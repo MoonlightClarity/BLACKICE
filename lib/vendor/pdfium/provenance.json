@@ -1,0 +1,26 @@
+{
+  "package": "@hyzyla/pdfium",
+  "version": "3.0.0",
+  "source": "https://github.com/hyzyla/pdfium",
+  "tarball": "https://registry.npmjs.org/@hyzyla/pdfium/-/pdfium-3.0.0.tgz",
+  "npmIntegrity": "sha512-Hw7/Pc/y2f8ZYVNXxAvDiLAV0qJT4+e5HMwbMghra/s2RKXuuWYdR/8ohoD4YwQfTL5UzSNlTtP1LJHip7LiEQ==",
+  "tarballSha256": "35ae2bd7aeb538927cb55de82bd8b9c2f629a2e6b2ca3960c6145c4f1024e857",
+  "copiedUnmodified": [
+    {
+      "path": "index.esm.js",
+      "bytes": 282081,
+      "sha256": "284fcfb782e3c5a0a39d79fbf3d497101bb2f50f796de389e009dd3fd077a870"
+    },
+    {
+      "path": "pdfium.wasm",
+      "bytes": 5298237,
+      "sha256": "beeaf5bbff216d555fecec7cd486072838c4632a2272d31b52ef1fd05008fe7c"
+    },
+    {
+      "path": "LICENSE-wrapper.md",
+      "bytes": 1072,
+      "sha256": "b60c044f81876f350bf5e309071bfc2057c444efd07d2b82790b786049d9d83f"
+    }
+  ],
+  "runtimeDownloads": false
+}

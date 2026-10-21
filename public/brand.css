@@ -1,0 +1,15 @@
+/* Relay's signal mark and routed field stay still and outside the reading focus. */
+.workspace-mode-brand{letter-spacing:-.25px;gap:6px}
+.workspace-mode-brand > img{width:23px;height:23px;object-fit:contain}
+.conversation-scroll{background:url('/assets/relay-field.svg') center top/cover no-repeat, linear-gradient(145deg,#11212bd9,#050b12ed)}
+.conversation-timeline,.conversation-turn,.conversation-empty{background:transparent}
+.conversation-empty{gap:16px;padding-bottom:70px}
+.conversation-empty>img{width:106px;height:106px;opacity:1}
+.conversation-empty>h1{font-size:25px;font-weight:450;letter-spacing:-.65px;color:#e4e4e4;text-align:center;max-width:400px}
+.conversation-message:not(.user)>.conversation-message-author::before{content:'';flex:none;display:block;width:18px;height:18px;background:url('/assets/relay-mark.svg') center/contain no-repeat;opacity:.85}
+.conversation-sidebar{background:url('/assets/relay-field.svg') left top/auto 570px no-repeat, linear-gradient(145deg,#11212bd9,#050b12ed)}
+.conversation-history-filter,.conversation-search,.conversation-list{position:relative}
+.configure-workspace{background:url('/assets/relay-field.svg') center top/cover no-repeat, linear-gradient(145deg,#11212bd9,#050b12ed)}
+.configure-page{background:transparent}
+@media(max-width:600px){.conversation-empty>img{width:82px;height:82px}.conversation-empty>h1{font-size:22px;max-width:280px}.conversation-scroll{background-position:60% top}.workspace-mode-brand > img{width:21px;height:21px}}
+@media(prefers-contrast:more){.conversation-scroll,.conversation-sidebar,.configure-workspace{background-image:none}}

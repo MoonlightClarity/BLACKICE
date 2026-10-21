@@ -1,0 +1,17 @@
+BLACKICE
+Copyright 2026 BLACKICE
+
+BLACKICE-authored portions of this distribution are licensed under the
+Apache License, Version 2.0. See LICENSE.
+
+This distribution also includes third-party software, filter-list data,
+reference material, and fonts. Those components retain their original
+copyright notices and license terms. The BLACKICE license does not replace
+or relicense them.
+
+See THIRD-PARTY-NOTICES.md for the component inventory and the locations of
+the preserved licenses, attribution notices, source bundles, and provenance
+records. Binary packages must also retain the notices supplied with their
+Electron runtime and its bundled components.
+
+This NOTICE provides attribution and does not modify any license terms.

@@ -1,0 +1,73 @@
+/* Everyday conversation controls share one readable, quiet hierarchy. */
+.conversation-workspace{font-family:"Segoe UI Variable","Segoe UI",Arial,sans-serif}
+.conversation-message-text{font-family:inherit;font-size:15px;line-height:1.7;color:#e2e2e2}
+.conversation-message-text p,.conversation-message-text li{font-family:inherit;font-size:15px;line-height:1.7;color:#ddd}
+.conversation-message-text strong{color:#eee}
+.conversation-message-text a{color:#dedede}
+.conversation-message-text blockquote{border-color:#666;color:#bbb}
+.conversation-message-text code,.conversation-message-text pre{border-color:#444;color:#ddd}
+.conversation-message-text pre code{font-family:"Cascadia Code",Consolas,monospace}
+.conversation-message-author{font-size:11px;color:#aaa}
+.conversation-message.user .conversation-message-author{font-size:10px;color:#aaa}
+.conversation-user-text{font-size:14px;line-height:1.65;color:#e3e3e3}
+.conversation-message.user{padding:11px 15px;border-color:#363636}
+.conversation-message{margin-bottom:18px}
+.conversation-turn{padding-bottom:22px}
+.conversation-turn-controls>button{min-width:30px;min-height:30px;color:#aaa}
+.conversation-turn-controls>button:hover,.conversation-turn-controls>button:focus-visible{border-color:#666;color:#fff}
+.conversation-turn-metrics{font-size:10px;color:#999}
+.conversation-context>summary{min-height:28px;font-size:11px;color:#aaa}
+.conversation-composer>textarea{font-size:14px;line-height:1.65;padding:13px 15px 4px}
+.conversation-composer>textarea::placeholder{font-size:14px}
+.conversation-context-choice>summary{font-size:11px;min-height:32px}
+.conversation-options>summary{width:32px;height:32px}
+.conversation-compose-bar{gap:7px;padding:4px 9px 8px;min-height:44px}
+.conversation-header-button,.conversation-actions>summary{min-height:32px;font-size:12px}
+.conversation-scroll{background-image:linear-gradient(#0c1a2588,#040c1288),url('/assets/relay-field.svg')}
+
+/* Keep the first message beside its invitation, rather than at the window edge. */
+.conversation-main:has(.conversation-empty){justify-content:center;overflow:auto;padding:32px 0 clamp(24px,8dvh,72px);background:url('/assets/relay-field.svg') center/cover no-repeat, linear-gradient(145deg,#11212bd9,#050b12ed)}
+.conversation-main:has(.conversation-empty) .conversation-scroll{flex:0 0 auto;overflow:visible;background:none;scrollbar-gutter:auto}
+.conversation-main:has(.conversation-empty) .conversation-timeline{min-height:0;padding:0 24px}
+.conversation-main:has(.conversation-empty) .conversation-empty{min-height:0;gap:17px;padding:0 0 27px}
+.conversation-main:has(.conversation-empty) .conversation-empty>img{width:76px;height:76px}
+.conversation-main:has(.conversation-empty) .conversation-empty>h1{font-size:24px;max-width:100%;line-height:1.35}
+.conversation-main:has(.conversation-empty) .conversation-compose{padding:0 24px;width:min(760px,100%)}
+.conversation-start-actions{display:none}
+.conversation-main:has(.conversation-empty) .conversation-start-actions{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:15px}
+.conversation-start-actions>button{display:inline-flex;align-items:center;gap:7px;min-height:33px;padding:6px 10px;border:1px solid #333;border-radius:6px;background:linear-gradient(145deg,#11212bd9,#050b12ed);color:#bbb;font:inherit;font-size:12px;cursor:pointer}
+.conversation-start-actions>button:hover,.conversation-start-actions>button:focus-visible{outline:1px solid #888;outline-offset:1px;color:#fff}
+.conversation-start-actions svg{color:#aaa;flex:none}
+.workspace-mode-brand{font-size:13px}
+#workspace-modes nav>button,.workspace-models{font-size:12px}
+/* Dialog height follows the available space below the app's two title bars. */
+.modal-backdrop{display:flex;align-items:center;justify-content:center;padding:12px;overflow:hidden}
+.modal-backdrop>.modal{max-height:100%;min-height:0}
+.file-patches-workspace{min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.file-patches-workspace .file-patches-results{min-height:0;flex:1;max-height:none}
+
+@media(max-width:600px){
+  #workspace-modes{gap:4px;padding:0 8px}
+  #workspace-modes .workspace-mode-brand{font-size:0;gap:0;margin-right:2px}
+  #workspace-modes nav>button{font-size:11px;padding:7px 7px}
+  #workspace-modes .workspace-health{font-size:0;gap:0;max-width:16px;padding:7px 5px}
+  #workspace-modes .workspace-models{font-size:11px;padding:5px 6px}
+  #workspace-modes .workspace-search{padding:7px 5px}
+  .conversation-main:has(.conversation-empty) .conversation-empty>h1{white-space:normal;max-width:calc(100vw - 48px)}
+  .conversation-main:has(.conversation-empty){padding:25px 0}
+  .conversation-main:has(.conversation-empty) .conversation-empty>img{width:61px;height:61px}
+  .conversation-main:has(.conversation-empty) .conversation-empty>h1{font-size:21px;max-width:280px}
+  .conversation-main:has(.conversation-empty) .conversation-compose{padding:0 16px}
+  .conversation-main:has(.conversation-empty) .conversation-empty{padding-bottom:22px;gap:13px}
+  .conversation-message-text p,.conversation-message-text li{font-size:14px}
+  .conversation-start-actions{gap:7px}
+  .conversation-start-actions>button{font-size:11px}
+}
+@media(max-height:560px){
+  .conversation-main:has(.conversation-empty){justify-content:flex-start;padding:20px 0}
+  .conversation-main:has(.conversation-empty) .conversation-empty>img{width:45px;height:45px}
+  .conversation-main:has(.conversation-empty) .conversation-empty{padding-bottom:15px;gap:10px}
+}
+@media(max-width:360px){#workspace-modes nav>button{font-size:10px;padding-left:5px;padding-right:5px}#workspace-modes{gap:2px}}
+@media(prefers-contrast:more){.conversation-main:has(.conversation-empty),.conversation-scroll{background-image:none}.conversation-start-actions>button{border-color:#aaa;color:#eee}}
+.artifact-actions{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:wrap}.artifact-file-details{margin-top:18px;border-top:1px solid #292929;padding-top:12px;color:#aaa;font-size:12px}.artifact-file-details>summary{cursor:pointer;min-height:28px;align-content:center}.artifact-file-details .artifact-file-meta{margin:12px 0 0;padding-bottom:0;border:0}.artifact-view>[role=status]{color:#aaa;font-size:14px}.artifact-view>#artifact-open-error{color:#e2b5bd;font-size:13px;overflow-wrap:anywhere}.artifact-modal .artifact-view{flex:1;min-height:0}.artifact-modal>.modal-header h2{overflow-wrap:anywhere}

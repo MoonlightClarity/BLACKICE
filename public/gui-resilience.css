@@ -1,0 +1,6 @@
+.gui-recovery { position: fixed; right: 20px; bottom: 20px; z-index: 10000; width: min(440px, calc(100vw - 40px)); padding: 20px; box-sizing: border-box; color: #e4edf4; background: linear-gradient(145deg, #152330, #101923); border: 1px solid #71899a; border-radius: 12px; box-shadow: 0 12px 36px #0008; font: 14px/1.5 system-ui, sans-serif; }
+.gui-recovery[hidden], .gui-recovery [hidden] { display: none; }
+.gui-recovery strong { display: block; font-size: 16px; }
+.gui-recovery p { margin: 10px 0 16px; }
+.gui-recovery button { padding: 8px 12px; margin-right: 8px; color: inherit; background: linear-gradient(180deg, #2d455c, #24384b); border: 1px solid #71899a; border-radius: 6px; cursor: pointer; font: inherit; }
+.gui-recovery button:focus-visible { outline: 2px solid #b5defb; outline-offset: 3px; }

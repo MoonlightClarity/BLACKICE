@@ -1,0 +1,161 @@
+{
+  "id": "32e1660a-e255-40d5-9133-5adfa9ecf691",
+  "workflowId": "live-delegation",
+  "workflowName": "Live authenticated parent-child delegation",
+  "status": "completed",
+  "settled": true,
+  "createdAt": "2026-10-17T23:41:51.133Z",
+  "updatedAt": "2026-10-17T23:42:06.370Z",
+  "startedAt": "2026-10-17T23:41:51.152Z",
+  "finishedAt": "2026-10-17T23:42:06.348Z",
+  "fixtureSource": "Reduced from an authenticated live BLACKICE QA run on 2026-10-17. User prompt, local paths, file contents, token usage, and unrelated events omitted.",
+  "input": "Live parent-child delegation QA",
+  "workflow": {
+    "id": "live-delegation",
+    "name": "Live authenticated parent-child delegation",
+    "nodes": [
+      {
+        "id": "input",
+        "type": "input",
+        "name": "Task",
+        "model": "default"
+      },
+      {
+        "id": "agent",
+        "type": "agent",
+        "name": "QA coordinator",
+        "model": "gpt-6.1-sol"
+      },
+      {
+        "id": "output",
+        "type": "output",
+        "name": "Result",
+        "model": "default"
+      }
+    ],
+    "edges": [
+      {
+        "source": "input",
+        "target": "agent"
+      },
+      {
+        "source": "agent",
+        "target": "output"
+      }
+    ]
+  },
+  "nodes": {
+    "input": {
+      "status": "completed",
+      "startedAt": "2026-10-17T23:41:51.154Z",
+      "finishedAt": "2026-10-17T23:41:51.154Z"
+    },
+    "agent": {
+      "status": "completed",
+      "startedAt": "2026-10-17T23:41:51.154Z",
+      "finishedAt": "2026-10-17T23:42:06.348Z",
+      "threadId": "01a14c3e-42c2-74b0-a439-21a21b82d8a5"
+    },
+    "output": {
+      "status": "completed",
+      "startedAt": "2026-10-17T23:42:06.348Z",
+      "finishedAt": "2026-10-17T23:42:06.348Z"
+    }
+  },
+  "events": [
+    {
+      "type": "agent.event",
+      "runId": "32e1660a-e255-40d5-9133-5adfa9ecf691",
+      "nodeId": "agent",
+      "at": "2026-10-17T23:41:56.262Z",
+      "data": {
+        "type": "subagent",
+        "id": "alpha",
+        "status": "running",
+        "label": "Read only alpha.txt using relay_workspace action read. Do not read any other files or modify files. Return the exact key and numeric value c"
+      }
+    },
+    {
+      "type": "agent.event",
+      "runId": "32e1660a-e255-40d5-9133-5adfa9ecf691",
+      "nodeId": "agent",
+      "at": "2026-10-17T23:41:56.262Z",
+      "data": {
+        "type": "subagent",
+        "id": "beta",
+        "status": "running",
+        "label": "Read only beta.txt using relay_workspace action read. Do not read any other files or modify files. Return the exact key and numeric value co"
+      }
+    },
+    {
+      "type": "agent.event",
+      "runId": "32e1660a-e255-40d5-9133-5adfa9ecf691",
+      "nodeId": "agent",
+      "at": "2026-10-17T23:41:59.679Z",
+      "data": {
+        "type": "subagent",
+        "id": "beta",
+        "status": "tool",
+        "tool": "workspace.action"
+      }
+    },
+    {
+      "type": "agent.event",
+      "runId": "32e1660a-e255-40d5-9133-5adfa9ecf691",
+      "nodeId": "agent",
+      "at": "2026-10-17T23:41:59.681Z",
+      "data": {
+        "type": "subagent",
+        "id": "beta",
+        "status": "tool-completed"
+      }
+    },
+    {
+      "type": "agent.event",
+      "runId": "32e1660a-e255-40d5-9133-5adfa9ecf691",
+      "nodeId": "agent",
+      "at": "2026-10-17T23:42:00.072Z",
+      "data": {
+        "type": "subagent",
+        "id": "alpha",
+        "status": "tool",
+        "tool": "workspace.action"
+      }
+    },
+    {
+      "type": "agent.event",
+      "runId": "32e1660a-e255-40d5-9133-5adfa9ecf691",
+      "nodeId": "agent",
+      "at": "2026-10-17T23:42:00.073Z",
+      "data": {
+        "type": "subagent",
+        "id": "alpha",
+        "status": "tool-completed"
+      }
+    },
+    {
+      "type": "agent.event",
+      "runId": "32e1660a-e255-40d5-9133-5adfa9ecf691",
+      "nodeId": "agent",
+      "at": "2026-10-17T23:42:00.994Z",
+      "data": {
+        "type": "subagent",
+        "id": "beta",
+        "status": "completed",
+        "durationMs": 4732
+      }
+    },
+    {
+      "type": "agent.event",
+      "runId": "32e1660a-e255-40d5-9133-5adfa9ecf691",
+      "nodeId": "agent",
+      "at": "2026-10-17T23:42:02.252Z",
+      "data": {
+        "type": "subagent",
+        "id": "alpha",
+        "status": "completed",
+        "durationMs": 5990
+      }
+    }
+  ]
+}

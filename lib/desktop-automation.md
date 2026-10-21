@@ -1,0 +1,28 @@
+# Background Windows automation
+
+Relay observes the current Windows session and operates supported application controls without moving the physical pointer, injecting keystrokes, changing the clipboard, or requesting foreground focus. There are no per-action approval prompts.
+
+The agent starts with `windows`, then `inspect` on an explicit window ID. Inspection returns a bounded accessibility tree, opaque element references and each control's supported actions. Refs remain stable across inspections of a live control, but expire after reconnecting the native worker or when a control is replaced. A stale ref never falls back to a screen coordinate or a different control.
+
+Supported actions are `invoke`, `set_value`, `select`, `toggle`, `expand`, `collapse`, `scroll`, `scroll_into_view`, and `get_text`. Screenshots and window enumeration are read-only. Old coordinate-click, typing, key, and focus requests return guidance to use accessibility refs.
+
+UI Automation actions use a native UIA2 client with `AutoSetFocus=false`, verified before use. The installed Windows UI Automation type library is imported in memory, so no Windows SDK or generated interop binary is required. Standard HWND text fields use `WM_SETTEXT`; standard buttons notify their actual parent with `WM_COMMAND/BN_CLICKED`. Standard native checkboxes update their check state through their control protocol before notifying the parent. These targeted protocols do not inject pointer or keyboard messages.
+
+Some application providers activate a window themselves. Stock WinForms checkboxes exhibit this behavior, and updating their native check state does not update the managed `Checked` value. Relay therefore omits their toggle action and rejects a direct toggle attempt. Use an application integration for these controls. Other application actions can open a dialog or change focus as an application side effect; responses report foreground/cursor changes observed during each mutation. Relay does not try to steal focus back.
+
+Custom game/canvas surfaces, controls without appropriate accessibility patterns, secure desktops, and Windows elevation boundaries are not bypassed. A dedicated application or browser integration is needed for unsupported surfaces. UIA automatically setting focus is disabled; this is not an isolation boundary around arbitrary application code.
+
+Desktop operations remain serialized. Stop, detach, or cancellation aborts queued work and terminates the native worker. An action already accepted by an application may have completed; inspect current state before retrying it.
+
+## Verification
+
+The regular desktop tests cover explicit targeting, bounds, physical-input rejection, serialization, cancellation, stale worker isolation, and native helper recovery. An opt-in live test launches a dedicated stock WinForms fixture offscreen without activation; it never acts on existing user applications:
+
+```powershell
+$env:RELAY_LIVE_UIA_QA='1'
+node --test tests/desktop-uia.live.test.mjs
+```
+
+The test verifies actual text, button count, native checkbox state, selection, expansion and scroll state, with the original foreground window and cursor position unchanged. It also verifies read-only and unsupported controls, stable refs, and expiration after reconnection.
+
+Microsoft references: [control patterns](https://learn.microsoft.com/dotnet/framework/ui-automation/ui-automation-control-patterns-overview), [bounded element traversal](https://learn.microsoft.com/dotnet/framework/ui-automation/obtaining-ui-automation-elements), [disabling automatic focus](https://learn.microsoft.com/windows/win32/api/uiautomationclient/nf-uiautomationclient-iuiautomation2-put_autosetfocus), [button notifications](https://learn.microsoft.com/windows/win32/controls/bn-clicked).

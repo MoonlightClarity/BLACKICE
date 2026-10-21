@@ -1,0 +1,312 @@
+/*
+ * BLACKICE / CONSOLE TYPE
+ * Three deliberate voices: etched console controls, angular display headings,
+ * and an open, quiet face for messages and source. Fonts are served locally.
+ */
+@font-face{
+  font-family:"Share Tech Mono";
+  font-style:normal;
+  font-weight:400;
+  font-display:swap;
+  src:url("/assets/fonts/ShareTechMono-Regular.ttf") format("truetype");
+}
+:root{
+  --blackice-controls:"Share Tech Mono","OCR A Extended","Lucida Console",Consolas,monospace;
+  --blackice-reading:"IBM Plex Mono","Cascadia Code",Consolas,monospace;
+  --blackice-display:"Oxanium","Bahnschrift","Arial Narrow",sans-serif;
+  --blackice-control-size:14px;
+  --blackice-reading-size:13px;
+  --noir-font:var(--blackice-controls);
+  --relay-mono:var(--blackice-controls);
+  font-family:var(--blackice-controls);
+  font-synthesis:none;
+}
+html,body,#app,#modal-root,#toast-root,
+.conversation-workspace,.conversation-shell,.configure-workspace,.configure-page,
+.observe-workspace,.model-picker-panel,.modal,.toast{
+  font-family:var(--blackice-controls)!important;
+  font-size:var(--blackice-control-size);
+  font-weight:400;
+  line-height:1.5;
+  font-variant-numeric:tabular-nums slashed-zero;
+  font-feature-settings:normal;
+  letter-spacing:.015em;
+}
+
+/* Cover actual controls, including popovers mounted outside the app shell. */
+body :is(button,input,select,textarea,summary,label,[role="tab"],[role="button"]:where(:not(svg,svg *)),.button){
+  font-family:var(--blackice-controls)!important;
+  font-size:var(--blackice-control-size)!important;
+  font-weight:400!important;
+  letter-spacing:.025em;
+  line-height:1.35;
+}
+body :is(button,summary,[role="button"]:where(:not(svg,svg *)),.button) :is(span,strong,small,em){
+  font-family:inherit;
+}
+body :is(input,select,textarea){
+  text-transform:none;
+  letter-spacing:.01em;
+}
+body :is(input,textarea)::placeholder{
+  font-family:inherit;
+  font-size:inherit;
+  font-weight:400;
+  letter-spacing:.01em;
+  opacity:1;
+}
+body :is(kbd,.shortcut){
+  font-family:var(--blackice-controls)!important;
+  font-size:12px!important;
+  font-weight:400;
+  letter-spacing:.025em;
+}
+
+/* High-specificity shell rules replace the old compressed 9–12px labels. */
+#workspace-modes nav>button,
+#workspace-modes :is(.workspace-health,.workspace-models,.workspace-menu button){
+  font-family:var(--blackice-controls)!important;
+  font-size:14px!important;
+  font-weight:400!important;
+  letter-spacing:.06em;
+}
+#workspace-modes nav>button{
+  text-transform:uppercase;
+  letter-spacing:.09em;
+}
+#workspace-modes .workspace-brand-meta{
+  font-family:var(--blackice-controls)!important;
+  font-size:11px!important;
+  font-weight:400!important;
+  line-height:1.4;
+  letter-spacing:.12em!important;
+}
+#workspace-modes .workspace-wordmark{
+  font-family:var(--blackice-display)!important;
+  font-size:21px!important;
+  font-weight:600!important;
+  letter-spacing:.14em!important;
+  line-height:1.1;
+}
+.conversation-header .conversation-title{
+  font-family:var(--blackice-controls)!important;
+  font-size:14px!important;
+  font-weight:400!important;
+  letter-spacing:.025em;
+}
+.conversation-history-filter>span,.conversation-sidebar-heading,
+.model-picker-group-label,.section-eyebrow,.library-category,
+.inspector-section-title,.configure-eyebrow,.configure-label,
+.configure-connections dt,.connection-selected-label{
+  font-family:var(--blackice-controls)!important;
+  font-size:12px!important;
+  font-weight:400!important;
+  letter-spacing:.1em!important;
+  line-height:1.5;
+  text-transform:uppercase;
+}
+
+/* Uppercase only fixed interface actions. Titles, models and user data retain case. */
+.configure-nav>button,.conversation-actions>summary,
+.conversation-turn-controls>button,.configure-editor-actions>.configure-button,
+.modal-footer>.button,.connection-footer>.button,.file-patches-footer .button,
+.conversation-sidebar .conversation-new,.model-picker-connect{
+  text-transform:uppercase;
+  letter-spacing:.07em;
+}
+.conversation-starters .starter-card .starter-copy strong,
+.configure-automation-actions strong{
+  font-family:var(--blackice-controls)!important;
+  font-size:16px!important;
+  font-weight:400!important;
+  line-height:1.3;
+  letter-spacing:.045em;
+}
+.conversation-starters .starter-card .starter-copy small,
+.configure-automation-actions small{
+  font-family:var(--blackice-controls)!important;
+  font-size:13px!important;
+  line-height:1.5;
+  font-weight:400;
+  letter-spacing:0;
+}
+.model-picker-name,.model-picker-option-name,
+.connection-model-row strong,.connection-row strong,
+.conversation-sidebar-row .conversation-list-item{
+  font-family:var(--blackice-controls)!important;
+  font-size:14px!important;
+  font-weight:400!important;
+  letter-spacing:.015em;
+  text-transform:none;
+}
+.model-picker-meta,.model-picker-option-detail,
+.connection-model-row small,.connection-row small,
+.model-picker-group-label,.conversation-sidebar-meta,
+.conversation-composer-status,.conversation-draft-state,.conversation-turn-metrics,
+.conversation-message-author,.conversation-message.user .conversation-message-author,
+.configure-readiness,.configure-disclosure>summary>span,
+.field-help,.field-label .optional,.footer-note,.attachments-format-note,
+.attachments-count,.attachment-chip small,.attachment-chip strong,
+.observe-stream,.observe-eyebrow,.observe-agent-brief time,
+.observe-edit>header>time,.observe-line-number,.observe-edit>footer,
+.file-patch-name small,.file-patch-status,.context-footnotes,.context-metrics dt{
+  font-family:var(--blackice-controls)!important;
+  font-size:12px!important;
+  font-weight:400!important;
+  line-height:1.5;
+  letter-spacing:.025em;
+}
+.conversation-empty-eyebrow,.noir-hero-footer{
+  font-family:var(--blackice-controls)!important;
+  font-size:12px!important;
+  font-weight:400!important;
+  line-height:1.5;
+  letter-spacing:.16em!important;
+}
+.conversation-empty>p,.configure-about>p,
+.configure-optional-note,.configure-runtime-note,.configure-history-note,
+.configure-execution-note,.connection-storage-note,.modal-header p,
+.response-pref-intro,.observe-empty p,.toast{
+  font-family:var(--blackice-controls)!important;
+  font-size:14px!important;
+  line-height:1.6!important;
+  letter-spacing:.01em;
+}
+
+/* The display face belongs to a clear hierarchy, not every small control. */
+body :is(h1,h2,h3,h4),.agent-workspace-hero h2,.modal-header h2,
+.configure-heading h1,.configure-section-heading h2,.configure-automation-heading h2,
+.configure-chat-prompt h2,.observe-title h1,.observe-now h2,.observe-empty h2{
+  font-family:var(--blackice-display)!important;
+  font-weight:500!important;
+  line-height:1.25;
+  letter-spacing:.035em!important;
+}
+.conversation-main:has(.conversation-empty) .conversation-empty>h1{
+  font-family:var(--blackice-display)!important;
+  font-size:clamp(34px,4.25vw,52px)!important;
+  font-weight:500!important;
+  line-height:1.13!important;
+  letter-spacing:.035em!important;
+}
+.configure-section-heading h2,.configure-automation-heading h2,
+.configure-chat-prompt h2,.modal-header h2{
+  font-size:19px!important;
+}
+
+/* Reading remains calm and accurately cased, with generous line spacing. */
+.conversation-message-text,.conversation-user-text,
+.conversation-message-text :is(p,li,blockquote,td,th),
+.observe-message-body,.observe-message-body :is(p,li),
+.observe-update.message p,.configure-instructions,.context-checkpoint p,
+.conversation-composer>textarea,
+.configure-workspace textarea,.modal textarea,.connection-model-capacities textarea{
+  font-family:var(--blackice-reading)!important;
+  font-size:var(--blackice-reading-size)!important;
+  font-weight:400;
+  letter-spacing:0!important;
+  line-height:1.75!important;
+  text-transform:none;
+  font-variant-numeric:normal;
+}
+.conversation-composer>textarea::placeholder{
+  font-family:var(--blackice-reading)!important;
+  font-size:var(--blackice-reading-size)!important;
+  letter-spacing:0;
+}
+body :is(code,pre),.observe-diff,.observe-command-line,
+.observe-command-folder code,.observe-command-output pre,
+.observe-edit-path strong,.runtime-command,.execution-output,
+.event-main pre,.import-area,.file-patch-receipt dd{
+  font-family:var(--blackice-reading)!important;
+  font-size:var(--blackice-reading-size)!important;
+  line-height:1.7!important;
+  font-weight:400;
+  letter-spacing:0;
+  text-transform:none;
+  font-variant-numeric:normal;
+}
+.conversation-message-text :is(h1,h2,h3,h4){
+  font-family:var(--blackice-display)!important;
+  font-weight:500!important;
+  letter-spacing:.02em!important;
+  line-height:1.35!important;
+}
+
+/* Retain legible terminal labels while giving compact navigation room to fit. */
+@media(max-width:760px){
+  #workspace-modes nav>button{
+    font-size:13px!important;
+    letter-spacing:.035em;
+  }
+  .conversation-main:has(.conversation-empty) .conversation-empty>h1{
+    font-size:clamp(30px,6vw,42px)!important;
+  }
+}
+@media(max-width:480px){
+  #workspace-modes .workspace-wordmark{
+    font-size:15px!important;
+    letter-spacing:.08em!important;
+  }
+  #workspace-modes nav>button{
+    font-size:13px!important;
+    padding-inline:5px!important;
+    letter-spacing:.025em;
+  }
+  #workspace-modes :is(.workspace-health,.workspace-models){
+    font-size:12px!important;
+    letter-spacing:.015em;
+  }
+  .conversation-empty-eyebrow{
+    font-size:12px!important;
+    letter-spacing:.1em!important;
+  }
+  .conversation-starters .starter-card .starter-copy strong{
+    font-size:15px!important;
+  }
+  .conversation-starters .starter-card .starter-copy small{
+    font-size:12px!important;
+  }
+  .model-picker-button .model-picker-name{font-size:13px!important}
+  .model-picker-button .model-picker-meta{font-size:11px!important}
+}
+
+/* The page is a fixed shell; its workspaces own scrolling. overflow:hidden
+ * creates a scroll container that keyboard focus can silently pan sideways. */
+html,body{width:100%;max-width:100%;min-width:0;overflow:clip!important}
+html body #workspace-modes{box-sizing:border-box;min-width:0;max-width:100%;width:100%;flex-wrap:nowrap}
+html body #workspace-modes nav{flex:0 1 auto;min-width:0}
+html body #workspace-modes nav>button{flex:none;white-space:nowrap}
+html body #workspace-modes .workspace-menu{flex:none;min-width:34px}
+html body #workspace-modes .workspace-menu>summary{box-sizing:border-box;width:34px;min-width:34px;text-align:center}
+html body #workspace-modes .workspace-menu>div{max-width:calc(100vw - 24px);max-height:min(700px,calc(100dvh - 150px));overflow-y:auto;overscroll-behavior:contain}
+@media(max-width:1700px){
+  html body #workspace-modes .workspace-brand-meta,
+  html body #configure-mode-actions{display:none!important}
+}
+@media(max-width:1360px){
+  html body #workspace-modes{gap:10px!important;padding-inline:16px!important}
+  html body #workspace-modes .workspace-health{display:none!important}
+}
+@media(max-width:1100px){
+  html body #workspace-modes{gap:8px!important;padding-inline:12px!important}
+  html body #workspace-modes :is(.workspace-projects,.workspace-models){display:none!important}
+  html body #workspace-modes .workspace-wordmark{font-size:19px!important;letter-spacing:.10em!important}
+  html body #workspace-modes nav>button{font-size:13px!important;letter-spacing:.035em;padding-inline:8px!important;min-width:0!important}
+}
+@media(max-width:680px){
+  html body #workspace-modes{gap:7px!important;padding-inline:10px!important}
+  html body #workspace-modes .workspace-wordmark,
+  html body #workspace-modes .workspace-search{display:none!important}
+  html body #workspace-modes .workspace-mode-brand{gap:0!important;margin-right:0}
+}
+@media(max-width:540px){
+  /* Retain the existing 87px mobile header and matching app/modal offsets.
+   * Four equal tracks keep every workspace tab in the same reachable row. */
+  html body #workspace-modes{grid-template-columns:minmax(0,1fr) 34px;grid-template-rows:32px 34px;gap:6px 8px!important;padding:7px 10px!important}
+  html body #workspace-modes .workspace-mode-brand{grid-column:1;grid-row:1;gap:9px!important}
+  html body #workspace-modes .workspace-wordmark{display:inline-block!important;font-size:17px!important;letter-spacing:.10em!important}
+  html body #workspace-modes .workspace-menu{grid-column:2;grid-row:1}
+  html body #workspace-modes nav{grid-column:1/-1;grid-row:2;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px!important;min-width:0}
+  html body #workspace-modes nav>button{box-sizing:border-box;min-width:0!important;width:100%;font-size:12px!important;letter-spacing:.02em;padding-inline:4px!important}
+}

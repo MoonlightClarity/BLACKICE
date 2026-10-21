@@ -1,0 +1,358 @@
+/* BLACKICE / MATERIAL SYSTEM
+ * A single frozen material, with color assigned to the job of each surface.
+ * The retained SVG skins are editable local assets. blackice-material.css adds
+ * the quiet vector scene and shared gradient treatment in the active theme.
+ */
+:root{
+  --bi-panel:url("/assets/blackice-panel-ice.svg");
+  --bi-control:url("/assets/blackice-control-ice.svg");
+  --bi-surface-rgb:13 27 38;
+  --bi-control-rgb:15 32 44;
+  --bi-accent-rgb:158 218 232;
+  --bi-ink:#e6f2f5;
+  --bi-muted:#acc0cb;
+  --bi-edge:rgb(var(--bi-accent-rgb) / .32);
+  --bi-shadow:0 14px 34px #00081280;
+}
+
+/* Conversation: slate for reading, steel for history, glacial teal for writing. */
+.conversation-workspace{--bi-surface-rgb:11 24 35;--bi-accent-rgb:145 187 214}
+.conversation-sidebar{--bi-surface-rgb:17 28 45;--bi-accent-rgb:145 175 208}
+.conversation-timeline{--bi-surface-rgb:10 23 34;--bi-accent-rgb:137 181 207}
+.conversation-message.user{--bi-surface-rgb:17 35 49;--bi-accent-rgb:150 194 223}
+.conversation-compose,.conversation-options-panel,.conversation-context-panel,.model-picker-panel{
+  --bi-surface-rgb:9 32 39;--bi-control-rgb:13 39 46;--bi-accent-rgb:159 225 228;
+}
+
+/* Steel blue configuration; dusk violet for events, traces and history. */
+.configure-workspace,.configure-page{--bi-surface-rgb:16 28 46;--bi-control-rgb:20 37 55;--bi-accent-rgb:151 187 224}
+.observe-workspace,.execution,.execution-body,.history-row,.operation-snapshot{
+  --bi-surface-rgb:25 24 43;--bi-control-rgb:33 31 54;--bi-accent-rgb:182 171 216;
+}
+#modal-root .modal{--bi-surface-rgb:15 28 41;--bi-control-rgb:19 36 49;--bi-accent-rgb:157 198 221}
+#modal-root .modal:has(.connection-workspace),.connection-workspace,
+.tool-connection-card,.tool-connection-catalog{--bi-surface-rgb:10 33 39;--bi-control-rgb:14 42 47;--bi-accent-rgb:143 211 208}
+.browser-workspace-modal .connection-intro{--bi-surface-rgb:15 28 44;--bi-control-rgb:20 38 53;--bi-accent-rgb:151 187 224}
+.browser-workspace-modal .connection-intro.browser-neo-intro{--bi-surface-rgb:9 29 36;--bi-control-rgb:14 39 45;--bi-accent-rgb:143 211 208}
+html body #modal-root .browser-workspace-modal #browser-workspace-view{background:linear-gradient(145deg,#111e29,#071018)!important}
+#modal-root .modal:has(.identity-editor),#modal-root .modal:has(.knowledge-editor),
+#modal-root .modal:has(.prompt-section-editor){--bi-surface-rgb:20 29 44;--bi-control-rgb:25 38 55;--bi-accent-rgb:169 191 222}
+#modal-root .modal:has(.learning-detail),#modal-root .modal:has(.inbox-detail){--bi-surface-rgb:27 26 45;--bi-control-rgb:36 33 55;--bi-accent-rgb:185 174 214}
+
+/* The four invitations share a material but signal four kinds of work. */
+.conversation-starters [data-starter="review-files"]{--bi-surface-rgb:15 35 48;--bi-control-rgb:15 35 48;--bi-accent-rgb:153 197 225}
+.conversation-starters [data-starter="research"]{--bi-surface-rgb:10 39 42;--bi-control-rgb:10 39 42;--bi-accent-rgb:137 218 211}
+.conversation-starters [data-starter="plan"]{--bi-surface-rgb:31 28 49;--bi-control-rgb:31 28 49;--bi-accent-rgb:190 175 225}
+.conversation-starters [data-starter="draft"]{--bi-surface-rgb:25 34 48;--bi-control-rgb:25 34 48;--bi-accent-rgb:181 206 230}
+
+/* The shared control face reaches bare buttons, disclosures and link actions. */
+html body :is(#workspace-modes,#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(button,summary,[role="button"]:where(:not(svg,svg *)),a.button),
+html body :is(.conversation-action-list a,.task-artifact-download,.learning-source-link){
+  color:var(--bi-ink)!important;
+  background:
+    linear-gradient(180deg,rgb(var(--bi-control-rgb) / .46),rgb(var(--bi-control-rgb) / .72)), var(--bi-control) center / 100% 100% no-repeat, linear-gradient(145deg,color-mix(in srgb,rgb(var(--bi-control-rgb)) 90%,#668b9d 10%),rgb(var(--bi-control-rgb)))!important;
+  border:1px solid rgb(var(--bi-accent-rgb) / .22)!important;
+  border-top-color:rgb(var(--bi-accent-rgb) / .40)!important;
+  border-bottom-color:rgb(var(--bi-accent-rgb) / .14)!important;
+  border-radius:1px!important;
+  box-shadow:inset 0 1px rgb(230 248 252 / .08),inset 0 -2px #00070d66,0 3px 8px #00081350!important;
+  text-shadow:0 1px 1px #000b;
+  transition:background-color .14s,border-color .14s,box-shadow .14s,filter .14s!important;
+}
+html body :is(#workspace-modes,#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(button,summary,[role="button"]:where(:not(svg,svg *)),a.button):not(:disabled):not([aria-disabled="true"]):hover,
+html body :is(.conversation-action-list a,.task-artifact-download,.learning-source-link):hover{
+  background:
+    linear-gradient(115deg,rgb(var(--bi-accent-rgb) / .18),rgb(var(--bi-accent-rgb) / .04) 56%,rgb(var(--bi-accent-rgb) / .09)), var(--bi-control) center / 100% 100% no-repeat, linear-gradient(145deg,color-mix(in srgb,rgb(var(--bi-control-rgb)) 90%,#668b9d 10%),rgb(var(--bi-control-rgb)))!important;
+  border-color:rgb(var(--bi-accent-rgb) / .58)!important;
+  box-shadow:inset 0 1px rgb(var(--bi-accent-rgb) / .28),inset 0 -2px #00070d80,0 0 12px rgb(var(--bi-accent-rgb) / .10)!important;
+  color:#f0fbff!important;
+  transform:none!important;
+}
+html body :is(#workspace-modes,#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(button,summary,[role="button"]:where(:not(svg,svg *)),a.button):active{
+  box-shadow:inset 0 2px 8px #000a,inset 0 -1px rgb(var(--bi-accent-rgb) / .22)!important;
+}
+html body :is(#workspace-modes,#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(button,summary,[role="button"]:where(:not(svg,svg *)),a.button):focus-visible{
+  outline:2px solid #d8f5fa!important;outline-offset:2px;
+  box-shadow:inset 0 0 0 1px rgb(var(--bi-accent-rgb) / .8),0 0 0 4px #020910!important;
+}
+html body :is(#workspace-modes,#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(button,[role="button"]:where(:not(svg,svg *))):is(:disabled,[aria-disabled="true"]){
+  background:linear-gradient(#0d1820bb,#08121bd9), var(--bi-control) center / 100% 100% no-repeat, linear-gradient(145deg,#15242e,#0a151e)!important;
+  border-color:#2b414d!important;color:#718794!important;
+  box-shadow:inset 0 1px #d8f5fa06!important;filter:none!important;
+  cursor:default!important;text-shadow:none;
+}
+
+/* Selected controls carry an illuminated inner seam, never a flat fill. */
+html body :is(#workspace-modes,#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(button,summary,[role="button"]:where(:not(svg,svg *))):is([aria-selected="true"],[aria-pressed="true"],[aria-current="page"],[aria-current="true"],.active,.selected,.is-active):not(:disabled):not([aria-disabled="true"]),
+html body #app .conversation-sidebar-row.selected{
+  background:linear-gradient(110deg,rgb(var(--bi-accent-rgb) / .27),rgb(var(--bi-accent-rgb) / .07)), var(--bi-control) center / 100% 100% no-repeat, linear-gradient(145deg,color-mix(in srgb,rgb(var(--bi-control-rgb)) 90%,#668b9d 10%),rgb(var(--bi-control-rgb)))!important;
+  color:rgb(var(--bi-accent-rgb))!important;
+  border-color:rgb(var(--bi-accent-rgb) / .55)!important;
+  box-shadow:inset 2px 0 rgb(var(--bi-accent-rgb)),inset 0 1px rgb(var(--bi-accent-rgb) / .18),0 2px 7px #0009!important;
+}
+html body :is(#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(.button.primary,.configure-button.primary,.conversation-send,.connection-primary){
+  --bi-control-rgb:57 101 116;
+  --bi-accent-rgb:190 239 242;
+  background:linear-gradient(130deg,#c7edf0b8,#4f8a9fa8 48%,#244c60cc), var(--bi-control) center / 100% 100% no-repeat, linear-gradient(145deg,#2a505e,#214451)!important;
+  color:#f0fcff!important;border-color:#a6dce8!important;
+  text-shadow:0 1px 2px #00161eb8;
+  box-shadow:inset 0 1px #efffff88,inset 0 -2px #071a2c77,0 3px 13px #0008!important;
+}
+
+/* Frozen panel faces: quiet interiors with faceted, cracked material at the rim. */
+html body :is(#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(
+ .conversation-sidebar,.conversation-composer,.conversation-message.user,
+ .conversation-options-panel,.conversation-context-panel,.conversation-action-list,
+ .conversation-row-menu,.model-picker-panel,.conversation-rename,.conversation-browser-signin,
+ .conversation-queue-receipt,.task-state,.task-checkpoint,.task-files,.task-milestones,
+ .configure-basics,.configure-workflow,.configure-disclosure,.configure-chat-prompt,
+ .configure-step-editor,.response-defaults,.response-context-advanced,
+ .observe-shell,.observe-panel,.observe-section,.observe-agent,.observe-update,
+ .observe-edit,.observe-command,.observe-message,.observe-now,.observe-empty,
+ .connection-default,.connection-row,.connection-add,.connection-catalog,.connection-intro,
+ .connection-selected,.connection-manual,.connection-advanced,.connection-model-capacities,
+ .tool-connection-card,.tool-connection-catalog,.tool-connection-tool,.tool-import-preview-row,
+ .identity-editor,.identity-preview,.identity-notice,.identity-history,.identity-version,
+ .learning-sidebar,.learning-detail,.learning-why,.learning-evidence,.learning-options,.learning-history,
+ .knowledge-card,.knowledge-entry,.knowledge-audit,.knowledge-revision-grid,.knowledge-editor,
+ .prompt-section-list,.prompt-section-editor,.prompt-preview,
+ .inbox-sidebar,.inbox-detail,.inbox-config,.inbox-attempts,
+ .file-patch,.file-patch-receipt,.browser-address,.browser-downloads,
+ .advanced-panel,.operation-row,.operation-job,.operation-snapshot,.deployment-settings,
+ .swarm-preview,.schedule-recurrence,.schedule-next,.schedule-paused,.deployment-limits,
+ .library,.inspector,.execution-overview,.approval-banner,.diagnostic-item,
+ .desktop-permission,.desktop-preview-panel,.desktop-card,.desktop-window,.desktop-access-toggle
+),html body .model-picker-panel{
+  background:
+    linear-gradient(125deg,rgb(var(--bi-accent-rgb) / .13),transparent 42%,rgb(var(--bi-accent-rgb) / .035)), var(--bi-panel) center / 100% 100% no-repeat, linear-gradient(145deg,color-mix(in srgb,rgb(var(--bi-surface-rgb) / .96) 90%,#668b9d 10%),rgb(var(--bi-surface-rgb) / .96))!important;
+  border:1px solid rgb(var(--bi-accent-rgb) / .25)!important;
+  border-top-color:rgb(var(--bi-accent-rgb) / .43)!important;
+  border-radius:2px!important;
+  color:var(--bi-ink)!important;
+  box-shadow:var(--bi-shadow),inset 0 1px rgb(var(--bi-accent-rgb) / .10),inset 0 -1px #020910!important;
+}
+html body #app .conversation-timeline:not(:has(.conversation-empty)){
+  background:linear-gradient(180deg,#091520ec,#0a1620f5),var(--bi-panel) center / 100% 100% no-repeat!important;
+  border-inline-color:rgb(var(--bi-accent-rgb) / .22)!important;
+}
+html body #app .conversation-starters .starter-card,
+html body #app .configure-automation-actions>button{
+  background:linear-gradient(135deg,rgb(var(--bi-accent-rgb) / .22),rgb(var(--bi-accent-rgb) / .045) 55%), var(--bi-panel) center / 100% 100% no-repeat, linear-gradient(145deg,color-mix(in srgb,rgb(var(--bi-surface-rgb)) 90%,#668b9d 10%),rgb(var(--bi-surface-rgb)))!important;
+  border:1px solid rgb(var(--bi-accent-rgb) / .41)!important;
+  border-top-color:rgb(var(--bi-accent-rgb) / .76)!important;
+  box-shadow:inset 0 1px rgb(var(--bi-accent-rgb) / .18),0 9px 25px #00091399!important;
+}
+html body #app .conversation-starters .starter-card:hover,
+html body #app .configure-automation-actions>button:hover{
+  background:linear-gradient(135deg,rgb(var(--bi-accent-rgb) / .34),rgb(var(--bi-accent-rgb) / .08) 65%), var(--bi-panel) center / 100% 100% no-repeat, linear-gradient(145deg,color-mix(in srgb,rgb(var(--bi-surface-rgb)) 90%,#668b9d 10%),rgb(var(--bi-surface-rgb)))!important;
+  border-color:rgb(var(--bi-accent-rgb) / .86)!important;
+}
+html body #app .conversation-starters .starter-card .starter-icon{
+  color:rgb(var(--bi-accent-rgb))!important;
+  background:linear-gradient(135deg,rgb(var(--bi-accent-rgb) / .14),transparent), linear-gradient(145deg,#11202b,#07121b)!important;
+  border-color:rgb(var(--bi-accent-rgb) / .3)!important;border-radius:0!important;
+}
+html body #app .conversation-starters .starter-copy strong{color:rgb(var(--bi-accent-rgb))!important}
+html body #app .conversation-starters .starter-copy small{color:#b5c8d3!important}
+html body #app .configure-automation-actions>button:first-child{--bi-surface-rgb:12 34 44;--bi-accent-rgb:140 208 220}
+html body #app .configure-automation-actions>button:last-child{--bi-surface-rgb:30 27 48;--bi-accent-rgb:184 173 218}
+
+/* The detached dialog shell and command palette are frozen slabs too. */
+html body #modal-root .modal,
+html body #workspace-modes .workspace-menu>div{
+  background:linear-gradient(130deg,rgb(var(--bi-accent-rgb) / .12),transparent 50%), var(--bi-panel) center / 100% 100% no-repeat, linear-gradient(145deg,color-mix(in srgb,rgb(var(--bi-surface-rgb)) 90%,#668b9d 10%),rgb(var(--bi-surface-rgb)))!important;
+  border:1px solid rgb(var(--bi-accent-rgb) / .51)!important;border-radius:2px!important;
+  box-shadow:0 28px 100px #000d,inset 0 1px rgb(var(--bi-accent-rgb) / .24)!important;
+}
+.modal-backdrop{background:linear-gradient(145deg,#0c161cd9,#01070bd9)!important;backdrop-filter:blur(7px)!important}
+html body #modal-root :is(.modal-body,.modal-header,.modal-footer,.connection-workspace,.command-palette){
+  background:transparent!important;color:var(--bi-ink)!important;
+  border-color:rgb(var(--bi-accent-rgb) / .23)!important;
+}
+html body #modal-root .modal-header{
+  background:linear-gradient(100deg,rgb(var(--bi-accent-rgb) / .11),transparent 80%)!important;
+}
+html body #modal-root .modal-footer{background:linear-gradient(145deg,color-mix(in srgb,rgb(2 10 17 / .38) 90%,#668b9d 10%),rgb(2 10 17 / .38))!important}
+html body #modal-root .connection-footer{background:linear-gradient(145deg,color-mix(in srgb,rgb(2 13 20 / .55) 90%,#668b9d 10%),rgb(2 13 20 / .55))!important;border-color:rgb(var(--bi-accent-rgb) / .22)!important}
+html body .model-picker-panel :is(.model-picker-option-detail,.model-picker-group-label,.model-picker-empty){color:var(--bi-muted)!important}
+html body #app .observe-now{padding:15px 18px!important}
+html body #workspace-modes nav>button[data-mode="observe"]{--bi-control-rgb:31 29 48;--bi-accent-rgb:181 171 216}
+html body #workspace-modes nav>button[data-mode="configure"]{--bi-control-rgb:18 33 53;--bi-accent-rgb:150 187 226}
+
+/* Text-entry wells retain the same cold rim without putting cracks behind text. */
+html body :is(#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),select,textarea){
+  color:var(--bi-ink)!important;background:
+    linear-gradient(180deg,rgb(var(--bi-accent-rgb) / .045),transparent 12px), linear-gradient(145deg,#0f1c26,#050d15)!important;
+  border:1px solid rgb(var(--bi-accent-rgb) / .3)!important;
+  border-bottom-color:rgb(var(--bi-accent-rgb) / .47)!important;
+  border-radius:1px!important;box-shadow:inset 0 2px 7px #0007!important;
+  caret-color:rgb(var(--bi-accent-rgb));
+}
+html body :is(#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(input,select,textarea):focus{
+  outline:none!important;border-color:rgb(var(--bi-accent-rgb) / .85)!important;
+  box-shadow:inset 0 1px 6px #0007,0 0 0 2px rgb(var(--bi-accent-rgb) / .14)!important;
+}
+html body #app .conversation-composer>textarea#mission-task{
+  background:transparent!important;border:0!important;box-shadow:none!important;
+}
+html body #app .conversation-composer:focus-within{
+  border-color:rgb(var(--bi-accent-rgb) / .85)!important;
+  box-shadow:inset 0 1px rgb(var(--bi-accent-rgb) / .20),0 0 0 2px #041019,0 0 0 3px rgb(var(--bi-accent-rgb) / .42),var(--bi-shadow)!important;
+}
+html body #app .conversation-search input#conversation-search{
+  background:transparent!important;border:0!important;box-shadow:none!important;
+}
+html body #app .conversation-sidebar-row{
+  background:linear-gradient(115deg,rgb(var(--bi-accent-rgb) / .08),transparent), var(--bi-control) center/100% 100% no-repeat, linear-gradient(145deg,color-mix(in srgb,rgb(var(--bi-control-rgb) / .65) 90%,#668b9d 10%),rgb(var(--bi-control-rgb) / .65))!important;
+  border:1px solid rgb(var(--bi-accent-rgb) / .15)!important;border-radius:1px!important;
+}
+html body #app .conversation-sidebar-row :is(.conversation-list-item,.conversation-list-more){
+  background:transparent!important;border:0!important;box-shadow:none!important;
+}
+html body :is(#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(input[type="checkbox"],input[type="radio"],input[type="range"]){
+  accent-color:rgb(var(--bi-accent-rgb));
+}
+html body :is(#app,#modal-root,.model-picker-panel,.conversation-row-menu) select option{background:linear-gradient(145deg,#152633,#0a1823);color:#e6f2f5}
+
+/* Structured rows and tabs have a cold separator instead of legacy purple paint. */
+html body :is(#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(
+ .configure-basic-row,.configure-section-heading,.configure-nav,.configure-step-navigation,
+ .connection-model-row,.connection-model-group,.connection-provider-grid,.connection-tabs,
+ .tool-connection-tabs,.identity-tabs,.learning-row,.learning-history-row,.knowledge-tabs,
+ .prompt-row,.prompt-field,.prompt-history-row,.prompt-trash-row,.inbox-tabs,.inbox-row,
+ .browser-tab-row,.file-patch-heading,.inspector-heading,.inspector-tabs,.inspector-footer,
+ .execution-top,.desktop-panel-heading,.desktop-bottom,.context-metrics,.task-artifact
+){border-color:rgb(var(--bi-accent-rgb) / .22)!important;color:var(--bi-ink)!important}
+html body :is(#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(.field-label,.configure-label,.connection-label,.field-help,.footer-note,.connection-storage-note){color:var(--bi-muted)!important}
+html body :is(#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(.connection-model-row,.learning-row,.inbox-row,.knowledge-entry):hover{
+  background:linear-gradient(145deg,color-mix(in srgb,rgb(var(--bi-accent-rgb) / .08) 90%,#668b9d 10%),rgb(var(--bi-accent-rgb) / .08))!important;
+}
+html body :is(#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(.node-icon,.badge,.attachment-chip,.node-mini-pill,.status-pill,kbd){
+  color:rgb(var(--bi-accent-rgb))!important;background:linear-gradient(145deg,color-mix(in srgb,rgb(var(--bi-control-rgb) / .82) 90%,#668b9d 10%),rgb(var(--bi-control-rgb) / .82))!important;
+  border-color:rgb(var(--bi-accent-rgb) / .3)!important;border-radius:1px!important;
+}
+html body :is(#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(pre,.runtime-command,.file-patch-comparison pre,.learning-diff,.learning-version-content,.knowledge-revision-grid pre){
+  background:linear-gradient(145deg,#0f1b25,#050c14)!important;color:#c7d9e2!important;border-color:rgb(var(--bi-accent-rgb) / .23)!important;
+}
+.conversation-message-text :is(p,li,td,th,blockquote){background:transparent!important}
+html body #toast-root .toast{
+  background:linear-gradient(115deg,#183142dd,#091621ee),var(--bi-control) center/100% 100% no-repeat!important;
+  color:#dceff4!important;border-color:#668f9f!important;border-radius:1px!important;
+}
+
+/* Meaning is preserved in the same material: success, caution and destructive work. */
+html body :is(#workspace-modes,#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(.success,.connected,.ready,.done){--bi-accent-rgb:149 206 185}
+html body :is(#workspace-modes,#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(.warning,.waiting,.needs-attention,.attention){--bi-accent-rgb:220 185 139}
+html body :is(#workspace-modes,#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(.error,.failed,.danger,.error-text,[role="alert"]){--bi-accent-rgb:223 145 159}
+html body :is(#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(button.danger,.button.danger,.conversation-stop,.conversation-delete,[data-chat-action="delete"],[data-action^="delete-"],[data-mission-action="stop-all"]){
+  --bi-control-rgb:47 24 35;--bi-accent-rgb:230 151 166;color:#f2bdc8!important;border-color:#a95e72!important;
+}
+html body :is(#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(.error-text,.error-message,.conversation-error,[role="alert"]){color:#edacbb!important}
+html body :is(#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(.notice.success,.configure-readiness.ready,.connection-status.connected){color:#a6d3bd!important}
+html body :is(#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(.notice.warning,.notice.waiting,.connection-status.pending){color:#dfc397!important}
+html body #app .observe-diff-line.add{background:linear-gradient(145deg,#1c38328c,#122b228c)!important;color:#b6dfc7!important}
+html body #app .observe-diff-line.remove{background:linear-gradient(145deg,#3b29368c,#321b268c)!important;color:#edb1c0!important}
+html body #app .observe-diff-count.add{color:#b6dfc7!important}
+html body #app .observe-diff-count.remove{color:#edb1c0!important}
+html body #app .observe-diff-count>b:first-child{color:#b6dfc7!important}
+html body #app .observe-diff-count>b:last-child{color:#edb1c0!important}
+
+/* Inner records keep a fine ice face; their enclosing slabs carry the rich frost. */
+html body #modal-root .connection-workspace .connection-row,
+html body #app .configure-basics .response-defaults{
+  background:linear-gradient(rgb(var(--bi-surface-rgb) / .58),rgb(var(--bi-surface-rgb) / .76)), var(--bi-panel) center/100% 100% no-repeat, linear-gradient(145deg,color-mix(in srgb,rgb(var(--bi-surface-rgb)) 90%,#668b9d 10%),rgb(var(--bi-surface-rgb)))!important;
+  border-color:rgb(var(--bi-accent-rgb) / .22)!important;
+  box-shadow:inset 0 1px rgb(var(--bi-accent-rgb) / .06)!important;
+}
+html body #modal-root :is(.connection-row small,.connection-model-row small,.connection-storage-note),
+html body .model-picker-panel :is(.model-picker-option-detail,.model-picker-group-label){
+  color:#b5cbd4!important;
+}
+
+/* Command search is a compact icon, a readable label, and an optional shortcut. */
+html body #modal-root .command-modal{width:min(720px,calc(100vw - 36px))!important}
+html body #modal-root .command-search{
+  display:flex;align-items:center;gap:12px;padding:15px 17px!important;
+  border-bottom:1px solid rgb(var(--bi-accent-rgb) / .24);
+}
+html body #modal-root .command-search>input#command-query{
+  flex:1;min-width:0;background:transparent!important;border:0!important;box-shadow:none!important;
+}
+html body #modal-root .command-search:focus-within{box-shadow:inset 0 -2px rgb(var(--bi-accent-rgb) / .8)}
+html body #modal-root .command-results{max-height:min(54dvh,430px);overflow:auto;padding:6px!important}
+html body #modal-root .command-result{
+  display:grid!important;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;
+  gap:12px!important;min-height:60px;padding:9px 12px!important;text-align:left;
+  background:linear-gradient(rgb(var(--bi-control-rgb) / .64),rgb(var(--bi-control-rgb) / .80)), var(--bi-control) center/100% 100% no-repeat, linear-gradient(145deg,color-mix(in srgb,rgb(var(--bi-control-rgb)) 90%,#668b9d 10%),rgb(var(--bi-control-rgb)))!important;
+  border-color:rgb(var(--bi-accent-rgb) / .16)!important;box-shadow:none!important;
+}
+html body #modal-root .command-result>.node-icon{
+  width:30px!important;height:30px!important;min-width:30px;max-width:30px;
+  flex:0 0 30px!important;grid-column:1;
+  display:grid;place-items:center;border-color:rgb(var(--bi-accent-rgb) / .2)!important;
+}
+html body #modal-root .command-result>span:not(.node-icon){min-width:0;grid-column:2}
+html body #modal-root .command-result :is(strong,small){display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+html body #modal-root .command-result strong{font-size:14px!important;line-height:1.4;color:#e0f0f4!important}
+html body #modal-root .command-result small{font-size:12px!important;line-height:1.5;margin-top:3px;color:#b5cbd4!important}
+html body #modal-root .command-result:disabled :is(strong,small,.node-icon,kbd){color:#718794!important;text-shadow:none!important}
+html body #modal-root .command-result:disabled :is(.node-icon,kbd){border-color:#2b414d!important;background:linear-gradient(145deg,#15242e,#0a151e)!important}
+html body #modal-root .command-footer{
+  display:flex;flex-wrap:wrap;gap:6px 18px;padding:11px 17px!important;
+  color:#b5cbd4!important;font:12px/1.5 var(--blackice-controls)!important;
+  background:linear-gradient(145deg,#101e2999,#060f1899)!important;border-top:1px solid rgb(var(--bi-accent-rgb) / .22)!important;
+}
+.native-titlebar{
+  background:linear-gradient(90deg,#0d1e2c,#07121b 75%,#000)!important;
+  border-color:#253e4c!important;font-family:var(--blackice-controls)!important;
+  font-size:12px!important;letter-spacing:.10em;
+}
+.native-titlebar-context{color:#9db7c5!important;font-size:11px!important;letter-spacing:.04em}
+html body :is(#workspace-modes,#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(button,[role="button"]:where(:not(svg,svg *))):is(:disabled,[aria-disabled="true"]){
+  background:linear-gradient(#0d1820bb,#08121bd9), var(--bi-control) center / 100% 100% no-repeat, linear-gradient(145deg,#15242e,#0a151e)!important;
+  border-color:#2b414d!important;color:#718794!important;
+  box-shadow:inset 0 1px #d8f5fa06!important;filter:none!important;
+  cursor:default!important;text-shadow:none;
+}
+
+@media(max-width:760px){
+  html body :is(#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(.conversation-starters .starter-card,.configure-basics,.configure-disclosure,.modal){
+    background-size:auto,100% 100%,auto!important;
+  }
+  html body #workspace-modes nav>button{min-width:0!important}
+}
+@media(max-width:540px){
+  html body #workspace-modes{
+    display:grid!important;grid-template-columns:minmax(0,1fr) auto auto;
+    grid-template-rows:32px 34px;gap:6px 8px!important;
+    height:87px!important;min-height:87px!important;padding:7px 10px!important;
+    align-items:center;
+  }
+  #workspace-modes .workspace-mode-brand{grid-column:1;grid-row:1;min-width:0}
+  #workspace-modes .workspace-models{grid-column:2;grid-row:1}
+  #workspace-modes .workspace-menu{grid-column:3;grid-row:1}
+  #workspace-modes .workspace-mode-spacer{display:none!important}
+  #workspace-modes nav{grid-column:1/-1;grid-row:2;display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr));width:100%;gap:6px!important}
+  html body #workspace-modes nav>button{width:100%;height:34px!important;max-height:34px!important}
+  .conversation-empty .noir-hero-emblem{display:none!important}
+  html body #app{height:calc(100dvh - 87px)!important}
+  html body.native-shell #app{height:calc(100dvh - 123px)!important}
+  .modal-backdrop{top:87px!important}
+  .native-shell .modal-backdrop{top:123px!important}
+  html body #modal-root .modal{max-height:calc(100dvh - 111px)!important}
+  html body.native-shell #modal-root .modal{max-height:calc(100dvh - 147px)!important}
+}
+@media(prefers-reduced-motion:reduce){
+  html body :is(#workspace-modes,#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(button,summary,[role="button"]:where(:not(svg,svg *))){transition:none!important}
+}
+@media(prefers-contrast:more){
+  html body :is(#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(button,summary,input,select,textarea,.modal,.conversation-composer){
+    border-color:rgb(var(--bi-accent-rgb) / .88)!important;
+  }
+}
+@media(forced-colors:active){
+  html body :is(#workspace-modes,#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(button,summary,input,select,textarea,.modal,.conversation-composer,.conversation-sidebar,.starter-card){
+    color:CanvasText!important;border-color:CanvasText!important;box-shadow:none!important;
+  }
+  html body :is(#workspace-modes,#app,#modal-root,.model-picker-panel,.conversation-row-menu) :is(button,summary):focus-visible{outline-color:Highlight!important}
+}

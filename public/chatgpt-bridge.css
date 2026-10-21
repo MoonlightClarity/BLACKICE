@@ -1,0 +1,106 @@
+.modal.chatgpt-bridge-modal{width:min(1120px,100%);max-height:calc(100vh - 40px)}
+.chatgpt-bridge-workspace{min-height:0;flex:1 1 auto;max-height:calc(100vh - 135px);overflow:auto;color:var(--bi-ink,#e6f2f5);background:linear-gradient(145deg,#12222d,#07141d)}
+.bridge-mark{display:grid;place-items:center;width:40px;height:40px;border:1px solid #426678;color:#c0e6ec;flex-shrink:0}
+.bridge-intro{padding:17px 24px;background:linear-gradient(120deg,#142d3b,#10232f);border-bottom:1px solid #345363}
+.bridge-intro>p{margin:0;color:#c4d9e3;font-size:12px;line-height:1.8;max-width:900px}
+.bridge-intro strong{font-weight:500;color:#edfaff}
+.bridge-connection{margin-top:12px;font-size:12px;color:#c4d9e3;line-height:1.8}
+.bridge-connection summary{width:fit-content;padding:5px 9px;cursor:pointer}
+.bridge-connection ol{margin:12px 0 5px;padding-left:21px}
+.bridge-connection p{margin:7px 0 0}
+.bridge-connection form{margin-top:17px}
+.bridge-settings-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:15px}
+.bridge-settings-grid select{min-width:0;padding:11px 12px;font:inherit;font-size:12px;line-height:1.75;background:linear-gradient(145deg,#162f3d,#0b212e);color:#e4f1f7;border:1px solid #3c6072}
+.bridge-enable{display:flex;align-items:center;gap:10px;font-size:12px;margin:0 0 16px}
+.bridge-enable input{width:15px;height:15px;accent-color:#a4d8e6}
+.bridge-settings-actions{display:flex;flex-wrap:wrap;gap:9px;margin:12px 0}
+.bridge-settings-actions .button{font-size:11px;min-height:30px}
+.bridge-connection-status{color:#b8dfe5;font-size:11px;overflow-wrap:anywhere}
+.bridge-connection .bridge-error,.bridge-connection .bridge-receipt{margin:12px 0}
+.bridge-setup-details{margin:15px 0 0}
+.bridge-setup-details textarea{display:block;box-sizing:border-box;width:100%;resize:vertical;padding:12px;margin-top:12px;background:linear-gradient(145deg,#152c38,#0a1e29);color:#d6e8f2;border:1px solid #406171;font:inherit;font-size:11px;line-height:1.8}
+.bridge-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 24px;border-bottom:1px solid #294453}
+.bridge-toolbar>span{color:#bad0db;font-size:11px;line-height:1.7}
+.bridge-toolbar>div{display:flex;gap:9px;align-items:center}
+.bridge-toolbar .button,.bridge-compose-heading .button{font-size:11px;min-height:31px}
+.bridge-error,.bridge-receipt{margin:12px 24px;font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.bridge-error{color:#f1b7ae}
+.bridge-receipt{color:#b9e1de}
+.bridge-layout{display:grid;grid-template-columns:268px minmax(0,1fr);min-height:445px;border-bottom:1px solid #294453}
+.bridge-sidebar{display:flex;flex-direction:column;min-height:0;min-width:0;border-right:1px solid #294453;background:linear-gradient(145deg,#162734,#0b1924)}
+.bridge-filter{display:flex;align-items:center;gap:9px;padding:13px;font-size:11px;color:#b6cdd9}
+.bridge-filter select{min-width:0;flex:1;font:inherit;font-size:11px;padding:8px;background:linear-gradient(145deg,#1a3441,#102632);color:#dcecf3;border:1px solid #395866}
+.bridge-request-list{padding:0 10px;overflow:auto;max-height:442px;min-height:0}
+.bridge-request-row{display:grid;gap:7px;width:100%;margin-bottom:6px;padding:13px 11px;text-align:left;cursor:pointer}
+.bridge-request-row strong{font-size:12px;font-weight:500;line-height:1.5;overflow-wrap:anywhere}
+.bridge-request-row span{color:#b9d3df;font-size:11px;line-height:1.4}
+.bridge-request-row small{color:#9cb5c3;font-size:10px;line-height:1.5}
+.bridge-pagination{margin-top:auto;padding:14px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:10px;color:#a9c3d0}
+#bridge-page-prev svg{transform:rotate(180deg)}
+.bridge-main{min-width:0;padding:22px 25px;background:linear-gradient(145deg,#132530,#081620)}
+.bridge-compose-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:20px}
+.bridge-compose-heading h3,.bridge-main h3{font-size:18px;font-weight:500;line-height:1.5;color:#edf8fb;margin:0;overflow-wrap:anywhere}
+.bridge-field{display:grid;gap:8px;margin-bottom:17px}
+.bridge-field>span{display:flex;justify-content:space-between;font-size:12px;color:#d4e5ed}
+.bridge-field small,.bridge-context summary small{font-size:10px;color:#9fbbc9;font-weight:400}
+.bridge-field>small{text-align:right}
+.bridge-field input,.bridge-field textarea,.bridge-handoff-panel textarea{display:block;width:100%;min-width:0;background:linear-gradient(145deg,#162f3d,#0b212e);color:#e4f1f7;border:1px solid #3c6072;padding:11px 12px;border-radius:1px;outline:none;font:inherit;font-size:12px;line-height:1.75;box-sizing:border-box}
+.bridge-field input::placeholder,.bridge-field textarea::placeholder{color:#91adbc}
+.bridge-field textarea,.bridge-handoff-panel textarea{resize:vertical}
+.bridge-field input:focus,.bridge-field textarea:focus,.bridge-handoff-panel textarea:focus,.bridge-filter select:focus{border-color:#c0e8f2;outline:2px solid #bedfe873;outline-offset:1px}
+.bridge-context{margin:10px 0 16px}
+.bridge-context summary,.bridge-source summary,.bridge-handoff-panel summary{padding:9px 11px;cursor:pointer;font-size:12px;color:#c5dfe9}
+.bridge-context summary small{margin-left:8px}
+.bridge-context>.bridge-field{margin:14px 0 0}
+.bridge-field-help{font-size:11px;line-height:1.8;color:#aec8d5;margin:12px 0;overflow-wrap:anywhere}
+.bridge-compose-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid #2a4a59;margin-top:21px;padding-top:17px}
+.bridge-compose-footer>span{font-size:11px;line-height:1.7;color:#a8c7d5;max-width:230px}
+.bridge-compose-footer .button{font-size:11px;white-space:nowrap}
+.bridge-empty{padding:24px 15px;margin:0;color:#a5c1d0;font-size:12px;line-height:1.8;text-align:center}
+.bridge-detail-meta{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:17px;font-size:11px;line-height:1.6;color:#c1e2e9}
+.bridge-detail-meta code{font-size:9px;color:#99b9c9;overflow-wrap:anywhere;max-width:55%;text-align:right}
+.bridge-detail-actions{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
+.bridge-detail-actions .button{font-size:11px;min-height:31px}
+.bridge-waiting{font-size:12px;line-height:1.8;color:#c2dde9;padding:12px 14px;background:linear-gradient(145deg,#1b3948,#112c3a);border-left:2px solid #9bd9e4;margin:16px 0}
+.bridge-handoff-panel{margin:15px 0}
+.bridge-handoff-panel textarea{font-size:11px;margin-top:12px}
+.bridge-answer-panel,.bridge-source{margin-top:21px}
+.bridge-main h4{font-size:12px;font-weight:500;color:#c8e1eb;margin:17px 0 10px}
+.bridge-main pre{font-family:inherit;font-size:12px;line-height:1.85;white-space:pre-wrap;overflow-wrap:anywhere;color:#e0eff6;margin:0;padding:15px 16px;background:linear-gradient(145deg,#162e3c,#0c212d);border:1px solid #2e5061;max-height:440px;overflow:auto;tab-size:4}
+.bridge-source pre{color:#bdd3df;font-size:11px;max-height:260px}
+.bridge-main .bridge-error{margin:12px 0}
+.chatgpt-bridge-workspace [hidden]{display:none!important}
+@media(max-width:760px){.modal.chatgpt-bridge-modal{width:calc(100vw - 20px);max-height:calc(100vh - 20px)}.chatgpt-bridge-workspace{max-height:calc(100vh - 120px)}.bridge-intro,.bridge-toolbar{padding-left:16px;padding-right:16px}.bridge-error,.bridge-receipt{margin-left:16px;margin-right:16px}.bridge-layout{grid-template-columns:205px minmax(0,1fr)}.bridge-main{padding:19px 17px}.bridge-compose-heading,.bridge-compose-footer{flex-wrap:wrap}.bridge-compose-footer>span{max-width:none}.bridge-detail-meta{display:grid;gap:6px}.bridge-detail-meta code{max-width:none;text-align:left}}
+@media(max-width:540px){.bridge-toolbar{align-items:flex-start;flex-direction:column;gap:10px}.bridge-toolbar>div{width:100%;justify-content:space-between}.bridge-layout{display:flex;flex-direction:column}.bridge-sidebar{border-right:0;border-bottom:1px solid #294453;max-height:260px}.bridge-request-list{max-height:155px}.bridge-pagination{padding:9px 12px}.bridge-main{padding:19px 16px}.bridge-compose-heading h3{font-size:17px}.bridge-main pre{max-height:380px}.bridge-settings-grid{grid-template-columns:minmax(0,1fr);gap:0}}
+
+/* Keep the chosen route, next step, and approval scope visible. */
+.chatgpt-bridge-modal{font-family:"Segoe UI",system-ui,-apple-system,sans-serif}
+.chatgpt-bridge-modal .modal-title h2{font-family:Oxanium,"Segoe UI",sans-serif;font-size:24px;font-weight:500}
+.chatgpt-bridge-modal .modal-title p{font-size:14px;line-height:1.6;color:#adc9d8}
+.chatgpt-bridge-workspace{font-family:inherit;font-size:14px;line-height:1.6}
+.bridge-intro{background:linear-gradient(145deg,#152a37,#0a1c28);padding:20px 24px;border-bottom-color:#355665}
+.bridge-connection-summary{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px 20px;padding:17px 19px;border:1px solid #416477;border-left:3px solid #a1d3e3;border-radius:8px}
+.bridge-summary-label{font-size:12px;color:#a7c7d6}.bridge-connection-summary h3{font-size:18px;font-weight:600;color:#e4f4fb;margin:3px 0;overflow-wrap:anywhere}
+.bridge-connection-summary p{margin:4px 0 0;font-size:13px;color:#b2cedc;line-height:1.6}.bridge-connection-summary .bridge-next-step{grid-column:1/-1;max-width:900px;color:#c7dde8;margin-top:3px}
+.bridge-approval-summary{grid-column:1/-1;font-size:12px;color:#b7dbd5}
+.bridge-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin:19px 0 2px;padding:0;list-style:none}
+.bridge-steps li{display:flex;align-items:flex-start;gap:10px;min-width:0}.bridge-steps li>span{display:grid;place-items:center;width:24px;height:24px;flex-shrink:0;border:1px solid #4e7185;border-radius:50%;color:#b9d9e7;font-size:12px}
+.bridge-steps strong{display:block;font-size:13px;color:#dfedf5;font-weight:600}.bridge-steps small{display:block;font-size:12px;color:#9fbdcd;line-height:1.5;margin-top:3px}
+.bridge-connection{margin-top:19px;border-top:1px solid #335365;padding-top:7px;font-size:14px}.bridge-connection>summary,.bridge-setup-details>summary{cursor:pointer;font-size:13px;color:#c4dde9;padding:10px 0;line-height:1.5;min-height:38px;box-sizing:border-box}
+.bridge-connection form{margin-top:14px}.bridge-settings-grid{gap:18px}.bridge-field>span{font-size:13px;color:#d8eaf2}.bridge-field small,.bridge-context summary small{font-size:12px;color:#a5c2d2;line-height:1.6}
+.bridge-field input,.bridge-field textarea,.bridge-field select,.bridge-settings-grid select,.bridge-handoff-panel textarea{font-family:inherit;font-size:14px;line-height:1.65;min-height:43px;border-color:#496b7e;border-radius:6px;padding:10px 12px;width:100%;box-sizing:border-box;min-width:0;background:linear-gradient(145deg,#142c3a,#091e2b);color:#e5f4fb}
+.bridge-approval-field{padding:15px 17px;border:1px solid #365566;border-radius:7px;margin:17px 0 22px;max-width:850px}.bridge-approval-field select{max-width:420px}.bridge-approval-field>small{text-align:left;max-width:780px}
+.bridge-enable{font-size:14px;margin-top:18px}.bridge-enable input{width:17px;height:17px}.bridge-field-help{font-size:13px;color:#aac7d8;line-height:1.7}
+.chatgpt-bridge-modal .button{font-family:inherit;font-size:13px;min-height:40px;padding:9px 13px;line-height:1.4;border-radius:6px}.bridge-settings-actions .button,.bridge-toolbar .button,.bridge-detail-actions .button,.bridge-compose-heading .button,.bridge-compose-footer .button{font-size:13px;min-height:39px}
+.bridge-setup-details{margin-top:10px;border-top:1px solid #335365;padding-top:5px}.bridge-setup-details textarea{font-family:inherit;font-size:13px;line-height:1.75;border-radius:6px}
+.bridge-connection-status{font-size:13px;color:#b9dfdf}.bridge-toolbar{padding-top:17px;padding-bottom:17px}.bridge-toolbar>span{font-size:13px}.bridge-error,.bridge-receipt{font-size:13px;line-height:1.65}
+.bridge-layout{grid-template-columns:270px minmax(0,1fr)}.bridge-filter{font-size:13px;padding:16px 13px}.bridge-filter select{font-size:13px;border-radius:5px;min-height:38px}
+.bridge-request-row{border-radius:7px;padding:15px 12px;gap:6px}.bridge-request-row strong{font-size:14px}.bridge-request-row span{font-size:12px}.bridge-request-row small{font-size:11px}.bridge-pagination{font-size:12px}
+.bridge-compose-heading h3,.bridge-main h3{font-family:Oxanium,"Segoe UI",sans-serif;font-size:21px;font-weight:500;line-height:1.5}.bridge-compose-heading{margin-bottom:22px}
+.bridge-compose-footer>span{font-size:13px;line-height:1.6;max-width:250px}.bridge-context summary,.bridge-source summary,.bridge-handoff-panel summary{font-size:13px;line-height:1.5;min-height:39px}
+.bridge-empty{font-size:13px}.bridge-detail-meta{font-size:13px}.bridge-detail-meta code{font-family:Consolas,"Cascadia Code",monospace;font-size:11px}.bridge-waiting{font-size:14px;line-height:1.75;border-radius:0 6px 6px 0}
+.bridge-main h4{font-size:14px;font-weight:600}.bridge-main pre{font-family:"Segoe UI",system-ui,sans-serif;font-size:14px;line-height:1.8;border-radius:6px}.bridge-source pre{font-size:13px}.bridge-handoff-panel textarea{font-family:Consolas,"Cascadia Code",monospace;font-size:12px}
+.chatgpt-bridge-modal :is(button,summary,input,select,textarea,pre):focus-visible{outline:2px solid #b7e4f3;outline-offset:3px}
+@media(max-width:760px){.bridge-intro{padding:17px}.bridge-connection-summary{padding:15px;gap:10px}.bridge-steps{gap:13px}.bridge-steps small{font-size:11px}.bridge-layout{grid-template-columns:220px minmax(0,1fr)}}
+@media(max-width:540px){.bridge-connection-summary{grid-template-columns:minmax(0,1fr)}.bridge-connection-summary>.button{justify-self:start;margin-top:4px}.bridge-steps{grid-template-columns:minmax(0,1fr);gap:12px}.bridge-steps small{font-size:12px}.bridge-main{padding-top:22px}.bridge-approval-field{padding:14px}.bridge-compose-heading h3{font-size:20px}.bridge-compose-footer{align-items:flex-start}.bridge-compose-footer>span{max-width:none}}
+.bridge-mode-note{font-size:12px;line-height:1.6;color:#a8c6d5;margin:16px 0 0;padding-top:12px;border-top:1px solid #2e4d60}

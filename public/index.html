@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en" data-blackice-ui="comfort">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#03080d">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="BLACKICE. A background agent workspace for task plans, contained browsing, shared projects and scheduled work.">
+  <title>BLACKICE — Background Agent Workspace</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/relay-mark.svg">
+  <link rel="preload" as="image" type="image/svg+xml" href="/assets/blackice-field.svg">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/identity.css">
+  <link rel="stylesheet" href="/learning.css">
+  <link rel="stylesheet" href="/agent-workspace.css">
+  <link rel="stylesheet" href="/email.css">
+  <link rel="stylesheet" href="/tool-connections.css">
+  <link rel="stylesheet" href="/attachments.css">
+  <link rel="stylesheet" href="/inbox.css">
+  <link rel="stylesheet" href="/projects.css">
+  <link rel="stylesheet" href="/workspace.css">
+  <link id="blackice-application-session-styles" rel="stylesheet" href="/application-session.css">
+  <link id="relay-conversation-styles" rel="stylesheet" href="/conversation.css">
+  <link id="relay-observe-styles" rel="stylesheet" href="/observe.css">
+  <link rel="stylesheet" href="/advanced.css">
+  <link rel="stylesheet" href="/modes.css">
+  <link rel="stylesheet" href="/configure.css">
+  <link rel="stylesheet" href="/chatgpt-connector.css">
+  <link rel="stylesheet" href="/browser-credentials.css">
+  <link id="relay-sidebar-styles" rel="stylesheet" href="/sidebar.css">
+  <link id="relay-model-picker-styles" rel="stylesheet" href="/model-picker.css">
+  <link rel="stylesheet" href="/brand.css">
+  <link rel="stylesheet" href="/ux.css">
+  <link rel="stylesheet" href="/knowledge.css">
+  <link id="relay-file-patches-styles" rel="stylesheet" href="/file-patches.css">
+  <link rel="stylesheet" href="/prompts.css">
+  <link rel="stylesheet" href="/relay-surface.css">
+  <link id="relay-connections-styles" rel="stylesheet" href="/connections.css">
+  <link id="relay-context-styles" rel="stylesheet" href="/context.css">
+  <link id="relay-task-state-styles" rel="stylesheet" href="/task-state.css">
+  <link rel="stylesheet" href="/agentdesk-noir.css">
+  <link rel="stylesheet" href="/blackice-components.css">
+  <link rel="stylesheet" href="/blackice-type.css">
+  <link rel="stylesheet" href="/workflow-map.css">
+  <link rel="stylesheet" href="/blackice-experience.css">
+  <link id="blackice-task-plan-styles" rel="stylesheet" href="/task-plan.css">
+  <link id="blackice-planning-styles" rel="stylesheet" href="/planning-workspace.css">
+  <link rel="stylesheet" href="/gui-resilience.css">
+  <link rel="stylesheet" href="/blackice-material.css">
+  <link rel="stylesheet" href="/conversation-layout.css">
+  <script src="/gui-resilience.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#mission-task">Skip to task</a>
+  <div id="app" class="mission-view"></div>
+  <aside id="gui-recovery" class="gui-recovery" role="status" aria-live="polite" aria-atomic="true">
+    <strong id="gui-recovery-title">Starting BLACKICE…</strong>
+    <p id="gui-recovery-detail">Preparing your workspace.</p>
+    <button id="gui-reload" type="button" hidden>Reload interface</button>
+    <button id="gui-dismiss" type="button" hidden>Dismiss</button>
+  </aside>
+  <div id="modal-root"></div>
+  <div id="toast-root" role="status" aria-live="polite"></div>
+</body>
+</html>
+

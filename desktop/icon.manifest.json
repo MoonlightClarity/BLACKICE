@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "source": "icon.svg",
+  "sourceSha256": "a179270915272142a9726c904ef83daa374563eb518b3ae7fc4952a68c9e1964",
+  "renderer": {
+    "electron": "44.7.2",
+    "chromium": "152.0.7977.149"
+  },
+  "pngSha256": "9ffc68f71ccd1b48e3300cce1afc7b3ccbcec159f31bf6f817a73f2608e3d057",
+  "icoSha256": "81ca4a68019499299147d9acedd8fb07860609a63619548ddcb606397e104ca2",
+  "sizes": [
+    16,
+    24,
+    32,
+    48,
+    64,
+    128,
+    256
+  ]
+}

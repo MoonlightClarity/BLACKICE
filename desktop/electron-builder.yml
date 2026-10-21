@@ -1,0 +1,67 @@
+appId: com.agentdesk.workbench
+productName: BLACKICE
+copyright: Copyright 2026 BLACKICE
+asar: false
+npmRebuild: false
+directories:
+  output: .build/desktop
+  buildResources: desktop
+files:
+  - package.json
+  - LICENSE
+  - NOTICE
+  - THIRD-PARTY-NOTICES.md
+  - server.mjs
+  - public/**/*
+  - lib/**/*
+  - scripts/generate-noir-background.mjs
+  - scripts/noir-scene.config.json
+  - scripts/chatgpt-bridge.mjs
+  - scripts/email-oauth-token.mjs
+  - scripts/remote-access-cli.mjs
+  - CHATGPT-BRIDGE.md
+  - CHATGPT-CONNECTOR.md
+  - desktop/**/*.mjs
+  - desktop/**/*.cjs
+  - '!desktop/build-icon.mjs'
+  - CHAT-MODE.md
+  - RELEASE-NOTES-2.31.0.md
+  - RELEASE-NOTES-2.31.1.md
+  - RELEASE-NOTES-2.32.0.md
+  - RELEASE-NOTES-2.33.5.md
+  - PLANNING-ORGANIZATION.md
+  - REMOTE-ACCESS.md
+  - BROWSER-PROTECTION.md
+  - EMAIL.md
+  - PLANNING-AWARENESS.md
+  - RELEASE-NOTES-2.30.0.md
+  - desktop/icon.ico
+  - '!**/*.test.mjs'
+  - '!**/*.currents-backup-*'
+  - '!data{,/**/*}'
+  - '!workspace{,/**/*}'
+  - '!tests{,/**/*}'
+  - '!node_modules{,/**/*}'
+win:
+  icon: desktop/icon.ico
+  executableName: BLACKICE
+  target:
+    - target: nsis
+      arch:
+        - x64
+  signAndEditExecutable: true
+  requestedExecutionLevel: asInvoker
+artifactName: Blackice-${version}-Setup.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: BLACKICE
+  uninstallDisplayName: BLACKICE ${version}
+  deleteAppDataOnUninstall: false
+  runAfterFinish: false
+electronLanguages:
+  - en-US

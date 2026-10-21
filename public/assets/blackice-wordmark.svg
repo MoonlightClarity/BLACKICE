@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="364" height="48" viewBox="0 0 364 48" fill="none" role="img" aria-labelledby="title description">
+  <title id="title">BLACKICE</title>
+  <desc id="description">BLACKICE, drawn as editable geometric letter paths with small cut ice corners.</desc>
+  <defs><linearGradient id="letter-light" x1="40" y1="2" x2="320" y2="48" gradientUnits="userSpaceOnUse"><stop stop-color="#f1f7f8"/><stop offset=".53" stop-color="#d6e4e9"/><stop offset="1" stop-color="#a8c3d0"/></linearGradient></defs>
+  <g id="letterforms" fill="url(#letter-light)" fill-rule="evenodd">
+    <path id="B" d="M2 5h24l7 7v9l-5 4 6 5v8l-7 7H2Zm7 7v10h15l2-2v-5l-3-3Zm0 17v9h15l3-3v-3l-3-3Z"/>
+    <path id="L" d="M47 5h7v33h24v7H47Z"/>
+    <path id="A" d="M97 5h14l13 40h-8l-3-10H95l-3 10h-8Zm5 7-5 16h14l-5-16Z"/>
+    <path id="C-first" d="M144 5h24v7h-21l-4 4v18l4 4h21v7h-24l-8-8V13Z"/>
+    <path id="K" d="M181 5h7v16h6l15-16h10l-19 20 20 20h-10l-17-17h-5v17h-7Z"/>
+    <path id="I" d="M232 5h7v40h-7Z"/>
+    <path id="C-last" d="M260 5h24v7h-21l-4 4v18l4 4h21v7h-24l-8-8V13Z"/>
+    <path id="E" d="M297 5h34v7h-27v9h23v7h-23v10h27v7h-34Z"/>
+  </g>
+  <path id="ice-cut" d="m347 5-8 18h10l-8 22" stroke="#b5d4df" stroke-width="2" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,419 @@
+/* BLACKICE / Quiet ice.
+ * One authored SVG scene; restrained gradients for reading, controls and layers.
+ * The scene stays behind the workspace instead of repeating inside every card.
+ * Component sheets own layout and state, and use gradient surfaces themselves.
+ */
+:root[data-blackice-ui="comfort"] {
+  --bi-ice-image: url('/assets/blackice-field.svg');
+  --bi-ice-position: 58% 50%;
+  --noir-image: var(--bi-ice-image);
+  --bi-panel: none;
+  --bi-control: none;
+  --bi-base: #071016;
+  --bi-ink: #edf5f6;
+  --bi-muted: #a8bcc7;
+  --bi-border: #96b8c62e;
+  --bi-focus: #c1e7f3;
+  --bi-primary: #d5eef1;
+  --relay-base: var(--bi-base);
+  --relay-soft: #cfdee1;
+  --relay-dim: #b4c6cb;
+  --relay-line: #90b0b63d;
+  --relay-line-strong: #8cb4bd80;
+  --bi-reading: #09141edb;
+  --bi-glass: #142532ba;
+  --bi-edge-light: #ddf5fa66;
+  --bi-edge-dark: #020609c9;
+}
+
+/* The edge fractures remain aligned around the quiet central reading space. */
+html[data-blackice-ui] body {
+  background: var(--bi-ice-image) var(--bi-ice-position) / cover no-repeat, linear-gradient(145deg,#04090d,#10202a) !important;
+}
+html[data-blackice-ui] body #app,
+html[data-blackice-ui] body #app :is(.conversation-workspace,.conversation-shell,.conversation-task-layout) {
+  background: transparent !important;
+}
+html[data-blackice-ui] body #app :is(.conversation-main,.conversation-sidebar,.task-plan-workspace)::before {
+  display: none !important;
+}
+html[data-blackice-ui] body #workspace-modes {
+  background: linear-gradient(180deg, #03080ad9, #071116c2) !important;
+  border-bottom-color: #9cbccc32 !important;
+  box-shadow: inset 0 1px #e5f5ff0f, 0 4px 20px #0002 !important;
+  backdrop-filter: none !important;
+}
+html[data-blackice-ui] body #workspace-modes .workspace-wordmark {
+  position: relative; display: inline-flex !important; align-items: center; line-height: 1;
+  background: none !important; -webkit-text-fill-color: currentColor !important;
+}
+html[data-blackice-ui] body #workspace-modes .workspace-wordmark > img {
+  width: 137px !important; height: 18px !important; object-fit: contain; filter: none !important;
+}
+.workspace-wordmark-label {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+.blackice-icon { vertical-align: middle; overflow: visible; }
+html[data-blackice-ui] body .native-titlebar {
+  background: linear-gradient(145deg,#0d161ade,#020709de) !important;
+  border-bottom-color: #c5e4ec29 !important;
+  color: #c7d9df !important;
+}
+html[data-blackice-ui] body #workspace-modes [role="tab"][aria-selected="true"] {
+  background: linear-gradient(145deg, #aec8d233, #d0f0f10d 54%, #5b828d38) !important;
+  border-color: #b7dce37d !important;
+  box-shadow: inset 0 1px #e4f6ff26, inset 0 -2px #b6e8ec85 !important;
+  color: #ecffff !important;
+}
+html[data-blackice-ui] body #app .conversation-header {
+  background: linear-gradient(145deg,#0e171cbd,#03080bbd) !important;
+  border-bottom-color: #a5c7d044 !important;
+  box-shadow: inset 0 1px #f1ffff0d;
+}
+html[data-blackice-ui] body #app .conversation-sidebar {
+  background: linear-gradient(100deg, #02080bd9, #08141bbf) !important;
+  border-right-color: #abc9d340 !important;
+  box-shadow: inset -1px 0 #0008;
+}
+html[data-blackice-ui] body #app :is(.conversation-list,.conversation-sidebar-list) { background: transparent !important; }
+html[data-blackice-ui] body #app .conversation-sidebar-row { background: linear-gradient(145deg,#111f2640,#07111540) !important; }
+html[data-blackice-ui] body #app .conversation-sidebar-row.selected {
+  background: linear-gradient(120deg, #3d657385, #0c2634b3) !important;
+  border-color: #b9dfe16b !important;
+  box-shadow: inset 2px 0 #d0f0f4, inset 0 1px #e8ffff29 !important;
+}
+html[data-blackice-ui] body #app :is(.conversation-sidebar-meta,.conversation-sidebar-empty,.conversation-sidebar-row small) { color: #bfced3 !important; }
+
+/* The welcome shares the same quiet field as the work that follows. */
+html[data-blackice-ui] body #app .conversation-main {
+  background: linear-gradient(115deg, #02070966, #02070938) !important;
+}
+html[data-blackice-ui] body #app .conversation-main:has(.blackice-workbench-welcome) {
+  background: linear-gradient(90deg, #02060991, #0206094d 50%, #02060900 90%) !important;
+}
+html[data-blackice-ui] body #app .blackice-welcome-hero {
+  display: block;
+  min-height: 208px;
+}
+html[data-blackice-ui] body #app .blackice-welcome-formation { display: none !important; }
+html[data-blackice-ui] body #app .blackice-welcome-copy { max-width: 600px; }
+html[data-blackice-ui] body #app .blackice-welcome-copy h1 {
+  max-width: 570px;
+  font-size: clamp(30px, 2.8vw, 42px) !important;
+  line-height: 1.13 !important;
+  letter-spacing: -.035em !important;
+  color: #f1f8fa !important;
+  text-shadow: 0 2px 24px #0009, 0 1px 2px #000 !important;
+}
+html[data-blackice-ui] body #app .blackice-welcome-copy h1 em {
+  color: #c2dce5 !important;
+  text-shadow: 0 2px 24px #000a;
+}
+html[data-blackice-ui] body #app .blackice-welcome-copy > p {
+  color: #d0dfe4 !important;
+  max-width: 485px;
+  text-shadow: 0 1px 5px #000, 0 0 18px #0008;
+}
+html[data-blackice-ui] body #app .blackice-workbench-welcome .conversation-empty-eyebrow {
+  color: #dbedf1 !important;
+  text-shadow: 0 1px 3px #000;
+}
+html[data-blackice-ui] body #app .blackice-welcome-rail {
+  padding-inline: 15px;
+  background: linear-gradient(145deg,#0e181cba,#03090bba);
+  border-color: #b4d6de52;
+  border-radius: 10px;
+  box-shadow: inset 0 1px #dcf8ff17, 0 6px 25px #0003;
+}
+html[data-blackice-ui] body #app .blackice-welcome-rail strong { color: #ecf4f7; }
+html[data-blackice-ui] body #app .blackice-welcome-rail small { color: #c4d5dc; }
+html[data-blackice-ui] body #app .blackice-workbench-welcome .conversation-welcome-status {
+  background: linear-gradient(145deg,#102026bf,#061215bf) !important;
+  border-color: #afdad96b !important;
+  box-shadow: inset 2px 0 #bee9e7, inset 0 1px #e7ffff17;
+}
+html[data-blackice-ui] body #app .blackice-workbench-welcome .conversation-welcome-status[data-state="attention"] {
+  background: linear-gradient(145deg,#2b272ee0,#21191ee0) !important;
+  border-color: #d5b39388 !important;
+}
+html[data-blackice-ui] body #app .blackice-workbench-welcome .conversation-starters .starter-card {
+  background: linear-gradient(135deg,#1a3443bf,#0e1d28cf) !important;
+  border-color: #b8d6df59 !important;
+  box-shadow: inset 0 1px #e3f8ff2e, inset 0 -1px #0009, 0 5px 14px #0005 !important;
+}
+html[data-blackice-ui] body #app .blackice-workbench-welcome .conversation-starters .starter-card:hover {
+  background: linear-gradient(135deg,#264655d9,#152d3bd6) !important;
+  border-color: #d2f0f2b3 !important;
+  box-shadow: inset 0 1px #f1ffff80, 0 6px 18px #0007 !important;
+}
+html[data-blackice-ui] body #app .blackice-welcome-links > button {
+  color: #d3e7ed !important;
+  text-shadow: 0 1px 4px #000;
+}
+
+/* Reading surfaces carry enough depth to separate content from the field. */
+html[data-blackice-ui] body #app .conversation-message.assistant {
+  padding: 17px 19px;
+  background: linear-gradient(135deg,#101f2acc,#08131dd9) !important;
+  border: 1px solid #96b7c529;
+  border-top-color: #b4d6e137;
+  border-radius: 10px;
+  box-shadow: inset 0 1px #edffff0d, 0 8px 28px #0003;
+}
+html[data-blackice-ui] body #app .conversation-message.user {
+  background: linear-gradient(120deg,#1c3543d1,#112937cc) !important;
+  border-color: #c2dfe259 !important;
+  box-shadow: inset 0 1px #e9ffff24, 0 6px 23px #0003 !important;
+}
+html[data-blackice-ui] body #app :is(.conversation-message-text,.conversation-message-text p,.conversation-message-text li,.conversation-user-text) { color: #e3edf1 !important; }
+html[data-blackice-ui] body #app :is(.conversation-turn-status,.conversation-compose-footer,.conversation-compose-footer small,.conversation-composer-status,.conversation-draft-state,.conversation-turn-metrics) {
+  color: #c2d5db !important;
+  text-shadow: 0 1px 4px #000, 0 0 12px #000;
+}
+html[data-blackice-ui] body #app :is(.conversation-work,.conversation-files,.task-checkpoint,.conversation-tool-issue) {
+  background: linear-gradient(145deg,color-mix(in srgb,var(--bi-reading) 90%,#668b9d 10%),var(--bi-reading)) !important;
+  border-color: #a6c7d247 !important;
+}
+html[data-blackice-ui] body #app .conversation-composer {
+  background: linear-gradient(135deg,#203744d6,#0d1c28ed 64%,#142a37e6) !important;
+  border-color: #9fc5d467 !important;
+  box-shadow: inset 0 1px #e4f5fc2e, 0 10px 34px #0005 !important;
+}
+html[data-blackice-ui] body #app .conversation-composer:focus-within {
+  border-color: #b4dce9 !important;
+  box-shadow: inset 0 1px #e4f5fc40, 0 0 0 3px #b4dce914, 0 10px 34px #0005 !important;
+}
+html[data-blackice-ui] body #app .conversation-composer > textarea::placeholder { color: #c6d5dc !important; }
+html[data-blackice-ui] body #app .conversation-composer > textarea { color: #f1f8fa !important; }
+html[data-blackice-ui] body #app .conversation-titlebar { background: linear-gradient(145deg,#0f1e25a6,#050f14a6) !important; }
+
+/* The outline is an inset working face, not a second opaque application. Its
+ * geometry, tree affordances, scroll containers and compact disclosure stay
+ * with task-plan.css and task-plan-ui.mjs. */
+html[data-blackice-ui] body #app .task-plan-workspace {
+  --plan-ink: #eef7f8;
+  --plan-soft: #cbdde2;
+  --plan-muted: #b8cbd2;
+  --plan-line: #7c9aa5;
+  background: linear-gradient(100deg,#091722e6,#0b1b26c7) !important;
+  border-right-color: #b1d4df57;
+  box-shadow: inset -1px 0 #0008, 8px 0 30px #0003;
+}
+html[data-blackice-ui] body #app .task-plan-header {
+  background: linear-gradient(100deg, #050c0f66, #25415226 70%, transparent);
+}
+html[data-blackice-ui] body #app .task-plan-header h2 {
+  font-size: clamp(21px,1.7vw,26px) !important; line-height: 1.28 !important;
+  letter-spacing: -.025em !important; text-shadow: none;
+}
+html[data-blackice-ui] body #app :is(.task-plan-layout-label,.task-plan-type,.task-plan-progress-copy,.task-plan-outline-label,.task-plan-row-condition,.task-plan-row-kind,.task-plan-step-number,.task-plan-row-state,.task-plan-phase,.task-plan-breadcrumbs,.task-plan-footer-line > p) { color: #c3d5dc !important; }
+html[data-blackice-ui] body #app :is(.task-plan-progress-copy > small,.task-plan-progress-copy > strong > span,.task-plan-method small) { color: #b9d0d7; }
+html[data-blackice-ui] body #app .task-plan-row-title { color: #e4f0f4; }
+html[data-blackice-ui] body #app .task-plan-children { border-left-color: #8ab0bd73; }
+html[data-blackice-ui] body #app .task-plan-children > .task-plan-node > .task-plan-row::before { border-top-color: #8ab0bd73; }
+html[data-blackice-ui] body #app .task-plan-row:hover { background: linear-gradient(145deg,#8ab9ca2b,#86b3c32b); border-color: #b1dce957; }
+html[data-blackice-ui] body #app .task-plan-node.is-selected > .task-plan-row {
+  background: linear-gradient(112deg,#335566ad,#1b3846b8 68%,#1e414e99);
+  border-color: #b1d8e37d;
+  box-shadow: inset 2px 0 #bfe5ee, inset 0 1px #e0f6ff24, 0 3px 12px #0003;
+}
+html[data-blackice-ui] body #app .task-plan-node:focus-visible > .task-plan-row { outline-color: #e8fcff; box-shadow: 0 0 0 4px #020709d9; }
+html[data-blackice-ui] body #app .task-plan-inspector {
+  background: linear-gradient(120deg,#132834f2,#0c1a25f5);
+  border-color: #98bdcf5c;
+  box-shadow: inset 0 1px #efffff45, 0 -5px 22px #0006;
+}
+html[data-blackice-ui] body #app .task-plan-inspector-toggle {
+  background: linear-gradient(100deg,#10212de8,#152b37df) !important;
+  border-bottom: 1px solid #afcfd529 !important;
+  box-shadow: inset 0 1px #f0ffff29 !important;
+}
+html[data-blackice-ui] body #app .task-plan-inspector-toggle:hover {
+  background: linear-gradient(100deg,#1b3341ed,#18313fdc) !important;
+}
+html[data-blackice-ui] body #app .conversation-plan-tabs { background: linear-gradient(145deg,#0e181dcc,#03090ccc) !important; border-bottom-color: #b1cfd547; }
+html[data-blackice-ui] body #app .conversation-plan-tabs > button[aria-selected="true"] {
+  background: linear-gradient(145deg, #7b9ea74f, #142e397a) !important;
+  border-color: #b7dce580 !important;
+  box-shadow: inset 0 1px #e3ffff40, inset 0 -1px #b9e3ed47 !important;
+}
+
+/* Menus and dialogs use a quiet gradient, with no repeated background scene. */
+html[data-blackice-ui] body #modal-root .modal-backdrop { background: linear-gradient(145deg,#0d161a99,#02070899) !important; backdrop-filter: blur(3px) !important; }
+html[data-blackice-ui] body #modal-root .modal {
+  background: linear-gradient(128deg,#142431f5,#09141cf5 56%,#101f2bf2) !important;
+  border-color: #a2c4d259 !important;
+  box-shadow: inset 0 1px #e4f5ff26, 0 28px 100px #000b !important;
+}
+html[data-blackice-ui] body #modal-root .modal-header {
+  background: linear-gradient(105deg,#1a33406b,#10212d21) !important;
+  border-bottom-color: #b6d4dd52 !important;
+}
+html[data-blackice-ui] body #modal-root :is(.modal-body,.connection-workspace,.agent-workspace,.task-method-workspace,.chatgpt-bridge-workspace) { background: transparent !important; }
+html[data-blackice-ui] body #modal-root :is(.modal-footer,.connection-footer,.task-method-footer) { background: linear-gradient(145deg,#0f1c23e0,#040d13e0) !important; border-top-color: #b2d0d447 !important; }
+html[data-blackice-ui] body #modal-root :is(.agent-workspace-card,.connection-provider-card,.connection-model-row,.connection-codex-model,.model-option,.tool-connection-card,.identity-card,.project-card,.process-card) {
+  background: linear-gradient(145deg,#101f29c7,#061118c7) !important;
+  border-color: #95bdc952 !important;
+  box-shadow: inset 0 1px #e8ffff17;
+}
+html[data-blackice-ui] body #modal-root :is(.bridge-sidebar,.bridge-main) { background: linear-gradient(145deg,#101e2580,#060f1480) !important; border-color: #a8c8d144 !important; }
+html[data-blackice-ui] body #modal-root .bridge-intro { background: linear-gradient(90deg, #030a0bb3, #0819231a) !important; }
+html[data-blackice-ui] body #modal-root :is(.bridge-connection,.bridge-context,.bridge-detail-card,.bridge-handoff-panel,.bridge-message,.bridge-result) { background: linear-gradient(145deg,#0f1e27c7,#040f16c7) !important; border-color: #b2d6df4d !important; }
+html[data-blackice-ui] body #modal-root :is(.bridge-connection > summary,.bridge-context > summary) { background: linear-gradient(145deg,#1e3641d9,#142932d9) !important; }
+html[data-blackice-ui] body :is(.model-picker-panel,.conversation-row-menu),
+html[data-blackice-ui] body #app :is(.conversation-options-panel,.conversation-reasoning-panel,.conversation-context-panel,.task-plan-menu > div) {
+  background: linear-gradient(140deg,#1b3141fc,#0b1925fc) !important;
+  border-color: #aacbd766 !important;
+  box-shadow: inset 0 1px #e7ffff24, 0 14px 40px #0009 !important;
+}
+html[data-blackice-ui] body .model-picker-panel .model-picker-option.is-active { background: linear-gradient(145deg,#4b71827a,#4467777a) !important; border-color: #c6e7ed96 !important; }
+html[data-blackice-ui] body :is(.model-picker-observation,.connection-model-observation) { color: #c0d6df; border-top: 1px solid #93b7c33b; }
+html[data-blackice-ui] body :is(.model-picker-observation,.connection-model-observation) > summary { color: #d2e6ee !important; }
+html[data-blackice-ui] body .model-picker-panel .model-picker-list { flex: 1 1 132px; }
+html[data-blackice-ui] body .model-picker-observation {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: min(180px, 25dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  margin-top: 3px;
+}
+html[data-blackice-ui] body .model-picker-observation > summary {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 9px 10px !important;
+  font-size: 11px !important;
+  line-height: 1.5;
+  background: linear-gradient(145deg,#1d323e,#13242e) !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  cursor: pointer;
+}
+html[data-blackice-ui] body .model-picker-observation-body { padding: 0 10px 9px; overflow-wrap: anywhere; }
+html[data-blackice-ui] body :is(.model-picker-observation,.connection-model-observation) dl { display: grid; gap: 6px; margin: 10px 0; }
+html[data-blackice-ui] body :is(.model-picker-observation,.connection-model-observation) dl > div { display: grid; grid-template-columns: minmax(70px, 1fr) minmax(0, 2fr); gap: 8px; }
+html[data-blackice-ui] body :is(.model-picker-observation,.connection-model-observation) :is(dt,dd,p) { min-width: 0; margin: 0; font-size: 11px !important; line-height: 1.55; overflow-wrap: anywhere; }
+html[data-blackice-ui] body :is(.model-picker-observation,.connection-model-observation) dt { color: #a9c5d1; }
+html[data-blackice-ui] body :is(.model-picker-observation,.connection-model-observation) dd { color: #deedf3; }
+html[data-blackice-ui] body .connection-model-observation { margin-top: 10px; padding-top: 7px; }
+html[data-blackice-ui] body .connection-model-observation > summary { padding: 7px 9px !important; font-size: 12px !important; line-height: 1.5; cursor: pointer; }
+
+/* Library and method outlines keep a bright edge and a quiet reading face. */
+html[data-blackice-ui] body #modal-root .task-method-header { background: linear-gradient(95deg, #030a0bc4, #06101833) !important; border-bottom-color: #a7cbd657; }
+html[data-blackice-ui] body #modal-root :is(.task-method-header p,.task-method-card p,.task-method-outline p,.task-method-outline small,.task-method-footer > span,.task-method-root-layout > p) { color: #c5d8e2; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-card {
+  background: linear-gradient(125deg, #16303bbf, #04111acf) !important;
+  border-color: #afcfdb5c !important;
+  box-shadow: inset 0 1px #e7ffff24, 0 6px 18px #0004 !important;
+}
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-card:hover {
+  background: linear-gradient(125deg, #305364d4, #0c2332d4) !important;
+  border-color: #d4f1f4b3 !important;
+  box-shadow: inset 0 1px #f1ffff66, 0 7px 22px #0006 !important;
+}
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-outline { background: linear-gradient(145deg,#0e1e2887,#030f1787); border-radius: 6px; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) :is(.task-method-root-layout,.task-method-inputs) { background: linear-gradient(145deg,#10222aaf,#06141aaf); border-color: #9fbecb57; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-discovery { display: grid; gap: 14px; margin: 0 0 18px; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-search { margin: 0; min-height: 46px; background: linear-gradient(145deg,#0f1f29d6,#041119d6); border-color: #a4cbd373; }
+html[data-blackice-ui] body .process-method-library .task-method-search { display: flex; align-items: center; border: 1px solid #a4cbd373; border-radius: 10px; padding: 0 12px; }
+html[data-blackice-ui] body .process-method-library .task-method-search input { width: 100%; min-width: 0; min-height: 44px; margin: 0; padding: 11px 0; background: transparent !important; border: 0 !important; box-shadow: none !important; color: #e5f2f6; font-size: 14px; }
+html[data-blackice-ui] body .process-method-library .task-method-search:focus-within { outline: 2px solid #e3fbff; outline-offset: 2px; }
+html[data-blackice-ui] body .process-method-library .task-method-filters .field { margin: 0; }
+html[data-blackice-ui] body .process-method-library .process-method-card:has(.process-method-card-steps[open]) { grid-column: 1 / -1; }
+html[data-blackice-ui] body .process-method-library .process-method-card-steps > .task-method-outline { padding: 0; list-style: none; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-filters { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-filters label { display: grid; min-width: 0; gap: 6px; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-filters label > span { font-size: 12px; line-height: 1.5; color: #c3d8e1; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-filters select { width: 100%; min-width: 0; min-height: 40px; padding: 8px 28px 8px 11px; border: 1px solid #a1c6d15c; border-radius: 8px; background: linear-gradient(145deg,#10222be8,#06141be8); color: #e5f2f6; font: 13px/1.5 var(--blackice-controls,sans-serif); }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-results-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin: 0 0 15px; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-results-count { min-width: 0; margin: 0; color: #c2d6df; font-size: 12px; line-height: 1.6; font-variant-numeric: tabular-nums; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-pagination { display: flex; gap: 8px; margin-left: auto; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-pagination .button { min-width: 74px; min-height: 40px; padding: 8px 12px; font-size: 12px; line-height: 1.5; white-space: nowrap; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-card-foot { flex-wrap: wrap; line-height: 1.65; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-step-instructions { font-size: 14px; line-height: 1.75; margin: 8px 0 12px; max-width: 76ch; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-outline details > summary { min-height: 36px; box-sizing: border-box; padding-block: 8px; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-outline details ul { padding-left: 19px; color: #c7dce5; font-size: 13px; line-height: 1.7; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-fit { color: #d7e8ef; font-size: 15px; line-height: 1.7; margin: 0 0 20px; max-width: 76ch; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-guidance { padding: 16px 18px; margin: 12px 0; background: linear-gradient(145deg,#0f1e28b3,#040f17b3); border: 1px solid #99bccb3d; border-radius: 10px; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-guidance h3 { margin: 0 0 10px; color: #e6f2f6; font-size: 15px; line-height: 1.5; font-weight: 550; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-guidance ul { padding-left: 19px; margin: 0; color: #c4d9e2; font-size: 13px; line-height: 1.75; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-guidance li + li { margin-top: 6px; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-references { border-top: 1px solid #93b4c140; margin: 17px 0; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-references > summary { min-height: 40px; padding: 10px 0; box-sizing: border-box; color: #cae3eb; font-size: 13px; line-height: 1.5; cursor: pointer; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-references ul { margin: 0 0 12px; padding-left: 19px; color: #c3d7e0; font-size: 13px; line-height: 1.7; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-attribution { margin: 17px 0 21px; padding-left: 13px; border-left: 2px solid #87b4c174; color: #b5ced9; font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-attribution p { margin: 5px 0; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) :is(.task-method-references,.task-method-attribution) a { color: #ceeef6; text-decoration: underline; text-underline-offset: 3px; }
+html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) :is(select,summary,a):focus-visible { outline: 2px solid #e3fbff; outline-offset: 3px; }
+
+/* Settings, activity, and the workflow canvas use the same scene, while actual
+ * application captures and previews retain their original pixels. */
+html[data-blackice-ui] body #app :is(.configure-workspace,.observe-workspace,.desktop-workspace) { background: linear-gradient(145deg,#0e171c80,#03080b80) !important; }
+html[data-blackice-ui] body #app :is(.configure-basics,.configure-disclosure,.configure-card,.observe-panel,.observe-card,.observe-activity,.operation-snapshot,.activity-card) { background: linear-gradient(145deg,color-mix(in srgb,var(--bi-reading) 90%,#668b9d 10%),var(--bi-reading)) !important; border-color: #a7c8d354 !important; }
+html[data-blackice-ui] body #app :is(.rail,.topbar,.library,.inspector,.execution,.execution-top) { background: linear-gradient(145deg,#0f1e27d9,#040f16d9) !important; border-color: #a4c7d33d !important; }
+html[data-blackice-ui] body #app .inspector-body { background: transparent !important; }
+html[data-blackice-ui] body #app :is(#canvas,.canvas) {
+  background: radial-gradient(#a4c5d323 .7px, transparent .9px) 0 0 / 24px 24px, linear-gradient(140deg,#08131fc9,#0c1a2599) !important;
+}
+html[data-blackice-ui] body #app .graph-node { background: linear-gradient(130deg, #18303cde, #051219ed) !important; border-color: #b5d8e085 !important; box-shadow: inset 0 1px #e6ffff40, 0 9px 26px #0008 !important; }
+
+@media (max-width: 980px) {
+  :root[data-blackice-ui="comfort"] { --bi-ice-position: 65% 50%; }
+  html[data-blackice-ui] body #app .conversation-sidebar { background: linear-gradient(145deg,#0e1920f2,#030a0ff2) !important; }
+}
+@media (max-width: 600px) {
+  html[data-blackice-ui] body #workspace-modes .workspace-wordmark > img { width: 122px !important; height: 16px !important; }
+  html[data-blackice-ui] body #app .conversation-main:has(.blackice-workbench-welcome) { background: linear-gradient(95deg, #02090aa6, #02090a99) !important; }
+  html[data-blackice-ui] body #app .blackice-welcome-hero { min-height: 0; }
+  html[data-blackice-ui] body #app .blackice-welcome-copy h1 { font-size: 30px !important; line-height: 1.18 !important; }
+  html[data-blackice-ui] body #app .blackice-welcome-rail { padding-inline: 10px; }
+  html[data-blackice-ui] body #app .conversation-message.assistant { padding: 14px; }
+  html[data-blackice-ui] body #app .task-plan-workspace { background: linear-gradient(145deg,#0d171bbf,#02080abf) !important; }
+  html[data-blackice-ui] body #app .task-plan-header { background: linear-gradient(100deg, #03090c47, #122d3638); }
+  html[data-blackice-ui] body #app .task-plan-inspector { background: linear-gradient(145deg,#11222ae8,#07141ae8); }
+  html[data-blackice-ui] body #modal-root .modal { background-position: 70% 50% !important; }
+  html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-filters { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+  html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-filters label:first-child { grid-column: 1 / -1; }
+  html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-results-header { gap: 8px; }
+  html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-guidance { padding: 13px; }
+  html[data-blackice-ui] body :is(#blackice-task-methods,.process-method-library) .task-method-step-instructions { font-size: 13px; line-height: 1.75; }
+}
+@media (max-height: 820px) and (min-width: 601px) {
+  html[data-blackice-ui] body #app .blackice-welcome-hero { min-height: 182px; }
+}
+@media (prefers-contrast: more) {
+  :root[data-blackice-ui="comfort"] { --bi-reading: #02080cf5; --bi-muted: #dae8ec; }
+  html[data-blackice-ui] body #app :is(.conversation-main:has(.blackice-workbench-welcome),.conversation-main,.task-plan-workspace,.task-plan-inspector),
+  html[data-blackice-ui] body #modal-root .modal { background: linear-gradient(145deg,#0d171c,#02070b) !important; background-image: none !important; }
+  html[data-blackice-ui] body #app .conversation-message.assistant { border-color: #b9d4df; }
+  html[data-blackice-ui] body #app .task-plan-node.is-selected > .task-plan-row { border-color: #eaffff; background: linear-gradient(145deg,#2c4754,#233b46); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-blackice-ui] body { background-attachment: scroll !important; }
+  html[data-blackice-ui] body :is(#app,#modal-root,#workspace-modes,.model-picker-panel) * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  html[data-blackice-ui] body :is(#app,#modal-root,#workspace-modes,.model-picker-panel) :is(button,summary,[role="button"]:where(:not(svg,svg *)),a.button,.starter-card,.task-plan-row,.task-plan-node,.task-plan-node-mark) { animation: none !important; transition: none !important; }
+}
+@media (forced-colors: active) {
+  html[data-blackice-ui] body #workspace-modes .workspace-wordmark > img { display: none; }
+  html[data-blackice-ui] body #workspace-modes .workspace-wordmark-label {
+    position: static; width: auto; height: auto; margin: 0; overflow: visible;
+    clip-path: none; color: CanvasText; font: 600 18px/1 var(--blackice-display);
+  }
+  html[data-blackice-ui] body {  }
+  html[data-blackice-ui] body :is(#app,#modal-root,#workspace-modes,.model-picker-panel,.conversation-row-menu),
+  html[data-blackice-ui] body :is(#app,#modal-root,#workspace-modes,.model-picker-panel,.conversation-row-menu) * {
+    background-image: none !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+  html[data-blackice-ui] body #app :is(.conversation-message,.task-plan-workspace,.task-plan-inspector,.task-plan-inspector-toggle,.conversation-header,.conversation-sidebar),
+  html[data-blackice-ui] body #modal-root :is(.modal,.modal-header,.modal-body,.task-method-workspace,.task-method-header,.bridge-sidebar,.bridge-main) {  color: CanvasText !important; border-color: CanvasText !important; }
+  html[data-blackice-ui] body #app :is(.conversation-main:has(.blackice-workbench-welcome),.conversation-message.assistant,.conversation-message.user,.task-plan-inspector-toggle) {  color: CanvasText !important; }
+  html[data-blackice-ui] body #app .task-plan-node.is-selected > .task-plan-row {  border-color: Highlight !important; }
+  html[data-blackice-ui] body #app .task-plan-node:focus-visible > .task-plan-row { outline-color: Highlight !important; }
+  html[data-blackice-ui] body #workspace-modes [role="tab"][aria-selected="true"] {  color:CanvasText !important; }
+}

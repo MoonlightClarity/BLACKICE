@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none" role="img" aria-labelledby="title description">
+  <title id="title">BLACKICE</title>
+  <desc id="description">An editable dark ice plate divided by a bright branching fissure.</desc>
+  <defs>
+    <linearGradient id="slab" x1="36" y1="22" x2="208" y2="232" gradientUnits="userSpaceOnUse"><stop stop-color="#203a49"/><stop offset=".46" stop-color="#06121c"/><stop offset="1" stop-color="#162e3d"/></linearGradient>
+    <linearGradient id="facet" x1="104" y1="28" x2="214" y2="224" gradientUnits="userSpaceOnUse"><stop stop-color="#7599a9" stop-opacity=".12"/><stop offset=".55" stop-color="#0a1822" stop-opacity=".04"/><stop offset="1" stop-color="#7094a4" stop-opacity=".22"/></linearGradient>
+    <linearGradient id="rim" x1="40" y1="20" x2="218" y2="235" gradientUnits="userSpaceOnUse"><stop stop-color="#b8d2dd" stop-opacity=".74"/><stop offset=".45" stop-color="#527587" stop-opacity=".28"/><stop offset="1" stop-color="#a5c7d5" stop-opacity=".65"/></linearGradient>
+    <linearGradient id="fissure" x1="126" y1="32" x2="128" y2="224" gradientUnits="userSpaceOnUse"><stop stop-color="#bad8e3"/><stop offset=".45" stop-color="#effbff"/><stop offset="1" stop-color="#8fb9cc"/></linearGradient>
+  </defs>
+  <g id="ice-plate">
+    <path d="M60 13h121l60 48v137l-46 45H56l-43-39V57Z" fill="url(#slab)" stroke="url(#rim)" stroke-width="3"/>
+    <path d="m61 24 116 1 52 42v126l-39 38H61l-36-34V62Z" fill="url(#facet)"/>
+    <path d="m60 13 47 44 21-21 51-11m62 36-54 50 28 56-20 76M13 57l53 48-13 58 3 80" stroke="url(#rim)" stroke-width="1.8" opacity=".6"/>
+  </g>
+  <g id="branching-fracture" stroke="url(#fissure)" stroke-linejoin="round" stroke-linecap="round">
+    <path d="m130 35-21 69 54-15-33 54 39 12-45 64" stroke-width="7.5"/>
+    <path d="m109 104-38-23-21 7m113 1 24 22 19-3m-76 35-53 8-24 12m71 56-4-43-22-14m71-7 22 32 20 6" stroke-width="2.4" opacity=".82"/>
+    <path d="m71 81-5-20m121 50 7 21m-117 19-13-22m127 58-4 22" stroke-width="1.7" opacity=".54"/>
+  </g>
+</svg>

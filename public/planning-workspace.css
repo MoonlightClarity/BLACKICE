@@ -1,0 +1,204 @@
+/* A dedicated working surface; the map and outline remain the saved task plan. */
+html[data-blackice-ui] body #app.planning-view { grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr); }
+html[data-blackice-ui] body #app.planning-view > :is(.rail,.topbar,.library,.main,.inspector) { display:none!important; }
+html[data-blackice-ui] body #app #planning-workspace {
+  grid-column:1/-1;grid-row:1/-1;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;
+  color:#dcebef;font:13px/1.5 var(--blackice-controls,system-ui,sans-serif);
+  background:linear-gradient(145deg,#14272feb,#070e15f5),url('/assets/blackice-field.svg') center/cover;
+}
+html[data-blackice-ui] body #app #planning-workspace[hidden],
+html[data-blackice-ui] body #app #planning-workspace [hidden] { display:none!important; }
+html[data-blackice-ui] body #app #planning-workspace :is(button,input,textarea,select,summary) { font-family:inherit; }
+html[data-blackice-ui] body #app #planning-workspace button {
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px!important;min-width:0;
+  padding:6px 11px!important;border:1px solid #698f9b57!important;border-radius:5px 9px 5px 9px!important;
+  background:linear-gradient(135deg,#28465087,#142a3594)!important;box-shadow:inset 0 1px #daf7ff0e!important;
+  color:#c5dfe8!important;font-size:12px!important;font-weight:500;line-height:1.4;cursor:pointer;
+}
+html[data-blackice-ui] body #app #planning-workspace button:hover { border-color:#a2ccd48f!important;background:linear-gradient(135deg,#3a5b6485,#203c4899)!important;color:#eef9fa!important; }
+html[data-blackice-ui] body #app #planning-workspace button.primary { color:#eaf8f7!important;border-color:#a0cfcba3!important;background:linear-gradient(135deg,#3f696a99,#234747aa)!important; }
+html[data-blackice-ui] body #app #planning-workspace button:disabled { color:#8fa7b0!important;border-color:#5269724f!important;opacity:1!important;cursor:default; }
+html[data-blackice-ui] body #app #planning-workspace :is(button,input,textarea,select,summary,[data-planning-outline]):focus-visible { outline:2px solid #c4edf2!important;outline-offset:3px; }
+html[data-blackice-ui] body #app #planning-workspace :is(input:not([type="checkbox"]),textarea,select) {
+  width:100%;min-width:0;max-width:100%;padding:8px 10px;font-size:13px;line-height:1.55;
+  color:#daedf2;background:linear-gradient(140deg,#112731ed,#0b1822f5);border:1px solid #7196a46b;border-radius:5px;
+}
+html[data-blackice-ui] body #app #planning-workspace :is(input,textarea)::placeholder { color:#8ea6b0; }
+html[data-blackice-ui] body #app #planning-workspace textarea { resize:vertical;min-height:65px;max-height:300px; }
+html[data-blackice-ui] body #app #planning-workspace input[type="checkbox"] { width:16px;height:16px;flex:0 0 auto;accent-color:#a6d6d2; }
+html[data-blackice-ui] body #app #planning-workspace :is(h1,h2,h3,p) { margin:0; }
+html[data-blackice-ui] body #app #planning-workspace :is(h1,h2,h3) { color:#e0f0f2!important; }
+html[data-blackice-ui] body #app .planning-heading { display:flex;align-items:center;justify-content:space-between;gap:18px;flex:0 0 auto;padding:17px 24px;border-bottom:1px solid #6e929e4d;background:linear-gradient(125deg,#26455060,#1128335e); }
+html[data-blackice-ui] body #app .planning-heading-copy { display:flex;align-items:center;gap:12px;min-width:0; }
+html[data-blackice-ui] body #app .planning-heading-copy > svg { color:#a6d2d8;flex:0 0 auto; }
+html[data-blackice-ui] body #app .planning-heading h1 { font-size:22px!important;font-weight:550;line-height:1.2!important;letter-spacing:-.025em; }
+html[data-blackice-ui] body #app .planning-heading p { color:#9ebac5;font-size:12px!important;line-height:1.4;margin-top:4px!important; }
+html[data-blackice-ui] body #app .planning-heading-actions { display:flex;gap:7px;flex:0 0 auto; }
+html[data-blackice-ui] body #app .planning-layout { display:grid;grid-template-columns:minmax(220px,270px) minmax(300px,1fr) minmax(280px,340px);flex:1;min-height:0;min-width:0;overflow:hidden; }
+html[data-blackice-ui] body #app #planning-workspace[data-plan-enlarged="true"] .planning-layout { grid-template-columns:minmax(0,1fr); }
+html[data-blackice-ui] body #app .planning-catalog { display:flex;flex-direction:column;min-height:0;min-width:0;border-right:1px solid #4c6c774f;background:linear-gradient(167deg,#122832ad,#0a1821c9); }
+html[data-blackice-ui] body #app .planning-catalog-heading { display:grid;gap:9px;padding:17px 15px 8px;flex:0 0 auto; }
+html[data-blackice-ui] body #app .planning-catalog h2 { font-size:13px!important;font-weight:550; }
+html[data-blackice-ui] body #app .planning-catalog-title { display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0; }
+html[data-blackice-ui] body #app #planning-workspace .planning-catalog-title button { font-size:10px!important;min-height:30px!important;padding:4px 7px!important; }
+html[data-blackice-ui] body #app .planning-catalog-filters { display:grid;grid-template-columns:minmax(0,1fr);gap:6px; }
+html[data-blackice-ui] body #app #planning-workspace .planning-catalog-filters select { font-size:11px;padding:6px 8px; }
+html[data-blackice-ui] body #app #planning-catalog-status { color:#9bb6c2;font-size:11px!important;min-height:17px; }
+html[data-blackice-ui] body #app .planning-catalog-list { flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:4px 9px 14px; }
+html[data-blackice-ui] body #app .planning-outline, html[data-blackice-ui] body #app .planning-outline-children { list-style:none;margin:0;padding:0; }
+html[data-blackice-ui] body #app .planning-outline-group { min-width:0;margin:2px 0 7px;border-radius:4px;outline-offset:1px!important; }
+html[data-blackice-ui] body #app .planning-outline-group-label { display:flex;align-items:center;gap:6px;min-height:36px;padding:6px 5px;color:#c3dce4;cursor:pointer; }
+html[data-blackice-ui] body #app .planning-outline-group-label:hover { background:linear-gradient(125deg,#47707b25,#35576120); }
+html[data-blackice-ui] body #app .planning-outline-group-label strong { flex:1;min-width:0;overflow-wrap:anywhere;font-size:12px;font-weight:550; }
+html[data-blackice-ui] body #app .planning-outline-group-label small { flex:0 0 auto;min-width:20px;padding:1px 5px;text-align:center;border-radius:4px;background:linear-gradient(125deg,#42616d38,#2c4b5833);color:#abc7d2;font-size:10px; }
+html[data-blackice-ui] body #app .planning-outline-chevron { width:12px;flex:0 0 12px;text-align:center;color:#99c1ce;font-size:12px; }
+html[data-blackice-ui] body #app .planning-outline-children { margin:0 0 0 11px;padding:0 0 0 10px;border-left:1px solid #638c9970; }
+html[data-blackice-ui] body #app .planning-outline-children > li { position:relative;min-width:0; }
+html[data-blackice-ui] body #app .planning-outline-children > li::before { position:absolute;content:'';width:9px;height:1px;left:-10px;top:18px;background:linear-gradient(90deg,#638c9970,#638c994d); }
+html[data-blackice-ui] body #app .planning-outline-empty { padding:9px 5px;color:#9bb7c3;font-size:11px;line-height:1.65; }
+html[data-blackice-ui] body #app #planning-workspace .planning-catalog-row { display:grid;gap:3px;justify-items:start;text-align:left;width:100%;margin-bottom:3px;padding:8px 8px!important;border-color:transparent!important;background:transparent!important;box-shadow:none!important;border-radius:4px!important; }
+html[data-blackice-ui] body #app #planning-workspace .planning-catalog-row[aria-current="true"] { border-color:#98cbd078!important;background:linear-gradient(125deg,#30545b99,#1d3b4999)!important; }
+html[data-blackice-ui] body #app .planning-catalog-row strong { display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;font-size:12px;line-height:1.55;font-weight:550;color:#d3e6ec; }
+html[data-blackice-ui] body #app .planning-catalog-row :is(span,small) { font-size:10px;font-weight:400;color:#9db9c4; }
+html[data-blackice-ui] body #app #planning-catalog-footer { padding:0 14px 12px; }
+html[data-blackice-ui] body #app .planning-group-actions { flex:0 0 auto;min-width:0;padding:10px 14px;border-top:1px solid #567e8b47; }
+html[data-blackice-ui] body #app .planning-group-actions > p { color:#a4c2ce;font-size:10px!important;overflow-wrap:anywhere; }
+html[data-blackice-ui] body #app .planning-group-actions > div { display:flex;flex-wrap:wrap;gap:5px;margin-top:7px; }
+html[data-blackice-ui] body #app #planning-workspace .planning-group-actions button { font-size:10px!important;min-height:30px!important;padding:4px 7px!important; }
+html[data-blackice-ui] body #app .planning-organization { flex:0 1 auto;min-height:130px;max-height:60%;overflow:auto;overscroll-behavior:contain;padding:12px;margin:0 9px 10px;border:1px solid #80aebd87;border-radius:5px;background:linear-gradient(150deg,#23434d,#142d3a); }
+html[data-blackice-ui] body #app .planning-organization h3 { font-size:12px!important;font-weight:550;margin-bottom:11px!important; }
+html[data-blackice-ui] body #app .planning-organization fieldset { display:grid;gap:10px;min-width:0;padding:0;margin:0;border:0; }
+html[data-blackice-ui] body #app .planning-organization fieldset > p { color:#bad4df;font-size:11px!important;line-height:1.65; }
+html[data-blackice-ui] body #app .planning-organization-target { max-height:70px;overflow:auto;overflow-wrap:anywhere; }
+html[data-blackice-ui] body #app #planning-organization-messages > :not(:empty) { margin-top:10px!important; }
+html[data-blackice-ui] body #app #planning-organization-actions { display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;margin-top:13px; }
+html[data-blackice-ui] body #app #planning-workspace #planning-organization-actions button { font-size:11px!important;padding:5px 8px!important; }
+html[data-blackice-ui] body #app .planning-organization-receipt { margin:0 15px 10px!important;color:#b8ddc9;font-size:11px!important;line-height:1.6; }
+html[data-blackice-ui] body #app .planning-board { display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden; }
+html[data-blackice-ui] body #app .planning-task-bar { display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;flex:0 0 auto;padding:10px 14px;border-bottom:1px solid #4c6c774f;background:linear-gradient(125deg,#1c374159,#101e2973); }
+html[data-blackice-ui] body #app .planning-task-bar > div { display:flex;flex-wrap:wrap;align-items:center;gap:5px; }
+html[data-blackice-ui] body #app .planning-task-bar > .planning-document-identity { flex:1 1 100%;display:grid;gap:1px;min-width:0; }
+html[data-blackice-ui] body #app .planning-document-identity > span { color:#97bbc8;font-size:10px; }
+html[data-blackice-ui] body #app .planning-document-identity > strong { color:#d4e9ed;font-size:13px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+html[data-blackice-ui] body #app .planning-work-counts { font-size:11px;color:#a3c1cc; }
+html[data-blackice-ui] body #app .planning-work-counts > span + span::before { content:'·';padding-right:5px;color:#708e9b; }
+html[data-blackice-ui] body #app #planning-workspace .planning-task-bar button { font-size:11px!important;min-height:32px!important;padding:5px 8px!important; }
+html[data-blackice-ui] body #app #planning-load-status:not(:empty) { color:#dfc199;padding:10px 15px;border-bottom:1px solid #866e496b; }
+html[data-blackice-ui] body #app #planning-plan-mount { flex:1;min-height:0;border:0;box-shadow:none; }
+html[data-blackice-ui] body #app #planning-plan-mount > .task-plan-header { padding:20px 22px 0; }
+html[data-blackice-ui] body #app #planning-plan-mount .task-plan-header h2 { font-size:22px!important;line-height:1.3!important; }
+html[data-blackice-ui] body #app #planning-plan-mount .task-plan-eyebrow { margin-bottom:12px;font-size:10px; }
+html[data-blackice-ui] body #app #planning-plan-mount .task-plan-tree-viewport { flex:1;min-height:0; }
+html[data-blackice-ui] body #app #planning-workspace #planning-plan-mount .task-plan-expander { padding:0!important;min-height:24px!important;min-width:20px!important;max-width:20px;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important; }
+html[data-blackice-ui] body #app .task-plan-row-owner { color:#94b7c5;font-size:10px;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+html[data-blackice-ui] body #app .task-plan-node[data-readiness="ready"] > .task-plan-row .task-plan-row-state { color:#afd8c6; }
+html[data-blackice-ui] body #app .planning-editor { min-width:0;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:0 18px 20px;border-left:1px solid #668b9770;background:linear-gradient(150deg,#1a313bf2,#0e202bf7 50%,#142c34eb); }
+html[data-blackice-ui] body #app .planning-editor-heading { display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:18px 0 13px; }
+html[data-blackice-ui] body #app .planning-editor-heading h2 { font-size:14px!important;font-weight:550; }
+html[data-blackice-ui] body #app #planning-editor-revision { color:#96b5c2;font-size:10px;white-space:nowrap; }
+html[data-blackice-ui] body #app .planning-edit-fields { display:grid;gap:15px;border:0;min-width:0;padding:0;margin:0; }
+html[data-blackice-ui] body #app .planning-field { display:grid;gap:6px;min-width:0;font-size:11px;color:#b5cbd5; }
+html[data-blackice-ui] body #app .planning-two-fields { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
+html[data-blackice-ui] body #app .planning-field-help { color:#91aebc;font-size:11px!important;line-height:1.7;margin-top:6px!important; }
+html[data-blackice-ui] body #app .planning-field-disclosure { border-top:1px solid #6587954d;padding-top:3px; }
+html[data-blackice-ui] body #app .planning-field-disclosure > summary { padding:10px 0;color:#adcbd6;font-size:12px;cursor:pointer; }
+html[data-blackice-ui] body #app .planning-field-disclosure > :not(summary) { margin-top:11px; }
+html[data-blackice-ui] body #app .planning-dependencies { display:grid;gap:4px;padding:10px 0;border:0;border-top:1px solid #5c7f8a47;min-width:0;max-height:230px;overflow:auto;overscroll-behavior:contain; }
+html[data-blackice-ui] body #app .planning-dependencies legend { font-size:11px;color:#a5c3cf;padding:0 6px 0 0; }
+html[data-blackice-ui] body #app .planning-dependencies > label { display:flex;align-items:flex-start;gap:9px;min-height:35px;padding:5px 2px;color:#bdd4de;font-size:12px;cursor:pointer; }
+html[data-blackice-ui] body #app .planning-dependencies > label > span { min-width:0;overflow-wrap:anywhere; }
+html[data-blackice-ui] body #app .planning-dependencies small { display:block;color:#91adbc;font-size:10px; }
+html[data-blackice-ui] body #app .planning-new-children { border:1px solid #65859260;border-radius:6px;padding:11px;min-width:0; }
+html[data-blackice-ui] body #app .planning-new-children legend { padding:0 6px;font-size:11px;color:#bed7df; }
+html[data-blackice-ui] body #app .planning-child-draft { display:grid;gap:10px;padding-bottom:13px; }
+html[data-blackice-ui] body #app .planning-child-draft + .planning-child-draft { border-top:1px solid #63848f47;padding-top:14px; }
+html[data-blackice-ui] body #app .planning-child-draft > strong { font-size:11px;font-weight:550;color:#a9cbd5; }
+html[data-blackice-ui] body #app .planning-child-draft label { display:grid;gap:5px;font-size:11px;color:#a7c2ce; }
+html[data-blackice-ui] body #app .planning-editor-actions { display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap;margin-top:17px;padding-top:14px;border-top:1px solid #6b8d9859; }
+html[data-blackice-ui] body #app .planning-remove { flex:1 1 100%;font-size:11px;color:#b4adb0;padding:8px 0 0; }
+html[data-blackice-ui] body #app .planning-remove summary { cursor:pointer;min-height:30px;display:flex;align-items:center; }
+html[data-blackice-ui] body #app .planning-remove p { margin:5px 0 10px!important;line-height:1.7; }
+html[data-blackice-ui] body #app #planning-draft-switcher { margin-top:17px;color:#abc7d2;font-size:11px; }
+html[data-blackice-ui] body #app #planning-draft-switcher button { display:block;text-align:left;width:100%;margin-top:6px;overflow-wrap:anywhere; }
+html[data-blackice-ui] body #app .planning-runtime-status { display:grid;gap:4px;padding:10px 12px;margin-bottom:16px;border-left:2px solid #97b8c9;background:linear-gradient(145deg,#30475047,#1f394c4d);font-size:11px;color:#a8c3cf; }
+html[data-blackice-ui] body #app .planning-runtime-status strong { color:#d5e7ec;font-size:12px;font-weight:550; }
+html[data-blackice-ui] body #app .planning-runtime-status[data-work-state="ready"] { border-left-color:#a9d4bc; }
+html[data-blackice-ui] body #app .planning-runtime-status[data-work-state="blocked"] { border-left-color:#dbb78e; }
+html[data-blackice-ui] body #app .planning-awareness { display:grid;gap:9px;margin:15px 0 0;min-width:0;color:#b7d1db;font-size:11px;line-height:1.6; }
+html[data-blackice-ui] body #app .planning-presence { display:flex;align-items:flex-start;gap:8px;padding:8px 0;overflow-wrap:anywhere; }
+html[data-blackice-ui] body #app .planning-presence > span:last-child { min-width:0; }
+html[data-blackice-ui] body #app .planning-presence strong { font-weight:550;color:#d1e6e8; }
+html[data-blackice-ui] body #app .planning-presence small { display:block;font-size:10px;color:#9dbbc6; }
+html[data-blackice-ui] body #app .planning-presence-dot { width:6px;height:6px;flex:0 0 6px;border-radius:50%;background:linear-gradient(145deg,#b1d6d1,#99c5c0);margin-top:6px; }
+html[data-blackice-ui] body #app .planning-awareness-receipts { min-width:0;border-top:1px solid #6587954d;border-bottom:1px solid #6587954d; }
+html[data-blackice-ui] body #app .planning-awareness-receipts > summary { min-height:34px;padding:7px 0;color:#bed9e2;cursor:pointer;overflow-wrap:anywhere; }
+html[data-blackice-ui] body #app .planning-awareness-receipts ul { display:grid;gap:9px;padding:0;margin:3px 0 10px;list-style:none;max-height:230px;overflow:auto;overscroll-behavior:contain; }
+html[data-blackice-ui] body #app .planning-awareness-receipts li { display:grid;gap:2px;min-width:0;overflow-wrap:anywhere;padding:5px 0; }
+html[data-blackice-ui] body #app .planning-awareness-receipts li strong { font-size:11px;font-weight:550;color:#d0e2e8; }
+html[data-blackice-ui] body #app .planning-awareness-receipts li span { color:#a9c5d0;font-size:10px; }
+html[data-blackice-ui] body #app .planning-awareness-receipts li em { color:#e2c8a0;font-style:normal; }
+html[data-blackice-ui] body #app .planning-awareness-receipts > p { font-size:10px!important;color:#9dbbc6;line-height:1.7;margin:0 0 10px!important; }
+html[data-blackice-ui] body #app .planning-awareness-error { font-size:11px!important;color:#d8c39f;overflow-wrap:anywhere; }
+html[data-blackice-ui] body #app #planning-editor-messages > :not(:empty) { margin-bottom:14px!important; }
+html[data-blackice-ui] body #app :is(.planning-notice,.planning-error,.planning-receipt) { padding:9px 11px;font-size:12px!important;line-height:1.65;overflow-wrap:anywhere;border:1px solid #95b8c052;border-radius:5px;background:linear-gradient(135deg,#2d4a4f33,#20384252); }
+html[data-blackice-ui] body #app .planning-error { color:#edc3b6;border-color:#bd8f775c;background:linear-gradient(135deg,#583b3447,#3e2d333f); }
+html[data-blackice-ui] body #app .planning-receipt { color:#b8ddc9; }
+html[data-blackice-ui] body #app .planning-conflict { padding:12px;border:1px solid #c0a17475;border-radius:5px;background:linear-gradient(145deg,#4c483235,#382f2859);font-size:12px;color:#d7c5a8; }
+html[data-blackice-ui] body #app .planning-conflict > strong { color:#ead6b5;font-size:12px;font-weight:550; }
+html[data-blackice-ui] body #app .planning-conflict > p { margin:7px 0 10px!important;font-size:11px;line-height:1.65; }
+html[data-blackice-ui] body #app .planning-conflict-review { font-size:11px;color:#a9c0cd;border:1px solid #718e9b6b;padding:11px;border-radius:5px; }
+html[data-blackice-ui] body #app .planning-conflict-review h3 { font-size:12px!important;font-weight:550;margin-bottom:13px!important; }
+html[data-blackice-ui] body #app .planning-conflict-review > div { border-top:1px solid #61798570;margin-top:10px;padding-top:10px; }
+html[data-blackice-ui] body #app .planning-conflict-review strong { font-weight:550;color:#cbdfe6; }
+html[data-blackice-ui] body #app .planning-conflict-review dl { margin:9px 0 12px; }
+html[data-blackice-ui] body #app .planning-conflict-review dt { font-size:10px;color:#9ab8c4;margin-top:9px; }
+html[data-blackice-ui] body #app .planning-conflict-review dd { margin:3px 0 0;color:#c5d8e0;white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow:auto; }
+html[data-blackice-ui] body #app .planning-conflict-review > p { margin-top:9px!important;line-height:1.6; }
+html[data-blackice-ui] body #app .planning-empty-note { padding:16px 10px;color:#9eb8c5;font-size:12px!important;line-height:1.7; }
+html[data-blackice-ui] body #app .planning-workspace-empty { display:flex;flex-direction:column;align-items:center;justify-content:center;gap:15px;flex:1;min-height:0;padding:30px;text-align:center; }
+html[data-blackice-ui] body #app .planning-workspace-empty > svg { width:54px;height:54px;color:#a6cfd7; }
+html[data-blackice-ui] body #app .planning-workspace-empty h2 { font-size:22px!important;font-weight:500; }
+html[data-blackice-ui] body #app .planning-workspace-empty p { max-width:380px;color:#a2bfcc;font-size:13px!important;line-height:1.75; }
+html[data-blackice-ui] body #app .planning-mobile-tabs { display:flex;align-items:center;gap:4px;flex:0 0 auto;padding:7px 12px;border-bottom:1px solid #5e849256;background:linear-gradient(120deg,#1b333fbe,#1027319c); }
+html[data-blackice-ui] body #app #planning-workspace .planning-mobile-tabs > button { flex:1;border-color:transparent!important;background:transparent!important; }
+html[data-blackice-ui] body #app #planning-workspace .planning-mobile-tabs > button[aria-selected="true"] { border-color:#8eafb98f!important;background:linear-gradient(145deg,#395b647a,#223e4a9e)!important;color:#e8f5f7!important; }
+@media(max-width:1200px) and (min-width:1051px) {
+  html[data-blackice-ui] body #app .planning-layout { grid-template-columns:220px minmax(280px,1fr) 300px; }
+  html[data-blackice-ui] body #app .planning-editor { padding-inline:14px; }
+}
+@media(max-width:1050px) {
+  html[data-blackice-ui] body #app .planning-layout { display:flex;flex-direction:column; }
+  html[data-blackice-ui] body #app .planning-layout > :is(aside,section) { flex:1;min-height:0;border:0; }
+  html[data-blackice-ui] body #app .planning-editor { padding:0 max(18px,calc((100% - 680px)/2)) 30px; }
+  html[data-blackice-ui] body #app .planning-catalog-heading { grid-template-columns:minmax(0,1fr) minmax(150px,230px);align-items:center;padding:16px 18px 8px; }
+  html[data-blackice-ui] body #app .planning-catalog-title { grid-column:1/-1; }
+  html[data-blackice-ui] body #app .planning-catalog-filters { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  html[data-blackice-ui] body #app .planning-organization { margin-inline:18px;max-height:60%; }
+  html[data-blackice-ui] body #app .planning-catalog-list { padding-inline:14px; }
+  html[data-blackice-ui] body #app #planning-workspace .planning-catalog-row { padding:13px!important; }
+  html[data-blackice-ui] body #app .planning-catalog-row strong { font-size:13px; }
+}
+@media(max-width:600px) {
+  html[data-blackice-ui] body #app .planning-heading { padding:11px 14px;gap:8px; }
+  html[data-blackice-ui] body #app .planning-heading-copy { gap:8px; }
+  html[data-blackice-ui] body #app .planning-heading-copy > svg { width:20px; }
+  html[data-blackice-ui] body #app .planning-heading h1 { font-size:18px!important; }
+  html[data-blackice-ui] body #app .planning-heading p { display:none; }
+  html[data-blackice-ui] body #app #planning-workspace .planning-heading-actions > button { min-height:36px!important;font-size:11px!important;padding:6px 8px!important; }
+  html[data-blackice-ui] body #app #planning-workspace button { min-height:38px!important; }
+  html[data-blackice-ui] body #app .planning-task-bar { padding:8px 12px;gap:7px; }
+  html[data-blackice-ui] body #app .planning-work-counts { font-size:10px; }
+  html[data-blackice-ui] body #app #planning-workspace .planning-task-bar button { font-size:10px!important;min-height:36px!important;padding-inline:7px!important; }
+  html[data-blackice-ui] body #app #planning-plan-mount > .task-plan-header { padding:13px 16px 0; }
+  html[data-blackice-ui] body #app #planning-plan-mount .task-plan-header h2 { font-size:18px!important; }
+  html[data-blackice-ui] body #app .planning-editor { padding:0 15px 30px; }
+  html[data-blackice-ui] body #app .planning-catalog-heading { grid-template-columns:minmax(0,1fr); }
+  html[data-blackice-ui] body #app .planning-two-fields { grid-template-columns:minmax(0,1fr); }
+  html[data-blackice-ui] body #app .planning-field { font-size:12px; }
+  html[data-blackice-ui] body #app .planning-awareness-receipts > summary { min-height:38px;padding:9px 0; }
+}
+@media(forced-colors:active) {
+  html[data-blackice-ui] body #app #planning-workspace :is(button,input,textarea,select,summary,p,strong,span,small,h1,h2,h3,dd,dt) { color:CanvasText!important;border-color:CanvasText!important;box-shadow:none!important; }
+  html[data-blackice-ui] body #app #planning-workspace .planning-catalog-row[aria-current="true"] { border-color:Highlight!important; }
+  html[data-blackice-ui] body #app #planning-workspace :is(button,input,textarea,select,summary,[data-planning-outline]):focus-visible { outline-color:Highlight!important; }
+}

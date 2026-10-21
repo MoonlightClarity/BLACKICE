@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="1920" height="1200" viewBox="0 0 1920 1200" fill="none" role="img" aria-labelledby="title description">
+  <title id="title">BLACKICE / Quiet fractures</title>
+  <desc id="description">An editable vector field of dark translucent ice. Broad overlapping sheets catch a little silver blue light at the edges, with branching fissures kept outside the central reading space.</desc>
+  <defs>
+    <linearGradient id="depth" x1="280" y1="0" x2="1510" y2="1200" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#04090d"/><stop offset=".48" stop-color="#071018"/><stop offset="1" stop-color="#10202a"/>
+    </linearGradient>
+    <radialGradient id="underlight" cx="0" cy="0" r="1" gradientTransform="translate(1800 980) rotate(-145) scale(1120 800)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#416879" stop-opacity=".17"/><stop offset=".62" stop-color="#1c3948" stop-opacity=".06"/><stop offset="1" stop-color="#071018" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="far-sheet" x1="1050" y1="150" x2="1850" y2="1200" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#60818a" stop-opacity=".015"/><stop offset=".62" stop-color="#7495a0" stop-opacity=".075"/><stop offset="1" stop-color="#172c39" stop-opacity=".025"/>
+    </linearGradient>
+    <linearGradient id="near-sheet" x1="1760" y1="60" x2="1300" y2="1200" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#b2c8cc" stop-opacity=".07"/><stop offset=".46" stop-color="#203b4a" stop-opacity=".015"/><stop offset="1" stop-color="#547484" stop-opacity=".11"/>
+    </linearGradient>
+    <linearGradient id="low-sheet" x1="200" y1="900" x2="1750" y2="1200" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#17303d" stop-opacity=".025"/><stop offset=".63" stop-color="#577c8c" stop-opacity=".06"/><stop offset="1" stop-color="#9fbcc6" stop-opacity=".12"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="1120" y1="40" x2="1840" y2="1180" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8aafbd" stop-opacity="0"/><stop offset=".35" stop-color="#b2d0d8" stop-opacity=".16"/><stop offset=".73" stop-color="#719aad" stop-opacity=".06"/><stop offset="1" stop-color="#dbeced" stop-opacity=".2"/>
+    </linearGradient>
+    <linearGradient id="fissure" x1="1930" y1="50" x2="1480" y2="1190" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#92b5c3" stop-opacity=".06"/><stop offset=".35" stop-color="#c2d8df" stop-opacity=".3"/><stop offset=".66" stop-color="#8aacbd" stop-opacity=".08"/><stop offset="1" stop-color="#c5dce2" stop-opacity=".25"/>
+    </linearGradient>
+    <linearGradient id="left-falloff" x1="0" y1="400" x2="1150" y2="550" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#02070b" stop-opacity=".58"/><stop offset=".75" stop-color="#02070b" stop-opacity=".13"/><stop offset="1" stop-color="#02070b" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <g id="01-frozen-depth" inkscape:groupmode="layer" inkscape:label="01 · Frozen depth">
+    <path d="M0 0h1920v1200H0z" fill="url(#depth)"/>
+    <path d="M0 0h1920v1200H0z" fill="url(#underlight)"/>
+  </g>
+  <g id="02-translucent-sheets" inkscape:groupmode="layer" inkscape:label="02 · Translucent sheets">
+    <path d="m1112-80 390 0 92 344-224 228 245 222-136 486H843l332-377-131-352 154-193Z" fill="url(#far-sheet)"/>
+    <path d="m1809-60 251 0v1310h-625l71-268 212-232-81-224 160-247Z" fill="url(#near-sheet)"/>
+    <path d="m-70 1198 0-150 458-65 176 79 447-107 224 88 248-63 547 64v216Z" fill="url(#low-sheet)"/>
+    <path d="m-65 338 251-250 349-154 384 0-411 200-180 213Z" fill="url(#far-sheet)" opacity=".36"/>
+    <path d="m1594 264-224 228 245 222-136 486m330-1200 88 279-160 247 81 224-212 232-71 218" stroke="url(#edge)" stroke-width="1.2"/>
+    <path d="m388 983 176 79 447-107 224 88 248-63 437 50" stroke="url(#edge)" stroke-width=".8"/>
+  </g>
+  <g id="03-branching-fissures" inkscape:groupmode="layer" inkscape:label="03 · Branching fissures" stroke="url(#fissure)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m1920 128-129 95-13 79-99 58 24 89-94 102 76 63-33 115 63 47-151 154 27 61-96 134-12 75" stroke-width="1.35"/>
+    <path d="m1791 223 68 20 61-31m-142 90 43 27-12 70 71 55 40-4m-217-1 107 18 32 86 78 48m-311-50-30 99 48 56-60 119m118-211 85 17 25 100 94 78m-237-80-25 35 30 26m-28 54 92 9 99 90 50-17m-329 72-83-43-37 53-73 39m220 86 56-22 80 58 64-14m-296 112-49-55-91 17" stroke-width=".75" opacity=".76"/>
+    <path d="m1609 551 78-101-25-88 109-57 14-79m-200 871 84-102-28-59 139-156" stroke-width=".45" opacity=".36"/>
+    <path d="m-10 1011 172 32 94-38 87 40 112-15 95 57 125-6 79 63 156-18 121 74" stroke-width=".9" opacity=".46"/>
+    <path d="m162 1043 37 65-27 92m181-155-9 90 31 65m185-113-29 50-82 31m305-24 10-79 51-58" stroke-width=".5" opacity=".32"/>
+  </g>
+  <g id="04-reading-space" inkscape:groupmode="layer" inkscape:label="04 · Quiet reading space">
+    <path d="M0 0h1920v1200H0z" fill="url(#left-falloff)"/>
+  </g>
+</svg>

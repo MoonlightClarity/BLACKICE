@@ -1,0 +1,38 @@
+{
+  "name": "relay-agent-harness",
+  "version": "2.33.5",
+  "author": "BLACKICE",
+  "private": true,
+  "type": "module",
+  "description": "BLACKICE: direct ChatGPT tools, scoped OAuth, durable actions, contained browsing, optional email, and organized plans.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test --test-concurrency=4 tests/*.test.mjs",
+    "desktop": "electron .",
+    "scene:build": "node scripts/generate-noir-background.mjs",
+    "scene:check": "node scripts/generate-noir-background.mjs --check",
+    "package:desktop": "electron desktop/build-icon.mjs --check && node scripts/generate-noir-background.mjs --check && node scripts/package-public.mjs",
+    "package:public": "electron desktop/build-icon.mjs --check && node scripts/generate-noir-background.mjs --check && node scripts/package-public.mjs",
+    "release:check": "node scripts/release-check.mjs",
+    "icon:build": "electron desktop/build-icon.mjs",
+    "icon:check": "electron desktop/build-icon.mjs --check",
+    "headless": "electron . --headless"
+  },
+  "devDependencies": {
+    "electron": "44.7.2",
+    "electron-builder": "26.15.3"
+  },
+  "main": "desktop/main.mjs",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MoonlightClarity/BLACKICE.git"
+  },
+  "homepage": "https://github.com/MoonlightClarity/BLACKICE#readme",
+  "bugs": {
+    "url": "https://github.com/MoonlightClarity/BLACKICE/issues"
+  }
+}

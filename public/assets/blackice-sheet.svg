@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1100" fill="none">
+  <defs>
+    <linearGradient id="water" x1="310" y1="0" x2="1260" y2="1100" gradientUnits="userSpaceOnUse"><stop stop-color="#020404"/><stop offset=".48" stop-color="#080e10"/><stop offset="1" stop-color="#020405"/></linearGradient>
+    <linearGradient id="ice" x1="235" y1="150" x2="1450" y2="1070" gradientUnits="userSpaceOnUse"><stop stop-color="#132125"/><stop offset=".36" stop-color="#090e10"/><stop offset=".73" stop-color="#030607"/><stop offset="1" stop-color="#20363b"/></linearGradient>
+    <linearGradient id="edge" x1="242" y1="282" x2="1430" y2="1100" gradientUnits="userSpaceOnUse"><stop stop-color="#d2f7f8" stop-opacity=".08"/><stop offset=".38" stop-color="#efffff" stop-opacity=".68"/><stop offset=".7" stop-color="#82bac7" stop-opacity=".15"/><stop offset="1" stop-color="#c6f6fb" stop-opacity=".62"/></linearGradient>
+    <linearGradient id="fracture" x1="0" y1="220" x2="1600" y2="850" gradientUnits="userSpaceOnUse"><stop stop-color="#73abb2" stop-opacity=".04"/><stop offset=".45" stop-color="#caecef" stop-opacity=".48"/><stop offset=".63" stop-color="#e1ffff" stop-opacity=".8"/><stop offset="1" stop-color="#719ea5" stop-opacity=".05"/></linearGradient>
+    <radialGradient id="sheen" cx="0" cy="0" r="1" gradientTransform="translate(1140 340) rotate(132) scale(700 220)" gradientUnits="userSpaceOnUse"><stop stop-color="#88bfca" stop-opacity=".13"/><stop offset="1" stop-color="#8cd7de" stop-opacity="0"/></radialGradient>
+    <filter id="frost"><feTurbulence type="fractalNoise" baseFrequency=".34" numOctaves="3" seed="23" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope=".055"/></feComponentTransfer></filter>
+  </defs>
+  <path fill="url(#water)" d="M0 0h1600v1100H0z"/>
+  <path fill="url(#ice)" d="m-65 895 315-604 174 166 302-219 237 145 233-211 382 167 115 866H-65Z"/>
+  <path fill="#263d42" opacity=".13" d="m-65 895 315-604 30 39-247 570Zm315-604 174 166 302-219-33 66-269 177ZM963 383l233-211-200 234Z"/>
+  <path fill="url(#sheen)" d="M0 0h1600v1100H0z"/>
+  <g stroke="url(#edge)" stroke-linejoin="bevel"><path stroke-width="1.4" d="m-65 895 315-604 174 166 302-219 237 145 233-211 382 167"/><path opacity=".28" d="m-28 898 288-575 164 158 278-211 262 136 232-218 382 176"/></g>
+  <g stroke="url(#fracture)" stroke-linecap="round">
+    <path stroke-width="1.5" d="M-24 584 242 612 409 559 532 645 781 671 924 584 1084 622 1261 535 1439 566 1624 486"/>
+    <path stroke-width=".9" d="m410 559-46-129 35-65-9-107M532 645l-4 107-63 91 13 122-41 151M781 671l39 104-56 75 3 173-40 83M924 584l-35-102 49-104-30-82m176 326 77 95-2 51 99 181 11 152m-8-566 77-123-7-123 98-97m10 374 64 146 15 153 97 68"/>
+    <path stroke-width=".6" opacity=".5" d="m33 446 209 166 36 121 114 37 73 73m-102-413-127-20-70-130m275 91 35-42 75 14 83-87m129 415-12-63 117-143-40-32m124 288 80 22 35 83-13 79m-34-416 50 26 68-11 78 30m-479 235 45 18 91-10 28 35m-171 58-90 23-86-30-98 6m-32-271 119-67 73 6 96-41m369 400 111 12 97-48 180 14"/>
+    <path opacity=".24" stroke-width="3" d="m570 649 211 22 143-87 81 19"/>
+  </g>
+  <g fill="#c6eef1" opacity=".18"><circle cx="749" cy="738" r="1.8"/><circle cx="756" cy="749" r=".8"/><circle cx="744" cy="756" r="1.1"/><circle cx="914" cy="613" r="1"/><circle cx="918" cy="620" r="1.7"/><circle cx="1300" cy="500" r=".9"/><circle cx="1307" cy="508" r="1.4"/><circle cx="356" cy="671" r="1.3"/><circle cx="361" cy="676" r=".7"/></g>
+  <path fill="#a7d6df" filter="url(#frost)" opacity=".48" d="M0 0h1600v1100H0z"/>
+</svg>

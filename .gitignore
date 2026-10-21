@@ -1,0 +1,31 @@
+# Dependencies and generated builds
+node_modules/
+/.build/
+/dist/
+/coverage/
+/.tmp*/
+
+# Local application state and working files
+/data/
+/workspace/
+/backups/
+/diagnostics/
+/release-receipts*.json
+/*-verification.json
+
+# Editor and connector recovery copies
+*.currents-backup-*
+*.log
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+
+# Local configuration and signing credentials
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.key
+*.pem

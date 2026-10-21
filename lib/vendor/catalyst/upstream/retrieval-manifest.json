@@ -1,0 +1,201 @@
+{
+  "repository": "https://github.com/MoonlightClarity/Catalyst",
+  "commit": "1c50eea56ea4c05de8055084583145882dc8d302",
+  "files": [
+    {
+      "path": "LICENSE.txt",
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "LICENSES.md",
+      "bytes": 1472,
+      "sha256": "54aa79d7eccc714b46c6be5ccb0d34a16cb130afdca2a61cbb9fb623328807e3"
+    },
+    {
+      "path": "docs/structured-analytic-techniques-catalog-freeze.md",
+      "bytes": 1867,
+      "sha256": "b3715252b0b7fd5f4d79297420d6186a87f1c9e9bff9f6dc9bffe112083cae08"
+    },
+    {
+      "path": "src/domain/techniqueCatalogMetadata.ts",
+      "bytes": 57771,
+      "sha256": "9dc17ccbb9ef59b8967c1a068271083cdd0791896990f7e9bc52db4d66f376f1"
+    },
+    {
+      "path": "src/domain/techniquesCatalog.ts",
+      "bytes": 22198,
+      "sha256": "a785ce802eff5df929c5498762d5380b5dfd573518fa57bec650ad5efd644601"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflows.ts",
+      "bytes": 40515,
+      "sha256": "5b2687d6fff5d5945354e3a8deadf14b15636354532f7721606dff4558185390"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsAdvanced.ts",
+      "bytes": 47878,
+      "sha256": "4ae390111b68c2b62194a348ff0f6aa2cfca7684e3f85e886258fbae9462dd54"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsCausal.ts",
+      "bytes": 11876,
+      "sha256": "7433bab17b7fc3665af00e9c3da1f09f0aa95e3c1632edf16914b5b4894f3695"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsChallenge.ts",
+      "bytes": 10713,
+      "sha256": "fa472d93960ae7bafaba964af87b5f739e77fee4112d9bff8bda12f0942ea7e8"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsDecisionUncertainty.ts",
+      "bytes": 10912,
+      "sha256": "c5f167bff81169c14504685cff2a1298c04def09a3b71ab5f0dd9d9c16be10bd"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsDesign.ts",
+      "bytes": 10026,
+      "sha256": "3a0df9e04e3e956daf1299cb3bc1b82a6e4503c24d5c25c2a6e4ea56b46405a6"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsEconomics.ts",
+      "bytes": 6072,
+      "sha256": "ddc0bbbe891d1edad04f4c0eb4bbb4de3af273cd7174b611505dddcc25402565"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsExpert.ts",
+      "bytes": 13634,
+      "sha256": "346f6957ce9343bcb090e5a78e62106f8b05d683e2b4a51dfe489f82d739dcb9"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsForecasting.ts",
+      "bytes": 20538,
+      "sha256": "35dadff99231121b786642427e96aac9f70a54e0aecde45a3d4d64c2fb2b3873"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsFraming.ts",
+      "bytes": 11378,
+      "sha256": "9c4bf11867007f148204a44c5b86ed4ce32a307c7793e1d40180b0c60bbc9f1e"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsGeospatial.ts",
+      "bytes": 6458,
+      "sha256": "dd5f0fdd057c0f90663fcd20627ffb4c47615076dd6830260799c5dd45abfc2d"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsHistorical.ts",
+      "bytes": 16315,
+      "sha256": "06ed6f92180a3cb6c37721ddf78952d1c818848bc5a67f1f30c7871c15ea35e0"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsIntelligence.ts",
+      "bytes": 16468,
+      "sha256": "7de1359abed573153b51536f2b12852884af329e4e244084215e0ee19fe93f86"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsIntelligenceCore.ts",
+      "bytes": 15441,
+      "sha256": "99b0bd2d54107bb7d8480b8087eb9a69d7a609e3ae598d2ce2ded7d18c43ceb4"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsLanguageMedia.ts",
+      "bytes": 15043,
+      "sha256": "bcb863c92789c7baabf4a404c396833cef55df69d65f442ed2b6896cc4615a77"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsLegal.ts",
+      "bytes": 5295,
+      "sha256": "b68651bc059e20c085102ded96e895781476a1d5666fb34631be258a16fdb6c4"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsMCDA.ts",
+      "bytes": 12212,
+      "sha256": "b1e67a5fd1b88592cbdd12657584e4535d78e8b365da84fa7f036da99e575c2e"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsNetworks.ts",
+      "bytes": 13321,
+      "sha256": "ea01452c97c28b07028b03358ac726427593a72632af63f9446660f9ac35fd92"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsOperationsResearch.ts",
+      "bytes": 5425,
+      "sha256": "da8f71aee36eb3499a3c354ad33903a16175e95844b0e04c7b26823eef6da693"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsPolicy.ts",
+      "bytes": 5465,
+      "sha256": "e48fd7906ba66ec0dd6459b60c40de699a64a1c82e67ccf46daabda620cd5635"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsQualitative.ts",
+      "bytes": 9532,
+      "sha256": "85495cc811f793a220580b150827429cfb876bca2ff2b9364e7c864d0e41e626"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsQuality.ts",
+      "bytes": 8778,
+      "sha256": "09fcea205bd50b3cf0434514b77c30048f43ddc16350885e8c3b35bdaf7d956e"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsQuantitative.ts",
+      "bytes": 11094,
+      "sha256": "0f6a08f25c9a8696404d314a614f30df37280d76c6193690fc043b8275846575"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsResearchSynthesis.ts",
+      "bytes": 10822,
+      "sha256": "6b8b5b57650b4fea9eba240063e2c535bd0e2931fb4eba2a7d939bbb1f87f658"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsSafety.ts",
+      "bytes": 13340,
+      "sha256": "581d2c2c8a3419054c2fc947b230fc9c4a5b054fdb0e98942c892b41bb841d71"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsSecurity.ts",
+      "bytes": 12447,
+      "sha256": "5804e94c2d969a4b1682738f6f81d9edd610b47dbbc248f73ea52aaf7c447bdc"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsSystemsDynamics.ts",
+      "bytes": 12132,
+      "sha256": "6378477ee7ebe54e10c33a8207ccb679897f71839946d8a8ce7d630ad4e29b19"
+    },
+    {
+      "path": "src/domain/techniquesCatalogWorkflowsTheoryDerived.ts",
+      "bytes": 24801,
+      "sha256": "b6663dc0a7eeb4bbbf4d6304f673b522d2ac38a04a7530585b80cb2b8fb90a89"
+    },
+    {
+      "path": "src/domain/techniques.ts",
+      "bytes": 14566,
+      "sha256": "fcb0aae14694e1b3f4d4557247db5f13f7e8d16fa30b8c9250297525f152607d"
+    },
+    {
+      "path": "src/domain/techniqueFamilies.ts",
+      "bytes": 4593,
+      "sha256": "b1cefb9365835bfd6b1a83c2aadc735ab1ec2b362dc5fd5ad3bc1aa12f8875ea"
+    },
+    {
+      "path": "src/domain/types.ts",
+      "bytes": 6508,
+      "sha256": "554c6ebc13fe7d8e7d7f0ee4b212bf49f8ef3c760a4183b1dd506517eda6ce37"
+    },
+    {
+      "path": "src/domain/techniquesExtended.ts",
+      "bytes": 20775,
+      "sha256": "8d083831612f68a020e1daa1a580a706e7e6da6488de38603b72c23a1162a4f3"
+    },
+    {
+      "path": "src/domain/techniquesInterdisciplinary.ts",
+      "bytes": 26546,
+      "sha256": "79939e057e73b1d62ae22d5435c0dbeb97ae24d01141d5a393541034107ea5c4"
+    },
+    {
+      "path": "src/domain/techniquesHumanities.ts",
+      "bytes": 23862,
+      "sha256": "bdcf96e049aca9e7fa4f1e8179b70ae8eb3fd6ea095514ce4265d0472974a43f"
+    }
+  ]
+}

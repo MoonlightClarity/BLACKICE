@@ -1,0 +1,31 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "scope": "source-publication",
+  "version": "2.33.5",
+  "checkedAt": "2026-10-21T16:18:53.742Z",
+  "platform": "win32",
+  "node": "v24.13.0",
+  "appFingerprint": "c0d7546d5c940c933c15398d0c4c83d6767636bc5b4342c899966e75cd9f2fd5",
+  "tests": {
+    "files": 296,
+    "total": 3979,
+    "passed": 3975,
+    "failed": 0,
+    "cancelled": 0,
+    "optionalSkipped": 4,
+    "requiredSkipped": 0,
+    "exitCode": 0
+  },
+  "fingerprintUnchanged": true,
+  "testLogSha256": "2eea647ff863b99d242722b45d6a6e95bc86749fe2cd7910e122f632b1f504a9",
+  "optionalIntegrations": [
+    "Electron browser sign-in and local storage across restart",
+    "Electron lazy tab restoration",
+    "Native Windows accessibility fixture",
+    "Headless Firefox fixture"
+  ],
+  "license": "Apache-2.0",
+  "binaryInstallerVerified": false,
+  "prolongedSoakCompleted": false
+}
