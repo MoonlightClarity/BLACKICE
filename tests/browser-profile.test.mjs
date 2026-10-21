@@ -102,14 +102,60 @@ test('legacy v1 snapshot records remain usable and refresh into compact v2 witho
   const legacySnapshot = created.id + '-12345678-1234-4234-8234-123456789012';
   const legacyRoot = path.join(f.store.root, 'snapshots', legacySnapshot), legacyData = path.join(legacyRoot, 'user-data');
   await fs.mkdir(legacyRoot, { recursive: true }); await fs.rename(created.userDataDir, legacyData);
-  await fs.rename(created.manifestPath, path.join(legacyRoot, 'manifest.json'));
+  const manifest = JSON.parse(await fs.readFile(created.manifestPath, 'utf8'));
+  await fs.unlink(created.manifestPath);
   const legacy = { ...created, version: 1, snapshot: legacySnapshot, userDataDir: legacyData }; delete legacy.manifestPath;
+  await fs.writeFile(path.join(legacyRoot, 'manifest.json'), JSON.stringify({ ...legacy, entries: manifest.entries }));
   await fs.writeFile(path.join(f.store.importsDir, created.id + '.json'), JSON.stringify(legacy));
   assert.equal((await f.store.status(created.id)).available, true);
+  assert.equal(await f.store.ownsSnapshot(created.id, legacyData), true);
+  assert.equal(await f.store.ownsSnapshot('browser-profile-0000000000000000', legacyData), false);
   assert.ok((await f.store.connection(created.id)).args.includes('--userDataDir=' + legacyData));
   const compact = await f.store.import(f.input);
   assert.equal(compact.version, 2); assert.equal(compact.id, created.id); assert.equal(compact.previousSnapshot, legacyData); assert.equal(await exists(legacyData), true);
   assert.equal(compact.userDataDir, path.join(f.dataDir, 'bp', compact.snapshot));
+  assert.equal(await f.store.ownsSnapshot(created.id, legacyData), true);
+  assert.equal(await f.store.ownsSnapshot(created.id, compact.userDataDir), true);
+  await fs.writeFile(path.join(legacyRoot, 'manifest.json'), JSON.stringify({ ...legacy, userDataDir: compact.userDataDir }));
+  assert.equal(await f.store.ownsSnapshot(created.id, legacyData), false);
+});
+
+test('snapshot ownership reads only exact manifests and recognizes retained revisions of the same import', async t => {
+  const f = await fixture(t), first = await f.store.import(f.input), second = await f.store.import(f.input);
+  const other = await f.store.import({ ...f.input, profileDirectory: 'Default' }), reads = [];
+  f.store.io = { ...fs, async readFile(file, ...args) {
+    assert.ok([first.manifestPath, second.manifestPath, other.manifestPath].includes(file), `Unexpected browser-data read: ${file}`);
+    reads.push(file); return fs.readFile(file, ...args);
+  } };
+  assert.equal(await f.store.ownsSnapshot(first.id, first.userDataDir), true);
+  assert.equal(await f.store.ownsSnapshot(first.id, second.userDataDir), true);
+  assert.equal(await f.store.ownsSnapshot(other.id, other.userDataDir), true);
+  assert.equal(await f.store.ownsSnapshot(first.id, other.userDataDir), false);
+  assert.equal(await f.store.ownsSnapshot(other.id, first.userDataDir), false);
+  assert.equal(await f.store.ownsSnapshot(first.id, f.userDataDir), false);
+  assert.equal(await f.store.ownsSnapshot('../invalid-id', first.userDataDir), false);
+  assert.equal(await f.store.ownsSnapshot(first.id, path.join(first.userDataDir, 'Profile 2')), false);
+  assert.deepEqual(reads, [first.manifestPath, second.manifestPath, other.manifestPath]);
+});
+
+test('snapshot ownership rejects missing, malformed, mismatched, and redirected manifest metadata', async t => {
+  const f = await fixture(t), record = await f.store.import(f.input), original = await fs.readFile(record.manifestPath, 'utf8'), manifest = JSON.parse(original);
+  for (const modified of [
+    { ...manifest, id: 'browser-profile-0000000000000000' },
+    { ...manifest, snapshot: '0'.repeat(24) },
+    { ...manifest, userDataDir: f.userDataDir },
+    { ...manifest, manifestPath: path.join(f.root, 'other.json') },
+    { ...manifest, source: { ...manifest.source, userDataDir: path.join(f.root, 'different-source') } },
+  ]) {
+    await fs.writeFile(record.manifestPath, JSON.stringify(modified));
+    assert.equal(await f.store.ownsSnapshot(record.id, record.userDataDir), false);
+  }
+  await fs.writeFile(record.manifestPath, '{');
+  assert.equal(await f.store.ownsSnapshot(record.id, record.userDataDir), false);
+  await fs.unlink(record.manifestPath);
+  assert.equal(await f.store.ownsSnapshot(record.id, record.userDataDir), false);
+  await fs.writeFile(record.manifestPath, original);
+  assert.equal(await f.store.ownsSnapshot(record.id, record.userDataDir), true);
 });
 
 test('compact record validation keeps source identity, revision, runtime root and manifest ownership bound', async t => {

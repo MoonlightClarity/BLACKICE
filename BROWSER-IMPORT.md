@@ -75,7 +75,7 @@ Copying every relevant file does not prove that an account will remain signed in
 
 ### Library interface and tests
 
-`BrowserProfileStore` in `lib/browser-profile.mjs` exposes `init()`, `discover()`, `list()`, `status(id)`, `import({sourceId, signal})`, `connection(id, options)`, and `close()`. Explicit imports use `{browser, userDataDir, profileDirectory, executablePath, signal}`. `connection()` returns a normalized official MCP configuration without spawning a browser. The server, direct tools, and CLI share the resulting connection; there is no separate browser permission or per-action approval layer in this library.
+`BrowserProfileStore` in `lib/browser-profile.mjs` exposes `init()`, `discover()`, `list()`, `status(id)`, `import({sourceId, signal})`, `ownsSnapshot(id, userDataDir)`, `connection(id, options)`, and `close()`. Explicit imports use `{browser, userDataDir, profileDirectory, executablePath, signal}`. `ownsSnapshot()` validates the manifest of a current or retained revision without inspecting browser data; this lets a refreshed import reconnect under its stable connection ID. `connection()` returns a normalized official MCP configuration without spawning a browser. The server, direct tools, and CLI share the resulting connection; there is no separate browser permission or per-action approval layer in this library.
 
 Run the disposable unit fixtures with:
 

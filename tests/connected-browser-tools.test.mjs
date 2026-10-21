@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { DirectExecutionAPI, DIRECT_EXECUTION_SCOPES } from '../lib/direct-execution-api.mjs';
 import { createDirectConnectedBrowserTools, createDirectBrowserProfileTools } from '../lib/connected-browser-tools.mjs';
+import { BrowserProfileStore } from '../lib/browser-profile.mjs';
 
 const client = { id: 'native-browser-grant', label: 'ChatGPT', scopes: [...DIRECT_EXECUTION_SCOPES] };
 const success = value => ({ success: true, contentItems: [{ type: 'inputText', text: JSON.stringify(value) }] });
@@ -71,6 +72,30 @@ test('profile connection preserves conflicting or disabled settings and never tr
   manager.list = () => [config];
   await assert.rejects(execute({ importId: config.id }), { code: 'BROWSER_PROFILE_CONNECTION_UNVERIFIED' });
   assert.equal(connections, 1);
+});
+
+test('reimported compact profiles reconnect from an older owned revision without adopting another profile', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'blackice-profile-reconnect-'));
+  const userDataDir = path.join(root, 'source'), executablePath = path.join(root, 'synthetic-browser');
+  await mkdir(path.join(userDataDir, 'Profile 2'), { recursive: true }); await mkdir(path.join(userDataDir, 'Default'));
+  await writeFile(executablePath, 'synthetic executable; never launched');
+  await writeFile(path.join(userDataDir, 'Local State'), JSON.stringify({ profile: { info_cache: { 'Profile 2': { name: 'Selected' }, Default: { name: 'Other' } } } }));
+  await writeFile(path.join(userDataDir, 'Profile 2', 'Preferences'), '{}'); await writeFile(path.join(userDataDir, 'Default', 'Preferences'), '{}');
+  const profiles = await new BrowserProfileStore({ dataDir: path.join(root, 'data') }).init();
+  t.after(async () => { await profiles.close(); await rm(root, { recursive: true, force: true }); });
+  const input = { browser: 'chrome', userDataDir, executablePath, profileDirectory: 'Profile 2' };
+  let configured, saves = 0, connects = 0;
+  const manager = { list: () => configured ? [configured] : [], save: async value => { configured = value; saves++; }, connect: async () => { connects++; }, call: async () => ({ content: [{ type: 'text', text: 'Verified fixture page' }] }) };
+  const connect = createDirectBrowserProfileTools({ profiles, manager }).find(tool => tool.definition.name === 'blackice_profile_connect').execute;
+  const first = await profiles.import(input); await connect({ importId: first.id });
+  assert.ok(configured.args.includes('--userDataDir=' + first.userDataDir));
+  await profiles.import(input); // A refresh need not have been connected.
+  const latest = await profiles.import(input); await connect({ importId: first.id });
+  assert.ok(configured.args.includes('--userDataDir=' + latest.userDataDir)); assert.equal(saves, 2); assert.equal(connects, 2);
+  const other = await profiles.import({ ...input, profileDirectory: 'Default' });
+  configured = { ...configured, args: configured.args.map(arg => arg.startsWith('--userDataDir=') ? '--userDataDir=' + other.userDataDir : arg) };
+  await assert.rejects(connect({ importId: first.id }), { code: 'BROWSER_PROFILE_CONNECTION_CONFLICT' });
+  assert.equal(saves, 2); assert.equal(connects, 2);
 });
 
 test('host-owned tool time budgets cancel actual work and unlimited profile work remains explicitly cancellable', async t => {
