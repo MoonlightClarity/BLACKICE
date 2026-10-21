@@ -1,0 +1,166 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "scope": "windows-installer-release",
+  "version": "2.33.5",
+  "tag": "v2.33.5",
+  "checkedAt": "2026-10-21T16:56:31.480Z",
+  "passed": true,
+  "classification": "ready-for-public-release-unsigned",
+  "artifact": {
+    "sha256": "1dc370ae766dea12996819e259846cab7df5efe1bfc821f71a8b90ece3aaa59d",
+    "bytes": 111436476,
+    "signingStatus": "unsigned",
+    "manifestSha256": "c757d2944279d6b6f575ae751d3d13ea393098edf3e1e4611e8b16ce03407d3b",
+    "name": "Blackice-2.33.5-Setup.exe"
+  },
+  "appFingerprint": "c0d7546d5c940c933c15398d0c4c83d6767636bc5b4342c899966e75cd9f2fd5",
+  "builtFromCommit": "be128867b10b5cce1ca26aea96f2d41a99d360ed",
+  "testedSourceCommit": "7268622c045471086bfc2ff3b35c9e4845c45a63",
+  "workflow": {
+    "url": "https://github.com/MoonlightClarity/BLACKICE/actions/runs/39639162142",
+    "runId": "39639162142",
+    "attempt": "1",
+    "runner": "windows-2022",
+    "conclusion": "success"
+  },
+  "sourceTests": {
+    "receiptPath": "verification/windows-2026-10-21.json",
+    "receiptSha256": "8b7f5768e8c60e7f4be22c5901c63b3fa5738af1debbe6c9114538c4d00329d6",
+    "checkedAt": "2026-10-21T16:18:53.742Z",
+    "node": "v24.13.0",
+    "files": 296,
+    "total": 3979,
+    "passed": 3975,
+    "failed": 0,
+    "cancelled": 0,
+    "optionalSkipped": 4,
+    "requiredSkipped": 0,
+    "exitCode": 0,
+    "rerunInInstallerWorkflow": false
+  },
+  "installedIntegrity": {
+    "filesVerified": 354,
+    "sourceInstalledMatch": true,
+    "privateFilesRejected": 0,
+    "licenseNoticesVerified": true,
+    "shortcutsVerified": [
+      "Desktop",
+      "Start menu"
+    ],
+    "registrationVerified": true
+  },
+  "nativeChecks": {
+    "startup": true,
+    "restart": true,
+    "oldSessionRejected": true,
+    "windowVisible": true,
+    "shutdown": true,
+    "forcedTerminationUsed": false,
+    "stopFailureEvents": 0
+  },
+  "profileBackup": {
+    "passed": true,
+    "verified": true,
+    "restoreVerified": true,
+    "realWindowsBinding": true,
+    "filesVerified": 77,
+    "bytesVerified": 299601,
+    "manifestSha256": "167ae33757c1d22a03dbbd789b6eb2cc0ad737bbc0fe30efcd9ea435c108861e",
+    "previousProfilePreserved": true,
+    "cacheExcluded": true,
+    "corruptionRejected": true
+  },
+  "diagnostics": {
+    "passed": true,
+    "redactionVerified": true,
+    "credentialLeakScanPassed": true,
+    "operation": "installed-authenticated-http-export",
+    "fixtureBoundaries": [
+      "provider",
+      "desktop",
+      "browser"
+    ],
+    "exportSha256": "8a9b320a008c42eb956f94e49fcd605aa4614be3e96a7c92813bbf5125b5f0d5",
+    "exportBytes": 1126,
+    "eventsVerified": 4,
+    "logSegmentsScanned": 1,
+    "canaryClasses": [
+      "API key",
+      "password",
+      "authorization",
+      "cookie",
+      "URL",
+      "path",
+      "prompt",
+      "error"
+    ],
+    "modelCalls": 0
+  },
+  "uninstallation": {
+    "attempted": true,
+    "passed": true,
+    "forcedTerminationUsed": false,
+    "uninstall": {
+      "waitMode": "Start-Process -Wait (process tree)",
+      "exitCode": 0,
+      "elapsedMilliseconds": 1266
+    },
+    "filesRemaining": 0,
+    "registrationsRemaining": 0,
+    "shortcutsRemaining": 0,
+    "profileSentinelPreserved": true,
+    "profileSentinelSha256": "ec20aa0e24b9dfe1969ec7993e1c7820e0390aea4a44f8e6e0de8bb86b35a38b"
+  },
+  "limits": {
+    "signingStatus": "unsigned",
+    "publisherVerified": false,
+    "prolongedSoakCompleted": false,
+    "externalProviderCallsInInstallerWorkflow": 0,
+    "optionalIntegrationsSkippedInSourceSuite": 4
+  },
+  "evidence": [
+    {
+      "name": "blackice-github-validation.json",
+      "url": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.33.5/blackice-github-validation.json",
+      "bytes": 521,
+      "sha256": "09edbeb5f21540b718a09f114c4ef9d17e0cb2819ffece6635421f15ec377b09"
+    },
+    {
+      "name": "blackice-public-readiness.json",
+      "url": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.33.5/blackice-public-readiness.json",
+      "bytes": 2358,
+      "sha256": "3052f23ac4419bd99172ce4c4c3b1610c38c35f5ed3994febc1e97aebb96c930"
+    },
+    {
+      "name": "blackice-release-receipts.json",
+      "url": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.33.5/blackice-release-receipts.json",
+      "bytes": 2639,
+      "sha256": "9395be3e7fb87a438bc8f02e4f93a34c8b9af0b177d1cb8635043ae06afa9d21"
+    },
+    {
+      "name": "blackice-runtime-integrity.json",
+      "url": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.33.5/blackice-runtime-integrity.json",
+      "bytes": 3498,
+      "sha256": "c68d6e38e6efad2140bff825e9ba3e9a21890ad18bcf2394d693358a2697ee6e"
+    },
+    {
+      "name": "blackice-runtime-validation.json",
+      "url": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.33.5/blackice-runtime-validation.json",
+      "bytes": 2891,
+      "sha256": "649cff7496ffd1453d1a10aa5a848d3fd05a3ddf2cd77a75ce460e0f8386a68b"
+    },
+    {
+      "name": "blackice-source-test-provenance.json",
+      "url": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.33.5/blackice-source-test-provenance.json",
+      "bytes": 785,
+      "sha256": "adeba68e43398144abadc607f86b46c2d0a5673b7e2d422fae00c69c3b5bf3fa"
+    },
+    {
+      "name": "blackice-windows-install-validation.json",
+      "url": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.33.5/blackice-windows-install-validation.json",
+      "bytes": 2996,
+      "sha256": "77dee50338163fef922dbdbea6327e295e5ab5eee514e2c7c51a6971bc7765b1"
+    }
+  ]
+}

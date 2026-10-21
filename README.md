@@ -9,11 +9,15 @@ BLACKICE is a Windows app that lets AI assistants work with your files, use webs
 - **Automate repeat work:** Queue tasks or schedule them to run while BLACKICE is open.
 - **Follow the work:** See actions, results, errors, and file changes as they happen.
 
+**[Download BLACKICE 2.33.5 for Windows x64](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.33.5/Blackice-2.33.5-Setup.exe)** · [Release notes and checksums](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.33.5)
+
+The installer is unsigned; Windows has not verified a publisher identity for it.
+
 See [Start](#start) to run it and [Use BLACKICE from ChatGPT](#use-blackice-from-chatgpt) to connect it.
 
 BLACKICE's original source is available under the [Apache License 2.0](LICENSE). Bundled third-party components retain the licenses and attribution described in [Third-party notices](THIRD-PARTY-NOTICES.md).
 
-[Performance and reliability verification](PERFORMANCE.md) records the measured improvements, completed Windows checks, and remaining limits of this update. This source publication does not establish verification of a new Windows installer; [Signing and release](SIGNING-AND-RELEASE.md) defines the checks for each exact installer candidate.
+[Performance and reliability verification](PERFORMANCE.md) records the measured improvements and source tests. [Exact installer verification](verification/windows-installer-2.33.5.json) and the [Windows release checks](https://github.com/MoonlightClarity/BLACKICE/actions/runs/39639162142) cover installation, packaged files, native startup and restart, clean shutdown, backup/restore, diagnostics, and uninstallation. A prolonged production soak has not been performed. [Signing and release](SIGNING-AND-RELEASE.md) defines the release checks.
 
 ## Saved passwords and browser copying
 
@@ -349,11 +353,11 @@ Earlier end-to-end dogfooding built Nightboard, a playable chess game with origi
 
 ## Start
 
-Run the verified **AgentDesk-2.19.1-Setup.exe** for Windows. Setup installs Agent Desk for your Windows account, adds the **Agent Desk** Start Menu shortcut, and registers it in **Settings → Apps → Installed apps**. Program files are under `%LOCALAPPDATA%\Programs\Agent Desk` and the executable is `Agent Desk.exe`. Saved data deliberately stays in `%APPDATA%\Relay`.
+Download [**Blackice-2.33.5-Setup.exe**](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.33.5/Blackice-2.33.5-Setup.exe) from the [v2.33.5 release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.33.5) and compare its SHA-256 with the published checksum. If updating, create a profile backup through **Recovery & support** and quit BLACKICE first.
 
-Use the Setup installer again to reinstall or update the registered program. Uninstall it through **Installed apps**; your saved chats, settings and workspace remain in `%APPDATA%\Relay`. Back up that profile through **Recovery & support** when needed.
+Run Setup to install for your Windows account. It adds **BLACKICE** shortcuts to the Start menu and Desktop and registers the program under **Settings → Apps → Installed apps**. The executable is `BLACKICE.exe`. Saved chats, settings, and workspace data remain in `%APPDATA%\Relay`.
 
-Older `Relay-Desktop-Windows` archives and `Install-Relay.ps1` belong to the previous product identity. Use Agent Desk Setup for updates; do not reinstall a legacy Relay build over Agent Desk.
+Use the current Setup installer to reinstall or update. Uninstall through **Installed apps**; saved profile data is preserved. Older `Relay-Desktop-Windows` archives and `Install-Relay.ps1` are legacy tools and should not overwrite an installation managed by Setup.
 
 Use your signed-in Codex account, or click **Models** in the top bar (**Ctrl+M**). Choose OpenRouter, OpenAI, Anthropic, Ollama, LM Studio, or **Custom API**. Enter your key if needed, choose **Find models**, search and select models, then **Save models**. Choose a model under **Default model** and click **Use as default**. The default is saved across restarts; the conversation picker changes only that chat. Existing chats keep their last actual model unless you change it. Provider charges and Codex usage remain with their respective accounts.
 
