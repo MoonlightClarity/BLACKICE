@@ -1,6 +1,15 @@
 # BLACKICE 2.33.5
 
-BLACKICE is a Windows desktop agent workspace for local files, commands, contained browsing, and plans. It exposes direct tools to ChatGPT and can also run configured model providers. See [Start](#start) to run it and [Use BLACKICE from ChatGPT](#use-blackice-from-chatgpt) to connect it.
+BLACKICE is a Windows app that lets AI assistants work with your files, use websites, and carry out tasks on your computer. Use it from ChatGPT, or choose a supported online or local AI model inside the app.
+
+- **Work with files:** Read documents, edit files, create results, and run commands.
+- **Use websites:** Open pages, fill in forms, upload files, and keep sign-ins in the built-in browser.
+- **Tackle larger jobs:** Make step-by-step plans, track progress, and split work among several AI assistants.
+- **Keep useful context:** Save conversations, notes, instructions, and reusable skills.
+- **Automate repeat work:** Queue tasks or schedule them to run while BLACKICE is open.
+- **Follow the work:** See actions, results, errors, and file changes as they happen.
+
+See [Start](#start) to run it and [Use BLACKICE from ChatGPT](#use-blackice-from-chatgpt) to connect it.
 
 BLACKICE's original source is available under the [Apache License 2.0](LICENSE). Bundled third-party components retain the licenses and attribution described in [Third-party notices](THIRD-PARTY-NOTICES.md).
 
