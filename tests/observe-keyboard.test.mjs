@@ -75,6 +75,84 @@ test('focused sign-in shows the page before optional tools and keeps long OAuth 
   assert.equal(f.mount.classList.contains('observe-browser-focused'), false);
 });
 
+test('a popup opened by the current preview click is presented and closes back to its parent', async t => {
+  const f = await fixture(t, { focusPage: true, hook(call, { state, receipt }) {
+    if (call.body?.action !== 'click') return;
+    state.tabs.push({ ...page('signin'), parentTabId: 'one' }); state.activeTab = 'signin';
+    return receipt('one');
+  } });
+  await f.point(); await f.poll(1000);
+  assert.equal(f.$('[role="tab"][aria-selected="true"]').dataset.tabId, 'signin');
+  assert.equal(f.calls.filter(call => call.body?.action === 'screenshot').at(-1).body.tabId, 'signin');
+  assert.equal(f.$('#observe-browser-url').value, 'https://signin.example.test/');
+  assert.equal(f.$('#observe-browser-input-help').dataset.active, 'false', 'the old document cannot keep receiving keyboard input');
+  assert.equal(f.mount.classList.contains('observe-browser-focused'), true, 'the sign-in remains in the visible focused page surface');
+  f.state.activeTab = 'two'; await f.poll(1000);
+  assert.equal(f.$('[role="tab"][aria-selected="true"]').dataset.tabId, 'signin', 'the initial exact-tab handoff must not pin the parent again');
+  f.state.tabs.splice(f.state.tabs.findIndex(tab => tab.tabId === 'signin'), 1); await f.poll(1000);
+  assert.equal(f.$('[role="tab"][aria-selected="true"]').dataset.tabId, 'one', 'closing sign-in returns to its opener instead of an unrelated neighbor');
+  assert.equal(f.calls.filter(call => call.body?.action === 'click').length, 1);
+  assert.equal(f.calls.filter(call => call.body?.action === 'screenshot').at(-1).body.tabId, 'one');
+});
+
+test('popup presentation ignores existing children and newly opened children of another page', async t => {
+  const f = await fixture(t, { focusPage: true });
+  f.state.tabs.push({ ...page('existing'), parentTabId: 'one' }); await f.poll();
+  await f.point();
+  f.state.tabs.push({ ...page('unrelated'), parentTabId: 'two' }); f.state.activeTab = 'unrelated'; await f.poll(1000);
+  assert.equal(f.$('[role="tab"][aria-selected="true"]').dataset.tabId, 'one');
+  f.state.activeTab = 'existing'; await f.poll(1000);
+  assert.equal(f.$('[role="tab"][aria-selected="true"]').dataset.tabId, 'one');
+  f.state.tabs.push({ ...page('signin'), parentTabId: 'one' }); await f.poll(1000);
+  assert.equal(f.$('[role="tab"][aria-selected="true"]').dataset.tabId, 'signin');
+});
+
+test('a child observed before a queued click dispatches is not mistaken for its popup', async t => {
+  const f = await fixture(t), gate = deferred();
+  f.hook(call => call.route === '/api/browser/status' ? gate.promise : undefined); await f.poll();
+  await f.point();
+  f.state.tabs.push({ ...page('existing'), parentTabId: 'one' }); f.state.activeTab = 'existing';
+  f.hook(); gate.resolve(structuredClone(f.state)); await f.settle(); await f.poll(1000);
+  assert.equal(f.calls.filter(call => call.body?.action === 'click').length, 1);
+  assert.equal(f.$('[role="tab"][aria-selected="true"]').dataset.tabId, 'one');
+});
+
+test('a later manual tab selection cancels popup presentation from an unfinished click', async t => {
+  const f = await fixture(t), gate = deferred();
+  f.hook(call => call.body?.action === 'click' ? gate.promise : undefined);
+  const clicking = f.point(); await tick();
+  await f.click('[data-observe-browser="tab"][data-tab-id="two"]');
+  f.state.tabs.push({ ...page('signin'), parentTabId: 'one' }); f.state.activeTab = 'signin';
+  f.hook(); gate.resolve(f.receipt('one')); await clicking; await f.poll(1000);
+  assert.equal(f.$('[role="tab"][aria-selected="true"]').dataset.tabId, 'two');
+  assert.equal(f.calls.filter(call => call.body?.action === 'screenshot').at(-1).body.tabId, 'two');
+});
+
+test('an old completed gesture cannot make a later background popup replace its pinned page', async t => {
+  const f = await fixture(t); await f.point();
+  f.state.tabs.push({ ...page('late'), parentTabId: 'one' }); f.state.activeTab = 'late'; await f.poll(10001);
+  assert.equal(f.$('[role="tab"][aria-selected="true"]').dataset.tabId, 'one');
+});
+
+test('popup discovery survives a slow pending activation and supports nested sign-in returning to a surviving ancestor', async t => {
+  const f = await fixture(t, { focusPage: true }), gate = deferred();
+  await f.point();
+  f.hook(call => call.body?.action === 'press' ? gate.promise : undefined);
+  await f.key('Enter'); await tick(); await f.poll(12000);
+  f.state.tabs.push({ ...page('signin'), parentTabId: 'one' }); f.state.activeTab = 'signin';
+  f.hook(); gate.resolve(f.receipt('one')); await f.settle(); await f.poll(1000);
+  assert.equal(f.$('[role="tab"][aria-selected="true"]').dataset.tabId, 'signin');
+  f.hook((call, { state, receipt }) => {
+    if (call.body?.action !== 'click') return;
+    state.tabs.push({ ...page('challenge'), parentTabId: 'signin' }); state.activeTab = 'challenge'; return receipt('signin');
+  });
+  await f.point(); await f.poll(1000);
+  assert.equal(f.$('[role="tab"][aria-selected="true"]').dataset.tabId, 'challenge');
+  f.state.tabs.splice(f.state.tabs.findIndex(tab => tab.tabId === 'signin'), 1); await f.poll(1000);
+  f.state.tabs.splice(f.state.tabs.findIndex(tab => tab.tabId === 'challenge'), 1); f.state.activeTab = 'two'; await f.poll(1000);
+  assert.equal(f.$('[role="tab"][aria-selected="true"]').dataset.tabId, 'one');
+});
+
 test('the focused ChatGPT conversation stays on its exact tab and returns to connection settings without a browser action', async t => {
   let settings = 0;
   const f = await fixture(t, { focusPage: true, chatGPTConversation: true, onOpenConnectionSettings() { settings++; } });

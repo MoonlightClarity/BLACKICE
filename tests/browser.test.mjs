@@ -23,15 +23,14 @@ test('focused typing requires explicit contained ownership and a complete docume
   await browser.perform(valid, { source: 'user' }); assert.deepEqual(calls, [valid]);
 });
 
-test('dialog decisions are local-only, exact and absent from the agent tool catalog', async t => {
+test('tools resolve observed dialogs with the same exact identity checks as local input', async t => {
   const calls = [], browser = fixtureWorkspace({ driver: { status: () => ({ available: true, contained: true }), perform: async (args, options) => { calls.push({ args, source: options.source }); return { receipt: { decided: true } }; } } });
   t.after(() => browser.close());
   const value = { action: 'interaction', browser: 'relay', tabId: 'owned-tab', interactionId: 'browser_input_11111111-1111-4111-8111-111111111111', expectedUrl: 'https://example.test/', expectedDocumentId: 'owned-tab:2', decision: 'dismiss' };
-  assert.equal(BROWSER_TOOL.inputSchema.properties.action.enum.includes('interaction'), false);
-  await assert.rejects(browser.perform(value), { code: 'BROWSER_INTERACTION_USER_ONLY' });
+  assert.equal(BROWSER_TOOL.inputSchema.properties.action.enum.includes('interaction'), true);
   for (const extra of [{ browser: 'firefox' }, { expectedUrl: undefined }, { expectedDocumentId: undefined }, { interactionId: 'guessed' }, { decision: 'yes' }, { source: 'user' }, { promptText: 'x'.repeat(4097) }]) await assert.rejects(browser.perform({ ...value, ...extra }, { source: 'user' }), { code: 'BROWSER_VALIDATION' });
-  const result = await createBrowserToolHandler({ browser })({ name: 'relay_browser', arguments: value }); assert.equal(result.success, false); assert.equal(calls.length, 0);
-  await browser.perform(value, { source: 'user' }); assert.deepEqual(calls, [{ args: value, source: 'user' }]);
+  const result = await createBrowserToolHandler({ browser })({ name: 'relay_browser', arguments: value }); assert.equal(result.success, true); assert.equal(calls.length, 1);
+  await browser.perform(value, { source: 'user' }); assert.deepEqual(calls, [{ args: value, source: 'agent' }, { args: value, source: 'user' }]);
 });
 
 test('chooser uploads require a fresh document and preserve only the host upload validator across the queue', async t => {

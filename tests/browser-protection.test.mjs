@@ -13,21 +13,39 @@ function bundle(texts = [rules.join('\n'), '[Adblock Plus 2.0]\n||metrics.fixtur
   const bytes = Buffer.from(texts.join('\n'));
   return { schema: 1, encoding: 'gzip-base64', fetchedAt: '2026-10-19T00:00:00.000Z', sources: PROTECTION_SOURCES.map((source, index) => ({ ...source, bytes: Buffer.byteLength(texts[index]), sha256: sha(texts[index]) })), sha256: sha(bytes), bytes: bytes.length, data: gzipSync(bytes).toString('base64') };
 }
-async function fixture(t, { bundled = false, saved, cache, ...options } = {}) {
+async function fixture(t, { bundled = false, enabled = false, saved, cache, ...options } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-browser-protection-')), bundledFile = path.join(directory, 'owned-bundle.json');
   await writeFile(bundledFile, JSON.stringify(bundle()));
   if (saved !== undefined) await writeFile(path.join(directory, 'browser-protection.json'), typeof saved === 'string' ? saved : JSON.stringify(saved));
   if (cache !== undefined) await writeFile(path.join(directory, 'browser-protection-filters.json'), typeof cache === 'string' ? cache : JSON.stringify(cache));
   const protection = new BrowserProtection({ dataDir: directory, ...(bundled ? {} : { bundledFile, minimumRules: 1 }), ...options });
   t.after(async () => { await protection.close(); assert.match(path.basename(directory), /^blackice-browser-protection-/); await rm(directory, { recursive: true, force: true }); });
-  await protection.init(); return { protection, directory, bundledFile };
+  await protection.init(); if (enabled) await protection.configure({ action: 'global', enabled: true }); return { protection, directory, bundledFile };
 }
 const ad = (protection, extra = {}) => protection.match({ url: 'https://ads.fixture.test/ad.js', sourceUrl: 'https://article.fixture.test/story', type: 'script', tabId: 'observed', ...extra });
 const textResponse = text => new Response(text, { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 
+test('new browsing profiles are unfiltered until an explicit filtering choice is saved', async t => {
+  const { protection, directory } = await fixture(t);
+  assert.equal(protection.status().ready, true); assert.equal(protection.status().enabled, false); assert.equal(protection.status().preferenceSource, 'default');
+  assert.deepEqual(ad(protection), { cancel: false, reason: 'disabled' }); assert.equal(protection.status().blockedRequests, 0);
+  await assert.rejects(access(path.join(directory, 'browser-protection.json')), { code: 'ENOENT' });
+  await protection.configure({ action: 'global', enabled: true }); assert.equal(ad(protection).cancel, true);
+});
+
+test('legacy implicit enables become unfiltered while explicit current choices and site exemptions survive reload', async t => {
+  const origin = 'https://article.fixture.test';
+  for (const [schema, enabled, expected, preferenceSource] of [[1, true, false, 'legacy-default-disabled'], [1, false, false, 'saved'], [2, true, true, 'saved'], [2, false, false, 'saved']]) {
+    const saved = { schema, enabled, exemptOrigins: [origin] }, { protection, directory } = await fixture(t, { saved });
+    assert.equal(protection.status().enabled, expected); assert.equal(protection.status().preferenceSource, preferenceSource); assert.deepEqual(protection.status().exemptOrigins, [origin]);
+    assert.equal(ad(protection).cancel, false); assert.equal(ad(protection, { sourceUrl: 'https://other.fixture.test/' }).cancel, expected);
+    assert.deepEqual(JSON.parse(await readFile(path.join(directory, 'browser-protection.json'), 'utf8')), saved, 'Loading preserves the original preferences until an explicit change.');
+  }
+});
+
 test('the pinned production Ghostery engine loads bundled network rules and blocks real ad and tracker URLs', async t => {
   let requests = 0;
-  const { protection } = await fixture(t, { bundled: true, fetch: () => { requests++; assert.fail('Startup must use the verified bundled filters without network access.'); } });
+  const { protection } = await fixture(t, { bundled: true, enabled: true, fetch: () => { requests++; assert.fail('Startup must use the verified bundled filters without network access.'); } });
   const status = protection.status(); assert.equal(status.ready, true); assert.equal(status.engineVersion, '2.20.1'); assert.equal(status.mode, 'network-only'); assert.ok(status.filterCount > 100000); assert.equal(status.source, 'bundled'); assert.equal(requests, 0);
   for (const url of ['https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js', 'https://www.google-analytics.com/analytics.js']) assert.equal(protection.match({ url, sourceUrl: 'https://example.com/article', type: 'script', tabId: 'real-rules' }).cancel, true, url);
   assert.equal(protection.match({ url: 'https://example.com/article.png', sourceUrl: 'https://example.com/article', type: 'image', tabId: 'real-rules' }).cancel, false);
@@ -35,7 +53,7 @@ test('the pinned production Ghostery engine loads bundled network rules and bloc
 });
 
 test('actual network matching respects request types and filter exceptions without logging destinations', async t => {
-  const { protection } = await fixture(t);
+  const { protection } = await fixture(t, { enabled: true });
   assert.equal(ad(protection).cancel, true); assert.equal(ad(protection, { type: 'image' }).cancel, false); assert.equal(ad(protection, { url: 'https://ads.fixture.test/allowed.js' }).cancel, false);
   assert.equal(ad(protection, { url: 'wss://tracker.fixture.test/socket', type: 'webSocket' }).cancel, true);
   assert.equal(protection.status().blockedRequests, 2); assert.equal(protection.tabStatus('observed', 'https://article.fixture.test/story').blockedRequests, 2);
@@ -44,7 +62,7 @@ test('actual network matching respects request types and filter exceptions witho
 });
 
 test('a site exception is bound to the observed current origin and never borrowed by another origin or unattributed worker', async t => {
-  const { protection } = await fixture(t), origin = 'https://article.fixture.test';
+  const { protection } = await fixture(t, { enabled: true }), origin = 'https://article.fixture.test';
   await protection.configure({ action: 'site', tabId: 'observed', origin, enabled: false }, { currentOrigin: id => id === 'observed' ? origin : null });
   assert.equal(ad(protection).cancel, false); assert.equal(ad(protection, { sourceUrl: 'http://article.fixture.test/story' }).cancel, true); assert.equal(ad(protection, { sourceUrl: 'https://article.fixture.test:8443/story' }).cancel, true);
   assert.equal(ad(protection, { tabId: undefined }).cancel, true); assert.equal(ad(protection, { type: 'mainFrame', url: 'https://tracker.fixture.test/new-page' }).cancel, true);
@@ -62,7 +80,7 @@ test('global and exact-site choices persist and disabling globally retains truth
   assert.equal(restored.status().enabled, false); assert.deepEqual(restored.status().exemptOrigins, [origin]);
   await restored.configure({ action: 'global', enabled: true }); assert.equal(ad(restored).cancel, false); assert.equal(ad(restored, { sourceUrl: 'https://other.fixture.test/' }).cancel, true);
   await restored.configure({ action: 'site', tabId: 'observed', origin, enabled: true }, { currentOrigin: () => origin }); assert.equal(ad(restored).cancel, true);
-  const saved = JSON.parse(await readFile(path.join(directory, 'browser-protection.json'), 'utf8')); assert.deepEqual(saved, { schema: 1, enabled: true, exemptOrigins: [] });
+  const saved = JSON.parse(await readFile(path.join(directory, 'browser-protection.json'), 'utf8')); assert.deepEqual(saved, { schema: 2, enabled: true, exemptOrigins: [] });
 });
 
 test('navigation between preparation and durable commit rejects an exemption and preserves the saved choices', async t => {
@@ -84,27 +102,36 @@ test('unobserved, ambiguous, wildcard and extra-field site requests cannot chang
     { action: 'global', enabled: 'false' }, { action: 'global', enabled: false, source: 'agent' }, { action: 'refresh', url: 'https://elsewhere.test/list' },
   ];
   for (const value of invalid) await assert.rejects(protection.configure(value, { currentOrigin: () => null }));
-  assert.equal(protection.status().enabled, true); assert.deepEqual(protection.status().exemptOrigins, []);
+  assert.equal(protection.status().enabled, false); assert.deepEqual(protection.status().exemptOrigins, []);
   assert.equal(protectionOrigin('https://example.test/a?q=secret'), 'https://example.test'); assert.equal(protectionOrigin('data:text/html,example'), null);
 });
 
-test('unreadable settings are preserved with protection enabled and cannot be silently overwritten', async t => {
+test('unreadable settings are preserved while browsing continues unfiltered', async t => {
   const original = '{"schema":1,"enabled":false,"exemptOrigins":["*"]}', { protection, directory } = await fixture(t, { saved: original });
-  assert.equal(protection.status().settingsHealthy, false); assert.equal(protection.status().enabled, true); assert.equal(ad(protection).cancel, true);
+  assert.equal(protection.status().settingsHealthy, false); assert.equal(protection.status().enabled, false); assert.equal(ad(protection).cancel, false);
   await assert.rejects(protection.configure({ action: 'global', enabled: false }), { code: 'BROWSER_PROTECTION_SETTINGS_UNREADABLE' });
   assert.equal(await readFile(path.join(directory, 'browser-protection.json'), 'utf8'), original);
 });
 
 test('a corrupt saved update falls back to the bundled rules and retains the original update for recovery', async t => {
-  const { protection, directory } = await fixture(t, { cache: '{invalid' });
+  const { protection, directory } = await fixture(t, { enabled: true, cache: '{invalid' });
   assert.equal(protection.status().ready, true); assert.equal(protection.status().source, 'bundled'); assert.equal(protection.status().error.code, 'BROWSER_PROTECTION_CACHE_UNREADABLE'); assert.equal(ad(protection).cancel, true);
   assert.equal(await readFile(path.join(directory, 'browser-protection-filters.json'), 'utf8'), '{invalid');
 });
 
-test('missing filters visibly fail closed until a person explicitly disables protection', async t => {
-  const { protection } = await fixture(t, { compile: async () => { throw new Error('Invalid fixture rules'); } });
-  assert.equal(protection.status().ready, false); assert.equal(protection.status().error.code, 'BROWSER_PROTECTION_FILTERS_UNAVAILABLE'); assert.equal(ad(protection).reason, 'filters-unavailable');
+test('missing filters preserve the opt-in preference but allow network requests', async t => {
+  const { protection } = await fixture(t, { enabled: true, compile: async () => { throw new Error('Invalid fixture rules'); } });
+  assert.equal(protection.status().ready, false); assert.equal(protection.status().enabled, true); assert.equal(protection.status().error.code, 'BROWSER_PROTECTION_FILTERS_UNAVAILABLE'); assert.deepEqual(ad(protection), { cancel: false, reason: 'filters-unavailable' });
+  assert.equal(protection.tabStatus('observed', 'https://article.fixture.test').enforced, false); assert.equal(protection.status().blockedRequests, 0);
   await protection.configure({ action: 'global', enabled: false }); assert.equal(ad(protection).cancel, false); assert.equal(protection.status().ready, false);
+});
+
+test('filter matching errors allow the request without recording a false block', async t => {
+  const { protection } = await fixture(t, { enabled: true });
+  protection.compiled.engine.match = () => { throw new Error('Fixture matcher failure'); };
+  assert.deepEqual(ad(protection), { cancel: false, reason: 'filter-error' });
+  assert.equal(protection.status().error.code, 'BROWSER_PROTECTION_MATCH_FAILED'); assert.equal(protection.status().blockedRequests, 0);
+  assert.equal(protection.match({ url: 'invalid fixture URL' }).cancel, false);
 });
 
 test('filter bundle integrity, bounded sizes and fixed source identities are verified before compilation', () => {
@@ -116,7 +143,7 @@ test('filter bundle integrity, bounded sizes and fixed source identities are ver
 
 test('explicit refresh coalesces, fetches only fixed HTTPS text lists and atomically loads the updated engine', async t => {
   const calls = [], texts = ['[Adblock Plus 2.0]\n||new-ads.fixture.test^', '[Adblock Plus 2.0]\n||new-tracker.fixture.test^'];
-  const { protection, directory, bundledFile } = await fixture(t, { fetch: async (url, options) => { calls.push({ url, options }); return textResponse(texts[calls.length - 1]); } });
+  const { protection, directory, bundledFile } = await fixture(t, { enabled: true, fetch: async (url, options) => { calls.push({ url, options }); return textResponse(texts[calls.length - 1]); } });
   assert.equal(calls.length, 0); const first = protection.refresh(), second = protection.refresh(); assert.equal(first, second); assert.equal(protection.status().refreshing, true); await first;
   assert.deepEqual(calls.map(call => call.url), PROTECTION_SOURCES.map(source => source.url)); for (const call of calls) { assert.equal(call.options.redirect, 'error'); assert.equal(call.options.headers.Accept, 'text/plain'); assert.ok(call.options.signal instanceof AbortSignal); }
   assert.equal(protection.status().refreshing, false); assert.equal(protection.status().source, 'updated'); assert.equal(protection.status().error, null); assert.equal(protection.match({ url: 'https://new-ads.fixture.test/a.js', type: 'script', sourceUrl: 'https://example.test/' }).cancel, true);
@@ -126,7 +153,7 @@ test('explicit refresh coalesces, fetches only fixed HTTPS text lists and atomic
 
 test('failed, redirected, oversized or non-text refreshes retain the last working engine and saved cache', async t => {
   let mode = 'valid'; const valid = '[Adblock Plus 2.0]\n||ads.fixture.test^';
-  const { protection, directory } = await fixture(t, { fetch: async () => {
+  const { protection, directory } = await fixture(t, { enabled: true, fetch: async () => {
     if (mode === 'failure') throw new Error('bounded fixture failure');
     if (mode === 'html') return new Response('<!doctype html>', { headers: { 'Content-Type': 'text/html' } });
     if (mode === 'oversized') return new Response(valid, { headers: { 'Content-Type': 'text/plain', 'Content-Length': String(9 * 1024 * 1024) } });
@@ -151,5 +178,5 @@ test('shutdown aborts an in-flight refresh and prevents late filter or settings 
 test('a pre-cancelled settings action never changes persisted protection', async t => {
   const { protection, directory } = await fixture(t), controller = new AbortController(); controller.abort();
   await assert.rejects(protection.configure({ action: 'global', enabled: false }, { signal: controller.signal }), { code: 'ABORT_ERR' });
-  assert.equal(protection.status().enabled, true); await assert.rejects(access(path.join(directory, 'browser-protection.json')), { code: 'ENOENT' });
+  assert.equal(protection.status().enabled, false); await assert.rejects(access(path.join(directory, 'browser-protection.json')), { code: 'ENOENT' });
 });

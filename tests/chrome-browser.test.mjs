@@ -18,11 +18,12 @@ test('Chrome configuration uses official autoConnect through Relay stdio without
   assert.doesNotMatch(config.args.join(' '),/headless|isolated|user-data-dir|browser-url|remote-debugging-port/);
 });
 
-test('Chrome background policy clamps only the actual foreground switches and preserves caller arguments',()=>{
+test('Chrome defaults background behavior and preserves explicit foreground and isolation choices',()=>{
   const open={url:'https://example.test/',background:false,timeout:1000};
-  assert.deepEqual(chromeBackgroundArguments('new_page',open),{...open,background:true});assert.equal(open.background,false);
-  assert.deepEqual(chromeBackgroundArguments('new_page',{...open,isolatedContext:'fresh-profile'}),{...open,background:true},'existing-session path must not create a signed-out isolated profile');
-  assert.deepEqual(chromeBackgroundArguments('select_page',{pageId:3,bringToFront:true}),{pageId:3,bringToFront:false});
+  assert.deepEqual(chromeBackgroundArguments('new_page',open),open);assert.equal(open.background,false);
+  assert.deepEqual(chromeBackgroundArguments('new_page',{url:open.url}),{url:open.url,background:true});
+  assert.deepEqual(chromeBackgroundArguments('new_page',{...open,isolatedContext:'fresh-profile'}),{...open,isolatedContext:'fresh-profile'},'explicit isolation is a caller choice');
+  assert.deepEqual(chromeBackgroundArguments('select_page',{pageId:3,bringToFront:true}),{pageId:3,bringToFront:true});
   assert.deepEqual(chromeBackgroundArguments('fill',{uid:'1_2',value:'fixture'}),{uid:'1_2',value:'fixture'});
   assert.deepEqual(chromeBackgroundOpen('https://example.test'),{name:'new_page',arguments:{url:'https://example.test/',background:true}});
   assert.throws(()=>chromeBackgroundOpen('file:///C:/private'),{code:'BROWSER_VALIDATION'});

@@ -65,11 +65,11 @@ test('the actual isolated preload exposes one bounded write channel and no clipb
   assert.equal(calls.length, 1);
 });
 
-test('desktop wiring retains denied Chromium permissions and registers only the scoped native writer', async () => {
+test('desktop wiring grants browser permissions and preserves the scoped native clipboard writer', async () => {
   const source = await readFile(new URL('../desktop/main.mjs', import.meta.url), 'utf8');
   assert.match(source, /ipcMain\.handle\('relay:write-clipboard', createClipboardHandler\(\{ trustedSender, writeText: text => clipboard\.writeText\(text\) \}\)\)/);
   assert.match(source, /return isTrustedDesktopSender\(event, mainWindow, origin\)/);
-  assert.match(source, /setPermissionRequestHandler\([^\n]*callback\(false\)/);
-  assert.match(source, /setPermissionCheckHandler\(\(\) => false\)/);
+  assert.match(source, /setPermissionRequestHandler\([^\n]*callback\(true\)/);
+  assert.match(source, /setPermissionCheckHandler\(\(\) => true\)/);
   assert.doesNotMatch(source, /clipboard\.(?:read|readText|readHTML|readImage|availableFormats)\s*\(/);
 });

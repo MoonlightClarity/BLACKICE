@@ -124,14 +124,14 @@ test('existing Chrome attach remains explicit and imported profiles use their ow
   assert.equal(connected.success, true); assert.equal(connected.receipt.outcome, 'connected'); assert.equal(connected.receipt.actionDispatched, true);
   assert.doesNotMatch(JSON.stringify(connected), /Private fixture tab/); assert.equal(JSON.parse(connected.contentItems[0].text).accountAuthenticated, 'unknown');
   const opened = await executeConnectedBrowser({ manager, action: 'call', connectionId: config.id, name: 'new_page', arguments: { url: 'https://example.test/', isolatedContext: 'fresh', background: false } });
-  assert.equal(opened.success, true); assert.deepEqual(calls.at(-1), { name: 'new_page', args: { url: 'https://example.test/', background: true } });
+  assert.equal(opened.success, true); assert.deepEqual(calls.at(-1), { name: 'new_page', args: { url: 'https://example.test/', isolatedContext: 'fresh', background: false } });
   client.connected = false;
   const disconnected = await executeConnectedBrowser({ manager, action: 'call', connectionId: config.id, name: 'list_pages' });
   assert.equal(disconnected.success, false); assert.equal(disconnected.receipt.actionDispatched, false); assert.equal(calls.length, 2);
   const profile = { ...config, id: 'browser-profile-0123456789abcdef', args: ['-y', 'chrome-devtools-mcp@latest', '--executablePath=C:/Native/chrome.exe', '--userDataDir=C:/Imported/fixture'] };
   await manager.save(profile); const imported = { ...client, connected: true }; manager.clients.set(profile.id, imported);
   const profileCall = await executeConnectedBrowser({ manager, action: 'call', connectionId: profile.id, name: 'select_page', arguments: { pageId: 3, bringToFront: true } });
-  assert.equal(profileCall.success, true); assert.equal(profileCall.receipt.mode, 'imported-profile'); assert.deepEqual(calls.at(-1), { name: 'select_page', args: { pageId: 3, bringToFront: false } });
+  assert.equal(profileCall.success, true); assert.equal(profileCall.receipt.mode, 'imported-profile'); assert.deepEqual(calls.at(-1), { name: 'select_page', args: { pageId: 3, bringToFront: true } });
   assert.equal(isChromeBrowserConnection(profile), true); assert.deepEqual(manager.configs.get(profile.id).args, profile.args);
 });
 

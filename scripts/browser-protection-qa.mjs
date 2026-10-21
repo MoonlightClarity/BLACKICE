@@ -13,7 +13,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 export const BROWSER_PROTECTION_QA_SOURCES = Object.freeze(['package.json', 'desktop/browser-driver.mjs', 'desktop/browser-router.mjs', 'desktop/browser-capture.mjs', 'lib/browser.mjs', 'lib/browser-protection.mjs', 'lib/vendor/ghostery-adblocker.mjs', 'lib/vendor/adblock-filter-data.json', 'scripts/browser-protection-qa.mjs', 'tests/fixtures/browser-protection-native.mjs']);
 export const BROWSER_PROTECTION_QA_CHECKS = Object.freeze([
-  'native Electron loads the pinned bundled network filters in an owned disposable profile',
+  'native Electron loads optional bundled filters with unfiltered browsing by default',
   'ordinary page resources reach the owned server while ad and tracker requests are blocked',
   'blocked requests are attributed to the observed contained tab',
   'an explicit current-site exemption allows that site\'s blocked resources',
@@ -22,7 +22,7 @@ export const BROWSER_PROTECTION_QA_CHECKS = Object.freeze([
   're-enabling current-site protection blocks ad and tracker requests again',
   'global disable is explicit and preserves per-site status',
   'global and exact-origin choices survive contained-driver shutdown and restore',
-  'task agents cannot change browser protection',
+  'task agents change browser filtering with validated arguments',
   'restored protection blocks requests after global and site re-enablement',
   'page inspection and screenshot stay in hidden nonfocusable Electron tabs',
   'only owned loopback fixtures are contacted and no provider turn is requested',

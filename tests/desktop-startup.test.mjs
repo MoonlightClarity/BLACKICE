@@ -9,7 +9,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function windows({failLoad=false}={}){
   const created=[];
   class Window extends EventEmitter {
-    constructor(options){super();this.options=options;this.visible=false;this.destroyed=false;this.shows=0;this.loads=[];const contents=new EventEmitter();contents.session={webRequest:{onBeforeRequest:fn=>{contents.request=fn;}},setPermissionRequestHandler:fn=>{contents.permission=fn;},setPermissionCheckHandler:fn=>{contents.permissionCheck=fn;}};contents.setWindowOpenHandler=fn=>{contents.open=fn;};this.webContents=contents;created.push(this);}
+    constructor(options){super();this.options=options;this.visible=false;this.destroyed=false;this.shows=0;this.loads=[];const contents=new EventEmitter();contents.session={webRequest:{onBeforeRequest:fn=>{contents.request=fn;}},setPermissionRequestHandler:fn=>{contents.permission=fn;},setPermissionCheckHandler:fn=>{contents.permissionCheck=fn;},setDevicePermissionHandler:fn=>{contents.devicePermission=fn;},setUSBProtectedClassesHandler:fn=>{contents.usbProtectedClasses=fn;}};contents.setWindowOpenHandler=fn=>{contents.open=fn;};this.webContents=contents;created.push(this);}
     removeMenu(){this.menuRemoved=true;}
     isDestroyed(){return this.destroyed;}
     isVisible(){return this.visible;}
@@ -32,7 +32,7 @@ test('the static startup indicator is isolated and becomes visible only after it
   assert.deepEqual(window.webContents.open({url:'https://external.invalid'}),{action:'deny'});
   for(const name of ['will-navigate','will-redirect','will-attach-webview']){let prevented=false;window.webContents.emit(name,{preventDefault(){prevented=true;}});assert.equal(prevented,true);}
   let admitted;window.webContents.request({url},value=>{admitted=value;});assert.deepEqual(admitted,{cancel:false});window.webContents.request({url:'https://external.invalid'},value=>{admitted=value;});assert.deepEqual(admitted,{cancel:true});
-  window.webContents.permission(null,'camera',value=>{admitted=value;});assert.equal(admitted,false);assert.equal(window.webContents.permissionCheck(),false);
+  window.webContents.permission(null,'camera',value=>{admitted=value;});assert.equal(admitted,true);assert.equal(window.webContents.permissionCheck(),true);assert.equal(window.webContents.devicePermission({deviceType:'usb'}),true);assert.deepEqual(window.webContents.usbProtectedClasses({protectedClasses:['hid']}),[]);
   window.emit('ready-to-show');assert.equal(await indicator.ready,true);assert.equal(window.visible,true);indicator.dispose();assert.equal(window.destroyed,true);
 });
 

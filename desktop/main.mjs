@@ -284,8 +284,10 @@ function createWindow() {
   contents.on('will-navigate', preventNavigation);
   contents.on('will-redirect', preventNavigation);
   contents.on('will-attach-webview', event => event.preventDefault());
-  contents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-  contents.session.setPermissionCheckHandler(() => false);
+  contents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(true));
+  contents.session.setPermissionCheckHandler(() => true);
+  contents.session.setDevicePermissionHandler(() => true);
+  contents.session.setUSBProtectedClassesHandler(() => []);
   contents.session.webRequest.onBeforeRequest((details, callback) => {
     let allowed = false;
     try { allowed = new URL(details.url).origin === origin; } catch {}

@@ -56,7 +56,7 @@ function keyboardModifiers(value) {
 const containedWindowOptions = browserSession => ({
   width: 1280, height: 900, useContentSize: true, show: false, focusable: false, skipTaskbar: true,
   frame: false, fullscreenable: false, minimizable: false, maximizable: false, backgroundColor: '#000000', autoHideMenuBar: true, title: 'BLACKICE contained browser',
-  webPreferences: { session: browserSession, offscreen: true, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, webviewTag: false, backgroundThrottling: false, spellcheck: false, paintWhenInitiallyHidden: true, disableDialogs: true },
+  webPreferences: { session: browserSession, offscreen: true, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, webviewTag: false, backgroundThrottling: false, spellcheck: false, paintWhenInitiallyHidden: true, disableDialogs: false },
 });
 const cancel = signal => { if (signal?.aborted) throw Object.assign(error('Browser action cancelled.'), { name: 'AbortError' }); };
 const bounded = (promise, signal, ms = 12000) => new Promise((resolve, reject) => {
@@ -229,7 +229,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     // This dedicated partition owns one request interceptor. The app window's
     // independent default-session containment policy is left unchanged.
     this.beforeRequest = (details, callback) => {
-      let blocked = true;
+      let blocked = false;
       try {
         const tab = [...this.tabs.values()].find(item => item.window && !item.window.isDestroyed() && item.window.webContents.id === details.webContentsId);
         const sourceUrl = tab ? tab.window.webContents.getURL() : details.initiator || details.referrer || '';
@@ -244,9 +244,14 @@ export class ElectronBrowserDriver extends EventEmitter {
     this.session.cookies.on('changed', this.cookieListener);
     this.session.webRequest.onCompleted(details => this.diagnostics.request(details));
     this.session.webRequest.onErrorOccurred(details => this.diagnostics.request(details));
-    // Site features run without agent approval dialogs. OS protected features retain OS behavior.
-    this.session.setPermissionRequestHandler((_wc, _permission, cb) => cb(false));
-    this.session.setPermissionCheckHandler(() => false);
+    // BLACKICE grants web capabilities in this dedicated browsing profile without approval prompts.
+    // OS permission checks and device selection remain separate.
+    this.session.setPermissionRequestHandler((_wc, _permission, cb) => cb(true));
+    this.session.setPermissionCheckHandler(() => true);
+    this.session.setDevicePermissionHandler(() => true);
+    this.session.setUSBProtectedClassesHandler(() => []);
+    this.fileSystemAccessListener = (_event, _details, callback) => callback('allow');
+    this.session.on('file-system-access-restricted', this.fileSystemAccessListener);
     this.downloadListener = (_event, item, contents) => this.download(item, contents);
     this.session.on('will-download', this.downloadListener);
   }
@@ -413,12 +418,11 @@ export class ElectronBrowserDriver extends EventEmitter {
         tab.inputWarning = supported ? 'This page requested files. Choose explicit file paths in BLACKICE, or cancel this selection.' : 'This file request does not expose a contained input. No native file picker was opened.';
         this.setInteraction(tab, { kind: 'file_chooser', status: supported ? 'pending' : 'blocked', message: tab.inputWarning, multiple: params?.mode === 'selectMultiple', ...(supported ? {} : { reason: 'file_input_unavailable' }) }, supported ? { backendNodeId: params.backendNodeId } : null);
       } else if (method === 'Page.javascriptDialogOpening') {
-        // disableDialogs remains enabled. Electron normally closes its own
-        // handler with false; report that limit honestly instead of pretending
-        // the discarded confirm/prompt can later be accepted. A target with no
-        // browser handler is genuinely paused by CDP and can be resolved here.
-        const paused = params?.hasBrowserHandler === false;
-        this.setInteraction(tab, { kind: 'javascript_dialog', status: paused ? 'pending' : 'blocked', dialogType: ['alert', 'confirm', 'prompt', 'beforeunload'].includes(params?.type) ? params.type : 'unknown', message: interactionText(params?.message), ...(paused ? {} : { reason: 'native_dialog_disabled' }) });
+        // An observed native dialog is resolvable through CDP even when
+        // Electron reports its own browser handler. A subsequent closed event
+        // retires that exact decision if the page or browser resolves it first.
+        const supported = ['alert', 'confirm', 'prompt', 'beforeunload'].includes(params?.type);
+        this.setInteraction(tab, { kind: 'javascript_dialog', status: supported ? 'pending' : 'blocked', dialogType: supported ? params.type : 'unknown', message: interactionText(params?.message), ...(supported ? {} : { reason: 'dialog_type_unsupported' }) });
       } else if (method === 'Page.javascriptDialogClosed' && tab.pendingInteraction?.kind === 'javascript_dialog') {
         tab.pendingInteraction = { ...tab.pendingInteraction, status: 'blocked', reason: params?.result === true ? 'dialog_closed_elsewhere' : 'dialog_cancelled', closedAt: new Date().toISOString() };
         this.emit('changed');
@@ -448,7 +452,12 @@ export class ElectronBrowserDriver extends EventEmitter {
     wc.on('page-title-updated', (_event, value) => { tab.title = value; this.persist(); this.emit('changed'); });
     wc.on('will-navigate', (event, target) => { try { browserURL(target); } catch { event.preventDefault(); } });
     wc.on('will-redirect', (event, target) => { try { browserURL(target); } catch { event.preventDefault(); } });
-    window.on('close', event => { if (!this.closed && !tab.closing) { event.preventDefault(); window.hide(); this.emit('changed'); } });
+    window.on('close', event => {
+      // A script-opened authentication window must be able to finish its own
+      // native close lifecycle, so the opener observes window.closed normally.
+      if (suppliedWindow) return;
+      if (!this.closed && !tab.closing) { event.preventDefault(); window.hide(); this.emit('changed'); }
+    });
     window.on('closed', () => {
       // An old renderer can finish closing after an explicit recovery created
       // its replacement. It must not remove that replacement's saved tab.
@@ -515,29 +524,44 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (this.persistenceError) throw Object.assign(error('Browser pages were suspended, but their saved folder state could not be confirmed.'), { code: 'BROWSER_SAVE_FAILED' });
     return { suspended, retained };
   }
-  async organize(args, source) {
-    if (source !== 'user') throw capacityError('Browser organization requires the local user controls.', 'BROWSER_ORGANIZATION_USER_ONLY');
+  async organize(args, source, context) {
+    const owner = browserOwner(context);
+    const assertFolder = folder => {
+      if (owner && !(folder.kind === 'task' && folder.taskId === owner.taskId) && !(owner.allowUserTabs && folder.kind === 'user')) throw capacityError('Choose a browser folder belonging to this task.', 'BROWSER_FOLDER_OWNERSHIP');
+    };
+    const assertTab = tab => {
+      if (source !== 'user' && tab.purpose === 'chat-mode') throw capacityError('The human ChatGPT tab is reserved for its caller.', 'BROWSER_HUMAN_CHAT_RESERVED');
+      if (owner && !sameOwner(tab.owner, owner) && !(owner.allowUserTabs && !tab.owner)) throw capacityError('This browser tab belongs to another task.', 'BROWSER_TAB_OWNERSHIP');
+    };
     if (args.action === 'folder_create') {
       if (this.folders.size >= this.maxSavedTabs) throw capacityError('The browser folder capacity is full.', 'BROWSER_FOLDER_LIMIT');
-      const now = new Date().toISOString(), folder = { id: `folder_${randomUUID()}`, name: folderName(args.name), kind: 'user', createdAt: now, updatedAt: now };
+      const now = new Date().toISOString(), folder = { id: `folder_${randomUUID()}`, name: folderName(args.name), kind: owner ? 'task' : 'user', ...(owner ? { taskId: owner.taskId } : {}), createdAt: now, updatedAt: now };
       this.folders.set(folder.id, folder); this.persist(); this.emit('changed'); return this.savedStatus({ folder: { ...folder } });
     }
     if (args.action === 'folder_rename' || args.action === 'folder_close') {
       const folder = this.folders.get(args.folderId); if (!folder) throw capacityError('Choose an existing browser folder.', 'BROWSER_FOLDER_NOT_FOUND');
+      assertFolder(folder);
       if (args.action === 'folder_rename') { folder.name = folderName(args.name); folder.updatedAt = new Date().toISOString(); }
-      else { for (const tab of [...this.tabs.values()]) if (tab.folderId === folder.id) this.closeTab(tab); if (folder.id !== DEFAULT_FOLDER) this.folders.delete(folder.id); }
+      else {
+        const affected = [...this.tabs.values()].filter(tab => tab.folderId === folder.id);
+        affected.forEach(assertTab);
+        for (const tab of affected) this.closeTab(tab);
+        if (folder.id !== DEFAULT_FOLDER) this.folders.delete(folder.id);
+      }
       this.persist(); this.emit('changed'); return this.savedStatus();
     }
-    const tab = this.tab(args.tabId);
+    const tab = this.tab(args.tabId); assertTab(tab);
     if (args.action === 'suspend') { const receipt = this.suspendTab(tab); return this.savedStatus({ receipt: { tabId: tab.id, ...receipt } }); }
     if (args.action === 'tab_move') {
       const parent = args.parentTabId == null ? null : this.tabs.get(args.parentTabId), folder = this.folders.get(args.folderId || parent?.folderId || tab.folderId);
       if (!folder || args.parentTabId != null && !parent) throw capacityError('Choose an existing browser folder and parent tab.', 'BROWSER_FOLDER_NOT_FOUND');
+      assertFolder(folder); if (parent) assertTab(parent);
       if (tab.purpose === 'chat-mode' || parent?.purpose === 'chat-mode' || (tab.owner ? folder.kind !== 'task' || folder.taskId !== tab.owner.taskId : folder.kind !== 'user')) throw capacityError('Keep task-owned and personal tabs in their own folders.', 'BROWSER_FOLDER_OWNERSHIP');
       if (parent && (parent.folderId !== folder.id || !sameOwner(parent.owner, tab.owner))) throw capacityError('A parent tab must have the same folder and task owner.', 'BROWSER_TAB_OWNERSHIP');
       const branch = new Set([tab.id]); let changed = true;
       while (changed) { changed = false; for (const child of this.tabs.values()) if (branch.has(child.parentTabId) && !branch.has(child.id)) { branch.add(child.id); changed = true; } }
       if (parent && branch.has(parent.id)) throw capacityError('A tab cannot become a child of its own branch.', 'BROWSER_TAB_CYCLE');
+      for (const id of branch) assertTab(this.tabs.get(id));
       for (const id of branch) this.tabs.get(id).folderId = folder.id;
       tab.parentTabId = parent?.id || null; this.persist(); this.emit('changed'); return this.savedStatus();
     }
@@ -697,7 +721,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (expected?.expectedDocumentId === undefined && expected?.expectedUrl === undefined) return;
     if (typeof expected.expectedDocumentId !== 'string' || typeof expected.expectedUrl !== 'string' || expected.expectedDocumentId !== inputDocumentId(tab) || expected.expectedUrl !== tab.window.webContents.getURL()) throw Object.assign(error('The page changed before keyboard or pointer input. Refresh the preview and click the intended field again.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
   }
-  async cdp(tab, method, params = {}, signal, expected) {
+  async cdp(tab, method, params = {}, signal, expected, sessionId) {
     if (tab.rendererFailure) throw rendererFailure(tab);
     const wc = tab.window.webContents;
     if (method.startsWith('Input.')) {
@@ -708,7 +732,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       this.assertInputDocument(tab, expected);
     } else if (!wc.debugger.isAttached()) { wc.debugger.attach('1.3'); tab.containmentReady = null; }
     cancel(signal);
-    const native = wc.debugger.sendCommand(method, params);
+    const native = sessionId ? wc.debugger.sendCommand(method, params, sessionId) : wc.debugger.sendCommand(method, params);
     if (method === 'Page.handleJavaScriptDialog' || method === 'DOM.setFileInputFiles' || params.type === 'mouseReleased' || params.type === 'keyUp') return bounded(native, signal);
     return this.pageWork(tab, native, signal);
   }
@@ -738,14 +762,88 @@ export class ElectronBrowserDriver extends EventEmitter {
       if (revision !== undefined && tab.revision !== revision) throw error('The page changed while preparing browser input. Take a fresh snapshot before acting.');
     } });
   }
-  async clickPoint(tab, point, signal, expected) {
+  async clickPoint(tab, point, signal, expected, sessionId) {
     cancel(signal);
-    try { await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 }, signal, expected); }
+    try { await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 }, signal, expected, sessionId); }
     finally {
-      try { await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 }, AbortSignal.timeout(1500)); }
+      try { await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 }, AbortSignal.timeout(1500), undefined, sessionId); }
       catch { tab.inputWarning = 'Browser button release could not be confirmed. Inspect or reload before continuing.'; }
     }
     cancel(signal);
+  }
+  async pointerTarget(tab, point, signal, expected) {
+    const wc = tab.window.webContents, guard = expected?.expectedDocumentId === undefined
+      ? { expectedDocumentId: inputDocumentId(tab), expectedUrl: wc.getURL() } : expected;
+    this.assertInputDocument(tab, guard);
+    const sessions = [], close = async () => {
+      for (const sessionId of sessions.reverse()) {
+        try { await bounded(wc.debugger.sendCommand('Target.detachFromTarget', { sessionId }), undefined, 1500); } catch {}
+      }
+    };
+    let sessionId, contextId, targetPoint = { x: point.x, y: point.y }, localPoint = targetPoint;
+    // Ordinary documents retain the fast root-target path. Only a point that
+    // actually hits an iframe needs child-frame inspection or attachment.
+    if (!wc.mainFrame.framesInSubtree.some(frame => frame !== wc.mainFrame)) return { point: targetPoint, guard, close };
+    const command = (method, params = {}) => this.cdp(tab, method, params, signal, undefined, sessionId);
+    try {
+      for (let depth = 0; depth < 16; depth++) {
+        cancel(signal); this.assertInputDocument(tab, guard);
+        const hit = await command('Runtime.evaluate', { expression: `((x,y)=>{let el=document.elementFromPoint(x,y);while(el?.shadowRoot){const next=el.shadowRoot.elementFromPoint(x,y);if(!next||next===el)break;el=next;}return el&&['IFRAME','FRAME'].includes(el.tagName)?el:null;})(${JSON.stringify(localPoint.x)},${JSON.stringify(localPoint.y)})`, ...(contextId ? { contextId } : {}), returnByValue: false });
+        if (hit.exceptionDetails) throw error('The current frame could not be inspected before pointer input.');
+        const objectId = hit.result?.objectId;
+        if (!objectId) return { point: targetPoint, guard, sessionId, close };
+        let frameId, quad;
+        try {
+          const described = await command('DOM.describeNode', { objectId });
+          frameId = described.node?.frameId;
+          if (!frameId || !['IFRAME', 'FRAME'].includes(described.node.nodeName)) throw error('The iframe hit target changed before pointer input.');
+          quad = (await command('DOM.getBoxModel', { objectId })).model?.content;
+        } finally { try { await command('Runtime.releaseObject', { objectId }); } catch {} }
+        if (!Array.isArray(quad) || quad.length !== 8 || !quad.every(Number.isFinite)) throw error('The current iframe does not expose usable pointer geometry.');
+        // DOM box quads belong to the current target viewport, even when the
+        // owner element is in a same-process child document. Invert its affine
+        // transform before switching to the child renderer's CSS coordinates.
+        const ax = quad[2] - quad[0], ay = quad[3] - quad[1], bx = quad[6] - quad[0], by = quad[7] - quad[1], determinant = ax * by - ay * bx;
+        if (Math.abs(determinant) < 0.000001 || Math.abs(quad[4] - quad[2] - quad[6] + quad[0]) > 0.5 || Math.abs(quad[5] - quad[3] - quad[7] + quad[1]) > 0.5) throw error('The iframe has unsupported pointer geometry. Inspect its page before another action.');
+        const dx = targetPoint.x - quad[0], dy = targetPoint.y - quad[1], u = (dx * by - dy * bx) / determinant, v = (ax * dy - ay * dx) / determinant;
+        // A border click remains on its owner document; it must not be moved
+        // into an unrelated point inside the child document.
+        if (u < 0 || u >= 1 || v < 0 || v >= 1) return { point: targetPoint, guard, sessionId, close };
+        const targets = (await command('Target.getTargets')).targetInfos || [];
+        const target = targets.find(value => value.type === 'iframe' && value.targetId === frameId);
+        if (target) {
+          const attached = await command('Target.attachToTarget', { targetId: frameId, flatten: true });
+          if (!attached.sessionId) throw error('The exact iframe could not be attached for pointer input.');
+          sessionId = attached.sessionId; sessions.push(sessionId); contextId = undefined;
+          const frameTree = (await command('Page.getFrameTree')).frameTree;
+          if (frameTree?.frame?.id !== frameId) throw error('The attached pointer target is not the observed iframe.');
+        } else {
+          // A same-process iframe needs no input redirect, but its descendant
+          // may live in a different renderer. Inspect it without reading any
+          // page values or changing its main-world application state.
+          const world = await command('Page.createIsolatedWorld', { frameId, worldName: this.key + '_pointer' });
+          if (!Number.isInteger(world.executionContextId)) throw error('The iframe document changed before pointer input.');
+          contextId = world.executionContextId;
+        }
+        const viewport = await command('Runtime.evaluate', { expression: '({width:innerWidth,height:innerHeight})', ...(contextId ? { contextId } : {}), returnByValue: true });
+        const size = viewport.result?.value;
+        if (viewport.exceptionDetails || !Number.isFinite(size?.width) || !Number.isFinite(size?.height) || size.width <= 0 || size.height <= 0) throw error('The iframe viewport could not be inspected before pointer input.');
+        localPoint = { x: u * size.width, y: v * size.height };
+        if (target) targetPoint = localPoint;
+      }
+      throw error('The iframe nesting exceeds the supported pointer inspection depth.');
+    } catch (cause) {
+      await close();
+      if (!cause.code) Object.assign(cause, { code: 'BROWSER_INPUT_FRAME_UNAVAILABLE', actionDispatched: false });
+      throw cause;
+    }
+  }
+  async pointerInput(tab, point, action, signal, expected) {
+    const target = await this.pointerTarget(tab, point, signal, expected);
+    try {
+      await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseMoved', ...target.point, button: 'none' }, signal, target.guard, target.sessionId);
+      if (action === 'click') await this.clickPoint(tab, target.point, signal, target.guard, target.sessionId);
+    } finally { await target.close(); }
   }
   async browserPoint(tab, frame, point, signal) {
     const main = tab.window.webContents.mainFrame;
@@ -801,7 +899,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     const owner = browserOwner(context);
     if (args.action === 'tabs') return this.status();
     if (args.action === 'downloads') return { downloads: this.downloads.slice(-30) };
-    if (['folder_create', 'folder_rename', 'folder_close', 'tab_move', 'suspend'].includes(args.action)) return this.organize(args, source);
+    if (['folder_create', 'folder_rename', 'folder_close', 'tab_move', 'suspend'].includes(args.action)) return this.organize(args, source, owner);
     if (args.action === 'reuse_session') throw error('Session transfer was removed because it can invalidate the source sign-in. Connect directly to the existing browser instead.');
     const selected = args.tabId || (owner ? this.ownerActiveTabs.get(browserOwnerKey(owner)) : this.activeTab);
     let tab = args.action === 'open' ? this.newTab(browserURL(args.url), { owner, folderId: args.folderId, parentTabId: args.parentTabId }) : this.tab(selected);
@@ -819,7 +917,6 @@ export class ElectronBrowserDriver extends EventEmitter {
       tab.rendererFailure = null; tab.loadError = null;
     }
     if (args.action === 'interaction') {
-      if (source !== 'user') throw Object.assign(error('A person must resolve website dialogs in the local BLACKICE browser.'), { code: 'BROWSER_INTERACTION_USER_ONLY' });
       return this.resolveInteraction(tab, args, signal);
     }
     const pending = tab.pendingInteraction;
@@ -876,10 +973,7 @@ export class ElectronBrowserDriver extends EventEmitter {
         // A retry waited for another frame: the target can have moved or detached meanwhile.
         if (retries) ({ frame, result } = await this.element(tab, args, 'prepare', signal));
         const point = await this.browserPoint(tab, frame, result, signal);
-        await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseMoved', ...point, button: 'none' }, signal, args);
-        if (args.action === 'click') {
-          await this.clickPoint(tab, point, signal, args);
-        }
+        await this.pointerInput(tab, point, args.action, signal, args);
         receipt = { [args.action === 'click' ? 'clicked' : 'hovered']: args.ref, input: 'browser protocol' };
       } else {
         const viewport = await bounded(tab.window.webContents.executeJavaScript('({width:innerWidth,height:innerHeight})'), signal);
@@ -889,8 +983,7 @@ export class ElectronBrowserDriver extends EventEmitter {
           const current = await bounded(tab.window.webContents.executeJavaScript('({width:innerWidth,height:innerHeight})'), signal);
           if (current.width !== viewport.width || current.height !== viewport.height) throw error('The browser viewport changed while preparing input. Take a fresh screenshot before acting.');
         }
-        await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: args.x, y: args.y, button: 'none' }, signal, args);
-        if (args.action === 'click') await this.clickPoint(tab, { x: args.x, y: args.y }, signal, args);
+        await this.pointerInput(tab, { x: args.x, y: args.y }, args.action, signal, args);
         receipt = { [args.action === 'click' ? 'clicked' : 'hovered']: true };
         // Human preview input shares a queue with typing. A completed guarded
         // click must not hold that queue for navigation settling or a DOM scan;
@@ -1005,6 +1098,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     this.persist(); this.closed = true;
     const closingProtection = Promise.resolve().then(() => this.protection.close()); this.protection.off('updated', this.protectionListener);
     this.session.removeListener('will-download', this.downloadListener);
+    this.session.removeListener('file-system-access-restricted', this.fileSystemAccessListener);
     this.session.cookies.removeListener('changed', this.cookieListener);
     this.session.webRequest.onCompleted(null); this.session.webRequest.onErrorOccurred(null);
     for (const t of [...this.tabs.values()]) { t.closing = true; if (t.window) t.window.destroy(); else this.removeTab(t); }

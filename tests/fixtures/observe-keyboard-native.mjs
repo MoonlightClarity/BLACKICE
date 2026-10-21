@@ -220,7 +220,7 @@ async function run() {
     browser = new BrowserWorkspace({ driver: new BrowserRouter({ independent: driver }) });
     const perform = browser.perform.bind(browser);
     browser.perform = (args, options) => {
-      const entry = { action: args.action, tabId: args.tabId, browser: args.browser, expectedUrl: args.expectedUrl, expectedDocumentId: args.expectedDocumentId, key: args.key, modifiers: args.modifiers, textLength: typeof args.text === 'string' ? args.text.length : undefined, startedAt: Date.now() };
+      const entry = { action: args.action, tabId: args.tabId, browser: args.browser, expectedUrl: args.expectedUrl, expectedDocumentId: args.expectedDocumentId, interactionId: args.interactionId, decision: args.decision, key: args.key, modifiers: args.modifiers, textLength: typeof args.text === 'string' ? args.text.length : undefined, startedAt: Date.now() };
       actions.push(entry); const gate = holdNext?.action === args.action ? holdNext : undefined; if (gate) holdNext = undefined;
       const operation = (async () => {
         if (args.action === 'screenshot' && failNextPreview) { failNextPreview = false; entry.injectedPreviewFailure = true; entry.completedAt = Date.now(); throw Error('Owned temporary renderer preview failure.'); }
@@ -456,12 +456,14 @@ async function run() {
     check('A same-document delayed form becomes visible and accepts ordinary typing without Refresh', (await state(b)).submits === 1 && actions.filter(entry => entry.action === 'type' && entry.tabId === b).at(-1).expectedDocumentId === verificationDocument && await evaluate('qaRefreshClicks===0'));
     check('Automatic progression never replays an Enter submission or the Next action', served.submissions === 1 && served.continues === 1 && actions.slice(submissionActions).filter(entry => entry.action === 'press' && entry.key === 'Enter').length === 2 && actions.slice(beforeNext).filter(entry => entry.action === 'click' && entry.startedAt <= redirectReleasedAt).length === 1);
 
-    const dialogPoint = await fieldPoint(b, 'native-dialog'); await pointer(dialogPoint.x, dialogPoint.y);
-    await until('native page dialog handoff', () => evaluate('Boolean(document.querySelector("#observe-browser-interaction [data-decision=acknowledge]"))'));
+    const dialogPoint = await fieldPoint(b, 'native-dialog'), dialogActionStart = actions.length; await pointer(dialogPoint.x, dialogPoint.y);
+    await until('native page dialog accept control', () => evaluate('Boolean(document.querySelector("#observe-browser-interaction [data-decision=accept]:not([disabled])"))'));
     const dialog = driver.status().tabs.find(tab => tab.tabId === b)?.pendingInteraction;
-    check('A real contained confirmation produces a concrete blocked-dialog handoff without automatic acceptance', dialog?.kind === 'javascript_dialog' && dialog.dialogType === 'confirm' && dialog.status === 'blocked' && dialog.tabId === b && dialog.url === verifyURL && typeof dialog.id === 'string' && typeof dialog.documentId === 'string' && await evaluate('document.querySelector("[data-observe-browser=point]").disabled && !document.querySelector("#observe-browser-interaction [data-decision=accept]")'));
-    await click('#observe-browser-interaction [data-decision="acknowledge"]'); await currentPreview(b, verifyURL, Date.now());
-    check('Acknowledging the disabled native dialog reports its canceled result without replaying the page click', await inspect(b, 'qaDialogCount===1 && qaDialogResult===false') && !driver.status().tabs.find(tab => tab.tabId === b)?.pendingInteraction);
+    // Only inspect driver state and the app UI while the contained page is paused in confirm().
+    check('A real contained confirmation remains pending for its exact guarded decision without automatic acceptance', dialog?.kind === 'javascript_dialog' && dialog.dialogType === 'confirm' && dialog.status === 'pending' && dialog.tabId === b && dialog.url === verifyURL && typeof dialog.id === 'string' && typeof dialog.documentId === 'string' && !actions.slice(dialogActionStart).some(entry => entry.action === 'interaction') && await evaluate(`document.querySelector('[data-observe-browser=point]').disabled && document.querySelector('#observe-browser-interaction [data-decision=accept]')?.dataset.interactionId===${JSON.stringify(dialog.id)}`));
+    const acceptStartedAt = Date.now(); await click('#observe-browser-interaction [data-decision="accept"]'); await currentPreview(b, verifyURL, acceptStartedAt);
+    const dialogDecisions = actions.slice(dialogActionStart).filter(entry => entry.action === 'interaction');
+    check('Accepting the guarded native confirmation returns true once without replaying the page click', await inspect(b, 'qaDialogCount===1 && qaDialogResult===true') && !driver.status().tabs.find(tab => tab.tabId === b)?.pendingInteraction && dialogDecisions.length === 1 && dialogDecisions[0].tabId === b && dialogDecisions[0].interactionId === dialog.id && dialogDecisions[0].decision === 'accept' && dialogDecisions[0].expectedUrl === verifyURL && dialogDecisions[0].expectedDocumentId === dialog.documentId);
 
     const filePoint = await fieldPoint(b, 'native-file-button'); await pointer(filePoint.x, filePoint.y);
     await until('native file chooser handoff', () => evaluate('Boolean(document.querySelector("#observe-browser-interaction [data-decision=upload]:not([disabled])"))'));
@@ -472,7 +474,7 @@ async function run() {
     const uploaded = await inspect(b, '(async()=>{const file=document.querySelector("#native-file").files[0];return {name:file.name,size:file.size,text:await file.text(),clicks:qaFileClicks}})()');
     await currentPreview(b, verifyURL, Date.now());
     check('The explicit desktop picker selection uploads exactly the owned file without an operating-system website picker', uploaded.name === 'owned-upload.txt' && uploaded.size === Buffer.byteLength(uploadText) && uploaded.text === uploadText && uploaded.clicks === 1 && !driver.status().tabs.find(tab => tab.tabId === b)?.pendingInteraction && await evaluate('window.relayDesktop.fixturePickerCalls()===1 && qaRefreshClicks===0'));
-    report.evidence.push({ nativeDialog: { id: dialog.id, type: dialog.dialogType, status: dialog.status, observedResult: false, originalInvocations: 1 }, nativeChooser: { id: chooser.id, documentId: chooser.documentId, filename: uploaded.name, bytes: uploaded.size, explicitlyPicked: true, picker: 'Owned fixture callback for the real desktop picker integration', websiteNativePickerOpened: false } });
+    report.evidence.push({ nativeDialog: { id: dialog.id, type: dialog.dialogType, status: dialog.status, decision: 'accept', documentId: dialog.documentId, observedResult: true, originalInvocations: 1 }, nativeChooser: { id: chooser.id, documentId: chooser.documentId, filename: uploaded.name, bytes: uploaded.size, explicitlyPicked: true, picker: 'Owned fixture callback for the real desktop picker integration', websiteNativePickerOpened: false } });
 
     await click('[data-mode="view"]'); await type('local'); await settled();
     check('Leaving Activity stops contained keyboard input', await evaluate('document.querySelector("#observe-workspace").hidden') && (await state(b)).email === 'finished' && (await state(a)).email === beforeAddress.email + 's');

@@ -50,6 +50,33 @@ test('choosing a tab pins its preview until Follow active page is explicitly ena
   await f.click('follow'); assert.equal(f.selected, 'three'); assert.equal(f.$('#observe-browser-follow').getAttribute('aria-pressed'), 'true'); f.data.status.activeTab = 'one'; await f.poll(); assert.equal(f.selected, 'one'); assert.equal(f.calls.some(call => call.body?.action === 'activate'), false);
 });
 
+test('Follow active page presents an agent popup while an unrelated manually pinned page stays selected', async t => {
+  const f = await fixture(t);
+  f.data.status.tabs.push(page('agent-signin', { parentTabId: 'one' })); f.data.status.activeTab = 'agent-signin'; await f.poll();
+  assert.equal(f.selected, 'agent-signin'); assert.equal(f.$('#observe-browser-follow').getAttribute('aria-pressed'), 'true');
+  assert.equal(f.calls.filter(call => call.body?.action === 'screenshot').at(-1).body.tabId, 'agent-signin');
+  await f.click('tab', 'two');
+  f.data.status.tabs.push(page('other-signin', { parentTabId: 'one' })); f.data.status.activeTab = 'other-signin'; await f.poll();
+  assert.equal(f.selected, 'two');
+  f.data.status.tabs.push(page('background-child', { parentTabId: 'two' })); f.data.status.activeTab = 'background-child'; await f.poll();
+  assert.equal(f.selected, 'two', 'a pinned page requires a current local activation before its new child is presented');
+});
+
+test('a popup opened by an observed control action is captured without treating its new tab as an input failure', async t => {
+  const f = await fixture(t); await f.click('tab', 'two'); await f.click('inspect');
+  await f.input('#observe-browser-url', 'https://two.draft.test/'); await f.input('#observe-browser-text', 'Keep the parent draft');
+  f.hook((call, data) => {
+    if (call.body?.action !== 'click') return;
+    data.status.tabs.push(page('signin', { parentTabId: 'two' })); data.status.activeTab = 'signin'; return controls('two');
+  });
+  await f.click('control');
+  assert.equal(f.selected, 'signin'); assert.equal(f.calls.filter(call => call.body?.action === 'screenshot').at(-1).body.tabId, 'signin');
+  assert.doesNotMatch(f.$('#observe-browser-status').textContent, /no longer available|may have completed/);
+  f.hook(); await f.click('close', 'signin');
+  assert.equal(f.selected, 'two'); assert.equal(f.$('#observe-browser-url').value, 'https://two.draft.test/'); assert.equal(f.$('#observe-browser-text').value, 'Keep the parent draft');
+  assert.equal(f.calls.filter(call => call.body?.action === 'click').length, 1);
+});
+
 test('keyboard arrows, Home and End select tabs and Delete closes to a surviving neighbour', async t => {
   const f = await fixture(t); await f.key('ArrowRight'); assert.equal(f.selected, 'two'); assert.equal(document.activeElement.dataset.tabId, 'two'); await f.key('End'); assert.equal(f.selected, 'three'); await f.key('ArrowRight'); assert.equal(f.selected, 'one'); await f.key('Home'); assert.equal(f.selected, 'one'); await f.key('ArrowLeft'); assert.equal(f.selected, 'three');
   await f.key('Delete'); assert.equal(f.selected, 'two'); assert.equal(document.activeElement.dataset.tabId, 'two'); assert.deepEqual(f.calls.filter(call => call.body?.action === 'close').map(call => call.body.tabId), ['three']);

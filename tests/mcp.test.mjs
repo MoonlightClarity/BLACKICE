@@ -38,14 +38,14 @@ test('managed Chrome never triggers a native connection dialog from an unconnect
   await assert.rejects(manager.call(config.id, 'list_pages', {}), { code: 'MCP_BROWSER_DISCONNECTED' }); assert.equal(calls, 1, 'setup call alone must not verify a browser');
 });
 
-test('managed Chrome applies background behavior at the actual gateway and invalidates failed connections', async t => {
+test('managed Chrome preserves explicit browser choices at the actual gateway and invalidates failed connections', async t => {
   const { manager } = await managerHarness(t); const config = chromeAutoConnectConnection(); await manager.save(config);
   const calls = []; let failed = false;
   const client = { config, connected: true, closed: false, tools: [], async start() {}, async call(name, args) { calls.push({ name, args }); if (failed === 'disconnect') this.connected = false; return failed ? { isError: true, content: [] } : { content: [{ type: 'text', text: 'local fixture' }] }; }, async close() {} };
   manager.clients.set(config.id, client); manager.chromeBrowserClient = client;
-  await manager.call(config.id, 'new_page', { url: 'https://example.test/', background: false, isolatedContext: 'wrong-profile' });
+  await manager.call(config.id, 'new_page', { url: 'https://example.test/', background: false, isolatedContext: 'requested-profile' });
   await manager.call(config.id, 'select_page', { pageId: 1, bringToFront: true });
-  assert.deepEqual(calls, [{ name: 'new_page', args: { url: 'https://example.test/', background: true } }, { name: 'select_page', args: { pageId: 1, bringToFront: false } }]);
+  assert.deepEqual(calls, [{ name: 'new_page', args: { url: 'https://example.test/', background: false, isolatedContext: 'requested-profile' } }, { name: 'select_page', args: { pageId: 1, bringToFront: true } }]);
   client.connected = false;
   await assert.rejects(manager.call(config.id, 'list_pages', {}), { code: 'MCP_BROWSER_DISCONNECTED' }); assert.equal(calls.length, 2, 'a lost MCP process must not silently restart and prompt Chrome');
   client.connected = true;

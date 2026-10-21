@@ -54,7 +54,8 @@ try {
   });
   await boundedNative('starting the owned loopback fixture server', new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); }), 5000); origin = `http://127.0.0.1:${server.address().port}`; secondOrigin = `http://qa-second.blackice.test:${server.address().port}`;
   await startDriver(); const initial = workspace.protectionStatus(); report.evidence.push({ stage: 'initial', protection: initial });
-  check(0, initial.available && initial.enabled && initial.ready && initial.source === 'bundled' && initial.engineVersion === '2.20.1' && initial.filterCount > 100000 && app.getPath('userData') === profile && driver.tabs.size === 0);
+  check(0, initial.available && !initial.enabled && initial.ready && initial.source === 'bundled' && initial.engineVersion === '2.20.1' && initial.filterCount > 100000 && app.getPath('userData') === profile && driver.tabs.size === 0);
+  await workspace.configureProtection({ action: 'global', enabled: true });
   let first = await act('open', null, origin + '/'); report.evidence.push({ stage: 'protected', counts: { ...counts }, page: first.page, protection: workspace.protectionStatus() });
   check(1, counts.legitimate === 1 && counts.ads === 0 && counts.trackers === 0 && !first.page.ad && !first.page.tracker);
   const perTab = workspace.protectionStatus().tabs.find(tab => tab.tabId === first.tabId); check(2, perTab.origin === origin && perTab.enabled === true && perTab.blockedRequests >= 2 && workspace.protectionStatus().blockedRequests >= 2);
@@ -70,7 +71,8 @@ try {
   check(7, second.page.ad && second.page.tracker && disabled.enabled === false && disabled.tabs.find(tab => tab.tabId === first.tabId).siteExempt === true && disabled.tabs.every(tab => tab.available && tab.origin && !tab.enabled));
   await boundedNative('closing the contained driver before profile restore', workspace.close(), 20000); assert.equal(BrowserWindow.getAllWindows().length, 0); await startDriver(); const restored = workspace.protectionStatus(); report.evidence.push({ stage: 'restored', protection: restored });
   check(8, restored.enabled === false && restored.ready && restored.exemptOrigins.includes(origin) && driver.tabs.size === 2 && driver.status().tabs.every(tab => tab.suspended && !tab.visible));
-  await assert.rejects(workspace.configureProtection({ action: 'global', enabled: false }, { source: 'agent' }), { code: 'BROWSER_PROTECTION_USER_ONLY' }); await assert.rejects(workspace.perform({ action: 'protection', enabled: false }), { code: 'BROWSER_VALIDATION' }); check(9, workspace.protectionStatus().enabled === false);
+  await workspace.perform({ action: 'protection', operation: 'global', enabled: true }); assert.equal(workspace.protectionStatus().enabled, true);
+  await workspace.configureProtection({ action: 'global', enabled: false }, { source: 'agent' }); await assert.rejects(workspace.perform({ action: 'protection', enabled: false }), { code: 'BROWSER_VALIDATION' }); check(9, workspace.protectionStatus().enabled === false);
   const restoredTab = driver.status().tabs.find(tab => new URL(tab.url).origin === origin); assert.ok(restoredTab); first = await act('navigate', restoredTab.tabId, origin + '/?restored=1');
   await workspace.configureProtection({ action: 'global', enabled: true }); await workspace.configureProtection({ action: 'site', tabId: first.tabId, origin, enabled: true }); before = totalBlockedResources(); first = await act('reload', first.tabId);
   check(10, !first.page.ad && !first.page.tracker && totalBlockedResources() === before && workspace.protectionStatus().enabled === true && workspace.protectionStatus().tabs.find(tab => tab.tabId === first.tabId).enabled === true);

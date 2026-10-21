@@ -12,12 +12,13 @@ async function fixture(t, { command = async () => ({}), loadURL = async () => {}
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-contained-driver-')), windows = [], session = new EventEmitter(), extensionLoads = [];
   session.extensions = { loadExtension: (...args) => { extensionLoads.push(args); return loadExtension(...args); } };
   session.cookies = new EventEmitter(); session.webRequest = { onBeforeRequest(_filter, listener) { session.beforeRequest = listener || null; }, onCompleted() {}, onErrorOccurred() {} }; session.setPermissionRequestHandler = fn => { session.permissionRequest = fn; }; session.setPermissionCheckHandler = fn => { session.permissionCheck = fn; }; session.flushStorageData = async () => {};
+  session.setDevicePermissionHandler = fn => { session.devicePermission = fn; }; session.setUSBProtectedClassesHandler = fn => { session.usbProtectedClasses = fn; };
   class Window extends EventEmitter {
     constructor(options) {
       super(); this.options = options; this.visible = Boolean(options.show); this.destroyed = false; this.loads = []; this.protocol = []; windows.push(this);
       const contents = this.webContents = new EventEmitter(), debugger_ = contents.debugger = new EventEmitter(); debugger_.attached = false;
       debugger_.isAttached = () => debugger_.attached; debugger_.attach = () => { debugger_.attached = true; };
-      debugger_.sendCommand = async (method, params) => { this.protocol.push({ method, params }); return command(method, params, this); };
+      debugger_.sendCommand = async (method, params, sessionId) => { this.protocol.push({ method, params, ...(sessionId ? { sessionId } : {}) }); return command(method, params, this, sessionId); };
       contents.isOffscreen = () => options.webPreferences?.offscreen === true;
       contents.isDestroyed = () => this.destroyed; contents.getURL = () => this.url || ''; contents.getTitle = () => 'Local fixture'; contents.isLoading = () => false;
       contents.isLoadingMainFrame = () => false;
@@ -36,7 +37,7 @@ async function fixture(t, { command = async () => ({}), loadURL = async () => {}
   const sourceURL = new URL('../desktop/browser-driver.mjs', import.meta.url), key = '__containedFixture_' + randomUUID().replaceAll('-', '');
   let source = await readFile(sourceURL, 'utf8');
   source = source.replace("import { BrowserWindow, session } from 'electron';", `const {BrowserWindow,session}=globalThis[${JSON.stringify(key)}];`).replace(/from '(\.\.?\/[^']+)'/g, (_all, relative) => `from '${new URL(relative, sourceURL).href}'`);
-  globalThis[key] = { BrowserWindow: Window, session: { fromPartition: name => { assert.equal(name, 'persist:relay-agent-browser-v2'); return session; } } };
+  globalThis[key] = { BrowserWindow: Window, session: { fromPartition: name => { assert.equal(name, 'persist:relay-agent-browser-v2'); return session; }, get defaultSession() { assert.fail('The contained driver must not change the desktop shell session.'); } } };
   let ElectronBrowserDriver; try { ({ ElectronBrowserDriver } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'))); } finally { delete globalThis[key]; }
   const driver = new ElectronBrowserDriver({ dataDir: directory, downloadDir: path.join(directory, 'downloads'), ...limits });
   t.after(async () => { if (closeError) await assert.rejects(driver.close(), closeError); else await driver.close(); assert.match(path.basename(directory), /^blackice-contained-driver-/); assert.equal(path.dirname(directory), path.resolve(tmpdir())); await rm(directory, { recursive: true, force: true }); });
@@ -44,10 +45,37 @@ async function fixture(t, { command = async () => ({}), loadURL = async () => {}
 }
 const assertContained = window => {
   assert.equal(window.options.show, false); assert.equal(window.options.focusable, false); assert.equal(window.options.skipTaskbar, true); assert.equal(window.options.fullscreenable, false);
-  assert.equal(window.options.webPreferences.offscreen, true); assert.equal(window.options.webPreferences.paintWhenInitiallyHidden, true); assert.equal(window.options.webPreferences.backgroundThrottling, false); assert.equal(window.options.webPreferences.disableDialogs, true);
+  assert.equal(window.options.webPreferences.offscreen, true); assert.equal(window.options.webPreferences.paintWhenInitiallyHidden, true); assert.equal(window.options.webPreferences.backgroundThrottling, false); assert.equal(window.options.webPreferences.disableDialogs, false);
   assert.equal(window.options.webPreferences.nodeIntegration, false); assert.equal(window.options.webPreferences.contextIsolation, true); assert.equal(window.options.webPreferences.sandbox, true); assert.equal(window.visible, false);
   assert.equal(window.options.webPreferences.nodeIntegrationInSubFrames, undefined); assert.equal(window.options.webPreferences.preload, undefined);
 };
+
+test('the dedicated contained profile grants website capabilities for documents, subframes and workers', async t => {
+  const { driver, session } = await fixture(t), tab = driver.newTab('https://example.test/');
+  await tab.loading;
+  assert.equal(tab.window.options.webPreferences.session, session);
+  const contexts = [
+    { contents: tab.window.webContents, origin: 'https://example.test', details: { requestingUrl: 'https://example.test/', isMainFrame: true } },
+    { contents: tab.window.webContents, origin: 'https://identity.example.test', details: { requestingUrl: 'https://identity.example.test/signin', embeddingOrigin: 'https://example.test', isMainFrame: false } },
+    { contents: null, origin: 'https://worker.example.test', details: { isMainFrame: false } },
+  ];
+  const permissions = ['notifications', 'geolocation', 'media', 'midiSysex', 'clipboard-read', 'clipboard-sanitized-write', 'display-capture', 'fileSystem', 'fullscreen', 'openExternal', 'storage-access', 'top-level-storage-access', 'local-network', 'loopback-network', 'persistent-storage', 'hid', 'serial', 'usb', 'unknown', 'future-browser-capability'];
+  for (const { contents, origin, details } of contexts) for (const permission of permissions) {
+    assert.equal(session.permissionCheck(contents, permission, origin, details), true, `check ${permission} for ${origin}`);
+    const grants = [];
+    session.permissionRequest(contents, permission, value => grants.push(value), details);
+    assert.deepEqual(grants, [true], `request ${permission} for ${origin} must grant exactly once`);
+  }
+});
+
+test('the contained profile grants device access and leaves no protected USB classes', async t => {
+  const { session } = await fixture(t);
+  for (const deviceType of ['hid', 'serial', 'usb']) {
+    assert.equal(session.devicePermission({ deviceType, origin: 'https://device.example.test', device: { vendorId: 1, productId: 2 } }), true);
+  }
+  const protectedClasses = Object.freeze(['audio', 'audio-video', 'hid', 'mass-storage', 'smart-card', 'video', 'wireless']);
+  assert.deepEqual(session.usbProtectedClasses({ protectedClasses }), []);
+});
 
 test('compatibility loads before direct tab navigation or input and popups cannot race its readiness', async t => {
   let release; const pending = new Promise(resolve => { release = resolve; });
@@ -252,8 +280,7 @@ test('editing keys retain modifiers and release keys without scanning a password
 });
 
 test('actual driver pages and captures remain offscreen, nonfocusable and outside the taskbar', async t => {
-  const { driver, windows, session } = await fixture(t), tab = driver.newTab('https://example.test/'); await tab.loading; assertContained(windows[0]);
-  assert.equal(session.permissionCheck(), false); let permission; session.permissionRequest(null, 'notifications', value => { permission = value; }); assert.equal(permission, false);
+  const { driver, windows } = await fixture(t), tab = driver.newTab('https://example.test/'); await tab.loading; assertContained(windows[0]);
   const image = await driver.perform({ action: 'screenshot', tabId: tab.id }); assert.equal(image.imageUrl, 'data:image/png;base64,fixture'); assert.deepEqual(windows[0].captureArgs, [undefined, { stayHidden: true }]);
   const status = driver.status(); assert.equal(status.contained, true); assert.equal(status.canShow, false); assert.equal(status.tabs[0].contained, true); assert.equal(status.tabs[0].canShow, false); assert.equal(status.tabs[0].visible, false);
 });
@@ -343,10 +370,11 @@ test('HTTP authentication is cancelled without invoking a native login prompt or
   assert.equal(tab.pendingInteraction.kind, 'http_auth'); assert.equal(tab.pendingInteraction.status, 'blocked'); assert.equal(tab.pendingInteraction.reason, 'http_auth_unsupported');
 });
 
-test('Electron-suppressed JavaScript dialogs are truthful blocked notices and cannot be accepted later', async t => {
+test('a native dialog closed elsewhere becomes a truthful blocked notice and cannot be accepted later', async t => {
   const { driver, windows } = await fixture(t), tab = driver.newTab('https://example.test/'); await tab.loading;
   const debug = windows[0].webContents.debugger;
   debug.emit('message', {}, 'Page.javascriptDialogOpening', { hasBrowserHandler: true, type: 'confirm', message: 'Confirm owned action?', defaultPrompt: 'Never retained fixture text' });
+  assert.equal(tab.pendingInteraction.status, 'pending');
   debug.emit('message', {}, 'Page.javascriptDialogClosed', { result: false, userInput: 'Never retained fixture text' });
   const pending = driver.status().tabs[0].pendingInteraction, args = { action: 'interaction', tabId: tab.id, interactionId: pending.id, expectedUrl: pending.url, expectedDocumentId: pending.documentId };
   assert.equal(pending.status, 'blocked'); assert.equal(pending.reason, 'dialog_cancelled'); assert.doesNotMatch(JSON.stringify(pending), /Never retained/);
@@ -356,11 +384,11 @@ test('Electron-suppressed JavaScript dialogs are truthful blocked notices and ca
   assert.equal(result.receipt.acknowledged, true); assert.equal(result.receipt.replayed, false); assert.equal(tab.pendingInteraction, null); assertContained(windows[0]);
 });
 
-test('a real CDP-paused dialog releases the browser queue for an exact local decision without replaying input', async t => {
+test('a real CDP-paused dialog releases the browser queue for an exact agent decision without replaying input', async t => {
   let release, first = true, typed = 0;
   const held = new Promise(resolve => { release = resolve; });
   const { driver, windows } = await fixture(t, { command: async (method, _params, window) => {
-    if (method === 'Input.insertText') { typed++; if (first) { first = false; window.webContents.debugger.emit('message', {}, 'Page.javascriptDialogOpening', { hasBrowserHandler: false, type: 'confirm', message: 'Owned paused confirm' }); return held; } }
+    if (method === 'Input.insertText') { typed++; if (first) { first = false; window.webContents.debugger.emit('message', {}, 'Page.javascriptDialogOpening', { hasBrowserHandler: true, type: 'confirm', message: 'Owned paused confirm' }); return held; } }
     if (method === 'Page.handleJavaScriptDialog') window.webContents.debugger.emit('message', {}, 'Page.javascriptDialogClosed', { result: false });
     return {};
   } });
@@ -371,10 +399,9 @@ test('a real CDP-paused dialog releases the browser queue for an exact local dec
   assert.equal(result.pendingInteraction.status, 'pending'); assert.equal(tab.suspendedWork.size, 1); assert.equal(browser.status().busy, false); assert.equal(typed, 1);
   const blocked = await browser.perform({ action: 'type', ...guard, text: 'Do not dispatch' }); assert.equal(blocked.actionDispatched, false); assert.equal(typed, 1);
   const action = { action: 'interaction', ...guard, interactionId: result.pendingInteraction.id, decision: 'dismiss' };
-  await assert.rejects(browser.perform(action), { code: 'BROWSER_INTERACTION_USER_ONLY' });
-  await assert.rejects(browser.perform({ ...action, interactionId: `browser_input_${randomUUID()}` }, { source: 'user' }), { code: 'BROWSER_INTERACTION_CHANGED' });
-  await assert.rejects(browser.perform({ ...action, expectedDocumentId: 'replaced-document' }, { source: 'user' }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
-  const resolved = await browser.perform(action, { source: 'user' }); await tick();
+  await assert.rejects(browser.perform({ ...action, interactionId: `browser_input_${randomUUID()}` }), { code: 'BROWSER_INTERACTION_CHANGED' });
+  await assert.rejects(browser.perform({ ...action, expectedDocumentId: 'replaced-document' }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+  const resolved = await browser.perform(action); await tick();
   assert.equal(browser.status().tabs[0].pendingInteraction, undefined);
   assert.equal(browser.status().tabs[0].interactionSettling, true, 'Resolving the dialog does not prove its native page command has settled.');
   release({}); await tick();
@@ -657,4 +684,118 @@ test('old active downloads remain visible and prevent page suspension beyond the
   const blocked = await driver.releaseOwner(owner); assert.equal(blocked.suspended.length, 0); assert.match(blocked.retained[0].reason, /download/); assert.ok(tab.window);
   held.emit('done', {}, 'completed'); assert.equal(driver.status().activeDownloads, 0); assert.ok(driver.downloads.length <= 100);
   assert.deepEqual((await driver.releaseOwner(owner)).suspended, [tab.id]);
+});
+
+
+async function pointerFixture(t, { beforeInput, inputError, nested = false, iframeTarget = true } = {}) {
+  const childURL = 'https://identity.example.test/button', quad = [150, 80, 450, 80, 450, 230, 150, 230];
+  let instance;
+  const f = await fixture(t, { command: async (method, params, window, sessionId) => {
+    if (method === 'Runtime.evaluate') {
+      if (params.expression === '({width:innerWidth,height:innerHeight})') {
+        beforeInput?.(instance);
+        return { result: { value: { width: 300, height: 150 } } };
+      }
+      if (!sessionId && !params.contextId) return { result: { objectId: nested ? 'outer-owner' : 'exact-owner' } };
+      if (params.contextId === 41 && nested) return { result: { objectId: 'exact-owner' } };
+      return { result: { subtype: 'null', value: null } };
+    }
+    if (method === 'DOM.describeNode') return { node: { nodeName: 'IFRAME', frameId: params.objectId === 'outer-owner' ? 'same-process-child' : 'owned-frame' } };
+    if (method === 'DOM.getBoxModel') return { model: { content: quad } };
+    if (method === 'DOM.getFrameOwner') return { backendNodeId: 7 };
+    if (method === 'Target.getTargets') return { targetInfos: [{ type: 'iframe', targetId: 'unrelated-same-url', url: childURL }, ...(iframeTarget ? [{ type: 'iframe', targetId: 'owned-frame', url: childURL }] : [])] };
+    if (method === 'Target.attachToTarget') { assert.equal(params.targetId, 'owned-frame'); assert.equal(params.flatten, true); return { sessionId: 'exact-child-session' }; }
+    if (method === 'Page.getFrameTree') return sessionId ? { frameTree: { frame: { id: 'owned-frame', url: childURL } } } : { frameTree: { frame: { id: 'root', url: window.url }, childFrames: [{ frame: { id: 'owned-frame', url: childURL } }] } };
+    if (method === 'Page.createIsolatedWorld') return { executionContextId: nested ? 41 : 42 };
+    if (method === 'Input.dispatchMouseEvent' && params.type === 'mousePressed' && inputError) throw inputError;
+    return {};
+  } });
+  const tab = f.driver.newTab('https://parent.example.test/'); await tab.loading;
+  const main = tab.window.webContents.mainFrame, child = { parent: main, processId: 2, routingId: 2, url: childURL, name: '', frames: [], framesInSubtree: [], executeJavaScript: main.executeJavaScript };
+  main.url = tab.url; main.frames = [child]; main.framesInSubtree = [main, child];
+  tab.window.webContents.executeJavaScript = async () => ({ width: 1280, height: 900 });
+  const guard = { browser: 'relay', tabId: tab.id, expectedUrl: tab.url, expectedDocumentId: `${tab.id}:${tab.revision}` };
+  f.driver.element = async () => ({ frame: child, result: { x: 150, y: 75, viewportWidth: 300, viewportHeight: 150 } });
+  f.driver.snapshot = async () => ({ frames: [] });
+  instance = { ...f, tab, child, main, guard };
+  return instance;
+}
+
+test('reference and coordinate pointers target the exact cross-process iframe with native events', async t => {
+  const f = await pointerFixture(t);
+  for (const action of ['hover', 'click']) for (const target of [{ ref: 'current-frame-button' }, { x: 300, y: 155 }]) {
+    f.windows[0].protocol.length = 0;
+    await f.driver.perform({ action, ...(action === 'click' ? f.guard : { tabId: f.tab.id }), ...target }, { source: 'user' });
+    const inputs = f.windows[0].protocol.filter(call => call.method === 'Input.dispatchMouseEvent');
+    assert.deepEqual(inputs.map(call => call.params.type), action === 'click' ? ['mouseMoved', 'mousePressed', 'mouseReleased'] : ['mouseMoved']);
+    for (const input of inputs) { assert.equal(input.sessionId, 'exact-child-session'); assert.equal(input.params.x, 150); assert.equal(input.params.y, 75); }
+    assert.equal(f.windows[0].protocol.filter(call => call.method === 'Target.attachToTarget').length, 1);
+    assert.equal(f.windows[0].protocol.filter(call => call.method === 'Target.detachFromTarget').length, 1);
+  }
+});
+
+test('pointer routing can find an OOPIF through a same-process child without routing to duplicate URLs', async t => {
+  const f = await pointerFixture(t, { nested: true });
+  await f.driver.perform({ action: 'click', ...f.guard, x: 300, y: 155 }, { source: 'user' });
+  assert.equal(f.windows[0].protocol.some(call => call.method === 'Page.createIsolatedWorld' && call.params.frameId === 'same-process-child'), true);
+  assert.deepEqual(f.windows[0].protocol.filter(call => call.method === 'Target.attachToTarget').map(call => call.params.targetId), ['owned-frame']);
+  assert.ok(f.windows[0].protocol.filter(call => call.method === 'Input.dispatchMouseEvent').every(call => call.sessionId === 'exact-child-session'));
+});
+
+test('same-process iframe input stays on its existing native root target', async t => {
+  const f = await pointerFixture(t, { iframeTarget: false });
+  await f.driver.perform({ action: 'click', ...f.guard, x: 300, y: 155 }, { source: 'user' });
+  assert.equal(f.windows[0].protocol.some(call => call.method === 'Target.attachToTarget'), false);
+  for (const call of f.windows[0].protocol.filter(call => call.method === 'Input.dispatchMouseEvent')) { assert.equal(call.sessionId, undefined); assert.equal(call.params.x, 300); assert.equal(call.params.y, 155); }
+});
+
+test('iframe navigation during routing rejects input and detaches the exact child session', async t => {
+  let changed = false;
+  const f = await pointerFixture(t, { beforeInput: fixture => { if (!changed) { changed = true; fixture.tab.revision++; } } });
+  await assert.rejects(f.driver.perform({ action: 'click', ...f.guard, x: 300, y: 155 }, { source: 'user' }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+  assert.equal(f.windows[0].protocol.some(call => call.method.startsWith('Input.')), false);
+  assert.equal(f.windows[0].protocol.filter(call => call.method === 'Target.detachFromTarget').length, 1);
+});
+
+test('an uncertain iframe press is released in that same session without root fallback or a second press', async t => {
+  const f = await pointerFixture(t, { inputError: Error('Owned uncertain pointer receipt') });
+  await assert.rejects(f.driver.perform({ action: 'click', ...f.guard, x: 300, y: 155 }, { source: 'user' }), /Owned uncertain pointer receipt/);
+  const inputs = f.windows[0].protocol.filter(call => call.method === 'Input.dispatchMouseEvent');
+  assert.deepEqual(inputs.map(call => call.params.type), ['mouseMoved', 'mousePressed', 'mouseReleased']);
+  assert.ok(inputs.every(call => call.sessionId === 'exact-child-session'));
+  assert.equal(f.windows[0].protocol.filter(call => call.method === 'Target.detachFromTarget').length, 1);
+});
+
+test('restricted file-system requests are granted and the owned listener is removed on close', async t => {
+  const { driver, session } = await fixture(t), answers = [];
+  session.emit('file-system-access-restricted', {}, { origin: 'https://files.example.test', path: 'fixture-only' }, decision => answers.push(decision));
+  assert.deepEqual(answers, ['allow']);
+  assert.equal(session.listenerCount('file-system-access-restricted'), 1);
+  await driver.close(); assert.equal(session.listenerCount('file-system-access-restricted'), 0);
+});
+
+test('a script-opened contained popup can close normally while ordinary window close behavior remains stable', async t => {
+  const { driver, Window } = await fixture(t), parent = driver.newTab('https://parent.example.test/'); await parent.loading;
+  const options = parent.window.webContents.openHandler({ url: 'https://identity.example.test/' }).overrideBrowserWindowOptions;
+  const child = new Window(options); parent.window.webContents.emit('did-create-window', child, { url: 'https://identity.example.test/' }); await tick();
+  let prevented = 0; child.emit('close', { preventDefault: () => prevented++ });
+  assert.equal(prevented, 0);
+  const childTab = [...driver.tabs.values()].find(tab => tab.window === child); assert.equal(childTab.closing, false, 'A cancellable beforeunload must not retire a still-live popup.');
+  child.destroy(); assert.equal(driver.tabs.has(childTab.id), false); assert.equal(driver.tabs.has(parent.id), true);
+  parent.window.emit('close', { preventDefault: () => prevented++ }); assert.equal(prevented, 1);
+});
+
+test('agent organization keeps task provenance and cannot affect sibling workers or the human calling tab', async t => {
+  const { driver } = await fixture(t), owner = taskOwner('organize'), sibling = { ...owner, nodeId: 'different-worker' };
+  const own = driver.newTab('https://own.example/', { owner }), other = driver.newTab('https://other.example/', { owner: sibling }); await Promise.all([own.loading, other.loading]);
+  const created = await driver.perform({ action: 'folder_create', name: 'Owned destination' }, { owner });
+  assert.equal(created.folder.kind, 'task'); assert.equal(created.folder.taskId, owner.taskId);
+  await driver.perform({ action: 'tab_move', tabId: own.id, folderId: created.folder.id }, { owner });
+  assert.equal(own.folderId, created.folder.id);
+  await assert.rejects(driver.perform({ action: 'suspend', tabId: other.id }, { owner }), { code: 'BROWSER_TAB_OWNERSHIP' });
+  await assert.rejects(driver.perform({ action: 'folder_close', folderId: other.folderId }, { owner }), { code: 'BROWSER_TAB_OWNERSHIP' });
+  const human = driver.newTab('https://chatgpt.com/', { purpose: 'chat-mode' }); await human.loading;
+  await assert.rejects(driver.perform({ action: 'folder_close', folderId: human.folderId }, { owner: { ...owner, allowUserTabs: true } }), { code: 'BROWSER_HUMAN_CHAT_RESERVED' });
+  assert.ok(driver.tabs.has(human.id)); assert.ok(driver.tabs.has(other.id));
+  await driver.perform({ action: 'folder_close', folderId: created.folder.id }, { owner }); assert.equal(driver.tabs.has(own.id), false);
 });

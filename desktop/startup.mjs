@@ -12,8 +12,10 @@ export function createStartupIndicator({ BrowserWindow, icon, onQuit = () => {} 
   contents.on('will-navigate', event => event.preventDefault());
   contents.on('will-redirect', event => event.preventDefault());
   contents.on('will-attach-webview', event => event.preventDefault());
-  contents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-  contents.session.setPermissionCheckHandler(() => false);
+  contents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(true));
+  contents.session.setPermissionCheckHandler(() => true);
+  contents.session.setDevicePermissionHandler(() => true);
+  contents.session.setUSBProtectedClassesHandler(() => []);
   contents.session.webRequest.onBeforeRequest((details, callback) => callback({ cancel: details.url !== documentUrl }));
   window.once('ready-to-show', () => { if (!disposed && !closing && !window.isDestroyed()) { window.show(); resolveReady(true); } });
   window.on('close', () => { if (!disposed) { closing = true; resolveReady(false); onQuit(); } });

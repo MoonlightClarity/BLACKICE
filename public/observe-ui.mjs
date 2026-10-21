@@ -128,13 +128,23 @@ export function renderObserveBrowser(state, { escape = escapeText } = {}) {
 export function initObserveBrowser({ mount, api, isVisible = () => true, now = Date.now, onFocusPageChange = () => {}, onOpenConnectionSettings, pickBrowserFiles }) {
   const $ = selector => mount.querySelector(selector), drafts = new Map();
   const state = { folderState:new Map(),treeOpen:true,status: {}, selectedId: null, displayedId: null, displayedUrl: '', followAgent: true, protectionBusy: false, protectionOpen: false, protectionError: '', protectionNotice: '', frame: null, document: null, ref: null, address: '', addressDirty: false, text: '', fieldValue: '', key: 'Enter', controlsOpen: false, controlsStale: true, watching: true, busy: false, stale: true, error: '', notice: '', inputNotice: '', nextAt: 0, progressUntil: 0, readFailures: 0, active: false, generation: 0, controller: null, mutationPending: false };
-  let protectionController = null, inputSession = null, inputRefresh = null, rendering = false, renderDeferred = false, renderedFrame = null, pointerGesture = null, pointerRelease = null;
+  let protectionController = null, inputSession = null, inputRefresh = null, rendering = false, renderDeferred = false, renderedFrame = null, pointerGesture = null, pointerRelease = null, popupRequest = null, popupParents = [];
   state.canPickBrowserFiles = typeof pickBrowserFiles === 'function';
   state.canOpenConnectionSettings = typeof onOpenConnectionSettings === 'function';
   const visible = () => state.active && mount.isConnected !== false && isVisible();
   const model = () => observeBrowserModel(state.status, state.selectedId);
   const actionNode = (action, tabId) => [...mount.querySelectorAll('[data-observe-browser]')].find(item => item.dataset.observeBrowser === action && (!tabId || item.dataset.tabId === tabId));
   const inputMatches = session => session && state.frame?.tabId === session.tabId && state.frame.url === session.url && state.frame.documentId === session.documentId && model().selected?.tabId === session.tabId && !model().selected.pendingInteraction;
+  function watchPopup(tabId, item) {
+    if (item.action !== 'click' && !(item.action === 'press' && ['Enter', 'Space'].includes(item.key)) && !(item.action === 'interaction' && item.decision === 'accept')) return null;
+    // Arm at dispatch, after any in-flight status read. Existing children and
+    // popups belonging to another page must not take over a pinned preview.
+    popupRequest = { parentId: tabId, knownIds: new Set(model().tabs.map(tab => tab.tabId)), generation: state.generation, pending: true, expiresAt: now() + 10000 };
+    return popupRequest;
+  }
+  function settlePopup(request) {
+    if (request && popupRequest === request) { request.pending = false; request.expiresAt = now() + 10000; }
+  }
   function inputFeedback() {
     const help = $('#observe-browser-input-help');
     if (help) { help.textContent = browserInputHint(state.inputActive); help.setAttribute?.('data-active', String(state.inputActive === true)); }
@@ -186,7 +196,10 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
           if (!inputMatches(session) || state.stale) throw Error('The contained page changed before queued input could be applied.');
           const item = session.queue.shift();
           state.progressUntil = now() + 10000;
-          const result = await api('/api/browser/action', { method: 'POST', body: { ...item, browser: 'relay', tabId: session.tabId, expectedUrl: session.url, expectedDocumentId: session.documentId }, signal: AbortSignal.any([session.controller.signal, AbortSignal.timeout(10000)]) });
+          const popup = watchPopup(session.tabId, item);
+          let result;
+          try { result = await api('/api/browser/action', { method: 'POST', body: { ...item, browser: 'relay', tabId: session.tabId, expectedUrl: session.url, expectedDocumentId: session.documentId }, signal: AbortSignal.any([session.controller.signal, AbortSignal.timeout(10000)]) }); }
+          finally { settlePopup(popup); }
           if (inputSession !== session || !visible()) return;
           if (result?.tabId !== session.tabId) throw Error('The contained page changed while input was being applied.');
           if (observeBrowserInteraction(result.pendingInteraction, session.tabId)) {
@@ -299,9 +312,24 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     if (area && item) { if (item.left < area.left) strip.scrollLeft -= area.left - item.left; else if (item.right > area.right) strip.scrollLeft += item.right - area.right; }
   }
   function applyStatus(value) {
-    const previousTabs = model().tabs, nextTabs = observeBrowserModel(value).tabs;
-    if (!state.followAgent) state.selectedId = observeBrowserNeighbor(previousTabs, nextTabs, state.selectedId);
+    const previousTabs = model().tabs, previousId = model().selected?.tabId, nextTabs = observeBrowserModel(value).tabs, live = new Set(nextTabs.map(tab => tab.tabId));
+    let popupParentId = null, popupReturnedFrom = null;
+    if (popupRequest && (popupRequest.generation !== state.generation || popupRequest.parentId !== previousId || !popupRequest.pending && now() > popupRequest.expiresAt)) popupRequest = null;
+    const children = popupRequest ? (Array.isArray(value.tabs) ? value.tabs : []).filter(tab => live.has(tab?.tabId) && tab.parentTabId === popupRequest.parentId && !popupRequest.knownIds.has(tab.tabId) && tab.suspended !== true) : [];
+    const popup = children.find(tab => tab.tabId === value.activeTab) || (children.length === 1 ? children[0] : null);
+    if (popup) {
+      popupParentId = popupRequest.parentId; popupParents.push(popupParentId); popupRequest = null;
+      state.requiredTabId = null; state.followAgent = false; state.selectedId = popup.tabId; state.revealSelected = true;
+    } else if (!state.followAgent) {
+      const parent = !live.has(previousId) && popupParents.findLast(id => live.has(id));
+      if (parent) {
+        popupReturnedFrom = previousId; popupParents = popupParents.slice(0, popupParents.lastIndexOf(parent));
+        state.requiredTabId = null; state.selectedId = parent; state.revealSelected = true;
+      } else state.selectedId = observeBrowserNeighbor(previousTabs, nextTabs, state.selectedId);
+    }
     else state.selectedId = null;
+    if (popupRequest && !live.has(popupRequest.parentId)) popupRequest = null;
+    if (!live.has(previousId) && !popupParentId && !popupReturnedFrom) popupParents = [];
     const next = observeBrowserModel(value, state.selectedId), selected = next.selected;
     if (inputSession && (selected?.tabId !== inputSession.tabId || selected?.url !== inputSession.url)) stopInput({ notice: 'The page changed. Click its field to resume keyboard input.' });
     const interaction = selected?.pendingInteraction;
@@ -317,8 +345,8 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     }
     state.status = value; state.displayedId = selected?.tabId || null; state.displayedUrl = selected?.url || '';
     if (!state.addressDirty) state.address = selected?.url || '';
-    const live = new Set(nextTabs.map(tab => tab.tabId)); for (const id of drafts.keys()) if (!live.has(id)) drafts.delete(id);
-    return next;
+    for (const id of drafts.keys()) if (!live.has(id)) drafts.delete(id);
+    return { ...next, popupParentId, popupReturnedFrom };
   }
   function adoptDocument(value, tabId) {
     const observed = observeBrowserDocument(value, tabId); if (!observed) return;
@@ -332,7 +360,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
   }
   async function selectTab(id, { focus = true, follow = false } = {}) {
     if (!visible() || !cancelRead()) return;
-    stopInput();
+    stopInput(); popupRequest = null; popupParents = [];
     if (state.focusPage) { state.focusPage = false; state.chatGPTConversation = false; onFocusPageChange(false); }
     remember(); if (id && !model().tabs.some(tab => tab.tabId === id)) return;
     state.requiredTabId = null; state.followAgent = follow; state.selectedId = follow ? null : id;
@@ -368,7 +396,11 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
         if (!['open', 'close', 'suspend'].includes(action) && target !== tabId) throw Error('The active page changed. Inspect the selected page before repeating the action.');
         if (['fill', 'select'].includes(action) && (state.controlsStale || state.stale)) throw Error('Read the current page controls before setting this field.');
         const body = { ...parameters, action: action === 'inspect' ? 'snapshot' : action, browser: 'relay', ...(action === 'open' ? {} : { tabId: target }) };
-        dispatched = mutation; state.mutationPending = mutation; const result = await request('/api/browser/action', 'POST', body); if (!current()) return;
+        const popup = watchPopup(target, body);
+        dispatched = mutation; state.mutationPending = mutation; let result;
+        try { result = await request('/api/browser/action', 'POST', body); }
+        finally { settlePopup(popup); }
+        if (!current()) return;
         if (action === 'open') {
           if (typeof result.tabId !== 'string') throw Error('The contained browser did not return its new page identity.');
           if (state.address === parameters.url) { state.addressDirty = false; state.address = state.displayedUrl; }
@@ -378,7 +410,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
         if (mutation&&action!=='suspend') state.stale = true;
         if (action === 'navigate' && state.address === parameters.url) state.addressDirty = false;
         const updatedStatus = await request('/api/browser/status'); if (!current()) return; view = applyStatus(updatedStatus);
-        if (!view.available || view.blocked || !['close','suspend'].includes(action) && view.selected?.tabId !== tabId) throw Error('The page is no longer available in the contained browser. Inspect the tabs before continuing.');
+        if (!view.available || view.blocked || !['close','suspend'].includes(action) && view.selected?.tabId !== tabId && view.popupParentId !== tabId && view.popupReturnedFrom !== tabId) throw Error('The page is no longer available in the contained browser. Inspect the tabs before continuing.');
         if(action==='suspend'){
           const outcome=browserSuspensionOutcome({...updatedStatus,...(result?.receipt?{receipt:result.receipt}:{})},target);
           state.notice=outcome.message;
@@ -425,7 +457,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
         state.busy = false; state.action = ''; state.pending = ''; state.controller = null; state.mutationPending = false;
         const retryDelay = state.readFailures ? Math.min(5000, 1000 * 2 ** Math.min(state.readFailures - 1, 3)) : waiting || state.focusPage || model().selected?.loading || now() < state.progressUntil ? 1000 : 5000;
         state.nextAt = now() + retryDelay;
-        if (state.error && inputSession) stopInput(); render(); if (action === 'close' || action === 'open') revealTab(model().selected?.tabId); state.pendingFocus = null; void pumpInput();
+        if (state.error && inputSession) stopInput(); render(); if (action === 'close' || action === 'open' || state.revealSelected) revealTab(model().selected?.tabId); state.revealSelected = false; state.pendingFocus = null; void pumpInput();
       }
       else if (generation === state.generation && state.controller === controller) { state.controller = null; state.busy = false; state.stale = true; state.nextAt = 0; state.pendingFocus = null; if (dispatched) { state.inputNotice = 'The view became hidden while a page action was pending. Inspect the page before repeating it.'; } state.mutationPending = false; }
     }
@@ -638,6 +670,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
   render();
   return {
     async enter({ tabId, focusPage = false, chatGPTConversation = false } = {}) {
+      popupRequest = null; popupParents = [];
       state.active = true; state.nextAt = 0; state.requiredTabId = typeof tabId === 'string' && tabId ? tabId : null; state.focusPage = focusPage === true; state.chatGPTConversation = state.focusPage && Boolean(state.requiredTabId) && chatGPTConversation === true; state.browserToolsOpen = false; if (state.focusPage) state.watching = true; onFocusPageChange(state.focusPage);
       if (!cancelRead()) return;
       const generation = state.generation, doc = mount.ownerDocument || globalThis.document, entryFocus = doc?.activeElement;
@@ -652,7 +685,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
       if (inputSession?.running || inputSession?.queue.length || inputSession?.composing) return;
       if (!state.stale && now() - Date.parse(state.capturedAt) > 10000) { state.stale = true; render(); } if (state.watching && !state.busy && now() >= state.nextAt) void work();
     },
-    leave() { stopInput(); finishPointer({ redraw: false }); remember(); keepDraft(); state.active = false; state.generation++; state.controller?.abort(); state.controller = null; protectionController?.abort(); protectionController = null; state.protectionBusy = false; state.protectionFocus = null; state.pickingFiles = false; state.interactionId = null; state.interactionDraft = ''; state.interactionError = ''; state.busy = false; state.frame = null; renderedFrame = null; state.document = null; for (const saved of drafts.values()) saved.document = null; state.stale = true; state.controlsStale = true; state.pendingFocus = null; state.rendered = null; state.error = ''; state.mutationPending = false; mount.innerHTML = ''; },
+    leave() { stopInput(); popupRequest = null; popupParents = []; finishPointer({ redraw: false }); remember(); keepDraft(); state.active = false; state.generation++; state.controller?.abort(); state.controller = null; protectionController?.abort(); protectionController = null; state.protectionBusy = false; state.protectionFocus = null; state.pickingFiles = false; state.interactionId = null; state.interactionDraft = ''; state.interactionError = ''; state.busy = false; state.frame = null; renderedFrame = null; state.document = null; for (const saved of drafts.values()) saved.document = null; state.stale = true; state.controlsStale = true; state.pendingFocus = null; state.rendered = null; state.error = ''; state.mutationPending = false; mount.innerHTML = ''; },
     destroy() { this.leave(); drafts.clear(); for (const [type, listener] of Object.entries(listeners)) mount.removeEventListener(type, listener); ownerWindow?.removeEventListener?.('blur', windowBlur); ownerWindow?.removeEventListener?.('pointerup', pointerup); ownerWindow?.removeEventListener?.('pointercancel', pointercancel); }
   };
 }

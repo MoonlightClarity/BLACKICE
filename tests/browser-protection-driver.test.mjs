@@ -9,10 +9,10 @@ import { BrowserProtection } from '../lib/browser-protection.mjs';
 import { BrowserRouter } from '../desktop/browser-router.mjs';
 import { BrowserWorkspace, BROWSER_ACTIONS, BROWSER_TOOL } from '../lib/browser.mjs';
 
-test('the contained session owns one actual request interceptor and exposes guarded human-only protection through the router', async t => {
+test('the contained session filters only after opt-in and exposes guarded filtering through the router', async t => {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-protection-driver-')), native = new EventEmitter(), windows = [], registrations = [], protocol = [];
   native.extensions = { loadExtension: async () => ({ id: 'owned-compatibility-extension' }) };
-  native.cookies = new EventEmitter(); native.webRequest = { onBeforeRequest(...args) { registrations.push(args); native.beforeRequest = args.at(-1); }, onCompleted() {}, onErrorOccurred() {} }; native.setPermissionRequestHandler = () => {}; native.setPermissionCheckHandler = () => {}; native.flushStorageData = async () => {};
+  native.cookies = new EventEmitter(); native.webRequest = { onBeforeRequest(...args) { registrations.push(args); native.beforeRequest = args.at(-1); }, onCompleted() {}, onErrorOccurred() {} }; native.setPermissionRequestHandler = native.setPermissionCheckHandler = native.setDevicePermissionHandler = native.setUSBProtectedClassesHandler = () => {}; native.flushStorageData = async () => {};
   class Window extends EventEmitter {
     constructor(options) {
       super(); this.options = options; this.destroyed = false; windows.push(this);
@@ -32,6 +32,8 @@ test('the contained session owns one actual request interceptor and exposes guar
   assert.equal(registrations.length, 1); assert.deepEqual(registrations[0][0], { urls: ['<all_urls>'] });
   const tab = driver.newTab('https://example.com/article'); await tab.loading;
   const request = (values = {}) => { const results = []; native.beforeRequest({ url: 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js', resourceType: 'script', webContentsId: tab.window.webContents.id, ...values }, value => results.push(value)); assert.equal(results.length, 1, 'Every native request must receive exactly one decision.'); return results[0]; };
+  assert.deepEqual(request(), { cancel: false });
+  await workspace.configureProtection({ action: 'global', enabled: true }, { source: 'agent' });
   assert.deepEqual(request(), { cancel: true }); assert.deepEqual(request({ url: 'https://example.com/article.png', resourceType: 'image' }), { cancel: false });
   assert.equal(workspace.protectionStatus().tabs.find(value => value.tabId === tab.id).blockedRequests, 1); assert.equal(workspace.status().tabs.find(value => value.tabId === tab.id).protection.origin, 'https://example.com');
   await workspace.configureProtection({ action: 'site', tabId: tab.id, origin: 'https://example.com', enabled: false }); assert.deepEqual(request(), { cancel: false });
@@ -39,8 +41,9 @@ test('the contained session owns one actual request interceptor and exposes guar
   await assert.rejects(workspace.configureProtection({ action: 'site', tabId: tab.id, origin: 'https://example.com', enabled: false }), { code: 'BROWSER_PROTECTION_STALE_TAB' }); assert.deepEqual(request(), { cancel: true });
   await assert.rejects(workspace.configureProtection({ action: 'site', tabId: 'firefox:external', origin: 'https://external.test', enabled: false }), { code: 'BROWSER_PROTECTION_CONTAINED_ONLY' });
   await assert.rejects(workspace.configureProtection({ action: 'site', tabId: 'unknown', origin: 'https://example.com', enabled: false }), { code: 'BROWSER_TAB_NOT_FOUND' });
-  await assert.rejects(workspace.configureProtection({ action: 'global', enabled: false }, { source: 'agent' }), { code: 'BROWSER_PROTECTION_USER_ONLY' });
-  await assert.rejects(workspace.perform({ action: 'protection', enabled: false }), { code: 'BROWSER_VALIDATION' }); assert.equal(BROWSER_ACTIONS.includes('protection'), false); assert.equal(JSON.stringify(BROWSER_TOOL).includes('configureProtection'), false);
-  const match = protection.match; protection.match = () => { throw new Error('Unexpected filter exception'); }; assert.deepEqual(request(), { cancel: true }); protection.match = match;
+  await workspace.configureProtection({ action: 'global', enabled: false }, { source: 'agent' }); assert.deepEqual(request(), { cancel: false });
+  await assert.rejects(workspace.perform({ action: 'protection', enabled: false }), { code: 'BROWSER_VALIDATION' }); assert.equal(BROWSER_ACTIONS.includes('protection'), true); assert.ok(BROWSER_TOOL.inputSchema.properties.operation.enum.includes('global'));
+  await workspace.perform({ action: 'protection', operation: 'global', enabled: true }); assert.deepEqual(request(), { cancel: true });
+  const match = protection.match; protection.match = () => { throw new Error('Unexpected filter exception'); }; assert.deepEqual(request(), { cancel: false }); protection.match = match;
   assert.equal(windows.length, 1); assert.equal(windows[0].options.show, false); assert.equal(windows[0].options.focusable, false); assert.equal(windows[0].options.webPreferences.offscreen, true); assert.ok(protocol.includes('Page.setInterceptFileChooserDialog'));
 });

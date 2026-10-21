@@ -24,7 +24,7 @@ async function fixture(t, { transformReceipt, exception = false, behavior, assig
   session.extensions = { loadExtension: async () => ({ id: 'owned-compatibility-extension' }) };
   session.cookies = new EventEmitter();
   session.webRequest = { onBeforeRequest() {}, onCompleted() {}, onErrorOccurred() {} };
-  session.setPermissionRequestHandler = () => {}; session.setPermissionCheckHandler = () => {};
+  session.setPermissionRequestHandler = session.setPermissionCheckHandler = session.setDevicePermissionHandler = session.setUSBProtectedClassesHandler = () => {};
   session.flushStorageData = async () => {};
   class DataTransfer {
     constructor() { this.files = []; this.items = { add: file => this.files.push(file) }; }

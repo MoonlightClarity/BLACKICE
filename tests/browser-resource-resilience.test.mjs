@@ -39,7 +39,7 @@ function fixture({ writeFile = async () => {}, loadURL = async () => {} } = {}) 
   session.extensions = { loadExtension: async () => ({ id: 'owned-compatibility-extension' }) };
   session.cookies = new EventEmitter();
   session.webRequest = { onBeforeRequest() {}, onCompleted() {}, onErrorOccurred() {} };
-  session.setPermissionRequestHandler = session.setPermissionCheckHandler = () => {};
+  session.setPermissionRequestHandler = session.setPermissionCheckHandler = session.setDevicePermissionHandler = session.setUSBProtectedClassesHandler = () => {};
   const protection = new EventEmitter();
   protection.status = protection.tabStatus = () => ({});
   protection.forgetTab = () => {};
