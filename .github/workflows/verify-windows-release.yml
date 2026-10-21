@@ -1,0 +1,148 @@
+name: Verify Windows release installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing draft release tag
+        required: true
+        default: v2.33.5
+        type: string
+      expected_sha256:
+        description: Approved exact Setup.exe SHA-256
+        required: true
+        default: 1dc370ae766dea12996819e259846cab7df5efe1bfc821f71a8b90ece3aaa59d
+        type: string
+      expected_fingerprint:
+        description: Approved application fingerprint
+        required: true
+        default: c0d7546d5c940c933c15398d0c4c83d6767636bc5b4342c899966e75cd9f2fd5
+        type: string
+      expected_source_commit:
+        description: Full SHA of the commit containing this workflow and verification scripts
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release-validation-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  installer:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      EXPECTED_SHA256: ${{ inputs.expected_sha256 }}
+      EXPECTED_FINGERPRINT: ${{ inputs.expected_fingerprint }}
+      EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+    steps:
+      - name: Validate inputs and fetch exact trusted source
+        run: |
+          $ErrorActionPreference='Stop'
+          if ($env:RELEASE_TAG -cnotmatch '^v\d+\.\d+\.\d+$' -or
+              $env:EXPECTED_SHA256 -cnotmatch '^[a-f0-9]{64}$' -or
+              $env:EXPECTED_FINGERPRINT -cnotmatch '^[a-f0-9]{64}$' -or
+              $env:EXPECTED_SOURCE_COMMIT -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid validation input.' }
+          if ($env:GITHUB_SHA -cne $env:EXPECTED_SOURCE_COMMIT) { throw 'Dispatch ref must identify the approved workflow commit.' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or $env:GITHUB_SERVER_URL -ne 'https://github.com') { throw 'Fresh GitHub-hosted runner required.' }
+          $source=Join-Path $env:GITHUB_WORKSPACE 'validation-source'
+          if (Test-Path -LiteralPath $source) { throw 'Checkout directory already exists.' }
+          git init $source
+          if ($LASTEXITCODE -ne 0) { throw 'git init failed.' }
+          git -C $source config core.autocrlf false
+          if ($LASTEXITCODE -ne 0) { throw 'git configuration failed.' }
+          git -C $source remote add origin "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY.git"
+          if ($LASTEXITCODE -ne 0) { throw 'git remote failed.' }
+          # Public repository: no GitHub credential is persisted in Git config.
+          git -C $source fetch --no-tags --depth=1 origin $env:EXPECTED_SOURCE_COMMIT
+          if ($LASTEXITCODE -ne 0) { throw 'Exact source fetch failed.' }
+          git -C $source checkout --detach FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Exact source checkout failed.' }
+          $actual=(git -C $source rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -cne $env:EXPECTED_SOURCE_COMMIT) { throw 'Fetched source SHA mismatch.' }
+          $distribution=Join-Path $env:RUNNER_TEMP 'blackice-distribution'
+          $evidence=Join-Path $env:RUNNER_TEMP 'blackice-evidence'
+          New-Item -ItemType Directory -Path $distribution,$evidence | Out-Null
+          "BLACKICE_SOURCE=$source" >> $env:GITHUB_ENV
+          "BLACKICE_DISTRIBUTION=$distribution" >> $env:GITHUB_ENV
+          "BLACKICE_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+
+      - name: Download exact installer from the existing draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $raw=gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft,tagName,databaseId,targetCommitish,assets
+          if ($LASTEXITCODE -ne 0) { throw 'Draft lookup failed.' }
+          $release=$raw | ConvertFrom-Json
+          if (!$release.isDraft -or $release.tagName -cne $env:RELEASE_TAG -or $release.targetCommitish -cne $env:EXPECTED_SOURCE_COMMIT) { throw 'Draft release identity/target mismatch.' }
+          $name='Blackice-' + $env:RELEASE_TAG.Substring(1) + '-Setup.exe'
+          foreach ($assetName in @($name,'blackice-public-release.json','SHA256SUMS.txt')) {
+            if (@($release.assets | Where-Object name -CEQ $assetName).Count -ne 1) { throw 'Expected unique draft asset missing.' }
+          }
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --dir $env:BLACKICE_DISTRIBUTION --pattern $name --pattern blackice-public-release.json --pattern SHA256SUMS.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Draft download failed.' }
+          $setup=Join-Path $env:BLACKICE_DISTRIBUTION $name
+          $hash=(Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -cne $env:EXPECTED_SHA256) { throw 'Downloaded installer SHA-256 mismatch.' }
+          $checksums=Get-Content -LiteralPath (Join-Path $env:BLACKICE_DISTRIBUTION 'SHA256SUMS.txt')
+          foreach ($assetName in @($name,'blackice-public-release.json')) {
+            $assetHash=(Get-FileHash -LiteralPath (Join-Path $env:BLACKICE_DISTRIBUTION $assetName) -Algorithm SHA256).Hash.ToLowerInvariant()
+            $pattern='^' + $assetHash + '\s+\*?' + [regex]::Escape($assetName) + '$'
+            if (@($checksums | Where-Object { $_ -cmatch $pattern }).Count -ne 1) { throw 'SHA256SUMS binding mismatch.' }
+          }
+          $binding=@{format=1;product='BLACKICE';releaseId=$release.databaseId;tag=$release.tagName;draftAtDownload=$release.isDraft;sourceCommit=$env:EXPECTED_SOURCE_COMMIT;workflowCommit=$env:GITHUB_SHA;appFingerprint=$env:EXPECTED_FINGERPRINT;artifactSha256=$hash;artifactBytes=(Get-Item $setup).Length;githubRunId=$env:GITHUB_RUN_ID;githubRunAttempt=$env:GITHUB_RUN_ATTEMPT}
+          $binding | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $env:BLACKICE_EVIDENCE 'blackice-github-validation.json') -Encoding utf8NoBOM
+
+      - name: Exercise installation, isolated native runtime, and uninstallation
+        run: |
+          $ErrorActionPreference='Stop'
+          # No GH_TOKEN is passed to the installer or application checks.
+          & (Join-Path $env:BLACKICE_SOURCE 'scripts/verify-windows-release.ps1') `
+            -SourceRoot $env:BLACKICE_SOURCE `
+            -Distribution $env:BLACKICE_DISTRIBUTION `
+            -EvidenceDirectory $env:BLACKICE_EVIDENCE `
+            -Tag $env:RELEASE_TAG `
+            -ExpectedSha256 $env:EXPECTED_SHA256 `
+            -ExpectedFingerprint $env:EXPECTED_FINGERPRINT `
+            -ExpectedSourceCommit $env:EXPECTED_SOURCE_COMMIT
+
+      - name: Attach only sanitized verification evidence to the same draft
+        if: ${{ always() && env.BLACKICE_EVIDENCE != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $bindingPath=Join-Path $env:BLACKICE_EVIDENCE 'blackice-github-validation.json'
+          if (!(Test-Path -LiteralPath $bindingPath)) { Write-Host 'No bound draft evidence to upload.'; exit 0 }
+          $binding=Get-Content -Raw -LiteralPath $bindingPath | ConvertFrom-Json
+          $raw=gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft,tagName,databaseId,targetCommitish
+          if ($LASTEXITCODE -ne 0) { throw 'Draft recheck failed.' }
+          $release=$raw | ConvertFrom-Json
+          if (!$release.isDraft -or $release.databaseId -ne $binding.releaseId -or $release.tagName -cne $binding.tag -or $release.targetCommitish -cne $env:EXPECTED_SOURCE_COMMIT) { throw 'Release changed or is no longer the same draft; refusing upload.' }
+          $names=@('blackice-github-validation.json','blackice-windows-install-validation.json','blackice-runtime-integrity.json','blackice-source-test-provenance.json','blackice-runtime-validation.json','blackice-release-receipts.json','blackice-public-readiness.json')
+          $files=@()
+          foreach ($name in $names) {
+            $file=Join-Path $env:BLACKICE_EVIDENCE $name
+            if (Test-Path -LiteralPath $file -PathType Leaf) {
+              $item=Get-Item -LiteralPath $file
+              if ($item.Length -gt 1000000 -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Unexpected evidence file.' }
+              $null=Get-Content -Raw -LiteralPath $file | ConvertFrom-Json
+              $files+=$file
+            }
+          }
+          # This fixed JSON allowlist can never replace Setup.exe or its manifest.
+          gh release upload $env:RELEASE_TAG @files --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Supporting evidence upload failed.' }
+          $readiness=Join-Path $env:BLACKICE_EVIDENCE 'blackice-public-readiness.json'
+          if (Test-Path -LiteralPath $readiness) {
+            $result=Get-Content -Raw -LiteralPath $readiness | ConvertFrom-Json
+            "## BLACKICE Windows validation`n`nClassification: $($result.classification).`n`nSource: $env:EXPECTED_SOURCE_COMMIT`n`nInstaller SHA-256: $env:EXPECTED_SHA256`n`nEvidence attached to the existing draft. Publication remains a separate action." >> $env:GITHUB_STEP_SUMMARY
+          }
