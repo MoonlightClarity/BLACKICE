@@ -67,11 +67,17 @@ An interrupted process can leave an unreferenced staging or snapshot directory. 
 
 ### Native behavior and authentication fidelity
 
-The generated MCP configuration supplies `--executablePath`, `--userDataDir`, and the exact `--profile-directory` argument. It does not combine these with `--autoConnect`, `--channel`, or an isolated/incognito context. Its ordinary mode is a native headed browser; disposable fixtures can request headless mode.
+Both generated Chrome connection routes use the shared, tested `chrome-devtools-mcp@1.11.0` version. The default launcher needs Node.js and npm available on the host; npm obtains that exact package version on first use. Choosing Connect upgrades an unchanged BLACKICE-generated `@latest` configuration to this pin. A custom package version, additional launch flags, disabled configuration, or another profile's snapshot is preserved rather than silently adopted.
+
+The imported-profile configuration supplies `--executablePath`, `--userDataDir`, and the exact `--profile-directory` argument. It does not combine these with `--autoConnect`, `--channel`, or an isolated/incognito context. Its ordinary mode is a native headed browser; disposable fixtures can request headless mode.
 
 The connection ignores Puppeteer's default flags that disable extensions, background component extensions, sync, background networking, client-side phishing detection, and IPC flooding protection. It also ignores the Linux `--password-store=basic` and macOS `--use-mock-keychain` defaults. This retains the installed browser's normal extensions, native secret-store integration, background behavior, and these native protections. Browser and enterprise policies still apply; this is an official automation connection, and it does not promise identical behavior for every automation-sensitive site.
 
 Copying every relevant file does not prove that an account will remain signed in. Windows app-bound encryption can bind data to the browser application and machine. Operating-system keychains, hardware-bound keys, device-bound sessions, and website session policy can also affect portability. Running the same installed browser under the same operating-system account avoids introducing a different browser's encryption implementation, but it does not establish that every copied credential is usable. Import metadata therefore reports `authentication: "unverified"`; check an actual account page or server response before claiming a working sign-in. Password databases and cookie stores remain opaque throughout the copy.
+
+Current Windows Chrome has a specific limitation for a copied default profile: its [app-bound key provider](https://github.com/chromium/chromium/blob/main/chrome/browser/os_crypt/app_bound_encryption_provider_win.cc) returns `kTemporarilyUnavailable` when the browser uses a nondefault user-data directory, before attempting to decrypt the stored app-bound key. Consequently, copying an app-bound cookie database and `Local State` unchanged into BLACKICE's `bp/` directory does not make those cookies usable, even with the same Chrome executable and Windows account. A successful file copy can preserve browser data while the imported browser still shows a sign-in page.
+
+To reuse that existing signed-in Chrome profile, use **Connect Chrome** or `BLACKICE browser connect-chrome --request-id=connect-live-001`. Keep the original Chrome session open, enable its native remote-debugging connection in `chrome://inspect/#remote-debugging`, and accept Chrome's own connection request if shown. This attaches the original browser session without relocating its profile. The discovered connection is shared by BLACKICE agents and ChatGPT; inspect the target site to confirm its current account state.
 
 ### Library interface and tests
 
@@ -80,10 +86,12 @@ Copying every relevant file does not prove that an account will remain signed in
 Run the disposable unit fixtures with:
 
 ```sh
-node --test tests/browser-profile.test.mjs
+node --test tests/browser-profile.test.mjs tests/chrome-browser.test.mjs tests/connected-browser-tools.test.mjs tests/connected-browser-gateway.test.mjs tests/browser-cli.test.mjs tests/browser-commands-http.test.mjs
 ```
 
 They cover byte preservation of opaque browser databases and durable storage, exact non-default profile selection, reported omissions, source preservation, native source locks, changing source files and directory structure, cancellation, failed publication, an actual interrupted subprocess, import-lock recovery, concurrent imports, link and path rejection, compact Windows path budgets, snapshot ownership and collision handling, legacy record compatibility, discovery, and native launch arguments. `scripts/browser-profile-smoke.mjs` performs the separate native-browser regression using a newly created synthetic profile and loopback-only fixture. Synthetic success does not establish personal-account portability.
+
+See [repeatable source and native verification](SIGNING-AND-RELEASE.md#repeatable-source-and-native-verification) for the pinned adapter installation, exact native fixture commands, and the separate Windows installer checks.
 
 Primary references for the profile-copy behavior and its limits:
 

@@ -6,14 +6,14 @@ import { parseConnectionImport } from '../lib/connection-import.mjs';
 function fixture({ config, result = { content: [{type:'text',text:'## Pages\n1: https://private.fixture.test/ Private title'}] }, error, tools = [{name:'list_pages'}] } = {}) {
   let configurations=config ? [structuredClone(config)] : [];
   const operations=[], clients=new Map();
-  const manager={clients, list(){operations.push(['list']);return configurations.map(config=>({...config,connected:!!clients.get(config.id)?.connected}));}, async init(){operations.push(['init']);}, async save(input){operations.push(['save',input]);configurations.push({...input});}, async connect(id,{signal}={}){operations.push(['connect',id]);if(error)throw error;const client={connected:true,tools}; clients.set(id,client);return client;}, async call(id,name,args,options){operations.push(['call',id,name,args,options]);return result;}};
+  const manager={clients, list(){operations.push(['list']);return configurations.map(config=>({...config,connected:!!clients.get(config.id)?.connected}));}, async init(){operations.push(['init']);}, async save(input){operations.push(['save',input]);configurations=[...configurations.filter(config=>config.id!==input.id),{...input}];}, async connect(id,{signal}={}){operations.push(['connect',id]);if(error)throw error;const client={connected:true,tools}; clients.set(id,client);return client;}, async call(id,name,args,options){operations.push(['call',id,name,args,options]);return result;}};
   return{manager,operations};
 }
 
 test('Chrome configuration uses official autoConnect through Relay stdio without browser launch or profile-copy flags',()=>{
   const config=chromeAutoConnectConnection();
   assert.equal(config.transport,'stdio');assert.equal(config.command,'npx');assert.equal(config.id,CHROME_BROWSER_CONNECTION_ID);
-  assert.deepEqual(config.args,['-y','chrome-devtools-mcp@latest','--autoConnect','--channel=stable','--no-usage-statistics','--no-performance-crux']);
+  assert.deepEqual(config.args,['-y','chrome-devtools-mcp@1.11.0','--autoConnect','--channel=stable','--no-usage-statistics','--no-performance-crux']);
   assert.equal(config.timeoutMs,60000);assert.equal(parseConnectionImport({connections:[config]}).candidates[0].args.includes('--autoConnect'),true);
   assert.doesNotMatch(config.args.join(' '),/headless|isolated|user-data-dir|browser-url|remote-debugging-port/);
 });
@@ -66,8 +66,23 @@ test('An MCP catalog connection alone never claims that Chrome or its account is
   const status=chromeBrowserStatus({connections:manager});assert.equal(status.serverConnected,true);assert.equal(status.browserConnected,false);assert.equal(status.state,'server-connected');
 });
 
+test('only explicit Connect upgrades the exact legacy generated package and preserves the selected channel',async()=>{
+  const config=chromeAutoConnectConnection({channel:'beta',command:'C:\\Program Files\\nodejs\\npx.cmd',timeoutMs:90000});
+  config.args[1]='chrome-devtools-mcp@latest';
+  const {manager,operations}=fixture({config});
+  assert.equal(chromeBrowserStatus({connections:manager}).state,'disconnected');
+  assert.deepEqual(operations,[['list']]);assert.equal(manager.list()[0].args[1],'chrome-devtools-mcp@latest');
+  await registerChromeBrowser({connections:manager});
+  const saved=operations.filter(([name])=>name==='save');assert.equal(saved.length,1);
+  assert.deepEqual(saved[0][1].args,['-y','chrome-devtools-mcp@1.11.0','--autoConnect','--channel=beta','--no-usage-statistics','--no-performance-crux']);
+  assert.equal(saved[0][1].command,config.command);assert.equal(saved[0][1].timeoutMs,90000);
+  await registerChromeBrowser({connections:manager});assert.equal(operations.filter(([name])=>name==='save').length,1);
+});
+
 test('Explicit Connect preserves conflicting or disabled configurations without starting any process',async()=>{
-  for(const config of [{...chromeAutoConnectConnection(),command:'custom-server'}, {...chromeAutoConnectConnection(),enabled:false}]){
+  const legacy=chromeAutoConnectConnection();legacy.args[1]='chrome-devtools-mcp@latest';
+  const otherVersion=chromeAutoConnectConnection();otherVersion.args[1]='chrome-devtools-mcp@1.12.0';
+  for(const config of [{...chromeAutoConnectConnection(),command:'custom-server'}, {...chromeAutoConnectConnection(),enabled:false}, {...legacy,enabled:false}, {...legacy,args:[...legacy.args,'--browser-url=http://localhost:9222']}, otherVersion]){
     const{manager,operations}=fixture({config});const before=manager.list();operations.length=0;
     await assert.rejects(registerChromeBrowser({connections:manager}),{code:config.enabled===false?'CHROME_CONNECTION_DISABLED':'CHROME_CONNECTION_CONFLICT'});
     assert.deepEqual(manager.list(),before);assert.equal(operations.some(([name])=>['save','connect','call'].includes(name)),false);

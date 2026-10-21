@@ -555,7 +555,7 @@ The execution history keeps its most recent 100 runs. The separate conversation 
 
 ## Source and verification
 
-Node.js 22+ is required for source development. `npm install` installs build tools. `npm start` or **Start Relay.cmd** starts the source UI at [127.0.0.1:4317](http://127.0.0.1:4317); **Stop Relay.cmd** saves and stops it. The independent browser is a native desktop capability, so use `npm run desktop` for full functionality.
+Node.js 22.12+ is required to install the pinned desktop build tools. Use `npm ci` for a clean install from `package-lock.json`. `npm start` or **Start Relay.cmd** starts the source UI at [127.0.0.1:4317](http://127.0.0.1:4317); **Stop Relay.cmd** saves and stops it. The independent browser is a native desktop capability, so use `npm run desktop` for full functionality. [Repeatable source and native verification](SIGNING-AND-RELEASE.md#repeatable-source-and-native-verification) lists the focused browser/auth tests, disposable native fixtures, and exact release-evidence inputs.
 
 The previous 2.16 candidate was verified as a registered Windows program, including its Setup artifact, shortcuts and 118 matching runtime source files. Its suite recorded 1,279 passed tests and four optional skips, with a separate real Codex/Ultra runtime-default and SVG deliverable smoke. That is historical evidence, not validation of 2.18. Current release checks must match the exact version, application fingerprint and Setup installer. The two earlier optional live Windows non-interference failures remain unresolved as described above.
 

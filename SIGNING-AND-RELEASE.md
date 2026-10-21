@@ -14,6 +14,47 @@ When the project is directly inside an `outputs` directory, the candidate is wri
 
 Setup uses the BLACKICE program name, `BLACKICE.exe`, Start menu and Desktop shortcuts, and an Installed apps entry with an uninstaller. The stable application ID, package identity, and `%APPDATA%\Relay` profile directory remain unchanged for installation and data continuity. Do not rename those identifiers as a branding cleanup. Uninstalling preserves profile data.
 
+## Repeatable source and native verification
+
+Use a clean checkout of the exact source commit on Windows and Node.js 22.12 or newer. Record the source commit, Node/npm versions, native browser version, and test log hashes with the candidate's evidence. `package-lock.json` fixes the desktop build dependencies, including Electron 44.7.2 and electron-builder 26.15.3. Both generated native Chrome connection routes use the shared `chrome-devtools-mcp@1.11.0` pin in `lib/chrome-browser-policy.mjs`; that separately launched adapter is not bundled by the application's npm lockfile. A native browser remains an installed host dependency, so its version must be recorded rather than inferred from the source checkout.
+
+```powershell
+npm ci
+npm test
+```
+
+For focused investigation, these commands exercise the browser gateway/profile copy, contained input/passkey behavior, OAuth recovery, and release evidence separately. They supplement the full suite:
+
+```powershell
+node --test tests/chrome-browser.test.mjs tests/browser-profile.test.mjs tests/connected-browser-tools.test.mjs tests/connected-browser-gateway.test.mjs tests/browser-cli.test.mjs tests/browser-commands-http.test.mjs
+node --test tests/browser-contained-driver.test.mjs tests/browser-passkey.test.mjs tests/observe-keyboard.test.mjs
+node --test tests/chatgpt-oauth.test.mjs tests/chatgpt-connector.test.mjs tests/chatgpt-connector-http.test.mjs
+node --test tests/release-check.test.mjs tests/windows-release-inputs.test.mjs
+```
+
+The native fixtures below use a new synthetic browser profile and local pages. They do not open a personal browser profile or establish that copied account credentials work. Run the Electron fixtures with the checkout's raw Electron executable, never the installed BLACKICE application. Keep their reports outside the checkout. Set `$chrome` to the installed Chrome executable to be tested; the example is an ordinary system installation path.
+
+```powershell
+$evidence = Join-Path $env:TEMP ('blackice-verification-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $evidence | Out-Null
+$electron = Join-Path $PWD 'node_modules\electron\dist\electron.exe'
+$chrome = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+$adapter = Join-Path $evidence 'adapter'
+New-Item -ItemType Directory -Path $adapter | Out-Null
+Set-Content -LiteralPath (Join-Path $adapter 'package.json') -Value '{"private":true}' -Encoding utf8
+npm install --prefix $adapter --save-exact --no-audit --no-fund chrome-devtools-mcp@1.11.0
+$mcpEntry = Join-Path $adapter 'node_modules\chrome-devtools-mcp\build\src\index.js'
+node scripts/browser-profile-smoke.mjs "--executable=$chrome" "--mcp-entry=$mcpEntry" "--output=$evidence\browser-profile.json"
+& $electron scripts/browser-input-smoke.mjs "--output=$evidence\browser-input.json"
+& $electron scripts/browser-passkey-smoke.mjs "--output=$evidence\browser-passkey.json"
+```
+
+Retain the adapter's generated lockfile with private build evidence if the same resolved dependency tree will be reused. Each fixture must exit successfully and its report must show a passing result. The profile report records actual browser/MCP versions and source hashes; the passkey report records first-script coverage across frames, popups, and restored pages without requesting a real credential. These reports are evidence for their recorded source bytes and environment only. They cannot replace the final Setup.exe verification or a native restart receipt.
+
+After finishing runtime changes and setting the release version, use `npm run package:public` and the exact-candidate checks below. Machine-specific file-patch installers and the historical `scripts/install-background-update.mjs` helper are not the public build or update workflow.
+
+The **Verify Windows release installer** GitHub workflow accepts an existing draft tag, its exact installer SHA-256, application fingerprint, full source commit, and `source_test_receipt`. Supply a tracked path such as `verification/windows-VERSION.json` containing actual Windows source-test results for that version and fingerprint. The workflow forwards it as `-SourceTestReceipt` to `scripts/verify-windows-release.ps1`; untracked, stale, unsuccessful, or mismatched evidence is rejected. The historical receipt is never selected implicitly. This workflow runs only on a disposable GitHub-hosted Windows VM, checks the actual installer, and attaches sanitized supporting evidence to the existing draft. Publication remains a separate step.
+
 ## Optional existing signing identity
 
 Without a signing identity, the installer is explicitly unsigned. Its manifest records `signing.status: "unsigned"`, null publisher fields, and `publisherVerified: false`. Windows has not verified a BLACKICE publisher identity. No signing account or paid service is required for that release policy.

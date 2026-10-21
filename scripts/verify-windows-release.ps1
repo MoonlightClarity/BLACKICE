@@ -8,7 +8,8 @@ param(
   [Parameter(Mandatory)][ValidatePattern('^v\d+\.\d+\.\d+$')][string]$Tag,
   [Parameter(Mandatory)][ValidatePattern('^[a-f0-9]{64}$')][string]$ExpectedSha256,
   [Parameter(Mandatory)][ValidatePattern('^[a-f0-9]{64}$')][string]$ExpectedFingerprint,
-  [Parameter(Mandatory)][ValidatePattern('^[a-f0-9]{40}$')][string]$ExpectedSourceCommit
+  [Parameter(Mandatory)][ValidatePattern('^[a-f0-9]{40}$')][string]$ExpectedSourceCommit,
+  [Parameter(Mandatory)][ValidatePattern('^verification/[A-Za-z0-9][A-Za-z0-9._-]*\.json$')][string]$SourceTestReceipt
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -210,26 +211,24 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
-const [src,app,install,out,expected,version,commit]=process.argv.slice(2);
+const [src,app,install,out,expected,version,commit,receiptPath]=process.argv.slice(2);
 const check=(v,m)=>{if(!v)throw Error(m)};
 check(Number(process.versions.node.split('.')[0])>=22,'Node 22 or newer required');
 const sha=b=>createHash('sha256').update(b).digest('hex');
 const save=async(n,v)=>fs.writeFile(path.join(out,n),JSON.stringify(v,null,2)+'\n');
 const {appFingerprint}=await import(pathToFileURL(path.join(src,'scripts/release-check.mjs')));
+const {approvedWindowsPackageFile,forbiddenWindowsPackagePath,readWindowsSourceTestReceipt}=await import(pathToFileURL(path.join(src,'scripts/windows-release-inputs.mjs')));
 const source=await appFingerprint(src), installed=await appFingerprint(app);
 check(source===expected&&installed===source,'Source/installed fingerprint mismatch');
 const tracked=new Set(execFileSync('git',['-C',src,'ls-files','-z'],{encoding:'utf8',maxBuffer:8e6}).split('\0'));
-const top=new Set(['package.json','LICENSE','NOTICE','THIRD-PARTY-NOTICES.md','server.mjs','CHATGPT-BRIDGE.md','CHATGPT-CONNECTOR.md','CHAT-MODE.md','PLANNING-ORGANIZATION.md','REMOTE-ACCESS.md','BROWSER-PROTECTION.md','EMAIL.md','PLANNING-AWARENESS.md',...['2.30.0','2.31.0','2.31.1','2.32.0','2.33.5'].map(v=>`RELEASE-NOTES-${v}.md`)]);
-const allowed=p=>top.has(p)||/^(lib|public)\//.test(p)||/^desktop\/.*\.(mjs|cjs)$/.test(p)||p==='desktop/icon.ico'||/^scripts\/(generate-noir-background\.mjs|noir-scene\.config\.json|chatgpt-bridge\.mjs|email-oauth-token\.mjs|remote-access-cli\.mjs)$/.test(p);
-const forbidden=p=>p==='desktop/build-icon.mjs'||p.endsWith('.test.mjs')||p.includes('.currents-backup-')||/(^|\/)(\.git|\.env(?:\..*)?|data|workspace|tests|node_modules)(\/|$)/.test(p);
 const records=[];
 async function walk(relative='') {
   for(const name of await fs.readdir(path.join(app,relative))) {
     const p=relative?`${relative}/${name}`:name, file=path.join(app,p), stat=await fs.lstat(file);
-    check(!stat.isSymbolicLink(),'Packaged symbolic link'); check(!forbidden(p),'Excluded/private package path');
+    check(!stat.isSymbolicLink(),'Packaged symbolic link'); check(!forbiddenWindowsPackagePath(p),'Excluded/private package path');
     if(stat.isDirectory()) await walk(p);
     else {
-      check(stat.isFile()&&allowed(p)&&tracked.has(p),'Unapproved or untracked packaged file');
+      check(stat.isFile()&&approvedWindowsPackageFile(p,version)&&tracked.has(p),'Unapproved or untracked packaged file');
       const bytes=await fs.readFile(file), hash=sha(bytes);
       // release-check compares normalized package metadata on both sides.
       if(p!=='package.json')check(hash===sha(await fs.readFile(path.join(src,p))),'Packaged file differs from checked-out source');
@@ -245,15 +244,12 @@ for(const name of ['LICENSE.electron.txt','LICENSES.chromium.html']) {
   check(stat.isFile()&&!stat.isSymbolicLink()&&bytes.length>100,'Electron license missing');
   notices.push({path:`<electron>/${name}`,bytes:bytes.length,sha256:sha(bytes)});
 }
-const receiptPath='verification/windows-2026-10-21.json', bytes=await fs.readFile(path.join(src,receiptPath)), prior=JSON.parse(bytes), t=prior.tests;
-check(tracked.has(receiptPath)&&prior.format===1&&prior.product==='BLACKICE'&&prior.scope==='source-publication'&&prior.version===version&&prior.appFingerprint===expected&&prior.fingerprintUnchanged===true&&prior.platform==='win32','Prior source test receipt binding mismatch');
-check(['total','passed','failed','requiredSkipped','optionalSkipped','cancelled','exitCode'].every(k=>Number.isSafeInteger(t[k])&&t[k]>=0)&&t.passed>0&&t.failed===0&&t.requiredSkipped===0&&t.cancelled===0&&t.exitCode===0&&t.total===t.passed+t.failed+t.requiredSkipped+t.optionalSkipped,'Prior required tests did not pass');
-check(/^[a-f\d]{64}$/.test(prior.testLogSha256),'Prior test log provenance missing');
+const prior=await readWindowsSourceTestReceipt({directory:src,receiptPath,version,appFingerprint:expected,tracked});
 const provenance={sourceCommit:commit,githubRunId:process.env.GITHUB_RUN_ID,githubRunAttempt:process.env.GITHUB_RUN_ATTEMPT};
-await save('blackice-source-test-provenance.json',{format:1,product:'BLACKICE',...provenance,receiptPath,receiptSha256:sha(bytes),checkedAt:prior.checkedAt,platform:prior.platform,node:prior.node,appFingerprint:prior.appFingerprint,tests:t,testLogSha256:prior.testLogSha256,rerunInThisWorkflow:false});
+await save('blackice-source-test-provenance.json',{format:1,product:'BLACKICE',...provenance,...prior,rerunInThisWorkflow:false});
 await save('blackice-runtime-integrity.json',{format:1,product:'BLACKICE',...provenance,node:process.version,sourceFingerprint:source,installedFingerprint:installed,filesVerified:records.length,inventorySha256:sha(Buffer.from(JSON.stringify(records.sort((a,b)=>a.path.localeCompare(b.path,'en'))))),privateFileScan:{method:'every installed app file matches tracked source and packaging allowlist',filesExamined:records.length,rejectedFiles:0},notices,passed:true});
 '@ | Set-Content -LiteralPath $integrityScript -Encoding utf8NoBOM
-  Invoke-Node @($integrityScript,$SourceRoot,$app,$install,$EvidenceDirectory,$ExpectedFingerprint,$version,$commit)
+  Invoke-Node @($integrityScript,$SourceRoot,$app,$install,$EvidenceDirectory,$ExpectedFingerprint,$version,$commit,$SourceTestReceipt)
   $stage='runtime'
   $runtimeReport=Join-Path $EvidenceDirectory 'blackice-runtime-validation.json'
   Invoke-Node @((Join-Path $SourceRoot 'scripts\verify-installed-runtime.mjs'),'--app-dir',$app,'--exe',$exe,'--test-root',(Join-Path $work 'runtime'),'--report',$runtimeReport,'--expected-version',$version,'--expected-fingerprint',$ExpectedFingerprint)

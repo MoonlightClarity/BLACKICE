@@ -89,13 +89,23 @@ test('reimported compact profiles reconnect from an older owned revision without
   const connect = createDirectBrowserProfileTools({ profiles, manager }).find(tool => tool.definition.name === 'blackice_profile_connect').execute;
   const first = await profiles.import(input); await connect({ importId: first.id });
   assert.ok(configured.args.includes('--userDataDir=' + first.userDataDir));
+  configured = { ...configured, args: configured.args.map(arg => arg === 'chrome-devtools-mcp@1.11.0' ? 'chrome-devtools-mcp@latest' : arg) };
+  await connect({ importId: first.id });
+  assert.equal(configured.args[1], 'chrome-devtools-mcp@1.11.0'); assert.equal(saves, 2); assert.equal(connects, 2);
+  configured = { ...configured, args: configured.args.map(arg => arg === 'chrome-devtools-mcp@1.11.0' ? 'chrome-devtools-mcp@latest' : arg) };
   await profiles.import(input); // A refresh need not have been connected.
   const latest = await profiles.import(input); await connect({ importId: first.id });
-  assert.ok(configured.args.includes('--userDataDir=' + latest.userDataDir)); assert.equal(saves, 2); assert.equal(connects, 2);
+  assert.ok(configured.args.includes('--userDataDir=' + latest.userDataDir)); assert.equal(configured.args[1], 'chrome-devtools-mcp@1.11.0'); assert.equal(saves, 3); assert.equal(connects, 3);
+  const expected = configured;
+  for (const args of [expected.args.map(arg => arg === 'chrome-devtools-mcp@1.11.0' ? 'chrome-devtools-mcp@1.12.0' : arg), [...expected.args, '--browserUrl=http://localhost:9222']]) {
+    configured = { ...expected, args };
+    await assert.rejects(connect({ importId: first.id }), { code: 'BROWSER_PROFILE_CONNECTION_CONFLICT' });
+  }
+  configured = expected;
   const other = await profiles.import({ ...input, profileDirectory: 'Default' });
   configured = { ...configured, args: configured.args.map(arg => arg.startsWith('--userDataDir=') ? '--userDataDir=' + other.userDataDir : arg) };
   await assert.rejects(connect({ importId: first.id }), { code: 'BROWSER_PROFILE_CONNECTION_CONFLICT' });
-  assert.equal(saves, 2); assert.equal(connects, 2);
+  assert.equal(saves, 3); assert.equal(connects, 3);
 });
 
 test('host-owned tool time budgets cancel actual work and unlimited profile work remains explicitly cancellable', async t => {

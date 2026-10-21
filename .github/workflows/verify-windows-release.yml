@@ -6,20 +6,21 @@ on:
       tag:
         description: Existing draft release tag
         required: true
-        default: v2.33.5
         type: string
       expected_sha256:
         description: Approved exact Setup.exe SHA-256
         required: true
-        default: 1dc370ae766dea12996819e259846cab7df5efe1bfc821f71a8b90ece3aaa59d
         type: string
       expected_fingerprint:
         description: Approved application fingerprint
         required: true
-        default: c0d7546d5c940c933c15398d0c4c83d6767636bc5b4342c899966e75cd9f2fd5
         type: string
       expected_source_commit:
         description: Full SHA of the commit containing this workflow and verification scripts
+        required: true
+        type: string
+      source_test_receipt:
+        description: Tracked verification/NAME.json source-test receipt for this version and fingerprint
         required: true
         type: string
 
@@ -42,6 +43,7 @@ jobs:
       EXPECTED_SHA256: ${{ inputs.expected_sha256 }}
       EXPECTED_FINGERPRINT: ${{ inputs.expected_fingerprint }}
       EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+      SOURCE_TEST_RECEIPT: ${{ inputs.source_test_receipt }}
     steps:
       - name: Validate inputs and fetch exact trusted source
         run: |
@@ -49,7 +51,8 @@ jobs:
           if ($env:RELEASE_TAG -cnotmatch '^v\d+\.\d+\.\d+$' -or
               $env:EXPECTED_SHA256 -cnotmatch '^[a-f0-9]{64}$' -or
               $env:EXPECTED_FINGERPRINT -cnotmatch '^[a-f0-9]{64}$' -or
-              $env:EXPECTED_SOURCE_COMMIT -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid validation input.' }
+              $env:EXPECTED_SOURCE_COMMIT -cnotmatch '^[a-f0-9]{40}$' -or
+              $env:SOURCE_TEST_RECEIPT -cnotmatch '^verification/[A-Za-z0-9][A-Za-z0-9._-]*\.json$') { throw 'Invalid validation input.' }
           if ($env:GITHUB_SHA -cne $env:EXPECTED_SOURCE_COMMIT) { throw 'Dispatch ref must identify the approved workflow commit.' }
           if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or $env:GITHUB_SERVER_URL -ne 'https://github.com') { throw 'Fresh GitHub-hosted runner required.' }
           $source=Join-Path $env:GITHUB_WORKSPACE 'validation-source'
@@ -98,7 +101,7 @@ jobs:
             $pattern='^' + $assetHash + '\s+\*?' + [regex]::Escape($assetName) + '$'
             if (@($checksums | Where-Object { $_ -cmatch $pattern }).Count -ne 1) { throw 'SHA256SUMS binding mismatch.' }
           }
-          $binding=@{format=1;product='BLACKICE';releaseId=$release.databaseId;tag=$release.tagName;draftAtDownload=$release.isDraft;sourceCommit=$env:EXPECTED_SOURCE_COMMIT;workflowCommit=$env:GITHUB_SHA;appFingerprint=$env:EXPECTED_FINGERPRINT;artifactSha256=$hash;artifactBytes=(Get-Item $setup).Length;githubRunId=$env:GITHUB_RUN_ID;githubRunAttempt=$env:GITHUB_RUN_ATTEMPT}
+          $binding=@{format=1;product='BLACKICE';releaseId=$release.databaseId;tag=$release.tagName;draftAtDownload=$release.isDraft;sourceCommit=$env:EXPECTED_SOURCE_COMMIT;workflowCommit=$env:GITHUB_SHA;appFingerprint=$env:EXPECTED_FINGERPRINT;artifactSha256=$hash;artifactBytes=(Get-Item $setup).Length;sourceTestReceipt=$env:SOURCE_TEST_RECEIPT;githubRunId=$env:GITHUB_RUN_ID;githubRunAttempt=$env:GITHUB_RUN_ATTEMPT}
           $binding | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $env:BLACKICE_EVIDENCE 'blackice-github-validation.json') -Encoding utf8NoBOM
 
       - name: Exercise installation, isolated native runtime, and uninstallation
@@ -112,7 +115,8 @@ jobs:
             -Tag $env:RELEASE_TAG `
             -ExpectedSha256 $env:EXPECTED_SHA256 `
             -ExpectedFingerprint $env:EXPECTED_FINGERPRINT `
-            -ExpectedSourceCommit $env:EXPECTED_SOURCE_COMMIT
+            -ExpectedSourceCommit $env:EXPECTED_SOURCE_COMMIT `
+            -SourceTestReceipt $env:SOURCE_TEST_RECEIPT
 
       - name: Attach only sanitized verification evidence to the same draft
         if: ${{ always() && env.BLACKICE_EVIDENCE != '' }}
