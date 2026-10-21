@@ -23,6 +23,7 @@ files:
   - CHATGPT-CONNECTOR.md
   - desktop/**/*.mjs
   - desktop/**/*.cjs
+  - desktop/browser-compatibility/**/*
   - '!desktop/build-icon.mjs'
   - CHAT-MODE.md
   - RELEASE-NOTES-2.31.0.md

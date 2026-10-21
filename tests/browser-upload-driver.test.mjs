@@ -21,6 +21,7 @@ const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 async function fixture(t, { transformReceipt, exception = false, behavior, assignmentFailure = false, cdpResponse } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-upload-regression-'));
   const windows = [], session = new EventEmitter();
+  session.extensions = { loadExtension: async () => ({ id: 'owned-compatibility-extension' }) };
   session.cookies = new EventEmitter();
   session.webRequest = { onBeforeRequest() {}, onCompleted() {}, onErrorOccurred() {} };
   session.setPermissionRequestHandler = () => {}; session.setPermissionCheckHandler = () => {};

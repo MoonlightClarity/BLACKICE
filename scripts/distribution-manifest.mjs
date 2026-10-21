@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 
 export const MANIFEST_FILE = 'relay-distribution.json';
 
-/** Match the desktop code globs and exclusions in electron-builder.yml. */
+/** Match the desktop runtime globs and exclusions in electron-builder.yml. */
 export async function desktopRuntimeModules(directory) {
   const files = [];
   async function visit(relative) {
@@ -13,7 +13,7 @@ export async function desktopRuntimeModules(directory) {
       if (entry.name.includes('.currents-backup-') || name === 'desktop/build-icon.mjs') continue;
       if (entry.isSymbolicLink()) throw new Error('Application inputs cannot contain links.');
       if (entry.isDirectory()) await visit(name);
-      else if (entry.isFile() && /\.(?:mjs|cjs)$/.test(name) && !name.endsWith('.test.mjs')) files.push(name);
+      else if (entry.isFile() && (/\.(?:mjs|cjs)$/.test(name) || name.startsWith('desktop/browser-compatibility/')) && !name.endsWith('.test.mjs')) files.push(name);
     }
   }
   await visit('desktop'); return files.sort();

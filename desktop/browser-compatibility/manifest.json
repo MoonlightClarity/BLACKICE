@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "BLACKICE contained browser compatibility",
+  "version": "1.0.0",
+  "description": "Correct conditional passkey capability reporting in the contained browser.",
+  "content_scripts": [{
+    "matches": ["http://*/*", "https://*/*"],
+    "js": ["main.js"],
+    "run_at": "document_start",
+    "world": "MAIN",
+    "all_frames": true,
+    "match_about_blank": true,
+    "match_origin_as_fallback": true
+  }]
+}

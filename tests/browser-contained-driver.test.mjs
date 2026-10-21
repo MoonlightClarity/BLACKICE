@@ -8,8 +8,9 @@ import { randomUUID } from 'node:crypto';
 import { BrowserWorkspace, createBrowserToolHandler } from '../lib/browser.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
-async function fixture(t, { command = async () => ({}), loadURL = async () => {}, limits = {}, closeError } = {}) {
-  const directory = await mkdtemp(path.join(tmpdir(), 'blackice-contained-driver-')), windows = [], session = new EventEmitter();
+async function fixture(t, { command = async () => ({}), loadURL = async () => {}, loadExtension = async () => ({ id: 'owned-compatibility-extension' }), limits = {}, closeError } = {}) {
+  const directory = await mkdtemp(path.join(tmpdir(), 'blackice-contained-driver-')), windows = [], session = new EventEmitter(), extensionLoads = [];
+  session.extensions = { loadExtension: (...args) => { extensionLoads.push(args); return loadExtension(...args); } };
   session.cookies = new EventEmitter(); session.webRequest = { onBeforeRequest(_filter, listener) { session.beforeRequest = listener || null; }, onCompleted() {}, onErrorOccurred() {} }; session.setPermissionRequestHandler = fn => { session.permissionRequest = fn; }; session.setPermissionCheckHandler = fn => { session.permissionCheck = fn; }; session.flushStorageData = async () => {};
   class Window extends EventEmitter {
     constructor(options) {
@@ -39,13 +40,69 @@ async function fixture(t, { command = async () => ({}), loadURL = async () => {}
   let ElectronBrowserDriver; try { ({ ElectronBrowserDriver } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'))); } finally { delete globalThis[key]; }
   const driver = new ElectronBrowserDriver({ dataDir: directory, downloadDir: path.join(directory, 'downloads'), ...limits });
   t.after(async () => { if (closeError) await assert.rejects(driver.close(), closeError); else await driver.close(); assert.match(path.basename(directory), /^blackice-contained-driver-/); assert.equal(path.dirname(directory), path.resolve(tmpdir())); await rm(directory, { recursive: true, force: true }); });
-  return { driver, windows, Window, session, directory };
+  return { driver, windows, Window, session, directory, extensionLoads };
 }
 const assertContained = window => {
   assert.equal(window.options.show, false); assert.equal(window.options.focusable, false); assert.equal(window.options.skipTaskbar, true); assert.equal(window.options.fullscreenable, false);
   assert.equal(window.options.webPreferences.offscreen, true); assert.equal(window.options.webPreferences.paintWhenInitiallyHidden, true); assert.equal(window.options.webPreferences.backgroundThrottling, false); assert.equal(window.options.webPreferences.disableDialogs, true);
   assert.equal(window.options.webPreferences.nodeIntegration, false); assert.equal(window.options.webPreferences.contextIsolation, true); assert.equal(window.options.webPreferences.sandbox, true); assert.equal(window.visible, false);
+  assert.equal(window.options.webPreferences.nodeIntegrationInSubFrames, undefined); assert.equal(window.options.webPreferences.preload, undefined);
 };
+
+test('compatibility loads before direct tab navigation or input and popups cannot race its readiness', async t => {
+  let release; const pending = new Promise(resolve => { release = resolve; });
+  const { driver, windows, Window, extensionLoads } = await fixture(t, { loadExtension: () => pending });
+  t.after(() => release({ id: 'owned-compatibility-extension' }));
+  const tab = driver.newTab('https://signin.example.test/'), input = driver.cdp(tab, 'Input.insertText', { text: 'owned fixture' });
+  await tick();
+  assert.equal(extensionLoads.length, 1); assert.deepEqual(windows[0].loads, ['about:blank']); assert.deepEqual(windows[0].protocol, []);
+  assert.equal(windows[0].webContents.openHandler({ url: 'https://signin.example.test/popup' }).action, 'deny');
+  const premature = new Window(windows[0].options);
+  assert.throws(() => driver.newTab('https://signin.example.test/popup', { window: premature }), { code: 'BROWSER_COMPATIBILITY_NOT_READY', actionDispatched: false });
+  assert.equal(premature.destroyed, true); assert.equal(driver.tabs.size, 1);
+  release({ id: 'owned-compatibility-extension' }); await tab.loading; await input;
+  assert.deepEqual(windows[0].loads, ['about:blank', 'https://signin.example.test/']);
+  assert.equal(windows[0].protocol.at(-1).method, 'Input.insertText');
+  assert.equal(windows[0].webContents.openHandler({ url: 'https://signin.example.test/popup' }).action, 'allow');
+  assertContained(windows[0]); assert.equal(extensionLoads.length, 1);
+});
+
+test('startup waits for compatibility before restoring metadata and resumes only afterward', async t => {
+  let release; const pending = new Promise(resolve => { release = resolve; });
+  const { driver, windows, directory } = await fixture(t, { loadExtension: () => pending });
+  t.after(() => release({ id: 'owned-compatibility-extension' }));
+  await writeFile(path.join(directory, 'browser-tabs.json'), JSON.stringify([{ url: 'https://saved.example.test/', title: 'Owned saved page' }]));
+  let initialized = false; const initializedDriver = driver.init().then(() => { initialized = true; });
+  await tick(); assert.equal(initialized, false); assert.equal(driver.tabs.size, 0); assert.equal(windows.length, 0);
+  release({ id: 'owned-compatibility-extension' }); await initializedDriver;
+  assert.equal(driver.tabs.size, 1); assert.equal(windows.length, 0);
+  const result = await driver.perform({ action: 'read', tabId: driver.activeTab });
+  assert.equal(result.url, 'https://saved.example.test/'); assert.deepEqual(windows[0].loads, ['about:blank', 'https://saved.example.test/']);
+});
+
+test('direct metadata resumption cannot bypass compatibility loading', async t => {
+  let release; const pending = new Promise(resolve => { release = resolve; });
+  const { driver, windows } = await fixture(t, { loadExtension: () => pending });
+  t.after(() => release({ id: 'owned-compatibility-extension' }));
+  const tab = driver.newTab('https://saved.example.test/', { restore: true });
+  assert.equal(windows.length, 0);
+  const result = driver.perform({ action: 'read', tabId: tab.id });
+  await tick(); assert.deepEqual(windows[0].loads, ['about:blank']); assert.deepEqual(windows[0].protocol, []);
+  release({ id: 'owned-compatibility-extension' }); assert.equal((await result).url, 'https://saved.example.test/');
+  assert.deepEqual(windows[0].loads, ['about:blank', 'https://saved.example.test/']);
+});
+
+test('failed compatibility installation rejects startup, navigation, input and popups without a fallback or retry', async t => {
+  const { driver, windows, extensionLoads } = await fixture(t, { loadExtension: async () => { throw new Error('Owned fixture extension load failure'); } });
+  await assert.rejects(driver.init(), { code: 'BROWSER_COMPATIBILITY_UNAVAILABLE', actionDispatched: false });
+  const tab = driver.newTab('https://signin.example.test/'); await tab.loading;
+  assert.match(tab.loadError, /compatibility extension could not be loaded/);
+  await assert.rejects(driver.perform({ action: 'navigate', tabId: tab.id, url: 'https://signin.example.test/second' }), { code: 'BROWSER_COMPATIBILITY_UNAVAILABLE', actionDispatched: false });
+  await assert.rejects(driver.cdp(tab, 'Input.insertText', { text: 'owned fixture' }), { code: 'BROWSER_COMPATIBILITY_UNAVAILABLE', actionDispatched: false });
+  assert.equal(windows[0].webContents.openHandler({ url: 'https://signin.example.test/popup' }).action, 'deny');
+  assert.deepEqual(windows[0].loads, ['about:blank']); assert.deepEqual(windows[0].protocol, []); assert.equal(extensionLoads.length, 1);
+  assertContained(windows[0]);
+});
 
 test('direct text enters the observed document through browser input without echoing its contents', async t => {
   const { driver, windows } = await fixture(t), tab = driver.newTab('https://signin.example.test/'); await tab.loading;

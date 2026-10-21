@@ -21,9 +21,9 @@ async function releaseFixture(t) {
   return directory;
 }
 
-test('runtime fingerprints bind every desktop helper and invalidate an omitted packaged module', async t => {
+test('runtime fingerprints bind desktop helpers and browser compatibility assets, including packaged omissions', async t => {
   const directory = await releaseFixture(t);
-  for (const name of ['startup.mjs', 'restart.mjs', 'runtime-record.mjs', 'future/worker.mjs', 'future/preload.cjs']) {
+  for (const name of ['startup.mjs', 'restart.mjs', 'runtime-record.mjs', 'future/worker.mjs', 'future/preload.cjs', 'browser-compatibility/manifest.json', 'browser-compatibility/main.js']) {
     const before = await appFingerprint(directory), file = path.join(directory, 'desktop', name);
     await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, 'current runtime code');
     const included = await appFingerprint(directory); assert.notEqual(included, before, `${name} must enter runtime evidence`);

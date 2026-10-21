@@ -11,6 +11,7 @@ import { BrowserWorkspace, BROWSER_ACTIONS, BROWSER_TOOL } from '../lib/browser.
 
 test('the contained session owns one actual request interceptor and exposes guarded human-only protection through the router', async t => {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-protection-driver-')), native = new EventEmitter(), windows = [], registrations = [], protocol = [];
+  native.extensions = { loadExtension: async () => ({ id: 'owned-compatibility-extension' }) };
   native.cookies = new EventEmitter(); native.webRequest = { onBeforeRequest(...args) { registrations.push(args); native.beforeRequest = args.at(-1); }, onCompleted() {}, onErrorOccurred() {} }; native.setPermissionRequestHandler = () => {}; native.setPermissionCheckHandler = () => {}; native.flushStorageData = async () => {};
   class Window extends EventEmitter {
     constructor(options) {

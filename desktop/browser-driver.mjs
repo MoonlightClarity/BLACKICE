@@ -5,6 +5,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey } from '../lib/browser.mjs';
 import { captureHiddenPage } from './browser-capture.mjs';
+import { loadBrowserCompatibility } from './browser-compatibility.mjs';
 import { BrowserDiagnostics } from '../lib/browser-diagnostics.mjs';
 import { BrowserProtection, protectionOrigin } from '../lib/browser-protection.mjs';
 
@@ -220,6 +221,9 @@ export class ElectronBrowserDriver extends EventEmitter {
     // Retire the 2.4.2 partition that could contain transferred site credentials.
     // Preserve its files offline; never open it or replay its cookies again.
     this.session = session.fromPartition('persist:relay-agent-browser-v2');
+    this.compatibilityLoaded = false;
+    this.compatibilityReady = loadBrowserCompatibility(this.session).then(() => { this.compatibilityLoaded = true; });
+    this.compatibilityReady.catch(() => {});
     this.protection = protection || new BrowserProtection({ dataDir });
     this.protectionListener = () => this.emit('changed'); this.protection.on('updated', this.protectionListener);
     // This dedicated partition owns one request interceptor. The app window's
@@ -247,6 +251,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     this.session.on('will-download', this.downloadListener);
   }
   async init() {
+    await this.compatibilityReady;
     await fs.mkdir(this.downloadDir, { recursive: true });
     await this.protection.init();
     let saved; try { saved = JSON.parse(await fs.readFile(path.join(this.dataDir, 'browser-tabs.json'), 'utf8')); } catch {}
@@ -386,6 +391,9 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (tab.rendererFailure) throw rendererFailure(tab);
     if (tab.window && !tab.window.isDestroyed()) return;
     this.assertLiveCapacity(tab);
+    if (suppliedWindow && !this.compatibilityLoaded) {
+      suppliedWindow.destroy(); throw capacityError('The contained browser compatibility extension is not ready. No popup was adopted.', 'BROWSER_COMPATIBILITY_NOT_READY');
+    }
     if (suppliedWindow && (suppliedWindow.webContents.isOffscreen?.() !== true || suppliedWindow.isVisible() || suppliedWindow.isFocusable())) {
       suppliedWindow.destroy(); throw error('The browser popup could not remain contained. Use the Observe view to inspect the original page.');
     }
@@ -418,13 +426,13 @@ export class ElectronBrowserDriver extends EventEmitter {
     });
     wc.debugger.on('detach', () => { tab.containmentReady = null; this.clearInteraction(tab); });
     wc.setWindowOpenHandler(({ url }) => {
-      try { if (url && url !== 'about:blank') browserURL(url); if (this.closed || !this.hasTabCapacity(null, tab.owner)) return { action: 'deny' }; }
+      try { if (url && url !== 'about:blank') browserURL(url); if (this.closed || !this.compatibilityLoaded || !this.hasTabCapacity(null, tab.owner)) return { action: 'deny' }; }
       catch { return { action: 'deny' }; }
       // Preserve window.opener for OAuth while rendering the popup only inside BLACKICE.
       return { action: 'allow', overrideBrowserWindowOptions: containedWindowOptions(this.session) };
     });
     wc.on('did-create-window', (child, details) => {
-      if (this.closed || !this.hasTabCapacity(null, tab.owner)) child.destroy();
+      if (this.closed || !this.compatibilityLoaded || !this.hasTabCapacity(null, tab.owner)) child.destroy();
       else try { this.newTab(details.url || 'about:blank', { window: child, owner: tab.owner, folderId: tab.folderId, parentTabId: tab.id }); } catch { if (!child.isDestroyed()) child.destroy(); }
     });
     wc.on('will-attach-webview', event => event.preventDefault());
@@ -451,7 +459,8 @@ export class ElectronBrowserDriver extends EventEmitter {
     });
     // A new offscreen WebContents needs an inert renderer before Page protocol
     // commands can complete. Never load a website until its native-picker guard
-    // is armed. Restored website URLs remain suspended behind the same guard.
+    // and session-wide document-start compatibility script are ready. Restored
+    // website URLs remain suspended behind the same guards.
     tab.rendererReady = suppliedWindow ? Promise.resolve() : wc.loadURL('about:blank'); tab.rendererReady.catch(() => {});
     const containment = this.ensureContained(tab); containment.catch(() => {});
     tab.navigationDispatched = Boolean(suppliedWindow);
@@ -707,6 +716,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (tab.rendererFailure) throw rendererFailure(tab);
     cancel(signal); const wc = tab.window.webContents;
     if (this.closed || !tab.window || tab.window.isDestroyed()) throw error('The contained browser page closed.');
+    await bounded(this.compatibilityReady, signal); cancel(signal);
     await bounded(tab.rendererReady, signal, 8000); cancel(signal);
     if (tab.rendererFailure) throw rendererFailure(tab);
     if (this.closed || !tab.window || tab.window.isDestroyed()) throw error('The contained browser page closed.');
