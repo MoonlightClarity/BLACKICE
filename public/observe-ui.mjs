@@ -158,11 +158,14 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     return inputSession;
   }
   function refreshAfterInput(session) {
-    clearTimeout(inputRefresh);
+    // Keep one preview deadline while more input arrives. Resetting a trailing
+    // debounce for every character leaves a continuously typed field visually
+    // frozen. Captures remain serialized with page input and capped at 4 Hz.
+    if (inputRefresh !== null) return;
     inputRefresh = setTimeout(() => {
       inputRefresh = null;
       if (inputSession === session && visible() && !session.composing && !session.running && !session.queue.length && !state.busy && !state.protectionBusy) void work();
-    }, 180);
+    }, 250);
   }
   function recoverInput({ uncertain = false } = {}) {
     // Recovery is read-only. Never carry a click, submission or text across a
@@ -218,7 +221,6 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     if (session.queue.length >= 128 || queuedChars + (item.text?.length || 0) > 32768) {
       stopInput({ notice: 'The page could not keep up with input. Inspect its field, then click it to resume.' }); render(); return false;
     }
-    clearTimeout(inputRefresh); inputRefresh = null;
     const last = session.queue.at(-1);
     if (item.action === 'type' && last?.action === 'type' && last.text.length + item.text.length <= 16384) last.text += item.text;
     else session.queue.push(item);

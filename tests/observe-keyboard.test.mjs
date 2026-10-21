@@ -298,6 +298,49 @@ test('a slow first type coalesces later characters while preserving editing keys
   assert.equal(f.input().value, '');
 });
 
+test('continuous typing receives a bounded preview without waiting for a quiet pause', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = await fixture(t);
+  await f.point();
+  const captures = () => f.calls.filter(call => call.body?.action === 'screenshot').length;
+  const initial = captures();
+  for (const character of 'abcdefgh') {
+    await f.text(character); await f.settle();
+    t.mock.timers.tick(80); await f.settle();
+  }
+  assert.equal(f.mutations().map(call => call.body.text).join(''), 'abcdefgh');
+  assert.equal(captures() - initial, 2, 'two coalesced previews during 640 ms of uninterrupted typing');
+  assert.equal(f.document.activeElement, f.input());
+  assert.equal(f.input().value, '');
+});
+
+test('input preview deadlines never overlap a slow capture or reorder its queued text', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = await fixture(t), gate = deferred();
+  await f.point();
+  f.hook(call => call.body?.action === 'screenshot' ? gate.promise : undefined);
+  t.mock.timers.tick(250); await f.settle();
+  const captures = f.calls.filter(call => call.body?.action === 'screenshot').length;
+  await f.text('abc'); await f.text('def'); await f.settle();
+  t.mock.timers.tick(1000); await f.settle();
+  assert.equal(f.calls.filter(call => call.body?.action === 'screenshot').length, captures);
+  assert.equal(f.mutations().length, 0, 'input remains behind the in-flight read');
+  f.hook(null); gate.resolve({ ...f.receipt('one'), imageUrl: image, width: 1280, height: 900 }); await f.settle();
+  assert.deepEqual(f.mutations().map(call => call.body.text), ['abcdef']);
+  assert.equal(f.document.activeElement, f.input());
+});
+
+test('a lightweight guarded click receipt releases text and refreshes independently without a DOM snapshot', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = await fixture(t, { hook: (call, { receipt }) => call.body?.action === 'click' ? { ...receipt(call.body.tabId), receipt: { clicked: true, input: 'browser protocol' } } : undefined });
+  await f.point(); await f.text('field input'); await f.settle();
+  assert.equal(f.mutations()[0].body.text, 'field input');
+  assert.equal(f.mutations()[0].body.expectedDocumentId, 'one:1');
+  t.mock.timers.tick(250); await f.settle();
+  assert.deepEqual(f.calls.filter(call => call.body).map(call => call.body.action), ['screenshot', 'click', 'type', 'screenshot']);
+  assert.equal(f.$('#observe-browser-input-help').dataset.active, 'true');
+});
+
 test('cancelable native text is forwarded before editing the hidden textarea can scroll its caret', async t => {
   const gate = deferred(), f = await fixture(t, { hook: call => call.body?.action === 'click' ? gate.promise : undefined });
   const clicking = f.point(); await tick(); const input = f.input();

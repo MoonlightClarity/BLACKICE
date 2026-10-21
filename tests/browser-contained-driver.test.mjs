@@ -59,6 +59,91 @@ test('direct text enters the observed document through browser input without ech
   assertContained(windows[0]);
 });
 
+test('guarded human preview clicks release the input queue without waiting or scanning the page', async t => {
+  const { driver, windows } = await fixture(t), tab = driver.newTab('https://signin.example.test/'); await tab.loading;
+  const browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());
+  const guard = { browser: 'relay', tabId: tab.id, expectedUrl: 'https://signin.example.test/', expectedDocumentId: `${tab.id}:${tab.revision}` };
+  let viewportReads = 0, captures = 0, disposed = 0;
+  windows[0].webContents.executeJavaScript = async () => { viewportReads++; return { width: 1280, height: 900 }; };
+  const capture = driver.capture.bind(driver);
+  driver.capture = async (...args) => { captures++; return capture(...args); };
+  driver.watchNavigation = () => ({ wait: async () => assert.fail('Human input must not wait for navigation.'), dispose: () => { disposed++; } });
+  driver.settle = async () => assert.fail('Human input must not wait for page settling.');
+  driver.snapshot = async () => assert.fail('Human input must not scan the page.');
+  const clicked = browser.perform({ action: 'click', ...guard, x: 100, y: 120 }, { source: 'user' });
+  const typed = browser.perform({ action: 'type', ...guard, text: 'Owned input' }, { source: 'user' });
+  const [result, textResult] = await Promise.all([clicked, typed]);
+  assert.equal(result.frames, undefined); assert.equal(result.documentId, guard.expectedDocumentId);
+  assert.deepEqual(result.receipt, { clicked: true, input: 'browser protocol' });
+  assert.equal(textResult.receipt.typed, true); assert.equal(viewportReads, 1); assert.equal(captures, 1); assert.equal(disposed, 1);
+  assert.deepEqual(windows[0].captureArgs, [undefined, { stayHidden: true }]);
+  assert.deepEqual(windows[0].protocol.filter(call => call.method.startsWith('Input.')).map(call => call.params.type || call.method), ['mouseMoved', 'mousePressed', 'mouseReleased', 'Input.insertText']);
+  assertContained(windows[0]);
+});
+
+test('agent, unguarded, and reference clicks retain their post-action page inspection', async t => {
+  const { driver, windows } = await fixture(t), tab = driver.newTab('https://example.test/'); await tab.loading;
+  const guard = { tabId: tab.id, expectedUrl: 'https://example.test/', expectedDocumentId: `${tab.id}:${tab.revision}` };
+  windows[0].webContents.executeJavaScript = async () => ({ width: 1280, height: 900 });
+  let waits = 0, settles = 0, snapshots = 0, disposed = 0;
+  driver.watchNavigation = () => ({ wait: async () => { waits++; }, dispose: () => { disposed++; } });
+  driver.settle = async () => { settles++; };
+  driver.snapshot = async () => { snapshots++; return { frames: [{ text: 'Observed after the click' }] }; };
+  driver.element = async () => ({ frame: windows[0].webContents.mainFrame, result: { x: 100, y: 120 } });
+  driver.browserPoint = async (_tab, _frame, point) => point;
+  for (const [args, options] of [
+    [{ action: 'click', ...guard, x: 100, y: 120 }, { source: 'agent' }],
+    [{ action: 'click', tabId: tab.id, x: 100, y: 120 }, { source: 'user' }],
+    [{ action: 'click', ...guard, ref: 'observed-control' }, { source: 'user' }],
+  ]) {
+    const result = await driver.perform(args, options);
+    assert.deepEqual(result.frames, [{ text: 'Observed after the click' }]);
+    assert.ok(result.receipt.clicked); assert.ok(Array.isArray(result.tabs));
+  }
+  assert.equal(waits, 3); assert.equal(settles, 3); assert.equal(snapshots, 3); assert.equal(disposed, 3);
+});
+
+test('guarded human clicks reject a stale document before input and after capture', async t => {
+  const { driver, windows } = await fixture(t), tab = driver.newTab('https://signin.example.test/'); await tab.loading;
+  windows[0].webContents.executeJavaScript = async () => ({ width: 1280, height: 900 });
+  const args = { action: 'click', tabId: tab.id, expectedUrl: 'https://signin.example.test/', expectedDocumentId: `${tab.id}:${tab.revision}`, x: 100, y: 120 };
+  tab.revision++;
+  await assert.rejects(driver.perform(args, { source: 'user' }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+  assert.equal(windows[0].captureArgs, undefined);
+  args.expectedDocumentId = `${tab.id}:${tab.revision}`;
+  const capture = driver.capture.bind(driver);
+  driver.capture = async (...values) => { const result = await capture(...values); tab.window.webContents.emit('did-frame-navigate', {}, args.expectedUrl, 200, 'OK', true, 1, 1); return result; };
+  await assert.rejects(driver.perform(args, { source: 'user' }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+  assert.equal(windows[0].protocol.some(call => call.method.startsWith('Input.')), false);
+  assert.equal(windows[0].webContents.listenerCount('did-start-navigation'), 0);
+});
+
+test('a modal-paused human click releases its button and reports the interaction without replay', async t => {
+  let release, presses = 0;
+  const held = new Promise(resolve => { release = resolve; });
+  const { driver, windows } = await fixture(t, { command: async (method, params, window) => {
+    if (method === 'Input.dispatchMouseEvent' && params.type === 'mousePressed') {
+      presses++;
+      window.webContents.debugger.emit('message', {}, 'Page.javascriptDialogOpening', { hasBrowserHandler: false, type: 'confirm', message: 'Owned paused confirm' });
+      return held;
+    }
+    return {};
+  } });
+  const tab = driver.newTab('https://example.test/'); await tab.loading;
+  windows[0].webContents.executeJavaScript = async () => ({ width: 1280, height: 900 });
+  const args = { action: 'click', tabId: tab.id, expectedUrl: 'https://example.test/', expectedDocumentId: `${tab.id}:${tab.revision}`, x: 100, y: 120 };
+  driver.settle = async () => assert.fail('A pending dialog must not settle the page.');
+  driver.snapshot = async () => assert.fail('A pending dialog must not scan the page.');
+  const result = await driver.perform(args, { source: 'user' });
+  assert.equal(result.pendingInteraction.status, 'pending'); assert.equal(result.actionDispatched, true); assert.equal(result.inspectBeforeContinuing, true);
+  assert.equal(tab.suspendedWork.size, 1); assert.equal(presses, 1);
+  assert.deepEqual(windows[0].protocol.filter(call => call.method === 'Input.dispatchMouseEvent').map(call => call.params.type), ['mouseMoved', 'mousePressed', 'mouseReleased']);
+  assert.equal(windows[0].webContents.listenerCount('did-start-navigation'), 0);
+  const blocked = await driver.perform(args, { source: 'user' });
+  assert.equal(blocked.actionDispatched, false); assert.equal(presses, 1);
+  release({}); await tick(); assert.equal(tab.suspendedWork.size, 0);
+});
+
 test('direct input rejects a changed URL or a same-URL replacement document', async t => {
   const { driver, windows } = await fixture(t), tab = driver.newTab('https://signin.example.test/'); await tab.loading;
   const expected = { expectedUrl: 'https://signin.example.test/', expectedDocumentId: `${tab.id}:${tab.revision}` };

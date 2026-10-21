@@ -882,6 +882,13 @@ export class ElectronBrowserDriver extends EventEmitter {
         await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: args.x, y: args.y, button: 'none' }, signal, args);
         if (args.action === 'click') await this.clickPoint(tab, { x: args.x, y: args.y }, signal, args);
         receipt = { [args.action === 'click' ? 'clicked' : 'hovered']: true };
+        // Human preview input shares a queue with typing. A completed guarded
+        // click must not hold that queue for navigation settling or a DOM scan;
+        // the preview refresh observes its result, as it does for typing/keys.
+        if (args.action === 'click' && source === 'user' && args.expectedDocumentId !== undefined) {
+          cancel(signal);
+          return { ...this.interactionReceipt(tab), receipt: { ...receipt, input: 'browser protocol' } };
+        }
       }
     }
     if (args.action === 'press') {
