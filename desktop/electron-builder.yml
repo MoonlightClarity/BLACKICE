@@ -19,6 +19,8 @@ files:
   - scripts/chatgpt-bridge.mjs
   - scripts/email-oauth-token.mjs
   - scripts/remote-access-cli.mjs
+  - scripts/browser-cli.mjs
+  - BROWSER-IMPORT.md
   - CHATGPT-BRIDGE.md
   - CHATGPT-CONNECTOR.md
   - desktop/**/*.mjs

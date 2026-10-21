@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { browserWorkspaceMarkup, openBrowserWorkspace } from '../public/browser-ui.mjs';
+import { browserWorkspaceMarkup, browserProfilesMarkup, openBrowserWorkspace } from '../public/browser-ui.mjs';
 
 const independent = { available: true, tabs: [{ tabId: 'tab-1', title: 'Fixture page', url: 'https://example.com/' }], activeTab: 'tab-1', downloads: [] };
 
-test('connected BrowserOS is manual, may foreground and remains unavailable to task agents', () => {
+test('connected BrowserOS exposes its own session to agents and ChatGPT without claiming website authentication', () => {
   const html = browserWorkspaceMarkup({ ...independent, signedBrowser: { available: true, endpoint: 'http://127.0.0.1:9000/mcp', accountAuthenticated: null } }, { selected: 'tab-1' });
   assert.match(html, /BrowserOS neo/); assert.match(html, />Connected</);
-  assert.match(html, /Manual external connection\. Neo may activate its window; it is unavailable to task agents\./);
+  assert.match(html, /Agents and ChatGPT can use Neo with its existing and imported sign-ins\./);
   assert.doesNotMatch(html, /Uses your BrowserOS sign-ins|agent checks each site before acting/);
   assert.match(html, /id="browser-reconnect"/); assert.doesNotMatch(html, /id="browser-start"|LinkedIn|account is signed in/);
   assert.match(html, /<details id="browser-separate" class="browser-downloads"><summary>Separate browser/);
@@ -46,8 +46,8 @@ test('stale Firefox availability never offers copying sessions or claims an auth
   const status = { ...independent, sessionReuse: { browser: 'firefox', available: true, accountAuthenticated: 'unknown' }, signedBrowser: { available: false, endpoint: 'http://127.0.0.1:9000/mcp' } };
   const html = browserWorkspaceMarkup(status);
   assert.match(html, /Existing browser<\/strong><span>Direct connection<\/span>/);
-  assert.match(html, /Manual external connections keep their own sign-ins\. Agent browser work stays inside Activity\./);
-  assert.ok(html.indexOf('BrowserOS neo') < html.indexOf('Existing browser'));
+  assert.match(html, /Native browser connections keep their own sign-ins and are available to agents and ChatGPT\./);
+  assert.ok(html.indexOf('Existing browser') < html.indexOf('BrowserOS neo'));
   assert.match(html, /<details id="browser-separate" class="browser-downloads"><summary>Separate browser/);
   assert.match(html, /id="browser-reconnect"/); assert.match(html, /id="browser-start"/);
   assert.doesNotMatch(html, /LinkedIn|signed into|account is|Import session|Configure Firefox|Firefox sign-ins|Agents can reuse saved website sessions|id="browser-neo"/);
@@ -60,25 +60,25 @@ test('disabled Firefox reuse metadata keeps direct connection guidance and Brows
   assert.match(html, /BrowserOS neo<\/strong><span>Connected/);
 });
 
-test('Chrome connection is explicit and warns about foreground dialogs while agent work stays contained', () => {
+test('Chrome connection exposes the existing profile and its native connection setup', () => {
   const status = { ...independent, chromeBrowser: { available: true, connected: false, accountAuthenticated: 'unknown', reason: 'Chrome is waiting for its connection request.' }, signedBrowser: { available: true } };
   const html = browserWorkspaceMarkup(status);
-  assert.match(html, /Chrome<\/strong><span>Not connected/); assert.match(html, /id="browser-chrome-connect">Connect Chrome/);
-  assert.match(html, /Manual connection\. Chrome dialogs can appear in front of your work; agents use the contained browser\./);
+  assert.match(html, /Chrome · existing profile<\/strong><span>Not connected/); assert.match(html, /id="browser-chrome-connect">Connect Chrome/);
+  assert.match(html, /BLACKICE agents and ChatGPT share this native browser connection\./);
   assert.doesNotMatch(html, /Your sign-ins stay in Chrome\. The agent checks each site\./);
   assert.match(html, /<details id="browser-chrome-setup"><summary>Connection setup/);
   assert.match(html, /chrome:\/\/inspect\/#remote-debugging/); assert.match(html, /choose Allow in Chrome’s connection prompt/);
   assert.doesNotMatch(html, /<details id="browser-neo"/);
-  assert.ok(html.indexOf('BrowserOS neo') < html.indexOf('Chrome</strong>'));
+  assert.ok(html.indexOf('Chrome · existing profile') < html.indexOf('BrowserOS neo'));
   assert.match(html, /id="browser-reconnect"/); assert.match(html, /Chrome is waiting for its connection request\./);
   assert.doesNotMatch(html, /Firefox sign-ins|Import session|LinkedIn|account is signed in/);
 });
 
 test('only an established Chrome connection earns Connected status and setup errors stay text', () => {
   const available = browserWorkspaceMarkup({ ...independent, chromeBrowser: { available: true, connected: false, reason: '<img src=x onerror=alert(1)>' } });
-  assert.doesNotMatch(available, /Chrome<\/strong><span>Connected|<img/); assert.match(available, /&lt;img/);
+  assert.doesNotMatch(available, /Chrome · existing profile<\/strong><span>Connected|<img/); assert.match(available, /&lt;img/);
   const connected = browserWorkspaceMarkup({ ...independent, chromeBrowser: { available: true, connected: true, connectionId: 'chrome-live', accountAuthenticated: 'unknown' } }, { chromeSetupOpen: true });
-  assert.match(connected, /Chrome<\/strong><span>Connected/); assert.match(connected, />Reconnect Chrome<\/button>/);
+  assert.match(connected, /Chrome · existing profile<\/strong><span>Connected/); assert.match(connected, />Reconnect Chrome<\/button>/);
   assert.match(connected, /id="browser-chrome-setup" open/); assert.doesNotMatch(connected, /Import session|authenticated account/);
 });
 
@@ -97,11 +97,18 @@ test('opening the browser workspace never connects Chrome until its explicit but
   assert.equal(calls[2].route, '/api/browser/status'); assert.equal(error.textContent, ''); assert.equal(button.disabled, false);
 });
 
-test('native BrowserOS discovery exposes manual controls with an explicit foreground limitation', () => {
+test('native BrowserOS discovery exposes native controls without excluding agents', () => {
   const html = browserWorkspaceMarkup({ ...independent, signedBrowser: { available: false, discovering: true, nativeIntegration: true, canStart: true }, chromeBrowser: { connected: false } });
   assert.match(html, /BrowserOS neo<\/strong><span>Connecting…/);
-  assert.match(html, /Manual controls · may foreground a window/); assert.match(html, /Manual external connection is unavailable\. Use Activity for contained browser work\./);
+  assert.match(html, /Native browser · may foreground a window/); assert.match(html, /Connect Neo to use its native browser profile\./);
   assert.doesNotMatch(html, /Automatic · no tool server setup|BLACKICE finds BrowserOS neo automatically/);
   assert.match(html, /id="browser-start"/); assert.doesNotMatch(html, /<details id="browser-neo"/);
-  assert.ok(html.indexOf('BrowserOS neo') < html.indexOf('Chrome<\/strong>'));
+  assert.ok(html.indexOf('Chrome · existing profile') < html.indexOf('BrowserOS neo'));
+});
+
+test('whole-profile import names the source, preserves metadata as text, and keeps authentication unverified', () => {
+  const html = browserProfilesMarkup({ sources: [{ id: 'source', name: 'Chrome', profileName: '<img src=x>' }], imports: [{ id: 'copy', name: 'Chrome', profileName: 'Work', available: true }] });
+  assert.match(html, /Extensions, settings, history, and site storage/); assert.match(html, /source profile is left unchanged/);
+  assert.match(html, /Website sign-in is unverified/); assert.match(html, /data-browser-profile-connect="copy"/);
+  assert.match(html, /&lt;img src=x&gt;/); assert.doesNotMatch(html, /<img|Successfully signed in|All logins imported/);
 });

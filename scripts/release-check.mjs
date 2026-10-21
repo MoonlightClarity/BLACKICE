@@ -33,6 +33,7 @@ export async function appFingerprint(directory = source) {
   // Adding, changing, or omitting a module must invalidate prior build evidence.
   for (const relative of await desktopRuntimeModules(directory)) await visit(relative);
   try { await fs.lstat(path.join(directory, 'scripts/remote-access-cli.mjs')); await visit('scripts/remote-access-cli.mjs'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  try { await fs.lstat(path.join(directory, 'scripts/browser-cli.mjs')); await visit('scripts/browser-cli.mjs'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   // Older builds predate the connector CLI; include it whenever present so a
   // candidate cannot silently omit or change the installed bridge entry point.
   try { await fs.lstat(path.join(directory,'scripts/chatgpt-bridge.mjs')); await visit('scripts/chatgpt-bridge.mjs'); } catch(error) { if(error.code!=='ENOENT')throw error; }

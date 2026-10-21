@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { createServer } from 'node:http';
-import { createHash } from 'node:crypto';
+import { createHash, createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { runInNewContext } from 'node:vm';
 import { ChatGPTOAuth, CHATGPT_OAUTH_CLIENT_ID as CLIENT, CHATGPT_OAUTH_REDIRECT as REDIRECT, CHATGPT_OAUTH_SCOPES as SCOPES } from '../lib/chatgpt-oauth.mjs';
 
@@ -21,7 +21,7 @@ const bearer = token => ({ headers: { authorization: `Bearer ${token}` }, rawHea
 async function setup(t, options = {}) {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'blackice-oauth-'));
   let clock = Date.UTC(2026, 9, 20); const calls = [], revoked = [];
-  const oauth = new ChatGPTOAuth({ dataDir, origin: ORIGIN, now: () => clock, fetcher: async (url, request) => { calls.push({ url, request }); return options.fetcher ? options.fetcher(url, request) : response(); }, onRevoked: ids => revoked.push(...ids) });
+  const oauth = new ChatGPTOAuth({ ...options, dataDir, origin: ORIGIN, now: () => clock, fetcher: async (url, request) => { calls.push({ url, request }); return options.fetcher ? options.fetcher(url, request) : response(); }, onRevoked: ids => revoked.push(...ids) });
   await oauth.init();
   t.after(async () => { await oauth.close(); await fs.rm(dataDir, { recursive: true, force: true }); });
   return { oauth, dataDir, calls, revoked, advance: ms => { clock += ms; }, now: () => clock };
@@ -67,6 +67,15 @@ async function grant(oauth, options = {}) {
   return { ...issued, tokens: exchanged.json, client };
 }
 function refresh(oauth, token, overrides = {}) { return route(oauth, 'POST', '/chatgpt/oauth/token', { form: { grant_type: 'refresh_token', client_id: CLIENT, refresh_token: token, resource: RESOURCE, ...overrides } }); }
+function protectedStorage() {
+  // A real authenticated cipher stands in for Electron's protected OS store.
+  const key = randomBytes(32);
+  return {
+    storageBackend: () => 'dpapi', isEncryptionAvailable: () => true,
+    encryptSecret: text => { const nonce = randomBytes(12), cipher = createCipheriv('aes-256-gcm', key, nonce), sealed = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]); return Buffer.concat([nonce, cipher.getAuthTag(), sealed]).toString('base64'); },
+    decryptSecret: text => { const sealed = Buffer.from(text, 'base64'), decipher = createDecipheriv('aes-256-gcm', key, sealed.subarray(0, 12)); decipher.setAuthTag(sealed.subarray(12, 28)); return Buffer.concat([decipher.update(sealed.subarray(28)), decipher.final()]).toString('utf8'); },
+  };
+}
 
 test('metadata binds the exact resource, issuer, S256 and current public CIMD client', async t => {
   const { oauth, calls } = await setup(t);
@@ -210,23 +219,147 @@ test('reloading approved authorization before exchange retains its original usab
   assert.equal(new URL(poll.json.redirect).searchParams.get('code'), issued.code); assert.equal((await exchange(oauth, issued.code)).status, 200);
 });
 
-test('refresh rotates credentials and replay revokes the whole family durably', async t => {
-  const { oauth, dataDir, revoked } = await setup(t); const value = await grant(oauth);
+test('refresh rotates credentials and replay beyond the retry grace revokes the whole family durably', async t => {
+  const { oauth, dataDir, revoked, advance } = await setup(t); const value = await grant(oauth);
   const renewed = await refresh(oauth, value.tokens.refresh_token); assert.equal(renewed.status, 200);
   assert.notEqual(renewed.json.refresh_token, value.tokens.refresh_token); assert.notEqual(renewed.json.access_token, value.tokens.access_token);
   const refreshedClient = await oauth.authenticateRequest(bearer(renewed.json.access_token));
   assert.equal(refreshedClient.id, value.client.id); assert.deepEqual(refreshedClient.scopes, value.client.scopes);
   const disk = await fs.readFile(path.join(dataDir, 'chatgpt-oauth.json'), 'utf8'); assert.ok(!disk.includes(value.tokens.refresh_token)); assert.ok(!disk.includes(renewed.json.refresh_token));
+  advance(60000);
   const replay = await refresh(oauth, value.tokens.refresh_token); assert.equal(replay.json.error, 'invalid_grant');
   assert.equal(await oauth.authenticateRequest(bearer(renewed.json.access_token)), null); assert.equal(await oauth.authenticateRequest(bearer(value.tokens.access_token)), null); assert.ok(revoked.includes(value.client.id));
   assert.deepEqual(JSON.parse(await fs.readFile(path.join(dataDir, 'chatgpt-oauth.json'), 'utf8')).grants, []);
 });
 
-test('concurrent refresh cannot leave two live token families', async t => {
-  const { oauth } = await setup(t); const value = await grant(oauth);
-  const results = await Promise.all([refresh(oauth, value.tokens.refresh_token), refresh(oauth, value.tokens.refresh_token)]);
-  assert.deepEqual(results.map(result => result.status).sort(), [200, 400]);
-  assert.equal(oauth.getClient(value.client.id), null); assert.equal(await oauth.authenticateRequest(bearer(results.find(result => result.status === 200).json.access_token)), null);
+test('concurrent refresh retries share the same live replacement without revoking the grant', async t => {
+  const { oauth, revoked } = await setup(t); const value = await grant(oauth);
+  const results = await Promise.all(Array.from({ length: 12 }, () => refresh(oauth, value.tokens.refresh_token)));
+  assert.ok(results.every(result => result.status === 200));
+  for (const result of results) assert.deepEqual(result.json, results[0].json);
+  assert.equal(oauth.getClient(value.client.id).id, value.client.id); assert.ok(await oauth.authenticateRequest(bearer(results[0].json.access_token)));
+  assert.equal(oauth.grants[0].refresh.usedHashes.length, 1); assert.equal(oauth.grants[0].accessTokens.length, 2); assert.deepEqual(revoked, []);
+});
+
+test('lost refresh response is recoverable for 60 seconds without extending token or grant expiry', async t => {
+  const { oauth, advance, revoked } = await setup(t), value = await grant(oauth), originalExpiry = oauth.grants[0].expiresAt;
+  const first = await refresh(oauth, value.tokens.refresh_token); advance(59000);
+  const retry = await refresh(oauth, value.tokens.refresh_token);
+  assert.equal(retry.status, 200); assert.equal(retry.json.access_token, first.json.access_token); assert.equal(retry.json.refresh_token, first.json.refresh_token);
+  assert.equal(retry.json.expires_in, first.json.expires_in - 59); assert.equal(oauth.grants[0].expiresAt, originalExpiry);
+  assert.equal(oauth.grants[0].refresh.usedHashes.length, 1); assert.deepEqual(revoked, []);
+  advance(1000); assert.equal((await refresh(oauth, value.tokens.refresh_token)).json.error, 'invalid_grant'); assert.equal(oauth.getClient(value.client.id), null);
+});
+
+test('a delayed retry of a recent superseded token never revokes the current family', async t => {
+  const { oauth, revoked } = await setup(t), initial = await grant(oauth);
+  const first = await refresh(oauth, initial.tokens.refresh_token), second = await refresh(oauth, first.json.refresh_token);
+  const delayed = await refresh(oauth, initial.tokens.refresh_token);
+  assert.equal(delayed.status, 400); assert.equal(delayed.json.error, 'invalid_grant'); assert.match(delayed.json.error_description, /superseded/);
+  assert.ok(await oauth.authenticateRequest(bearer(second.json.access_token))); assert.equal(oauth.getClient(initial.client.id).id, initial.client.id); assert.deepEqual(revoked, []);
+  assert.deepEqual((await refresh(oauth, first.json.refresh_token)).json, second.json);
+});
+
+test('retry receipts bind exact requested scope and resource without revoking a valid connection on mismatch', async t => {
+  const { oauth, revoked } = await setup(t), value = await grant(oauth, { requestedScopes: 'read commands:run', scopes: ['read', 'commands:run'] });
+  const first = await refresh(oauth, value.tokens.refresh_token, { scope: 'read' }); assert.equal(first.status, 200);
+  assert.deepEqual((await refresh(oauth, value.tokens.refresh_token, { scope: 'read' })).json, first.json);
+  assert.equal((await refresh(oauth, value.tokens.refresh_token)).json.error, 'invalid_request');
+  assert.equal((await refresh(oauth, value.tokens.refresh_token, { scope: 'read commands:run' })).json.error, 'invalid_request');
+  assert.equal((await refresh(oauth, value.tokens.refresh_token, { resource: 'https://other.example/mcp/chatgpt', scope: 'read' })).json.error, 'invalid_target');
+  assert.equal((await refresh(oauth, value.tokens.refresh_token, { client_id: 'https://other.example/client.json', scope: 'read' })).json.error, 'invalid_client');
+  assert.deepEqual((await oauth.authenticateRequest(bearer(first.json.access_token))).scopes, ['read']); assert.deepEqual(revoked, []);
+});
+
+test('protected retry receipts survive restart while grant records remain hash-only', async t => {
+  const protection = protectedStorage(), env = await setup(t, protection), value = await grant(env.oauth);
+  const renewed = await refresh(env.oauth, value.tokens.refresh_token);
+  const grantText = await fs.readFile(env.oauth.file, 'utf8'), retryText = await fs.readFile(env.oauth.retryFile, 'utf8');
+  for (const secret of [value.tokens.access_token, value.tokens.refresh_token, renewed.json.access_token, renewed.json.refresh_token]) { assert.ok(!grantText.includes(secret)); assert.ok(!retryText.includes(secret)); }
+  assert.deepEqual(Object.keys(JSON.parse(grantText).grants[0].refresh).sort(), ['expiresAt', 'hash', 'usedHashes']);
+  assert.equal(JSON.parse(retryText).encoding, 'string'); env.advance(10000); await env.oauth.close();
+  const reopened = await new ChatGPTOAuth({ dataDir: env.dataDir, origin: ORIGIN, now: env.now, ...protection }).init(); t.after(() => reopened.close());
+  const retry = await refresh(reopened, value.tokens.refresh_token);
+  assert.equal(retry.status, 200); assert.equal(retry.json.access_token, renewed.json.access_token); assert.equal(retry.json.refresh_token, renewed.json.refresh_token); assert.equal(retry.json.expires_in, renewed.json.expires_in - 10);
+  assert.equal(reopened.getClient(value.client.id).id, value.client.id); assert.equal(reopened.status().refreshRetry.persistence, 'protected');
+});
+
+test('superseded-token tombstones survive protected restart and cannot invalidate the latest token', async t => {
+  const protection = protectedStorage(), env = await setup(t, protection), value = await grant(env.oauth);
+  const first = await refresh(env.oauth, value.tokens.refresh_token), second = await refresh(env.oauth, first.json.refresh_token); await env.oauth.close();
+  const reopened = await new ChatGPTOAuth({ dataDir: env.dataDir, origin: ORIGIN, now: env.now, ...protection }).init(); t.after(() => reopened.close());
+  assert.equal((await refresh(reopened, value.tokens.refresh_token)).json.error, 'invalid_grant');
+  assert.ok(reopened.getClient(value.client.id)); assert.ok(await reopened.authenticateRequest(bearer(second.json.access_token)));
+  assert.deepEqual((await refresh(reopened, first.json.refresh_token)).json, second.json);
+});
+
+test('an encrypted receipt written before a failed grant commit cannot authorize orphaned replacement tokens', async t => {
+  const protection = protectedStorage(), env = await setup(t, protection), value = await grant(env.oauth);
+  const persist = env.oauth.persist.bind(env.oauth); let orphaned;
+  const save = env.oauth.saveRefreshRetry.bind(env.oauth);
+  env.oauth.saveRefreshRetry = async receipt => { orphaned = receipt.tokens; return save(receipt); };
+  env.oauth.persist = async () => { throw new Error('Synthetic exit before grant commit'); };
+  assert.equal((await refresh(env.oauth, value.tokens.refresh_token)).status, 500);
+  env.oauth.persist = persist; await env.oauth.close();
+  const reopened = await new ChatGPTOAuth({ dataDir: env.dataDir, origin: ORIGIN, now: env.now, ...protection }).init(); t.after(() => reopened.close());
+  assert.equal(reopened.refreshRetries.size, 0); assert.equal(await reopened.authenticateRequest(bearer(orphaned.access_token)), null);
+  assert.equal((await refresh(reopened, orphaned.refresh_token)).json.error, 'invalid_grant'); assert.ok(reopened.getClient(value.client.id));
+  assert.equal((await refresh(reopened, value.tokens.refresh_token)).status, 200);
+});
+
+test('unavailable protected storage is explicitly memory-only and never writes plaintext fallback', async t => {
+  const env = await setup(t, { storageBackend: () => 'basic_text', isEncryptionAvailable: () => true, encryptSecret: () => assert.fail('Never use basic_text'), decryptSecret: () => assert.fail('Never use basic_text') });
+  const value = await grant(env.oauth), renewed = await refresh(env.oauth, value.tokens.refresh_token);
+  assert.equal(renewed.status, 200); assert.equal(env.oauth.status().refreshRetry.persistence, 'memory');
+  await assert.rejects(fs.stat(env.oauth.retryFile), { code: 'ENOENT' }); await env.oauth.close();
+  const reopened = await new ChatGPTOAuth({ dataDir: env.dataDir, origin: ORIGIN, now: env.now }).init(); t.after(() => reopened.close());
+  assert.equal(reopened.refreshRetries.size, 0); assert.ok(await reopened.authenticateRequest(bearer(renewed.json.access_token)));
+  // With no protected receipt there is no response recovery after a restart.
+  // Normal replay handling remains unchanged; callers need the returned token.
+  assert.equal((await refresh(reopened, value.tokens.refresh_token)).json.error, 'invalid_grant');
+});
+
+test('a protected receipt write failure leaves the current refresh token valid for retry', async t => {
+  const env = await setup(t, protectedStorage()), value = await grant(env.oauth);
+  await fs.mkdir(env.oauth.retryFile); await fs.writeFile(path.join(env.oauth.retryFile, 'preserve'), 'marker');
+  const failed = await refresh(env.oauth, value.tokens.refresh_token);
+  assert.equal(failed.status, 503); assert.equal(failed.json.access_token, undefined); assert.equal(env.oauth.status().healthy, true); assert.ok(env.oauth.getClient(value.client.id)); assert.deepEqual(env.revoked, []);
+  assert.equal(await fs.readFile(path.join(env.oauth.retryFile, 'preserve'), 'utf8'), 'marker');
+  await fs.rm(env.oauth.retryFile, { recursive: true }); assert.equal((await refresh(env.oauth, value.tokens.refresh_token)).status, 200);
+});
+
+test('corrupt optional retry records do not disable existing normal credentials', async t => {
+  const protection = protectedStorage(), env = await setup(t, protection), value = await grant(env.oauth);
+  const renewed = await refresh(env.oauth, value.tokens.refresh_token); await env.oauth.close();
+  await fs.writeFile(env.oauth.retryFile, '{corrupt retry sidecar');
+  const reopened = await new ChatGPTOAuth({ dataDir: env.dataDir, origin: ORIGIN, now: env.now, ...protection }).init(); t.after(() => reopened.close());
+  assert.equal(reopened.status().healthy, true); assert.match(reopened.status().refreshRetry.recoveryError, /unavailable/);
+  assert.ok(await reopened.authenticateRequest(bearer(renewed.json.access_token))); assert.equal((await refresh(reopened, renewed.json.refresh_token)).status, 200);
+  assert.equal(reopened.status().refreshRetry.recoveryError, null);
+});
+
+test('revocation and origin changes during protected encryption cannot commit or return replacement credentials', async t => {
+  for (const operation of ['revoke', 'origin']) await t.test(operation, async t => {
+    const protection = protectedStorage(), env = await setup(t, protection), value = await grant(env.oauth);
+    let enter, release; const entered = new Promise(resolve => { enter = resolve; }), paused = new Promise(resolve => { release = resolve; });
+    env.oauth.encryptSecret = async plaintext => { enter(); await paused; return protection.encryptSecret(plaintext); };
+    const refreshing = refresh(env.oauth, value.tokens.refresh_token); await entered;
+    const revoking = operation === 'revoke' ? env.oauth.revoke(value.client.id) : (env.oauth.setOrigin('https://new.example'), env.oauth.tail);
+    release(); const result = await refreshing; await revoking;
+    assert.equal(result.status >= 400, true); assert.equal(result.json.access_token, undefined); assert.equal(env.oauth.getClient(value.client.id), null);
+    assert.deepEqual(JSON.parse(await fs.readFile(env.oauth.file, 'utf8')).grants, []); assert.equal(env.oauth.refreshRetries.size, 0);
+  });
+});
+
+test('explicit revocation and expiry cannot be undone by a protected retry receipt', async t => {
+  for (const operation of ['revoke', 'expiry']) await t.test(operation, async t => {
+    const protection = protectedStorage(), env = await setup(t, protection), value = await grant(env.oauth);
+    await refresh(env.oauth, value.tokens.refresh_token);
+    if (operation === 'revoke') await env.oauth.revoke(value.client.id); else env.advance(30 * 86400000);
+    await env.oauth.close();
+    const reopened = await new ChatGPTOAuth({ dataDir: env.dataDir, origin: ORIGIN, now: env.now, ...protection }).init(); t.after(() => reopened.close());
+    assert.equal((await refresh(reopened, value.tokens.refresh_token)).json.error, 'invalid_grant'); assert.equal(reopened.getClient(value.client.id), null); assert.equal(reopened.refreshRetries.size, 0);
+  });
 });
 
 test('refresh can attenuate permissions but never enlarge them or change resource', async t => {

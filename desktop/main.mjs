@@ -18,16 +18,18 @@ import { DesktopRestartController } from './restart.mjs';
 import { writeDesktopRuntimeRecord } from './runtime-record.mjs';
 import { createClipboardHandler, isTrustedDesktopSender } from './clipboard.mjs';
 import { desktopRemoteAccessArgs, runRemoteAccessCLI } from '../lib/remote-access-cli.mjs';
+import { desktopBrowserArgs, runBrowserCLI } from '../lib/browser-cli.mjs';
 import { credentialTemporaryProtection } from '../lib/credential-temp-protection.mjs';
 import { DesktopStartup, createStartupIndicator } from './startup.mjs';
 import { createDesktopConnectionStartup } from './connection-startup.mjs';
 import { DesktopRendererRecovery } from './renderer-recovery.mjs';
 
 const accessArgs = desktopRemoteAccessArgs(process.argv, { packaged: app.isPackaged });
-if (accessArgs) {
+const browserArgs = desktopBrowserArgs(process.argv, { packaged: app.isPackaged });
+if (accessArgs || browserArgs) {
   // A CLI invocation must not initialize a profile, take its lock, show its
   // window, or log the code/credential in desktop diagnostics.
-  const exitCode = await runRemoteAccessCLI(accessArgs, { defaultProfile: path.join(app.getPath('appData'), 'Relay'), expectedExecutable: process.execPath });
+  const exitCode = await (browserArgs ? runBrowserCLI : runRemoteAccessCLI)(browserArgs || accessArgs, { defaultProfile: path.join(app.getPath('appData'), 'Relay'), expectedExecutable: process.execPath });
   app.exit(exitCode);
 } else {
 const DESKTOP_DIR = path.dirname(fileURLToPath(import.meta.url));

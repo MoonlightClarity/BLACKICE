@@ -77,6 +77,32 @@ test('an authenticated read echoes the exact request/result pair and uses direct
   const status = await connector.status(); assert.equal(status.actions.providerTurns, false); assert.equal(status.chatSurfaceVerification, 'not-recorded'); assert.equal(status.lastAuthenticatedToolCall.nonce, 'proof-37');
 });
 
+test('invalid supplied bearer credentials receive HTTP 401 without invoking linking UI or admitting an action', async t => {
+  const { connector, calls, setClient } = await fixture(t);
+  const secret = 'blackice_at_' + 'fixture_invalid_credential'.padEnd(43, 'x');
+  const response = await post(connector, rpc('tools/call', { name: 'blackice_direct_status', arguments: { nonce: 'private-fixture-argument' } }), { authorization: 'Bearer ' + secret });
+  assert.equal(response.statusCode, 401); assert.match(response.headers['www-authenticate'], /error="invalid_token"/); assert.match(response.headers['www-authenticate'], /resource_metadata=/);
+  assert.equal(response.json().code, 'CHATGPT_AUTH_REQUIRED'); assert.equal(response.json().result, undefined); assert.deepEqual(calls, []);
+  const status = await connector.status();
+  assert.equal(status.authDiagnostics.invalidBearerChallenges, 1); assert.equal(status.authDiagnostics.linkingChallenges, 0);
+  assert.deepEqual(Object.keys(status.authDiagnostics.lastChallenge).sort(), ['at', 'kind', 'method', 'statusCode', 'tool']);
+  assert.equal(status.authDiagnostics.lastChallenge.tool, 'blackice_direct_status');
+  assert.ok(!JSON.stringify(status).includes(secret)); assert.ok(!JSON.stringify(status).includes('private-fixture-argument'));
+  status.authDiagnostics.lastChallenge.kind = 'caller-mutation'; assert.equal((await connector.status()).authDiagnostics.lastChallenge.kind, 'invalidBearerChallenges');
+  setClient({ id: 'same-grant', scopes: ['read'] });
+  const refreshed = await post(connector, rpc('tools/call', { name: 'blackice_direct_status', arguments: { nonce: 'after-refresh' } }), { authorization: 'Bearer replacement-fixture' });
+  assert.equal(refreshed.statusCode, 200); assert.equal(refreshed.json().result.isError, false); assert.equal(calls.length, 1); assert.equal(calls[0].client.id, 'same-grant');
+});
+
+test('revocation between authentication and admission gets an HTTP challenge without executing', async t => {
+  const { connector, oauth, setClient, calls } = await fixture(t);
+  setClient({ id: 'fixture-revoked-grant', scopes: ['read'] });
+  oauth.getClient = () => null;
+  const response = await post(connector, rpc('tools/call', { name: 'blackice_direct_status' }), { authorization: 'Bearer fixture' });
+  assert.equal(response.statusCode, 401); assert.equal(response.json().code, 'CHATGPT_ACCESS_REVOKED'); assert.match(response.headers['www-authenticate'], /invalid_token/); assert.deepEqual(calls, []);
+  assert.equal((await connector.status()).authDiagnostics.authorizationLostChallenges, 1);
+});
+
 test('scope checks, cross-origin requests and disabled connectors block execution', async t => {
   const { connector, setClient, calls, revoked } = await fixture(t); setClient({ id: 'grant-one', scopes: ['read', 'browser:write'] });
   const value = (await post(connector, rpc('tools/call', { name: 'blackice_browser_upload', arguments: {} }))).json(); assert.equal(value.result.isError, true); assert.deepEqual(calls, []);

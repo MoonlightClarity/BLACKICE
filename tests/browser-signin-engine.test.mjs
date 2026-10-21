@@ -7,14 +7,14 @@ import path from 'node:path';
 import {HarnessEngine} from '../lib/engine.mjs';
 import {createMissionWorkflow} from '../public/mission-model.mjs';
 
-test('live agent sign-in is durable, does not invoke a browser window, and blocks subsequent contained-browser actions in this turn',async t=>{
+test('contained sign-in pauses its browser without blocking an independent authorized native session',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'agentdesk-quiet-auth-')),cwd=path.join(root,'work'),dataDir=path.join(root,'data');
  await mkdir(cwd);
- let browserCalls=0,windowOpens=0;
+ let browserCalls=0,nativeCalls=0,windowOpens=0;
  const connections={
   signedBrowser:{available:true,connectionId:'browseros-neo',toolNames:['tabs','navigate','snapshot','act']},
   refreshSignedBrowser:async()=>{windowOpens++;return{available:true,connectionId:'browseros-neo'};},
-  list:()=>[],status:()=>({}),call:async()=>{browserCalls++;throw Error('This browser action should not be reached after a blocker');},
+  list:()=>[],status:()=>({}),redact:String,call:async()=>{nativeCalls++;return{content:[{type:'text',text:'Observed the separate signed-in native session.'}]};},
   close:async()=>{},
  };
  class Runtime extends EventEmitter {
@@ -29,6 +29,8 @@ test('live agent sign-in is durable, does not invoke a browser window, and block
    const guarded=await options.onToolCall({name:'relay_browser',arguments:{action:'navigate',tabId:'contained-tab',url:'https://www.linkedin.com/'}});
    assert.equal(guarded.success,false);
    assert.match(guarded.contentItems[0].text,/Browser actions are paused/);
+   const native=await options.onToolCall({name:'relay_connections',arguments:{action:'call',connectionId:'browseros-neo',name:'tabs',arguments:{}}});
+   assert.equal(native.success,true);assert.match(native.contentItems[0].text,/separate signed-in native session/);
    return{output:'LinkedIn sign-in is required; nothing was published.'};
   }
  }
@@ -42,6 +44,7 @@ test('live agent sign-in is durable, does not invoke a browser window, and block
  for(let i=0;i<80;i++){run=engine.getRun(started.id);if(run?.settled)break;await new Promise(r=>setTimeout(r,20));}
  assert.equal(run.status,'completed',run.error);
  assert.equal(browserCalls,0);
+ assert.equal(nativeCalls,1);
  assert.equal(windowOpens,0);
  assert.equal(run.browserSignIn.hostname,'www.linkedin.com');assert.equal(run.browserSignIn.browser,'relay');
  assert.equal(run.browserSignIn.status,'awaiting-user');
@@ -51,14 +54,14 @@ test('live agent sign-in is durable, does not invoke a browser window, and block
  assert.equal(contents.find(item=>item.id===run.id)?.browserSignIn?.origin,'https://www.linkedin.com');
 });
 
-test('delegated browser workers share the quiet sign-in blocker and cannot bypass it',async t=>{
+test('delegated workers preserve the contained challenge while independent native sessions remain usable',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'agentdesk-delegated-auth-')),cwd=path.join(root,'work'),dataDir=path.join(root,'data');
  await mkdir(cwd);
- let calls=0;
+ let calls=0,nativeCalls=0;
  const connections={
   signedBrowser:{available:true,connectionId:'browseros-neo'},
   refreshSignedBrowser:async()=>({available:true}),list:()=>[],status:()=>({}),
-  call:async()=>{calls++;throw Error('Unexpected Neo call after login block')},close:async()=>{},
+  redact:String,call:async()=>{nativeCalls++;return{content:[{type:'text',text:'Independent native fixture session.'}]};},close:async()=>{},
  };
  class Runtime extends EventEmitter{
   status(){return {connected:true,authenticated:true,defaultModel:'demo',models:[{id:'demo',model:'demo',available:true}]};}
@@ -74,6 +77,8 @@ test('delegated browser workers share the quiet sign-in blocker and cannot bypas
     assert.equal(reported.success,true);
     const second=await options.onToolCall({name:'relay_browser',arguments:{action:'tabs'}});
     assert.equal(second.success,false);
+    const native=await options.onToolCall({name:'relay_connections',arguments:{action:'call',connectionId:'browseros-neo',name:'tabs',arguments:{}}});
+    assert.equal(native.success,true);
     return {output:'LinkedIn sign-in required'};
    }
    const result=await options.onToolCall({name:'relay_delegate',arguments:{tasks:[{id:'webcheck',prompt:'Inspect LinkedIn sign in and report any blocker.'}]}});
@@ -96,5 +101,5 @@ test('delegated browser workers share the quiet sign-in blocker and cannot bypas
  assert.equal(run.status,'completed',run.error);
  assert.equal(run.browserSignIn?.hostname,'linkedin.com');assert.equal(run.browserSignIn.browser,'relay');
  assert.equal(run.events.filter(e=>e.data?.type==='browser.signin').length,1);
- assert.equal(calls,0);
+ assert.equal(calls,0);assert.equal(nativeCalls,1);
 });

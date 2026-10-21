@@ -39,7 +39,7 @@ const sameDirectory = (left, right) => {
   const normalize = value => process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value);
   return normalize(left) === normalize(right);
 };
-const documents = new Set(['CHAT-MODE.md', 'RELEASE-NOTES-2.31.0.md', 'README.md', 'RELEASE-NOTES.md', 'CHATGPT-BRIDGE.md', 'UI-VALIDATION.md', 'METHODS.md', 'APPLICATION-COMPATIBILITY.md', 'EMAIL.md', 'REMOTE-ACCESS.md', 'BROWSER-PROTECTION.md', 'PLANNING-AWARENESS.md', 'RELEASE-NOTES-2.30.0.md', 'RELEASE-NOTES-2.29.0.md', 'RELEASE-NOTES-2.24.0.md', 'RELEASE-NOTES-2.24.1.md', 'RELEASE-NOTES-2.25.0.md']);
+const documents = new Set(['CHAT-MODE.md', 'RELEASE-NOTES-2.31.0.md', 'README.md', 'RELEASE-NOTES.md', 'CHATGPT-BRIDGE.md', 'CHATGPT-CONNECTOR.md', 'BROWSER-IMPORT.md', 'UI-VALIDATION.md', 'METHODS.md', 'APPLICATION-COMPATIBILITY.md', 'EMAIL.md', 'REMOTE-ACCESS.md', 'BROWSER-PROTECTION.md', 'PLANNING-AWARENESS.md', 'RELEASE-NOTES-2.30.0.md', 'RELEASE-NOTES-2.29.0.md', 'RELEASE-NOTES-2.24.0.md', 'RELEASE-NOTES-2.24.1.md', 'RELEASE-NOTES-2.25.0.md']);
 const sourceDocuments = new Set(['RELEASE-NOTES-2.23.md', 'RELEASE-NOTES-2.23.1.md', 'RELEASE-NOTES-2.24.0.md', 'RELEASE-NOTES-2.24.1.md', 'RELEASE-NOTES-2.25.0.md']);
 // Match desktop/electron-builder.yml's explicit packaged runtime files. The
 // source tree also contains icon sources and build tools that are not installed.
@@ -339,7 +339,7 @@ function nativeClosed(installed) {
 }
 
 const overlaps = (left, right) => { const a = left.toLowerCase(), b = right.toLowerCase(); return a === b || a.startsWith(b + path.sep) || b.startsWith(a + path.sep); };
-export const installedFile = file => file === 'package.json' || file === 'server.mjs' || documents.has(file) || /^(?:lib|public)\//.test(file) || installedDesktopFiles.has(file) || ['scripts/chatgpt-bridge.mjs', 'scripts/email-oauth-token.mjs', 'scripts/remote-access-cli.mjs'].includes(file);
+export const installedFile = file => file === 'package.json' || file === 'server.mjs' || documents.has(file) || /^(?:lib|public)\//.test(file) || installedDesktopFiles.has(file) || ['scripts/chatgpt-bridge.mjs', 'scripts/email-oauth-token.mjs', 'scripts/remote-access-cli.mjs', 'scripts/browser-cli.mjs'].includes(file);
 
 async function directoryRoot(value) {
   const resolved = path.resolve(value), info = await fs.lstat(resolved);

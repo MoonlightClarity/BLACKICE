@@ -72,7 +72,7 @@ for(const phase of ['startup','preparation'])test(`a passive settings waiter can
   const operation=async({signal})=>{permission=signal;began.resolve();await release.promise;if(!signal.aborted)effects++;return phase==='startup'?{started:!signal.aborted}:{ready:!signal.aborted,policyVerified:true,created:!signal.aborted};};
   const integration=createSignedBrowserIntegration({registerImpl:async()=>phase==='startup'?{available:false}:connected,startBrowser:operation,prepareWindowImpl:operation});t.after(()=>integration.close());
   const passive=integration.refresh(),started=integration.refresh({signal:web.signal,startIfNeeded:true});await began.promise;web.abort();assert.equal((await started).available,false);assert.equal(permission.aborted,true);
-  release.resolve();assert.equal((await passive).available,false);assert.equal(effects,0);
+  release.resolve();const result=await passive;assert.equal(result.available,phase==='preparation');if(phase==='preparation'){assert.equal(result.browserConnected,true);assert.equal(result.backgroundReady,false);assert.match(result.backgroundReason,/cancelled/);}assert.equal(effects,0);
 });
 
 test('a web requester joining after passive preparation was skipped must receive a fresh focus check',async t=>{
@@ -87,6 +87,6 @@ test('a replacement web task waits for cancelled preparation to retire before it
   const began=deferred(),release=deferred(),first=new AbortController();let probes=0,preparations=0;
   const integration=createSignedBrowserIntegration({registerImpl:async()=>{probes++;return connected;},prepareWindowImpl:async({signal})=>{preparations++;if(preparations===1){began.resolve();await release.promise;}return{ready:!signal.aborted,policyVerified:!signal.aborted,created:false};}});t.after(()=>integration.close());
   const passive=integration.refresh(),cancelled=integration.refresh({signal:first.signal,startIfNeeded:true});await began.promise;first.abort();await cancelled;
-  const replacement=integration.refresh({startIfNeeded:true});release.resolve();assert.equal((await passive).available,false);
+  const replacement=integration.refresh({startIfNeeded:true});release.resolve();const observed=await passive;assert.equal(observed.available,true);assert.equal(observed.browserConnected,true);assert.equal(observed.backgroundReady,false);
   const result=await replacement;assert.equal(result.available,true);assert.equal(result.backgroundWindow.policyVerified,true);assert.equal(probes,2);assert.equal(preparations,2);
 });

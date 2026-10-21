@@ -70,11 +70,11 @@ test('real MCP registration discovers the existing browser without opening, navi
   assert.equal(manager.list()[0].url, url); assert.equal(manager.list()[0].timeoutMs, 30000);
   const gateway = createConnectionToolHandler({ manager });
   const catalog = await gateway({ name: 'relay_connections', arguments: { action: 'tools', connectionId: status.connectionId, query: 'tabs' } });
-  assert.equal(catalog.success, false); assert.match(catalog.contentItems[0].text, /External Neo interaction is disabled/);
+  assert.equal(catalog.success, true); assert.equal(catalog.receipt.browser, 'neo'); assert.deepEqual(JSON.parse(catalog.contentItems[0].text).tools.map(tool => tool.name), ['tabs']);
   const listing = await gateway({ name: 'relay_connections', arguments: { action: 'call', connectionId: status.connectionId, name: 'tabs', arguments: { action: 'list' } } });
-  assert.equal(listing.success, false); assert.match(listing.contentItems[0].text, /External Neo interaction is disabled/);
-  assert.equal(calls.length, 8, 'retired agent discovery and calls cannot contact the native browser');
-  assert.equal(manager.list()[0].agentAvailable, false); assert.match(manager.list()[0].agentUnavailableReason, /Manual connection only/);
+  assert.equal(listing.success, true); assert.equal(listing.receipt.actionDispatched, true); assert.equal(listing.receipt.outcome, 'completed');
+  assert.equal(calls.length, 9, 'discovery reuses the real catalog and one explicit native action reaches the transport');
+  assert.equal(manager.list()[0].agentAvailable, true); assert.equal(manager.list()[0].agentUnavailableReason, undefined);
   assert.deepEqual(calls.at(-1).params, { name: 'tabs', arguments: { action: 'list' } });
   assert.match(signedBrowserInstructions(status), /connectionId "browseros-neo"/);
   assert.match(signedBrowserInstructions(status), /does not mean every site is signed in/);
@@ -265,8 +265,8 @@ test('native registration retries a stale endpoint and discovers a modern Neo ru
   assert.equal(actual.manager.list().length, 1); assert.equal(actual.manager.list()[0].url, actual.url);
   assert.equal(unrelated.calls.some(call => call.method === 'tools/call'), false); assert.deepEqual(actual.calls.filter(call => call.method === 'tools/call').map(call => call.params), [{ name: 'tabs', arguments: { action: 'list' } }, { name: 'tabs', arguments: { action: 'list' } }]);
   const instructions = signedBrowserInstructions(status);
-  assert.match(instructions, /by default for website work/); assert.match(instructions, /authorized post or edit/); assert.match(instructions, /name_session/); assert.match(instructions, /explicit schema-checked/); assert.match(instructions,/Unrestricted run, raw CDP/);
-  assert.match(instructions, /fullPage:false/); assert.match(instructions, /document\.hasFocus\(\).*cannot establish OS foreground/); assert.match(instructions, /failed screenshot is never a reason to publish/);
+  assert.match(instructions, /Reuse the browser and profile requested by the user/); assert.match(instructions, /authorized post or edit/); assert.match(instructions, /name_session/); assert.match(instructions, /actual tool schemas/); assert.match(instructions, /run, raw CDP, full-page capture/);
+  assert.match(instructions, /full-page capture when relevant and supported/); assert.match(instructions, /focus and visibility do not establish native desktop foreground/); assert.match(instructions, /failed screenshot is never a reason to publish/); assert.doesNotMatch(instructions, /finite background interface|fullPage:false|do not call BrowserOS request_human_help/);
   const runOnly = neoCatalog.filter(tool => tool.name !== 'navigate');
   assert.equal(isSignedBrowserCatalog(runOnly), true);
   assert.equal(isSignedBrowserCatalog([{ name: 'run', inputSchema: { type: 'object', properties: { code: { type: 'string' } } } }]), false);
@@ -306,6 +306,28 @@ test('native integration is lazy, shares reconnects, escalates a concurrent web 
   manager.clients.get('browseros-neo').closed = true;
   assert.equal(integration.status().available, false); assert.match(integration.status().reason, /reconnects/);
   await integration.close(); assert.match((await integration.refresh()).reason, /cancelled/);
+});
+
+test('native browser availability remains verified when background window readiness is unavailable', async () => {
+  let backgroundReady = false;
+  const manager = { clients: new Map([['browseros-neo', { connected: true, closed: false }]]) };
+  const connected = { available: true, catalogConnected: true, browserConnected: true, reusesBrowserSession: true, connectionId: 'browseros-neo', reason: 'Native browser connection verified.' };
+  const integration = createSignedBrowserIntegration({ connections: manager,
+    registerImpl: async () => ({ ...connected }),
+    prepareWindowImpl: async () => backgroundReady ? { ready: true, policyVerified: true, created: false } : { ready: false, policyVerified: false, created: false, code: 'FOCUS_POLICY_DISABLED', reason: 'Native background focus preference is disabled.' },
+    startBrowser: () => assert.fail('A working native browser must not be started again.'),
+  });
+  try {
+    const status = await integration.refresh({ startIfNeeded: true });
+    for (const key of ['available', 'catalogConnected', 'browserConnected', 'reusesBrowserSession']) assert.equal(status[key], true, key);
+    assert.equal(status.reason, connected.reason);
+    assert.equal(status.backgroundReady, false); assert.equal(status.backgroundReason, 'Native background focus preference is disabled.');
+    assert.equal(status.backgroundWindow.code, 'FOCUS_POLICY_DISABLED'); assert.equal(status.backgroundWindow.ready, false);
+    assert.equal(integration.status().available, true);
+    backgroundReady = true;
+    const ready = await integration.refresh({ startIfNeeded: true });
+    assert.equal(ready.available, true); assert.equal(ready.backgroundReady, true); assert.equal(ready.backgroundReason, null);
+  } finally { await integration.close(); }
 });
 
 test('closing native integration aborts pending discovery without launching a browser', async () => {

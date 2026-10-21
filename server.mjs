@@ -34,6 +34,8 @@ import { BrowserCredentialVault, credentialCheck, credentialError } from './lib/
 import { BrowserCredentialMirror } from './lib/browser-credential-mirror.mjs';
 import { BrowserCredentialDestination } from './lib/browser-credential-destination.mjs';
 import { createDirectBrowserCredentialTools } from './lib/browser-credential-tools.mjs';
+import { createDirectConnectedBrowserTools, createDirectBrowserProfileTools } from './lib/connected-browser-tools.mjs';
+import { BrowserProfileStore } from './lib/browser-profile.mjs';
 import { DiagnosticsStore } from './lib/diagnostics.mjs';
 import { writeEventStream } from './lib/event-stream.mjs';
 import {ApplicationWorkspace} from './lib/application-workspace.mjs';
@@ -56,6 +58,8 @@ import { chatGPTFileImportTool } from './lib/chatgpt-file-import.mjs';
 
 const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const APP_VERSION = JSON.parse(await fs.readFile(path.join(APP_DIR, 'package.json'), 'utf8')).version;
+const LOCAL_BROWSER_CLIENT = Object.freeze({ id: 'local-browser-tools', label: 'BLACKICE browser commands', kind: 'local-browser', scopes: ['read', 'browser:read', 'browser:write', 'files:read', 'files:write', 'commands:run'] });
+const LOCAL_BROWSER_TOOLS = new Set(['blackice_connected_browser_read', 'blackice_connected_browser_action', 'blackice_profile_list', 'blackice_profile_import', 'blackice_profile_connect']);
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ttf': 'font/ttf' };
 const safeEqual = (a, b) => {
   if (typeof a !== 'string') return false;
@@ -83,6 +87,9 @@ export async function createHarnessServer(options = {}) {
   const prompts = options.prompts || new PromptTemplateStore({ dataDir }); await prompts.init();
   const identity = options.identity || new IdentityStore({ dataDir }); await identity.init();
   const connections = options.connections || new ConnectionManager({ dataDir, ...options.secretStorage }); await connections.init();
+  const browserProfiles = options.browserProfiles || await new BrowserProfileStore({ dataDir: path.resolve(dataDir) }).init();
+  let browserProfileState = { sources: [], imports: [], loaded: false };
+  const refreshBrowserProfiles = async () => { browserProfileState = { ...await browserProfiles.discover(), loaded: true }; return browserProfileState; };
   const signedIntegration=options.signedBrowser===true?createSignedBrowserIntegration({...options.signedBrowserOptions,connections,startBrowser:options.startSignedBrowser}):null;
   let notifySignedBrowser=()=>{};
   const refreshSignedBrowser=async options=>{if(!signedIntegration)return undefined;const value=await signedIntegration.refresh(options);notifySignedBrowser();return value;};
@@ -90,7 +97,7 @@ export async function createHarnessServer(options = {}) {
   let browserImport, browserCredentials, browserCredentialMirror, browserCredentialDestinations;
   const browserStatus = req => {
     const info = browserImport?.snapshot(), localManagement = Boolean(req && req.headers?.['x-blackice-remote'] !== '1');
-    return { ...browser.status(), ...(signedIntegration ? { signedBrowser:signedIntegration.status() } : {}), ...(options.signedBrowser === true ? { chromeBrowser: chromeBrowserStatus({ connections }), ...(info ? { neoImport: { ...info, localManagement, capabilities: { ...info.capabilities, open: localManagement && info.capabilities.open === true } } } : {}) } : {}) };
+    return { ...browser.status(), browserProfiles: browserProfileState, ...(signedIntegration ? { signedBrowser:signedIntegration.status() } : {}), ...(options.signedBrowser === true ? { chromeBrowser: chromeBrowserStatus({ connections }), ...(info ? { neoImport: { ...info, localManagement, capabilities: { ...info.capabilities, open: localManagement && info.capabilities.open === true } } } : {}) } : {}) };
   };
   let chromeConnect;
   const attachments = options.attachments || new AttachmentStore({ dataDir }); await attachments.init();
@@ -258,7 +265,7 @@ export async function createHarnessServer(options = {}) {
   }
   remoteAgentApi = new RemoteAgentAPI({ engine, tasks, conversations, planningOrganization, runtime, defaultCwd, version: APP_VERSION, recoverClientRequest, onEvent: sendEvent, isClosing: () => Boolean(closePromise || maintenanceRequested) });
   const connectorChanged = () => sendEvent({ type: 'chatgpt-connector.updated', data: connectorPresence(), at: new Date().toISOString() });
-  const chatGPTOAuth = options.chatGPTOAuth || await new ChatGPTOAuth({ dataDir: path.resolve(dataDir) }).init();
+  const chatGPTOAuth = options.chatGPTOAuth || await new ChatGPTOAuth({ dataDir: path.resolve(dataDir), ...options.credentialStorage }).init();
   const connectorClosing = () => Boolean(closePromise || maintenanceRequested);
   browserImport = options.browserImport || new BrowserImportBridge({ isClosing: connectorClosing });
   const credentialPresence = () => ({ available: true, localManagement: true });
@@ -289,8 +296,9 @@ export async function createHarnessServer(options = {}) {
     dataDir: path.resolve(dataDir), allowedRoot: defaultCwd, browser, patchStore: engine.filePatches,
     isClosing: connectorClosing, onChange: connectorChanged,
     ...(options.desktopRestart ? { restartStatus: context => options.desktopRestart.status({ ownerId: context.canRestart ? context.ownerId : undefined }) } : {}),
-    additionalTools: [chatGPTFileImportTool({ directory: path.join(defaultCwd, 'blackice-imports') }), ...(options.desktopRestart ? [desktopRestartTool({ restart: options.desktopRestart, getJob: id => directExecution.jobs.get(id) })] : []), ...((await browserCredentials.status()).available ? createDirectBrowserCredentialTools({ vault: browserCredentials, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes) }) : [])],
+    additionalTools: [chatGPTFileImportTool({ directory: path.join(defaultCwd, 'blackice-imports') }), ...createDirectConnectedBrowserTools({ manager: connections, connectChrome: options.connectChromeBrowser }), ...createDirectBrowserProfileTools({ profiles: browserProfiles, manager: connections, onChange: refreshBrowserProfiles }), ...(options.desktopRestart ? [desktopRestartTool({ restart: options.desktopRestart, getJob: id => directExecution.jobs.get(id) })] : []), ...((await browserCredentials.status()).available ? createDirectBrowserCredentialTools({ vault: browserCredentials, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes) }) : [])],
     authorizeClient: async (client, { requiredScopes }) => {
+      if (client.id === 'local-browser-tools' && client.kind === 'local-browser') return !connectorClosing() && requiredScopes.every(scope => LOCAL_BROWSER_CLIENT.scopes.includes(scope));
       const current = await chatGPTOAuth.getClient(client.id);
       return Boolean(chatGPTConnector?.enabled && current && requiredScopes.every(scope => current.scopes.includes(scope)));
     },
@@ -773,7 +781,21 @@ export async function createHarnessServer(options = {}) {
       if (providerMatch?.[2] && req.method === 'POST') { const value = await body(req); const result = providerMatch[2] === '/test' ? await runtime.testProvider(providerMatch[1]) : await runtime.discoverModels(providerMatch[1], value); runtimeUpdate(); return json(res, 200, result); }
       if (pathname === '/api/browser/status' && req.method === 'GET') {
         if (options.signedBrowser === true) await browserImport.status();
+        await refreshBrowserProfiles();
         return json(res, 200, browserStatus(req));
+      }
+      if (pathname === '/api/browser/commands' && req.method === 'POST') {
+        if (req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Use the authenticated ChatGPT browser tools for a remote connection.' });
+        const value = await body(req, 150000);
+        if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !['tool', 'arguments'].includes(key)) || !LOCAL_BROWSER_TOOLS.has(value.tool)) return json(res, 400, { error: 'Choose a supported BLACKICE browser command.' });
+        return json(res, 200, await directExecution.call(value.tool, value.arguments, LOCAL_BROWSER_CLIENT));
+      }
+      const browserCommandJob = pathname.match(/^\/api\/browser\/commands\/(direct_[a-f0-9]{64})$/);
+      if (browserCommandJob && req.method === 'GET') {
+        if (req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Read remote browser results with blackice_get_job.' });
+        const paging = new URL(req.url, `http://${host}`).searchParams, offset = Number(paging.get('offset') || 0), limit = Number(paging.get('limit') || 50000);
+        if ([...paging.keys()].some(key => !['offset', 'limit'].includes(key)) || !Number.isSafeInteger(offset) || offset < 0 || offset > 10000000 || !Number.isSafeInteger(limit) || limit < 1 || limit > 50000) return json(res, 400, { error: 'Use a valid browser result offset and limit.' });
+        return json(res, 200, await directExecution.getJob(browserCommandJob[1], LOCAL_BROWSER_CLIENT, { offset, limit }));
       }
       if (pathname === '/api/browser/neo/import' && req.method === 'POST') {
         if (req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Open Neo import settings from BLACKICE on this computer.' });
@@ -970,7 +992,7 @@ export async function createHarnessServer(options = {}) {
   const heartbeat = setInterval(() => { for (const res of clients) if(!writeEventStream(res,': heartbeat\n\n'))clients.delete(res); }, 15000);
   heartbeat.unref();
   return {
-    server, engine, runtime, runtimeSettings, desktop, knowledge, prompts, browser,browserCredentials,browserCredentialMirror,browserCredentialDestinations,applicationWorkspace, identity, learning, connections, tasks, planningOrganization, attachments, email, emailOAuth, emailClient, inbox, conversations, operations,projects,capabilities,liveEdits,diagnostics,supportSnapshot,beginMaintenance,endMaintenance,assertRestartReady,assertRestartPrepared,beginRestart,endRestart,remoteAccess,remoteAgentApi,chatGPTConnector,chatGPTOAuth,directExecution,chatGPTPlanning,connectorSetup,
+    server, engine, runtime, runtimeSettings, desktop, knowledge, prompts, browser,browserProfiles,browserCredentials,browserCredentialMirror,browserCredentialDestinations,applicationWorkspace, identity, learning, connections, tasks, planningOrganization, attachments, email, emailOAuth, emailClient, inbox, conversations, operations,projects,capabilities,liveEdits,diagnostics,supportSnapshot,beginMaintenance,endMaintenance,assertRestartReady,assertRestartPrepared,beginRestart,endRestart,remoteAccess,remoteAgentApi,chatGPTConnector,chatGPTOAuth,directExecution,chatGPTPlanning,connectorSetup,
     async listen() {
       await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
       boundPort = server.address().port;
@@ -1017,6 +1039,7 @@ export async function createHarnessServer(options = {}) {
         await cleanup(() => browserCredentialDestinations.close());
         await cleanup(() => browserCredentials.close());
         await cleanup(() => browserImport.close());
+        await cleanup(() => browserProfiles.close());
         await cleanup(() => connections.close());
         await cleanup(() => identity.close());
         await cleanup(() => tasks.close());

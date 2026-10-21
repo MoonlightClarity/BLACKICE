@@ -52,14 +52,18 @@ async function approvedDirectGrants(f) {
   await f.app.chatGPTOAuth.persist(connectorGrantIds.map((id, index) => ({ id, clientId: 'https://chatgpt.com/oauth/client.json', label: 'ChatGPT', resource: f.app.chatGPTConnector.origin + '/mcp/chatgpt', scopes: index ? ['read', 'files:read'] : [...scopes], createdAt: now, expiresAt, lastUsedAt: now, accessTokens: [{ hash: createHash('sha256').update(tokens[index]).digest('hex'), expiresAt }], refresh: { hash: String(index + 1).repeat(64), expiresAt, usedHashes: [] } })));
   return connectorGrantIds.map((id, index) => ({ client: f.app.chatGPTOAuth.getClient(id), token: tokens[index] }));
 }
-async function connectorTool(f, grant, name, args) {
+async function connectorResponse(f, grant, name, args) {
   const payload = JSON.stringify({ jsonrpc: '2.0', id: 'fixture-tool', method: 'tools/call', params: { name, arguments: args } });
   const response = await new Promise((resolve, reject) => {
     const req = http.request({ hostname: '127.0.0.1', port: f.app.remoteAccess.gateway.port, path: '/mcp/chatgpt', method: 'POST', headers: { Host: new URL(f.app.chatGPTConnector.origin).host, Authorization: 'Bearer ' + grant.token, Accept: 'application/json, text/event-stream', 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } }, res => {
-      let body = ''; res.setEncoding('utf8'); res.on('data', chunk => { body += chunk; }); res.once('end', () => resolve({ status: res.statusCode, body: JSON.parse(body) }));
+      let body = ''; res.setEncoding('utf8'); res.on('data', chunk => { body += chunk; }); res.once('end', () => resolve({ status: res.statusCode, headers: res.headers, body: JSON.parse(body) }));
     });
     req.once('error', reject); req.end(payload);
   });
+  return response;
+}
+async function connectorTool(f, grant, name, args) {
+  const response = await connectorResponse(f, grant, name, args);
   assert.equal(response.status, 200); assert.equal(response.body.error, undefined);
   return response.body.result;
 }
@@ -103,9 +107,59 @@ test('direct execution retains OAuth scopes and revocation while accepting expli
   assert.equal(written.status, 'succeeded');
   assert.equal(await fs.readFile(path.join(f.root, 'outside.txt'), 'utf8'), 'Explicit authorized path.');
   await f.app.chatGPTOAuth.revoke(grant.client.id);
-  const revoked = await connectorTool(f, grant, 'blackice_run_command', { requestId: 'revoked-command', command: 'echo forbidden' });
-  assert.equal(revoked.isError, true); assert.ok(revoked._meta['mcp/www_authenticate']);
+  const revoked = await connectorResponse(f, grant, 'blackice_run_command', { requestId: 'revoked-command', command: 'echo forbidden' });
+  assert.equal(revoked.status, 401); assert.match(revoked.headers['www-authenticate'], /error="invalid_token"/);
+  assert.equal(revoked.body.code, 'CHATGPT_AUTH_REQUIRED'); assert.equal(revoked.body.result, undefined);
   assert.deepEqual(f.app.chatGPTOAuth.getClient(readOnly.client.id).scopes, ['read', 'files:read']);
+});
+
+test('expired access receives HTTP 401 and refreshing the same grant preserves a running job and its retry receipt', async t => {
+  const f = await fixture(t), [grant] = await approvedDirectGrants(f), oauth = f.app.chatGPTOAuth, api = f.app.directExecution;
+  let clock = Date.now(); oauth.now = () => clock;
+  const stored = structuredClone(oauth.grants.find(value => value.id === grant.client.id));
+  const credentials = oauth.mint(stored, []);
+  await oauth.persist(oauth.grants.map(value => value.id === stored.id ? stored : value));
+  grant.token = credentials.access_token;
+  const started = held(), release = held(), originalPrepare = api.prepare.bind(api);
+  const request = { requestId: 'survives-access-refresh', action: 'write', path: 'after-refresh.txt', text: 'One admitted write survives access-token renewal.' };
+  let dispatches = 0;
+  t.mock.method(api, 'prepare', async (...args) => {
+    const prepared = await originalPrepare(...args);
+    if (args[0].requestId !== request.requestId) return prepared;
+    const waiting = async () => { started.resolve(); await release.promise; dispatches++; return prepared(); };
+    waiting.dispatchesAction = prepared.dispatchesAction;
+    return waiting;
+  });
+  try {
+    const admitted = await connectorTool(f, grant, 'blackice_workspace_write', request);
+    assert.equal(admitted.isError, false);
+    await started.promise;
+    const jobId = admitted.structuredContent.jobId, active = api.active.get(jobId);
+    assert.ok(active); assert.equal((await api.getJob(jobId, grant.client)).status, 'running');
+    clock += credentials.expires_in * 1000 + 1;
+    const expired = await connectorResponse(f, grant, 'blackice_get_job', { jobId });
+    assert.equal(expired.status, 401); assert.match(expired.headers['www-authenticate'], /error="invalid_token"/);
+    assert.match(expired.headers['www-authenticate'], /resource_metadata=/);
+    assert.equal(expired.body.code, 'CHATGPT_AUTH_REQUIRED'); assert.equal(expired.body.result, undefined);
+    assert.equal(oauth.getClient(grant.client.id).id, grant.client.id);
+    assert.equal(active.controller.signal.aborted, false); assert.equal(dispatches, 0);
+    const renewed = await oauth.token({ grant_type: 'refresh_token', client_id: stored.clientId, refresh_token: credentials.refresh_token, resource: stored.resource }, oauth.epoch);
+    grant.token = renewed.access_token;
+    const ongoing = await connectorTool(f, grant, 'blackice_get_job', { jobId });
+    assert.equal(ongoing.isError, false); assert.equal(ongoing.structuredContent.status, 'running');
+    assert.equal(active.controller.signal.aborted, false);
+    assert.deepEqual(oauth.getClient(grant.client.id).scopes, grant.client.scopes);
+    release.resolve();
+    const finished = await settledConnectorJob(f, grant, jobId);
+    assert.equal(finished.status, 'succeeded'); assert.equal(dispatches, 1);
+    assert.equal(await fs.readFile(path.join(f.root, 'workspace', request.path), 'utf8'), request.text);
+    const retried = await connectorTool(f, grant, 'blackice_workspace_write', request);
+    assert.equal(retried.structuredContent.existing, true); assert.equal(retried.structuredContent.jobId, jobId);
+    assert.equal(dispatches, 1);
+    const diagnostics = (await f.app.chatGPTConnector.status()).authDiagnostics;
+    assert.equal(diagnostics.invalidBearerChallenges, 1); assert.equal(diagnostics.authorizationLostChallenges, 0);
+    assert.equal(f.runtime.agentCalls, 0);
+  } finally { release.resolve(); }
 });
 
 test('removing local action approvals preserves legacy pending and cancelled receipts without replay', async t => {

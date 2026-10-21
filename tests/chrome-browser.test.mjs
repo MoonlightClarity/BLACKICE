@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CHROME_BROWSER_INSTRUCTIONS, CHROME_BROWSER_CONNECTION_ID, chromeAutoConnectConnection, chromeBackgroundOpen, chromeBackgroundArguments, chromeBrowserStatus, isManagedChromeConnection, registerChromeBrowser } from '../lib/chrome-browser.mjs';
+import { CHROME_BROWSER_INSTRUCTIONS, CHROME_BROWSER_CONNECTION_ID, chromeAutoConnectConnection, chromeBackgroundOpen, chromeBackgroundArguments, chromeBrowserStatus, isManagedChromeConnection, isChromeBrowserConnection, registerChromeBrowser } from '../lib/chrome-browser.mjs';
 import { parseConnectionImport } from '../lib/connection-import.mjs';
 
 function fixture({ config, result = { content: [{type:'text',text:'## Pages\n1: https://private.fixture.test/ Private title'}] }, error, tools = [{name:'list_pages'}] } = {}) {
@@ -29,10 +29,18 @@ test('Chrome background policy clamps only the actual foreground switches and pr
   assert.match(CHROME_BROWSER_INSTRUCTIONS,/omit isolatedContext/);assert.match(CHROME_BROWSER_INSTRUCTIONS,/bringToFront:false/);assert.match(CHROME_BROWSER_INSTRUCTIONS,/does not prove sign-in/);
 });
 
-test('Only Relay managed exact Chrome autoConnect configurations receive the background policy',()=>{
+test('only exact managed Chrome autoConnect configurations use the live-session attach state',()=>{
   const config=chromeAutoConnectConnection();assert.equal(isManagedChromeConnection(config),true);
   for(const altered of [{...config,id:'custom-browser'},{...config,command:'another-server'},{...config,args:[...config.args,'--browser-url=http://localhost:9222']},{...config,args:['-y','chrome-devtools-mcp@latest']},{...config,args:[...config.args,'--user-data-dir=C:/different-profile']}])assert.equal(isManagedChromeConnection(altered),false);
   assert.equal(isManagedChromeConnection({...config,command:'C:\\Program Files\\nodejs\\npx.cmd'}),true);
+});
+
+test('official native profile launchers are identified separately from the managed live session',()=>{
+  const live=chromeAutoConnectConnection();
+  const profile={...live,id:'browser-profile-0123456789abcdef',args:['-y','chrome-devtools-mcp@latest','--executablePath=C:/Browser/chrome.exe','--userDataDir=C:/Profiles/imported']};
+  assert.equal(isChromeBrowserConnection(live),true);assert.equal(isChromeBrowserConnection(profile),true);assert.equal(isManagedChromeConnection(profile),false);
+  assert.equal(isChromeBrowserConnection({...profile,command:'C:\\Tools\\chrome-devtools-mcp.cmd',args:profile.args.slice(2)}),true);
+  for(const config of [{...profile,command:'unrelated-server'},{...profile,args:['-y','unrelated-mcp','chrome-devtools-mcp is mentioned in data']},{id:profile.id,transport:'http',url:'http://127.0.0.1:1234/mcp'}])assert.equal(isChromeBrowserConnection(config),false);
 });
 
 test('Status refreshes perform no initialization, save, connect, browser probing or profile reads',()=>{

@@ -20,11 +20,12 @@ async function managerHarness(t, options = {}) {
   t.after(async () => { await Promise.all(cleanupManagers.map(client => client.close())); assert.match(path.basename(dataDir), /^relay-mcp-test-/); await rm(dataDir, { recursive: true, force: true }); }); return { manager, dataDir, cleanupManagers };
 }
 const stdio = (dataDir, extra = {}) => ({ id: 'fixture', name: 'Local fixture', transport: 'stdio', command: process.execPath, args: [fixture], cwd: dataDir, ...extra });
-test('native browser is unavailable without checking or invoking its external tools',async()=>{
- let invoked=0;const manager={signedBrowser:{connectionId:'browseros-neo'},redact:value=>value,refreshSignedBrowser:async()=>{assert.fail('Agent calls must not refresh or start an external browser.');},tools:async()=>invoked++,call:async()=>invoked++};
+test('configured native browser tools are available without an unrelated contained-browser prerequisite',async()=>{
+ const invoked=[],manager={signedBrowser:{connectionId:'browseros-neo'},redact:String,refreshSignedBrowser:async()=>{assert.fail('Explicit tool calls use their configured MCP connection without an unrelated refresh.');},tools:async()=>{invoked.push('tools');return {tools:[{name:'run',inputSchema:{type:'object'}}]};},call:async(id,name,args)=>{invoked.push({id,name,args});return {content:[{type:'text',text:'Native browser observation.'}]};}};
  const handler=createConnectionToolHandler({manager});
- for(const action of ['tools','call']){const result=await handler({name:'relay_connections',arguments:{action,connectionId:'browseros-neo',name:'tabs'}});assert.equal(result.success,false);assert.match(result.contentItems[0].text,/External Neo interaction is disabled/);}
- assert.equal(invoked,0);
+ const catalog=await handler({name:'relay_connections',arguments:{action:'tools',connectionId:'browseros-neo'}});assert.equal(catalog.success,true);assert.equal(JSON.parse(catalog.contentItems[0].text).tools[0].name,'run');
+ const result=await handler({name:'relay_connections',arguments:{action:'call',connectionId:'browseros-neo',name:'run',arguments:{code:'return await browser.pages.list();'}}});assert.equal(result.success,true);
+ assert.deepEqual(invoked,['tools',{id:'browseros-neo',name:'run',args:{code:'return await browser.pages.list();'}}]);
 });
 
 test('managed Chrome never triggers a native connection dialog from an unconnected agent call', async t => {
