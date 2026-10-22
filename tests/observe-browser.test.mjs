@@ -66,7 +66,7 @@ test('page frames, current control receipts, and screenshot coordinates are boun
 
 test('the actual public API client refreshes a real rendered contained frame and excludes native routes', async t => {
   const f = fixture(t, { initial: status([tab('one'), tab('native-window', { browser: 'neo' }), tab('shown', { visible: true })]) }); await f.ui.enter();
-  assert.match(f.html, /Captured contained browser page/); assert.match(f.html, /Websites and their sign-ins stay in this contained browser/); assert.doesNotMatch(f.html, /value="native-window"|value="shown"|Open window/);
+  assert.match(f.html, /Captured contained browser page/); assert.match(f.html, /Websites stay inside BLACKICE · separate saved sign-ins/); assert.doesNotMatch(f.html, /value="native-window"|value="shown"|Open window/);
   assert.deepEqual(f.calls.map(call => [call.route, call.body?.action]), [['/api/browser/status?view=contained', undefined], ['/api/browser/action', 'screenshot']]);
   assert.equal(f.element('observe-browser-url').value, 'https://example.test/one'); assert.ok(f.calls.every(call => call.signal instanceof AbortSignal));
 });

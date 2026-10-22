@@ -170,7 +170,7 @@ test('saved schedules describe local recurrence, next time and pause state in th
 });
 
 test('creating a swarm explains parallel work and hands adoption a task-entry intent without starting a run',async t=>{
-  let context;const f=fixture(t,{onWorkflow:(workflow,value)=>{context=value;}});f.ui.openSwarm();assert.match(f.modals.at(-1).html,/Choose your team. Next, give it a task/);assert.match(f.modals.at(-1).html,/Creating a team starts no work/);assert.match(f.modals.at(-1).html,/Create &amp; give task/);await f.submit(f.elements.get('#swarm-form'));assert.equal(context.requestTask,true);assert.equal(f.requests.length,0,'creating a team never launches a task or touches operational queues');
+  let context;const f=fixture(t,{onWorkflow:(workflow,value)=>{context=value;}});f.ui.openSwarm();assert.match(f.modals.at(-1).html,/Choose your team. Next, give it a task/);assert.match(f.modals.at(-1).html,/Creating a team starts no work/);assert.match(f.modals.at(-1).html,/Create &amp; give task/);assert.match(f.modals.at(-1).html,/<div class="modal-footer"><button type="button" class="button" data-action="projects">Back to saved swarms<\/button><button type="submit"/);assert.equal(f.created.length,0,'returning to the library must not adopt or start the one-off team');await f.submit(f.elements.get('#swarm-form'));assert.equal(context.requestTask,true);assert.equal(f.requests.length,0,'creating a team never launches a task or touches operational queues');
 });
 
 test('unchanged manager polls preserve mounted rows and their handler while changed status, errors and fresh modals render',async t=>{
