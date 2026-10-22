@@ -268,10 +268,31 @@ test('revocation and narrowed scopes between authentication and dispatch prevent
   for (const current of [null, { id: 'grant-one', scopes: ['read'] }]) {
     oauth.getClient = async () => current;
     const result = (await post(connector, rpc('tools/call', { name: 'blackice_browser_upload', arguments: {} }))).json().result;
-    assert.equal(result.isError, true); assert.equal(result.structuredContent.code, 'CHATGPT_ACCESS_REVOKED');
+    assert.equal(result.isError, true);
+    assert.equal(result.structuredContent.code, current ? 'CHATGPT_SCOPE_REQUIRED' : 'CHATGPT_ACCESS_REVOKED');
     assert.ok(result._meta['mcp/www_authenticate']);
   }
   assert.deepEqual(calls, []);
+});
+
+test('a valid grant narrowed before dispatch requests the missing scope without invalidating its bearer credential', async t => {
+  const { connector, oauth, setClient, calls } = await fixture(t);
+  setClient({ id: 'same-grant', scopes: ['read', 'browser:write', 'files:read'] });
+  oauth.getClient = async () => ({ id: 'same-grant', scopes: ['read'] });
+  oauth.challenge = (scopes, error) => 'Bearer error="' + error + '", scope="' + scopes.join(' ') + '"';
+  const response = await post(connector, rpc('tools/call', { name: 'blackice_browser_upload', arguments: {} }), {
+    authorization: 'Bearer valid-before-and-after-scope-change',
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers['www-authenticate'], undefined);
+  const result = response.json().result;
+  assert.equal(result.structuredContent.code, 'CHATGPT_SCOPE_REQUIRED');
+  assert.match(result._meta['mcp/www_authenticate'][0], /error="insufficient_scope"/);
+  assert.deepEqual(calls, []);
+  const status = connector.authStatus();
+  assert.equal(status.scopeChallenges, 1);
+  assert.equal(status.invalidBearerChallenges, 0);
+  assert.equal(status.authorizationLostChallenges, 0);
 });
 
 test('maintenance blocks OAuth writes and tracks already admitted OAuth work until settled', async t => {
@@ -322,4 +343,65 @@ test('a saved result with narrower current access challenges for its actual requ
   execution.call = async () => { throw Object.assign(Error('This saved receipt requires file access.'), { status: 403, code: 'DIRECT_SCOPE_REQUIRED', requiredScopes: ['read', 'files:read'] }); };
   const result = (await post(connector, rpc('tools/call', { name: 'blackice_direct_status', arguments: {} }))).json().result;
   assert.equal(result.isError, true); assert.match(result._meta['mcp/www_authenticate'][0], /scope="read files:read"/); assert.deepEqual(result.structuredContent.requiredScopes, ['read', 'files:read']);
+});
+
+test('an action or upstream HTTP permission error does not ask ChatGPT to reconnect BLACKICE', async t => {
+  const { connector, execution, setClient } = await fixture(t);
+  setClient({ id: 'still-authorized-grant', scopes: ['read'] });
+  for (const status of [401, 403]) {
+    execution.call = async () => {
+      throw Object.assign(Error('The destination website requires its own sign-in.'), {
+        status, code: 'DESTINATION_HTTP_ERROR',
+      });
+    };
+    const response = await post(connector, rpc('tools/call', { name: 'blackice_direct_status' }), {
+      authorization: 'Bearer still-valid-fixture',
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headers['www-authenticate'], undefined);
+    const result = response.json().result;
+    assert.equal(result.isError, true);
+    assert.equal(result.structuredContent.code, 'DESTINATION_HTTP_ERROR');
+    assert.equal(result._meta?.['mcp/www_authenticate'], undefined);
+  }
+  const status = await connector.status();
+  assert.deepEqual(status.authDiagnostics, {
+    invalidBearerChallenges: 0, linkingChallenges: 0, scopeChallenges: 0,
+    authorizationLostChallenges: 0, lastChallenge: null,
+  });
+});
+
+test('direct status exposes sanitized integration diagnostics without changing the advertised catalog', async t => {
+  const { connector, setClient } = await fixture(t);
+  const catalog = connector.catalogStatus();
+  setClient({ id: 'existing-grant', scopes: ['read'] });
+  const response = await post(connector, rpc('tools/call', {
+    name: 'blackice_direct_status', arguments: { nonce: 'rebuild-status' },
+  }), { authorization: 'Bearer private-fixture-value' });
+  const result = response.json().result.structuredContent;
+  assert.equal(result.integration.implementation, 'direct-connector-v2');
+  assert.equal(result.integration.localMutationApproval, false);
+  assert.deepEqual(result.toolCatalog, catalog);
+  assert.equal(result.authDiagnostics.lastChallenge, null);
+  assert.ok(!JSON.stringify(result).includes('private-fixture-value'));
+  result.authDiagnostics.linkingChallenges = 100;
+  assert.equal(connector.authStatus().linkingChallenges, 0);
+  assert.deepEqual(connector.catalogStatus(), catalog);
+});
+
+test('a stalled optional setup observer does not delay delivery of a completed action', { timeout: 2000 }, async t => {
+  const { connector, setClient } = await fixture(t);
+  setClient({ id: 'existing-grant', scopes: ['read'] });
+  let release, observed = false;
+  const observer = new Promise(resolve => { release = resolve; });
+  t.after(() => release());
+  connector.onAuthenticatedToolCall = async () => { observed = true; await observer; };
+  const response = await post(connector, rpc('tools/call', {
+    name: 'blackice_direct_status', arguments: { nonce: 'delivered-before-observer' },
+  }));
+  assert.equal(observed, true);
+  assert.equal(response.json().result.isError, false);
+  assert.equal(response.json().result.structuredContent.nonce, 'delivered-before-observer');
+  await connector.close();
+  release();
 });

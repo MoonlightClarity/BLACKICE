@@ -42,3 +42,15 @@ Do not classify mutating or open-world tools as read-only to suppress host appro
 The access-token retention update preserves unexpired access tokens when another refresh issues a replacement. After activation, a persisted grant can contain more than four access-token records. Older OAuth loaders accept at most four records per grant and check that limit before filtering expiry, so they cannot read that state even after those records expire. A post-activation rollback must retain an OAuth loader compatible with the stored records and preserve the existing grants and tokens; restoring the older OAuth source alone is insufficient.
 
 An installer rollback before activation is a different case: if the previous process is still running and the updated runtime has not written authorization state, restoring the previous application files does not introduce this state-format incompatibility. Record whether activation occurred when choosing a rollback procedure.
+
+## Rebuilt connector boundary
+
+The `direct-connector-v2` implementation separates the wire protocol, tool catalog, and OAuth admission. `blackice_direct_status` returns `integration` and the same bounded `authDiagnostics` counters as local connector status. This identifies the loaded implementation without issuing a command or exposing credentials.
+
+Each request uses one catalog snapshot for discovery metadata, required scopes, and dispatch. The unchanged native catalog contains 28 tools and retains fingerprint `e005a0eba62989d59498e014efffaf8b43a3b2bb9b5f77100aa4ca46e138748d`. The endpoint, supported protocol versions, tool schemas, annotations, full accepted operations, persisted OAuth format, and durable job format are preserved. Initialization does not create or reset grant state.
+
+Optional status and setup observers cannot delay or replace an accepted action's response. Only explicit BLACKICE authorization errors produce connection challenges; a destination service's HTTP 401/403 remains an action error. If the same live grant loses a required scope before dispatch, the response identifies the missing scope rather than invalidating a valid access token.
+
+The plugin package builder reads an existing package and writes a separate candidate. It aligns the direct MCP fallback name with the existing hosted App declaration, preserves App ID and connection settings, and synchronizes portable and legacy manifests. The hosted route remains bound to the same App; a standalone MCP client that keys its token cache by the renamed fallback may need to select that route again.
+
+Validation covers independent MCP clients, token refresh under the same grant, receipt reads after reconstruction, same-ID retries without repeated effects, observer failures, the full catalog fingerprint, and package preservation. These checks establish BLACKICE behavior. A ChatGPT-hosted approval dialog still requires observation across actual user turns before reporting the repeated-prompt issue as fixed.
