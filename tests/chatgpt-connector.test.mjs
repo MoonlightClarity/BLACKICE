@@ -4,7 +4,14 @@ import { Readable } from 'node:stream';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { createHash } from 'node:crypto';
 import { ChatGPTConnector } from '../lib/chatgpt-connector.mjs';
+import { DirectExecutionAPI, DIRECT_EXECUTION_SCOPES } from '../lib/direct-execution-api.mjs';
+import { ChatGPTPlanningAPI } from '../lib/chatgpt-planning.mjs';
+import { chatGPTFileImportTool } from '../lib/chatgpt-file-import.mjs';
+import { desktopRestartTool } from '../lib/desktop-restart-tool.mjs';
+import { createDirectBrowserCredentialTools } from '../lib/browser-credential-tools.mjs';
+import { createDirectConnectedBrowserTools, createDirectBrowserProfileTools } from '../lib/connected-browser-tools.mjs';
 
 class Response {
   headers = {}; body = ''; statusCode = 0; destroyed = false;
@@ -46,6 +53,72 @@ test('public discovery advertises exact OAuth scopes but never executes a user t
   assert.equal(unauthenticated.result.isError, true); assert.match(unauthenticated.result._meta['mcp/www_authenticate'][0], /resource_metadata=/); assert.deepEqual(calls, []);
 });
 
+test('a pending native restart keeps authenticated receipt reads and cancellation available without admitting new work', async t => {
+  const { connector, execution, setClient, setClosing, calls } = await fixture(t);
+  const definitions = new DirectExecutionAPI({ dataDir: path.dirname(connector.file) });
+  execution.tools = () => definitions.tools();
+  const original = JSON.stringify((await post(connector, rpc('tools/list'))).json().result.tools);
+  const fingerprint = connector.catalogStatus();
+  let pending = true; connector.isRestartPending = () => pending; setClosing(true);
+  assert.equal(JSON.stringify((await post(connector, rpc('tools/list'))).json().result.tools), original);
+  assert.deepEqual(connector.catalogStatus(), fingerprint);
+  const controls = ['blackice_direct_status', 'blackice_get_job', 'blackice_list_jobs', 'blackice_cancel_job'];
+  for (const name of controls) {
+    const missing = (await post(connector, rpc('tools/call', { name, arguments: {} }))).json().result;
+    assert.equal(missing.isError, true); assert.ok(missing._meta['mcp/www_authenticate']);
+  }
+  assert.deepEqual(calls, []);
+  setClient({ id: 'pending-restart-owner', scopes: [...DIRECT_EXECUTION_SCOPES] });
+  for (const name of controls) {
+    const response = await post(connector, rpc('tools/call', { name, arguments: { jobId: 'owned-job' } }));
+    assert.equal(response.statusCode, 200); assert.equal(response.json().result.isError, false, name);
+  }
+  assert.deepEqual(calls.map(call => call.name), controls);
+  const mutation = await post(connector, rpc('tools/call', { name: 'blackice_run_command', arguments: { requestId: 'blocked-command', command: 'must not execute' } }));
+  assert.equal(mutation.statusCode, 503); assert.equal(calls.length, controls.length);
+  setClient(null);
+  const expired = await post(connector, rpc('tools/call', { name: 'blackice_cancel_job', arguments: { jobId: 'owned-job' } }), { authorization: 'Bearer expired-fixture-token' });
+  assert.equal(expired.statusCode, 401); assert.equal(calls.length, controls.length);
+  setClient({ id: 'pending-restart-owner', scopes: [...DIRECT_EXECUTION_SCOPES] });
+  pending = false;
+  for (const name of controls) assert.equal((await post(connector, rpc('tools/call', { name, arguments: {} }))).statusCode, 503);
+  assert.equal(calls.length, controls.length); assert.deepEqual(connector.catalogStatus(), fingerprint);
+});
+
+test('every advertised definition mirrors OAuth metadata without changing scopes, annotations or catalog stability', async t => {
+  const { connector, execution, calls } = await fixture(t);
+  const unavailable = () => assert.fail('Catalog inspection must not execute an adapter.');
+  const definitions = new DirectExecutionAPI({ dataDir: path.dirname(connector.file), additionalTools: [
+    chatGPTFileImportTool({ directory: path.join(path.dirname(connector.file), 'unused-imports') }),
+    ...createDirectConnectedBrowserTools({ manager: {}, connectChrome: unavailable }),
+    ...createDirectBrowserProfileTools({ profiles: {}, manager: {} }),
+    desktopRestartTool({ restart: { request: unavailable }, getJob: unavailable }),
+    ...createDirectBrowserCredentialTools({ vault: {}, browser: {}, reauthorize: unavailable }),
+  ] });
+  definitions.definitions.get('blackice_run_command')._meta = { 'fixture/preserved': 'existing metadata' };
+  execution.tools = () => definitions.tools(); connector.planning = new ChatGPTPlanningAPI({});
+  const source = [...execution.tools(), ...connector.planning.tools()];
+  const advertised = (await post(connector, rpc('tools/list'))).json().result.tools;
+  assert.equal(advertised.length, source.length);
+  for (const [index, tool] of advertised.entries()) {
+    const { scope, requiredScope, requiredScopes, scopes, ...definition } = source[index];
+    const expected = [{ type: 'oauth2', scopes: [...new Set(['read', ...(requiredScopes || scopes || [scope || requiredScope || 'read'])])] }];
+    assert.deepEqual(tool.securitySchemes, expected, tool.name);
+    assert.deepEqual(tool._meta.securitySchemes, expected, tool.name);
+    assert.deepEqual(tool.annotations, definition.annotations, tool.name);
+    assert.deepEqual(tool.inputSchema, definition.inputSchema, tool.name);
+    for (const [key, value] of Object.entries(definition._meta || {})) assert.deepEqual(tool._meta[key], value, tool.name);
+    assert.equal(tool._meta['openai/toolInvocation/invoking'], 'Contacting BLACKICE');
+    assert.equal(tool._meta['openai/toolInvocation/invoked'], 'Action status received');
+  }
+  const serialized = JSON.stringify(advertised), fingerprint = connector.catalogStatus();
+  for (let i = 0; i < 3; i++) { assert.equal(JSON.stringify(connector.tools()), serialized); assert.deepEqual(connector.catalogStatus(), fingerprint); }
+  advertised[0]._meta.securitySchemes[0].scopes.push('caller-mutation');
+  assert.deepEqual(advertised[0].securitySchemes, [{ type: 'oauth2', scopes: ['read'] }]);
+  assert.equal(JSON.stringify(connector.tools()), serialized); assert.deepEqual(connector.catalogStatus(), fingerprint);
+  assert.deepEqual(calls, []);
+});
+
 test('unauthenticated GET discovery probes return the OAuth metadata challenge without starting a stream or tool', async t => {
   const { connector, oauth, calls, setClient, setClosing } = await fixture(t);
   let authentications = 0;
@@ -75,6 +148,57 @@ test('an authenticated read echoes the exact request/result pair and uses direct
   const response = await post(connector, rpc('tools/call', { name: 'blackice_direct_status', arguments: { nonce: 'proof-37' } }, 'matching-id'));
   const value = response.json(); assert.equal(value.id, 'matching-id'); assert.equal(value.result.structuredContent.nonce, 'proof-37'); assert.equal(value.result.structuredContent.modelStarted, false); assert.equal(calls.length, 1);
   const status = await connector.status(); assert.equal(status.actions.providerTurns, false); assert.equal(status.chatSurfaceVerification, 'not-recorded'); assert.equal(status.lastAuthenticatedToolCall.nonce, 'proof-37');
+});
+
+test('the actual direct/planning catalog is stable across nonce probes, status, auth challenges and refreshed credentials', async t => {
+  const { connector, execution, setClient, calls } = await fixture(t);
+  // Real public definitions with a transport-only executor: no native action,
+  // command, browser, credential store or remote service is accessed.
+  const definitions = new DirectExecutionAPI({ dataDir: path.dirname(connector.file) });
+  execution.tools = () => definitions.tools(); connector.planning = new ChatGPTPlanningAPI({});
+  const list = async headers => (await post(connector, rpc('tools/list'), headers)).json().result.tools;
+  const original = await list(), serialized = JSON.stringify(original);
+  const expected = { sha256: createHash('sha256').update(serialized).digest('hex'), toolCount: original.length, serverVersion: '2.33.0' };
+  const sameGrant = { id: 'stable-fixture-grant', scopes: [...DIRECT_EXECUTION_SCOPES] };
+  for (const nonce of ['first-fixture-probe', 'second-fixture-probe']) {
+    setClient(sameGrant);
+    const result = (await post(connector, rpc('tools/call', { name: 'blackice_direct_status', arguments: { nonce } }), { authorization: 'Bearer valid-fixture-credential' })).json().result;
+    assert.equal(result.isError, false); assert.equal(result.structuredContent.nonce, nonce);
+    assert.deepEqual(result.structuredContent.toolCatalog, expected);
+    assert.deepEqual((await connector.status()).toolCatalog, expected);
+    assert.equal(JSON.stringify(await list()), serialized);
+  }
+  const beforeChallenge = calls.length;
+  setClient(null);
+  assert.equal((await post(connector, rpc('tools/call', { name: 'blackice_direct_status' }), { authorization: 'Bearer expired-fixture-credential' })).statusCode, 401);
+  setClient({ ...sameGrant, scopes: ['read'] });
+  const missingScope = (await post(connector, rpc('tools/call', { name: 'blackice_browser_upload', arguments: {} }))).json().result;
+  assert.equal(missingScope.isError, true); assert.ok(missingScope._meta['mcp/www_authenticate']);
+  assert.equal(calls.length, beforeChallenge, 'diagnostics do not admit unauthorized work');
+  assert.equal(JSON.stringify(await list()), serialized, 'the public catalog does not shrink with a grant');
+  setClient(sameGrant);
+  const refreshed = (await post(connector, rpc('tools/call', { name: 'blackice_direct_status', arguments: { nonce: 'after-fixture-refresh' } }), { authorization: 'Bearer refreshed-fixture-credential' })).json().result;
+  assert.deepEqual(refreshed.structuredContent.toolCatalog, expected);
+  original[0].description = 'caller mutation'; original[0].securitySchemes[0].scopes.push('invented');
+  assert.equal(JSON.stringify(await list()), serialized, 'returned catalog objects cannot mutate later advertisements');
+  assert.deepEqual(connector.catalogStatus(), expected);
+});
+
+test('catalog diagnostics detect an actual definition change without changing tool annotations or scopes', async t => {
+  const { connector, execution } = await fixture(t);
+  const definitions = new DirectExecutionAPI({ dataDir: path.dirname(connector.file) });
+  execution.tools = () => definitions.tools();
+  const first = connector.catalogStatus();
+  const command = definitions.definitions.get('blackice_run_command');
+  assert.deepEqual(command.annotations, { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true });
+  assert.deepEqual(command.requiredScopes, ['commands:run']);
+  command.description += ' Fixture catalog revision.';
+  const second = connector.catalogStatus();
+  assert.notEqual(second.sha256, first.sha256); assert.equal(second.toolCount, first.toolCount);
+  const advertised = connector.tools().find(tool => tool.name === 'blackice_run_command');
+  assert.deepEqual(advertised.annotations, command.annotations);
+  assert.deepEqual(advertised.securitySchemes, [{ type: 'oauth2', scopes: ['read', 'commands:run'] }]);
+  assert.equal(Object.hasOwn(advertised, 'toolCatalog'), false, 'the diagnostic fingerprint is never added to public definitions');
 });
 
 test('invalid supplied bearer credentials receive HTTP 401 without invoking linking UI or admitting an action', async t => {

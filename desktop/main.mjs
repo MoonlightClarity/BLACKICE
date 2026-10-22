@@ -19,6 +19,8 @@ import { writeDesktopRuntimeRecord } from './runtime-record.mjs';
 import { createClipboardHandler, isTrustedDesktopSender } from './clipboard.mjs';
 import { desktopRemoteAccessArgs, runRemoteAccessCLI } from '../lib/remote-access-cli.mjs';
 import { desktopBrowserArgs, runBrowserCLI } from '../lib/browser-cli.mjs';
+import { desktopRestartArgs, runDesktopRestartCLI } from '../lib/desktop-restart-cli.mjs';
+import { DESKTOP_RESTART_ORIGIN_ENV } from '../lib/desktop-restart-origin.mjs';
 import { credentialTemporaryProtection } from '../lib/credential-temp-protection.mjs';
 import { DesktopStartup, createStartupIndicator } from './startup.mjs';
 import { createDesktopConnectionStartup } from './connection-startup.mjs';
@@ -26,12 +28,25 @@ import { DesktopRendererRecovery } from './renderer-recovery.mjs';
 
 const accessArgs = desktopRemoteAccessArgs(process.argv, { packaged: app.isPackaged });
 const browserArgs = desktopBrowserArgs(process.argv, { packaged: app.isPackaged });
-if (accessArgs || browserArgs) {
+const restartArgs = desktopRestartArgs(process.argv, { packaged: app.isPackaged });
+if (accessArgs || browserArgs || restartArgs) {
   // A CLI invocation must not initialize a profile, take its lock, show its
   // window, or log the code/credential in desktop diagnostics.
-  const exitCode = await (browserArgs ? runBrowserCLI : runRemoteAccessCLI)(browserArgs || accessArgs, { defaultProfile: path.join(app.getPath('appData'), 'Relay'), expectedExecutable: process.execPath });
+  const exitCode = await (browserArgs ? runBrowserCLI : accessArgs ? runRemoteAccessCLI : runDesktopRestartCLI)(browserArgs || accessArgs || restartArgs, {
+    defaultProfile: path.join(app.getPath('appData'), 'Relay'), expectedExecutable: process.execPath,
+    legacyHandoff: runtime => {
+      // Explicit compatibility bootstrap only. The already-verified old primary
+      // owns the actual restart; this secondary never launches a replacement.
+      app.setName('BLACKICE'); app.setPath('userData', runtime.profile);
+      if (app.requestSingleInstanceLock({ headless: false, background: false, quit: false, restart: true })) {
+        app.releaseSingleInstanceLock();
+        throw Object.assign(new Error('The verified primary stopped before the legacy handoff. No restart was scheduled.'), { code: 'DESKTOP_RESTART_LEGACY_UNAVAILABLE' });
+      }
+    },
+  });
   app.exit(exitCode);
 } else {
+delete process.env[DESKTOP_RESTART_ORIGIN_ENV];
 const DESKTOP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const APP_DIR = path.dirname(DESKTOP_DIR);
 const ACTIVE = new Set(['queued', 'running', 'waiting']);
@@ -60,7 +75,7 @@ const desktopLifecycle = new DesktopLifecycle({ headless: launch.headless, backg
   if (!desktopRestart) throw new Error('BLACKICE is still starting. Try restart after it is ready.');
   await desktopRestart.request({ requestId: randomUUID(), ownerId: 'local' });
   const receipt = await desktopRestart.waitForHandoff();
-  if (!['restarting', 'completed'].includes(receipt?.status)) throw new Error(receipt?.error?.message || 'BLACKICE could not prepare the restart and remains open.');
+  if (!['restarting', 'completed'].includes(receipt?.status)) throw Object.assign(new Error(receipt?.error?.message || 'BLACKICE could not prepare the restart and remains open.'), { code: receipt?.error?.code || 'DESKTOP_RESTART_PREPARE_FAILED' });
 } });
 desktopLifecycle.on('updated', () => { if (runtimeRecord && !shutdownPromise) void saveRuntimeRecord(); });
 
@@ -106,6 +121,7 @@ function handle(channel, fn) {
 }
 
 async function detachDesktop() {
+  desktopRestart?.cancelPending();
   const pausingOperations=harness?.operations?.pause('Emergency stop requested.');
   pausingOperations?.catch(()=>{});
   const pausingInbox = harness?.inbox?.pause('Emergency stop requested. Resume the inbox when ready.');
@@ -130,6 +146,7 @@ async function shutdown() {
   if (shutdownPromise) return shutdownPromise;
   shutdownPromise = (async () => {
     restartReady = false;
+    if (desktopRestart?.cancelPending()) await desktopRestart.waitForHandoff();
     desktopLifecycle.stop();
     startup.stop();
     void diagnostics.record({ component: 'desktop', event: 'stopping' });
@@ -375,23 +392,24 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
     const defaultCwd = app.isPackaged || launch.profileDir ? path.join(userData, 'workspace') : path.join(APP_DIR, 'workspace');
     await startup.step(() => fs.mkdir(dataDir, { recursive: true }));
     if (!launch.profileDir) await startup.step(() => migrateHistory(dataDir));
-    // Only the primary instance owns this profile's restart receipt. A secondary
-    // --restart invocation merely forwards its intent through Electron's lock.
+    // The primary owns every receipt and native handoff. Normal --restart calls
+    // use the acknowledged local protocol; only explicit legacy bootstrap uses
+    // the old single-instance event.
     desktopRestart = new DesktopRestartController({
       profileDir: userData,
       getIdentity: () => ({ pid: process.pid, startedAt: processStartedAt, profileDir: userData, mode: desktopLifecycle.status().mode }),
       getLaunchOptions: () => ({ execPath: process.execPath, args: buildDesktopRelaunchArgs({ profileDir: launch.profileDir, mode: desktopLifecycle.status().mode }), profileDir: userData, mode: desktopLifecycle.status().mode }),
       checkReady: async context => {
-        if (!restartReady || shutdownPromise || maintenancePromise) throw new Error('BLACKICE is starting, closing, or preparing profile maintenance. Restart was not scheduled.');
+        if (!restartReady || shutdownPromise || maintenancePromise) throw Object.assign(new Error('BLACKICE is starting, closing, or preparing profile maintenance.'), { code: 'DESKTOP_RESTART_CLOSING' });
+        if (context.jobId && !context.origin) throw Object.assign(new Error('The originating restart action has no owned binding.'), { code: 'DESKTOP_RESTART_ORIGIN_INVALID' });
         await harness.assertRestartReady(context);
       },
       prepare: async context => {
-        if (!restartReady || shutdownPromise || maintenancePromise) throw new Error('BLACKICE is no longer ready to restart.');
+        if (!restartReady || shutdownPromise || maintenancePromise) throw Object.assign(new Error('BLACKICE is no longer ready to restart.'), { code: 'DESKTOP_RESTART_CLOSING' });
         await harness.beginRestart(context);
         if (context.jobId) {
-          const job = await harness.directExecution.jobs.get(context.jobId);
-          if (job.tool !== 'blackice_restart' || job.status !== 'succeeded') throw new Error('The restart action has no successful saved scheduling receipt.');
-          await harness.directExecution.require(job.client, ['commands:run']);
+          const job = await harness.directExecution.validateRestartOrigin(context.origin, { requireFinished: true });
+          if (job.jobId !== context.jobId || job.ownerId !== context.ownerId) throw Object.assign(new Error('The originating action does not match the restart receipt.'), { code: 'DESKTOP_RESTART_ORIGIN_INVALID' });
         }
         await saveWindowState();
         await runtimeWriteChain;

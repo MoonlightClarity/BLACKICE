@@ -1,8 +1,35 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { browserWorkspaceMarkup, browserProfilesMarkup, openBrowserWorkspace } from '../public/browser-ui.mjs';
+import { planningDOM } from './fixture-planning-dom.mjs';
 
 const independent = { available: true, tabs: [{ tabId: 'tab-1', title: 'Fixture page', url: 'https://example.com/' }], activeTab: 'tab-1', downloads: [] };
+
+test('the browser address form accepts bare hostnames and submits the normalized URL', async t => {
+  const f = planningDOM(t), calls = [], status = structuredClone(independent);
+  f.mount.id = 'browser-workspace-view';
+  f.document.querySelectorAll = selector => [...f.document.head.querySelectorAll(selector), ...f.document.body.querySelectorAll(selector)];
+  await openBrowserWorkspace({ showModal() {}, closeModal() {}, toast() {}, api: async (route, method, body) => {
+    if (route === '/api/browser/status') return structuredClone(status);
+    assert.equal(route, '/api/browser/action'); assert.equal(method, 'POST'); calls.push(body);
+    status.tabs[0].url = body.url;
+    return { tabId: status.activeTab };
+  } });
+  assert.equal(f.$('#browser-url').type, 'text');
+  assert.equal(f.$('#browser-url').getAttribute('inputmode'), 'url');
+  for (const [address, url] of [['www.linkedin.comm', 'https://www.linkedin.comm/'], ['//example.test/feed/', 'https://example.test/feed/'], ['localhost:3000/page', 'http://localhost:3000/page']]) {
+    await f.input('#browser-url', address);
+    await f.$('#browser-open-form').dispatch('submit');
+    assert.deepEqual(calls.at(-1), { action: 'open', url });
+    assert.equal(f.$('#browser-url').value, '');
+    assert.equal(f.$('#browser-ui-error').textContent, '');
+  }
+  await f.input('#browser-url', 'not a url');
+  await f.$('#browser-open-form').dispatch('submit');
+  assert.equal(calls.length, 3);
+  assert.equal(f.$('#browser-url').value, 'not a url');
+  assert.match(f.$('#browser-ui-error').textContent, /website address/);
+});
 
 test('connected BrowserOS exposes its own session to agents and ChatGPT without claiming website authentication', () => {
   const html = browserWorkspaceMarkup({ ...independent, signedBrowser: { available: true, endpoint: 'http://127.0.0.1:9000/mcp', accountAuthenticated: null } }, { selected: 'tab-1' });

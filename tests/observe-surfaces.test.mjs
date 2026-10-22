@@ -41,9 +41,9 @@ function fixture(t, { handle, run = null, apiEnabled = true, stop, onChatGPTSett
   const mount = nodeFor(), calls = [], watches = [], snapshot = { runs: run ? [run] : [], currentRun: run }, opened = [];
   const api = createApiClient({ fetcher: async (route, options) => {
     const call = { route, body: options.body ? JSON.parse(options.body) : undefined, signal: options.signal }; calls.push(call);
-    assert.ok(['/api/browser/status', '/api/browser/action', '/api/application-sessions/status', '/api/application-sessions/action'].includes(route), 'panes must not call desktop, Neo, show, or physical-input routes');
+    assert.ok(['/api/browser/status?view=contained', '/api/browser/action', '/api/application-sessions/status', '/api/application-sessions/action'].includes(route), 'panes must not call desktop, Neo, show, or physical-input routes');
     const custom = await handle?.(call); if (custom !== undefined) return Response.json(custom);
-    if (route === '/api/browser/status') return Response.json(browserStatus());
+    if (route === '/api/browser/status?view=contained') return Response.json(browserStatus());
     if (route === '/api/application-sessions/status') return Response.json(appStatus());
     if (route === '/api/browser/action') return Response.json(call.body.action === 'screenshot' ? { tabId: 'contained-page', imageUrl, width: 1280, height: 900 } : { tabId: 'contained-page', frames: [{ text: 'Observed page', elements: [{ ref: 'browser-field', role: 'textbox', name: 'Browser message' }] }] });
     return Response.json(call.body.action === 'screenshot' ? { sessionId: 'private-notepad', imageUrl, width: 1280, height: 900, capturedAt: new Date(now).toISOString() } : appObservation());
@@ -112,7 +112,7 @@ test('Observe cancellation locks and late errors stay with the task that request
 
 test('only the selected surface is visible and polling, and surface changes perform no app or page mutations', async t => {
   const f = fixture(t); await f.enter(); assert.equal(f.pane('browser').hidden, false); assert.equal(f.pane('applications').hidden, true); assert.equal(f.pane('workflow').hidden, true);
-  assert.deepEqual(f.calls.map(call => [call.route, call.body?.action]), [['/api/browser/status', undefined], ['/api/browser/action', 'screenshot']]);
+  assert.deepEqual(f.calls.map(call => [call.route, call.body?.action]), [['/api/browser/status?view=contained', undefined], ['/api/browser/action', 'screenshot']]);
   await f.select('applications'); assert.equal(f.pane('browser').hidden, true); assert.equal(f.pane('applications').hidden, false); assert.match(f.pane('applications').innerHTML, /Actual private editor text/);
   const browserCalls = f.calls.filter(call => call.route.startsWith('/api/browser')).length; f.advance(6000); f.ui.update(); await flush(); assert.equal(f.calls.filter(call => call.route.startsWith('/api/browser')).length, browserCalls);
   await f.select('workflow'); assert.equal(f.pane('workflow').hidden, false); assert.equal(f.pane('applications').hidden, true); const count = f.calls.length; f.advance(6000); f.ui.update(); await flush(); assert.equal(f.calls.length, count);
@@ -129,7 +129,7 @@ test('browser and application drafts plus each surface scroll position survive s
 
 test('switching away aborts a pending browser observation and a late response cannot strand its busy state', async t => {
   const gate = deferred(); let held = true;
-  const f = fixture(t, { handle: call => held && call.route === '/api/browser/status' ? gate.promise : undefined }); f.ui.enter(); await flush(); const pending = f.calls[0];
+  const f = fixture(t, { handle: call => held && call.route === '/api/browser/status?view=contained' ? gate.promise : undefined }); f.ui.enter(); await flush(); const pending = f.calls[0];
   f.element('observe-browser-url').value = 'https://draft.test/while-loading'; await f.select('applications'); assert.equal(pending.signal.aborted, true); const browserHTML = f.pane('browser').innerHTML;
   gate.resolve(browserStatus()); await flush(); assert.equal(f.pane('browser').innerHTML, browserHTML); assert.equal(f.calls.filter(call => call.route === '/api/browser/action').length, 0);
   held = false; await f.select('browser'); assert.match(f.pane('browser').innerHTML, /Captured contained browser page/); assert.equal(f.element('observe-browser-url').value, 'https://draft.test/while-loading'); assert.equal(f.pane('browser').attrs['aria-busy'], 'false');
@@ -193,7 +193,7 @@ test('live command updates keep the focused output disclosure and its open state
 });
 
 test('an explicit sign-in tab enters Browser even when a task previously selected Workflow', async t => {
-  const exact = 'owned-sign-in', calls = [], f = fixture(t, { run: activeRun(), handle(call) { calls.push(call); if (call.route === '/api/browser/status') { const status = browserStatus(); status.tabs.push({ tabId: exact, browser: 'relay', visible: false, title: 'ChatGPT', url: 'https://chatgpt.com/' }); return status; } if (call.route === '/api/browser/action' && call.body.action === 'screenshot') return { tabId: call.body.tabId, imageUrl, width: 1280, height: 900 }; } });
+  const exact = 'owned-sign-in', calls = [], f = fixture(t, { run: activeRun(), handle(call) { calls.push(call); if (call.route === '/api/browser/status?view=contained') { const status = browserStatus(); status.tabs.push({ tabId: exact, browser: 'relay', visible: false, title: 'ChatGPT', url: 'https://chatgpt.com/' }); return status; } if (call.route === '/api/browser/action' && call.body.action === 'screenshot') return { tabId: call.body.tabId, imageUrl, width: 1280, height: 900 }; } });
   await f.enter(); assert.equal(f.pane('workflow').hidden, false); assert.equal(calls.length, 0);
   const scroll = f.mount.querySelector('.observe-scroll'); scroll.scrollTop = 950;
   await f.ui.enter({ tabId: exact, focusPage: true }); await flush(); assert.equal(f.pane('browser').hidden, false); assert.equal(f.pane('workflow').hidden, true); assert.deepEqual(calls.filter(call => call.body?.action === 'screenshot').map(call => call.body.tabId), [exact]);

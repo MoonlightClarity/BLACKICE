@@ -5,6 +5,7 @@ import { safeSvgPreview, SVG_PREVIEW_LIMIT } from './svg-preview.mjs';
 import { initApplicationSessionUI, installApplicationSessionStyles } from './application-session-ui.mjs';
 import { isSettlingRun } from './conversation-model.mjs';
 import {browserTreeModel,browserFolderDOMId,browserCapacityLabel,browserPersistenceMessage,browserSuspensionOutcome} from './browser-tree-model.mjs';
+import { normalizeBrowserAddress } from './browser-address.mjs';
 const escapeText = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 const svgPaths = { eye: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>', agent: '<rect x="4" y="6" width="16" height="14" rx="4"/><path d="M12 2v4M8 12h.01M16 12h.01M9 16h6"/>', clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', desktop: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/>', grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>', plan: '<path d="M8 5h12M8 12h12M8 19h12M3 5h.01M3 12h.01M3 19h.01"/>', terminal: '<path d="m4 7 5 5-5 5m8 0h8"/>', tool: '<path d="m14 6 4 4M3 21l8-8m-1-8a6 6 0 0 0 9 8l-5-5 1-4a6 6 0 0 0-5 1Z"/>', file: '<path d="M14 2H6v20h14V8Zm0 0v6h6M8 13h8m-8 4h6"/>', folder: '<path d="M3 6h7l2 2h9v12H3Z"/>', search: '<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/>', stop: '<rect x="5" y="5" width="14" height="14" rx="2"/>', message: '<path d="M4 4h16v12H9l-5 4Z"/>' };
 const svg = (name, size = 16) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${svgPaths[name] || svgPaths.tool}</svg>`;
@@ -112,7 +113,7 @@ export function renderObserveBrowser(state, { escape = escapeText } = {}) {
   const frame = state.frame, control = state.document?.controls.find(item => item.ref === state.ref), fields = control?.options, writable = control?.role === 'textbox' || ['text','password','email','search','url','number','tel'].includes(control?.type), suspended=state.status?.tabs?.find(tab=>tab.tabId===model.selected?.tabId)?.suspended===true;
   const button = (action, label, off = pageDisabled || (state.stale || state.controlsStale) && ['key','fill','control'].includes(action)) => `<button type="button" class="button" data-observe-browser="${action}"${off ? ' disabled' : ''}>${label}</button>`;
   const heading = `<header class="observe-browser-heading"><div><h2>${state.focusPage ? state.chatGPTConversation ? 'ChatGPT in BLACKICE' : 'Website sign-in' : 'Contained browser'}</h2><p>${state.focusPage ? state.chatGPTConversation ? 'Use your ChatGPT conversation here. Manage BLACKICE tool access in Connection settings.' : 'Sign in on the page below. Your session stays in BLACKICE.' : 'Websites stay inside BLACKICE · separate saved sign-ins'}</p></div><div class="observe-browser-heading-actions">${state.focusPage ? (state.chatGPTConversation && state.canOpenConnectionSettings ? button('connection-settings', 'Connection settings', false) : '') + button('back', 'Back') + button('refresh', 'Refresh', state.busy) : button('watch', state.watching ? 'Pause preview' : 'Resume preview', state.busy)}</div></header>`;
-  const tools = `${renderObserveBrowserTree(state,{escape})}${renderObserveBrowserTabs(state, { escape })}<div class="observe-browser-toolbar"><button type="button" id="observe-browser-follow" class="button observe-browser-follow" data-observe-browser="follow" aria-pressed="${state.followAgent !== false}" title="Follow the page used most recently by the agent. Choosing a tab pins that page instead."${state.busy && !['refresh','inspect'].includes(state.action) ? ' disabled' : ''}>${state.followAgent !== false ? 'Following active page' : 'Follow active page'}</button>${state.focusPage ? button('watch', state.watching ? 'Pause preview' : 'Resume preview', state.busy) : button('refresh', 'Refresh view', state.busy)}${button('inspect', 'Read page controls')}${state.focusPage ? '' : button('back', 'Back')}${button('forward', 'Forward')}</div><form id="observe-browser-address-form" class="observe-browser-address"><label class="observe-sr-only" for="observe-browser-url">Website address</label><input id="observe-browser-url" type="url" required placeholder="https://…" value="${escape(state.address || '')}" autocomplete="off" spellcheck="false"><button class="button" type="submit"${disabled ? ' disabled' : ''}>${model.selected ? 'Go' : 'Open page'}</button></form>${renderObserveProtection(state, { escape })}`;
+  const tools = `${renderObserveBrowserTree(state,{escape})}${renderObserveBrowserTabs(state, { escape })}<div class="observe-browser-toolbar"><button type="button" id="observe-browser-follow" class="button observe-browser-follow" data-observe-browser="follow" aria-pressed="${state.followAgent !== false}" title="Follow the page used most recently by the agent. Choosing a tab pins that page instead."${state.busy && !['refresh','inspect'].includes(state.action) ? ' disabled' : ''}>${state.followAgent !== false ? 'Following active page' : 'Follow active page'}</button>${state.focusPage ? button('watch', state.watching ? 'Pause preview' : 'Resume preview', state.busy) : button('refresh', 'Refresh view', state.busy)}${button('inspect', 'Read page controls')}${state.focusPage ? '' : button('back', 'Back')}${button('forward', 'Forward')}</div><form id="observe-browser-address-form" class="observe-browser-address"><label class="observe-sr-only" for="observe-browser-url">Website address</label><input id="observe-browser-url" type="text" inputmode="url" required placeholder="https://…" value="${escape(state.address || '')}" autocomplete="off" spellcheck="false"><button class="button" type="submit"${disabled ? ' disabled' : ''}>${model.selected ? 'Go' : 'Open page'}</button></form>${renderObserveProtection(state, { escape })}`;
   const message = state.busy ? state.pending || 'Updating page…' : state.error || model.reason || state.inputNotice || state.notice || (state.focusPage ? 'Your page is ready for input.' : state.watching ? 'Preview refreshes while Activity is visible.' : 'Preview paused. Refresh explicitly to inspect the current page.');
   const status = `<p id="observe-browser-status" class="observe-browser-status${state.error ? ' error' : ''}" role="status" aria-live="polite">${escape(message)}</p>`;
   const title = model.selected ? `<div class="observe-browser-page-title"><strong>${escape(model.selected.title)}</strong><span>${escape(browserDisplayURL(model.selected.url))}</span></div>` : '';
@@ -128,7 +129,7 @@ export function renderObserveBrowser(state, { escape = escapeText } = {}) {
 export function initObserveBrowser({ mount, api, isVisible = () => true, now = Date.now, onFocusPageChange = () => {}, onOpenConnectionSettings, pickBrowserFiles }) {
   const $ = selector => mount.querySelector(selector), drafts = new Map();
   const state = { folderState:new Map(),treeOpen:true,status: {}, selectedId: null, displayedId: null, displayedUrl: '', followAgent: true, protectionBusy: false, protectionOpen: false, protectionError: '', protectionNotice: '', frame: null, document: null, ref: null, address: '', addressDirty: false, text: '', fieldValue: '', key: 'Enter', controlsOpen: false, controlsStale: true, watching: true, busy: false, stale: true, error: '', notice: '', inputNotice: '', nextAt: 0, progressUntil: 0, readFailures: 0, active: false, generation: 0, controller: null, mutationPending: false };
-  let protectionController = null, inputSession = null, inputRefresh = null, rendering = false, renderDeferred = false, renderedFrame = null, pointerGesture = null, pointerRelease = null, popupRequest = null, popupParents = [];
+  let protectionController = null, inputSession = null, inputRefresh = null, inputRefreshDue = false, rendering = false, renderDeferred = false, renderedFrame = null, pointerGesture = null, pointerRelease = null, popupRequest = null, popupParents = [];
   state.canPickBrowserFiles = typeof pickBrowserFiles === 'function';
   state.canOpenConnectionSettings = typeof onOpenConnectionSettings === 'function';
   const visible = () => state.active && mount.isConnected !== false && isVisible();
@@ -150,7 +151,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     if (help) { help.textContent = browserInputHint(state.inputActive); help.setAttribute?.('data-active', String(state.inputActive === true)); }
   }
   function stopInput({ notice = '', focus = false } = {}) {
-    clearTimeout(inputRefresh); inputRefresh = null;
+    clearTimeout(inputRefresh); inputRefresh = null; inputRefreshDue = false;
     const session = inputSession; inputSession = null; state.inputActive = false;
     if (session) { session.queue.length = 0; session.controller.abort(); }
     const input = $('#observe-browser-input'); if (input) input.value = '';
@@ -171,10 +172,16 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     // Keep one preview deadline while more input arrives. Resetting a trailing
     // debounce for every character leaves a continuously typed field visually
     // frozen. Captures remain serialized with page input and capped at 4 Hz.
+    if (inputSession !== session || !visible()) return;
+    if (inputRefreshDue) {
+      if (!session.composing && !session.running && !session.queue.length && !state.busy && !state.protectionBusy) void work();
+      return;
+    }
     if (inputRefresh !== null) return;
     inputRefresh = setTimeout(() => {
-      inputRefresh = null;
-      if (inputSession === session && visible() && !session.composing && !session.running && !session.queue.length && !state.busy && !state.protectionBusy) void work();
+      // A key receipt may still be in flight at this deadline. Keep the due
+      // preview so its completion does not add another full 250 ms delay.
+      inputRefresh = null; inputRefreshDue = true; refreshAfterInput(session);
     }, 250);
   }
   function recoverInput({ uncertain = false } = {}) {
@@ -370,6 +377,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
   }
   async function work(action = 'refresh', extra = {}) {
     if (!visible() || state.busy || state.protectionBusy || inputSession?.running || inputSession?.queue.length) return; remember();
+    if (action === 'refresh') { clearTimeout(inputRefresh); inputRefresh = null; inputRefreshDue = false; }
     const origin = typeof document === 'undefined' ? null : document.activeElement;
     state.pendingFocus = mount.contains?.(origin) ? focusSnapshot(origin) : null;
     const initial = model().selected?.tabId, explicitTarget = extra.tabId || (action === 'refresh' ? state.requiredTabId : null), { tabId: ignored, ...parameters } = extra;
@@ -379,7 +387,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     if (mutation) state.progressUntil = now() + 10000;
     state.busy = true; state.action = action; state.error = ''; state.notice = ''; state.pending = action === 'close' ? 'Closing the contained tab…' : action === 'suspend' ? 'Suspending the contained page…' : mutation ? 'Applying page input inside BLACKICE…' : action === 'inspect' ? 'Reading contained page controls…' : 'Refreshing contained browser…'; render();
     try {
-      const initialStatus = await request('/api/browser/status'); if (!current()) return;
+      const initialStatus = await request('/api/browser/status?view=contained'); if (!current()) return;
       if (action === 'refresh' && explicitTarget) {
         state.followAgent = false; state.selectedId = explicitTarget;
         if (!observeBrowserModel(initialStatus).tabs.some(tab => tab.tabId === explicitTarget)) { state.status = initialStatus; throw Error('The requested contained tab is no longer available. Open it again before viewing.'); }
@@ -409,7 +417,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
         if (action === 'close' && target === state.displayedId) { state.requiredTabId = null; state.followAgent = false; state.selectedId = target; }
         if (mutation&&action!=='suspend') state.stale = true;
         if (action === 'navigate' && state.address === parameters.url) state.addressDirty = false;
-        const updatedStatus = await request('/api/browser/status'); if (!current()) return; view = applyStatus(updatedStatus);
+        const updatedStatus = await request('/api/browser/status?view=contained'); if (!current()) return; view = applyStatus(updatedStatus);
         if (!view.available || view.blocked || !['close','suspend'].includes(action) && view.selected?.tabId !== tabId && view.popupParentId !== tabId && view.popupReturnedFrom !== tabId) throw Error('The page is no longer available in the contained browser. Inspect the tabs before continuing.');
         if(action==='suspend'){
           const outcome=browserSuspensionOutcome({...updatedStatus,...(result?.receipt?{receipt:result.receipt}:{})},target);
@@ -429,7 +437,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
         const result = await request('/api/browser/action', 'POST', { action: 'screenshot', browser: 'relay', tabId }); if (!current()) return;
         const frame = observeBrowserFrame(result, tabId); if (!frame) throw Error('The contained browser returned no valid page frame.');
         if(state.status.tabs.some(tab=>tab.tabId===tabId&&tab.suspended===true)){
-          const resumedStatus=await request('/api/browser/status');if(!current())return;view=applyStatus(resumedStatus);
+          const resumedStatus=await request('/api/browser/status?view=contained');if(!current())return;view=applyStatus(resumedStatus);
           if(view.selected?.tabId!==tabId)throw Error('The selected page changed while it was loading. Inspect the current tab before continuing.');
         }
         if (frame.url && frame.url !== view.selected.url) {
@@ -444,7 +452,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
         // A failed save or response can follow a completed suspension. Read
         // status only, and never wake that page automatically to check it.
         if((explicitTarget||initial)===initial){stopInput();state.watching=false;state.followAgent=false;state.selectedId=initial;}
-        try{const observed=await request('/api/browser/status');if(current())applyStatus(observed);}catch{}
+        try{const observed=await request('/api/browser/status?view=contained');if(current())applyStatus(observed);}catch{}
       }
       if (current()) {
         state.error = String(error.message || 'The contained page could not be updated.').slice(0, 600);
@@ -560,9 +568,10 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
   async function openURL(newTab = false) {
     if (!visible() || state.busy || state.protectionBusy) return;
     remember(); let url;
-    try { url = new URL(state.address); if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw Error(); }
-    catch { state.error = 'Enter a complete HTTP or HTTPS website address without embedded credentials.'; render(); $('#observe-browser-url')?.focus?.({ preventScroll: true }); return; }
-    await work(newTab || !model().selected ? 'open' : 'navigate', { url: url.href });
+    try { url = normalizeBrowserAddress(state.address); }
+    catch (error) { state.error = error.message; render(); $('#observe-browser-url')?.focus?.({ preventScroll: true }); return; }
+    state.address = url; const address = $('#observe-browser-url'); if (address) address.value = url;
+    await work(newTab || !model().selected ? 'open' : 'navigate', { url });
   }
   const submit = event => { if (event.target.id !== 'observe-browser-address-form') return; event.preventDefault(); return openURL(); };
   const change = event => {
@@ -635,6 +644,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     session.composing = false; session.skipComposition = text; event.target.value = '';
     if (text) queueInput({ action: 'type', text });
     if (renderDeferred) render();
+    if (inputRefreshDue) refreshAfterInput(session);
   };
   const focusout = event => {
     if (event.target.id === 'observe-browser-input' && !rendering) stopInput();

@@ -32,7 +32,9 @@ export function buildDesktopRelaunchArgs({ argv = process.argv, profileDir = nul
   const args = [];
   for (let index = 1; index < argv.length; index++) {
     const argument = argv[index];
-    if (/^--(?:restart|quit|headless|background)(?:=|$)/.test(argument)) continue;
+    if (/^--(?:restart|restart-status|cancel-restart|legacy-native-handoff|quit|headless|background)(?:=|$)/.test(argument)) continue;
+    if (argument === '--request-id') { index++; continue; }
+    if (argument.startsWith('--request-id=')) continue;
     if (argument === '--profile-dir' || argument === '--profile') { index++; continue; }
     if (/^--(?:profile-dir|profile)=/.test(argument)) continue;
     args.push(argument);

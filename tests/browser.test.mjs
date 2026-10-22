@@ -57,7 +57,18 @@ test('typing and editing keys keep admission order while rapid text is queued', 
 
 test('browser URL validation accepts websites and rejects executable/local/credential URLs', () => {
   assert.equal(browserURL('https://example.com/path'), 'https://example.com/path');
-  for (const url of ['javascript:alert(1)', 'file:///c:/Windows/a.txt', 'https://key:secret@example.com', 'not a url']) assert.throws(() => browserURL(url));
+  assert.equal(browserURL('www.linkedin.comm'), 'https://www.linkedin.comm/');
+  for (const url of ['javascript:alert(1)', 'file:///c:/Windows/a.txt', 'https://key:secret@example.com', 'not a url']) assert.throws(() => browserURL(url), { code: 'BROWSER_VALIDATION' });
+});
+test('open and navigate normalize bare addresses before dispatching to the browser', async t => {
+  const calls = [], browser = fixtureWorkspace({ driver: { perform: async args => { calls.push(args); return { tabId: 'one' }; } } });
+  t.after(() => browser.close());
+  await browser.perform({ action: 'open', url: 'www.linkedin.comm' }, { source: 'user' });
+  await browser.perform({ action: 'navigate', tabId: 'one', url: 'localhost:3000/page' }, { source: 'user' });
+  assert.deepEqual(calls, [
+    { action: 'open', url: 'https://www.linkedin.comm/' },
+    { action: 'navigate', tabId: 'one', url: 'http://localhost:3000/page' },
+  ]);
 });
 test('browser actions serialize and caller cancellation prevents queued mutations', async () => {
   const driver = new EventEmitter(), calls = []; let release;
@@ -77,6 +88,21 @@ test('browser screenshot tools return pixels only as image content and errors st
   const stale = await handler({ name: 'relay_browser', arguments: { action: 'click', ref: 'stale' } });
   assert.equal(stale.success, false); assert.match(stale.contentItems[0].text, /new snapshot/);
   await browser.close();
+});
+
+test('browser failure receipts retain non-Error messages and never collapse unknown rejections to an empty object', async () => {
+  const stale = 'This element ref is stale. Take a new snapshot and choose its current ref.';
+  for (const [reason, expected] of [
+    [Object.assign(new Error(stale), { code: 'BROWSER_REF_STALE', actionDispatched: false }), { error: stale, code: 'BROWSER_REF_STALE', actionDispatched: false }],
+    [stale, { error: stale, code: 'BROWSER_ACTION_FAILED' }],
+    [{ description: 'The node no longer exists.', code: -32000 }, { error: 'The node no longer exists.', code: -32000 }],
+    ...[{}, null, undefined].map(reason => [reason, { error: 'The browser action failed without error details. Inspect the current page before repeating it.', code: 'BROWSER_ACTION_FAILED' }]),
+  ]) {
+    const browser = { status: () => ({ available: true, contained: true, tabs: [{ tabId: 'one' }], activeTab: 'one' }), perform: async () => { throw reason; } };
+    const result = await createBrowserToolHandler({ browser })({ name: 'relay_browser', arguments: { action: 'click', tabId: 'one', ref: 'old-media' } });
+    assert.equal(result.success, false); assert.equal(result.code, expected.code);
+    assert.deepEqual(JSON.parse(result.contentItems[0].text), expected);
+  }
 });
 
 test('browser tools continue beyond 200 actions and respect an explicit caller budget', async () => {

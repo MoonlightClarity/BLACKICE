@@ -87,37 +87,66 @@ test('missing or contradictory contained-driver status is unavailable without br
   }
 });
 
-test('connection discovery hides native browsers and never refreshes or starts one', async () => {
+test('connection discovery includes native browsers and their full catalogs without starting one implicitly', async () => {
   const chrome = chromeAutoConnectConnection(), configs = new Map([
     ['browseros-neo', { id: 'browseros-neo', name: 'BrowserOS Neo', url: 'http://127.0.0.1:9000/mcp' }],
     ['alias', { id: 'alias', name: 'Saved alias', url: 'http://localhost:9000/mcp' }],
     [chrome.id, chrome], ['notes', { id: 'notes', name: 'Notes' }],
-  ]), calls = [];
-  const manager = { configs, signedBrowser: { connectionId: 'browseros-neo', available: true }, list: () => [...configs.values()], redact: String,
-    refreshSignedBrowser: async () => { calls.push('refresh'); }, connect: async id => { calls.push(['connect', id]); }, call: async id => { calls.push(['call', id]); return { content: [] }; } };
+  ]), calls = [], clients = new Map();
+  const catalog = id => id === chrome.id ? [{ name: 'list_pages' }, { name: 'evaluate_script' }] : [{ name: 'tabs' }, { name: 'run', description: 'BrowserOS neo browser.windows(args)' }];
+  const manager = { configs, clients, signedBrowser: { connectionId: 'browseros-neo', available: true }, list: () => [...configs.values()], redact: String,
+    refreshSignedBrowser: async () => { calls.push('refresh'); },
+    tools: async id => { calls.push(['tools', id]); clients.set(id, { tools: catalog(id) }); return { tools: catalog(id) }; },
+    connect: async id => { calls.push(['connect', id]); return clients.get(id); },
+    call: async (id, name, args, { onDispatch } = {}) => { calls.push(['call', id, name, args]); onDispatch?.(); return { content: [{ type: 'text', text: 'Observed connected-tool result' }] }; } };
   for (const containedBrowser of [false, true]) {
     const handler = createConnectionToolHandler({ manager, containedBrowser });
+    const discoveryStart = calls.length;
     const result = await handler(connectionCall({ action: 'connections' }));
-    assert.deepEqual(JSON.parse(result.contentItems[0].text).map(entry => entry.id), ['notes']);
-    for (const id of ['browseros-neo', 'alias', chrome.id]) for (const action of ['tools', 'call']) {
-      const rejected = await handler(connectionCall({ action, connectionId: id, name: 'tabs' }));
-      assert.equal(rejected.success, false); assert.match(rejected.contentItems[0].text, /interaction is disabled/);
+    assert.equal(result.success, true);
+    assert.deepEqual(JSON.parse(result.contentItems[0].text).map(entry => entry.id), [...configs.keys()]);
+    assert.equal(calls.length, discoveryStart, 'listing connections does not connect, refresh or launch a browser');
+    for (const id of ['browseros-neo', 'alias', chrome.id]) {
+      const tools = await handler(connectionCall({ action: 'tools', connectionId: id }));
+      assert.equal(tools.success, true);
+      assert.deepEqual(JSON.parse(tools.contentItems[0].text).tools, catalog(id));
+      assert.equal(tools.receipt.actionDispatched, false);
+      const name = id === chrome.id ? 'evaluate_script' : 'run';
+      const args = id === chrome.id ? { function: '() => document.title' } : { code: 'return await browser.pages.list()' };
+      const executed = await handler(connectionCall({ action: 'call', connectionId: id, name, arguments: args }));
+      assert.equal(executed.success, true);
+      assert.equal(executed.receipt.actionDispatched, true); assert.equal(executed.receipt.outcome, 'completed');
+      assert.deepEqual(calls.at(-1), ['call', id, name, args]);
     }
   }
-  assert.deepEqual(calls, []);
+  assert.equal(calls.includes('refresh'), false, 'native browser availability no longer adds a startup or refresh prerequisite');
   assert.equal((await createConnectionToolHandler({ manager })(connectionCall({ action: 'call', connectionId: 'notes', name: 'read' }))).success, true);
-  assert.deepEqual(calls, [['connect', 'notes'], ['call', 'notes']], 'ordinary MCP integrations still execute');
+  assert.deepEqual(calls.at(-1), ['call', 'notes', 'read', {}], 'ordinary MCP integrations still execute');
 });
 
-test('a Neo alias identified by its discovered catalog cannot execute a task tool', async () => {
-  const clients = new Map(); let executed = 0;
-  const manager = { clients, redact: String, connect: async id => clients.set(id, { tools: [{ name: 'tabs' }, { name: 'run', description: 'BrowserOS neo browser.windows(args)' }] }), call: async () => { executed++; } };
-  const result = await createConnectionToolHandler({ manager })(connectionCall({ action: 'call', connectionId: 'renamed', name: 'run', arguments: { code: 'never execute' } }));
-  assert.equal(result.success, false); assert.match(result.contentItems[0].text, /interaction is disabled/); assert.equal(executed, 0);
+test('a Neo alias identified by its discovered catalog executes its supported native tool without a blanket denial', async () => {
+  const clients = new Map(), configs = new Map([['renamed', { id: 'renamed', name: 'Saved browser', url: 'http://127.0.0.1:9100/mcp' }]]), executed = [];
+  const tools = [{ name: 'tabs' }, { name: 'run', description: 'BrowserOS neo browser.windows(args)' }];
+  const manager = { clients, configs, list: () => [...configs.values()], redact: String,
+    tools: async id => { clients.set(id, { tools }); return { tools }; }, connect: async id => clients.get(id),
+    call: async (id, name, args, { onDispatch } = {}) => { executed.push({ id, name, args }); onDispatch?.(); return { content: [{ type: 'text', text: 'Observed native state' }] }; } };
+  const handler = createConnectionToolHandler({ manager });
+  const discovery = await handler(connectionCall({ action: 'tools', connectionId: 'renamed' }));
+  assert.equal(discovery.success, true); assert.deepEqual(JSON.parse(discovery.contentItems[0].text).tools, tools); assert.equal(executed.length, 0);
+  const args = { code: 'return await browser.pages.list()' };
+  const result = await handler(connectionCall({ action: 'call', connectionId: 'renamed', name: 'run', arguments: args }));
+  assert.equal(result.success, true); assert.equal(result.receipt.browser, 'neo'); assert.equal(result.receipt.actionDispatched, true);
+  assert.deepEqual(executed, [{ id: 'renamed', name: 'run', args }]);
+  const missing = await handler(connectionCall({ action: 'call', connectionId: 'renamed', name: 'not-in-catalog' }));
+  assert.equal(missing.success, false); assert.equal(missing.receipt.code, 'MCP_TOOL_NOT_FOUND'); assert.equal(missing.receipt.actionDispatched, false); assert.equal(executed.length, 1);
 });
 
-test('desktop public status advertises only inspection while the dedicated adapter remains separate', () => {
+test('desktop public status truthfully advertises implemented background accessibility actions', () => {
   const desktop = new DesktopController({ platform: 'win32', runner: async () => ({}) }), status = desktop.status();
-  assert.equal(status.scope, 'read_only_windows_inspection'); assert.match(status.description, /Read-only inspection/);
-  assert.deepEqual(status.actions, ['screenshot', 'windows', 'inspect', 'get_text', 'wait']);
+  assert.equal(status.scope, 'windows_accessibility_automation'); assert.match(status.description, /Inspect and operate/);
+  assert.deepEqual(status.actions, ['screenshot', 'windows', 'inspect', 'get_text', 'invoke', 'set_value', 'select', 'toggle', 'expand', 'collapse', 'scroll', 'scroll_into_view', 'wait']);
+  assert.equal(status.physicalInput, false); assert.equal(status.requiresForeground, false);
+  assert.doesNotMatch(status.limitations.join(' '), /Generic application mutation is unavailable/);
+  status.actions.length = 0;
+  assert.ok(desktop.status().actions.includes('invoke'), 'status action lists do not mutate controller capabilities');
 });

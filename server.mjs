@@ -174,6 +174,7 @@ export async function createHarnessServer(options = {}) {
       if (directExecution.storageError) throw new Error('Direct action storage needs recovery before restarting.');
       return directExecution.jobs.snapshot({ unfinishedOnly: true });
     },
+    getOriginJob: origin => directExecution.validateRestartOrigin(origin),
     getPendingActions: () => Boolean(inbox.hasPendingWork() || operations.hasPendingWork() || projects.hasPendingWork() || emailOAuth.flow || emailOAuth.callbackOperations?.size || emailOAuth.requests?.size || connectorStartupEnabling),
     setMaintenance: value => { maintenanceRequested = value; engine.maintenanceRequested = value; },
     drain: async () => {
@@ -295,8 +296,10 @@ export async function createHarnessServer(options = {}) {
   directExecution = options.directExecution || await new DirectExecutionAPI({
     dataDir: path.resolve(dataDir), allowedRoot: defaultCwd, browser, patchStore: engine.filePatches,
     isClosing: connectorClosing, onChange: connectorChanged,
-    ...(options.desktopRestart ? { restartStatus: context => options.desktopRestart.status({ ownerId: context.canRestart ? context.ownerId : undefined }) } : {}),
-    additionalTools: [chatGPTFileImportTool({ directory: path.join(defaultCwd, 'blackice-imports') }), ...createDirectConnectedBrowserTools({ manager: connections, connectChrome: options.connectChromeBrowser }), ...createDirectBrowserProfileTools({ profiles: browserProfiles, manager: connections, onChange: refreshBrowserProfiles }), ...(options.desktopRestart ? [desktopRestartTool({ restart: options.desktopRestart, getJob: id => directExecution.jobs.get(id) })] : []), ...((await browserCredentials.status()).available ? createDirectBrowserCredentialTools({ vault: browserCredentials, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes) }) : [])],
+    ...(options.desktopRestart ? { desktopRestart: options.desktopRestart, restartStatus: context => options.desktopRestart.status({ ownerId: context.canRestart ? context.ownerId : undefined }) } : {}),
+    // Vault health can change between startups or recover during this process.
+    // Keep its tool definitions stable; every credential action checks the store.
+    additionalTools: [chatGPTFileImportTool({ directory: path.join(defaultCwd, 'blackice-imports') }), ...createDirectConnectedBrowserTools({ manager: connections, connectChrome: options.connectChromeBrowser }), ...createDirectBrowserProfileTools({ profiles: browserProfiles, manager: connections, onChange: refreshBrowserProfiles }), ...(options.desktopRestart ? [desktopRestartTool({ restart: options.desktopRestart, getJob: id => directExecution.jobs.get(id) })] : []), ...createDirectBrowserCredentialTools({ vault: browserCredentials, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes) })],
     authorizeClient: async (client, { requiredScopes }) => {
       if (client.id === 'local-browser-tools' && client.kind === 'local-browser') return !connectorClosing() && requiredScopes.every(scope => LOCAL_BROWSER_CLIENT.scopes.includes(scope));
       const current = await chatGPTOAuth.getClient(client.id);
@@ -304,7 +307,7 @@ export async function createHarnessServer(options = {}) {
     },
   }).init();
   const chatGPTPlanning = new ChatGPTPlanningAPI({ tasks, conversations, engine, planningOrganization, projects, onUpdated: sendEvent, isClosing: connectorClosing });
-  chatGPTConnector = await new ChatGPTConnector({ dataDir: path.resolve(dataDir), execution: directExecution, planning: chatGPTPlanning, oauth: chatGPTOAuth, version: APP_VERSION, isClosing: connectorClosing, onChange: connectorChanged }).init();
+  chatGPTConnector = await new ChatGPTConnector({ dataDir: path.resolve(dataDir), execution: directExecution, planning: chatGPTPlanning, oauth: chatGPTOAuth, version: APP_VERSION, isClosing: connectorClosing, isRestartPending: () => options.desktopRestart?.isPending?.() === true, onChange: connectorChanged }).init();
   const connectorRevocations = new Map();
   chatGPTOAuth.on?.('updated', connectorChanged);
   chatGPTOAuth.on?.('revoked', ids => {
@@ -355,7 +358,8 @@ export async function createHarnessServer(options = {}) {
     const cookieName = `relay_session_${boundPort}`;
     const cookie = String(req.headers.cookie || '').split(';').map(s => s.trim()).find(s => s.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1);
     if (pathname.startsWith('/api/') && !safeEqual(cookie, session)) return json(res, 401, { error: 'Open Relay in this browser before using its API.' });
-    if ((closePromise||maintenanceRequested) && pathname.startsWith('/api/') && !['GET', 'HEAD'].includes(req.method)) return json(res, 503, { error: 'Relay is closing for maintenance. Try again after it reopens.' });
+    const restartControl = options.desktopRestart?.isPending?.() === true && ['/api/runs/stop-all', '/api/chatgpt-connector/cancel-action', '/api/chatgpt-connector/revoke'].includes(pathname);
+    if ((closePromise||maintenanceRequested) && pathname.startsWith('/api/') && !['GET', 'HEAD'].includes(req.method) && !restartControl && !['/api/desktop/restart', '/api/desktop/restart/status', '/api/desktop/restart/cancel'].includes(pathname)) return json(res, 503, { error: 'Relay is closing for maintenance. Try again after it reopens.' });
     try {
       const observeMatch=pathname.match(/^\/api\/runs\/([a-zA-Z0-9_-]+)\/observe$/);
       if(observeMatch&&req.method==='GET'){
@@ -507,7 +511,7 @@ export async function createHarnessServer(options = {}) {
         if (req.method !== 'POST' || !['enable', 'disable', 'approve-access', 'reject-access', 'revoke', 'reject-action', 'resolve-action', 'cancel-action', 'open-chatgpt', 'prepare', 'check-connection', 'confirm-connection', 'enable-startup'].includes(action)) return json(res, 404, { error: 'Unknown connector management action.' });
         if (['open-chatgpt', 'prepare', 'check-connection', 'confirm-connection', 'enable-startup'].includes(action) && req.url.includes('?')) return json(res, 400, { error: 'Connection setup does not accept URL parameters.' });
         const value = await body(req, 8192);
-        if (maintenanceRequested || closePromise) return json(res, 503, { error: 'BLACKICE is closing for maintenance.' });
+        if ((maintenanceRequested || closePromise) && !restartControl) return json(res, 503, { error: 'BLACKICE is closing for maintenance.' });
         const keys = action === 'prepare' ? ['confirmPublic'] : action === 'confirm-connection' ? ['nonce'] : action === 'approve-access' ? ['id', 'scopes'] : ['reject-access', 'revoke', 'cancel-action'].includes(action) ? ['id'] : ['reject-action', 'resolve-action'].includes(action) ? ['id', 'interactionId'] : [];
         if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !keys.includes(key)) || keys.includes('id') && (typeof value.id !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(value.id)) || keys.includes('interactionId') && (typeof value.interactionId !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(value.interactionId)) || action === 'approve-access' && (!Array.isArray(value.scopes) || value.scopes.some(scope => typeof scope !== 'string'))) return json(res, 400, { error: 'Use the exact pending request and permissions shown in BLACKICE.' });
         if (action === 'prepare' && typeof value.confirmPublic !== 'boolean' || action === 'confirm-connection' && (typeof value.nonce !== 'string' || !/^[A-Za-z0-9_.:-]{1,120}$/.test(value.nonce))) return json(res, 400, { error: 'Use the confirmation fields shown in connection setup.' });
@@ -582,7 +586,7 @@ export async function createHarnessServer(options = {}) {
         }
         if (action === 'enable' && (!remoteAccess?.status().enabled || remoteAccess?.status().mode !== 'public' || !chatGPTConnector.origin)) return json(res, 409, { error: 'Enable the authenticated public HTTPS route under Remote access before connecting ChatGPT. Private tailnet addresses cannot be reached by the ChatGPT service.' });
         const pending = Promise.resolve().then(async () => {
-          if (maintenanceRequested || closePromise) throw Object.assign(new Error('BLACKICE is closing for maintenance.'), { status: 503 });
+          if ((maintenanceRequested || closePromise) && !restartControl) throw Object.assign(new Error('BLACKICE is closing for maintenance.'), { status: 503 });
           if (action === 'enable' || action === 'disable') await chatGPTConnector.setEnabled(action === 'enable');
           else if (action === 'approve-access') await chatGPTOAuth.approve(value.id, { scopes: value.scopes });
           else if (action === 'reject-access') await chatGPTOAuth.reject(value.id);
@@ -607,6 +611,20 @@ export async function createHarnessServer(options = {}) {
         fileMutations.add(pending);
         try { return json(res, 200, await pending); }
         finally { fileMutations.delete(pending); }
+      }
+      const nativeRestartAction = pathname.match(/^\/api\/desktop\/restart(?:\/(status|cancel))?$/);
+      if (nativeRestartAction && req.method === 'POST') {
+        if (req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Use the authenticated direct restart tool for a remote request.', code: 'DESKTOP_RESTART_LOCAL_REQUIRED' });
+        const value = await body(req, 2048);
+        if (new URL(req.url, `http://${host}`).search || !value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !['requestId', 'originToken'].includes(key))) return json(res, 400, { error: 'Use one stable restart request ID and its inherited origin, if present.', code: 'DESKTOP_RESTART_ARGUMENTS' });
+        let acknowledge, rejectAcknowledgement;
+        const acknowledged = new Promise((resolve, reject) => { acknowledge = resolve; rejectAcknowledgement = reject; });
+        acknowledged.catch(() => {});
+        res.once('finish', acknowledge);
+        res.once('close', () => { if (!res.writableFinished) rejectAcknowledgement(new Error('The native reply closed before acknowledgement.')); });
+        const result = await directExecution.nativeRestart({ ...value, action: nativeRestartAction[1] || 'restart' }, { waitForAcknowledgement: () => acknowledged });
+        if (result.receipt?.status === 'failed') void diagnostics.recordError('desktop', 'restart_failed', result.receipt.error);
+        return json(res, 200, { protocol: 1, acknowledged: true, ...result });
       }
       const desktopAction = pathname.match(/^\/api\/desktop\/(background|show)$/);
       if (desktopAction && req.method === 'POST') {
@@ -780,8 +798,12 @@ export async function createHarnessServer(options = {}) {
       if (providerMatch && req.method === 'DELETE' && !providerMatch[2]) { await body(req); const value = await runtime.removeProvider(providerMatch[1]); runtimeUpdate(); return json(res, 200, value); }
       if (providerMatch?.[2] && req.method === 'POST') { const value = await body(req); const result = providerMatch[2] === '/test' ? await runtime.testProvider(providerMatch[1]) : await runtime.discoverModels(providerMatch[1], value); runtimeUpdate(); return json(res, 200, result); }
       if (pathname === '/api/browser/status' && req.method === 'GET') {
-        if (options.signedBrowser === true) await browserImport.status();
-        await refreshBrowserProfiles();
+        // The contained preview polls while typing. Native profile discovery
+        // performs disk reads and belongs to the browser-management refresh.
+        if (new URL(req.url, `http://${host}`).searchParams.get('view') !== 'contained') {
+          if (options.signedBrowser === true) await browserImport.status();
+          await refreshBrowserProfiles();
+        }
         return json(res, 200, browserStatus(req));
       }
       if (pathname === '/api/browser/commands' && req.method === 'POST') {
@@ -939,6 +961,8 @@ export async function createHarnessServer(options = {}) {
         await body(req);
         // Invoke every stop independently, even if one adapter throws synchronously.
         const pending=[],attempt=action=>{try{pending.push(Promise.resolve(action()));}catch(error){pending.push(Promise.reject(error));}};
+        const restartCancellationRequested = options.desktopRestart?.cancelPending?.() === true;
+        if (restartCancellationRequested) attempt(() => options.desktopRestart.waitForHandoff());
         attempt(()=>inbox.pause('All chats stopped. Resume queued starts when ready.'));
         attempt(()=>operations.pause('All chats stopped.'));
         attempt(()=>pauseProjects('All work stopped. Resume the project when ready.'));
@@ -948,7 +972,7 @@ export async function createHarnessServer(options = {}) {
         attempt(()=>browser.cancel());
         attempt(()=>learning.cancelBackground('All chats stopped.'));
         const results=await Promise.allSettled(pending),failures=results.filter(result=>result.status==='rejected').map(result=>String(result.reason?.message||result.reason));
-        return json(res,failures.length?500:200,{cancelled,...(failures.length?{error:'Some stop actions need attention.',details:failures}:{})});
+        return json(res,failures.length?500:200,{cancelled,...(restartCancellationRequested?{restartCancellationRequested:true}:{}),...(failures.length?{error:'Some stop actions need attention.',details:failures}:{})});
       }
       const runMatch = pathname.match(/^\/api\/runs\/([a-zA-Z0-9_-]+)(\/(?:cancel|retry|continue|steer|compact))?$/);
       if (runMatch && req.method === 'GET' && !runMatch[2]) return json(res, 200, await conversations.get(runMatch[1]));
@@ -965,7 +989,7 @@ export async function createHarnessServer(options = {}) {
       }
       if (pathname.startsWith('/api/')) return json(res, 404, { error: 'Endpoint not found.' });
       if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'Method not allowed.' });
-      const files = Object.fromEntries(['gui-resilience.js','gui-resilience.css','browser-credentials-ui.mjs','browser-credentials.css','chatgpt-connector-ui.mjs','chatgpt-connector.css','model-routes.mjs','clipboard.mjs','email-oauth-ui.mjs','planning-awareness.mjs','planning-workspace-ui.mjs','planning-workspace-model.mjs','planning-workspace.css','remote-access-ui.mjs','remote-access.css','icon-symbols.mjs','task-plan-map.mjs','planning-mode.mjs','assets/blackice-field.svg','assets/blackice-wordmark.svg','workspace-integrations.mjs','email-ui.mjs', 'email-reader.mjs','email.css','task-plan-model.mjs','task-plan-ui.mjs','task-plan.css','task-method-ui.mjs','task-method.css','blackice-material.css','conversation-layout.css','blackice-experience.css','process-model.mjs','process-ui.mjs','assets/blackice-sheet.svg','assets/blackice-slab.svg','application-session-ui.mjs','application-session-model.mjs','application-session.css','project-view-model.mjs','operations-view-model.mjs','workflow-map.mjs','workflow-map.css','projects-ui.mjs','projects.css','tool-outcomes-model.mjs','response-defaults.mjs','repeat-task-model.mjs','task-title.mjs','prompt-template-model.mjs','prompts-ui.mjs','prompts.css','reasoning-model.mjs','provider-catalog.mjs','connection-models.mjs','connections.css','draft-store.mjs','svg-preview.mjs','api-client.mjs','artifact-ui.mjs','conversation-attention.mjs','conversation-search.mjs','index.html','app.js','editor-model.mjs','knowledge-ui.mjs','mission-ui.mjs','mission-model.mjs','connections-ui.mjs','browser-ui.mjs','browser-tree-model.mjs','browser-tree.css','identity-ui.mjs','identity.css','learning-ui.mjs','learning.css','context-ui.mjs','context.css','tool-connections-ui.mjs','tool-connections.css','agent-workspace.css','styles.css','brand.css','ux.css','relay-surface.css','agentdesk-noir.css','blackice-components.css','blackice-type.css','knowledge.css','file-patches.css','file-patches-ui.mjs','sidebar.css','sidebar-model.mjs','model-picker.css','model-picker.mjs','workspace.css','attachments-ui.mjs','attachments.css','inbox-ui.mjs','inbox.css','task-state-ui.mjs','task-state.css','conversation-model.mjs','composer-helpers.mjs','run-state-model.mjs','conversation.css','observe-stream.mjs','observe-ui.mjs','observe-model.mjs','observe.css','swarm-model.mjs','schedule-model.mjs','conversation-menu.mjs','advanced-ui.mjs','advanced.css','modes.css','configure-ui.mjs','configure.css','assets/fonts/Oxanium-Variable.ttf','assets/fonts/IBMPlexMono-Regular.ttf','assets/fonts/IBMPlexMono-Medium.ttf','assets/fonts/ShareTechMono-Regular.ttf','assets/blackice-panel-ice.svg','assets/blackice-control-ice.svg','assets/relay-mark.svg','assets/agentdesk-noir-city.svg','assets/relay-field.svg','assets/identity.svg','assets/learning.svg','assets/context.svg','assets/connections.svg'].map(file => [`/${file}`, file])); files['/'] = 'index.html';
+      const files = Object.fromEntries(['gui-resilience.js','gui-resilience.css','browser-credentials-ui.mjs','browser-credentials.css','chatgpt-connector-ui.mjs','chatgpt-connector.css','model-routes.mjs','clipboard.mjs','email-oauth-ui.mjs','planning-awareness.mjs','planning-workspace-ui.mjs','planning-workspace-model.mjs','planning-workspace.css','remote-access-ui.mjs','remote-access.css','icon-symbols.mjs','task-plan-map.mjs','planning-mode.mjs','assets/blackice-field.svg','assets/blackice-wordmark.svg','workspace-integrations.mjs','email-ui.mjs', 'email-reader.mjs','email.css','task-plan-model.mjs','task-plan-ui.mjs','task-plan.css','task-method-ui.mjs','task-method.css','blackice-material.css','conversation-layout.css','blackice-experience.css','process-model.mjs','process-ui.mjs','assets/blackice-sheet.svg','assets/blackice-slab.svg','application-session-ui.mjs','application-session-model.mjs','application-session.css','project-view-model.mjs','operations-view-model.mjs','workflow-map.mjs','workflow-map.css','projects-ui.mjs','projects.css','tool-outcomes-model.mjs','response-defaults.mjs','repeat-task-model.mjs','task-title.mjs','prompt-template-model.mjs','prompts-ui.mjs','prompts.css','reasoning-model.mjs','provider-catalog.mjs','connection-models.mjs','connections.css','draft-store.mjs','svg-preview.mjs','api-client.mjs','artifact-ui.mjs','conversation-attention.mjs','conversation-search.mjs','index.html','app.js','editor-model.mjs','knowledge-ui.mjs','mission-ui.mjs','mission-model.mjs','connections-ui.mjs','browser-ui.mjs','browser-address.mjs','browser-tree-model.mjs','browser-tree.css','identity-ui.mjs','identity.css','learning-ui.mjs','learning.css','context-ui.mjs','context.css','tool-connections-ui.mjs','tool-connections.css','agent-workspace.css','styles.css','brand.css','ux.css','relay-surface.css','agentdesk-noir.css','blackice-components.css','blackice-type.css','knowledge.css','file-patches.css','file-patches-ui.mjs','sidebar.css','sidebar-model.mjs','model-picker.css','model-picker.mjs','workspace.css','attachments-ui.mjs','attachments.css','inbox-ui.mjs','inbox.css','task-state-ui.mjs','task-state.css','conversation-model.mjs','composer-helpers.mjs','run-state-model.mjs','conversation.css','observe-stream.mjs','observe-ui.mjs','observe-model.mjs','observe.css','swarm-model.mjs','schedule-model.mjs','conversation-menu.mjs','advanced-ui.mjs','advanced.css','modes.css','configure-ui.mjs','configure.css','assets/fonts/Oxanium-Variable.ttf','assets/fonts/IBMPlexMono-Regular.ttf','assets/fonts/IBMPlexMono-Medium.ttf','assets/fonts/ShareTechMono-Regular.ttf','assets/blackice-panel-ice.svg','assets/blackice-control-ice.svg','assets/relay-mark.svg','assets/agentdesk-noir-city.svg','assets/relay-field.svg','assets/identity.svg','assets/learning.svg','assets/context.svg','assets/connections.svg'].map(file => [`/${file}`, file])); files['/'] = 'index.html';
       if (pathname === '/favicon.ico') { res.writeHead(204); return res.end(); }
       if (!files[pathname]) return json(res, 404, { error: 'Page not found.' });
       const content = await fs.readFile(path.join(APP_DIR, 'public', files[pathname]));
@@ -973,6 +997,11 @@ export async function createHarnessServer(options = {}) {
       res.writeHead(200, { 'Content-Type': MIME[path.extname(files[pathname])], 'Cache-Control': 'no-store' });
       res.end(req.method === 'HEAD' ? undefined : content);
     } catch (error) {
+      if (pathname.startsWith('/api/desktop/restart')) {
+        void diagnostics.recordError('desktop', 'restart_failed', error);
+        if (!res.headersSent) return json(res, error.status || 400, { error: error.message, code: typeof error.code === 'string' && /^DESKTOP_RESTART_[A-Z_]+$/.test(error.code) ? error.code : 'DESKTOP_RESTART_PREPARE_FAILED' });
+        return res.end();
+      }
       if (pathname.startsWith('/api/browser-credentials')) {
         void diagnostics.recordError('credentials', 'request_failed', new Error('A password-manager operation could not complete.'));
         const code = typeof error.code === 'string' && /^CREDENTIAL_[A-Z_]+$/.test(error.code) ? error.code : 'CREDENTIAL_OPERATION_FAILED';

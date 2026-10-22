@@ -1,7 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { BrowserRouter } from '../desktop/browser-router.mjs';
+import { agentBrowserRequest, browserOwnerKey } from '../lib/browser.mjs';
+import { observeBrowserModel } from '../public/observe-model.mjs';
 
 class FakeDriver extends EventEmitter {
   constructor(tabs = [], metadata = {}) { super(); this.tabs = tabs.map(tabId => ({ tabId, url: `https://example.com/${tabId}` })); this.activeTab = tabs[0] || null; this.calls = []; this.metadata = metadata; this.closeCalls = 0; this.showCalls = []; }
@@ -10,6 +16,108 @@ class FakeDriver extends EventEmitter {
   async show(tabId) { this.showCalls.push(tabId); return { tabId, visible: true }; }
   async close() { this.closeCalls++; }
 }
+
+async function nativePopupFixture(t) {
+  const directory = await mkdtemp(path.join(tmpdir(), 'blackice-router-popup-')), session = new EventEmitter();
+  session.extensions = { loadExtension: async () => ({ id: 'fixture-compatibility' }) };
+  session.cookies = new EventEmitter(); session.webRequest = { onBeforeRequest() {}, onCompleted() {}, onErrorOccurred() {} };
+  session.setPermissionRequestHandler = session.setPermissionCheckHandler = session.setDevicePermissionHandler = session.setUSBProtectedClassesHandler = () => {};
+  session.flushStorageData = async () => {};
+  class Window extends EventEmitter {
+    constructor(options) {
+      super(); this.options = options; this.url = ''; this.title = 'Fixture page'; this.destroyed = false;
+      const wc = this.webContents = new EventEmitter(), debugger_ = wc.debugger = new EventEmitter();
+      debugger_.isAttached = () => debugger_.attached === true; debugger_.attach = () => { debugger_.attached = true; }; debugger_.sendCommand = async () => ({});
+      wc.isOffscreen = () => options.webPreferences.offscreen; wc.isDestroyed = () => this.destroyed;
+      wc.getURL = () => this.url; wc.getTitle = () => this.title; wc.isLoading = wc.isLoadingMainFrame = () => false;
+      wc.setWindowOpenHandler = handler => { wc.openHandler = handler; }; wc.loadURL = async url => { this.url = url; };
+      wc.mainFrame = { processId: 1, routingId: 1, framesInSubtree: [], executeJavaScript: async () => {
+        this.beforeSnapshot?.();
+        return { url: this.url, title: this.title, elements: [], text: 'Fixture page', readyState: 'complete' };
+      } };
+    }
+    removeMenu() {} isDestroyed() { return this.destroyed; } isVisible() { return false; } isFocusable() { return this.options.focusable !== false; }
+    hide() {} destroy() { if (!this.destroyed) { this.destroyed = true; this.emit('closed'); } }
+  }
+  // Use the actual driver and its did-create-window adoption; replace only
+  // Electron's native boundary. No HTTP server or real browser is started.
+  const sourceURL = new URL('../desktop/browser-driver.mjs', import.meta.url), key = '__routerPopupFixture_' + randomUUID().replaceAll('-', '');
+  let source = await readFile(sourceURL, 'utf8');
+  source = source.replace("import { BrowserWindow, session } from 'electron';", 'const {BrowserWindow,session}=globalThis[' + JSON.stringify(key) + '];').replace(/from '(\.\.?\/[^']+)'/g, (_all, relative) => "from '" + new URL(relative, sourceURL).href + "'");
+  globalThis[key] = { BrowserWindow: Window, session: { fromPartition: () => session } };
+  let Driver;
+  try { ({ ElectronBrowserDriver: Driver } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'))); }
+  finally { delete globalThis[key]; }
+  const protection = Object.assign(new EventEmitter(), { status: () => ({ available: true, enabled: false }), tabStatus: () => ({}), match: () => ({ cancel: false }), forgetTab() {}, close: async () => {} });
+  const driver = new Driver({ dataDir: directory, downloadDir: path.join(directory, 'downloads'), protection });
+  await driver.compatibilityReady;
+  const router = new BrowserRouter({ independent: driver });
+  t.after(async () => { await router.close(); await rm(directory, { recursive: true, force: true }); });
+  const popup = (parent, url = 'https://identity.example.test/signin') => {
+    const response = parent.window.webContents.openHandler({ url }); assert.equal(response.action, 'allow');
+    const childWindow = new Window(response.overrideBrowserWindowOptions); childWindow.url = url;
+    parent.window.webContents.emit('did-create-window', childWindow, { url });
+    const child = [...driver.tabs.values()].find(tab => tab.window === childWindow);
+    assert.ok(child, 'The actual driver must adopt the native child.');
+    return child;
+  };
+  return { driver, router, popup };
+}
+
+test('native popup navigation follows its selected parent through the router and preserves pinned previews', async t => {
+  const { driver, router, popup } = await nativePopupFixture(t);
+  const parent = driver.newTab('https://site.example.test/login'); await parent.loading;
+  assert.equal(router.status().activeTab, parent.id);
+  const child = popup(parent), status = router.status();
+  assert.equal(status.browsers.relay.activeTab, child.id);
+  assert.equal(status.activeTab, child.id);
+  assert.equal(observeBrowserModel(status).selected.tabId, child.id);
+  assert.equal(observeBrowserModel(status, parent.id).selected.tabId, parent.id, 'An explicitly pinned Observe page stays selected.');
+  child.window.url = 'https://site.example.test/feed'; child.window.title = 'Feed';
+  child.window.webContents.emit('did-frame-navigate', {}, child.window.url, 200, 'OK', true);
+  const redirected = observeBrowserModel(router.status()).selected;
+  assert.equal(redirected.tabId, child.id); assert.equal(redirected.url, 'https://site.example.test/feed');
+});
+
+test('a native task popup follows the observed task without changing another owner selection', async t => {
+  const { driver, router, popup } = await nativePopupFixture(t);
+  const owner = { taskId: 'task', runId: 'run', nodeId: 'agent' }, other = { taskId: 'other', runId: 'other-run', nodeId: 'other-agent' };
+  const personal = driver.newTab('https://personal.example.test/'), parent = driver.newTab('https://site.example.test/login', { owner }), unrelated = driver.newTab('https://other.example.test/', { owner: other });
+  await Promise.all([personal.loading, parent.loading, unrelated.loading]);
+  await router.perform({ action: 'snapshot', tabId: parent.id }, { source: 'user' });
+  const child = popup(parent), status = router.status();
+  assert.equal(driver.activeTab, parent.id, 'Task popup adoption updates ownerActiveTabs rather than the personal selection.');
+  assert.equal(status.activeTab, child.id);
+  assert.equal(status.ownerActiveTabs[browserOwnerKey(owner)], child.id);
+  assert.equal(agentBrowserRequest({ action: 'read' }, status, owner).tabId, child.id);
+  assert.equal(agentBrowserRequest({ action: 'read' }, status, other).tabId, unrelated.id);
+  const background = popup(unrelated), afterBackground = router.status();
+  assert.equal(afterBackground.activeTab, child.id, 'Another task popup cannot replace the followed page.');
+  assert.equal(agentBrowserRequest({ action: 'read' }, afterBackground, other).tabId, background.id);
+});
+
+test('a late parent action receipt does not replace the popup adopted during that action', async t => {
+  const { driver, router, popup } = await nativePopupFixture(t), parent = driver.newTab('https://site.example.test/login'); await parent.loading;
+  assert.equal(router.status().activeTab, parent.id);
+  let child;
+  parent.window.beforeSnapshot = () => {
+    parent.window.beforeSnapshot = null; child = popup(parent);
+    assert.equal(router.status().activeTab, child.id, 'Status observers may see the popup before the action resolves.');
+  };
+  const result = await router.perform({ action: 'snapshot', tabId: parent.id }, { source: 'user' });
+  assert.equal(result.tabId, parent.id, 'The receipt must continue to describe the original operation.');
+  assert.equal(router.status().activeTab, child.id);
+});
+
+test('a closed native popup returns follow selection to its parent rather than the first personal page', async t => {
+  const { driver, router, popup } = await nativePopupFixture(t);
+  const other = driver.newTab('https://unrelated.example.test/'), parent = driver.newTab('https://site.example.test/login');
+  await Promise.all([other.loading, parent.loading]); assert.equal(router.status().activeTab, parent.id);
+  const child = popup(parent); assert.equal(router.status().activeTab, child.id);
+  child.window.destroy();
+  assert.equal(driver.activeTab, other.id, 'The driver default alone selects the first personal page.');
+  const status = router.status(); assert.equal(status.activeTab, parent.id); assert.equal(observeBrowserModel(status).selected.tabId, parent.id);
+});
 
 test('guarded direct typing cannot fall through to an external browser', async () => {
   const independent = new FakeDriver(['owned']), firefox = new FakeDriver(['external']), router = new BrowserRouter({ independent, firefox });

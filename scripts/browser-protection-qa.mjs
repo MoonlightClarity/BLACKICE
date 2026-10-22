@@ -7,11 +7,11 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { appFingerprint } from './release-check.mjs';
-import { captureSourceFiles } from './install-background-update.mjs';
+import { captureSourceEvidence } from './source-evidence.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
-export const BROWSER_PROTECTION_QA_SOURCES = Object.freeze(['package.json', 'desktop/browser-driver.mjs', 'desktop/browser-router.mjs', 'desktop/browser-capture.mjs', 'lib/browser.mjs', 'lib/browser-protection.mjs', 'lib/vendor/ghostery-adblocker.mjs', 'lib/vendor/adblock-filter-data.json', 'scripts/browser-protection-qa.mjs', 'tests/fixtures/browser-protection-native.mjs']);
+export const BROWSER_PROTECTION_QA_SOURCES = Object.freeze(['package.json', 'desktop/browser-driver.mjs', 'desktop/browser-router.mjs', 'desktop/browser-capture.mjs', 'lib/browser.mjs', 'lib/browser-protection.mjs', 'lib/vendor/ghostery-adblocker.mjs', 'lib/vendor/adblock-filter-data.json', 'scripts/browser-protection-qa.mjs', 'scripts/source-evidence.mjs', 'tests/fixtures/browser-protection-native.mjs']);
 export const BROWSER_PROTECTION_QA_CHECKS = Object.freeze([
   'native Electron loads optional bundled filters with unfiltered browsing by default',
   'ordinary page resources reach the owned server while ad and tracker requests are blocked',
@@ -45,7 +45,7 @@ export async function runBrowserProtectionQA(options) {
   const report = { schema: 1, candidate, version, platform: process.platform, startedAt: new Date(started).toISOString(), appFingerprintBefore: null, appFingerprintAfter: null, sourceHashesBefore: {}, sourceHashesAfter: {}, unchangedDuringChecks: false, checks: [], cleanup: false, forcedCleanup: false, providerTurnsRequested: 0, profile: { disposable: true, custom: true }, errors: [] };
   let owned;
   try {
-    report.appFingerprintBefore = await appFingerprint(candidate); report.sourceHashesBefore = await captureSourceFiles(candidate);
+    report.appFingerprintBefore = await appFingerprint(candidate); report.sourceHashesBefore = await captureSourceEvidence(candidate);
     for (const name of BROWSER_PROTECTION_QA_SOURCES) assert.match(report.sourceHashesBefore[name] || '', /^[a-f0-9]{64}$/, 'Bind native browser acceptance to ' + name);
     const stdout = await fs.open(path.join(out, 'browser-native.stdout.log'), 'w'), stderr = await fs.open(path.join(out, 'browser-native.stderr.log'), 'w');
     const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS;
@@ -72,7 +72,7 @@ export async function runBrowserProtectionQA(options) {
     }
     if (!owned || owned.exited) for (let attempt = 0; attempt < 20; attempt++) { try { await fs.rm(profile, { recursive: true, force: true }); report.cleanup = report.native?.cleanup === true && !report.native?.forcedCleanup; break; } catch { await wait(200); } }
     try {
-      report.appFingerprintAfter = await appFingerprint(candidate); report.sourceHashesAfter = await captureSourceFiles(candidate);
+      report.appFingerprintAfter = await appFingerprint(candidate); report.sourceHashesAfter = await captureSourceEvidence(candidate);
       report.unchangedDuringChecks = report.appFingerprintBefore === report.appFingerprintAfter && JSON.stringify(report.sourceHashesBefore) === JSON.stringify(report.sourceHashesAfter);
       if (!report.unchangedDuringChecks) report.errors.push('Candidate application or acceptance sources changed during native browser checks.');
     } catch (cause) { report.errors.push('Could not bind final candidate sources: ' + cause.message); }

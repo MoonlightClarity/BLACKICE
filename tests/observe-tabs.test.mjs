@@ -17,7 +17,7 @@ async function fixture(t, { tabs = [page('one'), page('two'), page('three')], fo
   withProtection();
   const api = async (route, options = {}) => {
     const call = { route, ...options }; calls.push(call); const override = await currentHook?.(call, data); if (override !== undefined) return override;
-    if (route === '/api/browser/status') { withProtection(); return structuredClone(data.status); }
+    if (route === '/api/browser/status?view=contained') { withProtection(); return structuredClone(data.status); }
     if (route === '/api/browser/protection') {
       assert.equal(options.method, 'POST'); const body = options.body;
       if (body.action === 'site') {
@@ -101,7 +101,7 @@ test('per-tab drafts survive selection and readonly polling preserves the actual
 });
 
 test('a late cancelled read cannot overwrite the newly selected page or capture the old tab', async t => {
-  const f = await fixture(t), gate = deferred(); let hold = true; f.hook(call => hold && call.route === '/api/browser/status' ? gate.promise : undefined); const pending = f.click('refresh'); await tick(); const old = f.calls.at(-1); hold = false; await f.click('tab', 'two'); const count = f.calls.length; assert.equal(old.signal.aborted, true); gate.resolve({ ...f.data.status, activeTab: 'three' }); await pending;
+  const f = await fixture(t), gate = deferred(); let hold = true; f.hook(call => hold && call.route === '/api/browser/status?view=contained' ? gate.promise : undefined); const pending = f.click('refresh'); await tick(); const old = f.calls.at(-1); hold = false; await f.click('tab', 'two'); const count = f.calls.length; assert.equal(old.signal.aborted, true); gate.resolve({ ...f.data.status, activeTab: 'three' }); await pending;
   assert.equal(f.selected, 'two'); assert.equal(f.calls.length, count); assert.equal(f.calls.at(-1).body.tabId, 'two'); assert.equal(f.$('#observe-browser-url').value, 'https://two.example.test/');
 });
 
@@ -149,7 +149,7 @@ test('a missing requested setup tab shows an error without reading or capturing 
 });
 
 test('leaving during an exact-tab status read prevents late capture and selection changes', async t => {
-  const f = await fixture(t), gate = deferred(); f.ui.leave(); f.hook(call => call.route === '/api/browser/status' ? gate.promise : undefined);
+  const f = await fixture(t), gate = deferred(); f.ui.leave(); f.hook(call => call.route === '/api/browser/status?view=contained' ? gate.promise : undefined);
   const pending = f.ui.enter({ tabId: 'two' }); await tick(); const call = f.calls.at(-1), count = f.calls.length; f.ui.leave(); assert.equal(call.signal.aborted, true);
   gate.resolve(f.data.status); await pending; assert.equal(f.calls.length, count); assert.equal(f.mount.innerHTML, '');
 });

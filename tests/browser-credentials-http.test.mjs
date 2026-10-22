@@ -14,10 +14,11 @@ class Runtime extends EventEmitter {
 }
 class Desktop extends EventEmitter { status() { return { available: false, enabled: false }; } async setEnabled() { return this.status(); } }
 const local = '/api/browser-credentials';
-async function fixture(t, { encrypted = true, openDestination } = {}) {
+async function fixture(t, { encrypted = true, isEncryptionAvailable = () => true, openDestination } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-credentials-http-')), key = randomBytes(32), handoffs = [], revealed = [];
   const credentialStorage = encrypted ? {
     storageBackend: 'dpapi', // Injected AES test double; this is not native DPAPI evidence.
+    isEncryptionAvailable,
     encryptSecret(value) { const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', key, iv); const bytes = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]); return Buffer.concat([iv, cipher.getAuthTag(), bytes]); },
     decryptSecret(value) { const raw = Buffer.from(value), decipher = createDecipheriv('aes-256-gcm', key, raw.subarray(0, 12)); decipher.setAuthTag(raw.subarray(12, 28)); return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString('utf8'); },
   } : {};
@@ -32,6 +33,19 @@ async function fixture(t, { encrypted = true, openDestination } = {}) {
   const request = (route = local, { method = 'GET', body, headers = {} } = {}) => fetch(url + route, { method, headers: { Cookie: cookie, ...headers, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   const post = (route, body) => request(local + route, { method: 'POST', body });
   return { app, directory, url, request, post, handoffs, revealed };
+}
+
+async function credentialJob(f, name, args) {
+  // Exercise the production direct executor with its existing local owner.
+  const client = { id: 'local-browser-tools', kind: 'local-browser', label: 'Credential fixture', scopes: ['read', 'browser:read', 'browser:write'] };
+  const admitted = await f.app.directExecution.call(name, args, client);
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const job = await f.app.directExecution.getJob(admitted.jobId, client);
+    if (job.settled) return job;
+    assert.notEqual(job.status, 'awaiting_input');
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  assert.fail('The credential action did not settle.');
 }
 
 test('password-manager routes require local session, reject remote/cross-origin access and URL parameters', async t => {
@@ -72,12 +86,43 @@ test('selected browser copy creates one temporary native handoff and user confir
   await assert.rejects(readFile(f.app.browserCredentialMirror.paths(begun.batchId).filePath), { code: 'ENOENT' });
 });
 
-test('missing protected storage keeps app available and exposes no credential mutation tools', async t => {
-  const f = await fixture(t, { encrypted: false }), state = await (await f.request()).json();
+test('missing protected storage preserves the public catalog and credential actions report unavailable', async t => {
+  const f = await fixture(t, { encrypted: false }), healthy = await fixture(t), state = await (await f.request()).json();
   assert.equal(state.vault.available, false); assert.equal((await f.request('/api/status')).status, 200);
-  assert.equal(f.app.directExecution.tools().some(tool => tool.name.startsWith('blackice_credentials_')), false);
+  const catalog = healthy.app.chatGPTConnector.tools(), fingerprint = healthy.app.chatGPTConnector.catalogStatus();
+  assert.deepEqual(catalog.filter(tool => tool.name.startsWith('blackice_credentials_')).map(tool => tool.name), ['blackice_credentials_list', 'blackice_credentials_generate', 'blackice_credentials_fill']);
+  assert.deepEqual(f.app.chatGPTConnector.tools(), catalog);
+  assert.deepEqual(f.app.chatGPTConnector.catalogStatus(), fingerprint);
+  assert.equal(f.app.chatGPTConnector.instructions(), healthy.app.chatGPTConnector.instructions());
+  const origin = 'https://example.test';
+  for (const [action, extra] of [['list', {}], ['generate', { username: 'owned' }], ['fill', { credentialId: 'credential_fixture', revision: 1, browser: 'relay', tabId: 'fixture', expectedUrl: origin + '/login', expectedDocumentId: 'fixture:1', passwordRef: 'password-ref' }]]) {
+    const job = await credentialJob(f, 'blackice_credentials_' + action, { origin, requestId: 'unavailable_' + action, ...extra });
+    assert.equal(job.status, 'failed'); assert.equal(job.interaction, null); assert.equal(job.result.success, false);
+    assert.equal(JSON.parse(job.result.text.text).code, 'BROWSER_CREDENTIAL_UNAVAILABLE');
+  }
+  assert.deepEqual(f.app.chatGPTConnector.tools(), catalog);
+  assert.deepEqual(f.app.chatGPTConnector.catalogStatus(), fingerprint);
   const result = await f.post('/save', { origin: 'https://example.test', username: 'owned', password: 'fixture', expectedRevision: 0, requestId: 'unavailable' });
   assert.equal(result.status, 503); assert.equal(f.handoffs.length, 0);
+});
+
+test('credential storage can recover after startup without changing the public catalog', async t => {
+  let available = false;
+  const f = await fixture(t, { isEncryptionAvailable: () => available }), catalog = f.app.chatGPTConnector.tools(), fingerprint = f.app.chatGPTConnector.catalogStatus();
+  assert.equal((await (await f.request()).json()).vault.available, false);
+  assert.equal(catalog.filter(tool => tool.name.startsWith('blackice_credentials_')).length, 3);
+  const before = await credentialJob(f, 'blackice_credentials_list', { origin: 'https://example.test', requestId: 'before_recovery' });
+  assert.equal(before.status, 'failed'); assert.equal(JSON.parse(before.result.text.text).code, 'BROWSER_CREDENTIAL_UNAVAILABLE');
+  available = true;
+  assert.equal((await (await f.request()).json()).vault.available, true);
+  const recovered = await credentialJob(f, 'blackice_credentials_list', { origin: 'https://example.test', requestId: 'after_recovery' });
+  assert.equal(recovered.status, 'succeeded'); assert.deepEqual(JSON.parse(recovered.result.text.text).credentials, []);
+  assert.deepEqual(f.app.chatGPTConnector.tools(), catalog); assert.deepEqual(f.app.chatGPTConnector.catalogStatus(), fingerprint);
+  available = false;
+  const unavailable = await credentialJob(f, 'blackice_credentials_list', { origin: 'https://example.test', requestId: 'unavailable_again' });
+  assert.equal(unavailable.status, 'failed'); assert.equal(JSON.parse(unavailable.result.text.text).code, 'BROWSER_CREDENTIAL_UNAVAILABLE');
+  assert.deepEqual(f.app.chatGPTConnector.tools(), catalog); assert.deepEqual(f.app.chatGPTConnector.catalogStatus(), fingerprint);
+  assert.equal(f.handoffs.length, 0);
 });
 
 for (const interruptedBy of ['cancellation', 'maintenance']) test(`a late browser-open receipt after ${interruptedBy} cannot reveal a deleted import file`, async t => {

@@ -83,6 +83,25 @@ test('real shell runs return their working directory, stderr and actual nonzero 
   assert.equal(success.success, true); assert.equal(parsed(success).exitCode, 0); assert.match(parsed(success).stdout, /verified-shell-result/);
 });
 
+test('only an executor-supplied origin reaches the command child and inherited case variants are stripped', async t => {
+  const key = 'BLACKICE_RESTART_ORIGIN', alternate = 'blackice_restart_origin';
+  const before = { [key]: process.env[key], [alternate]: process.env[alternate] };
+  try {
+    process.env[key] = 'ambient-stale-origin'; process.env[alternate] = 'ambient-case-variant';
+    const token = 'b'.repeat(64), normal = await harness(t), owned = await harness(t, { restartOriginToken: token });
+    const script = path.join(normal.cwd, 'origin-child.mjs');
+    await writeFile(script, `process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toUpperCase() === '${key}'))));`);
+    const command = nodeCommand(script);
+    const plain = parsed(await normal.handler(call({ action: 'run', command })));
+    const bound = parsed(await owned.handler(call({ action: 'run', command })));
+    assert.deepEqual(JSON.parse(plain.stdout), {});
+    assert.deepEqual(JSON.parse(bound.stdout), { [key]: token });
+    assert.equal(process.env[key], process.platform === 'win32' ? 'ambient-case-variant' : 'ambient-stale-origin');
+  } finally {
+    for (const name of [alternate, key]) if (before[name] === undefined) delete process.env[name]; else process.env[name] = before[name];
+  }
+});
+
 test('shell output is drained and capped while the actual exit code is preserved', async t => {
   const { handler, cwd } = await harness(t);
   const script = path.join(cwd, 'large-output.cjs'); await writeFile(script, 'process.stdout.write("\\\"".repeat(100000));');
@@ -113,11 +132,15 @@ test('command timeout reports failure and cleans up the actual process tree', as
   assert.equal(alive(pids.parent), false); assert.equal(alive(pids.child), false);
 });
 
-test('queued/cancelled calls do not write and GUI guidance forbids global input takeover', async t => {
+test('queued/cancelled calls do not write and application guidance describes available adapters', async t => {
   const { handler, cwd } = await harness(t), controller = new AbortController(); controller.abort();
   await assert.rejects(handler(call({ action: 'write', path: 'must-not-exist.txt', text: 'No write.' }), { signal: controller.signal }), cause => cause.name === 'AbortError');
   assert.deepEqual(await readdir(cwd), []);
-  assert.equal(WORKSPACE_TOOL.name, 'relay_workspace'); assert.match(WORKSPACE_INSTRUCTIONS, /physical input/); assert.match(WORKSPACE_INSTRUCTIONS, /relay_desktop/); assert.match(WORKSPACE_INSTRUCTIONS, /relay_browser/);
+  assert.equal(WORKSPACE_TOOL.name, 'relay_workspace');
+  assert.match(WORKSPACE_INSTRUCTIONS, /Authorized application launches and other task-relevant operating system commands may use run/);
+  assert.match(WORKSPACE_INSTRUCTIONS, /preserve unrelated user work/);
+  assert.match(WORKSPACE_INSTRUCTIONS, /respect stop, detach and cancellation/);
+  assert.match(WORKSPACE_INSTRUCTIONS, /relay_desktop/); assert.match(WORKSPACE_INSTRUCTIONS, /relay_browser/);
 });
 
 async function completeReadPages(handler, selected, expected) {

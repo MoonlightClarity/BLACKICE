@@ -38,7 +38,7 @@ const progress = path.join(out, 'native-observe-keyboard-progress-' + nonce + '.
 const SOURCE_FILES = ['server.mjs', 'lib/browser.mjs', 'desktop/browser-driver.mjs', 'desktop/browser-router.mjs', 'desktop/browser-capture.mjs', 'public/app.js', 'public/configure-ui.mjs', 'public/chatgpt-connector-ui.mjs', 'public/mission-ui.mjs', 'public/mission-model.mjs', 'public/model-picker.mjs', 'public/model-routes.mjs', 'public/observe-ui.mjs', 'public/observe-model.mjs', 'public/observe.css', 'tests/fixtures/observe-keyboard-native.mjs'];
 const sourceHashes = async () => Object.fromEntries(await Promise.all(SOURCE_FILES.map(async file => [file, createHash('sha256').update(await fs.readFile(path.join(ROOT, file))).digest('hex')])));
 let driver, browser, harness, fixtureServer, ui, origin, fixtureOrigin, holdNext, activeGate, failNextPreview = false;
-const externalOpens = [];
+const externalOpens = [], retiredChatModeRequests = [];
 const actions = [], pendingActions = new Set(), fixtureClients = new Set(), served = { signin: 0, oauth: 0, progress: 0, submissions: 0, continues: 0, unexpected: 0 };
 const defer = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const lateRedirect = defer();
@@ -60,12 +60,12 @@ async function addressDiagnostics(label, { start = false, stop = false } = {}) {
   const value = await evaluate(`(() => {
     const describe=node=>node?{tag:node.tagName,id:node.id,action:node.dataset?.observeBrowser,connected:node.isConnected}:null,rect=node=>{if(!node)return null;const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,top:r.top,bottom:r.bottom}};
     if(${start}){
-      globalThis.qaAddressEvents=[];globalThis.qaAddressOriginalInput=document.querySelector('#observe-browser-url');globalThis.qaAddressOriginalSummary=document.querySelector('#observe-browser-tools > summary');
-      globalThis.qaAddressRecord=event=>{if(qaAddressEvents.length>=100)return;const hit=Number.isFinite(event.clientX)?document.elementFromPoint(event.clientX,event.clientY):null;qaAddressEvents.push({type:event.type,time:performance.now(),target:describe(event.target),related:describe(event.relatedTarget),active:describe(document.activeElement),x:event.clientX,y:event.clientY,hit:describe(hit),toolsOpen:document.querySelector('#observe-browser-tools')?.open,busy:document.querySelector('#observe-browser')?.getAttribute('aria-busy'),originalInputConnected:qaAddressOriginalInput.isConnected,originalSummaryConnected:qaAddressOriginalSummary.isConnected});};
+      globalThis.qaAddressEvents=[];globalThis.qaAddressOriginalInput=document.querySelector('#observe-browser-url');globalThis.qaAddressOriginalSummary=document.querySelector('#observe-browser-protection-settings > summary');
+      globalThis.qaAddressRecord=event=>{if(qaAddressEvents.length>=100)return;const hit=Number.isFinite(event.clientX)?document.elementFromPoint(event.clientX,event.clientY):null;qaAddressEvents.push({type:event.type,time:performance.now(),target:describe(event.target),related:describe(event.relatedTarget),active:describe(document.activeElement),x:event.clientX,y:event.clientY,hit:describe(hit),protectionOpen:document.querySelector('#observe-browser-protection-settings')?.open,busy:document.querySelector('#observe-browser')?.getAttribute('aria-busy'),originalInputConnected:qaAddressOriginalInput.isConnected,originalSummaryConnected:qaAddressOriginalSummary.isConnected});};
       for(const name of ['pointerdown','pointerup','click','focusin','focusout','keydown'])document.addEventListener(name,qaAddressRecord,true);
     }
-    const input=document.querySelector('#observe-browser-url'),r=rect(input),summary=document.querySelector('#observe-browser-tools > summary'),value=input?.value||'',hit=r?document.elementFromPoint(r.x+r.width/2,r.y+r.height/2):null;
-    const result={label:${JSON.stringify(label)},active:describe(document.activeElement),width:innerWidth,height:innerHeight,rootScroll:document.scrollingElement?.scrollTop,activityScroll:document.querySelector('#observe-workspace .observe-scroll')?.scrollTop,toolsOpen:document.querySelector('#observe-browser-tools')?.open,addressRect:r,summaryRect:rect(summary),centerHit:describe(hit),addressHittable:hit===input,addressVisible:input?.checkVisibility?.({visibilityProperty:true}),value:value.length<=512?value:null,valueLength:value.length,busy:document.querySelector('#observe-browser')?.getAttribute('aria-busy'),events:[...(globalThis.qaAddressEvents||[])]};
+    const input=document.querySelector('#observe-browser-url'),r=rect(input),summary=document.querySelector('#observe-browser-protection-settings > summary'),value=input?.value||'',hit=r?document.elementFromPoint(r.x+r.width/2,r.y+r.height/2):null;
+    const result={label:${JSON.stringify(label)},active:describe(document.activeElement),width:innerWidth,height:innerHeight,rootScroll:document.scrollingElement?.scrollTop,activityScroll:document.querySelector('#observe-workspace .observe-scroll')?.scrollTop,protectionOpen:document.querySelector('#observe-browser-protection-settings')?.open,addressRect:r,summaryRect:rect(summary),centerHit:describe(hit),addressHittable:hit===input,addressVisible:input?.checkVisibility?.({visibilityProperty:true}),value:value.length<=512?value:null,valueLength:value.length,busy:document.querySelector('#observe-browser')?.getAttribute('aria-busy'),events:[...(globalThis.qaAddressEvents||[])]};
     if(${stop}&&globalThis.qaAddressRecord){for(const name of ['pointerdown','pointerup','click','focusin','focusout','keydown'])document.removeEventListener(name,qaAddressRecord,true);globalThis.qaAddressRecord=null;}
     return result;
   })()`);
@@ -146,7 +146,7 @@ async function inputViewport(label) {
   })()`);
   const record = { label, ...value, nativeWindow: { visible: ui.isVisible(), focused: ui.isFocused(), focusable: ui.isFocusable(), offscreen: ui.webContents.isOffscreen(), bounds: ui.getBounds(), contentBounds: ui.getContentBounds() } }; (report.inputViewports ||= []).push(record); return record;
 }
-async function checkInputViewport(name, before, { requireHeading = true } = {}) {
+async function checkInputViewport(name, before, { requireHeading = false } = {}) {
   const after = await inputViewport(name), close = (a, b) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= 1;
   after.criteria = {
     viewportUnchanged: close(after.width, before.width) && close(after.height, before.height),
@@ -176,21 +176,11 @@ function progressingSignIn(step) {
   return `<!doctype html><html><head><meta charset="utf-8"><title>Owned login progression ${step}</title><style>body{font:20px system-ui;margin:36px;background:#edf7f2;color:#10172a}form{margin-top:${step === 'password' ? 130 : 50}px}label,input{display:block;margin:12px 0}input{width:390px;height:42px;font:20px system-ui;padding:6px}button{padding:10px}</style></head><body><h1>Owned login progression</h1><p>Disposable localhost forms. No external account.</p><form method="post" action="/signin/progress/submit">${content}</form>${interactions}<script>globalThis.qaSubmits=0;globalThis.qaDialogCount=0;globalThis.qaFileClicks=0;globalThis.qaStage=${JSON.stringify(step === 'password' ? 'loading-password' : step)};${script}</script></body></html>`;
 }
 function disabledControllers() {
-  const runtime = new EventEmitter(); runtime.status = () => ({ connected: false, authenticated: false, models: [{ id: 'chatgpt::chat-mode', model: 'chatgpt::chat-mode', displayName: 'ChatGPT Chat Mode', providerId: 'chatgpt', providerType: 'browser', experimental: true, available: false, supportsTools: false, supportsImages: false, supportsReasoningSelection: false, routeState: 'sign-in-required', setupAction: 'chat-mode' }], providers: [], activeTurns: 0 }); runtime.init = async () => {}; runtime.start = async () => runtime.status(); runtime.close = async () => {};
+  const runtime = new EventEmitter(); runtime.status = () => ({ connected: false, authenticated: false, models: [], providers: [], activeTurns: 0 }); runtime.init = async () => {}; runtime.start = async () => runtime.status(); runtime.close = async () => {};
   runtime.runAgent = async () => { report.providerTurnsRequested++; throw Error('This acceptance fixture must not request a provider turn.'); };
   const desktop = new EventEmitter(); desktop.status = () => ({ available: false, enabled: false, busy: false }); desktop.setEnabled = async () => desktop.status();
   const applicationWorkspace = new EventEmitter(); applicationWorkspace.status = () => ({ available: false, sessions: [], documents: [], supportedApps: [], documentStorage: { healthy: true } }); applicationWorkspace.close = async () => {};
   return { runtime, desktop, applicationWorkspace };
-}
-// Dependency injection matches the HTTP fixture: only the returned setup tab
-// is synthetic. The model picker, setup request, app handoff and page UI are real.
-class OwnedChatMode {
-  constructor(tabId) { this.tabId = tabId; this.calls = []; }
-  async init() { return this; }
-  status() { return { available: true, experimental: true, state: 'sign-in-required', ready: false, providerTransportVerified: false, message: 'Sign in on the owned local acceptance page.' }; }
-  async openSetup() { this.calls.push('setup'); return { status: this.status(), tabId: this.tabId }; }
-  async refresh() { this.calls.push('refresh'); return this.status(); }
-  async close() { this.closed = true; }
 }
 app.on('browser-window-created', (_event, window) => { for (const name of ['show', 'focus']) window.on(name, () => report.foregroundEvents.push({ windowId: window.id, name })); });
 
@@ -247,10 +237,11 @@ async function run() {
     const first = await browser.perform({ action: 'open', browser: 'relay', url: oauthUrl }, { source: 'user' });
     const second = await browser.perform({ action: 'open', browser: 'relay', url: fixtureOrigin + '/signin/b' }, { source: 'user' });
     const a = first.tabId, b = second.tabId; report.fixtureTabs = [a, b];
-    const chatMode = new OwnedChatMode(a);
     const remoteFixture = createRemoteTransportFixture({ hostname: 'native-onboarding.tailtest.ts.net', config: {} });
     const remoteAccess = new RemoteAccessManager({ dataDir: path.join(profile, 'harness'), transport: remoteFixture.transport, defaultHttpsPort: 8443 });
-    harness = await createHarnessServer({ port: 0, dataDir: path.join(profile, 'harness'), defaultCwd: path.join(profile, 'workspace'), remoteAccess, autoAttachDesktop: false, emailExecutableHint: '', browser, chatMode, openExternal: async url => { externalOpens.push(url); }, ...disabledControllers() }); origin = await harness.listen();
+    harness = await createHarnessServer({ port: 0, dataDir: path.join(profile, 'harness'), defaultCwd: path.join(profile, 'workspace'), remoteAccess, autoAttachDesktop: false, emailExecutableHint: '', browser, openExternal: async url => { externalOpens.push(url); }, ...disabledControllers() });
+    harness.server.on('request', request => { const pathname = new URL(request.url, 'http://127.0.0.1').pathname; if (pathname === '/api/chat-mode' || pathname.startsWith('/api/chat-mode/')) retiredChatModeRequests.push({ method: request.method, pathname }); });
+    origin = await harness.listen();
     const uiSession = session.fromPartition('persist:observe-keyboard-ui-' + nonce); await uiSession.setProxy({ mode: 'direct' });
     uiSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     const uploadPath = path.join(profile, 'owned-upload.txt'), uploadText = 'Owned native file chooser acceptance.\n', pickerPreload = path.join(profile, 'owned-picker-preload.cjs');
@@ -265,14 +256,19 @@ async function run() {
     }
     await until('public workspace navigation', () => evaluate('Boolean(document.querySelector("[data-mode=observe]"))'), 15000);
     await evaluate('globalThis.qaKeys=[];document.addEventListener("keydown",e=>qaKeys.push({trusted:e.isTrusted,target:e.target.id,key:e.key}),true)');
-    await until('real Chat model picker', () => evaluate('Boolean(document.querySelector(".conversation-model-choice .model-picker-button"))'));
-    await click('.conversation-model-choice .model-picker-button');
-    await until('Chat Mode model route', () => evaluate(`Boolean(document.querySelector(${JSON.stringify('.model-picker-panel:not([hidden]) .model-picker-option[data-model-value="chatgpt::chat-mode"]')}))`));
-    await click('.model-picker-panel:not([hidden]) .model-picker-option[data-model-value="chatgpt::chat-mode"]'); await readyPreview(a);
-    await until('focused Chat Mode entry', () => evaluate('document.querySelector("#observe-workspace").classList.contains("observe-page-focus") && document.activeElement?.dataset?.observeBrowser==="point"'));
-    check('The real model picker opens Chat Mode setup on its exact owned contained tab', chatMode.calls.join(',') === 'setup' && await evaluate('document.querySelector("#observe-browser").classList.contains("observe-browser-focused") && [...document.querySelectorAll(".model-picker-panel")].every(panel=>panel.hidden)'));
+    const entryActionStart = actions.length;
+    await click('[data-mode="observe"]');
+    await until('public Activity browser surface', () => evaluate('Boolean(document.querySelector("[data-observe-surface=browser]"))'));
+    await click('[data-observe-surface="browser"]');
+    await until('owned contained tab selection', () => evaluate(`Boolean(document.querySelector('[data-observe-browser="tab"][data-tab-id=${JSON.stringify(a)}]:not([disabled])'))`));
+    await click('[data-observe-browser="tab"][data-tab-id="' + a + '"]'); await readyPreview(a); await settled();
+    check('The real Activity browser controls select the exact owned tab without a setup request or provider turn', retiredChatModeRequests.length === 0 && report.providerTurnsRequested === 0 && harness.engine.listRuns().length === 0 && actions.slice(entryActionStart).some(entry => entry.action === 'screenshot' && entry.tabId === a && entry.completedAt) && actions.slice(entryActionStart).every(entry => ['screenshot', 'snapshot'].includes(entry.action)) && await evaluate(`document.querySelector('#observe-surface-browser').getAttribute('aria-selected')==='true' && !document.querySelector('#observe-browser').hidden && document.querySelector('#observe-browser-follow').getAttribute('aria-pressed')==='false' && document.activeElement?.dataset?.observeBrowser==='tab' && document.activeElement.dataset.tabId===${JSON.stringify(a)}`));
     check('Real public Activity browser loads both owned sign-in tabs', await evaluate('!document.querySelector("#observe-workspace").hidden && document.querySelectorAll("[data-observe-browser=tab]").length===2'));
-    check('Sign-in entry focuses the page and places typing guidance before the image', await evaluate('(() => {const help=document.querySelector("#observe-browser-input-help"),image=document.querySelector("#observe-browser-image"),tools=document.querySelector("#observe-browser-tools");return document.activeElement?.dataset?.observeBrowser==="point" && help?.dataset.active==="false" && help.textContent.includes("Click a field below and type") && Boolean(help.compareDocumentPosition(image)&Node.DOCUMENT_POSITION_FOLLOWING) && tools && !tools.open;})()'));
+    check('Manual browser entry presents typing guidance and waits for an explicit page-field click', await evaluate('(() => {const help=document.querySelector("#observe-browser-input-help"),image=document.querySelector("#observe-browser-image"),point=document.querySelector("[data-observe-browser=point]");return !document.querySelector("#observe-workspace").classList.contains("observe-page-focus") && document.activeElement?.id!=="observe-browser-input" && help?.dataset.active==="false" && help.textContent.includes("Click a field below and type") && Boolean(help.compareDocumentPosition(image)&Node.DOCUMENT_POSITION_FOLLOWING) && point && !point.disabled;})()'));
+    report.manualEntry = { route: ['Activity', 'Browser', 'Owned contained tab'], tabId: a, retiredChatModeRequests: retiredChatModeRequests.length, providerTurnsRequested: report.providerTurnsRequested, pageActions: actions.slice(entryActionStart).map(entry => entry.action) };
+    // Ordinary Activity has a full-width preview beneath its browser controls.
+    // Reveal the owned form once before measuring; never rescue scrolling after input.
+    await evaluate('document.querySelector("#observe-browser-image").scrollIntoView({block:"start",behavior:"instant"})');
     const localForm = await inspect(a, '(() => {const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height}},r=rect(document.querySelector("form"));return {left:r.left,top:r.top,bottom:r.bottom,width:innerWidth,height:innerHeight,rect:r,devicePixelRatio,scrollX,scrollY,visualViewport:visualViewport?{width:visualViewport.width,height:visualViewport.height,scale:visualViewport.scale,offsetTop:visualViewport.offsetTop,offsetLeft:visualViewport.offsetLeft}:null,fields:["email","password"].map(id=>{const r=rect(document.getElementById(id));return {id,x:r.x+r.width/2,y:r.y+r.height/2,rect:r}})}})()');
     const layout = await evaluate(`(() => {
       const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height}},describe=e=>e?{tag:e.tagName,id:e.id,className:typeof e.className==='string'?e.className:''}:null;
@@ -291,19 +287,19 @@ async function run() {
     const signinEntryImage = await bounded('initial sign-in screenshot', ui.webContents.capturePage(), 6000);
     await fs.writeFile(path.join(out, 'observe-keyboard-signin-entry.png'), signinEntryImage.toPNG()); report.signinEntryScreenshot = 'observe-keyboard-signin-entry.png'; layout.screenshotSize = signinEntryImage.getSize();
     checkpoint('recorded initial sign-in geometry before acceptance');
-    check('A ten-thousand-character OAuth-shaped local URL leaves the sign-in form above the fold in the available Windows viewport', Object.values(layout.criteria).every(Boolean), layout);
+    check('The manually revealed form with a ten-thousand-character OAuth-shaped URL is visible and hittable in the Windows viewport', Object.values(layout.criteria).every(Boolean), layout);
     check('The full local OAuth address remains exact while the sign-in heading omits its query', await evaluate(`document.querySelector('#observe-browser-url').value===${JSON.stringify(oauthUrl)} && document.querySelector('.observe-browser-page-title').textContent.length<350 && !document.querySelector('.observe-browser-page-title').textContent.includes('state=')`));
 
     checkpoint('normal typing while the initial preview click is pending');
     const clickGate = gateNext('click', 'before'); await clickField(a, 'email', { scroll: false }); await bounded('held preview click admitted', clickGate.entered.promise);
-    const typingViewport = await inputViewport('Focused page before the first native character');
-    await key('a'); await checkInputViewport('The first native character preserves the app viewport and visible sign-in heading', typingViewport);
+    const typingViewport = await inputViewport('Manual Activity page before the first native character');
+    await key('a'); await checkInputViewport('The first native character preserves the app viewport and manually revealed form', typingViewport);
     await type('lpha'); await checkInputViewport('Queued native typing preserves every preview ancestor scroll position', typingViewport);
     check('Native characters wait for the preview click to select the remote field', (await state(a)).email === '' && !actions.some(entry => entry.action === 'type'));
     clickGate.release.resolve(); await waitField(a, 'email', 'alpha'); await settled();
     await checkInputViewport('Settled native typing and preview rendering keep the page in place', typingViewport);
     check('Click then ordinary trusted typing enters the contained email field', (await state(a)).active === 'email');
-    check('One field click visibly activates keyboard capture in the focused sign-in page', actions.filter(entry => entry.action === 'click').length === 1 && await evaluate('document.activeElement?.id==="observe-browser-input" && document.querySelector("#observe-browser-input-help").dataset.active==="true" && document.querySelector("#observe-browser-input-help").textContent.includes("Typing goes to this page")'));
+    check('One field click visibly activates keyboard capture in the selected Activity page', actions.filter(entry => entry.action === 'click').length === 1 && await evaluate('document.activeElement?.id==="observe-browser-input" && document.querySelector("#observe-browser-input-help").dataset.active==="true" && document.querySelector("#observe-browser-input-help").textContent.includes("Typing goes to this page")'));
 
     checkpoint('field click and text during the natural post-input preview refresh');
     const initialTypeFinished = actions.filter(entry => entry.action === 'type').at(-1).completedAt;
@@ -376,9 +372,9 @@ async function run() {
     await checkInputViewport('Draining rapid keys and refreshing the preview preserve the viewport', typingViewport);
 
     const beforeAddress = await state(a), inputCount = actions.filter(entry => ['type', 'press'].includes(entry.action)).length;
-    await addressDiagnostics('Before opening browser tools', { start: true });
-    const summaryGesture = await localClickAcrossPreview('#observe-browser-tools > summary', 'Browser tools summary');
-    check('A browser-tools summary click spanning preview completion opens its controls without losing the pressed target', summaryGesture.retainedBeforeRelease && summaryGesture.after.toolsOpen === true);
+    await addressDiagnostics('Before opening local protection settings', { start: true });
+    const summaryGesture = await localClickAcrossPreview('#observe-browser-protection-settings > summary', 'Protection settings summary');
+    check('A protection-settings summary click spanning preview completion opens its controls without losing the pressed target', summaryGesture.retainedBeforeRelease && summaryGesture.after.protectionOpen === true);
     const addressGesture = await localClickAcrossPreview('#observe-browser-url', 'Local website address');
     const addressClicked = addressGesture.after;
     assert.equal(addressClicked.active?.id, 'observe-browser-url', 'A native click must focus the visible local address field before typing.');
@@ -394,11 +390,33 @@ async function run() {
     // Ordinary Activity uses a full-width, uncapped page. Reveal only the owned
     // field before taking the reference; never rescue scrolling after editing.
     assert.equal(await evaluate('document.querySelector("#observe-workspace").classList.contains("observe-page-focus")'), false);
+    const ordinaryTarget = point => evaluate(`(() => {
+      const area=document.querySelector('#observe-workspace .observe-scroll'),image=document.querySelector('#observe-browser-image'),button=document.querySelector('[data-observe-browser="point"]'),point=${JSON.stringify(point)};
+      const r=area.getBoundingClientRect(),left=r.left+area.clientLeft,top=r.top+area.clientTop;
+      const clip={left:Math.max(0,left),top:Math.max(0,top),right:Math.min(innerWidth,left+area.clientWidth),bottom:Math.min(innerHeight,top+area.clientHeight)};
+      const hit=document.elementFromPoint(point.x,point.y),shown=image.getBoundingClientRect();
+      return {point,clip,width:innerWidth,height:innerHeight,scrollTop:area.scrollTop,scrollLeft:area.scrollLeft,
+        image:{x:shown.x,y:shown.y,width:shown.width,height:shown.height},
+        selectedTabId:document.querySelector('[data-observe-browser="tab"][aria-selected="true"]')?.getAttribute('data-tab-id'),
+        insideClip:point.x>clip.left&&point.x<clip.right&&point.y>clip.top&&point.y<clip.bottom,
+        hit:hit?{tag:hit.tagName,id:hit.id,action:hit.getAttribute('data-observe-browser')}:null,
+        hitsPreview:Boolean(button&&!button.disabled&&hit?.closest('[data-observe-browser="point"]')===button)};
+    })()`);
     let ordinaryPoint = await fieldPoint(b, 'email', { scroll: false });
-    const ordinaryPreparation = await evaluate(`(() => {const area=document.querySelector('#observe-workspace .observe-scroll'),point=${JSON.stringify(ordinaryPoint)},before=area.scrollTop;if(point.y<80||point.y>innerHeight-80)area.scrollTop+=point.y-innerHeight/2;return {scrollBefore:before,scrollAfter:area.scrollTop,width:innerWidth,height:innerHeight};})()`);
-    ordinaryPoint = await fieldPoint(b, 'email', { scroll: false });
-    assert.ok(ordinaryPoint.y > 0 && ordinaryPoint.y < ordinaryPreparation.height, 'The owned ordinary-Activity field must be visible before clicking.');
+    const ordinaryPreparation = { before: await ordinaryTarget(ordinaryPoint) };
     report.ordinaryActivityPreparation = ordinaryPreparation;
+    const ordinaryClip = ordinaryPreparation.before.clip;
+    assert.ok(ordinaryClip.right > ordinaryClip.left && ordinaryClip.bottom > ordinaryClip.top, 'The ordinary-Activity scroll area must intersect the native viewport before clicking.');
+    const ordinaryMargin = Math.min(24, (ordinaryClip.bottom - ordinaryClip.top) / 4);
+    const ordinaryReveal = ordinaryPoint.y <= ordinaryClip.top + ordinaryMargin || ordinaryPoint.y >= ordinaryClip.bottom - ordinaryMargin
+      ? ordinaryPoint.y - (ordinaryClip.top + ordinaryClip.bottom) / 2 : 0;
+    if (ordinaryReveal) await evaluate(`document.querySelector('#observe-workspace .observe-scroll').scrollTop+=${JSON.stringify(ordinaryReveal)}`);
+    ordinaryPoint = await fieldPoint(b, 'email', { scroll: false });
+    ordinaryPreparation.after = await ordinaryTarget(ordinaryPoint);
+    Object.assign(ordinaryPreparation, { scrollBefore: ordinaryPreparation.before.scrollTop, scrollAfter: ordinaryPreparation.after.scrollTop, width: ordinaryPreparation.after.width, height: ordinaryPreparation.after.height });
+    assert.equal(ordinaryPreparation.after.selectedTabId, b, 'The owned ordinary-Activity field must remain in the selected tab before clicking.');
+    assert.ok(ordinaryPreparation.after.insideClip, 'The owned ordinary-Activity field must be inside the visible scroll area before clicking.');
+    assert.ok(ordinaryPreparation.after.hitsPreview, 'The owned ordinary-Activity field must hit the selected preview button before clicking.');
     const ordinaryBeforeClick = await inputViewport('Ordinary Activity before the visible field click');
     await clickField(b, 'email', { scroll: false }); await settled();
     await checkInputViewport('Clicking a visible field in ordinary Activity preserves the surrounding viewport', ordinaryBeforeClick, { requireHeading: false });
@@ -483,8 +501,8 @@ async function run() {
     const keyEvidence = await evaluate('({count:qaKeys.length,allTrusted:qaKeys.every(e=>e.trusted),capture:qaKeys.filter(e=>e.target==="observe-browser-input").length})');
     check('Ordinary typing is exercised with trusted Chromium keyboard events', keyEvidence.count > 50 && keyEvidence.capture > 30 && keyEvidence.allTrusted);
     check(visibleUI ? 'Only the explicitly requested owned app window can be visible or focused' : 'All browser and app fixture windows remain hidden and nonfocusable', (visibleUI ? report.foregroundEvents.every(event => event.windowId === ui.id) : report.foregroundEvents.length === 0) && BrowserWindow.getAllWindows().every(window => visibleUI && window === ui || !window.isVisible() && !window.isFocused() && !window.isFocusable() && window.webContents.isOffscreen()));
-    check('Only owned loopback pages and local forms were used, with no provider turn', served.signin === 3 && served.oauth === 1 && served.progress === 4 && served.submissions === 1 && served.continues === 1 && served.unexpected === 0 && [...fixtureClients].every(client => client === '127.0.0.1' || client === '::ffff:127.0.0.1') && report.providerTurnsRequested === 0 && chatMode.calls.join(',') === 'setup' && (await state(a)).submits === 1 && (await state(b)).submits === 1);
-    report.evidence.push({ keyEvidence, inputActions: inputActions.map(({expectedUrl,...entry})=>({...entry,expectedUrlLength:expectedUrl.length,expectedUrlSha256:createHash('sha256').update(expectedUrl).digest('hex')})), served, chatModeSetupCalls: chatMode.calls.length, clipboardAccess: false, remotePasswordLength: (await state(a)).password.length, nativeWindows: BrowserWindow.getAllWindows().length });
+    check('Only owned loopback pages and local forms were used, with no provider turn or retired setup request', served.signin === 3 && served.oauth === 1 && served.progress === 4 && served.submissions === 1 && served.continues === 1 && served.unexpected === 0 && [...fixtureClients].every(client => client === '127.0.0.1' || client === '::ffff:127.0.0.1') && report.providerTurnsRequested === 0 && retiredChatModeRequests.length === 0 && (await state(a)).submits === 1 && (await state(b)).submits === 1);
+    report.evidence.push({ keyEvidence, inputActions: inputActions.map(({expectedUrl,...entry})=>({...entry,expectedUrlLength:expectedUrl.length,expectedUrlSha256:createHash('sha256').update(expectedUrl).digest('hex')})), served, retiredChatModeRequests: retiredChatModeRequests.length, clipboardAccess: false, remotePasswordLength: (await state(a)).password.length, nativeWindows: BrowserWindow.getAllWindows().length });
     await click('[data-mode="observe"]'); await readyPreview(b); await fs.writeFile(path.join(out, 'observe-keyboard-native.png'), (await ui.webContents.capturePage()).toPNG()); report.screenshot = 'observe-keyboard-native.png';
 
     checkpoint('connector system browser setup through the real desktop UI');
@@ -492,7 +510,7 @@ async function run() {
     const keptDraft = 'Keep this unsent ChatGPT workspace draft.'; await type(keptDraft);
     await until('owned unsent Chat draft', () => evaluate(`document.querySelector('#mission-task').value===${JSON.stringify(keptDraft)}`)); await settled();
     const panelBefore = await evaluate(`(async()=>{const response=await fetch('/api/status');if(!response.ok)throw Error('Owned status unavailable');const status=await response.json();return {draft:document.querySelector('#mission-task').value,model:document.querySelector('#mission-model').value,defaultModel:status.defaultModel??null,runtimeSettings:status.runtimeSettings};})()`);
-    const panelTabs = [...driver.tabs.keys()].sort(), panelSetupCount = chatMode.calls.length, panelActionStart = actions.length, panelRuns = harness.engine.listRuns().length, panelExternalStart = externalOpens.length;
+    const panelTabs = [...driver.tabs.keys()].sort(), panelRetiredRequestCount = retiredChatModeRequests.length, panelActionStart = actions.length, panelRuns = harness.engine.listRuns().length, panelExternalStart = externalOpens.length;
     const pluginUrl = 'https://chatgpt.com/plugins';
     check('The injected system browser opener is explicitly available in connector status', await evaluate(`(async()=>{const response=await fetch('/api/chatgpt-connector');return response.ok && (await response.json()).canOpenChatGPT===true;})()`));
     const notPrepared = await evaluate(`(async()=>{const response=await fetch('/api/chatgpt-connector/open-chatgpt',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});return response.status;})()`);
@@ -501,12 +519,12 @@ async function run() {
     check('Explicit preparation makes only this fixture computer ready without issuing a ChatGPT grant', prepared.setup.ready === true && prepared.setup.serverUrl === 'https://native-onboarding.tailtest.ts.net:8443/mcp/chatgpt' && prepared.setup.stage === 'register' && prepared.oauth.grants.length === 0 && prepared.oauth.requests.length === 0 && externalOpens.length === panelExternalStart);
     await click('[data-mode="configure"]');
     await until('system browser ChatGPT setup action', () => evaluate(`(() => {const node=document.querySelector('[data-connector-action="open-chatgpt"]');return node && !node.disabled && node.getAttribute('aria-disabled')!=='true' && node.checkVisibility({visibilityProperty:true});})()`));
-    check('Opening Settings alone does not launch setup', externalOpens.length === panelExternalStart && chatMode.calls.length === panelSetupCount);
+    check('Opening Settings alone does not launch setup', externalOpens.length === panelExternalStart && retiredChatModeRequests.length === panelRetiredRequestCount);
     await click('[data-connector-action="open-chatgpt"]');
     await until('one fixed system browser setup request', () => externalOpens.length === panelExternalStart + 1);
     await until('system browser setup receipt', () => evaluate(`document.querySelector('[data-connector-action="open-chatgpt"]').getAttribute('aria-disabled')!=='true' && document.querySelector('#configure-connector-mount .connector-receipt')?.textContent.includes('setup was requested in your default browser')`));
     check('The connector click requests only generic ChatGPT Plugins in the injected system browser', externalOpens.length === panelExternalStart + 1 && externalOpens.at(-1) === pluginUrl);
-    check('The system browser setup keeps Settings open without changing embedded tabs or starting Chat Mode or a run', chatMode.calls.length === panelSetupCount && JSON.stringify([...driver.tabs.keys()].sort()) === JSON.stringify(panelTabs) && report.providerTurnsRequested === 0 && harness.engine.listRuns().length === panelRuns && await evaluate('!document.querySelector("#configure-workspace").hidden && document.querySelector("#observe-workspace").hidden'));
+    check('The system browser setup keeps Settings open without changing embedded tabs, requesting the retired route or starting a run', retiredChatModeRequests.length === panelRetiredRequestCount && JSON.stringify([...driver.tabs.keys()].sort()) === JSON.stringify(panelTabs) && report.providerTurnsRequested === 0 && harness.engine.listRuns().length === panelRuns && await evaluate('!document.querySelector("#configure-workspace").hidden && document.querySelector("#observe-workspace").hidden'));
     const screenshotSize = ui.getContentSize();
     if (!visibleUI) {
       const guideHeight = await evaluate(`document.querySelector('#configure-connector-mount').getBoundingClientRect().height`);
@@ -522,7 +540,7 @@ async function run() {
     await click('[data-mode="view"]');
     const panelAfter = await evaluate(`(async()=>{const response=await fetch('/api/status');if(!response.ok)throw Error('Owned status unavailable');const status=await response.json();return {draft:document.querySelector('#mission-task').value,model:document.querySelector('#mission-model').value,defaultModel:status.defaultModel??null,runtimeSettings:status.runtimeSettings};})()`);
     check('System browser setup preserves the unsent draft, selected model and runtime defaults without submitting work', JSON.stringify(panelAfter) === JSON.stringify(panelBefore) && panelAfter.draft === keptDraft && report.providerTurnsRequested === 0 && harness.engine.listRuns().length === panelRuns && actions.slice(panelActionStart).every(entry => ['screenshot', 'snapshot'].includes(entry.action)));
-    report.connectorSetup = { fixtureOnly: true, externalAccountsTested: false, externalNavigationPerformed: false, connectionVerified: false, externalOpenStubCalls: externalOpens.length - panelExternalStart, requestedUrl: externalOpens.at(-1), embeddedTabsPreserved: JSON.stringify([...driver.tabs.keys()].sort()) === JSON.stringify(panelTabs), setupCallsAdded: chatMode.calls.length - panelSetupCount, engineRunsAdded: harness.engine.listRuns().length - panelRuns, draftPreserved: panelAfter.draft === panelBefore.draft, selectedModelPreserved: panelAfter.model === panelBefore.model, defaultModelPreserved: panelAfter.defaultModel === panelBefore.defaultModel, runtimeSettingsPreserved: JSON.stringify(panelAfter.runtimeSettings) === JSON.stringify(panelBefore.runtimeSettings), providerTurnsRequested: report.providerTurnsRequested, screenshot: 'chatgpt-system-browser-setup.png' };
+    report.connectorSetup = { fixtureOnly: true, externalAccountsTested: false, externalNavigationPerformed: false, connectionVerified: false, externalOpenStubCalls: externalOpens.length - panelExternalStart, requestedUrl: externalOpens.at(-1), embeddedTabsPreserved: JSON.stringify([...driver.tabs.keys()].sort()) === JSON.stringify(panelTabs), retiredChatModeRequestsAdded: retiredChatModeRequests.length - panelRetiredRequestCount, engineRunsAdded: harness.engine.listRuns().length - panelRuns, draftPreserved: panelAfter.draft === panelBefore.draft, selectedModelPreserved: panelAfter.model === panelBefore.model, defaultModelPreserved: panelAfter.defaultModel === panelBefore.defaultModel, runtimeSettingsPreserved: JSON.stringify(panelAfter.runtimeSettings) === JSON.stringify(panelBefore.runtimeSettings), providerTurnsRequested: report.providerTurnsRequested, screenshot: 'chatgpt-system-browser-setup.png' };
   } catch (cause) {
     report.errors.push(cause.stack || cause.message);
     if (report.addressTransition) try { await addressDiagnostics('Address state at failure', { stop: true }); } catch (error) { report.addressDiagnosticError = error.message; }

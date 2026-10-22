@@ -52,7 +52,7 @@ test('concurrent duplicate request IDs coalesce and another owner cannot reuse t
 test('a scheduling persistence failure leaves the app open and disables restart', async t => {
   const f = await fixture(t, { io: { rename: async () => { throw Object.assign(new Error('disk denied'), { code: 'EACCES' }); } } });
   await assert.rejects(f.controller.request({ requestId: 'disk-failure' }), { code: 'DESKTOP_RESTART_STORAGE_UNAVAILABLE' });
-  assert.deepEqual(f.events, [['check', null]]); assert.equal(f.controller.status().available, false);
+  assert.deepEqual(f.events, []); assert.equal(f.controller.status().available, false);
   assert.equal(f.controller.status().error.code, 'DESKTOP_RESTART_STORAGE_UNAVAILABLE');
   assert.deepEqual(await fs.readdir(f.profileDir), []);
 });
@@ -117,11 +117,71 @@ test('cancellation during preparation releases the barrier and cannot arm relaun
   assert.equal((await f.controller.waitForHandoff()).status, 'cancelled'); assert.deepEqual(f.events, [['check', null], ['release']]);
 });
 
-test('readiness rejection does not create a receipt, and preparation becoming busy releases the gate', async t => {
-  const early = await fixture(t, { checkReady: () => false });
-  await assert.rejects(early.controller.request({ requestId: 'initially-busy' }), { code: 'DESKTOP_RESTART_BUSY' }); assert.deepEqual(await fs.readdir(early.profileDir), []);
+test('readiness rejection has a durable same-request failure, and preparation becoming busy releases the gate', async t => {
+  let busy = true;
+  const early = await fixture(t, { checkReady: () => !busy });
+  const refusal = await early.controller.request({ requestId: 'initially-busy' });
+  assert.equal(refusal.status, 'failed'); assert.equal(refusal.error.code, 'DESKTOP_RESTART_BUSY'); assert.equal(refusal.durable, true);
+  assert.equal((await early.read()).receipts[0].id, refusal.id);
+  busy = false;
+  assert.deepEqual(await early.controller.request({ requestId: 'initially-busy' }), refusal);
+  assert.deepEqual(early.events, []);
   const late = await fixture(t, { prepare: () => ({ ready: false }) }); await late.controller.request({ requestId: 'became-busy' });
   const result = await late.controller.waitForHandoff(); assert.equal(result.status, 'failed'); assert.equal(result.error.code, 'DESKTOP_RESTART_BUSY'); assert.deepEqual(late.events, [['check', null], ['release']]);
+});
+
+test('readiness preserves the specific refusal code in the durable restart receipt', async t => {
+  for (const code of ['DESKTOP_RESTART_BROWSER_BUSY', 'DESKTOP_RESTART_STORAGE', 'DESKTOP_RESTART_ORIGIN_UNAUTHORIZED']) {
+    const f = await fixture(t, { checkReady: () => { throw Object.assign(new Error('private details'), { code }); } });
+    const result = await f.controller.request({ requestId: code });
+    assert.equal(result.status, 'failed'); assert.equal(result.error.code, code);
+    assert.doesNotMatch(JSON.stringify(result), /private details/);
+    assert.equal((await f.read()).receipts[0].error.code, code);
+  }
+});
+
+test('native scheduling acknowledgement is delivered before origin waiting and preparation', async t => {
+  const ack = deferred(), origin = deferred(), f = await fixture(t); let reads = 0;
+  await f.controller.request({ requestId: 'ack-before-origin', jobId: 'job-a', waitForAcknowledgement: () => ack.promise, waitForReceipt: () => { reads++; return origin.promise; } });
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(reads, 0);
+  ack.resolve(); await new Promise(resolve => setImmediate(resolve)); assert.equal(reads, 1);
+  assert.deepEqual(f.events, [['check', 'job-a']]);
+  origin.resolve(succeeded()); assert.equal((await f.controller.waitForHandoff()).status, 'restarting');
+});
+
+test('an undeliverable native acknowledgement records failure without any handoff', async t => {
+  const f = await fixture(t);
+  await f.controller.request({ requestId: 'closed-ack', waitForAcknowledgement: () => Promise.reject(new Error('socket closed')) });
+  const receipt = await f.controller.waitForHandoff();
+  assert.equal(receipt.status, 'failed'); assert.equal(receipt.error.code, 'DESKTOP_RESTART_ACK_UNAVAILABLE');
+  assert.deepEqual(f.events, [['check', null]]);
+});
+
+test('cancelPending reaches a successful origin during held preparation and cannot cancel an armed handoff', async t => {
+  const entered = deferred(), release = deferred();
+  const f = await fixture(t, { prepare: async () => { entered.resolve(); await release.promise; } });
+  await f.controller.request({ requestId: 'cancel-after-success', ownerId: 'grant-a', jobId: 'job-a', waitForReceipt: succeeded });
+  await entered.promise;
+  assert.equal(f.controller.cancelPending({ ownerId: 'other', jobId: 'job-a' }), false);
+  assert.equal(f.controller.cancelPending({ ownerId: 'grant-a', jobId: 'different' }), false);
+  assert.equal(f.controller.cancelPending({ ownerId: 'grant-a', jobId: 'job-a' }), true);
+  assert.equal((await f.controller.waitForHandoff()).status, 'cancelled');
+  release.resolve(); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(f.events, [['check', 'job-a'], ['release']]);
+  const armed = await fixture(t); await armed.controller.request({ requestId: 'armed' }); await armed.controller.waitForHandoff();
+  assert.equal(armed.controller.cancelPending(), false); assert.equal(armed.controller.status().status, 'restarting');
+});
+
+test('cancelPending covers the initial receipt-write window and records cancellation', async t => {
+  const writing = deferred(), release = deferred(); let writes = 0;
+  const f = await fixture(t, { io: { rename: async (...args) => { if (++writes === 1) { writing.resolve(); await release.promise; } return fs.rename(...args); } } });
+  const request = f.controller.request({ requestId: 'cancel-writing', ownerId: 'grant-a', jobId: 'job-a', waitForReceipt: succeeded });
+  await writing.promise;
+  assert.equal(f.controller.cancelPending({ ownerId: 'grant-a', requestId: 'cancel-writing' }), true);
+  release.resolve(); const receipt = await request;
+  assert.equal(receipt.status, 'cancelled'); assert.equal(receipt.durable, true);
+  assert.equal((await f.controller.waitForHandoff()).id, receipt.id);
+  assert.deepEqual(f.events, []); assert.equal((await f.read()).receipts[0].status, 'cancelled');
 });
 
 test('release failure disables new requests instead of clearing an uncertain barrier', async t => {

@@ -90,7 +90,7 @@ Inbox refreshes preserve the selected control and scroll position. Moving away f
 
 The interface uses an editable SVG black-ice scene: broad translucent sheets, quiet depth, and sparse reflective fissures. The active background, geometric wordmark, app mark, and controls are vector sources. Reading surfaces use gradients and transparency, with visible keyboard focus and explicit reduced-motion and contrast treatments. A task starts with one outcome and one Planning control. Its agent saves a visible outline that can also be explored as a mind map. New chat, Send, and Stop stay labeled; drafts and model choices survive navigation.
 
-The workspace now centers on five integrations: **Background browser**, **Email**, **Planning**, **Swarm projects**, and **Schedules & jobs**. Availability reflects the actual adapter and saved evidence. ChatGPT uses the **BLACKICE connection** to call local tools and receive durable results. BLACKICE does not drive ChatGPT as a browser model provider. General Windows application automation is not an advertised capability; the finite dedicated Notepad adapter remains separate from read-only desktop inspection.
+The workspace now centers on five integrations: **Background browser**, **Email**, **Planning**, **Swarm projects**, and **Schedules & jobs**. Availability reflects the actual adapter and saved evidence. ChatGPT uses the **BLACKICE connection** to call local tools and receive durable results. BLACKICE does not drive ChatGPT as a browser model provider. Windows accessibility automation operates supported controls in existing applications. The dedicated private-session adapter remains available for compatible catalog applications.
 
 Activity distinguishes the task's state from the surface being viewed and lets you hold evidence with Follow live turned off. Projects combine an outcome and ordered steps with expected results and acceptance checks. Owners, priorities, dates, notes, tags, and milestones keep the plan useful as work proceeds. Workflow pan and zoom survive navigation; editing shortcuts apply only to the visible workflow. Dialogs include disclosure controls in keyboard navigation.
 
@@ -497,11 +497,13 @@ Agents can inspect page controls/text, follow links, fill forms, select options,
 
 Downloads remain in `%APPDATA%\Relay\downloads`. Uploads accept up to ten regular files totalling 20 MB. The contained browser has a bounded tab inventory. Page text is untrusted task data and cannot authorize actions.
 
-## Windows inspection and dedicated text editor
+## Windows accessibility automation and private application sessions
 
-Generic Windows tools list existing windows, inspect accessible controls and capture screenshots. They do not expose invoke, set-value, typing, clicking, selection or other input actions, regardless of whether the contained browser is present. Stale calls requesting those actions are rejected before native dispatch, and returned accessibility action lists are filtered to the inspection contract.
+`relay_desktop` lists existing windows, inspects accessible controls, reads text and captures screenshots. It also exposes the implemented semantic actions in every task mode: `invoke`, `set_value`, `select`, `toggle`, `expand`, `collapse`, `scroll` and `scroll_into_view`. Start with `windows`, inspect the selected `windowId`, and use current element refs and the actions advertised by each control. Verify the resulting state after a change. Stale refs, replaced controls and unsupported native patterns produce an actual capability error; they do not fall back to guessed targets.
 
-The separately verified `relay_apps` Notepad adapter offers bounded text operations in an owned private desktop session. Its catalog and compatibility evidence determine availability. It cannot launch arbitrary executables. Use the contained browser for web tasks and the workspace file tools for documents/code.
+These actions use accessibility protocols without physical pointer input, keystroke injection or foreground-focus requests. An application can still open a dialog or change focus as its own side effect. Actual support depends on its accessibility provider and Windows access boundaries; secure desktops and unsupported controls remain runtime limitations. Stop, detach and cancellation halt queued work. An action already accepted by an application may have completed, so inspect before retrying. See [Background Windows automation](lib/desktop-automation.md) for adapter details and repeatable verification.
+
+`relay_apps` offers compatible applications in owned private desktop sessions with supported text operations. Its catalog governs that adapter; it does not impose a global restriction on other applications. Use `relay_workspace` for authorized native application launches and commands, and `relay_desktop` for supported controls in existing windows. Preserve unrelated user work and use the adapter that fits the requested task.
 
 ## Tools, context, and workflows
 

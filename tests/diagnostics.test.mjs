@@ -15,6 +15,16 @@ async function harness(t, options = {}) {
 const record = { component: 'desktop', event: 'ready', level: 'info' };
 const saved = overrides => ({ at: '2026-10-16T22:00:00.000Z', ...record, ...overrides });
 
+test('native restart diagnostics preserve concrete refusal codes without arbitrary restart-prefixed payloads', async t => {
+  const { store } = await harness(t);
+  const codes = ['DESKTOP_RESTART_BUSY', 'DESKTOP_RESTART_BROWSER_BUSY', 'DESKTOP_RESTART_ORIGIN_INVALID', 'DESKTOP_RESTART_CANCELLED', 'DESKTOP_RESTART_DRAIN_TIMEOUT', 'DESKTOP_RESTART_STORAGE', 'DESKTOP_RESTART_ACK_UNCERTAIN'];
+  for (const code of codes) await store.recordError('desktop', 'restart_failed', Object.assign(new Error('PRIVATE_DETAILS'), { code }));
+  await store.recordError('desktop', 'restart_failed', { code: 'DESKTOP_RESTART_PRIVATE_DETAILS' });
+  const snapshot = await store.snapshot();
+  assert.deepEqual(snapshot.events.map(event => event.code), [...codes, 'UNKNOWN_ERROR']);
+  assert.doesNotMatch(JSON.stringify(snapshot), /PRIVATE_DETAILS/);
+});
+
 test('prompt library diagnostics expose health without retaining template bodies or field values',async t=>{
   const {store}=await harness(t);const result=await store.snapshot({health:{promptsHealthy:true,promptText:'PRIVATE_TEMPLATE',values:'PRIVATE_VALUES'}});assert.deepEqual(result.health,{promptsHealthy:true});assert.doesNotMatch(JSON.stringify(result),/PRIVATE_/);
 });

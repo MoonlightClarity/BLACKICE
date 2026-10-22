@@ -69,6 +69,11 @@ test('relaunch keeps dev and unrelated arguments while replacing transient flags
   assert.deepEqual(buildDesktopRelaunchArgs({ argv: ['blackice.exe', '--profile-dir=C:\\Old', '--headless', '--restart', '--quit'], profileDir: 'C:\\Current Profile', mode: 'window' }), ['--profile-dir', 'C:\\Current Profile']);
 });
 
+test('native restart request and compatibility flags cannot replay through relaunch', () => {
+  const argv = ['electron', '.', '--restart', '--request-id', 'first', '--restart-status', '--cancel-restart', '--request-id=second', '--legacy-native-handoff', '--unrelated'];
+  assert.deepEqual(buildDesktopRelaunchArgs({ argv, mode: 'background' }), ['.', '--unrelated', '--background']);
+});
+
 test('relaunch mode comes from the running instance and never preserves restart or quit triggers', () => {
   const argv = ['blackice', '--headless', '--profile-dir=/tmp/stale', '--restart', '--quit', '--background=false', '--restart=true', '--quit=false', '--headless=true', '--unrelated'];
   for (const mode of ['window', 'background', 'headless']) {

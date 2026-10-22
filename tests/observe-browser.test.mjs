@@ -28,11 +28,11 @@ function fixture(t, { initial = status(), handle } = {}) {
   } });
   const data = { status: initial, clicks: 0 };
   const api = createApiClient({ timeoutMs: 2000, fetcher: async (route, options) => {
-    assert.ok(['/api/browser/status', '/api/browser/action'].includes(route), 'the contained surface cannot call a native show or connection route');
+    assert.ok(['/api/browser/status?view=contained', '/api/browser/action'].includes(route), 'the contained surface cannot call a native show or connection route');
     const body = options.body ? JSON.parse(options.body) : undefined, call = { route, method: options.method, body, signal: options.signal }; calls.push(call);
     if (body) assert.equal(body.browser, 'relay', 'every page action explicitly targets contained Chromium');
     const custom = await handle?.(call, data); if (custom !== undefined) return Response.json(custom);
-    if (route === '/api/browser/status') return Response.json(data.status);
+    if (route === '/api/browser/status?view=contained') return Response.json(data.status);
     if (body.action === 'screenshot') return Response.json(frame(body.tabId));
     if (body.action === 'open') { data.status.tabs.push(tab('new', { url: body.url })); data.status.activeTab = 'new'; return Response.json(documentFor('new')); }
     if (body.action === 'navigate') data.status.tabs.find(tab => tab.tabId === body.tabId).url = body.url;
@@ -67,13 +67,13 @@ test('page frames, current control receipts, and screenshot coordinates are boun
 test('the actual public API client refreshes a real rendered contained frame and excludes native routes', async t => {
   const f = fixture(t, { initial: status([tab('one'), tab('native-window', { browser: 'neo' }), tab('shown', { visible: true })]) }); await f.ui.enter();
   assert.match(f.html, /Captured contained browser page/); assert.match(f.html, /Websites and their sign-ins stay in this contained browser/); assert.doesNotMatch(f.html, /value="native-window"|value="shown"|Open window/);
-  assert.deepEqual(f.calls.map(call => [call.route, call.body?.action]), [['/api/browser/status', undefined], ['/api/browser/action', 'screenshot']]);
+  assert.deepEqual(f.calls.map(call => [call.route, call.body?.action]), [['/api/browser/status?view=contained', undefined], ['/api/browser/action', 'screenshot']]);
   assert.equal(f.element('observe-browser-url').value, 'https://example.test/one'); assert.ok(f.calls.every(call => call.signal instanceof AbortSignal));
 });
 
 test('five-second preview refresh is single flight and preserves an edited address with keyboard focus', async t => {
   const gate = deferred(); let held = false;
-  const f = fixture(t, { handle: call => held && call.route === '/api/browser/status' ? gate.promise : undefined }); await f.ui.enter();
+  const f = fixture(t, { handle: call => held && call.route === '/api/browser/status?view=contained' ? gate.promise : undefined }); await f.ui.enter();
   const address = f.element('observe-browser-url'); address.value = 'https://draft.test/unfinished'; address.focus(); address.selectionStart = 8; address.selectionEnd = 12;
   held = true; f.advance(4999); f.ui.update(); assert.equal(f.calls.length, 2); f.advance(1); f.ui.update(); f.ui.update(); assert.equal(f.calls.length, 3);
   assert.equal(f.element('observe-browser-url').value, 'https://draft.test/unfinished'); assert.equal(f.focused.id, 'observe-browser-url'); assert.equal(f.focused.selectionStart, 8);
@@ -106,6 +106,18 @@ test('opening a website is contained and a hidden page cannot be acted on after 
   assert.equal(f.calls.filter(call => call.body?.action === 'click').length, count); assert.match(f.html, /hidden BLACKICE page|no longer a hidden BLACKICE tab/);
 });
 
+test('the Observe address form accepts a bare hostname and dispatches its normalized URL once', async t => {
+  const f = fixture(t, { initial: status([]) }); await f.ui.enter();
+  const address = f.element('observe-browser-url');
+  assert.equal(address.type, 'text', 'native URL validation must not reject a bare website address before submit');
+  assert.equal(address.inputmode, 'url');
+  address.value = '  owned.example.test/signin?next=%2Ffeed  '; await f.submit();
+  const opened = f.calls.filter(call => call.body?.action === 'open');
+  assert.equal(opened.length, 1);
+  assert.equal(opened[0].body.url, 'https://owned.example.test/signin?next=%2Ffeed');
+  assert.ok(f.calls.every(call => call.route !== '/api/browser/status'), 'Observe uses the status view that does not scan native profiles');
+});
+
 test('closing a selected hidden page leaves other pages intact and then shows the next actual contained page', async t => {
   const f = fixture(t, { initial: status([tab('one'), tab('two'), tab('visible', { visible: true }), tab('firefox:outside', { browser: 'firefox' })]) }); await f.ui.enter();
   await f.click('close'); assert.deepEqual(f.calls.find(call => call.body?.action === 'close').body, { action: 'close', browser: 'relay', tabId: 'one' });
@@ -123,7 +135,7 @@ test('keyboard focus returns to a page action after its temporarily disabled con
 });
 
 test('leaving aborts requests and late responses cannot capture, act, or repopulate a fresh entry', async t => {
-  const gate = deferred(); let held = true; const f = fixture(t, { handle: call => held && call.route === '/api/browser/status' ? gate.promise : undefined });
+  const gate = deferred(); let held = true; const f = fixture(t, { handle: call => held && call.route === '/api/browser/status?view=contained' ? gate.promise : undefined });
   const pending = f.ui.enter(); await flush(); const initial = f.calls[0]; f.ui.leave(); assert.equal(initial.signal.aborted, true); assert.equal(f.html, '');
   held = false; await f.ui.enter(); const count = f.calls.length, writes = f.mount.writes; gate.resolve(status([tab('old-private-page')])); await pending;
   assert.equal(f.calls.length, count); assert.equal(f.mount.writes, writes); assert.doesNotMatch(f.html, /old-private-page/);
@@ -152,7 +164,7 @@ test('contained surface is available in Activity without fabricating a selected 
   const elements = new Map(), listeners = new Map(), basic = () => ({ innerHTML: '', textContent: '', value: '', hidden: false, classList: { add() {}, toggle() {} }, querySelector: () => null, querySelectorAll: () => [], addEventListener() {}, removeEventListener() {}, isConnected: true });
   const element = key => { if (!elements.has(key)) elements.set(key, basic()); return elements.get(key); }, mount = { ...basic(), hidden: false, querySelector: element, addEventListener: (name, handler) => listeners.set(name, handler), removeEventListener: name => listeners.delete(name), contains: () => false };
   const calls = [], ui = initObserveUI({ mount, getSnapshot: () => ({ runs: [], currentRun: null }), api: async route => { calls.push(route); return status([]); } }); t.after(() => ui.destroy()); ui.enter(); await flush();
-  assert.equal(element('#observe-content').hidden, true); assert.match(element('#observe-browser').innerHTML, /Contained browser/); assert.equal(element('#observe-application-sessions').innerHTML, ''); assert.deepEqual(calls, ['/api/browser/status']); assert.equal(element('#observe-browser').hidden, false); assert.equal(element('#observe-application-sessions').hidden, true); ui.selectSurface('applications'); await flush(); assert.match(element('#observe-application-sessions').innerHTML, /Application sessions/); assert.equal(element('#observe-browser').hidden, true); assert.equal(element('#observe-application-sessions').hidden, false); assert.deepEqual(calls, ['/api/browser/status', '/api/application-sessions/status']);
+  assert.equal(element('#observe-content').hidden, true); assert.match(element('#observe-browser').innerHTML, /Contained browser/); assert.equal(element('#observe-application-sessions').innerHTML, ''); assert.deepEqual(calls, ['/api/browser/status?view=contained']); assert.equal(element('#observe-browser').hidden, false); assert.equal(element('#observe-application-sessions').hidden, true); ui.selectSurface('applications'); await flush(); assert.match(element('#observe-application-sessions').innerHTML, /Application sessions/); assert.equal(element('#observe-browser').hidden, true); assert.equal(element('#observe-application-sessions').hidden, false); assert.deepEqual(calls, ['/api/browser/status?view=contained', '/api/application-sessions/status']);
   assert.doesNotMatch(mount.innerHTML, /Open Windows|data-observe-action="desktop"/);
 });
 

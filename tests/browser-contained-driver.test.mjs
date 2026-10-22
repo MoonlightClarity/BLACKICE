@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import vm from 'node:vm';
 import { BrowserWorkspace, createBrowserToolHandler } from '../lib/browser.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -22,6 +23,7 @@ async function fixture(t, { command = async () => ({}), loadURL = async () => {}
       contents.isOffscreen = () => options.webPreferences?.offscreen === true;
       contents.isDestroyed = () => this.destroyed; contents.getURL = () => this.url || ''; contents.getTitle = () => 'Local fixture'; contents.isLoading = () => false;
       contents.isLoadingMainFrame = () => false;
+      contents.executeJavaScript = async () => ({ width: options.width, height: options.height });
       contents.mainFrame = { processId: 1, routingId: 1, framesInSubtree: [], executeJavaScript: async () => ({ title: 'Local fixture', url: this.url, elements: [], text: 'Owned fixture page', readyState: 'complete' }) };
       contents.setWindowOpenHandler = fn => { contents.openHandler = fn; }; contents.loadURL = async url => { this.loads.push(url); await loadURL(url, this); this.url = url; };
       contents.capturePage = async (...args) => { this.captureArgs = args; return { isEmpty: () => false, getSize: () => ({ width: 1280, height: 900 }), toDataURL: () => 'data:image/png;base64,fixture' }; };
@@ -49,6 +51,41 @@ const assertContained = window => {
   assert.equal(window.options.webPreferences.nodeIntegration, false); assert.equal(window.options.webPreferences.contextIsolation, true); assert.equal(window.options.webPreferences.sandbox, true); assert.equal(window.visible, false);
   assert.equal(window.options.webPreferences.nodeIntegrationInSubFrames, undefined); assert.equal(window.options.webPreferences.preload, undefined);
 };
+
+test('a detached renderer ref preserves its message across a boundary that loses Error properties', async t => {
+  const { driver } = await fixture(t), tab = driver.newTab('https://example.test/composer'); await tab.loading;
+  const frame = tab.window.webContents.mainFrame, context = vm.createContext({ [driver.key]: { elements: new Map([['old-media', { isConnected: false }]]) } });
+  frame.executeJavaScript = async code => {
+    // Model a cross-process boundary that copies ordinary data but drops the
+    // non-enumerable message of an uncaught renderer Error.
+    try { return JSON.parse(JSON.stringify(vm.runInContext(code, context))); }
+    catch (cause) { throw JSON.parse(JSON.stringify(cause)); }
+  };
+  tab.refs.set('old-media', frame);
+  const browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());
+  const result = await createBrowserToolHandler({ browser })({ name: 'relay_browser', arguments: { action: 'click', tabId: tab.id, ref: 'old-media' } });
+  assert.equal(result.success, false); assert.equal(result.code, 'BROWSER_REF_STALE');
+  assert.deepEqual(JSON.parse(result.contentItems[0].text), { error: 'This element ref is stale. Take a new snapshot and choose its current ref.', code: 'BROWSER_REF_STALE' });
+  assert.equal(tab.window.protocol.some(item => item.method.startsWith('Input.')), false, 'A detached target must fail before browser input.');
+  assert.equal(tab.window.captureArgs, undefined, 'A detached target must fail before pointer preparation.');
+});
+
+test('unexpected renderer failures retain their message without trusting a page-supplied no-effect claim', async t => {
+  const { driver } = await fixture(t), tab = driver.newTab('https://example.test/composer'); await tab.loading;
+  let scrolls = 0;
+  const element = { isConnected: true, getAttribute: () => null, scrollIntoView: () => { scrolls++; }, getBoundingClientRect() { throw Object.assign(new Error('Layout changed after scrolling.'), { code: 'BROWSER_LAYOUT_FAILED', actionDispatched: false }); } };
+  const frame = tab.window.webContents.mainFrame, context = vm.createContext({ [driver.key]: { elements: new Map([['media', element]]) } });
+  frame.executeJavaScript = async code => {
+    try { return JSON.parse(JSON.stringify(vm.runInContext(code, context))); }
+    catch (cause) { throw JSON.parse(JSON.stringify(cause)); }
+  };
+  tab.refs.set('media', frame);
+  const browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());
+  const result = await createBrowserToolHandler({ browser })({ name: 'relay_browser', arguments: { action: 'click', tabId: tab.id, ref: 'media' } });
+  assert.equal(result.success, false); assert.equal(result.code, 'BROWSER_LAYOUT_FAILED');
+  assert.deepEqual(JSON.parse(result.contentItems[0].text), { error: 'Layout changed after scrolling.', code: 'BROWSER_LAYOUT_FAILED' });
+  assert.equal(scrolls, 1, 'Renderer work has already changed the page before the error.');
+});
 
 test('the dedicated contained profile grants website capabilities for documents, subframes and workers', async t => {
   const { driver, session } = await fixture(t), tab = driver.newTab('https://example.test/');
@@ -308,6 +345,184 @@ test('OAuth popups inherit the exact contained policy and are adopted without a 
   parent.window.webContents.emit('did-create-window', child, { url: 'https://example.test/oauth' }); await tick(); assert.equal(driver.tabs.size, 2); assert.equal(windows.length, 2); assert.equal(driver.tab(driver.activeTab).window, child);
   for (const window of windows) assertContained(window);
   assert.equal(child.webContents.openHandler({ url: 'file:///C:/private' }).action, 'deny');
+});
+
+async function popupViewportFixture(t, { viewport = { width: 0, height: 0 }, contentSize = [1281, 824], command = async () => {}, readViewport = async () => {}, captureAvailable = true } = {}) {
+  const state = { viewport: { ...viewport }, emulated: false, events: [], reads: 0, captures: 0, snapshots: 0, prepares: 0 };
+  const f = await fixture(t, { command: async (method, params, window) => {
+    if (window !== state.window) return {};
+    state.events.push(method);
+    if (method === 'Emulation.setDeviceMetricsOverride') { state.viewport = { width: params.width, height: params.height }; state.emulated = true; }
+    await command(method, params, state);
+    if (method === 'Emulation.clearDeviceMetricsOverride') state.emulated = false;
+    return {};
+  } });
+  const parent = f.driver.newTab('https://parent.example.test/'); await parent.loading;
+  const options = parent.window.webContents.openHandler({ url: 'https://identity.example.test/' }).overrideBrowserWindowOptions;
+  const window = state.window = new f.Window(options), wc = window.webContents;
+  window.url = 'https://identity.example.test/'; window.getContentSize = () => contentSize;
+  wc.executeJavaScript = async expression => {
+    assert.equal(expression, '({width:innerWidth,height:innerHeight})');
+    state.reads++; state.events.push('viewport');
+    const value = { ...state.viewport }; await readViewport(state); return value;
+  };
+  wc.mainFrame.executeJavaScript = async code => {
+    assert.equal(state.emulated, false, 'Temporary metrics must be cleared before inspecting or preparing the page.');
+    assert.ok(state.viewport.width > 0 && state.viewport.height > 0, 'Page geometry must be initialized first.');
+    if (code.includes('function pageSnapshot(')) {
+      state.snapshots++; state.events.push('snapshot');
+      return { title: 'Popup fixture', url: window.url, elements: [{ ref: 'complete', name: 'Complete fixture sign-in' }], text: 'Identity ready', readyState: 'complete' };
+    }
+    assert.ok(code.includes('function elementActionResult('));
+    state.prepares++; state.events.push('prepare');
+    return { x: state.viewport.width / 2, y: state.viewport.height / 2, viewportWidth: state.viewport.width, viewportHeight: state.viewport.height };
+  };
+  wc.capturePage = async (_rect, options) => {
+    assert.deepEqual(options, { stayHidden: true }); assert.equal(state.emulated, false);
+    state.captures++; state.events.push('capture');
+    const valid = captureAvailable && state.viewport.width > 0 && state.viewport.height > 0;
+    return { isEmpty: () => !valid, getSize: () => valid ? { ...state.viewport } : { width: 0, height: 0 }, toDataURL: () => 'data:image/png;base64,popup' };
+  };
+  parent.window.webContents.emit('did-create-window', window, { url: window.url }); await tick();
+  const tab = [...f.driver.tabs.values()].find(tab => tab.window === window);
+  assert.ok(tab); Object.assign(state, f, { parent, tab, wc });
+  state.guard = { tabId: tab.id, expectedUrl: window.url, expectedDocumentId: `${tab.id}:${tab.revision}` };
+  return state;
+}
+
+test('a zero-sized adopted popup is initialized and reset before snapshot, pointer preparation and native capture', async t => {
+  const f = await popupViewportFixture(t), window = f.tab.window, wc = window.webContents;
+  const snapshot = await f.driver.perform({ action: 'snapshot', tabId: f.tab.id });
+  assert.equal(snapshot.frames[0].elements[0].ref, 'complete');
+  await f.driver.perform({ action: 'click', ...f.guard, ref: 'complete' });
+  const preview = await f.driver.perform({ action: 'screenshot', tabId: f.tab.id });
+  assert.equal(preview.width, 1281); assert.equal(preview.height, 824);
+  assert.deepEqual(f.window.protocol.filter(call => call.method.startsWith('Emulation.')), [
+    { method: 'Emulation.setDeviceMetricsOverride', params: { width: 1281, height: 824, deviceScaleFactor: 0, mobile: false, dontSetVisibleSize: false } },
+    { method: 'Emulation.clearDeviceMetricsOverride', params: undefined },
+  ]);
+  assert.ok(f.events.indexOf('Emulation.clearDeviceMetricsOverride') < f.events.indexOf('snapshot'));
+  assert.ok(f.events.indexOf('snapshot') < f.events.indexOf('prepare'));
+  assert.ok(f.events.indexOf('prepare') < f.events.indexOf('capture'));
+  const inputs = f.window.protocol.filter(call => call.method === 'Input.dispatchMouseEvent');
+  assert.deepEqual(inputs.map(call => call.params.type), ['mouseMoved', 'mousePressed', 'mouseReleased']);
+  assert.ok(inputs.every(call => call.params.x === 640.5 && call.params.y === 412));
+  assert.equal(f.prepares, 1); assert.equal(f.reads, 2, 'Subsequent actions must reuse the completed initialization.');
+  assert.equal(f.tab.window, window); assert.equal(f.tab.window.webContents, wc);
+  assert.equal(f.tab.parentTabId, f.parent.id); assert.equal(f.window.options.webPreferences.session, f.parent.window.options.webPreferences.session);
+  assert.deepEqual(f.window.loads, [], 'The original native popup must not be replaced or navigated again.');
+  assertContained(f.window);
+});
+
+test('ordinary windows and already-sized adopted popups do not receive device emulation', async t => {
+  const f = await popupViewportFixture(t, { viewport: { width: 1280, height: 900 } });
+  f.parent.window.webContents.executeJavaScript = () => assert.fail('Ordinary pages must not enter popup viewport initialization.');
+  await f.driver.perform({ action: 'snapshot', tabId: f.parent.id });
+  await f.driver.perform({ action: 'snapshot', tabId: f.tab.id });
+  await f.driver.perform({ action: 'screenshot', tabId: f.tab.id });
+  assert.equal(f.reads, 1); assert.equal(f.emulated, false);
+  assert.equal(f.windows.some(window => window.protocol.some(call => call.method.startsWith('Emulation.'))), false);
+});
+
+test('an explicit popup navigation initializes before its first resulting snapshot', async t => {
+  const f = await popupViewportFixture(t);
+  const result = await f.driver.perform({ action: 'navigate', tabId: f.tab.id, url: 'https://identity.example.test/next' });
+  assert.equal(result.url, 'https://identity.example.test/next');
+  assert.deepEqual(f.window.loads, ['https://identity.example.test/next']);
+  assert.ok(f.events.indexOf('Emulation.clearDeviceMetricsOverride') < f.events.indexOf('snapshot'));
+});
+
+test('popup viewport initialization still requires a real native frame before pointer input', async t => {
+  const f = await popupViewportFixture(t, { captureAvailable: false });
+  await f.driver.perform({ action: 'snapshot', tabId: f.tab.id });
+  await assert.rejects(f.driver.perform({ action: 'click', ...f.guard, ref: 'complete' }), { code: 'BROWSER_CAPTURE_UNAVAILABLE' });
+  assert.equal(f.captures, 3); assert.equal(f.prepares, 1);
+  assert.equal(f.window.protocol.some(call => call.method.startsWith('Input.')), false);
+});
+
+test('Stop during popup viewport initialization clears metrics without dispatching the requested input', async t => {
+  const controller = new AbortController();
+  const f = await popupViewportFixture(t, { command: async method => { if (method === 'Emulation.setDeviceMetricsOverride') controller.abort(); } });
+  await assert.rejects(f.driver.perform({ action: 'type', ...f.guard, text: 'Must not arrive' }, { signal: controller.signal }), { name: 'AbortError' });
+  await tick();
+  assert.equal(f.emulated, false); assert.equal(f.tab.popupViewport.resetRequired, false);
+  assert.equal(f.window.protocol.filter(call => call.method === 'Emulation.clearDeviceMetricsOverride').length, 1);
+  assert.equal(f.window.protocol.some(call => call.method.startsWith('Input.')), false);
+  assert.equal(f.snapshots, 0); assert.equal(f.captures, 0);
+  await f.driver.perform({ action: 'snapshot', tabId: f.tab.id });
+  assert.equal(f.window.protocol.filter(call => call.method === 'Emulation.setDeviceMetricsOverride').length, 1, 'A later explicit read must not repeat the successful resize.');
+});
+
+test('document replacement during popup initialization rejects stale input after clearing metrics', async t => {
+  for (const stage of ['viewport', 'set', 'clear']) await t.test(stage, async t => {
+    let changed = false;
+    const replace = state => { if (!changed) { changed = true; state.tab.revision++; } };
+    const f = await popupViewportFixture(t, {
+      readViewport: async state => { if (stage === 'viewport') replace(state); },
+      command: async (method, _params, state) => { if (method === `Emulation.${stage === 'set' ? 'setDeviceMetricsOverride' : 'clearDeviceMetricsOverride'}` && stage !== 'viewport') replace(state); },
+    });
+    await assert.rejects(f.driver.perform({ action: 'type', ...f.guard, text: 'Must not arrive' }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+    assert.equal(f.emulated, false); assert.equal(f.window.protocol.some(call => call.method.startsWith('Input.')), false);
+    assert.equal(f.snapshots, 0); assert.equal(f.captures, 0);
+    assert.equal(f.window.protocol.filter(call => call.method === 'Emulation.setDeviceMetricsOverride').length, stage === 'viewport' ? 0 : 1);
+  });
+});
+
+test('a failed popup metrics acknowledgment is cleared and surfaced without input replay', async t => {
+  const failure = Object.assign(Error('Owned uncertain metrics response'), { code: 'FIXTURE_METRICS_FAILED' });
+  const f = await popupViewportFixture(t, { command: async method => { if (method === 'Emulation.setDeviceMetricsOverride') throw failure; } });
+  await assert.rejects(f.driver.perform({ action: 'type', ...f.guard, text: 'Must not arrive' }), failure);
+  assert.equal(f.emulated, false); assert.equal(f.tab.popupViewport.ready, false);
+  assert.equal(f.window.protocol.filter(call => call.method === 'Emulation.clearDeviceMetricsOverride').length, 1);
+  assert.equal(f.window.protocol.some(call => call.method.startsWith('Input.')), false);
+});
+
+test('an unconfirmed popup metrics reset prevents continuation and is cleared before a later explicit read', async t => {
+  let failClear = true;
+  const f = await popupViewportFixture(t, { command: async method => { if (method === 'Emulation.clearDeviceMetricsOverride' && failClear) throw Error('Owned reset failure'); } });
+  await assert.rejects(f.driver.perform({ action: 'type', ...f.guard, text: 'Must not arrive' }), /Owned reset failure/);
+  assert.equal(f.emulated, true); assert.equal(f.tab.popupViewport.ready, false); assert.equal(f.tab.popupViewport.resetRequired, true);
+  assert.equal(f.window.protocol.some(call => call.method.startsWith('Input.')), false);
+  const reads = f.reads; failClear = false;
+  await f.driver.perform({ action: 'snapshot', tabId: f.tab.id });
+  assert.equal(f.emulated, false); assert.equal(f.tab.popupViewport.resetRequired, false);
+  assert.equal(f.reads, reads + 1); assert.equal(f.window.protocol.filter(call => call.method === 'Emulation.setDeviceMetricsOverride').length, 1);
+  assert.equal(f.window.protocol.filter(call => call.method === 'Emulation.clearDeviceMetricsOverride').length, 2);
+});
+
+test('debugger detachment during popup initialization cannot reattach or admit the interrupted input', async t => {
+  let detach = true;
+  const f = await popupViewportFixture(t, { command: async (method, _params, state) => {
+    if (method === 'Emulation.setDeviceMetricsOverride' && detach) { detach = false; state.wc.debugger.attached = false; state.wc.debugger.emit('detach'); }
+  } });
+  await assert.rejects(f.driver.perform({ action: 'type', ...f.guard, text: 'Must not arrive' }), { code: 'BROWSER_CONTAINMENT_LOST' });
+  assert.equal(f.wc.debugger.isAttached(), false); assert.equal(f.tab.containmentReady, null);
+  assert.equal(f.window.protocol.some(call => call.method.startsWith('Input.')), false);
+  assert.equal(f.tab.popupViewport.resetRequired, true);
+  await f.driver.perform({ action: 'snapshot', tabId: f.tab.id });
+  assert.equal(f.wc.debugger.isAttached(), true); assert.equal(f.emulated, false);
+  assert.equal(f.window.protocol.filter(call => call.method === 'Emulation.setDeviceMetricsOverride').length, 1);
+});
+
+test('popup close during initialization prevents page work and input on a replacement target', async t => {
+  const f = await popupViewportFixture(t, { command: async (method, _params, state) => { if (method === 'Emulation.setDeviceMetricsOverride') state.window.destroy(); } });
+  await assert.rejects(f.driver.perform({ action: 'type', ...f.guard, text: 'Must not arrive' }), { code: 'BROWSER_CLOSED' });
+  assert.equal(f.window.destroyed, true); assert.equal(f.driver.tabs.has(f.tab.id), false);
+  assert.equal(f.window.protocol.some(call => call.method.startsWith('Input.')), false);
+  assert.equal(f.snapshots, 0); assert.equal(f.windows.length, 2);
+});
+
+test('popup initialization rejects unusable native sizes and a viewport that remains empty after reset', async t => {
+  await t.test('native size', async t => {
+    const f = await popupViewportFixture(t, { contentSize: [0, 824] });
+    await assert.rejects(f.driver.perform({ action: 'snapshot', tabId: f.tab.id }), { code: 'BROWSER_VIEWPORT_UNAVAILABLE' });
+    assert.equal(f.window.protocol.some(call => call.method.startsWith('Emulation.')), false); assert.equal(f.snapshots, 0);
+  });
+  await t.test('empty after reset', async t => {
+    const f = await popupViewportFixture(t, { command: async (method, _params, state) => { if (method === 'Emulation.clearDeviceMetricsOverride') state.viewport = { width: 0, height: 0 }; } });
+    await assert.rejects(f.driver.perform({ action: 'type', ...f.guard, text: 'Must not arrive' }), { code: 'BROWSER_VIEWPORT_UNAVAILABLE' });
+    assert.equal(f.emulated, false); assert.equal(f.window.protocol.some(call => call.method.startsWith('Input.')), false); assert.equal(f.snapshots, 0);
+  });
 });
 
 test('an unexpectedly visible, focusable or non-offscreen popup is destroyed instead of adopted', async t => {

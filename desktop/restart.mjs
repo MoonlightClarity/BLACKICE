@@ -10,10 +10,20 @@ const MESSAGES = {
   DESKTOP_RESTART_STORAGE_UNAVAILABLE: 'The saved restart receipt could not be safely read or written.',
   DESKTOP_RESTART_HISTORY_FULL: 'Restart receipt history is full; new restart requests are disabled to preserve idempotency.',
   DESKTOP_RESTART_BUSY: 'BLACKICE must be idle before restarting.',
+  DESKTOP_RESTART_CLOSING: 'BLACKICE is already closing.',
+  DESKTOP_RESTART_BROWSER_BUSY: 'Finish browser actions, downloads, page loads, or pending interactions before restarting BLACKICE.',
+  DESKTOP_RESTART_BROWSER_STATE: 'Browser state could not be checked before restarting BLACKICE.',
+  DESKTOP_RESTART_STORAGE: 'Pending browser or direct-action storage could not be safely drained before restarting BLACKICE.',
+  DESKTOP_RESTART_DRAIN_TIMEOUT: 'BLACKICE could not finish pending writes before the restart deadline.',
+  DESKTOP_RESTART_RELEASED: 'The pending restart preparation was released.',
+  DESKTOP_RESTART_NOT_PREPARED: 'BLACKICE has no prepared native restart gate.',
   DESKTOP_RESTART_CANCELLED: 'The restart request was cancelled before relaunch was armed.',
+  DESKTOP_RESTART_ORIGIN_INVALID: 'The restart origin is no longer an owned direct action.',
+  DESKTOP_RESTART_ORIGIN_UNAUTHORIZED: 'The originating connection is no longer authorized to restart BLACKICE.',
   DESKTOP_RESTART_ORIGIN_FAILED: 'The originating action did not succeed; BLACKICE remains open.',
   DESKTOP_RESTART_RECEIPT_UNAVAILABLE: 'The originating action receipt could not be verified.',
   DESKTOP_RESTART_RECEIPT_TIMEOUT: 'The originating action did not finish before the restart deadline.',
+  DESKTOP_RESTART_ACK_UNAVAILABLE: 'The native restart scheduling acknowledgement could not be delivered. Inspect the same request ID before continuing.',
   DESKTOP_RESTART_PREPARE_FAILED: 'BLACKICE could not prepare a graceful restart and remains open.',
   DESKTOP_RESTART_RELEASE_FAILED: 'The restart barrier could not be released safely.',
   DESKTOP_RESTART_LAUNCH_INVALID: 'Restart launch options must preserve the current profile and desktop mode.',
@@ -83,6 +93,18 @@ export class DesktopRestartController {
     const latest = this.receipts.at(-1), receipt = ownerId === undefined ? null : this.receipts.findLast(value => value.ownerId === ownerId);
     return { available: !error, provider: 'electron', status: latest?.status || 'idle', ...(receipt ? { receipt: copy(receipt) } : {}), ...(error ? { error: copy(error) } : {}) };
   }
+  receipt({ ownerId, requestId } = {}) { return copy(this.receipts.find(value => value.ownerId === ownerId && value.requestId === requestId) || null); }
+  isPending() { return Boolean(this.active && !this.active.armed); }
+  cancelPending({ ownerId, requestId, jobId } = {}) {
+    const active = this.active;
+    if (!active || active.armed || ownerId !== undefined && active.ownerId !== ownerId || requestId !== undefined && active.requestId !== requestId || jobId !== undefined && active.jobId !== jobId) return false;
+    active.controller.abort();
+    return true;
+  }
+  releaseActive(active) {
+    active.detachSignal?.();
+    if (!active.armed && this.active === active) this.active = null;
+  }
   async persist(receipts) {
     const temporary = `${this.file}.${randomUUID()}.tmp`; let handle;
     try {
@@ -106,9 +128,9 @@ export class DesktopRestartController {
     });
   }
   abortIfNeeded(signal) { if (signal?.aborted) throw failure('DESKTOP_RESTART_CANCELLED'); }
-  async request({ requestId, ownerId = 'local', jobId = null, waitForReceipt = null, signal } = {}) {
+  async request({ requestId, ownerId = 'local', jobId = null, origin: actionOrigin = null, waitForReceipt = null, waitForAcknowledgement = null, signal } = {}) {
     await this.init();
-    if (!text(requestId, 120) || !/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(requestId) || !text(ownerId) || jobId !== null && !text(jobId) || waitForReceipt !== null && typeof waitForReceipt !== 'function') throw new TypeError('A stable restart request ID and owner are required.');
+    if (!text(requestId, 120) || !/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(requestId) || !text(ownerId) || jobId !== null && !text(jobId) || waitForReceipt !== null && typeof waitForReceipt !== 'function' || waitForAcknowledgement != null && typeof waitForAcknowledgement !== 'function') throw new TypeError('A stable restart request ID and owner are required.');
     return this.serial(async () => {
       const previous = this.receipts.find(value => value.requestId === requestId && value.ownerId === ownerId); if (previous) return copy(previous);
       if (this.storageError) throw failure('DESKTOP_RESTART_STORAGE_UNAVAILABLE', 503);
@@ -116,15 +138,34 @@ export class DesktopRestartController {
       if (this.receipts.length >= this.maxHistory) throw failure('DESKTOP_RESTART_HISTORY_FULL');
       if (this.active || this.receipts.some(value => PENDING.has(value.status))) throw failure('DESKTOP_RESTART_BUSY');
       this.abortIfNeeded(signal);
-      try { const ready = await this.checkReady({ jobId }); if (ready === false || ready?.ready === false) throw failure('DESKTOP_RESTART_BUSY'); }
-      catch (error) { throw failure(error?.status === 409 || error?.code === 'DESKTOP_RESTART_BUSY' ? 'DESKTOP_RESTART_BUSY' : 'DESKTOP_RESTART_PREPARE_FAILED'); }
-      this.abortIfNeeded(signal);
       const origin = this.identity(await this.getIdentity()), at = this.timestamp(); this.abortIfNeeded(signal);
       const receipt = { id: randomUUID(), requestId, ownerId, jobId, status: 'scheduled', requestedAt: at, updatedAt: at, origin, durable: true };
-      await this.persist([...this.receipts, receipt]);
-      const active = this.active = { id: receipt.id, armed: false };
+      const active = this.active = { id: receipt.id, ownerId, requestId, jobId, armed: false, controller: new AbortController() };
+      const abort = () => { if (!active.armed) active.controller.abort(); };
+      signal?.addEventListener('abort', abort, { once: true });
+      active.detachSignal = () => signal?.removeEventListener('abort', abort);
+      if (signal?.aborted) abort();
+      let complete;
+      this.handoff = new Promise(resolve => { complete = resolve; });
+      const context = { requestId, ownerId, jobId, origin: actionOrigin, signal: active.controller.signal };
+      try {
+        // Save the identity before readiness checks so a refusal has a durable,
+        // same-request receipt instead of disappearing into a secondary process.
+        await this.persist([...this.receipts, receipt]);
+        const ready = await this.bounded(() => this.checkReady(context), performance.now() + this.receiptTimeoutMs, context.signal);
+        if (ready === false || ready?.ready === false) throw failure('DESKTOP_RESTART_BUSY');
+        this.abortIfNeeded(context.signal);
+      } catch (error) {
+        const failed = { ...receipt, status: error?.code === 'DESKTOP_RESTART_CANCELLED' ? 'cancelled' : 'failed', error: publicError(error), updatedAt: this.timestamp(), durable: !this.storageError };
+        try {
+          if (this.storageError) throw failure('DESKTOP_RESTART_STORAGE_UNAVAILABLE', 503);
+          await this.persist(this.receipts.map(value => value.id === active.id ? failed : value));
+          complete(copy(failed)); return copy(failed);
+        } catch (storageError) { complete({ ...failed, durable: false }); throw storageError; }
+        finally { this.releaseActive(active); }
+      }
       // The receipt must return to the caller before any closing work begins.
-      this.handoff = new Promise(resolve => setImmediate(() => { this.runHandoff(active, { jobId, waitForReceipt, signal }).then(resolve, () => resolve(copy(this.receipts.find(value => value.id === active.id)))); }));
+      setImmediate(() => { this.runHandoff(active, { ...context, waitForReceipt, waitForAcknowledgement }).then(complete, () => complete(copy(this.receipts.find(value => value.id === active.id)))); });
       return copy(receipt);
     });
   }
@@ -160,16 +201,21 @@ export class DesktopRestartController {
     if (!value || !text(value.execPath, 4096) || !path.isAbsolute(value.execPath) || !Array.isArray(value.args) || value.args.some(argument => typeof argument !== 'string' || argument.includes('\0') || /^--(?:restart|quit)(?:=|$)/.test(argument)) || !sameProfile(value.profileDir, this.profileDir) || !MODES.has(value.mode) || value.mode !== origin.mode) throw failure('DESKTOP_RESTART_LAUNCH_INVALID');
     return { execPath: value.execPath, args: [...value.args] };
   }
-  async runHandoff(active, { jobId, waitForReceipt, signal }) {
+  async runHandoff(active, context) {
+    const { waitForReceipt, waitForAcknowledgement, signal } = context;
     let prepared = false;
     try {
+      if (waitForAcknowledgement) {
+        try { await this.bounded(waitForAcknowledgement, performance.now() + this.receiptTimeoutMs, signal); }
+        catch (error) { throw error?.code === 'DESKTOP_RESTART_CANCELLED' ? error : failure('DESKTOP_RESTART_ACK_UNAVAILABLE'); }
+      }
       await this.waitForOrigin(waitForReceipt, signal); this.abortIfNeeded(signal);
-      prepared = true; const ready = await this.prepare({ jobId });
+      prepared = true; const ready = await this.bounded(() => this.prepare(context), performance.now() + this.receiptTimeoutMs, signal);
       if (ready === false || ready?.ready === false) throw failure('DESKTOP_RESTART_BUSY');
       this.abortIfNeeded(signal);
       const receipt = this.receipts.find(value => value.id === active.id), options = this.launchOptions(await this.getLaunchOptions(), receipt.origin);
       this.abortIfNeeded(signal); await this.update(active.id, { status: 'restarting' }); this.abortIfNeeded(signal);
-      try { this.relaunch(options); } catch { throw failure('DESKTOP_RESTART_ARM_FAILED'); }
+      try { this.relaunch(options); } catch (error) { throw MESSAGES[error?.code] ? error : failure('DESKTOP_RESTART_ARM_FAILED'); }
       active.armed = true;
       // There must be no awaited or fallible preparation between arming Electron
       // and requesting its existing graceful before-quit shutdown path.
@@ -179,13 +225,13 @@ export class DesktopRestartController {
     } catch (error) {
       if (active.armed) return copy(this.receipts.find(value => value.id === active.id));
       if (prepared) {
-        try { await this.release({ jobId }); }
+        try { await this.release(context); }
         catch { this.operationalError = publicError(failure('DESKTOP_RESTART_RELEASE_FAILED')); error = failure('DESKTOP_RESTART_RELEASE_FAILED'); }
       }
       const changes = { status: error?.code === 'DESKTOP_RESTART_CANCELLED' ? 'cancelled' : 'failed', error: publicError(error) };
       try { if (this.storageError) throw failure('DESKTOP_RESTART_STORAGE_UNAVAILABLE'); return await this.update(active.id, changes); }
       catch { const failed = { ...this.receipts.find(value => value.id === active.id), ...changes, error: this.storageError || changes.error, updatedAt: this.timestamp(), durable: false }; this.receipts = this.receipts.map(value => value.id === active.id ? failed : value); return copy(failed); }
-    } finally { if (!active.armed && this.active === active) this.active = null; }
+    } finally { this.releaseActive(active); }
   }
   async confirmStartup(identity) {
     await this.init();

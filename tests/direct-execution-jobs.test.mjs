@@ -225,3 +225,123 @@ test('a failed temporary handle close preserves the storage error used to cancel
   await assert.rejects(store.admit(admission('no-bypass-after-close')), { code: 'DIRECT_JOB_STORAGE' });
   assert.deepEqual((await readdir(path.dirname(file))).filter(name => name.endsWith('.tmp')), []);
 });
+
+const renameRefusal = (code = 'EPERM') => Object.assign(new Error('The owned fixture still has a receipt reader.'), { code, syscall: 'rename' });
+
+test('Windows receipt replacement tolerates a transient reader and saves one next revision', async t => {
+  for (const code of ['EPERM', 'EACCES', 'EBUSY']) await t.test(code, async t => {
+    const { make } = await harness(t), store = make({ platform: 'win32' }), job = (await store.admit(admission('reader-overlap'))).job;
+    const file = store.file(job.id), before = await readFile(file, 'utf8'), reader = await fs.open(file, 'r');
+    let readerHeld = true, releaseTimer, attempts = 0;
+    assert.equal(await reader.readFile('utf8'), before);
+    store.io = { ...fs, rename: async (...args) => {
+      attempts++;
+      if (readerHeld) {
+        releaseTimer ||= setTimeout(() => { void reader.close().then(() => { readerHeld = false; }); }, 5);
+        throw renameRefusal(code);
+      }
+      await fs.rename(...args);
+    } };
+    let next;
+    try { next = await store.update(job.id, () => ({ status: 'running', dispatched: true })); }
+    finally { clearTimeout(releaseTimer); await reader.close(); }
+    assert.ok(attempts >= 2 && attempts <= 5, 'Only the bounded replacement attempts may run.');
+    assert.equal(next.revision, job.revision + 1); assert.equal(next.status, 'running'); assert.equal(store.storageError, null);
+    assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), next); assert.deepEqual(await store.get(job.id), next);
+    assert.equal((await store.admit(admission('reader-overlap'))).created, false);
+    assert.deepEqual((await readdir(store.directory)).filter(name => name.endsWith('.tmp')), []);
+  });
+});
+
+test('Windows receipt replacement exhausts a bounded refusal without overwriting the prior receipt', async t => {
+  const { make } = await harness(t), store = make({ platform: 'win32' }), job = (await store.admit(admission('refusal-exhausted'))).job;
+  const file = store.file(job.id), before = await readFile(file), indexed = structuredClone(store.records.get(job.id)); let attempts = 0;
+  store.io = { ...fs, rename: async () => { attempts++; throw renameRefusal(); } };
+  await assert.rejects(store.update(job.id, () => ({ status: 'running', dispatched: true })), { code: 'DIRECT_JOB_STORAGE' });
+  assert.equal(attempts, 5); assert.deepEqual(await readFile(file), before); assert.deepEqual(store.records.get(job.id), indexed);
+  await assert.rejects(store.update(job.id, () => ({ status: 'cancelled' })), { code: 'DIRECT_JOB_STORAGE' });
+  await assert.rejects(store.admit(admission('no-new-work')), { code: 'DIRECT_JOB_STORAGE' }); assert.equal(attempts, 5);
+  assert.deepEqual((await readdir(store.directory)).filter(name => name.endsWith('.tmp')), []);
+});
+
+test('receipt replacement does not retry other platforms or unknown write failures', async t => {
+  for (const [platform, code] of [['linux', 'EPERM'], ['win32', 'EIO'], ['win32', 'ENOENT']]) await t.test(platform + ':' + code, async t => {
+    const { make } = await harness(t), store = make({ platform }), job = (await store.admit(admission('no-generic-retry'))).job;
+    const before = await readFile(store.file(job.id)); let attempts = 0;
+    store.io = { ...fs, rename: async () => { attempts++; throw renameRefusal(code); } };
+    await assert.rejects(store.update(job.id, () => ({ status: 'running' })), { code: 'DIRECT_JOB_STORAGE' });
+    assert.equal(attempts, 1); assert.deepEqual(await readFile(store.file(job.id)), before);
+  });
+});
+
+test('Windows receipt retries stop when the destination, temporary file or lease changes', async t => {
+  for (const changed of ['destination', 'destination removed', 'temporary', 'temporary removed', 'lease']) await t.test(changed, async t => {
+    const { make } = await harness(t), store = make({ platform: 'win32' }), job = (await store.admit(admission('changed-evidence'))).job;
+    const file = store.file(job.id), before = await readFile(file), indexed = structuredClone(store.records.get(job.id)); let attempts = 0;
+    let evidence = before;
+    store.io = { ...fs, rename: async (temporary, destination) => {
+      attempts++;
+      if (changed === 'destination') { evidence = Buffer.from('Changed receipt evidence'); await writeFile(destination, evidence); }
+      if (changed === 'destination removed') { evidence = null; await fs.unlink(destination); }
+      if (changed === 'temporary') await writeFile(temporary, 'Changed temporary evidence');
+      if (changed === 'temporary removed') await fs.unlink(temporary);
+      if (changed === 'lease') await writeFile(store.leaseFile, JSON.stringify({ version: 1, pid: process.pid, token: 'another-owned-fixture-executor' }));
+      throw renameRefusal();
+    } };
+    await assert.rejects(store.update(job.id, () => ({ status: 'running', dispatched: true })), { code: 'DIRECT_JOB_STORAGE' });
+    assert.equal(attempts, 1); assert.deepEqual(store.records.get(job.id), indexed);
+    if (evidence === null) await assert.rejects(readFile(file), { code: 'ENOENT' }); else assert.deepEqual(await readFile(file), evidence);
+    await assert.rejects(store.admit(admission('must-not-overwrite')), { code: 'DIRECT_JOB_STORAGE' }); assert.equal(attempts, 1);
+    if (changed === 'lease') { await store.close(); assert.equal(JSON.parse(await readFile(store.leaseFile, 'utf8')).token, 'another-owned-fixture-executor'); }
+  });
+});
+
+test('Windows receipt retries never replace an unexpectedly created admission destination', async t => {
+  const { make } = await harness(t), store = make({ platform: 'win32' }); await store.init(); let destination, attempts = 0;
+  store.io = { ...fs, rename: async (temporary, file) => { attempts++; destination = file; await writeFile(file, 'Unindexed receipt evidence'); throw renameRefusal(); } };
+  await assert.rejects(store.admit(admission('new-destination')), { code: 'DIRECT_JOB_STORAGE' });
+  assert.equal(attempts, 1); assert.equal(await readFile(destination, 'utf8'), 'Unindexed receipt evidence'); assert.equal(store.records.size, 0);
+});
+
+test('Windows receipt retries recheck destination and lease after the initial proof enters its wait', async t => {
+  for (const changed of ['destination', 'lease']) await t.test(changed, async t => {
+    const { make } = await harness(t), store = make({ platform: 'win32' }), job = (await store.admit(admission('retry-window'))).job;
+    const file = store.file(job.id), before = await readFile(file); let attempts = 0, destinationRead = false, snapshotHeld = false, notify, release;
+    const seen = new Promise(resolve => { notify = resolve; }), gate = new Promise(resolve => { release = resolve; });
+    store.io = { ...fs,
+      rename: async (...args) => { if (++attempts === 1) throw renameRefusal(); await fs.rename(...args); },
+      readFile: async (selected, ...args) => {
+        const raw = await fs.readFile(selected, ...args);
+        if (attempts === 1 && selected === file) destinationRead = true;
+        if (attempts === 1 && destinationRead && selected === store.leaseFile && !snapshotHeld) {
+          // The first proof has read the old destination and the current lease.
+          // Change the fixture after that final snapshot, before the next attempt.
+          snapshotHeld = true; notify(); await gate;
+        }
+        return raw;
+      },
+    };
+    const updating = store.update(job.id, () => ({ status: 'running', dispatched: true }));
+    try {
+      await Promise.race([seen, updating.then(() => { assert.fail('The first proof must precede replacement.'); })]);
+      if (changed === 'destination') await writeFile(file, 'Receipt changed during the retry window');
+      else await writeFile(store.leaseFile, JSON.stringify({ version: 1, pid: process.pid, token: 'lease-changed-during-wait' }));
+    } finally { release(); }
+    await assert.rejects(updating, { code: 'DIRECT_JOB_STORAGE' }); assert.equal(attempts, 1);
+    if (changed === 'destination') assert.equal(await readFile(file, 'utf8'), 'Receipt changed during the retry window');
+    else { assert.deepEqual(await readFile(file), before); await store.close(); assert.equal(JSON.parse(await readFile(store.leaseFile, 'utf8')).token, 'lease-changed-during-wait'); }
+  });
+});
+
+test('Windows receipt retry categories never turn a committed rename with a lost acknowledgement into success', async t => {
+  const { make } = await harness(t), store = make({ platform: 'win32' }), input = admission('committed-refusal'), job = (await store.admit(input)).job;
+  const indexed = structuredClone(store.records.get(job.id)); let attempts = 0;
+  store.io = { ...fs, rename: async (...args) => { attempts++; await fs.rename(...args); throw renameRefusal(); } };
+  await assert.rejects(store.update(job.id, () => ({ status: 'succeeded', result: { exact: 'committed receipt' }, finishedAt: new Date().toISOString() })), { code: 'DIRECT_JOB_STORAGE' });
+  const evidence = await readFile(store.file(job.id)); assert.equal(attempts, 1); assert.deepEqual(store.records.get(job.id), indexed);
+  assert.equal(JSON.parse(evidence).result.exact, 'committed receipt');
+  await assert.rejects(store.update(job.id, () => ({ status: 'cancelled' })), { code: 'DIRECT_JOB_STORAGE' }); assert.equal(attempts, 1);
+  await store.close(); const reopened = make(); await reopened.init();
+  const duplicate = await reopened.admit(input); assert.equal(duplicate.created, false); assert.equal(duplicate.job.result.exact, 'committed receipt');
+  assert.deepEqual(await readFile(reopened.file(job.id)), evidence);
+});

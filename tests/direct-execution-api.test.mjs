@@ -213,6 +213,36 @@ test('contained browser reads use real serialized handler and reject external br
   assert.equal(done.status, 'succeeded'); assert.equal(calls[0].browser, 'relay'); assert.match(done.result.text.text, /Actual browser receipt/);
 });
 
+test('browser failures keep actionable durable messages, uncertainty and exact replay across reload', async t => {
+  const stale = 'This element ref is stale. Take a new snapshot and choose its current ref.', calls = [];
+  const browser = new BrowserWorkspace({ driver: {
+    status: () => ({ available: true, contained: true, tabs: [{ tabId: 'one' }], activeTab: 'one' }),
+    perform: async args => { calls.push(args.ref); if (args.ref === 'detached') throw Object.assign(new Error(stale), { code: 'BROWSER_REF_STALE', actionDispatched: false }); throw stale; },
+    close: async () => {},
+  } }); t.after(() => browser.close());
+  const { api, dataDir, cwd } = await harness(t, { browser }), completed = [];
+  for (const [ref, possible] of [['detached', false], ['unknown-boundary', true]]) {
+    const request = { requestId: `failure-${ref}`, action: 'click', tabId: 'one', ref };
+    const pending = await api.call('blackice_browser_action', request, client), done = await waitJob(api, pending.jobId);
+    assert.equal(done.status, 'failed'); assert.equal(done.error.code, 'DIRECT_TOOL_FAILED');
+    const receipt = JSON.parse(done.result.text.text);
+    assert.equal(receipt.error, stale); assert.equal(receipt.code, possible ? 'BROWSER_ACTION_FAILED' : 'BROWSER_REF_STALE');
+    assert.equal(receipt.actionDispatched, possible ? undefined : false);
+    assert.deepEqual(done.effects, { possible, confirmed: false });
+    const replay = await api.call('blackice_browser_action', request, client);
+    assert.equal(replay.existing, true); assert.equal(replay.jobId, pending.jobId);
+    completed.push({ request, jobId: pending.jobId, text: done.result.text.text, possible });
+  }
+  assert.deepEqual(calls, ['detached', 'unknown-boundary']); await api.close();
+  const reopened = new DirectExecutionAPI({ dataDir, allowedRoot: cwd, browser }); t.after(() => reopened.close()); await reopened.init();
+  for (const { request, jobId, text, possible } of completed) {
+    const saved = await reopened.getJob(jobId, client); assert.equal(saved.result.text.text, text); assert.deepEqual(saved.effects, { possible, confirmed: false });
+    const replay = await reopened.call('blackice_browser_action', request, client); assert.equal(replay.existing, true); assert.equal(replay.jobId, jobId);
+  }
+  assert.deepEqual(calls, ['detached', 'unknown-boundary'], 'Reading and replaying an error receipt must not send the click again.');
+  await reopened.close();
+});
+
 test('a concrete pending browser interaction blocks without dispatch and local resolution never replays it', async t => {
   let performed = 0;
   const browser = new BrowserWorkspace({ driver: { status: () => ({ contained: true, available: true, tabs: [{ tabId: 'one' }], activeTab: 'one' }), perform: async () => { performed++; return {}; }, close: async () => {} } }); t.after(() => browser.close());

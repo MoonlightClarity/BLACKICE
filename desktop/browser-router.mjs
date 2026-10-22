@@ -4,6 +4,14 @@ const FIREFOX_PREFIX = 'firefox:';
 const fail = (message, code = 'BROWSER_VALIDATION') => Object.assign(new Error(message), { code });
 const externalId = (browser, id) => browser === 'firefox' ? `${FIREFOX_PREFIX}${id}` : String(id);
 const cancelled = () => Object.assign(fail('Browser action cancelled. Inspect the page before repeating an action.', 'ABORT_ERR'), { name: 'AbortError' });
+function descendsFrom(owners, child, parent) {
+  const seen = new Set();
+  while (child && !seen.has(child)) {
+    seen.add(child); child = owners.get(child)?.parentTabId;
+    if (child === parent) return true;
+  }
+  return false;
+}
 
 /** Combines a ready Relay browser with a Firefox adapter that connects lazily. */
 export class BrowserRouter extends EventEmitter {
@@ -17,7 +25,7 @@ export class BrowserRouter extends EventEmitter {
   // particular, restoring/listing a workspace must not start Firefox.
   async init() { if (this.closed) throw fail('The browser workspace has closed.', 'BROWSER_CLOSED'); return this; }
   status() {
-    const tabs = [], downloads = [], browsers = {}, owners = new Map(); let fallback = null, relayStatus = {};
+    const tabs = [], downloads = [], browsers = {}, owners = new Map(), previousOwners = this.owners; let fallback = null, relayStatus = {};
     for (const [browser, driver] of Object.entries(this.drivers)) {
       if (!driver || this.closed) { browsers[browser] = { available: false, canShow: false, contained: browser === 'relay' }; continue; }
       const status = driver.status?.() || {};
@@ -27,7 +35,7 @@ export class BrowserRouter extends EventEmitter {
       for (const tab of childTabs || []) {
         const tabId = externalId(browser, tab.tabId);
         if (owners.has(tabId)) throw fail('Browser tab identities conflict. Close and reopen the affected tab.', 'BROWSER_TAB_CONFLICT');
-        owners.set(tabId, { browser, nativeId: tab.tabId });
+        owners.set(tabId, { browser, nativeId: tab.tabId, ...(browser === 'relay' && tab.parentTabId ? { parentTabId: tab.parentTabId } : {}) });
         tabs.push({ ...tab, tabId, browser, canShow: false, contained: browser === 'relay' });
       }
       const childActiveTab = activeTab != null ? externalId(browser, activeTab) : null;
@@ -36,7 +44,26 @@ export class BrowserRouter extends EventEmitter {
       for (const item of childDownloads || []) downloads.push({ ...item, browser, ...(item.tabId != null ? { tabId: externalId(browser, item.tabId) } : {}) });
     }
     this.owners = owners;
+    // A closing popup returns to its surviving parent, even when the contained
+    // driver's fallback is a different personal page.
+    if (!owners.has(this.activeTab) && previousOwners) {
+      const seen = new Set(); let parent = this.activeTab;
+      while (parent && !seen.has(parent)) {
+        seen.add(parent); parent = previousOwners.get(parent)?.parentTabId;
+        if (owners.has(parent)) { this.activeTab = parent; break; }
+      }
+    }
     if (!owners.has(this.activeTab)) this.activeTab = fallback || tabs[0]?.tabId || null;
+    // Follow only a newly created live child of the page already being followed.
+    // Task popups update ownerActiveTabs rather than the driver's personal active
+    // tab, so comparing driver.activeTab alone loses their handoff.
+    if (previousOwners) {
+      for (;;) {
+        const children = tabs.filter(tab => tab.browser === 'relay' && tab.parentTabId === this.activeTab && tab.suspended !== true && !previousOwners.has(tab.tabId));
+        if (children.length !== 1) break;
+        this.activeTab = children[0].tabId;
+      }
+    }
     const containedAvailable = !this.closed && browsers.relay?.available === true;
     return { ...relayStatus, available: !this.closed && Object.values(browsers).some(browser => browser.available), background: true, physicalInput: false, contained: containedAvailable, containedAvailable, canShow: false, tabs, downloads, activeTab: this.activeTab, browsers };
   }
@@ -69,6 +96,7 @@ export class BrowserRouter extends EventEmitter {
     const nativeArgs = { ...args }; delete nativeArgs.browser;
     if (independent) delete nativeArgs.tabId;
     if (selected.nativeId != null) nativeArgs.tabId = selected.nativeId;
+    const knownTabs = new Set(status.tabs.map(tab => tab.tabId));
     const result = await driver.perform(nativeArgs, options);
     // An adapter can complete after cancellation or while shutdown is draining
     // it. Do not publish an old success or resurrect the selected tab then.
@@ -77,7 +105,10 @@ export class BrowserRouter extends EventEmitter {
     const merged = this.status();
     if (['close', 'folder_create', 'folder_rename', 'folder_close', 'tab_move', 'suspend'].includes(args.action)) return { ...merged, ...(result?.folder ? { folder: result.folder } : {}), ...(result?.receipt ? { receipt: result.receipt } : {}) };
     const tabId = result?.tabId != null ? externalId(selected.browser, result.tabId) : selected.tabId;
-    if (!options.owner && tabId && this.owners.has(tabId) && this.activeTab !== tabId) { this.activeTab = tabId; this.emit('changed'); }
+    // The original action still returns its own receipt; it must not reselect
+    // the parent after a native child appeared while that action was finishing.
+    const popupHandoff = !knownTabs.has(this.activeTab) && descendsFrom(this.owners, this.activeTab, tabId);
+    if (!options.owner && !popupHandoff && tabId && this.owners.has(tabId) && this.activeTab !== tabId) { this.activeTab = tabId; this.emit('changed'); }
     return { ...result, browser: selected.browser, ...(tabId ? { tabId } : {}), ...(result?.tabs ? { tabs: merged.tabs } : {}), ...(result?.activeTab !== undefined ? { activeTab: this.activeTab } : {}) };
   }
   async show(tabId) {

@@ -16,7 +16,7 @@ async function fixture(t, { hook, identity = true, url, focusPage = false, chatG
   const api = async (route, options = {}) => {
     const call = { route, ...options }; calls.push(call);
     const overridden = await currentHook?.(call, { state, receipt }); if (overridden !== undefined) return overridden;
-    if (route === '/api/browser/status') return structuredClone(state);
+    if (route === '/api/browser/status?view=contained') return structuredClone(state);
     assert.equal(route, '/api/browser/action'); assert.equal(options.body.browser, 'relay');
     const { action, tabId } = options.body;
     if (action === 'screenshot') return { ...receipt(tabId), ...(identity ? {} : { documentId: undefined }), imageUrl: image, width: 1280, height: 900 };
@@ -109,7 +109,7 @@ test('popup presentation ignores existing children and newly opened children of 
 
 test('a child observed before a queued click dispatches is not mistaken for its popup', async t => {
   const f = await fixture(t), gate = deferred();
-  f.hook(call => call.route === '/api/browser/status' ? gate.promise : undefined); await f.poll();
+  f.hook(call => call.route === '/api/browser/status?view=contained' ? gate.promise : undefined); await f.poll();
   await f.point();
   f.state.tabs.push({ ...page('existing'), parentTabId: 'one' }); f.state.activeTab = 'existing';
   f.hook(); gate.resolve(structuredClone(f.state)); await f.settle(); await f.poll(1000);
@@ -390,6 +390,46 @@ test('continuous typing receives a bounded preview without waiting for a quiet p
   assert.equal(captures() - initial, 2, 'two coalesced previews during 640 ms of uninterrupted typing');
   assert.equal(f.document.activeElement, f.input());
   assert.equal(f.input().value, '');
+});
+
+test('a preview due during a slow key receipt starts as soon as ordered input finishes', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = await fixture(t), gate = deferred();
+  await f.point();
+  const captures = () => f.calls.filter(call => call.body?.action === 'screenshot').length;
+  const initial = captures();
+  let first = true;
+  f.hook(call => { if (call.body?.action === 'type' && first) { first = false; return gate.promise; } });
+  await f.text('a'); await f.settle();
+  t.mock.timers.tick(250); await f.settle();
+  await f.text('b'); await f.key('Backspace'); await f.text('c');
+  assert.equal(captures(), initial, 'a preview cannot overtake unconfirmed input');
+  gate.resolve(f.receipt('one')); await f.settle();
+  assert.deepEqual(f.mutations().map(call => [call.body.action, call.body.text ?? call.body.key]), [['type', 'a'], ['type', 'b'], ['press', 'Backspace'], ['type', 'c']]);
+  assert.equal(captures(), initial + 1, 'the expired preview deadline must not restart another 250 ms timer');
+  assert.equal(f.document.activeElement, f.input());
+});
+
+test('leaving clears a due input preview and late key completion cannot refresh a new session', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = await fixture(t), gate = deferred();
+  await f.point();
+  f.hook(call => call.body?.action === 'type' ? gate.promise : undefined);
+  await f.text('old'); await f.settle(); t.mock.timers.tick(250); await f.settle();
+  const sent = f.mutations()[0]; f.ui.leave(); assert.equal(sent.signal.aborted, true);
+  f.hook(null); await f.ui.enter(); const count = f.calls.length;
+  gate.resolve(f.receipt('one')); await f.settle(); t.mock.timers.tick(250); await f.settle();
+  assert.equal(f.calls.length, count);
+  assert.equal(f.$('#observe-browser-input-help').dataset.active, 'false');
+});
+
+test('a normal preview refresh consumes the pending input deadline without a duplicate capture', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = await fixture(t); await f.point(); await f.text('a'); await f.settle();
+  await f.poll();
+  const count = f.calls.filter(call => call.body?.action === 'screenshot').length;
+  t.mock.timers.tick(250); await f.settle();
+  assert.equal(f.calls.filter(call => call.body?.action === 'screenshot').length, count);
 });
 
 test('input preview deadlines never overlap a slow capture or reorder its queued text', async t => {
@@ -699,7 +739,7 @@ test('a status poll completing during a physical dialog-button press retains its
     const f = await fixture(t), gate = deferred();
     f.state.tabs[0].pendingInteraction = interactionFor('javascript_dialog', { dialogType: 'confirm' }); await f.poll();
     const button = f.$('[data-decision="accept"]'); await button.dispatch('pointerdown', { button: 0, pointerId: 1 }, true);
-    f.hook(call => call.route === '/api/browser/status' ? gate.promise : undefined); await f.poll(1000);
+    f.hook(call => call.route === '/api/browser/status?view=contained' ? gate.promise : undefined); await f.poll(1000);
     if (changed) f.state.tabs[0].pendingInteraction.id = 'replacement-interaction';
     gate.resolve(structuredClone(f.state)); await f.settle();
     assert.equal(f.mount.getAttribute('aria-busy'), 'false'); assert.equal(f.$('[data-decision="accept"]'), button); assert.equal(button.isConnected, true);

@@ -114,7 +114,7 @@ function pageSnapshot(key, prefix, query) {
 
 function elementAction(key, ref, action, args) {
   const el = globalThis[key]?.elements.get(ref);
-  if (!el?.isConnected) throw new Error('This element ref is stale. Take a new snapshot and choose its current ref.');
+  if (!el?.isConnected) return { __blackiceElementError: { message: 'This element ref is stale. Take a new snapshot and choose its current ref.', code: 'BROWSER_REF_STALE' } };
   if (el.disabled || el.getAttribute('aria-disabled') === 'true') throw new Error('This element is disabled. Inspect what is required first.');
   if (action === 'prepare') {
     el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
@@ -161,6 +161,17 @@ function elementAction(key, ref, action, args) {
   }
   if (action === 'scroll') { el.scrollBy({ top: args.top, left: args.left, behavior: 'instant' }); return { scrollTop: el.scrollTop, scrollLeft: el.scrollLeft }; }
   throw new Error('Unsupported element action.');
+}
+
+function elementActionResult(run, key, ref, action, args) {
+  try { return run(key, ref, action, args); }
+  catch (reason) {
+    // Preserve non-enumerable Error.message before the renderer result crosses
+    // Electron's process boundary. Unknown failures cannot prove no side effect.
+    const message = typeof reason === 'string' ? reason : typeof reason?.message === 'string' ? reason.message : typeof reason?.description === 'string' ? reason.description : '';
+    const code = typeof reason?.code === 'string' && reason.code.trim() ? reason.code.slice(0, 120) : typeof reason?.code === 'number' && Number.isFinite(reason.code) ? reason.code : 'BROWSER_ELEMENT_ACTION_FAILED';
+    return { __blackiceElementError: { message: message.trim() ? message.slice(0, 1500) : 'The page could not complete this element action. Take a fresh snapshot and inspect before repeating it.', code } };
+  }
 }
 
 // Host-only credential path. Validation runs once without a secret and again
@@ -405,6 +416,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     const window = suppliedWindow || new BrowserWindow(containedWindowOptions(this.session));
     window.removeMenu();
     tab.window = window; tab.suspending = false; tab.closing = false;
+    tab.popupViewport = suppliedWindow ? { ready: false, resetRequired: false, pending: null } : null;
     const wc = window.webContents;
     wc.on('render-process-gone', (_event, details) => this.rendererGone(tab, window, details));
     wc.on('login', (event, _details, _authInfo, callback) => {
@@ -635,6 +647,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       tab.loading = window.webContents.loadURL(url).catch(reason => { if (tab.window === window) tab.loadError = reason.message; });
     }
     await this.pageWork(tab, tab.loading, signal, 20000);
+    if (tab.popupViewport) await this.ensurePopupViewport(tab, signal);
   }
   async show() { throw Object.assign(error('Browser pages stay contained inside BLACKICE. Use the Observe view to inspect and control them.'), { code: 'BROWSER_CONTAINED' }); }
   async download(item, contents) {
@@ -654,6 +667,7 @@ export class ElectronBrowserDriver extends EventEmitter {
   }
   async snapshot(tab, query, signal) {
     if (tab.pendingInteraction?.status === 'pending') return this.interactionReceipt(tab, { frames: [] });
+    if (tab.popupViewport) await this.ensurePopupViewport(tab, signal);
     cancel(signal); const frames = [], errors = []; let remainingElements = 400, remainingText = 24000;
     const deadline = Date.now() + 7000;
     tab.refs.clear();
@@ -678,9 +692,15 @@ export class ElectronBrowserDriver extends EventEmitter {
     return { tabId: tab.id, url: tab.window.webContents.getURL(), documentId: inputDocumentId(tab), title: tab.window.webContents.getTitle(), frames, ...(frames.some(f => f.truncated) ? { hint: 'Large page: supply query to narrow the controls/text, or scroll a virtualized region and inspect again.' } : {}), ...(errors.length ? { frameErrors: errors } : {}), ...(tab.loadError ? { navigationError: tab.loadError } : {}), ...(tab.inputWarning ? { inputWarning: tab.inputWarning } : {}), ...(tab.pendingInteraction ? { pendingInteraction: structuredClone(tab.pendingInteraction) } : {}) };
   }
   async element(tab, args, action, signal, extra = {}) {
-    if (typeof args.ref !== 'string' || !tab.refs.has(args.ref)) throw error('Take a fresh snapshot and choose an element ref.');
+    if (typeof args.ref !== 'string' || !tab.refs.has(args.ref)) throw Object.assign(error('Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE' });
     const frame = tab.refs.get(args.ref);
-    const result = await this.pageWork(tab, frame.executeJavaScript(`(${elementAction.toString()})(${JSON.stringify(this.key)},${JSON.stringify(args.ref)},${JSON.stringify(action)},${JSON.stringify({ ...args, ...extra })})`), signal);
+    const result = await this.pageWork(tab, frame.executeJavaScript(`(${elementActionResult.toString()})(${elementAction.toString()},${JSON.stringify(this.key)},${JSON.stringify(args.ref)},${JSON.stringify(action)},${JSON.stringify({ ...args, ...extra })})`), signal);
+    if (result?.__blackiceElementError) {
+      const { message, code } = result.__blackiceElementError;
+      // An earlier preparation pass can already have scrolled the page. Keep
+      // dispatch uncertainty even when this particular ref check sent no input.
+      throw Object.assign(error(message), { code });
+    }
     return { frame, result };
   }
   async prepareCredentialFill(value, { signal, source = 'agent', owner: context } = {}) {
@@ -755,6 +775,62 @@ export class ElectronBrowserDriver extends EventEmitter {
       tab.containmentReady.catch(() => {});
     }
     await bounded(tab.containmentReady, signal, 8000); cancel(signal);
+  }
+  async ensurePopupViewport(tab, signal) {
+    const state = tab.popupViewport;
+    if (!state || state.ready) return;
+    cancel(signal);
+    if (!state.pending) {
+      state.pending = (async () => {
+        const window = tab.window, wc = window.webContents, containment = tab.containmentReady;
+        const expected = { expectedUrl: wc.getURL(), expectedDocumentId: inputDocumentId(tab) };
+        const current = () => {
+          cancel(signal);
+          if (tab.rendererFailure) throw rendererFailure(tab);
+          if (this.closed || tab.window !== window || tab.popupViewport !== state || window.isDestroyed() || wc.isDestroyed()) throw Object.assign(error('The popup closed before its browser viewport was ready.'), { code: 'BROWSER_CLOSED' });
+          if (!containment || tab.containmentReady !== containment || !wc.debugger.isAttached()) throw Object.assign(error('The contained popup connection changed before its viewport was ready. Inspect the page after it reconnects.'), { code: 'BROWSER_CONTAINMENT_LOST' });
+          this.assertInputDocument(tab, expected);
+        };
+        const clear = async () => {
+          if (wc.isDestroyed() || !wc.debugger.isAttached()) throw Object.assign(error('The popup viewport reset could not be confirmed. Inspect the page after it reconnects.'), { code: 'BROWSER_CONTAINMENT_LOST' });
+          // Cleanup uses the same debugger, even after Stop or a document change.
+          // Do not reconnect or leave an unconfirmed override marked as ready.
+          await bounded(wc.debugger.sendCommand('Emulation.clearDeviceMetricsOverride'), undefined, 1500);
+          state.resetRequired = false;
+        };
+        const viewport = async () => {
+          current();
+          const size = await this.pageWork(tab, wc.executeJavaScript('({width:innerWidth,height:innerHeight})'), signal);
+          current(); return size;
+        };
+        const usable = size => Number.isFinite(size?.width) && size.width > 0 && Number.isFinite(size?.height) && size.height > 0;
+        const unavailable = () => Object.assign(error('The contained popup has no usable browser viewport. Inspect or reload it before acting.'), { code: 'BROWSER_VIEWPORT_UNAVAILABLE' });
+        current();
+        if (state.resetRequired) { await clear(); current(); }
+        const before = await viewport();
+        if (!usable(before)) {
+          if (before?.width !== 0 || before?.height !== 0) throw unavailable();
+          const [width, height] = window.getContentSize();
+          if (![width, height].every(value => Number.isSafeInteger(value) && value > 0)) throw unavailable();
+          // Electron's adopted offscreen popup can have a 0×0 render widget
+          // despite nonzero native bounds. Chromium resizes that actual widget;
+          // clearing immediately retains the initialized size without emulation.
+          state.resetRequired = true;
+          let failure;
+          try {
+            current();
+            await this.pageWork(tab, wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 0, mobile: false, dontSetVisibleSize: false }), signal);
+            current();
+          } catch (reason) { failure = reason; }
+          try { await clear(); } catch (reason) { failure ||= reason; }
+          if (failure) throw failure;
+          if (!usable(await viewport())) throw unavailable();
+        }
+        current(); state.ready = true;
+      })().finally(() => { state.pending = null; });
+      state.pending.catch(() => {});
+    }
+    await bounded(state.pending, signal);
   }
   async capture(tab, signal, revision) {
     return captureHiddenPage(tab.window.webContents, { signal, assertCurrent: () => {

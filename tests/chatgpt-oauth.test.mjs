@@ -232,6 +232,98 @@ test('refresh rotates credentials and replay beyond the retry grace revokes the 
   assert.deepEqual(JSON.parse(await fs.readFile(path.join(dataDir, 'chatgpt-oauth.json'), 'utf8')).grants, []);
 });
 
+test('more than four refreshes preserve every unexpired access token across restart and prune only expired records', async t => {
+  const env = await setup(t), value = await grant(env.oauth, { requestedScopes: SCOPES.join(' '), scopes: SCOPES });
+  const tokens = [value.tokens], originalExpiry = env.oauth.grants[0].accessTokens[0].expiresAt;
+  for (let index = 0; index < 5; index++) {
+    env.advance(1000); const result = await refresh(env.oauth, tokens.at(-1).refresh_token);
+    assert.equal(result.status, 200); tokens.push(result.json);
+  }
+  assert.equal(env.oauth.grants[0].accessTokens.length, 6); assert.equal(env.oauth.grants[0].accessTokens[0].expiresAt, originalExpiry);
+  for (const token of tokens) {
+    const client = await env.oauth.authenticateRequest(bearer(token.access_token));
+    assert.equal(client?.id, value.client.id); assert.deepEqual(client.scopes, SCOPES);
+  }
+  await env.oauth.close();
+  const reopened = await new ChatGPTOAuth({ dataDir: env.dataDir, origin: ORIGIN, now: env.now }).init(); t.after(() => reopened.close());
+  assert.equal(reopened.status().healthy, true); assert.equal(reopened.grants[0].accessTokens.length, 6);
+  for (const token of tokens) {
+    const client = await reopened.authenticateRequest(bearer(token.access_token));
+    assert.equal(client?.id, value.client.id); assert.deepEqual(client.scopes, SCOPES);
+  }
+  env.advance(15 * 60000 - 5000);
+  assert.equal(await reopened.authenticateRequest(bearer(tokens[0].access_token)), null);
+  for (const token of tokens.slice(1)) assert.equal((await reopened.authenticateRequest(bearer(token.access_token)))?.id, value.client.id);
+  const renewed = await refresh(reopened, tokens.at(-1).refresh_token); assert.equal(renewed.status, 200);
+  const stored = JSON.parse(await fs.readFile(reopened.file, 'utf8')).grants[0];
+  assert.equal(stored.accessTokens.length, 6); assert.ok(stored.accessTokens.every(token => Date.parse(token.expiresAt) > env.now()));
+  assert.ok(!stored.accessTokens.some(token => token.expiresAt === originalExpiry)); assert.deepEqual(stored.scopes, SCOPES);
+});
+
+test('the global access-token budget rejects new issuance without disabling grants and recovers after expiry', async t => {
+  const env = await setup(t), first = await grant(env.oauth, { requestedScopes: SCOPES.join(' '), scopes: SCOPES }), second = await grant(env.oauth, { requestedScopes: SCOPES.join(' '), scopes: SCOPES });
+  const seeded = structuredClone(env.oauth.grants), expiresAt = new Date(env.now() + 1000).toISOString();
+  for (const grant of seeded) for (let index = 0; index < 1023; index++) grant.accessTokens.push({ hash: createHash('sha256').update(`capacity-${grant.id}-${index}`).digest('hex'), expiresAt });
+  await env.oauth.persist(seeded);
+  assert.equal(env.oauth.grants.reduce((count, grant) => count + grant.accessTokens.length, 0), 2048);
+  const reopened = await new ChatGPTOAuth({ dataDir: env.dataDir, origin: ORIGIN, now: env.now }).init();
+  t.after(() => reopened.close()); assert.equal(reopened.status().healthy, true);
+  for (const value of [first, second]) assert.equal((await reopened.authenticateRequest(bearer(value.tokens.access_token)))?.id, value.client.id);
+  await reopened.close();
+  const before = await fs.readFile(env.oauth.file, 'utf8'), originalRefresh = env.oauth.grants.map(grant => structuredClone(grant.refresh));
+  for (const value of [first, second]) {
+    const result = await refresh(env.oauth, value.tokens.refresh_token);
+    assert.equal(result.status, 503); assert.equal(result.json.error, 'temporarily_unavailable'); assert.equal(result.json.access_token, undefined);
+  }
+  const pending = await approveAndCode(env.oauth), blocked = await exchange(env.oauth, pending.code);
+  assert.equal(blocked.status, 503); assert.equal(blocked.json.error, 'temporarily_unavailable'); assert.equal(blocked.json.access_token, undefined);
+  assert.equal(env.oauth.status().healthy, true); assert.equal(env.oauth.refreshRetries.size, 0); assert.deepEqual(env.revoked, []);
+  assert.deepEqual(env.oauth.grants.map(grant => grant.refresh), originalRefresh); assert.equal(await fs.readFile(env.oauth.file, 'utf8'), before);
+  for (const value of [first, second]) {
+    const client = await env.oauth.authenticateRequest(bearer(value.tokens.access_token));
+    assert.equal(client?.id, value.client.id); assert.deepEqual(client.scopes, SCOPES);
+  }
+  env.advance(1000);
+  assert.equal((await refresh(env.oauth, first.tokens.refresh_token)).status, 200);
+  const stored = JSON.parse(await fs.readFile(env.oauth.file, 'utf8')).grants;
+  assert.equal(stored.reduce((count, grant) => count + grant.accessTokens.length, 0), 3);
+  assert.equal(stored.find(grant => grant.id === second.client.id).accessTokens.length, 1);
+  assert.equal((await exchange(env.oauth, pending.code)).status, 200); assert.equal(env.oauth.status().healthy, true); assert.deepEqual(env.revoked, []);
+  for (const value of [first, second]) assert.equal((await env.oauth.authenticateRequest(bearer(value.tokens.access_token)))?.id, value.client.id);
+});
+
+test('loader bounds access-token records across grants instead of allowing the budget once per grant', async t => {
+  const env = await setup(t); await grant(env.oauth); await grant(env.oauth);
+  const seeded = structuredClone(env.oauth.grants), expiresAt = new Date(env.now() + 1000).toISOString();
+  for (let index = 0; index < 2047; index++) seeded[index % seeded.length].accessTokens.push({ hash: createHash('sha256').update(`invalid-capacity-${index}`).digest('hex'), expiresAt });
+  assert.ok(seeded.every(grant => grant.accessTokens.length < 2048));
+  const oversized = JSON.stringify({ schema: 1, grants: seeded }, null, 2) + '\n';
+  await env.oauth.close(); await fs.writeFile(env.oauth.file, oversized);
+  const reopened = await new ChatGPTOAuth({ dataDir: env.dataDir, origin: ORIGIN, now: env.now }).init(); t.after(() => reopened.close());
+  assert.equal(reopened.status().healthy, false); assert.equal(await fs.readFile(reopened.file, 'utf8'), oversized);
+});
+
+test('credential capacity checks exact persisted bytes and never disable a valid store on overflow', async t => {
+  const env = await setup(t), value = await grant(env.oauth), maximum = 8 * 1024 * 1024;
+  const original = await fs.readFile(env.oauth.file, 'utf8'), candidate = structuredClone(env.oauth.grants), originalCreatedAt = candidate[0].createdAt;
+  const padding = maximum - Buffer.byteLength(JSON.stringify({ schema: 1, grants: candidate }, null, 2) + '\n');
+  // Extra fractional-second zeros preserve a valid timestamp while exercising the exact byte boundary.
+  candidate[0].createdAt = originalCreatedAt.slice(0, -1) + '0'.repeat(padding) + 'Z';
+  assert.equal(Date.parse(candidate[0].createdAt), Date.parse(originalCreatedAt));
+  const over = structuredClone(candidate); over[0].createdAt = over[0].createdAt.slice(0, -1) + '0Z';
+  assert.ok(Buffer.byteLength(JSON.stringify({ schema: 1, grants: over })) < maximum);
+  assert.equal(Buffer.byteLength(JSON.stringify({ schema: 1, grants: over }, null, 2) + '\n'), maximum + 1);
+  await assert.rejects(env.oauth.persist(over), error => error.status === 503 && error.oauthError === 'temporarily_unavailable');
+  assert.equal(env.oauth.status().healthy, true); assert.deepEqual(env.revoked, []); assert.equal(env.oauth.grants[0].createdAt, originalCreatedAt);
+  assert.equal(await fs.readFile(env.oauth.file, 'utf8'), original); assert.equal((await env.oauth.authenticateRequest(bearer(value.tokens.access_token)))?.id, value.client.id);
+  await env.oauth.persist(candidate);
+  const persisted = await fs.readFile(env.oauth.file, 'utf8'); assert.equal(Buffer.byteLength(persisted), maximum);
+  assert.equal(persisted, JSON.stringify({ schema: 1, grants: candidate }, null, 2) + '\n');
+  await env.oauth.close();
+  const reopened = await new ChatGPTOAuth({ dataDir: env.dataDir, origin: ORIGIN, now: env.now }).init(); t.after(() => reopened.close());
+  assert.equal(reopened.status().healthy, true); assert.equal((await reopened.authenticateRequest(bearer(value.tokens.access_token)))?.id, value.client.id);
+});
+
 test('concurrent refresh retries share the same live replacement without revoking the grant', async t => {
   const { oauth, revoked } = await setup(t); const value = await grant(oauth);
   const results = await Promise.all(Array.from({ length: 12 }, () => refresh(oauth, value.tokens.refresh_token)));
@@ -696,4 +788,111 @@ test('the first browser-bound poll retires restart leftovers omitted from a cros
   assert.deepEqual(poll.headers['set-cookie'], [staleName + '=; Path=/chatgpt/oauth/; Secure; HttpOnly; SameSite=Strict; Max-Age=0']);
   jar.apply(poll); assert.equal(jar.values.has(staleName), false); assert.equal(jar.values.get('unrelated'), 'keep'); assert.equal(jar.values.has(oauth.cookieName(request.id)), true);
   const again = await route(oauth, 'GET', '/chatgpt/oauth/pending/' + request.id, { headers: { cookie: jar.header() } }); assert.equal(again.headers['set-cookie'], undefined);
+});
+
+test('token outcome diagnostics distinguish rotation, successful retry and preserved-grant retry failures', async t => {
+  const { oauth, now, advance, revoked } = await setup(t);
+  assert.deepEqual(oauth.status().tokenDiagnostics, { succeeded: 0, failed: 0, lastFailure: null, recentOutcomes: [] });
+  const initial = await grant(oauth, { requestedScopes: SCOPES.join(' '), scopes: [...SCOPES] });
+  advance(1000); const first = await refresh(oauth, initial.tokens.refresh_token);
+  assert.equal(first.status, 200); assert.deepEqual(Object.keys(first.json).sort(), ['access_token', 'expires_in', 'refresh_token', 'scope', 'token_type']);
+  const retry = await refresh(oauth, initial.tokens.refresh_token); assert.deepEqual(retry.json, first.json);
+  advance(1000); const second = await refresh(oauth, first.json.refresh_token); assert.equal(second.status, 200);
+  advance(1000); const superseded = await refresh(oauth, initial.tokens.refresh_token);
+  assert.equal(superseded.status, 400); assert.equal(superseded.json.error, 'invalid_grant'); assert.match(superseded.json.error_description, /superseded/);
+  const mismatch = await refresh(oauth, first.json.refresh_token, { scope: 'read' });
+  assert.equal(mismatch.status, 400); assert.equal(mismatch.json.error, 'invalid_request');
+  assert.deepEqual(oauth.getClient(initial.client.id).scopes, SCOPES); assert.ok(await oauth.authenticateRequest(bearer(second.json.access_token))); assert.deepEqual(revoked, []);
+  const diagnostic = oauth.status().tokenDiagnostics;
+  assert.equal(diagnostic.succeeded, 4); assert.equal(diagnostic.failed, 2);
+  assert.deepEqual(diagnostic.recentOutcomes.map(({ category, statusCode }) => [category, statusCode]), [
+    ['authorization_code_issued', 200], ['refresh_rotated', 200], ['refresh_retry_succeeded', 200], ['refresh_rotated', 200], ['refresh_retry_superseded', 400], ['refresh_retry_mismatch', 400],
+  ]);
+  assert.deepEqual(diagnostic.lastFailure, { at: new Date(now()).toISOString(), statusCode: 400, category: 'refresh_retry_mismatch' });
+  advance(60000); const replay = await refresh(oauth, initial.tokens.refresh_token);
+  assert.equal(replay.status, 400); assert.equal(oauth.getClient(initial.client.id), null); assert.deepEqual(revoked, [initial.client.id]);
+  assert.equal(oauth.status().tokenDiagnostics.lastFailure.category, 'refresh_replay_revoked');
+});
+
+test('token outcome diagnostics include pre-token refusals, rate limits and protected-retry failures', async t => {
+  const { oauth, now, revoked } = await setup(t, protectedStorage()), initial = await grant(oauth);
+  await fs.mkdir(oauth.retryFile);
+  const storage = await refresh(oauth, initial.tokens.refresh_token);
+  assert.equal(storage.status, 503); assert.equal(storage.json.error, 'temporarily_unavailable');
+  assert.equal(oauth.status().tokenDiagnostics.lastFailure.category, 'refresh_retry_storage_unavailable');
+  assert.ok(oauth.getClient(initial.client.id)); assert.deepEqual(revoked, []);
+  await fs.rm(oauth.retryFile, { recursive: true });
+  const renewed = await refresh(oauth, initial.tokens.refresh_token); assert.equal(renewed.status, 200);
+  oauth.rates.set('token', { at: now(), count: 120 });
+  const limited = await refresh(oauth, renewed.json.refresh_token);
+  assert.equal(limited.status, 429); assert.equal(limited.headers['retry-after'], '60'); assert.equal(oauth.status().tokenDiagnostics.lastFailure.category, 'rate_limited');
+  for (const [method, options, statusCode, category] of [
+    ['GET', {}, 405, 'invalid_request'],
+    ['POST', { raw: '{}', headers: { 'content-type': 'application/json' } }, 415, 'invalid_request'],
+    ['POST', { headers: { authorization: 'Bearer deliberately-untrusted-header' } }, 400, 'invalid_client'],
+    ['POST', { enabled: false }, 503, 'access_denied'],
+  ]) {
+    const result = await route(oauth, method, '/chatgpt/oauth/token', options);
+    assert.equal(result.status, statusCode);
+    assert.deepEqual(oauth.status().tokenDiagnostics.lastFailure, { at: new Date(now()).toISOString(), statusCode, category });
+  }
+  assert.ok(oauth.getClient(initial.client.id)); assert.deepEqual(revoked, []);
+  const before = oauth.status().tokenDiagnostics;
+  await route(oauth, 'GET', '/.well-known/oauth-authorization-server');
+  await route(oauth, 'POST', '/chatgpt/oauth/revoke', { form: { client_id: CLIENT, token: 'unrecognized-revocation-token' } });
+  assert.deepEqual(oauth.status().tokenDiagnostics, before);
+});
+
+test('token outcome diagnostics are bounded, detached from callers, secret-free and process-local', async t => {
+  const env = await setup(t), { oauth } = env, initial = await grant(oauth);
+  const marker = 'private-header-body-and-error-marker-48e9fb12';
+  const rejected = await route(oauth, 'POST', '/chatgpt/oauth/token', {
+    form: { grant_type: 'refresh_token', client_id: CLIENT, refresh_token: initial.tokens.refresh_token, resource: RESOURCE, private_argument: marker },
+    headers: { authorization: 'Bearer ' + marker, cookie: marker, 'x-private-marker': marker },
+  });
+  assert.equal(rejected.status, 400); const failure = oauth.status().tokenDiagnostics.lastFailure;
+  let renewed;
+  for (let index = 0; index < 40; index++) { renewed = await refresh(oauth, initial.tokens.refresh_token); assert.equal(renewed.status, 200); }
+  const diagnostic = oauth.status().tokenDiagnostics, serialized = JSON.stringify(diagnostic);
+  assert.equal(diagnostic.succeeded, 41); assert.equal(diagnostic.failed, 1); assert.equal(diagnostic.recentOutcomes.length, 32);
+  assert.ok(diagnostic.recentOutcomes.every(item => item.category === 'refresh_retry_succeeded')); assert.deepEqual(diagnostic.lastFailure, failure);
+  assert.deepEqual(Object.keys(diagnostic).sort(), ['failed', 'lastFailure', 'recentOutcomes', 'succeeded']);
+  for (const outcome of [...diagnostic.recentOutcomes, diagnostic.lastFailure]) assert.deepEqual(Object.keys(outcome).sort(), ['at', 'category', 'statusCode']);
+  for (const secret of [marker, initial.code, VERIFIER, initial.client.id, initial.tokens.access_token, initial.tokens.refresh_token, renewed.json.access_token, renewed.json.refresh_token, CLIENT, RESOURCE]) {
+    assert.equal(serialized.includes(secret), false); assert.equal(serialized.includes(createHash('sha256').update(secret).digest('hex')), false);
+  }
+  diagnostic.lastFailure.category = marker; diagnostic.recentOutcomes[0].at = marker; diagnostic.recentOutcomes.length = 0;
+  assert.deepEqual(oauth.status().tokenDiagnostics.lastFailure, failure); assert.equal(oauth.status().tokenDiagnostics.recentOutcomes.length, 32);
+  const persisted = await fs.readFile(oauth.file, 'utf8'); assert.doesNotMatch(persisted, /tokenDiagnostics|recentOutcomes|lastFailure/);
+  await oauth.close();
+  const reopened = await new ChatGPTOAuth({ dataDir: env.dataDir, origin: ORIGIN, now: env.now }).init(); t.after(() => reopened.close());
+  assert.deepEqual(reopened.status().tokenDiagnostics, { succeeded: 0, failed: 0, lastFailure: null, recentOutcomes: [] });
+  assert.equal((await reopened.authenticateRequest(bearer(renewed.json.access_token))).id, initial.client.id);
+});
+
+test('token outcome diagnostics discard unknown exception labels and cannot change token responses', async t => {
+  const { oauth } = await setup(t), initial = await grant(oauth), original = oauth.token;
+  const secret = 'private-exception-category-and-message-0d32f1a4';
+  oauth.token = async () => { throw Object.assign(new Error(secret), { oauthError: secret, status: 500 }); };
+  const failed = await refresh(oauth, initial.tokens.refresh_token);
+  assert.equal(failed.status, 500); assert.equal(failed.json.error, secret);
+  assert.equal(oauth.status().tokenDiagnostics.lastFailure.category, 'server_error'); assert.equal(JSON.stringify(oauth.status().tokenDiagnostics).includes(secret), false);
+  oauth.token = original;
+  const before = oauth.status().tokenDiagnostics;
+  oauth.recordTokenOutcome = () => { throw new Error(secret); };
+  const renewed = await refresh(oauth, initial.tokens.refresh_token);
+  assert.equal(renewed.status, 200); assert.ok(await oauth.authenticateRequest(bearer(renewed.json.access_token))); assert.deepEqual(oauth.status().tokenDiagnostics, before);
+});
+
+test('token outcome diagnostics record a committed outcome without claiming its lost response was delivered', async t => {
+  const { oauth } = await setup(t), initial = await grant(oauth);
+  const form = new URLSearchParams({ grant_type: 'refresh_token', client_id: CLIENT, refresh_token: initial.tokens.refresh_token, resource: RESOURCE });
+  const req = Readable.from([Buffer.from(form.toString())]);
+  req.method = 'POST'; req.url = '/chatgpt/oauth/token'; req.headers = { 'content-type': 'application/x-www-form-urlencoded' };
+  const res = { destroyed: true, writeHead() { assert.fail('The disconnected client cannot receive headers.'); }, end() { assert.fail('The disconnected client cannot receive a response.'); } };
+  await oauth.handle(req, res, { enabled: true });
+  assert.equal(oauth.grants[0].refresh.usedHashes.length, 1);
+  assert.deepEqual(oauth.status().tokenDiagnostics.recentOutcomes.map(value => [value.category, value.statusCode]), [['authorization_code_issued', 200], ['refresh_rotated', 200]]);
+  const recovered = await refresh(oauth, initial.tokens.refresh_token); assert.equal(recovered.status, 200);
+  assert.equal(oauth.status().tokenDiagnostics.recentOutcomes.at(-1).category, 'refresh_retry_succeeded');
 });

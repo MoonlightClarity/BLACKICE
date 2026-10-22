@@ -57,6 +57,35 @@ Concurrent native workers receive task folders and host-owned pages scoped to th
 
 An undecided native consent request has no fixed elapsed-time deadline while its browser-bound session and server request remain available. Restarting BLACKICE or losing that browser session can invalidate an unfinished request. Authorization codes and access/refresh tokens retain their normal expiry and replay protections. Existing approved grants survive an ordinary restart; an unfinished consent page is a different state.
 
+## Native restart from a command
+
+Use the installed BLACKICE executable with a stable request ID. In PowerShell, with `$blackiceExe` and `$profileDir` set to the intended installation and profile:
+
+```powershell
+& $blackiceExe --restart --request-id=restart-example-001 --profile-dir=$profileDir
+```
+
+The JSON reply acknowledges a saved scheduling receipt. `scheduled` is not completed restart: the originating direct command must exit successfully and its durable job receipt must be saved before BLACKICE prepares the profile and calls Electron's native relaunch. End the command after this acknowledgement. Do not wait for completion inside the same originating command.
+
+After reconnecting, inspect the restart receipt through `blackice_direct_status`, then match the request ID and replacement process identity. For a restart submitted from an ordinary local terminal, use:
+
+```powershell
+& $blackiceExe --restart-status --request-id=restart-example-001 --profile-dir=$profileDir
+& $blackiceExe --cancel-restart --request-id=restart-example-001 --profile-dir=$profileDir
+```
+
+Receipts are owner scoped. A restart submitted inside `blackice_run_command` belongs to that authenticated connection; read it through that connection's status and cancel the exact originating job through `blackice_cancel_job` or the local connector interface. The command's opaque origin binding is supplied by BLACKICE; do not copy it or supply a job ID as an exemption. Cancellation, Stop and grant revocation remain effective until native relaunch is armed. A late cancellation does not rewrite a command that already succeeded.
+
+If the scheduling reply is lost, keep the same request ID. Inspect its receipt and retry that same ID when appropriate; a different ID requests a different restart. A saved failure is returned on an identical retry and does not replay the action. Other unfinished jobs, browser interactions and downloads still block restart. A stale `awaiting_input` job whose browser interaction was already resolved must be inspected and explicitly cancelled; genuine pending interactions must be resolved before retrying.
+
+When installing this protocol over an older running primary, the new secondary executable cannot receive the new scheduling acknowledgement from the old process. The explicit, one-time compatibility command is:
+
+```powershell
+& $blackiceExe --restart --legacy-native-handoff --profile-dir=$profileDir
+```
+
+This uses Electron's original single-instance forwarding. It has no caller request ID or scheduling acknowledgement; its exit code does not prove restart completion. Verify the saved native restart receipt and replacement process afterward, then verify the normal stable-ID command. There is no automatic legacy fallback after an HTTP error or an uncertain reply. When the old primary is itself serving the launching direct command, let that launcher finish after forwarding; the compatibility path retains the old primary's readiness checks.
+
 ## Find the failing step
 
 | What you see | Check and recovery |

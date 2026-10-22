@@ -135,30 +135,36 @@ test('all nonterminal direct actions block restart regardless of owner or intera
   }
 });
 
-test('only the exact restart job is excluded; same-owner, prefix-matching, and missing IDs still block', async () => {
-  const f = fixture();
-  f.state.jobs = [{ id: 'own-restart', ownerId: 'owner', status: 'running' }];
-  await f.barrier.assertReady({ jobId: 'own-restart' });
+test('only an executor-validated origin is excluded during scheduling; IDs, owners, and unfinished states cannot substitute', async () => {
+  const origin = Object.freeze({});
+  const f = fixture({ getOriginJob: async value => { assert.equal(value, origin); return { jobId: 'own-restart', ownerId: 'owner', tool: 'blackice_run_command' }; } });
+  f.state.jobs = [{ id: 'own-restart', ownerId: 'owner', tool: 'blackice_run_command', status: 'running' }];
+  await assert.rejects(f.barrier.assertReady({ jobId: 'own-restart' }), { code: 'DESKTOP_RESTART_BUSY' });
+  await f.barrier.assertReady({ origin });
   for (const other of [
     { id: 'other-job', ownerId: 'owner', status: 'queued' },
     { id: 'own-restart-extra', ownerId: 'owner', status: 'running' },
     { status: 'running' },
   ]) {
     f.state.jobs.push(other);
-    await assert.rejects(f.barrier.assertReady({ jobId: 'own-restart' }), { code: 'DESKTOP_RESTART_BUSY' });
+    await assert.rejects(f.barrier.assertReady({ origin }), { code: 'DESKTOP_RESTART_BUSY' });
     f.state.jobs.pop();
   }
   f.state.jobs = [{ status: 'running' }];
   await assert.rejects(f.barrier.assertReady(), { code: 'DESKTOP_RESTART_BUSY' });
-  f.state.jobs = [{ jobId: 'own-restart', status: 'running' }];
-  await f.barrier.assertReady({ jobId: 'own-restart' });
+  for (const value of [
+    { id: 'own-restart', ownerId: 'other', tool: 'blackice_run_command', status: 'running' },
+    { id: 'own-restart', ownerId: 'owner', tool: 'blackice_browser_action', status: 'running' },
+    { jobId: 'own-restart', ownerId: 'owner', tool: 'blackice_run_command', status: 'running' },
+    ...['queued', 'cancelling', 'awaiting_input'].map(status => ({ id: 'own-restart', ownerId: 'owner', tool: 'blackice_run_command', status })),
+  ]) { f.state.jobs = [value]; await assert.rejects(f.barrier.assertReady({ origin }), { code: 'DESKTOP_RESTART_BUSY' }); }
   assert.deepEqual(f.gates, []);
 });
 
 test('begin gates before draining, rechecks after drain, and holds the gate until an idempotent end', async () => {
   const draining = held(), releaseDrain = held();
   const f = fixture({ drain: async () => { assert.equal(f.state.maintenance, true); draining.resolve(); await releaseDrain.promise; } });
-  f.state.jobs = [{ id: 'own-restart', status: 'running' }];
+  f.state.jobs = [{ id: 'own-restart', status: 'succeeded' }];
   const pending = f.barrier.begin({ jobId: 'own-restart' });
   await draining.promise;
   assert.deepEqual(f.gates, [true]); assert.equal(f.jobReads, 1);
@@ -166,6 +172,25 @@ test('begin gates before draining, rechecks after drain, and holds the gate unti
   assert.equal(f.jobReads, 2); assert.equal(f.state.maintenance, true);
   f.barrier.end(); f.barrier.end();
   assert.deepEqual(f.gates, [true, false]); assert.equal(f.state.maintenance, false);
+});
+
+test('preparation refuses even the validated origin while it is unfinished', async () => {
+  const origin = Object.freeze({});
+  const f = fixture({ getOriginJob: async () => ({ jobId: 'own', ownerId: 'owner', tool: 'blackice_run_command' }) });
+  f.state.jobs = [{ id: 'own', ownerId: 'owner', tool: 'blackice_run_command', status: 'running' }];
+  await f.barrier.assertReady({ origin });
+  await assert.rejects(f.barrier.begin({ origin, jobId: 'own' }), { code: 'DESKTOP_RESTART_BUSY' });
+  assert.deepEqual(f.gates, []);
+});
+
+test('cancellation during a held drain releases its gate before the drain finishes', async () => {
+  const entered = held(), release = held(), controller = new AbortController();
+  const f = fixture({ drain: async () => { entered.resolve(); await release.promise; } });
+  const pending = f.barrier.begin({ signal: controller.signal });
+  await entered.promise; controller.abort();
+  await assert.rejects(pending, { code: 'DESKTOP_RESTART_CANCELLED' });
+  assert.deepEqual(f.gates, [true, false]); assert.equal(f.state.maintenance, false);
+  release.resolve(); await Promise.resolve(); assert.equal(f.state.maintenance, false);
 });
 
 test('the final native handoff check is synchronous, requires its prepared gate, and catches late browser work', async () => {
