@@ -16,6 +16,19 @@ test('Windows installer inventory accepts the new runtime assets and the selecte
   for (const directory of ['data', 'lib/node_modules', 'public/.git', 'tests']) assert.equal(forbiddenWindowsPackagePath(directory), true, directory);
 });
 
+test('every explicit installer file is approved for the current release', async () => {
+  const config = await fs.readFile(new URL('../desktop/electron-builder.yml', import.meta.url), 'utf8');
+  const { version } = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  const section = /^files:\r?\n([\s\S]*?)(?=^\S)/m.exec(config)?.[1];
+  assert.ok(section, 'installer files section is present');
+  const rules = section.split(/\r?\n/).map(line => /^  - (.+?)\s*$/.exec(line)?.[1]).filter(Boolean)
+    .map(rule => rule.replace(/^(['"])(.*)\1$/, '$2'));
+  const files = rules.filter(rule => !rule.startsWith('!') && !/[*?\[\]{}]/.test(rule));
+  assert.ok(files.includes('package.json'), 'explicit installer file rules were found');
+  assert.ok(files.includes('RELEASE-NOTES-' + version + '.md'), 'the installer includes current release notes');
+  for (const file of files) assert.equal(approvedWindowsPackageFile(file, version), true, file);
+});
+
 async function fixture(t) {
   const directory = await fs.mkdtemp(path.join(tmpdir(), 'blackice-release-receipt-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
