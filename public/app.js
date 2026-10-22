@@ -178,7 +178,7 @@
       if(!planningUI){
         planningMountPromise ||= import('/planning-workspace-ui.mjs');
         const {initPlanningWorkspaceUI}=await planningMountPromise;if(owner!==viewIntent||state.screen!=='planning')return;
-        planningUI ||= initPlanningWorkspaceUI({mount:$('#planning-workspace'),api,onArtifact:showArtifact,onSaved:rememberPlanReceipt,onError:error=>toast(error.message,true),onOpenRun:async id=>{showMission();await missionUI?.openConversation(id);},onNewChat:()=>{showMission();$('#mission-workspace [data-mission-action="new-task"]')?.click();missionUI?.focus();}});
+        planningUI ||= initPlanningWorkspaceUI({mount:$('#planning-workspace'),api,onArtifact:showArtifact,onSaved:rememberPlanReceipt,onError:error=>toast(error.message,true),onManagePlan:(action,taskId,runId)=>missionUI?.managePlan(action,taskId,runId),onOpenRun:async id=>{showMission();await missionUI?.openConversation(id);},onNewChat:()=>{showMission();$('#mission-workspace [data-mission-action="new-task"]')?.click();missionUI?.focus();}});
       }
       if(owner===viewIntent&&state.screen==='planning')await planningUI.enter(seed);
     }catch(error){planningMountPromise=null;if(owner===viewIntent)toast(`Could not open Planning: ${error.message}`,true);}

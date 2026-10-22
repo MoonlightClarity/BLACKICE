@@ -63,11 +63,11 @@ export function renderPlanningEditor(task, draft, { editable = true } = {}) {
   return `<form id="planning-editor-form" data-planning-editor-key="${escape(draft.key)}"><fieldset class="planning-edit-fields"${disabled}>${fields}</fieldset></form>`;
 }
 
-export function initPlanningWorkspaceUI({ mount, api, onOpenRun, onNewChat, onArtifact, onSaved, onError = () => {}, controllerOptions = {} } = {}) {
+export function initPlanningWorkspaceUI({ mount, api, onOpenRun, onNewChat, onArtifact, onSaved, onManagePlan, onError = () => {}, controllerOptions = {} } = {}) {
   if (!mount) throw new Error('Planning needs a workspace mount.');
   installPlanningWorkspaceStyles();
   const media = typeof window !== 'undefined' ? window.matchMedia?.('(max-width: 1050px)') : null;
-  let compact = media?.matches === true, planEnlarged = false, destroyed = false, formSignature = '', messagesSignature = '', awarenessSignature = '', actionsSignature = null, taskBarSignature = null, catalogFooterSignature = null, draftSwitcherSignature = null, editorTitle = '', applying = false, catalogEmpty, documentVisible = document.visibilityState !== 'hidden';
+  let compact = media?.matches === true, planEnlarged = false, destroyed = false, formSignature = '', messagesSignature = '', awarenessSignature = '', actionsSignature = null, taskBarSignature = null, catalogFooterSignature = null, draftSwitcherSignature = null, editorTitle = '', applying = false, planActionBusy = false, catalogEmpty, documentVisible = document.visibilityState !== 'hidden';
   let outlineFocus = '', focusedGroup = '', outlineFilter = '', selectedOutlineLocation = '', organizationReturnTarget = '', organizationFormSignature = '', organizationMessageSignature = '', organizationActionsSignature = '', groupActionsSignature = '', groupFilterSignature = '';
   const catalogRows = new Map(), catalogGroups = new Map(), expandedGroups = new Map();
   const $ = selector => mount.querySelector(selector);
@@ -286,7 +286,14 @@ export function initPlanningWorkspaceUI({ mount, api, onOpenRun, onNewChat, onAr
     $('#planning-load-status').textContent = state.error || (state.taskLoading && !task ? 'Loading saved plan…' : '');
     if (task) {
       const meta = item.meta || {}, view = taskPlanView(task, { runStatus: meta.runStatus }), ready = task.availableWork?.ready?.length ?? 0, active = task.availableWork?.active?.length ?? 0;
-      renderTaskBar(`<div class="planning-document-identity"><span>${escape(meta.groupName || 'Ungrouped')}</span><strong>${escape(meta.title || meta.name || task.goal || 'Untitled plan')}</strong></div><div class="planning-work-counts"><span>${ready} ready</span><span>${active} active</span>${meta.bucket === 'archived' ? '<span>Archived chat</span>' : meta.bucket === 'deleted' ? '<span>Trash · read only</span>' : ''}</div><div>${controller.editable() && state.organization.revision !== null ? action('organize-plan', 'Rename / move') : ''}${action('objective', 'Objective')}${controller.editable() ? action('add', 'Add step', 'class="primary"') : ''}${meta.runId && onOpenRun ? action('open-chat', 'Open chat') : ''}</div>`);
+      const lifecycleDisabled = planActionBusy || meta.running || !meta.runId ? 'disabled' : '';
+      const lifecycleHint = meta.running ? ' title="Wait for this task to finish before changing its history."' : !meta.runId ? ' title="This plan is not attached to a saved chat."' : '';
+      const lifecycle = meta.bucket === 'active'
+        ? `${action('archive-plan', 'Archive plan', `${lifecycleDisabled}${lifecycleHint}`)}${action('trash-plan', 'Move to Trash', `${lifecycleDisabled}${lifecycleHint} class="planning-destructive"`)}`
+        : meta.bucket === 'archived'
+          ? `${action('restore-plan', 'Restore plan', `${lifecycleDisabled}${lifecycleHint}`)}${action('trash-plan', 'Move to Trash', `${lifecycleDisabled}${lifecycleHint} class="planning-destructive"`)}`
+          : meta.bucket === 'deleted' ? action('restore-plan', 'Restore from Trash', `${lifecycleDisabled}${lifecycleHint}`) : '';
+      renderTaskBar(`<div class="planning-document-identity"><span>${escape(meta.groupName || 'Ungrouped')}</span><strong>${escape(meta.title || meta.name || task.goal || 'Untitled plan')}</strong></div><div class="planning-work-counts"><span>${ready} ready</span><span>${active} active</span>${meta.bucket === 'archived' ? '<span>Archived chat</span>' : meta.bucket === 'deleted' ? '<span>Trash · read only</span>' : ''}</div><div>${controller.editable() && state.organization.revision !== null ? action('organize-plan', 'Rename / move') : ''}${action('objective', 'Objective')}${controller.editable() ? action('add', 'Add step', 'class="primary"') : ''}${meta.runId && onOpenRun ? action('open-chat', 'Open chat') : ''}${lifecycle}</div>`);
       if (!['input', 'filter', 'pane', 'saving', 'review', 'awareness', 'outline', 'organization', 'organization-input'].includes(reason)) { applying = true; try { planUI.update({ taskState: task, runId: meta.runId, runStatus: meta.runStatus, settled: !view.live, planningMode: meta.planningMode || 'auto' }); const id = controller.draft()?.stepId; if (id && task.steps.some(step => step.id === id)) planUI.selectStep(id, { focus: false, notify: false }); } finally { applying = false; } }
     } else renderTaskBar('');
     renderEditor(reason);
@@ -324,7 +331,7 @@ export function initPlanningWorkspaceUI({ mount, api, onOpenRun, onNewChat, onAr
     if (target.dataset.planningTask) { await selectPlan(target.dataset.planningTask); return; }
     if (target.dataset.planningDraft) { controller.selectDraft(target.dataset.planningDraft); return; }
     const name = target.dataset.planningAction; if (!name) return;
-    if (['objective', 'add', 'organize-plan', 'create-group', 'rename-group', 'remove-group'].includes(name)) planUI.setEnlarged(false, { focusControl: false });
+    if (['objective', 'add', 'organize-plan', 'create-group', 'rename-group', 'remove-group', 'archive-plan', 'trash-plan', 'restore-plan'].includes(name)) planUI.setEnlarged(false, { focusControl: false });
     const item = controller.entry(), draft = controller.draft();
     if (name === 'refresh') return controller.refresh();
     if (name === 'reload-list') return controller.loadCatalog();
@@ -343,6 +350,19 @@ export function initPlanningWorkspaceUI({ mount, api, onOpenRun, onNewChat, onAr
     if (name === 'objective') { controller.selectEditor(); controller.setPane('edit'); $('#planning-editor-form textarea')?.focus({ preventScroll: true }); return; }
     if (name === 'add') { controller.startAdd(draft?.stepId); $('#planning-editor-form input')?.focus({ preventScroll: true }); return; }
     if (name === 'open-chat' && item?.meta?.runId) return onOpenRun?.(item.meta.runId);
+    if (['archive-plan', 'trash-plan', 'restore-plan'].includes(name)) {
+      if (!item?.task || !item.meta?.runId || planActionBusy) return;
+      const operation = name === 'archive-plan' ? 'archive' : name === 'trash-plan' ? 'delete' : 'restore';
+      planActionBusy = true; render();
+      try {
+        let result = onManagePlan ? await onManagePlan(operation, item.task.taskId, item.meta.runId) : undefined;
+        if (result === undefined) result = await api(`/api/conversations/${encodeURIComponent(item.meta.runId)}/${operation}`, 'POST', {});
+        if (result === false || destroyed || !controller.state.active) return;
+        await controller.loadCatalog();
+        if (controller.state.taskId === item.task.taskId) { controller.clearSelection(); const next = outlineNodes()[0]; if (next) focusOutline(next); else $('#planning-search')?.focus?.({ preventScroll: true }); }
+      } finally { planActionBusy = false; render(); }
+      return;
+    }
     if (name === 'discard') return controller.discard();
     if (name === 'review') return controller.reviewLatest();
     if (name === 'use-review') return controller.applyReviewedDraft();

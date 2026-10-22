@@ -557,7 +557,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     if (action === 'new') { await openURL(true); return; }
     if (action === 'close'||action==='tree-close') return work('close', { tabId: button.dataset.tabId });
     if (action === 'tree-suspend') return work('suspend', { tabId: button.dataset.tabId });
-    if (action === 'up' || action === 'down') { await work('scroll', { direction: action, amount: 650 }); return; }
+    if (action === 'up' || action === 'down') { await work('scroll', { direction: action, amount: 420 }); return; }
     if (action === 'key') { await work('press', { key: state.key, ...(!state.controlsStale && state.ref ? { ref: state.ref } : {}) }); return; }
     if (action === 'control' || action === 'fill') {
       const control = state.document?.controls.find(item => item.ref === state.ref); if (!control || state.stale || state.controlsStale) return;

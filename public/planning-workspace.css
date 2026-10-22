@@ -18,6 +18,8 @@ html[data-blackice-ui] body #app #planning-workspace button {
 html[data-blackice-ui] body #app #planning-workspace button:hover { border-color:#a2ccd48f!important;background:linear-gradient(135deg,#3a5b6485,#203c4899)!important;color:#eef9fa!important; }
 html[data-blackice-ui] body #app #planning-workspace button.primary { color:#f0fbf9!important;border-color:#a0cfcbbd!important;background:linear-gradient(135deg,#416c6ce6,#285456e6)!important; }
 html[data-blackice-ui] body #app #planning-workspace button.primary:hover:not(:disabled) { border-color:#c4e8e0!important;background:linear-gradient(135deg,#4d7d7be6,#326365e6)!important; }
+html[data-blackice-ui] body #app #planning-workspace .planning-task-bar button.planning-destructive { color:#edc0c0!important;border-color:#9b666988!important;background:linear-gradient(135deg,#573d4387,#2c2a3494)!important; }
+html[data-blackice-ui] body #app #planning-workspace .planning-task-bar button.planning-destructive:hover:not(:disabled) { color:#ffe1e1!important;border-color:#d18f8fb8!important;background:linear-gradient(135deg,#7650599c,#453340ad)!important; }
 html[data-blackice-ui] body #app #planning-workspace button:disabled { color:#8fa7b0!important;border-color:#5269724f!important;background:linear-gradient(135deg,#253c475e,#162d386b)!important;opacity:1!important;cursor:default; }
 html[data-blackice-ui] body #app #planning-workspace :is(button,input,textarea,select,summary,[data-planning-outline]):focus-visible { outline:2px solid #c4edf2!important;outline-offset:3px; }
 html[data-blackice-ui] body #app #planning-workspace :is(input:not([type="checkbox"]),textarea,select) {

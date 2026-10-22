@@ -139,7 +139,15 @@ function inspectElement(key, ref, action, argument) {
     if (el.tagName !== 'SELECT' || ![...el.options].some(option => option.value === argument)) throw new Error('Choose an available native select option.');
     el.value = argument; el.dispatchEvent(new Event('input', { bubbles: true, composed: true })); el.dispatchEvent(new Event('change', { bubbles: true, composed: true })); return JSON.stringify({ selected: el.value });
   }
-  if (action === 'scroll') { const { top, left } = JSON.parse(argument); el.scrollBy({ top, left, behavior: 'instant' }); return JSON.stringify({ scrollTop: el.scrollTop, scrollLeft: el.scrollLeft }); }
+  if (action === 'scroll') {
+    const { top, left } = JSON.parse(argument), position = () => ({ scrollTop: el.scrollTop, scrollLeft: el.scrollLeft }), reducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
+    el.scrollBy({ top, left, behavior: reducedMotion ? 'instant' : 'smooth' }); if (reducedMotion) return JSON.stringify(position());
+    const started = performance.now(); let previous = position(), steady = 0;
+    return new Promise(resolve => {
+      const sample = () => { const current = position(); if (Math.abs(current.scrollTop - previous.scrollTop) < 0.5 && Math.abs(current.scrollLeft - previous.scrollLeft) < 0.5) steady++; else { previous = current; steady = 0; } const elapsed = performance.now() - started; if (elapsed >= 120 && steady >= 3 || elapsed >= 1800) { resolve(); return; } setTimeout(sample, 40); };
+      setTimeout(sample, 40);
+    }).then(() => JSON.stringify(position()));
+  }
   throw new Error('Unsupported element operation.');
 }
 
@@ -166,6 +174,16 @@ function keySequence(key) {
   const converted = parts.map(part => KEYS[part] || ([...part].length === 1 ? part : null));
   if (converted.some(part => !part)) throw fail('That browser key is not supported.', 'BROWSER_VALIDATION');
   return [...converted.map(value => ({ type: 'keyDown', value })), ...converted.toReversed().map(value => ({ type: 'keyUp', value }))];
+}
+
+function scrollDocument(argument) {
+  const { top, left } = JSON.parse(argument), target = document.scrollingElement || document.documentElement, position = () => ({ scrollY, scrollX }), reducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
+  target.scrollBy({ top, left, behavior: reducedMotion ? 'instant' : 'smooth' }); if (reducedMotion) return JSON.stringify(position());
+  const started = performance.now(); let previous = position(), steady = 0;
+  return new Promise(resolve => {
+    const sample = () => { const current = position(); if (Math.abs(current.scrollY - previous.scrollY) < 0.5 && Math.abs(current.scrollX - previous.scrollX) < 0.5) steady++; else { previous = current; steady = 0; } const elapsed = performance.now() - started; if (elapsed >= 120 && steady >= 3 || elapsed >= 1800) { resolve(); return; } setTimeout(sample, 40); };
+    setTimeout(sample, 40);
+  }).then(() => JSON.stringify(position()));
 }
 
 export class FirefoxBiDiDriver extends EventEmitter {
@@ -319,11 +337,11 @@ export class FirefoxBiDiDriver extends EventEmitter {
     if (args.action === 'press') { const context = args.ref ? this.ref(tab,args.ref) : tab.tabId; if (args.ref) await this.call(context,inspectElement,[this.key,args.ref,'focus',''],{signal});this.assertCurrent(tab,actionRevision);await this.keys(context,keySequence(args.key),signal); receipt = { pressed: args.key }; }
     if (args.action === 'select') { const context = this.ref(tab,args.ref); receipt = await this.call(context,inspectElement,[this.key,args.ref,'select',String(args.value ?? '')],{signal}); }
     if (args.action === 'scroll') {
-      const amount = Number.isFinite(args.amount) ? Math.min(10000,Math.max(1,args.amount)) : 600, direction = args.direction || 'down';
+      const amount = Number.isFinite(args.amount) ? Math.min(10000,Math.max(1,args.amount)) : 450, direction = args.direction || 'down';
       if (!['up','down','left','right'].includes(direction)) throw fail('Choose a scroll direction.', 'BROWSER_VALIDATION');
       const top = direction === 'up' ? -amount : direction === 'down' ? amount : 0, left = direction === 'left' ? -amount : direction === 'right' ? amount : 0;
       if (args.ref) receipt = await this.call(this.ref(tab,args.ref),inspectElement,[this.key,args.ref,'scroll',JSON.stringify({top,left})],{signal});
-      else receipt = await this.call(tab.tabId,function(scroll) { const {top,left}=JSON.parse(scroll); globalThis.scrollBy({top,left,behavior:'instant'}); return JSON.stringify({scrollX,scrollY}); },[JSON.stringify({top,left})],{signal});
+      else receipt = await this.call(tab.tabId,scrollDocument,[JSON.stringify({top,left})],{signal});
     }
     if (args.action === 'wait') { const query=String(args.query || args.text || ''); if (!query && !args.ref) throw fail('Wait requires expected page text in query or text, or an element ref.', 'BROWSER_VALIDATION'); const timeoutMs = Math.min(20000,Math.max(1,Number(args.timeoutMs)||10000)); receipt = await this.call(args.ref ? this.ref(tab,args.ref) : tab.tabId,waitForPage,[this.key,query,String(args.ref || ''),timeoutMs],{signal,timeoutMs:timeoutMs+1500}); }
     await this.settle(tab,signal);

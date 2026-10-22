@@ -394,7 +394,10 @@ export function createPlanningWorkspaceController({ api, onChange = () => {}, on
       if (state.taskId === id) notify('error'); return false;
     } finally { current.busy = false; if (state.taskId === id) notify('saving'); }
   }
-  return { state, entries, entry, draft, editable, awareness, enter, leave, refresh, loadCatalog, selectTask: id => loadTask(id, { select: true }), selectEditor, edit, startAdd, discard, save, reviewLatest, applyReviewedDraft, handleEvent, startOrganization, editOrganization, cancelOrganization, saveOrganization, reviewOrganization, applyReviewedOrganization,
+  return { state, entries, entry, draft, editable, awareness, enter, leave, refresh, loadCatalog, selectTask: id => loadTask(id, { select: true }), clearSelection() {
+    if (!state.taskId) return false;
+    ++taskIntent; taskAbort?.abort(); taskAbort = null; state.taskId = ''; state.taskLoading = false; state.error = ''; state.pane = 'saved'; awareness.enter(''); notify('selection'); return true;
+  }, selectEditor, edit, startAdd, discard, save, reviewLatest, applyReviewedDraft, handleEvent, startOrganization, editOrganization, cancelOrganization, saveOrganization, reviewOrganization, applyReviewedOrganization,
     selectDraft(key) { const item = entry(); if (!item?.drafts.has(key)) return false; if (item.editorKey !== key) awareness.stopEditing(); item.editorKey = key; notify('editor'); return true; },
     setPane(pane) { if (['plan', 'edit', 'saved'].includes(pane)) { state.pane = pane; notify('pane'); } },
     setFilter({ query = state.query, bucket = state.bucket, groupId = state.groupId } = {}) { state.query = String(query).slice(0, 500); state.bucket = ['all', 'active', 'archived', 'deleted'].includes(bucket) ? bucket : 'active'; state.groupId = groupId === '' || groupId === 'ungrouped' || validGroupId(groupId) ? groupId : ''; ++catalogIntent; catalogAbort?.abort(); clearTimer(refreshTimer); refreshTimer = setTimer(() => { refreshTimer = null; void loadCatalog(); }, coalesceMs); notify('filter'); },

@@ -112,7 +112,27 @@ function pageSnapshot(key, prefix, query) {
   return { title: document.title, url: location.href, elements: query ? items.filter(i => `${i.name} ${i.value || ''}`.toLowerCase().includes(query.toLowerCase())) : items, text: text.join('\n').slice(0, 22000), truncated, readyState: document.readyState };
 }
 
-function elementAction(key, ref, action, args) {
+async function smoothPageScroll(target, top, left) {
+  const position = () => ({ scrollTop: target.scrollTop, scrollLeft: target.scrollLeft });
+  const reducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
+  target.scrollBy({ top, left, behavior: reducedMotion ? 'instant' : 'smooth' });
+  if (reducedMotion || !top && !left) return position();
+  const started = performance.now(); let previous = position(), steady = 0;
+  await new Promise(resolve => {
+    const sample = () => {
+      const current = position();
+      if (Math.abs(current.scrollTop - previous.scrollTop) < 0.5 && Math.abs(current.scrollLeft - previous.scrollLeft) < 0.5) steady++;
+      else { previous = current; steady = 0; }
+      const elapsed = performance.now() - started;
+      if (elapsed >= 120 && steady >= 3 || elapsed >= 1800) { resolve(); return; }
+      setTimeout(sample, 40);
+    };
+    setTimeout(sample, 40);
+  });
+  return position();
+}
+
+function elementAction(key, ref, action, args, scrollPage) {
   const el = globalThis[key]?.elements.get(ref);
   if (!el?.isConnected) return { __blackiceElementError: { message: 'This element ref is stale. Take a new snapshot and choose its current ref.', code: 'BROWSER_REF_STALE' } };
   if (el.disabled || el.getAttribute('aria-disabled') === 'true') throw new Error('This element is disabled. Inspect what is required first.');
@@ -159,12 +179,12 @@ function elementAction(key, ref, action, args) {
     el.dispatchEvent(new Event('input', { bubbles: true, composed: true })); el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
     return { delivered, uploaded: [...el.files].map(file => ({ name: file.name, size: file.size, type: file.type })), eventsDispatched: true };
   }
-  if (action === 'scroll') { el.scrollBy({ top: args.top, left: args.left, behavior: 'instant' }); return { scrollTop: el.scrollTop, scrollLeft: el.scrollLeft }; }
+  if (action === 'scroll') return scrollPage(el, args.top, args.left);
   throw new Error('Unsupported element action.');
 }
 
-function elementActionResult(run, key, ref, action, args) {
-  try { return run(key, ref, action, args); }
+async function elementActionResult(run, scrollPage, key, ref, action, args) {
+  try { return await run(key, ref, action, args, scrollPage); }
   catch (reason) {
     // Preserve non-enumerable Error.message before the renderer result crosses
     // Electron's process boundary. Unknown failures cannot prove no side effect.
@@ -694,7 +714,7 @@ export class ElectronBrowserDriver extends EventEmitter {
   async element(tab, args, action, signal, extra = {}) {
     if (typeof args.ref !== 'string' || !tab.refs.has(args.ref)) throw Object.assign(error('Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE' });
     const frame = tab.refs.get(args.ref);
-    const result = await this.pageWork(tab, frame.executeJavaScript(`(${elementActionResult.toString()})(${elementAction.toString()},${JSON.stringify(this.key)},${JSON.stringify(args.ref)},${JSON.stringify(action)},${JSON.stringify({ ...args, ...extra })})`), signal);
+    const result = await this.pageWork(tab, frame.executeJavaScript(`(${elementActionResult.toString()})(${elementAction.toString()},${smoothPageScroll.toString()},${JSON.stringify(this.key)},${JSON.stringify(args.ref)},${JSON.stringify(action)},${JSON.stringify({ ...args, ...extra })})`), signal);
     if (result?.__blackiceElementError) {
       const { message, code } = result.__blackiceElementError;
       // An earlier preparation pass can already have scrolled the page. Keep
@@ -1087,10 +1107,10 @@ export class ElectronBrowserDriver extends EventEmitter {
       if (args.expectedDocumentId !== undefined) return { ...this.interactionReceipt(tab), receipt: { ...receipt, ...(args.modifiers?.length ? { modifiers: [...args.modifiers] } : {}), input: 'browser protocol' } };
     }
     if (args.action === 'scroll') {
-      const amount = Math.min(2000, Math.max(1, Number(args.amount) || 650)), direction = args.direction || 'down';
+      const amount = Math.min(2000, Math.max(1, Number(args.amount) || 450)), direction = args.direction || 'down';
       const movement = { top: ['up','down'].includes(direction) ? amount * (direction === 'up' ? -1 : 1) : 0, left: ['left','right'].includes(direction) ? amount * (direction === 'left' ? -1 : 1) : 0 };
       if (args.ref) receipt = (await this.element(tab, args, 'scroll', signal, movement)).result;
-      else receipt = await bounded(tab.window.webContents.executeJavaScript(`window.scrollBy({top:${movement.top},left:${movement.left},behavior:'instant'}); ({scrollY,scrollX})`), signal);
+      else receipt = await bounded(tab.window.webContents.executeJavaScript(`(async()=>{await (${smoothPageScroll.toString()})(document.scrollingElement||document.documentElement,${movement.top},${movement.left});return {scrollY,scrollX};})()`), signal);
     }
     if (args.action === 'upload') {
       if (!Array.isArray(args.paths) || !args.paths.length || args.paths.length > 10) throw error('Supply 1–10 absolute local file paths.');
