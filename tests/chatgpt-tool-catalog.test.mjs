@@ -19,9 +19,9 @@ const definition = (name, extra = {}) => ({
 const unavailable = () => assert.fail('Discovery must not execute a tool.');
 const provider = tools => ({ tools: () => tools, call: unavailable });
 
-test('the full native catalog retains the exact 28-tool public contract and fingerprint', () => {
-  // A fixed digest of the deployed 2.33.5/2.33.6 catalog catches any accidental
-  // change to names, order, descriptions, schemas, annotations or OAuth metadata.
+test('the full native catalog omits classification hints across all 28 public tools', () => {
+  // A fixed digest catches accidental changes to the remaining public contract:
+  // names, order, descriptions, schemas and OAuth metadata.
   // Only definitions are constructed: no storage or native adapter is opened.
   const execution = new DirectExecutionAPI({ dataDir: '/unused-catalog-fixture', additionalTools: [
     chatGPTFileImportTool({ directory: '/unused-catalog-fixture/imports' }),
@@ -41,10 +41,11 @@ test('the full native catalog retains the exact 28-tool public contract and fing
     'blackice_get_swarm_plan', 'blackice_get_plan_groups', 'blackice_edit_plan', 'blackice_edit_plan_groups',
   ]);
   assert.deepEqual(catalog.status(), {
-    sha256: 'e005a0eba62989d59498e014efffaf8b43a3b2bb9b5f77100aa4ca46e138748d',
+    sha256: 'a2d2816177291775572f39b0694e6acc30973c00073bc45f05e58cc1165859b2',
     toolCount: 28,
     serverVersion: '2.33.5',
   });
+  for (const tool of catalog.tools()) assert.equal(Object.hasOwn(tool, 'annotations'), false, tool.name);
   assert.equal(createHash('sha256').update(JSON.stringify(catalog.tools())).digest('hex'), catalog.status().sha256);
 });
 
@@ -108,15 +109,26 @@ test('caller and provider mutations cannot change snapshots or their authorizati
   tools[0]._meta.securitySchemes[0].scopes.push('metadata mutation');
   entry.requiredScopes.length = 0;
   entry.definition._meta['fixture/preserved'].nested.push('entry mutation');
-  entry.definition.annotations.destructiveHint = false;
+  entry.definition.annotations = { destructiveHint: false };
   catalog.status().sha256 = 'fake';
 
   assert.equal(JSON.stringify(catalog.tools()), serialized);
   assert.equal(catalog.status().sha256, fingerprint);
   assert.deepEqual(catalog.get('blackice_fixture').requiredScopes, ['read', 'browser:write', 'files:read']);
-  assert.deepEqual(catalog.get('blackice_fixture').definition.annotations, {
-    readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true,
+  assert.equal(Object.hasOwn(catalog.get('blackice_fixture').definition, 'annotations'), false);
+});
+
+test('classification hints are omitted without mutating providers or removing display annotations', () => {
+  const original = definition('blackice_fixture', {
+    scope: 'commands:run',
+    annotations: { title: 'Run a command', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
   });
+  const before = structuredClone(original);
+  const catalog = createChatGPTToolCatalog({ providers: [provider([original])], version: 'fixture' });
+  assert.deepEqual(catalog.tools()[0].annotations, { title: 'Run a command' });
+  assert.deepEqual(catalog.get(original.name).definition.annotations, { title: 'Run a command' });
+  assert.deepEqual(catalog.get(original.name).requiredScopes, ['read', 'commands:run']);
+  assert.deepEqual(original, before);
 });
 
 test('scope aliases and existing metadata preserve their wire representation and provider order', () => {

@@ -85,7 +85,7 @@ test('a pending native restart keeps authenticated receipt reads and cancellatio
   assert.equal(calls.length, controls.length); assert.deepEqual(connector.catalogStatus(), fingerprint);
 });
 
-test('every advertised definition mirrors OAuth metadata without changing scopes, annotations or catalog stability', async t => {
+test('every advertised definition omits classification hints and retains OAuth metadata and catalog stability', async t => {
   const { connector, execution, calls } = await fixture(t);
   const unavailable = () => assert.fail('Catalog inspection must not execute an adapter.');
   const definitions = new DirectExecutionAPI({ dataDir: path.dirname(connector.file), additionalTools: [
@@ -105,7 +105,9 @@ test('every advertised definition mirrors OAuth metadata without changing scopes
     const expected = [{ type: 'oauth2', scopes: [...new Set(['read', ...(requiredScopes || scopes || [scope || requiredScope || 'read'])])] }];
     assert.deepEqual(tool.securitySchemes, expected, tool.name);
     assert.deepEqual(tool._meta.securitySchemes, expected, tool.name);
-    assert.deepEqual(tool.annotations, definition.annotations, tool.name);
+    assert.equal(Object.hasOwn(tool, 'annotations'), false, tool.name);
+    assert.equal(tool.name, definition.name);
+    assert.equal(tool.description, definition.description);
     assert.deepEqual(tool.inputSchema, definition.inputSchema, tool.name);
     for (const [key, value] of Object.entries(definition._meta || {})) assert.deepEqual(tool._meta[key], value, tool.name);
     assert.equal(tool._meta['openai/toolInvocation/invoking'], 'Contacting BLACKICE');
@@ -184,7 +186,7 @@ test('the actual direct/planning catalog is stable across nonce probes, status, 
   assert.deepEqual(connector.catalogStatus(), expected);
 });
 
-test('catalog diagnostics detect an actual definition change without changing tool annotations or scopes', async t => {
+test('catalog diagnostics detect public definition changes while omitted hints do not change the fingerprint', async t => {
   const { connector, execution } = await fixture(t);
   const definitions = new DirectExecutionAPI({ dataDir: path.dirname(connector.file) });
   execution.tools = () => definitions.tools();
@@ -192,11 +194,13 @@ test('catalog diagnostics detect an actual definition change without changing to
   const command = definitions.definitions.get('blackice_run_command');
   assert.deepEqual(command.annotations, { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true });
   assert.deepEqual(command.requiredScopes, ['commands:run']);
+  command.annotations.destructiveHint = false;
+  assert.deepEqual(connector.catalogStatus(), first, 'private classification hints are absent from the public contract');
   command.description += ' Fixture catalog revision.';
   const second = connector.catalogStatus();
   assert.notEqual(second.sha256, first.sha256); assert.equal(second.toolCount, first.toolCount);
   const advertised = connector.tools().find(tool => tool.name === 'blackice_run_command');
-  assert.deepEqual(advertised.annotations, command.annotations);
+  assert.equal(Object.hasOwn(advertised, 'annotations'), false);
   assert.deepEqual(advertised.securitySchemes, [{ type: 'oauth2', scopes: ['read', 'commands:run'] }]);
   assert.equal(Object.hasOwn(advertised, 'toolCatalog'), false, 'the diagnostic fingerprint is never added to public definitions');
 });

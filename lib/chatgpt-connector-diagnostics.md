@@ -35,7 +35,7 @@ For a recurring incident, retain the exact host error, timestamp, catalog hash a
 
 After a confirmed host catalog rejection, refresh the available tool definitions and reissue the same authorized action with identical arguments and the same `requestId` while the connection ID remains unchanged. If a BLACKICE job ID was returned, read that durable job first. A lost response does not establish that an action failed. After a connection change, inspect prior effects before submitting new work, since request identity is scoped to the original grant.
 
-Do not classify mutating or open-world tools as read-only to suppress host approval. Catalog annotations describe the actual operation; host action preferences and OAuth validation remain separate from BLACKICE's lack of a local per-action approval gate.
+The public catalog omits the optional `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint` classification fields, matching the original Currents connector on this point. It does not replace them with read-only or non-destructive claims. Tool descriptions, schemas, OAuth requirements, and host action preferences continue to describe and control the actual operations. A changed catalog alone does not establish that repeated host approval prompts are fixed.
 
 ## Deployment and rollback compatibility
 
@@ -47,7 +47,7 @@ An installer rollback before activation is a different case: if the previous pro
 
 The `direct-connector-v2` implementation separates the wire protocol, tool catalog, and OAuth admission. `blackice_direct_status` returns `integration` and the same bounded `authDiagnostics` counters as local connector status. This identifies the loaded implementation without issuing a command or exposing credentials.
 
-Each request uses one catalog snapshot for discovery metadata, required scopes, and dispatch. The unchanged native catalog contains 28 tools and retains fingerprint `e005a0eba62989d59498e014efffaf8b43a3b2bb9b5f77100aa4ca46e138748d`. The endpoint, supported protocol versions, tool schemas, annotations, full accepted operations, persisted OAuth format, and durable job format are preserved. Initialization does not create or reset grant state.
+Each request uses one catalog snapshot for discovery metadata, required scopes, and dispatch. The native catalog contains 28 tools. After omitting optional classification hints its fingerprint is `a2d2816177291775572f39b0694e6acc30973c00073bc45f05e58cc1165859b2`; the prior catalog with hints had fingerprint `e005a0eba62989d59498e014efffaf8b43a3b2bb9b5f77100aa4ca46e138748d`. The endpoint, supported protocol versions, tool schemas, full accepted operations, persisted OAuth format, and durable job format are preserved. Initialization does not create or reset grant state.
 
 Optional status and setup observers cannot delay or replace an accepted action's response. Only explicit BLACKICE authorization errors produce connection challenges; a destination service's HTTP 401/403 remains an action error. If the same live grant loses a required scope before dispatch, the response identifies the missing scope rather than invalidating a valid access token.
 
