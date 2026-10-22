@@ -270,7 +270,7 @@ test('palette keyboard activation respects a tabbed result and arrows follow its
 test('command search ranks titles before descriptive matches and preserves chat relevance and stable ties',async()=>{
   const f=await fixture(()=>({})),ids=query=>[...f.matchingCommands(query)].map(command=>command.id);
   assert.equal(ids('learning')[0],'learning');assert.ok(ids('learning').indexOf('learning')<ids('learning').indexOf('agent-workspace'));
-  assert.equal(ids('api')[0],'models-connections');assert.deepEqual(ids('cron'),['schedule','operations']);
+  assert.equal(ids('api')[0],'models-connections');assert.deepEqual(ids('cron'),['operations','schedule'],'the named cronjobs manager outranks a task-creation keyword match');
   assert.equal(ids('file changes')[0],'file-patches');assert.equal(ids('history')[0],'learning','title substring outranks a description-only match');
   for(const query of ['learning','api','cron'])assert.equal(f.matchingCommands(query).some(command=>command.studio),false,query);
   assert.equal(f.matchingCommands().some(command=>command.studio),false);

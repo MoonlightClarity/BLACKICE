@@ -41,7 +41,7 @@ async function waitJob(api, jobId, who = client) {
 }
 
 test('MCP discovery publishes the same expanded browser schemas with the existing scopes', async t => {
-  const { api, directory } = await fixture(t), connector = new ChatGPTConnector({ dataDir: directory, execution: api, planning: { tools: () => [] }, oauth: {} });
+  const { api, directory } = await fixture(t), connector = new ChatGPTConnector({ dataDir: directory, execution: api, planning: { tools: () => [], call: async () => { throw new Error('Discovery must not execute planning tools.'); } }, oauth: {} });
   for (const [name, scope] of [['blackice_browser_action', 'browser:write'], ['blackice_browser_read', 'browser:read']]) {
     const runtime = api.tools().find(tool => tool.name === name), exposed = connector.tools().find(tool => tool.name === name);
     assert.deepEqual(exposed.inputSchema, runtime.inputSchema); assert.deepEqual(exposed.securitySchemes, [{ type: 'oauth2', scopes: ['read', scope] }]);

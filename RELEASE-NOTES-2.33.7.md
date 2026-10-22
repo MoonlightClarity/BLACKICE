@@ -18,7 +18,7 @@ Planning, saved swarms and scheduled work now share the same navigation. Swarms 
 
 The layouts support narrow windows, and navigation itself does not submit tasks or start workers. Schedule drafts are retained for the current UI session; they are not saved across an app restart.
 
-Vendored method catalog files also retain their exact pinned bytes in Windows checkouts, preventing line-ending conversion from invalidating their integrity checks.
+Vendored method catalog files and generated artwork retain their exact pinned bytes in Windows checkouts, preventing line-ending conversion from invalidating their integrity checks.
 
 ## Verification
 

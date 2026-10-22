@@ -63,7 +63,7 @@ async function fixture(t, { transformReceipt, exception = false, behavior, assig
       contents.getURL = () => this.url || ''; contents.getTitle = () => 'Upload regression fixture';
       contents.isLoading = () => false; contents.isLoadingMainFrame = () => false;
       contents.mainFrame = { processId: 1, routingId: 1, framesInSubtree: [], executeJavaScript: async script => {
-        if (script.startsWith('(function elementAction')) return transform(vm.runInContext(script, context));
+        if (script.startsWith('(async function elementActionResult')) return transform(await vm.runInContext(script, context));
         return { title: 'Upload regression fixture', url: this.url, elements: input.alert ? [{ role: 'alert', name: input.alert }] : [], text: ['Owned fixture', input.appState, input.alert].filter(Boolean).join('\n'), readyState: 'complete' };
       } };
       contents.setWindowOpenHandler = () => {}; contents.loadURL = async url => { this.url = url; };

@@ -79,7 +79,7 @@ test('actual password type, visibility, editability and snapshot identity are ma
 test('opaque-filled password values remain masked after a show-password toggle and a same-document snapshot revision', async () => {
   const f = fixture(); await (await f.driver.prepareCredentialFill(f.args))(secret);
   vm.runInContext(`document.documentElement={children:[password,confirmation,username]};document.title='Owned fixture';document.getElementById=()=>null;for(const el of document.documentElement.children){el.children=[];el.childNodes=[];el.getAttribute=name=>name==='aria-label'?el.id:null;}password.type='text';confirmation.type='text';`, f.context);
-  const snapshotSource = source.slice(source.indexOf('function pageSnapshot('), source.indexOf('\nfunction elementAction('));
+  const snapshotSource = source.slice(source.indexOf('function pageSnapshot('), source.indexOf('\nasync function smoothPageScroll('));
   const result = vm.runInContext(`(${snapshotSource})("__fixture","revised-prefix","")`, f.context);
   assert.equal(result.elements.length, 3);
   assert.ok(result.elements.filter(element => ['password', 'confirmation'].includes(element.name)).every(element => !Object.hasOwn(element, 'value')));

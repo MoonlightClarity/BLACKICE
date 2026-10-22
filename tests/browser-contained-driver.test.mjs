@@ -58,7 +58,7 @@ test('a detached renderer ref preserves its message across a boundary that loses
   frame.executeJavaScript = async code => {
     // Model a cross-process boundary that copies ordinary data but drops the
     // non-enumerable message of an uncaught renderer Error.
-    try { return JSON.parse(JSON.stringify(vm.runInContext(code, context))); }
+    try { return JSON.parse(JSON.stringify(await vm.runInContext(code, context))); }
     catch (cause) { throw JSON.parse(JSON.stringify(cause)); }
   };
   tab.refs.set('old-media', frame);
@@ -76,7 +76,7 @@ test('unexpected renderer failures retain their message without trusting a page-
   const element = { isConnected: true, getAttribute: () => null, scrollIntoView: () => { scrolls++; }, getBoundingClientRect() { throw Object.assign(new Error('Layout changed after scrolling.'), { code: 'BROWSER_LAYOUT_FAILED', actionDispatched: false }); } };
   const frame = tab.window.webContents.mainFrame, context = vm.createContext({ [driver.key]: { elements: new Map([['media', element]]) } });
   frame.executeJavaScript = async code => {
-    try { return JSON.parse(JSON.stringify(vm.runInContext(code, context))); }
+    try { return JSON.parse(JSON.stringify(await vm.runInContext(code, context))); }
     catch (cause) { throw JSON.parse(JSON.stringify(cause)); }
   };
   tab.refs.set('media', frame);

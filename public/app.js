@@ -598,7 +598,7 @@
     {id:'task-notes',label:'Task plans & notes',detail:'Open the current task outline, notes and evidence',keywords:'plan notes steps checkpoints',icon:'plan'},
     {id:'schedule',label:'Schedule a task',detail:'Choose a task and when it runs',keywords:'cron cronjob recurring automation timer',icon:'clock'},
     {id:'swarm',label:'Create a swarm',detail:'Several specialists, one result',keywords:'team parallel agents',icon:'agent'},
-    {id:'operations',label:'Schedules & cronjobs',detail:'Saved schedules, upcoming tasks and job history',keywords:'cron cronjobs operations automation recurring',icon:'clock'},
+    {id:'operations',label:'Manage schedules & cronjobs',detail:'Saved schedules, upcoming tasks and job history',keywords:'cron cronjobs operations automation recurring',icon:'clock'},
     {id:'mission',label:'Go to conversation',detail:'Return to your current chat',keywords:'view chat',icon:'spark'},
     {id:'inbox',label:'Task inbox',detail:'Capture tasks, change their order, or run the queue',icon:'inbox'},
     {id:'agent-workspace',label:'Your agent',detail:'Identity, user profile, learning, context and connected tools',icon:'identity'},
