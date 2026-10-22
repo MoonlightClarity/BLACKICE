@@ -16,7 +16,7 @@ class Runtime extends EventEmitter {
   async close() {}
 }
 
-test('legacy native discovery preserves its manual connection while an ordinary task completes without native browser admission', async t => {
+test('legacy native discovery preserves its manual connection while background readiness remains unverified and an ordinary task completes', async t => {
   const directory = await mkdtemp(path.join(tmpdir(), 'relay-browser-server-'));
   const methods = [];
   const tools = ['tabs', 'snapshot', 'act', 'navigate'].map(name => ({ name, description: 'Fixture browser tool.', inputSchema: { type: 'object', properties: { action: { type: 'string' }, page: { type: 'integer' }, kind: { type: 'string' }, url: { type: 'string' } } } }));
@@ -40,12 +40,17 @@ test('legacy native discovery preserves its manual connection while an ordinary 
   assert.equal(status.signedBrowser.endpoint, endpoint); assert.equal(status.signedBrowser.reusesBrowserSession, true);
   assert.deepEqual(methods, ['initialize', 'notifications/initialized', 'tools/list', 'tools/call', 'initialize', 'notifications/initialized', 'tools/list', 'tools/call'], 'status validates the browser link before persisting it and checks the adopted connection');
   assert.equal((await request('/api/browser/reconnect', {})).status, 200);
-  const started=await request('/api/browser/start', {});assert.equal(started.status,503);assert.match((await started.json()).error,/cannot verify its background focus policy/);
+  const started = await request('/api/browser/start', {}); assert.equal(started.status, 200);
+  const startedStatus = (await started.json()).signedBrowser;
+  assert.equal(startedStatus.available, true); assert.equal(startedStatus.connectionId, 'browseros-neo'); assert.equal(startedStatus.reusesBrowserSession, true);
+  assert.equal(startedStatus.backgroundReady, false); assert.match(startedStatus.backgroundReason, /cannot verify its background focus policy/);
+  assert.equal(startedStatus.backgroundWindow.ready, false); assert.equal(startedStatus.backgroundWindow.supported, false);
   assert.equal(app.connections.configs.get('browseros-neo').url,endpoint);assert.equal(app.connections.clients.get('browseros-neo').connected,true,'unsupported policy keeps the existing tool connection intact');assert.equal(app.connections.signedBrowser.backgroundWindow.ready,false);assert.equal(app.connections.signedBrowser.backgroundWindow.supported,false);
   const graph = { id: 'browser-prompt', name: 'Browser prompt', nodes: [{ id: 'input', type: 'input', name: 'Task' }, { id: 'agent', type: 'agent', name: 'Agent', prompt: 'Inspect the website', sandbox: 'read-only' }, { id: 'output', type: 'output', name: 'Result' }], edges: [{ id: 'a', source: 'input', target: 'agent' }, { id: 'b', source: 'agent', target: 'output' }], settings: { maxParallel: 1 } };
   const run = app.engine.startRun({ workflow: graph, input: 'Check the actual account state.' });
   await app.engine.executions.get(run.id);
-  assert.equal(app.engine.getRun(run.id).status,'completed','an ordinary model turn can still finish without native browser admission');
-  assert.doesNotMatch(runtime.prompts[0], /EXISTING BROWSER SESSION/,'an unverifiable native session is not advertised as usable');
+  assert.equal(app.engine.getRun(run.id).status,'completed','an ordinary model turn can still finish when native background readiness is unverified');
+  assert.doesNotMatch(runtime.prompts[0], /EXISTING BROWSER SESSION/, 'ordinary tasks use the configured connection instructions instead of the legacy session block');
+  assert.match(runtime.prompts[0], /relay_connections for a configured native Chrome, Neo or imported browser profile/, 'configured native profiles remain an explicit browser choice');
   assert.equal(methods.filter(method => method === 'tools/call').length, 4, 'Discovery and explicit reconnect/start only read the browser inventory');
 });

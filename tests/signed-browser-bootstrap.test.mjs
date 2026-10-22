@@ -230,20 +230,20 @@ test('capture rejects dangerous options before calls and damaged, mismatched, ov
   }
 });
 
-test('passive discovery never runs native admission; an explicit task checks it and propagates blockers', async () => {
+test('passive discovery never probes background readiness; an explicit task reports it without hiding the live connection', async () => {
   let preparations = 0;
   const integration = createSignedBrowserIntegration({
     registerImpl: async () => ({ available: true, catalogKind: 'neo-run', connectionId: 'neo' }),
     prepareWindowImpl: async () => { preparations++; return { ready: false, reason: 'Focus policy needs attention.' }; },
   });
   assert.equal((await integration.refresh()).available, true); assert.equal(preparations, 0);
-  const blocked = await integration.refresh({ startIfNeeded: true });
-  assert.equal(preparations, 1); assert.equal(blocked.available, false); assert.equal(blocked.reason, 'Focus policy needs attention.');
-  assert.equal(blocked.backgroundWindow.ready, false);
+  const checked = await integration.refresh({ startIfNeeded: true });
+  assert.equal(preparations, 1); assert.equal(checked.available, true); assert.equal(checked.backgroundReady, false); assert.equal(checked.backgroundReason, 'Focus policy needs attention.');
+  assert.equal(checked.backgroundWindow.ready, false);
   await integration.close();
 });
 
-test('repeated zero-window task admission stays blocked until a human opens an existing Neo window', async () => {
+test('repeated zero-window checks preserve the live connection and report background readiness until an existing Neo window is supplied', async () => {
   const fixture = protocolFixture();
   let mcpCalls = 0;
   const connections = { clients: new Map([['neo', { connected: true, closed: false, tools: [run], call: async (name, args) => {
@@ -253,13 +253,13 @@ test('repeated zero-window task admission stays blocked until a human opens an e
   const integration = createSignedBrowserIntegration({ connections, registerImpl: async () => ({ available: true, catalogKind: 'neo-run', connectionId: 'neo' }) });
   assert.equal((await integration.refresh()).available, true); assert.equal(mcpCalls, 0);
   const first = await integration.refresh({ startIfNeeded: true });
-  assert.equal(first.available, false); assert.equal(first.backgroundWindow.created, false); assert.equal(first.backgroundWindow.code, 'NATIVE_WINDOW_REQUIRED'); assert.equal(first.backgroundWindow.policyVerified, true); assert.match(first.reason, /contained BLACKICE browser in Observe/); assert.match(first.reason, /will not open one automatically/);
+  assert.equal(first.available, true); assert.equal(first.backgroundReady, false); assert.equal(first.backgroundWindow.ready, false); assert.equal(first.backgroundWindow.created, false); assert.equal(first.backgroundWindow.code, 'NATIVE_WINDOW_REQUIRED'); assert.equal(first.backgroundWindow.policyVerified, true); assert.match(first.backgroundReason, /contained BLACKICE browser in Observe/); assert.match(first.backgroundReason, /will not open one automatically/);
   const second = await integration.refresh({ startIfNeeded: true });
-  assert.equal(second.available, false); assert.equal(second.backgroundWindow.code, 'NATIVE_WINDOW_REQUIRED'); assert.deepEqual(fixture.existing, []);
+  assert.equal(second.available, true); assert.equal(second.backgroundReady, false); assert.equal(second.backgroundWindow.ready, false); assert.equal(second.backgroundWindow.code, 'NATIVE_WINDOW_REQUIRED'); assert.deepEqual(fixture.existing, []);
   // Only external human action supplies this pre-existing native window.
   fixture.existing.push({ id: 82, state: 'normal', focused: false });
-  const third = await integration.refresh({ startIfNeeded: true }); assert.equal(third.available, true); assert.equal(third.backgroundWindow.created, false); assert.equal(third.backgroundWindow.policyVerified, true);
-  const fourth = await integration.refresh({ startIfNeeded: true }); assert.equal(fourth.available, true); assert.equal(fourth.backgroundWindow.created, false);
+  const third = await integration.refresh({ startIfNeeded: true }); assert.equal(third.available, true); assert.equal(third.backgroundReady, true); assert.equal(third.backgroundReason, null); assert.equal(third.backgroundWindow.ready, true); assert.equal(third.backgroundWindow.created, false); assert.equal(third.backgroundWindow.policyVerified, true);
+  const fourth = await integration.refresh({ startIfNeeded: true }); assert.equal(fourth.available, true); assert.equal(fourth.backgroundReady, true); assert.equal(fourth.backgroundReason, null); assert.equal(fourth.backgroundWindow.ready, true); assert.equal(fourth.backgroundWindow.created, false);
   assert.deepEqual(fixture.existing, [{ id: 82, state: 'normal', focused: false }]); assert.equal(mcpCalls, 4); assert.deepEqual(fixture.nativeCalls.map(call => call.method), Array.from({ length: 4 }, () => ['getPref', 'getAll']).flat());
   await integration.close();
 });
