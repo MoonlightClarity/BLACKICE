@@ -209,3 +209,23 @@ test('mobile naming opens the visible outline pane and Escape returns to an acce
   await f.dom.key(document.activeElement, 'Escape');
   assert.equal(f.dom.$('#planning-organization').hidden, true); assert.equal(document.activeElement.dataset.planningTask, 'task-a'); assert.equal(f.dom.$('#planning-saved-panel').hidden, false);
 });
+
+
+test('Planning identifies saved chat plans and offers the shared workspace destinations without a write',async t=>{
+  const f=await fixture(t),nav=f.dom.$('.coordination-navigation');assert.ok(nav);
+  assert.equal(nav.querySelector('[data-action="planning"]').getAttribute('aria-current'),'page');assert.equal(nav.querySelector('[data-action="planning"]').disabled,true);
+  assert.ok(nav.querySelector('[data-action="projects"]'));assert.ok(nav.querySelector('[data-action="operations"]'));assert.equal(f.dom.$('.planning-catalog-title h2').textContent,'Saved chat plans');assert.equal(f.writes().length,0);
+});
+
+for(const width of [1440,320]) test(`named group removal targets its own group and preserves saved work at ${width}px`,async t=>{
+  const f=await fixture(t,{width}),launch=f.dom.$('[data-planning-group="launch"]'),research=f.dom.$('[data-planning-group="research"]');
+  launch.focus();await f.dom.key(launch,'ArrowRight');const expanded=research.getAttribute('aria-expanded');
+  const remove=research.querySelector('[data-planning-action="remove-group"]');assert.ok(remove);assert.equal(remove.getAttribute('aria-label'),'Remove group Research');
+  const key=await f.dom.key(remove,'Enter');assert.equal(key.defaultPrevented,false,'native button activation must not toggle its tree group');assert.equal(research.getAttribute('aria-expanded'),expanded);
+  await f.dom.click(remove);assert.equal(f.controller.state.organizationDraft.groupId,'research');assert.equal(f.dom.$('#planning-organization-title').textContent,'Remove “Research”?');assert.equal(research.getAttribute('aria-expanded'),expanded);assert.equal(f.writes().length,0);
+  await f.dom.click('[data-planning-action="cancel-organization"]');
+  f.controller.selectEditor('inspect');f.controller.edit('title','Keep my unfinished task edit');const draft=f.controller.draft(),before=await f.tasks.get('task-a');
+  await f.dom.click(launch.querySelector('[data-planning-action="remove-group"]'));assert.equal(f.controller.state.organizationDraft.groupId,'launch');assert.equal(await f.controller.saveOrganization(),true);
+  assert.deepEqual(await f.tasks.get('task-a'),before);assert.equal(f.controller.draft(),draft);assert.equal(draft.values.title,'Keep my unfinished task edit');assert.equal(f.dom.$('[data-planning-task="task-a"]').closest('[data-planning-group]').dataset.planningGroup,'ungrouped');
+  assert.equal(f.dom.$('[data-planning-group="ungrouped"] [data-planning-action="remove-group"]'),null);assert.equal(f.writes().length,1);
+});

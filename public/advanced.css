@@ -57,3 +57,15 @@ html[data-blackice-ui] body #modal-root #swarm-plan-preview { height:410px;min-w
 #swarm-plan-preview .task-plan-map-navigation,#swarm-plan-preview .task-plan-map-controls { display:flex;flex-wrap:wrap;gap:4px;padding:4px 10px; }
 #swarm-plan-preview [hidden] { display:none!important; }
 @media(max-width:600px){html[data-blackice-ui] body #modal-root #swarm-plan-preview{height:320px;}html[data-blackice-ui] body #modal-root .swarm-assignment > summary{min-height:46px;}}
+
+/* Schedule navigation keeps configuration separate from execution receipts. */
+.operations-sections{display:flex;gap:8px;flex-wrap:wrap;padding-bottom:15px;margin-bottom:16px;border-bottom:1px solid #36505f}
+.operations-sections button{display:flex;align-items:center;gap:8px;padding:8px 11px;font-size:12px;color:#c2dbe5}
+.operations-sections span{font-size:10px;color:#9fb9c8}
+.operations-schedules:focus,.operations-jobs:focus{outline:1px solid #91bcc6;outline-offset:7px}
+.operations-scope{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:9px 12px;margin:12px 0;border-left:2px solid #98bbce;background:#243b4a70;color:#b4cedb;font-size:12px}
+.operations-scope strong{font-weight:550;color:#d1e5ec;overflow-wrap:anywhere}
+.operations-scope .button{font-size:11px}
+.schedule-draft-note{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 15px;padding:10px 12px;border-left:2px solid #b6cba8;background:#2c443733;color:#bfd1be;font-size:12px;line-height:1.5}
+.schedule-draft-note .button{font-size:11px}
+@media(max-width:600px){.operations-sections{gap:6px}.operations-sections button{flex:1;justify-content:center;padding:9px 7px}.operations-scope{align-items:flex-start}}

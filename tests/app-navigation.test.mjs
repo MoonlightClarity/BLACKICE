@@ -53,7 +53,7 @@ async function fixture({pauseModule,apiResponse,desktop=true}={}){
     renderDesktop=()=>renderMode();renderHeader=()=>{};renderGraph=()=>{};renderInspector=()=>{};markDirty=()=>{state.dirty=true;};saveWorkflow=()=>__effects.push('save');showRun=()=>__effects.push('run');restoreHistory=direction=>__effects.push(direction);toast=(message,error)=>__messages.push({message,error});
     missionUI={getDraft:()=>__draft,getSelection:()=>null,capturePromptDraft:()=>({...__draft}),applyPromptDraft(capture,text){if(capture.task!==__draft.task)return{applied:false};__draft.task=text;return{applied:true};},focus(){document.activeElement=document.querySelector('#mission-task');__effects.push('chat-focus:'+state.screen);},update(){},submitFocused(){__effects.push('chat-submit');}};configureUI={update(){},draft:__settingsDraft};observeUI={update(){},enter(){}};
     ${clickRegistration}
-    globalThis.app={state,mountConfigure,mountObserve,showChatGPTConnectorSettings,toast:renderToast,handleGlobalKey,updateSkipLink,syncWorkflowView,ensureWorkflowView,applyView,fit,showModal,closeModal,showPlanning,showMission,showObserve,showConfigure,showWorkflow,selectWorkspaceMode,handleWorkspaceModeKey,renderMode,showLearning,showEmailWorkspace,showIdentity,showToolConnections,showFilePatches,showKnowledge,showConnections,showBrowserWorkspace,showProjects,showInbox,showOperations,showSchedule,showSwarm,showDeployOperation};
+    globalThis.app={state,mountConfigure,mountObserve,showChatGPTConnectorSettings,toast:renderToast,handleGlobalKey,updateSkipLink,syncWorkflowView,ensureWorkflowView,applyView,fit,showModal,closeModal,showPlanning,showTaskNotes,showMission,showObserve,showConfigure,showWorkflow,selectWorkspaceMode,handleWorkspaceModeKey,renderMode,showLearning,showEmailWorkspace,showIdentity,showToolConnections,showFilePatches,showKnowledge,showConnections,showBrowserWorkspace,showProjects,showInbox,showOperations,showSchedule,showSwarm,showDeployOperation};
   })();`);
   await vm.runInContext(adapted,context);
   const app=context.app;app.state.workflow={id:'draft',name:'Unfinished workflow',nodes:[],edges:[],settings:{cwd:'C:\\fixture'}};app.state.dirty=false;
@@ -305,6 +305,32 @@ for(const desktop of [true,false])test(`Settings on ${desktop?'desktop':'web'} c
   assert.deepEqual(calls,[]);assert.deepEqual(f.observedEntries,[]);
   assert.equal(f.state.screen,'configure');assert.equal(f.state.currentRun,null);
   assert.deepEqual(f.draft,draft);assert.deepEqual(f.effects,[]);assert.equal(f.document.activeElement,focused);
+});
+
+
+test('generic Planning navigation retains its selected plan while explicit links choose a plan',async()=>{
+  const f=await fixture();await f.showPlanning({taskId:'chosen-plan'});await f.showOperations();await f.showPlanning();
+  const seeds=f.effects.filter(item=>item.planningSeed).map(item=>item.planningSeed);
+  assert.equal(seeds[0].taskId,'chosen-plan');
+  assert.deepEqual(Object.keys(seeds.at(-1)),[],'returning from schedules must not replace the selected plan with the current chat');
+  await f.showPlanning({taskId:'linked-plan'});assert.equal(f.effects.filter(item=>item.planningSeed).at(-1).planningSeed.taskId,'linked-plan');
+  assert.equal(f.draft.task,'Keep my unsent task');assert.ok(!f.effects.includes('chat-submit'));assert.ok(!f.effects.includes('run'));
+});
+
+test('current-task notes explicitly follow the selected chat after another plan was open',async()=>{
+  const f=await fixture();await f.showPlanning({taskId:'plan-A'});
+  f.state.currentRun={id:'run-B',taskState:{taskId:'plan-B',revision:2,steps:[]},status:'completed'};
+  await f.showTaskNotes();
+  const seed=f.effects.filter(item=>item.planningSeed).at(-1).planningSeed;
+  assert.equal(seed.taskId,'plan-B');assert.equal(seed.runId,'run-B');
+  assert.equal(f.draft.task,'Keep my unsent task');assert.ok(!f.effects.includes('run'));
+});
+
+test('shared coordination destinations preserve unsent work and use existing navigation ownership',async()=>{
+  const f=await fixture();f.state.dirty=true;const draft=structuredClone(f.draft);
+  for(const action of ['projects','operations','planning'])await f.activateAction(action);
+  assert.deepEqual(f.opened,['projects','operations','planning']);assert.deepEqual(f.draft,draft);assert.equal(f.state.dirty,true);
+  assert.equal(f.state.screen,'planning');assert.equal(f.state.modal,null);assert.ok(!f.effects.includes('chat-submit'));assert.ok(!f.effects.includes('run'));
 });
 
 test('connection settings remains reachable without opening a ChatGPT tab or submitting work',async()=>{

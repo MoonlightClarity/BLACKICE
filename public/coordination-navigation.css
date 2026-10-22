@@ -1,0 +1,13 @@
+/* One set of destinations for plans, saved teams, and scheduled runs. */
+.coordination-navigation{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:0 0 16px;padding:5px;border:1px solid var(--line,#263a45);border-radius:12px;background:rgba(6,16,23,.6)}
+.coordination-navigation button{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;min-height:54px;padding:10px 12px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--muted,#a4b7c2);text-align:left;cursor:pointer}
+.coordination-navigation button strong{font-size:13px;color:inherit}
+.coordination-navigation button span{font-size:11px;line-height:1.4;overflow-wrap:anywhere}
+.coordination-navigation button:hover{background:rgba(123,208,230,.07);color:var(--text,#e5eef3)}
+.coordination-navigation button[aria-current="page"]{opacity:1;border-color:rgba(125,207,230,.28);background:rgba(96,184,207,.12);color:var(--text,#e5eef3);cursor:default}
+.coordination-navigation button:focus-visible{outline:2px solid var(--accent,#8ed5e7);outline-offset:2px}
+#workspace-modes .workspace-schedules{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:34px;padding:0 10px;border:1px solid var(--line,#263a45);border-radius:8px;background:rgba(12,24,32,.7);color:var(--text,#e5eef3);font:inherit;font-size:12px;white-space:nowrap;cursor:pointer}
+#workspace-modes .workspace-schedules:focus-visible{outline:2px solid var(--accent,#8ed5e7);outline-offset:2px}
+.planning-workspace>.coordination-navigation{flex:none;margin:0 16px 12px}
+@media(max-width:1100px){html body #workspace-modes .workspace-schedules{display:none!important}}
+@media(max-width:540px){.coordination-navigation{gap:3px;padding:3px;margin-bottom:12px}.coordination-navigation button{padding:9px 7px;min-height:44px;align-items:center}.coordination-navigation button span{display:none}.planning-workspace>.coordination-navigation{margin:0 10px 10px}}

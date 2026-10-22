@@ -1,0 +1,2 @@
+# Vendored catalog and source hashes depend on the exact upstream bytes.
+lib/vendor/catalyst/** -text

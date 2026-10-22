@@ -209,3 +209,6 @@ html[data-blackice-ui] body #app #planning-workspace .planning-mobile-tabs > but
   html[data-blackice-ui] body #app #planning-workspace .planning-catalog-row[aria-current="true"] { border-color:Highlight!important; }
   html[data-blackice-ui] body #app #planning-workspace :is(button,input,textarea,select,summary,[data-planning-outline]):focus-visible { outline-color:Highlight!important; }
 }
+
+html[data-blackice-ui] body #app #planning-workspace .planning-group-remove { flex:0 0 auto;min-height:34px!important;padding:5px 8px!important;font-size:12px!important;color:#d5dfe5;border-color:#647b854f!important;background:linear-gradient(125deg,#3a505a42,#22374030)!important; }
+html[data-blackice-ui] body #app #planning-workspace .planning-group-remove:hover { border-color:#b0c8d3a8!important;background:linear-gradient(125deg,#4b657268,#2a43534d)!important; }

@@ -194,7 +194,7 @@ test('draft recovery follows the current workspace while editable output folders
 
 test('project form fields retain stable accessible labels after populated editor rerenders',async t=>{
   const f=fixture(t);await authoredDraft(f);await f.click('add-task');
-  assert.equal(f.form.elements.namedItem('name').attributes['aria-label'],'Project name');
+  assert.equal(f.form.elements.namedItem('name').attributes['aria-label'],'Swarm name');
   const instructions=f.form.groups.map(group=>group.fields.find(node=>node.name==='instructions'));
   assert.equal(instructions.length,2);assert.deepEqual(instructions.map(node=>node.attributes['aria-label']),['Instructions','Instructions']);assert.equal(instructions[0].value,'Create the requested result.');
 });
@@ -340,7 +340,7 @@ test('expanded working-folder detail and its keyboard focus survive project upda
 
 
 test('an empty project library offers a clear starting point without empty filters or sidebar',async t=>{
-  const f=fixture(t);await f.ui.open();assert.match(f.html,/Create a project/);assert.doesNotMatch(f.html,/class="project-portfolio"/);assert.doesNotMatch(f.html,/class="project-list"/);assert.match(f.html,/class="project-layout single"/);assert.equal(f.calls.filter(call=>call.method).length,0);
+  const f=fixture(t);await f.ui.open();assert.match(f.html,/Create a saved swarm/);assert.doesNotMatch(f.html,/class="project-portfolio"/);assert.doesNotMatch(f.html,/class="project-list"/);assert.match(f.html,/class="project-layout single"/);assert.equal(f.calls.filter(call=>call.method).length,0);
 });
 
 test('task summaries start compact and map or Next inspection expands only the requested task',async t=>{
@@ -438,7 +438,7 @@ test('legacy saved projects keep their original supplied context without reopeni
 test('retired Methods entry points open the shared Planning workspace without creating work',async t=>{
   const f=fixture(t,{methods:[reusableMethod()]});for(const options of [{tab:'methods'},{tab:'capabilities'},{methodId:'compare-method'}])await f.ui.open(options);
   assert.equal(f.planningOpened.length,3);assert.equal(f.calls.length,0);assert.equal(f.drafts.length,0);
-  await f.ui.open();assert.match(f.html,/Swarm projects/);assert.doesNotMatch(f.html,/data-project="(?:browse-methods|choose-method|edit-method|new-method)"/);await f.click('planning');assert.equal(f.planningOpened.length,4);assert.equal(f.calls.filter(call=>call.method).length,0);
+  await f.ui.open();assert.match(f.html,/Saved swarms/);assert.doesNotMatch(f.html,/data-project="(?:browse-methods|choose-method|edit-method|new-method)"/);await f.click('planning');assert.equal(f.planningOpened.length,4);assert.equal(f.calls.filter(call=>call.method).length,0);
 });
 
 test('Swarms opens active plans by default and keeps Archive explicit across saved updates',async t=>{
@@ -554,4 +554,24 @@ test('an unavailable group refresh preserves the current move selection and bloc
   const project={...savedProject(),groupId:'work'},f=fixture(t,{projects:[project],organization:{revision:3,groups:[{id:'work',name:'Work'}]}});await f.ui.open();await f.click('move-plan',{id:project.id});
   f.setOrganization({revision:null,healthy:false,groups:[],error:'Organization unavailable.'});await f.click('reload-organization');
   assert.equal(f.forms.get('project-organization-editor').elements.namedItem('groupId').value,'work');assert.match(f.html,/Unavailable group/);await f.submit('project-organization-editor');assert.equal(f.calls.filter(call=>call.method).length,0);assert.match(f.html,/Organization unavailable/);
+});
+
+
+test('Swarms distinguishes saved plans from one-off creation and the related workspaces',async t=>{
+  const f=fixture(t);await f.ui.open();
+  assert.match(f.html,/data-action="planning"/);assert.match(f.html,/data-action="projects" aria-current="page" disabled/);assert.match(f.html,/data-action="operations"/);
+  assert.match(f.html,/data-action="swarm">Create one-off swarm/);assert.match(f.html,/data-project="new"[^>]*>New saved swarm/);assert.match(f.html,/Create a saved swarm/);
+  assert.equal(f.calls.filter(call=>call.method).length,0,'navigation and empty-state choices must not dispatch work');
+});
+
+test('returning from Planning retains the selected saved swarm and offers unfinished drafts explicitly',async t=>{
+  const project=savedProject(),f=fixture(t,{projects:[project]});await authoredDraft(f);const key=f.drafts[0].key;
+  await f.click('cancel-edit');await f.click('select',{id:project.id});await f.click('planning');f.close();await f.ui.open();
+  assert.equal(f.form,null,'the selected saved swarm must not be replaced by an unrelated recovery draft');assert.match(f.html,/Saved plan/);assert.match(f.html,/Resume draft/);
+  await f.click('resume-draft',{id:key});assert.equal(f.form.elements.namedItem('name').value,'A carefully authored goal');assert.equal(f.calls.filter(call=>call.method).length,0);
+});
+
+test('opening Planning saves the current swarm draft and restores its exact text on return',async t=>{
+  const f=fixture(t);await authoredDraft(f);await f.input('objective','Keep this exact unfinished outcome.');await f.click('planning');f.close();await f.ui.open();
+  assert.equal(f.form.elements.namedItem('objective').value,'Keep this exact unfinished outcome.');assert.equal(f.drafts[0].data.draft.objective,'Keep this exact unfinished outcome.');assert.equal(f.calls.filter(call=>call.method).length,0);
 });
