@@ -1,0 +1,74 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "scope": "source-publication",
+  "version": "2.33.6",
+  "checkedAt": "2026-10-22T07:56:17.433Z",
+  "platform": "win32",
+  "node": "v24.13.0",
+  "appFingerprint": "987e3f981f7872a950771b3a5423fb1a94eee3301cddab0c5dfc8d521e8720f0",
+  "fingerprintUnchanged": true,
+  "tests": {
+    "files": 311,
+    "total": 4215,
+    "passed": 4210,
+    "failed": 0,
+    "cancelled": 0,
+    "optionalSkipped": 5,
+    "requiredSkipped": 0,
+    "exitCode": 0
+  },
+  "testLogSha256": "6cbd54219e475c4f21d5d7bce0cd598d2ec104c4cef5a58e63221fa8a6d4be9c",
+  "optionalIntegrations": [
+    {
+      "name": "Relay-owned sign-in and local storage survive a full process restart without foregrounding",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+      "optional": true,
+      "file": "tests/browser-auth.integration.test.mjs",
+      "switch": "RELAY_LIVE_BROWSER_QA",
+      "enabled": false
+    },
+    {
+      "name": "restored hidden browser tabs defer requests until used and never load closed or replaced pages",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 for disposable Electron restoration.",
+      "optional": true,
+      "file": "tests/browser-lazy.integration.test.mjs",
+      "switch": "RELAY_LIVE_BROWSER_QA",
+      "enabled": false
+    },
+    {
+      "name": "native cross-origin popups redirect, message their opener and follow or close without breaking Observe pins or task routing",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+      "optional": true,
+      "file": "tests/browser-popup.integration.test.mjs",
+      "switch": "RELAY_LIVE_BROWSER_QA",
+      "enabled": false
+    },
+    {
+      "name": "live background accessibility actions change only a dedicated non-activating fixture and leave foreground and cursor untouched",
+      "reason": "",
+      "optional": true,
+      "file": "tests/desktop-uia.live.test.mjs",
+      "switch": "RELAY_LIVE_UIA_QA",
+      "enabled": false
+    },
+    {
+      "name": "real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart",
+      "reason": "Set RELAY_LIVE_FIREFOX_QA=1 on Windows to use a new disposable Firefox profile.",
+      "optional": true,
+      "file": "tests/firefox-live.integration.test.mjs",
+      "switch": "RELAY_LIVE_FIREFOX_QA",
+      "enabled": false
+    }
+  ],
+  "sourceHead": "78d7ce785503805858d60407e43d83a442c9c3dd",
+  "sourceTree": "09ae1d733a7ab03d75401d246ce45277d5679c6a",
+  "sourceFilesVerified": 782,
+  "sourceIndexSha256": "0fe1bbd28c39a407e4b87642ad3a3b2db304417955c95e4289711beaaeffb438",
+  "sourceUnchanged": true,
+  "attempt": "source-tests-2336-20261022-02",
+  "helperSha256": "fe82685b74aa431a7006ed02c4fd1a67408c1b616f12761b9ee91c29a98629fe",
+  "stderrLogSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "binaryInstallerVerified": false,
+  "prolongedSoakCompleted": false
+}
