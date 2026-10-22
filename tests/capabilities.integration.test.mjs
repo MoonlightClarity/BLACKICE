@@ -165,9 +165,9 @@ test('capacity one waits for the cancelled browser driver before allowing anothe
   assert.deepEqual(driver.released,[{taskId:run.taskId||run.id,runId:run.id,nodeId:'agent'}]);assert.equal(browser.status().recovery,undefined);
 });
 
-test('per-turn tool cancellation reaches the browser even while the outer workflow signal remains live',async t=>{
-  const toolController=new AbortController();let driverSignal,outerSignal;
-  const driver=new FakeBrowserDriver((args,{signal})=>{if(args.action!=='snapshot')return{};driverSignal=signal;return new Promise((resolve,reject)=>{signal.addEventListener('abort',()=>reject(Object.assign(new Error('Fixture turn aborted'),{name:'AbortError'})),{once:true});});});
+test('per-turn tool cancellation reaches the browser even while the outer workflow signal remains live',{timeout:30000},async t=>{
+  const toolController=new AbortController(),driverEntered=deferred();let driverSignal,outerSignal;
+  const driver=new FakeBrowserDriver((args,{signal})=>{if(args.action!=='snapshot')return{};driverSignal=signal;return new Promise((resolve,reject)=>{signal.addEventListener('abort',()=>reject(Object.assign(new Error('Fixture turn aborted'),{name:'AbortError'})),{once:true});driverEntered.resolve();});});
   const {api,settled}=await application(t,{driver,runtimeFactory:async()=>new FakeCodex(true,async options=>{
     await recordFixturePlan(options);
     outerSignal=options.signal;
@@ -175,7 +175,7 @@ test('per-turn tool cancellation reaches the browser even while the outer workfl
     await options.onToolCall({name:'relay_browser',arguments:{action:'snapshot',tabId:JSON.parse(opened.contentItems[0].text).tabId}},{signal:toolController.signal});
     return{output:'Unexpected completion',threadId:'fixture-thread'};
   })});
-  const start=await api('/api/runs',{method:'POST',body:{workflow:graph(),input:'Exercise runtime timeout boundary'}});await waitFor(()=>driverSignal,'contained browser driver entry');
+  const start=await api('/api/runs',{method:'POST',body:{workflow:graph(),input:'Exercise runtime timeout boundary'}});assert.equal(start.status,201);await driverEntered.promise;
   assert.deepEqual(driver.calls.map(call=>call.args.action),['open','snapshot']);assert.notEqual(driver.calls[1].args.tabId,'fixture-tab');assert.equal(driver.calls[1].options.owner.runId,start.data.id);
   assert.equal(outerSignal.aborted,false);toolController.abort();
   await waitFor(()=>driverSignal.aborted,'per-turn driver cancellation');
