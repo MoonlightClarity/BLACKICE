@@ -112,3 +112,55 @@
 #app .observe-browser-interaction-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 #app .observe-browser-interaction .observe-browser-interaction-error{color:#f0c2b8}
 @media(max-width:650px){#app .observe-page-focus>.observe-scroll{padding:10px 8px 20px}#app .observe-browser-focused .observe-browser-heading{padding:9px 10px;gap:8px}#app .observe-browser-focused .observe-browser-heading p{font-size:10px}#app .observe-browser-focused .observe-browser-heading-actions .button{padding:6px 8px;min-height:32px}#app .observe-browser-focused .observe-browser-stage{margin:0 8px}#app .observe-browser-focused .observe-browser-page-title{padding:8px 10px}#app .observe-browser-input-help{font-size:11px;padding:8px}}
+
+/* The Browser surface gives its first viewport to the website. Task monitoring
+   remains in Workflow; optional page controls stay in Browser tools. */
+#app .observe-workspace:has(> .observe-surface-navigation [data-observe-surface="browser"][aria-selected="true"])>.observe-header,
+#app .observe-workspace:has(> .observe-surface-navigation [data-observe-surface="browser"][aria-selected="true"])>.observe-surface-navigation>p{display:none}
+#app .observe-workspace:has(> .observe-surface-navigation [data-observe-surface="browser"][aria-selected="true"])>.observe-scroll{padding-top:16px}
+#app .observe-browser:not(.observe-browser-focused)>.observe-browser-heading{padding:10px 12px;min-height:58px}
+#app .observe-browser:not(.observe-browser-focused)>.observe-browser-heading h2{font-size:17px}
+#app .observe-browser-tabbar{margin:8px 12px 0}
+#app .observe-browser-navigation{display:flex;align-items:center;gap:8px;min-width:0;padding:8px 12px 0}
+#app .observe-browser-history{display:flex;align-items:center;gap:3px;flex:0 0 auto}
+#app .observe-browser-history>.button{display:grid;place-items:center;width:38px;min-width:38px;height:40px;min-height:40px;padding:0;border-radius:6px}
+#app .observe-browser-history>.button svg{width:17px;height:17px;flex:none}
+#app .observe-browser-navigation .observe-browser-address{display:flex;flex:1 1 0;flex-wrap:nowrap;gap:6px;min-width:0;margin:0;padding:0}
+#app .observe-browser-navigation .observe-browser-address input{flex:1 1 0;min-width:0;width:0;min-height:40px;font:14px/1.4 'IBM Plex Sans',sans-serif;padding:8px 10px;border-radius:6px}
+#app .observe-browser-navigation .observe-browser-address input:focus{border-color:#a9d8e7;box-shadow:0 0 0 2px #a9d8e71a}
+#app .observe-browser-navigation .observe-browser-address>.button{flex:0 0 auto;min-width:42px;min-height:40px;padding:8px 10px;font-size:13px;border-radius:6px}
+#app .observe-browser:not(.observe-browser-focused)>.observe-browser-tree{margin:8px 12px 0}
+#app .observe-browser-tree>summary{min-height:40px;padding:7px 10px}
+#app .observe-browser-status:empty{display:none}
+#app .observe-browser:not(.observe-browser-focused)>.observe-browser-stage{margin:10px 12px 0}
+#app .observe-browser:not(.observe-browser-focused) .observe-browser-input-help{padding:8px 10px;font-size:11px;line-height:1.5}
+#app .observe-browser-new-draft{min-height:240px;gap:12px;background:radial-gradient(ellipse at top,#24445266,transparent 70%)}
+#app .observe-browser-new-draft strong{font-size:23px;color:#e0eff5}
+#app .observe-browser-new-draft p{font:13px/1.7 'IBM Plex Sans',sans-serif;color:#b3cbd8;max-width:42ch}
+#app .observe-browser-new-draft>.button{margin-top:6px;min-height:40px}
+#app .observe-browser:has(.observe-browser-new-draft) .observe-browser-history,
+#app .observe-browser:has(.observe-browser-no-tabs) .observe-browser-history{display:none}
+#app .observe-browser-tools>.observe-browser-toolbar{padding:0 12px 10px}
+#app .observe-browser-tools>.observe-browser-protection{margin:0 12px 10px}
+#app .observe-browser-tools>.observe-browser-page-actions{padding:10px 12px}
+#app .observe-browser-tools>.observe-browser-controls{padding:0 12px 12px}
+#app .observe-browser-tools>summary{min-height:42px;padding:10px 12px}
+@media(max-width:650px){
+  #app .observe-workspace:has(> .observe-surface-navigation [data-observe-surface="browser"][aria-selected="true"])>.observe-scroll{padding:10px 8px 20px}
+  #app .observe-browser-tabbar{margin:8px 8px 0;gap:5px}
+  #app .observe-browser-navigation{padding:7px 8px 0;gap:5px}
+  #app .observe-browser-history{gap:2px}
+  #app .observe-browser-history>.button{width:34px;min-width:34px;height:40px}
+  #app .observe-browser-navigation .observe-browser-address{gap:4px}
+  #app .observe-browser-navigation .observe-browser-address input{padding:8px 7px;flex-basis:0}
+  #app .observe-browser-navigation .observe-browser-address>.button{min-width:38px;padding:8px;font-size:12px}
+  #app .observe-browser:not(.observe-browser-focused)>.observe-browser-tree{margin:8px 8px 0}
+  #app .observe-browser:not(.observe-browser-focused)>.observe-browser-stage{margin:8px 8px 0}
+  #app .observe-browser-new-draft{min-height:220px;padding:22px 16px}
+  #app .observe-browser-new-draft strong{font-size:21px}
+}
+@media(max-width:360px){
+  #app .observe-browser-navigation{flex-wrap:wrap}
+  #app .observe-browser-navigation .observe-browser-address{flex-basis:100%;order:0}
+  #app .observe-browser-history{order:1}
+}

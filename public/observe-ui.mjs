@@ -56,9 +56,13 @@ export function renderObserveExternalActions(model,{escape=escapeText,openReceip
   }).join('')}</div><p class="observe-external-note">Receipts are agent reports. Open the result or destination to check the website itself.</p>`;
 }
 const browserTabDOMId = id => 'observe-contained-tab-' + Array.from(id, char => char.codePointAt(0).toString(16)).join('-');
+const observeBrowserView = state => {
+  const view = observeBrowserModel(state.status, state.newTabDraft ? null : state.selectedId);
+  return state.newTabDraft ? { ...view, selected: null } : view;
+};
 export function renderObserveBrowserTree(state,{escape=escapeText}={}){
  if(!Array.isArray(state.status?.folders))return '';
- const view=observeBrowserModel(state.status,state.selectedId),pages=new Map(view.tabs.map(tab=>[tab.tabId,tab]));
+ const view=observeBrowserView(state),pages=new Map(view.tabs.map(tab=>[tab.tabId,tab]));
  const tree=browserTreeModel({...state.status,tabs:(state.status.tabs||[]).filter(tab=>pages.has(tab.tabId)).map(tab=>({...tab,title:pages.get(tab.tabId).title}))});
  const selected=view.selected?.tabId,locked=state.busy&&!['refresh','inspect'].includes(state.action),closed=state.busy||state.protectionBusy||!view.available||view.blocked;
  const branch=nodes=>`<ul class="observe-browser-tree-branch">${nodes.map(tab=>`<li><div class="observe-browser-tree-page${tab.tabId===selected?' selected':''}"><button type="button" data-observe-browser="tree-tab" data-tab-id="${escape(tab.tabId)}"${tab.tabId===selected?' aria-current="page"':''} title="${escape(browserDisplayURL(tab.url))}"${locked?' disabled':''}><span>${escape(tab.title)}</span>${tab.suspended?'<small>Saved</small>':''}</button>${tab.suspended?'':`<button type="button" class="observe-browser-tree-suspend" data-observe-browser="tree-suspend" data-tab-id="${escape(tab.tabId)}" aria-label="Suspend ${escape(tab.title)}" title="Release this page’s memory and keep it in its folder"${closed?' disabled':''}>Suspend</button>`}<button type="button" class="observe-browser-tree-close" data-observe-browser="tree-close" data-tab-id="${escape(tab.tabId)}" aria-label="Close ${escape(tab.title)}"${closed?' disabled':''}>×</button></div>${tab.children.length?branch(tab.children):''}</li>`).join('')}</ul>`;
@@ -67,11 +71,12 @@ export function renderObserveBrowserTree(state,{escape=escapeText}={}){
  return `${persistence?`<p class="observe-browser-save-error" role="alert">${escape(persistence)}</p>`:''}<details id="observe-browser-tree" class="observe-browser-tree"${state.treeOpen===true?' open':''}><summary id="observe-browser-tree-toggle"><strong>Folders &amp; pages</strong>${capacity?`<span>${escape(capacity)}</span>`:''}</summary><div class="observe-browser-tree-content">${groups||'<p>No saved pages yet.</p>'}</div></details>`;
 }
 export function renderObserveBrowserTabs(state, { escape = escapeText } = {}) {
-  const model = observeBrowserModel(state.status, state.selectedId), locked = state.busy && !['refresh', 'inspect'].includes(state.action), unavailable = !model.available || model.blocked;
-  return `<div class="observe-browser-tabbar"><div id="observe-browser-tabs" role="tablist" aria-label="Contained browser tabs">${model.tabs.map(tab => `<div class="observe-browser-tab-item${model.selected?.tabId === tab.tabId ? ' selected' : ''}" role="presentation"><button type="button" id="${browserTabDOMId(tab.tabId)}" class="observe-browser-tab" role="tab" data-observe-browser="tab" data-tab-id="${escape(tab.tabId)}" aria-controls="observe-browser-page" aria-selected="${model.selected?.tabId === tab.tabId}" tabindex="${model.selected?.tabId === tab.tabId ? '0' : '-1'}" aria-label="${escape(tab.title)}${tab.loading ? ' · Loading' : ''}" title="${escape(tab.title + (tab.url ? '\n' + browserDisplayURL(tab.url) : ''))}"${locked ? ' disabled' : ''}><span class="observe-browser-tab-marker${tab.loading ? ' loading' : ''}" aria-hidden="true">${tab.loading ? '◌' : '·'}</span><span class="observe-browser-tab-title">${escape(tab.title)}</span></button><button type="button" class="observe-browser-tab-close" data-observe-browser="close" data-tab-id="${escape(tab.tabId)}" aria-label="Close ${escape(tab.title)}" title="Close tab" tabindex="${model.selected?.tabId === tab.tabId ? '0' : '-1'}"${state.busy || unavailable ? ' disabled' : ''}>×</button></div>`).join('')}${!model.tabs.length ? '<span class="observe-browser-no-tabs">No open pages</span>' : ''}</div><button type="button" class="button observe-browser-new-tab" data-observe-browser="new" aria-label="New tab" title="Open the address below in a new tab"${state.busy || unavailable ? ' disabled' : ''}><span aria-hidden="true">＋</span><span class="observe-browser-new-tab-label">New tab</span></button></div>`;
+  const model = observeBrowserView(state), locked = state.busy && !['refresh', 'inspect'].includes(state.action), unavailable = !model.available || model.blocked;
+  const draft = state.newTabDraft ? '<div class="observe-browser-tab-item selected" role="presentation"><button type="button" id="observe-browser-draft-tab" class="observe-browser-tab" role="tab" data-observe-browser="draft-tab" aria-controls="observe-browser-page" aria-selected="true" tabindex="0"><span class="observe-browser-tab-marker" aria-hidden="true">＋</span><span class="observe-browser-tab-title">New tab</span></button></div>' : '';
+  return `<div class="observe-browser-tabbar"><div id="observe-browser-tabs" role="tablist" aria-label="Contained browser tabs">${model.tabs.map(tab => `<div class="observe-browser-tab-item${model.selected?.tabId === tab.tabId ? ' selected' : ''}" role="presentation"><button type="button" id="${browserTabDOMId(tab.tabId)}" class="observe-browser-tab" role="tab" data-observe-browser="tab" data-tab-id="${escape(tab.tabId)}" aria-controls="observe-browser-page" aria-selected="${model.selected?.tabId === tab.tabId}" tabindex="${model.selected?.tabId === tab.tabId ? '0' : '-1'}" aria-label="${escape(tab.title)}${tab.loading ? ' · Loading' : ''}" title="${escape(tab.title + (tab.url ? '\n' + browserDisplayURL(tab.url) : ''))}"${locked ? ' disabled' : ''}><span class="observe-browser-tab-marker${tab.loading ? ' loading' : ''}" aria-hidden="true">${tab.loading ? '◌' : '·'}</span><span class="observe-browser-tab-title">${escape(tab.title)}</span></button><button type="button" class="observe-browser-tab-close" data-observe-browser="close" data-tab-id="${escape(tab.tabId)}" aria-label="Close ${escape(tab.title)}" title="Close tab" tabindex="${model.selected?.tabId === tab.tabId ? '0' : '-1'}"${state.busy || unavailable ? ' disabled' : ''}>×</button></div>`).join('')}${draft}${!model.tabs.length && !draft ? '<span class="observe-browser-no-tabs">No open pages</span>' : ''}</div><button type="button" class="button observe-browser-new-tab" data-observe-browser="new" aria-label="New tab" title="Open a new tab"${locked || unavailable ? ' disabled' : ''}><span aria-hidden="true">＋</span><span class="observe-browser-new-tab-label">New tab</span></button></div>`;
 }
 export function renderObserveProtection(state, { escape = escapeText } = {}) {
-  const global = state.status?.protection || {}, selected = observeBrowserModel(state.status, state.selectedId).selected, site = selected?.protection || {};
+  const global = state.status?.protection || {}, selected = observeBrowserView(state).selected, site = selected?.protection || {};
   const busy = state.protectionBusy || state.busy, available = global.available === true, enabled = global.enabled === true, ready = global.ready === true;
   let origin = null; try { const value = new URL(site.origin); if (['https:', 'http:'].includes(value.protocol) && value.origin === site.origin) origin = value.origin; } catch {}
   const siteReady = available && enabled && ready && site.available === true && origin;
@@ -90,12 +95,12 @@ const browserDisplayURL = value => {
   } catch { return 'Contained page'; }
 };
 const browserInputHint = active => active
-  ? 'Typing goes to this page · Tab moves between fields · Escape releases the keyboard'
-  : 'Click a field below and type · You can also paste';
+  ? 'Typing goes to this page · Scroll here with your mouse or trackpad · Escape releases the keyboard'
+  : 'Click a field and type · Scroll this page with your mouse or trackpad';
 const sameBrowserInputFrame = (left, right) => left === right || Boolean(left?.documentId && right?.documentId && ['tabId', 'url', 'documentId', 'width', 'height'].every(key => left[key] === right[key]));
 
 export function renderObserveBrowserInteraction(state, { escape = escapeText } = {}) {
-  const model = observeBrowserModel(state.status, state.selectedId), interaction = model.selected?.pendingInteraction;
+  const model = observeBrowserView(state), interaction = model.selected?.pendingInteraction;
   if (!interaction) return '';
   const blocked = interaction.status === 'blocked', files = interaction.kind === 'file_chooser', prompt = !blocked && interaction.dialogType === 'prompt';
   const disabled = state.busy || state.protectionBusy || state.pickingFiles || !model.available || model.blocked;
@@ -107,33 +112,39 @@ export function renderObserveBrowserInteraction(state, { escape = escapeText } =
 }
 
 export function renderObserveBrowser(state, { escape = escapeText } = {}) {
-  const model = observeBrowserModel(state.status, state.selectedId), reading = state.busy && ['refresh', 'inspect'].includes(state.action);
+  const model = observeBrowserView(state), reading = state.busy && ['refresh', 'inspect'].includes(state.action);
   const disabled = state.busy || state.protectionBusy || !model.available || model.blocked, pageDisabled = disabled || !model.selected || Boolean(model.selected.pendingInteraction);
   const pointerDisabled = state.protectionBusy || state.busy && !reading || !model.available || model.blocked || !model.selected || Boolean(model.selected.pendingInteraction) || state.stale;
   const frame = state.frame, control = state.document?.controls.find(item => item.ref === state.ref), fields = control?.options, writable = control?.role === 'textbox' || ['text','password','email','search','url','number','tel'].includes(control?.type), suspended=state.status?.tabs?.find(tab=>tab.tabId===model.selected?.tabId)?.suspended===true;
   const button = (action, label, off = pageDisabled || (state.stale || state.controlsStale) && ['key','fill','control'].includes(action)) => `<button type="button" class="button" data-observe-browser="${action}"${off ? ' disabled' : ''}>${label}</button>`;
-  const heading = `<header class="observe-browser-heading"><div><h2>${state.focusPage ? state.chatGPTConversation ? 'ChatGPT in BLACKICE' : 'Website sign-in' : 'Contained browser'}</h2><p>${state.focusPage ? state.chatGPTConversation ? 'Use your ChatGPT conversation here. Manage BLACKICE tool access in Connection settings.' : 'Sign in on the page below. Your session stays in BLACKICE.' : 'Websites stay inside BLACKICE · separate saved sign-ins'}</p></div><div class="observe-browser-heading-actions">${state.focusPage ? (state.chatGPTConversation && state.canOpenConnectionSettings ? button('connection-settings', 'Connection settings', false) : '') + button('back', 'Back') + button('refresh', 'Refresh', state.busy) : button('watch', state.watching ? 'Pause preview' : 'Resume preview', state.busy)}</div></header>`;
-  const tools = `${renderObserveBrowserTabs(state, { escape })}<div class="observe-browser-toolbar"><button type="button" id="observe-browser-follow" class="button observe-browser-follow" data-observe-browser="follow" aria-pressed="${state.followAgent !== false}" title="Follow the page used most recently by the agent. Choosing a tab pins that page instead."${state.busy && !['refresh','inspect'].includes(state.action) ? ' disabled' : ''}>${state.followAgent !== false ? 'Following active page' : 'Follow active page'}</button>${state.focusPage ? button('watch', state.watching ? 'Pause preview' : 'Resume preview', state.busy) : button('refresh', 'Refresh view', state.busy)}${button('inspect', 'Read page controls')}${state.focusPage ? '' : button('back', 'Back')}${button('forward', 'Forward')}</div><form id="observe-browser-address-form" class="observe-browser-address"><label class="observe-sr-only" for="observe-browser-url">Website address</label><input id="observe-browser-url" type="text" inputmode="url" required placeholder="https://…" value="${escape(state.address || '')}" autocomplete="off" spellcheck="false"><button class="button" type="submit"${disabled ? ' disabled' : ''}>${model.selected ? 'Go' : 'Open page'}</button></form>${renderObserveBrowserTree(state,{escape})}${renderObserveProtection(state, { escape })}`;
-  const message = state.busy ? state.pending || 'Updating page…' : state.error || model.reason || state.inputNotice || state.notice || (state.focusPage ? 'Your page is ready for input.' : state.watching ? 'Preview refreshes while Activity is visible.' : 'Preview paused. Refresh explicitly to inspect the current page.');
+  const navigationPaths = { back: '<path d="m12 5-7 7 7 7M5 12h14"/>', forward: '<path d="m12 5 7 7-7 7M5 12h14"/>', reload: '<path d="M20 7v5h-5M20 12a8 8 0 1 0-2 5M20 7l-3-3"/>' };
+  const navigationButton = (action, label) => `<button type="button" class="button observe-browser-nav-button" data-observe-browser="${action}" aria-label="${label}" title="${label}"${pageDisabled ? ' disabled' : ''}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${navigationPaths[action]}</svg><span class="observe-sr-only">${label}</span></button>`;
+  const heading = `<header class="observe-browser-heading"><div><h2>${state.focusPage ? state.chatGPTConversation ? 'ChatGPT in BLACKICE' : 'Website sign-in' : 'Browser'}</h2>${state.focusPage ? `<p>${state.chatGPTConversation ? 'Use your ChatGPT conversation here. Manage BLACKICE tool access in Connection settings.' : 'Sign in on the page below. Your session stays in BLACKICE.'}</p>` : ''}</div><div class="observe-browser-heading-actions">${state.focusPage ? (state.chatGPTConversation && state.canOpenConnectionSettings ? button('connection-settings', 'Connection settings', false) : '') + button('back', 'Back') + button('reload', 'Reload page') : button('watch', state.watching ? 'Pause preview' : 'Resume preview', state.busy)}</div></header>`;
+  const navigation = `<div class="observe-browser-navigation"><div class="observe-browser-history" role="group" aria-label="Page navigation">${navigationButton('back', 'Back')}${navigationButton('forward', 'Forward')}${navigationButton('reload', 'Reload page')}</div><form id="observe-browser-address-form" class="observe-browser-address"><label class="observe-sr-only" for="observe-browser-url">Website address</label><input id="observe-browser-url" type="text" inputmode="url" required placeholder="Enter a website address" value="${escape(state.address || '')}" autocomplete="off" spellcheck="false"><button class="button" type="submit" aria-label="${state.newTabDraft ? 'Open in new tab' : model.selected ? 'Go to address' : 'Open page'}"${disabled ? ' disabled' : ''}>${model.selected ? 'Go' : 'Open'}</button></form></div>`;
+  const primary = `${renderObserveBrowserTabs(state, { escape })}${navigation}${renderObserveBrowserTree(state,{escape})}`;
+  const secondary = `<div class="observe-browser-toolbar"><button type="button" id="observe-browser-follow" class="button observe-browser-follow" data-observe-browser="follow" aria-pressed="${state.followAgent !== false}" title="Follow the page used most recently by the agent. Choosing a tab pins that page instead."${state.busy && !['refresh','inspect'].includes(state.action) ? ' disabled' : ''}>${state.followAgent !== false ? 'Following active page' : 'Follow active page'}</button>${button('refresh', 'Refresh preview', state.busy)}${state.focusPage ? button('watch', state.watching ? 'Pause preview' : 'Resume preview', state.busy) : ''}${button('inspect', 'Read page controls')}</div>${renderObserveProtection(state, { escape })}`;
+  const message = state.busy ? state.pending || 'Updating page…' : state.error || model.reason || state.inputNotice || state.notice || (state.newTabDraft ? '' : state.focusPage ? 'Your page is ready for input.' : state.watching ? '' : 'Preview paused. Refresh preview to inspect the current page.');
   const status = `<p id="observe-browser-status" class="observe-browser-status${state.error ? ' error' : ''}" role="status" aria-live="polite">${escape(message)}</p>`;
-  const title = model.selected ? `<div class="observe-browser-page-title"><strong>${escape(model.selected.title)}</strong><span>${escape(browserDisplayURL(model.selected.url))}</span></div>` : '';
-  const stage = `<div id="observe-browser-page" class="observe-browser-stage" role="tabpanel"${model.selected && !state.focusPage ? ` aria-labelledby="${browserTabDOMId(model.selected.tabId)}"` : ' aria-label="Contained page"'}>${frame ? `<p id="observe-browser-input-help" class="observe-browser-input-help" data-active="${state.inputActive === true}" role="status" aria-live="polite">${browserInputHint(state.inputActive)}</p><button type="button" class="observe-browser-frame" data-observe-browser="point" aria-label="Website page. Click a field and type. Press Escape to release the keyboard." aria-describedby="observe-browser-input-help"${pointerDisabled ? ' disabled' : ''}><img id="observe-browser-image" src="${escape(frame.imageUrl)}" width="${frame.width}" height="${frame.height}" alt="Captured contained browser page. Click a field to enter text." draggable="false"></button><textarea id="observe-browser-input" class="observe-browser-input" tabindex="-1" aria-label="Keyboard input for the contained page" aria-describedby="observe-browser-input-help" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true"></textarea><p class="observe-browser-stamp">${state.stale ? state.watching ? 'Earlier frame · updating automatically' : 'Earlier frame · refresh before interacting' : `Captured ${escape(clock(state.capturedAt))} · page input stays in this browser`}</p>` : `<div class="observe-browser-placeholder"><strong>${suspended ? 'Page is suspended' : model.selected ? 'Loading the page…' : 'Open a website here'}</strong><p>${suspended ? 'Refresh or select this page to load it again.' : model.selected ? 'The page will appear here when its view is ready.' : 'The agent and you can work in contained tabs without opening a desktop browser.'}</p></div>`}</div>`;
+  const title = state.focusPage && model.selected ? `<div class="observe-browser-page-title"><strong>${escape(model.selected.title)}</strong><span>${escape(browserDisplayURL(model.selected.url))}</span></div>` : '';
+  const draft = state.newTabDraft ? `<div id="observe-browser-new-draft" class="observe-browser-placeholder observe-browser-new-draft"><strong>Where would you like to go?</strong><p>Enter a website address above and press Enter to open your new tab.</p>${button('cancel-new', 'Cancel new tab', state.busy && !reading)}</div>` : '';
+  const stage = `<div id="observe-browser-page" class="observe-browser-stage" role="tabpanel"${state.newTabDraft ? ' aria-labelledby="observe-browser-draft-tab"' : model.selected && !state.focusPage ? ` aria-labelledby="${browserTabDOMId(model.selected.tabId)}"` : ' aria-label="Contained page"'}>${draft || (frame ? `<p id="observe-browser-input-help" class="observe-browser-input-help" data-active="${state.inputActive === true}" role="status" aria-live="polite">${browserInputHint(state.inputActive)}</p><button type="button" class="observe-browser-frame" data-observe-browser="point" aria-label="Website page. Click a field and type. Scroll with your mouse or trackpad. Press Escape to release the keyboard." aria-describedby="observe-browser-input-help"${pointerDisabled ? ' disabled' : ''}><img id="observe-browser-image" src="${escape(frame.imageUrl)}" width="${frame.width}" height="${frame.height}" alt="Captured contained browser page. Click a field to enter text." draggable="false"></button><textarea id="observe-browser-input" class="observe-browser-input" tabindex="-1" aria-label="Keyboard input for the contained page" aria-describedby="observe-browser-input-help" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true"></textarea><p class="observe-browser-stamp">${state.stale ? state.watching ? 'Earlier frame · updating automatically' : 'Earlier frame · refresh before interacting' : `Captured ${escape(clock(state.capturedAt))} · page input stays in this browser`}</p>` : `<div class="observe-browser-placeholder"><strong>${suspended ? 'Page is suspended' : model.selected ? 'Loading the page…' : 'Open a website here'}</strong><p>${suspended ? 'Refresh or select this page to load it again.' : model.selected ? 'The page will appear here when its view is ready.' : 'Enter a website address above to open your first page.'}</p></div>`)}</div>`;
   const manual = `<div class="observe-browser-page-actions">${button('up', 'Scroll up')}${button('down', 'Scroll down')}<label class="observe-sr-only" for="observe-browser-key">Page key</label><select id="observe-browser-key"${pageDisabled ? ' disabled' : ''}>${['Enter','Tab','Escape','Backspace','ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Space'].map(key => `<option${state.key === key ? ' selected' : ''}>${key}</option>`).join('')}</select>${button('key', 'Send key')}</div><details id="observe-browser-controls" class="observe-browser-controls"${state.controlsOpen ? ' open' : ''}><summary>Page controls &amp; text${state.document ? ` · ${state.document.controls.length} observed controls` : ''}</summary>${state.document ? `<label>Observed control<select id="observe-browser-ref"${pageDisabled ? ' disabled' : ''}>${state.document.controls.map(item => `<option value="${escape(item.ref)}"${state.ref === item.ref ? ' selected' : ''}>${escape(item.name)}${item.type ? ` · ${escape(item.type)}` : ''}</option>`).join('')}</select></label><div class="observe-browser-field">${fields ? `<label class="observe-sr-only" for="observe-browser-value">Option value</label><select id="observe-browser-value">${fields.map(option => `<option value="${escape(option.value)}"${state.fieldValue === option.value ? ' selected' : ''}>${escape(option.label)}</option>`).join('')}</select>` : `<label class="observe-sr-only" for="observe-browser-text">Text for selected field</label><input id="observe-browser-text" type="${control?.type === 'password' ? 'password' : 'text'}" autocomplete="off" placeholder="Text for selected field" value="${escape(state.text || '')}">`}${button('fill', fields ? 'Select option' : 'Set field', pageDisabled || state.stale || state.controlsStale || !control || !fields && !writable)}${button('control', 'Click control', pageDisabled || state.stale || state.controlsStale || !control)}</div><pre class="observe-browser-page-text" tabindex="0">${escape(state.document.text || 'No page text was returned.')}</pre>` : '<p>Read page controls to inspect current text and fill fields by their observed labels.</p>'}</details>`;
   const interaction = renderObserveBrowserInteraction(state, { escape });
+  const tools = `<details id="observe-browser-tools" class="observe-browser-tools"${state.browserToolsOpen ? ' open' : ''}><summary>${state.focusPage ? 'Browser tools and other tabs' : 'Browser tools'}</summary>${state.focusPage ? primary : ''}${secondary}${state.newTabDraft ? '' : manual}</details>`;
   return state.focusPage
-    ? `${heading}${title}${interaction}${stage}${status}<details id="observe-browser-tools" class="observe-browser-tools"${state.browserToolsOpen ? ' open' : ''}><summary>Browser tools and other tabs</summary>${tools}${manual}</details>`
-    : `${heading}${tools}${status}${title}${interaction}${stage}${manual}`;
+    ? `${heading}${title}${interaction}${stage}${status}${tools}`
+    : `${heading}${primary}${status}${interaction}${stage}${tools}`;
 }
 
 /** A page-local work surface. It never calls native browser or window routes. */
 export function initObserveBrowser({ mount, api, isVisible = () => true, now = Date.now, onFocusPageChange = () => {}, onOpenConnectionSettings, pickBrowserFiles }) {
   const $ = selector => mount.querySelector(selector), drafts = new Map();
-  const state = { folderState:new Map(),treeOpen:false,status: {}, selectedId: null, displayedId: null, displayedUrl: '', followAgent: true, protectionBusy: false, protectionOpen: false, protectionError: '', protectionNotice: '', frame: null, document: null, ref: null, address: '', addressDirty: false, text: '', fieldValue: '', key: 'Enter', controlsOpen: false, controlsStale: true, watching: true, busy: false, stale: true, error: '', notice: '', inputNotice: '', nextAt: 0, progressUntil: 0, readFailures: 0, active: false, generation: 0, controller: null, mutationPending: false };
+  const state = { folderState:new Map(),treeOpen:false,status: {}, selectedId: null, displayedId: null, displayedUrl: '', followAgent: true, newTabDraft: null, protectionBusy: false, protectionOpen: false, protectionError: '', protectionNotice: '', frame: null, document: null, ref: null, address: '', addressDirty: false, text: '', fieldValue: '', key: 'Enter', controlsOpen: false, controlsStale: true, watching: true, busy: false, stale: true, error: '', notice: '', inputNotice: '', nextAt: 0, progressUntil: 0, readFailures: 0, active: false, generation: 0, controller: null, mutationPending: false };
   let protectionController = null, inputSession = null, inputRefresh = null, inputRefreshDue = false, rendering = false, renderDeferred = false, renderedFrame = null, pointerGesture = null, pointerRelease = null, popupRequest = null, popupParents = [];
   state.canPickBrowserFiles = typeof pickBrowserFiles === 'function';
   state.canOpenConnectionSettings = typeof onOpenConnectionSettings === 'function';
   const visible = () => state.active && mount.isConnected !== false && isVisible();
-  const model = () => observeBrowserModel(state.status, state.selectedId);
+  const model = () => observeBrowserView(state);
   const actionNode = (action, tabId) => [...mount.querySelectorAll('[data-observe-browser]')].find(item => item.dataset.observeBrowser === action && (!tabId || item.dataset.tabId === tabId));
   const inputMatches = session => session && state.frame?.tabId === session.tabId && state.frame.url === session.url && state.frame.documentId === session.documentId && model().selected?.tabId === session.tabId && !model().selected.pendingInteraction;
   function watchPopup(tabId, item) {
@@ -159,12 +170,12 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     if (focus) actionNode('point')?.focus?.({ preventScroll: true });
     inputFeedback();
   }
-  function captureInput() {
+  function captureInput({ keyboard = true } = {}) {
     if (!state.frame?.documentId || !state.frame.url || state.stale || model().selected?.pendingInteraction || !visible()) return null;
     if (inputSession && !inputMatches(inputSession)) stopInput();
     if (!inputSession) inputSession = { tabId: state.frame.tabId, url: state.frame.url, documentId: state.frame.documentId, queue: [], controller: new AbortController(), running: null, composing: false };
-    state.followAgent = false; state.selectedId = inputSession.tabId; state.inputActive = true; state.inputNotice = '';
-    $('#observe-browser-input')?.focus?.({ preventScroll: true });
+    state.followAgent = false; state.selectedId = inputSession.tabId; state.inputNotice = '';
+    if (keyboard) { state.inputActive = true; $('#observe-browser-input')?.focus?.({ preventScroll: true }); }
     inputFeedback();
     return inputSession;
   }
@@ -174,7 +185,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     // frozen. Captures remain serialized with page input and capped at 4 Hz.
     if (inputSession !== session || !visible()) return;
     if (inputRefreshDue) {
-      if (!session.composing && !session.running && !session.queue.length && !state.busy && !state.protectionBusy) void work();
+      if (!session.composing && !session.running && !state.busy && !state.protectionBusy) void work();
       return;
     }
     if (inputRefresh !== null) return;
@@ -197,11 +208,25 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
   function pumpInput() {
     const session = inputSession;
     if (!session || session.running || !session.queue.length || state.busy || state.protectionBusy || !visible()) return session?.running;
+    // A due preview can be released by compositionend before a pump starts.
+    // Handle it before assigning the async worker: a synchronous early exit
+    // inside that worker would otherwise overwrite its finally cleanup with
+    // the already-fulfilled Promise and permanently stall this input session.
+    if (inputRefreshDue) { refreshAfterInput(session); return; }
     session.running = (async () => {
       try {
         while (inputSession === session && session.queue.length && visible() && !state.busy && !state.protectionBusy) {
+          if (inputRefreshDue) break;
           if (!inputMatches(session) || state.stale) throw Error('The contained page changed before queued input could be applied.');
-          const item = session.queue.shift();
+          let item = session.queue.shift();
+          if (item.action === 'scroll') {
+            // Keep accumulated trackpad distance without sending one enormous
+            // event. Splitting at dispatch preserves its place among clicks,
+            // text and editing keys, including both wheel axes.
+            const deltaX = Math.max(-2000, Math.min(2000, item.deltaX)), deltaY = Math.max(-2000, Math.min(2000, item.deltaY));
+            if (deltaX !== item.deltaX || deltaY !== item.deltaY) session.queue.unshift({ ...item, deltaX: item.deltaX - deltaX, deltaY: item.deltaY - deltaY });
+            item = { ...item, deltaX, deltaY };
+          }
           state.progressUntil = now() + 10000;
           const popup = watchPopup(session.tabId, item);
           let result;
@@ -218,13 +243,15 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
           }
           if (item.action === 'click') adoptDocument(result, session.tabId);
           state.controlsStale = true;
+          refreshAfterInput(session);
         }
       } catch (error) {
         if (inputSession === session && visible()) recoverInput({ uncertain: true });
       } finally {
         session.running = null;
         if (inputSession === session && visible()) {
-          if (session.queue.length && !state.busy && !state.protectionBusy) queueMicrotask(pumpInput);
+          if (inputRefreshDue) refreshAfterInput(session);
+          else if (session.queue.length && !state.busy && !state.protectionBusy) queueMicrotask(pumpInput);
           else refreshAfterInput(session);
         }
       }
@@ -243,6 +270,10 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     }
     const last = session.queue.at(-1);
     if (item.action === 'type' && last?.action === 'type' && last.text.length + item.text.length <= 16384) last.text += item.text;
+    else if (item.action === 'scroll' && last?.action === 'scroll' && last.x === item.x && last.y === item.y && Math.abs(last.deltaX + item.deltaX) <= 32000 && Math.abs(last.deltaY + item.deltaY) <= 32000) {
+      last.deltaX += item.deltaX; last.deltaY += item.deltaY;
+      if (!last.deltaX && !last.deltaY) session.queue.pop();
+    }
     else session.queue.push(item);
     void pumpInput(); return true;
   }
@@ -314,12 +345,19 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     rendering = false;
   }
   function revealTab(id) {
-    const strip = $('#observe-browser-tabs'), tab = actionNode('tab', id); if (!strip || !tab) return;
+    const strip = $('#observe-browser-tabs'), tab = state.newTabDraft ? actionNode('draft-tab') : actionNode('tab', id); if (!strip || !tab) return;
     const area = strip.getBoundingClientRect?.(), item = tab.closest?.('.observe-browser-tab-item')?.getBoundingClientRect?.() || tab.getBoundingClientRect?.();
     if (area && item) { if (item.left < area.left) strip.scrollLeft -= area.left - item.left; else if (item.right > area.right) strip.scrollLeft += item.right - area.right; }
   }
   function applyStatus(value) {
     const previousTabs = model().tabs, previousId = model().selected?.tabId, nextTabs = observeBrowserModel(value).tabs, live = new Set(nextTabs.map(tab => tab.tabId));
+    if (state.newTabDraft) {
+      // A local new-tab address has no page identity yet. Inventory refreshes
+      // must neither navigate it nor save its text over an existing tab draft.
+      state.status = value;
+      for (const id of drafts.keys()) if (!live.has(id)) drafts.delete(id);
+      return model();
+    }
     let popupParentId = null, popupReturnedFrom = null;
     if (popupRequest && (popupRequest.generation !== state.generation || popupRequest.parentId !== previousId || !popupRequest.pending && now() > popupRequest.expiresAt)) popupRequest = null;
     const children = popupRequest ? (Array.isArray(value.tabs) ? value.tabs : []).filter(tab => live.has(tab?.tabId) && tab.parentTabId === popupRequest.parentId && !popupRequest.knownIds.has(tab.tabId) && tab.suspended !== true) : [];
@@ -366,18 +404,46 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     if (!['refresh', 'inspect'].includes(state.action)) return false;
     state.generation++; state.controller?.abort(); state.controller = null; state.busy = false; state.pendingFocus = null; state.stale = true; return true;
   }
+  function newTab() {
+    if (!visible() || !cancelRead()) return;
+    if (state.newTabDraft) { $('#observe-browser-url')?.focus?.({ preventScroll: true }); return; }
+    remember(); keepDraft(); stopInput(); popupRequest = null; popupParents = [];
+    state.newTabDraft = { tabId: model().selected?.tabId || null, followAgent: state.followAgent, requiredTabId: state.requiredTabId, focusPage: state.focusPage, chatGPTConversation: state.chatGPTConversation };
+    state.followAgent = false; state.requiredTabId = null; state.focusPage = false; state.chatGPTConversation = false; onFocusPageChange(false);
+    Object.assign(state, { displayedId: null, displayedUrl: '', address: '', addressDirty: false, frame: null, document: null, ref: null, text: '', fieldValue: '', controlsOpen: false, stale: true, controlsStale: true, error: '', notice: '', inputNotice: '', nextAt: now() + 5000 });
+    render(); $('#observe-browser-url')?.focus?.({ preventScroll: true });
+    revealTab();
+  }
+  function discardNewTab() {
+    const previous = state.newTabDraft;
+    if (!previous) return null;
+    state.newTabDraft = null; state.address = ''; state.addressDirty = false;
+    return previous;
+  }
+  async function cancelNewTab() {
+    if (!visible() || !state.newTabDraft || !cancelRead()) return;
+    remember();
+    const previous = discardNewTab();
+    state.selectedId = previous.tabId; state.followAgent = previous.followAgent; state.requiredTabId = previous.requiredTabId;
+    state.focusPage = previous.focusPage; state.chatGPTConversation = previous.chatGPTConversation; onFocusPageChange(state.focusPage);
+    applyStatus(state.status); state.error = ''; state.notice = ''; state.nextAt = 0; render();
+    (state.focusPage ? actionNode('point') : actionNode('tab', model().selected?.tabId) || $('#observe-browser-url'))?.focus?.({ preventScroll: true });
+    await work();
+  }
   async function selectTab(id, { focus = true, follow = false } = {}) {
     if (!visible() || !cancelRead()) return;
     stopInput(); popupRequest = null; popupParents = [];
     if (state.focusPage) { state.focusPage = false; state.chatGPTConversation = false; onFocusPageChange(false); }
     remember(); if (id && !model().tabs.some(tab => tab.tabId === id)) return;
+    discardNewTab();
     state.requiredTabId = null; state.followAgent = follow; state.selectedId = follow ? null : id;
     applyStatus(state.status); state.error = ''; state.nextAt = 0; render();
     if (focus) { actionNode('tab', model().selected?.tabId)?.focus?.({ preventScroll: true }); revealTab(model().selected?.tabId); }
     await work();
   }
   async function work(action = 'refresh', extra = {}) {
-    if (!visible() || state.busy || state.protectionBusy || inputSession?.running || inputSession?.queue.length) return; remember();
+    const inputPreview = action === 'refresh' && inputRefreshDue && !inputSession?.composing;
+    if (!visible() || state.busy || state.protectionBusy || inputSession?.running || inputSession?.queue.length && !inputPreview) return; remember();
     if (action === 'refresh') { clearTimeout(inputRefresh); inputRefresh = null; inputRefreshDue = false; }
     const origin = typeof document === 'undefined' ? null : document.activeElement;
     state.pendingFocus = mount.contains?.(origin) ? focusSnapshot(origin) : null;
@@ -412,6 +478,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
         if (!current()) return;
         if (action === 'open') {
           if (typeof result.tabId !== 'string') throw Error('The contained browser did not return its new page identity.');
+          state.newTabDraft = null;
           if (state.address === parameters.url) { state.addressDirty = false; state.address = state.displayedUrl; }
           state.requiredTabId = null; state.followAgent = false; state.selectedId = tabId = result.tabId;
         }
@@ -533,6 +600,8 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     }
     if (action === 'tab') return selectTab(button.dataset.tabId);
     if (action === 'tree-tab') return selectTab(button.dataset.tabId,{focus:false});
+    if (action === 'new' || action === 'draft-tab') return newTab();
+    if (action === 'cancel-new') return cancelNewTab();
     if (action === 'follow') return selectTab(state.followAgent ? model().selected?.tabId : null, { follow: !state.followAgent, focus: false });
     if (action === 'interaction') return answerInteraction(button);
     if (action.startsWith('protection-')) return protection(action);
@@ -554,7 +623,6 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     }
     if (state.busy || state.protectionBusy) return;
     if (action === 'watch') { state.watching = !state.watching; state.nextAt = 0; render(); if (state.watching) await work(); return; }
-    if (action === 'new') { await openURL(true); return; }
     if (action === 'close'||action==='tree-close') return work('close', { tabId: button.dataset.tabId });
     if (action === 'tree-suspend') return work('suspend', { tabId: button.dataset.tabId });
     if (action === 'up' || action === 'down') { await work('scroll', { direction: action, amount: 650 }); return; }
@@ -564,15 +632,16 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
       const text = state.text; await work(action === 'control' ? 'click' : control.options ? 'select' : 'fill', { ref: control.ref, ...(action === 'fill' ? control.options ? { value: state.fieldValue } : { text } : {}) });
       if (!state.error && action === 'fill' && state.text === text) { state.text = ''; if ($('#observe-browser-text')) $('#observe-browser-text').value = ''; } return;
     }
+    if (['back', 'forward', 'reload'].includes(action)) stopInput();
     await work(action);
   };
-  async function openURL(newTab = false) {
+  async function openURL() {
     if (!visible() || state.busy || state.protectionBusy) return;
     remember(); let url;
     try { url = normalizeBrowserAddress(state.address); }
     catch (error) { state.error = error.message; render(); $('#observe-browser-url')?.focus?.({ preventScroll: true }); return; }
     state.address = url; const address = $('#observe-browser-url'); if (address) address.value = url;
-    await work(newTab || !model().selected ? 'open' : 'navigate', { url });
+    stopInput(); await work(!model().selected ? 'open' : 'navigate', { url });
   }
   const submit = event => { if (event.target.id !== 'observe-browser-address-form') return; event.preventDefault(); return openURL(); };
   const change = event => {
@@ -580,6 +649,13 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     if (event.target.id === 'observe-browser-ref') { state.ref = event.target.value; state.text = ''; state.fieldValue = state.document?.controls.find(item => item.ref === state.ref)?.options?.[0]?.value || ''; if ($('#observe-browser-text')) $('#observe-browser-text').value = ''; render(); }
   };
   const keydown = event => {
+    if (state.newTabDraft && visible() && !event.isComposing && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation?.(); return cancelNewTab(); }
+      if (event.target.closest?.('[data-observe-browser="draft-tab"]') && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+        const tabs = model().tabs, tab = ['ArrowLeft', 'End'].includes(event.key) ? tabs.at(-1) : tabs[0];
+        if (tab) { event.preventDefault(); return selectTab(tab.tabId); }
+      }
+    }
     if (event.target.id === 'observe-browser-input') {
       if (!inputSession || !visible()) return;
       if (event.isComposing || event.keyCode === 229 || inputSession.composing) { event.stopPropagation?.(); return; }
@@ -650,6 +726,17 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
   const focusout = event => {
     if (event.target.id === 'observe-browser-input' && !rendering) stopInput();
   };
+  const wheel = event => {
+    const preview = event.target.closest?.('[data-observe-browser="point"]');
+    if (!preview || preview.disabled || !mount.contains(preview) || !visible() || event.ctrlKey || event.metaKey || event.cancelable === false || state.protectionBusy || state.busy && !['refresh', 'inspect'].includes(state.action)) return;
+    const frame = state.frame, point = observeBrowserPoint(frame, event, $('#observe-browser-image')?.getBoundingClientRect?.());
+    const mode = event.deltaMode ?? 0, xUnit = mode === 1 ? 16 : mode === 2 ? frame?.width : 1, yUnit = mode === 1 ? 16 : mode === 2 ? frame?.height : 1;
+    const deltaX = event.deltaX * xUnit, deltaY = event.deltaY * yUnit;
+    if (!point || ![0, 1, 2].includes(mode) || ![deltaX, deltaY].every(value => Number.isFinite(value) && Math.abs(value) <= 32000) || !deltaX && !deltaY) return;
+    // Wheel input shares ordering and document identity with clicks and typing,
+    // but does not focus the keyboard capture or take focus from local fields.
+    if (captureInput({ keyboard: false }) && queueInput({ action: 'scroll', ...point, deltaX, deltaY })) { event.preventDefault(); event.stopPropagation?.(); }
+  };
   const pointerdown = event => {
     const control = event.target.closest?.('[data-observe-browser="point"], [data-observe-browser="interaction"], #observe-browser-tools > summary, #observe-browser-tree > summary, .observe-browser-folder > summary, #observe-browser-protection-settings > summary, #observe-browser-url');
     if (!control || control.disabled || !mount.contains(control) || !visible() || event.isPrimary === false || event.button !== undefined && event.button !== 0) return;
@@ -673,8 +760,19 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
   const pointercancel = () => finishPointer();
   const windowBlur = () => { stopInput(); finishPointer(); };
   const ownerWindow = mount.ownerDocument?.defaultView || (typeof window === 'undefined' ? null : window);
+  let browserWidth = mount.getBoundingClientRect?.().width;
+  const resized = () => {
+    const width = mount.getBoundingClientRect?.().width;
+    if (!Number.isFinite(width) || width === browserWidth) return;
+    browserWidth = width;
+    if (visible()) revealTab(model().selected?.tabId);
+  };
+  const resizeObserver = typeof ownerWindow?.ResizeObserver === 'function' ? new ownerWindow.ResizeObserver(resized) : null;
+  resizeObserver?.observe(mount);
+  if (!resizeObserver) ownerWindow?.addEventListener?.('resize', resized);
   const listeners = { click, submit, change, keydown, input, beforeinput, paste, compositionstart, compositionend, focusout, pointerdown };
   for (const [type, listener] of Object.entries(listeners)) mount.addEventListener(type, listener);
+  mount.addEventListener('wheel', wheel, { passive: false });
   ownerWindow?.addEventListener?.('blur', windowBlur);
   ownerWindow?.addEventListener?.('pointerup', pointerup);
   ownerWindow?.addEventListener?.('pointercancel', pointercancel);
@@ -682,10 +780,12 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
   return {
     async enter({ tabId, focusPage = false, chatGPTConversation = false } = {}) {
       popupRequest = null; popupParents = [];
+      if (typeof tabId === 'string' && tabId || focusPage) discardNewTab();
       state.active = true; state.nextAt = 0; state.requiredTabId = typeof tabId === 'string' && tabId ? tabId : null; state.focusPage = focusPage === true; state.chatGPTConversation = state.focusPage && Boolean(state.requiredTabId) && chatGPTConversation === true; state.browserToolsOpen = false; if (state.focusPage) state.watching = true; onFocusPageChange(state.focusPage);
       if (!cancelRead()) return;
       const generation = state.generation, doc = mount.ownerDocument || globalThis.document, entryFocus = doc?.activeElement;
       await work('refresh', typeof tabId === 'string' && tabId ? { tabId } : {});
+      if (generation === state.generation && visible()) revealTab(model().selected?.tabId);
       if (generation === state.generation && visible() && state.focusPage) {
         const focused = doc?.activeElement, ownsFocus = focused === entryFocus || !focused || focused === doc?.body || focused.isConnected === false;
         if (ownsFocus && (!mount.contains?.(focused) || focused?.dataset?.observeBrowser === 'point')) { mount.scrollTop = 0; actionNode('point')?.focus?.({ preventScroll: true }); }
@@ -697,7 +797,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
       if (!state.stale && now() - Date.parse(state.capturedAt) > 10000) { state.stale = true; render(); } if (state.watching && !state.busy && now() >= state.nextAt) void work();
     },
     leave() { stopInput(); popupRequest = null; popupParents = []; finishPointer({ redraw: false }); remember(); keepDraft(); state.active = false; state.generation++; state.controller?.abort(); state.controller = null; protectionController?.abort(); protectionController = null; state.protectionBusy = false; state.protectionFocus = null; state.pickingFiles = false; state.interactionId = null; state.interactionDraft = ''; state.interactionError = ''; state.busy = false; state.frame = null; renderedFrame = null; state.document = null; for (const saved of drafts.values()) saved.document = null; state.stale = true; state.controlsStale = true; state.pendingFocus = null; state.rendered = null; state.error = ''; state.mutationPending = false; mount.innerHTML = ''; },
-    destroy() { this.leave(); drafts.clear(); for (const [type, listener] of Object.entries(listeners)) mount.removeEventListener(type, listener); ownerWindow?.removeEventListener?.('blur', windowBlur); ownerWindow?.removeEventListener?.('pointerup', pointerup); ownerWindow?.removeEventListener?.('pointercancel', pointercancel); }
+    destroy() { this.leave(); drafts.clear(); resizeObserver?.disconnect(); ownerWindow?.removeEventListener?.('resize', resized); for (const [type, listener] of Object.entries(listeners)) mount.removeEventListener(type, listener); mount.removeEventListener('wheel', wheel); ownerWindow?.removeEventListener?.('blur', windowBlur); ownerWindow?.removeEventListener?.('pointerup', pointerup); ownerWindow?.removeEventListener?.('pointercancel', pointercancel); }
   };
 }
 

@@ -5,6 +5,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey } from '../lib/browser.mjs';
 import { sameBrowserOwner, browserOwnsTab, browserOwnsFolder, browserDownloadProvenance } from '../lib/browser-access.mjs';
+import { browserWheelScroll, validateBrowserCommand } from '../lib/browser-command.mjs';
 import { captureHiddenPage } from './browser-capture.mjs';
 import { loadBrowserCompatibility } from './browser-compatibility.mjs';
 import { BrowserPageLifetime } from './browser-lifecycle.mjs';
@@ -949,6 +950,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     try {
       await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseMoved', ...target.point, button: 'none' }, signal, target.guard, target.sessionId, target.instance);
       if (action === 'click') await this.clickPoint(tab, target.point, signal, target.guard, target.sessionId, target.instance);
+      if (action === 'scroll') await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseWheel', ...target.point, deltaX: expected.deltaX, deltaY: expected.deltaY, button: 'none' }, signal, target.guard, target.sessionId, target.instance);
     } finally { await target.close(); }
   }
   async browserPoint(tab, frame, point, signal) {
@@ -1007,6 +1009,11 @@ export class ElectronBrowserDriver extends EventEmitter {
   }
   async perform(args, { signal, source = 'agent', owner: context, validateUploadPath } = {}) {
     cancel(signal);
+    const wheel = browserWheelScroll(args);
+    // The router consumes the transport's browser selector before invoking
+    // this contained-only adapter. Retain full wheel/document validation here
+    // using that known native destination.
+    if (wheel) validateBrowserCommand({ ...args, browser: args.browser ?? 'relay' });
     const owner = browserOwner(context);
     if (args.action === 'tabs') return this.status();
     if (args.action === 'downloads') return { downloads: this.downloads.slice(-30) };
@@ -1019,7 +1026,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     catch (cause) { throw Object.assign(cause, { actionDispatched: false, stage: 'document' }); }
     if (owner) { this.ownerActiveTabs.set(browserOwnerKey(owner), tab.id); if (tab.owner) tab.owner.runId = owner.runId; }
     else this.activeTab = tab.id;
-    if (source === 'user' && tab.owner && ['navigate', 'click', 'fill', 'type', 'select', 'press', 'upload', 'interaction', 'back', 'forward', 'reload'].includes(args.action)) tab.userPinned = true;
+    if (source === 'user' && tab.owner && ['navigate', 'click', 'fill', 'type', 'select', 'press', 'scroll', 'upload', 'interaction', 'back', 'forward', 'reload'].includes(args.action)) tab.userPinned = true;
     if (args.action === 'close') { this.closeTab(tab); return this.savedStatus(); }
     const recoveringRenderer = tab.rendererFailure;
     if (tab.rendererFailure) {
@@ -1137,6 +1144,16 @@ export class ElectronBrowserDriver extends EventEmitter {
       if (args.expectedDocumentId !== undefined) return { ...this.interactionReceipt(tab), receipt: { ...receipt, ...(args.modifiers?.length ? { modifiers: [...args.modifiers] } : {}), input: 'browser protocol' } };
     }
     if (args.action === 'scroll') {
+      if (wheel) {
+        const viewport = await this.pageWork(tab, actionInstance.contents.executeJavaScript('({width:innerWidth,height:innerHeight})'), signal, 12000, actionInstance);
+        actionCurrent();
+        if (args.x >= viewport.width || args.y >= viewport.height) throw Object.assign(error(`Scroll coordinates must be within the current ${viewport.width} × ${viewport.height} browser viewport.`), { code: 'BROWSER_VALIDATION', actionDispatched: false });
+        // Native wheel input hit-tests the pane under the pointer and preserves
+        // both axes. A script-level window.scrollBy would miss nested scrollers.
+        await this.pointerInput(tab, { x: args.x, y: args.y }, 'scroll', signal, args);
+        actionCurrent();
+        return { ...this.interactionReceipt(tab), receipt: { scrolled: true, deltaX: args.deltaX, deltaY: args.deltaY, input: 'browser protocol' } };
+      }
       const amount = Math.min(2000, Math.max(1, Number(args.amount) || 650)), direction = args.direction || 'down';
       const movement = { top: ['up','down'].includes(direction) ? amount * (direction === 'up' ? -1 : 1) : 0, left: ['left','right'].includes(direction) ? amount * (direction === 'left' ? -1 : 1) : 0 };
       if (args.ref) receipt = (await this.element(tab, args, 'scroll', signal, movement)).result;

@@ -166,7 +166,7 @@ test('the focused ChatGPT conversation stays on its exact tab and returns to con
   await f.click('[data-observe-browser="connection-settings"]');
   assert.equal(settings, 1); assert.equal(f.calls.length, before, 'the return action is local navigation');
   await f.click('[data-observe-browser="tab"][data-tab-id="two"]');
-  assert.equal(f.$('.observe-browser-heading h2').textContent, 'Contained browser');
+  assert.equal(f.$('.observe-browser-heading h2').textContent, 'Browser');
   assert.equal(f.$('[data-observe-browser="connection-settings"]'), null);
 });
 
@@ -490,6 +490,96 @@ test('a lightweight guarded click receipt releases text and refreshes independen
   t.mock.timers.tick(250); await f.settle();
   assert.deepEqual(f.calls.filter(call => call.body).map(call => call.body.action), ['screenshot', 'click', 'type', 'screenshot']);
   assert.equal(f.$('#observe-browser-input-help').dataset.active, 'true');
+});
+
+test('wheel bursts preserve both axes and the observed pointer without taking keyboard focus', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = await fixture(t), gate = deferred(); let first = true;
+  const address = f.$('#observe-browser-url'); address.value = 'https://unfinished-address.test/'; address.focus();
+  const imageNode = f.$('#observe-browser-image'); imageNode.getBoundingClientRect = () => ({ left: 10, top: 20, width: 640, height: 450 });
+  f.hook(call => { if (call.body?.action === 'scroll' && first) { first = false; return gate.promise; } });
+  for (const [deltaX, deltaY] of [[2, 10], [3, 20], [-1, 30], [6, 40]]) {
+    const event = await imageNode.dispatch('wheel', { clientX: 110, clientY: 70, deltaMode: 0, deltaX, deltaY }, true);
+    assert.equal(event.defaultPrevented, true);
+  }
+  assert.equal(f.document.activeElement, address); assert.equal(f.$('#observe-browser-input-help').getAttribute('data-active'), 'false');
+  gate.resolve(f.receipt('one')); await f.settle();
+  const scrolls = f.calls.filter(call => call.body?.action === 'scroll').map(call => call.body);
+  assert.equal(scrolls.length, 2, 'the pending part of the burst is coalesced');
+  assert.deepEqual(scrolls.map(body => [body.deltaX, body.deltaY]), [[2, 10], [8, 90]]);
+  for (const body of scrolls) assert.deepEqual({ ...body, deltaX: 0, deltaY: 0 }, { action: 'scroll', browser: 'relay', tabId: 'one', expectedUrl: 'https://one.example.test/', expectedDocumentId: 'one:1', x: 200, y: 100, deltaX: 0, deltaY: 0 });
+  const captures = f.calls.filter(call => call.body?.action === 'screenshot').length;
+  t.mock.timers.tick(250); await f.settle();
+  assert.equal(f.calls.filter(call => call.body?.action === 'screenshot').length, captures + 1);
+  assert.equal(f.document.activeElement, address); assert.equal(f.$('#observe-browser-url').value, 'https://unfinished-address.test/');
+});
+
+test('wheel input is an ordered barrier between page clicks and typed text', async t => {
+  const gate = deferred(); const f = await fixture(t, { hook: call => call.body?.action === 'click' ? gate.promise : undefined });
+  const click = f.point(); await f.settle();
+  await f.text('before');
+  await f.$('#observe-browser-image').dispatch('wheel', { clientX: 100, clientY: 20, deltaMode: 0, deltaX: 30, deltaY: 80 }, true);
+  await f.text('after');
+  assert.equal(f.calls.filter(call => call.body?.action === 'scroll').length, 0);
+  gate.resolve(f.receipt('one')); await click; await f.settle();
+  assert.deepEqual(f.calls.filter(call => ['click', 'type', 'scroll'].includes(call.body?.action)).map(call => [call.body.action, call.body.text || null]), [['click', null], ['type', 'before'], ['scroll', null], ['type', 'after']]);
+  assert.equal(f.document.activeElement, f.input());
+});
+
+test('continuous wheel input gets its due preview between receipts before pending gestures resume', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = await fixture(t), gate = deferred(); let count = 0;
+  f.hook(call => { if (call.body?.action === 'scroll' && ++count === 2) return gate.promise; });
+  const wheel = deltaY => f.$('#observe-browser-image').dispatch('wheel', { clientX: 100, clientY: 20, deltaMode: 0, deltaX: 0, deltaY }, true);
+  await wheel(10); await f.settle(); await wheel(20); await wheel(30);
+  const captures = f.calls.filter(call => call.body?.action === 'screenshot').length;
+  t.mock.timers.tick(250); await f.settle(); assert.equal(f.calls.filter(call => call.body?.action === 'screenshot').length, captures);
+  gate.resolve(f.receipt('one')); await f.settle();
+  assert.deepEqual(f.calls.filter(call => call.body).map(call => call.body.action), ['screenshot', 'scroll', 'scroll', 'screenshot', 'scroll']);
+  assert.deepEqual(f.calls.filter(call => call.body?.action === 'scroll').map(call => call.body.deltaY), [10, 20, 30]);
+});
+
+test('composition ending after an overdue preview releases its text and subsequent typing', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = await fixture(t); await f.point();
+  const input = f.input(), captures = () => f.calls.filter(call => call.body?.action === 'screenshot').length, initial = captures();
+  await input.dispatch('compositionstart', {}, true);
+  t.mock.timers.tick(300); await f.settle();
+  assert.equal(captures(), initial, 'the due preview waits for native composition to finish');
+  await input.dispatch('compositionend', { data: 'first' }, true); await f.settle();
+  await f.text('second'); await f.settle();
+  assert.equal(f.mutations().filter(call => call.body.action === 'type').map(call => call.body.text).join(''), 'firstsecond');
+  assert.equal(captures(), initial + 1, 'the overdue preview runs once before queued composition text');
+  assert.equal(f.document.activeElement, f.input());
+  t.mock.timers.tick(250); await f.settle();
+  assert.equal(captures(), initial + 2, 'later typing still schedules a fresh preview');
+});
+
+test('a changed document or selected tab discards its pending wheel gestures', async t => {
+  const f = await fixture(t), gate = deferred(); let first = true;
+  f.hook(call => { if (call.body?.action === 'scroll' && first) { first = false; return gate.promise; } });
+  const wheel = () => f.$('#observe-browser-image').dispatch('wheel', { clientX: 100, clientY: 20, deltaMode: 0, deltaX: 12, deltaY: 50 }, true);
+  await wheel(); await wheel(); gate.resolve(f.navigate('one')); await f.settle();
+  assert.equal(f.calls.filter(call => call.body?.action === 'scroll').length, 1);
+  await wheel(); await f.settle(); assert.equal(f.calls.filter(call => call.body?.action === 'scroll').at(-1).body.expectedDocumentId, 'one:2');
+  const secondGate = deferred(); first = true;
+  f.hook(call => { if (call.body?.action === 'scroll' && first) { first = false; return secondGate.promise; } });
+  await wheel(); await wheel(); const count = f.calls.filter(call => call.body?.action === 'scroll').length;
+  await f.click('[data-observe-browser="tab"][data-tab-id="two"]'); secondGate.resolve(f.receipt('one')); await f.settle();
+  assert.equal(f.calls.filter(call => call.body?.action === 'scroll').length, count);
+  assert.equal(f.calls.filter(call => call.body?.action === 'screenshot').at(-1).body.tabId, 'two');
+});
+
+test('wheel units normalize, large bursts split without lost axes, and unrelated gestures stay local', async t => {
+  const f = await fixture(t);
+  const wheel = extra => f.$('#observe-browser-image').dispatch('wheel', { clientX: 100, clientY: 20, deltaMode: 0, deltaX: 0, deltaY: 10, ...extra }, true);
+  for (const extra of [{ ctrlKey: true }, { metaKey: true }, { deltaY: 1e20 }, { deltaX: Infinity }, { deltaMode: 4 }, { deltaX: 0, deltaY: 0 }]) assert.equal((await wheel(extra)).defaultPrevented, false);
+  const outside = await f.$('#observe-browser-url').dispatch('wheel', { deltaX: 0, deltaY: 20 }, true); assert.equal(outside.defaultPrevented, false);
+  assert.equal(f.calls.filter(call => call.body?.action === 'scroll').length, 0);
+  await wheel({ deltaMode: 1, deltaX: 2, deltaY: -3 }); await f.settle();
+  await wheel({ deltaMode: 2, deltaX: 1, deltaY: 0 }); await f.settle();
+  await wheel({ deltaMode: 0, deltaX: 5000, deltaY: -4500 }); await f.settle();
+  assert.deepEqual(f.calls.filter(call => call.body?.action === 'scroll').map(call => [call.body.deltaX, call.body.deltaY]), [[32, -48], [1280, 0], [2000, -2000], [2000, -2000], [1000, -500]]);
 });
 
 test('cancelable native text is forwarded before editing the hidden textarea can scroll its caret', async t => {

@@ -66,7 +66,7 @@ test('page frames, current control receipts, and screenshot coordinates are boun
 
 test('the actual public API client refreshes a real rendered contained frame and excludes native routes', async t => {
   const f = fixture(t, { initial: status([tab('one'), tab('native-window', { browser: 'neo' }), tab('shown', { visible: true })]) }); await f.ui.enter();
-  assert.match(f.html, /Captured contained browser page/); assert.match(f.html, /Websites and their sign-ins stay in this contained browser/); assert.doesNotMatch(f.html, /value="native-window"|value="shown"|Open window/);
+  assert.match(f.html, /Captured contained browser page/); assert.match(f.html, /<h2>Browser<\/h2>/); assert.doesNotMatch(f.html, /value="native-window"|value="shown"|Open window/);
   assert.deepEqual(f.calls.map(call => [call.route, call.body?.action]), [['/api/browser/status?view=contained', undefined], ['/api/browser/action', 'screenshot']]);
   assert.equal(f.element('observe-browser-url').value, 'https://example.test/one'); assert.ok(f.calls.every(call => call.signal instanceof AbortSignal));
 });
@@ -170,5 +170,5 @@ test('contained surface is available in Activity without fabricating a selected 
 
 test('browser surface renders page content as escaped text and never embeds a remote website iframe', () => {
   const html = renderObserveBrowser({ status: status([tab('unsafe', { title: '<img src=x onerror=alert(1)>' })]), document: { controls: [{ ref: 'unsafe" onclick="bad', name: '<script>bad</script>', role: 'textbox' }], text: '<svg onload=alert(1)>' }, address: 'https://example.test/?a=" onfocus="bad', watching: true });
-  assert.doesNotMatch(html, /<iframe|<script|<svg|<img src=x|onclick="bad|onfocus="bad/); assert.match(html, /&lt;script&gt;/); assert.match(html, /&lt;svg/);
+  assert.doesNotMatch(html, /<iframe|<script|<svg onload|<img src=x|onclick="bad|onfocus="bad/); assert.match(html, /&lt;script&gt;/); assert.match(html, /&lt;svg/);
 });

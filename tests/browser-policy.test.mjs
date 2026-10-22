@@ -120,6 +120,23 @@ test('unsupported command names cannot resolve inherited registry entries', asyn
   assert.deepEqual(calls, []);
 });
 
+test('wheel scrolling accepts signed pixel deltas only with an explicit observed page', async t => {
+  const { browser, calls } = fixture(t);
+  const wheel = { action: 'scroll', browser: 'relay', tabId: 'mine', x: 120.5, y: 48.25, deltaX: -13.5, deltaY: 200.75, expectedUrl: 'https://owned.test/', expectedDocumentId: 'mine:1' };
+  await browser.perform(wheel, { source: 'user' });
+  assert.deepEqual(calls[0].args, wheel);
+  for (const change of [
+    { x: undefined }, { y: undefined }, { deltaX: undefined }, { deltaY: undefined }, { x: -1 }, { y: -1 },
+    { deltaX: Infinity }, { deltaY: NaN }, { deltaX: '12' }, { deltaX: 0, deltaY: 0 },
+    { ref: 'control' }, { direction: 'down' }, { amount: 200 }, { tabId: undefined }, { browser: undefined },
+    { expectedUrl: undefined }, { expectedDocumentId: undefined },
+  ]) await assert.rejects(browser.perform({ ...wheel, ...change }, { source: 'user' }), { code: 'BROWSER_VALIDATION', actionDispatched: false });
+  assert.equal(calls.length, 1, 'malformed wheel input must never reach the native adapter');
+  await browser.perform({ action: 'scroll', tabId: 'mine', direction: 'up', amount: 500 }, { source: 'user' });
+  await browser.perform({ action: 'scroll', tabId: 'mine', ref: 'pane', direction: 'right', amount: 50 }, { source: 'user' });
+  assert.equal(calls.length, 3, 'existing directional and element-ref scrolling remain supported');
+});
+
 test('organization ownership is checked again after queued work and host admission', async t => {
   const { browser, driver, tabs, calls } = fixture(t);
   let release; const waiting = new Promise(resolve => { release = resolve; });

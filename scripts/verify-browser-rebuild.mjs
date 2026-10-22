@@ -12,24 +12,26 @@ const args = process.argv.slice(2), options = {};
 for (let index = 0; index < args.length; index++) {
   const value = args[index];
   if (value === '--help') { options.help = true; continue; }
+  if (value === '--wheel-only') { options.wheelOnly = true; continue; }
   if (!value.startsWith('--')) throw Error(`Unexpected argument: ${value}`);
   const equal = value.indexOf('='), name = value.slice(2, equal < 0 ? undefined : equal);
   if (!['electron', 'out', 'source'].includes(name) || Object.hasOwn(options, name)) throw Error(`Unknown or repeated option: ${name}`);
   options[name] = equal < 0 ? args[++index] : value.slice(equal + 1);
   if (!options[name] || options[name].startsWith('--')) throw Error(`Supply --${name}=<absolute path>.`);
 }
-if (options.help) { console.log('node scripts/verify-browser-rebuild.mjs --electron=<absolute raw electron.exe> --out=<absolute evidence directory outside source> [--source=<candidate checkout>]'); process.exit(0); }
+if (options.help) { console.log('node scripts/verify-browser-rebuild.mjs --electron=<absolute raw electron.exe> --out=<absolute evidence directory outside source> [--source=<candidate checkout>] [--wheel-only]'); process.exit(0); }
 const source = path.resolve(options.source || path.join(path.dirname(fileURLToPath(import.meta.url)), '..'));
 if (!options.electron || !path.isAbsolute(options.electron) || !options.out || !path.isAbsolute(options.out)) throw Error('Supply absolute --electron and --out paths.');
 const executable = path.resolve(options.electron), out = path.resolve(options.out), relativeOut = path.relative(source, out);
 if (!['electron', 'electron.exe'].includes(path.basename(executable).toLowerCase())) throw Error('Use a raw Electron executable, never the installed BLACKICE application.');
 if (!relativeOut || !relativeOut.startsWith('..' + path.sep) && !path.isAbsolute(relativeOut)) throw Error('Keep verification evidence outside the candidate source.');
 if (!(await fs.stat(executable)).isFile()) throw Error('The supplied raw Electron executable is not a file.');
-const fixtureFile = path.join(source, 'tests/fixtures/browser-rebuild-live.mjs');
+const fixtureRelative = options.wheelOnly ? 'tests/fixtures/browser-wheel-live.mjs' : 'tests/fixtures/browser-rebuild-live.mjs';
+const fixtureFile = path.join(source, fixtureRelative), suite = options.wheelOnly ? 'browser-wheel' : 'browser-rebuild';
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 
 async function sourceHashes() {
-  const pending = ['desktop/browser-driver.mjs', 'desktop/browser-router.mjs', 'lib/browser.mjs', 'tests/fixtures/browser-rebuild-live.mjs', 'scripts/verify-browser-rebuild.mjs'];
+  const pending = ['desktop/browser-driver.mjs', 'desktop/browser-router.mjs', 'lib/browser.mjs', fixtureRelative, 'scripts/verify-browser-rebuild.mjs'];
   const files = new Set(['package.json', 'desktop/browser-compatibility/manifest.json', 'desktop/browser-compatibility/main.js', 'lib/vendor/adblock-filter-data.json']);
   while (pending.length) {
     const relative = pending.pop(); if (files.has(relative)) continue; files.add(relative);
@@ -46,9 +48,9 @@ async function sourceHashes() {
 
 await fs.mkdir(out, { recursive: true });
 const root = await fs.mkdtemp(path.join(tmpdir(), 'blackice-browser-rebuild-')), nonce = randomUUID();
-await fs.mkdir(path.join(root, 'profile')); await fs.writeFile(path.join(root, 'fixture-marker.json'), JSON.stringify({ suite: 'native-browser-rebuild', nonce }));
+await fs.mkdir(path.join(root, 'profile')); await fs.writeFile(path.join(root, 'fixture-marker.json'), JSON.stringify({ suite: 'native-' + suite, nonce }));
 const reportFile = path.join(out, 'browser-rebuild-report.json'), nativeFile = path.join(out, 'browser-rebuild-native.json'), logFile = path.join(out, 'browser-rebuild-native.log');
-const report = { format: 1, product: 'BLACKICE', suite: 'browser-rebuild', source, platform: process.platform, node: process.version, startedAt: new Date().toISOString(), deadlineMs: 90000,
+const report = { format: 1, product: 'BLACKICE', suite, source, platform: process.platform, node: process.version, startedAt: new Date().toISOString(), deadlineMs: 90000,
   actualUserBrowserAccessed: false, onlyDisposableLocalSites: true, temporaryRoot: root, executable: { path: executable, sha256: digest(await fs.readFile(executable)) }, before: await sourceHashes() };
 await fs.writeFile(reportFile, JSON.stringify(report, null, 2) + '\n');
 const environment = { ...process.env }; delete environment.ELECTRON_RUN_AS_NODE;

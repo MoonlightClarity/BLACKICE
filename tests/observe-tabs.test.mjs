@@ -109,8 +109,59 @@ test('a page disappearing before input is never replaced by a mutation against t
   const f = await fixture(t); await f.click('tab', 'two'); f.data.status.tabs = f.data.status.tabs.filter(tab => tab.tabId !== 'two'); await f.button('point').dispatch('click', {clientX:80,clientY:25}, true); assert.equal(f.selected, 'three'); assert.equal(f.calls.filter(call => call.body?.action === 'click').length, 0);
 });
 
-test('New tab opens the authored address once and keeps existing tabs intact', async t => {
-  const f = await fixture(t); await f.input('#observe-browser-url', 'https://new.example.test/report'); await f.click('new'); assert.equal(f.data.status.tabs.length, 4); assert.ok(f.selected.startsWith('created-')); assert.equal(f.$('#observe-browser-url').value, 'https://new.example.test/report'); assert.deepEqual(f.calls.filter(call => call.body?.action === 'open').map(call => call.body), [{ action: 'open', browser: 'relay', url: 'https://new.example.test/report' }]); assert.equal(f.$('#observe-browser-follow').getAttribute('aria-pressed'), 'false');
+test('New tab starts locally, retains its focused draft through polls, and opens only on submit', async t => {
+  const f = await fixture(t); await f.input('#observe-browser-url', 'https://previous-draft.test/');
+  const captures = f.calls.filter(call => call.body?.action === 'screenshot').length;
+  await f.click('new');
+  assert.equal(f.data.status.tabs.length, 3); assert.equal(f.calls.filter(call => call.body?.action === 'open').length, 0);
+  assert.ok(f.$('#observe-browser-new-draft')); assert.equal(f.$('#observe-browser-url').value, ''); assert.equal(document.activeElement, f.$('#observe-browser-url'));
+  assert.equal(f.$('[data-observe-browser="draft-tab"]').getAttribute('aria-selected'), 'true');
+  await f.input('#observe-browser-url', 'new.example.test/report');
+  const address = f.$('#observe-browser-url'); address.setSelectionRange(4, 11); await f.poll();
+  assert.equal(f.$('#observe-browser-url'), address); assert.equal(address.value, 'new.example.test/report'); assert.equal(document.activeElement, address); assert.deepEqual([address.selectionStart, address.selectionEnd], [4, 11]);
+  assert.equal(f.calls.filter(call => call.body?.action === 'screenshot').length, captures);
+  await f.click('new'); assert.equal(f.$('#observe-browser-url').value, 'new.example.test/report', 'another + press keeps the unfinished draft');
+  await f.$('#observe-browser-address-form').dispatch('submit', {}, true);
+  assert.equal(f.data.status.tabs.length, 4); assert.ok(f.selected.startsWith('created-')); assert.equal(f.$('#observe-browser-new-draft'), null);
+  assert.equal(f.$('#observe-browser-url').value, 'https://new.example.test/report');
+  assert.deepEqual(f.calls.filter(call => call.body?.action === 'open').map(call => call.body), [{ action: 'open', browser: 'relay', url: 'https://new.example.test/report' }]);
+  await f.click('tab', 'one'); assert.equal(f.$('#observe-browser-url').value, 'https://previous-draft.test/');
+});
+
+test('Cancel and Escape discard only the local new tab and restore the previous tab drafts', async t => {
+  const f = await fixture(t); await f.click('tab', 'two'); await f.click('inspect');
+  await f.input('#observe-browser-url', 'https://two-unsent.test/'); await f.input('#observe-browser-text', 'Unsent page field');
+  for (const exit of ['cancel', 'escape']) {
+    await f.click('new'); await f.input('#observe-browser-url', 'https://discard-this-draft.test/');
+    if (exit === 'cancel') await f.click('cancel-new');
+    else await f.$('#observe-browser-url').dispatch('keydown', { key: 'Escape' }, true);
+    assert.equal(f.selected, 'two'); assert.equal(f.$('#observe-browser-new-draft'), null);
+    assert.equal(f.$('#observe-browser-url').value, 'https://two-unsent.test/'); assert.equal(f.$('#observe-browser-text').value, 'Unsent page field');
+    assert.equal(f.$('#observe-browser-follow').getAttribute('aria-pressed'), 'false');
+  }
+  assert.equal(f.calls.filter(call => ['open', 'navigate', 'close'].includes(call.body?.action)).length, 0);
+});
+
+test('selecting an existing page exits a new-tab draft without transferring its address', async t => {
+  const f = await fixture(t); await f.click('tab', 'two'); await f.input('#observe-browser-url', 'https://two-saved-draft.test/');
+  await f.click('tab', 'one'); await f.click('new'); await f.input('#observe-browser-url', 'https://not-two.test/');
+  await f.click('tab', 'two');
+  assert.equal(f.selected, 'two'); assert.equal(f.$('#observe-browser-url').value, 'https://two-saved-draft.test/');
+  assert.equal(f.calls.filter(call => call.body?.action === 'open').length, 0);
+  await f.click('new'); f.data.status.tabs = f.data.status.tabs.filter(tab => tab.tabId !== 'two'); await f.poll();
+  assert.ok(f.$('#observe-browser-new-draft')); assert.equal(f.$('#observe-browser-status').textContent, '');
+  await f.click('cancel-new'); assert.equal(f.selected, 'one');
+});
+
+test('Reload page refreshes the exact pinned website while Refresh preview only captures its view', async t => {
+  const f = await fixture(t); await f.click('tab', 'two'); await f.input('#observe-browser-url', 'https://unsent-other-website.test/');
+  await f.click('reload');
+  assert.deepEqual(f.calls.filter(call => call.body?.action === 'reload').map(call => call.body), [{ action: 'reload', browser: 'relay', tabId: 'two' }]);
+  assert.equal(f.selected, 'two'); assert.equal(f.$('#observe-browser-url').value, 'https://unsent-other-website.test/');
+  assert.equal(f.calls.filter(call => call.body?.action === 'navigate').length, 0);
+  const start = f.calls.length; await f.click('refresh');
+  assert.deepEqual(f.calls.slice(start).filter(call => call.body).map(call => call.body.action), ['screenshot']);
+  assert.equal(f.data.status.tabs.length, 3);
 });
 
 test('site protection uses the exact observed origin and leaves other tabs and their drafts unchanged', async t => {
