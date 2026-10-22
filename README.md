@@ -1,4 +1,4 @@
-# BLACKICE 2.33.6
+# BLACKICE 2.33.7
 
 BLACKICE is a Windows app that lets AI assistants work with your files, use websites, and carry out tasks on your computer. Use it from ChatGPT, or choose a supported online or local AI model inside the app.
 
@@ -9,7 +9,7 @@ BLACKICE is a Windows app that lets AI assistants work with your files, use webs
 - **Automate repeat work:** Queue tasks or schedule them to run while BLACKICE is open.
 - **Follow the work:** See actions, results, errors, and file changes as they happen.
 
-**[Download BLACKICE 2.33.6 for Windows x64](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.33.6/Blackice-2.33.6-Setup.exe)** · [Release notes and checksums](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.33.6)
+**[Download BLACKICE 2.33.7 for Windows x64](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.33.7/Blackice-2.33.7-Setup.exe)** · [Release notes and checksums](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.33.7)
 
 The installer is unsigned; Windows has not verified a publisher identity for it.
 
@@ -17,7 +17,7 @@ See [Start](#start) to run it and [Use BLACKICE from ChatGPT](#use-blackice-from
 
 BLACKICE's original source is available under the [Apache License 2.0](LICENSE). Bundled third-party components retain the licenses and attribution described in [Third-party notices](THIRD-PARTY-NOTICES.md).
 
-[Performance and reliability verification](PERFORMANCE.md) records the measured improvements and source tests. The [2.33.6 release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.33.6) carries the current release's verification evidence. [Historical 2.33.5 installer verification](verification/windows-installer-2.33.5.json) and [its Windows release checks](https://github.com/MoonlightClarity/BLACKICE/actions/runs/39639162142) document that earlier artifact. A prolonged production soak has not been performed. [Signing and release](SIGNING-AND-RELEASE.md) defines the release checks.
+[Performance and reliability verification](PERFORMANCE.md) records the measured improvements and source tests. The [2.33.7 release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.33.7) carries the current release's verification evidence. [Historical 2.33.5 installer verification](verification/windows-installer-2.33.5.json) and [its Windows release checks](https://github.com/MoonlightClarity/BLACKICE/actions/runs/39639162142) document that earlier artifact. A prolonged production soak has not been performed. [Signing and release](SIGNING-AND-RELEASE.md) defines the release checks.
 
 ## Saved passwords and browser copying
 

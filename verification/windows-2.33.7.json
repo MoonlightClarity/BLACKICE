@@ -1,0 +1,31 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "scope": "source-publication",
+  "version": "2.33.7",
+  "sourceHead": "d5be9fa0e83310d944b799311b4a54ecf0bbf01c",
+  "platform": "win32",
+  "node": "v24.13.0",
+  "checkedAt": "2026-10-22T23:15:40.399Z",
+  "appFingerprint": "075039a9c4a3d1c47e95ea20260ee96a0643675679e2ee48395afe00db58475a",
+  "fingerprintUnchanged": true,
+  "sourceFilesVerified": 795,
+  "testFiles": 315,
+  "tests": {
+    "total": 4249,
+    "passed": 4244,
+    "failed": 0,
+    "requiredSkipped": 0,
+    "optionalSkipped": 5,
+    "cancelled": 0,
+    "exitCode": 0
+  },
+  "testLogSha256": "c2654a8d8c71d309b122704efe6f847aa21139c4c731f63cdec9c4c755cd7006",
+  "optionalIntegrationSkips": [
+    "ok 396 - Relay-owned sign-in and local storage survive a full process restart without foregrounding # SKIP Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+    "ok 600 - restored hidden browser tabs defer requests until used and never load closed or replaced pages # SKIP Set RELAY_LIVE_BROWSER_QA=1 for disposable Electron restoration.",
+    "ok 615 - native cross-origin popups redirect, message their opener and follow or close without breaking Observe pins or task routing # SKIP Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+    "ok 1719 - live background accessibility actions change only a dedicated non-activating fixture and leave foreground and cursor untouched # SKIP",
+    "ok 2119 - real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart # SKIP Set RELAY_LIVE_FIREFOX_QA=1 on Windows to use a new disposable Firefox profile."
+  ]
+}
