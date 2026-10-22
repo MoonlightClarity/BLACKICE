@@ -278,6 +278,39 @@ test('a local browser-tools press keeps its native target through preview comple
   assert.equal(f.mutations().length, 0);
 });
 
+test('folder disclosures retain native activation when preview polling completes during a press', async t => {
+  const f = await fixture(t);
+  f.state.folders = [{ id: 'personal', name: 'Personal', kind: 'user' }];
+  f.state.tabs.forEach(tab => { tab.folderId = 'personal'; });
+  await f.poll();
+  for (const selector of ['#observe-browser-tree', '[data-observe-folder="personal"]']) {
+    f.$(selector).open = false;
+    const gate = deferred();
+    f.hook(call => call.body?.action === 'screenshot' ? gate.promise : undefined);
+    await f.poll();
+    const summary = f.$(`${selector} > summary`);
+    const press = await summary.dispatch('pointerdown', { button: 0, pointerId: 1 }, true);
+    assert.equal(press.defaultPrevented, false, 'folder disclosures retain native focus and activation');
+    summary.focus();
+    f.hook(null); gate.resolve({ ...f.receipt('one'), imageUrl: image, width: 1280, height: 900 }); await f.settle();
+    assert.equal(f.mount.getAttribute('aria-busy'), 'false');
+    assert.equal(summary.isConnected, true, 'a preview cannot detach a physically pressed folder disclosure');
+    assert.equal(f.$(`${selector} > summary`), summary);
+    assert.equal(f.document.activeElement, summary);
+    await f.page('pointerup');
+    const click = await summary.dispatch('click', {}, true); assert.equal(click.defaultPrevented, false);
+    // The small DOM fixture supplies the browser's default details activation.
+    summary.parentElement.open = true;
+    await new Promise(resolve => setTimeout(resolve, 0)); await f.settle();
+    assert.equal(f.$(selector).open, true, 'the delayed redraw remembers the completed native activation');
+    assert.equal(f.document.activeElement, f.$(`${selector} > summary`));
+  }
+  await f.poll();
+  assert.equal(f.$('#observe-browser-tree').open, true);
+  assert.equal(f.$('[data-observe-folder="personal"]').open, true);
+  assert.ok(f.calls.filter(call => call.route === '/api/browser/action').every(call => call.body.action === 'screenshot'), 'folder disclosure changes do not send page actions');
+});
+
 test('a protection-settings press stays attached while its pending site response completes', async t => {
   const f = await fixture(t), gate = deferred(), origin = new URL(f.state.tabs[0].url).origin;
   const protection = exempt => ({ available: true, enabled: true, ready: true, filterCount: 1000, tabs: f.state.tabs.map(tab => ({ tabId: tab.tabId, available: true, enabled: tab.tabId !== 'one' || !exempt, siteExempt: tab.tabId === 'one' && exempt, origin: new URL(tab.url).origin })) });
