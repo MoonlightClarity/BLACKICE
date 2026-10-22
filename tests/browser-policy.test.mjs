@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BROWSER_TOOL, BrowserWorkspace, browserOwnerKey, createBrowserToolHandler } from '../lib/browser.mjs';
+import { browserDownloadProvenance } from '../lib/browser-access.mjs';
 
 const owner = { taskId: 'task', runId: 'run', nodeId: 'worker' };
 const call = arguments_ => ({ name: 'relay_browser', arguments: arguments_ });
@@ -67,6 +68,56 @@ test('direct connector ownership permits ordinary personal tabs but preserves th
   assert.equal((await handler(call({ action: 'folder_close', folderId: 'personal' }))).success, true);
   assert.equal(receipt(await handler(call({ action: 'folder_close', folderId: 'calling' }))).code, 'BROWSER_HUMAN_CHAT_RESERVED');
   assert.equal(calls.length, 2);
+});
+
+test('an authorized connector can open inside a personal folder or under its personal parent', async t => {
+  const { browser, handler: taskHandler, calls } = fixture(t), handler = createBrowserToolHandler({ browser, owner: { ...owner, allowUserTabs: true } });
+  for (const target of [{ folderId: 'personal' }, { parentTabId: 'personal-tab' }, { folderId: 'personal', parentTabId: 'personal-tab' }]) {
+    const args = { action: 'open', url: 'https://example.test/child', ...target };
+    assert.equal((await handler(call(args))).success, true, JSON.stringify(target));
+    assert.equal(receipt(await taskHandler(call(args))).code, 'BROWSER_TAB_OWNERSHIP');
+  }
+  assert.equal(calls.length, 3);
+  assert.ok(calls.every(value => value.owner.allowUserTabs && value.args.url === 'https://example.test/child'));
+  assert.equal(receipt(await handler(call({ action: 'open', url: 'https://example.test/', folderId: 'foreign' }))).code, 'BROWSER_TAB_OWNERSHIP');
+});
+
+test('closed source downloads keep their original owner and calling-tab provenance', async t => {
+  const { browser, driver, tabs, handler } = fixture(t), connector = createBrowserToolHandler({ browser, owner: { ...owner, allowUserTabs: true } });
+  const downloads = tabs.map(tab => ({ tabId: tab.tabId, name: `${tab.tabId}.txt`, provenance: browserDownloadProvenance(tab) }));
+  downloads.push({ tabId: 'unattributed', name: 'legacy.txt' }, { tabId: 'mismatch', name: 'mismatch.txt', provenance: downloads[0].provenance });
+  driver.perform = async () => ({ downloads, browsers: { relay: { downloads } } });
+  tabs.find(tab => tab.tabId === 'chat').purpose = null;
+  assert.ok(!receipt(await connector(call({ action: 'downloads' }))).downloads.some(item => item.name === 'chat.txt'), 'a calling-tab download cannot be relabeled by later page metadata');
+  tabs.splice(0);
+  const owned = receipt(await handler(call({ action: 'downloads' })));
+  const personal = receipt(await connector(call({ action: 'downloads' })));
+  assert.deepEqual(owned.downloads.map(item => item.name), ['mine.txt', 'child.txt']);
+  assert.deepEqual(personal.downloads.map(item => item.name), ['mine.txt', 'child.txt', 'personal-tab.txt']);
+  assert.deepEqual(personal.browsers.relay.downloads, personal.downloads);
+  assert.equal(downloads[0].provenance.owner.taskId, owner.taskId);
+  assert.equal(downloads.find(item => item.name === 'chat.txt').provenance.purpose, 'chat-mode');
+});
+
+test('page commands share optional document guards and coordinate hover has a dispatchable shape', async t => {
+  const { handler, calls } = fixture(t), guard = { expectedUrl: 'https://owned.test/', expectedDocumentId: 'mine:1' };
+  const actions = [
+    { action: 'read' }, { action: 'snapshot' }, { action: 'screenshot' }, { action: 'navigate', url: 'https://owned.test/next' },
+    { action: 'hover', x: 45, y: 30 }, { action: 'fill', ref: 'field', text: 'owned input' }, { action: 'select', ref: 'choice', value: 'one' },
+    { action: 'wait', text: 'ready' }, { action: 'scroll', direction: 'down' }, { action: 'back' }, { action: 'forward' }, { action: 'reload' }, { action: 'close' },
+  ];
+  for (const action of actions) assert.equal((await handler(call({ ...action, tabId: 'mine', ...guard }))).success, true, action.action);
+  assert.equal(calls.length, actions.length);
+  assert.ok(calls.every(value => value.args.expectedUrl === guard.expectedUrl && value.args.expectedDocumentId === guard.expectedDocumentId));
+  const invalid = await handler(call({ action: 'hover', tabId: 'mine', x: 45, y: 30 }));
+  assert.equal(receipt(invalid).code, 'BROWSER_VALIDATION'); assert.equal(receipt(invalid).actionDispatched, false); assert.equal(receipt(invalid).stage, 'validation');
+  assert.equal(calls.length, actions.length, 'incomplete document guards must not reach the adapter');
+});
+
+test('unsupported command names cannot resolve inherited registry entries', async t => {
+  const { browser, calls } = fixture(t);
+  for (const action of ['toString', 'constructor', '__proto__', { name: 'read' }]) await assert.rejects(browser.perform({ action, tabId: 'mine' }, { owner }), { code: 'BROWSER_VALIDATION', actionDispatched: false });
+  assert.deepEqual(calls, []);
 });
 
 test('organization ownership is checked again after queued work and host admission', async t => {

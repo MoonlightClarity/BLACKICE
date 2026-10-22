@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import vm from 'node:vm';
 import { BrowserRouter } from '../desktop/browser-router.mjs';
+import { BrowserPageLifetime } from '../desktop/browser-lifecycle.mjs';
 
 // The production renderer function and driver method run here; only Electron
 // and the DOM boundary are fixtures. Native acceptance covers actual Chromium.
@@ -41,6 +42,7 @@ function fixture() {
   const tab = { id: 'owned-tab', revision: 3, refs: new Map(['password-ref', 'confirmation-ref', 'username-ref'].map(ref => [ref, frame])), suspendedWork: new Set(), window: { isDestroyed: () => false, webContents: { getURL: () => context.top.location.href } } };
   const driver = Object.create(ElectronBrowserDriver.prototype);
   Object.assign(driver, { key: '__fixture', tabs: new Map([[tab.id, tab]]), activeTab: tab.id, closed: false, activate: async () => {}, ensureContained: async () => {}, pageWork: async (_tab, promise) => promise });
+  new BrowserPageLifetime({ tab, window: tab.window, isClosed: () => driver.closed });
   const args = { browser: 'relay', origin, credentialId: secret.credentialId, revision: secret.revision, tabId: tab.id, expectedUrl: url, expectedDocumentId: `${tab.id}:${tab.revision}`, passwordRef: 'password-ref', confirmationRef: 'confirmation-ref', usernameRef: 'username-ref' };
   return { driver, tab, frame, context, args, writes, events, evaluations };
 }

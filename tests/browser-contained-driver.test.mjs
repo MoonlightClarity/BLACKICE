@@ -114,17 +114,17 @@ test('the contained profile grants device access and leaves no protected USB cla
   assert.deepEqual(session.usbProtectedClasses({ protectedClasses }), []);
 });
 
-test('compatibility loads before direct tab navigation or input and popups cannot race its readiness', async t => {
+test('compatibility preparation precedes normal navigation without vetoing contained popup adoption', async t => {
   let release; const pending = new Promise(resolve => { release = resolve; });
   const { driver, windows, Window, extensionLoads } = await fixture(t, { loadExtension: () => pending });
   t.after(() => release({ id: 'owned-compatibility-extension' }));
   const tab = driver.newTab('https://signin.example.test/'), input = driver.cdp(tab, 'Input.insertText', { text: 'owned fixture' });
   await tick();
   assert.equal(extensionLoads.length, 1); assert.deepEqual(windows[0].loads, ['about:blank']); assert.deepEqual(windows[0].protocol, []);
-  assert.equal(windows[0].webContents.openHandler({ url: 'https://signin.example.test/popup' }).action, 'deny');
+  assert.equal(windows[0].webContents.openHandler({ url: 'https://signin.example.test/popup' }).action, 'allow');
   const premature = new Window(windows[0].options);
-  assert.throws(() => driver.newTab('https://signin.example.test/popup', { window: premature }), { code: 'BROWSER_COMPATIBILITY_NOT_READY', actionDispatched: false });
-  assert.equal(premature.destroyed, true); assert.equal(driver.tabs.size, 1);
+  driver.newTab('https://signin.example.test/popup', { window: premature });
+  assert.equal(premature.destroyed, false); assert.equal(driver.tabs.size, 2);
   release({ id: 'owned-compatibility-extension' }); await tab.loading; await input;
   assert.deepEqual(windows[0].loads, ['about:blank', 'https://signin.example.test/']);
   assert.equal(windows[0].protocol.at(-1).method, 'Input.insertText');
@@ -157,15 +157,20 @@ test('direct metadata resumption cannot bypass compatibility loading', async t =
   assert.deepEqual(windows[0].loads, ['about:blank', 'https://saved.example.test/']);
 });
 
-test('failed compatibility installation rejects startup, navigation, input and popups without a fallback or retry', async t => {
+test('optional compatibility failure is observable while ordinary browsing and input remain available', async t => {
   const { driver, windows, extensionLoads } = await fixture(t, { loadExtension: async () => { throw new Error('Owned fixture extension load failure'); } });
-  await assert.rejects(driver.init(), { code: 'BROWSER_COMPATIBILITY_UNAVAILABLE', actionDispatched: false });
+  await driver.init();
+  assert.equal(driver.status().compatibility.status, 'degraded');
+  assert.equal(driver.status().compatibility.code, 'BROWSER_COMPATIBILITY_UNAVAILABLE');
   const tab = driver.newTab('https://signin.example.test/'); await tab.loading;
-  assert.match(tab.loadError, /compatibility extension could not be loaded/);
-  await assert.rejects(driver.perform({ action: 'navigate', tabId: tab.id, url: 'https://signin.example.test/second' }), { code: 'BROWSER_COMPATIBILITY_UNAVAILABLE', actionDispatched: false });
-  await assert.rejects(driver.cdp(tab, 'Input.insertText', { text: 'owned fixture' }), { code: 'BROWSER_COMPATIBILITY_UNAVAILABLE', actionDispatched: false });
-  assert.equal(windows[0].webContents.openHandler({ url: 'https://signin.example.test/popup' }).action, 'deny');
-  assert.deepEqual(windows[0].loads, ['about:blank']); assert.deepEqual(windows[0].protocol, []); assert.equal(extensionLoads.length, 1);
+  assert.equal(tab.loadError, undefined);
+  const result = await driver.perform({ action: 'navigate', tabId: tab.id, url: 'https://signin.example.test/second' });
+  assert.equal(result.url, 'https://signin.example.test/second');
+  await driver.cdp(tab, 'Input.insertText', { text: 'owned fixture' });
+  assert.equal(windows[0].webContents.openHandler({ url: 'https://signin.example.test/popup' }).action, 'allow');
+  assert.deepEqual(windows[0].loads, ['about:blank', 'https://signin.example.test/', 'https://signin.example.test/second']);
+  assert.equal(windows[0].protocol.at(-1).method, 'Input.insertText');
+  assert.equal(extensionLoads.length, 1, 'ordinary actions do not retry an uncertain extension installation');
   assertContained(windows[0]);
 });
 
@@ -549,6 +554,74 @@ test('native file pickers are intercepted before navigation or trusted input, in
   assert.deepEqual(windows[0].protocol.at(-1), { method: 'DOM.setFileInputFiles', params: { files: [], backendNodeId: 42 } }); assert.equal(tab.pendingInteraction, null); assertContained(windows[0]);
 });
 
+test('a detached protocol preparation settles promptly and its late completion cannot change a newer connection', async t => {
+  let block = false, release, entered;
+  const held = new Promise(resolve => { release = resolve; }), started = new Promise(resolve => { entered = resolve; });
+  const { driver, windows } = await fixture(t, { command: async method => {
+    if (method === 'Page.enable' && block) { block = false; entered(); await held; }
+    return {};
+  } });
+  t.after(release);
+  const tab = driver.newTab('https://example.test/'); await tab.loading;
+  const debug = windows[0].webContents.debugger;
+  debug.attached = false; debug.emit('detach'); block = true;
+  const pending = driver.cdp(tab, 'Input.insertText', { text: 'Interrupted input' });
+  const failed = assert.rejects(pending, { code: 'BROWSER_CONTAINMENT_LOST' });
+  await started; debug.attached = false; debug.emit('detach'); await failed;
+  await driver.ensureContained(tab); const ready = tab.containmentReady;
+  release(); await tick();
+  assert.equal(tab.containmentReady, ready, 'A stale preparation cannot erase current readiness.');
+  assert.equal(windows[0].protocol.filter(call => call.method === 'Page.setInterceptFileChooserDialog').length, 2, 'The obsolete preparation cannot configure a newer debugger.');
+  assert.equal(windows[0].protocol.some(call => call.method === 'Input.insertText'), false, 'Interrupted input is never replayed on the new connection.');
+});
+
+test('key release stays with its native instance when the renderer is replaced during keydown', async t => {
+  let driver, tab, retire = false;
+  const f = await fixture(t, { command: async (method, params, window) => {
+    if (retire && method === 'Input.dispatchKeyEvent' && params.type === 'keyDown') {
+      retire = false; window.webContents.emit('render-process-gone', {}, { reason: 'crashed' });
+      tab.rendererFailure = null; driver.materialize(tab);
+    }
+    return {};
+  } });
+  driver = f.driver; tab = driver.newTab('https://example.test/'); await tab.loading;
+  retire = true;
+  await assert.rejects(driver.perform({ action: 'press', tabId: tab.id, key: 'Enter' }), { code: 'BROWSER_RENDERER_GONE' });
+  await driver.activate(tab);
+  assert.equal(f.windows.length, 2);
+  assert.deepEqual(f.windows[0].protocol.filter(call => call.method.startsWith('Input.')).map(call => call.params.type), ['keyDown']);
+  assert.equal(f.windows[1].protocol.some(call => call.method.startsWith('Input.')), false);
+  assert.equal(tab.inputWarning, null, 'Cleanup of the old input cannot put a warning on the replacement.');
+});
+
+test('a late explicit navigation failure cannot overwrite a recovered page', async t => {
+  let reject, entered;
+  const held = new Promise((_, reject_) => { reject = reject_; }), started = new Promise(resolve => { entered = resolve; });
+  const f = await fixture(t, { loadURL: async url => { if (url === 'https://old.example/pending') { entered(); await held; } } });
+  const tab = f.driver.newTab('https://example.test/'); await tab.loading;
+  const pending = f.driver.perform({ action: 'navigate', tabId: tab.id, url: 'https://old.example/pending' });
+  const failed = assert.rejects(pending, { code: 'BROWSER_RENDERER_GONE' });
+  await started; f.windows[0].webContents.emit('render-process-gone', {}, { reason: 'crashed' }); await failed;
+  await f.driver.perform({ action: 'navigate', tabId: tab.id, url: 'https://current.example/' });
+  reject(new Error('Retired navigation failed')); await tick();
+  assert.equal(tab.loadError, null); assert.equal(tab.url, 'https://current.example/');
+  assert.equal((await f.driver.perform({ action: 'read', tabId: tab.id })).url, 'https://current.example/');
+});
+
+test('read, coordinate hover and close honor the same optional document guard before any effect', async t => {
+  const { driver, windows } = await fixture(t), browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());
+  const tab = driver.newTab('https://example.test/'); await tab.loading;
+  const guard = { browser: 'relay', tabId: tab.id, expectedDocumentId: `${tab.id}:${tab.revision}`, expectedUrl: 'https://example.test/' };
+  const read = await browser.perform({ action: 'read', ...guard }); assert.equal(read.tabId, tab.id);
+  const hover = await browser.perform({ action: 'hover', ...guard, x: 100, y: 100 }); assert.equal(hover.receipt.hovered, true);
+  const inputCount = windows[0].protocol.filter(call => call.method.startsWith('Input.')).length;
+  tab.revision++;
+  for (const action of ['read', 'hover', 'close']) await assert.rejects(browser.perform({ action, ...guard, ...(action === 'hover' ? { x: 100, y: 100 } : {}) }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', actionDispatched: false, stage: 'document' });
+  assert.equal(driver.tabs.has(tab.id), true); assert.equal(windows[0].protocol.filter(call => call.method.startsWith('Input.')).length, inputCount);
+  await browser.perform({ action: 'close', ...guard, expectedDocumentId: `${tab.id}:${tab.revision}` });
+  assert.equal(driver.tabs.has(tab.id), false);
+});
+
 test('renderer startup finishes on inert blank before protocol guards, website navigation or trusted input', async t => {
   let release; const renderer = new Promise(resolve => { release = resolve; });
   const { driver, windows } = await fixture(t, { loadURL: url => url === 'about:blank' ? renderer : Promise.resolve() });
@@ -574,7 +647,7 @@ test('a detach while the input guard resumes rejects without reconnecting or sen
 
 test('a failed native-picker guard prevents navigation and trusted input without showing a fallback', async t => {
   const { driver, windows } = await fixture(t, { command: async method => { if (method === 'Page.setInterceptFileChooserDialog') throw Error('Unavailable fixture protocol'); return {}; } });
-  const tab = driver.newTab('https://example.test/'); await tab.loading; await assert.rejects(driver.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mousePressed' }), /disable native file dialogs/);
+  const tab = driver.newTab('https://example.test/'); await tab.loading; await assert.rejects(driver.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mousePressed' }), { code: 'BROWSER_PROTOCOL_UNAVAILABLE', actionDispatched: false });
   assert.deepEqual(windows[0].loads, ['about:blank']); assert.equal(windows[0].protocol.some(call => call.method.startsWith('Input.')), false); assertContained(windows[0]);
 });
 
@@ -712,6 +785,23 @@ test('one durable Chat Mode tab has reserved capacity without displacing normal 
 });
 
 const taskOwner = (taskId, nodeId = 'agent', runId = `run-${taskId}`) => ({ taskId, runId, nodeId, label: `Research ${taskId}` });
+
+test('an authorized personal child or folder remains personal and selectable by its requesting task', async t => {
+  const { driver } = await fixture(t), browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());
+  const source = { source: 'user' }, owner = { ...taskOwner('personal-access'), allowUserTabs: true };
+  const folder = (await browser.perform({ action: 'folder_create', name: 'Personal sources' }, source)).folder;
+  const parent = await browser.perform({ action: 'open', url: 'https://personal.example/', folderId: folder.id }, source);
+  const selected = driver.activeTab;
+  const child = await browser.perform({ action: 'open', url: 'https://personal.example/child', parentTabId: parent.tabId }, { owner });
+  assert.equal(driver.tabs.get(child.tabId).owner, null); assert.equal(driver.tabs.get(child.tabId).folderId, folder.id);
+  assert.equal((await browser.perform({ action: 'read' }, { owner })).tabId, child.tabId);
+  const sibling = await browser.perform({ action: 'open', url: 'https://personal.example/sibling', folderId: folder.id }, { owner });
+  assert.equal(driver.tabs.get(sibling.tabId).owner, null); assert.equal(driver.activeTab, selected);
+  assert.equal((await browser.perform({ action: 'read' }, { owner })).tabId, sibling.tabId);
+  assert.deepEqual((await driver.releaseOwner(owner)).suspended, [], 'Task cleanup preserves the personal pages.');
+  await browser.perform({ action: 'close', tabId: sibling.tabId }, { owner });
+  assert.equal(driver.tabs.has(sibling.tabId), false);
+});
 
 test('eight retained personal pages do not consume task folders and concurrent workers cannot retarget each other', async t => {
   const { driver, windows } = await fixture(t), browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());
@@ -899,6 +989,21 @@ test('old active downloads remain visible and prevent page suspension beyond the
   const blocked = await driver.releaseOwner(owner); assert.equal(blocked.suspended.length, 0); assert.match(blocked.retained[0].reason, /download/); assert.ok(tab.window);
   held.emit('done', {}, 'completed'); assert.equal(driver.status().activeDownloads, 0); assert.ok(driver.downloads.length <= 100);
   assert.deepEqual((await driver.releaseOwner(owner)).suspended, [tab.id]);
+});
+
+test('download source ownership survives source closure and a subsequent browser command', async t => {
+  const { driver } = await fixture(t), browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());
+  const owner = taskOwner('download-source'), opened = await browser.perform({ action: 'open', url: 'https://downloads.example/' }, { owner });
+  const tab = driver.tabs.get(opened.tabId), source = { ...tab.owner };
+  const item = Object.assign(new EventEmitter(), { getFilename: () => 'fixture.txt', setSavePath() {}, getTotalBytes: () => 100, getReceivedBytes: () => 100 });
+  await driver.download(item, tab.window.webContents); item.emit('done', {}, 'completed');
+  const id = driver.downloads[0].id;
+  assert.deepEqual(driver.downloads[0].provenance, { version: 1, tabId: tab.id, purpose: null, owner: source });
+  await browser.perform({ action: 'close', tabId: tab.id }, { owner });
+  assert.equal(driver.tabs.has(tab.id), false);
+  const result = await browser.perform({ action: 'downloads' }, { owner });
+  assert.deepEqual(result.downloads.map(value => value.id), [id]);
+  assert.deepEqual((await browser.perform({ action: 'downloads' }, { owner: taskOwner('another-task') })).downloads, []);
 });
 
 

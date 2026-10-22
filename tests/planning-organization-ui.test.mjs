@@ -126,6 +126,46 @@ test('group creation, rename and removal persist while assigned plans remain sav
   assert.equal(f.dom.$('[data-planning-task="task-a"]').closest('[data-planning-group]').dataset.planningGroup, 'ungrouped'); assert.deepEqual(await f.tasks.get('task-a'), before);
 });
 
+for (const width of [1440, 320]) test(`the visible group Remove button targets its own group and retains all plans at ${width}px`, async t => {
+  const f = await fixture(t, { width });
+  const before = await f.tasks.get('task-a'), archived = await f.tasks.get('task-archived');
+  f.controller.edit('goal', 'Keep my unsaved objective while removing its group');
+  const draft = f.controller.draft(), group = f.dom.$('[data-planning-group="launch"]');
+  const selector = '[data-planning-action="remove-group"][data-planning-group-id="launch"]';
+  const remove = f.dom.$(selector);
+  assert.equal(remove.textContent, 'Remove');
+  assert.equal(remove.getAttribute('aria-label'), 'Remove group Launch');
+  assert.equal(f.dom.$('[data-planning-group="ungrouped"] [data-planning-action="remove-group"]'), null);
+  await f.dom.click('[data-planning-group="research"] > .planning-outline-group-label');
+  const expanded = group.getAttribute('aria-expanded');
+  await remove.dispatch('pointerdown', { button: 0 }, true);
+  await f.controller.refresh();
+  assert.equal(f.dom.$(selector), remove, 'polling keeps the exact group action target');
+  assert.equal((await f.dom.key(remove, 'Enter')).defaultPrevented, false, 'native button activation is not intercepted by tree navigation');
+  await f.dom.click(remove);
+  assert.equal(f.controller.state.organizationDraft.groupId, 'launch', 'the previously focused group does not choose the removal target');
+  assert.equal(f.controller.state.organizationDraft.mode, 'remove-group');
+  assert.equal(group.getAttribute('aria-expanded'), expanded, 'Remove does not toggle the group');
+  assert.equal(f.dom.$('#planning-organization-title').textContent, 'Remove “Launch”?');
+  assert.match(f.dom.$('#planning-organization-fields').textContent, /Ungrouped.*saved work is kept/);
+  assert.equal(f.writes().length, 0);
+  assert.equal(f.dom.$('#planning-saved-panel').hidden, false);
+  await f.dom.click('[data-planning-action="cancel-organization"]');
+  assert.equal(f.controller.state.organizationDraft, null);
+  assert.equal(document.activeElement, group);
+  await f.dom.click(remove);
+  assert.equal(await f.controller.saveOrganization(), true);
+  assert.deepEqual(f.writes()[0].body.operations, [{ type: 'remove_group', groupId: 'launch' }]);
+  const saved = await f.planningOrganization.get();
+  assert.equal(saved.groups.some(item => item.id === 'launch'), false);
+  for (const taskId of ['task-a', 'task-archived']) assert.equal(saved.plans.find(item => item.taskId === taskId).groupId, null);
+  assert.deepEqual(await f.tasks.get('task-a'), before);
+  assert.deepEqual(await f.tasks.get('task-archived'), archived);
+  assert.equal(f.controller.draft(), draft);
+  assert.equal(draft.values.goal, 'Keep my unsaved objective while removing its group');
+  assert.match(f.dom.$('#planning-organization-receipt').textContent, /Removed “Launch”.*Ungrouped/);
+});
+
 test('clearing a custom plan name restores the chat title without rewriting its objective', async t => {
   const f = await fixture(t), task = await f.tasks.get('task-a');
   f.controller.startOrganization('plan'); f.controller.editOrganization('name', ''); assert.equal(await f.controller.saveOrganization(), true);

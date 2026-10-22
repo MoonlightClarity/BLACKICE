@@ -41,7 +41,7 @@ async function waitJob(api, jobId, who = client) {
 }
 
 test('MCP discovery publishes the same expanded browser schemas with the existing scopes', async t => {
-  const { api, directory } = await fixture(t), connector = new ChatGPTConnector({ dataDir: directory, execution: api, planning: { tools: () => [] }, oauth: {} });
+  const { api, directory } = await fixture(t), connector = new ChatGPTConnector({ dataDir: directory, execution: api, planning: { tools: () => [], call: async () => { throw new Error('No planning tools in this fixture.'); } }, oauth: {} });
   for (const [name, scope] of [['blackice_browser_action', 'browser:write'], ['blackice_browser_read', 'browser:read']]) {
     const runtime = api.tools().find(tool => tool.name === name), exposed = connector.tools().find(tool => tool.name === name);
     assert.deepEqual(exposed.inputSchema, runtime.inputSchema); assert.deepEqual(exposed.securitySchemes, [{ type: 'oauth2', scopes: ['read', scope] }]);
@@ -84,6 +84,40 @@ test('an exact direct dialog decision resolves the pending interaction without r
   assert.doesNotMatch(JSON.stringify(done), new RegExp(promptText)); assert.doesNotMatch(await readFile(path.join(directory, 'direct-execution-jobs', `${resolution.jobId}.json`), 'utf8'), new RegExp(promptText));
   assert.equal((await api.call('blackice_browser_action', args, client)).existing, true); assert.equal(calls.length, 1);
   assert.equal((await api.getJob(blocked.jobId, client)).status, 'awaiting_input', 'Resolving a dialog never relabels or replays its earlier uncertain action.');
+});
+
+test('direct requests accept optional page guards and guarded coordinate hover through the same contract', async t => {
+  const { api, calls } = await fixture(t), guard = { expectedUrl: 'https://example.test/', expectedDocumentId: 'one:1' };
+  const requests = [
+    ['blackice_browser_read', { action: 'read' }], ['blackice_browser_read', { action: 'snapshot' }],
+    ['blackice_browser_action', { action: 'hover', x: 30, y: 40 }], ['blackice_browser_action', { action: 'fill', ref: 'field', text: 'draft' }],
+    ['blackice_browser_action', { action: 'select', ref: 'choice', value: 'one' }], ['blackice_browser_action', { action: 'close' }],
+  ];
+  for (const [index, [name, args]] of requests.entries()) {
+    const submitted = await api.call(name, { requestId: `guarded-${index}`, ...args, tabId: 'one', ...guard }, client);
+    const done = await waitJob(api, submitted.jobId); assert.equal(done.status, 'succeeded', JSON.stringify(done));
+  }
+  assert.equal(calls.length, requests.length);
+  assert.ok(calls.every(args => args.expectedDocumentId === guard.expectedDocumentId && args.expectedUrl === guard.expectedUrl));
+  await assert.rejects(api.call('blackice_browser_action', { requestId: 'unguarded-hover', action: 'hover', tabId: 'one', x: 30, y: 40 }, client), { code: 'DIRECT_REQUEST_INVALID', actionDispatched: false });
+  assert.equal(calls.length, requests.length);
+});
+
+test('a pending dialog leaves observation, cleanup, navigation and other tabs available', async t => {
+  const { api, calls, tabs } = await fixture(t, { pending: { ...interaction }, inspect: true });
+  tabs.push({ tabId: 'two', url: 'https://unrelated.test/', folderId: 'personal' });
+  const requests = [
+    ['blackice_browser_read', { action: 'read', tabId: 'one' }], ['blackice_browser_read', { action: 'tabs' }],
+    ['blackice_browser_action', { action: 'navigate', tabId: 'one', url: 'https://example.test/next' }],
+    ['blackice_browser_action', { action: 'close', tabId: 'one' }], ['blackice_browser_action', { action: 'click', tabId: 'two', ref: 'observed' }],
+  ];
+  for (const [index, [name, args]] of requests.entries()) {
+    const submitted = await api.call(name, { requestId: `available-${index}`, ...args }, client), done = await waitJob(api, submitted.jobId);
+    assert.equal(done.status, 'succeeded', JSON.stringify(done));
+  }
+  assert.equal(calls.length, requests.length);
+  const click = await api.call('blackice_browser_action', { requestId: 'blocked-page-input', action: 'click', tabId: 'one', ref: 'observed' }, client), waiting = await waitJob(api, click.jobId);
+  assert.equal(waiting.status, 'awaiting_input'); assert.deepEqual(waiting.effects, { possible: false, confirmed: false }); assert.equal(calls.length, requests.length);
 });
 
 test('new direct actions reject malformed fields and foreign or caller targets before admission', async t => {

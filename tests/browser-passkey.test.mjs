@@ -105,12 +105,12 @@ test('compatibility loading is scoped to the supplied session and reused across 
   assert.equal(calls.length, 2); assert.equal(calls[1], 'other-session');
 });
 
-test('missing extension support or a failed load fails closed without retrying installation', async () => {
+test('missing extension support or a failed load reports the optional feature failure without retrying installation', async () => {
   let calls = 0;
   const failure = new Error('Owned fixture manifest failure');
   for (const browserSession of [{}, { extensions: { loadExtension: async () => { calls++; throw failure; } } }]) {
     const first = loadBrowserCompatibility(browserSession);
-    await assert.rejects(first, value => value.code === 'BROWSER_COMPATIBILITY_UNAVAILABLE' && value.actionDispatched === false && /Remote pages remain blocked/.test(value.message));
+    await assert.rejects(first, value => value.code === 'BROWSER_COMPATIBILITY_UNAVAILABLE' && value.actionDispatched === false && /Ordinary browsing remains available/.test(value.message));
     assert.equal(loadBrowserCompatibility(browserSession), first);
     await assert.rejects(loadBrowserCompatibility(browserSession), { code: 'BROWSER_COMPATIBILITY_UNAVAILABLE' });
   }

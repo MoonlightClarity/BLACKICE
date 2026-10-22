@@ -4,8 +4,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey } from '../lib/browser.mjs';
+import { sameBrowserOwner, browserOwnsTab, browserOwnsFolder, browserDownloadProvenance } from '../lib/browser-access.mjs';
 import { captureHiddenPage } from './browser-capture.mjs';
 import { loadBrowserCompatibility } from './browser-compatibility.mjs';
+import { BrowserPageLifetime } from './browser-lifecycle.mjs';
 import { BrowserDiagnostics } from '../lib/browser-diagnostics.mjs';
 import { BrowserProtection, protectionOrigin } from '../lib/browser-protection.mjs';
 
@@ -13,7 +15,7 @@ const error = message => new Error(message);
 const DEFAULT_FOLDER = 'folder_user';
 const validId = value => typeof value === 'string' && /^[a-zA-Z0-9_.:-]{1,200}$/.test(value);
 const ownerRecord = owner => owner ? { taskId: owner.taskId, runId: owner.runId, nodeId: owner.nodeId } : null;
-const sameOwner = (left, right) => left?.taskId === right?.taskId && left?.nodeId === right?.nodeId;
+const sameOwner = sameBrowserOwner;
 const folderName = value => {
   if (typeof value !== 'string' || !value.trim() || value.length > 200 || /[\u0000-\u001f\u007f]/.test(value)) throw Object.assign(error('Use a folder name from 1 to 200 characters.'), { code: 'BROWSER_FOLDER_VALIDATION', actionDispatched: false });
   return value.trim();
@@ -60,8 +62,8 @@ const containedWindowOptions = browserSession => ({
 });
 const cancel = signal => { if (signal?.aborted) throw Object.assign(error('Browser action cancelled.'), { name: 'AbortError' }); };
 const bounded = (promise, signal, ms = 12000) => new Promise((resolve, reject) => {
-  let timer;
-  const done = (fn, value) => { clearTimeout(timer); signal?.removeEventListener('abort', abort); fn(value); };
+  let timer, settled = false;
+  const done = (fn, value) => { if (settled) return; settled = true; clearTimeout(timer); signal?.removeEventListener('abort', abort); fn(value); };
   const abort = () => done(reject, Object.assign(error('Browser action cancelled; inspect before repeating an action.'), { name: 'AbortError' }));
   timer = setTimeout(() => done(reject, error('The page did not respond. Inspect or reload before repeating an action.')), ms);
   signal?.addEventListener('abort', abort, { once: true });
@@ -232,9 +234,12 @@ export class ElectronBrowserDriver extends EventEmitter {
     // Retire the 2.4.2 partition that could contain transferred site credentials.
     // Preserve its files offline; never open it or replay its cookies again.
     this.session = session.fromPartition('persist:relay-agent-browser-v2');
-    this.compatibilityLoaded = false;
-    this.compatibilityReady = loadBrowserCompatibility(this.session).then(() => { this.compatibilityLoaded = true; });
-    this.compatibilityReady.catch(() => {});
+    this.compatibility = { status: 'loading', ready: false };
+    this.compatibilityReady = loadBrowserCompatibility(this.session).then(() => {
+      this.compatibility = { status: 'ready', ready: true };
+    }, cause => {
+      this.compatibility = { status: 'degraded', ready: false, code: cause.code || 'BROWSER_COMPATIBILITY_UNAVAILABLE', message: cause.message };
+    }).then(() => { if (!this.closed) this.emit('changed'); });
     this.protection = protection || new BrowserProtection({ dataDir });
     this.protectionListener = () => this.emit('changed'); this.protection.on('updated', this.protectionListener);
     // This dedicated partition owns one request interceptor. The app window's
@@ -303,7 +308,7 @@ export class ElectronBrowserDriver extends EventEmitter {
   liveTabs() { return [...this.tabs.values()].filter(tab => tab.window && !tab.window.isDestroyed()); }
   status() {
     const live = this.liveTabs();
-    return { contained: true, canShow: false, protection: this.protection.status(), persistence: { healthy: !this.persistenceError, ...(this.persistenceError ? { error: 'Browser folders and pages could not be saved.' } : {}) }, folders: [...this.folders.values()].map(folder => ({ ...folder })), capacity: { live: live.filter(tab => tab.purpose !== 'chat-mode').length, maxLive: this.maxLiveTabs, saved: this.tabs.size, maxSaved: this.maxSavedTabs, perTaskLive: this.maxTaskTabs }, ownerActiveTabs: Object.fromEntries(this.ownerActiveTabs), tabs: [...this.tabs.values()].map(t => ({ tabId: t.id, folderId: t.folderId, parentTabId: t.parentTabId || null, ...(t.owner ? { owner: { ...t.owner } } : {}), ...(t.purpose === 'chat-mode' ? { purpose: 'chat-mode' } : {}), url: this.tabURL(t), title: t.pendingURL ? t.title : t.window?.webContents.getTitle() || t.title, loading: !t.pendingURL && Boolean(t.window?.webContents.isLoading()), visible: Boolean(t.window?.isVisible()), contained: true, canShow: false, protection: this.protection.tabStatus(t.id, this.tabURL(t)), suspended: !t.window || Boolean(t.pendingURL), interactionSettling: t.suspendedWork.size > 0, ...(t.rendererFailure ? { rendererFailure: { ...t.rendererFailure } } : {}), ...(t.pendingInteraction ? { pendingInteraction: structuredClone(t.pendingInteraction) } : {}) })), activeTab: this.activeTab, downloads: this.downloads.filter((item, index) => item.status === 'downloading' || index >= this.downloads.length - 20), activeDownloads: this.downloads.filter(item => item.status === 'downloading').length, profile: 'BLACKICE contained browser · saved locally', ...(this.diagnostics ? { diagnostics: this.diagnostics.snapshot() } : {}) };
+    return { contained: true, canShow: false, compatibility: { ...this.compatibility }, protection: this.protection.status(), persistence: { healthy: !this.persistenceError, ...(this.persistenceError ? { error: 'Browser folders and pages could not be saved.' } : {}) }, folders: [...this.folders.values()].map(folder => ({ ...folder })), capacity: { live: live.filter(tab => tab.purpose !== 'chat-mode').length, maxLive: this.maxLiveTabs, saved: this.tabs.size, maxSaved: this.maxSavedTabs, perTaskLive: this.maxTaskTabs }, ownerActiveTabs: Object.fromEntries(this.ownerActiveTabs), tabs: [...this.tabs.values()].map(t => ({ tabId: t.id, folderId: t.folderId, parentTabId: t.parentTabId || null, ...(t.owner ? { owner: { ...t.owner } } : {}), ...(t.purpose === 'chat-mode' ? { purpose: 'chat-mode' } : {}), url: this.tabURL(t), title: t.pendingURL ? t.title : t.window?.webContents.getTitle() || t.title, loading: !t.pendingURL && Boolean(t.window?.webContents.isLoading()), visible: Boolean(t.window?.isVisible()), contained: true, canShow: false, protection: this.protection.tabStatus(t.id, this.tabURL(t)), suspended: !t.window || Boolean(t.pendingURL), interactionSettling: t.suspendedWork.size > 0, ...(t.rendererFailure ? { rendererFailure: { ...t.rendererFailure } } : {}), ...(t.pendingInteraction ? { pendingInteraction: structuredClone(t.pendingInteraction) } : {}) })), activeTab: this.activeTab, downloads: this.downloads.filter((item, index) => item.status === 'downloading' || index >= this.downloads.length - 20), activeDownloads: this.downloads.filter(item => item.status === 'downloading').length, profile: 'BLACKICE contained browser · saved locally', ...(this.diagnostics ? { diagnostics: this.diagnostics.snapshot() } : {}) };
   }
   protectionStatus() { return { ...this.protection.status(), tabs: [...this.tabs.values()].map(tab => ({ tabId: tab.id, ...this.protection.tabStatus(tab.id, this.tabURL(tab)) })) }; }
   async configureProtection(options, { signal } = {}) {
@@ -338,23 +343,27 @@ export class ElectronBrowserDriver extends EventEmitter {
       } finally { this.persistenceRunning = false; }
     });
   }
+  async awaitPersistence({ actionDispatched = false } = {}) {
+    let saved;
+    do { saved = this.writeChain; await saved; } while (saved !== this.writeChain);
+    if (this.persistenceError) throw Object.assign(error(actionDispatched
+      ? 'The browser changed in memory, but its folder and page state could not be saved. Inspect the current browser state before repeating the action.'
+      : 'Browser folders and pages could not be saved. Keep the browser open and retry after storage is available.'), { code: 'BROWSER_SAVE_FAILED', actionDispatched });
+  }
   async flushPersistence() {
     if (this.closed) throw Object.assign(error('The browser workspace is closing.'), { code: 'BROWSER_CLOSED' });
     this.persist();
-    let saved;
-    do { saved = this.writeChain; await saved; } while (saved !== this.writeChain);
-    if (this.persistenceError) throw Object.assign(error('Browser folders and pages could not be saved. Keep the browser open and retry after storage is available.'), { code: 'BROWSER_SAVE_FAILED' });
+    await this.awaitPersistence();
     return this.status();
   }
   async savedStatus(extra = {}) {
-    await this.writeChain;
-    if (this.persistenceError) throw Object.assign(error('The browser changed in memory, but its folder and page state could not be saved. Inspect the current browser state before repeating the action.'), { code: 'BROWSER_SAVE_FAILED', actionDispatched: true });
+    await this.awaitPersistence({ actionDispatched: true });
     return { ...this.status(), ...extra };
   }
   folderFor(owner, folderId) {
     if (folderId != null) {
       const folder = this.folders.get(folderId);
-      if (!folder || owner && (folder.kind !== 'task' || folder.taskId !== owner.taskId)) throw capacityError('Choose a browser folder belonging to this task.', 'BROWSER_FOLDER_OWNERSHIP');
+      if (!folder || !browserOwnsFolder(folder, owner)) throw capacityError('Choose a browser folder available to this task.', 'BROWSER_FOLDER_OWNERSHIP');
       return folder;
     }
     if (!owner) return this.folders.get(DEFAULT_FOLDER);
@@ -382,14 +391,15 @@ export class ElectronBrowserDriver extends EventEmitter {
   }
   newTab(url, { restore = false, title = '', window: suppliedWindow, purpose = null, owner: context, folderId, parentTabId = null, id } = {}) {
     if (this.closed) throw error('Browser workspace has closed.');
-    let owner = browserOwner(context);
+    const requestOwner = browserOwner(context); let owner = requestOwner;
     if (purpose !== null && purpose !== 'chat-mode') throw error('Use a supported contained browser tab purpose.');
     if (purpose === 'chat-mode' && owner) throw capacityError('The human ChatGPT tab cannot belong to an agent task.', 'BROWSER_HUMAN_CHAT_RESERVED');
     const parent = parentTabId ? this.tabs.get(parentTabId) : null;
-    if (parentTabId && (!parent || parent.purpose === 'chat-mode' || owner && !sameOwner(parent.owner, owner))) throw capacityError('Choose a parent tab owned by this worker.', 'BROWSER_TAB_OWNERSHIP');
+    if (parentTabId && (!parent || parent.purpose === 'chat-mode' || !browserOwnsTab(parent, requestOwner))) throw capacityError('Choose a parent tab available to this worker.', 'BROWSER_TAB_OWNERSHIP');
     if (parent && folderId != null && folderId !== parent.folderId) throw capacityError('A child tab must remain in its parent folder.', 'BROWSER_FOLDER_VALIDATION');
-    if (!owner && parent?.owner) owner = { ...parent.owner };
-    const folder = this.folderFor(owner, parent?.folderId || folderId);
+    const folder = this.folderFor(requestOwner, parent?.folderId || folderId);
+    if (parent) owner = parent.owner ? { ...parent.owner } : null;
+    else if (folder.kind === 'user') owner = null;
     if (!owner && folder.kind === 'task') owner = { taskId: folder.taskId, runId: 'user', nodeId: 'user' };
     if (this.tabs.size >= this.maxSavedTabs) throw capacityError('The saved browser page capacity is full. Close an unneeded page in the browser workspace.', 'BROWSER_SAVED_LIMIT');
     if (purpose === 'chat-mode' && !this.hasTabCapacity(purpose)) throw capacityError('The dedicated human ChatGPT tab is already open.', 'BROWSER_CHAT_MODE_TAB_EXISTS');
@@ -397,7 +407,9 @@ export class ElectronBrowserDriver extends EventEmitter {
     const tab = { id: id || randomUUID(), url, title, purpose, folderId: folder.id, parentTabId: parent?.id || null, owner: ownerRecord(owner), pendingURL: restore && !suppliedWindow ? url : null, preparingURL: !restore && !suppliedWindow ? url : null, window: null, refs: new Map(), revision: 0, interactionWaiters: new Set(), rendererWaiters: new Set(), suspendedWork: new Set(), loading: Promise.resolve() };
     if (!restore) this.assertLiveCapacity(tab);
     this.tabs.set(tab.id, tab);
-    if (owner) this.ownerActiveTabs.set(browserOwnerKey(owner), tab.id); else this.activeTab = tab.id;
+    if (requestOwner) this.ownerActiveTabs.set(browserOwnerKey(requestOwner), tab.id);
+    else if (owner) this.ownerActiveTabs.set(browserOwnerKey(owner), tab.id);
+    else this.activeTab = tab.id;
     try { if (!restore || suppliedWindow) this.materialize(tab, suppliedWindow); }
     catch (cause) { this.removeTab(tab); throw cause; }
     if (!restore) { this.persist(); this.emit('changed'); }
@@ -407,9 +419,6 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (tab.rendererFailure) throw rendererFailure(tab);
     if (tab.window && !tab.window.isDestroyed()) return;
     this.assertLiveCapacity(tab);
-    if (suppliedWindow && !this.compatibilityLoaded) {
-      suppliedWindow.destroy(); throw capacityError('The contained browser compatibility extension is not ready. No popup was adopted.', 'BROWSER_COMPATIBILITY_NOT_READY');
-    }
     if (suppliedWindow && (suppliedWindow.webContents.isOffscreen?.() !== true || suppliedWindow.isVisible() || suppliedWindow.isFocusable())) {
       suppliedWindow.destroy(); throw error('The browser popup could not remain contained. Use the Observe view to inspect the original page.');
     }
@@ -418,13 +427,14 @@ export class ElectronBrowserDriver extends EventEmitter {
     tab.window = window; tab.suspending = false; tab.closing = false;
     tab.popupViewport = suppliedWindow ? { ready: false, resetRequired: false, pending: null } : null;
     const wc = window.webContents;
-    wc.on('render-process-gone', (_event, details) => this.rendererGone(tab, window, details));
-    wc.on('login', (event, _details, _authInfo, callback) => {
+    const instance = new BrowserPageLifetime({ tab, window, isClosed: () => this.closed });
+    instance.on(wc, 'render-process-gone', (_event, details) => this.rendererGone(tab, window, details));
+    instance.on(wc, 'login', (event, _details, _authInfo, callback) => {
       event.preventDefault(); callback();
       tab.inputWarning = 'HTTP authentication was cancelled. This contained browser does not accept credentials through a native login prompt.';
       this.setInteraction(tab, { kind: 'http_auth', status: 'blocked', message: tab.inputWarning, reason: 'http_auth_unsupported' });
     });
-    wc.debugger.on('message', (_event, method, params) => {
+    instance.on(wc.debugger, 'message', (_event, method, params) => {
       if (method === 'Page.fileChooserOpened') {
         const supported = Number.isSafeInteger(params?.backendNodeId) && params.backendNodeId > 0;
         tab.inputWarning = supported ? 'This page requested files. Choose explicit file paths in BLACKICE, or cancel this selection.' : 'This file request does not expose a contained input. No native file picker was opened.';
@@ -440,55 +450,65 @@ export class ElectronBrowserDriver extends EventEmitter {
         this.emit('changed');
       }
     });
-    wc.debugger.on('detach', () => { tab.containmentReady = null; this.clearInteraction(tab); });
+    instance.on(wc.debugger, 'detach', () => { instance.invalidateProtocol(); this.clearInteraction(tab); });
     wc.setWindowOpenHandler(({ url }) => {
-      try { if (url && url !== 'about:blank') browserURL(url); if (this.closed || !this.compatibilityLoaded || !this.hasTabCapacity(null, tab.owner)) return { action: 'deny' }; }
+      try { if (url && url !== 'about:blank') browserURL(url); if (!instance.current() || !this.hasTabCapacity(null, tab.owner)) return { action: 'deny' }; }
       catch { return { action: 'deny' }; }
       // Preserve window.opener for OAuth while rendering the popup only inside BLACKICE.
       return { action: 'allow', overrideBrowserWindowOptions: containedWindowOptions(this.session) };
     });
-    wc.on('did-create-window', (child, details) => {
-      if (this.closed || !this.compatibilityLoaded || !this.hasTabCapacity(null, tab.owner)) child.destroy();
+    instance.on(wc, 'did-create-window', (child, details) => {
+      if (!instance.current() || !this.hasTabCapacity(null, tab.owner)) child.destroy();
       else try { this.newTab(details.url || 'about:blank', { window: child, owner: tab.owner, folderId: tab.folderId, parentTabId: tab.id }); } catch { if (!child.isDestroyed()) child.destroy(); }
     });
-    wc.on('will-attach-webview', event => event.preventDefault());
+    instance.on(wc, 'will-attach-webview', event => event.preventDefault());
     const navigated = () => { tab.revision++; tab.refs.clear(); this.clearInteraction(tab); this.persist(); this.emit('changed'); };
-    wc.on('did-frame-navigate', (_event, _url, _responseCode, _statusText, isMainFrame) => {
+    instance.on(wc, 'did-frame-navigate', (_event, _url, _responseCode, _statusText, isMainFrame) => {
       // Only a new top-level document retires the capture restriction. Hash
       // changes, SPA routes and child navigations can retain a filled field.
       if (isMainFrame === true) tab.credentialCaptureBlocked = false;
       navigated();
     });
-    wc.on('did-navigate-in-page', navigated);
-    wc.on('did-fail-load', (_event, code, description, _url, isMainFrame) => { if (isMainFrame !== false && code !== -3) { tab.loadError = String(description || `Navigation failed (${code}).`); this.emit('changed'); } });
-    wc.on('page-title-updated', (_event, value) => { tab.title = value; this.persist(); this.emit('changed'); });
-    wc.on('will-navigate', (event, target) => { try { browserURL(target); } catch { event.preventDefault(); } });
-    wc.on('will-redirect', (event, target) => { try { browserURL(target); } catch { event.preventDefault(); } });
-    window.on('close', event => {
+    instance.on(wc, 'did-navigate-in-page', navigated);
+    instance.on(wc, 'did-fail-load', (_event, code, description, _url, isMainFrame) => { if (isMainFrame !== false && code !== -3) { tab.loadError = String(description || `Navigation failed (${code}).`); this.emit('changed'); } });
+    instance.on(wc, 'page-title-updated', (_event, value) => { tab.title = value; this.persist(); this.emit('changed'); });
+    instance.on(wc, 'will-navigate', (event, target) => { try { browserURL(target); } catch { event.preventDefault(); } });
+    instance.on(wc, 'will-redirect', (event, target) => { try { browserURL(target); } catch { event.preventDefault(); } });
+    instance.on(window, 'close', event => {
       // A script-opened authentication window must be able to finish its own
       // native close lifecycle, so the opener observes window.closed normally.
       if (suppliedWindow) return;
       if (!this.closed && !tab.closing) { event.preventDefault(); window.hide(); this.emit('changed'); }
     });
-    window.on('closed', () => {
-      // An old renderer can finish closing after an explicit recovery created
-      // its replacement. It must not remove that replacement's saved tab.
-      if (tab.window !== window) return;
-      tab.window = null;
-      if (!tab.suspending) this.removeTab(tab);
+    instance.on(window, 'closed', () => {
+      if (!tab.suspending) this.removeTab(tab); else this.retireNative(tab);
       if (!this.closed) { this.persist(); this.emit('changed'); }
     });
     // A new offscreen WebContents needs an inert renderer before Page protocol
-    // commands can complete. Never load a website until its native-picker guard
-    // and session-wide document-start compatibility script are ready. Restored
-    // website URLs remain suspended behind the same guards.
+    // commands can complete. Native picker interception belongs to this one
+    // instance. Optional compatibility finishes before navigation, but a failed
+    // compatibility feature does not disable the browser.
     tab.rendererReady = suppliedWindow ? Promise.resolve() : wc.loadURL('about:blank'); tab.rendererReady.catch(() => {});
     const containment = this.ensureContained(tab); containment.catch(() => {});
     tab.navigationDispatched = Boolean(suppliedWindow);
-    tab.loading = suppliedWindow || tab.pendingURL ? Promise.resolve() : containment.then(() => { if (tab.window !== window || tab.rendererFailure) throw rendererFailure(tab); tab.preparingURL = null; tab.navigationDispatched = true; return wc.loadURL(tab.url); }).catch(reason => { if (tab.window === window) tab.loadError = reason.message; });
+    tab.loading = suppliedWindow || tab.pendingURL ? Promise.resolve() : containment.then(() => { instance.assertCurrent(); tab.preparingURL = null; tab.navigationDispatched = true; return wc.loadURL(tab.url); }).catch(reason => { if (instance.current()) tab.loadError = reason.message; });
+  }
+  nativeInstance(tab) {
+    if (tab.rendererFailure) throw rendererFailure(tab);
+    if (!tab.instance) throw Object.assign(error('This browser page is not active. Inspect or resume the tab before continuing.'), { code: 'BROWSER_CLOSED' });
+    return tab.instance.assertCurrent();
+  }
+  retireNative(tab, cause) {
+    const window = tab.window, instance = tab.instance;
+    instance?.retire(cause);
+    tab.window = null; tab.instance = null; tab.containmentReady = null; tab.rendererReady = null; tab.loading = Promise.resolve();
+    return window;
   }
   tab(id) { const tab = this.tabs.get(id || this.activeTab); if (!tab || tab.window?.isDestroyed()) throw error('Choose an existing browser tab, or open a URL first.'); return tab; }
   removeTab(tab) {
+    if (this.tabs.get(tab.id) !== tab) return;
+    const window = this.retireNative(tab);
+    if (window && !window.isDestroyed()) window.destroy();
     this.tabs.delete(tab.id); this.protection.forgetTab(tab.id);
     for (const child of this.tabs.values()) if (child.parentTabId === tab.id) child.parentTabId = this.tabs.has(tab.parentTabId) ? tab.parentTabId : null;
     for (const [key, id] of this.ownerActiveTabs) if (id === tab.id) { const next = [...this.tabs.values()].find(item => browserOwnerKey(item.owner) === key); if (next) this.ownerActiveTabs.set(key, next.id); else this.ownerActiveTabs.delete(key); }
@@ -496,7 +516,7 @@ export class ElectronBrowserDriver extends EventEmitter {
   }
   closeTab(tab) {
     tab.closing = true; tab.suspending = false;
-    if (tab.window && !tab.window.isDestroyed()) tab.window.destroy(); else this.removeTab(tab);
+    this.removeTab(tab);
     this.persist(); this.emit('changed');
   }
   rendererGone(tab, window, details = {}) {
@@ -509,10 +529,9 @@ export class ElectronBrowserDriver extends EventEmitter {
     tab.rendererFailure = { reason: reasons.includes(details.reason) ? details.reason : 'unknown', ...(Number.isInteger(details.exitCode) ? { exitCode: details.exitCode } : {}), at: new Date().toISOString() };
     tab.pendingURL = tab.url; tab.preparingURL = null; tab.revision++; tab.refs.clear();
     this.clearInteraction(tab); tab.suspendedWork.clear();
-    tab.containmentReady = null; tab.rendererReady = null; tab.loading = Promise.resolve();
+    this.retireNative(tab, rendererFailure(tab, true));
     for (const notify of tab.rendererWaiters || []) notify();
     tab.rendererWaiters?.clear();
-    tab.window = null;
     try { if (!window.isDestroyed()) window.destroy(); } catch {}
     this.persist(); this.emit('changed');
   }
@@ -522,8 +541,8 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (tab.pendingInteraction || tab.suspendedWork.size) return { suspended: false, reason: 'A website interaction still requires inspection.' };
     if (this.downloads.some(item => item.tabId === tab.id && item.status === 'downloading')) return { suspended: false, reason: 'A download is still running.' };
     tab.url = this.tabURL(tab); tab.title = tab.window.webContents.getTitle() || tab.title; tab.pendingURL = tab.url; tab.preparingURL = null;
-    tab.revision++; tab.refs.clear(); tab.suspending = true; tab.userPinned = false; tab.containmentReady = null; tab.rendererReady = null; tab.loading = Promise.resolve();
-    tab.window.destroy(); tab.window = null; this.persist(); this.emit('changed');
+    tab.revision++; tab.refs.clear(); tab.suspending = true; tab.userPinned = false;
+    const window = this.retireNative(tab); window.destroy(); this.persist(); this.emit('changed');
     return { suspended: true };
   }
   async releaseOwner(context) {
@@ -532,18 +551,17 @@ export class ElectronBrowserDriver extends EventEmitter {
     for (const tab of this.tabs.values()) if (tab.purpose !== 'chat-mode' && sameOwner(tab.owner, owner) && tab.owner.runId === owner.runId) {
       const result = this.suspendTab(tab, { automatic: true }); if (result.suspended) suspended.push(tab.id); else retained.push({ tabId: tab.id, reason: result.reason });
     }
-    await this.writeChain;
-    if (this.persistenceError) throw Object.assign(error('Browser pages were suspended, but their saved folder state could not be confirmed.'), { code: 'BROWSER_SAVE_FAILED' });
+    await this.awaitPersistence({ actionDispatched: suspended.length > 0 });
     return { suspended, retained };
   }
   async organize(args, source, context) {
     const owner = browserOwner(context);
     const assertFolder = folder => {
-      if (owner && !(folder.kind === 'task' && folder.taskId === owner.taskId) && !(owner.allowUserTabs && folder.kind === 'user')) throw capacityError('Choose a browser folder belonging to this task.', 'BROWSER_FOLDER_OWNERSHIP');
+      if (!browserOwnsFolder(folder, owner)) throw capacityError('Choose a browser folder available to this task.', 'BROWSER_FOLDER_OWNERSHIP');
     };
     const assertTab = tab => {
       if (source !== 'user' && tab.purpose === 'chat-mode') throw capacityError('The human ChatGPT tab is reserved for its caller.', 'BROWSER_HUMAN_CHAT_RESERVED');
-      if (owner && !sameOwner(tab.owner, owner) && !(owner.allowUserTabs && !tab.owner)) throw capacityError('This browser tab belongs to another task.', 'BROWSER_TAB_OWNERSHIP');
+      if (!browserOwnsTab(tab, owner)) throw capacityError('This browser tab belongs to another task.', 'BROWSER_TAB_OWNERSHIP');
     };
     if (args.action === 'folder_create') {
       if (this.folders.size >= this.maxSavedTabs) throw capacityError('The browser folder capacity is full.', 'BROWSER_FOLDER_LIMIT');
@@ -595,25 +613,27 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (!value || value.id !== (args.interactionId || args.chooserId) || value.tabId !== tab.id || value.documentId !== inputDocumentId(tab) || value.url !== tab.window.webContents.getURL()) throw interactionChanged();
     return value;
   }
-  async pageWork(tab, promise, signal, ms = 12000) {
+  async pageWork(tab, promise, signal, ms = 12000, expectedInstance) {
     const native = Promise.resolve(promise); native.catch(() => {});
+    const instance = expectedInstance || this.nativeInstance(tab); instance.assertCurrent();
     let interrupted = false, notify, rendererGone;
     const pending = new Promise((_, reject) => { notify = () => { interrupted = true; reject(interactionError()); }; rendererGone = () => reject(rendererFailure(tab, true)); });
     tab.interactionWaiters.add(notify);
     (tab.rendererWaiters ||= new Set()).add(rendererGone);
     if (tab.rendererFailure) rendererGone();
     if (tab.pendingInteraction?.kind === 'javascript_dialog' && tab.pendingInteraction.status === 'pending') notify();
-    try { return await bounded(Promise.race([native, pending]), signal, ms); }
+    try { return await bounded(instance.observe(Promise.race([native, pending])), signal, ms); }
     finally {
       tab.interactionWaiters.delete(notify);
       tab.rendererWaiters.delete(rendererGone);
       // A modal-suspended protocol operation is not a completed operation.
       // Keep it observed and reject unrelated input until an explicit decision
       // has released it; do not replay its original command on resolution.
-      if (interrupted && !tab.rendererFailure) { tab.suspendedWork.add(native); native.finally(() => { tab.suspendedWork.delete(native); this.emit('changed'); }).catch(() => {}); }
+      if (interrupted && instance.current()) { tab.suspendedWork.add(native); native.finally(() => { tab.suspendedWork.delete(native); if (instance.current()) this.emit('changed'); }).catch(() => {}); }
     }
   }
   async resolveInteraction(tab, args, signal) {
+    const instance = this.nativeInstance(tab);
     const current = this.currentInteraction(tab, args);
     if (current.status === 'blocked') {
       if (args.decision !== 'acknowledge' || args.promptText !== undefined) throw error('This interaction has already been blocked or cancelled. Acknowledge it, then inspect before choosing another action.');
@@ -624,15 +644,16 @@ export class ElectronBrowserDriver extends EventEmitter {
       if (args.decision !== 'dismiss' || args.promptText !== undefined) throw error('Upload explicitly chosen files, or dismiss this file request.');
       const backendNodeId = tab.interactionTarget?.backendNodeId;
       if (!Number.isSafeInteger(backendNodeId)) throw interactionChanged();
-      await this.ensureContained(tab, signal); this.currentInteraction(tab, args); cancel(signal);
+      await this.ensureContained(tab, signal); instance.assertCurrent(); this.currentInteraction(tab, args); cancel(signal);
       await this.cdp(tab, 'DOM.setFileInputFiles', { files: [], backendNodeId }, signal);
     } else if (current.kind === 'javascript_dialog') {
       if (!['accept', 'dismiss'].includes(args.decision) || args.promptText !== undefined && (current.dialogType !== 'prompt' || args.decision !== 'accept')) throw error('Accept or dismiss this exact dialog; prompt text is only valid for accepting a prompt.');
-      await this.ensureContained(tab, signal); this.currentInteraction(tab, args); cancel(signal);
+      await this.ensureContained(tab, signal); instance.assertCurrent(); this.currentInteraction(tab, args); cancel(signal);
       // This one command is deliberately outside pageWork: it releases the
       // modal that pageWork is observing, without queueing another DOM script.
       await this.cdp(tab, 'Page.handleJavaScriptDialog', { accept: args.decision === 'accept', ...(args.promptText !== undefined ? { promptText: args.promptText } : {}) }, signal);
     } else throw error('This interaction cannot be completed in the contained browser.');
+    instance.assertCurrent();
     if (tab.pendingInteraction?.id === current.id) this.clearInteraction(tab);
     this.emit('changed');
     return this.interactionReceipt(tab, { receipt: { interactionId: current.id, decision: args.decision, replayed: false, inspectBeforeContinuing: true } });
@@ -640,13 +661,15 @@ export class ElectronBrowserDriver extends EventEmitter {
   async activate(tab, signal) {
     if (tab.rendererFailure) throw rendererFailure(tab);
     if (!tab.window) this.materialize(tab);
+    const instance = this.nativeInstance(tab);
     await this.ensureContained(tab, signal);
+    instance.assertCurrent();
     if (tab.pendingURL) {
       const url = tab.pendingURL; tab.pendingURL = null; tab.loadError = null; tab.navigationDispatched = true;
-      const window = tab.window;
-      tab.loading = window.webContents.loadURL(url).catch(reason => { if (tab.window === window) tab.loadError = reason.message; });
+      tab.loading = instance.contents.loadURL(url).catch(reason => { if (instance.current()) tab.loadError = reason.message; });
     }
-    await this.pageWork(tab, tab.loading, signal, 20000);
+    await this.pageWork(tab, tab.loading, signal, 20000, instance);
+    instance.assertCurrent();
     if (tab.popupViewport) await this.ensurePopupViewport(tab, signal);
   }
   async show() { throw Object.assign(error('Browser pages stay contained inside BLACKICE. Use the Observe view to inspect and control them.'), { code: 'BROWSER_CONTAINED' }); }
@@ -654,7 +677,8 @@ export class ElectronBrowserDriver extends EventEmitter {
     const fileName = path.basename(item.getFilename()).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_') || 'download';
     const target = path.join(this.downloadDir, `${Date.now()}-${randomUUID().slice(0,8)}-${fileName}`);
     item.setSavePath(target);
-    const record = { id: randomUUID(), tabId: [...this.tabs.values()].find(t => t.window?.webContents === contents)?.id, name: fileName, path: target, status: 'downloading', receivedBytes: 0, totalBytes: item.getTotalBytes() };
+    const sourceTab = [...this.tabs.values()].find(tab => tab.window?.webContents === contents), provenance = sourceTab ? browserDownloadProvenance(sourceTab) : null;
+    const record = { id: randomUUID(), tabId: sourceTab?.id, ...(provenance ? { provenance } : {}), name: fileName, path: target, status: 'downloading', receivedBytes: 0, totalBytes: item.getTotalBytes() };
     this.downloads.push(record); this.pruneDownloads();
     item.on('updated', () => { record.receivedBytes = item.getReceivedBytes(); record.totalBytes = item.getTotalBytes(); });
     item.once('done', (_event, state) => { record.status = state; this.pruneDownloads(); this.emit('changed'); }); this.emit('changed');
@@ -666,35 +690,39 @@ export class ElectronBrowserDriver extends EventEmitter {
     this.downloads = this.downloads.filter((item, index) => index >= cutoff || item.status === 'downloading');
   }
   async snapshot(tab, query, signal) {
+    const instance = this.nativeInstance(tab);
     if (tab.pendingInteraction?.status === 'pending') return this.interactionReceipt(tab, { frames: [] });
     if (tab.popupViewport) await this.ensurePopupViewport(tab, signal);
     cancel(signal); const frames = [], errors = []; let remainingElements = 400, remainingText = 24000;
     const deadline = Date.now() + 7000;
     tab.refs.clear();
-    const mainFrame = tab.window.webContents.mainFrame;
+    const mainFrame = instance.contents.mainFrame;
     // Electron does not promise subtree traversal order. Ad-heavy pages can
     // have more descendants than the cap; always inspect their main document.
     const allFrames = [mainFrame, ...mainFrame.framesInSubtree.filter(frame => frame !== mainFrame)].slice(0, 30);
     for (const frame of allFrames) {
-      cancel(signal);
+      cancel(signal); instance.assertCurrent();
       if (Date.now() >= deadline) { errors.push({ error: 'Snapshot time budget reached. Narrow the query to the controls you need.' }); break; }
       try {
         const prefix = `${tab.revision}-${frame.processId}-${frame.routingId}`;
-        const value = await this.pageWork(tab, frame.executeJavaScript(`(${pageSnapshot.toString()})(${JSON.stringify(this.key)},${JSON.stringify(prefix)},${JSON.stringify(query || '')})`), signal, Math.max(1, Math.min(deadline - Date.now(), frame === mainFrame ? 5000 : 500)));
+        const value = await this.pageWork(tab, frame.executeJavaScript(`(${pageSnapshot.toString()})(${JSON.stringify(this.key)},${JSON.stringify(prefix)},${JSON.stringify(query || '')})`), signal, Math.max(1, Math.min(deadline - Date.now(), frame === mainFrame ? 5000 : 500)), instance);
         if (value.elements.length > remainingElements || value.text.length > remainingText) value.truncated = true;
         value.elements = value.elements.slice(0, remainingElements); value.text = value.text.slice(0, remainingText);
         remainingElements -= value.elements.length; remainingText -= value.text.length;
         for (const item of value.elements) tab.refs.set(item.ref, frame);
         frames.push({ frame: `${frame.processId}-${frame.routingId}`, ...value });
         if (query && frame === mainFrame && value.elements.length) break;
-      } catch (reason) { if (signal?.aborted || ['BROWSER_INTERACTION_PENDING', 'BROWSER_RENDERER_GONE'].includes(reason.code)) throw reason; errors.push({ frame: frame.url, error: reason.message }); }
+      } catch (reason) { instance.assertCurrent(); if (signal?.aborted || ['BROWSER_INTERACTION_PENDING', 'BROWSER_RENDERER_GONE'].includes(reason.code)) throw reason; errors.push({ frame: frame.url, error: reason.message }); }
     }
-    return { tabId: tab.id, url: tab.window.webContents.getURL(), documentId: inputDocumentId(tab), title: tab.window.webContents.getTitle(), frames, ...(frames.some(f => f.truncated) ? { hint: 'Large page: supply query to narrow the controls/text, or scroll a virtualized region and inspect again.' } : {}), ...(errors.length ? { frameErrors: errors } : {}), ...(tab.loadError ? { navigationError: tab.loadError } : {}), ...(tab.inputWarning ? { inputWarning: tab.inputWarning } : {}), ...(tab.pendingInteraction ? { pendingInteraction: structuredClone(tab.pendingInteraction) } : {}) };
+    instance.assertCurrent();
+    return { tabId: tab.id, url: instance.contents.getURL(), documentId: inputDocumentId(tab), title: instance.contents.getTitle(), frames, ...(frames.some(f => f.truncated) ? { hint: 'Large page: supply query to narrow the controls/text, or scroll a virtualized region and inspect again.' } : {}), ...(errors.length ? { frameErrors: errors } : {}), ...(tab.loadError ? { navigationError: tab.loadError } : {}), ...(tab.inputWarning ? { inputWarning: tab.inputWarning } : {}), ...(tab.pendingInteraction ? { pendingInteraction: structuredClone(tab.pendingInteraction) } : {}) };
   }
   async element(tab, args, action, signal, extra = {}) {
+    const instance = this.nativeInstance(tab);
     if (typeof args.ref !== 'string' || !tab.refs.has(args.ref)) throw Object.assign(error('Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE' });
     const frame = tab.refs.get(args.ref);
-    const result = await this.pageWork(tab, frame.executeJavaScript(`(${elementActionResult.toString()})(${elementAction.toString()},${JSON.stringify(this.key)},${JSON.stringify(args.ref)},${JSON.stringify(action)},${JSON.stringify({ ...args, ...extra })})`), signal);
+    const result = await this.pageWork(tab, frame.executeJavaScript(`(${elementActionResult.toString()})(${elementAction.toString()},${JSON.stringify(this.key)},${JSON.stringify(args.ref)},${JSON.stringify(action)},${JSON.stringify({ ...args, ...extra })})`), signal, 12000, instance);
+    instance.assertCurrent();
     if (result?.__blackiceElementError) {
       const { message, code } = result.__blackiceElementError;
       // An earlier preparation pass can already have scrolled the page. Keep
@@ -707,19 +735,20 @@ export class ElectronBrowserDriver extends EventEmitter {
     const args = browserCredentialTarget({ browser: 'relay', ...value }), tab = this.tab(args.tabId);
     const owner = browserOwner(context);
     const unavailable = () => Object.assign(error('The protected password target changed or could not be verified.'), { code: 'BROWSER_CREDENTIAL_TARGET_CHANGED' });
-    if (source !== 'agent' || tab.purpose === 'chat-mode' || owner && !sameOwner(tab.owner, owner) && !(owner.allowUserTabs && !tab.owner)) throw unavailable();
+    if (source !== 'agent' || tab.purpose === 'chat-mode' || !browserOwnsTab(tab, owner)) throw unavailable();
     if (owner && tab.owner) tab.owner.runId = owner.runId;
     await this.activate(tab, signal); this.assertInputDocument(tab, args); cancel(signal);
+    const instance = this.nativeInstance(tab);
     const refs = [args.passwordRef, args.confirmationRef, args.usernameRef].filter(Boolean), frame = tab.refs.get(args.passwordRef);
     if (!frame || refs.some(ref => tab.refs.get(ref) !== frame) || new URL(frame.url).origin !== args.origin) throw unavailable();
     const frameUrl = frame.url, input = { ...args, frameUrl };
     const assertCurrent = () => {
-      cancel(signal); this.assertInputDocument(tab, args);
+      cancel(signal); instance.assertCurrent(); this.assertInputDocument(tab, args);
       if (this.closed || tab.window.isDestroyed() || tab.purpose === 'chat-mode' || tab.pendingInteraction || tab.suspendedWork.size || frame.url !== frameUrl || refs.some(ref => tab.refs.get(ref) !== frame)) throw unavailable();
     };
     const evaluate = secret => frame.executeJavaScript(`(${credentialFields.toString()})(${JSON.stringify(this.key)},${JSON.stringify(input)}${secret === undefined ? '' : ',' + JSON.stringify(secret)})`);
     assertCurrent();
-    const verified = await this.pageWork(tab, evaluate(), signal);
+    const verified = await this.pageWork(tab, evaluate(), signal, 12000, instance);
     assertCurrent(); if (verified?.valid !== true) throw unavailable();
     let used = false;
     return async secret => {
@@ -730,7 +759,7 @@ export class ElectronBrowserDriver extends EventEmitter {
         // site can reveal/hide a password during asynchronous capture, so a
         // field-type scan cannot safely authorize agent screenshots.
         tab.credentialCaptureBlocked = true;
-        const result = await this.pageWork(tab, evaluate(secret), signal);
+        const result = await this.pageWork(tab, evaluate(secret), signal, 12000, instance);
         if (result?.filled !== true) throw unavailable();
         cancel(signal);
         return { filled: true, submissionRequested: false };
@@ -739,53 +768,53 @@ export class ElectronBrowserDriver extends EventEmitter {
   }
   assertInputDocument(tab, expected) {
     if (expected?.expectedDocumentId === undefined && expected?.expectedUrl === undefined) return;
-    if (typeof expected.expectedDocumentId !== 'string' || typeof expected.expectedUrl !== 'string' || expected.expectedDocumentId !== inputDocumentId(tab) || expected.expectedUrl !== tab.window.webContents.getURL()) throw Object.assign(error('The page changed before keyboard or pointer input. Refresh the preview and click the intended field again.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+    if (typeof expected.expectedDocumentId !== 'string' || typeof expected.expectedUrl !== 'string' || expected.expectedDocumentId !== inputDocumentId(tab) || expected.expectedUrl !== tab.window?.webContents.getURL()) throw Object.assign(error('The observed browser document changed before the action. Inspect the current page and use its current document identity.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
   }
-  async cdp(tab, method, params = {}, signal, expected, sessionId) {
-    if (tab.rendererFailure) throw rendererFailure(tab);
-    const wc = tab.window.webContents;
+  async cdp(tab, method, params = {}, signal, expected, sessionId, instance = this.nativeInstance(tab)) {
+    instance.assertCurrent();
+    const wc = instance.contents;
     if (method.startsWith('Input.')) {
       await this.ensureContained(tab, signal);
+      instance.assertCurrent();
       // A detach can invalidate the guard while the awaiting caller resumes.
       // Never reconnect and send this input under a fresh, unguarded session.
       if (!wc.debugger.isAttached() || !tab.containmentReady) throw Object.assign(error('The contained browser connection changed before input. Inspect the page and try the action again after it reconnects.'), { code: 'BROWSER_CONTAINMENT_LOST' });
       this.assertInputDocument(tab, expected);
-    } else if (!wc.debugger.isAttached()) { wc.debugger.attach('1.3'); tab.containmentReady = null; }
+    } else if (!wc.debugger.isAttached()) { wc.debugger.attach('1.3'); instance.invalidateProtocol(); }
     cancel(signal);
     const native = sessionId ? wc.debugger.sendCommand(method, params, sessionId) : wc.debugger.sendCommand(method, params);
-    if (method === 'Page.handleJavaScriptDialog' || method === 'DOM.setFileInputFiles' || params.type === 'mouseReleased' || params.type === 'keyUp') return bounded(native, signal);
-    return this.pageWork(tab, native, signal);
+    if (method === 'Page.handleJavaScriptDialog' || method === 'DOM.setFileInputFiles' || params.type === 'mouseReleased' || params.type === 'keyUp') return bounded(instance.observe(native), signal);
+    return this.pageWork(tab, native, signal, 12000, instance);
   }
   async ensureContained(tab, signal) {
-    if (tab.rendererFailure) throw rendererFailure(tab);
-    cancel(signal); const wc = tab.window.webContents;
-    if (this.closed || !tab.window || tab.window.isDestroyed()) throw error('The contained browser page closed.');
-    await bounded(this.compatibilityReady, signal); cancel(signal);
-    await bounded(tab.rendererReady, signal, 8000); cancel(signal);
-    if (tab.rendererFailure) throw rendererFailure(tab);
-    if (this.closed || !tab.window || tab.window.isDestroyed()) throw error('The contained browser page closed.');
-    if (!wc.debugger.isAttached()) { wc.debugger.attach('1.3'); tab.containmentReady = null; }
-    if (!tab.containmentReady) {
-      tab.containmentReady = bounded((async () => {
-        await wc.debugger.sendCommand('Page.enable');
-        await wc.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: true });
-      })(), undefined, 8000).catch(() => {
-        tab.containmentReady = null; throw error('The browser could not disable native file dialogs. No contained browser input was sent.');
-      });
-      tab.containmentReady.catch(() => {});
-    }
-    await bounded(tab.containmentReady, signal, 8000); cancel(signal);
+    cancel(signal); const instance = this.nativeInstance(tab), wc = instance.contents;
+    await bounded(instance.observe(this.compatibilityReady), signal); cancel(signal);
+    await bounded(instance.observe(tab.rendererReady), signal, 8000); cancel(signal);
+    instance.assertCurrent();
+    if (!wc.debugger.isAttached()) { wc.debugger.attach('1.3'); instance.invalidateProtocol(); }
+    const ready = instance.prepareProtocol(assertProtocol => bounded((async () => {
+      try {
+        assertProtocol();
+        await wc.debugger.sendCommand('Page.enable'); assertProtocol();
+        await wc.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: true }); assertProtocol();
+      } catch (cause) {
+        assertProtocol();
+        throw Object.assign(error('The browser protocol could not prepare file selection. Inspect the current page before another action.'), { code: 'BROWSER_PROTOCOL_UNAVAILABLE', cause, actionDispatched: false });
+      }
+    })(), undefined, 8000));
+    await bounded(instance.observe(ready), signal, 8000); cancel(signal);
   }
   async ensurePopupViewport(tab, signal) {
+    const instance = this.nativeInstance(tab);
     const state = tab.popupViewport;
     if (!state || state.ready) return;
     cancel(signal);
     if (!state.pending) {
       state.pending = (async () => {
-        const window = tab.window, wc = window.webContents, containment = tab.containmentReady;
+        const window = instance.window, wc = instance.contents, containment = tab.containmentReady;
         const expected = { expectedUrl: wc.getURL(), expectedDocumentId: inputDocumentId(tab) };
         const current = () => {
-          cancel(signal);
+          cancel(signal); instance.assertCurrent();
           if (tab.rendererFailure) throw rendererFailure(tab);
           if (this.closed || tab.window !== window || tab.popupViewport !== state || window.isDestroyed() || wc.isDestroyed()) throw Object.assign(error('The popup closed before its browser viewport was ready.'), { code: 'BROWSER_CLOSED' });
           if (!containment || tab.containmentReady !== containment || !wc.debugger.isAttached()) throw Object.assign(error('The contained popup connection changed before its viewport was ready. Inspect the page after it reconnects.'), { code: 'BROWSER_CONTAINMENT_LOST' });
@@ -800,7 +829,7 @@ export class ElectronBrowserDriver extends EventEmitter {
         };
         const viewport = async () => {
           current();
-          const size = await this.pageWork(tab, wc.executeJavaScript('({width:innerWidth,height:innerHeight})'), signal);
+          const size = await this.pageWork(tab, wc.executeJavaScript('({width:innerWidth,height:innerHeight})'), signal, 12000, instance);
           current(); return size;
         };
         const usable = size => Number.isFinite(size?.width) && size.width > 0 && Number.isFinite(size?.height) && size.height > 0;
@@ -819,7 +848,7 @@ export class ElectronBrowserDriver extends EventEmitter {
           let failure;
           try {
             current();
-            await this.pageWork(tab, wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 0, mobile: false, dontSetVisibleSize: false }), signal);
+            await this.pageWork(tab, wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 0, mobile: false, dontSetVisibleSize: false }), signal, 12000, instance);
             current();
           } catch (reason) { failure = reason; }
           try { await clear(); } catch (reason) { failure ||= reason; }
@@ -830,25 +859,26 @@ export class ElectronBrowserDriver extends EventEmitter {
       })().finally(() => { state.pending = null; });
       state.pending.catch(() => {});
     }
-    await bounded(state.pending, signal);
+    await bounded(instance.observe(state.pending), signal);
   }
   async capture(tab, signal, revision) {
-    return captureHiddenPage(tab.window.webContents, { signal, assertCurrent: () => {
-      if (this.closed || tab.window.isDestroyed()) throw error('The browser page closed before capture completed.');
+    const instance = this.nativeInstance(tab);
+    return instance.observe(captureHiddenPage(instance.contents, { signal, assertCurrent: () => {
+      instance.assertCurrent();
       if (revision !== undefined && tab.revision !== revision) throw error('The page changed while preparing browser input. Take a fresh snapshot before acting.');
-    } });
+    } }));
   }
-  async clickPoint(tab, point, signal, expected, sessionId) {
+  async clickPoint(tab, point, signal, expected, sessionId, instance = this.nativeInstance(tab)) {
     cancel(signal);
-    try { await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 }, signal, expected, sessionId); }
+    try { await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 }, signal, expected, sessionId, instance); }
     finally {
-      try { await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 }, AbortSignal.timeout(1500), undefined, sessionId); }
-      catch { tab.inputWarning = 'Browser button release could not be confirmed. Inspect or reload before continuing.'; }
+      try { await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 }, AbortSignal.timeout(1500), undefined, sessionId, instance); }
+      catch { if (instance.current()) tab.inputWarning = 'Browser button release could not be confirmed. Inspect or reload before continuing.'; }
     }
     cancel(signal);
   }
   async pointerTarget(tab, point, signal, expected) {
-    const wc = tab.window.webContents, guard = expected?.expectedDocumentId === undefined
+    const instance = this.nativeInstance(tab), wc = instance.contents, guard = expected?.expectedDocumentId === undefined
       ? { expectedDocumentId: inputDocumentId(tab), expectedUrl: wc.getURL() } : expected;
     this.assertInputDocument(tab, guard);
     const sessions = [], close = async () => {
@@ -859,15 +889,15 @@ export class ElectronBrowserDriver extends EventEmitter {
     let sessionId, contextId, targetPoint = { x: point.x, y: point.y }, localPoint = targetPoint;
     // Ordinary documents retain the fast root-target path. Only a point that
     // actually hits an iframe needs child-frame inspection or attachment.
-    if (!wc.mainFrame.framesInSubtree.some(frame => frame !== wc.mainFrame)) return { point: targetPoint, guard, close };
-    const command = (method, params = {}) => this.cdp(tab, method, params, signal, undefined, sessionId);
+    if (!wc.mainFrame.framesInSubtree.some(frame => frame !== wc.mainFrame)) return { point: targetPoint, guard, close, instance };
+    const command = (method, params = {}) => this.cdp(tab, method, params, signal, undefined, sessionId, instance);
     try {
       for (let depth = 0; depth < 16; depth++) {
-        cancel(signal); this.assertInputDocument(tab, guard);
+        cancel(signal); instance.assertCurrent(); this.assertInputDocument(tab, guard);
         const hit = await command('Runtime.evaluate', { expression: `((x,y)=>{let el=document.elementFromPoint(x,y);while(el?.shadowRoot){const next=el.shadowRoot.elementFromPoint(x,y);if(!next||next===el)break;el=next;}return el&&['IFRAME','FRAME'].includes(el.tagName)?el:null;})(${JSON.stringify(localPoint.x)},${JSON.stringify(localPoint.y)})`, ...(contextId ? { contextId } : {}), returnByValue: false });
         if (hit.exceptionDetails) throw error('The current frame could not be inspected before pointer input.');
         const objectId = hit.result?.objectId;
-        if (!objectId) return { point: targetPoint, guard, sessionId, close };
+        if (!objectId) return { point: targetPoint, guard, sessionId, close, instance };
         let frameId, quad;
         try {
           const described = await command('DOM.describeNode', { objectId });
@@ -884,7 +914,7 @@ export class ElectronBrowserDriver extends EventEmitter {
         const dx = targetPoint.x - quad[0], dy = targetPoint.y - quad[1], u = (dx * by - dy * bx) / determinant, v = (ax * dy - ay * dx) / determinant;
         // A border click remains on its owner document; it must not be moved
         // into an unrelated point inside the child document.
-        if (u < 0 || u >= 1 || v < 0 || v >= 1) return { point: targetPoint, guard, sessionId, close };
+        if (u < 0 || u >= 1 || v < 0 || v >= 1) return { point: targetPoint, guard, sessionId, close, instance };
         const targets = (await command('Target.getTargets')).targetInfos || [];
         const target = targets.find(value => value.type === 'iframe' && value.targetId === frameId);
         if (target) {
@@ -917,14 +947,15 @@ export class ElectronBrowserDriver extends EventEmitter {
   async pointerInput(tab, point, action, signal, expected) {
     const target = await this.pointerTarget(tab, point, signal, expected);
     try {
-      await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseMoved', ...target.point, button: 'none' }, signal, target.guard, target.sessionId);
-      if (action === 'click') await this.clickPoint(tab, target.point, signal, target.guard, target.sessionId);
+      await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseMoved', ...target.point, button: 'none' }, signal, target.guard, target.sessionId, target.instance);
+      if (action === 'click') await this.clickPoint(tab, target.point, signal, target.guard, target.sessionId, target.instance);
     } finally { await target.close(); }
   }
   async browserPoint(tab, frame, point, signal) {
-    const main = tab.window.webContents.mainFrame;
+    const instance = this.nativeInstance(tab), main = instance.contents.mainFrame;
     if (frame === main) return { x: point.x, y: point.y };
-    const tree = (await this.cdp(tab, 'Page.getFrameTree', {}, signal)).frameTree;
+    const command = (method, params = {}) => this.cdp(tab, method, params, signal, undefined, undefined, instance);
+    const tree = (await command('Page.getFrameTree')).frameTree;
     const indices = []; let current = frame;
     while (current && current !== main) { const parent = current.parent; if (!parent) throw error('Embedded frame changed. Take a fresh snapshot.'); indices.unshift(parent.frames.indexOf(current)); current = parent; }
     let branch = tree;
@@ -933,29 +964,33 @@ export class ElectronBrowserDriver extends EventEmitter {
       const matches = []; const walk = node => { if (node.frame.url === frame.url && (node.frame.name || '') === (frame.name || '')) matches.push(node); for (const child of node.childFrames || []) walk(child); }; walk(tree);
       if (matches.length === 1) branch = matches[0];
       else {
-        const targets = (await this.cdp(tab, 'Target.getTargets', {}, signal)).targetInfos;
+        const targets = (await command('Target.getTargets')).targetInfos;
         const embedded = targets.filter(t => t.type === 'iframe' && t.url === frame.url && (frame.parent !== main || t.parentFrameId === tree.frame.id || t.parentId === tree.frame.id));
         if (embedded.length !== 1) throw error('Embedded frame identity is ambiguous. Refresh the snapshot or use screenshot coordinates for this control.');
         branch = { frame: { id: embedded[0].targetId } };
       }
     }
     try {
-      const owner = await this.cdp(tab, 'DOM.getFrameOwner', { frameId: branch.frame.id }, signal);
-      const { model } = await this.cdp(tab, 'DOM.getBoxModel', { backendNodeId: owner.backendNodeId }, signal);
+      const owner = await command('DOM.getFrameOwner', { frameId: branch.frame.id });
+      const { model } = await command('DOM.getBoxModel', { backendNodeId: owner.backendNodeId });
       const q = model.content, u = point.x / point.viewportWidth, v = point.y / point.viewportHeight;
       return { x: q[0] + (q[2] - q[0]) * u + (q[6] - q[0]) * v, y: q[1] + (q[3] - q[1]) * u + (q[7] - q[1]) * v };
     } catch { throw error('This embedded frame does not expose a page-level input target. Use its screenshot coordinates for a trusted browser click, or open the frame URL in a separate tab.'); }
   }
   async settle(tab, signal) {
-    const wc = tab.window.webContents;
+    const instance = this.nativeInstance(tab), wc = instance.contents;
     if (!wc.isLoadingMainFrame()) return;
-    await new Promise((resolve, reject) => {
-      const done = () => { clearTimeout(timer); wc.removeListener('dom-ready', done); wc.removeListener('did-stop-loading', done); wc.removeListener('render-process-gone', done); signal?.removeEventListener('abort', abort); resolve(); };
-      const abort = () => { done(); reject(Object.assign(error('Browser action cancelled.'), { name: 'AbortError' })); };
-      const timer = setTimeout(done, 8000);
-      wc.once('dom-ready', done); wc.once('did-stop-loading', done); wc.once('render-process-gone', done); signal?.addEventListener('abort', abort, { once: true });
-      if (signal?.aborted) abort(); else if (!wc.isLoadingMainFrame()) done();
-    });
+    let cleanup = () => {};
+    try {
+      await instance.observe(new Promise((resolve, reject) => {
+        const done = () => resolve();
+        const abort = () => reject(Object.assign(error('Browser action cancelled.'), { name: 'AbortError' }));
+        const timer = setTimeout(done, 8000);
+        cleanup = () => { clearTimeout(timer); wc.removeListener('dom-ready', done); wc.removeListener('did-stop-loading', done); wc.removeListener('render-process-gone', done); signal?.removeEventListener('abort', abort); };
+        wc.once('dom-ready', done); wc.once('did-stop-loading', done); wc.once('render-process-gone', done); signal?.addEventListener('abort', abort, { once: true });
+        if (signal?.aborted) abort(); else if (!wc.isLoadingMainFrame()) done();
+      }));
+    } finally { cleanup(); }
     cancel(signal);
   }
   watchNavigation(tab, signal) {
@@ -979,11 +1014,13 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (args.action === 'reuse_session') throw error('Session transfer was removed because it can invalidate the source sign-in. Connect directly to the existing browser instead.');
     const selected = args.tabId || (owner ? this.ownerActiveTabs.get(browserOwnerKey(owner)) : this.activeTab);
     let tab = args.action === 'open' ? this.newTab(browserURL(args.url), { owner, folderId: args.folderId, parentTabId: args.parentTabId }) : this.tab(selected);
-    if (owner && !sameOwner(tab.owner, owner) && !(owner.allowUserTabs && !tab.owner)) throw capacityError('This browser tab belongs to another task.', 'BROWSER_TAB_OWNERSHIP');
+    if (!browserOwnsTab(tab, owner)) throw capacityError('This browser tab belongs to another task.', 'BROWSER_TAB_OWNERSHIP');
+    try { this.assertInputDocument(tab, args); }
+    catch (cause) { throw Object.assign(cause, { actionDispatched: false, stage: 'document' }); }
     if (owner) { this.ownerActiveTabs.set(browserOwnerKey(owner), tab.id); if (tab.owner) tab.owner.runId = owner.runId; }
     else this.activeTab = tab.id;
     if (source === 'user' && tab.owner && ['navigate', 'click', 'fill', 'type', 'select', 'press', 'upload', 'interaction', 'back', 'forward', 'reload'].includes(args.action)) tab.userPinned = true;
-    if (args.action === 'close') { this.closeTab(tab); return this.status(); }
+    if (args.action === 'close') { this.closeTab(tab); return this.savedStatus(); }
     const recoveringRenderer = tab.rendererFailure;
     if (tab.rendererFailure) {
       if (!['reload', 'navigate'].includes(args.action)) throw rendererFailure(tab);
@@ -1005,18 +1042,19 @@ export class ElectronBrowserDriver extends EventEmitter {
     const resumed = !!tab.pendingURL && args.action !== 'navigate';
     if (args.action !== 'navigate') await this.activate(tab, signal);
     else { if (!tab.window) this.materialize(tab); await this.ensureContained(tab, signal); }
+    const actionInstance = this.nativeInstance(tab), actionCurrent = () => { cancel(signal); actionInstance.assertCurrent(); };
     // Reloading a saved page already dispatches its one navigation in activate.
     // A failed activation cannot be cleared by the no-op "already reloaded" arm.
     if (tab.loadError && (resumed && args.action === 'reload' || !['navigate', 'reload', 'back', 'forward'].includes(args.action))) throw navigationFailure(tab);
-    if (['type', 'press', 'click', 'upload'].includes(args.action)) this.assertInputDocument(tab, args);
+    this.assertInputDocument(tab, args);
     if (args.action === 'type' && (typeof args.text !== 'string' || !args.text.length || args.text.length > 16384 || typeof args.expectedDocumentId !== 'string' || typeof args.expectedUrl !== 'string')) throw error('Type 1–16384 characters into a field on the current observed page.');
     const navigation = ['click','press','reload','back','forward'].includes(args.action) ? this.watchNavigation(tab, signal) : null;
     try {
-    if (args.action === 'open') await bounded(tab.loading, signal, 20000);
+    if (args.action === 'open') { await bounded(actionInstance.observe(tab.loading), signal, 20000); actionCurrent(); }
     if (['navigate', 'reload', 'back', 'forward'].includes(args.action)) {
       tab.loadError = null; tab.navigationDispatched = true;
-      const wc = tab.window.webContents;
-      if (args.action === 'navigate') { tab.pendingURL = null; tab.url = browserURL(args.url); await bounded(wc.loadURL(tab.url).catch(e => { tab.loadError = e.message; }), signal, 20000); }
+      const wc = actionInstance.contents;
+      if (args.action === 'navigate') { tab.pendingURL = null; tab.url = browserURL(args.url); await bounded(actionInstance.observe(wc.loadURL(tab.url).catch(e => { if (actionInstance.current()) tab.loadError = e.message; })), signal, 20000); actionCurrent(); }
       else if (args.action === 'reload' && !resumed) wc.reload();
       else if (args.action === 'reload') { /* Resuming the suspended URL already performs this reload. */ }
       else if (args.action === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
@@ -1025,8 +1063,8 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
     let receipt;
     if (args.action === 'type') {
-      await this.cdp(tab, 'Input.insertText', { text: args.text }, signal, args);
-      cancel(signal);
+      await this.cdp(tab, 'Input.insertText', { text: args.text }, signal, args, undefined, actionInstance);
+      actionCurrent();
       // Human typing is streamed in order. Do not scan the whole page or echo
       // input text (including passwords) into a per-keystroke response.
       return { ...this.interactionReceipt(tab), receipt: { typed: true, characters: args.text.length, input: 'browser protocol' } };
@@ -1034,8 +1072,10 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (args.action === 'fill') {
       const text = String(args.text ?? '');
       receipt = (await this.element(tab, { ...args, text }, 'fill', signal)).result;
+      actionCurrent();
       if (receipt.needsTrustedTextInput) {
-        await this.cdp(tab, 'Input.insertText', { text }, signal);
+        await this.cdp(tab, 'Input.insertText', { text }, signal, args, undefined, actionInstance);
+        actionCurrent();
         receipt = { filled: true, characters: text.length, input: 'browser' };
       }
     }
@@ -1043,23 +1083,32 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (['click', 'hover'].includes(args.action)) {
       if (args.ref) {
         let { frame, result } = await this.element(tab, args, 'prepare', signal);
+        actionCurrent();
         const revision = tab.revision;
         // Flush layout/compositing after scroll or SPA changes before hit testing.
         const { retries } = await this.capture(tab, signal, revision);
+        actionCurrent();
         // A retry waited for another frame: the target can have moved or detached meanwhile.
         if (retries) ({ frame, result } = await this.element(tab, args, 'prepare', signal));
+        actionCurrent();
         const point = await this.browserPoint(tab, frame, result, signal);
+        actionCurrent();
         await this.pointerInput(tab, point, args.action, signal, args);
+        actionCurrent();
         receipt = { [args.action === 'click' ? 'clicked' : 'hovered']: args.ref, input: 'browser protocol' };
       } else {
-        const viewport = await bounded(tab.window.webContents.executeJavaScript('({width:innerWidth,height:innerHeight})'), signal);
+        const viewport = await this.pageWork(tab, actionInstance.contents.executeJavaScript('({width:innerWidth,height:innerHeight})'), signal, 12000, actionInstance);
+        actionCurrent();
         if (![args.x, args.y].every(n => Number.isFinite(n) && n >= 0) || args.x >= viewport.width || args.y >= viewport.height) throw error(`Canvas coordinates must be within the current ${viewport.width} × ${viewport.height} browser viewport. Prefer element refs.`);
         const { retries } = await this.capture(tab, signal, tab.revision);
+        actionCurrent();
         if (retries) {
-          const current = await bounded(tab.window.webContents.executeJavaScript('({width:innerWidth,height:innerHeight})'), signal);
+          const current = await this.pageWork(tab, actionInstance.contents.executeJavaScript('({width:innerWidth,height:innerHeight})'), signal, 12000, actionInstance);
+          actionCurrent();
           if (current.width !== viewport.width || current.height !== viewport.height) throw error('The browser viewport changed while preparing input. Take a fresh screenshot before acting.');
         }
         await this.pointerInput(tab, { x: args.x, y: args.y }, args.action, signal, args);
+        actionCurrent();
         receipt = { [args.action === 'click' ? 'clicked' : 'hovered']: true };
         // Human preview input shares a queue with typing. A completed guarded
         // click must not hold that queue for navigation settling or a DOM scan;
@@ -1071,26 +1120,27 @@ export class ElectronBrowserDriver extends EventEmitter {
       }
     }
     if (args.action === 'press') {
+      const inputInstance = actionInstance;
       const rawKey = String(args.key || ''), key = rawKey.toLowerCase() === 'a' ? 'A' : rawKey, modifiers = keyboardModifiers(args.modifiers);
       const keys = { Enter: { code: 'Enter', windowsVirtualKeyCode: 13 }, Tab: { code: 'Tab', windowsVirtualKeyCode: 9 }, Escape: { code: 'Escape', windowsVirtualKeyCode: 27 }, Backspace: { code: 'Backspace', windowsVirtualKeyCode: 8 }, Delete: { code: 'Delete', windowsVirtualKeyCode: 46 }, Home: { code: 'Home', windowsVirtualKeyCode: 36 }, End: { code: 'End', windowsVirtualKeyCode: 35 }, PageUp: { code: 'PageUp', windowsVirtualKeyCode: 33 }, PageDown: { code: 'PageDown', windowsVirtualKeyCode: 34 }, ArrowDown: { code: 'ArrowDown', windowsVirtualKeyCode: 40 }, ArrowUp: { code: 'ArrowUp', windowsVirtualKeyCode: 38 }, ArrowLeft: { code: 'ArrowLeft', windowsVirtualKeyCode: 37 }, ArrowRight: { code: 'ArrowRight', windowsVirtualKeyCode: 39 }, Space: { code: 'Space', windowsVirtualKeyCode: 32 }, A: { code: 'KeyA', windowsVirtualKeyCode: 65 } };
       if (!Object.hasOwn(keys, key) || key === 'A' && (!(modifiers & 6) || modifiers & 1)) throw error('Use a supported editing or navigation key, or Control/Meta+A to select all. Use type or fill for text.');
       if (args.ref) await this.element(tab, args, 'focus', signal);
       const eventKey = key === 'Space' ? ' ' : key === 'A' && !(modifiers & 8) ? 'a' : key;
       try {
-        await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyDown', key: eventKey, ...keys[key], modifiers }, signal, args);
-        if (key === 'Enter') await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'char', text: '\r', key: 'Enter', ...keys[key], modifiers }, signal, args);
+        await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyDown', key: eventKey, ...keys[key], modifiers }, signal, args, undefined, inputInstance);
+        if (key === 'Enter') await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'char', text: '\r', key: 'Enter', ...keys[key], modifiers }, signal, args, undefined, inputInstance);
       } finally {
-        try { await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyUp', key: eventKey, ...keys[key], modifiers }, AbortSignal.timeout(1500)); }
-        catch { tab.inputWarning = 'Browser key release could not be confirmed. Inspect or reload before continuing.'; }
+        try { await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyUp', key: eventKey, ...keys[key], modifiers }, AbortSignal.timeout(1500), undefined, undefined, inputInstance); }
+        catch { if (inputInstance.current()) tab.inputWarning = 'Browser key release could not be confirmed. Inspect or reload before continuing.'; }
       }
-      cancel(signal); receipt = { pressed: key };
+      actionCurrent(); receipt = { pressed: key };
       if (args.expectedDocumentId !== undefined) return { ...this.interactionReceipt(tab), receipt: { ...receipt, ...(args.modifiers?.length ? { modifiers: [...args.modifiers] } : {}), input: 'browser protocol' } };
     }
     if (args.action === 'scroll') {
       const amount = Math.min(2000, Math.max(1, Number(args.amount) || 650)), direction = args.direction || 'down';
       const movement = { top: ['up','down'].includes(direction) ? amount * (direction === 'up' ? -1 : 1) : 0, left: ['left','right'].includes(direction) ? amount * (direction === 'left' ? -1 : 1) : 0 };
       if (args.ref) receipt = (await this.element(tab, args, 'scroll', signal, movement)).result;
-      else receipt = await bounded(tab.window.webContents.executeJavaScript(`window.scrollBy({top:${movement.top},left:${movement.left},behavior:'instant'}); ({scrollY,scrollX})`), signal);
+      else receipt = await this.pageWork(tab, actionInstance.contents.executeJavaScript(`window.scrollBy({top:${movement.top},left:${movement.left},behavior:'instant'}); ({scrollY,scrollX})`), signal, 12000, actionInstance);
     }
     if (args.action === 'upload') {
       if (!Array.isArray(args.paths) || !args.paths.length || args.paths.length > 10) throw error('Supply 1–10 absolute local file paths.');
@@ -1116,21 +1166,23 @@ export class ElectronBrowserDriver extends EventEmitter {
         if (validateUploadPath) await validateUploadPath(file); cancel(signal);
         files.push({ name: path.basename(file), size: bytes.length, type: uploadMimeTypes.get(path.extname(file).toLowerCase()) || 'application/octet-stream', data: bytes.toString('base64') });
       }
-      this.assertInputDocument(tab, args);
+      actionCurrent(); this.assertInputDocument(tab, args);
       if (chooser) {
         this.currentInteraction(tab, args);
-        const target = tab.interactionTarget, resolved = await this.cdp(tab, 'DOM.resolveNode', { backendNodeId: target.backendNodeId }, signal);
+        const target = tab.interactionTarget, resolved = await this.cdp(tab, 'DOM.resolveNode', { backendNodeId: target.backendNodeId }, signal, undefined, undefined, actionInstance);
+        actionCurrent();
         if (typeof resolved?.object?.objectId !== 'string') throw interactionChanged();
         const objectId = resolved.object.objectId;
         try {
           this.currentInteraction(tab, args); cancel(signal);
-          const value = await this.cdp(tab, 'Runtime.callFunctionOn', { objectId, functionDeclaration: assignChosenFiles.toString(), arguments: [{ value: files }], returnByValue: true }, signal);
+          const value = await this.cdp(tab, 'Runtime.callFunctionOn', { objectId, functionDeclaration: assignChosenFiles.toString(), arguments: [{ value: files }], returnByValue: true }, signal, undefined, undefined, actionInstance);
+          actionCurrent();
           if (value?.exceptionDetails) throw uploadRejected();
           receipt = value?.result?.value;
         } finally {
-          if (tab.pendingInteraction?.id === chooser.id) this.clearInteraction(tab);
-          void this.cdp(tab, 'Runtime.releaseObject', { objectId }).catch(() => {});
-          this.emit('changed');
+          if (actionInstance.current() && tab.pendingInteraction?.id === chooser.id) this.clearInteraction(tab);
+          void this.cdp(tab, 'Runtime.releaseObject', { objectId }, undefined, undefined, undefined, actionInstance).catch(() => {});
+          if (actionInstance.current()) this.emit('changed');
         }
       } else receipt = (await this.element(tab, args, 'upload', signal, { files })).result;
       receipt = validateUploadReceipt(receipt, files);
@@ -1141,7 +1193,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       };
       assertCredentialCapture();
       const revision = tab.revision, { image } = await this.capture(tab, signal, revision);
-      cancel(signal);
+      actionCurrent();
       assertCredentialCapture();
       if (tab.revision !== revision) throw Object.assign(error('The page changed while the preview was being captured. Refresh the preview before typing.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
       return { tabId: tab.id, url: tab.window.webContents.getURL(), documentId: inputDocumentId(tab), width: image.getSize().width, height: image.getSize().height, imageUrl: image.toDataURL(), ...(tab.pendingInteraction ? { pendingInteraction: structuredClone(tab.pendingInteraction) } : {}) };
@@ -1151,15 +1203,17 @@ export class ElectronBrowserDriver extends EventEmitter {
       if (!expected || typeof expected !== 'string' || expected.length > 1000) throw error('Specify expected page text to wait for.');
       const deadline = Date.now() + Math.min(20000, Math.max(100, Number(args.timeoutMs) || 10000));
       do {
-        cancel(signal); const snapshot = await this.snapshot(tab, expected, signal);
+        actionCurrent(); const snapshot = await this.snapshot(tab, expected, signal); actionCurrent();
         if (snapshot.frames.some(f => f.text.toLowerCase().includes(expected.toLowerCase()) || f.elements.length)) return { ...await this.snapshot(tab, undefined, signal), matched: expected };
         if (Date.now() >= deadline) throw error('Expected text did not appear. Inspect the page before choosing another action.');
         await bounded(new Promise(resolve => setTimeout(resolve, 120)), signal, 1000);
       } while (true);
     }
-    cancel(signal); await navigation?.wait(); await this.settle(tab, signal);
+    actionCurrent(); await navigation?.wait(); actionCurrent(); await this.settle(tab, signal); actionCurrent();
     if (tab.loadError) throw navigationFailure(tab);
     const result = await this.snapshot(tab, args.query, signal);
+    actionCurrent();
+    if (['open', 'navigate', 'reload', 'back', 'forward'].includes(args.action)) { this.persist(); await this.awaitPersistence({ actionDispatched: true }); actionCurrent(); }
     return { ...result, ...(receipt ? { receipt } : {}), tabs: this.status().tabs };
     } finally { navigation?.dispose(); }
     } catch (reason) {
@@ -1177,7 +1231,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     this.session.removeListener('file-system-access-restricted', this.fileSystemAccessListener);
     this.session.cookies.removeListener('changed', this.cookieListener);
     this.session.webRequest.onCompleted(null); this.session.webRequest.onErrorOccurred(null);
-    for (const t of [...this.tabs.values()]) { t.closing = true; if (t.window) t.window.destroy(); else this.removeTab(t); }
+    for (const tab of [...this.tabs.values()]) { tab.closing = true; this.removeTab(tab); }
     this.session.webRequest.onBeforeRequest(null);
     this.closePromise = Promise.allSettled([closingProtection, this.writeChain, Promise.resolve().then(() => this.session.flushStorageData())]).then(results => {
       if (this.persistenceError) throw Object.assign(error('Browser shutdown could not confirm saved folders and pages.'), { code: 'BROWSER_SAVE_FAILED' });

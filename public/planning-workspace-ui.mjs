@@ -83,7 +83,7 @@ export function initPlanningWorkspaceUI({ mount, api, onOpenRun, onNewChat, onAr
       <section id="planning-organization" class="planning-organization" aria-label="Organize plans" hidden><h3 id="planning-organization-title"></h3><div id="planning-organization-fields"></div><div id="planning-organization-messages" aria-live="polite"></div><div id="planning-organization-actions"></div></section>
       <p id="planning-organization-receipt" class="planning-organization-receipt" role="status" hidden></p>
       <div id="planning-catalog-list" class="planning-catalog-list"><ul id="planning-outline" class="planning-outline" role="tree" aria-label="Plans by group" aria-describedby="planning-outline-help"></ul></div>
-      <p id="planning-outline-help" class="sr-only">Use arrow keys to navigate groups and plans. Right arrow expands a group; left arrow collapses it. Enter opens a plan. F2 renames the focused item.</p>
+      <p id="planning-outline-help" class="sr-only">Use arrow keys to navigate groups and plans. Right arrow expands a group; left arrow collapses it. Enter opens a plan. F2 renames the focused item. Each named group has a Remove button; its plans stay saved in Ungrouped.</p>
       <div id="planning-group-actions" class="planning-group-actions"></div><div id="planning-catalog-footer"></div>
     </aside>
     <section id="planning-board-panel" class="planning-board" aria-label="Saved plan"><div id="planning-task-bar" class="planning-task-bar"></div><div id="planning-load-status" role="status"></div><div id="planning-plan-mount"></div><div id="planning-empty" class="planning-workspace-empty" hidden>${glyph}<h2>A place to shape the work.</h2><p>Open a saved chat plan to refine its objective, steps and branches. New tasks create their plans here as the agent works.</p>${onNewChat ? action('new-chat', 'Start a task in chat') : ''}</div></section>
@@ -93,11 +93,11 @@ export function initPlanningWorkspaceUI({ mount, api, onOpenRun, onNewChat, onAr
   function focusCapture(region) {
     const active = document.activeElement; if (!active || !region.contains(active)) return null;
     const data = active.dataset || {};
-    return { active, field: data.planningField, organizationField: data.planningOrganizationField, outline: data.planningOutline, child: data.planningChild, childField: data.childField, dependency: data.planningDependency, action: data.planningAction, task: data.planningTask, draft: data.planningDraft, start: active.selectionStart, end: active.selectionEnd, direction: active.selectionDirection };
+    return { active, field: data.planningField, organizationField: data.planningOrganizationField, outline: data.planningOutline, child: data.planningChild, childField: data.childField, dependency: data.planningDependency, action: data.planningAction, groupId: data.planningGroupId, task: data.planningTask, draft: data.planningDraft, start: active.selectionStart, end: active.selectionEnd, direction: active.selectionDirection };
   }
   function focusRestore(saved, region) {
     if (!saved || saved.active.isConnected && region.contains(saved.active)) return;
-    const target = [...region.querySelectorAll('input,textarea,select,button,[data-planning-outline]')].find(element => saved.field ? element.dataset.planningField === saved.field : saved.organizationField ? element.dataset.planningOrganizationField === saved.organizationField : saved.outline ? element.dataset.planningOutline === saved.outline : saved.child != null ? element.dataset.planningChild === saved.child && element.dataset.childField === saved.childField : saved.dependency ? element.dataset.planningDependency === saved.dependency : saved.task ? element.dataset.planningTask === saved.task : saved.draft ? element.dataset.planningDraft === saved.draft : element.dataset.planningAction === saved.action);
+    const target = [...region.querySelectorAll('input,textarea,select,button,[data-planning-outline]')].find(element => saved.field ? element.dataset.planningField === saved.field : saved.organizationField ? element.dataset.planningOrganizationField === saved.organizationField : saved.outline ? element.dataset.planningOutline === saved.outline : saved.child != null ? element.dataset.planningChild === saved.child && element.dataset.childField === saved.childField : saved.dependency ? element.dataset.planningDependency === saved.dependency : saved.task ? element.dataset.planningTask === saved.task : saved.draft ? element.dataset.planningDraft === saved.draft : element.dataset.planningAction === saved.action && element.dataset.planningGroupId === saved.groupId);
     if (!target || target.disabled) return; target.focus({ preventScroll: true });
     if (typeof saved.start === 'number') try { target.setSelectionRange(saved.start, saved.end, saved.direction); } catch { /* Native selects do not expose text ranges. */ }
   }
@@ -146,7 +146,7 @@ export function initPlanningWorkspaceUI({ mount, api, onOpenRun, onNewChat, onAr
   }
   function renderGroupActions() {
     const state = controller.state, group = state.organization.groups.find(group => group.id === focusedGroup);
-    const markup = group ? `<p>${escape(group.name)}</p><div>${action('rename-group', 'Rename group', state.organizationDraft?.busy ? 'disabled' : '')}${action('remove-group', 'Remove group', state.organizationDraft?.busy ? 'disabled' : '')}</div>` : '<p>Select a group to rename or remove it.</p>';
+    const markup = group ? `<p>${escape(group.name)}</p><div>${action('rename-group', 'Rename group', state.organizationDraft?.busy ? 'disabled' : '')}</div>` : '<p>Remove a group using the button beside its name. Its plans stay saved in Ungrouped.</p>';
     if (markup !== groupActionsSignature) { groupActionsSignature = markup; replace($('#planning-group-actions'), markup); }
   }
   function renderCatalog() {
@@ -161,12 +161,15 @@ export function initPlanningWorkspaceUI({ mount, api, onOpenRun, onNewChat, onAr
         const item = document.createElement('li'), header = document.createElement('div'), chevron = document.createElement('span'), title = document.createElement('strong'), count = document.createElement('small'), children = document.createElement('ul'), empty = document.createElement('li');
         item.className = 'planning-outline-group'; item.setAttribute('role', 'treeitem'); item.setAttribute('aria-level', '1'); item.dataset.planningGroup = group.id; item.dataset.planningOutline = `group:${group.id}`;
         header.className = 'planning-outline-group-label'; chevron.className = 'planning-outline-chevron'; chevron.setAttribute('aria-hidden', 'true'); count.setAttribute('aria-hidden', 'true'); header.append(chevron, title, count);
+        const remove = group.id === 'ungrouped' ? null : document.createElement('button');
+        if (remove) { remove.setAttribute('type', 'button'); remove.className = 'planning-group-remove'; remove.dataset.planningAction = 'remove-group'; remove.dataset.planningGroupId = group.id; remove.textContent = 'Remove'; header.append(remove); }
         children.setAttribute('role', 'group'); children.className = 'planning-outline-children'; empty.setAttribute('role', 'none'); empty.className = 'planning-outline-empty'; item.append(header, children);
-        branch = { item, header, chevron, title, count, children, empty }; catalogGroups.set(group.id, branch);
+        branch = { item, header, chevron, title, count, children, empty, remove }; catalogGroups.set(group.id, branch);
       }
       if (!expandedGroups.has(group.id) || changedFilter && group.plans.length) expandedGroups.set(group.id, Boolean(group.plans.length));
       const expanded = expandedGroups.get(group.id), count = group.plans.length, total = Math.max(count, Number(group.planCount) || 0);
       branch.title.textContent = group.name; branch.count.textContent = total > count ? `${count}/${total}` : String(count); branch.chevron.textContent = expanded ? '▾' : '▸';
+      if (branch.remove) { branch.remove.setAttribute('aria-label', `Remove group ${group.name}`); branch.remove.title = `Remove ${group.name}; keep its plans in Ungrouped`; branch.remove.disabled = state.organization.revision === null || state.organizationDraft?.busy === true; }
       branch.item.setAttribute('aria-label', `${group.name}, ${count}${total > count ? ` of ${total} loaded` : ''} ${count === 1 ? 'plan' : 'plans'}`);
       branch.item.setAttribute('aria-expanded', String(expanded)); branch.item.setAttribute('aria-posinset', String(groupIndex + 1)); branch.item.setAttribute('aria-setsize', String(groups.length)); branch.children.hidden = !expanded;
       if (tree.children[groupIndex] !== branch.item) tree.insertBefore(branch.item, tree.children[groupIndex] || null);
@@ -220,7 +223,7 @@ export function initPlanningWorkspaceUI({ mount, api, onOpenRun, onNewChat, onAr
     }
     organizationReturnTarget = draft.mode === 'plan' ? `plan:${draft.taskId}` : `group:${draft.groupId}`;
     const removing = draft.mode === 'remove-group', namingPlan = draft.mode === 'plan', stale = draft.conflict || draft.uncertain || draft.revision !== state.organization.revision;
-    $('#planning-organization-title').textContent = ({ plan: 'Rename or move plan', 'create-group': 'Create a group', 'rename-group': 'Rename group', 'remove-group': 'Remove group' })[draft.mode];
+    $('#planning-organization-title').textContent = removing ? `Remove “${draft.label}”?` : ({ plan: 'Rename or move plan', 'create-group': 'Create a group', 'rename-group': 'Rename group' })[draft.mode];
     const groupOptions = option('', 'Ungrouped', draft.values.groupId) + state.organization.groups.map(group => option(group.id, group.name, draft.values.groupId)).join('');
     const signature = JSON.stringify([draft.mode, draft.taskId, draft.groupId, draft.values, state.organization.groups.map(group => [group.id, group.name])]);
     if (reason === 'organization-input') organizationFormSignature = signature;
@@ -313,13 +316,14 @@ export function initPlanningWorkspaceUI({ mount, api, onOpenRun, onNewChat, onAr
     if (compact && controller.state.taskId === id) ($('#planning-plan-mount [data-plan-node]') || $('[data-planning-action="objective"]'))?.focus({ preventScroll: true });
   }
   async function click(event) {
+    const target = event.target.closest?.('button');
     const outline = event.target.closest?.('[data-planning-outline]');
-    if (outline && mount.contains(outline)) {
+    if (outline && mount.contains(outline) && !target?.dataset.planningAction) {
       focusOutline(outline);
       if (outline.dataset.planningTask) return selectPlan(outline.dataset.planningTask);
       toggleGroup(outline.dataset.planningGroup); return;
     }
-    const target = event.target.closest?.('button'); if (!target || !mount.contains(target) || target.disabled) return;
+    if (!target || !mount.contains(target) || target.disabled) return;
     if (target.dataset.planningPane) { planUI.setEnlarged(false, { focusControl: false }); controller.setPane(target.dataset.planningPane); return; }
     if (target.dataset.planningTask) { await selectPlan(target.dataset.planningTask); return; }
     if (target.dataset.planningDraft) { controller.selectDraft(target.dataset.planningDraft); return; }
@@ -331,7 +335,7 @@ export function initPlanningWorkspaceUI({ mount, api, onOpenRun, onNewChat, onAr
     if (name === 'more') return controller.loadCatalog({ append: true });
     if (name === 'create-group') return openOrganization('create-group');
     if (name === 'rename-group') return openOrganization('rename-group', { groupId: focusedGroup });
-    if (name === 'remove-group') return openOrganization('remove-group', { groupId: focusedGroup });
+    if (name === 'remove-group') return openOrganization('remove-group', { groupId: target.dataset.planningGroupId });
     if (name === 'organize-plan') return openOrganization('plan');
     if (name === 'cancel-organization') {
       const current = controller.state.organizationDraft, key = current?.mode === 'plan' ? `plan:${current.taskId}` : `group:${current?.groupId}`;
@@ -352,7 +356,7 @@ export function initPlanningWorkspaceUI({ mount, api, onOpenRun, onNewChat, onAr
     if (event.defaultPrevented) return;
     if (event.key === 'Escape' && !event.ctrlKey && !event.metaKey && !event.altKey && planEnlarged) { event.preventDefault(); event.stopPropagation(); planUI.setEnlarged(false); return; }
     const outline = event.target.closest?.('[data-planning-outline]');
-    if (outline && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    if (outline && !event.target.closest?.('[data-planning-action]') && !event.ctrlKey && !event.metaKey && !event.altKey) {
       const nodes = outlineNodes(), index = nodes.indexOf(outline), groupId = outline.dataset.planningGroup, group = groupId ? catalogGroups.get(groupId) : null;
       if (['ArrowDown', 'ArrowUp', 'Home', 'End', 'ArrowRight', 'ArrowLeft', 'Enter', ' ', 'F2'].includes(event.key)) {
         event.preventDefault();

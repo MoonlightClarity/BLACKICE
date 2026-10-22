@@ -8,6 +8,8 @@ import path from 'node:path';
 import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey } from '../lib/browser.mjs';
 import { BrowserDiagnostics } from '../lib/browser-diagnostics.mjs';
 import { loadBrowserCompatibility } from '../desktop/browser-compatibility.mjs';
+import { BrowserPageLifetime } from '../desktop/browser-lifecycle.mjs';
+import { sameBrowserOwner, browserOwnsTab, browserOwnsFolder, browserDownloadProvenance } from '../lib/browser-access.mjs';
 
 const source = await readFile(new URL('../desktop/browser-driver.mjs', import.meta.url), 'utf8');
 
@@ -44,7 +46,8 @@ function fixture({ writeFile = async () => {}, loadURL = async () => {} } = {}) 
   protection.status = protection.tabStatus = () => ({});
   protection.forgetTab = () => {};
   const context = vm.createContext({ BrowserWindow: Window, session: { fromPartition: () => session }, EventEmitter,
-    createHash, randomUUID, path, browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, BrowserDiagnostics, loadBrowserCompatibility,
+    createHash, randomUUID, path, browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, BrowserDiagnostics, loadBrowserCompatibility, BrowserPageLifetime,
+    sameBrowserOwner, browserOwnsTab, browserOwnsFolder, browserDownloadProvenance,
     fs: { writeFile: async (file, value) => { writes.push(JSON.parse(value)); await writeFile(file, value); }, rename: async (...args) => { renames.push(args); } },
     setTimeout, clearTimeout, AbortSignal, structuredClone, URL,
   });
@@ -139,6 +142,56 @@ test('a late load failure from a crashed window cannot poison its replacement', 
   assert.equal(tab.loadError, null);
   assert.equal(tab.window, f.windows[1]);
   await f.driver.writeChain;
+});
+
+test('retired native events cannot mutate the replacement tab or detach its current refs', async () => {
+  const f = fixture(), tab = f.driver.newTab('https://example.test/current'); await tab.loading;
+  const old = tab.window, oldInstance = tab.instance;
+  old.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 1 });
+  f.driver.snapshot = async () => ({ frames: [] });
+  f.driver.watchNavigation = () => ({ wait: async () => {}, dispose() {} });
+  await f.driver.perform({ action: 'reload', tabId: tab.id });
+  const replacement = tab.window, revision = tab.revision, current = { marker: 'current element' };
+  tab.refs.set('current-ref', current); tab.credentialCaptureBlocked = true;
+  old.webContents.emit('did-fail-load', {}, -105, 'Old renderer failure', 'https://old.test/', true);
+  old.webContents.emit('page-title-updated', {}, 'Old renderer title');
+  old.webContents.emit('did-navigate-in-page', {}, 'https://old.test/');
+  old.webContents.emit('did-frame-navigate', {}, 'https://old.test/', 200, 'OK', true);
+  old.webContents.debugger.emit('message', {}, 'Page.javascriptDialogOpening', { type: 'alert', message: 'Old dialog' });
+  old.webContents.debugger.emit('detach'); old.emit('closed');
+  assert.equal(tab.window, replacement); assert.equal(tab.loadError, null);
+  assert.equal(tab.title, 'Test page'); assert.equal(tab.revision, revision);
+  assert.equal(tab.refs.get('current-ref'), current); assert.equal(tab.credentialCaptureBlocked, true);
+  assert.equal(tab.pendingInteraction, null); assert.equal(tab.instance.generation, oldInstance.generation + 1);
+  assert.equal(old.webContents.eventNames().length, 0); assert.equal(old.webContents.debugger.eventNames().length, 0);
+  assert.equal(oldInstance.listeners.size, 0); assert.equal(oldInstance.waiters.size, 0);
+  await f.driver.writeChain;
+});
+
+test('an explicit close retires pending native work and waits for its saved removal', async () => {
+  let release, entered;
+  const writing = new Promise(resolve => { entered = resolve; });
+  const blocked = new Promise(resolve => { release = resolve; });
+  const f = fixture({ writeFile: async () => { entered(); await blocked; } });
+  const tab = f.driver.newTab('https://example.test/current'); await tab.loading;
+  const instance = tab.instance, pending = f.driver.pageWork(tab, new Promise(() => {}));
+  const interrupted = assert.rejects(pending, { code: 'BROWSER_CLOSED' });
+  let completed = false;
+  const closing = f.driver.perform({ action: 'close', tabId: tab.id }).then(value => { completed = true; return value; });
+  await writing; await interrupted;
+  assert.equal(completed, false); assert.equal(f.driver.tabs.has(tab.id), false);
+  assert.equal(instance.waiters.size, 0); assert.equal(instance.listeners.size, 0);
+  release(); const result = await closing;
+  assert.equal(result.persistence.healthy, true); assert.equal(result.tabs.length, 0);
+  assert.equal(f.writes.at(-1).tabs.length, 0, 'the successful close receipt includes persisted removal');
+});
+
+test('a close whose disk write fails reports that the tab changed in memory', async () => {
+  const f = fixture({ writeFile: async () => { throw new Error('Disk unavailable'); } });
+  const tab = f.driver.newTab('https://example.test/current', { restore: true });
+  await assert.rejects(f.driver.perform({ action: 'close', tabId: tab.id }), error => error.code === 'BROWSER_SAVE_FAILED' && error.actionDispatched === true);
+  assert.equal(f.driver.tabs.has(tab.id), false);
+  assert.equal(f.driver.status().persistence.healthy, false);
 });
 
 test('a blocked disk retains only the newest pending browser state and the save receipt drains it', async () => {

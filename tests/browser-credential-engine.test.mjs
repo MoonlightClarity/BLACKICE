@@ -124,13 +124,15 @@ test('a read-only assigned worker can inspect metadata but cannot generate or fi
   done(await f.settled(f.start(graph).id)); assert.equal(f.generated.length, 0);
 });
 
-test('a recorded human MFA challenge prevents credential mutations while metadata remains inspectable', async t => {
+test('a recorded human MFA challenge applies to its origin while metadata and unrelated credentials remain usable', async t => {
   const f = await fixture(t, async options => {
     const reported = await options.onToolCall({ name: 'relay_browser_signin', arguments: { site: 'https://credentials.example.com/challenge', reason: 'verification', evidence: 'verification-page' } });
     assert.equal(reported.success, true);
-    const generated = await call(options, generation); assert.equal(generated.success, false); assert.match(generated.contentItems[0].text, /requires a human action/);
-    assert.equal((await call(options, { action: 'list', origin })).success, true);
+    const blockedOrigin = 'https://credentials.example.com';
+    const generated = await call(options, { ...generation, origin: blockedOrigin }); assert.equal(generated.success, false); assert.equal(payload(generated).code, 'BROWSER_SIGNIN_REQUIRED');
+    assert.equal((await call(options, { action: 'list', origin: blockedOrigin })).success, true);
+    assert.equal((await call(options, generation)).success, true, 'a challenge at a different origin does not block this authorized signup');
     return { output: 'The observed MFA step requires the user.' };
   });
-  done(await f.settled(f.start().id)); assert.equal(f.generated.length, 0);
+  done(await f.settled(f.start().id)); assert.equal(f.generated.length, 1); assert.equal(f.generated[0].origin, origin);
 });

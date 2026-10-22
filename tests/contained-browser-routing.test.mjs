@@ -27,7 +27,7 @@ test('contained ownership and sign-in pause do not gate configured native browse
    assert.equal(opened.success,true);assert.equal(opened.receipt.actionDispatched,true);
    assert.equal((await options.onToolCall({name:'relay_browser',arguments:{action:'open',browser:'relay',url:'https://example.com/'}})).success,true);
    const report=await options.onToolCall({name:'relay_browser_signin',arguments:{site:'https://example.com/',reason:'sign-in',evidence:'login-form'}});assert.equal(report.success,true);assert.match(report.contentItems[0].text,/Observe/);
-   const repeat=await options.onToolCall({name:'relay_browser',arguments:{action:'click',tabId:'contained-tab',ref:'submit'}});assert.equal(repeat.success,false);assert.match(repeat.contentItems[0].text,/actions are paused/);
+   const repeat=await options.onToolCall({name:'relay_browser',arguments:{action:'click',tabId:'contained-tab',ref:'submit'}});assert.equal(repeat.success,false);assert.equal(repeat.code,'BROWSER_SIGNIN_REQUIRED');assert.equal(JSON.parse(repeat.contentItems[0].text).actionDispatched,false);
    const nativeAfterPause=await options.onToolCall({name:'relay_connections',arguments:{action:'call',connectionId:config.id,name:'run',arguments:{code:'return await browser.pages.list();'}}});
    assert.equal(nativeAfterPause.success,true);assert.equal(nativeAfterPause.receipt.actionDispatched,true);
    return{output:'Contained sign-in is paused; the configured native browser remains available.'};

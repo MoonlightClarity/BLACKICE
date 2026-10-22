@@ -181,7 +181,7 @@ test('active caller cancellation quarantines an uncooperative adapter and observ
   const driver = { perform: (_args, { signal }) => { calls++; adapterSignal = signal; return calls === 1 ? held.promise : Promise.resolve({ tabId: 'one' }); } };
   const browser = fixtureWorkspace({ driver, timeoutMs: 1000, shutdownTimeoutMs: 50 });
   t.after(async () => { held.resolve({}); await browser.close().catch(() => {}); });
-  const controller = new AbortController(), active = browser.perform({ action: 'fill', text: 'draft' }, { signal: controller.signal });
+  const controller = new AbortController(), active = browser.perform({ action: 'fill', ref: 'observed-field', text: 'draft' }, { signal: controller.signal });
   const cancelled = assert.rejects(active, { code: 'ABORT_ERR' }); await tick(); controller.abort(); await cancelled;
   assert.equal(adapterSignal.aborted, true); assert.equal(browser.status().acceptingActions, false);
   await assert.rejects(browser.perform({ action: 'click', ref: 'send' }), { code: 'BROWSER_RECOVERY_REQUIRED' });
@@ -238,7 +238,7 @@ test('a disconnect timeout keeps its admission barrier until physical completion
   const driver = { drivers: { firefox: { disconnect: async () => { disconnects++; } } }, perform: () => action.promise };
   const browser = fixtureWorkspace({ driver, timeoutMs: 1000, shutdownTimeoutMs: 25 });
   t.after(async () => { action.resolve({}); await browser.close().catch(() => {}); });
-  const active = browser.perform({ action: 'fill', text: 'draft' }), cancelled = assert.rejects(active, { code: 'ABORT_ERR' }); await tick();
+  const active = browser.perform({ action: 'fill', ref: 'observed-field', text: 'draft' }), cancelled = assert.rejects(active, { code: 'ABORT_ERR' }); await tick();
   const disconnecting = browser.disconnectFirefox(), timedOut = assert.rejects(disconnecting, { code: 'BROWSER_DISCONNECT_TIMEOUT' });
   await cancelled; await timedOut;
   assert.equal(browser.disconnectFirefox(), disconnecting); assert.equal(disconnects, 1);

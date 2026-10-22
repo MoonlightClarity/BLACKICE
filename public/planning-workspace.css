@@ -52,6 +52,8 @@ html[data-blackice-ui] body #app .planning-outline-group-label { display:flex;al
 html[data-blackice-ui] body #app .planning-outline-group-label:hover { background:linear-gradient(125deg,#47707b25,#35576120); }
 html[data-blackice-ui] body #app .planning-outline-group-label strong { flex:1;min-width:0;overflow-wrap:anywhere;font-size:13px;font-weight:550; }
 html[data-blackice-ui] body #app .planning-outline-group-label small { flex:0 0 auto;min-width:22px;padding:2px 6px;text-align:center;border-radius:4px;background:linear-gradient(125deg,#42616d38,#2c4b5833);color:#b8d2dc;font-size:12px; }
+html[data-blackice-ui] body #app #planning-workspace .planning-group-remove { flex:0 0 auto;min-height:34px!important;padding:5px 8px!important;font-size:12px!important;color:#d5dfe5;border-color:#647b854f!important;background:linear-gradient(125deg,#3a505a42,#22374030)!important; }
+html[data-blackice-ui] body #app #planning-workspace .planning-group-remove:hover { border-color:#b0c8d3a8!important;background:linear-gradient(125deg,#4b657268,#2a43534d)!important; }
 html[data-blackice-ui] body #app .planning-outline-chevron { width:12px;flex:0 0 12px;text-align:center;color:#99c1ce;font-size:12px; }
 html[data-blackice-ui] body #app .planning-outline-children { margin:0 0 0 11px;padding:0 0 0 10px;border-left:1px solid #638c9970; }
 html[data-blackice-ui] body #app .planning-outline-children > li { position:relative;min-width:0; }

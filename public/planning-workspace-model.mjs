@@ -219,7 +219,7 @@ export function createPlanningWorkspaceController({ api, onChange = () => {}, on
       if (rememberOrganization(result)) applyOrganizationOperation(operation, current.revision);
       ++catalogIntent; catalogAbort?.abort(); state.catalogLoading = false;
       state.organizationDraft = null;
-      state.organizationReceipt = ({ plan: 'Plan name and group saved.', 'create-group': 'Group created.', 'rename-group': 'Group renamed.', 'remove-group': 'Group removed. Its plans and Swarms are now ungrouped.' })[current.mode];
+      state.organizationReceipt = ({ plan: 'Plan name and group saved.', 'create-group': 'Group created.', 'rename-group': 'Group renamed.', 'remove-group': `Removed “${current.label}”. Its plans and Swarms are now in Ungrouped.` })[current.mode];
       if (state.active) await loadCatalog();
       notify('organization'); return true;
     } catch (error) {
