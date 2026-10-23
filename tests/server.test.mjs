@@ -165,8 +165,17 @@ test('HTTP Stop all still stops every chat and waits for queue saves when browse
 });
 
 test('live execution updates publish parallel admission, stopping acknowledgement, and the freed slots', async t => {
-  const holds = [deferred(), deferred()], calls = [], runtime = new FakeRuntime();
-  runtime.runAgent = async options => { await recordFixturePlan(options); const index = calls.length; calls.push(options); return holds[index].promise; };
+  const holds = [deferred(), deferred()], calls = [], arrivalOrder = [], secondRecorded = deferred(), runtime = new FakeRuntime();
+  const inputs = ['FIRST LIVE CAPACITY CHAT', 'SECOND LIVE CAPACITY CHAT'];
+  runtime.runAgent = async options => {
+    const index = inputs.findIndex(input => options.prompt.includes(input)); assert.ok(index >= 0, 'the fixture call belongs to an exact submitted chat');
+    await recordFixturePlan(options);
+    // Concurrent plan saves may finish in either order. Deliberately finish
+    // the second first; acknowledgements must follow chat identity, not arrival.
+    if (index === 0) await secondRecorded.promise;
+    calls[index] = options; arrivalOrder.push(index); if (index === 1) secondRecorded.resolve();
+    return holds[index].promise;
+  };
   const { app, request, auth, url } = await application(t, { runtime, maxConcurrentRuns: 2 }); await app.learning.updateSettings({ mode: 'manual' });
   const controller = new AbortController(), stream = await fetch(url + '/api/events', { headers: auth, signal: controller.signal }); assert.equal(stream.status, 200);
   const reader = stream.body.getReader(), events = []; let buffer = '';
@@ -182,7 +191,7 @@ test('live execution updates publish parallel admission, stopping acknowledgemen
   };
   const post = (route, body = {}) => request(route, { method: 'POST', headers: auth, body });
   try {
-    const first = await post('/api/runs', { workflow: graph, input: 'FIRST LIVE CAPACITY CHAT' }), second = await post('/api/runs', { workflow: graph, input: 'SECOND LIVE CAPACITY CHAT' }); await until(() => calls.length === 2, 'live capacity fixtures start');
+    const first = await post('/api/runs', { workflow: graph, input: inputs[0] }), second = await post('/api/runs', { workflow: graph, input: inputs[1] }); await until(() => calls[0] && calls[1], 'live capacity fixtures start'); assert.deepEqual(arrivalOrder, [1, 0]);
     const admitted = await execution(value => value.activeRunCount === 2 && value.activeRunIds.includes(first.data.id) && value.activeRunIds.includes(second.data.id)); assert.equal(admitted.availableSlots, 0); assert.equal(admitted.capacity, 2);
     assert.equal((await post(`/api/runs/${first.data.id}/cancel`)).status, 200);
     const stopping = await execution(value => value.activeRunCount === 2 && value.stopping); assert.equal(stopping.availableSlots, 0); assert.equal(stopping.settling, true);
@@ -191,7 +200,7 @@ test('live execution updates publish parallel admission, stopping acknowledgemen
     holds[1].resolve({ output: 'Second fixture reply.', threadId: 'live-capacity-second' });
     const idle = await execution(value => value.activeRunCount === 0); assert.equal(idle.availableSlots, 2); assert.deepEqual(idle.activeRunIds, []); assert.equal(idle.activeRunId, null);
     assert.equal((await request('/api/status', { headers: auth })).data.execution.availableSlots, idle.availableSlots);
-  } finally { holds.forEach(hold => hold.resolve({ output: 'Fixture cleanup.' })); await reader.cancel().catch(() => {}); controller.abort(); }
+  } finally { secondRecorded.resolve(); holds.forEach(hold => hold.resolve({ output: 'Fixture cleanup.' })); await reader.cancel().catch(() => {}); controller.abort(); }
 });
 
 test('parallel Relay instances retain distinct browser cookies without authenticating each other', async t => {

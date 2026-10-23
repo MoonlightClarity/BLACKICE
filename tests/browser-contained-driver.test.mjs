@@ -182,6 +182,39 @@ test('direct text enters the observed document through browser input without ech
   assertContained(windows[0]);
 });
 
+test('form edits and hover enforce supplied document identity before touching an observed ref', async t => {
+  const { driver } = await fixture(t), tab = driver.newTab('https://careers.example.test/application'); await tab.loading;
+  const effects = [], guards = [];
+  driver.element = async (_tab, args, action) => { effects.push(action); return { frame: {}, result: action === 'fill' ? { filled: true } : action === 'select' ? { selected: args.value } : { x: 20, y: 20 } }; };
+  driver.capture = async () => ({ retries: 0 });
+  driver.browserPoint = async () => ({ x: 20, y: 20 });
+  driver.pointerInput = async (_tab, _point, action, _signal, expected) => { guards.push(expected); effects.push(action); };
+  const guard = { browser: 'relay', tabId: tab.id, expectedUrl: tab.url, expectedDocumentId: `${tab.id}:${tab.revision}` };
+  for (const action of ['fill', 'select', 'hover']) {
+    const request = { ...guard, action, ref: 'observed-field', ...(action === 'fill' ? { text: 'Owned draft' } : action === 'select' ? { value: 'choice' } : {}) };
+    const before = effects.length;
+    for (const changed of [{ expectedDocumentId: `${tab.id}:old` }, { expectedUrl: 'https://careers.example.test/other' }]) {
+      await assert.rejects(driver.perform({ ...request, ...changed }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+      assert.equal(effects.length, before, 'A stale guard must fail before any renderer or pointer work.');
+    }
+    const result = await driver.perform(request);
+    assert.ok(result.receipt);
+    assert.ok(effects.length > before);
+  }
+  assert.equal(guards[0].expectedDocumentId, guard.expectedDocumentId);
+  assert.equal(guards[0].expectedUrl, guard.expectedUrl);
+  const { expectedDocumentId, expectedUrl, ...refOnly } = { ...guard, action: 'fill', ref: 'observed-field', text: 'Legacy draft' };
+  assert.equal((await driver.perform(refOnly)).receipt.filled, true, 'Existing ref-only fills remain supported.');
+});
+
+test('a guarded contenteditable fill cannot insert text after its observed document changes', async t => {
+  const { driver, windows } = await fixture(t), tab = driver.newTab('https://careers.example.test/application'); await tab.loading;
+  const guard = { browser: 'relay', tabId: tab.id, expectedUrl: tab.url, expectedDocumentId: `${tab.id}:${tab.revision}` };
+  driver.element = async () => { tab.revision++; return { result: { needsTrustedTextInput: true } }; };
+  await assert.rejects(driver.perform({ ...guard, action: 'fill', ref: 'observed-editor', text: 'Owned draft' }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+  assert.equal(windows[0].protocol.filter(call => call.method === 'Input.insertText').length, 0);
+});
+
 test('guarded human preview clicks release the input queue without waiting or scanning the page', async t => {
   const { driver, windows } = await fixture(t), tab = driver.newTab('https://signin.example.test/'); await tab.loading;
   const browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());

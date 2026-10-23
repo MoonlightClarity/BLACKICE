@@ -70,6 +70,31 @@ for (const fallback of [false, true]) {
     const sensitive = parsed(await handler(call({ action: 'search', query: 'ACTUAL NEEDLE', caseSensitive: true })));
     assert.ok(sensitive.engine === 'rg' ? !sensitive.output : sensitive.matches.length === 0);
   });
+
+  test(`${fallback ? 'filesystem fallback' : 'ripgrep when available'} reports pipe queries as one literal instead of independent term searches`, async t => {
+    const { handler, cwd } = await harness(t, fallback ? { rgCommand: '__relay_missing_search_executable__' } : {});
+    const file = path.join(cwd, 'application-history.txt'), query = 'YipitData|6397670';
+    await writeFile(file, 'Prior application: YipitData\nPosting ID: 6397670\n');
+    const absent = parsed(await handler(call({ action: 'search', query })));
+    assert.equal(absent.matchMode, 'literal'); assert.equal(absent.query, query);
+    assert.equal(absent.path, cwd); assert.equal(absent.truncated, false);
+    assert.ok(absent.engine === 'rg' ? absent.output === '' : absent.matches.length === 0);
+    assert.match(absent.note, /exact literal.*reported search coverage/i);
+    assert.match(absent.note, /separate/i);
+    if (fallback) assert.equal(absent.engine, 'filesystem');
+    t.diagnostic(`Search engine exercised: ${absent.engine}`);
+    for (const term of ['YipitData', '6397670']) {
+      const found = parsed(await handler(call({ action: 'search', query: term })));
+      assert.equal(found.matchMode, 'literal'); assert.equal(found.query, term);
+      assert.ok(found.engine === 'rg' ? found.output.includes(term) : found.matches.some(item => item.text.includes(term)));
+      assert.equal(found.note, undefined);
+    }
+    await writeFile(file, 'A literal marker: YipitData|6397670\n');
+    const exact = parsed(await handler(call({ action: 'search', query })));
+    assert.equal(exact.matchMode, 'literal'); assert.equal(exact.query, query);
+    assert.ok(exact.engine === 'rg' ? exact.output.includes(query) : exact.matches.some(item => item.text.includes(query)));
+    assert.equal(exact.note, undefined, 'The exact pipe text remains searchable without query rewriting.');
+  });
 }
 
 test('real shell runs return their working directory, stderr and actual nonzero exit code', async t => {
@@ -81,6 +106,16 @@ test('real shell runs return their working directory, stderr and actual nonzero 
   assert.ok(ran.stdout.toLowerCase().includes(other.toLowerCase())); assert.equal(ran.timedOut, false);
   const success = await handler(call({ action: 'run', command: process.platform === 'win32' ? "Write-Output 'verified-shell-result'" : "printf 'verified-shell-result\\n'" }));
   assert.equal(success.success, true); assert.equal(parsed(success).exitCode, 0); assert.match(parsed(success).stdout, /verified-shell-result/);
+});
+
+test('bounded filesystem search previews retain literal mode and the exact query', async t => {
+  const { handler, cwd } = await harness(t, { rgCommand: '__relay_missing_search_executable__' });
+  const query = 'audit|marker';
+  await writeFile(path.join(cwd, 'many.txt'), (query + ' ' + 'x'.repeat(480) + '\n').repeat(100));
+  const response = await handler(call({ action: 'search', query, limit: 100 })), found = parsed(response);
+  assert.equal(response.success, true); assert.ok(response.contentItems[0].text.length <= 40000);
+  assert.equal(found.matchMode, 'literal'); assert.equal(found.query, query); assert.equal(found.engine, 'filesystem');
+  assert.equal(found.truncated, true); assert.ok(found.preview);
 });
 
 test('only an executor-supplied origin reaches the command child and inherited case variants are stripped', async t => {

@@ -68,7 +68,21 @@ export function newerTaskState(previous, incoming, taskId) {
   const valid = value => value && typeof value === 'object' && !Array.isArray(value) && typeof taskId === 'string' && taskId.length > 0 && value.taskId === taskId && Number.isSafeInteger(value.revision) && value.revision > 0;
   const saved = valid(previous) ? previous : undefined;
   if (!valid(incoming)) return saved;
-  return saved && saved.revision >= incoming.revision ? saved : incoming;
+  const plan = saved && saved.revision >= incoming.revision ? saved : incoming;
+  const previousExecution = saved?.executionObservations, incomingExecution = incoming.executionObservations;
+  const previousTotal = previousExecution?.total || 0, incomingTotal = incomingExecution?.total || 0;
+  let execution = incomingExecution && (!previousExecution || incomingTotal > previousTotal) ? incomingExecution : previousExecution;
+  const previousHealthAt = Date.parse(previousExecution?.healthObservedAt || '') || 0, incomingHealthAt = Date.parse(incomingExecution?.healthObservedAt || '') || 0;
+  if (incomingExecution?.unavailable && (!previousHealthAt || !incomingHealthAt || incomingHealthAt >= previousHealthAt)) {
+    // A failed read has no journal sequence. Preserve last-known receipts while
+    // making the current loss of access visible instead of treating it as zero.
+    execution = { ...execution, unavailable: true, code: incomingExecution.code, note: incomingExecution.note, ...(incomingHealthAt ? { healthObservedAt: incomingExecution.healthObservedAt } : {}) };
+  } else if (previousExecution?.unavailable) {
+    if (incomingExecution && !incomingExecution.unavailable && (incomingTotal >= previousTotal && incomingHealthAt > previousHealthAt || incomingTotal > previousTotal && !incomingHealthAt)) {
+      execution = { ...previousExecution, ...incomingExecution }; delete execution.unavailable; delete execution.code;
+    } else if (execution !== previousExecution) execution = { ...execution, unavailable: true, code: previousExecution.code, note: previousExecution.note, ...(previousExecution.healthObservedAt ? { healthObservedAt: previousExecution.healthObservedAt } : {}) };
+  } else if (incomingExecution && !incomingExecution.unavailable && incomingTotal >= previousTotal && incomingHealthAt > previousHealthAt) execution = { ...previousExecution, ...incomingExecution };
+  return execution && execution !== plan.executionObservations ? { ...plan, executionObservations: execution } : plan;
 }
 
 function withTaskState(run, taskState) {
@@ -124,6 +138,9 @@ export function reduceRunEvent(run, event) {
     const taskState = newerTaskState(run.taskState, data.state, run.taskId || run.id);
     if (taskState) next.taskState = taskState;
     else delete next.taskState;
+  }
+  if (data.type === 'task.execution' && run.taskState && data.taskId === (run.taskId || run.id)) {
+    next.taskState = newerTaskState(run.taskState, { ...run.taskState, executionObservations: data.executionObservations }, run.taskId || run.id);
   }
   const previous = run.nodes?.[nodeId];
   if (!previous) return next;

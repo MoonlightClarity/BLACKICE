@@ -73,6 +73,28 @@ test('authorized direct organization and filtering dispatch once without new gra
   await assert.rejects(api.call('blackice_browser_action', { requestId: 'missing-write', action: 'protection', operation: 'global', enabled: false }, reader), { code: 'DIRECT_SCOPE_REQUIRED' });
 });
 
+test('direct form fills, selections and hover retain complete optional guards and deduplicate execution', async t => {
+  const { api, calls } = await fixture(t);
+  const guard = { tabId: 'one', expectedUrl: 'https://example.test/', expectedDocumentId: 'one:1' };
+  for (const action of ['fill', 'select', 'hover']) {
+    const args = { requestId: `guarded-${action}`, ...guard, action, ref: 'observed-control', ...(action === 'fill' ? { text: 'Owned draft' } : action === 'select' ? { value: 'available-option' } : {}) };
+    const job = await api.call('blackice_browser_action', args, client), done = await waitJob(api, job.jobId);
+    assert.equal(done.status, 'succeeded', JSON.stringify(done));
+    assert.deepEqual(calls.at(-1), { ...Object.fromEntries(Object.entries(args).filter(([key]) => key !== 'requestId')), browser: 'relay' });
+    const count = calls.length, repeated = await api.call('blackice_browser_action', args, client);
+    assert.equal(repeated.jobId, job.jobId); assert.equal(repeated.existing, true); assert.equal(calls.length, count);
+    for (const [index, missing] of ['expectedUrl', 'expectedDocumentId'].entries()) {
+      const incomplete = { ...args, requestId: `incomplete-${action}-${index}` }; delete incomplete[missing];
+      await assert.rejects(api.call('blackice_browser_action', incomplete, client), { code: 'DIRECT_REQUEST_INVALID' });
+    }
+  }
+  assert.equal(calls.length, 3);
+  assert.equal((await api.listJobs(client)).total, 3, 'Incomplete guards never create durable jobs.');
+  await assert.rejects(api.call('blackice_browser_action', { requestId: 'guarded-foreign', action: 'fill', ...guard, tabId: 'other', ref: 'observed-control', text: 'Owned draft' }, client), { code: 'BROWSER_TAB_OWNERSHIP' });
+  await assert.rejects(api.call('blackice_browser_action', { requestId: 'guarded-no-write', action: 'fill', ...guard, ref: 'observed-control', text: 'Owned draft' }, { ...client, scopes: ['read', 'browser:read'] }), { code: 'DIRECT_SCOPE_REQUIRED' });
+  assert.equal(calls.length, 3);
+});
+
 test('an exact direct dialog decision resolves the pending interaction without replaying its original click or storing prompt text', async t => {
   const { api, directory, calls } = await fixture(t, { pending: { ...interaction }, inspect: true });
   const blocked = await api.call('blackice_browser_action', { requestId: 'original-click', action: 'click', tabId: 'one', ref: 'observed' }, client), waiting = await waitJob(api, blocked.jobId);

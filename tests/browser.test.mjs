@@ -23,6 +23,28 @@ test('focused typing requires explicit contained ownership and a complete docume
   await browser.perform(valid, { source: 'user' }); assert.deepEqual(calls, [valid]);
 });
 
+test('guarded form fill, selection and hover cross the tool boundary without losing the observed identity', async t => {
+  const calls = [], browser = fixtureWorkspace({ driver: { status: () => ({ available: true, contained: true }), perform: async args => { calls.push(args); return { tabId: args.tabId }; } } });
+  t.after(() => browser.close());
+  const handler = createBrowserToolHandler({ browser });
+  const guard = { browser: 'relay', tabId: 'owned-tab', expectedUrl: 'https://careers.example.test/application', expectedDocumentId: 'owned-tab:9' };
+  for (const action of ['fill', 'select', 'hover']) {
+    const request = { ...guard, action, ref: 'observed-field', ...(action === 'fill' ? { text: 'A real draft' } : action === 'select' ? { value: 'available-option' } : {}) };
+    const response = await handler({ name: 'relay_browser', arguments: request });
+    assert.equal(response.success, true, `${action} should accept the same complete guard advertised for page input`);
+    assert.deepEqual(calls.at(-1), request);
+    const dispatched = calls.length;
+    for (const override of [{ expectedDocumentId: undefined }, { expectedUrl: undefined }, { expectedDocumentId: '' }, { expectedUrl: '' }, { expectedUrl: 'file:///private' }]) {
+      await assert.rejects(browser.perform({ ...request, ...override }), { code: 'BROWSER_VALIDATION' });
+    }
+    assert.equal(calls.length, dispatched, 'An incomplete guard must not reach the driver.');
+  }
+  await assert.rejects(browser.perform({ ...guard, action: 'read' }), { code: 'BROWSER_VALIDATION' });
+  const legacy = { action: 'fill', browser: 'relay', tabId: 'owned-tab', ref: 'observed-field', text: 'Ref-only draft' };
+  assert.equal((await handler({ name: 'relay_browser', arguments: legacy })).success, true);
+  assert.deepEqual(calls.at(-1), legacy);
+});
+
 test('tools resolve observed dialogs with the same exact identity checks as local input', async t => {
   const calls = [], browser = fixtureWorkspace({ driver: { status: () => ({ available: true, contained: true }), perform: async (args, options) => { calls.push({ args, source: options.source }); return { receipt: { decided: true } }; } } });
   t.after(() => browser.close());
