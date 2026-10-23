@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { normalizeTaskPlan, runtimeTaskPlan, taskPlanProgress, TASK_PLAN_LIMITS } from '../lib/task-plan.mjs';
-import { TaskStateStore, TASK_TOOL, TASK_TOOL_V5, TASK_TOOL_V4, TASK_TOOL_V3, PREVIOUS_TASK_TOOL, LEGACY_TASK_TOOL, TASK_INSTRUCTIONS, TASK_INSTRUCTIONS_V5, TASK_INSTRUCTIONS_V4, TASK_INSTRUCTIONS_V3, PREVIOUS_TASK_INSTRUCTIONS, LEGACY_TASK_INSTRUCTIONS, taskToolForVersion, taskInstructionsForVersion, createTaskToolHandler } from '../lib/task-state.mjs';
+import { TaskStateStore, TASK_TOOL, TASK_TOOL_V6, TASK_TOOL_V5, TASK_TOOL_V4, TASK_TOOL_V3, PREVIOUS_TASK_TOOL, LEGACY_TASK_TOOL, TASK_INSTRUCTIONS, TASK_INSTRUCTIONS_V6, TASK_INSTRUCTIONS_V5, TASK_INSTRUCTIONS_V4, TASK_INSTRUCTIONS_V3, PREVIOUS_TASK_INSTRUCTIONS, LEGACY_TASK_INSTRUCTIONS, taskToolForVersion, taskInstructionsForVersion, createTaskToolHandler } from '../lib/task-state.mjs';
 import { BUILTIN_METHODS, BUILTIN_TASK_TYPES, BUILTIN_STEP_TYPES } from '../lib/process-ontology.mjs';
 import { MethodStore } from '../lib/methods.mjs';
 
@@ -194,17 +194,18 @@ test('plan revisions retain external recovery guards and never turn an uncertain
   assert.match(await store.getContext(state.taskId, { maxChars: 512 }), /Inspect the destination before any retry/);
 });
 
-test('task tool versions 1 through 5 retain their exact native catalogs and instructions', () => {
+test('task tool versions 1 through 6 retain their exact native catalogs and instructions', () => {
   const expected = [
     [LEGACY_TASK_TOOL, LEGACY_TASK_INSTRUCTIONS, '7d35a411c732a452b8906d442e7faa93bbf0885a8e819402af8a55ecf0c86813', 'a7461d87b42633ca51a8a580fc63da6bc18062f3df90805e08a16b35b37bb396'],
     [PREVIOUS_TASK_TOOL, PREVIOUS_TASK_INSTRUCTIONS, '85ab060ad0ea909aa1515c43c2e1be1de59c6b4c03a2233c8a9e84167b2ae62a', '020f26e500ee6f5cbe341f0a3833db2287bc79abb84d92b4830f0134c1ab19b9'],
     [TASK_TOOL_V3, TASK_INSTRUCTIONS_V3, '01f7df1da9f1ed0785c8009ebda7c39aec1d7d7fc97b6d971512a7e9254e7be6', 'da77363a37dd7ecff9440e5fdb7bd19666187b24ae59c5a6510941d3adf22b60'],
     [TASK_TOOL_V4, TASK_INSTRUCTIONS_V4, '6fed41dec09160afd7b66a680808aed672c53677c8857a70e7113712d3fc68d0', '17676fbf975245ee700e175a6f905b2334b59df03f1618fbd75c39a41feb1bfb'],
-    [TASK_TOOL_V5, TASK_INSTRUCTIONS_V5, '7ef57b1bf5e36f753a400ce262af91a5044af294c6552c9cbba7fb26a78592ee', '66de27e4b19f66cbf2ee488a4dcc38b76c02b56d95b13b3897f9434ef86a87b2']
+    [TASK_TOOL_V5, TASK_INSTRUCTIONS_V5, '7ef57b1bf5e36f753a400ce262af91a5044af294c6552c9cbba7fb26a78592ee', '66de27e4b19f66cbf2ee488a4dcc38b76c02b56d95b13b3897f9434ef86a87b2'],
+    [TASK_TOOL_V6, TASK_INSTRUCTIONS_V6, 'a690b71995ce9e64e720e2b6c476592e75b2f342e62def14e885e6de03ed46d6', '6c56b3ff76f9ea9822c66d6a3b1254083ca86c1ef9f944fd256cea8e60e625d6']
   ];
   expected.forEach(([tool, instructions, toolHash, instructionHash], index) => { assert.equal(taskToolForVersion(index + 1), tool); assert.equal(taskInstructionsForVersion(index + 1), instructions); assert.equal(digest(tool), toolHash); assert.equal(digest(instructions), instructionHash); });
-  assert.equal(taskToolForVersion(6), TASK_TOOL); assert.equal(taskInstructionsForVersion(6), TASK_INSTRUCTIONS); assert.ok(TASK_TOOL.inputSchema.properties.action.enum.includes('describe')); assert.ok(TASK_TOOL.inputSchema.properties.steps.items.properties.kind);
-  assert.throws(() => taskToolForVersion(7), { code: 'TASK_SCHEMA_UNSUPPORTED' }); assert.match(TASK_INSTRUCTIONS, /normal way to work on every request/); assert.doesNotMatch(TASK_INSTRUCTIONS, /need no saved plan/);
+  assert.equal(taskToolForVersion(7), TASK_TOOL); assert.equal(taskInstructionsForVersion(7), TASK_INSTRUCTIONS); assert.ok(TASK_TOOL.inputSchema.properties.action.enum.includes('describe')); assert.ok(TASK_TOOL.inputSchema.properties.steps.items.properties.kind);
+  assert.throws(() => taskToolForVersion(8), { code: 'TASK_SCHEMA_UNSUPPORTED' }); assert.match(TASK_INSTRUCTIONS, /normal way to work on every request/); assert.doesNotMatch(TASK_INSTRUCTIONS, /need no saved plan/);
 });
 
 test('legacy handlers reject new actions and schema fields instead of silently executing undeclared capabilities', async t => {
