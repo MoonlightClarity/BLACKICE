@@ -106,11 +106,16 @@ export class DesktopRestartController {
     if (!active.armed && this.active === active) this.active = null;
   }
   async persist(receipts) {
-    const temporary = `${this.file}.${randomUUID()}.tmp`; let handle;
+    const temporary = `${this.file}.${randomUUID()}.tmp`, encoded = JSON.stringify({ version: 1, receipts }) + '\n'; let handle;
     try {
       await this.io.mkdir(this.profileDir, { recursive: true });
-      handle = await this.io.open(temporary, 'wx', 0o600); await handle.writeFile(JSON.stringify({ version: 1, receipts }) + '\n'); await handle.sync(); await handle.close(); handle = null;
-      await this.io.rename(temporary, this.file);
+      handle = await this.io.open(temporary, 'wx', 0o600); await handle.writeFile(encoded); await handle.sync(); await handle.close(); handle = null;
+      try { await this.io.rename(temporary, this.file); }
+      catch (error) {
+        let committed = false;
+        try { const stat = await this.io.lstat(this.file); committed = stat.isFile() && !stat.isSymbolicLink() && stat.size === Buffer.byteLength(encoded) && await this.io.readFile(this.file, 'utf8') === encoded; } catch {}
+        if (!committed) throw error;
+      }
       // Windows does not expose directory fsync. On supporting platforms, sync
       // the rename as well as the file before allowing a process to quit.
       let directory;
