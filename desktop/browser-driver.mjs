@@ -21,6 +21,7 @@ const folderName = value => {
 const capacityError = (message, code) => Object.assign(error(message), { code, actionDispatched: false });
 const navigationFailure = tab => Object.assign(error(`The browser could not load the requested page: ${String(tab.loadError || 'navigation failed').slice(0, 1000)}`), { code: 'BROWSER_NAVIGATION_FAILED', actionDispatched: tab.navigationDispatched === true });
 const rendererFailure = (tab, actionDispatched = false) => Object.assign(error(`This browser page stopped unexpectedly (${tab.rendererFailure?.reason || 'unknown'}). Reload or navigate this tab explicitly, then inspect it before repeating any action.`), { code: 'BROWSER_RENDERER_GONE', actionDispatched });
+const disposedFrame = reason => /\brender frame was disposed\b/i.test(String(reason?.message || reason));
 // Match ordinary file-picker metadata without changing the selected bytes/name.
 const uploadMimeTypes = new Map(Object.entries({
   '.pdf': 'application/pdf', '.txt': 'text/plain', '.csv': 'text/csv',
@@ -71,11 +72,42 @@ const bounded = (promise, signal, ms = 12000) => new Promise((resolve, reject) =
 
 // The same function executes inside each frame, including cross-origin frames.
 // No Node APIs, keys or local application handles are exposed to the page.
-function pageSnapshot(key, prefix, query) {
+function pageSnapshot(key, prefix, query, readContext = false) {
   let state = globalThis[key];
   if (!state || state.document !== document || state.prefix !== prefix) state = globalThis[key] = { document, prefix, documentId: Math.random().toString(36).slice(2), elements: new Map(), ids: new WeakMap(), next: 0, credentialFields: state?.document === document && state.credentialFields || new WeakSet() };
   const items = [], text = [], seen = new Set(); let scanned = 0, truncated = false;
   const normalized = value => String(value || '').replace(/\s+/g, ' ').trim();
+  const contextual = Boolean(readContext && query), needle = String(query || '').toLowerCase();
+  let previousText, following = 0, matches = 0, textScanned = 0, textIndex = 0, textChars = 0, lastTextIndex = -1;
+  const excerpt = (value, position) => {
+    if (value.length <= 2000) return value;
+    truncated = true;
+    const start = position === 'before' ? value.length - 1998 : position === 'match' ? Math.max(0, value.toLowerCase().indexOf(needle) - 200) : 0;
+    return `${start ? '…' : ''}${value.slice(start, start + 1998)}${start + 1998 < value.length ? '…' : ''}`;
+  };
+  const appendText = (value, index) => {
+    if (index <= lastTextIndex) return;
+    if (lastTextIndex >= 0 && index > lastTextIndex + 1 && textChars < 21998) { text.push('…'); textChars += 2; }
+    const remaining = 22000 - textChars - (text.length ? 1 : 0);
+    if (remaining <= 0) { truncated = true; return; }
+    text.push(value.slice(0, remaining)); textChars += Math.min(value.length, remaining) + (text.length > 1 ? 1 : 0); lastTextIndex = index;
+    if (value.length > remaining) truncated = true;
+  };
+  const collectText = node => {
+    if (contextual && (++textScanned > 16000 || textChars >= 22000)) { truncated = true; return; }
+    const value = normalized(node.textContent); if (!value) return;
+    if (!contextual) { if (!query || value.toLowerCase().includes(needle)) text.push(value); return; }
+    const index = textIndex++;
+    const matching = value.toLowerCase().includes(needle);
+    if (matching && matches < 12) {
+      if (previousText) appendText(previousText.value, previousText.index);
+      appendText(excerpt(value, 'match'), index); following = 8; matches++;
+    } else {
+      if (matching) truncated = true;
+      if (following > 0) { appendText(excerpt(value, 'after'), index); following--; }
+    }
+    previousText = { value: excerpt(value, 'before'), index };
+  };
   function walk(root) {
     for (const el of root.children || []) {
       if (++scanned > 16000 || items.length >= 300) { truncated = true; return; }
@@ -88,19 +120,23 @@ function pageSnapshot(key, prefix, query) {
       // Reading every ancestor's innerText/geometry can repeatedly lay out a
       // large feed. Only controls need boxes and accessible names.
       const box = control ? el.getBoundingClientRect() : null;
+      const privateValue = el.type === 'password' || state.credentialFields?.has(el);
       if (box && (box.width > 0 || box.height > 0)) {
         // A site's show-password toggle or same-document navigation must not
         // turn an opaque host-filled password into a model-visible value.
-        const privateValue = el.type === 'password' || state.credentialFields?.has(el);
         const labelled = (el.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ');
-        const label = normalized(el.getAttribute('aria-label') || labelled || (el.labels ? [...el.labels].map(l => l.textContent).join(' ') : '') || el.getAttribute('placeholder') || el.getAttribute('aria-placeholder') || el.getAttribute('data-placeholder') || el.textContent || el.getAttribute('title') || el.getAttribute('alt')).slice(0, 300);
+        const label = normalized(el.getAttribute('aria-label') || labelled || (el.labels ? [...el.labels].map(l => l.textContent).join(' ') : '') || el.getAttribute('placeholder') || el.getAttribute('aria-placeholder') || el.getAttribute('data-placeholder') || (!privateValue && el.textContent) || el.getAttribute('title') || el.getAttribute('alt')).slice(0, 300);
         let ref = state.ids.get(el); if (!ref) { ref = `${prefix}:${state.documentId}:${++state.next}`; state.ids.set(el, ref); }
         if (!query || `${label} ${!privateValue && 'value' in el ? el.value : ''}`.toLowerCase().includes(query.toLowerCase())) {
           state.elements.set(ref, el); seen.add(ref);
           items.push({ ref, role: role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), name: label, tag: el.tagName.toLowerCase(), ...(el.type ? { type: el.type } : {}), ...(!privateValue && 'value' in el ? { value: String(el.value).slice(0, 300) } : {}), ...(el.disabled ? { disabled: true } : {}), ...(el.checked ? { checked: true } : {}), ...(el.getAttribute('aria-expanded') ? { expanded: el.getAttribute('aria-expanded') } : {}), ...(el.tagName === 'A' ? { href: el.href } : {}), ...(el.tagName === 'SELECT' ? { options: [...el.options].slice(0, 80).map(o => ({ value: o.value, label: o.label })) } : {}) });
         }
       }
-      for (const node of el.childNodes) if (node.nodeType === 3) { const value = normalized(node.textContent); if (value && (!query || value.toLowerCase().includes(query.toLowerCase()))) text.push(value); }
+      if (privateValue) continue;
+      for (const node of el.childNodes) if (node.nodeType === 3) {
+        if (contextual && (textScanned >= 16000 || textChars >= 22000)) { truncated = true; break; }
+        collectText(node);
+      }
       if (el.shadowRoot) walk(el.shadowRoot);
       walk(el);
     }
@@ -109,7 +145,7 @@ function pageSnapshot(key, prefix, query) {
   // The host retires every previous snapshot's refs. Keep only this bounded
   // result, including when a query skips many otherwise connected controls.
   for (const ref of state.elements.keys()) if (!seen.has(ref)) state.elements.delete(ref);
-  return { title: document.title, url: location.href, elements: query ? items.filter(i => `${i.name} ${i.value || ''}`.toLowerCase().includes(query.toLowerCase())) : items, text: text.join('\n').slice(0, 22000), truncated, readyState: document.readyState };
+  return { title: document.title, url: location.href, elements: query ? items.filter(i => `${i.name} ${i.value || ''}`.toLowerCase().includes(query.toLowerCase())) : items, text: text.join('\n').slice(0, 22000), truncated, readyState: document.readyState, ...(contextual ? { textContext: { matches, before: 1, after: 8 } } : {}) };
 }
 
 async function smoothPageScroll(target, top, left) {
@@ -685,31 +721,53 @@ export class ElectronBrowserDriver extends EventEmitter {
     const cutoff = this.downloads.length - 100;
     this.downloads = this.downloads.filter((item, index) => index >= cutoff || item.status === 'downloading');
   }
-  async snapshot(tab, query, signal) {
+  async snapshot(tab, query, signal, { readContext = false } = {}) {
     if (tab.pendingInteraction?.status === 'pending') return this.interactionReceipt(tab, { frames: [] });
     if (tab.popupViewport) await this.ensurePopupViewport(tab, signal);
-    cancel(signal); const frames = [], errors = []; let remainingElements = 400, remainingText = 24000;
+    cancel(signal);
     const deadline = Date.now() + 7000;
-    tab.refs.clear();
-    const mainFrame = tab.window.webContents.mainFrame;
-    // Electron does not promise subtree traversal order. Ad-heavy pages can
-    // have more descendants than the cap; always inspect their main document.
-    const allFrames = [mainFrame, ...mainFrame.framesInSubtree.filter(frame => frame !== mainFrame)].slice(0, 30);
-    for (const frame of allFrames) {
+    for (let attempt = 0; attempt < 2; attempt++) {
       cancel(signal);
-      if (Date.now() >= deadline) { errors.push({ error: 'Snapshot time budget reached. Narrow the query to the controls you need.' }); break; }
+      const frames = [], errors = []; let remainingElements = 400, remainingText = 24000, frameDisposed = false, mainFrame, allFrames;
+      tab.refs.clear();
       try {
-        const prefix = `${tab.revision}-${frame.processId}-${frame.routingId}`;
-        const value = await this.pageWork(tab, frame.executeJavaScript(`(${pageSnapshot.toString()})(${JSON.stringify(this.key)},${JSON.stringify(prefix)},${JSON.stringify(query || '')})`), signal, Math.max(1, Math.min(deadline - Date.now(), frame === mainFrame ? 5000 : 500)));
-        if (value.elements.length > remainingElements || value.text.length > remainingText) value.truncated = true;
-        value.elements = value.elements.slice(0, remainingElements); value.text = value.text.slice(0, remainingText);
-        remainingElements -= value.elements.length; remainingText -= value.text.length;
-        for (const item of value.elements) tab.refs.set(item.ref, frame);
-        frames.push({ frame: `${frame.processId}-${frame.routingId}`, ...value });
-        if (query && frame === mainFrame && value.elements.length) break;
-      } catch (reason) { if (signal?.aborted || ['BROWSER_INTERACTION_PENDING', 'BROWSER_RENDERER_GONE'].includes(reason.code)) throw reason; errors.push({ frame: frame.url, error: reason.message }); }
+        mainFrame = tab.window.webContents.mainFrame;
+        // Electron does not promise subtree traversal order. Ad-heavy pages can
+        // have more descendants than the cap; always inspect their main document.
+        allFrames = [mainFrame, ...mainFrame.framesInSubtree.filter(frame => frame !== mainFrame)].slice(0, 30);
+      } catch (reason) {
+        cancel(signal);
+        if (attempt === 0 && disposedFrame(reason) && Date.now() < deadline) continue;
+        throw reason;
+      }
+      for (const frame of allFrames) {
+        cancel(signal);
+        if (Date.now() >= deadline) { errors.push({ error: 'Snapshot time budget reached. Narrow the query to the controls you need.' }); break; }
+        let frameLabel = frame === mainFrame ? 'main' : 'subframe';
+        try {
+          frameLabel = `${frame.processId}-${frame.routingId}`;
+          const prefix = `${tab.revision}-${frameLabel}`;
+          const value = await this.pageWork(tab, frame.executeJavaScript(`(${pageSnapshot.toString()})(${JSON.stringify(this.key)},${JSON.stringify(prefix)},${JSON.stringify(query || '')},${Boolean(readContext)})`), signal, Math.max(1, Math.min(deadline - Date.now(), frame === mainFrame ? 5000 : 500)));
+          if (value.elements.length > remainingElements || value.text.length > remainingText) value.truncated = true;
+          value.elements = value.elements.slice(0, remainingElements); value.text = value.text.slice(0, remainingText);
+          remainingElements -= value.elements.length; remainingText -= value.text.length;
+          for (const item of value.elements) tab.refs.set(item.ref, frame);
+          frames.push({ frame: frameLabel, ...value });
+          if (query && frame === mainFrame && value.elements.length) break;
+        } catch (reason) {
+          cancel(signal);
+          if (['BROWSER_INTERACTION_PENDING', 'BROWSER_RENDERER_GONE'].includes(reason?.code)) throw reason;
+          frameDisposed ||= disposedFrame(reason);
+          // Frame metadata getters can throw after navigation too. Keep the
+          // already captured label; never touch a disposed frame in this catch.
+          errors.push({ frame: frameLabel, error: String(reason?.message || reason) });
+        }
+      }
+      // Only the read is repeated, never the action that preceded it. Reacquire
+      // current frames once, inside the original deadline, if none were readable.
+      if (attempt === 0 && !frames.length && frameDisposed && Date.now() < deadline) continue;
+      return { tabId: tab.id, url: tab.window.webContents.getURL(), documentId: inputDocumentId(tab), title: tab.window.webContents.getTitle(), frames, ...(frames.some(f => f.truncated) ? { hint: 'Large page: supply query to narrow the controls/text, or scroll a virtualized region and inspect again.' } : {}), ...(errors.length ? { frameErrors: errors } : {}), ...(tab.loadError ? { navigationError: tab.loadError } : {}), ...(tab.inputWarning ? { inputWarning: tab.inputWarning } : {}), ...(tab.pendingInteraction ? { pendingInteraction: structuredClone(tab.pendingInteraction) } : {}) };
     }
-    return { tabId: tab.id, url: tab.window.webContents.getURL(), documentId: inputDocumentId(tab), title: tab.window.webContents.getTitle(), frames, ...(frames.some(f => f.truncated) ? { hint: 'Large page: supply query to narrow the controls/text, or scroll a virtualized region and inspect again.' } : {}), ...(errors.length ? { frameErrors: errors } : {}), ...(tab.loadError ? { navigationError: tab.loadError } : {}), ...(tab.inputWarning ? { inputWarning: tab.inputWarning } : {}), ...(tab.pendingInteraction ? { pendingInteraction: structuredClone(tab.pendingInteraction) } : {}) };
   }
   async element(tab, args, action, signal, extra = {}) {
     if (typeof args.ref !== 'string' || !tab.refs.has(args.ref)) throw Object.assign(error('Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE' });
@@ -1209,7 +1267,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
     cancel(signal); await navigation?.wait(); await this.settle(tab, signal);
     if (tab.loadError) throw navigationFailure(tab);
-    const result = await this.snapshot(tab, args.query, signal);
+    const result = await this.snapshot(tab, args.query, signal, { readContext: args.action === 'read' });
     return { ...result, ...(receipt ? { receipt } : {}), tabs: this.status().tabs };
     } finally { navigation?.dispose(); }
     } catch (reason) {

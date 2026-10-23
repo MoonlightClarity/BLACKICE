@@ -312,7 +312,7 @@ test('reusable method drafts preserve honest legacy migration and saving fails c
   const handler = createTaskToolHandler({ store, taskId: state.taskId, runId: 'run-one', nodeId: 'coordinator' }), call = args => handler({ name: 'relay_task', arguments: args });
   let result = await call({ action: 'draft_method', expectedRevision: migrated.revision }); assert.equal(result.success, true, result.contentItems[0].text);
   const draft = JSON.parse(result.contentItems[0].text); assert.match(draft.draft.outline.steps[0].doneWhen, /^Draft criterion:/); assert.equal(draft.draft.outline.steps[0].evidence, undefined); assert.deepEqual(await store.get(state.taskId), migrated);
-  for (const expectedRevision of [undefined, 0, migrated.revision - 1]) { result = await call({ action: 'save_method', expectedRevision }); assert.equal(result.success, false); assert.ok(['TASK_STATE_CONFLICT', 'TASK_METHOD_UNAVAILABLE'].includes(result.code)); }
+  for (const [expectedRevision, code, status] of [[undefined, 'TASK_STATE_REVISION_REQUIRED', 400], [0, 'TASK_STATE_REVISION_INVALID', 400], [migrated.revision - 1, 'TASK_METHOD_UNAVAILABLE', 503]]) { result = await call({ action: 'save_method', expectedRevision }); assert.equal(result.success, false); assert.equal(result.code, code); assert.equal(result.status, status); }
   result = await call({ action: 'save_method', expectedRevision: migrated.revision }); assert.equal(result.code, 'TASK_METHOD_UNAVAILABLE'); assert.match(result.contentItems[0].text, /outline is still saved/);
   result = await call({ action: 'draft_method', expectedRevision: legacy.revision }); assert.equal(result.code, 'TASK_STATE_CONFLICT');
   assert.deepEqual(await store.get(state.taskId), migrated);

@@ -476,6 +476,27 @@ for (const type of ['openai', 'anthropic', 'compatible']) {
   });
 }
 
+for (const type of ['openai', 'anthropic', 'compatible']) test(`${type}: returned tool failures retain their code for diagnostics and revision recovery`, async t => {
+  const { runtime, baseUrl, cwd, requests } = await harness(t, (request, response, step) => {
+    if (type === 'openai') return json(response, { status: 'completed', output: step === 1
+      ? [{ type: 'function_call', call_id: 'conflict', name: 'relay_task', arguments: JSON.stringify({ action: 'plan', expectedRevision: 1, steps: [] }) }]
+      : [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'The update was rejected; read the latest state.' }] }] });
+    if (type === 'anthropic') return json(response, { content: step === 1
+      ? [{ type: 'tool_use', id: 'conflict', name: 'relay_task', input: { action: 'plan', expectedRevision: 1, steps: [] } }]
+      : [{ type: 'text', text: 'The update was rejected; read the latest state.' }], stop_reason: step === 1 ? 'tool_use' : 'end_turn' });
+    return json(response, { choices: [{ message: step === 1
+      ? { role: 'assistant', content: null, tool_calls: [{ id: 'conflict', type: 'function', function: { name: 'relay_task', arguments: JSON.stringify({ action: 'plan', expectedRevision: 1, steps: [] }) } }] }
+      : { role: 'assistant', content: 'The update was rejected; read the latest state.' }, finish_reason: step === 1 ? 'tool_calls' : 'stop' }] });
+  });
+  await runtime.saveProvider({ id: 'conflict', type, baseUrl, apiKey: 'conflict-fixture-only', models: ['model'] });
+  const events = [];
+  await runtime.runAgent({ cwd, prompt: 'Try the revision-guarded update.', model: 'conflict::model', dynamicTools: [{ ...tool, name: 'relay_task' }], onEvent: event => events.push(event), onToolCall: async () => ({ success: false, code: 'TASK_STATE_CONFLICT', status: 409, currentRevision: 2, contentItems: [{ type: 'inputText', text: 'Read the latest state (revision 2) before updating it.' }] }) });
+  const receipt = events.find(event => event.type === 'tool.result');
+  assert.equal(receipt.success, false); assert.equal(receipt.code, 'TASK_STATE_CONFLICT'); assert.ok(receipt.recoveryKey);
+  assert.match(receipt.message, /revision 2/); assert.equal(requests.length, 2);
+  assert.match(JSON.stringify(requests[1].body), /revision 2/);
+});
+
 test('cancellation aborts an in-flight HTTP request promptly and returns an AbortError', async t => {
   const arrived = deferred();
   const { runtime, baseUrl, cwd } = await harness(t, () => arrived.resolve());
@@ -1100,4 +1121,73 @@ test('saved API defaults start independently while unused Codex reports a pendin
   const before = runtime.status().defaultModelSelection, status = await runtime.start();
   assert.equal(starts, 0); assert.equal(status.defaultModelInitializing, false); assert.equal(status.defaultModelAvailable, true);
   assert.equal(status.defaultModelSelection, before); assert.equal(status.defaultModel, 'selected-api::kept-model'); assert.equal(codex.calls.length, 0);
+});
+
+for (const fixture of [
+  { status: 400, code: 'PROVIDER_HTTP', scope: 'request' },
+  { status: 429, code: 'PROVIDER_RATE_LIMIT', scope: 'connection' },
+  { status: 502, code: 'PROVIDER_SERVICE', scope: 'connection' },
+]) test(`generic provider failures retain HTTP ${fixture.status} in the error and saved diagnostic`, async t => {
+  const { runtime, baseUrl, cwd, requests } = await harness(t, (request, response) => json(response, { error: { message: 'Provider returned error' } }, fixture.status));
+  await runtime.saveProvider({ id: 'generic', type: 'compatible', baseUrl, models: ['model'] });
+  await assert.rejects(runtime.runAgent({ cwd, model: 'generic::model', prompt: 'Try the exact model once.' }), cause => cause.code === fixture.code && cause.httpStatus === fixture.status && cause.message.includes(`HTTP ${fixture.status}`));
+  const provider = runtime.listProviders()[0], receipt = fixture.scope === 'connection' ? provider.lastFailure : provider.modelChecks.model.lastFailure;
+  assert.equal(receipt.httpStatus, fixture.status); assert.equal(receipt.scope, fixture.scope);
+  assert.equal(requests.length, 1, 'diagnostics must not retry or switch models');
+});
+
+test('a parsed OpenRouter upstream service rejection stays with its model and never exposes raw payloads', async t => {
+  const secret = 'fixture-upstream-private-key', payload = 'private submitted transcript must never appear in diagnostics';
+  const { runtime, baseUrl, cwd, requests } = await harness(t, (request, response) => {
+    if (request.body.model === 'restricted:free') return json(response, { error: { message: 'Provider returned error', metadata: { provider_name: 'AtlasCloud', raw: JSON.stringify({ error: { code: 'upstream_unavailable', type: 'server_error', status: 503, message: `${payload} ${secret}`, request: request.body }, request: request.body }) } } }, 502);
+    return json(response, { choices: [{ message: { role: 'assistant', content: 'Healthy sibling reply.' }, finish_reason: 'stop' }] });
+  });
+  await runtime.saveProvider({ id: 'router-diagnostic', preset: 'openrouter', baseUrl, apiKey: secret, models: ['restricted:free', 'healthy:free'] });
+  await assert.rejects(runtime.runAgent({ cwd, model: 'router-diagnostic::restricted:free', prompt: payload }), cause => cause.code === 'PROVIDER_SERVICE' && cause.httpStatus === 502 && cause.upstreamStatus === 503 && cause.upstreamCode === 'upstream_unavailable' && /HTTP 502/.test(cause.message) && !cause.message.includes(payload) && !cause.message.includes(secret));
+  const provider = runtime.listProviders()[0], receipt = provider.modelChecks['restricted:free'].lastFailure;
+  assert.equal(provider.lastFailure, undefined); assert.equal(receipt.scope, 'model'); assert.equal(receipt.httpStatus, 502); assert.equal(receipt.upstreamStatus, 503); assert.equal(receipt.upstreamProvider, 'AtlasCloud');
+  assert.equal((await runtime.runAgent({ cwd, model: 'router-diagnostic::healthy:free', prompt: 'Use the sibling explicitly.' })).output, 'Healthy sibling reply.');
+  assert.equal(runtime.listProviders()[0].modelChecks['restricted:free'].lastFailure.code, 'PROVIDER_SERVICE');
+  assert.ok(!JSON.stringify(runtime.status()).includes(payload)); assert.ok(!JSON.stringify(runtime.status()).includes(secret));
+  assert.equal(requests.length, 2);
+});
+
+test('malformed assistant tool arguments are rejected locally and a later provider rejection keeps its status without echoing upstream messages', async t => {
+  const malformed = '{"target":"workspace"', secret = 'fixture-malformed-private-key', payload = 'private request payload marker';
+  let effects = 0, threadId;
+  const { runtime, baseUrl, cwd, requests, dataDir } = await harness(t, (request, response, index) => {
+    if (index === 1) return json(response, { choices: [{ message: { role: 'assistant', content: null, tool_calls: [{ id: 'invalid-tool-json', type: 'function', function: { name: 'relay_observe', arguments: malformed } }] }, finish_reason: 'tool_calls' }] });
+    assert.equal(request.body.messages.find(message => message.role === 'assistant').tool_calls[0].function.arguments, malformed, 'the saved transcript proves what was forwarded; this fixture does not infer the live upstream failure cause');
+    assert.equal(request.body.messages.find(message => message.role === 'tool').tool_call_id, 'invalid-tool-json');
+    return json(response, { error: { message: 'Provider returned error', metadata: { raw: JSON.stringify({ error: { code: 'invalid_tool_arguments', type: 'invalid_request_error', param: 'messages[0].tool_calls[0].function.arguments', message: `${payload} ${secret}`, request: request.body } }) } } }, 400);
+  });
+  await runtime.saveProvider({ id: 'malformed', preset: 'openrouter', baseUrl, apiKey: secret, models: ['exact:free'] });
+  await assert.rejects(runtime.runAgent({ cwd, model: 'malformed::exact:free', prompt: payload, dynamicTools: [tool], onEvent: event => { threadId ||= event.threadId; }, onToolCall: async () => { effects++; return { success: true, contentItems: [] }; } }), cause => cause.code === 'PROVIDER_HTTP' && cause.httpStatus === 400 && cause.upstreamCode === 'invalid_tool_arguments' && cause.upstreamParam === 'messages[0].tool_calls[0].function.arguments' && /HTTP 400/.test(cause.message) && !cause.message.includes(payload) && !cause.message.includes(secret));
+  assert.equal(effects, 0, 'malformed tool JSON cannot reach a side effect'); assert.equal(requests.length, 2);
+  const saved = JSON.parse(await readFile(path.join(dataDir, 'provider-threads', `${threadId}.json`), 'utf8'));
+  assert.equal(saved.messages.find(message => message.role === 'assistant').tool_calls[0].function.arguments, malformed);
+  const provider = runtime.listProviders()[0], receipt = provider.modelChecks['exact:free'].lastFailure;
+  assert.equal(provider.lastFailure, undefined); assert.equal(receipt.scope, 'request'); assert.equal(receipt.httpStatus, 400); assert.equal(receipt.upstreamCode, 'invalid_tool_arguments');
+  assert.ok(!JSON.stringify(runtime.status()).includes(payload)); assert.ok(!JSON.stringify(runtime.status()).includes(secret));
+});
+
+test('unstructured OpenRouter raw errors and unknown metadata are not copied into diagnostics', async t => {
+  const payload = 'private unstructured provider request contents';
+  const { runtime, baseUrl, cwd } = await harness(t, (request, response) => json(response, { error: { message: 'Provider returned error', metadata: { raw: payload, request: request.body, api_key: 'unrecognized-private-key' } } }, 400));
+  await runtime.saveProvider({ id: 'raw-error', preset: 'openrouter', baseUrl, apiKey: 'fixture-key', models: ['exact:free'] });
+  await assert.rejects(runtime.runAgent({ cwd, model: 'raw-error::exact:free', prompt: payload }), cause => cause.httpStatus === 400 && cause.upstreamCode === undefined && /HTTP 400/.test(cause.message) && !cause.message.includes(payload));
+  const receipt = runtime.listProviders()[0].modelChecks['exact:free'].lastFailure;
+  assert.equal(receipt.upstreamCode, undefined); assert.ok(!JSON.stringify(receipt).includes(payload)); assert.ok(!JSON.stringify(receipt).includes('unrecognized-private-key'));
+});
+
+test('known credentials echoed in valid upstream identifier fields are redacted before errors and durable diagnostics', async t => {
+  const secret = 'fixture-secret-valid-as-identifier';
+  const { runtime, baseUrl, cwd } = await harness(t, (request, response) => json(response, { error: { message: 'Provider returned error', metadata: { provider_name: secret, raw: JSON.stringify({ error: { code: secret, type: secret, param: secret } }) } } }, 400));
+  await runtime.saveProvider({ id: 'redacted-identifiers', preset: 'openrouter', baseUrl, apiKey: secret, models: ['exact:free'] });
+  await assert.rejects(runtime.runAgent({ cwd, model: 'redacted-identifiers::exact:free', prompt: 'Check redacted diagnostics.' }), cause => {
+    assert.equal(cause.upstreamCode, '[redacted]'); assert.equal(cause.upstreamType, '[redacted]'); assert.equal(cause.upstreamParam, '[redacted]'); assert.equal(cause.upstreamProvider, '[redacted]');
+    assert.ok(!cause.message.includes(secret)); assert.ok(!JSON.stringify(cause).includes(secret)); return cause.httpStatus === 400;
+  });
+  const receipt = runtime.listProviders()[0].modelChecks['exact:free'].lastFailure;
+  assert.equal(receipt.upstreamCode, '[redacted]'); assert.equal(receipt.upstreamProvider, '[redacted]'); assert.ok(!JSON.stringify(runtime.status()).includes(secret));
 });
