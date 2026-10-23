@@ -127,8 +127,19 @@ test('normal inbox autorun cannot execute a managed operation while operations o
   const polling=operations.poll();await entered.promise;const paused=operations.pause('Global Stop');release.resolve();await polling;await paused;assert.equal(engine.calls.length,0);await inbox.configure({autoRun:true});await inbox.pump();assert.equal(engine.calls.length,0);await operations.resume();await inbox.pause('Still globally stopped');await operations.poll();assert.equal(engine.calls.length,0);assert.ok(operations.status().blockedReason);await operations.resume({resumeInbox:true});await operations.poll();assert.equal(engine.calls.length,1);assert.equal(operations.getJob(job.id).status,'running');
 });
 
+test('intervals accept positive whole seconds without an arbitrary 30-day ceiling',async t=>{
+  const {operations,create}=await harness(t);
+  await assert.rejects(create({enabled:false,trigger:{type:'interval',everySeconds:0}}),/positive whole/);
+  for(const seconds of [1,31*86400]){
+    const saved=await create({enabled:false,trigger:{type:'interval',everySeconds:seconds}});
+    assert.equal(saved.trigger.everySeconds,seconds);
+    const preview=operations.previewSchedule({trigger:saved.trigger,count:2});
+    assert.equal(preview.occurrences[1].at-preview.occurrences[0].at,seconds*1000);
+  }
+});
+
 test('intervals use seconds, coalesce overlap and missed ticks, and restart never silently catches up',async t=>{
-  const {operations,engine,create,advance,options}=await harness(t);await assert.rejects(create({enabled:true,trigger:{type:'interval',everySeconds:1}}),/Interval in seconds/);const deployment=await create({enabled:true,trigger:{type:'interval',everySeconds:10},overlap:'skip'});advance(9999);await operations.poll();assert.equal(engine.calls.length,0);advance(1);await operations.poll();assert.equal(engine.calls.length,1);const first=operations.snapshot().jobs[0];advance(100000);await operations.poll();assert.equal(operations.snapshot().jobs.length,1);assert.equal(operations.getDeployment(deployment.id).skippedOverlaps,1);engine.finish(first.attempts[0].runId);await operations.poll();assert.equal(engine.calls.length,1);advance(10000);await operations.poll();assert.equal(engine.calls.length,2);
+  const {operations,engine,create,advance,options}=await harness(t);await assert.rejects(create({enabled:true,trigger:{type:'interval',everySeconds:0}}),/Interval in seconds/);const deployment=await create({enabled:true,trigger:{type:'interval',everySeconds:10},overlap:'skip'});advance(9999);await operations.poll();assert.equal(engine.calls.length,0);advance(1);await operations.poll();assert.equal(engine.calls.length,1);const first=operations.snapshot().jobs[0];advance(100000);await operations.poll();assert.equal(operations.snapshot().jobs.length,1);assert.equal(operations.getDeployment(deployment.id).skippedOverlaps,1);engine.finish(first.attempts[0].runId);await operations.poll();assert.equal(engine.calls.length,1);advance(10000);await operations.poll();assert.equal(engine.calls.length,2);
   await operations.close();const restored=await new OperationsStore(options).init();restored.kick=()=>{};advance(1000000);await restored.poll();assert.equal(engine.calls.length,2);assert.equal(restored.status().paused,true);await restored.resume({resumeInbox:true});await restored.poll();assert.equal(engine.calls.length,2,'resume schedules the next future tick instead of replaying missed ones');await restored.close();
 });
 

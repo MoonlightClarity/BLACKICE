@@ -497,9 +497,8 @@ test('secondary task actions preserve drafts and retired bridge controls cannot 
   const h = mountMission(f, statusSnapshot(), { chatgptBridge: () => calls.push('bridge'), schedule: () => calls.push('schedule'), swarm: () => calls.push('swarm') }); await turn();
   const before = h.ui.getDraft();
   for (const action of ['schedule-task', 'create-swarm']) {
-    f.element('#mission-options').open = true;
     await h.action(action);
-    assert.equal(f.element('#mission-options').open, false);
+    assert.doesNotMatch(f.mount.innerHTML, /id="mission-options"/);
     assert.deepEqual(h.ui.getDraft(), before);
   }
   await h.action('chatgpt-bridge');
@@ -1479,7 +1478,7 @@ test('desktop plan preference is restored without hiding the conversation or cha
 
 test('Escape returns focus to the response setting that was closed', async t => {
   const f = missionFixture(t, savedDrafts('Draft stays here')), h = mountMission(f, statusSnapshot()); await turn();
-  for (const [panelId, inputId] of [['mission-context', 'mission-effort'], ['mission-options', 'mission-cwd']]) {
+  for (const [panelId, inputId] of [['mission-context', 'mission-effort'], ['conversation-actions', 'conversation-actions']]) {
     const panel = f.element('#' + panelId), input = f.element('#' + inputId);
     f.element('#conversation-rename').hidden = true; panel.open = true; input.focus();
     const event = menuEvent(input, { key: 'Escape' });

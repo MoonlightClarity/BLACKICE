@@ -3,7 +3,7 @@ export function scheduleTriggerFromDraft(draft={}){
   const recurrence=draft.trigger||'daily';
   if(recurrence==='manual'||recurrence==='webhook')return{type:recurrence};
   if(recurrence==='interval'){
-    const seconds=Number(draft.seconds);if(!Number.isSafeInteger(seconds)||seconds<10||seconds>2592000)throw new Error('Choose an interval from 10 seconds to 30 days.');
+    const seconds=Number(draft.seconds);if(!Number.isSafeInteger(seconds)||seconds<1)throw new Error('Choose a positive whole number of seconds.');
     return{type:'interval',everySeconds:seconds};
   }
   const timezone=String(draft.timezone||'').trim();if(!timezone)throw new Error('Enter a time zone, such as America/New_York.');
@@ -26,11 +26,11 @@ export function scheduleDraftFromTrigger(trigger={},timezone=Intl.DateTimeFormat
 }
 
 export function scheduleLabel(trigger={}){
-  if(trigger.type==='interval')return`Every ${trigger.everySeconds}s`;
+  if(trigger.type==='interval')return`Every ${trigger.everySeconds} seconds`;
   if(trigger.type==='webhook')return'Webhook';if(trigger.type==='manual')return'Manual';
   const draft=scheduleDraftFromTrigger(trigger,'UTC'),zone=trigger.timezone||'UTC';
-  if(draft.trigger==='daily')return`Daily at ${draft.time} · ${zone}`;
-  if(draft.trigger==='weekdays')return`Weekdays at ${draft.time} · ${zone}`;
-  if(draft.trigger==='weekly')return`${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][Number(draft.weekday)]} at ${draft.time} · ${zone}`;
+  if(draft.trigger==='daily')return`Daily at ${draft.time} · ${zone} · ${trigger.expression}`;
+  if(draft.trigger==='weekdays')return`Weekdays at ${draft.time} · ${zone} · ${trigger.expression}`;
+  if(draft.trigger==='weekly')return`${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][Number(draft.weekday)]} at ${draft.time} · ${zone} · ${trigger.expression}`;
   return`${trigger.expression||'Cron'} · ${zone}`;
 }

@@ -19,7 +19,7 @@ import { taskPlanView, savedPlanNotes } from './task-plan-model.mjs';
 import { PLANNING_MODES, PLANNING_MODE_OPTIONS, planningModeDescription, planningEffortIntent } from './planning-mode.mjs';
 import { isActiveRun, isSettlingRun, conversationRecovery, createRegisteredArtifactResolver, conversationId, conversationRuns, conversationSidebarItems, selectedConversationModel, selectedConversationContext, selectedConversationEffort, selectedConversationPlanDetail, selectedConversationPlanningMode, conversationPlanningConfig, conversationReasoningChoice, conversationPlanDetails, conversationEfforts, restoreConversationDrafts, searchConversations, mergeConversationRuns, conversationTurn, conversationAgents, runUserText, shouldSendConversationKey } from './conversation-model.mjs';
 
-export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll, onCapture, onInbox, onArtifact, api, pickFiles, onOpenRun, onContinue, onRetry, onStop, onDirect, onStudio, onSchedule, onRepeatTask, onSwarm, onConnections, onProjects, onOpenPlanning, onRunLimits, onPrompts, onSavePrompt, onAgent, onLearning, onCompact, onFeedback, onBrowser, onKnowledge, onDesktop, onOpenBrowserOS, onObserve, onCopy, pickFolder, escape, icon, toast }) {
+export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll, onCapture, onInbox, onArtifact, api, pickFiles, onOpenRun, onContinue, onRetry, onStop, onDirect, onStudio, onSchedule, onRepeatTask, onSwarm, onConnections, onProjects, onOpenPlanning, onRunLimits, onPrompts, onSavePrompt, onAgent, onLearning, onCompact, onFeedback, onBrowser, onKnowledge, onDesktop, onWorkspace, onOpenBrowserOS, onObserve, onCopy, pickFolder, escape, icon, toast }) {
   const $ = selector => mount.querySelector(selector), NEW = 'new';
   const attention = createConversationAttention(), readingPositions = new Map(), planViews = new Map(), stopRequests = new Map();
   const composerRequests = new Map(), composerErrors = new Map(), queueReceipts = new Map();
@@ -138,20 +138,11 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
             <div id="mission-attachments"></div>
             <div class="conversation-compose-settings" role="group" aria-label="Response settings">
               <label class="conversation-model-choice"><span>Model</span><select id="mission-model" aria-label="Model for next message"></select></label>
-              <label class="conversation-planning-choice"><span>Planning</span><select id="mission-planning-mode" aria-label="Planning for next response" aria-describedby="mission-planning-note">${PLANNING_MODE_OPTIONS.map(option => `<option value="${option.value}"${option.value === 'auto' ? ' selected' : ''}>${option.label}</option>`).join('')}</select></label>
+              <label class="conversation-planning-choice"><span>Planning</span><select id="mission-planning-mode" aria-label="Planning for next response" aria-describedby="mission-planning-note">${PLANNING_MODE_OPTIONS.map(option => `<option value="${option.value}"${option.value === 'auto' ? ' selected' : ''}>${option.label}</option>`).join('')}</select><span id="mission-planning-note" class="sr-only"></span></label>
+               <button id="conversation-folder-chip" class="conversation-folder-chip" type="button" data-mission-action="workspace" title="Change working folder in Settings">Working folder</button>
             </div>
             <div class="conversation-compose-bar">
-              <details id="mission-options" class="conversation-options">
-                <summary title="Message options" aria-label="Message options">${icon('more', 18)}<span>Options</span></summary>
-                <div class="conversation-options-panel">
-                  <div class="conversation-option-actions"><button type="button" data-mission-action="capture" id="mission-capture-button" title="Save this message as a new task in Inbox">${icon('inbox', 14)}Save for later</button></div>
-                  <label class="field"><span class="field-label">Working folder</span><div class="conversation-folder"><input id="mission-cwd" placeholder="Working folder" aria-label="Working folder">${pickFolder ? `<button class="icon-button" type="button" data-mission-action="pick-folder" aria-label="Choose working folder">${icon('folder', 14)}</button>` : ''}</div></label>
-                  <div class="conversation-option-guidance"><strong>Planning for the next response</strong><p id="mission-planning-note" class="conversation-planning-note"></p></div>
-                  <label class="conversation-desktop"><input id="mission-use-desktop" type="checkbox"><span>Read-only desktop inspection</span></label>
-                  <div class="conversation-option-links"><button type="button" data-mission-action="connections">Models</button><button type="button" data-mission-action="browser">Browser</button><button type="button" data-mission-action="knowledge">Memory</button><button type="button" data-mission-action="desktop">Desktop</button><button type="button" data-mission-action="agent">Agent settings</button></div>
-                  ${onSchedule || onSwarm ? `<div class="conversation-option-automations" aria-label="Other ways to work">${onSchedule ? `<button type="button" data-mission-action="schedule-task">${icon('clock', 14)}Schedule a task</button>` : ''}${onSwarm ? `<button type="button" data-mission-action="create-swarm">${icon('layers', 14)}Create a swarm</button>` : ''}</div>` : ''}
-                </div>
-              </details>
+              <button id="mission-capture-button" class="conversation-attach-button" type="button" data-mission-action="capture" aria-label="Save message for later" title="Save this message to the task inbox">${icon('inbox', 15)}<span>Save for later</span></button>
               <button id="conversation-attach" class="conversation-attach-button" type="button" data-mission-action="attach" title="Attach files" aria-label="Attach files">${icon('paperclip', 15)}<span>Attach</span></button>
               <div class="conversation-send-actions">
               <button id="conversation-stop" class="conversation-stop" type="button" data-mission-action="stop" aria-label="Stop current response" title="Stop" hidden>${icon('stop', 13)}<span>Stop</span></button>
@@ -169,8 +160,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
   try { desktopPlanCollapsed = localStorage.getItem('relay.ui.plan.collapsed') !== 'false'; } catch {}
   let attachmentUI, conversationMenu, taskPlanUI, historyRefreshTimer = null, historyRefreshFlight = null, historyRefreshRequested = false, historyWaiters = [], destroyed = false, promptUndo = null, promptDraftVersion = 0, taskSelectionPending = false, planVisible = false, planEnlarged = false, planView = 'conversation', planKey = '', workbenchIntent = 0;
   const modelPicker = initModelPicker({ select: $('#mission-model'), onConnect: onConnections });
-  if (onPrompts) { $('.conversation-option-actions').insertAdjacentHTML('beforeend', `<button type="button" id="mission-outline" class="conversation-outline-button" data-mission-action="prompts" title="Use a reusable prompt template">${icon('text', 13)}<span>Prompt templates</span></button>`); $('.conversation-options').insertAdjacentHTML('afterend', `<button type="button" id="mission-outline-undo" class="conversation-outline-undo" data-mission-action="undo-prompt" title="Restore the previous draft" hidden>Undo draft</button>`); }
-  if (onSavePrompt) $('.conversation-option-actions').insertAdjacentHTML('beforeend', `<button type="button" data-mission-action="save-prompt">${icon('text', 14)}Save prompt template</button>`);
+  if (onPrompts) $('#mission-capture-button').insertAdjacentHTML('afterend', `<button type="button" id="mission-outline" class="conversation-attach-button" data-mission-action="prompts" title="Prompt templates">${icon('text', 13)}<span>Prompts</span></button><button type="button" id="mission-outline-undo" class="conversation-outline-undo" data-mission-action="undo-prompt" title="Restore the previous draft" hidden>Undo draft</button>`);
   $('.conversation-model-choice').insertAdjacentHTML('afterend', '<details id="mission-context" class="conversation-context-choice"><summary title="Reasoning settings"><span class="conversation-setting-label">Reasoning</span><span class="conversation-setting-value">Default</span></summary><div class="conversation-context-panel"><label class="field"><span class="field-label">Reasoning level</span><select id="mission-effort" aria-label="Reasoning for next response"></select><span id="mission-effort-note" class="field-help"></span></label><details class="conversation-context-advanced"><summary>Advanced context capacity</summary><div id="mission-context-fields"></div></details><p class="conversation-context-help">BLACKICE handles routine context compaction automatically.</p><button type="button" data-mission-action="reset-context">Use saved chat context</button><p id="mission-context-error" role="alert" hidden></p></div></details>');
   $('#mission-form').insertAdjacentHTML('afterend', '<p id="mission-reasoning-warning" class="conversation-error" role="status" hidden></p>');
   $('#mission-form').insertAdjacentHTML('beforebegin', '<div id="conversation-state-banner" class="conversation-state-banner" hidden></div><div id="conversation-queue-receipt" class="conversation-queue-receipt" role="status" hidden></div>');
@@ -638,9 +628,8 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     const connection = runtimeConnectionFeedback({ statusLoaded: snapshot.statusLoaded, status: snapshot.status, model: actualModel });
     const reasoning = renderComposerContext(snapshot, mode, actualModel);
     $('#mission-task').readOnly = state.sending || state.capturing || state.selecting || Boolean(!state.forceNew && state.runId && !mode.run);
-    if (document.activeElement !== $('#mission-cwd')) $('#mission-cwd').value = mode.run?.cwd || state.prefs.cwd; $('#mission-cwd').readOnly = Boolean(mode.run); $('#mission-use-desktop').checked = mode.run ? Boolean(mode.agent?.desktop) : missionDesktopPreference(state.prefs, snapshot.desktop); $('#mission-use-desktop').disabled = Boolean(mode.run); const picker = $('[data-mission-action="pick-folder"]'); if (picker) picker.disabled = Boolean(mode.run);
     const activeFolder = workingFolderLabel(mode.run?.cwd || state.prefs.cwd || snapshot.status?.cwd), folderChip = $('#conversation-folder-chip');
-    if (folderChip) { folderChip.textContent = activeFolder.name; folderChip.title = activeFolder.missing ? 'Choose a working folder' : `Working folder: ${activeFolder.path}${mode.run ? ' · Fixed for this conversation' : ' · Change folder'}`; folderChip.setAttribute('aria-label', activeFolder.missing ? 'Choose working folder' : `Working folder: ${activeFolder.name}${mode.run ? ', fixed for this conversation' : ', choose a different folder'}`); folderChip.disabled = Boolean(mode.run) || state.sending || state.capturing || state.selecting || !pickFolder; }
+    if (folderChip) { folderChip.textContent = activeFolder.name; folderChip.title = activeFolder.missing ? 'Choose a working folder' : `Working folder: ${activeFolder.path}${mode.run ? ' · Fixed for this conversation' : ' · Change folder'}`; folderChip.setAttribute('aria-label', activeFolder.missing ? 'Choose working folder' : `Working folder: ${activeFolder.name}${mode.run ? ', fixed for this conversation' : ', choose a different folder'}`); folderChip.disabled = Boolean(mode.run) || state.sending || state.capturing || state.selecting || !onWorkspace; }
     const attachButton = $('#conversation-attach'); if (attachButton) attachButton.disabled = state.sending || state.capturing || state.pendingFiles || state.selecting || bucket !== 'active';
     const starters = $('#conversation-timeline .conversation-starters'); if (starters) starters.hidden = Boolean(draft().task.trim());
     const ready = mode.live || models.find(model => model.value === actualModel)?.available, send = $('#mission-start-button'); send.disabled = Boolean(connection?.busy && !ready) || state.sending || state.capturing || state.pendingFiles || state.managing || state.selecting || Boolean(mode.live && notice && notice.phase !== 'failed') || !mode.live && !recovering && (reasoning.unsupported || Boolean(state.contextErrors[state.key])) || Boolean(!state.forceNew && state.runId && (!mode.run || state.historyError)) || (!state.forceNew && state.historyPending.has(state.runId)) || !snapshot.statusLoaded || bucket !== 'active' || !recovering && (mode.blocked && !queueing || mode.mode === 'continue' && (!mode.agent || mode.run.settled !== true) || mode.mode === 'steer' && !mode.agent);
@@ -820,9 +809,8 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
       const starters = $('#conversation-timeline .conversation-starters'); if (starters) starters.hidden = Boolean(draft().task.trim());
       if (refreshReceipt) renderComposer(getSnapshot());
     }
-    if (event.target.id === 'mission-cwd') { delete draft().pendingSend; state.prefs.cwd = event.target.value; persist(); renderComposer(getSnapshot()); }
   });
-  mount.addEventListener('change', event => { if (event.target.id === 'mission-model') { if (event.target.value === '__connections__') { state.modelsSignature = ''; renderComposer(getSnapshot()); onConnections(); return; } draft().model = event.target.value; delete draft().pendingSend; state.error = ''; persist(); update(); } if (event.target.id === 'conversation-history-state') { state.historyState = event.target.value; void chatSearch.search(state.search, { scope: searchScope(), immediate: true }); renderSidebar(getSnapshot()); renderComposer(getSnapshot()); loadSummaries(); } if (event.target.id === 'mission-use-desktop') { delete draft().pendingSend; state.prefs.desktop = event.target.checked; state.prefs.desktopConfigured = true; persist(); } if (event.target.id === 'conversation-agent') { delete draft().pendingSend; state.selectedAgent = event.target.value; draft().agentId = event.target.value; persist(); update(); } });
+  mount.addEventListener('change', event => { if (event.target.id === 'mission-model') { if (event.target.value === '__connections__') { state.modelsSignature = ''; renderComposer(getSnapshot()); onConnections(); return; } draft().model = event.target.value; delete draft().pendingSend; state.error = ''; persist(); update(); } if (event.target.id === 'conversation-history-state') { state.historyState = event.target.value; void chatSearch.search(state.search, { scope: searchScope(), immediate: true }); renderSidebar(getSnapshot()); renderComposer(getSnapshot()); loadSummaries(); } if (event.target.id === 'conversation-agent') { delete draft().pendingSend; state.selectedAgent = event.target.value; draft().agentId = event.target.value; persist(); update(); } });
   mount.addEventListener('submit', async event => {
     if (event.target.id === 'conversation-rename') { event.preventDefault(); await saveRename(); return; }
     if (event.target.id !== 'mission-form') return; event.preventDefault(); const snapshot = getSnapshot(), mode = composerMode(snapshot), queueing = shouldQueue(mode), recovering = hasPendingReceipt(), config = configForMessage(), draftKey = state.key;
@@ -830,13 +818,13 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     if (state.sending || state.capturing || state.selecting || Boolean(!state.forceNew && state.runId && (!mode.run || state.historyError)) || (!state.forceNew && state.historyPending.has(state.runId)) || !snapshot.statusLoaded || state.pendingFiles || state.managing || selectedState() !== 'active' || !recovering && mode.blocked && !queueing || !config.task) return;
     if (!draft().pendingSend && mode.mode !== 'steer' && (!reasoningSupport(snapshot.status, config.model, effectiveEffort(mode)).available || state.contextErrors[state.key])) { $('#mission-context').open = true; renderComposer(snapshot); return; }
     if (!recovering && mode.mode !== 'steer' && !missionModels(snapshot.status, config.model).find(model => model.value === config.model)?.available) { try { onConnections(); } catch (error) { state.error = error.message; update(); } return; }
-    if (!config.cwd) { state.error = 'Choose a working folder.'; $('#mission-options').open = true; update(); $('#mission-cwd').focus({ preventScroll: true }); return; }
+    if (!config.cwd) { state.error = 'Choose a working folder in Settings.'; update(); onWorkspace?.(); return; }
     if (!recovering && (!queueing && mode.mode !== 'start' && !mode.agent || mode.mode === 'continue' && mode.run.settled !== true)) return;
     if (config.attachmentIds.length > 10) { state.error = 'A conversation can have up to 10 attached files.'; update(); return; }
     const pending = draft().pendingSend || { requestId: crypto.randomUUID(), mode: queueing ? 'queue' : mode.mode, runId: mode.run?.id, nodeId: mode.agent?.id, config: { ...config, ...(queueing && config.model === 'default' ? { model: snapshot.status.defaultModel } : {}) } };
     if (pending.mode !== 'steer') draft().pendingSend = pending; persist();
     const request = { kind: 'send', key: draftKey, submitted: structuredClone(draft()), config: pending.config, receiptId: pending.requestId };
-    composerRequests.set(draftKey, request); composerErrors.delete(draftKey); $('#mission-options').open = false; renderComposer(snapshot);
+    composerRequests.set(draftKey, request); composerErrors.delete(draftKey); renderComposer(snapshot);
     try {
       let next;
       if (pending.mode === 'queue') { const item = await onQueue({ ...pending.config, enqueueKey: pending.requestId }); queueReceipts.set(draftKey, item); if (ownsRequestView(request)) toast('Task queued.'); }
@@ -877,7 +865,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
       if (action === 'close-sidebar') closeMobileSidebar({ restoreFocus: true });
       if (action === 'working-chats') { state.historyState = 'working'; setSidebarOpen(true); renderSidebar(snapshot); renderComposer(snapshot); }
       if (action === 'latest') { scrollLatest(true); renderSidebar(snapshot); }
-      if (action === 'message-options') { $('#mission-options').open = true; $('#mission-cwd').focus({ preventScroll: true }); }
+      if (action === 'message-options' || action === 'workspace') { onWorkspace?.(); return; }
       if (action === 'projects') { onProjects?.({goal:$('#mission-task')?.value||''}); return; }
       if (action === 'planning') { onOpenPlanning?.(); return; }
       if (action === 'archive-conversation' || action === 'restore-conversation' || action === 'delete-conversation') return await manageConversation(action.split('-')[0]);
@@ -888,7 +876,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
       if (action === 'clear-match') { clearSearchMatch(); $('#conversation-scroll').focus({ preventScroll: true }); } if (action === 'reload-history') { state.historyError = ''; await loadHistory(state.runId, true); }
       if (action === 'retry-chats') return await retryHistory();
       if (action === 'open-queued') onInbox({ selectedId: button.dataset.id }); if (action === 'dismiss-queued') { state.lastQueued = null; renderComposer(getSnapshot()); }
-      if (action === 'schedule-task') { $('#mission-options').open = false; onSchedule?.(); } if (action === 'create-swarm') { $('#mission-options').open = false; onSwarm?.(); }
+      if (action === 'schedule-task') { onSchedule?.(); } if (action === 'create-swarm') { onSwarm?.(); }
       if (action === 'browser-signin-open'||action === 'browser-signin-observe') {
         const mode=composerMode(getSnapshot()),blocker=!state.forceNew&&selectedState()==='active'?mode.run?.browserSignIn:null;
         if(!blocker||blocker.status!=='awaiting-user')return;
@@ -914,8 +902,8 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
       }
       if (action === 'starter') { const template = starterPrompt(button.dataset.starter); if (!template || state.sending || state.capturing || state.selecting || selectedState() !== 'active') return; if (draft().task.trim()) { $('#mission-task').focus({preventScroll:true}); toast('Your draft is still here. Clear it before choosing another starter.'); return; } const result = applyPromptDraft(capturePromptDraft(), template); if (!result.applied) toast(result.error, true); return; }
       if (action === 'continue-milestone' || action === 'repeat-task') { if (action === 'repeat-task') await repeatSavedTask(run); else prepareNextAction(run); return; }
-      if (action === 'prompts') { $('#mission-options').open = false; onPrompts?.(); } if (action === 'save-prompt') { $('#mission-options').open = false; onSavePrompt?.(); } if (action === 'undo-prompt') { const result = undoPromptDraft(promptUndo); if (!result.undone) toast(result.error, true); }
-      if (action === 'studio') onStudio(); if (action === 'run-studio') onStudio(button.dataset.id); if (action === 'inbox') onInbox(); if (action === 'agent') onAgent(); if (action === 'learning') onLearning(); if (action === 'connections') { $('#mission-options').open = false; onConnections(); } if (action === 'run-limits') onRunLimits?.(); if (action === 'browser') onBrowser(); if (action === 'knowledge') onKnowledge(); if (action === 'desktop') onDesktop();
+      if (action === 'prompts') { onPrompts?.(); } if (action === 'save-prompt') { onSavePrompt?.(); } if (action === 'undo-prompt') { const result = undoPromptDraft(promptUndo); if (!result.undone) toast(result.error, true); }
+      if (action === 'studio') onStudio(); if (action === 'run-studio') onStudio(button.dataset.id); if (action === 'inbox') onInbox(); if (action === 'agent') onAgent(); if (action === 'learning') onLearning(); if (action === 'connections') { onConnections(); } if (action === 'run-limits') onRunLimits?.(); if (action === 'browser') onBrowser(); if (action === 'knowledge') onKnowledge(); if (action === 'desktop') onDesktop();
       if (action === 'attach') $('#mission-attachments .attachments-add').click();
       if (action === 'stop-all' && onStopAll) { button.disabled = true; try { await onStopAll(); } finally { if(button.isConnected)button.disabled = false; } } if (action === 'stop') await stopResponse(run); if (action === 'direct') { await alignRun(run); onDirect(button.dataset.nodeId); }
       if (action === 'retry') { if (selectedState() !== 'active') throw new Error('Restore this conversation before retrying.'); button.disabled = true; try { const key = state.key, next = await onRetry(run?.id); if (next) { state.cache = mergeConversationRuns(state.cache, [next]); if (state.key === key && !state.forceNew) { state.runId = next.id; remember(); } } update(); } finally { if (button.isConnected) button.disabled = false; } }
@@ -933,7 +921,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
           const item = await onCapture(config);
           consumeRequestDraft(request, { preferences: true });
           persist({ preserveNewerDrafts: true });
-          if (ownsRequestView(request)) { $('#mission-task').value = draft().task || ''; attachmentUI.reset(); $('#mission-options').open = false; autoSize(); onInbox({ selectedId: item.id }); }
+          if (ownsRequestView(request)) { $('#mission-task').value = draft().task || ''; attachmentUI.reset(); autoSize(); onInbox({ selectedId: item.id }); }
         } catch (error) { composerErrors.set(key, error.message); if (ownsRequestView(request)) toast(error.message, true); }
         finally { if (composerRequests.get(key) === request) composerRequests.delete(key); if (!destroyed) renderComposer(getSnapshot()); }
       }
@@ -944,7 +932,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
   const refreshSelectedMilestones = () => { if (!destroyed && taskSelectionPending) { taskSelectionPending = false; update(); } };
   document.addEventListener('selectionchange', refreshSelectedMilestones);
   document.addEventListener('visibilitychange', refreshAttention); document.addEventListener('focusin', refreshAttention); window.addEventListener('focus', refreshAttention); window.addEventListener('storage', refreshAttention);
-  for (const id of ['mission-options', 'mission-context', 'conversation-actions']) $(`#${id}`).addEventListener('toggle', () => { if (!$(`#${id}`).open) return; for (const other of ['mission-options', 'mission-context', 'conversation-actions']) if (other !== id) $(`#${other}`).open = false; });
+  for (const id of ['mission-context', 'conversation-actions']) $(`#${id}`).addEventListener('toggle', () => { if (!$(`#${id}`).open) return; for (const other of ['mission-context', 'conversation-actions']) if (other !== id) $(`#${other}`).open = false; });
   mount.addEventListener('keydown', event => {
     if (event.defaultPrevented) return;
     if (planVisible && narrowPlan() && ['conversation-plan-tab', 'conversation-dialogue-tab'].includes(event.target.id) && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
@@ -952,7 +940,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     }
     if (event.key === 'Escape' && !$('#conversation-rename').hidden) { event.preventDefault(); event.stopPropagation(); closeRename(); return; }
     if (event.target.id === 'mission-task' && shouldSendConversationKey(event)) { event.preventDefault(); event.stopPropagation(); if (!event.target.readOnly) $('#mission-form').requestSubmit(); return; }
-    if (event.key === 'Escape' && ($('#mission-options').open || $('#conversation-actions').open || $('#mission-context').open)) { event.preventDefault(); event.stopPropagation(); const opened = ['mission-options', 'conversation-actions', 'mission-context'].map(id => $(`#${id}`)).find(panel => panel.open); $('#mission-options').open = false; $('#conversation-actions').open = false; $('#mission-context').open = false; opened.querySelector('summary').focus({ preventScroll: true }); return; }
+    if (event.key === 'Escape' && ($('#conversation-actions').open || $('#mission-context').open)) { event.preventDefault(); event.stopPropagation(); const opened = ['conversation-actions', 'mission-context'].map(id => $(`#${id}`)).find(panel => panel.open); $('#conversation-actions').open = false; $('#mission-context').open = false; opened.querySelector('summary').focus({ preventScroll: true }); return; }
     if (event.key === 'Escape' && narrowSidebar() && mount.classList.contains('sidebar-open')) { event.preventDefault(); event.stopPropagation(); closeMobileSidebar({ restoreFocus: true }); }
   });
   function sharedDraftTask(key) { try { const stored = readStoredDrafts(); return { available: true, task: typeof stored.conversationDrafts?.[key]?.task === 'string' ? stored.conversationDrafts[key].task : key === NEW && typeof stored.task === 'string' ? stored.task : '' }; } catch { return { available: false }; } }

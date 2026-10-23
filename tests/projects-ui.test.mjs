@@ -346,7 +346,7 @@ test('expanded working-folder detail and its keyboard focus survive project upda
 
 
 test('an empty project library offers a clear starting point without empty filters or sidebar',async t=>{
-  const f=fixture(t);await f.ui.open();assert.match(f.html,/Create a saved swarm/);assert.doesNotMatch(f.html,/class="project-portfolio"/);assert.doesNotMatch(f.html,/class="project-list"/);assert.match(f.html,/class="project-layout single"/);assert.equal(f.calls.filter(call=>call.method).length,0);
+  const f=fixture(t);await f.ui.open();assert.match(f.html,/Create swarm/);assert.match(f.html,/Advanced saved plan/);assert.doesNotMatch(f.html,/class="project-portfolio"/);assert.doesNotMatch(f.html,/class="project-list"/);assert.match(f.html,/class="project-layout single"/);assert.equal(f.calls.filter(call=>call.method).length,0);
 });
 
 test('task summaries start compact and map or Next inspection expands only the requested task',async t=>{
@@ -444,7 +444,7 @@ test('legacy saved projects keep their original supplied context without reopeni
 test('retired Methods entry points open the shared Planning workspace without creating work',async t=>{
   const f=fixture(t,{methods:[reusableMethod()]});for(const options of [{tab:'methods'},{tab:'capabilities'},{methodId:'compare-method'}])await f.ui.open(options);
   assert.equal(f.planningOpened.length,3);assert.equal(f.calls.length,0);assert.equal(f.drafts.length,0);
-  await f.ui.open();assert.match(f.html,/Create a saved swarm/);assert.doesNotMatch(f.html,/data-project="(?:browse-methods|choose-method|edit-method|new-method)"/);await f.click('planning');assert.equal(f.planningOpened.length,4);assert.equal(f.calls.filter(call=>call.method).length,0);
+  await f.ui.open();assert.match(f.html,/Create swarm/);assert.match(f.html,/Advanced saved plan/);assert.doesNotMatch(f.html,/data-project="(?:browse-methods|choose-method|edit-method|new-method)"/);await f.click('planning');assert.equal(f.planningOpened.length,4);assert.equal(f.calls.filter(call=>call.method).length,0);
 });
 
 test('Swarms opens active plans by default and keeps Archive explicit across saved updates',async t=>{
@@ -566,7 +566,7 @@ test('an unavailable group refresh preserves the current move selection and bloc
 test('Swarms distinguishes saved plans from one-off creation and the related workspaces',async t=>{
   const f=fixture(t);await f.ui.open();
   assert.match(f.html,/data-action="planning"/);assert.match(f.html,/data-action="projects" aria-current="page" disabled/);assert.match(f.html,/data-action="operations"/);
-  assert.match(f.html,/data-action="swarm">One-off swarm/);assert.match(f.html,/data-project="new"[^>]*>Saved swarm/);assert.match(f.html,/Create a saved swarm/);
+  assert.match(f.html,/data-action="swarm">Create swarm/);assert.match(f.html,/data-project="new"[^>]*>Advanced saved plan/);assert.match(f.html,/Create swarm/);
   assert.equal(f.calls.filter(call=>call.method).length,0,'navigation and empty-state choices must not dispatch work');
 });
 

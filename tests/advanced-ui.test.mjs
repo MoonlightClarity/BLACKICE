@@ -16,7 +16,7 @@ function fixture(t,{deployments=[],api:onApi,onWorkflow,getWorkflow,getTaskDefau
       elements.set('#deployment-form',form);for(const name of ['interval','time','weekday','cron','timezone','preview','limit-preview','back','error','discard','draft-note'])elements.set('#deployment-'+name,element());
     }
     if(id==='swarm'){
-      const form={values:{name:'My large swarm',pattern:'research',members:'65',model:'cloud::chosen'},querySelectorAll:()=>[]};form.elements={namedItem:name=>({get value(){return form.values[name];}})};elements.set('#swarm-form',form);for(const name of ['assignment-list','autonomy-note','plan-preview','assignment-error'])elements.set('#swarm-'+name,element());
+      const form={values:{goal:'Compare actual sources and return a checked answer',name:'My large swarm',pattern:'research',members:'65',model:'cloud::chosen'},querySelectorAll:()=>[]};form.elements={namedItem:name=>({get value(){return form.values[name];}})};elements.set('#swarm-form',form);for(const name of ['assignment-list','autonomy-note','plan-preview','assignment-error'])elements.set('#swarm-'+name,element());
     }
   }
   globalThis.document={querySelector:selector=>elements.get(selector)||null};
@@ -42,7 +42,7 @@ test('schedule manager links saved configuration to clearable job history withou
 test('leaving schedule setup restores its unsaved values and enabled choice when returning from manager or Swarms',async t=>{
  const f=fixture(t);await f.ui.openSchedule();let form=f.elements.get('#deployment-form');form.values.input='Preserve this detailed task';form.values.name='Draft report';form.values.trigger='weekly';form.values.weekday='4';form.values.time='16:20';form.values.timezone='America/New_York';form.elements.enabled.checked=false;form.oninput();
  await f.elements.get('#deployment-back').onclick();assert.equal(f.modals.at(-1).id,'operations');await f.ui.openSchedule();form=f.elements.get('#deployment-form');assert.equal(form.values.input,'Preserve this detailed task');assert.equal(form.values.name,'Draft report');assert.equal(form.elements.trigger.value,'weekly');assert.equal(form.values.weekday,'4');assert.equal(form.values.time,'16:20');assert.equal(form.values.timezone,'America/New_York');assert.equal(form.elements.enabled.checked,false);assert.match(f.modals.at(-1).html,/id="deployment-draft-note">Your unsaved schedule draft is restored/);
- form.values.input='Revised draft';form.oninput();f.ui.openSwarm();assert.match(f.modals.at(-1).html,/data-action="operations"/);await f.ui.openSchedule();assert.equal(f.elements.get('#deployment-form').values.input,'Revised draft');assert.equal(f.requests.some(request=>request.path==='/api/operations/deployments'||request.path.endsWith('/trigger')),false);
+ form.values.input='Revised draft';form.oninput();f.ui.openSwarm();assert.match(f.modals.at(-1).html,/name='goal'/);await f.ui.openSchedule();assert.equal(f.elements.get('#deployment-form').values.input,'Revised draft');assert.equal(f.requests.some(request=>request.path==='/api/operations/deployments'||request.path.endsWith('/trigger')),false);
 });
 
 test('schedule drafts can be discarded and a successful save clears only that draft',async t=>{
@@ -98,8 +98,18 @@ for(const overlap of ['parallel','queue','skip'])test(`editing a deployment pres
   const form=f.elements.get('#deployment-form');form.values.overlap=overlap;await f.submit(form);const saved=f.requests.find(request=>request.method==='PUT');assert.equal(saved.path,'/api/operations/deployments/deploy');assert.equal(saved.body.expectedRevision,7);assert.equal(saved.body.overlap,overlap);assert.deepEqual(saved.body.attachmentIds,['source-file']);assert.deepEqual(saved.body.workflow,deployment.workflow);
 });
 
+test('swarm cannot start with an empty goal',async t=>{
+  const f=fixture(t);f.ui.openSwarm();const form=f.elements.get('#swarm-form');form.values.goal=' ';
+  await f.submit(form);assert.equal(f.created.length,0);assert.match(f.messages.at(-1).message,/Describe what the swarm should accomplish/);assert.equal(f.closed(),0);
+});
+
+test('an uncertain swarm submission keeps the same durable run request ID on retry',async t=>{
+  const attempts=[];const f=fixture(t,{onWorkflow:async(workflow,context)=>{attempts.push({id:workflow.id,requestId:context.requestId,task:context.task});if(attempts.length===1)throw new Error('Connection ended before the receipt arrived.');return true;}});
+  f.ui.openSwarm();const form=f.elements.get('#swarm-form');await f.submit(form);assert.equal(attempts.length,1);assert.equal(f.closed(),0);await f.submit(form);assert.equal(attempts.length,2);assert.deepEqual(attempts[0],attempts[1]);assert.equal(attempts[0].id,'swarm-'+attempts[0].requestId);assert.equal(f.closed(),1);
+});
+
 test('swarm form creates the exact research team within the shared-plan representation limit',async t=>{
-  const f=fixture(t);f.ui.openSwarm();const modal=f.modals.at(-1),form=f.elements.get('#swarm-form');assert.match(modal.html,/name="members" type="number" min="1" max="99" step="1"/);assert.match(modal.html,/200-step shared plan/);
+  const f=fixture(t);f.ui.openSwarm();const modal=f.modals.at(-1),form=f.elements.get('#swarm-form');assert.match(modal.html,/name='members' type='number' min='1' max='99' step='1'/);assert.match(modal.html,/Advanced team options/);assert.match(modal.html,/Start swarm/);
   await f.submit(form);assert.equal(f.created.length,1);const swarm=f.created[0],agents=swarm.nodes.filter(node=>node.type==='agent');assert.equal(agents.length,66);assert.equal(swarm.settings.maxParallel,65);assert.equal(agents.filter(agent=>agent.id==='coordinator').length,1);assert.ok(agents.filter(agent=>agent.id!=='coordinator').every(agent=>agent.assignment.canWrite===false&&agent.sandbox==='read-only'));assert.ok(agents.every(agent=>agent.model==='cloud::chosen'));assert.equal(f.closed(),1);
 });
 
@@ -169,8 +179,8 @@ test('saved schedules describe local recurrence, next time and pause state in th
   await f.ui.openOperations();const html=f.elements.get('#operations-view').innerHTML;assert.match(html,/Weekdays at 09:00/);assert.match(html,/America\/New_York/);assert.match(html,/Next:/);assert.match(html,/Schedules are paused/);assert.match(html,/data-op="schedule"/);assert.match(f.modals.at(-1).html,/Schedules &amp; cronjobs/);
 });
 
-test('creating a swarm explains parallel work and hands adoption a task-entry intent without starting a run',async t=>{
-  let context;const f=fixture(t,{onWorkflow:(workflow,value)=>{context=value;}});f.ui.openSwarm();assert.match(f.modals.at(-1).html,/Choose your team. Next, give it a task/);assert.match(f.modals.at(-1).html,/Creating a team starts no work/);assert.match(f.modals.at(-1).html,/Create &amp; give task/);assert.match(f.modals.at(-1).html,/<div class="modal-footer"><button type="button" class="button" data-action="projects">Back to saved swarms<\/button><button type="submit"/);assert.equal(f.created.length,0,'returning to the library must not adopt or start the one-off team');await f.submit(f.elements.get('#swarm-form'));assert.equal(context.requestTask,true);assert.equal(f.requests.length,0,'creating a team never launches a task or touches operational queues');
+test('swarm creation starts from a single goal and hands that task directly to the run callback',async t=>{
+  let context;const f=fixture(t,{onWorkflow:(workflow,value)=>{context=value;}});f.ui.openSwarm();assert.match(f.modals.at(-1).html,/Describe the result, choose your team, and start/);assert.match(f.modals.at(-1).html,/name='goal'/);assert.match(f.modals.at(-1).html,/Start swarm/);assert.match(f.modals.at(-1).html,/data-action='projects'>Saved swarms/);assert.equal(f.created.length,0,'returning to the library must not adopt or start the one-off team');await f.submit(f.elements.get('#swarm-form'));assert.equal(context.task,'Compare actual sources and return a checked answer');assert.equal(f.requests.length,0,'the run is started by the supplied workflow callback, not by the form directly');
 });
 
 test('unchanged manager polls preserve mounted rows and their handler while changed status, errors and fresh modals render',async t=>{

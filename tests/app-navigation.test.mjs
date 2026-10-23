@@ -21,7 +21,7 @@ async function fixture({pauseModule,apiResponse,desktop=true}={}){
   const timers=new Map();let clock=0,timerId=0;
   const toastRoot={children:[],append(node){node.parentNode=this;this.children.push(node);}};
   const frames=[],mount={innerHTML:''},menu={open:true},tabs=modes.map(mode=>({dataset:{mode},attributes:{},tabIndex:0,isConnected:true,setAttribute(name,value){this.attributes[name]=value;},focus(){document.activeElement=this;},closest(){return this;}})),actions={hidden:true};
-  const effects=[],skip={},destinations=Object.fromEntries(['mission-task','observe-workspace','planning-workspace','configure-workspace','desktop-workspace'].map(id=>[id,{id}])),canvas={id:'canvas',scrollTop:0,scrollLeft:0,clientWidth:900,clientHeight:600,style:{},focus(options){document.activeElement=this;this.focusOptions=options;},getBoundingClientRect(){return{width:this.clientWidth,height:this.clientHeight};}},world={style:{}},zoom={};let focusables=[];
+  const effects=[],skip={},destinations=Object.fromEntries(['mission-task','observe-workspace','planning-workspace','configure-workspace'].map(id=>[id,{id}])),canvas={id:'canvas',scrollTop:0,scrollLeft:0,clientWidth:900,clientHeight:600,style:{},focus(options){document.activeElement=this;this.focusOptions=options;},getBoundingClientRect(){return{width:this.clientWidth,height:this.clientHeight};}},world={style:{}},zoom={};let focusables=[];
   mount.querySelectorAll=()=>focusables;mount.querySelector=selector=>selector==='.modal'?modal:null;
   let modal=null;const document={addEventListener(name,handler){listeners.set(name,handler);},activeElement:{tagName:'BODY',dataset:{},isConnected:true,closest(){return null;},focus(){document.activeElement=this;}},createElement(tag){return{tagName:tag.toUpperCase(),className:'',textContent:'',remove(){const parent=this.parentNode;if(parent){parent.children.splice(parent.children.indexOf(this),1);this.parentNode=null;}},focus(){document.activeElement=this;}};},querySelector(selector){if(selector==='#toast-root')return toastRoot;if(selector==='.skip-link')return skip;if(selector==='#canvas')return canvas;if(selector==='#world')return world;if(selector==='#zoom-level')return zoom;if(destinations[selector.slice(1)])return destinations[selector.slice(1)];if(selector==='#modal-root')return mount;if(selector==='#modal-root .modal')return modal;if(selector==='.workspace-menu')return menu;if(selector==='#configure-mode-actions')return actions;const mode=/\[data-mode="([^"]+)"\]/.exec(selector)?.[1];return mode?tabs.find(tab=>tab.dataset.mode===mode):null;},querySelectorAll(selector){return selector.includes('#workspace-modes')?tabs:[];}};
   document.body=document.activeElement;
@@ -59,6 +59,13 @@ async function fixture({pauseModule,apiResponse,desktop=true}={}){
   const app=context.app;app.state.workflow={id:'draft',name:'Unfinished workflow',nodes:[],edges:[],settings:{cwd:'C:\\fixture'}};app.state.dirty=false;
   return{...app,configureCallbacks:()=>configureCallbacks,observeCallbacks:()=>observeCallbacks,observedEntries,planningCallbacks:()=>planningCallbacks,inboxCallbacks:()=>inboxCallbacks,modal:()=>modal,activateAction(action){const button={tagName:'BUTTON',dataset:{action},isConnected:true,closest(selector){return selector==='[data-action]'?this:null;}};document.activeElement=button;return listeners.get('click')({target:button,detail:0});},toastRoot,pendingTimers:()=>timers.size,advance(milliseconds){const target=clock+milliseconds;for(;;){const next=[...timers].filter(([,item])=>item.at<=target).sort((a,b)=>a[1].at-b[1].at||a[0]-b[0])[0];if(!next)break;clock=next[1].at;timers.delete(next[0]);next[1].callback();}clock=target;},tabs,actions,menu,mount,document,skip,destinations,canvas,world,effects,setFocusables(items){focusables=items;},key(key,options={}){const event={key,code:key===' '?'Space':key,preventDefault(){this.defaultPrevented=true;},...options};app.handleGlobalKey(event);return event;},opened,cancelled,messages,draft,settingsDraft,release:()=>pending?.resolve(),flush(){while(frames.length)frames.shift()();}};
 }
+
+test('the legacy Desktop route is not exposed by the current UI',async()=>{
+  const source=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
+  assert.doesNotMatch(source,/class="desktop-workspace/);
+  assert.doesNotMatch(source,/data-action="desktop"/);
+  assert.doesNotMatch(source,/label:'Open agent desktop'/);
+});
 
 test('repeating a toast reuses one message, resets its lifetime and preserves focus',async()=>{
   const f=await fixture(),focused=f.document.activeElement;
@@ -198,7 +205,7 @@ test('leaving Email cancels its pending requests while preserving the original c
 
 test('workflow editing shortcuts cannot change a hidden workflow or consume modal editing keys',async()=>{
   const f=await fixture();f.state.workflow.nodes=[{id:'keep',type:'agent',name:'Keep this node'}];f.state.selected='keep';
-  for(const screen of ['mission','observe','planning','configure','desktop']){
+  for(const screen of ['mission','observe','planning','configure']){
     f.state.screen=screen;
     for(const key of ['Delete','Backspace','f',' '])assert.equal(f.key(key).defaultPrevented,undefined,`${screen}: ${key}`);
     if(screen!=='mission')for(const key of ['s','Enter','z','y'])assert.equal(f.key(key,{ctrlKey:true}).defaultPrevented,undefined,`${screen}: Ctrl+${key}`);
@@ -244,7 +251,7 @@ test('Chat send shortcuts preserve composition, line breaks, read-only state and
 });
 
 test('each workspace skip link targets its visible focusable content',async()=>{
-  const f=await fixture();for(const [screen,id]of [['mission','mission-task'],['observe','observe-workspace'],['configure','configure-workspace'],['workflow','canvas'],['desktop','desktop-workspace']]){
+  const f=await fixture();for(const [screen,id]of [['mission','mission-task'],['observe','observe-workspace'],['configure','configure-workspace'],['workflow','canvas']]){
     f.state.screen=screen;f.updateSkipLink();assert.equal(f.skip.href,'#'+id);if(screen!=='mission')assert.equal((id==='canvas'?f.canvas:f.destinations[id]).tabIndex,-1);
   }
 });
