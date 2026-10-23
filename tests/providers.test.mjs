@@ -1152,23 +1152,107 @@ test('a parsed OpenRouter upstream service rejection stays with its model and ne
   assert.equal(requests.length, 2);
 });
 
-test('malformed assistant tool arguments are rejected locally and a later provider rejection keeps its status without echoing upstream messages', async t => {
-  const malformed = '{"target":"workspace"', secret = 'fixture-malformed-private-key', payload = 'private request payload marker';
-  let effects = 0, threadId;
-  const { runtime, baseUrl, cwd, requests, dataDir } = await harness(t, (request, response, index) => {
-    if (index === 1) return json(response, { choices: [{ message: { role: 'assistant', content: null, tool_calls: [{ id: 'invalid-tool-json', type: 'function', function: { name: 'relay_observe', arguments: malformed } }] }, finish_reason: 'tool_calls' }] });
-    assert.equal(request.body.messages.find(message => message.role === 'assistant').tool_calls[0].function.arguments, malformed, 'the saved transcript proves what was forwarded; this fixture does not infer the live upstream failure cause');
-    assert.equal(request.body.messages.find(message => message.role === 'tool').tool_call_id, 'invalid-tool-json');
-    return json(response, { error: { message: 'Provider returned error', metadata: { raw: JSON.stringify({ error: { code: 'invalid_tool_arguments', type: 'invalid_request_error', param: 'messages[0].tool_calls[0].function.arguments', message: `${payload} ${secret}`, request: request.body } }) } } }, 400);
+test('large OpenRouter error envelopes retain allowlisted upstream diagnostics without exposing private contents', async t => {
+  const secret = 'fixture-large-upstream-private-key', payload = 'private upstream transcript marker', privateMessage = `${payload} ${secret} `.repeat(160);
+  const { runtime, baseUrl, cwd, requests } = await harness(t, (request, response) => {
+    const envelope = { error: { message: 'Provider returned error', metadata: { provider_name: 'AtlasCloud', raw: JSON.stringify({ error: { code: 'invalid_tool_arguments', type: 'invalid_request_error', param: 'messages[2].tool_calls[0].function.arguments', status: 400, message: privateMessage, request: request.body } }) } } };
+    assert.ok(JSON.stringify(envelope).length > 2000, 'the complete error envelope must exceed the former read limit');
+    assert.ok(envelope.error.metadata.raw.length <= 20_000, 'upstream metadata stays within its existing parsing limit');
+    return json(response, envelope, 400);
   });
-  await runtime.saveProvider({ id: 'malformed', preset: 'openrouter', baseUrl, apiKey: secret, models: ['exact:free'] });
-  await assert.rejects(runtime.runAgent({ cwd, model: 'malformed::exact:free', prompt: payload, dynamicTools: [tool], onEvent: event => { threadId ||= event.threadId; }, onToolCall: async () => { effects++; return { success: true, contentItems: [] }; } }), cause => cause.code === 'PROVIDER_HTTP' && cause.httpStatus === 400 && cause.upstreamCode === 'invalid_tool_arguments' && cause.upstreamParam === 'messages[0].tool_calls[0].function.arguments' && /HTTP 400/.test(cause.message) && !cause.message.includes(payload) && !cause.message.includes(secret));
-  assert.equal(effects, 0, 'malformed tool JSON cannot reach a side effect'); assert.equal(requests.length, 2);
-  const saved = JSON.parse(await readFile(path.join(dataDir, 'provider-threads', `${threadId}.json`), 'utf8'));
-  assert.equal(saved.messages.find(message => message.role === 'assistant').tool_calls[0].function.arguments, malformed);
-  const provider = runtime.listProviders()[0], receipt = provider.modelChecks['exact:free'].lastFailure;
-  assert.equal(provider.lastFailure, undefined); assert.equal(receipt.scope, 'request'); assert.equal(receipt.httpStatus, 400); assert.equal(receipt.upstreamCode, 'invalid_tool_arguments');
-  assert.ok(!JSON.stringify(runtime.status()).includes(payload)); assert.ok(!JSON.stringify(runtime.status()).includes(secret));
+  await runtime.saveProvider({ id: 'large-upstream', preset: 'openrouter', baseUrl, apiKey: secret, models: ['exact:free'] });
+  await assert.rejects(runtime.runAgent({ cwd, model: 'large-upstream::exact:free', prompt: payload }), cause => {
+    assert.equal(cause.code, 'PROVIDER_HTTP'); assert.equal(cause.httpStatus, 400); assert.equal(cause.upstreamStatus, 400);
+    assert.equal(cause.upstreamCode, 'invalid_tool_arguments'); assert.equal(cause.upstreamType, 'invalid_request_error');
+    assert.equal(cause.upstreamParam, 'messages[2].tool_calls[0].function.arguments'); assert.equal(cause.upstreamProvider, 'AtlasCloud');
+    assert.ok(!cause.message.includes(payload)); assert.ok(!cause.message.includes(secret)); assert.ok(!JSON.stringify(cause).includes(payload)); return true;
+  });
+  const receipt = runtime.listProviders()[0].modelChecks['exact:free'].lastFailure;
+  assert.equal(receipt.httpStatus, 400); assert.equal(receipt.upstreamStatus, 400); assert.equal(receipt.upstreamCode, 'invalid_tool_arguments');
+  assert.equal(receipt.upstreamType, 'invalid_request_error'); assert.equal(receipt.upstreamParam, 'messages[2].tool_calls[0].function.arguments'); assert.equal(receipt.upstreamProvider, 'AtlasCloud');
+  assert.ok(!JSON.stringify(runtime.status()).includes(payload)); assert.ok(!JSON.stringify(runtime.status()).includes(secret)); assert.equal(requests.length, 1);
+});
+
+for (const format of ['json', 'sse']) for (const fixture of [
+  { name: 'malformed JSON', arguments: '{"target":"workspace"' },
+  { name: 'nonobject JSON', arguments: '["workspace"]' },
+  { name: 'empty arguments', arguments: '' },
+]) test(`compatible ${format}: ${fixture.name} recovers without executing it or poisoning mixed and restored tool history`, async t => {
+  const calls = [
+    { id: 'reused-call-id', type: 'function', function: { name: 'relay_observe', arguments: fixture.arguments } },
+    { id: 'valid-sibling', type: 'function', function: { name: 'relay_observe', arguments: '{"target":"sibling"}' } },
+  ];
+  const send = (response, message, finishReason) => format === 'json'
+    ? json(response, { choices: [{ index: 0, message: { role: 'assistant', ...message }, finish_reason: finishReason }] })
+    : sse(response, [{ choices: [{ index: 0, delta: { ...message, ...(message.tool_calls ? { tool_calls: message.tool_calls.map((call, index) => ({ ...call, index })) } : {}) } }] }, { choices: [{ index: 0, delta: {}, finish_reason: finishReason }] }]);
+  const effects = [];
+  const { runtime, baseUrl, cwd, requests, dataDir } = await harness(t, (request, response, index) => {
+    if (index === 1) return send(response, { content: 'Preserve the assistant context.', tool_calls: calls }, 'tool_calls');
+    const messages = request.body.messages, firstAssistant = messages.find(message => message.role === 'assistant');
+    assert.equal(firstAssistant.content, 'Preserve the assistant context.');
+    assert.deepEqual(firstAssistant.tool_calls.map(call => call.id), ['valid-sibling']);
+    assert.deepEqual(JSON.parse(firstAssistant.tool_calls[0].function.arguments), { target: 'sibling' });
+    const firstAssistantIndex = messages.indexOf(firstAssistant);
+    assert.equal(messages[firstAssistantIndex + 1].role, 'tool'); assert.equal(messages[firstAssistantIndex + 1].tool_call_id, 'valid-sibling');
+    const diagnostic = messages[firstAssistantIndex + 2];
+    assert.equal(diagnostic.role, 'user'); assert.match(diagnostic.content, /BLACKICE TOOL-CALL HISTORY/);
+    assert.match(diagnostic.content, /reused-call-id/); assert.match(diagnostic.content, /recordedResults/); assert.ok(diagnostic.content.length <= 8192);
+    if (index === 2) {
+      assert.equal(messages.filter(message => message.role === 'tool' && message.tool_call_id === 'reused-call-id').length, 0);
+      return send(response, { content: null, tool_calls: [{ id: 'reused-call-id', type: 'function', function: { name: 'relay_observe', arguments: '{"target":"corrected"}' } }] }, 'tool_calls');
+    }
+    const corrected = messages.find(message => message.role === 'assistant' && message.tool_calls?.some(call => call.id === 'reused-call-id'));
+    assert.deepEqual(JSON.parse(corrected.tool_calls[0].function.arguments), { target: 'corrected' }, 'later valid calls with the same ID must remain paired');
+    assert.equal(messages[messages.indexOf(corrected) + 1].tool_call_id, 'reused-call-id');
+    return send(response, { content: index === 3 ? 'Recovered.' : 'Continued.' }, 'stop');
+  });
+  await runtime.saveProvider({ id: 'malformed', preset: 'openrouter', baseUrl, apiKey: 'fixture-recovery-key', models: ['exact:free'] });
+  const result = await runtime.runAgent({ cwd, model: 'malformed::exact:free', prompt: 'Recover a rejected synthetic tool call.', dynamicTools: [tool], onToolCall: async call => { effects.push(call.arguments.target); return { success: true, contentItems: [{ type: 'inputText', text: `Observed ${call.arguments.target}.` }] }; } });
+  assert.equal(result.output, 'Recovered.'); assert.deepEqual(effects, ['sibling', 'corrected']); assert.equal(requests.length, 3);
+  const threadPath = path.join(dataDir, 'provider-threads', `${result.threadId}.json`), saved = JSON.parse(await readFile(threadPath, 'utf8'));
+  assert.equal(saved.messages.find(message => message.role === 'assistant').tool_calls[0].function.arguments, fixture.arguments);
+  assert.equal(saved.transcript.find(message => message.role === 'assistant').tool_calls[0].function.arguments, fixture.arguments);
+  assert.equal(saved.messages.filter(message => message.role === 'tool' && message.tool_call_id === 'reused-call-id').length, 2, 'durable history retains rejected and corrected receipts');
+  const restored = await new ProviderRuntime({ codex: new FakeCodex(), dataDir }).init(); t.after(() => restored.close());
+  await restored.saveProvider({ id: 'malformed', apiKey: 'fixture-recovery-key' });
+  const continued = await restored.runAgent({ cwd, model: 'malformed::exact:free', threadId: result.threadId, prompt: 'Continue using the saved observations.', dynamicTools: [tool], onToolCall: async () => { throw new Error('Confirmed work must not be repeated.'); } });
+  assert.equal(continued.output, 'Continued.'); assert.equal(requests.length, 4); assert.deepEqual(effects, ['sibling', 'corrected']);
+  const resaved = JSON.parse(await readFile(threadPath, 'utf8'));
+  assert.deepEqual(resaved.messages.slice(0, saved.messages.length), saved.messages); assert.deepEqual(resaved.transcript.slice(0, saved.transcript.length), saved.transcript);
+});
+
+test('compatible duplicate IDs pair only the rejected occurrence with its own result in either sibling order', async t => {
+  const call = (id, args) => ({ id, type: 'function', function: { name: 'relay_observe', arguments: args } });
+  const calls = [call('invalid-first', 'null'), call('invalid-first', '{"target":"first-valid"}'), call('invalid-second', '{"target":"second-valid"}'), call('invalid-second', '[]')];
+  const effects = [];
+  const { runtime, baseUrl, cwd } = await harness(t, (request, response, index) => {
+    if (index === 1) return json(response, { choices: [{ message: { role: 'assistant', content: null, tool_calls: calls }, finish_reason: 'tool_calls' }] });
+    const assistant = request.body.messages.find(message => message.role === 'assistant'), results = request.body.messages.filter(message => message.role === 'tool');
+    assert.deepEqual(assistant.tool_calls.map(item => JSON.parse(item.function.arguments).target), ['first-valid', 'second-valid']);
+    assert.deepEqual(results.map(item => [item.tool_call_id, item.content]), [['invalid-first', 'Observed first-valid.'], ['invalid-second', 'Observed second-valid.']]);
+    const diagnostic = request.body.messages.find(message => message.content?.includes('BLACKICE TOOL-CALL HISTORY'));
+    assert.match(diagnostic.content, /Tool arguments must be a JSON object/); assert.ok(!diagnostic.content.includes('Observed first-valid')); assert.ok(!diagnostic.content.includes('Observed second-valid'));
+    return json(response, { choices: [{ message: { role: 'assistant', content: 'Both valid siblings preserved.' }, finish_reason: 'stop' }] });
+  });
+  await runtime.saveProvider({ id: 'duplicate-ids', type: 'compatible', baseUrl, models: ['model'] });
+  const result = await runtime.runAgent({ cwd, model: 'duplicate-ids::model', prompt: 'Recover malformed duplicate-ID siblings.', dynamicTools: [tool], onToolCall: async call => { effects.push(call.arguments.target); return { success: true, contentItems: [{ type: 'inputText', text: `Observed ${call.arguments.target}.` }] }; } });
+  assert.equal(result.output, 'Both valid siblings preserved.'); assert.deepEqual(effects, ['first-valid', 'second-valid']);
+});
+
+test('compatible all-invalid batches become bounded historical diagnostics without orphaned tool results', async t => {
+  const calls = Array.from({ length: 80 }, (_, index) => ({ id: `rejected-${index}`, type: 'function', function: { name: 'relay_observe', arguments: 'null' } }));
+  let effects = 0;
+  const { runtime, baseUrl, cwd, requests } = await harness(t, (request, response, index) => {
+    if (index === 1) return json(response, { choices: [{ message: { role: 'assistant', content: '\n\n\n', tool_calls: calls }, finish_reason: 'tool_calls' }] });
+    assert.equal(request.body.messages.some(message => message.role === 'tool'), false);
+    assert.equal(request.body.messages.some(message => message.role === 'assistant'), false);
+    const diagnostic = request.body.messages.find(message => message.content?.includes('BLACKICE TOOL-CALL HISTORY'));
+    assert.match(diagnostic.content, /rejected-0/); assert.match(diagnostic.content, /Additional rejected calls/); assert.ok(diagnostic.content.length <= 8192);
+    return json(response, { choices: [{ message: { role: 'assistant', content: 'Recovered the rejected batch.' }, finish_reason: 'stop' }] });
+  });
+  await runtime.saveProvider({ id: 'rejected-batch', type: 'compatible', baseUrl, models: ['model'] });
+  const result = await runtime.runAgent({ cwd, model: 'rejected-batch::model', prompt: 'Recover invalid synthetic tool requests.', dynamicTools: [tool], onToolCall: async () => { effects++; return { success: true, contentItems: [] }; } });
+  assert.equal(result.output, 'Recovered the rejected batch.'); assert.equal(effects, 0); assert.equal(requests.length, 2);
 });
 
 test('unstructured OpenRouter raw errors and unknown metadata are not copied into diagnostics', async t => {
