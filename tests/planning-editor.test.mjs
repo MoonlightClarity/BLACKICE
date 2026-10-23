@@ -329,3 +329,28 @@ for(const width of [400,1440])for(const readOnly of [false,true])test('selecting
   if(!readOnly){await f.dom.click(target);assert.equal(f.dom.$('#planning-editor-panel').hidden,false);assert.equal(f.controller.draft().mode,'add');}
   assert.equal(f.calls.filter(call=>call.method==='POST').length,0,'selecting an empty saved plan must not create steps or dispatch work');
 });
+
+test('Planning Archive and reversible Trash name their chat scope and only act after the explicit choice',async t=>{
+  const f=await fixture(t,{ui:true}),c=f.controller,before=await f.store.get('task-a');c.edit('goal','Keep my unfinished objective while organizing');const pending=c.draft();
+  f.hook((url,method)=>{const match=/^\/api\/conversations\/run-task-a\/(archive|delete|restore)$/.exec(url);if(method==='POST'&&match){const meta=f.metas.get('task-a');meta.bucket=match[1]==='restore'?'active':match[1]==='archive'?'archived':'deleted';meta.editable=meta.bucket!=='deleted';return{state:meta.bucket};}});
+  const writes=()=>f.calls.filter(call=>call.method==='POST'),more=()=>f.dom.$('[data-planning-disclosure="plan-actions"]');
+  async function inspectHistory(bucket){await f.dom.click('[data-planning-pane="saved"]');f.dom.$('[data-planning-disclosure="catalog-options"]').open=true;await f.dom.input('#planning-state',bucket);await c.loadCatalog();await f.dom.click('[data-planning-task="task-a"]');}
+  assert.equal(more().open,false);more().open=true;const archive=f.dom.$('[data-planning-action="archive-plan"]');assert.equal(archive.textContent,'Archive plan and chat');await f.dom.click(archive);
+  assert.equal(f.metas.get('task-a').bucket,'archived');assert.equal(c.entries.get('task-a').drafts.get('goal'),pending);assert.deepEqual(await f.store.get('task-a'),before);
+  await inspectHistory('archived');assert.equal(f.dom.$('[data-planning-action="restore-plan"]').textContent,'Restore to Active plans');assert.equal(f.dom.$('[data-planning-action="archive-plan"]'),null);await f.dom.click('[data-planning-action="restore-plan"]');await inspectHistory('active');
+  more().open=true;const trash=f.dom.$('[data-planning-disclosure="trash-plan"]');assert.equal(trash.open,false);trash.open=true;assert.match(trash.textContent,/plan and its chat.*restore them from the Trash view/);trash.open=false;assert.equal(writes().length,2,'revealing or dismissing Trash must not change history');assert.equal(c.draft().values.goal,'Keep my unfinished objective while organizing');
+  trash.open=true;const final=f.dom.$('[data-planning-action="trash-plan"]');assert.equal(final.textContent,'Move plan and chat to Trash');await f.dom.click(final);assert.equal(f.metas.get('task-a').bucket,'deleted');assert.deepEqual(await f.store.get('task-a'),before);
+  await inspectHistory('deleted');assert.equal(c.editable(),false);assert.equal(f.dom.$('[data-planning-action="restore-plan"]').textContent,'Restore from Trash');assert.equal(f.dom.$('[data-planning-action="trash-plan"]'),null);assert.equal(f.dom.$('[data-planning-action="archive-plan"]'),null);assert.doesNotMatch(more().textContent,/permanent|purge/i,'unimplemented permanent deletion must not be presented as an available action');
+  await f.dom.click('[data-planning-action="restore-plan"]');await inspectHistory('active');assert.equal(c.draft().values.goal,'Keep my unfinished objective while organizing');assert.deepEqual(await f.store.get('task-a'),before);
+  assert.deepEqual(writes().map(call=>call.url),['archive','restore','delete','restore'].map(action=>'/api/conversations/run-task-a/'+action));assert.ok(writes().every(call=>Object.keys(call.body).length===0),'plan history actions must not rewrite plan steps or dispatch workers');
+});
+
+test('step removal explains immediate branch scope and saves only the chosen branch while retaining other drafts',async t=>{
+  const f=await fixture(t,{ui:true}),c=f.controller,current=await f.store.get('task-a');
+  const saved=await f.store.setPlan('task-a',{plan:{layout:'parallel'},steps:[{...action('branch','Draft branch'),kind:'sequence'},{...action('child','A child step'),parentId:'branch'},action('keep','Keep independent work')]},{expectedRevision:current.revision,runId:'run-task-a',nodeId:'agent',schemaVersion:4});await f.event(saved);
+  c.selectEditor('keep');c.edit('note','Keep this unrelated unsaved note');const otherDraft=c.draft();c.selectEditor('branch');c.setPane('edit');
+  const removal=f.dom.$('[data-planning-disclosure="remove"]');assert.equal(removal.open,false);removal.open=true;assert.match(removal.textContent,/Draft branch.*all its child steps.*saved plan now.*cannot be undone here.*chat and runtime history are kept/);assert.equal(f.dom.$('[data-planning-action="remove"]').textContent,'Remove branch now');removal.open=false;
+  assert.equal(f.calls.filter(call=>call.method==='POST').length,0,'opening or dismissing the removal explanation must not save');assert.equal((await f.store.get('task-a')).steps.length,3);
+  removal.open=true;await f.dom.click('[data-planning-action="remove"]');const result=await f.store.get('task-a'),write=f.calls.find(call=>call.method==='POST');
+  assert.deepEqual(write.body.operations,[{type:'remove',stepId:'branch'}]);assert.equal(write.body.expectedRevision,saved.revision);assert.deepEqual(result.steps.map(step=>step.id),['keep']);assert.equal(c.entry().drafts.get('keep'),otherDraft);assert.equal(otherDraft.values.note,'Keep this unrelated unsaved note');assert.match(f.dom.$('#planning-editor-messages').textContent,/Removed “Draft branch” from the plan.*Saved revision/);assert.equal(f.calls.filter(call=>call.method==='POST').length,1);
+});

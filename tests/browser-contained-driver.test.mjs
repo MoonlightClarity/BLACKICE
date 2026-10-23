@@ -7,6 +7,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import vm from 'node:vm';
 import { BrowserWorkspace, createBrowserToolHandler } from '../lib/browser.mjs';
+import { BrowserRouter } from '../desktop/browser-router.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 async function fixture(t, { command = async () => ({}), loadURL = async () => {}, loadExtension = async () => ({ id: 'owned-compatibility-extension' }), limits = {}, closeError } = {}) {
@@ -201,6 +202,62 @@ test('guarded human preview clicks release the input queue without waiting or sc
   assert.deepEqual(windows[0].captureArgs, [undefined, { stayHidden: true }]);
   assert.deepEqual(windows[0].protocol.filter(call => call.method.startsWith('Input.')).map(call => call.params.type || call.method), ['mouseMoved', 'mousePressed', 'mouseReleased', 'Input.insertText']);
   assertContained(windows[0]);
+});
+
+test('guarded wheel input crosses the real workspace and router with both axes and no DOM scan', async t => {
+  let release, scrolling;
+  const pending = new Promise(resolve => { release = resolve; });
+  const { driver, windows } = await fixture(t, { command: async (method, params) => {
+    if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseWheel') { scrolling = true; await pending; }
+    return {};
+  } });
+  t.after(() => release());
+  const tab = driver.newTab('https://example.test/'); await tab.loading;
+  const browser = new BrowserWorkspace({ driver: new BrowserRouter({ independent: driver }) }); t.after(() => browser.close());
+  const guard = { browser: 'relay', tabId: tab.id, expectedUrl: 'https://example.test/', expectedDocumentId: `${tab.id}:${tab.revision}` };
+  driver.settle = async () => assert.fail('Wheel input must not wait for page settling.');
+  driver.snapshot = async () => assert.fail('Wheel input must not scan the page.');
+  const wheel = browser.perform({ action: 'scroll', ...guard, x: 340.5, y: 190.25, deltaX: -32.5, deltaY: 180.75 }, { source: 'user' });
+  const typed = browser.perform({ action: 'type', ...guard, text: 'next input' }, { source: 'user' });
+  for (let index = 0; index < 20 && !scrolling; index++) await tick();
+  assert.equal(scrolling, true);
+  assert.equal(windows[0].protocol.some(call => call.method === 'Input.insertText'), false, 'later input waits for the wheel receipt');
+  release();
+  const [result, typedResult] = await Promise.all([wheel, typed]);
+  assert.equal(result.documentId, guard.expectedDocumentId); assert.equal(result.url, guard.expectedUrl); assert.equal(result.tabId, tab.id);
+  assert.deepEqual(result.receipt, { scrolled: true, deltaX: -32.5, deltaY: 180.75, input: 'browser protocol' });
+  assert.equal(result.frames, undefined); assert.equal(typedResult.receipt.typed, true);
+  assert.deepEqual(windows[0].protocol.filter(call => call.method.startsWith('Input.')), [
+    { method: 'Input.dispatchMouseEvent', params: { type: 'mouseMoved', x: 340.5, y: 190.25, button: 'none' } },
+    { method: 'Input.dispatchMouseEvent', params: { type: 'mouseWheel', x: 340.5, y: 190.25, deltaX: -32.5, deltaY: 180.75, button: 'none' } },
+    { method: 'Input.insertText', params: { text: 'next input' } },
+  ]);
+  assertContained(windows[0]);
+});
+
+test('wheel input rejects an outdated document or a pointer outside its viewport before dispatch', async t => {
+  const { driver, windows } = await fixture(t), tab = driver.newTab('https://example.test/'); await tab.loading;
+  const wheel = { action: 'scroll', browser: 'relay', tabId: tab.id, x: 120, y: 90, deltaX: 0, deltaY: 120, expectedUrl: 'https://example.test/', expectedDocumentId: `${tab.id}:${tab.revision}` };
+  await assert.rejects(driver.perform({ ...wheel, x: 1280 }), { code: 'BROWSER_VALIDATION', actionDispatched: false });
+  await assert.rejects(driver.perform({ ...wheel, y: 900 }), { code: 'BROWSER_VALIDATION', actionDispatched: false });
+  await assert.rejects(driver.perform({ ...wheel, expectedDocumentId: tab.id + ':old' }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', actionDispatched: false });
+  windows[0].webContents.executeJavaScript = async () => { tab.revision++; return { width: 1280, height: 900 }; };
+  await assert.rejects(driver.perform(wheel), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+  assert.equal(windows[0].protocol.some(call => call.method.startsWith('Input.')), false);
+});
+
+test('cancelled wheel viewport work never dispatches native input later', async t => {
+  const { driver, windows } = await fixture(t), tab = driver.newTab('https://example.test/'); await tab.loading;
+  const wheel = { action: 'scroll', browser: 'relay', tabId: tab.id, x: 120, y: 90, deltaX: 0, deltaY: 120, expectedUrl: 'https://example.test/', expectedDocumentId: tab.id + ':' + tab.revision };
+  const controller = new AbortController(); let release, entered;
+  const ready = new Promise(resolve => { entered = resolve; });
+  const viewport = new Promise(resolve => { release = resolve; });
+  windows[0].webContents.executeJavaScript = async () => { entered(); return viewport; };
+  const result = driver.perform(wheel, { source: 'user', signal: controller.signal });
+  const rejected = assert.rejects(result, { name: 'AbortError' });
+  await ready; controller.abort(); await rejected;
+  release({ width: 1280, height: 900 }); await tick();
+  assert.equal(windows[0].protocol.some(call => call.method.startsWith('Input.')), false);
 });
 
 test('agent, unguarded, and reference clicks retain their post-action page inspection', async t => {

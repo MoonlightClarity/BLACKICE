@@ -161,12 +161,12 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     if (focus) actionNode('point')?.focus?.({ preventScroll: true });
     inputFeedback();
   }
-  function captureInput() {
+  function captureInput({ keyboard = true } = {}) {
     if (!state.frame?.documentId || !state.frame.url || state.stale || model().selected?.pendingInteraction || !visible()) return null;
     if (inputSession && !inputMatches(inputSession)) stopInput();
     if (!inputSession) inputSession = { tabId: state.frame.tabId, url: state.frame.url, documentId: state.frame.documentId, queue: [], controller: new AbortController(), running: null, composing: false };
-    state.followAgent = false; state.selectedId = inputSession.tabId; state.inputActive = true; state.inputNotice = '';
-    $('#observe-browser-input')?.focus?.({ preventScroll: true });
+    state.followAgent = false; state.selectedId = inputSession.tabId; state.inputNotice = '';
+    if (keyboard) { state.inputActive = true; $('#observe-browser-input')?.focus?.({ preventScroll: true }); }
     inputFeedback();
     return inputSession;
   }
@@ -176,7 +176,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     // frozen. Captures remain serialized with page input and capped at 4 Hz.
     if (inputSession !== session || !visible()) return;
     if (inputRefreshDue) {
-      if (!session.composing && !session.running && !session.queue.length && !state.busy && !state.protectionBusy) void work();
+      if (!session.composing && !session.running && !state.busy && !state.protectionBusy) void work();
       return;
     }
     if (inputRefresh !== null) return;
@@ -199,11 +199,25 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
   function pumpInput() {
     const session = inputSession;
     if (!session || session.running || !session.queue.length || state.busy || state.protectionBusy || !visible()) return session?.running;
+    // A due preview can be released by compositionend before a pump starts.
+    // Handle it before assigning the async worker: a synchronous early exit
+    // inside that worker would otherwise overwrite its finally cleanup with
+    // the already-fulfilled Promise and permanently stall this input session.
+    if (inputRefreshDue) { refreshAfterInput(session); return; }
     session.running = (async () => {
       try {
         while (inputSession === session && session.queue.length && visible() && !state.busy && !state.protectionBusy) {
+          if (inputRefreshDue) break;
           if (!inputMatches(session) || state.stale) throw Error('The contained page changed before queued input could be applied.');
-          const item = session.queue.shift();
+          let item = session.queue.shift();
+          if (item.action === 'scroll') {
+            // Keep accumulated trackpad distance without sending one enormous
+            // event. Splitting at dispatch preserves its place among clicks,
+            // text and editing keys, including both wheel axes.
+            const deltaX = Math.max(-2000, Math.min(2000, item.deltaX)), deltaY = Math.max(-2000, Math.min(2000, item.deltaY));
+            if (deltaX !== item.deltaX || deltaY !== item.deltaY) session.queue.unshift({ ...item, deltaX: item.deltaX - deltaX, deltaY: item.deltaY - deltaY });
+            item = { ...item, deltaX, deltaY };
+          }
           state.progressUntil = now() + 10000;
           const popup = watchPopup(session.tabId, item);
           let result;
@@ -220,13 +234,15 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
           }
           if (item.action === 'click') adoptDocument(result, session.tabId);
           state.controlsStale = true;
+          refreshAfterInput(session);
         }
       } catch (error) {
         if (inputSession === session && visible()) recoverInput({ uncertain: true });
       } finally {
         session.running = null;
         if (inputSession === session && visible()) {
-          if (session.queue.length && !state.busy && !state.protectionBusy) queueMicrotask(pumpInput);
+          if (inputRefreshDue) refreshAfterInput(session);
+          else if (session.queue.length && !state.busy && !state.protectionBusy) queueMicrotask(pumpInput);
           else refreshAfterInput(session);
         }
       }
@@ -245,6 +261,10 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     }
     const last = session.queue.at(-1);
     if (item.action === 'type' && last?.action === 'type' && last.text.length + item.text.length <= 16384) last.text += item.text;
+    else if (item.action === 'scroll' && last?.action === 'scroll' && last.x === item.x && last.y === item.y && Math.abs(last.deltaX + item.deltaX) <= 32000 && Math.abs(last.deltaY + item.deltaY) <= 32000) {
+      last.deltaX += item.deltaX; last.deltaY += item.deltaY;
+      if (!last.deltaX && !last.deltaY) session.queue.pop();
+    }
     else session.queue.push(item);
     void pumpInput(); return true;
   }
@@ -379,7 +399,8 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     await work();
   }
   async function work(action = 'refresh', extra = {}) {
-    if (!visible() || state.busy || state.protectionBusy || inputSession?.running || inputSession?.queue.length) return; remember();
+    const inputPreview = action === 'refresh' && inputRefreshDue && !inputSession?.composing;
+    if (!visible() || state.busy || state.protectionBusy || inputSession?.running || inputSession?.queue.length && !inputPreview) return; remember();
     if (action === 'refresh') { clearTimeout(inputRefresh); inputRefresh = null; inputRefreshDue = false; }
     const origin = typeof document === 'undefined' ? null : document.activeElement;
     state.pendingFocus = mount.contains?.(origin) ? focusSnapshot(origin) : null;
@@ -652,6 +673,17 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
   const focusout = event => {
     if (event.target.id === 'observe-browser-input' && !rendering) stopInput();
   };
+  const wheel = event => {
+    const preview = event.target.closest?.('[data-observe-browser="point"]');
+    if (!preview || preview.disabled || !mount.contains(preview) || !visible() || event.ctrlKey || event.metaKey || event.cancelable === false || state.protectionBusy || state.busy && !['refresh', 'inspect'].includes(state.action)) return;
+    const frame = state.frame, point = observeBrowserPoint(frame, event, $('#observe-browser-image')?.getBoundingClientRect?.());
+    const mode = event.deltaMode ?? 0, xUnit = mode === 1 ? 16 : mode === 2 ? frame?.width : 1, yUnit = mode === 1 ? 16 : mode === 2 ? frame?.height : 1;
+    const deltaX = event.deltaX * xUnit, deltaY = event.deltaY * yUnit;
+    if (!point || ![0, 1, 2].includes(mode) || ![deltaX, deltaY].every(value => Number.isFinite(value) && Math.abs(value) <= 32000) || !deltaX && !deltaY) return;
+    // Wheel input shares ordering and document identity with clicks and typing,
+    // but does not focus the keyboard capture or take focus from local fields.
+    if (captureInput({ keyboard: false }) && queueInput({ action: 'scroll', ...point, deltaX, deltaY })) { event.preventDefault(); event.stopPropagation?.(); }
+  };
   const pointerdown = event => {
     const control = event.target.closest?.('[data-observe-browser="point"], [data-observe-browser="interaction"], #observe-browser-tools > summary, #observe-browser-tree > summary, .observe-browser-folder > summary, #observe-browser-protection-settings > summary, #observe-browser-url');
     if (!control || control.disabled || !mount.contains(control) || !visible() || event.isPrimary === false || event.button !== undefined && event.button !== 0) return;
@@ -677,6 +709,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
   const ownerWindow = mount.ownerDocument?.defaultView || (typeof window === 'undefined' ? null : window);
   const listeners = { click, submit, change, keydown, input, beforeinput, paste, compositionstart, compositionend, focusout, pointerdown };
   for (const [type, listener] of Object.entries(listeners)) mount.addEventListener(type, listener);
+  mount.addEventListener('wheel', wheel, { passive: false });
   ownerWindow?.addEventListener?.('blur', windowBlur);
   ownerWindow?.addEventListener?.('pointerup', pointerup);
   ownerWindow?.addEventListener?.('pointercancel', pointercancel);
@@ -699,7 +732,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
       if (!state.stale && now() - Date.parse(state.capturedAt) > 10000) { state.stale = true; render(); } if (state.watching && !state.busy && now() >= state.nextAt) void work();
     },
     leave() { stopInput(); popupRequest = null; popupParents = []; finishPointer({ redraw: false }); remember(); keepDraft(); state.active = false; state.generation++; state.controller?.abort(); state.controller = null; protectionController?.abort(); protectionController = null; state.protectionBusy = false; state.protectionFocus = null; state.pickingFiles = false; state.interactionId = null; state.interactionDraft = ''; state.interactionError = ''; state.busy = false; state.frame = null; renderedFrame = null; state.document = null; for (const saved of drafts.values()) saved.document = null; state.stale = true; state.controlsStale = true; state.pendingFocus = null; state.rendered = null; state.error = ''; state.mutationPending = false; mount.innerHTML = ''; },
-    destroy() { this.leave(); drafts.clear(); for (const [type, listener] of Object.entries(listeners)) mount.removeEventListener(type, listener); ownerWindow?.removeEventListener?.('blur', windowBlur); ownerWindow?.removeEventListener?.('pointerup', pointerup); ownerWindow?.removeEventListener?.('pointercancel', pointercancel); }
+    destroy() { this.leave(); drafts.clear(); mount.removeEventListener('wheel', wheel); for (const [type, listener] of Object.entries(listeners)) mount.removeEventListener(type, listener); ownerWindow?.removeEventListener?.('blur', windowBlur); ownerWindow?.removeEventListener?.('pointerup', pointerup); ownerWindow?.removeEventListener?.('pointercancel', pointercancel); }
   };
 }
 

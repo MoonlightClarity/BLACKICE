@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey } from '../lib/browser.mjs';
+import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll } from '../lib/browser.mjs';
 import { captureHiddenPage } from './browser-capture.mjs';
 import { loadBrowserCompatibility } from './browser-compatibility.mjs';
 import { BrowserDiagnostics } from '../lib/browser-diagnostics.mjs';
@@ -939,6 +939,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     try {
       await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseMoved', ...target.point, button: 'none' }, signal, target.guard, target.sessionId);
       if (action === 'click') await this.clickPoint(tab, target.point, signal, target.guard, target.sessionId);
+      if (action === 'scroll') await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseWheel', ...target.point, deltaX: expected.deltaX, deltaY: expected.deltaY, button: 'none' }, signal, target.guard, target.sessionId);
     } finally { await target.close(); }
   }
   async browserPoint(tab, frame, point, signal) {
@@ -992,6 +993,9 @@ export class ElectronBrowserDriver extends EventEmitter {
   }
   async perform(args, { signal, source = 'agent', owner: context, validateUploadPath } = {}) {
     cancel(signal);
+    const wheel = browserWheelScroll(args);
+    // The router removes its transport selector before entering this adapter.
+    if (wheel) validateBrowserWheelScroll({ ...args, browser: args.browser ?? 'relay' });
     const owner = browserOwner(context);
     if (args.action === 'tabs') return this.status();
     if (args.action === 'downloads') return { downloads: this.downloads.slice(-30) };
@@ -1000,9 +1004,14 @@ export class ElectronBrowserDriver extends EventEmitter {
     const selected = args.tabId || (owner ? this.ownerActiveTabs.get(browserOwnerKey(owner)) : this.activeTab);
     let tab = args.action === 'open' ? this.newTab(browserURL(args.url), { owner, folderId: args.folderId, parentTabId: args.parentTabId }) : this.tab(selected);
     if (owner && !sameOwner(tab.owner, owner) && !(owner.allowUserTabs && !tab.owner)) throw capacityError('This browser tab belongs to another task.', 'BROWSER_TAB_OWNERSHIP');
+    if (wheel) {
+      if (!tab.window || tab.window.isDestroyed()) throw Object.assign(error('The observed browser page is no longer active. Refresh its preview before scrolling.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', actionDispatched: false });
+      try { this.assertInputDocument(tab, args); }
+      catch (cause) { throw Object.assign(cause, { actionDispatched: false, stage: 'document' }); }
+    }
     if (owner) { this.ownerActiveTabs.set(browserOwnerKey(owner), tab.id); if (tab.owner) tab.owner.runId = owner.runId; }
     else this.activeTab = tab.id;
-    if (source === 'user' && tab.owner && ['navigate', 'click', 'fill', 'type', 'select', 'press', 'upload', 'interaction', 'back', 'forward', 'reload'].includes(args.action)) tab.userPinned = true;
+    if (source === 'user' && tab.owner && ['navigate', 'click', 'fill', 'type', 'select', 'press', 'scroll', 'upload', 'interaction', 'back', 'forward', 'reload'].includes(args.action)) tab.userPinned = true;
     if (args.action === 'close') { this.closeTab(tab); return this.status(); }
     const recoveringRenderer = tab.rendererFailure;
     if (tab.rendererFailure) {
@@ -1107,6 +1116,20 @@ export class ElectronBrowserDriver extends EventEmitter {
       if (args.expectedDocumentId !== undefined) return { ...this.interactionReceipt(tab), receipt: { ...receipt, ...(args.modifiers?.length ? { modifiers: [...args.modifiers] } : {}), input: 'browser protocol' } };
     }
     if (args.action === 'scroll') {
+      if (wheel) {
+        const contents = tab.window.webContents;
+        const viewport = await this.pageWork(tab, contents.executeJavaScript('({width:innerWidth,height:innerHeight})'), signal);
+        cancel(signal);
+        if (tab.window?.webContents !== contents) throw Object.assign(error('The observed browser page changed before scrolling.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', actionDispatched: false });
+        try { this.assertInputDocument(tab, args); }
+        catch (cause) { throw Object.assign(cause, { actionDispatched: false, stage: 'document' }); }
+        if (!Number.isFinite(viewport?.width) || !Number.isFinite(viewport?.height) || viewport.width <= 0 || viewport.height <= 0 || args.x >= viewport.width || args.y >= viewport.height) throw Object.assign(error('Scroll coordinates must be within the current browser viewport.'), { code: 'BROWSER_VALIDATION', actionDispatched: false });
+        // Native hit testing preserves nested panes, both axes and page handlers.
+        // Keep the input queue available without a DOM scan or settling wait.
+        await this.pointerInput(tab, { x: args.x, y: args.y }, 'scroll', signal, args);
+        cancel(signal); this.assertInputDocument(tab, args);
+        return { ...this.interactionReceipt(tab), receipt: { scrolled: true, deltaX: args.deltaX, deltaY: args.deltaY, input: 'browser protocol' } };
+      }
       const amount = Math.min(2000, Math.max(1, Number(args.amount) || 450)), direction = args.direction || 'down';
       const movement = { top: ['up','down'].includes(direction) ? amount * (direction === 'up' ? -1 : 1) : 0, left: ['left','right'].includes(direction) ? amount * (direction === 'left' ? -1 : 1) : 0 };
       if (args.ref) receipt = (await this.element(tab, args, 'scroll', signal, movement)).result;

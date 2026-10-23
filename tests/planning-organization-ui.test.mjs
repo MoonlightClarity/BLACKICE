@@ -222,7 +222,7 @@ for(const width of [1440,320]) test(`named group removal targets its own group a
   launch.focus();await f.dom.key(launch,'ArrowRight');const expanded=research.getAttribute('aria-expanded');
   const remove=research.querySelector('[data-planning-action="remove-group"]');assert.ok(remove);assert.equal(remove.getAttribute('aria-label'),'Remove group Research');
   const key=await f.dom.key(remove,'Enter');assert.equal(key.defaultPrevented,false,'native button activation must not toggle its tree group');assert.equal(research.getAttribute('aria-expanded'),expanded);
-  await f.dom.click(remove);assert.equal(f.controller.state.organizationDraft.groupId,'research');assert.equal(f.dom.$('#planning-organization-title').textContent,'Remove “Research”?');assert.equal(research.getAttribute('aria-expanded'),expanded);assert.equal(f.writes().length,0);
+  await f.dom.click(remove);assert.equal(f.controller.state.organizationDraft.groupId,'research');assert.equal(f.dom.$('#planning-organization-title').textContent,'Remove group “Research”?');assert.equal(research.getAttribute('aria-expanded'),expanded);assert.equal(f.writes().length,0);
   await f.dom.click('[data-planning-action="cancel-organization"]');
   f.controller.selectEditor('inspect');f.controller.edit('title','Keep my unfinished task edit');const draft=f.controller.draft(),before=await f.tasks.get('task-a');
   await f.dom.click(launch.querySelector('[data-planning-action="remove-group"]'));assert.equal(f.controller.state.organizationDraft.groupId,'launch');assert.equal(await f.controller.saveOrganization(),true);

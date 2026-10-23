@@ -373,6 +373,7 @@ export function createPlanningWorkspaceController({ api, onChange = () => {}, on
     let operations;
     try { operations = remove ? [{ type: 'remove', stepId: current.stepId }] : planningEditOperations(current); if (!operations.length) return false; }
     catch (error) { current.error = error.message; notify('error'); return false; }
+    const removedTitle = remove ? item.task.steps.find(step => step.id === current.stepId)?.title || 'Step' : '';
     const editingLease = awareness.leaseId();
     current.busy = true; current.error = ''; current.receipt = ''; notify('saving');
     try {
@@ -383,7 +384,7 @@ export function createPlanningWorkspaceController({ api, onChange = () => {}, on
       const values = planningDraftValues(saved.task, nextId);
       item.drafts.delete(current.key);
       if (values) {
-        const key = nextId || 'goal'; item.drafts.set(key, { key, stepId: nextId, mode: nextId ? 'step' : 'goal', original: clone(values), values: clone(values), revision: saved.task.revision, dirty: false, busy: false, conflict: false, review: false, error: '', receipt: `Saved revision ${saved.task.revision}.` });
+        const key = nextId || 'goal'; item.drafts.set(key, { key, stepId: nextId, mode: nextId ? 'step' : 'goal', original: clone(values), values: clone(values), revision: saved.task.revision, dirty: false, busy: false, conflict: false, review: false, error: '', receipt: remove ? `Removed “${removedTitle}” from the plan. Saved revision ${saved.task.revision}.` : `Saved revision ${saved.task.revision}.` });
         if (item.editorKey === current.key) item.editorKey = key;
       }
       try { onSaved(saved.task); } catch { /* Keep the actual receipt even if another view has gone away. */ }
