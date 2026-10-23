@@ -3,6 +3,7 @@ import { renderMarkdown, runMetrics } from './editor-model.mjs';
 import { renderContextStatus, renderContextFields, readContextFields } from './context-ui.mjs';
 import { STARTER_PROMPTS, starterPrompt, welcomeReadiness, workingFolderLabel, runtimeConnectionFeedback } from './composer-helpers.mjs';
 import { reasoningChoices, reasoningSupport, reasoningLabel, reasoningSelectionSupported } from './reasoning-model.mjs';
+import { serviceTierSupport } from './service-tier-model.mjs';
 import { initAttachmentsUI } from './attachments-ui.mjs';
 import { mergeMissionDrafts } from './draft-store.mjs';
 import { initConversationMenu } from './conversation-menu.mjs';
@@ -18,7 +19,7 @@ import { renderTaskState, renderTaskFiles, bindTaskStateEvents } from './task-st
 import { initTaskPlanUI } from './task-plan-ui.mjs';
 import { taskPlanView, savedPlanNotes } from './task-plan-model.mjs';
 import { PLANNING_MODES, PLANNING_MODE_OPTIONS, planningModeDescription, planningEffortIntent } from './planning-mode.mjs';
-import { isActiveRun, isSettlingRun, conversationRecovery, createRegisteredArtifactResolver, conversationId, conversationRuns, conversationSidebarItems, selectedConversationModel, selectedConversationContext, selectedConversationEffort, selectedConversationPlanDetail, selectedConversationPlanningMode, conversationPlanningConfig, conversationReasoningChoice, conversationPlanDetails, conversationEfforts, restoreConversationDrafts, searchConversations, mergeConversationRuns, conversationTurn, conversationAgents, runUserText, shouldSendConversationKey } from './conversation-model.mjs';
+import { isActiveRun, isSettlingRun, conversationRecovery, createRegisteredArtifactResolver, conversationId, conversationRuns, conversationSidebarItems, selectedConversationModel, selectedConversationContext, selectedConversationEffort, selectedConversationServiceTier, selectedConversationPlanDetail, selectedConversationPlanningMode, conversationPlanningConfig, conversationReasoningChoice, conversationPlanDetails, conversationEfforts, restoreConversationDrafts, searchConversations, mergeConversationRuns, conversationTurn, conversationAgents, runUserText, shouldSendConversationKey } from './conversation-model.mjs';
 
 export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll, onCapture, onInbox, onArtifact, api, pickFiles, onOpenRun, onContinue, onRetry, onStop, onDirect, onStudio, onSchedule, onRepeatTask, onSwarm, onConnections, onProjects, onOpenPlanning, onRunLimits, onPrompts, onSavePrompt, onAgent, onLearning, onCompact, onFeedback, onBrowser, onKnowledge, onDesktop, onWorkspace, onOpenBrowserOS, onObserve, onCopy, pickFolder, escape, icon, toast }) {
   const $ = selector => mount.querySelector(selector), NEW = 'new';
@@ -90,7 +91,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     if (request.receiptId && original.pendingSend?.requestId === request.receiptId) delete original.pendingSend;
     if (original.task === request.submitted.task) original.task = '';
     if (attachments) original.attachmentIds = (original.attachmentIds || []).filter(id => !request.config.attachmentIds.includes(id));
-    if (preferences && request.key === NEW) for (const field of ['model', 'context', 'effort', 'planDetail', 'planningMode']) {
+    if (preferences && request.key === NEW) for (const field of ['model', 'context', 'effort', 'serviceTier', 'planDetail', 'planningMode']) {
       if (JSON.stringify(original[field]) === JSON.stringify(request.submitted[field])) delete original[field];
     }
   }
@@ -112,7 +113,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
       <aside id="conversation-sidebar" class="conversation-sidebar" aria-label="Conversations">
         <div class="conversation-history-controls">
         <label class="conversation-history-filter"><span class="sr-only">Conversations</span><select id="conversation-history-state" aria-label="Conversation history"><option value="active">Chats</option><option value="unread">Unread</option><option value="working">Working</option><option value="archived">Archived</option><option value="deleted">Trash</option></select></label>
-          <button id="conversation-bulk-toggle" type="button" data-mission-action="bulk-start" aria-label="Select conversations for bulk actions">Select</button>
+          <button id="conversation-bulk-toggle" type="button" data-mission-action="bulk-start" aria-label="Multi-select chats" aria-controls="conversation-bulk-toolbar" aria-expanded="false">Multi-select</button>
         </div>
         <div id="conversation-bulk-toolbar" class="conversation-bulk-toolbar" hidden>
           <div class="conversation-bulk-heading"><span id="conversation-bulk-count" role="status" aria-live="polite">0 selected</span><button id="conversation-bulk-cancel" type="button" data-mission-action="bulk-cancel">Cancel</button></div>
@@ -159,8 +160,10 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
             <div class="conversation-compose-settings" role="group" aria-label="Response settings">
               <label class="conversation-model-choice"><span>Model</span><select id="mission-model" aria-label="Model for next message"></select></label>
               <label class="conversation-planning-choice"><span>Planning</span><select id="mission-planning-mode" aria-label="Planning for next response" aria-describedby="mission-planning-note">${PLANNING_MODE_OPTIONS.map(option => `<option value="${option.value}"${option.value === 'auto' ? ' selected' : ''}>${option.label}</option>`).join('')}</select><span id="mission-planning-note" class="sr-only"></span></label>
+              <label class="conversation-fast-choice" id="mission-fast-choice"><input id="mission-fast" type="checkbox" role="switch" aria-label="Fast mode for next response" aria-describedby="mission-fast-note"><span>Fast</span><span id="mission-fast-note" class="sr-only"></span></label>
                <button id="conversation-folder-chip" class="conversation-folder-chip" type="button" data-mission-action="workspace" title="Change working folder in Settings">Working folder</button>
             </div>
+            <p id="mission-service-tier-warning" class="conversation-error" role="status" hidden></p>
             <div class="conversation-compose-bar">
               <button id="mission-capture-button" class="conversation-attach-button" type="button" data-mission-action="capture" aria-label="Save message for later" title="Save this message to the task inbox">${icon('inbox', 15)}<span>Save for later</span></button>
               <button id="conversation-attach" class="conversation-attach-button" type="button" data-mission-action="attach" title="Attach files" aria-label="Attach files">${icon('paperclip', 15)}<span>Attach</span></button>
@@ -423,6 +426,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
       }
     }
     start.hidden = state.bulkSelecting;
+    start.setAttribute('aria-expanded', String(state.bulkSelecting));
     start.disabled = state.managing || !bulkVisible.length;
   $('#conversation-history-state').disabled = state.bulkBusy;
   $('#conversation-search').disabled = state.bulkBusy;
@@ -746,6 +750,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
   const effectiveContext = mode => selectedConversationContext(draft(), state.prefs, mode.agent, mode.run) || getSnapshot().status?.runtimeSettings?.defaultContext;
   const reasoningChoice = mode => conversationReasoningChoice({ draft: draft(), preferences: state.prefs, run: mode.run, agent: mode.agent, status: getSnapshot().status });
   const effectiveEffort = mode => reasoningChoice(mode).effort;
+  const effectiveServiceTier = mode => { const agent = mode.agent || mode.run?.workflow?.nodes?.find(node => node.type === 'agent'); return selectedConversationServiceTier(draft(), agent, mode.run, getSnapshot().status, selectedConversationModel(draft(), state.prefs, agent)); };
   const effectivePlanDetail = mode => selectedConversationPlanDetail(draft(), state.prefs, mode.run);
   const effectivePlanningMode = mode => selectedConversationPlanningMode(draft(), state.prefs, mode.run);
   function renderContextSummary(effort, context, routeManaged = false) {
@@ -770,6 +775,13 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     if (planning.value !== planningMode) planning.value = planningMode;
     planning.disabled = state.sending || state.capturing || state.selecting || selectedState() !== 'active';
     planning.title = planningNote; $('#mission-planning-note').textContent = planningNote;
+    const serviceTier = effectiveServiceTier(mode), fastSupport = serviceTierSupport(snapshot.status, actualModel, 'fast'), fast = $('#mission-fast');
+    fast.checked = serviceTier === 'fast';
+    fast.setAttribute('aria-checked', String(fast.checked));
+    fast.disabled = state.sending || state.capturing || state.selecting || selectedState() !== 'active' || !fastSupport.available && !fast.checked;
+    const fastNote = fastSupport.available ? 'Use the faster service tier. Reasoning stays unchanged. Applies to the next response.' : fastSupport.error;
+    $('#mission-fast-choice').title = fastNote; $('#mission-fast-note').textContent = fastNote;
+    const tierWarning = $('#mission-service-tier-warning'); tierWarning.hidden = serviceTier !== 'fast' || fastSupport.available; tierWarning.textContent = tierWarning.hidden ? '' : `${fastSupport.error} Turn Fast off to use Standard.`;
     $('#mission-effort-note').textContent = routeManaged ? 'This model does not expose reasoning selection.' : automatic ? `Maximal selects ${reasoningLabel(effort)} from this model’s reported reasoning levels. Choose an explicit level to override it.` : effort === 'default' ? 'Uses the model’s own default.' : reasoning.verified ? 'Options reported by this model.' : 'Provider support is unverified; the exact choice is sent.';
     const toolCapability=modelToolCapability(snapshot.status,actualModel);
     const warning = $('#mission-reasoning-warning'), warningText = reasoning.unsupported ? reasoning.error : state.contextErrors[state.key] || (toolCapability.available===false?toolCapability.message:''); warning.hidden = !warningText; warning.textContent = warningText ? `${warningText}${toolCapability.available===false?' Choose a tool-capable model to perform actions.':' Open Reasoning to change it.'}` : '';
@@ -784,7 +796,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
       container.innerHTML = renderContextFields(effectiveContext(mode) || {}, { prefix: 'mission-chat-context', title: 'Context window', nativeCodex });
     }
     for (const input of container.querySelectorAll('[data-context-option]')) input.disabled = state.sending || state.capturing || nativeCodex && input.dataset.contextOption === 'autoCompact';
-    return reasoning;
+    return { ...reasoning, serviceTierUnsupported: serviceTier === 'fast' && !fastSupport.available };
   }
   function renderComposer(snapshot) {
     if (!$('#mission-start-button')) return;
@@ -799,7 +811,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     if (folderChip) { folderChip.textContent = activeFolder.name; folderChip.title = activeFolder.missing ? 'Choose a working folder' : `Working folder: ${activeFolder.path}${mode.run ? ' · Fixed for this conversation' : ' · Change folder'}`; folderChip.setAttribute('aria-label', activeFolder.missing ? 'Choose working folder' : `Working folder: ${activeFolder.name}${mode.run ? ', fixed for this conversation' : ', choose a different folder'}`); folderChip.disabled = Boolean(mode.run) || state.sending || state.capturing || state.selecting || !onWorkspace; }
     const attachButton = $('#conversation-attach'); if (attachButton) attachButton.disabled = state.sending || state.capturing || state.pendingFiles || state.selecting || bucket !== 'active';
     const starters = $('#conversation-timeline .conversation-starters'); if (starters) starters.hidden = Boolean(draft().task.trim());
-    const ready = mode.live || models.find(model => model.value === actualModel)?.available, send = $('#mission-start-button'); send.disabled = Boolean(connection?.busy && !ready) || state.sending || state.capturing || state.pendingFiles || state.managing || state.selecting || Boolean(mode.live && notice && notice.phase !== 'failed') || !mode.live && !recovering && (reasoning.unsupported || Boolean(state.contextErrors[state.key])) || Boolean(!state.forceNew && state.runId && (!mode.run || state.historyError)) || (!state.forceNew && state.historyPending.has(state.runId)) || !snapshot.statusLoaded || bucket !== 'active' || !recovering && (mode.blocked && !queueing || mode.mode === 'continue' && (!mode.agent || mode.run.settled !== true) || mode.mode === 'steer' && !mode.agent);
+    const ready = mode.live || models.find(model => model.value === actualModel)?.available, send = $('#mission-start-button'); send.disabled = Boolean(connection?.busy && !ready) || state.sending || state.capturing || state.pendingFiles || state.managing || state.selecting || Boolean(mode.live && notice && notice.phase !== 'failed') || !mode.live && !recovering && (reasoning.unsupported || reasoning.serviceTierUnsupported || Boolean(state.contextErrors[state.key])) || Boolean(!state.forceNew && state.runId && (!mode.run || state.historyError)) || (!state.forceNew && state.historyPending.has(state.runId)) || !snapshot.statusLoaded || bucket !== 'active' || !recovering && (mode.blocked && !queueing || mode.mode === 'continue' && (!mode.agent || mode.run.settled !== true) || mode.mode === 'steer' && !mode.agent);
     const connects = !ready && !recovering, retiredRoute = isChatModeModel(actualModel, snapshot.status), sendLabel = state.capturing ? 'Saving task…' : state.sending ? queueing ? 'Queueing…' : 'Sending…' : state.pendingFiles ? 'Saving files…' : recovering ? 'Recover send' : connection?.busy && !ready ? 'Connecting…' : connects ? retiredRoute ? 'Choose model' : 'Connect model' : queueing ? 'Queue task' : mode.mode === 'steer' ? 'Send direction' : 'Send';
     send.classList.toggle('queues-task', queueing && !recovering && !connects);
     send.dataset.mode = state.sending || state.capturing ? 'sending' : recovering ? 'recover' : connects ? 'connect' : queueing ? 'queue' : mode.mode;
@@ -861,8 +873,8 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
   }
   function configForMessage({ newWorkflow = false } = {}) {
     const snapshot = getSnapshot(), mode = composerMode(snapshot), node = mode.agent;
-    const model = selectedConversationModel(draft(), state.prefs, node), effort = !reasoningSelectionSupported(snapshot.status, model) ? 'default' : conversationEfforts.includes(draft().effort) ? draft().effort : newWorkflow ? planningEffortIntent(node, mode.run?.nodes?.[node?.id]) : undefined;
-    return { task: draft().task.trim(), model, ...(effort === undefined ? {} : { effort }), ...conversationPlanningConfig(draft(), state.prefs, mode.run), cwd: mode.run?.cwd || state.prefs.cwd, desktop: mode.run ? Boolean(node?.desktop) : missionDesktopPreference(state.prefs, snapshot.desktop), context: effectiveContext(mode), attachmentIds: [...new Set([...(mode.run?.attachmentIds || []), ...draft().attachmentIds])] };
+    const model = selectedConversationModel(draft(), state.prefs, node), effort = !reasoningSelectionSupported(snapshot.status, model) ? 'default' : conversationEfforts.includes(draft().effort) ? draft().effort : newWorkflow ? planningEffortIntent(node, mode.run?.nodes?.[node?.id]) : undefined, serviceTier = effectiveServiceTier(mode);
+    return { task: draft().task.trim(), model, ...(effort === undefined ? {} : { effort }), ...(serviceTier === undefined ? {} : { serviceTier }), ...conversationPlanningConfig(draft(), state.prefs, mode.run), cwd: mode.run?.cwd || state.prefs.cwd, desktop: mode.run ? Boolean(node?.desktop) : missionDesktopPreference(state.prefs, snapshot.desktop), context: effectiveContext(mode), attachmentIds: [...new Set([...(mode.run?.attachmentIds || []), ...draft().attachmentIds])] };
   }
   async function selectRun(id) {
     if (state.selecting) return;
@@ -954,6 +966,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
   }
   function setContext(value) { if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Choose valid context settings.'); delete draft().pendingSend; draft().context = structuredClone(value); delete state.contextErrors[state.key]; persist(); renderComposer(getSnapshot()); }
   function setReasoning(value) { if (!conversationEfforts.includes(value)) throw new Error('Choose a valid reasoning level.'); delete draft().pendingSend; draft().effort = value; persist(); renderComposer(getSnapshot()); }
+  function setServiceTier(value) { if (!['default', 'fast'].includes(value)) throw new Error('Choose Standard or Fast mode.'); if (state.sending || state.capturing || state.selecting || selectedState() !== 'active') return; delete draft().pendingSend; draft().serviceTier = value; persist(); renderComposer(getSnapshot()); }
   function setPlanDetail(value, { asDefault = false } = {}) { if (!conversationPlanDetails.includes(value)) throw new Error('Choose Compact, Balanced, or Detailed planning.'); if (state.sending || state.capturing || state.selecting || selectedState() !== 'active') return; delete draft().pendingSend; draft().planDetail = value; if (asDefault) state.prefs.planDetail = value; persist(); renderComposer(getSnapshot()); }
   function setPlanningMode(value, { asDefault = false } = {}) { if (!PLANNING_MODES.includes(value)) throw new Error('Choose Maximal, On, Auto, or Off planning.'); if (state.sending || state.capturing || state.selecting || selectedState() !== 'active') return; delete draft().pendingSend; draft().planningMode = value; if (asDefault) state.prefs.planningMode = value; persist(); renderComposer(getSnapshot()); }
   function readComposerContext(event) {
@@ -965,7 +978,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     renderComposer(getSnapshot()); return true;
   }
   mount.addEventListener('input', readComposerContext);
-  mount.addEventListener('change', event => { if (readComposerContext(event)) return; if (event.target.id === 'mission-effort') setReasoning(event.target.value); if (event.target.id === 'mission-planning-mode') setPlanningMode(event.target.value); });
+  mount.addEventListener('change', event => { if (readComposerContext(event)) return; if (event.target.id === 'mission-effort') setReasoning(event.target.value); if (event.target.id === 'mission-fast') setServiceTier(event.target.checked ? 'fast' : 'default'); if (event.target.id === 'mission-planning-mode') setPlanningMode(event.target.value); });
   mount.addEventListener('input', event => {
     if (event.target.id === 'conversation-search') { if (state.bulkBusy) return; resetBulkSelection(); state.search = event.target.value; if (!state.search.trim()) clearSearchMatch(); void chatSearch.search(state.search, { scope: searchScope() }); renderSidebar(getSnapshot()); return; }
     if (event.target.id === 'mission-task') {
@@ -985,6 +998,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     if (['requesting', 'requested'].includes(stopRequests.get(mode.run?.id)?.phase)) return;
     if (state.sending || state.capturing || state.selecting || Boolean(!state.forceNew && state.runId && (!mode.run || state.historyError)) || (!state.forceNew && state.historyPending.has(state.runId)) || !snapshot.statusLoaded || state.pendingFiles || state.managing || selectedState() !== 'active' || !recovering && mode.blocked && !queueing || !config.task) return;
     if (!draft().pendingSend && mode.mode !== 'steer' && (!reasoningSupport(snapshot.status, config.model, effectiveEffort(mode)).available || state.contextErrors[state.key])) { $('#mission-context').open = true; renderComposer(snapshot); return; }
+    if (!recovering && mode.mode !== 'steer' && !serviceTierSupport(snapshot.status, config.model, config.serviceTier).available) { renderComposer(snapshot); $('#mission-fast').focus({ preventScroll: true }); return; }
     if (!recovering && mode.mode !== 'steer' && !missionModels(snapshot.status, config.model).find(model => model.value === config.model)?.available) { try { onConnections(); } catch (error) { state.error = error.message; update(); } return; }
     if (!config.cwd) { state.error = 'Choose a working folder in Settings.'; update(); onWorkspace?.(); return; }
     if (!recovering && (!queueing && mode.mode !== 'start' && !mode.agent || mode.mode === 'continue' && mode.run.settled !== true)) return;
@@ -997,7 +1011,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
       let next;
       if (pending.mode === 'queue') { const item = await onQueue({ ...pending.config, enqueueKey: pending.requestId }); queueReceipts.set(draftKey, item); if (ownsRequestView(request)) toast('Task queued.'); }
       else if (pending.mode === 'start') next = await onStart({ ...pending.config, requestId: pending.requestId });
-      else if (pending.mode === 'continue') next = await onContinue({ runId: pending.runId, nodeId: pending.nodeId, message: pending.config.task, attachmentIds: pending.config.attachmentIds, model: pending.config.model, ...(pending.config.effort === undefined ? {} : { effort: pending.config.effort }), planningMode: pending.config.planningMode, ...(pending.config.planDetail === undefined ? {} : { planDetail: pending.config.planDetail }), context: pending.config.context, requestId: pending.requestId });
+      else if (pending.mode === 'continue') next = await onContinue({ runId: pending.runId, nodeId: pending.nodeId, message: pending.config.task, attachmentIds: pending.config.attachmentIds, model: pending.config.model, ...(pending.config.effort === undefined ? {} : { effort: pending.config.effort }), ...(pending.config.serviceTier === undefined ? {} : { serviceTier: pending.config.serviceTier }), planningMode: pending.config.planningMode, ...(pending.config.planDetail === undefined ? {} : { planDetail: pending.config.planDetail }), context: pending.config.context, requestId: pending.requestId });
       else { const receipt = await api(`/api/runs/${encodeURIComponent(pending.runId)}/steer`, 'POST', { nodeId: pending.nodeId, message: pending.config.task }); if (receipt.accepted !== true) throw new Error('The agent did not accept that message.'); if (ownsRequestView(request)) toast(receipt.delivery === 'queued' ? 'Direction queued for the next model response.' : 'Direction delivered.'); }
       const selected = ownsRequestView(request);
       consumeRequestDraft(request, { attachments: pending.mode !== 'steer', preferences: ['start', 'queue'].includes(pending.mode) });
@@ -1091,6 +1105,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
         const config = configForMessage({ newWorkflow: true }), mode = composerMode(getSnapshot()), key = state.key;
         if (!config.task || state.pendingFiles || state.capturing || state.sending || state.selecting) return;
         if (!reasoningSupport(snapshot.status, config.model, effectiveEffort(mode)).available || state.contextErrors[state.key]) { $('#mission-context').open = true; renderComposer(snapshot); return; }
+        if (!serviceTierSupport(snapshot.status, config.model, config.serviceTier).available) { renderComposer(snapshot); $('#mission-fast').focus({ preventScroll: true }); return; }
         if (!config.cwd) throw new Error('Choose a working folder.');
         const request = { kind: 'capture', key, submitted: structuredClone(draft()), config, receiptId: draft().pendingSend?.requestId };
         composerRequests.set(key, request); composerErrors.delete(key); renderComposer(snapshot);
@@ -1145,6 +1160,6 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     promptDraftVersion++; delete draft().pendingSend; draft().task = token.before; $('#mission-task').value = token.before; promptUndo = null; persist(); update(); autoSize(); setWorkbenchView('conversation', { focusComposer: true }); return { undone: true };
   }
   $('#mission-task').value = draft().task || ''; autoSize(); update(); loadSummaries();
-  return { update, refreshHistory, openSearchResult, findChats, capturePromptDraft, applyPromptDraft, undoPromptDraft, getSelection: () => ({ key: state.key, runId: state.runId, forceNew: state.forceNew }), searchChats: (query = '', limit = 20) => searchConversations({ summaries: state.summaries, runs: allRuns(getSnapshot()), query, limit }), openConversation: selectRun, managePlan, setContext, setReasoning, setPlanDetail, setPlanningMode, getWorkbench: () => ({ visible: planVisible, collapsed: planVisible && !narrowPlan() && desktopPlanCollapsed, view: planView, taskId: planKey, selection: taskPlanUI.getSelection() }), showPlan: () => setWorkbenchView('plan'), setWorkspace(cwd) { if (typeof cwd !== 'string') return; delete draft().pendingSend; state.prefs.cwd = cwd; persist(); update(); }, prefill(text, { replace = false } = {}) { const filled = typeof text === 'string' && Boolean(text.trim()) && (replace === true || !draft().task.trim()); if (filled) { draft().task = text; $('#mission-task').value = text; persist(); update(); autoSize(); } setWorkbenchView('conversation', { focusComposer: true }); return filled; }, focus: () => setWorkbenchView('conversation', { focusComposer: true }), submitFocused() { $('#mission-form').requestSubmit(); }, getRequestDraft: () => configForMessage({ newWorkflow: true }), getDraft: () => ({ ...state.prefs, model: selectedConversationModel(draft(), state.prefs, composerMode(getSnapshot()).agent), effort: effectiveEffort(composerMode(getSnapshot())), planDetail: effectivePlanDetail(composerMode(getSnapshot())), planningMode: effectivePlanningMode(composerMode(getSnapshot())), context: effectiveContext(composerMode(getSnapshot())), task: draft().task, attachmentIds: [...draft().attachmentIds] }), destroy() { destroyed = true; chatSearch.destroy(); document.removeEventListener('selectionchange', refreshSelectedMilestones); document.removeEventListener('visibilitychange', refreshAttention); document.removeEventListener('focusin', refreshAttention); window.removeEventListener('focus', refreshAttention); window.removeEventListener('storage', refreshAttention); window.removeEventListener('resize', resizeSidebar); conversationMenu.destroy(); modelPicker.destroy(); taskPlanUI.destroy(); planViews.clear(); stopRequests.clear(); composerRequests.clear(); composerErrors.clear(); queueReceipts.clear(); state.summaryVersion++; if (historyRefreshTimer) clearTimeout(historyRefreshTimer); historyRefreshTimer = null; for (const resolve of historyWaiters) resolve(false); historyWaiters = []; } };
+  return { update, refreshHistory, openSearchResult, findChats, capturePromptDraft, applyPromptDraft, undoPromptDraft, getSelection: () => ({ key: state.key, runId: state.runId, forceNew: state.forceNew }), searchChats: (query = '', limit = 20) => searchConversations({ summaries: state.summaries, runs: allRuns(getSnapshot()), query, limit }), openConversation: selectRun, managePlan, setContext, setReasoning, setServiceTier, setPlanDetail, setPlanningMode, getWorkbench: () => ({ visible: planVisible, collapsed: planVisible && !narrowPlan() && desktopPlanCollapsed, view: planView, taskId: planKey, selection: taskPlanUI.getSelection() }), showPlan: () => setWorkbenchView('plan'), setWorkspace(cwd) { if (typeof cwd !== 'string') return; delete draft().pendingSend; state.prefs.cwd = cwd; persist(); update(); }, prefill(text, { replace = false } = {}) { const filled = typeof text === 'string' && Boolean(text.trim()) && (replace === true || !draft().task.trim()); if (filled) { draft().task = text; $('#mission-task').value = text; persist(); update(); autoSize(); } setWorkbenchView('conversation', { focusComposer: true }); return filled; }, focus: () => setWorkbenchView('conversation', { focusComposer: true }), submitFocused() { $('#mission-form').requestSubmit(); }, getRequestDraft: () => configForMessage({ newWorkflow: true }), getDraft: () => ({ ...state.prefs, model: selectedConversationModel(draft(), state.prefs, composerMode(getSnapshot()).agent), effort: effectiveEffort(composerMode(getSnapshot())), ...(effectiveServiceTier(composerMode(getSnapshot())) === undefined ? {} : { serviceTier: effectiveServiceTier(composerMode(getSnapshot())) }), planDetail: effectivePlanDetail(composerMode(getSnapshot())), planningMode: effectivePlanningMode(composerMode(getSnapshot())), context: effectiveContext(composerMode(getSnapshot())), task: draft().task, attachmentIds: [...draft().attachmentIds] }), destroy() { destroyed = true; chatSearch.destroy(); document.removeEventListener('selectionchange', refreshSelectedMilestones); document.removeEventListener('visibilitychange', refreshAttention); document.removeEventListener('focusin', refreshAttention); window.removeEventListener('focus', refreshAttention); window.removeEventListener('storage', refreshAttention); window.removeEventListener('resize', resizeSidebar); conversationMenu.destroy(); modelPicker.destroy(); taskPlanUI.destroy(); planViews.clear(); stopRequests.clear(); composerRequests.clear(); composerErrors.clear(); queueReceipts.clear(); state.summaryVersion++; if (historyRefreshTimer) clearTimeout(historyRefreshTimer); historyRefreshTimer = null; for (const resolve of historyWaiters) resolve(false); historyWaiters = []; } };
 }
 

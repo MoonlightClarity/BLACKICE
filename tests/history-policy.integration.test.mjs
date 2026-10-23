@@ -71,7 +71,7 @@ const follow = async (session, run, message, model) => {
 
 test('Relay-only is the default, follow-ups use saved messages and survive reopening without native resume', async t => {
   const session = await application(t);
-  assert.deepEqual((await session.api('/api/runtime/settings')).data, { codexHistory: 'relay', runTimeoutMs: null, providerIdleTimeoutMs: 300000, defaultEffort: 'default', defaultContext: { preset: 'model', windowTokens: null, autoCompact: true }, verbosity: 'balanced', subagentsEnabled: false, maxSubagents: 3 });
+  assert.deepEqual((await session.api('/api/runtime/settings')).data, { codexHistory: 'relay', runTimeoutMs: null, providerIdleTimeoutMs: 300000, defaultEffort: 'default', defaultServiceTier: 'default', defaultContext: { preset: 'model', windowTokens: null, autoCompact: true }, verbosity: 'balanced', subagentsEnabled: false, maxSubagents: 3 });
   const first = await start(session, 'USER_HISTORY_MARKER_A: remember the copper rook.');
   const unrelated = await start(session, 'UNRELATED_CONVERSATION_MARKER: a different chat.');
   const second = await follow(session, first, 'USER_HISTORY_MARKER_B: what did I ask you to remember?');
@@ -116,7 +116,7 @@ test('history settings apply to future starts and transitions use fresh sessions
   assert.equal(native.calls[3].codexHistory, 'relay'); assert.equal(native.calls[3].threadId, undefined); assert.equal(fourth.modelHandoff.reason, 'relay-history');
   assert.match(native.calls[3].prompt, /Started privately/); assert.match(native.calls[3].prompt, /Resume that visible session/);
   assert.equal(session.app.engine.getRun(second.id).runtimeSettings.codexHistory, 'codex', 'old admitted snapshots remain unchanged');
-  const reopened = await session.reopen(); assert.deepEqual((await reopened.api('/api/runtime/settings')).data, { codexHistory: 'relay', runTimeoutMs: null, providerIdleTimeoutMs: 300000, defaultEffort: 'default', defaultContext: { preset: 'model', windowTokens: null, autoCompact: true }, verbosity: 'balanced', subagentsEnabled: false, maxSubagents: 3 });
+  const reopened = await session.reopen(); assert.deepEqual((await reopened.api('/api/runtime/settings')).data, { codexHistory: 'relay', runTimeoutMs: null, providerIdleTimeoutMs: 300000, defaultEffort: 'default', defaultServiceTier: 'default', defaultContext: { preset: 'model', windowTokens: null, autoCompact: true }, verbosity: 'balanced', subagentsEnabled: false, maxSubagents: 3 });
 });
 
 test('API provider conversations retain their own durable sessions through Codex history changes and reopening', async t => {

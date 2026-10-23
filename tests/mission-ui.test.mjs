@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { initMissionUI } from '../public/mission-ui.mjs';
 import { createApiClient } from '../public/api-client.mjs';
 import { conversationMenuActions, conversationMenuPosition, initConversationMenu } from '../public/conversation-menu.mjs';
+import nativeLuna from './fixtures/native-luna-speed-catalog.json' with { type: 'json' };
 
 const turn = () => new Promise(resolve => setImmediate(resolve));
 function missionFixture(t, saved = { modelPreferenceVersion: 2, cwd: 'C:\\fixture', conversationDrafts: { new: { task: 'Keep this for later', attachmentIds: [], model: 'cloud::chosen' } } }, sharedStorage) {
@@ -62,6 +63,7 @@ function mountMission(f, snapshot, callbacks = {}) {
     async text(value) { f.element('#mission-task').value = value; await f.mount.dispatch('input', { target: f.element('#mission-task') }); },
     async model(value) { f.element('#mission-model').value = value; await f.mount.dispatch('change', { target: f.element('#mission-model') }); },
     async effort(value) { f.element('#mission-effort').value = value; await f.mount.dispatch('change', { target: f.element('#mission-effort') }); },
+    async fast(value) { f.element('#mission-fast').checked = value; await f.mount.dispatch('change', { target: f.element('#mission-fast') }); },
     async planningMode(value) { f.element('#mission-planning-mode').value = value; await f.mount.dispatch('change', { target: f.element('#mission-planning-mode') }); },
     async planAction(action, data = {}) { const button = f.element(`plan-action-${action}`); button.dataset = { planAction: action, ...data }; f.element('#mission-plan').append(button); await f.element('#mission-plan').dispatch('click', menuEvent(button)); },
     async action(action, data = {}) { const button = f.element(`action-${action}`); button.dataset = { missionAction: action, ...data }; await f.mount.dispatch('click', { target: button }); },
@@ -228,6 +230,90 @@ test('Planning mode is independent of reasoning, follows each draft, and restore
   await h.ui.openConversation(b.id); assert.equal(h.ui.getDraft().planningMode, 'auto'); await h.planningMode('off'); assert.equal(h.ui.getDraft().effort, 'default');
   await h.ui.openConversation(a.id); assert.equal(h.ui.getDraft().planningMode, 'maximal'); assert.equal(f.element('#mission-planning-mode').value, 'maximal'); h.ui.destroy();
   const reload = missionFixture(t, {}, storage), resumed = mountMission(reload, statusSnapshot([a, b])); await turn(); await resumed.ui.openConversation(b.id); assert.equal(resumed.ui.getDraft().planningMode, 'off'); await resumed.ui.openConversation(a.id); assert.equal(resumed.ui.getDraft().planningMode, 'maximal');
+});
+
+function fastSnapshot(runs = []) {
+  const snapshot = statusSnapshot(runs);
+  snapshot.status.defaultModel = 'luna';
+  snapshot.status.models.unshift({ id: 'luna', available: true, serviceTiers: [{ id: 'fast' }], supportedReasoningEfforts: ['low', 'max'] });
+  snapshot.status.runtimeSettings = { defaultServiceTier: 'default' };
+  return snapshot;
+}
+
+test('actual native Luna priority metadata enables Fast without changing Max reasoning or Planning', async t => {
+  const saved = savedDrafts('Use the advertised native Fast tier', nativeLuna.id); saved.conversationDrafts.new.effort = 'max'; saved.conversationDrafts.new.planningMode = 'on';
+  const f = missionFixture(t, saved), snapshot = statusSnapshot(); snapshot.status.defaultModel = nativeLuna.id;
+  snapshot.status.models.unshift({ ...nativeLuna, available: true, supportedReasoningEfforts: ['low', 'max'] });
+  const h = mountMission(f, snapshot); await turn();
+  assert.equal(f.element('#mission-fast').disabled, false); await h.fast(true); await h.submit();
+  assert.equal(h.starts.length, 1); assert.equal(h.starts[0].serviceTier, 'fast'); assert.equal(h.starts[0].model, 'gpt-6-luna');
+  assert.equal(h.starts[0].effort, 'max'); assert.equal(h.starts[0].planningMode, 'on');
+});
+
+test('Fast is independent of reasoning and Planning and belongs to an exact recoverable request', async t => {
+  const f = missionFixture(t, savedDrafts('Run with the requested speed')), snapshot = fastSnapshot(), h = mountMission(f, snapshot, { start: () => { throw new Error('Response lost after submission'); } }); await turn();
+  assert.equal(f.element('#mission-fast').checked, false); assert.equal(f.element('#mission-fast').disabled, false);
+  await h.effort('max'); await h.planningMode('on'); await h.fast(true);
+  assert.equal(h.ui.getDraft().effort, 'max'); assert.equal(h.ui.getDraft().planningMode, 'on'); assert.equal(h.ui.getDraft().serviceTier, 'fast');
+  assert.equal(f.element('#mission-fast').getAttribute('aria-checked'), 'true');
+  await h.submit(); const original = h.starts[0]; assert.equal(original.serviceTier, 'fast'); assert.equal(original.effort, 'max');
+  snapshot.status.models[0].serviceTiers = []; h.ui.update(); await h.submit();
+  assert.deepEqual(h.starts[1], original, 'An uncertain submitted receipt keeps its exact tier even if the catalog later changes.');
+  await h.fast(false); assert.equal(h.persisted().conversationDrafts.new.pendingSend, undefined); await h.submit();
+  assert.equal(h.starts[2].serviceTier, 'default'); assert.equal(h.starts[2].effort, 'max'); assert.notEqual(h.starts[2].requestId, original.requestId);
+});
+
+test('unsupported saved Fast stays visible and can be turned off without changing reasoning', async t => {
+  const saved = savedDrafts('Keep my choice', 'cloud::chosen'); saved.conversationDrafts.new.serviceTier = 'fast'; saved.conversationDrafts.new.effort = 'max';
+  const f = missionFixture(t, saved), h = mountMission(f, statusSnapshot()); await turn();
+  assert.equal(f.element('#mission-fast').checked, true); assert.equal(f.element('#mission-fast').disabled, false, 'Turning unsupported Fast off must stay possible.');
+  assert.equal(f.element('#mission-start-button').disabled, true); assert.match(f.element('#mission-service-tier-warning').textContent, /Turn Fast off/);
+  await h.submit(); assert.equal(h.starts.length, 0); await h.fast(false); await h.submit();
+  assert.equal(h.starts[0].serviceTier, 'default'); assert.equal(h.starts[0].effort, 'max');
+});
+
+test('new-chat Fast defaults do not change legacy continuations and explicit Standard resets a Fast chat', async t => {
+  const legacy = fixtureRun('legacy-tier', 'completed'), fast = fixtureRun('fast-tier', 'completed');
+  for (const run of [legacy, fast]) { run.workflow.nodes[0].model = 'luna'; run.workflow.nodes[0].effort = 'max'; run.nodes.agent.resolvedModel = 'luna'; }
+  fast.workflow.nodes[0].serviceTier = 'fast';
+  const f = missionFixture(t, savedDrafts('')), snapshot = fastSnapshot([legacy, fast]); snapshot.status.runtimeSettings.defaultServiceTier = 'fast';
+  const h = mountMission(f, snapshot); await turn(); await h.ui.openConversation(legacy.id); await h.text('Continue legacy'); await h.submit();
+  assert.equal(Object.hasOwn(h.mutations.find(item => item.continue).continue, 'serviceTier'), false);
+  await h.ui.openConversation(fast.id); assert.equal(f.element('#mission-fast').checked, true); await h.fast(false); await h.text('Use Standard for this reply'); await h.submit();
+  assert.equal(h.mutations.filter(item => item.continue).at(-1).continue.serviceTier, 'default'); assert.equal(h.ui.getDraft().effort, 'max');
+  await h.action('new-task'); assert.equal(h.ui.getRequestDraft().serviceTier, 'fast');
+});
+
+test('a new-chat Fast preference follows model capability without becoming an authored Fast choice', async t => {
+  const f = missionFixture(t, savedDrafts('Use the free model')), snapshot = fastSnapshot(); snapshot.status.runtimeSettings.defaultServiceTier = 'fast';
+  const h = mountMission(f, snapshot); await turn();
+  assert.equal(f.element('#mission-fast').checked, true);
+  await h.model('cloud::chosen');
+  assert.equal(f.element('#mission-fast').checked, false); assert.equal(f.element('#mission-fast').disabled, true);
+  assert.equal(Object.hasOwn(h.ui.getRequestDraft(), 'serviceTier'), false); assert.equal(f.element('#mission-service-tier-warning').hidden, true);
+  await h.model('luna'); assert.equal(f.element('#mission-fast').checked, true);
+  await h.model('cloud::chosen'); await h.submit();
+  assert.equal(h.starts.length, 1); assert.equal(h.starts[0].model, 'cloud::chosen'); assert.equal(Object.hasOwn(h.starts[0], 'serviceTier'), false);
+});
+
+test('Fast survives draft reload and travels with captured and queued tasks', async t => {
+  const saved = savedDrafts('Capture this task'), storage = new Map([['relay.mission.draft', JSON.stringify(saved)]]), f = missionFixture(t, saved, storage), snapshot = fastSnapshot();
+  const h = mountMission(f, snapshot, { capture: () => ({ id: 'captured-fast' }) }); await turn(); await h.fast(true); h.ui.destroy();
+  const reload = missionFixture(t, {}, storage), resumed = mountMission(reload, snapshot, { capture: () => ({ id: 'captured-fast' }) }); await turn();
+  assert.equal(resumed.ui.getDraft().serviceTier, 'fast'); await resumed.action('capture'); assert.equal(resumed.captures[0].serviceTier, 'fast');
+  const busy = fixtureRun('working-tier'); busy.workflow.nodes[0].model = 'luna'; busy.nodes.agent.resolvedModel = 'luna'; snapshot.runs = [busy]; snapshot.currentRun = busy; resumed.ui.update();
+  await resumed.action('new-task'); await resumed.text('Queue in Fast'); await resumed.fast(true); await resumed.submit();
+  assert.equal(resumed.queued[0].serviceTier, 'fast'); assert.equal(resumed.queued[0].model, 'luna');
+});
+
+test('Multi-select has a clear name, linked expanded state and keyboard focus return', async t => {
+  const f = missionFixture(t, savedDrafts('Keep this reply')), h = mountMission(f, statusSnapshot([fixtureRun('selectable', 'completed')])); await turn();
+  assert.match(f.mount.innerHTML, /id="conversation-bulk-toggle"[^>]*aria-label="Multi-select chats"[^>]*aria-controls="conversation-bulk-toolbar"[^>]*>Multi-select<\/button>/);
+  assert.equal(f.element('#conversation-bulk-toggle').getAttribute('aria-expanded'), 'false');
+  await h.action('bulk-start'); assert.equal(f.element('#conversation-bulk-toggle').getAttribute('aria-expanded'), 'true'); assert.equal(f.element('#conversation-bulk-toolbar').hidden, false);
+  assert.equal(globalThis.document.activeElement, f.element('#conversation-bulk-cancel'));
+  await h.action('bulk-cancel'); assert.equal(f.element('#conversation-bulk-toggle').getAttribute('aria-expanded'), 'false'); assert.equal(globalThis.document.activeElement, f.element('#conversation-bulk-toggle'));
+  assert.equal(h.ui.getDraft().task, 'Keep this reply'); assert.equal(h.starts.length, 0);
 });
 
 test('Planning mode is part of an exact recoverable start receipt and changing it creates a fresh request', async t => {

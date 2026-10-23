@@ -227,14 +227,14 @@
     const ownership=beginViewOperation(),generations=new Map(runEventGenerations);
     if(config.desktop&&!state.desktop.enabled)state.desktop=desktopStatus(await api('/api/desktop/attach','POST',{}));
     const workflow=createMissionWorkflow({...config,id:config.requestId?`mission_${config.requestId}`:uid('mission')}),saved=await api('/api/workflows','POST',workflow),graph=saved.workflow||saved;
-    const response=await api('/api/runs','POST',{workflow:graph,input:{task:config.task,cwd:config.cwd,attachmentIds:config.attachmentIds||[],...(config.planDetail?{planDetail:config.planDetail}:{}),...(config.planningMode?{planningMode:config.planningMode}:{})},...(config.requestId?{requestId:config.requestId}:{})}),run=rememberRunReceipt(response.run||response,generations),savedGraph=normalizeWorkflow(run.workflow||graph);
+    const response=await api('/api/runs','POST',{workflow:graph,input:{task:config.task,cwd:config.cwd,attachmentIds:config.attachmentIds||[],...(config.serviceTier!==undefined?{serviceTier:config.serviceTier}:{}),...(config.planDetail?{planDetail:config.planDetail}:{}),...(config.planningMode?{planningMode:config.planningMode}:{})},...(config.requestId?{requestId:config.requestId}:{})}),run=rememberRunReceipt(response.run||response,generations),savedGraph=normalizeWorkflow(run.workflow||graph);
     state.workflows=[savedGraph,...state.workflows.filter(item=>item.id!==savedGraph.id)];
     if(ownsView(ownership)){if(!state.dirty){state.workflow=savedGraph;editHistory.reset(state.workflow);state.selected='agent';state.selectedEdge=null;}state.currentRun=run;state.traceFilter=null;state.executionTab='trace';state.panelCollapsed=false;renderAll();}
     else renderStreamState();
     refreshRuns();return run;
   }
-  async function continueMissionTask({runId,nodeId,message,attachmentIds,model,context,effort,planDetail,planningMode,requestId}){
-    const ownership=beginViewOperation(),generations=new Map(runEventGenerations),response=await api(`/api/runs/${encodeURIComponent(runId)}/continue`,'POST',{nodeId,message,...(requestId?{requestId}:{}),...(model?{model}:{}),...(context!==undefined?{context}:{}),...(effort!==undefined?{effort}:{}),...(planDetail!==undefined?{planDetail}:{}),...(planningMode!==undefined?{planningMode}:{}),...(attachmentIds?{attachmentIds}:{})}),run=rememberRunReceipt(response.run||response,generations);
+  async function continueMissionTask({runId,nodeId,message,attachmentIds,model,context,effort,serviceTier,planDetail,planningMode,requestId}){
+    const ownership=beginViewOperation(),generations=new Map(runEventGenerations),response=await api(`/api/runs/${encodeURIComponent(runId)}/continue`,'POST',{nodeId,message,...(requestId?{requestId}:{}),...(model?{model}:{}),...(context!==undefined?{context}:{}),...(effort!==undefined?{effort}:{}),...(serviceTier!==undefined?{serviceTier}:{}),...(planDetail!==undefined?{planDetail}:{}),...(planningMode!==undefined?{planningMode}:{}),...(attachmentIds?{attachmentIds}:{})}),run=rememberRunReceipt(response.run||response,generations);
     if(ownsView(ownership)){state.currentRun=run;state.selected=nodeId;state.traceFilter=null;state.executionTab='trace';state.panelCollapsed=false;renderAll();}else renderStreamState();
     refreshRuns();return run;
   }

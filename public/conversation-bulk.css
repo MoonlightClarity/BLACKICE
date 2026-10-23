@@ -1,8 +1,11 @@
 /* Explicit multi-select controls for the conversation history sidebar. */
-.conversation-history-controls{display:flex;align-items:center;gap:7px;margin:0 3px 9px;min-width:0;flex:none}
-.conversation-history-controls .conversation-history-filter{flex:1;min-width:0;margin:0}
-.conversation-history-controls .conversation-history-filter select{width:100%;min-width:0}
-.conversation-history-controls #conversation-bulk-toggle{flex:0 0 auto;min-height:32px;padding:5px 9px;font-size:11px;font-weight:600;white-space:nowrap}
+html[data-blackice-ui] body #app .conversation-history-controls{display:flex;align-items:stretch;gap:7px;margin:0 3px 9px;min-width:0;flex:none}
+html[data-blackice-ui] body #app .conversation-history-controls .conversation-history-filter{display:block;flex:1;min-width:0;margin:0;padding:0}
+html[data-blackice-ui] body #app .conversation-history-controls .conversation-history-filter select,html[data-blackice-ui] body #app .conversation-history-controls #conversation-bulk-toggle{box-sizing:border-box;height:40px;min-height:40px;margin:0;vertical-align:middle}
+html[data-blackice-ui] body #app .conversation-history-controls .conversation-history-filter select{display:block;width:100%;min-width:0}
+html[data-blackice-ui] body #app .conversation-history-controls #conversation-bulk-toggle{flex:0 0 auto;padding:6px 9px;font-size:11px;line-height:1.2;font-weight:600;white-space:nowrap;cursor:pointer}
+.conversation-history-controls #conversation-bulk-toggle:focus-visible{outline:2px solid var(--relay-signal,#8dcadd);outline-offset:2px}
+@media(pointer:coarse){html[data-blackice-ui] body #app .conversation-history-controls .conversation-history-filter select,html[data-blackice-ui] body #app .conversation-history-controls #conversation-bulk-toggle{height:44px;min-height:44px}}
 .conversation-bulk-toolbar{margin:0 3px 9px;padding:9px;border:1px solid var(--relay-line,#40515e);border-radius:8px;background:var(--relay-pane,#14212a);flex:none}
 .conversation-bulk-heading{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:8px;font-size:11px;color:var(--relay-soft,#c7d6dc)}
 .conversation-bulk-heading>button{min-height:29px;padding:4px 8px;font-size:11px}

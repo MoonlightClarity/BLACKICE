@@ -13,11 +13,11 @@ test('subagents run bounded parallel work with inherited model, workspace, ephem
     active--;
     return {output:'Completed assigned part: '+options.prompt.match(/YOUR ASSIGNED TASK:\n(.*)/)?.[1]};
   }};
-  const handler=createSubagentToolHandler({runtime,cwd:'C:\\work',model:'codex-model',effort:'high',maxParallel:2,runInput:'Original request',verbosity:'detailed',onEvent:event=>events.push(event)});
+  const handler=createSubagentToolHandler({runtime,cwd:'C:\\work',model:'codex-model',effort:'high',serviceTier:'fast',maxParallel:2,runInput:'Original request',verbosity:'detailed',onEvent:event=>events.push(event)});
   const result=receipt(await handler(delegate(['one','two','three','four','five'])));
   assert.equal(result.completed,5);assert.equal(result.maxParallel,2);assert.equal(result.allCompleted,true);
   assert.equal(peak,2);assert.equal(calls.length,5);
-  assert.ok(calls.every(call=>call.cwd==='C:\\work' && call.model==='codex-model' && call.effort==='high' && call.codexHistory==='relay'));
+  assert.ok(calls.every(call=>call.cwd==='C:\\work' && call.model==='codex-model' && call.effort==='high' && call.serviceTier==='fast' && call.codexHistory==='relay'));
   assert.ok(calls.every(call=>call.prompt.includes('Original request') && call.prompt.includes('thorough')));
   assert.ok(events.filter(event=>event.status==='completed').length===5);
   assert.ok(result.results.every(item=>item.status==='completed'&&item.output.includes(item.id)));

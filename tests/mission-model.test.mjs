@@ -49,6 +49,15 @@ test('Mission creates a real valid graph while preserving selected model and des
   const workflow = createMissionWorkflow({ id: 'mission_test', task: 'Finish the task', model: 'local::actual', cwd: 'C:\\Projects', desktop: true });
   const checked = validateWorkflow(workflow); assert.equal(checked.nodes[1].model, 'local::actual'); assert.equal(checked.nodes[1].desktop, true); assert.equal(checked.settings.maxParallel, 1); assert.equal(checked.nodes.length, 3);
 });
+
+test('Mission preserves explicit Fast and Standard independently of max reasoning', () => {
+  for (const serviceTier of ['fast', 'default']) {
+    const checked = validateWorkflow(createMissionWorkflow({ id: `speed_${serviceTier}`, task: 'Use the chosen processing speed.', model: 'native', effort: 'max', serviceTier, planningMode: 'on' }));
+    assert.equal(checked.nodes[1].serviceTier, serviceTier); assert.equal(checked.nodes[1].effort, 'max'); assert.equal(checked.settings.planningMode, 'on');
+  }
+  assert.equal(Object.hasOwn(createMissionWorkflow({ task: 'Legacy omitted speed' }).nodes[1], 'serviceTier'), false);
+  assert.throws(() => createMissionWorkflow({ task: 'Invalid speed', serviceTier: 'priority' }), /Standard or Fast/);
+});
 test('Mission recipes persist the planning mode without embedding an unconditional plan mandate', () => {
   for (const planningMode of ['maximal', 'on', 'auto', 'off']) {
     const workflow = validateWorkflow(createMissionWorkflow({ id: `mode_${planningMode}`, task: 'Handle this request.', planningMode }));

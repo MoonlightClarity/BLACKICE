@@ -3,6 +3,20 @@ import assert from 'node:assert/strict';
 import { conversationRecovery, conversationId, conversationRuns, conversationSummaries, conversationSidebarItems, selectedConversationModel, selectedConversationContext, selectedConversationEffort, selectedConversationPlanDetail, selectedConversationPlanningMode, conversationPlanningConfig, restoreConversationDrafts, searchConversations, mergeConversationRuns, assistantMessages, conversationTurn, conversationAgents, shouldSendConversationKey, createRegisteredArtifactResolver } from '../public/conversation-model.mjs';
 import { PLANNING_MODES, normalizePlanningMode, planningModeDetail } from '../public/planning-mode.mjs';
 import { conversationReasoningChoice } from '../public/conversation-model.mjs';
+import { selectedConversationServiceTier } from '../public/conversation-model.mjs';
+
+test('Fast app defaults apply only to advertised new native chats and preserve explicit saved choices', () => {
+  const status = { defaultModel: 'luna', runtimeSettings: { defaultServiceTier: 'fast' }, models: [{ id: 'luna', serviceTiers: [{ id: 'fast' }] }, { id: 'standard' }, { id: 'free::model', providerId: 'free', serviceTiers: [{ id: 'fast' }] }] };
+  assert.equal(selectedConversationServiceTier({}, undefined, undefined, status), 'fast');
+  for (const model of ['standard', 'free::model', 'unknown']) {
+    assert.equal(selectedConversationServiceTier({ model }, undefined, undefined, status), undefined, 'An unsupported global default leaves the new request Standard.');
+    assert.equal(selectedConversationServiceTier({ model, serviceTier: 'fast' }, undefined, undefined, status), 'fast', 'An authored unsupported Fast choice remains visible for correction.');
+  }
+  assert.equal(selectedConversationServiceTier({}, undefined, { id: 'legacy' }, status), undefined);
+  assert.equal(selectedConversationServiceTier({}, { serviceTier: 'fast' }, { id: 'saved' }, status), 'fast');
+  assert.equal(selectedConversationServiceTier({ serviceTier: 'default' }, { serviceTier: 'fast' }, { id: 'saved' }, status), 'default');
+  assert.equal(selectedConversationServiceTier({}, undefined, undefined, status, 'free::model'), undefined, 'The actual preference-selected model controls capability.');
+});
 
 test('Maximal preview uses actual model metadata while retaining explicit and inherited reasoning intent', () => {
   const status = { defaultModel: 'wide', runtimeSettings: { defaultEffort: 'medium' }, models: [{ id: 'wide', supportedReasoningEfforts: ['low', 'high', 'ultra'] }, { id: 'narrow', supportedReasoningEfforts: [{ reasoningEffort: 'minimal' }, { reasoningEffort: 'low' }] }] };

@@ -353,6 +353,43 @@ test('advertised max and ultra reasoning reach the real turn RPC and report the 
   assert.equal(requests.filter(request => request.method === 'turn/start').length, 2, 'neither effort choice causes a hidden retry or downgrade');
 });
 
+for (const { label, catalog, wireTier } of [
+  { label: 'advertised fast ID', catalog: { id: 'fixture-model', model: 'fixture-model', serviceTiers: [{ id: 'fast', name: 'Fast', description: 'Advertised fixture speed.' }] }, wireTier: 'fast' },
+  { label: 'installed Luna priority ID', catalog: JSON.parse(await readFile(new URL('./fixtures/native-luna-speed-catalog.json', import.meta.url), 'utf8')), wireTier: 'priority' },
+]) test(`Fast reaches native thread and turn RPC independently of Max (${label}); continuation inherits until Standard reset`, async t => {
+  const { client, requests } = recordedRuntime(t);
+  await client.start();
+  await client._request('fixture/catalog', { models: [catalogModel(catalog.model, { ...catalog, isDefault: true, supportedReasoningEfforts: [{ reasoningEffort: 'max' }] })] });
+  await client.start({ refresh: true });
+  const first = await client.runAgent({ cwd, prompt: 'Start with Fast and Max.', effort: 'max', serviceTier: 'fast' });
+  const inherited = await client.runAgent({ cwd, prompt: 'Keep this chat choice.', threadId: first.threadId });
+  const standard = await client.runAgent({ cwd, prompt: 'Use Standard, preserving Max.', threadId: first.threadId, serviceTier: 'default' });
+  assert.equal(first.effort, 'max'); assert.equal(first.serviceTier, 'fast');
+  assert.equal(inherited.effort, 'max'); assert.equal(inherited.serviceTier, 'fast');
+  assert.equal(standard.effort, 'max'); assert.equal(standard.serviceTier, 'default');
+  const turns = requests.filter(request => request.method === 'turn/start').map(request => request.params);
+  assert.deepEqual(turns.map(turn => turn.serviceTier), [wireTier, wireTier, 'default']);
+  assert.deepEqual(turns.map(turn => turn.effort), ['max', 'max', 'max']);
+  assert.equal(turns.at(-1).serviceTierForTurn, 'default', 'The documented Standard turn override defeats an inherited Fast tier.');
+  assert.equal(requests.find(request => request.method === 'thread/start').params.serviceTier, wireTier);
+  assert.deepEqual(requests.filter(request => request.method === 'thread/resume').map(request => request.params.serviceTier), [wireTier, 'default']);
+  client.contexts.clear();
+  const restarted = await client.runAgent({ cwd, prompt: 'Restore saved Standard after a runtime restart.', threadId: first.threadId, sandbox: 'danger-full-access', effort: 'max', serviceTier: 'default' });
+  assert.equal(restarted.serviceTier, 'default'); assert.equal(requests.filter(request => request.method === 'turn/start').at(-1).params.serviceTierForTurn, 'default');
+  assert.equal(requests.filter(request => request.method === 'turn/start').length, 4, 'No silent retry or tier/effort substitution.');
+});
+
+test('native Fast capability rejects before creating a turn; legacy omission remains absent from the wire', async t => {
+  const { client, requests } = recordedRuntime(t);
+  await assert.rejects(client.runAgent({ cwd, prompt: 'Unsupported Fast must not silently run Standard.', serviceTier: 'fast' }), { code: 'FAST_MODE_UNAVAILABLE' });
+  await assert.rejects(client.runAgent({ cwd, prompt: 'Invalid tier.', serviceTier: null }), { code: 'INVALID_SERVICE_TIER' });
+  assert.equal(requests.some(request => ['thread/start', 'thread/resume', 'turn/start'].includes(request.method)), false);
+  await client.runAgent({ cwd, prompt: 'Legacy default behavior.' });
+  for (const request of requests.filter(request => ['thread/start', 'turn/start'].includes(request.method))) {
+    assert.equal(Object.hasOwn(request.params, 'serviceTier'), false); assert.equal(Object.hasOwn(request.params, 'serviceTierForTurn'), false);
+  }
+});
+
 test('native continuation inherits ultra until an explicit model-default reset clears the saved setting', async t => {
   const { client, requests } = recordedRuntime(t, { args: [fixture, '--reasoning-levels'] });
   const first = await client.runAgent({ cwd, prompt: 'Start with ultra.', effort: 'ultra' });

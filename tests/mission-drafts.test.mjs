@@ -2,6 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mergeMissionDrafts } from '../public/draft-store.mjs';
 
+test('changing Fast creates a new draft request while preserving other windows and reasoning', () => {
+  const before = { conversationDrafts: { chat: { task: 'Original', attachmentIds: [], effort: 'max', serviceTier: 'fast' } } }, remote = structuredClone(before), local = structuredClone(before);
+  remote.conversationDrafts.chat.pendingSend = { requestId: 'old-speed', config: { task: 'Original', serviceTier: 'fast' } };
+  remote.conversationDrafts.other = { task: 'Another window', serviceTier: 'fast' };
+  local.conversationDrafts.chat.serviceTier = 'default';
+  const merged = mergeMissionDrafts(remote, before, local);
+  assert.equal(merged.conversationDrafts.chat.serviceTier, 'default'); assert.equal(merged.conversationDrafts.chat.effort, 'max'); assert.equal(merged.conversationDrafts.chat.pendingSend, undefined);
+  assert.deepEqual(merged.conversationDrafts.other, remote.conversationDrafts.other); assert.equal(before.conversationDrafts.chat.serviceTier, 'fast');
+});
+
 test('editing plan detail merges safely and invalidates an older submitted receipt without changing reasoning',()=>{
   const baseline={conversationDrafts:{chat:{task:'Task',attachmentIds:[],planDetail:'balanced',effort:'ultra'}}};
   const remote=structuredClone(baseline);remote.conversationDrafts.chat.pendingSend={requestId:'old-receipt',config:{task:'Task',planDetail:'balanced'}};remote.conversationDrafts.other={task:'Other window task',attachmentIds:[]};

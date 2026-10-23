@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createResponseDefaults,renderResponseDefaults} from '../public/response-defaults.mjs';
+import nativeLuna from './fixtures/native-luna-speed-catalog.json' with { type: 'json' };
 const initial={defaultEffort:'default',defaultContext:{preset:'model',windowTokens:null,autoCompact:true,headroomTokens:2000},codexHistory:'relay'};
 const target=(key,value)=>({dataset:{responseDefault:key},value});
 test('response defaults save only dirty fields and preserve advanced context preferences',async()=>{
@@ -8,6 +9,24 @@ test('response defaults save only dirty fields and preserve advanced context pre
  const editor=createResponseDefaults({getSettings:()=>current,api:async(url,method,patch)=>{calls.push({url,method,patch});if(patch)current={...current,...patch};return structuredClone(current);},onSaved:value=>{saved=value;}});
  await editor.setOpen(true);editor.input(target('defaultEffort','ultra'));await editor.save();assert.deepEqual(calls[1].patch,{defaultEffort:'ultra'});assert.equal(saved.codexHistory,'relay');
  editor.input(target('preset','900k'));editor.input({dataset:{responseDefault:'autoCompact'},checked:false});await editor.save();assert.deepEqual(calls[2].patch,{defaultContext:{preset:'900k',windowTokens:900000,autoCompact:false}});assert.equal(editor.state.dirty,false);assert.equal(editor.state.receipt,'Defaults saved.');
+});
+
+test('Fast defaults save independently and rendering never changes preferences', async () => {
+  const calls = []; let current = { ...initial, defaultEffort: 'max', defaultServiceTier: 'default' };
+  const editor = createResponseDefaults({ getSettings: () => current, api: async (url, method, patch) => { calls.push({ url, method, patch }); if (patch) current = { ...current, ...patch }; return structuredClone(current); } });
+  const status = { runtimeSettings: current, defaultModel: 'native', models: [{ id: 'native', serviceTiers: [{ id: 'fast' }] }] };
+  assert.match(renderResponseDefaults(status), /Fast mode[\s\S]*New chats only\. Reasoning stays unchanged/); assert.equal(calls.length, 0);
+  await editor.setOpen(true); editor.input(target('defaultServiceTier', 'fast')); await editor.save();
+  assert.deepEqual(calls[1].patch, { defaultServiceTier: 'fast' }); assert.equal(editor.state.draft.defaultEffort, 'max');
+  editor.input(target('defaultServiceTier', 'default')); await editor.save(); assert.deepEqual(calls[2].patch, { defaultServiceTier: 'default' });
+  editor.input(target('defaultServiceTier', 'priority')); assert.match(editor.state.error, /Standard or Fast/); assert.equal(calls.length, 3);
+  assert.match(renderResponseDefaults({ defaultModel: 'remote::model', models: [{ id: 'remote::model' }] }), /value="fast" disabled>Fast · unavailable/);
+});
+
+test('actual native Luna priority metadata leaves the Fast default selectable', () => {
+  const html = renderResponseDefaults({ defaultModel: nativeLuna.id, models: [nativeLuna], runtimeSettings: { defaultServiceTier: 'fast', defaultEffort: 'max' } });
+  assert.match(html, /<option value="fast" selected>Fast<\/option>/);
+  assert.doesNotMatch(html, /Fast · unavailable/);
 });
 test('invalid context input never reaches API and a failed save keeps the draft editable',async()=>{
  let requests=0;const editor=createResponseDefaults({getSettings:()=>initial,api:async()=>{requests++;throw Error('Endpoint offline');}});

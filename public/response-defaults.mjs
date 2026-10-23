@@ -1,10 +1,11 @@
 import {REASONING_LEVELS,reasoningChoices,reasoningLabel} from './reasoning-model.mjs';
+import {serviceTierSupport} from './service-tier-model.mjs';
 const escape=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const clone=value=>structuredClone(value);
-export function responseDefaults(settings={}){return{defaultEffort:['default',...REASONING_LEVELS].includes(settings.defaultEffort)?settings.defaultEffort:'default',defaultContext:clone(settings.defaultContext||{preset:'model',windowTokens:null,autoCompact:true}),verbosity:['concise','balanced','detailed'].includes(settings.verbosity)?settings.verbosity:'balanced',subagentsEnabled:settings.subagentsEnabled===true,maxSubagents:Number.isSafeInteger(settings.maxSubagents)&&settings.maxSubagents>=1&&settings.maxSubagents<=8?settings.maxSubagents:3};}
+export function responseDefaults(settings={}){return{defaultEffort:['default',...REASONING_LEVELS].includes(settings.defaultEffort)?settings.defaultEffort:'default',defaultServiceTier:settings.defaultServiceTier==='fast'?'fast':'default',defaultContext:clone(settings.defaultContext||{preset:'model',windowTokens:null,autoCompact:true}),verbosity:['concise','balanced','detailed'].includes(settings.verbosity)?settings.verbosity:'balanced',subagentsEnabled:settings.subagentsEnabled===true,maxSubagents:Number.isSafeInteger(settings.maxSubagents)&&settings.maxSubagents>=1&&settings.maxSubagents<=8?settings.maxSubagents:3};}
 export function renderResponseDefaults(status={},state={}) {
  const values={...responseDefaults(status.runtimeSettings),...(state.draft||{})};
- const context=values.defaultContext||{},busy=state.loading||state.saving,disabled=busy?' disabled':'';
+ const context=values.defaultContext||{},busy=state.loading||state.saving,disabled=busy?' disabled':'',fast=serviceTierSupport(status,'default','fast');
  const window=context.preset==='900k'?'900k':context.preset==='custom'?Number(context.windowTokens||0).toLocaleString()+' tokens':'Model default';
  return `<details class="configure-disclosure response-defaults" data-configure-section="response-defaults"${state.open?' open':''}>
    <summary>Agent preferences<span>${escape(values.verbosity)} · ${values.subagentsEnabled?values.maxSubagents+' parallel agents':'one agent'}</span></summary>
@@ -13,6 +14,10 @@ export function renderResponseDefaults(status={},state={}) {
      <div class="response-default-grid">
        <label for="configure-default-effort">Reasoning
          <select id="configure-default-effort" data-response-default="defaultEffort"${disabled}>${reasoningChoices(status,'default',values.defaultEffort).map(item=>`<option value="${escape(item.value)}"${item.value===values.defaultEffort?' selected':''}>${escape(item.label)}${item.available?'':' · unavailable for this model'}</option>`).join('')}</select>
+       </label>
+       <label for="configure-default-service-tier">Fast mode
+         <select id="configure-default-service-tier" data-response-default="defaultServiceTier" aria-describedby="configure-service-tier-note"${disabled}><option value="default"${values.defaultServiceTier==='default'?' selected':''}>Standard</option><option value="fast"${values.defaultServiceTier==='fast'?' selected':''}${fast.available?'':' disabled'}>Fast${fast.available?'':' · unavailable for this model'}</option></select>
+         <small id="configure-service-tier-note">New chats only. Reasoning stays unchanged.${fast.available?'':` ${escape(fast.error)}`}</small>
        </label>
        <label for="configure-verbosity">Response length
          <select id="configure-verbosity" data-response-default="verbosity"${disabled}>${[['concise','Concise'],['balanced','Balanced'],['detailed','Detailed']].map(([value,label])=>`<option value="${value}"${values.verbosity===value?' selected':''}>${label}</option>`).join('')}</select>
@@ -43,6 +48,7 @@ export function createResponseDefaults({getSettings,api,onChange=()=>{},onSaved=
  async function load(){if(closed||state.loading||state.saving||state.dirty)return;const owner=++generation,version=revision;state.loading=true;state.error='';changed();try{const value=await api('/api/runtime/settings');if(closed||owner!==generation||version!==revision)return;state.draft=responseDefaults(value);keys.clear();contextKeys.clear();state.dirty=false;}catch(error){if(!closed&&owner===generation)state.error=error.message;}finally{if(!closed&&owner===generation){state.loading=false;changed();}}}
  function input(target){const key=target?.dataset?.responseDefault;if(!key)return false;if(closed||state.loading||state.saving)return true;const draft=ensure();state.receipt='';state.error='';
   if(key==='defaultEffort'){if(!['default',...REASONING_LEVELS].includes(target.value)){state.error='Choose a valid reasoning level.';changed();return true;}draft.defaultEffort=target.value;keys.add('defaultEffort');}
+  else if(key==='defaultServiceTier'){if(!['default','fast'].includes(target.value)){state.error='Choose Standard or Fast mode.';changed();return true;}draft.defaultServiceTier=target.value;keys.add('defaultServiceTier');}
   else if(key==='verbosity'){if(!['concise','balanced','detailed'].includes(target.value)){state.error='Choose a verbosity level.';changed();return true;}draft.verbosity=target.value;keys.add('verbosity');}
   else if(key==='subagentsEnabled'){draft.subagentsEnabled=Boolean(target.checked);keys.add('subagentsEnabled');}
   else if(key==='maxSubagents'){const limit=Number(target.value);if(!Number.isSafeInteger(limit)||limit<1||limit>8){state.error='Choose 1 to 8 parallel subagents.';changed();return true;}draft.maxSubagents=limit;keys.add('maxSubagents');}

@@ -2,6 +2,7 @@ import { taskTitle } from './task-title.mjs';
 import { REASONING_LEVELS, reasoningSelectionSupported } from './reasoning-model.mjs';
 import { newerTaskState } from './run-state-model.mjs';
 import { PLANNING_MODES, planningModeDetail, selectPlanningEffort } from './planning-mode.mjs';
+import { serviceTierSupport } from './service-tier-model.mjs';
 export const isActiveRun = run => ['queued', 'running', 'waiting'].includes(run?.status);
 // A terminal status can arrive before its tools release the conversation and execution slot.
 export const isSettlingRun = run => Boolean(run && !isActiveRun(run) && run.settled === false);
@@ -84,6 +85,8 @@ export function conversationSummaries(runs) {
 export const selectedConversationModel = (draft = {}, preferences = {}, agent) => draft.model || agent?.resolvedModel || agent?.model || preferences.model || 'default';
 export const conversationEfforts = ['default', ...REASONING_LEVELS];
 export const selectedConversationEffort = (draft = {}, agent, appDefault = 'default') => conversationEfforts.includes(draft.effort) ? draft.effort : conversationEfforts.includes(agent?.effort) ? agent.effort : conversationEfforts.includes(appDefault) ? appDefault : 'default';
+/** Existing chats retain captured tier or legacy omission; app Fast defaults affect only new chats. */
+export const selectedConversationServiceTier = (draft = {}, agent, run, status = {}, selection = draft.model || agent?.resolvedModel || agent?.model || 'default') => ['default', 'fast'].includes(draft.serviceTier) ? draft.serviceTier : ['default', 'fast'].includes(agent?.serviceTier) ? agent.serviceTier : !run && status.runtimeSettings?.defaultServiceTier === 'fast' && serviceTierSupport(status, selection, 'fast').available ? 'fast' : undefined;
 export const conversationPlanDetails = ['compact', 'balanced', 'detailed'];
 export const selectedConversationPlanDetail = (draft = {}, preferences = {}, run) => [draft.planDetail, run?.planDetail, run?.workflow?.settings?.planDetail, run?.taskState?.plan?.detail, preferences.planDetail, 'balanced'].find(value => conversationPlanDetails.includes(value));
 export const selectedConversationPlanningMode = (draft = {}, preferences = {}, run) => [draft.planningMode, run?.planningMode, run?.input?.planningMode, run?.workflow?.settings?.planningMode, ...Object.values(run?.nodes || {}).map(node => node.planning?.mode), preferences.planningMode, 'auto'].find(value => PLANNING_MODES.includes(value));
@@ -115,6 +118,7 @@ export function restoreConversationDrafts(saved = {}) {
   if (!drafts.new || typeof drafts.new !== 'object' || Array.isArray(drafts.new)) drafts.new = { task: legacy && typeof saved.task === 'string' ? saved.task : '', attachmentIds: legacy && Array.isArray(saved.attachmentIds) ? saved.attachmentIds : [] };
   for (const draft of Object.values(drafts)) if (draft && typeof draft === 'object' && !Array.isArray(draft)) {
     if (!conversationEfforts.includes(draft.effort)) delete draft.effort;
+    if (!['default', 'fast'].includes(draft.serviceTier)) delete draft.serviceTier;
     if (!conversationPlanDetails.includes(draft.planDetail)) delete draft.planDetail;
     if (!PLANNING_MODES.includes(draft.planningMode)) delete draft.planningMode;
     if (!draft.context || typeof draft.context !== 'object' || Array.isArray(draft.context)) delete draft.context;

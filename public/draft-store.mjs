@@ -31,7 +31,7 @@ export function mergeMissionDrafts(latest = {}, baseline = {}, current = {}, { p
     // newly submitted receipt with text or settings from a different window.
     const submitting = local?.pendingSend && JSON.stringify(local.pendingSend) !== JSON.stringify(before.pendingSend);
     const merged = submitting ? structuredClone(local) : mergeFields(remoteDrafts[key], before, local);
-    if (!submitting && ['task', 'model', 'context', 'effort', 'planningMode', 'planDetail', 'attachmentIds', 'agentId'].some(field => JSON.stringify(local?.[field]) !== JSON.stringify(before[field]))) delete merged.pendingSend;
+    if (!submitting && ['task', 'model', 'context', 'effort', 'serviceTier', 'planningMode', 'planDetail', 'attachmentIds', 'agentId'].some(field => JSON.stringify(local?.[field]) !== JSON.stringify(before[field]))) delete merged.pendingSend;
     if (Object.keys(merged).length) Object.defineProperty(drafts, key, { value: merged, enumerable: true, writable: true, configurable: true });
   }
   result.conversationDrafts = drafts;

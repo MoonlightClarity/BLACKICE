@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { RuntimeSettingsStore,validateRuntimeSettings } from '../lib/runtime-settings.mjs';
-const defaults = { codexHistory:'relay', runTimeoutMs:null, providerIdleTimeoutMs:300000, defaultEffort:'default', defaultContext:{preset:'model',windowTokens:null,autoCompact:true}, verbosity:'balanced', subagentsEnabled:false, maxSubagents:3 };
+const defaults = { codexHistory:'relay', runTimeoutMs:null, providerIdleTimeoutMs:300000, defaultEffort:'default', defaultServiceTier:'default', defaultContext:{preset:'model',windowTokens:null,autoCompact:true}, verbosity:'balanced', subagentsEnabled:false, maxSubagents:3 };
 const prefs = codexHistory => ({ ...defaults, codexHistory });
 
 async function settingsStore(t){
@@ -33,6 +33,17 @@ test('history choices persist independently of provider credentials and survive 
   assert.deepEqual(await store.update(prefs('codex')),prefs('codex'));assert.deepEqual(events,[prefs('codex')]);assert.deepEqual(JSON.parse(await fs.readFile(store.file,'utf8')),prefs('codex'));assert.deepEqual(await fs.readdir(dataDir),['runtime-settings.json']);
   const restarted=await new RuntimeSettingsStore({dataDir}).init();t.after(()=>restarted.close());assert.deepEqual(restarted.get(),prefs('codex'));
   await restarted.update(prefs('relay'));const again=await new RuntimeSettingsStore({dataDir}).init();t.after(()=>again.close());assert.deepEqual(again.get(),prefs('relay'));
+});
+
+test('Fast defaults persist independently from reasoning and reject invalid updates without rewriting saved preferences', async t => {
+  const {store,dataDir}=await settingsStore(t);
+  await store.update({defaultEffort:'max',defaultServiceTier:'fast'});
+  const saved=await fs.readFile(store.file,'utf8');
+  const restarted=await new RuntimeSettingsStore({dataDir}).init();t.after(()=>restarted.close());
+  assert.equal(restarted.get().defaultServiceTier,'fast');assert.equal(restarted.get().defaultEffort,'max');
+  for(const value of [null,undefined,true,'priority','auto','ultrafast'])await assert.rejects(store.update({defaultServiceTier:value}),{code:'RUNTIME_SETTINGS_INVALID'});
+  assert.equal(await fs.readFile(store.file,'utf8'),saved);
+  await store.update({defaultServiceTier:'default'});assert.equal(store.get().defaultEffort,'max');assert.equal(store.get().defaultServiceTier,'default');
 });
 
 test('serialized history saves publish the value only after each durable write and invalid updates cannot poison the queue',async t=>{
