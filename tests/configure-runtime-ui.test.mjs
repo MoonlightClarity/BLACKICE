@@ -31,7 +31,7 @@ test('oversized pasted digits are rejected before arbitrary-precision arithmetic
 });
 
 test('run limits remain in the clearly labeled collapsed section and accurately describe per-agent and API activity semantics',()=>{
-  const html=renderConfigureView(snapshot());assert.match(html,/data-configure-section="preferences"><summary>Advanced preferences<span>Time limits &amp; history/);assert.match(html,/Agent time limit/);assert.match(html,/Maximum time for each agent response, with any provider/);assert.match(html,/API inactivity timeout/);assert.match(html,/Streamed heartbeats count as activity/);assert.match(html,/Active work keeps its saved limits/);assert.match(html,/value="5"/);assert.doesNotMatch(html,/data-configure-runtime[^>]*\smax=/);
+  const html=renderConfigureView(snapshot());assert.match(html,/data-configure-section="preferences"><summary>Advanced preferences<span>Limits &amp; history/);assert.match(html,/Agent time limit/);assert.match(html,/Maximum time for each agent response, with any provider/);assert.match(html,/API inactivity timeout/);assert.match(html,/Streamed heartbeats count as activity/);assert.match(html,/Active work keeps its saved limits/);assert.match(html,/value="5"/);assert.doesNotMatch(html,/data-configure-runtime[^>]*\smax=/);
   const oneMillisecond=snapshot();oneMillisecond.status.runtimeSettings.runTimeoutMs=1;assert.match(renderConfigureView(oneMillisecond),/value="0.001"/);
   const missing=renderConfigureView(snapshot(),{},{runtime:false,history:false});assert.doesNotMatch(missing,/Run limits|API inactivity/);
 });

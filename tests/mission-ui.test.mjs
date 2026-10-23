@@ -83,10 +83,12 @@ const plannedRun = (id, status = 'running') => {
   return run;
 };
 
-test('structured tasks default to Plan, expose keyboard tabs, and keep hidden responses unread', async t => {
+test('structured tasks default to Conversation and explicit Plan keeps hidden responses unread', async t => {
   const run = plannedRun('default-plan'), f = missionFixture(t, savedDrafts('')), snapshot = statusSnapshot([run]), h = mountMission(f, snapshot); await turn();
-  assert.equal(h.ui.getWorkbench().visible, true); assert.equal(h.ui.getWorkbench().view, 'plan'); assert.equal(h.ui.getWorkbench().selection.selectedId, 'build');
-  assert.equal(f.element('#conversation-plan-tabs').hidden, false); assert.equal(f.element('#mission-plan').hidden, false); assert.equal(f.element('#conversation-dialogue').hidden, true); assert.equal(f.element('#conversation-dialogue').inert, true); assert.equal(f.element('#mission-plan').getAttribute('role'), 'tabpanel');
+  assert.equal(h.ui.getWorkbench().visible, true); assert.equal(h.ui.getWorkbench().view, 'conversation'); assert.equal(h.ui.getWorkbench().selection.selectedId, 'build');
+  assert.equal(f.element('#conversation-plan-tabs').hidden, false); assert.equal(f.element('#mission-plan').hidden, true); assert.equal(f.element('#conversation-dialogue').hidden, false); assert.equal(f.element('#conversation-dialogue').inert, false); assert.equal(f.element('#mission-plan').getAttribute('role'), 'tabpanel');
+  await h.action('plan-view', { view: 'plan' });
+  assert.equal(f.element('#mission-plan').hidden, false); assert.equal(f.element('#conversation-dialogue').inert, true);
   assert.equal(f.element('#conversation-timeline').children[0].querySelector('.conversation-work-slot').hidden, true, 'the old flat work panel is not repeated');
   run.status = 'completed'; run.settled = true; h.ui.update();
   assert.match(f.element('#conversation-list').innerHTML, /New response/); assert.equal(f.element('#conversation-tab-attention').hidden, false);
@@ -101,17 +103,18 @@ test('Plan and Conversation retain per-task view, reading position, selected ste
   const a = plannedRun('plan-position-a'), b = plannedRun('plan-position-b'), f = missionFixture(t, savedDrafts('')), snapshot = statusSnapshot([a, b]), h = mountMission(f, snapshot); await turn(); await h.ui.openConversation(a.id);
   await h.planAction('select', { stepId: 'inspect' }); await h.action('plan-view', { view: 'conversation' }); await h.text('Keep this partial direction');
   const scroll = f.element('#conversation-scroll'); scroll.scrollHeight = 2400; scroll.clientHeight = 500; scroll.scrollTop = 380; await scroll.dispatch('scroll', {});
-  await h.ui.openConversation(b.id); assert.equal(h.ui.getWorkbench().view, 'plan'); await h.planAction('select', { stepId: 'verify' });
+  await h.ui.openConversation(b.id); assert.equal(h.ui.getWorkbench().view, 'conversation'); h.ui.showPlan(); await h.planAction('select', { stepId: 'verify' });
   await h.ui.openConversation(a.id); assert.equal(h.ui.getWorkbench().view, 'conversation'); assert.equal(h.ui.getWorkbench().selection.selectedId, 'inspect'); assert.equal(h.ui.getDraft().task, 'Keep this partial direction'); assert.equal(scroll.scrollTop, 380);
   h.ui.showPlan(); scroll.scrollTop = 0; await scroll.dispatch('scroll', {}); a.nodes.agent.output = 'Another streamed line'; h.ui.update();
   await h.action('plan-view', { view: 'conversation' }); assert.equal(scroll.scrollTop, 380, 'hidden scroll events cannot overwrite the reading position');
   await h.ui.openConversation(b.id); assert.equal(h.ui.getWorkbench().selection.selectedId, 'verify'); assert.equal(h.ui.getWorkbench().view, 'plan');
 });
 
-test('desktop keeps both task surfaces available and narrow resizing moves focus out of a hidden pane', async t => {
-  const f = missionFixture(t, savedDrafts('')); globalThis.window.innerWidth = 1440;
+test('an explicitly expanded desktop plan stays available and resizing moves focus out of a hidden pane', async t => {
+  const f = missionFixture(t, savedDrafts('')); f.storage.set('relay.ui.plan.collapsed', 'false'); globalThis.window.innerWidth = 1440;
   const h = mountMission(f, statusSnapshot([plannedRun('responsive-plan')])); await turn();
   assert.equal(f.element('#conversation-plan-tabs').hidden, true); assert.equal(f.element('#mission-plan').hidden, false); assert.equal(f.element('#conversation-dialogue').hidden, false); assert.equal(f.element('#mission-plan').getAttribute('role'), undefined);
+  h.ui.showPlan();
   f.element('#conversation-dialogue').append(f.element('#mission-task')); f.element('#mission-task').focus();
   globalThis.window.innerWidth = 390; await f.windowEvents.dispatch('resize', {});
   assert.equal(f.element('#conversation-dialogue').inert, true); assert.equal(globalThis.document.activeElement, f.element('#conversation-plan-tab'));
@@ -193,20 +196,21 @@ for (const planningStatus of ['unavailable', 'missing']) test(`an empty ${planni
   assert.equal(h.ui.getWorkbench().view, 'conversation', 'a new planning state cannot override the chosen pane');
 });
 
-test('empty preparing plans stay Plan-first while saved steps and notes remain reachable after a planning limitation', async t => {
+test('preparing plans, saved steps and saved notes stay reachable without replacing the conversation', async t => {
   const preparing = plannedRun('preparing-default'), steps = plannedRun('saved-step-default', 'completed'), notes = plannedRun('saved-note-default', 'completed');
   preparing.taskState.steps = []; preparing.taskState.plan.origin = 'runtime'; preparing.nodes.agent.planning.status = 'preparing';
   steps.nodes.agent.planning.status = 'missing'; notes.taskState.steps = []; notes.nodes.agent.planning.status = 'unavailable'; notes.taskState.checkpoint = { nextAction: 'Inspect the saved notes before continuing.' };
   const f = missionFixture(t, savedDrafts('')); globalThis.window.innerWidth = 390;
   const h = mountMission(f, statusSnapshot([preparing, steps, notes])); f.cleanup(() => h.ui.destroy()); await turn();
-  for (const run of [preparing, steps, notes]) { await h.ui.openConversation(run.id); assert.equal(h.ui.getWorkbench().view, 'plan'); assert.equal(f.element('#mission-plan').hidden, false); }
+  for (const run of [preparing, steps, notes]) { await h.ui.openConversation(run.id); assert.equal(h.ui.getWorkbench().view, 'conversation'); assert.equal(f.element('#mission-plan').hidden, true); h.ui.showPlan(); assert.equal(h.ui.getWorkbench().view, 'plan'); assert.equal(f.element('#mission-plan').hidden, false); }
   assert.match(f.element('#mission-plan').querySelector('[data-plan-region="empty"]').innerHTML, /Inspect the saved notes before continuing/);
 });
 
-test('legacy history remains a conversation while an automatic plan opens for each new structured task', async t => {
+test('legacy and structured chats keep Conversation primary while saved Plan remains reachable', async t => {
   const legacy = fixtureRun('old-conversation', 'completed'), next = plannedRun('new-plan'), f = missionFixture(t, savedDrafts('')), h = mountMission(f, statusSnapshot([legacy, next])); await turn(); await h.ui.openConversation(legacy.id);
   assert.equal(h.ui.getWorkbench().visible, false); assert.equal(f.element('#conversation-plan-tabs').hidden, true); assert.equal(f.element('#conversation-dialogue').hidden, false);
-  await h.ui.openConversation(next.id); assert.equal(h.ui.getWorkbench().visible, true); assert.equal(h.ui.getWorkbench().view, 'plan');
+  await h.ui.openConversation(next.id); assert.equal(h.ui.getWorkbench().visible, true); assert.equal(h.ui.getWorkbench().view, 'conversation');
+  h.ui.showPlan(); assert.equal(h.ui.getWorkbench().view, 'plan');
 });
 
 test('structured next-action and repeat controls honor complete rather than the chosen-path fraction', async t => {
@@ -1430,6 +1434,8 @@ test('desktop plan visibility preserves the draft and selection across updates a
   const run = plannedRun('roomy-plan'), f = missionFixture(t, savedDrafts(''));
   globalThis.window.innerWidth = 1440;
   const snapshot = statusSnapshot([run]), h = mountMission(f, snapshot); await turn();
+  assert.equal(h.ui.getWorkbench().collapsed, true, 'fresh desktop chats keep Plan available on demand');
+  h.ui.showPlan();
   await h.text('Keep this direction while I read');
   await h.planAction('select', { stepId: 'verify' });
   const before = structuredClone(run.taskState), selected = h.ui.getWorkbench().selection.selectedId;
@@ -1539,4 +1545,31 @@ test('a response route tag follows the recorded worker receipt, never the next-r
   run.nodes.agent.resolvedModel = 'chatgpt::chat-mode'; h.ui.update(); assert.equal(slot().hidden, false); assert.match(slot().innerHTML, /ChatGPT Chat Mode/); assert.match(slot().innerHTML, /Retired/);
   await h.model('cloud::other'); snapshot.status.models = []; h.ui.update(); assert.match(slot().innerHTML, /data-response-route="chatgpt::chat-mode"/);
   run.nodes.agent.resolvedModel = 'cloud::default'; h.ui.update(); assert.equal(slot().hidden, true);
+});
+
+for (const savedChoice of [null, 'true', 'false']) test('Chat quiet defaults restore explicit pane choices: ' + (savedChoice ?? 'fresh'), async t => {
+  const storage = new Map([['relay.mission.draft', JSON.stringify(savedDrafts(''))]]);
+  if (savedChoice !== null) { storage.set('relay.ui.sidebar.collapsed', savedChoice); storage.set('relay.ui.plan.collapsed', savedChoice); }
+  const f = missionFixture(t, {}, storage); globalThis.window.innerWidth = 1440;
+  const run = plannedRun('quiet-pane-choice'), before = structuredClone(run), h = mountMission(f, statusSnapshot([run])); f.cleanup(() => h.ui.destroy()); await turn();
+  const collapsed = savedChoice !== 'false';
+  assert.equal(f.mount.classList.contains('sidebar-collapsed'), collapsed);
+  assert.equal(h.ui.getWorkbench().collapsed, collapsed);
+  assert.equal(f.element('#mission-plan').hidden, collapsed);
+  assert.equal(f.element('#conversation-dialogue').hidden, false);
+  assert.equal(f.element('#conversation-plan-toggle').hidden, false);
+  await h.action('sidebar'); await h.action('toggle-plan'); h.ui.update();
+  assert.equal(f.mount.classList.contains('sidebar-collapsed'), !collapsed);
+  assert.equal(h.ui.getWorkbench().collapsed, !collapsed);
+  assert.equal(storage.get('relay.ui.sidebar.collapsed'), String(!collapsed));
+  assert.equal(storage.get('relay.ui.plan.collapsed'), String(!collapsed));
+  await h.text('Keep this through a reload'); h.ui.destroy();
+  const restored = missionFixture(t, {}, storage); globalThis.window.innerWidth = 1440;
+  const resumed = mountMission(restored, statusSnapshot([run])); restored.cleanup(() => resumed.ui.destroy()); await turn();
+  assert.equal(restored.mount.classList.contains('sidebar-collapsed'), !collapsed);
+  assert.equal(resumed.ui.getWorkbench().collapsed, !collapsed);
+  assert.equal(restored.element('#conversation-dialogue').hidden, false);
+  assert.equal(resumed.ui.getDraft().task, 'Keep this through a reload');
+  assert.deepEqual(run, before);
+  assert.equal(h.starts.length + h.queued.length + h.mutations.length + resumed.starts.length + resumed.queued.length + resumed.mutations.length, 0);
 });

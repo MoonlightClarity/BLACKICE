@@ -104,7 +104,7 @@ test('untrusted presence names are escaped and no editing or read assertion is f
 
 test('awareness updates preserve focused input, local drafts, pressed controls, and open read receipt details', async t => {
   const f = fixture(t, { withUI: true }); await f.enter(); const c = f.workspace.controller;
-  c.selectEditor('b');
+  c.selectEditor('b'); c.setPane('edit');
   const input = f.dom.$('[data-planning-field="title"]'); input.focus(); input.setSelectionRange(2, 7, 'backward');
   await f.dom.input('[data-planning-field="title"]', 'My unsaved correction'); await turn();
   assert.equal(f.dom.$('[data-planning-field="title"]'), input, 'First presence update must keep the input node.');
@@ -120,7 +120,7 @@ test('awareness updates preserve focused input, local drafts, pressed controls, 
 });
 
 test('successful save releases its own lease and saved worker awareness remains separate from the draft receipt', async t => {
-  const f = fixture(t, { withUI: true }); await f.enter(); const c = f.workspace.controller; c.selectEditor('b');
+  const f = fixture(t, { withUI: true }); await f.enter(); const c = f.workspace.controller; c.selectEditor('b'); c.setPane('edit');
   await f.dom.input('[data-planning-field="title"]', 'Saved human correction'); await turn();
   assert.equal(f.presence.size, 1); assert.equal(await c.save(), true); await turn();
   assert.equal(f.presence.size, 0); assert.equal(c.awareness.state.editing, false); assert.equal(c.draft().revision, 6);
@@ -141,7 +141,7 @@ test('discard, editor selection, compact pane navigation and leaving stop presen
 
 test('a save that finishes after another step starts editing never releases the newer lease', async t => {
   const f = fixture(t, { withUI: true }), pending = deferred(); await f.enter(); const c = f.workspace.controller;
-  c.selectEditor('a'); await f.dom.input('[data-planning-field="title"]', 'Save A later'); await turn();
+  c.selectEditor('a'); c.setPane('edit'); await f.dom.input('[data-planning-field="title"]', 'Save A later'); await turn();
   f.hook(async (url, method, body) => { if (!url.endsWith('/plan/edit')) return; await pending.promise; const value = f.documents.get('task-a'); value.revision++; value.steps.find(item => item.id === 'a').title = body.operations[0].patch.title; return structuredClone(value); });
   const saving = c.save(); await turn(); c.selectEditor('b'); await f.dom.input('[data-planning-field="title"]', 'Keep B while A saves'); await turn();
   const id = c.awareness.state.editorId; pending.resolve(); assert.equal(await saving, true); await turn();
@@ -149,7 +149,7 @@ test('a save that finishes after another step starts editing never releases the 
 });
 
 test('document hiding and page departure release presence, and showing a kept draft does not advertise editing', async t => {
-  const f = fixture(t, { withUI: true }); await f.enter(); const c = f.workspace.controller; c.selectEditor('a');
+  const f = fixture(t, { withUI: true }); await f.enter(); const c = f.workspace.controller; c.selectEditor('a'); c.setPane('edit');
   await f.dom.input('[data-planning-field="title"]', 'Keep this text while hidden'); await turn(); assert.equal(f.presence.size, 1);
   await f.dom.visibility('hidden'); await turn(); assert.equal(f.presence.size, 0);
   await f.dom.visibility('visible'); await turn(); assert.equal(f.presence.size, 0); assert.equal(c.draft().values.title, 'Keep this text while hidden');
@@ -160,6 +160,7 @@ test('document hiding and page departure release presence, and showing a kept dr
 
 test('a burst of worker receipt events coalesces into one awareness read without reloading task fields', async t => {
   const f = fixture(t, { withUI: true }); await f.enter();
+  f.workspace.controller.setPane('edit');
   const before = f.calls.length, field = f.dom.$('[data-planning-field="goal"]'); field.focus();
   for (let index = 0; index < 48; index++) f.workspace.handleEvent({ type: 'planning.awareness', data: { taskId: 'task-a' } });
   await f.time.advance(350);
@@ -168,7 +169,7 @@ test('a burst of worker receipt events coalesces into one awareness read without
 });
 
 test('a rejected saved edit keeps its local draft and makes no automatic plan retry', async t => {
-  const f = fixture(t, { withUI: true }); await f.enter(); const c = f.workspace.controller; c.selectEditor('a');
+  const f = fixture(t, { withUI: true }); await f.enter(); const c = f.workspace.controller; c.selectEditor('a'); c.setPane('edit');
   await f.dom.input('[data-planning-field="title"]', 'Keep rejected draft'); await turn();
   f.hook((url, method) => { if (url.endsWith('/plan/edit')) throw Object.assign(new Error('Another editor saved a newer revision.'), { status: 409 }); });
   assert.equal(await c.save(), false); await turn();

@@ -28,15 +28,17 @@ function backgrounds(source) {
   return matches;
 }
 
-test('application surfaces keep gradients and editable artwork while native dropdowns use a readable opaque palette', async () => {
+test('application surfaces use controlled local media while native dropdowns keep a readable opaque palette', async () => {
   const html = await get('public/index.html');
   const files = [...new Set([...html.matchAll(/<link\b[^>]*rel="stylesheet"[^>]*href="([^"]+)"/g)].map(match => match[1]).concat('/browser-tree.css'))];
-  assert.ok(files.length > 0);
+  const photograph = '/assets/blackice-depth.png';
+  assert.ok(files.includes('/blackice-information.css'));
   for (const filename of files) {
+    assert.match(filename, /^\/[a-z0-9-]+\.css$/, 'stylesheets stay within the registered local resource namespace');
     const css = await get('public' + filename);
-    // Platform-rendered select popups need real background colors; gradient
-    // images do not paint their native option surface. Keep that exception
-    // confined to the named select layer and its two checked palette colors.
+    // Native select popups need real colors because background images do not
+    // paint their platform-rendered option surface. Flat application neutrals
+    // are also allowed; the native palette remains an explicit contrast guard.
     const native = css.match(/@layer blackice-native-selects\s*\{([\s\S]*)\}\s*$/);
     if (native) {
       assert.equal(filename, '/conversation-layout.css');
@@ -44,16 +46,25 @@ test('application surfaces keep gradients and editable artwork while native drop
       assert.ok(rules.length >= 4);
       for (const rule of rules) {
         const selectors = rule[1].split(',').map(value => value.trim());
-        assert.ok(selectors.every(selector => selector === 'html[data-blackice-ui]' || /^html\[data-blackice-ui\] body\b/.test(selector) && /\bselect\b/.test(selector)), 'Only native dropdowns may use the opaque palette');
-        for (const value of backgrounds(rule[2])) assert.ok(['#11212b', '#14212a'].includes(value), 'Keep the native dropdown palette explicit');
+        assert.ok(selectors.every(selector => selector === 'html[data-blackice-ui]' || /^html\[data-blackice-ui\] body\b/.test(selector) && /\bselect\b/.test(selector)), 'the native popup palette remains scoped to dropdowns');
+        for (const value of backgrounds(rule[2])) assert.ok(['#11212b', '#14212a'].includes(value), 'keep the native dropdown palette explicit');
       }
       assert.match(native[1], /select option/); assert.match(native[1], /select optgroup/); assert.match(native[1], /option:disabled/);
     }
-    for (const value of backgrounds(native ? css.slice(0, native.index) : css)) {
-      assert.ok(/^(?:none|transparent|inherit|unset|initial|revert)$/.test(value) || /(?:gradient|url)\(/.test(value), `${filename} has an authored flat surface: ${value}`);
-      assert.doesNotMatch(value, /url\([^)]*(?:\.png|\.jpe?g|\.webp|data:)/i, `${filename} must use editable geometry for artwork`);
+    assert.doesNotMatch(css, /@import\b/i, filename + ' must not load additional CSS remotely');
+    const clean = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const match of clean.matchAll(/url\(\s*['"]?([^'"\s)]+)['"]?\s*\)/g)) {
+      const resource = match[1];
+      assert.ok(resource === photograph || /^\/assets\/(?:[a-zA-Z0-9-]+\.svg|fonts\/[a-zA-Z0-9-]+\.ttf)$/.test(resource), filename + ' references an unapproved resource: ' + resource);
+      const bytes = await readFile(new URL('../public' + resource, import.meta.url));
+      assert.ok(bytes.length > 0, resource + ' must resolve locally');
+      if (resource.endsWith('.svg')) {
+        const svg = bytes.toString('utf8');
+        assert.match(svg, /<svg\b/);
+        assert.doesNotMatch(svg, /<image\b|<script\b|<foreignObject\b|\bhref\s*=|data:|@import|on\w+\s*=/i, resource + ' cannot load or execute external content');
+      }
     }
-    assert.doesNotMatch(css, /\[role=(?:"button"|button)\](?!:where\(:not\(svg,svg \*\)\))/, `${filename} must not apply HTML control transforms to SVG map nodes`);
+    assert.doesNotMatch(css, /\[role=(?:"button"|button)\](?!:where\(:not\(svg,svg \*\)\))/, filename + ' must not apply HTML control transforms to SVG map nodes');
   }
 });
 

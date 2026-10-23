@@ -211,3 +211,25 @@ test('Activity carries the explicit conversation context and its local settings 
   const before = f.calls.length; await f.browserAction('connection-settings');
   assert.equal(settings, 1); assert.equal(f.calls.length, before);
 });
+
+test('Activity keeps workflow inspection optional while recovery, status and Stop stay outside it', async t => {
+  const run = activeRun(); run.taskState.externalRecovery = { required: true, note: 'Inspect the saved receipt before retrying.' };
+  const f = fixture(t, { run, apiEnabled: false, stop: async () => {} }); await f.enter();
+  const inspector = f.element('observe-inspector'), markup = f.mount.innerHTML, start = markup.indexOf('<details id="observe-inspector"'), end = markup.indexOf('</details>', start), content = markup.slice(start, end);
+  assert.equal(inspector.open, false);
+  assert.match(content, /<summary>Workflow and workers<\/summary>/);
+  assert.match(content, /id="observe-workflow"/); assert.match(content, /id="observe-agents"/);
+  for (const id of ['observe-stream', 'observe-external', 'observe-pinned', 'observe-feed']) {
+    assert.ok(markup.indexOf('id="' + id + '"') >= 0 && markup.indexOf('id="' + id + '"') < start, id + ' stays in the primary view');
+  }
+  assert.ok(markup.indexOf('data-observe-action="stop"') < start);
+  assert.equal(f.element('observe-external').hidden, false);
+  assert.match(f.element('observe-external').innerHTML, /Inspect the saved receipt before retrying/);
+  assert.equal(f.mount.querySelector('[data-observe-action="stop"]').hidden, false);
+  inspector.open = true; inspector.focus();
+  f.ui.handleEvent({ type: 'agent.event', runId: run.id, nodeId: 'agent', at: new Date().toISOString(), data: { type: 'message', text: 'The latest meaningful result.' } }); f.ui.update();
+  assert.strictEqual(f.element('observe-inspector'), inspector); assert.equal(inspector.open, true); assert.strictEqual(f.focused(), inspector);
+  assert.match(f.element('observe-feed').innerHTML, /The latest meaningful result/);
+  inspector.open = false; f.ui.update();
+  assert.equal(inspector.open, false); assert.equal(f.element('observe-external').hidden, false);
+});

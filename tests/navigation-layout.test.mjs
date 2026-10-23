@@ -16,7 +16,9 @@ test('mobile navigation gives each real workspace destination its own track',asy
   assert.deepEqual(destinations.map(match=>match[1]),['view','observe','planning','configure']);
   assert.deepEqual(destinations.map(match=>/<span class="workspace-tab-label">([^<]+)<\/span>/.exec(match[2])?.[1]),['Chat','Activity','Planning','Settings']);
   assert.doesNotMatch(nav,/data-action="(?:projects|workflow)"/,'dialog and advanced-canvas actions are not workspace tabs');
-  assert.match(app,/<button\b[^>]*class="workspace-projects"[^>]*data-action="projects"[^>]*aria-haspopup="dialog"/,'Projects remains a prominent, correctly declared dialog action');
+  const menu=/<details class="workspace-menu">([\s\S]*?)<\/details>/.exec(app)?.[1];assert.ok(menu);
+  assert.match(menu,/<button data-action="projects">Swarms<\/button>/,'Swarms stays available from the compact workspace menu');
+  assert.doesNotMatch(app,/<button\b[^>]*class="workspace-(?:projects|schedules)"/,'secondary destinations do not add persistent header controls');
   for(const[index,style]of styles.entries()){
     const rules=[...style.matchAll(/#workspace-modes(?:\s+|\s*>\s*)nav(?:\[role="tablist"\])?\s*\{([^}]*)\}/g)];
     const trackCounts=rules.flatMap(rule=>[...rule[1].matchAll(/grid-template-columns\s*:\s*repeat\(\s*(\d+)\s*,\s*minmax\(\s*0\s*,\s*1fr\s*\)\s*\)/g)].map(match=>Number(match[1])));

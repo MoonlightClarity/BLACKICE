@@ -93,7 +93,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     }
   }
   mount.classList.add('conversation-workspace');
-  try { if (localStorage.getItem('relay.ui.sidebar.collapsed') === 'true') mount.classList.add('sidebar-collapsed'); } catch {}
+  try { if (localStorage.getItem('relay.ui.sidebar.collapsed') !== 'false') mount.classList.add('sidebar-collapsed'); } catch { mount.classList.add('sidebar-collapsed'); }
   mount.innerHTML = `
     <header class="conversation-header">
       <button class="conversation-header-button conversation-new-top" data-mission-action="new-task" title="New chat" aria-label="New chat">${icon('plus', 17)}<span>New chat</span></button>
@@ -165,9 +165,9 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
       </main>
       </div>
     </div>`;
-  let desktopPlanCollapsed = false;
-  try { desktopPlanCollapsed = localStorage.getItem('relay.ui.plan.collapsed') === 'true'; } catch {}
-  let attachmentUI, conversationMenu, taskPlanUI, historyRefreshTimer = null, historyRefreshFlight = null, historyRefreshRequested = false, historyWaiters = [], destroyed = false, promptUndo = null, promptDraftVersion = 0, taskSelectionPending = false, planVisible = false, planEnlarged = false, planView = 'plan', planKey = '', workbenchIntent = 0;
+  let desktopPlanCollapsed = true;
+  try { desktopPlanCollapsed = localStorage.getItem('relay.ui.plan.collapsed') !== 'false'; } catch {}
+  let attachmentUI, conversationMenu, taskPlanUI, historyRefreshTimer = null, historyRefreshFlight = null, historyRefreshRequested = false, historyWaiters = [], destroyed = false, promptUndo = null, promptDraftVersion = 0, taskSelectionPending = false, planVisible = false, planEnlarged = false, planView = 'conversation', planKey = '', workbenchIntent = 0;
   const modelPicker = initModelPicker({ select: $('#mission-model'), onConnect: onConnections });
   if (onPrompts) { $('.conversation-option-actions').insertAdjacentHTML('beforeend', `<button type="button" id="mission-outline" class="conversation-outline-button" data-mission-action="prompts" title="Use a reusable prompt template">${icon('text', 13)}<span>Prompt templates</span></button>`); $('.conversation-options').insertAdjacentHTML('afterend', `<button type="button" id="mission-outline-undo" class="conversation-outline-undo" data-mission-action="undo-prompt" title="Restore the previous draft" hidden>Undo draft</button>`); }
   if (onSavePrompt) $('.conversation-option-actions').insertAdjacentHTML('beforeend', `<button type="button" data-mission-action="save-prompt">${icon('text', 14)}Save prompt template</button>`);
@@ -185,7 +185,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     const taskState = run?.taskState;
     const off = planning?.status === 'off' || planning?.mode === 'off' || run?.planningMode === 'off';
     const hasSavedPlan = Boolean(taskState?.steps?.length || savedPlanNotes(taskState).length);
-    return { run, taskState, planning, defaultView: off || !hasSavedPlan && ['unavailable', 'missing'].includes(planning?.status) ? 'conversation' : 'plan', visible: Boolean(run && (off ? hasSavedPlan : taskState?.planVersion === 1 || planning && planning.status !== 'legacy')) };
+    return { run, taskState, planning, defaultView: 'conversation', visible: Boolean(run && (off ? hasSavedPlan : taskState?.planVersion === 1 || planning && planning.status !== 'legacy')) };
   }
   function renderTaskWorkbench(snapshot) {
     const { run, taskState, planning, visible, defaultView } = workbenchSnapshot(snapshot), layout = $('#conversation-task-layout'), tabs = $('#conversation-plan-tabs'), plan = $('#mission-plan'), dialogue = $('#conversation-dialogue');
@@ -526,8 +526,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
             <div class="conversation-welcome-state-copy" role="status"><strong id="conversation-welcome-state">Checking your model…</strong><p id="conversation-welcome-detail"></p></div>
             <button id="conversation-welcome-action" type="button" hidden></button>
           </div>
-          <div class="conversation-starters" aria-label="Start with a draft">${STARTER_PROMPTS.map(item => `<button class="starter-card starter-${escape(item.tint)}" type="button" data-mission-action="starter" data-starter="${escape(item.id)}" title="${escape(item.detail)}"><span class="starter-icon">${icon(item.icon, 15)}</span><span class="starter-copy"><strong>${escape(item.label)}</strong></span>${icon('chevron', 11)}</button>`).join('')}</div>
-          <div class="blackice-welcome-links">${onOpenPlanning ? `<button type="button" data-mission-action="planning">${icon('plan', 14)}Planning workspace</button>` : ''}${onProjects ? `<button type="button" data-mission-action="projects">${icon('folder', 14)}Projects</button>` : ''}</div>
+          <details class="conversation-examples"><summary>Examples</summary><div class="conversation-starters" aria-label="Start with a draft">${STARTER_PROMPTS.map(item => `<button class="starter-card starter-${escape(item.tint)}" type="button" data-mission-action="starter" data-starter="${escape(item.id)}" title="${escape(item.detail)}"><span class="starter-icon">${icon(item.icon, 15)}</span><span class="starter-copy"><strong>${escape(item.label)}</strong></span>${icon('chevron', 11)}</button>`).join('')}</div></details>
         </div>`;
       $('#conversation-title').textContent = ''; $('#conversation-title').title = ''; return;
     }

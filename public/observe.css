@@ -112,3 +112,11 @@
 #app .observe-browser-interaction-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 #app .observe-browser-interaction .observe-browser-interaction-error{color:#f0c2b8}
 @media(max-width:650px){#app .observe-page-focus>.observe-scroll{padding:10px 8px 20px}#app .observe-browser-focused .observe-browser-heading{padding:9px 10px;gap:8px}#app .observe-browser-focused .observe-browser-heading p{font-size:10px}#app .observe-browser-focused .observe-browser-heading-actions .button{padding:6px 8px;min-height:32px}#app .observe-browser-focused .observe-browser-stage{margin:0 8px}#app .observe-browser-focused .observe-browser-page-title{padding:8px 10px}#app .observe-browser-input-help{font-size:11px;padding:8px}}
+
+/* Task updates lead; the workflow and worker inspector opens on request. */
+#app .observe-work-inspector { margin:20px 0;border:1px solid #3e596a;border-radius:8px;background:linear-gradient(145deg,#132b3a9c,#0c1c2a9c);min-width:0; }
+#app .observe-work-inspector > summary { min-height:44px;padding:11px 15px;color:#bed7e3;font-size:14px;line-height:1.6;cursor:pointer; }
+#app .observe-work-inspector > summary:focus-visible { outline:2px solid var(--bi-focus,#9ad2e1);outline-offset:3px; }
+#app .observe-work-inspector > #observe-workflow { padding:0 14px 12px;min-width:0; }
+#app .observe-work-inspector > .observe-agent-strip { padding:0 14px 14px;margin:0; }
+#app .observe-browser-tools > summary { font-size:14px; }

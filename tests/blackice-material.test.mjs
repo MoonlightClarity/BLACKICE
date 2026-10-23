@@ -6,39 +6,53 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createHarnessServer} from '../server.mjs';
 
-const assetPath = '/assets/blackice-field.svg';
-const stylePath = '/blackice-material.css';
+const assetPath = '/assets/blackice-depth.png';
+const retainedScenePath = '/assets/blackice-field.svg';
+const materialPath = '/blackice-material.css';
+const stylePath = '/blackice-information.css';
 const layoutPath = '/conversation-layout.css';
 const local = pathname => readFile(new URL('../public' + pathname, import.meta.url));
 
-test('the active ice scene is compact editable vector geometry with locally resolved materials', async () => {
-  const bytes = await local(assetPath), svg = bytes.toString('utf8');
-  assert.ok(bytes.length < 80_000, 'the quiet scene should not need thousands of texture objects');
+test('the local black ice photograph is a bounded PNG with a full scene resolution', async () => {
+  const bytes = await local(assetPath);
+  assert.deepEqual(bytes.subarray(0, 8), Buffer.from('89504e470d0a1a0a', 'hex'));
+  assert.equal(bytes.subarray(12, 16).toString('ascii'), 'IHDR');
+  assert.ok(bytes.length < 4_000_000, 'the shared photograph remains bounded');
+  const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20);
+  assert.ok(width >= 1200 && height >= 600 && width <= 4096 && height <= 4096);
+});
+
+test('the retained vector scene keeps editable geometry and locally resolved materials', async () => {
+  const bytes = await local(retainedScenePath), svg = bytes.toString('utf8');
+  assert.ok(bytes.length < 80_000);
   assert.match(svg, /<svg\b[^>]*viewBox="0 0 1920 1200"/);
   assert.match(svg, /<title\b[^>]*>BLACKICE/);
   assert.match(svg, /<desc\b/);
   assert.match(svg, /<path\b/);
-  assert.match(svg, /inkscape:groupmode="layer"/,'named geometry layers are editable in vector tools');
-  assert.doesNotMatch(svg, /<image\b|<script\b|<foreignObject\b|\bhref\s*=|data:|@import/i,'the SVG must not wrap a raster or load active/remote content');
+  assert.match(svg, /inkscape:groupmode="layer"/, 'named geometry layers remain editable');
+  assert.doesNotMatch(svg, /<image\b|<script\b|<foreignObject\b|\bhref\s*=|data:|@import/i);
   const ids = [...svg.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
-  assert.equal(new Set(ids).size, ids.length, 'gradient and editing-layer identifiers remain unambiguous');
-  for (const reference of svg.matchAll(/url\(#([^)]+)\)/g)) assert.ok(ids.includes(reference[1]), `unresolved SVG paint ${reference[1]}`);
+  assert.equal(new Set(ids).size, ids.length);
+  for (const reference of svg.matchAll(/url\(#([^)]+)\)/g)) assert.ok(ids.includes(reference[1]), 'unresolved SVG paint ' + reference[1]);
   assert.ok(svg.trim().endsWith('</svg>'));
 });
 
-test('the entry document preloads the exact local scene and orders material before chat geometry', async () => {
+test('the entry document preloads the local photograph and applies information hierarchy after chat geometry', async () => {
   const html = (await local('/index.html')).toString('utf8');
   const styleLinks = [...html.matchAll(/<link\b[^>]*rel="stylesheet"[^>]*href="([^"]+)"[^>]*>/g)].map(match => match[1]);
-  assert.deepEqual(styleLinks.slice(-2), [stylePath, layoutPath], 'shared materials follow components, then chat geometry owns its responsive layout');
-  const imagePreloads = [...html.matchAll(/<link\b[^>]*rel="preload"[^>]*as="image"[^>]*href="([^"]+)"[^>]*>/g)].map(match => match[1]);
-  assert.deepEqual(imagePreloads, [assetPath], 'one shared scene is fetched for the initial view');
+  assert.deepEqual(styleLinks.slice(-3), [materialPath, layoutPath, stylePath]);
+  const preloads = [...html.matchAll(/<link\b[^>]*rel="preload"[^>]*as="image"[^>]*>/g)].map(match => match[0]);
+  assert.equal(preloads.length, 1, 'one shared scene is preloaded');
+  assert.match(preloads[0], /type="image\/png"/);
+  assert.match(preloads[0], /href="\/assets\/blackice-depth\.png"/);
   const css = (await local(stylePath)).toString('utf8');
   const media = [...css.matchAll(/url\(\s*['"]?([^'"\s)]+)['"]?\s*\)/g)].map(match => match[1]);
   assert.deepEqual([...new Set(media)], [assetPath]);
-  assert.ok(!/@import\b/i.test(css), 'the theme must work without remote CSS');
+  assert.doesNotMatch(css, /@import\b/i, 'the theme works without remote CSS');
+  assert.ok((await local(materialPath)).toString('utf8').includes(retainedScenePath), 'the retained vector fallback is still checked explicitly');
 });
 
-test('the running application serves the editable scene intact with SVG MIME and HEAD semantics', async t => {
+test('the running application serves only registered theme resources intact with MIME and HEAD semantics', async t => {
   const root = await mkdtemp(path.join(tmpdir(), 'blackice-material-'));
   class Runtime extends EventEmitter {
     status() { return {connected: false, authenticated: false, models: [], defaultModel: 'fixture'}; }
@@ -56,25 +70,18 @@ test('the running application serves the editable scene intact with SVG MIME and
   const page = await fetch(new URL('/', address));
   assert.equal(page.status, 200);
   const html = await page.text();
-  assert.ok(html.includes(`href="${stylePath}"`) && html.includes(`href="${assetPath}"`) && html.includes(`href="${layoutPath}"`));
-  const [scene, style, head, layout] = await Promise.all([
-    fetch(new URL(assetPath, address)),
-    fetch(new URL(stylePath, address)),
-    fetch(new URL(assetPath, address), {method: 'HEAD'}),
-    fetch(new URL(layoutPath, address)),
-  ]);
-  assert.equal(scene.status, 200);
-  assert.equal(scene.headers.get('content-type'), 'image/svg+xml');
-  assert.deepEqual(Buffer.from(await scene.arrayBuffer()), await local(assetPath));
-  assert.equal(style.status, 200);
-  assert.match(style.headers.get('content-type'), /^text\/css/);
-  assert.deepEqual(Buffer.from(await style.arrayBuffer()), await local(stylePath));
-  assert.equal(layout.status, 200);
-  assert.match(layout.headers.get('content-type'), /^text\/css/);
-  assert.deepEqual(Buffer.from(await layout.arrayBuffer()), await local(layoutPath));
-  assert.equal(head.status, 200);
-  assert.equal(head.headers.get('content-type'), 'image/svg+xml');
-  assert.equal((await head.arrayBuffer()).byteLength, 0);
-  const missing = await fetch(new URL('/assets/blackice-unregistered.svg', address));
-  assert.equal(missing.status, 404, 'adding the scene must not expose arbitrary files');
+  for (const pathname of [assetPath, materialPath, stylePath, layoutPath]) assert.ok(html.includes('href="' + pathname + '"'));
+  for (const [pathname, mime] of [[assetPath, 'image/png'], [retainedScenePath, 'image/svg+xml'], [stylePath, 'text/css; charset=utf-8'], [materialPath, 'text/css; charset=utf-8'], [layoutPath, 'text/css; charset=utf-8']]) {
+    const [response, head] = await Promise.all([fetch(new URL(pathname, address)), fetch(new URL(pathname, address), {method: 'HEAD'})]);
+    assert.equal(response.status, 200, pathname);
+    assert.equal(response.headers.get('content-type'), mime, pathname);
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), await local(pathname), pathname + ' keeps the exact checked local bytes');
+    assert.equal(head.status, 200, pathname);
+    assert.equal(head.headers.get('content-type'), mime, pathname);
+    assert.equal((await head.arrayBuffer()).byteLength, 0, pathname);
+  }
+  for (const pathname of ['/assets/blackice-unregistered.svg', '/assets/blackice-unregistered.png', '/blackice-unregistered.css']) {
+    const missing = await fetch(new URL(pathname, address));
+    assert.equal(missing.status, 404, 'registering theme resources must not expose arbitrary files');
+  }
 });

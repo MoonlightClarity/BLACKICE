@@ -45,3 +45,13 @@
 .configure-workspace :is(button,summary,select,input,textarea):focus-visible{outline:2px solid #abd6e7;outline-offset:3px}
 @media(max-width:800px){.configure-page{width:calc(100% - 36px)}.configure-heading{flex-wrap:wrap;gap:14px}.configure-chat-prompt{flex-direction:row;align-items:center}}
 @media(max-width:500px){.configure-page{padding-top:22px}.configure-heading h1{font-size:25px}.configure-subtitle{font-size:13px}.configure-nav{margin-top:16px}.configure-basic-row{padding:17px;gap:12px;align-items:stretch}.configure-basic-row .configure-button{align-self:flex-start}.configure-bridge-entry{flex-direction:column;align-items:flex-start;padding:17px;gap:13px}.configure-chat-prompt{align-items:flex-start;flex-direction:column;gap:13px}.configure-readiness{font-size:12px}}
+
+/* Everyday settings stay visible; integration controls are deliberately revealed. */
+.configure-integration>summary{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:48px}
+.configure-integration>summary [data-configure-status]{font-size:13px;color:#a9c2ce;text-align:right}
+.configure-integration>summary [data-attention=true]{color:#e2bf95}
+.configure-integration>div{padding:0 14px 14px;min-width:0}
+.configure-integration .chatgpt-connector,.configure-integration .browser-credentials,.configure-integration .remote-access{margin:0}
+.configure-workspace-integrations>.configure-link-list{padding-top:0}.configure-workspace-integrations .configure-link-list>button{min-height:44px}
+.configure-chat-prompt{border:0;padding:0;margin:16px 0;justify-content:flex-start}
+@media(max-width:500px){.configure-integration>summary{gap:10px}.configure-integration>div{padding:0 10px 10px}}

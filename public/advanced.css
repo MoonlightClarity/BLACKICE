@@ -69,3 +69,12 @@ html[data-blackice-ui] body #modal-root #swarm-plan-preview { height:410px;min-w
 .schedule-draft-note{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 15px;padding:10px 12px;border-left:2px solid #b6cba8;background:linear-gradient(145deg,#2c443733,#1e362933);color:#bfd1be;font-size:12px;line-height:1.5}
 .schedule-draft-note .button{font-size:11px}
 @media(max-width:600px){.operations-sections{gap:6px}.operations-sections button{flex:1;justify-content:center;padding:9px 7px}.operations-scope{align-items:flex-start}}
+
+/* Keep one schedule section in view; details retain secondary actions. */
+.operations-sections button[aria-pressed=true]{color:#e0f1f5;border-color:#6e9baa;background:linear-gradient(145deg,#274452,#152b3a)}
+#operations-view .operations-schedules[hidden],#operations-view .operations-jobs[hidden]{display:none!important}
+.operations-attention{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0;padding:10px 12px;border-left:2px solid #cbaf86;background:linear-gradient(145deg,#423a2f3b,#3a2d1f3b);color:#dec9aa;font-size:13px}
+.operation-row{display:block}.operation-row-summary{display:flex;align-items:center;gap:14px}.operation-row-summary>div{flex:1;min-width:0}.operation-row-summary>.button{flex:none;min-height:36px}.operation-row .operation-next{max-width:38%;font-size:12px;line-height:1.5;color:#adc2cf;overflow-wrap:anywhere}
+.operation-row-details>summary{font-size:12px;min-height:36px;display:flex;align-items:center;gap:8px;list-style:none;color:#b8d0dc}.operation-row-details>summary::before{content:'›';font-size:18px;transition:transform .15s}.operation-row-details[open]>summary::before{transform:rotate(90deg)}.operation-row-details>summary::-webkit-details-marker{display:none}
+.operation-row-extra{padding:0 0 8px}.operation-row-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.operation-row-actions>.button{font-size:12px;min-height:36px;padding:7px 11px}.operation-row-details .operation-limit-reached{display:none}
+@media(max-width:600px){.operation-row-summary{flex-wrap:wrap;align-items:flex-start}.operation-row-summary>div{flex-basis:calc(100% - 70px)}.operation-row-summary .operation-next{order:3;max-width:none;flex-basis:100%}.operation-row-summary>.button{font-size:12px;padding:7px 11px}.operations-attention{align-items:flex-start;flex-wrap:wrap}}

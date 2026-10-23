@@ -9,7 +9,7 @@ const count=(html,part)=>html.split(part).length-1;
 
 test('basics derive actual selected-model readiness and show only the small default working set',()=>{
   const current=snapshot(),summary=configureSummary(current);assert.equal(summary.ready,true);assert.match(summary.model.label,/Fast cloud model/);assert.equal(summary.workspace,'C:\\work');assert.equal(summary.desktop,'Connected');
-  const html=renderConfigureView(current);assert.match(html,/Tell BLACKICE what you want to change/);assert.match(html,/Describe changes in chat/);assert.match(html,/Ready to chat/);for(const label of ['Default model','Working folder','Your agent'])assert.match(html,new RegExp(label));assert.equal(count(html,'class="configure-basic-row"'),3);assert.equal(count(html,'<textarea'),0);assert.equal(count(html,'<svg'),0);assert.equal(count(html,'<details'),10);assert.match(html,/class="response-context-advanced"/);assert.ok(!/<details[^>]*\sopen[\s>]/.test(html));assert.ok(!html.includes('BUILD_ONLY_INSTRUCTIONS'));assert.ok(!html.includes('REVIEW_ONLY_INSTRUCTIONS'));assert.ok(!html.includes('Deploy this workflow'));
+  const html=renderConfigureView(current);assert.doesNotMatch(html,/Tell BLACKICE what you want to change/);assert.match(html,/Describe changes in chat/);assert.match(html,/Ready to chat/);for(const label of ['Default model','Working folder','Your agent'])assert.match(html,new RegExp(label));assert.equal(count(html,'class="configure-basic-row"'),3);assert.equal(count(html,'<textarea'),0);assert.equal(count(html,'<svg'),0);assert.equal(count(html,'<details'),11);assert.match(html,/data-configure-section="workspace"><summary>Background workspace/);assert.match(html,/class="response-context-advanced"/);assert.ok(!/<details[^>]*\sopen[\s>]/.test(html));assert.ok(!html.includes('BUILD_ONLY_INSTRUCTIONS'));assert.ok(!html.includes('REVIEW_ONLY_INSTRUCTIONS'));assert.ok(!html.includes('Deploy this workflow'));
   current.status.models[0].available=false;assert.equal(configureSummary(current).ready,false);assert.match(renderConfigureView(current),/Connect a model to begin/);assert.match(renderConfigureView(current),/>Connect a model<\/button>/);
   current.status.models[0].available=true;current.model='missing-chat-model';assert.equal(configureSummary(current).ready,true,'Basics shows the app default, independently of the current chat choice');
   current.status.defaultModelAvailable=false;assert.equal(configureSummary(current).ready,false,'explicit unavailable default remains unavailable');
@@ -97,9 +97,9 @@ test('configuration styling keeps gradient surfaces readable, labels visible and
   assert.ok(!/animation|transition\s*:/.test(css));assert.match(css,/font-size:14px/);assert.match(css,/:focus-visible/);assert.match(css,/@media\(max-width:500px\)/);
 });
 
-test('schedules and swarms are discoverable from Basics and dispatch independently of the selected workflow',async()=>{
-  const current=snapshot(),html=renderConfigureView(current);for(const label of ['Schedule a task','Create a swarm','Manage schedules'])assert.match(html,new RegExp(label));assert.ok(html.indexOf('Working folder')<html.indexOf('Schedule a task'));assert.ok(html.indexOf('Concurrent work')<html.indexOf('Schedule a task'));assert.match(html,/<section class="configure-automation"/,'automation remains a visible section below everyday preferences');
-  const mount=new Mount(),calls=[],ui=initConfigureUI({mount,getSnapshot:()=>current,onSchedule:(...args)=>calls.push(['schedule',args]),onSwarm:(...args)=>calls.push(['swarm',args]),onOperations:(...args)=>calls.push(['operations',args])});await mount.click('schedule');await mount.click('swarm');await mount.click('operations');assert.deepEqual(calls,[['schedule',[]],['swarm',[]],['operations',[]]]);assert.equal(current.workflow.id,'workflow-a');ui.destroy();
+test('Basics keeps a single workspace launcher while creation remains available in workflow settings',async()=>{
+  const current=snapshot(),html=renderConfigureView(current),workflowView=renderConfigureView(current,{view:'workflows'});assert.match(html,/data-configure-section="workspace"><summary>Background workspace/);assert.equal(count(html,'data-configure="operations"'),1);assert.doesNotMatch(html,/<section class="configure-automation"/);for(const label of ['Schedule a task','Create a swarm','Manage schedules'])assert.match(workflowView,new RegExp(label));
+  const mount=new Mount(),calls=[],ui=initConfigureUI({mount,getSnapshot:()=>current,onSchedule:(...args)=>calls.push(['schedule',args]),onSwarm:(...args)=>calls.push(['swarm',args]),onOperations:(...args)=>calls.push(['operations',args])});ui.showWorkflows();await mount.click('schedule');await mount.click('swarm');await mount.click('operations');assert.deepEqual(calls,[['schedule',[]],['swarm',[]],['operations',[]]]);assert.equal(current.workflow.id,'workflow-a');ui.destroy();
   const disconnected=renderConfigureView(current,{},{});assert.doesNotMatch(disconnected,/Schedule a task|Create a swarm|Manage schedules/);
 });
 
@@ -290,8 +290,8 @@ test('Settings exposes background workflows and cannot dispatch a retired Bridge
     onBrowser: () => calls.push('browser'), onEmail: () => calls.push('email'), onTaskNotes: () => calls.push('notes'),
     onProjects: () => calls.push('projects'), onOperations: () => calls.push('operations') });
   const html = mount.innerHTML;
-  assert.ok(html.indexOf('Default model') < html.indexOf('Prefer to describe a change'));
-  assert.ok(html.indexOf('Working folder') < html.indexOf('Prefer to describe a change'));
+  assert.ok(html.indexOf('Default model') < html.indexOf('Describe changes in chat'));
+  assert.ok(html.indexOf('Working folder') < html.indexOf('Describe changes in chat'));
   for (const label of ['Background browser', 'Email', 'Planning', 'Swarm projects', 'Schedules &amp; jobs']) assert.ok(html.includes(label), label);
   assert.ok(html.indexOf('Background workspace') < html.indexOf('Agent tools') || !html.includes('Agent tools'));
   assert.match(html, /Contained browser unavailable/); assert.match(html, /Setup required/);

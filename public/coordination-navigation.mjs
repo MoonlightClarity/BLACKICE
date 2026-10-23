@@ -1,10 +1,11 @@
 const destinations = [
-  ['planning', 'planning', 'Planning', 'Shape objectives and steps'],
-  ['swarms', 'projects', 'Swarms', 'Coordinate saved team plans'],
-  ['schedules', 'operations', 'Schedules', 'Manage cronjobs and run history'],
+  ['planning', 'planning', 'Planning'],
+  ['swarms', 'projects', 'Swarms'],
+  ['schedules', 'operations', 'Schedules'],
 ];
 
-/** Shared destinations only: navigating never submits or starts work. */
+/** Keep peer work areas available without repeating a full navigation strip. */
 export function coordinationNavigation(active) {
-  return `<nav class="coordination-navigation" aria-label="Planning, swarms and schedules">${destinations.map(([id, action, label, detail]) => `<button type="button" data-action="${action}"${id === active ? ' aria-current="page" disabled' : ''}><strong>${label}</strong><span>${detail}</span></button>`).join('')}</nav>`;
+  const label = destinations.find(([id]) => id === active)?.[2] || 'Work area';
+  return '<nav class="coordination-navigation" aria-label="Planning, swarms and schedules"><details class="coordination-picker" data-detail="coordination-area"><summary aria-label="Work area: ' + label + '"><strong>' + label + '</strong><span>Change area</span></summary><div class="coordination-destinations">' + destinations.map(([id, action, name]) => '<button type="button" data-action="' + action + '"' + (id === active ? ' aria-current="page" disabled' : '') + '>' + name + '</button>').join('') + '</div></details></nav>';
 }

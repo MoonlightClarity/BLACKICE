@@ -403,6 +403,12 @@ html[data-blackice-ui] body #app .conversation-search-target {
 .conversation-response-route>span:first-child { overflow-wrap:anywhere; }
 .conversation-route-experimental { padding:0 4px; border:1px solid #6b99a76b; border-radius:3px; color:#c4e3ee; font-size:9px; }
 
+/* Examples stay available without competing with the first message. */
+html[data-blackice-ui] body #app .conversation-examples { width:100%;margin:0; }
+html[data-blackice-ui] body #app .conversation-examples > summary { min-height:44px;padding:10px 14px;border:1px solid #6f96a34d;border-radius:8px;background:linear-gradient(145deg,#17313e70,#0b1c2870);color:#bfd6df;font-size:14px;line-height:1.6;cursor:pointer; }
+html[data-blackice-ui] body #app .conversation-examples > summary:focus-visible { outline:2px solid var(--bi-focus,#9ad2e1);outline-offset:3px; }
+html[data-blackice-ui] body #app .conversation-examples > .conversation-starters { margin-top:12px; }
+
 /* Important paint in this layer outranks the older unlayered field themes.
    Native controls and popup options share one palette at every specificity. */
 @layer blackice-native-selects {

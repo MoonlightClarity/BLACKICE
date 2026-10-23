@@ -212,3 +212,24 @@ html[data-blackice-ui] body #app #planning-workspace .planning-mobile-tabs > but
 
 html[data-blackice-ui] body #app #planning-workspace .planning-group-remove { flex:0 0 auto;min-height:34px!important;padding:5px 8px!important;font-size:12px!important;color:#d5dfe5;border-color:#647b854f!important;background:linear-gradient(125deg,#3a505a42,#22374030)!important; }
 html[data-blackice-ui] body #app #planning-workspace .planning-group-remove:hover { border-color:#b0c8d3a8!important;background:linear-gradient(125deg,#4b657268,#2a43534d)!important; }
+
+
+/* One deliberate working pane at every width. Hidden panes keep their DOM and drafts. */
+html[data-blackice-ui] body #app .planning-layout { display:flex;flex-direction:column;grid-template-columns:minmax(0,1fr); }
+html[data-blackice-ui] body #app .planning-layout > :is(aside,section) { flex:1;min-height:0; }
+html[data-blackice-ui] body #app .planning-layout > :is(.planning-catalog,.planning-editor) { box-sizing:border-box;width:100%;max-width:920px;margin-inline:auto;border:0; }
+html[data-blackice-ui] body #app .planning-editor { padding:0 24px 28px; }
+html[data-blackice-ui] body #app .planning-mobile-tabs { justify-content:flex-start; }
+html[data-blackice-ui] body #app #planning-workspace .planning-mobile-tabs > button { flex:0 1 180px; }
+html[data-blackice-ui] body #app .planning-task-bar > .planning-document-identity { flex:1 1 280px; }
+html[data-blackice-ui] body #app .planning-catalog-options > summary,
+html[data-blackice-ui] body #app .planning-plan-actions > summary,
+html[data-blackice-ui] body #app .planning-group-options > summary { cursor:pointer;padding:8px 11px;color:#c5dfe8; }
+html[data-blackice-ui] body #app .planning-catalog-options[open] > :not(summary) { margin-top:10px; }
+html[data-blackice-ui] body #app .planning-plan-actions > div,
+html[data-blackice-ui] body #app .planning-group-options > div { display:flex;flex-wrap:wrap;gap:8px;padding:8px 0; }
+html[data-blackice-ui] body #app .planning-catalog-row small { display:none; }
+html[data-blackice-ui] body #app .planning-catalog-row[aria-current="true"] small,
+html[data-blackice-ui] body #app .planning-catalog-row:focus small { display:block; }
+html[data-blackice-ui] body #app .planning-draft-alert { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 24px;border-bottom:1px solid #a08462;color:#e5ccb0; }
+@media(max-width:600px) { html[data-blackice-ui] body #app .planning-editor { padding-inline:15px; } html[data-blackice-ui] body #app .planning-draft-alert { padding-inline:15px; } }

@@ -50,13 +50,20 @@ test('coordination navigation names the same destinations with exactly one curre
   }
 });
 
-test('swarms and schedules stay discoverable in the header and compact menu',async()=>{
+test('four primary tabs stay compact and peer work areas remain available on demand',async()=>{
   const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),css=await readFile(new URL('../public/coordination-navigation.css',import.meta.url),'utf8');
-  assert.match(app,/class="workspace-projects" data-action="projects" aria-label="Swarms"/);
-  assert.match(app,/class="workspace-schedules" data-action="operations" aria-label="Schedules and cronjobs"/);
+  const tabs=/<nav role="tablist" aria-label="Workspace mode">([\s\S]*?)<\/nav>/.exec(app)[1];
+  assert.deepEqual([...tabs.matchAll(/data-mode="([^"]+)"/g)].map(match=>match[1]),['view','observe','planning','configure']);
+  assert.doesNotMatch(app,/class="workspace-projects"|class="workspace-schedules"/);
   const menu=/<details class="workspace-menu">([\s\S]*?)<\/details>/.exec(app)[1];
   assert.match(menu,/<button data-action="projects">Swarms<\/button>/);
+  assert.match(menu,/<button data-action="planning">Planning workspace<\/button>/);
   assert.match(menu,/<button data-action="operations">Schedules &amp; cronjobs<\/button>/);
-  assert.match(css,/@media\(max-width:1100px\)/);
-  assert.match(css,/\.coordination-navigation button:focus-visible/);
+  for(const area of ['planning','swarms','schedules']){
+    const chooser=coordinationNavigation(area),details=/<details\b([^>]*)>/.exec(chooser);
+    assert.ok(details,'work-area chooser is a keyboard-operable native disclosure');
+    assert.doesNotMatch(details[1],/\bopen\b/,'peer destinations stay closed until requested');
+    assert.match(chooser,/aria-label="Work area: (Planning|Swarms|Schedules)"/);
+  }
+  assert.match(css,/summary:focus-visible/);
 });

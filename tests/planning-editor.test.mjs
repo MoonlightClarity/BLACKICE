@@ -13,13 +13,13 @@ import { createSwarmWorkflow, swarmAssignments, swarmWorkflowPlan } from '../pub
 const turn = () => new Promise(resolve => setImmediate(resolve));
 const action = (id, title = id) => ({ id, title, kind: 'action', status: 'pending', parentId: null, dependsOn: [], doneWhen: `${title} has an observable checked result.` });
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
-async function fixture(t, { empty = false, width = 1440, ui = false, normalizeMarkup = false } = {}) {
+async function fixture(t, { empty = false, width = 1440, ui = false, normalizeMarkup = false, readOnly = false } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-planning-editor-')), cwd = path.join(directory, 'workspace'); await mkdir(cwd);
   const store = await new TaskStateStore({ dataDir: directory }).init(), metas = new Map(), calls = [], timers = new Map(), saved = []; let timerId = 0, hook;
   for (const id of ['task-a', 'task-b']) {
     const state = await store.ensure({ taskId: id, runId: `run-${id}`, cwd, goal: `Objective for ${id}`, defaultPlan: true });
     if (!empty) await store.setPlan(id, { plan: { layout: 'parallel' }, steps: [action('read', 'Inspect inputs'), action('write', 'Build result')] }, { expectedRevision: state.revision, runId: `run-${id}`, nodeId: 'agent', schemaVersion: 4 });
-    metas.set(id, { taskId: id, runId: `run-${id}`, runStatus: 'running', bucket: 'active', editable: true });
+    metas.set(id, { taskId: id, runId: `run-${id}`, runStatus: 'running', bucket: 'active', editable: !readOnly });
   }
   const api = async (url, options = 'GET', body) => {
     const method = typeof options === 'object' ? options.method || 'GET' : options; calls.push({ url, method, body });
@@ -189,17 +189,18 @@ test('atomic branch creation, path choice and dependencies use the validated gra
   state = await f.store.get('task-a'); assert.equal(state.availableWork.byId.write.state, 'waiting'); assert.equal(state.availableWork.byId.write.prerequisites[0].id, 'read');
 });
 
-test('Enlarge preserves the real unsaved editor and restores it before keyboard editing', async t => {
-  const f = await fixture(t, { ui: true }); f.controller.selectEditor('write');
+test('Enlarge keeps one pane visible and deliberate editing restores the same unsaved fields', async t => {
+  const f = await fixture(t, { ui: true }); f.controller.selectEditor('write'); f.controller.setPane('edit');
   const input = await f.dom.input('[data-planning-field="title"]', 'My unfinished title'); input.focus(); input.setSelectionRange(3, 10, 'backward');
   const editor = f.dom.$('#planning-editor-panel'), catalog = f.dom.$('#planning-saved-panel'), control = f.dom.$('[data-plan-action="enlarge"]'), draft = structuredClone(f.controller.draft()); editor.scrollTop = 177;
+  await f.dom.click('[data-planning-pane="plan"]');
   await f.dom.click(control);
   assert.equal(f.dom.mount.dataset.planEnlarged, 'true'); assert.equal(editor.hidden, true); assert.equal(editor.inert, true); assert.equal(catalog.hidden, true);
   f.workspace.update();
   assert.equal(f.dom.$('[data-planning-field="title"]'), input); assert.equal(f.dom.$('[data-plan-action="enlarge"]'), control); assert.equal(document.activeElement, control);
   assert.equal(input.value, 'My unfinished title'); assert.equal(input.selectionStart, 3); assert.equal(input.selectionEnd, 10); assert.equal(input.selectionDirection, 'backward');
   await f.dom.key(control, 'Escape');
-  assert.equal(editor.hidden, false); assert.equal(editor.inert, false); assert.equal(catalog.hidden, false); assert.equal(editor.scrollTop, 177);
+  assert.equal(editor.hidden, true); assert.equal(editor.inert, true); assert.equal(catalog.hidden, true); assert.equal(f.dom.$('#planning-board-panel').hidden, false); assert.equal(editor.scrollTop, 177);
   assert.equal(f.dom.$('[data-planning-field="title"]'), input); assert.deepEqual(f.controller.draft(), draft); assert.equal(document.activeElement, control);
   await f.dom.click(control); const node = f.dom.$('[data-plan-node="write"]'); node.focus(); await f.dom.key(node, 'Enter');
   assert.equal(f.dom.mount.dataset.planEnlarged, 'false'); assert.equal(editor.hidden, false); assert.equal(document.activeElement, input);
@@ -207,7 +208,7 @@ test('Enlarge preserves the real unsaved editor and restores it before keyboard 
 });
 
 test('live agent plan updates preserve the actual editor input, selection, scroll and dirty revision', async t => {
-  const f = await fixture(t, { ui: true }); f.controller.selectEditor('write');
+  const f = await fixture(t, { ui: true }); f.controller.selectEditor('write'); f.controller.setPane('edit');
   const input = await f.dom.input('[data-planning-field="title"]', 'My unfinished title'); input.focus(); input.setSelectionRange(3, 10, 'backward'); f.dom.$('#planning-editor-panel').scrollTop = 177;
   const prior = f.controller.draft().revision, saved = await f.store.setStep('task-a', 'read', { status: 'done', evidence: 'Read the actual supplied file and checked its constraints.' }, { expectedRevision: prior, runId: 'run-task-a', nodeId: 'agent', schemaVersion: 4 });
   await f.event(saved);
@@ -308,4 +309,23 @@ test('delivery swarms start an implementation owner and support explicit disjoin
   const scoped = createSwarmWorkflow({ assignments, members: 3, pattern: 'delivery' }); assert.equal(scoped.nodes.find(node => node.id === 'specialist-2').assignment.scope, assignments[1].scope); assert.equal(scoped.nodes.find(node => node.id === 'specialist-2').sandbox, 'danger-full-access');
   const preview = swarmWorkflowPlan(workflow), view = taskPlanView(preview); assert.equal(view.roots.length, 4); assert.deepEqual(view.byId.get('agent-coordinator').dependsOn, workers.map(node => `agent-${node.id}`)); assert.equal(view.progress.done, 0); assert.equal(preview.execution, undefined);
   assert.throws(() => createSwarmWorkflow({ members: 100 }), /99 specialists/); assert.equal(createSwarmWorkflow({ members: 48 }).settings.maxParallel, 48);
+});
+
+for(const width of [400,1440])test('Planning reveals one working pane and retains draft correction context at '+width+'px',async t=>{
+  const f=await fixture(t,{ui:true,width}),visible=()=>['#planning-board-panel','#planning-editor-panel','#planning-saved-panel'].filter(selector=>!f.dom.$(selector).hidden);
+  assert.deepEqual(visible(),['#planning-board-panel']);await f.dom.click('[data-planning-pane="saved"]');assert.deepEqual(visible(),['#planning-saved-panel']);f.controller.selectEditor('write');await f.dom.click('[data-planning-pane="edit"]');assert.deepEqual(visible(),['#planning-editor-panel']);
+  const input=await f.dom.input('[data-planning-field="title"]','An exact unfinished correction');input.focus();input.setSelectionRange(3,12,'backward');f.dom.$('#planning-editor-panel').scrollTop=123;
+  await f.dom.click('[data-planning-pane="plan"]');assert.deepEqual(visible(),['#planning-board-panel']);assert.equal(f.dom.$('#planning-editor-panel').inert,true);
+  const revision=f.controller.draft().revision,saved=await f.store.setStep('task-a','read',{status:'done',evidence:'Verified the actual fixture input.'},{expectedRevision:revision,runId:'run-task-a',nodeId:'agent',schemaVersion:4});await f.event(saved);
+  assert.equal(f.dom.$('#planning-draft-alert').hidden,false);assert.match(f.dom.$('#planning-draft-alert').textContent,/Review/);await f.dom.click('[data-planning-action="review-draft"]');
+  assert.deepEqual(visible(),['#planning-editor-panel']);assert.equal(f.dom.$('[data-planning-field="title"]'),input);assert.equal(document.activeElement,input);assert.equal(input.value,'An exact unfinished correction');assert.equal(input.selectionStart,3);assert.equal(input.selectionEnd,12);assert.equal(f.dom.$('#planning-editor-panel').scrollTop,123);assert.equal(f.calls.filter(call=>call.method==='POST').length,0);
+});
+
+for(const width of [400,1440])for(const readOnly of [false,true])test('selecting an empty '+(readOnly?'read-only':'editable')+' saved plan puts focus on visible work at '+width+'px',async t=>{
+  const f=await fixture(t,{empty:true,ui:true,width,readOnly});await f.dom.click('[data-planning-pane="saved"]');const row=f.dom.$('#planning-catalog-list [data-planning-task="task-b"]');row.focus();await f.dom.click(row);
+  const board=f.dom.$('#planning-board-panel'),saved=f.dom.$('#planning-saved-panel'),more=f.dom.$('[data-planning-disclosure="plan-actions"]'),target=readOnly?board:f.dom.$('[data-planning-action="add"]');
+  assert.equal(f.controller.state.taskId,'task-b');assert.equal(f.controller.state.pane,'plan');assert.equal(board.hidden,false);assert.equal(board.inert,false);assert.equal(saved.hidden,true);assert.equal(saved.inert,true);assert.equal(f.dom.$('#planning-plan-mount [data-plan-node]'),null);assert.equal(more.open,false);assert.equal(document.activeElement,target);assert.deepEqual(target.focusOptions,{preventScroll:true});if(readOnly)assert.equal(board.getAttribute('tabindex'),'-1');
+  for(let node=target;node;node=node.parentElement){assert.equal(node.hidden,false,'focus cannot remain in a hidden pane');assert.equal(node.inert,false,'focus cannot remain in an inert pane');if(node.tagName==='DETAILS')assert.equal(node.open,true,'focus cannot remain inside a closed action menu');}
+  if(!readOnly){await f.dom.click(target);assert.equal(f.dom.$('#planning-editor-panel').hidden,false);assert.equal(f.controller.draft().mode,'add');}
+  assert.equal(f.calls.filter(call=>call.method==='POST').length,0,'selecting an empty saved plan must not create steps or dispatch work');
 });

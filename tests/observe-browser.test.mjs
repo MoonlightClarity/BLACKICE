@@ -172,3 +172,32 @@ test('browser surface renders page content as escaped text and never embeds a re
   const html = renderObserveBrowser({ status: status([tab('unsafe', { title: '<img src=x onerror=alert(1)>' })]), document: { controls: [{ ref: 'unsafe" onclick="bad', name: '<script>bad</script>', role: 'textbox' }], text: '<svg onload=alert(1)>' }, address: 'https://example.test/?a=" onfocus="bad', watching: true });
   assert.doesNotMatch(html, /<iframe|<script|<svg|<img src=x|onclick="bad|onfocus="bad/); assert.match(html, /&lt;script&gt;/); assert.match(html, /&lt;svg/);
 });
+
+for (const selected of [false, true]) test('ordinary browser navigation remains visible without opening tools: ' + (selected ? 'selected page' : 'empty browser'), () => {
+  const html = renderObserveBrowser({ status: status(selected ? [tab('one')] : []), selectedId: selected ? 'one' : null });
+  const toolsAt = html.indexOf('<details id="observe-browser-tools"'), primary = html.slice(0, toolsAt), tools = html.slice(toolsAt);
+  assert.ok(toolsAt > 0); assert.match(tools, /^<details\b[^>]*><summary>Browser tools and other tabs<\/summary>/);
+  assert.match(primary, /id="observe-browser-address-form"/);
+  for (const action of ['back', 'forward', 'refresh']) assert.match(primary, new RegExp('data-observe-browser="' + action + '"'));
+  for (const action of ['follow', 'inspect']) assert.doesNotMatch(primary, new RegExp('data-observe-browser="' + action + '"'));
+  assert.equal((html.match(/id="observe-browser-address-form"/g) || []).length, 1);
+  assert.equal((html.match(/data-observe-browser="back"/g) || []).length, 1);
+  assert.equal((html.match(/data-observe-browser="forward"/g) || []).length, 1);
+});
+
+test('ordinary browser tools retain an explicit disclosure choice through preview refresh and re-entry', async t => {
+  const f = fixture(t); await f.ui.enter();
+  assert.equal(f.element('observe-browser-tools').open, false);
+  f.element('observe-browser-tools').open = true;
+  f.element('observe-browser-url').value = 'https://draft.test/retained'; f.element('observe-browser-url').focus();
+  f.advance(5000); f.ui.update(); await flush();
+  assert.equal(f.element('observe-browser-tools').open, true);
+  assert.equal(f.focused.id, 'observe-browser-url');
+  f.ui.leave(); await f.ui.enter();
+  assert.equal(f.element('observe-browser-tools').open, true);
+  assert.equal(f.element('observe-browser-url').value, 'https://draft.test/retained');
+  f.element('observe-browser-tools').open = false;
+  f.ui.leave(); await f.ui.enter();
+  assert.equal(f.element('observe-browser-tools').open, false);
+  assert.ok(f.calls.filter(call => call.body).every(call => call.body.action === 'screenshot'), 'disclosure and navigation retain state without page mutations');
+});

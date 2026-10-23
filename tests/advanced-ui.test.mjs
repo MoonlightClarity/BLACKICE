@@ -35,7 +35,7 @@ test('schedule manager links saved configuration to clearable job history withou
  const focus=[],scroll=[];view.querySelector=selector=>({scrollIntoView:()=>scroll.push(selector),focus:()=>focus.push(selector)});
  const click=(op,id)=>view.onclick({target:{closest:()=>({dataset:{op,id}})}});
  await click('jobs','alpha');assert.match(view.innerHTML,/Jobs for <strong>Morning report/);assert.match(view.innerHTML,/Showing 1 of 1 jobs for this schedule/);assert.match(view.innerHTML,/data-op="clear-filter">Show all schedules/);
- await click('section','schedules');assert.equal(focus.at(-1),'.operations-schedules');await click('filter','completed');assert.match(view.innerHTML,/No jobs match this view/);assert.match(view.innerHTML,/Clear job filters/);assert.equal(scroll.at(-1),'.operations-jobs');
+ await click('section','schedules');assert.equal(focus.at(-1),'.operations-schedules');await click('filter','completed');assert.match(view.innerHTML,/No jobs match this view/);assert.match(view.innerHTML,/Clear job filters/);assert.equal(focus.at(-1),'.operations-jobs');assert.match(view.innerHTML,/id="operations-schedules"[^>]* hidden inert/);assert.match(view.innerHTML,/id="operations-jobs"[^>]*tabindex="-1">/);
  await click('clear-filter');assert.match(view.innerHTML,/Showing 2 of 2 jobs/);assert.doesNotMatch(view.innerHTML,/Jobs for <strong>/);assert.equal(f.requests.some(request=>request.method!=='GET'),false);
 });
 
@@ -93,7 +93,7 @@ test('unchanged end dates preserve the exact second DST occurrence and edited da
 
 for(const overlap of ['parallel','queue','skip'])test(`editing a deployment preserves ${overlap} and its revision, workflow and attachments`,async t=>{
   const deployment={id:'deploy',name:'Saved operation',revision:7,input:'Existing task',cwd:'C:\\fixture',workflow:workflow(),attachmentIds:['source-file'],trigger:{type:'interval',everySeconds:120},overlap,retry:{maxAttempts:0,backoffSeconds:30},enabled:true},f=fixture(t,{deployments:[deployment]});
-  await f.ui.openOperations();const view=f.elements.get('#operations-view');assert.match(view.innerHTML,new RegExp(overlap==='parallel'?'run together':overlap==='queue'?'queue in order':'skip overlaps'));
+  await f.ui.openOperations();const view=f.elements.get('#operations-view');assert.match(view.innerHTML,new RegExp(overlap==='parallel'?'run together':overlap==='queue'?'queue in order':'skip overlaps','i'));
   await view.onclick({target:{closest:()=>({dataset:{op:'edit',id:'deploy'}})}});assert.match(f.modals.at(-1).html,new RegExp(`<option value="${overlap}" selected>`));
   const form=f.elements.get('#deployment-form');form.values.overlap=overlap;await f.submit(form);const saved=f.requests.find(request=>request.method==='PUT');assert.equal(saved.path,'/api/operations/deployments/deploy');assert.equal(saved.body.expectedRevision,7);assert.equal(saved.body.overlap,overlap);assert.deepEqual(saved.body.attachmentIds,['source-file']);assert.deepEqual(saved.body.workflow,deployment.workflow);
 });

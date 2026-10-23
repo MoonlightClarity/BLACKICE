@@ -1,0 +1,207 @@
+/* BLACKICE information layer: real ice in the open field, quiet planes for reading.
+   The repeated root IDs deliberately outrank asynchronously mounted component sheets.
+   This layer changes paint only; native selects and SVG work maps keep their owners. */
+:root[data-blackice-ui="comfort"] {
+  --bi-information-image: url('/assets/blackice-depth.png');
+  --bi-info-base: #080a0c; --bi-info-panel: #121416; --bi-info-raised: #1c1f22;
+  --bi-info-ink: #f2f3f4; --bi-info-muted: #b9c0c5; --bi-info-line: #d8dfe51f;
+  --bi-info-edge: #d8dfe569; --bi-info-frost: #e2e7eb; --bi-info-frost-ink: #111519;
+  --bi-info-current: #f6f7f8; --bi-info-focus: #eff5f9;
+  --ink: var(--bi-info-ink); --text: var(--bi-info-ink); --muted: var(--bi-info-muted);
+  --line: var(--bi-info-line); --canvas: var(--bi-info-base); --nav: var(--bi-info-base);
+  --bi-base: var(--bi-info-base); --bi-reading: var(--bi-info-panel); --bi-glass: #171b1ff5;
+  --bi-ink: var(--bi-info-ink); --bi-muted: var(--bi-info-muted); --bi-border: var(--bi-info-line);
+  --bi-primary: var(--bi-info-frost); --bi-focus: var(--bi-info-focus);
+  --relay-base: var(--bi-info-base); --relay-pane: var(--bi-info-panel); --relay-lift: var(--bi-info-raised);
+  --relay-rail: #0c0f12; --relay-line: var(--bi-info-line); --relay-line-strong: var(--bi-info-edge);
+  --relay-ink: var(--bi-info-ink); --relay-soft: #d4d9de; --relay-dim: var(--bi-info-muted);
+  --relay-hover: #2b3035; --relay-selected: #30373d; --relay-signal: var(--bi-info-frost);
+  --noir-base-rgb: 8 10 12; --noir-pane-rgb: 18 20 22; --noir-lift-rgb: 28 31 34;
+  --noir-rail-rgb: 12 15 18; --noir-line-rgb: 79 88 96; --noir-ink-rgb: 242 243 244;
+  --noir-soft-rgb: 185 192 197; --noir-cyan-rgb: 226 231 235;
+}
+html[data-blackice-ui] body {
+  background: linear-gradient(90deg,#080a0ceb 0%,#080a0cd6 34%,#080a0c73 66%,#080a0c1f 100%),
+    var(--bi-information-image) 60% 50% / cover no-repeat, var(--bi-info-base) !important;
+  color: var(--bi-info-ink);
+}
+html[data-blackice-ui] body #app#app,
+html[data-blackice-ui] body #app#app :is(.conversation-workspace,.conversation-shell,.conversation-task-layout,
+  .conversation-main,.conversation-main:has(.conversation-empty),.conversation-reading,.conversation-scroll,
+  .conversation-timeline,.configure-workspace,.configure-page,.observe-workspace,.observe-scroll,.planning-workspace) {
+  background: transparent !important;
+}
+html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(.conversation-workspace,.configure-workspace,
+  .observe-workspace,.planning-workspace,.projects-workspace,.modal) {
+  --bi-surface-rgb: 18 20 22; --bi-control-rgb: 28 31 34; --bi-accent-rgb: 226 231 235;
+  color: var(--bi-info-ink) !important;
+}
+/* One photographic header edge; labels sit over its opaque black left side. */
+html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(.conversation-header,.planning-heading,
+  .observe-header,.configure-heading,.modal-header,.task-method-header) {
+  background: linear-gradient(90deg,#0d1013fb 0%,#0d1013f7 55%,#0d10139c 76%,#0d101324 100%),
+    var(--bi-information-image) right 49% / cover no-repeat, var(--bi-info-panel) !important;
+  border-color: var(--bi-info-line) !important; box-shadow: none !important;
+}
+html[data-blackice-ui] body #workspace-modes#workspace-modes,
+html[data-blackice-ui] body .native-titlebar {
+  background: var(--bi-info-base) !important; border-color: var(--bi-info-line) !important; box-shadow: none !important;
+}
+html[data-blackice-ui] body #modal-root#modal-root .modal-backdrop { background: #020406b8 !important; }
+html[data-blackice-ui] body #modal-root#modal-root .modal {
+  background: var(--bi-info-panel) !important; border-color: var(--bi-info-edge) !important;
+  box-shadow: 0 24px 80px #000b !important;
+}
+/* Near-opaque reading faces keep the photograph away from dense text. */
+html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(.conversation-sidebar,.conversation-composer,
+  .conversation-message.assistant,.conversation-work,.conversation-files,
+  .task-plan-workspace,.task-plan-inspector,.planning-board,.planning-editor,.planning-catalog,.planning-task-bar,
+  .project-main,.project-list,.project-tabs,.project-detail-header,.project-task-card,.project-settings,
+  .project-supporting-details,.project-editor,.operation-row,.operation-job,.operations-advanced,.advanced-panel,
+  .observe-now,.observe-plan,.observe-work-inspector,.observe-panel,.observe-card,.observe-browser,.observe-feed-empty,.observe-session-note,
+  .observe-browser-stage,.observe-browser-tree,.observe-browser-controls,.observe-options,
+  .configure-basics,.configure-disclosure,.configure-card,.configure-workflow,.configure-one-step,
+  .connection-default,.connection-saved,.connection-row,.connection-provider-card,.connection-model-row,
+  .agent-workspace-card,.tool-connection-card,.identity-card,.process-card,.task-method-card) {
+  background: var(--bi-info-panel) !important; border-color: var(--bi-info-line) !important;
+  box-shadow: none !important;
+}
+html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(.task-plan-header,.task-plan-inspector-toggle,
+  .conversation-plan-tabs,.observe-surface-navigation,.observe-browser-heading,.project-task-summary,
+  .modal-footer,.connection-footer,.task-method-footer,.configure-section-heading,.project-catalog-heading) {
+  background: var(--bi-info-raised) !important; border-color: var(--bi-info-line) !important; box-shadow: none !important;
+}
+html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) .project-next-action:not([data-next-kind="attention"],[data-next-kind="reviewed"]) {
+  background: var(--bi-info-raised) !important; border-color: var(--bi-info-edge) !important;
+}
+html[data-blackice-ui] body #app#app .conversation-message.user { background: #252a2f !important; border-color: var(--bi-info-line) !important; box-shadow: none !important; }
+html[data-blackice-ui] body #app#app .conversation-composer { background: #181c20 !important; }
+html[data-blackice-ui] body #app#app .conversation-composer:focus-within {
+  border-color: var(--bi-info-focus) !important; box-shadow: 0 0 0 2px #eff5f914 !important;
+}
+html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(.coordination-destinations,.workspace-menu>div,
+  .conversation-options-panel,.conversation-context-panel,.conversation-reasoning-panel,.task-plan-menu>div) {
+  background: var(--bi-info-raised) !important; border-color: var(--bi-info-edge) !important; box-shadow: 0 14px 32px #0009 !important;
+}
+html[data-blackice-ui] body :is(.model-picker-panel.model-picker-panel,.conversation-row-menu.conversation-row-menu) {
+  background: var(--bi-info-raised) !important; border-color: var(--bi-info-edge) !important; box-shadow: 0 14px 32px #0009 !important;
+}
+/* Ordinary controls recede. Destructive controls and status-bearing text keep their semantic paint. */
+html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(
+  button:not(.danger,.destructive,.planning-destructive,.conversation-stop,.observe-stop,[data-mission-action="stop"],[data-observe-action="stop"]),
+  summary:not(.observe-external summary,.operation-recovery summary,.error summary,.warning summary,.success summary)) {
+  background: var(--bi-info-raised) !important; color: var(--bi-info-ink) !important;
+  border-color: var(--bi-info-line) !important; box-shadow: none !important;
+}
+html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(
+  button:not(.danger,.destructive,.planning-destructive,.conversation-stop,.observe-stop,[data-mission-action="stop"],[data-observe-action="stop"],[aria-selected="true"],[aria-pressed="true"],[aria-current="page"]):hover:not(:disabled),
+  summary:not(.observe-external summary,.operation-recovery summary,.error summary,.warning summary,.success summary):hover) {
+  background: #2a3036 !important; border-color: var(--bi-info-edge) !important;
+}
+html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(input:not([type="checkbox"],[type="radio"]),textarea) {
+  background: #0b0f13 !important; color: var(--bi-info-ink) !important; border-color: var(--bi-info-edge) !important; box-shadow: none !important;
+}
+html[data-blackice-ui] body #app#app .conversation-composer > textarea#mission-task { background: transparent !important; }
+html[data-blackice-ui] body #app#app .conversation-compose-settings :is(.model-picker-button,.conversation-context-choice>summary) {
+  background: transparent !important; border-color: transparent !important;
+}
+html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(input,textarea)::placeholder { color: var(--bi-info-muted) !important; opacity: 1; }
+html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(input[type="checkbox"],input[type="radio"]) { accent-color: var(--bi-info-frost); }
+/* Current workspace is the brightest anchor; primary work is a quieter frost. */
+html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(button.primary:not(.danger,.destructive),button#mission-start-button) {
+  background: var(--bi-info-frost) !important; color: var(--bi-info-frost-ink) !important;
+  border-color: var(--bi-info-frost) !important; box-shadow: none !important;
+}
+html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(button.primary:not(.danger,.destructive),button#mission-start-button):hover:not(:disabled) {
+  background: var(--bi-info-current) !important; color: var(--bi-info-frost-ink) !important; border-color: var(--bi-info-current) !important;
+}
+html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(button[aria-selected="true"],button[aria-pressed="true"],button[aria-current="page"]) {
+  background: #353e46 !important; color: var(--bi-info-ink) !important;
+  border-color: var(--bi-info-edge) !important; box-shadow: inset 0 -2px var(--bi-info-frost) !important;
+}
+html[data-blackice-ui] body #workspace-modes#workspace-modes button[role="tab"][aria-selected="true"],
+html[data-blackice-ui] body #workspace-modes#workspace-modes button[role="tab"][aria-selected="true"]:is(:hover,:focus-visible,:active) {
+  background: var(--bi-info-current) !important; color: var(--bi-info-frost-ink) !important;
+  border-color: var(--bi-info-current) !important; box-shadow: none !important;
+}
+html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(.conversation-sidebar-row.selected,
+  .project-list-item[aria-current="true"],.planning-catalog-row[aria-current="true"],.task-plan-node.is-selected>.task-plan-row) {
+  background: #2a333b !important; border-color: var(--bi-info-edge) !important; box-shadow: inset 3px 0 var(--bi-info-frost) !important;
+}
+html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(button:disabled,button#mission-start-button:disabled) {
+  background: #191d21 !important; color: #89959e !important; border-color: var(--bi-info-line) !important; box-shadow: none !important; opacity: 1 !important;
+}
+/* Planning's three pane controls use their real workspace scope, independent of legacy tab paint. */
+html[data-blackice-ui] body #app#app #planning-workspace .planning-mobile-tabs {
+  background: var(--bi-info-panel) !important; border-color: var(--bi-info-line) !important; box-shadow: none !important;
+}
+html[data-blackice-ui] body #app#app #planning-workspace .planning-mobile-tabs > button {
+  background: transparent !important; color: var(--bi-info-muted) !important; border-color: transparent !important; box-shadow: none !important;
+}
+html[data-blackice-ui] body #app#app #planning-workspace .planning-mobile-tabs > button[aria-selected="true"] {
+  background: #353e46 !important; color: var(--bi-info-ink) !important; border-color: var(--bi-info-edge) !important; box-shadow: inset 0 -2px var(--bi-info-frost) !important;
+}
+html[data-blackice-ui] body #app#app #planning-workspace .planning-mobile-tabs > button:not([aria-selected="true"]):hover:not(:disabled) {
+  background: var(--bi-info-raised) !important; color: var(--bi-info-ink) !important; border-color: var(--bi-info-edge) !important;
+}
+html[data-blackice-ui] body #app#app #planning-workspace .planning-mobile-tabs > button:disabled {
+  background: var(--bi-info-panel) !important; color: var(--bi-info-muted) !important; border-color: transparent !important; box-shadow: none !important;
+}
+html[data-blackice-ui] body #app#app #conversation-timeline .conversation-turn-controls { background: transparent !important; }
+html[data-blackice-ui] body #app#app #conversation-timeline .conversation-turn-controls > button:not(.conversation-retry) {
+  background: transparent !important; border-color: transparent !important; color: var(--bi-info-muted) !important; box-shadow: none !important;
+}
+html[data-blackice-ui] body #app#app #conversation-timeline .conversation-turn-controls > button:not(.conversation-retry):is(:hover,:focus-visible):not(:disabled) {
+  background: var(--bi-info-raised) !important; border-color: var(--bi-info-edge) !important; color: var(--bi-info-ink) !important;
+}
+html[data-blackice-ui] body #app#app #conversation-timeline .conversation-turn-controls > button:not(.conversation-retry):disabled {
+  color: #89959e !important; opacity: .65 !important;
+}
+html[data-blackice-ui] body #app#app :is(.observe-feed-empty,.observe-session-note) {
+  background: var(--bi-info-panel) !important; color: var(--bi-info-muted) !important; padding: 8px 10px; border-radius: 6px;
+}
+
+/* Explicit reading roles avoid washing semantic green, amber or red out of receipts. */
+html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(.conversation-message-text,.conversation-user-text,
+  .conversation-message-text p,.conversation-message-text li,.project-task-instructions,.project-goal-preview,
+  .planning-field>span,.configure-basic-row strong,.conversation-setting-value,.model-picker-name) { color: var(--bi-info-ink) !important; }
+html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(.configure-subtitle,.configure-label,.configure-optional-note,
+  .configure-link-list small,.configure-disclosure>summary>span:not([data-configure-status]),.conversation-compose-footer,.model-picker-meta,
+  .conversation-setting-label,.conversation-planning-choice>span,.conversation-sidebar-meta,.conversation-sidebar-empty,
+  .task-plan-layout-label,.task-plan-progress-copy,.task-plan-row-condition,.task-plan-row-kind,.task-plan-step-number,
+  .planning-field-help,.planning-catalog-status,.project-help,.project-summary,.project-list-count,
+  .observe-eyebrow,.observe-viewing-label,.observe-surface-navigation>p,.operation-row small:not(.operation-recovery small),.schedule-note,
+  .section-eyebrow,.connection-section-note,.coordination-picker>summary>span) { color: var(--bi-info-muted) !important; }
+html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(.planning-heading,.configure-heading,
+  .observe-title,.modal-header,.project-detail-header,.task-plan-header,.blackice-welcome-copy) :is(h1,h2,h3,h1 em) { color: var(--bi-info-ink) !important; }
+html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(button,input,textarea,select,summary,a[href],[data-planning-outline],[data-plan-node]):not(svg,svg *):focus-visible {
+  outline: 2px solid var(--bi-info-focus) !important; outline-offset: 3px !important;
+}
+@media (max-width: 600px) {
+  html[data-blackice-ui] body { background-position: center, 69% center, center; }
+  html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(.conversation-header,.planning-heading,
+    .observe-header,.configure-heading,.modal-header,.task-method-header) {
+    background-image: linear-gradient(90deg,#0d1013fd 0%,#0d1013f5 52%,#0d10136b 100%), var(--bi-information-image) !important;
+  }
+}
+@media (prefers-contrast: more) {
+  :root[data-blackice-ui="comfort"] { --bi-info-panel: #090d11; --bi-info-muted: #d5dde4; --bi-info-line: #aab8c599; --bi-info-edge: #e0e9f0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-blackice-ui] body { background-attachment: scroll !important; }
+  html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(button,summary,input,textarea,select) { transition: none !important; }
+}
+@media (forced-colors: active) {
+  :root[data-blackice-ui="comfort"] {
+    --bi-info-base: Canvas; --bi-info-panel: Canvas; --bi-info-raised: Canvas;
+    --bi-info-ink: CanvasText; --bi-info-muted: CanvasText; --bi-info-line: CanvasText; --bi-info-edge: CanvasText;
+    --bi-info-frost: Highlight; --bi-info-frost-ink: HighlightText; --bi-info-current: Highlight; --bi-info-focus: Highlight;
+  }
+  html[data-blackice-ui] body { background: Canvas !important; }
+  html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(.conversation-header,.planning-heading,
+    .observe-header,.configure-heading,.modal-header,.task-method-header,#workspace-modes,.conversation-message.user,.conversation-composer) {
+    background: Canvas !important; color: CanvasText !important; box-shadow: none !important;
+  }
+  html[data-blackice-ui] body :is(#app#app,#modal-root#modal-root,#workspace-modes#workspace-modes) :is(button,input,textarea,select,summary) { forced-color-adjust: auto; }
+  html[data-blackice-ui] body #workspace-modes#workspace-modes button[role="tab"][aria-selected="true"] { color: HighlightText !important; }
+}

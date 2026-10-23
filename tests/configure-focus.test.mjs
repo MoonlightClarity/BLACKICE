@@ -53,10 +53,10 @@ for(const section of ['execution','preferences'])test(`${section} disclosure kee
   read.resolve(settings());await loading;assert.strictEqual(document.activeElement,mount.querySelector(selector));assert.deepEqual(document.activeElement.lastFocusOptions,{preventScroll:true});
 });
 
-test('a pending settings response preserves the action the user moved to, including duplicate actions',async t=>{
+test('a pending settings response preserves the single background-workspace action the user moved to',async t=>{
   const read=deferred(),{document,mount,focus}=setup(t,{api:()=>read.promise,onOperations(){}}),loading=mount.toggle('preferences'),selector='[data-configure="operations"]';
-  const actions=mount.querySelectorAll(selector);assert.equal(actions.length,2,'the workspace and schedule sections each have an operations link');const chosen=focus(selector,1);
-  read.resolve(settings());await loading;assert.notStrictEqual(document.activeElement,chosen);assert.strictEqual(document.activeElement,mount.querySelectorAll(selector)[1],'the later duplicate must not jump to the first link');
+  const actions=mount.querySelectorAll(selector);assert.equal(actions.length,1,'the background workspace owns the single operations link');const chosen=focus(selector);
+  read.resolve(settings());await loading;assert.notStrictEqual(document.activeElement,chosen);assert.strictEqual(document.activeElement,mount.querySelectorAll(selector)[0],'the chosen background-workspace link retains focus');
 });
 
 test('a late settings response leaves focus outside Settings where the user put it',async t=>{

@@ -188,6 +188,16 @@ const heldRequest = () => { let resolve, reject; const promise = new Promise((ye
 const sparkCandidate = () => ({ id: 'gpt-5.3-codex-spark', model: 'gpt-5.3-codex-spark', displayName: 'GPT-5.3 Codex Spark', source: 'documented', lifecycle: { state: 'retired', date: '2026-09-14', note: 'OpenAI reports Spark retired from Codex.' }, provenance: { url: 'https://learn.chatgpt.com/docs/models', title: 'OpenAI model documentation', checkedAt: '2026-10-18' }, access: { state: 'unverified' } });
 const candidateStatus = (candidate, modelCheck = null, custom = []) => ({ codex: { connected: true, authenticated: true, modelCheck, modelCheckBlocked: false }, defaultModelSelection: 'native-default', defaultModel: 'native-default', models: [{ id: 'native-default' }, { id: 'native-other' }, ...custom.map(id => ({ ...candidate, id, model: id, source: 'custom' }))], customCodexModels: custom, codexModelCandidates: [candidate] });
 
+test('Add a provider is an explicit retained reveal that leaves current model drafts untouched', async t => {
+  const dom=connectionDocument(t),calls=[],api=async(url,method)=>{calls.push({url,method});return url==='/api/providers'?[]:candidateStatus(sparkCandidate());};
+  await openConnections({api,...dom});assert.equal(dom.get('#connection-add-provider').open,false);
+  const draft=dom.get('#connection-codex-id'),choice=dom.get('#connection-default-model');draft.value='Keep/Exact:Draft';draft.oninput();choice.value='native-other';choice.onchange();
+  const reveal=dom.get('#connection-add-provider');reveal.open=true;reveal.ontoggle();reveal.open=false;reveal.ontoggle();reveal.open=true;reveal.ontoggle();
+  assert.equal(draft.value,'Keep/Exact:Draft');assert.equal(choice.value,'native-other');assert.equal(dom.get('#connection-use-default').disabled,false);assert.equal(calls.length,2,'revealing providers makes no additional requests');
+  await dom.provider(PROVIDER_PRESETS[0].id).click();assert.ok(dom.form());await dom.get('#connection-back').onclick();
+  assert.equal(dom.get('#connection-add-provider').open,true,'Back retains the provider chooser state');assert.equal(dom.get('#connection-codex-id').value,'Keep/Exact:Draft');assert.equal(calls.every(call=>!call.method||call.method==='GET'),true);
+});
+
 test('native model search filters the entire list locally and keeps model choices and custom drafts intact', async t => {
   const dom = connectionDocument(t), candidate = sparkCandidate(), reads = [], writes = [];
   const models = Array.from({ length: 251 }, (_, index) => ({ id: `native-${index}`, displayName: index === 250 ? 'Raisonnement élargi' : `Model ${index}` }));
