@@ -1005,6 +1005,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     let tab = args.action === 'open' ? this.newTab(browserURL(args.url), { owner, folderId: args.folderId, parentTabId: args.parentTabId }) : this.tab(selected);
     if (owner && !sameOwner(tab.owner, owner) && !(owner.allowUserTabs && !tab.owner)) throw capacityError('This browser tab belongs to another task.', 'BROWSER_TAB_OWNERSHIP');
     if (wheel) {
+      if (tab.rendererFailure) throw rendererFailure(tab);
       if (!tab.window || tab.window.isDestroyed()) throw Object.assign(error('The observed browser page is no longer active. Refresh its preview before scrolling.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', actionDispatched: false });
       try { this.assertInputDocument(tab, args); }
       catch (cause) { throw Object.assign(cause, { actionDispatched: false, stage: 'document' }); }

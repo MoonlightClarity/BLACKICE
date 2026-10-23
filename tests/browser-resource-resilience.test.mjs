@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
-import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey } from '../lib/browser.mjs';
+import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll } from '../lib/browser.mjs';
 import { BrowserDiagnostics } from '../lib/browser-diagnostics.mjs';
 import { loadBrowserCompatibility } from '../desktop/browser-compatibility.mjs';
 
@@ -44,7 +44,7 @@ function fixture({ writeFile = async () => {}, loadURL = async () => {} } = {}) 
   protection.status = protection.tabStatus = () => ({});
   protection.forgetTab = () => {};
   const context = vm.createContext({ BrowserWindow: Window, session: { fromPartition: () => session }, EventEmitter,
-    createHash, randomUUID, path, browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, BrowserDiagnostics, loadBrowserCompatibility,
+    createHash, randomUUID, path, browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, BrowserDiagnostics, loadBrowserCompatibility,
     fs: { writeFile: async (file, value) => { writes.push(JSON.parse(value)); await writeFile(file, value); }, rename: async (...args) => { renames.push(args); } },
     setTimeout, clearTimeout, AbortSignal, structuredClone, URL,
   });
@@ -74,6 +74,16 @@ test('a crashed page releases its window, retires refs, and settles pending page
   await assert.rejects(f.driver.perform({ action: 'click', tabId: tab.id, ref: 'old-target' }), error => error.code === 'BROWSER_RENDERER_GONE');
   assert.equal(f.windows.length, 1);
   assert.deepEqual(window.webContents.loads, loads);
+  await f.driver.writeChain;
+});
+
+test('wheel input preserves a crashed page diagnosis without materializing a replacement', async () => {
+  const f = fixture(), tab = f.driver.newTab('https://example.test/page'); await tab.loading;
+  const window = tab.window, revision = tab.revision, loads = [...window.webContents.loads];
+  window.webContents.emit('render-process-gone', {}, { reason: 'oom', exitCode: 9 });
+  await assert.rejects(f.driver.perform({ action: 'scroll', browser: 'relay', tabId: tab.id, x: 120, y: 90, deltaX: 0, deltaY: 120, expectedUrl: 'https://example.test/page', expectedDocumentId: tab.id + ':' + revision }), error => error.code === 'BROWSER_RENDERER_GONE' && error.actionDispatched === false);
+  assert.equal(window.isDestroyed(), true); assert.equal(tab.window, null); assert.equal(f.windows.length, 1);
+  assert.equal(tab.rendererFailure.reason, 'oom'); assert.deepEqual(window.webContents.loads, loads);
   await f.driver.writeChain;
 });
 
