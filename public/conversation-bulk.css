@@ -1,0 +1,25 @@
+/* Explicit multi-select controls for the conversation history sidebar. */
+.conversation-history-controls{display:flex;align-items:center;gap:7px;margin:0 3px 9px;min-width:0;flex:none}
+.conversation-history-controls .conversation-history-filter{flex:1;min-width:0;margin:0}
+.conversation-history-controls .conversation-history-filter select{width:100%;min-width:0}
+.conversation-history-controls #conversation-bulk-toggle{flex:0 0 auto;min-height:32px;padding:5px 9px;font-size:11px;font-weight:600;white-space:nowrap}
+.conversation-bulk-toolbar{margin:0 3px 9px;padding:9px;border:1px solid var(--relay-line,#40515e);border-radius:8px;background:var(--relay-pane,#14212a);flex:none}
+.conversation-bulk-heading{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:8px;font-size:11px;color:var(--relay-soft,#c7d6dc)}
+.conversation-bulk-heading>button{min-height:29px;padding:4px 8px;font-size:11px}
+.conversation-bulk-actions{display:flex;gap:5px;flex-wrap:wrap}
+.conversation-bulk-actions>button{min-height:30px;padding:5px 8px;border:1px solid var(--relay-line,#40515e);border-radius:5px;background:var(--relay-lift,#1c303b);color:var(--relay-soft,#d0e0e9);font-size:11px;cursor:pointer;white-space:nowrap}
+.conversation-bulk-actions>button:disabled,.conversation-history-controls button:disabled,.conversation-bulk-confirm button:disabled{opacity:.43;cursor:not-allowed}
+.conversation-bulk-actions>button:not(:disabled):hover,.conversation-bulk-actions>button:not(:disabled):focus-visible{border-color:var(--relay-signal,#8dcadd);color:var(--relay-ink,#fff)}
+.conversation-bulk-actions #conversation-bulk-delete{border-color:#985f64;color:#e3b4b6}
+.conversation-bulk-confirm{flex:none;margin:0 3px 10px;padding:9px;border:1px solid #98636a;border-radius:7px;background:var(--relay-pane,#20262b);color:var(--relay-ink,#f3f4f6);font-size:11px;line-height:1.5}
+.conversation-bulk-confirm p{margin:0 0 8px}
+.conversation-bulk-confirm button{min-height:30px;margin-right:6px;padding:5px 9px;font-size:11px}
+.conversation-bulk-confirm #conversation-bulk-confirm-yes{border:1px solid #ab646b;color:#f4c5c5}
+.conversation-bulk-error{flex:none;margin:0 4px 9px;color:#f2a8af;font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+.conversation-bulk-toolbar[hidden],.conversation-bulk-confirm[hidden],.conversation-bulk-error[hidden],#conversation-bulk-toggle[hidden],.conversation-bulk-actions>button[hidden]{display:none!important}
+.conversation-sidebar-row.bulk-mode{display:flex;align-items:center;gap:4px;min-width:0}
+.conversation-sidebar-row.bulk-mode .conversation-list-item{min-width:0;flex:1;width:auto!important}
+.conversation-sidebar-row.bulk-marked{background:color-mix(in srgb,var(--relay-signal,#80bacc) 12%,transparent);border-radius:6px}
+.conversation-bulk-checkbox{width:16px;min-width:16px;height:16px;margin:0 2px 0 7px;flex:none;accent-color:var(--relay-signal,#7ec3d8);cursor:pointer}
+.conversation-bulk-checkbox:focus-visible{outline:2px solid var(--relay-signal,#7ec3d8);outline-offset:3px}
+@media (forced-colors:active){.conversation-sidebar-row.bulk-marked,.conversation-bulk-toolbar,.conversation-bulk-confirm{border:1px solid CanvasText}.conversation-bulk-checkbox{forced-color-adjust:auto}}

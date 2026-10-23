@@ -11,6 +11,7 @@ import { isChatModeModel, CHAT_MODE_RETIRED_MESSAGE, recordedResponseRoutes } fr
 import {modelToolCapability,renderToolIssues} from './tool-outcomes-model.mjs';
 import { taskTitle } from './task-title.mjs';
 import { sidebarConversations, sidebarGroups, renderSidebarGroups } from './sidebar-model.mjs';
+import { resolveBulkConversations } from './conversation-bulk-model.mjs';
 import { createConversationSearch, searchedSidebarConversations, searchMatchLabel } from './conversation-search.mjs';
 import { createConversationAttention, atConversationEnd, captureConversationScroll, restoreConversationScroll } from './conversation-attention.mjs';
 import { renderTaskState, renderTaskFiles, bindTaskStateEvents } from './task-state-ui.mjs';
@@ -24,10 +25,11 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
   const attention = createConversationAttention(), readingPositions = new Map(), planViews = new Map(), stopRequests = new Map();
   const composerRequests = new Map(), composerErrors = new Map(), queueReceipts = new Map();
   if (!document.getElementById('relay-conversation-styles')) { const link = document.createElement('link'); link.id = 'relay-conversation-styles'; link.rel = 'stylesheet'; link.href = '/conversation.css'; document.head.append(link); }
+  if (!document.getElementById('relay-conversation-bulk-styles')) { const link = document.createElement('link'); link.id = 'relay-conversation-bulk-styles'; link.rel = 'stylesheet'; link.href = '/conversation-bulk.css'; document.head.append(link); }
   if (!document.getElementById('relay-model-picker-styles')) { const link = document.createElement('link'); link.id = 'relay-model-picker-styles'; link.rel = 'stylesheet'; link.href = '/model-picker.css'; document.head.append(link); }
   let saved = {}; try { saved = JSON.parse(localStorage.getItem('relay.mission.draft') || '{}') || {}; } catch {}
   const restored = restoreConversationDrafts(saved);
-  const state = { prefs: restored.prefs, drafts: restored.drafts, contextErrors: {}, search: '', key: NEW, runId: null, observedRunId: null, forceNew: false, cache: [], summaries: { active: [], archived: [], deleted: [] }, historyState: 'active', summaryVersion: 0, summaryError: '', summaryRetrying: false, managing: false, historyLoaded: new Set(), historyPending: new Set(), historyError: '', truncated: false, loading: false, selecting: false, renaming: false, pendingFiles: false, feedback: {}, modelsSignature: '', viewKey: null, sidebarSignature: '', selectedAgent: null, autoScroll: true,
+  const state = { prefs: restored.prefs, drafts: restored.drafts, contextErrors: {}, search: '', key: NEW, runId: null, observedRunId: null, forceNew: false, cache: [], summaries: { active: [], archived: [], deleted: [] }, historyState: 'active', summaryVersion: 0, summaryError: '', summaryRetrying: false, managing: false, bulkSelecting: false, bulkSelected: new Map(), bulkBusy: false, bulkConfirm: false, bulkError: '', historyLoaded: new Set(), historyPending: new Set(), historyError: '', truncated: false, loading: false, selecting: false, renaming: false, pendingFiles: false, feedback: {}, modelsSignature: '', viewKey: null, sidebarSignature: '', selectedAgent: null, autoScroll: true,
     // Controls reflect the selected draft. Transport work keeps its original owner
     // when the user reads another conversation or opens the New chat draft.
     get sending() { return composerRequests.get(this.key)?.kind === 'send'; },
@@ -108,7 +110,25 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     <div class="conversation-shell">
       <button id="conversation-sidebar-scrim" class="conversation-sidebar-scrim" type="button" data-mission-action="close-sidebar" aria-label="Close conversation list" tabindex="-1" hidden></button>
       <aside id="conversation-sidebar" class="conversation-sidebar" aria-label="Conversations">
+        <div class="conversation-history-controls">
         <label class="conversation-history-filter"><span class="sr-only">Conversations</span><select id="conversation-history-state" aria-label="Conversation history"><option value="active">Chats</option><option value="unread">Unread</option><option value="working">Working</option><option value="archived">Archived</option><option value="deleted">Trash</option></select></label>
+          <button id="conversation-bulk-toggle" type="button" data-mission-action="bulk-start" aria-label="Select conversations for bulk actions">Select</button>
+        </div>
+        <div id="conversation-bulk-toolbar" class="conversation-bulk-toolbar" hidden>
+          <div class="conversation-bulk-heading"><span id="conversation-bulk-count" role="status" aria-live="polite">0 selected</span><button id="conversation-bulk-cancel" type="button" data-mission-action="bulk-cancel">Cancel</button></div>
+          <div class="conversation-bulk-actions">
+            <button id="conversation-bulk-all" type="button" data-mission-action="bulk-all">Select visible</button>
+            <button id="conversation-bulk-archive" type="button" data-mission-action="bulk-archive" disabled>Archive</button>
+            <button id="conversation-bulk-restore" type="button" data-mission-action="bulk-restore" disabled>Restore</button>
+            <button id="conversation-bulk-delete" type="button" data-mission-action="bulk-delete" disabled>Move to Trash</button>
+          </div>
+        </div>
+        <div id="conversation-bulk-confirm" class="conversation-bulk-confirm" role="group" aria-label="Confirm move to Trash" hidden>
+          <p id="conversation-bulk-confirm-text"></p>
+          <button id="conversation-bulk-confirm-no" type="button" data-mission-action="bulk-confirm-no">Cancel</button>
+          <button id="conversation-bulk-confirm-yes" type="button" data-mission-action="bulk-confirm-yes">Move to Trash</button>
+        </div>
+        <p id="conversation-bulk-error" class="conversation-bulk-error" role="alert" hidden></p>
         <button id="conversation-stop-all" class="conversation-stop-all" data-mission-action="stop-all" hidden>Stop all chats</button>
         <label class="conversation-search">${icon('search', 13)}<input id="conversation-search" type="search" placeholder="Search chats" aria-label="Search chat messages and file names" autocomplete="off" maxlength="200"></label>
         <p id="conversation-sidebar-error" class="conversation-sidebar-error" role="alert" hidden><span id="conversation-sidebar-error-text"></span> <button id="conversation-sidebar-retry" class="conversation-header-button" type="button" data-mission-action="retry-chats">Retry</button></p><div id="conversation-search-meta" class="conversation-search-meta" hidden><span id="conversation-search-status" role="status" aria-live="polite"></span><button id="conversation-search-retry" type="button" data-mission-action="retry-search" hidden>Retry search</button></div>
@@ -160,7 +180,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
   try { desktopPlanCollapsed = localStorage.getItem('relay.ui.plan.collapsed') !== 'false'; } catch {}
   let attachmentUI, conversationMenu, taskPlanUI, historyRefreshTimer = null, historyRefreshFlight = null, historyRefreshRequested = false, historyWaiters = [], destroyed = false, promptUndo = null, promptDraftVersion = 0, taskSelectionPending = false, planVisible = false, planEnlarged = false, planView = 'conversation', planKey = '', workbenchIntent = 0;
   const modelPicker = initModelPicker({ select: $('#mission-model'), onConnect: onConnections });
-  if (onPrompts) $('#mission-capture-button').insertAdjacentHTML('afterend', `<button type="button" id="mission-outline" class="conversation-attach-button" data-mission-action="prompts" title="Prompt templates">${icon('text', 13)}<span>Prompts</span></button><button type="button" id="mission-outline-undo" class="conversation-outline-undo" data-mission-action="undo-prompt" title="Restore the previous draft" hidden>Undo draft</button>`);
+  if (onPrompts) $('#mission-capture-button').insertAdjacentHTML('afterend', `<button type="button" id="mission-outline" class="conversation-attach-button" data-mission-action="prompts" aria-label="Prompt templates" title="Prompt templates">${icon('text', 13)}<span>Prompts</span></button><button type="button" id="mission-outline-undo" class="conversation-outline-undo" data-mission-action="undo-prompt" title="Restore the previous draft" hidden>Undo draft</button>`);
   $('.conversation-model-choice').insertAdjacentHTML('afterend', '<details id="mission-context" class="conversation-context-choice"><summary title="Reasoning settings"><span class="conversation-setting-label">Reasoning</span><span class="conversation-setting-value">Default</span></summary><div class="conversation-context-panel"><label class="field"><span class="field-label">Reasoning level</span><select id="mission-effort" aria-label="Reasoning for next response"></select><span id="mission-effort-note" class="field-help"></span></label><details class="conversation-context-advanced"><summary>Advanced context capacity</summary><div id="mission-context-fields"></div></details><p class="conversation-context-help">BLACKICE handles routine context compaction automatically.</p><button type="button" data-mission-action="reset-context">Use saved chat context</button><p id="mission-context-error" role="alert" hidden></p></div></details>');
   $('#mission-form').insertAdjacentHTML('afterend', '<p id="mission-reasoning-warning" class="conversation-error" role="status" hidden></p>');
   $('#mission-form').insertAdjacentHTML('beforebegin', '<div id="conversation-state-banner" class="conversation-state-banner" hidden></div><div id="conversation-queue-receipt" class="conversation-queue-receipt" role="status" hidden></div>');
@@ -366,8 +386,152 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     const working = isActiveRun(entry) || runs.some(run => conversationId(run, runs) === id && isActiveRun(run));
     return { ...entry, working };
   }
+
+  let bulkVisible = [];
+  function resetBulkSelection() {
+    state.bulkSelecting = false;
+    state.bulkSelected.clear();
+    state.bulkConfirm = false;
+    state.bulkError = '';
+    state.sidebarSignature = '';
+  }
+
+  function setBulkSelection(id, checked) {
+    if (!state.bulkSelecting || state.bulkBusy || state.managing) return;
+    const row = bulkVisible.find(item => item.id === id);
+    if (!row) return;
+    if (checked) state.bulkSelected.set(id, { runId: row.runId, state: row.state });
+    else state.bulkSelected.delete(id);
+    state.bulkConfirm = false;
+    state.bulkError = '';
+    state.sidebarSignature = '';
+    renderSidebar(getSnapshot());
+  }
+
+  function renderBulkControls() {
+    const start = $('#conversation-bulk-toggle');
+    const toolbar = $('#conversation-bulk-toolbar');
+    const confirmation = $('#conversation-bulk-confirm');
+    const error = $('#conversation-bulk-error');
+    if (!start || !toolbar || !confirmation || !error) return;
+    if (!state.bulkBusy) {
+      for (const [id, expected] of state.bulkSelected) {
+        if (!bulkVisible.some(item => item.id === id && item.runId === expected.runId && item.state === expected.state)) {
+          state.bulkSelected.delete(id);
+          state.bulkConfirm = false;
+        }
+      }
+    }
+    start.hidden = state.bulkSelecting;
+    start.disabled = state.managing || !bulkVisible.length;
+  $('#conversation-history-state').disabled = state.bulkBusy;
+  $('#conversation-search').disabled = state.bulkBusy;
+  toolbar.setAttribute('aria-busy', String(state.bulkBusy));
+    toolbar.hidden = !state.bulkSelecting;
+    confirmation.hidden = !state.bulkSelecting || !state.bulkConfirm;
+    error.hidden = !state.bulkError;
+    error.textContent = state.bulkError;
+    if (!state.bulkSelecting) return;
+    const selected = [...state.bulkSelected].map(([id, expected]) => ({ id, ...expected, current: conversationTarget(id, expected.runId) }));
+    const count = selected.length;
+    $('#conversation-bulk-count').textContent = state.bulkBusy ? `Working on ${count} selected chats…` : `${count} selected`;
+    const all = bulkVisible.length > 0 && bulkVisible.every(item => state.bulkSelected.has(item.id));
+    const allButton = $('#conversation-bulk-all');
+    allButton.textContent = all ? 'Clear visible' : 'Select visible';
+    allButton.disabled = state.bulkBusy || !bulkVisible.length;
+    $('#conversation-bulk-cancel').disabled = state.bulkBusy;
+    const allMatch = predicate => count > 0 && selected.every(entry => entry.current && entry.current.state === entry.state && predicate(entry.current));
+    const archive = $('#conversation-bulk-archive'), restore = $('#conversation-bulk-restore');
+    archive.hidden = !bulkVisible.some(item => item.state === 'active');
+    restore.hidden = !bulkVisible.some(item => item.state !== 'active');
+    archive.disabled = state.bulkBusy || !allMatch(entry => entry.state === 'active');
+    restore.disabled = state.bulkBusy || !allMatch(entry => entry.state !== 'active');
+    const trash = $('#conversation-bulk-delete');
+    trash.hidden = !bulkVisible.some(item => item.state !== 'deleted');
+    trash.disabled = state.bulkBusy || !allMatch(entry => entry.state !== 'deleted' && !entry.working);
+    trash.title = selected.some(entry => entry.current?.working) ? 'Stop working chats before moving them to Trash' : 'Move selected chats to Trash';
+    $('#conversation-bulk-confirm-text').textContent = `Move ${count} selected ${count === 1 ? 'conversation' : 'conversations'} to Trash? You can restore them from Trash.`;
+    $('#conversation-bulk-confirm-no').disabled = state.bulkBusy;
+    $('#conversation-bulk-confirm-yes').disabled = state.bulkBusy || trash.disabled;
+  }
+
+  function toggleBulkVisible() {
+    if (!state.bulkSelecting || state.bulkBusy || state.managing) return;
+    const all = bulkVisible.length > 0 && bulkVisible.every(item => state.bulkSelected.has(item.id));
+    for (const item of bulkVisible) {
+      if (all) state.bulkSelected.delete(item.id);
+      else state.bulkSelected.set(item.id, { runId: item.runId, state: item.state });
+    }
+    state.bulkConfirm = false;
+    state.bulkError = '';
+    state.sidebarSignature = '';
+    renderSidebar(getSnapshot());
+  }
+
+  async function performBulkAction(action, { confirmed = false } = {}) {
+    if (destroyed || !state.bulkSelecting || state.bulkBusy || state.managing) return;
+    let entries;
+    try {
+      entries = resolveBulkConversations(state.bulkSelected, id => conversationTarget(id), action);
+      if (action === 'delete' && !confirmed) {
+        state.bulkConfirm = true;
+        state.bulkError = '';
+        renderBulkControls();
+        $('#conversation-bulk-confirm-no').focus({ preventScroll: true });
+        return;
+      }
+      if (action === 'delete' && !state.bulkConfirm) throw new Error('Confirm the move to Trash before continuing.');
+    } catch (error) {
+      state.bulkConfirm = false;
+      state.bulkError = error.message;
+      renderBulkControls();
+      return;
+    }
+    state.bulkConfirm = false;
+    state.bulkBusy = true;
+    state.managing = true;
+    renderBulkControls();
+    renderComposer(getSnapshot());
+    let moved = 0;
+    const failures = [];
+    const bucket = action === 'archive' ? 'archived' : action === 'restore' ? 'active' : 'deleted';
+    try {
+      for (const original of entries) {
+        if (destroyed) break;
+        try {
+          const expected = new Map([[original.id, { runId: original.runId, state: original.state }]]);
+          const [current] = resolveBulkConversations(expected, id => conversationTarget(id), action);
+          await api(`/api/conversations/${encodeURIComponent(current.runId)}/${action}`, 'POST', {});
+          if (destroyed) break;
+          for (const key of ['active', 'archived', 'deleted']) {
+            state.summaries[key] = state.summaries[key].filter(item => (item.taskId || item.rootId || item.id) !== current.id);
+          }
+          state.summaries[bucket].push({ ...current, id: current.runId, rootId: current.id, taskId: current.id, state: bucket });
+          state.bulkSelected.delete(current.id);
+          moved++;
+        } catch (error) {
+          failures.push({ id: original.id, reason: String(error?.message || 'Request failed') });
+        }
+      }
+      if (destroyed) return;
+      state.bulkError = failures.length ? `${failures.length} ${failures.length === 1 ? 'conversation' : 'conversations'} could not be changed. ${failures[0].reason}` : '';
+      if (!state.bulkSelected.size) resetBulkSelection();
+      if (moved) toast(`${moved} ${moved === 1 ? 'conversation' : 'conversations'} ${action === 'archive' ? 'archived' : action === 'restore' ? 'restored' : 'moved to Trash'}.`);
+      state.sidebarSignature = '';
+      update();
+      if (moved) await loadSummaries();
+    } finally {
+      state.bulkBusy = false;
+      state.managing = false;
+      if (!destroyed) {
+        state.sidebarSignature = '';
+        update();
+      }
+    }
+  }
+
   async function manageConversation(action, requestedTarget, { fromPlan = false } = {}) {
-    if (destroyed || state.managing) return false;
+    if (destroyed || state.managing || state.bulkBusy) return false;
     const snapshot = getSnapshot(), run = latest(snapshot), target = requestedTarget || (run && conversationTarget(conversationId(run, allRuns(snapshot))));
     if (!target) return false;
     const entry = conversationTarget(target.id, target.runId), allowed = entry && (action === 'archive' ? entry.state === 'active' : action === 'restore' ? entry.state !== 'active' : action === 'delete' && entry.state !== 'deleted');
@@ -448,16 +612,19 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     const result = chatSearch.get(), hasResults = phrase && result.query === phrase && result.scope === scope && (result.status === 'ready' || result.conversations.length > 0);
     const fallback = sidebarConversations({ summaries: state.summaries, runs: allRuns(snapshot), historyState: state.historyState, query: state.search, isUnread: id => attention.unread(id) }).filter(item => scope !== 'archived' || item.state === 'archived');
     const list = hasResults ? searchedSidebarConversations(result.conversations, catalog, { historyState: state.historyState, isUnread: id => attention.unread(id) }) : fallback;
+    bulkVisible = list;
     renderSearchStatus(result, list.length);
+    renderBulkControls();
     const groups = phrase ? [{ label: 'Search results', items: list }] : sidebarGroups(list);
-    const signature = JSON.stringify([state.forceNew, state.key, state.historyState, state.search, result.status, groups.map(group => [group.label, group.items.map(item => [item.id, item.runId, item.title, item.status, item.settled, item.state, item.unread, item.match])])]);
+    const signature = JSON.stringify([state.forceNew, state.key, state.historyState, state.search, state.bulkSelecting, [...state.bulkSelected.keys()], result.status, groups.map(group => [group.label, group.items.map(item => [item.id, item.runId, item.title, item.status, item.settled, item.state, item.unread, item.match])])]);
     if (signature === state.sidebarSignature) return; state.sidebarSignature = signature;
     conversationMenu?.close();
-    const container = $('#conversation-list'), scrollTop = container.scrollTop, focused = container.contains(document.activeElement) ? document.activeElement : null, focusId = focused?.dataset?.conversationId, focusMore = Boolean(focused?.dataset?.chatMore);
+    const container = $('#conversation-list'), scrollTop = container.scrollTop, focused = container.contains(document.activeElement) ? document.activeElement : null, focusId = focused?.dataset?.conversationId, focusMore = Boolean(focused?.dataset?.chatMore), focusBulk = focused?.dataset?.bulkId;
     const empty = phrase ? ['waiting', 'loading'].includes(result.status) ? 'Looking through saved chats…' : result.status === 'error' ? 'Matching chat titles will still appear here.' : 'No matching chats. Try another word or a file name.' : state.historyState === 'deleted' ? 'Trash is empty.' : state.historyState === 'archived' ? 'No archived conversations.' : state.historyState === 'working' ? 'No chats are working.' : state.historyState === 'unread' ? 'You’re caught up.' : 'Your conversations appear here.';
-    container.innerHTML = list.length ? renderSidebarGroups(groups, { selectedId: state.forceNew ? null : state.key, escape }) : `<p class="conversation-sidebar-empty">${empty}</p>`;
+    container.innerHTML = list.length ? renderSidebarGroups(groups, { selectedId: state.forceNew ? null : state.key, escape, bulkSelecting: state.bulkSelecting, bulkSelected: new Set(state.bulkSelected.keys()) }) : `<p class="conversation-sidebar-empty">${empty}</p>`;
     container.scrollTop = scrollTop;
     if (focusId) { const controls = [...container.querySelectorAll('[data-conversation-id]')], next = controls.find(item => item.dataset.conversationId === focusId && Boolean(item.dataset.chatMore) === focusMore) || controls.find(item => item.dataset.missionAction === 'open-run'); (next || field).focus({ preventScroll: true }); }
+    if (focusBulk) [...container.querySelectorAll('[data-bulk-id]')].find(item => item.dataset.bulkId === focusBulk)?.focus({ preventScroll: true });
   }
   function messageHTML(message, run) { const node = run.workflow?.nodes?.find(node => node.id === message.nodeId), team = run.workflow?.nodes?.filter(node => node.type === 'agent').length > 1; return `<div class="conversation-message-author">${message.role === 'user' ? 'You' : team && node?.name ? escape(node.name) : 'BLACKICE'}${message.direction ? `<span>${message.delivery === 'queued' ? 'Queued direction' : 'Direction'}</span>` : ''}</div><div class="${message.role === 'user' ? 'conversation-user-text' : 'output-document conversation-message-text'}">${message.role === 'user' ? escape(message.text) : renderMarkdown(message.text, {resolveArtifact:createRegisteredArtifactResolver(run)})}</div>`; }
   function renderTurn(section, turn) {
@@ -800,7 +967,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
   mount.addEventListener('input', readComposerContext);
   mount.addEventListener('change', event => { if (readComposerContext(event)) return; if (event.target.id === 'mission-effort') setReasoning(event.target.value); if (event.target.id === 'mission-planning-mode') setPlanningMode(event.target.value); });
   mount.addEventListener('input', event => {
-    if (event.target.id === 'conversation-search') { state.search = event.target.value; if (!state.search.trim()) clearSearchMatch(); void chatSearch.search(state.search, { scope: searchScope() }); renderSidebar(getSnapshot()); return; }
+    if (event.target.id === 'conversation-search') { if (state.bulkBusy) return; resetBulkSelection(); state.search = event.target.value; if (!state.search.trim()) clearSearchMatch(); void chatSearch.search(state.search, { scope: searchScope() }); renderSidebar(getSnapshot()); return; }
     if (event.target.id === 'mission-task') {
       const refreshReceipt = Boolean(draft().pendingSend || state.lastQueued);
       promptDraftVersion++; promptUndo = null; if (onPrompts) $('#mission-outline-undo').hidden = true;
@@ -810,7 +977,8 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
       if (refreshReceipt) renderComposer(getSnapshot());
     }
   });
-  mount.addEventListener('change', event => { if (event.target.id === 'mission-model') { if (event.target.value === '__connections__') { state.modelsSignature = ''; renderComposer(getSnapshot()); onConnections(); return; } draft().model = event.target.value; delete draft().pendingSend; state.error = ''; persist(); update(); } if (event.target.id === 'conversation-history-state') { state.historyState = event.target.value; void chatSearch.search(state.search, { scope: searchScope(), immediate: true }); renderSidebar(getSnapshot()); renderComposer(getSnapshot()); loadSummaries(); } if (event.target.id === 'conversation-agent') { delete draft().pendingSend; state.selectedAgent = event.target.value; draft().agentId = event.target.value; persist(); update(); } });
+  mount.addEventListener('change', event => { if (event.target.dataset?.bulkId) setBulkSelection(event.target.dataset.bulkId, Boolean(event.target.checked)); });
+  mount.addEventListener('change', event => { if (event.target.id === 'mission-model') { if (event.target.value === '__connections__') { state.modelsSignature = ''; renderComposer(getSnapshot()); onConnections(); return; } draft().model = event.target.value; delete draft().pendingSend; state.error = ''; persist(); update(); } if (event.target.id === 'conversation-history-state') { if (state.bulkBusy) return; resetBulkSelection(); state.historyState = event.target.value; void chatSearch.search(state.search, { scope: searchScope(), immediate: true }); renderSidebar(getSnapshot()); renderComposer(getSnapshot()); loadSummaries(); } if (event.target.id === 'conversation-agent') { delete draft().pendingSend; state.selectedAgent = event.target.value; draft().agentId = event.target.value; persist(); update(); } });
   mount.addEventListener('submit', async event => {
     if (event.target.id === 'conversation-rename') { event.preventDefault(); await saveRename(); return; }
     if (event.target.id !== 'mission-form') return; event.preventDefault(); const snapshot = getSnapshot(), mode = composerMode(snapshot), queueing = shouldQueue(mode), recovering = hasPendingReceipt(), config = configForMessage(), draftKey = state.key;
@@ -844,6 +1012,15 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     const compact = event.target.closest('[data-action="compact-context"]'); if (compact) { event.stopPropagation(); const run = allRuns(getSnapshot()).find(run => Object.values(run.nodes || {}).some(node => node.threadId === compact.dataset.threadId)), node = Object.entries(run?.nodes || {}).find(([, node]) => node.threadId === compact.dataset.threadId); if (run && node) { compact.disabled = true; try { await onCompact(run.id, node[0]); } finally { if (compact.isConnected) compact.disabled = false; } } return; }
     const button = event.target.closest('[data-mission-action]'); if (!button || button.disabled) return; const action = button.dataset.missionAction, snapshot = getSnapshot(), run = button.dataset.id ? allRuns(snapshot).find(run => run.id === button.dataset.id) : latest(snapshot);
     try {
+      if (action === 'bulk-start') { if (state.managing || !bulkVisible.length) return; state.bulkSelecting = true; state.bulkSelected.clear(); state.bulkError = ''; state.bulkConfirm = false; state.sidebarSignature = ''; renderSidebar(snapshot); $('#conversation-bulk-cancel').focus({ preventScroll: true }); return; }
+      if (action === 'bulk-cancel') { if (state.bulkBusy) return; resetBulkSelection(); renderSidebar(snapshot); $('#conversation-bulk-toggle').focus({ preventScroll: true }); return; }
+      if (action === 'bulk-toggle') { setBulkSelection(button.dataset.conversationId, !state.bulkSelected.has(button.dataset.conversationId)); return; }
+      if (action === 'bulk-all') { toggleBulkVisible(); return; }
+      if (action === 'bulk-archive') { await performBulkAction('archive'); return; }
+      if (action === 'bulk-restore') { await performBulkAction('restore'); return; }
+      if (action === 'bulk-delete') { await performBulkAction('delete'); return; }
+      if (action === 'bulk-confirm-no') { if (state.bulkBusy) return; state.bulkConfirm = false; renderBulkControls(); $('#conversation-bulk-delete').focus({ preventScroll: true }); return; }
+      if (action === 'bulk-confirm-yes') { await performBulkAction('delete', { confirmed: true }); return; }
       if (action === 'rename-conversation') beginRename(null, button);
       if (action === 'cancel-rename') closeRename();
       if (action === 'chat-context') { setWorkbenchView('conversation'); $('#conversation-actions').open = false; $('#mission-context').open = true; $('#mission-effort').focus({ preventScroll: true }); }
@@ -939,6 +1116,8 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
       event.preventDefault(); event.stopPropagation(); const value = event.key === 'Home' ? 'plan' : event.key === 'End' ? 'conversation' : event.target.id === 'conversation-plan-tab' ? 'conversation' : 'plan'; setWorkbenchView(value, { focusTab: true }); return;
     }
     if (event.key === 'Escape' && !$('#conversation-rename').hidden) { event.preventDefault(); event.stopPropagation(); closeRename(); return; }
+    if (event.key === 'Escape' && state.bulkConfirm && !state.bulkBusy) { event.preventDefault(); event.stopPropagation(); state.bulkConfirm = false; renderBulkControls(); $('#conversation-bulk-delete').focus({ preventScroll: true }); return; }
+    if (event.key === 'Escape' && state.bulkSelecting && !state.bulkBusy) { event.preventDefault(); event.stopPropagation(); resetBulkSelection(); renderSidebar(getSnapshot()); $('#conversation-bulk-toggle').focus({ preventScroll: true }); return; }
     if (event.target.id === 'mission-task' && shouldSendConversationKey(event)) { event.preventDefault(); event.stopPropagation(); if (!event.target.readOnly) $('#mission-form').requestSubmit(); return; }
     if (event.key === 'Escape' && ($('#conversation-actions').open || $('#mission-context').open)) { event.preventDefault(); event.stopPropagation(); const opened = ['conversation-actions', 'mission-context'].map(id => $(`#${id}`)).find(panel => panel.open); $('#conversation-actions').open = false; $('#mission-context').open = false; opened.querySelector('summary').focus({ preventScroll: true }); return; }
     if (event.key === 'Escape' && narrowSidebar() && mount.classList.contains('sidebar-open')) { event.preventDefault(); event.stopPropagation(); closeMobileSidebar({ restoreFocus: true }); }

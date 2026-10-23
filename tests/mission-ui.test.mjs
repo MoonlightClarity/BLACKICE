@@ -566,6 +566,112 @@ test('archiving and restoring the selected chat preserves its unsent reply and r
   assert.equal(f.element('#conversation-history-state').value, 'active'); assert.equal(f.element('#mission-start-button').disabled, false); assert.deepEqual(h.ui.getSelection(), selected); assert.deepEqual(h.ui.getDraft(), draft);
 });
 
+
+test('bulk archive changes only selected visible chats without consuming an unsent reply', async t => {
+  const a=fixtureRun('bulk-selected','completed'),b=fixtureRun('bulk-target','completed'),c=fixtureRun('bulk-not-selected','completed');
+  const f=missionFixture(t,savedDrafts('')),snapshot=statusSnapshot([a,b,c]),states=new Map([[a.id,'active'],[b.id,'active'],[c.id,'active']]);
+  const h=mountMission(f,snapshot,{api:async(url,method)=>{
+    const match=/^\/api\/conversations\/([^/]+)\/(archive|restore|delete)$/.exec(url);
+    if(method==='POST'&&match){states.set(match[1],match[2]==='archive'?'archived':match[2]==='restore'?'active':'deleted');return{};}
+    if(url.includes('?state=')){const state=url.split('state=').at(-1);return{conversations:[...states].filter(([,bucket])=>bucket===state).map(([id,bucket])=>({taskId:id,runId:id,title:id,state:bucket}))};}
+  }});await turn();await h.ui.openConversation(a.id);await h.text('Do not lose this reply');const before=h.ui.getDraft();
+  await h.action('bulk-start');
+  assert.match(f.element('#conversation-list').innerHTML,/data-mission-action="bulk-toggle"/);
+  assert.doesNotMatch(f.element('#conversation-list').innerHTML,/data-chat-more="true"/);
+  await h.action('bulk-toggle',{conversationId:b.id});
+  assert.equal(f.element('#conversation-bulk-count').textContent,'1 selected');
+  await h.action('bulk-archive');
+  assert.deepEqual(h.mutations.filter(item=>item.url?.endsWith('/archive')).map(item=>item.url),['/api/conversations/bulk-target/archive']);
+  assert.equal(states.get(b.id),'archived');assert.equal(states.get(c.id),'active');
+  assert.equal(f.element('#conversation-bulk-toolbar').hidden,true);
+  assert.deepEqual(h.ui.getDraft(),before);
+  assert.equal(h.starts.length,0);
+});
+
+test('bulk Trash requires confirmation and rejects a live selected conversation',async t=>{
+  const a=fixtureRun('bulk-trash-ready','completed'),b=fixtureRun('bulk-trash-busy','running');
+  const f=missionFixture(t,savedDrafts('')),snapshot=statusSnapshot([a,b]),states=new Map([[a.id,'active'],[b.id,'active']]);
+  const h=mountMission(f,snapshot,{api:async(url,method)=>{
+    const match=/^\/api\/conversations\/([^/]+)\/(archive|restore|delete)$/.exec(url);
+    if(method==='POST'&&match){states.set(match[1],match[2]==='delete'?'deleted':match[2]==='archive'?'archived':'active');return{};}
+    if(url.includes('?state=')){const state=url.split('state=').at(-1);return{conversations:[...states].filter(([,bucket])=>bucket===state).map(([id,bucket])=>({taskId:id,runId:id,title:id,state:bucket}))};}
+  }});await turn();await h.action('bulk-start');await h.action('bulk-all');
+  assert.equal(f.element('#conversation-bulk-count').textContent,'2 selected');
+  assert.equal(f.element('#conversation-bulk-delete').disabled,true);
+  await h.action('bulk-delete');
+  assert.match(f.element('#conversation-bulk-error').textContent,/Stop working conversations/);
+  assert.equal(h.mutations.filter(item=>item.url?.endsWith('/delete')).length,0);
+  b.status='completed';b.settled=true;b.nodes.agent.status='completed';h.ui.update();
+  assert.equal(f.element('#conversation-bulk-delete').disabled,false);
+  await h.action('bulk-delete');
+  assert.equal(f.element('#conversation-bulk-confirm').hidden,false);
+  assert.equal(h.mutations.filter(item=>item.url?.endsWith('/delete')).length,0);
+  await h.action('bulk-confirm-no');
+  assert.equal(f.element('#conversation-bulk-confirm').hidden,true);
+  await h.action('bulk-delete');await h.action('bulk-confirm-yes');
+  assert.deepEqual(h.mutations.filter(item=>item.url?.endsWith('/delete')).map(item=>item.url).sort(),['/api/conversations/bulk-trash-busy/delete','/api/conversations/bulk-trash-ready/delete']);
+  assert.equal(states.get(a.id),'deleted');assert.equal(states.get(b.id),'deleted');assert.equal(f.element('#conversation-bulk-toolbar').hidden,true);
+});
+
+test('bulk partial failure keeps only the failed chat selected for explicit retry',async t=>{
+  const a=fixtureRun('bulk-good','completed'),b=fixtureRun('bulk-failed','completed');
+  const f=missionFixture(t,savedDrafts('')),snapshot=statusSnapshot([a,b]),states=new Map([[a.id,'active'],[b.id,'active']]);
+  let failedOnce=false;
+  const h=mountMission(f,snapshot,{api:async(url,method)=>{
+    const match=/^\/api\/conversations\/([^/]+)\/(archive|restore|delete)$/.exec(url);
+    if(method==='POST'&&match){if(match[1]===b.id&&!failedOnce){failedOnce=true;throw Error('Storage temporarily unavailable.');}states.set(match[1],match[2]==='archive'?'archived':match[2]==='restore'?'active':'deleted');return{};}
+    if(url.includes('?state=')){const state=url.split('state=').at(-1);return{conversations:[...states].filter(([,bucket])=>bucket===state).map(([id,bucket])=>({taskId:id,runId:id,title:id,state:bucket}))};}
+  }});await turn();await h.action('bulk-start');await h.action('bulk-all');await h.action('bulk-archive');
+  assert.equal(states.get(a.id),'archived');assert.equal(states.get(b.id),'active');
+  assert.equal(f.element('#conversation-bulk-count').textContent,'1 selected');
+  assert.match(f.element('#conversation-bulk-error').textContent,/Storage temporarily unavailable/);
+  await h.action('bulk-archive');
+  assert.equal(states.get(b.id),'archived');
+  assert.equal(h.mutations.filter(item=>item.url==='/api/conversations/bulk-good/archive').length,1);
+  await h.action('bulk-start');await h.action('bulk-all');
+  f.element('#conversation-history-state').value='archived';
+  await f.mount.dispatch('change',menuEvent(f.element('#conversation-history-state')));
+  assert.equal(f.element('#conversation-bulk-toolbar').hidden,true,'changing the filter discards hidden bulk selections');
+});
+
+
+test('bulk actions admit only one network mutation while the selection is busy',async t=>{
+  const a=fixtureRun('bulk-single-flight','completed'),f=missionFixture(t,savedDrafts('')),snapshot=statusSnapshot([a]);
+  let release,posts=0,bucket='active';
+  const h=mountMission(f,snapshot,{api:async(url,method)=>{
+    if(method==='POST'&&url.endsWith('/archive')){posts++;return new Promise(resolve=>{release=()=>{bucket='archived';resolve({});};});}
+    if(url.includes('?state='))return{conversations:url.endsWith(bucket)?[{taskId:a.id,runId:a.id,title:a.id,state:bucket}]:[]};
+  }});await turn();await h.action('bulk-start');await h.action('bulk-toggle',{conversationId:a.id});
+  const pending=h.action('bulk-archive');await turn();
+  assert.equal(posts,1);assert.equal(f.element('#conversation-bulk-archive').disabled,true);
+  assert.equal(f.element('#conversation-history-state').disabled,true);
+  await h.action('bulk-archive');await h.action('bulk-cancel');
+  assert.equal(posts,1,'duplicate clicks cannot admit another change');
+  assert.equal(f.element('#conversation-bulk-toolbar').hidden,false);
+  release();await pending;
+  assert.equal(posts,1);assert.equal(bucket,'archived');
+  assert.equal(f.element('#conversation-bulk-toolbar').hidden,true);
+  assert.equal(f.element('#conversation-history-state').disabled,false);
+});
+
+test('Trash multi-select offers Restore without exposing meaningless Archive or Trash actions',async t=>{
+  const a=fixtureRun('bulk-in-trash','completed'),f=missionFixture(t,savedDrafts('')),snapshot=statusSnapshot([a]);
+  let bucket='deleted';
+  const h=mountMission(f,snapshot,{api:async(url,method)=>{
+    if(method==='POST'&&url.endsWith('/restore')){bucket='active';return{};}
+    if(url.includes('?state='))return{conversations:url.endsWith(bucket)?[{taskId:a.id,runId:a.id,title:'Recoverable chat',state:bucket}]:[]};
+  }});await turn();
+  f.element('#conversation-history-state').value='deleted';
+  await f.mount.dispatch('change',menuEvent(f.element('#conversation-history-state')));await turn();
+  await h.action('bulk-start');await h.action('bulk-toggle',{conversationId:a.id});
+  assert.equal(f.element('#conversation-bulk-restore').hidden,false);
+  assert.equal(f.element('#conversation-bulk-archive').hidden,true);
+  assert.equal(f.element('#conversation-bulk-delete').hidden,true);
+  await h.action('bulk-restore');
+  assert.deepEqual(h.mutations.filter(v=>v.url?.endsWith('/restore')).map(v=>v.url),['/api/conversations/bulk-in-trash/restore']);
+  assert.equal(bucket,'active');
+});
+
 test('changing the sidebar search dismisses the menu, and destroying a pending action prevents late UI updates', async t => {
   const a = fixtureRun('dispose-target', 'completed'), f = missionFixture(t), snapshot = statusSnapshot([a]); let release;
   const h = mountMission(f, snapshot, { api: async (_url, method) => method ? new Promise(resolve => { release = resolve; }) : undefined }); await turn();

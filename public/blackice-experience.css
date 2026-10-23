@@ -662,3 +662,87 @@ html[data-blackice-ui] body #modal-root .connection-codex-capabilities dt { colo
 html[data-blackice-ui] body .model-picker-access { display:block; font-size:11px; line-height:1.5; color:#9fb9be; }
 
 html[data-blackice-ui] body #workspace-modes>nav[role="tablist"] { grid-template-columns:repeat(4,minmax(0,1fr)) !important; }
+
+/* Keep actual composer actions in one row. The old 36px button width could
+   wrap visible multi-word labels below the toolbar at ordinary desktop sizes. */
+html[data-blackice-ui] body #app .conversation-compose-bar {
+  display:flex !important;
+  flex-wrap:nowrap !important;
+  align-items:center;
+  gap:7px;
+  min-width:0;
+}
+html[data-blackice-ui] body #app .conversation-compose-bar > :is(#mission-capture-button,#mission-outline,#conversation-attach) {
+  display:inline-flex !important;
+  flex:0 0 38px !important;
+  width:38px !important;
+  min-width:38px !important;
+  max-width:38px !important;
+  height:38px !important;
+  min-height:38px !important;
+  padding:0 !important;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+  white-space:nowrap;
+  grid-column:auto !important;
+  grid-row:auto !important;
+}
+html[data-blackice-ui] body #app .conversation-compose-bar > :is(#mission-capture-button,#mission-outline,#conversation-attach) > span {
+  display:none !important;
+}
+html[data-blackice-ui] body #app .conversation-compose-bar .conversation-send-actions {
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:6px;
+  margin-left:auto;
+  flex:0 0 auto;
+  min-width:0;
+}
+html[data-blackice-ui] body #app .conversation-compose-bar :is(#mission-start-button,#conversation-stop) {
+  grid-column:auto !important;
+  grid-row:auto !important;
+  margin:0 !important;
+}
+html[data-blackice-ui] body #app .conversation-compose-bar #mission-outline-undo:not([hidden]) {
+  flex:0 1 auto;
+  min-width:0;
+  max-width:115px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+/* Keep Stop plus Send on-screen while a reply is running in a narrow window.
+   These controls never rely on the visible text for their accessible names. */
+@media (max-width:480px) {
+  html[data-blackice-ui] body #app .conversation-compose-bar {
+    gap:5px !important;
+  }
+  html[data-blackice-ui] body #app .conversation-compose-bar > :is(#mission-capture-button,#mission-outline,#conversation-attach) {
+    flex-basis:34px !important;
+    min-width:34px !important;
+    max-width:34px !important;
+    width:34px !important;
+    height:34px !important;
+    min-height:34px !important;
+  }
+  html[data-blackice-ui] body #app .conversation-compose-bar .conversation-send-actions {
+    gap:5px;
+  }
+  html[data-blackice-ui] body #app .conversation-compose-bar .conversation-send-actions #conversation-stop {
+    min-width:34px !important;
+    width:34px !important;
+    height:34px !important;
+    min-height:34px !important;
+    padding:0 !important;
+  }
+  html[data-blackice-ui] body #app .conversation-compose-bar .conversation-send-actions #conversation-stop > span {
+    display:none !important;
+  }
+  html[data-blackice-ui] body #app .conversation-compose-bar .conversation-send-actions #mission-start-button {
+    min-width:64px !important;
+    padding-inline:8px !important;
+  }
+}

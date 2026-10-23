@@ -94,7 +94,7 @@ test('restart browser final native callback refuses a download that starts after
 
 test('browser tree HTTP assets and the full app module import graph resolve through the served allowlist', async t => {
   const { app } = await fixture(t), origin = await app.listen();
-  for (const pathname of ['/browser-tree-model.mjs', '/browser-tree.css']) {
+  for (const pathname of ['/browser-tree-model.mjs', '/browser-tree.css', '/conversation-bulk-model.mjs', '/conversation-bulk.css']) {
     const response = await fetch(origin + pathname);
     assert.equal(response.status, 200, `${pathname} must be served`);
     assert.match(response.headers.get('content-type'), pathname.endsWith('.css') ? /^text\/css\b/ : /^text\/javascript\b/);
