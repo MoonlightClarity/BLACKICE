@@ -183,21 +183,22 @@ function elementAction(key, ref, action, args, scrollPage) {
   }
   if (action === 'click') { el.click(); return { clicked: true }; }
   if (action === 'focus') { el.focus({ preventScroll: true }); return { focused: document.activeElement === el || el.getRootNode()?.activeElement === el }; }
+  if (action === 'fill-ready') {
+    if (el.readOnly) throw new Error('This field is read only.');
+    if (document.activeElement !== el && el.getRootNode()?.activeElement !== el) throw new Error('The fill target lost focus before text input. Take a fresh snapshot before trying again.');
+    return { focused: true };
+  }
   if (action === 'fill') {
     if (el.readOnly) throw new Error('This field is read only.');
+    if (!el.isContentEditable && (!['INPUT', 'TEXTAREA'].includes(el.tagName) || el.tagName === 'INPUT' && !['text','search','tel','url','email','password','number'].includes(el.type))) throw new Error('Choose an editable text field to fill. Use the page controls for dates, colors, files or other non-text inputs.');
+    el.focus({ preventScroll: true });
+    if (!el.isConnected || document.activeElement !== el && el.getRootNode()?.activeElement !== el) throw new Error('This field could not be focused for text input. Take a fresh snapshot before trying again.');
     if (el.isContentEditable) {
-      el.focus({ preventScroll: true });
       const selection = el.ownerDocument.getSelection(), range = el.ownerDocument.createRange();
       range.selectNodeContents(el); selection.removeAllRanges(); selection.addRange(range);
       return { needsTrustedTextInput: true };
     }
-    else {
-      if (!['INPUT', 'TEXTAREA'].includes(el.tagName) || ['file','checkbox','radio','button','submit'].includes(el.type)) throw new Error('Choose a text field to fill.');
-      const setter = Object.getOwnPropertyDescriptor(el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, 'value')?.set;
-      setter.call(el, args.text);
-    }
-    el.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: args.text }));
-    el.dispatchEvent(new Event('change', { bubbles: true, composed: true })); return { filled: true, characters: args.text.length };
+    return { needsTrustedTextInput: true, needsSelectAll: true };
   }
   if (action === 'select') {
     if (el.tagName !== 'SELECT') throw new Error('This is not a native select. Click it and inspect the available options.');
@@ -1122,9 +1123,28 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
     if (args.action === 'fill') {
       const text = String(args.text ?? '');
+      const guard = args.expectedDocumentId === undefined && args.expectedUrl === undefined ? { expectedDocumentId: inputDocumentId(tab), expectedUrl: tab.window.webContents.getURL() } : args;
       receipt = (await this.element(tab, { ...args, text }, 'fill', signal)).result;
       if (receipt.needsTrustedTextInput) {
-        await this.cdp(tab, 'Input.insertText', { text }, signal, args);
+        // The DOM setter bypasses trusted input and dirty-value/blur state in
+        // controlled forms. Only focus/selection preparation runs in the page;
+        // Chromium performs the replacement, including a trusted empty clear.
+        if (receipt.needsSelectAll) {
+          try { await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 2, commands: ['selectAll'] }, signal, guard); }
+          finally {
+            try { await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 2 }, AbortSignal.timeout(1500)); }
+            catch { tab.inputWarning = 'Browser key release could not be confirmed. Inspect or reload before continuing.'; }
+          }
+        }
+        await this.element(tab, args, 'fill-ready', signal);
+        if (text) await this.cdp(tab, 'Input.insertText', { text }, signal, guard);
+        else {
+          try { await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 }, signal, guard); }
+          finally {
+            try { await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 }, AbortSignal.timeout(1500)); }
+            catch { tab.inputWarning = 'Browser key release could not be confirmed. Inspect or reload before continuing.'; }
+          }
+        }
         receipt = { filled: true, characters: text.length, input: 'browser' };
       }
     }
