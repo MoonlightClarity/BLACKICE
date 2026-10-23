@@ -94,3 +94,26 @@ The crash harness prints its result and temporary profile location. Inspect or c
 After adding the Apache license, repository metadata, preserved notice index, packaging notice entries, and publication documentation, the complete Windows suite ran again on 21 October 2026: **3,979 tests, 3,975 passed, zero failures or cancellations, and four optional integration skips**, across 296 test files. The process exited successfully, and the application fingerprint was unchanged before and after that run. The machine-readable [source verification summary](verification/windows-2026-10-21.json) identifies this publication build and the retained test-log digest. The optional Electron integrations described above were exercised during the preceding performance validation; they were not enabled in this publication-suite rerun.
 
 The connector command that launched this run exceeded its response time budget; the owned test process continued to completion. Its final process result, complete TAP totals, and test-log hash were read back and verified before publication. No result is inferred from the launcher status. This source check does not validate a new binary installer or a prolonged production soak.
+
+## Browser preview latency in 2.33.10
+
+This separate scenario compares 2.33.9 with the exact 2.33.10 runtime identified in [the paired native scroll evidence](verification/browser-scroll-latency-2.33.10.json). Wheel feedback now requests a lightweight, guarded JPEG preview independently of ordered input. It keeps one capture/decode outstanding and updates the existing page image; ordinary tool screenshots retain lossless PNG. Page identity, containment, credential restrictions and stale-input checks remain in force.
+
+Both sequential quiet runs used the same fixture and runner bytes, Electron 44.7.2, a textured local page with text/cards/gradients, and sixty scheduled wheel inputs at 16 ms intervals at each width. Each trial first warmed three ordinary PNG captures. All 720 vertical and 180 horizontal pixels reached the native nested pane, with trusted page events, no outer-page movement, no model calls or external requests, and complete temporary-profile/window/socket cleanup. Each run passed sixteen native acceptance checks.
+
+Each cell reports **2.33.9 / 2.33.10**. Display-ready means the actual image loaded and decoded a changed scroll marker; offscreen paint means that marker appeared in the frontend compositor output.
+
+| Viewport | First display-ready image | First actual offscreen paint | P95 changed-paint gap | Final catch-up after last input |
+| --- | ---: | ---: | ---: | ---: |
+| 1440 px | 775 / 108 ms | 840 / 167 ms | 667 / 209 ms | 561 / 326 ms |
+| 390 px | 700 / 137 ms | 748 / 178 ms | 763 / 109 ms | 1198 / 298 ms |
+
+These are scenario measurements on one Windows host, not a physical display latency measurement, a global FPS promise, or an extension of the older 2.33.5 soak results above. The paired evidence retains the application fingerprints, 149 resolved source-file hashes per run, raw-receipt digests, exact fixture/runner digests, viewport/DPR/frame-rate/display details and acceptance limits. Machine-specific paths and private content are excluded.
+
+Reproduce from a complete checkout with a raw Electron executable, keeping evidence outside the checkout:
+
+```powershell
+node scripts/verify-browser-scroll-latency.mjs --electron="<absolute raw electron.exe>" --source="<absolute checkout>" --out="<absolute evidence directory outside checkout>"
+```
+
+Use the same runner/fixture bytes and Electron binary for the baseline checkout and candidate, sequentially under comparable conditions. The runner creates only owned disposable local pages and a fresh temporary profile; it clears inherited Node/Electron injection options and verifies source, harness and application fingerprints before and after.

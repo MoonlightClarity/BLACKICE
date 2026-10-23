@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll } from '../lib/browser.mjs';
+import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview } from '../lib/browser.mjs';
 import { captureHiddenPage } from './browser-capture.mjs';
 import { loadBrowserCompatibility } from './browser-compatibility.mjs';
 import { BrowserDiagnostics } from '../lib/browser-diagnostics.mjs';
@@ -993,6 +993,7 @@ export class ElectronBrowserDriver extends EventEmitter {
   }
   async perform(args, { signal, source = 'agent', owner: context, validateUploadPath } = {}) {
     cancel(signal);
+    const preview = validateBrowserPreview({ ...args, browser: args.browser ?? 'relay' }, source);
     const wheel = browserWheelScroll(args);
     // The router removes its transport selector before entering this adapter.
     if (wheel) validateBrowserWheelScroll({ ...args, browser: args.browser ?? 'relay' });
@@ -1004,7 +1005,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     const selected = args.tabId || (owner ? this.ownerActiveTabs.get(browserOwnerKey(owner)) : this.activeTab);
     let tab = args.action === 'open' ? this.newTab(browserURL(args.url), { owner, folderId: args.folderId, parentTabId: args.parentTabId }) : this.tab(selected);
     if (owner && !sameOwner(tab.owner, owner) && !(owner.allowUserTabs && !tab.owner)) throw capacityError('This browser tab belongs to another task.', 'BROWSER_TAB_OWNERSHIP');
-    if (wheel) {
+    if (wheel || preview) {
       if (tab.rendererFailure) throw rendererFailure(tab);
       if (!tab.window || tab.window.isDestroyed()) throw Object.assign(error('The observed browser page is no longer active. Refresh its preview before scrolling.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', actionDispatched: false });
       try { this.assertInputDocument(tab, args); }
@@ -1184,11 +1185,16 @@ export class ElectronBrowserDriver extends EventEmitter {
         if (source !== 'user' && tab.credentialCaptureBlocked) throw Object.assign(error('This page received a protected credential. Continue with its masked snapshot; only the local human preview is available until the main page is replaced.'), { code: 'BROWSER_CREDENTIAL_CAPTURE_BLOCKED' });
       };
       assertCredentialCapture();
+      if (preview) this.assertInputDocument(tab, args);
       const revision = tab.revision, { image } = await this.capture(tab, signal, revision);
       cancel(signal);
       assertCredentialCapture();
       if (tab.revision !== revision) throw Object.assign(error('The page changed while the preview was being captured. Refresh the preview before typing.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
-      return { tabId: tab.id, url: tab.window.webContents.getURL(), documentId: inputDocumentId(tab), width: image.getSize().width, height: image.getSize().height, imageUrl: image.toDataURL(), ...(tab.pendingInteraction ? { pendingInteraction: structuredClone(tab.pendingInteraction) } : {}) };
+      if (preview) this.assertInputDocument(tab, args);
+      // The local live view favors small, quickly encoded frames. Tool screenshots
+      // retain their original lossless PNG representation.
+      const imageUrl = preview ? 'data:image/jpeg;base64,' + image.toJPEG(85).toString('base64') : image.toDataURL();
+      return { tabId: tab.id, url: tab.window.webContents.getURL(), documentId: inputDocumentId(tab), width: image.getSize().width, height: image.getSize().height, imageUrl, ...(tab.pendingInteraction ? { pendingInteraction: structuredClone(tab.pendingInteraction) } : {}) };
     }
     if (args.action === 'wait') {
       const expected = args.text || args.query;

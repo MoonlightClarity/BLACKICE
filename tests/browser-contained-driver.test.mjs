@@ -1071,3 +1071,38 @@ test('agent organization keeps task provenance and cannot affect sibling workers
   assert.ok(driver.tabs.has(human.id)); assert.ok(driver.tabs.has(other.id));
   await driver.perform({ action: 'folder_close', folderId: created.folder.id }, { owner }); assert.equal(driver.tabs.has(own.id), false);
 });
+
+test('local preview frames use guarded JPEG while ordinary screenshots remain lossless', async t => {
+  const f = await fixture(t), tab = f.driver.newTab('https://preview.test/'); await tab.loading;
+  let jpeg = 0, png = 0;
+  tab.window.webContents.capturePage = async () => ({ isEmpty: () => false, getSize: () => ({ width: 1280, height: 900 }), toJPEG: quality => { assert.equal(quality, 85); jpeg++; return Buffer.from('preview'); }, toDataURL: () => { png++; return 'data:image/png;base64,original'; } });
+  const request = { action: 'screenshot', browser: 'relay', tabId: tab.id, expectedUrl: tab.url, expectedDocumentId: tab.id + ':' + tab.revision, preview: true };
+  const browser = new BrowserWorkspace({ driver: new BrowserRouter({ independent: f.driver }) }); t.after(() => browser.close());
+  const frame = await browser.perform(request, { source: 'user' });
+  assert.equal(frame.imageUrl, 'data:image/jpeg;base64,' + Buffer.from('preview').toString('base64')); assert.equal(jpeg, 1); assert.equal(png, 0);
+  assert.equal(frame.documentId, request.expectedDocumentId); assert.equal(frame.url, request.expectedUrl);
+  const original = await browser.perform({ action: 'screenshot', browser: 'relay', tabId: tab.id }, { source: 'user' });
+  assert.equal(original.imageUrl, 'data:image/png;base64,original'); assert.equal(jpeg, 1); assert.equal(png, 1);
+});
+
+test('preview capture rejects stale documents without activation or copying pixels', async t => {
+  const f = await fixture(t), tab = f.driver.newTab('https://preview.test/'); await tab.loading;
+  const request = { action: 'screenshot', browser: 'relay', tabId: tab.id, expectedUrl: tab.url, expectedDocumentId: tab.id + ':' + tab.revision, preview: true };
+  let activations = 0, captures = 0;
+  f.driver.activate = async () => { activations++; }; f.driver.capture = async () => { captures++; assert.fail('No stale preview may copy pixels.'); };
+  tab.revision++;
+  await assert.rejects(f.driver.perform(request, { source: 'user' }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', actionDispatched: false });
+  assert.equal(activations, 0); assert.equal(captures, 0);
+  tab.window = null;
+  await assert.rejects(f.driver.perform({ ...request, expectedDocumentId: tab.id + ':' + tab.revision }, { source: 'user' }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', actionDispatched: false });
+  assert.equal(activations, 0); assert.equal(captures, 0); assert.equal(f.windows.length, 1);
+});
+
+test('navigation while a local preview is captured retires the image before encoding', async t => {
+  const f = await fixture(t), tab = f.driver.newTab('https://preview.test/'); await tab.loading;
+  let encodings = 0;
+  tab.window.webContents.capturePage = async () => { tab.revision++; return { isEmpty: () => false, getSize: () => ({ width: 1280, height: 900 }), toJPEG: () => { encodings++; return Buffer.from('obsolete'); } }; };
+  const request = { action: 'screenshot', browser: 'relay', tabId: tab.id, expectedUrl: tab.url, expectedDocumentId: tab.id + ':' + tab.revision, preview: true };
+  await assert.rejects(f.driver.perform(request, { source: 'user' }), /page changed/);
+  assert.equal(encodings, 0);
+});

@@ -492,25 +492,22 @@ test('a lightweight guarded click receipt releases text and refreshes independen
   assert.equal(f.$('#observe-browser-input-help').dataset.active, 'true');
 });
 
-test('wheel bursts preserve both axes and the observed pointer without taking keyboard focus', async t => {
+test('wheel bursts coalesce both axes and immediately request a guarded pixel preview without stealing focus', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const f = await fixture(t), gate = deferred(); let first = true;
   const address = f.$('#observe-browser-url'); address.value = 'https://unfinished-address.test/'; address.focus();
-  const imageNode = f.$('#observe-browser-image'); imageNode.getBoundingClientRect = () => ({ left: 10, top: 20, width: 640, height: 450 });
+  const imageNode = f.$('#observe-browser-image'), button = f.$('[data-observe-browser="point"]');
+  imageNode.getBoundingClientRect = () => ({ left: 10, top: 20, width: 640, height: 450 });
+  const statuses = f.calls.filter(call => call.route.includes('/status')).length;
   f.hook(call => { if (call.body?.action === 'scroll' && first) { first = false; return gate.promise; } });
-  for (const [deltaX, deltaY] of [[2, 10], [3, 20], [-1, 30], [6, 40]]) {
-    const event = await imageNode.dispatch('wheel', { clientX: 110, clientY: 70, deltaMode: 0, deltaX, deltaY }, true);
-    assert.equal(event.defaultPrevented, true);
-  }
-  assert.equal(f.document.activeElement, address); assert.equal(f.$('#observe-browser-input-help').getAttribute('data-active'), 'false');
+  for (const [deltaX, deltaY] of [[2, 10], [3, 20], [-1, 30], [6, 40]]) assert.equal((await imageNode.dispatch('wheel', { clientX: 110, clientY: 70, deltaMode: 0, deltaX, deltaY }, true)).defaultPrevented, true);
   gate.resolve(f.receipt('one')); await f.settle();
   const scrolls = f.calls.filter(call => call.body?.action === 'scroll').map(call => call.body);
-  assert.equal(scrolls.length, 2, 'the pending part of the burst is coalesced');
   assert.deepEqual(scrolls.map(body => [body.deltaX, body.deltaY]), [[2, 10], [8, 90]]);
   for (const body of scrolls) assert.deepEqual({ ...body, deltaX: 0, deltaY: 0 }, { action: 'scroll', browser: 'relay', tabId: 'one', expectedUrl: 'https://one.example.test/', expectedDocumentId: 'one:1', x: 200, y: 100, deltaX: 0, deltaY: 0 });
-  const captures = f.calls.filter(call => call.body?.action === 'screenshot').length;
-  t.mock.timers.tick(250); await f.settle();
-  assert.equal(f.calls.filter(call => call.body?.action === 'screenshot').length, captures + 1);
+  assert.deepEqual(f.calls.find(call => call.body?.preview).body, { action: 'screenshot', browser: 'relay', tabId: 'one', expectedUrl: 'https://one.example.test/', expectedDocumentId: 'one:1', preview: true });
+  assert.equal(f.calls.filter(call => call.route.includes('/status')).length, statuses, 'wheel frames do not perform a status preflight');
+  assert.equal(f.$('#observe-browser-image'), imageNode); assert.equal(f.$('[data-observe-browser="point"]'), button);
   assert.equal(f.document.activeElement, address); assert.equal(f.$('#observe-browser-url').value, 'https://unfinished-address.test/');
 });
 
@@ -526,17 +523,132 @@ test('wheel input is an ordered barrier between page clicks and typed text', asy
   assert.equal(f.document.activeElement, f.input());
 });
 
-test('continuous wheel input gets its due preview between receipts before pending gestures resume', async t => {
+test('a slow wheel capture never blocks later native gestures or typed text and permits one capture only', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const f = await fixture(t), gate = deferred(); let count = 0;
-  f.hook(call => { if (call.body?.action === 'scroll' && ++count === 2) return gate.promise; });
-  const wheel = deltaY => f.$('#observe-browser-image').dispatch('wheel', { clientX: 100, clientY: 20, deltaMode: 0, deltaX: 0, deltaY }, true);
-  await wheel(10); await f.settle(); await wheel(20); await wheel(30);
-  const captures = f.calls.filter(call => call.body?.action === 'screenshot').length;
-  t.mock.timers.tick(250); await f.settle(); assert.equal(f.calls.filter(call => call.body?.action === 'screenshot').length, captures);
-  gate.resolve(f.receipt('one')); await f.settle();
-  assert.deepEqual(f.calls.filter(call => call.body).map(call => call.body.action), ['screenshot', 'scroll', 'scroll', 'screenshot', 'scroll']);
-  assert.deepEqual(f.calls.filter(call => call.body?.action === 'scroll').map(call => call.body.deltaY), [10, 20, 30]);
+  const f = await fixture(t), gate = deferred(); await f.point(); await f.settle();
+  const imageNode = f.$('#observe-browser-image'), button = f.$('[data-observe-browser="point"]');
+  f.hook(call => call.body?.preview ? gate.promise : undefined);
+  const wheel = deltaY => imageNode.dispatch('wheel', { clientX: 100, clientY: 20, deltaMode: 0, deltaX: 0, deltaY }, true);
+  await wheel(10); await f.settle();
+  await wheel(20); await f.text('after'); await f.settle();
+  assert.deepEqual(f.calls.filter(call => ['scroll','type'].includes(call.body?.action)).map(call => [call.body.action,call.body.deltaY ?? call.body.text]), [['scroll',10],['scroll',20],['type','after']]);
+  assert.equal(f.calls.filter(call => call.body?.preview).length, 1, 'slow capture cannot grow a read backlog');
+  assert.equal(f.mount.getAttribute('aria-busy'), 'false');
+  gate.resolve({ ...f.receipt('one'), imageUrl: image, width: 1280, height: 900 }); await f.settle();
+  assert.equal(f.$('#observe-browser-image'), imageNode); assert.equal(f.$('[data-observe-browser="point"]'), button);
+  assert.equal(f.document.activeElement,f.input());
+});
+
+test('wheel picture decoding leaves native input free and cancelled old decodes never paint another tab', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = await fixture(t), decode = deferred(); let decodes = 0;
+  globalThis.window.Image = class { decode(){decodes++;return decode.promise;} };
+  const imageNode = f.$('#observe-browser-image');
+  const wheel = deltaY => imageNode.dispatch('wheel',{clientX:100,clientY:20,deltaMode:0,deltaX:0,deltaY},true);
+  await wheel(10); await f.settle(); await wheel(20); await f.settle();
+  assert.equal(decodes,1); assert.equal(f.calls.filter(call=>call.body?.action==='scroll').length,2);
+  assert.equal(f.calls.filter(call=>call.body?.preview).length,1);
+  await f.click('[data-observe-browser="tab"][data-tab-id="two"]'); await f.settle();
+  const current = f.$('#observe-browser-image');
+  decode.resolve(); await f.settle(); t.mock.timers.tick(500); await f.settle();
+  assert.equal(f.$('#observe-browser-image'),current);
+  assert.equal(f.calls.filter(call=>call.body?.preview).length,1,'an obsolete decode must not schedule more reads');
+  assert.equal(f.calls.filter(call=>call.body?.action==='screenshot').at(-1).body.tabId,'two');
+});
+
+test('continuous wheel receipts retain total distance with bounded captures and a finite final refresh', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f = await fixture(t), first = deferred(); let captures = 0;
+  const imageNode = f.$('#observe-browser-image'), button = f.$('[data-observe-browser="point"]');
+  f.hook(call=>{if(call.body?.preview&&++captures===1)return first.promise;});
+  for(let i=0;i<60;i++)await imageNode.dispatch('wheel',{clientX:100,clientY:20,deltaMode:0,deltaX:1,deltaY:4},true);
+  await f.settle(); assert.equal(captures,1);
+  const scrolls = f.calls.filter(call=>call.body?.action==='scroll');
+  assert.equal(scrolls.reduce((sum,call)=>sum+call.body.deltaY,0),240);
+  assert.equal(scrolls.reduce((sum,call)=>sum+call.body.deltaX,0),60);
+  first.resolve({...f.receipt('one'),imageUrl:image,width:1280,height:900}); await f.settle();
+  for(let i=0;i<4;i++){t.mock.timers.tick(50);await f.settle();}
+  assert.ok(captures>=2&&captures<=3,'one catch-up capture and one final settling frame at most');
+  const done=captures;t.mock.timers.tick(5000);await f.settle();assert.equal(captures,done,'input feedback stops after the finite tail');
+  assert.equal(f.$('#observe-browser-image'),imageNode);assert.equal(f.$('[data-observe-browser="point"]'),button);
+});
+
+test('a decoded wheel picture waits for a held pointer without detaching its native target', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f=await fixture(t),gate=deferred(),imageNode=f.$('#observe-browser-image'),button=f.$('[data-observe-browser="point"]'),before=imageNode.getAttribute('src');
+  const nextImage='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jR0MAAAAASUVORK5CYII=';
+  f.hook(call=>call.body?.preview?gate.promise:undefined);
+  await imageNode.dispatch('wheel',{clientX:100,clientY:20,deltaMode:0,deltaX:0,deltaY:10},true);await f.settle();
+  await button.dispatch('pointerdown',{pointerId:7,isPrimary:true,button:0},true);
+  gate.resolve({...f.receipt('one'),imageUrl:nextImage,width:1280,height:900});await f.settle();
+  assert.equal(imageNode.getAttribute('src'),before,'held pointer keeps its observed picture until release');
+  assert.equal(f.$('[data-observe-browser="point"]'),button);
+  await f.page('pointerup');t.mock.timers.tick(0);await f.settle();
+  assert.equal(imageNode.getAttribute('src'),nextImage);
+  assert.equal(f.$('#observe-browser-image'),imageNode);assert.equal(f.$('[data-observe-browser="point"]'),button);
+});
+
+test('a viewport change in a wheel frame requires a full refresh before more coordinates are admitted', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f=await fixture(t);let changed=false;
+  f.hook(call=>{if(call.body?.preview&&!changed){changed=true;return {...f.receipt('one'),imageUrl:image,width:640,height:450};}});
+  await f.$('#observe-browser-image').dispatch('wheel',{clientX:100,clientY:20,deltaMode:0,deltaX:0,deltaY:10},true);await f.settle();
+  const screenshots=f.calls.filter(call=>call.body?.action==='screenshot');
+  assert.equal(screenshots.at(-1).body.preview,undefined,'mismatched coordinates are recovered by the full guarded view');
+  assert.equal(f.$('#observe-browser-image').getAttribute('width'),'1280');
+  const previews=f.calls.filter(call=>call.body?.preview).length;t.mock.timers.tick(500);await f.settle();
+  assert.equal(f.calls.filter(call=>call.body?.preview).length,previews,'invalidated loop cannot retain a tail');
+});
+
+test('wheel preview identity changes discard queued old-document input and recover through a full read', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f = await fixture(t), picture = deferred(), secondWheel = deferred(); let wheels=0;
+  f.hook(call=>call.body?.preview?picture.promise:call.body?.action==='scroll'&&++wheels===2?secondWheel.promise:undefined);
+  const wheel=()=>f.$('#observe-browser-image').dispatch('wheel',{clientX:100,clientY:20,deltaMode:0,deltaX:0,deltaY:10},true);
+  await wheel();await f.settle();await wheel();await wheel();await f.settle();
+  picture.resolve({...f.navigate('one'),imageUrl:image,width:1280,height:900});await f.settle();
+  secondWheel.resolve(f.receipt('one'));await f.settle();
+  assert.equal(f.calls.filter(call=>call.body?.action==='scroll').length,2,'a queued third old-document wheel is never replayed');
+  assert.equal(f.calls.filter(call=>call.body?.action==='screenshot'&&!call.body.preview).at(-1).body.tabId,'one');
+  await wheel();await f.settle();
+  assert.equal(f.calls.filter(call=>call.body?.action==='scroll').at(-1).body.expectedDocumentId,'one:2');
+});
+
+test('a dialog discovered by the lightweight wheel frame appears immediately and stops its read tail', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f=await fixture(t),interaction=interactionFor();
+  f.hook(call=>call.body?.preview?{...f.receipt('one'),imageUrl:image,width:1280,height:900,pendingInteraction:interaction}:undefined);
+  await f.$('#observe-browser-image').dispatch('wheel',{clientX:100,clientY:20,deltaMode:0,deltaX:0,deltaY:10},true);await f.settle();
+  assert.equal(f.$('#observe-browser-dialog-text').value,'Initial value');
+  assert.equal(f.$('[data-observe-browser="point"]').disabled,true);
+  t.mock.timers.tick(1000);await f.settle();
+  assert.equal(f.calls.filter(call=>call.body?.preview).length,1);
+  assert.equal(f.calls.filter(call=>call.body?.action==='interaction').length,0,'a preview never answers a page request');
+});
+
+test('a stalled wheel decoder shares the finite read deadline and recovers without replaying gestures', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f=await fixture(t),deadline=new AbortController(),originalTimeout=AbortSignal.timeout;
+  t.mock.method(AbortSignal,'timeout',milliseconds=>milliseconds===10000?deadline.signal:originalTimeout(milliseconds));
+  globalThis.window.Image=class { decode(){return new Promise(()=>{});} };
+  await f.$('#observe-browser-image').dispatch('wheel',{clientX:100,clientY:20,deltaMode:0,deltaX:0,deltaY:10},true);await f.settle();
+  const preview=f.calls.find(call=>call.body?.preview);assert.ok(preview);
+  deadline.abort(new DOMException('Preview expired','TimeoutError'));await f.settle();
+  assert.equal(preview.signal.aborted,true);
+  assert.equal(f.calls.filter(call=>call.body?.action==='scroll').length,1);
+  assert.equal(f.calls.filter(call=>call.body?.action==='screenshot'&&!call.body.preview).length,2,'a timed-out decode falls back to a full read');
+  t.mock.timers.tick(1000);await f.settle();
+  assert.equal(f.calls.filter(call=>call.body?.preview).length,1,'the abandoned decoder cannot retain a read tail');
+});
+
+test('leaving cancels a slow wheel capture and every scheduled tail without repainting the hidden view', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f=await fixture(t),gate=deferred();
+  f.hook(call=>call.body?.preview?gate.promise:undefined);
+  await f.$('#observe-browser-image').dispatch('wheel',{clientX:100,clientY:20,deltaMode:0,deltaX:0,deltaY:10},true);await f.settle();
+  const request=f.calls.find(call=>call.body?.preview);f.ui.leave();assert.equal(request.signal.aborted,true);
+  gate.resolve({...f.receipt('one'),imageUrl:image,width:1280,height:900});await f.settle();t.mock.timers.tick(1000);await f.settle();
+  assert.equal(f.calls.filter(call=>call.body?.preview).length,1);assert.equal(f.mount.innerHTML,'');
 });
 
 test('composition ending after an overdue preview releases its text and subsequent typing', async t => {

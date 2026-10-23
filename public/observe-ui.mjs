@@ -153,6 +153,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     if (help) { help.textContent = browserInputHint(state.inputActive); help.setAttribute?.('data-active', String(state.inputActive === true)); }
   }
   function stopInput({ notice = '', focus = false } = {}) {
+    stopWheelPreview(inputSession);
     clearTimeout(inputRefresh); inputRefresh = null; inputRefreshDue = false;
     const session = inputSession; inputSession = null; state.inputActive = false;
     if (session) { session.queue.length = 0; session.controller.abort(); }
@@ -164,7 +165,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
   function captureInput({ keyboard = true } = {}) {
     if (!state.frame?.documentId || !state.frame.url || state.stale || model().selected?.pendingInteraction || !visible()) return null;
     if (inputSession && !inputMatches(inputSession)) stopInput();
-    if (!inputSession) inputSession = { tabId: state.frame.tabId, url: state.frame.url, documentId: state.frame.documentId, queue: [], controller: new AbortController(), running: null, composing: false };
+    if (!inputSession) inputSession = { tabId: state.frame.tabId, url: state.frame.url, documentId: state.frame.documentId, queue: [], controller: new AbortController(), running: null, composing: false, needsInputRefresh: false, wheelPreview: null };
     state.followAgent = false; state.selectedId = inputSession.tabId; state.inputNotice = '';
     if (keyboard) { state.inputActive = true; $('#observe-browser-input')?.focus?.({ preventScroll: true }); }
     inputFeedback();
@@ -186,6 +187,85 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
       inputRefresh = null; inputRefreshDue = true; refreshAfterInput(session);
     }, 250);
   }
+
+  // Wheel feedback reads pixels independently of the ordered input queue. One
+  // capture/decode is outstanding, so a slow picture cannot grow a read backlog.
+  function stopWheelPreview(session) {
+    const preview = session?.wheelPreview;
+    if (!preview) return;
+    session.wheelPreview = null; clearTimeout(preview.timer); preview.controller?.abort();
+  }
+  function presentWheelFrame(session, frame) {
+    if (inputSession !== session || !inputMatches(session) || !sameBrowserInputFrame(state.frame, frame) || !visible()) return false;
+    const preview = session.wheelPreview;
+    if (pointerGesture || session.composing) { if (preview) preview.ready = frame; return false; }
+    const image = $('#observe-browser-image');
+    if (!image) return false;
+    image.setAttribute('src', frame.imageUrl);
+    image.setAttribute('width', frame.width); image.setAttribute('height', frame.height);
+    state.frame = frame; renderedFrame = frame; state.capturedAt = new Date(now()).toISOString();
+    state.stale = false; state.controlsStale = true; state.nextAt = Math.max(state.nextAt, now() + 1000);
+    const stamp = $('.observe-browser-stamp');
+    if (stamp) stamp.textContent = 'Captured ' + clock(state.capturedAt) + ' · page input stays in this browser';
+    if (preview) preview.ready = null;
+    return true;
+  }
+  function resumeWheelPreview(session) {
+    const preview = session?.wheelPreview;
+    if (!preview || inputSession !== session || !visible() || !inputMatches(session)) return;
+    if (preview.ready && !pointerGesture && !session.composing) presentWheelFrame(session, preview.ready);
+    if (preview.running || preview.timer !== null || state.busy || state.protectionBusy || session.composing || preview.captured >= preview.revision && !preview.tail) return;
+    const controller = new AbortController(), generation = state.generation, revision = preview.revision, began = now();
+    if (revision <= preview.captured) preview.tail = false;
+    preview.controller = controller;
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]);
+    const owns = () => inputSession === session && session.wheelPreview === preview && generation === state.generation && visible() && inputMatches(session) && !controller.signal.aborted;
+    preview.running = (async () => {
+      try {
+        const result = await api('/api/browser/action', { method: 'POST', body: { action: 'screenshot', browser: 'relay', tabId: session.tabId, expectedUrl: session.url, expectedDocumentId: session.documentId, preview: true }, signal });
+        if (!owns()) return;
+        if (result?.tabId !== session.tabId) throw Error('The wheel preview returned another page.');
+        if (observeBrowserInteraction(result.pendingInteraction, session.tabId)) {
+          applyStatus({ ...state.status, tabs: state.status.tabs.map(tab => tab.tabId === session.tabId ? { ...tab, pendingInteraction: result.pendingInteraction } : tab) });
+          state.nextAt = 0; render(); return;
+        }
+        const frame = observeBrowserFrame(result, session.tabId);
+        if (!frame || !sameBrowserInputFrame(state.frame, frame)) throw Error('The page changed during its wheel preview.');
+        const Decoder = ownerWindow?.Image || globalThis.Image;
+        if (typeof Decoder === 'function') {
+          const decoded = new Decoder(); decoded.src = frame.imageUrl;
+          if (typeof decoded.decode === 'function') {
+            let abort;
+            const interrupted = new Promise((resolve, reject) => {
+              abort = () => reject(signal.reason || Error('The preview read was cancelled.'));
+              if (signal.aborted) abort(); else signal.addEventListener('abort', abort, { once: true });
+            });
+            try {
+              await Promise.race([Promise.resolve().then(() => { signal.throwIfAborted(); return decoded.decode(); }), interrupted]);
+            } finally { signal.removeEventListener('abort', abort); }
+          }
+        }
+        if (!owns()) return;
+        if (!sameBrowserInputFrame(state.frame, frame)) throw Error('The page changed while its preview decoded.');
+        presentWheelFrame(session, frame); preview.captured = revision;
+      } catch (error) {
+        if (owns()) recoverInput();
+      } finally {
+        preview.running = null; preview.controller = null;
+        if (owns() && (preview.captured < preview.revision || preview.tail)) {
+          // Pace from capture start; a slow capture adds no extra trailing delay.
+          preview.timer = setTimeout(() => { preview.timer = null; resumeWheelPreview(session); }, Math.max(0, 50 - (now() - began)));
+        }
+      }
+    })();
+  }
+  function refreshAfterWheel(session) {
+    if (inputSession !== session || !visible()) return;
+    const preview = session.wheelPreview ||= { revision: 0, captured: 0, tail: false, timer: null, controller: null, running: null, ready: null };
+    preview.revision++; preview.tail = true;
+    resumeWheelPreview(session);
+  }
+
   function recoverInput({ uncertain = false } = {}) {
     // Recovery is read-only. Never carry a click, submission or text across a
     // document boundary, including navigation that finishes after its receipt.
@@ -234,7 +314,8 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
           }
           if (item.action === 'click') adoptDocument(result, session.tabId);
           state.controlsStale = true;
-          refreshAfterInput(session);
+          if (item.action === 'scroll') refreshAfterWheel(session);
+          else { session.needsInputRefresh = true; refreshAfterInput(session); }
         }
       } catch (error) {
         if (inputSession === session && visible()) recoverInput({ uncertain: true });
@@ -243,7 +324,8 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
         if (inputSession === session && visible()) {
           if (inputRefreshDue) refreshAfterInput(session);
           else if (session.queue.length && !state.busy && !state.protectionBusy) queueMicrotask(pumpInput);
-          else refreshAfterInput(session);
+          else if (session.needsInputRefresh) refreshAfterInput(session);
+          resumeWheelPreview(session);
         }
       }
     })();
@@ -401,7 +483,8 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
   async function work(action = 'refresh', extra = {}) {
     const inputPreview = action === 'refresh' && inputRefreshDue && !inputSession?.composing;
     if (!visible() || state.busy || state.protectionBusy || inputSession?.running || inputSession?.queue.length && !inputPreview) return; remember();
-    if (action === 'refresh') { clearTimeout(inputRefresh); inputRefresh = null; inputRefreshDue = false; }
+    stopWheelPreview(inputSession);
+    if (action === 'refresh') { clearTimeout(inputRefresh); inputRefresh = null; inputRefreshDue = false; if (inputSession) inputSession.needsInputRefresh = false; }
     const origin = typeof document === 'undefined' ? null : document.activeElement;
     state.pendingFocus = mount.contains?.(origin) ? focusSnapshot(origin) : null;
     const initial = model().selected?.tabId, explicitTarget = extra.tabId || (action === 'refresh' ? state.requiredTabId : null), { tabId: ignored, ...parameters } = extra;
@@ -489,7 +572,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
         state.busy = false; state.action = ''; state.pending = ''; state.controller = null; state.mutationPending = false;
         const retryDelay = state.readFailures ? Math.min(5000, 1000 * 2 ** Math.min(state.readFailures - 1, 3)) : waiting || state.focusPage || model().selected?.loading || now() < state.progressUntil ? 1000 : 5000;
         state.nextAt = now() + retryDelay;
-        if (state.error && inputSession) stopInput(); render(); if (action === 'close' || action === 'open' || state.revealSelected) revealTab(model().selected?.tabId); state.revealSelected = false; state.pendingFocus = null; void pumpInput();
+        if (state.error && inputSession) stopInput(); render(); if (action === 'close' || action === 'open' || state.revealSelected) revealTab(model().selected?.tabId); state.revealSelected = false; state.pendingFocus = null; void pumpInput(); resumeWheelPreview(inputSession);
       }
       else if (generation === state.generation && state.controller === controller) { state.controller = null; state.busy = false; state.stale = true; state.nextAt = 0; state.pendingFocus = null; if (dispatched) { state.inputNotice = 'The view became hidden while a page action was pending. Inspect the page before repeating it.'; } state.mutationPending = false; }
     }
@@ -669,6 +752,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     if (text) queueInput({ action: 'type', text });
     if (renderDeferred) render();
     if (inputRefreshDue) refreshAfterInput(session);
+    resumeWheelPreview(session);
   };
   const focusout = event => {
     if (event.target.id === 'observe-browser-input' && !rendering) stopInput();
@@ -696,6 +780,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
   function finishPointer({ redraw = true } = {}) {
     clearTimeout(pointerRelease); pointerRelease = null; pointerGesture = null;
     if (redraw && renderDeferred && visible()) render();
+    resumeWheelPreview(inputSession);
   }
   const pointerup = event => {
     if (!pointerGesture || event.pointerId !== undefined && pointerGesture.pointerId !== undefined && event.pointerId !== pointerGesture.pointerId) return;
@@ -728,7 +813,7 @@ export function initObserveBrowser({ mount, api, isVisible = () => true, now = D
     },
     update() {
       if (!visible()) { stopInput(); if (state.active && state.controller) { remember(); keepDraft(); state.generation++; state.controller.abort(); state.controller = null; state.busy = false; state.stale = true; state.nextAt = 0; state.pendingFocus = null; if (state.mutationPending) { state.inputNotice = 'The view became hidden while a page action was pending. Inspect the page before repeating it.'; } state.mutationPending = false; } return; }
-      if (inputSession?.running || inputSession?.queue.length || inputSession?.composing) return;
+      if (inputSession?.running || inputSession?.queue.length || inputSession?.composing || inputSession?.wheelPreview && (inputSession.wheelPreview.running || inputSession.wheelPreview.timer !== null)) return;
       if (!state.stale && now() - Date.parse(state.capturedAt) > 10000) { state.stale = true; render(); } if (state.watching && !state.busy && now() >= state.nextAt) void work();
     },
     leave() { stopInput(); popupRequest = null; popupParents = []; finishPointer({ redraw: false }); remember(); keepDraft(); state.active = false; state.generation++; state.controller?.abort(); state.controller = null; protectionController?.abort(); protectionController = null; state.protectionBusy = false; state.protectionFocus = null; state.pickingFiles = false; state.interactionId = null; state.interactionDraft = ''; state.interactionError = ''; state.busy = false; state.frame = null; renderedFrame = null; state.document = null; for (const saved of drafts.values()) saved.document = null; state.stale = true; state.controlsStale = true; state.pendingFocus = null; state.rendered = null; state.error = ''; state.mutationPending = false; mount.innerHTML = ''; },

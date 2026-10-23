@@ -114,3 +114,17 @@ test('filtering changes retain queued host admission and do not dispatch after a
   assert.deepEqual(calls, []);
   await browser.configureProtection({ action: 'global', enabled: true }, { source: 'agent', owner }); assert.equal(calls.length, 1);
 });
+
+test('lightweight preview capture is local-only with an exact contained document', async t => {
+  const { browser, calls } = fixture(t);
+  const preview = { action: 'screenshot', browser: 'relay', tabId: 'mine', expectedUrl: 'https://owned.test/', expectedDocumentId: 'mine:1', preview: true };
+  await browser.perform(preview, { source: 'user' });
+  assert.deepEqual(calls[0].args, preview);
+  for (const change of [
+    { preview: false }, { preview: 'true' }, { action: 'scroll' }, { browser: undefined }, { browser: 'firefox' }, { tabId: undefined }, { tabId: 'firefox:mine' },
+    { expectedUrl: undefined }, { expectedDocumentId: undefined }, { expectedUrl: '' }, { expectedDocumentId: '' }, { ref: 'old-control' }, { x: 0 },
+  ]) await assert.rejects(browser.perform({ ...preview, ...change }, { source: 'user' }), { code: 'BROWSER_VALIDATION', actionDispatched: false });
+  await assert.rejects(browser.perform(preview, { source: 'agent', owner }), { code: 'BROWSER_VALIDATION', actionDispatched: false });
+  assert.equal(calls.length, 1);
+  assert.equal(BROWSER_TOOL.inputSchema.properties.preview, undefined, 'The local frame optimization is not an agent screenshot-quality option.');
+});

@@ -1,0 +1,810 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "kind": "native-browser-scroll-latency",
+  "passed": true,
+  "version": "2.33.10",
+  "recordedAt": "2026-10-23T06:32:33.252Z",
+  "baseline": {
+    "version": "2.33.9",
+    "commit": "ae419dee8c7f839f4364356bdb0b1eb4cb40d64a",
+    "appFingerprint": "da19fd82bb60bc1730621bc12202dbe6d034149b80c736dcd1c68b8a23adca04",
+    "sourceFileCount": 149,
+    "sourceFiles": {
+      "desktop/browser-capture.mjs": "2b596c4fd6ffc51e275f98ee666d919070418304f6250fa1f16a28cad0ffffc9",
+      "desktop/browser-compatibility.mjs": "350c1f813b4550b1d65863d719137e8f6e8d75977974e20357deb542848eaa68",
+      "desktop/browser-compatibility/main.js": "b750921124d410c3ff67bb0de5300717f0a5857bf6eb2986737b1eb6025a6c18",
+      "desktop/browser-compatibility/manifest.json": "d850072daa0c795c242b203bf99216c8b8d3fd710a78903a938fe8dde0cfc821",
+      "desktop/browser-driver.mjs": "b93a5c4c6f3ba461c2d0c2f8f9aefa2911bd88757a53313a6baf158af2eebd63",
+      "desktop/browser-router.mjs": "c3c69e17c6c06b3dc8f46e2d9796b9d22261cf8aa84f691e26ef7edf3b2b015d",
+      "lib/agent-email.mjs": "4df940c4ef8f19790bd991802cdf6d1c4d5b295aa090d538f9ba644af108fa08",
+      "lib/application-compatibility.mjs": "c5a4927c1fb90fa26b27fb550dc9e538657e4efbf351b5f52ff99eb333338107",
+      "lib/application-document-actions.mjs": "647eafa87d9467e73af4e4fcf01a7b36d89eac16fcf496a5c247c8b1879edcee",
+      "lib/application-documents.mjs": "fc64aee0749755d561169d4198881759a9d1fea6278dd5be4905443cc7e49050",
+      "lib/application-sessions.mjs": "c6e86b7dfc673623e5bbdc9d163d7836e9187fd727c789c506004a004154ffdd",
+      "lib/application-tools.mjs": "4168a6ecf50f73866455ee5a95d3f7396150c4e0c61d77b80755cc6db8ddbbb7",
+      "lib/application-workspace.mjs": "249ad4f9f699291582a3e15198151c40b76fba0e2e8981cb564f81c977a5d3a3",
+      "lib/artifact-discovery.mjs": "bc204ca21dfa795441c935f3924347a7cea8c11e871d1edac3f18a68ebbabe27",
+      "lib/attachments.mjs": "deeba9683ce64d096eb68558cc2d78d79cf3b7658190faa8db3b3c73c8051c55",
+      "lib/browser-credential-destination.mjs": "c3a31900efa75f11a84894945b827fdd1d259b5564783a38d3949ffed35cdef7",
+      "lib/browser-credential-mirror.mjs": "efa58b0cc7af34fa8f79420e42d3951fadc991745785faae243c7b56d07b9b15",
+      "lib/browser-credential-tools.mjs": "bd5979782f6b0bb468320fe49b775423626c3fb4810fa7f898c243bceb991073",
+      "lib/browser-credentials.mjs": "3b18ff430e1153949efb3844caf7262a2e96e22a80919f8300de4b6109c9c145",
+      "lib/browser-diagnostics.mjs": "6cc9bba9e3cb616fb0d359d3e56eed3dc4abbe5ce1437d4338fb01854e21c623",
+      "lib/browser-import.mjs": "0c014f824aa6bfc4d517f268ad2ead1718a0878ecbb8cdefc5cceac9f2aac1c9",
+      "lib/browser-profile.mjs": "c787b2c1e63eadb8badea99284434648264899430bffa623f1eab6e380f42cea",
+      "lib/browser-protection.mjs": "cacb72deed34d99056451801fb73a8ef0989cbe73374e25dcc0b53fe9c759b79",
+      "lib/browser-signin.mjs": "c797a6bf36d3138ade54b5b0b745dc920bbb19e81e52f12274c00c3a8ae1e9f3",
+      "lib/browser-window.mjs": "aefe0f29340d38811e1a8eb525e5fc5f5f8aa301a664c50ae5b5efd68ba2c790",
+      "lib/browser.mjs": "bd1237782ee18ecd33babd4fa31124c23aea141a82389de3da6fc1b0c6f69a57",
+      "lib/capabilities.mjs": "0e028fac9d8bd6d550f5d099c4867f333f4931a9196839eb3f185b7e2d269efb",
+      "lib/catalyst-methods.mjs": "9378000b5685b6a23e8c0f3938b08c48cc49c8f0b126df2b270b578856122fa2",
+      "lib/chatgpt-connector.mjs": "4bdd999450391928061a401dd49d1ec4c0db23d98ed2779194bde999482ddef0",
+      "lib/chatgpt-file-import.mjs": "c523876bacf69f46729500ca5de497ba2b91126c55026adf2526932be6ec9697",
+      "lib/chatgpt-grant-admission.mjs": "31120a921c42134768b3907d44aa73a619a6706068968cc07c4fb1177eae0f18",
+      "lib/chatgpt-mcp-protocol.mjs": "b23640deb59c4cda618b88f418131b15e34ba7811be6177b13039edac8971263",
+      "lib/chatgpt-oauth.mjs": "20039fe61d72e6df15fef7be2624440b634092ad9b2c79dd4e3b321b11cdbd09",
+      "lib/chatgpt-planning.mjs": "7ab68b146fe8c8c6142711f4aadc36ac5f32bde0d88fdbd06265cf0ff93c4745",
+      "lib/chatgpt-setup.mjs": "5539fb8d901caff9b2a6a82d1ad0897b5839fe4b017190ef2a4a26315ec5dafd",
+      "lib/chatgpt-tool-catalog.mjs": "61b2340f116faf1255ff8e50fd0c5bda200dba17d8dcefa1ac925760ad62a895",
+      "lib/chrome-browser-policy.mjs": "4945db3c244554f64b5b0be3b0b9dca621bb317c3f6fc7fcfe00002682941fe3",
+      "lib/chrome-browser.mjs": "db1d22c3f4fcc1659688f99d1c20412ceb055f1b60ce83b0c5577c4b34ed4254",
+      "lib/coalescing-persistence.mjs": "8dee5c3f0106ae6b6f54de355d2ac4ff7eebf73a8af14511ef92f3a11193f747",
+      "lib/codex-discovery.mjs": "16b4a0342666486a35ee68eb3a25764203afb05e00005ab19e697188d0be189d",
+      "lib/codex-model-candidates.mjs": "3b472349039c80fe8a52c118b827c2dded75f3574efa05245b613fd64d3b1fff",
+      "lib/codex-model-check.mjs": "d5690b8e2d4aa204f8da8b9ff9a0a512ead4e41c365f9f2b963986bdd330c5dc",
+      "lib/codex.mjs": "09d046c04e71ce702a62cf253c5984297ac0685f402637f9d54068c8a34c868a",
+      "lib/connected-browser-tools.mjs": "68f317c6299c630090f80f8863ddcf932029d20bbb5f8258ecea11001af144b0",
+      "lib/connection-import.mjs": "dcbc30b0ebe763cbdb45650bd9cbf43bc026d3bf08dc284fb80f8bdf35d1f03d",
+      "lib/connector-browser-owner.mjs": "377dea68ba70ea13b02da0954ae11d94a8d6c0ffd6fe0e306513391b13401140",
+      "lib/context.mjs": "c118e4b63ec9386e23a4052bc7a4b506bded3b02e8cb6c66b48e83d7cf7b9464",
+      "lib/control-tools.mjs": "7ddde468e6b9acfb7c906899726a3c45470a2b77b9441e389f6346a542f93798",
+      "lib/conversation-export.mjs": "4c04daa82cb0de3ad0ec0b635eff2dca12aa09f5d7155d78c05611b02f62907d",
+      "lib/conversation-search.mjs": "debf34f9b86d817ff66a0e27589a251423ce78055e82efd19a0f7ff76045b4eb",
+      "lib/conversations.mjs": "d4c6d4d3936e8078d2a8c3a20e15cdc02bc8fe5573b485e302eb2a9f98ea346f",
+      "lib/cron.mjs": "12b49bebf7074cf65a6135fd0d9d7061cc5aeaffd2651aa3eaf3e1b677cc5ff9",
+      "lib/desktop-restart-barrier.mjs": "fefc443068221c02935516e0617fe3f35a91741ac74a638c62c1b20c11b81e20",
+      "lib/desktop-restart-origin.mjs": "db7403f6793239462edb4e81606ec2fb22422a271282bd611b75826f15590d44",
+      "lib/desktop-restart-tool.mjs": "7ce20f8ada97e0150ec77f9515e237a3cebfd63bccf7a65e5b7538cb1e6dc4a5",
+      "lib/desktop-tools.mjs": "bc33a34cb63c15a03078ddbe9bc0cf0370523662b034b5c692372118fa2904d3",
+      "lib/desktop.mjs": "0d24471b93839fd4bf9b3e3bb3c1903895992e93c779ce124d3f2dd20a9bac45",
+      "lib/diagnostics.mjs": "2ebed2f8cc9580ddca776ca1cae8299eae8ac20e743c4e2f0a3c62ff93ce9003",
+      "lib/direct-execution-api.mjs": "f9ae311a30aa2351a565ec559317f4a7e16aa4fbf608704ac3d41d24b5bae4b9",
+      "lib/direct-execution-jobs.mjs": "ff8db61c7dff9785fae50f2aff0b05f53bbe2ed9702a0ad3b476da781261367f",
+      "lib/email-client.mjs": "d02b97730985692f1d8f40dd72169ecd54204bfc5de36137059bcc1fb1157ca8",
+      "lib/email-message.mjs": "500c5ddee1791695f090ed6af6b651f3bf677b841af805b40a8b22e78f9acfad",
+      "lib/email-oauth.mjs": "205fb0173b8d3096cbe4b36bd37df11b03fdebd7fc4b5d9af027eacaa8d486f0",
+      "lib/email-setup.mjs": "94d14bac105c2868b08d9f62a4147a90921fd081ff8dcd5a8613229f2da8885d",
+      "lib/email-tools.mjs": "95d84aff14d201d1b30723401427f412c1e1e2a20a07557e384a80d117a00a0f",
+      "lib/engine.mjs": "950e3495acf715029d7ed84c9baab6ff83283c0a17dba9bb13695dddd6e5231c",
+      "lib/event-stream.mjs": "30b007d4ada6410a0b07b70e4177e3c6f5c232abcf38dac74b1d2bfb66ad08c3",
+      "lib/external-retry.mjs": "b04af50768b135deb2d73a6b34ab0a1aed77ee410e733d95371427dd043cbe6d",
+      "lib/file-patches.mjs": "0cf5df2f074a4004c12236ef24258b2ace32998165edc52c1cf0a1b425938cad",
+      "lib/harness-identity.mjs": "802982ee9700769b0166fe0acc1bf0eef8a7c8c3f03034eb6385772456b2bad0",
+      "lib/identity.mjs": "5149edccc517d8dc214b692c8481c012a1bf418c883fec4bab8efb287466cef0",
+      "lib/inbox.mjs": "e433f88db6223bb7ee0a61530dbd1e0af3e8620f7ac64477aab6e37671d0ec8e",
+      "lib/knowledge.mjs": "ebbdeb3589acd9d2721c6c4ae304f499f5d7ddecf2607c9c8488c9815bfd6a63",
+      "lib/learning.mjs": "4bf45c63612c12a9509ef65813d00fd94d5414c05009caad86d68bd9d4c50bb8",
+      "lib/live-edits.mjs": "8a48152ef91730b4cbade80277e1135de8632b628530fe46f847393941c6b2ab",
+      "lib/mcp.mjs": "87ff172095ad5352f56d237a342a9a2e51d859b2768c9001881b01a0de109127",
+      "lib/method-catalog.mjs": "7881bdacc310216a0b69d7348a9d54f12af06248473f968644601f0ac09ed72c",
+      "lib/methods.mjs": "ac28977b3899ff55609afdf6583967237ba0d0488bec5ceb9104792a1dabf449",
+      "lib/neo-tool-policy.mjs": "929beb04dd705c4aacb0e089f5f997fffe61ec713cd31328e143e50768f7a1d4",
+      "lib/openrouter-attribution.mjs": "9e9d53b8f4007dfcd652e914df3504ed0585e7f277d476897b9b844b3471443d",
+      "lib/operations.mjs": "a5b12bf87706a934fb169d4f507c56c5f1344cfbfc3d3b4d012cfd34cd32252b",
+      "lib/pdf-documents.mjs": "2d961b6585bacf906b8bc8de7795a8c9acb3d129c0557fe04ec2dc416801660b",
+      "lib/planning-awareness.mjs": "a9ddd2742a9a948b0b46deb435d163c70fb3ff017d52576489bfb07f35214e43",
+      "lib/planning-edits.mjs": "3611fa95179c64cf717d54cb7468a4ed3846088c1f7dac98400aa02570bc135e",
+      "lib/planning-organization.mjs": "fc203407619e6dc201552bb589b0dadb3fe1dc3eb6da9d33afd78e7fe90cd831",
+      "lib/planning-policy.mjs": "0adf29cc5c7784ef03b9479a83bbe3201ea547028acb1e5391fa07bb5e3b47e7",
+      "lib/planning-runtime.mjs": "7d05cf6c9dd8b4c561d2793d1bf69ec19a4c4d958a4a5a4b1cad8fe42811b723",
+      "lib/planning-workspace.mjs": "5e92823ac9c12976aa99fbfb98ef766e05cddc15f37853e883dc8acabe7d7c6d",
+      "lib/process-ontology.mjs": "c97dc70aeb946428320e790a28b55a270de6562fed405145468ed91789c59b06",
+      "lib/project-management.mjs": "a2470e1d791347cac042192744212069dff4ddf7c2c626e0775fd50c0d77e0ca",
+      "lib/project-tools.mjs": "b79d79aeb825c0ebb124c4fbb0a957365c775ee8c6b7641825fb7acf8ba55fa3",
+      "lib/projects.mjs": "adf41971dbbc486bf314aa96318d9f898c7f409549d6dccfad995b72340c55cf",
+      "lib/prompt-templates.mjs": "602bc86075414f70acc4e28ff6a9cfae45e942babed1cda7568f9d49cfd7214b",
+      "lib/provider-store.mjs": "4b7b08c928cf79f91802ce2f50dbc0e9a1e9ca342e5ca9881385c525678fde74",
+      "lib/provider-transport.mjs": "adc8c8819854001b0b98dbd16201655f8ad91481b3131e62dd2fb61fa6b56a43",
+      "lib/providers.mjs": "498ac13243a5c3a04cb5220cf4ce9975227ee865ab5ab467b4df6128109c36d0",
+      "lib/remote-access-auth.mjs": "b1b499a7489df2fceffe1c51eb5461956d9b9be441b1a64826989be1550ab47d",
+      "lib/remote-access-gateway.mjs": "2504731f92251d488ea38584aac363db31569619f85e0cb128342965db33e203",
+      "lib/remote-access-tailscale.mjs": "4aaf60e4dacf879eb04791f51c4da5669c6ead9926e091bc44356fba40523ae8",
+      "lib/remote-access.mjs": "b3a0e4bae58bc236d90414a770674e0ebb14192cc4e4f21e5c88f62f106ce842",
+      "lib/remote-agent-api.mjs": "cb81dd68ee4f75f3c679b3f06cb56970676224d1d20f820a3642ec039278c24f",
+      "lib/retired-models.mjs": "d9db959351a9e45648c141277d7791855977da8f6de8dfec9457c71ba379ca7e",
+      "lib/run-timeout.mjs": "18f4eb34a7fa6c04d61d12856dc5f2eb6e17f9d1d306f37286f2e21a100cbb8f",
+      "lib/runtime-settings.mjs": "ac5a5b10382884dc9d2034ef50e7f824db93e232602343c06361670bab876e78",
+      "lib/signed-browser-bootstrap.mjs": "9ddc0ca866f7909508f7b6f66adf26ad06d329bd8f976258a46124f249f56b37",
+      "lib/signed-browser.mjs": "f45e17bb457a584ef0c04ca19e6d2dae5d57cb4ed34764f430ce949e387e01f4",
+      "lib/subagents.mjs": "07d4d1ccdc860a542a8a6213ace94710884960acfb14da567c38f8dfbbc27ebc",
+      "lib/task-plan.mjs": "5bc899786d3ac0616b381f2f4d2c7acac04662090fc5d79f1ac51f1886fd63ee",
+      "lib/task-state.mjs": "556493ef0ca13f5a206784a4db78bd1b1a69c65cf34038acc39485f99c1bf931",
+      "lib/tool-outcomes.mjs": "653af5c4407cf3b1dde8036daf6dc99b2a378c1350a585c83ac0b262018749ac",
+      "lib/tool-routing.mjs": "395b45c95ebec18eb2b432d0ca75ab9e852eb8632e52ce987e8df327a78f0589",
+      "lib/vendor/adblock-filter-data.json": "dcf001ed6a082c6e9474a7d46b687607afd0a3b4db137ee80b914092aee967da",
+      "lib/vendor/ghostery-adblocker.mjs": "d6e4493283cd1faf8335c1cf810e4878375a54d732ebdd031aaabafcf16e4221",
+      "lib/windows-session.mjs": "653b7cf578f8e6fd3caa0fe2e87c17be2c05d430f4d04473c41e91241622de98",
+      "lib/worker-permissions.mjs": "465576f892bb4b7bb802cdba51aaee99b092ed12881c2c26e1274be7e6c4f960",
+      "lib/workspace-tools.mjs": "6275f86abe2804d819319ae94114c3a1691ac297320b24ef7f9c221b54ab4814",
+      "package.json": "11254fc19ad3a532ae17261ac625cacfe63d37cb08befdcf42add3e981cd0b84",
+      "public/app.js": "bf1e59b6932816d438d13928d53df9516a572fe49f58bafb2d5c0cea71b39eaa",
+      "public/application-session-model.mjs": "2265530bc7405d22f66368bc35e0ed095e865f5df62f9736a42e927c7b83c6dc",
+      "public/application-session-ui.mjs": "5a2ac01fbd05b4603c57495ff69467ac5d314d81257edd72fcdb6630e0c81abc",
+      "public/blackice-information.css": "7c75bf90225835ddd5bb3deb723ba694e6f8ba24c48d9652d2295bd8af61ae7b",
+      "public/browser-address.mjs": "6d2a2dca3df4996708ff18e3d6c0abb58a369da0a3b84a6b5ea94f16558f43a7",
+      "public/browser-tree-model.mjs": "2aa307944e5d3ae0e1b47750d886a8389851a071cf2f1212d0888b3e1a9d13ad",
+      "public/connection-models.mjs": "553f61256b9613f6005a59931559aff1abd1b4b5e05c45421d0adb12386d66c3",
+      "public/conversation-layout.css": "4b3bf981b88c8967685903c4c067e168d31b56303515896a1c312f95210f7651",
+      "public/conversation-model.mjs": "0694f287af6553e3f48668945719e43d713f14921536356d682fc09060de0330",
+      "public/editor-model.mjs": "97157ae71d2c1ed84925fb71f725a5dd82a1d09b36e8e8794a3017f739ce90a5",
+      "public/index.html": "04feb8570280b657d5017b778ed4a8c7f26d0956a3a335fd39d123ce76cd3dd0",
+      "public/mission-model.mjs": "8824b2f56cbefaacef78ee8a41c4d9b3c007994e5d23704580cf98b033349f67",
+      "public/model-routes.mjs": "b15e380ead85386b96e8844f761eafbc469d69316ee16bc5fd75e28e76190e0d",
+      "public/observe-model.mjs": "c123e4a1927dfe600603f3457a3722a0f332965b4669c11dbeebeaf45fbfa5ae",
+      "public/observe-ui.mjs": "31f0d10876e69cc59e63fa675e33a306c5206d28b6f94cf6301e9b5f8bd5847b",
+      "public/observe.css": "dbcbb26a18f5e7eba6a453025597fa1e51358369e1e99ceee97194de543d540c",
+      "public/planning-mode.mjs": "e05c8baef47f97579c81995de368e9fb64564b6bdfe402c9c49012f0ec78ba78",
+      "public/process-model.mjs": "0ba6227ff87e7c69d43ed962fc53532bb21c685f3827d2cfe0e90060c8968d7d",
+      "public/project-view-model.mjs": "3b950e7f1b1ffe0f51f42c20bc580dcb9d4358abeb4fd7e559b94ad83d7ae094",
+      "public/prompt-template-model.mjs": "5cfc76607b74235f64a1f71e217fd876f49ba559125f2dcf326d901c692adbea",
+      "public/provider-catalog.mjs": "f69765123654101d93e0794f54e5a0c29e2f15e3af4ac1dbd9555478b7f8278c",
+      "public/reasoning-model.mjs": "500daa8667f7849f267fa14febb0b28d9e8587e0a599e4c6b28abce23f63152a",
+      "public/run-state-model.mjs": "93ef5b021408d0afc013b457f4657c91f3d5f9dfd2a0d000a4672f17cf469e3b",
+      "public/svg-preview.mjs": "fd77d11d17c3ab4906de7e62fe680a37d19a03539c3256af35c138373cc7387a",
+      "public/task-plan-model.mjs": "608eabdb197774a8d805fb5d5311e2e6de24e348160e1757d4b14d9564487a45",
+      "public/task-title.mjs": "7e8524930959e377a28be5205a81bafce4f62b2fa0fbeb73d94e2c510264dfa0",
+      "public/tool-outcomes-model.mjs": "99f0d4396ad7de7ff67fc05e2d8425f45cf4d7492351926f7808f798dfe02371",
+      "public/workflow-map.mjs": "4288092a29849073bf6326b2a8a224110dac4d71f92c93fc9156791e8fc170c2",
+      "scripts/distribution-manifest.mjs": "8190c9d45a02d969f6c6620ff504477297c3e4b7027a5a30adef17306454aaae",
+      "scripts/release-check.mjs": "fd2b6bf9a17437b244fe0d6fad87f32858f9facbaad5a37af1e3d6c18bc3d6e9",
+      "scripts/release-signing.mjs": "bc32c3b837c50035357a2f552b0134be5a947ec53b5346f993a006533bc95de0",
+      "server.mjs": "777a6bae68d2c2bc37c485d8ac4f789eb382b6e50bb766e3d4dee54afd5a5f37"
+    },
+    "startedAt": "2026-10-23T06:31:14.353Z",
+    "finishedAt": "2026-10-23T06:31:28.635Z",
+    "checks": 16,
+    "modelCalls": 0,
+    "externalRequests": 0,
+    "actualUserBrowserAccessed": false,
+    "allWheelRequestsGuarded": true,
+    "allWheelResponses200": true,
+    "temporaryProfileRemoved": true,
+    "cleanup": {
+      "complete": true,
+      "errors": [],
+      "remainingWindows": 0,
+      "remainingSockets": 0
+    },
+    "rawEvidenceSha256": {
+      "wrapper": "237acb2f5c94c8d10a223060caf0f16268f7b574c9751f427372329cb703bb59",
+      "native": "798cf6a1c0e7460ee95e3ed83a65b4d10d3f929106e4dc6bbaecdc5385530882",
+      "log": "de97a3c7721083eca0c4055ca2f353e59e261ef07b1f5097e201f8e7be5f88ba"
+    },
+    "widths": [
+      {
+        "width": 1440,
+        "height": 900,
+        "frontendViewport": {
+          "width": 1440,
+          "height": 900,
+          "devicePixelRatio": 1,
+          "visualViewport": {
+            "width": 1440,
+            "height": 900,
+            "scale": 1
+          }
+        },
+        "nativeViewport": {
+          "width": 1282,
+          "height": 825,
+          "devicePixelRatio": 1
+        },
+        "frameRates": {
+          "frontend": 60,
+          "native": 60
+        },
+        "warmupFrames": 3,
+        "metrics": {
+          "firstPaintMs": 840,
+          "paintedUpdates": 2,
+          "paintGapP95Ms": 667,
+          "paintGapMaxMs": 667,
+          "paintAgeP95Ms": 506,
+          "paintAgeMaxMs": 506,
+          "tailDrainMs": 561,
+          "nativeDrainMs": 98,
+          "sendDurationMs": 946,
+          "sendGapP95Ms": 30,
+          "sendGapMaxMs": 328,
+          "scheduledLatenessMaxMs": 326,
+          "deliveredDeltaY": 720,
+          "deliveredDeltaX": 180,
+          "firstDisplayReadyMs": 775
+        },
+        "pipeline": {
+          "wheelRequests": 15,
+          "previewRequests": 2,
+          "inputQueueP95Ms": 1,
+          "inputQueueMaxMs": 1,
+          "inputDriverP95Ms": 33,
+          "previewDriverP95Ms": 348,
+          "captureP95Ms": 37,
+          "previewCodecs": [
+            "data:image/png"
+          ]
+        },
+        "sourceCaptureMarkers": [
+          {
+            "atMs": 358,
+            "copiedAtMs": 395,
+            "markerY": 204
+          },
+          {
+            "atMs": 1085,
+            "copiedAtMs": 1119,
+            "markerY": 720
+          }
+        ]
+      },
+      {
+        "width": 390,
+        "height": 844,
+        "frontendViewport": {
+          "width": 390,
+          "height": 844,
+          "devicePixelRatio": 1,
+          "visualViewport": {
+            "width": 390,
+            "height": 844,
+            "scale": 1
+          }
+        },
+        "nativeViewport": {
+          "width": 1282,
+          "height": 825,
+          "devicePixelRatio": 1
+        },
+        "frameRates": {
+          "frontend": 60,
+          "native": 60
+        },
+        "warmupFrames": 3,
+        "metrics": {
+          "firstPaintMs": 748,
+          "paintedUpdates": 3,
+          "paintGapP95Ms": 763,
+          "paintGapMaxMs": 763,
+          "paintAgeP95Ms": 684,
+          "paintAgeMaxMs": 684,
+          "tailDrainMs": 1198,
+          "nativeDrainMs": 531,
+          "sendDurationMs": 957,
+          "sendGapP95Ms": 31,
+          "sendGapMaxMs": 290,
+          "scheduledLatenessMaxMs": 284,
+          "deliveredDeltaY": 720,
+          "deliveredDeltaX": 180,
+          "firstDisplayReadyMs": 700
+        },
+        "pipeline": {
+          "wheelRequests": 18,
+          "previewRequests": 3,
+          "inputQueueP95Ms": 1,
+          "inputQueueMaxMs": 1,
+          "inputDriverP95Ms": 32,
+          "previewDriverP95Ms": 364,
+          "captureP95Ms": 27,
+          "previewCodecs": [
+            "data:image/png"
+          ]
+        },
+        "sourceCaptureMarkers": [
+          {
+            "atMs": 333,
+            "copiedAtMs": 351,
+            "markerY": 180
+          },
+          {
+            "atMs": 1031,
+            "copiedAtMs": 1058,
+            "markerY": 708
+          },
+          {
+            "atMs": 1781,
+            "copiedAtMs": 1796,
+            "markerY": 720
+          }
+        ]
+      }
+    ]
+  },
+  "candidate": {
+    "appFingerprint": "98f7ba51eb85cc9bf1a23e57b2487f26d7c537e2c65a33e181e2ebef9f316844",
+    "sourceFileCount": 149,
+    "sourceFiles": {
+      "desktop/browser-capture.mjs": "2b596c4fd6ffc51e275f98ee666d919070418304f6250fa1f16a28cad0ffffc9",
+      "desktop/browser-compatibility.mjs": "350c1f813b4550b1d65863d719137e8f6e8d75977974e20357deb542848eaa68",
+      "desktop/browser-compatibility/main.js": "b750921124d410c3ff67bb0de5300717f0a5857bf6eb2986737b1eb6025a6c18",
+      "desktop/browser-compatibility/manifest.json": "d850072daa0c795c242b203bf99216c8b8d3fd710a78903a938fe8dde0cfc821",
+      "desktop/browser-driver.mjs": "892f6fc8acc9b40181bcd3e902865f96c00cc53b15caab316c00878873a05ed5",
+      "desktop/browser-router.mjs": "c3c69e17c6c06b3dc8f46e2d9796b9d22261cf8aa84f691e26ef7edf3b2b015d",
+      "lib/agent-email.mjs": "4df940c4ef8f19790bd991802cdf6d1c4d5b295aa090d538f9ba644af108fa08",
+      "lib/application-compatibility.mjs": "c5a4927c1fb90fa26b27fb550dc9e538657e4efbf351b5f52ff99eb333338107",
+      "lib/application-document-actions.mjs": "647eafa87d9467e73af4e4fcf01a7b36d89eac16fcf496a5c247c8b1879edcee",
+      "lib/application-documents.mjs": "fc64aee0749755d561169d4198881759a9d1fea6278dd5be4905443cc7e49050",
+      "lib/application-sessions.mjs": "c6e86b7dfc673623e5bbdc9d163d7836e9187fd727c789c506004a004154ffdd",
+      "lib/application-tools.mjs": "4168a6ecf50f73866455ee5a95d3f7396150c4e0c61d77b80755cc6db8ddbbb7",
+      "lib/application-workspace.mjs": "249ad4f9f699291582a3e15198151c40b76fba0e2e8981cb564f81c977a5d3a3",
+      "lib/artifact-discovery.mjs": "bc204ca21dfa795441c935f3924347a7cea8c11e871d1edac3f18a68ebbabe27",
+      "lib/attachments.mjs": "deeba9683ce64d096eb68558cc2d78d79cf3b7658190faa8db3b3c73c8051c55",
+      "lib/browser-credential-destination.mjs": "c3a31900efa75f11a84894945b827fdd1d259b5564783a38d3949ffed35cdef7",
+      "lib/browser-credential-mirror.mjs": "efa58b0cc7af34fa8f79420e42d3951fadc991745785faae243c7b56d07b9b15",
+      "lib/browser-credential-tools.mjs": "bd5979782f6b0bb468320fe49b775423626c3fb4810fa7f898c243bceb991073",
+      "lib/browser-credentials.mjs": "3b18ff430e1153949efb3844caf7262a2e96e22a80919f8300de4b6109c9c145",
+      "lib/browser-diagnostics.mjs": "6cc9bba9e3cb616fb0d359d3e56eed3dc4abbe5ce1437d4338fb01854e21c623",
+      "lib/browser-import.mjs": "0c014f824aa6bfc4d517f268ad2ead1718a0878ecbb8cdefc5cceac9f2aac1c9",
+      "lib/browser-profile.mjs": "c787b2c1e63eadb8badea99284434648264899430bffa623f1eab6e380f42cea",
+      "lib/browser-protection.mjs": "cacb72deed34d99056451801fb73a8ef0989cbe73374e25dcc0b53fe9c759b79",
+      "lib/browser-signin.mjs": "c797a6bf36d3138ade54b5b0b745dc920bbb19e81e52f12274c00c3a8ae1e9f3",
+      "lib/browser-window.mjs": "aefe0f29340d38811e1a8eb525e5fc5f5f8aa301a664c50ae5b5efd68ba2c790",
+      "lib/browser.mjs": "ccf90948f8dfe8175ef82bfbb0c57610f3e3d6d608909add307b59ba6c796a4a",
+      "lib/capabilities.mjs": "0e028fac9d8bd6d550f5d099c4867f333f4931a9196839eb3f185b7e2d269efb",
+      "lib/catalyst-methods.mjs": "9378000b5685b6a23e8c0f3938b08c48cc49c8f0b126df2b270b578856122fa2",
+      "lib/chatgpt-connector.mjs": "4bdd999450391928061a401dd49d1ec4c0db23d98ed2779194bde999482ddef0",
+      "lib/chatgpt-file-import.mjs": "c523876bacf69f46729500ca5de497ba2b91126c55026adf2526932be6ec9697",
+      "lib/chatgpt-grant-admission.mjs": "31120a921c42134768b3907d44aa73a619a6706068968cc07c4fb1177eae0f18",
+      "lib/chatgpt-mcp-protocol.mjs": "b23640deb59c4cda618b88f418131b15e34ba7811be6177b13039edac8971263",
+      "lib/chatgpt-oauth.mjs": "20039fe61d72e6df15fef7be2624440b634092ad9b2c79dd4e3b321b11cdbd09",
+      "lib/chatgpt-planning.mjs": "7ab68b146fe8c8c6142711f4aadc36ac5f32bde0d88fdbd06265cf0ff93c4745",
+      "lib/chatgpt-setup.mjs": "5539fb8d901caff9b2a6a82d1ad0897b5839fe4b017190ef2a4a26315ec5dafd",
+      "lib/chatgpt-tool-catalog.mjs": "61b2340f116faf1255ff8e50fd0c5bda200dba17d8dcefa1ac925760ad62a895",
+      "lib/chrome-browser-policy.mjs": "4945db3c244554f64b5b0be3b0b9dca621bb317c3f6fc7fcfe00002682941fe3",
+      "lib/chrome-browser.mjs": "db1d22c3f4fcc1659688f99d1c20412ceb055f1b60ce83b0c5577c4b34ed4254",
+      "lib/coalescing-persistence.mjs": "8dee5c3f0106ae6b6f54de355d2ac4ff7eebf73a8af14511ef92f3a11193f747",
+      "lib/codex-discovery.mjs": "16b4a0342666486a35ee68eb3a25764203afb05e00005ab19e697188d0be189d",
+      "lib/codex-model-candidates.mjs": "3b472349039c80fe8a52c118b827c2dded75f3574efa05245b613fd64d3b1fff",
+      "lib/codex-model-check.mjs": "d5690b8e2d4aa204f8da8b9ff9a0a512ead4e41c365f9f2b963986bdd330c5dc",
+      "lib/codex.mjs": "09d046c04e71ce702a62cf253c5984297ac0685f402637f9d54068c8a34c868a",
+      "lib/connected-browser-tools.mjs": "68f317c6299c630090f80f8863ddcf932029d20bbb5f8258ecea11001af144b0",
+      "lib/connection-import.mjs": "dcbc30b0ebe763cbdb45650bd9cbf43bc026d3bf08dc284fb80f8bdf35d1f03d",
+      "lib/connector-browser-owner.mjs": "377dea68ba70ea13b02da0954ae11d94a8d6c0ffd6fe0e306513391b13401140",
+      "lib/context.mjs": "c118e4b63ec9386e23a4052bc7a4b506bded3b02e8cb6c66b48e83d7cf7b9464",
+      "lib/control-tools.mjs": "7ddde468e6b9acfb7c906899726a3c45470a2b77b9441e389f6346a542f93798",
+      "lib/conversation-export.mjs": "4c04daa82cb0de3ad0ec0b635eff2dca12aa09f5d7155d78c05611b02f62907d",
+      "lib/conversation-search.mjs": "debf34f9b86d817ff66a0e27589a251423ce78055e82efd19a0f7ff76045b4eb",
+      "lib/conversations.mjs": "d4c6d4d3936e8078d2a8c3a20e15cdc02bc8fe5573b485e302eb2a9f98ea346f",
+      "lib/cron.mjs": "12b49bebf7074cf65a6135fd0d9d7061cc5aeaffd2651aa3eaf3e1b677cc5ff9",
+      "lib/desktop-restart-barrier.mjs": "fefc443068221c02935516e0617fe3f35a91741ac74a638c62c1b20c11b81e20",
+      "lib/desktop-restart-origin.mjs": "db7403f6793239462edb4e81606ec2fb22422a271282bd611b75826f15590d44",
+      "lib/desktop-restart-tool.mjs": "7ce20f8ada97e0150ec77f9515e237a3cebfd63bccf7a65e5b7538cb1e6dc4a5",
+      "lib/desktop-tools.mjs": "bc33a34cb63c15a03078ddbe9bc0cf0370523662b034b5c692372118fa2904d3",
+      "lib/desktop.mjs": "0d24471b93839fd4bf9b3e3bb3c1903895992e93c779ce124d3f2dd20a9bac45",
+      "lib/diagnostics.mjs": "2ebed2f8cc9580ddca776ca1cae8299eae8ac20e743c4e2f0a3c62ff93ce9003",
+      "lib/direct-execution-api.mjs": "f9ae311a30aa2351a565ec559317f4a7e16aa4fbf608704ac3d41d24b5bae4b9",
+      "lib/direct-execution-jobs.mjs": "ff8db61c7dff9785fae50f2aff0b05f53bbe2ed9702a0ad3b476da781261367f",
+      "lib/email-client.mjs": "d02b97730985692f1d8f40dd72169ecd54204bfc5de36137059bcc1fb1157ca8",
+      "lib/email-message.mjs": "500c5ddee1791695f090ed6af6b651f3bf677b841af805b40a8b22e78f9acfad",
+      "lib/email-oauth.mjs": "205fb0173b8d3096cbe4b36bd37df11b03fdebd7fc4b5d9af027eacaa8d486f0",
+      "lib/email-setup.mjs": "94d14bac105c2868b08d9f62a4147a90921fd081ff8dcd5a8613229f2da8885d",
+      "lib/email-tools.mjs": "95d84aff14d201d1b30723401427f412c1e1e2a20a07557e384a80d117a00a0f",
+      "lib/engine.mjs": "950e3495acf715029d7ed84c9baab6ff83283c0a17dba9bb13695dddd6e5231c",
+      "lib/event-stream.mjs": "30b007d4ada6410a0b07b70e4177e3c6f5c232abcf38dac74b1d2bfb66ad08c3",
+      "lib/external-retry.mjs": "b04af50768b135deb2d73a6b34ab0a1aed77ee410e733d95371427dd043cbe6d",
+      "lib/file-patches.mjs": "0cf5df2f074a4004c12236ef24258b2ace32998165edc52c1cf0a1b425938cad",
+      "lib/harness-identity.mjs": "802982ee9700769b0166fe0acc1bf0eef8a7c8c3f03034eb6385772456b2bad0",
+      "lib/identity.mjs": "5149edccc517d8dc214b692c8481c012a1bf418c883fec4bab8efb287466cef0",
+      "lib/inbox.mjs": "e433f88db6223bb7ee0a61530dbd1e0af3e8620f7ac64477aab6e37671d0ec8e",
+      "lib/knowledge.mjs": "ebbdeb3589acd9d2721c6c4ae304f499f5d7ddecf2607c9c8488c9815bfd6a63",
+      "lib/learning.mjs": "4bf45c63612c12a9509ef65813d00fd94d5414c05009caad86d68bd9d4c50bb8",
+      "lib/live-edits.mjs": "8a48152ef91730b4cbade80277e1135de8632b628530fe46f847393941c6b2ab",
+      "lib/mcp.mjs": "87ff172095ad5352f56d237a342a9a2e51d859b2768c9001881b01a0de109127",
+      "lib/method-catalog.mjs": "7881bdacc310216a0b69d7348a9d54f12af06248473f968644601f0ac09ed72c",
+      "lib/methods.mjs": "ac28977b3899ff55609afdf6583967237ba0d0488bec5ceb9104792a1dabf449",
+      "lib/neo-tool-policy.mjs": "929beb04dd705c4aacb0e089f5f997fffe61ec713cd31328e143e50768f7a1d4",
+      "lib/openrouter-attribution.mjs": "9e9d53b8f4007dfcd652e914df3504ed0585e7f277d476897b9b844b3471443d",
+      "lib/operations.mjs": "a5b12bf87706a934fb169d4f507c56c5f1344cfbfc3d3b4d012cfd34cd32252b",
+      "lib/pdf-documents.mjs": "2d961b6585bacf906b8bc8de7795a8c9acb3d129c0557fe04ec2dc416801660b",
+      "lib/planning-awareness.mjs": "a9ddd2742a9a948b0b46deb435d163c70fb3ff017d52576489bfb07f35214e43",
+      "lib/planning-edits.mjs": "3611fa95179c64cf717d54cb7468a4ed3846088c1f7dac98400aa02570bc135e",
+      "lib/planning-organization.mjs": "fc203407619e6dc201552bb589b0dadb3fe1dc3eb6da9d33afd78e7fe90cd831",
+      "lib/planning-policy.mjs": "0adf29cc5c7784ef03b9479a83bbe3201ea547028acb1e5391fa07bb5e3b47e7",
+      "lib/planning-runtime.mjs": "7d05cf6c9dd8b4c561d2793d1bf69ec19a4c4d958a4a5a4b1cad8fe42811b723",
+      "lib/planning-workspace.mjs": "5e92823ac9c12976aa99fbfb98ef766e05cddc15f37853e883dc8acabe7d7c6d",
+      "lib/process-ontology.mjs": "c97dc70aeb946428320e790a28b55a270de6562fed405145468ed91789c59b06",
+      "lib/project-management.mjs": "a2470e1d791347cac042192744212069dff4ddf7c2c626e0775fd50c0d77e0ca",
+      "lib/project-tools.mjs": "b79d79aeb825c0ebb124c4fbb0a957365c775ee8c6b7641825fb7acf8ba55fa3",
+      "lib/projects.mjs": "adf41971dbbc486bf314aa96318d9f898c7f409549d6dccfad995b72340c55cf",
+      "lib/prompt-templates.mjs": "602bc86075414f70acc4e28ff6a9cfae45e942babed1cda7568f9d49cfd7214b",
+      "lib/provider-store.mjs": "4b7b08c928cf79f91802ce2f50dbc0e9a1e9ca342e5ca9881385c525678fde74",
+      "lib/provider-transport.mjs": "adc8c8819854001b0b98dbd16201655f8ad91481b3131e62dd2fb61fa6b56a43",
+      "lib/providers.mjs": "498ac13243a5c3a04cb5220cf4ce9975227ee865ab5ab467b4df6128109c36d0",
+      "lib/remote-access-auth.mjs": "b1b499a7489df2fceffe1c51eb5461956d9b9be441b1a64826989be1550ab47d",
+      "lib/remote-access-gateway.mjs": "2504731f92251d488ea38584aac363db31569619f85e0cb128342965db33e203",
+      "lib/remote-access-tailscale.mjs": "4aaf60e4dacf879eb04791f51c4da5669c6ead9926e091bc44356fba40523ae8",
+      "lib/remote-access.mjs": "b3a0e4bae58bc236d90414a770674e0ebb14192cc4e4f21e5c88f62f106ce842",
+      "lib/remote-agent-api.mjs": "cb81dd68ee4f75f3c679b3f06cb56970676224d1d20f820a3642ec039278c24f",
+      "lib/retired-models.mjs": "d9db959351a9e45648c141277d7791855977da8f6de8dfec9457c71ba379ca7e",
+      "lib/run-timeout.mjs": "18f4eb34a7fa6c04d61d12856dc5f2eb6e17f9d1d306f37286f2e21a100cbb8f",
+      "lib/runtime-settings.mjs": "ac5a5b10382884dc9d2034ef50e7f824db93e232602343c06361670bab876e78",
+      "lib/signed-browser-bootstrap.mjs": "9ddc0ca866f7909508f7b6f66adf26ad06d329bd8f976258a46124f249f56b37",
+      "lib/signed-browser.mjs": "f45e17bb457a584ef0c04ca19e6d2dae5d57cb4ed34764f430ce949e387e01f4",
+      "lib/subagents.mjs": "07d4d1ccdc860a542a8a6213ace94710884960acfb14da567c38f8dfbbc27ebc",
+      "lib/task-plan.mjs": "5bc899786d3ac0616b381f2f4d2c7acac04662090fc5d79f1ac51f1886fd63ee",
+      "lib/task-state.mjs": "556493ef0ca13f5a206784a4db78bd1b1a69c65cf34038acc39485f99c1bf931",
+      "lib/tool-outcomes.mjs": "653af5c4407cf3b1dde8036daf6dc99b2a378c1350a585c83ac0b262018749ac",
+      "lib/tool-routing.mjs": "395b45c95ebec18eb2b432d0ca75ab9e852eb8632e52ce987e8df327a78f0589",
+      "lib/vendor/adblock-filter-data.json": "dcf001ed6a082c6e9474a7d46b687607afd0a3b4db137ee80b914092aee967da",
+      "lib/vendor/ghostery-adblocker.mjs": "d6e4493283cd1faf8335c1cf810e4878375a54d732ebdd031aaabafcf16e4221",
+      "lib/windows-session.mjs": "653b7cf578f8e6fd3caa0fe2e87c17be2c05d430f4d04473c41e91241622de98",
+      "lib/worker-permissions.mjs": "465576f892bb4b7bb802cdba51aaee99b092ed12881c2c26e1274be7e6c4f960",
+      "lib/workspace-tools.mjs": "6275f86abe2804d819319ae94114c3a1691ac297320b24ef7f9c221b54ab4814",
+      "package.json": "10016ef9a31fdd99f78ef9a9a62868f9020d7431f9aa59bb82ebc81f1839bf25",
+      "public/app.js": "bf1e59b6932816d438d13928d53df9516a572fe49f58bafb2d5c0cea71b39eaa",
+      "public/application-session-model.mjs": "2265530bc7405d22f66368bc35e0ed095e865f5df62f9736a42e927c7b83c6dc",
+      "public/application-session-ui.mjs": "5a2ac01fbd05b4603c57495ff69467ac5d314d81257edd72fcdb6630e0c81abc",
+      "public/blackice-information.css": "7c75bf90225835ddd5bb3deb723ba694e6f8ba24c48d9652d2295bd8af61ae7b",
+      "public/browser-address.mjs": "6d2a2dca3df4996708ff18e3d6c0abb58a369da0a3b84a6b5ea94f16558f43a7",
+      "public/browser-tree-model.mjs": "2aa307944e5d3ae0e1b47750d886a8389851a071cf2f1212d0888b3e1a9d13ad",
+      "public/connection-models.mjs": "553f61256b9613f6005a59931559aff1abd1b4b5e05c45421d0adb12386d66c3",
+      "public/conversation-layout.css": "4b3bf981b88c8967685903c4c067e168d31b56303515896a1c312f95210f7651",
+      "public/conversation-model.mjs": "0694f287af6553e3f48668945719e43d713f14921536356d682fc09060de0330",
+      "public/editor-model.mjs": "97157ae71d2c1ed84925fb71f725a5dd82a1d09b36e8e8794a3017f739ce90a5",
+      "public/index.html": "04feb8570280b657d5017b778ed4a8c7f26d0956a3a335fd39d123ce76cd3dd0",
+      "public/mission-model.mjs": "8824b2f56cbefaacef78ee8a41c4d9b3c007994e5d23704580cf98b033349f67",
+      "public/model-routes.mjs": "b15e380ead85386b96e8844f761eafbc469d69316ee16bc5fd75e28e76190e0d",
+      "public/observe-model.mjs": "c123e4a1927dfe600603f3457a3722a0f332965b4669c11dbeebeaf45fbfa5ae",
+      "public/observe-ui.mjs": "2e4f587b89a8dc12d24ce9e1c8e1644fef26e9c158f9b7ce010cff027d1f8504",
+      "public/observe.css": "dbcbb26a18f5e7eba6a453025597fa1e51358369e1e99ceee97194de543d540c",
+      "public/planning-mode.mjs": "e05c8baef47f97579c81995de368e9fb64564b6bdfe402c9c49012f0ec78ba78",
+      "public/process-model.mjs": "0ba6227ff87e7c69d43ed962fc53532bb21c685f3827d2cfe0e90060c8968d7d",
+      "public/project-view-model.mjs": "3b950e7f1b1ffe0f51f42c20bc580dcb9d4358abeb4fd7e559b94ad83d7ae094",
+      "public/prompt-template-model.mjs": "5cfc76607b74235f64a1f71e217fd876f49ba559125f2dcf326d901c692adbea",
+      "public/provider-catalog.mjs": "f69765123654101d93e0794f54e5a0c29e2f15e3af4ac1dbd9555478b7f8278c",
+      "public/reasoning-model.mjs": "500daa8667f7849f267fa14febb0b28d9e8587e0a599e4c6b28abce23f63152a",
+      "public/run-state-model.mjs": "93ef5b021408d0afc013b457f4657c91f3d5f9dfd2a0d000a4672f17cf469e3b",
+      "public/svg-preview.mjs": "fd77d11d17c3ab4906de7e62fe680a37d19a03539c3256af35c138373cc7387a",
+      "public/task-plan-model.mjs": "608eabdb197774a8d805fb5d5311e2e6de24e348160e1757d4b14d9564487a45",
+      "public/task-title.mjs": "7e8524930959e377a28be5205a81bafce4f62b2fa0fbeb73d94e2c510264dfa0",
+      "public/tool-outcomes-model.mjs": "99f0d4396ad7de7ff67fc05e2d8425f45cf4d7492351926f7808f798dfe02371",
+      "public/workflow-map.mjs": "4288092a29849073bf6326b2a8a224110dac4d71f92c93fc9156791e8fc170c2",
+      "scripts/distribution-manifest.mjs": "8190c9d45a02d969f6c6620ff504477297c3e4b7027a5a30adef17306454aaae",
+      "scripts/release-check.mjs": "fd2b6bf9a17437b244fe0d6fad87f32858f9facbaad5a37af1e3d6c18bc3d6e9",
+      "scripts/release-signing.mjs": "bc32c3b837c50035357a2f552b0134be5a947ec53b5346f993a006533bc95de0",
+      "server.mjs": "777a6bae68d2c2bc37c485d8ac4f789eb382b6e50bb766e3d4dee54afd5a5f37"
+    },
+    "startedAt": "2026-10-23T06:32:15.122Z",
+    "finishedAt": "2026-10-23T06:32:33.252Z",
+    "checks": 16,
+    "modelCalls": 0,
+    "externalRequests": 0,
+    "actualUserBrowserAccessed": false,
+    "allWheelRequestsGuarded": true,
+    "allWheelResponses200": true,
+    "temporaryProfileRemoved": true,
+    "cleanup": {
+      "complete": true,
+      "errors": [],
+      "remainingWindows": 0,
+      "remainingSockets": 0
+    },
+    "rawEvidenceSha256": {
+      "wrapper": "01952c40afa59dd8fa887e933a9fd6f7f250057c3afd6f5bd01feb6a1433919a",
+      "native": "0ea7a6680b5628e1b1e8a25787d5b6ba9922da54bf7a0bb9f20f2637934c8dd9",
+      "log": "ea65e3452602d17d105136664b5307e31e3b456aee190163d41b35a136882740"
+    },
+    "widths": [
+      {
+        "width": 1440,
+        "height": 900,
+        "frontendViewport": {
+          "width": 1440,
+          "height": 900,
+          "devicePixelRatio": 1,
+          "visualViewport": {
+            "width": 1440,
+            "height": 900,
+            "scale": 1
+          }
+        },
+        "nativeViewport": {
+          "width": 1282,
+          "height": 825,
+          "devicePixelRatio": 1
+        },
+        "frameRates": {
+          "frontend": 60,
+          "native": 60
+        },
+        "warmupFrames": 3,
+        "metrics": {
+          "firstPaintMs": 167,
+          "paintedUpdates": 11,
+          "paintGapP95Ms": 209,
+          "paintGapMaxMs": 209,
+          "paintAgeP95Ms": 219,
+          "paintAgeMaxMs": 219,
+          "tailDrainMs": 326,
+          "nativeDrainMs": 114,
+          "sendDurationMs": 945,
+          "sendGapP95Ms": 33,
+          "sendGapMaxMs": 38,
+          "scheduledLatenessMaxMs": 27,
+          "deliveredDeltaY": 720,
+          "deliveredDeltaX": 180,
+          "firstDisplayReadyMs": 108
+        },
+        "pipeline": {
+          "wheelRequests": 13,
+          "previewRequests": 13,
+          "inputQueueP95Ms": 65,
+          "inputQueueMaxMs": 65,
+          "inputDriverP95Ms": 35,
+          "previewDriverP95Ms": 67,
+          "captureP95Ms": 51,
+          "previewCodecs": [
+            "data:image/jpeg"
+          ]
+        },
+        "sourceCaptureMarkers": [
+          {
+            "atMs": 42,
+            "copiedAtMs": 71,
+            "markerY": 12
+          },
+          {
+            "atMs": 123,
+            "copiedAtMs": 172,
+            "markerY": 24
+          },
+          {
+            "atMs": 250,
+            "copiedAtMs": 276,
+            "markerY": 60
+          },
+          {
+            "atMs": 330,
+            "copiedAtMs": 381,
+            "markerY": 156
+          },
+          {
+            "atMs": 432,
+            "copiedAtMs": 480,
+            "markerY": 216
+          },
+          {
+            "atMs": 549,
+            "copiedAtMs": 590,
+            "markerY": 216
+          },
+          {
+            "atMs": 647,
+            "copiedAtMs": 692,
+            "markerY": 372
+          },
+          {
+            "atMs": 769,
+            "copiedAtMs": 799,
+            "markerY": 468
+          },
+          {
+            "atMs": 850,
+            "copiedAtMs": 883,
+            "markerY": 552
+          },
+          {
+            "atMs": 973,
+            "copiedAtMs": 989,
+            "markerY": 612
+          },
+          {
+            "atMs": 1061,
+            "copiedAtMs": 1091,
+            "markerY": 672
+          },
+          {
+            "atMs": 1133,
+            "copiedAtMs": 1164,
+            "markerY": 720
+          },
+          {
+            "atMs": 1215,
+            "copiedAtMs": 1247,
+            "markerY": 720
+          }
+        ]
+      },
+      {
+        "width": 390,
+        "height": 844,
+        "frontendViewport": {
+          "width": 390,
+          "height": 844,
+          "devicePixelRatio": 1,
+          "visualViewport": {
+            "width": 390,
+            "height": 844,
+            "scale": 1
+          }
+        },
+        "nativeViewport": {
+          "width": 1282,
+          "height": 825,
+          "devicePixelRatio": 1
+        },
+        "frameRates": {
+          "frontend": 60,
+          "native": 60
+        },
+        "warmupFrames": 3,
+        "metrics": {
+          "firstPaintMs": 178,
+          "paintedUpdates": 13,
+          "paintGapP95Ms": 109,
+          "paintGapMaxMs": 109,
+          "paintAgeP95Ms": 147,
+          "paintAgeMaxMs": 147,
+          "tailDrainMs": 298,
+          "nativeDrainMs": 188,
+          "sendDurationMs": 966,
+          "sendGapP95Ms": 35,
+          "sendGapMaxMs": 41,
+          "scheduledLatenessMaxMs": 38,
+          "deliveredDeltaY": 720,
+          "deliveredDeltaX": 180,
+          "firstDisplayReadyMs": 137
+        },
+        "pipeline": {
+          "wheelRequests": 14,
+          "previewRequests": 14,
+          "inputQueueP95Ms": 55,
+          "inputQueueMaxMs": 55,
+          "inputDriverP95Ms": 38,
+          "previewDriverP95Ms": 57,
+          "captureP95Ms": 39,
+          "previewCodecs": [
+            "data:image/jpeg"
+          ]
+        },
+        "sourceCaptureMarkers": [
+          {
+            "atMs": 56,
+            "copiedAtMs": 92,
+            "markerY": 12
+          },
+          {
+            "atMs": 159,
+            "copiedAtMs": 190,
+            "markerY": 24
+          },
+          {
+            "atMs": 243,
+            "copiedAtMs": 269,
+            "markerY": 96
+          },
+          {
+            "atMs": 325,
+            "copiedAtMs": 359,
+            "markerY": 168
+          },
+          {
+            "atMs": 424,
+            "copiedAtMs": 454,
+            "markerY": 228
+          },
+          {
+            "atMs": 510,
+            "copiedAtMs": 537,
+            "markerY": 300
+          },
+          {
+            "atMs": 607,
+            "copiedAtMs": 632,
+            "markerY": 360
+          },
+          {
+            "atMs": 727,
+            "copiedAtMs": 743,
+            "markerY": 432
+          },
+          {
+            "atMs": 833,
+            "copiedAtMs": 847,
+            "markerY": 504
+          },
+          {
+            "atMs": 901,
+            "copiedAtMs": 940,
+            "markerY": 612
+          },
+          {
+            "atMs": 989,
+            "copiedAtMs": 1026,
+            "markerY": 660
+          },
+          {
+            "atMs": 1100,
+            "copiedAtMs": 1122,
+            "markerY": 708
+          },
+          {
+            "atMs": 1165,
+            "copiedAtMs": 1181,
+            "markerY": 720
+          },
+          {
+            "atMs": 1230,
+            "copiedAtMs": 1248,
+            "markerY": 720
+          }
+        ]
+      }
+    ]
+  },
+  "harness": {
+    "fixture": {
+      "path": "tests/fixtures/browser-wheel-latency.mjs",
+      "sha256": "066ec4dfae317372c95596f0cf3114c47e06e32e9860e72c0654de4045b90ee7"
+    },
+    "runner": {
+      "path": "scripts/verify-browser-scroll-latency.mjs",
+      "sha256": "9ea23af9458c94ce2a3b80afb13c8eeec18dd18b8df05e9eeecf8326dcfe910a"
+    },
+    "sameBytesBothRuns": true,
+    "beforeAfterVerified": true,
+    "electron": "44.7.2",
+    "electronExecutableSha256": "1f41127064012c5e74422b2e0dfc35ff0b0fe8d7908b97d01503becd1b7fa9e1",
+    "node": "v24.13.0",
+    "environment": {
+      "platform": "win32",
+      "release": "10.0.19045",
+      "arch": "x64",
+      "logicalCpus": 8,
+      "totalMemoryBytes": 17080422400,
+      "displays": [
+        {
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 864
+          },
+          "workArea": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 824
+          },
+          "scaleFactor": 1.25,
+          "displayFrequency": 60,
+          "rotation": 0
+        }
+      ],
+      "frontendOffscreen": true,
+      "nativeOffscreen": true
+    },
+    "quietWindow": "Both runs were sequential; the team held other tests, hashing and file copies during measurement.",
+    "workload": {
+      "timedEventsPerWidth": 60,
+      "scheduledIntervalMs": 16,
+      "totalDeltaX": 180,
+      "totalDeltaY": 720,
+      "widths": [
+        1440,
+        390
+      ],
+      "localPage": "Text, eighty colored gradient cards, a nested two-axis scroll pane and a fixed binary scroll-position marker.",
+      "warmup": "Three ordinary PNG captures per width before the timed gesture."
+    }
+  },
+  "acceptance": {
+    "firstDisplayReadyAtMostMs": 150,
+    "firstActualOffscreenPaintBelowMs": 250,
+    "paintGapP95BelowMs": 250,
+    "tailDrainBelowMs": 400
+  },
+  "limitations": [
+    "The decoded/display-ready image and the later actual offscreen compositor paint are separate measurements. This is not a physical screen latency measurement.",
+    "These two local-page trials on one Windows host establish the stated scenario limits, not a global FPS guarantee or prolonged production soak."
+  ]
+}

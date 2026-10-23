@@ -1,4 +1,4 @@
-# BLACKICE 2.33.9
+# BLACKICE 2.33.10
 
 BLACKICE is a Windows app that lets AI assistants work with your files, use websites, and carry out tasks on your computer. Use it from ChatGPT, or choose a supported online or local AI model inside the app.
 
@@ -9,7 +9,7 @@ BLACKICE is a Windows app that lets AI assistants work with your files, use webs
 - **Automate repeat work:** Queue tasks or schedule them to run while BLACKICE is open.
 - **Follow the work:** See actions, results, errors, and file changes as they happen.
 
-**[Download BLACKICE 2.33.9 for Windows x64](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.33.9/Blackice-2.33.9-Setup.exe)** · [Release notes and checksums](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.33.9)
+**[Download BLACKICE 2.33.10 for Windows x64](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.33.10/Blackice-2.33.10-Setup.exe)** · [Release notes and checksums](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.33.10)
 
 The installer is unsigned; Windows has not verified a publisher identity for it.
 
@@ -17,7 +17,7 @@ See [Start](#start) to run it and [Use BLACKICE from ChatGPT](#use-blackice-from
 
 BLACKICE's original source is available under the [Apache License 2.0](LICENSE). Bundled third-party components retain the licenses and attribution described in [Third-party notices](THIRD-PARTY-NOTICES.md).
 
-[Performance and reliability verification](PERFORMANCE.md) records the measured improvements and source tests. The [2.33.9 release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.33.9) is the reference for that build's verification evidence. [Historical 2.33.5 installer verification](verification/windows-installer-2.33.5.json) and [its Windows release checks](https://github.com/MoonlightClarity/BLACKICE/actions/runs/39639162142) document that earlier artifact. A prolonged production soak has not been performed. [Signing and release](SIGNING-AND-RELEASE.md) defines the release checks.
+[Performance and reliability verification](PERFORMANCE.md) records the measured improvements and source tests. The [2.33.10 release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.33.10) is the reference for that build's verification evidence. [Historical 2.33.5 installer verification](verification/windows-installer-2.33.5.json) and [its Windows release checks](https://github.com/MoonlightClarity/BLACKICE/actions/runs/39639162142) document that earlier artifact. A prolonged production soak has not been performed. [Signing and release](SIGNING-AND-RELEASE.md) defines the release checks.
 
 ## Saved passwords and browser copying
 
@@ -353,7 +353,7 @@ Earlier end-to-end dogfooding built Nightboard, a playable chess game with origi
 
 ## Start
 
-Download [**Blackice-2.33.9-Setup.exe**](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.33.9/Blackice-2.33.9-Setup.exe) from the [v2.33.9 release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.33.9) and compare its SHA-256 with the published checksum. If updating, create a profile backup through **Recovery & support** and quit BLACKICE first.
+Download [**Blackice-2.33.10-Setup.exe**](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.33.10/Blackice-2.33.10-Setup.exe) from the [v2.33.10 release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.33.10) and compare its SHA-256 with the published checksum. If updating, create a profile backup through **Recovery & support** and quit BLACKICE first.
 
 Run Setup to install for your Windows account. It adds **BLACKICE** shortcuts to the Start menu and Desktop and registers the program under **Settings → Apps → Installed apps**. The executable is `BLACKICE.exe`. Saved chats, settings, and workspace data remain in `%APPDATA%\Relay`.
 
