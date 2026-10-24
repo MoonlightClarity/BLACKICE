@@ -1,4 +1,6 @@
-# BLACKICE 2.33.10
+# BLACKICE 2.33.13
+
+2.33.13 is the current source candidate. Its [release notes](RELEASE-NOTES-2.33.13.md) describe the changes; candidate verification and publication are separate steps. The currently published Windows installer is 2.33.10, linked below.
 
 BLACKICE is a Windows app that lets AI assistants work with your files, use websites, and carry out tasks on your computer. Use it from ChatGPT, or choose a supported online or local AI model inside the app.
 

@@ -55,6 +55,21 @@ test('a failed destination rename keeps original bytes and a truthful not-applie
   const{cwd,store}=await fixture(t,io);destination=path.join(cwd,'file.txt');await writeFile(destination,'original');await assert.rejects(store.patch({cwd,path:destination,oldText:'original',newText:'changed'}),/Injected/);assert.equal(await readFile(destination,'utf8'),'original');const history=await store.list({cwd});assert.equal(history.patches[0].status,'not_applied');assert.deepEqual(await readdir(cwd),['file.txt']);
 });
 
+test('a lost destination rename acknowledgement recovers applied bytes and a durable undo receipt',async t=>{
+  let destination,promotions=0;const io={...fs,rename:async(from,to)=>{await fs.rename(from,to);if(to===destination){promotions++;throw Error('Rename acknowledgement lost');}}};
+  const{cwd,store}=await fixture(t,io);destination=path.join(cwd,'file.txt');await writeFile(destination,'before');
+  const receipt=await store.patch({cwd,path:destination,oldText:'before',newText:'after'});
+  assert.equal(receipt.status,'applied');assert.equal(receipt.auditReceiptPending,undefined);assert.equal(await readFile(destination,'utf8'),'after');assert.equal((await store.get(receipt.id)).status,'applied');assert.equal(promotions,1);
+  const undone=await store.undo(receipt.id);assert.equal(undone.status,'applied');assert.equal(undone.undoOf,receipt.id);assert.equal(await readFile(destination,'utf8'),'before');assert.equal(promotions,2);assert.deepEqual(await readdir(cwd),['file.txt']);
+});
+
+test('an uncertain destination after rename retains a prepared receipt instead of falsely reporting no change',async t=>{
+  let destination;const io={...fs,rename:async(from,to)=>{await fs.rename(from,to);if(to===destination){await writeFile(to,'Later editor change');throw Error('Rename acknowledgement lost');}}};
+  const{cwd,store}=await fixture(t,io);destination=path.join(cwd,'file.txt');await writeFile(destination,'before');
+  await assert.rejects(store.patch({cwd,path:destination,oldText:'before',newText:'after'}),/acknowledgement lost/);
+  assert.equal(await readFile(destination,'utf8'),'Later editor change');const history=await store.list({cwd});assert.equal(history.total,1);assert.equal(history.patches[0].status,'prepared');const saved=await store.get(history.patches[0].id);assert.equal(saved.before,'before');assert.equal(saved.after,'after');await assert.rejects(store.undo(saved.id),/newer changes/);assert.deepEqual(await readdir(cwd),['file.txt']);
+});
+
 test('a concurrently edited file is preserved between journal preparation and file promotion',async t=>{
   let destination,changed=false;const io={...fs,writeFile:async(file,...args)=>{const result=await fs.writeFile(file,...args);if(!changed&&String(file).includes('.relay-patch-')){changed=true;await fs.writeFile(destination,'Editor changed it');}return result;}};
   const{cwd,store}=await fixture(t,io);destination=path.join(cwd,'file.txt');await writeFile(destination,'original');await assert.rejects(store.patch({cwd,path:destination,oldText:'original',newText:'changed'}),/file changed/);assert.equal(await readFile(destination,'utf8'),'Editor changed it');

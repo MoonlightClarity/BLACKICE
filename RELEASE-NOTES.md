@@ -1,3 +1,7 @@
+# BLACKICE 2.33.13: planning, Fast mode and background email
+
+See [RELEASE-NOTES-2.33.13.md](RELEASE-NOTES-2.33.13.md) for Fast mode, aligned Multi-select controls, compatible API recovery, durable planning and contained background email. Candidate verification and public release status are recorded separately.
+
 # BLACKICE 2.33.5: durable history and release reliability
 
 See [RELEASE-NOTES-2.33.5.md](RELEASE-NOTES-2.33.5.md) for durable job history beyond the former lifetime limit, compact metadata queries, restart diagnostics, complete desktop runtime packaging, and stricter installer evidence checks. Candidate verification results are recorded separately from public release status.

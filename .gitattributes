@@ -1,3 +1,9 @@
+# Runtime fingerprints must match a clean checkout on every build host.
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
 # Vendored catalog and source hashes depend on the exact upstream bytes.
 lib/vendor/catalyst/** -text
+public/assets/fonts/** -text
 public/assets/agentdesk-noir-city.svg -text

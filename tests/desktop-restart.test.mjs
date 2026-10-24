@@ -57,6 +57,19 @@ test('a scheduling persistence failure leaves the app open and disables restart'
   assert.deepEqual(await fs.readdir(f.profileDir), []);
 });
 
+test('a lost rename acknowledgement recognizes exact saved receipts without repeating restart', async t => {
+  let renames = 0;
+  const f = await fixture(t, { io: { rename: async (...args) => { await fs.rename(...args); renames++; throw new Error('Rename acknowledgement lost'); } } });
+  const scheduled = await f.controller.request({ requestId: 'lost-rename-ack', ownerId: 'grant-a' });
+  assert.equal(scheduled.status, 'scheduled'); assert.equal(scheduled.durable, true);
+  const final = await f.controller.waitForHandoff();
+  assert.equal(final.status, 'restarting'); assert.equal(final.durable, true); assert.equal(f.controller.status().available, true);
+  assert.equal((await f.read()).receipts[0].status, 'restarting'); assert.equal(renames, 2);
+  assert.equal((await f.controller.request({ requestId: 'lost-rename-ack', ownerId: 'grant-a' })).id, scheduled.id);
+  assert.equal(renames, 2); assert.equal(f.events.filter(([kind]) => kind === 'relaunch').length, 1);
+  assert.deepEqual(await fs.readdir(f.profileDir), ['desktop-restart.json']);
+});
+
 test('failure to persist restarting releases the barrier and never arms relaunch', async t => {
   let renames = 0;
   const f = await fixture(t, { io: { rename: async (...args) => { if (++renames === 2) throw new Error('second write failed'); return fs.rename(...args); } } });
