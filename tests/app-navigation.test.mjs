@@ -20,10 +20,11 @@ async function fixture({pauseModule,apiResponse,desktop=true}={}){
   const listeners=new Map();
   const timers=new Map();let clock=0,timerId=0;
   const toastRoot={children:[],append(node){node.parentNode=this;this.children.push(node);}};
+  const workspaceClasses=new Set(),appMount={classList:{toggle(name,enabled){if(enabled)workspaceClasses.add(name);else workspaceClasses.delete(name);},contains:name=>workspaceClasses.has(name)}};
   const frames=[],mount={innerHTML:''},menu={open:true},tabs=modes.map(mode=>({dataset:{mode},attributes:{},tabIndex:0,isConnected:true,setAttribute(name,value){this.attributes[name]=value;},focus(){document.activeElement=this;},closest(){return this;}})),actions={hidden:true};
-  const effects=[],skip={},destinations=Object.fromEntries(['mission-task','observe-workspace','planning-workspace','configure-workspace'].map(id=>[id,{id}])),canvas={id:'canvas',scrollTop:0,scrollLeft:0,clientWidth:900,clientHeight:600,style:{},focus(options){document.activeElement=this;this.focusOptions=options;},getBoundingClientRect(){return{width:this.clientWidth,height:this.clientHeight};}},world={style:{}},zoom={};let focusables=[];
+  const effects=[],skip={},destinations=Object.fromEntries(['mission-task','mission-workspace','observe-workspace','planning-workspace','configure-workspace'].map(id=>[id,{id}])),canvas={id:'canvas',scrollTop:0,scrollLeft:0,clientWidth:900,clientHeight:600,style:{},focus(options){document.activeElement=this;this.focusOptions=options;},getBoundingClientRect(){return{width:this.clientWidth,height:this.clientHeight};}},world={style:{}},zoom={};let focusables=[];
   mount.querySelectorAll=()=>focusables;mount.querySelector=selector=>selector==='.modal'?modal:null;
-  let modal=null;const document={addEventListener(name,handler){listeners.set(name,handler);},activeElement:{tagName:'BODY',dataset:{},isConnected:true,closest(){return null;},focus(){document.activeElement=this;}},createElement(tag){return{tagName:tag.toUpperCase(),className:'',textContent:'',remove(){const parent=this.parentNode;if(parent){parent.children.splice(parent.children.indexOf(this),1);this.parentNode=null;}},focus(){document.activeElement=this;}};},querySelector(selector){if(selector==='#toast-root')return toastRoot;if(selector==='.skip-link')return skip;if(selector==='#canvas')return canvas;if(selector==='#world')return world;if(selector==='#zoom-level')return zoom;if(destinations[selector.slice(1)])return destinations[selector.slice(1)];if(selector==='#modal-root')return mount;if(selector==='#modal-root .modal')return modal;if(selector==='.workspace-menu')return menu;if(selector==='#configure-mode-actions')return actions;const mode=/\[data-mode="([^"]+)"\]/.exec(selector)?.[1];return mode?tabs.find(tab=>tab.dataset.mode===mode):null;},querySelectorAll(selector){return selector.includes('#workspace-modes')?tabs:[];}};
+  let modal=null;const document={addEventListener(name,handler){listeners.set(name,handler);},activeElement:{tagName:'BODY',dataset:{},isConnected:true,closest(){return null;},focus(){document.activeElement=this;}},createElement(tag){return{tagName:tag.toUpperCase(),className:'',textContent:'',remove(){const parent=this.parentNode;if(parent){parent.children.splice(parent.children.indexOf(this),1);this.parentNode=null;}},focus(){document.activeElement=this;}};},querySelector(selector){if(selector==='#app')return appMount;if(selector==='#toast-root')return toastRoot;if(selector==='.skip-link')return skip;if(selector==='#canvas')return canvas;if(selector==='#world')return world;if(selector==='#zoom-level')return zoom;if(destinations[selector.slice(1)])return destinations[selector.slice(1)];if(selector==='#modal-root')return mount;if(selector==='#modal-root .modal')return modal;if(selector==='.workspace-menu')return menu;if(selector==='#configure-mode-actions')return actions;const mode=/\[data-mode="([^"]+)"\]/.exec(selector)?.[1];return mode?tabs.find(tab=>tab.dataset.mode===mode):null;},querySelectorAll(selector){return selector.includes('#workspace-modes')?tabs:[];}};
   document.body=document.activeElement;
   Object.defineProperty(mount,'innerHTML',{get(){return this.value||'';},set(value){
     if(modal){modal.isConnected=false;for(const control of modal.querySelectorAll())control.isConnected=false;}this.value=value;
@@ -39,7 +40,7 @@ async function fixture({pauseModule,apiResponse,desktop=true}={}){
   const modules={
     '/conversation-search.mjs':conversationSearchModel,
     '/configure-ui.mjs':{initConfigureUI:callbacks=>{configureCallbacks=callbacks;return{update(){},showConnector(){effects.push('connector-settings');}};}},
-    '/observe-ui.mjs':{initObserveUI:callbacks=>{observeCallbacks=callbacks;return{update(){},enter(options){observedEntries.push(options);}};}},
+    '/observe-ui.mjs':{initObserveUI:callbacks=>{observeCallbacks=callbacks;return{update(){},leave(){},enter(options){observedEntries.push(options);}};}},
     '/observe-stream.mjs':{createObserveSubscription:()=>()=>{}},
     '/editor-model.mjs':{WorkflowHistory:class{},diagnoseWorkflow:()=>[],fitWorkflow(){effects.push('fit');return{x:80,y:45,scale:.75};},renderMarkdown:value=>value},
     '/mission-model.mjs':{},'/reasoning-model.mjs':{},'/run-state-model.mjs':runStateModel,'/context-ui.mjs':{},'/task-state-ui.mjs':{},'/svg-preview.mjs':{},'/artifact-ui.mjs':{},'/prompts-ui.mjs':{},'/task-title.mjs':{},'/repeat-task-model.mjs':{},'/workspace-integrations.mjs': workspaceIntegrationModel, '/api-client.mjs':{createApiClient:()=>apiResponse||(async()=>({}))},
@@ -50,8 +51,8 @@ async function fixture({pauseModule,apiResponse,desktop=true}={}){
   const context=vm.createContext({document,window:{relayDesktop:desktop?{}:undefined},structuredClone,crypto:webcrypto,requestAnimationFrame:fn=>frames.push(fn),clearTimeout(id){timers.delete(id);},setTimeout(callback,milliseconds){const id=++timerId;timers.set(id,{callback,at:clock+milliseconds});return id;},console,__effects:effects,__draft:draft,__settingsDraft:settingsDraft,__messages:messages,__load:async name=>{if(name===pauseModule)await pending.promise;return modules[name]||{};}});
   const adapted=source.replace(/import\('([^']+)'\)/g,(_,name)=>`__load(${JSON.stringify(name)})`).replace(/\n  init\(\);\s*\n\}\)\(\);\s*$/,()=>`
     const renderToast=toast;
-    renderDesktop=()=>renderMode();renderHeader=()=>{};renderGraph=()=>{};renderInspector=()=>{};markDirty=()=>{state.dirty=true;};saveWorkflow=()=>__effects.push('save');showRun=()=>__effects.push('run');restoreHistory=direction=>__effects.push(direction);toast=(message,error)=>__messages.push({message,error});
-    missionUI={getDraft:()=>__draft,getSelection:()=>null,capturePromptDraft:()=>({...__draft}),applyPromptDraft(capture,text){if(capture.task!==__draft.task)return{applied:false};__draft.task=text;return{applied:true};},focus(){document.activeElement=document.querySelector('#mission-task');__effects.push('chat-focus:'+state.screen);},update(){},submitFocused(){__effects.push('chat-submit');}};configureUI={update(){},draft:__settingsDraft};observeUI={update(){},enter(){}};
+    renderHeader=()=>{};renderGraph=()=>{};renderInspector=()=>{};markDirty=()=>{state.dirty=true;};saveWorkflow=()=>__effects.push('save');showRun=()=>__effects.push('run');restoreHistory=direction=>__effects.push(direction);toast=(message,error)=>__messages.push({message,error});
+    missionUI={getDraft:()=>__draft,getSelection:()=>null,capturePromptDraft:()=>({...__draft}),applyPromptDraft(capture,text){if(capture.task!==__draft.task)return{applied:false};__draft.task=text;return{applied:true};},focus(){document.activeElement=document.querySelector('#mission-task');__effects.push('chat-focus:'+state.screen);},update(){},submitFocused(){__effects.push('chat-submit');}};configureUI={update(){},draft:__settingsDraft};observeUI={update(){},leave(){},enter(){}};
     ${clickRegistration}
     globalThis.app={state,mountConfigure,mountObserve,showChatGPTConnectorSettings,toast:renderToast,handleGlobalKey,updateSkipLink,syncWorkflowView,ensureWorkflowView,applyView,fit,showModal,closeModal,showPlanning,showTaskNotes,showMission,showObserve,showConfigure,showWorkflow,selectWorkspaceMode,handleWorkspaceModeKey,renderMode,showLearning,showEmailWorkspace,showIdentity,showToolConnections,showFilePatches,showKnowledge,showConnections,showBrowserWorkspace,showProjects,showInbox,showOperations,showSchedule,showSwarm,showDeployOperation};
   })();`);
@@ -65,6 +66,27 @@ test('the legacy Desktop route is not exposed by the current UI',async()=>{
   assert.doesNotMatch(source,/class="desktop-workspace/);
   assert.doesNotMatch(source,/data-action="desktop"/);
   assert.doesNotMatch(source,/label:'Open agent desktop'/);
+});
+
+test('workspace tabs update the visible surface and accessibility state without a legacy Desktop mount',async()=>{
+  const f=await fixture(),app=f.document.querySelector('#app');
+  assert.equal(f.document.querySelector('#desktop-workspace'),null);
+  const screens={view:'mission',observe:'observe',planning:'planning',configure:'configure'};
+  const targets={mission:'#mission-task',observe:'#observe-workspace',planning:'#planning-workspace',configure:'#configure-workspace',workflow:'#canvas'};
+  for(const mode of ['configure','observe','planning','view','configure','view']){
+    f.selectWorkspaceMode(mode);await turn();f.flush();const screen=screens[mode];
+    assert.equal(f.state.screen,screen);
+    for(const [name,id]of Object.entries({mission:'mission-workspace',observe:'observe-workspace',planning:'planning-workspace',configure:'configure-workspace'})){
+      assert.equal(f.destinations[id].hidden,name!==screen,`${mode}: ${name} visibility`);
+      assert.equal(app.classList.contains(`${name}-view`),name===screen,`${mode}: ${name} layout`);
+    }
+    for(const tab of f.tabs){assert.equal(tab.attributes['aria-selected'],String(tab.dataset.mode===mode));assert.equal(tab.tabIndex,tab.dataset.mode===mode?0:-1);}
+    assert.equal(f.skip.href,targets[screen]);assert.equal(f.actions.hidden,true);assert.equal(f.document.activeElement.dataset.mode,mode);
+  }
+  f.showWorkflow();f.flush();assert.equal(f.skip.href,targets.workflow);assert.equal(f.actions.hidden,false);
+  for(const id of ['mission-workspace','observe-workspace','planning-workspace','configure-workspace'])assert.equal(f.destinations[id].hidden,true);
+  assert.ok(f.tabs.every(tab=>tab.attributes['aria-selected']==='false'));
+  assert.equal(f.draft.task,'Keep my unsent task');assert.equal(f.state.workflow.id,'draft');assert.equal(f.state.dirty,false);
 });
 
 test('repeating a toast reuses one message, resets its lifetime and preserves focus',async()=>{

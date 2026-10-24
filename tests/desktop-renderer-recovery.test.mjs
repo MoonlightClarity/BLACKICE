@@ -12,17 +12,19 @@ function fixture(t, overrides = {}) {
   const window = new EventEmitter(); window.webContents = new EventEmitter();
   window.destroyed = false; window.visible = true; window.webContents.isDestroyed = () => window.destroyed;
   window.isDestroyed = () => window.destroyed; window.isVisible = () => window.visible;
-  const loads = [], prompts = [], errors = [], crashes = [];
+  const loads = [], prompts = [], errors = [], crashes = [], hangTransitions = [];
   let closing = false, unavailable = 0;
   window.loadURL = url => { loads.push(url); return overrides.load?.(loads.length) ?? Promise.resolve(); };
   const recovery = new DesktopRendererRecovery({ window, url: 'http://127.0.0.1:3547/',
     isClosing: () => closing, showRecovery: options => { prompts.push(options); return overrides.ask?.(options) ?? Promise.resolve({ response: 0 }); },
     onCrash: details => crashes.push(details), onError: error => errors.push(error), onUnavailable: () => unavailable++,
+    onUnresponsive: (...args) => { hangTransitions.push({ event: 'unresponsive', args }); return overrides.onUnresponsive?.(); },
+    onResponsive: (...args) => { hangTransitions.push({ event: 'responsive', args }); return overrides.onResponsive?.(); },
     setTimer: (callback, delay) => { const id = ++nextTimer; timers.set(id, { callback, delay }); return id; },
     clearTimer: id => timers.delete(id), stableMs: 60, unresponsiveMs: 15, loadTimeoutMs: 20,
   });
   t.after(() => recovery.stop());
-  return { recovery, window, loads, prompts, errors, crashes, timers,
+  return { recovery, window, loads, prompts, errors, crashes, hangTransitions, timers,
     close: () => { closing = true; recovery.stop(); },
     get unavailable() { return unavailable; },
     fire(delay) { for (const [id, timer] of [...timers]) if (timer.delay === delay) { timers.delete(id); timer.callback(); } },
@@ -174,6 +176,33 @@ test('becoming responsive cancels a pending hang prompt and ignores its late Rel
   assert.equal(f.prompts[0].signal.aborted, true); answer.resolve({ response: 1 }); await tick(); assert.equal(f.loads.length, 0);
 });
 
+test('hang diagnostics report each real transition once with no native event payload', async t => {
+  const f = fixture(t); f.window.visible = false;
+  f.window.emit('responsive', { message: 'PRIVATE_NATIVE_DETAILS' });
+  f.window.emit('unresponsive', { url: 'https://PRIVATE_WINDOW.example/' });
+  f.window.emit('unresponsive', { message: 'PRIVATE_DUPLICATE' });
+  assert.deepEqual(f.hangTransitions, [{ event: 'unresponsive', args: [] }]);
+  f.fire(15); await tick(); assert.equal(f.prompts.length, 0);
+  f.window.emit('responsive', { message: 'PRIVATE_NATIVE_DETAILS' });
+  f.window.emit('responsive');
+  assert.deepEqual(f.hangTransitions, [{ event: 'unresponsive', args: [] }, { event: 'responsive', args: [] }]);
+  f.window.emit('unresponsive'); f.close(); f.recovery.responsive(); f.recovery.unresponsive();
+  assert.deepEqual(f.hangTransitions.map(value => value.event), ['unresponsive', 'responsive', 'unresponsive']);
+});
+
+test('hang diagnostic observer failures cannot interrupt native recovery', async t => {
+  const f = fixture(t, {
+    onUnresponsive: () => { throw new Error('PRIVATE_DIAGNOSTIC_FAILURE'); },
+    onResponsive: () => Promise.reject(new Error('PRIVATE_DIAGNOSTIC_REJECTION')),
+  });
+  f.window.emit('unresponsive'); f.window.emit('responsive'); await tick();
+  assert.equal(f.recovery.hung, false); f.fire(15); assert.equal(f.prompts.length, 0); assert.equal(f.errors.length, 0);
+  f.window.emit('unresponsive');
+  await f.recovery.rendererGone({ reason: 'crashed' }); f.window.emit('responsive');
+  assert.equal(f.loads.length, 1); assert.equal(f.recovery.state, 'ready');
+  assert.deepEqual(f.hangTransitions.map(value => value.event), ['unresponsive', 'responsive', 'unresponsive']);
+});
+
 test('native prompt failures are contained and preserve a running backend', async t => {
   const f = fixture(t, { ask: () => Promise.reject(new Error('fixture native prompt error')) });
   await f.recovery.rendererGone({ reason: 'crashed' }); await f.recovery.rendererGone({ reason: 'crashed' });
@@ -184,6 +213,8 @@ test('desktop wiring isolates renderer recovery from detach and guards shutdown'
   const source = await readFile(new URL('../desktop/main.mjs', import.meta.url), 'utf8');
   const wiring = source.slice(source.indexOf('const recovery = rendererRecovery = new DesktopRendererRecovery('), source.indexOf('let readyToShow = false;'));
   assert.ok(wiring.includes('dialog.showMessageBox(window, options)')); assert.ok(wiring.includes("event: 'renderer_gone'"));
+  assert.ok(wiring.includes("onUnresponsive: () => diagnostics.record({ component: 'desktop', event: 'renderer_unresponsive', level: 'warning' })"));
+  assert.ok(wiring.includes("onResponsive: () => diagnostics.record({ component: 'desktop', event: 'renderer_responsive' })"));
   assert.ok(wiring.includes('restartClosing')); assert.ok(wiring.includes('maintenanceScheduled')); assert.ok(wiring.includes('desktopLifecycle.quitting'));
   assert.ok(!wiring.includes('detachDesktop')); assert.ok(!wiring.includes('app.quit')); assert.match(source, /return recovery\.loadInitial\(\)/);
   assert.match(source, /async function shutdown\(\) \{\s*rendererRecovery\?\.stop\(\)/);

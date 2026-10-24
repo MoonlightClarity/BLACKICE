@@ -299,23 +299,32 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     if (destroyed || historyRefreshFlight || !historyRefreshRequested) return;
     historyRefreshRequested = false;
     const version = state.summaryVersion, buckets = ['active', 'archived', 'deleted'];
-    historyRefreshFlight = Promise.allSettled(buckets.map(bucket => api(`/api/conversations?state=${bucket}`)));
-    const results = await historyRefreshFlight;
-    if (!destroyed && version === state.summaryVersion) {
-      const failure = results.find(result => result.status === 'rejected');
-      if (!failure) {
-        state.summaries = Object.fromEntries(results.map((result, index) => { const data = result.value; return [buckets[index], (Array.isArray(data) ? data : data.conversations || data.items || []).map(entry => ({ ...entry, state: buckets[index] }))]; }));
-        const items = attentionItems(getSnapshot()); attention.observe(items, { catalogIds: items.map(item => item.id) });
-        const catalogSignature = JSON.stringify(buckets.map(bucket => state.summaries[bucket].map(item => [item.taskId || item.rootId || item.id, item.updatedAt, item.state, item.title])));
-        if (state.searchCatalogSignature !== catalogSignature) { state.searchCatalogSignature = catalogSignature; if (state.search.trim()) void chatSearch.refresh(); }
+    let failed = false;
+    try {
+      historyRefreshFlight = Promise.allSettled(buckets.map(bucket => api(`/api/conversations?state=${bucket}`)));
+      const results = await historyRefreshFlight;
+      if (!destroyed && version === state.summaryVersion) {
+        const failure = results.find(result => result.status === 'rejected');
+        if (!failure) {
+          state.summaries = Object.fromEntries(results.map((result, index) => { const data = result.value; return [buckets[index], (Array.isArray(data) ? data : data.conversations || data.items || []).map(entry => ({ ...entry, state: buckets[index] }))]; }));
+          const items = attentionItems(getSnapshot()); attention.observe(items, { catalogIds: items.map(item => item.id) });
+          const catalogSignature = JSON.stringify(buckets.map(bucket => state.summaries[bucket].map(item => [item.taskId || item.rootId || item.id, item.updatedAt, item.state, item.title])));
+          if (state.searchCatalogSignature !== catalogSignature) { state.searchCatalogSignature = catalogSignature; if (state.search.trim()) void chatSearch.refresh(); }
+        }
+        state.summaryError = failure ? failure.reason?.message || 'History could not load.' : '';
+        const snapshot = getSnapshot(); renderConversationTitle(snapshot); renderSidebar(snapshot); renderComposer(snapshot); renderConversationActions(snapshot);
       }
-      state.summaryError = failure ? failure.reason?.message || 'History could not load.' : '';
-      const snapshot = getSnapshot(); renderConversationTitle(snapshot); renderSidebar(snapshot); renderComposer(snapshot); renderConversationActions(snapshot);
+    } catch (error) {
+      failed = true; globalThis.blackiceUIResilience?.report(error);
+    } finally {
+      // Rendering can fail after a successful response. Always release the flight
+      // and its callers so a later refresh can recover instead of staying busy.
+      historyRefreshFlight = null;
+      if (!destroyed) {
+        if (historyRefreshRequested) { historyRefreshTimer = setTimeout(() => { historyRefreshTimer = null; void runHistoryRefresh(); }, 80); }
+        else { const waiters = historyWaiters; historyWaiters = []; for (const resolve of waiters) resolve(!failed && !state.summaryError); }
+      }
     }
-    historyRefreshFlight = null;
-    if (destroyed) return;
-    if (historyRefreshRequested) { historyRefreshTimer = setTimeout(() => { historyRefreshTimer = null; void runHistoryRefresh(); }, 80); }
-    else { const waiters = historyWaiters; historyWaiters = []; for (const resolve of waiters) resolve(!state.summaryError); }
   }
   const loadSummaries = () => refreshHistory({ immediate: true });
   async function retryHistory() {

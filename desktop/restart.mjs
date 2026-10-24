@@ -10,6 +10,7 @@ const MESSAGES = {
   DESKTOP_RESTART_STORAGE_UNAVAILABLE: 'The saved restart receipt could not be safely read or written.',
   DESKTOP_RESTART_HISTORY_FULL: 'Restart receipt history is full; new restart requests are disabled to preserve idempotency.',
   DESKTOP_RESTART_BUSY: 'BLACKICE must be idle before restarting.',
+  DESKTOP_RESTART_REQUEST_MISMATCH: 'This request ID was saved with a different force choice. Inspect that receipt; use a new ID for a new restart intent.',
   DESKTOP_RESTART_CLOSING: 'BLACKICE is already closing.',
   DESKTOP_RESTART_BROWSER_BUSY: 'Finish browser actions, downloads, page loads, or pending interactions before restarting BLACKICE.',
   DESKTOP_RESTART_BROWSER_STATE: 'Browser state could not be checked before restarting BLACKICE.',
@@ -33,7 +34,15 @@ const MESSAGES = {
   DESKTOP_RESTART_MODE_CHANGED: 'BLACKICE reopened in a different desktop mode; this restart request will not be replayed.',
 };
 function failure(code, status = 409) { return Object.assign(new Error(MESSAGES[code] || 'The restart request could not be completed.'), { code, status }); }
-function publicError(error) { const code = MESSAGES[error?.code] ? error.code : 'DESKTOP_RESTART_PREPARE_FAILED'; return { code, message: MESSAGES[code] }; }
+const BLOCKERS = {
+  maintenance: 'BLACKICE is already preparing profile maintenance.',
+  active_runs: 'Active agent work must finish or be stopped before restarting BLACKICE.',
+  learning: 'A background learning review must finish or be stopped before restarting BLACKICE.',
+  application_sessions: 'End private application sessions before restarting BLACKICE; they may contain unsaved work.',
+  pending_actions: 'Queued work, sign-ins, or connection checks must finish or be stopped before restarting BLACKICE.',
+  direct_actions: 'Unfinished direct actions, including actions waiting for input, must finish or be cancelled before restarting BLACKICE.',
+};
+function publicError(error) { const code = MESSAGES[error?.code] ? error.code : 'DESKTOP_RESTART_PREPARE_FAILED'; const blocker = code === 'DESKTOP_RESTART_BUSY' && Object.hasOwn(BLOCKERS, error?.blocker) ? error.blocker : null; return { code, message: blocker ? BLOCKERS[blocker] : MESSAGES[code], ...(blocker ? { blocker } : {}) }; }
 function copy(value) { return value == null ? value : structuredClone(value); }
 function text(value, max = 240) { return typeof value === 'string' && value.length > 0 && value.length <= max && !/[\x00-\x1f\x7f]/.test(value); }
 function requestKey(ownerId, requestId) { return JSON.stringify([ownerId, requestId]); }
@@ -61,6 +70,8 @@ export class DesktopRestartController {
   validateReceipt(value) {
     if (!value || !text(value.id, 120) || !text(value.ownerId) || !text(value.requestId, 120) || !/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(value.requestId) || value.jobId !== null && !text(value.jobId) || !STATUSES.has(value.status) || !validDate(value.requestedAt) || !validDate(value.updatedAt) || value.completedAt !== undefined && !validDate(value.completedAt)) throw failure('DESKTOP_RESTART_STORAGE_UNAVAILABLE');
     const receipt = { id: value.id, requestId: value.requestId, ownerId: value.ownerId, jobId: value.jobId, status: value.status, requestedAt: value.requestedAt, updatedAt: value.updatedAt, origin: this.identity(value.origin), durable: true };
+    if (value.force !== undefined && typeof value.force !== 'boolean') throw failure('DESKTOP_RESTART_STORAGE_UNAVAILABLE');
+    receipt.force = value.force === true;
     if (value.completedAt !== undefined) receipt.completedAt = value.completedAt;
     if (value.started !== undefined) receipt.started = this.identity(value.started);
     if (value.error !== undefined) { if (!MESSAGES[value.error?.code]) throw failure('DESKTOP_RESTART_STORAGE_UNAVAILABLE'); receipt.error = publicError(value.error); }
@@ -133,18 +144,18 @@ export class DesktopRestartController {
     });
   }
   abortIfNeeded(signal) { if (signal?.aborted) throw failure('DESKTOP_RESTART_CANCELLED'); }
-  async request({ requestId, ownerId = 'local', jobId = null, origin: actionOrigin = null, waitForReceipt = null, waitForAcknowledgement = null, signal } = {}) {
+  async request({ requestId, ownerId = 'local', jobId = null, force = false, origin: actionOrigin = null, waitForReceipt = null, waitForAcknowledgement = null, signal } = {}) {
     await this.init();
-    if (!text(requestId, 120) || !/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(requestId) || !text(ownerId) || jobId !== null && !text(jobId) || waitForReceipt !== null && typeof waitForReceipt !== 'function' || waitForAcknowledgement != null && typeof waitForAcknowledgement !== 'function') throw new TypeError('A stable restart request ID and owner are required.');
+    if (!text(requestId, 120) || !/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(requestId) || !text(ownerId) || typeof force !== 'boolean' || jobId !== null && !text(jobId) || waitForReceipt !== null && typeof waitForReceipt !== 'function' || waitForAcknowledgement != null && typeof waitForAcknowledgement !== 'function') throw new TypeError('A stable restart request ID, owner and boolean force choice are required.');
     return this.serial(async () => {
-      const previous = this.receipts.find(value => value.requestId === requestId && value.ownerId === ownerId); if (previous) return copy(previous);
+      const previous = this.receipts.find(value => value.requestId === requestId && value.ownerId === ownerId); if (previous) { if (previous.force !== force) throw failure('DESKTOP_RESTART_REQUEST_MISMATCH'); return copy(previous); }
       if (this.storageError) throw failure('DESKTOP_RESTART_STORAGE_UNAVAILABLE', 503);
       if (this.operationalError) throw failure(this.operationalError.code, 503);
       if (this.receipts.length >= this.maxHistory) throw failure('DESKTOP_RESTART_HISTORY_FULL');
       if (this.active || this.receipts.some(value => PENDING.has(value.status))) throw failure('DESKTOP_RESTART_BUSY');
       this.abortIfNeeded(signal);
       const origin = this.identity(await this.getIdentity()), at = this.timestamp(); this.abortIfNeeded(signal);
-      const receipt = { id: randomUUID(), requestId, ownerId, jobId, status: 'scheduled', requestedAt: at, updatedAt: at, origin, durable: true };
+      const receipt = { id: randomUUID(), requestId, ownerId, jobId, force, status: 'scheduled', requestedAt: at, updatedAt: at, origin, durable: true };
       const active = this.active = { id: receipt.id, ownerId, requestId, jobId, armed: false, controller: new AbortController() };
       const abort = () => { if (!active.armed) active.controller.abort(); };
       signal?.addEventListener('abort', abort, { once: true });
@@ -152,7 +163,7 @@ export class DesktopRestartController {
       if (signal?.aborted) abort();
       let complete;
       this.handoff = new Promise(resolve => { complete = resolve; });
-      const context = { requestId, ownerId, jobId, origin: actionOrigin, signal: active.controller.signal };
+      const context = { requestId, ownerId, jobId, force, origin: actionOrigin, signal: active.controller.signal };
       try {
         // Save the identity before readiness checks so a refusal has a durable,
         // same-request receipt instead of disappearing into a secondary process.
@@ -203,7 +214,7 @@ export class DesktopRestartController {
     }
   }
   launchOptions(value, origin) {
-    if (!value || !text(value.execPath, 4096) || !path.isAbsolute(value.execPath) || !Array.isArray(value.args) || value.args.some(argument => typeof argument !== 'string' || argument.includes('\0') || /^--(?:restart|quit)(?:=|$)/.test(argument)) || !sameProfile(value.profileDir, this.profileDir) || !MODES.has(value.mode) || value.mode !== origin.mode) throw failure('DESKTOP_RESTART_LAUNCH_INVALID');
+    if (!value || !text(value.execPath, 4096) || !path.isAbsolute(value.execPath) || !Array.isArray(value.args) || value.args.some(argument => typeof argument !== 'string' || argument.includes('\0') || /^--(?:restart|quit|force)(?:=|$)/.test(argument)) || !sameProfile(value.profileDir, this.profileDir) || !MODES.has(value.mode) || value.mode !== origin.mode) throw failure('DESKTOP_RESTART_LAUNCH_INVALID');
     return { execPath: value.execPath, args: [...value.args] };
   }
   async runHandoff(active, context) {

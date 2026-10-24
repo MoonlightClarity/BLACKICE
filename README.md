@@ -1,6 +1,6 @@
-# BLACKICE 2.33.13
+# BLACKICE 2.33.14
 
-See the [2.33.13 release notes](RELEASE-NOTES-2.33.13.md) for planning, Fast mode, compatible API recovery, Multi-select and contained background email improvements. [Windows source verification](verification/windows-2.33.13.json) records the matching source checks; installer evidence and checksums accompany the release below.
+See the [2.33.14 release notes](RELEASE-NOTES-2.33.14.md) for restored workspace navigation, recoverable history updates, interface diagnostics and the explicit native restart force option. [Windows source verification](verification/windows-2.33.14.json) records the matching source checks; installer evidence and checksums accompany the release below.
 
 **BLACKICE is an open-source Windows AI-agent execution platform.** It connects AI reasoning to real work on a computer: reading and editing files, running commands, navigating websites, completing forms, and coordinating longer tasks. It is software the user controls, not a managed automation service.
 
@@ -19,7 +19,7 @@ What the platform provides:
 
 **At your own risk:** BLACKICE deliberately gives authorized AI tools real authority on the user's machine. It does not turn Windows commands into a sandbox or add a BLACKICE approval prompt for every authorized direct action. [Read about authority and responsibility](#authority-and-responsibility).
 
-**[Download BLACKICE 2.33.13 for Windows x64](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.33.13/Blackice-2.33.13-Setup.exe)** · [Release notes and checksums](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.33.13)
+**[Download BLACKICE 2.33.14 for Windows x64](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.33.14/Blackice-2.33.14-Setup.exe)** · [Release notes and checksums](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.33.14)
 
 The installer is unsigned; Windows has not verified a publisher identity for it.
 
@@ -371,7 +371,7 @@ Earlier end-to-end dogfooding built Nightboard, a playable chess game with origi
 
 ## Start
 
-Download [**Blackice-2.33.13-Setup.exe**](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.33.13/Blackice-2.33.13-Setup.exe) from the [v2.33.13 release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.33.13) and compare its SHA-256 with the published checksum. If updating, create a profile backup through **Recovery & support** and quit BLACKICE first.
+Download [**Blackice-2.33.14-Setup.exe**](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.33.14/Blackice-2.33.14-Setup.exe) from the [v2.33.14 release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.33.14) and compare its SHA-256 with the published checksum. If updating, create a profile backup through **Recovery & support** and quit BLACKICE first.
 
 Run Setup to install for your Windows account. It adds **BLACKICE** shortcuts to the Start menu and Desktop and registers the program under **Settings → Apps → Installed apps**. The executable is `BLACKICE.exe`. Saved chats, settings, and workspace data remain in `%APPDATA%\Relay`.
 

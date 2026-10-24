@@ -48,6 +48,7 @@ test('native dispatch recognizes only restart actions before ordinary desktop st
 });
 
 test('restart arguments preserve exact request and profile identities while rejecting conflicting options', () => {
+  assert.deepEqual(parseDesktopRestartArgs(['--restart', '--force', '--request-id=forced']), { action: 'restart', force: true, 'request-id': 'forced' });
   assert.deepEqual(parseDesktopRestartArgs(['--restart', '--request-id', 'restart:exact_1.2-3', '--profile', '/chosen profile']), { action: 'restart', 'request-id': 'restart:exact_1.2-3', 'profile-dir': '/chosen profile' });
   assert.deepEqual(parseDesktopRestartArgs(['--restart-status', '--request-id=saved']), { action: 'status', 'request-id': 'saved' });
   assert.deepEqual(parseDesktopRestartArgs(['--cancel-restart', '--request-id=saved']), { action: 'cancel', 'request-id': 'saved' });
@@ -59,7 +60,22 @@ test('restart arguments preserve exact request and profile identities while reje
     ['--restart', '--request-id=-invalid'], ['--restart', '--request-id=has space'], ['--restart', '--request-id=' + 'a'.repeat(121)],
     ['--restart', '--request-id=bad\nvalue'], ['--restart', '--request-id= padded '], ['--restart', '--origin-token=' + 'b'.repeat(64)],
     ['--restart', '--job-id=someone-else'], ['--restart', '--owner-id=another-owner'], ['--restart', '--unknown'],
+    ['--force'], ['--restart-status', '--request-id=saved', '--force'], ['--cancel-restart', '--request-id=saved', '--force'],
+    ['--restart', '--force=true'], ['--restart', '--force', '--force'], ['--restart', '--force', '--legacy-native-handoff'],
   ]) assert.throws(() => parseDesktopRestartArgs(args), { code: 'DESKTOP_RESTART_ARGUMENTS' }, JSON.stringify(args));
+});
+
+test('native force is explicit in the authenticated request and must match the durable acknowledgement', async () => {
+  const calls = [];
+  const context = { connect: async () => ({ request: async (route, input) => { calls.push({ route, input }); const result = acknowledgement(input.requestId); result.receipt.force = true; return result; } }) };
+  const result = await invoke(['--restart', '--force', '--request-id=force-exact'], context);
+  assert.equal(result.code, 0); assert.equal(result.result.receipt.force, true);
+  assert.deepEqual(calls, [{ route: '/api/desktop/restart', input: { requestId: 'force-exact', force: true } }]);
+  const uncertain = await invoke(['--restart', '--force', '--request-id=force-exact'], { connect: async () => ({ request: async () => acknowledgement('force-exact') }) });
+  assert.equal(uncertain.code, 1); assert.equal(uncertain.error.code, 'DESKTOP_RESTART_ACK_UNCERTAIN');
+  const invalidReceipt = acknowledgement('force-exact'); invalidReceipt.receipt.force = 'true';
+  const invalid = await invoke(['--restart', '--force', '--request-id=force-exact'], { connect: async () => ({ request: async () => invalidReceipt }) });
+  assert.equal(invalid.code, 1); assert.equal(invalid.error.code, 'DESKTOP_RESTART_ACK_UNCERTAIN');
 });
 
 test('help makes no connection and never creates or forwards a restart request', async () => {

@@ -4,6 +4,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DesktopRestartController } from '../desktop/restart.mjs';
+import { createDesktopRestartBarrier } from '../lib/desktop-restart-barrier.mjs';
 
 const finishedAt = '2026-10-21T04:00:01.000Z';
 const succeeded = () => ({ status: 'succeeded', finishedAt });
@@ -32,6 +33,66 @@ test('returns a durable scheduling receipt before arming, and waits for the orig
   assert.deepEqual(f.events, [['check', 'job-a'], ['prepare', 'job-a'], ['relaunch', { execPath: f.launch.execPath, args: f.launch.args }], ['quit']]);
   assert.equal((await f.read()).receipts[0].status, 'restarting');
   assert.equal(Object.hasOwn(f.events[2][1], 'profileDir'), false);
+});
+
+test('force choice is durable, reaches both phases and cannot change behind the same request ID', async t => {
+  const ack = deferred(), origin = deferred(), contexts = [];
+  const f = await fixture(t, { checkReady: value => contexts.push(['check', value.force]), prepare: value => contexts.push(['prepare', value.force]) });
+  const receipt = await f.controller.request({ requestId: 'force-stable', force: true, waitForAcknowledgement: () => ack.promise, waitForReceipt: () => origin.promise });
+  assert.equal(receipt.force, true); assert.equal((await f.read()).receipts[0].force, true);
+  await assert.rejects(f.controller.request({ requestId: 'force-stable' }), { code: 'DESKTOP_RESTART_REQUEST_MISMATCH' });
+  assert.deepEqual(contexts, [['check', true]]); assert.deepEqual(f.events, []);
+  ack.resolve(); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(contexts, [['check', true]]); origin.resolve(succeeded());
+  assert.equal((await f.controller.waitForHandoff()).force, true);
+  assert.deepEqual(contexts, [['check', true], ['prepare', true]]);
+  const reopened = await fixture(t, { profileDir: f.profileDir });
+  assert.equal(reopened.controller.receipt({ ownerId: 'local', requestId: 'force-stable' }).force, true);
+  assert.deepEqual(reopened.events, []);
+  await assert.rejects(reopened.controller.request({ requestId: 'force-stable', force: false }), { code: 'DESKTOP_RESTART_REQUEST_MISMATCH' });
+  await reopened.controller.confirmStartup({ ...reopened.origin, pid: 5678 });
+  assert.equal((await reopened.controller.request({ requestId: 'force-stable', force: true })).status, 'completed');
+  assert.deepEqual(reopened.events, []);
+});
+
+test('a forced restart that cannot finish preparation records failure and leaves the app open', async t => {
+  const f = await fixture(t, { receiptTimeoutMs: 20, prepare: () => new Promise(() => {}) });
+  await f.controller.request({ requestId: 'force-timeout', force: true });
+  const receipt = await f.controller.waitForHandoff();
+  assert.equal(receipt.force, true); assert.equal(receipt.status, 'failed');
+  assert.equal(receipt.error.code, 'DESKTOP_RESTART_RECEIPT_TIMEOUT');
+  assert.deepEqual(f.events, [['check', null], ['release']]);
+  assert.equal(f.controller.isPending(), false);
+});
+
+test('an outer controller deadline retires force cancellation work before reopening its admission gate', async t => {
+  const entered = deferred(), pause = deferred(); let maintenance = false, stopSignal, lateCancels = 0;
+  const barrier = createDesktopRestartBarrier({
+    isClosing: () => false, isMaintenance: () => maintenance, getEngineStatus: () => ({ activeCount: 0 }),
+    getLearningActive: () => false, getApplicationSessions: () => [], getBrowserStatus: () => ({ available: false }),
+    getDirectJobs: async () => [], getPendingActions: () => false, setMaintenance: value => { maintenance = value; }, drain: async () => {},
+    stopWork: async ({ signal }) => { stopSignal = signal; entered.resolve(); await pause.promise; if (!signal.aborted) lateCancels++; },
+    timeoutMs: 10000,
+  });
+  t.after(() => barrier.end());
+  const f = await fixture(t, { receiptTimeoutMs: 25, checkReady: context => barrier.assertReady(context), prepare: context => barrier.begin(context), release: () => barrier.end() });
+  await f.controller.request({ requestId: 'outer-force-timeout', force: true }); await entered.promise;
+  const result = await f.controller.waitForHandoff();
+  assert.equal(result.status, 'failed'); assert.equal(result.error.code, 'DESKTOP_RESTART_RECEIPT_TIMEOUT');
+  assert.equal(stopSignal.aborted, true); assert.equal(maintenance, false); assert.deepEqual(f.events, []);
+  await barrier.begin({ jobId: 'new-preparation' });
+  pause.resolve(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(lateCancels, 0); assert.equal(maintenance, true); barrier.assertPrepared();
+});
+
+test('busy receipts retain a fixed actionable blocker and discard arbitrary error descriptions', async t => {
+  const f = await fixture(t, { checkReady: () => { throw Object.assign(new Error('PRIVATE_JOB_AND_OWNER'), { code: 'DESKTOP_RESTART_BUSY', blocker: 'direct_actions' }); } });
+  const result = await f.controller.request({ requestId: 'busy-details' });
+  assert.equal(result.error.blocker, 'direct_actions'); assert.match(result.error.message, /waiting for input/);
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE_/);
+  const reopened = await fixture(t, { profileDir: f.profileDir });
+  assert.deepEqual(reopened.controller.receipt({ ownerId: 'local', requestId: 'busy-details' }).error, result.error);
+  await assert.rejects(f.controller.request({ requestId: 'busy-details', force: true }), { code: 'DESKTOP_RESTART_REQUEST_MISMATCH' });
 });
 
 test('concurrent duplicate request IDs coalesce and another owner cannot reuse them to see the receipt', async t => {
@@ -253,7 +314,7 @@ test('startup in a different desktop mode records an interruption and never repl
 });
 
 test('relaunch arguments cannot replay a restart or quit trigger', async t => {
-  for (const argument of ['--restart', '--quit', '--restart=true', '--quit=true']) {
+  for (const argument of ['--restart', '--quit', '--restart=true', '--quit=true', '--force', '--force=true']) {
     await t.test(argument, async t => {
       const f = await fixture(t); f.launch.args.push(argument); await f.controller.request({ requestId: 'trigger-guard' });
       const receipt = await f.controller.waitForHandoff(); assert.equal(receipt.status, 'failed'); assert.equal(receipt.error.code, 'DESKTOP_RESTART_LAUNCH_INVALID'); assert.deepEqual(f.events, [['check', null], ['prepare', null], ['release']]);

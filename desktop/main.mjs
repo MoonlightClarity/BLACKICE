@@ -316,6 +316,8 @@ function createWindow() {
     isClosing: () => Boolean(shutdownPromise || didClose || restartClosing || maintenanceScheduled || desktopLifecycle.stopped || desktopLifecycle.quitting),
     showRecovery: options => dialog.showMessageBox(window, options),
     onCrash: details => diagnostics.record({ component: 'desktop', event: 'renderer_gone', level: 'error', reason: details.reason, exitCode: details.exitCode }),
+    onUnresponsive: () => diagnostics.record({ component: 'desktop', event: 'renderer_unresponsive', level: 'warning' }),
+    onResponsive: () => diagnostics.record({ component: 'desktop', event: 'renderer_responsive' }),
     onError: error => diagnostics.recordError('desktop', 'window_reopen_failed', error),
     onUnavailable: () => {
       if (!startup.stopped && desktopLifecycle.mode === 'window' && !window.isDestroyed()) { window.show(); startup.indicator?.dispose(); }

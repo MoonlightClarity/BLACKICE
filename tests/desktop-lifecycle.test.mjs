@@ -57,7 +57,7 @@ test('restart and background flags are explicit booleans with no contradictory l
   for (const argv of [
     ['--restart', '--quit'], ['--restart', '--headless'], ['--restart', '--background'],
     ['--headless', '--background'], ['--background', '--quit'],
-    ['--restart=true'], ['--restart=false'], ['--background=true'], ['--background='], ['--quit=false'], ['--headless=false'],
+    ['--restart=true'], ['--restart=false'], ['--background=true'], ['--background='], ['--quit=false'], ['--headless=false'], ['--force'], ['--force=true'],
   ]) assert.throws(() => parseDesktopLaunchArgs(argv, { platform: 'linux' }));
 });
 
@@ -70,7 +70,7 @@ test('relaunch keeps dev and unrelated arguments while replacing transient flags
 });
 
 test('native restart request and compatibility flags cannot replay through relaunch', () => {
-  const argv = ['electron', '.', '--restart', '--request-id', 'first', '--restart-status', '--cancel-restart', '--request-id=second', '--legacy-native-handoff', '--unrelated'];
+  const argv = ['electron', '.', '--restart', '--force', '--force=true', '--request-id', 'first', '--restart-status', '--cancel-restart', '--request-id=second', '--legacy-native-handoff', '--unrelated'];
   assert.deepEqual(buildDesktopRelaunchArgs({ argv, mode: 'background' }), ['.', '--unrelated', '--background']);
 });
 

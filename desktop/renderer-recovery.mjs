@@ -1,8 +1,8 @@
 /** Recover only the shell renderer. The runtime, browser tabs and jobs stay owned by main. */
 export class DesktopRendererRecovery {
-  constructor({ window, url, isClosing = () => false, showRecovery, onCrash = () => {}, onError = () => {}, onUnavailable = () => {}, stableMs = 60_000, unresponsiveMs = 15_000, loadTimeoutMs = 20_000, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
+  constructor({ window, url, isClosing = () => false, showRecovery, onCrash = () => {}, onUnresponsive = () => {}, onResponsive = () => {}, onError = () => {}, onUnavailable = () => {}, stableMs = 60_000, unresponsiveMs = 15_000, loadTimeoutMs = 20_000, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
     this.window = window; this.url = url; this.isClosing = isClosing; this.showRecovery = showRecovery;
-    this.onCrash = onCrash; this.onError = onError; this.onUnavailable = onUnavailable;
+    this.onCrash = onCrash; this.onUnresponsive = onUnresponsive; this.onResponsive = onResponsive; this.onError = onError; this.onUnavailable = onUnavailable;
     this.stableMs = stableMs; this.unresponsiveMs = unresponsiveMs; this.loadTimeoutMs = loadTimeoutMs;
     this.setTimer = setTimer; this.clearTimer = clearTimer;
     this.state = 'ready'; this.stopped = false; this.automaticUsed = false; this.revision = 0;
@@ -150,6 +150,7 @@ export class DesktopRendererRecovery {
   unresponsive() {
     if (!this.active() || this.hung || this.state !== 'ready') return;
     this.hung = true; this.cancelTimer('stableTimer');
+    this.observe(this.onUnresponsive);
     this.timer('hangTimer', () => {
       if (!this.active() || !this.hung || this.state !== 'ready' || !this.window.isVisible()) return;
       const revision = this.revision;
@@ -166,7 +167,9 @@ export class DesktopRendererRecovery {
   }
 
   responsive() {
+    if (!this.active() || !this.hung) return;
     this.hung = false; this.cancelTimer('hangTimer');
+    this.observe(this.onResponsive);
     if (this.prompt?.kind === 'hang') this.prompt.controller.abort();
     this.armStable();
   }

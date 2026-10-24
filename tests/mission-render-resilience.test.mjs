@@ -115,3 +115,44 @@ test('selection-deferred turn rendering does not commit the parent signature', (
   f.render(); assert.equal(f.timeline.children[0].dataset.runSignature, undefined);
   complete = true; f.render(); assert.ok(f.timeline.children[0].dataset.runSignature);
 });
+
+function historyFixture() {
+  const timers = new Map(), reports = [], requests = []; let timerId = 0;
+  const context = {
+    destroyed: false, historyRefreshTimer: null, historyRefreshFlight: null, historyRefreshRequested: false, historyWaiters: [],
+    state: { summaryVersion: 0, summaries: {}, summaryError: '', search: '' },
+    api: async path => { requests.push(path); return { conversations: [] }; },
+    attentionItems: () => [], attention: { observe() {} }, getSnapshot: () => ({}),
+    renderConversationTitle() {}, renderSidebar() {}, renderComposer() {}, renderConversationActions() {},
+    blackiceUIResilience: { report: error => reports.push(error) },
+    setTimeout(callback) { const id = ++timerId; timers.set(id, callback); return id; }, clearTimeout(id) { timers.delete(id); }
+  };
+  const start = source.indexOf('  function refreshHistory('), end = source.indexOf('  const loadSummaries', start);
+  assert.ok(start >= 0 && end > start);
+  const refresh = runInNewContext(source.slice(start, end) + '\nrefreshHistory;', context);
+  return { context, refresh, timers, reports, requests };
+}
+test('a history render exception releases busy callers, reports recovery, and permits a fresh retry', async () => {
+  const f = historyFixture(); let failing = true;
+  f.context.renderComposer = () => { if (failing) throw Error('private render failure'); };
+  assert.equal(await f.refresh({ immediate: true }), false);
+  assert.equal(f.context.historyRefreshFlight, null); assert.equal(f.context.historyWaiters.length, 0);
+  assert.equal(f.requests.length, 3); assert.equal(f.reports.length, 1); assert.match(f.reports[0].message, /private render failure/);
+  failing = false;
+  assert.equal(await f.refresh({ immediate: true }), true);
+  assert.equal(f.requests.length, 6); assert.equal(f.context.historyRefreshFlight, null);
+});
+test('a failed history render still runs a newer queued refresh and settles all callers with its receipt', async () => {
+  const f = historyFixture(); let newer, first = true, settled = false;
+  f.context.renderComposer = () => {
+    if (!first) return; first = false;
+    newer = f.refresh(); throw Error('render failed as a newer catalog event arrived');
+  };
+  const original = f.refresh({ immediate: true }); original.then(() => { settled = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false); assert.equal(f.context.historyRefreshFlight, null); assert.equal(f.timers.size, 1);
+  const [id, callback] = f.timers.entries().next().value; f.timers.delete(id); callback();
+  assert.equal(await original, true); assert.equal(await newer, true);
+  assert.equal(f.requests.length, 6); assert.equal(f.reports.length, 1);
+  assert.equal(f.context.historyWaiters.length, 0); assert.equal(f.context.historyRefreshFlight, null);
+});

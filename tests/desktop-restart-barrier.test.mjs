@@ -31,6 +31,72 @@ test('readiness is read-only and completed jobs and inactive sessions do not pre
   assert.deepEqual(f.state, before); assert.deepEqual(f.gates, []); assert.equal(f.drains, 0); assert.equal(f.jobReads, 1);
 });
 
+test('force readiness is read-only and force preparation gates before stopping and waits for settlement', async () => {
+  const entered = held(), settle = held(); let stops = 0;
+  const f = fixture({ stopWork: async ({ signal }) => {
+    stops++; assert.equal(f.state.maintenance, true); assert.equal(signal.aborted, false);
+    entered.resolve(); await settle.promise;
+    f.state.engine.activeCount = 0; f.state.learning = false; f.state.pending = false;
+    f.state.jobs[0].status = 'cancelled';
+  } });
+  f.state.engine.activeCount = 1; f.state.learning = true; f.state.pending = true;
+  f.state.jobs = [{ id: 'other-owner-input', status: 'awaiting_input' }];
+  const before = structuredClone(f.state);
+  await f.barrier.assertReady({ force: true }); assert.deepEqual(f.state, before); assert.equal(stops, 0);
+  await assert.rejects(f.barrier.assertReady(), { code: 'DESKTOP_RESTART_BUSY', blocker: 'active_runs' });
+  const pending = f.barrier.begin({ force: true }); await entered.promise;
+  assert.deepEqual(f.gates, [true]); assert.equal(f.drains, 0);
+  assert.throws(() => f.barrier.assertPrepared(), { code: 'DESKTOP_RESTART_NOT_PREPARED' });
+  settle.resolve(); await pending; assert.equal(stops, 1); assert.equal(f.drains, 1);
+  f.barrier.assertPrepared(); f.barrier.end(); assert.deepEqual(f.gates, [true, false]);
+});
+
+test('force preserves private-session, browser, storage and unknown-job refusals before stopping work', async () => {
+  for (const change of [
+    state => { state.sessions = [{ state: 'needs_attention' }]; },
+    state => { state.browser.tabs = [{ pendingInteraction: { kind: 'file_chooser' } }]; },
+    state => { state.browser.downloads = [{ status: 'downloading' }]; },
+    state => { state.browser.persistence.healthy = false; },
+    state => { state.jobs = [{ id: 'unknown', status: 'unknown' }]; },
+  ]) {
+    let stops = 0; const f = fixture({ stopWork: () => { stops++; } }); change(f.state);
+    await assert.rejects(f.barrier.begin({ force: true }));
+    assert.equal(stops, 0); assert.deepEqual(f.gates, []);
+  }
+});
+
+test('force requires actual settlement and releases its gate when an owner remains active', async () => {
+  const f = fixture({ stopWork: () => {} }); f.state.jobs = [{ id: 'stubborn', status: 'cancelling' }];
+  await assert.rejects(f.barrier.begin({ force: true }), { code: 'DESKTOP_RESTART_BUSY', blocker: 'direct_actions' });
+  assert.deepEqual(f.gates, [true, false]); assert.equal(f.drains, 0);
+  assert.throws(() => f.barrier.assertPrepared(), { code: 'DESKTOP_RESTART_NOT_PREPARED' });
+});
+
+test('force stop timeout aborts its owner wait, leaves the app open and cannot release a newer gate', async () => {
+  const late = held(); let stopSignal;
+  const f = fixture({ timeoutMs: 15, stopWork: async ({ signal }) => { stopSignal = signal; await late.promise; } });
+  await assert.rejects(f.barrier.begin({ force: true }), { code: 'DESKTOP_RESTART_DRAIN_TIMEOUT' });
+  assert.equal(stopSignal.aborted, true); assert.equal(f.state.maintenance, false);
+  await f.barrier.begin({ jobId: 'later' }); late.resolve(); await Promise.resolve(); await Promise.resolve();
+  assert.equal(f.state.maintenance, true); f.barrier.assertPrepared(); f.barrier.end();
+});
+
+test('ending a force preparation aborts late stop continuations before releasing its gate', async () => {
+  const entered = held(), finishPause = held(); let stopSignal, lateCancels = 0;
+  const f = fixture({ stopWork: async ({ signal }) => {
+    stopSignal = signal; entered.resolve(); await finishPause.promise;
+    if (!signal.aborted) lateCancels++;
+  } });
+  const first = f.barrier.begin({ force: true, jobId: 'first' });
+  const rejected = assert.rejects(first, { code: 'DESKTOP_RESTART_RELEASED' });
+  await entered.promise; f.barrier.end();
+  assert.equal(stopSignal.aborted, true); assert.equal(f.state.maintenance, false);
+  await f.barrier.begin({ jobId: 'newer' });
+  finishPause.resolve(); await rejected; await Promise.resolve();
+  assert.equal(lateCancels, 0); assert.equal(f.state.maintenance, true);
+  f.barrier.assertPrepared(); f.barrier.end();
+});
+
 test('retained personal and task pages do not prevent restart and are never changed by readiness', async () => {
   const f = fixture();
   f.state.browser.tabs = [

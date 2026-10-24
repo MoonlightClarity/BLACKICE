@@ -1,4 +1,8 @@
-# BLACKICE 2.33.13: planning, Fast mode and background email
+# BLACKICE 2.33.14: workspace navigation and restart recovery
+
+See [RELEASE-NOTES-2.33.14.md](RELEASE-NOTES-2.33.14.md) for the workspace navigation fix, history refresh recovery, interface diagnostics and explicit native restart force option. Exact source and installer verification belong to the matching release evidence.
+
+## BLACKICE 2.33.13: planning, Fast mode and background email
 
 See [RELEASE-NOTES-2.33.13.md](RELEASE-NOTES-2.33.13.md) for Fast mode, aligned Multi-select controls, compatible API recovery, durable planning and contained background email. Candidate verification and public release status are recorded separately.
 

@@ -86,7 +86,7 @@ async function fixture(t, { holdPrepare = false } = {}) {
   await writeFile(script, `import { runDesktopRestartCLI } from ${JSON.stringify(new URL('../lib/desktop-restart-cli.mjs', import.meta.url).href)};
 const [origin, requestId, mode] = process.argv.slice(2);
 const opened = await fetch(origin), cookie = opened.headers.get('set-cookie').split(';')[0]; await opened.arrayBuffer();
-const exitCode = await runDesktopRestartCLI(['--restart', '--request-id=' + requestId], {
+const exitCode = await runDesktopRestartCLI(['--restart', '--request-id=' + requestId, ...(mode.startsWith('force') ? ['--force'] : [])], {
   connect: async () => ({ runtime: { pid: 1234, startedAt: '2026-10-22T00:00:00.000Z' },
     request: async (route, input) => {
       const response = await fetch(origin + route, { method: 'POST', headers: { cookie, origin, 'content-type': 'application/json' }, body: JSON.stringify(input) });
@@ -94,8 +94,8 @@ const exitCode = await runDesktopRestartCLI(['--restart', '--request-id=' + requ
     }
   })
 });
-if (mode === 'hold' && exitCode === 0) await (await fetch(origin + '/__fixture/hold-child')).text();
-process.exitCode = mode === 'fail' && exitCode === 0 ? 7 : exitCode;
+if (mode.includes('hold') && exitCode === 0) await (await fetch(origin + '/__fixture/hold-child')).text();
+process.exitCode = mode.includes('fail') && exitCode === 0 ? 7 : exitCode;
 `);
   const run = (requestId, mode = 'normal') => app.directExecution.call('blackice_run_command', { requestId: 'command-' + requestId, command: nodeCommand(script, [origin, requestId, mode]), timeoutMs: 20000 }, client);
   const waitJob = async id => {
@@ -150,9 +150,44 @@ for (const sameOwner of [true, false]) test(`an unrelated ${sameOwner ? 'same-ow
   assert.equal((await f.waitJob(admitted.jobId)).status, 'failed');
   const receipt = f.controller.receipt({ ownerId: f.client.id, requestId: 'blocked-by-pending-' + sameOwner });
   assert.equal(receipt.status, 'failed'); assert.equal(receipt.error.code, 'DESKTOP_RESTART_BUSY'); assert.equal(receipt.durable, true);
+  assert.equal(receipt.error.blocker, 'direct_actions'); assert.match(receipt.error.message, /waiting for input/);
   const original = await f.app.directExecution.jobs.get(pending.job.id);
   assert.equal(original.status, 'awaiting_input'); assert.equal(original.revision, pending.job.revision);
   assert.deepEqual(f.native, []);
+});
+
+test('force waits for the originating command success before cancelling a saved other-owner chooser', { timeout: 25000 }, async t => {
+  const f = await fixture(t), owner = { ...f.client, id: 'older-fixture-grant' };
+  const pending = await f.app.directExecution.jobs.admit({ ownerId: owner.id, requestId: 'old-chooser', tool: 'blackice_browser_action', arguments: { action: 'click', tabId: 'fixture', ref: 'button' }, requiredScopes: ['browser:write'], client: owner, mutating: true, interaction: { id: 'old-file-chooser', kind: 'file_chooser', createdAt: new Date().toISOString() } });
+  const admitted = await f.run('force-owned-success', 'force-hold'); await f.childHeld.promise;
+  const scheduled = f.controller.receipt({ ownerId: f.client.id, requestId: 'force-owned-success' });
+  assert.equal(scheduled.status, 'scheduled'); assert.equal(scheduled.force, true);
+  assert.equal((await f.app.directExecution.jobs.get(pending.job.id)).status, 'awaiting_input');
+  assert.deepEqual(f.native, []); assert.equal(Boolean(f.app.engine.maintenanceRequested), false);
+  f.releaseChild.resolve(); assert.equal((await f.waitJob(admitted.jobId)).status, 'succeeded');
+  const receipt = await f.controller.waitForHandoff(); assert.equal(receipt.status, 'restarting'); assert.equal(receipt.force, true);
+  const cancelled = await f.app.directExecution.jobs.get(pending.job.id);
+  assert.equal(cancelled.status, 'cancelled'); assert.equal(cancelled.interaction, null); assert.ok(cancelled.finishedAt);
+  assert.equal(cancelled.ownerId, owner.id); assert.ok(cancelled.revision > pending.job.revision);
+  assert.equal(f.app.inbox.status().paused, true); assert.equal(f.app.operations.status().paused, true);
+  assert.deepEqual(f.native, [{ action: 'relaunch', savedJob: admitted.jobId, savedStatus: 'succeeded' }, { action: 'quit' }]);
+});
+
+test('force stops and settles a real owned command before the graceful native handoff', { timeout: 25000 }, async t => {
+  const f = await fixture(t), script = path.join(f.directory, 'waiting-owned-command.mjs'), marker = path.join(f.directory, 'command-started');
+  await writeFile(script, `import { writeFile } from 'node:fs/promises'; await writeFile(${JSON.stringify(marker)}, 'started'); setInterval(() => {}, 1000);`);
+  const admitted = await f.app.directExecution.call('blackice_run_command', { requestId: 'force-stops-command', command: nodeCommand(script, []), timeoutMs: 20000 }, f.client);
+  const deadline = Date.now() + 10000;
+  while (true) {
+    try { await readFile(marker); break; } catch (error) { if (error.code !== 'ENOENT' || Date.now() >= deadline) throw error; await delay(5); }
+  }
+  assert.equal((await f.app.directExecution.jobs.get(admitted.jobId)).status, 'running');
+  const response = await f.post('/api/desktop/restart', { requestId: 'force-local-stop', force: true });
+  assert.equal(response.status, 200); assert.equal(response.value.receipt.force, true);
+  const final = await f.controller.waitForHandoff(); assert.equal(final.status, 'restarting');
+  assert.equal((await f.app.directExecution.jobs.get(admitted.jobId)).status, 'cancelled');
+  assert.equal(f.app.directExecution.active.size, 0);
+  assert.deepEqual(f.native, [{ action: 'relaunch' }, { action: 'quit' }]);
 });
 
 for (const action of ['cancel-action', 'stop-all', 'revoke']) test(`local ${action} reaches a held pre-arm restart after durable origin success`, { timeout: 25000 }, async t => {
@@ -174,13 +209,14 @@ test('native HTTP refuses invented origins, owner/job overrides and remote manag
   const f = await fixture(t);
   const forged = await f.post('/api/desktop/restart', { requestId: 'invented-origin', originToken: 'a'.repeat(64) });
   assert.equal(forged.value.code, 'DESKTOP_RESTART_ORIGIN_INVALID'); assert.equal(forged.status, 409);
-  for (const fields of [{ jobId: 'direct_fake' }, { ownerId: f.client.id }]) {
+  for (const fields of [{ jobId: 'direct_fake' }, { ownerId: f.client.id }, { force: 'true' }, { force: null }]) {
     const response = await f.post('/api/desktop/restart', { requestId: 'invalid-override', ...fields });
     assert.equal(response.status, 400); assert.equal(response.value.code, 'DESKTOP_RESTART_ARGUMENTS');
   }
   const remote = await f.post('/api/desktop/restart', { requestId: 'remote-local-route' }, { 'x-blackice-remote': '1' });
   assert.equal(remote.status, 403); assert.equal(remote.value.code, 'DESKTOP_RESTART_LOCAL_REQUIRED');
   assert.deepEqual(f.controller.receipts, []); assert.deepEqual(f.native, []);
+  for (const action of ['status', 'cancel']) assert.equal((await f.post('/api/desktop/restart/' + action, { requestId: 'invalid-force', force: true })).status, 400);
 });
 
 test('the authenticated direct restart tool also waits for its exact durable receipt before native handoff', { timeout: 15000 }, async t => {

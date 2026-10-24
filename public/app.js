@@ -372,15 +372,16 @@
     const skip=$('.skip-link');if(skip){skip.href=target[0];skip.textContent=target[1];}const destination=$(target[0]);if(destination&&state.screen!=='mission')destination.tabIndex=-1;
   }
   function renderDesktop(){
-    if(!$('#desktop-workspace'))return;
-    const desktop=state.desktop,enabled=!!desktop.enabled,pending=state.desktopPending;
+    // Workspace navigation remains active when the legacy desktop preview is absent.
     $('#app').classList.toggle('planning-view',state.screen==='planning');const planningMount=$('#planning-workspace');if(planningMount)planningMount.hidden=state.screen!=='planning';if(state.screen!=='planning')planningUI?.leave();
     $('#app').classList.toggle('configure-view',state.screen==='configure');const configureMount=$('#configure-workspace');if(configureMount)configureMount.hidden=state.screen!=='configure';if(state.screen!=='observe')observeUI?.leave();
     $('#app').classList.toggle('observe-view',state.screen==='observe');const observeMount=$('#observe-workspace');if(observeMount)observeMount.hidden=state.screen!=='observe';renderMode();
-    $('#app').classList.toggle('desktop-view',state.screen==='desktop');$('#desktop-workspace').classList.toggle('hidden',state.screen!=='desktop');
+    const desktopMount=$('#desktop-workspace');$('#app').classList.toggle('desktop-view',state.screen==='desktop');desktopMount?.classList.toggle('hidden',state.screen!=='desktop');
     $('#app').classList.toggle('mission-view',state.screen==='mission');$('#mission-workspace').hidden=state.screen!=='mission';$$('.rail-button[data-action="mission"]').forEach(el=>el.classList.toggle('active',state.screen==='mission'));updateSkipLink();
     $$('.rail-button[data-action="library"]').forEach(el=>el.classList.toggle('active',state.screen==='workflow'));
 
+    if(!desktopMount)return;
+    const desktop=state.desktop,enabled=!!desktop.enabled,pending=state.desktopPending;
     $('#desktop-presence').hidden=!enabled;
     const available=desktop.available!==false;
     for(const id of ['desktop-attach','desktop-empty-attach']){const button=$(`#${id}`);button.hidden=enabled;button.disabled=pending||!available;button.innerHTML=`${icon(pending?'refresh':'link',14)}${pending?'Connecting…':available?(id==='desktop-attach'?'Attach desktop':'Attach Windows desktop'):'Windows desktop unavailable'}`;}

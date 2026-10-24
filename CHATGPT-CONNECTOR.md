@@ -78,6 +78,18 @@ Receipts are owner scoped. A restart submitted inside `blackice_run_command` bel
 
 If the scheduling reply is lost, keep the same request ID. Inspect its receipt and retry that same ID when appropriate; a different ID requests a different restart. A saved failure is returned on an identical retry and does not replay the action. Other unfinished jobs, browser interactions and downloads still block restart. A stale `awaiting_input` job whose browser interaction was already resolved must be inspected and explicitly cancelled; genuine pending interactions must be resolved before retrying.
 
+For an explicitly requested restart that should stop cancellable work, add `--force`:
+
+```powershell
+& $blackiceExe --restart --force --request-id=restart-force-example-001 --profile-dir=$profileDir
+```
+
+The receipt saves `force: true`. After the scheduling acknowledgement and any originating command's durable success, BLACKICE blocks new starts, pauses automatic queues, cancels active runs and all unfinished direct actions through their owners, and waits for their executors and writes to settle. This includes saved actions waiting for input under older connections; cancellation retains their audit receipts and cannot undo previous effects. Automatic queues remain paused even if preparation later fails. Forced restart still refuses private application sessions, unresolved browser interactions or downloads, unhealthy storage, and work whose cancellation cannot be confirmed. It uses the same graceful native relaunch with the current profile and mode; it never kills the BLACKICE process.
+
+`--force` is valid only with `--restart`, and cannot accompany the legacy handoff. The force choice is part of the saved request identity: retry an uncertain request with the same ID and same force choice. Changing that choice behind an existing ID is rejected; use a new ID only for a deliberate new restart intent. Status and cancellation commands omit `--force`. Busy receipts include a fixed blocker category, such as `direct_actions`, without exporting job IDs, owners or action contents.
+
+After installing these files over a running older primary, start BLACKICE normally in a new process before using `--force`. Updating files or reloading the interface does not replace the primary's restart handler; the older running handler rejects the new force option. `--force` cannot bootstrap that upgrade.
+
 When installing this protocol over an older running primary, the new secondary executable cannot receive the new scheduling acknowledgement from the old process. The explicit, one-time compatibility command is:
 
 ```powershell

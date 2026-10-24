@@ -12,6 +12,7 @@ export function parseDesktopLaunchArgs(argv = process.argv, { platform = process
     else if (argument === '--background') background = true;
     else if (argument === '--quit') quit = true;
     else if (argument === '--restart') restart = true;
+    else if (/^--force(?:=|$)/.test(argument)) throw new Error('Use --force only with the native --restart command.');
     else if (argument === '--profile-dir' || argument === '--profile' || argument.startsWith('--profile-dir=') || argument.startsWith('--profile=')) {
       if (profileDir !== null) throw new Error('Choose the desktop profile only once.');
       const value = argument.includes('=') ? argument.slice(argument.indexOf('=') + 1) : argv[++index];
@@ -32,7 +33,7 @@ export function buildDesktopRelaunchArgs({ argv = process.argv, profileDir = nul
   const args = [];
   for (let index = 1; index < argv.length; index++) {
     const argument = argv[index];
-    if (/^--(?:restart|restart-status|cancel-restart|legacy-native-handoff|quit|headless|background)(?:=|$)/.test(argument)) continue;
+    if (/^--(?:restart|restart-status|cancel-restart|legacy-native-handoff|force|quit|headless|background)(?:=|$)/.test(argument)) continue;
     if (argument === '--request-id') { index++; continue; }
     if (argument.startsWith('--request-id=')) continue;
     if (argument === '--profile-dir' || argument === '--profile') { index++; continue; }

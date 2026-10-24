@@ -15,6 +15,23 @@ async function harness(t, options = {}) {
 const record = { component: 'desktop', event: 'ready', level: 'info' };
 const saved = overrides => ({ at: '2026-10-16T22:00:00.000Z', ...record, ...overrides });
 
+test('renderer hang and resume diagnostics persist fixed metadata within existing retention bounds', async t => {
+  const { store, dataDir, directory } = await harness(t, { maxEvents: 2 });
+  for (const event of ['renderer_unresponsive', 'renderer_responsive', 'renderer_unresponsive']) {
+    assert.equal(await store.record({ component: 'desktop', event, level: event === 'renderer_unresponsive' ? 'warning' : 'info', message: 'PRIVATE_RENDERER_TEXT', url: 'https://PRIVATE_RENDERER.example/', contents: 'PRIVATE_PROMPT' }), true);
+  }
+  const snapshot = await store.snapshot();
+  assert.deepEqual(snapshot.events.map(({ at, ...event }) => event), [
+    { component: 'desktop', event: 'renderer_responsive', level: 'info' },
+    { component: 'desktop', event: 'renderer_unresponsive', level: 'warning' },
+  ]);
+  assert.equal(snapshot.diagnostics.droppedEvents, 0);
+  await store.close();
+  const restored = new DiagnosticsStore({ dataDir, maxEvents: 2 }); t.after(() => restored.close());
+  assert.deepEqual((await restored.snapshot()).events, snapshot.events);
+  assert.doesNotMatch(await fs.readFile(path.join(directory, 'events.0.jsonl'), 'utf8'), /PRIVATE_/);
+});
+
 test('native restart diagnostics preserve concrete refusal codes without arbitrary restart-prefixed payloads', async t => {
   const { store } = await harness(t);
   const codes = ['DESKTOP_RESTART_BUSY', 'DESKTOP_RESTART_BROWSER_BUSY', 'DESKTOP_RESTART_ORIGIN_INVALID', 'DESKTOP_RESTART_CANCELLED', 'DESKTOP_RESTART_DRAIN_TIMEOUT', 'DESKTOP_RESTART_STORAGE', 'DESKTOP_RESTART_ACK_UNCERTAIN'];

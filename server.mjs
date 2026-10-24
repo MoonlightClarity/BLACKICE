@@ -177,13 +177,41 @@ export async function createHarnessServer(options = {}) {
     getOriginJob: origin => directExecution.validateRestartOrigin(origin),
     getPendingActions: () => Boolean(inbox.hasPendingWork() || operations.hasPendingWork() || projects.hasPendingWork() || emailOAuth.flow || emailOAuth.callbackOperations?.size || emailOAuth.requests?.size || connectorStartupEnabling),
     setMaintenance: value => { maintenanceRequested = value; engine.maintenanceRequested = value; },
+    stopWork: async ({ signal }) => {
+      const check = () => { if (signal.aborted) throw Object.assign(new Error('The forced restart preparation was stopped.'), { code: 'DESKTOP_RESTART_CANCELLED' }); };
+      const reason = 'Forced restart requested. Automatic work remains paused; inspect stopped work before resuming.';
+      check();
+      // Pause admissions durably before signalling existing owners. These pauses
+      // intentionally survive a failed restart; cancelled work is never replayed.
+      await Promise.all([inbox.pause(reason), operations.pause(reason), pauseProjects(reason)]);
+      check();
+      const jobs = directExecution ? await directExecution.jobs.snapshot({ unfinishedOnly: true }) : [];
+      check();
+      const pending = [], attempt = operation => { try { pending.push(Promise.resolve(operation())); } catch (error) { pending.push(Promise.reject(error)); } };
+      for (const job of jobs) attempt(() => directExecution.cancel(job.id, { ownerId: job.ownerId, reason }));
+      for (const run of engine.listRuns()) if (['queued', 'running', 'waiting'].includes(run.status)) attempt(() => engine.cancelRun(run.id));
+      attempt(() => engine.cancelCompactions?.());
+      attempt(() => learning.cancelBackground(reason));
+      attempt(() => browser.cancel());
+      attempt(() => emailOAuth.drain());
+      if (connectorStartupEnabling) pending.push(connectorStartupEnabling);
+      const stopped = await Promise.allSettled(pending);
+      check();
+      if (stopped.some(value => value.status === 'rejected')) throw Object.assign(new Error('Owned work could not be safely stopped for restart.'), { code: 'DESKTOP_RESTART_PREPARE_FAILED', status: 503 });
+      // A cancellation request is not settlement. Keep the gate until every
+      // actual executor acknowledges it, then persist the resulting run state.
+      await Promise.allSettled([...engine.executions.values(), ...(directExecution ? [...directExecution.active.values()].map(value => value.settled) : [])]);
+      check();
+      await engine.persist();
+      check();
+    },
     drain: async () => {
       // Finish admitted writes without cancelling work or changing persisted
       // queue settings. The shared gate prevents new mutations while draining.
       await Promise.all([
         ...(chatGPTConnector?.inflight || []), ...knowledgeMutations, ...fileMutations,
         prompts.writeChain, email.writeChain, emailOAuth.writeChain,
-        connectorSetup.tail, inbox.tail, operations.tail, projects.tail, directExecution?.jobs.tail,
+        connectorSetup.tail, inbox.tail, operations.tail, projects.tail, directExecution?.jobs.tail, engine.writeChain,
       ]);
       const browserState = browser.status();
       if (browserState.available === true || browserState.persistentSession === true || browserState.tabs?.length) {
@@ -616,7 +644,7 @@ export async function createHarnessServer(options = {}) {
       if (nativeRestartAction && req.method === 'POST') {
         if (req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Use the authenticated direct restart tool for a remote request.', code: 'DESKTOP_RESTART_LOCAL_REQUIRED' });
         const value = await body(req, 2048);
-        if (new URL(req.url, `http://${host}`).search || !value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !['requestId', 'originToken'].includes(key))) return json(res, 400, { error: 'Use one stable restart request ID and its inherited origin, if present.', code: 'DESKTOP_RESTART_ARGUMENTS' });
+        if (new URL(req.url, `http://${host}`).search || !value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !['requestId', 'originToken', 'force'].includes(key)) || value.force !== undefined && (typeof value.force !== 'boolean' || nativeRestartAction[1])) return json(res, 400, { error: 'Use one stable restart request ID, its inherited origin if present, and a boolean force choice only for restart.', code: 'DESKTOP_RESTART_ARGUMENTS' });
         let acknowledge, rejectAcknowledgement;
         const acknowledged = new Promise((resolve, reject) => { acknowledge = resolve; rejectAcknowledgement = reject; });
         acknowledged.catch(() => {});
