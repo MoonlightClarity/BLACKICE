@@ -79,6 +79,25 @@ test('registration typing stays local; explicit sign-in saves the registration a
   assert.equal(JSON.stringify(f.saved).includes('fixture-desktop-secret'), false); assert.equal(JSON.stringify(f.receipts).includes('fixture-desktop-secret'), false);
 });
 
+test('sign-in explains requested mailbox management and sending while connected access follows actual saved capabilities', t => {
+  const value = registered({ connected: true });
+  value.oauth.scopes = ['https://www.googleapis.com/auth/gmail.modify', 'https://www.googleapis.com/auth/gmail.send'];
+  value.oauth.capabilities = { read: true, send: false };
+  const f = fixture(t, { value });
+  assert.match(f.dom.$('#email-oauth-permissions').textContent, /read and manage your mailbox and send messages/);
+  assert.match(f.dom.$('#email-oauth-permissions').textContent, /Existing connections keep their granted permissions/);
+  assert.match(f.dom.$('#email-oauth-note').textContent, /does not include sending access/);
+  f.adopt({ ...value, oauth: { ...value.oauth, capabilities: { read: true, send: true } } });
+  assert.match(f.dom.$('#email-oauth-note').textContent, /Mailbox and sending access is available/);
+  f.adopt({ ...value, oauth: { ...value.oauth, capabilities: undefined } });
+  assert.match(f.dom.$('#email-oauth-note').textContent, /permissions have not been reported/);
+  assert.equal(f.calls.length, 0, 'Displaying or updating capabilities neither requests consent nor sends a message.');
+  const unavailable = emailOAuthCopy({ ...value.oauth, available: false, capabilities: { read: true, send: true } });
+  assert.match(unavailable.label, /Open BLACKICE on this computer/); assert.doesNotMatch(unavailable.note, /access is available/);
+  assert.match(emailOAuthCopy(registered({ pending: true }).oauth).note, /reading and managing mail, and sending messages/);
+  assert.match(emailOAuthCopy(registered().oauth).note, /read and manage mail, and send messages/);
+});
+
 test('status adoption preserves focused registration edits, caret, engine input and disclosure identity', async t => {
   const f = fixture(t, { value: registered() });
   const field = await f.dom.input('#email-oauth-client-id', 'my-unsaved.apps.googleusercontent.com'), disclosure = f.dom.$('#email-oauth-registration');

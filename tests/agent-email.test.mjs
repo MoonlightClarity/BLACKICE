@@ -203,7 +203,7 @@ test('draft headers reject CRLF injection and unsupported actions cannot send', 
   const { store, calls } = await setup(t);
   assert.throws(() => store.draft({ to: ['alice@example.invalid\r\nBcc:other@example.invalid'], body: 'x' }), { code: 'EMAIL_INVALID' });
   assert.throws(() => store.draft({ to: ['alice@example.invalid'], subject: 'Hi\nBcc:other@example.invalid' }), { code: 'EMAIL_INVALID' });
-  const handler = createEmailToolHandler({ store });
+  const handler = createEmailToolHandler({ store, schemaVersion: 1 });
   const response = await handler({ name: EMAIL_TOOL.name, arguments: { action: 'send', to: ['alice@example.invalid'], body: 'x' } });
   assert.equal(response.success, false);
   assert.equal(calls.length, 0);

@@ -252,8 +252,8 @@ export async function createHarnessServer(options = {}) {
     if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !keys.includes(key))) throw Object.assign(new Error('Choose prompt fields from the supported request format.'), { status: 400 });
     return value;
   }
-  async function emailBody(req, keys) {
-    const value = await body(req, 300000);
+  async function emailBody(req, keys, maxBytes = 300000) {
+    const value = await body(req, maxBytes);
     if (maintenanceRequested || closePromise) throw Object.assign(new Error('BLACKICE is closing for maintenance.'), { status: 503 });
     if (!value || Array.isArray(value) || typeof value !== 'object' || Object.keys(value).some(key => !keys.includes(key))) throw Object.assign(new Error('Use only the supported email fields.'), { status: 400 });
     return value;
@@ -702,7 +702,7 @@ export async function createHarnessServer(options = {}) {
       }
       if (pathname === '/api/email/action' && req.method === 'POST') {
         const value = await emailBody(req,['action','folder','query','limit','page','id']);
-        if (!['mailboxes','list','read'].includes(value.action)) return json(res,400,{error:'Email supports folder discovery, message listing, search and preview. Sending is not available.',code:'EMAIL_ACTION_UNAVAILABLE'});
+        if (!['mailboxes','list','read'].includes(value.action)) return json(res,400,{error:'Use this endpoint for folder discovery, message listing, search and preview. Use /api/email/compose and /api/email/send for background sending.',code:'EMAIL_ACTION_UNAVAILABLE'});
         const {action,...args}=value;
         return json(res,200,await emailOperation(() => email[action](args,{signal:AbortSignal.timeout(40000)})));
       }
@@ -713,6 +713,17 @@ export async function createHarnessServer(options = {}) {
       }
       const emailDraftMatch=pathname.match(/^\/api\/email\/drafts\/([a-zA-Z0-9_-]+)$/);
       if (emailDraftMatch && req.method === 'GET') return json(res,200,{draft:await email.getDraft(emailDraftMatch[1])});
+      if (pathname === '/api/email/compose' && req.method === 'POST') {
+        const value = await emailBody(req, ['requestId', 'from', 'to', 'cc', 'bcc', 'subject', 'body', 'attachments'], 4 * 1024 * 1024);
+        return json(res, 201, { delivery: await emailOperation(() => email.compose(value, { signal: AbortSignal.timeout(40000) })) });
+      }
+      if (pathname === '/api/email/send' && req.method === 'POST') {
+        const value = await emailBody(req, ['id', 'requestId']);
+        return json(res, 200, { delivery: await emailOperation(() => email.send(value, { signal: AbortSignal.timeout(40000) })) });
+      }
+      if (pathname === '/api/email/deliveries' && req.method === 'GET') return json(res, 200, { deliveries: await email.listDeliveries() });
+      const emailDeliveryMatch = pathname.match(/^\/api\/email\/deliveries\/([a-zA-Z0-9_-]+)$/);
+      if (emailDeliveryMatch && req.method === 'GET') return json(res, 200, { delivery: await email.getDelivery(emailDeliveryMatch[1]) });
       if (pathname === '/api/chatgpt-bridge' || pathname.startsWith('/api/chatgpt-bridge/')) return json(res,410,{error:'The ChatGPT Bridge is not offered because end-to-end operation has not been verified.',code:'FEATURE_NOT_OFFERED'});
       if (pathname === '/api/browseros/show' && req.method === 'POST') {
         const value=await body(req);
@@ -1012,7 +1023,8 @@ export async function createHarnessServer(options = {}) {
       // The registration form needs an explicit conflict receipt to offer a
       // deliberate reload. Do not expose arbitrary internal/provider codes.
       const emailRegistrationConflict = error.status === 409 && error.code === 'EMAIL_OAUTH_REVISION_CONFLICT' && ['/api/email/oauth/config', '/api/email/oauth/begin'].includes(pathname);
-      if (!res.headersSent) json(res, error.status || (/not found/i.test(error.message) ? 404 : 400), { error: error.message, ...(emailRegistrationConflict ? { code: 'EMAIL_OAUTH_REVISION_CONFLICT' } : {}) });
+      const emailDeliveryError = /^\/api\/email\/(?:compose|send|deliveries(?:\/[a-zA-Z0-9_-]+)?)$/.test(pathname) && typeof error.code === 'string' && /^[A-Z0-9_]{1,100}$/.test(error.code);
+      if (!res.headersSent) json(res, error.status || (/not found/i.test(error.message) ? 404 : 400), { error: error.message, ...(emailRegistrationConflict ? { code: 'EMAIL_OAUTH_REVISION_CONFLICT' } : emailDeliveryError ? { code: error.code } : {}) });
       else res.end();
     }
   });

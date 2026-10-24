@@ -14,12 +14,17 @@ function googleRegistration(source) {
 
 export function emailOAuthCopy(value = {}) {
   if (value.available === false) return { label: 'Open BLACKICE on this computer to connect', note: 'Email sign-in needs the desktop app and its encrypted credential storage.' };
-  if (value.authorization?.pending) return { label: 'Finish sign-in in your browser', note: 'Choose your account and approve mailbox reading. This screen updates when sign-in finishes.' };
+  if (value.authorization?.pending) return { label: 'Finish sign-in in your browser', note: 'Choose your account to authorize reading and managing mail, and sending messages. This screen updates when sign-in finishes.' };
   if (value.state === 'unavailable') return { label: 'Connection needs attention', note: value.lastError?.message || 'Saved email authorization could not be loaded. Existing files have been preserved.' };
   if (value.lastError) return { label: 'Sign-in needs attention', note: value.lastError.message || 'Sign in again to reconnect your account.' };
-  if (value.connected) return { label: `Signed in with ${providerName(value.provider)}`, note: `${value.identity?.email && value.identity?.verifiedAt ? `Account: ${value.identity.email}. ` : ''}Access refreshes automatically. Your account password stays with your mail provider.` };
-  if (!value.configured) return { label: 'Connect your mailbox', note: 'Use browser sign-in with Google or Microsoft. No app password is needed.' };
-  return { label: 'Ready to sign in', note: 'Your application registration is saved. Sign in to authorize mailbox reading.' };
+  if (value.connected) {
+    const access = value.capabilities?.read === true && value.capabilities?.send === true ? 'Mailbox and sending access is available.'
+      : value.capabilities?.read === true && value.capabilities?.send === false ? 'Mailbox access is available. This saved connection does not include sending access.'
+        : 'Mailbox and sending permissions have not been reported for this saved connection.';
+    return { label: `Signed in with ${providerName(value.provider)}`, note: `${value.identity?.email && value.identity?.verifiedAt ? `Account: ${value.identity.email}. ` : ''}${access} Access refreshes automatically. Your account password stays with your mail provider.` };
+  }
+  if (!value.configured) return { label: 'Connect your mailbox', note: 'Use browser sign-in with Google or Microsoft for mailbox and sending access. No app password is needed.' };
+  return { label: 'Ready to sign in', note: 'Your application registration is saved. Sign in to request access to read and manage mail, and send messages.' };
 }
 
 /** Manages authorization controls without replacing the mailbox or compose form. */
@@ -52,7 +57,7 @@ export function initEmailOAuthUI({ mount, api, getSnapshot, adoptSnapshot, onBus
       <details id="email-oauth-runtime"${!hint ? ' open' : ''}><summary>Mail engine</summary><label for="email-oauth-executable">Himalaya executable</label><input id="email-oauth-executable" value="${escapeText(hint)}" autocomplete="off" spellcheck="false"><p class="field-help">BLACKICE uses Himalaya in the background and manages the OAuth connection for it.</p></details>
       <p id="email-oauth-stale" class="field-help" role="status" hidden>Saved registration changed. Reload it before saving or signing in. Reloading replaces registration edits only.</p>
       <div class="email-actions"><button class="button primary" id="email-oauth-connect" type="submit">Sign in with Google</button><button class="button" id="email-oauth-cancel" type="button" hidden>Cancel sign-in</button><button class="button" id="email-oauth-disconnect" type="button" hidden>Disconnect</button></div>
-      <p class="field-help">This connection requests mailbox reading. Drafts remain local in BLACKICE.</p>
+      <p id="email-oauth-permissions" class="field-help">Sign-in requests access to read and manage your mailbox and send messages. Existing connections keep their granted permissions. Saving a local draft does not send it.</p>
     </form></section>`;
   const secretInput = $('#email-oauth-client-secret'), importInput = $('#email-oauth-import');
 
@@ -125,7 +130,7 @@ export function initEmailOAuthUI({ mount, api, getSnapshot, adoptSnapshot, onBus
         const value = await reload({ background: true });
         if (current() && value && previousPending && !value.oauth?.authorization?.pending) {
           const completed = value.oauth?.connected && !value.oauth?.lastError && value.oauth.revision > previousRevision;
-          const note = completed ? 'Email sign-in completed. Read messages to check mailbox access.' : value.oauth?.connected && !value.oauth?.lastError ? 'Sign-in ended. Your existing email connection is still available.' : emailOAuthCopy(value.oauth).note;
+          const note = completed ? `Email sign-in completed. ${emailOAuthCopy(value.oauth).note}` : value.oauth?.connected && !value.oauth?.lastError ? 'Sign-in ended. Your existing email connection is still available.' : emailOAuthCopy(value.oauth).note;
           showReceipt(note, Boolean(value.oauth?.lastError) || !value.oauth?.connected);
           await onChanged();
         }

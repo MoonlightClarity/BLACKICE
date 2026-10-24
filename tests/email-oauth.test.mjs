@@ -99,13 +99,13 @@ test('registration uses fixed providers, rejects stale configuration and never e
   assert.doesNotMatch(file, new RegExp(SECRET)); assert.doesNotMatch(JSON.stringify(manager.status()), new RegExp(SECRET));
 });
 
-test('actual loopback callback validates state and PKCE and accepts one read-only grant with verified identity', async t => {
+test('actual loopback callback requests mailbox and sending scope while preserving an existing read grant with verified identity', async t => {
   const fixture = await setup(t), { manager, opened, tokenCalls, profileCalls } = fixture;
   await configure(manager, { loginHint: 'suggested@example.test' });
   await manager.begin(); const auth = opened.at(-1);
   assert.equal(auth.origin + auth.pathname, 'https://accounts.google.com/o/oauth2/v2/auth');
   assert.equal(auth.searchParams.get('code_challenge_method'), 'S256');
-  assert.equal(auth.searchParams.get('scope'), READ_SCOPE);
+  assert.equal(auth.searchParams.get('scope'), 'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send');
   assert.equal(auth.searchParams.get('access_type'), 'offline');
   assert.doesNotMatch(auth.toString(), new RegExp(SECRET));
   const invalid = await fetch(callbackURL(opened, { state: 'wrong' })); await invalid.text();
@@ -170,12 +170,12 @@ test('a rejected refresh fails closed if encrypted storage cannot clear the revo
   await assert.rejects(fixture.manager.getAccessToken(), { code: 'EMAIL_OAUTH_STORAGE' });
 });
 
-test('provider errors, missing offline access, excess permissions and invalid identity remain safe failures', async t => {
+test('provider errors, missing offline access, missing mail permission and invalid identity remain safe failures', async t => {
   for (const scenario of ['provider-error', 'offline', 'scope', 'identity']) {
     const fixture = await setup(t); await configure(fixture.manager);
     if (scenario === 'provider-error') fixture.state.tokenError = { error: 'invalid_client', error_description: SECRET };
     if (scenario === 'offline') fixture.state.tokenResponse = { access_token: 'fixture-access-1', token_type: 'Bearer', expires_in: 3600, scope: READ_SCOPE };
-    if (scenario === 'scope') fixture.state.tokenResponse = { access_token: 'fixture-access-1', refresh_token: 'fixture-refresh-1', token_type: 'Bearer', expires_in: 3600, scope: `${READ_SCOPE} https://www.googleapis.com/auth/gmail.send` };
+    if (scenario === 'scope') fixture.state.tokenResponse = { access_token: 'fixture-access-1', refresh_token: 'fixture-refresh-1', token_type: 'Bearer', expires_in: 3600, scope: 'https://www.googleapis.com/auth/calendar.readonly' };
     if (scenario === 'identity') fixture.state.profileError = true;
     assert.equal((await authorize(fixture)).status, 400, scenario);
     assert.equal(fixture.manager.status().connected, false, scenario);
@@ -261,7 +261,7 @@ test('expired or denied consent cannot become an active grant', async t => {
   assert.equal(response.status, 400); assert.equal(denied.tokenCalls.length, 0); assert.doesNotMatch(html + JSON.stringify(denied.manager.status()), new RegExp(SECRET));
 });
 
-test('Microsoft requests read-only mail and identity using a public client and the registered localhost redirect', async t => {
+test('Microsoft requests mailbox and sending access while retaining actual capabilities of a legacy grant', async t => {
   const fixture = await setup(t);
   await fixture.manager.configure({ provider: 'microsoft', clientId: '12345678-1234-1234-1234-123456789abc' });
   await assert.rejects(fixture.manager.configure({ clientSecret: SECRET }), { code: 'EMAIL_OAUTH_INVALID' });
@@ -269,11 +269,37 @@ test('Microsoft requests read-only mail and identity using a public client and t
   fixture.state.profileResponse = { mail: 'outlook@example.test' };
   assert.equal((await authorize(fixture)).status, 200);
   assert.equal(fixture.opened[0].origin, 'https://login.microsoftonline.com');
+  assert.match(fixture.opened[0].searchParams.get('scope'), /Mail.ReadWrite/);
+  assert.match(fixture.opened[0].searchParams.get('scope'), /Mail.Send/);
+  assert.deepEqual(fixture.manager.status().capabilities, {read:true,send:false});
   assert.equal(new URL(fixture.opened[0].searchParams.get('redirect_uri')).hostname, 'localhost');
   assert.equal(new URL(fixture.opened[0].searchParams.get('redirect_uri')).pathname, '/');
   assert.equal(fixture.tokenCalls[0].has('client_secret'), false);
   assert.equal(fixture.manager.status().identity.email, 'outlook@example.test');
   const context = await fixture.manager.commandContext(); assert.match(await fs.readFile(context.configPath, 'utf8'), /msgraph\.auth\.token\.command/);
+});
+
+test('full mail grants support sending and legitimate broader grants survive encrypted reload without narrowing', async t => {
+  for (const scope of ['https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send openid email', 'https://mail.google.com/']) {
+    const fixture=await setup(t);await configure(fixture.manager);
+    fixture.state.tokenResponse={access_token:'fixture-access-full',refresh_token:'fixture-refresh-full',token_type:'Bearer',expires_in:3600,scope};
+    assert.equal((await authorize(fixture)).status,200);
+    assert.deepEqual(fixture.manager.status().capabilities,{read:true,send:true});
+    await fixture.manager.close();
+    const reopened=await new EmailOAuthManager(fixture.managerOptions).init();fixture.managers.push(reopened);
+    assert.equal(reopened.status().connected,true);assert.deepEqual(reopened.status().capabilities,{read:true,send:true});
+    assert.deepEqual(reopened.status().grantedScopes,scope.split(' '));
+  }
+});
+
+test('legacy Microsoft refresh keeps the actual grant scope instead of implicitly requesting a broader grant', async t => {
+  const fixture=await setup(t);await fixture.manager.configure({provider:'microsoft',clientId:'12345678-1234-1234-1234-123456789abc'});
+  fixture.state.tokenResponse={access_token:'fixture-old-read',refresh_token:'fixture-refresh-read',token_type:'Bearer',expires_in:1,scope:'Mail.Read User.Read offline_access'};
+  fixture.state.profileResponse={mail:'fixture@example.test'};
+  assert.equal((await authorize(fixture)).status,200);
+  await fixture.manager.getAccessToken();
+  assert.equal(fixture.tokenCalls.at(-1).get('scope'),'Mail.Read User.Read offline_access');
+  assert.deepEqual(fixture.manager.status().capabilities,{read:true,send:false});
 });
 
 test('managed adapter retains external configuration compatibility and never returns an OAuth token to tools', async t => {
