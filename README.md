@@ -2,14 +2,22 @@
 
 See the [2.33.13 release notes](RELEASE-NOTES-2.33.13.md) for planning, Fast mode, compatible API recovery, Multi-select and contained background email improvements. [Windows source verification](verification/windows-2.33.13.json) records the matching source checks; installer evidence and checksums accompany the release below.
 
-BLACKICE is a Windows app that lets AI assistants work with your files, use websites, and carry out tasks on your computer. Use it from ChatGPT, or choose a supported online or local AI model inside the app.
+**BLACKICE is an open-source Windows AI-agent execution platform.** It connects AI reasoning to real work on a computer: reading and editing files, running commands, navigating websites, completing forms, and coordinating longer tasks. It is software the user controls, not a managed automation service.
 
-- **Work with files:** Read documents, edit files, create results, and run commands.
-- **Use websites:** Open pages, fill in forms, upload files, and keep sign-ins in the built-in browser.
-- **Tackle larger jobs:** Make step-by-step plans, track progress, and split work among several AI assistants.
-- **Keep useful context:** Save conversations, notes, instructions, and reusable skills.
-- **Automate repeat work:** Queue tasks or schedule them to run while BLACKICE is open.
-- **Follow the work:** See actions, results, errors, and file changes as they happen.
+There are **two distinct ways to use it**:
+
+- **ChatGPT → BLACKICE (direct execution):** From an ordinary ChatGPT conversation, an authenticated MCP/OAuth connection exposes local file, command, browser, and planning tools. BLACKICE executes the requested tool actions and returns durable results to that conversation **without launching another AI model**. ChatGPT supplies the reasoning.
+- **BLACKICE's own agent environment:** Choose a supported online or local model within the Windows app. Its agents can use connected tools, work through editable plans, coordinate specialized workers in parallel, preserve knowledge and skills, and run queued or scheduled jobs.
+
+What the platform provides:
+
+- **Files and commands:** Inspect documents, edit and create files, run Windows commands, and preserve change records for supported operations.
+- **Browsers and external actions:** Use the contained browser or configured native browsers; navigate pages, fill forms, upload files, and use configured background email.
+- **Planning and teams:** Maintain revisioned plans with dependencies, branches, owners, evidence, and multi-agent coordination.
+- **Continuity and automation:** Save conversations, knowledge, skills, run results, and scheduled or triggered workflows while the host is running.
+- **Inspectable execution:** Review action status, durable receipts, errors, file changes, and interrupted work rather than relying only on a model's claim of success.
+
+**At your own risk:** BLACKICE deliberately gives authorized AI tools real authority on the user's machine. It does not turn Windows commands into a sandbox or add a BLACKICE approval prompt for every authorized direct action. [Read about authority and responsibility](#authority-and-responsibility).
 
 **[Download BLACKICE 2.33.13 for Windows x64](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.33.13/Blackice-2.33.13-Setup.exe)** · [Release notes and checksums](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.33.13)
 
@@ -20,6 +28,12 @@ See [Start](#start) to run it and [Use BLACKICE from ChatGPT](#use-blackice-from
 BLACKICE's original source is available under the [Apache License 2.0](LICENSE). Bundled third-party components retain the licenses and attribution described in [Third-party notices](THIRD-PARTY-NOTICES.md).
 
 [Performance and reliability verification](PERFORMANCE.md) records the measured improvements and source tests. The [2.33.10 release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.33.10) is the reference for that build's verification evidence. [Historical 2.33.5 installer verification](verification/windows-installer-2.33.5.json) and [its Windows release checks](https://github.com/MoonlightClarity/BLACKICE/actions/runs/39639162142) document that earlier artifact. A prolonged production soak has not been performed. [Signing and release](SIGNING-AND-RELEASE.md) defines the release checks.
+
+## Authority and responsibility
+
+BLACKICE is designed around **user control and responsibility**. The operator chooses whether to connect ChatGPT, which capabilities to grant, which models to use, and what tasks to delegate. The direct ChatGPT connector uses scoped OAuth grants. Within an authorized grant, file access is not confined to the configured working folder, and shell commands run with the Windows account's permissions **without an operating-system sandbox**. BLACKICE does not add a separate local approval gate for each direct tool call. ChatGPT host permissions, Windows privileges, website sign-ins, and native browser restrictions still apply independently.
+
+**Use BLACKICE at your own risk.** Actions may change real files, accounts, websites, or connected services. BLACKICE records bounded action results and durable receipts, supports stopping work and inspecting uncertain effects, and does not automatically replay interrupted actions. It cannot undo effects already accepted by an external system, and a model's report does not independently verify the outcome. BLACKICE's original source is available under the [Apache License 2.0](LICENSE), with [third-party notices](THIRD-PARTY-NOTICES.md) for bundled dependencies; it is provided **AS IS**, without warranty. See the [ChatGPT connector documentation](CHATGPT-CONNECTOR.md) for exact scopes and execution boundaries.
 
 ## Saved passwords and browser copying
 
@@ -179,7 +193,7 @@ The agent-facing `relay_email` tool can read status, discover folders, list/sear
 
 The message reader displays decoded text and attachment descriptions, with original source behind a disclosure. It never loads message HTML or remote images. **Reply as local draft** prepares the reply address, subject and quoted body. It preserves an existing composer and requires an explicit **New draft** before replacement; saving remains a separate action.
 
-Drafts are saved on this computer, with stable request IDs that deduplicate exact retries and reject changed content under the same ID. They remain readable after restart. The email integration does not send messages, upload drafts, move/delete mail or enter credentials. Its setup is deliberately separate from the durable task Inbox, which is a work queue rather than an email client. No account is selected automatically during this update. See [EMAIL.md](EMAIL.md) for the supported contract and verification scope.
+Drafts are saved on this computer, with stable request IDs that deduplicate exact retries and reject changed content under the same ID; they remain readable after restart. As of 2.33.13, the background email composer can also prepare immutable messages with exact attachment hashes and send through a configured account that has sending access, without driving an email application's window. Durable delivery records distinguish preparation, transport acceptance and uncertain outcomes; an uncertain send is not automatically replayed, and acceptance does not prove the recipient acknowledged it. This does not add provider draft uploads or mailbox move/delete operations. Email setup is separate from the durable task Inbox, which is a work queue rather than an email client. See the [2.33.13 release notes](RELEASE-NOTES-2.33.13.md) for sending and [email setup documentation](EMAIL.md) for mailbox configuration, reading and local drafts.
 
 ## Typed knowledge and linked evidence
 
@@ -391,9 +405,9 @@ Provider generation failures show specific key, quota, rate-limit, endpoint or s
 
 Model catalogs are searchable and paged, including entries beyond the first 200. Up to 200 selected models are saved per connection. A catalog response proves reachability, not permission to generate; OpenRouter Test also verifies its key. Explicit defaults stay selected if a provider disappears, with an actionable error instead of silently switching providers.
 
-Execution is direct and trusted. There are no agent permission settings, approval dialogs, or approval gates. Stop cancels the selected chat and its attached tools. Open **Working → Stop all chats** to stop every chat and pause queued starts. **Ctrl+Alt+Escape** stops the active work and detaches Windows control globally.
+Execution is direct within the permissions of the selected environment. BLACKICE's agent runtime does not add a routine per-action approval gate; the ChatGPT connector separately requires an authorized OAuth grant with specific scopes, and the calling client may have its own permissions. Stop cancels the selected chat and its attached tools. Open **Working → Stop all chats** to stop every chat and pause queued starts. **Ctrl+Alt+Escape** stops the active work and detaches Windows control globally.
 
-Relay is provided **AS IS**, without warranty. Use it at your own risk. You are responsible for the tasks you request and their effects on your computer, files, accounts and connected services. This notice is also available in Configure → About; it does not interrupt tool execution.
+BLACKICE is provided **AS IS**, without warranty. Use it at your own risk. You are responsible for the tasks you request and their effects on your computer, files, accounts and connected services. This notice is also available in Configure → About; it does not interrupt tool execution.
 
 ## Your histories and provider choices
 
