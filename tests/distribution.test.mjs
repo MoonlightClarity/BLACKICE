@@ -34,7 +34,7 @@ Add-Type -TypeDefinition $code -OutputAssembly $Output -OutputType ConsoleApplic
 `);
   for (const version of ['2.5.0', '2.5.1']) {
     const directory = path.join(base, version); await files(directory, version); await fs.rm(path.join(directory, 'Relay.exe'));
-    await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-File', compile, '-Output', path.join(directory, 'Relay.exe'), '-Release', version], { windowsHide: true, timeout: 20000 });
+    await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', compile, '-Output', path.join(directory, 'Relay.exe'), '-Release', version], { windowsHide: true, timeout: 20000 });
     await createDistributionManifest(directory, version);
   }
 });
@@ -81,7 +81,7 @@ test('installer verifies a staged real PE version, creates the exact stable shor
   assert.equal(first.installed, true); assert.equal(first.version, '2.5.0'); assert.equal(first.installRoot, fixture.installRoot);
   assert.equal(JSON.parse(await fs.readFile(path.join(fixture.installRoot, 'relay-install.json'), 'utf8')).version, '2.5.0');
   const linkCheck = path.join(fixture.directory, 'link.ps1'); await fs.writeFile(linkCheck, `param($File) (New-Object -ComObject WScript.Shell).CreateShortcut($File).TargetPath`);
-  const target = await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-File', linkCheck, '-File', path.join(fixture.desktopPath, 'Relay.lnk')], { windowsHide: true });
+  const target = await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', linkCheck, '-File', path.join(fixture.desktopPath, 'Relay.lnk')], { windowsHide: true });
   assert.equal(target.stdout.trim(), path.join(fixture.installRoot, 'Relay.exe'));
   await fs.rm(fixture.source, { recursive: true }); await fs.cp(path.join(base, '2.5.1'), fixture.source, { recursive: true });
   const updated = JSON.parse((await fixture.run()).stdout.trim()); assert.equal(updated.version, '2.5.1'); assert.ok(updated.previousInstall);
