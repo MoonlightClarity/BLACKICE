@@ -18,7 +18,7 @@ async function setup(t, options = {}) {
   const configPath = path.join(directory, 'fixture.toml');
   await fs.writeFile(configPath, '# no credentials, no account transport\n');
   const calls = [];
-  const store = await new AgentEmailStore({ dataDir: directory, runner: options.runner || fixtureRunner(options.mode || 'ok', calls) }).init();
+  const store = await new AgentEmailStore({ dataDir: directory, runner: options.runner || fixtureRunner(options.mode || 'ok', calls), oauth: options.oauth }).init();
   t.after(() => store.close());
   return { directory, configPath, calls, store, config: { enabled: true, executable: process.execPath, configPath, account: 'fixture' } };
 }
@@ -145,6 +145,7 @@ test('list/search preserve exact argument boundaries and read uses non-marking p
   assert.equal(message.preview, true);
   assert.match(message.message, /harmless fixture body/);
   assert.equal(store.status().state, 'account_observed');
+  assert.equal(store.status().ready, true);
   const opaque = await store.read({ id: 'opaque:AAMkAG-node_42=', folder: '-strange folder' });
   assert.equal(opaque.id, 'opaque:AAMkAG-node_42=');
   await assert.rejects(store.read({ id: 'bad\nidentifier' }), { code: 'EMAIL_INVALID' });
@@ -156,6 +157,44 @@ test('invalid JSON never becomes successful account evidence', async t => {
   await store.check();
   await assert.rejects(store.list(), { code: 'EMAIL_PROTOCOL' });
   assert.equal(store.status().account.observed, false);
+});
+
+test('selected external connection stays ready after a scoped search failure and hides unused OAuth from model status', async t => {
+  const run = fixtureRunner(), oauth = { status: () => ({ state: 'not_configured', connected: false }), on() {}, off() {}, async close() {} };
+  const { store, config } = await setup(t, { oauth, runner: input => {
+    if (input.args.includes('fail-query')) throw Object.assign(Error('Fixture query failed'), { code: 'EMAIL_CLIENT_FAILED' });
+    return run(input);
+  } });
+  await store.configure(config); await store.check();
+  assert.equal(store.status().ready, false);
+  await store.mailboxes();
+  await assert.rejects(store.list({ query: 'fail-query' }), { code: 'EMAIL_CLIENT_FAILED' });
+  const response = await createEmailToolHandler({ store })({ name: 'relay_email', arguments: { action: 'status' } });
+  const status = JSON.parse(response.contentItems[0].text);
+  assert.equal(response.success, true); assert.equal(status.connection, 'external');
+  assert.equal(status.ready, true); assert.equal(status.capabilities.send, true);
+  assert.equal(status.lastError.operation, 'search'); assert.equal(Object.hasOwn(status, 'oauth'), false);
+  assert.match(status.note, /does not establish that sending is unavailable/);
+  assert.equal(store.snapshot().oauth.state, 'not_configured');
+  await store.configure({ enabled: false }); assert.equal(store.status().ready, false);
+});
+
+test('v2 status rechecks the configured local CLI after restart without authenticating or reading mail', async t => {
+  const { store, config, calls } = await setup(t); await store.configure(config);
+  const handler = createEmailToolHandler({ store }), call = { name: 'relay_email', arguments: { action: 'status' } };
+  const first = await handler(call), status = JSON.parse(first.contentItems[0].text);
+  assert.equal(first.success, true); assert.equal(status.cli.checked, true);
+  assert.equal(status.ready, false); assert.equal(status.account.observed, false); assert.equal(status.capabilities.send, true);
+  assert.ok(calls.length > 0); assert.ok(calls.every(call => call.args.includes('--version') || call.args.includes('--help')));
+  const count = calls.length; await handler(call); assert.equal(calls.length, count);
+});
+
+test('structured client query errors explain multiword patterns without exposing diagnostics or blaming sending', async () => {
+  await assert.rejects(runEmailCli({ executable: process.execPath, args: [fixture, 'query-error', 'envelope', 'search', '--', 'subject several words'] }), error => {
+    assert.equal(error.code, 'EMAIL_QUERY_INVALID'); assert.equal(error.status, 400);
+    assert.match(error.message, /Quote multiword/); assert.match(error.message, /Select the Sent folder/);
+    assert.doesNotMatch(error.message, /PRIVATE_QUERY|DO_NOT_LEAK/); return true;
+  });
 });
 
 test('the v2 envelope object preserves queued indexing work and rejects v1 bare arrays', async t => {

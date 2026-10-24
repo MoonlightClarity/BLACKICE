@@ -6,6 +6,9 @@ if (mode === 'hang') {
 } else if (mode === 'oversized') {
   process.stdout.write('x'.repeat(4096));
   setInterval(() => {}, 1000);
+} else if (mode === 'query-error') {
+  process.stdout.write(JSON.stringify({ error: 'cannot parse search query', sources: ['PRIVATE_QUERY_DETAILS_DO_NOT_EXPOSE'] }));
+  process.stderr.write('auth token=DO_NOT_LEAK_PRIVATE_VALUE'); process.exitCode = 1;
 } else if (mode === 'failed') {
   process.stderr.write('auth token=DO_NOT_LEAK_PRIVATE_VALUE message=PRIVATE_BODY');
   process.exitCode = 9;
