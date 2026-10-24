@@ -4,7 +4,25 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
-import { approvedWindowsPackageFile, forbiddenWindowsPackagePath, readWindowsSourceTestReceipt } from '../scripts/windows-release-inputs.mjs';
+import { approvedWindowsPackageFile, forbiddenWindowsPackagePath, readWindowsSourceTestReceipt, nativeRestartCLIOutcome } from '../scripts/windows-release-inputs.mjs';
+
+test('native restart diagnostics retain only the exit code and an enumerated error code from noisy private logs', () => {
+  const log = ['Native warning: C:\\private\\profile Bearer private-token', 'not JSON ACCESS_RUNTIME_OWNERSHIP', '{broken', JSON.stringify({ error: 'Private message C:\\private\\profile Bearer private-token', code: 'ACCESS_HOST_NOT_RUNNING', requestId: 'private-request', token: 'private-token' })].join('\r\n');
+  const outcome = nativeRestartCLIOutcome(log, 1);
+  assert.deepEqual(outcome, { exitCode: 1, errorCode: 'ACCESS_HOST_NOT_RUNNING' });
+  assert.doesNotMatch(JSON.stringify(outcome), /private|Bearer|requestId|token|message/);
+});
+
+test('native restart failed receipt diagnostics omit the receipt, profile identity and private error message', () => {
+  const log = JSON.stringify({ protocol: 1, acknowledged: true, receipt: { status: 'failed', requestId: 'private-request', origin: { profileDir: 'C:\\private\\profile' }, error: { code: 'DESKTOP_RESTART_BUSY', message: 'private-token' } } });
+  assert.deepEqual(nativeRestartCLIOutcome(log, 1), { exitCode: 1, errorCode: 'DESKTOP_RESTART_BUSY' });
+});
+
+test('native restart diagnostics ignore unknown codes, non-error JSON, malformed lines and success noise', () => {
+  for (const line of ['null', '[]', '42', '{}', '{"code":"ACCESS_HOST_NOT_RUNNING"}', '{"error":"private","code":"ACCESS_PRIVATE_TOKEN"}', '{"error":"private","code":{"token":"private"}}', 'prefix {"error":"private","code":"ACCESS_HOST_NOT_RUNNING"}', '{"error":"private","code":"ACCESS_HOST_NOT_RUNNING"' ]) assert.deepEqual(nativeRestartCLIOutcome(line, 1), { exitCode: 1 });
+  assert.deepEqual(nativeRestartCLIOutcome('{"error":"private","code":"ACCESS_HOST_NOT_RUNNING"}', 0), { exitCode: 0 });
+  assert.deepEqual(nativeRestartCLIOutcome('noise', 'private-token'), { exitCode: null });
+});
 
 test('Windows installer inventory accepts the new runtime assets and the selected release notes', () => {
   for (const file of ['BROWSER-IMPORT.md', 'CHATGPT-CONNECTOR.md', 'scripts/browser-cli.mjs', 'desktop/browser-compatibility/manifest.json', 'desktop/browser-compatibility/main.js', 'desktop/browser-compatibility.mjs', 'lib/browser-profile.mjs', 'public/browser-ui.mjs', 'RELEASE-NOTES-9.8.7.md', 'RELEASE-NOTES-2.33.8.md', 'RELEASE-NOTES-2.33.9.md', 'RELEASE-NOTES-2.33.10.md', 'RELEASE-NOTES-2.33.11.md', 'RELEASE-NOTES-2.33.12.md', 'RELEASE-NOTES-2.33.13.md']) {

@@ -5,6 +5,38 @@ import { createHash } from 'node:crypto';
 const topLevelFiles = new Set(['package.json', 'LICENSE', 'NOTICE', 'THIRD-PARTY-NOTICES.md', 'server.mjs', 'CHATGPT-BRIDGE.md', 'CHATGPT-CONNECTOR.md', 'CHAT-MODE.md', 'PLANNING-ORGANIZATION.md', 'REMOTE-ACCESS.md', 'BROWSER-PROTECTION.md', 'BROWSER-IMPORT.md', 'EMAIL.md', 'PLANNING-AWARENESS.md', ...['2.30.0', '2.31.0', '2.31.1', '2.32.0', '2.33.5', '2.33.6', '2.33.7', '2.33.8', '2.33.9', '2.33.10', '2.33.11', '2.33.12', '2.33.13'].map(version => `RELEASE-NOTES-${version}.md`)]);
 const check = (condition, message) => { if (!condition) throw new Error(message); };
 
+// Public native CLI diagnostics contain only enumerated codes, never log text.
+const nativeRestartErrorCodes = new Set([
+  'ACCESS_HOST_PLATFORM', 'ACCESS_HOST_NOT_RUNNING', 'ACCESS_RUNTIME_INVALID', 'ACCESS_RUNTIME_OWNERSHIP',
+  'BROWSER_CLI_PROFILE', 'BROWSER_CLI_SESSION', 'BROWSER_CLI_RUNTIME', 'BROWSER_CLI_UNREACHABLE',
+  'BROWSER_CLI_UNCERTAIN', 'BROWSER_CLI_RESPONSE', 'BROWSER_CLI_REJECTED',
+  'DESKTOP_RESTART_ARGUMENTS', 'DESKTOP_RESTART_CLI_FAILED', 'DESKTOP_RESTART_ACK_UNCERTAIN',
+  'DESKTOP_RESTART_LEGACY_UNAVAILABLE', 'DESKTOP_RESTART_STORAGE_UNAVAILABLE', 'DESKTOP_RESTART_HISTORY_FULL',
+  'DESKTOP_RESTART_BUSY', 'DESKTOP_RESTART_REQUEST_MISMATCH', 'DESKTOP_RESTART_CLOSING',
+  'DESKTOP_RESTART_BROWSER_BUSY', 'DESKTOP_RESTART_BROWSER_STATE', 'DESKTOP_RESTART_STORAGE',
+  'DESKTOP_RESTART_DRAIN_TIMEOUT', 'DESKTOP_RESTART_RELEASED', 'DESKTOP_RESTART_NOT_PREPARED',
+  'DESKTOP_RESTART_CANCELLED', 'DESKTOP_RESTART_ORIGIN_INVALID', 'DESKTOP_RESTART_ORIGIN_UNAUTHORIZED',
+  'DESKTOP_RESTART_ORIGIN_FAILED', 'DESKTOP_RESTART_RECEIPT_UNAVAILABLE', 'DESKTOP_RESTART_RECEIPT_TIMEOUT',
+  'DESKTOP_RESTART_ACK_UNAVAILABLE', 'DESKTOP_RESTART_PREPARE_FAILED', 'DESKTOP_RESTART_RELEASE_FAILED',
+  'DESKTOP_RESTART_LAUNCH_INVALID', 'DESKTOP_RESTART_ARM_FAILED', 'DESKTOP_RESTART_QUIT_UNCONFIRMED',
+  'DESKTOP_RESTART_INTERRUPTED', 'DESKTOP_RESTART_MODE_CHANGED', 'DESKTOP_RESTART_UNAVAILABLE',
+]);
+
+/** Sanitize only the log segment written after one native restart invocation. */
+export function nativeRestartCLIOutcome(log, exitCode) {
+  const outcome = { exitCode: Number.isSafeInteger(exitCode) ? exitCode : null };
+  if (outcome.exitCode === 0 || typeof log !== 'string') return outcome;
+  for (const line of log.split(/\r?\n/)) {
+    if (line.length > 65536) continue;
+    let value; try { value = JSON.parse(line); } catch { continue; }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const code = typeof value.error === 'string' ? value.code
+      : value.protocol === 1 && value.acknowledged === true && ['failed', 'cancelled', 'interrupted'].includes(value.receipt?.status) ? value.receipt.error?.code : null;
+    if (nativeRestartErrorCodes.has(code)) outcome.errorCode = code;
+  }
+  return outcome;
+}
+
 export function forbiddenWindowsPackagePath(relative) {
   return relative === 'desktop/build-icon.mjs' || relative.endsWith('.test.mjs') || relative.includes('.currents-backup-') || /(^|\/)(\.git|\.env(?:\..*)?|data|workspace|tests|node_modules)(\/|$)/.test(relative);
 }

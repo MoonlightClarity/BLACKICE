@@ -9,6 +9,7 @@ import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
+import { nativeRestartCLIOutcome } from './windows-release-inputs.mjs';
 
 const args = process.argv.slice(2);
 function option(name, required = true) {
@@ -204,9 +205,14 @@ async function main() {
     const restartFile = path.join(profile, 'desktop-restart.json');
     const oldIds = new Set((await optionalJSON(restartFile))?.receipts?.map(value => value.id) || []);
     const restartAt = performance.now(), requestTime = Date.now();
+    const nativeLog = path.join(work, 'private-native.log'), restartLogOffset = (await fs.stat(nativeLog)).size;
     const command = launch(['--restart']);
     const forwarded = await bounded(command.done, 15_000, 'Native restart forwarding did not exit.');
-    if (forwarded.error) throw forwarded.error; assert.equal(forwarded.code, 0);
+    const commandLog = (await fs.readFile(nativeLog)).subarray(restartLogOffset).toString('utf8');
+    report.restart.schedulingCommand = nativeRestartCLIOutcome(commandLog, forwarded.code);
+    if (forwarded.error) throw forwarded.error;
+    if (forwarded.code !== 0 && report.restart.schedulingCommand.errorCode) throw Object.assign(new Error('Native restart command failed.'), { code: report.restart.schedulingCommand.errorCode });
+    assert.equal(forwarded.code, 0);
     let matchingId;
     const completed = await poll(async () => {
       const saved = await optionalJSON(restartFile);
@@ -233,7 +239,7 @@ async function main() {
     const stale = await fetch(new URL('/api/diagnostics/export', after.url), { headers: { Cookie: initial.cookie }, signal: AbortSignal.timeout(10_000) });
     assert.equal(stale.status, 401); await stale.arrayBuffer();
     await fs.writeFile(path.join(work, 'private-native-restart-receipt.json'), JSON.stringify(receipt, null, 2));
-    report.restart = { passed: true, nativeCommandUsed: true, matchingReceiptCompleted: true, replacementPidChanged: true,
+    report.restart = { ...report.restart, passed: true, nativeCommandUsed: true, matchingReceiptCompleted: true, replacementPidChanged: true,
       originalProcessExited: true, profilePreserved: true, modePreserved: true, discoveryReread: true,
       oldSessionRejected: true, receiptSha256: sha(JSON.stringify(receipt)), milliseconds: Math.round(performance.now() - restartAt) };
 
