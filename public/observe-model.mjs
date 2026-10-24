@@ -48,6 +48,16 @@ const emailDestinationRecipient = value => {
   if (local.length > 64 || !/^[A-Za-z0-9!#$%&'*+\/=?^_\x60{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+\/=?^_\x60{|}~-]+)*$/.test(local) || domain.length > 253 || !domain.split('.').every(part => /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(part))) return null;
   return value === `mailto:${encodeURIComponent(local)}@${domain.toLowerCase()}` ? `${local}@${domain}` : null;
 };
+// A canonical message reference is opaque receipt text, never a browser URL.
+const emailMessageReference = receipt => {
+  const value=receipt.url;
+  if(receipt.referenceKind!=='email-message'||typeof value!=='string'||value.length>2048||!value.startsWith('mid:')||/[\s\u0000-\u001f\u007f/?#]/.test(value.slice(4)))return null;
+  let decoded;try{decoded=decodeURIComponent(value.slice(4));}catch{return null;}
+  const match=/^([^@]+)@(.+)$/.exec(decoded),dotAtom=/^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*$/;
+  if(!match||!dotAtom.test(match[1])||!(dotAtom.test(match[2])||/^\[[\x21-\x5a\x5e-\x7e]*\]$/.test(match[2])))return null;
+  const emailMessageId=`<${decoded}>`;
+  return value===`mid:${encodeURIComponent(match[1])}@${encodeURIComponent(match[2])}`&&receipt.emailMessageId===emailMessageId?{referenceKind:'email-message',emailMessageId}:null;
+};
 const receiptText=(value,limit)=>typeof value==='string'?value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g,'').slice(0,limit):'';
 const receiptIdentity=value=>typeof value==='string'&&/^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/.test(value)?value:null;
 /** Saved milestones describe what an agent recorded, including unresolved blockers. */
@@ -66,11 +76,11 @@ export function observeExternalActions(run){
   for(const [index,receipt]of raw.slice(0,8).entries()){
     if(!receipt||typeof receipt!=='object'||Array.isArray(receipt))continue;
     const destinationRecipient=emailDestinationRecipient(receipt.destination);
-    const status=['prepared','uncertain','confirmed'].includes(receipt.status)?receipt.status:'unknown',destination=destinationRecipient?receipt.destination:externalUrl(receipt.destination),url=status==='confirmed'?externalUrl(receipt.url):null;
+    const status=['prepared','uncertain','confirmed'].includes(receipt.status)?receipt.status:'unknown',destination=destinationRecipient?receipt.destination:externalUrl(receipt.destination),messageReference=status==='confirmed'&&destinationRecipient?emailMessageReference(receipt):null,url=status==='confirmed'?(messageReference?receipt.url:externalUrl(receipt.url)):null;
     const source=status==='confirmed'?receipt.confirmedBy:status==='prepared'&&receipt.reconciledAt?receipt.reconciledBy:receipt.attemptedBy;
     const attempts=Number.isSafeInteger(receipt.attempts)&&receipt.attempts>=0?receipt.attempts:null,reconciled=status==='prepared'&&Boolean(receipt.reconciledAt),needsInspection=status==='uncertain'||status==='unknown'||status==='confirmed'&&!url;
     const recordedAt=[status==='confirmed'?receipt.confirmedAt:null,status==='prepared'?receipt.reconciledAt:null,receipt.attemptedAt,receipt.preparedAt].find(value=>typeof value==='string'&&Number.isFinite(Date.parse(value)))||null;
-    receipts.push({id:receiptIdentity(receipt.id)||'unidentified-'+index,status,label:({prepared:reconciled?'Absence checked':'Prepared',uncertain:'Needs inspection',confirmed:'Confirmed result',unknown:'Unknown outcome'})[status],destination,...(destinationRecipient?{destinationRecipient}:{}),url,attempts,attemptsMayBeIncomplete:receipt.attemptsMayBeIncomplete===true,needsInspection,reconciled,recordedAt,contentExcerpt:receiptText(receipt.contentExcerpt,160),evidence:receiptText(receipt.evidence,2000),absenceEvidence:receiptText(receipt.absenceEvidence,2000),attachmentSha256:typeof receipt.attachmentSha256==='string'&&/^[a-f0-9]{64}$/.test(receipt.attachmentSha256)?receipt.attachmentSha256:null,sourceRunId:receiptIdentity(source?.runId),sourceNodeId:receiptIdentity(source?.nodeId)});
+    receipts.push({id:receiptIdentity(receipt.id)||'unidentified-'+index,status,label:({prepared:reconciled?'Absence checked':'Prepared',uncertain:'Needs inspection',confirmed:'Confirmed result',unknown:'Unknown outcome'})[status],destination,...(destinationRecipient?{destinationRecipient}:{}),url,...(messageReference||{}),attempts,attemptsMayBeIncomplete:receipt.attemptsMayBeIncomplete===true,needsInspection,reconciled,recordedAt,contentExcerpt:receiptText(receipt.contentExcerpt,160),evidence:receiptText(receipt.evidence,2000),absenceEvidence:receiptText(receipt.absenceEvidence,2000),attachmentSha256:typeof receipt.attachmentSha256==='string'&&/^[a-f0-9]{64}$/.test(receipt.attachmentSha256)?receipt.attachmentSha256:null,sourceRunId:receiptIdentity(source?.runId),sourceNodeId:receiptIdentity(source?.nodeId)});
   }
   const priority=item=>item.needsInspection?0:item.status==='prepared'?1:2;receipts.sort((one,two)=>priority(one)-priority(two));
   return{receipts,recoveryRequired:saved?.externalRecovery?.required===true,recoveryNote:receiptText(saved?.externalRecovery?.note,700),confirmed:receipts.filter(item=>item.status==='confirmed').length,needsInspection:receipts.filter(item=>item.needsInspection).length};
