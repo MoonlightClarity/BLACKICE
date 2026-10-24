@@ -1,0 +1,34 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "scope": "source-publication",
+  "version": "2.33.13",
+  "sourceHead": "a27e2118bea36a254caae893c0196e97c017f7bc",
+  "platform": "win32",
+  "node": "v24.13.0",
+  "checkedAt": "2026-10-24T09:59:45.241Z",
+  "appFingerprint": "544cecb032593e7601a04ced40247be1fc4d04ae2764e5cede3ec3abc198863c",
+  "fingerprintUnchanged": true,
+  "sourceFilesVerified": 847,
+  "testFiles": 342,
+  "tests": {
+    "total": 4534,
+    "passed": 4526,
+    "failed": 0,
+    "requiredSkipped": 0,
+    "optionalSkipped": 8,
+    "cancelled": 0,
+    "exitCode": 0
+  },
+  "testLogSha256": "177cd1d5e0e2fbf51bffbce4c4fa392d95b4583e2992523e78118e2fff4dc199",
+  "optionalIntegrationSkips": [
+    "ok 405 - Relay-owned sign-in and local storage survive a full process restart without foregrounding # SKIP Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+    "ok 620 - restored hidden browser tabs defer requests until used and never load closed or replaced pages # SKIP Set RELAY_LIVE_BROWSER_QA=1 for disposable Electron restoration.",
+    "ok 637 - native cross-origin popups redirect, message their opener and follow or close without breaking Observe pins or task routing # SKIP Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+    "ok 761 - actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases # SKIP Set RELAY_TRUSTED_FILL_QA=1 for the isolated native fixture.",
+    "ok 1782 - live background accessibility actions change only a dedicated non-activating fixture and leave foreground and cursor untouched # SKIP",
+    "ok 1931 - hidden isolated Chromium composer validates real layout and one-click send wiring # SKIP Set BLACKICE_EMAIL_COMPOSE_QA=1 for the isolated native UI fixture.",
+    "ok 1956 - installed Himalaya sends exact MIME to disposable loopback SMTP and strips Bcc headers # SKIP",
+    "ok 2270 - real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart # SKIP Set RELAY_LIVE_FIREFOX_QA=1 on Windows to use a new disposable Firefox profile."
+  ]
+}
