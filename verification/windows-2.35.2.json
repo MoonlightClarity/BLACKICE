@@ -1,0 +1,46 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "scope": "source-publication",
+  "version": "2.35.2",
+  "sourceHead": "ff0e9d19efc7799922e48a7a04165cdf20484cbb",
+  "platform": "win32",
+  "node": "v24.13.0",
+  "checkedAt": "2026-10-25T21:11:54.579Z",
+  "appFingerprint": "9dc491d26954844a9e128b7caa9c5d31ee9b635e1d4d5435fa776d262aa0a767",
+  "fingerprintUnchanged": true,
+  "testFiles": 386,
+  "tests": {
+    "total": 4842,
+    "passed": 4834,
+    "failed": 0,
+    "requiredSkipped": 0,
+    "optionalSkipped": 8,
+    "cancelled": 0,
+    "exitCode": 0
+  },
+  "testLogSha256": "049028f25e7598c01d259a3986f33cc323a065095f3a8aa2cb9244ffc41218f4",
+  "optionalIntegrationSkips": [
+    "ok 410 - Relay-owned sign-in and local storage survive a full process restart without foregrounding # SKIP Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+    "ok 638 - restored hidden browser tabs defer requests until used and never load closed or replaced pages # SKIP Set RELAY_LIVE_BROWSER_QA=1 for disposable Electron restoration.",
+    "ok 677 - native cross-origin popups redirect, message their opener and follow or close without breaking Observe pins or task routing # SKIP Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+    "ok 803 - actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases # SKIP Set RELAY_TRUSTED_FILL_QA=1 for the isolated native fixture.",
+    "ok 1846 - live background accessibility actions change only a dedicated non-activating fixture and leave foreground and cursor untouched # SKIP",
+    "ok 2010 - hidden isolated Chromium composer validates real layout and one-click send wiring # SKIP Set BLACKICE_EMAIL_COMPOSE_QA=1 for the isolated native UI fixture.",
+    "ok 2035 - installed Himalaya sends exact MIME to disposable loopback SMTP and strips Bcc headers # SKIP",
+    "ok 2349 - real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart # SKIP Set RELAY_LIVE_FIREFOX_QA=1 on Windows to use a new disposable Firefox profile."
+  ],
+  "fullSuite": true,
+  "sourceByteVerification": {
+    "freshCheckoutVerified": true,
+    "packagedSourceFiles": 463,
+    "nativeRuntimeFiles": 19,
+    "allPayloadFiles": 482,
+    "installerSha256": "ef449914b4f14799985651c3949c7b874abf75e85c0c703e8056d758fdfb1961"
+  },
+  "limitations": [
+    "Optional native/browser/mail integrations are reported separately; no required test was skipped.",
+    "This source-suite record does not substitute for isolated exact-installer validation.",
+    "The intermittent historical multi-minute startup remains unexplained."
+  ]
+}
