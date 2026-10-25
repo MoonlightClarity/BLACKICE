@@ -196,8 +196,10 @@ test('provider and browser HTTP routes require local authentication and report b
   assert.equal((await api('/api/providers/missing/test',{method:'POST',body:{}})).status,404);
   assert.equal((await api('/api/providers',{method:'POST',body:{id:'codex',type:'openai'}})).status,400);
   assert.equal((await api('/api/providers',{method:'POST',body:{id:'bad',type:'compatible',baseUrl:'javascript:alert(1)'}})).status,400);
-  assert.equal((await api('/api/browser/action',{method:'POST',body:{action:'open',url:'file:///C:/private.txt'}})).status,400);
+  assert.equal((await api('/api/browser/action',{method:'POST',body:{action:'open',url:'javascript:alert(1)'}})).status,400);
   assert.equal(driver.calls.length,0,'invalid browser URL never reaches Chromium');
+  assert.equal((await api('/api/browser/action',{method:'POST',body:{action:'open',url:'file:///C:/Documents/local.html'}})).status,200);
+  assert.equal(driver.calls.at(-1).args.url,'file:///C:/Documents/local.html','The native browser receives the explicit local page URL.');
   assert.equal((await api('/api/browser/action',{method:'POST',body:{action:'tabs'}})).status,200);assert.equal((await api('/api/browser/show',{method:'POST',body:{tabId:'fixture-tab'}})).data.visible,true);assert.deepEqual(driver.shown,['fixture-tab']);
   assert.equal((await api('/api/browser/show',{method:'POST',body:{tabId:'missing'}})).status,404);
   assert.ok(!(await api('/api/status')).text.includes(secret));

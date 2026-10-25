@@ -54,7 +54,7 @@ async function waitFor(read, message, timeout = 5000) {
   assert.fail(message);
 }
 
-async function fixture(t, { remote = false } = {}) {
+async function fixture(t, { remote = false, emailEnabled = true } = {}) {
   const root = await mkdtemp(path.join(tmpdir(), 'blackice-planning-awareness-http-')), dataDir = path.join(root, 'data');
   await mkdir(dataDir);
   const transport = createRemoteTransportFixture(), manager = new RemoteAccessManager({ dataDir, transport: transport.transport, defaultHttpsPort: 8443 }), streams = new Set();
@@ -64,7 +64,7 @@ async function fixture(t, { remote = false } = {}) {
     try { await app?.close(); assert.equal(cliCalls, 0, 'The fixture must never access a real mailbox or CLI.'); }
     finally { await rm(root, { recursive: true, force: true }); }
   });
-  const email = await new AgentEmailStore({ dataDir, runner: async () => { cliCalls++; throw new Error('No mailbox CLI is available in this fixture.'); } }).init();
+  const email = emailEnabled ? await new AgentEmailStore({ dataDir, runner: async () => { cliCalls++; throw new Error('No mailbox CLI is available in this fixture.'); } }).init() : null;
   app = await createHarnessServer({ port: 0, dataDir, defaultCwd: path.join(root, 'workspace'), runtime: new Runtime(), desktop: new Desktop(), email, remoteAccess: manager, autoAttachDesktop: false });
   await app.learning.updateSettings({ mode: 'manual' });
   const url = new URL(await app.listen()), localTarget = { port: Number(url.port), host: url.host };
@@ -214,19 +214,24 @@ test('awareness respects chat visibility and maintenance while existing leases c
   assert.equal((await f.local(f.route + '/awareness')).value.revision, f.state.revision);
 });
 
-test('a paired browser can read email status and create unsent drafts but email credentials and OAuth control remain host-only', async t => {
-  const f = await fixture(t, { remote: true }), paired = await f.browser('Remote draft reviewer');
-  assert.equal((await f.remote('/api/email', { headers: paired.headers })).status, 200);
-  assert.equal((await f.remote('/api/email/oauth/status', { headers: paired.headers })).status, 200);
-  const draft = await f.remote('/api/email/drafts', { method: 'POST', headers: paired.headers, body: { requestId: 'remote-unsent-fixture', to: ['fixture@example.test'], subject: 'An unsent fixture draft', body: 'This content is saved locally for review and is never sent.' } });
-  assert.equal(draft.status, 201, draft.text); assert.equal(draft.value.draft.sent, false); assert.equal(draft.value.draft.state, 'local_draft');
-  const listed = await f.remote('/api/email', { headers: paired.headers }); assert.equal(listed.value.drafts.length, 1);
-  const disabledMailbox = await f.remote('/api/email/action', { method: 'POST', headers: paired.headers, body: { action: 'list', folder: 'INBOX' } });
-  assert.equal(disabledMailbox.status, 409, 'The browser reaches the email API, whose unconfigured mailbox fails closed.');
-  const before = f.app.email.snapshot();
-  for (const [route, method] of [['/api/email/config', 'PUT'], ['/api/email/config', 'POST'], ['/api/email/oauth/config', 'PUT'], ['/api/email/oauth/begin', 'POST'], ['/api/email/oauth/cancel', 'POST'], ['/api/email/oauth/disconnect', 'POST']]) {
-    const blocked = await f.remote(route, { method, headers: paired.headers, body: {} });
-    assert.equal(blocked.status, 403, route); assert.equal(blocked.value.code, 'REMOTE_LOCAL_ONLY');
+test('retired built-in email routes fail closed locally and for paired browsers without invoking a mailbox CLI', async t => {
+  const f = await fixture(t, { remote: true, emailEnabled: false }), paired = await f.browser('Paired browser');
+  assert.equal(f.app.email, null, 'No built-in email runtime is started.');
+  const routes = [
+    ['/api/email', 'GET'],
+    ['/api/email/oauth/status', 'GET'],
+    ['/api/email/drafts', 'POST'],
+    ['/api/email/action', 'POST'],
+    ['/api/email/config', 'PUT'],
+    ['/api/email/oauth/begin', 'POST'],
+  ];
+  for (const [route, method] of routes) {
+    const options = { method, ...(method === 'GET' ? {} : { body: {} }) };
+    const local = await f.local(route, options);
+    assert.equal(local.status, 410, route+' must reject a retired built-in adapter');
+    assert.equal(local.value.code, 'EMAIL_RETIRED');
+    const remote = await f.remote(route, { ...options, headers: paired.headers });
+    assert.ok([400,403,404,410].includes(remote.status),route+' must remain unavailable through a paired browser');
+    assert.equal(remote.status === 200 || remote.status === 201,false,'Remote mail operations must not be accepted');
   }
-  assert.deepEqual(f.app.email.snapshot(), before);
 });

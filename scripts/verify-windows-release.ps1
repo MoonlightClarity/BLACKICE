@@ -252,7 +252,7 @@ await save('blackice-runtime-integrity.json',{format:1,product:'BLACKICE',...pro
   Invoke-Node @($integrityScript,$SourceRoot,$app,$install,$EvidenceDirectory,$ExpectedFingerprint,$version,$commit,$SourceTestReceipt)
   $stage='runtime'
   $runtimeReport=Join-Path $EvidenceDirectory 'blackice-runtime-validation.json'
-  Invoke-Node @((Join-Path $SourceRoot 'scripts\verify-installed-runtime.mjs'),'--app-dir',$app,'--exe',$exe,'--test-root',(Join-Path $work 'runtime'),'--report',$runtimeReport,'--expected-version',$version,'--expected-fingerprint',$ExpectedFingerprint)
+  Invoke-Node @((Join-Path $SourceRoot 'scripts\verify-installed-runtime.mjs'),'--app-dir',$app,'--exe',$exe,'--test-root',(Join-Path $work 'runtime'),'--report',$runtimeReport,'--expected-version',$version,'--expected-fingerprint',$ExpectedFingerprint,'--hidden-only')
   $runtime=Get-Content -Raw -LiteralPath $runtimeReport | ConvertFrom-Json -AsHashtable
   Assert ($runtime.passed -eq $true -and $runtime.failures.Count -eq 0) 'Native runtime validation failed.'
   foreach ($name in @('startup','restart','window','shutdown','profileBackup','diagnostics')) { Assert ($runtime[$name].passed -eq $true) 'Required native runtime check did not pass.' }

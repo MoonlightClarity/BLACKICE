@@ -12,6 +12,7 @@ import { performance } from 'node:perf_hooks';
 import { nativeRestartCLIOutcome } from './windows-release-inputs.mjs';
 
 const args = process.argv.slice(2);
+const hiddenOnly = args.includes('--hidden-only');
 function option(name, required = true) {
   const index = args.indexOf(name), value = index < 0 ? undefined : args[index + 1];
   if (required && (!value || value.startsWith('--'))) throw new Error('Missing validation argument.');
@@ -63,6 +64,7 @@ async function main() {
   const testRoot = path.resolve(option('--test-root')), reportFile = path.resolve(option('--report'));
   const expectedVersion = option('--expected-version', false), expectedFingerprint = option('--expected-fingerprint', false);
   const report = { format: 1, product: 'BLACKICE', validation: 'installed-runtime', startedAt: new Date().toISOString(),
+    scope: hiddenOnly ? 'strictly-hidden-runtime' : 'full-native-runtime', visibleDesktopValidation: !hiddenOnly,
     platform: process.platform, arch: process.arch, passed: false, startup: { passed: false }, restart: { passed: false }, window: { passed: false },
     shutdown: { passed: false, cleanupMethod: 'native-quit', forcedTerminationUsed: false }, profileBackup: { passed: false, verified: false, restoreVerified: false },
     diagnostics: { passed: false, redactionVerified: false, credentialLeakScanPassed: false }, failures: [] };
@@ -243,6 +245,14 @@ async function main() {
       originalProcessExited: true, profilePreserved: true, modePreserved: true, discoveryReread: true,
       oldSessionRejected: true, receiptSha256: sha(JSON.stringify(receipt)), milliseconds: Math.round(performance.now() - restartAt) };
 
+    if(hiddenOnly){
+      const hiddenRecord=await runtimeRecord(),hiddenStatus=await replacement.get('/api/status');
+      assert.equal(hiddenRecord.pid,after.pid);assert.equal(hiddenRecord.lifecycle.mode,'headless');
+      assert.equal(hiddenRecord.lifecycle.windowVisible,false);assert.equal(hiddenStatus.status,200);
+      assert.equal(hiddenStatus.value.desktopLifecycle.windowVisible,false);
+      report.window={passed:true,validation:'remains-headless',plainNativeLaunchUsed:false,
+        sameProfile:true,sameRuntimePid:true,mode:'headless',windowVisible:false,statusHttpVerified:true};
+    }else{
     stage = 'native-window';
     const windowAt = performance.now(), windowCommand = launch([]);
     const windowForwarded = await bounded(windowCommand.done, 15_000, 'Native window forwarding did not exit.');
@@ -260,6 +270,7 @@ async function main() {
     assert.equal(visible.profileMode, 'custom');
     report.window = { passed: true, plainNativeLaunchUsed: true, sameProfile: true, sameRuntimePid: true,
       mode: 'window', windowVisible: true, statusHttpVerified: true, milliseconds: Math.round(performance.now() - windowAt) };
+    }
 
     stage = 'native-shutdown'; await stopOwnedRuntime();
 

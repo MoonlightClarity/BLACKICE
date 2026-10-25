@@ -97,7 +97,7 @@ test('desktop wiring preserves recovery ordering, window security, cancellation 
   const start=source.slice(source.indexOf('app.whenReady().then(async () => {'));
   assert.ok(start.indexOf('awaitProfileMaintenance')<start.indexOf('recoverProfileRestore'));assert.ok(start.indexOf('recoverProfileRestore')<start.indexOf('startup.showIndicator()'));assert.ok(start.indexOf('startup.showIndicator()')<start.indexOf('startLocalHarness(dataDir, defaultCwd)'));
   assert.match(source,/headless: launch\.headless \|\| launch\.background, createIndicator:/);assert.match(source,/else if \(launch\.quit\)/);
-  assert.match(source,/startup\.step\(\(\) => startLocalHarness\(dataDir, defaultCwd\), value => value\.instance\.close\(\)\)/);
+  assert.match(source,/startup\.step\(\(\) => startupPhase\(diagnostics, 'local-harness', \(\) => startLocalHarness\(dataDir, defaultCwd\)\), value => value\.instance\.close\(\)\)/);
   assert.match(source,/desktopLifecycle\.stop\(\);\s*startup\.stop\(\)/);assert.match(source,/startup\.drainAfter\(\(\) => harness\?\.close\(\)\)/);
   assert.match(source,/mainWindow\.on\('show', handoffStartup\)/);assert.match(source,/startup\.handoff\(mainWindow, readyToShow\)/);assert.match(source,/!startup\.stopped && !desktopLifecycle\.stopped/);
   assert.match(source,/preload: path\.join\(DESKTOP_DIR, 'preload\.cjs'\)/);assert.match(source,/nodeIntegration: false, contextIsolation: true, sandbox: true/);assert.match(source,/\.\.\.\(windowState\.bounds \|\| \{\}\)/);

@@ -25,7 +25,7 @@ test('native restart diagnostics ignore unknown codes, non-error JSON, malformed
 });
 
 test('Windows installer inventory accepts the new runtime assets and the selected release notes', () => {
-  for (const file of ['BROWSER-IMPORT.md', 'CHATGPT-CONNECTOR.md', 'scripts/browser-cli.mjs', 'desktop/browser-compatibility/manifest.json', 'desktop/browser-compatibility/main.js', 'desktop/browser-compatibility.mjs', 'lib/browser-profile.mjs', 'public/browser-ui.mjs', 'RELEASE-NOTES-9.8.7.md', 'RELEASE-NOTES-2.33.8.md', 'RELEASE-NOTES-2.33.9.md', 'RELEASE-NOTES-2.33.10.md', 'RELEASE-NOTES-2.33.11.md', 'RELEASE-NOTES-2.33.12.md', 'RELEASE-NOTES-2.33.13.md']) {
+  for (const file of ['BROWSER-IMPORT.md', 'CHATGPT-CONNECTOR.md', 'scripts/browser-cli.mjs', 'desktop/browser-compatibility/manifest.json', 'desktop/browser-compatibility/main.js', 'desktop/browser-compatibility.mjs', 'lib/browser-profile.mjs', 'public/browser-ui.mjs', 'RELEASE-NOTES-9.8.7.md', 'RELEASE-NOTES-2.33.8.md', 'RELEASE-NOTES-2.33.9.md', 'RELEASE-NOTES-2.33.10.md', 'RELEASE-NOTES-2.33.11.md', 'RELEASE-NOTES-2.33.12.md', 'RELEASE-NOTES-2.33.13.md', 'RELEASE-NOTES-2.34.0.md']) {
     assert.equal(approvedWindowsPackageFile(file, '9.8.7'), true, file);
   }
   for (const file of ['README.md', 'scripts/browser-profile-smoke.mjs', 'scripts/windows-release-inputs.mjs', 'RELEASE-NOTES-9.8.6.md', 'RELEASE-NOTES-2.33.14.md', 'desktop/unknown.json', 'desktop/build-icon.mjs', 'lib/example.test.mjs', 'public/.env', 'lib/node_modules/unsafe.mjs', 'lib/.currents-backup-file.mjs', '../lib/file.mjs', 'lib/../private.txt', 'lib\\file.mjs']) {
@@ -37,6 +37,29 @@ test('Windows installer inventory accepts the new runtime assets and the selecte
 test('2.33.14 permits its current notes and preserved 2.33.13 notes without approving arbitrary release documents', () => {
   for (const file of ['RELEASE-NOTES-2.33.13.md', 'RELEASE-NOTES-2.33.14.md']) assert.equal(approvedWindowsPackageFile(file, '2.33.14'), true, file);
   for (const file of ['RELEASE-NOTES-2.33.15.md', 'RELEASE-NOTES-9.8.6.md', 'RELEASE-NOTES-custom.md', 'RELEASE-NOTES.md']) assert.equal(approvedWindowsPackageFile(file, '2.33.14'), false, file);
+});
+
+test('Windows installer native helpers use exact approved paths without permitting arbitrary PowerShell or C# files', async () => {
+  for (const file of ['desktop/make-icon.ps1', 'desktop/native-window-host.cs', 'desktop/native-window-host.ps1']) {
+    assert.equal(approvedWindowsPackageFile(file, '2.35.2'), true, file);
+    assert.equal((await fs.stat(new URL('../' + file, import.meta.url))).isFile(), true, file);
+  }
+  for (const file of ['desktop/unknown.ps1', 'desktop/unknown.cs', 'desktop/nested/native-window-host.ps1', 'desktop/native-window-host.cmd', 'desktop/native-window-host.cs.bak', 'desktop/native-window-host.ps1.currents-backup-private', 'desktop/../native-window-host.ps1', 'desktop\\native-window-host.ps1', '/desktop/native-window-host.ps1']) {
+    assert.equal(approvedWindowsPackageFile(file, '2.35.2'), false, file);
+  }
+});
+
+test('Windows CI uses hidden native validation and retains every required lifecycle and recovery check', async () => {
+  const script = await fs.readFile(new URL('../scripts/verify-windows-release.ps1', import.meta.url), 'utf8');
+  const invocation = script.split(/\r?\n/).find(line => line.includes('Invoke-Node') && line.includes('scripts\\verify-installed-runtime.mjs'));
+  assert.ok(invocation, 'The installer verifier invokes the actual isolated runtime validator.');
+  assert.match(invocation, /'--hidden-only'/);
+  const required = /foreach \(\$name in @\(([^)]+)\)\) \{ Assert \(\$runtime\[\$name\]\.passed/.exec(script);
+  assert.ok(required, 'Native runtime results remain mandatory.');
+  assert.deepEqual([...required[1].matchAll(/'([^']+)'/g)].map(match => match[1]), ['startup', 'restart', 'window', 'shutdown', 'profileBackup', 'diagnostics']);
+  assert.match(script, /\$runtime\.shutdown\.forcedTerminationUsed -eq \$false/);
+  assert.match(script, /\$runtime\.shutdown\.nativeQuitVerified -eq \$true/);
+  assert.match(script, /\$runtime\.shutdown\.ownedProcessesExited -eq \$true/);
 });
 
 test('every explicit installer file is approved for the current release', async () => {

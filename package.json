@@ -1,10 +1,10 @@
 {
   "name": "relay-agent-harness",
-  "version": "2.33.14",
+  "version": "2.35.2",
   "author": "BLACKICE",
   "private": true,
   "type": "module",
-  "description": "BLACKICE: direct ChatGPT tools, scoped OAuth, durable actions, contained browsing, optional email, and organized plans.",
+  "description": "BLACKICE: direct ChatGPT tools, scoped OAuth, durable actions, native browsing, conversation/project planning, and scheduled tasks.",
   "engines": {
     "node": ">=22"
   },

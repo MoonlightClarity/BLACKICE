@@ -18,7 +18,7 @@ test('focused typing requires explicit contained ownership and a complete docume
   const calls = [], driver = { perform: async args => { calls.push(args); return { tabId: args.tabId }; } }, browser = fixtureWorkspace({ driver });
   t.after(() => browser.close());
   const valid = { action: 'type', browser: 'relay', tabId: 'owned-tab', text: 'safe fixture', expectedUrl: 'https://signin.example.test/', expectedDocumentId: 'owned-tab:1' };
-  for (const override of [{ browser: 'firefox' }, { browser: undefined }, { tabId: undefined }, { text: '' }, { text: 'x'.repeat(16385) }, { expectedDocumentId: undefined }, { expectedUrl: undefined }, { expectedUrl: 'file:///private' }, { expectedDocumentId: 1 }, { modifiers: ['Control'] }]) await assert.rejects(browser.perform({ ...valid, ...override }), { code: 'BROWSER_VALIDATION' });
+  for (const override of [{ browser: 'firefox' }, { browser: undefined }, { tabId: undefined }, { text: '' }, { text: 'x'.repeat(16385) }, { expectedDocumentId: undefined }, { expectedUrl: undefined }, { expectedUrl: 'javascript:alert(1)' }, { expectedDocumentId: 1 }, { modifiers: ['Control'] }]) await assert.rejects(browser.perform({ ...valid, ...override }), { code: 'BROWSER_VALIDATION' });
   assert.deepEqual(calls, []);
   await browser.perform(valid, { source: 'user' }); assert.deepEqual(calls, [valid]);
 });
@@ -34,7 +34,7 @@ test('guarded form fill, selection and hover cross the tool boundary without los
     assert.equal(response.success, true, `${action} should accept the same complete guard advertised for page input`);
     assert.deepEqual(calls.at(-1), request);
     const dispatched = calls.length;
-    for (const override of [{ expectedDocumentId: undefined }, { expectedUrl: undefined }, { expectedDocumentId: '' }, { expectedUrl: '' }, { expectedUrl: 'file:///private' }]) {
+    for (const override of [{ expectedDocumentId: undefined }, { expectedUrl: undefined }, { expectedDocumentId: '' }, { expectedUrl: '' }, { expectedUrl: 'javascript:alert(1)' }]) {
       await assert.rejects(browser.perform({ ...request, ...override }), { code: 'BROWSER_VALIDATION' });
     }
     assert.equal(calls.length, dispatched, 'An incomplete guard must not reach the driver.');
@@ -77,10 +77,11 @@ test('typing and editing keys keep admission order while rapid text is queued', 
   assert.doesNotMatch(JSON.stringify(events), /private-first|private-second/);
 });
 
-test('browser URL validation accepts websites and rejects executable/local/credential URLs', () => {
+test('browser URL validation accepts normal page addresses and rejects executable or credential URLs', () => {
   assert.equal(browserURL('https://example.com/path'), 'https://example.com/path');
   assert.equal(browserURL('www.linkedin.comm'), 'https://www.linkedin.comm/');
-  for (const url of ['javascript:alert(1)', 'file:///c:/Windows/a.txt', 'https://key:secret@example.com', 'not a url']) assert.throws(() => browserURL(url), { code: 'BROWSER_VALIDATION' });
+  for (const url of ['file:///C:/Documents/local.html', 'about:version', 'chrome://version/']) assert.equal(browserURL(url), new URL(url).href);
+  for (const url of ['javascript:alert(1)', 'https://key:secret@example.com', 'not a url']) assert.throws(() => browserURL(url), { code: 'BROWSER_VALIDATION' });
 });
 test('open and navigate normalize bare addresses before dispatching to the browser', async t => {
   const calls = [], browser = fixtureWorkspace({ driver: { perform: async args => { calls.push(args); return { tabId: 'one' }; } } });
@@ -91,6 +92,18 @@ test('open and navigate normalize bare addresses before dispatching to the brows
     { action: 'open', url: 'https://www.linkedin.comm/' },
     { action: 'navigate', tabId: 'one', url: 'http://localhost:3000/page' },
   ]);
+});
+test('new-tab URLs and explicit metadata selection use the existing workspace without page input', async t => {
+  const calls = [], browser = fixtureWorkspace({ driver: { perform: async args => { calls.push(args); return { tabId: 'one' }; } } });
+  t.after(() => browser.close());
+  await browser.perform({ action: 'open', url: 'about:blank' }, { source: 'user' });
+  await browser.perform({ action: 'navigate', tabId: 'one', url: 'about:blank' }, { source: 'user' });
+  await browser.perform({ action: 'tab_select', browser: 'relay', tabId: 'one' }, { source: 'user' });
+  assert.deepEqual(calls, [{ action: 'open', url: 'about:blank' }, { action: 'navigate', tabId: 'one', url: 'about:blank' },
+    { action: 'tab_select', browser: 'relay', tabId: 'one' }]);
+  for (const args of [{ action: 'tab_select' }, { action: 'tab_select', tabId: '' }, { action: 'tab_select', tabId: 'one', url: 'https://example.test/' }])
+    await assert.rejects(browser.perform(args, { source: 'user' }), { code: 'BROWSER_VALIDATION' });
+  assert.equal(calls.length, 3);
 });
 test('browser actions serialize and caller cancellation prevents queued mutations', async () => {
   const driver = new EventEmitter(), calls = []; let release;

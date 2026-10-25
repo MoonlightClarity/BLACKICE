@@ -22,6 +22,49 @@ test('Planning catalog preserves renamed titles and buckets when a new turn star
   const values = planningConversations(context());
   assert.deepEqual(values.get('a'), { taskId: 'a', title: 'Renamed active chat', runId: 'a-next', runStatus: 'running', bucket: 'active', updatedAt: '2026-10-19T10:01:00Z' }); assert.equal(values.get('c').bucket, 'deleted');
 });
+
+test('Planning reads only scalar run metadata without snapshotting unrelated retained payloads', () => {
+  const c = context(), untouched = [];
+  c.engine.listRuns = () => assert.fail('A metadata catalog must not snapshot full retained runs.');
+  const run = { id: 'new-task', input: 'A'.repeat(100000), status: 'waiting', createdAt: '2026-10-19T11:00:00Z', updatedAt: '2026-10-19T11:01:00Z' };
+  for (const field of ['nodes', 'events', 'workflow', 'taskState', 'metadata', 'output']) Object.defineProperty(run, field, { enumerable: true, get() { untouched.push(field); throw Error('Unrelated run payload was accessed.'); } });
+  c.engine.runs.set(run.id, run);
+  const values = planningConversations(c);
+  assert.deepEqual(values.get('new-task'), { taskId: 'new-task', title: 'A'.repeat(140), runId: 'new-task', runStatus: 'waiting', bucket: 'active', updatedAt: '2026-10-19T11:01:00Z' });
+  assert.equal(values.get('a').title, 'Renamed active chat');
+  assert.equal(values.get('a').runStatus, 'running');
+  assert.equal(values.get('b').bucket, 'archived');
+  assert.equal(values.get('c').bucket, 'deleted');
+  assert.deepEqual(untouched, []);
+});
+
+test('Planning raw-map metadata exactly matches legacy snapshot order, timestamp ties and title fallbacks', () => {
+  const entries = [{ id: 'saved-turn', taskId: 'saved', title: '', state: 'archived', status: 'failed', updatedAt: '2026-10-19T09:00:00Z' }];
+  const runs = new Map([
+    ['older', { id: 'older', taskId: 'shared', input: 'First admitted title', status: 'completed', createdAt: '2026-10-19T10:00:00Z' }],
+    ['newer', { id: 'newer', taskId: 'shared', input: 'Second admitted title', status: 'running', updatedAt: '2026-10-19T10:00:00Z' }],
+    ['saved-next', { id: 'saved-next', taskId: 'saved', input: '', workflowName: 'Unused for string input', status: 'waiting', updatedAt: '2026-10-19T09:00:00Z' }],
+    ['workflow-title', { id: 'workflow-title', workflowName: 'Workflow fallback', status: 'queued', createdAt: '2026-10-19T11:00:00Z' }],
+    ['default-title', { id: 'default-title', status: 'completed', createdAt: '2026-10-19T12:00:00Z' }],
+  ]);
+  const before = structuredClone([...runs]), conversations = { list: () => structuredClone(entries) };
+  let legacyReads = 0;
+  const listRuns = () => { legacyReads++; return [...runs.values()].reverse().map(run => structuredClone(run)); };
+  const expected = planningConversations({ conversations, engine: { listRuns } });
+  const actual = planningConversations({ conversations, engine: { runs, listRuns: () => assert.fail('Raw Map must take precedence.') } });
+  assert.deepEqual([...actual], [...expected]);
+  assert.equal(legacyReads, 1);
+  assert.equal(actual.get('shared').runId, 'older');
+  assert.equal(actual.get('shared').title, 'Second admitted title');
+  assert.equal(actual.get('saved').title, '');
+  assert.equal(actual.get('saved').bucket, 'archived');
+  assert.equal(actual.get('workflow-title').title, 'Workflow fallback');
+  assert.equal(actual.get('default-title').title, 'Task');
+  assert.deepEqual([...runs], before);
+  let fallbackReads = 0;
+  assert.deepEqual([...planningConversations({ conversations, engine: { runs: {}, listRuns: () => { fallbackReads++; return listRuns(); } } })], [...expected]);
+  assert.equal(fallbackReads, 1);
+});
 test('Planning filters saved-chat buckets before store pagination', async () => {
   const c = context(), result = await listPlanningWorkspace(c, planningQuery(new URLSearchParams()));
   assert.deepEqual(c.calls[0].taskIds, ['a']); assert.deepEqual(result.plans.map(plan => plan.bucket), ['active']); assert.equal(result.plans[0].running, true);

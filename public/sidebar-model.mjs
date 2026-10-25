@@ -6,14 +6,15 @@ const normalize = value => String(value || '').normalize('NFKD').replace(/[\u030
 const localDay = value => { const date = new Date(value); return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000; };
 
 /** The sidebar uses the complete loaded catalog; searching never requires transcripts. */
-export function sidebarConversations({ summaries = {}, runs = [], historyState = 'active', query = '', isUnread = () => false } = {}) {
+export function sidebarConversations({ summaries = {}, runs = [], runSummaries = null, historyState = 'active', query = '', isUnread = () => false } = {}) {
   const phrase = normalize(query).trim(), words = phrase.split(/\s+/).filter(Boolean);
   const buckets = historyState === 'deleted' ? ['deleted'] : phrase || historyState === 'unread' ? ['active', 'archived'] : [historyState === 'working' ? 'active' : historyState];
   const updated = new Map();
   const remember = (id, at) => { const value = timestamp(at); if (value > (updated.get(id) || 0)) updated.set(id, value); };
   for (const bucket of ['active', 'archived', 'deleted']) for (const item of summaries[bucket] || []) remember(item.taskId || item.rootId || item.id, item.updatedAt || item.createdAt);
-  for (const run of runs) remember(conversationId(run, runs), run.updatedAt || run.createdAt);
-  return buckets.flatMap(state => conversationSidebarItems({ summaries, runs, state })).map(item => {
+  const byId = new Map(runs.map(run => [run.id, run]));
+  for (const run of runs) remember(conversationId(run, runs, byId), run.updatedAt || run.createdAt);
+  return buckets.flatMap(state => conversationSidebarItems({ summaries, runs, runSummaries, state })).map(item => {
     const at = Math.max(timestamp(item.updatedAt || item.createdAt), updated.get(item.id) || 0);
     const title = normalize(item.title), searchable = normalize(`${item.title} ${item.preview || item.originalTask || ''}`);
     return { ...item, updatedAt: at ? new Date(at).toISOString() : '', unread: isUnread(item.id), match: words.every(word => searchable.includes(word)), score: title === phrase ? 4 : title.startsWith(phrase) ? 3 : title.includes(phrase) ? 2 : 1 };

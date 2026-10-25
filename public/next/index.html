@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>BLACKICE — Workspace</title>
+  <link rel="icon" href="/assets/blackice-v2-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/next/base.css">
+  <link rel="stylesheet" href="/attachments.css">
+  <link rel="stylesheet" href="/next/chat.css">
+  <link rel="stylesheet" href="/next/chat-management.css">
+  <link rel="stylesheet" href="/next/parity.css">
+  <link rel="stylesheet" href="/next/browser.css">
+  <link rel="stylesheet" href="/next/knowledge.css">
+  <link rel="stylesheet" href="/next/settings.css">
+  <link rel="stylesheet" href="/next/settings-identity.css">
+  <link rel="stylesheet" href="/next/settings-providers.css">
+  <link rel="stylesheet" href="/next/settings-connections.css">
+  <link rel="stylesheet" href="/next/brand.css">
+  <link rel="stylesheet" href="/next/work-visual.css">
+  <link rel="stylesheet" href="/next/controls.css">
+  <script src="/next/guard.js" defer></script>
+  <script type="module" src="/next/app.mjs"></script>
+</head>
+<body>
+  <div id="next-app" class="next-shell">
+    <header class="next-topbar">
+      <div class="next-brand"><img src="/assets/blackice-v2-mark.svg" width="36" height="36" alt=""><span class="next-brand-copy"><strong>BLACKICE</strong><span class="next-brand-subtitle">WORKSPACE</span></span></div>
+      <nav class="next-tabs" aria-label="Workspace" role="tablist">
+        <button class="next-tab" data-space="chat" role="tab" aria-selected="true" aria-controls="next-stage">Chat</button>
+        <button class="next-tab" data-space="planning" role="tab" aria-selected="false" tabindex="-1" aria-controls="next-stage">Planning</button>
+        <button class="next-tab" data-space="tasks" role="tab" aria-selected="false" tabindex="-1" aria-controls="next-stage">Tasks</button>
+        <button class="next-tab" data-space="browser" role="tab" aria-selected="false" tabindex="-1" aria-controls="next-stage">Browser</button>
+        <button class="next-tab" data-space="activity" role="tab" aria-selected="false" tabindex="-1" aria-controls="next-stage">Activity</button>
+        <button class="next-tab" data-space="knowledge" role="tab" aria-selected="false" tabindex="-1" aria-controls="next-stage">Knowledge</button>
+        <button class="next-tab" data-space="settings" role="tab" aria-selected="false" tabindex="-1" aria-controls="next-stage">Settings</button>
+      </nav>
+      <div class="next-topbar-right"><span id="next-health" class="next-health" role="status">Starting…</span></div>
+    </header>
+    <main class="next-content" id="next-stage" tabindex="-1" aria-live="off">
+      <section class="next-loading" aria-label="Starting Chat">
+        <h1>Chat</h1><p>Opening your conversations…</p>
+        <div class="next-loading-composer">What would you like to work on?</div>
+      </section>
+    </main>
+    <div class="next-toast" id="next-toast" aria-live="polite"></div>
+  </div>
+  <div id="next-fatal" hidden role="alert">
+    <strong>The workspace could not start.</strong>
+    <p id="next-fatal-detail">Your BLACKICE server and saved work are unaffected.</p>
+    <button type="button" id="next-fatal-retry">Reload interface</button>
+    <a href="/legacy/" class="next-recovery-link">Open classic interface</a>
+  </div>
+</body>
+</html>

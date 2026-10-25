@@ -1,0 +1,212 @@
+/* Saved data is the picture: boards, dependency maps and run paths.
+ * All colors derive from BLACKICE's graphite and silver control palette. */
+.next-visual-workspace{padding:22px 26px}
+.next-visual-workspace>.next-panel-inner{max-width:1760px;min-width:0}
+.next-visual-workspace .next-panel-head{margin-bottom:18px}
+.next-visual-workspace .next-panel-head h1{margin:0;line-height:1.25}
+.next-visual-workspace .next-panel-head p{margin:7px 0 0;max-width:62ch}
+.next-visual-tabs{display:flex;flex-wrap:wrap;gap:5px;border-bottom:1px solid var(--line);margin-bottom:20px;padding-bottom:9px}
+.next-visual-tabs button{background:transparent;box-shadow:none;border-color:transparent;padding:9px 15px;color:var(--muted)}
+.next-visual-tabs button[aria-selected=true]{background:#c4ccd51b;border-color:#b7c3d15e;color:var(--text);box-shadow:inset 0 -2px #c4ccd5}
+.next-visual-workspace [role=tabpanel][hidden]{display:none}
+.next-visual-workspace :is(h2,h3){overflow-wrap:anywhere}
+.next-visual-workspace :is(.next-row,.next-stack,.next-card){min-width:0}
+.next-visual-workspace details>summary{cursor:pointer;min-height:34px;padding:7px 0;color:var(--accent)}
+.next-visual-workspace :is(button,summary):focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.next-visual-workspace .next-panel-head h1{font-size:29px}
+/* One plan at a time. Catalog, saved map and focused step inspector. */
+.next-planning-layout{display:grid;grid-template-columns:240px minmax(0,1fr);gap:18px;align-items:start}
+.next-planning-catalog{min-width:0;background:#12161be8;border:1px solid var(--line);border-radius:6px;padding:12px}
+.next-planning-catalog>.next-row{gap:8px}
+.next-planning-catalog .next-field{width:100%!important;min-width:0}
+#next-planning-list{display:flex;flex-direction:column;gap:7px;max-height:calc(100dvh - 360px);min-height:130px;overflow:auto;scrollbar-width:thin;padding:2px}
+#next-planning-list>.next-planning-plan-card{padding:11px;background:#1b2027bd;border:1px solid var(--line);border-radius:5px;position:relative}
+#next-planning-list>.next-planning-plan-card.is-selected{border-color:#b9c5d49e;background:#333e4c85;box-shadow:inset 2px 0 #d0d7df}
+.next-planning-filters{display:grid;gap:9px}
+.next-planning-plan-meta,.next-planning-plan-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.next-planning-plan-actions{margin-top:9px}
+.next-planning-plan-menu{font-size:11px}
+.next-planning-plan-menu button{margin:4px}
+#next-planning-list h3{font-size:13px;line-height:1.5;margin:0 0 7px}
+#next-planning-list p{font-size:11px;margin:4px 0;line-height:1.45;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+#next-planning-list button{font-size:11px;min-height:29px;padding:5px 8px}
+#next-planning-list .next-row{gap:5px}
+#next-planning-info{font-size:11px;line-height:1.5}
+#next-planning-detail{min-width:0}
+.next-plan-surface{background:#11161de8;border:1px solid var(--line);border-radius:7px;overflow:hidden;padding:18px}
+.next-plan-detail{background:#10151bec;border:1px solid var(--line);border-radius:7px;padding:18px;min-width:0}
+.next-plan-detail-header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.next-plan-detail-header h2{font-size:22px;font-weight:500;margin:7px 0 14px}
+.next-plan-eyebrow{font:10px 'Blackice Console',Consolas,monospace;color:var(--muted);letter-spacing:.07em;text-transform:uppercase}
+.next-plan-management{display:flex;flex-wrap:wrap;gap:7px}
+.next-plan-management button{font-size:11px;min-height:30px;padding:6px 9px}
+.next-plan-progress{display:flex;align-items:center;gap:10px;margin:0 0 17px}
+.next-plan-progress progress{appearance:none;width:160px;height:5px;border:0;border-radius:4px;overflow:hidden;background:#3c4655;accent-color:#bdc9d8}
+.next-plan-progress progress::-webkit-progress-bar{background:#3c4655}.next-plan-progress progress::-webkit-progress-value{background:#c0ccda}
+.next-plan-progress span{font-size:11px}
+.next-plan-visual{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:15px;align-items:start;min-width:0}
+.next-plan-visual .next-plan-surface{padding:0;border:0;background:transparent}
+.next-plan-visual .next-plan-toolbar{margin-top:0;padding-top:0;border-top:0}
+.next-plan-visual .next-plan-inspector{border:1px solid var(--line);border-radius:5px;padding:14px;background:#1c232cd9;margin-top:0}
+.next-plan-map-hint{font-size:10px;line-height:1.55;margin:9px 0 0}
+.next-plan-detail-field{margin:14px 0}
+.next-plan-detail-field h4{font-size:11px;font-weight:500;color:var(--muted);margin:0 0 6px}
+.next-plan-detail-text{font-size:12px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+.next-plan-dependency{display:block;font-size:11px;max-width:100%;text-align:left;margin:5px 0;white-space:normal}
+.next-plan-save-actions{margin-top:13px}
+.next-plan-save-actions button{font-size:12px}
+.next-plan-conflict{border:1px solid #cbb79888;padding:12px;border-radius:4px}.next-plan-conflict button{margin:4px;font-size:12px}
+.next-plan-project-map{display:block;color:var(--text);max-width:none}
+.next-plan-project-node rect{fill:#252d38;stroke:#8c9bb0;stroke-width:1}.next-plan-project-node.is-selected rect{stroke:#e7edf5;stroke-width:2;fill:#3b4a5d}
+.next-plan-project-node{cursor:pointer;outline:none}.next-plan-project-node:focus-visible rect{stroke:#fff;stroke-width:3}
+.next-plan-project-title{fill:#e6eaef;font-size:13px;font-weight:600}.next-plan-project-status{fill:#b5c2d2;font:10px 'Blackice Console',Consolas,monospace}.next-plan-project-edge{stroke:#a0aec0;fill:none;stroke-width:1.5}
+.next-plan-next-action{margin-bottom:15px;font-size:12px}.next-plan-next-action p{margin:5px 0 0;line-height:1.6}
+.next-plan-milestones h3{font-size:16px}.next-plan-milestone-path{display:flex;gap:12px;overflow:auto;padding-bottom:8px}.next-plan-milestone{flex:0 0 200px;position:relative;border:1px solid var(--line);border-top:3px solid #aebaca;border-radius:5px;background:#242c37;padding:13px}.next-plan-milestone h4{margin:0 0 9px}.next-plan-milestone time{display:block;font-size:11px;margin-top:8px}.next-plan-milestone p{font-size:11px}
+.next-plan-surface h2{font-size:22px;margin:0 0 7px;font-weight:500}
+.next-plan-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:7px;padding:11px 0;margin-top:12px;border-top:1px solid var(--line)}
+.next-plan-toolbar button{font-size:11px;padding:6px 10px;min-height:30px}
+.next-plan-toolbar button[aria-pressed=true]{border-color:var(--accent);background:#44516180}
+.next-plan-toolbar output{font:11px 'Blackice Console',Consolas,monospace;min-width:40px;text-align:center}
+.next-plan-map-viewport{min-height:310px;height:clamp(310px,48dvh,620px);max-width:100%;overflow:auto;overscroll-behavior:contain;border:1px solid #8d9aab3b;border-radius:5px;background-color:#11151b;background-image:radial-gradient(#a2aebe2b .75px,transparent .9px);background-size:18px 18px;scrollbar-color:#596575 transparent;position:relative}
+.next-plan-map-viewport .task-plan-map{display:block;max-width:none;color:#c5d0dd;--task-plan-map-surface:#252d38;--task-plan-map-surface-active:#3c495a;--task-plan-map-surface-goal:#2e3947}
+.next-plan-map-viewport .task-plan-map-node-surface{fill:#202731;stroke:#7c8a9e;stroke-width:1;rx:8px}
+.next-plan-map-viewport .is-goal .task-plan-map-node-surface{fill:#303a47;stroke:#a6b3c4}
+.next-plan-map-viewport .is-selected .task-plan-map-node-surface{fill:#3a4859;stroke:#e5eaf0;stroke-width:2}
+.next-plan-map-viewport .is-current .task-plan-map-node-surface{stroke:#d2dbe7;stroke-width:2}
+.next-plan-map-viewport .task-plan-map-title{fill:#e6eaef;font:550 13px 'Segoe UI',sans-serif}
+.next-plan-map-viewport :is(.task-plan-map-number,.task-plan-map-status,.task-plan-map-kind){fill:#b2bfce;font:10px 'Blackice Console',Consolas,monospace}
+.next-plan-map-viewport .task-plan-map-node[data-status=done] .task-plan-map-node-surface{stroke:#99b8aa}
+.next-plan-map-viewport .task-plan-map-node[data-status=blocked] .task-plan-map-node-surface{stroke:#cfb295;stroke-dasharray:5 2}
+.next-plan-map-viewport .task-plan-map-node[data-branch=not-selected]{opacity:.55}
+.next-plan-map-viewport .task-plan-map-edge{fill:none;stroke:#9caabd;stroke-width:1.5;stroke-opacity:.7}
+.next-plan-map-viewport .task-plan-map-edge[data-relation=parallel]{stroke-dasharray:4 3}
+.next-plan-map-viewport .task-plan-map-edge[data-relation=choice]{stroke-dasharray:1 4}
+.next-plan-map-viewport .task-plan-map-edge[data-relation=dependency]{stroke:#cbb798;stroke-dasharray:7 4}
+.next-plan-map-viewport .task-plan-map-arrow{fill:#cbb798}
+.next-plan-map-viewport [role=button]{cursor:pointer;outline:none}
+.next-plan-map-viewport [role=button]:focus-visible .task-plan-map-node-surface{stroke:#fff;stroke-width:3}
+.next-plan-inspector{padding:16px 0 0;min-width:0;border-top:1px solid var(--line);margin-top:16px}
+.next-plan-inspector h3{margin:0 0 10px;font-size:17px}
+.next-plan-inspector textarea{width:100%;min-height:72px;resize:vertical}
+.next-plan-inspector .next-label{gap:7px}
+#next-planning-edit{gap:13px}
+#next-planning-goal-disclosure{border-bottom:1px solid var(--line);padding-bottom:5px}
+#next-planning-goal{width:100%}
+.next-plan-outline{list-style:none;padding:10px;margin:0;max-height:48dvh;overflow:auto}
+.next-plan-outline button{text-align:left;width:100%;margin:3px 0;display:flex;align-items:center;gap:10px}
+.next-plan-outline button[aria-pressed=true]{border-color:var(--accent);background:#3b4859}
+.next-plan-project-path{display:flex;gap:14px;overflow:auto;padding:18px 4px 22px;min-height:180px;align-items:stretch}
+.next-plan-project-path>*{flex:0 0 230px;border:1px solid var(--line);border-top:3px solid #a4afbe;background:#1c232c;padding:14px;border-radius:5px}
+/* Bounded task catalogs become four honest runtime lanes. No drag writes. */
+.next-task-board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;align-items:start}
+.next-task-lane{min-width:0;background:#12171dd9;border:1px solid #8d9aab30;border-radius:6px;min-height:270px;overflow:hidden}
+.next-task-lane-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:13px 12px;border-bottom:1px solid var(--line);border-top:2px solid #8793a4}
+.next-task-lane-head h3{margin:0;font:12px 'Blackice Console',Consolas,monospace;letter-spacing:.02em}
+.next-task-lane-head span{font-size:11px;color:var(--muted)}
+.next-task-lane[data-task-lane=working] .next-task-lane-head{border-top-color:#d0d8e2}
+.next-task-lane[data-task-lane=attention] .next-task-lane-head{border-top-color:#cdb292}
+.next-task-lane[data-task-lane=completed] .next-task-lane-head{border-top-color:#9eb7aa}
+.next-task-lane-body{display:grid;align-content:start;gap:9px;padding:10px;max-height:calc(100dvh - 360px);min-height:220px;overflow:auto;scrollbar-width:thin}
+.next-task-card{position:relative;border:1px solid #8793a444;border-radius:5px;background:linear-gradient(135deg,#282f39,#1b2129);padding:12px;box-shadow:0 3px 10px #0002;min-width:0}
+.next-task-card h3{font-size:13px;line-height:1.55;margin:0}
+.next-task-title{background:transparent;border:0;box-shadow:none;padding:0;text-align:left;color:#e5eaf0;font-size:13px;font-weight:600;line-height:1.55;min-height:28px;overflow-wrap:anywhere}
+.next-task-title:hover:not(:disabled){background:transparent;text-decoration:underline}
+.next-task-card>.next-row{align-items:flex-start;gap:8px}
+.next-task-select{display:flex;gap:8px;align-items:center;font-size:11px}
+.next-task-select input{width:15px;height:15px}
+.next-task-card .next-help{font-size:11px;line-height:1.5;margin:6px 0;overflow-wrap:anywhere}
+.next-task-menu{margin-top:8px;border-top:1px solid #8793a426}
+.next-task-menu>summary{font-size:11px;min-height:28px!important;padding:6px 0!important}
+.next-task-menu .next-row{gap:6px}
+.next-task-menu button{font-size:11px;min-height:28px;padding:5px 8px}
+.next-task-history-head,.next-task-schedules-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.next-task-history-head h2{font-size:18px;margin:0}
+.next-task-history-head p{margin:6px 0 0;font-size:12px}
+.next-task-filters{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px}
+.next-task-filters>.next-label:first-child{flex:0 0 160px}
+.next-task-filters>.next-label:last-child{flex:1;min-width:180px}
+.next-task-filters .next-field{width:100%;min-width:0}
+.next-task-bulk{display:inline-flex;flex-wrap:wrap;gap:7px;align-items:center;margin:3px 0 13px}
+.next-task-bulk button{font-size:11px;min-height:29px}
+.next-task-bulk span{font:11px 'Blackice Console',Consolas,monospace;color:var(--muted)}
+.next-task-status{display:inline-block;font-size:11px;margin:0 0 13px 12px}
+.next-task-card-head{display:grid;grid-template-columns:16px minmax(0,1fr);align-items:start;gap:8px}
+.next-task-card-head .next-task-menu{grid-column:1/-1}
+.next-task-card-head .next-task-select{padding-top:5px}
+.next-task-card-head .next-task-select input{margin:0}
+.next-task-menu-actions{display:flex;flex-wrap:wrap;gap:6px;padding:4px 0 6px}
+.next-task-meta{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:8px}
+.next-task-meta time{font-size:10px;color:var(--muted)}
+.next-task-lane-empty{font-size:12px;color:var(--muted);padding:10px 2px}
+.next-task-timeline{display:grid;gap:9px;padding:0 0 0 19px;border-left:1px solid #8d9aab66;margin-left:7px}
+.next-task-timeline .next-task-card::before{content:'';position:absolute;left:-25px;top:18px;width:9px;height:9px;background:#b9c4d3;border:2px solid #1c222b;border-radius:50%}
+.next-task-timeline .next-task-card{box-shadow:none}
+#next-tasks-history,#next-activity-tasks,#next-activity-workflows{background:transparent;border:0;padding:0;box-shadow:none}
+#next-tasks-history>.next-task-history-head{display:none}
+#next-tasks-history h2,#next-activity-tasks h2{font-size:18px;margin:0 0 6px}
+#next-tasks-history>p,#next-activity-tasks>p{font-size:12px}
+#next-tasks-create{max-width:840px}
+#next-tasks-jobs{display:grid;gap:10px}
+#next-tasks-jobs article{border-left:2px solid #a7b3c4;padding:14px}
+/* Activity has one selected surface, with authoring behind disclosures. */
+.next-activity-workspace #next-activity-runtime{padding:0;margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:transparent;border:0;box-shadow:none}
+.next-activity-workspace #next-activity-runtime h2{display:none}
+.next-activity-workspace #next-activity-runtime p{margin:0;font-size:12px}
+.next-activity-workspace #next-workflow-form{gap:12px}
+.next-activity-workspace .next-workflow-run-details{max-height:none;border:0;padding-top:0}
+.next-workflow-catalog{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:12px;margin:12px 0;align-items:end}
+.next-workflow-catalog-actions{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.next-workflow-catalog-actions button{font-size:11px;padding:9px;min-height:37px}
+.next-workflow-catalog>#next-workflow-more{grid-column:1/-1}
+.next-workflow-catalog .next-field{width:100%;max-width:100%}
+.next-workflow-focus{padding:16px;border:1px solid var(--line);border-radius:6px;background:#11161de8;margin:12px 0}
+.next-workflow-focus>header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.next-workflow-focus h3{font-size:20px;font-weight:500;margin:0}
+#next-workflow-focus-kind{margin:0 0 5px}
+#next-workflow-focus-meta{font-size:11px;margin:5px 0 0;overflow-wrap:anywhere}
+.next-workflow-map-toolbar{gap:7px;margin-bottom:9px}
+.next-workflow-map-toolbar button{font-size:11px;padding:6px 9px;min-height:30px}
+.next-workflow-map-toolbar span{font-size:10px}
+.next-workflow-run-actions{font-size:11px;position:relative}
+.next-workflow-run-actions>summary{min-height:30px!important;padding:5px 8px!important;border:1px solid var(--line);border-radius:4px}
+.next-workflow-run-actions[open]>div{position:absolute;z-index:4;right:0;top:36px;display:grid;gap:6px;min-width:170px;padding:9px;border:1px solid var(--line);border-radius:4px;background:#242c37;box-shadow:0 5px 18px #0008}
+.next-workflow-visual{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:16px;min-width:0;align-items:start}
+.next-workflow-map-viewport{height:340px;max-width:100%;overflow:auto;overscroll-behavior:contain;border:1px solid #8d9aab44;border-radius:5px;background:#11151b radial-gradient(#a2aebe2b .75px,transparent .9px);background-size:18px 18px;scrollbar-color:#596575 transparent}
+#next-workflow-map{display:block;max-width:none;color:#aab9cc}
+.next-workflow-map-box{fill:#262f3b;stroke:#8c9bb0;stroke-width:1.5}
+.next-workflow-map-stage.is-selected .next-workflow-map-box{fill:#3b4a5d;stroke:#e4ebf4;stroke-width:2}
+.next-workflow-map-stage{cursor:pointer;outline:none}
+.next-workflow-map-stage:focus-visible .next-workflow-map-box{stroke:#fff;stroke-width:3}
+.next-workflow-map-stage[data-state=running] .next-workflow-map-box{stroke:#d6e0ed;stroke-width:2}
+.next-workflow-map-stage[data-state=completed] .next-workflow-map-box{stroke:#99b8aa}
+.next-workflow-map-stage[data-state=failed] .next-workflow-map-box{stroke:#d1b095;stroke-dasharray:5 2}
+.next-workflow-map-name{fill:#e6eaef;font-size:13px;font-weight:550}.next-workflow-map-meta{fill:#b7c4d4;font:10px 'Blackice Console',Consolas,monospace}
+.next-workflow-map-edge{fill:none;stroke:#a3b1c3;stroke-width:1.5}
+#next-workflow-stage-inspector{min-width:0;max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:5px;background:#222a35;padding:14px;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+#next-workflow-stage-inspector h4{font-size:16px;margin:0 0 12px}
+#next-workflow-stage-inspector button{font-size:11px;max-width:100%}
+#next-workflow-stage-inspector pre{white-space:pre-wrap;max-height:180px;overflow:auto}
+.next-workflow-inspector-field{margin:12px 0}.next-workflow-inspector-field h5{font-size:11px;color:var(--muted);margin:0 0 5px;font-weight:500}.next-workflow-inspector-field p{margin:0;white-space:pre-wrap}
+#next-workflow-launch,#next-workflow-run-lookup,#next-workflow-structure{border:1px solid var(--line);border-radius:5px;background:#1a2029a6;padding:8px 13px;margin-top:12px}
+#next-workflow-launch>summary,#next-workflow-run-lookup>summary,#next-workflow-structure>summary{font-size:12px}
+#next-workflow-launch .next-stack{padding:10px 0}
+#next-workflow-feedback{font-size:12px;margin:12px 0}
+.next-run-path{display:flex;gap:12px;overflow:auto;padding:18px 0;align-items:stretch}
+.next-run-path>.next-workflow-node{flex:0 0 220px;min-width:0;position:relative}
+.next-run-path>.next-workflow-node+.next-workflow-node::before{content:'→';position:absolute;left:-13px;top:30px;color:var(--muted)}
+@media(max-width:1180px){.next-plan-visual,.next-workflow-visual{grid-template-columns:minmax(0,1fr)}.next-plan-visual .next-plan-inspector{margin-top:0}.next-plan-inspector textarea{min-height:70px}}
+@media(max-width:1050px){.next-task-board{grid-template-columns:repeat(2,minmax(0,1fr))}.next-task-lane-body{max-height:none;min-height:80px}.next-task-lane{min-height:160px}.next-planning-layout{grid-template-columns:205px minmax(0,1fr);gap:12px}.next-plan-surface{padding:13px}.next-plan-map-viewport{height:330px}}
+@media(max-width:700px){.next-visual-workspace{padding:18px}.next-planning-layout{grid-template-columns:minmax(0,1fr)}.next-planning-catalog{padding:10px}#next-planning-list{flex-direction:row;max-height:125px;min-height:0;overflow:auto}#next-planning-list>.next-planning-plan-card{flex:0 0 210px}.next-planning-filters{grid-template-columns:1fr 1fr}.next-planning-filters input{grid-column:1/-1}.next-planning-catalog input{grid-column:1/-1}.next-plan-map-viewport{height:310px}.next-plan-surface h2{font-size:20px}.next-visual-tabs{margin-bottom:14px}.next-visual-tabs button{padding:8px 12px}.next-visual-workspace .next-panel-head h1{font-size:25px}}
+@media(max-width:700px){.next-workflow-catalog{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.next-workflow-catalog-actions{grid-column:1/-1}}
+@media(max-height:650px){.next-visual-workspace{padding:16px 18px}.next-visual-workspace .next-panel-head{margin-bottom:12px}.next-visual-workspace .next-panel-head h1{font-size:24px}.next-visual-workspace .next-panel-head>div>p{display:none}.next-visual-tabs{margin-bottom:12px;padding-bottom:6px}.next-visual-tabs button{padding:7px 12px}.next-plan-detail{padding:13px}.next-plan-detail-header h2{font-size:19px;margin:5px 0 11px}.next-plan-progress{margin-bottom:12px}.next-plan-toolbar{gap:5px}.next-workflow-focus{padding:12px}.next-workflow-focus>header{margin-bottom:9px}}
+@media(max-height:650px){.next-activity-workspace #next-activity-runtime p{display:block;font-size:10px}.next-workflow-focus h3{font-size:18px}.next-workflow-focus-header .next-row{gap:7px}.next-workflow-focus-header button{font-size:11px;min-height:29px;padding:6px 9px}#next-workflow-focus-kind{font-size:9px;margin-bottom:3px}#next-workflow-focus-meta{font-size:10px;margin-top:4px}}
+@media(max-width:520px){.next-task-board,.next-workflow-catalog{grid-template-columns:minmax(0,1fr)}.next-visual-workspace{padding:13px}.next-task-history-filters .next-field{width:100%}.next-visual-tabs{gap:2px}.next-visual-tabs button{padding-inline:9px}}
+@media(prefers-reduced-motion:reduce){.next-visual-workspace *{scroll-behavior:auto!important}}
+@media(forced-colors:active){.next-visual-workspace :is(.next-planning-catalog,.next-plan-surface,.next-plan-map-viewport,.next-task-lane,.next-task-card){background:Canvas;color:CanvasText;border-color:CanvasText;box-shadow:none}.next-visual-tabs button[aria-selected=true]{background:Highlight;color:HighlightText}.next-plan-map-viewport .task-plan-map-node-surface{fill:Canvas;stroke:CanvasText}.next-plan-map-viewport .is-selected .task-plan-map-node-surface{fill:Canvas;stroke:Highlight;stroke-width:3}.next-plan-map-viewport :is(.task-plan-map-title,.task-plan-map-number,.task-plan-map-status,.task-plan-map-kind,.task-plan-map-arrow){fill:CanvasText}.next-plan-map-viewport .task-plan-map-edge{stroke:CanvasText}.next-plan-map-viewport .task-plan-map-node[data-branch=not-selected]{opacity:1}.next-task-title{color:LinkText}.next-task-timeline .next-task-card::before{background:CanvasText}}
+@media(forced-colors:active){
+  .next-visual-workspace :is(.next-plan-detail,.next-plan-inspector,.next-workflow-focus,.next-workflow-map-viewport,#next-workflow-stage-inspector){background:Canvas;color:CanvasText;border-color:CanvasText;box-shadow:none}
+  .next-plan-map-viewport .task-plan-map-node-surface,.next-plan-project-node rect,.next-workflow-map-box{fill:Canvas!important;stroke:CanvasText!important}
+  .next-plan-map-viewport .is-selected .task-plan-map-node-surface,.next-plan-project-node.is-selected rect,.next-workflow-map-stage.is-selected .next-workflow-map-box{stroke:Highlight!important;stroke-width:3}
+  .next-plan-project-title,.next-plan-project-status,.next-workflow-map-name,.next-workflow-map-meta{fill:CanvasText}
+  .next-plan-map-viewport .task-plan-map-edge,.next-plan-project-edge,.next-workflow-map-edge{stroke:CanvasText!important}
+}

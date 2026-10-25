@@ -44,6 +44,9 @@ function eventFixture() {
   const frames = [], reports = [], calls = [];
   const old = { id: 'run-1', status: 'running' }, state = { screen: 'mission', currentRun: old, runs: [old], workflows: [], workflow: { id: 'workflow-1' }, status: {}, desktop: {} };
   const context = vm.createContext({ state, runEventGenerations: new Map(), requestAnimationFrame: fn => frames.push(fn),
+    // The actual throttle is validated separately; this fixture checks the
+    // legacy event reducer and its outer requestAnimationFrame paint boundary.
+    createRenderThrottle:()=>({request(fn){fn();},cancel(){},flush(){}}),
     blackiceUIResilience: { report: error => reports.push(error) },
     missionUI: { update() { calls.push('mission'); throw Error('broken mission'); } },
     observeUI: { handleEvent() { calls.push('observe-event'); throw Error('broken observe'); }, update() { calls.push('observe-update'); } },

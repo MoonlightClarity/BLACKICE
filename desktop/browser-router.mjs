@@ -89,7 +89,7 @@ export class BrowserRouter extends EventEmitter {
     if (args.action === 'downloads') return { downloads: args.browser ? status.downloads.filter(item => item.browser === args.browser) : status.downloads };
     const independent = ['open', 'folder_create', 'folder_rename', 'folder_close'].includes(args.action);
     const selected = independent ? { browser: args.browser || 'relay' } : this.owner(args, status);
-    if (['folder_create', 'folder_rename', 'folder_close', 'tab_move', 'suspend'].includes(args.action) && selected.browser !== 'relay') throw fail('Browser folders and saved pages belong to the contained BLACKICE browser.', 'BROWSER_CONTAINED_ONLY');
+    if (['folder_create', 'folder_rename', 'folder_close', 'tab_move', 'tab_select', 'suspend'].includes(args.action) && selected.browser !== 'relay') throw fail('Browser folders and saved pages belong to the contained BLACKICE browser.', 'BROWSER_CONTAINED_ONLY');
     if (selected.browser !== 'relay' && (args.action === 'type' || args.expectedDocumentId !== undefined || args.expectedUrl !== undefined)) throw fail('Direct page typing is available only in the contained BLACKICE browser.', 'BROWSER_CONTAINED_INPUT_REQUIRED');
     const driver = this.drivers[selected.browser];
     if (!driver) throw fail('This browser is not available.', 'BROWSER_UNAVAILABLE');

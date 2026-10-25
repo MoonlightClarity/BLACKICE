@@ -557,6 +557,31 @@ test('shutdown signals and drains active work after storage failure, retaining t
   });
 });
 
+test('direct metadata tab selection preserves pending sign-in without page inspection and requires an exact owned target', async t => {
+  const pages = [{ tabId: 'personal', browser: 'relay', url: 'about:blank', title: 'New tab',
+    pendingInteraction: { kind: 'http_auth', status: 'pending', challengeId: 'fixture-auth' } },
+  { tabId: 'other', browser: 'relay', url: 'https://example.test/', owner: { taskId: 'another-task', runId: 'other', nodeId: 'agent' } },
+  { tabId: 'reserved', browser: 'relay', url: 'https://chatgpt.com/', purpose: 'chat-mode' }];
+  let selected = 'personal', inspections = 0; const dispatched = [];
+  const driver = { status: () => ({ available: true, contained: true, activeTab: selected, tabs: pages, folders: [] }),
+    async perform(args) { assert.equal(args.action, 'tab_select'); dispatched.push(args); selected = args.tabId; return this.status(); } };
+  const browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());
+  const { api } = await harness(t, { browser, inspectBrowserInteraction: () => { inspections++; throw Error('Selection must never inspect page interactions.'); } });
+  const definition = api.tools(client).find(tool => tool.name === 'blackice_browser_action');
+  assert.ok(definition.inputSchema.properties.action.enum.includes('tab_select'));
+  const args = { requestId: 'select-personal', action: 'tab_select', tabId: 'personal' };
+  const job = await api.call('blackice_browser_action', args, client), done = await waitJob(api, job.jobId);
+  assert.equal(done.status, 'succeeded'); assert.equal(inspections, 0); assert.equal(dispatched.length, 1);
+  const receipt = JSON.parse(done.result.text.text); assert.equal(receipt.tabs[0].pendingInteraction.challengeId, 'fixture-auth');
+  const replay = await api.call('blackice_browser_action', args, client); assert.equal(replay.existing, true); assert.equal(dispatched.length, 1);
+  await assert.rejects(api.call('blackice_browser_action', { requestId: 'select-missing', action: 'tab_select' }, client), /observed contained browser tab/);
+  await assert.rejects(api.call('blackice_browser_action', { ...args, requestId: 'select-extra', url: 'https://example.test/' }, client), /fields/);
+  await assert.rejects(api.call('blackice_browser_action', { ...args, requestId: 'select-unknown', tabId: 'unknown' }, client), { code: 'BROWSER_TAB_NOT_FOUND' });
+  await assert.rejects(api.call('blackice_browser_action', { ...args, requestId: 'select-other', tabId: 'other' }, client), { code: 'BROWSER_TAB_OWNERSHIP' });
+  await assert.rejects(api.call('blackice_browser_action', { ...args, requestId: 'select-reserved', tabId: 'reserved' }, client), { code: 'BROWSER_HUMAN_CHAT_RESERVED' });
+  assert.equal(inspections, 0); assert.equal(dispatched.length, 1);
+});
+
 test('direct browser grants receive stable task ownership and cannot target another grant page', async t => {
   const pages = [{ tabId: 'personal', browser: 'relay', url: 'https://example.test/personal', title: 'Personal' }], dispatched = [];
   const driver = {

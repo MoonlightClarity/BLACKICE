@@ -1,0 +1,14 @@
+/* Skip layout and paint for distant saved turns. The DOM remains intact:
+   screen readers, search, earlier messages and copied text are preserved.
+   Chromium refines the intrinsic height after the first actual paint. */
+.conversation-turn {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 480px;
+}
+/* Live answer text is escaped and directly painted while streaming, instead
+   of reparsing a growing Markdown tree at each incoming token. On completion
+   the entire answer is rendered as full Markdown by mission-ui. */
+.conversation-message-text.conversation-streaming-plain {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

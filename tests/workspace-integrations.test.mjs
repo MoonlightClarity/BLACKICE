@@ -2,26 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { workspaceIntegrations } from '../public/workspace-integrations.mjs';
 
-test('workspace entry points never treat an external browser catalog or an email configuration as verified service', () => {
-  const cards = workspaceIntegrations({browser:{available:true,contained:false},email:{configured:true}});
-  assert.deepEqual(cards.map(card => card.id), ['browser','email','planning','swarm','schedules']);
+test('workspace entry points use the browser and never expose retired mailbox adapters', () => {
+  const cards = workspaceIntegrations({browser:{available:true,contained:false},email:{configured:true,enabled:true,cli:{checked:true}}});
+  assert.deepEqual(cards.map(card => card.id), ['browser','planning','swarm','schedules']);
   assert.equal(cards[0].ready,false);
-  assert.equal(cards[1].ready,false);
-  assert.equal(cards[1].state,'Setup required');
-  const configured=workspaceIntegrations({email:{configured:true,enabled:true}})[1];
-  assert.match(configured.state,/check CLI/);assert.equal(configured.ready,false);
-  const cliChecked=workspaceIntegrations({email:{configured:true,enabled:true,cli:{checked:true}}})[1];
-  assert.match(cliChecked.state,/mailbox unchecked/);assert.equal(cliChecked.ready,false);
+  assert.ok(!JSON.stringify(cards).includes('email'));
+  assert.ok(!JSON.stringify(cards).includes('Himalaya'));
   assert.ok(!JSON.stringify(cards).includes('ChatGPT'));
 });
 
 test('contained browser availability and scheduler pause/storage failures remain visible', () => {
   const cards = workspaceIntegrations({browser:{available:true,contained:true},storage:{healthy:false},projects:{healthy:false},operations:{healthy:true,paused:true}});
   assert.equal(cards[0].ready,true);
-  assert.equal(cards[2].ready,false);
-  assert.equal(cards[3].ready,false);
-  assert.equal(cards[4].ready,false);
-  assert.match(cards[4].state,/Paused.*while BLACKICE is open/);
+  assert.equal(cards.find(card => card.id === 'planning').ready,false);
+  assert.equal(cards.find(card => card.id === 'swarm').ready,false);
+  assert.equal(cards.find(card => card.id === 'schedules').ready,false);
+  assert.match(cards.find(card => card.id === 'schedules').state,/Paused.*while BLACKICE is open/);
 });
 
 test('healthy project and scheduler storage does not advertise execution while dispatch is blocked', () => {
@@ -48,11 +44,9 @@ test('the Planning card opens the shared saved editor and preserves Off semantic
   assert.equal(unavailable.ready,false);assert.match(unavailable.state,/Storage needs attention/);
 });
 
-test('unreadable email storage overrides saved configuration and old access evidence', () => {
-  for (const unhealthy of [{state:'unavailable'}, {storage:{healthy:false}}]) {
-    const card=workspaceIntegrations({email:{configured:true,enabled:true,cli:{checked:true},account:{observed:true},...unhealthy}})[1];
-    assert.equal(card.ready,false);
-    assert.match(card.state,/storage needs attention/i);
-    assert.doesNotMatch(card.state,/Setup required|Last mailbox operation|CLI checked/);
+test('retired email status never re-enables a mailbox workspace card', () => {
+  for (const unhealthy of [{state:'unavailable'}, {storage:{healthy:false}}, {configured:true,enabled:true,cli:{checked:true},account:{observed:true}}]) {
+    const cards=workspaceIntegrations({email:unhealthy});
+    assert.equal(cards.some(card=>card.id==='email'),false);
   }
 });

@@ -211,10 +211,10 @@ test('mobile naming opens the visible outline pane and Escape returns to an acce
 });
 
 
-test('Planning identifies saved chat plans and offers the shared workspace destinations without a write',async t=>{
+test('Planning identifies conversation plans and offers shared workspace destinations without a write',async t=>{
   const f=await fixture(t),nav=f.dom.$('.coordination-navigation');assert.ok(nav);
   assert.equal(nav.querySelector('[data-action="planning"]').getAttribute('aria-current'),'page');assert.equal(nav.querySelector('[data-action="planning"]').disabled,true);
-  assert.ok(nav.querySelector('[data-action="projects"]'));assert.ok(nav.querySelector('[data-action="operations"]'));assert.equal(f.dom.$('.planning-catalog-title h2').textContent,'Saved chat plans');assert.equal(f.writes().length,0);
+  assert.ok(nav.querySelector('[data-action="projects"]'));assert.ok(nav.querySelector('[data-action="operations"]'));assert.equal(f.dom.$('.planning-catalog-title h2').textContent,'Conversation plans');assert.equal(f.writes().length,0);
 });
 
 for(const width of [1440,320]) test(`named group removal targets its own group and preserves saved work at ${width}px`,async t=>{

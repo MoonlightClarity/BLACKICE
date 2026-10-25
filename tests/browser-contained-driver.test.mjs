@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import vm from 'node:vm';
+import { pathToFileURL } from 'node:url';
 import { BrowserWorkspace, createBrowserToolHandler } from '../lib/browser.mjs';
 import { BrowserRouter } from '../desktop/browser-router.mjs';
 
@@ -49,9 +50,194 @@ async function fixture(t, { command = async () => ({}), loadURL = async () => {}
 const assertContained = window => {
   assert.equal(window.options.show, false); assert.equal(window.options.focusable, false); assert.equal(window.options.skipTaskbar, true); assert.equal(window.options.fullscreenable, false);
   assert.equal(window.options.webPreferences.offscreen, true); assert.equal(window.options.webPreferences.paintWhenInitiallyHidden, true); assert.equal(window.options.webPreferences.backgroundThrottling, false); assert.equal(window.options.webPreferences.disableDialogs, false);
-  assert.equal(window.options.webPreferences.nodeIntegration, false); assert.equal(window.options.webPreferences.contextIsolation, true); assert.equal(window.options.webPreferences.sandbox, true); assert.equal(window.visible, false);
+  assert.equal(window.options.webPreferences.nodeIntegration, false); assert.equal(window.options.webPreferences.contextIsolation, true); assert.equal(window.options.webPreferences.sandbox, false); assert.equal(window.visible, false);
   assert.equal(window.options.webPreferences.nodeIntegrationInSubFrames, undefined); assert.equal(window.options.webPreferences.preload, undefined);
 };
+
+test('local files and Chromium internal pages keep their actual URL and survive a lazy restart', async t => {
+  const { driver, directory, windows } = await fixture(t); await driver.init();
+  const local = path.join(directory, 'local fixture.html'); await writeFile(local, '<!doctype html><title>Local fixture</title><input>');
+  const fileURL = pathToFileURL(local).href, browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());
+  const file = await browser.perform({ action: 'open', browser: 'relay', url: fileURL }, { source: 'user' });
+  assert.equal(file.url, fileURL); assert.deepEqual(windows[0].loads, ['about:blank', fileURL]);
+  await browser.perform({ action: 'type', browser: 'relay', tabId: file.tabId, text: 'Local page input',
+    expectedDocumentId: file.documentId, expectedUrl: fileURL }, { source: 'user' });
+  assert.ok(windows[0].protocol.some(call => call.method === 'Input.insertText'));
+  const internal = await browser.perform({ action: 'open', browser: 'relay', url: 'about:version' }, { source: 'user' });
+  const tab = driver.tabs.get(internal.tabId); let prevented = 0;
+  tab.window.webContents.emit('will-redirect', { preventDefault: () => prevented++ }, 'chrome://version/');
+  tab.window.url = 'chrome://version/'; tab.window.webContents.emit('did-frame-navigate', {}, 'chrome://version/', 200, 'OK', true);
+  assert.equal(prevented, 0); assert.equal(driver.status().tabs.find(item => item.tabId === tab.id).url, 'chrome://version/');
+  tab.window.webContents.emit('will-navigate', { preventDefault: () => prevented++ }, fileURL); assert.equal(prevented, 0);
+  tab.window.webContents.emit('will-navigate', { preventDefault: () => prevented++ }, 'javascript:alert(1)'); assert.equal(prevented, 1);
+  const fragment = await browser.perform({ action: 'open', browser: 'relay', url: 'about:blank#notes' }, { source: 'user' });
+  assert.equal(fragment.title, 'New tab'); await driver.close();
+  const count = windows.length, restored = new driver.constructor({ dataDir: directory, downloadDir: path.join(directory, 'downloads') });
+  try {
+    await restored.init(); assert.equal(windows.length, count);
+    assert.deepEqual(restored.status().tabs.map(item => item.url), [fileURL, 'chrome://version/', 'about:blank#notes']);
+    assert.equal(restored.status().activeTab, fragment.tabId); assert.ok(restored.status().tabs.every(item => item.suspended));
+    assert.equal((await restored.perform({ action: 'read', tabId: file.tabId }, { source: 'user' })).url, fileURL);
+  } finally { await restored.close(); }
+});
+
+test('human tabs and popups can pass eight personal pages while total live and saved budgets remain intact', async t => {
+  const { driver, Window, directory } = await fixture(t, { limits: { maxLiveTabs: 10, maxSavedTabs: 11 } }); await driver.init();
+  const pages = [];
+  for (let i = 0; i < 9; i++) pages.push(await driver.perform({ action: 'open', url: 'about:blank' }, { source: 'user' }));
+  assert.equal(driver.tabs.size, 9); assert.equal(new Set(pages.map(page => page.tabId)).size, 9);
+  const parent = driver.tabs.get(pages[0].tabId), popup = parent.window.webContents.openHandler({ url: 'https://signin.example.test/' });
+  assert.equal(popup.action, 'allow');
+  const child = new Window(popup.overrideBrowserWindowOptions); child.url = 'https://signin.example.test/';
+  parent.window.webContents.emit('did-create-window', child, { url: child.url });
+  assert.equal(child.destroyed, false); assert.equal(driver.tabs.size, 10);
+  await assert.rejects(driver.perform({ action: 'open', url: 'about:blank' }, { source: 'user' }), { code: 'BROWSER_LIVE_LIMIT' });
+  await driver.perform({ action: 'suspend', tabId: pages[1].tabId }, { source: 'user' });
+  await driver.perform({ action: 'open', url: 'about:blank' }, { source: 'user' });
+  await assert.rejects(driver.perform({ action: 'open', url: 'about:blank' }, { source: 'user' }), { code: 'BROWSER_SAVED_LIMIT' });
+  const saved = JSON.parse(await readFile(path.join(directory, 'browser-tabs.json'), 'utf8'));
+  assert.equal(saved.tabs.length, 11); assert.ok(saved.tabs.every(tab => tab.humanCreated === true));
+  await driver.close();
+  const restored = new driver.constructor({ dataDir: directory, downloadDir: path.join(directory, 'downloads') });
+  try {
+    await restored.init(); assert.equal(restored.tabs.size, 11); assert.ok([...restored.tabs.values()].every(tab => tab.humanCreated));
+    const resumed = await restored.perform({ action: 'read', tabId: pages[0].tabId }, { source: 'user' });
+    assert.equal(resumed.tabId, pages[0].tabId);
+    assert.equal(restored.tabs.get(pages[0].tabId).window.webContents.openHandler({ url: 'https://signin.example.test/' }).action, 'allow');
+  } finally { await restored.close(); }
+});
+
+test('human branch moves durably transfer folder ownership while old agent targets cannot retarget the moved pages', async t => {
+  const { driver, directory, windows } = await fixture(t); await driver.init();
+  const alice = taskOwner('move-alice'), bob = taskOwner('move-bob');
+  const root = await driver.perform({ action: 'open', url: 'https://alice.example/' }, { owner: alice });
+  const kept = await driver.perform({ action: 'open', url: 'https://alice.example/kept' }, { owner: alice });
+  const child = await driver.perform({ action: 'open', url: 'https://alice.example/child', parentTabId: root.tabId }, { owner: alice });
+  const destination = await driver.perform({ action: 'open', url: 'https://bob.example/' }, { owner: bob });
+  const rootTab = driver.tabs.get(root.tabId), childTab = driver.tabs.get(child.tabId), destinationTab = driver.tabs.get(destination.tabId);
+  await driver.perform({ action: 'tab_move', tabId: root.tabId, folderId: 'folder_user', parentTabId: null }, { source: 'user' });
+  assert.equal(rootTab.owner, null); assert.equal(childTab.owner, null); assert.equal(childTab.parentTabId, root.tabId);
+  assert.equal(driver.ownerActiveTabs.get(alice.taskId+'\0'+alice.nodeId), kept.tabId);
+  await assert.rejects(driver.perform({ action: 'navigate', tabId: root.tabId, url: 'https://wrong.example/' }, { owner: alice }), { code: 'BROWSER_TAB_OWNERSHIP' });
+  await driver.perform({ action: 'tab_move', tabId: root.tabId, parentTabId: destination.tabId }, { source: 'user' });
+  for (const tab of [rootTab, childTab]) { assert.deepEqual(tab.owner, { taskId: bob.taskId, runId: bob.runId, nodeId: bob.nodeId }); assert.equal(tab.folderId, destinationTab.folderId); assert.equal(tab.userPinned, true); }
+  assert.equal(rootTab.parentTabId, destination.tabId); assert.equal(childTab.parentTabId, root.tabId);
+  assert.equal(driver.ownerActiveTabs.get(bob.taskId+'\0'+bob.nodeId), destination.tabId, 'Moving a branch must not silently retarget the destination worker.');
+  const cleanup = await driver.releaseOwner(bob); assert.ok(cleanup.retained.some(item => item.tabId === root.tabId));
+  const personal = await driver.perform({ action: 'open', url: 'about:blank' }, { source: 'user' });
+  await driver.perform({ action: 'tab_move', tabId: personal.tabId, folderId: destinationTab.folderId, parentTabId: null }, { source: 'user' });
+  assert.deepEqual(driver.tabs.get(personal.tabId).owner, { taskId: bob.taskId, runId: 'user', nodeId: 'user' });
+  await assert.rejects(driver.perform({ action: 'tab_move', tabId: kept.tabId, parentTabId: root.tabId }, { owner: alice }), { code: 'BROWSER_FOLDER_OWNERSHIP' });
+  const before = driver.status().tabs.map(({tabId,folderId,parentTabId,owner}) => ({tabId,folderId,parentTabId,owner}));
+  const disk = JSON.parse(await readFile(path.join(directory, 'browser-tabs.json'), 'utf8'));
+  assert.equal(disk.tabs.find(tab => tab.tabId === root.tabId).owner.taskId, bob.taskId); await driver.close();
+  const count = windows.length, restored = new driver.constructor({ dataDir: directory, downloadDir: path.join(directory, 'downloads') });
+  try { await restored.init(); assert.equal(windows.length, count); assert.deepEqual(restored.status().tabs.map(({tabId,folderId,parentTabId,owner}) => ({tabId,folderId,parentTabId,owner})), before); }
+  finally { await restored.close(); }
+});
+
+test('human resumption and task-folder tabs use the total budget while background worker admission stays bounded', async t => {
+  const { driver } = await fixture(t, { limits: { maxTaskTabs: 1, maxLiveTabs: 3 } }); await driver.init();
+  const owner = taskOwner('human-resume');
+  await driver.perform({ action: 'open', url: 'https://task.example/live' }, { owner });
+  const suspended = driver.newTab('https://task.example/saved', { restore: true, owner });
+  const result = await driver.perform({ action: 'read', tabId: suspended.id }, { source: 'user' });
+  assert.equal(result.tabId, suspended.id); assert.equal(suspended.humanCreated, true); assert.equal(driver.status().capacity.live, 2);
+  await assert.rejects(driver.perform({ action: 'open', url: 'https://task.example/agent-extra' }, { owner }), { code: 'BROWSER_TASK_TAB_LIMIT' });
+  const human = await driver.perform({ action: 'open', url: 'about:blank', folderId: suspended.folderId }, { source: 'user' });
+  assert.equal(driver.tabs.get(human.tabId).owner.taskId, owner.taskId); assert.equal(driver.status().capacity.live, 3);
+  await assert.rejects(driver.perform({ action: 'open', url: 'about:blank' }, { source: 'user' }), { code: 'BROWSER_LIVE_LIMIT' });
+});
+
+test('independent blank tabs, explicit metadata selection and close persist before their API receipts', async t => {
+  const { driver, windows, directory } = await fixture(t); await driver.init();
+  const router = new BrowserRouter({ independent: driver }), browser = new BrowserWorkspace({ driver: router });
+  t.after(() => browser.close());
+  const first = await browser.perform({ action: 'open', browser: 'relay', url: 'about:blank' }, { source: 'user' });
+  const second = await browser.perform({ action: 'open', browser: 'relay', url: 'about:blank' }, { source: 'user' });
+  assert.notEqual(first.tabId, second.tabId); assert.equal(first.url, 'about:blank'); assert.equal(first.title, 'New tab');
+  assert.equal(second.title, 'New tab'); assert.equal(windows.length, 2);
+  for (const window of windows) { assertContained(window); assert.deepEqual(window.loads, ['about:blank']); }
+  let saved = JSON.parse(await readFile(path.join(directory, 'browser-tabs.json'), 'utf8'));
+  assert.equal(saved.activeTab, second.tabId); assert.deepEqual(saved.tabs.map(tab => [tab.tabId, tab.url, tab.title]),
+    [[first.tabId, 'about:blank', 'New tab'], [second.tabId, 'about:blank', 'New tab']]);
+  const protocolCounts = windows.map(window => window.protocol.length);
+  const selected = await browser.perform({ action: 'tab_select', browser: 'relay', tabId: first.tabId }, { source: 'user' });
+  assert.equal(selected.activeTab, first.tabId); assert.equal(router.status().activeTab, first.tabId);
+  assert.deepEqual(windows.map(window => window.protocol.length), protocolCounts, 'Selecting a saved tab must not perform page work.');
+  saved = JSON.parse(await readFile(path.join(directory, 'browser-tabs.json'), 'utf8')); assert.equal(saved.activeTab, first.tabId);
+  const closed = await browser.perform({ action: 'close', browser: 'relay', tabId: second.tabId }, { source: 'user' });
+  assert.equal(closed.activeTab, first.tabId); assert.deepEqual(closed.tabs.map(tab => tab.tabId), [first.tabId]);
+  saved = JSON.parse(await readFile(path.join(directory, 'browser-tabs.json'), 'utf8'));
+  assert.equal(saved.activeTab, first.tabId); assert.deepEqual(saved.tabs.map(tab => tab.tabId), [first.tabId]);
+});
+
+test('blank and HTTP pages restore lazily with the selected ID and blank navigation retains its WebContents', async t => {
+  const { driver, windows, directory } = await fixture(t); await driver.init();
+  const blank = await driver.perform({ action: 'open', url: 'about:blank' }, { source: 'user' });
+  const website = await driver.perform({ action: 'open', url: 'https://saved.example.test/' }, { source: 'user' });
+  await driver.perform({ action: 'tab_select', tabId: blank.tabId }, { source: 'user' }); await driver.close();
+  const nativeCount = windows.length, restored = new driver.constructor({ dataDir: directory, downloadDir: path.join(directory, 'downloads') });
+  try {
+    await restored.init(); const status = restored.status();
+    assert.equal(windows.length, nativeCount); assert.equal(status.activeTab, blank.tabId);
+    assert.deepEqual(status.tabs.map(tab => [tab.tabId, tab.url]), [[blank.tabId, 'about:blank'], [website.tabId, 'https://saved.example.test/']]);
+    assert.ok(status.tabs.every(tab => tab.suspended && !tab.canGoBack && !tab.canGoForward));
+    assert.equal(status.tabs[0].title, 'New tab');
+    await restored.perform({ action: 'tab_select', tabId: blank.tabId }, { source: 'user' });
+    assert.equal(windows.length, nativeCount, 'Metadata selection must not materialize a restored page.');
+    const resumed = await restored.perform({ action: 'read', tabId: blank.tabId }, { source: 'user' });
+    const tab = restored.tabs.get(blank.tabId), contents = tab.window.webContents;
+    assert.equal(resumed.url, 'about:blank'); assert.equal(resumed.title, 'New tab');
+    assert.deepEqual(tab.window.loads, ['about:blank']); assert.equal(restored.tabs.get(website.tabId).window, null);
+    const navigated = await restored.perform({ action: 'navigate', tabId: blank.tabId, url: 'https://new.example.test/' }, { source: 'user' });
+    assert.equal(navigated.tabId, blank.tabId); assert.equal(navigated.url, 'https://new.example.test/'); assert.equal(tab.window.webContents, contents);
+    // A direct human location change bypasses the command API but still saves the real blank URL.
+    tab.window.url = 'about:blank'; contents.emit('did-frame-navigate', {}, 'about:blank', 200, 'OK', true); await restored.writeChain;
+    assert.equal(restored.status().tabs.find(item => item.tabId === blank.tabId).title, 'New tab');
+    const saved = JSON.parse(await readFile(path.join(directory, 'browser-tabs.json'), 'utf8'));
+    assert.equal(saved.tabs.find(item => item.tabId === blank.tabId).url, 'about:blank');
+    const suspended = await restored.perform({ action: 'suspend', tabId: blank.tabId }, { source: 'user' });
+    assert.equal(suspended.tabs.find(item => item.tabId === blank.tabId).suspended, true);
+    assert.equal((await restored.perform({ action: 'read', tabId: blank.tabId }, { source: 'user' })).url, 'about:blank');
+  } finally { await restored.close(); }
+});
+
+test('metadata tab selection preserves an authentication challenge and reports only live navigation history', async t => {
+  const { driver, windows, directory } = await fixture(t); await driver.init();
+  const blank = driver.newTab('about:blank', { restore: true });
+  const other = await driver.perform({ action: 'open', url: 'https://signin.example.test/' }, { source: 'user' });
+  const tab = driver.tabs.get(other.tabId); let cancelled = 0;
+  const challengeId = driver.beginAuthentication(tab, { url: other.url }, { realm: 'Fixture', scheme: 'basic' }, () => cancelled++);
+  tab.window.webContents.navigationHistory = { canGoBack: () => true, canGoForward: () => false };
+  assert.equal(driver.status().tabs.find(item => item.tabId === tab.id).canGoBack, true);
+  const protocols = windows.map(window => window.protocol.length);
+  const selected = await driver.perform({ action: 'tab_select', tabId: tab.id }, { source: 'user' });
+  assert.equal(selected.activeTab, tab.id); assert.equal(selected.tabs.find(item => item.tabId === tab.id).pendingInteraction.challengeId, challengeId);
+  assert.equal(cancelled, 0); assert.deepEqual(windows.map(window => window.protocol.length), protocols);
+  await driver.perform({ action: 'tab_select', tabId: blank.id }, { source: 'user' });
+  assert.equal(windows.length, 1); assert.equal(driver.status().tabs.find(item => item.tabId === blank.id).canGoBack, false);
+  assert.equal(JSON.parse(await readFile(path.join(directory, 'browser-tabs.json'), 'utf8')).activeTab, blank.id);
+  await assert.rejects(driver.perform({ action: 'tab_select' }), { code: 'BROWSER_VALIDATION' });
+});
+
+test('new blank tabs and metadata selection retain their in-memory effect when saving cannot be confirmed', async t => {
+  const { driver, windows, directory } = await fixture(t); await driver.init();
+  const blank = await driver.perform({ action: 'open', url: 'about:blank' }, { source: 'user' });
+  const second = await driver.perform({ action: 'open', url: 'about:blank' }, { source: 'user' });
+  driver.dataDir = path.join(directory, 'missing-storage');
+  try {
+    const protocols = windows.map(window => window.protocol.length);
+    await assert.rejects(driver.perform({ action: 'tab_select', tabId: blank.tabId }, { source: 'user' }), { code: 'BROWSER_SAVE_FAILED', actionDispatched: true });
+    assert.equal(driver.status().activeTab, blank.tabId); assert.equal(driver.status().tabs.length, 2);
+    assert.deepEqual(windows.map(window => window.protocol.length), protocols);
+    await assert.rejects(driver.perform({ action: 'close', tabId: second.tabId }, { source: 'user' }), { code: 'BROWSER_SAVE_FAILED', actionDispatched: true });
+    assert.deepEqual(driver.status().tabs.map(tab => tab.tabId), [blank.tabId]);
+    await assert.rejects(driver.perform({ action: 'open', url: 'about:blank' }, { source: 'user' }), { code: 'BROWSER_SAVE_FAILED', actionDispatched: true });
+    assert.equal(driver.status().tabs.length, 2, 'A failed save receipt must not discard or replay its created tab.');
+  } finally { driver.dataDir = directory; await driver.flushPersistence(); }
+  assert.equal(JSON.parse(await readFile(path.join(directory, 'browser-tabs.json'), 'utf8')).tabs.length, 2);
+});
 
 test('a detached renderer ref preserves its message across a boundary that loses Error properties', async t => {
   const { driver } = await fixture(t), tab = driver.newTab('https://example.test/composer'); await tab.loading;
@@ -434,7 +620,8 @@ test('OAuth popups inherit the exact contained policy and are adopted without a 
   const child = new Window(response.overrideBrowserWindowOptions); assertContained(child); assert.equal(child.options.webPreferences.session, parent.window.options.webPreferences.session);
   parent.window.webContents.emit('did-create-window', child, { url: 'https://example.test/oauth' }); await tick(); assert.equal(driver.tabs.size, 2); assert.equal(windows.length, 2); assert.equal(driver.tab(driver.activeTab).window, child);
   for (const window of windows) assertContained(window);
-  assert.equal(child.webContents.openHandler({ url: 'file:///C:/private' }).action, 'deny');
+  assert.equal(child.webContents.openHandler({ url: 'file:///C:/Documents/local.html' }).action, 'allow');
+  assert.equal(child.webContents.openHandler({ url: 'javascript:alert(1)' }).action, 'deny');
 });
 
 async function popupViewportFixture(t, { viewport = { width: 0, height: 0 }, contentSize = [1281, 824], command = async () => {}, readViewport = async () => {}, captureAvailable = true } = {}) {
@@ -675,7 +862,7 @@ test('HTTP authentication is cancelled without invoking a native login prompt or
   assert.equal(tab.pendingInteraction.kind, 'http_auth'); assert.equal(tab.pendingInteraction.status, 'blocked'); assert.equal(tab.pendingInteraction.reason, 'http_auth_unsupported');
 });
 
-test('a native dialog closed elsewhere becomes a truthful blocked notice and cannot be accepted later', async t => {
+test('a closed dialog rejects stale acceptance and keeps legacy acknowledgment as an optional noop', async t => {
   const { driver, windows } = await fixture(t), tab = driver.newTab('https://example.test/'); await tab.loading;
   const debug = windows[0].webContents.debugger;
   debug.emit('message', {}, 'Page.javascriptDialogOpening', { hasBrowserHandler: true, type: 'confirm', message: 'Confirm owned action?', defaultPrompt: 'Never retained fixture text' });
@@ -683,10 +870,36 @@ test('a native dialog closed elsewhere becomes a truthful blocked notice and can
   debug.emit('message', {}, 'Page.javascriptDialogClosed', { result: false, userInput: 'Never retained fixture text' });
   const pending = driver.status().tabs[0].pendingInteraction, args = { action: 'interaction', tabId: tab.id, interactionId: pending.id, expectedUrl: pending.url, expectedDocumentId: pending.documentId };
   assert.equal(pending.status, 'blocked'); assert.equal(pending.reason, 'dialog_cancelled'); assert.doesNotMatch(JSON.stringify(pending), /Never retained/);
-  await assert.rejects(driver.perform({ ...args, decision: 'accept' }, { source: 'user' }), /blocked or cancelled/);
+  await assert.rejects(driver.perform({ ...args, decision: 'accept' }, { source: 'user' }), /closed or cancelled/);
   assert.equal(windows[0].protocol.some(item => item.method === 'Page.handleJavaScriptDialog'), false);
   const result = await driver.perform({ ...args, decision: 'acknowledge' }, { source: 'user' });
   assert.equal(result.receipt.acknowledged, true); assert.equal(result.receipt.replayed, false); assert.equal(tab.pendingInteraction, null); assertContained(windows[0]);
+});
+
+test('the next explicit input retires a closed dialog without acknowledgment or replaying its original input', async t => {
+  let release;
+  const held = new Promise(resolve => { release = resolve; }), typed = [];
+  const { driver, windows } = await fixture(t, { command: async (method, params, window) => {
+    if (method === 'Input.insertText') {
+      typed.push(params.text);
+      if (typed.length === 1) {
+        window.webContents.debugger.emit('message', {}, 'Page.javascriptDialogOpening', { type: 'confirm', message: 'Owned fixture confirmation' });
+        return held;
+      }
+    }
+    return {};
+  } });
+  const tab = driver.newTab('https://example.test/'); await tab.loading;
+  const guard = { tabId: tab.id, expectedUrl: tab.url, expectedDocumentId: `${tab.id}:${tab.revision}` };
+  const first = await driver.perform({ action: 'type', ...guard, text: 'First input' }, { source: 'user' });
+  assert.equal(first.pendingInteraction.status, 'pending');
+  windows[0].webContents.debugger.emit('message', {}, 'Page.javascriptDialogClosed', { result: false });
+  assert.equal(tab.pendingInteraction.status, 'blocked');
+  release({}); await tick();
+  const next = await driver.perform({ action: 'type', ...guard, text: 'Next explicit input' }, { source: 'user' });
+  assert.equal(next.receipt.typed, true); assert.equal(tab.pendingInteraction, null);
+  assert.deepEqual(typed, ['First input', 'Next explicit input']);
+  assert.equal(windows[0].protocol.some(command => command.method === 'Page.handleJavaScriptDialog'), false);
 });
 
 test('a real CDP-paused dialog releases the browser queue for an exact agent decision without replaying input', async t => {

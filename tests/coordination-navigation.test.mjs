@@ -36,7 +36,7 @@ test('the real server serves navigation assets and the complete Planning, Swarms
   }
   assert.ok(fetched.has('/coordination-navigation.mjs'),'all workspace imports resolve to the served shared module');
   const css=await asset('/coordination-navigation.css',/css/);assert.match(css,/\.coordination-navigation/);
-  const home=await fetch(base),html=await home.text();assert.equal(home.status,200);assert.match(html,/<link rel="stylesheet" href="\/coordination-navigation\.css">/);
+  const home=await fetch(new URL('/legacy/',base)),html=await home.text();assert.equal(home.status,200);assert.match(html,/<link rel="stylesheet" href="\/coordination-navigation\.css">/);
   assert.equal(workerCalls,0);
 });
 
@@ -50,15 +50,15 @@ test('coordination navigation names the same destinations with exactly one curre
   }
 });
 
-test('four primary tabs stay compact and peer work areas remain available on demand',async()=>{
+test('five classic workspace tabs remain reachable alongside on-demand peer work areas',async()=>{
   const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8'),css=await readFile(new URL('../public/coordination-navigation.css',import.meta.url),'utf8');
   const tabs=/<nav role="tablist" aria-label="Workspace mode">([\s\S]*?)<\/nav>/.exec(app)[1];
-  assert.deepEqual([...tabs.matchAll(/data-mode="([^"]+)"/g)].map(match=>match[1]),['view','observe','planning','configure']);
+  assert.deepEqual([...tabs.matchAll(/data-mode="([^"]+)"/g)].map(match=>match[1]),['view','observe','planning','tasks','configure']);
   assert.doesNotMatch(app,/class="workspace-projects"|class="workspace-schedules"/);
   const menu=/<details class="workspace-menu">([\s\S]*?)<\/details>/.exec(app)[1];
   assert.match(menu,/<button data-action="projects">Swarms<\/button>/);
   assert.match(menu,/<button data-action="planning">Planning workspace<\/button>/);
-  assert.match(menu,/<button data-action="operations">Schedules &amp; cronjobs<\/button>/);
+  assert.match(menu,/<button data-action="operations">Tasks &amp; schedules<\/button>/);
   for(const area of ['planning','swarms','schedules']){
     const chooser=coordinationNavigation(area),details=/<details\b([^>]*)>/.exec(chooser);
     assert.ok(details,'work-area chooser is a keyboard-operable native disclosure');

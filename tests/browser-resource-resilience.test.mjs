@@ -53,6 +53,25 @@ function fixture({ writeFile = async () => {}, loadURL = async () => {} } = {}) 
   return { driver, windows, writes, renames, context };
 }
 
+test('renderer-death notification never destroys a native BrowserWindow inside the Chromium callback', async () => {
+  const f = fixture(), tab = f.driver.newTab('https://example.test/page');
+  await tab.loading;
+  const window = tab.window;
+  let insideRendererCallback = true, destroyedInsideCallback = false, calls = 0;
+  const destroy = window.destroy.bind(window);
+  window.destroy = () => { destroyedInsideCallback ||= insideRendererCallback; calls++; destroy(); };
+  window.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 0x80000003 });
+  insideRendererCallback = false;
+  assert.equal(tab.window, null, 'The crashed tab is immediately detached from the native window.');
+  assert.equal(tab.rendererFailure.reason, 'crashed');
+  assert.equal(window.isDestroyed(), false, 'Native destruction must wait for Chromium observers to return.');
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(destroyedInsideCallback, false);
+  assert.equal(window.isDestroyed(), true);
+  assert.equal(calls, 1, 'The dead BrowserWindow is disposed once.');
+  assert.equal(f.driver.tabs.get(tab.id), tab, 'Saved tab identity survives a native crash.');
+});
+
 test('a crashed page releases its window, retires refs, and settles pending page work without replay', async () => {
   const f = fixture(), tab = f.driver.newTab('https://example.test/page');
   await tab.loading;
@@ -61,6 +80,7 @@ test('a crashed page releases its window, retires refs, and settles pending page
   const pending = f.driver.pageWork(tab, new Promise(() => {}), undefined, 5000);
   window.webContents.emit('render-process-gone', {}, { reason: 'oom', exitCode: 9 });
   await assert.rejects(pending, error => error.code === 'BROWSER_RENDERER_GONE' && error.actionDispatched === true);
+  await new Promise(resolve => setTimeout(resolve, 5));
   assert.equal(window.isDestroyed(), true);
   assert.equal(tab.window, null);
   assert.equal(f.driver.tabs.get(tab.id), tab);
@@ -82,6 +102,7 @@ test('wheel input preserves a crashed page diagnosis without materializing a rep
   const window = tab.window, revision = tab.revision, loads = [...window.webContents.loads];
   window.webContents.emit('render-process-gone', {}, { reason: 'oom', exitCode: 9 });
   await assert.rejects(f.driver.perform({ action: 'scroll', browser: 'relay', tabId: tab.id, x: 120, y: 90, deltaX: 0, deltaY: 120, expectedUrl: 'https://example.test/page', expectedDocumentId: tab.id + ':' + revision }), error => error.code === 'BROWSER_RENDERER_GONE' && error.actionDispatched === false);
+  await new Promise(resolve => setTimeout(resolve, 5));
   assert.equal(window.isDestroyed(), true); assert.equal(tab.window, null); assert.equal(f.windows.length, 1);
   assert.equal(tab.rendererFailure.reason, 'oom'); assert.deepEqual(window.webContents.loads, loads);
   await f.driver.writeChain;

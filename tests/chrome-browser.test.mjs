@@ -26,7 +26,8 @@ test('Chrome defaults background behavior and preserves explicit foreground and 
   assert.deepEqual(chromeBackgroundArguments('select_page',{pageId:3,bringToFront:true}),{pageId:3,bringToFront:true});
   assert.deepEqual(chromeBackgroundArguments('fill',{uid:'1_2',value:'fixture'}),{uid:'1_2',value:'fixture'});
   assert.deepEqual(chromeBackgroundOpen('https://example.test'),{name:'new_page',arguments:{url:'https://example.test/',background:true}});
-  assert.throws(()=>chromeBackgroundOpen('file:///C:/private'),{code:'BROWSER_VALIDATION'});
+  assert.deepEqual(chromeBackgroundOpen('file:///C:/Documents/local.html'),{name:'new_page',arguments:{url:'file:///C:/Documents/local.html',background:true}});
+  assert.throws(()=>chromeBackgroundOpen('javascript:alert(1)'),{code:'BROWSER_VALIDATION'});
   assert.match(CHROME_BROWSER_INSTRUCTIONS,/omit isolatedContext/);assert.match(CHROME_BROWSER_INSTRUCTIONS,/bringToFront:false/);assert.match(CHROME_BROWSER_INSTRUCTIONS,/does not prove sign-in/);
 });
 

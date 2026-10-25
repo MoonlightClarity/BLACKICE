@@ -9,6 +9,7 @@ import {MethodStore} from './lib/methods.mjs';
 import {CapabilityStore} from './lib/capabilities.mjs';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { HarnessEngine } from './lib/engine.mjs';
+import { startupPhase } from './lib/startup-timing.mjs';
 import { CodexRuntime } from './lib/codex.mjs';
 import { DesktopController } from './lib/desktop.mjs';
 import { KnowledgeStore } from './lib/knowledge.mjs';
@@ -39,10 +40,6 @@ import { BrowserProfileStore } from './lib/browser-profile.mjs';
 import { DiagnosticsStore } from './lib/diagnostics.mjs';
 import { writeEventStream } from './lib/event-stream.mjs';
 import {ApplicationWorkspace} from './lib/application-workspace.mjs';
-import { AgentEmailStore } from './lib/agent-email.mjs';
-import { EmailOAuthManager } from './lib/email-oauth.mjs';
-import { discoverHimalayaExecutable } from './lib/email-setup.mjs';
-import { EmailClientBridge } from './lib/email-client.mjs';
 import { planningQuery, listPlanningWorkspace, editPlanningWorkspace, readPlanningAwareness, updatePlanningPresence, readPlanningOrganization, editPlanningOrganization, projectPlanningWorkspace, guardArchivedProjectExecution } from './lib/planning-workspace.mjs';
 import { PlanningOrganizationStore } from './lib/planning-organization.mjs';
 import { RemoteAccessManager } from './lib/remote-access.mjs';
@@ -103,17 +100,19 @@ export async function createHarnessServer(options = {}) {
   const attachments = options.attachments || new AttachmentStore({ dataDir }); await attachments.init();
   const tasks = options.tasks || new TaskStateStore({ dataDir: path.resolve(dataDir) }); await tasks.init();
   const planningOrganization = options.planningOrganization || new PlanningOrganizationStore({ dataDir: path.resolve(dataDir) }); await planningOrganization.init();
-  const emailOAuth = options.emailOAuth || await new EmailOAuthManager({ dataDir: path.resolve(dataDir), ...options.secretStorage, openExternal: options.openExternal, tokenRuntimeExecutable: options.tokenRuntimeExecutable || process.execPath }).init();
-  const email = options.email || await new AgentEmailStore({ dataDir: path.resolve(dataDir), oauth: emailOAuth }).init();
-  const emailExecutableHint = options.emailExecutableHint ?? await discoverHimalayaExecutable();
-  const emailSnapshot = req => ({ ...email.snapshot(), localManagement: req?.headers['x-blackice-remote'] !== '1', setupHints: { executable: emailExecutableHint } });
+  // Native Thunderbird/Himalaya integration is retired. Existing on-disk email
+  // data is preserved, but no mailbox adapter, OAuth flow, or CLI is started.
+  // Explicit injected stores remain usable in legacy test harnesses only.
+  const emailOAuth = options.emailOAuth || null;
+  const email = options.email || null;
+  const emailSnapshot = req => email ? ({ ...email.snapshot(), localManagement: req?.headers['x-blackice-remote'] !== '1', setupHints: {} }) : ({ available: false, retired: true });
   const engine = options.engine || new HarnessEngine({ runtime, dataDir, defaultCwd, desktop, knowledge, browser, identity, connections, tasks, attachments, email, ...(options.maxConcurrentRuns !== undefined ? {maxConcurrentRuns:options.maxConcurrentRuns} : {}) });
-  await engine.init();
+  await startupPhase(diagnostics, 'history', () => engine.init());
   engine.runtimeSettings = runtimeSettings;
   engine.prompts = prompts;
   engine.email = email;
   engine.applicationWorkspace=applicationWorkspace;
-  const conversations=await new ConversationArchive({dataDir,engine}).init();
+  const conversations=await startupPhase(diagnostics, 'conversations', () => new ConversationArchive({dataDir,engine}).init());
   // Recent-run retention must not turn a repeated send into a new task.
   const recoverClientRequest = async value => {
     const id = engine.clientRequestRunId?.(value?.requestId);
@@ -149,16 +148,16 @@ export async function createHarnessServer(options = {}) {
   const fileMutations = new Set();
   let connectorStartupEnabling = null;
   const mutateKnowledge = operation => { const pending = Promise.resolve().then(operation); knowledgeMutations.add(pending); pending.then(() => knowledgeMutations.delete(pending), () => knowledgeMutations.delete(pending)); return pending; };
-  let boundPort = port, closePromise, maintenanceRequested=false, remoteAgentApi, chatGPTConnector, directExecution;
+  let boundPort = port, closePromise, remoteStartup, maintenanceRequested=false, remoteAgentApi, chatGPTConnector, directExecution;
   const connectorPresence = () => ({ available: Boolean(remoteAccess && chatGPTConnector?.healthy), enabled: Boolean(chatGPTConnector?.enabled), localManagement: true });
   const beginMaintenance=async()=>{
     if(maintenanceRequested)throw Object.assign(new Error('Relay is already preparing profile maintenance.'),{status:409});
     if(engine.executionStatus().activeCount||learning.active)throw Object.assign(new Error('Finish or stop active work before backing up or restoring Relay.'),{status:409});
     if(applicationWorkspace.status().sessions.some(item=>['starting','running','needs_attention'].includes(item.state)))throw Object.assign(new Error('End private application sessions before profile maintenance; they may contain unsaved work.'),{status:409});
     maintenanceRequested=true;engine.maintenanceRequested=true;
-    try{if((await directExecution?.status())?.jobs.active || chatGPTConnector?.inflight.size)throw Object.assign(new Error('Finish or cancel active ChatGPT connector actions before profile maintenance.'),{status:409});await emailOAuth.drain();await Promise.all([inbox.pause('Profile maintenance requested. Resume queued work when ready.'),operations.pause('Profile maintenance requested. Resume operations when ready.'),pauseProjects('Profile maintenance requested. Resume project work when ready.')]);
+    try{if((await directExecution?.status())?.jobs.active || chatGPTConnector?.inflight.size)throw Object.assign(new Error('Finish or cancel active ChatGPT connector actions before profile maintenance.'),{status:409});await emailOAuth?.drain?.();await Promise.all([inbox.pause('Profile maintenance requested. Resume queued work when ready.'),operations.pause('Profile maintenance requested. Resume operations when ready.'),pauseProjects('Profile maintenance requested. Resume project work when ready.')]);
       // Finish admitted local writes before profile maintenance.
-      await Promise.all([...knowledgeMutations,...fileMutations,prompts.writeChain,email.writeChain,emailOAuth.writeChain,connectorSetup.tail]);}
+      await Promise.all([...knowledgeMutations,...fileMutations,prompts.writeChain,email?.writeChain,emailOAuth?.writeChain,connectorSetup.tail]);}
     catch(error){maintenanceRequested=false;engine.maintenanceRequested=false;throw error;}
   };
   const endMaintenance=()=>{maintenanceRequested=false;engine.maintenanceRequested=false;};
@@ -175,7 +174,7 @@ export async function createHarnessServer(options = {}) {
       return directExecution.jobs.snapshot({ unfinishedOnly: true });
     },
     getOriginJob: origin => directExecution.validateRestartOrigin(origin),
-    getPendingActions: () => Boolean(inbox.hasPendingWork() || operations.hasPendingWork() || projects.hasPendingWork() || emailOAuth.flow || emailOAuth.callbackOperations?.size || emailOAuth.requests?.size || connectorStartupEnabling),
+    getPendingActions: () => Boolean(inbox.hasPendingWork() || operations.hasPendingWork() || projects.hasPendingWork() || emailOAuth?.flow || emailOAuth?.callbackOperations?.size || emailOAuth?.requests?.size || connectorStartupEnabling),
     setMaintenance: value => { maintenanceRequested = value; engine.maintenanceRequested = value; },
     stopWork: async ({ signal }) => {
       const check = () => { if (signal.aborted) throw Object.assign(new Error('The forced restart preparation was stopped.'), { code: 'DESKTOP_RESTART_CANCELLED' }); };
@@ -193,7 +192,7 @@ export async function createHarnessServer(options = {}) {
       attempt(() => engine.cancelCompactions?.());
       attempt(() => learning.cancelBackground(reason));
       attempt(() => browser.cancel());
-      attempt(() => emailOAuth.drain());
+      attempt(() => emailOAuth?.drain?.());
       if (connectorStartupEnabling) pending.push(connectorStartupEnabling);
       const stopped = await Promise.allSettled(pending);
       check();
@@ -210,7 +209,7 @@ export async function createHarnessServer(options = {}) {
       // queue settings. The shared gate prevents new mutations while draining.
       await Promise.all([
         ...(chatGPTConnector?.inflight || []), ...knowledgeMutations, ...fileMutations,
-        prompts.writeChain, email.writeChain, emailOAuth.writeChain,
+        prompts.writeChain, email?.writeChain, emailOAuth?.writeChain,
         connectorSetup.tail, inbox.tail, operations.tail, projects.tail, directExecution?.jobs.tail, engine.writeChain,
       ]);
       const browserState = browser.status();
@@ -224,7 +223,7 @@ export async function createHarnessServer(options = {}) {
   const assertRestartPrepared = () => restartBarrier.assertPrepared();
   const beginRestart = context => restartBarrier.begin(context);
   const endRestart = () => restartBarrier.end();
-  const status = req => { const info = runtime.status(); return { ...info, chatGPTConnector: connectorPresence(), browserCredentials: { available: true, localManagement: req?.headers?.['x-blackice-remote'] !== '1' }, error: info.error || info.lastError || null, cwd: defaultCwd, app: 'relay-agent-harness', version: APP_VERSION, maintenance:options.maintenanceStatus?.()||null, diagnostics:diagnostics.status(), desktopApp: Boolean(options.installPath), ...(options.installPath ? { installPath: options.installPath } : {}), runtimeSettings: runtimeSettings.get(), execution: engine.executionStatus(), storage: engine.storageStatus(), knowledge: knowledge.status(), prompts: prompts.status(), email: email.status(), browser: browserStatus(req), applicationSessions:applicationWorkspace.status(), identity: identity.status(), learning: learning.status(), connections: connections.status(), attachments: attachments.status(), inbox: inbox.status(), conversations:conversations.status(),operations:operations.status(),projects:projects.status(),capabilities:capabilities.status(),methods:methods.status() }; };
+  const status = req => { const info = runtime.status(); return { ...info, chatGPTConnector: connectorPresence(), browserCredentials: { available: true, localManagement: req?.headers?.['x-blackice-remote'] !== '1' }, error: info.error || info.lastError || null, cwd: defaultCwd, app: 'relay-agent-harness', version: APP_VERSION, maintenance:options.maintenanceStatus?.()||null, diagnostics:diagnostics.status(), desktopApp: Boolean(options.installPath), ...(options.installPath ? { installPath: options.installPath } : {}), runtimeSettings: runtimeSettings.get(), execution: engine.executionStatus(), storage: engine.storageStatus(), knowledge: knowledge.status(), prompts: prompts.status(), email: email?.status?.() || { available: false, retired: true }, browser: browserStatus(req), applicationSessions:applicationWorkspace.status(), identity: identity.status(), learning: learning.status(), connections: connections.status(), attachments: attachments.status(), inbox: inbox.status(), conversations:conversations.status(),operations:operations.status(),projects:projects.status(),capabilities:capabilities.status(),methods:methods.status() }; };
   const diagnosticRunStates=new Map();
   const supportSnapshot=()=>{const value=status();return diagnostics.snapshot({version:APP_VERSION,counts:{savedRuns:engine.listRuns().length,activeRuns:value.execution.activeCount,conversations:value.conversations.conversations,providers:value.providers?.length||0,connections:value.connections?.connections?.length||value.connections?.count||0},health:{storageHealthy:value.storage.healthy,conversationStorageHealthy:value.conversations.healthy,identityHealthy:value.identity.healthy,attachmentsHealthy:value.attachments.healthy,knowledgeHealthy:value.knowledge.healthy,promptsHealthy:value.prompts.healthy,browserAvailable:value.browser.available,desktopAvailable:value.desktop?.available,inboxPaused:value.inbox.paused,operationsPaused:value.operations.paused}});};
   const sendEvent = event => {
@@ -253,7 +252,7 @@ export async function createHarnessServer(options = {}) {
   browser.on?.('status', value => sendEvent({ type: 'browser.updated', data: value, at: new Date().toISOString() }));
   learning.on?.('updated', value => sendEvent({ type: 'learning.updated', data: value, at: new Date().toISOString() }));
   connections.on?.('status', value => sendEvent({ type: 'connections.updated', data: value, at: new Date().toISOString() }));
-  email.on?.('updated', value => sendEvent({type:'email.updated',data:email.status(),at:new Date().toISOString()}));
+  email?.on?.('updated', value => sendEvent({type:'email.updated',data:email.status(),at:new Date().toISOString()}));
   operations.on?.('updated',value=>sendEvent({type:'operations.updated',data:value,at:new Date().toISOString()}));
   projects.on?.('updated',value=>sendEvent({type:'projects.updated',data:value,at:new Date().toISOString()}));
   capabilities.on?.('updated',value=>sendEvent({type:'capabilities.updated',data:value,at:new Date().toISOString()}));
@@ -320,8 +319,8 @@ export async function createHarnessServer(options = {}) {
     onChange: () => sendEvent({ type: 'browser-credentials.updated', data: credentialPresence(), at: new Date().toISOString() }),
   }).init();
   engine.credentials = browserCredentials;
-  const emailClient = options.emailClient || new EmailClientBridge({ isClosing: connectorClosing });
-  directExecution = options.directExecution || await new DirectExecutionAPI({
+  const emailClient = options.emailClient || null;
+  directExecution = options.directExecution || await startupPhase(diagnostics, 'direct-jobs', () => new DirectExecutionAPI({
     dataDir: path.resolve(dataDir), allowedRoot: defaultCwd, browser, patchStore: engine.filePatches,
     isClosing: connectorClosing, onChange: connectorChanged,
     ...(options.desktopRestart ? { desktopRestart: options.desktopRestart, restartStatus: context => options.desktopRestart.status({ ownerId: context.canRestart ? context.ownerId : undefined }) } : {}),
@@ -333,7 +332,7 @@ export async function createHarnessServer(options = {}) {
       const current = await chatGPTOAuth.getClient(client.id);
       return Boolean(chatGPTConnector?.enabled && current && requiredScopes.every(scope => current.scopes.includes(scope)));
     },
-  }).init();
+  }).init());
   const chatGPTPlanning = new ChatGPTPlanningAPI({ tasks, conversations, engine, planningOrganization, projects, onUpdated: sendEvent, isClosing: connectorClosing });
   chatGPTConnector = await new ChatGPTConnector({ dataDir: path.resolve(dataDir), execution: directExecution, planning: chatGPTPlanning, oauth: chatGPTOAuth, version: APP_VERSION, isClosing: connectorClosing, isRestartPending: () => options.desktopRestart?.isPending?.() === true, onChange: connectorChanged }).init();
   const connectorRevocations = new Map();
@@ -692,6 +691,7 @@ export async function createHarnessServer(options = {}) {
         fileMutations.add(pending);
         try { return json(res, 200, await pending); } finally { fileMutations.delete(pending); }
       }
+      if ((pathname === '/api/email' || pathname.startsWith('/api/email/')) && !email) return json(res,410,{error:'The built-in email adapter has been retired. Use the browser for email.',code:'EMAIL_RETIRED'});
       if (pathname === '/api/email' && req.method === 'GET') return json(res,200,emailSnapshot(req));
       if (pathname === '/api/email/client' && req.method === 'GET') return json(res, 200, { ...await emailClient.status(), localManagement: req.headers['x-blackice-remote'] !== '1' });
       if (pathname === '/api/email/client/open' && req.method === 'POST') {
@@ -989,10 +989,13 @@ export async function createHarnessServer(options = {}) {
         res.write(`data: ${JSON.stringify({ type: 'runtime.status', data: status(req), at: new Date().toISOString() })}\n\n`);
         clients.add(res); res.on('close', () => clients.delete(res)); return;
       }
-      if (pathname === '/api/workflows' && req.method === 'GET') return json(res, 200, engine.listWorkflows());
+      if (pathname === '/api/workflows' && req.method === 'GET') {
+        const view=new URL(req.url,`http://${host}`).searchParams.get('view');
+        return json(res,200,view==='index'?engine.listWorkflowSummaries():engine.listWorkflows());
+      }
       if (pathname === '/api/workflows' && req.method === 'POST') return json(res, 200, await engine.saveWorkflow(await body(req)));
       const workflowMatch = pathname.match(/^\/api\/workflows\/([a-zA-Z0-9_-]+)$/);
-      if (workflowMatch && req.method === 'GET') { const w = engine.listWorkflows().find(w => w.id === workflowMatch[1]); return json(res, w ? 200 : 404, w || { error: 'Workflow not found.' }); }
+      if (workflowMatch && req.method === 'GET') { const w = engine.getWorkflow(workflowMatch[1]); return json(res, w ? 200 : 404, w || { error: 'Workflow not found.' }); }
       if (workflowMatch && req.method === 'DELETE') { await body(req); await engine.deleteWorkflow(workflowMatch[1]); return json(res, 200, { ok: true }); }
       if (pathname === '/api/runs' && req.method === 'GET') return json(res, 200, engine.listRuns());
       if (pathname === '/api/runs' && req.method === 'POST') { const value=await body(req);await recoverClientRequest(value);return json(res,201,engine.startRun(value)); }
@@ -1028,11 +1031,37 @@ export async function createHarnessServer(options = {}) {
       }
       if (pathname.startsWith('/api/')) return json(res, 404, { error: 'Endpoint not found.' });
       if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'Method not allowed.' });
-      const files = Object.fromEntries(['coordination-navigation.mjs','coordination-navigation.css','gui-resilience.js','gui-resilience.css','browser-credentials-ui.mjs','browser-credentials.css','chatgpt-connector-ui.mjs','chatgpt-connector.css','model-routes.mjs','clipboard.mjs','email-oauth-ui.mjs','planning-awareness.mjs','planning-workspace-ui.mjs','planning-workspace-model.mjs','planning-workspace.css','remote-access-ui.mjs','remote-access.css','icon-symbols.mjs','task-plan-map.mjs','planning-mode.mjs','assets/blackice-field.svg','assets/blackice-depth.png','assets/blackice-wordmark.svg','workspace-integrations.mjs','email-ui.mjs', 'email-reader.mjs','email.css','task-plan-model.mjs','task-plan-ui.mjs','task-plan.css','task-method-ui.mjs','task-method.css','blackice-material.css','conversation-layout.css','blackice-information.css','blackice-experience.css','process-model.mjs','process-ui.mjs','assets/blackice-sheet.svg','assets/blackice-slab.svg','application-session-ui.mjs','application-session-model.mjs','application-session.css','project-view-model.mjs','operations-view-model.mjs','workflow-map.mjs','workflow-map.css','projects-ui.mjs','projects.css','tool-outcomes-model.mjs','response-defaults.mjs','repeat-task-model.mjs','task-title.mjs','prompt-template-model.mjs','prompts-ui.mjs','prompts.css','reasoning-model.mjs','service-tier-model.mjs','provider-catalog.mjs','connection-models.mjs','connections.css','draft-store.mjs','svg-preview.mjs','api-client.mjs','artifact-ui.mjs','conversation-attention.mjs','conversation-search.mjs','index.html','app.js','editor-model.mjs','knowledge-ui.mjs','mission-ui.mjs','mission-model.mjs','connections-ui.mjs','browser-ui.mjs','browser-address.mjs','browser-tree-model.mjs','browser-tree.css','identity-ui.mjs','identity.css','learning-ui.mjs','learning.css','context-ui.mjs','context.css','tool-connections-ui.mjs','tool-connections.css','agent-workspace.css','styles.css','brand.css','ux.css','relay-surface.css','agentdesk-noir.css','blackice-components.css','blackice-type.css','knowledge.css','file-patches.css','file-patches-ui.mjs','sidebar.css','sidebar-model.mjs','conversation-bulk-model.mjs','conversation-bulk.css','model-picker.css','model-picker.mjs','workspace.css','attachments-ui.mjs','attachments.css','inbox-ui.mjs','inbox.css','task-state-ui.mjs','task-state.css','conversation-model.mjs','composer-helpers.mjs','run-state-model.mjs','conversation.css','observe-stream.mjs','observe-ui.mjs','observe-model.mjs','observe.css','swarm-model.mjs','schedule-model.mjs','conversation-menu.mjs','advanced-ui.mjs','advanced.css','modes.css','configure-ui.mjs','configure.css','assets/fonts/Oxanium-Variable.ttf','assets/fonts/IBMPlexMono-Regular.ttf','assets/fonts/IBMPlexMono-Medium.ttf','assets/fonts/ShareTechMono-Regular.ttf','assets/blackice-panel-ice.svg','assets/blackice-control-ice.svg','assets/relay-mark.svg','assets/agentdesk-noir-city.svg','assets/relay-field.svg','assets/identity.svg','assets/learning.svg','assets/context.svg','assets/connections.svg'].map(file => [`/${file}`, file])); files['/'] = 'index.html';
+      const files = Object.fromEntries(['coordination-navigation.mjs','coordination-navigation.css','gui-resilience.js','gui-resilience.css','browser-credentials-ui.mjs','browser-credentials.css','chatgpt-connector-ui.mjs','chatgpt-connector.css','model-routes.mjs','clipboard.mjs','email-oauth-ui.mjs','planning-awareness.mjs','planning-workspace-ui.mjs','planning-workspace-model.mjs','planning-workspace.css','remote-access-ui.mjs','remote-access.css','icon-symbols.mjs','task-plan-map.mjs','planning-mode.mjs','assets/blackice-field.svg','assets/blackice-depth.png','assets/blackice-wordmark.svg','workspace-integrations.mjs','email-ui.mjs', 'email-reader.mjs','email.css','task-plan-model.mjs','task-plan-ui.mjs','task-plan.css','task-method-ui.mjs','task-method.css','blackice-material.css','conversation-layout.css','blackice-information.css','blackice-experience.css','process-model.mjs','process-ui.mjs','assets/blackice-sheet.svg','assets/blackice-slab.svg','application-session-ui.mjs','application-session-model.mjs','application-session.css','project-view-model.mjs','operations-view-model.mjs','workflow-map.mjs','workflow-map.css','projects-ui.mjs','projects.css','tool-outcomes-model.mjs','response-defaults.mjs','repeat-task-model.mjs','task-title.mjs','prompt-template-model.mjs','prompts-ui.mjs','prompts.css','reasoning-model.mjs','service-tier-model.mjs','provider-catalog.mjs','connection-models.mjs','connections.css','draft-store.mjs','svg-preview.mjs','api-client.mjs','run-index-client.mjs','run-index-model.mjs','renderer-scheduler.mjs','artifact-ui.mjs','conversation-attention.mjs','conversation-search.mjs','index.html','app.js','editor-model.mjs','knowledge-ui.mjs','mission-ui.mjs','mission-model.mjs','connections-ui.mjs','browser-ui.mjs','browser-address.mjs','browser-tree-model.mjs','browser-tree.css','identity-ui.mjs','identity.css','learning-ui.mjs','learning.css','context-ui.mjs','context.css','tool-connections-ui.mjs','tool-connections.css','agent-workspace.css','styles.css','brand.css','ux.css','relay-surface.css','agentdesk-noir.css','blackice-components.css','blackice-type.css','knowledge.css','file-patches.css','file-patches-ui.mjs','sidebar.css','sidebar-model.mjs','conversation-bulk-model.mjs','conversation-bulk.css','model-picker.css','model-picker.mjs','workspace.css','attachments-ui.mjs','attachments.css','inbox-ui.mjs','inbox.css','task-state-ui.mjs','task-state.css','conversation-model.mjs','composer-helpers.mjs','run-state-model.mjs','conversation.css','observe-stream.mjs','observe-ui.mjs','observe-model.mjs','observe.css','swarm-model.mjs','schedule-model.mjs','conversation-menu.mjs','advanced-ui.mjs','advanced.css','modes.css','configure-ui.mjs','configure.css','assets/fonts/Oxanium-Variable.ttf','assets/fonts/IBMPlexMono-Regular.ttf','assets/fonts/IBMPlexMono-Medium.ttf','assets/fonts/ShareTechMono-Regular.ttf','assets/blackice-panel-ice.svg','assets/blackice-control-ice.svg','assets/relay-mark.svg','assets/agentdesk-noir-city.svg','assets/relay-field.svg','assets/identity.svg','assets/learning.svg','assets/context.svg','assets/connections.svg'].map(file => [`/${file}`, file])); files['/'] = 'next/index.html'; files['/index.html'] = 'next/index.html';
+      files['/legacy'] = 'index.html'; files['/legacy/'] = 'index.html';
+      files['/legacy/index.html'] = 'index.html';
+      // Release candidate: V2 is the default Electron startup surface.
+      // Classic remains available under /legacy/ for recovery and unsurfaced
+      // advanced workflows. The backend, saved data and API routes are unchanged.
+      // Explicit file registration retains the static path boundary.
+      files['/assets/blackice-dark-ice.png'] = 'assets/blackice-dark-ice.png';
+      files['/assets/blackice-v2-mark.svg'] = 'assets/blackice-v2-mark.svg';
+      const nextFiles = ['index.html','base.css','chat.css','chat-management.css','brand.css','work-visual.css','controls.css','guard.js','app.mjs',
+        'core/api.mjs','core/dom.mjs','core/events.mjs',
+        'chat/chat.mjs','chat/model.mjs','chat/render.mjs','chat/send.mjs',
+        'chat/options-model.mjs','chat/artifacts.mjs','parity.css',
+        'chat/reader-model.mjs','chat/reader-worker.mjs','chat/reader-client.mjs',
+        // Native hosting UI assets are registered at the public root below.
+        'workspaces/planning.mjs','workspaces/planning-visual.mjs','workspaces/tasks.mjs','workspaces/tasks-visual-model.mjs','workspaces/task-lifecycle.mjs','workspaces/workflow-execution.mjs',
+        'workspaces/workflow-editor.mjs','workspaces/workflow-edit-model.mjs',
+        'workspaces/workflow-overview-model.mjs','workspaces/workflow-canvas-model.mjs','workspaces/workflow-canvas.mjs','workspaces/workflow-graph-author.mjs',
+        'workspaces/workflow-graph-edit.mjs','workspaces/browser-model.mjs','workspaces/browser-native.mjs',
+        'browser.css','knowledge.css','workspaces/knowledge.mjs','workspaces/knowledge-model.mjs',
+        'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/settings.mjs',
+        'settings.css','settings-identity.css','settings-providers.css','settings-connections.css',
+        'workspaces/settings-identity.mjs','workspaces/settings-providers.mjs','workspaces/settings-connections.mjs','workspaces/settings-import.mjs'];
+      for (const file of nextFiles) files['/next/' + file] = 'next/' + file;
+      files['/next'] = 'next/index.html'; files['/next/'] = 'next/index.html';
+      files['/native-apps-ui.mjs'] = 'native-apps-ui.mjs';
+      files['/native-apps.css'] = 'native-apps.css';
       if (pathname === '/favicon.ico') { res.writeHead(204); return res.end(); }
       if (!files[pathname]) return json(res, 404, { error: 'Page not found.' });
       const content = await fs.readFile(path.join(APP_DIR, 'public', files[pathname]));
-      if (files[pathname] === 'index.html') res.setHeader('Set-Cookie', `${cookieName}=${session}; HttpOnly; SameSite=Strict; Path=/`);
+      if (files[pathname] === 'index.html' || files[pathname] === 'next/index.html') res.setHeader('Set-Cookie', `${cookieName}=${session}; HttpOnly; SameSite=Strict; Path=/`);
       res.writeHead(200, { 'Content-Type': MIME[path.extname(files[pathname])], 'Cache-Control': 'no-store' });
       res.end(req.method === 'HEAD' ? undefined : content);
     } catch (error) {
@@ -1062,10 +1091,15 @@ export async function createHarnessServer(options = {}) {
   heartbeat.unref();
   return {
     server, engine, runtime, runtimeSettings, desktop, knowledge, prompts, browser,browserProfiles,browserCredentials,browserCredentialMirror,browserCredentialDestinations,applicationWorkspace, identity, learning, connections, tasks, planningOrganization, attachments, email, emailOAuth, emailClient, inbox, conversations, operations,projects,capabilities,liveEdits,diagnostics,supportSnapshot,beginMaintenance,endMaintenance,assertRestartReady,assertRestartPrepared,beginRestart,endRestart,remoteAccess,remoteAgentApi,chatGPTConnector,chatGPTOAuth,directExecution,chatGPTPlanning,connectorSetup,
-    async listen() {
+    async listen({ waitForRemote = true } = {}) {
+      if (typeof waitForRemote !== 'boolean') throw new TypeError('Choose whether to wait for remote startup.');
       await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
       boundPort = server.address().port;
-      await remoteAccess?.attach({ origin: `http://127.0.0.1:${boundPort}`, sessionCookie: `relay_session_${boundPort}=${session}` });
+      remoteStartup = remoteAccess ? startupPhase(diagnostics, 'remote-route', () => remoteAccess.attach({ origin: `http://127.0.0.1:${boundPort}`, sessionCookie: `relay_session_${boundPort}=${session}` })) : Promise.resolve();
+      // The desktop can open its local workspace while the saved HTTPS route
+      // reconnects. RemoteAccessManager continues to own admission and cleanup.
+      if (waitForRemote) await remoteStartup;
+      else void remoteStartup.catch(() => {});
       await diagnostics.record({component:'server',event:'ready'});
       // Listening is independent of provider startup so connection errors are visible in the UI.
       Promise.resolve().then(() => runtime.start()).then(() => { runtimeUpdate(); inbox.kick(); }).catch(error => { void diagnostics.recordError('runtime','runtime_failed',error);console.error('Agent connection failed; see support diagnostics.'); runtimeUpdate(); });
@@ -1080,6 +1114,7 @@ export async function createHarnessServer(options = {}) {
         const cleanup = async operation => { try { await operation(); } catch (error) { firstError ||= error; } };
         await cleanup(() => connectorSetup.close());
         await cleanup(() => remoteAccess?.close());
+        await cleanup(() => remoteStartup?.catch(() => {}));
         remoteAgentApi.close();
         await cleanup(() => chatGPTConnector.close());
         await cleanup(()=>Promise.all([...observers.keys()].map(id=>stopObserving(id,'Relay is closing.'))));
@@ -1101,9 +1136,9 @@ export async function createHarnessServer(options = {}) {
         await cleanup(() => learning.close());
         await cleanup(() => runtimeSettings.close());
         await cleanup(() => prompts.close());
-        await cleanup(() => email.close());
-        await cleanup(() => emailOAuth.close());
-        await cleanup(() => emailClient.close());
+        await cleanup(() => email?.close?.());
+        await cleanup(() => emailOAuth?.close?.());
+        await cleanup(() => emailClient?.close?.());
         await cleanup(() => browserCredentialMirror.close());
         await cleanup(() => browserCredentialDestinations.close());
         await cleanup(() => browserCredentials.close());

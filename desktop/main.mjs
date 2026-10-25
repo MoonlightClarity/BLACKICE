@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, dialog, globalShortcut, ipcMain, nativeTheme, screen, shell, safeStorage, session, clipboard } from 'electron';
+import { app, BrowserWindow, BaseWindow, WebContentsView, Menu, dialog, globalShortcut, ipcMain, nativeTheme, screen, shell, safeStorage, session, clipboard, crashReporter } from 'electron';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { promises as fs, constants } from 'node:fs';
@@ -11,6 +11,7 @@ import { BrowserRouter } from './browser-router.mjs';
 import { LazyFirefoxDriver } from './firefox-lazy.mjs';
 import { startBackgroundBrowser } from '../lib/browser-startup.mjs';
 import { DiagnosticsStore } from '../lib/diagnostics.mjs';
+import { startupPhase } from '../lib/startup-timing.mjs';
 import {recoverProfileRestore} from '../lib/profile-backup.mjs';
 import {prepareProfileMaintenance,registerMaintenanceHelper,cancelPreparedMaintenance,awaitProfileMaintenance,readMaintenanceReceipt} from '../lib/profile-maintenance.mjs';
 import { DesktopLifecycle, parseDesktopLaunchArgs, prepareDesktopProfile, buildDesktopRelaunchArgs } from './lifecycle.mjs';
@@ -25,6 +26,10 @@ import { credentialTemporaryProtection } from '../lib/credential-temp-protection
 import { DesktopStartup, createStartupIndicator } from './startup.mjs';
 import { createDesktopConnectionStartup } from './connection-startup.mjs';
 import { DesktopRendererRecovery } from './renderer-recovery.mjs';
+import { electronExitReceipt } from './electron-exit-diagnostics.mjs';
+import { initializeLocalCrashReporting } from './local-crash-reporting.mjs';
+import { NativeAppHost } from './native-app-host.mjs';
+import { createLiveBrowserWindow, performBrowserSurface } from './browser-surface.mjs';
 
 const accessArgs = desktopRemoteAccessArgs(process.argv, { packaged: app.isPackaged });
 const browserArgs = desktopBrowserArgs(process.argv, { packaged: app.isPackaged });
@@ -51,6 +56,9 @@ const DESKTOP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const APP_DIR = path.dirname(DESKTOP_DIR);
 const ACTIVE = new Set(['queued', 'running', 'waiting']);
 let mainWindow, harness, origin, shutdownPromise, didClose = false;
+const nativeApps = new NativeAppHost({ getWindow: () => mainWindow });
+const liveBrowserDriver = () => harness?.browser?.driver?.drivers?.relay;
+const hideBrowserSurface = () => { liveBrowserDriver()?.surface?.hide(); };
 let rendererRecovery = null;
 let windowState = {}, windowSaveTimer, windowWriteChain = Promise.resolve();
 let maintenancePromise=null,maintenanceReceipt=null,maintenanceScheduled=false;
@@ -68,8 +76,26 @@ app.setAppUserModelId('com.agentdesk.workbench');
 // Relay profile. Presentation can change without moving saved user data.
 // A separate, verified profile migration can happen later if needed.
 app.setPath('userData', await prepareDesktopProfile(launch, { defaultProfile: path.join(app.getPath('appData'), 'Relay') }));
+// Capture native Chromium/renderer/GPU failures without sending process memory
+// to a vendor or server. Never make app startup depend on Crashpad availability.
+let localCrashReportsEnabled = false;
+try { localCrashReportsEnabled = (await initializeLocalCrashReporting({ app, crashReporter })).localOnly; }
+catch { console.warn('BLACKICE local-only crash reporting could not initialize.'); }
 nativeTheme.themeSource = 'dark';
 const diagnostics = new DiagnosticsStore({ dataDir: app.getPath('userData'), version: app.getVersion() });
+// Record only bounded native process outcomes. Never mutate BrowserWindows or
+// reload a renderer synchronously inside Chromium process-death callbacks.
+const recordProcessGone = receipt => {
+  if (receipt.reason === 'clean-exit') return;
+  setImmediate(() => {
+    try { void Promise.resolve(diagnostics.record(receipt)).catch(() => {}); }
+    catch { /* An unavailable diagnostics store must never break Electron recovery. */ }
+  });
+};
+app.on('render-process-gone', (_event, webContents, details) =>
+  recordProcessGone(electronExitReceipt('renderer', details, webContents?.id)));
+app.on('child-process-gone', (_event, details) =>
+  recordProcessGone(electronExitReceipt(details?.type, details)));
 const startup = new DesktopStartup({ headless: launch.headless || launch.background, createIndicator: () => createStartupIndicator({ BrowserWindow, icon: path.join(DESKTOP_DIR, 'icon.ico'), onQuit: () => app.quit() }) });
 const desktopLifecycle = new DesktopLifecycle({ headless: launch.headless, background: launch.background, getWindow: () => mainWindow, createWindow, saveWindow: saveWindowState, quit: () => app.quit(), restart: async () => {
   if (!desktopRestart) throw new Error('BLACKICE is still starting. Try restart after it is ready.');
@@ -151,6 +177,8 @@ async function shutdown() {
     startup.stop();
     void diagnostics.record({ component: 'desktop', event: 'stopping' });
     globalShortcut.unregisterAll();
+    // Return embedded windows to their original desktop; never kill their processes.
+    await nativeApps.close().catch(error => diagnostics.recordError('native-apps', 'detach_failed', error));
     clearTimeout(windowSaveTimer);
     const savingWindow=saveWindowState();
     // A prepared restart has already admitted an idle, drained runtime. Preserve
@@ -236,7 +264,25 @@ async function startLocalHarness(dataDir, defaultCwd) {
   let port = 0;
   try { const saved = JSON.parse(await fs.readFile(portFile, 'utf8')); if (Number.isInteger(saved.port) && saved.port >= 1024 && saved.port <= 65535) port = saved.port; } catch {}
   const createInstance = async selectedPort => {
-    const independent = await new ElectronBrowserDriver({ dataDir, downloadDir: path.join(app.getPath('userData'), 'downloads') }).init();
+    const independent = await startupPhase(diagnostics, 'browser', () => new ElectronBrowserDriver({ dataDir, downloadDir: path.join(app.getPath('userData'), 'downloads'), liveSurface: true,
+      createSurfaceWindow: options => createLiveBrowserWindow({ WebContentsView, BaseWindow, options,
+        onShortcut: (action, host) => {
+          if (host !== mainWindow || host.isDestroyed()) return;
+          if (['address', 'new-tab', 'next-tab', 'previous-tab'].includes(action)) host.webContents.focus();
+          host.webContents.send('relay:browser-shortcut', action);
+        },
+        onContextMenu: (contents, params, host) => {
+          const template = params.isEditable ? [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { type: 'separator' }, { role: 'selectAll' }]
+            : [{ role: 'copy', enabled: Boolean(params.selectionText) }, { role: 'selectAll' }];
+          if (params.linkURL && /^https?:/i.test(params.linkURL)) template.unshift({ label: 'Open link in new tab', click: () => {
+            const parent = [...independent.tabs.values()].find(tab => tab.window?.webContents === contents);
+            if (parent) try { independent.newTab(params.linkURL, { parentTabId: parent.id, folderId: parent.folderId, owner: parent.owner }); }
+            catch (error) { void diagnostics.recordError('browser', 'open_link_failed', error); }
+          } }, { label: 'Copy link address', click: () => clipboard.writeText(params.linkURL) }, { type: 'separator' });
+          Menu.buildFromTemplate(template).popup({ window: host, frame: contents.mainFrame });
+        },
+      }),
+    }).init());
     const firefox = await new LazyFirefoxDriver().init();
     const driver = new BrowserRouter({ independent, firefox });
     const browser = new BrowserWorkspace({ driver });
@@ -252,12 +298,12 @@ async function startLocalHarness(dataDir, defaultCwd) {
   };
   let instance = await createInstance(port);
   let url;
-  try { url = await instance.listen(); }
+  try { url = await instance.listen({ waitForRemote: false }); }
   catch (error) {
     await instance.close();
     if (error.code !== 'EADDRINUSE' || port === 0) throw error;
     instance = await createInstance(0);
-    url = await instance.listen();
+    url = await instance.listen({ waitForRemote: false });
   }
   await fs.writeFile(portFile, JSON.stringify({ port: Number(new URL(url).port) }));
   return { instance, url };
@@ -284,6 +330,9 @@ function createWindow() {
   });
   mainWindow.removeMenu();
   const contents = mainWindow.webContents;
+  contents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame) hideBrowserSurface(); });
+  contents.on('render-process-gone', hideBrowserSurface);
+  window.on('closed', hideBrowserSurface);
   contents.setWindowOpenHandler(({ url }) => {
     try {
       const target = new URL(url);
@@ -330,7 +379,19 @@ function createWindow() {
   for (const event of ['move', 'resize', 'maximize', 'unmaximize']) mainWindow.on(event, () => {
     clearTimeout(windowSaveTimer); windowSaveTimer = setTimeout(() => { void saveWindowState(); }, 350);
   });
-  mainWindow.on('close', () => { recovery.stop(); void saveWindowState(); });
+  let releasingNativeApp = false;
+  mainWindow.on('close', event => {
+    if (nativeApps.attached && !shutdownPromise && !releasingNativeApp) {
+      event.preventDefault();
+      releasingNativeApp = true;
+      void nativeApps.detach().catch(error => diagnostics.recordError('native-apps', 'detach_failed', error))
+        .finally(() => { if (!window.isDestroyed()) window.close(); });
+      // Keep the close request owned until the window really closes, even if
+      // Windows refused to reparent an unresponsive application.
+      return;
+    }
+    recovery.stop(); void saveWindowState();
+  });
   mainWindow.on('closed', () => { mainWindow = null; if (!didClose) desktopLifecycle.windowClosed(); });
   return recovery.loadInitial();
 }
@@ -385,7 +446,9 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
     await startup.step(() => awaitProfileMaintenance({profileDir:app.getPath('userData')}));
     await startup.step(() => recoverProfileRestore({profileDir:app.getPath('userData')}));
     maintenanceReceipt=await startup.step(() => readMaintenanceReceipt(app.getPath('userData')));
-    await startup.step(() => diagnostics.init()); await startup.step(() => diagnostics.record({ component: 'desktop', event: 'started' }));
+    await startup.step(() => diagnostics.init());
+    await startup.step(() => diagnostics.record({ component: 'electron-crashpad', event: localCrashReportsEnabled ? 'local_enabled' : 'unavailable', mode: 'local-only', uploadToServer: false }));
+    await startup.step(() => diagnostics.record({ component: 'desktop', event: 'started' }));
     if(maintenanceReceipt)void diagnostics.record({component:'maintenance',event:maintenanceReceipt.status==='completed'?(maintenanceReceipt.mode==='backup'?'backup_completed':'restore_completed'):'maintenance_failed',...(maintenanceReceipt.status==='failed'?{level:'error',code:maintenanceReceipt.code}:{})});
     Menu.setApplicationMenu(null);
     await startup.showIndicator();
@@ -422,12 +485,34 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
       quit: () => app.quit(),
     });
     await startup.step(() => desktopRestart.init());
-    const local = await startup.step(() => startLocalHarness(dataDir, defaultCwd), value => value.instance.close());
+    const local = await startup.step(() => startupPhase(diagnostics, 'local-harness', () => startLocalHarness(dataDir, defaultCwd)), value => value.instance.close());
     harness = local.instance;
     await startup.step(() => harness.desktop.setEnabled(true));
     harness.server.on('relay.shutdown', () => app.quit());
     origin = local.url;
     ipcMain.handle('relay:write-clipboard', createClipboardHandler({ trustedSender, writeText: text => clipboard.writeText(text) }));
+    ipcMain.handle('relay:browser-surface', (event, request) => {
+      if (!trustedSender(event)) throw new Error('Browser surface requests must come from BLACKICE.');
+      return performBrowserSurface(harness?.browser?.driver, mainWindow, request);
+    });
+    ipcMain.handle('relay:native-apps', async (event, request) => {
+      if (!trustedSender(event) || !request || typeof request !== 'object' || Array.isArray(request)) throw new Error('Native application request must come from BLACKICE.');
+      const { action, windowId, bounds } = request;
+      if (typeof action !== 'string') throw new Error('Choose a native application action.');
+      if (action === 'status') return nativeApps.status();
+      if (action === 'windows') return { ...nativeApps.availability(), windows: await nativeApps.windows() };
+      if (action === 'launch') {
+        const chosen = await dialog.showOpenDialog(mainWindow, { title: 'Choose a Windows application', properties: ['openFile'], filters: [{ name: 'Windows applications', extensions: ['exe'] }] });
+        return chosen.canceled || !chosen.filePaths[0] ? { cancelled: true } : nativeApps.launch(chosen.filePaths[0]);
+      }
+      if (action === 'attach') return nativeApps.attach(windowId, bounds);
+      if (action === 'position') return nativeApps.position(bounds);
+      if (action === 'show') return nativeApps.visibleState(true);
+      if (action === 'hide') return nativeApps.visibleState(false);
+      if (action === 'dialogs') return { dialogs: await nativeApps.dialogs() };
+      if (action === 'detach') return nativeApps.detach();
+      throw new Error('Unsupported native application command.');
+    });
     handle('relay:minimize', () => mainWindow.minimize());
     handle('relay:maximize', () => {
       if (mainWindow.isMaximized()) mainWindow.unmaximize(); else mainWindow.maximize();
@@ -469,8 +554,7 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
       capabilities: { electron: true, nativeRestart: true, encryptedSecretsAvailable: safeStorage.isEncryptionAvailable(), containedBrowser: true },
     };
     await startup.step(() => saveRuntimeRecord());
-    await startup.step(() => loadWindowState());
-    await startup.step(() => desktopLifecycle.start());
+    await startup.step(() => startupPhase(diagnostics, 'window', async () => { await loadWindowState(); await desktopLifecycle.start(); }));
     await startup.step(() => diagnostics.record({ component: 'desktop', event: 'ready' }));
     await startup.step(() => desktopRestart.confirmStartup());
     restartReady = true;

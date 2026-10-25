@@ -73,6 +73,24 @@ function mountMission(f, snapshot, callbacks = {}) {
 
 const menuEvent = (target, extra = {}) => ({ target, preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; }, ...extra });
 
+test('live answers use fast escaped text, then full Markdown once the response settles', async t => {
+  const run = fixtureRun('stream-paint'), f = missionFixture(t, savedDrafts(''));
+  run.events.push({ nodeId: 'agent', at: '2026-10-16T10:01:00Z',
+    data: { type: 'message', itemId: 'answer', text: '**Bold final answer**' } });
+  const snapshot = statusSnapshot([run]), h = mountMission(f, snapshot);
+  f.cleanup(() => h.ui.destroy());
+  await turn();
+  const section = f.element('#conversation-timeline').children[0];
+  const response = section.querySelector('.conversation-responses').children[0];
+  assert.match(response.innerHTML, /conversation-streaming-plain/);
+  assert.match(response.innerHTML, /\*\*Bold final answer\*\*/);
+  assert.doesNotMatch(response.innerHTML, /<strong>Bold final answer<\/strong>/);
+  run.status = 'completed'; run.settled = true; run.nodes.agent.status = 'completed';
+  h.ui.update();
+  assert.match(response.innerHTML, /output-document conversation-message-text/);
+  assert.match(response.innerHTML, /<strong>Bold final answer<\/strong>/);
+});
+
 const plannedRun = (id, status = 'running') => {
   const run = fixtureRun(id, status);
   run.planDetail = 'balanced'; run.nodes.agent.planning = { status: 'recorded', schemaVersion: 1, detail: 'balanced' };

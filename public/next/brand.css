@@ -1,0 +1,126 @@
+/* BLACKICE / Dark ice. Original material artwork for the independent
+ * frontend. Layout, controls and state remain owned by their workspace modules. */
+@font-face{font-family:"Blackice Display";font-style:normal;font-weight:100 900;font-display:swap;src:url('/assets/fonts/Oxanium-Variable.ttf') format('truetype')}
+@font-face{font-family:"Blackice Console";font-style:normal;font-weight:400;font-display:swap;src:url('/assets/fonts/ShareTechMono-Regular.ttf') format('truetype')}
+:root{
+  --panel:#171b21;--raised:#252b33;--line:#8794a34a;--muted:#a3adba;--accent:#c4ccd5;
+  --text:#e6eaef;--text-primary:#e6eaef;--text-muted:#a3adba;
+  --next-control-background:#0e1217;--next-control-menu-background:#1b2027;--next-control-foreground:#e7ebef;
+  --next-control-selection-background:#424d5b;--next-control-selection-foreground:#fafbfc;--next-control-muted:#a9b2bd;
+  background:#080a0e;color:#e6eaef;font-family:"Segoe UI",Arial,sans-serif;font-size:14px;
+}
+.next-shell{grid-template-rows:108px minmax(0,1fr);background:#0a0a0b url('/assets/blackice-dark-ice.png') center/cover no-repeat}
+.next-topbar{position:relative;gap:24px;padding:0 20px 44px;background:#101112;border-bottom-color:#c0c2c765;box-shadow:inset 0 1px #f1f2f40b,0 3px 20px #0004;z-index:6}
+.next-topbar::after{content:"";position:absolute;inset:auto 0 0;height:44px;pointer-events:none;background:#101113 url('/assets/blackice-dark-ice.png') center 45%/cover no-repeat;border-top:1px solid #a6a9ae3b;box-shadow:inset 0 8px 15px #090a0b33}
+.next-brand{gap:10px;min-width:174px}
+.next-brand>img{width:36px;height:36px}
+.next-brand-copy{display:flex;flex-direction:column;gap:3px}
+.next-brand strong{font:600 20px/1 "Blackice Display","Bahnschrift",sans-serif;letter-spacing:.16em;color:#ecedee}
+.next-brand-subtitle{font:9px/1 "Blackice Console",Consolas,monospace;letter-spacing:.26em;color:#a2a5a9}
+.next-tabs{align-self:stretch;gap:1px;min-height:63px}
+.next-tab{font:12px/1 "Blackice Console",Consolas,monospace;letter-spacing:.06em;text-transform:uppercase;padding:23px 12px 21px;position:relative}
+.next-tab[aria-selected=true]{background:linear-gradient(180deg,#bdbfc31b,#85888d0e);color:#f5f6f7;border-bottom-color:#d6d9dd;box-shadow:inset 0 1px #eaebee13}
+.next-tab:hover:not(:disabled){background:#c9ccd116;color:#eeeff0}
+.next-health{font:11px/1.4 "Blackice Console",Consolas,monospace;color:#b6b8bc}
+.next-health[data-status=ready]::before{content:"";display:inline-block;width:5px;height:5px;margin:0 8px 1px 0;background:#cccfd3;box-shadow:0 0 8px #cccfd333}
+.next-content,.next-space{background:transparent}
+button{border-radius:4px;background:linear-gradient(145deg,#2c333c,#1b2027);border-color:#8995a34a;box-shadow:inset 0 1px #edf1f50b;color:#e3e8ee}
+button:hover:not(:disabled){background:linear-gradient(145deg,#39424e,#282f39);border-color:#b0bbc76b}
+.next-primary{background:linear-gradient(135deg,#d2d7dd,#aeb8c3);border-color:#cbd2da;color:#151a21;font-weight:600}
+.next-primary:hover:not(:disabled){background:linear-gradient(135deg,#e5e9ed,#c6cfd8);border-color:#e4e9ee}
+.next-field{background:#0d1117;border-color:#8492a34a;color:#e7ebef;border-radius:4px;min-height:37px}
+.next-field::placeholder{color:#939eac}
+:is(h1,h2,h3,.next-panel-head strong){font-family:"Blackice Display","Bahnschrift",sans-serif;letter-spacing:.01em}
+.next-panel{background:linear-gradient(100deg,#090a0bb8,#0d0e1050);padding:28px}
+.next-panel-head h1{font-size:26px;font-weight:500;letter-spacing:-.02em}
+.next-card{border-radius:6px;border-color:#8d9aab3b;background:linear-gradient(135deg,#1b2027ef,#11161dee);box-shadow:inset 0 1px #e9eff50b,0 5px 20px #0002}
+.next-empty{background:#0d0e0f99;border-color:#94979c50;border-radius:5px}
+.next-label{font-size:12px;color:#babbbe}
+.next-help,.next-muted{color:#b2b4b7}
+.next-status-pill{border-radius:3px;border-color:#9ea1a540;font:11px/1.5 "Blackice Console",Consolas,monospace;letter-spacing:.03em}
+.next-chat{background:transparent}
+.next-chat-sidebar{background:linear-gradient(110deg,#09090aef,#141517e6);border-right-color:#bec0c438;box-shadow:inset -1px 0 #070708}
+.next-sidebar-head{padding:16px 13px;border-bottom-color:#a0a3a933;gap:10px}
+.next-sidebar-row>strong{font:12px/1.4 "Blackice Console",Consolas,monospace;letter-spacing:.07em;text-transform:uppercase;color:#cacbce}
+.next-conversation{padding:12px 10px;border-radius:3px}
+.next-conversation[aria-current=true]{background:linear-gradient(100deg,#4d505575,#27292c60);border-color:#b4b7bc52;box-shadow:inset 2px 0 #dfe1e4}
+.next-conversation-title{font-size:13px;color:#e3e4e5}
+.next-conversation-meta{color:#adafb2;font-size:11px}
+.next-chat-main{background:linear-gradient(90deg,#05070bb8,#090c1199 68%,#0c101699)}
+.next-chat-head{background:linear-gradient(100deg,#131415e8,#161719bd);border-bottom-color:#b4b6bb33;box-shadow:inset 0 1px #eef0f208}
+.next-chat-heading strong{font-size:14px;font-weight:500;color:#e9eaec}
+.next-chat-heading small{font-size:11px;color:#acaeb1}
+.next-chat-timeline{max-width:960px;padding:32px 42px 48px}
+.next-chat-intro:has(>h1){min-height:min(430px,52vh);align-items:flex-start;text-align:left;max-width:620px;margin:auto;position:relative;padding:35px 0 38px}
+.next-chat-intro:has(>h1)::before{content:"";display:block;width:76px;height:76px;margin-bottom:24px;background:url('/assets/blackice-v2-mark.svg') center/contain no-repeat}
+.next-chat-intro h1{font:500 clamp(27px,2.8vw,38px)/1.2 "Blackice Display","Bahnschrift",sans-serif;letter-spacing:-.035em;max-width:520px;margin:0;color:#f2f2f3;text-wrap:balance}
+.next-chat-intro p{font-size:14px;line-height:1.7;max-width:390px;margin:17px 0 0;color:#b8c1cd}
+.next-chat-intro[data-empty]{min-height:240px}
+.next-message-title{font:11px/1.5 "Blackice Console",Consolas,monospace;letter-spacing:.045em;color:#b2becc}
+.next-message[data-role=assistant] .next-message-title::before{content:"";display:inline-block;width:15px;height:17px;margin:0 7px -4px 0;background:url('/assets/blackice-v2-mark.svg') center/contain no-repeat}
+.next-message-body{font-size:14px;line-height:1.8}
+.next-message[data-role=user] .next-message-body{background:linear-gradient(135deg,#26282ce8,#1d1e21e8);border-color:#afb2b73b;border-radius:6px;color:#e7e8ea}
+.next-message-body pre{background:#090a0bf5;border-color:#90929740;border-radius:4px}
+.next-message-body code{background:#222427;border-radius:2px}
+.next-chat-composer-area{background:linear-gradient(100deg,#0d0e0fe8,#17181be8);border-top-color:#bcbfc330;padding-top:12px}
+.next-chat-compose{background:linear-gradient(135deg,#1c222bf5,#121820f5);border-color:#a4b1c261;border-radius:6px;box-shadow:inset 0 1px #edf2f70d,0 5px 24px #0003}
+.next-chat-compose:focus-within{border-color:#ced7e199;box-shadow:inset 0 1px #f4f7fa13,0 0 0 2px #a7b6c70b}
+.next-chat-input{font-size:14px;padding:16px 16px 8px;color:#f2f3f4}
+.next-chat-input::placeholder{color:#afb2b6}
+.next-chat-options{padding:8px 12px 12px}
+.next-chat-options label{font-size:11px;color:#acb5c0}
+.next-chat-options select{color:#e8e9eb;font-size:12px}
+.next-chat-hint{font:11px/1.4 "Blackice Console",Consolas,monospace;letter-spacing:.01em;color:#a2aebd}
+.next-settings-sections{background:#101113f5;border-bottom:1px solid #a8aaaf3b;top:-28px;padding:10px 0 13px}
+.next-settings-sections [aria-selected=true]{background:#ced0d41c;border-color:#d0d2d57a;color:#eeeff1;box-shadow:inset 0 -1px #d1d3d7}
+.next-workflow-editor,.next-graph-canvas-shell{background:#161719ed;border-color:#a5a8ad47}
+.next-graph-canvas-toolbar{background:#1e1f22;border-bottom-color:#a6a8ad3d}
+.next-graph-canvas-viewport{background-color:#131416;background-image:linear-gradient(#8c8e9313 1px,transparent 1px),linear-gradient(90deg,#8c8e9313 1px,transparent 1px)}
+.next-toast p{background:#24262a;border-color:#c4c6ca57;border-radius:4px}
+/* Match legacy workspace-specific fills without changing their layout or
+ * interaction targets. System contrast colors retain their own palette. */
+@media(forced-colors:none){
+  .next-space input[type=checkbox],.next-space input[type=radio]{accent-color:var(--accent)}
+  .next-conversation-list,.next-chat-scroll,.next-browser-navigation .next-browser-tabs{scrollbar-color:#596575 transparent}
+  .next-conversation-more{background:#242d38;border-color:#6c7a8c66;color:#d5dde6}
+  .next-conversation-more:hover,.next-conversation-more:focus-visible{background:#344151}
+  .next-message[data-role=assistant] .next-message-body{color:#e0e6ed}
+  .next-message-body blockquote{border-left-color:#78889b;color:#b9c3d0}
+  .next-message-body a,.next-recovery-link{color:#c5d0dd}
+  .next-chat #next-chat-attachments .attachment-chip{background:#29333f;border-color:#76879a;color:#e4eaf1}
+  .next-chat #next-chat-attachments .attachment-chip strong{color:#e9eef4}
+  .next-chat #next-chat-attachments .attachment-chip small,.next-chat #next-chat-attachments .attachments-format-note,.next-chat #next-chat-attachments .attachments-count{color:#b1bdcc}
+  .next-chat #next-chat-attachments .attachments-drop-overlay{background:#2c3744;border-color:#9aabbe;color:#edf1f6}
+  .next-knowledge-list button[aria-pressed=true],.next-provider-list-item[aria-pressed=true],.next-connection-settings .next-connections-entry[aria-current=true],.next-identity-settings .next-identity-tabs [aria-selected=true]{background:#303c49;color:#edf1f6;border-color:var(--accent)}
+  .next-knowledge-revision-preview,.next-connection-settings .next-connections-editor,.next-workflow-node,.next-workflow-link{background:#1c232d}
+  .next-knowledge-list p{color:#bdc7d4}
+  .next-connection-settings .next-connections-tool pre,.next-artifact-pre{background:#0f151c;color:#dce4ed;border-color:var(--line)}
+  .next-artifact-dialog{background:#1b232e;color:#e4ebf3;border-color:#8e9eb2}
+  .next-artifact-dialog::backdrop{background:#06090ddd}
+  .next-artifact-download{color:#eef2f7;border-color:#8e9eb2}
+  .next-graph-canvas-toolbar button[aria-pressed=true]{background:#3b495a}
+  #next-workflow-canvas{color:#a0afc2}
+  #next-workflow-canvas .next-canvas-stage-box{fill:#2e3a49;stroke:#8292a7}
+  #next-workflow-canvas .next-canvas-stage[data-node=input] .next-canvas-stage-box{fill:#3b4a5d}
+  #next-workflow-canvas .next-canvas-stage.is-selected .next-canvas-stage-box,#next-workflow-canvas .next-canvas-stage:focus-visible .next-canvas-stage-box{stroke:#edf1f6}
+  #next-workflow-canvas .next-canvas-stage.is-link-source .next-canvas-stage-box{stroke:#a7bcd5;stroke-dasharray:5 3}
+  #next-workflow-canvas .next-canvas-stage-type{fill:#c4cfdd}
+  #next-workflow-canvas .next-canvas-stage-id{fill:#a7b7cb}
+  #next-workflow-canvas .next-canvas-edge-line{stroke:#9badc2}
+  #next-workflow-canvas .next-canvas-edge.is-selected .next-canvas-edge-line,#next-workflow-canvas .next-canvas-edge:focus-visible .next-canvas-edge-line{stroke:#edf1f6}
+  .next-browser-navigation,.next-native-downloads{background:#1b222c}
+  .next-browser-tab-group{background:#242d39}
+  .next-browser-tab-group:has(.next-browser-tab[aria-selected=true]){background:#394758;border-color:#a1b1c4}
+  .next-native-browser,.next-native-browser-page,.next-browser-visual{background:#10161e}
+  .next-native-auth,.next-browser-dialog{background:#242e3b;border-color:#8495aa}
+  .next-browser-text-panel summary{color:#d1dbe7}
+  .next-browser-text-panel pre{color:#becbdc}
+  .native-apps-layout button:not(:disabled):hover{background:#303b49}
+}
+@media(max-width:1000px){.next-topbar{gap:13px;padding-inline:14px}.next-brand{min-width:151px;gap:8px}.next-brand strong{font-size:18px}.next-tab{padding-inline:10px}.next-topbar-right{display:none}}
+@media(max-width:720px){.next-shell{grid-template-rows:92px minmax(0,1fr)}.next-topbar{padding:0 10px 36px;gap:10px}.next-topbar::after{height:36px}.next-tabs{min-height:55px}.next-brand{min-width:130px}.next-brand>img{width:29px;height:29px}.next-brand strong{font-size:16px;letter-spacing:.12em}.next-brand-subtitle{display:block;font-size:8px;letter-spacing:.18em}.next-tab{font-size:11px;padding:20px 9px 18px}.next-panel{padding:20px}.next-settings-sections{top:-20px}.next-chat-timeline{padding:22px}.next-chat-intro:has(>h1){min-height:310px;padding-block:22px}.next-chat-intro:has(>h1)::before{width:58px;height:58px;margin-bottom:20px}}
+@media(max-width:650px){.next-chat[data-show-list=true] .next-chat-sidebar{inset:92px 0 0}.next-chat-head{flex-wrap:wrap}.next-chat-head-actions{flex-wrap:wrap}.next-chat-heading{flex:1}.next-chat-timeline{padding:20px}.next-chat-intro h1{font-size:29px}.next-chat-intro p{font-size:13px}.next-chat-options{gap:7px}.next-chat-options select{max-width:118px}.next-chat-composer-area{padding-inline:10px}}
+@media(max-height:650px){.next-chat-intro:has(>h1){min-height:150px;padding:16px 0}.next-chat-intro:has(>h1)::before{display:none}.next-chat-intro h1{font-size:27px}.next-chat-intro p{font-size:13px;line-height:1.5;margin-top:12px}}
+/* Static opaque illustrations do not depend on transparency effects. */
+@media(prefers-reduced-transparency:reduce),(prefers-contrast:more){.next-chat-main{background:#0d0e0f}.next-chat-sidebar,.next-topbar,.next-chat-head,.next-chat-composer-area,.next-card{background:#141618}.next-chat-compose{background:#1d1e21}}
+@media(forced-colors:active){.next-shell,.next-chat-main,.next-panel{background:Canvas}.next-topbar::after{background:Canvas;border-color:CanvasText;box-shadow:none}.next-chat-intro:has(>h1)::before,.next-message-title::before,.next-health::before{display:none}.next-topbar,.next-chat-sidebar,.next-chat-head,.next-chat-composer-area,.next-chat-compose,.next-card,.next-settings-sections{background:Canvas;color:CanvasText;border-color:CanvasText;box-shadow:none}.next-tab[aria-selected=true],.next-conversation[aria-current=true],.next-settings-sections [aria-selected=true]{background:Highlight;color:HighlightText}.next-primary{background:ButtonFace;color:ButtonText;border-color:ButtonText}.next-brand strong{color:CanvasText}}

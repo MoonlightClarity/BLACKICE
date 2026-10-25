@@ -15,6 +15,9 @@ function fixture({ screen = 'workflow', failExecution = false } = {}) {
     desktopActions: [], desktop: {}, inspectorTab: 'activity' };
   const count = name => () => { rendered[name] = (rendered[name] || 0) + 1; };
   const context = vm.createContext({ state, rendered, requestAnimationFrame: callback => frames.push(callback),
+    // Isolate the outer frame batching under test; dedicated scheduler tests
+    // exercise the inner 110 ms chat paint throttle with a fake clock.
+    createRenderThrottle:()=>({request(fn){fn();},cancel(){},flush(){}}),
     reduceRunCollection, runEventGenerations: new Map(),
     missionUI: { update: count('mission') }, observeUI: { update: count('observe'), handleEvent() {} },
     planningUI: { handleEvent() {} }, configureUI: { update() {} },

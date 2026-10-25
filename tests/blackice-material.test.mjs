@@ -67,7 +67,7 @@ test('the running application serves only registered theme resources intact with
   const app = await createHarnessServer({port: 0, dataDir: path.join(root, 'data'), defaultCwd: root, runtime: new Runtime(), desktop: new Desktop(), autoAttachDesktop: false, showBrowserOS: async () => ({shown: false, focused: false, started: false})});
   t.after(async () => { await app.close(); await rm(root, {recursive: true, force: true}); });
   const address = await app.listen();
-  const page = await fetch(new URL('/', address));
+  const page = await fetch(new URL('/legacy/', address));
   assert.equal(page.status, 200);
   const html = await page.text();
   for (const pathname of [assetPath, materialPath, stylePath, layoutPath]) assert.ok(html.includes('href="' + pathname + '"'));

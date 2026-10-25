@@ -84,7 +84,7 @@ test('email HTTP guards prevent unsupported sends, mailbox access before checks 
   assert.equal(f.email.listDrafts().length,0);f.app.endMaintenance();
 });
 
-test('corrupt optional email state permits ordinary chat, status, maintenance and clean shutdown while email actions fail closed',async t=>{
+test('retired email adapters never load legacy state and ordinary chat and maintenance still work',async t=>{
   let modelCalls=0;
   class LocalRuntime extends Runtime {
     status(){return {connected:true,authenticated:true,models:[{model:'email-recovery-fixture'}],defaultModel:'email-recovery-fixture'};}
@@ -97,9 +97,10 @@ test('corrupt optional email state permits ordinary chat, status, maintenance an
     await writeFile(path.join(directory,'preserved.eml'),fixtureDraft);
   }});
   const statusResponse=await f.request('/api/status');assert.equal(statusResponse.status,200);
-  assert.equal((await statusResponse.json()).email.storage.healthy,false);
-  const emailResponse=await f.request('/api/email');assert.equal(emailResponse.status,200);
-  const email=await emailResponse.json();assert.equal(email.state,'unavailable');assert.equal(email.storage.recoveryRequired,true);assert.equal(email.localDrafts,null);assert.equal(email.config,null);
+  const emailStatus=(await statusResponse.json()).email;
+  assert.equal(emailStatus.retired,true);assert.equal(emailStatus.available,false);
+  const emailResponse=await f.request('/api/email');assert.equal(emailResponse.status,410);
+  assert.equal((await emailResponse.json()).code,'EMAIL_RETIRED');
   for(const [route,options] of [
     ['/api/email/drafts',{}],['/api/email/drafts/unknown-draft',{}],
     ['/api/email/config',{method:'PUT',body:{config:{enabled:false},expectedRevision:0}}],
@@ -109,7 +110,7 @@ test('corrupt optional email state permits ordinary chat, status, maintenance an
     ['/api/email/action',{method:'POST',body:{action:'read',folder:'INBOX',id:'fixture'}}],
     ['/api/email/drafts',{method:'POST',body:{requestId:'blocked-draft',to:['fixture@example.test'],subject:'Keep the old file',body:'This write must not happen.'}}],
   ]){
-    const response=await f.request(route,options);assert.equal(response.status,503,route);assert.match((await response.json()).error,/Saved email setup and drafts could not be loaded/);
+    const response=await f.request(route,options);assert.equal(response.status,410,route);assert.equal((await response.json()).code,'EMAIL_RETIRED');
   }
   const workflow={id:'email-recovery-flow',name:'Ordinary task',nodes:[{id:'input',type:'input',name:'Task'},{id:'agent',type:'agent',name:'Worker',prompt:'Complete the user task.',model:'email-recovery-fixture'},{id:'output',type:'output',name:'Result'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1}};
   const started=await f.request('/api/runs',{method:'POST',body:{workflow,input:'Complete an ordinary local fixture task.'}});assert.equal(started.status,201);

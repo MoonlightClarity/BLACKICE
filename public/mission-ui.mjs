@@ -19,7 +19,7 @@ import { renderTaskState, renderTaskFiles, bindTaskStateEvents } from './task-st
 import { initTaskPlanUI } from './task-plan-ui.mjs';
 import { taskPlanView, savedPlanNotes } from './task-plan-model.mjs';
 import { PLANNING_MODES, PLANNING_MODE_OPTIONS, planningModeDescription, planningEffortIntent } from './planning-mode.mjs';
-import { isActiveRun, isSettlingRun, conversationRecovery, createRegisteredArtifactResolver, conversationId, conversationRuns, conversationSidebarItems, selectedConversationModel, selectedConversationContext, selectedConversationEffort, selectedConversationServiceTier, selectedConversationPlanDetail, selectedConversationPlanningMode, conversationPlanningConfig, conversationReasoningChoice, conversationPlanDetails, conversationEfforts, restoreConversationDrafts, searchConversations, mergeConversationRuns, conversationTurn, conversationAgents, runUserText, shouldSendConversationKey } from './conversation-model.mjs';
+import { isActiveRun, isSettlingRun, conversationRecovery, createRegisteredArtifactResolver, conversationId, conversationRuns, conversationSidebarItems, conversationSummaries, selectedConversationModel, selectedConversationContext, selectedConversationEffort, selectedConversationServiceTier, selectedConversationPlanDetail, selectedConversationPlanningMode, conversationPlanningConfig, conversationReasoningChoice, conversationPlanDetails, conversationEfforts, restoreConversationDrafts, searchConversations, mergeConversationRuns, conversationTurn, conversationAgents, runUserText, shouldSendConversationKey } from './conversation-model.mjs';
 
 export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll, onCapture, onInbox, onArtifact, api, pickFiles, onOpenRun, onContinue, onRetry, onStop, onDirect, onStudio, onSchedule, onRepeatTask, onSwarm, onConnections, onProjects, onOpenPlanning, onRunLimits, onPrompts, onSavePrompt, onAgent, onLearning, onCompact, onFeedback, onBrowser, onKnowledge, onDesktop, onWorkspace, onOpenBrowserOS, onObserve, onCopy, pickFolder, escape, icon, toast }) {
   const $ = selector => mount.querySelector(selector), NEW = 'new';
@@ -27,6 +27,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
   const composerRequests = new Map(), composerErrors = new Map(), queueReceipts = new Map();
   if (!document.getElementById('relay-conversation-styles')) { const link = document.createElement('link'); link.id = 'relay-conversation-styles'; link.rel = 'stylesheet'; link.href = '/conversation.css'; document.head.append(link); }
   if (!document.getElementById('relay-conversation-bulk-styles')) { const link = document.createElement('link'); link.id = 'relay-conversation-bulk-styles'; link.rel = 'stylesheet'; link.href = '/conversation-bulk.css'; document.head.append(link); }
+  if (!document.getElementById('relay-conversation-performance-styles')) { const link = document.createElement('link'); link.id = 'relay-conversation-performance-styles'; link.rel = 'stylesheet'; link.href = '/conversation-performance.css'; document.head.append(link); }
   if (!document.getElementById('relay-model-picker-styles')) { const link = document.createElement('link'); link.id = 'relay-model-picker-styles'; link.rel = 'stylesheet'; link.href = '/model-picker.css'; document.head.append(link); }
   let saved = {}; try { saved = JSON.parse(localStorage.getItem('relay.mission.draft') || '{}') || {}; } catch {}
   const restored = restoreConversationDrafts(saved);
@@ -44,9 +45,28 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
   state.drafts[NEW] ||= { task: '', attachmentIds: [] };
   try { state.forceNew = localStorage.getItem('relay.mission.newTask') === 'true' || Boolean(state.drafts[NEW].task?.trim()); } catch {}
   const draft = () => { if (!state.drafts[state.key] || typeof state.drafts[state.key] !== 'object' || Array.isArray(state.drafts[state.key])) state.drafts[state.key] = { task: '', attachmentIds: [] }; const value = state.drafts[state.key]; if (typeof value.task !== 'string') value.task = ''; if (!Array.isArray(value.attachmentIds)) value.attachmentIds = []; return value; };
-  const allRuns = snapshot => mergeConversationRuns(state.cache, snapshot.runs, snapshot.currentRun ? [snapshot.currentRun] : []);
+  // A selected chat can receive dozens of stream receipts per second. Merging
+  // every archived event stream for each composer, timeline and sidebar read
+  // becomes quadratic in the visible number of turns.
+  let mergedRunsCache = null, selectedFamilyCache = null;
+  const allRuns = snapshot => {
+    const incoming = snapshot.runs || [], prior = mergedRunsCache;
+    if (prior && prior.cache === state.cache && prior.current === snapshot.currentRun
+      && prior.inputs.length === incoming.length && incoming.every((run, index) => run === prior.inputs[index])) return prior.value;
+    const value = mergeConversationRuns(state.cache, incoming, snapshot.currentRun ? [snapshot.currentRun] : []);
+    mergedRunsCache = { cache: state.cache, current: snapshot.currentRun, inputs: [...incoming], value };
+    return value;
+  };
   const activeRun = snapshot => isActiveRun(snapshot.currentRun) ? snapshot.currentRun : snapshot.runs.find(isActiveRun);
-  const family = snapshot => { if (state.forceNew || !state.runId) return []; const runs = allRuns(snapshot), selected = runs.find(run => run.id === state.runId); return selected ? conversationRuns(runs, selected) : []; };
+  const family = snapshot => {
+    if (state.forceNew || !state.runId) return [];
+    const runs = allRuns(snapshot), prior = selectedFamilyCache;
+    if (prior?.runs === runs && prior.runId === state.runId) return prior.value;
+    const selected = runs.find(run => run.id === state.runId);
+    const value = selected ? conversationRuns(runs, selected) : [];
+    selectedFamilyCache = { runs, runId: state.runId, value };
+    return value;
+  };
   const latest = snapshot => family(snapshot).at(-1) || null;
   function stopNotice(run) {
     if (run?.status === 'cancelled' && run.settled !== true) return { phase: 'stopping', text: 'Stopping… Waiting for active work to finish. Your draft is kept.' };
@@ -577,9 +597,9 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     finally { state.historyPending.delete(id); state.loading = state.historyPending.size > 0; update(); }
   }
   function renderHistoryNotice() { const element = $('#conversation-history-notice'); element.hidden = !(state.loading || state.historyError || state.truncated); element.innerHTML = state.historyError ? `${escape(state.historyError)} <button data-mission-action="reload-history">Try again</button>` : state.loading ? 'Loading conversation…' : 'Some older turns are unavailable.'; }
-  function attentionItems(snapshot) {
-    const runs = allRuns(snapshot), byId = new Map(runs.map(run => [run.id, run]));
-    return ['active', 'archived', 'deleted'].flatMap(historyState => sidebarConversations({ summaries: state.summaries, runs, historyState })).map(item => {
+  function attentionItems(snapshot, runs = allRuns(snapshot), runSummaries = conversationSummaries(runs)) {
+    const byId = new Map(runs.map(run => [run.id, run]));
+    return ['active', 'archived', 'deleted'].flatMap(historyState => sidebarConversations({ summaries: state.summaries, runs, runSummaries, historyState })).map(item => {
       const run = byId.get(item.runId);
       return run ? { ...item, createdAt: run.createdAt, settled: run.settled } : item;
     });
@@ -615,15 +635,16 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     $('#conversation-list').setAttribute('aria-busy', String(active && pending));
   }
   function renderSidebar(snapshot) {
-    attention.observe(attentionItems(snapshot)); markVisibleResponse();
+    const runs = allRuns(snapshot), runSummaries = conversationSummaries(runs);
+    attention.observe(attentionItems(snapshot, runs, runSummaries)); markVisibleResponse();
     const visibleRun = latest(snapshot); $('#conversation-tab-attention').hidden = !planVisible || !visibleRun || !attention.unread(conversationId(visibleRun, allRuns(snapshot)));
     $('#conversation-history-state').value = state.historyState; renderSidebarRecovery();
     const field = $('#conversation-search'), scope = searchScope(), phrase = state.search.trim();
     field.placeholder = scope === 'deleted' ? 'Search Trash' : scope === 'archived' ? 'Search archived chats' : 'Search all chats';
     field.setAttribute('aria-label', scope === 'deleted' ? 'Search messages and file names in Trash' : scope === 'archived' ? 'Search archived messages and file names' : 'Search chat messages and file names');
-    const catalog = ['active', 'archived', 'deleted'].flatMap(historyState => sidebarConversations({ summaries: state.summaries, runs: allRuns(snapshot), historyState, isUnread: id => attention.unread(id) }));
+    const catalog = ['active', 'archived', 'deleted'].flatMap(historyState => sidebarConversations({ summaries: state.summaries, runs, runSummaries, historyState, isUnread: id => attention.unread(id) }));
     const result = chatSearch.get(), hasResults = phrase && result.query === phrase && result.scope === scope && (result.status === 'ready' || result.conversations.length > 0);
-    const fallback = sidebarConversations({ summaries: state.summaries, runs: allRuns(snapshot), historyState: state.historyState, query: state.search, isUnread: id => attention.unread(id) }).filter(item => scope !== 'archived' || item.state === 'archived');
+    const fallback = sidebarConversations({ summaries: state.summaries, runs, runSummaries, historyState: state.historyState, query: state.search, isUnread: id => attention.unread(id) }).filter(item => scope !== 'archived' || item.state === 'archived');
     const list = hasResults ? searchedSidebarConversations(result.conversations, catalog, { historyState: state.historyState, isUnread: id => attention.unread(id) }) : fallback;
     bulkVisible = list;
     renderSearchStatus(result, list.length);
@@ -639,7 +660,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     if (focusId) { const controls = [...container.querySelectorAll('[data-conversation-id]')], next = controls.find(item => item.dataset.conversationId === focusId && Boolean(item.dataset.chatMore) === focusMore) || controls.find(item => item.dataset.missionAction === 'open-run'); (next || field).focus({ preventScroll: true }); }
     if (focusBulk) [...container.querySelectorAll('[data-bulk-id]')].find(item => item.dataset.bulkId === focusBulk)?.focus({ preventScroll: true });
   }
-  function messageHTML(message, run) { const node = run.workflow?.nodes?.find(node => node.id === message.nodeId), team = run.workflow?.nodes?.filter(node => node.type === 'agent').length > 1; return `<div class="conversation-message-author">${message.role === 'user' ? 'You' : team && node?.name ? escape(node.name) : 'BLACKICE'}${message.direction ? `<span>${message.delivery === 'queued' ? 'Queued direction' : 'Direction'}</span>` : ''}</div><div class="${message.role === 'user' ? 'conversation-user-text' : 'output-document conversation-message-text'}">${message.role === 'user' ? escape(message.text) : renderMarkdown(message.text, {resolveArtifact:createRegisteredArtifactResolver(run)})}</div>`; }
+  function messageHTML(message, run) { const node = run.workflow?.nodes?.find(node => node.id === message.nodeId), team = run.workflow?.nodes?.filter(node => node.type === 'agent').length > 1; return `<div class="conversation-message-author">${message.role === 'user' ? 'You' : team && node?.name ? escape(node.name) : 'BLACKICE'}${message.direction ? `<span>${message.delivery === 'queued' ? 'Queued direction' : 'Direction'}</span>` : ''}</div><div class="${message.role === 'user' ? 'conversation-user-text' : isActiveRun(run) ? 'conversation-message-text conversation-streaming-plain' : 'output-document conversation-message-text'}">${message.role === 'user' || isActiveRun(run) ? escape(message.text) : renderMarkdown(message.text, {resolveArtifact:createRegisteredArtifactResolver(run)})}</div>`; }
   function renderTurn(section, turn) {
     let complete = true;
     const run = turn.run, active = isActiveRun(run), metrics = runMetrics(run), user = section.querySelector('.conversation-user-slot'), userSignature = JSON.stringify([turn.userText, turn.retry, run.attachmentIds]);
@@ -647,7 +668,8 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     const routes = recordedResponseRoutes(run), routeSlot = section.querySelector('.conversation-route-slot'), routeSignature = JSON.stringify(routes);
     if (routeSlot && routeSlot.dataset.signature !== routeSignature) { routeSlot.hidden = routes.length === 0; routeSlot.innerHTML = routes.map(route => `<div class="conversation-response-route" data-response-route="${escape(route.model)}" aria-label="Recorded response route: ${escape(route.label)}. Retired" title="Recorded route for ${escape(route.agents.map(agent => agent.name).join(', '))}"><span>${escape(route.label)}</span><span class="conversation-route-experimental">Retired</span></div>`).join(''); routeSlot.dataset.signature = routeSignature; }
     const responses = section.querySelector('.conversation-responses'), seen = new Set();
-    for (const message of turn.messages) { seen.add(message.id); let article = [...responses.children].find(element => element.dataset.messageId === message.id); if (!article) { article = document.createElement('article'); article.className = `conversation-message ${message.role === 'user' ? 'user direction' : 'assistant'}`; article.dataset.messageId = message.id; responses.append(article); } const signature = JSON.stringify([message.text, message.phase, message.delivery, run.taskState?.revision]), selection = window.getSelection(); if (article.dataset.signature !== signature) { if (selection && !selection.isCollapsed && selection.containsNode(article, true)) { complete = false; taskSelectionPending = true; } else { article.innerHTML = messageHTML(message, run); article.dataset.signature = signature; } } }
+    const responseNodes = new Map([...responses.children].map(element => [element.dataset.messageId, element]));
+    for (const message of turn.messages) { seen.add(message.id); let article = responseNodes.get(message.id); if (!article) { article = document.createElement('article'); article.className = `conversation-message ${message.role === 'user' ? 'user direction' : 'assistant'}`; article.dataset.messageId = message.id; responses.append(article); } const signature = JSON.stringify([message.text, message.phase, message.delivery, run.taskState?.revision, active]), selection = window.getSelection(); if (article.dataset.signature !== signature) { if (selection && !selection.isCollapsed && selection.containsNode(article, true)) { complete = false; taskSelectionPending = true; } else { article.innerHTML = messageHTML(message, run); article.dataset.signature = signature; } } }
     for (const element of [...responses.children]) if (!seen.has(element.dataset.messageId)) element.remove();
     const work = section.querySelector('.conversation-work-slot'), canAct = run.id === latest(getSnapshot())?.id && selectedState() === 'active', workSignature = JSON.stringify([run.taskState?.revision, run.taskState?.taskId, run.status, run.settled, canAct]);
     const selection = window.getSelection(), readingWork = selection && !selection.isCollapsed && selection.containsNode(work, true);
@@ -872,6 +894,9 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
   }
   function update() {
     if (destroyed) return;
+    // Refresh the memo boundary for each observable state change; test harnesses
+    // and external providers may mutate an existing run object in place.
+    mergedRunsCache = null; selectedFamilyCache = null;
     const snapshot = getSnapshot(), current = snapshot.currentRun; if (!state.prefs.cwd && snapshot.status.cwd) state.prefs.cwd = snapshot.status.cwd;
     for (const run of allRuns(snapshot)) if (run.settled === true) stopRequests.delete(run.id);
     if (state.prefs.desktopConfigured !== true) state.prefs.desktop = missionDesktopPreference(state.prefs, snapshot.desktop);
@@ -1128,7 +1153,22 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
       }
     } catch (error) { toast(error.message, true); }
   });
-  $('#conversation-scroll').addEventListener('scroll', () => { if (!conversationIsVisible()) return; const view = $('#conversation-scroll'); state.autoScroll = view.scrollHeight - view.scrollTop - view.clientHeight < 90; if (state.viewKey) readingPositions.set(state.viewKey, captureConversationScroll(view, $('#conversation-timeline'), state.autoScroll)); $('#conversation-jump').hidden = state.autoScroll || !family(getSnapshot()).length; if (markVisibleResponse()) renderSidebar(getSnapshot()); }, { passive: true });
+  let pendingScrollFrame = false;
+  const readScroll = () => {
+    pendingScrollFrame = false;
+    if (destroyed || !conversationIsVisible()) return;
+    const view = $('#conversation-scroll');
+    state.autoScroll = view.scrollHeight - view.scrollTop - view.clientHeight < 90;
+    if (state.viewKey) readingPositions.set(state.viewKey, captureConversationScroll(view, $('#conversation-timeline'), state.autoScroll));
+    $('#conversation-jump').hidden = state.autoScroll || !family(getSnapshot()).length;
+    if (markVisibleResponse()) renderSidebar(getSnapshot());
+  };
+  $('#conversation-scroll').addEventListener('scroll', () => {
+    if (!conversationIsVisible() || pendingScrollFrame) return;
+    if (typeof requestAnimationFrame !== 'function') { readScroll(); return; }
+    pendingScrollFrame = true;
+    requestAnimationFrame(readScroll);
+  }, { passive: true });
   const refreshAttention = () => { if (!destroyed) { attention.refresh(); renderSidebar(getSnapshot()); } };
   const refreshSelectedMilestones = () => { if (!destroyed && taskSelectionPending) { taskSelectionPending = false; update(); } };
   document.addEventListener('selectionchange', refreshSelectedMilestones);

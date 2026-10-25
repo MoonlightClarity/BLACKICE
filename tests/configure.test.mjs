@@ -292,13 +292,14 @@ test('Settings exposes background workflows and cannot dispatch a retired Bridge
   const html = mount.innerHTML;
   assert.ok(html.indexOf('Default model') < html.indexOf('Describe changes in chat'));
   assert.ok(html.indexOf('Working folder') < html.indexOf('Describe changes in chat'));
-  for (const label of ['Background browser', 'Email', 'Planning', 'Swarm projects', 'Schedules &amp; jobs']) assert.ok(html.includes(label), label);
+  for (const label of ['Background browser', 'Planning', 'Swarm projects', 'Schedules &amp; jobs']) assert.ok(html.includes(label), label);
+  assert.doesNotMatch(html, /data-configure="email"/, 'Retired mail controls must not reappear.');
   assert.ok(html.indexOf('Background workspace') < html.indexOf('Agent tools') || !html.includes('Agent tools'));
-  assert.match(html, /Contained browser unavailable/); assert.match(html, /Setup required/);
+  assert.match(html, /Contained browser unavailable/); assert.match(html, /Ready to chat/);
   assert.doesNotMatch(html, /chatgptBridge|ChatGPT bridge|manual bridge|manual handoff/i);
   await mount.click('chatgptBridge'); assert.deepEqual(calls, [], 'stale controls cannot call the removed integration');
   for (const action of ['browser', 'email', 'taskNotes', 'projects', 'operations', 'connections']) await mount.click(action);
-  assert.deepEqual(calls, ['browser', 'email', 'notes', 'projects', 'operations', 'models']); ui.destroy();
+  assert.deepEqual(calls, ['browser', 'notes', 'projects', 'operations', 'models']); ui.destroy();
   const noCallbacks = renderConfigureView(snapshot(), {}, { connections: true, chatgptBridge: true });
   assert.doesNotMatch(noCallbacks, /data-configure="(?:chatgptBridge|email|taskNotes|projects)"/);
 });

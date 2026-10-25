@@ -44,6 +44,9 @@ async function fixture({pauseModule,apiResponse,desktop=true}={}){
     '/observe-stream.mjs':{createObserveSubscription:()=>()=>{}},
     '/editor-model.mjs':{WorkflowHistory:class{},diagnoseWorkflow:()=>[],fitWorkflow(){effects.push('fit');return{x:80,y:45,scale:.75};},renderMarkdown:value=>value},
     '/mission-model.mjs':{},'/reasoning-model.mjs':{},'/run-state-model.mjs':runStateModel,'/context-ui.mjs':{},'/task-state-ui.mjs':{},'/svg-preview.mjs':{},'/artifact-ui.mjs':{},'/prompts-ui.mjs':{},'/task-title.mjs':{},'/repeat-task-model.mjs':{},'/workspace-integrations.mjs': workspaceIntegrationModel, '/api-client.mjs':{createApiClient:()=>apiResponse||(async()=>({}))},
+    '/run-index-client.mjs':{createRunIndexClient:()=>({read:async()=>[],close(){},usingWorker:false})},
+    '/renderer-scheduler.mjs':{createRenderThrottle:()=>({request(fn){fn();},cancel(){},flush(){}})},
+    '/run-index-model.mjs':{reconcileRunIndex:(old,summary)=>summary},
     '/planning-workspace-ui.mjs':{initPlanningWorkspaceUI:callbacks=>{planningCallbacks=callbacks;return{async enter(seed){opened.push('planning');effects.push({planningSeed:seed});},leave(){},handleEvent(){}};}},
     '/email-ui.mjs':{initEmailUI:()=>ui('email')},'/learning-ui.mjs':{initLearningUI:()=>ui('learning')},'/identity-ui.mjs':{openIdentity:()=>ui('identity').open()},'/tool-connections-ui.mjs':{initToolConnectionsUI:()=>ui('tool-connections')},'/file-patches-ui.mjs':{initFilePatchesUI:()=>ui('file-patches')},'/knowledge-ui.mjs':{initKnowledgeUI:()=>ui('knowledge')},'/connections-ui.mjs':{openConnections:()=>ui('connections').open()},'/browser-ui.mjs':{openBrowserWorkspace:()=>ui('browser').open()},'/projects-ui.mjs':{initProjectsUI:()=>ui('projects')},'/inbox-ui.mjs':{initInboxUI:callbacks=>{inboxCallbacks=callbacks;return ui('inbox');}},'/advanced-ui.mjs':{initAdvancedUI:()=>({openOperations:()=>ui('operations').open(),openSchedule:()=>ui('schedule').open(),openSwarm:()=>ui('swarm').open(),deployWorkflow:()=>ui('deployment').open()})},
   };
@@ -122,25 +125,25 @@ test('selecting the already active Chat tab still dismisses its open subconfigur
 
 test('the advanced menu focuses its canvas and retains a reachable primary tab without selecting it',async()=>{
   const f=await fixture();f.selectWorkspaceMode('configure');f.flush();await f.activateAction('workflow');f.flush();
-  assert.equal(f.state.screen,'workflow');assert.equal(f.actions.hidden,false);assert.deepEqual(f.tabs.map(tab=>tab.dataset.mode),['view','observe','planning','configure']);assert.ok(f.tabs.every(tab=>tab.attributes['aria-selected']==='false'));
-  assert.deepEqual(f.tabs.map(tab=>tab.tabIndex),[-1,-1,-1,0],'the last primary tab remains reachable while the separate canvas is open');assert.equal(f.document.activeElement,f.canvas);assert.equal(f.canvas.tabIndex,-1);assert.equal(f.canvas.focusOptions.preventScroll,true);
-  f.renderMode();assert.deepEqual(f.tabs.map(tab=>tab.tabIndex),[-1,-1,-1,0],'status renders retain the same single tab stop');
+  assert.equal(f.state.screen,'workflow');assert.equal(f.actions.hidden,false);assert.deepEqual(f.tabs.map(tab=>tab.dataset.mode),['view','observe','planning','tasks','configure']);assert.ok(f.tabs.every(tab=>tab.attributes['aria-selected']==='false'));
+  assert.deepEqual(f.tabs.map(tab=>tab.tabIndex),[-1,-1,-1,-1,0],'the last primary tab remains reachable while the separate canvas is open');assert.equal(f.document.activeElement,f.canvas);assert.equal(f.canvas.tabIndex,-1);assert.equal(f.canvas.focusOptions.preventScroll,true);
+  f.renderMode();assert.deepEqual(f.tabs.map(tab=>tab.tabIndex),[-1,-1,-1,-1,0],'status renders retain the same single tab stop');
   f.updateSkipLink();assert.equal(f.skip.href,'#canvas');assert.equal(f.menu.open,false);
-  f.selectWorkspaceMode('view');f.flush();assert.equal(f.state.screen,'mission');assert.equal(f.actions.hidden,true);assert.deepEqual(f.tabs.map(tab=>tab.tabIndex),[0,-1,-1,-1]);assert.equal(f.document.activeElement.dataset.mode,'view');
+  f.selectWorkspaceMode('view');f.flush();assert.equal(f.state.screen,'mission');assert.equal(f.actions.hidden,true);assert.deepEqual(f.tabs.map(tab=>tab.tabIndex),[0,-1,-1,-1,-1]);assert.equal(f.document.activeElement.dataset.mode,'view');
 });
 
 test('the advanced canvas restores the first primary tab when no previous tab stop exists',async()=>{
   const f=await fixture();for(const tab of f.tabs)tab.tabIndex=-1;await f.activateAction('workflow');f.flush();
-  assert.deepEqual(f.tabs.map(tab=>tab.tabIndex),[0,-1,-1,-1]);assert.ok(f.tabs.every(tab=>tab.attributes['aria-selected']==='false'));assert.equal(f.document.activeElement,f.canvas);
+  assert.deepEqual(f.tabs.map(tab=>tab.tabIndex),[0,-1,-1,-1,-1]);assert.ok(f.tabs.every(tab=>tab.attributes['aria-selected']==='false'));assert.equal(f.document.activeElement,f.canvas);
   let prevented=false;f.handleWorkspaceModeKey({target:f.tabs[0],key:'ArrowRight',preventDefault(){prevented=true;}});f.flush();
-  assert.equal(prevented,true);assert.equal(f.state.screen,'observe');assert.deepEqual(f.tabs.map(tab=>tab.tabIndex),[-1,0,-1,-1]);assert.equal(f.document.activeElement,f.tabs[1]);
+  assert.equal(prevented,true);assert.equal(f.state.screen,'observe');assert.deepEqual(f.tabs.map(tab=>tab.tabIndex),[-1,0,-1,-1,-1]);assert.equal(f.document.activeElement,f.tabs[1]);
 });
 
 test('a deferred canvas focus cannot replace a newer focused field or workspace',async()=>{
   const f=await fixture();await f.activateAction('workflow');const field={tagName:'INPUT'};f.document.activeElement=field;f.flush();
   assert.equal(f.state.screen,'workflow');assert.equal(f.document.activeElement,field);assert.equal(f.canvas.focusOptions,undefined);
   await f.activateAction('workflow');f.selectWorkspaceMode('configure');f.flush();
-  assert.equal(f.state.screen,'configure');assert.equal(f.document.activeElement,f.tabs[3]);assert.equal(f.canvas.focusOptions,undefined);
+  assert.equal(f.state.screen,'configure');assert.equal(f.document.activeElement,f.tabs[4]);assert.equal(f.canvas.focusOptions,undefined);
 });
 
 test('a loading or error-only dialog takes focus and restores its opener when closed',async()=>{
@@ -217,7 +220,7 @@ test('closing while a subconfiguration module loads cancels that opening',async(
 
 test('workspace tab arrow keys wrap and Home/End activate a single reachable tab',async()=>{
   const f=await fixture();let prevented=0;const key=(mode,key)=>{f.handleWorkspaceModeKey({target:f.tabs.find(tab=>tab.dataset.mode===mode),key,preventDefault(){prevented++;}});f.flush();};
-  key('view','ArrowLeft');assert.equal(f.state.screen,'configure');key('configure','ArrowRight');assert.equal(f.state.screen,'mission');key('view','End');assert.equal(f.state.screen,'configure');key('configure','Home');assert.equal(f.state.screen,'mission');assert.equal(prevented,4);assert.deepEqual(f.tabs.map(tab=>tab.tabIndex),[0,-1,-1,-1]);
+  key('view','ArrowLeft');assert.equal(f.state.screen,'configure');key('configure','ArrowRight');assert.equal(f.state.screen,'mission');key('view','End');assert.equal(f.state.screen,'configure');key('configure','Home');assert.equal(f.state.screen,'mission');assert.equal(prevented,4);assert.deepEqual(f.tabs.map(tab=>tab.tabIndex),[0,-1,-1,-1,-1]);
 });
 
 test('leaving Email cancels its pending requests while preserving the original chat draft',async()=>{

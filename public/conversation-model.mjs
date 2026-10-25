@@ -58,9 +58,10 @@ export function createRegisteredArtifactResolver(run) {
   };
 }
 
-export function conversationId(run, runs = []) {
+export function conversationId(run, runs = [], index = null) {
   if (!run) return 'new'; if (run.taskId) return run.taskId;
-  const byId = new Map(runs.map(item => [item.id, item])), visited = new Set(); let root = run;
+  // Batch callers supply one index instead of rebuilding it for every run.
+  const byId = index || new Map(runs.map(item => [item.id, item])), visited = new Set(); let root = run;
   while (root.parentRunId && byId.has(root.parentRunId) && !visited.has(root.parentRunId)) { visited.add(root.id); root = byId.get(root.parentRunId); }
   return root.taskId || root.id;
 }
@@ -73,13 +74,19 @@ export function conversationRuns(runs, selected) {
   return [...family].map(id => byId.get(id)).filter(Boolean).sort((a, b) => time(a) - time(b) || a.id.localeCompare(b.id));
 }
 export function conversationSummaries(runs) {
-  const groups = new Map();
+  const groups = new Map(), byId = new Map(runs.map(run => [run.id, run]));
   for (const run of [...runs].sort((a, b) => time(a) - time(b))) {
-    const id = conversationId(run, runs), existing = groups.get(id);
+    const id = conversationId(run, runs, byId), existing = groups.get(id);
     if (!existing) groups.set(id, { id, rootRunId: run.id, runId: run.id, title: taskTitle(runUserText(run), { max: 140, fallback: run.workflowName || 'Conversation' }), updatedAt: run.createdAt, status: run.status, settled: run.settled, runs: 1 });
     else { existing.runId = run.id; existing.updatedAt = run.createdAt; existing.status = run.status; existing.settled = run.settled; existing.runs++; }
   }
-  for (const item of groups.values()) { const active = runs.find(run => (isActiveRun(run) || isSettlingRun(run)) && conversationId(run, runs) === item.id); if (active) { item.runId = active.id; item.status = active.status; item.settled = active.settled; } }
+  // Preserve first-active-run precedence without scanning every run for every group.
+  const activeGroups = new Set();
+  for (const run of runs) {
+    if (!isActiveRun(run) && !isSettlingRun(run)) continue;
+    const id = conversationId(run, runs, byId), item = groups.get(id);
+    if (item && !activeGroups.has(id)) { item.runId = run.id; item.status = run.status; item.settled = run.settled; activeGroups.add(id); }
+  }
   return [...groups.values()].sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0));
 }
 export const selectedConversationModel = (draft = {}, preferences = {}, agent) => draft.model || agent?.resolvedModel || agent?.model || preferences.model || 'default';
@@ -141,13 +148,13 @@ export function searchConversations({ summaries = {}, runs = [], state, query = 
     return { entry, score: title === phrase ? 4 : title.startsWith(phrase) ? 3 : title.includes(phrase) ? 2 : 1, matches: words.every(word => searchable.includes(word)) };
   }).filter(item => item.matches).sort((a, b) => b.score - a.score || (Date.parse(b.entry.updatedAt || '') || 0) - (Date.parse(a.entry.updatedAt || '') || 0)).slice(0, Math.max(0, Math.min(200, Number(limit) || 0))).map(item => item.entry);
 }
-export function conversationSidebarItems({ summaries = {}, runs = [], state = 'active' } = {}) {
+export function conversationSidebarItems({ summaries = {}, runs = [], runSummaries = null, state = 'active' } = {}) {
   const catalog = new Map();
   for (const bucket of ['active', 'archived', 'deleted']) for (const entry of summaries[bucket] || []) {
     const id = entry.taskId || entry.rootId || entry.id;
     catalog.set(id, { ...entry, id, state: entry.state || bucket, runId: entry.runId || entry.latestRunId || entry.id, title: entry.rootTitle || entry.title || 'Conversation' });
   }
-  for (const entry of conversationSummaries(runs)) {
+  for (const entry of runSummaries || conversationSummaries(runs)) {
     const previous = catalog.get(entry.id);
     // A loaded transcript can contain only older turns after recent-run eviction.
     // Keep the durable latest turn until that turn, or a newer one, is loaded.
@@ -166,19 +173,30 @@ export function mergeConversationRuns(...collections) {
       else { const initial = { ...run }; if (taskState) initial.taskState = taskState; else delete initial.taskState; map.set(run.id, initial); }
       continue;
     }
+    if (old === run) continue;
     const nodes = { ...old.nodes };
     for (const [id, node] of Object.entries(run.nodes || {})) nodes[id] = { ...nodes[id], ...node };
-    // Live execution keeps a bounded tool ring; archived human/assistant receipts are durable.
-    const durable = event => { const data = event.data || event; return ['message', 'steer'].includes(data.type) || data.type === 'item' && data.item?.type === 'agentMessage'; };
-    const incoming = run.events === undefined ? old.events || [] : run.events;
-    const receipts = new Map();
-    for (const event of [...(old.events || []).filter(durable), ...incoming]) {
-      const data = event.data || event, nodeId = event.nodeId || data.nodeId || 'agent', itemId = data.itemId || data.item?.id;
-      const key = durable(event) && data.type !== 'steer' && itemId ? `message:${nodeId}:${itemId}` : JSON.stringify([event.at, nodeId, data.type, itemId, data.text, data.delta, data.action, data.item]);
-      receipts.set(key, event);
+    // Avoid serializing and sorting every historical receipt when the live
+    // snapshot only changed status, usage, or other metadata. Event arrays are
+    // immutable in the stream reducer; newer events get a different reference.
+    let events;
+    if (run.events === undefined || old.events === run.events || run.indexed === true && run.events?.length === 0) {
+      // A worker run-index entry has intentionally omitted its execution
+      // receipts. Keep the fully loaded conversation's event array by reference
+      // rather than rebuilding thousands of archived messages on each frame.
+      events = old.events || [];
+    } else {
+      // Live execution keeps a bounded tool ring; archived human/assistant receipts are durable.
+      const durable = event => { const data = event.data || event; return ['message', 'steer'].includes(data.type) || data.type === 'item' && data.item?.type === 'agentMessage'; };
+      const receipts = new Map();
+      for (const event of [...(old.events || []).filter(durable), ...run.events]) {
+        const data = event.data || event, nodeId = event.nodeId || data.nodeId || 'agent', itemId = data.itemId || data.item?.id;
+        const key = durable(event) && data.type !== 'steer' && itemId ? `message:${nodeId}:${itemId}` : JSON.stringify([event.at, nodeId, data.type, itemId, data.text, data.delta, data.action, data.item]);
+        receipts.set(key, event);
+      }
+      const completed = new Set([...receipts.values()].filter(durable).map(event => { const data = event.data || event; return data.type !== 'steer' && (data.itemId || data.item?.id) ? `${event.nodeId || data.nodeId || 'agent'}:${data.itemId || data.item.id}` : null; }).filter(Boolean));
+      events = [...receipts.values()].filter(event => { const data = event.data || event; return data.type !== 'delta' || !data.itemId || !completed.has(`${event.nodeId || data.nodeId || 'agent'}:${data.itemId}`); }).sort((a, b) => (Date.parse(a.at) || 0) - (Date.parse(b.at) || 0));
     }
-    const completed = new Set([...receipts.values()].filter(durable).map(event => { const data = event.data || event; return data.type !== 'steer' && (data.itemId || data.item?.id) ? `${event.nodeId || data.nodeId || 'agent'}:${data.itemId || data.item.id}` : null; }).filter(Boolean));
-    const events = [...receipts.values()].filter(event => { const data = event.data || event; return data.type !== 'delta' || !data.itemId || !completed.has(`${event.nodeId || data.nodeId || 'agent'}:${data.itemId}`); }).sort((a, b) => (Date.parse(a.at) || 0) - (Date.parse(b.at) || 0));
     const merged = { ...old, ...run, nodes, events }, taskState = newerTaskState(old.taskState, run.taskState, old.taskId || run.taskId || run.id);
     if (taskState) merged.taskState = taskState;
     else delete merged.taskState;

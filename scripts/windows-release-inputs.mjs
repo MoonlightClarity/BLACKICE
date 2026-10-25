@@ -2,8 +2,13 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 
-const topLevelFiles = new Set(['package.json', 'LICENSE', 'NOTICE', 'THIRD-PARTY-NOTICES.md', 'server.mjs', 'CHATGPT-BRIDGE.md', 'CHATGPT-CONNECTOR.md', 'CHAT-MODE.md', 'PLANNING-ORGANIZATION.md', 'REMOTE-ACCESS.md', 'BROWSER-PROTECTION.md', 'BROWSER-IMPORT.md', 'EMAIL.md', 'PLANNING-AWARENESS.md', ...['2.30.0', '2.31.0', '2.31.1', '2.32.0', '2.33.5', '2.33.6', '2.33.7', '2.33.8', '2.33.9', '2.33.10', '2.33.11', '2.33.12', '2.33.13'].map(version => `RELEASE-NOTES-${version}.md`)]);
+const topLevelFiles = new Set(['package.json', 'LICENSE', 'NOTICE', 'THIRD-PARTY-NOTICES.md', 'server.mjs', 'CHATGPT-BRIDGE.md', 'CHATGPT-CONNECTOR.md', 'CHAT-MODE.md', 'PLANNING-ORGANIZATION.md', 'REMOTE-ACCESS.md', 'BROWSER-PROTECTION.md', 'BROWSER-IMPORT.md', 'EMAIL.md', 'PLANNING-AWARENESS.md', ...['2.30.0', '2.31.0', '2.31.1', '2.32.0', '2.33.5', '2.33.6', '2.33.7', '2.33.8', '2.33.9', '2.33.10', '2.33.11', '2.33.12', '2.33.13', '2.34.0', '2.34.1', '2.34.2', '2.34.3', '2.34.4'].map(version => `RELEASE-NOTES-${version}.md`)]);
 const check = (condition, message) => { if (!condition) throw new Error(message); };
+topLevelFiles.add('RELEASE-NOTES-2.35.0.md');
+topLevelFiles.add('RELEASE-NOTES-2.35.1.md');
+
+// Match the existing installer inputs without admitting arbitrary native helpers.
+const packagedNativeHelpers = new Set(['desktop/make-icon.ps1', 'desktop/native-window-host.cs', 'desktop/native-window-host.ps1']);
 
 // Public native CLI diagnostics contain only enumerated codes, never log text.
 const nativeRestartErrorCodes = new Set([
@@ -44,7 +49,7 @@ export function forbiddenWindowsPackagePath(relative) {
 /** The installed-file verifier uses the same runtime families as electron-builder. */
 export function approvedWindowsPackageFile(relative, version) {
   if (typeof relative !== 'string' || relative.includes('\\') || relative.startsWith('/') || relative.split('/').some(part => !part || part === '.' || part === '..') || forbiddenWindowsPackagePath(relative)) return false;
-  return topLevelFiles.has(relative) || (/^\d+\.\d+\.\d+$/.test(version) && relative === `RELEASE-NOTES-${version}.md`) || /^(lib|public)\//.test(relative) || /^desktop\/.*\.(mjs|cjs)$/.test(relative) || relative.startsWith('desktop/browser-compatibility/') || relative === 'desktop/icon.ico' || /^scripts\/(generate-noir-background\.mjs|noir-scene\.config\.json|chatgpt-bridge\.mjs|email-oauth-token\.mjs|remote-access-cli\.mjs|browser-cli\.mjs)$/.test(relative);
+  return topLevelFiles.has(relative) || packagedNativeHelpers.has(relative) || (/^\d+\.\d+\.\d+$/.test(version) && relative === `RELEASE-NOTES-${version}.md`) || /^(lib|public)\//.test(relative) || /^desktop\/.*\.(mjs|cjs)$/.test(relative) || relative.startsWith('desktop/browser-compatibility/') || relative === 'desktop/icon.ico' || /^scripts\/(generate-noir-background\.mjs|noir-scene\.config\.json|chatgpt-bridge\.mjs|email-oauth-token\.mjs|remote-access-cli\.mjs|browser-cli\.mjs)$/.test(relative);
 }
 
 /** Read existing, tracked evidence; never synthesize a passing source-test receipt. */

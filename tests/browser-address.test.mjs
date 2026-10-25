@@ -41,12 +41,20 @@ test('explicit HTTP and HTTPS addresses keep their existing URL semantics', () =
   assert.equal(normalizeBrowserAddress(new URL('https://example.test/')), 'https://example.test/');
 });
 
+test('explicit local and Chromium page addresses retain the engine URL semantics', () => {
+  for (const value of ['about:blank', 'about:blank#fragment', 'about:blank?query', 'about:version', 'about:gpu',
+    'chrome://version/', 'chrome://gpu/', 'file:///C:/Documents/My%20Page.html', 'file://server/share/page.html',
+    new URL('file:///C:/Documents/local.html')])
+    assert.equal(normalizeBrowserAddress(value), new URL(value).href);
+  assert.equal(normalizeBrowserAddress('  ABOUT:blank  '), 'about:blank');
+});
+
 test('invalid addresses and existing unsupported URL forms still fail validation', () => {
   for (const address of [
     '', '   ', undefined, null, 123, {}, 'not a url', '/relative/path', '?query', '#fragment',
     'https://', 'example.test:70000', '[::1',
-    'javascript:alert(1)', 'javascript:123', 'data:text/html,hello', 'file:///c:/Windows/a.txt',
-    'ftp://example.test/file', 'mailto:name@example.test', 'chrome://settings',
+    'javascript:alert(1)', 'javascript:123', 'data:text/html,hello',
+    'ftp://example.test/file', 'mailto:name@example.test', 'custom-protocol://open',
     'https://name:password@example.test/', '//name:password@example.test/', 'name@example.test',
   ]) assert.throws(() => normalizeBrowserAddress(address), TypeError, String(address));
 });

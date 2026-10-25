@@ -64,7 +64,7 @@ export function renderPlanningEditor(task, draft, { editable = true } = {}) {
   return `<form id="planning-editor-form" data-planning-editor-key="${escape(draft.key)}"><fieldset class="planning-edit-fields"${disabled}>${fields}</fieldset></form>`;
 }
 
-export function initPlanningWorkspaceUI({ mount, api, onOpenRun, onNewChat, onArtifact, onSaved, onManagePlan, onError = () => {}, controllerOptions = {} } = {}) {
+export function initPlanningWorkspaceUI({ mount, api, onOpenRun, onNewChat, onProjects, onArtifact, onSaved, onManagePlan, onError = () => {}, controllerOptions = {} } = {}) {
   if (!mount) throw new Error('Planning needs a workspace mount.');
   installPlanningWorkspaceStyles();
   const media = typeof window !== 'undefined' ? window.matchMedia?.('(max-width: 1050px)') : null;
@@ -73,10 +73,10 @@ export function initPlanningWorkspaceUI({ mount, api, onOpenRun, onNewChat, onAr
   const catalogRows = new Map(), catalogGroups = new Map(), expandedGroups = new Map();
   const $ = selector => mount.querySelector(selector);
   mount.classList.add('planning-workspace');
-  mount.innerHTML = `<header class="planning-heading"><div class="planning-heading-copy">${glyph}<div><h1>Planning</h1></div></div><div class="planning-heading-actions">${action('refresh', 'Refresh')}${onNewChat ? action('new-chat', 'New chat') : ''}</div></header>${coordinationNavigation('planning')}
+  mount.innerHTML = `<header class="planning-heading"><div class="planning-heading-copy">${glyph}<div><h1>Planning</h1></div></div><div class="planning-heading-actions">${onProjects ? action('project-plans', 'Project plans') : ''}${action('refresh', 'Refresh')}${onNewChat ? action('new-chat', 'New chat') : ''}</div></header>${coordinationNavigation('planning')}
     <nav class="planning-mobile-tabs" role="tablist" aria-label="Planning panels"><button type="button" role="tab" data-planning-pane="plan" aria-controls="planning-board-panel" aria-selected="true">Plan</button><button type="button" role="tab" data-planning-pane="edit" aria-controls="planning-editor-panel" aria-selected="false" tabindex="-1">Edit</button><button type="button" role="tab" data-planning-pane="saved" aria-controls="planning-saved-panel" aria-selected="false" tabindex="-1">Saved plans</button></nav><div id="planning-draft-alert" class="planning-draft-alert" role="status" hidden></div>
     <div class="planning-layout"><aside id="planning-saved-panel" class="planning-catalog" aria-label="Saved plans">
-      <div class="planning-catalog-heading"><div class="planning-catalog-title"><h2>Saved chat plans</h2></div>
+      <div class="planning-catalog-heading"><div class="planning-catalog-title"><h2>Conversation plans</h2></div>
         <label class="planning-search"><span class="sr-only">Search saved plans</span><input id="planning-search" type="search" maxlength="500" placeholder="Find a plan…" autocomplete="off"></label>
         <details class="planning-catalog-options" data-planning-disclosure="catalog-options"><summary>Filters &amp; groups</summary><div class="planning-catalog-filters"><select id="planning-state" aria-label="Plan history"><option value="active">Active plans</option><option value="archived">Archive</option><option value="deleted">Trash · read only</option></select><select id="planning-group-filter" aria-label="Filter by group"><option value="">All groups</option><option value="ungrouped">Ungrouped</option></select></div>${action('create-group', 'New group')}</details>
         <p id="planning-catalog-status" role="status"></p>
@@ -87,7 +87,7 @@ export function initPlanningWorkspaceUI({ mount, api, onOpenRun, onNewChat, onAr
       <p id="planning-outline-help" class="sr-only">Use arrow keys to navigate groups and plans. Right arrow expands a group; left arrow collapses it. Enter opens a plan. F2 renames the focused item. Each named group has a Remove button; its plans stay saved in Ungrouped.</p>
       <div id="planning-group-actions" class="planning-group-actions"></div><div id="planning-catalog-footer"></div>
     </aside>
-    <section id="planning-board-panel" class="planning-board" aria-label="Saved plan" tabindex="-1"><div id="planning-task-bar" class="planning-task-bar"></div><div id="planning-load-status" role="status"></div><div id="planning-plan-mount"></div><div id="planning-empty" class="planning-workspace-empty" hidden>${glyph}<h2>A place to shape the work.</h2><p>Open a saved chat plan to refine its objective, steps and branches. Start a task in chat to create one. Swarms keeps specialist tasks and their worker history.</p>${onNewChat ? action('new-chat', 'Start a task in chat') : ''}</div></section>
+    <section id="planning-board-panel" class="planning-board" aria-label="Saved plan" tabindex="-1"><div id="planning-task-bar" class="planning-task-bar"></div><div id="planning-load-status" role="status"></div><div id="planning-plan-mount"></div><div id="planning-empty" class="planning-workspace-empty" hidden>${glyph}<h2>A place to shape the work.</h2><p>Open a saved chat plan to refine its objective, steps and branches. Start a task in chat to create a conversation plan, or switch to project planning for multi-worker project plans.</p>${onNewChat ? action('new-chat', 'Start a task in chat') : ''}${onProjects ? action('project-plans', 'Open project planning') : ''}</div></section>
     <aside id="planning-editor-panel" class="planning-editor" aria-label="Plan editor"><header class="planning-editor-heading"><h2 id="planning-editor-title">Objective</h2><span id="planning-editor-revision"></span></header><div id="planning-editor-runtime"></div><div id="planning-editor-messages" aria-live="polite"></div><div id="planning-editor-fields"></div><div id="planning-editor-actions" class="planning-editor-actions"></div><div id="planning-editor-awareness"></div><div id="planning-draft-switcher"></div></aside></div>`;
   const controller = createPlanningWorkspaceController({ ...controllerOptions, api, onSaved, onChange: reason => render(reason) });
   const planUI = initTaskPlanUI({ mount: $('#planning-plan-mount'), externalInspector: true, onArtifact, onEnlargedChange: value => { planEnlarged = value; if (value) controller.state.pane = 'plan'; renderPanes(); }, onSelection: value => { if (applying) return; controller.selectEditor(value.stepId); if (value.openDetails) { planUI.setEnlarged(false, { focusControl: false }); controller.setPane('edit'); $('#planning-editor-form [data-planning-field]')?.focus({ preventScroll: true }); } }, onError });
@@ -358,6 +358,7 @@ export function initPlanningWorkspaceUI({ mount, api, onOpenRun, onNewChat, onAr
     if (name === 'review-organization') return controller.reviewOrganization();
     if (name === 'use-organization-review') return controller.applyReviewedOrganization();
     if (name === 'new-chat') return onNewChat?.();
+    if (name === 'project-plans') return onProjects?.();
     if (name === 'review-draft') { planUI.setEnlarged(false, { focusControl: false }); controller.setPane('edit'); $('#planning-editor-form [data-planning-field]')?.focus({ preventScroll: true }); return; }
     if (name === 'objective') { controller.selectEditor(); controller.setPane('edit'); $('#planning-editor-form textarea')?.focus({ preventScroll: true }); return; }
     if (name === 'add') { controller.startAdd(draft?.stepId); $('#planning-editor-form input')?.focus({ preventScroll: true }); return; }

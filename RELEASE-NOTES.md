@@ -1,3 +1,24 @@
+# BLACKICE 2.35.2 — V2 workspace checkpoint
+
+This checkpoint brings the V2 workspace changes since 2.33.14 into the public source and Windows release.
+
+- **A focused workspace:** independent Chat, Planning, Tasks, Browser, Activity, Knowledge and Settings, with the classic recovery interface at `/legacy/`.
+- **Visual work management:** Planning maps and focused inspectors, a Tasks status board, and Activity workflow maps with real run status. Archive, recoverable Trash, Restore, search and bulk actions are retained where the underlying record supports them.
+- **An ordinary desktop browser:** the actual Chromium page, persistent independent blank tabs, per-tab address drafts, navigation, downloads, shortcuts and website/proxy sign-in. The screenshot/manual-input interface remains a compatibility fallback. Thunderbird/Himalaya integration is retired; use Browser for webmail.
+- **Native configuration and knowledge:** memory/skill editing with revision recovery; Identity history; provider/model management; individual tool connections and explicit pasted/file configuration import. Import saves configuration without starting servers. Descriptive worker assignments no longer derive capability restrictions.
+- **Black-ice identity:** realistic dark-ice imagery, graphite/silver chrome, readable native dropdowns and system forced-color support.
+- **Measured performance work:** bounded Chat rendering and history decoding, full direct-action validation with at most four readers, and scalar Planning catalogs. In one same-workload installed comparison, Planning metadata responses improved from about 400–442 ms to 6–14 ms.
+- **Startup diagnosis:** the local desktop can open independently of saved remote-route reconnection, with fixed, privacy-limited phase timings. The earlier intermittent multi-minute startup is still unexplained; this release does not claim all startup or responsiveness problems are solved.
+
+Saved profile data is retained. Workflow/schedule permanent-removal semantics and separate site/OS requirements remain. The installer is unsigned; verify the attached checksum. Hidden/synthetic tests do not prove arbitrary Windows dialogs, IME, visible frame rate or every real-world workflow.
+
+See the release's verification receipt for the exact source, installer and completed checks. Older release assets remain available separately.
+
+
+---
+
+The entries below are historical release notes. Retired features and older local verification statements describe their named versions, not the current interface or current release evidence.
+
 # BLACKICE 2.33.14: workspace navigation and restart recovery
 
 See [RELEASE-NOTES-2.33.14.md](RELEASE-NOTES-2.33.14.md) for the workspace navigation fix, history refresh recovery, interface diagnostics and explicit native restart force option. Exact source and installer verification belong to the matching release evidence.

@@ -1,0 +1,4 @@
+.next-settings-sections{display:flex;flex-wrap:wrap;gap:7px;position:sticky;top:-25px;z-index:2;padding:10px 0;margin:0 0 15px;background:#0b121b}
+.next-settings-sections [aria-selected=true]{background:#315771;border-color:#7cabc4}
+[data-workspace=settings] [role=tabpanel]{min-width:0}
+[data-workspace=settings] [role=tabpanel] textarea{resize:vertical;max-width:100%}

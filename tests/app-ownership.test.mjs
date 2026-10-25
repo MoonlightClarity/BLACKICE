@@ -28,6 +28,9 @@ async function fixture(api) {
     '/editor-model.mjs': { WorkflowHistory: class { reset() {} record() {} }, diagnoseWorkflow:()=>[], fitWorkflow() {}, renderMarkdown: value => value },
     '/mission-model.mjs': missionModel, '/reasoning-model.mjs':reasoningModel, '/run-state-model.mjs': runState, '/context-ui.mjs': {}, '/task-state-ui.mjs': {}, '/svg-preview.mjs': {}, '/artifact-ui.mjs': {}, '/prompts-ui.mjs': {}, '/task-title.mjs':taskTitleModel, '/repeat-task-model.mjs':repeatTaskModel,
     '/clipboard.mjs': clipboardModel, '/conversation-search.mjs': conversationSearchModel, '/icon-symbols.mjs': iconSymbolsModel, '/workspace-integrations.mjs': workspaceIntegrationModel, '/api-client.mjs': { createApiClient: () => async (url, method, body) => { calls.push({ url, method, body }); return api(url, method, body); } },
+    '/run-index-client.mjs':{createRunIndexClient:()=>({read:async()=>[],close(){},usingWorker:false})},
+    '/renderer-scheduler.mjs':{createRenderThrottle:()=>({request(fn){fn();},cancel(){},flush(){}})},
+    '/run-index-model.mjs':{reconcileRunIndex:(old,summary)=>summary},
   };
   const context = vm.createContext({ __modules: modules, __selection: { runId: 'original', forceNew: false }, structuredClone, crypto: webcrypto,
     document: { querySelector:()=>null }, localStorage: { setItem() {} }, requestAnimationFrame() {}, setTimeout: () => 1, clearTimeout() {}, queueMicrotask, console,

@@ -301,9 +301,12 @@ test('Observe mounts application sessions without a selected task and leaving ca
   const elements = new Map(), basic = () => ({ innerHTML: '', textContent: '', value: '', hidden: false, classList: { add() {}, toggle() {} }, querySelector: () => null, querySelectorAll: () => [], addEventListener() {}, removeEventListener() {}, isConnected: true });
   const element = key => { if (!elements.has(key)) elements.set(key, basic()); return elements.get(key); }, mount = { ...basic(), hidden: false, querySelector: element, contains: () => false };
   const gate = deferred(), calls = [], ui = initObserveUI({ mount, getSnapshot: () => ({ runs: [], currentRun: null }), api: async (route, options) => { calls.push({ route, signal: options.signal }); return route === '/api/application-sessions/status' ? gate.promise : { available: false }; } }); t.after(() => ui.destroy());
-  ui.enter(); await flush(); await ui.selectSurface('applications'); await flush(); assert.equal(element('#observe-content').hidden, true); assert.match(element('#observe-application-sessions').innerHTML, /Application sessions/); assert.match(mount.innerHTML, /id="observe-application-sessions"/);
-  const native = calls.find(call => call.route === '/api/application-sessions/status'); assert.ok(native); ui.leave(); assert.equal(native.signal.aborted, true); assert.equal(element('#observe-application-sessions').innerHTML, '');
-  gate.resolve(status([session('late-private-app')])); await flush(); assert.equal(element('#observe-application-sessions').innerHTML, ''); assert.equal(calls.length, 2); assert.ok(!calls.some(call => call.route.endsWith('/action')));
+  ui.enter(); await flush(); await ui.selectSurface('applications'); await flush(); assert.equal(element('#observe-content').hidden, true); assert.match(element('#observe-application-sessions').innerHTML, /Native applications/); assert.match(mount.innerHTML, /id="observe-application-sessions"/);
+  assert.ok(!calls.some(call => call.route === '/api/application-sessions/status'), 'The retired private-desktop broker is not used.');
+  ui.leave();assert.equal(element('#observe-content').hidden,true);
+  gate.resolve(status([session('late-private-app')])); await flush();
+  assert.ok(!calls.some(call => call.route === '/api/application-sessions/status' || call.route.endsWith('/action')));
+  assert.match(element('#observe-application-sessions').innerHTML, /Native applications/);
 });
 
 

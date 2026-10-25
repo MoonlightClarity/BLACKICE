@@ -79,6 +79,14 @@ test('native popup navigation follows its selected parent through the router and
   assert.equal(redirected.tabId, child.id); assert.equal(redirected.url, 'https://site.example.test/feed');
 });
 
+test('saved-tab selection cannot dispatch to an external browser adapter', async () => {
+  const independent = new FakeDriver(['contained']), firefox = new FakeDriver(['external']);
+  const router = new BrowserRouter({ independent, firefox });
+  await assert.rejects(router.perform({ action: 'tab_select', browser: 'firefox', tabId: 'firefox:external' }), { code: 'BROWSER_CONTAINED_ONLY' });
+  assert.equal(independent.calls.length, 0); assert.equal(firefox.calls.length, 0);
+  await router.close();
+});
+
 test('a native task popup follows the observed task without changing another owner selection', async t => {
   const { driver, router, popup } = await nativePopupFixture(t);
   const owner = { taskId: 'task', runId: 'run', nodeId: 'agent' }, other = { taskId: 'other', runId: 'other-run', nodeId: 'other-agent' };

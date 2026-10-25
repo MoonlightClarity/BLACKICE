@@ -1,0 +1,21 @@
+.next-identity-settings { min-width: 0; }
+.next-identity-settings .next-identity-tabs { display: flex; gap: .5rem; margin: 1rem 0; }
+.next-identity-settings .next-identity-tabs [aria-selected="true"] { background: #1b2d40; color: #fff; border-color: var(--accent); }
+.next-identity-settings .next-identity-heading { display: flex; justify-content: space-between; align-items: start; gap: 1rem; }
+.next-identity-settings h3 { margin: 0; }
+.next-identity-settings .next-identity-path { overflow-wrap: anywhere; font-size: .8rem; color: var(--muted); }
+.next-identity-settings .next-identity-content { display: block; box-sizing: border-box; width: 100%; min-height: 17rem; resize: vertical; font-family: ui-monospace, Consolas, monospace; line-height: 1.55; }
+.next-identity-settings .next-identity-save-row { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-top: .75rem; }
+.next-identity-settings .next-identity-save-row p { flex: 1 1 18rem; }
+.next-identity-settings .next-identity-notice { min-height: 1.5em; overflow-wrap: anywhere; }
+.next-identity-settings .next-identity-notice[data-error="true"], .next-identity-settings [data-error="true"], .next-identity-settings .next-identity-warning { color: #ffb9ae; }
+.next-identity-settings .next-identity-conflict { border: 1px solid var(--line); border-radius: .5rem; padding: .75rem; margin-bottom: 1rem; }
+.next-identity-settings .next-identity-history { margin-top: 1rem; }
+.next-identity-settings .next-identity-history ol { list-style: none; padding: 0; margin: 0 0 .75rem; }
+.next-identity-settings .next-identity-version { display: flex; justify-content: space-between; align-items: center; gap: 1rem; border-top: 1px solid var(--line); padding: .75rem 0; }
+.next-identity-settings .next-identity-version small { display: block; color: var(--muted); margin-top: .25rem; }
+.next-identity-settings #next-identity-recover { margin: 0 .75rem .75rem 0; }
+@media (max-width: 620px) {
+  .next-identity-settings .next-identity-heading, .next-identity-settings .next-identity-version { flex-wrap: wrap; }
+  .next-identity-settings .next-identity-content { min-height: 14rem; }
+}

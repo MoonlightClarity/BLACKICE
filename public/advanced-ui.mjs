@@ -13,10 +13,11 @@ export function operationLimitsFromDraft(values,{previousEndAt=null}={}){
  return{maxIterations,runForSeconds,endAt};
 }
 
-export function initAdvancedUI({api,showModal,closeModal,toast,escape,icon,getWorkflow,getCwd,getModels,getTaskDefaults=()=>({}),onWorkflow,onOpenRun,captureOwnership=()=>null,ownsOwnership=()=>true,createPlanUI=initTaskPlanUI}){
- const $=selector=>document.querySelector(selector),renderedOperations=new WeakMap(),scheduleDrafts=new Map();let swarmPreviewUI;let snapshot,busy=null,timer,modalIntent=0,refreshIntent=0,pendingRefresh=null,jobFilter='all',deploymentFilter='',jobLimit=40,operationsSection='schedules',refreshError='';
- const capture=()=>({modal:$('#modal-root .modal'),view:captureOwnership(),intent:modalIntent});
- const ownsModal=owner=>owner.intent===modalIntent&&owner.modal===$('#modal-root .modal');
+export function initAdvancedUI({api,showModal,closeModal,toast,escape,icon,getWorkflow,getCwd,getModels,getTaskDefaults=()=>({}),onWorkflow,onOpenRun,getTasksMount=()=>null,captureOwnership=()=>null,ownsOwnership=()=>true,createPlanUI=initTaskPlanUI}){
+ const $=selector=>document.querySelector(selector),renderedOperations=new WeakMap(),scheduleDrafts=new Map();let swarmPreviewUI;let snapshot,busy=null,timer,modalIntent=0,refreshIntent=0,pendingRefresh=null,jobFilter='all',deploymentFilter='',jobLimit=40,operationsSection='schedules',refreshError='',operationsHome='modal';
+ const currentSurface=()=>{const dialog=$('#modal-root .modal');if(dialog)return dialog;const tasks=getTasksMount();return tasks&&!tasks.hidden&&tasks.contains($('#operations-view'))?tasks:null;};
+ const capture=()=>({modal:currentSurface(),view:captureOwnership(),intent:modalIntent});
+ const ownsModal=owner=>owner.intent===modalIntent&&owner.modal===currentSurface();
  const owns=owner=>ownsModal(owner)&&ownsOwnership(owner.view);
  const isBusy=()=>Boolean(busy&&ownsModal(busy));
  const header=(title,actions='')=>`<div class="modal-header"><div class="modal-title"><h2>${escape(title)}</h2></div>${actions}<button class="icon-button" data-action="close-modal" aria-label="Close dialog">${icon('close',16)}</button></div>`;
@@ -75,7 +76,19 @@ export function initAdvancedUI({api,showModal,closeModal,toast,escape,icon,getWo
   catch(error){if(!current())return;refreshError=`Updates unavailable. Displaying the last loaded receipts. ${error.message}`;if(snapshot)renderOperations();else view.innerHTML=`<p id="operations-error" role="alert">Could not load schedules. ${escape(error.message)}</p><button class="button" data-op="refresh">Try again</button>`;if(!snapshot)view.onclick=event=>{if(event.target.closest('[data-op="refresh"]'))return refresh().catch(()=>{});};if(!silent)toast(error.message,true);}
   finally{if(pendingRefresh===pending)pendingRefresh=null;}
  }
- async function openOperations(){clearInterval(timer);modalIntent++;snapshot=null;refreshError='';showModal('operations',header('Schedules & cronjobs')+coordinationNavigation('schedules')+'<div id="operations-view" class="advanced-panel"></div>',true);$('#modal-root .modal')?.classList.add('advanced-modal');const owner=capture();await refresh();if(!owns(owner))return;timer=setInterval(()=>{if(!owns(owner)||!$('#operations-view'))return clearInterval(timer);if(!isBusy())return refresh({silent:true,background:true}).catch(()=>{});},3000);}
+ async function openOperations({embedded=operationsHome==='workspace'}={}){
+  clearInterval(timer);modalIntent++;snapshot=null;refreshError='';operationsHome=embedded?'workspace':'modal';
+  if(embedded){
+   const mount=getTasksMount();if(!mount)throw Error('Tasks workspace is unavailable.');
+   closeModal({restoreFocus:false});
+   mount.innerHTML='<header class="tasks-workspace-heading"><h1>Tasks</h1><p>Scheduled jobs, recurring tasks, and their execution history.</p></header><div id="operations-view" class="advanced-panel"></div>';
+  } else {
+   showModal('operations',header('Schedules & cronjobs')+coordinationNavigation('schedules')+'<div id="operations-view" class="advanced-panel"></div>',true);
+   $('#modal-root .modal')?.classList.add('advanced-modal');
+  }
+  const owner=capture();await refresh();if(!owns(owner))return;
+  timer=setInterval(()=>{if(!owns(owner)||!$('#operations-view'))return clearInterval(timer);if(!isBusy())return refresh({silent:true,background:true}).catch(()=>{});},3000);
+ }
  function deployWorkflow(){return editDeployment(null);}
  function openSchedule(seed){return editDeployment(null,{standalone:true,seed:seed?.repeatTask===true?seed:null});}
  async function editDeployment(existing,{standalone=false,seed=null}={}){
@@ -111,7 +124,7 @@ export function initAdvancedUI({api,showModal,closeModal,toast,escape,icon,getWo
     <label class='field'><span class='field-label'>Type of work</span><select name='pattern'><option value='research'>Research or analysis</option><option value='delivery'>Build or implement</option></select></label>
     <label class='field'><span class='field-label'>Team name (optional)</span><input name='name' maxlength='100' placeholder='Uses the first line of your goal'></label>
     <p class='schedule-note' id='swarm-autonomy-note'></p>
-    <details class='swarm-scopes'><summary>Worker roles and permissions</summary><p class='schedule-note'>Defaults assign one writer for implementation work and leave other specialists read-only. Edit only if you need custom scopes.</p><div id='swarm-assignment-list'></div></details>
+    <details class='swarm-scopes'><summary>Worker assignments</summary><p class='schedule-note'>Describe each worker’s scope, required inputs, expected result, and completion check.</p><div id='swarm-assignment-list'></div></details>
     <details class='swarm-plan-preview-disclosure'><summary>Preview the shared plan</summary><div id='swarm-plan-preview' aria-label='Swarm plan preview'></div></details>
   </details>
   <p class='schedule-note'>Working folder: ${escape(getCwd()||'Not configured')}. The result will open in Chat. Starting will run the chosen workers and a coordinator.</p>
@@ -120,9 +133,9 @@ export function initAdvancedUI({api,showModal,closeModal,toast,escape,icon,getWo
  <div class='modal-footer'><button type='button' class='button' data-action='projects'>Saved swarms</button><button type='submit' class='button primary'>Start swarm</button></div>
 </form>`);
   const form=$('#swarm-form'),value=name=>form.elements.namedItem(name)?.value,requestId=crypto.randomUUID(),workflowId='swarm-'+requestId;let pattern=value('pattern')||'research',count=Number(value('members'))||3,assignments=swarmAssignments({members:count,pattern});const assignmentDrafts=new Map([[pattern,new Map(assignments.map(item=>[item.id,item]))]]);
-  const readAssignments=()=>{for(const row of form.querySelectorAll('[data-swarm-assignment]')){const item=assignments.find(item=>item.id===row.dataset.swarmAssignment);if(!item)continue;for(const field of ['scope','result','doneWhen'])item[field]=row.querySelector(`[data-assignment-field="${field}"]`).value;item.inputs=row.querySelector('[data-assignment-field="inputs"]').value.split('\n').map(line=>line.trim()).filter(Boolean);item.canWrite=row.querySelector('[data-assignment-field="canWrite"]').checked;}};
+  const readAssignments=()=>{for(const row of form.querySelectorAll('[data-swarm-assignment]')){const item=assignments.find(item=>item.id===row.dataset.swarmAssignment);if(!item)continue;for(const field of ['scope','result','doneWhen'])item[field]=row.querySelector(`[data-assignment-field="${field}"]`).value;item.inputs=row.querySelector('[data-assignment-field="inputs"]').value.split('\n').map(line=>line.trim()).filter(Boolean);}};
   function renderAssignments(){
-    $('#swarm-assignment-list').innerHTML=assignments.map(item=>`<details class="swarm-assignment" data-swarm-assignment="${escape(item.id)}"><summary><strong>${escape(item.name)}</strong><span>${item.canWrite?'May edit its scope':'Read only'}</span></summary><label class="field"><span class="field-label">Work scope · include owned paths for file edits</span><textarea data-assignment-field="scope" maxlength="3000" rows="3">${escape(item.scope)}</textarea></label><label class="field"><span class="field-label">Required inputs · one per line</span><textarea data-assignment-field="inputs" rows="2">${escape(item.inputs.join('\n'))}</textarea></label><label class="field"><span class="field-label">Expected result</span><textarea data-assignment-field="result" maxlength="1000" rows="2">${escape(item.result)}</textarea></label><label class="field"><span class="field-label">Done when</span><textarea data-assignment-field="doneWhen" maxlength="1000" rows="2">${escape(item.doneWhen)}</textarea></label><label class="swarm-write-scope"><input type="checkbox" data-assignment-field="canWrite"${item.canWrite?' checked':''}>May edit files in this scope</label></details>`).join('');
+    $('#swarm-assignment-list').innerHTML=assignments.map(item=>`<details class="swarm-assignment" data-swarm-assignment="${escape(item.id)}"><summary><strong>${escape(item.name)}</strong><span>${escape(item.role)}</span></summary><label class="field"><span class="field-label">Work scope</span><textarea data-assignment-field="scope" maxlength="3000" rows="3">${escape(item.scope)}</textarea></label><label class="field"><span class="field-label">Required inputs · one per line</span><textarea data-assignment-field="inputs" rows="2">${escape(item.inputs.join('\n'))}</textarea></label><label class="field"><span class="field-label">Expected result</span><textarea data-assignment-field="result" maxlength="1000" rows="2">${escape(item.result)}</textarea></label><label class="field"><span class="field-label">Done when</span><textarea data-assignment-field="doneWhen" maxlength="1000" rows="2">${escape(item.doneWhen)}</textarea></label></details>`).join('');
     $('#swarm-autonomy-note').textContent=pattern==='delivery'?'The implementation owner starts immediately. Independent review branches inspect in parallel, then the coordinator integrates and checks the result.':'Independent branches investigate in parallel. The coordinator synthesizes the checked evidence after their handoffs.';
   }
   function preview(){

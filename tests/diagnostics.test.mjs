@@ -191,3 +191,52 @@ test('restart and window lifecycle failures survive logging and reopening withou
   assert.doesNotMatch(JSON.stringify(snapshot), /PRIVATE_/);
   assert.doesNotMatch(await fs.readFile(path.join(directory, 'events.0.jsonl'), 'utf8'), /PRIVATE_/);
 });
+
+test('startup phase diagnostics require fixed phases and retain only bounded timing fields across restart', async t => {
+  const { store, dataDir, directory } = await harness(t);
+  const phases = ['browser', 'history', 'conversations', 'direct-jobs', 'remote-route', 'local-harness', 'window'];
+  for (const [index, phase] of phases.entries()) {
+    assert.equal(await store.record({ component: 'system', event: 'startup_phase', phase, durationMs: index ? 86_400_000 : 0,
+      outcome: index % 2 ? 'failed' : 'ready', level: index % 2 ? 'error' : 'info',
+      code: 'OK', status: 200, state: 'running', reason: 'crashed', exitCode: 1,
+      label: 'PRIVATE_LABEL', path: 'C:\\PRIVATE_PROFILE', url: 'https://PRIVATE_URL.example/', message: 'PRIVATE_ERROR', runId: 'PRIVATE_ID', content: 'PRIVATE_CONTENT' }), true);
+  }
+  // A normal server ready remains distinct and cannot accidentally acquire phase fields.
+  await store.record({ component: 'server', event: 'ready', phase: 'history', durationMs: 123, outcome: 'ready' });
+  const snapshot = await store.snapshot();
+  assert.equal(snapshot.events.length, 8);
+  for (const event of snapshot.events.slice(0, 7)) {
+    assert.deepEqual(Object.keys(event).sort(), ['at', 'component', 'durationMs', 'event', 'level', 'outcome', 'phase'].sort());
+    assert.equal(event.event, 'startup_phase');
+  }
+  assert.deepEqual(snapshot.events.at(-1), { at: snapshot.events.at(-1).at, component: 'server', event: 'ready', level: 'info' });
+  assert.doesNotMatch(JSON.stringify(snapshot), /PRIVATE_/);
+  assert.doesNotMatch(await fs.readFile(path.join(directory, 'events.0.jsonl'), 'utf8'), /PRIVATE_/);
+  await store.close();
+  const reopened = new DiagnosticsStore({ dataDir }); t.after(() => reopened.close());
+  assert.deepEqual((await reopened.snapshot()).events, snapshot.events);
+});
+
+test('malformed or arbitrary startup labels are dropped rather than stored as partial events', async t => {
+  const { store } = await harness(t);
+  const base = { component: 'system', event: 'startup_phase', phase: 'browser', durationMs: 4, outcome: 'ready' };
+  const invalid = [
+    { phase: undefined }, { phase: 'PRIVATE_LABEL' }, { phase: 'https://PRIVATE_URL.example/' }, { phase: { label: 'browser' } },
+    { durationMs: undefined }, { durationMs: -1 }, { durationMs: 0.5 }, { durationMs: 86_400_001 }, { durationMs: Infinity }, { durationMs: NaN }, { durationMs: '4' },
+    { outcome: undefined }, { outcome: 'PRIVATE_OUTCOME' }, { outcome: 'running' },
+  ];
+  for (const patch of invalid) assert.equal(await store.record({ ...base, ...patch }), false);
+  assert.equal(await store.record({ ...base, get phase() { throw Error('PRIVATE_GETTER'); } }), false);
+  assert.equal((await store.snapshot()).events.length, 0);
+  assert.equal(store.status().droppedEvents, invalid.length + 1);
+});
+
+test('reopening startup timing logs revalidates phases and strips hostile payloads', async t => {
+  const { store, directory } = await harness(t); await fs.mkdir(directory);
+  const timed = saved({ component: 'system', event: 'startup_phase', phase: 'remote-route', durationMs: 431, outcome: 'failed', message: 'PRIVATE_MESSAGE', ids: ['PRIVATE_ID'] });
+  await fs.writeFile(path.join(directory, 'events.0.jsonl'), [timed, { ...timed, phase: 'PRIVATE_PHASE' }, { ...timed, durationMs: -3 }, { ...timed, outcome: 'PRIVATE_OUTCOME' }].map(value => JSON.stringify(value)).join('\n'));
+  const snapshot = await store.snapshot();
+  assert.equal(snapshot.events.length, 1); assert.equal(snapshot.diagnostics.malformedRecords, 3);
+  assert.deepEqual(snapshot.events[0], { at: timed.at, component: 'system', event: 'startup_phase', level: 'info', phase: 'remote-route', durationMs: 431, outcome: 'failed' });
+  assert.doesNotMatch(JSON.stringify(snapshot), /PRIVATE_/);
+});

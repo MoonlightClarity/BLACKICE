@@ -113,17 +113,17 @@ test('Observe cancellation locks and late errors stay with the task that request
 test('only the selected surface is visible and polling, and surface changes perform no app or page mutations', async t => {
   const f = fixture(t); await f.enter(); assert.equal(f.pane('browser').hidden, false); assert.equal(f.pane('applications').hidden, true); assert.equal(f.pane('workflow').hidden, true);
   assert.deepEqual(f.calls.map(call => [call.route, call.body?.action]), [['/api/browser/status?view=contained', undefined], ['/api/browser/action', 'screenshot']]);
-  await f.select('applications'); assert.equal(f.pane('browser').hidden, true); assert.equal(f.pane('applications').hidden, false); assert.match(f.pane('applications').innerHTML, /Actual private editor text/);
+  await f.select('applications'); assert.equal(f.pane('browser').hidden, true); assert.equal(f.pane('applications').hidden, false); assert.match(f.pane('applications').innerHTML, /Native applications/); assert.doesNotMatch(f.pane('applications').innerHTML, /Actual private editor text|application-session-text/);
   const browserCalls = f.calls.filter(call => call.route.startsWith('/api/browser')).length; f.advance(6000); f.ui.update(); await flush(); assert.equal(f.calls.filter(call => call.route.startsWith('/api/browser')).length, browserCalls);
   await f.select('workflow'); assert.equal(f.pane('workflow').hidden, false); assert.equal(f.pane('applications').hidden, true); const count = f.calls.length; f.advance(6000); f.ui.update(); await flush(); assert.equal(f.calls.length, count);
   assert.ok(f.calls.filter(call => call.body).every(call => ['inspect', 'screenshot'].includes(call.body.action)), 'view switching cannot start, close, edit, navigate, or show an application or page');
 });
 
-test('browser and application drafts plus each surface scroll position survive switching', async t => {
+test('browser drafts and per-surface scroll positions survive switching to native Windows applications', async t => {
   const f = fixture(t); await f.enter(); f.element('observe-browser-url').value = 'https://draft.test/unfinished'; await f.browserAction('inspect'); f.element('observe-browser-text').value = 'Unsent browser field'; f.mount.querySelector('.observe-scroll').scrollTop = 95;
-  await f.select('applications'); f.element('application-session-name').value = 'Unstarted session draft'; f.element('application-session-text').value = 'Unapplied private editor draft'; f.element('application-session-save-title').value = 'Unsaved version title'; f.mount.querySelector('.observe-scroll').scrollTop = 145;
+  await f.select('applications'); assert.match(f.pane('applications').innerHTML,/Native applications/); f.mount.querySelector('.observe-scroll').scrollTop = 145;
   await f.select('browser'); assert.equal(f.element('observe-browser-url').value, 'https://draft.test/unfinished'); assert.equal(f.element('observe-browser-text').value, 'Unsent browser field'); assert.equal(f.mount.querySelector('.observe-scroll').scrollTop, 95);
-  await f.select('applications'); assert.equal(f.element('application-session-name').value, 'Unstarted session draft'); assert.equal(f.element('application-session-text').value, 'Unapplied private editor draft'); assert.equal(f.element('application-session-save-title').value, 'Unsaved version title'); assert.equal(f.mount.querySelector('.observe-scroll').scrollTop, 145);
+  await f.select('applications'); assert.equal(f.mount.querySelector('.observe-scroll').scrollTop, 145); assert.equal(f.element('application-session-text'),null,'Retired private desktop editor must not reappear');
   assert.equal(f.calls.filter(call => call.body && ['create', 'control', 'close', 'open', 'fill'].includes(call.body.action)).length, 0);
 });
 
@@ -135,11 +135,18 @@ test('switching away aborts a pending browser observation and a late response ca
   held = false; await f.select('browser'); assert.match(f.pane('browser').innerHTML, /Captured contained browser page/); assert.equal(f.element('observe-browser-url').value, 'https://draft.test/while-loading'); assert.equal(f.pane('browser').attrs['aria-busy'], 'false');
 });
 
-test('an accepted native edit is never replayed or closed when the view switches while its receipt is pending', async t => {
-  const gate = deferred(), f = fixture(t, { handle: call => call.body?.action === 'control' ? gate.promise : undefined }); await f.enter(); await f.select('applications'); f.element('application-session-text').value = 'Exactly one accepted edit';
-  const accepted = f.appAction('set-value'); await flush(); const mutation = f.calls.find(call => call.body?.action === 'control'); assert.ok(mutation);
-  await f.select('browser'); assert.equal(mutation.signal.aborted, true, 'only the HTTP observation is cancelled by changing panes'); gate.resolve(appObservation()); await accepted; await flush();
-  await f.select('applications'); assert.equal(f.calls.filter(call => call.body?.action === 'control').length, 1); assert.equal(f.calls.filter(call => call.body?.action === 'create' || call.body?.action === 'close').length, 0); assert.equal(f.element('application-session-text').value, 'Exactly one accepted edit');
+test('switching native application surfaces never uses or replays the retired private-desktop editor API', async t => {
+  const f = fixture(t, { handle: call => {
+    if (call.route.startsWith('/api/application-sessions/')) throw Error('Retired private desktop API was called');
+  }});
+  await f.enter();
+  await f.select('applications');
+  assert.match(f.pane('applications').innerHTML,/Native applications/);
+  assert.equal(f.element('application-session-text'),null,'Private text editing is not part of the native Windows host');
+  await f.select('browser');
+  await f.select('applications');
+  assert.equal(f.calls.some(call=>call.route.startsWith('/api/application-sessions/')),false);
+  assert.equal(f.calls.filter(call=>['control','create','close','fill'].includes(call.body?.action)).length,0);
 });
 
 test('workflow observation pauses while hidden and returns with captured evidence and an explicit gap', async t => {
@@ -155,10 +162,10 @@ test('arrow, Home, and End keys activate and focus tabs without launching surfac
   assert.equal(await f.key('workflow', 'Enter'), false); assert.ok(f.calls.filter(call => call.body).every(call => ['inspect', 'screenshot'].includes(call.body.action)));
 });
 
-test('choosing a saved task reveals Workflow and full Activity leave still releases private preview buffers', async t => {
+test('choosing a saved task reveals Workflow and Activity leave suspends native/browser observation without closing applications', async t => {
   const f = fixture(t, { run: { ...activeRun(), status: 'completed' } }); await f.enter(); await f.select('applications'); const picker = f.element('observe-run'); picker.value = 'real-task'; await f.mount.listeners.get('change')({ target: picker });
   assert.equal(f.pane('workflow').hidden, false); assert.deepEqual(f.opened, [['real-task', 'observe']]); assert.match(f.element('observe-workflow').innerHTML, /Actual task workflow/);
-  await f.select('applications'); f.ui.leave(); assert.equal(f.pane('applications').innerHTML, ''); assert.equal(f.pane('browser').innerHTML, ''); const count = f.calls.length; f.advance(20000); f.ui.update(); await flush(); assert.equal(f.calls.length, count); assert.ok(!f.calls.some(call => call.body?.action === 'close'));
+  await f.select('applications'); f.ui.leave(); assert.match(f.pane('applications').innerHTML, /Native applications/); assert.equal(f.pane('browser').innerHTML, ''); const count = f.calls.length; f.advance(20000); f.ui.update(); await flush(); assert.equal(f.calls.length, count); assert.ok(!f.calls.some(call => call.body?.action === 'close'));
 });
 
 

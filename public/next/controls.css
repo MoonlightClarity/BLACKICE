@@ -1,0 +1,49 @@
+/* Keep the collapsed control and its native menu in the same dark palette.
+ * Retain platform arrows, keyboard handling and popup behavior. */
+select {
+  color-scheme: dark;
+  background-color: var(--next-control-background, #0e1926);
+  color: var(--next-control-foreground, #e0e8f2);
+}
+
+select option,
+select optgroup {
+  color-scheme: dark;
+  background-color: var(--next-control-menu-background, #132030);
+  color: var(--next-control-foreground, #e0e8f2);
+}
+
+select option:checked {
+  background-color: var(--next-control-selection-background, #315771);
+  color: var(--next-control-selection-foreground, #f1f7fc);
+}
+
+select:disabled,
+select option:disabled,
+select optgroup:disabled,
+select optgroup:disabled option {
+  color: var(--next-control-muted, #90a4b8);
+}
+
+@media (forced-colors: active) {
+  select,
+  select option,
+  select optgroup {
+    color-scheme: light dark;
+    forced-color-adjust: auto;
+    background-color: Canvas;
+    color: CanvasText;
+  }
+
+  select option:checked {
+    background-color: Highlight;
+    color: HighlightText;
+  }
+
+  select:disabled,
+  select option:disabled,
+  select optgroup:disabled,
+  select optgroup:disabled option {
+    color: GrayText;
+  }
+}

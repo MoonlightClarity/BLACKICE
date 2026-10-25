@@ -25,6 +25,8 @@ files:
   - CHATGPT-CONNECTOR.md
   - desktop/**/*.mjs
   - desktop/**/*.cjs
+  - desktop/**/*.cs
+  - desktop/**/*.ps1
   - desktop/browser-compatibility/**/*
   - '!desktop/build-icon.mjs'
   - CHAT-MODE.md
@@ -39,7 +41,14 @@ files:
   - RELEASE-NOTES-2.33.11.md
   - RELEASE-NOTES-2.33.12.md
   - RELEASE-NOTES-2.33.13.md
-  - RELEASE-NOTES-2.33.14.md
+  - RELEASE-NOTES-2.34.0.md
+  - RELEASE-NOTES-2.34.1.md
+  - RELEASE-NOTES-2.34.2.md
+  - RELEASE-NOTES-2.34.3.md
+  - RELEASE-NOTES-2.34.4.md
+  - RELEASE-NOTES-2.35.0.md
+  - RELEASE-NOTES-2.35.1.md
+  - RELEASE-NOTES-2.35.2.md
   - PLANNING-ORGANIZATION.md
   - REMOTE-ACCESS.md
   - BROWSER-PROTECTION.md

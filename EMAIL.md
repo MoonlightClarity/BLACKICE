@@ -1,6 +1,10 @@
-# Email: browser sign-in, background reading and local drafts
+# Email integration (retired)
 
-BLACKICE provides an agent-facing email adapter for **Himalaya 2.2.1**, together with a local draft workspace. It supports listing, searching, and reading an explicitly configured account without opening a terminal or mail application. Drafts are saved locally as `.eml` files. Sending and uploading drafts to a provider are not implemented.
+> **Archived documentation.** The Thunderbird/Himalaya integration and BLACKICE email workspace are retired in the current source build. Use **Activity → Browser** for email; the standard `/api/email` routes return `410 EMAIL_RETIRED`. Historical `agent-email/` files and previous drafts are preserved on disk rather than automatically deleted. The instructions below describe historical implementations and are **not valid setup steps** for the current application.
+
+## Historical background
+
+Earlier BLACKICE versions supported a Himalaya mailbox adapter, local drafts, and subsequently optional sending. The following sections are kept for reference only.
 
 ## Setup and status
 

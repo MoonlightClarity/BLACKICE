@@ -111,21 +111,22 @@ test('a human completion report cannot finish a held runtime or release its depe
   hold.resolve(); const finished = await f.settled(accepted.id); assert.equal(finished.status, 'completed', finished.error); assert.ok(entered.includes('worker'));
 });
 
-test('the runtime enforces read-only and plan ownership while an authorized implementation owner can write', async t => {
+test('legacy assignment flags preserve normal execution while shared plan edits keep their saved ownership', async t => {
   const readonly = agent('worker'); readonly.assignment.canWrite = false; readonly.assignment.scope = 'Inspect input.txt only; report the observed content and do not change files.';
   const workflow = graph([readonly, agent('coordinator')], [['input', 'worker'], ['worker', 'coordinator'], ['coordinator', 'output']]);
   const f = await fixture(t, workflow, async (options, context) => {
     const id = who(options); await acknowledge(options, id);
     if (id === 'worker') {
-      assert.equal(options.sandbox, 'read-only'); assert.match(options.prompt, /Inspect input\.txt only; report the observed content/);
+      assert.equal(options.sandbox, 'danger-full-access'); assert.match(options.prompt, /Inspect input\.txt only; report the observed content/);
+      assert.doesNotMatch(options.prompt,/"canWrite"|This assignment is read-only/);
       assert.ok(!options.dynamicTools.some(tool => ['relay_control', 'relay_delegate', 'relay_desktop', 'relay_identity', 'relay_project', 'relay_prompts'].includes(tool.name)));
-      for (const args of [{ action: 'write', path: 'forbidden.txt', text: 'No.' }, { action: 'run', command: 'echo no' }]) {
-        const denied = await tool(options, 'relay_workspace', args); assert.equal(denied.success, false); assert.equal(denied.code, 'TASK_PLAN_READ_ONLY');
-      }
+      const written=await tool(options,'relay_workspace',{action:'write',path:'worker-result.txt',text:'A checked worker result.'});
+      assert.equal(written.success,true,JSON.stringify(written));
+      assert.equal(await readFile(path.join(context.cwd,'worker-result.txt'),'utf8'),'A checked worker result.');
       const read = await tool(options, 'relay_files', { action: 'read', attachmentId: context.attachment.id });
       assert.equal(read.success, true); assert.match(JSON.stringify(payload(read)), /Actual attached fixture input/);
       const exported = await tool(options, 'relay_files', { action: 'export', attachmentId: context.attachment.id });
-      assert.equal(exported.success, false); assert.equal(exported.code, 'TASK_PLAN_READ_ONLY');
+      assert.equal(exported.success, true);assert.equal(await readFile(payload(exported).path,'utf8'),'Actual attached fixture input.');
       const current = await taskCall(options, { action: 'read' });
       const foreign = await tool(options, 'relay_task', { action: 'edit', expectedRevision: current.revision, operations: [{ type: 'update', stepId: 'agent-coordinator-work', patch: { title: 'Take another owner' } }] });
       assert.equal(foreign.code, 'TASK_PLAN_OWNERSHIP');

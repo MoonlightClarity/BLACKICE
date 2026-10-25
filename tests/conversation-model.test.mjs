@@ -5,6 +5,32 @@ import { PLANNING_MODES, normalizePlanningMode, planningModeDetail } from '../pu
 import { conversationReasoningChoice } from '../public/conversation-model.mjs';
 import { selectedConversationServiceTier } from '../public/conversation-model.mjs';
 
+test('metadata-only live updates reuse immutable event history without reprocessing its receipts', () => {
+  const events = [{ at: '2026-10-24T12:00:00Z', nodeId: 'agent', data: { type: 'message', text: 'Already received' } }];
+  const cached = { id: 'cached', events, nodes: { agent: { output: 'Already received' } }, status: 'running' };
+  const statusOnly = { ...cached, status: 'completed', settled: true };
+  const merged = mergeConversationRuns([cached], [statusOnly]);
+  assert.equal(merged[0].status, 'completed');
+  assert.equal(merged[0].settled, true);
+  assert.strictEqual(merged[0].events, events);
+  const withoutEvents = mergeConversationRuns([cached], [{ id: 'cached', status: 'failed' }]);
+  assert.strictEqual(withoutEvents[0].events, events);
+  assert.equal(withoutEvents[0].status, 'failed');
+});
+
+test('thousands of saved chats summarize without quadratic re-indexing on a frontend refresh', () => {
+  const runs = Array.from({ length: 2500 }, (_, index) => ({
+    id: 'performance-run-' + index, status: 'running', settled: false,
+    createdAt: new Date(1740000000000 + index * 1000).toISOString(),
+    input: { task: 'Chat ' + index }, nodes: {}, workflow: { nodes: [] },
+  }));
+  const start = performance.now(), result = conversationSummaries(runs);
+  assert.equal(result.length, runs.length);
+  assert.equal(result[0].id, runs.at(-1).id);
+  assert.equal(result.at(-1).id, runs[0].id);
+  assert.ok(performance.now() - start < 3000, 'Summarizing 2,500 chats must remain responsive on a normal desktop.');
+});
+
 test('Fast app defaults apply only to advertised new native chats and preserve explicit saved choices', () => {
   const status = { defaultModel: 'luna', runtimeSettings: { defaultServiceTier: 'fast' }, models: [{ id: 'luna', serviceTiers: [{ id: 'fast' }] }, { id: 'standard' }, { id: 'free::model', providerId: 'free', serviceTiers: [{ id: 'fast' }] }] };
   assert.equal(selectedConversationServiceTier({}, undefined, undefined, status), 'fast');

@@ -43,9 +43,9 @@ test('new identity markup is limited to presentation and keeps durable Relay ide
  const navigation=app.match(/<nav\b(?=[^>]*\brole="tablist")(?=[^>]*\baria-label="Workspace mode")[^>]*>([\s\S]*?)<\/nav>/)?.[1];
  assert.ok(navigation,'the primary workspace destinations belong to a named tablist');
  const tabs=[...navigation.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].map(([,markup,content])=>({label:content.match(/<span\b[^>]*class="[^"]*\bworkspace-tab-label\b[^"]*"[^>]*>([^<]+)<\/span>/)?.[1].trim(),attributes:Object.fromEntries([...markup.matchAll(/([\w-]+)="([^"]*)"/g)].map(([,name,value])=>[name,value]))}));
- assert.equal(tabs.length,4,'Chat, Activity, Planning and Settings are the four primary workspace tabs');
- assert.deepEqual(tabs.map(tab=>tab.attributes['data-mode']),['view','observe','planning','configure'],'primary tabs keep their stable identifiers and give Planning its own destination');
- for(const[mode,label,selected,tabIndex]of [['view','Chat','true','0'],['observe','Activity','false','-1'],['planning','Planning','false','-1'],['configure','Settings','false','-1']]){
+ assert.equal(tabs.length,5,'Chat, Activity, Planning, Tasks and Settings are the five primary classic workspace tabs');
+ assert.deepEqual(tabs.map(tab=>tab.attributes['data-mode']),['view','observe','planning','tasks','configure'],'primary tabs keep their stable identifiers and give Planning its own destination');
+ for(const[mode,label,selected,tabIndex]of [['view','Chat','true','0'],['observe','Activity','false','-1'],['planning','Planning','false','-1'],['tasks','Tasks','false','-1'],['configure','Settings','false','-1']]){
   const tab=tabs.find(tab=>tab.attributes['data-mode']===mode);assert.ok(tab,`${label} has its own mode`);assert.equal(tab.label,label);assert.equal(tab.attributes.role,'tab');assert.equal(tab.attributes['aria-selected'],selected);assert.equal(tab.attributes.tabindex,tabIndex);
  }
  const menu=app.match(/<details class="workspace-menu">([\s\S]*?)<\/details>/)?.[1];assert.ok(menu,'advanced destinations retain the named Workspace menu');

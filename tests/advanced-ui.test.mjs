@@ -6,6 +6,10 @@ const workflow=()=>({id:'workflow',name:'Independent work',nodes:[{id:'input',ty
 function fixture(t,{deployments=[],api:onApi,onWorkflow,getWorkflow,getTaskDefaults}={}){
   const previous=Object.fromEntries(['document','FormData','setInterval','clearInterval'].map(key=>[key,{present:Object.hasOwn(globalThis,key),value:globalThis[key]}])),elements=new Map(),requests=[],modals=[],messages=[],created=[],intervals=new Map();let closed=0,timer=0,view=0;
   const element=()=>{let html='';return{get innerHTML(){return html;},set innerHTML(value){html=value;this.htmlWrites++;},htmlWrites:0,hidden:false,disabled:false,textContent:'',classList:{add(){}}};};
+  const tasksMount=element(),tasksView=element();
+  tasksMount.contains=node=>node===tasksView;
+  const tasksMarkup=Object.getOwnPropertyDescriptor(tasksMount,'innerHTML');
+  Object.defineProperty(tasksMount,'innerHTML',{get(){return tasksMarkup.get.call(this);},set(value){tasksMarkup.set.call(this,value);if(value.includes('id="operations-view"'))elements.set('#operations-view',tasksView);}});
   function showModal(id,html){
     elements.clear();modals.push({id,html});elements.set('#modal-root .modal',element());
     if(id==='operations'){elements.set('#operations-view',element());elements.set('#operations-error',element());}
@@ -22,12 +26,32 @@ function fixture(t,{deployments=[],api:onApi,onWorkflow,getWorkflow,getTaskDefau
   globalThis.document={querySelector:selector=>elements.get(selector)||null};
   globalThis.FormData=class{constructor(form){this.entries=Object.entries(form.values);}[Symbol.iterator](){return this.entries[Symbol.iterator]();}};
   globalThis.setInterval=callback=>{const id=++timer;intervals.set(id,callback);return id;};globalThis.clearInterval=id=>intervals.delete(id);
-  const ui=initAdvancedUI({createPlanUI:()=>({update(){},destroy(){}}),api:async(path,method='GET',body)=>{requests.push({path,method,body});if(onApi){const value=await onApi(path,method,body);if(value!==undefined)return value;}if(path==='/api/operations')return{status:{paused:false,running:0,queued:0},deployments,jobs:[]};return{};},showModal,closeModal:()=>{closed++;elements.clear();},toast:(message,error)=>messages.push({message,error}),escape:value=>String(value??'').replace(/[<>&"]/g,char=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[char])),icon:()=>'',getWorkflow:getWorkflow||(async()=>workflow()),getCwd:()=> 'C:\\fixture',getTaskDefaults,getModels:()=>[{id:'cloud::chosen',displayName:'Chosen cloud'}],onWorkflow:async(value,context)=>{created.push(value);return onWorkflow?.(value,context);},onOpenRun(){},captureOwnership:()=>view,ownsOwnership:owner=>owner===view});
+  const ui=initAdvancedUI({createPlanUI:()=>({update(){},destroy(){}}),api:async(path,method='GET',body)=>{requests.push({path,method,body});if(onApi){const value=await onApi(path,method,body);if(value!==undefined)return value;}if(path==='/api/operations')return{status:{paused:false,running:0,queued:0},deployments,jobs:[]};return{};},showModal,closeModal:()=>{closed++;elements.clear();},toast:(message,error)=>messages.push({message,error}),escape:value=>String(value??'').replace(/[<>&"]/g,char=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[char])),icon:()=>'',getWorkflow:getWorkflow||(async()=>workflow()),getCwd:()=> 'C:\\fixture',getTaskDefaults,getTasksMount:()=>tasksMount,getModels:()=>[{id:'cloud::chosen',displayName:'Chosen cloud'}],onWorkflow:async(value,context)=>{created.push(value);return onWorkflow?.(value,context);},onOpenRun(){},captureOwnership:()=>view,ownsOwnership:owner=>owner===view});
   t.after(()=>{for(const[key,old]of Object.entries(previous))if(old.present)globalThis[key]=old.value;else delete globalThis[key];});
   const submit=form=>form.onsubmit({target:form,preventDefault(){}});
-  return{ui,elements,requests,modals,messages,created,closed:()=>closed,submit,replaceModal:showModal,navigate:()=>{view++;},poll:()=>[...intervals.values()].at(-1)?.()};
+  return{ui,elements,tasksMount,tasksView,requests,modals,messages,created,closed:()=>closed,submit,replaceModal:showModal,navigate:()=>{view++;},poll:()=>[...intervals.values()].at(-1)?.()};
 }
 
+
+test('Tasks mounts recurring schedules and job history in its own workspace, not the Planning modal',async t=>{
+  const f=fixture(t);
+  await f.ui.openOperations({embedded:true});
+  assert.match(f.tasksMount.innerHTML,/id="operations-view"/);
+  assert.match(f.tasksMount.innerHTML,/Scheduled jobs, recurring tasks/);
+  assert.match(f.tasksView.innerHTML,/Saved schedules/);
+  assert.match(f.tasksView.innerHTML,/Job history/);
+  assert.equal(f.modals.length,0);
+  assert.equal(f.requests.filter(request=>request.path==='/api/operations'&&request.method==='GET').length,1);
+});
+
+test('hidden Tasks workspace stops schedule polling instead of lagging behind Chat',async t=>{
+  const f=fixture(t);
+  await f.ui.openOperations({embedded:true});
+  const initial=f.requests.length;
+  f.tasksMount.hidden=true;
+  await f.poll();
+  assert.equal(f.requests.length,initial);
+});
 
 test('schedule manager links saved configuration to clearable job history without running work',async t=>{
  const deployments=[{id:'alpha',name:'Morning report',enabled:false,trigger:{type:'manual'},overlap:'parallel'},{id:'beta',name:'Weekly check',enabled:false,trigger:{type:'manual'},overlap:'parallel'}],jobs=[{id:'a',deploymentId:'alpha',deploymentName:'Morning report',status:'failed',attempts:[]},{id:'b',deploymentId:'beta',deploymentName:'Weekly check',status:'completed',attempts:[]}],f=fixture(t,{api:path=>path==='/api/operations'?{status:{paused:false},deployments,jobs}:undefined});
@@ -110,7 +134,16 @@ test('an uncertain swarm submission keeps the same durable run request ID on ret
 
 test('swarm form creates the exact research team within the shared-plan representation limit',async t=>{
   const f=fixture(t);f.ui.openSwarm();const modal=f.modals.at(-1),form=f.elements.get('#swarm-form');assert.match(modal.html,/name='members' type='number' min='1' max='99' step='1'/);assert.match(modal.html,/Advanced team options/);assert.match(modal.html,/Start swarm/);
-  await f.submit(form);assert.equal(f.created.length,1);const swarm=f.created[0],agents=swarm.nodes.filter(node=>node.type==='agent');assert.equal(agents.length,66);assert.equal(swarm.settings.maxParallel,65);assert.equal(agents.filter(agent=>agent.id==='coordinator').length,1);assert.ok(agents.filter(agent=>agent.id!=='coordinator').every(agent=>agent.assignment.canWrite===false&&agent.sandbox==='read-only'));assert.ok(agents.every(agent=>agent.model==='cloud::chosen'));assert.equal(f.closed(),1);
+  await f.submit(form);assert.equal(f.created.length,1);const swarm=f.created[0],agents=swarm.nodes.filter(node=>node.type==='agent');assert.equal(agents.length,66);assert.equal(swarm.settings.maxParallel,65);assert.equal(agents.filter(agent=>agent.id==='coordinator').length,1);assert.ok(agents.every(agent=>!Object.hasOwn(agent.assignment,'canWrite')&&!Object.hasOwn(agent,'sandbox')));assert.ok(agents.every(agent=>agent.model==='cloud::chosen'));assert.equal(f.closed(),1);
+});
+
+test('classic worker assignments expose four descriptive fields without permission controls',t=>{
+  const f=fixture(t);f.ui.openSwarm();
+  assert.match(f.modals.at(-1).html,/Worker assignments/);
+  assert.doesNotMatch(f.modals.at(-1).html,/roles and permissions|one writer|read.only|least.privilege|risk.ack/i);
+  const rows=f.elements.get('#swarm-assignment-list').innerHTML;
+  assert.deepEqual([...new Set([...rows.matchAll(/data-assignment-field="([^"]+)"/g)].map(match=>match[1]))].sort(),['doneWhen','inputs','result','scope']);
+  assert.doesNotMatch(rows,/canWrite|type="checkbox"|May edit|Read only|permission/i);
 });
 
 test('swarm submit is exclusive while saving and failed validation leaves its form available',async t=>{
