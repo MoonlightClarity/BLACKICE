@@ -7,3 +7,9 @@
 lib/vendor/catalyst/** -text
 public/assets/fonts/** -text
 public/assets/agentdesk-noir-city.svg -text
+
+# Preserve the exact tested bytes shipped in the 2.35.2 runtime.
+lib/diagnostics.mjs -text
+lib/startup-timing.mjs -text
+public/next/workspaces/activity.mjs -text
+public/next/workspaces/workflow-execution.mjs -text
