@@ -41,6 +41,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     state.inputOwner=key;
     view.input.value=state.drafts.get(key)||'';
     resize();
+    attachmentsUI?.reset({cancelPending:false});
   };
   const resize = () => { view.input.style.height='auto';view.input.style.height=Math.min(180,Math.max(58,view.input.scrollHeight))+'px'; };
   const showError = error => { state.broken=true;view.hint.classList.add('next-chat-error');view.hint.textContent=String(error?.message||error||'An operation failed.'); };
@@ -222,6 +223,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
         render({preserve:true});
       },
       messageLimits:state.messageLimits,
+      getAttachment:id=>attachmentsUI.getMetadata(id),
       onStop:(kind,id)=>{void runAction(kind,id);},
       onArtifact:ref=>{void artifacts.open(ref).catch(showError);} });
     if(!preserve||atBottom)view.scroll.scrollTop=view.scroll.scrollHeight;
@@ -259,6 +261,14 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     state.messageLimits=messageLimitsAfterRefresh(state.runs,runs,state.messageLimits);
     state.runs=runs;state.lastLoadedAt=Date.now();
     render({preserve:refresh});hint('Enter to send · Shift+Enter for a new line');
+    // History carries saved file IDs; resolve human-readable names without
+    // blocking the transcript or altering the files delivered to the agent.
+    if(runs.some(run=>Array.isArray(run.attachmentIds)&&run.attachmentIds.length)) {
+      void attachmentsUI.refresh().then(()=>{
+        if(state.active&&!state.destroyed&&state.dataController===controller&&!controller.signal.aborted)
+          render({preserve:true});
+      });
+    }
     try { localStorage.setItem('blackice.next.selected',id); } catch {}
     if(!state.markdown) void loadMarkdown();
   }

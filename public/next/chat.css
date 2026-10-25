@@ -24,4 +24,8 @@
 .next-chat #next-chat-attachments .attachment-chip small { color: #93b3c9; }
 .next-chat #next-chat-attachments .attachment-chip > button { background: transparent; color: #b6cfe2; }
 .next-chat #next-chat-attachments .attachments-drop-overlay { background: #213c51; border-color: #769db6; color: #e3f0f9; }
+/* Keep the complete filename visible on the sent message, including long names. */
+.next-message-files { display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px;margin-top:7px;max-width:85%; }
+.next-message-files-label { color:#99b6ca;font-size:10px; }
+.next-message-file { display:inline-block;max-width:100%;overflow-wrap:anywhere;white-space:normal;padding:5px 9px;border:1px solid #476781;border-radius:6px;background:#21354a;color:#e0edf7;font-size:11px;line-height:1.5; }
 @media(max-width:820px){.next-chat{grid-template-columns:215px minmax(0,1fr)}.next-chat-timeline{padding:20px 20px 30px}.next-chat-head{padding:10px 13px}.next-chat-composer-area{padding:7px 12px 13px}}@media(max-width:650px){.next-chat{grid-template-columns:1fr}.next-chat-sidebar{display:none}.next-chat[data-show-list=true] .next-chat-sidebar{display:flex;position:absolute;inset:48px 0 0;z-index:5}.next-chat[data-show-list=true] .next-chat-main{visibility:hidden}.next-chat-timeline{padding:15px}.next-chat-options{gap:5px}.next-chat-options select{max-width:100px}.next-message[data-role=user] .next-message-body{max-width:95%}}

@@ -118,7 +118,7 @@ export function paintIntroduction(view, message = '') {
   text(intro,'What would you like to work on?','h1');
   text(intro,message||'Start a new conversation, or choose saved work from the left.','p');
 }
-export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, onArtifact, onMoreMessages, messageLimits }={}) {
+export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, onArtifact, onMoreMessages, messageLimits, getAttachment }={}) {
   const {shown,hidden}=windowedRuns(runs,count), fragment=view.timeline.ownerDocument.createDocumentFragment();
   if (hidden > 0) {
     const older=text(fragment,'Show earlier responses ('+hidden+')','button','next-older');
@@ -139,11 +139,23 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
     for(const node of run.workflow?.nodes||[]){
       if(node?.id&&!nodeNames.has(node.id))nodeNames.set(node.id,node.name||'BLACKICE');
     }
-    // Suppress duplicate original prompt when a retry carries the same request.
+    // Suppress duplicate original prompt (and its files) on a same-request retry.
     if (request && !(run.retryOf && earlier && runText(earlier)===request)) {
       const user=text(section,'','article','next-message');user.dataset.role='user';
       text(user,'You','div','next-message-title');
       text(user,request,'div','next-message-body');
+      const fileIds=Array.isArray(run.attachmentIds)?[...new Set(run.attachmentIds)]:[];
+      if(fileIds.length){
+        const files=text(user,'','div','next-message-files');
+        files.setAttribute('aria-label',fileIds.length===1?'1 attached file':fileIds.length+' attached files');
+        text(files,'Attached','span','next-message-files-label');
+        for(const id of fileIds){
+          const name=getAttachment?.(id)?.name;
+          const filename=typeof name==='string'&&name.trim()?name:'Filename unavailable';
+          const chip=text(files,'📎 '+filename,'span','next-message-file');
+          chip.title=filename;
+        }
+      }
     }
     const allMessages=Array.isArray(run.precomputedMessages)?run.precomputedMessages:messagesOfRun(run);
     const {shown:messages,hidden:olderMessages}=windowedMessages(

@@ -16,6 +16,7 @@ export function projectFamily(family) {
       id:run.id,taskId:run.taskId,parentRunId:run.parentRunId,retryOf:run.retryOf,
       createdAt:run.createdAt,updatedAt:run.updatedAt,
       input:run.input,status:run.status,settled:run.settled,output:run.output,
+      attachmentIds:Array.isArray(run.attachmentIds)?run.attachmentIds.filter(id=>typeof id==='string'):[],
       workflow:{id:run.workflow?.id,name:run.workflow?.name,
         nodes:(run.workflow?.nodes||[]).map(n=>({id:n.id,type:n.type,name:n.name,model:n.model}))},
       // The worker returns bounded task metadata, never an entire state history
