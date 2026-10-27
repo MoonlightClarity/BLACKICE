@@ -17,6 +17,7 @@ export function planningDOM(t, { width = 1440, normalizeMarkup = false } = {}) {
     getAttribute(key) { return key === 'class' ? this.className : key.startsWith('data-') ? this.dataset[camel(key.slice(5))] ?? null : this.attributes.get(key) ?? null; }
     hasAttribute(key) { return this.getAttribute(key) !== null; }
     removeAttribute(key) { this.attributes.delete(key); if (key.startsWith('data-')) delete this.dataset[camel(key.slice(5))]; }
+    appendChild(item) { this.append(item); return item; }
     append(...items) { for (const item of items) { item.remove(); this.children.push(item); item.parentElement = this; } }
     insertBefore(item, reference) { item.remove(); const index = reference ? this.children.indexOf(reference) : -1; this.children.splice(index < 0 ? this.children.length : index, 0, item); item.parentElement = this; }
     remove() { if (!this.parentElement) return; const index = this.parentElement.children.indexOf(this); if (index >= 0) this.parentElement.children.splice(index, 1); this.parentElement = null; }
@@ -58,7 +59,7 @@ export function planningDOM(t, { width = 1440, normalizeMarkup = false } = {}) {
     async dispatch(type, values = {}, bubble = false) { const event = { target: this, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; }, ...values }; for (let node = this; node; node = bubble && !event.stopped ? node.parentElement : null) { for (const handler of node.listeners.get(type) || []) await handler(event); await node[`on${type}`]?.(event); } return event; }
   }
   const body = new Element('body'), head = new Element('head'), events = new Element('document'), windowEvents = new Element('window'), mount = new Element('section'); body.root = true; head.root = true; body.append(mount);
-  const document = { body, head, activeElement: null, visibilityState: 'visible', createElement: tag => new Element(tag), getElementById: id => head.querySelector(`#${id}`) || body.querySelector(`#${id}`), querySelector: selector => head.querySelector(selector) || body.querySelector(selector), addEventListener: (...args) => events.addEventListener(...args), removeEventListener: (...args) => events.removeEventListener(...args) };
+  const document = { body, head, activeElement: null, visibilityState: 'visible', createElement: tag => new Element(tag), createElementNS: (_namespace,tag) => new Element(tag), getElementById: id => head.querySelector(`#${id}`) || body.querySelector(`#${id}`), querySelector: selector => head.querySelector(selector) || body.querySelector(selector), addEventListener: (...args) => events.addEventListener(...args), removeEventListener: (...args) => events.removeEventListener(...args) };
   const medias = new Map();
   globalThis.document = document; globalThis.window = { addEventListener: (...args) => windowEvents.addEventListener(...args), removeEventListener: (...args) => windowEvents.removeEventListener(...args), matchMedia(query) { if (!medias.has(query)) { const media = new Element('media'); media.matches = width <= Number(/max-width:\s*(\d+)/.exec(query)?.[1] || 0); medias.set(query, media); } return medias.get(query); }, getSelection: () => null };
   t.after(() => { for (const [key, before] of old) if (before.present) globalThis[key] = before.value; else delete globalThis[key]; });

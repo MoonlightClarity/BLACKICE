@@ -12,9 +12,17 @@ export function normalizeChatOptions(value={}){
   const planningMode=PLANNING_MODES.includes(value?.planningMode)?value.planningMode:'auto';
   return {model,effort,serviceTier,planningMode};
 }
+export function resolvedDefaultModel(status={}) {
+  const saved=typeof status.defaultModel==='string'&&status.defaultModel.trim()&&status.defaultModel!=='default'?status.defaultModel.trim():null;
+  const model=saved&&(status.models||[]).find(item=>(item?.id||item?.model)===saved);
+  const name=model?.displayName||saved||'';
+  const label=name?'Default · '+name:status.defaultModelInitializing?'Default · resolving…':'Default · not configured';
+  return {id:saved,name,label,available:status.defaultModelAvailable!==false};
+}
 export function chatOptionChoices(status={},raw={}){
   const selected=normalizeChatOptions(raw);
-  const models=[{id:'default',label:'Default model',disabled:false}];
+  const defaultInfo=resolvedDefaultModel(status);
+  const models=[{id:'default',label:defaultInfo.label,disabled:false}];
   for(const item of status.models||[]){
     const id=item?.id||item?.model;
     if(typeof id!=='string'||!id||models.some(x=>x.id===id))continue;
@@ -25,7 +33,7 @@ export function chatOptionChoices(status={},raw={}){
   const fast=serviceTierSupport(status,selected.model,'fast');
   const tiers=[{id:'default',label:'Standard',disabled:false},
     {id:'fast',label:'Fast',disabled:!fast.available,verified:fast.verified}];
-  return {models,efforts,tiers,selected};
+  return {models,efforts,tiers,selected,defaultInfo};
 }
 export function validateChatOptions(status={},raw={}){
   const selection=normalizeChatOptions(raw);

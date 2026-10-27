@@ -1,0 +1,388 @@
+/* BLACKICE — late-loaded layout corrections.
+   This is the canonical override for compact Chat sidebars and Planning.
+   It loads AFTER brand/work-visual/controls; avoid duplicating it in those files. */
+
+/* Chat: honor the actual sidebar width, not only the window media breakpoint. */
+.next-chat{min-width:0;max-width:100%}
+.next-chat .next-chat-sidebar{
+  min-width:0;max-width:100%;overflow-x:clip;
+  container-type:inline-size;
+}
+.next-chat .next-sidebar-head{
+  min-width:0;max-width:100%;width:100%;box-sizing:border-box;
+  grid-template-columns:minmax(0,1fr);
+}
+.next-chat .next-sidebar-row{
+  min-width:0;max-width:100%;display:flex;flex-wrap:wrap;gap:6px;
+}
+.next-chat .next-sidebar-row>strong{
+  flex:1 1 auto;min-width:0;overflow-wrap:anywhere;
+}
+.next-chat .next-sidebar-row>button{flex:0 1 auto;min-width:0;max-width:100%}
+.next-chat .next-sidebar-head :is(input,select,button),
+.next-chat .next-sidebar-search,
+.next-chat .next-sidebar-filter{
+  box-sizing:border-box;min-width:0;max-width:100%;
+}
+.next-chat .next-conversation-list{
+  min-width:0;max-width:100%;overflow-x:hidden;overflow-y:auto;
+}
+.next-chat .next-conversation-row{
+  min-width:0;max-width:calc(100% - 10px);width:calc(100% - 10px);
+  box-sizing:border-box;display:flex;flex-wrap:wrap;align-items:flex-start;
+}
+.next-chat .next-conversation-row>.next-conversation{
+  flex:1 1 0;width:0;min-width:0;max-width:100%;
+  overflow:hidden;text-align:left;
+}
+.next-chat .next-conversation-title{
+  display:block;min-width:0;max-width:100%;
+  white-space:normal;text-overflow:clip;overflow:visible;
+  overflow-wrap:anywhere;word-break:normal;line-height:1.4;
+}
+.next-chat .next-conversation-meta{
+  min-width:0;display:flex;flex-wrap:wrap;gap:3px 8px;
+  overflow-wrap:anywhere;
+}
+.next-chat .next-conversation-meta>*{min-width:0}
+.next-chat .next-conversation-actions{
+  flex:0 0 auto;max-width:100%;min-width:0;
+}
+.next-chat .next-conversation-actions>summary{
+  min-width:0;max-width:100%;box-sizing:border-box;
+}
+.next-chat .next-conversation-actions[open]{flex:1 1 100%;min-width:0}
+.next-chat .next-conversation-actions .next-conversation-menu{
+  width:100%;min-width:0;max-width:100%;box-sizing:border-box;
+}
+.next-chat :is(.next-chat-sidebar,.next-sidebar-row,.next-chat-bulk,
+  .next-sidebar-head,.next-conversation-list,.next-conversation-row,
+  .next-conversation,.next-conversation-menu,.next-chat-management-status)
+  {overflow-wrap:anywhere}
+@container (max-width:185px){
+  .next-sidebar-head{padding:10px 8px}
+  .next-sidebar-row>strong{flex-basis:100%}
+  .next-sidebar-row>button{width:100%;flex:1 1 100%}
+  .next-conversation-title{font-size:11px;line-height:1.42}
+  .next-conversation-meta{font-size:10px}
+  .next-conversation-row{margin-inline:3px;gap:2px}
+  .next-conversation-actions>summary{padding:4px 6px}
+  .next-chat-bulk-actions{display:flex;flex-wrap:wrap}
+}
+.next-chat .next-chat-main{min-width:0;max-width:100%}
+.next-chat :is(.next-chat-heading,.next-chat-head-actions,.next-chat-compose,
+  .next-chat-options,.next-chat-options>label,.next-chat-timeline,
+  .next-message-body,.next-chat-phase){min-width:0;max-width:100%}
+.next-chat :is(.next-message-body,.next-chat-phase-paragraph,
+  .next-chat-working-note-body){overflow-wrap:anywhere}
+.next-chat :is(.next-message-body pre,.next-message-body table){
+  max-width:100%;overflow-x:auto
+}
+
+/* Planning: remove inherited blue chrome and keep semantic relations legible. */
+.next-planning-workspace{
+  --accent:#d2d6dc;
+  --line:#7a818b6e;
+  --muted:#aeb5bd;
+  --panel:#181c22;
+  --raised:#2a2f35;
+  --text:#e9ecf0;
+  min-width:0;max-width:100%;
+}
+.next-planning-workspace :is(.next-planning-catalog,.next-planning-detail,
+  .next-planning-plan-list,.next-planning-plan-card,.next-plan-detail,
+  .next-plan-surface,.next-plan-visual,.next-plan-inspector,
+  .next-intel-map-workspace,.next-intel-map-content,.next-intel-map-graph-pane,
+  .next-intel-map-source-pane,.next-intel-map-inspector,.next-intel-map-toolbar,
+  .next-intel-composer,.next-intel-landing,.next-intel-brief,.next-intel-fact,
+  .next-intel-phase,.next-intel-map-brief,.next-intel-pir-brief,
+  .next-intel-decision-brief,.next-intel-graph-lane){
+  min-width:0;max-width:100%;box-sizing:border-box
+}
+.next-planning-workspace :is(.next-intel-landing,.next-intel-composer,
+  .next-intel-brief,.next-intel-execution-details,.next-intel-map-source-pane,
+  .next-intel-map-inspector){
+  background:linear-gradient(145deg,#242931,#171b21);
+  border-color:#737c8675;color:#e9edf1
+}
+.next-planning-workspace :is(.next-intel-pir-brief,.next-intel-decision-brief,
+  .next-intel-fact,.next-intel-phase){
+  background:linear-gradient(145deg,#292e35,#20242a);
+  border-color:#737c8675
+}
+.next-planning-workspace .next-intel-map-toolbar{
+  background:#22272d;border-color:#78818b75
+}
+.next-planning-workspace .next-intel-map-toolbar button{
+  background:#30353c;border-color:#7d858e;color:#e6eaee
+}
+.next-planning-workspace .next-intel-map-toolbar button[aria-pressed=true]{
+  background:#454b53;border-color:#d1d6dc;color:#fff;
+  box-shadow:inset 0 -2px #d4d9df
+}
+.next-planning-workspace .next-intel-graph-scroll,
+.next-planning-workspace .next-plan-map-viewport{
+  background-color:#11151b;
+  border-color:#737c8675;
+  background-image:linear-gradient(#bbc2ca0c 1px,transparent 1px),
+    linear-gradient(90deg,#bbc2ca0c 1px,transparent 1px);
+}
+.next-planning-workspace .next-intel-graph-lane{
+  background:linear-gradient(180deg,#2a3037b5,#1b2026a8);
+  border-color:#78828c70
+}
+.next-planning-workspace .next-intel-graph-lane-count{
+  background:#394149;color:#e1e5e9
+}
+.next-planning-workspace .next-intel-graph-node{
+  background:#292e35;border-color:#87909a;color:#f0f2f5
+}
+.next-planning-workspace .next-intel-graph-node:hover{background:#373e47}
+.next-planning-workspace .next-intel-graph-node:focus-visible,
+.next-planning-workspace .next-intel-graph-node.is-selected{
+  background:#414850;border-color:#d4d9df;outline-color:#e5e8eb
+}
+.next-planning-workspace .next-intel-graph-node[data-intel-kind=hypotheses]
+  {border-left-color:#b7c0c9}
+.next-planning-workspace .next-intel-graph-node[data-intel-kind=collection]
+  {border-left-color:#aeb7c0}
+.next-planning-workspace .next-intel-graph-node[data-intel-kind=evidence]
+  {border-left-color:#aabdad}
+.next-planning-workspace .next-intel-graph-node[data-intel-kind=judgments]
+  {border-left-color:#d0c3a8}
+.next-planning-workspace :is(.next-intel-kicker,.next-intel-phase-number,
+  .next-intel-fact h4,.next-intel-graph-lane-title,.next-intel-node-eyebrow,
+  .next-intel-source-label,.next-intel-inspector-field strong,
+  .next-intel-map-inspector h4,.next-intel-execution-details>summary){
+  color:#d1d6dc
+}
+.next-planning-workspace :is(.next-intel-map-head p,.next-intel-lane-hint,
+  .next-intel-graph-empty,.next-intel-map-source-pane .next-help,
+  .next-intel-node-caption,.next-intel-graph-legend,.next-intel-warnings){
+  color:#afb7bf
+}
+.next-planning-workspace .next-intel-graph-empty{
+  background:#191e24;border-color:#767f896b
+}
+.next-planning-workspace .next-intel-source-editor{
+  background:#11151b;border-color:#7b858f;color:#edf0f4;
+  min-width:0;max-width:100%;box-sizing:border-box
+}
+.next-planning-workspace .next-intel-source-editor:focus-visible,
+.next-planning-workspace .next-intel-graph-scroll:focus-visible{
+  outline-color:#dae0e6
+}
+.next-planning-workspace :is(.next-intel-graph-edge,.next-intel-graph-edge-tests,
+  .next-intel-graph-edge-answers,.next-intel-graph-edge-collected,
+  .next-intel-graph-edge-evaluates){stroke:#aeb8c2}
+.next-planning-workspace .next-intel-graph-edge-supports{stroke:#a6baaa}
+.next-planning-workspace .next-intel-graph-edge-challenges{stroke:#c6aa98}
+.next-planning-workspace .next-intel-graph-edge-basis{stroke:#c9c0aa}
+.next-planning-workspace .next-intel-legend-line,
+.next-planning-workspace .next-intel-legend-line.next-intel-graph-edge-tests
+  {border-color:#aeb8c2}
+.next-planning-workspace .next-intel-legend-line.next-intel-graph-edge-supports
+  {border-color:#a6baaa}
+.next-planning-workspace .next-intel-legend-line.next-intel-graph-edge-challenges
+  {border-color:#c6aa98}
+.next-planning-workspace .next-intel-legend-line.next-intel-graph-edge-basis
+  {border-color:#c9c0aa}
+.next-planning-workspace #next-planning-list>.next-planning-plan-card.is-selected{
+  background:#343a42b8;border-color:#c4cbd2a0
+}
+.next-planning-workspace .next-plan-map-viewport .task-plan-map{
+  color:#d4dbe1;
+  --task-plan-map-surface:#292e35;
+  --task-plan-map-surface-active:#414850;
+  --task-plan-map-surface-goal:#333941
+}
+.next-planning-workspace .next-plan-map-viewport .task-plan-map-node-surface{
+  fill:#292e35;stroke:#98a2ac
+}
+.next-planning-workspace .next-plan-map-viewport .is-selected .task-plan-map-node-surface{
+  fill:#454c55;stroke:#e1e5e9
+}
+.next-planning-workspace .next-plan-map-viewport .task-plan-map-edge{
+  stroke:#abb5bf
+}
+.next-planning-workspace .next-plan-visual .next-plan-inspector{
+  background:#20252b;border-color:#7a848d6d
+}
+.next-planning-workspace :is(.next-plan-project-node rect,.next-plan-milestone){
+  fill:#292e35;background:#292e35;border-color:#77818b
+}
+.next-planning-workspace .next-plan-project-node.is-selected rect{
+  fill:#414850;stroke:#d6dce2
+}
+.next-planning-workspace .next-plan-toolbar button[aria-pressed=true],
+.next-planning-workspace .next-plan-outline button[aria-pressed=true]{
+  background:#404850;border-color:#b6c1cb
+}
+.next-planning-workspace :is(.next-intel-graph-node,.next-intel-node-title,
+  .next-intel-node-caption,.next-intel-node-eyebrow,
+  .next-plan-detail,.next-plan-inspector,.next-plan-surface,
+  .next-planning-plan-card,.next-planning-plan-card h3,
+  .next-intel-pir-brief strong,.next-intel-decision,.next-intel-fact p){
+  min-width:0;max-width:100%;box-sizing:border-box;overflow-wrap:anywhere
+}
+.next-planning-workspace .next-intel-node-title{
+  white-space:normal;word-break:normal
+}
+.next-planning-workspace .next-intel-node-caption{
+  white-space:normal;overflow:hidden;text-overflow:clip;
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2
+}
+.next-planning-workspace .next-intel-node-eyebrow{
+  gap:5px;overflow:hidden
+}
+.next-planning-workspace #next-planning-list>.next-empty{
+  display:block;-webkit-line-clamp:unset;-webkit-box-orient:initial;
+  overflow:visible;white-space:normal;overflow-wrap:anywhere
+}
+.next-planning-workspace :is(input,button,select,textarea){
+  min-width:0;max-width:100%;box-sizing:border-box
+}
+.next-planning-workspace pre{max-width:100%;overflow-x:auto}
+
+/* Respond to the space left after the catalog, rather than the window width.
+   A narrow split view must expose its editor before the diagram. */
+.next-planning-workspace .next-planning-detail{container:planning-detail / inline-size}
+.next-planning-workspace .next-panel-head>div{min-width:0}
+.next-planning-workspace .next-panel-head h1{overflow-wrap:anywhere}
+.next-planning-workspace .next-intel-map-workspace[data-mode=split] .next-intel-map-content{
+  display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);
+}
+.next-planning-workspace .next-intel-map-workspace[data-mode=split] .next-intel-map-source-pane{
+  grid-column:1;grid-row:1;order:0;
+}
+.next-planning-workspace .next-intel-map-workspace[data-mode=split] .next-intel-map-graph-pane{
+  grid-column:2;grid-row:1;order:1;
+}
+.next-planning-workspace .next-intel-source-editor{
+  height:clamp(220px,42dvh,460px);min-height:180px;max-height:none;
+}
+.next-planning-workspace .next-intel-graph-scroll{
+  height:clamp(240px,45dvh,520px);min-height:240px;
+}
+@container planning-detail (max-width:900px){
+  .next-planning-workspace .next-intel-map-workspace[data-mode=split] .next-intel-map-content{
+    display:flex;flex-direction:column;
+  }
+  .next-planning-workspace .next-intel-map-brief{grid-template-columns:minmax(0,1fr)}
+  .next-planning-workspace .next-intel-map-toolbar button:last-child{margin-left:0}
+}
+@media(max-width:900px){
+  .next-planning-workspace .next-panel-head{align-items:flex-start;flex-wrap:wrap}
+  .next-planning-workspace .next-intel-header-actions{width:auto}
+}
+@media(max-width:480px){
+  .next-planning-workspace .next-planning-filters{grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:920px){
+  .next-planning-workspace .next-intel-map-brief{
+    grid-template-columns:minmax(0,1fr)
+  }
+}
+
+/* Source-native recurring tradecraft passes, projected from the saved agent plan. */
+.next-planning-workspace .next-tradecraft-timeline{
+  margin:13px 0 16px;
+  padding:11px 13px;
+  border:1px solid #828b9578;
+  border-radius:7px;
+  background:linear-gradient(130deg,#242a32e9,#161b21e9);
+  max-width:100%;
+  min-width:0;
+}
+.next-planning-workspace .next-tradecraft-timeline>summary{
+  cursor:pointer;
+  font-size:13px;
+  font-weight:650;
+  color:#e5e9ed;
+  overflow-wrap:anywhere;
+}
+.next-planning-workspace .next-tradecraft-timeline>.next-help{
+  margin:10px 0;
+  color:#b7c0ca;
+  line-height:1.5;
+}
+.next-planning-workspace .next-tradecraft-steps{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));
+  gap:9px;
+  padding:0;
+  margin:12px 0 0;
+  list-style:none;
+  counter-reset:tradecraft-pass;
+  min-width:0;
+}
+.next-planning-workspace .next-tradecraft-step{
+  min-width:0;
+  box-sizing:border-box;
+  padding:9px 11px;
+  background:#2d343c;
+  border:1px solid #77828e;
+  border-top:2px solid #c1c8d0;
+  border-radius:5px;
+  color:#e7eaee;
+  overflow-wrap:anywhere;
+  counter-increment:tradecraft-pass;
+}
+.next-planning-workspace .next-tradecraft-step::before{
+  content:"Pass " counter(tradecraft-pass);
+  display:block;
+  color:#b6c1cc;
+  font:10px/1.4 Consolas,monospace;
+  margin-bottom:5px;
+}
+.next-planning-workspace .next-tradecraft-step[data-status=done]{
+  border-top-color:#acbfae;
+}
+.next-planning-workspace .next-tradecraft-step-head{
+  min-width:0;
+  overflow-wrap:anywhere;
+  font-size:12px;
+  font-weight:600;
+}
+.next-planning-workspace .next-tradecraft-step-link{
+  width:100%;
+  text-align:left;
+  min-width:0;
+  font:inherit;
+  color:#eff3f7;
+  background:none;
+  border:0;
+  padding:0;
+  overflow-wrap:anywhere;
+}
+.next-planning-workspace .next-tradecraft-step-link:hover,
+.next-planning-workspace .next-tradecraft-step-link:focus-visible{
+  text-decoration:underline;
+  outline-color:#d4dbe2;
+}
+.next-planning-workspace .next-tradecraft-meta{
+  margin:6px 0;
+  font-size:11px;
+  color:#c1cad4;
+}
+.next-planning-workspace .next-tradecraft-step .next-help{
+  margin:0;
+  font-size:11px;
+  color:#aeb8c3;
+}
+.next-planning-workspace .next-tradecraft-evidence{
+  display:block;
+  margin-top:8px;
+  color:#c1dcc7;
+  font-size:10px;
+}
+/* Keep native browser selection readable in the system contrast palette too. */
+@media(forced-colors:active){
+  .next-browser-tab-group:has(.next-browser-tab[aria-selected=true]){
+    background:Highlight;border-color:HighlightText;
+  }
+  .next-browser-tab-group .next-browser-tab[aria-selected=true],
+  .next-browser-tab-group:has(.next-browser-tab[aria-selected=true]) .next-browser-tab-close{
+    color:HighlightText;
+  }
+}

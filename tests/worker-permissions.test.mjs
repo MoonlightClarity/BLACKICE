@@ -68,7 +68,7 @@ test('a legacy delegate assignment flag does not reduce the normal workspace cap
     return { output: 'Review completed.' };
   });
   const saved = await f.run('Review research without changing files.');
-  assert.equal(saved.nodes.agent.subagentSchemaVersion, 3);
+  assert.equal(saved.nodes.agent.subagentSchemaVersion, 4);
   assert.deepEqual(f.effects, { emailDrafts: 0, connections: 0, browserInputs: 0 });
   await access(path.join(f.cwd, 'worker-result.txt'));
   assert.equal(f.owners.length, 1);

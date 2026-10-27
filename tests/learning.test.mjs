@@ -203,12 +203,12 @@ test('a real runtime reflection records a durable skill, evidence and usage, and
   assert.deepEqual(calls[0].dynamicTools.map(tool=>tool.name),['relay_learn']);
   const lesson=learning.listLessons()[0];assert.equal(lesson.kind,'skill');assert.equal(lesson.confidence,'observed_once');assert.equal(lesson.evidence[0].runId,'source-run');assert.equal(lesson.evidence[0].quote,'Verified document list in browser.');
   const actual=knowledge.get(lesson.knowledgeId);assert.equal(actual.kind,'skill');assert.match(actual.content,/## Verification/);assert.match(actual.content,/not a measured performance improvement/);assert.equal(actual.provenance.nodeId,`learning-${review.id}`);
-  const context=learning.getContext(cwd,{query:'export'});assert.equal(context.skills[0].knowledgeId,actual.id);assert.ok(JSON.stringify(context).length<=LEARNING_LIMITS.contextChars);
+  const context=learning.getContext(cwd,{query:'export'});assert.equal(context.skills.length,0); // Generated skills remain saved but are not automatically admitted.assert.ok(JSON.stringify(context).length<=LEARNING_LIMITS.contextChars);
   // A completed review can still be flushing its final state; a restart closes that writer first.
   await learning.close();
   const restored=new LearningStore(options);stores.push(restored);await restored.init();
   assert.equal(restored.getReview(review.id).status,'completed');assert.deepEqual(restored.getReview(review.id).usage,completed.usage);assert.deepEqual(restored.listLessons()[0].evidence,lesson.evidence);
-  assert.equal(restored.getContext(cwd).skills[0].knowledgeId,actual.id);assert.equal(JSON.parse(await readFile(path.join(directory,'learning.json'),'utf8')).lessons.length,1);await restored.close();
+  assert.equal(restored.getContext(cwd).skills.length,0);assert.equal(JSON.parse(await readFile(path.join(directory,'learning.json'),'utf8')).lessons.length,1);await restored.close();
 });
 
 test('background reviews see a bounded direct knowledge catalog for this folder and global scope only',async t=>{
@@ -259,7 +259,7 @@ test('repeated reviews deduplicate, revisions accumulate distinct-run evidence, 
   const forced=await learning.learnNow('source-run',{force:true});assert.equal((await done(forced.id)).status,'no_changes');let lesson=learning.listLessons()[0];assert.equal(lesson.revision,1);assert.equal(knowledge.get(lesson.knowledgeId).revision,1);
   const next=await learning.scheduleAfterRun(add('second-run'));await done(next.id);lesson=learning.listLessons()[0];assert.equal(lesson.revision,2);assert.equal(lesson.confidence,'supported_by_multiple_runs');assert.deepEqual(new Set(lesson.evidence.map(item=>item.runId)),new Set(['source-run','second-run']));assert.equal(lesson.history.length,1);
   await learning.removeLesson(lesson.id);assert.equal(learning.getContext(lesson.cwd).skills.length,0);assert.throws(()=>knowledge.get(lesson.knowledgeId),{status:404});
-  const restored=await learning.restoreLesson(lesson.id,1);assert.equal(restored.status,'active');assert.equal(restored.revision,3);assert.equal(restored.confidence,'observed_once');assert.equal(learning.getContext(lesson.cwd).skills.length,1);
+  const restored=await learning.restoreLesson(lesson.id,1);assert.equal(restored.status,'active');assert.equal(restored.revision,3);assert.equal(restored.confidence,'observed_once');assert.equal(learning.getContext(lesson.cwd).skills.length,1); // Explicit human restore opts this saved procedure back into use.
 });
 
 test('fabricated evidence, inferred user facts and a failed-run working skill are rejected before any write',async t=>{
@@ -299,8 +299,8 @@ test('automatic fact and skill changes apply without approval, retain their sour
   assert.equal(fact.evidence[0].quote,'Please use concise output');assert.equal(fact.profileUpdated,true);
   assert.equal(knowledge.get(skill.knowledgeId).provenance.nodeId,`learning-${first.id}`);
   const next=learning.getContext(cwd,{query:'export concise'});
-  assert.equal(next.skills[0].knowledgeId,skill.knowledgeId);assert.equal(next.facts[0].id,fact.id);
-  assert.deepEqual(next.skills[0].evidenceRunIds,['provider-source-a']);
+  assert.equal(next.skills.length,0);assert.equal(next.facts[0].id,fact.id);
+  assert.deepEqual([...new Set(skill.evidence.map(item=>item.runId))],['provider-source-a']);
   const second=await learning.scheduleAfterRun(observed('provider-source-b'));
   assert.equal((await done(second.id)).status,'completed');assert.equal(calls.length,2);
   const updated=learning.listLessons().find(item=>item.id===skill.id);

@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable, Writable } from 'node:stream';
-import { RemoteSessionStore } from '../lib/remote-access-auth.mjs';
+import { RemoteSessionStore, REMOTE_SCOPES } from '../lib/remote-access-auth.mjs';
 import { desktopRemoteAccessArgs, parseRemoteAccessArgs, createAccessCode, runRemoteAccessCLI, redeemAccessCode, readAccessCode, validateRuntimeOwnership } from '../lib/remote-access-cli.mjs';
 
 const localUrl = 'http://127.0.0.1:21345', publicUrl = 'https://blackice.example.test:8443';
@@ -58,15 +58,15 @@ test('native dispatch recognizes explicit access commands without reinterpreting
   assert.equal(desktopRemoteAccessArgs(['BLACKICE.exe', '--headless']), null);
   assert.equal(desktopRemoteAccessArgs(['BLACKICE.exe', '--quit']), null);
   assert.equal(parseRemoteAccessArgs(['--access-code']).kind, 'browser');
-  assert.deepEqual(parseRemoteAccessArgs(['remote', 'code', '--kind', 'agent']).scopes, ['read']);
-  assert.deepEqual(parseRemoteAccessArgs(['remote', 'code', '--kind=agent', '--scope', 'tasks:write', '--scope', 'read']).scopes, ['read', 'tasks:write']);
-  assert.deepEqual(parseRemoteAccessArgs(['remote', 'code', '--kind=agent', '--scope=read', '--scope=tasks:write']).scopes, ['read', 'tasks:write']);
+  assert.deepEqual(parseRemoteAccessArgs(['remote', 'code', '--kind', 'agent']).scopes, REMOTE_SCOPES);
+  assert.deepEqual(parseRemoteAccessArgs(['remote', 'code', '--kind=agent', '--scope', 'tasks:write', '--scope', 'read']).scopes, REMOTE_SCOPES);
+  assert.deepEqual(parseRemoteAccessArgs(['remote', 'code', '--kind=agent', '--scope=read', '--scope=tasks:write']).scopes, REMOTE_SCOPES);
   assert.equal(parseRemoteAccessArgs(['remote', 'pair', '--url=' + publicUrl, '--code-stdin', '--name=App: builder']).name, 'App: builder');
 });
 
 test('command arguments cannot carry a code, broaden permissions at redemption, or choose an arbitrary credential file', () => {
   for (const args of [
-    ['code', '--scope', 'read'], ['code', '--kind', 'agent', '--scope', '*'], ['code', '--kind', 'agent', '--scope', 'read', '--scope', 'read'],
+    // Legacy --scope variants are accepted but cannot narrow or grant agent capabilities.
     ['--access-code=true'], ['code', '--json=true'], ['code', '--profile-dir', 'relative'], ['code', '--profile-dir', '/', '--json'],
     ['pair', '--url', publicUrl, '--code', 'secret'], ['pair', '--url', publicUrl, '--code-stdin', '--scope', 'tasks:write'],
     ['pair', '--url', 'http://example.test', '--code-stdin'], ['pair', '--url', publicUrl + '/remote/agent/pair', '--code-stdin'],
@@ -79,10 +79,10 @@ test('host issuance and stdin redemption complete one authenticated scoped hando
   const f = await fixture(t), before = await fs.readFile(f.runtimeFile, 'utf8');
   const issued = await invoke(['remote', 'code', '--kind', 'agent', '--scope=read', '--scope=tasks:write', '--json'], f.context);
   assert.equal(issued.exitCode, 0, issued.stdout + issued.stderr); assert.equal(issued.value.host.mode, 'headless');
-  assert.deepEqual(issued.value.scopes, ['read', 'tasks:write']);
+  assert.deepEqual(issued.value.scopes, REMOTE_SCOPES);
   const paired = await invoke(['remote', 'pair', '--url=' + publicUrl, '--code-stdin', '--name=App: builder', '--json'], f.context, issued.value.code + '\n');
   assert.equal(paired.exitCode, 0, paired.stdout + paired.stderr);
-  assert.deepEqual(f.sessions.authenticate(paired.value.token, 'agent').scopes, ['read', 'tasks:write']);
+  assert.deepEqual(f.sessions.authenticate(paired.value.token, 'agent').scopes, REMOTE_SCOPES);
   assert.equal(paired.value.device.label, 'App: builder');
   assert.equal(paired.value.device.expiresAt, issued.value.sessionExpiresAt); assert.equal(issued.stderr + paired.stderr, '');
   const posts = f.calls.filter(call => call.options.method === 'POST');
@@ -208,7 +208,7 @@ test('a remote receipt cannot substitute a browser token, foreign endpoint, or u
 test('help has no profile, listener, or transport side effects', async () => {
   let calls = 0;
   const result = await invoke(['remote', '--help'], { fetchImpl: async () => { calls++; throw Error(); }, inspectRuntime: async () => { calls++; throw Error(); } });
-  assert.equal(result.exitCode, 0); assert.match(result.stdout, /--code-stdin/); assert.match(result.stdout, /--scope=tasks:write/); assert.match(result.stdout, /--url=HTTPS_ORIGIN/); assert.match(result.stdout, /--name=NAME/); assert.equal(calls, 0);
+  assert.equal(result.exitCode, 0); assert.match(result.stdout, /--code-stdin/); assert.match(result.stdout, /--scope=NAME/); assert.match(result.stdout, /--url=HTTPS_ORIGIN/); assert.match(result.stdout, /--name=NAME/); assert.equal(calls, 0);
 });
 
 

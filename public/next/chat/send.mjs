@@ -1,5 +1,5 @@
 import { stableId } from '../core/dom.mjs';
-import { replyTarget, running } from './model.mjs';
+import { replyTarget, canContinueRun } from './model.mjs';
 
 /** Send once; the existing server executes and persists the real run.
  * Failures preserve unsent drafts, and no mutation is silently replayed.
@@ -16,13 +16,13 @@ export async function submitChat({ api, runs, task, model = 'default', effort = 
     if (result?.accepted !== true) throw Error('The running agent did not accept that message.');
     return { mode:'direction',runId:latest.run.id,receipt:result };
   }
-  if (latest.run && latest.nodeId && latest.run.status === 'completed' && latest.run.settled === true) {
+  if (latest.run && latest.nodeId && canContinueRun(latest.run)) {
     const requestId=stableId('chat');
     const result=await api('/api/runs/' + encodeURIComponent(latest.run.id) + '/continue','POST',
       { nodeId:latest.nodeId,message:content,model,effort,serviceTier,planningMode,attachmentIds,requestId });
     return { mode:'continued',run:result?.run||result,requestId };
   }
-  if (latest.run) throw Error('This response cannot be continued yet. Use Retry or start a new conversation.');
+  if (latest.run) throw Error(latest.run.settled === false ? 'This response is still settling. Wait for it to finish before sending again.' : 'This conversation has no stopped agent to continue. Use Retry or start a new conversation.');
   if (!cwd) throw Error('Choose a working folder in Settings before starting new work.');
   const requestId=stableId('chat');
   const { createMissionWorkflow }=await import('../../mission-model.mjs');
@@ -36,5 +36,5 @@ export async function submitChat({ api, runs, task, model = 'default', effort = 
 export function replyState(runs) {
   const target=replyTarget(runs);
   return { ...target, working:Boolean(target.active),
-    canSend:!target.run || target.active || target.run?.status === 'completed' && target.run?.settled === true };
+    canSend:!target.run || target.active || Boolean(target.nodeId && canContinueRun(target.run)) };
 }

@@ -1,0 +1,58 @@
+/* Ontology reflects saved Planning steps. No inferred analytical completion. */
+.next-plan-ontology{margin:14px 0;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:12px;max-width:100%;min-width:0}
+.next-plan-ontology-summary{cursor:pointer;font-weight:650;font-size:14px;color:#e0e8f2}
+.next-plan-ontology-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start;margin-top:13px;min-width:0}
+.next-plan-ontology-lane{min-width:0;border:1px solid var(--line);border-radius:7px;background:#20252b;padding:12px}
+.next-plan-ontology-lane[data-domain=unclassified]{grid-column:1/-1}
+.next-plan-ontology-lane h3{font-size:13px;color:#e0e8f2;margin:0 0 4px}
+.next-plan-ontology-lane>p{margin:0 0 10px;overflow-wrap:anywhere}
+.next-plan-ontology-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 8px;padding:7px 0;border-top:1px solid var(--line);align-items:center;min-width:0}
+.next-plan-ontology-link{padding:4px 0;border:0;text-align:left;background:transparent!important;color:#e0e8f2;font-size:13px;min-width:0;white-space:normal;overflow-wrap:anywhere}
+.next-plan-ontology-link:hover{text-decoration:underline}
+.next-plan-ontology-item .next-status-pill{white-space:nowrap}
+.next-plan-ontology-type{grid-column:1/-1;display:block}
+.next-plan-ontology-note{margin:12px 0 0;overflow-wrap:anywhere}
+@media(max-width:750px){.next-plan-ontology-grid{grid-template-columns:minmax(0,1fr)}.next-plan-ontology-lane[data-domain=unclassified]{grid-column:auto}}
+
+/* Final Planning surface layer: retain BLACKICE's neutral dark shell rather than
+ * the pre-ontology blue prototype palette. Applied after legacy styles. */
+.next-planning-workspace{
+  --panel:#1b2026;--raised:#30363e;--line:#737d887d;
+  --muted:#bac4ce;--accent:#d0d8e0;color:#e9edf1;min-width:0;
+}
+.next-planning-workspace :is(.next-planning-layout,.next-planning-catalog,
+ .next-planning-detail,.next-plan-detail,.next-plan-surface,.next-plan-visual,
+ .next-plan-ontology,.next-intel-map-workspace,.next-intel-map-content,
+ .next-intel-map-graph-pane,.next-intel-map-source-pane,.next-intel-map-diagram,
+ .next-intel-map-inspector,.next-intel-brief,.next-intel-fact,.next-intel-map-brief,
+ .next-intel-pir-brief,.next-intel-decision-brief){min-width:0;max-width:100%}
+.next-planning-workspace :is(.next-intel-landing,.next-intel-composer,.next-intel-brief,
+ .next-intel-map-toolbar,.next-intel-map-inspector,.next-intel-map-source-pane,
+ .next-intel-pir-brief,.next-intel-decision-brief,.next-plan-ontology,
+ .next-plan-ontology-lane){
+  background:#22272e;border-color:#66717f;color:#e9edf1;
+}
+.next-planning-workspace :is(.next-intel-graph-scroll,.next-plan-map-viewport){
+  background-color:#14181e;border-color:#66717f;
+}
+.next-planning-workspace :is(.next-intel-graph-lane,.next-intel-graph-node){
+  background:#252b32;border-color:#737d88;color:#eef0f3;
+}
+.next-planning-workspace :is(.next-plan-detail-text,.next-intel-source-editor,
+ .next-intel-map-inspector p,.next-intel-map-inspector h3,.next-intel-node-caption,
+ .next-intel-node-title,.next-intel-graph-empty,.next-intel-pir-brief strong,
+ .next-intel-decision-brief p,.next-plan-inspector,.next-plan-ontology-link,
+ .next-planning-plan-card,.next-planning-plan-meta){
+  min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:normal;
+}
+.next-planning-workspace .next-intel-source-editor{
+  display:block;white-space:pre-wrap;overflow:auto;resize:vertical;
+}
+.next-planning-workspace .next-intel-graph-node{overflow:hidden}
+.next-planning-workspace .next-intel-node-caption{
+  white-space:normal;text-overflow:clip;display:-webkit-box;
+  -webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.next-planning-workspace :is(.next-plan-ontology-link,.next-plan-dependency){
+  white-space:normal;text-align:left;
+}

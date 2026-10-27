@@ -51,34 +51,16 @@ test('HWND from Electron resolves as a real native 64-bit window handle', () => 
   assert.throws(() => nativeHandle({ getNativeWindowHandle: () => Buffer.alloc(0) }));
 });
 
-test('ordinary Windows applications embed without a supported-app allowlist or isolation', async () => {
-  const { host, instances } = fixture();
-  assert.deepEqual(host.availability().isolated, false);
-  const windows = await host.windows();
-  assert.equal(windows[0].process, 'unlisted.exe');
-  const dimensions = { x: 55, y: 170, width: 900, height: 500 };
-  const joined = await host.attach('374828', dimensions);
-  assert.equal(joined.attached, true);
-  assert.equal(joined.isolated, false);
-  assert.equal(host.attached, true);
-  const attached = instances[0].messages.find(value => value.action === 'attach');
-  assert.equal(attached.windowId, '374828');
-  assert.equal(attached.hostWindowId, '777888');
-  assert.equal(attached.x, 55);
-  assert.equal(attached.height, 500);
-  assert.equal(instances[0].messages.find(value => value.action === 'windows').excludePid, 1111);
-  assert.deepEqual((await host.dialogs()).map(value => value.title), ['Save As']);
-  assert.equal((await host.visibleState(false)).visible, false);
-  assert.equal((await host.visibleState(true)).visible, true);
-  await host.position({ ...dimensions, width: 880 });
-  assert.equal(instances[0].messages.find(value => value.action === 'position').width, 880);
-  await host.detach();
-  assert.equal(host.attached, false);
-  await host.close();
-  assert.equal(instances[0].killed, true, 'Only the window manager helper terminates.');
-  assert.equal(instances[0].messages.some(value => value.action === 'terminate'), false);
+test('retired native application embedding cannot be launched from the production BLACKICE entry points', async () => {
+  const {readFile} = await import('node:fs/promises');
+  const main = await readFile(new URL('../desktop/main.mjs', import.meta.url), 'utf8');
+  const preload = await readFile(new URL('../desktop/preload.cjs', import.meta.url), 'utf8');
+  const shell = await readFile(new URL('../public/next/index.html', import.meta.url), 'utf8');
+  assert.match(main, /nativeWindows:null/);
+  assert.doesNotMatch(main, /new NativeAppWorkspace\(|new NativeAppHost\(/);
+  assert.doesNotMatch(preload, /relay:native-apps/);
+  assert.doesNotMatch(shell, /data-space="applications"/);
 });
-
 test('an unobserved or invalid handle cannot accidentally embed a different application', async () => {
   const { host } = fixture();
   await assert.rejects(host.attach('55555', { x: 0, y: 0, width: 400, height: 300 }), /Refresh the window list/);

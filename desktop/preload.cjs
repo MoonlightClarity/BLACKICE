@@ -16,7 +16,6 @@ contextBridge.exposeInMainWorld('relayDesktop', Object.freeze({
     return ipcRenderer.invoke('relay:write-clipboard', text);
   },
   detachDesktop: () => ipcRenderer.invoke('relay:detach-desktop'),
-  nativeApps: request => ipcRenderer.invoke('relay:native-apps', request),
   browserSurface: request => ipcRenderer.invoke('relay:browser-surface', request),
   onBrowserShortcut: callback => {
     if (typeof callback !== 'function') return () => {};

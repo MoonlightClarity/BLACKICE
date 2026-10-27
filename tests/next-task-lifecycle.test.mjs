@@ -56,6 +56,7 @@ function fixture(t,{planning=false,tasksWorkspace=false,request}={}){
   const component=(planning?createPlanningWorkspace:tasksWorkspace?createTasksWorkspace:createTaskHistory)({mount:dom.mount,api,
     events:{subscribe(listener){listeners.add(listener);return()=>listeners.delete(listener);}},
     notify:(...args)=>notifications.push(args),onNavigate:(...args)=>navigation.push(args)});
+  if(planning)dom.$('#next-planning-type').value='conversation';
   t.after(()=>component.destroy());
   return{...dom,component,calls,tasks,plans,projects,notifications,navigation,listeners,
     async select(selector,value){dom.$(selector).value=value;await dom.$(selector).dispatch('change');await settle();},

@@ -1,6 +1,6 @@
 {
   "name": "relay-agent-harness",
-  "version": "2.35.2",
+  "version": "2.35.3",
   "author": "BLACKICE",
   "private": true,
   "type": "module",
@@ -34,5 +34,8 @@
   "homepage": "https://github.com/MoonlightClarity/BLACKICE#readme",
   "bugs": {
     "url": "https://github.com/MoonlightClarity/BLACKICE/issues"
+  },
+  "overrides": {
+    "@peculiar/asn1-schema": "2.11.1"
   }
 }

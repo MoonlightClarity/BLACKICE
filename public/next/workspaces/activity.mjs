@@ -1,32 +1,27 @@
-import { initNativeAppsUI } from '../../native-apps-ui.mjs';
 import { createWorkflowActivityUI } from './workflow-execution.mjs';
 import { createTaskHistory } from './task-lifecycle.mjs';
 
 /** Each Activity surface owns its reads and subscriptions only while selected.
- * Hosted applications keep their Windows lifetime when their panel is hidden.
+ * Native windows have their own Applications workspace.
  */
 export function createActivityWorkspace({mount,api,events,getStatus,notify,onNavigate}) {
   mount.innerHTML=[
     '<div class="next-panel next-activity-workspace next-visual-workspace"><div class="next-panel-inner">',
-    '<header class="next-panel-head"><div><h1>Activity</h1><p>Follow a workflow, review task progress, or return to an application.</p></div>',
+    '<header class="next-panel-head"><div><h1>Activity</h1><p>Follow a workflow or review task progress.</p></div>',
     '<div id="next-activity-runtime" class="next-card"><h2>Agent activity</h2><p class="next-help" id="next-activity-status">Checking current work…</p></div></header>',
     '<div class="next-visual-tabs" role="tablist" aria-label="Activity views">',
     '<button type="button" role="tab" id="next-activity-tab-workflows" aria-controls="next-activity-workflows" aria-selected="true">Workflows</button>',
-    '<button type="button" role="tab" id="next-activity-tab-tasks" aria-controls="next-activity-tasks" aria-selected="false" tabindex="-1">Task timeline</button>',
-    '<button type="button" role="tab" id="next-activity-tab-apps" aria-controls="next-activity-native" aria-selected="false" tabindex="-1">Applications</button></div>',
+    '<button type="button" role="tab" id="next-activity-tab-tasks" aria-controls="next-activity-tasks" aria-selected="false" tabindex="-1">Task timeline</button></div>',
     '<section id="next-activity-workflows" role="tabpanel" aria-labelledby="next-activity-tab-workflows"></section>',
     '<section id="next-activity-tasks" role="tabpanel" aria-labelledby="next-activity-tab-tasks" hidden></section>',
-    '<section id="next-activity-native" role="tabpanel" aria-labelledby="next-activity-tab-apps" class="next-card" hidden></section>',
     '</div></div>',
   ].join('');
   const $=id=>mount.querySelector('#'+id),activity=$('next-activity-status');
   let active=false,unsubscribe=null,section='workflows';
   const workflows=createWorkflowActivityUI({mount:$('next-activity-workflows'),api,events,getStatus,notify,onNavigate});
   const history=createTaskHistory({mount:$('next-activity-tasks'),api,events,notify,onNavigate,prefix:'next-activity-tasks',presentation:'timeline'});
-  const nativeUI=initNativeAppsUI({mount:$('next-activity-native'),desktop:globalThis.window?.relayDesktop,
-    isVisible:()=>active&&section==='apps'&&!mount.hidden&&globalThis.document?.visibilityState!=='hidden'});
-  const surfaces={workflows,tasks:history,apps:nativeUI};
-  const panels={workflows:$('next-activity-workflows'),tasks:$('next-activity-tasks'),apps:$('next-activity-native')};
+  const surfaces={workflows,tasks:history};
+  const panels={workflows:$('next-activity-workflows'),tasks:$('next-activity-tasks')};
   const keys=Object.keys(surfaces),tabs=keys.map(key=>$('next-activity-tab-'+key));
   function select(key){
     if(!surfaces[key]||key===section)return;

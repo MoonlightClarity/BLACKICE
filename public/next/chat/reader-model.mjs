@@ -22,10 +22,10 @@ export function projectFamily(family) {
       // The worker returns bounded task metadata, never an entire state history
       // or tool/agent trace. Artifacts themselves are fetched only on click.
       taskState:run.taskState&&{
-        taskId:run.taskState.taskId||run.taskId,revision:run.taskState.revision,
+        taskId:run.taskState.taskId||run.taskId,revision:run.taskState.revision,updatedAt:run.taskState.updatedAt||run.updatedAt,
         goal:run.taskState.goal,
         steps:(run.taskState.steps||[]).slice(0,150).map(step=>({
-          id:step.id,title:step.title,status:step.status,note:String(step.note||'').slice(0,500),
+          id:step.id,title:step.title,kind:step.kind,stepType:step.stepType,status:step.status,note:String(step.note||'').slice(0,500),evidence:String(step.evidence||'').slice(0,2500),
         })),
         artifacts:(run.taskState.artifacts||[]).slice(0,40).map(a=>({
           id:a.id,title:a.title,fileName:a.fileName,contentType:a.contentType,size:a.size,sha256:a.sha256,

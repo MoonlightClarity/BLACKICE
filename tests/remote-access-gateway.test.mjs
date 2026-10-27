@@ -6,6 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { once } from 'node:events';
 import { RemoteAccessManager } from '../lib/remote-access.mjs';
+import { REMOTE_SCOPES } from '../lib/remote-access-auth.mjs';
 import { REMOTE_COOKIE, machineRemotePath, forwardedIdentityPath } from '../lib/remote-access-gateway.mjs';
 import { createRemoteTransportFixture } from './fixtures/remote-transport.mjs';
 
@@ -151,7 +152,7 @@ test('agent bearer credentials cannot bypass scoped APIs through legacy routes o
   const { request, manager } = await fixture(t), issued = await manager.createAgent({ label: 'Read-only agent', scopes: ['read'] }), headers = { Authorization: 'Bearer ' + issued.token };
   for (const route of ['/', '/app.js', '/api/status', '/api/runs', '/api/providers', '/api/remote-access', '/api/agentish', '/mcp/other']) assert.equal((await request(route, { headers })).status, 403, route);
   assert.equal((await request('/api/agent/status', { headers: { Cookie: `${REMOTE_COOKIE}=${issued.token}` } })).status, 401);
-  const result = await request('/api/agent/status', { headers }); assert.equal(result.status, 200); assert.equal(result.value.client.id, issued.device.id); assert.equal(result.value.client.kind, 'agent'); assert.deepEqual(result.value.client.scopes, ['read']); assert.equal(result.value.replay, null);
+  const result = await request('/api/agent/status', { headers }); assert.equal(result.status, 200); assert.equal(result.value.client.id, issued.device.id); assert.equal(result.value.client.kind, 'agent'); assert.deepEqual(result.value.client.scopes, REMOTE_SCOPES); assert.equal(result.value.replay, null);
   const session = await request('/remote/session', { headers }); assert.equal(session.value.clientKind, 'agent'); assert.equal(session.value.localManagement, false);
 });
 
@@ -240,6 +241,6 @@ test('graceful shutdown preserves credential hashes and enabled mode for the sam
   const first = await fixture(t), issued = await first.manager.createAgent({ label: 'Persistent agent', scopes: ['read', 'planning:write'] });
   await first.manager.close(); assert.ok(!first.transport.config.TCP['8443']);
   const manager = await new RemoteAccessManager({ dataDir: first.dataDir, transport: first.transport.transport, defaultHttpsPort: 8443 }).init(); t.after(() => manager.close());
-  await manager.attach({ origin: first.origin, sessionCookie: first.localCookie }); assert.equal(manager.status().enabled, true); assert.deepEqual(manager.sessions.authenticate(issued.token, 'agent').scopes, ['read', 'planning:write']);
+  await manager.attach({ origin: first.origin, sessionCookie: first.localCookie }); assert.equal(manager.status().enabled, true); assert.deepEqual(manager.sessions.authenticate(issued.token, 'agent').scopes, REMOTE_SCOPES);
   assert.ok(!JSON.stringify(manager.status()).includes(issued.token));
 });

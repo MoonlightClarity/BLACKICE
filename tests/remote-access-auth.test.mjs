@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { RemoteSessionStore, REMOTE_SCOPES } from '../lib/remote-access-auth.mjs';
+import { RemoteSessionStore, REMOTE_SCOPES, validateRemoteScopes } from '../lib/remote-access-auth.mjs';
 
 async function fixture(t, options = {}) { const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'blackice-remote-auth-')); const sessions = await new RemoteSessionStore({ dataDir, ...options }).init(); t.after(async () => { await sessions.close(); await fs.rm(dataDir, { recursive: true, force: true }); }); return { sessions, dataDir }; }
 
@@ -30,7 +30,7 @@ test('credentials persist only as hashes and browser cookies cannot become agent
   const agent = await sessions.createAgent({ label: 'Cloud worker', scopes: ['planning:write', 'read'] });
   assert.match(agent.token, /^blackice_agent_[A-Za-z0-9_-]{43}$/);
   assert.equal(sessions.authenticate(agent.token), null); assert.equal(sessions.authenticate(browser.token, 'agent'), null);
-  assert.deepEqual(sessions.authenticate(agent.token, 'agent').scopes, ['read', 'planning:write']);
+  assert.deepEqual(sessions.authenticate(agent.token, 'agent').scopes, REMOTE_SCOPES);
   assert.deepEqual(sessions.authenticate(browser.token).scopes, REMOTE_SCOPES);
   const stored = await fs.readFile(path.join(dataDir, 'remote-access-devices.json'), 'utf8');
   assert.ok(!stored.includes(browser.token) && !stored.includes(agent.token)); assert.ok(!JSON.stringify(sessions.status()).includes('hash'));
@@ -38,13 +38,13 @@ test('credentials persist only as hashes and browser cookies cannot become agent
   assert.equal(reopened.authenticate(browser.token).kind, 'browser'); assert.equal(reopened.authenticate(agent.token, 'agent').kind, 'agent');
 });
 
-test('agent permissions are validated and returned arrays cannot modify stored scope', async t => {
+test('legacy scope labels are validated but no per-action authorization tier is introduced', async t => {
   const { sessions } = await fixture(t);
-  for (const scopes of [[], ['*'], ['read', 'read'], 'read', ['read', 'desktop:write']]) await assert.rejects(sessions.createAgent({ label: 'Agent', scopes }), { code: 'REMOTE_SCOPES_INVALID' });
+  for (const scopes of [[], ['*'], ['read', 'read'], 'read', ['read', 'desktop:write']]) assert.throws(() => validateRemoteScopes(scopes), { code: 'REMOTE_SCOPES_INVALID' }); // Persisted historical scope records remain validated.
   await assert.rejects(sessions.createAgent({ label: 'Bad\nname', scopes: ['read'] }), { code: 'REMOTE_DEVICE_NAME' });
   const issued = await sessions.createAgent({ label: 'Reader', scopes: ['read'] }); issued.device.scopes.push('tasks:write');
   const publicInfo = sessions.status(); publicInfo.devices[0].scopes.push('planning:write');
-  assert.deepEqual(sessions.authenticate(issued.token, 'agent').scopes, ['read']);
+  assert.deepEqual(sessions.authenticate(issued.token, 'agent').scopes, REMOTE_SCOPES); // Issuance has full agent authority and returned records are copies.
 });
 
 test('independent revocation and expiry invalidate only the selected client', async t => {

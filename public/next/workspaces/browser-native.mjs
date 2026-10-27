@@ -225,7 +225,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
       nodes.button.dataset.tabId=tab?.tabId||'';
       nodes.button.title=tab?(tab.owner?'Task tab · ':'')+(tab.url||label):'New tab';
       nodes.button.setAttribute('aria-selected',String(chosen));nodes.button.tabIndex=chosen?0:-1;
-      nodes.button.classList.toggle('next-primary',chosen);nodes.button.disabled=busy;
+      nodes.button.disabled=busy;
       nodes.close.dataset.closeTab=tab?.tabId||'';nodes.close.disabled=busy||!tab;nodes.close.setAttribute('aria-label','Close '+label);
       if(ui.tabs.children[index]!==nodes.group)ui.tabs.insertBefore(nodes.group,ui.tabs.children[index]||null);
     }

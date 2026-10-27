@@ -37,7 +37,7 @@ async function application(t,{execute,connectionsFactory,autoLearning=false,maxC
 test('identity is attached as real tools and an immutable per-turn snapshot, then refreshed for the next turn',async t=>{
   let initialRevision,initialPrompt;
   const {app,runtime,request,settled}=await application(t,{execute:async(options,index)=>{
-    assert.ok(options.dynamicTools.some(item=>item.name==='relay_identity'));assert.match(options.prompt,/RELAY GLOBAL IDENTITY/);
+    assert.ok(options.dynamicTools.some(item=>item.name==='relay_identity'));assert.match(options.prompt,/BLACKICE GLOBAL IDENTITY/);
     await recordFixturePlan(options);
     if(index===1){
       initialPrompt=options.prompt;const record=JSON.parse(text(await tool(options,'relay_identity',{action:'read',kind:'user'})));initialRevision=record.revision;
@@ -103,12 +103,12 @@ test('a completed reflection persists a real skill and the next agent receives a
       await tool(options,'relay_learn',{action:'finish',summaryOfReview:'Recorded the observed fixture verification procedure.'});return{output:'Recorded evidence-backed skill.'};
     }
     await recordFixturePlan(options);
-    foreground++;if(foreground===2){const lesson=app.learning.listLessons()[0];assert.match(options.prompt,new RegExp(lesson.knowledgeId));const receipt=await tool(options,'relay_skills',{action:'read',id:lesson.knowledgeId});assert.equal(receipt.success,true);assert.match(text(receipt),/Read the current artifact/);readSkill=true;}
+    foreground++;if(foreground===2){const lesson=app.learning.listLessons()[0];assert.doesNotMatch(options.prompt,new RegExp(lesson.knowledgeId));const receipt=await tool(options,'relay_skills',{action:'read',id:lesson.knowledgeId});assert.equal(receipt.success,true);assert.match(text(receipt),/Read the current artifact/);readSkill=true;}
     return{output:'Verified fixture result.',threadId:`skill-thread-${foreground}`};
   }});
   app.learning.delayMs=0;const first=app.engine.startRun({workflow:graph(),input:'Verify the fixture export'});await settled(first.id);await waitFor(()=>app.learning.listLessons().length&&app.learning.status().activeReviewId===null,'automatic skill commit');
-  const lesson=app.learning.listLessons()[0];assert.equal(app.knowledge.get(lesson.knowledgeId).provenance.runId,first.id);assert.equal(app.learning.getContext(cwd).skills[0].id,lesson.id);
-  await app.learning.updateSettings({mode:'manual'});const second=app.engine.startRun({workflow:graph(),input:'Verify the next fixture export'});const next=await settled(second.id);assert.equal(next.status,'completed',next.error);assert.equal(readSkill,true);assert.deepEqual(next.nodes.agent.learningContext.skills,[lesson.id]);
+  const lesson=app.learning.listLessons()[0];assert.equal(app.knowledge.get(lesson.knowledgeId).provenance.runId,first.id);assert.equal(app.learning.getContext(cwd).skills.length,0); // Learned skills remain inspectable but are not auto-injected as authoritative context.
+  await app.learning.updateSettings({mode:'manual'});const second=app.engine.startRun({workflow:graph(),input:'Verify the next fixture export'});const next=await settled(second.id);assert.equal(next.status,'completed',next.error);assert.equal(readSkill,true);assert.deepEqual(next.nodes.agent.learningContext.skills,[]);
 });
 
 test('connected capabilities are registered and call a real MCP transport through the engine with redacted API state and shutdown cleanup',async t=>{

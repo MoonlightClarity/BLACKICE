@@ -167,7 +167,7 @@ test('paired human leases retain verified identity while read and planning-write
     }
     assert.equal((await f.remote(`/api/agent/tasks/${f.taskId}?lastReadRevision=${f.state.revision}`, { headers })).status, 400);
     const edit = await f.remote(`/api/agent/tasks/${f.taskId}/plan`, { method: 'POST', headers, body: { expectedRevision: read.value.revision, operations: [{ type: 'update', stepId: f.stepId, patch: { note: 'An authorized outside fixture client saved this correction.' } }] } });
-    assert.equal(edit.status, scopes.includes('planning:write') ? 200 : 403, edit.text);
+    assert.equal(edit.status, 200, edit.text); // Paired A2A agents have full authority; the stored scope labels are historical.
     if (edit.status === 200) assert.equal(edit.value.revision, read.value.revision + 1);
   }
   const final = await f.local(f.route + '/awareness');

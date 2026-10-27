@@ -1,16 +1,18 @@
 import { text, escapeHTML } from '../core/dom.mjs';
+import { renderRecordedAnalyticPasses } from './tradecraft-timeline.mjs';
+import { projectPlanningOntology } from '../../planning-ontology.mjs';
 import { changeTaskState, taskActions, taskActionLabel, taskIsRunning } from './task-lifecycle.mjs';
 import { taskPlanView, reconcilePlanSession, selectPlanStep, togglePlanBranch, planKeyboard, visiblePlanNodes, planKindLabel } from '../../task-plan-model.mjs';
 import { renderTaskPlanMapSVG, taskPlanMap, planMapZoom, planMapFitZoom, reconcilePlanMapSession } from '../../task-plan-map.mjs';
-import { createPlanningDraft, planningDraftDirty, planningDraftOperations, acceptPlanningSnapshot, rebasePlanningDraft, commitPlanningDraft, projectVisualModel } from './planning-visual.mjs';
+import { createPlanningDraft, planningDraftDirty, planningDraftOperations, acceptPlanningSnapshot, rebasePlanningDraft, commitPlanningDraft, projectVisualModel, buildIntelligenceProject, intelligenceProjectDraft, isIntelligenceProject, renderIntelligenceComposer, renderIntelligenceLanding, renderIntelligenceOverview, intelligenceStarterText, intelligenceTextFromProject, intelligenceProjectFromText, renderIntelligenceMapWorkspace } from './planning-visual.mjs';
 
-export function createPlanningWorkspace({ mount, api, events, notify = () => {}, onNavigate }) {
+export function createPlanningWorkspace({ mount, api, events, notify = () => {}, onNavigate, getStatus = () => ({}) }) {
   mount.innerHTML = [
     '<div class="next-panel next-planning-workspace next-visual-workspace"><div class="next-panel-inner">',
-    '<header class="next-panel-head"><div><h1>Planning</h1><p>See the path, inspect a step, and keep the work in view.</p></div>',
-    '<button type="button" id="next-planning-refresh">Refresh</button></header>',
+    '<header class="next-panel-head"><div><h1>Intelligence Planning</h1><p>Define the intelligence requirement, plan collection, test hypotheses, and shape the assessment.</p></div>',
+    '<div class="next-intel-header-actions"><button type="button" class="next-primary" id="next-intel-new">New assessment</button><button type="button" id="next-planning-refresh">Refresh</button></div></header>',
     '<div class="next-planning-layout"><aside class="next-planning-catalog" aria-label="Saved plans">',
-    '<div class="next-planning-filters"><label class="next-label">Plan type<select class="next-field" id="next-planning-type"><option value="conversation">Conversation plans</option><option value="project">Project plans</option></select></label>',
+    '<div class="next-planning-filters"><label class="next-label">Plan type<select class="next-field" id="next-planning-type"><option value="analysis">Intelligence assessments</option><option value="conversation">Agent working plans</option><option value="project">Other project plans</option></select></label>',
     '<label class="next-label">History<select class="next-field" id="next-planning-state"><option value="active">Active</option><option value="archived">Archived</option><option value="deleted">Trash</option></select></label>',
     '<input class="next-field" id="next-planning-query" type="search" maxlength="500" placeholder="Find plans" aria-label="Find plans">',
     '</div><p class="next-help" id="next-planning-info" role="status"></p>',
@@ -21,10 +23,16 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
   const find = id => mount.querySelector('#' + id), elements = {
     type: find('next-planning-type'), state: find('next-planning-state'), query: find('next-planning-query'),
     list: find('next-planning-list'), detail: find('next-planning-detail'), info: find('next-planning-info'),
-    more: find('next-planning-more'), refresh: find('next-planning-refresh'),
+    more: find('next-planning-more'), refresh: find('next-planning-refresh'), create: find('next-intel-new'),
   };
   let active = false, destroyed = false, generation = 0, detailGeneration = 0, items = [], selected = null, nextOffset = null, pending = false, timer = null, unsubscribe = null, error = '', detailError = '', readingDetail = false, detailController = null;
   const drafts = new Map(), documents = new Map(), sessions = new Map();
+  let composing = false, mapController = null;
+  const mountIntelligenceMap = options => {
+    mapController?.destroy?.();
+    mapController = renderIntelligenceMapWorkspace(options);
+    return mapController;
+  };
   const key = plan => plan ? plan.kind + ':' + (plan.taskId || plan.id) : '';
   const el = (parent, tag, content, cls) => text(parent, content, tag, cls);
   const button = (parent, label, action, id) => {
@@ -33,6 +41,31 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
   };
   const badge = (parent, label, status) => { const node = el(parent, 'span', label, 'next-status-pill'); node.dataset.state = status || label; return node; };
   const title = plan => plan.title || plan.name || plan.goal || plan.id || 'Plan';
+  async function showComposer(project = null) {
+    if (!active || destroyed || pending) return;
+    composing = true;
+    let cwd = project?.cwd || getStatus()?.cwd || '';
+    if (!cwd) { try { cwd = (await api('/api/status'))?.cwd || ''; } catch { /* User can enter an absolute working folder in the text. */ } }
+    if (!composing || !active) return;
+    mountIntelligenceMap({
+      parent: elements.detail, editable: true, project,
+      source: intelligenceTextFromProject(project, cwd),
+      onSave: async source => {
+        const definition = intelligenceProjectFromText(source, project);
+        const canUpdate = project && ['draft', 'paused', 'needs_attention'].includes(project.status)
+          && (project.tasks || []).every(task => !(task.attempts || []).length);
+        const result = canUpdate
+          ? await api('/api/projects/' + encodeURIComponent(project.id), 'PUT', { expectedRevision: project.revision, ...definition })
+          : await api('/api/projects', 'POST', definition);
+        composing = false;
+        elements.type.value = 'analysis'; elements.state.value = 'active'; elements.query.value = '';
+        await load();
+        if (active) await select({ ...result, kind: 'project' });
+        notify(canUpdate ? 'Intelligence text updated.' : 'Intelligence assessment draft saved.');
+      },
+      onCancel: () => { composing = false; drawDetail(); }
+    });
+  }
   function sessionFor(plan) {
     const id = key(plan); if (!sessions.has(id)) sessions.set(id, { presentation: 'map', mapZoom: 1, fitted: false, goalOpen: false });
     return sessions.get(id);
@@ -57,6 +90,43 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
       const node = button(parent, taskActionLabel(action), () => void lifecycle(plan, action)); node.dataset.planAction = action; node.disabled = pending;
       if (action === 'delete' && taskIsRunning(plan)) { node.disabled = true; node.title = 'Stop the task and wait for it to settle before moving it to Trash.'; }
     }
+  }
+  function recordedOntology(parent, saved, state) {
+    const ontology = projectPlanningOntology(saved);
+    if (!ontology.nodes.length) return;
+    const disclosure = el(parent, 'details', '', 'next-plan-ontology');
+    disclosure.open = state.ontologyOpen !== false;
+    const summary = el(disclosure, 'summary', 'Analytical process / technical execution', 'next-plan-ontology-summary');
+    summary.setAttribute('aria-label', 'Show the ontology projected from this saved plan');
+    disclosure.addEventListener('toggle', () => { state.ontologyOpen = disclosure.open; });
+    const lanes = el(disclosure, 'div', '', 'next-plan-ontology-grid');
+    const planView = taskPlanView(saved);
+    const display = [
+      ['analytical', 'Analytical process', 'Questions, competing explanations, evidence tests and judgments'],
+      ['technical', 'Technical execution', 'Methods, tool actions, collected material and output checks'],
+      ['unclassified', 'Untyped saved work', 'Older or unclassified steps; no role has been inferred']
+    ];
+    for (const [domain, name, description] of display) {
+      const nodes = ontology.lanes[domain];
+      if (domain === 'unclassified' && !nodes.length) continue;
+      const lane = el(lanes, 'section', '', 'next-plan-ontology-lane');
+      lane.dataset.domain = domain;
+      el(lane, 'h3', name + ' (' + nodes.length + ')');
+      el(lane, 'p', description, 'next-help');
+      if (!nodes.length) el(lane, 'p', 'No saved ' + (domain === 'analytical' ? 'analytical' : 'technical') + ' actions yet.', 'next-help');
+      for (const node of nodes) {
+        const line = el(lane, 'div', '', 'next-plan-ontology-item');
+        const action = button(line, node.title, () => {
+          Object.assign(state, selectPlanStep(planView, state, node.id));
+          drawDetail(); focusStep(node.id);
+        });
+        action.className = 'next-plan-ontology-link';
+        action.title = node.label + (node.doneWhen ? ' — ' + node.doneWhen : '');
+        badge(line, node.status, node.status);
+        el(line, 'small', node.label, 'next-help next-plan-ontology-type');
+      }
+    }
+    el(disclosure, 'p', ontology.note, 'next-help next-plan-ontology-note');
   }
   function progress(parent, done, total, label) {
     const row = el(parent, 'div', '', 'next-plan-progress');
@@ -238,12 +308,39 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
   function detail(plan) {
     const previous = elements.detail.querySelector('[data-plan-key]'), previousViewport = elements.detail.querySelector('.next-plan-map-viewport'), previousSession = sessions.get(previous?.dataset.planKey);
     if (previousViewport && previousSession && (previousViewport.dataset.mapFocus || '') === (previousSession.mapFocusId || '')) { previousSession.mapLeft = previousViewport.scrollLeft || 0; previousSession.mapTop = previousViewport.scrollTop || 0; }
+    mapController?.destroy?.(); mapController = null;
     elements.detail.replaceChildren(); if (destroyed) return;
-    if (!plan) { el(elements.detail, 'p', 'Choose a plan to see its steps and dependencies.', 'next-plan-empty next-empty'); return; }
+    if (!plan) {
+      mountIntelligenceMap({
+        parent: elements.detail, source: intelligenceStarterText({ cwd: getStatus()?.cwd || '' }),
+        onEdit: () => void showComposer()
+      });
+      const heading = elements.detail.querySelector('.next-intel-map-head h2');
+      if (heading) heading.textContent = 'Illustrative intelligence map';
+      const hint = elements.detail.querySelector('.next-intel-map-head p');
+      if (hint) hint.textContent = 'Draft example — not findings. LLMs edit the structured source; BLACKICE turns its explicit entities and links into this map.';
+      return;
+    }
     const box = el(elements.detail, 'section', '', 'next-plan-detail'); box.dataset.planId = plan.taskId || plan.id; box.dataset.planKey = key(plan);
-    const header = el(box, 'header', '', 'next-plan-detail-header'), heading = el(header, 'div'); el(heading, 'span', plan.kind === 'project' ? 'Project plan' : 'Conversation plan', 'next-plan-eyebrow'); el(heading, 'h2', title(plan));
+    const header = el(box, 'header', '', 'next-plan-detail-header'), heading = el(header, 'div'); el(heading, 'span', isIntelligenceProject(plan) ? 'Intelligence assessment' : plan.kind === 'project' ? 'Project plan' : 'Agent working plan', 'next-plan-eyebrow'); el(heading, 'h2', title(plan));
     const management = el(header, 'div', '', 'next-plan-management'); planActions(management, plan);
-    if (plan.kind === 'project') { projectDetail(box, plan); return; }
+    if (plan.kind === 'project') {
+      if (isIntelligenceProject(plan)) {
+        const map = el(box, 'div', '', 'next-intel-embedded');
+        mountIntelligenceMap({ parent: map, source: intelligenceTextFromProject(plan), project: plan, onEdit: () => void showComposer(plan) });
+        // Keep execution and reviewer receipts available, but separate them
+        // from the analytical argument represented by the text-driven map.
+        const execution = el(box, 'details', '', 'next-intel-execution-details');
+        el(execution, 'summary', 'Agent execution plan and verification');
+        const executionBody = el(execution, 'div', '', 'next-intel-execution-body');
+        execution.addEventListener('toggle', () => {
+          if (execution.open && !executionBody.childNodes.length) projectDetail(executionBody, plan);
+        });
+        return;
+      }
+      projectDetail(box, plan);
+      return;
+    }
     const full = fullPlan(plan);
     if (readingDetail) el(box, 'p', 'Loading saved steps…', 'next-help');
     if (detailError) { const message = el(box, 'p', detailError, 'next-help'); message.setAttribute('role', 'alert'); button(box, 'Retry loading plan', () => void select(plan, { force: true })); }
@@ -251,6 +348,15 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
     const draft = draftFor(full), editable = plan.bucket !== 'deleted' && plan.editable !== false && !detailError && Number.isSafeInteger(draft.base.revision), state = sessionFor(plan);
     const savedProgress = draft.latest.progress || taskPlanView(draft.latest).progress;
     progress(box, savedProgress.done || 0, savedProgress.total || 0, (savedProgress.done || 0) + ' of ' + (savedProgress.total || 0) + ' planned steps done');
+    recordedOntology(box, draft.latest, state);
+    const techniqueTimeline = renderRecordedAnalyticPasses(box, draft.latest, { onSelect: id => {
+      Object.assign(state, selectPlanStep(taskPlanView(draft.latest), state, id));
+      drawDetail(); focusStep(id);
+    } });
+    if (techniqueTimeline) {
+      techniqueTimeline.open = Boolean(state.techniqueTimelineOpen);
+      techniqueTimeline.addEventListener('toggle', () => { state.techniqueTimelineOpen = techniqueTimeline.open; });
+    }
     const form = el(box, 'form', '', 'next-plan-edit'); form.id = 'next-planning-edit';
     conversationVisual(form, plan, draft, editable);
     const goalDisclosure = el(form, 'details', '', 'next-plan-goal-disclosure'); goalDisclosure.id = 'next-planning-goal-disclosure'; goalDisclosure.open = state.goalOpen; el(goalDisclosure, 'summary', 'Shared goal');
@@ -285,10 +391,11 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
     });
   }
   function paint() {
-    elements.list.replaceChildren(); if (!items.length) el(elements.list, 'p', 'No matching plans in this view.', 'next-empty');
+    elements.list.replaceChildren(); if (!items.length) el(elements.list, 'p', elements.type.value === 'analysis' ? 'No intelligence assessments yet. Start with a priority intelligence question.' : 'No matching plans in this view.', 'next-empty');
     for (const item of items) {
       const card = el(elements.list, 'article', '', 'next-planning-plan-card' + (key(selected) === key(item) ? ' is-selected' : '')); card.dataset.planId = item.taskId || item.id;
       el(card, 'h3', title(item));
+      if (isIntelligenceProject(item)) el(card, 'p', intelligenceProjectDraft(item).question || 'Priority intelligence question not defined', 'next-intel-catalog-question');
       const row = el(card, 'div', '', 'next-planning-plan-meta'); badge(row, item.runStatus || item.status || 'saved', item.runStatus || item.status || 'saved');
       const p = item.kind === 'project' ? item.summary?.progress : item.progress;
       if (p?.total) el(row, 'span', String(p.done ?? p.completed ?? 0) + '/' + p.total + (item.kind === 'project' ? ' reviewed' : ' steps'), 'next-help');
@@ -300,6 +407,7 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
   }
   async function select(plan, { force = false } = {}) {
     if (!active || destroyed) return;
+    composing = false;
     if (key(selected) !== key(plan)) releaseCleanSelection(); abortDetail(); selected = plan; detailError = ''; paint();
     if (plan.kind === 'project') { detail(plan); return; }
     const cached = documents.get(plan.taskId);
@@ -318,12 +426,12 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
     if (!active || destroyed) return;
     const token = ++generation, type = elements.type.value, state = elements.state.value, query = elements.query.value;
     try {
-      const data = type === 'project' ? await api('/api/projects') : await api('/api/planning?' + new URLSearchParams({ state, query, limit: '40', offset: String(more ? nextOffset || 0 : 0) }));
+      const data = type !== 'conversation' ? await api('/api/projects') : await api('/api/planning?' + new URLSearchParams({ state, query, limit: '40', offset: String(more ? nextOffset || 0 : 0) }));
       if (!active || token !== generation) return;
-      if (type === 'project') { items = (Array.isArray(data?.projects) ? data.projects : []).filter(plan => (plan.archived === true) === (state === 'archived') && String(plan.name || plan.title || '').toLowerCase().includes(query.toLowerCase())).map(plan => ({ ...plan, kind: 'project' })); nextOffset = null; }
+      if (type !== 'conversation') { items = (Array.isArray(data?.projects) ? data.projects : []).filter(plan => (plan.archived === true) === (state === 'archived') && (type === 'analysis' ? isIntelligenceProject(plan) : !isIntelligenceProject(plan)) && String(plan.name || plan.title || '').toLowerCase().includes(query.toLowerCase())).map(plan => ({ ...plan, kind: 'project' })); nextOffset = null; }
       else { const values = (Array.isArray(data?.plans) ? data.plans : []).map(plan => ({ ...plan, kind: 'conversation' })); items = more ? [...items, ...values.filter(value => !items.some(item => key(item) === key(value)))] : values; nextOffset = Number.isSafeInteger(data.nextOffset) ? data.nextOffset : null; }
       error = data.healthy === false ? 'Some saved plans could not be read. Available plans are shown.' : ''; paint();
-      if (more) return;
+      if (composing || more) return;
       const selectedKey = key(selected); let match = items.find(item => key(item) === selectedKey);
       if (!match && selected?.kind === 'conversation' && drafts.has(selectedKey) && (planningDraftDirty(drafts.get(selectedKey)) || drafts.get(selectedKey).detachedNotes.length)) {
         const exact = { taskId: selected.taskId, limit: '1', offset: '0' }, results = await Promise.all(['all', 'deleted'].map(state => api('/api/planning?' + new URLSearchParams({ ...exact, state }))));
@@ -351,13 +459,14 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
     finally { pending = false; if (active) { paint(); drawDetail({ retainFocus: true }); } }
   }
   function reset() { generation++; releaseCleanSelection(); abortDetail(); selected = null; items = []; nextOffset = null; detailError = ''; error = ''; paint(); detail(null); void load(); }
-  elements.type.addEventListener('change', () => { const trash = [...elements.state.children].find(option => option.value === 'deleted'); if (trash) trash.disabled = elements.type.value === 'project'; if (elements.type.value === 'project' && elements.state.value === 'deleted') elements.state.value = 'active'; reset(); });
+  elements.type.addEventListener('change', () => { composing = false; const trash = [...elements.state.children].find(option => option.value === 'deleted'); if (trash) trash.disabled = elements.type.value !== 'conversation'; if (elements.type.value !== 'conversation' && elements.state.value === 'deleted') elements.state.value = 'active'; reset(); });
   elements.state.addEventListener('change', reset);
   elements.query.addEventListener('input', () => { generation++; abortDetail(); clearTimeout(timer); timer = setTimeout(reset, 240); });
   elements.refresh.addEventListener('click', () => void load()); elements.more.addEventListener('click', () => void load({ more: true }));
+  elements.create.addEventListener('click', () => void showComposer());
   return {
     enter() { if (active || destroyed) return; active = true; unsubscribe = events.subscribe(event => { if (!active || !['planning.updated', 'projects.updated', 'conversations.updated', 'conversations.changed'].includes(event.type)) return; clearTimeout(timer); timer = setTimeout(() => void load(), 600); }); void load(); },
     leave() { active = false; generation++; abortDetail(); unsubscribe?.(); unsubscribe = null; clearTimeout(timer); },
-    destroy() { this.leave(); destroyed = true; drafts.clear(); documents.clear(); sessions.clear(); mount.innerHTML = ''; },
+    destroy() { this.leave(); destroyed = true; mapController?.destroy?.(); mapController = null; drafts.clear(); documents.clear(); sessions.clear(); mount.innerHTML = ''; },
   };
 }

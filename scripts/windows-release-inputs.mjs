@@ -6,6 +6,7 @@ const topLevelFiles = new Set(['package.json', 'LICENSE', 'NOTICE', 'THIRD-PARTY
 const check = (condition, message) => { if (!condition) throw new Error(message); };
 topLevelFiles.add('RELEASE-NOTES-2.35.0.md');
 topLevelFiles.add('RELEASE-NOTES-2.35.1.md');
+topLevelFiles.add('RELEASE-NOTES-2.35.2.md');
 
 // Match the existing installer inputs without admitting arbitrary native helpers.
 const packagedNativeHelpers = new Set(['desktop/make-icon.ps1', 'desktop/native-window-host.cs', 'desktop/native-window-host.ps1']);

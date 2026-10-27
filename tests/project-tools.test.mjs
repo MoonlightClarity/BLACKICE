@@ -21,7 +21,7 @@ test('an agent creates the shared project through its attached tool without exec
       if(calls.length===1){
         assert.ok(options.dynamicTools.some(tool=>tool.name===PROJECT_TOOL.name));
         assert.match(options.developerInstructions,/relay_project/);
-        assert.match(options.developerInstructions,/review_task/);
+        assert.match(options.developerInstructions,/planning|plan/i);
         const methods=await options.onToolCall({name:PROJECT_TOOL.name,arguments:{action:'methods'}});assert.equal(methods.success,true);assert.ok(payload(methods).methods.some(method=>method.id==='research-brief'),'the ordinary agent receives the shared method store through its actual engine handler');
         const created=await options.onToolCall({name:PROJECT_TOOL.name,arguments:{action:'create',project:{name:'Shared goal',objective:'Check an isolated result.',tasks:[{id:'check',title:'Check result',instructions:'Inspect output.',acceptanceCriteria:['A result was inspected.']}]}}});
         assert.equal(created.success,true);const project=payload(created);assert.equal(project.cwd,cwd);assert.equal(project.status,'draft');

@@ -260,15 +260,15 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     const runs=conversationRuns(family);
     state.messageLimits=messageLimitsAfterRefresh(state.runs,runs,state.messageLimits);
     state.runs=runs;state.lastLoadedAt=Date.now();
-    render({preserve:refresh});hint('Enter to send · Shift+Enter for a new line');
-    // History carries saved file IDs; resolve human-readable names without
-    // blocking the transcript or altering the files delivered to the agent.
+    render({preserve:refresh});
+    // Resolve names for stored attachment IDs without blocking the transcript.
     if(runs.some(run=>Array.isArray(run.attachmentIds)&&run.attachmentIds.length)) {
       void attachmentsUI.refresh().then(()=>{
         if(state.active&&!state.destroyed&&state.dataController===controller&&!controller.signal.aborted)
           render({preserve:true});
-      });
+      }).catch(()=>{});
     }
+    hint('Enter to send · Shift+Enter for a new line');
     try { localStorage.setItem('blackice.next.selected',id); } catch {}
     if(!state.markdown) void loadMarkdown();
   }
@@ -361,6 +361,24 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     }
     if(!event.runId || !state.runs.some(run=>run.id===event.runId))return;
     const data=event.data || {};
+    if(event.type==='agent.event' && data.type==='task.state' && data.state){
+      const current=state.runs.find(run=>run.id===event.runId);
+      if(current && Number(data.state.revision)>Number(current.taskState?.revision||0)){
+        current.taskState=data.state;
+        render({preserve:true});
+      }
+    }
+    if(event.type==='agent.event' && data.type==='message' && typeof data.text==='string' && data.text.trim()){
+      const current=state.runs.find(run=>run.id===event.runId);
+      if(current){
+        const messages=current.precomputedMessages ||= [];
+        const id=(event.nodeId||'agent')+':'+(data.itemId||('live-'+data.text.length+'-'+data.text.slice(0,24)));
+        if(!messages.some(message=>message.id===id))
+          messages.push({id,nodeId:event.nodeId||'agent',role:'assistant',text:data.text,
+            phase:data.phase,provisional:data.provisional===true});
+        render({preserve:true});
+      }
+    }
     if(data.type==='delta'&&typeof data.delta==='string'&&event.runId===state.runs.at(-1)?.id)queueLive(data.delta);
     if(event.type==='run.updated') {
       const updated=data.run||data;

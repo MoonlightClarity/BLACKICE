@@ -76,14 +76,14 @@ export function messagesOfRun(run) {
     }
     if (d.type === 'delta' && text(d.delta)) {
       const id = d.itemId ? nodeId + ':' + d.itemId : anonymous.get(nodeId) || nodeId + ':stream-' + serial++;
-      anonymous.set(nodeId,id);entry(id,nodeId).text += d.delta;continue;
+      anonymous.set(nodeId,id);const item=entry(id,nodeId);item.text += d.delta;if(d.provisional)item.provisional=true;continue;
     }
     if (d.type === 'message' || d.type === 'item' && d.item?.type === 'agentMessage') {
       const content = text(d.text ?? d.item?.text);
       if (!content.trim()) continue;
       const itemId = d.itemId || d.item?.id;
       const id = itemId ? nodeId + ':' + itemId : anonymous.get(nodeId) || nodeId + ':message-' + serial++;
-      const item = entry(id,nodeId); item.text=content;item.phase=d.phase||d.item?.phase||item.phase;
+      const item = entry(id,nodeId); item.text=content;item.phase=d.phase||d.item?.phase||item.phase;if(d.provisional)item.provisional=true;
       anonymous.delete(nodeId);continue;
     }
     if (d.type === 'item' && ['dynamicToolCall','mcpToolCall','commandExecution','fileChange'].includes(d.item?.type)) anonymous.delete(nodeId);
@@ -116,18 +116,32 @@ export function messagesOfRun(run) {
     messages.push({ id:'saved-result',role:'assistant',text:run.output,phase:'final_answer' });
   return messages.filter(m=>m.text.trim());
 }
+const TERMINAL_CHAT_STATUSES = new Set(['completed', 'failed', 'cancelled']);
+export function canContinueRun(run) {
+  return Boolean(run && run.settled === true && TERMINAL_CHAT_STATUSES.has(run.status));
+}
 export function replyTarget(runs) {
-  for (let i = runs.length - 1; i >= 0; i--) {
-    const run = runs[i];
-    if (running(run)) return { run, active: true,
-      nodeId: run.workflow?.nodes?.find(node => node.type === 'agent' && run.nodes?.[node.id]?.status === 'running')?.id || 'agent' };
-    if (run.status === 'completed' && run.settled === true) {
-      const agent = [...(run.workflow?.nodes || [])].reverse().find(n =>
-        n.type === 'agent' && (run.nodes?.[n.id]?.threadId || run.nodes?.[n.id]?.resumeThreadId));
-      if (agent) return { run, nodeId: agent.id, active: false };
-    }
+  const history = Array.isArray(runs) ? runs : [];
+  // The last saved turn owns the reply target. In particular, do not skip
+  // a failed model and silently resume an earlier successful model.
+  const run = history.at(-1) || null;
+  if (running(run)) {
+    const agent = run.status === 'running' && run.workflow?.nodes?.find(node =>
+      node.type === 'agent' && run.nodes?.[node.id]?.status === 'running'
+      && (['opening','inquiry-opening','inquiry','main-opening'].includes(run.nodes?.[node.id]?.runtimePhase)
+        || run.nodes?.[node.id]?.threadId && run.nodes?.[node.id]?.turnId));
+    // Opening/handoff directions queue inside the active execution; an inquiry
+    // uses its actual live turn. Never target an older idle coordinator thread.
+    return { run, active: Boolean(agent), nodeId: agent?.id || null };
   }
-  return { run: runs.at(-1) || null, nodeId: null, active: false };
+  if (canContinueRun(run)) {
+    const agent = [...(run.workflow?.nodes || [])].reverse().find(node =>
+      node.type === 'agent' && TERMINAL_CHAT_STATUSES.has(run.nodes?.[node.id]?.status));
+    // A provider can fail before creating a thread. The engine reconstructs
+    // context from saved conversation history, so a thread ID is not required.
+    if (agent) return { run, nodeId: agent.id, active: false };
+  }
+  return { run, nodeId: null, active: false };
 }
 export const CHAT_MESSAGE_BATCH=80;
 export function windowedMessages(messages, count=CHAT_MESSAGE_BATCH) {

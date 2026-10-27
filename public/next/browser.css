@@ -72,6 +72,11 @@
   padding: 7px 10px;
   text-align: left;
 }
+.next-browser-tab-group .next-browser-tab[aria-selected=true] {
+  color: #f0f3f7;
+  font-weight: 600;
+}
+.next-browser-tab-group .next-browser-tab-close { color: #d3dae3; }
 .next-browser-tab-group .next-browser-tab-close {
   background: transparent;
   border: 0;

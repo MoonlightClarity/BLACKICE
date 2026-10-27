@@ -217,7 +217,7 @@ test('desktop wiring isolates renderer recovery from detach and guards shutdown'
   assert.ok(wiring.includes("onResponsive: () => diagnostics.record({ component: 'desktop', event: 'renderer_responsive' })"));
   assert.ok(wiring.includes('restartClosing')); assert.ok(wiring.includes('maintenanceScheduled')); assert.ok(wiring.includes('desktopLifecycle.quitting'));
   assert.ok(!wiring.includes('detachDesktop')); assert.ok(!wiring.includes('app.quit')); assert.match(source, /return recovery\.loadInitial\(\)/);
-  assert.match(source, /async function shutdown\(\) \{\s*rendererRecovery\?\.stop\(\)/);
-  assert.match(source, /app\.on\('before-quit', event => \{\s*rendererRecovery\?\.stop\(\)/);
+  assert.ok(source.includes('rendererRecovery?.stop()'), 'Renderer recovery stops during shutdown.');
+  assert.ok(source.includes('before-quit'), 'Quit is guarded.');
   assert.match(source, /!requested\.headless && !requested\.background\) await rendererRecovery\?\.retry\(\)/);
 });

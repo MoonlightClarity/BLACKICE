@@ -16,7 +16,7 @@ export function createIdentitySettings({mount,api,events,notify=()=>{}}) {
   mount.innerHTML=[
     '<section class="next-card next-identity-settings" aria-labelledby="next-identity-title">',
     '<h2 id="next-identity-title">Identity &amp; profile</h2>',
-    '<p class="next-help">Global character and user preferences shared across all working folders. Saved changes apply to the next agent turn; current turns keep their original snapshot.</p>',
+    '<p class="next-help">Global character and user preferences shared across all working folders. SOUL.md stays fixed during development and learning. You can edit it here or explicitly ask BLACKICE to revise it. Saved changes apply to the next agent turn; current turns keep their original snapshot.</p>',
     '<div class="next-identity-tabs" role="tablist" aria-label="Identity files">',
     '<button id="next-identity-soul" type="button" role="tab" aria-controls="next-identity-editor">Soul</button>',
     '<button id="next-identity-user" type="button" role="tab" aria-controls="next-identity-editor">User profile</button></div>',
@@ -89,7 +89,7 @@ export function createIdentitySettings({mount,api,events,notify=()=>{}}) {
     for(const kind of KINDS){ui[kind].setAttribute('aria-selected',String(kind===selected));ui[kind].tabIndex=kind===selected?0:-1;}
     ui.editor.setAttribute('aria-labelledby','next-identity-'+selected);
     ui.name.textContent=NAMES[selected];
-    ui.description.textContent=selected==='soul'?'Personality, voice, and working style.':'Confirmed facts and preferences about you.';
+    ui.description.textContent=selected==='soul'?'Fixed BLACKICE identity, voice, and working style. Yours to edit.':'Confirmed facts and preferences about you.';
     ui.path.textContent=doc?.path||'';ui.warning.hidden=!doc?.warning;ui.warning.textContent=doc?.warning||'';
     ui.conflict.hidden=!state.incoming;ui.content.setAttribute('aria-label',NAMES[selected]+' Markdown');
     ui.content.maxLength=LIMITS[selected];

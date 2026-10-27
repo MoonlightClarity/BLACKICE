@@ -1,0 +1,85 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "scope": "source-publication",
+  "version": "2.35.3",
+  "platform": "win32",
+  "node": "v24.13.0",
+  "checkedAt": "2026-10-27T09:05:13.461Z",
+  "appFingerprint": "b2f6142a0aa53925088d20483a35a55aadc120248e682b097ccc7d625f174bbd",
+  "fingerprintUnchanged": true,
+  "testFiles": 389,
+  "tests": {
+    "total": 4855,
+    "passed": 4847,
+    "failed": 0,
+    "requiredSkipped": 0,
+    "optionalSkipped": 8,
+    "cancelled": 0,
+    "exitCode": 0
+  },
+  "fullSuite": true,
+  "testLogSha256": "136a28b60a5f050ba34c1f6cf82f330d9d22c6e4810d663aac98320706b8506d",
+  "batchEvidence": [
+    {
+      "batch": 0,
+      "tests": 1290,
+      "passed": 1286,
+      "failed": 0,
+      "skipped": 4,
+      "cancelled": 0,
+      "logSha256": "59b5d4371cfe1050fc89ea051173862bdfc9e7180c6242280cbd993bcfc74236"
+    },
+    {
+      "batch": 1,
+      "tests": 1124,
+      "passed": 1121,
+      "failed": 0,
+      "skipped": 3,
+      "cancelled": 0,
+      "logSha256": "b44af5c9fb006d39e712956b7a8781cc4f58d973e8874f6655a2a7135fadfdf8"
+    },
+    {
+      "batch": 2,
+      "tests": 1157,
+      "passed": 1156,
+      "failed": 0,
+      "skipped": 1,
+      "cancelled": 0,
+      "logSha256": "abb5cb07aa0a3a92a3e8d45f203d5f429002abd559458ae1873806d32842478e"
+    },
+    {
+      "batch": 3,
+      "tests": 1193,
+      "passed": 1193,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSha256": "02340f4107041e5824b90816935f14954ae9e9fd47f48b09aa42247fad177cf2"
+    },
+    {
+      "batch": 4,
+      "tests": 91,
+      "passed": 91,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSha256": "6393d711df0592ca7126cd3cc8d4a4daeab927a446be4ac84a5c361d508bf829"
+    }
+  ],
+  "optionalIntegrationSkips": [
+    "ok 413 - Relay-owned sign-in and local storage survive a full process restart without foregrounding # SKIP Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+    "ok 641 - restored hidden browser tabs defer requests until used and never load closed or replaced pages # SKIP Set RELAY_LIVE_BROWSER_QA=1 for disposable Electron restoration.",
+    "ok 680 - native cross-origin popups redirect, message their opener and follow or close without breaking Observe pins or task routing # SKIP Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+    "ok 806 - actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases # SKIP Set RELAY_TRUSTED_FILL_QA=1 for the isolated native fixture.",
+    "ok 580 - live background accessibility actions change only a dedicated non-activating fixture and leave foreground and cursor untouched # SKIP",
+    "ok 744 - hidden isolated Chromium composer validates real layout and one-click send wiring # SKIP Set BLACKICE_EMAIL_COMPOSE_QA=1 for the isolated native UI fixture.",
+    "ok 769 - installed Himalaya sends exact MIME to disposable loopback SMTP and strips Bcc headers # SKIP",
+    "ok 1 - real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart # SKIP Set RELAY_LIVE_FIREFOX_QA=1 on Windows to use a new disposable Firefox profile."
+  ],
+  "limitations": [
+    "Optional integrations are separately recorded as skips; no required tests were skipped.",
+    "This local source test record does not substitute for fresh exact-installer validation.",
+    "No independent analytical quality evaluation is asserted by unit tests."
+  ]
+}

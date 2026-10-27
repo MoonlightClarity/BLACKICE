@@ -24,7 +24,7 @@ async function fixture(t) {
 
 test('every built-in method previews a usable ordered project with declared types, independent checks and no execution', async t => {
   const { methods, projects, engine, cwd } = await fixture(t), snapshot = methods.snapshot();
-  assert.equal(snapshot.status.builtin, BUILTIN_METHODS.length); assert.equal(snapshot.status.builtin, 589); assert.equal(snapshot.status.custom, 0); assert.equal(snapshot.ontology.taskTypes.length, 7); assert.equal(snapshot.ontology.stepTypes.length, 7);
+  assert.equal(snapshot.status.builtin, BUILTIN_METHODS.length); assert.equal(snapshot.status.builtin, 589); assert.equal(snapshot.status.custom, 0); assert.equal(snapshot.ontology.taskTypes.length, 7); assert.ok(snapshot.ontology.stepTypes.length >= 7); assert.ok(snapshot.ontology.stepTypes.some(item => item.id === 'analytic_judgment'));
   for (const method of snapshot.methods) {
     const preview = methods.preview(method.id, { objective: 'A scoped fixture outcome.', cwd, inputs: Object.fromEntries(method.inputs.map(input => [input.id, 'Fixture material.'])) });
     assert.equal(preview.method.id, method.id); assert.equal(preview.method.revision, 1); assert.equal(preview.model, 'default'); assert.equal(preview.verifierModel, 'default'); assert.equal(Object.hasOwn(preview, 'status'), false);

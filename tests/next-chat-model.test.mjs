@@ -8,7 +8,7 @@ const sampleRun=(id,status='completed',events=[])=>({
   id,taskId:'conversation',status,settled:status==='completed',
   createdAt:'2026-10-24T10:00:00Z',input:'A user question',
   workflow:{nodes:[{id:'agent',type:'agent',name:'BLACKICE agent',model:'default'}]},
-  nodes:{agent:{status,threadId:'thread-'+id,output:'**The final answer**'}},
+  nodes:{agent:{status,threadId:'thread-'+id,turnId:status==='running'?'turn-'+id:undefined,output:'**The final answer**'}},
   events,
 });
 test('conversation reader strips large tool traces but keeps real messages and directions',()=>{

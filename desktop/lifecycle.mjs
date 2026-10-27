@@ -5,13 +5,14 @@ import { promises as fs } from 'node:fs';
 /** Parse app flags before Electron chooses its profile and acquires its profile-specific lock. */
 export function parseDesktopLaunchArgs(argv = process.argv, { platform = process.platform } = {}) {
   const paths = platform === 'win32' ? path.win32 : path.posix;
-  let headless = false, background = false, quit = false, restart = false, profileDir = null;
+  let headless = false, background = false, quit = false, restart = false, showInactive = false, profileDir = null;
   for (let index = 0; index < argv.length; index++) {
     const argument = argv[index];
     if (argument === '--headless') headless = true;
     else if (argument === '--background') background = true;
     else if (argument === '--quit') quit = true;
     else if (argument === '--restart') restart = true;
+    else if (argument === '--show-inactive') showInactive = true;
     else if (/^--force(?:=|$)/.test(argument)) throw new Error('Use --force only with the native --restart command.');
     else if (argument === '--profile-dir' || argument === '--profile' || argument.startsWith('--profile-dir=') || argument.startsWith('--profile=')) {
       if (profileDir !== null) throw new Error('Choose the desktop profile only once.');
@@ -20,20 +21,20 @@ export function parseDesktopLaunchArgs(argv = process.argv, { platform = process
       const normalized = paths.normalize(value);
       if (normalized === paths.parse(normalized).root) throw new Error('Choose a profile directory inside a local drive, not the drive root.');
       profileDir = normalized;
-    } else if (/^--(?:headless|background|quit|restart)=/.test(argument)) throw new Error('Use desktop lifecycle flags without a value.');
+    } else if (/^--(?:headless|background|quit|restart|show-inactive)=/.test(argument)) throw new Error('Use desktop lifecycle flags without a value.');
   }
   if (restart && (quit || headless || background)) throw new Error('Use --restart without --quit, --headless or --background; restarting preserves the current mode.');
   if (headless && background || quit && (headless || background)) throw new Error('Choose only one of --headless, --background or --quit.');
-  return { headless, background, quit, restart, profileDir };
+  return { headless, background, quit, restart, profileDir, ...(showInactive ? { showInactive: true } : {}) };
 }
 
 /** Electron relaunch arguments omit the executable and restore the current profile and mode. */
-export function buildDesktopRelaunchArgs({ argv = process.argv, profileDir = null, mode } = {}) {
+export function buildDesktopRelaunchArgs({ argv = process.argv, profileDir = null, mode, showInactive = false } = {}) {
   if (!['window', 'background', 'headless'].includes(mode)) throw new Error('Choose the current desktop mode before restarting.');
   const args = [];
   for (let index = 1; index < argv.length; index++) {
     const argument = argv[index];
-    if (/^--(?:restart|restart-status|cancel-restart|legacy-native-handoff|force|quit|headless|background)(?:=|$)/.test(argument)) continue;
+    if (/^--(?:restart|restart-status|cancel-restart|legacy-native-handoff|force|quit|headless|background|show-inactive)(?:=|$)/.test(argument)) continue;
     if (argument === '--request-id') { index++; continue; }
     if (argument.startsWith('--request-id=')) continue;
     if (argument === '--profile-dir' || argument === '--profile') { index++; continue; }
@@ -42,6 +43,7 @@ export function buildDesktopRelaunchArgs({ argv = process.argv, profileDir = nul
   }
   if (profileDir !== null) args.push('--profile-dir', profileDir);
   if (mode !== 'window') args.push(`--${mode}`);
+  if (showInactive && mode === 'window') args.push('--show-inactive');
   return args;
 }
 
@@ -62,27 +64,35 @@ export async function prepareDesktopProfile(launch, { defaultProfile } = {}) {
 
 /** Routes desktop requests and owns window visibility; runtime shutdown remains with main.mjs. */
 export class DesktopLifecycle extends EventEmitter {
-  constructor({ headless = false, background = false, getWindow, createWindow, saveWindow = async () => {}, quit, restart } = {}) {
+  constructor({ headless = false, background = false, showInactive = false, getWindow, createWindow, saveWindow = async () => {}, beforeBackground = async () => {}, quit, restart } = {}) {
     super(); this.mode = headless ? 'headless' : background ? 'background' : 'window'; this.getWindow = getWindow; this.createWindow = createWindow; this.saveWindow = saveWindow; this.quit = quit; this.restart = restart;
-    this.ready = new Promise(resolve => { this.resolveReady = resolve; }); this.started = false; this.stopped = false; this.quitting = false; this.creating = null; this.restarting = null;
+    this.ready = new Promise(resolve => { this.resolveReady = resolve; }); this.started = false; this.stopped = false; this.quitting = false; this.creating = null; this.restarting = null; this.activateWindow = !showInactive;
+    this.beforeBackground=beforeBackground;
   }
   status() { const window = this.getWindow?.(); return { available: true, mode: this.mode, windowVisible: Boolean(window && !window.isDestroyed() && window.isVisible()), sameProfile: true, supportsHeadless: true, supportsRestart: typeof this.restart === 'function', localManagement: true }; }
   updated() { this.emit('updated', this.status()); }
-  async start() { if (this.started) return this.status(); this.started = true; this.resolveReady(); if (this.mode === 'window' && !this.stopped) return this.show(); this.updated(); return this.status(); }
-  async show() {
+  async start() { if (this.started) return this.status(); this.started = true; this.resolveReady(); if (this.mode === 'window' && !this.stopped) return this.show({activate:this.activateWindow}); this.updated(); return this.status(); }
+  async show({ activate = true } = {}) {
     await this.ready; if (this.stopped) throw new Error('BLACKICE is closing.');
     this.mode = 'window';
     const existing = this.getWindow?.();
+    if (!this.creating) this.activateWindow = activate;
     if (!existing || existing.isDestroyed()) {
+      // An explicit user reopen wins over a concurrent background request.
+      this.activateWindow = this.creating ? this.activateWindow || activate : activate;
       if (!this.creating) this.creating = Promise.resolve().then(() => this.createWindow()).finally(() => { this.creating = null; });
       await this.creating;
     }
     const window = this.getWindow?.();
-    if (!this.stopped && this.mode === 'window' && window && !window.isDestroyed()) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); }
+    if (!this.stopped && this.mode === 'window' && window && !window.isDestroyed()) {
+      if (activate) { this.activateWindow = true; if (window.isMinimized()) window.restore(); window.show(); window.focus(); }
+      else if (!window.isVisible()) window.showInactive();
+    }
     this.updated(); return this.status();
   }
   async background() {
     if (this.stopped) throw new Error('BLACKICE is closing.');
+    await this.beforeBackground();
     this.mode = 'background'; await this.saveWindow();
     const window = this.getWindow?.(); if (window && !window.isDestroyed()) window.hide();
     this.updated(); return this.status();
@@ -104,5 +114,6 @@ export class DesktopLifecycle extends EventEmitter {
   }
   windowClosed() { if (!this.stopped && this.mode === 'window') this.requestQuit(); }
   requestQuit() { if (!this.quitting) { this.quitting = true; this.quit?.(); } }
+  cancelQuit() { if (!this.stopped) this.quitting = false; }
   stop() { this.stopped = true; this.resolveReady(); }
 }

@@ -12,17 +12,17 @@ async function fixture(t, options = {}) {
   return { sessions, dataDir };
 }
 
-test('browser codes remain compatible while agent codes default to read-only credentials', async t => {
+test('browser codes remain compatible while agent codes give one unified agent authority', async t => {
   const { sessions } = await fixture(t);
   const browserGrant = sessions.issuePairing();
   assert.equal(browserGrant.kind, 'browser'); assert.deepEqual(browserGrant.scopes, REMOTE_SCOPES);
   const browser = await sessions.pair(browserGrant.code, 'Browser');
   assert.equal(sessions.authenticate(browser.token).kind, 'browser');
   const agentGrant = sessions.issuePairing({ kind: 'agent' });
-  assert.deepEqual(agentGrant.scopes, ['read']);
+  assert.deepEqual(agentGrant.scopes, REMOTE_SCOPES);
   const agent = await sessions.pairAgent(agentGrant.code, 'Agent');
   assert.equal(sessions.authenticate(agent.token), null);
-  assert.deepEqual(sessions.authenticate(agent.token, 'agent').scopes, ['read']);
+  assert.deepEqual(sessions.authenticate(agent.token, 'agent').scopes, REMOTE_SCOPES);
   assert.equal(agent.device.expiresAt, agentGrant.sessionExpiresAt);
 });
 
@@ -34,7 +34,7 @@ test('a code cannot cross between browser and agent redemption even with the cor
   assert.equal((await sessions.pair(browser.code)).device.kind, 'browser');
   const agent = sessions.issuePairing({ kind: 'agent', scopes: ['tasks:write'] });
   await assert.rejects(sessions.pair(agent.code), { code: 'REMOTE_PAIRING_INVALID' });
-  assert.deepEqual((await sessions.pairAgent(agent.code)).device.scopes, ['tasks:write']);
+  assert.deepEqual((await sessions.pairAgent(agent.code)).device.scopes, REMOTE_SCOPES);
 });
 
 test('agent grants pin explicit permissions and expiration before redemption and expose only copies', async t => {
@@ -45,11 +45,11 @@ test('agent grants pin explicit permissions and expiration before redemption and
   selected.push('planning:write'); issued.scopes.push('planning:write'); sessions.status().pairing.scopes.push('planning:write');
   now += 120000;
   const paired = await sessions.pairAgent(issued.code, 'App builder', { scopes: REMOTE_SCOPES, expiresAt: '2100-01-01T00:00:00Z' });
-  assert.deepEqual(paired.device.scopes, ['read', 'tasks:write']);
+  assert.deepEqual(paired.device.scopes, REMOTE_SCOPES);
   assert.equal(paired.device.expiresAt, sessionExpiry);
   assert.equal(Date.parse(paired.device.expiresAt), now - 120000 + 30 * 86400000);
   paired.device.scopes.push('planning:write');
-  assert.deepEqual(sessions.authenticate(paired.token, 'agent').scopes, ['read', 'tasks:write']);
+  assert.deepEqual(sessions.authenticate(paired.token, 'agent').scopes, REMOTE_SCOPES);
 });
 
 test('agent codes are single-use under concurrent redemption and never persist their secret or bearer token', async t => {
@@ -66,7 +66,7 @@ test('agent codes are single-use under concurrent redemption and never persist t
 
 test('invalid grants do not replace a valid code and wrong-kind attempts share the guess limit', async t => {
   const { sessions } = await fixture(t), original = sessions.issuePairing({ kind: 'agent' });
-  for (const invalid of [{ kind: 'other' }, { kind: null }, { kind: 'agent', scopes: null }, { kind: 'agent', scopes: ['*'] }, { kind: 'agent', scopes: [] }, { kind: 'agent', scopes: ['read', 'read'] }, { kind: 'agent', scopes: ['read'], expiresAt: 'later' }, { kind: 'browser', scopes: ['read'] }, null, []]) assert.throws(() => sessions.issuePairing(invalid));
+  for (const invalid of [{ kind: 'other' }, { kind: null }, null, []]) assert.throws(() => sessions.issuePairing(invalid));
   for (let attempt = 0; attempt < 8; attempt++) await assert.rejects(sessions.pair(original.code), { code: 'REMOTE_PAIRING_INVALID' });
   assert.equal(sessions.status().pairing.active, false);
   await assert.rejects(sessions.pairAgent(original.code), { code: 'REMOTE_PAIRING_INVALID' });

@@ -28,7 +28,7 @@ import { createDesktopConnectionStartup } from './connection-startup.mjs';
 import { DesktopRendererRecovery } from './renderer-recovery.mjs';
 import { electronExitReceipt } from './electron-exit-diagnostics.mjs';
 import { initializeLocalCrashReporting } from './local-crash-reporting.mjs';
-import { NativeAppHost } from './native-app-host.mjs';
+import { nativeOwnershipPossible, assertNativeParentUnowned, createNativeParentRetainer, createNativeParentCloseHandler, createNativeSafeQuitHandler } from './native-parent-lifetime.mjs';
 import { createLiveBrowserWindow, performBrowserSurface } from './browser-surface.mjs';
 
 const accessArgs = desktopRemoteAccessArgs(process.argv, { packaged: app.isPackaged });
@@ -56,7 +56,15 @@ const DESKTOP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const APP_DIR = path.dirname(DESKTOP_DIR);
 const ACTIVE = new Set(['queued', 'running', 'waiting']);
 let mainWindow, harness, origin, shutdownPromise, didClose = false;
-const nativeApps = new NativeAppHost({ getWindow: () => mainWindow });
+// Native Applications was retired: no external window manager, COM host or
+// operating-system application process is instantiated by BLACKICE.
+const nativeApps = Object.freeze({
+  attached: false, sessionActive: false, ownershipPossible: false, visible: false,
+  async visibleState() { return { visible: false }; },
+  async reposition() {},
+  async close() {},
+});
+const nativeAppSurface = Object.freeze({ close() {} });
 const liveBrowserDriver = () => harness?.browser?.driver?.drivers?.relay;
 const hideBrowserSurface = () => { liveBrowserDriver()?.surface?.hide(); };
 let rendererRecovery = null;
@@ -96,14 +104,16 @@ app.on('render-process-gone', (_event, webContents, details) =>
   recordProcessGone(electronExitReceipt('renderer', details, webContents?.id)));
 app.on('child-process-gone', (_event, details) =>
   recordProcessGone(electronExitReceipt(details?.type, details)));
-const startup = new DesktopStartup({ headless: launch.headless || launch.background, createIndicator: () => createStartupIndicator({ BrowserWindow, icon: path.join(DESKTOP_DIR, 'icon.ico'), onQuit: () => app.quit() }) });
-const desktopLifecycle = new DesktopLifecycle({ headless: launch.headless, background: launch.background, getWindow: () => mainWindow, createWindow, saveWindow: saveWindowState, quit: () => app.quit(), restart: async () => {
+const startup = new DesktopStartup({ headless: launch.headless || launch.background, createIndicator: () => createStartupIndicator({ BrowserWindow, activate: !launch.showInactive, icon: path.join(DESKTOP_DIR, 'icon.ico'), onQuit: () => app.quit() }) });
+const desktopLifecycle = new DesktopLifecycle({ headless: launch.headless, background: launch.background, showInactive: launch.showInactive, getWindow: () => mainWindow, createWindow, saveWindow: saveWindowState,
+  beforeBackground:async()=>{if(nativeOwnershipPossible(nativeApps))await nativeApps.visibleState(false);},quit: () => app.quit(), restart: async () => {
   if (!desktopRestart) throw new Error('BLACKICE is still starting. Try restart after it is ready.');
   await desktopRestart.request({ requestId: randomUUID(), ownerId: 'local' });
   const receipt = await desktopRestart.waitForHandoff();
   if (!['restarting', 'completed'].includes(receipt?.status)) throw Object.assign(new Error(receipt?.error?.message || 'BLACKICE could not prepare the restart and remains open.'), { code: receipt?.error?.code || 'DESKTOP_RESTART_PREPARE_FAILED' });
 } });
 desktopLifecycle.on('updated', () => { if (runtimeRecord && !shutdownPromise) void saveRuntimeRecord(); });
+const retainNativeParent=createNativeParentRetainer({host:nativeApps,background:()=>desktopLifecycle.background()});
 
 function saveRuntimeRecord() {
   if (!runtimeRecord) return runtimeWriteChain;
@@ -168,17 +178,20 @@ async function detachDesktop() {
 }
 
 async function shutdown() {
-  rendererRecovery?.stop();
   if (shutdownPromise) return shutdownPromise;
   shutdownPromise = (async () => {
+    // Managed applications retain their real hidden parent in this same
+    // instance. Ordinary quit never detaches them onto the Windows desktop.
+    assertNativeParentUnowned(nativeApps);
+    await nativeApps.close();
+    rendererRecovery?.stop();
     restartReady = false;
     if (desktopRestart?.cancelPending()) await desktopRestart.waitForHandoff();
     desktopLifecycle.stop();
     startup.stop();
     void diagnostics.record({ component: 'desktop', event: 'stopping' });
     globalShortcut.unregisterAll();
-    // Return embedded windows to their original desktop; never kill their processes.
-    await nativeApps.close().catch(error => diagnostics.recordError('native-apps', 'detach_failed', error));
+    nativeAppSurface.close();
     clearTimeout(windowSaveTimer);
     const savingWindow=saveWindowState();
     // A prepared restart has already admitted an idle, drained runtime. Preserve
@@ -196,6 +209,7 @@ async function shutdown() {
 function profileMaintenance(mode){
   if(maintenancePromise)return maintenancePromise;
   if (restartClosing || ['scheduled', 'restarting'].includes(desktopRestart?.status().status)) return Promise.reject(new Error('BLACKICE is preparing a restart. Profile maintenance can start after it reopens.'));
+  try{assertNativeParentUnowned(nativeApps);}catch(error){return Promise.reject(error);}
   maintenancePromise=(async()=>{
     const profileDir=app.getPath('userData');
     const chosen=await dialog.showOpenDialog(mainWindow,{title:mode==='backup'?'Choose where to save the BLACKICE backup':'Choose a BLACKICE backup folder to restore',properties:['openDirectory',...(mode==='backup'?['createDirectory']:[])]});
@@ -203,9 +217,11 @@ function profileMaintenance(mode){
     const backupDir=mode==='backup'?path.join(chosen.filePaths[0],`BLACKICE-${new Date().toISOString().replace(/[:.]/g,'-')}.relay-backup`):chosen.filePaths[0];
     let prepared, maintenanceBegan = false;
     try{
+      assertNativeParentUnowned(nativeApps);
       await harness.beginMaintenance();
       maintenanceBegan = true;
       prepared=await prepareProfileMaintenance({mode,profileDir,backupDir,appVersion:app.getVersion(),allowForeignBinding:mode==='restore'});
+      assertNativeParentUnowned(nativeApps);
       const args=[path.join(DESKTOP_DIR,'maintenance-helper.mjs'),prepared.requestFile,process.execPath,...(!app.isPackaged?[APP_DIR]:[])];
       const child=spawn(process.execPath,args,{detached:true,stdio:'ignore',windowsHide:true,env:{...process.env,ELECTRON_RUN_AS_NODE:'1'}});
       await new Promise((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});
@@ -293,7 +309,7 @@ async function startLocalHarness(dataDir, defaultCwd) {
     const credentialStorage = { ...secretStorage, storageBackend: () => process.platform === 'win32' ? 'dpapi' : process.platform === 'darwin' ? 'keychain' : safeStorage.getSelectedStorageBackend(), isEncryptionAvailable: () => safeStorage.isEncryptionAvailable() };
     try { return await createHarnessServer({ installPath: path.dirname(process.execPath), port: selectedPort, dataDir, defaultCwd, browser, secretStorage, credentialStorage,
       protectCredentialTemporaryDirectory: credentialTemporaryProtection({ dataDir }), revealCredentialImportFile: filename => shell.showItemInFolder(filename),
-      openExternal: url => shell.openExternal(url), tokenRuntimeExecutable: process.execPath, diagnostics, desktopLifecycle, desktopRestart, connectionStartup, maintenanceStatus:()=>maintenanceReceipt?{mode:maintenanceReceipt.mode,status:maintenanceReceipt.status,requiresReauthentication:maintenanceReceipt.result?.requiresReauthentication===true}:null, signedBrowser: true, startSignedBrowser: browserOptions => startBackgroundBrowser(browserOptions) }); }
+      openExternal: url => shell.openExternal(url), nativeWindows:null, tokenRuntimeExecutable: process.execPath, diagnostics, desktopLifecycle, desktopRestart, connectionStartup, maintenanceStatus:()=>maintenanceReceipt?{mode:maintenanceReceipt.mode,status:maintenanceReceipt.status,requiresReauthentication:maintenanceReceipt.result?.requiresReauthentication===true}:null, signedBrowser: true, startSignedBrowser: browserOptions => startBackgroundBrowser(browserOptions) }); }
     catch (error) { await browser.close(); throw error; }
   };
   let instance = await createInstance(port);
@@ -369,29 +385,23 @@ function createWindow() {
     onResponsive: () => diagnostics.record({ component: 'desktop', event: 'renderer_responsive' }),
     onError: error => diagnostics.recordError('desktop', 'window_reopen_failed', error),
     onUnavailable: () => {
-      if (!startup.stopped && desktopLifecycle.mode === 'window' && !window.isDestroyed()) { window.show(); startup.indicator?.dispose(); }
+      if (!startup.stopped && desktopLifecycle.mode === 'window' && !window.isDestroyed()) { if (desktopLifecycle.activateWindow) window.show(); else window.showInactive(); startup.indicator?.dispose(); }
     },
   });
   let readyToShow = false;
   const handoffStartup = () => startup.handoff(mainWindow, readyToShow);
   mainWindow.on('show', handoffStartup);
-  mainWindow.once('ready-to-show', () => { readyToShow = true; if (!startup.stopped && !desktopLifecycle.stopped && desktopLifecycle.mode === 'window') { if (windowState.maximized) mainWindow.maximize(); mainWindow.show(); } handoffStartup(); });
+  mainWindow.once('ready-to-show', () => { readyToShow = true; if (!startup.stopped && !desktopLifecycle.stopped && desktopLifecycle.mode === 'window') { if (desktopLifecycle.activateWindow) { if (windowState.maximized) mainWindow.maximize(); mainWindow.show(); } else mainWindow.showInactive(); } handoffStartup(); });
   for (const event of ['move', 'resize', 'maximize', 'unmaximize']) mainWindow.on(event, () => {
     clearTimeout(windowSaveTimer); windowSaveTimer = setTimeout(() => { void saveWindowState(); }, 350);
   });
-  let releasingNativeApp = false;
-  mainWindow.on('close', event => {
-    if (nativeApps.attached && !shutdownPromise && !releasingNativeApp) {
-      event.preventDefault();
-      releasingNativeApp = true;
-      void nativeApps.detach().catch(error => diagnostics.recordError('native-apps', 'detach_failed', error))
-        .finally(() => { if (!window.isDestroyed()) window.close(); });
-      // Keep the close request owned until the window really closes, even if
-      // Windows refused to reparent an unresponsive application.
-      return;
-    }
-    recovery.stop(); void saveWindowState();
-  });
+  mainWindow.on('move', () => { void nativeApps.reposition().catch(error => diagnostics.recordError('native-apps', 'position_failed', error)); });
+  mainWindow.on('close', createNativeParentCloseHandler({host:nativeApps,retain:retainNativeParent,
+    closeWindow:()=>{if(!window.isDestroyed())window.close();},
+    onRetained:()=>desktopLifecycle.cancelQuit(),
+    onError:error=>{void diagnostics.recordError('native-apps','detach_failed',error);},
+    onAllowed:()=>{recovery.stop();void saveWindowState();}
+  }));
   mainWindow.on('closed', () => { mainWindow = null; if (!didClose) desktopLifecycle.windowClosed(); });
   return recovery.loadInitial();
 }
@@ -422,11 +432,13 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
     } catch (error) { void diagnostics.recordError('desktop', 'lifecycle_request_failed', error); }
   });
   app.on('window-all-closed', () => desktopLifecycle.windowClosed());
-  app.on('before-quit', event => {
-    rendererRecovery?.stop();
-    if (didClose) return;
-    event.preventDefault();
-    const timer = setTimeout(async () => {
+  const handleSafeQuit = createNativeSafeQuitHandler({host:nativeApps,retain:retainNativeParent,shutdown,
+    onReleased:()=>{didClose=true;app.quit();},
+    onRetained:()=>desktopLifecycle.cancelQuit(),
+    onBlocked:async error=>{shutdownPromise=null;desktopLifecycle.cancelQuit();void diagnostics.recordError('native-apps','parent_retained',error);if(nativeOwnershipPossible(nativeApps))await retainNativeParent().catch(hideError=>diagnostics.recordError('native-apps','hide_failed',hideError));},
+    onFailure:error=>{console.error('BLACKICE shutdown:',error.message);didClose=true;app.quit();},
+    onTimeoutBlocked:()=>{void diagnostics.recordError('native-apps','detach_unconfirmed',new Error('Quit is waiting for the existing native application session to release.'));},
+    onTimeout:async()=>{
       // A provider that fails to acknowledge cancellation must not keep the app alive.
       try {
         await Promise.race([
@@ -434,12 +446,10 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
           new Promise(resolve => setTimeout(resolve, 3_000)),
         ]);
       } catch (error) { await diagnostics.recordError('desktop', 'stop_failed', error); }
-      finally { await Promise.race([diagnostics.flush(), new Promise(resolve => setTimeout(resolve, 1000))]); app.exit(1); }
-    }, 25_000);
-    void shutdown().catch(error => console.error('BLACKICE shutdown:', error.message)).finally(() => {
-      clearTimeout(timer); didClose = true; app.quit();
-    });
+      finally { await Promise.race([diagnostics.flush(), new Promise(resolve => setTimeout(resolve, 1000))]); if(!nativeOwnershipPossible(nativeApps))app.exit(1); }
+    }
   });
+  app.on('before-quit', event => {if(!didClose)void handleSafeQuit(event);});
   process.on('SIGTERM', () => app.quit());
   process.on('SIGINT', () => app.quit());
   app.whenReady().then(async () => {
@@ -451,7 +461,6 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
     await startup.step(() => diagnostics.record({ component: 'desktop', event: 'started' }));
     if(maintenanceReceipt)void diagnostics.record({component:'maintenance',event:maintenanceReceipt.status==='completed'?(maintenanceReceipt.mode==='backup'?'backup_completed':'restore_completed'):'maintenance_failed',...(maintenanceReceipt.status==='failed'?{level:'error',code:maintenanceReceipt.code}:{})});
     Menu.setApplicationMenu(null);
-    await startup.showIndicator();
     const userData = app.getPath('userData');
     const dataDir = path.join(userData, 'data');
     const defaultCwd = app.isPackaged || launch.profileDir ? path.join(userData, 'workspace') : path.join(APP_DIR, 'workspace');
@@ -463,14 +472,16 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
     desktopRestart = new DesktopRestartController({
       profileDir: userData,
       getIdentity: () => ({ pid: process.pid, startedAt: processStartedAt, profileDir: userData, mode: desktopLifecycle.status().mode }),
-      getLaunchOptions: () => ({ execPath: process.execPath, args: buildDesktopRelaunchArgs({ profileDir: launch.profileDir, mode: desktopLifecycle.status().mode }), profileDir: userData, mode: desktopLifecycle.status().mode }),
+      getLaunchOptions: () => ({ execPath: process.execPath, args: buildDesktopRelaunchArgs({ profileDir: launch.profileDir, mode: desktopLifecycle.status().mode, showInactive: true }), profileDir: userData, mode: desktopLifecycle.status().mode }),
       checkReady: async context => {
         if (!restartReady || shutdownPromise || maintenancePromise) throw Object.assign(new Error('BLACKICE is starting, closing, or preparing profile maintenance.'), { code: 'DESKTOP_RESTART_CLOSING' });
+        assertNativeParentUnowned(nativeApps);
         if (context.jobId && !context.origin) throw Object.assign(new Error('The originating restart action has no owned binding.'), { code: 'DESKTOP_RESTART_ORIGIN_INVALID' });
         await harness.assertRestartReady(context);
       },
       prepare: async context => {
         if (!restartReady || shutdownPromise || maintenancePromise) throw Object.assign(new Error('BLACKICE is no longer ready to restart.'), { code: 'DESKTOP_RESTART_CLOSING' });
+        assertNativeParentUnowned(nativeApps);
         await harness.beginRestart(context);
         if (context.jobId) {
           const job = await harness.directExecution.validateRestartOrigin(context.origin, { requireFinished: true });
@@ -481,10 +492,14 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
         await diagnostics.flush();
       },
       release: () => harness?.endRestart(),
-      relaunch: options => { harness.assertRestartPrepared(); app.relaunch(options); restartClosing = true; },
+      relaunch: options => { assertNativeParentUnowned(nativeApps); harness.assertRestartPrepared(); app.relaunch(options); restartClosing = true; },
       quit: () => app.quit(),
     });
     await startup.step(() => desktopRestart.init());
+    // A native restart can originate in an older process without the new flag.
+    // Recognize its existing receipt before either desktop window is painted.
+    if (desktopRestart.isRestartStartup()) { launch.showInactive = true; desktopLifecycle.activateWindow = false; }
+    await startup.showIndicator();
     const local = await startup.step(() => startupPhase(diagnostics, 'local-harness', () => startLocalHarness(dataDir, defaultCwd)), value => value.instance.close());
     harness = local.instance;
     await startup.step(() => harness.desktop.setEnabled(true));
@@ -494,24 +509,6 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
     ipcMain.handle('relay:browser-surface', (event, request) => {
       if (!trustedSender(event)) throw new Error('Browser surface requests must come from BLACKICE.');
       return performBrowserSurface(harness?.browser?.driver, mainWindow, request);
-    });
-    ipcMain.handle('relay:native-apps', async (event, request) => {
-      if (!trustedSender(event) || !request || typeof request !== 'object' || Array.isArray(request)) throw new Error('Native application request must come from BLACKICE.');
-      const { action, windowId, bounds } = request;
-      if (typeof action !== 'string') throw new Error('Choose a native application action.');
-      if (action === 'status') return nativeApps.status();
-      if (action === 'windows') return { ...nativeApps.availability(), windows: await nativeApps.windows() };
-      if (action === 'launch') {
-        const chosen = await dialog.showOpenDialog(mainWindow, { title: 'Choose a Windows application', properties: ['openFile'], filters: [{ name: 'Windows applications', extensions: ['exe'] }] });
-        return chosen.canceled || !chosen.filePaths[0] ? { cancelled: true } : nativeApps.launch(chosen.filePaths[0]);
-      }
-      if (action === 'attach') return nativeApps.attach(windowId, bounds);
-      if (action === 'position') return nativeApps.position(bounds);
-      if (action === 'show') return nativeApps.visibleState(true);
-      if (action === 'hide') return nativeApps.visibleState(false);
-      if (action === 'dialogs') return { dialogs: await nativeApps.dialogs() };
-      if (action === 'detach') return nativeApps.detach();
-      throw new Error('Unsupported native application command.');
     });
     handle('relay:minimize', () => mainWindow.minimize());
     handle('relay:maximize', () => {
@@ -561,11 +558,10 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
     await startup.step(() => saveRuntimeRecord());
   }).catch(async error => {
     if (startup.stopped || shutdownPromise || didClose) return;
-    desktopLifecycle.stop(); startup.stop();
     await diagnostics.recordError('desktop', 'start_failed', error);
     if (!launch.headless && !launch.background) dialog.showErrorBox('BLACKICE could not start', error.message);
     else console.error('BLACKICE could not start:', error.message);
-    await shutdown().catch(() => {});
+    try{await shutdown();}catch(stopError){if(nativeOwnershipPossible(nativeApps)||stopError.nativeReleaseBlocked){shutdownPromise=null;desktopLifecycle.cancelQuit();await diagnostics.recordError('native-apps','parent_retained',stopError);await retainNativeParent().catch(()=>{});return;}}
     didClose = true; app.exit(1);
   });
 }

@@ -148,20 +148,71 @@ function inlineMarkdown(value, { links = true, depth = 0, resolveArtifact } = {}
 /** Small intentionally limited Markdown renderer: raw HTML, images and executable URLs stay inert. */
 export function renderMarkdown(value, { resolveArtifact } = {}) {
   const inline = text => inlineMarkdown(text, { resolveArtifact });
-  const lines = String(value ?? '').replaceAll('\r\n', '\n').split('\n'), result = [];
-  let paragraph = [], list = null, code = null, language = '';
-  const flushParagraph = () => { if (paragraph.length) { result.push(`<p>${paragraph.map(inline).join('<br>')}</p>`); paragraph = []; } };
-  const flushList = () => { if (list) { result.push(`<${list.type}>${list.items.map(item => `<li>${inline(item)}</li>`).join('')}</${list.type}>`); list = null; } };
-  for (const line of lines) {
-    const fence = line.match(/^\s*```([\w-]*)/);
-    if (fence) { if (code) { result.push(`<pre><code${language ? ` data-language="${html(language)}"` : ''}>${html(code.join('\n'))}</code></pre>`); code = null; } else { flushParagraph(); flushList(); code = []; language = fence[1]; } continue; }
-    if (code) { code.push(line); continue; }
-    if (!line.trim()) { flushParagraph(); flushList(); continue; }
-    const heading = line.match(/^(#{1,4})\s+(.+)$/), item = line.match(/^\s*(?:([-*])|\d+\.)\s+(.+)$/);
-    if (heading) { flushParagraph(); flushList(); const level = heading[1].length + 1; result.push(`<h${level}>${inline(heading[2])}</h${level}>`); }
-    else if (item) { flushParagraph(); const type = item[1] ? 'ul' : 'ol'; if (list?.type !== type) { flushList(); list = { type, items: [] }; } list.items.push(item[2]); }
-    else { flushList(); paragraph.push(line); }
+  const indentation = line => (line.match(/^[ \t]*/)?.[0] || '').replaceAll('\t', '    ').length;
+  const stripIndent = (line, columns) => {
+    let index = 0, width = 0;
+    while (index < line.length && width < columns && /[ \t]/.test(line[index])) width += line[index++] === '\t' ? 4 : 1;
+    return line.slice(index);
+  };
+  const marker = line => {
+    const match = line.match(/^([ \t]*)(?:(\d{1,9})([.)])|([-+*]))([ \t]+)(.*)$/);
+    if (!match) return null;
+    const indent = indentation(match[1]), type = match[2] === undefined ? 'ul' : 'ol';
+    return { indent, type, delimiter: type === 'ol' ? match[3] : '', start: Number(match[2] || 1),
+      content: match[6], contentIndent: indent + (match[2]?.length || 0) + 1 + indentation(match[5]) };
+  };
+  const heading = line => line.match(/^[ \t]{0,3}(#{1,4})\s+(.+)$/);
+  const fence = line => line.match(/^[ \t]*\x60{3}([\w-]*)/);
+  function renderLines(lines, depth = 0) {
+    if (depth >= 24) return '<p>' + lines.map(inline).join('<br>') + '</p>';
+    const result = []; let paragraph = [], index = 0;
+    const flush = () => { if (paragraph.length) { result.push('<p>' + paragraph.map(inline).join('<br>') + '</p>'); paragraph = []; } };
+    while (index < lines.length) {
+      const line = lines[index], opening = fence(line), title = heading(line), first = marker(line);
+      if (!line.trim()) { flush(); index++; continue; }
+      if (opening) {
+        flush(); const code = []; index++;
+        while (index < lines.length && !/^[ \t]*\x60{3,}\s*$/.test(lines[index])) code.push(lines[index++]);
+        if (index < lines.length) index++;
+        result.push('<pre><code' + (opening[1] ? ' data-language="' + html(opening[1]) + '"' : '') + '>' + html(code.join('\n')) + '</code></pre>');
+      } else if (title) {
+        flush(); const level = title[1].length + 1;
+        result.push('<h' + level + '>' + inline(title[2]) + '</h' + level + '>'); index++;
+      } else if (first) {
+        flush(); const items = []; let loose = false;
+        const sibling = item => item && item.indent === first.indent && item.type === first.type && item.delimiter === first.delimiter;
+        while (index < lines.length && sibling(marker(lines[index]))) {
+          const current = marker(lines[index++]), body = [current.content];
+          while (index < lines.length) {
+            const next = lines[index], nextMarker = marker(next);
+            if (!next.trim()) {
+              let lookahead = index;
+              while (lookahead < lines.length && !lines[lookahead].trim()) lookahead++;
+              if (lookahead === lines.length) { index = lookahead; break; }
+              if (sibling(marker(lines[lookahead]))) { loose = true; index = lookahead; break; }
+              if (indentation(lines[lookahead]) > first.indent) {
+                loose = true; body.push(''); index = lookahead; continue;
+              }
+              break;
+            }
+            if (nextMarker && nextMarker.indent <= first.indent) break;
+            if (indentation(next) > first.indent) { body.push(stripIndent(next, current.contentIndent)); index++; continue; }
+            // Wrapped paragraphs may continue without indentation. Blank lines,
+            // headings, fences and sibling markers end that continuation.
+            if (heading(next) || fence(next)) break;
+            body.push(next); index++;
+          }
+          items.push(body);
+        }
+        const content = items.map(body => {
+          let rendered = renderLines(body, depth + 1);
+          if (!loose) rendered = rendered.replace(/^<p>([\s\S]*?)<\/p>/, '$1');
+          return '<li>' + rendered + '</li>';
+        }).join('');
+        result.push('<' + first.type + (first.type === 'ol' && first.start !== 1 ? ' start="' + first.start + '"' : '') + '>' + content + '</' + first.type + '>');
+      } else { paragraph.push(line); index++; }
+    }
+    flush(); return result.join('');
   }
-  if (code) result.push(`<pre><code>${html(code.join('\n'))}</code></pre>`);
-  flushParagraph(); flushList(); return result.join('');
+  return renderLines(String(value ?? '').replace(/\r\n?/g, '\n').split('\n'));
 }

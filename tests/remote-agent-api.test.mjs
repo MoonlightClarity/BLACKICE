@@ -54,11 +54,11 @@ test('machine paths are isolated from legacy APIs and lookalike prefixes', () =>
   for (const pathname of ['/mcp-extra', '/api/agents', '/api/runs', '/api/remote-access']) assert.equal(isRemoteAgentPath(pathname), false);
 });
 
-test('tool catalog and execution independently enforce the verified scopes', async t => {
+test('paired agent tools use unified authority while still validating arguments and identity', async t => {
   const { api, requests } = await fixture(t);
-  assert.ok(api.tools(readClient).every(tool => tool.annotations.readOnlyHint));
+  assert.ok(api.tools(readClient).some(tool => tool.name === 'blackice_start_task')); // Legacy read label does not restrict a paired agent.
   assert.ok(api.tools(client).some(tool => tool.name === 'blackice_start_task'));
-  for (const name of ['blackice_start_task', 'blackice_edit_plan', 'blackice_cancel_task']) await assert.rejects(api.call(name, {}, readClient), { status: 403, code: 'REMOTE_SCOPE_REQUIRED' });
+  for (const name of ['blackice_start_task', 'blackice_edit_plan', 'blackice_cancel_task']) await assert.rejects(api.call(name, {}, readClient), { status: 400 }); // Tool argument validation still applies.
   await assert.rejects(api.call('blackice_status', {}, null), { status: 401 }); assert.deepEqual(requests, []);
 });
 
@@ -145,13 +145,13 @@ test('Trash and unknown history cannot be read or edited through an agent handle
   }
 });
 
-test('legacy MCP initializes and returns scoped tools over stateless HTTP', async t => {
+test('legacy MCP initializes and returns full paired-agent tools over stateless HTTP', async t => {
   const { api } = await fixture(t);
   const start = await http(api, '/mcp', { method: 'POST', payload: { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'Fixture', version: '1' } } } });
   assert.equal(start.json().result.protocolVersion, '2025-06-18'); assert.equal(start.headers['mcp-session-id'], undefined);
   const notice = await http(api, '/mcp', { method: 'POST', payload: { jsonrpc: '2.0', method: 'notifications/initialized' } }); assert.equal(notice.statusCode, 202); assert.equal(notice.output, '');
   const list = await http(api, '/mcp', { method: 'POST', payload: { jsonrpc: '2.0', id: 'tools', method: 'tools/list' }, headers: { 'mcp-protocol-version': '2025-06-18' }, identity: readClient });
-  assert.equal(list.statusCode, 200); assert.equal(list.json().id, 'tools'); assert.ok(list.json().result.tools.every(tool => tool.annotations.readOnlyHint));
+  assert.equal(list.statusCode, 200); assert.equal(list.json().id, 'tools'); assert.ok(list.json().result.tools.some(tool => tool.name === 'blackice_start_task'));
   assert.equal((await http(api, '/mcp')).statusCode, 405);
 });
 
@@ -176,7 +176,7 @@ test('MCP errors distinguish malformed protocol, unsupported versions and forbid
   const invalid = await http(api, '/mcp', { method: 'POST', raw: '{' }); assert.equal(invalid.json().error.code, -32700);
   const batch = await http(api, '/mcp', { method: 'POST', payload: [modern('tools/list')] }); assert.equal(batch.json().error.code, -32600);
   const denied = await http(api, '/mcp', { method: 'POST', payload: modern('tools/call', { name: 'blackice_cancel_task', arguments: { runId: 'run-one' } }), headers: modernHeaders('tools/call', 'blackice_cancel_task'), identity: readClient });
-  assert.equal(denied.statusCode, 403); assert.equal(denied.json().error.data.requiredScope, 'tasks:write');
+  assert.equal(denied.statusCode, 200); assert.equal(denied.json().result.isError, false); // Valid paired agent has full authority.
 });
 
 test('REST validates routing and preserves the actionable revision conflict', async t => {
