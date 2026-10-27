@@ -14,5 +14,13 @@ export async function recordFixturePlan(options, { title = 'Exercise the request
   const current = await call({ action: 'read' });
   const plan = Object.fromEntries(['layout', 'detail', 'taskType', 'focusStepId', 'selectedChildId'].filter(key => current.plan?.[key] !== undefined).map(key => [key, current.plan[key]]));
   if (current.plan?.method) plan.method = { id: current.plan.method.id, revision: current.plan.method.revision };
-  return call({ action: 'plan', expectedRevision: current.revision, plan, steps: current.steps.length ? current.steps : [{ id: 'fixture-action', title, kind: 'action', status: 'active', doneWhen }] });
+  const method = 'Call the operation specified by this fixture, inspect its returned receipt and saved effects, and compare them with the fixture assertions.';
+  const result = 'The observed tool result and its effects for the requested fixture behavior.';
+  const steps = current.steps.map(step => (step.kind || 'action') === 'action' && !['done', 'skipped'].includes(step.status)
+    ? { ...step, result: step.result || result, note: step.note || method } : step);
+  if (!steps.some(step => (step.kind || 'action') === 'action' && !['done', 'skipped'].includes(step.status))) {
+    let id = 'fixture-action'; while (steps.some(step => step.id === id)) id += '-next';
+    steps.push({ id, title, kind: 'action', status: 'active', doneWhen, result, note: method });
+  }
+  return call({ action: 'plan', expectedRevision: current.revision, plan, steps });
 }

@@ -62,7 +62,7 @@ test('Retry after a lost publication response reconciles its durable attempt ins
  const f=await fixture(t,async(options,number)=>{
    options.onEvent({type:'thread',threadId:'native-publication-thread'});
    let saved=await call(options,{action:'read'});
-   saved=await call(options,{action:'plan',expectedRevision:saved.revision,steps:[{id:'publish',title:'Inspect and reconcile one authorized publication',status:'active',doneWhen:'The one existing or newly sent result has a confirmed receipt with observed destination evidence.'}]});
+   saved=await call(options,{action:'plan',expectedRevision:saved.revision,steps:[{id:'publish',title:'Inspect and reconcile one authorized publication',status:'active',result:'One reconciled publication receipt without a duplicate send.',note:'Inspect the saved attempt and destination, then confirm the matching result before reporting delivery.',doneWhen:'The one existing or newly sent result has a confirmed receipt with observed destination evidence.'}]});
    if(number===1){
      saved=await call(options,{action:'external',expectedRevision:saved.revision,external:{receiptId:'publish-once',operation:'prepare',destination:'https://www.linkedin.com/in/fixture/recent-activity/',content:'BLACKICE development update.',attachmentSha256:'a'.repeat(64)}});
      await call(options,{action:'external',expectedRevision:saved.revision,external:{receiptId:'publish-once',operation:'attempt'}});
@@ -81,7 +81,7 @@ test('a delayed older milestone receipt cannot replace a newer committed swarm s
  const committed=deferred(),release=deferred();let taskId;
  const f=await fixture(t,async options=>{
    const initial=await call(options,{action:'read'});taskId=initial.taskId;
-   const older=call(options,{action:'plan',expectedRevision:initial.revision,steps:[{id:'deliver',title:'Deliver the result',status:'active',doneWhen:'The output is checked.'}]});
+   const older=call(options,{action:'plan',expectedRevision:initial.revision,steps:[{id:'deliver',title:'Deliver the result',status:'active',result:'The checked fixture output.',note:'Produce the fixture output and inspect its value against the expected result.',doneWhen:'The output is checked.'}]});
    await committed.promise;
    const current=await call(options,{action:'read'}),latest=await call(options,{action:'step',expectedRevision:current.revision,stepId:'deliver',status:'done',evidence:'Checked actual output.'});
    release.resolve();await older;assert.equal(f.engine.getRun(options.runId||f.engine.listRuns()[0].id).taskState.revision,latest.revision);
@@ -93,7 +93,7 @@ test('a delayed older milestone receipt cannot replace a newer committed swarm s
 });
 
 test('settled run snapshots reload authoritative milestones even when the writer event was lost',async t=>{
- let f;f=await fixture(t,async options=>{const state=await call(options,{action:'read'});await f.tasks.setPlan(state.taskId,{steps:[{id:'check',title:'Check the real result',status:'done',doneWhen:'The check passes.',evidence:'Fixture check passed.'}]},{runId:f.engine.listRuns()[0].id,nodeId:'agent',expectedRevision:state.revision});return{output:'Finished.',threadId:'provider_no-event'};});
+ let f;f=await fixture(t,async options=>{const state=await recordFixturePlan(options,{title:'Check the real result',doneWhen:'The check passes.'});await f.tasks.setStep(state.taskId,state.steps[0].id,{status:'done',evidence:'Fixture check passed.'},{runId:f.engine.listRuns()[0].id,nodeId:'agent',expectedRevision:state.revision});return{output:'Finished.',threadId:'provider_no-event'};});
  const run=await f.settled(f.engine.startRun({workflow:f.workflow,input:'Keep committed progress.'}).id);assert.equal(run.status,'completed');assert.equal(run.taskState.progress.done,1);assert.equal(run.taskState.steps[0].evidence,'Fixture check passed.');
 });
 

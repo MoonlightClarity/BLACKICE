@@ -6,7 +6,7 @@ export const PLANNING_MODES = Object.freeze(['on', 'off']);
 export const PLANNING_INPUT_MODES = Object.freeze([...PLANNING_MODES, 'auto', 'maximal']);
 export const isPlanningMode = value => PLANNING_INPUT_MODES.includes(value);
 export const PLANNING_MODE_OPTIONS = Object.freeze([
-  Object.freeze({ value: 'on', label: 'On', description: 'Require an actual Planning tool call before the agent responds. Outline depth remains proportional.' }),
+  Object.freeze({ value: 'on', label: 'On', description: 'Require full substantive planning: concrete methods, decision-relevant comparisons and observed results.' }),
   Object.freeze({ value: 'off', label: 'Off', description: 'No automatic Planning requirement. Existing plans remain available.' }),
 ]);
 export function normalizePlanningMode(value, { fallback = 'on' } = {}) {
@@ -17,8 +17,9 @@ export function normalizePlanningMode(value, { fallback = 'on' } = {}) {
 export const planningModeLabel = value => PLANNING_MODE_OPTIONS.find(option => option.value === normalizePlanningMode(value)).label;
 export const planningModeDescription = value => PLANNING_MODE_OPTIONS.find(option => option.value === normalizePlanningMode(value)).description;
 
-/** Plan detail is not planning activation; Maximal is no longer a separate state. */
-export function planningModeDetail(_mode, legacyDetail) {
+/** On is maximal substantive planning; old display hints cannot weaken it. */
+export function planningModeDetail(mode, legacyDetail) {
+  if (normalizePlanningMode(mode) === 'on') return 'detailed';
   return ['compact', 'balanced', 'detailed'].includes(legacyDetail) ? legacyDetail : undefined;
 }
 

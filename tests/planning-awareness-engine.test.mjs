@@ -11,7 +11,7 @@ import { RuntimeSettingsStore } from '../lib/runtime-settings.mjs';
 const payload = receipt => JSON.parse(receipt.contentItems[0].text);
 const call = (options, name, args) => options.onToolCall({ name, arguments: args });
 async function task(options, args) { const receipt = await call(options, 'relay_task', args); assert.equal(receipt.success, true, receipt.contentItems[0].text); return payload(receipt); }
-const action = (id, parentId = null) => ({ id, title: id, kind: 'action', parentId, status: 'pending', doneWhen: `${id} has a checked fixture result.` });
+const action = (id, parentId = null) => ({ id, title: id, kind: 'action', parentId, status: 'pending', result: 'The assigned fixture operation and its checked effects.', note: 'Execute the assigned fixture operation, inspect its receipt and compare the actual saved effect with the expected output.', doneWhen: `${id} has a checked fixture result.` });
 const workflow = {
   name: 'Awareness fixture', settings: { maxParallel: 2 },
   nodes: [{ id: 'input', type: 'input', name: 'Request' }, { id: 'agent', type: 'agent', name: 'Agent', model: 'fixture-awareness', prompt: 'Complete the requested work.' }, { id: 'output', type: 'output', name: 'Result' }],

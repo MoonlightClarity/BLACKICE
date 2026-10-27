@@ -272,7 +272,7 @@ test('actual engine tool dispatch publishes journal updates at unchanged plan re
       let saved;
       if (!/TASK PLANNING MODE: OFF/.test(options.developerInstructions)) {
         const read = payload(await options.onToolCall({ name: 'relay_task', callId: 'actual-read', arguments: { action: 'read' } }));
-        saved = payload(await options.onToolCall({ name: 'relay_task', callId: 'actual-plan', arguments: { action: 'plan', expectedRevision: read.revision, plan: { layout: 'sequence' }, steps: [action()] } }));
+        saved = payload(await options.onToolCall({ name: 'relay_task', callId: 'actual-plan', arguments: { action: 'plan', expectedRevision: read.revision, plan: { layout: 'sequence' }, steps: [{ ...action(), result: 'The fixture file and its recorded write receipt.', note: 'Write the specified content, inspect the returned receipt, and compare the journal event and unchanged plan revision.' }] } }));
       }
       const result = await options.onToolCall({ name: 'relay_workspace', callId: 'actual-write', arguments: { action: 'write', path: 'checked-fixture.txt', text: 'Known fixture result.' } });
       assert.equal(result.success, true);

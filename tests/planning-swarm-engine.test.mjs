@@ -132,7 +132,7 @@ test('legacy assignment flags preserve normal execution while shared plan edits 
       assert.equal(foreign.code, 'TASK_PLAN_OWNERSHIP');
       const remote = await tool(options, 'relay_task', { action: 'external', expectedRevision: current.revision, external: { operation: 'attempt', receiptId: 'forbidden-send' } });
       assert.equal(remote.code, 'TASK_PLAN_OWNERSHIP');
-      await revise(options, () => ({ action: 'plan', steps: [{ id: 'agent-worker-inspect', title: 'Inspect the assigned input', kind: 'action', parentId: null, status: 'active', doneWhen: 'The assigned content was inspected and its actual result recorded.' }] }));
+      await revise(options, () => ({ action: 'plan', steps: [{ id: 'agent-worker-inspect', title: 'Inspect the assigned input', kind: 'action', parentId: null, status: 'active', result: 'The assigned input and its observed contents.', note: 'Read the attached input, inspect its contents and compare them with the fixture expectation.', doneWhen: 'The assigned content was inspected and its actual result recorded.' }] }));
       await complete(options, 'agent-worker-inspect');
     } else {
       assert.equal(options.sandbox, 'danger-full-access');
@@ -157,12 +157,12 @@ test('on-demand linked workers maintain the same saved plan within their action 
       assert.ok(!options.dynamicTools.some(tool => ['relay_delegate', 'relay_control'].includes(tool.name)));
       const current = await taskCall(options, { action: 'read' }); assert.equal(current.execution.nodes[delegatedPlanNodeId('coordinator', 'inspector')].status, 'running');
       const denied = await tool(options, 'relay_task', { action: 'edit', expectedRevision: current.revision, operations: [{ type: 'update', stepId: 'summary', patch: { title: 'Changed another owner' } }] }); assert.equal(denied.code, 'TASK_PLAN_OWNERSHIP');
-      await revise(options, () => ({ action: 'plan', steps: [{ id: 'inspect-input', kind: 'action', parentId: null, title: 'Read the delegated input', status: 'active', doneWhen: 'The actual input was checked.' }] }));
+      await revise(options, () => ({ action: 'plan', steps: [{ id: 'inspect-input', kind: 'action', parentId: null, title: 'Read the delegated input', status: 'active', result: 'The delegated input and its checked contents.', note: 'Read the assigned input and compare its contents with the delegated fixture requirement.', doneWhen: 'The actual input was checked.' }] }));
       await complete(options, 'inspect-input'); return { output: 'Checked the assigned input and recorded its evidence.' };
     }
     await revise(options, () => ({ action: 'plan', plan: { layout: 'sequence' }, steps: [
-      { id: 'inspect', title: 'Inspect the delegated input', kind: 'action', parentId: null, status: 'pending', doneWhen: 'The delegated input was checked.' },
-      { id: 'summary', title: 'Review the actual worker result', kind: 'action', parentId: null, status: 'pending', doneWhen: 'The actual returned result was reviewed.' }
+      { id: 'inspect', title: 'Inspect the delegated input', kind: 'action', parentId: null, status: 'pending', result: 'A checked input finding from the assigned worker.', note: 'Delegate the bounded inspection and inspect the returned finding and its actual execution receipt.', doneWhen: 'The delegated input was checked.' },
+      { id: 'summary', title: 'Review the actual worker result', kind: 'action', parentId: null, status: 'pending', result: 'An integrated finding supported by the worker result.', note: 'Compare the returned worker finding and execution receipt with the original fixture requirement before reporting the conclusion.', doneWhen: 'The actual returned result was reviewed.' }
     ] }));
     const returned = await tool(options, 'relay_delegate', { tasks: [{ id: 'inspector', stepId: 'inspect', prompt: 'Inspect only the assigned input and maintain that saved plan action.' }] });
     assert.equal(returned.success, true, returned.contentItems[0].text); childReceipt = payload(returned).results[0];
