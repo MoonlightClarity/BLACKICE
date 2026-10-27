@@ -1,0 +1,218 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "scope": "source-publication",
+  "version": "2.35.4",
+  "platform": "win32",
+  "node": "v24.13.0",
+  "checkedAt": "2026-10-27T20:15:03.639Z",
+  "appFingerprint": "d9099e209a92431a7ba381a1de64164958045c75953e63efa5cff2b1c340ad5f",
+  "fingerprintUnchanged": true,
+  "artifactSha256": "bb3a960f246b5db45ed6bbfdd7cda48d55d497effcb6445c5afa75ef7c54c29e",
+  "testFiles": 398,
+  "tests": {
+    "total": 4938,
+    "passed": 4930,
+    "failed": 0,
+    "requiredSkipped": 0,
+    "optionalSkipped": 8,
+    "cancelled": 0,
+    "exitCode": 0
+  },
+  "fullSuite": true,
+  "testLogSha256": "f8647a7e951b08e0489849c0eb0755171527a4270cf53b792474c55c59dcd362",
+  "testLogHashMethod": "sha256 of newline-separated, ascending batch log SHA-256 digests",
+  "batchEvidence": [
+    {
+      "batch": 0,
+      "offset": 0,
+      "files": 25,
+      "tests": 391,
+      "passed": 391,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSha256": "ead286caf0bd91652dc1dc333ddfcda9fbb17a23a553f49a0102189108e25c8c"
+    },
+    {
+      "batch": 1,
+      "offset": 25,
+      "files": 25,
+      "tests": 304,
+      "passed": 302,
+      "failed": 0,
+      "skipped": 2,
+      "cancelled": 0,
+      "logSha256": "b7be6e0a02287eea9a900530881c095534370ba8fdacd63957c28b6720efd52b"
+    },
+    {
+      "batch": 2,
+      "offset": 50,
+      "files": 25,
+      "tests": 273,
+      "passed": 271,
+      "failed": 0,
+      "skipped": 2,
+      "cancelled": 0,
+      "logSha256": "cf21ea124e084ffcaaaf879e0429ef29c1f9485bd175690fe148e6ca9c408b2a"
+    },
+    {
+      "batch": 3,
+      "offset": 75,
+      "files": 25,
+      "tests": 349,
+      "passed": 349,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSha256": "5dbed16078f81b4b780010b23049edfc58bcbbc60028e3713f40239b97dd997b"
+    },
+    {
+      "batch": 4,
+      "offset": 100,
+      "files": 25,
+      "tests": 279,
+      "passed": 279,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSha256": "8862f9a7bcfe67f4c4c85ebf2754e307e9974089a9a26496b2016a0ad46d4564"
+    },
+    {
+      "batch": 5,
+      "offset": 125,
+      "files": 25,
+      "tests": 288,
+      "passed": 288,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSha256": "10b47219302b2e19e95ac629b7193d5f8e5934d250937a0eccdc61802880c244"
+    },
+    {
+      "batch": 6,
+      "offset": 150,
+      "files": 25,
+      "tests": 310,
+      "passed": 307,
+      "failed": 0,
+      "skipped": 3,
+      "cancelled": 0,
+      "logSha256": "2dc76d147c24894da2be95c606d110d721a63fde4086c74fa5185d9565136ce9"
+    },
+    {
+      "batch": 7,
+      "offset": 175,
+      "files": 25,
+      "tests": 359,
+      "passed": 358,
+      "failed": 0,
+      "skipped": 1,
+      "cancelled": 0,
+      "logSha256": "3205678b817ce2b141e1a9ccce3fe280f18b29ca376ea9649c140ac5b55e7881"
+    },
+    {
+      "batch": 8,
+      "offset": 200,
+      "files": 25,
+      "tests": 459,
+      "passed": 459,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSha256": "ab0e1e3a750143555f9203b230db71b8774c913afde853fd2aa9eb6abb7564e7"
+    },
+    {
+      "batch": 9,
+      "offset": 225,
+      "files": 25,
+      "tests": 174,
+      "passed": 174,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSha256": "b2ad6f9930add5000e58a2039d6f2630df99e98295ad54bb1dce0189a03c33d6"
+    },
+    {
+      "batch": 10,
+      "offset": 250,
+      "files": 25,
+      "tests": 263,
+      "passed": 263,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSha256": "a0b7e19d47583eb8bfaa3e85d21cddac23c64b513c4a25c7629840086ac50588"
+    },
+    {
+      "batch": 11,
+      "offset": 275,
+      "files": 25,
+      "tests": 290,
+      "passed": 290,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSha256": "ba6da71427c7449696224e1986e267c542947a4b12f93158fcd2095a932f565a"
+    },
+    {
+      "batch": 12,
+      "offset": 300,
+      "files": 25,
+      "tests": 468,
+      "passed": 468,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSha256": "92601ec05a5c7064a30a6cd12d11fb777222214b4da0c6e82c856587f9a3643a"
+    },
+    {
+      "batch": 13,
+      "offset": 325,
+      "files": 25,
+      "tests": 274,
+      "passed": 274,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSha256": "1687e36cfa5ee7bd2cbf1ea6d032ee5a0d9eabb913a3aa64e8f223fdf5aabded"
+    },
+    {
+      "batch": 14,
+      "offset": 350,
+      "files": 25,
+      "tests": 227,
+      "passed": 227,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSha256": "72583f6178a5874128615afa02a15382fcfe747e937f4b733cfa68259aa19c51"
+    },
+    {
+      "batch": 15,
+      "offset": 375,
+      "files": 23,
+      "tests": 230,
+      "passed": 230,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSha256": "e2c61c7272efdc3a10998f0f99d75e7aca1fbb87e03691819acf0af5e022695a"
+    }
+  ],
+  "optionalIntegrationSkips": [
+    "﹣ Relay-owned sign-in and local storage survive a full process restart without foregrounding (1.6311ms) # Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+    "﹣ restored hidden browser tabs defer requests until used and never load closed or replaced pages (1.2274ms) # Set RELAY_LIVE_BROWSER_QA=1 for disposable Electron restoration.",
+    "﹣ native cross-origin popups redirect, message their opener and follow or close without breaking Observe pins or task routing (1.1978ms) # Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+    "﹣ actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases (0.2047ms) # Set RELAY_TRUSTED_FILL_QA=1 for the isolated native fixture.",
+    "﹣ live background accessibility actions change only a dedicated non-activating fixture and leave foreground and cursor untouched (1.8621ms) # SKIP",
+    "﹣ hidden isolated Chromium composer validates real layout and one-click send wiring (0.1932ms) # Set BLACKICE_EMAIL_COMPOSE_QA=1 for the isolated native UI fixture.",
+    "﹣ installed Himalaya sends exact MIME to disposable loopback SMTP and strips Bcc headers (1.1714ms) # SKIP",
+    "﹣ real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart (1.1033ms) # Set RELAY_LIVE_FIREFOX_QA=1 on Windows to use a new disposable Firefox profile."
+  ],
+  "limitations": [
+    "Eight opt-in or environment-dependent integration cases were separately recorded as optional skips; no required tests were skipped.",
+    "Local source test evidence does not substitute for exact-installer installation and runtime validation on an isolated Windows runner.",
+    "Passing unit tests does not establish independent analytical-quality outcomes."
+  ]
+}
