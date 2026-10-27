@@ -150,6 +150,29 @@
 #next-tasks-history h2,#next-activity-tasks h2{font-size:18px;margin:0 0 6px}
 #next-tasks-history>p,#next-activity-tasks>p{font-size:12px}
 #next-tasks-create{max-width:840px}
+#next-tasks-schedule-detail{margin:16px 0;max-width:960px;min-width:0}
+.next-schedule-detail-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px}
+.next-schedule-detail-head h3{margin:0;font-size:17px;overflow-wrap:anywhere}
+.next-schedule-detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:8px 18px;margin:12px 0}
+.next-schedule-detail-row{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.next-schedule-detail-row strong{color:var(--muted);font-size:11px;letter-spacing:.02em}
+.next-schedule-inspector h4{font-size:13px;margin:18px 0 8px}
+.next-schedule-source{margin:7px 0 10px;padding:12px;background:#0c121ac7;border:1px solid #70819b33;border-radius:8px;color:#e6ecf4;font:12px/1.55 'Blackice Console',Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto}
+.next-schedule-steps{display:grid;gap:7px}
+.next-schedule-step{padding:8px 10px;border:1px solid #70819b44;border-radius:8px;min-width:0}
+.next-schedule-step>summary{font-size:12px;font-weight:600;cursor:pointer;overflow-wrap:anywhere}
+.next-schedule-step .next-schedule-detail-row{margin:6px 0}
+.next-schedule-job{display:flex;flex-wrap:wrap;align-items:center;gap:8px;border-top:1px solid #8793a42a;padding:8px 0;font-size:12px;overflow-wrap:anywhere}
+.next-schedule-job button{min-height:28px;font-size:11px}
+.next-schedule-job>p{flex-basis:100%}
+.next-schedule-edit-form{max-width:780px;margin:10px 0}
+.next-schedule-edit-form .next-schedule-field{display:grid;gap:5px}
+.next-schedule-edit-form .next-field{width:100%;min-width:0}
+.next-schedule-edit-form textarea.next-field{min-height:145px;resize:vertical;white-space:pre-wrap}
+.next-schedule-checkbox{display:flex;align-items:center;gap:9px;font-size:12px}
+.next-schedule-checkbox input{height:16px;width:16px;flex:none}
+.next-schedule-feedback{overflow-wrap:anywhere}
+@media(max-width:620px){.next-schedule-detail-grid{grid-template-columns:1fr}.next-schedule-detail-head{align-items:flex-start}}
 #next-tasks-jobs{display:grid;gap:10px}
 #next-tasks-jobs article{border-left:2px solid #a7b3c4;padding:14px}
 /* Activity has one selected surface, with authoring behind disclosures. */
@@ -466,3 +489,33 @@
 .next-planning-workspace .next-plan-progress progress,
 .next-planning-workspace .next-plan-progress progress::-webkit-progress-bar{background:#383f48}
 .next-planning-workspace .next-plan-progress progress::-webkit-progress-value{background:#c2c9d1}
+
+/* Metacognition is optional, quiet Planning metadata, not a blocking wizard. */
+.next-planning-workspace .next-plan-criteria,
+.next-planning-workspace .next-plan-metacognition{
+  margin:12px 0;padding:10px 12px;border:1px solid #737d8966;border-radius:10px;
+  background:#252b32;color:inherit
+}
+.next-planning-workspace .next-plan-criteria>summary,
+.next-planning-workspace .next-plan-metacognition>summary{
+  font-weight:650;cursor:pointer;line-height:1.45
+}
+.next-planning-workspace .next-plan-criteria-rows{
+  display:grid;gap:10px;margin:10px 0
+}
+.next-planning-workspace .next-plan-criterion-row{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
+  align-items:start;gap:10px;padding:10px;border:1px solid #737d894d;
+  border-radius:8px;background:#20252b
+}
+.next-planning-workspace .next-plan-criterion-row textarea,
+.next-planning-workspace .next-plan-metacognition textarea{
+  width:100%;min-height:64px;resize:vertical
+}
+.next-planning-workspace .next-plan-metacognition>label{
+  display:block;margin:9px 0
+}
+.next-planning-workspace .next-plan-metacognition>p,
+.next-planning-workspace .next-plan-criteria>p{
+  line-height:1.45
+}

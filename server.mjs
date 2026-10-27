@@ -47,6 +47,7 @@ import { RemoteAccessManager } from './lib/remote-access.mjs';
 import { RemoteAgentAPI, isRemoteAgentPath } from './lib/remote-agent-api.mjs';
 import { ChatGPTOAuth } from './lib/chatgpt-oauth.mjs';
 import { ChatGPTConnector } from './lib/chatgpt-connector.mjs';
+import { ChatGPTSchedulesAPI } from './lib/chatgpt-schedules.mjs';
 import { ChatGPTSetup, CHATGPT_SETUP_URL } from './lib/chatgpt-setup.mjs';
 import { ChatGPTPlanningAPI } from './lib/chatgpt-planning.mjs';
 import { DirectExecutionAPI } from './lib/direct-execution-api.mjs';
@@ -123,7 +124,11 @@ export async function createHarnessServer(options = {}) {
     if (id && !engine.runs.has(id)) engine.restoreArchivedRun(await conversations.get(id));
   };
   const inbox = options.inbox || new TaskInbox({ dataDir, engine, createWorkflow: item => createMissionWorkflow({ id: `inbox-${item.id}`, task: item.input, cwd: item.cwd }) }); await inbox.init();
-  const operations=options.operations||new OperationsStore({dataDir,inbox,engine});await operations.init({preservePausedState:options.desktopRestart?.isRestartStartup?.()===true});
+  const operations=options.operations||new OperationsStore({dataDir,inbox,engine,conversationArchive:conversations});
+  // Restore an intentionally unpaused scheduler after a clean host restart.
+  // OperationsStore still fails closed on conflicting, interrupted or uncertain receipts,
+  // preserves explicit Stop, and journals overdue occurrences instead of replaying them.
+  await operations.init({preservePausedState:true});
   engine.operations=operations;
   const projects=await new ProjectStore({dataDir,engine,isPaused:()=>Boolean(engine.maintenanceRequested)}).init();
   guardArchivedProjectExecution(projects, planningOrganization);
@@ -338,7 +343,8 @@ export async function createHarnessServer(options = {}) {
     },
   }).init());
   const chatGPTPlanning = new ChatGPTPlanningAPI({ tasks, conversations, engine, planningOrganization, projects, onUpdated: sendEvent, isClosing: connectorClosing });
-  chatGPTConnector = await new ChatGPTConnector({ dataDir: path.resolve(dataDir), execution: directExecution, planning: chatGPTPlanning, oauth: chatGPTOAuth, version: APP_VERSION, isClosing: connectorClosing, isRestartPending: () => options.desktopRestart?.isPending?.() === true, onChange: connectorChanged }).init();
+  const chatGPTSchedules = new ChatGPTSchedulesAPI({ operations, isClosing: connectorClosing });
+  chatGPTConnector = await new ChatGPTConnector({ dataDir: path.resolve(dataDir), execution: directExecution, planning: chatGPTPlanning, schedules: chatGPTSchedules, oauth: chatGPTOAuth, version: APP_VERSION, isClosing: connectorClosing, isRestartPending: () => options.desktopRestart?.isPending?.() === true, onChange: connectorChanged }).init();
   const connectorRevocations = new Map();
   chatGPTOAuth.on?.('updated', connectorChanged);
   chatGPTOAuth.on?.('revoked', ids => {
@@ -517,18 +523,33 @@ export async function createHarnessServer(options = {}) {
       if(pathname==='/api/operations/schedule-preview'&&req.method==='POST')return json(res,200,operations.previewSchedule(await body(req)));
       if(pathname==='/api/operations/pause'&&req.method==='POST'){const value=await body(req);return json(res,200,await operations.pause(value.reason||'Paused by you.'));}
       if(pathname==='/api/operations/resume'&&req.method==='POST')return json(res,200,await operations.resume(await body(req)));
-      if(pathname==='/api/operations/deployments'&&req.method==='POST'){const value=await body(req);attachments.validateIds(value.attachmentIds||[]);if(typeof value.cwd!=='string'||!(await fs.stat(value.cwd)).isDirectory())throw new Error('Choose an existing working folder.');return json(res,201,await operations.create(value));}
+      if(pathname==='/api/operations/deployments'&&req.method==='POST'){const value=await body(req);attachments.validateIds(value.attachmentIds||[]);if(typeof value.cwd!=='string'||!(await fs.stat(value.cwd)).isDirectory())throw new Error('Choose an existing working folder.');return json(res,201,await operations.create(value,{actor:'local-session'}));}
       const deploymentMatch=pathname.match(/^\/api\/operations\/deployments\/([a-zA-Z0-9_-]+)(?:\/(trigger|webhook|rotate))?$/);
       if(deploymentMatch){const id=deploymentMatch[1],action=deploymentMatch[2];
+        if(req.method==='GET'&&!action)return json(res,200,operations.getDeployment(id));
         if(req.method==='GET'&&action==='webhook')return json(res,200,{...operations.getWebhook(id),url:'http://127.0.0.1:'+boundPort+'/hooks/'+id});
         if(req.method==='POST'&&action==='trigger'){const value=await body(req);return json(res,202,await operations.trigger(id,{source:'manual',payload:value.payload,idempotencyKey:value.idempotencyKey}));}
         if(req.method==='POST'&&action==='rotate'){await body(req);return json(res,200,await operations.rotateWebhook(id));}
-        if(req.method==='PUT'&&!action){const value=await body(req);if(value.attachmentIds)attachments.validateIds(value.attachmentIds);if(value.cwd!==undefined&&(typeof value.cwd!=='string'||!(await fs.stat(value.cwd)).isDirectory()))throw new Error('Choose an existing working folder.');return json(res,200,await operations.update(id,value));}
-        if(req.method==='DELETE'&&!action){await body(req);return json(res,200,await operations.remove(id));}
+        if(req.method==='PUT'&&!action){const value=await body(req);if(value.attachmentIds)attachments.validateIds(value.attachmentIds);if(value.cwd!==undefined&&(typeof value.cwd!=='string'||!(await fs.stat(value.cwd)).isDirectory()))throw new Error('Choose an existing working folder.');return json(res,200,await operations.update(id,value,{actor:'local-session'}));}
+        if(req.method==='DELETE'&&!action){const value=await body(req);return json(res,200,await operations.remove(id,{expectedRevision:value?.expectedRevision,actor:'local-session'}));}
       }
-      const jobMatch=pathname.match(/^\/api\/operations\/jobs\/([a-zA-Z0-9_-]+)(?:\/(retry))?$/);
-      if(jobMatch&&req.method==='GET')return json(res,200,operations.getJob(jobMatch[1]));
-      if(jobMatch&&req.method==='POST'&&jobMatch[2]){await body(req);return json(res,201,await operations.retryJob(jobMatch[1]));}
+      const jobMatch=pathname.match(/^\/api\/operations\/jobs\/([a-zA-Z0-9_-]+)(?:\/(retry|acknowledge|redeliver))?$/);
+      if(jobMatch&&req.method==='GET'&&!jobMatch[2])return json(res,200,operations.getJob(jobMatch[1]));
+      if(jobMatch&&req.method==='POST'&&jobMatch[2]==='retry'){await body(req);return json(res,201,await operations.retryJob(jobMatch[1]));}
+      if(jobMatch&&req.method==='POST'&&jobMatch[2]==='redeliver'){
+        const value=await body(req);
+        if(!value||!Number.isSafeInteger(value.expectedRevision)
+          ||Object.keys(value).some(key=>!['expectedRevision','confirmPossibleDuplicate'].includes(key))
+          ||value.confirmPossibleDuplicate!==undefined&&typeof value.confirmPossibleDuplicate!=='boolean')
+          return json(res,400,{error:'Supply expectedRevision and an optional explicit duplicate-risk confirmation.'});
+        return json(res,200,await operations.retryOutbound(jobMatch[1],value));
+      }
+      if(jobMatch&&req.method==='POST'&&jobMatch[2]==='acknowledge'){
+        const value=await body(req);
+        if(!value||!Number.isSafeInteger(value.expectedRevision)||Object.keys(value).some(key=>key!=='expectedRevision'))
+          return json(res,400,{error:'Supply the exact expected result revision.'});
+        return json(res,200,await operations.acknowledgeResult(jobMatch[1],{expectedRevision:value.expectedRevision}));
+      }
       if (pathname === '/api/status' && req.method === 'GET') {
         if (options.signedBrowser === true) await browserImport.status();
         const remote = req.headers['x-blackice-remote'] === '1';

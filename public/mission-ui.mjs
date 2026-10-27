@@ -179,7 +179,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
             <div id="mission-attachments"></div>
             <div class="conversation-compose-settings" role="group" aria-label="Response settings">
               <label class="conversation-model-choice"><span>Model</span><select id="mission-model" aria-label="Model for next message"></select></label>
-              <label class="conversation-planning-choice"><span>Planning</span><select id="mission-planning-mode" aria-label="Planning for next response" aria-describedby="mission-planning-note">${PLANNING_MODE_OPTIONS.map(option => `<option value="${option.value}"${option.value === 'auto' ? ' selected' : ''}>${option.label}</option>`).join('')}</select><span id="mission-planning-note" class="sr-only"></span></label>
+              <label class="conversation-planning-choice"><span>Planning</span><select id="mission-planning-mode" aria-label="Planning for next response" aria-describedby="mission-planning-note">${PLANNING_MODE_OPTIONS.map(option => `<option value="${option.value}"${option.value === 'on' ? ' selected' : ''}>${option.label}</option>`).join('')}</select><span id="mission-planning-note" class="sr-only"></span></label>
               <label class="conversation-fast-choice" id="mission-fast-choice"><input id="mission-fast" type="checkbox" role="switch" aria-label="Fast mode for next response" aria-describedby="mission-fast-note"><span>Fast</span><span id="mission-fast-note" class="sr-only"></span></label>
                <button id="conversation-folder-chip" class="conversation-folder-chip" type="button" data-mission-action="workspace" title="Change working folder in Settings">Working folder</button>
             </div>
@@ -239,7 +239,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
       else { pane.removeAttribute('role'); pane.removeAttribute('aria-labelledby'); }
     }
     const editable = Boolean(run && selectedState() === 'active' && !state.sending && !state.capturing && !state.selecting && !state.managing && !state.historyError), saved = taskPlanView(taskState, { runStatus: run?.status });
-    taskPlanUI?.update({ taskState, runId: run?.id, runStatus: run?.status, settled: run?.settled === true, goal: run ? runUserText(run) : '', planningMode: planning?.mode || run?.planningMode || 'auto', planningAvailable: planning?.status !== 'unavailable', planningStatus: planning?.status, planningMessage: planning?.message, canGuide: editable, canSaveMethod: editable && taskState?.plan?.origin === 'agent', canContinue: editable && (Boolean(saved.focus) || Boolean(taskState?.checkpoint?.nextAction)) && planning?.status !== 'unavailable', canRepeat: editable && Boolean(onRepeatTask) });
+    taskPlanUI?.update({ taskState, runId: run?.id, runStatus: run?.status, settled: run?.settled === true, goal: run ? runUserText(run) : '', planningMode: planning?.mode || run?.planningMode || 'on', planningAvailable: planning?.status !== 'unavailable', planningStatus: planning?.status, planningMessage: planning?.message, canGuide: editable, canSaveMethod: editable && taskState?.plan?.origin === 'agent', canContinue: editable && (Boolean(saved.focus) || Boolean(taskState?.checkpoint?.nextAction)) && planning?.status !== 'unavailable', canRepeat: editable && Boolean(onRepeatTask) });
     const focused = document.activeElement;
     if (visible && (hidePlan && plan.contains(focused) || hideDialogue && dialogue.contains(focused))) $(narrow ? planView === 'plan' ? '#conversation-plan-tab' : '#conversation-dialogue-tab' : '#conversation-plan-toggle').focus({ preventScroll: true });
     $('#conversation-tab-attention').hidden = !visible || !run || !attention.unread(conversationId(run, allRuns(snapshot)));
@@ -795,12 +795,12 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     summary.title = description; summary.setAttribute('aria-label', description);
   }
   function renderComposerContext(snapshot, mode, actualModel) {
-    const choice = reasoningChoice(mode), effort = choice.effort, automatic = choice.source === 'maximal-model-catalog', selectedEffort = automatic ? 'default' : effort;
+    const choice = reasoningChoice(mode), effort = choice.effort, selectedEffort = effort;
     const routeManaged = !reasoningSelectionSupported(snapshot.status, actualModel);
-    const support = reasoningSupport(snapshot.status, actualModel, effort), reasoning = { ...support, effort, selectedEffort, automatic, unsupported: !support.available, choices: reasoningChoices(snapshot.status, actualModel, selectedEffort) }, select = $('#mission-effort');
+    const support = reasoningSupport(snapshot.status, actualModel, effort), reasoning = { ...support, effort, selectedEffort, unsupported: !support.available, choices: reasoningChoices(snapshot.status, actualModel, selectedEffort) }, select = $('#mission-effort');
     renderContextSummary(effort, effectiveContext(mode), routeManaged);
     const reasoningSignature = JSON.stringify([reasoning, state.key, mode.agent?.id]);
-    if (select.dataset.signature !== reasoningSignature) { select.dataset.signature = reasoningSignature; select.innerHTML = reasoning.choices.map(option => `<option value="${escape(option.value)}"${option.value === reasoning.selectedEffort ? ' selected' : ''}>${escape(option.value === 'default' && automatic ? `Automatic · ${reasoningLabel(effort)} (Maximal)` : option.label)}${option.available ? '' : ' · unavailable'}</option>`).join(''); }
+    if (select.dataset.signature !== reasoningSignature) { select.dataset.signature = reasoningSignature; select.innerHTML = reasoning.choices.map(option => `<option value="${escape(option.value)}"${option.value === reasoning.selectedEffort ? ' selected' : ''}>${escape(option.label)}${option.available ? '' : ' · unavailable'}</option>`).join(''); }
     select.disabled = state.sending || state.capturing || routeManaged;
     const planning = $('#mission-planning-mode'), planningMode = effectivePlanningMode(mode), planningNote = planningModeDescription(planningMode) + (mode.run ? ' Applies to your next response; saved notes are kept.' : '');
     if (planning.value !== planningMode) planning.value = planningMode;
@@ -813,7 +813,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
     const fastNote = fastSupport.available ? 'Use the faster service tier. Reasoning stays unchanged. Applies to the next response.' : fastSupport.error;
     $('#mission-fast-choice').title = fastNote; $('#mission-fast-note').textContent = fastNote;
     const tierWarning = $('#mission-service-tier-warning'); tierWarning.hidden = serviceTier !== 'fast' || fastSupport.available; tierWarning.textContent = tierWarning.hidden ? '' : `${fastSupport.error} Turn Fast off to use Standard.`;
-    $('#mission-effort-note').textContent = routeManaged ? 'This model does not expose reasoning selection.' : automatic ? `Maximal selects ${reasoningLabel(effort)} from this model’s reported reasoning levels. Choose an explicit level to override it.` : effort === 'default' ? 'Uses the model’s own default.' : reasoning.verified ? 'Options reported by this model.' : 'Provider support is unverified; the exact choice is sent.';
+    $('#mission-effort-note').textContent = routeManaged ? 'This model does not expose reasoning selection.' : effort === 'default' ? 'Uses the model’s own default.' : reasoning.verified ? 'Options reported by this model.' : 'Provider support is unverified; the exact choice is sent.';
     const toolCapability=modelToolCapability(snapshot.status,actualModel);
     const warning = $('#mission-reasoning-warning'), warningText = reasoning.unsupported ? reasoning.error : state.contextErrors[state.key] || (toolCapability.available===false?toolCapability.message:''); warning.hidden = !warningText; warning.textContent = warningText ? `${warningText}${toolCapability.available===false?' Choose a tool-capable model to perform actions.':' Open Reasoning to change it.'}` : '';
     const contextError = $('#mission-context-error'); contextError.hidden = !state.contextErrors[state.key]; contextError.textContent = state.contextErrors[state.key] || '';
@@ -1002,7 +1002,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
   function setReasoning(value) { if (!conversationEfforts.includes(value)) throw new Error('Choose a valid reasoning level.'); delete draft().pendingSend; draft().effort = value; persist(); renderComposer(getSnapshot()); }
   function setServiceTier(value) { if (!['default', 'fast'].includes(value)) throw new Error('Choose Standard or Fast mode.'); if (state.sending || state.capturing || state.selecting || selectedState() !== 'active') return; delete draft().pendingSend; draft().serviceTier = value; persist(); renderComposer(getSnapshot()); }
   function setPlanDetail(value, { asDefault = false } = {}) { if (!conversationPlanDetails.includes(value)) throw new Error('Choose Compact, Balanced, or Detailed planning.'); if (state.sending || state.capturing || state.selecting || selectedState() !== 'active') return; delete draft().pendingSend; draft().planDetail = value; if (asDefault) state.prefs.planDetail = value; persist(); renderComposer(getSnapshot()); }
-  function setPlanningMode(value, { asDefault = false } = {}) { if (!PLANNING_MODES.includes(value)) throw new Error('Choose Maximal, On, Auto, or Off planning.'); if (state.sending || state.capturing || state.selecting || selectedState() !== 'active') return; delete draft().pendingSend; draft().planningMode = value; if (asDefault) state.prefs.planningMode = value; persist(); renderComposer(getSnapshot()); }
+  function setPlanningMode(value, { asDefault = false } = {}) { if (!['on','off'].includes(value)) throw new Error('Choose Planning On or Off.'); if (state.sending || state.capturing || state.selecting || selectedState() !== 'active') return; delete draft().pendingSend; draft().planningMode = value; if (asDefault) state.prefs.planningMode = value; persist(); renderComposer(getSnapshot()); }
   function readComposerContext(event) {
     if (!event.target.dataset?.contextOption || !event.target.closest('[data-context-fields]')) return false;
     if (state.sending || state.capturing) return true;

@@ -2,14 +2,14 @@ import { reasoningChoices, reasoningSupport } from '../../reasoning-model.mjs';
 import { serviceTierSupport } from '../../service-tier-model.mjs';
 
 export const DEFAULT_CHAT_OPTIONS=Object.freeze({
-  model:'default',effort:'default',serviceTier:'default',planningMode:'auto',
+  model:'default',effort:'default',serviceTier:'default',planningMode:'on',
 });
-export const PLANNING_MODES=Object.freeze(['auto','on','maximal','off']);
+export const PLANNING_MODES=Object.freeze(['on','off']);
 export function normalizeChatOptions(value={}){
   const model=typeof value?.model==='string'&&value.model.length<=180?value.model:'default';
   const effort=typeof value?.effort==='string'&&value.effort.length<=25?value.effort:'default';
   const serviceTier=['default','fast'].includes(value?.serviceTier)?value.serviceTier:'default';
-  const planningMode=PLANNING_MODES.includes(value?.planningMode)?value.planningMode:'auto';
+  const planningMode=value?.planningMode==='off'?'off':'on';
   return {model,effort,serviceTier,planningMode};
 }
 export function resolvedDefaultModel(status={}) {

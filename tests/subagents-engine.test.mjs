@@ -58,13 +58,13 @@ test('enabled Relay chats really delegate with bounded child tools and observabl
   const runtime=new Runtime(),engine=new HarnessEngine({runtime,dataDir,defaultCwd:cwd});
   const prefs=await new RuntimeSettingsStore({dataDir}).init();engine.runtimeSettings=prefs;await engine.init();
   t.after(async()=>{await engine.close();await prefs.close();await rm(root,{recursive:true,force:true});});
-  const disabled=await finish(engine,engine.startRun({workflow:taskGraph(),input:'Evaluate a change.'}).id);
+  const disabled=await finish(engine,engine.startRun({workflow:taskGraph(),input:'Evaluate a change.',planningMode:'off'}).id);
   assert.equal(disabled.status,'completed',disabled.error);
   assert.equal(disabled.nodes.agent.output,'No delegation configured.');
   assert.equal(calls.length,1);
   assert.ok(!calls[0].dynamicTools.some(tool=>tool.name==='relay_delegate'));
   await prefs.update({subagentsEnabled:true,maxSubagents:2,verbosity:'detailed',defaultEffort:'high'});
-  const enabled=await finish(engine,engine.startRun({workflow:taskGraph(),input:'Evaluate a change with delegation.'}).id);
+  const enabled=await finish(engine,engine.startRun({workflow:taskGraph(),input:'Evaluate a change with delegation.',planningMode:'off'}).id);
   assert.equal(enabled.status,'completed',enabled.error);
   assert.match(enabled.nodes.agent.output,/Worker finished/);
   assert.equal(receipts.length,1);

@@ -35,7 +35,7 @@ test('a repeat recipe preserves the original accepted planning mode and explicit
 test('input-only planning choices survive repetition without capturing agent-derived outline depth', () => {
  const original = { id: 'root', cwd: 'C:\\workspace', input: { task: 'An adaptive recurring check.', planningMode: 'auto' }, workflow: { nodes: [], settings: { planningMode: 'on' } }, taskState: { plan: { detail: 'detailed' } } };
  const seed = repeatTaskSeed({ id: 'root', status: 'completed', settled: true }, original);
- assert.equal(seed.workflow.settings.planningMode, 'auto');
+ assert.equal(seed.workflow.settings.planningMode, 'on');
  assert.equal(Object.hasOwn(seed.workflow.settings, 'planDetail'), false, 'The next run must be free to adapt its outline to the new work');
 });
 
@@ -59,7 +59,7 @@ test('repeat recipes restore per-agent effort intent and preserve legacy or deli
  assert.deepEqual(original, before, 'Effective effort and its evidence stay intact in admitted history');
  const status = { models: [{ id: 'fixture', supportedReasoningEfforts: ['low', 'medium', 'high'] }] };
  const freshChoice = id => selectPlanningEffort({ mode: seed.workflow.settings.planningMode, status, model: 'fixture', requestedEffort: seed.workflow.nodes.find(node => node.id === id).effort, defaultEffort: 'medium' });
- assert.equal(freshChoice('maximal').effort, 'high', 'A new run recomputes automatic effort against its current model catalog');
- assert.equal(freshChoice('maximal-default').effort, 'high', 'An explicit model default still permits the bounded Maximal choice');
+ assert.equal(freshChoice('maximal').effort, 'medium', 'Planning On does not override model reasoning defaults');
+ assert.equal(freshChoice('maximal-default').effort, 'default', 'An explicit model default remains exact regardless of Planning');
  assert.equal(freshChoice('explicit').effort, 'low', 'A concrete authored override remains authoritative');
 });

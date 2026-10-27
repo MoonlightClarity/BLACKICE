@@ -4,7 +4,7 @@ import { replyTarget, canContinueRun } from './model.mjs';
 /** Send once; the existing server executes and persists the real run.
  * Failures preserve unsent drafts, and no mutation is silently replayed.
  */
-export async function submitChat({ api, runs, task, model = 'default', effort = 'default', serviceTier = 'default', planningMode = 'auto', cwd = '', attachmentIds=[] }) {
+export async function submitChat({ api, runs, task, model = 'default', effort = 'default', serviceTier = 'default', planningMode = 'on', cwd = '', attachmentIds=[] }) {
   if(!Array.isArray(attachmentIds)||attachmentIds.length>10||attachmentIds.some(id=>typeof id!=='string'||!/^[A-Za-z0-9_-]{1,160}$/.test(id)))throw Error('Invalid attached files.');
   if (typeof task !== 'string' || !task.trim()) throw Error('Enter a message first.');
   const content = task.trim(), latest = replyTarget(runs);

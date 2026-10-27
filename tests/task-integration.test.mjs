@@ -65,14 +65,14 @@ for (const ending of ['cancelled', 'failed']) test(`${ending} real saved agent s
 test('legacy native threads retain their real tool catalog while new tasks receive relay_task', async t => {
   const nativeThread = 'legacy-native-thread', runtime = new Runtime(async options => ({ output: 'Original native result.', threadId: options.threadId || nativeThread }));
   const { engine, tasks, cwd, dataDir, engines } = await engineHarness(t, runtime, { withTasks: false });
-  const original = engine.startRun({ workflow: graph, input: 'Keep the original user objective.' }); await settled(engine, original.id); assert.deepEqual(runtime.calls[0].dynamicTools.map(tool => tool.name), ['relay_workspace', 'relay_control']);
+  const original = engine.startRun({ workflow: graph, input: 'Keep the original user objective.', planningMode: 'off' }); await settled(engine, original.id); assert.deepEqual(runtime.calls[0].dynamicTools.map(tool => tool.name), ['relay_workspace', 'relay_control']);
   // Simulate a saved thread from before the task and control gateways existed.
   engine.runs.get(original.id).nodes.agent.toolNames = ['relay_workspace']; await engine.close();
   const nextRuntime = new Runtime(async options => ({ output: 'Native resumed.', threadId: options.threadId || 'new-native-thread' })), restored = new HarnessEngine({ runtime: nextRuntime, tasks, dataDir, defaultCwd: cwd }); engines.push(restored); await restored.init();
   const continuation = restored.continueRun(original.id, { nodeId: 'agent', message: 'Refine the original result.' }); const run = await settled(restored, continuation.id); const resumed = nextRuntime.calls[0];
   assert.equal(resumed.threadId, nativeThread); assert.deepEqual(resumed.dynamicTools.map(tool => tool.name), ['relay_workspace']); assert.match(run.nodes.agent.capabilitiesNote, /original tools/); assert.match(resumed.prompt, /relay_task is available in new tasks/); assert.ok(!resumed.prompt.includes('Read relay_task for full state before editing.'), 'a legacy thread must not be told to call an unattached tool');
   assert.equal((await tasks.get(original.id)).goal, 'Keep the original user objective.');
-  const fresh = restored.startRun({ workflow: graph, input: 'A new task has the new gateway.' }); await settled(restored, fresh.id); assert.ok(nextRuntime.calls[1].dynamicTools.some(tool => tool.name === 'relay_task')); assert.ok(nextRuntime.calls[1].dynamicTools.some(tool => tool.name === 'relay_control')); assert.notEqual(fresh.taskId, original.id);
+  const fresh = restored.startRun({ workflow: graph, input: 'A new task has the new gateway.', planningMode: 'off' }); await settled(restored, fresh.id); assert.ok(nextRuntime.calls[1].dynamicTools.some(tool => tool.name === 'relay_task')); assert.ok(nextRuntime.calls[1].dynamicTools.some(tool => tool.name === 'relay_control')); assert.notEqual(fresh.taskId, original.id);
 });
 
 async function application(t) {

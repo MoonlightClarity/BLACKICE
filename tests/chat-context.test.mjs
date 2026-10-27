@@ -11,7 +11,7 @@ import { normalizeContextOptions, estimateContextTokens } from '../lib/context.m
 
 const graph = (agent = {}, settings = {}) => ({ id: 'editable-context', name: 'Conversation settings', nodes: [
   { id: 'input', type: 'input' }, { id: 'agent', type: 'agent', name: 'Assistant', model: 'fixture-model', prompt: 'Verify the actual workspace before acting.', effort: 'high', ...agent }, { id: 'output', type: 'output' },
-], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1, ...settings } });
+], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1, planningMode: 'off', ...settings } });
 const agentOf = run => run.workflow.nodes.find(node => node.id === 'agent');
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const settle = async (engine, run) => { await engine.executions.get(run.id); const saved = engine.getRun(run.id); assert.equal(saved.settled, true); return saved; };
@@ -162,7 +162,7 @@ test('pre-defaults version-two start receipts retain their original normalized m
   const{validateWorkflow}=await import('../lib/engine.mjs'),{createHash}=await import('node:crypto'),normalized=validateWorkflow(workflow);delete normalized.id;
   for(const node of normalized.nodes)if(node.effort===undefined)node.effort='medium';
   const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().filter(key=>value[key]!==undefined).map(key=>[key,canonical(value[key])])):value;
-  const stored=engine.runs.get(first.id);stored.metadata.clientRequestHashVersion=2;stored.metadata.clientRequestHash=createHash('sha256').update(JSON.stringify(canonical({kind:'start',workflow:normalized,task:request.input,cwd,attachmentIds:[]}))).digest('hex');engine.clientRequests.delete(request.requestId);engine.rememberClientRequest(stored);
+  const stored=engine.runs.get(first.id);stored.metadata.clientRequestHashVersion=2;stored.metadata.clientRequestHash=createHash('sha256').update(JSON.stringify(canonical({kind:'start',workflow:normalized,task:request.input,cwd,attachmentIds:[],planningMode:'off'}))).digest('hex');engine.clientRequests.delete(request.requestId);engine.rememberClientRequest(stored);
   engine.runtimeSettings={get:()=>({defaultEffort:'ultra',defaultContext:{preset:'900k'}})};
   assert.equal(engine.startRun(request).id,first.id);assert.equal(runtime.calls.length,1);assert.throws(()=>engine.startRun({...request,input:'Changed task.'}),{code:'RUN_REQUEST_CONFLICT'});
 });

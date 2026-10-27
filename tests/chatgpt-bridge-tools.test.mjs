@@ -99,7 +99,7 @@ test('engine and delegated agents never offer the retired Bridge, including old 
   // Even a caller restoring an obsolete field cannot enable the feature.
   engine.chatgptBridge = store; engine.runtimeSettings = prefs; await engine.init();
   cleanups.push(async () => { await engine.close(); await prefs.close(); });
-  const workflow = { id: 'retired-bridge-task', name: 'Retired Bridge fixture', nodes: [{ id: 'input', type: 'input' }, { id: 'agent', type: 'agent', name: 'Coordinator', prompt: 'Follow the user request.', model: 'fixture-model' }, { id: 'output', type: 'output' }], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1 } };
+  const workflow = { id: 'retired-bridge-task', name: 'Retired Bridge fixture', nodes: [{ id: 'input', type: 'input' }, { id: 'agent', type: 'agent', name: 'Coordinator', prompt: 'Follow the user request.', model: 'fixture-model' }, { id: 'output', type: 'output' }], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1, planningMode: 'off' } };
   const first = engine.startRun({ workflow, input: 'Inspect the fixture.' }); await engine.executions.get(first.id);
   assert.equal(engine.getRun(first.id).status, 'completed', engine.getRun(first.id).error);
   engine.runs.get(first.id).nodes.agent.toolNames.push(CHATGPT_BRIDGE_TOOL.name);

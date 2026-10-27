@@ -30,7 +30,7 @@ const workflow = (overrides = {}) => ({
   id: 'test-flow', name: 'Bounded QA',
   nodes: [node('input', 'input'), node('agent', 'agent', 'AGENT_MARKER'), node('output', 'output')],
   edges: [edge('input', 'agent'), edge('agent', 'output')],
-  settings: { maxParallel: 2 }, ...overrides,
+  ...overrides, settings: { maxParallel: 2, planningMode: 'off', ...overrides.settings },
 });
 class FakeRuntime extends EventEmitter {
   constructor(execute = async () => ({ output: 'agent result', threadId: 'fake-thread' })) {
@@ -386,7 +386,7 @@ test('an upgraded legacy start receipt replays its original admission using save
   const accepted = engine.runs.get(first.id), normalized = validateWorkflow(request.workflow), { id, createdAt, updatedAt, ...content } = normalized;
   for(const node of content.nodes)if(node.effort===undefined)node.effort='medium';
   accepted.workflow.nodes.find(node => node.type === 'agent').model = 'default';
-  accepted.metadata.clientRequestHash = legacyDigest({ kind: 'start', workflow: content, task: request.input, cwd, attachmentIds: [], models: [{ nodeId: 'agent', providerId: 'primary', model: 'vendor/original' }], metadata: request.metadata });
+  accepted.metadata.clientRequestHash = legacyDigest({ kind: 'start', workflow: content, task: request.input, cwd, attachmentIds: [], models: [{ nodeId: 'agent', providerId: 'primary', model: 'vendor/original' }], metadata: request.metadata, planningMode: 'off' });
   delete accepted.metadata.clientRequestHashVersion;
   await engine.close();
   runtime.resolveModel = () => { throw new Error('Legacy replay must not consult the current provider/default.'); };

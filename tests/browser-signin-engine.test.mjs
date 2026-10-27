@@ -38,7 +38,7 @@ test('contained sign-in pauses its browser without blocking an independent autho
  const runtime=new Runtime(),engine=new HarnessEngine({runtime,dataDir,defaultCwd:cwd,connections,browser});
  await engine.init();t.after(async()=>{await engine.close();await rm(root,{recursive:true,force:true})});
  const task='Open https://www.linkedin.com/feed/ to inspect sign-in status.';
- const workflow=createMissionWorkflow({task,model:'model-test',cwd,id:'quiet-auth-workflow'});
+ const workflow=createMissionWorkflow({task,model:'model-test',cwd,id:'quiet-auth-workflow',planningMode:'off'});
  const started=engine.startRun({workflow,input:task});
  let run;
  for(let i=0;i<80;i++){run=engine.getRun(started.id);if(run?.settled)break;await new Promise(r=>setTimeout(r,20));}
@@ -94,7 +94,7 @@ test('delegated workers preserve the contained challenge while independent nativ
  await prefs.update({subagentsEnabled:true,maxSubagents:2});
  t.after(async()=>{await engine.close();await prefs.close();await rm(root,{recursive:true,force:true})});
  const task='Inspect LinkedIn at https://linkedin.com/feed/ and report login status.';
- const workflow=createMissionWorkflow({task,model:'demo',cwd,id:'subagent-signin'});
+ const workflow=createMissionWorkflow({task,model:'demo',cwd,id:'subagent-signin',planningMode:'off'});
  const started=engine.startRun({workflow,input:task});
  let run;
  for(let i=0;i<120;i++){run=engine.getRun(started.id);if(run?.settled)break;await new Promise(r=>setTimeout(r,20));}

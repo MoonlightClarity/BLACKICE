@@ -67,11 +67,42 @@ for (const mode of ['auto', 'on', 'maximal']) test(`${mode} blocks operational t
     return { output: 'An answer without a plan.', threadId: 'planning-mode-thread', usage: { totalTokens: 17 } };
   });
   const run = await f.settle(f.start({ planningMode: mode }).id);
-  assert.equal(run.planningMode, mode); assert.equal(run.status, 'failed'); assert.equal(run.nodes.agent.errorCode, 'TASK_PLAN_REQUIRED');
-  assert.equal(run.nodes.agent.planning.mode, mode); assert.equal(run.nodes.agent.planning.status, 'missing'); assert.equal(run.nodes.agent.output, '');
+  assert.equal(run.planningMode, 'on'); assert.equal(run.status, 'failed'); assert.equal(run.nodes.agent.errorCode, 'TASK_PLAN_REQUIRED');
+  assert.equal(run.nodes.agent.planning.mode, 'on'); assert.equal(run.nodes.agent.planning.status, 'missing'); assert.equal(run.nodes.agent.output, '');
   assert.equal(run.nodes.agent.usage.totalTokens, 17); assert.equal(run.nodes.agent.threadId, 'planning-mode-thread');
   assert.deepEqual(run.taskState.steps, []); assert.equal(f.runtime.calls.length, 1);
   await assert.rejects(readFile(path.join(f.cwd, 'unplanned.txt')), { code: 'ENOENT' });
+});
+
+test('Planning On fails before inference when the selected model cannot call the required tool',async t=>{
+  const f=await fixture(t,async()=>{assert.fail('The model must not be invoked without the required Planning tool.');});
+  f.runtime.models[0].supportsTools=false;
+  const run=await f.settle(f.start({planningMode:'on'}).id);
+  assert.equal(run.status,'failed');
+  assert.equal(run.nodes.agent.errorCode,'TASK_PLAN_UNAVAILABLE');
+  assert.equal(run.nodes.agent.planning.status,'unavailable');
+  assert.equal(run.nodes.agent.planning.mode,'on');
+  assert.match(run.error,/Planning is On.*selected model does not expose tool calling/);
+  assert.equal(f.runtime.calls.length,0);
+  assert.equal(run.output,'');
+});
+
+test('Planning On rejects a saved legacy thread without compatible Planning tools before a model turn',async t=>{
+  const f=await fixture(t,async options=>{
+    assert.match(options.developerInstructions,/TASK PLANNING MODE: OFF/);
+    return{output:'Legacy notes remain readable.',threadId:'planning-mode-thread'};
+  });
+  const previous=await f.settle(f.start({planningMode:'off'}).id);finished(previous);
+  const state=f.engine.runs.get(previous.id);
+  state.nodes.agent.toolNames=['relay_workspace'];
+  state.nodes.agent.taskSchemaVersion=1;
+  const continuation=await f.settle(f.engine.continueRun(previous.id,{nodeId:'agent',message:'Now require Planning',planningMode:'on'}).id);
+  assert.equal(continuation.status,'failed');
+  assert.equal(continuation.nodes.agent.errorCode,'TASK_PLAN_UNAVAILABLE');
+  assert.match(continuation.error,/saved conversation has no compatible Planning tool/);
+  assert.equal(f.runtime.calls.length,1,'No extra model turn was spent without a usable task tool.');
+  assert.equal(continuation.output,'');
+  assert.equal(previous.status,'completed');
 });
 
 test('Off permits normal operations and final output without creating an automatic outline or method lookup', async t => {
@@ -99,30 +130,34 @@ test('Auto lets the agent choose atomic or expanded detail while an explicit leg
     assert.equal(state.plan.detail, number === 2 ? 'detailed' : 'compact');
     return { output: 'The chosen depth was recorded.', threadId: `adaptive-${number}` };
   });
-  const first = await f.settle(f.start().id); finished(first); assert.equal(first.planningMode, 'auto'); assert.equal(first.nodes.agent.planning.detail, 'compact');
+  const first = await f.settle(f.start().id); finished(first); assert.equal(first.planningMode, 'on'); assert.equal(first.nodes.agent.planning.detail, 'compact');
   const second = await f.settle(f.start({ input: 'A substantive fixture request.' }).id); finished(second); assert.equal(second.nodes.agent.planning.detail, 'detailed');
   const legacy = await f.settle(f.start({ planDetail: 'compact' }).id); finished(legacy); assert.equal(legacy.planDetail, 'compact');
 });
 
-test('Maximal admits a fully specified atomic action, rejects shallow plans atomically, and requires real completion evidence', async t => {
+test('legacy Maximal maps to On and accepts a sufficient compact plan without unnecessary detail', async t => {
   const f = await fixture(t, async (options, number, context) => {
-    assert.match(options.developerInstructions, /Maximal planning is selected/); assert.match(options.developerInstructions, /concrete method and verification procedure/);
-    assert.match(options.developerInstructions, /do not invent branches, approvals, fixed step counts or work/);
-    const before = await task(options, { action: 'read' }); assert.equal(before.plan.detail, 'detailed');
-    options.onEvent({ type: 'delta', delta: 'Held until sufficient plan.' });
-    const shallow = await call(options, 'relay_task', { action: 'plan', expectedRevision: before.revision, plan: { detail: 'compact' }, steps: [action()] });
-    assert.equal(shallow.success, false); assert.equal(shallow.code, 'TASK_PLAN_DETAIL_REQUIRED');
-    const after = await task(options, { action: 'read' }); assert.equal(after.revision, before.revision); assert.deepEqual(after.steps, []);
+    assert.match(options.developerInstructions, /Planning is On/);
+    assert.doesNotMatch(options.developerInstructions, /Maximal planning is selected/);
+    const before = await task(options, { action: 'read' });
+    assert.equal(before.plan.detail, 'compact');
+    options.onEvent({ type: 'delta', delta: 'Held until actual Planning call.' });
     assert.equal(context.engine.listRuns()[0].nodes.agent.output, '');
-    const accepted = await plan(options, { detail: 'compact', previous: after }); assert.equal(accepted.plan.detail, 'detailed'); assert.equal(accepted.steps.length, 1);
-    assert.equal(context.engine.listRuns()[0].nodes.agent.output, 'Held until sufficient plan.');
-    const invented = await call(options, 'relay_task', { action: 'step', expectedRevision: accepted.revision, stepId: 'answer', status: 'done' }); assert.equal(invented.success, false);
-    const completed = await task(options, { action: 'step', expectedRevision: accepted.revision, stepId: 'answer', status: 'done', evidence: 'Read the fixture request and checked that this response states the observed fixture result.' });
+    const accepted = await task(options, { action: 'plan', expectedRevision: before.revision, plan: { detail: 'compact' }, steps: [action()] });
+    assert.equal(accepted.plan.detail, 'compact');
+    assert.equal(accepted.steps.length, 1);
+    assert.equal(context.engine.listRuns()[0].nodes.agent.output, 'Held until actual Planning call.');
+    const unverified = await call(options, 'relay_task', { action: 'step', expectedRevision: accepted.revision, stepId: 'answer', status: 'done' });
+    assert.equal(unverified.success, false, 'On still requires actual completion evidence');
+    const completed = await task(options, { action: 'step', expectedRevision: accepted.revision, stepId: 'answer', status: 'done', evidence: 'Observed this test result and its constraints.' });
     assert.equal(completed.progress.done, 1);
-    return { output: 'A bounded detailed action was completed.', threadId: 'planning-mode-thread' };
+    return { output: 'A sufficient compact plan was recorded.', threadId: 'planning-mode-thread' };
   });
   const run = await f.settle(f.start({ planningMode: 'maximal', planDetail: 'compact' }).id); finished(run);
-  assert.equal(run.nodes.agent.planning.detail, 'detailed'); assert.equal(run.taskState.plan.detail, 'detailed'); assert.equal(run.planDetail, 'compact', 'The legacy hint remains readable but Maximal takes precedence');
+  assert.equal(run.planningMode, 'on');
+  assert.equal(run.nodes.agent.planning.detail, 'compact');
+  assert.equal(run.taskState.plan.detail, 'compact');
+  assert.equal(run.planDetail, 'compact');
 });
 
 test('Off continuation preserves the exact prior tree, evidence, notes and native schema; On reauthors before using tools', async t => {
@@ -147,12 +182,12 @@ test('Off continuation preserves the exact prior tree, evidence, notes and nativ
   });
   const initial = await f.settle(f.start().id); finished(initial);
   const off = await f.settle(f.engine.continueRun(initial.id, { nodeId: 'agent', message: 'Continue with automatic planning off.', planningMode: 'off' }).id); finished(off);
-  assert.deepEqual(await f.tasks.get(initial.taskId), saved); assert.deepEqual(off.taskState, saved); assert.equal(initial.planningMode, 'auto'); assert.equal(off.planningMode, 'off');
+  assert.deepEqual(await f.tasks.get(initial.taskId), saved); assert.deepEqual(off.taskState, saved); assert.equal(initial.planningMode, 'on'); assert.equal(off.planningMode, 'off');
   const on = await f.settle(f.engine.continueRun(off.id, { nodeId: 'agent', message: 'Continue with a visible plan.', planningMode: 'on' }).id); finished(on);
   assert.equal(on.planningMode, 'on'); assert.equal(on.taskState.plan.authoredBy.runId, on.id); assert.equal(on.taskState.steps[0].evidence, 'Checked the original fixture answer.');
 });
 
-test('a deeper Maximal follow-up preserves older completed actions without adding fictional result or method details', async t => {
+test('legacy Maximal follow-up is On and preserves earlier completed evidence without forced expansion', async t => {
   let original;
   const f = await fixture(t, async (options, number) => {
     if (number === 1) {
@@ -160,16 +195,18 @@ test('a deeper Maximal follow-up preserves older completed actions without addin
       original = (await task(options, { action: 'step', expectedRevision: state.revision, stepId: 'answer', status: 'done', evidence: 'Original response checked.' })).steps[0];
     } else {
       const previous = await task(options, { action: 'read' });
-      const state = await plan(options, { previous, steps: [...previous.steps, detailedAction('expanded')] });
-      assert.deepEqual(state.steps[0], original); assert.equal(state.plan.detail, 'detailed');
-      const shallow = await call(options, 'relay_task', { action: 'step', expectedRevision: state.revision, stepId: 'expanded', note: '' });
-      assert.equal(shallow.code, 'TASK_PLAN_DETAIL_REQUIRED'); assert.equal((await task(options, { action: 'read' })).revision, state.revision);
+      const state = await plan(options, { previous, steps: [...previous.steps, action('expanded')] });
+      assert.deepEqual(state.steps[0], original);
+      assert.equal(state.plan.detail, 'balanced');
+      assert.equal(state.steps[1].result, undefined, 'New actions do not require fabricated procedural detail.');
     }
     return { output: 'Observed work preserved.', threadId: 'planning-mode-thread' };
   });
   const first = await f.settle(f.start().id); finished(first);
-  const next = await f.settle(f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Expand the remaining work.', planningMode: 'maximal' }).id); finished(next);
-  assert.equal(next.taskState.steps[0].result, undefined); assert.equal(next.taskState.steps[0].note, undefined);
+  const next = await f.settle(f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Add only useful new work.', planningMode: 'maximal' }).id); finished(next);
+  assert.equal(next.planningMode, 'on');
+  assert.equal(next.taskState.steps[0].result, undefined);
+  assert.equal(next.taskState.steps[0].note, undefined);
 });
 
 test('Retry inherits the accepted mode and an explicit override changes only the new recovery turn', async t => {
@@ -195,13 +232,13 @@ test('mode admission is strict, has explicit precedence, and is bound into start
   assert.throws(() => f.start({ planningMode: 'on', input: { task: 'Request.', planningMode: 'off' } }), { code: 'PLANNING_MODE_INVALID' });
   f.workflow.settings.planningMode = 'off';
   const request = { requestId: 'mode-start-once', planningMode: 'on' }, first = await f.settle(f.start(request).id); finished(first); assert.equal(first.planningMode, 'on');
-  assert.equal(f.start(request).id, first.id); assert.throws(() => f.start({ ...request, planningMode: 'maximal' }), { code: 'RUN_REQUEST_CONFLICT' });
+  assert.equal(f.start(request).id, first.id); assert.equal(f.start({ ...request, planningMode: 'maximal' }).id, first.id, 'Legacy Maximal is exactly equivalent to On.');
   const continuation = { requestId: 'mode-continue-once', nodeId: 'agent', message: 'Expand this reply.', planningMode: 'maximal' };
-  const next = await f.settle(f.engine.continueRun(first.id, continuation).id); finished(next); assert.equal(next.planningMode, 'maximal');
+  const next = await f.settle(f.engine.continueRun(first.id, continuation).id); finished(next); assert.equal(next.planningMode, 'on');
   await f.reopen(); assert.equal(f.start(request).id, first.id); assert.equal(f.engine.continueRun(first.id, continuation).id, next.id); assert.equal(f.runtime.calls.length, 2);
   assert.throws(() => f.engine.continueRun(first.id, { ...continuation, planningMode: 'off' }), { code: 'RUN_REQUEST_CONFLICT' });
   assert.throws(() => f.engine.continueRun(first.id, { ...continuation, planningMode: undefined }), { code: 'RUN_REQUEST_CONFLICT' });
-  const inherited = await f.settle(f.engine.continueRun(next.id, { nodeId: 'agent', message: 'Use the saved choice.' }).id); finished(inherited); assert.equal(inherited.planningMode, 'maximal');
+  const inherited = await f.settle(f.engine.continueRun(next.id, { nodeId: 'agent', message: 'Use the saved choice.' }).id); finished(inherited); assert.equal(inherited.planningMode, 'on');
 });
 
 test('missing-mode receipts remain recoverable as Auto without permitting a changed Off request', async t => {
@@ -211,16 +248,16 @@ test('missing-mode receipts remain recoverable as Auto without permitting a chan
   delete f.engine.runs.get(first.id).nodes.agent.planning.mode;
   await f.reopen(); assert.equal(f.start(request).id, first.id); assert.equal(f.runtime.calls.length, 1);
   assert.throws(() => f.start({ ...request, planningMode: 'off' }), { code: 'RUN_REQUEST_CONFLICT' });
-  const resumed = await f.settle(f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue a legacy default request.' }).id); finished(resumed); assert.equal(resumed.planningMode, 'auto');
+  const resumed = await f.settle(f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue a legacy default request.' }).id); finished(resumed); assert.equal(resumed.planningMode, 'on');
 });
 
 for (const scenario of [
-  { label: 'advertised object levels', advertised: [{ reasoningEffort: 'low' }, { reasoningEffort: 'ultra' }, { reasoningEffort: 'max' }], expected: 'ultra', source: 'maximal-model-catalog' },
-  { label: 'explicit model default', advertised: ['low', 'high'], requested: 'default', expected: 'high', source: 'maximal-model-catalog' },
+  { label: 'advertised object levels', advertised: [{ reasoningEffort: 'low' }, { reasoningEffort: 'ultra' }, { reasoningEffort: 'max' }], expected: 'low', source: 'application-default' },
+  { label: 'explicit model default', advertised: ['low', 'high'], requested: 'default', expected: 'default', source: 'request' },
   { label: 'explicit concrete override', advertised: ['low', 'high'], requested: 'low', expected: 'low', source: 'request' },
   { label: 'unknown provider support', advertised: [], defaultEffort: 'medium', expected: 'medium', source: 'application-default' },
   { label: 'unknown advertised token', advertised: ['unlimited'], requested: 'default', expected: 'default', source: 'request' },
-]) test(`Maximal effort uses only observed model metadata: ${scenario.label}`, async t => {
+]) test(`Planning aliases never select model effort: ${scenario.label}`, async t => {
   const f = await fixture(t, async options => { assert.equal(options.effort, scenario.expected); await plan(options); return { output: 'Actual fixture result.', threadId: 'planning-mode-thread' }; });
   f.runtime.models[0].supportedReasoningEfforts = scenario.advertised; f.settings.defaultEffort = scenario.defaultEffort || 'low';
   if (scenario.requested) f.workflow.nodes[1].effort = scenario.requested;
@@ -229,8 +266,8 @@ for (const scenario of [
   assert.deepEqual(run.nodes.agent.effortSelection, { effort: scenario.expected, source: scenario.source, requestedEffort: scenario.requested ?? null });
 });
 
-test('Maximal recalculates inherited automatic effort for the chosen model while concrete user overrides remain authoritative', async t => {
-  const expected = ['high', 'low', 'default', 'low', 'low'];
+test('planning stays independent of model effort while concrete user overrides remain authoritative', async t => {
+  const expected = ['default', 'default', 'default', 'low', 'low'];
   const f = await fixture(t, async (options, number) => {
     assert.equal(options.effort, expected[number - 1]);
     if (number !== 3) await plan(options);
@@ -242,7 +279,7 @@ test('Maximal recalculates inherited automatic effort for the chosen model while
   const off = await f.settle(f.engine.continueRun(narrow.id, { nodeId: 'agent', message: 'Turn planning off.', planningMode: 'off' }).id); finished(off);
   const explicit = await f.settle(f.engine.continueRun(off.id, { nodeId: 'agent', message: 'Use low explicitly.', planningMode: 'on', effort: 'low' }).id); finished(explicit);
   const preserved = await f.settle(f.engine.continueRun(explicit.id, { nodeId: 'agent', message: 'Expand the plan with the same effort.', planningMode: 'maximal', model: 'fixture-model' }).id); finished(preserved);
-  assert.equal(preserved.nodes.agent.effortSelection.source, 'request'); assert.equal(f.engine.getRun(first.id).workflow.nodes[1].effort, 'high');
+  assert.equal(preserved.nodes.agent.effortSelection.source, 'request'); assert.equal(f.engine.getRun(first.id).workflow.nodes[1].effort, 'default');
 });
 
 test('a saved Inbox workflow keeps each selected mode across restart and real engine dispatch', async t => {
@@ -259,7 +296,7 @@ test('a saved Inbox workflow keeps each selected mode across restart and real en
     for (const item of items) {
       assert.equal(inbox.get(item.id).workflow.settings.planningMode, item.workflow.settings.planningMode);
       const receipt = await inbox.runNow(item.id), run = await f.settle(receipt.run.id); finished(run);
-      assert.equal(run.planningMode, item.workflow.settings.planningMode); assert.equal(run.nodes.agent.planning.mode, run.planningMode); await inbox.reconcile();
+      assert.equal(run.planningMode, item.workflow.settings.planningMode === 'off' ? 'off' : 'on'); assert.equal(run.nodes.agent.planning.mode, run.planningMode); await inbox.reconcile();
     }
   } finally { await inbox.close(); }
   assert.equal(f.runtime.calls.length, 4);
@@ -273,11 +310,11 @@ test('a cron deployment preserves Maximal in the admitted workflow snapshot thro
   try {
     const deployment = await operations.create({ name: 'Bounded planning fixture', input: 'Run one local planning check.', cwd: f.cwd, workflow: { ...f.workflow, settings: { planningMode: 'maximal', maxParallel: 1 } }, enabled: true, trigger: { type: 'cron', expression: '* * * * *', timezone: 'UTC' }, limits: { maxIterations: 1 } });
     await operations.close(); operations = await new OperationsStore(options).init(); operations.kick = () => {};
-    assert.equal(operations.getDeployment(deployment.id).workflow.settings.planningMode, 'maximal');
+    assert.equal(operations.getDeployment(deployment.id).workflow.settings.planningMode, 'on');
     assert.equal(operations.status().paused, true); await operations.resume();
     now += 60000; await operations.poll();
-    const admitted = operations.snapshot().jobs[0]; assert.ok(admitted); assert.equal(admitted.definition.workflow.settings.planningMode, 'maximal');
-    const run = await until(() => f.engine.listRuns()[0]); const settled = await f.settle(run.id); finished(settled); assert.equal(settled.planningMode, 'maximal'); assert.equal(settled.nodes.agent.planning.detail, 'detailed');
+    const admitted = operations.snapshot().jobs[0]; assert.ok(admitted); assert.equal(admitted.definition.workflow.settings.planningMode, 'on');
+    const run = await until(() => f.engine.listRuns()[0]); const settled = await f.settle(run.id); finished(settled); assert.equal(settled.planningMode, 'on'); assert.equal(settled.nodes.agent.planning.detail, 'balanced');
     await operations.poll(); assert.equal(operations.getJob(admitted.id).status, 'completed'); now += 120000; await operations.poll(); assert.equal(f.runtime.calls.length, 1);
   } finally { await operations.close(); await inbox.close(); }
 });
@@ -328,7 +365,7 @@ test('archived run restoration rejects invalid saved planning modes before admit
 });
 
 test('inherited application effort keeps its origin across ordinary follow-ups and Retry before a later Maximal turn', async t => {
-  const expected = ['medium', 'medium', 'medium', 'high'];
+  const expected = ['medium', 'medium', 'medium', 'medium'];
   const f = await fixture(t, async (options, number) => {
     assert.equal(options.effort, expected[number - 1]); await plan(options);
     if (number === 2) throw Error('Observed fixture failure after a recorded plan.');
@@ -340,7 +377,7 @@ test('inherited application effort keeps its origin across ordinary follow-ups a
   const retried = await f.settle(f.engine.retryRun(second.id).id); finished(retried);
   for (const run of [first, second, retried]) assert.deepEqual(run.nodes.agent.effortSelection, { effort: 'medium', source: 'application-default', requestedEffort: null });
   const maximal = await f.settle(f.engine.continueRun(retried.id, { nodeId: 'agent', message: 'Now use Maximal planning.', planningMode: 'maximal' }).id); finished(maximal);
-  assert.equal(maximal.nodes.agent.effortSelection.source, 'maximal-model-catalog'); assert.equal(maximal.nodes.agent.effortSelection.requestedEffort, null);
+  assert.notEqual(maximal.nodes.agent.effortSelection.source, 'maximal-model-catalog'); assert.equal(maximal.nodes.agent.planning.mode, 'on');
 });
 
 for (const limitation of ['tool-less model', 'legacy catalog']) test(`Off reports task capability accurately for a ${limitation}`, async t => {

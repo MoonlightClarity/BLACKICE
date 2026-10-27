@@ -17,7 +17,7 @@ test('V2 offers native model-specific reasoning and speed choices without false 
   const rows=chatOptionChoices(status,selected);
   assert.ok(rows.efforts.some(item=>item.id==='high'&&!item.disabled));
   assert.equal(rows.tiers.find(item=>item.id==='fast').disabled,false);
-  assert.deepEqual(validateChatOptions(status,selected),selected);
+  assert.deepEqual(validateChatOptions(status,selected),{...selected,planningMode:'on'});
   assert.throws(()=>validateChatOptions(status,{...selected,effort:'ultra'}),/does not offer|reasoning/i);
   assert.throws(()=>validateChatOptions(status,{model:'vendor::restricted',serviceTier:'fast'}),/Fast mode|Codex/i);
   assert.throws(()=>validateChatOptions(status,{model:'nonexistent'}),/available model/);

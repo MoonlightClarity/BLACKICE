@@ -349,6 +349,139 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
     const savedProgress = draft.latest.progress || taskPlanView(draft.latest).progress;
     progress(box, savedProgress.done || 0, savedProgress.total || 0, (savedProgress.done || 0) + ' of ' + (savedProgress.total || 0) + ' planned steps done');
     recordedOntology(box, draft.latest, state);
+    // Decision policies are first-class saved Planning metadata, not implicit
+    // exclusions inferred from a job posting's use of the word "required".
+    const criteriaPanel=el(box,'details','','next-plan-criteria');
+    criteriaPanel.id='next-planning-decision-criteria';
+    const savedCriteria=draft.latest.plan?.decisionCriteria||[];
+    el(criteriaPanel,'summary','Decision criteria · '+savedCriteria.length+' classified');
+    el(criteriaPanel,'p','Classify what actually constrains a decision: real gates, material barriers, manageable gaps, external claims, preferences and unknowns. Wording such as required is evidence of a claim, not proof of an unavoidable gate. Older job-specific kinds remain supported.','next-help');
+    const policyRows=el(criteriaPanel,'div','','next-plan-criteria-rows');
+    const kinds=[
+      ['hard_gate','Verified hard gate'],['material_barrier','Material barrier / costly gap'],
+      ['adaptable_gap','Adaptable / manageable gap'],['stated_requirement','Stated requirement / claim'],
+      ['preference','Preference / tradeoff'],['unverified','Unknown / unverified'],
+      ['substantial_skill','Substantial skill (legacy)'],['trainable_skill','Trainable skill (legacy)'],
+      ['employer_wishlist','Employer wish list (legacy)']
+    ];
+    const sources=[['user','User'],['external','External source / stakeholder'],['analyst','Analyst inference'],['employer','Employer (legacy)']];
+    const evidenceStates=[['','Not classified'],['confirmed','Confirmed'],['reported','Reported by source'],['inferred','Inferred'],['unknown','Unknown'],['contradicted','Contradicted']];
+    let policySerial=0;
+    const createSelect=(parent,name,options,value)=>{
+      const control=el(parent,'select','','next-field');control.setAttribute('name',name);
+      for(const [id,title] of options){const option=el(control,'option',title);option.value=id;}
+      control.value=value;return control;
+    };
+    const createPolicyRow=(criterion={})=>{
+      const row=el(policyRows,'div','','next-plan-criterion-row');
+      row.dataset.criterionId=criterion.id||'decision-'+(++policySerial);
+      const name=el(row,'label','Criterion','next-label');
+      const label=el(name,'input','','next-field');label.setAttribute('name','label');
+      label.maxLength=180;label.value=criterion.label||'';label.readOnly=!editable;
+      const kindLabel=el(row,'label','Classification','next-label');
+      const kind=createSelect(kindLabel,'kind',kinds,criterion.kind||'preference');kind.disabled=!editable;
+      const sourceLabel=el(row,'label','Origin','next-label');
+      const source=createSelect(sourceLabel,'source',sources,criterion.source||'user');source.disabled=!editable;
+      const evidenceLabel=el(row,'label','Evidence status','next-label');
+      const evidence=createSelect(evidenceLabel,'evidenceStatus',evidenceStates,criterion.evidenceStatus||'');evidence.disabled=!editable;
+      const priorityLabel=el(row,'label','Priority (1–5)','next-label');
+      const priority=el(priorityLabel,'input','','next-field');priority.setAttribute('name','priority');priority.type='number';priority.min=1;priority.max=5;priority.value=String(criterion.priority??3);priority.readOnly=!editable;
+      const basisLabel=el(row,'label','Why this classification applies','next-label');
+      const basis=el(basisLabel,'textarea','','next-field');basis.setAttribute('name','basis');basis.rows=2;
+      basis.maxLength=700;basis.value=criterion.basis||'';basis.readOnly=!editable;
+      const mandatory=el(row,'label','','next-label');
+      const checked=el(mandatory,'input');checked.type='checkbox';checked.setAttribute('name','verifiedNonNegotiable');
+      checked.checked=criterion.verifiedNonNegotiable===true;checked.disabled=!editable;
+      el(mandatory,'span','External non-negotiability verified beyond the claimed wording');
+      const toggle=()=>{mandatory.hidden=kind.value!=='hard_gate'||!['external','employer'].includes(source.value);};
+      kind.addEventListener('change',toggle);source.addEventListener('change',toggle);toggle();
+      if(editable)button(row,'Remove criterion',()=>{row.remove();policyFeedback.textContent='Criterion removed from this draft. Save to persist.';});
+      return row;
+    };
+    const policyActions=el(criteriaPanel,'div','','next-row');
+    const policyFeedback=el(criteriaPanel,'p','','next-help');policyFeedback.setAttribute('role','status');
+    for(const criterion of savedCriteria)createPolicyRow(criterion);
+    if(editable){
+      button(policyActions,'Add criterion',()=>{createPolicyRow();criteriaPanel.open=true;});
+      button(policyActions,'Save criteria',async()=>{
+        if(pending||draft.base.revision!==draft.latest.revision){
+          policyFeedback.textContent='Refresh this plan before editing a changed revision.';return;
+        }
+        if(planningDraftDirty(draft)){
+          policyFeedback.textContent='Save the other plan changes first, then save the criteria.';return;
+        }
+        const values=[...policyRows.children].map(row=>{
+          const field=name=>row.querySelector('[name='+name+']');
+          const value={
+            id:row.dataset.criterionId,label:field('label').value,
+            kind:field('kind').value,source:field('source').value,
+            basis:field('basis').value,priority:Number(field('priority').value)
+          };
+          if(value.kind==='hard_gate'&&['external','employer'].includes(value.source))
+            value.verifiedNonNegotiable=field('verifiedNonNegotiable').checked;
+          if(field('evidenceStatus').value)value.evidenceStatus=field('evidenceStatus').value;
+          return value;
+        });
+        pending=true;policyFeedback.textContent='Saving decision criteria…';
+        try{
+          const updated=await api('/api/tasks/'+encodeURIComponent(plan.taskId)+'/plan/edit','POST',{
+            expectedRevision:draft.base.revision,
+            operations:[{type:'metadata',patch:{decisionCriteria:values}}]
+          });
+          if(updated.taskId!==plan.taskId||!Array.isArray(updated.steps))throw Error('The saved criterion update could not be verified.');
+          documents.set(plan.taskId,updated);
+          drafts.set(key(plan),createPlanningDraft(updated));
+          items=items.map(item=>key(item)===key(plan)?{...item,...updated,kind:'conversation',bucket:item.bucket,editable:item.editable}:item);
+          if(key(selected)===key(plan))selected={...selected,...updated,kind:'conversation',bucket:selected.bucket,editable:selected.editable};
+          notify('Decision criteria saved.');
+        }catch(cause){policyFeedback.textContent=cause.message;notify(cause.message,true);}
+        finally{pending=false;if(active)drawDetail({retainFocus:true});}
+      });
+    }
+    // Compact optional judgment frame for general decisions, debugging,
+    // research, design and recurring work. Nothing here creates a gate or task.
+    const framePanel=el(box,'details','','next-plan-metacognition');
+    framePanel.id='next-planning-metacognition';
+    const savedFrame=draft.latest.plan?.metacognition||{};
+    el(framePanel,'summary','Practical judgment · '+Object.keys(savedFrame).length+' notes');
+    el(framePanel,'p','Use only what materially improves the decision. Missing information is not negative evidence, and another check is not automatically more useful than acting.','next-help');
+    const frameControls=new Map(),frameFields=[["outcome","Useful outcome","What would actually make this work valuable?"],["keyUncertainty","Decision-changing uncertainty","Which assumption matters enough to change the approach?"],["nextProbe","Cheapest useful check","What small test would clarify or falsify that assumption?"],["goodEnough","Good enough","What result would be sufficiently useful, without demanding perfection?"],["reassessWhen","Stop or reassess when","What observation or cost means stop, switch method or seek more evidence?"],["observation","What happened","What did we observe versus expect? What remains unverified?"],["lesson","Transferable correction","What change would prevent a repeat, without overgeneralizing?"]];
+    for(const [field,title,hint] of frameFields){
+      const fieldLabel=el(framePanel,'label',title,'next-label');
+      const control=el(fieldLabel,'textarea','','next-field');
+      control.dataset.judgmentField=field;control.rows=2;control.maxLength=700;
+      control.placeholder=hint;control.value=savedFrame[field]||'';control.readOnly=!editable;
+      frameControls.set(field,control);
+    }
+    const frameFeedback=el(framePanel,'p','','next-help');frameFeedback.setAttribute('role','status');
+    if(editable)button(framePanel,'Save judgment frame',async()=>{
+      if(pending||draft.base.revision!==draft.latest.revision){
+        frameFeedback.textContent='Refresh this plan before saving changed criteria.';return;
+      }
+      if(planningDraftDirty(draft)){
+        frameFeedback.textContent='Save other plan edits first, then save the judgment frame.';return;
+      }
+      const frame={};
+      for(const [field,control] of frameControls){const value=control.value.trim();if(value)frame[field]=value;}
+      if(JSON.stringify(frame)===JSON.stringify(savedFrame)){
+        frameFeedback.textContent='No judgment changes to save.';return;
+      }
+      pending=true;frameFeedback.textContent='Saving judgment frame…';
+      try{
+        const updated=await api('/api/tasks/'+encodeURIComponent(plan.taskId)+'/plan/edit','POST',{
+          expectedRevision:draft.base.revision,
+          operations:[{type:'metadata',patch:{metacognition:Object.keys(frame).length?frame:null}}]
+        });
+        if(updated.taskId!==plan.taskId||!Array.isArray(updated.steps))
+          throw Error('The saved judgment frame could not be verified.');
+        documents.set(plan.taskId,updated);
+        drafts.set(key(plan),createPlanningDraft(updated));
+        items=items.map(item=>key(item)===key(plan)?{...item,...updated,kind:'conversation',bucket:item.bucket,editable:item.editable}:item);
+        if(key(selected)===key(plan))selected={...selected,...updated,kind:'conversation',bucket:selected.bucket,editable:selected.editable};
+        notify('Judgment frame saved.');
+      }catch(cause){frameFeedback.textContent=cause.message;notify(cause.message,true);}
+      finally{pending=false;if(active)drawDetail({retainFocus:true});}
+    });
     const techniqueTimeline = renderRecordedAnalyticPasses(box, draft.latest, { onSelect: id => {
       Object.assign(state, selectPlanStep(taskPlanView(draft.latest), state, id));
       drawDetail(); focusStep(id);

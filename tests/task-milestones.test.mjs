@@ -108,8 +108,8 @@ test('legacy records and original step/checkpoint calls retain their optional fi
   state = await other.setStep('milestone-task', 'old-step', { status: 'done' }, actor(state.revision));
   assert.equal(state.steps[0].note, 'Legacy note.'); assert.equal(state.steps[0].doneWhen, undefined); assert.equal(state.progress.done, 1);
   const context = await other.getContext('milestone-task'); assert.match(context, /Next action: Legacy next step\./);
-  assert.equal(TASK_SCHEMA_VERSION, 7); assert.equal(TASK_TOOL.name, LEGACY_TASK_TOOL.name);
-  assert.equal(taskToolForVersion(1), LEGACY_TASK_TOOL); assert.equal(taskToolForVersion(7), TASK_TOOL);
+  assert.equal(TASK_SCHEMA_VERSION, 8); assert.equal(TASK_TOOL.name, LEGACY_TASK_TOOL.name);
+  assert.equal(taskToolForVersion(1), LEGACY_TASK_TOOL); assert.equal(taskToolForVersion(8), TASK_TOOL);
   assert.ok(!taskToolForVersion(5).inputSchema.properties.action.enum.includes('edit')); assert.ok(TASK_TOOL.inputSchema.properties.action.enum.includes('edit'));
   assert.deepEqual(TASK_TOOL_V3.inputSchema.properties.action.enum.filter(action => action !== 'external'), LEGACY_TASK_TOOL.inputSchema.properties.action.enum);
   for (const key of ['doneWhen', 'evidence', 'blockedReason', 'nextAction']) assert.equal(LEGACY_TASK_TOOL.inputSchema.properties[key], undefined);

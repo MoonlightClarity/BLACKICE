@@ -36,7 +36,7 @@ export function createChatFrame(mount) {
     '<div class="next-chat-options"><label>Model <select id="next-chat-model"><option value="default">Default</option></select></label>',
     '<label>Reasoning <select id="next-chat-effort"><option value="default">Model default</option></select></label>',
     '<label>Speed <select id="next-chat-tier"><option value="default">Standard</option></select></label>',
-    '<label>Planning <select id="next-chat-plan"><option value="auto">Auto</option><option value="on">On</option><option value="maximal">Maximal</option><option value="off">Off</option></select></label>',
+    '<label>Planning <select id="next-chat-plan"><option value="on">On</option><option value="off">Off</option></select></label>',
     '<span class="next-chat-spacer"></span><button class="next-primary" type="submit" id="next-chat-send">Send</button></div></form>',
     '<p id="next-chat-hint" class="next-chat-hint" role="status">Enter to send · Shift+Enter for a new line</p>',
     '</footer></div>',

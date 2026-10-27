@@ -75,7 +75,7 @@ test('the live describe read and plan examples execute against the actual curren
   assert.deepEqual(description.plan.inputSchema.required, ['action', 'expectedRevision', 'steps']);
   assert.equal(description.plan.inputSchema.properties.plan.properties.steps, undefined);
   assert.equal(description.plan.example.plan.steps, undefined);
-  assert.ok(Array.isArray(description.plan.example.steps)); assert.equal(description.plan.example.plan.detail, 'detailed');
+  assert.ok(Array.isArray(description.plan.example.steps)); assert.equal(description.plan.example.plan.detail, 'balanced');
   assert.match(description.plan.note, /latest read/); assert.match(description.plan.note, /Every action needs doneWhen/);
   assert.match(TASK_TOOL.inputSchema.properties.expectedRevision.description, /Required on every write/);
   assert.match(TASK_TOOL.inputSchema.properties.plan.description, /never plan.steps/);

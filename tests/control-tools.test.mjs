@@ -16,6 +16,30 @@ const graph=(id='controlled-workflow')=>({id,name:'Configured through chat',node
 const unpack=result=>JSON.parse(result.contentItems.filter(item=>item.type==='inputText').map(item=>item.text).join('\n'));
 const call=async(options,args,success=true)=>{const result=await options.onToolCall({name:'relay_control',arguments:args});assert.equal(result.success,success,JSON.stringify(unpack(result)));return unpack(result);};
 
+test('scheduled agent workers cannot recursively mutate or trigger cronjobs',async()=>{
+  let called=0;
+  const operations={
+    snapshot:()=>({status:{paused:false},deployments:[],jobs:[]}),
+    trigger:async()=>{called++;return{id:'should-not-admit'};},
+    resume:async()=>{called++;return{paused:false};},
+    pause:async()=>{called++;return{paused:true};}
+  };
+  const engine={listWorkflows:()=>[],runtime:{status:()=>({models:[],defaultModel:'gpt-6-luna'})}};
+  const handler=createControlToolHandler({engine,getOperations:()=>operations,validateWorkflow,
+    run:{id:'scheduled-agent',cwd:'C:\\scheduled',metadata:{managedBy:'operations'}},
+    nodeId:'agent',signal:new AbortController().signal});
+  const invoke=action=>handler({name:'relay_control',arguments:{action,id:'a'}});
+  for(const action of ['deployment_save','deployment_update','deployment_run','job_retry','operations_pause','operations_resume']){
+    const receipt=await invoke(action);
+    assert.equal(receipt.success,false,action);
+    assert.match(unpack(receipt).error,/Scheduled executions cannot mutate or trigger recurring jobs/);
+  }
+  assert.equal(called,0,'cron itself did not fire a second job or resume the scheduler');
+  const read=await invoke('operations_list');
+  assert.equal(read.success,true);
+  assert.equal(unpack(read).status.paused,false);
+});
+
 test('pre-Fast native schema and instructions retain their exact v3 bytes', () => {
  const digest=value=>createHash('sha256').update(typeof value==='string'?value:JSON.stringify(value)).digest('hex');
  // Recorded from the committed v3 export before adding speed fields.

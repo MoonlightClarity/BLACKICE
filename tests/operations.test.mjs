@@ -17,9 +17,9 @@ class Engine extends EventEmitter{
   startRun(value){if(this.maxConcurrentRuns!==null&&this.executions.size>=this.maxConcurrentRuns)throw Object.assign(new Error('Engine is busy'),{status:409});this.calls.push(structuredClone(value));const id=`operation-run-${this.calls.length}`,run={id,status:'running',settled:false,metadata:structuredClone(value.metadata),input:value.input.task,cwd:value.input.cwd};this.runs.set(id,run);this.executions.set(id,true);this.onStart?.(run,value);return structuredClone(run);}
   finish(id,status='completed',{settled=true,error}={}){const run=this.runs.get(id);assert.ok(run,`Run ${id} exists`);Object.assign(run,{status,settled,error,finishedAt:new Date().toISOString()});if(settled)this.executions.delete(id);this.emit('event',{type:'run.updated',runId:id,data:structuredClone(run)});}
 }
-async function harness(t,{automatic=false,capacity=1}={}){
+async function harness(t,{automatic=false,capacity=1,outboundTransport}={}){
   const directory=await mkdtemp(path.join(tmpdir(),'relay-operations-test-')),cwd=path.join(directory,'workspace');await mkdir(cwd);let timestamp=1792150000000;
-  const engine=new Engine(capacity),inbox=await new TaskInbox({dataDir:directory,engine}).init(),options={dataDir:directory,inbox,engine,clock:()=>timestamp,pollMs:20},operations=await new OperationsStore(options).init();if(!automatic)operations.kick=()=>{};
+  const engine=new Engine(capacity),inbox=await new TaskInbox({dataDir:directory,engine}).init(),options={dataDir:directory,inbox,engine,clock:()=>timestamp,pollMs:20,...(outboundTransport?{outboundTransport}:{})},operations=await new OperationsStore(options).init();if(!automatic)operations.kick=()=>{};
   t.after(async()=>{await operations.close().catch(()=>{});await inbox.close().catch(()=>{});assert.match(path.basename(directory),/^relay-operations-test-/);await rm(directory,{recursive:true,force:true});});
   const create=value=>operations.create({name:'Fixture operation',input:'Verify the deployed fixture.',cwd,workflow:workflow(),...value});const advance=milliseconds=>{timestamp+=milliseconds;};
   return{directory,cwd,engine,inbox,operations,options,create,advance};
@@ -35,6 +35,387 @@ async function externalReceipt(t,{directory,cwd,engine},runId,{status='uncertain
   if(backupRecovery){await store.close();await rm(store.file(runId));const restored=await new TaskStateStore({dataDir:directory}).init();t.after(()=>restored.close());engine.runs.get(runId).taskState=await restored.get(runId);}
   else engine.runs.get(runId).taskState=await store.get(runId);
 }
+
+test('outbound webhook is opt-in, pins its exact saved destination, and reports its URL in local receipts',async t=>{
+  const calls=[];
+  const transport=async request=>{calls.push({deliveryId:request.deliveryId,key:request.idempotencyKey,target:request.target,payload:request.payload});return{state:'delivered',httpStatus:202};};
+  const {operations,engine,create}=await harness(t,{outboundTransport:transport});
+  const untouched=await create({name:'Local-only work',trigger:{type:'manual'}});
+  assert.deepEqual(untouched.deliveryTarget,{type:'local'});
+  const local=await operations.trigger(untouched.id);
+  assert.equal(local.outbound,null);
+  const target={type:'webhook',url:'https://alerts.example.com/private/opaque-path'};
+  const created=await create({name:'Outbound research',trigger:{type:'manual'},deliveryTarget:target});
+  assert.equal(created.deliveryTarget.host,'alerts.example.com');
+  assert.equal(created.deliveryTarget.url,target.url);
+  const saved=await operations.trigger(created.id,{idempotencyKey:'once'});
+  assert.equal(saved.definition.deliveryTarget.host,'alerts.example.com');
+  assert.equal(saved.definition.deliveryTarget.url,target.url);
+  // Edits of the deployment do not rewrite already admitted jobs.
+  await operations.update(created.id,{deliveryTarget:{type:'local'}});
+  await operations.poll();
+  engine.runs.get('operation-run-1').output='Local first result.';
+  engine.finish('operation-run-1');
+  await operations.poll();
+  engine.runs.get('operation-run-2').output='Three verified job-search findings.';
+  engine.finish('operation-run-2');
+  await operations.poll();
+  await until(()=>operations.getJob(saved.id).outbound?.state==='delivered');
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].target.url,target.url,'admitted job keeps original destination');
+  assert.equal(calls[0].deliveryId,saved.id);
+  assert.equal(calls[0].key,saved.id);
+  const payload=JSON.parse(calls[0].payload);
+  assert.equal(payload.jobId,saved.id);
+  assert.match(payload.outputPreview,/Three verified job-search/);
+  assert.equal(payload.outcome,'completed');
+  assert.equal(operations.getJob(saved.id).outbound.httpStatus,202);
+  assert.equal(operations.getJob(saved.id).delivery.state,'available','local review is independent from remote acceptance');
+  assert.equal(operations.status().outbound.delivered,1);
+  assert.equal(operations.snapshot().deployments.find(item=>item.id===created.id).deliveryTarget.url,undefined);
+});
+
+test('a transient DNS-style failure retries with the same delivery key, then terminal receipt survives restart',async t=>{
+  const calls=[];
+  const transport=async request=>{calls.push(request.idempotencyKey);return calls.length===1?{state:'retryable',reason:'DNS lookup failed'}:{state:'delivered',httpStatus:204};};
+  const {operations,engine,create,advance,options}=await harness(t,{outboundTransport:transport});
+  const deployment=await create({trigger:{type:'manual'},deliveryTarget:{type:'webhook',url:'https://alerts.example.com/hook'}});
+  const saved=await operations.trigger(deployment.id);
+  await operations.poll();engine.finish('operation-run-1');await operations.poll();
+  await until(()=>operations.getJob(saved.id).outbound?.state==='retry_wait');
+  const waiting=operations.getJob(saved.id).outbound;
+  assert.equal(waiting.attempts.length,1);
+  assert.equal(waiting.error,'DNS lookup failed');
+  assert.equal(calls.length,1);
+  advance(10000);await operations.poll();
+  await until(()=>operations.getJob(saved.id).outbound?.state==='delivered');
+  const delivered=operations.getJob(saved.id).outbound;
+  assert.equal(delivered.attempts.length,2);
+  assert.equal(calls.length,2);
+  assert.deepEqual(calls,[saved.id,saved.id]);
+  assert.equal(delivered.attempts[1].httpStatus,204);
+  await operations.close();
+  const restored=await new OperationsStore(options).init({preservePausedState:true});
+  restored.kick=()=>{};
+  t.after(()=>restored.close());
+  assert.equal(restored.getJob(saved.id).outbound.state,'delivered');
+  assert.equal(restored.getJob(saved.id).outbound.attempts.length,2);
+  await restored.poll();
+  assert.equal(calls.length,2,'restart never replays a settled delivery');
+});
+
+test('an ambiguous HTTPS outcome never automatically retries, including after resume and restart',async t=>{
+  const calls=[];
+  const transport=async claim=>{calls.push(claim.deliveryId);return{state:'unknown',httpStatus:503,reason:'Remote may have accepted.'};};
+  const {operations,engine,create,advance,options}=await harness(t,{outboundTransport:transport});
+  const dep=await create({trigger:{type:'manual'},deliveryTarget:{type:'webhook',url:'https://alerts.example.com/out'}});
+  const job=await operations.trigger(dep.id);
+  await operations.poll();engine.finish('operation-run-1');await operations.poll();
+  await until(()=>operations.getJob(job.id).outbound?.state==='unknown');
+  assert.equal(operations.getJob(job.id).outbound.httpStatus,503);
+  advance(500000);await operations.pause('Inspect ambiguous send');await operations.resume();await operations.poll();
+  assert.equal(calls.length,1);
+  await operations.close();
+  const restored=await new OperationsStore(options).init({preservePausedState:true});restored.kick=()=>{};
+  t.after(()=>restored.close());
+  await restored.poll();
+  assert.equal(restored.getJob(job.id).outbound.state,'unknown');
+  assert.equal(calls.length,1);
+});
+
+test('outbound sends never bypass a paused scheduler; local reports remain reviewable',async t=>{
+  const calls=[];
+  const {operations,engine,create}=await harness(t,{outboundTransport:async claim=>{calls.push(claim);return{state:'delivered',httpStatus:200};}});
+  const dep=await create({trigger:{type:'manual'},deliveryTarget:{type:'webhook',url:'https://alerts.example.com/incoming'}});
+  const job=await operations.trigger(dep.id);
+  await operations.poll();
+  await operations.pause('Operator stopped all scheduled work');
+  engine.finish('operation-run-1');await operations.poll();
+  assert.equal(operations.getJob(job.id).delivery.state,'available');
+  assert.equal(operations.getJob(job.id).outbound.state,'queued');
+  assert.equal(calls.length,0);
+  await operations.resume();await operations.poll();
+  await until(()=>operations.getJob(job.id).outbound.state==='delivered');
+  assert.equal(calls.length,1);
+});
+
+test('ambiguous external outcomes require explicit duplicate-risk acceptance before any resend',async t=>{
+  const sent=[];
+  const {operations,engine,create}=await harness(t,{
+    outboundTransport:async claim=>{sent.push(claim.idempotencyKey);return sent.length===1?
+      {state:'unknown',reason:'The remote response was lost.'}:{state:'delivered',httpStatus:202};}
+  });
+  const created=await create({trigger:{type:'manual'},deliveryTarget:{type:'webhook',url:'https://alerts.example.com/hook'}});
+  const job=await operations.trigger(created.id);
+  await operations.poll();engine.finish('operation-run-1');await operations.poll();
+  await until(()=>operations.getJob(job.id).outbound?.state==='unknown');
+  const first=operations.getJob(job.id).outbound;
+  assert.equal(sent.length,1);
+  await assert.rejects(operations.retryOutbound(job.id,{expectedRevision:first.revision}),/confirm the possible duplicate/i);
+  await assert.rejects(operations.retryOutbound(job.id,{expectedRevision:first.revision-1,confirmPossibleDuplicate:true}),/receipt changed/);
+  assert.equal(sent.length,1);
+  const queued=await operations.retryOutbound(job.id,{expectedRevision:first.revision,confirmPossibleDuplicate:true});
+  assert.equal(queued.outbound.state,'queued');
+  assert.equal(queued.outbound.attempts.length,1);
+  await operations.poll();
+  await until(()=>operations.getJob(job.id).outbound?.state==='delivered');
+  assert.deepEqual(sent,[job.id,job.id],'receiver sees one stable Idempotency-Key across explicit retries');
+  assert.equal(operations.getJob(job.id).outbound.attempts.length,2);
+});
+
+test('removing a schedule cancels external delivery that has not yet been sent',async t=>{
+  const sent=[];
+  const {operations,create}=await harness(t,{outboundTransport:async claim=>{sent.push(claim);return{state:'delivered',httpStatus:200};}});
+  const schedule=await create({trigger:{type:'manual'},deliveryTarget:{type:'webhook',url:'https://alerts.example.com/out'}});
+  const job=await operations.trigger(schedule.id);
+  await operations.remove(schedule.id,{expectedRevision:schedule.revision,actor:'local-session'});
+  assert.equal(operations.getJob(job.id).outbound.state,'cancelled');
+  assert.match(operations.getJob(job.id).outbound.error,/Schedule removed/);
+  assert.equal(operations.getJob(job.id).delivery.state,'available','local cancellation history stays reviewable');
+  await operations.poll();
+  assert.equal(sent.length,0);
+});
+
+test('a lost in-flight HTTP claim is fenced unknown at restart and never automatically resent',async t=>{
+  const sent=[];
+  const {operations,engine,create,options,directory}=await harness(t,{outboundTransport:async claim=>{sent.push(claim);return{state:'delivered',httpStatus:200};}});
+  const schedule=await create({trigger:{type:'manual'},deliveryTarget:{type:'webhook',url:'https://alerts.example.com/out'}});
+  const job=await operations.trigger(schedule.id);
+  await operations.poll();await operations.pause('Simulate saved in-flight receipt');
+  engine.finish('operation-run-1');await operations.poll();
+  const pending=operations.getJob(job.id);
+  assert.equal(pending.outbound.state,'queued');
+  await operations.close();
+  const file=JSON.parse(await readFile(path.join(directory,'operations.json'),'utf8'));
+  const row=file.jobs.find(item=>item.id===job.id);
+  row.outbound.state='sending';row.outbound.nextAttemptAt=null;row.outbound.revision++;
+  row.outbound.attempts.push({
+    number:1,id:job.id+':1',state:'sending',
+    startedAt:new Date(Date.parse(job.createdAt)+1500).toISOString(),
+    finishedAt:null,payloadHash:'a'.repeat(64),httpStatus:null,reason:null
+  });
+  await writeFile(path.join(directory,'operations.json'),JSON.stringify(file));
+  const restored=await new OperationsStore(options).init({preservePausedState:true});
+  restored.kick=()=>{};t.after(()=>restored.close());
+  const unknown=restored.getJob(job.id);
+  assert.equal(unknown.outbound.state,'unknown');
+  assert.match(unknown.outbound.error,/will not be replayed automatically/);
+  assert.equal(unknown.outbound.attempts.length,1);
+  await restored.resume();await restored.poll();
+  assert.equal(sent.length,0);
+});
+
+test('scheduled results survive restart and remain unacknowledged until explicit review',async t=>{
+  const {operations,engine,create,options}=await harness(t);
+  const deployment=await create({trigger:{type:'manual'}});
+  const pending=await operations.trigger(deployment.id,{idempotencyKey:'result-once'});
+  assert.equal(pending.delivery.state,'pending');
+  await assert.rejects(operations.acknowledgeResult(pending.id,{expectedRevision:1}),/no reviewable result/i);
+  await operations.poll();
+  engine.runs.get('operation-run-1').output='Verified job search evidence from the original run.';
+  engine.finish('operation-run-1','completed');
+  await operations.poll();
+  const completed=operations.getJob(pending.id);
+  assert.equal(completed.status,'completed');
+  assert.equal(completed.delivery.state,'available','engine completion does not equal human acknowledgement');
+  assert.equal(completed.delivery.revision,2);
+  assert.equal(completed.delivery.outcome,'completed');
+  assert.match(completed.delivery.preview,/Verified job search evidence/);
+  assert.equal(completed.delivery.sourceRunId,'operation-run-1');
+  assert.equal(operations.status().availableResults,1);
+  assert.equal(operations.snapshot().results.available,1);
+  const attempts=structuredClone(completed.attempts);
+  await assert.rejects(operations.acknowledgeResult(pending.id,{expectedRevision:1}),/receipt changed/);
+  const acknowledged=await operations.acknowledgeResult(pending.id,{expectedRevision:2});
+  assert.equal(acknowledged.delivery.state,'acknowledged');
+  assert.equal(acknowledged.delivery.revision,3);
+  assert.equal(operations.status().availableResults,0);
+  assert.deepEqual(operations.getJob(pending.id).attempts,attempts,'marking reviewed does not rewrite the actual run');
+  const repeat=await operations.acknowledgeResult(pending.id,{expectedRevision:2});
+  assert.deepEqual(repeat,acknowledged,'lost acknowledgement responses are safe to retry');
+  await operations.close();
+  const restored=await new OperationsStore(options).init({preservePausedState:true});
+  restored.kick=()=>{};
+  t.after(()=>restored.close());
+  assert.equal(restored.getJob(pending.id).delivery.state,'acknowledged');
+  assert.equal(restored.getJob(pending.id).delivery.preview,completed.delivery.preview);
+  assert.equal(restored.snapshot().results.acknowledged,1);
+});
+
+test('retrying a failed scheduled task delays local result publication until the terminal outcome',async t=>{
+  const {operations,engine,create,advance}=await harness(t);
+  const deployment=await create({retry:{maxAttempts:1,backoffSeconds:1}});
+  const job=await operations.trigger(deployment.id);
+  await operations.poll();
+  engine.finish('operation-run-1','failed',{error:'First verification failed'});
+  await operations.poll();
+  assert.equal(operations.getJob(job.id).status,'retry_wait');
+  assert.equal(operations.getJob(job.id).delivery.state,'pending');
+  assert.equal(operations.snapshot().results.available,0);
+  advance(1000);await operations.poll();
+  engine.runs.get('operation-run-2').output='Second attempt did not verify.';
+  engine.finish('operation-run-2','failed',{error:'Final verification failed'});
+  await operations.poll();
+  const outcome=operations.getJob(job.id);
+  assert.equal(outcome.status,'failed');
+  assert.equal(outcome.delivery.state,'available');
+  assert.equal(outcome.delivery.outcome,'failed');
+  assert.match(outcome.delivery.error,/Final verification failed/);
+  assert.equal(operations.snapshot().results.available,1);
+});
+
+test('cancelling an unstarted scheduled job publishes an honest cancellation notice',async t=>{
+  const {operations,create}=await harness(t);
+  const deployment=await create({trigger:{type:'manual'}});
+  const job=await operations.trigger(deployment.id);
+  await operations.remove(deployment.id,{expectedRevision:deployment.revision,actor:'local-session'});
+  const cancelled=operations.getJob(job.id);
+  assert.equal(cancelled.status,'cancelled');
+  assert.equal(cancelled.delivery.state,'available');
+  assert.equal(cancelled.delivery.outcome,'cancelled');
+  assert.equal(cancelled.delivery.preview,null);
+  assert.equal(cancelled.delivery.sourceRunId,null);
+});
+
+test('an opt-in clean-restart catch-up admits one missed occurrence but never bursts the backlog',async t=>{
+  const {operations,engine,create,advance,options}=await harness(t);
+  const created=await create({enabled:true,trigger:{type:'interval',everySeconds:10},missedRunPolicy:{onResume:'once',maxAgeSeconds:60}});
+  assert.deepEqual(created.missedRunPolicy,{onResume:'once',maxAgeSeconds:60});
+  await operations.close();advance(35000);
+  const restored=await new OperationsStore(options).init({preservePausedState:true});restored.kick=()=>{};
+  t.after(()=>restored.close());
+  assert.equal(restored.status().paused,false);
+  assert.equal(restored.getDeployment(created.id).nextAt,created.nextAt,'due occurrence remains claimable within configured age');
+  await restored.poll();
+  assert.equal(engine.calls.length,1);
+  const history=restored.snapshot().jobs;
+  assert.equal(history.length,1);
+  assert.equal(history[0].scheduledAt,created.nextAt);
+  assert.ok(history[0].latenessMs>=25000);
+  assert.ok(restored.getDeployment(created.id).nextAt>=created.nextAt+35000);
+  await restored.poll();
+  assert.equal(engine.calls.length,1,'overdue backlog does not replay in a burst');
+});
+
+test('catch-up age guard skips missed occurrences that are too old',async t=>{
+  const {operations,engine,create,advance,options}=await harness(t);
+  const created=await create({enabled:true,trigger:{type:'interval',everySeconds:10},missedRunPolicy:{onResume:'once',maxAgeSeconds:60}});
+  await operations.close();advance(300000);
+  const restored=await new OperationsStore(options).init({preservePausedState:true});restored.kick=()=>{};
+  t.after(()=>restored.close());
+  const current=restored.getDeployment(created.id);
+  assert.ok(current.nextAt>=created.nextAt+300000);
+  assert.equal(current.occurrenceHistory.at(-1).reason,'catch-up-expired');
+  await restored.poll();
+  assert.equal(engine.calls.length,0);
+});
+
+test('explicit resume respects opt-in one-time catch-up and leaves Stop authoritative',async t=>{
+  const {operations,engine,create,advance}=await harness(t);
+  const created=await create({enabled:true,trigger:{type:'interval',everySeconds:10},missedRunPolicy:{onResume:'once',maxAgeSeconds:86400}});
+  await operations.pause('Operator paused');
+  advance(35000);await operations.poll();
+  assert.equal(engine.calls.length,0);
+  await operations.resume();await operations.poll();
+  assert.equal(engine.calls.length,1);
+  assert.equal(operations.snapshot().jobs[0].scheduledAt,created.nextAt);
+  advance(1000);await operations.poll();
+  assert.equal(engine.calls.length,1);
+});
+
+test('invalid catch-up definitions are rejected atomically before any scheduling',async t=>{
+  const {operations,create}=await harness(t);
+  for(const value of [{onResume:'auto'}, {onResume:'once',maxAgeSeconds:0},
+      {onResume:'once',maxAgeSeconds:604801}, {onResume:'once',maxAgeSeconds:'3600'},
+      {onResume:'once',maxAgeSeconds:3600,unknown:'field'}]){
+    await assert.rejects(create({missedRunPolicy:value}),/missed-run|catch-up age/i);
+  }
+  assert.equal(operations.list().length,0);
+});
+
+test('late scheduled polls keep one due admission and explicitly journal the collapsed backlog',async t=>{
+  const {operations,create,advance,engine}=await harness(t);
+  const created=await create({enabled:true,trigger:{type:'interval',everySeconds:10},overlap:'queue'});
+  const firstDue=created.nextAt;
+  advance(50000);await operations.poll();
+  const detail=operations.getDeployment(created.id),history=detail.occurrenceHistory;
+  assert.equal(engine.calls.length,1);
+  const admitted=history.find(item=>item.kind==='admitted'),skipped=history.find(item=>item.reason==='backlog-collapsed');
+  assert.equal(admitted.scheduledAt,firstDue);
+  assert.equal(skipped.scheduledAt,firstDue+10000);
+  assert.ok(skipped.throughAt>=skipped.scheduledAt);
+  assert.ok(detail.nextAt>skipped.throughAt);
+  assert.equal(operations.snapshot().jobs[0].scheduledAt,firstDue);
+  assert.equal(engine.calls[0].metadata.managedBy,'operations','scheduled workers carry durable managed provenance');
+  assert.equal(operations.status().ticker.state,'running');
+  assert.ok(operations.status().ticker.lastSuccessAt);
+});
+
+test('resuming schedules records due slots skipped during an explicit stop, without replay',async t=>{
+  const {operations,create,advance}=await harness(t);
+  const created=await create({enabled:true,trigger:{type:'interval',everySeconds:10}});
+  await operations.pause('Operator stopped the scheduler');
+  advance(33000);await operations.resume();
+  const detail=operations.getDeployment(created.id);
+  assert.equal(operations.snapshot().jobs.length,0);
+  assert.equal(detail.occurrenceHistory.at(-1).kind,'skipped');
+  assert.equal(detail.occurrenceHistory.at(-1).reason,'scheduler-resumed');
+  assert.equal(detail.occurrenceHistory.at(-1).scheduledAt,created.nextAt);
+  assert.ok(detail.nextAt>detail.occurrenceHistory.at(-1).throughAt);
+});
+
+test('verified clean restart journals an overdue slot instead of dropping it invisibly',async t=>{
+  const {operations,options,create,advance}=await harness(t);
+  const created=await create({enabled:true,trigger:{type:'interval',everySeconds:10}});
+  await operations.close();
+  advance(30000);
+  const restored=await new OperationsStore(options).init({preservePausedState:true});restored.kick=()=>{};
+  t.after(()=>restored.close());
+  const detail=restored.getDeployment(created.id);
+  assert.equal(restored.status().paused,false);
+  assert.equal(restored.snapshot().jobs.length,0);
+  assert.equal(detail.occurrenceHistory.at(-1).reason,'clean-restart');
+  assert.equal(detail.occurrenceHistory.at(-1).scheduledAt,created.nextAt);
+});
+
+test('overlap skips receive a distinct occurrence receipt and stale scheduler health is reported',async t=>{
+  const {operations,create,advance}=await harness(t);
+  const created=await create({enabled:true,trigger:{type:'interval',everySeconds:10},overlap:'skip'});
+  advance(10000);await operations.poll();
+  advance(10000);await operations.poll();
+  const detail=operations.getDeployment(created.id);
+  assert.equal(detail.skippedOverlaps,1);
+  assert.equal(detail.occurrenceHistory.at(-1).reason,'overlap-busy');
+  assert.equal(detail.occurrenceHistory.at(-1).kind,'skipped');
+  advance(30000);
+  assert.equal(operations.status().ticker.state,'stale');
+  assert.equal(operations.getDeployment(created.id).overdue,true);
+  assert.match(operations.getDeployment(created.id).overdueSince,/2026-/);
+});
+
+test('schedule edits and removals keep bounded actor-labelled audit with sanitized tombstones',async t=>{
+  const {operations,cwd,engine}=await harness(t);
+  const created=await operations.create({name:'Daily audit',input:'Source-sensitive task instructions',cwd,workflow:workflow(),
+    enabled:true,trigger:{type:'cron',expression:'0 9 * * *',timezone:'America/New_York'}},{actor:'agent'});
+  assert.equal(created.changeHistory[0].source,'agent');
+  const updated=await operations.update(created.id,{name:'Daily audited search',expectedRevision:created.revision},{actor:'local-session'});
+  assert.deepEqual(updated.changeHistory.map(x=>x.kind),['created','updated']);
+  assert.equal(updated.changeHistory.at(-1).source,'local-session');
+  await assert.rejects(operations.remove(created.id,{expectedRevision:created.revision,actor:'chatgpt-connector'}),/changed/);
+  assert.equal(operations.getDeployment(created.id).removed,undefined);
+  const before=operations.snapshot().jobs.length;
+  await operations.remove(created.id,{expectedRevision:updated.revision,actor:'chatgpt-connector'});
+  assert.equal(operations.list().some(item=>item.id===created.id),false);
+  assert.equal(operations.snapshot().jobs.length,before);
+  const removed=operations.snapshot().removedDeployments.find(item=>item.id===created.id);
+  assert.equal(removed.removedBy,'chatgpt-connector');
+  assert.equal(removed.changeHistory.at(-1).kind,'removed');
+  assert.equal(removed.changeHistory.at(-1).source,'chatgpt-connector');
+  assert.equal(Object.hasOwn(removed,'input'),false);
+  assert.equal(Object.hasOwn(removed,'workflow'),false);
+  assert.equal(Object.hasOwn(removed,'webhookToken'),false);
+  await assert.rejects(Promise.resolve().then(()=>operations.getDeployment(created.id)),/not found/);
+});
 
 test('finite operations count unique manual and webhook admissions durably while duplicate deliveries remain readable after the limit',async t=>{
   const {operations,create,options}=await harness(t),deployment=await create({enabled:true,trigger:{type:'webhook'},limits:{maxIterations:2}});

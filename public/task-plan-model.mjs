@@ -13,7 +13,7 @@ export function savedPlanNotes(taskState) {
   return [['Next action', checkpoint.nextAction], ['Decisions', checkpoint.decisions], ['Completed', checkpoint.completed], ['Next steps', checkpoint.nextSteps], ['Open questions', checkpoint.openQuestions]].map(([label, value]) => ({ label, entries: (Array.isArray(value) ? value : [value]).filter(value => typeof value === 'string' && value.trim()) })).filter(section => section.entries.length);
 }
 
-export function taskPlanView(taskState, { goal = '', runStatus = '', settled = false, planningMode = 'auto', planningAvailable = true, planningStatus = '', planningMessage = '' } = {}) {
+export function taskPlanView(taskState, { goal = '', runStatus = '', settled = false, planningMode = 'on', planningAvailable = true, planningStatus = '', planningMessage = '' } = {}) {
   const state = taskState || {}, plan = state.plan || {}, byId = new Map(), roots = [];
   planningMode = planningStatus === 'off' ? 'off' : normalizePlanningMode(planningMode);
   const planningEnabled = planningMode !== 'off';

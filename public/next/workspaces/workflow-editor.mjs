@@ -122,7 +122,7 @@ export function createWorkflowEditor({mount,api,getBusy=()=>false,onSaved=()=>{}
     const option=field=>Object.hasOwn(edits,field)?edits[field]:currentSettings[field];
     ui.parallel.value=option('maxParallel')===null||option('maxParallel')===undefined
       ?'':String(option('maxParallel'));
-    ui.planning.value=option('planningMode')??'inherit';
+    ui.planning.value=option('planningMode')===undefined?'inherit':option('planningMode')==='off'?'off':'on';
     ui.detail.value=option('planDetail')??'inherit';
   }
   function populateStages(preferred=''){

@@ -174,7 +174,7 @@ test('unlimited API Stop signals immediately and retains the tool lease until it
   assert.equal(record.messages.filter(message => message.tool_call_id === 'tool-1').length, 1); assert.equal(record.pendingToolCalls, undefined);
 });
 
-const flow = { id: 'execution-budget', name: 'Execution budget', nodes: [{ id: 'input', type: 'input' }, { id: 'agent', type: 'agent', prompt: 'Return the verified result.', model: 'native-model' }, { id: 'output', type: 'output' }], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1 } };
+const flow = { id: 'execution-budget', name: 'Execution budget', nodes: [{ id: 'input', type: 'input' }, { id: 'agent', type: 'agent', prompt: 'Return the verified result.', model: 'native-model' }, { id: 'output', type: 'output' }], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1, planningMode: 'off' } };
 
 test('admitted run budgets stay immutable while future continuations and retries use the current choices', async t => {
   const directory = await mkdtemp(path.join(tmpdir(), 'relay-budget-engine-')), dataDir = path.join(directory, 'data'), workspace = path.join(directory, 'workspace'); await mkdir(workspace);

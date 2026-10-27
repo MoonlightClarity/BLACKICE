@@ -21,7 +21,7 @@ The default interface has seven workspaces, with separate loading and update lif
 | --- | --- |
 | **Chat** | Work with an agent, keep drafts and attachments, inspect saved results, and manage conversations. |
 | **Planning** | Explore conversation and project maps, inspect one step at a time, and explicitly save revision-checked plan edits. |
-| **Tasks** | See saved work on a status board; open Schedules or Job history separately. |
+| **Tasks** | See saved work on a status board; inspect and edit schedules with revision checks, or review job receipts and run history separately. |
 | **Browser** | Use the actual Chromium page with ordinary tabs, navigation, typing, downloads and site sign-in. |
 | **Activity** | Inspect workflow maps and real run status, open task timelines, or manage application windows. |
 | **Knowledge** | Search and edit memories and reusable skills, inspect revisions and recover entries from Trash. |
@@ -50,6 +50,24 @@ Use the current **BLACKICE connection** for ChatGPT-to-BLACKICE tools. [CHATGPT-
 Reuse an existing healthy connection. An uncertain action should be inspected through its saved receipt before any explicit retry. Connection status and local endpoint readiness do not by themselves prove that a particular ChatGPT conversation has the tools attached.
 
 The former reverse ChatGPT Bridge and browser-based ChatGPT model provider are retired. Their historical files and saved data do not make them supported setup paths. BLACKICE workers use native Codex or configured API providers.
+
+## Cronjob reliability and inspection
+
+**Tasks → Schedules** shows the saved triggers, pinned agent/model, limits, job receipts and (when applicable) overdue status, scheduler tick health, and recent occurrence history. A delayed tick admits no more than one currently due occurrence per job and records the skipped backlog as a bounded range, rather than silently dropping scheduled times or burst-replaying jobs. Clean restart and explicit resume account for overdue slots as skipped; neither silently runs them. A paused scheduler is not a running scheduler, even if an enabled schedule is saved.
+
+Every new schedule create, edit and removal records a bounded source-labelled change receipt; removed schedules stay visible in the historical inspection section without exposing webhook secrets or agent instructions. Older removals show `not-recorded` when provenance is unavailable. Scheduled agent workers cannot recursively invoke the native scheduler-control tool. BLACKICE still requires a running/awake host.
+
+**Tasks → Results** is a durable *local* result inbox for newly admitted jobs. Job completion, a result becoming available locally, and explicit human acknowledgement are separate recorded events. Successful, failed, cancelled and interrupted results remain reviewable after restarting BLACKICE. A bounded output preview is copied only when the engine run and saved inbox identity match; use **Open saved run** for the full recorded output. **Mark reviewed** is an explicit revision-checked action, and never changes the job's execution history. Legacy runs without local-result receipts remain available in Job history; BLACKICE does not invent delivery evidence for them. This does **not** push results to ChatGPT, email, or other services, and showing a result does not prove the user read it. No native scheduler permissions or per-action approval prompts were added.
+
+## Planning: practical judgment and recurring work
+
+**Planning is an On/Off switch, not a four-level reasoning mode.** On (the default) requires a real current-turn `relay_task` plan write before publishing the agent's final answer or dispatching unrelated operational tools. The engine verifies the saved plan's run identity, holds premature answer text and fails closed if the required Planning tool is unavailable. A simple task can use one concise, checkable action; no maximal-detail ritual is required. Off skips the automatic Planning gate while preserving saved notes for optional use. Existing Auto and Maximal values are read as On, and future UI choices are only On/Off. Model reasoning effort and the separately authored plan-detail hint do not change when this switch changes.
+
+Planning supports a revision-checked **decision criterion register** across job research, engineering, procurement and other real-world decisions. Classify verified hard gates separately from material barriers, adaptable gaps, stated requirements, preferences and unknowns. Record the provenance and evidence status of a claim: wording like "required" alone does not make it non-negotiable, and missing data does not establish an adverse outcome. Saved job-specific categories remain readable for compatibility.
+
+A second, **optional judgment frame** records the practical outcome, consequential uncertainty, cheapest useful test, sufficiency condition, reassessment point, observed mismatch and transferable lesson. It is designed to *prevent* excessive verification and perfectionism, not force an introspection checklist on small tasks. Both the frame and criteria are editable in the live Planning workspace; neither can create a job, grant capabilities or certify completion. See [Practical judgment and metacognition](docs/METACOGNITION.md) for the reasoning model and examples.
+
+**Recurring cron or interval schedules with one compatible agent and nonparallel overlap** now continue the last settled run in the same conversation and Planning task, including after a clean application restart. Each occurrence retains its own durable job/run receipt, but the user's research thread and task context persist across scans. Parallel work, incompatible workflow changes, or unavailable historical turns do not blindly reuse a model thread. Previously saved independent conversations are not retroactively merged.
 
 ## Plans, teams and saved work
 

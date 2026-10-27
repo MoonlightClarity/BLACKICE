@@ -61,12 +61,12 @@ test('Mission preserves explicit Fast and Standard independently of max reasonin
 test('Mission recipes persist the planning mode without embedding an unconditional plan mandate', () => {
   for (const planningMode of ['maximal', 'on', 'auto', 'off']) {
     const workflow = validateWorkflow(createMissionWorkflow({ id: `mode_${planningMode}`, task: 'Handle this request.', planningMode }));
-    assert.equal(workflow.settings.planningMode, planningMode); assert.equal(workflow.settings.planDetail, undefined);
+    assert.equal(workflow.settings.planningMode, planningMode === 'off' ? 'off' : 'on'); assert.equal(workflow.settings.planDetail, undefined);
     assert.match(workflow.nodes[1].prompt, /Follow the selected planning mode/); assert.doesNotMatch(workflow.nodes[1].prompt, /Use the attached task tool to keep a visible plan/);
   }
-  assert.equal(createMissionWorkflow({ task: 'Default mode' }).settings.planningMode, 'auto');
+  assert.equal(createMissionWorkflow({ task: 'Default mode' }).settings.planningMode, 'on');
   assert.equal(createMissionWorkflow({ task: 'Legacy hint', planDetail: 'compact' }).settings.planDetail, 'compact');
-  assert.throws(() => createMissionWorkflow({ task: 'Invalid mode', planningMode: 'OFF' }), /Choose Maximal/);
+  assert.throws(() => createMissionWorkflow({ task: 'Invalid mode', planningMode: 'OFF' }), /Choose Planning On or Off/);
 });
 test('New task hides an old result while an actual running task always stays visible', () => {
   const completed = { id: 'done', status: 'completed' }, running = { id: 'active', status: 'running' };

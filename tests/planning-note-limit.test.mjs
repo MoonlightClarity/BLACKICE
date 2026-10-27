@@ -17,25 +17,25 @@ async function fixture(t, schemaVersion) {
   return { store, state, call: args => handler({ name: 'relay_task', arguments: args }) };
 }
 
-test('v7 advertises the actual note limit on every plan, step, add and update path while cached v6 catalogs remain unchanged', async t => {
-  assert.equal(TASK_SCHEMA_VERSION, 7);
-  for (const tool of [taskToolForVersion(7), taskWorkerToolForVersion(7)]) {
+test('v7 and v8 advertise the same note limit while cached v6 remains unchanged', async t => {
+  assert.equal(TASK_SCHEMA_VERSION, 8);
+  for (const tool of [taskToolForVersion(7), taskWorkerToolForVersion(7), taskToolForVersion(8), taskWorkerToolForVersion(8)]) {
     const f = tool.inputSchema.properties;
     for (const note of [f.note, f.steps.items.properties.note, f.operations.items.properties.step.properties.note, f.operations.items.properties.patch.properties.note.anyOf[0]]) assert.equal(note.maxLength, 700);
     assert.deepEqual(f.operations.items.properties.patch.properties.note.anyOf[1], { type: 'null' });
   }
-  assert.equal(taskWorkerToolForVersion(7), TASK_WORKER_TOOL);
+  assert.equal(taskWorkerToolForVersion(8), TASK_WORKER_TOOL);
   assert.equal(digest(taskWorkerToolForVersion(6)), 'e27a50b314a227b671c7a82303054e60ab3a3668cbb96e29d88d561633d4173c');
   assert.equal(taskWorkerToolForVersion(6).inputSchema.properties.note.maxLength, undefined);
-  for (const version of [6, 7]) {
+  for (const version of [6, 7, 8]) {
     const f = await fixture(t, version), description = parsed(await f.call({ action: 'describe' }));
     assert.equal(description.schemaVersion, version);
-    assert.equal(description.plan.inputSchema.properties.steps.items.properties.note.maxLength, version === 7 ? 700 : undefined);
-    assert.equal(description.operations.items.properties.patch.properties.note.anyOf[0].maxLength, version === 7 ? 700 : undefined);
+    assert.equal(description.plan.inputSchema.properties.steps.items.properties.note.maxLength, version >= 7 ? 700 : undefined);
+    assert.equal(description.operations.items.properties.patch.properties.note.anyOf[0].maxLength, version >= 7 ? 700 : undefined);
   }
 });
 
-for (const version of [6, 7]) test(`v${version} rejects the observed 714-character note atomically and accepts a concise repair at the unchanged 700-character boundary`, async t => {
+for (const version of [6, 7, 8]) test(`v${version} rejects the observed 714-character note atomically and accepts a concise repair at the unchanged 700-character boundary`, async t => {
   const f = await fixture(t, version), ids = ['finish_supported_answers', 'pre_submit_review', 'submit_mariner_once'];
   const saved = await f.call({ action: 'plan', expectedRevision: f.state.revision, steps: ids.map(id => ({ id, title: id, kind: 'action', status: 'pending', note: 'n'.repeat(700), doneWhen: 'The actual result is checked.' })) });
   assert.equal(saved.success, true);

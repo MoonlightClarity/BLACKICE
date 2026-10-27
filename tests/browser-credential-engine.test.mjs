@@ -41,7 +41,7 @@ async function fixture(t, execute, { available = true, subagents = false, shared
   await prefs.update({ subagentsEnabled: subagents, maxSubagents: 2, codexHistory: 'codex' });
   const browser = { status: () => ({ available: true, contained: true, tabs: [] }), perform: async () => assert.fail('No real browser action is authorized by this engine fixture.'), close: async () => {} };
   const engine = new HarnessEngine({ runtime: new Runtime(), credentials: vault, browser, tasks, dataDir: root, defaultCwd: cwd }); engine.runtimeSettings = prefs; await engine.init();
-  const workflow = createMissionWorkflow({ id: 'credential-engine', task: 'Create the authorized account at ' + origin + '.', model: 'fixture', cwd });
+  const workflow = createMissionWorkflow({ id: 'credential-engine', task: 'Create the authorized account at ' + origin + '.', model: 'fixture', cwd, planningMode: 'off' });
   const context = { engine, vault, owners, generated, calls, root, cwd, workflow, tasks, start: (graph = workflow) => engine.startRun({ workflow: graph, input: 'Create the authorized account at ' + origin + '.' }), settled: id => wait(() => engine.getRun(id)?.settled && engine.getRun(id)) };
   t.after(async () => { await engine.close(); await prefs.close(); await tasks?.close(); assert.match(path.basename(root), /^blackice-credential-engine-/); await rm(root, { recursive: true, force: true }); });
   return context;
@@ -105,7 +105,7 @@ test('delegated workers receive the protected flow with a distinct trusted owner
 
 test('a saved assignment flag does not remove ordinary credential capabilities', async t => {
   const agent = (id, canWrite) => ({ id, type: 'agent', name: id, model: 'fixture', prompt: 'Inspect the assigned credential metadata.', assignment: { scope: 'Only inspect credential metadata.', inputs: ['The user request.'], result: 'Checked metadata.', doneWhen: 'The exact-origin metadata is inspected.', canWrite } });
-  const graph = { name: 'Credential scopes', nodes: [{ id: 'input', type: 'input', name: 'Task' }, agent('worker', false), agent('coordinator', true), { id: 'output', type: 'output', name: 'Result' }], edges: [{ source: 'input', target: 'worker' }, { source: 'worker', target: 'coordinator' }, { source: 'coordinator', target: 'output' }], settings: { maxParallel: 1 }, planning: { shared: true, coordinatorNodeId: 'coordinator' } };
+  const graph = { name: 'Credential scopes', nodes: [{ id: 'input', type: 'input', name: 'Task' }, agent('worker', false), agent('coordinator', true), { id: 'output', type: 'output', name: 'Result' }], edges: [{ source: 'input', target: 'worker' }, { source: 'worker', target: 'coordinator' }, { source: 'coordinator', target: 'output' }], settings: { maxParallel: 1, planningMode: 'off' }, planning: { shared: true, coordinatorNodeId: 'coordinator' } };
   const f = await fixture(t, async options => {
     const worker = options.prompt.startsWith('You are worker.'), id = worker ? 'worker' : 'coordinator';
     if (!worker) await recordFixturePlan(options);

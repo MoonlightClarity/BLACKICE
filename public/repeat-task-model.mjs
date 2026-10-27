@@ -1,4 +1,4 @@
-import { PLANNING_MODES, planningEffortIntent } from './planning-mode.mjs';
+import { PLANNING_INPUT_MODES, normalizePlanningMode, planningEffortIntent } from './planning-mode.mjs';
 
 /** Repeat one admitted recipe; follow-up graphs may contain only a selected agent. */
 export function repeatTaskSeed(completed, original) {
@@ -9,9 +9,9 @@ export function repeatTaskSeed(completed, original) {
   const input = typeof original.input === 'string' ? original.input : original.input?.task || '';
   if (!input.trim()) throw new Error('The original task is unavailable. Describe the repeatable task in Schedule a task.');
   const workflow = structuredClone(original.workflow);
-  const planningMode = [original.planningMode, original.input?.planningMode, workflow.settings?.planningMode].find(value => PLANNING_MODES.includes(value));
+  const planningMode = [original.planningMode, original.input?.planningMode, workflow.settings?.planningMode].find(value => PLANNING_INPUT_MODES.includes(value));
   const planDetail = [original.planDetail, original.input?.planDetail, workflow.settings?.planDetail].find(value => ['compact', 'balanced', 'detailed'].includes(value));
-  if (planningMode !== undefined || planDetail !== undefined) workflow.settings = { ...workflow.settings, ...(planningMode === undefined ? {} : { planningMode }), ...(planDetail === undefined ? {} : { planDetail }) };
+  if (planningMode !== undefined || planDetail !== undefined) workflow.settings = { ...workflow.settings, ...(planningMode === undefined ? {} : { planningMode: normalizePlanningMode(planningMode) }), ...(planDetail === undefined ? {} : { planDetail }) };
   for (const node of workflow.nodes || []) {
     if (node.type !== 'agent') continue;
     // Executed workflows contain the effective effort; a new recipe needs the authored choice.

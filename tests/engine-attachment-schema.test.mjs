@@ -39,7 +39,7 @@ async function fixture(t, execute, { model = 'fixture', threadId = 'native-attac
   }
   const runtime = new Runtime(), engine = await new HarnessEngine({ runtime, attachments, dataDir: directory, defaultCwd: cwd }).init();
   t.after(async () => { await engine.close(); assert.match(path.basename(directory), /^blackice-attachment-schema-/); await rm(directory, { recursive: true, force: true }); });
-  const workflow = createMissionWorkflow({ id: 'attachment-schema-fixture', task: 'Use the attached task files.', cwd });
+  const workflow = createMissionWorkflow({ id: 'attachment-schema-fixture', task: 'Use the attached task files.', cwd, planningMode: 'off' });
   return { engine, runtime, attachments, cwd, workflow, threadId, start: () => engine.startRun({ workflow, input: { task: 'Read the actual attachment.', attachmentIds: Object.values(ids) } }), settled: id => wait(() => engine.getRun(id).settled && engine.getRun(id)) };
 }
 const completed = run => assert.equal(run.status, 'completed', run.nodes.agent.error || run.error);

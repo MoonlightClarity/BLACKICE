@@ -167,7 +167,7 @@ test('an enlarged desktop plan keeps the hidden conversation unread and preserve
 
 test('Guide appends the selected step to an owned draft and reveals it without sending or changing settings', async t => {
   const f = missionFixture(t, savedDrafts('')), run = plannedRun('guide-step'), snapshot = statusSnapshot([run]), h = mountMission(f, snapshot, { prompts() {} }); await turn();
-  await h.text('Keep my original context'); await h.model('cloud::chosen'); await h.effort('ultra'); h.ui.setContext({ preset: '900k' }); await h.planningMode('maximal');
+  await h.text('Keep my original context'); await h.model('cloud::chosen'); await h.effort('ultra'); h.ui.setContext({ preset: '900k' }); await h.planningMode('on');
   h.ui.showPlan(); await h.planAction('select', { stepId: 'verify' }); const before = h.ui.getDraft();
   await h.planAction('enlarge'); assert.equal(h.ui.getWorkbench().selection.enlarged, true);
   await h.planAction('guide'); assert.match(h.ui.getDraft().task, /^Keep my original context\n\nAbout step “Verify the result” \(verify\)/); assert.match(h.ui.getDraft().task, /Done when: The meaningful checks pass/);
@@ -244,10 +244,10 @@ test('structured next-action and repeat controls honor complete rather than the 
 
 test('Planning mode is independent of reasoning, follows each draft, and restores after reload', async t => {
   const a = plannedRun('detail-a', 'completed'), b = plannedRun('detail-b', 'completed'), saved = savedDrafts(''), storage = new Map([['relay.mission.draft', JSON.stringify(saved)]]), f = missionFixture(t, saved, storage), h = mountMission(f, statusSnapshot([a, b])); await turn();
-  await h.ui.openConversation(a.id); await h.planningMode('maximal'); await h.effort('ultra'); assert.equal(h.ui.getDraft().planningMode, 'maximal'); assert.equal(h.ui.getDraft().effort, 'ultra');
-  await h.ui.openConversation(b.id); assert.equal(h.ui.getDraft().planningMode, 'auto'); await h.planningMode('off'); assert.equal(h.ui.getDraft().effort, 'default');
-  await h.ui.openConversation(a.id); assert.equal(h.ui.getDraft().planningMode, 'maximal'); assert.equal(f.element('#mission-planning-mode').value, 'maximal'); h.ui.destroy();
-  const reload = missionFixture(t, {}, storage), resumed = mountMission(reload, statusSnapshot([a, b])); await turn(); await resumed.ui.openConversation(b.id); assert.equal(resumed.ui.getDraft().planningMode, 'off'); await resumed.ui.openConversation(a.id); assert.equal(resumed.ui.getDraft().planningMode, 'maximal');
+  await h.ui.openConversation(a.id); await h.planningMode('on'); await h.effort('ultra'); assert.equal(h.ui.getDraft().planningMode, 'on'); assert.equal(h.ui.getDraft().effort, 'ultra');
+  await h.ui.openConversation(b.id); assert.equal(h.ui.getDraft().planningMode, 'on'); await h.planningMode('off'); assert.equal(h.ui.getDraft().effort, 'default');
+  await h.ui.openConversation(a.id); assert.equal(h.ui.getDraft().planningMode, 'on'); assert.equal(f.element('#mission-planning-mode').value, 'on'); h.ui.destroy();
+  const reload = missionFixture(t, {}, storage), resumed = mountMission(reload, statusSnapshot([a, b])); await turn(); await resumed.ui.openConversation(b.id); assert.equal(resumed.ui.getDraft().planningMode, 'off'); await resumed.ui.openConversation(a.id); assert.equal(resumed.ui.getDraft().planningMode, 'on');
 });
 
 function fastSnapshot(runs = []) {
@@ -336,28 +336,28 @@ test('Multi-select has a clear name, linked expanded state and keyboard focus re
 
 test('Planning mode is part of an exact recoverable start receipt and changing it creates a fresh request', async t => {
   const f = missionFixture(t, savedDrafts('Plan this task')), h = mountMission(f, statusSnapshot(), { start: () => { throw new Error('Response lost after submission'); } }); await turn();
-  await h.planningMode('maximal'); await h.effort('max'); await h.submit(); const original = h.starts[0]; await h.submit(); assert.deepEqual(h.starts[1], original); assert.equal(original.planningMode, 'maximal'); assert.equal(original.effort, 'max');
+  await h.planningMode('on'); await h.effort('max'); await h.submit(); const original = h.starts[0]; await h.submit(); assert.deepEqual(h.starts[1], original); assert.equal(original.planningMode, 'on'); assert.equal(original.effort, 'max');
   await h.planningMode('off'); assert.equal(h.persisted().conversationDrafts.new.pendingSend, undefined); await h.submit(); assert.notEqual(h.starts[2].requestId, original.requestId); assert.equal(h.starts[2].planningMode, 'off'); assert.equal(h.starts[2].effort, 'max');
 });
 
 test('Planning mode travels with a continuation and with a captured new task', async t => {
   const run = plannedRun('detail-continuation', 'completed'), f = missionFixture(t, savedDrafts('')), snapshot = statusSnapshot([run]), h = mountMission(f, snapshot, { capture: () => ({ id: 'captured-plan' }) }); await turn();
   await h.text('Continue with a deeper plan'); await h.planningMode('on'); await h.submit(); assert.equal(h.mutations.find(item => item.continue).continue.planningMode, 'on');
-  await h.action('new-task'); await h.text('Keep this for tomorrow'); await h.planningMode('off'); await h.action('capture'); assert.equal(h.captures[0].planningMode, 'off'); assert.equal(h.persisted().conversationDrafts.new.planningMode, undefined); assert.equal(h.ui.getDraft().planningMode, 'auto');
+  await h.action('new-task'); await h.text('Keep this for tomorrow'); await h.planningMode('off'); await h.action('capture'); assert.equal(h.captures[0].planningMode, 'off'); assert.equal(h.persisted().conversationDrafts.new.planningMode, undefined); assert.equal(h.ui.getDraft().planningMode, 'on');
 });
 
-test('Auto is the visible default and new requests leave depth selection to the agent', async t => {
+test('On is the visible default and requires a real plan while leaving depth proportional', async t => {
   const f = missionFixture(t, savedDrafts('A short task')), h = mountMission(f, statusSnapshot()); await turn();
-  assert.equal(f.element('#mission-planning-mode').value, 'auto'); assert.equal(h.ui.getDraft().planningMode, 'auto');
-  assert.match(f.mount.innerHTML, /Planning[\s\S]*value="maximal"[\s\S]*value="on"[\s\S]*value="auto" selected[\s\S]*value="off"/);
+  assert.equal(f.element('#mission-planning-mode').value, 'on'); assert.equal(h.ui.getDraft().planningMode, 'on');
+  assert.match(f.mount.innerHTML, /Planning[\s\S]*value="on" selected[\s\S]*value="off"/); assert.doesNotMatch(f.mount.innerHTML, /<option value="(?:auto|maximal)"/);
   assert.doesNotMatch(f.mount.innerHTML, /mission-plan-detail/); await h.submit();
-  assert.equal(h.starts[0].planningMode, 'auto'); assert.equal(Object.hasOwn(h.starts[0], 'planDetail'), false);
+  assert.equal(h.starts[0].planningMode, 'on'); assert.equal(Object.hasOwn(h.starts[0], 'planDetail'), false);
 });
 
 test('legacy depth preferences remain usable without a second planning control', async t => {
   const saved = savedDrafts('Keep the explicit older preference'); saved.conversationDrafts.new.planDetail = 'compact';
   const f = missionFixture(t, saved), h = mountMission(f, statusSnapshot(), { start: () => { throw new Error('Keep receipt for retry'); } }); await turn();
-  await h.submit(); assert.equal(h.starts[0].planDetail, 'compact'); assert.equal(h.starts[0].planningMode, 'auto');
+  await h.submit(); assert.equal(h.starts[0].planDetail, 'compact'); assert.equal(h.starts[0].planningMode, 'on');
   h.ui.setPlanDetail('detailed'); await h.submit(); assert.equal(h.starts[1].planDetail, 'detailed'); assert.notEqual(h.starts[0].requestId, h.starts[1].requestId);
 });
 
@@ -385,20 +385,20 @@ test('checkpoint-only notes stay reachable in Off without becoming invented plan
   assert.deepEqual(h.ui.getWorkbench().selection.visibleIds, []); assert.deepEqual(run.taskState, before);
 });
 
-test('Maximal previews the selected model’s highest supported effort without submitting an inherited default as explicit', async t => {
+test('Planning On does not change model effort and preserves separately selected models', async t => {
   const f = missionFixture(t, savedDrafts('Plan this carefully')), snapshot = statusSnapshot(); snapshot.status.runtimeSettings = { defaultEffort: 'medium' };
   snapshot.status.models[0].supportedReasoningEfforts = ['medium', 'high', 'ultra']; snapshot.status.models[2].supportedReasoningEfforts = ['low', 'high'];
   const h = mountMission(f, snapshot); await turn(); assert.equal(h.ui.getDraft().effort, 'medium'); assert.equal(Object.hasOwn(h.ui.getRequestDraft(), 'effort'), false);
-  await h.planningMode('maximal'); assert.equal(h.ui.getDraft().effort, 'ultra'); assert.match(f.element('#mission-effort-note').textContent, /Maximal selects Ultra/); assert.match(f.element('#mission-effort').innerHTML, /Automatic · Ultra \(Maximal\)/);
-  await h.model('cloud::other'); assert.equal(h.ui.getDraft().effort, 'high'); assert.equal(f.element('#mission-start-button').disabled, false); assert.equal(Object.hasOwn(h.ui.getRequestDraft(), 'planDetail'), false);
-  await h.submit(); assert.equal(h.starts[0].planningMode, 'maximal'); assert.equal(h.starts[0].model, 'cloud::other'); assert.equal(Object.hasOwn(h.starts[0], 'effort'), false);
+  await h.planningMode('on'); assert.equal(h.ui.getDraft().effort, 'medium'); assert.doesNotMatch(f.element('#mission-effort-note').textContent, /Maximal selects/);
+  await h.model('cloud::other'); assert.equal(h.ui.getDraft().effort, 'default'); assert.equal(f.element('#mission-start-button').disabled, false); assert.equal(Object.hasOwn(h.ui.getRequestDraft(), 'planDetail'), false);
+  await h.submit(); assert.equal(h.starts[0].planningMode, 'on'); assert.equal(h.starts[0].model, 'cloud::other'); assert.equal(Object.hasOwn(h.starts[0], 'effort'), false);
 });
 
-test('an explicit effort override remains exact under Maximal and selecting Model default enables its catalog choice', async t => {
+test('an explicit effort override remains exact under Planning On and model default stays default', async t => {
   const f = missionFixture(t, savedDrafts('Use my exact level')), snapshot = statusSnapshot(); snapshot.status.models[0].supportedReasoningEfforts = ['low', 'high', 'ultra'];
-  const h = mountMission(f, snapshot, { start: () => { throw new Error('Keep submitted receipt'); } }); await turn(); await h.planningMode('maximal'); await h.effort('low');
+  const h = mountMission(f, snapshot, { start: () => { throw new Error('Keep submitted receipt'); } }); await turn(); await h.planningMode('on'); await h.effort('low');
   assert.equal(h.ui.getDraft().effort, 'low'); await h.submit(); assert.equal(h.starts[0].effort, 'low');
-  await h.effort('default'); assert.equal(h.ui.getDraft().effort, 'ultra'); await h.submit(); assert.equal(h.starts[1].effort, 'default'); assert.notEqual(h.starts[1].requestId, h.starts[0].requestId);
+  await h.effort('default'); assert.equal(h.ui.getDraft().effort, 'default'); await h.submit(); assert.equal(h.starts[1].effort, 'default'); assert.notEqual(h.starts[1].requestId, h.starts[0].requestId);
 });
 
 test('continuing from Maximal to Off restores underlying effort intent while preserving saved notes and receipt ownership', async t => {
@@ -410,10 +410,10 @@ test('continuing from Maximal to Off restores underlying effort intent while pre
   assert.deepEqual(h.mutations.filter(item => item.continue)[1].continue, original); assert.deepEqual(run.taskState, before);
 });
 
-test('queued Maximal keeps mode and absent effort in the exact pending receipt', async t => {
+test('queued Planning On preserves mode and independent reasoning intent in its exact receipt', async t => {
   const working = fixtureRun('busy'), f = missionFixture(t, savedDrafts('Queue this larger task')), snapshot = statusSnapshot([working]); snapshot.status.runtimeSettings = { defaultEffort: 'medium' }; snapshot.status.models[0].supportedReasoningEfforts = ['medium', 'ultra'];
-  const h = mountMission(f, snapshot, { queue: () => { throw new Error('Queue receipt lost'); } }); await turn(); await h.planningMode('maximal'); await h.submit(); const original = h.queued[0];
-  assert.equal(original.planningMode, 'maximal'); assert.equal(Object.hasOwn(original, 'effort'), false); assert.equal(Object.hasOwn(original, 'planDetail'), false);
+  const h = mountMission(f, snapshot, { queue: () => { throw new Error('Queue receipt lost'); } }); await turn(); await h.planningMode('on'); await h.submit(); const original = h.queued[0];
+  assert.equal(original.planningMode, 'on'); assert.equal(Object.hasOwn(original, 'effort'), false); assert.equal(Object.hasOwn(original, 'planDetail'), false);
   working.status = 'completed'; working.settled = true; h.ui.update(); await h.submit(); assert.deepEqual(h.queued[1], original); assert.deepEqual(h.starts, []);
 });
 
@@ -421,7 +421,7 @@ for (const [source, requestedEffort, effective, expected] of [['request', 'low',
   const run = plannedRun(`recipe-${source}-${requestedEffort}`, 'completed'); run.planningMode = source === 'maximal-model-catalog' ? 'maximal' : 'auto'; run.workflow.nodes[0].effort = effective; run.nodes.agent.effortSelection = { effort: effective, source, requestedEffort };
   const f = missionFixture(t, savedDrafts('')), h = mountMission(f, statusSnapshot([run]), { capture: () => ({ id: 'captured-intent' }) }); await turn(); await h.text('Save this as a separate recipe.');
   assert.equal(h.ui.getRequestDraft().effort, expected); assert.equal(Object.hasOwn(h.ui.getRequestDraft(), 'effort'), expected !== undefined);
-  await h.action('capture'); assert.equal(h.captures[0].effort, expected); assert.equal(Object.hasOwn(h.captures[0], 'effort'), expected !== undefined); assert.equal(h.captures[0].planningMode, run.planningMode);
+  await h.action('capture'); assert.equal(h.captures[0].effort, expected); assert.equal(Object.hasOwn(h.captures[0], 'effort'), expected !== undefined); assert.equal(h.captures[0].planningMode, 'on');
 });
 
 test('legacy authored workflow effort survives a new recipe while continuing still relies on engine inheritance', async t => {

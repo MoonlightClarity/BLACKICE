@@ -27,6 +27,159 @@ async function fixture(t,{execute,maxConcurrentRuns=4}={}){
   return{get app(){return app;},get url(){return url;},get cookie(){return cookie;},directory,dataDir,cwd,calls,request,create,hook,async restart(){await app.close();return boot();}};
 }
 
+test('authenticated HTTP config reports exact webhook URLs and requires explicit replay of unknown sends',async t=>{
+  const f=await fixture(t),sent=[];
+  f.app.operations.outboundTransport=async value=>{
+    sent.push({id:value.deliveryId,key:value.idempotencyKey,target:value.target.url});
+    return sent.length===1?{state:'unknown',httpStatus:503,reason:'Remote outcome unverified.'}:{state:'delivered',httpStatus:202};
+  };
+  const secret='https://alerts.example.com/private/sensitive-path';
+  const invalid=await f.request('/api/operations/deployments',{method:'POST',body:{
+    name:'Invalid webhook',input:'Check local facts.',cwd:f.cwd,workflow:workflow(),
+    deliveryTarget:{type:'webhook',url:'http://localhost:9229/secret'}}});
+  assert.equal(invalid.status,201);
+  assert.equal(invalid.data.deliveryTarget.url,'http://localhost:9229/secret');
+  const schedule=await f.create({trigger:{type:'manual'},deliveryTarget:{type:'webhook',url:secret},
+    missedRunPolicy:{onResume:'once',maxAgeSeconds:3600}});
+  assert.deepEqual(schedule.deliveryTarget,{type:'webhook',url:secret,host:'alerts.example.com',configured:true});
+  assert.deepEqual(schedule.missedRunPolicy,{onResume:'once',maxAgeSeconds:3600});
+  assert.equal(schedule.deliveryTarget.url,secret);
+  const admitted=await f.request('/api/operations/deployments/'+schedule.id+'/trigger',{method:'POST',body:{idempotencyKey:'test-http-delivery'}});
+  assert.equal(admitted.status,202);
+  assert.equal(admitted.data.definition.deliveryTarget.url,secret);
+  await until(()=>f.app.operations.getJob(admitted.data.id).outbound?.state==='unknown');
+  assert.equal(sent.length,1);
+  const current=(await f.request('/api/operations/jobs/'+admitted.data.id)).data;
+  assert.equal(current.status,'completed');
+  assert.equal(current.outbound.state,'unknown');
+  assert.equal(current.definition.deliveryTarget.url,secret);
+  const visible=(await f.request('/api/operations')).data;
+  assert.equal(visible.deployments.find(item=>item.id===schedule.id).deliveryTarget.url,secret);
+  assert.equal(visible.jobs.find(item=>item.id===admitted.data.id).definition.deliveryTarget.url,secret);
+  assert.equal((await f.request('/api/operations/jobs/'+admitted.data.id+'/redeliver',{
+    method:'POST',auth:false,body:{expectedRevision:current.outbound.revision,confirmPossibleDuplicate:true}})).status,401);
+  const url='/api/operations/jobs/'+admitted.data.id+'/redeliver';
+  assert.equal((await f.request(url,{method:'POST',body:{expectedRevision:current.outbound.revision}})).status,409);
+  assert.equal((await f.request(url,{method:'POST',body:{expectedRevision:current.outbound.revision-1,confirmPossibleDuplicate:true}})).status,409);
+  const retry=await f.request(url,{method:'POST',body:{expectedRevision:current.outbound.revision,confirmPossibleDuplicate:true}});
+  assert.equal(retry.status,200);
+  await until(()=>f.app.operations.getJob(admitted.data.id).outbound?.state==='delivered');
+  assert.equal(sent.length,2);
+  assert.deepEqual(sent.map(item=>item.key),[admitted.data.id,admitted.data.id]);
+  assert.equal(f.app.operations.getJob(admitted.data.id).outbound.attempts.length,2);
+  assert.equal((await f.request('/api/operations')).data.jobs.find(item=>item.id===admitted.data.id).outbound.url,secret);
+  await f.restart();
+  assert.equal(f.app.operations.getJob(admitted.data.id).outbound.state,'delivered');
+});
+
+test('repeated cron occurrences continue one conversation and one saved Planning task across host restart',async t=>{
+  const f=await fixture(t),schedule=await f.create({
+    name:'Recurring research continuity fixture',
+    trigger:{type:'cron',expression:'*/30 * * * *',timezone:'America/New_York'},
+    overlap:'skip'
+  });
+  const trigger=async key=>{
+    const admitted=await f.request('/api/operations/deployments/'+schedule.id+'/trigger',{method:'POST',body:{idempotencyKey:key}});
+    assert.equal(admitted.status,202,JSON.stringify(admitted.data));
+    await until(()=>f.app.operations.getJob(admitted.data.id).status==='completed','completed recurring run');
+    return f.app.operations.getJob(admitted.data.id);
+  };
+  const first=await trigger('research-1'),firstRunId=first.attempts.at(-1).runId;
+  assert.ok(firstRunId);
+  const firstRun=await f.app.conversations.get(firstRunId);
+  assert.equal(firstRun.taskId,firstRunId);
+  const originalPlan=await f.app.tasks.get(firstRunId);
+  assert.ok(originalPlan.taskId===firstRunId);
+  await f.restart();
+  const second=await trigger('research-2'),secondRunId=second.attempts.at(-1).runId;
+  assert.notEqual(firstRunId,secondRunId,'each execution retains an individual run receipt');
+  const secondRun=await f.app.conversations.get(secondRunId);
+  assert.equal(secondRun.kind,'continuation','scheduled research continues rather than restarting an unrelated conversation');
+  assert.equal(secondRun.parentRunId,firstRunId);
+  assert.equal(secondRun.taskId,firstRunId,'both runs share one conversation root and persisted Planning task');
+  assert.equal(second.continuedFromRunId,firstRunId);
+  assert.equal(second.conversationRootId,firstRunId);
+  assert.equal(secondRun.metadata?.managedBy,'operations');
+  assert.equal(secondRun.metadata?.inboxId,second.attempts.at(-1).inboxId);
+  assert.equal(secondRun.metadata?.inboxDispatchId!==undefined,true);
+  const family=await f.app.conversations.family(secondRunId);
+  assert.equal(family.rootId,firstRunId);
+  assert.equal(family.runs.length,2);
+  assert.deepEqual(family.runs.map(run=>run.id),[firstRunId,secondRunId]);
+  const shared=await f.app.tasks.get(secondRun.taskId);
+  assert.equal(shared.taskId,originalPlan.taskId);
+  assert.ok(shared.revision>=originalPlan.revision,'the second occurrence keeps the original Planning continuity');
+  assert.equal(f.app.conversations.list('active').filter(row=>row.rootId===firstRunId).length,1);
+  assert.equal(f.calls.length,2,'no extra model run was started to stitch the conversation together');
+  await f.restart();
+  const third=await trigger('research-3'),thirdRunId=third.attempts.at(-1).runId;
+  const thirdRun=await f.app.conversations.get(thirdRunId);
+  assert.equal(thirdRun.kind,'continuation');
+  assert.equal(thirdRun.parentRunId,secondRunId,'the next scheduled turn continues the latest run');
+  assert.equal(thirdRun.taskId,firstRunId,'subsequent occurrences keep the original Planning identity');
+  assert.equal(third.conversationRootId,firstRunId);
+  const longerFamily=await f.app.conversations.family(thirdRunId);
+  assert.equal(longerFamily.rootId,firstRunId);
+  assert.deepEqual(longerFamily.runs.map(run=>run.id),[firstRunId,secondRunId,thirdRunId]);
+  assert.equal(f.app.conversations.list('active').filter(row=>row.rootId===firstRunId).length,1);
+  assert.equal(f.calls.length,3,'three admitted occurrences create three runs but only one conversation');
+});
+test('parallel schedules remain independent rather than sharing one active provider thread',async t=>{
+  const f=await fixture(t),schedule=await f.create({trigger:{type:'manual'},overlap:'parallel'});
+  const trigger=async key=>{
+    const response=await f.request('/api/operations/deployments/'+schedule.id+'/trigger',{method:'POST',body:{idempotencyKey:key}});
+    await until(()=>f.app.operations.getJob(response.data.id).status==='completed');
+    return await f.app.conversations.get(f.app.operations.getJob(response.data.id).attempts.at(-1).runId);
+  };
+  const first=await trigger('parallel-A'),second=await trigger('parallel-B');
+  assert.notEqual(first.taskId,second.taskId,'manual/parallel work is not forced into a shared thread');
+});
+test('ordinary clean host restart retains enabled cronjobs; explicit Stop stays durable',async t=>{
+  const f=await fixture(t),created=await f.create({trigger:{type:'cron',expression:'0 9 * * *',timezone:'America/New_York'}});
+  assert.equal(f.app.operations.status().paused,false);
+  assert.equal(f.app.operations.getDeployment(created.id).enabled,true);
+  await f.restart();
+  const restored=f.app.operations.getDeployment(created.id);
+  assert.equal(f.app.operations.status().paused,false,'clean restart must not silently disable recurring work');
+  assert.equal(restored.enabled,true);
+  assert.deepEqual(restored.trigger,created.trigger);
+  assert.equal(f.app.operations.snapshot().jobs.length,0);
+  await f.app.operations.pause('User explicitly stopped scheduled work');
+  await f.restart();
+  assert.equal(f.app.operations.status().paused,true,'deliberate operator pause survives restart');
+  assert.match(f.app.operations.status().pauseReason,/explicitly stopped/);
+});
+test('scheduled results are locally available, revision-acknowledged, authenticated, and durable',async t=>{
+  const f=await fixture(t),deployment=await f.create({enabled:true,trigger:{type:'manual'}});
+  const admission=await f.request('/api/operations/deployments/'+deployment.id+'/trigger',{method:'POST',body:{idempotencyKey:'durable-results-fixture'}});
+  assert.equal(admission.status,202);
+  await until(()=>f.app.operations.getJob(admission.data.id).status==='completed');
+  const completed=f.app.operations.getJob(admission.data.id);
+  assert.equal(completed.delivery.state,'available');
+  assert.equal(completed.delivery.outcome,'completed');
+  assert.equal(completed.delivery.revision,2);
+  assert.equal(completed.delivery.acknowledgedAt,null);
+  assert.match(completed.delivery.preview||'',/Verified operation side effect 1/);
+  const snapshot=await f.request('/api/operations');
+  assert.equal(snapshot.data.results.available,1);
+  assert.equal(snapshot.data.status.availableResults,1);
+  assert.equal((await f.request('/api/operations',{auth:false})).status,401);
+  const url='/api/operations/jobs/'+admission.data.id+'/acknowledge';
+  assert.equal((await f.request(url,{method:'POST',auth:false,body:{expectedRevision:2}})).status,401);
+  assert.equal((await f.request(url,{method:'POST',body:{}})).status,400);
+  assert.equal((await f.request(url,{method:'POST',body:{expectedRevision:1}})).status,409);
+  const acknowledge=await f.request(url,{method:'POST',body:{expectedRevision:2}});
+  assert.equal(acknowledge.status,200);
+  assert.equal(acknowledge.data.delivery.state,'acknowledged');
+  assert.equal((await f.request(url,{method:'POST',body:{expectedRevision:2}})).data.delivery.revision,3);
+  assert.equal((await f.request('/api/operations')).data.results.available,0);
+  await f.restart();
+  const saved=f.app.operations.getJob(admission.data.id);
+  assert.equal(saved.delivery.state,'acknowledged');
+  assert.equal(saved.delivery.preview,completed.delivery.preview);
+  assert.equal(saved.attempts[0].runId,completed.attempts[0].runId);
+});
+
 test('deployment setup requires the local session and rejects invalid folders, attachments and stale edits before capture',async t=>{
   const context=await fixture(t),{request,cwd,directory}=context;
   assert.equal((await request('/api/operations',{auth:false})).status,401);assert.equal((await request('/api/operations/deployments',{method:'POST',auth:false,body:{}})).status,401);
@@ -36,6 +189,9 @@ test('deployment setup requires the local session and rejects invalid folders, a
   const regularFile=path.join(directory,'not-a-folder.txt');await writeFile(regularFile,'A regular file.');assert.equal((await request('/api/operations/deployments',{method:'POST',body:{...base,cwd:regularFile}})).status,400);
   assert.ok([400,404].includes((await request('/api/operations/deployments',{method:'POST',body:{...base,attachmentIds:['file_missing']}})).status));assert.equal((await request('/api/operations')).data.deployments.length,0);
   const deployment=await context.create({enabled:false,trigger:{type:'manual'}});const changed=await request(`/api/operations/deployments/${deployment.id}`,{method:'PUT',body:{name:'Updated deployment',expectedRevision:deployment.revision}});assert.equal(changed.status,200);assert.equal(changed.data.revision,2);
+  const inspected=await request(`/api/operations/deployments/${deployment.id}`);assert.equal(inspected.status,200);assert.equal(inspected.data.revision,2);assert.equal(inspected.data.name,'Updated deployment');assert.equal(inspected.data.trigger.type,'manual');
+  assert.equal(Object.hasOwn(inspected.data,'webhookToken'),false,'the inspected schedule must not expose its secret');
+  assert.equal((await request(`/api/operations/deployments/${deployment.id}`,{auth:false})).status,401,'inspection requires the local session');
   assert.equal((await request(`/api/operations/deployments/${deployment.id}`,{method:'PUT',body:{cwd:path.join(directory,'still-missing')}})).status,400);assert.ok([400,404].includes((await request(`/api/operations/deployments/${deployment.id}`,{method:'PUT',body:{attachmentIds:['file_missing']}})).status));assert.equal((await request(`/api/operations/deployments/${deployment.id}`,{method:'PUT',body:{name:'Stale overwrite',expectedRevision:1}})).status,409);
   const secret=(await request(`/api/operations/deployments/${deployment.id}/webhook`)).data;assert.match(secret.token,/^[a-f0-9]{64}$/);assert.equal((await request(`/api/operations/deployments/${deployment.id}/webhook`,{auth:false})).status,401);assert.ok(!JSON.stringify((await request('/api/operations')).data).includes(secret.token));assert.ok(!JSON.stringify((await request('/api/status')).data).includes(secret.token));assert.equal(context.calls.length,0);
 });
@@ -67,7 +223,7 @@ test('calendar preview is session-protected and read-only, while real DST fold t
   const deployment=await context.create({trigger});assert.equal(deployment.nextAt,preview.data.nextAt);const scheduled=[];
   for(const occurrence of preview.data.occurrences){clock=occurrence.at;await context.app.operations.poll();await until(async()=>{await context.app.operations.poll();return context.app.operations.snapshot().jobs.filter(job=>job.status==='completed').length===scheduled.length+1;});scheduled.push(occurrence.at);}
   const jobs=context.app.operations.snapshot().jobs;assert.equal(context.calls.length,2);assert.deepEqual(jobs.map(job=>job.scheduledAt).sort(),scheduled);assert.ok(jobs.every(job=>job.source==='cron'&&job.attempts.length===1));assert.equal(new Set(jobs.map(job=>job.keyHash)).size,2);
-  const disk=JSON.parse(await readFile(path.join(context.dataDir,'operations.json'),'utf8'));assert.deepEqual(disk.deployments[0].trigger,trigger);await context.restart();assert.equal(context.app.operations.status().paused,true);assert.equal(context.app.operations.snapshot().jobs.length,2);assert.equal(context.calls.length,2);
+  const disk=JSON.parse(await readFile(path.join(context.dataDir,'operations.json'),'utf8'));assert.deepEqual(disk.deployments[0].trigger,trigger);await context.restart();assert.equal(context.app.operations.status().paused,false,'clean host restart resumes when all run receipts are settled');assert.equal(context.app.operations.snapshot().jobs.length,2);assert.equal(context.calls.length,2);
 });
 
 test('unlimited HTTP webhook jobs overlap beyond four with independent durable receipts',async t=>{

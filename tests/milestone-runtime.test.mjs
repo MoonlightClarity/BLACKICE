@@ -36,7 +36,7 @@ test('native milestone schema survives continuation and old saved catalogs use c
  const first=await f.settled(f.engine.startRun({workflow:f.workflow,input:'First task.'}).id);assert.equal(first.nodes.agent.taskSchemaVersion,TASK_SCHEMA_VERSION);assert.equal(first.status,'completed',first.error);
  const next=await f.settled(f.engine.continueRun(first.id,{nodeId:'agent',message:'Continue with the saved milestones.'}).id);assert.equal(next.nodes.agent.taskSchemaVersion,TASK_SCHEMA_VERSION);assert.equal(f.runtime.calls[1].threadId,'native-milestone-thread');assert.equal(next.status,'completed',next.error);
  delete f.engine.runs.get(next.id).nodes.agent.taskSchemaVersion;
- const old=await f.settled(f.engine.continueRun(next.id,{nodeId:'agent',message:'Use an older saved native catalog.'}).id);assert.equal(old.nodes.agent.taskSchemaVersion,1);assert.equal(old.status,'completed');assert.equal(old.nodes.agent.planning.status,'legacy');assert.equal(old.nodes.agent.threadId,'native-milestone-thread');assert.equal(f.runtime.calls[2].threadId,'native-milestone-thread');
+ const old=await f.settled(f.engine.continueRun(next.id,{nodeId:'agent',message:'Use an older saved native catalog.',planningMode:'off'}).id);assert.equal(old.nodes.agent.taskSchemaVersion,1);assert.equal(old.status,'completed');assert.equal(old.nodes.agent.planning.status,'off');assert.equal(old.nodes.agent.threadId,'native-milestone-thread');assert.equal(f.runtime.calls[2].threadId,'native-milestone-thread');
 });
 
 test('native Retry retains its milestone schema after a failed response',async t=>{
@@ -54,7 +54,7 @@ test('version two native catalogs retain milestones without a changed external-a
    return{output:'Saved.',threadId:'native-v2-catalog'};
  });
  const initial=await f.settled(f.engine.startRun({workflow:f.workflow,input:'Original task.'}).id);assert.equal(initial.status,'completed',initial.error);f.engine.runs.get(initial.id).nodes.agent.taskSchemaVersion=2;
- const next=await f.settled(f.engine.continueRun(initial.id,{nodeId:'agent',message:'Continue using the original v2 catalog.'}).id);assert.equal(next.nodes.agent.taskSchemaVersion,2);assert.equal(next.status,'completed');assert.equal(next.nodes.agent.planning.status,'legacy');assert.equal(next.nodes.agent.threadId,'native-v2-catalog');
+ const next=await f.settled(f.engine.continueRun(initial.id,{nodeId:'agent',message:'Continue using the original v2 catalog.',planningMode:'off'}).id);assert.equal(next.nodes.agent.taskSchemaVersion,2);assert.equal(next.status,'completed');assert.equal(next.nodes.agent.planning.status,'off');assert.equal(next.nodes.agent.threadId,'native-v2-catalog');
 });
 
 test('Retry after a lost publication response reconciles its durable attempt instead of sending twice',async t=>{

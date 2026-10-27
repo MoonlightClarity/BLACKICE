@@ -13,6 +13,9 @@ const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;})
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const until=async(check,label='inbox condition')=>{const end=Date.now()+5000;while(Date.now()<end){const value=await check();if(value)return value;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail(`${label} did not settle`);};
 const workflow=()=>({id:'saved-workflow',name:'Saved model task',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Agent',prompt:'Verify the task.',model:'saved-model',context:{preset:'900k'}},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1}});
+// Infrastructure-only fixtures have no Planning store/tool. Off is explicit;
+// default On must not silently bypass the new tool-call requirement.
+const workflowNoPlanning=()=>({...workflow(),settings:{maxParallel:1,planningMode:'off'}});
 class Engine extends EventEmitter{
   constructor(capacity=1){super();this.runs=new Map();this.executions=new Map();this.calls=[];this.closed=false;this.beforeStart=null;this.maxConcurrentRuns=capacity;}
   listRuns(){return structuredClone([...this.runs.values()]);}
@@ -118,7 +121,7 @@ test('real engine admission persists inbox metadata before any runtime action an
   const runtime={status:()=>({connected:true,authenticated:true}),runAgent:async options=>{calls++;const runs=JSON.parse(await readFile(path.join(directory,'runs.json'),'utf8')),saved=runs.find(run=>run.metadata?.inboxId);assert.ok(saved,'admission is on disk before runtime execution');const queue=JSON.parse(await readFile(path.join(directory,'inbox.json'),'utf8'));assert.equal(queue.items[0].dispatchId,saved.metadata.inboxDispatchId);entered.resolve();return{output:'Verified real engine fixture.',threadId:'inbox-fixture-thread'};}};
   const learning={cancelBackground:()=>{stopping++;return release.promise;},getContext:()=>({lessons:[],skills:[],facts:[],truncated:false}),scheduleAfterRun:async()=>{}};
   const engine=await new HarnessEngine({runtime,dataDir:directory,defaultCwd:cwd,learning}).init(),inbox=await new TaskInbox({dataDir:directory,engine}).init();t.after(async()=>{release.resolve();await inbox.close();await engine.close();assert.match(path.basename(directory),/^relay-inbox-engine-/);await rm(directory,{recursive:true,force:true});});
-  const item=await inbox.add({input:'Use the persisted admission journal',cwd,workflow:workflow()}),started=await inbox.runNow(item.id);assert.equal(started.run.metadata.inboxId,item.id);assert.equal(stopping,1);await tick();assert.equal(calls,0);release.resolve();await entered.promise;await until(()=>inbox.get(item.id).status==='completed');assert.equal(calls,1);assert.equal(inbox.get(item.id).runId,started.run.id);
+  const item=await inbox.add({input:'Use the persisted admission journal',cwd,workflow:workflowNoPlanning()}),started=await inbox.runNow(item.id);assert.equal(started.run.metadata.inboxId,item.id);assert.equal(stopping,1);await tick();assert.equal(calls,0);release.resolve();await entered.promise;await until(()=>inbox.get(item.id).status==='completed');assert.equal(calls,1);assert.equal(inbox.get(item.id).runId,started.run.id);
 });
 
 test('HTTP inbox capture stays usable while a real task runs, auth applies, and stopping one chat leaves queued work eligible',async t=>{
@@ -141,7 +144,7 @@ for(const action of ['cancel','close'])test(`${action} while the real engine adm
   const engine=await new HarnessEngine({runtime,dataDir:directory,defaultCwd:cwd,maxConcurrentRuns:1}).init(),inbox=await new TaskInbox({dataDir:directory,engine}).init();
   const entered=deferred(),release=deferred(),persist=engine.persist.bind(engine);let delayed=false;engine.persist=async()=>{if(!delayed&&engine.runs.size){delayed=true;entered.resolve();await release.promise;}return persist();};
   t.after(async()=>{release.resolve();await inbox.close();await engine.close();assert.match(path.basename(directory),/^relay-inbox-admission-/);await rm(directory,{recursive:true,force:true});});
-  const first=await inbox.add({input:'Cancel before inference',cwd,workflow:workflow()}),second=await inbox.add({input:'Keep next task saved',cwd,workflow:workflow()});await inbox.configure({autoRun:true});await entered.promise;await until(()=>inbox.get(first.id).runId);const runId=inbox.get(first.id).runId;
+  const first=await inbox.add({input:'Cancel before inference',cwd,workflow:workflowNoPlanning()}),second=await inbox.add({input:'Keep next task saved',cwd,workflow:workflowNoPlanning()});await inbox.configure({autoRun:true});await entered.promise;await until(()=>inbox.get(first.id).runId);const runId=inbox.get(first.id).runId;
   let closing;if(action==='cancel'){await inbox.pause('Stop while admission is saving');engine.cancelRun(runId);}else{await inbox.close();closing=engine.close();}
   await tick();assert.equal(calls,0);assert.equal(engine.getRun(runId).status,'cancelled');release.resolve();if(closing)await closing;await until(()=>engine.getRun(runId).settled);if(action==='cancel')await until(()=>inbox.get(first.id).status==='cancelled');
   assert.equal(calls,0);assert.equal(inbox.get(second.id).status,'queued');assert.equal(engine.controllers.size,0);assert.equal(engine.executions.size,0);const disk=JSON.parse(await readFile(path.join(directory,'runs.json'),'utf8'));assert.equal(disk.find(run=>run.id===runId).status,'cancelled');

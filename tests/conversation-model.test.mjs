@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { conversationRecovery, conversationId, conversationRuns, conversationSummaries, conversationSidebarItems, selectedConversationModel, selectedConversationContext, selectedConversationEffort, selectedConversationPlanDetail, selectedConversationPlanningMode, conversationPlanningConfig, restoreConversationDrafts, searchConversations, mergeConversationRuns, assistantMessages, conversationTurn, conversationAgents, shouldSendConversationKey, createRegisteredArtifactResolver } from '../public/conversation-model.mjs';
-import { PLANNING_MODES, normalizePlanningMode, planningModeDetail } from '../public/planning-mode.mjs';
+import { PLANNING_MODES, PLANNING_INPUT_MODES, normalizePlanningMode, planningModeDetail } from '../public/planning-mode.mjs';
 import { conversationReasoningChoice } from '../public/conversation-model.mjs';
 import { selectedConversationServiceTier } from '../public/conversation-model.mjs';
 
@@ -44,53 +44,54 @@ test('Fast app defaults apply only to advertised new native chats and preserve e
   assert.equal(selectedConversationServiceTier({}, undefined, undefined, status, 'free::model'), undefined, 'The actual preference-selected model controls capability.');
 });
 
-test('Maximal preview uses actual model metadata while retaining explicit and inherited reasoning intent', () => {
-  const status = { defaultModel: 'wide', runtimeSettings: { defaultEffort: 'medium' }, models: [{ id: 'wide', supportedReasoningEfforts: ['low', 'high', 'ultra'] }, { id: 'narrow', supportedReasoningEfforts: [{ reasoningEffort: 'minimal' }, { reasoningEffort: 'low' }] }] };
+test('Planning On/Off and legacy aliases never select model reasoning effort', () => {
+  const status = { defaultModel: 'wide', runtimeSettings: { defaultEffort: 'medium' }, models: [{ id: 'wide', supportedReasoningEfforts: ['low','medium','high','ultra'] }, { id: 'narrow', supportedReasoningEfforts: ['minimal','low'] }] };
   const chosen = draft => conversationReasoningChoice({ draft, status });
-  assert.deepEqual(chosen({ planningMode: 'maximal' }), { effort: 'ultra', source: 'maximal-model-catalog', requestedEffort: null });
-  assert.equal(chosen({ planningMode: 'maximal', model: 'narrow' }).effort, 'low');
-  assert.equal(chosen({ planningMode: 'maximal', effort: 'high' }).effort, 'high');
-  assert.equal(chosen({ planningMode: 'maximal', effort: 'default' }).effort, 'ultra');
+  assert.deepEqual(chosen({ planningMode: 'maximal' }), { effort: 'medium', source: 'application-default', requestedEffort: null });
+  assert.equal(chosen({ planningMode: 'on' }).effort, 'medium');
+  assert.equal(chosen({ planningMode: 'off' }).effort, 'medium');
+  assert.equal(chosen({ planningMode: 'on', model: 'narrow' }).effort, 'default','Unsupported inherited effort falls back to the model default.');
+  assert.equal(chosen({ planningMode: 'on', effort: 'high' }).effort, 'high');
+  assert.equal(chosen({ planningMode: 'on', effort: 'default' }).effort, 'default');
   const agent = { id: 'agent', model: 'wide', effort: 'ultra' }, run = { planningMode: 'maximal', nodes: { agent: { effortSelection: { effort: 'ultra', source: 'maximal-model-catalog', requestedEffort: null } } } };
   assert.equal(conversationReasoningChoice({ draft: { planningMode: 'off' }, agent, run, status }).effort, 'medium');
-  assert.equal(conversationReasoningChoice({ draft: { model: 'narrow' }, agent, run, status }).effort, 'low');
   agent.effort = 'medium'; run.planningMode = 'auto'; run.nodes.agent.effortSelection = { effort: 'medium', source: 'application-default', requestedEffort: null };
-  assert.equal(conversationReasoningChoice({ draft: { planningMode: 'maximal' }, agent, run, status }).effort, 'ultra');
+  assert.equal(conversationReasoningChoice({ draft: { planningMode: 'on' }, agent, run, status }).effort, 'medium');
 });
 
-test('Maximal preview keeps the saved model and effort before the next turn is steerable', () => {
+test('legacy Maximal keeps its saved model but planning activation no longer selects effort', () => {
   const status = { defaultModel: 'wide', models: [{ id: 'wide', supportedReasoningEfforts: ['high', 'ultra'] }, { id: 'narrow', supportedReasoningEfforts: ['low', 'max'] }] };
   for (const state of [{ status: 'queued' }, { status: 'running' }, { status: 'running', threadId: 'thread' }, { status: 'running', threadId: 'thread', turnId: 'turn' }, { status: 'completed', threadId: 'thread', turnId: 'turn' }]) {
     const run = { planningMode: 'maximal', workflow: { nodes: [{ id: 'agent', type: 'agent', model: 'narrow', effort: 'max' }] }, nodes: { agent: { ...state, effortSelection: { effort: 'max', source: 'maximal-model-catalog', requestedEffort: null } } } };
     const agent = conversationAgents(run, state.status === 'completed' ? 'continue' : 'steer')[0];
     const displayedModel = selectedConversationModel({}, {}, agent || run.workflow.nodes.find(node => node.type === 'agent'));
     assert.equal(displayedModel, 'narrow');
-    assert.equal(conversationReasoningChoice({ run, agent, status }).effort, 'max');
+    assert.equal(conversationReasoningChoice({ run, agent, status }).effort, 'default');
   }
 });
 
-test('the four planning modes have one validated vocabulary and Auto is the display fallback', () => {
-  assert.deepEqual(PLANNING_MODES, ['maximal', 'on', 'auto', 'off']); assert.equal(normalizePlanningMode(undefined), 'auto'); assert.equal(normalizePlanningMode('MAXIMAL'), 'auto');
-  for (const mode of PLANNING_MODES) assert.equal(normalizePlanningMode(mode), mode);
-  assert.equal(planningModeDetail('maximal', 'compact'), 'detailed'); assert.equal(planningModeDetail('auto'), undefined);
+test('On/Off is the effective planning vocabulary and Auto/Maximal are legacy On aliases', () => {
+  assert.deepEqual(PLANNING_MODES, ['on', 'off']); assert.deepEqual(PLANNING_INPUT_MODES, ['on','off','auto','maximal']); assert.equal(normalizePlanningMode(undefined), 'on'); assert.equal(normalizePlanningMode('MAXIMAL'), 'on');
+  for (const mode of PLANNING_MODES) assert.equal(normalizePlanningMode(mode), mode === 'off' ? 'off' : 'on');
+  assert.equal(planningModeDetail('maximal', 'compact'), 'compact'); assert.equal(planningModeDetail('auto'), undefined);
 });
 
 test('planning mode follows an explicit draft, admitted run, workflow and preference without confusing depth or reasoning', () => {
-  assert.equal(selectedConversationPlanningMode(), 'auto'); assert.equal(selectedConversationPlanningMode({}, { planningMode: 'off' }), 'off');
+  assert.equal(selectedConversationPlanningMode(), 'on'); assert.equal(selectedConversationPlanningMode({}, { planningMode: 'off' }), 'off');
   assert.equal(selectedConversationPlanningMode({}, { planningMode: 'off' }, { workflow: { settings: { planningMode: 'on' } } }), 'on');
-  assert.equal(selectedConversationPlanningMode({}, {}, { planningMode: 'maximal', workflow: { settings: { planningMode: 'on' } } }), 'maximal');
+  assert.equal(selectedConversationPlanningMode({}, {}, { planningMode: 'maximal', workflow: { settings: { planningMode: 'on' } } }), 'on');
   assert.equal(selectedConversationPlanningMode({ planningMode: 'off', planDetail: 'detailed', effort: 'ultra' }, {}, { planningMode: 'maximal' }), 'off');
   assert.equal(selectedConversationPlanningMode({}, {}, { nodes: { worker: { planning: { mode: 'on' } } } }), 'on');
 });
 
-test('Auto omits synthesized runtime depth while explicit legacy hints survive compatible requests', () => {
-  assert.deepEqual(conversationPlanningConfig(), { planningMode: 'auto' });
+test('On keeps outline detail independent while legacy aliases normalize to On', () => {
+  assert.deepEqual(conversationPlanningConfig(), { planningMode: 'on' });
   const run = { planningMode: 'maximal', planDetail: 'detailed', taskState: { plan: { detail: 'detailed' } } };
-  assert.deepEqual(conversationPlanningConfig({ planningMode: 'auto' }, {}, run), { planningMode: 'auto' });
-  assert.deepEqual(conversationPlanningConfig({}, {}, { planDetail: 'compact' }), { planningMode: 'auto', planDetail: 'compact' });
-  assert.deepEqual(conversationPlanningConfig({ planDetail: 'compact', planningMode: 'maximal' }), { planningMode: 'maximal', planDetail: 'detailed' });
+  assert.deepEqual(conversationPlanningConfig({ planningMode: 'auto' }, {}, run), { planningMode: 'on' });
+  assert.deepEqual(conversationPlanningConfig({}, {}, { planDetail: 'compact' }), { planningMode: 'on', planDetail: 'compact' });
+  assert.deepEqual(conversationPlanningConfig({ planDetail: 'compact', planningMode: 'maximal' }), { planningMode: 'on', planDetail: 'compact' });
   assert.deepEqual(conversationPlanningConfig({ planDetail: 'detailed', planningMode: 'off' }), { planningMode: 'off' });
-  assert.deepEqual(conversationPlanningConfig({ planningMode: 'auto' }, {}, { ...run, input: { planDetail: 'compact' } }), { planningMode: 'auto', planDetail: 'compact' });
+  assert.deepEqual(conversationPlanningConfig({ planningMode: 'auto' }, {}, { ...run, input: { planDetail: 'compact' } }), { planningMode: 'on', planDetail: 'compact' });
 });
 
 test('draft restoration preserves exact modes and removes malformed values without mutating saved source', () => {
@@ -98,6 +99,14 @@ test('draft restoration preserves exact modes and removes malformed values witho
   assert.equal(restored.prefs.planningMode, 'on'); assert.equal(restored.drafts.new.planningMode, 'off'); assert.equal(restored.drafts.new.planDetail, 'compact'); assert.equal(restored.drafts.invalid.planningMode, undefined); assert.deepEqual(source, before);
 });
 
+test('historical Auto and Maximal preferences restore as On without changing saved inputs', () => {
+  const old = {planningMode:'maximal',conversationDrafts:{new:{task:'Inspect a task',planningMode:'auto'},old:{task:'Old chat',planningMode:'maximal'}}};
+  const before=structuredClone(old),restored=restoreConversationDrafts(old);
+  assert.equal(restored.prefs.planningMode,'on');
+  assert.equal(restored.drafts.new.planningMode,'on');
+  assert.equal(restored.drafts.old.planningMode,'on');
+  assert.deepEqual(old,before);
+});
 test('plan detail follows explicit draft, saved task, workflow, saved plan and preference before its balanced default', () => {
   assert.equal(selectedConversationPlanDetail(), 'balanced');
   assert.equal(selectedConversationPlanDetail({}, { planDetail: 'compact' }), 'compact');

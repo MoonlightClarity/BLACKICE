@@ -249,5 +249,5 @@ test('a successful schedule Save immediately restores live schedule controls aft
   await f.input('[name="name"]','New schedule');await f.input('[name="input"]','Only explicit work');await f.input('[name="cwd"]','C:\\fixture');
   await f.$('#next-tasks-form').dispatch('submit');await settle();
   assert.equal(schedules.length,1);assert.equal(f.$('#next-tasks-form').inert,false);
-  const controls=f.$('#next-tasks-deployments').querySelectorAll('button');assert.equal(controls.length,3);assert.ok(controls.every(node=>!node.disabled));
+  const controls=f.$('#next-tasks-deployments').querySelectorAll('button');assert.equal(controls.length,4,'Schedule controls include Inspect/edit alongside Run, Disable and Remove');assert.ok(controls.every(node=>!node.disabled));
 });

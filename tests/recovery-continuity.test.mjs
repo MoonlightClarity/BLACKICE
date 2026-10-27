@@ -10,7 +10,7 @@ import { ProviderRuntime } from '../lib/providers.mjs';
 
 const workflow = model => ({ id: 'recovery-effects', name: 'Resume confirmed work', nodes: [
   { id: 'input', type: 'input' }, { id: 'agent', type: 'agent', name: 'Agent', prompt: 'Create the requested file exactly once and verify it.', model, effort: 'default' }, { id: 'output', type: 'output' },
-], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1 } });
+], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1, planningMode: 'off' } });
 const settle = async (engine, run) => { await engine.executions.get(run.id); assert.equal(engine.getRun(run.id).settled, true); return engine.getRun(run.id); };
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 class Native extends EventEmitter {

@@ -14,7 +14,7 @@ import { capabilityGuidance } from '../lib/tool-routing.mjs';
 import { estimateContextTokens } from '../lib/context.mjs';
 
 const until=async(check,label='routing condition')=>{const end=Date.now()+5000;while(Date.now()<end){const result=check();if(result)return result;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail(`${label} did not settle`);};
-const graph=model=>({id:'routing-workflow',name:'Tool routing protocol test',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Worker',prompt:'Answer the current request using attached capabilities when needed.',model},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1}});
+const graph=model=>({id:'routing-workflow',name:'Tool routing protocol test',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Worker',prompt:'Answer the current request using attached capabilities when needed.',model},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode:'off'}});
 const manifest=instructions=>JSON.parse(instructions.split('ACTUAL ATTACHED CATALOG\n')[1].split('\nTOOL SELECTION PLAYBOOKS')[0]);
 const occurrences=(text,part)=>text.split(part).length-1;
 class OfflineCodex extends EventEmitter{status(){return{connected:false,authenticated:false,models:[],defaultModel:null};}async close(){}}
@@ -29,7 +29,7 @@ for(const type of ['openai','anthropic','compatible'])test(`${type}: the engine 
   const instructions=body=>type==='openai'?body.instructions:type==='anthropic'?body.system:body.messages.find(message=>message.role==='system')?.content;
   const messages=body=>type==='openai'?body.input:body.messages.filter(message=>message.role!=='system');
   const toolNames=body=>(body.tools||[]).map(tool=>type==='compatible'?tool.function.name:tool.name);
-  const firstInstructions=instructions(requests[0].body);assert.equal(typeof firstInstructions,'string');assert.match(firstInstructions,/CAPABILITY ROUTING — BEFORE ACTION/);assert.match(firstInstructions,/brief operational plan/);assert.match(firstInstructions,/Do not force a tool call/);
+  const firstInstructions=instructions(requests[0].body);assert.equal(typeof firstInstructions,'string');assert.match(firstInstructions,/CAPABILITY ROUTING — BEFORE ACTION/);assert.match(firstInstructions,/GENERAL ANALYTICAL METHOD/);assert.match(firstInstructions,/reasoning moves, not mandatory stages/);
   assert.deepEqual(manifest(firstInstructions).map(item=>item.name),toolNames(requests[0].body));assert.deepEqual(new Set(toolNames(requests[0].body)),new Set(['relay_workspace','relay_control','relay_memory','relay_skills','relay_history']));for(const name of ['relay_browser','relay_desktop','relay_connections','relay_identity','relay_files','relay_task'])assert.ok(!manifest(firstInstructions).some(item=>item.name===name),name);
   assert.ok(!JSON.stringify(messages(requests[0].body)).includes('CAPABILITY ROUTING — BEFORE ACTION'),'routing policy must not exist only in a user prompt');
   // Remote providers can receive a genuinely updated catalog on their next turn.

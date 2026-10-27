@@ -67,7 +67,7 @@ test('advanced model, reasoning, speed, context and workflow settings preserve u
     first:{model:'cloud::remote-fixture',effort:'high',serviceTier:'fast',
       context:{preset:'custom',windowTokens:120000,autoCompact:false}},
     second:{model:'default',effort:'default',serviceTier:'default'},
-  },workflowSettings:{maxParallel:3,planningMode:'maximal',planDetail:'detailed'}});
+  },workflowSettings:{maxParallel:3,planningMode:'on',planDetail:'detailed'}});
   assert.equal(advanced.nodes[1].model,'cloud::remote-fixture');
   assert.equal(advanced.nodes[1].effort,'high');
   assert.equal(advanced.nodes[1].serviceTier,'fast');
@@ -77,7 +77,7 @@ test('advanced model, reasoning, speed, context and workflow settings preserve u
   assert.equal(advanced.nodes[2].effort,'default','Explicit model default is different from omission.');
   assert.equal(advanced.nodes[2].serviceTier,'default');
   assert.equal(advanced.settings.maxParallel,3);
-  assert.equal(advanced.settings.planningMode,'maximal');
+  assert.equal(advanced.settings.planningMode,'on');
   assert.equal(advanced.settings.planDetail,'detailed');
   assert.deepEqual(advanced.edges,original.edges);
   assert.deepEqual(advanced.nodes[1].settings,{depth:2});

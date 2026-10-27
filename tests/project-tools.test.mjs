@@ -10,7 +10,7 @@ import {CapabilityStore} from '../lib/capabilities.mjs';
 import {MethodStore} from '../lib/methods.mjs';
 import {createProjectToolHandler,PROJECT_TOOL} from '../lib/project-tools.mjs';
 
-const graph=id=>({id,name:'Project tool integration',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Coordinator',model:'fixture-model',prompt:'Follow the user request.'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1}});
+const graph=id=>({id,name:'Project tool integration',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Coordinator',model:'fixture-model',prompt:'Follow the user request.'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode:'off'}});
 const payload=response=>JSON.parse(response.contentItems[0].text);
 test('an agent creates the shared project through its attached tool without executing it; saved native catalogs stay truthful',async t=>{
   const root=await mkdtemp(path.join(tmpdir(),'blackice-project-tool-')),cwd=path.join(root,'workspace');await mkdir(cwd);const calls=[];
@@ -65,7 +65,7 @@ test('review_task prepares a real project review without execution until an expl
       return{output:JSON.stringify({passed,summary:'Read the existing marker without changing it.',criteria:[{criterion:'marker.txt contains accepted',passed,evidence:`Observed ${content.trim()}.`}]})};
     }
   }
-  const engine=await new HarnessEngine({runtime:new Runtime(),dataDir:path.join(root,'data'),defaultCwd:cwd}).init(),projects=await new ProjectStore({dataDir:path.join(root,'data'),engine}).init();clearTimeout(projects.timer);projects.timer=null;projects.kick=()=>{};
+  const engine=await new HarnessEngine({runtime:new Runtime(),dataDir:path.join(root,'data'),defaultCwd:cwd}).init(),projects=await new ProjectStore({dataDir:path.join(root,'data'),engine}).init();const savedStart=engine.startRun.bind(engine);engine.startRun=request=>savedStart({...request,planningMode:'off'});clearTimeout(projects.timer);projects.timer=null;projects.kick=()=>{};
   t.after(async()=>{await projects.close();await engine.close();assert.match(path.basename(root),/^blackice-project-tool-/);await rm(root,{recursive:true,force:true});});
   const project=await projects.create({name:'Review existing marker',objective:'Check a marker without repeating implementation.',cwd,maxRepairs:0,tasks:[{id:'marker',title:'Marker',instructions:'Write marker.txt and inspect it.',acceptanceCriteria:['marker.txt contains accepted']}]});
   await projects.start(project.id);await projects.poll();await engine.executions.get(projects.get(project.id).tasks[0].attempts[0].implementation.runId);await projects.poll();await engine.executions.get(projects.get(project.id).tasks[0].attempts[0].verification.runId);await projects.poll();const original=projects.get(project.id).tasks[0].attempts[0];assert.equal(calls.length,2);

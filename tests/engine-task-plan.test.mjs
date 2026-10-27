@@ -208,7 +208,7 @@ test('follow-ups require a fresh plan while preserving earlier completed work, e
   assert.deepEqual(f.engine.getRun(firstSnapshot.id), firstSnapshot); assert.equal(f.runtime.calls.length, 2);
 });
 
-for (const version of [1, 2, 3]) test(`saved native task schema v${version} retains its exact tools and does not acquire the default-plan guard`, async t => {
+for (const version of [1, 2, 3]) test(`saved native task schema v${version} remains available with Planning Off and its original tool contract`, async t => {
   const f = await fixture(t, async (options, number, context) => {
     if (number === 1) { await savePlan(options); return { output: 'Original turn.', threadId: context.threadId }; }
     assert.deepEqual(options.dynamicTools.find(tool => tool.name === 'relay_task'), taskToolForVersion(version));
@@ -219,8 +219,8 @@ for (const version of [1, 2, 3]) test(`saved native task schema v${version} reta
   });
   const first = await f.settled(f.start().id); completed(first);
   f.engine.runs.get(first.id).nodes.agent.taskSchemaVersion = version;
-  const next = await f.settled(f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Use the original tools.' }).id); completed(next);
-  assert.equal(next.nodes.agent.taskSchemaVersion, version); assert.equal(next.nodes.agent.planning.status, 'legacy');
+  const next = await f.settled(f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Use the original tools.', planningMode:'off' }).id); completed(next);
+  assert.equal(next.nodes.agent.taskSchemaVersion, version); assert.equal(next.nodes.agent.planning.status, 'off');
 });
 
 test('provider continuations receive current planning even if their older saved schema is missing', async t => {
@@ -280,7 +280,7 @@ test('missing or unsupported planning stays explicit and never fabricates model 
     options.onEvent({ type: 'delta', delta: 'This model can answer without tools.' });
     return { output: 'This model can answer without tools.' };
   }, { supportsTools: false });
-  const noTools = await unsupported.settled(unsupported.start().id); completed(noTools); assert.equal(noTools.nodes.agent.planning.status, 'unavailable');
+  const noTools = await unsupported.settled(unsupported.start('Complete with Planning Off.',{planningMode:'off'}).id); completed(noTools); assert.equal(noTools.nodes.agent.planning.status, 'off');
   assert.equal(noTools.taskState.plan, undefined); assert.deepEqual(noTools.taskState.steps, []); assert.equal(noTools.nodes.agent.taskSchemaVersion, undefined);
   assert.equal(answerEvents(noTools).length, 1);
 });

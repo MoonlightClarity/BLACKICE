@@ -2,7 +2,7 @@
  * Never rewire edges, regenerate node IDs, or drop unknown engine metadata.
  */
 export const WORKFLOW_REASONING_EFFORTS = Object.freeze(['default','none','minimal','low','medium','high','xhigh','max','ultra']);
-export const WORKFLOW_PLANNING_MODES = Object.freeze(['maximal','on','auto','off']);
+export const WORKFLOW_PLANNING_MODES = Object.freeze(['on','off']);
 export const WORKFLOW_PLAN_DETAILS = Object.freeze(['compact','balanced','detailed']);
 const workflowReasoning=new Set(WORKFLOW_REASONING_EFFORTS);
 const workflowPlanning=new Set(WORKFLOW_PLANNING_MODES);

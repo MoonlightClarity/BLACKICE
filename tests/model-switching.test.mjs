@@ -57,7 +57,7 @@ test('switching models discards a capacity learned from the old model and uses t
 
 test('engine model changes resume only within a provider and hand actual saved text to a new provider thread', async t => {
   const { engine: makeEngine, runtime, codex, requests } = await fixture(t), engine = await makeEngine(), history = [];
-  let run = engine.startRun({ workflow: createMissionWorkflow({ id: 'switch-chat', task: 'ORIGINAL_TASK', model: 'codex-a' }), input: 'ORIGINAL_TASK' }); await engine.executions.get(run.id); run = engine.getRun(run.id); history.push(run);
+  let run = engine.startRun({ workflow: createMissionWorkflow({ id: 'switch-chat', task: 'ORIGINAL_TASK', model: 'codex-a', planningMode: 'off' }), input: 'ORIGINAL_TASK' }); await engine.executions.get(run.id); run = engine.getRun(run.id); history.push(run);
   const variants = ['codex-b', 'primary::model-a', 'primary::model-b', 'secondary::model-a', 'codex-a'];
   for (const [index, model] of variants.entries()) {
     const previous = run, before = structuredClone(engine.getRun(previous.id)), sameProvider = (previous.nodes.agent.resolvedModel || previous.workflow.nodes.find(node => node.id === 'agent').model).split('::')[0] === model.split('::')[0] || !model.includes('::') && !previous.nodes.agent.threadId.startsWith('provider_');
@@ -73,7 +73,7 @@ test('engine model changes resume only within a provider and hand actual saved t
 
 test('accepted provider directions and intermediate assistant replies survive a cross-provider handoff', async t => {
   const hold = deferred(), { engine: makeEngine, requests, directory, archives } = await fixture(t, 'compatible', async ({ index }) => { if (index === 1) await hold.promise; }), engine = await makeEngine(), archive = await new ConversationArchive({ dataDir: path.join(directory, 'engine'), engine }).init(); archives.push(archive);
-  const first = engine.startRun({ workflow: createMissionWorkflow({ id: 'direction-chat', task: 'ORIGINAL_HANDOFF_TASK', model: 'primary::model-a' }), input: 'ORIGINAL_HANDOFF_TASK' });
+  const first = engine.startRun({ workflow: createMissionWorkflow({ id: 'direction-chat', task: 'ORIGINAL_HANDOFF_TASK', model: 'primary::model-a', planningMode: 'off' }), input: 'ORIGINAL_HANDOFF_TASK' });
   try { await until(() => requests.length && engine.getRun(first.id).nodes.agent.turnId); const receipt = await engine.steerRun(first.id, { nodeId: 'agent', message: 'ACTUAL_ACCEPTED_USER_DIRECTION' }); assert.equal(receipt.accepted, true); } finally { hold.resolve(); }
   await engine.executions.get(first.id); const previous = engine.getRun(first.id); assert.equal(previous.status, 'completed'); assert.ok(previous.events.some(event => event.data?.type === 'steer' && event.data.text === 'ACTUAL_ACCEPTED_USER_DIRECTION')); assert.equal(requests.length, 2);
   await archive.chain; engine.runs.get(first.id).events = Array.from({ length: 2500 }, (_, index) => ({ nodeId: 'agent', data: { type: 'item', item: { type: 'commandExecution', id: `bounded-${index}` } } }));
@@ -86,7 +86,7 @@ test('accepted provider directions and intermediate assistant replies survive a 
 
 test('retrying a failed provider handoff retains actual history without resuming the old native thread', async t => {
   const { engine: makeEngine, requests, codex } = await fixture(t, 'compatible', ({ response, index }) => { if (index === 1) { response.writeHead(503, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ error: { message: 'Temporary fixture provider failure.' } })); return false; } }), engine = await makeEngine();
-  const initial = engine.startRun({ workflow: createMissionWorkflow({ id: 'retry-handoff-chat', task: 'ORIGINAL_RETRY_HANDOFF_TASK', model: 'codex-a' }), input: 'ORIGINAL_RETRY_HANDOFF_TASK' }); await engine.executions.get(initial.id); const original = engine.getRun(initial.id);
+  const initial = engine.startRun({ workflow: createMissionWorkflow({ id: 'retry-handoff-chat', task: 'ORIGINAL_RETRY_HANDOFF_TASK', model: 'codex-a', planningMode: 'off' }), input: 'ORIGINAL_RETRY_HANDOFF_TASK' }); await engine.executions.get(initial.id); const original = engine.getRun(initial.id);
   const continued = engine.continueRun(initial.id, { nodeId: 'agent', message: 'Continue this exact discussion on the other provider.', model: 'secondary::model-b' }, { historyRuns: [original] }); await engine.executions.get(continued.id); const failed = engine.getRun(continued.id);
   assert.equal(failed.status, 'failed'); assert.match(failed.error, /Temporary fixture provider failure/); assert.ok(failed.modelHandoff); assert.equal(codex.calls.length, 1);
   const retried = engine.retryRun(failed.id); assert.deepEqual(retried.modelHandoff, failed.modelHandoff); assert.equal(retried.nodes.agent.resumeThreadId, undefined); await engine.executions.get(retried.id); const completed = engine.getRun(retried.id);
@@ -97,7 +97,7 @@ test('retrying a failed provider handoff retains actual history without resuming
 
 test('the actual provider transcript resolves a legacy default-model run without model receipts', async t => {
   const { engine: makeEngine, runtime, requests } = await fixture(t), engine = await makeEngine();
-  const first = engine.startRun({ workflow: createMissionWorkflow({ id: 'legacy-model-chat', task: 'LEGACY_ACTUAL_CONTEXT', model: 'primary::model-a' }), input: 'LEGACY_ACTUAL_CONTEXT' }); await engine.executions.get(first.id);
+  const first = engine.startRun({ workflow: createMissionWorkflow({ id: 'legacy-model-chat', task: 'LEGACY_ACTUAL_CONTEXT', model: 'primary::model-a', planningMode: 'off' }), input: 'LEGACY_ACTUAL_CONTEXT' }); await engine.executions.get(first.id);
   const legacy = engine.runs.get(first.id); legacy.workflow.nodes.find(node => node.id === 'agent').model = 'default'; delete legacy.nodes.agent.resolvedModel; legacy.events = legacy.events.filter(event => event.data?.type !== 'thread'); const original = engine.getRun(first.id);
   const threadModel = await runtime.savedThreadModel(original.nodes.agent.threadId); assert.equal(threadModel, 'primary::model-a');
   const next = engine.continueRun(first.id, { nodeId: 'agent', message: 'Change models in this actual provider.', model: 'primary::model-b' }, { historyRuns: [original], threadModel }); await engine.executions.get(next.id); const result = engine.getRun(next.id);

@@ -35,6 +35,6 @@ test('contained ownership and sign-in pause do not gate configured native browse
  }
  const engine=new HarnessEngine({runtime:new Runtime(),dataDir:path.join(root,'data'),defaultCwd:cwd,connections,browser});await engine.init();
  t.after(async()=>{await engine.close();await rm(root,{recursive:true,force:true});});
- const task='Inspect https://example.com/ and use the configured Neo profile when needed.';const started=engine.startRun({workflow:createMissionWorkflow({task,model:'demo',cwd,id:'contained-routing'}),input:task});
+ const task='Inspect https://example.com/ and use the configured Neo profile when needed.';const started=engine.startRun({workflow:createMissionWorkflow({task,model:'demo',cwd,id:'contained-routing',planningMode:'off'}),input:task});
  await engine.executions.get(started.id);const result=engine.getRun(started.id);assert.equal(result.status,'completed',result.error);assert.equal(result.browserSignIn.browser,'relay');assert.equal(native,2);assert.equal(refreshes,0,'native work is dispatched only through explicit gateway calls');assert.equal(pages,1);
 });
