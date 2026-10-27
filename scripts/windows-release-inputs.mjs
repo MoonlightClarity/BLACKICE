@@ -8,9 +8,13 @@ topLevelFiles.add('RELEASE-NOTES-2.35.0.md');
 topLevelFiles.add('RELEASE-NOTES-2.35.1.md');
 topLevelFiles.add('RELEASE-NOTES-2.35.2.md');
 topLevelFiles.add('RELEASE-NOTES-2.35.3.md');
+topLevelFiles.add('RELEASE-NOTES-2.35.4.md');
 
 // Match the existing installer inputs without admitting arbitrary native helpers.
-const packagedNativeHelpers = new Set(['desktop/make-icon.ps1', 'desktop/native-window-host.cs', 'desktop/native-window-host.ps1']);
+const packagedNativeHelpers = new Set([
+  'desktop/make-icon.ps1', 'desktop/native-window-host.cs', 'desktop/native-window-host.ps1',
+  'desktop/installed-app-icons.cs', 'desktop/native-app-launcher.cs', 'desktop/native-foreground-guard.cs',
+]);
 
 // Public native CLI diagnostics contain only enumerated codes, never log text.
 const nativeRestartErrorCodes = new Set([

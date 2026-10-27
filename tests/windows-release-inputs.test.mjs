@@ -40,7 +40,7 @@ test('2.33.14 permits its current notes and preserved 2.33.13 notes without appr
 });
 
 test('Windows installer native helpers use exact approved paths without permitting arbitrary PowerShell or C# files', async () => {
-  for (const file of ['desktop/make-icon.ps1', 'desktop/native-window-host.cs', 'desktop/native-window-host.ps1']) {
+  for (const file of ['desktop/make-icon.ps1', 'desktop/native-window-host.cs', 'desktop/native-window-host.ps1', 'desktop/installed-app-icons.cs', 'desktop/native-app-launcher.cs', 'desktop/native-foreground-guard.cs']) {
     assert.equal(approvedWindowsPackageFile(file, '2.35.2'), true, file);
     assert.equal((await fs.stat(new URL('../' + file, import.meta.url))).isFile(), true, file);
   }
