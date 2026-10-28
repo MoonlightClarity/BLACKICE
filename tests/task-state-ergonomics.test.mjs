@@ -76,7 +76,10 @@ test('the live describe read and plan examples execute against the actual curren
   assert.equal(description.plan.inputSchema.properties.plan.properties.steps, undefined);
   assert.equal(description.plan.example.plan.steps, undefined);
   assert.ok(Array.isArray(description.plan.example.steps)); assert.equal(description.plan.example.plan.detail, 'balanced');
-  assert.match(description.plan.note, /latest read/); assert.match(description.plan.note, /Every action needs doneWhen/);
+  assert.match(description.plan.note, /latest read/);
+  for (const step of description.plan.example.steps) for (const field of ['result', 'note', 'doneWhen']) {
+    assert.ok(typeof step[field] === 'string' && step[field].trim(), `The advertised action supplies its prospective ${field}.`);
+  }
   assert.match(TASK_TOOL.inputSchema.properties.expectedRevision.description, /Required on every write/);
   assert.match(TASK_TOOL.inputSchema.properties.plan.description, /never plan.steps/);
   assert.match(TASK_TOOL.inputSchema.properties.steps.description, /top-level/);

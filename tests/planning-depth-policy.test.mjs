@@ -107,3 +107,86 @@ test('a cosmetic title correction does not invalidate an already performed work 
     evidence:'The item prices sum to 12.25; the saved value of 12.50 differs by 0.25.'};
   assert.equal(on(state([corrected]),previous).steps[0].title,corrected.title);
 });
+
+test('the observed result-as-finding payload gets precise recovery and can complete without changing its work definition',()=>{
+  // Representative of the actual native exact-edit completion failure: the
+  // work and checks were recorded, but result was rewritten as a past finding.
+  const planned={
+    id:'correct_notice',kind:'action',status:'active',parentId:null,
+    title:'Replace the typo in notice.txt and verify the byte-level scope',
+    note:'Inspect only the target directory and notice.txt; record the original bytes and directory entries, replace the one exact ASCII phrase, then compare the result against the original with only that phrase substituted.',
+    doneWhen:'The exact phrase occurs once before editing and zero times afterward; the resulting bytes equal the original bytes with only that phrase replaced; directory entries are unchanged.',
+    result:'notice.txt contains the requested correction, with every other byte unchanged and no directory entries added, removed, or renamed.'
+  };
+  const evidence="Exactly one ASCII occurrence of 'teh meeting' was found at byte offset 19. The same-length replacement matched the expected bytes on read-back; the file remained 73 bytes and the directory entries were unchanged.";
+  const previous=on(state([planned]));
+  const saved=structuredClone(previous);
+  const attempted=state([{...planned,status:'done',
+    result:'notice.txt was corrected in place; the directory contents remained unchanged.',evidence}]);
+  const rejected=structuredClone(attempted);
+  assert.throws(()=>on(attempted,previous),error=>{
+    assert.equal(error.code,'TASK_PLAN_PROSPECTIVE_REQUIRED');
+    assert.match(error.message,/prospective fields changed: result\./);
+    assert.match(error.message,/result is the expected output/);
+    assert.match(error.message,/actual findings and checks in evidence, not result/);
+    assert.match(error.message,/omit them from the step call/);
+    assert.match(error.message,/Do not repeat completed work solely to correct this payload/);
+    return true;
+  });
+  assert.deepEqual(previous,saved,'Rejected completion preserves the saved prospective definition.');
+  assert.deepEqual(attempted,rejected,'Validation does not rewrite the rejected payload.');
+  // The task-state handler merges this minimal completion update into the
+  // saved action; correcting it requires no change to the performed work.
+  const completion={status:'done',evidence};
+  const accepted=on(state([{...previous.steps[0],...completion}]),previous);
+  assert.equal(accepted.steps[0].status,'done');
+  assert.equal(accepted.steps[0].evidence,evidence);
+  for(const field of ['result','note','doneWhen'])
+    assert.equal(accepted.steps[0][field],saved.steps[0][field]);
+});
+
+test('procedure and criterion rewrites still fail and name the actual changed fields',()=>{
+  const previous=on(state([action()]));
+  const replacements={
+    note:'Read only the stored subtotal without independently summing the item prices.',
+    doneWhen:'The stored subtotal field contains a number.'
+  };
+  for(const field of ['note','doneWhen']){
+    const changed={...action(),status:'done',[field]:replacements[field],evidence:'The stored field contains 12.50.'};
+    assert.throws(()=>on(state([changed]),previous),error=>{
+      assert.equal(error.code,'TASK_PLAN_PROSPECTIVE_REQUIRED');
+      assert.ok(error.message.includes('prospective fields changed: '+field+'.'));
+      assert.match(error.message,/save the revised unfinished action before performing and completing that revised work/);
+      return true;
+    });
+  }
+  const both={...action(),...replacements,status:'done',evidence:'The stored field contains 12.50.'};
+  assert.throws(()=>on(state([both]),previous),error=>{
+    assert.equal(error.code,'TASK_PLAN_PROSPECTIVE_REQUIRED');
+    assert.match(error.message,/prospective fields changed: note, doneWhen\./);
+    return true;
+  });
+});
+
+test('explicitly repeated identical prospective fields are accepted on completion',()=>{
+  const previous=on(state([action()]));
+  const completed={...action(),status:'done',
+    result:previous.steps[0].result,note:previous.steps[0].note,doneWhen:previous.steps[0].doneWhen,
+    evidence:'Independent addition gives 12.25, which is 0.25 below the stored subtotal of 12.50.'};
+  const accepted=on(state([completed]),previous);
+  assert.equal(accepted.steps[0].status,'done');
+  assert.equal(accepted.steps[0].evidence,completed.evidence);
+});
+
+test('new or incomplete saved definitions still require prospective work instead of completion-payload recovery',()=>{
+  const completed={...action(),status:'done',evidence:'Independent addition gives 12.25; the stored value is 12.50.'};
+  for(const previous of [state([]),state([{...action(),note:undefined}])]){
+    assert.throws(()=>on(state([completed]),previous),error=>{
+      assert.equal(error.code,'TASK_PLAN_PROSPECTIVE_REQUIRED');
+      assert.match(error.message,/no prospective definition was saved for/);
+      assert.match(error.message,/while the action is unfinished, then perform that work/);
+      assert.doesNotMatch(error.message,/omit them from the step call/);
+      return true;
+    });
+  }
+});
