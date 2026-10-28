@@ -1,8 +1,8 @@
-# BLACKICE 2.35.2
+# BLACKICE 2.35.6
 
 BLACKICE is an open-source Windows AI-agent workspace for files, commands, websites, editable plans and longer-running work. It runs on your computer and keeps its saved workspace in your Windows profile.
 
-**[Download for Windows x64](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.35.2/Blackice-2.35.2-Setup.exe)** · [Release notes and checksums](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.35.2) · [What changed](RELEASE-NOTES.md)
+**[Download for Windows x64](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.35.6/Blackice-2.35.6-Setup.exe)** · [Release notes and checksums](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.35.6) · [What changed](RELEASE-NOTES.md)
 
 The Windows installer is unsigned. Compare its SHA-256 with the checksum attached to the same release.
 
