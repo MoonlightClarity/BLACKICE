@@ -44,6 +44,8 @@ The requested provider effort, the dispatched parameter, the effective value rep
 
 ## Behavioral evaluation
 
+The executable local acceptance fixtures and independent output checks are documented in [PLANNING-BEHAVIOR-EVAL.md](PLANNING-BEHAVIOR-EVAL.md). They prepare tasks and score results without starting a provider. Passing their verifier tests is separate from a model passing the tasks.
+
 These cases are evaluation specifications. Passing deterministic runtime tests does not mean these model behaviors have passed. Evaluate actual decisions, candidate outputs, actions, and use of evidence, not the presence of favored words. Use the same model and explicit effort for paired cases when comparing behavior.
 
 | Pair | Controlled change | Evaluate |
