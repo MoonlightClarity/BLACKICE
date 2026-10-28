@@ -1,0 +1,62 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "scope": "source-publication",
+  "version": "2.35.6",
+  "sourceHead": "c33aded16f1bb0fa68689791e678d9b68701f161",
+  "platform": "win32",
+  "node": "v24.13.0",
+  "npm": "11.6.2",
+  "checkedAt": "2026-10-28T10:15:40.966Z",
+  "appFingerprint": "dddf1fb1e61bcd89ac013da14d1c9f8a17ddd5893f49e64bc7e4dc40a5529e75",
+  "fingerprintUnchanged": true,
+  "sourceIndexSha256": "ac58490e98a88bc48713874265eda5a6ab8f1e3c753bf4425ade67d2ace19c85",
+  "sourceFilesVerified": 1065,
+  "sourceUnchanged": true,
+  "testFiles": 404,
+  "fullSuite": true,
+  "tests": {
+    "total": 5000,
+    "passed": 4992,
+    "failed": 0,
+    "requiredSkipped": 0,
+    "optionalSkipped": 8,
+    "cancelled": 0,
+    "exitCode": 0
+  },
+  "testLogSha256": "94e56124421ef0ac32fa2fe42573621c54488daab6b901bff5257503ac570632",
+  "optionalIntegrationSkips": [
+    "Relay-owned sign-in and local storage survive a full process restart without foregrounding",
+    "restored hidden browser tabs defer requests until used and never load closed or replaced pages",
+    "native cross-origin popups redirect, message their opener and follow or close without breaking Observe pins or task routing",
+    "actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases",
+    "live background accessibility actions change only a dedicated non-activating fixture and leave foreground and cursor untouched",
+    "hidden isolated Chromium composer validates real layout and one-click send wiring",
+    "installed Himalaya sends exact MIME to disposable loopback SMTP and strips Bcc headers",
+    "real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart"
+  ],
+  "dependencies": {
+    "electron": "44.7.2",
+    "electronBuilder": "26.15.3",
+    "packageLockSha256": "d01988bd06969fbb97877b6765852b7f13c61a9799fa406d9ac3431103ed4356"
+  },
+  "limitations": [
+    "Optional native/browser/mail integrations are reported separately; no required test was skipped.",
+    "This full source-suite receipt does not substitute for isolated exact-installer validation.",
+    "Bounded model evaluations do not establish universal reasoning quality."
+  ],
+  "artifactSha256": "95fdccd137b16783822072e7ad4267eb4ee117a366093c44be9ea10d1f4b682f",
+  "packageLogSha256": "eb34ea569ccfaf218e66351b4a5857032345298cbde818cee9c89216fb2c233e",
+  "dependencyPreparationLogSha256": "fcb3051e72c3df62a9144aa06b0c48b696023d8984cb7772ebcd5d616f1d389a",
+  "priorValidation": {
+    "sourceHead": "233f925fbcf62db9e8ceaab1f74fdc607ddb3383",
+    "fullSuitePassed": false,
+    "testLogSha256": "fc436324b585ea29f934bf16ac619edc5ba52c1b246ea0596b015020b92fe500",
+    "stalledSyntheticFixturesStopped": [
+      "tests/engine-task-plan.test.mjs",
+      "tests/task-integration.test.mjs"
+    ],
+    "correctionCommit": "c33aded16f1bb0fa68689791e678d9b68701f161",
+    "correctionScope": "Nine existing test fixtures were aligned with the already implemented prospective Planning On contract. Production runtime sources were not changed by this test correction."
+  }
+}
