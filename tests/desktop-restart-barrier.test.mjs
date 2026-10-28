@@ -51,11 +51,63 @@ test('force readiness is read-only and force preparation gates before stopping a
   f.barrier.assertPrepared(); f.barrier.end(); assert.deepEqual(f.gates, [true, false]);
 });
 
-test('force preserves private-session, browser, storage and unknown-job refusals before stopping work', async () => {
+test('force allows a busy browser action to be cancelled before checking settlement and preparing handoff', async () => {
+  const entered = held(), settle = held(); let stops = 0;
+  const f = fixture({ stopWork: async ({ signal }) => {
+    stops++; assert.equal(f.state.maintenance, true); assert.equal(signal.aborted, false);
+    assert.equal(f.state.browser.busy, true); entered.resolve(); await settle.promise;
+    // Model the owned browser action acknowledging cancellation and releasing
+    // its page load. Until this happens the restart must not hand off.
+    f.state.browser.busy = false; f.state.browser.tabs[0].loading = false;
+  } });
+  f.state.browser.busy = true; f.state.browser.tabs = [{ tabId: 'active', loading: true }];
+  await assert.rejects(f.barrier.begin(), { code: 'DESKTOP_RESTART_BROWSER_BUSY' });
+  await f.barrier.assertReady({ force: true });
+  const pending = f.barrier.begin({ force: true }); await entered.promise;
+  assert.deepEqual(f.gates, [true]); assert.equal(f.drains, 0);
+  assert.throws(() => f.barrier.assertPrepared(), { code: 'DESKTOP_RESTART_NOT_PREPARED' });
+  settle.resolve(); await pending;
+  assert.equal(stops, 1); assert.equal(f.drains, 1); f.barrier.assertPrepared();
+  f.barrier.end(); assert.deepEqual(f.gates, [true, false]);
+});
+
+test('force still refuses browser activity that has not settled after cancellation', async () => {
   for (const change of [
-    state => { state.sessions = [{ state: 'needs_attention' }]; },
+    state => { state.browser.busy = true; },
     state => { state.browser.tabs = [{ pendingInteraction: { kind: 'file_chooser' } }]; },
+    state => { state.browser.tabs = [{ loading: true }]; },
     state => { state.browser.downloads = [{ status: 'downloading' }]; },
+    state => { state.browser.recovery = { required: true }; },
+  ]) {
+    let stops = 0; const f = fixture({ stopWork: () => { stops++; } }); change(f.state);
+    const browser = structuredClone(f.state.browser);
+    await assert.rejects(f.barrier.begin({ force: true }), { code: 'DESKTOP_RESTART_BROWSER_BUSY' });
+    assert.equal(stops, 1); assert.deepEqual(f.state.browser, browser);
+    assert.deepEqual(f.gates, [true, false]); assert.equal(f.drains, 0);
+    assert.throws(() => f.barrier.assertPrepared(), { code: 'DESKTOP_RESTART_NOT_PREPARED' });
+  }
+});
+
+test('force lets the owner interrupt a private session before preparing handoff', async () => {
+  let stops = 0;
+  const f = fixture({ stopWork: () => { stops++; assert.equal(f.state.maintenance, true); f.state.sessions[0] = { state: 'interrupted', restartCleanup: { outcome: 'requested' } }; } });
+  f.state.sessions = [{ state: 'running' }];
+  await assert.rejects(f.barrier.begin(), { code: 'DESKTOP_RESTART_BUSY', blocker: 'application_sessions' });
+  await f.barrier.begin({ force: true });
+  assert.equal(stops, 1); assert.equal(f.state.sessions[0].restartCleanup.outcome, 'requested');
+  f.barrier.assertPrepared(); f.barrier.end();
+});
+
+test('force refuses a private session whose owned cleanup remains uncertain', async () => {
+  let stops = 0;
+  const f = fixture({ stopWork: () => { stops++; f.state.sessions[0] = { state: 'closed', restartCleanup: { outcome: 'uncertain' } }; } });
+  f.state.sessions = [{ state: 'running' }];
+  await assert.rejects(f.barrier.begin({ force: true }), { code: 'DESKTOP_RESTART_BUSY', blocker: 'application_sessions' });
+  assert.equal(stops, 1); assert.deepEqual(f.gates, [true, false]); assert.equal(f.drains, 0);
+});
+
+test('force preserves storage and unknown-job refusals before stopping work', async () => {
+  for (const change of [
     state => { state.browser.persistence.healthy = false; },
     state => { state.jobs = [{ id: 'unknown', status: 'unknown' }]; },
   ]) {
@@ -63,6 +115,13 @@ test('force preserves private-session, browser, storage and unknown-job refusals
     await assert.rejects(f.barrier.begin({ force: true }));
     assert.equal(stops, 0); assert.deepEqual(f.gates, []);
   }
+});
+
+test('force refuses unreadable private-session history before cancelling other work', async () => {
+  let stops = 0;
+  const f = fixture({ getApplicationSessions: () => { throw Object.assign(new Error('Session history could not be checked.'), { code: 'DESKTOP_RESTART_STORAGE' }); }, stopWork: () => { stops++; } });
+  await assert.rejects(f.barrier.begin({ force: true }), { code: 'DESKTOP_RESTART_STORAGE' });
+  assert.equal(stops, 0); assert.deepEqual(f.gates, []);
 });
 
 test('force requires actual settlement and releases its gate when an owner remains active', async () => {
@@ -79,6 +138,34 @@ test('force stop timeout aborts its owner wait, leaves the app open and cannot r
   assert.equal(stopSignal.aborted, true); assert.equal(f.state.maintenance, false);
   await f.barrier.begin({ jobId: 'later' }); late.resolve(); await Promise.resolve(); await Promise.resolve();
   assert.equal(f.state.maintenance, true); f.barrier.assertPrepared(); f.barrier.end();
+});
+
+test('a timed-out force preparation reports already persisted private-session interruptions', async () => {
+  const late = held();
+  const f = fixture({ timeoutMs: 15, stopWork: async ({ onPrivateSessionStopped }) => {
+    onPrivateSessionStopped({ sessionId: 'app_interrupted', outcome: 'requested' });
+    await late.promise;
+  } });
+  await assert.rejects(f.barrier.begin({ force: true }), error => {
+    assert.equal(error.code, 'DESKTOP_RESTART_DRAIN_TIMEOUT');
+    assert.deepEqual(error.forceEffects, { privateSessions: [{ sessionId: 'app_interrupted', outcome: 'requested' }] });
+    return true;
+  });
+  assert.equal(f.state.maintenance, false); late.resolve();
+});
+
+test('force summaries retain partial browser outcomes when preparation times out', async () => {
+  const late = held();
+  const f = fixture({ timeoutMs: 15, stopWork: async ({ onBrowserEffects }) => {
+    onBrowserEffects({ browsers: { relay: { loads: [{ tabId: 'page', outcome: 'stopped' }], interactions: [{ tabId: 'other', kind: 'javascript_dialog', outcome: 'uncertain' }], downloads: [{ id: 'download', tabId: 'page', outcome: 'cancelled' }] } } });
+    await late.promise;
+  } });
+  await assert.rejects(f.barrier.begin({ force: true }), error => {
+    assert.equal(error.code, 'DESKTOP_RESTART_DRAIN_TIMEOUT');
+    assert.deepEqual(error.forceEffects, { browser: { loads: { stopped: 1 }, interactions: { uncertain: 1 }, downloads: { cancelled: 1 } } });
+    return true;
+  });
+  assert.equal(f.state.maintenance, false); late.resolve();
 });
 
 test('ending a force preparation aborts late stop continuations before releasing its gate', async () => {

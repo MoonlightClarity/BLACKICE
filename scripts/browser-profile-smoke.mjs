@@ -172,7 +172,7 @@ async function startFixture() {
     if (!['/seed', '/verify'].includes(url.pathname)) { res.statusCode = 404; res.end('Fixture route not found'); return; }
     if (url.pathname === '/seed') res.setHeader('Set-Cookie', `blackice_smoke_cookie=${nonce}; HttpOnly; Max-Age=604800; Path=/; SameSite=Lax`);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.end(`<!doctype html><meta charset="utf-8"><title>BLACKICE disposable profile fixture</title><h1>Disposable local profile fixture</h1><script>(${fixtureBootstrap.toString()})(${JSON.stringify(nonce)},${JSON.stringify(marker)})</script>`);
+    res.end(`<!doctype html><meta charset="utf-8"><title>BLACKICE disposable profile fixture</title><h1>Disposable local profile fixture</h1><button id="vision-fixture" style="position:fixed;left:100px;top:100px;width:120px;height:80px">Vision fixture</button><script>window.visionFixture={count:0,trusted:false};document.querySelector('#vision-fixture').addEventListener('click',e=>{window.visionFixture.count++;window.visionFixture.trusted=e.isTrusted});(${fixtureBootstrap.toString()})(${JSON.stringify(nonce)},${JSON.stringify(marker)})</script>`);
   });
   server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); origin = `http://127.0.0.1:${server.address().port}`;
@@ -294,7 +294,22 @@ async function importedState(connection, MCPClient) {
   }
   const result = await client.call('evaluate_script', argumentsForEvaluation);
   if (result.isError) throw Error(`Reading disposable imported state failed: ${resultText(result)}`);
-  return parseEvidence(result);
+  const restored = parseEvidence(result);
+  for (const name of ['take_screenshot', 'click_at']) assert.ok(client.tools.some(tool => tool.name === name), `Vision tool ${name} is missing`);
+  const pageArgs = argumentsForEvaluation.pageId === undefined ? {} : { pageId: argumentsForEvaluation.pageId };
+  const shot = await client.call('take_screenshot', pageArgs);
+  assert.ok(!shot.isError && shot.content?.some(item => item.type === 'image'), 'The same imported page must return a screenshot');
+  const geometry = await client.call('evaluate_script', { ...pageArgs, function: `() => { const r=document.querySelector('#vision-fixture').getBoundingClientRect(); return {marker:${JSON.stringify(marker)},x:r.left+r.width/2,y:r.top+r.height/2,width:innerWidth,height:innerHeight}; }` });
+  if (geometry.isError) throw Error(`Reading fixture geometry failed: ${resultText(geometry)}`);
+  const point = parseEvidence(geometry);
+  assert.ok(point.x > 0 && point.y > 0 && point.x < point.width && point.y < point.height, 'Fixture point must be in the visible viewport');
+  const clicked = await client.call('click_at', { ...pageArgs, x: point.x, y: point.y });
+  if (clicked.isError) throw Error(`Native coordinate click failed: ${resultText(clicked)}`);
+  const observed = await client.call('evaluate_script', { ...pageArgs, function: `() => ({marker:${JSON.stringify(marker)},...window.visionFixture})` });
+  if (observed.isError) throw Error(`Reading fixture click state failed: ${resultText(observed)}`);
+  const clickState = parseEvidence(observed);
+  verify('same imported page receives one trusted coordinate click', () => { assert.equal(clickState.count, 1); assert.equal(clickState.trusted, true); });
+  return restored;
 }
 
 function cleanup() {

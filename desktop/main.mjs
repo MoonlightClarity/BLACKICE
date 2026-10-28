@@ -21,6 +21,7 @@ import { createClipboardHandler, isTrustedDesktopSender } from './clipboard.mjs'
 import { desktopRemoteAccessArgs, runRemoteAccessCLI } from '../lib/remote-access-cli.mjs';
 import { desktopBrowserArgs, runBrowserCLI } from '../lib/browser-cli.mjs';
 import { desktopRestartArgs, runDesktopRestartCLI } from '../lib/desktop-restart-cli.mjs';
+import { forceWindowsRestart, windowsProcessIdentity } from '../lib/desktop-hard-restart.mjs';
 import { DESKTOP_RESTART_ORIGIN_ENV } from '../lib/desktop-restart-origin.mjs';
 import { credentialTemporaryProtection } from '../lib/credential-temp-protection.mjs';
 import { DesktopStartup, createStartupIndicator } from './startup.mjs';
@@ -39,6 +40,8 @@ if (accessArgs || browserArgs || restartArgs) {
   // window, or log the code/credential in desktop diagnostics.
   const exitCode = await (browserArgs ? runBrowserCLI : accessArgs ? runRemoteAccessCLI : runDesktopRestartCLI)(browserArgs || accessArgs || restartArgs, {
     defaultProfile: path.join(app.getPath('appData'), 'Relay'), expectedExecutable: process.execPath,
+    appDirectory: app.isPackaged ? undefined : path.dirname(path.dirname(fileURLToPath(import.meta.url))),
+    forceFallback: forceWindowsRestart,
     legacyHandoff: runtime => {
       // Explicit compatibility bootstrap only. The already-verified old primary
       // owns the actual restart; this secondary never launches a replacement.
@@ -71,6 +74,7 @@ let rendererRecovery = null;
 let windowState = {}, windowSaveTimer, windowWriteChain = Promise.resolve();
 let maintenancePromise=null,maintenanceReceipt=null,maintenanceScheduled=false;
 let runtimeRecord = null, runtimeWriteChain = Promise.resolve();
+let hardRestartIdentity = null;
 let desktopRestart = null, restartReady = false, restartClosing = false;
 const launch = parseDesktopLaunchArgs();
 const processStartedAt = new Date(Date.now() - process.uptime() * 1000).toISOString();
@@ -104,7 +108,12 @@ app.on('render-process-gone', (_event, webContents, details) =>
   recordProcessGone(electronExitReceipt('renderer', details, webContents?.id)));
 app.on('child-process-gone', (_event, details) =>
   recordProcessGone(electronExitReceipt(details?.type, details)));
-const startup = new DesktopStartup({ headless: launch.headless || launch.background, createIndicator: () => createStartupIndicator({ BrowserWindow, activate: !launch.showInactive, icon: path.join(DESKTOP_DIR, 'icon.ico'), onQuit: () => app.quit() }) });
+// Show the isolated, non-persistent indicator without taking focus before the
+// restart receipt is read; a normal launch may activate it after that check.
+const startup = new DesktopStartup({ headless: launch.headless || launch.background, createIndicator: () => createStartupIndicator({ BrowserWindow, activate: false, icon: path.join(DESKTOP_DIR, 'icon.ico'), onQuit: () => app.quit() }) });
+// Startup phase callbacks update the local indicator only; diagnostic storage
+// and initialization remain authoritative even if the indicator is unavailable.
+diagnostics.onStartupPhase = (phase, outcome) => startup.progress(phase, outcome);
 const desktopLifecycle = new DesktopLifecycle({ headless: launch.headless, background: launch.background, showInactive: launch.showInactive, getWindow: () => mainWindow, createWindow, saveWindow: saveWindowState,
   beforeBackground:async()=>{if(nativeOwnershipPossible(nativeApps))await nativeApps.visibleState(false);},quit: () => app.quit(), restart: async () => {
   if (!desktopRestart) throw new Error('BLACKICE is still starting. Try restart after it is ready.');
@@ -117,7 +126,8 @@ const retainNativeParent=createNativeParentRetainer({host:nativeApps,background:
 
 function saveRuntimeRecord() {
   if (!runtimeRecord) return runtimeWriteChain;
-  const value = JSON.stringify({ ...runtimeRecord, lifecycle: desktopLifecycle.status(), restart: desktopRestart?.status(), at: new Date().toISOString() });
+  const mode = desktopLifecycle.status().mode;
+  const value = JSON.stringify({ ...runtimeRecord, lifecycle: desktopLifecycle.status(), restart: desktopRestart?.status(), ...(hardRestartIdentity ? { hardRestart: { identity: hardRestartIdentity, args: buildDesktopRelaunchArgs({ profileDir: launch.profileDir, mode, showInactive: true }) } } : {}), at: new Date().toISOString() });
   const file = path.join(app.getPath('userData'), 'desktop-runtime.json');
   runtimeWriteChain = runtimeWriteChain.catch(() => {}).then(() => writeDesktopRuntimeRecord(file, value)).catch(error => diagnostics.recordError('desktop', 'storage_failed', error));
   return runtimeWriteChain;
@@ -280,7 +290,7 @@ async function startLocalHarness(dataDir, defaultCwd) {
   let port = 0;
   try { const saved = JSON.parse(await fs.readFile(portFile, 'utf8')); if (Number.isInteger(saved.port) && saved.port >= 1024 && saved.port <= 65535) port = saved.port; } catch {}
   const createInstance = async selectedPort => {
-    const independent = await startupPhase(diagnostics, 'browser', () => new ElectronBrowserDriver({ dataDir, downloadDir: path.join(app.getPath('userData'), 'downloads'), liveSurface: true,
+    const independent = await startupPhase(diagnostics, 'browser', () => new ElectronBrowserDriver({ dataDir, downloadDir: path.join(app.getPath('userData'), 'downloads'), liveSurface: true, openExternal: url => shell.openExternal(url),
       createSurfaceWindow: options => createLiveBrowserWindow({ WebContentsView, BaseWindow, options,
         onShortcut: (action, host) => {
           if (host !== mainWindow || host.isDestroyed()) return;
@@ -453,6 +463,8 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
   process.on('SIGTERM', () => app.quit());
   process.on('SIGINT', () => app.quit());
   app.whenReady().then(async () => {
+    await startup.showIndicator();
+    startup.progress('profile', 'started');
     await startup.step(() => awaitProfileMaintenance({profileDir:app.getPath('userData')}));
     await startup.step(() => recoverProfileRestore({profileDir:app.getPath('userData')}));
     maintenanceReceipt=await startup.step(() => readMaintenanceReceipt(app.getPath('userData')));
@@ -482,14 +494,20 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
       prepare: async context => {
         if (!restartReady || shutdownPromise || maintenancePromise) throw Object.assign(new Error('BLACKICE is no longer ready to restart.'), { code: 'DESKTOP_RESTART_CLOSING' });
         assertNativeParentUnowned(nativeApps);
-        await harness.beginRestart(context);
-        if (context.jobId) {
-          const job = await harness.directExecution.validateRestartOrigin(context.origin, { requireFinished: true });
-          if (job.jobId !== context.jobId || job.ownerId !== context.ownerId) throw Object.assign(new Error('The originating action does not match the restart receipt.'), { code: 'DESKTOP_RESTART_ORIGIN_INVALID' });
+        const preparation = await harness.beginRestart(context);
+        try {
+          if (context.jobId) {
+            const job = await harness.directExecution.validateRestartOrigin(context.origin, { requireFinished: true });
+            if (job.jobId !== context.jobId || job.ownerId !== context.ownerId) throw Object.assign(new Error('The originating action does not match the restart receipt.'), { code: 'DESKTOP_RESTART_ORIGIN_INVALID' });
+          }
+          await saveWindowState();
+          await runtimeWriteChain;
+          await diagnostics.flush();
+          return preparation;
+        } catch (error) {
+          if (preparation?.forceEffects && error && typeof error === 'object') error.forceEffects = preparation.forceEffects;
+          throw error;
         }
-        await saveWindowState();
-        await runtimeWriteChain;
-        await diagnostics.flush();
       },
       release: () => harness?.endRestart(),
       relaunch: options => { assertNativeParentUnowned(nativeApps); harness.assertRestartPrepared(); app.relaunch(options); restartClosing = true; },
@@ -497,9 +515,10 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
     });
     await startup.step(() => desktopRestart.init());
     // A native restart can originate in an older process without the new flag.
-    // Recognize its existing receipt before either desktop window is painted.
+    // Recognize its existing receipt before activating either desktop window.
     if (desktopRestart.isRestartStartup()) { launch.showInactive = true; desktopLifecycle.activateWindow = false; }
-    await startup.showIndicator();
+    else if (!launch.showInactive) startup.activateIndicator();
+    startup.progress('profile', 'ready');
     const local = await startup.step(() => startupPhase(diagnostics, 'local-harness', () => startLocalHarness(dataDir, defaultCwd)), value => value.instance.close());
     harness = local.instance;
     await startup.step(() => harness.desktop.setEnabled(true));
@@ -550,6 +569,9 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
       profileMode: launch.profileDir ? 'custom' : 'default',
       capabilities: { electron: true, nativeRestart: true, encryptedSecretsAvailable: safeStorage.isEncryptionAvailable(), containedBrowser: true },
     };
+    // Exact Windows kernel creation time prevents a stale PID from targeting a
+    // different process. Startup remains available if identity capture fails.
+    try { hardRestartIdentity = await windowsProcessIdentity(); } catch { hardRestartIdentity = null; }
     await startup.step(() => saveRuntimeRecord());
     await startup.step(() => startupPhase(diagnostics, 'window', async () => { await loadWindowState(); await desktopLifecycle.start(); }));
     await startup.step(() => diagnostics.record({ component: 'desktop', event: 'ready' }));
@@ -558,6 +580,7 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
     await startup.step(() => saveRuntimeRecord());
   }).catch(async error => {
     if (startup.stopped || shutdownPromise || didClose) return;
+    startup.progress('local-harness', 'failed');
     await diagnostics.recordError('desktop', 'start_failed', error);
     if (!launch.headless && !launch.background) dialog.showErrorBox('BLACKICE could not start', error.message);
     else console.error('BLACKICE could not start:', error.message);

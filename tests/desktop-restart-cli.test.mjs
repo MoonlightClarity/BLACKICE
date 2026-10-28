@@ -78,10 +78,33 @@ test('native force is explicit in the authenticated request and must match the d
   assert.equal(invalid.code, 1); assert.equal(invalid.error.code, 'DESKTOP_RESTART_ACK_UNCERTAIN');
 });
 
+test('force observes a real asynchronously failed or stuck native handoff before escalating', async t => {
+  for (const stuck of [false, true]) await t.test(stuck ? 'stuck after acknowledgement' : 'failure after acknowledgement', async t => {
+    const f = await localSession(t), pending = held(); let fallback = 0;
+    const controller = new DesktopRestartController({
+      profileDir: f.profile, receiptTimeoutMs: 5000,
+      getIdentity: () => ({ ...f.runtime, profileDir: f.profile, mode: 'background' }),
+      getLaunchOptions: () => ({ execPath: process.execPath, args: [], profileDir: f.profile, mode: 'background' }),
+      prepare: async () => { if (stuck) await pending.promise; throw new Error('fixture prepare failure'); },
+      relaunch: () => assert.fail('failed preparation must not relaunch'), quit: () => assert.fail('failed preparation must not quit'),
+    });
+    t.after(async () => { controller.cancelPending(); pending.resolve(); await controller.waitForHandoff(); });
+    f.state.restart = async (route, input) => {
+      const receipt = route.endsWith('/status') ? controller.receipt({ requestId: input.requestId, ownerId: 'local' }) : await controller.request({ requestId: input.requestId, force: true });
+      return json({ protocol: 1, acknowledged: true, receipt });
+    };
+    const original = { pid: f.runtime.pid, created: '12345678901234567', image: 'C:\\fixture.exe' };
+    const result = await invoke(['--restart', '--force', '--request-id=async-force'], { ...f.context, forceWaitMs: stuck ? 150 : 1500, forcePollMs: 10, getForceIdentity: async () => original, forceFallback: async (_options, context) => { fallback++; assert.deepEqual(context.expectedIdentity, original); return { protocol: 'emergency-force', outcome: 'fixture' }; } });
+    assert.equal(result.code, 0, result.stderr); assert.equal(result.result.protocol, 'emergency-force'); assert.equal(fallback, 1);
+    assert.ok(f.calls.some(item => item.target.endsWith('/api/desktop/restart/status')));
+  });
+});
+
 test('help makes no connection and never creates or forwards a restart request', async () => {
   let connections = 0, legacyCalls = 0;
   const result = await invoke(['--restart', '--help'], { connect: async () => { connections++; throw new Error('Help must be offline.'); }, legacyHandoff: () => { legacyCalls++; } });
   assert.equal(result.code, 0); assert.match(result.stdout, /durable scheduling, not completed restart/);
+  assert.match(result.stdout, /Emergency claims are not\s+available through --restart-status/);
   assert.match(result.stdout, /same ID/); assert.equal(result.stderr, ''); assert.equal(connections, 0); assert.equal(legacyCalls, 0);
 });
 

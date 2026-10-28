@@ -190,6 +190,22 @@ test('force stops and settles a real owned command before the graceful native ha
   assert.deepEqual(f.native, [{ action: 'relaunch' }, { action: 'quit' }]);
 });
 
+test('the direct force tool stops an active command only after its own receipt is durable', { timeout: 25000 }, async t => {
+  const f = await fixture(t), script = path.join(f.directory, 'direct-force-owned-command.mjs'), marker = path.join(f.directory, 'direct-force-command-started');
+  await writeFile(script, `import { writeFile } from 'node:fs/promises'; await writeFile(${JSON.stringify(marker)}, 'started'); setInterval(() => {}, 1000);`);
+  const running = await f.app.directExecution.call('blackice_run_command', { requestId: 'direct-force-active-command', command: nodeCommand(script, []), timeoutMs: 20000 }, f.client);
+  const deadline = Date.now() + 10000;
+  while (true) {
+    try { await readFile(marker); break; } catch (error) { if (error.code !== 'ENOENT' || Date.now() >= deadline) throw error; await delay(5); }
+  }
+  const restart = await f.app.directExecution.call('blackice_restart', { requestId: 'direct-force-native', force: true }, f.client);
+  assert.equal((await f.waitJob(restart.jobId)).status, 'succeeded');
+  const receipt = await f.controller.waitForHandoff();
+  assert.equal(receipt.status, 'restarting'); assert.equal(receipt.force, true); assert.equal(receipt.jobId, restart.jobId);
+  assert.equal((await f.app.directExecution.jobs.get(running.jobId)).status, 'cancelled');
+  assert.deepEqual(f.native, [{ action: 'relaunch', savedJob: restart.jobId, savedStatus: 'succeeded' }, { action: 'quit' }]);
+});
+
 for (const action of ['cancel-action', 'stop-all', 'revoke']) test(`local ${action} reaches a held pre-arm restart after durable origin success`, { timeout: 25000 }, async t => {
   const f = await fixture(t, { holdPrepare: true }), admitted = await f.run('pre-arm-' + action);
   await f.prepared.promise;

@@ -51,6 +51,9 @@ const assertContained = window => {
   assert.equal(window.options.show, false); assert.equal(window.options.focusable, false); assert.equal(window.options.skipTaskbar, true); assert.equal(window.options.fullscreenable, false);
   assert.equal(window.options.webPreferences.offscreen, true); assert.equal(window.options.webPreferences.paintWhenInitiallyHidden, true); assert.equal(window.options.webPreferences.backgroundThrottling, false); assert.equal(window.options.webPreferences.disableDialogs, false);
   assert.equal(window.options.webPreferences.nodeIntegration, false); assert.equal(window.options.webPreferences.contextIsolation, true); assert.equal(window.options.webPreferences.sandbox, false); assert.equal(window.visible, false);
+  assert.equal(window.options.webPreferences.spellcheck, true);
+  assert.equal(window.options.webPreferences.webSecurity, true);
+  assert.equal(window.options.webPreferences.webviewTag, false);
   assert.equal(window.options.webPreferences.nodeIntegrationInSubFrames, undefined); assert.equal(window.options.webPreferences.preload, undefined);
 };
 
@@ -69,7 +72,7 @@ test('local files and Chromium internal pages keep their actual URL and survive 
   tab.window.url = 'chrome://version/'; tab.window.webContents.emit('did-frame-navigate', {}, 'chrome://version/', 200, 'OK', true);
   assert.equal(prevented, 0); assert.equal(driver.status().tabs.find(item => item.tabId === tab.id).url, 'chrome://version/');
   tab.window.webContents.emit('will-navigate', { preventDefault: () => prevented++ }, fileURL); assert.equal(prevented, 0);
-  tab.window.webContents.emit('will-navigate', { preventDefault: () => prevented++ }, 'javascript:alert(1)'); assert.equal(prevented, 1);
+  tab.window.webContents.emit('will-navigate', { preventDefault: () => prevented++ }, 'javascript:alert(1)'); assert.equal(prevented, 0);
   const fragment = await browser.perform({ action: 'open', browser: 'relay', url: 'about:blank#notes' }, { source: 'user' });
   assert.equal(fragment.title, 'New tab'); await driver.close();
   const count = windows.length, restored = new driver.constructor({ dataDir: directory, downloadDir: path.join(directory, 'downloads') });
@@ -79,6 +82,14 @@ test('local files and Chromium internal pages keep their actual URL and survive 
     assert.equal(restored.status().activeTab, fragment.tabId); assert.ok(restored.status().tabs.every(item => item.suspended));
     assert.equal((await restored.perform({ action: 'read', tabId: file.tabId }, { source: 'user' })).url, fileURL);
   } finally { await restored.close(); }
+});
+
+test('contained pages do not attach webviews that could bypass the reserved chat boundary', async t => {
+  const { driver } = await fixture(t); await driver.init();
+  const tab = driver.newTab('https://example.test/'); await tab.loading;
+  let prevented = false;
+  tab.window.webContents.emit('will-attach-webview', { preventDefault: () => { prevented = true; } }, {}, {});
+  assert.equal(prevented, true);
 });
 
 test('human tabs and popups can pass eight personal pages while total live and saved budgets remain intact', async t => {
@@ -257,6 +268,84 @@ test('a detached renderer ref preserves its message across a boundary that loses
   assert.equal(tab.window.captureArgs, undefined, 'A detached target must fail before pointer preparation.');
 });
 
+async function observedSelectFixture(t, names) {
+  const { driver } = await fixture(t), tab = driver.newTab('https://example.test/form'); await tab.loading;
+  const controls = names.map(name => ({
+    tagName: 'SELECT', type: 'select-one', value: '', options: [{ value: 'yes', label: 'Yes' }],
+    children: [], childNodes: [], labels: [], textContent: '', isConnected: true,
+    getAttribute(key) { return key === 'aria-label' ? name : null; },
+    getBoundingClientRect() { return { x: 0, y: 0, width: 100, height: 20 }; },
+    dispatchEvent() {},
+  }));
+  const document = { title: 'Form', readyState: 'complete', documentElement: { children: controls }, getElementById: () => null };
+  const context = vm.createContext({ document, location: { href: tab.url }, getComputedStyle: () => ({ display: 'block', visibility: 'visible' }), Event: class Event { constructor(type, options) { this.type = type; this.options = options; } } });
+  const frame = tab.window.webContents.mainFrame;
+  frame.executeJavaScript = async code => JSON.parse(JSON.stringify(await vm.runInContext(code, context)));
+  return { driver, tab, frame, context, document, controls };
+}
+
+test('refs from separate filtered reads stay usable on their original connected controls', async t => {
+  const f = await observedSelectFixture(t, ['Authorization', 'Sponsorship', 'Privacy']);
+  const read = async query => (await f.driver.perform({ action: 'read', tabId: f.tab.id, query }, { source: 'user' })).frames[0].elements[0].ref;
+  const refs = [await read('Authorization'), await read('Sponsorship'), await read('Privacy')];
+  assert.equal(new Set(refs).size, 3);
+  const guard = { tabId: f.tab.id, expectedUrl: f.tab.url, expectedDocumentId: `${f.tab.id}:${f.tab.revision}` };
+  for (const ref of refs) await f.driver.perform({ action: 'select', ...guard, ref, value: 'yes' }, { source: 'user' });
+  assert.deepEqual(f.controls.map(control => control.value), ['yes', 'yes', 'yes']);
+
+  // A retained ref is never rebound to a replacement with the same label.
+  f.controls[0].isConnected = false;
+  const replacement = { ...f.controls[0], value: '', isConnected: true };
+  f.document.documentElement.children[0] = replacement;
+  await assert.rejects(f.driver.perform({ action: 'select', ...guard, ref: refs[0], value: 'yes' }, { source: 'user' }), { code: 'BROWSER_REF_STALE' });
+  assert.equal(replacement.value, '');
+
+  // An observed frame that has been replaced is also retired before input.
+  const oldFrame = f.frame;
+  f.tab.window.webContents.mainFrame = { processId: 2, routingId: 2, framesInSubtree: [], executeJavaScript: async () => assert.fail('A stale frame must not dispatch input.') };
+  await assert.rejects(f.driver.element(f.tab, { ref: refs[1], value: 'yes' }, 'select'), { code: 'BROWSER_REF_STALE' });
+  assert.notEqual(f.tab.window.webContents.mainFrame, oldFrame);
+});
+
+test('same-document accumulated refs have a bounded recent lifetime', async t => {
+  const names = Array.from({ length: 810 }, (_, index) => `group${Math.floor(index / 270)} item${index}`);
+  const f = await observedSelectFixture(t, names);
+  const groups = [];
+  for (let index = 0; index < 3; index++) groups.push((await f.driver.perform({ action: 'read', tabId: f.tab.id, query: `group${index}` }, { source: 'user' })).frames[0].elements);
+  assert.equal(groups.flat().length, 810);
+  assert.equal(f.tab.refs.size, 800);
+  assert.equal(f.context[f.driver.key].elements.size, 800);
+  await assert.rejects(f.driver.element(f.tab, { ref: groups[0][0].ref, value: 'yes' }, 'select'), { code: 'BROWSER_REF_STALE' });
+  await f.driver.element(f.tab, { ref: groups[2].at(-1).ref, value: 'yes' }, 'select');
+  assert.equal(f.controls.at(-1).value, 'yes');
+});
+
+test('retained refs reject a connected control that is hidden or repurposed', async t => {
+  const f = await observedSelectFixture(t, ['Original']);
+  const read = async query => (await f.driver.perform({ action: 'read', tabId: f.tab.id, query }, { source: 'user' })).frames[0].elements[0].ref;
+  const oldRef = await read('Original'), control = f.controls[0];
+  control.getAttribute = key => key === 'aria-label' ? 'Different action' : null;
+  await assert.rejects(f.driver.element(f.tab, { ref: oldRef, value: 'yes' }, 'select'), { code: 'BROWSER_REF_STALE' });
+  assert.equal(control.value, '');
+  const currentRef = await read('Different action');
+  assert.notEqual(currentRef, oldRef, 'A repurposed node must receive a new observed identity.');
+  control.getBoundingClientRect = () => ({ x: 0, y: 0, width: 0, height: 0 });
+  await assert.rejects(f.driver.element(f.tab, { ref: currentRef, value: 'yes' }, 'select'), { code: 'BROWSER_REF_STALE' });
+  assert.equal(control.value, '');
+});
+
+test('navigation retires accumulated refs before any input', async t => {
+  const f = await observedSelectFixture(t, ['Authorization', 'Privacy']);
+  const first = await f.driver.perform({ action: 'read', tabId: f.tab.id, query: 'Authorization' }, { source: 'user' });
+  const second = await f.driver.perform({ action: 'read', tabId: f.tab.id, query: 'Privacy' }, { source: 'user' });
+  const refs = [first.frames[0].elements[0].ref, second.frames[0].elements[0].ref];
+  assert.equal(f.tab.refs.size, 2);
+  f.tab.window.webContents.emit('did-navigate-in-page');
+  assert.equal(f.tab.refs.size, 0);
+  for (const ref of refs) await assert.rejects(f.driver.element(f.tab, { ref, value: 'yes' }, 'select'), { code: 'BROWSER_REF_STALE' });
+  assert.deepEqual(f.controls.map(control => control.value), ['', '']);
+});
+
 test('unexpected renderer failures retain their message without trusting a page-supplied no-effect claim', async t => {
   const { driver } = await fixture(t), tab = driver.newTab('https://example.test/composer'); await tab.loading;
   let scrolls = 0;
@@ -299,6 +388,53 @@ test('the contained profile grants device access and leaves no protected USB cla
   }
   const protectedClasses = Object.freeze(['audio', 'audio-video', 'hid', 'mass-storage', 'smart-card', 'video', 'wireless']);
   assert.deepEqual(session.usbProtectedClasses({ protectedClasses }), []);
+});
+
+test('site popups remain usable and saved even when ordinary tab limits are reached', async t => {
+  const { driver, Window, directory } = await fixture(t, { limits: { maxTabs: 1, maxLiveTabs: 1, maxSavedTabs: 1 } });
+  await driver.init();
+  const parent = driver.newTab('https://example.test/'); await parent.loading;
+  const popup = parent.window.webContents.openHandler({ url: 'https://example.test/popup' });
+  assert.equal(popup.action, 'allow');
+  const child = new Window(popup.overrideBrowserWindowOptions); child.url = 'https://example.test/popup';
+  parent.window.webContents.emit('did-create-window', child, { url: child.url });
+  assert.equal(child.destroyed, false); assert.equal(driver.tabs.size, 2);
+  driver.persist(); await driver.writeChain;
+  assert.equal(JSON.parse(await readFile(path.join(directory, 'browser-tabs.json'), 'utf8')).tabs.length, 2);
+  await driver.close();
+  const restored = new driver.constructor({ dataDir: directory, downloadDir: path.join(directory, 'downloads'), maxTabs: 1, maxLiveTabs: 1, maxSavedTabs: 1 });
+  try { await restored.init(); assert.equal(restored.tabs.size, 2); }
+  finally { await restored.close(); }
+});
+
+test('external protocol navigation delegates to the operating system without replacing the page', async t => {
+  const calls = [];
+  const { driver } = await fixture(t, { limits: { openExternal: async url => { calls.push(url); if (url.startsWith('broken:')) throw new Error('No handler'); } } });
+  await driver.init(); const parent = driver.newTab('https://example.test/'); await parent.loading;
+  const open = await driver.perform({ action: 'open', url: 'mailto:person@example.test' });
+  assert.equal(open.receipt.handedToOperatingSystem, true); assert.equal(driver.tabs.size, 1);
+  const navigate = await driver.perform({ action: 'navigate', tabId: parent.id, url: 'tel:+15551234567' });
+  assert.equal(navigate.receipt.handedToOperatingSystem, true); assert.equal(driver.tabs.get(parent.id).url, 'https://example.test/');
+  let prevented = 0;
+  parent.window.webContents.emit('will-navigate', { preventDefault: () => prevented++ }, 'custom-app:resource'); await tick();
+  assert.equal(prevented, 1); assert.deepEqual(calls, ['mailto:person@example.test', 'tel:+15551234567', 'custom-app:resource']);
+  await assert.rejects(driver.perform({ action: 'open', url: 'broken:resource' }), /No handler/);
+  assert.equal(parent.window.webContents.openHandler({ url: 'mailto:second@example.test' }).action, 'deny'); await tick();
+  assert.equal(calls.at(-1), 'mailto:second@example.test');
+});
+
+test('agent click reports the resulting external handoff and surfaces operating-system failure', async t => {
+  let failHandoff = false;
+  const { driver } = await fixture(t, {
+    limits: { openExternal: async () => { if (failHandoff) throw new Error('No OS handler'); } },
+    command: async (method, params, win) => { if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased') win.webContents.emit('will-navigate', { preventDefault() {} }, 'mailto:person@example.test'); }
+  });
+  await driver.init(); const tab = driver.newTab('https://example.test/'); await tab.loading;
+  const click = { action: 'click', tabId: tab.id, x: 5, y: 5, expectedUrl: 'https://example.test/', expectedDocumentId: `${tab.id}:${tab.revision}` };
+  const result = await driver.perform(click);
+  assert.equal(result.receipt.externalHandoff.status, 'handed-to-os');
+  failHandoff = true;
+  await assert.rejects(driver.perform(click), error => { assert.match(error.message, /No OS handler/); assert.equal(error.actionDispatched, true); return true; });
 });
 
 test('compatibility loads before direct tab navigation or input and popups cannot race its readiness', async t => {
@@ -621,7 +757,7 @@ test('OAuth popups inherit the exact contained policy and are adopted without a 
   parent.window.webContents.emit('did-create-window', child, { url: 'https://example.test/oauth' }); await tick(); assert.equal(driver.tabs.size, 2); assert.equal(windows.length, 2); assert.equal(driver.tab(driver.activeTab).window, child);
   for (const window of windows) assertContained(window);
   assert.equal(child.webContents.openHandler({ url: 'file:///C:/Documents/local.html' }).action, 'allow');
-  assert.equal(child.webContents.openHandler({ url: 'javascript:alert(1)' }).action, 'deny');
+  assert.equal(child.webContents.openHandler({ url: 'javascript:alert(1)' }).action, 'allow');
 });
 
 async function popupViewportFixture(t, { viewport = { width: 0, height: 0 }, contentSize = [1281, 824], command = async () => {}, readViewport = async () => {}, captureAvailable = true } = {}) {
@@ -826,6 +962,114 @@ test('native file pickers are intercepted before navigation or trusted input, in
   assert.deepEqual(windows[0].protocol.at(-1), { method: 'DOM.setFileInputFiles', params: { files: [], backendNodeId: 42 } }); assert.equal(tab.pendingInteraction, null); assertContained(windows[0]);
 });
 
+test('forced restart stops ordinary browser loads, dismisses a chooser, and cancels a download without touching the calling chat', async t => {
+  const { driver } = await fixture(t); await driver.init();
+  const tab = driver.newTab('https://example.test/'), chat = driver.newTab('https://chat.example.test/', { purpose: 'chat-mode' });
+  await Promise.all([tab.loading, chat.loading]);
+  const wc = tab.window.webContents, chatWC = chat.window.webContents;
+  let loading = true, chatStops = 0;
+  wc.isLoading = () => loading;
+  wc.stop = () => { loading = false; wc.emit('did-stop-loading'); };
+  chatWC.isLoading = () => true; chatWC.stop = () => { chatStops++; };
+  wc.debugger.emit('message', {}, 'Page.fileChooserOpened', { backendNodeId: 42 }); await tick();
+  assert.equal(tab.pendingInteraction.kind, 'file_chooser');
+  const updates = [];
+  class Download extends EventEmitter {
+    constructor() { super(); this.calls = 0; }
+    getFilename() { return 'fixture.txt'; } getTotalBytes() { return 7; } getReceivedBytes() { return 2; }
+    setSavePath(path) { this.path = path; } cancel() { this.calls++; assert.equal(updates.at(-1).downloads[0].outcome, 'uncertain'); this.emit('done', {}, 'cancelled'); }
+  }
+  const ordinary = new Download(), protectedDownload = new Download();
+  await driver.download(ordinary, wc); await driver.download(protectedDownload, chatWC);
+  const result = await driver.stopForRestart({ onEffect: value => { updates.push(value); } });
+  assert.deepEqual(result.loads, [{ tabId: tab.id, outcome: 'stopped' }]);
+  assert.deepEqual(result.interactions, [{ tabId: tab.id, kind: 'file_chooser', outcome: 'dismissed' }]);
+  assert.equal(result.downloads.length, 1); assert.equal(result.downloads[0].outcome, 'cancelled');
+  assert.equal(ordinary.calls, 1); assert.equal(protectedDownload.calls, 0); assert.equal(chatStops, 0);
+  assert.equal(updates.at(-1).downloads[0].outcome, 'cancelled');
+  assert.equal(tab.pendingInteraction, null);
+  assert.ok(tab.window.protocol.some(call => call.method === 'DOM.setFileInputFiles' && call.params.backendNodeId === 42 && call.params.files.length === 0));
+  assert.equal(driver.status().downloads.find(value => value.tabId === chat.id).status, 'downloading');
+});
+
+test('a cancelled forced browser stop does not replay an uncertain dialog dismissal', async t => {
+  let release; const pending = new Promise(resolve => { release = resolve; });
+  const { driver } = await fixture(t, { command: async method => { if (method === 'Page.handleJavaScriptDialog') await pending; return {}; } });
+  await driver.init(); const tab = driver.newTab('https://example.test/'); await tab.loading;
+  tab.window.webContents.debugger.emit('message', {}, 'Page.javascriptDialogOpening', { type: 'confirm', message: 'Fixture dialog' }); await tick();
+  const signal = new AbortController(), updates = [], stop = driver.stopForRestart({ signal: signal.signal, onEffect: value => updates.push(value) }); await tick(); signal.abort();
+  await assert.rejects(stop, error => error.name === 'AbortError' && error.forceBrowserEffects.interactions[0].outcome === 'uncertain');
+  release(); await tick();
+  assert.equal(updates.length, 1); assert.equal(updates[0].interactions[0].outcome, 'uncertain');
+  let loading = true, loadStops = 0; const wc = tab.window.webContents;
+  wc.isLoading = () => loading;
+  wc.stop = () => { loadStops++; loading = false; wc.emit('did-stop-loading'); };
+  const again = await driver.stopForRestart();
+  assert.equal(again.interactions[0].outcome, 'uncertain');
+  assert.equal(loadStops, 1); assert.equal(again.loads[0].outcome, 'stopped');
+  assert.equal(tab.window.protocol.filter(call => call.method === 'Page.handleJavaScriptDialog').length, 1);
+});
+
+test('a stuck tab does not prevent force from stopping another tab and its download', async t => {
+  let releaseDialog; const heldDialog = new Promise(resolve => { releaseDialog = resolve; });
+  const { driver } = await fixture(t, { command: async method => { if (method === 'Page.handleJavaScriptDialog') await heldDialog; return {}; } });
+  await driver.init();
+  const blocked = driver.newTab('https://blocked.example.test/'), other = driver.newTab('https://other.example.test/');
+  await Promise.all([blocked.loading, other.loading]);
+  blocked.window.webContents.debugger.emit('message', {}, 'Page.javascriptDialogOpening', { type: 'confirm', message: 'Held dialog' }); await tick();
+  let loading = true, stopCalls = 0;
+  const wc = other.window.webContents;
+  wc.isLoading = () => loading;
+  wc.stop = () => { stopCalls++; loading = false; wc.emit('did-stop-loading'); };
+  class Download extends EventEmitter {
+    constructor() { super(); this.calls = 0; }
+    getFilename() { return 'fixture.txt'; } getTotalBytes() { return 7; } getReceivedBytes() { return 2; }
+    setSavePath() {} cancel() { this.calls++; this.emit('done', {}, 'cancelled'); }
+  }
+  const download = new Download(); await driver.download(download, wc);
+  const controller = new AbortController(), updates = [];
+  const stopping = driver.stopForRestart({ signal: controller.signal, onEffect: value => updates.push(value) });
+  await tick();
+  assert.equal(stopCalls, 1); assert.equal(download.calls, 1);
+  assert.ok(updates.some(value => value.loads.some(item => item.tabId === other.id && item.outcome === 'stopped')));
+  assert.ok(updates.some(value => value.downloads.some(item => item.tabId === other.id && item.outcome === 'cancelled')));
+  controller.abort();
+  await assert.rejects(stopping, reason => reason.name === 'AbortError' && reason.forceBrowserEffects.interactions.some(item => item.tabId === blocked.id && item.outcome === 'uncertain'));
+  releaseDialog(); await tick();
+  assert.equal(blocked.window.protocol.filter(call => call.method === 'Page.handleJavaScriptDialog').length, 1);
+});
+
+test('a timed-out download cancellation waits for the original request without cancelling twice', async t => {
+  const { driver } = await fixture(t); await driver.init();
+  const tab = driver.newTab('https://example.test/'); await tab.loading;
+  class Download extends EventEmitter {
+    constructor() { super(); this.calls = 0; }
+    getFilename() { return 'fixture.txt'; } getTotalBytes() { return 7; } getReceivedBytes() { return 2; }
+    setSavePath() {} cancel() { this.calls++; }
+  }
+  const download = new Download(); await driver.download(download, tab.window.webContents);
+  const controller = new AbortController(), first = driver.stopForRestart({ signal: controller.signal });
+  await tick(); controller.abort();
+  await assert.rejects(first, reason => reason.name === 'AbortError' && reason.forceBrowserEffects.downloads[0].outcome === 'uncertain');
+  assert.equal(download.calls, 1);
+  const later = driver.stopForRestart(); await tick(); assert.equal(download.calls, 1);
+  download.emit('done', {}, 'cancelled');
+  assert.equal((await later).downloads[0].outcome, 'cancelled');
+  assert.equal(download.calls, 1);
+});
+
+test('force restart waits for a stopped navigation promise to settle after the loading indicator clears', async t => {
+  const { driver } = await fixture(t); await driver.init();
+  const tab = driver.newTab('https://example.test/'); await tab.loading;
+  let release, loading = true; tab.loading = new Promise(resolve => { release = resolve; });
+  const wc = tab.window.webContents;
+  wc.isLoading = () => loading;
+  wc.stop = () => { loading = false; wc.emit('did-stop-loading'); };
+  let settled = false; const stop = driver.stopForRestart().then(value => { settled = true; return value; });
+  await tick(); assert.equal(loading, false); assert.equal(settled, false);
+  release(); assert.equal((await stop).loads[0].outcome, 'stopped');
+});
+
 test('renderer startup finishes on inert blank before protocol guards, website navigation or trusted input', async t => {
   let release; const renderer = new Promise(resolve => { release = resolve; });
   const { driver, windows } = await fixture(t, { loadURL: url => url === 'about:blank' ? renderer : Promise.resolve() });
@@ -997,7 +1241,7 @@ test('one durable Chat Mode tab has reserved capacity without displacing normal 
   assert.ok(driver.status().tabs.filter(tab => tab.tabId !== owned.id).every(tab => !Object.hasOwn(tab, 'purpose')));
   assert.throws(() => driver.newTab('https://chatgpt.com/', { purpose: 'chat-mode' }), { code: 'BROWSER_CHAT_MODE_TAB_EXISTS' });
   assert.throws(() => driver.newTab('https://third.example/'), { code: 'BROWSER_TAB_LIMIT' });
-  assert.equal(owned.window.webContents.openHandler({ url: 'https://third.example/' }).action, 'deny');
+  assert.equal(owned.window.webContents.openHandler({ url: 'https://third.example/' }).action, 'allow');
   driver.persist(); await driver.writeChain;
   const persisted = JSON.parse(await readFile(path.join(directory, 'browser-tabs.json'), 'utf8')), saved = persisted.tabs;
   assert.equal(persisted.version, 2);

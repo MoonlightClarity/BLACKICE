@@ -1,4 +1,5 @@
 import { connectionDefaultModels } from '../../connection-models.mjs';
+import { createForceRestart } from './settings-restart.mjs';
 
 const REASONING=['default','none','minimal','low','medium','high','xhigh','max','ultra'];
 const VERBOSITY=['concise','balanced','detailed'];
@@ -48,6 +49,11 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '<p class="next-help">Manage saved model connections in the Models section.</p>',
     '<button type="button" id="next-settings-reconnect">Reconnect model runtime</button>',
     '<p id="next-settings-reconnect-feedback" class="next-help" role="status"></p></section>',
+    '<section class="next-card" id="next-settings-restart-card" hidden><h2>Restart BLACKICE</h2>',
+    '<p class="next-help">Force restart attempts to stop active work and browser activity and close private application sessions. It pauses scheduled and queued work. Unsaved session work may be lost. It can still fail if work cannot settle or storage cannot be saved. Resume schedules afterward.</p>',
+    '<div class="next-row"><button type="button" id="next-settings-force-restart">Force restart</button>',
+    '<button type="button" id="next-settings-check-restart" hidden>Check restart</button></div>',
+    '<p id="next-settings-restart-feedback" class="next-help" role="status" aria-live="polite"></p></section>',
     '<section class="next-card"><h2>Classic interface fallback</h2><p class="next-help">Use the previous frontend for features not yet migrated. Your saved data and backend remain the same.</p>',
     '<a href="/legacy/" class="next-primary next-artifact-download">Open classic interface</a></section>',
     '<section class="next-card"><h2>Runtime health</h2><p class="next-help" id="next-settings-status" role="status">Checking BLACKICE…</p></section>',
@@ -61,6 +67,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     model:$('next-settings-model'),saveModel:$('next-settings-save-model'),
     status:$('next-settings-status'),modelFeedback:$('next-settings-model-feedback'),reconnectFeedback:$('next-settings-reconnect-feedback'),
     refresh:$('next-settings-refresh'),reconnect:$('next-settings-reconnect'),
+    restartCard:$('next-settings-restart-card'),forceRestart:$('next-settings-force-restart'),checkRestart:$('next-settings-check-restart'),restartFeedback:$('next-settings-restart-feedback'),
     runtime:$('next-runtime-settings-form'),effort:$('next-runtime-effort'),tier:$('next-runtime-tier'),
     verbosity:$('next-runtime-verbosity'),idle:$('next-runtime-idle'),timeout:$('next-runtime-timeout'),
     maxSubagents:$('next-runtime-max-subagents'),subagents:$('next-runtime-subagents'),
@@ -70,6 +77,14 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
   let active=false,destroyed=false,generation=0,status=getStatus?.()||{},section='general',sectionRevision=0,
     modelDirty=false,modelRevision=0,runtimeDirty=false,runtimeRevision=0,executionDirty=false,executionRevision=0,statusRead=0;
   const pending=new Set(),panels=new Map(),sectionButtons=[...mount.querySelectorAll('[data-settings-section]')];
+  let restartStorage; try { restartStorage = globalThis.localStorage; } catch {}
+  const restart = createForceRestart({api, storage:restartStorage, onChange:value=>{
+    f.forceRestart.disabled=!value.canStart; f.checkRestart.hidden=!value.record; f.checkRestart.disabled=!value.canCheck;
+    f.restartFeedback.textContent=value.error||value.record?.message||'';
+  }});
+  const restartInitial=restart.state(); f.forceRestart.disabled=!restartInitial.canStart; f.checkRestart.hidden=!restartInitial.record; f.checkRestart.disabled=!restartInitial.canCheck; f.restartFeedback.textContent=restartInitial.record?.message||'';
+  f.forceRestart.addEventListener('click',()=>void restart.start());
+  f.checkRestart.addEventListener('click',()=>void restart.check());
   const loaders={
     identity:()=>import('./settings-identity.mjs').then(module=>module.createIdentitySettings),
     models:()=>import('./settings-providers.mjs').then(module=>module.createProviderSettings),
@@ -122,6 +137,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
   });
   function drawStatus(info){
     status=info||{};
+    f.restartCard.hidden=!(status.desktopLifecycle?.available===true && status.desktopLifecycle?.supportsRestart===true && status.desktopLifecycle?.localManagement===true);
     f.status.textContent='BLACKICE '+(status.version||'')+' · '+
       (status.connected===false?'Model connection unavailable':'Model connection available')+
       ' · '+(status.execution?.activeCount||0)+' active execution(s)';

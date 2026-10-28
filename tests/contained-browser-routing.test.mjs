@@ -5,7 +5,15 @@ import {mkdtemp,mkdir,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {HarnessEngine} from '../lib/engine.mjs';
+import {BROWSER_TOOL} from '../lib/browser.mjs';
 import {createMissionWorkflow} from '../public/mission-model.mjs';
+
+test('contained browser exposes screenshot-relative visual control input with its document guard', () => {
+ const fields=BROWSER_TOOL.inputSchema.properties;
+ assert.match(fields.x.description,/visible page control/);
+ assert.match(fields.x.description,/screenshot-relative CSS pixels/);
+ assert.match(fields.expectedDocumentId.description,/coordinate click or hover/);
+});
 
 test('contained ownership and sign-in pause do not gate configured native browser tools',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'blackice-contained-routing-')),cwd=path.join(root,'workspace');await mkdir(cwd);
@@ -19,7 +27,10 @@ test('contained ownership and sign-in pause do not gate configured native browse
   status(){return{connected:true,authenticated:true,defaultModel:'demo',models:[{id:'demo',model:'demo',available:true}]};}
   async runAgent(options){
    assert.match(options.prompt,/BACKGROUND WORKSPACE/);assert.match(options.developerInstructions,/contained (?:relay_browser|browser)/);
-   assert.match(options.prompt,/relay_connections for a configured native Chrome, Neo or imported browser profile/);
+   assert.match(options.prompt,/default to the BLACKICE contained browser/);
+   assert.match(options.prompt,/Honor a user-selected browser or profile/);
+   assert.match(options.prompt,/existing native session or a needed capability/);
+   assert.match(options.prompt,/Preserve an in-progress form/);
    const foreign=await options.onToolCall({name:'relay_browser',arguments:{action:'read',tabId:'personal-tab'}});assert.equal(foreign.success,false);assert.equal(foreign.code,'BROWSER_TAB_OWNERSHIP');assert.equal(pages,0);
    const discovered=await options.onToolCall({name:'relay_connections',arguments:{action:'tools',connectionId:config.id}});
    assert.equal(discovered.success,true);assert.equal(discovered.receipt.browser,'neo');assert.equal(discovered.receipt.actionDispatched,false);

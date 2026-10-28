@@ -48,6 +48,29 @@ function text(value, max = 240) { return typeof value === 'string' && value.leng
 function requestKey(ownerId, requestId) { return JSON.stringify([ownerId, requestId]); }
 function sameProfile(left, right) { if (!text(left, 4096) || !text(right, 4096)) return false; const normalize = value => process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value); return normalize(left) === normalize(right); }
 function validDate(value) { return typeof value === 'string' && Number.isFinite(Date.parse(value)); }
+function forceEffects(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !['privateSessions', 'browser'].includes(key))) throw failure('DESKTOP_RESTART_STORAGE_UNAVAILABLE');
+  const result = {};
+  if (value.privateSessions !== undefined) {
+    if (!Array.isArray(value.privateSessions) || value.privateSessions.length < 1 || value.privateSessions.length > 100) throw failure('DESKTOP_RESTART_STORAGE_UNAVAILABLE');
+    const seen = new Set();
+    result.privateSessions = value.privateSessions.map(item => {
+      if (!item || typeof item !== 'object' || Array.isArray(item) || Object.keys(item).some(key => !['sessionId', 'outcome'].includes(key)) || !text(item.sessionId, 120) || !/^[A-Za-z0-9_-]+$/.test(item.sessionId) || seen.has(item.sessionId) || !['requested', 'confirmed', 'uncertain'].includes(item.outcome)) throw failure('DESKTOP_RESTART_STORAGE_UNAVAILABLE');
+      seen.add(item.sessionId); return { sessionId: item.sessionId, outcome: item.outcome };
+    });
+  }
+  if (value.browser !== undefined) {
+    const allowed = { loads: ['stopped', 'uncertain'], interactions: ['dismissed', 'uncertain'], downloads: ['cancelled', 'completed', 'interrupted', 'uncertain'] };
+    if (!value.browser || typeof value.browser !== 'object' || Array.isArray(value.browser) || !Object.keys(value.browser).length || Object.keys(value.browser).some(key => !Object.hasOwn(allowed, key))) throw failure('DESKTOP_RESTART_STORAGE_UNAVAILABLE');
+    result.browser = {};
+    for (const [kind, counts] of Object.entries(value.browser)) {
+      if (!counts || typeof counts !== 'object' || Array.isArray(counts) || !Object.keys(counts).length || Object.entries(counts).some(([outcome, count]) => !allowed[kind].includes(outcome) || !Number.isSafeInteger(count) || count < 1 || count > 100000)) throw failure('DESKTOP_RESTART_STORAGE_UNAVAILABLE');
+      result.browser[kind] = { ...counts };
+    }
+  }
+  if (!Object.keys(result).length) throw failure('DESKTOP_RESTART_STORAGE_UNAVAILABLE');
+  return result;
+}
 
 /**
  * A restart is an app-owned, one-shot handoff. No saved request is ever replayed.
@@ -72,6 +95,7 @@ export class DesktopRestartController {
     const receipt = { id: value.id, requestId: value.requestId, ownerId: value.ownerId, jobId: value.jobId, status: value.status, requestedAt: value.requestedAt, updatedAt: value.updatedAt, origin: this.identity(value.origin), durable: true };
     if (value.force !== undefined && typeof value.force !== 'boolean') throw failure('DESKTOP_RESTART_STORAGE_UNAVAILABLE');
     receipt.force = value.force === true;
+    if (value.forceEffects !== undefined) { if (!receipt.force) throw failure('DESKTOP_RESTART_STORAGE_UNAVAILABLE'); receipt.forceEffects = forceEffects(value.forceEffects); }
     if (value.completedAt !== undefined) receipt.completedAt = value.completedAt;
     if (value.started !== undefined) receipt.started = this.identity(value.started);
     if (value.error !== undefined) { if (!MESSAGES[value.error?.code]) throw failure('DESKTOP_RESTART_STORAGE_UNAVAILABLE'); receipt.error = publicError(value.error); }
@@ -219,7 +243,7 @@ export class DesktopRestartController {
   }
   async runHandoff(active, context) {
     const { waitForReceipt, waitForAcknowledgement, signal } = context;
-    let prepared = false;
+    let prepared = false, preparedEffects;
     try {
       if (waitForAcknowledgement) {
         try { await this.bounded(waitForAcknowledgement, performance.now() + this.receiptTimeoutMs, signal); }
@@ -228,9 +252,11 @@ export class DesktopRestartController {
       await this.waitForOrigin(waitForReceipt, signal); this.abortIfNeeded(signal);
       prepared = true; const ready = await this.bounded(() => this.prepare(context), performance.now() + this.receiptTimeoutMs, signal);
       if (ready === false || ready?.ready === false) throw failure('DESKTOP_RESTART_BUSY');
+      if (ready?.forceEffects && !context.force) throw failure('DESKTOP_RESTART_PREPARE_FAILED');
+      if (ready?.forceEffects) preparedEffects = forceEffects(ready.forceEffects);
       this.abortIfNeeded(signal);
       const receipt = this.receipts.find(value => value.id === active.id), options = this.launchOptions(await this.getLaunchOptions(), receipt.origin);
-      this.abortIfNeeded(signal); await this.update(active.id, { status: 'restarting' }); this.abortIfNeeded(signal);
+      this.abortIfNeeded(signal); await this.update(active.id, { status: 'restarting', ...(preparedEffects ? { forceEffects: preparedEffects } : {}) }); this.abortIfNeeded(signal);
       try { this.relaunch(options); } catch (error) { throw MESSAGES[error?.code] ? error : failure('DESKTOP_RESTART_ARM_FAILED'); }
       active.armed = true;
       // There must be no awaited or fallible preparation between arming Electron
@@ -244,7 +270,8 @@ export class DesktopRestartController {
         try { await this.release(context); }
         catch { this.operationalError = publicError(failure('DESKTOP_RESTART_RELEASE_FAILED')); error = failure('DESKTOP_RESTART_RELEASE_FAILED'); }
       }
-      const changes = { status: error?.code === 'DESKTOP_RESTART_CANCELLED' ? 'cancelled' : 'failed', error: publicError(error) };
+      const effects = error?.forceEffects ? forceEffects(error.forceEffects) : preparedEffects;
+      const changes = { status: error?.code === 'DESKTOP_RESTART_CANCELLED' ? 'cancelled' : 'failed', error: publicError(error), ...(effects ? { forceEffects: effects } : {}) };
       try { if (this.storageError) throw failure('DESKTOP_RESTART_STORAGE_UNAVAILABLE'); return await this.update(active.id, changes); }
       catch { const failed = { ...this.receipts.find(value => value.id === active.id), ...changes, error: this.storageError || changes.error, updatedAt: this.timestamp(), durable: false }; this.receipts = this.receipts.map(value => value.id === active.id ? failed : value); return copy(failed); }
     } finally { this.releaseActive(active); }

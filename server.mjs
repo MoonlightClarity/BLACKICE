@@ -175,7 +175,10 @@ export async function createHarnessServer(options = {}) {
     isMaintenance: () => maintenanceRequested,
     getEngineStatus: () => engine.executionStatus(),
     getLearningActive: () => Boolean(learning.active),
-    getApplicationSessions: () => applicationWorkspace.status().sessions,
+    getApplicationSessions: () => {
+      if (applicationWorkspace.storageError) throw Object.assign(new Error('Private application session history could not be safely saved. Inspect it before restarting.'), { code: 'DESKTOP_RESTART_STORAGE', status: 503 });
+      return applicationWorkspace.status().sessions;
+    },
     getBrowserStatus: () => browser.status(),
     getDirectJobs: async () => {
       if (!directExecution) return [];
@@ -185,7 +188,7 @@ export async function createHarnessServer(options = {}) {
     getOriginJob: origin => directExecution.validateRestartOrigin(origin),
     getPendingActions: () => Boolean(inbox.hasPendingWork() || operations.hasPendingWork() || projects.hasPendingWork() || emailOAuth?.flow || emailOAuth?.callbackOperations?.size || emailOAuth?.requests?.size || connectorStartupEnabling),
     setMaintenance: value => { maintenanceRequested = value; engine.maintenanceRequested = value; },
-    stopWork: async ({ signal }) => {
+    stopWork: async ({ signal, onPrivateSessionStopped = () => {}, onBrowserEffects = () => {} }) => {
       const check = () => { if (signal.aborted) throw Object.assign(new Error('The forced restart preparation was stopped.'), { code: 'DESKTOP_RESTART_CANCELLED' }); };
       const reason = 'Forced restart requested. Automatic work remains paused; inspect stopped work before resuming.';
       check();
@@ -196,11 +199,32 @@ export async function createHarnessServer(options = {}) {
       const jobs = directExecution ? await directExecution.jobs.snapshot({ unfinishedOnly: true }) : [];
       check();
       const pending = [], attempt = operation => { try { pending.push(Promise.resolve(operation())); } catch (error) { pending.push(Promise.reject(error)); } };
+      const sessions = applicationWorkspace.status().sessions.filter(value => ['starting', 'running', 'needs_attention'].includes(value.state) || value.restartCleanup?.outcome === 'uncertain');
+      for (const session of sessions) attempt(async () => {
+        if (typeof applicationWorkspace.endForRestart !== 'function') throw new Error('Owned private-session cleanup is unavailable.');
+        try {
+          const result = await applicationWorkspace.endForRestart(session.id, { signal, onEffect: onPrivateSessionStopped });
+          if (['requested', 'confirmed'].includes(result?.restartCleanup?.outcome)) onPrivateSessionStopped({ sessionId: session.id, outcome: result.restartCleanup.outcome });
+          return result;
+        } catch (error) {
+          // Surface a lost close response only if its uncertain intent was
+          // durably saved; never replay the potentially completed cleanup.
+          if (!applicationWorkspace.storageError) {
+            const outcome = applicationWorkspace.status().sessions.find(value => value.id === session.id)?.restartCleanup?.outcome;
+            if (outcome === 'uncertain') onPrivateSessionStopped({ sessionId: session.id, outcome });
+          }
+          throw error;
+        }
+      });
       for (const job of jobs) attempt(() => directExecution.cancel(job.id, { ownerId: job.ownerId, reason }));
       for (const run of engine.listRuns()) if (['queued', 'running', 'waiting'].includes(run.status)) attempt(() => engine.cancelRun(run.id));
       attempt(() => engine.cancelCompactions?.());
       attempt(() => learning.cancelBackground(reason));
-      attempt(() => browser.cancel());
+      // The browser caller can observe cancellation before the adapter has
+      // physically stopped. Capture the owned action's settlement separately,
+      // while the gate prevents new work from entering its queue.
+      let browserSettlement;
+      attempt(() => { const result = browser.cancel(); browserSettlement = browser.active?.settled; return result; });
       attempt(() => emailOAuth?.drain?.());
       if (connectorStartupEnabling) pending.push(connectorStartupEnabling);
       const stopped = await Promise.allSettled(pending);
@@ -208,7 +232,16 @@ export async function createHarnessServer(options = {}) {
       if (stopped.some(value => value.status === 'rejected')) throw Object.assign(new Error('Owned work could not be safely stopped for restart.'), { code: 'DESKTOP_RESTART_PREPARE_FAILED', status: 503 });
       // A cancellation request is not settlement. Keep the gate until every
       // actual executor acknowledges it, then persist the resulting run state.
-      await Promise.allSettled([...engine.executions.values(), ...(directExecution ? [...directExecution.active.values()].map(value => value.settled) : [])]);
+      await Promise.allSettled([...engine.executions.values(), ...(directExecution ? [...directExecution.active.values()].map(value => value.settled) : []), ...(browserSettlement ? [browserSettlement] : [])]);
+      // Owner finalizers may start as soon as the cancelled browser operation
+      // settles. They are admitted cleanup, so wait for each physical browser
+      // operation that was already queued before checking readiness again.
+      while (browser.active?.settled) { check(); await browser.active.settled; }
+      check();
+      if (typeof browser.stopForRestart === 'function') {
+        try { onBrowserEffects(await browser.stopForRestart({ signal, onEffect: onBrowserEffects })); }
+        catch (error) { if (error?.forceBrowserEffects) onBrowserEffects(error.forceBrowserEffects); throw error; }
+      }
       check();
       await engine.persist();
       check();
@@ -1076,7 +1109,7 @@ export async function createHarnessServer(options = {}) {
         'workspaces/workflow-overview-model.mjs','workspaces/workflow-canvas-model.mjs','workspaces/workflow-canvas.mjs','workspaces/workflow-graph-author.mjs',
         'workspaces/workflow-graph-edit.mjs','workspaces/browser-model.mjs','workspaces/browser-native.mjs',
         'browser.css','knowledge.css','workspaces/knowledge.mjs','workspaces/knowledge-model.mjs',
-        'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/settings.mjs',
+        'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/settings.mjs','workspaces/settings-restart.mjs',
         'settings.css','settings-identity.css','settings-providers.css','settings-connections.css',
         'workspaces/settings-identity.mjs','workspaces/applications.mjs','workspaces/settings-providers.mjs','workspaces/settings-connections.mjs','workspaces/settings-import.mjs'];
       for (const file of nextFiles) files['/next/' + file] = 'next/' + file;

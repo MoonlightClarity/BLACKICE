@@ -67,3 +67,48 @@ test('live describe supplies an executable completion example without changing t
   assert.match(TASK_TOOL.inputSchema.properties.evidence.description, /actual observed finding/);
   assert.equal(TASK_TOOL_V7.inputSchema.properties.result.description, 'The concrete result this action should produce.');
 });
+
+test('oversized evidence reports its exact length without changing the plan and a corrected completion succeeds', async t => {
+  const f = await fixture(t);
+  const step = { id: 'inspect', title: 'Inspect the result', kind: 'action', status: 'pending', result: 'A checked result', note: 'Read and compare the observed result with the requested outcome.', doneWhen: 'The result and its limits are recorded.' };
+  const saved = payload(await f.call({ action: 'plan', expectedRevision: f.initial.revision, plan: { layout: 'sequence' }, steps: [step] }));
+  const before = await readFile(f.store.file(f.taskId));
+  for (const evidence of ['x'.repeat(2001), 'x'.repeat(2056), '😀'.repeat(1001)]) {
+    const rejected = await f.call({ action: 'step', expectedRevision: saved.revision, stepId: step.id, status: 'done', evidence });
+    assert.equal(rejected.success, false);
+    assert.equal(rejected.code, 'TASK_PLAN_EVIDENCE_TOO_LONG');
+    const error = payload(rejected);
+    assert.equal(error.actualLength, evidence.length);
+    assert.equal(error.maxLength, 2000);
+    assert.match(error.error, new RegExp(`${evidence.length - 2000} over`));
+    assert.match(error.error, /retry.*current revision/i);
+    assert.match(error.error, /Do not repeat work/);
+    assert.deepEqual(await readFile(f.store.file(f.taskId)), before);
+  }
+  const boundary = 'x'.repeat(2000);
+  const completed = await f.call({ action: 'step', expectedRevision: saved.revision, stepId: step.id, status: 'done', evidence: boundary });
+  assert.equal(completed.success, true);
+  assert.equal(payload(completed).steps[0].evidence, boundary);
+  assert.equal(payload(completed).revision, saved.revision + 1);
+});
+
+test('plan and edit reject oversized evidence with the same recoverable details', async t => {
+  const f = await fixture(t);
+  const step = { id: 'inspect', title: 'Inspect the result', kind: 'action', status: 'pending', result: 'A checked result', note: 'Read and compare the observed result with the requested outcome.', doneWhen: 'The result and its limits are recorded.' };
+  const beforePlan = await readFile(f.store.file(f.taskId));
+  const rejectedPlan = await f.call({ action: 'plan', expectedRevision: f.initial.revision, plan: { layout: 'sequence' }, steps: [{ ...step, evidence: 'x'.repeat(2056) }] });
+  assert.equal(rejectedPlan.code, 'TASK_PLAN_EVIDENCE_TOO_LONG');
+  assert.equal(payload(rejectedPlan).actualLength, 2056);
+  assert.equal(payload(rejectedPlan).maxLength, 2000);
+  assert.deepEqual(await readFile(f.store.file(f.taskId)), beforePlan);
+  const saved = payload(await f.call({ action: 'plan', expectedRevision: f.initial.revision, plan: { layout: 'sequence' }, steps: [step] }));
+  const beforeEdit = await readFile(f.store.file(f.taskId));
+  const rejectedEdit = await f.call({ action: 'edit', expectedRevision: saved.revision, operations: [{ type: 'update', stepId: step.id, patch: { evidence: 'x'.repeat(2056) } }] });
+  assert.equal(rejectedEdit.code, 'TASK_PLAN_EVIDENCE_TOO_LONG');
+  assert.equal(payload(rejectedEdit).actualLength, 2056);
+  assert.equal(payload(rejectedEdit).maxLength, 2000);
+  assert.deepEqual(await readFile(f.store.file(f.taskId)), beforeEdit);
+  const corrected = await f.call({ action: 'edit', expectedRevision: saved.revision, operations: [{ type: 'update', stepId: step.id, patch: { evidence: 'Checked the result and retained its limits.' } }] });
+  assert.equal(corrected.success, true);
+  assert.equal(payload(corrected).revision, saved.revision + 1);
+});

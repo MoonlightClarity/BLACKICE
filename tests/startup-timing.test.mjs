@@ -3,6 +3,20 @@ import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { STARTUP_PHASES, startupPhase } from '../lib/startup-timing.mjs';
 
+test('startup progress reports actual phase transitions without affecting startup', async () => {
+  const observed = [], gate = {};
+  gate.promise = new Promise(resolve => { gate.resolve = resolve; });
+  const diagnostics = { onStartupPhase(phase, outcome) { observed.push([phase, outcome]); }, async record() {} };
+  const pending = startupPhase(diagnostics, 'history', () => gate.promise);
+  assert.deepEqual(observed, [['history', 'started']]);
+  gate.resolve('ready'); assert.equal(await pending, 'ready');
+  assert.deepEqual(observed, [['history', 'started'], ['history', 'ready']]);
+  const failure = new Error('fixture');
+  await assert.rejects(startupPhase(diagnostics, 'browser', () => { throw failure; }), error => error === failure);
+  assert.deepEqual(observed.slice(-2), [['browser', 'started'], ['browser', 'failed']]);
+  assert.equal(await startupPhase({ onStartupPhase() { throw Error('unavailable UI'); } }, 'window', () => 42), 42);
+});
+
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 
 test('startup timing waits for the operation and measures monotonic elapsed time without changing its value', async t => {

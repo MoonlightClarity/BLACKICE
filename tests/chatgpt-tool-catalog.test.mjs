@@ -20,7 +20,7 @@ const unavailable = () => assert.fail('Discovery must not execute a tool.');
 const provider = tools => ({ tools: () => tools, call: unavailable });
 
 test('the full native catalog retains the exact 28-tool public contract and fingerprint', () => {
-  // The deployed catalog plus its intentional tab_select enum addition catches accidental
+  // The deployed catalog plus intentional tab_select and forced-restart additions catches accidental
   // change to names, order, descriptions, schemas, annotations or OAuth metadata.
   // Only definitions are constructed: no storage or native adapter is opened.
   const execution = new DirectExecutionAPI({ dataDir: '/unused-catalog-fixture', additionalTools: [
@@ -41,7 +41,7 @@ test('the full native catalog retains the exact 28-tool public contract and fing
     'blackice_get_swarm_plan', 'blackice_get_plan_groups', 'blackice_edit_plan', 'blackice_edit_plan_groups',
   ]);
   assert.deepEqual(catalog.status(), {
-    sha256: '48bb2ed5c3cca6e8673392a73b71f255c474e2105759483b97192a24f5abe034',
+    sha256: '6082e5fbff16a4e2badbc6e6442209c72dbe7782c4df3ab98720f9ee9247ecef',
     toolCount: 28,
     serverVersion: '2.33.5',
   });

@@ -18,9 +18,11 @@ test('focused typing requires explicit contained ownership and a complete docume
   const calls = [], driver = { perform: async args => { calls.push(args); return { tabId: args.tabId }; } }, browser = fixtureWorkspace({ driver });
   t.after(() => browser.close());
   const valid = { action: 'type', browser: 'relay', tabId: 'owned-tab', text: 'safe fixture', expectedUrl: 'https://signin.example.test/', expectedDocumentId: 'owned-tab:1' };
-  for (const override of [{ browser: 'firefox' }, { browser: undefined }, { tabId: undefined }, { text: '' }, { text: 'x'.repeat(16385) }, { expectedDocumentId: undefined }, { expectedUrl: undefined }, { expectedUrl: 'javascript:alert(1)' }, { expectedDocumentId: 1 }, { modifiers: ['Control'] }]) await assert.rejects(browser.perform({ ...valid, ...override }), { code: 'BROWSER_VALIDATION' });
+  for (const override of [{ browser: 'firefox' }, { browser: undefined }, { tabId: undefined }, { text: '' }, { text: 'x'.repeat(16385) }, { expectedDocumentId: undefined }, { expectedUrl: undefined }, { expectedDocumentId: 1 }, { modifiers: ['Control'] }]) await assert.rejects(browser.perform({ ...valid, ...override }), { code: 'BROWSER_VALIDATION' });
   assert.deepEqual(calls, []);
   await browser.perform(valid, { source: 'user' }); assert.deepEqual(calls, [valid]);
+  const explicitScheme = { ...valid, expectedUrl: 'javascript:alert(1)' };
+  await browser.perform(explicitScheme, { source: 'user' }); assert.deepEqual(calls.at(-1), explicitScheme);
 });
 
 test('guarded form fill, selection and hover cross the tool boundary without losing the observed identity', async t => {
@@ -34,7 +36,7 @@ test('guarded form fill, selection and hover cross the tool boundary without los
     assert.equal(response.success, true, `${action} should accept the same complete guard advertised for page input`);
     assert.deepEqual(calls.at(-1), request);
     const dispatched = calls.length;
-    for (const override of [{ expectedDocumentId: undefined }, { expectedUrl: undefined }, { expectedDocumentId: '' }, { expectedUrl: '' }, { expectedUrl: 'javascript:alert(1)' }]) {
+    for (const override of [{ expectedDocumentId: undefined }, { expectedUrl: undefined }, { expectedDocumentId: '' }, { expectedUrl: '' }]) {
       await assert.rejects(browser.perform({ ...request, ...override }), { code: 'BROWSER_VALIDATION' });
     }
     assert.equal(calls.length, dispatched, 'An incomplete guard must not reach the driver.');
@@ -77,11 +79,12 @@ test('typing and editing keys keep admission order while rapid text is queued', 
   assert.doesNotMatch(JSON.stringify(events), /private-first|private-second/);
 });
 
-test('browser URL validation accepts normal page addresses and rejects executable or credential URLs', () => {
+test('browser URL validation preserves explicit schemes and credentials while rejecting malformed addresses', () => {
   assert.equal(browserURL('https://example.com/path'), 'https://example.com/path');
   assert.equal(browserURL('www.linkedin.comm'), 'https://www.linkedin.comm/');
   for (const url of ['file:///C:/Documents/local.html', 'about:version', 'chrome://version/']) assert.equal(browserURL(url), new URL(url).href);
-  for (const url of ['javascript:alert(1)', 'https://key:secret@example.com', 'not a url']) assert.throws(() => browserURL(url), { code: 'BROWSER_VALIDATION' });
+  for (const url of ['javascript:alert(1)', 'https://key:secret@example.com']) assert.equal(browserURL(url), new URL(url).href);
+  assert.throws(() => browserURL('not a url'), { code: 'BROWSER_VALIDATION' });
 });
 test('open and navigate normalize bare addresses before dispatching to the browser', async t => {
   const calls = [], browser = fixtureWorkspace({ driver: { perform: async args => { calls.push(args); return { tabId: 'one' }; } } });

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
 import {readFile} from 'node:fs/promises';
+import {runInNewContext} from 'node:vm';
 import {DesktopStartup, createStartupIndicator} from '../desktop/startup.mjs';
 
 const held=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return{promise,resolve};};
@@ -9,11 +10,12 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function windows({failLoad=false}={}){
   const created=[];
   class Window extends EventEmitter {
-    constructor(options){super();this.options=options;this.visible=false;this.destroyed=false;this.shows=0;this.loads=[];const contents=new EventEmitter();contents.session={webRequest:{onBeforeRequest:fn=>{contents.request=fn;}},setPermissionRequestHandler:fn=>{contents.permission=fn;},setPermissionCheckHandler:fn=>{contents.permissionCheck=fn;},setDevicePermissionHandler:fn=>{contents.devicePermission=fn;},setUSBProtectedClassesHandler:fn=>{contents.usbProtectedClasses=fn;}};contents.setWindowOpenHandler=fn=>{contents.open=fn;};this.webContents=contents;created.push(this);}
+    constructor(options){super();this.options=options;this.visible=false;this.destroyed=false;this.shows=0;this.loads=[];const contents=new EventEmitter();contents.scripts=[];contents.executeJavaScript=async script=>{contents.scripts.push(script);};contents.session={webRequest:{onBeforeRequest:fn=>{contents.request=fn;}},setPermissionRequestHandler:fn=>{contents.permission=fn;},setPermissionCheckHandler:fn=>{contents.permissionCheck=fn;},setDevicePermissionHandler:fn=>{contents.devicePermission=fn;},setUSBProtectedClassesHandler:fn=>{contents.usbProtectedClasses=fn;}};contents.setWindowOpenHandler=fn=>{contents.open=fn;};this.webContents=contents;created.push(this);}
     removeMenu(){this.menuRemoved=true;}
     isDestroyed(){return this.destroyed;}
     isVisible(){return this.visible;}
     show(){this.visible=true;this.shows++;this.emit('show');}
+    showInactive(){this.visible=true;this.inactiveShows=(this.inactiveShows||0)+1;this.emit('show');}
     destroy(){this.destroyed=true;this.visible=false;this.emit('closed');}
     loadURL(url){this.loads.push(url);return failLoad?Promise.reject(new Error('fixture load failure')):Promise.resolve();}
     userClose(){this.emit('close');this.destroy();}
@@ -41,6 +43,36 @@ test('handoff keeps the indicator until the real workspace is both ready and vis
   let visible=false;const workspace={isDestroyed:()=>false,isVisible:()=>visible};
   assert.equal(indicator.handoff(workspace,false),false);assert.equal(indicator.handoff(workspace,true),false);assert.equal(window.destroyed,false);
   visible=true;assert.equal(indicator.handoff(workspace,false),false);assert.equal(window.destroyed,false);assert.equal(indicator.handoff(workspace,true),true);assert.equal(window.destroyed,true);
+});
+
+test('startup progress reflects completed real phases and elapsed time rather than a guessed percentage',async()=>{
+  const f=windows(); let time=0, timer, cleared=false;
+  const indicator=createStartupIndicator({BrowserWindow:f.Window,now:()=>time,setTimer:fn=>{timer=fn;return 7;},clearTimer:id=>{assert.equal(id,7);cleared=true;}});
+  const window=f.created[0]; const elements=Object.fromEntries(['stage','fill','progress','milestones','elapsed','hint'].map(id=>[id,{textContent:'',style:{},attributes:{},setAttribute(key,value){this.attributes[key]=value;}}]));
+  window.webContents.executeJavaScript=async script=>{window.webContents.scripts.push(script);runInNewContext(script,{document:{getElementById:id=>elements[id]}});};
+  indicator.progress('browser','started'); window.emit('ready-to-show'); await indicator.ready; await tick();
+  assert.match(window.webContents.scripts.at(-1),/Starting the browser/);
+  assert.match(window.webContents.scripts.at(-1),/"count":0/);
+  assert.equal(elements.stage.textContent,'Starting the browser…'); assert.equal(elements.progress.attributes['aria-valuenow'],'0');
+  time=6000; timer(); await tick(); assert.match(window.webContents.scripts.at(-1),/"elapsed":"6s"/);
+  indicator.progress('browser','ready'); indicator.progress('history','started'); await tick();
+  assert.match(window.webContents.scripts.at(-1),/Restoring saved work/); assert.match(window.webContents.scripts.at(-1),/"count":1/);
+  assert.equal(elements.stage.textContent,'Restoring saved work…'); assert.equal(elements.fill.style.width,(1/6*100)+'%'); assert.equal(elements.progress.attributes['aria-valuetext'],'1 of 6 startup stages completed');
+  time=67000; timer(); await tick(); assert.match(window.webContents.scripts.at(-1),/"elapsed":"1m 01s"/);
+  assert.equal(elements.milestones.textContent,'1 of 6 stages completed'); assert.equal(elements.elapsed.textContent,'Current step: 1m 01s');
+  indicator.progress('local-harness','ready'); indicator.progress('history','ready'); indicator.progress('history','ready'); await tick();
+  assert.match(window.webContents.scripts.at(-1),/"count":2/);
+  indicator.progress('local-harness','failed'); await tick(); assert.equal(elements.stage.textContent,'BLACKICE could not finish starting.'); assert.equal(elements.elapsed.textContent,'Startup stopped'); assert.equal(elements.hint.textContent,'Check the startup error message.');
+  indicator.dispose(); assert.equal(cleared,true); const before=window.webContents.scripts.length; timer(); await tick(); assert.equal(window.webContents.scripts.length,before);
+});
+
+test('the early isolated indicator appears without taking focus until restart identity is resolved',async()=>{
+  const f=windows(); const startup=new DesktopStartup({createIndicator:()=>createStartupIndicator({BrowserWindow:f.Window,activate:false})});
+  const showing=startup.showIndicator(); await tick(); const window=f.created[0]; window.emit('ready-to-show'); await showing;
+  startup.progress('profile','started'); await tick(); assert.equal(window.inactiveShows,1); assert.equal(window.shows,0); assert.match(window.webContents.scripts.at(-1),/Preparing your profile/);
+  // Native restart or explicitly inactive launches never call activateIndicator.
+  assert.equal(window.visible,true); startup.activateIndicator(); assert.equal(window.shows,1);
+  startup.stop(); startup.activateIndicator(); assert.equal(window.shows,1);
 });
 
 test('normal startup shows progress before a held backend and disposes it after workspace handoff',async()=>{
@@ -95,7 +127,8 @@ test('a failed static page load rejects safely and stop removes the failed indic
 test('desktop wiring preserves recovery ordering, window security, cancellation and packaged helper',async()=>{
   const source=await readFile(new URL('../desktop/main.mjs',import.meta.url),'utf8'),builder=await readFile(new URL('../desktop/electron-builder.yml',import.meta.url),'utf8');
   const start=source.slice(source.indexOf('app.whenReady().then(async () => {'));
-  assert.ok(start.indexOf('awaitProfileMaintenance')<start.indexOf('recoverProfileRestore'));assert.ok(start.indexOf('recoverProfileRestore')<start.indexOf('startup.showIndicator()'));assert.ok(start.indexOf('startup.showIndicator()')<start.indexOf('startLocalHarness(dataDir, defaultCwd)'));
+  assert.ok(start.indexOf('startup.showIndicator()')<start.indexOf('awaitProfileMaintenance'));assert.ok(start.indexOf('awaitProfileMaintenance')<start.indexOf('recoverProfileRestore'));assert.ok(start.indexOf('recoverProfileRestore')<start.indexOf('desktopRestart.init()'));assert.ok(start.indexOf('desktopRestart.init()')<start.indexOf('startup.activateIndicator()'));assert.ok(start.indexOf('startup.showIndicator()')<start.indexOf('startLocalHarness(dataDir, defaultCwd)'));
+  assert.match(source,/activate: false, icon:/); assert.match(start,/if \(desktopRestart\.isRestartStartup\(\)\)[\s\S]*?else if \(!launch\.showInactive\) startup\.activateIndicator\(\)/);
   assert.match(source,/headless: launch\.headless \|\| launch\.background, createIndicator:/);assert.match(source,/else if \(launch\.quit\)/);
   assert.match(source,/startup\.step\(\(\) => startupPhase\(diagnostics, 'local-harness', \(\) => startLocalHarness\(dataDir, defaultCwd\)\), value => value\.instance\.close\(\)\)/);
   assert.match(source,/desktopLifecycle\.stop\(\);\s*startup\.stop\(\)/);assert.match(source,/startup\.drainAfter\(\(\) => harness\?\.close\(\)\)/);

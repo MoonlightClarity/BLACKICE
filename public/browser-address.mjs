@@ -22,8 +22,7 @@ export function normalizeBrowserAddress(value) {
       if (localOrIP) url = new URL(`http:${authority}`);
     }
   } catch { throw invalidAddress(); }
-  // Internal pages and local files use Chromium's own navigation rules. An
-  // about: alias can resolve to chrome:, so accept both forms of that page.
-  if (!['http:', 'https:', 'file:', 'about:', 'chrome:'].includes(url.protocol) || url.username || url.password) throw new TypeError('Enter a web, local file, or browser page address without embedded credentials.');
+  // Preserve explicit schemes and URL credentials; the browser and OS decide
+  // how to handle navigation, unsupported schemes and external applications.
   return url.href;
 }

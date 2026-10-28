@@ -35,6 +35,15 @@ try {
   const act = async (action, name, extra = {}) => snapshot = await browser.perform({ action, tabId: id, ...(name ? { ref: ref(name) } : {}), ...extra });
   check('Cross-origin frame inspected', () => assert.ok(snapshot.frames.some(f => f.elements.some(e => e.name === 'Frame field'))));
   const firstContents = driver.tab(id).window.webContents;
+  await firstContents.executeJavaScript(`for (const name of ['Fixture authorization', 'Fixture sponsorship', 'Fixture privacy']) { const el = document.createElement('select'); el.setAttribute('aria-label', name); el.innerHTML = '<option value="">Choose</option><option value="yes">Yes</option>'; document.body.append(el); }`);
+  const observedRefs = [];
+  for (const query of ['Fixture authorization', 'Fixture sponsorship', 'Fixture privacy']) {
+    const observed = await browser.perform({ action: 'read', tabId: id, query });
+    observedRefs.push(observed.frames.flatMap(frame => frame.elements).find(element => element.name === query)?.ref);
+  }
+  assert.ok(observedRefs.every(Boolean));
+  for (const current of observedRefs) snapshot = await browser.perform({ action: 'select', tabId: id, ref: current, value: 'yes' });
+  check('Separate filtered reads retain the same-document controls for later actions', () => assert.equal(snapshot.frames[0].elements.filter(element => element.name?.startsWith('Fixture ') && element.value === 'yes').length, 3));
   await firstContents.executeJavaScript("globalThis.fixtureSaveClicks=0;document.querySelector('#save').addEventListener('click',()=>globalThis.fixtureSaveClicks++)");
   const originalCapture = firstContents.capturePage.bind(firstContents); let captureAttempts = 0;
   if (process.argv.includes('--fixture-capture-transient')) firstContents.capturePage = async (...params) => {
@@ -63,7 +72,7 @@ try {
   const stale = ref('Old field'); await act('click', 'Replace field');
   await assert.rejects(browser.perform({ action: 'fill', tabId: id, ref: stale, text: 'no' }), /stale|fresh snapshot/); checks.push('Detached refs fail without touching replacement');
   const upload = path.join(dataDir, 'upload-fixture.txt'); await fs.writeFile(upload, 'RELAY_UPLOAD');
-  await act('upload', 'Upload file', { paths: [upload] }); check('File upload + change event', () => assert.ok(snapshot.frames[0].text.includes('upload-fixture.txt')));
+  await act('upload', 'Upload file', { paths: [upload], expectedUrl: snapshot.url, expectedDocumentId: snapshot.documentId }); check('File upload + change event', () => assert.ok(snapshot.frames[0].text.includes('upload-fixture.txt')));
   await act('click', 'Download fixture');
   let downloads; for (let i = 0; i < 50; i++) { downloads = await browser.perform({ action: 'downloads' }); if (downloads.downloads[0]?.status === 'completed') break; await new Promise(r => setTimeout(r, 30)); }
   check('Download saved to unique local file', () => assert.equal(downloads.downloads[0]?.status, 'completed'));

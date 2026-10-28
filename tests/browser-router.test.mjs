@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { BrowserRouter } from '../desktop/browser-router.mjs';
-import { agentBrowserRequest, browserOwnerKey } from '../lib/browser.mjs';
+import { agentBrowserRequest, browserOwnerKey, BrowserWorkspace } from '../lib/browser.mjs';
 import { observeBrowserModel } from '../public/observe-model.mjs';
 
 class FakeDriver extends EventEmitter {
@@ -16,6 +16,21 @@ class FakeDriver extends EventEmitter {
   async show(tabId) { this.showCalls.push(tabId); return { tabId, visible: true }; }
   async close() { this.closeCalls++; }
 }
+
+test('restart cleanup reports driver uncertainty and settlement through router and workspace', async () => {
+  const relay = new FakeDriver(), updates = [];
+  relay.stopForRestart = async ({ onEffect }) => {
+    onEffect({ loads: [{ tabId: 'ordinary', outcome: 'uncertain' }], interactions: [], downloads: [] });
+    onEffect({ loads: [{ tabId: 'ordinary', outcome: 'stopped' }], interactions: [], downloads: [] });
+    return { loads: [{ tabId: 'ordinary', outcome: 'stopped' }], interactions: [], downloads: [] };
+  };
+  const workspace = new BrowserWorkspace({ driver: new BrowserRouter({ independent: relay }) });
+  const result = await workspace.stopForRestart({ onEffect: value => updates.push(value) });
+  assert.equal(updates[0].browsers.relay.loads[0].outcome, 'uncertain');
+  assert.equal(updates[1].browsers.relay.loads[0].outcome, 'stopped');
+  assert.deepEqual(result, updates[1]);
+  await workspace.close();
+});
 
 async function nativePopupFixture(t) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-router-popup-')), session = new EventEmitter();

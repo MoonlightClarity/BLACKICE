@@ -13,7 +13,7 @@ function fixture({ config, result = { content: [{type:'text',text:'## Pages\n1: 
 test('Chrome configuration uses official autoConnect through Relay stdio without browser launch or profile-copy flags',()=>{
   const config=chromeAutoConnectConnection();
   assert.equal(config.transport,'stdio');assert.equal(config.command,'npx');assert.equal(config.id,CHROME_BROWSER_CONNECTION_ID);
-  assert.deepEqual(config.args,['-y','chrome-devtools-mcp@1.11.0','--autoConnect','--channel=stable','--no-usage-statistics','--no-performance-crux']);
+  assert.deepEqual(config.args,['-y','chrome-devtools-mcp@1.11.0','--autoConnect','--channel=stable','--no-usage-statistics','--no-performance-crux','--experimentalVision=true']);
   assert.equal(config.timeoutMs,60000);assert.equal(parseConnectionImport({connections:[config]}).candidates[0].args.includes('--autoConnect'),true);
   assert.doesNotMatch(config.args.join(' '),/headless|isolated|user-data-dir|browser-url|remote-debugging-port/);
 });
@@ -27,7 +27,7 @@ test('Chrome defaults background behavior and preserves explicit foreground and 
   assert.deepEqual(chromeBackgroundArguments('fill',{uid:'1_2',value:'fixture'}),{uid:'1_2',value:'fixture'});
   assert.deepEqual(chromeBackgroundOpen('https://example.test'),{name:'new_page',arguments:{url:'https://example.test/',background:true}});
   assert.deepEqual(chromeBackgroundOpen('file:///C:/Documents/local.html'),{name:'new_page',arguments:{url:'file:///C:/Documents/local.html',background:true}});
-  assert.throws(()=>chromeBackgroundOpen('javascript:alert(1)'),{code:'BROWSER_VALIDATION'});
+  assert.deepEqual(chromeBackgroundOpen('javascript:alert(1)'),{name:'new_page',arguments:{url:'javascript:alert(1)',background:true}});
   assert.match(CHROME_BROWSER_INSTRUCTIONS,/omit isolatedContext/);assert.match(CHROME_BROWSER_INSTRUCTIONS,/bringToFront:false/);assert.match(CHROME_BROWSER_INSTRUCTIONS,/does not prove sign-in/);
 });
 
@@ -76,7 +76,7 @@ test('only explicit Connect upgrades the exact legacy generated package and pres
   assert.deepEqual(operations,[['list']]);assert.equal(manager.list()[0].args[1],'chrome-devtools-mcp@latest');
   await registerChromeBrowser({connections:manager});
   const saved=operations.filter(([name])=>name==='save');assert.equal(saved.length,1);
-  assert.deepEqual(saved[0][1].args,['-y','chrome-devtools-mcp@1.11.0','--autoConnect','--channel=beta','--no-usage-statistics','--no-performance-crux']);
+  assert.deepEqual(saved[0][1].args,['-y','chrome-devtools-mcp@1.11.0','--autoConnect','--channel=beta','--no-usage-statistics','--no-performance-crux','--experimentalVision=true']);
   assert.equal(saved[0][1].command,config.command);assert.equal(saved[0][1].timeoutMs,90000);
   await registerChromeBrowser({connections:manager});assert.equal(operations.filter(([name])=>name==='save').length,1);
 });
@@ -89,6 +89,15 @@ test('Explicit Connect preserves conflicting or disabled configurations without 
     await assert.rejects(registerChromeBrowser({connections:manager}),{code:config.enabled===false?'CHROME_CONNECTION_DISABLED':'CHROME_CONNECTION_CONFLICT'});
     assert.deepEqual(manager.list(),before);assert.equal(operations.some(([name])=>['save','connect','call'].includes(name)),false);
   }
+});
+
+test('managed vision upgrade preserves active Chrome and upgrades only after disconnect', async()=>{
+  const config=chromeAutoConnectConnection(); config.args=config.args.filter(arg=>arg!=='--experimentalVision=true');
+  const {manager,operations}=fixture({config}); await manager.connect(config.id); operations.length=0;
+  await assert.rejects(registerChromeBrowser({connections:manager}),{code:'CHROME_CONNECTION_ACTIVE'});
+  assert.equal(operations.some(([name])=>['save','connect','call'].includes(name)),false);
+  manager.clients.clear(); await registerChromeBrowser({connections:manager});
+  assert.ok(manager.list()[0].args.includes('--experimentalVision=true'));
 });
 
 test('Chrome handshake failures return bounded setup guidance without propagating private results or exception text',async()=>{

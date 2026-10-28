@@ -74,6 +74,18 @@ test('profile connection preserves conflicting or disabled settings and never tr
   assert.equal(connections, 1);
 });
 
+test('managed imported profile vision upgrade preserves an active connection and rejects custom vision settings', async () => {
+  const config={id:'browser-profile-1234567890abcdef',transport:'stdio',command:'npx',args:['-y','chrome-devtools-mcp@1.11.0','--userDataDir=C:/copied','--experimentalVision=true']};
+  let current={...config,connected:true,args:config.args.filter(arg=>arg!=='--experimentalVision=true')}, saves=0, connects=0;
+  const manager={list:()=>[current],save:async value=>{current=value;saves++;},connect:async()=>{connects++;},call:async()=>({content:[{type:'text',text:'Fixture'}]})};
+  const connect=createDirectBrowserProfileTools({profiles:{connection:async()=>config},manager}).find(tool=>tool.definition.name==='blackice_profile_connect').execute;
+  await assert.rejects(connect({importId:config.id}),{code:'BROWSER_PROFILE_CONNECTION_ACTIVE'});
+  assert.equal(saves,0); assert.equal(connects,0);
+  current.connected=false; await connect({importId:config.id}); assert.equal(saves,1); assert.equal(connects,1);
+  current={...config,args:config.args.map(arg=>arg==='--experimentalVision=true'?'--experimentalVision=false':arg)};
+  await assert.rejects(connect({importId:config.id}),{code:'BROWSER_PROFILE_CONNECTION_CONFLICT'});
+});
+
 test('reimported compact profiles reconnect from an older owned revision without adopting another profile', async t => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'blackice-profile-reconnect-'));
   const userDataDir = path.join(root, 'source'), executablePath = path.join(root, 'synthetic-browser');

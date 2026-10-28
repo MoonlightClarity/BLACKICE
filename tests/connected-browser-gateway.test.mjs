@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { ConnectionManager, connectedBrowserIdentity, createConnectionToolHandler, executeConnectedBrowser } from '../lib/mcp.mjs';
+import { ConnectionManager, MCPClient, connectedBrowserIdentity, createConnectionToolHandler, executeConnectedBrowser } from '../lib/mcp.mjs';
 import { chromeAutoConnectConnection, isChromeBrowserConnection } from '../lib/chrome-browser.mjs';
 
 const schema = { type: 'object', properties: { code: { type: 'string' } }, additionalProperties: true };
@@ -133,6 +133,93 @@ test('existing Chrome attach remains explicit and imported profiles use their ow
   const profileCall = await executeConnectedBrowser({ manager, action: 'call', connectionId: profile.id, name: 'select_page', arguments: { pageId: 3, bringToFront: true } });
   assert.equal(profileCall.success, true); assert.equal(profileCall.receipt.mode, 'imported-profile'); assert.deepEqual(calls.at(-1), { name: 'select_page', args: { pageId: 3, bringToFront: true } });
   assert.equal(isChromeBrowserConnection(profile), true); assert.deepEqual(manager.configs.get(profile.id).args, profile.args);
+});
+
+test('imported Chrome retains exact selected bytes until its connection is disposed', async t => {
+  const { manager, directory } = await harness(t);
+  const profile = { ...chromeAutoConnectConnection(), id: 'browser-profile-0123456789abcdef', args: ['-y', 'chrome-devtools-mcp@latest', '--executablePath=C:/Native/chrome.exe', '--userDataDir=C:/Imported/fixture'] };
+  await manager.save(profile); const file = path.join(directory, 'résumé.pdf'); await writeFile(file, Buffer.from([0, 1, 2, 255]));
+  let staged, calls = 0;
+  const client = { connected: true, closed: false, tools: [...chromeTools, { name: 'upload_file' }], async start() {}, async close() { this.closed = true; }, async call(name, args, options) {
+    options.onDispatch?.(); calls++; staged = args.filePaths[0];
+    assert.equal(name, 'upload_file'); assert.equal(path.basename(staged), path.basename(file));
+    assert.deepEqual(await readFile(staged), await readFile(file));
+    return { content: [{ type: 'text', text: 'Delivered to page handlers.' }] };
+  } };
+  manager.clients.set(profile.id, client);
+  const result = await executeConnectedBrowser({ manager, action: 'call', connectionId: profile.id, name: 'upload_file', arguments: { pageId: 3, uid: 'file', filePaths: [file] } });
+  assert.equal(result.success, true); assert.equal(calls, 1); assert.equal(result.receipt.stagingRetained, true);
+  assert.match(result.contentItems.at(-2).text, /confirm site acceptance/);
+  assert.deepEqual(await readFile(staged), await readFile(file), 'The browser can read the selected file after the tool returns.');
+  await manager.disconnect(profile.id); await assert.rejects(readFile(staged), { code: 'ENOENT' });
+  assert.deepEqual(await readFile(file), Buffer.from([0, 1, 2, 255]));
+});
+
+test('failed and uncertain imported uploads never replay and retain possible file effects until disposal', async t => {
+  const { manager, directory } = await harness(t);
+  const profile = { ...chromeAutoConnectConnection(), id: 'browser-profile-0123456789abcdef', args: ['-y', 'chrome-devtools-mcp@latest', '--executablePath=C:/Native/chrome.exe', '--userDataDir=C:/Imported/fixture'] };
+  await manager.save(profile); const file = path.join(directory, 'upload.txt'); await writeFile(file, 'payload');
+  let staged, calls = 0, uncertain = false; const paths = [];
+  const client = { connected: true, closed: false, tools: [...chromeTools, { name: 'upload_file' }], async start() {}, async close() { this.closed = true; }, async call(name, args, options) {
+    options.onDispatch?.(); calls++; staged = args.filePaths[0]; paths.push(staged);
+    if (uncertain) throw new Error('transport lost');
+    return { isError: true, content: [{ type: 'text', text: 'The site reported an error.' }] };
+  } };
+  manager.clients.set(profile.id, client);
+  const invoke = files => executeConnectedBrowser({ manager, action: 'call', connectionId: profile.id, name: 'upload_file', arguments: { pageId: 3, uid: 'file', filePaths: files } });
+  const error = await invoke([file]); assert.equal(error.success, false); assert.equal(error.receipt.outcome, 'tool-error'); assert.equal(calls, 1);
+  uncertain = true; const lost = await invoke([file]); assert.equal(lost.success, false); assert.equal(lost.receipt.outcome, 'unknown'); assert.equal(lost.receipt.stagingRetained, true); assert.equal(calls, 2);
+  for (const selected of paths) assert.equal(await readFile(selected, 'utf8'), 'payload');
+  const missing = await invoke([path.join(directory, 'missing')]); assert.equal(missing.success, false); assert.equal(missing.receipt.actionDispatched, false); assert.equal(calls, 2);
+  await manager.disconnect(profile.id); for (const selected of paths) await assert.rejects(readFile(selected), { code: 'ENOENT' });
+});
+
+test('attached Chrome sessions are never staged under an imported-profile label', async t => {
+  const { manager, directory } = await harness(t);
+  const profile = { ...chromeAutoConnectConnection(), id: 'browser-profile-0123456789abcdef', args: ['-y', 'chrome-devtools-mcp@latest', '--autoConnect', '--userDataDir=C:/Imported/fixture'] };
+  await manager.save(profile); const file = path.join(directory, 'upload.txt'); await writeFile(file, 'payload'); let received;
+  const client = { connected: true, closed: false, tools: [...chromeTools, { name: 'upload_file' }], async start() {}, async close() {}, async call(name, args, options) { options.onDispatch?.(); received = args.filePaths[0]; return { content: [{ type: 'text', text: 'ok' }] }; } };
+  manager.clients.set(profile.id, client);
+  const result = await executeConnectedBrowser({ manager, action: 'call', connectionId: profile.id, name: 'upload_file', arguments: { pageId: 3, uid: 'file', filePaths: [file] } });
+  assert.equal(result.success, true); assert.equal(received, file); assert.equal(result.receipt.uploadStaged, undefined);
+});
+
+test('cancelled dispatched uploads retain their selected bytes until the imported connection closes', async t => {
+  const { manager, directory } = await harness(t);
+  const profile = { ...chromeAutoConnectConnection(), id: 'browser-profile-0123456789abcdef', args: ['-y', 'chrome-devtools-mcp@latest', '--executablePath=C:/Native/chrome.exe', '--userDataDir=C:/Imported/fixture'] };
+  await manager.save(profile); const file = path.join(directory, 'upload.txt'); await writeFile(file, 'payload');
+  const controller = new AbortController(); let staged, calls = 0;
+  const client = { connected: true, closed: false, tools: [...chromeTools, { name: 'upload_file' }], async start() {}, async close() { this.closed = true; }, async call(name, args, options) {
+    options.onDispatch?.(); calls++; staged = args.filePaths[0]; controller.abort(); return { content: [{ type: 'text', text: 'May have reached the page.' }] };
+  } };
+  manager.clients.set(profile.id, client);
+  await assert.rejects(executeConnectedBrowser({ manager, action: 'call', connectionId: profile.id, name: 'upload_file', arguments: { pageId: 3, uid: 'file', filePaths: [file] }, signal: controller.signal }), error => {
+    assert.equal(error.name, 'AbortError'); assert.equal(error.receipt.outcome, 'unknown'); assert.equal(error.receipt.stagingRetained, true); return true;
+  });
+  assert.equal(calls, 1); assert.equal(await readFile(staged, 'utf8'), 'payload');
+  await manager.disconnect(profile.id); await assert.rejects(readFile(staged), { code: 'ENOENT' });
+});
+
+test('orderly reconnect clears staged files while a previously lost browser retains them', async t => {
+  const { manager, directory } = await harness(t);
+  const profile = { ...chromeAutoConnectConnection(), id: 'browser-profile-0123456789abcdef', args: ['-y', 'chrome-devtools-mcp@latest', '--executablePath=C:/Native/chrome.exe', '--userDataDir=C:/Imported/fixture'] };
+  await manager.save(profile); const file = path.join(directory, 'upload.txt'); await writeFile(file, 'payload');
+  let staged;
+  const client = () => ({ connected: true, closed: false, tools: [...chromeTools, { name: 'upload_file' }], async start() {}, async close() { this.closed = true; }, async call(name, args, options) { options.onDispatch?.(); staged = args.filePaths[0]; return { content: [{ type: 'text', text: 'ok' }] }; } });
+  const invoke = () => executeConnectedBrowser({ manager, action: 'call', connectionId: profile.id, name: 'upload_file', arguments: { pageId: 3, uid: 'file', filePaths: [file] } });
+  const originalStart = MCPClient.prototype.start; MCPClient.prototype.start = async function () { this.connected = true; return this; };
+  try {
+    manager.clients.set(profile.id, client()); assert.equal((await invoke()).success, true);
+    const cleanStage = staged; await manager.connect(profile.id, { reconnect: true });
+    await assert.rejects(readFile(cleanStage), { code: 'ENOENT' });
+    const lostClient = client(); manager.clients.set(profile.id, lostClient); assert.equal((await invoke()).success, true);
+    const uncertainStage = staged; lostClient.closed = true;
+    await manager.connect(profile.id, { reconnect: true });
+    assert.equal(await readFile(uncertainStage, 'utf8'), 'payload');
+    const stagingRoot = path.dirname(path.dirname(uncertainStage));
+    assert.ok(stagingRoot.startsWith(path.join(tmpdir(), 'blackice-upload-')));
+    await rm(stagingRoot, { recursive: true, force: true });
+  } finally { MCPClient.prototype.start = originalStart; }
 });
 
 test('connected browser image export shares exact-byte validation, receipt and no-overwrite behavior', async t => {

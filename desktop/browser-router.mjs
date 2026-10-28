@@ -122,6 +122,17 @@ export class BrowserRouter extends EventEmitter {
     if (this.closed || typeof this.drivers.relay?.releaseOwner !== 'function') return { suspended: [], retained: [], unavailable: true };
     return this.drivers.relay.releaseOwner(owner);
   }
+  async stopForRestart({ signal, onEffect } = {}) {
+    const browsers = {};
+    for (const [name, driver] of Object.entries(this.drivers)) {
+      if (signal?.aborted) throw Object.assign(cancelled(), { forceBrowserEffects: { browsers } });
+      if (typeof driver?.stopForRestart !== 'function') continue;
+      const report = effects => { browsers[name] = effects; if (!signal?.aborted && typeof onEffect === 'function') onEffect(structuredClone({ browsers })); };
+      try { browsers[name] = await driver.stopForRestart({ signal, onEffect: report }); }
+      catch (reason) { if (reason.forceBrowserEffects) browsers[name] = reason.forceBrowserEffects; throw Object.assign(reason, { forceBrowserEffects: { browsers } }); }
+    }
+    return { browsers };
+  }
   async flushPersistence() {
     if (this.closed) throw fail('The browser workspace has closed.', 'BROWSER_CLOSED');
     if (typeof this.drivers.relay?.flushPersistence !== 'function') throw fail('The contained browser cannot confirm its saved page and folder state.', 'BROWSER_PERSISTENCE_UNAVAILABLE');

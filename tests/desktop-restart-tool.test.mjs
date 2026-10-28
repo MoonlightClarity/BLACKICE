@@ -15,8 +15,8 @@ test('restart tool schema requires one stable request ID and existing command au
   const { definition } = desktopRestartTool({ restart: { request() {} }, getJob() {} });
   assert.equal(definition.name, 'blackice_restart'); assert.equal(definition.scope, 'commands:run');
   assert.deepEqual(definition.requiredScopes, ['commands:run']); assert.equal(definition.mutating, true);
-  assert.deepEqual(definition.annotations, { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false });
-  assert.deepEqual(Object.keys(definition.inputSchema.properties), ['requestId']);
+  assert.deepEqual(definition.annotations, { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false });
+  assert.deepEqual(Object.keys(definition.inputSchema.properties), ['requestId', 'force']);
   assert.deepEqual(definition.inputSchema.required, ['requestId']); assert.equal(definition.inputSchema.additionalProperties, false);
   const id = definition.inputSchema.properties.requestId;
   assert.equal(id.minLength, 1); assert.equal(id.maxLength, 120);
@@ -24,7 +24,9 @@ test('restart tool schema requires one stable request ID and existing command au
   for (const value of ['', ' restart', 'restart/one', 'a'.repeat(121)]) assert.doesNotMatch(value, new RegExp(id.pattern));
   assert.match(definition.description, /scheduling, not completed restart/);
   assert.match(definition.description, /preserving the current profile and mode/);
-  assert.match(definition.description, /Refuses active work/);
+  assert.equal(definition.inputSchema.properties.force.type, 'boolean');
+  assert.match(definition.description, /active work blocks restart/);
+  assert.match(definition.description, /pause automatic queues and stop cancellable work/);
 });
 
 test('restart tool returns only its scheduling receipt and defers raw job reads to the controller', async () => {
@@ -36,7 +38,8 @@ test('restart tool returns only its scheduling receipt and defers raw job reads 
     getJob: async id => { reads.push(id); return rawJob; },
   });
   const result = await tool.execute({ requestId: 'scheduled-once' }, { signal, jobId, client });
-  assert.deepEqual(Object.keys(received).sort(), ['jobId', 'ownerId', 'requestId', 'signal', 'waitForReceipt']);
+  assert.deepEqual(Object.keys(received).sort(), ['force', 'jobId', 'ownerId', 'requestId', 'signal', 'waitForReceipt']);
+  assert.equal(received.force, false);
   assert.equal(received.requestId, 'scheduled-once'); assert.equal(received.ownerId, client.id);
   assert.equal(received.jobId, jobId); assert.equal(received.signal, signal); assert.deepEqual(reads, []);
   assert.deepEqual(result, { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify(scheduled(received)) }] });
@@ -78,13 +81,32 @@ test('API enforces restart scope and exact schema before admitting any job', asy
   assert.equal(api.tools(read).some(tool => tool.name === 'blackice_restart'), false);
   assert.equal(api.tools(client).some(tool => tool.name === 'blackice_restart'), true);
   await assert.rejects(api.call('blackice_restart', { requestId: 'read-denied' }, read), { code: 'DIRECT_SCOPE_REQUIRED', scope: 'commands:run' });
-  for (const args of [{}, { requestId: '' }, { requestId: 'bad/id' }, { requestId: 'a'.repeat(121) }, ...['force', 'approved', 'approval', 'override'].map(key => ({ requestId: `extra-${key}`, [key]: true }))]) {
+  for (const args of [{}, { requestId: '' }, { requestId: 'bad/id' }, { requestId: 'a'.repeat(121) }, ...['approved', 'approval', 'override'].map(key => ({ requestId: `extra-${key}`, [key]: true })), ...[null, 'true', 1].map(force => ({ requestId: 'invalid-force', force }))]) {
     await assert.rejects(api.call('blackice_restart', args, client), { code: 'DIRECT_REQUEST_INVALID' });
   }
   assert.equal(calls, 0); assert.equal((await api.status(client)).jobs.total, 0);
   const standalone = make();
   assert.equal(standalone.tools(client).some(tool => tool.name === 'blackice_restart'), false);
   await assert.rejects(standalone.call('blackice_restart', { requestId: 'standalone' }, client), { code: 'DIRECT_TOOL_UNKNOWN' });
+});
+
+test('API force restart forwards an explicit choice and retries the exact same request once', async t => {
+  const started = held(), release = held(); t.after(() => release.resolve());
+  const { make } = await apiHarness(t);
+  let calls = 0, received, api;
+  const restart = { request: async value => { calls++; received = value; started.resolve(); await release.promise; return { ...scheduled(value), force: value.force }; } };
+  api = make({ additionalTools: [desktopRestartTool({ restart, getJob: id => api.jobs.get(id) })] });
+  const args = { requestId: 'force-restart-once', force: true };
+  const first = await api.call('blackice_restart', args, client);
+  await started.promise;
+  assert.equal(received.force, true);
+  const same = await api.call('blackice_restart', args, client);
+  assert.equal(same.existing, true); assert.equal(same.jobId, first.jobId); assert.equal(calls, 1);
+  await assert.rejects(api.call('blackice_restart', { ...args, force: false }, client), { code: 'DIRECT_REQUEST_CONFLICT' });
+  release.resolve();
+  const done = await waitJob(api, first.jobId);
+  assert.equal(done.status, 'succeeded');
+  assert.equal(JSON.parse(done.result.text.text).force, true);
 });
 
 test('API saves a restart scheduling receipt and identical retries never execute again across reopen', async t => {

@@ -309,7 +309,42 @@ test('history discovery is workspace scoped, excludes the current run, returns a
   await assert.rejects(handler(call('relay_history', { action: 'read', id: 'other-project' })), /selected history scope/);
   assert.equal(decode(await handler(call('relay_history', { action: 'read', id: 'other-project', scope: 'global' }))).run.output, 'private output');
   assert.equal(decode(await handler(call('relay_history', { action: 'search', query: 'Other project', scope: 'global' }))).results[0].id, 'other-project');
-  await assert.rejects(handler(call('relay_history', { action: 'search', limit: 11 })), /Limit/);
+  const capped = decode(await handler(call('relay_history', { action: 'search', query: 'needle', limit: 20 })));
+  assert.equal(capped.requestedLimit, 20);
+  assert.equal(capped.appliedLimit, 10);
+  assert.equal(capped.truncated, true);
+  assert.deepEqual(capped.results, result.results);
+});
+
+test('knowledge searches cap oversized positive limits and report whether results were omitted', async t => {
+  const { store, cwd } = await harness(t);
+  for (const kind of ['memory', 'skill']) {
+    for (let index = 0; index < 12; index++) await store.upsert({ kind, title: `Match ${index}`, content: `matching record ${index}`, cwd });
+  }
+  const handler = createKnowledgeToolHandler({ store, cwd, getRuns: () => [] });
+  for (const [name, kind] of [['relay_memory', 'memory'], ['relay_skills', 'skill']]) {
+    const capped = decode(await handler(call(name, { action: 'search', query: 'matching', limit: 20 })));
+    assert.equal(capped.requestedLimit, 20);
+    assert.equal(capped.appliedLimit, 10);
+    assert.equal(capped.truncated, true);
+    assert.deepEqual(capped.entries, store.list({ kind, query: 'matching', cwd, limit: 10 }));
+    const standard = decode(await handler(call(name, { action: 'search', query: 'matching' })));
+    assert.equal(standard.requestedLimit, 10);
+    assert.deepEqual(standard.entries, capped.entries);
+    const few = decode(await handler(call(name, { action: 'search', query: 'record 11', limit: 20 })));
+    assert.equal(few.truncated, false);
+    for (const invalid of [0, -1, 1.5, '20', Number.MAX_SAFE_INTEGER + 1]) {
+      await assert.rejects(handler(call(name, { action: 'search', limit: invalid })), /Limit/);
+    }
+  }
+  const history = decode(await handler(call('relay_history', { action: 'search', limit: 20 })));
+  assert.equal(history.truncated, false);
+  assert.equal(history.appliedLimit, 10);
+  for (const invalid of [0, -1, 1.5, '20', Number.MAX_SAFE_INTEGER + 1]) {
+    await assert.rejects(handler(call('relay_history', { action: 'search', limit: invalid })), /Limit/);
+  }
+  await assert.rejects(handler(call('relay_memory', { action: 'remember', title: 'Invalid', content: 'unchanged', limit: 20 })), /Limit/);
+  assert.equal(store.list({ kind: 'memory', cwd, limit: 20 }).length, 12);
 });
 
 test('history reads bound large outcomes and node handoffs and preserve observed completion status', async t => {
@@ -330,7 +365,8 @@ test('published dynamic tool schemas match their runtime names and disallow unbo
   for (const tool of KNOWLEDGE_TOOLS) {
     assert.equal(tool.type, 'function');
     assert.equal(tool.inputSchema.additionalProperties, false);
-    assert.equal(tool.inputSchema.properties.limit.maximum, 10);
+    assert.equal(tool.inputSchema.properties.limit.maximum, Number.MAX_SAFE_INTEGER);
+    assert.match(tool.inputSchema.properties.limit.description, /at most 10/);
     assert.equal(tool.inputSchema.properties.query.maxLength, 256);
   }
 });
