@@ -1,0 +1,59 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "scope": "source-publication",
+  "version": "2.36.0",
+  "sourceHead": "649c67c4baccb3818ce7441c00168f92b16123e2",
+  "platform": "win32",
+  "node": "v24.13.0",
+  "npm": "11.6.2",
+  "checkedAt": "2026-10-28T15:13:04.4082529Z",
+  "appFingerprint": "2d7c2ae64bb4b55ebc0fa6b694d65e81f75c01d341d050ca98c8037ac73e4ed9",
+  "fingerprintUnchanged": true,
+  "fingerprintComparison": "The tested checkout was clean before and after the run. A separate pristine checkout of the same commit was measured after the run and matched both the post-test and post-package application fingerprints; no separate pre-test fingerprint was recorded.",
+  "sourceIndexSha256": "2f60fbe881f6c762eab7c3d9ffa512822eb7d65169727a47a5982b0d41e7ab00",
+  "sourceFilesVerified": 1079,
+  "sourceUnchanged": true,
+  "testFiles": 411,
+  "fullSuite": true,
+  "tests": {
+    "total": 5086,
+    "passed": 5078,
+    "failed": 0,
+    "requiredSkipped": 0,
+    "optionalSkipped": 8,
+    "cancelled": 0,
+    "exitCode": 0
+  },
+  "testLogSha256": "fd774e19c66978f80b8d8761609f9e4207da45426f21eafacf359aab2448f834",
+  "optionalIntegrationSkips": [
+    "Relay-owned sign-in and local storage survive a full process restart without foregrounding",
+    "restored hidden browser tabs defer requests until used and never load closed or replaced pages",
+    "native cross-origin popups redirect, message their opener and follow or close without breaking Observe pins or task routing",
+    "actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases",
+    "live background accessibility actions change only a dedicated non-activating fixture and leave foreground and cursor untouched",
+    "hidden isolated Chromium composer validates real layout and one-click send wiring",
+    "installed Himalaya sends exact MIME to disposable loopback SMTP and strips Bcc headers",
+    "real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart"
+  ],
+  "dependencies": {
+    "electron": "44.7.2",
+    "electronBuilder": "26.15.3",
+    "packageLockSha256": "db930c8b09d98cb60add0632f1d5eda1cb4b8682513c5196e9d8c39bbf45a20c"
+  },
+  "limitations": [
+    "Eight opt-in live browser, accessibility, email and Firefox integration fixtures were skipped; no required test was skipped.",
+    "This source-suite receipt does not substitute for isolated exact-installer validation.",
+    "Bounded model evaluations do not establish universal reasoning quality.",
+    "The candidate installer is unsigned; Windows cannot verify a publisher identity."
+  ],
+  "artifactSha256": "6da87dbf77691ddd24981fdd59b9b9b133126149726fb1595ccb74b0cd8cbd58",
+  "packageLogSha256": "47aacce1904bdfc887b00836c635bb0218cf935c0acf2d7680754a24157d50a5",
+  "priorValidation": {
+    "sourceHead": "129dc4d7b569c0bd2f7f50d6fbd7fcee411a3703",
+    "fullSuitePassed": false,
+    "testLogSha256": "e9845b7cca574a0bab50d3531e73950a9a5c4eeaa6b7202bc916bfa1f5728f06",
+    "correctionCommit": "649c67c4baccb3818ce7441c00168f92b16123e2",
+    "correctionScope": "A force-restart test fixture was corrected to avoid a timeout race and teardown deadlock. Production runtime sources were unchanged."
+  }
+}
