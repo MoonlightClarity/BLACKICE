@@ -52,13 +52,21 @@ test('API Stop keeps a real pending patch leased, preserves its late receipt, an
     if (request.model === 'independent') return finalReply('Independent conversation completed.');
     if (++primaryRequests === 1) return callReply([['plan-read', 'relay_task', { action: 'read' }]]);
     if (primaryRequests === 2) {
-      const state = JSON.parse(request.messages.findLast(message => message.role === 'tool').content);
-      return callReply([['plan-write', 'relay_task', { action: 'plan', expectedRevision: state.revision, plan: { layout: 'sequence', detail: 'balanced' }, steps: [{ id: 'patch', kind: 'action', title: 'Apply the fixture patch', status: 'active', doneWhen: 'The saved patch receipt and target bytes agree.' }] }]]);
+      const receipt = request.messages.find(message => message.role === 'tool' && message.tool_call_id === 'plan-read');
+      assert.ok(receipt, 'The provider receives the actual task-read result.');
+      const state = JSON.parse(receipt.content); assert.equal(state.error, undefined, receipt.content);
+      return callReply([['plan-write', 'relay_task', { action: 'plan', expectedRevision: state.revision, plan: { layout: 'sequence', detail: 'balanced' }, steps: [{ id: 'patch', kind: 'action', title: 'Apply the fixture patch', status: 'active', result: 'result.txt contains confirmed patch with a durable receipt identifying the changed bytes.', note: 'Apply the exact before-to-confirmed patch replacement in result.txt through relay_workspace patch; compare the resulting file contents and afterHash saved in the durable receipt.', doneWhen: 'The saved patch receipt and target bytes agree.' }] }]]);
     }
-    if (primaryRequests === 3) return callReply([
-      ['held-patch', 'relay_workspace', { action: 'patch', path: 'result.txt', oldText: 'before', newText: 'confirmed patch' }],
-      ['must-not-start', 'relay_workspace', { action: 'write', path: 'after-stop.txt', text: 'This later operation must not run.' }],
-    ]);
+    if (primaryRequests === 3) {
+      const receipt = request.messages.find(message => message.role === 'tool' && message.tool_call_id === 'plan-write');
+      assert.ok(receipt, 'The provider receives the actual plan-write result before requesting the patch.');
+      const planned = JSON.parse(receipt.content); assert.equal(planned.error, undefined, receipt.content);
+      assert.equal(planned.plan.origin, 'agent'); assert.equal(planned.plan.detail, 'detailed'); assert.equal(planned.steps[0].id, 'patch');
+      return callReply([
+        ['held-patch', 'relay_workspace', { action: 'patch', path: 'result.txt', oldText: 'before', newText: 'confirmed patch' }],
+        ['must-not-start', 'relay_workspace', { action: 'write', path: 'after-stop.txt', text: 'This later operation must not run.' }],
+      ]);
+    }
     return finalReply('Continuation after actual tool settlement.');
   });
   const tasks = await new TaskStateStore({ dataDir: f.dataDir }).init(), engine = await new HarnessEngine({ runtime: f.runtime, tasks, dataDir: f.dataDir, defaultCwd: f.cwd, maxConcurrentRuns: 2 }).init();

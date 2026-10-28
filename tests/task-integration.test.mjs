@@ -30,15 +30,21 @@ async function taskCall(options, args) { const result = await options.onToolCall
 const settled = (engine, id) => wait(() => engine.getRun(id).settled && engine.getRun(id));
 
 for (const ending of ['cancelled', 'failed']) test(`${ending} real saved agent state resumes the same conversation and preserves the stopped run`, async t => {
-  const started = deferred(), releaseStop = deferred(), threadId = 'provider_continuity-thread'; let artifactId;
+  const releaseStop = deferred(), threadId = 'provider_continuity-thread'; let started = false, artifactId;
   const runtime = new Runtime(async (options, callNumber) => {
     options.onEvent({ type: 'thread', threadId }); options.onEvent({ type: 'turn', turnId: 'turn-' + callNumber, threadId });
     assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_task'));
     if (callNumber === 1) {
-      let state = await taskCall(options, { action: 'read' }); state = await taskCall(options, { action: 'plan', expectedRevision: state.revision, steps: [{ id: 'inspect', title: 'Inspect source', status: 'done', doneWhen: 'The fixture source has been inspected.', evidence: 'The fixture inspected its supplied source before recording this state.' }, { id: 'finish', title: 'Finish the deliverable', status: 'active', doneWhen: 'The complete deliverable is written and its current content has been checked.' }] });
+      let state = await taskCall(options, { action: 'read' }); state = await taskCall(options, { action: 'plan', expectedRevision: state.revision, steps: [
+        { id: 'inspect', title: 'Inspect source', status: 'active', result: 'The source content for project ALPHA is confirmed.', note: 'Read source.txt from the fixture workspace and compare its contents with the supplied project source.', doneWhen: 'The source file has been read and its actual contents recorded.' },
+        { id: 'finish', title: 'Finish the deliverable', status: 'pending', result: 'A registered deliverable.txt containing the completed project work.', note: 'Write the partial deliverable, preserve it if interrupted, then read and complete its contents, verify the finished bytes, and register the file.', doneWhen: 'The complete deliverable is written and its current content has been checked.' },
+      ] });
+      assert.equal(await readFile(path.join(options.cwd, 'source.txt'), 'utf8'), 'Fixture source for project ALPHA.');
+      state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'inspect', status: 'done', evidence: 'Read source.txt and confirmed its contents are "Fixture source for project ALPHA.".' });
+      state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'finish', status: 'active' });
       await writeFile(path.join(options.cwd, 'deliverable.txt'), 'Actual partial work.'); state = await taskCall(options, { action: 'artifact', expectedRevision: state.revision, path: 'deliverable.txt', title: 'Deliverable' }); artifactId = state.artifacts[0].id;
       state = await taskCall(options, { action: 'checkpoint', expectedRevision: state.revision, goal: 'Finish project ALPHA.', completed: ['Inspected the real source.'], decisions: ['Keep the existing implementation.'], nextSteps: ['Complete and recheck the file.'] });
-      options.onEvent({ type: 'delta', threadId, delta: 'Partial work is preserved.' }); options.onEvent({ type: 'usage', threadId, usage: { totalTokens: 20, total: { totalTokens: 20 } } }); started.resolve();
+      options.onEvent({ type: 'delta', threadId, delta: 'Partial work is preserved.' }); options.onEvent({ type: 'usage', threadId, usage: { totalTokens: 20, total: { totalTokens: 20 } } }); started = true;
       if (ending === 'cancelled') { await new Promise(resolve => { if (options.signal.aborted) resolve(); else options.signal.addEventListener('abort', resolve, { once: true }); }); await releaseStop.promise; options.onEvent({ type: 'usage', threadId, usage: { totalTokens: 25, total: { totalTokens: 25 } } }); options.onEvent({ type: 'delta', threadId, delta: 'Unwanted text after stop.' }); throw Object.assign(new Error('Stopped.'), { name: 'AbortError' }); }
       throw new Error('Provider transport deliberately failed.');
     }
@@ -46,11 +52,17 @@ for (const ending of ['cancelled', 'failed']) test(`${ending} real saved agent s
     let state = await taskCall(options, { action: 'read' }); assert.equal(state.interruption.status, ending); assert.equal(state.progress.done, 1); assert.equal(state.artifacts[0].id, artifactId);
     state = await taskCall(options, { action: 'plan', expectedRevision: state.revision, steps: state.steps });
     assert.equal(await readFile(path.join(options.cwd, 'deliverable.txt'), 'utf8'), 'Actual partial work.'); await writeFile(path.join(options.cwd, 'deliverable.txt'), 'Actual finished work.');
+    assert.equal(await readFile(path.join(options.cwd, 'deliverable.txt'), 'utf8'), 'Actual finished work.');
     state = await taskCall(options, { action: 'artifact', expectedRevision: state.revision, path: 'deliverable.txt' }); state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'finish', status: 'done', evidence: 'Read and replaced the fixture deliverable, then checked the current registered bytes.' });
     assert.equal(state.progress.done, 2); assert.equal(state.interruption, null); return { output: 'Completed and checked.', threadId, usage: { totalTokens: 10, total: { totalTokens: 30 } } };
   });
-  const { engine, tasks, engines, cwd, dataDir } = await engineHarness(t, runtime), original = engine.startRun({ workflow: graph, input: 'Finish project ALPHA.' }); await started.promise;
-  if (ending === 'cancelled') { engine.cancelRun(original.id); assert.throws(() => engine.continueRun(original.id, { nodeId: 'agent', message: 'Too soon.' }), /active|stopping|finish/i); releaseStop.resolve(); }
+  const { engine, tasks, engines, cwd, dataDir } = await engineHarness(t, runtime);
+  await writeFile(path.join(cwd, 'source.txt'), 'Fixture source for project ALPHA.');
+  const original = engine.startRun({ workflow: graph, input: 'Finish project ALPHA.' });
+  try {
+    await wait(() => { if (started) return true; const run = engine.getRun(original.id); assert.ok(!run.settled, run.error || run.nodes.agent?.error || 'Fixture settled before recording partial work.'); return false; });
+    if (ending === 'cancelled') { engine.cancelRun(original.id); assert.throws(() => engine.continueRun(original.id, { nodeId: 'agent', message: 'Too soon.' }), /active|stopping|finish/i); }
+  } finally { releaseStop.resolve(); }
   const stopped = await settled(engine, original.id); assert.equal(stopped.status, ending); assert.equal(stopped.nodes.agent.threadId, threadId); assert.equal(stopped.nodes.agent.output, 'Partial work is preserved.'); assert.equal(stopped.nodes.agent.usage.total.totalTokens, ending === 'cancelled' ? 25 : 20); assert.equal(stopped.taskState.checkpoint.kind, 'agent'); assert.equal(stopped.taskState.interruption.status, ending);
   assert.equal(stopped.taskState.checkpoint.provenance.runId, original.id); assert.equal(stopped.taskState.checkpoint.provenance.nodeId, 'agent'); assert.equal(stopped.taskState.checkpoint.provenance.source, 'agent'); assert.equal(stopped.taskState.interruption.provenance.runId, original.id); assert.equal(stopped.taskState.interruption.provenance.source, 'runtime');
   const stoppedSnapshot = structuredClone(stopped);

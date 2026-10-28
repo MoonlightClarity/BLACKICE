@@ -29,7 +29,10 @@ for(const type of ['openai','anthropic','compatible'])test(`${type}: the engine 
   const instructions=body=>type==='openai'?body.instructions:type==='anthropic'?body.system:body.messages.find(message=>message.role==='system')?.content;
   const messages=body=>type==='openai'?body.input:body.messages.filter(message=>message.role!=='system');
   const toolNames=body=>(body.tools||[]).map(tool=>type==='compatible'?tool.function.name:tool.name);
-  const firstInstructions=instructions(requests[0].body);assert.equal(typeof firstInstructions,'string');assert.match(firstInstructions,/CAPABILITY ROUTING — BEFORE ACTION/);assert.match(firstInstructions,/GENERAL ANALYTICAL METHOD/);assert.match(firstInstructions,/reasoning moves, not mandatory stages/);
+  const firstInstructions=instructions(requests[0].body);assert.equal(typeof firstInstructions,'string');assert.match(firstInstructions,/CAPABILITY ROUTING — BEFORE ACTION/);assert.match(firstInstructions,/GENERAL ANALYTICAL METHOD/);
+  assert.match(firstInstructions,/actual candidate wording, designs, allocations or rival predictions under common conditions/);
+  assert.match(firstInstructions,/reasoning operations, not mandatory stages, fields or an output template/);
+  assert.match(firstInstructions,/evidence and fit threshold for the next authorized action/);
   assert.deepEqual(manifest(firstInstructions).map(item=>item.name),toolNames(requests[0].body));assert.deepEqual(new Set(toolNames(requests[0].body)),new Set(['relay_workspace','relay_control','relay_memory','relay_skills','relay_history']));for(const name of ['relay_browser','relay_desktop','relay_connections','relay_identity','relay_files','relay_task'])assert.ok(!manifest(firstInstructions).some(item=>item.name===name),name);
   assert.ok(!JSON.stringify(messages(requests[0].body)).includes('CAPABILITY ROUTING — BEFORE ACTION'),'routing policy must not exist only in a user prompt');
   // Remote providers can receive a genuinely updated catalog on their next turn.

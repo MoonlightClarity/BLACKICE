@@ -16,6 +16,13 @@ const waitFor=async(check,label='condition')=>{const deadline=Date.now()+4000;wh
 const jsonResponse=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}});
 const answer=text=>({status:'completed',output:[{type:'message',role:'assistant',content:[{type:'output_text',text}]}],usage:{input_tokens:7,output_tokens:3,total_tokens:10}});
 const functionCall=(name,args,id='browser-call')=>({status:'completed',output:[{type:'function_call',id:`item-${id}`,call_id:id,name,arguments:JSON.stringify(args)}],usage:{input_tokens:7,output_tokens:3,total_tokens:10}});
+const toolResult=(request,callId)=>{
+  const receipt=request.input.find(item=>item.type==='function_call_output'&&item.call_id===callId);
+  assert.ok(receipt,`Missing provider tool result for ${callId}`);
+  const text=receipt.output.filter(item=>item.type==='input_text').map(item=>item.text).join('\n'),value=JSON.parse(text);
+  assert.equal(value.error,undefined,text);
+  return value;
+};
 const graph=(model='default')=>({id:'capability-flow',name:'Capabilities integration',nodes:[{id:'input',type:'input',name:'Task'},{id:'agent',type:'agent',name:'Agent',prompt:'Inspect the requested result and report verified evidence.',model},{id:'output',type:'output',name:'Result'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:2}});
 
 class FakeCodex extends EventEmitter {
@@ -74,12 +81,13 @@ test('HTTP preflight checks each selected provider instead of aggregate runtime 
         return jsonResponse(functionCall('relay_task',{action:'read'},'default-task-read'));
       }
       if(requests.length===2){
-        const receipt=body.input.find(item=>item.type==='function_call_output'&&item.call_id==='default-task-read');
-        const current=JSON.parse(receipt.output.filter(item=>item.type==='input_text').map(item=>item.text).join('\n'));
+        const current=toolResult(body,'default-task-read');
         assert.equal(current.plan.origin,'runtime');assert.deepEqual(current.steps,[]);
-        return jsonResponse(functionCall('relay_task',{action:'plan',expectedRevision:current.revision,plan:{layout:'sequence'},steps:[{id:'verify-provider',title:'Verify the selected remote provider',kind:'action',status:'active',doneWhen:'The configured available provider returns its own fixture response.'}]},'default-task-plan'));
+        return jsonResponse(functionCall('relay_task',{action:'plan',expectedRevision:current.revision,plan:{layout:'sequence'},steps:[{id:'verify-provider',title:'Verify the selected remote provider',kind:'action',status:'active',result:'A response from the configured remote provider, with the selected route available for verification.',note:'Use the admitted remote-fixture route and return its fixture response; check the captured provider model and ensure the offline native provider was not invoked.',doneWhen:'The configured available provider returns its own fixture response.'}]},'default-task-plan'));
       }
       assert.equal(requests.length,3);
+      const planned=toolResult(body,'default-task-plan');
+      assert.equal(planned.plan.origin,'agent');assert.equal(planned.plan.detail,'detailed');assert.equal(planned.steps[0].id,'verify-provider');
       return jsonResponse(answer('Remote provider selected correctly'));
     }}).init();
     await runtime.saveProvider({id:'cloud',type:'openai',models:['remote-fixture'],apiKey:'fixture-private-provider-key'});
@@ -113,15 +121,17 @@ test('provider HTTP tools registered by the engine invoke the actual browser wor
         return jsonResponse(functionCall('relay_task',{action:'read'},'task-read'));
       }
       if(requests.length===2){
-        const receipt=request.input.find(item=>item.type==='function_call_output'&&item.call_id==='task-read');
-        const current=JSON.parse(receipt.output.filter(item=>item.type==='input_text').map(item=>item.text).join('\n'));
+        const current=toolResult(request,'task-read');
         assert.equal(current.plan.origin,'runtime');assert.deepEqual(current.steps,[]);
-        return jsonResponse(functionCall('relay_task',{action:'plan',expectedRevision:current.revision,plan:{layout:'sequence'},steps:[{id:'verify-browser',title:'Open and inspect the fixture page',kind:'action',status:'active',doneWhen:'The browser returns the observed fixture value and its actual screenshot.'}]},'task-plan'));
+        return jsonResponse(functionCall('relay_task',{action:'plan',expectedRevision:current.revision,plan:{layout:'sequence'},steps:[{id:'verify-browser',title:'Open and inspect the fixture page',kind:'action',status:'active',result:'The fixture page observation and an actual screenshot from the task-owned browser tab.',note:'Open https://example.test/fixture, retain the returned task-owned tabId, and request a screenshot from that tab; inspect the returned page text and image.',doneWhen:'The browser returns the observed fixture value and its actual screenshot.'}]},'task-plan'));
       }
-      if(requests.length===3)return jsonResponse(functionCall('relay_browser',{action:'open',url:'https://example.test/fixture'},'open'));
+      if(requests.length===3){
+        const planned=toolResult(request,'task-plan');
+        assert.equal(planned.plan.origin,'agent');assert.equal(planned.plan.detail,'detailed');assert.equal(planned.steps[0].id,'verify-browser');
+        return jsonResponse(functionCall('relay_browser',{action:'open',url:'https://example.test/fixture'},'open'));
+      }
       if(requests.length===4){
-        const receipt=request.input.find(item=>item.type==='function_call_output'&&item.call_id==='open');
-        const opened=JSON.parse(receipt.output.filter(item=>item.type==='input_text').map(item=>item.text).join('\n'));
+        const opened=toolResult(request,'open');
         assert.ok(opened.tabId);assert.notEqual(opened.tabId,personalTab.tabId);
         return jsonResponse(functionCall('relay_browser',{action:'screenshot',tabId:opened.tabId},'image'));
       }

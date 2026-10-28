@@ -22,7 +22,12 @@ async function fixture(t,{execute,externalReceipt=false}={}){
       options.onEvent({type:'thread',threadId:`project-fixture-${calls.length}`,model:'project-fixture-model'});
       const taskCall=async args=>{const result=await options.onToolCall({name:'relay_task',arguments:args});assert.equal(result.success,true,JSON.stringify(result));return JSON.parse(result.contentItems[0].text);};
       let taskState=await taskCall({action:'read'});
-      taskState=await taskCall({action:'plan',expectedRevision:taskState.revision,steps:[{id:'assigned',title:review?'Inspect the saved proof against its criterion':'Write the requested proof file',status:'active',doneWhen:review?'The actual proof file is read and compared with the requested content.':'The intended file is written and its gateway receipt confirms the write.'}]});
+      taskState=await taskCall({action:'plan',expectedRevision:taskState.revision,steps:[{
+        id:'assigned',title:review?'Inspect the saved proof against its criterion':'Write the requested proof file',status:'active',
+        result:review?'An independent acceptance verdict with the observed proof content and any failed criterion.':'proof.txt saved with this fixture attempt\'s intended content and a write receipt.',
+        note:review?'Read proof.txt through relay_workspace, compare its actual content with the requirement that it contains accepted, and return the verdict with the observed content.':'Write the fixture\'s initial or repaired content to proof.txt through relay_workspace and inspect the returned write receipt; a separate reviewer will check acceptance.',
+        doneWhen:review?'The actual proof file is read and compared with the requested content.':'The intended file is written and its gateway receipt confirms the write.',
+      }]});
       if(!review){
         const repaired=options.prompt.includes('PREVIOUS VERIFICATION: REPAIR THESE FAILURES');
         const text=repaired&&!options.prompt.includes('FORCE_FAILURE')?'accepted\n':'draft\n';

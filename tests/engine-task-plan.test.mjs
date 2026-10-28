@@ -21,7 +21,12 @@ const call = (options, name, args, context) => options.onToolCall({ name, argume
 async function taskCall(options, args) {
   const response = await call(options, 'relay_task', args); assert.equal(response.success, true, response.contentItems?.[0]?.text); return payload(response);
 }
-const leaf = (id = 'answer', title = 'Answer the current question') => ({ id, title, kind: 'action', parentId: null, status: 'active', doneWhen: 'The requested result is present and its stated check was performed.' });
+const leaf = (id = 'answer', title = 'Answer the current question') => ({
+  id, title, kind: 'action', parentId: null, status: 'active',
+  result: 'The observed result and saved effects of the named fixture operation.',
+  note: 'Perform the operation specified by this fixture, inspect its returned receipt and saved effects, and compare them with the corresponding assertions.',
+  doneWhen: 'The requested result is present and its stated check was performed.',
+});
 async function savePlan(options, steps = [leaf()], plan = {}) {
   const state = await taskCall(options, { action: 'read' });
   return taskCall(options, { action: 'plan', expectedRevision: state.revision, steps, plan: { layout: 'sequence', taskType: 'general', ...plan } });
@@ -48,7 +53,7 @@ async function fixture(t, execute, { model = 'fixture-plan-model', threadId = 'n
 const completed = run => assert.equal(run.status, 'completed', run.error || run.nodes.agent.error);
 const answerEvents = run => run.events.filter(event => ['delta', 'message'].includes(event.data?.type) || event.data?.type === 'item' && ['agentMessage', 'exitedReviewMode'].includes(event.data.item?.type));
 
-test('answer deltas and native complete messages wait until the durable current-turn plan is published', async t => {
+test('preplanning answer events are discarded and fresh answers follow the durable current-turn plan', async t => {
   const f = await fixture(t, async (options, number, context) => {
     const before = context.engine.listRuns()[0];
     options.onEvent({ type: 'delta', itemId: 'early', delta: 'Prepared ' });
@@ -58,19 +63,28 @@ test('answer deltas and native complete messages wait until the durable current-
     options.onEvent({ type: 'usage', usage: { totalTokens: 13 } });
     const waiting = context.engine.getRun(before.id);
     assert.equal(waiting.nodes.agent.output, ''); assert.equal(answerEvents(waiting).length, 0);
-    assert.equal(waiting.nodes.agent.usage.totalTokens, 13, 'Measured usage remains live while text waits');
+    assert.equal(waiting.nodes.agent.usage.totalTokens, 13, 'Measured usage remains live while preplanning text is withheld');
     const state = await savePlan(options);
-    assert.equal((await context.tasks.get(before.taskId)).revision, state.revision, 'The plan is committed before releasing text');
+    assert.equal((await context.tasks.get(before.taskId)).revision, state.revision, 'The plan is committed before new answer text can be published');
     const planned = context.engine.getRun(before.id);
-    assert.equal(planned.nodes.agent.output, 'Prepared answer.'); assert.equal(answerEvents(planned).length, 4);
-    const planAt = planned.events.findIndex(event => event.data?.type === 'task.state' && event.data.state.plan?.authoredBy?.runId === before.id);
-    assert.ok(planAt >= 0); assert.ok(planned.events.every((event, index) => !answerEvents({ events: [event] }).length || index > planAt));
+    assert.equal(planned.nodes.agent.output, ''); assert.equal(answerEvents(planned).length, 0, 'A later plan must not release earlier deltas or complete messages');
+    assert.equal(planned.nodes.agent.usage.totalTokens, 13);
+    options.onEvent({ type: 'delta', itemId: 'current', delta: 'Current ' });
+    options.onEvent({ type: 'delta', itemId: 'current', delta: 'answer.' });
+    options.onEvent({ type: 'message', itemId: 'current', text: 'Current answer.', phase: 'final_answer' });
+    options.onEvent({ type: 'item', item: { type: 'agentMessage', id: 'current', text: 'Current answer.', phase: 'final_answer' }, stage: 'completed' });
+    const published = context.engine.getRun(before.id);
+    assert.equal(published.nodes.agent.output, 'Current answer.'); assert.equal(answerEvents(published).length, 4);
     options.onEvent({ type: 'delta', itemId: 'later', delta: ' More detail.' });
-    assert.equal(context.engine.getRun(before.id).nodes.agent.output, 'Prepared answer. More detail.', 'Text streams normally after the plan');
-    return { output: 'Prepared answer. More detail.', threadId: context.threadId };
+    assert.equal(context.engine.getRun(before.id).nodes.agent.output, 'Current answer. More detail.', 'Fresh text streams normally after the plan');
+    return { output: 'Current answer. More detail.', threadId: context.threadId };
   });
   const run = await f.settled(f.start().id); completed(run);
   assert.equal(run.nodes.agent.planning.status, 'recorded'); assert.equal(f.runtime.calls.length, 1);
+  assert.equal(run.nodes.agent.output, 'Current answer. More detail.');
+  assert.ok(answerEvents(run).every(event => (event.data.item?.id || event.data.itemId) !== 'early'));
+  const planAt = run.events.findIndex(event => event.data?.type === 'task.state' && event.data.state.plan?.authoredBy?.runId === run.id);
+  assert.ok(planAt >= 0); assert.ok(run.events.every((event, index) => !answerEvents({ events: [event] }).length || index > planAt));
 });
 
 test('ordinary work publishes an honest root before inference and requires a durable plan before mutations', async t => {
@@ -99,12 +113,12 @@ test('ordinary work publishes an honest root before inference and requires a dur
   assert.equal(run.nodes.agent.taskSchemaVersion, TASK_SCHEMA_VERSION); assert.equal(await readFile(path.join(f.cwd, 'result.txt'), 'utf8'), 'verified fixture output');
 });
 
-test('a saved Inbox workflow keeps its planning detail through restart and dispatch, while explicit requests override the preset', async t => {
+test('saved Inbox planning metadata survives restart while Planning On retains full detail despite compact requests', async t => {
   const f = await fixture(t, async (options, number, context) => {
-    const expected = number === 1 ? 'detailed' : 'compact';
-    assert.match(options.developerInstructions, number === 1 ? /detailed operational outline/ : /Keep the outline compact/);
+    assert.match(options.developerInstructions, /detailed operational outline/);
+    assert.doesNotMatch(options.developerInstructions, /Keep the outline compact/);
     const state = await savePlan(options, [leaf()], { detail: number === 1 ? 'compact' : 'detailed' });
-    assert.equal(state.plan.detail, expected, 'the actual request preference also controls the accepted plan, even if the agent copies stale metadata');
+    assert.equal(state.plan.detail, 'detailed', 'Planning On keeps full detail even if a request or saved plan carries a legacy compact hint');
     await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'answer', status: 'done', evidence: 'Returned the fixture answer and checked its stated result.' });
     return { output: 'The saved request preference was used.', threadId: context.threadId };
   });
@@ -124,7 +138,8 @@ test('a saved Inbox workflow keeps its planning detail through restart and dispa
     assert.equal(run.workflow.settings.planDetail, 'detailed');
   } finally { await inbox.close(); }
   const override = await f.settled(f.start({ task: 'Use a compact plan for this request.', planDetail: 'compact' }).id);
-  completed(override); assert.equal(override.planDetail, 'compact'); assert.equal(override.taskState.plan.detail, 'compact');
+  completed(override); assert.equal(override.planDetail, 'compact', 'The authored request is retained independently of its effective planning detail');
+  assert.equal(override.nodes.agent.planning.detail, 'detailed'); assert.equal(override.taskState.plan.detail, 'detailed');
 });
 
 test('a bounded discovery allowance grounds the plan but does not admit shell commands or arbitrary connector calls', async t => {
@@ -188,7 +203,7 @@ test('follow-ups require a fresh plan while preserving earlier completed work, e
       state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'answer', status: 'done', evidence: 'The fixture computed 2 + 2 = 4.' });
       return { output: '4', threadId: context.threadId };
     }
-    assert.equal(options.threadId, context.threadId); assert.match(options.developerInstructions, /preserve completed work and its evidence/);
+    assert.equal(options.threadId, context.threadId); assert.match(options.developerInstructions, /On a follow-up or retry, preserve earlier work and its evidence/);
     assert.match(options.developerInstructions, /detailed operational outline/);
     const prior = await taskCall(options, { action: 'read' }); assert.equal(prior.steps[0].status, 'done'); assert.match(prior.steps[0].evidence, /2 \+ 2/);
     assert.equal((await call(options, 'relay_workspace', { action: 'write', path: 'followup.txt', text: 'not yet' })).code, 'TASK_PLAN_REQUIRED');
@@ -198,7 +213,7 @@ test('follow-ups require a fresh plan while preserving earlier completed work, e
     return { output: 'A second example is ready.', threadId: context.threadId };
   });
   firstSnapshot = await f.settled(f.start({ task: 'What is 2 + 2?', planDetail: 'compact' }).id); completed(firstSnapshot);
-  assert.equal(firstSnapshot.planDetail, 'compact');
+  assert.equal(firstSnapshot.planDetail, 'compact'); assert.equal(firstSnapshot.nodes.agent.planning.detail, 'detailed');
   const request = { nodeId: 'agent', message: 'Give me another example.', planDetail: 'detailed', requestId: 'followup-detail-once' };
   const accepted = f.engine.continueRun(firstSnapshot.id, request);
   assert.equal(f.engine.continueRun(firstSnapshot.id, request).id, accepted.id);
@@ -316,19 +331,27 @@ test('plan detail is part of idempotent request identity and failed turns retain
 });
 
 for (const alreadyPlanned of [false, true]) test(`Stop ${alreadyPlanned ? 'after' : 'before'} planning preserves actual state and rejects later work`, async t => {
-  let ready;
-  const waiting = new Promise(resolve => { ready = resolve; });
+  let ready = false;
   const f = await fixture(t, async (options, number, context) => {
     if (alreadyPlanned) await savePlan(options);
     options.onEvent({ type: 'delta', delta: 'Text before Stop.' });
-    ready();
+    ready = true;
     await new Promise(resolve => { if (options.signal.aborted) resolve(); else options.signal.addEventListener('abort', resolve, { once: true }); });
     await assert.rejects(call(options, 'relay_workspace', { action: 'write', path: 'after-stop.txt', text: 'must not be written' }), { name: 'AbortError' });
     options.onEvent({ type: 'delta', delta: 'Late text must not be published.' });
     options.onEvent({ type: 'usage', usage: { totalTokens: 17 } });
     throw Object.assign(new Error('Fixture stopped.'), { name: 'AbortError' });
   });
-  const accepted = f.start(); await waiting; f.engine.cancelRun(accepted.id);
+  const accepted = f.start();
+  try {
+    await wait(() => {
+      const run = f.engine.getRun(accepted.id);
+      assert.ok(!run.settled, run.error || run.nodes.agent?.error || 'The cancellation fixture settled before its ready signal.');
+      return ready;
+    });
+  } finally {
+    if (!f.engine.getRun(accepted.id).settled) f.engine.cancelRun(accepted.id);
+  }
   const stopped = await f.settled(accepted.id); assert.equal(stopped.status, 'cancelled');
   assert.equal(stopped.taskState.progress.done, 0); assert.equal(stopped.taskState.plan.origin, alreadyPlanned ? 'agent' : 'runtime');
   assert.equal(stopped.nodes.agent.planning.status, alreadyPlanned ? 'recorded' : 'missing');

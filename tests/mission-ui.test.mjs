@@ -354,10 +354,10 @@ test('On is the visible default and requires a real plan while leaving depth pro
   assert.equal(h.starts[0].planningMode, 'on'); assert.equal(Object.hasOwn(h.starts[0], 'planDetail'), false);
 });
 
-test('legacy depth preferences remain usable without a second planning control', async t => {
+test('legacy compact hints resolve to detailed Planning On and an explicit detail edit creates a fresh request', async t => {
   const saved = savedDrafts('Keep the explicit older preference'); saved.conversationDrafts.new.planDetail = 'compact';
   const f = missionFixture(t, saved), h = mountMission(f, statusSnapshot(), { start: () => { throw new Error('Keep receipt for retry'); } }); await turn();
-  await h.submit(); assert.equal(h.starts[0].planDetail, 'compact'); assert.equal(h.starts[0].planningMode, 'on');
+  await h.submit(); assert.equal(h.starts[0].planDetail, 'detailed'); assert.equal(h.starts[0].planningMode, 'on');
   h.ui.setPlanDetail('detailed'); await h.submit(); assert.equal(h.starts[1].planDetail, 'detailed'); assert.notEqual(h.starts[0].requestId, h.starts[1].requestId);
 });
 

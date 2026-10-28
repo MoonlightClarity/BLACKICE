@@ -146,13 +146,13 @@ test('milestone count follows the saved-state budget and enormous arrays stop va
   assert.equal((await store.get('milestone-task')).revision, state.revision);
 });
 
-test('continuity budgets preserve outcome, current milestone, evidence, blocker and one next action before historical detail', async t => {
+test('continuity budgets preserve the plan goal, current milestone, reported finding, blocker and one next action before historical detail', async t => {
   const { store, actor } = await harness(t);
   let state = await store.setPlan('milestone-task', { goal: 'Ship chess. ' + 'Outcome detail. '.repeat(120), steps: [{ id: 'resume', title: 'Board check', status: 'blocked', doneWhen: 'Legal moves pass. ' + 'Criteria. '.repeat(95), evidence: 'Offline check failed. ' + 'Evidence detail. '.repeat(110), blockedReason: 'Network unavailable. ' + 'Obstacle. '.repeat(90) }, ...Array.from({ length: 80 }, (_, index) => ({ title: `Later milestone ${index + 1}` }))] }, actor(1));
   state = await store.checkpoint('milestone-task', { nextAction: 'Resume board check.', decisions: Array(8).fill('Old decision. '.repeat(45)), completed: Array(8).fill('Historical work. '.repeat(40)), nextSteps: ['This older list must not displace the concrete resume action.'] }, actor(state.revision));
   for (const maxChars of [512, 800, 1200, 12000]) {
     const context = await store.getContext('milestone-task', { maxChars }); assert.ok(context.length <= maxChars);
-    for (const label of ['Outcome:', 'Current milestone:', 'Done when:', 'Blocked:', 'Evidence:', 'Next action:']) assert.ok(context.includes(label), `${label} must survive a ${maxChars} character budget`);
+    for (const label of ['Plan goal:', 'Current milestone:', 'Done when:', 'Blocked:', 'Reported finding:', 'Next action:']) assert.ok(context.includes(label), `${label} must survive a ${maxChars} character budget`);
     assert.match(context, /agent-reported/); assert.match(context, /not correctness/); assert.match(context, /Next action: Resume/);
     assert.ok(context.indexOf('Next action:') < (context.indexOf('Milestones:') < 0 ? Infinity : context.indexOf('Milestones:')));
     if (maxChars < 12000) assert.match(context, /shortened/);
@@ -169,6 +169,6 @@ test('bound milestone tools emit committed truth, retain file-byte limits and ex
   result = await handler({ name: 'relay_task', arguments: { action: 'checkpoint', expectedRevision: state.revision, nextAction: 'Build and run the board test.' } }); assert.equal(result.success, true); state = JSON.parse(result.contentItems[0].text);
   assert.equal(events.length, 3); assert.deepEqual(events.at(-1).state, await store.get('milestone-task')); assert.equal(state.provenance.runId, 'bound-run'); assert.equal(state.progress.done, 0);
   assert.equal(state.steps[0].verification, undefined); assert.equal(state.steps[0].verifiedAt, undefined); assert.equal(state.steps[0].evidence, 'No check executed.');
-  assert.match(TASK_TOOL.inputSchema.properties.evidence.description, /not runtime verification/);
+  assert.match(TASK_TOOL.inputSchema.properties.evidence.description, /not independent runtime verification/);
   const invalid = await handler({ name: 'relay_task', arguments: { action: 'step', expectedRevision: state.revision, stepId: 'playable', status: 'blocked', blockedReason: '' } }); assert.equal(invalid.success, false); assert.equal(events.length, 3); assert.equal((await store.get('milestone-task')).revision, state.revision);
 });

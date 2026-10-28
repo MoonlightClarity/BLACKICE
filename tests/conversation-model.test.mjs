@@ -73,7 +73,7 @@ test('legacy Maximal keeps its saved model but planning activation no longer sel
 test('On/Off is the effective planning vocabulary and Auto/Maximal are legacy On aliases', () => {
   assert.deepEqual(PLANNING_MODES, ['on', 'off']); assert.deepEqual(PLANNING_INPUT_MODES, ['on','off','auto','maximal']); assert.equal(normalizePlanningMode(undefined), 'on'); assert.equal(normalizePlanningMode('MAXIMAL'), 'on');
   for (const mode of PLANNING_MODES) assert.equal(normalizePlanningMode(mode), mode === 'off' ? 'off' : 'on');
-  assert.equal(planningModeDetail('maximal', 'compact'), 'compact'); assert.equal(planningModeDetail('auto'), undefined);
+  assert.equal(planningModeDetail('maximal', 'compact'), 'detailed'); assert.equal(planningModeDetail('auto'), 'detailed');
 });
 
 test('planning mode follows an explicit draft, admitted run, workflow and preference without confusing depth or reasoning', () => {
@@ -84,14 +84,14 @@ test('planning mode follows an explicit draft, admitted run, workflow and prefer
   assert.equal(selectedConversationPlanningMode({}, {}, { nodes: { worker: { planning: { mode: 'on' } } } }), 'on');
 });
 
-test('On keeps outline detail independent while legacy aliases normalize to On', () => {
+test('On uses full substantive detail despite legacy compact hints while Off omits the override', () => {
   assert.deepEqual(conversationPlanningConfig(), { planningMode: 'on' });
   const run = { planningMode: 'maximal', planDetail: 'detailed', taskState: { plan: { detail: 'detailed' } } };
   assert.deepEqual(conversationPlanningConfig({ planningMode: 'auto' }, {}, run), { planningMode: 'on' });
-  assert.deepEqual(conversationPlanningConfig({}, {}, { planDetail: 'compact' }), { planningMode: 'on', planDetail: 'compact' });
-  assert.deepEqual(conversationPlanningConfig({ planDetail: 'compact', planningMode: 'maximal' }), { planningMode: 'on', planDetail: 'compact' });
+  assert.deepEqual(conversationPlanningConfig({}, {}, { planDetail: 'compact' }), { planningMode: 'on', planDetail: 'detailed' });
+  assert.deepEqual(conversationPlanningConfig({ planDetail: 'compact', planningMode: 'maximal' }), { planningMode: 'on', planDetail: 'detailed' });
   assert.deepEqual(conversationPlanningConfig({ planDetail: 'detailed', planningMode: 'off' }), { planningMode: 'off' });
-  assert.deepEqual(conversationPlanningConfig({ planningMode: 'auto' }, {}, { ...run, input: { planDetail: 'compact' } }), { planningMode: 'on', planDetail: 'compact' });
+  assert.deepEqual(conversationPlanningConfig({ planningMode: 'auto' }, {}, { ...run, input: { planDetail: 'compact' } }), { planningMode: 'on', planDetail: 'detailed' });
 });
 
 test('draft restoration preserves exact modes and removes malformed values without mutating saved source', () => {
