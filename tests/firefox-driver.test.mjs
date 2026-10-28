@@ -122,7 +122,9 @@ test('Firefox reports protocol failures and unsupported actions instead of inven
 
 test('Firefox accepts only local BiDi endpoints and validates navigation before any new tab is created',async t=>{
   for(const endpoint of ['ws://other.test:9222/session','http://127.0.0.1:9222/session','ws://user:secret@127.0.0.1:9222/session','ws://127.0.0.1:9222/other'])assert.throws(()=>new FirefoxBiDiDriver({endpoint}),{code:'BROWSER_VALIDATION'});
-  const{mock,instance}=await driver(t);const before=mock.commands.length;await assert.rejects(instance.perform({action:'open',url:'javascript:alert(1)'}),{code:'BROWSER_VALIDATION'});assert.equal(mock.commands.length,before);
+  const{mock,instance}=await driver(t);const before=mock.commands.length;await assert.rejects(instance.perform({action:'open',url:'http://['}),{code:'BROWSER_VALIDATION'});assert.equal(mock.commands.length,before);
+  const explicit=await instance.perform({action:'open',url:'javascript:alert(1)'});assert.equal(explicit.url,'javascript:alert(1)');
+  assert.equal(mock.commands.find(command=>command.method==='browsingContext.navigate').params.url,'javascript:alert(1)');
   const opened=await instance.perform({action:'open',url:'file:///C:/Documents/local.html'});assert.equal(opened.url,'file:///C:/Documents/local.html');
 });
 

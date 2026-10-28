@@ -61,8 +61,8 @@ test('queried read includes role requirements while snapshot keeps exact filteri
   assert.deepEqual(read.elements, snapshot.elements, 'Text context must not grant refs to nearby unmatched controls.');
   assert.deepEqual(read.textContext, { matches: 1, before: 1, after: 8 });
   assert.ok(read.text.length <= 22000);
-  for (const ref of priorRefs) assert.equal(f.context[f.key].elements.has(ref), false, 'Unreturned controls must be retired in the renderer.');
-  assert.equal(f.context[f.key].elements.size, read.elements.length);
+  for (const ref of priorRefs) assert.equal(f.context[f.key].elements.has(ref), true, 'Earlier observed controls remain available within the same document.');
+  assert.ok(f.context[f.key].elements.size <= 800, 'Retained renderer references stay bounded.');
   const secretSearch = f.run('PASSWORD', true); assert.equal(secretSearch.text, '');
   assert.deepEqual(secretSearch.elements.map(item => item.name), ['Password']);
   assert.ok(secretSearch.elements.every(item => !Object.hasOwn(item, 'value')));
@@ -90,7 +90,7 @@ test('queried read limits matching passages and text-node scans even inside one 
   assert.equal(inspected, 16000); assert.equal(bounded.truncated, true); assert.equal(bounded.text, '');
 });
 
-test('the actual public read path opts into context and keeps host refs exact; no-query reads remain unchanged', async () => {
+test('the actual public read path opts into context and retains observed same-document refs; no-query reads remain unchanged', async () => {
   const f = roleFixture(), frame = { processId: 1, routingId: 1, framesInSubtree: [], executeJavaScript: async code => JSON.parse(JSON.stringify(vm.runInContext(code, f.context))) };
   const tab = { id: 'tab-one', revision: 1, refs: new Map(), suspendedWork: new Set(), window: { isDestroyed: () => false, webContents: { mainFrame: frame, getURL: () => 'https://jobs.example.test/role', getTitle: () => 'Role fixture' } } };
   const driver = Object.create(ElectronBrowserDriver.prototype);
@@ -101,9 +101,9 @@ test('the actual public read path opts into context and keeps host refs exact; n
   const snapshot = await driver.perform({ action: 'snapshot', tabId: tab.id, query: 'About the role' });
   const read = await driver.perform({ action: 'read', tabId: tab.id, query: 'About the role' });
   assert.equal(snapshot.frames[0].text, 'About the role'); assert.match(read.frames[0].text, /Three years of Python/);
-  assert.equal(tab.refs.has(oldApplyRef), false); assert.equal(tab.refs.size, 1);
-  assert.equal(f.context[f.key].elements.size, 1);
-  assert.deepEqual([...tab.refs.keys()], read.frames[0].elements.map(item => item.ref));
+  assert.equal(tab.refs.has(oldApplyRef), true, 'A filtered read must not retire a control observed earlier on the same page.');
+  assert.ok(read.frames[0].elements.every(item => tab.refs.has(item.ref)));
+  assert.ok(tab.refs.size <= 800); assert.ok(f.context[f.key].elements.size <= 800);
   const unfilteredSnapshot = await driver.perform({ action: 'snapshot', tabId: tab.id });
   const unfilteredRead = await driver.perform({ action: 'read', tabId: tab.id });
   assert.deepEqual(unfilteredRead, unfilteredSnapshot); assert.equal(unfilteredRead.frames[0].textContext, undefined);
@@ -161,5 +161,8 @@ test('frame reacquisition shares the original read deadline and cancellation for
   Object.defineProperty(cancelledFrame, 'framesInSubtree', { get() { controller.abort(); throw disposed(); } });
   const stopped = frameFixture(() => cancelledFrame);
   await assert.rejects(stopped.driver.perform({ action: 'snapshot', tabId: stopped.tab.id }, { signal: controller.signal }), { name: 'AbortError' });
-  assert.equal(stopped.counts.acquisitions, 1); assert.equal(stopped.tab.refs.size, 0);
+  assert.equal(stopped.counts.acquisitions, 1);
+  assert.equal(stopped.tab.refs.has('stale-ref'), true, 'Cancelling a read does not erase prior observations.');
+  await assert.rejects(stopped.driver.element(stopped.tab, { ref: 'stale-ref' }, 'click'), { code: 'BROWSER_REF_STALE' });
+  assert.equal(stopped.tab.refs.has('stale-ref'), false, 'A reference whose frame has since been disposed is retired before any action.');
 });

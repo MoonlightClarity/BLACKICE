@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,6 +9,11 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { discoverWindowsRestartTarget, forceWindowsRestart, windowsProcessIdentity } from '../lib/desktop-hard-restart.mjs';
 import { executeDesktopRestartCLI, parseDesktopRestartArgs } from '../lib/desktop-restart-cli.mjs';
 import { DESKTOP_RESTART_ORIGIN_ENV } from '../lib/desktop-restart-origin.mjs';
+
+// Electron 44 may install its executable lazily, rather than during npm ci.
+// Use the package's supported resolver rather than assuming dist already exists.
+const require = createRequire(import.meta.url);
+const electronExecutable = () => require('electron');
 
 async function removeFixture(dir) {
   const root = await realpath(os.tmpdir()), target = await realpath(dir);
@@ -21,12 +27,12 @@ test('force uses native when healthy and falls back on failed or unavailable nat
   const forceFallback = async () => { calls++; return { protocol: 'emergency-force' }; };
   const identity = { pid: 123, created: '12345678901234567', image: 'C:\\test.exe' };
   const connect = receipt => async () => ({ runtime: { pid: 123 }, request: async () => ({ protocol: 1, acknowledged: true, receipt: { requestId: 'test', force: true, durable: true, status: receipt, ...(receipt === 'failed' ? { error: { code: 'DESKTOP_RESTART_PREPARE_FAILED' } } : {}) } }) });
-  assert.equal((await executeDesktopRestartCLI(options, { forceFallback, connect: connect('scheduled'), getForceIdentity: async () => identity, forceWaitMs: 0 })).receipt.status, 'scheduled');
+  assert.equal((await executeDesktopRestartCLI(options, { env: {}, forceFallback, connect: connect('scheduled'), getForceIdentity: async () => identity, forceWaitMs: 0 })).receipt.status, 'scheduled');
   assert.equal(calls, 0);
-  assert.equal((await executeDesktopRestartCLI(options, { forceFallback, connect: connect('failed'), getForceIdentity: async () => identity })).protocol, 'emergency-force');
-  assert.equal((await executeDesktopRestartCLI(options, { forceFallback, connect: async () => { throw Object.assign(new Error('frozen'), { code: 'BROWSER_CLI_UNREACHABLE' }); } })).protocol, 'emergency-force');
+  assert.equal((await executeDesktopRestartCLI(options, { env: {}, forceFallback, connect: connect('failed'), getForceIdentity: async () => identity })).protocol, 'emergency-force');
+  assert.equal((await executeDesktopRestartCLI(options, { env: {}, forceFallback, connect: async () => { throw Object.assign(new Error('frozen'), { code: 'BROWSER_CLI_UNREACHABLE' }); } })).protocol, 'emergency-force');
   assert.equal(calls, 2);
-  assert.equal((await executeDesktopRestartCLI(parseDesktopRestartArgs(['--restart', '--force', '--emergency', '--request-id=test']), { forceFallback })).protocol, 'emergency-force');
+  assert.equal((await executeDesktopRestartCLI(parseDesktopRestartArgs(['--restart', '--force', '--emergency', '--request-id=test']), { env: {}, forceFallback })).protocol, 'emergency-force');
 });
 
 test('a lost acknowledgement never escalates against a replacement or unknown original', async () => {
@@ -131,7 +137,7 @@ test('emergency restart proceeds with an explicitly non-durable claim if claim s
   assert.equal(await readFile(output, 'utf8'), 'started');
 });
 
-test('a late competing Electron relaunch cannot create a second active instance in the same profile', { skip: process.platform !== 'win32', timeout: 45000 }, async t => {
+test('a late competing Electron relaunch cannot create a second active instance in the same profile', { skip: process.platform !== 'win32', timeout: 90000 }, async t => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'blackice-hard-electron-'));
   const profile = path.join(dir, 'profile'), claims = path.join(dir, 'claims'), appDir = path.join(dir, 'app');
   const events = path.join(dir, 'events.jsonl'), stop = path.join(dir, 'stop');
@@ -155,7 +161,7 @@ test('a late competing Electron relaunch cannot create a second active instance 
       });
     }
   `);
-  const electron = path.resolve('node_modules/electron/dist/electron.exe');
+  const electron = electronExecutable();
   const target = spawn(electron, [appDir, '--profile-dir', profile, '--background', '--freeze'], { windowsHide: true, stdio: 'ignore' });
   t.after(async () => { await writeFile(stop, 'stop').catch(() => {}); await delay(1000); try { target.kill(); } catch {} await removeFixture(dir); });
   const runtimeFile = path.join(profile, 'desktop-runtime.json');
@@ -174,13 +180,13 @@ test('a late competing Electron relaunch cannot create a second active instance 
   assert.equal(rows.filter(row => row.kind === 'second').length, 1, 'late launch is forwarded to the replacement');
 });
 
-test('an owned PowerShell command and its helper survive termination of their frozen Electron parent', { skip: process.platform !== 'win32', timeout: 70000 }, async t => {
+test('an owned PowerShell command and its helper survive termination of their frozen Electron parent', { skip: process.platform !== 'win32', timeout: 120000 }, async t => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'blackice-hard-owned-'));
   const profile = path.join(dir, 'profile'), appDir = path.join(dir, 'app'), claims = path.join(dir, 'claims');
   const outcome = path.join(dir, 'outcome.json'), events = path.join(dir, 'events.jsonl'), stop = path.join(dir, 'stop');
   await mkdir(profile); await mkdir(appDir); await mkdir(claims);
   const moduleUrl = new URL('../lib/desktop-hard-restart.mjs', import.meta.url).href;
-  const electron = path.resolve('node_modules/electron/dist/electron.exe');
+  const electron = electronExecutable();
   const cli = path.join(dir, 'cli.cjs'), command = path.join(dir, 'command.ps1');
   await writeFile(cli, `setTimeout(async()=>{ try { const m=await import(${JSON.stringify(moduleUrl)}); const r=await m.forceWindowsRestart({'profile-dir':${JSON.stringify(profile)},'request-id':'owned-command'},{expectedExecutable:${JSON.stringify(electron)},tempDir:${JSON.stringify(claims)}});require('fs').writeFileSync(${JSON.stringify(outcome)},JSON.stringify(r)); }catch(e){require('fs').writeFileSync(${JSON.stringify(outcome)},JSON.stringify({error:e.message,code:e.code}));}},1200);`);
   const quote = s => `'${s.replaceAll("'", "''")}'`;
@@ -210,7 +216,7 @@ test('an owned PowerShell command and its helper survive termination of their fr
   assert.equal(resumed.lifecycle.mode, 'headless'); assert.notEqual(resumed.pid, original.pid);
 });
 
-test('record-free discovery matches profile and executable, refuses ambiguity, then restarts a frozen startup', { skip: process.platform !== 'win32', timeout: 60000 }, async t => {
+test('record-free discovery matches profile and executable, refuses ambiguity, then restarts a frozen startup', { skip: process.platform !== 'win32', timeout: 120000 }, async t => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'blackice-hard-discovery-'));
   const profile = path.join(dir, 'profile'), other = path.join(dir, 'other'), appDir = path.join(dir, 'app'), claims = path.join(dir, 'claims');
   await mkdir(profile); await mkdir(other); await mkdir(appDir); await mkdir(claims);
@@ -220,7 +226,7 @@ test('record-free discovery matches profile and executable, refuses ambiguity, t
     const i=process.argv.indexOf('--profile-dir'),profile=process.argv[i+1]; app.setPath('userData',profile);
     app.whenReady().then(()=>{fs.appendFileSync(path.join(profile,'events'),process.pid+'\\n');const marker=path.join(profile,'frozen');if(!fs.existsSync(marker)){fs.writeFileSync(marker,'1');while(true){}}setInterval(()=>{if(fs.existsSync(path.join(profile,'stop')))app.quit()},100)});
   `);
-  const electron = path.resolve('node_modules/electron/dist/electron.exe');
+  const electron = electronExecutable();
   const run = selected => spawn(electron, [appDir, '--profile-dir', selected, '--background'], { windowsHide: true, stdio: 'ignore' });
   const first = run(profile), unrelated = run(other);
   const otherApp = path.join(dir, 'unrelated-app'); await mkdir(otherApp);

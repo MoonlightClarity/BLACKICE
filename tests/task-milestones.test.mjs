@@ -125,8 +125,11 @@ test('milestone bounds reject invalid criteria, evidence, blockers and next acti
   const { store, actor } = await harness(t); const state = await store.setPlan('milestone-task', { steps: milestones() }, actor(1));
   for (const [key, values] of [['doneWhen', ['', ' ', 'x'.repeat(1001), 'bad\0value']], ['evidence', ['x'.repeat(2001), 'bad\0value', {}]], ['blockedReason', ['', ' ', 'x'.repeat(1001), 'bad\0value']]]) {
     for (const value of values) {
-      assert.throws(() => store.setStep('milestone-task', 'playable', { status: key === 'blockedReason' ? 'blocked' : 'active', [key]: value }, actor(state.revision)), { code: 'INVALID_TASK_STATE' });
-      assert.throws(() => store.setPlan('milestone-task', { steps: [{ title: 'Invalid milestone', status: key === 'blockedReason' ? 'blocked' : 'active', [key]: value }] }, actor(state.revision)), { code: 'INVALID_TASK_STATE' });
+      const expected = key === 'evidence' && typeof value === 'string' && value.length > 2000
+        ? { code: 'TASK_PLAN_EVIDENCE_TOO_LONG' }
+        : { code: 'INVALID_TASK_STATE' };
+      assert.throws(() => store.setStep('milestone-task', 'playable', { status: key === 'blockedReason' ? 'blocked' : 'active', [key]: value }, actor(state.revision)), expected);
+      assert.throws(() => store.setPlan('milestone-task', { steps: [{ title: 'Invalid milestone', status: key === 'blockedReason' ? 'blocked' : 'active', [key]: value }] }, actor(state.revision)), expected);
     }
   }
   for (const nextAction of ['', ' ', 'x'.repeat(1001), 'bad\0value', []]) await assert.rejects(store.checkpoint('milestone-task', { nextAction }, actor(state.revision)), { code: 'INVALID_TASK_STATE' });

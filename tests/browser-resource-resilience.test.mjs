@@ -205,7 +205,7 @@ test('coalesced storage failures remain visible and a later successful save clea
   assert.equal(f.renames.length, 1);
 });
 
-test('query snapshots keep strong DOM refs only for the current bounded result', () => {
+test('query snapshots retain recent observed DOM refs within a bounded document cache', () => {
   const controls = Array.from({ length: 1500 }, (_, index) => ({
     tagName: 'BUTTON', textContent: `group-${Math.floor(index / 100)} item-${index}`, isConnected: true,
     getAttribute: () => null, getBoundingClientRect: () => ({ width: 10, height: 10 }),
@@ -218,12 +218,15 @@ test('query snapshots keep strong DOM refs only for the current bounded result',
   for (let group = 0; group < 15; group++) {
     const result = context.pageSnapshot('snapshotState', 'doc-1', `group-${group} `);
     assert.equal(result.elements.length, 100);
-    assert.equal(context.snapshotState.elements.size, 100);
-    assert.ok([...context.snapshotState.elements.values()].every(element => element.textContent.startsWith(`group-${group} `)));
+    assert.equal(context.snapshotState.elements.size, Math.min((group + 1) * 100, 800));
+    assert.ok(result.elements.every(item => context.snapshotState.elements.has(item.ref)), 'Current observations are available for actions.');
+    if (group >= 8) assert.ok([...context.snapshotState.elements.values()].every(element => !element.textContent.startsWith(`group-${group - 8} `)), 'Oldest observations are evicted when the cap is exceeded.');
   }
   context.pageSnapshot('snapshotState', 'doc-1', 'no-match');
-  assert.equal(context.snapshotState.elements.size, 0);
+  assert.equal(context.snapshotState.elements.size, 800, 'An empty filtered read does not invalidate earlier observations.');
   const unfiltered = context.pageSnapshot('snapshotState', 'doc-1', '');
   assert.equal(unfiltered.elements.length, 300);
-  assert.equal(context.snapshotState.elements.size, 300);
+  assert.equal(context.snapshotState.elements.size, 800);
+  context.pageSnapshot('snapshotState', 'doc-2', 'group-0 ');
+  assert.equal(context.snapshotState.elements.size, 100, 'A new document identity retires previous references.');
 });

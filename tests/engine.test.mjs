@@ -986,7 +986,8 @@ for (const throws of [false, true]) test(`unavailable contained browser records 
   assert.match(issue.message, /native browser sessions remain available through relay_connections/);
   assert.ok(events.some(event => event.type === 'agent.event' && event.data?.type === 'capability' && event.data.available === false));
   assert.ok(runtime.calls[0].dynamicTools.some(tool => tool.name === 'relay_connections'), 'other supported connection tools remain attached');
-  assert.match(runtime.calls[0].prompt, /native Chrome, Neo or imported browser profile/);
+  assert.match(runtime.calls[0].prompt, /For new web work, start with the BLACKICE contained relay_browser/);
+  assert.match(runtime.calls[0].prompt, /Configured browser tools are available even when the contained browser is unavailable/);
   assert.doesNotMatch(runtime.calls[0].prompt, /Website actions use only|External Neo and managed Chrome task interfaces are unavailable/);
   await engine.close();
   const restored = await new HarnessEngine({ runtime: new FakeRuntime(), dataDir, defaultCwd: cwd }).init(); engines.push(restored);

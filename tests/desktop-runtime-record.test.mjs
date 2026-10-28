@@ -20,7 +20,7 @@ async function mainWriter(directory, write) {
   assert.ok(declaration, 'main keeps its runtime publication function');
   const errors = [], state = { mode: 'background', restart: 'scheduled' };
   const context = {
-    runtimeRecord: { pid: 123, revision: 1 }, runtimeWriteChain: Promise.resolve(),
+    runtimeRecord: { pid: 123, revision: 1 }, runtimeWriteChain: Promise.resolve(), hardRestartIdentity: null,
     desktopLifecycle: { status: () => ({ mode: state.mode }) }, desktopRestart: { status: () => ({ status: state.restart }) },
     app: { getPath: key => { assert.equal(key, 'userData'); return directory; } }, path,
     writeDesktopRuntimeRecord: write,
