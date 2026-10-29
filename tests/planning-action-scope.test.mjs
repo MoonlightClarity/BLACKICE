@@ -39,13 +39,18 @@ test('planning and execution keep outcome, evidence and consequence in the suppl
 });
 
 test('representation guidance distinguishes audience relevance from material factual accuracy', () => {
+  // Check the supplied instruction obligations; this does not certify model judgment.
   for (const instruction of [BLACKICE_HARNESS_INSTRUCTIONS, PLANNING_DEPTH_INSTRUCTIONS]) {
     assert.match(instruction, /actual question/);
-    assert.match(instruction, /(?:unasked weaknesses)/);
-    assert.match(instruction, /private negotiating limits/);
+    assert.match(instruction, /strongest supported evidence/);
+    assert.match(instruction, /do not invent a question/i);
     assert.match(instruction, /Answer material factual questions accurately/);
-    assert.match(instruction, /(?:never invent|without inventing) (?:qualifications|claims)/);
   }
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Keep candid assessment private; do not volunteer [^\n.]+private limits[^\n.]+question does not require/);
+  assert.match(PLANNING_DEPTH_INSTRUCTIONS, /Leave out true but unhelpful facts[^\n.]+question does not require/);
+  assert.match(PLANNING_DEPTH_INSTRUCTIONS, /Keep private assessment and negotiating limits distinct from what is sent/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /never invent qualifications, results, endorsements or personal history/);
+  assert.match(PLANNING_DEPTH_INSTRUCTIONS, /scope needed to avoid a misleading claim/);
 });
 
 test('both planning modes keep the current direction distinct from past background and select artifacts for the audience', () => {

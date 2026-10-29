@@ -28,3 +28,17 @@ These diagnostics verify the configuration path and selector semantics. They do 
 The public checkpoint retains the implementation, synthetic fixtures and regression tests. Personal task records, prompt transcripts, machine-specific activation records and private evaluation outputs are retained outside public Git history. The sanitized release tree's implementation bytes are compared with the completed local development tree before release metadata changes.
 
 Current source-suite and exact-installer results are recorded in the versioned release evidence.
+
+## Completed live observation
+
+After activation, the final observed recurring task completed using 98 relay_browser calls, all on the contained driver, and zero connected-browser calls. The complete trace contained no native MCP or command-execution items. All 21 shell operations were inspected and performed local document, hash or ledger work; none launched another browser or used alternate browser automation.
+
+The task reached an application form, uploaded the existing supported document, and made a supported correction to a parsed field. The website then required human verification. No new confirmed external submission was counted. This verifies the observed contained-browser behavior while leaving the separate submission criterion unmet.
+
+Further recurring runs were paused at the user's requested release checkpoint.
+
+## Release test correction
+
+The initial full-suite attempt exceeded the connector's two-minute command limit and is not a passing result. Bounded groups then exposed one stale instruction-wording assertion. The test expected old disclosure phrases even though the current instructions explicitly preserve relevance, private assessment and limits, material factual accuracy, and supported claims.
+
+The assertion was updated to check those current obligations. No runtime instruction or behavior was changed for this correction. The required suite is rerun against the corrected committed tree, with the superseded attempt retained in local evidence and only the successful complete run included in the release receipt.
