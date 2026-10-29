@@ -61,13 +61,14 @@ export function conversationRuns(value) {
     (Date.parse(a.createdAt || '') || 0) - (Date.parse(b.createdAt || '') || 0) || a.id.localeCompare(b.id));
 }
 export function messagesOfRun(run) {
-  const messages = [], byId = new Map(), anonymous = new Map(); let serial = 0;
+  const messages = [], byId = new Map(), anonymous = new Map(); let serial = 0, eventOrder = 0, eventAt;
   function entry(id, nodeId, role = 'assistant') {
     let item = byId.get(id);
-    if (!item) { item = { id, nodeId, role, text: '', phase: null }; byId.set(id, item); messages.push(item); }
+    if (!item) { item = { id, nodeId, role, text: '', phase: null, order: eventOrder, ...(eventAt ? { at: eventAt } : {}) }; byId.set(id, item); messages.push(item); }
     return item;
   }
-  for (const receipt of run?.events || []) {
+  for (const [order, receipt] of (Array.isArray(run?.events) ? run.events : []).entries()) {
+    eventOrder = Number.isFinite(receipt?.timelineOrder) ? receipt.timelineOrder : order; eventAt = typeof receipt?.at === 'string' ? receipt.at : undefined;
     const d = receipt?.data || receipt || {}, nodeId = receipt?.nodeId || d.nodeId || 'agent';
     if (d.type === 'steer' && d.accepted !== false && text(d.text).trim()) {
       const id = 'direction:' + nodeId + ':' + (receipt.at || serial++) + ':' + d.text;
@@ -106,14 +107,15 @@ export function messagesOfRun(run) {
     if (combined.trim() === output.trim()) continue;
     if (!shown.length || run.nodes[node.id]?.status === 'completed') {
       const saved={id:node.id+':saved-output',nodeId:node.id,
-        role:'assistant',text:output,phase:'final_answer'};
+        role:'assistant',text:output,phase:'final_answer',order:(run?.events?.length||0)+messages.length,
+        at:run.nodes[node.id]?.finishedAt||run.finishedAt||run.updatedAt};
       messages.push(saved);
       if(!assistantMessages.has(node.id))assistantMessages.set(node.id,[]);
       assistantMessages.get(node.id).push(saved);
     }
   }
   if (!messages.some(m=>m.role==='assistant') && text(run?.output).trim())
-    messages.push({ id:'saved-result',role:'assistant',text:run.output,phase:'final_answer' });
+    messages.push({ id:'saved-result',role:'assistant',text:run.output,phase:'final_answer',order:(run?.events?.length||0)+messages.length,at:run.finishedAt||run.updatedAt });
   return messages.filter(m=>m.text.trim());
 }
 const TERMINAL_CHAT_STATUSES = new Set(['completed', 'failed', 'cancelled']);

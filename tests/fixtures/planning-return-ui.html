@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en" data-fixture-ready="false">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BLACKICE chronological planning return fixture</title>
+  <link rel="stylesheet" href="../../public/next/base.css">
+  <link rel="stylesheet" href="../../public/next/chat.css">
+  <link rel="stylesheet" href="../../public/next/parity.css">
+  <style>
+    html,body{height:auto;overflow:auto}body{max-width:980px;margin:auto;padding:24px}
+    .next-chat{display:block;height:auto;padding:1px 24px 20px;border-radius:9px}
+    .fixture-intro{margin-bottom:20px}.fixture-intro p{max-width:760px}
+    .next-chat-timeline{padding:22px 12px}.next-chat-turn{content-visibility:visible}
+    .next-help{font-size:12px}.next-chat-phase-paragraph p{margin:7px 0}
+    @media(max-width:600px){body{padding:12px}.next-chat{padding:1px 6px 12px}}
+  </style>
+</head>
+<body>
+  <header class="fixture-intro">
+    <h1>Chronological planning return</h1>
+    <p>Production Chat renderer using synthetic public plan, finding, review, and message receipts. The complete saved outline keeps its parent hierarchy.</p>
+  </header>
+  <main class="next-chat"><div id="timeline" class="next-chat-timeline"></div></main>
+  <script id="planning-return-fixture-report" type="application/json">{"ready":false}</script>
+  <script type="module">
+    import { planningReturnRun } from './planning-return-records.mjs';
+    import { projectFamily } from '../../public/next/chat/reader-model.mjs';
+    import { paintHistory } from '../../public/next/chat/render.mjs';
+    import { createChatWorkspace } from '../../public/next/chat/chat.mjs';
+    const options = { composition: new URL(location.href).searchParams.get('composition') === '1' };
+    const run = planningReturnRun(options), timeline = document.querySelector('#timeline');
+    paintHistory({ timeline }, projectFamily({ runs: [run] }).runs);
+    timeline.querySelector('.next-chat-task-summary').open = true;
+    async function checkLiveUpdates() {
+      const source = planningReturnRun(options), empty = { ...source, status: 'running', settled: false, output: '', taskState: null, events: [], nodes: { agent: { status: 'running' } } };
+      const host = document.createElement('div'); host.hidden = true; document.body.append(host);
+      const NativeWorker = globalThis.Worker; let handler, workspace;
+      class FixtureReader {
+        addEventListener(type, listener) { if (type === 'message') this.receive = listener; }
+        postMessage(message) { if (message.type === 'load') queueMicrotask(() => this.receive({ data: { id: message.id, ok: true, family: projectFamily({ runs: [empty] }) } })); }
+        terminate() {}
+      }
+      try {
+        globalThis.Worker = FixtureReader;
+        workspace = createChatWorkspace({ mount: host, api: async route => {
+          if (route.startsWith('/api/conversations?')) return { conversations: [] };
+          throw Error('Unexpected fixture API route: ' + route);
+        }, events: { subscribe(value) { handler = value; return () => {}; } }, getStatus: () => ({ cwd: 'synthetic-fixture' }) });
+        globalThis.Worker = NativeWorker;
+        workspace.enter(); workspace.openConversationId(source.id);
+        for (let attempt = 0; attempt < 30 && workspace.getState().runCount !== 1; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+        if (workspace.getState().runCount !== 1) throw Error('Live fixture did not load.');
+        handler({ type: 'agent.event', runId: source.id, nodeId: 'agent', at: '2026-10-29T12:00:00.500Z', data: { type: 'steer', accepted: true, text: 'Please keep the delivery fee separate in the answer.' } });
+        for (const event of source.events) handler(event);
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const phases = [...host.querySelectorAll('[data-phase]')].map(node => node.dataset.phase);
+        return { liveChronology: phases.join(',') === 'plan,think,plan,think,respond',
+          liveFinalOnce: host.querySelector('.next-chat-timeline').textContent.split(source.output).length - 1 === 1,
+          liveDirection: host.querySelector('.next-chat-timeline').textContent.includes('Please keep the delivery fee separate in the answer.'),
+          liveActivePhase: host.querySelector('[aria-current="step"]')?.dataset.phase === 'respond' };
+      } finally { globalThis.Worker = NativeWorker; workspace?.destroy(); host.remove(); }
+    }
+    const liveChecks = await checkLiveUpdates();
+    window.planningReturnFixture = {
+      ready: true,
+      report() {
+        const phases = [...timeline.querySelectorAll('[data-phase]')].map(node => node.dataset.phase);
+        const numbers = [...timeline.querySelectorAll('[data-step-number]')].map(node => node.dataset.stepNumber);
+        const sources = [...timeline.querySelectorAll('[data-activity-source]')].map(node => node.dataset.activitySource);
+        const bounds = [...timeline.querySelectorAll('.next-chat-phase')].map(node => { const { top, bottom, left, right } = node.getBoundingClientRect(); return { top, bottom, left, right }; });
+        return { ready: true, phases, numbers, sources,
+          checks: { chronology: phases.join(',') === 'plan,think,plan,think,respond', oneFinal: phases.filter(value => value === 'respond').length === 1,
+            dottedHierarchy: numbers.join(',') === '1,1.1,1.1.1', sourceReceipts: sources.join(',') === 'plan,observation,review'+(options.composition?',composition':''),
+            noOverlap: bounds.every((box, index) => !index || box.top >= bounds[index - 1].bottom),
+            pageContained: document.documentElement.scrollWidth <= innerWidth + 1, ...liveChecks } };
+      },
+    };
+    requestAnimationFrame(() => {
+      document.documentElement.dataset.fixtureReady = 'true';
+      document.querySelector('#planning-return-fixture-report').textContent = JSON.stringify(window.planningReturnFixture.report());
+    });
+  </script>
+</body>
+</html>

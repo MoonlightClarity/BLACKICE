@@ -7,11 +7,13 @@ import path from 'node:path';
 import { HarnessEngine } from '../lib/engine.mjs';
 import { TaskStateStore } from '../lib/task-state.mjs';
 import { RuntimeSettingsStore } from '../lib/runtime-settings.mjs';
+import { finishFixturePlan } from './fixture-task-plan.mjs';
 
 const payload = receipt => JSON.parse(receipt.contentItems[0].text);
 const call = (options, name, args) => options.onToolCall({ name, arguments: args });
 async function task(options, args) { const receipt = await call(options, 'relay_task', args); assert.equal(receipt.success, true, receipt.contentItems[0].text); return payload(receipt); }
-const action = (id, parentId = null) => ({ id, title: id, kind: 'action', parentId, status: 'pending', result: 'The assigned fixture operation and its checked effects.', note: 'Execute the assigned fixture operation, inspect its receipt and compare the actual saved effect with the expected output.', doneWhen: `${id} has a checked fixture result.` });
+const action = (id, parentId = null) => ({ id, title: id, kind: 'action', parentId, status: 'pending', operation: { kind: 'reasoning', target: `The ${id} fixture result` }, result: 'The assigned fixture operation and its checked effects.', note: 'Compare the supplied fixture result with its stated criterion.', doneWhen: `${id} has a checked fixture result.` });
+const writeAction = (id, target, status = 'active') => ({ ...action(id), status, operation: { kind: 'tool', tool: 'relay_workspace', action: 'write', target }, note: `Write the requested text to ${target} once.` });
 const workflow = {
   name: 'Awareness fixture', settings: { maxParallel: 2 },
   nodes: [{ id: 'input', type: 'input', name: 'Request' }, { id: 'agent', type: 'agent', name: 'Agent', model: 'fixture-awareness', prompt: 'Complete the requested work.' }, { id: 'output', type: 'output', name: 'Result' }],
@@ -39,22 +41,26 @@ test('the main engine refuses an actual workspace write after a human correction
   let beforeRead, afterRead;
   const f = await fixture(t, async (options, context) => {
     const initial = await task(options, { action: 'read' });
-    const plan = await task(options, { action: 'plan', expectedRevision: initial.revision, plan: { layout: 'parallel' }, steps: [action('build')] });
+    let plan = await task(options, { action: 'plan', expectedRevision: initial.revision, plan: { layout: 'sequence' }, steps: [writeAction('presence', 'presence.txt'), writeAction('build', 'actual.txt', 'pending')] });
     await task(options, { action: 'read' });
     context.tasks.awareness.setPresence(plan, { editorId: 'human-editor', stepId: 'build' }, { type: 'local-human', id: 'local-user' });
     const advisory = await call(options, 'relay_workspace', { action: 'write', path: 'presence.txt', text: 'Presence is advisory.' });
     assert.equal(advisory.success, true); assert.equal(payload(advisory).path, path.join(context.cwd, 'presence.txt'));
-    assert.equal(JSON.parse(advisory.contentItems[1].text).presence[0].stepId, 'build');
+    const awareness = advisory.contentItems.filter(item => item.type === 'inputText').map(item => { try { return JSON.parse(item.text); } catch { return {}; } }).find(item => item.presence);
+    assert.equal(awareness.presence[0].stepId, 'build');
     assert.equal(await readFile(path.join(context.cwd, 'presence.txt'), 'utf8'), 'Presence is advisory.');
+    plan = await task(options, { action: 'step', expectedRevision: plan.revision, stepId: 'presence', status: 'done', evidence: 'The actual write receipt identifies presence.txt and its saved bytes.' });
+    plan = await task(options, { action: 'step', expectedRevision: plan.revision, stepId: 'build', status: 'active' });
     const corrected = await context.tasks.editPlan(initial.taskId, { operations: [{ type: 'update', stepId: 'build', patch: { note: 'Write the revised text after reading this correction.' } }] }, { expectedRevision: plan.revision, source: 'human' });
     const write = { action: 'write', path: 'actual.txt', text: 'Revised fixture result.' };
     const denied = await call(options, 'relay_workspace', write); assert.equal(denied.code, 'TASK_PLAN_REVIEW_REQUIRED');
     await assert.rejects(readFile(path.join(context.cwd, 'actual.txt')), { code: 'ENOENT' });
     beforeRead = context.tasks.awareness.snapshot(corrected).workers[0];
-    const reviewed = await task(options, { action: 'read' }); assert.match(reviewed.steps[0].note, /revised text/);
+    const reviewed = await task(options, { action: 'read' }); assert.match(reviewed.steps.find(step => step.id === 'build').note, /revised text/);
     afterRead = context.tasks.awareness.snapshot(corrected).workers[0];
     const actual = await call(options, 'relay_workspace', write); assert.equal(actual.success, true, actual.contentItems[0].text);
-    await task(options, { action: 'step', expectedRevision: reviewed.revision, stepId: 'build', status: 'done', evidence: 'The actual written file contains the revised fixture result.' });
+    const completed = await task(options, { action: 'step', expectedRevision: reviewed.revision, stepId: 'build', status: 'done', evidence: 'The actual written file contains the revised fixture result.' });
+    await finishFixturePlan(options, { state: completed, summary: 'The human correction was read before the one permitted write, and the saved result matches that correction; no requested action remains.' });
     return { output: 'Written and checked the revised fixture result.' };
   });
   const result = await f.run(); assert.equal(result.status, 'completed', result.error);
@@ -70,21 +76,25 @@ test('an assigned delegate receives the same saved-edit gate and cannot operate 
     if (options.prompt.startsWith('You are a short-lived BLACKICE subagent.')) {
       let current = await task(options, { action: 'read' });
       const step = current.steps.find(item => item.id === 'inspect');
+      current = await task(options, { action: 'edit', expectedRevision: current.revision, operations: [{ type: 'update', stepId: step.id, patch: { operation: { kind: 'tool', tool: 'relay_workspace', action: 'write', target: 'delegated.txt' }, note: 'Write delegated.txt once with the reviewed delegated result.' } }] });
       current = await context.tasks.editPlan(current.taskId, { operations: [{ type: 'update', stepId: step.id, patch: { note: 'Read this delegated correction before changing the file.' } }] }, { expectedRevision: current.revision, source: 'human' });
       const denied = await call(options, 'relay_workspace', { action: 'write', path: 'delegated.txt', text: 'Unreviewed' }); assert.equal(denied.code, 'TASK_PLAN_REVIEW_REQUIRED'); deniedCount++;
       await assert.rejects(readFile(path.join(context.cwd, 'delegated.txt')), { code: 'ENOENT' });
       current = await task(options, { action: 'read' }); childReadRevision = current.revision;
       assert.equal(current.planningAwareness.worker.lastReadRevision, current.revision);
       const written = await call(options, 'relay_workspace', { action: 'write', path: 'delegated.txt', text: 'Reviewed delegated result.' }); assert.equal(written.success, true);
-      await task(options, { action: 'step', expectedRevision: current.revision, stepId: 'inspect', status: 'done', evidence: 'The delegated result was actually written after the saved correction was read.' });
+      const completed = await task(options, { action: 'step', expectedRevision: current.revision, stepId: 'inspect', status: 'done', evidence: 'The delegated result was actually written after the saved correction was read.' });
+      await finishFixturePlan(options, { state: completed, summary: 'The delegated assignment is complete with the human correction incorporated; the coordinator can now inspect the saved write receipt.' });
       return { output: 'Reviewed and wrote the delegated result.' };
     }
     let current = await task(options, { action: 'read' });
-    current = await task(options, { action: 'plan', expectedRevision: current.revision, plan: { layout: 'sequence' }, steps: [action('inspect'), action('integrate')] });
+    current = await task(options, { action: 'plan', expectedRevision: current.revision, plan: { layout: 'sequence' }, steps: [{ ...action('inspect'), status: 'active', operation: { kind: 'tool', tool: 'relay_delegate', target: 'The inspector worker assigned to inspect' }, note: 'Delegate the inspect scope to one inspector worker.' }, action('integrate')] });
     const delegated = await call(options, 'relay_delegate', { tasks: [{ id: 'inspector', stepId: 'inspect', prompt: 'Implement only the assigned inspection result.' }] });
     assert.equal(delegated.success, true, delegated.contentItems[0].text);
     current = await task(options, { action: 'read' });
-    await task(options, { action: 'step', expectedRevision: current.revision, stepId: 'integrate', status: 'done', evidence: 'The actual returned worker result and file were checked.' });
+    current = await task(options, { action: 'step', expectedRevision: current.revision, stepId: 'integrate', status: 'active' });
+    const completed = await task(options, { action: 'step', expectedRevision: current.revision, stepId: 'integrate', status: 'done', evidence: 'The actual returned worker result and file were checked.' });
+    await finishFixturePlan(options, { state: completed, summary: 'The actual worker result matches the corrected assignment and the integration check is complete; no requested work remains.' });
     return { output: 'Integrated the reviewed delegated result.' };
   }, { delegates: true });
   const result = await f.run(); assert.equal(result.status, 'completed', result.error); assert.equal(deniedCount, 1);

@@ -198,8 +198,6 @@ test('attached agent tools read and write the actual scoped store with run prove
     assert.ok(found.entries.every(entry => !Object.hasOwn(entry, 'content')));
     const read = decode(await options.onToolCall(tool('relay_memory', { action: 'read', id: 'local-note' })));
     assert.equal(read.entry.content, 'Local convention body.');
-    await assert.rejects(options.onToolCall(tool('relay_memory', { action: 'read', id: 'other-note' })), { status: 404 });
-    await assert.rejects(options.onToolCall(tool('relay_memory', { action: 'forget', id: 'global-note' })), /global scope explicitly/);
     const remembered = decode(await options.onToolCall(tool('relay_memory', { action: 'remember', title: 'Verified fact', content: 'Checked from this workspace.' })));
     assert.equal(remembered.entry.provenance.source, 'agent');
     assert.equal(remembered.entry.provenance.nodeId, 'alpha');
@@ -207,6 +205,11 @@ test('attached agent tools read and write the actual scoped store with run prove
     assert.equal(skill.entry.kind, 'skill');
     const history = decode(await options.onToolCall(tool('relay_history', { action: 'search' })));
     assert.equal(history.results.length, 0, 'active run is excluded from its own history');
+    // A thrown mutation has no confirmed runtime receipt. Keep the expected
+    // scope-denial checks after the intended writes; only read-only inspection
+    // follows an uncertain dispatched attempt.
+    await assert.rejects(options.onToolCall(tool('relay_memory', { action: 'forget', id: 'global-note' })), /global scope explicitly/);
+    await assert.rejects(options.onToolCall(tool('relay_memory', { action: 'read', id: 'other-note' })), { status: 404 });
     return { output: 'Remembered and verified', threadId: 'knowledge-thread' };
   });
   const { api, app, cwd, otherCwd, settled } = await application(t, { runtime });

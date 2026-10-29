@@ -1,4 +1,6 @@
 import { conversationRuns, messagesOfRun } from './model.mjs';
+import { projectPlanningActivity } from './planning-timeline.mjs';
+const records = value => Array.isArray(value) ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item)) : [];
 
 /** Convert a full archived execution family into a chat-only transfer.
  * Full event traces remain in the backend and are never sent to the UI thread.
@@ -23,15 +25,22 @@ export function projectFamily(family) {
       // or tool/agent trace. Artifacts themselves are fetched only on click.
       taskState:run.taskState&&{
         taskId:run.taskState.taskId||run.taskId,revision:run.taskState.revision,updatedAt:run.taskState.updatedAt||run.updatedAt,
-        goal:run.taskState.goal,
-        steps:(run.taskState.steps||[]).slice(0,150).map(step=>({
-          id:step.id,title:step.title,kind:step.kind,stepType:step.stepType,status:step.status,note:String(step.note||'').slice(0,500),evidence:String(step.evidence||'').slice(0,2500),
+        goal:run.taskState.goal,plan:run.taskState.plan,
+        steps:records(run.taskState.steps).slice(0,200).map(step=>({
+          id:step.id,title:step.title,parentId:step.parentId,kind:step.kind,stepType:step.stepType,status:step.status,
+          dependsOn:step.dependsOn,selectedChildId:step.selectedChildId,branch:step.branch,operation:step.operation,
+          result:step.result,doneWhen:step.doneWhen,attempt:step.attempt,
+          note:typeof step.note==='string'?step.note.slice(0,700):undefined,evidence:String(step.evidence||'').slice(0,2500),blockedReason:step.blockedReason,
         })),
-        artifacts:(run.taskState.artifacts||[]).slice(0,40).map(a=>({
+        planningReviews:records(run.taskState.planningReviews).slice(-16).map(review=>({
+          runId:review.runId,nodeId:review.nodeId,reviewedRevision:review.reviewedRevision,at:review.at,
+          decision:review.decision,summary:String(review.summary||'').slice(0,1200),nextStepId:review.nextStepId,
+        })),
+        artifacts:records(run.taskState.artifacts).slice(0,40).map(a=>({
           id:a.id,title:a.title,fileName:a.fileName,contentType:a.contentType,size:a.size,sha256:a.sha256,
         })),
       },
-      nodes,precomputedMessages:messages,events:[],
+      nodes,precomputedMessages:messages,planningActivity:projectPlanningActivity(run),events:[],
     };
   });
   return {rootId:family?.rootId||null,state:family?.state||'active',

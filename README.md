@@ -2,9 +2,9 @@
 
 BLACKICE is an open-source Windows application for working with AI agents on real tasks. It brings conversations, files, commands, web browsing, editable plans, reusable knowledge and recurring work into one desktop workspace. You can use an agent inside BLACKICE or connect an ordinary ChatGPT conversation to the tools on your computer.
 
-**Current public release: 2.36.1 for Windows x64. Project overview updated October 29, 2026.**
+**Current public release: 2.37.0 for Windows x64. Project overview updated October 29, 2026.**
 
-**[Download the Windows installer](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.36.1/Blackice-2.36.1-Setup.exe)** · [Release details](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.36.1) · [Release notes](RELEASE-NOTES-2.36.1.md) · [Checksums](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.36.1/SHA256SUMS.txt)
+**[Download the Windows installer](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.37.0/Blackice-2.37.0-Setup.exe)** · [Release details](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.37.0) · [Release notes](RELEASE-NOTES-2.37.0.md) · [Checksums](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.37.0/SHA256SUMS.txt)
 
 BLACKICE is usable today and remains under active development. The current release includes the desktop workspace, direct ChatGPT connection, built-in browser, shared planning, coordinated agents and recurring tasks. The installer is currently unsigned. The [project state](#current-project-state) section explains what has been checked, what recently changed and what still needs work.
 
@@ -76,7 +76,9 @@ The local password manager can save and generate website credentials and fill su
 
 Planning gives the human and agents a shared, editable record of the goal, steps, dependencies, assignments, evidence and observed results. View it as a map or outline and inspect one step at a time. Saved plans can be named, grouped and revisited. The current **Intelligence Planning** view distinguishes analytical assessments, agent working plans and other project plans; **New assessment** starts a saved analytical project.
 
-**Planning is On or Off.** On is the default for BLACKICE agents. It allows relevant initial reading, then requires a current plan before the agent proceeds with the work or gives a final answer. Off removes that automatic requirement while keeping saved notes and optional planning tools available. Model reasoning effort is a separate setting.
+**Planning is On or Off.** On is the default for BLACKICE agents. Before an operational tool, the agent saves the next concrete action and recursively splits compound work into the smallest meaningful substeps. One eligible leaf is active at a time. Its actual result must be recorded before the next operation. Inspection is a planned step too. Off removes automatic planning and sequential dispatch requirements while keeping saved notes and optional planning tools available. Model reasoning effort is a separate setting.
+
+The plan follows a Python-like algorithm: chronological operations, ordered **IF / ELIF / ELSE**, nested **AND / OR / NOT / Boolean XOR**, and typed comparisons. Unknown information stays unknown rather than selecting ELSE. Thinking and new evidence can send the agent back to planning. **Return to this step** opens another attempt of an earlier leaf or group, preserves its previous results, and flags affected later work for reassessment. [Recursive planning](docs/RECURSIVE-PLANNING.md) documents the exact format, examples, execution checks and limits.
 
 For decisions, the plan can distinguish genuine hard constraints from preferences, adaptable gaps and information that is still unknown. An optional judgment frame records the practical outcome, important uncertainty, a useful next check and what was learned. These tools help an agent decide when it has enough information to act and when it needs to reconsider. [Practical judgment and metacognition](docs/METACOGNITION.md) explains the approach with examples.
 
@@ -85,6 +87,8 @@ Plan edits are explicit saves, and conflicting edits preserve your draft for rev
 ### Coordinate agents and reusable workflows
 
 In **Activity → New workflow**, add and connect agent stages, with optional human-approval and output stages. Configure each agent's model, instructions and assignment, choose which stages depend on others and which can run in parallel, then **Save graph** and **Run workflow**. Agents call their tools as part of those stages. Assignments can describe the scope, inputs, expected result and completion criteria for each worker. The classic interface also includes starter workflow templates and quick team setups.
+
+With Planning On, workflow stages and delegated operational work proceed one at a time. Planning Off retains the workflow's configured parallelism. An older native conversation upgrades its planning tool catalog through an internal continuation while retaining the same BLACKICE conversation and task history.
 
 Agents can delegate parts of a task to other workers. Saved projects organize longer work into tasks, dependencies, implementation and review attempts, and milestones. Plans and run histories let you inspect what each worker did and continue from the recorded state. Project start, pause and retry controls remain in the classic interface. Selecting a node in a map inspects it; running work is a separate action.
 
@@ -112,20 +116,20 @@ Chat preserves conversation history, drafts and attachments across navigation. C
 
 ### What the current release brings together
 
-The public **2.36.1** release combines the features above with recent work on four practical problems:
+The public **2.37.0** release adds a recursive planning checkpoint:
 
-- **Keeping browsing inside BLACKICE.** The built-in browser is the default, including a fix for an installed browser-routing skill diverting native Codex work to another browser.
-- **Preserving recurring work.** Repeated tasks keep the compatible conversation and plan, including when their instructions change.
-- **Improving practical judgment.** Planning distinguishes the user's actual requirements from an agent's earlier choices, treats preferences and unknowns separately, and records observed outcomes.
-- **Making large workspaces more responsive.** Chat and sidebar updates do less repeated work on saved histories. Startup shows its current stage, and development tools can inspect and profile the actual desktop application.
+- **Executable substeps.** Plans use nested parent/child groups and concrete operations. Conditional choices support ordered IF/ELIF/ELSE, nested AND/OR/NOT/XOR, comparisons and membership tests over recorded observations.
+- **One operation at a time.** The runtime requires an eligible active leaf and its actual outcome before the next operation. Revisiting earlier work preserves previous attempts and puts dependent work back up for review without automatically repeating its effects.
+- **A return to planning before the answer.** After work, the agent records whether to continue, respond or report a genuine blocker. Changed work or user directions invalidate an earlier review. A premature final response resumes the same task for reassessment.
+- **Chronology and hierarchy in the interface.** Chat retains successive planning and working phases, and the outline follows the saved tree with numbers such as 1.1 and 1.1.1. Public planning activity survives conversation reopening and execution-history rollover.
 
-The [2.36.1 release notes](RELEASE-NOTES-2.36.1.md) and [2.36.0 notes](RELEASE-NOTES-2.36.0.md) describe the individual changes, including restart and browser compatibility improvements.
+The [2.37.0 release notes](RELEASE-NOTES-2.37.0.md), [planning contract](docs/RECURSIVE-PLANNING.md) and [bounded dogfood findings](docs/PLANNING-DOGFOOD-2026-10-29.md) describe the behavior and its limits. Earlier browser, conversation and workflow improvements remain described in the [2.36.1 notes](RELEASE-NOTES-2.36.1.md).
 
 ### What has been checked
 
 The published Windows installer has been checked for installation, shortcuts and registration, startup, restart, shutdown, profile backup and restore, and clean removal. Its packaged application files were compared with the released source. Automated source checks and the release's verification records are available for readers who want the technical evidence.
 
-Those checks apply to the named release and installer. They do not mean every website, desktop application or model-driven task has been proven to work. The [release page](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.36.1), [Windows verification run](https://github.com/MoonlightClarity/BLACKICE/actions/runs/40795583611) and [source verification record](https://github.com/MoonlightClarity/BLACKICE/blob/v2.36.1/verification/windows-2.36.1.json) contain the details.
+Those checks apply to the named release and installer. They do not mean every website, desktop application or model-driven task has been proven to work. The [release page](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.37.0), attached Windows installer verification records and [source verification record](https://github.com/MoonlightClarity/BLACKICE/blob/v2.37.0/verification/windows-2.37.0.json) contain the details.
 
 ### Current limitations and open issues
 

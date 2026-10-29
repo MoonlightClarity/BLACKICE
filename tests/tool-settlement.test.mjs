@@ -55,7 +55,7 @@ test('API Stop keeps a real pending patch leased, preserves its late receipt, an
       const receipt = request.messages.find(message => message.role === 'tool' && message.tool_call_id === 'plan-read');
       assert.ok(receipt, 'The provider receives the actual task-read result.');
       const state = JSON.parse(receipt.content); assert.equal(state.error, undefined, receipt.content);
-      return callReply([['plan-write', 'relay_task', { action: 'plan', expectedRevision: state.revision, plan: { layout: 'sequence', detail: 'balanced' }, steps: [{ id: 'patch', kind: 'action', title: 'Apply the fixture patch', status: 'active', result: 'result.txt contains confirmed patch with a durable receipt identifying the changed bytes.', note: 'Apply the exact before-to-confirmed patch replacement in result.txt through relay_workspace patch; compare the resulting file contents and afterHash saved in the durable receipt.', doneWhen: 'The saved patch receipt and target bytes agree.' }] }]]);
+      return callReply([['plan-write', 'relay_task', { action: 'plan', expectedRevision: state.revision, plan: { layout: 'sequence', detail: 'balanced' }, steps: [{ id: 'patch', kind: 'action', title: 'Apply the fixture patch', status: 'active', operation: { kind: 'tool', tool: 'relay_workspace', action: 'patch', target: 'result.txt' }, result: 'result.txt contains confirmed patch with a durable receipt identifying the changed bytes.', note: 'Apply the exact before-to-confirmed patch replacement in result.txt through relay_workspace patch; compare the resulting file contents and afterHash saved in the durable receipt.', doneWhen: 'The saved patch receipt and target bytes agree.' }] }]]);
     }
     if (primaryRequests === 3) {
       const receipt = request.messages.find(message => message.role === 'tool' && message.tool_call_id === 'plan-write');
@@ -98,7 +98,9 @@ test('API Stop keeps a real pending patch leased, preserves its late receipt, an
   const receipt = JSON.parse(item.data.item.contentItems[0].text);
   assert.equal(receipt.status, 'applied'); assert.equal(receipt.path, file); assert.equal((await engine.filePatches.get(receipt.id)).afterHash, receipt.afterHash);
   const transcript = await f.runtime.readThread(threadId);
-  assert.equal(JSON.parse(transcript.messages.find(message => message.tool_call_id === 'held-patch').content).afterHash, receipt.afterHash);
+  const retainedToolItems = transcript.messages.find(message => message.tool_call_id === 'held-patch').content.split('\n').map(text => JSON.parse(text));
+  assert.equal(retainedToolItems[0].afterHash, receipt.afterHash);
+  assert.ok(retainedToolItems.some(item => item.type === 'planning.sequence' && item.stepId === 'patch'));
   assert.match(transcript.messages.find(message => message.tool_call_id === 'must-not-start').content, /interrupted/);
   assert.equal(transcript.pendingToolCalls, undefined); assert.equal(primaryRequests, 3, 'Stop starts no further provider request.');
   const continued = engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue after the original callback settled.', planningMode: 'off' }); await engine.executions.get(continued.id);

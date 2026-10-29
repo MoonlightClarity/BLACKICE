@@ -62,7 +62,7 @@ test('Retry after a lost publication response reconciles its durable attempt ins
  const f=await fixture(t,async(options,number)=>{
    options.onEvent({type:'thread',threadId:'native-publication-thread'});
    let saved=await call(options,{action:'read'});
-   saved=await call(options,{action:'plan',expectedRevision:saved.revision,steps:[{id:'publish',title:'Inspect and reconcile one authorized publication',status:'active',result:'One reconciled publication receipt without a duplicate send.',note:'Inspect the saved attempt and destination, then confirm the matching result before reporting delivery.',doneWhen:'The one existing or newly sent result has a confirmed receipt with observed destination evidence.'}]});
+   saved=await call(options,{action:'plan',expectedRevision:saved.revision,steps:[{id:'publish',title:'Reconcile the supplied publication receipt',status:'active',operation:{kind:'reasoning',target:'The supplied publish-once fixture receipt and destination observation'},result:'One reconciled publication receipt without a duplicate send.',note:'Compare the supplied destination observation with the saved publish-once attempt.',doneWhen:'The one existing or newly sent result has a confirmed receipt with observed destination evidence.'}]});
    if(number===1){
      saved=await call(options,{action:'external',expectedRevision:saved.revision,external:{receiptId:'publish-once',operation:'prepare',destination:'https://www.linkedin.com/in/fixture/recent-activity/',content:'BLACKICE development update.',attachmentSha256:'a'.repeat(64)}});
      await call(options,{action:'external',expectedRevision:saved.revision,external:{receiptId:'publish-once',operation:'attempt'}});
@@ -81,7 +81,7 @@ test('a delayed older milestone receipt cannot replace a newer committed swarm s
  const committed=deferred(),release=deferred();let taskId;
  const f=await fixture(t,async options=>{
    const initial=await call(options,{action:'read'});taskId=initial.taskId;
-   const older=call(options,{action:'plan',expectedRevision:initial.revision,steps:[{id:'deliver',title:'Deliver the result',status:'active',result:'The checked fixture output.',note:'Produce the fixture output and inspect its value against the expected result.',doneWhen:'The output is checked.'}]});
+   const older=call(options,{action:'plan',expectedRevision:initial.revision,steps:[{id:'deliver',title:'Compare the supplied fixture result',status:'active',operation:{kind:'reasoning',target:'The supplied milestone fixture output'},result:'The checked fixture output.',note:'Compare the supplied fixture output with its expected value.',doneWhen:'The output is checked.'}]});
    await committed.promise;
    const current=await call(options,{action:'read'}),latest=await call(options,{action:'step',expectedRevision:current.revision,stepId:'deliver',status:'done',evidence:'Checked actual output.'});
    release.resolve();await older;assert.equal(f.engine.getRun(options.runId||f.engine.listRuns()[0].id).taskState.revision,latest.revision);

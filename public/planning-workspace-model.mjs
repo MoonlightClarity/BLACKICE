@@ -6,7 +6,7 @@ const own = (value, key) => Object.hasOwn(value, key);
 const validId = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/.test(value);
 const validGroupId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,120}$/.test(value) && !['all', 'ungrouped'].includes(value);
 const GROUPS = ['sequence', 'parallel', 'choice'];
-const STEP_FIELDS = ['title', 'kind', 'doneWhen', 'result', 'note', 'condition', 'status', 'evidence', 'blockedReason', 'skipReason', 'parentId', 'beforeId', 'dependsOn', 'selectedChildId'];
+const STEP_FIELDS = ['title', 'kind', 'doneWhen', 'result', 'note', 'condition', 'status', 'evidence', 'blockedReason', 'skipReason', 'parentId', 'beforeId', 'dependsOn', 'selectedChildId', 'revisitReason'];
 
 /** Grouping belongs to the saved-plan catalog, independently of executable steps. */
 export function planningCatalogOutline(plans = [], organization = {}, { groupId = '', query = '' } = {}) {
@@ -28,7 +28,7 @@ export function planningDraftValues(task, stepId = null) {
   const step = task.steps?.find(item => item.id === stepId);
   if (!step) return null;
   const siblings = task.steps.filter(item => (item.parentId || '') === (step.parentId || ''));
-  return Object.fromEntries(STEP_FIELDS.map(key => [key, key === 'dependsOn' ? [...(step.dependsOn || [])] : key === 'beforeId' ? siblings[siblings.findIndex(item => item.id === stepId) + 1]?.id || '' : key === 'kind' ? step.kind || 'action' : key === 'status' ? step.status || 'pending' : step[key] || '']));
+  return Object.fromEntries(STEP_FIELDS.map(key => [key, key === 'revisitReason' ? '' : key === 'dependsOn' ? [...(step.dependsOn || [])] : key === 'beforeId' ? siblings[siblings.findIndex(item => item.id === stepId) + 1]?.id || '' : key === 'kind' ? step.kind || 'action' : key === 'status' ? step.status || 'pending' : step[key] || '']));
 }
 
 export function planningChangedFields(draft) {
@@ -63,9 +63,13 @@ export function planningEditOperations(draft) {
     return operations;
   }
   const patch = {};
-  for (const key of STEP_FIELDS.filter(key => !['parentId', 'beforeId', 'dependsOn', 'selectedChildId'].includes(key))) if (changes.has(key)) patch[key] = value[key] === '' && !['title', 'kind', 'status'].includes(key) ? null : value[key];
+  for (const key of STEP_FIELDS.filter(key => !['parentId', 'beforeId', 'dependsOn', 'selectedChildId', 'revisitReason'].includes(key))) if (changes.has(key)) patch[key] = value[key] === '' && !['title', 'kind', 'status'].includes(key) ? null : value[key];
   if (own(patch, 'title')) patch.title = requireText(patch.title, 'A step title');
-  const operations = Object.keys(patch).length ? [{ type: 'update', stepId: draft.stepId, patch }] : [];
+  const revisitReason = String(value.revisitReason || '').trim();
+  if (revisitReason.length > 1000) throw new Error('Keep the reason for revisiting to at most 1,000 characters.');
+  if (changes.has('status') && ['done', 'skipped'].includes(draft.original.status) && !['done', 'skipped'].includes(value.status) && !revisitReason) throw new Error('Use Return to this step and explain what needs reassessing before reopening completed work.');
+  const operations = revisitReason ? [{ type: 'revisit', stepId: draft.stepId, reason: revisitReason }] : [];
+  if (Object.keys(patch).length) operations.push({ type: 'update', stepId: draft.stepId, patch });
   if (changes.has('parentId') || changes.has('beforeId')) operations.push({ type: 'move', stepId: draft.stepId, parentId: value.parentId || null, ...(value.beforeId ? { beforeId: value.beforeId } : {}) });
   if (changes.has('dependsOn')) operations.push({ type: 'dependencies', stepId: draft.stepId, dependsOn: [...value.dependsOn] });
   if (changes.has('selectedChildId') || changes.has('kind') && value.kind !== 'choice' && draft.original.selectedChildId) operations.push({ type: 'choose', stepId: draft.stepId, selectedChildId: value.kind === 'choice' ? value.selectedChildId || null : null });

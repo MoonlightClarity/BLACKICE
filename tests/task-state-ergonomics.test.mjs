@@ -80,6 +80,7 @@ test('the live describe read and plan examples execute against the actual curren
   for (const step of description.plan.example.steps) for (const field of ['result', 'note', 'doneWhen']) {
     assert.ok(typeof step[field] === 'string' && step[field].trim(), `The advertised action supplies its prospective ${field}.`);
   }
+  assert.equal(description.plan.example.steps[0].operation.kind, 'reasoning');
   assert.match(TASK_TOOL.inputSchema.properties.expectedRevision.description, /Required on every write/);
   assert.match(TASK_TOOL.inputSchema.properties.plan.description, /never plan.steps/);
   assert.match(TASK_TOOL.inputSchema.properties.steps.description, /top-level/);
@@ -89,7 +90,7 @@ test('the live describe read and plan examples execute against the actual curren
   const planned = await f.call(example); assert.equal(planned.success, true, planned.contentItems[0].text);
   const saved = payload(planned);
   assert.deepEqual(saved.plan.authoredBy, { runId: 'run-one', nodeId: 'agent' });
-  assert.equal(saved.steps[0].status, 'pending'); assert.equal(saved.progress.done, 0); assert.equal(saved.progress.complete, false);
+  assert.equal(saved.steps[0].status, 'active'); assert.equal(saved.steps[0].operation.kind, 'reasoning'); assert.equal(saved.progress.done, 0); assert.equal(saved.progress.complete, false);
   const prematureDone = await f.call({ action: 'step', expectedRevision: saved.revision, stepId: saved.steps[0].id, status: 'done' });
   assert.equal(prematureDone.success, false); assert.match(payload(prematureDone).error, /evidence/);
   assert.equal((await f.store.get(f.state.taskId)).revision, saved.revision);

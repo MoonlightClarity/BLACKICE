@@ -7,7 +7,7 @@ import path from 'node:path';
 import {HarnessEngine} from '../lib/engine.mjs';
 import {RuntimeSettingsStore} from '../lib/runtime-settings.mjs';
 import {TaskStateStore} from '../lib/task-state.mjs';
-import {recordFixturePlan} from './fixture-task-plan.mjs';
+import {recordFixturePlan,finishFixturePlan} from './fixture-task-plan.mjs';
 
 const taskGraph=()=>({
   name:'Independent worker test',
@@ -90,6 +90,15 @@ test('a failed child execution remains inspectable in the durable parent run aft
       await recordFixturePlan(options,{title:'Inspect the child failure receipt',doneWhen:'The coordinator reports the actual failure and preserves its execution evidence.'});
       const returned=await options.onToolCall({name:'relay_delegate',arguments:{tasks:[{id:'independent',prompt:'Inspect one local fixture; report actual work.'}]}});
       assert.equal(returned.success,false);childReceipt=JSON.parse(returned.contentItems[0].text).results[0];
+      const read=await options.onToolCall({name:'relay_task',arguments:{action:'read'}});
+      assert.equal(read.success,true,read.contentItems[0].text);
+      let state=JSON.parse(read.contentItems[0].text);
+      const unfinished=state.steps.find(step=>(step.kind||'action')==='action'&&step.status==='active');
+      if(unfinished){
+        const reconciled=await options.onToolCall({name:'relay_task',arguments:{action:'step',expectedRevision:state.revision,stepId:unfinished.id,status:'blocked',blockedReason:childReceipt.error}});
+        assert.equal(reconciled.success,true,reconciled.contentItems[0].text);state=JSON.parse(reconciled.contentItems[0].text);
+      }
+      await finishFixturePlan(options,{state,decision:'blocked',summary:'The worker failed after its recorded tool result. Its actual exception and partial usage are preserved; this fixture has no independent ready recovery action and reports the blocker honestly.'});
       return{output:'The independent worker failed after one tool result; its execution receipt is available for inspection.',threadId:'coordinator-thread'};
     }
   }

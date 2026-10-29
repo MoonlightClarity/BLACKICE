@@ -7,15 +7,22 @@ const note = step => String(step.note || '');
 /** Drafts keep a full revision, never a metadata-only catalog row. */
 export function createPlanningDraft(plan) {
   if (!Array.isArray(plan?.steps)) throw Error('Load the saved plan before editing it.');
-  return { base: plan, latest: plan, goal: String(plan.goal || ''), notes: new Map(plan.steps.map(step => [step.id, note(step)])), detachedNotes: [], error: '' };
+  return { base: plan, latest: plan, goal: String(plan.goal || ''), notes: new Map(plan.steps.map(step => [step.id, note(step)])), revisit: null, detachedNotes: [], error: '' };
 }
 
 export function planningDraftDirty(draft) {
-  return draft.goal !== String(draft.base.goal || '') || draft.base.steps.some(step => (draft.notes.get(step.id) || '') !== note(step));
+  return Boolean(draft.revisit) || draft.goal !== String(draft.base.goal || '') || draft.base.steps.some(step => (draft.notes.get(step.id) || '') !== note(step));
 }
 
 export function planningDraftOperations(draft) {
   const operations = [];
+  if (draft.revisit) {
+    if (!draft.base.steps.some(step => step.id === draft.revisit.stepId)) throw Error('The step to revisit is no longer in this plan. Review the saved version.');
+    const reason = String(draft.revisit.reason || '').trim();
+    if (!reason || reason.length > 1000) throw Error('Explain why this step needs revisiting in 1 to 1,000 characters.');
+    // Archive the saved attempt before applying a revised procedure to it.
+    operations.push({ type: 'revisit', stepId: draft.revisit.stepId, reason });
+  }
   if (draft.goal.trim() !== String(draft.base.goal || '')) operations.push({ type: 'metadata', patch: { goal: draft.goal.trim() } });
   for (const step of draft.base.steps) if ((draft.notes.get(step.id) || '') !== note(step)) operations.push({ type: 'update', stepId: step.id, patch: { note: draft.notes.get(step.id) || '' } });
   return operations;
@@ -34,10 +41,13 @@ export function rebasePlanningDraft(draft) {
   for (const step of previous.steps) if (!ids.has(step.id) && (draft.notes.get(step.id) || '') !== note(step)) {
     detachedNotes.push({ id: step.id, title: step.title || step.id, note: draft.notes.get(step.id) || '' });
   }
+  const removedRevisit = draft.revisit && !ids.has(draft.revisit.stepId);
+  if (removedRevisit) detachedNotes.push({ id: draft.revisit.stepId, title: old.get(draft.revisit.stepId)?.title || draft.revisit.stepId, note: 'Revisit requested: ' + draft.revisit.reason });
   return {
     ...draft, base: latest,
     goal: draft.goal === String(previous.goal || '') ? String(latest.goal || '') : draft.goal,
     notes: new Map(latest.steps.map(step => [step.id, old.has(step.id) && (draft.notes.get(step.id) || '') !== note(old.get(step.id)) ? draft.notes.get(step.id) || '' : note(step)])),
+    revisit: removedRevisit ? null : draft.revisit,
     detachedNotes, error: 'Draft kept. Save explicitly to apply it to the latest revision.',
   };
 }
@@ -49,6 +59,7 @@ export function commitPlanningDraft(draft, saved, submitted) {
     ...draft, base: saved, latest,
     goal: draft.goal === submitted.goal ? String(saved.goal || '') : draft.goal,
     notes: new Map(saved.steps.map(step => [step.id, draft.notes.get(step.id) === submitted.notes.get(step.id) ? note(step) : draft.notes.get(step.id) ?? note(step)])),
+    revisit: JSON.stringify(draft.revisit) === JSON.stringify(submitted.revisit) ? null : draft.revisit,
     error: 'Saved revision ' + saved.revision + '.',
   };
 }

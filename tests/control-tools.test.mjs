@@ -13,7 +13,7 @@ import {recordFixturePlan} from './fixture-task-plan.mjs';
 
 const until=async(check,label='control operation')=>{const end=Date.now()+7000;while(Date.now()<end){const value=await check();if(value)return value;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail(`${label} did not settle`);};
 const graph=(id='controlled-workflow')=>({id,name:'Configured through chat',nodes:[{id:'input',type:'input',name:'Task'},{id:'agent',type:'agent',name:'Worker',prompt:'Verify the original requested result.',model:'control-fixture-model'},{id:'output',type:'output',name:'Result'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1}});
-const unpack=result=>JSON.parse(result.contentItems.filter(item=>item.type==='inputText').map(item=>item.text).join('\n'));
+const unpack=result=>JSON.parse(result.contentItems.find(item=>item.type==='inputText').text);
 const call=async(options,args,success=true)=>{const result=await options.onToolCall({name:'relay_control',arguments:args});assert.equal(result.success,success,JSON.stringify(unpack(result)));return unpack(result);};
 
 test('scheduled agent workers cannot recursively mutate or trigger cronjobs',async()=>{

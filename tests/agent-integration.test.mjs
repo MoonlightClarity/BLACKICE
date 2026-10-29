@@ -22,6 +22,7 @@ class Runtime extends EventEmitter {
 class NoDesktop extends EventEmitter {status(){return{available:false,enabled:false};}async setEnabled(){return this.status();}}
 const tool=(options,name,args,context)=>options.onToolCall({name,arguments:args},context);
 const text=result=>result.contentItems.filter(item=>item.type==='inputText').map(item=>item.text).join('\n');
+const toolData=result=>{assert.equal(result.success,true,text(result));return JSON.parse(result.contentItems.find(item=>item.type==='inputText').text);};
 async function application(t,{execute,connectionsFactory,autoLearning=false,maxConcurrentRuns=4}={}){
   const directory=await mkdtemp(path.join(tmpdir(),'relay-agent-integration-')),dataDir=path.join(directory,'data'),cwd=path.join(directory,'workspace');
   const runtime=new Runtime(execute),connections=connectionsFactory?await connectionsFactory({dataDir,cwd}):undefined;
@@ -40,8 +41,8 @@ test('identity is attached as real tools and an immutable per-turn snapshot, the
     assert.ok(options.dynamicTools.some(item=>item.name==='relay_identity'));assert.match(options.prompt,/BLACKICE GLOBAL IDENTITY/);
     await recordFixturePlan(options);
     if(index===1){
-      initialPrompt=options.prompt;const record=JSON.parse(text(await tool(options,'relay_identity',{action:'read',kind:'user'})));initialRevision=record.revision;
-      const saved=JSON.parse(text(await tool(options,'relay_identity',{action:'update',kind:'user',content:record.content+'\n- Prefer compact handoffs.\n',expectedRevision:record.revision,expectedHash:record.diskHash,sourceQuote:'Prefer compact handoffs.'})));
+      initialPrompt=options.prompt;const record=toolData(await tool(options,'relay_identity',{action:'read',kind:'user'}));initialRevision=record.revision;
+      const saved=toolData(await tool(options,'relay_identity',{action:'update',kind:'user',content:record.content+'\n- Prefer compact handoffs.\n',expectedRevision:record.revision,expectedHash:record.diskHash,sourceQuote:'Prefer compact handoffs.'}));
       assert.equal(saved.revision,record.revision+1);assert.equal(options.prompt,initialPrompt,'saving cannot mutate the current turn snapshot');
     }else assert.match(options.prompt,/Prefer compact handoffs/);
     return{output:'Verified fixture result.',threadId:`fixture-thread-${index}`};

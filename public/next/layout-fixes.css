@@ -219,7 +219,7 @@
   fill:#414850;stroke:#d6dce2
 }
 .next-planning-workspace .next-plan-toolbar button[aria-pressed=true],
-.next-planning-workspace .next-plan-outline button[aria-pressed=true]{
+.next-planning-workspace .next-plan-outline button:is([aria-pressed=true],[aria-selected=true]){
   background:#404850;border-color:#b6c1cb
 }
 .next-planning-workspace :is(.next-intel-graph-node,.next-intel-node-title,

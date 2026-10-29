@@ -23,10 +23,15 @@ async function taskCall(options, args) {
 }
 const leaf = (id = 'answer', title = 'Answer the current question') => ({
   id, title, kind: 'action', parentId: null, status: 'active',
+  operation: { kind: 'reasoning', target: title },
   result: 'The observed result and saved effects of the named fixture operation.',
   note: 'Perform the operation specified by this fixture, inspect its returned receipt and saved effects, and compare them with the corresponding assertions.',
   doneWhen: 'The requested result is present and its stated check was performed.',
 });
+const toolLeaf = (id, action, target, status = 'active') => ({ ...leaf(id, `${action} ${target}`), status,
+  operation: { kind: 'tool', tool: 'relay_workspace', action, target },
+  result: `The returned ${action} receipt for ${target}.`, note: `Call relay_workspace ${action} once for ${target}.`,
+  doneWhen: `The ${action} receipt identifies ${target} and the requested result.` });
 async function savePlan(options, steps = [leaf()], plan = {}) {
   const state = await taskCall(options, { action: 'read' });
   return taskCall(options, { action: 'plan', expectedRevision: state.revision, steps, plan: { layout: 'sequence', taskType: 'general', ...plan } });
@@ -101,15 +106,17 @@ test('ordinary work publishes an honest root before inference and requires a dur
     assert.equal(denied.success, false); assert.equal(denied.code, 'TASK_PLAN_REQUIRED'); assert.match(payload(denied).message, /without asking the user for approval/);
     await assert.rejects(readFile(path.join(context.cwd, 'result.txt')), { code: 'ENOENT' });
     assert.equal((await context.tasks.get(run.taskId)).revision, initial.revision);
-    let state = await savePlan(options, [leaf('deliver', 'Create and inspect result.txt')]);
+    let state = await savePlan(options, [toolLeaf('deliver', 'write', 'result.txt'), toolLeaf('inspect', 'read', 'result.txt', 'pending')]);
     assert.deepEqual(state.plan.authoredBy, { runId: run.id, nodeId: 'agent' });
     const written = await call(options, 'relay_workspace', { action: 'write', path: 'result.txt', text: 'verified fixture output' }); assert.equal(written.success, true);
+    state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'deliver', status: 'done', evidence: 'The write receipt identifies result.txt and the saved byte count.' });
+    state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'inspect', status: 'active' });
     const read = await call(options, 'relay_workspace', { action: 'read', path: 'result.txt' }); assert.equal(read.success, true); assert.match(payload(read).content, /verified fixture output/);
-    state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'deliver', status: 'done', evidence: 'Read result.txt through relay_workspace and observed verified fixture output.' });
-    assert.equal(state.progress.done, 1); return { output: 'Created and read the result.', threadId: context.threadId };
+    state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'inspect', status: 'done', evidence: 'Read result.txt through relay_workspace and observed verified fixture output.' });
+    assert.equal(state.progress.done, 2); return { output: 'Created and read the result.', threadId: context.threadId };
   });
   const run = await f.settled(f.start().id); completed(run); assert.equal(f.runtime.calls.length, 1, 'Planning runs inside the same agent turn');
-  assert.equal(run.nodes.agent.planning.status, 'recorded'); assert.equal(run.taskState.plan.origin, 'agent'); assert.equal(run.taskState.progress.done, 1);
+  assert.equal(run.nodes.agent.planning.status, 'recorded'); assert.equal(run.taskState.plan.origin, 'agent'); assert.equal(run.taskState.progress.done, 2);
   assert.equal(run.nodes.agent.taskSchemaVersion, TASK_SCHEMA_VERSION); assert.equal(await readFile(path.join(f.cwd, 'result.txt'), 'utf8'), 'verified fixture output');
 });
 
@@ -142,15 +149,14 @@ test('saved Inbox planning metadata survives restart while Planning On retains f
   assert.equal(override.nodes.agent.planning.detail, 'detailed'); assert.equal(override.taskState.plan.detail, 'detailed');
 });
 
-test('a bounded discovery allowance grounds the plan but does not admit shell commands or arbitrary connector calls', async t => {
+test('inspection and mutations both require a saved concrete leaf while planning discovery stays available', async t => {
   const f = await fixture(t, async (options, number, context) => {
     await writeFile(path.join(context.cwd, 'input.txt'), 'Actual task material.');
-    for (let index = 0; index < 4; index++) assert.equal((await call(options, 'relay_workspace', { action: 'read', path: 'input.txt' })).success, true);
-    const exhausted = await call(options, 'relay_workspace', { action: 'read', path: 'input.txt' }); assert.equal(exhausted.code, 'TASK_PLAN_REQUIRED'); assert.equal(payload(exhausted).inspectionCallsUsed, 4);
+    const unplanned = await call(options, 'relay_workspace', { action: 'read', path: 'input.txt' }); assert.equal(unplanned.code, 'TASK_PLAN_REQUIRED'); assert.equal(payload(unplanned).inspectionCallsUsed, 0);
     const command = await call(options, 'relay_workspace', { action: 'run', command: 'echo must-not-run' }); assert.equal(command.code, 'TASK_PLAN_REQUIRED');
     const connector = await call(options, 'relay_connections', { action: 'call', connectionId: 'fixture', name: 'unknown_read' }); assert.equal(connector.code, 'TASK_PLAN_REQUIRED');
     const description = await taskCall(options, { action: 'describe', methodQuery: 'Research a question' }); assert.ok(JSON.stringify(description).includes('research-brief')); assert.equal(description.totalMethods, 589); assert.ok(description.methods.length <= 20);
-    const state = await savePlan(options); assert.equal(state.plan.origin, 'agent');
+    const state = await savePlan(options, [toolLeaf('inspect', 'read', 'input.txt')]); assert.equal(state.plan.origin, 'agent');
     assert.equal((await call(options, 'relay_workspace', { action: 'read', path: 'input.txt' })).success, true, 'After planning the normal tool rules apply');
     return { output: 'The source was inspected.', threadId: context.threadId };
   });
@@ -166,23 +172,24 @@ test('an invalid or stale plan cannot admit work and a current read can recover 
     assert.equal((await call(options, 'relay_workspace', { action: 'write', path: 'never.txt', text: 'no' })).code, 'TASK_PLAN_REQUIRED');
     const stale = await call(options, 'relay_task', { action: 'plan', expectedRevision: initial.revision + 1, steps: [leaf()] }); assert.equal(stale.success, false);
     assert.equal(context.engine.listRuns()[0].nodes.agent.planning.status, 'preparing');
-    await savePlan(options); assert.equal((await call(options, 'relay_workspace', { action: 'write', path: 'after-plan.txt', text: 'yes' })).success, true);
+    await savePlan(options, [toolLeaf('write', 'write', 'after-plan.txt')]); assert.equal((await call(options, 'relay_workspace', { action: 'write', path: 'after-plan.txt', text: 'yes' })).success, true);
     return { output: 'A current plan was saved.', threadId: context.threadId };
   });
   const run = await f.settled(f.start().id); completed(run); assert.equal(f.runtime.calls.length, 1); assert.equal(run.nodes.agent.planning.status, 'recorded');
   await assert.rejects(readFile(path.join(f.cwd, 'never.txt')), { code: 'ENOENT' });
 });
 
-test('nested parallel branches are persisted through the actual engine tool and emit live step receipts', async t => {
+test('nested independent branches execute chronologically and emit live step receipts', async t => {
   const f = await fixture(t, async (options, number, context) => {
     const steps = [
       { id: 'sources', title: 'Inspect two inputs', kind: 'parallel', parentId: null },
       { ...leaf('left', 'Inspect the first input'), parentId: 'sources' },
-      { ...leaf('right', 'Inspect the second input'), parentId: 'sources' },
+      { ...leaf('right', 'Inspect the second input'), parentId: 'sources', status: 'pending' },
       { ...leaf('report', 'Combine the findings'), status: 'pending', dependsOn: ['sources'] },
     ];
     let state = await savePlan(options, steps);
     state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'left', status: 'done', evidence: 'Fixture inspected the first supplied input.' });
+    state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'right', status: 'active' });
     state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'right', status: 'done', evidence: 'Fixture inspected the second supplied input.' });
     state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'report', status: 'active' });
     assert.equal(state.steps.find(step => step.id === 'sources').status, 'done');
@@ -248,20 +255,21 @@ test('provider continuations receive current planning even if their older saved 
   assert.equal(next.nodes.agent.taskSchemaVersion, TASK_SCHEMA_VERSION); assert.equal(next.nodes.agent.planning.status, 'recorded'); assert.equal(f.runtime.calls[1].threadId, f.threadId);
 });
 
-test('a saved v4 native thread keeps its original method schema and planning guard across a v5 catalog update', async t => {
+test('Planning On migrates a saved v4 native catalog through the existing same-task handoff', async t => {
   const f = await fixture(t, async (options, number, context) => {
     if (number === 1) { await savePlan(options); return { output: 'The original outline is recorded.', threadId: context.threadId }; }
-    assert.deepEqual(options.dynamicTools.find(tool => tool.name === 'relay_task'), taskToolForVersion(4));
+    assert.deepEqual(options.dynamicTools.find(tool => tool.name === 'relay_task'), TASK_TOOL);
+    assert.equal(options.threadId, undefined);
     assert.doesNotMatch(options.developerInstructions, /METHOD DISCOVERY AND ADAPTATION/);
     assert.equal((await call(options, 'relay_workspace', { action: 'write', path: 'should-wait.txt', text: 'not admitted' })).code, 'TASK_PLAN_REQUIRED');
-    const catalog = await taskCall(options, { action: 'describe' }); assert.equal(catalog.schemaVersion, 4); assert.equal(catalog.methods.length, 589); assert.ok(catalog.methods.some(method => method.id === 'catalyst-ach')); assert.ok(JSON.stringify(catalog).length < 128000);
-    const unexposed = await call(options, 'relay_task', { action: 'describe', methodQuery: 'ACH' }); assert.equal(unexposed.code, 'TASK_SCHEMA_UNSUPPORTED');
-    await savePlan(options); assert.equal((await call(options, 'relay_workspace', { action: 'write', path: 'kept-v4.txt', text: 'The saved tool contract was retained.' })).success, true);
-    return { output: 'The original tool contract is retained.', threadId: context.threadId };
+    const catalog = await taskCall(options, { action: 'describe', methodQuery: 'ACH' }); assert.equal(catalog.schemaVersion, TASK_SCHEMA_VERSION); assert.equal(catalog.totalMethods, 589); assert.ok(catalog.methods.some(method => method.id === 'catalyst-ach')); assert.ok(JSON.stringify(catalog).length < 128000);
+    await savePlan(options, [toolLeaf('write', 'write', 'migrated.txt')]); assert.equal((await call(options, 'relay_workspace', { action: 'write', path: 'migrated.txt', text: 'The task retained its history and received current tools.' })).success, true);
+    return { output: 'The current planning contract is available in the original task.', threadId: context.threadId };
   });
   const first = await f.settled(f.start().id); completed(first); f.engine.runs.get(first.id).nodes.agent.taskSchemaVersion = 4;
   const next = await f.settled(f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue this task with its saved method schema.' }).id); completed(next);
-  assert.equal(next.nodes.agent.taskSchemaVersion, 4); assert.equal(next.nodes.agent.planning.status, 'recorded'); assert.equal(f.runtime.calls.length, 2);
+  assert.equal(next.nodes.agent.taskSchemaVersion, TASK_SCHEMA_VERSION); assert.equal(next.nodes.agent.planning.status, 'recorded'); assert.equal(f.runtime.calls.length, 2);
+  assert.equal(next.taskId, first.taskId); assert.equal(next.conversationId, first.conversationId);
 });
 
 test('project workers receive method and ontology guidance without recursive project orchestration', async t => {

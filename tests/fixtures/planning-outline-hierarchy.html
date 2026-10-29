@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en" data-blackice-ui="true" data-fixture-ready="false">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BLACKICE saved outline hierarchy fixture</title>
+  <link rel="stylesheet" href="../../public/next/base.css">
+  <link rel="stylesheet" href="../../public/next/work-visual.css">
+  <link rel="stylesheet" href="../../public/next/layout-fixes.css">
+  <link rel="stylesheet" href="../../public/next/planning-ontology.css">
+  <link id="blackice-task-plan-styles" rel="stylesheet" href="../../public/task-plan.css">
+  <link id="relay-task-state-styles" rel="stylesheet" href="../../public/task-state.css">
+  <style>
+    html,body{height:auto;overflow:auto}body{padding:24px;max-width:1500px;margin:auto}
+    .fixture-heading{margin:0 0 20px}.fixture-heading p{max-width:880px}
+    .fixture-panel{min-width:0;margin-bottom:32px}.fixture-current{min-width:0}
+    .fixture-current>.next-panel{height:auto;overflow:visible}
+    .fixture-legacy-shell{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;align-items:start}
+    #main-outline{height:1100px}#milestones{max-width:840px}
+    .sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    @media(max-width:1100px){.fixture-legacy-shell{grid-template-columns:minmax(0,1fr)}}
+  </style>
+</head>
+<body>
+  <header class="fixture-heading">
+    <h1>Saved outline hierarchy</h1>
+    <p>Production renderers over one synthetic saved tree. The third-level check is
+      <strong>1.2.1</strong>; its sibling is <strong>1.2.2</strong>. Collapsing their
+      parent keeps the next branch at <strong>1.3</strong>. Reordering moves the check
+      to <strong>1.1.1</strong> and the verification root from <strong>3</strong> to <strong>2</strong>.</p>
+    <button type="button" id="fixture-reorder">Show reordered siblings</button>
+    <p id="fixture-status" role="status">Original saved sibling order</p>
+  </header>
+  <section id="current-panel" class="fixture-panel"><h2>Current Planning workspace</h2><div id="current-planning" class="fixture-current"></div></section>
+  <div id="app" class="fixture-legacy-shell">
+    <section id="conversation-panel" class="fixture-panel"><h2>Conversation outline</h2><div id="main-outline"></div></section>
+    <section id="legacy-panel" class="fixture-panel"><h2>Legacy milestone fallback</h2><div id="milestones"></div></section>
+  </div>
+  <script id="outline-fixture-report" type="application/json">{"ready":false}</script>
+  <script type="module">
+    import { outlineTree, outlineNumbers, reorderedOutlineTree, reorderedOutlineNumbers } from './planning-outline-tree.mjs';
+    import { createPlanningWorkspace } from '../../public/next/workspaces/planning.mjs';
+    import { initTaskPlanUI } from '../../public/task-plan-ui.mjs';
+    import { renderTaskState } from '../../public/task-state-ui.mjs';
+    let reordered = new URL(location.href).searchParams.get('reordered') === '1';
+    let saved = reordered ? reorderedOutlineTree() : outlineTree(), onEvent = () => {};
+    const labels = (selector, id, number) => Object.fromEntries([...document.querySelectorAll(selector)].map(row => [row.dataset[id], row.querySelector(number)?.textContent]));
+    const matches = (actual, expected) => Object.keys(actual).length === Object.keys(expected).length && Object.entries(expected).every(([id, number]) => actual[id] === number);
+    const rectangle = element => {
+      if (!element) return null;
+      const { top, right, bottom, left, width, height } = element.getBoundingClientRect();
+      return { top, right, bottom, left, width, height };
+    };
+    const contained = (child, parent) => Boolean(child && parent && child.width > 0 && child.height > 0 && child.left >= parent.left - 1 && child.top >= parent.top - 1 && child.right <= parent.right + 1 && child.bottom <= parent.bottom + 1);
+    const overlap = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+    window.outlineFixture = {
+      ready: false,
+      report() {
+        const expected = reordered ? reorderedOutlineNumbers : outlineNumbers;
+        const current = labels('[data-plan-outline-step]', 'planOutlineStep', '.next-plan-outline-number');
+        const main = labels('[data-plan-node]', 'planNode', '.task-plan-step-number');
+        const legacy = labels('[data-task-step]', 'taskStep', '.task-step-number');
+        const geometry = [...document.querySelectorAll('[data-plan-outline-step]')].map(row => {
+          const number = row.querySelector('.next-plan-outline-number'), bounds = number.getBoundingClientRect();
+          return { id: row.dataset.planOutlineStep, number: number.textContent, level: Number(row.getAttribute('aria-level')),
+            position: Number(row.getAttribute('aria-posinset')), siblings: Number(row.getAttribute('aria-setsize')),
+            padding: parseFloat(getComputedStyle(row).paddingInlineStart), numberLeft: bounds.left, numberTop: bounds.top };
+        });
+        const root = geometry.find(row => row.id === 'prepare'), leaf = geometry.find(row => row.id === 'format');
+        const panels = Object.fromEntries(['current-panel', 'conversation-panel', 'legacy-panel'].map(id => [id, rectangle(document.getElementById(id))]));
+        const currentLeaf = rectangle(document.querySelector('[data-plan-outline-step="format"]'));
+        const currentViewport = rectangle(document.querySelector('.next-plan-outline'));
+        const mainWorkspace = document.getElementById('main-outline'), mainTree = mainWorkspace.querySelector('.task-plan-tree');
+        const mainRow = mainWorkspace.querySelector('[data-plan-node="format"] > .task-plan-row');
+        const mainViewport = mainWorkspace.querySelector('.task-plan-tree-viewport');
+        const mainStyle = { workspace: getComputedStyle(mainWorkspace).display, tree: mainTree ? getComputedStyle(mainTree).listStyleType : '', row: mainRow ? getComputedStyle(mainRow).display : '' };
+        const mainRegions = [...mainWorkspace.children].filter(element => !element.hidden && !element.classList.contains('sr-only')).map(rectangle);
+        const ontology = document.querySelector('.next-plan-ontology');
+        return { ready: this.ready, revision: saved.revision, reordered, expected, current, main, legacy, geometry, panels, mainStyle, currentLeaf, currentViewport,
+          checks: { currentLabels: matches(current, expected), mainLabels: matches(main, expected), legacyLabels: matches(legacy, expected),
+            threeLevels: leaf?.level === 3 && leaf.position === 1 && leaf.siblings === 2,
+            visibleIndentation: Boolean(root && leaf && Math.abs(leaf.numberLeft - root.numberLeft - 36) < 1),
+            ontologyClosed: Boolean(ontology && !ontology.open),
+            mainStylesApplied: mainStyle.workspace === 'flex' && mainStyle.tree === 'none' && mainStyle.row === 'grid',
+            currentLeafInsideOutline: contained(currentLeaf, currentViewport),
+            currentLeafInsidePanel: contained(currentLeaf, panels['current-panel']),
+            currentLeafVisibleOnPage: contained(currentLeaf, { left: 0, top: 0, right: innerWidth, bottom: innerHeight }),
+            mainLeafInsideOutline: contained(rectangle(mainRow), rectangle(mainViewport)),
+            mainContentsContained: mainRegions.every(region => contained(region, rectangle(mainWorkspace))),
+            panelsDoNotOverlap: Object.values(panels).every((panel, index, all) => all.slice(index + 1).every(other => !overlap(panel, other))),
+            pageContained: document.documentElement.scrollWidth <= innerWidth + 1 } };
+      },
+    };
+    function publishReport() {
+      document.documentElement.dataset.fixtureReady = String(window.outlineFixture.ready);
+      document.querySelector('#outline-fixture-report').textContent = JSON.stringify(window.outlineFixture.report());
+    }
+    let reportFrame = 0;
+    const reportChanges = new MutationObserver(() => {
+      if (!reportFrame) reportFrame = requestAnimationFrame(() => { reportFrame = 0; publishReport(); });
+    });
+    for (const id of ['current-planning', 'main-outline', 'milestones']) reportChanges.observe(document.getElementById(id), { childList: true, subtree: true });
+    const main = initTaskPlanUI({ mount: document.querySelector('#main-outline') });
+    const api = async (route, method = 'GET') => {
+      if (method !== 'GET') throw Error('This visual fixture is read-only.');
+      if (route.startsWith('/api/planning?')) return { plans: [{ taskId: saved.taskId, revision: saved.revision, goal: saved.goal, bucket: 'active', editable: false, status: 'running', runStatus: 'running', running: true }], nextOffset: null };
+      if (route === '/api/tasks/' + saved.taskId) return structuredClone(saved);
+      throw Error('Unexpected fixture route: ' + route);
+    };
+    const currentMount = document.querySelector('#current-planning');
+    const current = createPlanningWorkspace({ mount: currentMount, api, events: { subscribe(handler) { onEvent = handler; return () => { onEvent = () => {}; }; } } });
+    document.querySelector('#next-planning-type').value = 'conversation';
+    function closeOntology() {
+      const disclosure = currentMount.querySelector('.next-plan-ontology');
+      if (disclosure?.open) { disclosure.open = false; disclosure.dispatchEvent(new Event('toggle')); }
+    }
+    const firstOutline = new MutationObserver(() => {
+      const button = document.querySelector('#next-plan-outline-view');
+      if (button) { firstOutline.disconnect(); closeOntology(); button.click(); closeOntology(); requestAnimationFrame(() => { window.outlineFixture.ready = true; publishReport(); }); }
+    });
+    firstOutline.observe(currentMount, { childList: true, subtree: true });
+    current.enter();
+    function render() {
+      main.update({ taskState: saved, runStatus: 'running', runId: 'outline-fixture' });
+      document.querySelector('#milestones').innerHTML = renderTaskState(saved, { expanded: true, runStatus: 'running' });
+      document.querySelector('#fixture-status').textContent = reordered ? 'Reordered saved siblings; the format check is 1.1.1.' : 'Original saved sibling order; the format check is 1.2.1.';
+      document.querySelector('#fixture-reorder').textContent = reordered ? 'Restore original siblings' : 'Show reordered siblings';
+    }
+    document.querySelector('#fixture-reorder').addEventListener('click', () => {
+      reordered = !reordered;
+      const revision = saved.revision + 1;
+      saved = reordered ? reorderedOutlineTree() : outlineTree(); saved.revision = revision;
+      render(); onEvent({ type: 'planning.updated', taskId: saved.taskId });
+    });
+    render();
+    window.addEventListener('pagehide', () => { reportChanges.disconnect(); main.destroy(); current.destroy(); }, { once: true });
+  </script>
+</body>
+</html>

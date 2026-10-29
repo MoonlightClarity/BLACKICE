@@ -1,0 +1,39 @@
+# BLACKICE 2.37.0 — Recursive planning and post-work reassessment
+
+This release makes Planning On a continuing part of the work. The agent saves concrete substeps before attempting them, records actual findings, returns to the plan to decide what follows, and completes a fresh reassessment before publishing its final response.
+
+## Concrete, chronological substeps
+
+- Plans can contain nested sequence, parallel and choice groups. Each executable leaf identifies one tool operation or one bounded reasoning question, its expected result, its procedure and its completion check.
+- Planning On executes one eligible leaf at a time. Tool dispatch checks the saved operation and prerequisites, and the previous operation's result must be recorded before another operation proceeds.
+- Material analytical comparisons belong in their own substeps. A phase such as “compare every option and choose the winner” needs decomposition when it contains several distinct comparisons.
+- The outline preserves parent-child relationships and displays dotted numbering such as `1`, `1.1` and `1.1.1`. Collapsing a group retains the saved numbering; reordering siblings changes the outline consistently.
+
+## Executable decisions and returning to earlier work
+
+- Choice groups support ordered `IF / ELIF / ELSE` with nested `AND`, `OR`, `NOT` and Boolean `XOR`, plus equality, ordering, membership and supported identity comparisons.
+- Branches operate on recorded constituent observations. An unknown earlier condition prevents fallthrough; missing evidence is not silently treated as false.
+- `revisit` reopens an earlier action or group, preserves its prior attempts and findings, and marks affected dependent work for reassessment.
+- Reopening a step does not undo or repeat its previous effects. Uncertain operations retain their identity until their actual outcome is reconciled.
+
+## A real return to planning before the response
+
+- Task-tool schema 10 adds an explicit review after actual reasoning or tool work. The agent records whether to continue an eligible leaf, respond with the completed result, or report a genuine blocker.
+- A plan read or a `done` status alone does not satisfy this reassessment. The final review is tied to the relevant plan, recorded operations and accepted user direction; changes require a fresh review.
+- A premature final answer remains an unpublished candidate while the same accepted task returns to planning. Completed operations are preserved. A compliant model can finish the entire cycle within one provider turn; no fixed number of turns or tokens substitutes for the work.
+- Scoped workers review their own assignments, so unrelated pending work does not prevent a completed handoff. Planning Off retains its ordinary behavior.
+- Existing schema 9 tool definitions remain unchanged. Planning On upgrades older native conversations through the existing continuity path while preserving the BLACKICE conversation and task history.
+
+## Chronological presentation and saved conversations
+
+Chat presents planning, work updates, reassessment and the final response in chronological order. Nested substeps retain their hierarchy across the Planning views. Saved conversation and archive records preserve the public phase metadata needed to reconstruct that sequence when reopened.
+
+The visible timeline uses saved plan events, concise review summaries and public message phases. It does not expose private reasoning or fabricate a transcript of thinking.
+
+## Verification status
+
+The [public dogfood summary](docs/PLANNING-DOGFOOD-2026-10-29.md) distinguishes completed model observations, targeted tests and remaining validation. It includes early planning failures and the corrections they prompted. The [planning guide](docs/RECURSIVE-PLANNING.md) documents the condition language, review contract and recovery behavior.
+
+Final verification of the complete 2.37.0 source suite and exact Windows installer is still in progress for this candidate. A patched development installation, a synthetic UI fixture or a successful model run does not establish that the public Setup installer has been verified. Bound source and installer receipts must report those results separately.
+
+The installer retains the existing per-user Windows installation and profile-continuity policy. Its release manifest records its actual signing status.

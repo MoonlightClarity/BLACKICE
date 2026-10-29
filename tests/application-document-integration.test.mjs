@@ -188,7 +188,7 @@ test('engine tool rejects fabricated save inputs, unknown document fields and st
   const started = f.app.engine.startRun({ workflow: graph, input: 'Check saved document input boundaries.' }); await f.app.engine.executions.get(started.id); assert.equal(f.app.engine.getRun(started.id).status, 'completed', f.app.engine.getRun(started.id).error); assert.equal(f.runtime.editorText, 'Current collaborative editor'); assert.equal(f.runtime.calls.filter(call => call.action === 'set_value').length, writes); assert.equal(f.workspace.documents.list().length, 1);
 });
 
-test('native application catalogs without a version marker retain the exact original schema through continuation and retry', async t => {
+test('Planning Off native application catalogs without a version marker retain the exact original schema through continuation and retry', async t => {
   const f = await fixture(t); await f.app.runtimeSettings.update({ codexHistory: 'codex' }); let turns = 0;
   f.model.execute = async options => {
     turns++; const tool = options.dynamicTools.find(item => item.name === APPLICATION_TOOL.name); assert.ok(tool);
@@ -205,7 +205,10 @@ test('native application catalogs without a version marker retain the exact orig
     if (turns === 2) throw Error('Fixture interrupted after checking the original app catalog.');
     return { output: 'Retained the original attached application schema.', threadId: 'native-legacy-application-thread', codexHistory: 'codex' };
   };
-  const first = f.app.engine.startRun({ workflow: graph, input: 'Check the initially attached application schema.' }); await f.app.engine.executions.get(first.id); assert.equal(f.app.engine.getRun(first.id).nodes.agent.applicationSchemaVersion, APPLICATION_SCHEMA_VERSION);
+  // Catalog immutability is exercised with optional planning. Planning On has
+  // separate upgrade coverage and records the names of rejected operations in
+  // the plan history, which is intentionally supplied on the next turn.
+  const first = f.app.engine.startRun({ workflow: graph, planningMode: 'off', input: 'Check the initially attached application schema.' }); await f.app.engine.executions.get(first.id); assert.equal(f.app.engine.getRun(first.id).nodes.agent.applicationSchemaVersion, APPLICATION_SCHEMA_VERSION);
   // An actual pre-upgrade native conversation has relay_apps in its catalog but
   // predates the newly persisted schema marker.
   delete f.app.engine.runs.get(first.id).nodes.agent.applicationSchemaVersion; f.model.expectedApplicationSchemaVersion = 1;

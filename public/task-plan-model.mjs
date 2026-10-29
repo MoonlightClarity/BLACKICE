@@ -7,7 +7,81 @@ const copySet = value => new Set(value instanceof Set ? value : Array.isArray(va
 const text = value => typeof value === 'string' ? value : '';
 const finiteCount = value => Number.isSafeInteger(value) && value >= 0;
 
-export const planKindLabel = kind => ({ sequence: 'Steps in order', parallel: 'Can run in parallel', choice: 'Choose a path', action: 'Step' }[kind] || 'Step');
+export const planKindLabel = kind => ({ sequence: 'Steps in order', parallel: 'Independent paths', choice: 'Choose a path', action: 'Step' }[kind] || 'Step');
+
+const scalarText = value => value === null ? 'None' : value === true ? 'True' : value === false ? 'False' : typeof value === 'string' ? JSON.stringify(value) : typeof value === 'number' && Number.isFinite(value) ? String(value) : 'Unknown';
+const literalText = value => Array.isArray(value) ? '[' + value.map(scalarText).join(', ') + ']' : scalarText(value);
+const elifPaths = rule => Array.isArray(rule?.elif) ? rule.elif.filter(path => path && typeof path === 'object') : [];
+
+/** Display the saved expression without evaluating it or selecting a path. */
+export function planPredicateText(expression) {
+  const seen = new Set(); let count = 0;
+  const operand = value => value && typeof value === 'object' && typeof value.fact === 'string' ? value.fact : value && typeof value === 'object' && Object.hasOwn(value, 'value') ? literalText(value.value) : 'Unknown';
+  const format = (value, depth = 1) => {
+    if (++count > 512 || depth > 24) return '…';
+    if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
+    if (!value || typeof value !== 'object' || Array.isArray(value) || seen.has(value)) return 'Unknown condition';
+    seen.add(value);
+    let result;
+    if (typeof value.fact === 'string') result = value.fact;
+    else if (Object.hasOwn(value, 'not')) result = 'NOT (' + format(value.not, depth + 1) + ')';
+    else if (value.compare && typeof value.compare === 'object') result = '(' + operand(value.compare.left) + ' ' + String(value.compare.op || '?') + ' ' + operand(value.compare.right) + ')';
+    else {
+      const operator = ['and', 'or', 'xor'].find(key => Array.isArray(value[key]));
+      result = operator ? '(' + value[operator].map(item => format(item, depth + 1)).join(' ' + operator.toUpperCase() + ' ') + ')' : 'Unknown condition';
+    }
+    seen.delete(value); return result;
+  };
+  return format(expression);
+}
+
+export function planBranchText(rule, childLabel = id => id) {
+  if (!rule || typeof rule !== 'object') return '';
+  return [
+    'IF ' + planPredicateText(rule.if) + ' → ' + childLabel(rule.then),
+    ...elifPaths(rule).map(path => 'ELIF ' + planPredicateText(path.if) + ' → ' + childLabel(path.then)),
+    'ELSE → ' + childLabel(rule.else),
+  ].join('\n');
+}
+
+export function planLogicFields(view, step) {
+  const rule = step?.branchLogic;
+  if (!rule || typeof rule !== 'object') return [];
+  const alternatives = elifPaths(rule), referenced = new Set(), seen = new Set(); let count = 0;
+  const collect = (expression, depth = 1) => {
+    if (++count > 512 || depth > 24 || !expression || typeof expression !== 'object' || seen.has(expression)) return;
+    seen.add(expression);
+    if (typeof expression.fact === 'string') referenced.add(expression.fact);
+    if (Object.hasOwn(expression, 'not')) collect(expression.not, depth + 1);
+    for (const key of ['and', 'or', 'xor']) for (const item of Array.isArray(expression[key]) ? expression[key] : []) collect(item, depth + 1);
+    for (const operand of [expression.compare?.left, expression.compare?.right]) if (typeof operand?.fact === 'string') referenced.add(operand.fact);
+  };
+  for (const expression of [rule.if, ...alternatives.map(path => path.if)]) { count = 0; seen.clear(); collect(expression); }
+  const facts = new Map((view.plan.facts || []).map(fact => [fact.id, fact]));
+  const observation = [...referenced].map(id => {
+    const fact = facts.get(id), known = fact && fact.known !== false && Object.hasOwn(fact, 'value') && (fact.value !== null || fact.known === true), value = known ? literalText(fact.value) : 'Unknown';
+    return id + ': ' + value + (typeof fact?.evidence === 'string' && fact.evidence ? ' — ' + fact.evidence : '');
+  }).join('\n');
+  const selectedElif = alternatives.findIndex(path => path.then === step.selectedChildId);
+  const selected = step.selectedChildId === rule.then ? 'IF is true · THEN path selected' : selectedElif >= 0 ? 'Earlier conditions are false · ELIF ' + (selectedElif + 1) + ' path selected' : step.selectedChildId === rule.else ? 'All preceding conditions are false · ELSE path selected' : 'Waiting for the condition to be resolved';
+  return [
+    ['Condition', 'IF ' + planPredicateText(rule.if)],
+    ['Then', view.byId.get(rule.then)?.title || rule.then],
+    ...alternatives.flatMap((path, index) => [['Elif ' + (index + 1), 'ELIF ' + planPredicateText(path.if)], ['Then (elif ' + (index + 1) + ')', view.byId.get(path.then)?.title || path.then]]),
+    ['Else', view.byId.get(rule.else)?.title || rule.else],
+    ['Condition result', selected],
+    ...(observation ? [['Observed facts', observation]] : []),
+  ];
+}
+
+export function planAttemptHistory(step) {
+  return (Array.isArray(step?.pastAttempts) ? step.pastAttempts : []).filter(attempt => attempt && typeof attempt === 'object').map(attempt => ({
+    attempt: Number.isSafeInteger(attempt.attempt) ? attempt.attempt : null,
+    status: STATUS.has(attempt.status) ? attempt.status : 'pending',
+    at: text(attempt.at), reason: text(attempt.reason),
+    fields: [['Expected result', attempt.result], ['Procedure', attempt.note], ['Done when', attempt.doneWhen], ['Recorded evidence', attempt.evidence], ['Blocked by', attempt.blockedReason], ['Why skipped', attempt.skipReason], ['Effect observation', attempt.reconciliation?.outcome === 'confirmed' ? 'Earlier effect observed' : attempt.reconciliation?.outcome === 'absent' ? 'Earlier effect checked absent' : ''], ['Observation evidence', attempt.reconciliation?.evidence]].filter(([, value]) => typeof value === 'string' && value),
+  }));
+}
 export function savedPlanNotes(taskState) {
   const checkpoint = taskState?.checkpoint || {};
   return [['Next action', checkpoint.nextAction], ['Decisions', checkpoint.decisions], ['Completed', checkpoint.completed], ['Next steps', checkpoint.nextSteps], ['Open questions', checkpoint.openQuestions]].map(([label, value]) => ({ label, entries: (Array.isArray(value) ? value : [value]).filter(value => typeof value === 'string' && value.trim()) })).filter(section => section.entries.length);
@@ -22,7 +96,7 @@ export function taskPlanView(taskState, { goal = '', runStatus = '', settled = f
     if (!step || typeof step !== 'object') continue;
     const id = text(step.id) || `saved-step-${index + 1}`;
     if (byId.has(id)) continue;
-    byId.set(id, { ...step, id, title: text(step.title) || `Step ${index + 1}`, status: STATUS.has(step.status) ? step.status : 'pending', parentId: text(step.parentId) || null, dependsOn: Array.isArray(step.dependsOn) ? [...new Set(step.dependsOn.filter(id => typeof id === 'string'))] : [], kind: GROUPS.has(step.kind) ? step.kind : 'action', children: [], order: index, source: step });
+    byId.set(id, { ...step, branchLogic: step.branch && typeof step.branch === 'object' ? step.branch : null, id, title: text(step.title) || `Step ${index + 1}`, status: STATUS.has(step.status) ? step.status : 'pending', parentId: text(step.parentId) || null, dependsOn: Array.isArray(step.dependsOn) ? [...new Set(step.dependsOn.filter(id => typeof id === 'string'))] : [], kind: GROUPS.has(step.kind) ? step.kind : 'action', children: [], order: index, source: step });
   }
   // Persisted plans are validated by the server. Tolerate an older imported
   // malformed relationship without losing a row or recursing indefinitely.
@@ -39,10 +113,13 @@ export function taskPlanView(taskState, { goal = '', runStatus = '', settled = f
   function walk(children, parent, branch = 'included', path = []) {
     const parentChoice = parent ? parent.kind === 'choice' : plan.layout === 'choice';
     const chosenId = parent ? parent.selectedChildId : plan.selectedChildId;
+    const rule = parent ? parent.branchLogic : plan.branch;
     for (const [index, node] of children.entries()) {
       node.depth = path.length + 1; node.number = [...path, index + 1].join('.'); node.position = index + 1; node.siblingCount = children.length;
       node.branch = branch !== 'included' ? branch : parentChoice ? chosenId ? chosenId === node.id ? 'included' : 'not-selected' : 'option' : 'included';
       node.isChoiceOption = parentChoice; node.isSelectedOption = parentChoice && chosenId === node.id;
+      const elifIndex = parentChoice && rule ? elifPaths(rule).findIndex(path => path.then === node.id) : -1;
+      node.branchRole = parentChoice && rule ? rule.then === node.id ? 'THEN' : elifIndex >= 0 ? 'ELIF ' + (elifIndex + 1) : rule.else === node.id ? 'ELSE' : '' : '';
       if (node.children.length && node.kind === 'action') node.kind = 'sequence';
       node.isGroup = GROUPS.has(node.kind); nodes.push(node);
       if (node.isChoiceOption) options.push(node);
@@ -67,6 +144,7 @@ export function taskPlanView(taskState, { goal = '', runStatus = '', settled = f
       node.ready = node.availability.state === 'ready';
       node.statusLabel = ({ ready: 'Ready', active: node.execution?.status === 'running' ? 'Working' : 'Active', blocked: 'Blocked', waiting: 'Waiting', 'awaiting-choice': 'Choose path', unselected: 'Not chosen', done: 'Done', skipped: 'Skipped' })[node.availability.state] || node.statusLabel;
     }
+    if (node.branch === 'included' && node.kind === 'choice' && node.branchLogic && !node.selectedChildId && !['done', 'skipped'].includes(node.status)) node.statusLabel = 'Waiting for condition';
     const descendants = [];
     function descend(children) { for (const child of children) { if (child.isGroup) descend(child.children); else descendants.push(child); } }
     descend(node.children);

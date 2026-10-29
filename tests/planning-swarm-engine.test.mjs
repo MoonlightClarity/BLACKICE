@@ -8,6 +8,7 @@ import { HarnessEngine } from '../lib/engine.mjs';
 import { TaskStateStore, delegatedPlanNodeId } from '../lib/task-state.mjs';
 import { RuntimeSettingsStore } from '../lib/runtime-settings.mjs';
 import { AttachmentStore } from '../lib/attachments.mjs';
+import { finishFixturePlan } from './fixture-task-plan.mjs';
 
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const waitFor = async check => {
@@ -29,7 +30,7 @@ async function revise(options, build) {
   }
   assert.fail('The fixture could not merge its own progress with other worker revisions.');
 }
-const acknowledge = (options, nodeId) => revise(options, () => ({ action: 'edit', operations: [{ type: 'update', stepId: `agent-${nodeId}-work`, patch: { status: 'active', note: `Started the assigned ${nodeId} check.` } }] }));
+const acknowledge = (options, nodeId) => revise(options, () => ({ action: 'edit', operations: [{ type: 'update', stepId: `agent-${nodeId}-work`, patch: { status: 'active', operation: { kind: 'reasoning', target: `The supplied ${nodeId} fixture input` }, note: `Compare the supplied ${nodeId} fixture input with its assigned requirement.` } }] }));
 const complete = (options, stepId) => revise(options, () => ({ action: 'step', stepId, status: 'done', evidence: `The actual ${stepId} fixture result was checked.` }));
 const agent = (id, extra = {}) => ({ id, type: 'agent', name: id, prompt: `Complete the assigned ${id} work.`, model: 'fixture-planning', assignment: { scope: `Only ${id} fixture work.`, inputs: ['The original request.'], result: `Checked ${id} result.`, doneWhen: `The ${id} result passes its stated check.`, canWrite: true }, ...extra });
 const graph = (agents, edges, shared = true) => ({
@@ -59,10 +60,34 @@ async function fixture(t, workflow, execute, { holds = [], subagents = false, at
 }
 const who = options => options.prompt.match(/^You are ([a-z]+)\./)?.[1];
 
-test('a shared branch really starts its dependent before an unrelated coordinator finishes', async t => {
+test('Planning On schedules ready workflow agents one at a time even with an authored parallel limit', async t => {
+  const hold = deferred(), entered = [], workflow = graph([agent('coordinator'), agent('worker')], [['input', 'coordinator'], ['input', 'worker'], ['coordinator', 'output'], ['worker', 'output']]);
+  const f = await fixture(t, workflow, async options => {
+    const id = who(options); entered.push(id); await acknowledge(options, id);
+    if (id === 'coordinator') await hold.promise;
+    const completed = await complete(options, `agent-${id}-work`);
+    await finishFixturePlan(options, { state: completed, summary: `The ${id} assignment has its actual result checked; this node can hand off while the other workflow assignment retains its own status.` });
+    return { output: `Actual ${id} result.` };
+  }, { holds: [hold] });
+  const accepted = f.start();
+  await waitFor(() => f.engine.getRun(accepted.id).nodes.coordinator.planning?.status === 'recorded');
+  assert.deepEqual(entered, ['coordinator']);
+  assert.equal(f.engine.getRun(accepted.id).nodes.worker.status, 'queued');
+  hold.resolve();
+  const finished = await f.settled(accepted.id);
+  assert.equal(finished.status, 'completed', finished.error); assert.deepEqual(entered, ['coordinator', 'worker']);
+  assert.equal(finished.workflow.settings.maxParallel, 2, 'Authored settings remain intact; On applies the sequential execution policy.');
+  assert.equal(finished.taskState.progress.done, 2);
+  const coordinatorReview = finished.taskState.planningReviews.find(review => review.nodeId === 'coordinator');
+  assert.equal(coordinatorReview.scopeStepId, 'agent-coordinator', 'Completing the coordinator assignment does not claim that the later worker has finished.');
+  assert.equal(finished.taskState.planningReviews.find(review => review.nodeId === 'worker').scopeStepId, 'agent-worker');
+});
+
+test('Planning Off preserves shared workflow concurrency before an unrelated coordinator finishes', async t => {
   const hold = deferred(), entered = [], workflow = graph([agent('coordinator'), agent('left'), agent('right')], [
     ['input', 'coordinator'], ['input', 'left'], ['left', 'right'], ['coordinator', 'output'], ['right', 'output']
   ]);
+  workflow.settings.planningMode = 'off';
   const f = await fixture(t, workflow, async (options, context) => {
     const id = who(options); entered.push(id); await acknowledge(options, id);
     if (id === 'coordinator') await hold.promise;
@@ -80,14 +105,15 @@ test('a shared branch really starts its dependent before an unrelated coordinato
   hold.resolve(); const finished = await f.settled(accepted.id); assert.equal(finished.status, 'completed', finished.error); assert.equal(finished.taskState.progress.done, 3);
 });
 
-test('a human dependency edit wakes ready work while the coordinator is awaiting its own result', async t => {
+test('with Planning Off a human dependency edit wakes concurrent work while the coordinator awaits its result', async t => {
   const hold = deferred(), workflow = graph([agent('coordinator'), agent('worker')], [['input', 'coordinator'], ['coordinator', 'worker'], ['worker', 'output']]);
+  workflow.settings.planningMode = 'off';
   const f = await fixture(t, workflow, async options => {
     const id = who(options); await acknowledge(options, id); if (id === 'coordinator') await hold.promise;
     await complete(options, `agent-${id}-work`); return { output: `Actual ${id} result.` };
   }, { holds: [hold] });
   const accepted = f.start();
-  await waitFor(() => f.engine.getRun(accepted.id).nodes.coordinator.planning?.status === 'recorded');
+  await waitFor(() => f.engine.getRun(accepted.id).taskState?.steps.find(step => step.id === 'agent-coordinator-work')?.status === 'active');
   const previous = await f.tasks.get(accepted.taskId);
   const human = await f.tasks.editPlan(accepted.taskId, { operations: [{ type: 'dependencies', stepId: 'agent-worker', dependsOn: [] }] }, { expectedRevision: previous.revision, source: 'human' });
   assert.equal(human.provenance.source, 'human'); assert.equal(human.execution.nodes.worker.status, 'queued');
@@ -100,7 +126,19 @@ test('a human completion report cannot finish a held runtime or release its depe
   const hold = deferred(), entered = [], workflow = graph([agent('coordinator'), agent('worker')], [['input', 'coordinator'], ['coordinator', 'worker'], ['worker', 'output']]);
   const f = await fixture(t, workflow, async options => {
     const id = who(options); entered.push(id); await acknowledge(options, id);
-    if (id === 'coordinator') await hold.promise; else await complete(options, 'agent-worker-work');
+    let completed;
+    if (id === 'coordinator') {
+      await hold.promise;
+      await revise(options, () => ({ action: 'edit', operations: [{ type: 'add', step: {
+        id: 'agent-coordinator-check', title: 'Check the human-reported result', kind: 'action', parentId: 'agent-coordinator', status: 'active',
+        operation: { kind: 'reasoning', target: 'The human-reported result against the coordinator assignment criterion.' },
+        result: 'The disposition of the human report against the assigned fixture criterion.',
+        note: 'Compare the actual human-reported observation with the saved coordinator requirement and preserve that report.',
+        doneWhen: 'The human report has a separate recorded check before this runtime hands off.'
+      } }] }));
+      completed = await complete(options, 'agent-coordinator-check');
+    } else completed = await complete(options, 'agent-worker-work');
+    await finishFixturePlan(options, { state: completed, summary: `The ${id} runtime has completed its own check and can hand off; a human status report did not itself finish the held runtime.` });
     return { output: `Actual ${id} result.` };
   }, { holds: [hold] });
   const accepted = f.start(); await waitFor(() => f.engine.getRun(accepted.id).nodes.coordinator.planning?.status === 'recorded');
@@ -114,6 +152,7 @@ test('a human completion report cannot finish a held runtime or release its depe
 test('legacy assignment flags preserve normal execution while shared plan edits keep their saved ownership', async t => {
   const readonly = agent('worker'); readonly.assignment.canWrite = false; readonly.assignment.scope = 'Inspect input.txt only; report the observed content and do not change files.';
   const workflow = graph([readonly, agent('coordinator')], [['input', 'worker'], ['worker', 'coordinator'], ['coordinator', 'output']]);
+  workflow.settings.planningMode = 'off';
   const f = await fixture(t, workflow, async (options, context) => {
     const id = who(options); await acknowledge(options, id);
     if (id === 'worker') {
@@ -157,27 +196,33 @@ test('on-demand linked workers maintain the same saved plan within their action 
       assert.ok(!options.dynamicTools.some(tool => ['relay_delegate', 'relay_control'].includes(tool.name)));
       const current = await taskCall(options, { action: 'read' }); assert.equal(current.execution.nodes[delegatedPlanNodeId('coordinator', 'inspector')].status, 'running');
       const denied = await tool(options, 'relay_task', { action: 'edit', expectedRevision: current.revision, operations: [{ type: 'update', stepId: 'summary', patch: { title: 'Changed another owner' } }] }); assert.equal(denied.code, 'TASK_PLAN_OWNERSHIP');
-      await revise(options, () => ({ action: 'plan', steps: [{ id: 'inspect-input', kind: 'action', parentId: null, title: 'Read the delegated input', status: 'active', result: 'The delegated input and its checked contents.', note: 'Read the assigned input and compare its contents with the delegated fixture requirement.', doneWhen: 'The actual input was checked.' }] }));
-      await complete(options, 'inspect-input'); return { output: 'Checked the assigned input and recorded its evidence.' };
+      await revise(options, () => ({ action: 'plan', steps: [{ id: 'inspect-input', kind: 'action', parentId: null, title: 'Compare the delegated fixture input', status: 'active', operation: { kind: 'reasoning', target: 'The supplied delegated fixture input' }, result: 'The delegated input and its checked contents.', note: 'Compare the supplied input with the delegated fixture requirement.', doneWhen: 'The actual input was checked.' }] }));
+      const completed = await complete(options, 'inspect-input');
+      await finishFixturePlan(options, { state: completed, summary: 'The delegated input was compared with its assigned requirement and the result is ready for coordinator review.' });
+      return { output: 'Checked the assigned input and recorded its evidence.' };
     }
     await revise(options, () => ({ action: 'plan', plan: { layout: 'sequence' }, steps: [
-      { id: 'inspect', title: 'Inspect the delegated input', kind: 'action', parentId: null, status: 'pending', result: 'A checked input finding from the assigned worker.', note: 'Delegate the bounded inspection and inspect the returned finding and its actual execution receipt.', doneWhen: 'The delegated input was checked.' },
-      { id: 'summary', title: 'Review the actual worker result', kind: 'action', parentId: null, status: 'pending', result: 'An integrated finding supported by the worker result.', note: 'Compare the returned worker finding and execution receipt with the original fixture requirement before reporting the conclusion.', doneWhen: 'The actual returned result was reviewed.' }
+      { id: 'inspect', title: 'Inspect the delegated input', kind: 'action', parentId: null, status: 'active', operation: { kind: 'tool', tool: 'relay_delegate', target: 'One inspector worker assigned the inspect scope' }, result: 'A checked input finding from the assigned worker.', note: 'Delegate the bounded inspect scope to one inspector worker.', doneWhen: 'The delegated input was checked.' },
+      { id: 'summary', title: 'Review the actual worker result', kind: 'action', parentId: null, status: 'pending', operation: { kind: 'reasoning', target: 'The returned inspector finding' }, result: 'An integrated finding supported by the worker result.', note: 'Compare the returned worker finding and execution receipt with the original fixture requirement before reporting the conclusion.', doneWhen: 'The actual returned result was reviewed.' }
     ] }));
     const returned = await tool(options, 'relay_delegate', { tasks: [{ id: 'inspector', stepId: 'inspect', prompt: 'Inspect only the assigned input and maintain that saved plan action.' }] });
     assert.equal(returned.success, true, returned.contentItems[0].text); childReceipt = payload(returned).results[0];
     const after = await taskCall(options, { action: 'read' }); assert.equal(after.execution.nodes[delegatedPlanNodeId('coordinator', 'inspector')].status, 'completed');
     assert.equal(after.steps.find(step => step.id === 'summary').title, 'Review the actual worker result');
-    await complete(options, 'summary'); return { output: 'Reviewed the actual delegated result.' };
+    await taskCall(options, { action: 'step', expectedRevision: after.revision, stepId: 'summary', status: 'active' });
+    const completed = await complete(options, 'summary');
+    await finishFixturePlan(options, { state: completed, summary: 'The actual delegated result and terminal worker receipt have been checked against the requested outcome; no integration work remains.' });
+    return { output: 'Reviewed the actual delegated result.' };
   }, { subagents: true });
   const run = await f.settled(f.start().id); assert.equal(run.status, 'completed', run.error);
   assert.equal(childReceipt.status, 'completed'); assert.equal(run.taskState.steps.find(step => step.id === 'inspect-input').status, 'done');
   assert.equal(run.taskState.execution.nodes[delegatedPlanNodeId('coordinator', 'inspector')].status, 'completed');
 });
 
-test('a worker failure preserves its real cause and settles the other runtime before publishing final status', async t => {
+test('a concurrent Planning Off worker failure preserves its cause and settles the other runtime before final status', async t => {
   const ready = deferred(), stopped = deferred(); let workerSettled = false;
   const workflow = graph([agent('coordinator'), agent('worker')], [['input', 'coordinator'], ['input', 'worker'], ['coordinator', 'output'], ['worker', 'output']]);
+  workflow.settings.planningMode = 'off';
   const f = await fixture(t, workflow, async options => {
     const id = who(options); await acknowledge(options, id);
     if (id === 'coordinator') { await ready.promise; throw Error('The actual required fixture source is unavailable.'); }

@@ -2,7 +2,7 @@ import { text, escapeHTML } from '../core/dom.mjs';
 import { renderRecordedAnalyticPasses } from './tradecraft-timeline.mjs';
 import { projectPlanningOntology } from '../../planning-ontology.mjs';
 import { changeTaskState, taskActions, taskActionLabel, taskIsRunning } from './task-lifecycle.mjs';
-import { taskPlanView, reconcilePlanSession, selectPlanStep, togglePlanBranch, planKeyboard, visiblePlanNodes, planKindLabel } from '../../task-plan-model.mjs';
+import { taskPlanView, reconcilePlanSession, selectPlanStep, togglePlanBranch, planKeyboard, visiblePlanNodes, planKindLabel, planLogicFields, planAttemptHistory, planBranchText } from '../../task-plan-model.mjs';
 import { renderTaskPlanMapSVG, taskPlanMap, planMapZoom, planMapFitZoom, reconcilePlanMapSession } from '../../task-plan-map.mjs';
 import { createPlanningDraft, planningDraftDirty, planningDraftOperations, acceptPlanningSnapshot, rebasePlanningDraft, commitPlanningDraft, projectVisualModel, buildIntelligenceProject, intelligenceProjectDraft, isIntelligenceProject, renderIntelligenceComposer, renderIntelligenceLanding, renderIntelligenceOverview, intelligenceStarterText, intelligenceTextFromProject, intelligenceProjectFromText, renderIntelligenceMapWorkspace } from './planning-visual.mjs';
 
@@ -202,6 +202,7 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
       const output = find('next-plan-zoom'); if (output) output.textContent = Math.round(state.mapZoom * 100) + '%';
     };
     renderToolbar(stage, plan, state, renderMap, { view });
+    if (view.plan.branch) detailField(stage, 'Root conditions', planBranchText(view.plan.branch, id => view.byId.get(id)?.title || id));
     if (!view.nodes.length) el(stage, 'p', 'This saved plan has no steps yet. The shared goal remains available below.', 'next-empty');
     else {
       viewport = el(stage, 'div', '', state.presentation === 'map' ? 'next-plan-map-viewport' : 'next-plan-outline'); viewport.id = 'next-planning-map';
@@ -211,10 +212,13 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
       } else {
         viewport.setAttribute('role', 'tree'); viewport.setAttribute('aria-label', 'Saved plan steps');
         for (const node of visiblePlanNodes(view, state.collapsed)) {
-          const row = button(viewport, node.number + ' · ' + node.title, () => chooseStep(node.id)); row.className = 'next-plan-outline-step'; row.dataset.planOutlineStep = node.id; row.dataset.state = node.status;
-          row.setAttribute('role', 'treeitem'); row.setAttribute('aria-level', String(node.depth)); row.setAttribute('aria-selected', String(state.selectedId === node.id)); row.tabIndex = state.selectedId === node.id ? 0 : -1;
+          const row = button(viewport, '', () => chooseStep(node.id)); row.className = 'next-plan-outline-step'; row.dataset.planOutlineStep = node.id; row.dataset.state = node.status;
+          el(row, 'span', node.number, 'next-plan-outline-number'); el(row, 'span', node.title, 'next-plan-outline-title');
+          row.setAttribute('role', 'treeitem'); row.setAttribute('aria-level', String(node.depth)); row.setAttribute('aria-posinset', String(node.position)); row.setAttribute('aria-setsize', String(node.siblingCount)); row.setAttribute('aria-selected', String(state.selectedId === node.id)); row.tabIndex = state.selectedId === node.id ? 0 : -1;
+          row.setAttribute('aria-label', ['Step ' + node.number, node.title, node.branchRole, node.statusLabel].filter(Boolean).join('. '));
+          if (view.focus?.id === node.id) row.setAttribute('aria-current', 'step');
           if (node.isGroup) row.setAttribute('aria-expanded', String(!state.collapsed.has(node.id)));
-          row.style.setProperty?.('--next-plan-depth', String(node.depth - 1)); el(row, 'span', node.statusLabel, 'next-help');
+          row.style.setProperty?.('--next-plan-depth', String(node.depth - 1)); el(row, 'span', (node.branchRole ? node.branchRole + ' · ' : '') + node.statusLabel, 'next-help');
         }
       }
       function chooseStep(id) { Object.assign(state, selectPlanStep(view, state, id)); drawDetail(); focusStep(id); }
@@ -238,6 +242,22 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
     if (node.isGroup) detailField(inspector, 'Structure', planKindLabel(node.kind));
     detailField(inspector, 'Readiness', node.availability?.reason); detailField(inspector, 'Done when', node.doneWhen); detailField(inspector, 'Expected result', node.result);
     detailField(inspector, 'Condition', node.condition); detailField(inspector, 'Evidence', node.evidence); detailField(inspector, 'Blocker', node.blockedReason); detailField(inspector, 'Skipped because', node.skipReason);
+    for (const [label, value] of planLogicFields(view, node)) detailField(inspector, label, value);
+    detailField(inspector, 'Path', node.branchRole);
+    if (node.attempt > 1) detailField(inspector, 'Current attempt', String(node.attempt));
+    const attempts = planAttemptHistory(node);
+    if (attempts.length) {
+      const history = el(inspector, 'details', '', 'next-plan-attempt-history'); history.dataset.stepId = node.id;
+      el(history, 'summary', 'Previous attempts · ' + attempts.length + (node.pastAttemptsOmitted ? ' shown of ' + (attempts.length + node.pastAttemptsOmitted) : ''));
+      el(history, 'p', 'Earlier work remains recorded. Returning to a step does not undo its effects.', 'next-help');
+      for (const attempt of attempts) {
+        const record = el(history, 'section', '', 'next-plan-attempt');
+        el(record, 'h4', 'Attempt ' + (attempt.attempt || '?') + ' · ' + attempt.status);
+        if (attempt.at) { const archived = el(record, 'p', 'Archived on '), when = el(archived, 'time', attempt.at); when.setAttribute('datetime', attempt.at); }
+        detailField(record, 'Revisited because', attempt.reason);
+        for (const [label, value] of attempt.fields) detailField(record, label, value);
+      }
+    }
     const prerequisites = node.availability?.prerequisites || node.dependsOn.map(id => ({ id, title: view.byId.get(id)?.title || id }));
     if (prerequisites.length) {
       const section = el(inspector, 'div', '', 'next-plan-detail-field'); el(section, 'h4', 'Prerequisites');
@@ -250,6 +270,24 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
     const noteLabel = el(inspector, 'label', 'Notes', 'next-label'), note = el(noteLabel, 'textarea', '', 'next-field');
     note.id = 'next-planning-note'; note.dataset.stepId = node.id; note.rows = 4; note.maxLength = 700; note.value = draft.notes.has(node.id) ? draft.notes.get(node.id) : node.note || ''; note.readOnly = !editable;
     note.addEventListener('input', () => { draft.notes.set(node.id, note.value); updateDraftControls(draft, editable); });
+    if (editable) {
+      const revisit = el(inspector, 'details', '', 'next-plan-revisit'); revisit.id = 'next-planning-revisit'; revisit.open = draft.revisit?.stepId === node.id;
+      el(revisit, 'summary', 'Return to this step');
+      el(revisit, 'p', 'Reopen this work and reassess affected later steps. Previous results stay in its history. Save the plan to apply the change.', 'next-help');
+      const label = el(revisit, 'label', 'Why revisit this step?', 'next-label'), reason = el(label, 'textarea', '', 'next-field');
+      reason.id = 'next-planning-revisit-reason'; reason.rows = 2; reason.maxLength = 1000; reason.value = draft.revisit?.stepId === node.id ? draft.revisit.reason : state.revisitReasons?.[node.id] || '';
+      const queue = button(revisit, draft.revisit?.stepId === node.id ? 'Revisit included in draft' : 'Include revisit in plan changes', () => {
+        if (pending) return;
+        draft.revisit = { stepId: node.id, reason: reason.value }; draft.error = '';
+        drawDetail({ retainFocus: true });
+      }, 'next-planning-queue-revisit');
+      queue.disabled = pending;
+      reason.addEventListener('input', () => { state.revisitReasons ||= {}; state.revisitReasons[node.id] = reason.value; if (draft.revisit?.stepId === node.id) { draft.revisit.reason = reason.value; draft.error = ''; updateDraftControls(draft, editable); } });
+      if (draft.revisit) {
+        el(revisit, 'p', 'Queued return: ' + (view.byId.get(draft.revisit.stepId)?.title || draft.revisit.stepId), 'next-help');
+        const cancel = button(revisit, 'Remove revisit from draft', () => { if (pending) return; draft.revisit = null; draft.error = ''; drawDetail({ retainFocus: true }); }, 'next-planning-cancel-revisit'); cancel.disabled = pending;
+      }
+    }
   }
   function projectDetail(parent, plan) {
     const model = projectVisualModel(plan), state = sessionFor(plan), byId = new Map((plan.tasks || []).map(task => [task.id, task]));
@@ -509,8 +547,10 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
     updateDraftControls(draft, editable);
     form.addEventListener('submit', async event => {
       event.preventDefault(); if (!active || !editable || pending || draft.latest.revision !== draft.base.revision) return;
-      const operations = planningDraftOperations(draft); if (!operations.length) { receipt.textContent = 'No changes to save.'; return; }
-      const submitted = { goal: draft.goal, notes: new Map(draft.notes) }; pending = true; generation++; updateDraftControls(draft, editable); receipt.textContent = 'Saving…'; paint();
+      let operations;
+      try { operations = planningDraftOperations(draft); } catch (cause) { draft.error = cause.message; updateDraftControls(draft, editable); return; }
+      if (!operations.length) { receipt.textContent = 'No changes to save.'; return; }
+      const submitted = { goal: draft.goal, notes: new Map(draft.notes), revisit: draft.revisit ? { ...draft.revisit } : null }; pending = true; generation++; updateDraftControls(draft, editable); receipt.textContent = 'Saving…'; paint();
       try {
         const saved = await api('/api/tasks/' + encodeURIComponent(plan.taskId) + '/plan/edit', 'POST', { expectedRevision: draft.base.revision, operations });
         if (!Array.isArray(saved?.steps) || saved.taskId !== plan.taskId) throw Error('The save receipt did not contain this plan. Refresh to inspect its saved state.');

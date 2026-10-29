@@ -2,6 +2,8 @@ import { text, formatDate } from '../core/dom.mjs';
 import { runText, messagesOfRun, windowedRuns, windowedMessages, CHAT_MESSAGE_BATCH, rootId, lastRunId, running, CHAT_INDEX_BATCH, conversationIndexWindow } from './model.mjs';
 import { chatOptionChoices } from './options-model.mjs';
 import { createRegisteredArtifactResolver } from '../../conversation-model.mjs';
+import { taskPlanView } from '../../task-plan-model.mjs';
+import { chatTimeline } from './planning-timeline.mjs';
 
 export function createChatFrame(mount) {
   mount.innerHTML = [
@@ -179,9 +181,8 @@ export function paintIntroduction(view, message = '') {
   text(intro,message||'Start a new conversation, or choose saved work from the left.','p');
 }
 /**
- * One transcript-level section per phase, rather than a label on each paragraph.
- * Think contains visible, user-facing working observations; private reasoning
- * is neither requested nor reconstructed from provider internals.
+ * Message categorization for callers that only need phase counts. Transcript
+ * rendering uses chatTimeline so a later planning return keeps its chronology.
  */
 export function chatMessagePhases(messages) {
   const directions=[], thinking=[], responding=[];
@@ -243,10 +244,7 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
       more.type='button';more.dataset.messageRun=run.id;
       more.addEventListener('click',()=>onMoreMessages?.(run.id));
     }
-    const phases=chatMessagePhases(messages);
     const state=run===shown.at(-1)?run.taskState:null;
-    const sourceNotes=(state?.steps||[]).filter(step=>(step.kind||'action')==='action'
-      && typeof step.evidence==='string' && step.evidence.trim());
     const resolveArtifact=createRegisteredArtifactResolver(run);
     const appendAssistant=(parent,message)=>{
       const body=text(parent,'','div','next-message-body next-chat-phase-paragraph');
@@ -256,26 +254,27 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
         if(onArtifact)body.addEventListener('click',event=>{const link=event.target.closest?.('[data-task-artifact][data-task-id]');if(link&&body.contains(link)){event.preventDefault();onArtifact({taskId:link.dataset.taskId,artifactId:link.dataset.taskArtifact});}});
       }
     };
-    for(const message of phases.directions){
-      const article=text(section,'','article','next-message');article.dataset.role='user';
-      text(article,'You','div','next-message-title');
-      text(article,message.text,'div','next-message-body');
-    }
-    if(phases.thinking.length||sourceNotes.length){
-      const group=text(section,'','section','next-chat-phase');group.dataset.phase='think';
-      text(group,'Think','h3','next-chat-phase-title');
-      text(group,'Working observations and hypotheses · provisional','p','next-help');
-      for(const message of phases.thinking)appendAssistant(group,message);
-      if(sourceNotes.length){
-        const panel=text(group,'','details','next-chat-working-notes');
-        panel.open=running(run)||state.steps.some(step=>(step.kind||'action')==='action'
-          && step.status!=='done'&&step.status!=='skipped');
-        text(panel,'Source observations · '+sourceNotes.length,'summary');
-        for(const step of sourceNotes){
-          const item=text(panel,'','details','next-chat-working-note');
-          text(item,step.title||step.id||'Observation','summary');
-          text(item,step.evidence,'div','next-chat-working-note-body');
+    for(const phase of chatTimeline(run,messages)){
+      if(phase.phase==='direction'){
+        for(const entry of phase.entries){
+          const article=text(section,'','article','next-message');article.dataset.role='user';
+          text(article,'You','div','next-message-title');text(article,entry.message.text,'div','next-message-body');
         }
+        continue;
+      }
+      const group=text(section,'','section','next-chat-phase');group.dataset.phase=phase.phase;group.dataset.timelineId=phase.id;
+      if(phase.active){group.dataset.state='active';group.setAttribute('aria-current','step');}
+      const provisional=phase.entries.some(entry=>entry.message?.provisional||entry.message?.phase==='unverified_answer');
+      text(group,phase.phase==='plan'?'Plan':phase.phase==='think'?'Think':provisional?'Respond · provisional':'Respond','h3','next-chat-phase-title');
+      if(phase.phase==='think')text(group,'Recorded findings and working updates · provisional','p','next-help');
+      for(const entry of phase.entries){
+        if(entry.message){appendAssistant(group,entry.message);continue;}
+        const item=text(group,'','div','next-chat-phase-paragraph');item.dataset.activityId=entry.id;item.dataset.activitySource=entry.source;
+        const label=[nodeNames.size>1&&nodeNames.get(entry.nodeId),entry.title].filter(Boolean).join(' · ');
+        text(item,label,'strong');
+        if(entry.at)text(item,' · '+new Date(entry.at).toLocaleTimeString(),'span','next-help');
+        text(item,entry.text,'p');
+        if(entry.nextStepId)text(item,'Next saved step: '+entry.nextStepId,'p','next-help');
       }
     }
     if (running(run)) {
@@ -285,32 +284,24 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
     }
     if(state) {
 
-      if(false){ // Legacy per-message observation panel replaced by grouped Think
-        const panel=text(section,'','details','next-chat-working-notes');
-        panel.open=running(run)||(state.steps||[]).some(step=>(step.kind||'action')==='action'&&step.status!=='done'&&step.status!=='skipped');
-        text(panel,'Think · '+observed.length+' recorded observations (provisional)','summary');
-        text(panel,'Source-based working observations; not private model reasoning or verified final conclusions.','p','next-help');
-        for(const step of observed){
-          const item=text(panel,'','details','next-chat-working-note');
-          text(item,step.title||step.id||'Observation','summary');
-          text(item,step.evidence,'div','next-chat-working-note-body');
-        }
-      }
       if(Array.isArray(state.steps)&&state.steps.length){
         const details=text(section,'','details','next-chat-task-summary');
         const summary=text(details,'','summary');
         const actions=state.steps.filter(step=>(step.kind||'action')==='action');
         const complete=actions.filter(step=>step.status==='completed'||step.status==='done').length;
-        summary.textContent='Plan · '+complete+' / '+actions.length+' actions · '+(running(run)?actions.find(step=>step.status==='active')?.title||'Agent working':!actions.length?'No actions recorded':complete===actions.length?'All actions marked done':'Run ended with unfinished work');
+        summary.textContent='Saved outline · '+complete+' / '+actions.length+' actions · '+(running(run)?actions.find(step=>step.status==='active')?.title||'Agent working':!actions.length?'No actions recorded':complete===actions.length?'All actions marked done':'Run ended with unfinished work');
         if(state.updatedAt) text(details,'Last saved plan activity: '+new Date(state.updatedAt).toLocaleTimeString(),'p','next-help');
         const steps=text(details,'','ol');
-        for(const item of state.steps.slice(0,60)){
-          const row=text(steps,'','li');
-          text(row,item.title||item.id||'Step','span');
-          row.appendChild(row.ownerDocument.createTextNode(' '));
-          const badge=text(row,item.status||'pending','span','next-status-pill');
-          badge.dataset.state=item.status||'pending';
-        }
+        const appendOutline=(list,items)=>{
+          list.setAttribute('style','list-style: none');
+          for(const item of items){
+            const row=text(list,'','li');row.dataset.stepId=item.id;row.dataset.stepNumber=item.number;
+            text(row,item.number+' '+item.title,'span');
+            const badge=text(row,item.status||'pending','span','next-status-pill');badge.dataset.state=item.status||'pending';
+            if(item.children.length)appendOutline(text(row,'','ol'),item.children);
+          }
+        };
+        appendOutline(steps,taskPlanView(state).roots);
       }
       if(Array.isArray(state.artifacts)&&state.artifacts.length){
         const details=text(section,'','details','next-chat-task-summary');
@@ -326,13 +317,6 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
           if(artifact.size!=null)text(file,Number(artifact.size).toLocaleString()+' bytes','span','next-help');
         }
       }
-    }
-    if(phases.responding.length){
-      const response=text(section,'','section','next-chat-phase');
-      response.dataset.phase='respond';
-      const provisional=phases.responding.some(m=>m.provisional||m.phase==='unverified_answer');
-      text(response,provisional?'Respond · provisional':'Respond','h3','next-chat-phase-title');
-      for(const message of phases.responding)appendAssistant(response,message);
     }
     const footer=text(section,'','div','next-turn-meta');
     const pill=text(footer,run.status||'saved','span','next-status-pill');

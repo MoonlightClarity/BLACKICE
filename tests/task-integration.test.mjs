@@ -27,6 +27,7 @@ async function engineHarness(t, runtime, { withTasks = true } = {}) {
   return { engine, tasks, engines, cwd, dataDir };
 }
 async function taskCall(options, args) { const result = await options.onToolCall({ name: 'relay_task', arguments: args }, { signal: options.signal }); assert.equal(result.success, true, result.contentItems?.[0]?.text); return JSON.parse(result.contentItems[0].text); }
+async function workspaceCall(options, callId, args) { const result = await options.onToolCall({ name: 'relay_workspace', callId, arguments: args }, { signal: options.signal }); assert.equal(result.success, true, result.contentItems?.[0]?.text); return JSON.parse(result.contentItems[0].text); }
 const settled = (engine, id) => wait(() => engine.getRun(id).settled && engine.getRun(id));
 
 for (const ending of ['cancelled', 'failed']) test(`${ending} real saved agent state resumes the same conversation and preserves the stopped run`, async t => {
@@ -36,25 +37,37 @@ for (const ending of ['cancelled', 'failed']) test(`${ending} real saved agent s
     assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_task'));
     if (callNumber === 1) {
       let state = await taskCall(options, { action: 'read' }); state = await taskCall(options, { action: 'plan', expectedRevision: state.revision, steps: [
-        { id: 'inspect', title: 'Inspect source', status: 'active', result: 'The source content for project ALPHA is confirmed.', note: 'Read source.txt from the fixture workspace and compare its contents with the supplied project source.', doneWhen: 'The source file has been read and its actual contents recorded.' },
-        { id: 'finish', title: 'Finish the deliverable', status: 'pending', result: 'A registered deliverable.txt containing the completed project work.', note: 'Write the partial deliverable, preserve it if interrupted, then read and complete its contents, verify the finished bytes, and register the file.', doneWhen: 'The complete deliverable is written and its current content has been checked.' },
+        { id: 'inspect', title: 'Inspect source', status: 'active', operation: { kind: 'tool', tool: 'relay_workspace', action: 'read', target: 'source.txt' }, result: 'The source content for project ALPHA is returned.', note: 'Read source.txt once from the fixture workspace.', doneWhen: 'The source reader returns its actual contents.' },
+        { id: 'write_partial', title: 'Save the partial deliverable', status: 'pending', operation: { kind: 'tool', tool: 'relay_workspace', action: 'write', target: 'deliverable.txt' }, result: 'The partial project work is saved in deliverable.txt.', note: 'Write the exact text Actual partial work. to deliverable.txt.', doneWhen: 'The write returns the expected path and byte count.' },
+        { id: 'inspect_partial', title: 'Read the saved partial deliverable', status: 'pending', operation: { kind: 'tool', tool: 'relay_workspace', action: 'read', target: 'deliverable.txt' }, result: 'The current saved deliverable contents are returned.', note: 'Read deliverable.txt once to establish the existing content before completing it.', doneWhen: 'The read returns the saved text without truncation.' },
+        { id: 'finish', title: 'Write the completed deliverable', status: 'pending', operation: { kind: 'tool', tool: 'relay_workspace', action: 'write', target: 'deliverable.txt' }, result: 'The completed project work is saved in deliverable.txt.', note: 'Write the exact text Actual finished work. to deliverable.txt.', doneWhen: 'The final write returns the expected path and byte count.' },
+        { id: 'verify', title: 'Read back the finished deliverable', status: 'pending', operation: { kind: 'tool', tool: 'relay_workspace', action: 'read', target: 'deliverable.txt' }, result: 'The saved final content is available for its exact-content check.', note: 'Read deliverable.txt once and inspect the returned text against Actual finished work.', doneWhen: 'The returned text is the complete expected final content.' },
       ] });
-      assert.equal(await readFile(path.join(options.cwd, 'source.txt'), 'utf8'), 'Fixture source for project ALPHA.');
+      assert.equal((await workspaceCall(options, 'inspect-source', { action: 'read', path: 'source.txt' })).content, '1: Fixture source for project ALPHA.');
       state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'inspect', status: 'done', evidence: 'Read source.txt and confirmed its contents are "Fixture source for project ALPHA.".' });
-      state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'finish', status: 'active' });
-      await writeFile(path.join(options.cwd, 'deliverable.txt'), 'Actual partial work.'); state = await taskCall(options, { action: 'artifact', expectedRevision: state.revision, path: 'deliverable.txt', title: 'Deliverable' }); artifactId = state.artifacts[0].id;
-      state = await taskCall(options, { action: 'checkpoint', expectedRevision: state.revision, goal: 'Finish project ALPHA.', completed: ['Inspected the real source.'], decisions: ['Keep the existing implementation.'], nextSteps: ['Complete and recheck the file.'] });
+      state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'write_partial', status: 'active' });
+      assert.equal((await workspaceCall(options, 'write-partial', { action: 'write', path: 'deliverable.txt', text: 'Actual partial work.' })).bytesWritten, Buffer.byteLength('Actual partial work.'));
+      state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'write_partial', status: 'done', evidence: 'The actual write returned deliverable.txt and 20 bytes written.' });
+      state = await taskCall(options, { action: 'artifact', expectedRevision: state.revision, path: 'deliverable.txt', title: 'Deliverable' }); artifactId = state.artifacts[0].id;
+      state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'inspect_partial', status: 'active' });
+      state = await taskCall(options, { action: 'checkpoint', expectedRevision: state.revision, goal: 'Finish project ALPHA.', completed: ['Inspected the real source.', 'Saved the actual partial deliverable.'], decisions: ['Keep the existing implementation.'], nextSteps: ['Complete and recheck the file.'] });
       options.onEvent({ type: 'delta', threadId, delta: 'Partial work is preserved.' }); options.onEvent({ type: 'usage', threadId, usage: { totalTokens: 20, total: { totalTokens: 20 } } }); started = true;
       if (ending === 'cancelled') { await new Promise(resolve => { if (options.signal.aborted) resolve(); else options.signal.addEventListener('abort', resolve, { once: true }); }); await releaseStop.promise; options.onEvent({ type: 'usage', threadId, usage: { totalTokens: 25, total: { totalTokens: 25 } } }); options.onEvent({ type: 'delta', threadId, delta: 'Unwanted text after stop.' }); throw Object.assign(new Error('Stopped.'), { name: 'AbortError' }); }
       throw new Error('Provider transport deliberately failed.');
     }
     assert.equal(options.threadId, threadId, 'continuation must resume, not construct another conversation'); assert.match(options.prompt, /Finish project ALPHA/); assert.match(options.prompt, /Keep the existing implementation/); assert.match(options.prompt, /Verify the current workspace/); assert.deepEqual(options.usageBaseline, { totalTokens: ending === 'cancelled' ? 25 : 20 });
-    let state = await taskCall(options, { action: 'read' }); assert.equal(state.interruption.status, ending); assert.equal(state.progress.done, 1); assert.equal(state.artifacts[0].id, artifactId);
+    let state = await taskCall(options, { action: 'read' }); assert.equal(state.interruption.status, ending); assert.equal(state.progress.done, 2); assert.equal(state.artifacts[0].id, artifactId);
     state = await taskCall(options, { action: 'plan', expectedRevision: state.revision, steps: state.steps });
-    assert.equal(await readFile(path.join(options.cwd, 'deliverable.txt'), 'utf8'), 'Actual partial work.'); await writeFile(path.join(options.cwd, 'deliverable.txt'), 'Actual finished work.');
-    assert.equal(await readFile(path.join(options.cwd, 'deliverable.txt'), 'utf8'), 'Actual finished work.');
-    state = await taskCall(options, { action: 'artifact', expectedRevision: state.revision, path: 'deliverable.txt' }); state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'finish', status: 'done', evidence: 'Read and replaced the fixture deliverable, then checked the current registered bytes.' });
-    assert.equal(state.progress.done, 2); assert.equal(state.interruption, null); return { output: 'Completed and checked.', threadId, usage: { totalTokens: 10, total: { totalTokens: 30 } } };
+    assert.equal((await workspaceCall(options, 'read-preserved-partial', { action: 'read', path: 'deliverable.txt' })).content, '1: Actual partial work.');
+    state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'inspect_partial', status: 'done', evidence: 'The actual read returned the preserved text Actual partial work. without truncation.' });
+    state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'finish', status: 'active' });
+    assert.equal((await workspaceCall(options, 'write-finished', { action: 'write', path: 'deliverable.txt', text: 'Actual finished work.' })).bytesWritten, Buffer.byteLength('Actual finished work.'));
+    state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'finish', status: 'done', evidence: 'The actual final write returned deliverable.txt and 21 bytes written.' });
+    state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'verify', status: 'active' });
+    assert.equal((await workspaceCall(options, 'verify-finished', { action: 'read', path: 'deliverable.txt' })).content, '1: Actual finished work.');
+    state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'verify', status: 'done', evidence: 'The actual final read returned exactly Actual finished work. without truncation.' });
+    state = await taskCall(options, { action: 'artifact', expectedRevision: state.revision, path: 'deliverable.txt' });
+    assert.equal(state.progress.done, 5); assert.equal(state.interruption, null); return { output: 'Completed and checked.', threadId, usage: { totalTokens: 10, total: { totalTokens: 30 } } };
   });
   const { engine, tasks, engines, cwd, dataDir } = await engineHarness(t, runtime);
   await writeFile(path.join(cwd, 'source.txt'), 'Fixture source for project ALPHA.');
@@ -67,11 +80,11 @@ for (const ending of ['cancelled', 'failed']) test(`${ending} real saved agent s
   assert.equal(stopped.taskState.checkpoint.provenance.runId, original.id); assert.equal(stopped.taskState.checkpoint.provenance.nodeId, 'agent'); assert.equal(stopped.taskState.checkpoint.provenance.source, 'agent'); assert.equal(stopped.taskState.interruption.provenance.runId, original.id); assert.equal(stopped.taskState.interruption.provenance.source, 'runtime');
   const stoppedSnapshot = structuredClone(stopped);
   const followup = engine.continueRun(original.id, { nodeId: 'agent', message: 'Finish the remaining work.' }); const completed = await settled(engine, followup.id);
-  assert.equal(completed.status, 'completed', JSON.stringify(completed.error || completed.nodes.agent.error)); assert.equal(completed.taskId, original.id); assert.equal(completed.continuedFrom.threadId, threadId); assert.equal(completed.taskState.progress.done, 2); assert.deepEqual(engine.getRun(original.id), stoppedSnapshot, 'continuation must preserve all original output and checkpoint records');
+  assert.equal(completed.status, 'completed', JSON.stringify(completed.error || completed.nodes.agent.error)); assert.equal(completed.taskId, original.id); assert.equal(completed.continuedFrom.threadId, threadId); assert.equal(completed.taskState.progress.done, 5); assert.deepEqual(engine.getRun(original.id), stoppedSnapshot, 'continuation must preserve all original output and checkpoint records');
   assert.equal(completed.taskState.goal, 'Finish project ALPHA.'); assert.equal(completed.taskState.provenance.runId, followup.id); assert.equal(completed.taskState.provenance.nodeId, 'agent'); assert.equal(completed.taskState.artifacts[0].provenance.runId, followup.id); assert.equal(completed.taskState.checkpoint.provenance.runId, original.id, 'historical checkpoint provenance must not be rewritten by continuation');
   assert.equal((await tasks.previewArtifact(original.id, artifactId)).text, 'Actual finished work.');
   await engine.close(); const nextRuntime = new Runtime(), restored = new HarnessEngine({ runtime: nextRuntime, tasks, dataDir, defaultCwd: cwd }); engines.push(restored); await restored.init();
-  assert.deepEqual(restored.getRun(original.id).taskState, stoppedSnapshot.taskState); assert.equal(restored.getRun(followup.id).taskState.progress.done, 2); assert.equal((await tasks.get(original.id)).progress.done, 2);
+  assert.deepEqual(restored.getRun(original.id).taskState, stoppedSnapshot.taskState); assert.equal(restored.getRun(followup.id).taskState.progress.done, 5); assert.equal((await tasks.get(original.id)).progress.done, 5);
 });
 
 test('legacy native threads retain their real tool catalog while new tasks receive relay_task', async t => {

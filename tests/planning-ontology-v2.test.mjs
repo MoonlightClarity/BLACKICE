@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 const root = new URL('../', import.meta.url);
 const module = async path => import(new URL(path, root).href);
 const visual = await module('public/next/workspaces/planning-visual.mjs');
@@ -16,7 +17,7 @@ const header = [
   'PIR: Which of two possible explanations best matches the source?',
   'Scope: An observed report',
   'Product: A bounded assessment with explicit gaps',
-  'Working folder: C:\\Users\\iris\\Documents',
+  'Working folder: ' + fileURLToPath(root),
   '',
 ].join('\n');
 

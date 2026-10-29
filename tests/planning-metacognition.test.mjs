@@ -9,8 +9,8 @@ import {
  METACOGNITION_FIELDS
 } from '../lib/task-plan.mjs';
 import { applyPlanningEdits } from '../lib/planning-edits.mjs';
-import { TaskStateStore, TASK_TOOL, TASK_TOOL_V6, TASK_TOOL_V7, TASK_INSTRUCTIONS,
- TASK_INSTRUCTIONS_V6, TASK_INSTRUCTIONS_V7, TASK_SCHEMA_VERSION,
+import { TaskStateStore, TASK_TOOL, TASK_TOOL_V6, TASK_TOOL_V7, TASK_TOOL_V8, TASK_INSTRUCTIONS,
+ TASK_INSTRUCTIONS_V6, TASK_INSTRUCTIONS_V7, TASK_INSTRUCTIONS_V8, TASK_SCHEMA_VERSION,
  taskToolForVersion, taskInstructionsForVersion } from '../lib/task-state.mjs';
 
 const action={id:'evaluate',title:'Deliver a practically useful recommendation',
@@ -115,19 +115,27 @@ test('current model instructions are cross-domain, while older tool versions rem
   assert.equal(meta.additionalProperties,false);
   assert.ok(meta.properties.goodEnough&&meta.properties.nextProbe&&meta.properties.lesson);
   assert.equal(TASK_TOOL.inputSchema.properties.operations.items.properties.patch.properties.metacognition.anyOf[0].type,'object');
-  assert.equal(TASK_SCHEMA_VERSION,8);
+  assert.equal(TASK_SCHEMA_VERSION,9);
   assert.equal(TASK_TOOL_V6.inputSchema.properties.plan.properties.metacognition,undefined);
   assert.equal(TASK_TOOL_V7.inputSchema.properties.plan.properties.metacognition,undefined);
   assert.equal(TASK_TOOL_V7.inputSchema.properties.plan.properties.decisionCriteria,undefined);
   assert.equal(taskToolForVersion(7),TASK_TOOL_V7);
-  assert.equal(taskToolForVersion(8),TASK_TOOL);
+  assert.equal(taskToolForVersion(8),TASK_TOOL_V8);
+  assert.equal(taskToolForVersion(9),TASK_TOOL);
+  assert.equal(TASK_TOOL_V8.inputSchema.properties.plan.properties.facts,undefined);
+  assert.ok(TASK_TOOL.inputSchema.properties.plan.properties.facts);
   assert.equal(taskInstructionsForVersion(7),TASK_INSTRUCTIONS_V7);
+  assert.equal(taskInstructionsForVersion(8),TASK_INSTRUCTIONS_V8);
+  assert.equal(taskInstructionsForVersion(9),TASK_INSTRUCTIONS);
   assert.equal(TASK_INSTRUCTIONS_V7,TASK_INSTRUCTIONS_V6);
   assert.ok(TASK_INSTRUCTIONS.includes('PRACTICAL JUDGMENT AND METACOGNITION'));
   assert.ok(TASK_INSTRUCTIONS.includes('material_barrier'));
   assert.ok(TASK_INSTRUCTIONS.includes('adaptable_gap'));
   assert.ok(TASK_INSTRUCTIONS.includes('goodEnough'));
   assert.ok(!TASK_INSTRUCTIONS.includes('perfect résumé match'));
-  assert.ok(TASK_INSTRUCTIONS.startsWith(TASK_INSTRUCTIONS_V6));
+  assert.ok(TASK_INSTRUCTIONS_V8.startsWith(TASK_INSTRUCTIONS_V6),'the cached version eight instructions retain their historical prefix');
+  assert.ok(TASK_INSTRUCTIONS.includes('CHRONOLOGICAL RECURSIVE WORK'));
+  assert.ok(TASK_INSTRUCTIONS.includes('keep only one eligible leaf active'));
+  assert.ok(!TASK_INSTRUCTIONS.includes('Do not wait for the coordinator or another independent branch unless your saved prerequisites require its result.'),'current instructions must not retain a conflicting parallel execution rule');
   assert.equal(TASK_INSTRUCTIONS.split('\n').length>7,true);
 });

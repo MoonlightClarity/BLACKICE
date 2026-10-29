@@ -6,6 +6,7 @@ import { initAttachmentsUI } from '../../attachments-ui.mjs';
 import { escapeHTML } from '../core/dom.mjs';
 import { normalizeChatOptions, validateChatOptions } from './options-model.mjs';
 import { createArtifactViewer } from './artifacts.mjs';
+import { planningActivityForEvent, mergePlanningActivity } from './planning-timeline.mjs';
 
 export function createChatWorkspace({ mount, api, events, getStatus, notify = () => {} }) {
   const view = createChatFrame(mount);
@@ -403,21 +404,46 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     }
     if(!event.runId || !state.runs.some(run=>run.id===event.runId))return;
     const data=event.data || {};
+    const currentRun=state.runs.find(run=>run.id===event.runId);
+    const nextOrder=()=>{
+      const previous=currentRun.timelineOrder??Math.max(0,...(currentRun.planningActivity||[]).map(row=>row.order||0),currentRun.precomputedMessages?.at(-1)?.order||0);
+      currentRun.timelineOrder=previous+1;return currentRun.timelineOrder;
+    };
     if(event.type==='agent.event' && data.type==='task.state' && data.state){
-      const current=state.runs.find(run=>run.id===event.runId);
+      const current=currentRun;
       if(current && Number(data.state.revision)>Number(current.taskState?.revision||0)){
+        current.planningActivity=mergePlanningActivity(current.planningActivity,
+          planningActivityForEvent(current.id,event,current.taskState,nextOrder()));
         current.taskState=data.state;
         render({preserve:true});
       }
     }
+    if(event.type==='agent.event' && data.type==='planning.reassessment'){
+      currentRun.planningActivity=mergePlanningActivity(currentRun.planningActivity,
+        planningActivityForEvent(currentRun.id,event,null,nextOrder()));
+      render({preserve:true});
+    }
+    if(event.type==='agent.event' && data.type==='item' && data.stage==='started' && data.item?.type==='agentMessage'){
+      const additions=planningActivityForEvent(currentRun.id,event,currentRun.taskState,nextOrder());
+      if(additions.length){currentRun.planningActivity=mergePlanningActivity(currentRun.planningActivity,additions);render({preserve:true});}
+    }
+    if(event.type==='agent.event' && data.type==='steer' && data.accepted!==false && typeof data.text==='string' && data.text.trim()){
+      const order=nextOrder(), nodeId=event.nodeId||'agent', id='direction:'+nodeId+':'+(event.at||order)+':'+data.text;
+      const messages=currentRun.precomputedMessages ||= [];
+      if(!messages.some(message=>message.id===id))messages.push({id,nodeId,role:'user',text:data.text,direction:true,delivery:data.delivery,at:event.at,order});
+      render({preserve:true});
+    }
     if(event.type==='agent.event' && data.type==='message' && typeof data.text==='string' && data.text.trim()){
       const current=state.runs.find(run=>run.id===event.runId);
       if(current){
+        // Completion replaces its transient stream. A queued paint must not
+        // append the same accepted answer again below its transcript section.
+        if(current===state.runs.at(-1)){state.stream.length=0;clearTimeout(state.liveTimer);state.liveTimer=null;}
         const messages=current.precomputedMessages ||= [];
         const id=(event.nodeId||'agent')+':'+(data.itemId||('live-'+data.text.length+'-'+data.text.slice(0,24)));
         if(!messages.some(message=>message.id===id))
           messages.push({id,nodeId:event.nodeId||'agent',role:'assistant',text:data.text,
-            phase:data.phase,provisional:data.provisional===true});
+            phase:data.phase,provisional:data.provisional===true,at:event.at,order:nextOrder()});
         render({preserve:true});
       }
     }

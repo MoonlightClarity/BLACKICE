@@ -13,7 +13,7 @@ const neoErrorDetail = value => {
   return brief(concise, 170) || 'Browser action failed. Inspect its tool result.';
 };
 const toolNames = { relay_workspace: 'Workspace', relay_browser: 'Browser', relay_desktop: 'Windows', relay_memory: 'Memory', relay_skills: 'Skills', relay_history: 'History', relay_identity: 'Identity', relay_connections: 'Connected tool', relay_task: 'Task plan', relay_files: 'Attached files' };
-const actions = { list: 'List files', read: 'Read', write: 'Write file', search: 'Search', run: 'Run command', open: 'Open page', navigate: 'Navigate', snapshot: 'Inspect page', screenshot: 'Observe page', click: 'Activate control', fill: 'Fill field', select: 'Select', press: 'Browser key', upload: 'Upload file', downloads: 'Check downloads', windows: 'List windows', inspect: 'Inspect controls', invoke: 'Invoke control', set_value: 'Set value', get_text: 'Read text', toggle: 'Toggle control', expand: 'Expand control', collapse: 'Collapse control', plan: 'Save plan', step: 'Update step', checkpoint: 'Save checkpoint', artifact: 'Check deliverable' };
+const actions = { list: 'List files', read: 'Read', write: 'Write file', search: 'Search', run: 'Run command', open: 'Open page', navigate: 'Navigate', snapshot: 'Inspect page', screenshot: 'Observe page', click: 'Activate control', fill: 'Fill field', select: 'Select', press: 'Browser key', upload: 'Upload file', downloads: 'Check downloads', windows: 'List windows', inspect: 'Inspect controls', invoke: 'Invoke control', set_value: 'Set value', get_text: 'Read text', toggle: 'Toggle control', expand: 'Expand control', collapse: 'Collapse control', plan: 'Save plan', review: 'Reassess plan', step: 'Update step', checkpoint: 'Save checkpoint', artifact: 'Check deliverable' };
 
 export function selectObservedRun(snapshot = {}, selectedId = null, followedId = null) {
   const runs = snapshot.runs || [], current = snapshot.currentRun;
@@ -126,7 +126,7 @@ export function normalizeObserveEvent(event, index = 0) {
     if (item.type === 'commandExecution') { const action = item.commandActions?.[0], record = commandRecord(item, {}, data.stage, true); row = { kind: 'workspace', icon: 'terminal', title: action?.type === 'read' ? 'Read file' : action?.type === 'search' ? 'Search workspace' : 'Run command', detail: brief(record.command.line) || fileName(action?.path || action?.name), ...record }; }
     if (item.type === 'fileChange') row = { kind: 'workspace', icon: 'file', title: 'File update', detail: (item.changes || []).map(change => fileName(change.path)).filter(Boolean).slice(0, 2).join(', '), status };
     if (item.type === 'webSearch') row = { kind: 'browser', icon: 'search', title: 'Web search', detail: brief(item.query || item.action?.query), status };
-    if (['dynamicToolCall', 'mcpToolCall'].includes(item.type)) { const name = item.name || item.tool, args = object(item.arguments); row = { kind: name === 'relay_browser' ? 'browser' : name === 'relay_desktop' ? 'desktop' : 'tool', icon: name === 'relay_browser' ? 'grid' : name === 'relay_desktop' ? 'desktop' : 'tool', title: toolNames[name] || (item.type === 'mcpToolCall' ? 'Connected tool' : brief(name, 80) || 'Tool call'), detail: actions[args.action] || label(item.toolName || item.server || ''), status }; if (name === 'relay_workspace' && args.action === 'run') { const record = commandRecord(item, args, data.stage); row = { ...row, kind: 'workspace', icon: 'terminal', title: 'Run command', detail: brief(record.command.line), ...record }; } }
+    if (['dynamicToolCall', 'mcpToolCall'].includes(item.type)) { const name = item.name || item.tool, args = object(item.arguments); row = { kind: name === 'relay_browser' ? 'browser' : name === 'relay_desktop' ? 'desktop' : 'tool', icon: name === 'relay_browser' ? 'grid' : name === 'relay_desktop' ? 'desktop' : 'tool', title: toolNames[name] || (item.type === 'mcpToolCall' ? 'Connected tool' : brief(name, 80) || 'Tool call'), detail: actions[args.action] || label(item.toolName || item.server || ''), status }; if (name === 'relay_workspace' && args.action === 'run') { const record = commandRecord(item, args, data.stage); row = { ...row, kind: 'workspace', icon: 'terminal', title: 'Run command', detail: brief(record.command.line), ...record }; } if (name === 'relay_task' && args.action === 'review') row = { ...row, kind: 'plan', icon: 'plan', reassessment: true, title: 'Reassess plan', detail: [label(args.review?.decision), brief(args.review?.summary)].filter(Boolean).join(' · ') }; }
     if (row) row.key = item.id ? `${event.nodeId || ''}:${item.id}` : null;
   }
   if (data.type === 'tool.result' && data.tool === 'relay_connections' && data.connectionId === 'browseros-neo') {
@@ -148,8 +148,16 @@ export function normalizeObserveEvent(event, index = 0) {
     row = {kind:'browser',icon:'grid',title:data.reason === 'verification' ? 'Browser verification required' : data.reason === 'permission' ? 'Website permission required' : 'Browser sign-in required',detail:brief(data.hostname,100),status:'recorded'};
   }
   if (data.type === 'task.state') { const steps = data.state?.steps || []; row = { kind: 'plan', icon: 'plan', title: 'Task plan saved', detail: `${steps.filter(step => step.status === 'done').length} of ${steps.length} steps marked complete`, status: 'completed' }; }
+  if (data.type === 'planning.reassessment' && ['current','continuing','required','stale','stalled'].includes(data.reviewStatus)) {
+    const status = data.reviewStatus, nodeId = brief(data.workerId || event.nodeId, 120);
+    row = { kind: 'plan', icon: 'plan', reassessment: true,
+      nodeId, key: `review:${nodeId}:${data.review?.reviewedRevision ?? ''}:${Number(data.returnCount) || 0}:${status}`,
+      title: status === 'current' ? 'Planning reviewed' : status === 'stalled' ? 'Planning review stalled' : status === 'continuing' ? 'Return to planning' : 'Planning review needed',
+      detail: status === 'current' ? [label(data.review?.decision), brief(data.review?.summary)].filter(Boolean).join(' · ') : brief(data.reviewReason),
+      status: status === 'current' ? 'completed' : status === 'stalled' ? 'failed' : status === 'continuing' ? 'running' : 'recorded' };
+  }
   if (!row) return null;
-  return { ...row, key: row.key || `event-${index}`, nodeId: event.nodeId || null, at: typeof event.at === 'string' ? event.at : data.at || null, title: brief(row.title, 100), detail: brief(row.detail) };
+  return { ...row, key: row.key || `event-${index}`, nodeId: row.nodeId || event.nodeId || null, at: typeof event.at === 'string' ? event.at : data.at || null, title: brief(row.title, 100), detail: brief(row.detail) };
 }
 export function observeTrace(run, { limit = 20, nodeId = null } = {}) {
   const result = [], byKey = new Map(); let index = 0;
@@ -211,7 +219,7 @@ export function createObserveFeed({ maxEntries = 40, maxChars = 240000 } = {}) {
         if (data.type === 'message') pendingMessages.delete(nodeId);
         return append({ key, kind: 'message', nodeId, at, title: 'Agent update', text, streaming: data.type === 'delta' });
       }
-      const row = normalizeObserveEvent(event, ++serial); if (!row || row.kind === 'plan') return false;
+      const row = normalizeObserveEvent(event, ++serial); if (!row || row.kind === 'plan' && !row.reassessment) return false;
       const receipt = JSON.stringify([row.key, row.at, row.status, row.title, row.detail]); if (seen.has(receipt)) return false; seen.add(receipt);
       return append({ ...row, kind: 'activity', key: row.key.startsWith('event-') ? `activity:${serial}` : row.key });
     },
