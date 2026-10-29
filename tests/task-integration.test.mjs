@@ -77,7 +77,11 @@ for (const ending of ['cancelled', 'failed']) test(`${ending} real saved agent s
     await wait(() => { if (started) return true; const run = engine.getRun(original.id); assert.ok(!run.settled, run.error || run.nodes.agent?.error || 'Fixture settled before recording partial work.'); return false; });
     if (ending === 'cancelled') { engine.cancelRun(original.id); assert.throws(() => engine.continueRun(original.id, { nodeId: 'agent', message: 'Too soon.' }), /active|stopping|finish/i); }
   } finally { releaseStop.resolve(); }
-  const stopped = await settled(engine, original.id); assert.equal(stopped.status, ending); assert.equal(stopped.nodes.agent.threadId, threadId); assert.equal(stopped.nodes.agent.output, 'Partial work is preserved.'); assert.equal(stopped.nodes.agent.usage.total.totalTokens, ending === 'cancelled' ? 25 : 20); assert.equal(stopped.taskState.checkpoint.kind, 'agent'); assert.equal(stopped.taskState.interruption.status, ending);
+  const stopped = await settled(engine, original.id); assert.equal(stopped.status, ending); assert.equal(stopped.nodes.agent.threadId, threadId);
+  assert.equal(stopped.nodes.agent.output, '', 'Interrupted work cannot publish an unreviewed final answer.');
+  assert.ok(stopped.events.some(event => event.data?.item?.phase === 'commentary' && event.data.item.text === 'Partial work is preserved.'), 'The public progress update remains available in saved events.');
+  assert.ok(!stopped.events.some(event => event.data?.delta === 'Unwanted text after stop.'), 'Stop rejects late answer text.');
+  assert.equal(stopped.nodes.agent.usage.total.totalTokens, ending === 'cancelled' ? 25 : 20); assert.equal(stopped.taskState.checkpoint.kind, 'agent'); assert.equal(stopped.taskState.interruption.status, ending);
   assert.equal(stopped.taskState.checkpoint.provenance.runId, original.id); assert.equal(stopped.taskState.checkpoint.provenance.nodeId, 'agent'); assert.equal(stopped.taskState.checkpoint.provenance.source, 'agent'); assert.equal(stopped.taskState.interruption.provenance.runId, original.id); assert.equal(stopped.taskState.interruption.provenance.source, 'runtime');
   const stoppedSnapshot = structuredClone(stopped);
   const followup = engine.continueRun(original.id, { nodeId: 'agent', message: 'Finish the remaining work.' }); const completed = await settled(engine, followup.id);

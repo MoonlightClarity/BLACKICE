@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
+import {performance} from 'node:perf_hooks';
 import {ConnectionManager} from '../lib/mcp.mjs';
 import {parseConnectionImport} from '../lib/connection-import.mjs';
 import {createConnectionImportSettings} from '../public/next/workspaces/settings-import.mjs';
@@ -10,7 +11,9 @@ import {createConnectionSettings} from '../public/next/workspaces/settings-conne
 import {planningDOM} from './fixture-planning-dom.mjs';
 
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
-const until=async read=>{for(let i=0;i<120;i++){if(read())return;await settle();}throw Error('Configuration import did not settle.');};
+// Persistence uses asynchronous filesystem I/O; event-loop turns are not a
+// time budget for that work to finish under a concurrent Windows suite.
+const until=async read=>{const deadline=performance.now()+5000;while(!read()){if(performance.now()>=deadline)throw Error('Configuration import did not settle within 5 seconds.');await new Promise(resolve=>setTimeout(resolve,5));}};
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
 const configuration=JSON.stringify({mcpServers:{'Local files':{command:'node',args:['synthetic-server.mjs','private-argument'],env:{TOKEN:'private-environment'}},Search:{type:'streamable-http',url:'https://fixture.invalid/mcp',headers:{Authorization:'Bearer private-header'}}}});
 function domFixture(t){
