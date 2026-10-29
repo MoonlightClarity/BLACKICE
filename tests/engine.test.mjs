@@ -418,7 +418,7 @@ test('legacy continuation receipts survive restart and default changes without c
     runtime.resolveModel = () => { throw new Error('Recovered continuation cannot resolve a new default.'); };
     const restored = await new HarnessEngine({ runtime, dataDir, defaultCwd: cwd }).init(); engines.push(restored);
     assert.equal(restored.continueRun(first.id, request).id, next.id);
-    for (const changed of [{ message: 'Changed follow-up.' }, { model: 'model-c' }]) assert.throws(() => restored.continueRun(first.id, { ...request, ...changed }), { code: 'RUN_REQUEST_CONFLICT' });
+    for (const changed of [{ message: 'Changed follow-up.' }, { model: 'model-c' }, { prompt: 'Changed agent instructions.' }]) assert.throws(() => restored.continueRun(first.id, { ...request, ...changed }), { code: 'RUN_REQUEST_CONFLICT' });
     if (explicitDefault) assert.throws(() => restored.continueRun(first.id, { ...request, model: 'model-b' }), { code: 'RUN_REQUEST_CONFLICT' }, 'explicit default remains part of the legacy authored intent');
     assert.equal(runtime.calls.length, 2);
   });
@@ -992,4 +992,34 @@ for (const throws of [false, true]) test(`unavailable contained browser records 
   await engine.close();
   const restored = await new HarnessEngine({ runtime: new FakeRuntime(), dataDir, defaultCwd: cwd }).init(); engines.push(restored);
   assert.deepEqual(restored.getRun(run.id).nodes.agent.capabilityIssues, [issue]);
+});
+
+test('continuations validate revised agent instructions and deliver them on the saved provider thread', async t => {
+  const { engine, runtime } = await harness(t), first = engine.startRun({ workflow: workflow(), input: 'Original task.' });
+  await engine.executions.get(first.id);
+  const initialCount=engine.runs.size;
+  for(const prompt of [null,42,'',' ','x'.repeat(40001)]) assert.throws(
+    ()=>engine.continueRun(first.id,{nodeId:'agent',message:'Continue.',prompt}),
+    /agent instructions/i);
+  assert.equal(engine.runs.size,initialCount,'invalid instructions are rejected before admission');
+  assert.equal(runtime.calls.length,1);
+  const prompt='CURRENT_MARKER: Use the revised task instructions and preserve confirmed work.';
+  const request={requestId:'revised-instructions',nodeId:'agent',message:'Continue once.',prompt};
+  const next=engine.continueRun(first.id,request);
+  assert.equal(engine.continueRun(first.id,request).id,next.id);
+  for(const changed of [{prompt:'DIFFERENT_MARKER'},{prompt:undefined}]) assert.throws(
+    ()=>engine.continueRun(first.id,{...request,...changed}),{code:'RUN_REQUEST_CONFLICT'});
+  await engine.executions.get(next.id);
+  assert.equal(next.taskId,first.taskId);
+  assert.equal(next.workflow.nodes.find(node=>node.id==='agent').prompt,prompt);
+  assert.equal(engine.getRun(first.id).workflow.nodes.find(node=>node.id==='agent').prompt,'AGENT_MARKER');
+  assert.equal(runtime.calls[1].threadId,'fake-thread');
+  assert.ok(runtime.calls[1].prompt.includes(prompt));
+  const omitted={requestId:'saved-instructions',nodeId:'agent',message:'Keep the saved instructions.'};
+  const third=engine.continueRun(next.id,omitted);
+  assert.throws(()=>engine.continueRun(next.id,{...omitted,prompt}),{code:'RUN_REQUEST_CONFLICT'});
+  await engine.executions.get(third.id);
+  assert.equal(runtime.calls[2].threadId,'fake-thread');
+  assert.ok(runtime.calls[2].prompt.includes(prompt));
+  assert.equal(runtime.calls.length,3);
 });

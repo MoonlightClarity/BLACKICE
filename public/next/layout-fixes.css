@@ -24,6 +24,10 @@
 .next-chat .next-sidebar-filter{
   box-sizing:border-box;min-width:0;max-width:100%;
 }
+/* The compact filter needs room for its label and the native select arrow. */
+.next-chat .next-sidebar-filter{
+  height:auto;min-height:37px;padding-block:6px;line-height:1.5;
+}
 .next-chat .next-conversation-list{
   min-width:0;max-width:100%;overflow-x:hidden;overflow-y:auto;
 }

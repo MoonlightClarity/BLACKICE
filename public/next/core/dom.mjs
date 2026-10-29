@@ -6,10 +6,11 @@ export const text = (parent, content, tag = 'span', className = '') => {
   node.className = className; node.textContent = String(content ?? '');
   parent.append(node); return node;
 };
+let dateFormatter;
 export const formatDate = value => {
   if (!value) return '';
   const ms = Date.parse(value);
-  return Number.isFinite(ms) ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(ms) : '';
+  return Number.isFinite(ms) ? (dateFormatter ||= new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })).format(ms) : '';
 };
 export const showError = (node, error) => { if (!node) return; node.textContent = String(error?.message || error || 'An operation failed.'); node.hidden = false; };
 export function stableId(prefix = 'action') {

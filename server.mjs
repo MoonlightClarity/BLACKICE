@@ -52,6 +52,7 @@ import { ChatGPTSetup, CHATGPT_SETUP_URL } from './lib/chatgpt-setup.mjs';
 import { ChatGPTPlanningAPI } from './lib/chatgpt-planning.mjs';
 import { DirectExecutionAPI } from './lib/direct-execution-api.mjs';
 import { desktopRestartTool } from './lib/desktop-restart-tool.mjs';
+import { frontendDevtoolsTool } from './lib/frontend-devtools-tool.mjs';
 import { createDesktopRestartBarrier } from './lib/desktop-restart-barrier.mjs';
 import { chatGPTFileImportTool } from './lib/chatgpt-file-import.mjs';
 import { chatGPTStartChatTool } from './lib/chatgpt-start-chat.mjs';
@@ -60,6 +61,7 @@ const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const APP_VERSION = JSON.parse(await fs.readFile(path.join(APP_DIR, 'package.json'), 'utf8')).version;
 const LOCAL_BROWSER_CLIENT = Object.freeze({ id: 'local-browser-tools', label: 'BLACKICE browser commands', kind: 'local-browser', scopes: ['read', 'browser:read', 'browser:write', 'files:read', 'files:write', 'commands:run'] });
 const LOCAL_BROWSER_TOOLS = new Set(['blackice_connected_browser_read', 'blackice_connected_browser_action', 'blackice_profile_list', 'blackice_profile_import', 'blackice_profile_connect']);
+const LOCAL_FRONTEND_CLIENT = Object.freeze({ id: 'local-frontend-tools', label: 'BLACKICE frontend development', kind: 'local-frontend', scopes: ['read', 'commands:run'] });
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ttf': 'font/ttf' };
 const safeEqual = (a, b) => {
   if (typeof a !== 'string') return false;
@@ -368,9 +370,10 @@ export async function createHarnessServer(options = {}) {
     ...(options.desktopRestart ? { desktopRestart: options.desktopRestart, restartStatus: context => options.desktopRestart.status({ ownerId: context.canRestart ? context.ownerId : undefined }) } : {}),
     // Vault health can change between startups or recover during this process.
     // Keep its tool definitions stable; every credential action checks the store.
-    additionalTools: [chatGPTFileImportTool({ directory: path.join(defaultCwd, 'blackice-imports') }), chatGPTStartChatTool({ engine, attachments, defaultCwd, isClosing: connectorClosing }), ...createDirectConnectedBrowserTools({ manager: connections, connectChrome: options.connectChromeBrowser }), ...createDirectBrowserProfileTools({ profiles: browserProfiles, manager: connections, onChange: refreshBrowserProfiles }), ...(options.desktopRestart ? [desktopRestartTool({ restart: options.desktopRestart, getJob: id => directExecution.jobs.get(id) })] : []), ...createDirectBrowserCredentialTools({ vault: browserCredentials, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes) })],
+    additionalTools: [chatGPTFileImportTool({ directory: path.join(defaultCwd, 'blackice-imports') }), chatGPTStartChatTool({ engine, attachments, defaultCwd, isClosing: connectorClosing }), ...createDirectConnectedBrowserTools({ manager: connections, connectChrome: options.connectChromeBrowser }), ...createDirectBrowserProfileTools({ profiles: browserProfiles, manager: connections, onChange: refreshBrowserProfiles }), ...(options.desktopRestart ? [desktopRestartTool({ restart: options.desktopRestart, getJob: id => directExecution.jobs.get(id) })] : []), ...(options.frontendDevtools ? [frontendDevtoolsTool({ frontend: options.frontendDevtools, artifactDirectory: path.join(dataDir, 'frontend-development') })] : []), ...createDirectBrowserCredentialTools({ vault: browserCredentials, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes) })],
     authorizeClient: async (client, { requiredScopes }) => {
       if (client.id === 'local-browser-tools' && client.kind === 'local-browser') return !connectorClosing() && requiredScopes.every(scope => LOCAL_BROWSER_CLIENT.scopes.includes(scope));
+      if (client.id === LOCAL_FRONTEND_CLIENT.id && client.kind === LOCAL_FRONTEND_CLIENT.kind) return Boolean(options.frontendDevtools) && !connectorClosing() && requiredScopes.every(scope => LOCAL_FRONTEND_CLIENT.scopes.includes(scope));
       const current = await chatGPTOAuth.getClient(client.id);
       return Boolean(chatGPTConnector?.enabled && current && requiredScopes.every(scope => current.scopes.includes(scope)));
     },
@@ -909,6 +912,16 @@ export async function createHarnessServer(options = {}) {
         if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !['tool', 'arguments'].includes(key)) || !LOCAL_BROWSER_TOOLS.has(value.tool)) return json(res, 400, { error: 'Choose a supported BLACKICE browser command.' });
         return json(res, 200, await directExecution.call(value.tool, value.arguments, LOCAL_BROWSER_CLIENT));
       }
+      if (pathname === '/api/development/frontend' && req.method === 'POST') {
+        if (req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Use blackice_frontend through the authenticated connector for remote development.' });
+        return json(res, 200, await directExecution.call('blackice_frontend', await body(req), LOCAL_FRONTEND_CLIENT));
+      }
+      const frontendJob = pathname.match(/^\/api\/development\/frontend\/jobs\/(direct_[a-f0-9]{64})$/);
+      if (frontendJob && req.method === 'GET') {
+        if (req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Read remote development results with blackice_get_job.' });
+        const query = new URL(req.url, `http://${host}`).searchParams;
+        return json(res, 200, await directExecution.getJob(frontendJob[1], LOCAL_FRONTEND_CLIENT, { offset: Number(query.get('offset') || 0), limit: Number(query.get('limit') || 50000), includeImages: query.get('includeImages') !== 'false' }));
+      }
       const browserCommandJob = pathname.match(/^\/api\/browser\/commands\/(direct_[a-f0-9]{64})$/);
       if (browserCommandJob && req.method === 'GET') {
         if (req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Read remote browser results with blackice_get_job.' });
@@ -1098,7 +1111,7 @@ export async function createHarnessServer(options = {}) {
       // Explicit file registration retains the static path boundary.
       files['/assets/blackice-dark-ice.png'] = 'assets/blackice-dark-ice.png';
       files['/assets/blackice-v2-mark.svg'] = 'assets/blackice-v2-mark.svg';
-      const nextFiles = ['index.html','base.css','chat.css','chat-management.css','brand.css','work-visual.css','intelligence-planning.css','intelligence-map.css','controls.css','guard.js','app.mjs',
+      const nextFiles = ['index.html','base.css','chat.css','chat-management.css','brand.css','work-visual.css','intelligence-planning.css','intelligence-map.css','controls.css','layout-fixes.css','planning-ontology.css','guard.js','app.mjs',
         'core/api.mjs','core/dom.mjs','core/events.mjs',
         'chat/chat.mjs','chat/model.mjs','chat/render.mjs','chat/send.mjs',
         'chat/options-model.mjs','chat/artifacts.mjs','parity.css',

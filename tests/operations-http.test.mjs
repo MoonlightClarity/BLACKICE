@@ -72,12 +72,13 @@ test('authenticated HTTP config reports exact webhook URLs and requires explicit
   assert.equal(f.app.operations.getJob(admitted.data.id).outbound.state,'delivered');
 });
 
-test('repeated cron occurrences continue one conversation and one saved Planning task across host restart',async t=>{
+for(const codexHistory of ['relay','codex']) test(`repeated cron occurrences retain revised instructions, conversation and Planning task across pause and host restart (${codexHistory})`,async t=>{
   const f=await fixture(t),schedule=await f.create({
     name:'Recurring research continuity fixture',
     trigger:{type:'cron',expression:'*/30 * * * *',timezone:'America/New_York'},
     overlap:'skip'
   });
+  assert.equal((await f.request('/api/runtime/settings',{method:'POST',body:{codexHistory}})).status,200);
   const trigger=async key=>{
     const admitted=await f.request('/api/operations/deployments/'+schedule.id+'/trigger',{method:'POST',body:{idempotencyKey:key}});
     assert.equal(admitted.status,202,JSON.stringify(admitted.data));
@@ -90,13 +91,33 @@ test('repeated cron occurrences continue one conversation and one saved Planning
   assert.equal(firstRun.taskId,firstRunId);
   const originalPlan=await f.app.tasks.get(firstRunId);
   assert.ok(originalPlan.taskId===firstRunId);
+  const originalPrompt=firstRun.workflow.nodes.find(node=>node.id==='agent').prompt;
+  const currentInstructions='UPDATED_RECURRING_INSTRUCTIONS: Use current evidence to write and independently verify the isolated fixture result.';
+  const updatedWorkflow=workflow();updatedWorkflow.nodes.find(node=>node.id==='agent').prompt=currentInstructions;
+  const paused=await f.request('/api/operations/deployments/'+schedule.id,{method:'PUT',body:{
+    expectedRevision:schedule.revision,enabled:false,workflow:updatedWorkflow
+  }});
+  assert.equal(paused.status,200,JSON.stringify(paused.data));
+  assert.equal(paused.data.enabled,false);assert.equal(paused.data.nextAt,null);
   await f.restart();
+  const restored=(await f.request('/api/operations/deployments/'+schedule.id)).data;
+  assert.equal(restored.enabled,false,'an explicit pause survives host restart');
+  assert.equal(restored.workflow.nodes.find(node=>node.id==='agent').prompt,currentInstructions);
+  const resumed=await f.request('/api/operations/deployments/'+schedule.id,{method:'PUT',body:{
+    expectedRevision:restored.revision,enabled:true
+  }});
+  assert.equal(resumed.status,200,JSON.stringify(resumed.data));
   const second=await trigger('research-2'),secondRunId=second.attempts.at(-1).runId;
   assert.notEqual(firstRunId,secondRunId,'each execution retains an individual run receipt');
   const secondRun=await f.app.conversations.get(secondRunId);
   assert.equal(secondRun.kind,'continuation','scheduled research continues rather than restarting an unrelated conversation');
   assert.equal(secondRun.parentRunId,firstRunId);
   assert.equal(secondRun.taskId,firstRunId,'both runs share one conversation root and persisted Planning task');
+  assert.equal(secondRun.workflow.nodes.find(node=>node.id==='agent').prompt,currentInstructions);
+  assert.ok(f.calls[1].prompt.includes(currentInstructions),'the actual resumed model turn receives the current instructions');
+  if(codexHistory==='codex')assert.equal(f.calls[1].threadId,firstRun.nodes.agent.threadId,'native history resumes the provider conversation');
+  else {assert.equal(f.calls[1].threadId,undefined);assert.equal(secondRun.modelHandoff.reason,'relay-history','Relay-only history retains the task while restoring saved context');}
+  assert.equal((await f.app.conversations.get(firstRunId)).workflow.nodes.find(node=>node.id==='agent').prompt,originalPrompt,'prior instructions remain in their original receipt');
   assert.equal(second.continuedFromRunId,firstRunId);
   assert.equal(second.conversationRootId,firstRunId);
   assert.equal(secondRun.metadata?.managedBy,'operations');
@@ -118,6 +139,8 @@ test('repeated cron occurrences continue one conversation and one saved Planning
   assert.equal(thirdRun.parentRunId,secondRunId,'the next scheduled turn continues the latest run');
   assert.equal(thirdRun.taskId,firstRunId,'subsequent occurrences keep the original Planning identity');
   assert.equal(third.conversationRootId,firstRunId);
+  assert.ok(f.calls[2].prompt.includes(currentInstructions),'later occurrences retain the revised instructions');
+  assert.equal(f.calls[2].threadId,codexHistory==='codex'?secondRun.nodes.agent.threadId:undefined);
   const longerFamily=await f.app.conversations.family(thirdRunId);
   assert.equal(longerFamily.rootId,firstRunId);
   assert.deepEqual(longerFamily.runs.map(run=>run.id),[firstRunId,secondRunId,thirdRunId]);

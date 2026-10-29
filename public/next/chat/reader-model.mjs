@@ -9,7 +9,7 @@ export function projectFamily(family) {
     const messages=messagesOfRun(run);
     const nodes=Object.fromEntries(Object.entries(run.nodes||{}).map(([id,node])=>[
       id,{status:node.status,threadId:node.threadId,resumeThreadId:node.resumeThreadId,
-        turnId:node.turnId,turnStatus:node.turnStatus,model:node.resolvedModel,
+        turnId:node.turnId,turnStatus:node.turnStatus,runtimePhase:node.runtimePhase,model:node.resolvedModel,
         output:node.output},
     ]));
     return {

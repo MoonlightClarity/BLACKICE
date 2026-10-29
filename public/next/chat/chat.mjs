@@ -62,8 +62,8 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     view.stop.hidden=!state.runs.some(running);
     view.stop.disabled=busy;
     const next=replyState(state.runs);
-    view.send.textContent=next.active?'Direct':'Send';
-    view.send.disabled=busy||state.attachmentsPending||bucket!=='active'||!next.canSend;
+    view.send.textContent=state.loading?'Loading…':next.active?'Direct':'Send';
+    view.send.disabled=busy||state.loading||Boolean(item&&!state.runs.length)||state.attachmentsPending||bucket!=='active'||!next.canSend;
     view.input.disabled=bucket!=='active'||state.managing;
     view.input.placeholder=bucket==='active'?'Message BLACKICE…':'Restore this conversation to reply';
     drawManagement();
@@ -93,22 +93,53 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     });
     drawManagement();
   }
-  async function loadList({ initialize=false }={}) {
-    if (!state.active||state.managing) return;
-    const token=++state.listRead,bucket=state.bucket;
-    try {
-      const answer=await api('/api/conversations?state='+encodeURIComponent(state.bucket));
-      if (!state.active||token!==state.listRead||bucket!==state.bucket||state.managing) return;
+  // A burst of catalog events needs one current read and one newest follow-up,
+  // not overlapping fetch/parse/sort/render work for the entire saved catalog.
+  let listFlight=null,listController=null,listBucket=null,listRequested=false,listInitialize=null,listWaiters=[];
+  function loadList({ initialize=false }={}) {
+    if(!state.active||state.managing||state.destroyed)return Promise.resolve(false);
+    state.listRead++;listRequested=true;
+    if(initialize)listInitialize={bucket:state.bucket,generation:state.generation};
+    const completion=new Promise(resolve=>listWaiters.push(resolve));
+    if(listFlight){if(listBucket!==state.bucket)listController?.abort();}
+    else void runListRead();
+    return completion;
+  }
+  async function runListRead(){
+    if(listFlight||!listRequested||!state.active||state.managing||state.destroyed)return;
+    listRequested=false;
+    const token=state.listRead,bucket=state.bucket,initial=listInitialize;
+    listInitialize=null;listBucket=bucket;
+    const controller=new AbortController();listController=controller;
+    let loaded=false;
+    listFlight=Promise.resolve().then(()=>api('/api/conversations?state='+encodeURIComponent(bucket),'GET',undefined,{signal:controller.signal}));
+    try{
+      const answer=await listFlight;
+      if(!state.active||token!==state.listRead||bucket!==state.bucket||state.managing||controller.signal.aborted){
+        if(initial&&listRequested&&!listInitialize&&initial.bucket===state.bucket&&initial.generation===state.generation)listInitialize=initial;
+        return;
+      }
       state.list=summaries(answer.conversations).map(item=>({...item,state:conversationBucket(item.state)||bucket}));indexPaint();
       const current=state.list.find(item=>rootId(item)===root());
       if(current){state.selected={...state.selected,...current};updateHead();}
-      if(initialize&&!state.selected) {
+      loaded=true;
+      if(initial&&initial.bucket===state.bucket&&initial.generation===state.generation&&!state.selected){
         let remembered='';
-        try { remembered=localStorage.getItem('blackice.next.selected')||localStorage.getItem('relay.mission.returnRun')||''; } catch{}
+        try{remembered=localStorage.getItem('blackice.next.selected')||localStorage.getItem('relay.mission.returnRun')||'';}catch{}
         const chosen=state.list.find(item=>rootId(item)===remembered||lastRunId(item)===remembered);
-        if(chosen) await open(chosen);
+        if(chosen)await open(chosen);
       }
-    }catch(error){if(state.active&&token===state.listRead){showError(error);notify('Could not load conversations: '+error.message,true);}}
+    }catch(error){
+      if(state.active&&token===state.listRead&&!controller.signal.aborted){showError(error);notify('Could not load conversations: '+error.message,true);}
+    }finally{
+      listFlight=null;
+      if(listController===controller)listController=null;
+      if(listRequested&&state.active&&!state.managing&&!state.destroyed)void runListRead();
+      else{
+        listRequested=false;listInitialize=null;
+        const waiters=listWaiters;listWaiters=[];for(const resolve of waiters)resolve(loaded);
+      }
+    }
   }
   function managementTarget(id){
     const listed=state.list.find(item=>rootId(item)===id),selected=root()===id?state.selected:null;
@@ -235,7 +266,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     const id=rootId(item);
     state.generation++;
     state.dataController?.abort();
-    const controller=new AbortController();state.dataController=controller;
+    const controller=new AbortController();state.dataController=controller;state.loading=true;
     state.selected=item;
     if(!refresh){clearTimeout(state.liveTimer);state.liveTimer=null;state.stream.length=0;
       state.runs=[];state.count=12;state.messageLimits.clear();choose(id);
@@ -245,6 +276,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     try { family=await reader.load(lastRunId(item),{signal:controller.signal}); }
     catch(error){if(controller.signal.aborted||error.name==='AbortError')return;
       if(state.active&&state.dataController===controller){
+        state.loading=false;updateHead();
         showError(error);
         view.timeline.replaceChildren();
         const panel=document.createElement('div');panel.className='next-chat-intro';
@@ -256,6 +288,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       }
       return;}
     if(!state.active||state.dataController!==controller||controller.signal.aborted) return;
+    state.loading=false;
     state.selected={...state.selected,...(family.state?{state:family.state}:{}),...(family.title?{title:family.title,rootTitle:family.title}:{})};
     const runs=conversationRuns(family);
     state.messageLimits=messageLimitsAfterRefresh(state.runs,runs,state.messageLimits);
@@ -268,13 +301,13 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
           render({preserve:true});
       }).catch(()=>{});
     }
-    hint('Enter to send · Shift+Enter for a new line');
+    hint(runs.length?'Enter to send · Shift+Enter for a new line':'No saved response is available to continue. Try opening this conversation again.');
     try { localStorage.setItem('blackice.next.selected',id); } catch {}
     if(!state.markdown) void loadMarkdown();
   }
   function showNew({focus=true}={}) {
     if(state.managing)return;
-    state.generation++;state.dataController?.abort();
+    state.generation++;state.dataController?.abort();state.loading=false;
     clearTimeout(state.liveTimer);state.liveTimer=null;state.stream.length=0;
     state.selected=null;state.runs=[];state.count=12;state.messageLimits.clear();
     choose('new');attachmentsUI.refreshEditability();
@@ -295,6 +328,11 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   }
   async function send() {
     if(state.pending||state.managing||state.attachmentsPending||selectedBucket()!=='active')return;
+    if(state.selected&&(state.loading||!state.runs.length)){
+      if(state.loading)hint('This conversation is still loading. Your draft is unchanged.');
+      else showError('The saved conversation is unavailable. Retry opening it before sending; your draft is unchanged.');
+      return;
+    }
     const task=view.input.value.trim();if(!task)return;
     const submittedOwner=state.inputOwner,submittedRevision=state.inputRevision;
     state.pending=true;updateHead();hint('Sending your message…');
@@ -356,7 +394,11 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     if(event.type==='run.updated'){
       const updated=event.data?.run||event.data;
       const item=state.list.find(item=>lastRunId(item)===event.runId);
-      if(item&&updated?.id===event.runId){item.status=updated.status;item.settled=updated.settled;indexPaint();}
+      if(item&&updated?.id===event.runId&&(item.status!==updated.status||item.settled!==updated.settled)){
+        item.status=updated.status;item.settled=updated.settled;
+        if(listFlight)void loadList();
+        indexPaint();
+      }
       if(lastRunId(state.selected)===event.runId&&updated?.id===event.runId)state.selected={...state.selected,status:updated.status,settled:updated.settled};
     }
     if(!event.runId || !state.runs.some(run=>run.id===event.runId))return;
@@ -451,7 +493,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       refreshChoices();
       view.bucket.value=state.bucket;attachmentsUI.refreshEditability();
       if(state.selected){
-        if(state.runs.some(running)||Date.now()-state.lastLoadedAt>30000)void open(state.selected,{refresh:true});
+        if(!state.runs.length||state.runs.some(running)||Date.now()-state.lastLoadedAt>30000)void open(state.selected,{refresh:true});
         void loadList();
       }
       else void loadList({initialize:true});
@@ -459,8 +501,9 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     },
     leave() {
       state.active=false;state.generation++;state.listRead++;state.unsubscribe?.();state.unsubscribe=null;
+      listRequested=false;listInitialize=null;listController?.abort();
       closeTrash();if(view.renameDialog.open){view.renameDialog.close();if(!state.managing)renameTarget=null;}
-      state.dataController?.abort();artifacts.cancel();
+      state.dataController?.abort();state.loading=false;artifacts.cancel();
       clearTimeout(state.listTimer);clearTimeout(state.liveTimer);clearTimeout(settleTimer);
       clearTimeout(searchTimer);searchTimer=null;
       clearTimeout(draftTimer);saveDraft();

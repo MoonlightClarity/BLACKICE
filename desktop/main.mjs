@@ -31,6 +31,7 @@ import { electronExitReceipt } from './electron-exit-diagnostics.mjs';
 import { initializeLocalCrashReporting } from './local-crash-reporting.mjs';
 import { nativeOwnershipPossible, assertNativeParentUnowned, createNativeParentRetainer, createNativeParentCloseHandler, createNativeSafeQuitHandler } from './native-parent-lifetime.mjs';
 import { createLiveBrowserWindow, performBrowserSurface } from './browser-surface.mjs';
+import { createFrontendDevtools } from './frontend-devtools.mjs';
 
 const accessArgs = desktopRemoteAccessArgs(process.argv, { packaged: app.isPackaged });
 const browserArgs = desktopBrowserArgs(process.argv, { packaged: app.isPackaged });
@@ -59,6 +60,8 @@ const DESKTOP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const APP_DIR = path.dirname(DESKTOP_DIR);
 const ACTIVE = new Set(['queued', 'running', 'waiting']);
 let mainWindow, harness, origin, shutdownPromise, didClose = false;
+const frontendDevtools = createFrontendDevtools({ getWindow: () => mainWindow, getAppMetrics: () => app.getAppMetrics() });
+app.on('will-quit', () => { try { frontendDevtools.close(); } catch (error) { console.error('BLACKICE frontend developer cleanup:', error.message); } });
 // Native Applications was retired: no external window manager, COM host or
 // operating-system application process is instantiated by BLACKICE.
 const nativeApps = Object.freeze({
@@ -317,7 +320,7 @@ async function startLocalHarness(dataDir, defaultCwd) {
       decryptSecret: value => safeStorage.decryptString(Buffer.from(value, 'base64')),
     } : {};
     const credentialStorage = { ...secretStorage, storageBackend: () => process.platform === 'win32' ? 'dpapi' : process.platform === 'darwin' ? 'keychain' : safeStorage.getSelectedStorageBackend(), isEncryptionAvailable: () => safeStorage.isEncryptionAvailable() };
-    try { return await createHarnessServer({ installPath: path.dirname(process.execPath), port: selectedPort, dataDir, defaultCwd, browser, secretStorage, credentialStorage,
+    try { return await createHarnessServer({ installPath: path.dirname(process.execPath), port: selectedPort, dataDir, defaultCwd, browser, secretStorage, credentialStorage, frontendDevtools,
       protectCredentialTemporaryDirectory: credentialTemporaryProtection({ dataDir }), revealCredentialImportFile: filename => shell.showItemInFolder(filename),
       openExternal: url => shell.openExternal(url), nativeWindows:null, tokenRuntimeExecutable: process.execPath, diagnostics, desktopLifecycle, desktopRestart, connectionStartup, maintenanceStatus:()=>maintenanceReceipt?{mode:maintenanceReceipt.mode,status:maintenanceReceipt.status,requiresReauthentication:maintenanceReceipt.result?.requiresReauthentication===true}:null, signedBrowser: true, startSignedBrowser: browserOptions => startBackgroundBrowser(browserOptions) }); }
     catch (error) { await browser.close(); throw error; }
@@ -349,7 +352,7 @@ function createWindow() {
       preload: path.join(DESKTOP_DIR, 'preload.cjs'),
       nodeIntegration: false, contextIsolation: true, sandbox: true,
       webSecurity: true, allowRunningInsecureContent: false,
-      webviewTag: false, devTools: !app.isPackaged,
+      webviewTag: false, devTools: true,
       spellcheck: false,
       additionalArguments: [`--relay-version=${app.getVersion()}`],
     },

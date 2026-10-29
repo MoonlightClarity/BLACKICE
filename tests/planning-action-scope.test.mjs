@@ -24,35 +24,28 @@ test('an explicit prerequisite remains binding for an action', () => {
   assert.match(PLANNING_DEPTH_INSTRUCTIONS, /user requires a choice|action would foreclose another/i);
 });
 
-test('planning and execution stay aligned with the person requesting help', () => {
-  // Applies to an analysis, an independent repair, and a purchasing decision,
-  // including the individual budget or other constraints supplied by the user.
-  assert.match(PLANNING_DEPTH_INSTRUCTIONS, /Throughout planning and execution, represent the person being helped/);
-  assert.match(PLANNING_DEPTH_INSTRUCTIONS, /pursue their actual objective, priorities and constraints/);
-  assert.match(PLANNING_DEPTH_INSTRUCTIONS, /choose work that advances the outcome they requested/);
-  assert.match(PLANNING_DEPTH_INSTRUCTIONS, /Use honest evidence, respect actual constraints and host controls/);
-  assert.match(PLANNING_DEPTH_INSTRUCTIONS, /explain consequential uncertainty or conflict/);
-  // The principle is also present in the always-on harness, including when
-  // optional task planning is off.
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Represent the person being helped throughout planning and execution/);
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /actual objectives, priorities and constraints/);
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /never invent qualifications, results, endorsements/);
+test('planning and execution keep outcome, evidence and consequence in the supplied guidance', () => {
+  // Wiring checks only. Actual judgment is evaluated through matched model runs,
+  // not certified by the presence of words in an instruction.
   for (const instruction of [BLACKICE_HARNESS_INSTRUCTIONS, PLANNING_DEPTH_INSTRUCTIONS]) {
-    assert.match(instruction, /reasonable inferences from the whole record and (?:the )?context/i);
-    assert.match(instruction, /missing verbatim statement alone is not a reason to stop/i);
-    assert.match(instruction, /material answer remains genuinely unsupported/i);
+    assert.match(instruction, /Plan backward from (?:their|the user’s) desired outcome/);
+    assert.match(instruction, /opportunity cost/);
+    assert.match(instruction, /(?:Preserve|preserve) (?:their actual|actual user) constraints/);
+    assert.match(instruction, /(?:realistic ability|could realistically do the work)/);
   }
+  assert.doesNotMatch(BLACKICE_HARNESS_INSTRUCTIONS, /prioritize avoiding catastrophic failure.*in that order/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /likelihood and severity together/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /A missing verbatim statement is not missing evidence/);
 });
 
-test('representing a product proposal emphasizes supportable value without inventing claims', () => {
-  // For a requested product proposal, the guidance supports relevant benefits
-  // without treating unrelated missing features as automatic disqualification.
-  assert.match(PLANNING_DEPTH_INSTRUCTIONS, /represent a person, product or proposal/);
-  assert.match(PLANNING_DEPTH_INSTRUCTIONS, /strongest relevant, supportable facts/);
-  assert.match(PLANNING_DEPTH_INSTRUCTIONS, /Do not volunteer unrequested gaps, absences, or unfavorable comparisons merely for balance/);
-  assert.match(PLANNING_DEPTH_INSTRUCTIONS, /Answer required questions honestly/);
-  assert.match(PLANNING_DEPTH_INSTRUCTIONS, /facts necessary to avoid a materially misleading answer/);
-  assert.match(PLANNING_DEPTH_INSTRUCTIONS, /do not invent qualifications, results, endorsements/);
+test('representation guidance distinguishes audience relevance from material factual accuracy', () => {
+  for (const instruction of [BLACKICE_HARNESS_INSTRUCTIONS, PLANNING_DEPTH_INSTRUCTIONS]) {
+    assert.match(instruction, /actual question/);
+    assert.match(instruction, /(?:unasked weaknesses)/);
+    assert.match(instruction, /private negotiating limits/);
+    assert.match(instruction, /Answer material factual questions accurately/);
+    assert.match(instruction, /(?:never invent|without inventing) (?:qualifications|claims)/);
+  }
 });
 
 test('both planning modes keep the current direction distinct from past background and select artifacts for the audience', () => {

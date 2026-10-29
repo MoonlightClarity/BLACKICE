@@ -1,6 +1,6 @@
 {
   "name": "relay-agent-harness",
-  "version": "2.36.0",
+  "version": "2.36.1",
   "author": "BLACKICE",
   "private": true,
   "type": "module",

@@ -349,7 +349,7 @@ test('navigation retires accumulated refs before any input', async t => {
 test('unexpected renderer failures retain their message without trusting a page-supplied no-effect claim', async t => {
   const { driver } = await fixture(t), tab = driver.newTab('https://example.test/composer'); await tab.loading;
   let scrolls = 0;
-  const element = { isConnected: true, getAttribute: () => null, scrollIntoView: () => { scrolls++; }, getBoundingClientRect() { throw Object.assign(new Error('Layout changed after scrolling.'), { code: 'BROWSER_LAYOUT_FAILED', actionDispatched: false }); } };
+  const element = { isConnected: true, getAttribute: () => null, scrollIntoView: () => { scrolls++; }, getBoundingClientRect() { throw Object.assign(new Error('Layout changed after scrolling.'), { code: 'BROWSER_LAYOUT_FAILED', actionDispatched: false, inputDispatched: false }); } };
   const frame = tab.window.webContents.mainFrame, context = vm.createContext({ [driver.key]: { elements: new Map([['media', element]]) } });
   frame.executeJavaScript = async code => {
     try { return JSON.parse(JSON.stringify(await vm.runInContext(code, context))); }
@@ -361,6 +361,39 @@ test('unexpected renderer failures retain their message without trusting a page-
   assert.equal(result.success, false); assert.equal(result.code, 'BROWSER_LAYOUT_FAILED');
   assert.deepEqual(JSON.parse(result.contentItems[0].text), { error: 'Layout changed after scrolling.', code: 'BROWSER_LAYOUT_FAILED' });
   assert.equal(scrolls, 1, 'Renderer work has already changed the page before the error.');
+});
+
+test('a page change during pre-pointer capture reports prevented input and permits recovery from a fresh snapshot', async t => {
+  const { driver } = await fixture(t); await driver.init();
+  const page = await driver.perform({ action: 'open', url: 'https://example.test/application' }, { source: 'user' });
+  const tab = driver.tabs.get(page.tabId), wc = tab.window.webContents, capture = wc.capturePage;
+  const click = snapshot => ({ action: 'click', tabId: tab.id, x: 20, y: 20, expectedDocumentId: snapshot.documentId, expectedUrl: snapshot.url });
+  wc.capturePage = async (...args) => { const image = await capture(...args); tab.revision++; return image; };
+  await assert.rejects(driver.perform(click(page), { source: 'user' }), cause => {
+    assert.equal(cause.code, 'BROWSER_INPUT_DOCUMENT_CHANGED');
+    assert.equal(cause.inputDispatched, false);
+    assert.equal(cause.actionDispatched, undefined, 'Preparation may already have changed the page.');
+    return true;
+  });
+  assert.equal(tab.window.protocol.filter(call => call.method === 'Input.dispatchMouseEvent').length, 0);
+  wc.capturePage = capture;
+  const fresh = await driver.perform({ action: 'snapshot', tabId: tab.id }, { source: 'user' });
+  const result = await driver.perform(click(fresh), { source: 'user' });
+  assert.equal(result.receipt.clicked, true);
+  assert.equal(tab.window.protocol.filter(call => call.method === 'Input.dispatchMouseEvent' && call.params.type === 'mousePressed').length, 1);
+});
+
+test('capture failures outside input preparation make no dispatch claim', async t => {
+  const { driver } = await fixture(t); await driver.init();
+  const tab = driver.newTab('https://example.test/'); await tab.loading;
+  const capture = tab.window.webContents.capturePage;
+  tab.window.webContents.capturePage = async (...args) => { const image = await capture(...args); tab.revision++; return image; };
+  await assert.rejects(driver.capture(tab, undefined, tab.revision), cause => {
+    assert.match(cause.message, /page changed/);
+    assert.equal(cause.inputDispatched, undefined);
+    assert.equal(cause.actionDispatched, undefined);
+    return true;
+  });
 });
 
 test('the dedicated contained profile grants website capabilities for documents, subframes and workers', async t => {

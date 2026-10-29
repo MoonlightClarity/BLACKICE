@@ -132,6 +132,8 @@ test('browser failure receipts retain non-Error messages and never collapse unkn
   const stale = 'This element ref is stale. Take a new snapshot and choose its current ref.';
   for (const [reason, expected] of [
     [Object.assign(new Error(stale), { code: 'BROWSER_REF_STALE', actionDispatched: false }), { error: stale, code: 'BROWSER_REF_STALE', actionDispatched: false }],
+    [Object.assign(new Error('The page changed before input.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', inputDispatched: false }), { error: 'The page changed before input.', code: 'BROWSER_INPUT_DOCUMENT_CHANGED', inputDispatched: false }],
+    [Object.assign(new Error('The response was lost after input.'), { inputDispatched: true }), { error: 'The response was lost after input.', code: 'BROWSER_ACTION_FAILED', inputDispatched: true }],
     [stale, { error: stale, code: 'BROWSER_ACTION_FAILED' }],
     [{ description: 'The node no longer exists.', code: -32000 }, { error: 'The node no longer exists.', code: -32000 }],
     ...[{}, null, undefined].map(reason => [reason, { error: 'The browser action failed without error details. Inspect the current page before repeating it.', code: 'BROWSER_ACTION_FAILED' }]),

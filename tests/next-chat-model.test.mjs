@@ -38,6 +38,20 @@ test('windowed transcript bounds DOM work independently of number of saved turns
   assert.equal(view.shown[0].id,'r2988');
   assert.equal(view.shown.at(-1).id,'r2999');
 });
+
+test('conversation projection preserves opening phases needed to direct the active agent',()=>{
+  for(const phase of ['opening','inquiry-opening','inquiry','main-opening']){
+    const source=sampleRun('opening','running');
+    delete source.nodes.agent.turnId;
+    source.nodes.agent.runtimePhase=phase;
+    const family=projectFamily({runs:[source],rootId:'conversation'});
+    assert.equal(family.runs[0].nodes.agent.runtimePhase,phase);
+    const target=replyTarget(family.runs);
+    assert.equal(target.active,true);
+    assert.equal(target.nodeId,'agent');
+    assert.equal(target.run.id,'opening');
+  }
+});
 test('sidebar windows a 20,000-conversation catalog without losing deep selection or search',()=>{
   const catalog=Array.from({length:20000},(_,i)=>({id:'saved-'+i,title:i===19800?'Needle from archived history':'Conversation '+i}));
   assert.equal(CHAT_INDEX_BATCH,80);

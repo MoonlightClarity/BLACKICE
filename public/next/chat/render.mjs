@@ -62,57 +62,116 @@ export function createChatFrame(mount) {
     effort:find('next-chat-effort'),tier:find('next-chat-tier'),send:find('next-chat-send'),hint:find('next-chat-hint') };
 }
 
+// Keep DOM identity while live metadata changes. The cache contains only the
+// exposed window, so the full searchable catalog never becomes a DOM cache.
+const indexViews = new WeakMap();
+
 export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATCH,onMore,selecting=false,selection=new Map(),onToggle,onAction,busy=false}={}) {
-  const fragment = view.list.ownerDocument.createDocumentFragment();
+  const list=view.list,doc=list.ownerDocument;
+  let cache=indexViews.get(list);
+  if(!cache){cache={rows:new Map()};indexViews.set(list,cache);}
+  cache.onMore=onMore;
   const {shown,hidden,pinned}=conversationIndexWindow(items,limit,chosen);
-  if (!items.length) text(fragment,'No conversations here.','p','next-chat-placeholder');
-  const add = item => {
-    const id = rootId(item), title = item.rootTitle || item.title || 'Conversation';
-    const row=text(fragment,'','div','next-conversation-row');
-    if(selecting){
-      const choice=text(row,'','label','next-conversation-choice');
-      const check=text(choice,'','input');check.type='checkbox';check.dataset.chatSelect=id;check.checked=selection.has(id);check.disabled=busy;
-      check.setAttribute('aria-label','Select '+title);check.addEventListener('change',()=>onToggle?.(item,check.checked));
-    }
-    const button = text(row,'','button','next-conversation');
-    button.type='button';button.dataset.conversation=id;
-    button.disabled=busy;
-    button.setAttribute('aria-current',String(id===chosen));
-    text(button,title,'span','next-conversation-title');
-    const foot=text(button,'','span','next-conversation-meta');
-    text(foot,(item.status||'Saved').replaceAll('_',' '));
-    text(foot,formatDate(item.updatedAt||item.createdAt));
-    button.addEventListener('click',()=>onSelect(item));
-    if(!selecting&&onAction){
-      const menu=text(row,'','details','next-conversation-actions');
-      const summary=text(menu,'…','summary');summary.setAttribute('aria-label','Actions for '+title);
-      const actions=text(menu,'','div','next-conversation-menu');
-      const bucket=item.state||'active';
-      for(const [action,label]of [...(bucket!=='deleted'?[['rename','Rename']]:[]),[bucket==='active'?'archive':'restore',bucket==='active'?'Archive':'Restore'],...(bucket!=='deleted'?[['delete','Move to Trash']]:[])]){
-        const control=text(actions,label,'button');control.type='button';control.dataset.chatAction=action;control.disabled=busy||(action==='delete'&&running(item));
-        if(action==='delete'&&running(item))control.title='Stop this chat before moving it to Trash.';
-        control.addEventListener('click',()=>{menu.open=false;onAction(item,action);});
-      }
-      for(const [format,label]of [['markdown','Export Markdown'],['json','Export JSON']]){
-        const link=text(actions,label,'a');link.href='/api/conversations/'+encodeURIComponent(lastRunId(item))+'/export?format='+format;link.download='';
-      }
-    }
+  const visible=pinned?[pinned,...shown]:shown,order=[],retained=new Set();
+  const focused=list.contains(doc.activeElement)?doc.activeElement:null,scrollTop=list.scrollTop;
+  const setText=(node,value)=>{if(node.textContent!==value)node.textContent=value;};
+  const marker=(key,label,className,tag='p')=>{
+    if(!cache[key]){const node=doc.createElement(tag);node.className=className;cache[key]=node;}
+    setText(cache[key],label);return cache[key];
   };
-  // Deep-linked conversations can be older than the visible batch. Keep the
-  // current selection accessible without mounting the entire history.
-  if (pinned) {
-    text(fragment,'Current conversation','p','next-conversation-pinned-label');
-    add(pinned);
+  if(!items.length)order.push(marker('empty','No conversations here.','next-chat-placeholder'));
+  if(pinned)order.push(marker('pinned','Current conversation','next-conversation-pinned-label'));
+  for(const item of visible){
+    const id=rootId(item),title=String(item.rootTitle||item.title||'Conversation');
+    const bucket=item.state||'active',actions=Boolean(onAction)&&!selecting;
+    let entry=cache.rows.get(id);
+    if(!entry||entry.selecting!==selecting||entry.hasActions!==actions||entry.bucket!==bucket){
+      const row=doc.createElement('div');row.className='next-conversation-row';
+      entry={row,selecting,hasActions:actions,bucket,controls:new Map(),exports:[]};
+      cache.rows.set(id,entry);
+      if(selecting){
+        const choice=text(row,'','label','next-conversation-choice');
+        const check=text(choice,'','input');check.type='checkbox';check.dataset.chatSelect=id;
+        entry.check=check;
+        check.addEventListener('change',()=>entry.onToggle?.(entry.item,check.checked));
+      }
+      const button=text(row,'','button','next-conversation');
+      button.type='button';button.dataset.conversation=id;
+      entry.button=button;entry.titleNode=text(button,'','span','next-conversation-title');
+      const foot=text(button,'','span','next-conversation-meta');
+      entry.statusNode=text(foot,'');entry.dateNode=text(foot,'');
+      button.addEventListener('click',()=>entry.onSelect?.(entry.item));
+      if(actions){
+        const menu=text(row,'','details','next-conversation-actions');entry.menu=menu;
+        entry.summary=text(menu,'…','summary');
+        const contents=text(menu,'','div','next-conversation-menu');
+        for(const [action,label]of [...(bucket!=='deleted'?[['rename','Rename']]:[]),[bucket==='active'?'archive':'restore',bucket==='active'?'Archive':'Restore'],...(bucket!=='deleted'?[['delete','Move to Trash']]:[])]){
+          const control=text(contents,label,'button');control.type='button';control.dataset.chatAction=action;
+          entry.controls.set(action,control);
+          control.addEventListener('click',()=>{menu.open=false;entry.onAction?.(entry.item,action);});
+        }
+        for(const [format,label]of [['markdown','Export Markdown'],['json','Export JSON']]){
+          const link=text(contents,label,'a');link.download='';entry.exports.push([link,format]);
+        }
+      }
+    }
+    // Event handlers read the latest row and callbacks even when a refreshed
+    // catalog has identical visible text but a newer continuation identifier.
+    entry.item=item;entry.onSelect=onSelect;entry.onToggle=onToggle;entry.onAction=onAction;
+    if(entry.title!==title){
+      setText(entry.titleNode,title);entry.title=title;
+      entry.check?.setAttribute('aria-label','Select '+title);
+      entry.summary?.setAttribute('aria-label','Actions for '+title);
+    }
+    const status=String(item.status||'Saved').replaceAll('_',' ');
+    if(entry.status!==status){setText(entry.statusNode,status);entry.status=status;}
+    const date=item.updatedAt||item.createdAt;
+    if(entry.date!==date){setText(entry.dateNode,formatDate(date));entry.date=date;}
+    const selected=id===chosen;
+    if(entry.selected!==selected){entry.button.setAttribute('aria-current',String(selected));entry.selected=selected;}
+    if(entry.button.disabled!==busy)entry.button.disabled=busy;
+    if(entry.check){
+      const checked=selection.has(id);
+      if(entry.check.checked!==checked)entry.check.checked=checked;
+      if(entry.check.disabled!==busy)entry.check.disabled=busy;
+    }
+    const working=running(item);
+    for(const [action,control]of entry.controls){
+      const disabled=busy||(action==='delete'&&working);
+      if(control.disabled!==disabled)control.disabled=disabled;
+      if(action==='delete'){
+        const hint=working?'Stop this chat before moving it to Trash.':'';
+        if(control.title!==hint)control.title=hint;
+      }
+    }
+    const runId=lastRunId(item);
+    if(entry.runId!==runId){
+      for(const [link,format]of entry.exports)link.href='/api/conversations/'+encodeURIComponent(runId)+'/export?format='+format;
+      entry.runId=runId;
+    }
+    retained.add(id);order.push(entry.row);
   }
-  for (const item of shown) add(item);
-  if (hidden > 0) {
-    const more=text(fragment,'Show '+Math.min(CHAT_INDEX_BATCH,hidden)+' more ('+hidden+' remaining)','button','next-conversation-more');
-    more.type='button';
-    more.addEventListener('click',()=>onMore?.());
+  if(hidden>0){
+    const more=marker('more','Show '+Math.min(CHAT_INDEX_BATCH,hidden)+' more ('+hidden+' remaining)','next-conversation-more','button');
+    if(!cache.moreBound){more.type='button';more.addEventListener('click',()=>cache.onMore?.());cache.moreBound=true;}
+    order.push(more);
   }
-  view.list.replaceChildren(fragment);
-  return pinned?[pinned,...shown]:shown;
+  // Move only rows whose order changed. Unchanged updates do not replace
+  // children, close a menu, blur a focused control, or reset the scroll position.
+  let moved=false;
+  for(let index=0;index<order.length;index++){
+    const existing=list.childNodes[index]||null;
+    if(existing!==order[index]){list.insertBefore(order[index],existing);moved=true;}
+  }
+  while(list.childNodes.length>order.length){list.lastChild.remove();moved=true;}
+  for(const id of cache.rows.keys())if(!retained.has(id))cache.rows.delete(id);
+  if(moved){
+    list.scrollTop=scrollTop;
+    if(focused?.isConnected&&doc.activeElement!==focused)focused.focus({preventScroll:true});
+  }
+  return visible;
 }
+
 export function paintIntroduction(view, message = '') {
   view.timeline.innerHTML='';
   const intro=text(view.timeline,'','div','next-chat-intro');

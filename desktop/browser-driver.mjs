@@ -1211,10 +1211,15 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
     await bounded(state.pending, signal);
   }
-  async capture(tab, signal, revision) {
+  async capture(tab, signal, revision, { beforeInput = false } = {}) {
     return captureHiddenPage(tab.window.webContents, { signal, assertCurrent: () => {
       if (this.closed || tab.window.isDestroyed()) throw error('The browser page closed before capture completed.');
-      if (revision !== undefined && tab.revision !== revision) throw error('The page changed while preparing browser input. Take a fresh snapshot before acting.');
+      if (revision !== undefined && tab.revision !== revision) {
+        // This host-observed failure precedes pointer dispatch. Preparation may
+        // have scrolled the page, so do not claim that the whole action had no effects.
+        if (beforeInput) throw Object.assign(error('The page changed before the requested pointer input was dispatched. Take a fresh snapshot before acting.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', inputDispatched: false });
+        throw error('The page changed while preparing browser input. Take a fresh snapshot before acting.');
+      }
     } });
   }
   async clickPoint(tab, point, signal, expected, sessionId) {
@@ -1475,7 +1480,7 @@ export class ElectronBrowserDriver extends EventEmitter {
         let { frame, result } = await this.element(tab, args, 'prepare', signal);
         const revision = tab.revision;
         // Flush layout/compositing after scroll or SPA changes before hit testing.
-        const { retries } = await this.capture(tab, signal, revision);
+        const { retries } = await this.capture(tab, signal, revision, { beforeInput: true });
         // A retry waited for another frame: the target can have moved or detached meanwhile.
         if (retries) ({ frame, result } = await this.element(tab, args, 'prepare', signal));
         const point = await this.browserPoint(tab, frame, result, signal);
@@ -1484,7 +1489,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       } else {
         const viewport = await bounded(tab.window.webContents.executeJavaScript('({width:innerWidth,height:innerHeight})'), signal);
         if (![args.x, args.y].every(n => Number.isFinite(n) && n >= 0) || args.x >= viewport.width || args.y >= viewport.height) throw error(`Screenshot coordinates must be within the current ${viewport.width} × ${viewport.height} browser viewport.`);
-        const { retries } = await this.capture(tab, signal, tab.revision);
+        const { retries } = await this.capture(tab, signal, tab.revision, { beforeInput: true });
         if (retries) {
           const current = await bounded(tab.window.webContents.executeJavaScript('({width:innerWidth,height:innerHeight})'), signal);
           if (current.width !== viewport.width || current.height !== viewport.height) throw error('The browser viewport changed while preparing input. Take a fresh screenshot before acting.');

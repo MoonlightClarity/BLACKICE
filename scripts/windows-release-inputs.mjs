@@ -11,6 +11,7 @@ topLevelFiles.add('RELEASE-NOTES-2.35.3.md');
 topLevelFiles.add('RELEASE-NOTES-2.35.4.md');
 topLevelFiles.add('RELEASE-NOTES-2.35.5.md');
 topLevelFiles.add('RELEASE-NOTES-2.35.6.md');
+topLevelFiles.add('RELEASE-NOTES-2.36.0.md');
 
 // Match the existing installer inputs without admitting arbitrary native helpers.
 const packagedNativeHelpers = new Set([

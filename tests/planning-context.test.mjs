@@ -87,3 +87,21 @@ test('a restarted engine supplies the latest paired-human work note on the actua
   assert.match(calls[1].developerInstructions, /planning is off/i);
   assert.equal((await restored.get(first.taskId)).revision, state.revision, 'The resumed response does not rewrite or finish the human-authored plan.');
 });
+
+test('plan provenance survives bounded excerpts and distinguishes the last human edit from the original method', async t => {
+  const f = await fixture(t);
+  let state = await f.store.ensure({ taskId: 'plan-provenance', runId: 'first-run', cwd: f.cwd, goal: 'Complete the requested research.', defaultPlan: true });
+  state = await f.store.editPlan(state.taskId, { operations: [{ type: 'add', step: action('search', { title: 'Use the earlier selected browser', status: 'blocked', blockedReason: 'The optional connection was unavailable at the previous observation.', note: 'Earlier implementation detail. '.repeat(20) }) }] }, { expectedRevision: state.revision, source: 'agent', runId: 'first-run', nodeId: 'agent' });
+  for (const maxChars of [512, 1500, 12000]) {
+    const context = await f.store.getContext(state.taskId, { maxChars });
+    assert.ok(context.length <= maxChars);
+    assert.ok(context.includes('Plan origin: ' + state.plan.origin + '; last updated by: agent.'));
+    assert.ok(context.indexOf('Plan origin:') < context.indexOf('Current milestone:'));
+  }
+  assert.deepEqual(await f.store.get(state.taskId), state, 'Rendering provenance does not rewrite a plan or its history.');
+  state = await edit(f.store, state, [{ type: 'update', stepId: 'search', patch: { note: 'Actual human constraint: preserve the selected signed-in profile.' } }]);
+  const humanContext = await f.store.getContext(state.taskId, { maxChars: 1500 });
+  assert.ok(humanContext.includes('Plan origin: ' + state.plan.origin + '; last updated by: human.'));
+  assert.match(humanContext, /Actual human constraint: preserve the selected signed-in profile/);
+  assert.deepEqual(await f.store.get(state.taskId), state);
+});
