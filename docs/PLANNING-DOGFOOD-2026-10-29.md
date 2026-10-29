@@ -79,7 +79,9 @@ The second workshop's archive retained 12 public activity records and all five r
 
 The response-preparation row is labeled “Compose response” and is supported by actual final-message-start metadata after a dated review. It does not claim to reveal private reasoning. Separately, the synthetic production-renderer browser fixture passed all ten checks, including chronology, one final answer, dotted hierarchy, live updates, containment and non-overlap, and was visually inspected in its composition mode.
 
-Final source-suite totals and verification of the exact Windows installer remain pending for this release candidate. Completed workshop observations, archive projections and presentation checks must not be relabeled as verification of the complete public build or Setup installer.
+The complete Windows source suite passed 5,265 tests across 430 test files, with eight predefined optional integrations skipped and no failures, cancellations or required skips. The tested 2.37.0 checkpoint is identified in the [source verification record](https://github.com/MoonlightClarity/BLACKICE/blob/v2.37.0/verification/windows-2.37.0.json); its tested commit, inventory, totals and log hashes define that result. The workshop observations, archive projections and presentation checks remain separate evidence. Publication of the Windows installer requires a fresh passing receipt for the exact Setup executable, reported with the actual release status on the [release page](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.37.0). The model trials and source tests do not substitute for that installer verification.
+
+The full suite also caught a missing static registration for the new timeline module. That registration was corrected before the final run. The real HTTP server served all 58 browser modules, and the installed app’s timeline endpoint returned the exact installed module after restart.
 
 ## Interpretation limits
 

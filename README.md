@@ -2,11 +2,13 @@
 
 BLACKICE is an open-source Windows application for working with AI agents on real tasks. It brings conversations, files, commands, web browsing, editable plans, reusable knowledge and recurring work into one desktop workspace. You can use an agent inside BLACKICE or connect an ordinary ChatGPT conversation to the tools on your computer.
 
-**Current public release: 2.37.0 for Windows x64. Project overview updated October 29, 2026.**
+**2.37.0 source checkpoint for Windows x64. Project overview updated October 29, 2026.**
 
-**[Download the Windows installer](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.37.0/Blackice-2.37.0-Setup.exe)** · [Release details](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.37.0) · [Release notes](RELEASE-NOTES-2.37.0.md) · [Checksums](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.37.0/SHA256SUMS.txt)
+**[2.37.0 Windows installer](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.37.0/Blackice-2.37.0-Setup.exe)** · [Release status and verification records](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.37.0) · [Release notes](RELEASE-NOTES-2.37.0.md) · [Checksums](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.37.0/SHA256SUMS.txt)
 
-BLACKICE is usable today and remains under active development. The current release includes the desktop workspace, direct ChatGPT connection, built-in browser, shared planning, coordinated agents and recurring tasks. The installer is currently unsigned. The [project state](#current-project-state) section explains what has been checked, what recently changed and what still needs work.
+Installer assets and checksums are published only after fresh verification of the exact Setup executable. Until publication, those asset links may be unavailable. The release page and its attached receipts report the actual publication and verification status.
+
+BLACKICE is usable today and remains under active development. The application includes the desktop workspace, direct ChatGPT connection, built-in browser, shared planning, coordinated agents and recurring tasks. The release manifest records the installer’s signing status. The [project state](#current-project-state) section explains what has been checked, what recently changed and what still needs work.
 
 [Getting started](#getting-started) · [Features](#what-you-can-do) · [Project state](#current-project-state) · [Data and updates](#your-data-background-operation-and-updates) · [Build from source](#build-from-source)
 
@@ -114,9 +116,9 @@ Chat preserves conversation history, drafts and attachments across navigation. C
 
 ## Current project state
 
-### What the current release brings together
+### What this source checkpoint includes
 
-The public **2.37.0** release adds a recursive planning checkpoint:
+The **2.37.0 source checkpoint** adds recursive planning:
 
 - **Executable substeps.** Plans use nested parent/child groups and concrete operations. Conditional choices support ordered IF/ELIF/ELSE, nested AND/OR/NOT/XOR, comparisons and membership tests over recorded observations.
 - **One operation at a time.** The runtime requires an eligible active leaf and its actual outcome before the next operation. Revisiting earlier work preserves previous attempts and puts dependent work back up for review without automatically repeating its effects.
@@ -125,11 +127,13 @@ The public **2.37.0** release adds a recursive planning checkpoint:
 
 The [2.37.0 release notes](RELEASE-NOTES-2.37.0.md), [planning contract](docs/RECURSIVE-PLANNING.md) and [bounded dogfood findings](docs/PLANNING-DOGFOOD-2026-10-29.md) describe the behavior and its limits. Earlier browser, conversation and workflow improvements remain described in the [2.36.1 notes](RELEASE-NOTES-2.36.1.md).
 
-### What has been checked
+### Verification and publication
 
-The published Windows installer has been checked for installation, shortcuts and registration, startup, restart, shutdown, profile backup and restore, and clean removal. Its packaged application files were compared with the released source. Automated source checks and the release's verification records are available for readers who want the technical evidence.
+The [source verification record](https://github.com/MoonlightClarity/BLACKICE/blob/v2.37.0/verification/windows-2.37.0.json) identifies the tested source checkpoint, its file and runtime fingerprints, complete test inventory, outcome counts and test-log hashes. The Windows run passed 5,265 tests across 430 test files, with eight predefined optional integrations skipped and no failures, cancellations or required skips.
 
-Those checks apply to the named release and installer. They do not mean every website, desktop application or model-driven task has been proven to work. The [release page](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.37.0), attached Windows installer verification records and [source verification record](https://github.com/MoonlightClarity/BLACKICE/blob/v2.37.0/verification/windows-2.37.0.json) contain the details.
+Publishing the Windows installer also requires fresh verification of that exact Setup executable: installation, shortcuts and registration, startup, restart, shutdown, profile backup and restore, clean removal, and comparison of its packaged application files with the release source. The [release page](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.37.0) reports the actual installer status and provides its verification records. A development installation, source test pass or model trial does not establish that the Setup installer passed.
+
+Each receipt applies to its named source checkpoint or installer artifact. It does not establish that every website, desktop application or model-driven task has been proven to work.
 
 ### Current limitations and open issues
 
