@@ -1,10 +1,23 @@
-# BLACKICE 2.35.6
+# BLACKICE
 
-BLACKICE is an open-source Windows AI-agent workspace for files, commands, websites, editable plans and longer-running work. It runs on your computer and keeps its saved workspace in your Windows profile.
+BLACKICE is an open-source Windows workspace for AI agents, local files and commands, browser work, editable plans and recurring tasks. It runs on your computer and keeps its saved workspace in your Windows profile.
 
-**[Download for Windows x64](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.35.6/Blackice-2.35.6-Setup.exe)** · [Release notes and checksums](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.35.6) · [What changed](RELEASE-NOTES.md)
+**Current release: 2.36.1 for Windows x64.**
+
+**[Download the Windows installer](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.36.1/Blackice-2.36.1-Setup.exe)** · [Release and verification records](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.36.1) · [2.36.1 release notes](RELEASE-NOTES-2.36.1.md) · [Checksums](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.36.1/SHA256SUMS.txt)
 
 The Windows installer is unsigned. Compare its SHA-256 with the checksum attached to the same release.
+
+## Current project state
+
+The 2.36.1 checkpoint brings together the browser, planning, recurring-work and frontend changes:
+
+- **Contained browsing by default.** Agent web work starts in BLACKICE's own browser. Native Codex sessions exclude the installed `browseros-neo` auto-routing skill when the contained browser tool is attached.
+- **Continuity across recurring work.** Compatible recurring agent tasks retain their conversation and Planning task, including when their instructions are edited.
+- **Planning tied to the user's outcome.** Planning separates practical constraints from preferences and unknowns and records observed results. Plan provenance and agent guidance distinguish the user's instructions from an agent's earlier choices.
+- **Less repeated frontend work.** Chat and sidebar updates avoid copying complete conversation histories and retain rendered rows where possible. Direct development tools can inspect and profile BLACKICE's actual desktop UI and Electron host.
+
+This release also includes the [2.36.0 restart, startup-progress and browser-compatibility changes](RELEASE-NOTES-2.36.0.md). Development remains active; the release evidence and current limits are described below.
 
 ## Two ways to work
 
@@ -49,7 +62,11 @@ Use the current **BLACKICE connection** for ChatGPT-to-BLACKICE tools. [CHATGPT-
 
 Reuse an existing healthy connection. An uncertain action should be inspected through its saved receipt before any explicit retry. Connection status and local endpoint readiness do not by themselves prove that a particular ChatGPT conversation has the tools attached.
 
-The former reverse ChatGPT Bridge and browser-based ChatGPT model provider are retired. Their historical files and saved data do not make them supported setup paths. BLACKICE workers use native Codex or configured API providers.
+### Reported desktop approval issue
+
+As reported on October 28, 2026, the ChatGPT desktop app asks for approval on every turn with **Pro Reasoning**, while **Extra High** does not show the same repeated prompts in that comparison. The checked BLACKICE connection already has the app-specific **Allow all actions** setting; BLACKICE reports no local per-action approval gate and no authorization failures. The cause and scope of the mode-dependent behavior remain unconfirmed.
+
+This concerns the current ChatGPT-to-BLACKICE connection. The former reverse ChatGPT Bridge and browser-based ChatGPT model provider are retired. Their historical files and saved data do not make them supported setup paths. BLACKICE workers use native Codex or configured API providers.
 
 ## Cronjob reliability and inspection
 
@@ -61,13 +78,15 @@ Every new schedule create, edit and removal records a bounded source-labelled ch
 
 ## Planning: practical judgment and recurring work
 
-**Planning is an On/Off switch, not a four-level reasoning mode.** On (the default) requires a real current-turn `relay_task` plan write before publishing the agent's final answer or dispatching unrelated operational tools. The engine verifies the saved plan's run identity, holds premature answer text and fails closed if the required Planning tool is unavailable. A simple task can use one concise, checkable action; no maximal-detail ritual is required. Off skips the automatic Planning gate while preserving saved notes for optional use. Existing Auto and Maximal values are read as On, and future UI choices are only On/Off. Model reasoning effort and the separately authored plan-detail hint do not change when this switch changes.
+**Planning is On or Off.** On (the default) requires a real current-turn `relay_task` plan before the agent publishes its final answer or dispatches unrelated operational tools. Planning guidance calls for an expected result, a concrete procedure and an observable completion criterion before execution, followed by the actual observed result. The engine checks the saved plan's run identity and holds premature answers or unrelated tools until the required plan is recorded. One fully specified action can be enough; there is no minimum step count. Off skips the automatic Planning requirement while preserving saved notes and optional tools. Historical Auto and Maximal values map to On. Model reasoning effort remains a separate setting.
 
 Planning supports a revision-checked **decision criterion register** across job research, engineering, procurement and other real-world decisions. Classify verified hard gates separately from material barriers, adaptable gaps, stated requirements, preferences and unknowns. Record the provenance and evidence status of a claim: wording like "required" alone does not make it non-negotiable, and missing data does not establish an adverse outcome. Saved job-specific categories remain readable for compatibility.
 
 A second, **optional judgment frame** records the practical outcome, consequential uncertainty, cheapest useful test, sufficiency condition, reassessment point, observed mismatch and transferable lesson. It is designed to *prevent* excessive verification and perfectionism, not force an introspection checklist on small tasks. Both the frame and criteria are editable in the live Planning workspace; neither can create a job, grant capabilities or certify completion. See [Practical judgment and metacognition](docs/METACOGNITION.md) for the reasoning model and examples.
 
-**Recurring cron or interval schedules with one compatible agent and nonparallel overlap** now continue the last settled run in the same conversation and Planning task, including after a clean application restart. Each occurrence retains its own durable job/run receipt, but the user's research thread and task context persist across scans. Parallel work, incompatible workflow changes, or unavailable historical turns do not blindly reuse a model thread. Previously saved independent conversations are not retroactively merged.
+**Recurring cron or interval schedules with one compatible agent and nonparallel overlap** continue the last settled run in the same conversation and Planning task, including after a clean application restart. Editing that agent's instructions preserves the conversation and task identity. Each occurrence retains its own durable job/run receipt, so the work history stays inspectable across scans. Parallel work, incompatible workflow structures or unavailable historical turns do not blindly reuse a model thread. Previously saved independent conversations are not retroactively merged.
+
+Shared agent guidance keeps the requested outcome central, carries forward authorization for ordinary necessary steps, and distinguishes private assessment from material appropriate for an external audience. It asks for accurate answers and supported claims without volunteering unrelated adverse details. Plan origin and update provenance help keep the user's instructions separate from an agent's earlier methods. These are general workflow improvements; bounded model observations do not establish universal judgment quality.
 
 ## Plans, teams and saved work
 
@@ -81,25 +100,40 @@ Memories can be notes, facts, assumptions or decisions, with sources and directe
 
 ## Browsing and applications
 
+**New agent web work starts in BLACKICE's contained Chromium browser.** The `relay_browser` tool dispatches only to that browser; an external browser is a separate tool choice. When the contained tool is attached, native Codex sessions exclude the installed `browseros-neo` auto-routing skill through per-session configuration, preserving other skill settings and leaving the global skill file intact. The [browser-routing report](verification/browser-routing-20261028.md) explains the conflict, fix and observed behavior.
+
 Desktop Browser mounts the same Chromium page used by background tools. Tabs have independent saved identities, including blank tabs; unfinished addresses stay with their tabs. Leaving the workspace parks the page without reloading it. Pending site or proxy HTTP sign-in remains available across workspace changes. Genuine site dialogs keep their normal choices; already-closed notices do not require an extra acknowledgment before the next action.
 
 Ordinary local-file and Chromium internal addresses are accepted where the runtime supports them. Human-created pages use the existing total resource budgets rather than the former eight-personal-tab limit. Some folder/branch organization remains available through backend tools or the classic interface. The screenshot/manual-input interface is a compatibility fallback for clients without the desktop bridge.
 
 Configured native browser connections have independent profiles and sessions. [BROWSER-IMPORT.md](BROWSER-IMPORT.md), [BROWSER-PASSWORDS.md](BROWSER-PASSWORDS.md) and [BROWSER-PROTECTION.md](BROWSER-PROTECTION.md) document their specific behavior and limits. Optional filtering begins unfiltered and is enabled explicitly.
 
+Site sign-in, human verification and missing required user information can still interrupt a workflow. A prepared form or successful file upload is not a confirmed external submission.
+
 **Activity → Applications** hosts ordinary existing Win32 windows on the Windows desktop. Its legacy agent application API still uses a separate backend; arbitrary application, dialog, IME and DPI compatibility is not established by the hidden browser tests.
 
 Thunderbird/Himalaya integration is retired. Use **Browser** for webmail. Historical email data is preserved; normal `/api/email` endpoints return `410 EMAIL_RETIRED`.
 
-## Performance and verification
+## Frontend performance and development
 
-Chat uses compact catalogs, bounded rendering and worker-backed decoding for large saved histories. Workspaces unsubscribe while hidden and load full selected records on demand. Planning metadata reads now project scalar summaries directly, avoiding full snapshots of retained conversation histories.
+Chat uses compact catalogs, bounded rendering and worker-backed decoding for large saved histories. The current implementation avoids cloning the entire conversation history during routine updates and retains existing chat/sidebar rows where possible. Workspaces unsubscribe while hidden and load full selected records on demand. Planning metadata reads project scalar summaries instead of taking full history snapshots.
 
-In a bounded installed comparison with the same saved workload, Planning metadata responses fell from approximately **400–442 ms to 6–14 ms**. This identifies and fixes one measured request cost. It is not a guarantee for other profiles, visible frame rate, whole user journeys or cold startup.
+Earlier bounded installed measurements reduced one Planning metadata request from approximately **400–442 ms to 6–14 ms** on the same saved workload. That measures a specific request cost, not visible frame rate or every profile. The reported intermittent multi-minute startup has not been fully explained; startup now exposes completed stages, the current stage and elapsed time.
 
-The earlier intermittent multi-minute startup remains unexplained. The desktop now opens independently of saved remote-route setup, complete direct-action validation uses at most four readers, and privacy-limited startup phase timings aid further diagnosis. A later faster launch does not establish the original cause.
+The direct `blackice_frontend` development tool inspects the actual desktop window and Electron host: state, DOM snapshots, screenshots, JavaScript evaluation, DevTools Protocol calls and buffered events. Profiling results use the durable job system, including saved files for large results. See [Native frontend development](docs/frontend-development.md) for the inspection and profiling workflow, and [PERFORMANCE.md](PERFORMANCE.md) for performance architecture.
 
-Source tests, synthetic headless journeys, disposable real-backend tests and hidden Electron checks cover different scopes. Historical verification files belong to their named versions. Hidden rendering cannot prove physical pointer/IME behavior or visible-window responsiveness. Current release evidence and checksums belong to the matching release assets; private profile captures and identifiers are not part of the publication.
+## Verification of the published 2.36.1 release
+
+Verification is pinned to the **v2.36.1 source tag and exact Windows installer**. Source tests, installer checks and model observations establish different things:
+
+| Evidence | Recorded result |
+| --- | --- |
+| [Complete source suite](https://github.com/MoonlightClarity/BLACKICE/blob/v2.36.1/verification/windows-2.36.1.json) | 417 test files; **5,117 passed, 0 failed, 0 required skips, 8 optional integration skips**. Four supplemental native-receipt checks also passed. |
+| [Windows installer validation](https://github.com/MoonlightClarity/BLACKICE/actions/runs/40795583611) | The exact installer passed per-user installation, version/registration/shortcuts, isolated headless startup/restart/shutdown, backup/restore, diagnostics redaction and clean uninstallation. All **511 packaged application files** matched the approved source. |
+| [Public-release readiness](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.36.1/blackice-public-readiness.json) | All required release gates passed. Classification: **ready for public release, unsigned**. No verified publisher signature is claimed. |
+| [Bounded browser observation](https://github.com/MoonlightClarity/BLACKICE/blob/v2.36.1/verification/browser-routing-20261028.md) | 98 contained-browser calls and zero connected-browser calls in the observed run. A site verification barrier prevented a confirmed submission; browser routing and task completion were assessed separately. |
+
+Hidden runtime checks do not establish physical pointer/IME compatibility, visible-window responsiveness or universal website support. A passing source suite does not establish model judgment or completion of an external task. Historical verification files belong to their named versions; the matching release assets provide the installer checksums and verification records. Private profiles and task transcripts are excluded from publication.
 
 ## Build from source
 
