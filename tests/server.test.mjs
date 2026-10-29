@@ -6,13 +6,11 @@ import { mkdtemp, mkdir, readFile, rmdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
-import { recordFixturePlan } from './fixture-task-plan.mjs';
 
 class FakeRuntime extends EventEmitter {
   status() { return { connected: true, authenticated: true, defaultModel: 'fixture-model', activeTurns: 0 }; }
   async start() { return this.status(); }
   async runAgent(options) {
-    await recordFixturePlan(options);
     options.onEvent?.({ type: 'delta', delta: 'HTTP fixture output' });
     return { output: 'HTTP fixture output', threadId: 'http-fixture-thread' };
   }
@@ -64,7 +62,7 @@ const graph = {
     { id: 'output', type: 'output', name: 'Result' },
   ],
   edges: [{ id: 'a', source: 'input', target: 'agent' }, { id: 'b', source: 'agent', target: 'output' }],
-  settings: { maxParallel: 2 },
+  settings: { maxParallel: 2, planningMode: 'off' },
 };
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const until = async (check, label = 'HTTP fixture condition') => { const deadline = Date.now() + 4000; while (Date.now() < deadline) { const result = await check(); if (result) return result; await new Promise(resolve => setTimeout(resolve, 5)); } assert.fail(`${label} did not settle`); };
@@ -92,7 +90,7 @@ test('execution settings API rejects invalid input and reports disk failures wit
 
 test('HTTP Stop all cancels every active chat, retains acknowledgement boundaries, and pauses queued starts', async t => {
   const holds = [deferred(), deferred(), deferred()], calls = [], runtime = new FakeRuntime();
-  runtime.runAgent = async options => { await recordFixturePlan(options); const index = calls.length; calls.push(options); options.onEvent({ type: 'thread', threadId: `stop-all-thread-${index}` }); return holds[index].promise; };
+  runtime.runAgent = async options => { const index = calls.length; calls.push(options); options.onEvent({ type: 'thread', threadId: `stop-all-thread-${index}` }); return holds[index].promise; };
   const { app, request, auth } = await application(t, { runtime, maxConcurrentRuns: 2 }); await app.learning.updateSettings({ mode: 'manual' });
   const post = (route, body = {}, authenticated = true) => request(route, { method: 'POST', headers: authenticated ? auth : {}, body });
   try {
@@ -115,9 +113,8 @@ test('HTTP Stop for one chat leaves another chat and queued starts running indep
   const inputs = ['FIRST ISOLATED CHAT', 'SECOND ISOLATED CHAT', 'QUEUED INDEPENDENT CHAT'];
   runtime.runAgent = async options => {
     const index = inputs.findIndex(input => options.prompt.includes(input)); assert.ok(index >= 0, 'the fixture call belongs to an exact submitted chat');
-    await recordFixturePlan(options);
-    // Plan persistence may finish in either order. Force the later chat to
-    // finish first and bind the held turn to its input, not callback arrival.
+    // Runtime callbacks may arrive in either order. Force the later chat to
+    // arrive first and bind the held turn to its input, not callback arrival.
     if (index === 0) await secondRecorded.promise;
     calls[index] = options; arrivalOrder.push(index); if (index === 1) secondRecorded.resolve();
     options.onEvent({ type: 'thread', threadId: `isolated-stop-thread-${index}` }); return holds[index].promise;
@@ -141,7 +138,7 @@ test('HTTP Stop for one chat leaves another chat and queued starts running indep
 
 test('HTTP Stop all still stops every chat and waits for queue saves when browser and learning cleanup fail', async t => {
   const holds = [deferred(), deferred()], saved = deferred(), calls = [], events = [], runtime = new FakeRuntime();
-  runtime.runAgent = async options => { await recordFixturePlan(options); const index = calls.length; calls.push(options); return holds[index].promise; };
+  runtime.runAgent = async options => { const index = calls.length; calls.push(options); return holds[index].promise; };
   const { app, request, auth } = await application(t, { runtime, maxConcurrentRuns: 2 }); await app.learning.updateSettings({ mode: 'manual' });
   const post = (route, body = {}) => request(route, { method: 'POST', headers: auth, body });
   const original = { browser: app.browser.cancel, learning: app.learning.cancelBackground, pause: app.inbox.pause, compactions: app.engine.cancelCompactions };
@@ -169,9 +166,8 @@ test('live execution updates publish parallel admission, stopping acknowledgemen
   const inputs = ['FIRST LIVE CAPACITY CHAT', 'SECOND LIVE CAPACITY CHAT'];
   runtime.runAgent = async options => {
     const index = inputs.findIndex(input => options.prompt.includes(input)); assert.ok(index >= 0, 'the fixture call belongs to an exact submitted chat');
-    await recordFixturePlan(options);
-    // Concurrent plan saves may finish in either order. Deliberately finish
-    // the second first; acknowledgements must follow chat identity, not arrival.
+    // Concurrent runtime callbacks may arrive in either order. Deliberately
+    // record the second first; acknowledgements must follow chat identity, not arrival.
     if (index === 0) await secondRecorded.promise;
     calls[index] = options; arrivalOrder.push(index); if (index === 1) secondRecorded.resolve();
     return holds[index].promise;
@@ -227,7 +223,7 @@ test('a large live update drains without disconnecting the browser event stream'
 
 test('HTTP submission receipts survive restart and recent-run eviction; rename survives archive and restore', async t => {
   let turns=0;
-  const runtime=()=>{const value=new FakeRuntime();value.runAgent=async options=>{await recordFixturePlan(options);turns++;return {output:'Delivered once',threadId:'fixture-receipt-thread'};};return value;};
+  const runtime=()=>{const value=new FakeRuntime();value.runAgent=async options=>{turns++;return {output:'Delivered once',threadId:'fixture-receipt-thread'};};return value;};
   const first=await application(t,{runtime:runtime()});
   const payload={workflow:graph,input:'Receipt recovery check',requestId:'stable-http-request'};
   const send=(app,value=payload)=>app.request('/api/runs',{method:'POST',headers:app.auth,body:value});
@@ -341,7 +337,6 @@ test('HTTP resume creates a linked run from the original snapshot and rejects co
   const runtime = new FakeRuntime();
   runtime.runAgent = async options => {
     if (++attempt === 1) throw new Error('fixture provider disconnected');
-    await recordFixturePlan(options);
     return { output: 'HTTP resumed result', threadId: 'resumed-http-thread', usage: { totalTokens: 8 } };
   };
   const { app, request, auth } = await application(t, { runtime });

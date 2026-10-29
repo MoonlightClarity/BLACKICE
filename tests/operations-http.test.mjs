@@ -6,23 +6,34 @@ import { mkdtemp,readFile,writeFile,rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
-import { recordFixturePlan } from './fixture-task-plan.mjs';
+import { recordFixturePlan, finishFixturePlan } from './fixture-task-plan.mjs';
 
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return{promise,resolve};};
 const until=async(check,label='HTTP operation condition')=>{const end=Date.now()+7000;while(Date.now()<end){const result=await check();if(result)return result;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail(`${label} did not settle`);};
-const workflow=()=>({id:'http-operation-workflow',name:'HTTP deployed worker',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Worker',prompt:'Write the isolated fixture result and independently read it.',model:'http-fixture-model'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1}});
+const workflow=(planningMode='on')=>({id:'http-operation-workflow',name:'HTTP deployed worker',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Worker',prompt:'Write the isolated fixture result and independently read it.',model:'http-fixture-model'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode}});
 class Desktop extends EventEmitter{status(){return{available:false,enabled:false};}async setEnabled(){return this.status();}}
-async function fixture(t,{execute,maxConcurrentRuns=4}={}){
+async function fixture(t,{execute,maxConcurrentRuns=4,planningMode='on'}={}){
   const directory=await mkdtemp(path.join(tmpdir(),'relay-operations-http-')),dataDir=path.join(directory,'data'),cwd=path.join(directory,'workspace'),calls=[],apps=[];
   let app,url,cookie;
   class Runtime extends EventEmitter{
     status(){return{connected:true,authenticated:true,defaultModel:'http-fixture-model',models:[{model:'http-fixture-model'}]};}async start(){return this.status();}async close(){this.closed=true;}
-    async runAgent(options){const index=calls.push(options);if(execute){await recordFixturePlan(options,{title:'Inspect the dispatched operation',doneWhen:'The fixture checks its own dispatched worker result.'});return execute(options,index);}await recordFixturePlan(options,{title:'Write and verify the isolated operation result',doneWhen:'The actual operation-proof.txt file contains the requested fixture output.'});options.onEvent({type:'thread',threadId:options.threadId||'http-fixture-thread',model:'http-fixture-model'});const content=`Verified operation side effect ${calls.length}.\n`,write=await options.onToolCall({name:'relay_workspace',arguments:{action:'write',path:'operation-proof.txt',text:content}});assert.equal(write.success,true);const read=await options.onToolCall({name:'relay_workspace',arguments:{action:'read',path:'operation-proof.txt'}});assert.equal(read.success,true);assert.match(read.contentItems[0].text,/Verified operation side effect/);return{output:content,threadId:options.threadId||'http-fixture-thread'};}
+    async runAgent(options){
+      const index=calls.push(options);
+      if(execute)return execute(options,index);
+      await recordFixturePlan(options,{title:'Write and verify the isolated operation result',doneWhen:'The actual operation-proof.txt file contains the requested fixture output.'});
+      options.onEvent({type:'thread',threadId:options.threadId||'http-fixture-thread',model:'http-fixture-model'});
+      const content=`Verified operation side effect ${index}.\n`,write=await options.onToolCall({name:'relay_workspace',arguments:{action:'write',path:'operation-proof.txt',text:content}});
+      assert.equal(write.success,true);
+      const read=await options.onToolCall({name:'relay_workspace',arguments:{action:'read',path:'operation-proof.txt'}});
+      assert.equal(read.success,true);assert.match(read.contentItems[0].text,/Verified operation side effect/);
+      await finishFixturePlan(options,{summary:'The workspace write succeeded and an independent read returned the operation proof content. Both actual responses are recorded; no work remains for this occurrence.'});
+      return{output:content,threadId:options.threadId||'http-fixture-thread'};
+    }
   }
   async function boot(){app=await createHarnessServer({port:0,dataDir,defaultCwd:cwd,maxConcurrentRuns,runtime:new Runtime(),desktop:new Desktop()});apps.push(app);await app.learning.updateSettings({mode:'manual'});url=await app.listen();const home=await fetch(url);cookie=home.headers.get('set-cookie').split(';',1)[0];await home.arrayBuffer();return app;}
   await boot();t.after(async()=>{for(const value of apps)await value.close();assert.match(path.basename(directory),/^relay-operations-http-/);await rm(directory,{recursive:true,force:true});});
   const request=async(route,{method='GET',body,auth=true,headers={}}={})=>{const response=await fetch(new URL(route,url),{method,headers:{...(auth?{Cookie:cookie}:{}),...(body===undefined?{}:{'Content-Type':'application/json'}),...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});return{status:response.status,data:await response.json()};};
-  const create=async extra=>{const response=await request('/api/operations/deployments',{method:'POST',body:{name:'HTTP fixture operation',input:'Write and verify the isolated fixture result.',cwd,workflow:workflow(),enabled:true,trigger:{type:'webhook'},...extra}});assert.equal(response.status,201,JSON.stringify(response.data));return response.data;};
+  const create=async extra=>{const response=await request('/api/operations/deployments',{method:'POST',body:{name:'HTTP fixture operation',input:'Write and verify the isolated fixture result.',cwd,workflow:workflow(planningMode),enabled:true,trigger:{type:'webhook'},...extra}});assert.equal(response.status,201,JSON.stringify(response.data));return response.data;};
   const hook=async(deployment,key,payload,headers={})=>{const secret=(await request(`/api/operations/deployments/${deployment.id}/webhook`)).data;return request(`/hooks/${deployment.id}`,{method:'POST',auth:false,body:payload,headers:{Authorization:`Bearer ${secret.token}`,...(key?{'Idempotency-Key':key}:{}),...headers}});};
   return{get app(){return app;},get url(){return url;},get cookie(){return cookie;},directory,dataDir,cwd,calls,request,create,hook,async restart(){await app.close();return boot();}};
 }
@@ -91,6 +102,7 @@ for(const codexHistory of ['relay','codex']) test(`repeated cron occurrences ret
   assert.equal(firstRun.taskId,firstRunId);
   const originalPlan=await f.app.tasks.get(firstRunId);
   assert.ok(originalPlan.taskId===firstRunId);
+  assert.equal(originalPlan.planningReviews.at(-1).runId,firstRunId);
   const originalPrompt=firstRun.workflow.nodes.find(node=>node.id==='agent').prompt;
   const currentInstructions='UPDATED_RECURRING_INSTRUCTIONS: Use current evidence to write and independently verify the isolated fixture result.';
   const updatedWorkflow=workflow();updatedWorkflow.nodes.find(node=>node.id==='agent').prompt=currentInstructions;
@@ -130,6 +142,7 @@ for(const codexHistory of ['relay','codex']) test(`repeated cron occurrences ret
   const shared=await f.app.tasks.get(secondRun.taskId);
   assert.equal(shared.taskId,originalPlan.taskId);
   assert.ok(shared.revision>=originalPlan.revision,'the second occurrence keeps the original Planning continuity');
+  assert.equal(shared.planningReviews.at(-1).runId,secondRunId,'the continuation reassesses its own newly completed work');
   assert.equal(f.app.conversations.list('active').filter(row=>row.rootId===firstRunId).length,1);
   assert.equal(f.calls.length,2,'no extra model run was started to stitch the conversation together');
   await f.restart();
@@ -138,6 +151,7 @@ for(const codexHistory of ['relay','codex']) test(`repeated cron occurrences ret
   assert.equal(thirdRun.kind,'continuation');
   assert.equal(thirdRun.parentRunId,secondRunId,'the next scheduled turn continues the latest run');
   assert.equal(thirdRun.taskId,firstRunId,'subsequent occurrences keep the original Planning identity');
+  assert.equal((await f.app.tasks.get(thirdRun.taskId)).planningReviews.at(-1).runId,thirdRunId);
   assert.equal(third.conversationRootId,firstRunId);
   assert.ok(f.calls[2].prompt.includes(currentInstructions),'later occurrences retain the revised instructions');
   assert.equal(f.calls[2].threadId,codexHistory==='codex'?secondRun.nodes.agent.threadId:undefined);
@@ -250,7 +264,7 @@ test('calendar preview is session-protected and read-only, while real DST fold t
 });
 
 test('unlimited HTTP webhook jobs overlap beyond four with independent durable receipts',async t=>{
-  const release=deferred(),context=await fixture(t,{maxConcurrentRuns:null,execute:async(options,index)=>{options.onEvent({type:'thread',threadId:`parallel-http-${index}`,model:'http-fixture-model'});await new Promise((resolve,reject)=>{const stop=()=>reject(Object.assign(new Error('Cancelled'),{code:'ABORT_ERR'}));if(options.signal.aborted)return stop();options.signal.addEventListener('abort',stop,{once:true});release.promise.then(()=>{options.signal.removeEventListener('abort',stop);resolve();});});return{output:`Verified independent HTTP operation ${index}.`,threadId:`parallel-http-${index}`};}});
+  const release=deferred(),context=await fixture(t,{maxConcurrentRuns:null,planningMode:'off',execute:async(options,index)=>{options.onEvent({type:'thread',threadId:`parallel-http-${index}`,model:'http-fixture-model'});await new Promise((resolve,reject)=>{const stop=()=>reject(Object.assign(new Error('Cancelled'),{code:'ABORT_ERR'}));if(options.signal.aborted)return stop();options.signal.addEventListener('abort',stop,{once:true});release.promise.then(()=>{options.signal.removeEventListener('abort',stop);resolve();});});return{output:`Verified independent HTTP operation ${index}.`,threadId:`parallel-http-${index}`};}});
   try{const deployment=await context.create(),jobs=[];for(let index=0;index<6;index++)jobs.push((await context.hook(deployment,`parallel-job:${index}`,{index})).data);await until(()=>context.calls.length===6&&jobs.every(job=>context.app.operations.getJob(job.id).status==='running'));assert.equal(context.app.engine.executionStatus().unlimited,true);assert.equal(context.app.engine.executionStatus().activeCount,6);assert.equal(new Set(jobs.map(job=>context.app.operations.getJob(job.id).attempts[0].runId)).size,6);const duplicate=await context.hook(deployment,'parallel-job:0',{index:0});assert.equal(duplicate.data.id,jobs[0].id);assert.equal(context.calls.length,6);release.resolve();await until(()=>jobs.every(job=>context.app.operations.getJob(job.id).status==='completed'));assert.ok(jobs.every(job=>context.app.operations.getJob(job.id).attempts.length===1));}finally{release.resolve();}
 });
 
@@ -265,7 +279,7 @@ test('webhook bearer auth works without a browser cookie, deduplicates delivery,
 });
 
 test('Stop all pauses operations and the global inbox, restart retains receipts, and Resume starts only the saved next job',async t=>{
-  const entered=deferred();const context=await fixture(t,{maxConcurrentRuns:1,execute:async(options,index)=>{if(index===1){entered.resolve();await new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(Object.assign(new Error('Stopped fixture worker'),{name:'AbortError'})),{once:true}));}return{output:'Verified resumed fixture.',threadId:'stop-fixture-thread'};}}),deployment=await context.create();
+  const entered=deferred();const context=await fixture(t,{maxConcurrentRuns:1,planningMode:'off',execute:async(options,index)=>{if(index===1){entered.resolve();await new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(Object.assign(new Error('Stopped fixture worker'),{name:'AbortError'})),{once:true}));}return{output:'Verified resumed fixture.',threadId:'stop-fixture-thread'};}}),deployment=await context.create();
   const first=await context.hook(deployment,'first-stop-job',{number:1});await entered.promise;const second=await context.hook(deployment,'second-saved-job',{number:2});const active=context.app.operations.getJob(first.data.id);await until(()=>context.app.operations.getJob(first.data.id).attempts[0]?.runId);const runId=context.app.operations.getJob(first.data.id).attempts[0].runId;
   assert.equal((await context.request('/api/runs/stop-all',{method:'POST',body:{}})).status,200);await until(()=>context.app.operations.getJob(first.data.id).status==='cancelled');assert.equal(context.app.operations.status().paused,true);assert.equal(context.app.inbox.status().paused,true);assert.equal(context.app.operations.getJob(second.data.id).status,'queued');assert.equal(context.calls.length,1);
   await context.restart();assert.equal(context.app.operations.getJob(first.data.id).attempts[0].runId,runId);assert.equal(context.app.operations.getJob(first.data.id).status,'cancelled');assert.equal(context.app.operations.status().paused,true);assert.equal(context.calls.length,1);const duplicate=await context.hook(deployment,'first-stop-job',{number:1});assert.equal(duplicate.data.id,first.data.id);

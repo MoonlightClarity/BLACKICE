@@ -38,7 +38,7 @@ The work and review portions repeat when the result calls for another observatio
 
 ### Self-contained workshop comparison
 
-The next live task uses only supplied data. It asks for the cheapest bundle containing one software workshop and one hardware workshop, with a maximum price of $170 and no time overlap. One $10 enrollment fee applies to each bundle, and a $30 discount applies only to S2 + H2. Touching endpoints do not overlap.
+The workshop task used only supplied data. It asked for the cheapest bundle containing one software workshop and one hardware workshop, with a maximum price of $170 and no time overlap. One $10 enrollment fee applied to each bundle, and a $30 discount applied only to S2 + H2. Touching endpoints did not count as overlap.
 
 | Workshop | Price | Time |
 | --- | ---: | --- |
@@ -49,9 +49,21 @@ The next live task uses only supplied data. It asks for the cheapest bundle cont
 
 The expected result is **S2 + H2 for $155**. The other feasible pair, S1 + H2, costs $165. Both pairs containing H1 overlap. No files or browser actions are required to solve the task.
 
-The first schema 10 workshop run saved a fresh final review for its current run. It also exposed a separate decomposition weakness: several material comparisons remained inside one oversized reasoning leaf. The instruction guidance was refined to require those distinct comparisons as substeps before attempting them. A second matching run is pending evaluation in this candidate record.
+The first schema 10 workshop run saved a fresh final review for its current run. It also exposed a separate decomposition weakness: several material comparisons remained inside one oversized reasoning leaf. The instruction guidance was refined to require those distinct comparisons as substeps before attempting them.
 
-This distinguishes successful review delivery from successful decomposition. The first workshop run does not, by itself, establish the complete requested planning behavior.
+The second run used the same ordinary task wording, matching the saved prompt apart from its terminal newline. It saved all five reasoning leaves before reporting any outcomes: four candidate checks under one sequence parent, followed by a separate selection leaf. Across all 16 saved revisions, at most one action leaf was active. Each outcome followed activation of that saved leaf, and each continue review preceded activation of the next leaf.
+
+| Observation | Second workshop result |
+| --- | --- |
+| Decomposition | Five reasoning leaves: four pair assessments and one final comparison. |
+| Return to planning | Four explicit continue reviews, then one fresh respond review covering the completed selection. |
+| Tool use | Seventeen successful planning-tool calls; no workspace, file or browser operation. |
+| Final answer | Correctly selected S2 + H2 at $155 and named S1 + H2 at $165 as the nearest valid alternative. |
+| Runtime repair | No automatic repair of a premature final was needed in this trial. |
+
+**A saved finding still contained an arithmetic error.** The selection leaf described $155 as “$25 below the cap.” The correct difference is $170 − $155 = **$15**. The final answer did not repeat that number, so the recommendation and alternative remained correct, but the final review did not catch the incorrect headroom in the saved evidence.
+
+The second run passes the candidate-level decomposition and repeated-review checks for this task. It does not establish the finest possible decomposition: each candidate leaf still combines overlap checking and price arithmetic. This workshop used a linear sequence, without executable choice nodes, Boolean branch expressions or revisit. The earlier schema 9 trials remain the separate evidence for those behaviors.
 
 ## Runtime and presentation checks
 
@@ -59,7 +71,15 @@ Focused deterministic checks exercise the actual planning handler, state store a
 
 Presentation fixtures use synthetic public records and the production renderers. They check nested numbering, indentation, preserved alternatives, chronological plan and review entries, and reconstruction of public phases in reopened conversations. A rendered fixture verifies that presentation path; it is not evidence of hidden reasoning or a claim that every live desktop state has been exercised.
 
-Final source-suite totals, final installer verification and the second workshop trial remain to be recorded for the release candidate. Historical focused checks must not be relabeled as verification of a later complete build.
+### Actual saved workshop projections
+
+The first workshop's reopened archive reconstructed `Plan → Think → Plan → Think → Respond`, with one final answer. Its four public activity records represented the initial plan, recorded finding, review and response composition.
+
+The second workshop's archive retained 12 public activity records and all five reviews through its final saved revision. The production timeline projection preserved the five outcome/review cycles and subsequent response preparation, followed by one final answer. Its saved outline retained the actual hierarchy: `1`, `1.1`, `1.2`, `1.3`, `1.4`, `2`. These projections reconstructed the public chronology without needing raw execution-trace events.
+
+The response-preparation row is labeled “Compose response” and is supported by actual final-message-start metadata after a dated review. It does not claim to reveal private reasoning. Separately, the synthetic production-renderer browser fixture passed all ten checks, including chronology, one final answer, dotted hierarchy, live updates, containment and non-overlap, and was visually inspected in its composition mode.
+
+Final source-suite totals and verification of the exact Windows installer remain pending for this release candidate. Completed workshop observations, archive projections and presentation checks must not be relabeled as verification of the complete public build or Setup installer.
 
 ## Interpretation limits
 

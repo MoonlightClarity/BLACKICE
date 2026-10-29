@@ -20,8 +20,10 @@ const unavailable = () => assert.fail('Discovery must not execute a tool.');
 const provider = tools => ({ tools: () => tools, call: unavailable });
 
 test('the full native catalog retains the exact 28-tool public contract and fingerprint', () => {
-  // The deployed catalog plus intentional tab_select and forced-restart additions catches accidental
-  // change to names, order, descriptions, schemas, annotations or OAuth metadata.
+  // The deployed catalog plus intentional tab_select, forced-restart and recursive
+  // planning additions catches accidental changes to its full public contract.
+  // Compared with upstream 9bb65bb, only blackice_edit_plan's definition changes:
+  // concrete operations, facts, recursive conditions and revisit are now exposed.
   // Only definitions are constructed: no storage or native adapter is opened.
   const execution = new DirectExecutionAPI({ dataDir: '/unused-catalog-fixture', additionalTools: [
     chatGPTFileImportTool({ directory: '/unused-catalog-fixture/imports' }),
@@ -41,11 +43,19 @@ test('the full native catalog retains the exact 28-tool public contract and fing
     'blackice_get_swarm_plan', 'blackice_get_plan_groups', 'blackice_edit_plan', 'blackice_edit_plan_groups',
   ]);
   assert.deepEqual(catalog.status(), {
-    sha256: '6082e5fbff16a4e2badbc6e6442209c72dbe7782c4df3ab98720f9ee9247ecef',
+    sha256: '3d399e2d1dbb475609837b32a1acd2b203aa378315ceb86608ef7f39a1c54260',
     toolCount: 28,
     serverVersion: '2.33.5',
   });
   assert.equal(createHash('sha256').update(JSON.stringify(catalog.tools())).digest('hex'), catalog.status().sha256);
+  const planning=catalog.tools().find(tool=>tool.name==='blackice_edit_plan').inputSchema;
+  const edits=Object.fromEntries(planning.properties.operations.items.oneOf.map(operation=>[operation.properties.type.const,operation.properties]));
+  assert.ok(edits.add.step.properties.operation);
+  assert.ok(edits.metadata.patch.properties.facts);
+  assert.ok(edits.add.step.properties.branch.properties.elif);
+  assert.equal(edits.add.step.properties.branch.properties.if.$ref,'#/$defs/planExpression');
+  assert.deepEqual(planning.$defs.planExpression.anyOf.filter(value=>value.properties).map(value=>Object.keys(value.properties)[0]),['fact','and','or','not','xor','compare']);
+  assert.equal(edits.revisit.reason.minLength,1);
 });
 
 test('each provider is sampled once and dispatch remains paired with its captured definition', async () => {

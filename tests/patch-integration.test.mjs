@@ -1,5 +1,4 @@
 import test from 'node:test';
-import {recordFixturePlan} from './fixture-task-plan.mjs';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
 import {mkdtemp,mkdir,readFile,writeFile,rm} from 'node:fs/promises';
@@ -13,7 +12,6 @@ class Runtime extends EventEmitter{
   async start(){return this.status();}
   async close(){}
   async runAgent(options){
-    await recordFixturePlan(options,{title:'Apply the requested patch',doneWhen:'The actual file contains the requested replacement and an undo receipt is returned.'});
     const call=async(name,args)=>{const response=await options.onToolCall({name,arguments:args},{signal:options.signal});assert.equal(response.success,true,response.contentItems?.[0]?.text);return JSON.parse(response.contentItems[0].text);};
     const read=await call('relay_workspace',{action:'read',path:'example.txt'});
     const patch=await call('relay_workspace',{action:'patch',path:'example.txt',oldText:'before',newText:'after',expectedHash:read.sha256});
@@ -24,7 +22,7 @@ async function fixture(t){const root=await mkdtemp(path.join(tmpdir(),'relay-pat
 async function settled(app,id){const deadline=Date.now()+5000;while(Date.now()<deadline){const run=app.engine.getRun(id);if(run.settled)return run;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Fixture run did not settle.');}
 
 test('an actual engine turn receives patch tools and its HTTP audit/undo changes the actual file',async t=>{
-  const{app,cwd,request,url,cookie}=await fixture(t),file=path.join(cwd,'example.txt');await writeFile(file,'prefix before suffix');const workflow=createMissionWorkflow({id:'patch-integration',cwd,model:'fixture',task:'Patch the fixture.'});const admitted=await request('/api/runs','POST',{workflow,input:'Patch the fixture.'});assert.equal(admitted.status,201);const run=await settled(app,(admitted.data.run||admitted.data).id);assert.equal(run.status,'completed');assert.equal(await readFile(file,'utf8'),'prefix after suffix');
+  const{app,cwd,request,url,cookie}=await fixture(t),file=path.join(cwd,'example.txt');await writeFile(file,'prefix before suffix');const workflow=createMissionWorkflow({id:'patch-integration',cwd,model:'fixture',task:'Patch the fixture.',planningMode:'off'});const admitted=await request('/api/runs','POST',{workflow,input:'Patch the fixture.'});assert.equal(admitted.status,201);const run=await settled(app,(admitted.data.run||admitted.data).id);assert.equal(run.status,'completed');assert.equal(await readFile(file,'utf8'),'prefix after suffix');
   const history=await request('/api/file-patches?cwd='+encodeURIComponent(cwd));assert.equal(history.status,200);assert.equal(history.data.total,1);const item=history.data.patches[0];assert.equal(item.runId,run.id);assert.equal('before' in item,false);
   const detail=await request('/api/file-patches/'+item.id);assert.equal(detail.data.before,'prefix before suffix');assert.equal(detail.data.after,'prefix after suffix');
   const denied=await fetch(url+'/api/file-patches');assert.equal(denied.status,401);const wrongOrigin=await fetch(url+'/api/file-patches/'+item.id+'/undo',{method:'POST',headers:{cookie,origin:'https://outside.invalid','content-type':'application/json'},body:'{}'});assert.equal(wrongOrigin.status,403);

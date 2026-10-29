@@ -51,7 +51,7 @@ for (const ending of ['cancelled', 'failed']) test(`${ending} real saved agent s
       state = await taskCall(options, { action: 'artifact', expectedRevision: state.revision, path: 'deliverable.txt', title: 'Deliverable' }); artifactId = state.artifacts[0].id;
       state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'inspect_partial', status: 'active' });
       state = await taskCall(options, { action: 'checkpoint', expectedRevision: state.revision, goal: 'Finish project ALPHA.', completed: ['Inspected the real source.', 'Saved the actual partial deliverable.'], decisions: ['Keep the existing implementation.'], nextSteps: ['Complete and recheck the file.'] });
-      options.onEvent({ type: 'delta', threadId, delta: 'Partial work is preserved.' }); options.onEvent({ type: 'usage', threadId, usage: { totalTokens: 20, total: { totalTokens: 20 } } }); started = true;
+      options.onEvent({ type: 'item', stage: 'completed', threadId, item: { id: 'partial-progress', type: 'agentMessage', phase: 'commentary', text: 'Partial work is preserved.' } }); options.onEvent({ type: 'usage', threadId, usage: { totalTokens: 20, total: { totalTokens: 20 } } }); started = true;
       if (ending === 'cancelled') { await new Promise(resolve => { if (options.signal.aborted) resolve(); else options.signal.addEventListener('abort', resolve, { once: true }); }); await releaseStop.promise; options.onEvent({ type: 'usage', threadId, usage: { totalTokens: 25, total: { totalTokens: 25 } } }); options.onEvent({ type: 'delta', threadId, delta: 'Unwanted text after stop.' }); throw Object.assign(new Error('Stopped.'), { name: 'AbortError' }); }
       throw new Error('Provider transport deliberately failed.');
     }
@@ -67,6 +67,7 @@ for (const ending of ['cancelled', 'failed']) test(`${ending} real saved agent s
     assert.equal((await workspaceCall(options, 'verify-finished', { action: 'read', path: 'deliverable.txt' })).content, '1: Actual finished work.');
     state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'verify', status: 'done', evidence: 'The actual final read returned exactly Actual finished work. without truncation.' });
     state = await taskCall(options, { action: 'artifact', expectedRevision: state.revision, path: 'deliverable.txt' });
+    state = await taskCall(options, { action: 'review', expectedRevision: state.revision, review: { decision: 'respond', summary: 'The preserved partial file was read before completing it. The final read confirmed Actual finished work., and the artifact receipt points to those verified bytes. All five saved actions are complete and no further work remains.' } });
     assert.equal(state.progress.done, 5); assert.equal(state.interruption, null); return { output: 'Completed and checked.', threadId, usage: { totalTokens: 10, total: { totalTokens: 30 } } };
   });
   const { engine, tasks, engines, cwd, dataDir } = await engineHarness(t, runtime);

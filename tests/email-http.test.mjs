@@ -6,7 +6,6 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createHarnessServer} from '../server.mjs';
 import {AgentEmailStore} from '../lib/agent-email.mjs';
-import {recordFixturePlan} from './fixture-task-plan.mjs';
 
 class Runtime extends EventEmitter {
   status(){return {connected:false,authenticated:false,models:[]};}
@@ -88,7 +87,7 @@ test('retired email adapters never load legacy state and ordinary chat and maint
   let modelCalls=0;
   class LocalRuntime extends Runtime {
     status(){return {connected:true,authenticated:true,models:[{model:'email-recovery-fixture'}],defaultModel:'email-recovery-fixture'};}
-    async runAgent(options){modelCalls++;await recordFixturePlan(options);return {output:'Ordinary work still completes.',threadId:'email-recovery-thread'};}
+    async runAgent(options){modelCalls++;return {output:'Ordinary work still completes.',threadId:'email-recovery-thread'};}
   }
   const damaged='{"schema":1,"revision":0,"config":{"enabled":false},"drafts":[',fixtureDraft='An existing draft artifact must be preserved.';
   const f=await fixture(t,{runtime:new LocalRuntime(),defaultEmailStore:true,prepare:async({dataDir})=>{
@@ -112,7 +111,7 @@ test('retired email adapters never load legacy state and ordinary chat and maint
   ]){
     const response=await f.request(route,options);assert.equal(response.status,410,route);assert.equal((await response.json()).code,'EMAIL_RETIRED');
   }
-  const workflow={id:'email-recovery-flow',name:'Ordinary task',nodes:[{id:'input',type:'input',name:'Task'},{id:'agent',type:'agent',name:'Worker',prompt:'Complete the user task.',model:'email-recovery-fixture'},{id:'output',type:'output',name:'Result'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1}};
+  const workflow={id:'email-recovery-flow',name:'Ordinary task',nodes:[{id:'input',type:'input',name:'Task'},{id:'agent',type:'agent',name:'Worker',prompt:'Complete the user task.',model:'email-recovery-fixture'},{id:'output',type:'output',name:'Result'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode:'off'}};
   const started=await f.request('/api/runs',{method:'POST',body:{workflow,input:'Complete an ordinary local fixture task.'}});assert.equal(started.status,201);
   const {id}=await started.json();let run;
   for(const deadline=Date.now()+7000;Date.now()<deadline;){run=f.app.engine.getRun(id);if(run.settled)break;await new Promise(resolve=>setTimeout(resolve,5));}

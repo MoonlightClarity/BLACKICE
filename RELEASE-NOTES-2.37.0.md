@@ -28,11 +28,15 @@ This release makes Planning On a continuing part of the work. The agent saves co
 
 Chat presents planning, work updates, reassessment and the final response in chronological order. Nested substeps retain their hierarchy across the Planning views. Saved conversation and archive records preserve the public phase metadata needed to reconstruct that sequence when reopened.
 
-The visible timeline uses saved plan events, concise review summaries and public message phases. It does not expose private reasoning or fabricate a transcript of thinking.
+The visible timeline uses saved plan events, recorded findings, concise review summaries and public message phases. When an actual final-message start follows a dated review, it can show a clearly labeled “Compose response” activity. It does not expose private reasoning or invent a missing activity.
+
+Reopened workshop records preserved the repeated planning returns and one final answer. The first run reconstructed `Plan → Think → Plan → Think → Respond`; the second retained all five outcome/review cycles, response preparation and the final response. These archive checks are separate from the synthetic browser fixture, which passed its ten presentation checks and visual inspection.
 
 ## Verification status
 
 The [public dogfood summary](docs/PLANNING-DOGFOOD-2026-10-29.md) distinguishes completed model observations, targeted tests and remaining validation. It includes early planning failures and the corrections they prompted. The [planning guide](docs/RECURSIVE-PLANNING.md) documents the condition language, review contract and recovery behavior.
+
+The second ordinary workshop trial saved five reasoning leaves, kept at most one active, and recorded four continue reviews followed by a fresh respond review. Its selected bundle ($155) and nearest valid alternative ($165) were correct. One saved finding incorrectly described the $155 result as $25 below a $170 cap; the correct margin is $15, and the final answer did not repeat the error. This establishes candidate-level decomposition and repeated reassessment for that trial, not the finest possible decomposition or a guarantee of semantic correctness. The workshop trial did not exercise an executable choice or revisit.
 
 Final verification of the complete 2.37.0 source suite and exact Windows installer is still in progress for this candidate. A patched development installation, a synthetic UI fixture or a successful model run does not establish that the public Setup installer has been verified. Bound source and installer receipts must report those results separately.
 

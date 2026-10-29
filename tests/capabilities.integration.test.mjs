@@ -93,7 +93,11 @@ test('HTTP preflight checks each selected provider instead of aggregate runtime 
         assert.equal(body.model,'remote-fixture');
         return jsonResponse(functionCall('relay_task',{action:'step',expectedRevision:planned.revision,stepId:'verify-provider',status:'done',evidence:'The configured provider received this request with model remote-fixture.'},'default-task-done'));
       }
-      assert.equal(requests.length,4);assert.equal(toolResult(body,'default-task-done').steps[0].status,'done');
+      if(requests.length===4){
+        const completed=toolResult(body,'default-task-done');assert.equal(completed.steps[0].status,'done');
+        return jsonResponse(functionCall('relay_task',{action:'review',expectedRevision:completed.revision,review:{decision:'respond',summary:'The admitted request used remote-fixture on the configured remote provider. The provider selection check is complete; no selected work remains.'}},'default-task-review'));
+      }
+      assert.equal(requests.length,5);assert.equal(toolResult(body,'default-task-review').planningReviews.at(-1).decision,'respond');
       return jsonResponse(answer('Remote provider selected correctly'));
     }}).init();
     await runtime.saveProvider({id:'cloud',type:'openai',models:['remote-fixture'],apiKey:'fixture-private-provider-key'});
@@ -112,8 +116,9 @@ test('HTTP preflight checks each selected provider instead of aggregate runtime 
   const started=await api('/api/runs',{method:'POST',body:{workflow:graph(),input:'Use the available default'}});
   assert.equal(started.status,201);const run=await settled(started.data.id);
   assert.equal(run.status,'completed',run.error);assert.match(run.output,/Remote provider selected correctly/);
-  assert.equal(requests.length,4);assert.ok(requests.every(request=>request.body.model==='remote-fixture'));assert.equal(codex.calls.length,0);
+  assert.equal(requests.length,5);assert.ok(requests.every(request=>request.body.model==='remote-fixture'));assert.equal(codex.calls.length,0);
   assert.equal(run.nodes.agent.planning.status,'recorded');assert.equal(run.taskState.plan.authoredBy.runId,run.id);
+  assert.equal(run.taskState.planningReviews.at(-1).runId,run.id);
   assert.equal(runtime.resolveModel('cloud::remote-fixture').available,true);
 });
 
@@ -159,7 +164,11 @@ test('provider HTTP tools registered by the engine invoke the actual browser wor
         assert.match(JSON.stringify(request.input),/UElYRUxT/,'the actual screenshot reaches the provider before it reports completion');
         return jsonResponse(functionCall('relay_task',{action:'step',expectedRevision:planRevision,stepId:'verify-browser',status:'done',evidence:`Browser screenshot returned an actual image from task-owned tab ${openedTabId}.`},'image-done'));
       }
-      assert.equal(requests.length,8);assert.ok(toolResult(request,'image-done').steps.every(step=>step.status==='done'));
+      if(requests.length===8){
+        const completed=toolResult(request,'image-done');assert.ok(completed.steps.every(step=>step.status==='done'));
+        return jsonResponse(functionCall('relay_task',{action:'review',expectedRevision:completed.revision,review:{decision:'respond',summary:'The browser opened the requested page in its task-owned tab and returned its observed text and actual screenshot. Both planned operations are complete; no selected work remains.'}},'browser-review'));
+      }
+      assert.equal(requests.length,9);assert.equal(toolResult(request,'browser-review').planningReviews.at(-1).decision,'respond');
       return jsonResponse(answer('Verified the browser workspace result'));
     }}).init();await runtime.saveProvider({id:'cloud',type:'openai',models:['tool-fixture'],apiKey:'fixture-browser-private-key'});return runtime;
   }});
@@ -170,7 +179,8 @@ test('provider HTTP tools registered by the engine invoke the actual browser wor
   assert.deepEqual(driver.status().tabs.find(tab=>tab.tabId===personalTab.tabId),personalTab);assert.equal(driver.status().activeTab,personalTab.tabId);
   assert.ok(requests[0].tools.some(tool=>tool.name==='relay_browser'));
   assert.ok(requests[0].input.some(item=>String(item.content).includes('BROWSER WORKSPACE')));
-  assert.equal(requests.length,8);assert.equal(run.nodes.agent.planning.status,'recorded');assert.equal(run.taskState.plan.authoredBy.runId,run.id);
+  assert.equal(requests.length,9);assert.equal(run.nodes.agent.planning.status,'recorded');assert.equal(run.taskState.plan.authoredBy.runId,run.id);
+  assert.equal(run.taskState.planningReviews.at(-1).runId,run.id);
   const wire=JSON.stringify(requests[6].input);assert.match(wire,/The page shows the verified fixture value/);assert.match(wire,/UElYRUxT/,'pixels reach the selected provider as an actual tool result');
   assert.ok(!JSON.stringify(run.events).includes('UElYRUxT'),'trace does not retain screenshot payloads');assert.ok(run.events.some(event=>event.data.type==='browser.action'));
   assert.match(run.output,/Verified the browser workspace result/);

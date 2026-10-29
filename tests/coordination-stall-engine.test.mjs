@@ -38,12 +38,14 @@ async function taskCall(options, build) {
 }
 async function complete(options) {
   const id = options.prompt.match(/^You are ([a-z]+)\./)?.[1];
+  assert.ok(['worker', 'coordinator'].includes(id), 'The prompt identifies the assigned fixture actor.');
   await taskCall(options, () => ({ action: 'edit', operations: [{ type: 'update', stepId: `agent-${id}-work`, patch: { status: 'active',
     operation: { kind: 'reasoning', target: `The supplied ${id} fixture assignment` },
     result: `The ${id} assignment label and prompt identifier are compared.`,
     note: `Compare the identifier extracted from the current prompt with the supplied ${id} assignment label.`,
     doneWhen: `The comparison identifies whether both supplied labels equal ${id}.` } }] }));
   await taskCall(options, () => ({ action: 'step', stepId: `agent-${id}-work`, status: 'done', evidence: 'The actual fixture result was checked.' }));
+  await taskCall(options, () => ({ action: 'review', review: { decision: 'respond', summary: `The current prompt identifies ${id}, matching its supplied assignment. The comparison is recorded and no work remains in this actor's assigned scope.` } }));
   return { output: `Checked ${id} fixture result.` };
 }
 async function fixture(t, { blocked = true, choice = false, grace, execute = complete, maxConcurrentRuns } = {}) {

@@ -5,7 +5,6 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
-import { recordFixturePlan } from './fixture-task-plan.mjs';
 
 class Runtime extends EventEmitter {
   constructor({failStart = false} = {}) { super(); this.failStart = failStart; this.ready = false; this.starts = 0; this.calls = []; }
@@ -14,7 +13,6 @@ class Runtime extends EventEmitter {
   async runAgent(options) {
     assert.equal(this.ready, true, 'queued work must wait for a recovered connection');
     this.calls.push(options.prompt);
-    await recordFixturePlan(options);
     return {output:'Owned reconnect fixture completed.',threadId:`reconnect-thread-${this.calls.length}`};
   }
   async close() { this.ready = false; }
@@ -23,7 +21,8 @@ class Runtime extends EventEmitter {
 const workflow = {
   id:'reconnect-fixture',name:'Reconnect fixture',
   nodes:[{id:'input',type:'input',name:'Task'},{id:'agent',type:'agent',name:'Agent',model:'reconnect-fixture',prompt:'Complete the local fixture.'},{id:'output',type:'output',name:'Result'}],
-  edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1},
+  // Queue admission and reconnect behavior do not depend on automatic Planning.
+  edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode:'off'},
 };
 const until = async (condition, label) => {
   const deadline = Date.now() + 5000;

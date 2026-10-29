@@ -6,12 +6,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
 import { ConnectionManager } from '../lib/mcp.mjs';
-import { recordFixturePlan } from './fixture-task-plan.mjs';
 
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return{promise,resolve};};
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const waitFor=async(check,label='condition')=>{const deadline=Date.now()+5000;while(Date.now()<deadline){const value=check();if(value)return value;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail(`${label} did not settle`);};
-const graph=()=>({id:'agent-integration',name:'Integration task',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Verifier',prompt:'Verify the requested result.',model:'fixture-model'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1}});
+// These fixtures exercise identity, learning, context and MCP integration.
+// Recursive planning and its final review use dedicated planning fixtures.
+const graph=()=>({id:'agent-integration',name:'Integration task',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Verifier',prompt:'Verify the requested result.',model:'fixture-model'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode:'off'}});
 class Runtime extends EventEmitter {
   constructor(execute){super();this.execute=execute;this.calls=[];this.closed=false;}
   status(){return{connected:true,authenticated:true,defaultModel:'fixture-model',models:[{model:'fixture-model',supportedReasoningEfforts:[{reasoningEffort:'medium'}]}]};}
@@ -39,7 +40,6 @@ test('identity is attached as real tools and an immutable per-turn snapshot, the
   let initialRevision,initialPrompt;
   const {app,runtime,request,settled}=await application(t,{execute:async(options,index)=>{
     assert.ok(options.dynamicTools.some(item=>item.name==='relay_identity'));assert.match(options.prompt,/BLACKICE GLOBAL IDENTITY/);
-    await recordFixturePlan(options);
     if(index===1){
       initialPrompt=options.prompt;const record=toolData(await tool(options,'relay_identity',{action:'read',kind:'user'}));initialRevision=record.revision;
       const saved=toolData(await tool(options,'relay_identity',{action:'update',kind:'user',content:record.content+'\n- Prefer compact handoffs.\n',expectedRevision:record.revision,expectedHash:record.diskHash,sourceQuote:'Prefer compact handoffs.'}));
@@ -61,7 +61,7 @@ test('identity is attached as real tools and an immutable per-turn snapshot, the
 
 test('workflow and node context settings survive HTTP validation, reach the runtime, and publish measured context events',async t=>{
   const measured={effectiveWindowTokens:128000,actualInputTokens:4500,remainingTokens:110000,warnings:['Requested window exceeds this fixture model.']};
-  const {app,runtime,request,settled}=await application(t,{maxConcurrentRuns:1,execute:async options=>{await recordFixturePlan(options);options.onEvent({type:'context',context:measured});return{output:'Context verified.',threadId:'context-thread'};}});
+  const {app,runtime,request,settled}=await application(t,{maxConcurrentRuns:1,execute:async options=>{options.onEvent({type:'context',context:measured});return{output:'Context verified.',threadId:'context-thread'};}});
   const flow=graph();flow.settings.context={preset:'900k',autoCompact:true};flow.nodes[1].context={preset:'custom',windowTokens:64000,autoCompact:false,outputReserveTokens:2048};
   const started=await request('/api/runs',{method:'POST',body:{workflow:flow,input:'Verify explicit context budgets.'}});assert.equal(started.status,201);
   const run=await settled(started.data.id);assert.equal(run.status,'completed',run.error);
@@ -84,7 +84,6 @@ test('automatic review is scheduled only after settlement and its cancellation f
     if(options.dynamicTools.some(item=>item.name==='relay_learn')){
       reflectionSignal=options.signal;await new Promise(resolve=>options.signal.addEventListener('abort',resolve,{once:true}));await release.promise;throw Object.assign(new Error('Background reviewer stopped'),{name:'AbortError'});
     }
-    await recordFixturePlan(options);
     foregroundCalls++;return{output:'Verified fixture result.',threadId:`foreground-${foregroundCalls}`};
   }});
   app.learning.delayMs=0;const scheduled=[],schedule=app.learning.scheduleAfterRun.bind(app.learning);app.learning.scheduleAfterRun=run=>{scheduled.push({settled:run.settled,status:run.status,executions:app.engine.executions.size});return schedule(run);};
@@ -103,7 +102,6 @@ test('a completed reflection persists a real skill and the next agent receives a
       await tool(options,'relay_learn',{action:'record',kind:'skill',key:'verify-fixture',title:'Verify the fixture',summary:'Read the fixture result before reporting success.',content:'Read the current artifact and compare it with the requested result.',whenToUse:'When checking fixture exports in this folder.',verification:'Read the actual output file.',evidence:[{id:'node_agent',quote:'Verified fixture result.'}]});
       await tool(options,'relay_learn',{action:'finish',summaryOfReview:'Recorded the observed fixture verification procedure.'});return{output:'Recorded evidence-backed skill.'};
     }
-    await recordFixturePlan(options);
     foreground++;if(foreground===2){const lesson=app.learning.listLessons()[0];assert.doesNotMatch(options.prompt,new RegExp(lesson.knowledgeId));const receipt=await tool(options,'relay_skills',{action:'read',id:lesson.knowledgeId});assert.equal(receipt.success,true);assert.match(text(receipt),/Read the current artifact/);readSkill=true;}
     return{output:'Verified fixture result.',threadId:`skill-thread-${foreground}`};
   }});
@@ -122,7 +120,6 @@ test('connected capabilities are registered and call a real MCP transport throug
       return new Response(JSON.stringify({jsonrpc:'2.0',id:message.id,result}),{status:200,headers:{'Content-Type':'application/json',...(message.method==='initialize'?{'Mcp-Session-Id':'fixture-session'}:{})}});
     }});return manager;
   },execute:async options=>{
-    await recordFixturePlan(options);
     assert.ok(options.dynamicTools.some(item=>item.name==='relay_connections'));assert.match(options.prompt,/CONNECTED CAPABILITIES/);
     const listed=await tool(options,'relay_connections',{action:'connections'});assert.match(text(listed),/fixture-mcp/);
     const tools=await tool(options,'relay_connections',{action:'tools',connectionId:'fixture-mcp'});assert.match(text(tools),/verify_fixture/);

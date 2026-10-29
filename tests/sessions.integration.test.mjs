@@ -1,5 +1,4 @@
 import test from 'node:test';
-import { recordFixturePlan } from './fixture-task-plan.mjs';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { EventEmitter } from 'node:events';
@@ -39,7 +38,7 @@ const graph = {
     { id: 'output', type: 'output', name: 'Result' },
   ],
   edges: [{ source: 'input', target: 'alpha' }, { source: 'input', target: 'beta' }, { source: 'alpha', target: 'output' }, { source: 'beta', target: 'output' }],
-  settings: { maxParallel: 2 },
+  settings: { maxParallel: 2, planningMode: 'off' },
 };
 const singleAgentGraph = () => ({ ...structuredClone(graph), nodes: graph.nodes.filter(node => node.id !== 'beta'), edges: graph.edges.filter(edge => edge.source !== 'beta' && edge.target !== 'beta') });
 
@@ -83,11 +82,7 @@ async function application(t, options = {}) {
 }
 
 test('HTTP continuation preserves its original snapshot and resumes only the chosen saved conversation', async t => {
-  let plans = Promise.resolve();
   const runtime = new FakeRuntime(async options => {
-    // The two initial agents share one durable task revision. Serialize only
-    // their fixture outline writes, keeping the actual parallel run unchanged.
-    await (plans = plans.then(() => recordFixturePlan(options, { title: 'Retain this agent’s saved conversation', doneWhen: 'Continuation resumes only the selected agent and preserves the original run snapshot.' })));
     const selected = options.prompt.includes('ALPHA_MARKER');
     return { output: options.threadId ? 'Refined result' : selected ? 'Alpha result' : 'Beta result', threadId: options.threadId || (selected ? 'alpha-thread' : 'beta-thread'), usage: { totalTokens: 20, total: { totalTokens: options.threadId ? 40 : 20 } } };
   });
@@ -189,7 +184,6 @@ test('HTTP knowledge CRUD is authenticated, workspace-filtered, durable and reco
 test('attached agent tools read and write the actual scoped store with run provenance and bounded history', async t => {
   const observations = [];
   const runtime = new FakeRuntime(async options => {
-    await recordFixturePlan(options, { title: 'Read and maintain the scoped knowledge store', doneWhen: 'Reads enforce workspace scope and saved entries retain actual run provenance.' });
     const attached = new Set(options.dynamicTools.map(spec => spec.name));
     for (const name of ['relay_history', 'relay_memory', 'relay_skills', 'relay_workspace']) assert.ok(attached.has(name), `${name} is attached to the agent`);
     const found = decode(await options.onToolCall(tool('relay_memory', { action: 'search', query: 'convention' })));
@@ -238,7 +232,7 @@ test('attached agent tools read and write the actual scoped store with run prove
 
 test('cancellation blocks late agent knowledge writes and queued store writes before they commit', async t => {
   const entered = deferred(), release = deferred();
-  const runtime = new FakeRuntime(async options => { await recordFixturePlan(options, { title: 'Exercise cancellation of a queued knowledge save', doneWhen: 'Cancellation preserves the original entry and rejects late writes.' }); entered.resolve(options); return release.promise; });
+  const runtime = new FakeRuntime(async options => { entered.resolve(options); return release.promise; });
   const { api, app, settled } = await application(t, { runtime });
   await api('/api/knowledge', { method: 'POST', body: { id: 'queued-agent-note', kind: 'memory', title: 'Prior fact', content: 'Must remain unchanged.', cwd: app.engine.defaultCwd } });
   const started = await api('/api/runs', { method: 'POST', body: { workflow: singleAgentGraph(), input: 'Await cancellation.' } });

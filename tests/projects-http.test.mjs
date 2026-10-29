@@ -40,12 +40,14 @@ async function fixture(t,{execute,externalReceipt=false}={}){
           }
           taskState=state;
         }
-        await taskCall({action:'step',expectedRevision:taskState.revision,stepId:'assigned',status:'done',evidence:`The workspace write returned success for proof.txt with intended content ${text.trim()}. Independent acceptance is checked by a separate reviewer.`});
+        taskState=await taskCall({action:'step',expectedRevision:taskState.revision,stepId:'assigned',status:'done',evidence:`The workspace write returned success for proof.txt with intended content ${text.trim()}. Independent acceptance is checked by a separate reviewer.`});
+        await taskCall({action:'review',expectedRevision:taskState.revision,review:{decision:'respond',summary:`The assigned write returned success with content ${text.trim()}. This implementation step is complete; independent acceptance remains the separate verifier's task.`}});
         return{output:`Wrote proof.txt: ${text.trim()}.`,threadId:`project-fixture-${calls.length}`};
       }
       const read=await options.onToolCall({name:'relay_workspace',arguments:{action:'read',path:'proof.txt'}});assert.equal(read.success,true);
       const actual=JSON.parse(read.contentItems[0].text).content,passed=actual.includes('accepted');
-      await taskCall({action:'step',expectedRevision:taskState.revision,stepId:'assigned',status:'done',evidence:`Read the actual proof and compared it with the acceptance criterion. Observed ${actual.trim()}; criterion passed: ${passed}.`});
+      taskState=await taskCall({action:'step',expectedRevision:taskState.revision,stepId:'assigned',status:'done',evidence:`Read the actual proof and compared it with the acceptance criterion. Observed ${actual.trim()}; criterion passed: ${passed}.`});
+      await taskCall({action:'review',expectedRevision:taskState.revision,review:{decision:'respond',summary:`The saved proof was read and assessed against the criterion. It ${passed?'passes':'fails'} because its observed content is ${actual.trim()}. Report this completed verification so the project controller can select its next action.`}});
       return{output:JSON.stringify({passed,summary:passed?'Read the saved file and confirmed accepted.':'Read the saved file; it still contains draft.',criteria:[{criterion:'proof.txt contains accepted',passed,evidence:`Observed ${actual.trim()}`}]}),threadId:`project-fixture-${calls.length}`};
     }
   }

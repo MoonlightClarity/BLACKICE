@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { recordFixturePlan } from './fixture-task-plan.mjs';
 import http from 'node:http';
 import {EventEmitter} from 'node:events';
 import {mkdtemp, mkdir, readFile, rm} from 'node:fs/promises';
@@ -17,7 +16,7 @@ const catalog = [{appId: 'notepad-classic', name: 'Notepad', available: true, ex
 const graph = {
   id: 'application-integration', name: 'Contained app integration',
   nodes: [{id: 'input', type: 'input'}, {id: 'agent', type: 'agent', name: 'App worker', model: 'application-fixture', prompt: 'Use the attached private application workspace.'}, {id: 'output', type: 'output'}],
-  edges: [{source: 'input', target: 'agent'}, {source: 'agent', target: 'output'}], settings: {maxParallel: 1},
+  edges: [{source: 'input', target: 'agent'}, {source: 'agent', target: 'output'}], settings: {maxParallel: 1, planningMode: 'off'},
 };
 
 // This fixture implements the private runtime protocol in memory. No Windows
@@ -63,7 +62,6 @@ class ModelRuntime extends EventEmitter {
     for (const tool of options.dynamicTools || []) assert.ok(['function', 'namespace'].includes(tool.type), `${tool.name || 'Unnamed attached tool'} must have a canonical function or namespace type.`);
     const applicationTool = options.dynamicTools?.find(tool => tool.name === APPLICATION_TOOL.name);
     if (applicationTool) assert.equal(applicationTool.type, 'function');
-    await recordFixturePlan(options, { title: 'Exercise the private application workflow', doneWhen: 'The actual scoped session and its observed effects match the requested application behavior.' });
     this.calls.push(options); return this.execute ? this.execute(options) : {output: 'No application action requested.', threadId: 'application-fixture-thread'};
   }
 }

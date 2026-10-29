@@ -1113,7 +1113,7 @@ export async function createHarnessServer(options = {}) {
       files['/assets/blackice-v2-mark.svg'] = 'assets/blackice-v2-mark.svg';
       const nextFiles = ['index.html','base.css','chat.css','chat-management.css','brand.css','work-visual.css','intelligence-planning.css','intelligence-map.css','controls.css','layout-fixes.css','planning-ontology.css','guard.js','app.mjs',
         'core/api.mjs','core/dom.mjs','core/events.mjs',
-        'chat/chat.mjs','chat/model.mjs','chat/render.mjs','chat/send.mjs',
+        'chat/chat.mjs','chat/model.mjs','chat/render.mjs','chat/send.mjs','chat/planning-timeline.mjs',
         'chat/options-model.mjs','chat/artifacts.mjs','parity.css',
         'chat/reader-model.mjs','chat/reader-worker.mjs','chat/reader-client.mjs',
         // Native hosting UI assets are registered at the public root below.

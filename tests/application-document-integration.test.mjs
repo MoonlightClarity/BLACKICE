@@ -9,12 +9,13 @@ import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
 import { ApplicationWorkspace } from '../lib/application-workspace.mjs';
 import { APPLICATION_TOOL, APPLICATION_SCHEMA_VERSION, LEGACY_APPLICATION_TOOL, LEGACY_APPLICATION_INSTRUCTIONS } from '../lib/application-tools.mjs';
-import { recordFixturePlan } from './fixture-task-plan.mjs';
 
 const EDITOR = 'uia_abcdef123456_1';
 const catalog = [{ appId: 'notepad-classic', name: 'Notepad', available: true, executable: 'C:\\Windows\\System32\\notepad.exe', args: [] }];
 const digest = text => createHash('sha256').update(text, 'utf8').digest('hex');
-const graph = { id: 'document-integration', name: 'Private document round trip', nodes: [{ id: 'input', type: 'input' }, { id: 'agent', type: 'agent', name: 'Document worker', model: 'document-fixture', prompt: 'Work with the attached private application editor and its saved versions.' }, { id: 'output', type: 'output' }], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1 } };
+// These fixtures verify document integrity and application tool boundaries.
+// Recursive planning and its final review use dedicated planning fixtures.
+const graph = { id: 'document-integration', name: 'Private document round trip', nodes: [{ id: 'input', type: 'input' }, { id: 'agent', type: 'agent', name: 'Document worker', model: 'document-fixture', prompt: 'Work with the attached private application editor and its saved versions.' }, { id: 'output', type: 'output' }], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1, planningMode: 'off' } };
 
 // In-memory private runtime only. These integration tests start a local HTTP
 // server and fake provider, never a Windows helper, browser, or GUI process.
@@ -61,7 +62,6 @@ class ModelRuntime extends EventEmitter {
         assert.equal(tool.inputSchema.properties.documentId.type, 'string'); assert.equal(tool.inputSchema.properties.title.type, 'string'); assert.equal(tool.inputSchema.properties.expectedTextSha256.pattern, '^[a-f0-9]{64}$');
       }
     }
-    await recordFixturePlan(options, { title: 'Exercise the private document workflow', doneWhen: 'Observed editor text and saved versions enforce the requested integrity and restore boundaries.' });
     this.calls.push(options); return this.execute ? this.execute(options) : { output: 'No application launch requested.', threadId: 'document-fixture-thread' };
   }
 }

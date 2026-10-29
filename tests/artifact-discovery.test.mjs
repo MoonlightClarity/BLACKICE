@@ -1,5 +1,4 @@
 import test from 'node:test';
-import { recordFixturePlan } from './fixture-task-plan.mjs';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, writeFile, readFile, symlink, rm } from 'node:fs/promises';
@@ -122,10 +121,10 @@ class Runtime extends EventEmitter {
   constructor(execute) { super(); this.execute = execute; }
   status() { return { connected: true, authenticated: true, defaultModel: 'fixture-model' }; }
   async start() { return this.status(); }
-  async runAgent(options) { await recordFixturePlan(options, { title: 'Create the requested linked file', doneWhen: 'The requested file is written and its final response link names the actual file.' }); return this.execute(options); }
+  async runAgent(options) { return this.execute(options); }
   async close() {}
 }
-const graph = { id: 'auto-files', name: 'Automatic output files', nodes: [{ id: 'input', type: 'input', name: 'Task' }, { id: 'agent', type: 'agent', name: 'Artist', prompt: 'Make a board.' }, { id: 'output', type: 'output', name: 'Result' }], edges: [{ id: 'a', source: 'input', target: 'agent' }, { id: 'b', source: 'agent', target: 'output' }] };
+const graph = { id: 'auto-files', name: 'Automatic output files', nodes: [{ id: 'input', type: 'input', name: 'Task' }, { id: 'agent', type: 'agent', name: 'Artist', prompt: 'Make a board.' }, { id: 'output', type: 'output', name: 'Result' }], edges: [{ id: 'a', source: 'input', target: 'agent' }, { id: 'b', source: 'agent', target: 'output' }], settings: { planningMode: 'off' } };
 async function settled(engine, id) { const end = Date.now() + 5000; while (Date.now() < end) { const run = engine.getRun(id); if (run.settled) return run; await new Promise(resolve => setTimeout(resolve, 10)); } assert.fail('Run did not settle.'); }
 
 test('real engine discovers a workspace-written SVG final link and persists its receipt without an explicit artifact tool call', async t => {

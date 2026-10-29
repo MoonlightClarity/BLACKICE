@@ -9,10 +9,10 @@ import {createHarnessServer} from '../server.mjs';
 import {CONTROL_TOOL,CONTROL_SCHEMA_VERSION,PRE_FAST_CONTROL_TOOL,PRE_FAST_CONTROL_INSTRUCTIONS,LEGACY_CONTROL_TOOL,createControlToolHandler} from '../lib/control-tools.mjs';
 import {validateWorkflow} from '../lib/engine.mjs';
 import {validateObservePresentation} from '../lib/live-edits.mjs';
-import {recordFixturePlan} from './fixture-task-plan.mjs';
 
 const until=async(check,label='control operation')=>{const end=Date.now()+7000;while(Date.now()<end){const value=await check();if(value)return value;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail(`${label} did not settle`);};
-const graph=(id='controlled-workflow')=>({id,name:'Configured through chat',nodes:[{id:'input',type:'input',name:'Task'},{id:'agent',type:'agent',name:'Worker',prompt:'Verify the original requested result.',model:'control-fixture-model'},{id:'output',type:'output',name:'Result'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1}});
+// These mocks exercise configuration contracts; Planning has its own protocol tests.
+const graph=(id='controlled-workflow')=>({id,name:'Configured through chat',nodes:[{id:'input',type:'input',name:'Task'},{id:'agent',type:'agent',name:'Worker',prompt:'Verify the original requested result.',model:'control-fixture-model'},{id:'output',type:'output',name:'Result'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode:'off'}});
 const unpack=result=>JSON.parse(result.contentItems.find(item=>item.type==='inputText').text);
 const call=async(options,args,success=true)=>{const result=await options.onToolCall({name:'relay_control',arguments:args});assert.equal(result.success,success,JSON.stringify(unpack(result)));return unpack(result);};
 
@@ -49,7 +49,6 @@ test('pre-Fast native schema and instructions retain their exact v3 bytes', () =
 
 test('new chat configuration saves speed separately; v3 continuations and Retry keep their original catalog', async t => {
  const f=await fixture(t,async(options,index)=>{
-  await recordFixturePlan(options);
   const definition=options.dynamicTools.find(tool=>tool.name==='relay_control'),description=await call(options,{action:'describe'});
   assert.deepEqual(description.tool,definition);
   if(index===1){
@@ -79,7 +78,6 @@ test('new chat configuration saves speed separately; v3 continuations and Retry 
 });
 test('old native control catalogs keep truthful schemas through continuation and retry',async t=>{
  const f=await fixture(t,async(options,index)=>{
-  await recordFixturePlan(options,{title:'Inspect the retained control catalog',doneWhen:'Describe matches the actual attached control schema through continuation and retry.'});
   const definition=options.dynamicTools.find(tool=>tool.name==='relay_control'),description=await call(options,{action:'describe'});
   assert.deepEqual(description.tool,definition);
   if(index===1){assert.ok(definition.inputSchema.properties.runtime.properties.defaultEffort);assert.ok(definition.inputSchema.properties.deployment.properties.limits);assert.ok(definition.inputSchema.properties.runtime.properties.subagentsEnabled);}
@@ -106,7 +104,6 @@ async function fixture(t,execute){
 test('the actual engine attaches the configuration gateway; saved revisions and step edits affect future runs only',async t=>{
   let firstSnapshot,updatedRevision,originalRevision;
   const context=await fixture(t,async(options,index)=>{
-    await recordFixturePlan(options);
     assert.ok(options.dynamicTools.some(tool=>tool.name===CONTROL_TOOL.name));assert.match(options.prompt,/AGENT CONFIGURATION/);
     if(index===1){
       const description=await call(options,{action:'describe'});assert.ok(description.tool.inputSchema.properties.action.enum.includes('step_update'));
@@ -131,7 +128,6 @@ test('the actual engine attaches the configuration gateway; saved revisions and 
 test('the actual agent schema previews a calendar schedule before persisting its real trigger and receipt',async t=>{
   let saved;
   const context=await fixture(t,async options=>{
-    await recordFixturePlan(options);
     const tool=options.dynamicTools.find(item=>item.name===CONTROL_TOOL.name);assert.ok(tool.inputSchema.properties.action.enum.includes('schedule_preview'));assert.ok(tool.inputSchema.properties.deployment.properties.trigger.properties.type.enum.includes('cron'));assert.match(options.prompt,/explicit IANA timezone/);
     const trigger={type:'cron',expression:'0 9 * * MON-FRI',timezone:'America/New_York'},before=context.app.operations.snapshot();
     const preview=await call(options,{action:'schedule_preview',trigger,count:2});assert.ok(preview.nextAt>Date.now());assert.equal(preview.occurrences.length,2);assert.deepEqual(context.app.operations.snapshot(),before,'preview is read-only');
@@ -144,7 +140,6 @@ test('the actual agent schema previews a calendar schedule before persisting its
 
 test('agents configure optional operation lifetimes and receive explicit reached-limit errors through the real control gateway',async t=>{
   let saved,receipt;const context=await fixture(t,async options=>{
-    await recordFixturePlan(options);
     const description=await call(options,{action:'describe'}),schema=description.tool.inputSchema.properties.deployment.properties.limits;assert.deepEqual(schema.type,['object','null']);assert.equal(schema.properties.maxIterations.maximum,Number.MAX_SAFE_INTEGER);assert.match(description.notes.join('\n'),/retries and repeated idempotency keys do not count/);assert.match(options.prompt,/deployment.limits/);
     saved=await call(options,{action:'deployment_save',deployment:{name:'Agent finite operation',input:'Repeat the authorized fixture task.',cwd:context.cwd,workflow:graph('finite-tool-worker'),trigger:{type:'manual'},limits:{maxIterations:1,runForSeconds:3600,endAt:'2030-01-05T17:30:00-05:00'}}});assert.equal(saved.admittedJobs,0);assert.equal(saved.activatedAt,null);
     receipt=await call(options,{action:'deployment_run',id:saved.id,idempotencyKey:'one-finite-request'});const duplicate=await call(options,{action:'deployment_run',id:saved.id,idempotencyKey:'one-finite-request'});assert.equal(duplicate.id,receipt.id);const blocked=await call(options,{action:'deployment_run',id:saved.id,idempotencyKey:'second-finite-request'},false);assert.match(blocked.error,/Stopped after 1 admitted job/);
@@ -165,7 +160,6 @@ test('independent agent handlers cannot overwrite a newer saved workflow with th
 test('an agent creates and triggers an actual durable operation, receives its job receipt, and runs the side effect once',async t=>{
   let receipt,deployment;
   const context=await fixture(t,async(options,index)=>{
-    await recordFixturePlan(options);
     if(index===1){
       deployment=await call(options,{action:'deployment_save',deployment:{name:'Configured operation',input:'Write and independently read the fixture proof.',cwd:context.cwd,workflow:graph('deployed-control-worker'),enabled:false,trigger:{type:'manual'},retry:{maxAttempts:0,backoffSeconds:1}}});
       receipt=await call(options,{action:'deployment_run',id:deployment.id,idempotencyKey:'one-agent-request',input:'fixture payload'});assert.equal(receipt.status,'queued');assert.equal(receipt.definition.workflow.id,'deployed-control-worker');
@@ -181,7 +175,6 @@ test('an agent creates and triggers an actual durable operation, receives its jo
 test('Observe accepts presentation only; an agent cannot inject file evidence or alter its execution snapshot',async t=>{
   const emitted=[];
   const context=await fixture(t,async options=>{
-    await recordFixturePlan(options);
     const initial=await call(options,{action:'observe_get'});assert.equal(initial.watching,false);const allowed={version:1,title:'Current file changes',focus:'edits',file:'fixture.txt',stepIds:['agent'],showAgents:false};const configured=await call(options,{action:'observe_set',presentation:allowed});assert.deepEqual(configured.presentation,allowed);
     for(const presentation of [{...allowed,events:[{path:'invented.txt',diff:'fabricated'}]},{...allowed,evidence:'made up'},{...allowed,status:'completed'},{...allowed,file:'../private.txt'},{...allowed,title:'control\u0000text'}])await call(options,{action:'observe_set',presentation},false);
     const current=await call(options,{action:'observe_get'});assert.deepEqual(current.presentation,allowed);assert.equal(current.watching,false);return{output:'Configured actual presentation without fabricated evidence.',threadId:'observe-control-thread'};
@@ -192,7 +185,6 @@ test('Observe accepts presentation only; an agent cannot inject file evidence or
 test('the configuration gateway rejects nonexistent folders and attachments before saving or updating an operation',async t=>{
   let deployment;
   const context=await fixture(t,async options=>{
-    await recordFixturePlan(options);
     const definition={name:'Validated deployment',input:'Use this valid isolated folder.',cwd:context.cwd,workflow:graph('validated-deployment'),attachmentIds:[],enabled:false,trigger:{type:'manual'}};
     for(const invalid of [{cwd:path.join(context.cwd,'missing-folder')},{cwd:path.join(context.cwd,'ordinary-file.txt')},{attachmentIds:['file_missing']}])await call(options,{action:'deployment_save',deployment:{...definition,...invalid}},false);
     assert.equal((await call(options,{action:'operations_list'})).deployments.length,0);deployment=await call(options,{action:'deployment_save',deployment:definition});
@@ -204,7 +196,6 @@ test('the configuration gateway rejects nonexistent folders and attachments befo
 
 test('the actual agent gateway pauses operations and explicitly resumes both operations and the stopped inbox',async t=>{
   const context=await fixture(t,async options=>{
-    await recordFixturePlan(options);
     const registered=options.dynamicTools.find(tool=>tool.name==='relay_control');for(const action of ['operations_pause','operations_resume','job_retry'])assert.ok(registered.inputSchema.properties.action.enum.includes(action));assert.equal(registered.inputSchema.properties.resumeInbox.type,'boolean');
     const described=await call(options,{action:'describe'});assert.ok(described.tool.inputSchema.properties.action.enum.includes('job_retry'));
     const paused=await call(options,{action:'operations_pause',reason:'Pause these configured tasks through chat.'});assert.equal(paused.paused,true);assert.equal(paused.pauseReason,'Pause these configured tasks through chat.');assert.equal((await call(options,{action:'operations_list'})).status.paused,true);assert.equal(context.app.operations.status().paused,true);
@@ -219,7 +210,6 @@ test('the actual agent gateway pauses operations and explicitly resumes both ope
 test('agents read and change the same durable history preference without changing active admission',async t=>{
   let chosen;
   const context=await fixture(t,async options=>{
-    await recordFixturePlan(options);
     assert.equal(options.codexHistory,'relay');
     assert.equal((await call(options,{action:'catalog'})).runtimeSettings.codexHistory,'relay');
     assert.deepEqual(await call(options,{action:'runtime_get'}),{codexHistory:'relay',runTimeoutMs:null,providerIdleTimeoutMs:300000,defaultEffort:'default',defaultServiceTier:'default',defaultContext:{preset:'model',windowTokens:null,autoCompact:true},verbosity:'balanced',subagentsEnabled:false,maxSubagents:3});
@@ -239,7 +229,6 @@ test('agents read and change the same durable history preference without changin
 
 test('agents patch user-selected durations through the real tool without changing active budgets or unrelated settings',async t=>{
   const context=await fixture(t,async options=>{
-    await recordFixturePlan(options);
     assert.equal(options.timeoutMs,null);assert.equal(options.providerIdleTimeoutMs,300000);
     const tool=options.dynamicTools.find(item=>item.name==='relay_control'),schema=tool.inputSchema.properties.runtime;
     assert.equal(schema.minProperties,1);assert.equal(schema.required,undefined);assert.deepEqual(schema.properties.runTimeoutMs.type,['integer','null']);
@@ -264,7 +253,6 @@ test('parallel agent runtime patches merge independently and cancellation cannot
 
 test('agents can save future reasoning and 900k defaults without changing the active chat choices',async t=>{
   const context=await fixture(t,async options=>{
-    await recordFixturePlan(options);
     assert.equal(options.effort,'default');assert.equal(options.context.windowTokens,null);
     const schema=CONTROL_TOOL.inputSchema.properties.runtime.properties;assert.ok(schema.defaultEffort.enum.includes('max'));assert.ok(schema.defaultEffort.enum.includes('ultra'));assert.ok(schema.defaultContext.properties.preset.enum.includes('900k'));
     const saved=await call(options,{action:'runtime_set',runtime:{defaultEffort:'ultra',defaultContext:{preset:'900k',autoCompact:true}}});
@@ -275,7 +263,6 @@ test('agents can save future reasoning and 900k defaults without changing the ac
 
 test('agents can configure and inspect optional delegation and verbosity without changing the admitted turn',async t=>{
  const context=await fixture(t,async options=>{
-  await recordFixturePlan(options);
   const schema=options.dynamicTools.find(tool=>tool.name==='relay_control').inputSchema.properties.runtime.properties;
   assert.deepEqual(schema.verbosity.enum,['concise','balanced','detailed']);
   assert.equal(schema.maxSubagents.maximum,8);

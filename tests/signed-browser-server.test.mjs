@@ -6,13 +6,12 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
-import { recordFixturePlan } from './fixture-task-plan.mjs';
 
 class Runtime extends EventEmitter {
   prompts = [];
   status() { return { connected: true, authenticated: true, defaultModel: 'fixture' }; }
   async start() { return this.status(); }
-  async runAgent(options) { await recordFixturePlan(options); this.prompts.push(options.prompt); return { output: 'Actual fixture result.', threadId: 'signed-browser-fixture' }; }
+  async runAgent(options) { this.prompts.push(options.prompt); return { output: 'Actual fixture result.', threadId: 'signed-browser-fixture' }; }
   async close() {}
 }
 
@@ -46,7 +45,7 @@ test('legacy native discovery preserves its manual connection while background r
   assert.equal(startedStatus.backgroundReady, false); assert.match(startedStatus.backgroundReason, /cannot verify its background focus policy/);
   assert.equal(startedStatus.backgroundWindow.ready, false); assert.equal(startedStatus.backgroundWindow.supported, false);
   assert.equal(app.connections.configs.get('browseros-neo').url,endpoint);assert.equal(app.connections.clients.get('browseros-neo').connected,true,'unsupported policy keeps the existing tool connection intact');assert.equal(app.connections.signedBrowser.backgroundWindow.ready,false);assert.equal(app.connections.signedBrowser.backgroundWindow.supported,false);
-  const graph = { id: 'browser-prompt', name: 'Browser prompt', nodes: [{ id: 'input', type: 'input', name: 'Task' }, { id: 'agent', type: 'agent', name: 'Agent', prompt: 'Inspect the website', sandbox: 'read-only' }, { id: 'output', type: 'output', name: 'Result' }], edges: [{ id: 'a', source: 'input', target: 'agent' }, { id: 'b', source: 'agent', target: 'output' }], settings: { maxParallel: 1 } };
+  const graph = { id: 'browser-prompt', name: 'Browser prompt', nodes: [{ id: 'input', type: 'input', name: 'Task' }, { id: 'agent', type: 'agent', name: 'Agent', prompt: 'Inspect the website', sandbox: 'read-only' }, { id: 'output', type: 'output', name: 'Result' }], edges: [{ id: 'a', source: 'input', target: 'agent' }, { id: 'b', source: 'agent', target: 'output' }], settings: { maxParallel: 1, planningMode: 'off' } };
   const run = app.engine.startRun({ workflow: graph, input: 'Check the actual account state.' });
   await app.engine.executions.get(run.id);
   assert.equal(app.engine.getRun(run.id).status,'completed','an ordinary model turn can still finish when native background readiness is unverified');

@@ -12,6 +12,7 @@ import { CodexRuntime } from '../lib/codex.mjs';
 import { HarnessEngine } from '../lib/engine.mjs';
 import { ProviderRuntime } from '../lib/providers.mjs';
 import { reduceRunEvent, adoptFetchedRun, newerTaskState } from '../public/run-state-model.mjs';
+import { finishFixturePlan } from './fixture-task-plan.mjs';
 
 const payload = receipt => JSON.parse(receipt.contentItems[0].text);
 const action = (id = 'draft') => ({ id, title: 'Prepare and verify the requested draft', kind: 'action', status: 'active', doneWhen: 'The destination displays the correct data and accepted attachment; unresolved facts remain visible.' });
@@ -279,7 +280,15 @@ test('actual engine tool dispatch publishes journal updates at unchanged plan re
       const live = engine.getRun(admittedId);
       if (saved) { assert.equal(live.taskState.revision, saved.revision); assert.equal(live.taskState.executionObservations.total, 1); assert.equal(live.taskState.steps[0].status, 'active'); }
       else assert.equal(live.taskState?.executionObservations, undefined);
-      return { output: 'The actual fixture write completed; this alone does not finish the requested milestone.' };
+      const receipt = payload(result);
+      assert.equal(receipt.path, path.join(f.cwd, 'checked-fixture.txt'));
+      assert.equal(receipt.bytesWritten, Buffer.byteLength('Known fixture result.'));
+      if (saved) {
+        const outcome = await options.onToolCall({ name: 'relay_task', arguments: { action: 'step', expectedRevision: saved.revision, stepId: 'draft', status: 'done', evidence: 'The actual write receipt names checked-fixture.txt and reports the expected UTF-8 byte count.' } });
+        assert.equal(outcome.success, true, outcome.contentItems?.[0]?.text);
+        await finishFixturePlan(options, { state: payload(outcome), summary: 'The requested write returned the expected path and byte count. Its outcome is now explicitly recorded; this fixture has no remaining write or receipt check.' });
+      }
+      return { output: 'The fixture write receipt identifies the expected path and byte count.' };
     }
   }
   engine = await new HarnessEngine({ runtime: new Runtime(), tasks: f.store, dataDir: f.directory, defaultCwd: f.cwd }).init();

@@ -9,14 +9,22 @@ import { createHarnessServer } from '../server.mjs';
 import { AgentEmailStore } from '../lib/agent-email.mjs';
 import { RemoteAccessManager } from '../lib/remote-access.mjs';
 import { createRemoteTransportFixture } from './fixtures/remote-transport.mjs';
-import { recordFixturePlan } from './fixture-task-plan.mjs';
+import { recordFixturePlan, finishFixturePlan } from './fixture-task-plan.mjs';
 
 class Runtime extends EventEmitter {
   status() { return { connected: true, authenticated: true, models: [{ model: 'awareness-http-fixture' }], defaultModel: 'awareness-http-fixture' }; }
   async start() { return this.status(); }
   async close() {}
   async runAgent(options) {
-    await recordFixturePlan(options);
+    let state = await recordFixturePlan(options, { title: 'Inspect the attached task gateway', doneWhen: 'The current relay_task schema and read response have been inspected.' });
+    const tool = options.dynamicTools.find(item => item.name === 'relay_task');
+    assert.ok(tool.inputSchema.properties.action.enum.includes('review'));
+    const active = state.steps.find(step => step.status === 'active' && step.kind === 'action');
+    assert.ok(active);
+    const saved = await options.onToolCall({ name: 'relay_task', arguments: { action: 'step', expectedRevision: state.revision, stepId: active.id, status: 'done', evidence: 'Inspected the attached relay_task schema, confirmed that review is supported, and read its actual current task state.' } });
+    assert.equal(saved.success, true, saved.contentItems?.[0]?.text);
+    state = JSON.parse(saved.contentItems[0].text);
+    await finishFixturePlan(options, { state, summary: 'The task gateway and its current state were inspected. The fixture preparation is complete; the HTTP test will independently exercise awareness without additional model work.' });
     return { output: 'The local HTTP fixture task completed.', threadId: 'awareness-http-thread' };
   }
 }

@@ -17,18 +17,18 @@ async function fixture(t, schemaVersion) {
   return { store, state, call: args => handler({ name: 'relay_task', arguments: args }) };
 }
 
-test('v7 through v9 advertise the same note limit while cached v6 remains unchanged', async t => {
-  assert.equal(TASK_SCHEMA_VERSION, 9);
-  for (const tool of [7, 8, 9].flatMap(version => [taskToolForVersion(version), taskWorkerToolForVersion(version)])) {
+test('v7 through v10 advertise the same note limit while cached v6 remains unchanged', async t => {
+  assert.equal(TASK_SCHEMA_VERSION, 10);
+  for (const tool of [7, 8, 9, 10].flatMap(version => [taskToolForVersion(version), taskWorkerToolForVersion(version)])) {
     const f = tool.inputSchema.properties;
     for (const note of [f.note, f.steps.items.properties.note, f.operations.items.properties.step.properties.note, f.operations.items.properties.patch.properties.note.anyOf[0]]) assert.equal(note.maxLength, 700);
     assert.deepEqual(f.operations.items.properties.patch.properties.note.anyOf[1], { type: 'null' });
   }
-  assert.equal(taskWorkerToolForVersion(9), TASK_WORKER_TOOL);
+  assert.equal(taskWorkerToolForVersion(10), TASK_WORKER_TOOL);
   assert.equal(taskWorkerToolForVersion(8).inputSchema.properties.operation, undefined);
   assert.equal(digest(taskWorkerToolForVersion(6)), 'e27a50b314a227b671c7a82303054e60ab3a3668cbb96e29d88d561633d4173c');
   assert.equal(taskWorkerToolForVersion(6).inputSchema.properties.note.maxLength, undefined);
-  for (const version of [6, 7, 8, 9]) {
+  for (const version of [6, 7, 8, 9, 10]) {
     const f = await fixture(t, version), description = parsed(await f.call({ action: 'describe' }));
     assert.equal(description.schemaVersion, version);
     assert.equal(description.plan.inputSchema.properties.steps.items.properties.note.maxLength, version >= 7 ? 700 : undefined);
@@ -36,7 +36,7 @@ test('v7 through v9 advertise the same note limit while cached v6 remains unchan
   }
 });
 
-for (const version of [6, 7, 8, 9]) test(`v${version} rejects the observed 714-character note atomically and accepts a concise repair at the unchanged 700-character boundary`, async t => {
+for (const version of [6, 7, 8, 9, 10]) test(`v${version} rejects the observed 714-character note atomically and accepts a concise repair at the unchanged 700-character boundary`, async t => {
   const f = await fixture(t, version), ids = ['finish_supported_answers', 'pre_submit_review', 'submit_mariner_once'];
   const saved = await f.call({ action: 'plan', expectedRevision: f.state.revision, steps: ids.map(id => ({ id, title: id, kind: 'action', status: 'pending', note: 'n'.repeat(700), doneWhen: 'The actual result is checked.' })) });
   assert.equal(saved.success, true);

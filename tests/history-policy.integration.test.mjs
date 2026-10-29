@@ -7,7 +7,6 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
 import { ProviderRuntime } from '../lib/providers.mjs';
-import { recordFixturePlan } from './fixture-task-plan.mjs';
 
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const waitFor = async (condition, label) => {
@@ -15,7 +14,9 @@ const waitFor = async (condition, label) => {
   while (Date.now() < until) { const result = condition(); if (result) return result; await new Promise(resolve => setTimeout(resolve, 5)); }
   assert.fail(`${label} did not settle`);
 };
-const flow = (model = 'fixture-native') => ({ id: 'history-policy', name: 'History policy test', nodes: [{ id: 'input', type: 'input' }, { id: 'agent', type: 'agent', name: 'Verifier', prompt: 'Use only this conversation and report verified facts.', model }, { id: 'output', type: 'output' }], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1 } });
+// Session/history fixtures deliberately leave automatic Planning off. The task
+// identity must still survive history-policy changes and host restarts.
+const flow = (model = 'fixture-native') => ({ id: 'history-policy', name: 'History policy test', nodes: [{ id: 'input', type: 'input' }, { id: 'agent', type: 'agent', name: 'Verifier', prompt: 'Use only this conversation and report verified facts.', model }, { id: 'output', type: 'output' }], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1, planningMode: 'off' } });
 
 class NativeFixture extends EventEmitter {
   constructor(execute) { super(); this.calls = []; this.execute = execute; this.prefix = `native-${randomUUID()}`; }
@@ -26,19 +27,10 @@ class NativeFixture extends EventEmitter {
     this.calls.push(options);
     const index = this.calls.length, threadId = options.threadId || `${this.prefix}-${index}`, turnId = `turn-${index}`;
     if (this.execute) return this.execute(options, { index, threadId, turnId });
-    await recordFixturePlan(options, { title: 'Use the saved conversation for this reply', doneWhen: 'The reply preserves this conversation without borrowing another conversation’s messages.' });
     const output = `ASSISTANT_HISTORY_MARKER_${index}`;
     options.onEvent({ type: 'thread', model: options.model, threadId, turnId, codexHistory: options.codexHistory });
     options.onEvent({ type: 'message', itemId: `message-${index}`, threadId, turnId, text: output, phase: 'final_answer' });
     return { output, threadId, turnId, codexHistory: options.codexHistory };
-  }
-}
-// Keep the real provider session/history implementation. The deterministic API
-// fixture authors its outline through the actual task gateway before replying.
-class ProviderFixture extends ProviderRuntime {
-  async runAgent(options) {
-    if (options.model?.includes('::')) await recordFixturePlan(options, { title: 'Continue the selected API conversation', doneWhen: 'The admitted provider reply uses the correct durable conversation session.' });
-    return super.runAgent(options);
   }
 }
 class NoDesktop extends EventEmitter { status() { return { available: false, enabled: false }; } async setEnabled() { return this.status(); } }
@@ -92,7 +84,6 @@ test('Relay-only is the default, follow-ups use saved messages and survive reope
 test('history settings apply to future starts and transitions use fresh sessions when a private turn is involved', async t => {
   const entered = deferred(), release = deferred();
   const native = new NativeFixture(async (options, { index, threadId, turnId }) => {
-    await recordFixturePlan(options, { title: 'Apply the admitted history policy', doneWhen: 'History policy changes affect future turns without changing this admitted turn.' });
     options.onEvent({ type: 'thread', model: options.model, threadId, turnId, codexHistory: options.codexHistory });
     if (index === 1) { entered.resolve(); await release.promise; }
     const output = `Policy output ${index}`;
@@ -123,7 +114,7 @@ test('API provider conversations retain their own durable sessions through Codex
   const requests = [], natives = [];
   const session = await application(t, async ({ dataDir }) => {
     const codex = new NativeFixture(); natives.push(codex);
-    const runtime = await new ProviderFixture({ codex, dataDir, fetchImpl: async (url, options) => { requests.push({ url, body: JSON.parse(options.body) }); return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: `API result ${requests.length}` }, finish_reason: 'stop' }] }), { headers: { 'Content-Type': 'application/json' } }); } }).init();
+    const runtime = await new ProviderRuntime({ codex, dataDir, fetchImpl: async (url, options) => { requests.push({ url, body: JSON.parse(options.body) }); return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: `API result ${requests.length}` }, finish_reason: 'stop' }] }), { headers: { 'Content-Type': 'application/json' } }); } }).init();
     if (!runtime.store.get('api')) await runtime.saveProvider({ id: 'api', type: 'compatible', baseUrl: 'http://127.0.0.1:11434/v1', models: ['api-model'] });
     await runtime.setDefaultModel('api::api-model'); return runtime;
   });
@@ -156,7 +147,7 @@ test('HTTP native reconnect explicitly starts Codex while preserving a selected 
 test('a failure before native session creation can continue on a different provider using the saved user task', async t => {
   const requests = [], codex = new NativeFixture(async () => { throw Object.assign(new Error('Fixture authentication expired before thread creation.'), { code: 'PROVIDER_AUTH' }); });
   const session = await application(t, async ({ dataDir }) => {
-    const runtime = await new ProviderFixture({ codex, dataDir, fetchImpl: async (_url, options) => { requests.push(JSON.parse(options.body)); return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'Recovered on the chosen API.' }, finish_reason: 'stop' }] }), { headers: { 'Content-Type': 'application/json' } }); } }).init();
+    const runtime = await new ProviderRuntime({ codex, dataDir, fetchImpl: async (_url, options) => { requests.push(JSON.parse(options.body)); return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'Recovered on the chosen API.' }, finish_reason: 'stop' }] }), { headers: { 'Content-Type': 'application/json' } }); } }).init();
     await runtime.saveProvider({ id: 'recovery', type: 'compatible', baseUrl: 'http://127.0.0.1:11434/v1', models: ['api-model'] }); return runtime;
   });
   const first = await start(session, 'PRE_SESSION_TASK_MARKER: generate a copper rook.');
@@ -169,7 +160,6 @@ test('a failure before native session creation can continue on a different provi
 
 test('retrying a failed visible continuation after selecting Relay-only rebuilds saved continuity instead of resuming Codex', async t => {
   const native = new NativeFixture(async (options, { index, threadId, turnId }) => {
-    await recordFixturePlan(options, { title: 'Retain verified work through a history-policy retry', doneWhen: 'Retry rebuilds the original request, follow-up and recorded partial result without resuming the private native session.' });
     options.onEvent({ type: 'thread', model: options.model, threadId, turnId, codexHistory: options.codexHistory });
     const output = index === 2 ? 'RETRY_PARTIAL_MARKER: first action was confirmed before the connection failed.' : `Retry fixture result ${index}`;
     options.onEvent({ type: 'message', threadId, turnId, text: output, phase: index === 2 ? 'commentary' : 'final_answer' });
@@ -191,7 +181,6 @@ test('retrying a failed visible continuation after selecting Relay-only rebuilds
 
 test('a failed initial Relay-only turn retains its partial saved messages when Retry starts a new native session', async t => {
   const native = new NativeFixture(async (options, { index, threadId, turnId }) => {
-    await recordFixturePlan(options, { title: 'Preserve partial work through a fresh-session retry', doneWhen: 'The retry receives the original request and partial saved result from the failed turn.' });
     options.onEvent({ type: 'thread', model: options.model, threadId, turnId, codexHistory: options.codexHistory });
     if (index === 1) {
       options.onEvent({ type: 'message', threadId, turnId, text: 'INITIAL_PRIVATE_PARTIAL_MARKER: the first operation finished; inspect its result before repeating it.', phase: 'commentary' });

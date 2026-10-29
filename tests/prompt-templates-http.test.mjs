@@ -5,15 +5,14 @@ import { mkdtemp, readFile, writeFile, rm, mkdir, rmdir } from 'node:fs/promises
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
-import { recordFixturePlan } from './fixture-task-plan.mjs';
 
 const outline = (title = 'Saved HTTP outline') => ({ title, description: 'HTTP prompt fixture', sections: [{ id: 'goal', title: 'Goal', content: '{{task}}', level: 0 }, { id: 'checks', title: 'Checks', content: 'Check the actual output.', level: 0 }] });
-const graph = { id: 'prompt-flow', name: 'Prompt fixture', nodes: [{ id: 'input', type: 'input', name: 'Task' }, { id: 'agent', type: 'agent', name: 'Worker', prompt: 'Complete the user task.', model: 'prompt-fixture-model' }, { id: 'output', type: 'output', name: 'Result' }], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1 } };
+const graph = { id: 'prompt-flow', name: 'Prompt fixture', nodes: [{ id: 'input', type: 'input', name: 'Task' }, { id: 'agent', type: 'agent', name: 'Worker', prompt: 'Complete the user task.', model: 'prompt-fixture-model' }, { id: 'output', type: 'output', name: 'Result' }], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1, planningMode: 'off' } };
 const until = async (check, label) => { const deadline = Date.now() + 7000; while (Date.now() < deadline) { const value = await check(); if (value) return value; await new Promise(resolve => setTimeout(resolve, 5)); } assert.fail(`${label} did not settle`); };
 async function fixture(t, execute, prepare) {
   const directory = await mkdtemp(path.join(tmpdir(), 'relay-prompt-http-')), calls = [];
   if (prepare) await prepare(directory);
-  class Runtime extends EventEmitter { status() { return { connected: true, authenticated: true, models: [{ model: 'prompt-fixture-model' }], defaultModel: 'prompt-fixture-model' }; } async start() { return this.status(); } async close() {} async runAgent(options) { calls.push(options); if (execute) return execute(options, calls.length); await recordFixturePlan(options); return { output: 'Prompt fixture finished.', threadId: `prompt-thread-${calls.length}` }; } }
+  class Runtime extends EventEmitter { status() { return { connected: true, authenticated: true, models: [{ model: 'prompt-fixture-model' }], defaultModel: 'prompt-fixture-model' }; } async start() { return this.status(); } async close() {} async runAgent(options) { calls.push(options); if (execute) return execute(options, calls.length); return { output: 'Prompt fixture finished.', threadId: `prompt-thread-${calls.length}` }; } }
   class Desktop extends EventEmitter { status() { return { available: false, enabled: false }; } async setEnabled() { return this.status(); } }
   const app = await createHarnessServer({ port: 0, dataDir: path.join(directory, 'data'), defaultCwd: path.join(directory, 'workspace'), runtime: new Runtime(), desktop: new Desktop() }); await app.learning.updateSettings({ mode: 'manual' });
   t.after(async () => { await app.close(); assert.match(path.basename(directory), /^relay-prompt-http-/); await rm(directory, { recursive: true, force: true }); });
@@ -77,7 +76,7 @@ test('profile maintenance drains admitted prompt writes and blocks new prompt mu
 });
 
 test('rendered prompt text stays frozen through library edits, Retry, queue dispatch and conversation export', async t => {
-  const { app, post, calls, settled } = await fixture(t, async (options, index) => { if (index === 1) throw new Error('Fixture failure before retry'); await recordFixturePlan(options); return { output: 'Completed the exact accepted task.', threadId: `frozen-${index}` }; });
+  const { app, post, calls, settled } = await fixture(t, async (options, index) => { if (index === 1) throw new Error('Fixture failure before retry'); return { output: 'Completed the exact accepted task.', threadId: `frozen-${index}` }; });
   const saved = (await post('/api/prompts/save', { template: outline() })).data.template;
   const rendered = (await post('/api/prompts/render', { id: saved.id, values: { task: 'Build a small chess game with SVG pieces' } })).data;
   const first = (await post('/api/runs', { workflow: graph, input: rendered.text, requestId: 'outline-same-send' })).data; assert.equal((await settled(first.id)).status, 'failed');
@@ -90,7 +89,6 @@ test('rendered prompt text stays frozen through library edits, Retry, queue disp
 
 test('real engine attaches relay_prompts while older native catalogs keep their original tools', async t => {
   const seen = [], { app, settled } = await fixture(t, async (options, index) => {
-    await recordFixturePlan(options);
     const names = options.dynamicTools.map(tool => tool.name); seen.push(names); options.onEvent({ type: 'thread', threadId: 'native-saved-prompt-thread', codexHistory: 'codex' });
     if (index === 1) { assert.ok(names.includes('relay_prompts')); assert.match(options.prompt, /OPTIONAL PROMPT OUTLINES/); const receipt = await options.onToolCall({ name: 'relay_prompts', arguments: { action: 'render', id: 'builtin_build', values: { task: 'A tool-rendered draft only' } } }); assert.equal(receipt.success, true); assert.match(receipt.contentItems[0].text, /A tool-rendered draft only/); }
     else { assert.equal(names.includes('relay_prompts'), false); assert.doesNotMatch(options.prompt, /OPTIONAL PROMPT OUTLINES/); assert.match(options.prompt, /retains its original tools/); }
@@ -99,5 +97,5 @@ test('real engine attaches relay_prompts while older native catalogs keep their 
   await app.runtimeSettings.update({ codexHistory: 'codex' }); const first = app.engine.startRun({ workflow: graph, input: 'Check optional prompt tooling' }); const firstRun = await settled(first.id); assert.equal(firstRun.status, 'completed', firstRun.error);
   const internal = app.engine.runs.get(first.id); internal.nodes.agent.toolNames = internal.nodes.agent.toolNames.filter(name => name !== 'relay_prompts');
   const continued = app.engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue this older catalog' }); assert.equal((await settled(continued.id)).status, 'completed'); assert.equal(seen.length, 2);
-  assert.deepEqual(seen[1], seen[0].filter(name => name !== 'relay_prompts'), 'a successful plan must not expand the saved native tool catalog');
+  assert.deepEqual(seen[1], seen[0].filter(name => name !== 'relay_prompts'), 'a successful continuation must not expand the saved native tool catalog');
 });

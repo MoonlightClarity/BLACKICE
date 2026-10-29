@@ -6,12 +6,11 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
-import { recordFixturePlan } from './fixture-task-plan.mjs';
 
 const SECRET = 'PRIVATE_SUPPORT_BOUNDARY_MARKER';
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const until = async (check, label = 'production boundary condition') => { const deadline = Date.now() + 5000; while (Date.now() < deadline) { const result = await check(); if (result) return result; await new Promise(resolve => setTimeout(resolve, 5)); } assert.fail(`${label} did not settle`); };
-const workflow = () => ({ id: 'production-boundary', name: `Workflow ${SECRET}`, nodes: [{ id: 'input', type: 'input' }, { id: 'agent', type: 'agent', name: 'Agent', model: 'fixture-model', prompt: `Private instructions ${SECRET}` }, { id: 'output', type: 'output' }], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: null } });
+const workflow = () => ({ id: 'production-boundary', name: `Workflow ${SECRET}`, nodes: [{ id: 'input', type: 'input' }, { id: 'agent', type: 'agent', name: 'Agent', model: 'fixture-model', prompt: `Private instructions ${SECRET}` }, { id: 'output', type: 'output' }], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: null, planningMode: 'off' } });
 
 async function fixture(t, { hold = false } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'relay-production-boundaries-')), dataDir = path.join(directory, 'data'), cwd = path.join(directory, 'workspace');
@@ -28,7 +27,6 @@ async function fixture(t, { hold = false } = {}) {
         const gate = deferred(); waiting.push(gate);
         await new Promise((resolve, reject) => { const stop = () => reject(Object.assign(new Error(`Stopped ${SECRET}`), { code: 'ABORT_ERR', name: 'AbortError' })); if (options.signal?.aborted) return stop(); options.signal?.addEventListener('abort', stop, { once: true }); gate.promise.then(() => { options.signal?.removeEventListener('abort', stop); resolve(); }); });
       }
-      await recordFixturePlan(options);
       if (options.dynamicTools?.some(tool => tool.name === 'relay_learn')) await options.onToolCall({ name: 'relay_learn', arguments: { action: 'finish', summaryOfReview: 'Fixture review completed without changes.' } });
       return { output: `Reply ${SECRET}`, threadId };
     }

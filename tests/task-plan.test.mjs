@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { normalizeTaskPlan, runtimeTaskPlan, taskPlanProgress, TASK_PLAN_LIMITS } from '../lib/task-plan.mjs';
-import { TaskStateStore, TASK_TOOL, TASK_TOOL_V6, TASK_TOOL_V5, TASK_TOOL_V4, TASK_TOOL_V3, PREVIOUS_TASK_TOOL, LEGACY_TASK_TOOL, TASK_INSTRUCTIONS, TASK_INSTRUCTIONS_V6, TASK_INSTRUCTIONS_V5, TASK_INSTRUCTIONS_V4, TASK_INSTRUCTIONS_V3, PREVIOUS_TASK_INSTRUCTIONS, LEGACY_TASK_INSTRUCTIONS, taskToolForVersion, taskInstructionsForVersion, createTaskToolHandler } from '../lib/task-state.mjs';
+import { TaskStateStore, TASK_TOOL, TASK_TOOL_V9, TASK_TOOL_V6, TASK_TOOL_V5, TASK_TOOL_V4, TASK_TOOL_V3, PREVIOUS_TASK_TOOL, LEGACY_TASK_TOOL, TASK_INSTRUCTIONS, TASK_INSTRUCTIONS_V9, TASK_INSTRUCTIONS_V6, TASK_INSTRUCTIONS_V5, TASK_INSTRUCTIONS_V4, TASK_INSTRUCTIONS_V3, PREVIOUS_TASK_INSTRUCTIONS, LEGACY_TASK_INSTRUCTIONS, taskToolForVersion, taskInstructionsForVersion, createTaskToolHandler } from '../lib/task-state.mjs';
 import { BUILTIN_METHODS, BUILTIN_TASK_TYPES, BUILTIN_STEP_TYPES } from '../lib/process-ontology.mjs';
 import { MethodStore } from '../lib/methods.mjs';
 
@@ -204,9 +204,9 @@ test('task tool versions 1 through 6 retain their exact native catalogs and inst
     [TASK_TOOL_V6, TASK_INSTRUCTIONS_V6, 'a690b71995ce9e64e720e2b6c476592e75b2f342e62def14e885e6de03ed46d6', '6c56b3ff76f9ea9822c66d6a3b1254083ca86c1ef9f944fd256cea8e60e625d6']
   ];
   expected.forEach(([tool, instructions, toolHash, instructionHash], index) => { assert.equal(taskToolForVersion(index + 1), tool); assert.equal(taskInstructionsForVersion(index + 1), instructions); assert.equal(digest(tool), toolHash); assert.equal(digest(instructions), instructionHash); });
-  assert.equal(taskToolForVersion(9), TASK_TOOL); assert.equal(taskInstructionsForVersion(9), TASK_INSTRUCTIONS); assert.ok(TASK_TOOL.inputSchema.properties.action.enum.includes('describe')); assert.ok(TASK_TOOL.inputSchema.properties.steps.items.properties.kind);
+  assert.equal(taskToolForVersion(9), TASK_TOOL_V9); assert.equal(taskInstructionsForVersion(9), TASK_INSTRUCTIONS_V9); assert.equal(taskToolForVersion(10), TASK_TOOL); assert.equal(taskInstructionsForVersion(10), TASK_INSTRUCTIONS); assert.ok(TASK_TOOL.inputSchema.properties.action.enum.includes('describe')); assert.ok(TASK_TOOL.inputSchema.properties.steps.items.properties.kind);
   assert.equal(taskToolForVersion(8).inputSchema.properties.steps.items.properties.operation, undefined);
-  assert.throws(() => taskToolForVersion(10), { code: 'TASK_SCHEMA_UNSUPPORTED' }); assert.match(TASK_INSTRUCTIONS, /normal way to work on every request/); assert.doesNotMatch(TASK_INSTRUCTIONS, /need no saved plan/);
+  assert.throws(() => taskToolForVersion(11), { code: 'TASK_SCHEMA_UNSUPPORTED' }); assert.match(TASK_INSTRUCTIONS, /normal way to work on every request/); assert.doesNotMatch(TASK_INSTRUCTIONS, /need no saved plan/);
 });
 
 test('legacy handlers reject new actions and schema fields instead of silently executing undeclared capabilities', async t => {
