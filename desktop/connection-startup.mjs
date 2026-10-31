@@ -126,7 +126,7 @@ export function tailscaleStartupState(value) {
   const installed = value?.installed === true && value?.servicePresent === true;
   const ready = installed && value.serviceAutomatic === true && value.serviceRunning === true && value.unattended === true;
   let detail = ready ? 'Tailscale is set to start automatically and run unattended. Its Windows tray window does not need to stay open.' : !installed ? 'Install Tailscale and sign in first, then refresh this check.' : !value.serviceRunning ? 'The Tailscale service is stopped. Setup can start it and enable automatic service startup; sign-in may still be needed.' : value.supported !== true || bool(value.unattended) === null ? 'Update Tailscale to a version that supports checking unattended mode, then refresh.' : value.connected !== true ? 'Connect and sign in to Tailscale before enabling unattended mode.' : 'Enable unattended mode and automatic service startup to keep Tailscale available after sign-out or a reboot.';
-  return { ready, canEnable: installed && (!value.serviceRunning || value.supported === true && value.connected === true), detail };
+  return { ready, ...(typeof value?.installed === 'boolean' ? { installed: value.installed } : {}), canEnable: installed && (!value.serviceRunning || value.supported === true && value.connected === true), detail };
 }
 
 export function startupLoginSpec({ executable, profileDir, appDir, packaged = true }) {

@@ -51,7 +51,7 @@ export function editWorkflowGraph(value,action){
   if(!action||typeof action!=='object'||Array.isArray(action))throw Error('Choose a graph operation.');
   const nodes=workflow.nodes,edges=workflow.edges;
   const byId=new Map(nodes.map(node=>[node?.id,node]));
-  if(byId.size!==nodes.length)throw Error('Duplicate stage IDs must be repaired in the classic workflow canvas.');
+  if(byId.size!==nodes.length)throw Error('Duplicate stage IDs must be repaired before editing this workflow.');
   const type=action.type;
   if(type==='add-node'){
     const node=action.node||{};

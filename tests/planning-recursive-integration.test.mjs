@@ -22,7 +22,8 @@ async function fixture(t, schemaVersion = 9) {
   const store = await new TaskStateStore({ dataDir: directory }).init(), taskId = 'recursive-integration';
   t.after(async () => { await store.close(); await rm(directory, { recursive: true, force: true }); });
   const initial = await store.ensure({ taskId, runId: 'run', nodeId: 'agent', cwd: directory, goal: 'Perform and revise the requested work.', defaultPlan: true });
-  const handler = createTaskToolHandler({ store, taskId, runId: 'run', nodeId: 'agent', schemaVersion, planningMode: 'on' });
+  // Enforce the executable outline contract whose blocked transitions this suite tests.
+  const handler = createTaskToolHandler({ store, taskId, runId: 'run', nodeId: 'agent', schemaVersion, executionGuardrails: true, planningMode: 'on' });
   return { directory, store, taskId, initial, call: args => handler({ name: 'relay_task', arguments: args }) };
 }
 
@@ -43,7 +44,7 @@ test('returning to an earlier prerequisite can change Boolean paths while invali
     { type: 'revisit', stepId: 'source', reason: 'A new observation contradicted the initial readiness result.' },
     { type: 'metadata', patch: { facts: [{ id: 'ready', value: false, evidence: 'The later inspection found an incomplete input.' }] } },
   ] });
-  validatePlanningOutline(next, { mode: 'on', previous: state, schemaVersion: 9 });
+  validatePlanningOutline(next, { mode: 'on', executionGuardrails: true, previous: state, schemaVersion: 9 });
   const byId = new Map(next.steps.map(step => [step.id, step]));
   assert.equal(byId.get('source').status, 'pending');
   assert.equal(byId.get('source').attempt, 2);
@@ -62,10 +63,10 @@ test('returning to an earlier prerequisite can change Boolean paths while invali
 });
 
 test('actual returned work must be reconciled before revisit can archive its attempt', async t => {
-  const f = await fixture(t), options = { schemaVersion: 9, planningMode: 'on' };
+  const f = await fixture(t), options = { schemaVersion: 9, executionGuardrails: true, planningMode: 'on' };
   const read = { ...action('read'), status: 'active', operation: { kind: 'tool', tool: 'relay_workspace', action: 'read', target: 'source.txt' } };
   let state = await f.store.setPlan(f.taskId, { plan: { layout: 'sequence' }, steps: [read] }, { ...options, expectedRevision: f.initial.revision });
-  const guard = createSequentialPlanningGuard({ store: f.store, taskId: f.taskId, runId: 'run', nodeId: 'agent' });
+  const guard = createSequentialPlanningGuard({ executionGuardrails: true, store: f.store, taskId: f.taskId, runId: 'run', nodeId: 'agent' });
   const call = { name: 'relay_workspace', callId: 'read-one', arguments: { action: 'read', path: 'source.txt' } };
   assert.equal(await guard.before(call, { expectedRevision: state.revision }), null);
   await guard.after(call, { success: true, contentItems: [{ type: 'inputText', text: 'Observed source text.' }] });
@@ -82,12 +83,12 @@ test('actual returned work must be reconciled before revisit can archive its att
 });
 
 test('returning to a prerequisite cannot archive a dependent operation that is still active', async t => {
-  const f = await fixture(t), options = { schemaVersion: 9, planningMode: 'on' };
+  const f = await fixture(t), options = { schemaVersion: 9, executionGuardrails: true, planningMode: 'on' };
   let state = await f.store.setPlan(f.taskId, { plan: { layout: 'sequence' }, steps: [
     action('earlier', { status: 'done' }),
     { ...action('read', { status: 'active' }), operation: { kind: 'tool', tool: 'relay_workspace', action: 'read', target: 'source.txt' } },
   ] }, { ...options, source: 'human', expectedRevision: f.initial.revision });
-  const guard = createSequentialPlanningGuard({ store: f.store, taskId: f.taskId, runId: 'run', nodeId: 'agent' });
+  const guard = createSequentialPlanningGuard({ executionGuardrails: true, store: f.store, taskId: f.taskId, runId: 'run', nodeId: 'agent' });
   const call = { name: 'relay_workspace', callId: 'dependent-read', arguments: { action: 'read', path: 'source.txt' } };
   assert.equal(await guard.before(call, { expectedRevision: state.revision }), null);
   const revisit = () => f.store.editPlan(f.taskId, { operations: [{ type: 'revisit', stepId: 'earlier', reason: 'New evidence changes the prerequisite.' }] }, { ...options, source: 'human', expectedRevision: state.revision });
@@ -106,10 +107,10 @@ test('returning to a prerequisite cannot archive a dependent operation that is s
 });
 
 test('replanning preserves dispatched work until its actual result has been reconciled', async t => {
-  const f = await fixture(t), options = { schemaVersion: 9, planningMode: 'on' };
+  const f = await fixture(t), options = { schemaVersion: 9, executionGuardrails: true, planningMode: 'on' };
   const read = { ...action('read', { status: 'active' }), operation: { kind: 'tool', tool: 'relay_workspace', action: 'read', target: 'source.txt' } };
   let state = await f.store.setPlan(f.taskId, { plan: { layout: 'sequence' }, steps: [read] }, { ...options, expectedRevision: f.initial.revision });
-  const guard = createSequentialPlanningGuard({ store: f.store, taskId: f.taskId, runId: 'run', nodeId: 'agent' });
+  const guard = createSequentialPlanningGuard({ executionGuardrails: true, store: f.store, taskId: f.taskId, runId: 'run', nodeId: 'agent' });
   const call = { name: 'relay_workspace', callId: 'before-replan', arguments: { action: 'read', path: 'source.txt' } };
   assert.equal(await guard.before(call, { expectedRevision: state.revision }), null);
   const replace = () => f.store.setPlan(f.taskId, { plan: { layout: 'sequence' }, steps: [action('replacement', { status: 'active' })] }, { ...options, source: 'human', expectedRevision: state.revision });
@@ -127,7 +128,7 @@ test('replanning preserves dispatched work until its actual result has been reco
 });
 
 test('an assigned worker can recursively split its unexecuted leaf into sequential operations', async t => {
-  const f = await fixture(t), options = { schemaVersion: 9, planningMode: 'on' };
+  const f = await fixture(t), options = { schemaVersion: 9, executionGuardrails: true, planningMode: 'on' };
   let state = await f.store.setPlan(f.taskId, { plan: { layout: 'sequence' }, steps: [
     { ...action('assigned', { status: 'active' }), operation: { kind: 'tool', tool: 'relay_delegate', target: 'assigned' } },
     action('after-worker'),
@@ -148,7 +149,7 @@ test('an assigned worker can recursively split its unexecuted leaf into sequenti
   assert.deepEqual(state.steps.find(step => step.id === 'after-worker'), independentDefinition);
   assert.equal(state.steps.find(step => step.id === 'read').parentId, 'assigned');
   assert.deepEqual(state.availableWork.active, ['read']);
-  const guard = createSequentialPlanningGuard({ store: f.store, taskId: f.taskId, runId: 'run', nodeId: workerId, scopeStepId: 'assigned' });
+  const guard = createSequentialPlanningGuard({ executionGuardrails: true, store: f.store, taskId: f.taskId, runId: 'run', nodeId: workerId, scopeStepId: 'assigned' });
   const read = { name: 'relay_workspace', callId: 'worker-read', arguments: { action: 'read', path: 'source.txt' } };
   assert.equal(await guard.before(read, { expectedRevision: state.revision }), null);
   await guard.after(read, { success: true, contentItems: [{ type: 'inputText', text: 'The source comparison input.' }] });
@@ -227,8 +228,8 @@ test('schema 9 IF/ELIF/ELSE evaluates typed comparisons in order and stops on an
 });
 
 test('cached schema 8 stays stable while executable operations remain available from schema 9 onward', async t => {
-  assert.equal(TASK_SCHEMA_VERSION, 10);
-  const old = taskToolForVersion(8).inputSchema, current = taskToolForVersion(9).inputSchema;
+  assert.equal(TASK_SCHEMA_VERSION, 12);
+  const old = taskToolForVersion(8, { executionGuardrails: true }).inputSchema, current = taskToolForVersion(9, { executionGuardrails: true }).inputSchema;
   assert.equal(old.properties.operation, undefined);
   assert.equal(old.properties.plan.properties.facts, undefined);
   assert.equal(old.properties.steps.items.properties.branch, undefined);
@@ -251,7 +252,7 @@ test('cached schema 8 stays stable while executable operations remain available 
     assert.equal(receipt.code, 'TASK_SCHEMA_UNSUPPORTED');
     assert.equal((await f.store.get(f.taskId)).revision, revision);
   }
-  const newHandler = createTaskToolHandler({ store: f.store, taskId: f.taskId, runId: 'new-run', nodeId: 'agent', schemaVersion: 9, planningMode: 'on' });
+  const newHandler = createTaskToolHandler({ store: f.store, taskId: f.taskId, runId: 'new-run', nodeId: 'agent', schemaVersion: 9, executionGuardrails: true, planningMode: 'on' });
   receipt = await newHandler({ name: 'relay_task', arguments: { action: 'step', expectedRevision: revision, stepId: 'legacy', operation: { kind: 'reasoning', target: 'The original comparison with one recorded reference.' } } });
   assert.equal(receipt.success, true, receipt.contentItems[0].text);
   assert.equal(payload(receipt).steps[0].operation.kind, 'reasoning');

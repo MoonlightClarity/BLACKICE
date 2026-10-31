@@ -5,14 +5,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { normalizeTaskPlan, runtimeTaskPlan, taskPlanProgress, TASK_PLAN_LIMITS } from '../lib/task-plan.mjs';
-import { TaskStateStore, TASK_TOOL, TASK_TOOL_V9, TASK_TOOL_V6, TASK_TOOL_V5, TASK_TOOL_V4, TASK_TOOL_V3, PREVIOUS_TASK_TOOL, LEGACY_TASK_TOOL, TASK_INSTRUCTIONS, TASK_INSTRUCTIONS_V9, TASK_INSTRUCTIONS_V6, TASK_INSTRUCTIONS_V5, TASK_INSTRUCTIONS_V4, TASK_INSTRUCTIONS_V3, PREVIOUS_TASK_INSTRUCTIONS, LEGACY_TASK_INSTRUCTIONS, taskToolForVersion, taskInstructionsForVersion, createTaskToolHandler } from '../lib/task-state.mjs';
+import { TaskStateStore, TASK_TOOL, TASK_TOOL_V10, TASK_TOOL_V11, TASK_SCHEMA_VERSION, TASK_TOOL_V9, TASK_TOOL_V6, TASK_TOOL_V5, TASK_TOOL_V4, TASK_TOOL_V3, PREVIOUS_TASK_TOOL, LEGACY_TASK_TOOL, TASK_INSTRUCTIONS, TASK_INSTRUCTIONS_V10, TASK_INSTRUCTIONS_V11, TASK_INSTRUCTIONS_V9, TASK_INSTRUCTIONS_V6, TASK_INSTRUCTIONS_V5, TASK_INSTRUCTIONS_V4, TASK_INSTRUCTIONS_V3, PREVIOUS_TASK_INSTRUCTIONS, LEGACY_TASK_INSTRUCTIONS, taskToolForVersion, taskInstructionsForVersion, createTaskToolHandler } from '../lib/task-state.mjs';
 import { BUILTIN_METHODS, BUILTIN_TASK_TYPES, BUILTIN_STEP_TYPES } from '../lib/process-ontology.mjs';
 import { MethodStore } from '../lib/methods.mjs';
 
 const action = (id, options = {}) => ({ id, title: `Result ${id}`, kind: 'action', parentId: null, status: 'pending', doneWhen: `The ${id} result meets its stated check.`, ...options });
 const group = (id, kind, options = {}) => ({ id, title: `Group ${id}`, kind, parentId: null, status: 'pending', ...options });
-const actor = (revision, runId = 'run-one', nodeId = 'coordinator') => ({ expectedRevision: revision, runId, nodeId, schemaVersion: 4 });
-const normalize = (steps, plan = { layout: 'sequence' }, options) => normalizeTaskPlan({ plan, steps }, options);
+const actor = (revision, runId = 'run-one', nodeId = 'coordinator') => ({ expectedRevision: revision, runId, nodeId, schemaVersion: 4, executionGuardrails: true });
+const normalize = (steps, plan = { layout: 'sequence' }, options) => normalizeTaskPlan({ plan, steps }, { executionGuardrails: true, ...options });
 const digest = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
 
 async function fixture(t, { legacy = false } = {}) {
@@ -191,7 +191,7 @@ test('plan revisions retain external recovery guards and never turn an uncertain
   saved = await store.setPlan(state.taskId, { steps: recovered.steps }, actor(recovered.revision, 'recovered-run'));
   assert.equal(saved.externalActions[0].status, 'uncertain'); assert.equal(saved.externalRecovery.required, true);
   await assert.rejects(store.externalAction(state.taskId, { receiptId: 'publication', operation: 'attempt' }, actor(saved.revision)), { code: 'EXTERNAL_ACTION_RECONCILE' });
-  assert.match(await store.getContext(state.taskId, { maxChars: 512 }), /Inspect the destination before any retry/);
+  assert.match(await store.getContext(state.taskId, { maxChars: 512, executionGuardrails: true }), /Inspect the destination before any retry/);
 });
 
 test('task tool versions 1 through 6 retain their exact native catalogs and instructions', () => {
@@ -203,10 +203,14 @@ test('task tool versions 1 through 6 retain their exact native catalogs and inst
     [TASK_TOOL_V5, TASK_INSTRUCTIONS_V5, '7ef57b1bf5e36f753a400ce262af91a5044af294c6552c9cbba7fb26a78592ee', '66de27e4b19f66cbf2ee488a4dcc38b76c02b56d95b13b3897f9434ef86a87b2'],
     [TASK_TOOL_V6, TASK_INSTRUCTIONS_V6, 'a690b71995ce9e64e720e2b6c476592e75b2f342e62def14e885e6de03ed46d6', '6c56b3ff76f9ea9822c66d6a3b1254083ca86c1ef9f944fd256cea8e60e625d6']
   ];
-  expected.forEach(([tool, instructions, toolHash, instructionHash], index) => { assert.equal(taskToolForVersion(index + 1), tool); assert.equal(taskInstructionsForVersion(index + 1), instructions); assert.equal(digest(tool), toolHash); assert.equal(digest(instructions), instructionHash); });
-  assert.equal(taskToolForVersion(9), TASK_TOOL_V9); assert.equal(taskInstructionsForVersion(9), TASK_INSTRUCTIONS_V9); assert.equal(taskToolForVersion(10), TASK_TOOL); assert.equal(taskInstructionsForVersion(10), TASK_INSTRUCTIONS); assert.ok(TASK_TOOL.inputSchema.properties.action.enum.includes('describe')); assert.ok(TASK_TOOL.inputSchema.properties.steps.items.properties.kind);
+  expected.forEach(([tool, instructions, toolHash, instructionHash], index) => { assert.equal(taskToolForVersion(index + 1, { executionGuardrails: true }), tool); assert.equal(taskInstructionsForVersion(index + 1, { executionGuardrails: true }), instructions); assert.equal(digest(tool), toolHash); assert.equal(digest(instructions), instructionHash); });
+  assert.equal(TASK_SCHEMA_VERSION, 12);
+  for (const [version, tool, instructions] of [[9, TASK_TOOL_V9, TASK_INSTRUCTIONS_V9], [10, TASK_TOOL_V10, TASK_INSTRUCTIONS_V10], [11, TASK_TOOL_V11, TASK_INSTRUCTIONS_V11], [12, TASK_TOOL, TASK_INSTRUCTIONS]]) {
+    assert.equal(taskToolForVersion(version, { executionGuardrails: true }), tool); assert.equal(taskInstructionsForVersion(version, { executionGuardrails: true }), instructions);
+  }
+  assert.ok(TASK_TOOL.inputSchema.properties.action.enum.includes('describe')); assert.ok(TASK_TOOL.inputSchema.properties.steps.items.properties.kind);
   assert.equal(taskToolForVersion(8).inputSchema.properties.steps.items.properties.operation, undefined);
-  assert.throws(() => taskToolForVersion(11), { code: 'TASK_SCHEMA_UNSUPPORTED' }); assert.match(TASK_INSTRUCTIONS, /normal way to work on every request/); assert.doesNotMatch(TASK_INSTRUCTIONS, /need no saved plan/);
+  assert.throws(() => taskToolForVersion(13), { code: 'TASK_SCHEMA_UNSUPPORTED' }); assert.match(TASK_INSTRUCTIONS, /normal way to work on every request/); assert.doesNotMatch(TASK_INSTRUCTIONS, /need no saved plan/);
 });
 
 test('legacy handlers reject new actions and schema fields instead of silently executing undeclared capabilities', async t => {
@@ -326,7 +330,7 @@ test('bounded plans reject enormous arrays before traversal, overdeep trees and 
   assert.throws(() => normalizeTaskPlan({ steps: huge }), { code: 'TASK_PLAN_LIMIT' }); assert.equal(visited, 0);
   const deep = Array.from({ length: TASK_PLAN_LIMITS.depth }, (_, index) => group(`g${index}`, 'sequence', { parentId: index ? `g${index - 1}` : null })); deep.push(action('leaf', { parentId: deep.at(-1).id }));
   assert.throws(() => normalize(deep), /nested plan levels/);
-  assert.throws(() => normalize(Array.from({ length: 40 }, (_, index) => action(`a${index}`, { evidence: 'x'.repeat(2000), doneWhen: 'x'.repeat(1000), note: 'x'.repeat(700) })), { layout: 'parallel' }), { code: 'TASK_PLAN_LIMIT' });
+  assert.throws(() => normalize(Array.from({ length: 80 }, (_, index) => action(`a${index}`, { evidence: 'x'.repeat(2000), doneWhen: 'x'.repeat(1000), note: 'x'.repeat(700) })), { layout: 'parallel' }), { code: 'TASK_PLAN_LIMIT' });
   assert.throws(() => runtimeTaskPlan('verbose'), /compact, balanced or detailed/);
 });
 

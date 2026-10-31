@@ -15,6 +15,7 @@ node_modules/
 
 # Editor and connector recovery copies
 *.currents-backup-*
+*.ownership-backup
 *.log
 *.tmp
 *.bak
@@ -29,3 +30,6 @@ Thumbs.db
 *.p12
 *.key
 *.pem
+
+# Local baseline diagnostic depends on private verification backups
+/tests/browser-debug-baseline-check.mjs

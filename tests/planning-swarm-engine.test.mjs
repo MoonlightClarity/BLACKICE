@@ -43,6 +43,7 @@ const graph = (agents, edges, shared = true) => ({
 async function fixture(t, workflow, execute, { holds = [], subagents = false, attachmentText } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-planning-runtime-')), cwd = path.join(directory, 'work'); await mkdir(cwd);
   const tasks = await new TaskStateStore({ dataDir: directory }).init(), prefs = await new RuntimeSettingsStore({ dataDir: directory }).init();
+  await prefs.update({ executionGuardrails: true });
   if (subagents) await prefs.update({ subagentsEnabled: true, maxSubagents: 2 });
   const attachments = attachmentText === undefined ? undefined : await new AttachmentStore({ dataDir: directory }).init();
   const attachment = attachments ? await attachments.importBytes({ name: 'input.txt', bytes: Buffer.from(attachmentText) }) : undefined;

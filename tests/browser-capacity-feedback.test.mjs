@@ -12,6 +12,7 @@ function fixture(t, { limit = 3, capacity = true } = {}) {
     { tabId: 'personal-private-id', suspended: false },
     { tabId: 'reserved-human-id', purpose: 'chat-mode', owner, suspended: false },
     { tabId: 'firefox:external', browser: 'firefox', owner, suspended: false },
+    { tabId: 'protected-private-id', protectedContent: true, suspended: true },
   ], calls = []; let next = 0;
   const taskLive = () => tabs.filter(tab => !tab.suspended && tab.purpose !== 'chat-mode' && tab.browser !== 'firefox' && tab.owner?.taskId === owner.taskId).length;
   const status = () => ({ available: true, contained: true, tabs: tabs.map(tab => ({ ...tab })), ...(capacity ? { capacity: { live: 4 + next, perTaskLive: limit, maxLive: 32 } } : {}) });
@@ -38,7 +39,14 @@ test('open reports the shared task live budget while preserving worker-scoped pa
   assert.equal(response.success, true); const result = parsed(response);
   assert.deepEqual(result.taskCapacity, { live: 2, limit: 3, remaining: 1 });
   assert.deepEqual(result.tabs.map(tab => tab.tabId), ['saved-owned', 'opened-1']);
-  assert.doesNotMatch(JSON.stringify(result), /sibling-private-id|other-task-private-id|personal-private-id|reserved-human-id|firefox:external/);
+  assert.deepEqual(result.ownershipCandidates, [
+    { tabId: 'sibling-private-id', ownerKey: JSON.stringify(['task', 'reviewer', 'run']) },
+    { tabId: 'saved-owned', ownerKey: JSON.stringify(['task', 'agent', 'run']) },
+    { tabId: 'other-task-private-id', ownerKey: JSON.stringify(['other-task', 'agent', 'run']) },
+    { tabId: 'personal-private-id', ownerKey: null },
+    { tabId: 'opened-1', url: 'https://example.invalid/research', ownerKey: JSON.stringify(['task', 'agent', 'run']) },
+  ], 'Explicit ownership transfers expose only their required public identity metadata.');
+  assert.doesNotMatch(JSON.stringify(result), /reserved-human-id|protected-private-id|firefox:external/);
   assert.deepEqual(f.calls.map(call => call.action), ['open'], 'Feedback must not automatically close, suspend, or navigate any page.');
 });
 

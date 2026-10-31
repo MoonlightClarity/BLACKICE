@@ -10,7 +10,7 @@ let status=null,current=null,revision=0;
 const spaces=new Map(), notifications=new Set();
 const modules={
   chat:()=>import('./chat/chat.mjs').then(m=>m.createChatWorkspace),
-  planning:()=>import('./workspaces/planning.mjs').then(m=>m.createPlanningWorkspace),
+  planning:()=>import('./workspaces/planning-browser.mjs').then(m=>m.createPlanningBrowser),
   tasks:()=>import('./workspaces/tasks.mjs').then(m=>m.createTasksWorkspace),
   browser:()=>import('./workspaces/browser.mjs').then(m=>m.createBrowserWorkspace),
   activity:()=>import('./workspaces/activity.mjs').then(m=>m.createActivityWorkspace),
@@ -45,10 +45,16 @@ function updateTabs(name){
     tab.tabIndex=selected?0:-1;
   }
 }
-async function show(name,{conversationId}={}){
+function openWorkspaceTarget(space){
+  const {conversationId,requestId,nodeId}=space?.navigation||{};
+  if(requestId)space?.instance?.openRequestId?.(requestId,{nodeId});
+  else if(conversationId)space?.instance?.openConversationId?.(conversationId);
+}
+async function show(name,{conversationId,requestId,nodeId}={}){
   if(!modules[name])return;
   const previous=current;const target=++revision;
-  if(previous===name){if(conversationId)spaces.get(name)?.instance?.openConversationId?.(conversationId);return;}
+  const navigation={conversationId,requestId,nodeId};
+  if(previous===name){const space=spaces.get(name);if(space){space.navigation=navigation;openWorkspaceTarget(space);}return;}
   if(previous && spaces.has(previous)){
     const item=spaces.get(previous);
     item.instance?.leave?.();item.mount.hidden=true;
@@ -65,13 +71,13 @@ async function show(name,{conversationId}={}){
     mount.dataset.workspace=name;
     mount.setAttribute('aria-label',name.charAt(0).toUpperCase()+name.slice(1));
     stage.append(mount);
-    space={mount,instance:null,loading:null};spaces.set(name,space);
+    space={mount,instance:null,loading:null,navigation};spaces.set(name,space);
     mount.innerHTML='<div class="next-loading"><h1>'+name.charAt(0).toUpperCase()+name.slice(1)+'</h1><p>Opening workspace…</p></div>';
     space.loading=modules[name]().then(factory=>{
       if(!spaces.has(name))return;
       const instance=factory({mount,api,events,notify,getStatus:()=>status,onNavigate:show});
       space.instance=instance;
-      if(current===name){instance.enter?.();instance.updateStatus?.(status);if(conversationId)instance.openConversationId?.(conversationId);}
+      if(current===name){instance.enter?.();instance.updateStatus?.(status);openWorkspaceTarget(space);}
       else mount.hidden=true;
     }).catch(error=>{
       mount.textContent='';
@@ -81,8 +87,9 @@ async function show(name,{conversationId}={}){
       wrapper.append(heading,note);mount.append(wrapper);notify(note.textContent,true);
     });
   }
+  space.navigation=navigation;
   space.mount.hidden=false;
-  if(space.instance){space.instance.enter?.();space.instance.updateStatus?.(status);if(conversationId)space.instance.openConversationId?.(conversationId);}
+  if(space.instance){space.instance.enter?.();space.instance.updateStatus?.(status);openWorkspaceTarget(space);}
   try{history.replaceState(null,'','#'+name);}catch{}
 }
 for(const tab of tabs){

@@ -1,4 +1,5 @@
 import { BrowserWindow, session } from 'electron';
+import { ownershipAction, ownershipChange } from '../lib/browser-ownership.mjs';
 import { EventEmitter } from 'node:events';
 import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
@@ -7,8 +8,10 @@ import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, bro
 import { captureHiddenPage } from './browser-capture.mjs';
 import { loadBrowserCompatibility } from './browser-compatibility.mjs';
 import { BrowserDiagnostics } from '../lib/browser-diagnostics.mjs';
+import { BrowserTabDiagnostics, diagnosticText } from '../lib/browser-tab-diagnostics.mjs';
 import { BrowserProtection, protectionOrigin } from '../lib/browser-protection.mjs';
 import { BrowserSurfaceHost } from './browser-surface.mjs';
+import { performProviderKeySource } from './provider-key-source.mjs';
 
 const error = message => new Error(message);
 const DEFAULT_FOLDER = 'folder_user';
@@ -153,7 +156,7 @@ function pageSnapshot(key, prefix, query, readContext = false) {
         }
         if (!query || `${label} ${!privateValue && 'value' in el ? el.value : ''}`.toLowerCase().includes(query.toLowerCase())) {
           state.elements.delete(ref); state.elements.set(ref, el); state.identities.set(ref, descriptor);
-          items.push({ ref, role: role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), name: label, tag: el.tagName.toLowerCase(), ...(el.type ? { type: el.type } : {}), ...(!privateValue && 'value' in el ? { value: String(el.value).slice(0, 300) } : {}), ...(el.disabled ? { disabled: true } : {}), ...(el.checked ? { checked: true } : {}), ...(el.getAttribute('aria-expanded') ? { expanded: el.getAttribute('aria-expanded') } : {}), ...(el.tagName === 'A' ? { href: el.href } : {}), ...(el.tagName === 'SELECT' ? { options: [...el.options].slice(0, 80).map(o => ({ value: o.value, label: o.label })) } : {}) });
+          items.push({ ref, role: role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), name: label, tag: el.tagName.toLowerCase(), ...(el.type ? { type: el.type } : {}), ...(!privateValue && 'value' in el ? { value: String(el.value).slice(0, 300) } : {}), disabled: Boolean(el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true'), ...(el.checked ? { checked: true } : {}), ...(el.getAttribute('aria-expanded') ? { expanded: el.getAttribute('aria-expanded') } : {}), ...(el.tagName === 'A' ? { href: el.href } : {}), ...(el.tagName === 'SELECT' ? { options: [...el.options].slice(0, 80).map(o => ({ value: o.value, label: o.label })) } : {}) });
         }
       }
       if (privateValue) continue;
@@ -208,7 +211,13 @@ function elementAction(key, ref, action, args, scrollPage) {
     const actual = JSON.stringify([el.tagName, el.type || '', role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), label]);
     if (style.display === 'none' || style.visibility === 'hidden' || !(box.width > 0 || box.height > 0) || actual !== expected) return { __blackiceElementError: { message: 'This observed control changed. Take a fresh snapshot and choose its current ref.', code: 'BROWSER_REF_STALE' } };
   }
-  if (el.disabled || el.getAttribute('aria-disabled') === 'true') throw new Error('This element is disabled. Inspect what is required first.');
+  if (el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true') throw new Error('This element is disabled. Inspect what is required first.');
+  if (action === 'pointer-verify') {
+    let hit = args.hit;
+    while (hit?.isConnected && hit !== el && !el.contains(hit) && hit.getRootNode?.()?.host) hit = hit.getRootNode().host;
+    if (!hit?.isConnected || hit !== el && !el.contains(hit)) throw new Error('The current pointer target is not the observed control. Inspect the page before acting.');
+    return { verified: true };
+  }
   if (action === 'prepare') {
     el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
     const r = el.getBoundingClientRect();
@@ -223,6 +232,20 @@ function elementAction(key, ref, action, args, scrollPage) {
   if (action === 'fill-ready') {
     if (el.readOnly) throw new Error('This field is read only.');
     if (document.activeElement !== el && el.getRootNode()?.activeElement !== el) throw new Error('The fill target lost focus before text input. Take a fresh snapshot before trying again.');
+    // Selection is preparation only; Chromium delivers the single trusted edit.
+    // A keyboard select-all acknowledgement does not prove selection completed.
+    let selected;
+    if (el.isContentEditable) {
+      const selection = el.ownerDocument.getSelection(), range = el.ownerDocument.createRange();
+      range.selectNodeContents(el); selection.removeAllRanges(); selection.addRange(range);
+      selected = selection.rangeCount === 1 && selection.getRangeAt(0).compareBoundaryPoints(Range.START_TO_START, range) === 0 && selection.getRangeAt(0).compareBoundaryPoints(Range.END_TO_END, range) === 0;
+    } else {
+      el.select();
+      // Email and number fields expose no selectionStart/End. Native select()
+      // still selects their editing contents, including an invalid partial number.
+      selected = typeof el.selectionStart !== 'number' || el.selectionStart === 0 && el.selectionEnd === el.value.length;
+    }
+    if (!selected || !el.isConnected || el.readOnly || el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true' || document.activeElement !== el && el.getRootNode()?.activeElement !== el) throw new Error('The fill target could not be selected for replacement. Inspect the field before trying again.');
     return { focused: true };
   }
   if (action === 'fill') {
@@ -230,12 +253,7 @@ function elementAction(key, ref, action, args, scrollPage) {
     if (!el.isContentEditable && (!['INPUT', 'TEXTAREA'].includes(el.tagName) || el.tagName === 'INPUT' && !['text','search','tel','url','email','password','number'].includes(el.type))) throw new Error('Choose an editable text field to fill. Use the page controls for dates, colors, files or other non-text inputs.');
     el.focus({ preventScroll: true });
     if (!el.isConnected || document.activeElement !== el && el.getRootNode()?.activeElement !== el) throw new Error('This field could not be focused for text input. Take a fresh snapshot before trying again.');
-    if (el.isContentEditable) {
-      const selection = el.ownerDocument.getSelection(), range = el.ownerDocument.createRange();
-      range.selectNodeContents(el); selection.removeAllRanges(); selection.addRange(range);
-      return { needsTrustedTextInput: true };
-    }
-    return { needsTrustedTextInput: true, needsSelectAll: true };
+    return { needsTrustedTextInput: true };
   }
   if (action === 'select') {
     if (el.tagName !== 'SELECT') throw new Error('This is not a native select. Click it and inspect the available options.');
@@ -343,6 +361,7 @@ export class ElectronBrowserDriver extends EventEmitter {
         const sourceUrl = tab ? tab.window.webContents.getURL() : details.initiator || details.referrer || '';
         const result = this.protection.match({ url: details.url, type: details.resourceType, sourceUrl, tabId: tab?.id });
         blocked = result.cancel === true;
+        this.recordNetwork?.('started', details);
       } catch {}
       callback({ cancel: blocked });
     };
@@ -350,8 +369,14 @@ export class ElectronBrowserDriver extends EventEmitter {
     this.diagnostics = new BrowserDiagnostics();
     this.cookieListener = (_event, cookie, cause, removed) => this.diagnostics.cookie(cookie, cause, removed);
     this.session.cookies.on('changed', this.cookieListener);
-    this.session.webRequest.onCompleted(details => this.diagnostics.request(details));
-    this.session.webRequest.onErrorOccurred(details => this.diagnostics.request(details));
+    const recordNetwork = (stage, details) => {
+      const tab = [...this.tabs.values()].find(item => item.window && !item.window.isDestroyed() && item.window.webContents.id === details.webContentsId);
+      if (tab && tab.purpose !== 'chat-mode' && !tab.providerKeyProtected) (tab.debugEvidence ||= new BrowserTabDiagnostics()).network(stage, details);
+    };
+    this.recordNetwork = recordNetwork;
+    this.session.webRequest.onResponseStarted?.(details => recordNetwork('response', details));
+    this.session.webRequest.onCompleted(details => { this.diagnostics.request(details); recordNetwork('completed', details); });
+    this.session.webRequest.onErrorOccurred(details => { this.diagnostics.request(details); recordNetwork('failed', details); });
     // BLACKICE grants web capabilities in this dedicated browsing profile without approval prompts.
     // OS permission checks and device selection remain separate.
     this.session.setPermissionRequestHandler((_wc, _permission, cb) => cb(true));
@@ -387,7 +412,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     try {
       for (const entry of entries) try {
         const owner = entry.owner ? browserOwner(entry.owner) : null;
-        this.newTab(browserURL(entry.url), { restore: true, id: validId(entry.tabId) && !this.tabs.has(entry.tabId) ? entry.tabId : undefined, title: typeof entry.title === 'string' ? entry.title : '', purpose: entry.purpose === 'chat-mode' ? 'chat-mode' : null, owner, humanCreated: entry.humanCreated === true, folderId: this.folders.has(entry.folderId) ? entry.folderId : undefined });
+        this.newTab(browserURL(entry.url), { restore: true, id: validId(entry.tabId) && !this.tabs.has(entry.tabId) ? entry.tabId : undefined, title: typeof entry.title === 'string' ? entry.title : '', purpose: entry.purpose === 'chat-mode' ? 'chat-mode' : null, owner, humanCreated: entry.humanCreated === true, providerKeyProtected: entry.providerKeyProtected === true, folderId: this.folders.has(entry.folderId) ? entry.folderId : undefined });
       } catch {}
       for (const entry of entries) {
         const tab = this.tabs.get(entry.tabId), parent = this.tabs.get(entry.parentTabId);
@@ -406,12 +431,13 @@ export class ElectronBrowserDriver extends EventEmitter {
     return tab.pendingURL || tab.preparingURL || (tab.loadError ? tab.url : savedPageURL(actual) ? actual : tab.url || actual);
   }
   tabTitle(tab) {
+    if (tab.providerKeyProtected) return 'Provider API key setup';
     return blankPageURL(this.tabURL(tab)) ? 'New tab' : (tab.pendingURL ? tab.title : tab.window?.webContents.getTitle() || tab.title) || '';
   }
   liveTabs() { return [...this.tabs.values()].filter(tab => tab.window && !tab.window.isDestroyed()); }
   status() {
     const live = this.liveTabs();
-    return { contained: true, canShow: false, protection: this.protection.status(), persistence: { healthy: !this.persistenceError, ...(this.persistenceError ? { error: 'Browser folders and pages could not be saved.' } : {}) }, folders: [...this.folders.values()].map(folder => ({ ...folder })), capacity: { live: live.filter(tab => tab.purpose !== 'chat-mode').length, maxLive: this.maxLiveTabs, saved: this.tabs.size, maxSaved: this.maxSavedTabs, perTaskLive: this.maxTaskTabs }, ownerActiveTabs: Object.fromEntries(this.ownerActiveTabs), tabs: [...this.tabs.values()].map(t => ({ tabId: t.id, folderId: t.folderId, parentTabId: t.parentTabId || null, ...(t.owner ? { owner: { ...t.owner } } : {}), ...(t.purpose === 'chat-mode' ? { purpose: 'chat-mode' } : {}), url: this.tabURL(t), title: this.tabTitle(t), loading: !t.pendingURL && Boolean(t.window?.webContents.isLoading()), canGoBack: !t.pendingURL && Boolean(t.window?.webContents.navigationHistory?.canGoBack?.()), canGoForward: !t.pendingURL && Boolean(t.window?.webContents.navigationHistory?.canGoForward?.()), visible: Boolean(t.window?.isVisible()), contained: true, canShow: false, protection: this.protection.tabStatus(t.id, this.tabURL(t)), suspended: !t.window || Boolean(t.pendingURL), interactionSettling: t.suspendedWork.size > 0, ...(t.rendererFailure ? { rendererFailure: { ...t.rendererFailure } } : {}), ...(t.pendingInteraction ? { pendingInteraction: structuredClone(t.pendingInteraction) } : {}) })), activeTab: this.activeTab, downloads: this.downloads.filter((item, index) => item.status === 'downloading' || index >= this.downloads.length - 20), activeDownloads: this.downloads.filter(item => item.status === 'downloading').length, profile: 'BLACKICE contained browser · saved locally', ...(this.diagnostics ? { diagnostics: this.diagnostics.snapshot() } : {}) };
+    return { contained: true, canShow: false, protection: this.protection.status(), persistence: { healthy: !this.persistenceError, ...(this.persistenceError ? { error: 'Browser folders and pages could not be saved.' } : {}) }, folders: [...this.folders.values()].map(folder => ({ ...folder })), capacity: { live: live.filter(tab => tab.purpose !== 'chat-mode').length, maxLive: this.maxLiveTabs, saved: this.tabs.size, maxSaved: this.maxSavedTabs, perTaskLive: this.maxTaskTabs }, ownerActiveTabs: Object.fromEntries(this.ownerActiveTabs), tabs: [...this.tabs.values()].map(t => ({ tabId: t.id, documentId: inputDocumentId(t), folderId: t.folderId, parentTabId: t.parentTabId || null, ...(t.owner ? { owner: { ...t.owner } } : {}), ...(t.purpose === 'chat-mode' ? { purpose: 'chat-mode' } : {}), ...(t.providerKeyProtected ? { protectedContent: true } : {}), url: this.tabURL(t), title: this.tabTitle(t), loading: !t.pendingURL && Boolean(t.window?.webContents.isLoading()), canGoBack: !t.pendingURL && Boolean(t.window?.webContents.navigationHistory?.canGoBack?.()), canGoForward: !t.pendingURL && Boolean(t.window?.webContents.navigationHistory?.canGoForward?.()), visible: Boolean(t.window?.isVisible()), contained: true, canShow: false, protection: this.protection.tabStatus(t.id, this.tabURL(t)), suspended: !t.window || Boolean(t.pendingURL), interactionSettling: t.suspendedWork.size > 0, ...(t.rendererFailure ? { rendererFailure: { ...t.rendererFailure } } : {}), ...(t.pendingInteraction ? { pendingInteraction: structuredClone(t.pendingInteraction) } : {}) })), activeTab: this.activeTab, downloads: this.downloads.filter((item, index) => item.status === 'downloading' || index >= this.downloads.length - 20), activeDownloads: this.downloads.filter(item => item.status === 'downloading').length, profile: 'BLACKICE contained browser · saved locally', ...(this.diagnostics ? { diagnostics: this.diagnostics.snapshot() } : {}) };
   }
   protectionStatus() { return { ...this.protection.status(), tabs: [...this.tabs.values()].map(tab => ({ tabId: tab.id, ...this.protection.tabStatus(tab.id, this.tabURL(tab)) })) }; }
   async configureProtection(options, { signal } = {}) {
@@ -421,7 +447,7 @@ export class ElectronBrowserDriver extends EventEmitter {
   }
   persist() {
     if (this.restoring || this.closed) return;
-    const entries = [...this.tabs.values()].filter(t => savedPageURL(this.tabURL(t))).map(t => ({ tabId: t.id, url: this.tabURL(t), title: this.tabTitle(t), folderId: t.folderId, parentTabId: t.parentTabId || null, ...(t.owner ? { owner: { ...t.owner } } : {}), ...(t.humanCreated ? { humanCreated: true } : {}), ...(t.purpose === 'chat-mode' ? { purpose: 'chat-mode' } : {}) }));
+    const entries = [...this.tabs.values()].filter(t => savedPageURL(this.tabURL(t))).map(t => ({ tabId: t.id, url: this.tabURL(t), title: this.tabTitle(t), folderId: t.folderId, parentTabId: t.parentTabId || null, ...(t.owner ? { owner: { ...t.owner } } : {}), ...(t.humanCreated ? { humanCreated: true } : {}), ...(t.ownershipReceipt ? { ownershipReceipt: t.ownershipReceipt } : {}), ...(t.providerKeyProtected ? { providerKeyProtected: true } : {}), ...(t.purpose === 'chat-mode' ? { purpose: 'chat-mode' } : {}) }));
     const saved = { version: 2, folders: [...this.folders.values()].map(folder => ({ ...folder })), tabs: entries, activeTab: this.activeTab };
     // Navigation and title events can arrive faster than the disk can flush.
     // Retain one latest pending snapshot instead of an unbounded promise queue
@@ -459,6 +485,24 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (this.persistenceError) throw Object.assign(error('The browser changed in memory, but its folder and page state could not be saved. Inspect the current browser state before repeating the action.'), { code: 'BROWSER_SAVE_FAILED', actionDispatched: true });
     return { ...this.status(), ...extra };
   }
+  async changeOwnership(args, source, caller) {
+    const change = ownershipChange(args, this.status(), caller, source);
+    const tab = this.tab(args.tabId);
+    if (tab.pendingInteraction || tab.suspendedWork?.size || this.downloads.some(d => d.tabId === tab.id && d.status === 'downloading')) throw capacityError('Finish pending input or downloads before transferring the tab.', 'BROWSER_TAB_BUSY');
+    if (change.owner && tab.owner?.taskId !== change.owner.taskId && tab.window && !tab.window.isDestroyed() && this.liveTabs().filter(t => t.owner?.taskId === change.owner.taskId).length >= this.maxTaskTabs) throw capacityError('The destination task live-tab capacity is full.', 'BROWSER_TASK_TAB_LIMIT');
+    const previousOwner = tab.owner ? { ...tab.owner } : null;
+    const folder = this.folderFor(change.owner, change.folderId);
+    const receipt = { action: args.action, tabId: tab.id, documentId: inputDocumentId(tab), url: this.tabURL(tab), previousOwner, owner: change.owner, previousFolderId: tab.folderId, folderId: folder.id, at: new Date().toISOString() };
+    // Move exactly one tab, never its unrelated descendants.
+    for (const child of this.tabs.values()) if (child.parentTabId === tab.id) child.parentTabId = null;
+    for (const [key, id] of this.ownerActiveTabs) if (id === tab.id) this.ownerActiveTabs.delete(key);
+    tab.owner = change.owner; tab.folderId = folder.id; tab.parentTabId = null;
+    tab.humanCreated = !change.owner; tab.userPinned = !change.owner;
+    tab.ownershipReceipt = receipt;
+    if (change.owner) this.ownerActiveTabs.set(browserOwnerKey(change.owner), tab.id);
+    this.persist(); this.emit('changed');
+    return this.savedStatus({ ownershipReceipt: receipt });
+  }
   folderFor(owner, folderId) {
     if (folderId != null) {
       const folder = this.folders.get(folderId);
@@ -491,7 +535,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     // admission remains bounded without limiting a person's browser to eight tabs.
     if (!tab.humanCreated && tab.owner && live.filter(item => item.owner?.taskId === tab.owner.taskId).length >= this.maxTaskTabs) throw capacityError(`This task has ${this.maxTaskTabs} live pages. Reuse or close one of its own pages before opening another.`, 'BROWSER_TASK_TAB_LIMIT');
   }
-  newTab(url, { restore = false, title = '', window: suppliedWindow, purpose = null, owner: context, humanCreated = false, folderId, parentTabId = null, id } = {}) {
+  newTab(url, { restore = false, title = '', window: suppliedWindow, purpose = null, owner: context, humanCreated = false, providerKeyProtected = false, folderId, parentTabId = null, id } = {}) {
     if (this.closed) throw error('Browser workspace has closed.');
     let owner = browserOwner(context);
     if (purpose !== null && purpose !== 'chat-mode') throw error('Use a supported contained browser tab purpose.');
@@ -505,7 +549,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (!suppliedWindow && !restore && this.tabs.size >= this.maxSavedTabs) throw capacityError('The saved browser page capacity is full. Close an unneeded page in the browser workspace.', 'BROWSER_SAVED_LIMIT');
     if (purpose === 'chat-mode' && !this.hasTabCapacity(purpose)) throw capacityError('The dedicated human ChatGPT tab is already open.', 'BROWSER_CHAT_MODE_TAB_EXISTS');
     if (!suppliedWindow && !restore && !humanCreated && purpose !== 'chat-mode' && !owner && [...this.tabs.values()].filter(tab => tab.purpose !== 'chat-mode' && !tab.owner).length >= this.maxTabs) throw capacityError(`Use at most ${this.maxTabs} personal browser tabs. Close one before opening another; task folders have separate capacity.`, 'BROWSER_TAB_LIMIT');
-    const tab = { id: id || randomUUID(), url, title: blankPageURL(url) ? 'New tab' : title, purpose, folderId: folder.id, parentTabId: parent?.id || null, owner: ownerRecord(owner), humanCreated: humanCreated === true, pendingURL: restore && !suppliedWindow ? url : null, preparingURL: !restore && !suppliedWindow ? url : null, window: null, refs: new Map(), revision: 0, interactionWaiters: new Set(), rendererWaiters: new Set(), suspendedWork: new Set(), loading: Promise.resolve() };
+    const tab = { id: id || randomUUID(), url, title: blankPageURL(url) ? 'New tab' : title, purpose, folderId: folder.id, parentTabId: parent?.id || null, owner: ownerRecord(owner), humanCreated: humanCreated === true, providerKeyProtected: providerKeyProtected === true, pendingURL: restore && !suppliedWindow ? url : null, preparingURL: !restore && !suppliedWindow ? url : null, window: null, refs: new Map(), refContexts: new Map(), frameRevisions: new Map(), mainRevision: 0, revision: 0, interactionWaiters: new Set(), rendererWaiters: new Set(), suspendedWork: new Set(), loading: Promise.resolve() };
     if (!restore && !suppliedWindow) this.assertLiveCapacity(tab);
     this.tabs.set(tab.id, tab);
     if (owner) this.ownerActiveTabs.set(browserOwnerKey(owner), tab.id); else this.activeTab = tab.id;
@@ -530,6 +574,16 @@ export class ElectronBrowserDriver extends EventEmitter {
     tab.window = window; tab.suspending = false; tab.closing = false;
     tab.popupViewport = suppliedWindow ? { ready: false, resetRequired: false, pending: null } : null;
     const wc = window.webContents;
+    tab.debugEvidence ||= new BrowserTabDiagnostics();
+    const diagnostic = (kind, details) => { if (tab.window === window && tab.purpose !== 'chat-mode' && !tab.providerKeyProtected) tab.debugEvidence.lifecycle(kind, details); };
+    wc.on('console-message', (_event, details, message, lineNumber, sourceId) => {
+      if (tab.window !== window || tab.purpose === 'chat-mode' || tab.providerKeyProtected || tab.credentialCaptureBlocked) return;
+      tab.debugEvidence.console(details && typeof details === 'object' ? details : { level: details, message, lineNumber, sourceId });
+    });
+    for (const [event, kind] of [['did-start-loading', 'loading-started'], ['did-stop-loading', 'loading-stopped'], ['unresponsive', 'unresponsive'], ['responsive', 'responsive']]) wc.on(event, () => diagnostic(kind));
+    wc.on('render-process-gone', (_event, details) => diagnostic('renderer-gone', { reason: details?.reason, code: details?.exitCode }));
+    wc.on('did-fail-load', (_event, code, description) => diagnostic('navigation-failed', { code, reason: description }));
+    wc.debugger.on('detach', (_event, reason) => diagnostic('debugger-detached', { reason }));
     wc.on('render-process-gone', (_event, details) => this.rendererGone(tab, window, details));
     wc.on('login', (event, details, authInfo, callback) => {
       event.preventDefault();
@@ -574,7 +628,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       if (this.liveSurface) return { action: 'allow', createWindow: options => {
         const child = this.createSurfaceWindow({ ...containedWindowOptions(this.session), ...options,
           webPreferences: { ...containedWindowOptions(this.session).webPreferences, ...options.webPreferences, session: this.session, offscreen: false } });
-        try { this.newTab(url || 'about:blank', { window: child, owner: tab.owner, humanCreated, folderId: tab.folderId, parentTabId: tab.id }); }
+        try { this.newTab(url || 'about:blank', { window: child, owner: tab.owner, humanCreated, providerKeyProtected: tab.providerKeyProtected === true, folderId: tab.folderId, parentTabId: tab.id }); }
         catch (cause) { child.destroy(); throw cause; }
         return child.webContents;
       } };
@@ -583,18 +637,17 @@ export class ElectronBrowserDriver extends EventEmitter {
     wc.on('did-create-window', (child, details) => {
       const humanCreated = tab.humanCreated || tab.humanSurface === true;
       if (this.closed || !this.compatibilityLoaded) child.destroy();
-      else try { this.newTab(details.url || 'about:blank', { window: child, owner: tab.owner, humanCreated, folderId: tab.folderId, parentTabId: tab.id }); } catch { if (!child.isDestroyed()) child.destroy(); }
+      else try { this.newTab(details.url || 'about:blank', { window: child, owner: tab.owner, humanCreated, providerKeyProtected: tab.providerKeyProtected === true, folderId: tab.folderId, parentTabId: tab.id }); } catch { if (!child.isDestroyed()) child.destroy(); }
     });
     wc.on('will-attach-webview', event => event.preventDefault());
-    const navigated = () => { tab.revision++; tab.refs.clear(); this.clearInteraction(tab); this.persist(); this.emit('changed'); };
     if (this.liveSurface) wc.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame === true) this.cancelAuthentication(tab); });
-    wc.on('did-frame-navigate', (_event, _url, _responseCode, _statusText, isMainFrame) => {
+    wc.on('did-frame-navigate', (_event, _url, _responseCode, _statusText, isMainFrame, frameProcessId, frameRoutingId) => {
       // Only a new top-level document retires the capture restriction. Hash
       // changes, SPA routes and child navigations can retain a filled field.
       if (isMainFrame === true) tab.credentialCaptureBlocked = false;
-      navigated();
+      this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId);
     });
-    wc.on('did-navigate-in-page', navigated);
+    wc.on('did-navigate-in-page', (_event, _url, isMainFrame, frameProcessId, frameRoutingId) => this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId));
     wc.on('did-fail-load', (_event, code, description, _url, isMainFrame) => { if (isMainFrame !== false && code !== -3) { tab.loadError = String(description || `Navigation failed (${code}).`); this.emit('changed'); } });
     wc.on('page-title-updated', (_event, value) => { tab.title = value; this.persist(); this.emit('changed'); });
     const handoffExternal = (event, target) => {
@@ -658,7 +711,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     try { tab.url = this.tabURL(tab); tab.title = window.webContents.getTitle() || tab.title; } catch {}
     const reasons = ['clean-exit', 'abnormal-exit', 'killed', 'crashed', 'oom', 'launch-failed', 'integrity-failure'];
     tab.rendererFailure = { reason: reasons.includes(details.reason) ? details.reason : 'unknown', ...(Number.isInteger(details.exitCode) ? { exitCode: details.exitCode } : {}), at: new Date().toISOString() };
-    tab.pendingURL = tab.url; tab.preparingURL = null; tab.revision++; tab.refs.clear();
+    tab.pendingURL = tab.url; tab.preparingURL = null; tab.revision++; this.retireAllReferences(tab);
     this.clearInteraction(tab); tab.suspendedWork.clear();
     tab.containmentReady = null; tab.rendererReady = null; tab.loading = Promise.resolve();
     for (const notify of tab.rendererWaiters || []) notify();
@@ -679,19 +732,35 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (tab.pendingInteraction || tab.suspendedWork.size) return { suspended: false, reason: 'A website interaction still requires inspection.' };
     if (this.downloads.some(item => item.tabId === tab.id && item.status === 'downloading')) return { suspended: false, reason: 'A download is still running.' };
     tab.url = this.tabURL(tab); tab.title = tab.window.webContents.getTitle() || tab.title; tab.pendingURL = tab.url; tab.preparingURL = null;
-    tab.revision++; tab.refs.clear(); tab.suspending = true; tab.userPinned = false; tab.containmentReady = null; tab.rendererReady = null; tab.loading = Promise.resolve();
+    tab.revision++; this.retireAllReferences(tab); tab.suspending = true; tab.userPinned = false; tab.containmentReady = null; tab.rendererReady = null; tab.loading = Promise.resolve();
     tab.window.destroy(); tab.window = null; this.persist(); this.emit('changed');
     return { suspended: true };
   }
-  async releaseOwner(context) {
-    const owner = browserOwner(context), suspended = [], retained = [];
+  async releaseOwner(context, { status } = {}) {
+    const owner = browserOwner(context), suspended = [], retained = [], closed = [], folders = new Set();
     if (!owner) throw capacityError('A host browser owner is required for cleanup.', 'BROWSER_OWNER_INVALID');
-    for (const tab of this.tabs.values()) if (tab.purpose !== 'chat-mode' && sameOwner(tab.owner, owner) && tab.owner.runId === owner.runId) {
-      const result = this.suspendTab(tab, { automatic: true }); if (result.suspended) suspended.push(tab.id); else retained.push({ tabId: tab.id, reason: result.reason });
+    for (const tab of [...this.tabs.values()]) if (tab.purpose !== 'chat-mode' && sameOwner(tab.owner, owner) && tab.owner.runId === owner.runId) {
+      if (['paused', 'awaiting_input', 'running', 'queued'].includes(status)) { retained.push({ tabId: tab.id, reason: 'This task is not finished; preserve its live page state.' }); continue; }
+      if (status === 'completed') {
+        const reason = tab.userPinned || tab.humanCreated ? 'The person interacted with this page; keep it open until they close it.'
+          : tab.pendingInteraction || tab.suspendedWork.size ? 'A website interaction still requires inspection.'
+          : this.downloads.some(item => item.tabId === tab.id && item.status === 'downloading') ? 'A download is still running.' : null;
+        if (reason) { retained.push({ tabId: tab.id, reason }); continue; }
+        folders.add(tab.folderId); this.closeTab(tab); closed.push(tab.id);
+      } else {
+        const result = this.suspendTab(tab, { automatic: true }); if (result.suspended) suspended.push(tab.id); else retained.push({ tabId: tab.id, reason: result.reason });
+      }
+    }
+    if (closed.length) {
+      for (const id of folders) {
+        const folder = this.folders.get(id);
+        if (folder?.kind === 'task' && folder.taskId === owner.taskId && ![...this.tabs.values()].some(tab => tab.folderId === id)) this.folders.delete(id);
+      }
+      this.persist(); this.emit('changed');
     }
     await this.writeChain;
-    if (this.persistenceError) throw Object.assign(error('Browser pages were suspended, but their saved folder state could not be confirmed.'), { code: 'BROWSER_SAVE_FAILED' });
-    return { suspended, retained };
+    if (this.persistenceError) throw Object.assign(error('Browser cleanup ran, but its saved folder state could not be confirmed.'), { code: 'BROWSER_SAVE_FAILED' });
+    return { suspended, retained, ...(status === 'completed' ? { closed } : {}) };
   }
   async organize(args, source, context) {
     const owner = source === 'user' ? null : browserOwner(context);
@@ -980,24 +1049,34 @@ export class ElectronBrowserDriver extends EventEmitter {
     this.downloads = this.downloads.filter((item, index) => index >= cutoff || item.status === 'downloading');
   }
   async snapshot(tab, query, signal, { readContext = false } = {}) {
+    if (tab.providerKeyProtected) return { tabId: tab.id, url: this.tabURL(tab), documentId: inputDocumentId(tab), frames: [], protectedContent: true, hint: 'This API-key page is masked for tools. Use protected provider key inspection or the local human browser view.' };
     if (tab.pendingInteraction?.status === 'pending') return this.interactionReceipt(tab, { frames: [] });
     if (tab.popupViewport) await this.ensurePopupViewport(tab, signal);
     cancel(signal);
     const deadline = Date.now() + 7000;
     for (let attempt = 0; attempt < 2; attempt++) {
       cancel(signal);
-      const frames = [], errors = []; let remainingElements = 400, remainingText = 24000, frameDisposed = false, mainFrame, allFrames;
+      const frames = [], errors = [], captured = []; let remainingElements = 400, remainingText = 24000, frameDisposed = false, mainFrame, allFrames;
+      const observedDocumentId = inputDocumentId(tab), observedUrl = tab.window.webContents.getURL();
+      let mainStamp, changedRead = false;
       try {
         mainFrame = tab.window.webContents.mainFrame;
+        mainStamp = this.frameStamp(tab, mainFrame, { mainFrame, throwDisposed: true });
+        if (!mainStamp) throw Object.assign(error('The main browser frame changed before observation. Take a fresh snapshot before acting.'), { code: 'BROWSER_SNAPSHOT_DOCUMENT_CHANGED' });
         // Electron does not promise subtree traversal order. Ad-heavy pages can
         // have more descendants than the cap; always inspect their main document.
         allFrames = [mainFrame, ...mainFrame.framesInSubtree.filter(frame => frame !== mainFrame)].slice(0, 30);
         const currentFrames = new Set(allFrames);
-        for (const [ref, frame] of tab.refs) if (!currentFrames.has(frame)) tab.refs.delete(ref);
+        for (const [ref, frame] of tab.refs) if (!currentFrames.has(frame)) { tab.refs.delete(ref); tab.refContexts?.delete(ref); }
       } catch (reason) {
         cancel(signal);
-        if (attempt === 0 && disposedFrame(reason) && Date.now() < deadline) continue;
-        throw reason;
+        if (reason?.code === 'BROWSER_SNAPSHOT_DOCUMENT_CHANGED') {
+          if (attempt === 0 && Date.now() < deadline) continue;
+          throw reason;
+        }
+        if (!disposedFrame(reason)) throw reason;
+        frameDisposed = true; allFrames = [];
+        errors.push({ frame: 'main', error: String(reason?.message || reason) });
       }
       for (const frame of allFrames) {
         cancel(signal);
@@ -1005,13 +1084,15 @@ export class ElectronBrowserDriver extends EventEmitter {
         let frameLabel = frame === mainFrame ? 'main' : 'subframe';
         try {
           frameLabel = `${frame.processId}-${frame.routingId}`;
-          const prefix = `${tab.revision}-${frameLabel}`;
+          const stamp = this.frameStamp(tab, frame, { mainFrame, throwDisposed: true });
+          if (!stamp) { changedRead = true; break; }
+          const prefix = `${stamp.mainRevision}-${stamp.lineage.map(value => value.revision).join('_')}-${frameLabel}`;
           const value = await this.pageWork(tab, frame.executeJavaScript(`(${pageSnapshot.toString()})(${JSON.stringify(this.key)},${JSON.stringify(prefix)},${JSON.stringify(query || '')},${Boolean(readContext)})`), signal, Math.max(1, Math.min(deadline - Date.now(), frame === mainFrame ? 5000 : 500)));
+          if (!this.frameStampCurrent(tab, stamp)) { changedRead = true; break; }
           if (value.elements.length > remainingElements || value.text.length > remainingText) value.truncated = true;
           value.elements = value.elements.slice(0, remainingElements); value.text = value.text.slice(0, remainingText);
           remainingElements -= value.elements.length; remainingText -= value.text.length;
-          for (const item of value.elements) { tab.refs.delete(item.ref); tab.refs.set(item.ref, frame); }
-          while (tab.refs.size > MAX_OBSERVED_REFS) tab.refs.delete(tab.refs.keys().next().value);
+          captured.push({ stamp, elements: value.elements });
           frames.push({ frame: frameLabel, ...value });
           if (query && frame === mainFrame && value.elements.length) break;
         } catch (reason) {
@@ -1026,11 +1107,28 @@ export class ElectronBrowserDriver extends EventEmitter {
       // Only the read is repeated, never the action that preceded it. Reacquire
       // current frames once, inside the original deadline, if none were readable.
       if (attempt === 0 && !frames.length && frameDisposed && Date.now() < deadline) continue;
-      return { tabId: tab.id, url: tab.window.webContents.getURL(), documentId: inputDocumentId(tab), title: this.tabTitle(tab), frames, ...(frames.some(f => f.truncated) ? { hint: 'Large page: supply query to narrow the controls/text, or scroll a virtualized region and inspect again.' } : {}), ...(errors.length ? { frameErrors: errors } : {}), ...(tab.loadError ? { navigationError: tab.loadError } : {}), ...(tab.inputWarning ? { inputWarning: tab.inputWarning } : {}), ...(tab.pendingInteraction ? { pendingInteraction: structuredClone(tab.pendingInteraction) } : {}) };
+      // A bounded failed read can report its disposal diagnostics without publishing
+      // any stale observation. Successful frames still require current stamps.
+      if (frames.length || !frameDisposed) changedRead ||= !this.frameStampCurrent(tab, mainStamp) || captured.some(value => !this.frameStampCurrent(tab, value.stamp));
+      if (changedRead) {
+        if (attempt === 0 && Date.now() < deadline) continue;
+        // A snapshot may be the result read after consequential input. Do not
+        // label the enclosing action undispatched merely because this read failed.
+        throw Object.assign(error('An observed frame changed while the snapshot was read. Take a fresh snapshot before acting.'), { code: 'BROWSER_SNAPSHOT_DOCUMENT_CHANGED' });
+      }
+      // Publish refs only after every captured document is still current. Retain
+      // the starting token: unrelated frame churn must not bless unobserved raw
+      // keyboard/coordinate context with a newer whole-page document token.
+      if (frameDisposed) for (const ref of tab.refs.keys()) if (!this.referenceCurrent(tab, ref)) { tab.refs.delete(ref); tab.refContexts?.delete(ref); }
+      this.rememberReferences(tab, captured, observedDocumentId);
+      return { tabId: tab.id, url: observedUrl, documentId: observedDocumentId, title: this.tabTitle(tab), frames, ...(frames.some(f => f.truncated) ? { hint: 'Large page: supply query to narrow the controls/text, or scroll a virtualized region and inspect again.' } : {}), ...(errors.length ? { frameErrors: errors } : {}), ...(tab.loadError ? { navigationError: tab.loadError } : {}), ...(tab.inputWarning ? { inputWarning: tab.inputWarning } : {}), ...(tab.pendingInteraction ? { pendingInteraction: structuredClone(tab.pendingInteraction) } : {}) };
     }
   }
   async element(tab, args, action, signal, extra = {}) {
-    if (typeof args.ref !== 'string' || !tab.refs.has(args.ref)) throw Object.assign(error('Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE' });
+    if (typeof args.ref !== 'string' || !this.referenceCurrent(tab, args.ref)) {
+      if (typeof args.ref === 'string') { tab.refs.delete(args.ref); tab.refContexts?.delete(args.ref); }
+      throw Object.assign(error('Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE' });
+    }
     const frame = tab.refs.get(args.ref);
     let result;
     try {
@@ -1038,7 +1136,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       if (frame !== main && !main.framesInSubtree.includes(frame)) throw Object.assign(error('The observed frame was replaced. Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE' });
       result = await this.pageWork(tab, frame.executeJavaScript(`(${elementActionResult.toString()})(${elementAction.toString()},${smoothPageScroll.toString()},${JSON.stringify(this.key)},${JSON.stringify(args.ref)},${JSON.stringify(action)},${JSON.stringify({ ...args, ...extra })})`), signal);
     } catch (reason) {
-      if (disposedFrame(reason)) { tab.refs.delete(args.ref); throw Object.assign(error('The observed frame was replaced. Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE' }); }
+      if (disposedFrame(reason)) { tab.refs.delete(args.ref); tab.refContexts?.delete(args.ref); throw Object.assign(error('The observed frame was replaced. Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE' }); }
       throw reason;
     }
     if (result?.__blackiceElementError) {
@@ -1047,8 +1145,10 @@ export class ElectronBrowserDriver extends EventEmitter {
       // dispatch uncertainty even when this particular ref check sent no input.
       throw Object.assign(error(message), { code });
     }
+    if (!this.referenceCurrent(tab, args.ref)) throw Object.assign(error('The target frame changed while the element action was running. Inspect its actual effects before another attempt.'), { code: 'BROWSER_REF_STALE' });
     return { frame, result };
   }
+  providerKeySource(value, options) { return performProviderKeySource(this, value, options); }
   async prepareCredentialFill(value, { signal, source = 'agent', owner: context } = {}) {
     const args = browserCredentialTarget({ browser: 'relay', ...value }), tab = this.tab(args.tabId);
     const owner = browserOwner(context);
@@ -1083,9 +1183,63 @@ export class ElectronBrowserDriver extends EventEmitter {
       } catch { throw Object.assign(error('Credential filling could not be confirmed. Inspect the page before trying again.'), { code: 'BROWSER_CREDENTIAL_FILL_UNCONFIRMED' }); }
     };
   }
+  retireAllReferences(tab) {
+    tab.mainRevision = (tab.mainRevision || 0) + 1;
+    tab.refs.clear(); tab.refContexts?.clear(); tab.frameRevisions?.clear();
+  }
+  navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId) {
+    tab.revision++;
+    if (isMainFrame !== false || !Number.isInteger(frameProcessId) || frameProcessId < 0 || !Number.isInteger(frameRoutingId) || frameRoutingId < 0) this.retireAllReferences(tab);
+    else {
+      const key = `${frameProcessId}-${frameRoutingId}`, revisions = tab.frameRevisions ||= new Map();
+      revisions.set(key, (revisions.get(key) || 0) + 1);
+      for (const [ref, context] of tab.refContexts || []) if (context.stamp.lineage.some(value => value.key === key)) { tab.refs.delete(ref); tab.refContexts.delete(ref); }
+      if (revisions.size > MAX_OBSERVED_REFS) this.retireAllReferences(tab);
+    }
+    // Native dialog/chooser decisions keep their existing whole-page guard.
+    this.clearInteraction(tab); this.persist(); this.emit('changed');
+  }
+  frameStamp(tab, frame, { mainFrame, throwDisposed = false } = {}) {
+    try {
+      const main = mainFrame || tab.window.webContents.mainFrame, members = new Set([main, ...main.framesInSubtree]);
+      if (!members.has(frame)) return null;
+      const lineage = [], seen = new Set(); let cursor = frame;
+      while (cursor) {
+        if (seen.has(cursor) || !members.has(cursor)) return null;
+        seen.add(cursor);
+        const key = `${cursor.processId}-${cursor.routingId}`;
+        lineage.push({ key, revision: tab.frameRevisions?.get(key) || 0 });
+        if (cursor === main) return { frame, window: tab.window, mainRevision: tab.mainRevision || 0, url: frame.url, topUrl: tab.window.webContents.getURL(), lineage };
+        cursor = cursor.parent;
+      }
+    } catch (reason) { if (throwDisposed && disposedFrame(reason)) throw reason; }
+    return null;
+  }
+  frameStampCurrent(tab, stamp) {
+    if (!stamp || stamp.window !== tab.window) return false;
+    const current = this.frameStamp(tab, stamp.frame);
+    return Boolean(current && current.mainRevision === stamp.mainRevision && current.url === stamp.url && current.topUrl === stamp.topUrl && JSON.stringify(current.lineage) === JSON.stringify(stamp.lineage));
+  }
+  rememberReferences(tab, captured, documentId) {
+    const contexts = tab.refContexts ||= new Map();
+    for (const { stamp, elements } of captured) for (const item of elements) {
+      const previous = contexts.get(item.ref), documents = previous && this.frameStampCurrent(tab, previous.stamp) ? new Set(previous.documents) : new Set();
+      documents.add(documentId); while (documents.size > 8) documents.delete(documents.values().next().value);
+      tab.refs.delete(item.ref); tab.refs.set(item.ref, stamp.frame);
+      contexts.set(item.ref, { stamp, documents });
+    }
+    while (tab.refs.size > MAX_OBSERVED_REFS) { const ref = tab.refs.keys().next().value; tab.refs.delete(ref); contexts.delete(ref); }
+  }
+  referenceCurrent(tab, ref, documentId) {
+    const context = tab.refContexts?.get(ref);
+    return Boolean(context && tab.refs.get(ref) === context.stamp.frame && this.frameStampCurrent(tab, context.stamp) && (documentId === undefined || context.documents.has(documentId)));
+  }
+  scopedInputCurrent(tab, expected) {
+    return Boolean(['click', 'hover', 'select', 'upload'].includes(expected?.action) && typeof expected.ref === 'string' && this.referenceCurrent(tab, expected.ref, expected.expectedDocumentId));
+  }
   assertInputDocument(tab, expected) {
     if (expected?.expectedDocumentId === undefined && expected?.expectedUrl === undefined) return;
-    if (typeof expected.expectedDocumentId !== 'string' || typeof expected.expectedUrl !== 'string' || expected.expectedDocumentId !== inputDocumentId(tab) || expected.expectedUrl !== tab.window.webContents.getURL()) throw Object.assign(error('The page changed before keyboard or pointer input. Refresh the preview and click the intended field again.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+    if (typeof expected.expectedDocumentId !== 'string' || typeof expected.expectedUrl !== 'string' || expected.expectedUrl !== tab.window.webContents.getURL() || expected.expectedDocumentId !== inputDocumentId(tab) && !this.scopedInputCurrent(tab, expected) || expected.ref && ['click', 'hover', 'fill', 'select', 'upload', 'press'].includes(expected.action) && !this.referenceCurrent(tab, expected.ref)) throw Object.assign(error('The page changed before keyboard or pointer input. Refresh the preview and click the intended field again.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
   }
   async cdp(tab, method, params = {}, signal, expected, sessionId) {
     if (tab.rendererFailure) throw rendererFailure(tab);
@@ -1095,12 +1249,45 @@ export class ElectronBrowserDriver extends EventEmitter {
       // A detach can invalidate the guard while the awaiting caller resumes.
       // Never reconnect and send this input under a fresh, unguarded session.
       if (!wc.debugger.isAttached() || !tab.containmentReady) throw Object.assign(error('The contained browser connection changed before input. Inspect the page and try the action again after it reconnects.'), { code: 'BROWSER_CONTAINMENT_LOST' });
-      this.assertInputDocument(tab, expected);
+      // Keyboard/text focus is whole-page context, even when preparation used
+      // a ref. A sibling reload must not authorize input into a changed focus.
+      const keyboard = method === 'Input.insertText' || method === 'Input.dispatchKeyEvent';
+      this.assertInputDocument(tab, keyboard && expected ? { ...expected, action: undefined } : expected);
+      if (method === 'Input.dispatchMouseEvent' && ['mouseMoved', 'mousePressed', 'mouseWheel'].includes(params.type) && expected?.ref) {
+        await this.assertPointerReference(tab, expected, params, signal, sessionId);
+        this.assertInputDocument(tab, expected);
+      }
     } else if (!wc.debugger.isAttached()) { wc.debugger.attach('1.3'); tab.containmentReady = null; }
     cancel(signal);
     const native = sessionId ? wc.debugger.sendCommand(method, params, sessionId) : wc.debugger.sendCommand(method, params);
     if (method === 'Page.handleJavaScriptDialog' || method === 'DOM.setFileInputFiles' || params.type === 'mouseReleased' || params.type === 'keyUp') return bounded(native, signal);
     return this.pageWork(tab, native, signal);
+  }
+  async assertPointerReference(tab, expected, point, signal, sessionId) {
+    let objectId;
+    try {
+      // Input coordinates are viewport CSS pixels. DOM hit lookup uses document
+      // CSS pixels in this exact target session, including a scrolled OOP frame.
+      const metrics = await this.cdp(tab, 'Page.getLayoutMetrics', {}, signal, undefined, sessionId);
+      const viewport = metrics.cssLayoutViewport;
+      if (!viewport || !['pageX', 'pageY', 'clientWidth', 'clientHeight'].every(key => Number.isFinite(viewport[key]))) throw error('The pointer viewport could not be verified.');
+      const hit = await this.cdp(tab, 'DOM.getNodeForLocation', { x: Math.floor(point.x + viewport.pageX), y: Math.floor(point.y + viewport.pageY) }, signal, undefined, sessionId);
+      if (!Number.isInteger(hit.backendNodeId)) throw error('The pointer hit node is unavailable.');
+      const resolved = await this.cdp(tab, 'DOM.resolveNode', { backendNodeId: hit.backendNodeId }, signal, undefined, sessionId);
+      objectId = resolved.object?.objectId;
+      if (!objectId) throw error('The pointer hit document is unavailable.');
+      const checked = await this.cdp(tab, 'Runtime.callFunctionOn', { objectId,
+        functionDeclaration: `function(key,ref){return (${elementAction.toString()})(key,ref,'pointer-verify',{hit:this});}`,
+        arguments: [{ value: this.key }, { value: expected.ref }], returnByValue: true }, signal, undefined, sessionId);
+      if (checked.exceptionDetails || checked.result?.value?.verified !== true) throw error('The pointer no longer hits the exact observed control in its document.');
+      const current = (await this.cdp(tab, 'Page.getLayoutMetrics', {}, signal, undefined, sessionId)).cssLayoutViewport;
+      if (!current || ['pageX', 'pageY', 'clientWidth', 'clientHeight'].some(key => current[key] !== viewport[key])) throw error('The pointer viewport changed during verification.');
+    } catch (cause) {
+      if (cause?.name === 'AbortError' || ['BROWSER_CONTAINMENT_LOST', 'BROWSER_RENDERER_GONE', 'BROWSER_INTERACTION_PENDING'].includes(cause?.code)) throw cause;
+      throw Object.assign(error('The pointer target changed or could not be verified. Take a fresh snapshot before acting.'), { code: 'BROWSER_REF_STALE' });
+    } finally {
+      if (objectId) void this.cdp(tab, 'Runtime.releaseObject', { objectId }, undefined, undefined, sessionId).catch(() => {});
+    }
   }
   async ensureContained(tab, signal) {
     if (tab.rendererFailure) throw rendererFailure(tab);
@@ -1211,10 +1398,11 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
     await bounded(state.pending, signal);
   }
-  async capture(tab, signal, revision, { beforeInput = false } = {}) {
+  async capture(tab, signal, revision, { beforeInput = false, expected } = {}) {
     return captureHiddenPage(tab.window.webContents, { signal, assertCurrent: () => {
       if (this.closed || tab.window.isDestroyed()) throw error('The browser page closed before capture completed.');
-      if (revision !== undefined && tab.revision !== revision) {
+      if (beforeInput && expected) this.assertInputDocument(tab, expected);
+      if (revision !== undefined && tab.revision !== revision && !(beforeInput && this.scopedInputCurrent(tab, expected))) {
         // This host-observed failure precedes pointer dispatch. Preparation may
         // have scrolled the page, so do not claim that the whole action had no effects.
         if (beforeInput) throw Object.assign(error('The page changed before the requested pointer input was dispatched. Take a fresh snapshot before acting.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', inputDispatched: false });
@@ -1233,7 +1421,7 @@ export class ElectronBrowserDriver extends EventEmitter {
   }
   async pointerTarget(tab, point, signal, expected) {
     const wc = tab.window.webContents, guard = expected?.expectedDocumentId === undefined
-      ? { expectedDocumentId: inputDocumentId(tab), expectedUrl: wc.getURL() } : expected;
+      ? { action: expected?.action, ref: expected?.ref, expectedDocumentId: [...(tab.refContexts?.get(expected?.ref)?.documents || [])].at(-1) || inputDocumentId(tab), expectedUrl: wc.getURL() } : expected;
     this.assertInputDocument(tab, guard);
     const sessions = [], close = async () => {
       for (const sessionId of sessions.reverse()) {
@@ -1355,7 +1543,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       dispose: () => { clearTimeout(timer); wc.removeListener('did-start-navigation', listener); wake?.(); },
     };
   }
-  async perform(args, { signal, source = 'agent', owner: context, validateUploadPath } = {}) {
+  async perform(args, { signal, source = 'agent', owner: context, validateUploadPath, suppressResultSnapshot = false } = {}) {
     cancel(signal);
     const preview = validateBrowserPreview({ ...args, browser: args.browser ?? 'relay' }, source);
     const wheel = browserWheelScroll(args);
@@ -1364,6 +1552,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     const owner = browserOwner(context);
     if (args.action === 'tabs') return this.status();
     if (args.action === 'downloads') return { downloads: this.downloads.slice(-30) };
+    if (ownershipAction(args.action)) return this.changeOwnership(args, source, owner);
     if (['folder_create', 'folder_rename', 'folder_close', 'tab_move', 'suspend'].includes(args.action)) return this.organize(args, source, owner);
     if (args.action === 'reuse_session') throw error('Session transfer was removed because it can invalidate the source sign-in. Connect directly to the existing browser instead.');
     if (args.action === 'tab_select' && (Object.keys(args).some(key => !['action', 'browser', 'tabId'].includes(key)) || typeof args.tabId !== 'string' || !validId(args.tabId))) throw capacityError('Select one observed browser tab by its tab ID.', 'BROWSER_VALIDATION');
@@ -1384,6 +1573,23 @@ export class ElectronBrowserDriver extends EventEmitter {
     const externalBefore = tab.externalHandoff;
     if (owner && !sameOwner(tab.owner, owner) && !(owner.allowUserTabs && !tab.owner)) throw capacityError('This browser tab belongs to another task.', 'BROWSER_TAB_OWNERSHIP');
     if (source === 'user') tab.humanCreated = true;
+    if (['diagnostics', 'debug_reset', 'stop'].includes(args.action)) {
+      if (source !== 'user' && tab.purpose === 'chat-mode') throw capacityError('The human ChatGPT tab is reserved for its caller.', 'BROWSER_HUMAN_CHAT_RESERVED');
+      if (tab.providerKeyProtected || tab.credentialCaptureBlocked) throw capacityError('Diagnostic content is unavailable while credential capture is protected.', 'BROWSER_DIAGNOSTICS_PROTECTED');
+      const wc = tab.window && !tab.window.isDestroyed() ? tab.window.webContents : null;
+      let receipt;
+      if (args.action !== 'diagnostics') {
+        if (!wc || !args.expectedUrl || !args.expectedDocumentId) throw capacityError('Use the exact live page identity for a debug control.', 'BROWSER_INPUT_DOCUMENT_CHANGED');
+        this.assertInputDocument(tab, args);
+        cancel(signal);
+        if (args.action === 'stop') { wc.stop(); receipt = { stopDispatched: true }; }
+        else receipt = (tab.debugEvidence ||= new BrowserTabDiagnostics()).clear();
+      }
+      return { tabId: tab.id, url: this.tabURL(tab), documentId: inputDocumentId(tab), suspended: !wc || Boolean(tab.pendingURL),
+        loading: Boolean(wc?.isLoading()), loadingMainFrame: Boolean(wc?.isLoadingMainFrame?.()), rendererGone: Boolean(tab.rendererFailure),
+        ...(tab.loadError ? { loadError: diagnosticText(tab.loadError) } : {}),
+        ...(receipt ? { receipt } : {}), debug: (tab.debugEvidence ||= new BrowserTabDiagnostics()).snapshot({ after: args.after, limit: args.limit }) };
+    }
     if (wheel || preview) {
       if (tab.rendererFailure) throw rendererFailure(tab);
       if (!tab.window || tab.window.isDestroyed()) throw Object.assign(error('The observed browser page is no longer active. Refresh its preview before scrolling.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', actionDispatched: false });
@@ -1455,13 +1661,6 @@ export class ElectronBrowserDriver extends EventEmitter {
         // The DOM setter bypasses trusted input and dirty-value/blur state in
         // controlled forms. Only focus/selection preparation runs in the page;
         // Chromium performs the replacement, including a trusted empty clear.
-        if (receipt.needsSelectAll) {
-          try { await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 2, commands: ['selectAll'] }, signal, guard); }
-          finally {
-            try { await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 2 }, AbortSignal.timeout(1500)); }
-            catch { tab.inputWarning = 'Browser key release could not be confirmed. Inspect or reload before continuing.'; }
-          }
-        }
         await this.element(tab, args, 'fill-ready', signal);
         if (text) await this.cdp(tab, 'Input.insertText', { text }, signal, guard);
         else {
@@ -1480,9 +1679,9 @@ export class ElectronBrowserDriver extends EventEmitter {
         let { frame, result } = await this.element(tab, args, 'prepare', signal);
         const revision = tab.revision;
         // Flush layout/compositing after scroll or SPA changes before hit testing.
-        const { retries } = await this.capture(tab, signal, revision, { beforeInput: true });
+        const { retries } = await this.capture(tab, signal, revision, { beforeInput: true, expected: args });
         // A retry waited for another frame: the target can have moved or detached meanwhile.
-        if (retries) ({ frame, result } = await this.element(tab, args, 'prepare', signal));
+        if (retries || tab.revision !== revision) ({ frame, result } = await this.element(tab, args, 'prepare', signal));
         const point = await this.browserPoint(tab, frame, result, signal);
         await this.pointerInput(tab, point, args.action, signal, args);
         receipt = { [args.action === 'click' ? 'clicked' : 'hovered']: args.ref, input: 'browser protocol' };
@@ -1586,7 +1785,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
     if (args.action === 'screenshot') {
       const assertCredentialCapture = () => {
-        if (source !== 'user' && tab.credentialCaptureBlocked) throw Object.assign(error('This page received a protected credential. Continue with its masked snapshot; only the local human preview is available until the main page is replaced.'), { code: 'BROWSER_CREDENTIAL_CAPTURE_BLOCKED' });
+        if (source !== 'user' && (tab.credentialCaptureBlocked || tab.providerKeyProtected)) throw Object.assign(error(tab.providerKeyProtected ? 'This provider-key tab is protected. Use protected provider key inspection or the local human browser view.' : 'This page received a protected credential. Continue with its masked snapshot; only the local human preview is available until the main page is replaced.'), { code: 'BROWSER_CREDENTIAL_CAPTURE_BLOCKED' });
       };
       assertCredentialCapture();
       if (preview) this.assertInputDocument(tab, args);
@@ -1618,6 +1817,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       receipt = { ...(receipt || {}), externalHandoff: { status: handoff.status } };
     }
     if (tab.loadError) throw navigationFailure(tab);
+    if (suppressResultSnapshot === true) return { tabId: tab.id, documentId: inputDocumentId(tab), actionDispatched: true, protectedContent: true };
     const result = await this.snapshot(tab, args.query, signal, { readContext: args.action === 'read' });
     if (['open', 'navigate', 'reload', 'back', 'forward'].includes(args.action)) { this.persist(); await this.savedStatus(); }
     return { ...result, ...(receipt ? { receipt } : {}), tabs: this.status().tabs };
@@ -1637,7 +1837,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     this.session.removeListener('will-download', this.downloadListener);
     this.session.removeListener('file-system-access-restricted', this.fileSystemAccessListener);
     this.session.cookies.removeListener('changed', this.cookieListener);
-    this.session.webRequest.onCompleted(null); this.session.webRequest.onErrorOccurred(null);
+    this.session.webRequest.onCompleted(null); this.session.webRequest.onErrorOccurred(null); this.session.webRequest.onResponseStarted?.(null);
     for (const t of [...this.tabs.values()]) { this.cancelAuthentication(t, { emit: false }); t.closing = true; if (t.window) t.window.destroy(); else this.removeTab(t); }
     this.session.webRequest.onBeforeRequest(null);
     this.closePromise = Promise.allSettled([closingProtection, this.writeChain, Promise.resolve().then(() => this.session.flushStorageData())]).then(results => {

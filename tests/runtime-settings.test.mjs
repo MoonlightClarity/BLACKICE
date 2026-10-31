@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { RuntimeSettingsStore,validateRuntimeSettings } from '../lib/runtime-settings.mjs';
-const defaults = { codexHistory:'relay', runTimeoutMs:null, providerIdleTimeoutMs:300000, defaultEffort:'default', defaultServiceTier:'default', defaultContext:{preset:'model',windowTokens:null,autoCompact:true}, verbosity:'balanced', subagentsEnabled:false, maxSubagents:3 };
+const defaults = { codexHistory:'codex', runTimeoutMs:null, providerIdleTimeoutMs:300000, defaultEffort:'default', defaultServiceTier:'default', defaultContext:{preset:'model',windowTokens:null,autoCompact:true}, verbosity:'balanced', subagentsEnabled:false, maxSubagents:3, connectedGmail:false, executionGuardrails:false, hiddenModelProviders:[] };
 const prefs = codexHistory => ({ ...defaults, codexHistory });
 
 async function settingsStore(t){
@@ -21,18 +21,18 @@ test('simultaneous context preference patches merge atomically without reverting
  assert.deepEqual(JSON.parse(await fs.readFile(store.file,'utf8')).defaultContext,store.get().defaultContext);
 });
 
-test('runtime preferences default to Relay-only with no agent deadline and a five-minute API inactivity watchdog',async t=>{
-  for(const codexHistory of ['relay','codex'])assert.deepEqual(validateRuntimeSettings({codexHistory}),{codexHistory});
+test('runtime preferences use persistent native history with no agent deadline and a five-minute API inactivity watchdog',async t=>{
+  for(const codexHistory of ['relay','codex'])assert.deepEqual(validateRuntimeSettings({codexHistory}),{codexHistory:'codex'});
   for(const value of [null,undefined,[],{},'relay',{codexHistory:true},{codexHistory:'private'},{codexHistory:'relay',defaultModel:'other'},{maxConcurrentRuns:4}])assert.throws(()=>validateRuntimeSettings(value),error=>error.status===400&&error.code==='RUNTIME_SETTINGS_INVALID');
-  const{store,dataDir}=await settingsStore(t);assert.deepEqual(store.get(),prefs('relay'));assert.deepEqual(await fs.readdir(dataDir),[],'ordinary startup does not create or touch provider configuration');
-  const exposed=store.get();exposed.codexHistory='codex';assert.deepEqual(store.get(),prefs('relay'),'callers cannot mutate saved preferences through the getter');
+  const{store,dataDir}=await settingsStore(t);assert.deepEqual(store.get(),prefs('codex'));assert.deepEqual(await fs.readdir(dataDir),[],'ordinary startup does not create or touch provider configuration');
+  const exposed=store.get();exposed.codexHistory='relay';assert.deepEqual(store.get(),prefs('codex'),'callers cannot mutate saved preferences through the getter');
 });
 
-test('history choices persist independently of provider credentials and survive restart',async t=>{
+test('legacy history input cannot reactivate temporary sessions and preferences survive restart independently of providers',async t=>{
   const{store,dataDir}=await settingsStore(t),events=[];store.on('updated',value=>events.push(value));
   assert.deepEqual(await store.update(prefs('codex')),prefs('codex'));assert.deepEqual(events,[prefs('codex')]);assert.deepEqual(JSON.parse(await fs.readFile(store.file,'utf8')),prefs('codex'));assert.deepEqual(await fs.readdir(dataDir),['runtime-settings.json']);
   const restarted=await new RuntimeSettingsStore({dataDir}).init();t.after(()=>restarted.close());assert.deepEqual(restarted.get(),prefs('codex'));
-  await restarted.update(prefs('relay'));const again=await new RuntimeSettingsStore({dataDir}).init();t.after(()=>again.close());assert.deepEqual(again.get(),prefs('relay'));
+  await restarted.update({...prefs('relay'),defaultEffort:'high'});const again=await new RuntimeSettingsStore({dataDir}).init();t.after(()=>again.close());assert.deepEqual(again.get(),{...prefs('codex'),defaultEffort:'high'});
 });
 
 test('Fast defaults persist independently from reasoning and reject invalid updates without rewriting saved preferences', async t => {
@@ -46,19 +46,19 @@ test('Fast defaults persist independently from reasoning and reject invalid upda
   await store.update({defaultServiceTier:'default'});assert.equal(store.get().defaultEffort,'max');assert.equal(store.get().defaultServiceTier,'default');
 });
 
-test('serialized history saves publish the value only after each durable write and invalid updates cannot poison the queue',async t=>{
+test('serialized compatibility saves publish each durable preference value and invalid updates cannot poison the queue',async t=>{
   const{store}=await settingsStore(t),events=[];store.on('updated',value=>events.push(value));
   await assert.rejects(store.update({codexHistory:'relay',unexpected:true}),{code:'RUNTIME_SETTINGS_INVALID'});
-  const values=await Promise.all([store.update(prefs('codex')),store.update(prefs('relay')),store.update(prefs('codex'))]);
-  assert.deepEqual(values,[prefs('codex'),prefs('relay'),prefs('codex')]);assert.deepEqual(events,values);assert.deepEqual(store.get(),prefs('codex'));assert.deepEqual(JSON.parse(await fs.readFile(store.file,'utf8')),prefs('codex'));
+  const values=await Promise.all([store.update({...prefs('codex'),verbosity:'concise'}),store.update({...prefs('relay'),verbosity:'detailed'}),store.update(prefs('codex'))]);
+  assert.deepEqual(values,[{...prefs('codex'),verbosity:'concise'},{...prefs('codex'),verbosity:'detailed'},prefs('codex')]);assert.deepEqual(events,values);assert.deepEqual(store.get(),prefs('codex'));assert.deepEqual(JSON.parse(await fs.readFile(store.file,'utf8')),prefs('codex'));
 });
 
-test('a failed atomic replacement keeps the prior history choice and persisted file, cleans staging and permits a later save',async t=>{
+test('a failed atomic replacement keeps prior preferences and file bytes, cleans staging and permits a later save',async t=>{
   const{store,dataDir}=await settingsStore(t);await store.update(prefs('codex'));const priorFile=store.file,priorBytes=await fs.readFile(priorFile),events=[];store.on('updated',value=>events.push(value));
   const blocked=path.join(dataDir,'blocked-destination');await fs.mkdir(blocked);store.file=blocked;
-  await assert.rejects(store.update(prefs('relay')),error=>error.code==='RUNTIME_SETTINGS_SAVE_FAILED'&&error.status===500);
+  await assert.rejects(store.update({...prefs('relay'),defaultEffort:'high'}),error=>error.code==='RUNTIME_SETTINGS_SAVE_FAILED'&&error.status===500);
   assert.deepEqual(store.get(),prefs('codex'));assert.deepEqual(await fs.readFile(priorFile),priorBytes);assert.deepEqual(events,[]);assert.equal((await fs.readdir(dataDir)).some(name=>name.endsWith('.tmp')),false);
-  store.file=priorFile;await store.update(prefs('relay'));assert.deepEqual(store.get(),prefs('relay'));assert.deepEqual(events,[prefs('relay')]);
+  store.file=priorFile;await store.update({...prefs('relay'),defaultEffort:'high'});assert.deepEqual(store.get(),{...prefs('codex'),defaultEffort:'high'});assert.deepEqual(events,[{...prefs('codex'),defaultEffort:'high'}]);
 });
 
 test('invalid saved history preferences are reported and preserved instead of replaced by defaults',async t=>{

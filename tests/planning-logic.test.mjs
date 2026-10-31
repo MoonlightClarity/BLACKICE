@@ -8,7 +8,7 @@ const fact = (id, value) => ({ id, value, ...(value === null ? {} : { evidence: 
 const action = (id, fields = {}) => ({ id, kind: 'action', title: `Inspect ${id}`, parentId: null, status: 'pending', doneWhen: `The ${id} observation is recorded.`, ...fields });
 const branch = (id, expression, then, otherwise, fields = {}) => ({ id, kind: 'choice', title: `Decide ${id}`, parentId: null, status: 'pending', branch: { if: expression, then, else: otherwise }, ...fields });
 const simple = (value = true, fields = {}) => ({ plan: { facts: [fact('available', value)] }, steps: [branch('route', { fact: 'available' }, 'read', 'discover', fields), action('read', { parentId: 'route' }), action('discover', { parentId: 'route' }), action('finish')] });
-const normalize = (value, previous = {}, actor = {}) => normalizeTaskPlan(value, { previous, actor });
+const normalize = (value, previous = {}, actor = {}) => normalizeTaskPlan(value, { previous, actor, executionGuardrails: true });
 const update = (state, id, patch) => normalize({ plan: state.plan, steps: state.steps.map(step => step.id === id ? { ...step, ...patch } : step) }, state);
 const operation = { kind: 'tool', target: 'The source document', tool: 'relay_workspace', action: 'read' };
 const snapshot = (step, reason = 'Recheck the earlier observation against the corrected input.') => ({ attempt: step.attempt || 1, status: step.status, at: '2026-10-29T12:00:00.000Z', reason, ...Object.fromEntries(['result', 'note', 'doneWhen', 'evidence', 'blockedReason', 'skipReason', 'operation', 'reconciliation'].filter(key => step[key] !== undefined).map(key => [key, step[key]])) });

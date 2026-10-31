@@ -6,7 +6,7 @@ import { createTaskHistory } from '../public/next/workspaces/task-lifecycle.mjs'
 import { planningDOM } from './fixture-planning-dom.mjs';
 
 const settle=async()=>{for(let i=0;i<5;i++)await new Promise(resolve=>setImmediate(resolve));};
-function fixture(t,{history=false,presentation='board'}={}){
+function fixture(t,{history=false,presentation='board',hook}={}){
   const dom=planningDOM(t),prototype=Object.getPrototypeOf(dom.mount);
   Object.defineProperty(prototype,'type',{get(){return this.getAttribute('type')||this.tagName.toLowerCase();},set(value){this.setAttribute('type',value);},configurable:true});
   prototype.replaceChildren=function(...nodes){for(const child of [...this.children])child.remove();this.rawText='';this.append(...nodes);};
@@ -34,6 +34,7 @@ function fixture(t,{history=false,presentation='board'}={}){
     preview:'Read the captured evidence before retrying.',previewTruncated:false,previewCharacters:44};
   const api=async(path,method='GET',payload)=>{
     calls.push({path,method,payload});const url=new URL(path,'http://fixture.local');
+    if(hook){const result=await hook({path,method,payload},{schedule,jobs,tasks,workflow});if(result!==undefined)return result;}
     if(url.pathname==='/api/conversations/search'){
       const offset=Number(url.searchParams.get('offset')||0),query=url.searchParams.get('q').toLowerCase();
       const matching=tasks.filter(item=>item.state===url.searchParams.get('state')&&item.title.toLowerCase().includes(query));
@@ -314,4 +315,65 @@ test('Saved job receipts are expandable without a run-history fetch',async t=>{
   const receipt=f.$('[data-job-inspect="job-0"]');
   assert.ok(receipt);assert.match(receipt.textContent,/Job ID|Source|Schedule revision|Attempt 2/);
   assert.equal(f.calls.some(call=>call.path==='/api/runs'),false);
+});
+
+const readinessGraph=(schedule,state='awaiting_input')=>({id:'readiness-request',viability:{nodeId:'viability',deploymentId:schedule.id},
+  nodes:[{id:'viability',readiness:{state,viability:{state,blockingFacts:[{id:'address',question:'Which address should the report use?',consequence:'The report requires your actual address.'}],issues:state==='needs_evidence'?['Read the supplied document before deciding whether the address is missing.']:[]}}}],
+  viabilityAction:{deployment:structuredClone(schedule)}});
+
+test('an explicit schedule readiness check preserves disabled state and links the exact saved Planning request',async t=>{
+  const f=fixture(t,{hook:async(call,{schedule})=>{
+    if(call.path==='/api/operations/deployments/schedule-a/readiness'){
+      schedule.revision++;schedule.viabilityRef={requestId:'readiness-request',responseId:'readiness-response'};
+      return readinessGraph(schedule);
+    }
+  }});f.component.enter();await settle();await f.clickReady('#next-tasks-tab-schedules');
+  assert.equal(f.calls.some(call=>call.path.endsWith('/readiness')),false);
+  await f.clickReady('[data-schedule-readiness="schedule-a"]');
+  assert.equal(f.schedule.enabled,false);
+  assert.match(f.$('#next-tasks-deployments').textContent,/Which address should the report use/);
+  assert.equal(f.calls.filter(call=>call.method!=='GET').length,1);
+  assert.deepEqual(f.calls.find(call=>call.path.endsWith('/readiness')).payload,{});
+  await f.clickReady('[data-schedule-readiness-open="schedule-a"]');
+  assert.deepEqual(f.navigation.at(-1),['planning',{requestId:'readiness-request',nodeId:'viability'}]);
+  assert.equal(f.calls.some(call=>call.path.endsWith('/trigger')),false);
+});
+
+test('a blocked Enable shows returned factual questions and never claims the schedule was enabled',async t=>{
+  const f=fixture(t,{hook:async(call,{schedule})=>{
+    if(call.path==='/api/operations/deployments/schedule-a'&&call.method==='PUT'){
+      assert.equal(call.payload.enabled,true);schedule.revision++;schedule.enabled=false;
+      return {...structuredClone(schedule),readiness:{state:'awaiting_input',requestId:'readiness-request',question:'Which address should the report use?'}};
+    }
+  }});f.component.enter();await settle();await f.clickReady('#next-tasks-tab-schedules');
+  await f.clickReady('[data-schedule-toggle="schedule-a"]');
+  assert.equal(f.schedule.enabled,false);assert.equal(f.$('[data-schedule-toggle="schedule-a"]').textContent,'Enable');
+  assert.match(f.$('#next-tasks-schedule-detail').textContent,/Which address should the report use/);
+  assert.match(f.notifications.at(-1)[0],/disabled draft/);
+  assert.equal(f.calls.filter(call=>call.method==='PUT').length,1);
+  assert.equal(f.calls.some(call=>call.path.endsWith('/trigger')),false);
+});
+
+test('enabled creation that returns a disabled draft displays the actual result and its Planning link',async t=>{
+  const f=fixture(t,{hook:async(call,{schedule})=>{
+    if(call.path==='/api/operations/deployments'&&call.method==='POST'){
+      assert.equal(call.payload.enabled,true);Object.assign(schedule,{name:call.payload.name,input:call.payload.input,enabled:false,revision:2});
+      return {...structuredClone(schedule),readiness:{state:'awaiting_input',requestId:'readiness-request',question:'Which address should the report use?'}};
+    }
+  }});f.component.enter();await settle();await f.clickReady('#next-tasks-tab-schedules');
+  const form=f.$('#next-tasks-form');form.querySelector('[name=name]').value='New report';form.querySelector('[name=input]').value='Prepare the report';form.querySelector('[name=enabled]').checked=true;
+  await form.dispatch('submit');await settle();
+  assert.equal(form.querySelector('[name=enabled]').checked,false);
+  assert.match(f.$('#next-tasks-preview-output').textContent,/disabled draft.*Which address/s);
+  assert.ok(f.$('[data-schedule-readiness-open="schedule-a"]'));
+  assert.equal(f.calls.filter(call=>call.path==='/api/operations/deployments'&&call.method==='POST').length,1);
+});
+
+test('source recovery is shown before personal factual questions and checking alone never triggers a schedule',async t=>{
+  const f=fixture(t,{hook:async(call,{schedule})=>call.path.endsWith('/readiness')?readinessGraph(schedule,'needs_evidence'):undefined});
+  f.component.enter();await settle();await f.clickReady('#next-tasks-tab-schedules');
+  await f.clickReady('[data-schedule-readiness="schedule-a"]');
+  const card=f.$('[data-schedule-readiness-state="needs_evidence"]');
+  assert.match(card.textContent,/Read the supplied document/);assert.doesNotMatch(card.textContent,/Which address should/);
+  assert.equal(f.calls.some(call=>call.method==='PUT'||call.path.endsWith('/trigger')),false);
 });

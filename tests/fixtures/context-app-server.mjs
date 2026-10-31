@@ -16,7 +16,10 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
   if (method === 'initialize') return reply(id, {});
   if (method === 'account/read') return reply(id, { account: { type: 'chatgpt', planType: 'test' }, requiresOpenaiAuth: true });
   if (method === 'model/list') return reply(id, { data: [{ id: 'fixture', model: 'fixture', isDefault: true, supportedReasoningEfforts: [] }], nextCursor: null });
-  if (method === 'thread/start') { const threadId = 'context-' + ++counter; threads.set(threadId, { config: params.config, turns: 0, injected: [], ephemeral:params.ephemeral===true }); return reply(id, { thread: { id: threadId, ...(params.ephemeral===true?{ephemeral:true}:{}) }, model: 'fixture' }); }
+  if (method === 'config/read') return reply(id, { config: { plugins: {}, mcp_servers: {}, skills: { config: [] } } });
+  if (method === 'skills/list') return reply(id, { data: (params.cwds || []).map(cwd => ({ cwd, skills: [], errors: [] })) });
+  if (method === 'thread/start') { const threadId = 'context-' + ++counter; threads.set(threadId, { cwd: params.cwd, config: params.config, turns: 0, injected: [], ephemeral:params.ephemeral===true }); return reply(id, { thread: { id: threadId, ...(params.ephemeral===true?{ephemeral:true}:{}) }, model: 'fixture' }); }
+  if (method === 'thread/read') { const saved = threads.get(params.threadId); return saved ? reply(id, { thread: { id: params.threadId, cwd: saved.cwd } }) : send({ id, error: { code: -32000, message: 'Fixture thread not found.' } }); }
   if (method === 'thread/resume') { if (params.config) threads.get(params.threadId).config = params.config; return reply(id, { thread: { id: params.threadId }, model: 'fixture' }); }
   if (method === 'thread/inject_items') { threads.get(params.threadId).injected.push(...params.items); return reply(id,{}); }
   if (method === 'turn/start') { const turnId = 'turn-' + ++counter; reply(id, { turn: { id: turnId } }); return complete(params.threadId, turnId, JSON.stringify({ config: threads.get(params.threadId).config ?? null })); }

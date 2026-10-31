@@ -20,10 +20,10 @@ const unavailable = () => assert.fail('Discovery must not execute a tool.');
 const provider = tools => ({ tools: () => tools, call: unavailable });
 
 test('the full native catalog retains the exact 28-tool public contract and fingerprint', () => {
-  // The deployed catalog plus intentional tab_select, forced-restart and recursive
-  // planning additions catches accidental changes to its full public contract.
-  // Compared with upstream 9bb65bb, only blackice_edit_plan's definition changes:
-  // concrete operations, facts, recursive conditions and revisit are now exposed.
+  // Bind the reviewed public definitions, including recursive planning,
+  // bounded contained diagnostics, exact-identity ownership/debug controls,
+  // the cleanup protocol and the explicit relay default for credential fill.
+  // The complete fingerprint catches unreviewed contract changes.
   // Only definitions are constructed: no storage or native adapter is opened.
   const execution = new DirectExecutionAPI({ dataDir: '/unused-catalog-fixture', additionalTools: [
     chatGPTFileImportTool({ directory: '/unused-catalog-fixture/imports' }),
@@ -43,11 +43,25 @@ test('the full native catalog retains the exact 28-tool public contract and fing
     'blackice_get_swarm_plan', 'blackice_get_plan_groups', 'blackice_edit_plan', 'blackice_edit_plan_groups',
   ]);
   assert.deepEqual(catalog.status(), {
-    sha256: '3d399e2d1dbb475609837b32a1acd2b203aa378315ceb86608ef7f39a1c54260',
+    sha256: '474cf0918763e7d89e4e7c0d80f4a04a4be59cb48a31d30f44d16655f9644a37',
     toolCount: 28,
     serverVersion: '2.33.5',
   });
   assert.equal(createHash('sha256').update(JSON.stringify(catalog.tools())).digest('hex'), catalog.status().sha256);
+  const read=catalog.tools().find(tool=>tool.name==='blackice_browser_read');
+  assert.equal(read.annotations.readOnlyHint,true);
+  assert.ok(read.inputSchema.properties.action.enum.includes('diagnostics'));
+  assert.equal(read.inputSchema.properties.after.minimum,0);
+  assert.equal(read.inputSchema.properties.limit.maximum,256);
+  assert.equal(read.inputSchema.properties.expectedUrl,undefined);
+  assert.equal(read.inputSchema.properties.expectedDocumentId,undefined);
+  const action=catalog.tools().find(tool=>tool.name==='blackice_browser_action').inputSchema;
+  for(const name of ['take_ownership','transfer_ownership','debug_reset','stop'])assert.ok(action.properties.action.enum.includes(name));
+  assert.deepEqual(action.properties.destination.enum,['user','task']);
+  assert.equal(action.properties.destinationOwnerKey.maxLength,650);
+  const fill=catalog.tools().find(tool=>tool.name==='blackice_credentials_fill').inputSchema;
+  assert.equal(fill.properties.browser.default,'relay');
+  assert.deepEqual(fill.properties.browser.enum,['relay']);
   const planning=catalog.tools().find(tool=>tool.name==='blackice_edit_plan').inputSchema;
   const edits=Object.fromEntries(planning.properties.operations.items.oneOf.map(operation=>[operation.properties.type.const,operation.properties]));
   assert.ok(edits.add.step.properties.operation);

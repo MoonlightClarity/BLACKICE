@@ -22,6 +22,8 @@ const workflow = {
 async function fixture(t, execute, { delegates = false } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-awareness-engine-')), cwd = path.join(directory, 'work'); await mkdir(cwd);
   const tasks = await new TaskStateStore({ dataDir: directory }).init(), settings = await new RuntimeSettingsStore({ dataDir: directory }).init();
+  // These fixtures exercise the opt-in saved-edit execution gates.
+  await settings.update({ executionGuardrails: true });
   if (delegates) await settings.update({ subagentsEnabled: true, maxSubagents: 2 });
   const context = { tasks, cwd };
   class Runtime extends EventEmitter {

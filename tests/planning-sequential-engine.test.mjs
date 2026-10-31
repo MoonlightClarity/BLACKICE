@@ -43,7 +43,7 @@ async function fixture(t, execute, { delegates = false } = {}) {
     }
   }
   const runtime = new Runtime(), engine = await new HarnessEngine({ runtime, tasks, dataDir: directory, defaultCwd: cwd }).init();
-  engine.runtimeSettings = { get: () => ({ codexHistory: 'codex', subagentsEnabled: delegates, maxSubagents: 1 }) };
+  engine.runtimeSettings = { get: () => ({ codexHistory: 'codex', executionGuardrails: true, subagentsEnabled: delegates, maxSubagents: 1 }) };
   context = { engine, runtime, tasks, cwd, async settle(id) {
     const deadline = Date.now() + 10000;
     while (Date.now() < deadline) { const run = engine.getRun(id); if (run.settled) return run; await new Promise(resolve => setTimeout(resolve, 5)); }

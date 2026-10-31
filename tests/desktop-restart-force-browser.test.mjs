@@ -36,6 +36,7 @@ test('forced native handoff cancels a busy browser and waits for its physical se
     async close() {}
   }
   class Runtime extends EventEmitter {
+  async runAgent() { assert.fail('This server fixture must not execute a model.'); }
     status() { return { connected: false, authenticated: false, activeTurns: 0, models: [] }; }
     async start() { return this.status(); }
     async close() {}
@@ -86,7 +87,8 @@ test('forced native handoff interrupts an owned private session and persists its
   };
   const applications = await new ApplicationWorkspace({ dataDir, runtime: privateRuntime, platform: 'win32', catalog: [{ appId: 'editor', name: 'Editor', executable: 'C:\\editor.exe', available: true }] }).init();
   const session = await applications.create({ appId: 'editor' });
-  class Runtime extends EventEmitter { status() { return { connected: false, authenticated: false, activeTurns: 0, models: [] }; } async start() {} async close() {} }
+  class Runtime extends EventEmitter {
+  async runAgent() { assert.fail('This server fixture must not execute a model.'); } status() { return { connected: false, authenticated: false, activeTurns: 0, models: [] }; } async start() {} async close() {} }
   const browser = new EventEmitter(); browser.status = () => ({ available: false, busy: false, lifecycle: 'ready', persistence: { healthy: true }, tabs: [], downloads: [] }); browser.cancel = () => {}; browser.close = async () => {};
   const desktop = new EventEmitter(); desktop.status = () => ({ available: false, enabled: false }); desktop.setEnabled = async () => desktop.status();
   const native = []; let app;

@@ -48,6 +48,8 @@ async function fixture(t, execute, { model = 'fixture-plan-model', threadId = 'n
     async close() {}
   }
   const runtime = new Runtime(), engine = await new HarnessEngine({ runtime, tasks, dataDir: directory, defaultCwd: cwd }).init(); engine.methods = methods;
+  // This suite exercises the explicitly enabled execution guardrails, including plan and final-review admission.
+  engine.runtimeSettings = { get: () => ({ executionGuardrails: true }) };
   const workflow = createMissionWorkflow({ id: workflowId, task: 'Complete the requested work.', cwd }); workflow.nodes.find(node => node.type === 'agent').model = model;
   const context = { engine, tasks, runtime, methods, cwd, directory, workflow, threadId,
     start: (input = 'Complete this task.', extras = {}) => engine.startRun({ workflow, input, ...extras }),
@@ -265,7 +267,7 @@ for (const version of [1, 2, 3]) test(`saved native task schema v${version} rema
       await finishFixturePlan(options, { state, summary: 'The initial task catalog is current and the fixture answer is ready. A later explicit Planning Off continuation will exercise its retained historical catalog separately.' });
       return { output: 'Original turn.', threadId: context.threadId };
     }
-    assert.deepEqual(options.dynamicTools.find(tool => tool.name === 'relay_task'), taskToolForVersion(version));
+    assert.deepEqual(options.dynamicTools.find(tool => tool.name === 'relay_task'), taskToolForVersion(version, { executionGuardrails: true }));
     assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|branching outline is the default/);
     assert.equal((await call(options, 'relay_workspace', { action: 'write', path: 'legacy.txt', text: `v${version}` })).success, true);
     const unsupported = await call(options, 'relay_task', { action: 'describe' }); assert.equal(unsupported.success, false);
@@ -427,6 +429,6 @@ for (const alreadyPlanned of [false, true]) test(`Stop ${alreadyPlanned ? 'after
 });
 
 test('capability instructions use default planning only for its actual v4 schema', () => {
-  const modern = capabilityGuidance([TASK_TOOL]); assert.match(modern, /branching outline is the default/); assert.doesNotMatch(modern, /Simple conversation needs no plan record/);
-  for (const version of [1, 2, 3]) { const legacy = capabilityGuidance([taskToolForVersion(version)]); assert.match(legacy, /Simple conversation needs no plan record/); assert.doesNotMatch(legacy, /branching outline is the default/); }
+  const modern = capabilityGuidance([TASK_TOOL], { executionGuardrails: true }); assert.match(modern, /branching outline is the working state/); assert.doesNotMatch(modern, /Simple conversation needs no plan record/);
+  for (const version of [1, 2, 3]) { const legacy = capabilityGuidance([taskToolForVersion(version, { executionGuardrails: true })], { executionGuardrails: true }); assert.match(legacy, /Simple conversation needs no plan record/); assert.doesNotMatch(legacy, /branching outline is the default/); }
 });

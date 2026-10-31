@@ -11,11 +11,33 @@ import { normalizeContextOptions, contextSnapshot, estimateContextTokens, splitC
 import { ProviderRuntime } from '../lib/providers.mjs';
 import { renderContextStatus, renderContextFields } from '../public/context-ui.mjs';
 
+// Supplementary capacity lookup is covered by provider-model-fallback tests.
+// Keep ordinary /models onboarding while isolating these generation/continuity fixtures.
+const protocolModelLimitResolver = { enrich: async (_config, models) => models };
+
 test('900k is an explicit request, while defaults preserve native model configuration', () => {
   assert.deepEqual(normalizeContextOptions(), { preset: 'model', windowTokens: null, autoCompact: true });
   assert.equal(normalizeContextOptions({ preset: '900k', windowTokens: 1000000 }).windowTokens, 900000);
   assert.equal(normalizeContextOptions({ preset: 'custom', windowTokens: 123456 }).windowTokens, 123456);
   for (const options of [null, [], { preset: 'invented' }, { preset: 'custom' }, { preset: 'custom', windowTokens: 4095 }, { autoCompact: 'false' }, { outputReserveTokens: 0 }, { preset: 'custom', windowTokens: 4096, outputReserveTokens: 3000, headroomTokens: 2000 }]) assert.throws(() => normalizeContextOptions(options), { code: 'INVALID_CONTEXT' });
+});
+
+test('manually configured model capacity bounds working budgets without becoming a provider report', () => {
+  const snapshot = contextSnapshot({ options: { preset: '900k' }, modelWindowTokens: 32768, modelWindowSource: 'user-configured' });
+  assert.equal(snapshot.requestedWindowTokens, 900000);
+  assert.equal(snapshot.modelWindowTokens, null);
+  assert.equal(snapshot.configuredModelWindowTokens, 32768);
+  assert.equal(snapshot.effectiveWindowTokens, 32768);
+  assert.equal(snapshot.windowSource, 'user-configured');
+  assert.equal(snapshot.inputBudgetTokens, 32768 - snapshot.outputReserveTokens - snapshot.headroomTokens);
+  assert.ok(snapshot.warnings.some(warning => /saved model context capacity.*32,768.*user-configured/.test(warning)));
+  assert.ok(snapshot.warnings.every(warning => !/model reports|reported limit is used/.test(warning)));
+  const smaller = contextSnapshot({ options: { preset: 'custom', windowTokens: 8192 }, modelWindowTokens: 32768, modelWindowSource: 'user-configured' });
+  assert.equal(smaller.effectiveWindowTokens, 8192);
+  assert.equal(smaller.warnings.some(warning => /saved capacity is used/.test(warning)), false);
+  const unknown = contextSnapshot({ options: { preset: '900k' } });
+  assert.equal(unknown.modelWindowTokens, null); assert.equal(unknown.configuredModelWindowTokens, null); assert.equal(unknown.effectiveWindowTokens, 900000);
+  assert.throws(() => contextSnapshot({ options: { preset: '900k', compactAtTokens: 50000 }, modelWindowTokens: 32768, modelWindowSource: 'user-configured' }), { code: 'INVALID_CONTEXT' });
 });
 
 test('reported model capacity bounds requested capacity and all remaining counts stay estimated', () => {
@@ -71,9 +93,12 @@ function answer(type, text, { call = false, incomplete = false } = {}) {
 }
 async function harness(t, type, { failSummary = false } = {}) {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'relay-context-test-')), requests = []; let normalCalls = 0;
-  const server = createServer(async (request, response) => { let raw = ''; for await (const chunk of request) raw += chunk; const body = JSON.parse(raw); requests.push(body); const summary = JSON.stringify(body).includes('Create a concise continuity checkpoint'); send(response, answer(type, summary ? 'Objective kept. The workspace was observed; continue verification.' : ++normalCalls === 1 ? '' : 'Verified workspace.', { call: !summary && normalCalls === 1, incomplete: summary && failSummary })); });
+  const server = createServer(async (request, response) => {
+    if (request.method === 'GET' && new URL(request.url, 'http://fixture').pathname.endsWith('/models')) return send(response, { data: [] });
+    let raw = ''; for await (const chunk of request) raw += chunk; const body = JSON.parse(raw); requests.push(body); const summary = JSON.stringify(body).includes('Create a concise continuity checkpoint'); send(response, answer(type, summary ? 'Objective kept. The workspace was observed; continue verification.' : ++normalCalls === 1 ? '' : 'Verified workspace.', { call: !summary && normalCalls === 1, incomplete: summary && failSummary }));
+  });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); const baseUrl = `http://127.0.0.1:${server.address().port}/v1`;
-  const runtime = await new ProviderRuntime({ codex: new FakeCodex(), dataDir }).init();
+  const runtime = await new ProviderRuntime({ modelLimitResolver: protocolModelLimitResolver, codex: new FakeCodex(), dataDir }).init();
   await runtime.saveProvider({ id: 'context', type, baseUrl, apiKey: 'private-context-key', models: [{ id: 'selected-model', contextWindowTokens: 8192, contextWindowSource: 'provider-reported' }] });
   t.after(async () => { await runtime.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); assert.match(path.basename(dataDir), /^relay-context-test-/); await rm(dataDir, { recursive: true, force: true }); });
   return { runtime, dataDir, requests, baseUrl };
@@ -90,7 +115,7 @@ for (const type of ['openai', 'anthropic', 'compatible']) test(`${type}: real se
   const summaryRequest = requests[2]; assert.equal(summaryRequest.model, 'selected-model'); assert.equal(summaryRequest.tools, undefined);
   const file = path.join(dataDir, 'provider-threads', first.threadId + '.json'), saved = JSON.parse(await readFile(file, 'utf8'));
   assert.match(JSON.stringify(saved.messages), /RELAY CONTEXT CHECKPOINT/); assert.ok(!JSON.stringify(saved.transcript).includes('RELAY CONTEXT CHECKPOINT')); assert.match(JSON.stringify(saved.transcript), /observed-data/); assert.equal(saved.compactions.length, 1); assert.equal(saved.totalUsage.totalTokens, 75); assertPairs(saved.messages); assertPairs(saved.transcript);
-  const restored = await new ProviderRuntime({ codex: new FakeCodex(), dataDir }).init(); t.after(() => restored.close()); await restored.saveProvider({ id: 'context', apiKey: 'private-context-key' });
+  const restored = await new ProviderRuntime({ modelLimitResolver: protocolModelLimitResolver, codex: new FakeCodex(), dataDir }).init(); t.after(() => restored.close()); await restored.saveProvider({ id: 'context', apiKey: 'private-context-key' });
   const resumed = await restored.runAgent({ cwd: dataDir, model: 'context::selected-model', prompt: 'Continue from the checkpoint.', threadId: first.threadId });
   assert.equal(resumed.threadId, first.threadId); assert.equal(resumed.output, 'Verified workspace.'); assert.equal(resumed.context.compactionCount, 1); assert.equal(resumed.usage.total.totalTokens, 100); assert.match(JSON.stringify(requests.at(-1)), /RELAY CONTEXT CHECKPOINT/); assert.equal(restored.listProviders()[0].baseUrl, baseUrl);
 });
@@ -107,10 +132,18 @@ test('automatic compaction triggers at the configured budget and failed summarie
   const after = JSON.parse(await readFile(file, 'utf8')); assert.deepEqual(after.messages, before.messages); assert.deepEqual(after.transcript, before.transcript); assert.equal(after.compactions.length, 0); assert.equal(after.totalUsage.totalTokens, before.totalUsage.totalTokens + 25);
 });
 
+function assertIsolatedContextConfig(config, expected = {}) {
+  assert.equal(config?.['features.apps'], false);
+  assert.equal(config?.['features.remote_plugin'], false);
+  assert.deepEqual(config?.['skills.config'], []);
+  const { 'features.apps': _apps, 'features.remote_plugin': _plugins, 'skills.config': _skills, ...context } = config;
+  assert.deepEqual(context, expected);
+}
+
 test('native Codex leaves defaults untouched, applies explicit 900k settings, and reports the real smaller window', async t => {
   const cwd = fileURLToPath(new URL('..', import.meta.url)), fixture = fileURLToPath(new URL('./fixtures/context-app-server.mjs', import.meta.url));
   const runtime = new CodexRuntime({ command: process.execPath, args: [fixture], cwd, requestTimeoutMs: 3000, runTimeoutMs: 5000 }); t.after(() => runtime.close());
-  const defaultRun = await runtime.runAgent({ cwd, prompt: 'Read config.' }); assert.deepEqual(JSON.parse(defaultRun.output), { config: null });
+  const defaultRun = await runtime.runAgent({ cwd, prompt: 'Read config.' }); assertIsolatedContextConfig(JSON.parse(defaultRun.output).config);
   const requested = await runtime.runAgent({ cwd, prompt: 'Read config.', context: { preset: '900k' } });
   const config = JSON.parse(requested.output).config; assert.equal(config.model_context_window, 900000); assert.ok(config.model_auto_compact_token_limit < 900000);
   assert.equal(requested.context.requestedWindowTokens, 900000); assert.equal(requested.context.modelWindowTokens, 828400); assert.equal(requested.context.effectiveWindowTokens, 828400);
@@ -147,11 +180,11 @@ test('native omitted context preserves 900k continuity, while an explicit model 
   assert.equal(resume.params.config.model_context_window, 900000); assert.equal(resume.params.config.model_auto_compact_token_limit, 123456);
   const reset = await runtime.runAgent({ cwd, prompt: 'Use model defaults.', threadId: first.threadId, context: { preset: 'model' } });
   resume = requests.filter(request => request.method === 'thread/resume').at(-1);
-  assert.deepEqual(resume.params.config, { model_context_window: null, model_auto_compact_token_limit: null });
+  assertIsolatedContextConfig(resume.params.config, { model_context_window: null, model_auto_compact_token_limit: null });
   assert.equal(reset.context.requestedWindowTokens, null); assert.notEqual(reset.context.compactAtTokens, 123456);
   const continued = await runtime.runAgent({ cwd, prompt: 'Keep the reset defaults.', threadId: first.threadId });
   assert.equal(continued.context.requestedWindowTokens, null); assert.notEqual(continued.context.compactAtTokens, 123456);
-  assert.equal(requests.filter(request => request.method === 'thread/resume').at(-1).params.config, undefined, 'omitted context after the reset must not resurrect the old override');
+  assertIsolatedContextConfig(requests.filter(request => request.method === 'thread/resume').at(-1).params.config, {});
 });
 
 test('an explicit native window change derives a fresh threshold when no threshold was supplied', async t => {
@@ -172,7 +205,7 @@ test('native compaction can explicitly reset a persistent 900k window and its ol
   const compacted = await runtime.compactThread(first.threadId, { context: { preset: 'model' } });
   assert.equal(compacted.compacted, true); assert.equal(compacted.context.requestedWindowTokens, null);
   const resume = requests.filter(request => request.method === 'thread/resume').at(-1);
-  assert.deepEqual(resume.params.config, { model_context_window: null, model_auto_compact_token_limit: null });
+  assertIsolatedContextConfig(resume.params.config, { model_context_window: null, model_auto_compact_token_limit: null });
   const continued = await runtime.runAgent({ cwd, prompt: 'Continue with reset context.', threadId: first.threadId });
   assert.equal(continued.context.requestedWindowTokens, null); assert.notEqual(continued.context.compactAtTokens, 123456);
 });
@@ -183,14 +216,14 @@ test('history chunks preserve every Unicode character and fit their stated input
   for(const chunk of chunks){assert.ok(estimateContextTokens(chunk)<=512);assert.doesNotMatch(chunk,/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/);}
 });
 
-test('private native history is injected completely and compacted in one ephemeral session before exactly one task turn', async t => {
+test('legacy native history input is restored completely in one persistent session before exactly one task turn', async t => {
   const {runtime,requests,cwd}=nativeContextRuntime(t),source='ORIGINAL_GOAL\n'+'x'.repeat(24000)+'\nMIDDLE_EVIDENCE\n'+'漢字🙂'.repeat(7000)+'\nLATEST_EVIDENCE';
   const events=[],result=await runtime.runAgent({cwd,prompt:'Continue the actual task once.',codexHistory:'relay',context:{preset:'custom',windowTokens:8192,outputReserveTokens:512,headroomTokens:256},continuity:{text:source,transcriptPath:path.join(cwd,'full-history.txt')},onEvent:event=>events.push(event)});
   const starts=requests.filter(item=>item.method==='thread/start'),injections=requests.filter(item=>item.method==='thread/inject_items'),compactions=requests.filter(item=>item.method==='thread/compact/start'),turns=requests.filter(item=>item.method==='turn/start');
-  assert.equal(starts.length,1);assert.equal(starts[0].params.ephemeral,true);assert.ok(injections.length>3);assert.equal(compactions.length,injections.length);assert.equal(turns.length,1);assert.equal(turns[0].params.input[0].text,'Continue the actual task once.');
+  assert.equal(starts.length,1);assert.equal(starts[0].params.ephemeral,undefined);assert.ok(injections.length>3);assert.equal(compactions.length,injections.length);assert.equal(turns.length,1);assert.equal(turns[0].params.input[0].text,'Continue the actual task once.');
   const injected=injections.map(item=>item.params.items[0].content[0].text.split('\n\n').slice(1).join('\n\n')).join('');assert.equal(injected,source);
   for(const request of [...injections,...compactions,...turns])assert.equal(request.params.threadId,result.threadId);
-  assert.equal(result.context.compactionCount,compactions.length);assert.equal(runtime.threads.size,0);assert.equal(runtime.contexts.has(result.threadId),false);assert.ok(events.some(event=>event.type==='context'&&event.context.compactionCount>0));
+  assert.equal(result.context.compactionCount,compactions.length);assert.equal(result.codexHistory,'codex');assert.equal(runtime.threads.size,0);assert.equal(runtime.contexts.has(result.threadId),true);assert.ok(events.some(event=>event.type==='context'&&event.context.compactionCount>0));
 });
 
 test('native compression failure and explicit disable never start the actual task turn', async t => {
@@ -237,5 +270,5 @@ test('native history import reserves the complete current turn before chunking a
   requests.length=0;const prompt='Current instructions. '+'x'.repeat(9000),instructions='Developer payload. '+'y'.repeat(1200),tools=[{...observe,description:'Tool payload. '+'z'.repeat(400)}];
   const result=await runtime.runAgent({cwd,prompt,developerInstructions:instructions,dynamicTools:tools,context,codexHistory:'relay',continuity:{text:source,transcriptPath:path.join(cwd,'original.txt')}}),imports=requests.filter(item=>item.method==='thread/inject_items');
   assert.ok(imports.length>2);for(const entry of imports){const imported=entry.params.items[0].content[0].text,target=Number(/checkpoint under (\d+) tokens/.exec(imported)?.[1]);assert.ok(target>=256);assert.ok(estimateContextTokens([[instructions,prompt,imported],tools])+target<7424,'import plus its stated retained checkpoint target and complete current payload fits');}
-  assert.equal(requests.filter(item=>item.method==='thread/start').length,1);assert.equal(requests.filter(item=>item.method==='turn/start').length,1);assert.equal(result.codexHistory,'relay');
+  assert.equal(requests.filter(item=>item.method==='thread/start').length,1);assert.equal(requests.filter(item=>item.method==='turn/start').length,1);assert.equal(result.codexHistory,'codex');
 });

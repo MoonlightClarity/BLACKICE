@@ -23,8 +23,8 @@ async function fixture(t, { steps = [leaf('first', 'active'), leaf('second')], l
     async guard(nodeId = `worker-${guards.length + 1}`, execute = async value => {
       effects++; await writeFile(path.join(cwd, value.arguments.path), value.arguments.text || 'read observed'); return success();
     }, runId = 'run-one') {
-      const guard = await createPlanningWorkerGuard({ store, taskId: 'task-one', runId, nodeId, sequentialEnabled, schemaVersion }); guards.push(guard);
-      const task = createTaskToolHandler({ store, taskId: 'task-one', runId, nodeId, schemaVersion });
+      const guard = await createPlanningWorkerGuard({ store, taskId: 'task-one', runId, nodeId, sequentialEnabled, schemaVersion, executionGuardrails: true }); guards.push(guard);
+      const task = createTaskToolHandler({ store, taskId: 'task-one', runId, nodeId, schemaVersion, executionGuardrails: true });
       const dispatch = wrapPlanningToolHandler(guard, async (value, context) => {
         const denied = await guard.before(value, context); if (denied) return denied;
         if (value.name === 'relay_task') return guard.after(value, await task(value, context));
@@ -77,9 +77,11 @@ test('concurrent guards reserve one task operation atomically', async t => {
   const first = await f.guard('first-worker', async () => { executions++; enter(); await held; return success(); });
   const other = await f.guard('other-worker', async () => { executions++; return success(); });
   const running = first.dispatch(call('long-operation')); await entered;
-  const rejected = await other.dispatch(call('concurrent-operation'));
-  assert.equal(rejected.code, 'TASK_PLAN_STEP_IN_FLIGHT'); assert.equal(executions, 1);
-  release(); assert.equal((await running).success, true);
+  try {
+    const rejected = await other.dispatch(call('concurrent-operation'));
+    assert.equal(rejected.code, 'TASK_PLAN_STEP_IN_FLIGHT'); assert.equal(executions, 1);
+  } finally { release(); }
+  assert.equal((await running).success, true);
 });
 
 test('a live operation cannot be completed or skipped before its actual result returns', async t => {
@@ -90,10 +92,10 @@ test('a live operation cannot be completed or skipped before its actual result r
   try {
     const state = await f.store.get('task-one');
     for (const patch of [{ status: 'done', evidence: 'The still-running effect is claimed complete.' }, { status: 'skipped', skipReason: 'The still-running effect is claimed skipped.' }]) {
-      await assert.rejects(f.store.setStep('task-one', 'first', patch, { expectedRevision: state.revision, source: 'human' }), { code: 'TASK_PLAN_STEP_IN_FLIGHT' });
+      await assert.rejects(f.store.setStep('task-one', 'first', patch, { expectedRevision: state.revision, source: 'human', executionGuardrails: true }), { code: 'TASK_PLAN_STEP_IN_FLIGHT' });
       assert.equal((await f.store.get('task-one')).revision, state.revision);
     }
-    const blocked = await f.store.setStep('task-one', 'first', { status: 'blocked', blockedReason: 'The actual running call has not returned yet.' }, { expectedRevision: state.revision, source: 'human' });
+    const blocked = await f.store.setStep('task-one', 'first', { status: 'blocked', blockedReason: 'The actual running call has not returned yet.' }, { expectedRevision: state.revision, source: 'human', executionGuardrails: true });
     assert.equal(blocked.steps[0].status, 'blocked', 'An honest stop or uncertainty record remains available.');
   } finally { release(); }
   assert.equal((await running).success, true);
@@ -187,12 +189,19 @@ test('a duplicate concurrent call ID cannot settle the original reservation', as
   const entered = new Promise(resolve => { enter = resolve; }), held = new Promise(resolve => { release = resolve; });
   const worker = await f.guard('worker', async () => { count++; enter(); await held; return success(); });
   const sharedCall = call('same-call-id'), original = worker.dispatch(sharedCall); await entered;
-  assert.equal((await worker.dispatch(sharedCall)).code, 'TASK_PLAN_STEP_IN_FLIGHT');
-  assert.equal((await worker.dispatch(call('third-call'))).code, 'TASK_PLAN_STEP_IN_FLIGHT');
-  assert.equal(count, 1);
-  const saved = JSON.parse(await readFile(f.sequenceFile(), 'utf8'));
-  assert.equal(saved.records[0].status, 'running');
-  release(); assert.equal((await original).success, true);
+  let duplicateSettled = false;
+  const duplicate = worker.dispatch(sharedCall);
+  duplicate.then(() => { duplicateSettled = true; }, () => { duplicateSettled = true; });
+  try {
+    assert.equal((await worker.dispatch({ ...sharedCall, arguments: { ...sharedCall.arguments, text: 'conflicting payload' } })).code, 'TOOL_CALL_ID_CONFLICT');
+    assert.equal((await worker.dispatch(call('third-call'))).code, 'TASK_PLAN_STEP_IN_FLIGHT');
+    assert.equal(count, 1); assert.equal(duplicateSettled, false, 'An exact replay waits for the original actual result.');
+    const saved = JSON.parse(await readFile(f.sequenceFile(), 'utf8'));
+    assert.equal(saved.records.length, 1); assert.equal(saved.records[0].status, 'running');
+  } finally { release(); }
+  const [result, replay] = await Promise.all([original, duplicate]);
+  assert.equal(result.success, true); assert.deepEqual(replay, result);
+  assert.equal(count, 1, 'The duplicate callback never executes or settles a second operation.');
 });
 
 test('an invalid tool response preserves uncertainty and does not leave a live reservation', async t => {
@@ -247,7 +256,11 @@ test('provider call IDs are scoped to run and worker while dispatch IDs remain u
     state = await second.task({ action: 'read' });
     state = await second.task({ action: 'step', expectedRevision: state.revision, stepId: 'second', status: 'done', evidence: 'The second actual response was observed.' });
     await second.task({ action: 'step', expectedRevision: state.revision, stepId: 'third', status: 'active' });
-    assert.equal((await second.dispatch(call('1'))).code, 'TASK_PLAN_CALL_ID_REUSED', 'A raw ID cannot be reused within the same run and worker.');
+    const replay = await second.dispatch(call('1'));
+    assert.equal(replay.success, true, 'An exact same-scope replay returns its original settled receipt.');
+    assert.equal((await second.dispatch(call('1', 'read'))).code, 'TOOL_CALL_ID_CONFLICT', 'A changed payload cannot reuse the original callback ID.');
+    assert.equal(JSON.parse(await readFile(f.sequenceFile(), 'utf8')).records.length, 2, 'The replay and conflict create no additional dispatch.');
+    assert.equal((await f.store.get('task-one')).steps.find(step => step.id === 'third').status, 'active', 'The old receipt cannot complete newly active work.');
   }
 });
 

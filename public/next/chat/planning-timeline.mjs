@@ -130,3 +130,55 @@ export function chatTimeline(run, messages = []) {
   if (current && (['queued', 'running', 'waiting'].includes(run?.status) || run?.settled === false)) current.active = true;
   return groups;
 }
+
+
+export function chatProgressPreview(value, fallback = 'Working…') {
+  const line = String(value || '').replace(/^[\s#*>`-]+/, '').split(/\r?\n/).find(value => value.trim()) || '';
+  const compact = line.replace(/\s+/g, ' ').trim();
+  if (!compact) return fallback;
+  return compact.length > 140 ? compact.slice(0, 137).replace(/\s+\S*$/, '') + '…' : compact;
+}
+
+/** A group's saved child progress does not certify its broad title's outcome. */
+export function chatOutlineStatusLabel(item) {
+  const status = item.statusLabel || item.status || 'Pending';
+  if (!item.isGroup) return status;
+  const done = Number.isSafeInteger(item.doneCount) ? item.doneCount : 0;
+  const total = Number.isSafeInteger(item.leafCount) ? item.leafCount : 0;
+  const skipped = Number.isSafeInteger(item.skippedCount) ? item.skippedCount : 0;
+  const terminal = ['done', 'skipped'].includes(item.status);
+  const progress = total ? done + '/' + total + ' steps' : skipped ? skipped + ' skipped' : terminal ? 'No steps' : '';
+  return [terminal ? '' : status, progress, total && skipped ? skipped + ' skipped' : ''].filter(Boolean).join(' · ');
+}
+
+/** Short public status for an inline chat update. The full saved
+ * activity remains available in chronological order inside the disclosure. */
+export function chatWorkSummary(phases) {
+  const entries = phases.flatMap(phase => phase.entries);
+  const latest = entries.findLast(entry => !['composition','runtime-reassessment','review'].includes(entry.source)) || entries.at(-1);
+  const active = phases.some(phase => phase.active);
+  const title = 'Details';
+  const raw = String(latest?.message?.text || (latest?.source === 'observation' ? latest.text : latest?.title) || latest?.text || 'Saved progress');
+  const preview = chatProgressPreview(raw, 'Saved progress');
+  return { title, preview, count: entries.length, active };
+}
+
+/** Provisional worker replies belong to the work record. A final result or a
+ * user direction always breaks the record so its real chronology is retained. */
+export function chatDisplayPhases(run, messages) {
+  return chatTimeline(run, messages).flatMap(phase => {
+    if (phase.phase !== 'respond') return [phase];
+    const groups = [];
+    for (const entry of phase.entries) {
+      const provisional = Boolean(entry.message?.provisional || entry.message?.phase === 'unverified_answer');
+      let group = groups.at(-1);
+      if (!group || group.provisional !== provisional) {
+        group = { ...phase, id: entry.id, entries: [], provisional, active: false };
+        groups.push(group);
+      }
+      group.entries.push(entry);
+    }
+    if (phase.active && groups.length) groups.at(-1).active = true;
+    return groups;
+  });
+}

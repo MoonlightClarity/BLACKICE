@@ -73,14 +73,14 @@ test('Stop during held native bootstrap releases one caller before readiness wit
   const turns = requests.filter(entry => entry.method === 'turn/start'); assert.equal(turns.length, 1); assert.doesNotMatch(JSON.stringify(turns), /STOPPED_CALLER_MUST_NOT_START/);
 });
 
-test('Stop during held thread creation returns before its acknowledgement and cleans the late ephemeral thread', async t => {
+test('Stop during held thread creation returns before its acknowledgement and releases the late persistent subscription', async t => {
   const runtime = new CodexRuntime({ command: process.execPath, args: [fixture, '--hold-first-thread-start'], cwd, requestTimeoutMs: 5000 }); t.after(() => runtime.close()); await runtime.start();
   const requests = [], request = runtime._request.bind(runtime); runtime._request = (method, params, ...args) => { requests.push({ method, params }); return request(method, params, ...args); };
   const controller = new AbortController();
   const stopped = runtime.runAgent({ cwd, prompt: 'STOPPED_OPEN_MUST_NOT_START', signal: controller.signal, codexHistory: 'relay' }); stopped.catch(() => {});
   await until(() => requests.some(entry => entry.method === 'thread/start'));
   const heldState = await runtime._request('fixture/threadState', {}), lateThreadId = heldState.threads[0].threadId;
-  assert.equal(heldState.threads[0].ephemeral, true); assert.equal(heldState.threads[0].turnCount, 0);
+  assert.equal(heldState.threads[0].ephemeral, false, 'The legacy relay history alias normalizes to persistent native history.'); assert.equal(heldState.threads[0].turnCount, 0);
   controller.abort(); await assert.rejects(stopped, { code: 'ABORT_ERR' });
   assert.ok([...runtime.pending.values()].length, 'the native thread opening RPC remains tracked until its response');
   const sibling = await runtime.runAgent({ cwd, prompt: 'SIBLING_DURING_HELD_OPEN' }); assert.match(sibling.output, /SIBLING_DURING_HELD_OPEN/);
@@ -88,7 +88,7 @@ test('Stop during held thread creation returns before its acknowledgement and cl
   const released = await runtime._request('fixture/releaseThreadOpen', {}); assert.equal(released.threadId, lateThreadId);
   await until(() => requests.some(entry => entry.method === 'thread/unsubscribe' && entry.params.threadId === lateThreadId));
   const state = await runtime._request('fixture/threadState', {});
-  assert.equal(state.threads.some(entry => entry.threadId === lateThreadId), false, 'late ephemeral creation is actually discarded by the native fixture');
+  assert.equal(state.threads.find(entry => entry.threadId === lateThreadId)?.turnCount, 0, 'unsubscribe releases the opening lease and preserves the persistent thread without starting the stopped turn');
   assert.ok(state.threads.some(entry => entry.threadId === sibling.threadId));
   assert.doesNotMatch(JSON.stringify(requests.filter(entry => entry.method === 'turn/start')), /STOPPED_OPEN_MUST_NOT_START/);
   assert.equal(runtime.status().connected, true); assert.equal(runtime.status().activeTurns, 0);
@@ -138,11 +138,12 @@ test('provider runtime applies a configured agent budget to native models and ke
 test('API explicit unlimited and long deadlines survive a shorter constructor budget, while omitted budgets stop stalled work', async t => {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'relay-budget-api-')), codex = new NativeFixture(); let calls = 0;
   const runtime = await new ProviderRuntime({ codex, dataDir, runTimeoutMs: 20, fetchImpl: async (url, options) => {
+    assert.equal(options.method, 'POST', 'Known fixture limits keep catalog discovery out of the inference budget.');
     calls++; await delay(55); if (options.signal.aborted) throw options.signal.reason;
     return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'API budget verified.' }, finish_reason: 'stop' }] }), { headers: { 'content-type': 'application/json' } });
   } }).init();
   t.after(async () => { await runtime.close(); await rm(dataDir, { recursive: true, force: true }); });
-  await runtime.saveProvider({ id: 'api', name: 'Budget API', type: 'compatible', baseUrl: 'http://127.0.0.1:1/v1', apiKey: 'fixture-api-key', models: ['model'] });
+  await runtime.saveProvider({ id: 'api', name: 'Budget API', type: 'compatible', baseUrl: 'http://127.0.0.1:1/v1', apiKey: 'fixture-api-key', models: [{ id: 'model', contextWindowTokens: 262144, maxOutputTokens: 4096 }] });
   for (const timeoutMs of [null, 30 * 86400000]) {
     const result = await runtime.runAgent({ cwd, prompt: 'Complete on the chosen API.', model: 'api::model', timeoutMs }); assert.equal(result.output, 'API budget verified.');
   }
@@ -153,12 +154,13 @@ test('API explicit unlimited and long deadlines survive a shorter constructor bu
 test('unlimited API Stop signals immediately and retains the tool lease until its callback settles', async t => {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'relay-budget-tool-')), codex = new NativeFixture(), started = deferred(), release = deferred(), controller = new AbortController(), events = [];
   let requests = 0, settled = false;
-  const runtime = await new ProviderRuntime({ codex, dataDir, fetchImpl: async () => {
+  const runtime = await new ProviderRuntime({ codex, dataDir, fetchImpl: async (_url, options) => {
+    assert.equal(options.method, 'POST', 'Only inference is counted by this cancellation fixture.');
     requests++;
     return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: null, tool_calls: [{ id: 'tool-1', type: 'function', function: { name: 'fixture_tool', arguments: '{}' } }] }, finish_reason: 'tool_calls' }] }), { headers: { 'content-type': 'application/json' } });
   } }).init();
   t.after(async () => { controller.abort(); release.resolve(); await runtime.close(); await rm(dataDir, { recursive: true, force: true }); });
-  await runtime.saveProvider({ id: 'api', name: 'Budget API', type: 'compatible', baseUrl: 'http://127.0.0.1:1/v1', apiKey: 'fixture-api-key', models: ['model'] });
+  await runtime.saveProvider({ id: 'api', name: 'Budget API', type: 'compatible', baseUrl: 'http://127.0.0.1:1/v1', apiKey: 'fixture-api-key', models: [{ id: 'model', contextWindowTokens: 262144, maxOutputTokens: 4096 }] });
   const pending = runtime.runAgent({ cwd, prompt: 'Observe the fixture.', model: 'api::model', timeoutMs: null, providerIdleTimeoutMs: null, signal: controller.signal, dynamicTools: [{ type: 'function', name: 'fixture_tool', inputSchema: { type: 'object', properties: {} } }], onEvent: event => events.push(event), onToolCall: async (call, context) => { started.resolve(context.signal); await release.promise; throw context.signal.reason; } });
   pending.then(() => { settled = true; }, () => { settled = true; });
   const signal = await Promise.race([started.promise, pending.then(() => assert.fail('The fixture turn finished without admitting its tool.'))]);
@@ -182,10 +184,10 @@ test('admitted run budgets stay immutable while future continuations and retries
   const runtime = new NativeFixture(); runtime.runAgent = async options => { calls.push(options); if (calls.length === 1) await gate.promise; if (shouldFail) { shouldFail = false; throw Object.assign(new Error('Interrupted fixture.'), { code: 'FIXTURE_INTERRUPTED' }); } return { output: 'Budget fixture complete.', threadId: 'budget-native-thread', codexHistory: 'codex' }; };
   const engine = await new HarnessEngine({ runtime, dataDir, defaultCwd: workspace }).init(); engine.runtimeSettings = settings;
   t.after(async () => { gate.resolve(); await engine.close(); await settings.close(); await rm(directory, { recursive: true, force: true }); });
-  await settings.update({ codexHistory: 'codex', runTimeoutMs: 10000, providerIdleTimeoutMs: 2000, defaultEffort:'default', defaultContext:{preset:'model',windowTokens:null,autoCompact:true} });
+  const admittedSettings = await settings.update({ codexHistory: 'codex', runTimeoutMs: 10000, providerIdleTimeoutMs: 2000, defaultEffort:'default', defaultContext:{preset:'model',windowTokens:null,autoCompact:true} });
   const first = engine.startRun({ workflow: flow, input: 'First admitted task.' }); await until(() => calls.length === 1);
   await settings.update({ runTimeoutMs: null, providerIdleTimeoutMs: null }); assert.equal(calls[0].timeoutMs, 10000); assert.equal(calls[0].providerIdleTimeoutMs, 2000); assert.equal(calls[0].signal.aborted, false);
-  gate.resolve(); await engine.executions.get(first.id); assert.deepEqual(engine.getRun(first.id).runtimeSettings, { codexHistory: 'codex', runTimeoutMs: 10000, providerIdleTimeoutMs: 2000, defaultEffort:'default', defaultServiceTier:'default', defaultContext:{preset:'model',windowTokens:null,autoCompact:true}, verbosity:'balanced',subagentsEnabled:false,maxSubagents:3 });
+  gate.resolve(); await engine.executions.get(first.id); assert.deepEqual(engine.getRun(first.id).runtimeSettings, admittedSettings, 'The admitted run retains the entire normalized settings snapshot after future settings change.');
   const next = engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue the verified result.' }); await engine.executions.get(next.id);
   assert.equal(calls[1].timeoutMs, null); assert.equal(calls[1].providerIdleTimeoutMs, null);
   shouldFail = true; const failed = engine.startRun({ workflow: flow, input: 'A recoverable task.' }); await engine.executions.get(failed.id); assert.equal(engine.getRun(failed.id).status, 'failed');

@@ -25,10 +25,10 @@ test('native restart diagnostics ignore unknown codes, non-error JSON, malformed
 });
 
 test('Windows installer inventory accepts the new runtime assets and the selected release notes', () => {
-  for (const file of ['BROWSER-IMPORT.md', 'CHATGPT-CONNECTOR.md', 'scripts/browser-cli.mjs', 'desktop/browser-compatibility/manifest.json', 'desktop/browser-compatibility/main.js', 'desktop/browser-compatibility.mjs', 'lib/browser-profile.mjs', 'public/browser-ui.mjs', 'RELEASE-NOTES-9.8.7.md', 'RELEASE-NOTES-2.33.8.md', 'RELEASE-NOTES-2.33.9.md', 'RELEASE-NOTES-2.33.10.md', 'RELEASE-NOTES-2.33.11.md', 'RELEASE-NOTES-2.33.12.md', 'RELEASE-NOTES-2.33.13.md', 'RELEASE-NOTES-2.34.0.md']) {
+  for (const file of ['BROWSER-IMPORT.md', 'CHATGPT-CONNECTOR.md', 'scripts/browser-cli.mjs', 'scripts/repair-shortcuts.ps1', 'desktop/browser-compatibility/manifest.json', 'desktop/browser-compatibility/main.js', 'desktop/browser-compatibility.mjs', 'lib/browser-profile.mjs', 'public/browser-ui.mjs', 'RELEASE-NOTES-9.8.7.md', 'RELEASE-NOTES-2.33.8.md', 'RELEASE-NOTES-2.33.9.md', 'RELEASE-NOTES-2.33.10.md', 'RELEASE-NOTES-2.33.11.md', 'RELEASE-NOTES-2.33.12.md', 'RELEASE-NOTES-2.33.13.md', 'RELEASE-NOTES-2.34.0.md']) {
     assert.equal(approvedWindowsPackageFile(file, '9.8.7'), true, file);
   }
-  for (const file of ['README.md', 'scripts/browser-profile-smoke.mjs', 'scripts/windows-release-inputs.mjs', 'RELEASE-NOTES-9.8.6.md', 'RELEASE-NOTES-2.33.14.md', 'desktop/unknown.json', 'desktop/build-icon.mjs', 'lib/example.test.mjs', 'public/.env', 'lib/node_modules/unsafe.mjs', 'lib/.currents-backup-file.mjs', '../lib/file.mjs', 'lib/../private.txt', 'lib\\file.mjs']) {
+  for (const file of ['README.md', 'scripts/browser-profile-smoke.mjs', 'scripts/windows-release-inputs.mjs', 'RELEASE-NOTES-9.8.6.md', 'RELEASE-NOTES-2.33.14.md', 'desktop/unknown.json', 'desktop/build-icon.mjs', 'lib/example.test.mjs', 'public/.env', 'lib/node_modules/unsafe.mjs', 'lib/.currents-backup-file.mjs', 'lib/browser.mjs.ownership-backup', 'public/assets.ownership-backup/private.mjs', 'desktop/old.ownership-backup/worker.mjs', 'scripts/other-shortcuts.ps1', '../lib/file.mjs', 'lib/../private.txt', 'lib\\file.mjs']) {
     assert.equal(approvedWindowsPackageFile(file, '9.8.7'), false, file);
   }
   for (const directory of ['data', 'lib/node_modules', 'public/.git', 'tests']) assert.equal(forbiddenWindowsPackagePath(directory), true, directory);
@@ -131,4 +131,16 @@ test('a linked receipt directory cannot redirect verification outside the approv
   await fs.rename(path.join(f.directory, 'verification'), redirected);
   await fs.symlink(redirected, path.join(f.directory, 'verification'), 'junction');
   await assert.rejects(readWindowsSourceTestReceipt(f.options), /must not be a link/);
+});
+
+test('current source publication requires the exact full tested source inventory', async t => {
+  const f = await fixture(t), sourceIndexSha256 = 'c'.repeat(64), options = { ...f.options, sourceIndexSha256 };
+  await assert.rejects(readWindowsSourceTestReceipt(options), /inventory binding mismatch/);
+  await f.write({ ...f.prior, sourceIndexSha256 });
+  assert.equal((await readWindowsSourceTestReceipt(options)).sourceIndexSha256, sourceIndexSha256);
+  for (const value of ['d'.repeat(64), '', null]) {
+    await assert.rejects(readWindowsSourceTestReceipt({ ...options, sourceIndexSha256: value }), /inventory binding mismatch/);
+  }
+  await f.write(f.prior);
+  assert.equal((await readWindowsSourceTestReceipt(f.options)).sourceIndexSha256, undefined, 'historical callers retain their original receipt contract');
 });

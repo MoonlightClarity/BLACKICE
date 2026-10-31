@@ -36,7 +36,8 @@ test('the real server serves navigation assets and the complete Planning, Swarms
   }
   assert.ok(fetched.has('/coordination-navigation.mjs'),'all workspace imports resolve to the served shared module');
   const css=await asset('/coordination-navigation.css',/css/);assert.match(css,/\.coordination-navigation/);
-  const home=await fetch(new URL('/legacy/',base)),html=await home.text();assert.equal(home.status,200);assert.match(html,/<link rel="stylesheet" href="\/coordination-navigation\.css">/);
+  const legacy=await fetch(new URL('/legacy/',base),{redirect:'manual'});assert.equal(legacy.status,302);assert.equal(legacy.headers.get('location'),'/');
+  const home=await fetch(new URL('/',base)),html=await home.text();assert.equal(home.status,200);assert.match(html,/src="\/next\/app\.mjs"/);
   assert.equal(workerCalls,0);
 });
 

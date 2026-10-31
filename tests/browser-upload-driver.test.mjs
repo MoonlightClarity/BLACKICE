@@ -97,7 +97,9 @@ async function requestFor(f, mode, names = ['resume.PDF']) {
     const pending = f.tab.pendingInteraction;
     return { request: { action: 'upload', tabId: f.tab.id, chooserId: pending.id, expectedUrl: pending.url, expectedDocumentId: pending.documentId, paths: files }, bytes };
   }
-  f.tab.refs.set('observed-file', f.tab.window.webContents.mainFrame);
+  const stamp = f.driver.frameStamp(f.tab, f.tab.window.webContents.mainFrame);
+  assert.ok(stamp, 'The fixture file control belongs to the current observed frame.');
+  f.driver.rememberReferences(f.tab, [{ stamp, elements: [{ ref: 'observed-file' }] }], `${f.tab.id}:${f.tab.revision}`);
   return { request: { action: 'upload', tabId: f.tab.id, ref: 'observed-file', expectedUrl: f.tab.window.url, expectedDocumentId: `${f.tab.id}:${f.tab.revision}`, paths: files }, bytes };
 }
 

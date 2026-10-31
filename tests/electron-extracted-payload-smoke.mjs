@@ -65,7 +65,8 @@ try{
   assert.ok(cookie.includes('='),'Same-profile session cookie required.');
   const old=await check(rt.url+'/legacy/',cookie);
   assert.equal(old.status,200);
-  assert.match(old.body,/\/app\.js/,'Classic recovery route must still be available.');
+  assert.match(old.body,/\/next\/app\.mjs/,'Old Classic bookmarks must open the current interface.');
+  assert.doesNotMatch(old.body,/<script\b[^>]*\/app\.js/);
   const asset=await check(rt.url+'/next/chat/reader-worker.mjs',cookie);
   assert.equal(asset.status,200);
   assert.match(asset.headers.get('content-type')||'',/javascript/);

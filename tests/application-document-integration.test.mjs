@@ -231,13 +231,19 @@ test('native version two application catalogs retain saved-text actions through 
   const retry = f.app.engine.retryRun(continued.id); await f.app.engine.executions.get(retry.id); const finished = f.app.engine.getRun(retry.id); assert.equal(finished.status, 'completed', finished.error); assert.equal(finished.nodes.agent.applicationSchemaVersion, 2); assert.equal(finished.nodes.agent.resumeApplicationSchemaVersion, 2); assert.equal(turns, 3); assert.equal(f.runtime.calls.length, 0);
 });
 
-test('fresh and Relay ephemeral conversations receive version two after legacy native history', async t => {
+test('legacy Relay preference input preserves the native catalog while fresh chats receive version two', async t => {
   const f = await fixture(t); await f.app.runtimeSettings.update({ codexHistory: 'codex' });
   f.model.execute = async options => { options.onEvent({ type: 'thread', threadId: 'native-upgrade-application-thread' }); return { output: 'Recorded an original native application conversation.', threadId: 'native-upgrade-application-thread', codexHistory: 'codex' }; };
   const original = f.app.engine.startRun({ workflow: graph, input: 'Record a pre-upgrade native session.' }); await f.app.engine.executions.get(original.id); delete f.app.engine.runs.get(original.id).nodes.agent.applicationSchemaVersion;
+  const savedOriginal = f.app.engine.getRun(original.id);
   await f.app.runtimeSettings.update({ codexHistory: 'relay' });
-  f.model.execute = async options => { assert.deepEqual(options.dynamicTools.find(item => item.name === APPLICATION_TOOL.name), APPLICATION_TOOL); assert.equal(options.threadId, undefined); assert.match(options.prompt, /save_text/); return { output: 'Used the current application schema in a fresh ephemeral session.', threadId: 'ephemeral-upgrade-application-thread', codexHistory: 'relay' }; };
-  const continued = f.app.engine.continueRun(original.id, { nodeId: 'agent', message: 'Continue with Relay continuity in a new ephemeral native session.' }); await f.app.engine.executions.get(continued.id); const ephemeral = f.app.engine.getRun(continued.id); assert.equal(ephemeral.status, 'completed', ephemeral.error); assert.equal(ephemeral.nodes.agent.applicationSchemaVersion, 2); assert.equal(ephemeral.nodes.agent.resumeApplicationSchemaVersion, undefined); assert.equal(ephemeral.modelHandoff.reason, 'relay-history');
+  assert.equal(f.app.runtimeSettings.get().codexHistory, 'codex', 'Legacy preference input normalizes to persistent native history.');
+  f.model.expectedApplicationSchemaVersion = 1;
+  f.model.execute = async options => { assert.deepEqual(options.dynamicTools.find(item => item.name === APPLICATION_TOOL.name), LEGACY_APPLICATION_TOOL); assert.equal(options.threadId, 'native-upgrade-application-thread'); assert.doesNotMatch(options.prompt, /save_text/); return { output: 'Retained the original native session and application schema.', threadId: 'native-upgrade-application-thread', codexHistory: 'codex' }; };
+  const continued = f.app.engine.continueRun(original.id, { nodeId: 'agent', message: 'Continue the saved native conversation after the legacy preference input.' }); await f.app.engine.executions.get(continued.id); const resumed = f.app.engine.getRun(continued.id);
+  assert.equal(resumed.status, 'completed', resumed.error); assert.equal(resumed.nodes.agent.applicationSchemaVersion, 1); assert.equal(resumed.nodes.agent.resumeApplicationSchemaVersion, 1); assert.equal(resumed.modelHandoff, undefined); assert.deepEqual(f.app.engine.getRun(original.id), savedOriginal);
+  f.model.expectedApplicationSchemaVersion = 2;
+  f.model.execute = async options => { assert.deepEqual(options.dynamicTools.find(item => item.name === APPLICATION_TOOL.name), APPLICATION_TOOL); assert.equal(options.threadId, undefined); assert.match(options.prompt, /save_text/); return { output: 'Used the current application schema in a fresh native session.', threadId: 'fresh-upgrade-application-thread', codexHistory: 'codex' }; };
   const fresh = f.app.engine.startRun({ workflow: graph, input: 'Start a completely fresh current-schema conversation.' }); await f.app.engine.executions.get(fresh.id); assert.equal(f.app.engine.getRun(fresh.id).status, 'completed', f.app.engine.getRun(fresh.id).error); assert.equal(f.app.engine.getRun(fresh.id).nodes.agent.applicationSchemaVersion, 2); assert.equal(f.runtime.calls.length, 0);
 });
 

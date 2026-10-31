@@ -31,7 +31,7 @@ test('runtime fingerprints bind desktop helpers and browser compatibility assets
     await fs.rm(file); assert.equal(await appFingerprint(directory), before, `${name} omission must differ from the complete source fingerprint`);
   }
   const before = await appFingerprint(directory);
-  for (const name of ['build-icon.mjs', 'future/worker.test.mjs', 'old.currents-backup-fixture/worker.mjs']) {
+  for (const name of ['build-icon.mjs', 'future/worker.test.mjs', 'old.currents-backup-fixture/worker.mjs', 'old.ownership-backup/worker.mjs', 'browser-compatibility/main.js.ownership-backup']) {
     const file = path.join(directory, 'desktop', name); await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, 'excluded fixture');
   }
   assert.equal(await appFingerprint(directory), before, 'build-only, test, and recovery files are excluded on both sides');
@@ -137,6 +137,19 @@ test('release collection verifies installer bytes before trusting any supplied s
   const packageFile=path.join(directory,'package.json');await fs.writeFile(packageFile,JSON.stringify({name:'relay-agent-harness',version:'9.8.7',scripts:{build:'development only'},devDependencies:{electron:'44.7.2'}}));assert.equal(await appFingerprint(directory),fingerprint,'builder-stripped metadata must not make the packaged app differ from source');
   await fs.writeFile(path.join(directory,'lib/example.mjs.currents-backup-1234-fixture'),'historical recovery bytes');assert.equal(await appFingerprint(directory),fingerprint,'excluded connector backups must not enter runtime evidence');
   await fs.mkdir(path.join(directory,'scripts'));await fs.writeFile(path.join(directory,'scripts/chatgpt-bridge.mjs'),'current bridge entry point');const withBridge=await appFingerprint(directory);assert.notEqual(withBridge,fingerprint,'the packaged connector CLI must enter runtime evidence');await fs.appendFile(path.join(directory,'scripts/chatgpt-bridge.mjs'),' changed');assert.notEqual(await appFingerprint(directory),withBridge,'connector CLI changes must invalidate old receipts');
+  const beforeRecovery = await appFingerprint(directory);
+  for (const name of ['lib/browser.mjs.ownership-backup', 'public/styles.css.ownership-backup']) {
+    await fs.writeFile(path.join(directory,name),'local recovery bytes');
+  }
+  const beforeShortcut = await appFingerprint(directory);
+  assert.equal(beforeShortcut,beforeRecovery,'local recovery copies must not enter runtime evidence');
+  await fs.writeFile(path.join(directory,'scripts/repair-shortcuts.ps1'),'current installed shortcut helper');
+  const withShortcut = await appFingerprint(directory);
+  assert.notEqual(withShortcut,beforeShortcut,'the packaged shortcut helper must enter runtime evidence');
+  await fs.appendFile(path.join(directory,'scripts/repair-shortcuts.ps1'),' changed');
+  assert.notEqual(await appFingerprint(directory),withShortcut,'shortcut helper changes must invalidate old receipts');
+  await fs.rm(path.join(directory,'scripts/repair-shortcuts.ps1'));
+  assert.equal(await appFingerprint(directory),beforeShortcut,'local recovery copies must not enter runtime evidence');
   await fs.writeFile(path.join(directory,'lib/changed.mjs'),'runtime change');assert.notEqual(await appFingerprint(directory),fingerprint);
 });
 

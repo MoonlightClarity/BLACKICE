@@ -58,6 +58,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
   let active=false,busy=false,revision=0,subscriptions=null,refreshTimer=null,snapshot=null,mutationError='';
   let workflowList=[],workflowLimit=80,workflowQuery='',workflowEpoch=0,workflowTimer=null,workflowLoaded=false,workflowLoading=false;
   let section='board',jobsLimit=35,selectedScheduleId=null,scheduleMode='inspect',editSource=null,editForm=null,editNotice=null;
+  const readinessBySchedule=new Map();
   const sections=['board','schedules','results','jobs'];
   const history=createTaskHistory({mount:$('next-tasks-history'),api,events,notify,onNavigate,prefix:'next-tasks-history',presentation:'board'});
   const humanTime=value=>{
@@ -68,7 +69,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
   async function execute(path,method,payload){
     if(busy)return;
     busy=true;mutationError='';revision++;paint();
-    try {await api(path,method,payload);await refresh();return true;}
+    try {const result=await api(path,method,payload);rememberReadiness(result);await refresh();if(result?.readiness)notify(scheduleSavedMessage(result));return result||true;}
     catch(error){mutationError=error.message;notify(error.message,true);view.info.textContent=error.message;return false;}
     finally{busy=false;if(active)paint();}
   }
@@ -107,6 +108,61 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
   }
   function selectedSchedule(){
     return (snapshot?.deployments||[]).find(task=>task.id===selectedScheduleId)||null;
+  }
+  function rememberReadiness(task){
+    if(!task?.id)return;
+    if(task.readiness){
+      readinessBySchedule.set(task.id,{...task.readiness,nodeId:'viability',deploymentRevision:task.revision});
+      selectedScheduleId=task.id;scheduleMode='inspect';editSource=null;editForm=null;editNotice=null;
+    }else readinessBySchedule.delete(task.id);
+    if(snapshot&&typeof task.enabled==='boolean'){
+      const index=snapshot.deployments.findIndex(item=>item.id===task.id);
+      if(index<0)snapshot.deployments.push(task);else snapshot.deployments[index]=task;
+    }
+  }
+  function scheduleSavedMessage(task,fallback='Schedule saved.'){
+    if(task?.enabled===false&&task.readiness&&task.readiness.state!=='ready')return 'Saved as a disabled draft. '+(task.readiness.question||'Complete the readiness check before enabling this schedule.');
+    return fallback;
+  }
+  function readinessFor(task){
+    const recorded=readinessBySchedule.get(task.id);
+    if(recorded&&recorded.deploymentRevision===task.revision)return recorded;
+    if(recorded)readinessBySchedule.delete(task.id);
+    return task.viabilityRef?.requestId?{state:'recorded',requestId:task.viabilityRef.requestId,nodeId:'viability'}:null;
+  }
+  function showReadiness(parent,task){
+    const check=readinessFor(task);if(!check)return;
+    const section=add(parent,'section','','next-schedule-readiness');section.dataset.scheduleReadinessState=check.state;section.dataset.scheduleReadinessFor=task.id;
+    add(section,'h4','Task readiness');
+    const labels={ready:'The recorded check has no unresolved essential inputs.',awaiting_input:'Essential facts are still needed.',needs_evidence:'The check needs usable source evidence.',stale:'The saved check needs to be refreshed.',recorded:'A readiness check is recorded in Planning.'};
+    add(section,'p',labels[check.state]||'Review the saved readiness check.','next-help');
+    if(check.question)add(section,'p',check.question,'next-help next-schedule-readiness-question');
+    if(check.requestId){
+      const open=add(section,'button','Open readiness in Planning');open.type='button';open.dataset.scheduleReadinessOpen=task.id;
+      open.addEventListener('click',()=>onNavigate?.('planning',{requestId:check.requestId,nodeId:check.nodeId||'viability'}));
+    }
+  }
+  async function checkReadiness(task){
+    if(busy)return;busy=true;mutationError='';revision++;paint();
+    try{
+      const graph=await api('/api/operations/deployments/'+encodeURIComponent(task.id)+'/readiness','POST',{});
+      if(!graph?.id||!Array.isArray(graph.nodes))throw Error('The readiness check did not return its saved Planning request.');
+      const nodeId=graph.viability?.nodeId||'viability',node=graph.nodes.find(item=>item.id===nodeId),finding=node?.readiness?.viability;
+      const state=graph.viability?.recoveryIssue?'needs_evidence':finding?.state||node?.readiness?.state||'needs_evidence';
+      const question=graph.viability?.recoveryIssue?.message||(state==='awaiting_input'?(finding?.blockingFacts||[]).map(fact=>fact.question+(fact.consequence?'\n'+fact.consequence:'')).join('\n\n'):(finding?.issues||[]).join('\n'));
+      if(graph.viabilityAction?.deployment)rememberReadiness(graph.viabilityAction.deployment);
+      await refresh();
+      const saved=(snapshot?.deployments||[]).find(item=>item.id===task.id)||graph.viabilityAction?.deployment||task;
+      readinessBySchedule.set(task.id,{state,requestId:graph.id,nodeId,question,deploymentRevision:saved.revision});
+      selectedScheduleId=task.id;scheduleMode='inspect';editSource=null;editForm=null;editNotice=null;
+      notify(state==='ready'?'Readiness check recorded.':'Readiness check recorded. Review the remaining questions or source recovery.');
+    }catch(error){mutationError=error.message;notify(error.message,true);}
+    finally{busy=false;if(active)paint();}
+  }
+  function readinessButton(parent,task){
+    const check=add(parent,'button','Check readiness');check.type='button';check.disabled=busy;check.dataset.scheduleReadiness=task.id;
+    check.title='Check the saved task with this schedule’s configured model.';
+    check.addEventListener('click',()=>void checkReadiness(task));
   }
   function chooseSchedule(id){
     if(selectedScheduleId===id&&scheduleMode==='inspect'){selectedScheduleId=null;view.detail.hidden=true;view.detail.replaceChildren();return;}
@@ -222,9 +278,10 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
         busy=true;save.disabled=true;preview.disabled=true;reload.disabled=true;output.textContent='Saving changes...';
         try{
           if(['cron','interval'].includes(proposed.trigger.type))await api('/api/operations/schedule-preview','POST',{trigger:proposed.trigger,count:1});
-          await api('/api/operations/deployments/'+encodeURIComponent(selected.id),'PUT',proposed);
+          const saved=await api('/api/operations/deployments/'+encodeURIComponent(selected.id),'PUT',proposed);
+          rememberReadiness(saved);
           scheduleMode='inspect';editSource=null;editForm=null;editNotice=null;
-          await refresh();notify('Schedule updated. Future admissions use the saved settings.');
+          await refresh();notify(scheduleSavedMessage(saved,'Schedule updated. Future admissions use the saved settings.'));
         }catch(error){
           output.textContent=error.message+(String(error.message).match(/revision|changed|conflict|409/i)?' Reload the current version and review your edits before retrying.':'');
           notify(error.message,true);
@@ -235,6 +292,8 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     const actions=add(view.detail,'div','','next-row');
     const edit=add(actions,'button','Edit schedule');edit.type='button';edit.dataset.scheduleEditOpen=selected.id;
     edit.addEventListener('click',openScheduleEditor);
+    readinessButton(actions,selected);
+    showReadiness(view.detail,selected);
     if(['cron','interval'].includes(selected.trigger?.type)){
       const preview=add(actions,'button','Preview upcoming runs');preview.type='button';preview.dataset.scheduleInspectPreview=selected.id;
       const previewOutput=add(view.detail,'p','','next-help next-schedule-feedback');previewOutput.setAttribute('role','status');
@@ -352,13 +411,15 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       const state=add(controls,'span',task.enabled?'Enabled':'Disabled','next-status-pill');
       state.dataset.state=task.enabled?'running':'saved';
       const toggle=add(controls,'button',task.enabled?'Disable':'Enable');
-      toggle.type='button';toggle.disabled=busy;
+      toggle.type='button';toggle.disabled=busy;toggle.dataset.scheduleToggle=task.id;
       toggle.addEventListener('click',()=>void execute('/api/operations/deployments/'+encodeURIComponent(task.id),'PUT',{
         expectedRevision:task.revision,enabled:!task.enabled,
       }));
       const triggerButton=add(controls,'button','Run now');
-      triggerButton.type='button';triggerButton.disabled=busy;
+      triggerButton.type='button';triggerButton.disabled=busy;triggerButton.dataset.scheduleTrigger=task.id;
       triggerButton.addEventListener('click',()=>void execute('/api/operations/deployments/'+encodeURIComponent(task.id)+'/trigger','POST',{}));
+      readinessButton(controls,task);
+      showReadiness(card,task);
       const removal=add(card,'details','','next-help');
       add(removal,'summary','Remove future scheduling');
       add(removal,'p','Stops future scheduling and cancels unstarted jobs. Running work and job history remain. A removal audit is retained; the schedule cannot be restored from this screen.');
@@ -564,13 +625,15 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       const workflow=await api('/api/workflows/'+encodeURIComponent(id));
       if(!workflow||workflow.id!==id||!Array.isArray(workflow.nodes)||!Array.isArray(workflow.edges))
         throw Error('The selected saved workflow could not be verified. Refresh before scheduling.');
-      await api('/api/operations/deployments','POST',{...request,workflow});
+      const saved=await api('/api/operations/deployments','POST',{...request,workflow});
+      rememberReadiness(saved);
       await refresh();
-      view.preview.textContent='Saved. Schedule available above.';
+      view.preview.textContent=scheduleSavedMessage(saved,'Saved. Schedule available above.');
+      if(typeof saved?.enabled==='boolean')fields.enabled.checked=saved.enabled;
       if(fields.name.value.trim()===request.name)fields.name.value='';
       if(fields.input.value.trim()===request.input)fields.input.value='';
       if(request.deliveryTarget.type==='webhook'){fields.outboundUrl.value='';fields.outboundType.value='local';updateOutboundCreate();}
-      notify('Schedule saved.');
+      notify(scheduleSavedMessage(saved));
     }catch(error){
       view.preview.textContent=error.message;notify(error.message,true);
     }finally{

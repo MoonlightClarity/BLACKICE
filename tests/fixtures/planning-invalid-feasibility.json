@@ -1,0 +1,134 @@
+{
+  "node": {
+    "createdAt": "2026-10-30T16:31:49.376Z",
+    "cycleId": "cycle-1b9f5bf9f26a0f62274f346f89d25dc2",
+    "cycleStage": "feasibility",
+    "id": "cycle-1b9f5bf9f26a0f62274f346f89d25dc2-feasibility",
+    "kind": "viability",
+    "parentId": "cycle-1b9f5bf9f26a0f62274f346f89d25dc2",
+    "prompt": "Prepare a plan for a later response recommending which of two fictional rooms can seat five people. North has 4 seats; South has 6 seats. Both are available at no charge. Use only these supplied facts. No external research or external actions are requested. The eventual response must name the qualifying room, state both capacities, and explain the two-seat difference. Stop after Plan for review. Keep each structured field concise. Create a child question only if a material unresolved issue requires one.",
+    "revision": 1,
+    "title": "Feasibility \u00b7 Plan only \u00b7 Fictional room capacity",
+    "updatedAt": "2026-10-30T16:31:49.376Z"
+  },
+  "nodeId": "cycle-1b9f5bf9f26a0f62274f346f89d25dc2-feasibility",
+  "nodeRevision": 1,
+  "requestId": "75d3074e-029e-4454-806e-fcdc43bbdafb",
+  "template": {
+    "description": "Check the requested outcome, actual capabilities and consequential missing facts. Recorded unknowns permit further analysis, while unresolved essentials hold operational work.",
+    "fields": [
+      {
+        "description": "State the current requested outcome, including any correction or cancellation in later user input.",
+        "grounding": "required",
+        "id": "objective",
+        "label": "Requested outcome",
+        "prompt": "State the current requested outcome, including any correction or cancellation in later user input.",
+        "required": true
+      },
+      {
+        "description": "Separate actual required inputs and hard constraints from preferences. A preferred qualification is not an essential requirement.",
+        "grounding": "required",
+        "id": "essentialInputs",
+        "label": "Essential inputs and preferences",
+        "prompt": "Separate actual required inputs and hard constraints from preferences. A preferred qualification is not an essential requirement.",
+        "required": true
+      },
+      {
+        "description": "Identify the supplied records, earlier answers and relevant evidence inspected before calling a fact missing.",
+        "grounding": "required",
+        "id": "evidenceRecovery",
+        "label": "Evidence already checked",
+        "prompt": "Identify the supplied records, earlier answers and relevant evidence inspected before calling a fact missing.",
+        "required": true
+      },
+      {
+        "description": "Describe a feasible route using actual capabilities and known inputs, or state the material dependency that prevents it.",
+        "grounding": "prospective",
+        "id": "feasiblePath",
+        "label": "Plausible route",
+        "prompt": "Describe a feasible route using actual capabilities and known inputs, or state the material dependency that prevents it.",
+        "required": true
+      },
+      {
+        "description": "Use supported ordinary inferences. Do not invent consequential personal facts. Explain any truthful omission the requested task permits.",
+        "grounding": "prospective",
+        "id": "inferenceLimits",
+        "label": "Inference and its limits",
+        "prompt": "Use supported ordinary inferences. Do not invent consequential personal facts. Explain any truthful omission the requested task permits.",
+        "required": true
+      },
+      {
+        "description": "Identify useful work that does not depend on an unresolved essential fact. Do not claim it was performed.",
+        "grounding": "prospective",
+        "id": "independentWork",
+        "label": "Independent useful work",
+        "prompt": "Identify useful work that does not depend on an unresolved essential fact. Do not claim it was performed.",
+        "required": true
+      },
+      {
+        "description": "Identify the consequential input, source or capability change that would require reconsideration.",
+        "grounding": "prospective",
+        "id": "recheckWhen",
+        "label": "What would change this check",
+        "prompt": "Identify the consequential input, source or capability change that would require reconsideration.",
+        "required": true
+      }
+    ],
+    "kind": "viability",
+    "label": "Feasibility"
+  },
+  "sources": [
+    {
+      "id": "request:75d3074e-029e-4454-806e-fcdc43bbdafb",
+      "kind": "user_request",
+      "provenance": {
+        "at": "2026-10-30T16:31:49.363Z",
+        "author": "local",
+        "kind": "human"
+      },
+      "text": "Prepare a plan for a later response recommending which of two fictional rooms can seat five people. North has 4 seats; South has 6 seats. Both are available at no charge. Use only these supplied facts. No external research or external actions are requested. The eventual response must name the qualifying room, state both capacities, and explain the two-seat difference. Stop after Plan for review. Keep each structured field concise. Create a child question only if a material unresolved issue requires one.",
+      "title": "Requested outcome",
+      "verified": false
+    },
+    {
+      "contentHash": "453c68cc3a7d55eca881a802a7cd1e31902b920362c4ea9a38cc8a7fbbe4a483",
+      "id": "cycle:context:cycle-1b9f5bf9f26a0f62274f346f89d25dc2",
+      "kind": "source",
+      "provenance": {
+        "kind": "runtime_evidence"
+      },
+      "text": "{\"title\":\"Plan only \u00b7 Fictional room capacity\",\"objective\":\"Prepare a plan for a later response recommending which of two fictional rooms can seat five people. North has 4 seats; South has 6 seats. Both are available at no charge. Use only these supplied facts. No external research or external actions are requested. The eventual response must name the qualifying room, state both capacities, and explain the two-seat difference. Stop after Plan for review. Keep each structured field concise. Create a child question only if a material unresolved issue requires one.\",\"acceptanceCriteria\":[],\"parentStage\":null,\"originalRequest\":\"Prepare a plan for a later response recommending which of two fictional rooms can seat five people. North has 4 seats; South has 6 seats. Both are available at no charge. Use only these supplied facts. No external research or external actions are requested. The eventual response must name the qualifying room, state both capacities, and explain the two-seat difference. Stop after Plan for review. Keep each structured field concise. Create a child question only if a material unresolved issue requires one.\",\"scope\":\"Analytical stage work. External effects require the separate operational workflow.\"}",
+      "title": "Purpose and completion criteria \u00b7 Plan only \u00b7 Fictional room capacity",
+      "verified": false
+    }
+  ],
+  "inputs": [],
+  "challenges": [],
+  "cycleContext": {
+    "acceptanceCriteria": [],
+    "children": [],
+    "criterionResults": [],
+    "cycleId": "cycle-1b9f5bf9f26a0f62274f346f89d25dc2",
+    "effectReceipts": [],
+    "execution": {
+      "required": false,
+      "state": "not_required"
+    },
+    "objective": "Prepare a plan for a later response recommending which of two fictional rooms can seat five people. North has 4 seats; South has 6 seats. Both are available at no charge. Use only these supplied facts. No external research or external actions are requested. The eventual response must name the qualifying room, state both capacities, and explain the two-seat difference. Stop after Plan for review. Keep each structured field concise. Create a child question only if a material unresolved issue requires one.",
+    "prerequisites": [],
+    "recoveryIssue": null,
+    "recursion": {
+      "cycleCount": 1,
+      "depth": 0,
+      "maxCycles": 24,
+      "maxDepth": 4,
+      "maxPassesPerStage": 3,
+      "maxProviderTurns": 160
+    },
+    "requiredAcceptanceCriteria": [],
+    "stageId": "feasibility",
+    "title": "Plan only \u00b7 Fictional room capacity"
+  },
+  "partialOutput": "```json\n{\n  \"values\": {\n    \"objective\": \"Prepare a plan for a later response recommending which of two fictional rooms can seat five people. North has 4 seats; South has 6 seats. Both are available at no charge. The eventual response must name the qualifying room, state both capacities, and explain the two-seat difference.\",\n    \"essentialInputs\": \"North room capacity: 4 seats; South room capacity: 6 seats; both available at no charge; need to recommend which room can seat five people\",\n    \"evidenceRecovery\": \"Source: request:75d3074e-029e-4454-806e-fcdc43bbdafb (user request) and cycle:context:cycle-1b9f5bf9f26a0f62274f346f89d25dc2 (context source)\",\n    \"feasiblePath\": \"Identify South room as the qualifying room because it has 6 seats which can accommodate five people, while North has only 4 seats which cannot seat five. The plan will recommend South and explain the capacity difference of 2 seats.\",\n    \"inferenceLimits\": \"Standard inference: a room with 6 seats can seat five people; a room with 4 seats cannot. No external knowledge required beyond the provided facts.\",\n    \"independentWork\": \"Calculate which room can seat five people based on seat counts (4 vs 6). This is a straightforward comparison using the provided numbers.\",\n    \"recheckWhen\": \"If new information about room capacities is provided, or if the requirement changes to a different number of seats, the plan would need revision.\"\n  },\n  \"grounding\": [\n    {\n      \"field\": \"objective\",\n      \"sourceId\": \"request:75d3074e-029e-4454-806e-fcdc43bbdafb\"\n    },\n    {\n      \"field\": \"essentialInputs\",\n      \"sourceId\": \"request:75d3074e-029e-4454-806e-fcdc43bbdafb\"\n    },\n    {\n      \"field\": \"evidenceRecovery\",\n      \"sourceId\": \"request:75d3074e-029e-4454-806e-fcdc43bbdafb\"\n    },\n    {\n      \"field\": \"feasiblePath\",\n      \"sourceId\": \"request:75d3074e-029e-4454-806e-fcdc43bbdafb\"\n    },\n    {\n      \"field\": \"inferenceLimits\",\n      \"sourceId\": \"request:75d3074e-029e-4454-806e-fcdc43bbdafb\"\n    },\n    {\n      \"field\": \"independentWork\",\n      \"sourceId\": \"request:75d3074e-029e-4454-806e-fcdc43bbdafb\"\n    },\n    {\n      \"field\": \"recheckWhen\",\n      \"sourceId\": \"request:75d3074e-029e-4454-806e-fcdc43bbdafb\"\n    }\n  ],\n  \"openQuestions\": [],\n  \"challengeResponses\": [\n    {\n      \"edgeId\": \"capacity-verification\",\n      \"disposition\": \"addressed\",\n      \"note\": \"The plan correctly identifies South as the only room that can seat five people based on the 6-seat capacity, while North (4 seats) cannot accommodate five people.\"\n    }\n  ],\n  \"requirements\": [\n    {\n      \"fieldId\": \"objective\",\n      \"sourceId\": \"request:75d3074e-029e-4454-806e-fcdc43bbdafb\",\n      \"dependentNodeIds\": [\"cycle-1b9f5bf9f26a0f62274f346f89d25dc2\"]\n    },\n    {\n      \"fieldId\": \"essentialInputs\",\n      \"sourceId\": \"request:75d3074e-029e-4454-806e-fcdc43bbdafb\",\n      \"dependentNodeIds\": [\"cycle-1b9f5bf9f26a0f62274f346f89d25dc2\"]\n    }\n  ]\n}\n```",
+  "workflowNodeIds": []
+}

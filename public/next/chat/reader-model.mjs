@@ -1,5 +1,7 @@
 import { conversationRuns, messagesOfRun } from './model.mjs';
+import { recordedChatModels } from './model.mjs';
 import { projectPlanningActivity } from './planning-timeline.mjs';
+import { contextOptions, contextStatistics, compactionStatistics } from '../core/context-controls.mjs';
 const records = value => Array.isArray(value) ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item)) : [];
 
 /** Convert a full archived execution family into a chat-only transfer.
@@ -8,19 +10,31 @@ const records = value => Array.isArray(value) ? value.filter(item => item && typ
 export function projectFamily(family) {
   const runs=conversationRuns(family);
   const projected=runs.map(run=>{
-    const messages=messagesOfRun(run);
+    const messages=messagesOfRun(run),models=recordedChatModels(run);
     const nodes=Object.fromEntries(Object.entries(run.nodes||{}).map(([id,node])=>[
-      id,{status:node.status,threadId:node.threadId,resumeThreadId:node.resumeThreadId,
-        turnId:node.turnId,turnStatus:node.turnStatus,runtimePhase:node.runtimePhase,model:node.resolvedModel,
+      id,{status:node.status,viabilityHeld:node.viabilityHeld===true,threadId:node.threadId,resumeThreadId:node.resumeThreadId,codexHistory:node.codexHistory,
+        turnId:node.turnId,turnStatus:node.turnStatus,runtimePhase:node.runtimePhase,model:models[id]?.model,resolvedModel:node.resolvedModel,
+        modelEvidence:models[id],
+        contextStatus:contextStatistics(node.contextStatus||node.context),lastCompaction:compactionStatistics(node.lastCompaction),
         output:node.output},
     ]));
     return {
       id:run.id,taskId:run.taskId,parentRunId:run.parentRunId,retryOf:run.retryOf,
       createdAt:run.createdAt,updatedAt:run.updatedAt,
       input:run.input,status:run.status,settled:run.settled,output:run.output,
+      planningExecutionMode:run.planningExecutionMode,
+      viability:run.viability?.awaitingInput===true?{awaitingInput:true}:undefined,
+      responseCycle:run.responseCycle&&{
+        state:run.responseCycle.state,requestId:run.responseCycle.requestId,cycleId:run.responseCycle.cycleId,
+        title:String(run.responseCycle.title||'').slice(0,240),summary:String(run.responseCycle.summary||'').slice(0,1200),
+        planRef:run.responseCycle.planRef&&{requestId:run.responseCycle.planRef.requestId,nodeId:run.responseCycle.planRef.nodeId,
+          nodeRevision:run.responseCycle.planRef.nodeRevision,responseId:run.responseCycle.planRef.responseId},
+      },
       attachmentIds:Array.isArray(run.attachmentIds)?run.attachmentIds.filter(id=>typeof id==='string'):[],
       workflow:{id:run.workflow?.id,name:run.workflow?.name,
-        nodes:(run.workflow?.nodes||[]).map(n=>({id:n.id,type:n.type,name:n.name,model:n.model}))},
+        settings:{...(run.workflow?.settings?.context?{context:contextOptions(run.workflow.settings.context)}:{}),codexHistory:run.workflow?.settings?.codexHistory},
+        nodes:(run.workflow?.nodes||[]).map(n=>({id:n.id,type:n.type,name:n.name,model:n.model,codexHistory:n.codexHistory,
+          ...(n.context?{context:contextOptions(n.context)}:{})}))},
       // The worker returns bounded task metadata, never an entire state history
       // or tool/agent trace. Artifacts themselves are fetched only on click.
       taskState:run.taskState&&{

@@ -16,6 +16,7 @@ test('the production server serves every stylesheet and script linked by the Nex
   const runtime = new EventEmitter();
   runtime.status = () => ({ connected: false, authenticated: false, models: [] });
   runtime.start = async () => runtime.status(); runtime.close = async () => {};
+  runtime.runAgent = async () => assert.fail('Entry asset delivery must never start a model.');
   const desktop = new EventEmitter();
   desktop.status = () => ({ available: false, enabled: false });
   desktop.setEnabled = async () => desktop.status();

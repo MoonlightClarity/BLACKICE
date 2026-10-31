@@ -34,7 +34,7 @@ test('a fresh successful attempt explains the expected pre-action uncertainty wi
   const restored = await f.open(), restoredHandler = f.handlerFor(restored);
   assert.deepEqual(await restored.get('send-task'), persisted);
   const recoveredRead = parsed(await f.call(restoredHandler, { action: 'read' })); assert.equal(recoveredRead.externalActionResult, undefined); assert.equal(recoveredRead.externalActions[0].status, 'uncertain');
-  assert.match(await restored.getContext('send-task'), /Inspect the destination before any retry/);
+  assert.match(await restored.getContext('send-task', { executionGuardrails: true }), /Inspect the destination before any retry/);
   const duplicate = await f.external(restoredHandler, { receiptId: prepare.receiptId, operation: 'attempt' }, restored);
   assert.equal(duplicate.success, false); assert.equal(duplicate.code, 'EXTERNAL_ACTION_RECONCILE'); assert.equal(parsed(duplicate).externalActionResult, undefined);
   assert.equal((await restored.get('send-task')).externalActions[0].attempts, 1);

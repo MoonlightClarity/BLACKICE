@@ -21,8 +21,9 @@ async function fixture(t) {
   return { store, cwd, directory, taskId: initial.taskId, get: () => store.get(initial.taskId),
     async edit(operations) { const state = await store.get(initial.taskId); return store.editPlan(initial.taskId, { operations }, { expectedRevision: state.revision, source: 'human', actor: human }); },
     async guard(nodeId = 'left-worker', scopeStepId = 'left') {
-      const guard = await createPlanningWorkerGuard({ store, taskId: initial.taskId, runId: 'run-one', nodeId, label: nodeId, scopeStepId });
-      const handler = createTaskToolHandler({ store, taskId: initial.taskId, runId: 'run-one', nodeId, scopeStepId, worker: Boolean(scopeStepId) });
+      // This suite explicitly tests guarded correction delivery, not advisory defaults.
+      const guard = await createPlanningWorkerGuard({ store, taskId: initial.taskId, runId: 'run-one', nodeId, label: nodeId, scopeStepId, executionGuardrails: true });
+      const handler = createTaskToolHandler({ store, taskId: initial.taskId, runId: 'run-one', nodeId, scopeStepId, worker: Boolean(scopeStepId), executionGuardrails: true });
       return { guard, async task(args) { const call = tool('relay_task', args), denied = await guard.before(call); return denied || guard.after(call, await handler(call)); } };
     }
   };

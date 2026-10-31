@@ -85,7 +85,7 @@ test('outline authoring rejects malformed structure, runtime fields and divergen
     draft => { draft.outline.steps[0].result = 'x'.repeat(1001); }
   ];
   for (const mutate of mutations) { const draft = taskPlanMethodDraft(source()); mutate(draft); await assert.rejects(methods.create(draft)); }
-  const huge = taskPlanMethodDraft(source()); huge.outline = { layout: 'parallel', steps: Array.from({ length: 100 }, (_, index) => action(`long-${index}`, `Long action ${index}`, { doneWhen: 'x'.repeat(1000) })) }; delete huge.steps;
+  const huge = taskPlanMethodDraft(source()); huge.outline = { layout: 'parallel', steps: Array.from({ length: 200 }, (_, index) => action(`long-${index}`, `Long action ${index}`, { doneWhen: 'x'.repeat(1000), result: 'y'.repeat(1000) })) }; delete huge.steps;
   await assert.rejects(methods.create(huge), { code: 'TASK_PLAN_LIMIT', status: 413 }); assert.equal(methods.status().custom, 0);
 });
 

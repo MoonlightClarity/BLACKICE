@@ -14,6 +14,7 @@ const held = () => { let resolve; const promise = new Promise(done => { resolve 
 const quote = text => process.platform === 'win32' ? `'${text.replaceAll("'", "''")}'` : `'${text.replaceAll("'", "'\\''")}'`;
 const nodeCommand = (script, args) => `${process.platform === 'win32' ? '& ' : ''}${quote(process.execPath)} ${quote(script)} ${args.map(quote).join(' ')}`;
 class Runtime extends EventEmitter {
+  async runAgent() { assert.fail('This server fixture must not execute a model.'); }
   status() { return { connected: false, authenticated: false, activeTurns: 0, models: [] }; }
   async start() { return this.status(); }
   async close() {}

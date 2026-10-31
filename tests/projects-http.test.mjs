@@ -15,6 +15,7 @@ async function fixture(t,{execute,externalReceipt=false}={}){
     status(){return{connected:true,authenticated:true,defaultModel:'project-fixture-model',models:[{model:'project-fixture-model'}]};}
     async start(){return this.status();}async close(){}
     async runAgent(options){
+      assert.notEqual(options.responseOnly,true,'This fixture exercises project implementation and independent review with automatic Planning off.');
       calls.push(options);
       assert.ok(!options.dynamicTools.some(tool=>tool.name==='relay_project'),'project workers cannot recursively orchestrate projects');
       if(execute)return execute(options,calls.length);
@@ -53,6 +54,9 @@ async function fixture(t,{execute,externalReceipt=false}={}){
   }
   const boot=async()=>{
     app=await createHarnessServer({port:0,dataDir,defaultCwd:cwd,runtime:new Runtime(),desktop:new Desktop(),autoAttachDesktop:false});apps.push(app);
+    // Project orchestration is the subject here; the real engine still performs every local action and review.
+    const startRun=app.engine.startRun.bind(app.engine);
+    app.engine.startRun=value=>startRun({...value,planningMode:'off'});
     await app.learning.updateSettings({mode:'manual'});url=await app.listen();const home=await fetch(url);cookie=home.headers.get('set-cookie').split(';',1)[0];await home.arrayBuffer();
   };
   await boot();

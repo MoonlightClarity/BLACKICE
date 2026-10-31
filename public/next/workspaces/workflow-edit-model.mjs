@@ -85,7 +85,7 @@ export function applyWorkflowStageEdits(workflow, {name, nodes = {}, workflowSet
       else {
         const context=input.context;
         if(!context||typeof context!=='object'||Array.isArray(context)
-          ||!['model','900k','custom'].includes(context.preset))
+          ||!['model','extended','900k','custom'].includes(context.preset))
           throw Error('Choose a supported context window preset.');
         if(context.autoCompact!==undefined&&typeof context.autoCompact!=='boolean')
           throw Error('Automatic compaction must be enabled or disabled.');

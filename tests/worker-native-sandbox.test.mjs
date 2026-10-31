@@ -27,11 +27,18 @@ function nativeFixture(t, { approvalRequests = [] } = {}) {
         if (!method) { const complete = approvals.get(id); approvals.delete(id); complete?.(); return; }
         if (method === 'initialize') return reply(id, { userAgent: 'sandbox-fixture/1.0.0' });
         if (method === 'account/read') return reply(id, { requiresOpenaiAuth: false });
+        if (method === 'config/read') return reply(id, { config: {} });
+        if (method === 'skills/list') return reply(id, { data: (params.cwds || []).map(cwd => ({ cwd, skills: [], errors: [] })) });
+        if (method === 'thread/read') {
+          const state = threads.get(params.threadId);
+          if (!state) return send({ id, error: { code: -32602, message: 'Unknown fixture thread.' } });
+          return reply(id, { thread: { id: params.threadId, cwd: state.cwd, model: 'fixture' } });
+        }
         if (method === 'model/list') return reply(id, { data: [{ id: 'fixture', model: 'fixture', isDefault: true, contextWindowTokens: 128000 }], nextCursor: null });
         if (method === 'thread/start' || method === 'thread/resume') {
           const threadId = params.threadId || `fixture-${++nextId}`;
           if (!['read-only', 'workspace-write', 'danger-full-access'].includes(params.sandbox) || method === 'thread/resume' && !threads.has(threadId)) return send({ id, error: { code: -32602, message: 'Invalid fixture thread or sandbox.' } });
-          threads.set(threadId, { sandbox: params.sandbox });
+          threads.set(threadId, { sandbox: params.sandbox, cwd: params.cwd || threads.get(threadId)?.cwd });
           return reply(id, { thread: { id: threadId, ephemeral: params.ephemeral === true }, model: 'fixture' });
         }
         if (method === 'turn/start' || method === 'thread/compact/start') {

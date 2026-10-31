@@ -52,7 +52,7 @@ function request(action, tabId = 'chat') {
     ...(['fill', 'type', 'wait'].includes(action) ? { text: 'Owned test input' } : {}),
     ...(action === 'select' ? { value: 'selected' } : {}),
     ...(action === 'press' ? { key: 'Enter' } : {}),
-    ...(action === 'type' ? { expectedUrl: 'https://chatgpt.com/c/owned', expectedDocumentId: 'chat:1' } : {}),
+    ...(['type', 'debug_reset', 'stop', 'take_ownership', 'transfer_ownership'].includes(action) ? { expectedUrl: 'https://chatgpt.com/c/owned', expectedDocumentId: 'chat:1' } : {}),
     ...(action === 'upload' ? { paths: ['/owned/file.txt'] } : {}),
   };
 }

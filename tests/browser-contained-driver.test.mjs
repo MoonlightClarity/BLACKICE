@@ -11,6 +11,24 @@ import { BrowserWorkspace, createBrowserToolHandler } from '../lib/browser.mjs';
 import { BrowserRouter } from '../desktop/browser-router.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
+
+function rememberFixtureRef(driver, tab, ref, frame = tab.window.webContents.mainFrame) {
+  const stamp = driver.frameStamp(tab, frame);
+  assert.ok(stamp, 'The fixture observation must identify a current frame.');
+  driver.rememberReferences(tab, [{ stamp, elements: [{ ref }] }], `${tab.id}:${tab.revision}`);
+}
+function pointerProof(method, params, ref, viewport = { width: 1280, height: 900 }) {
+  if (method === 'Page.getLayoutMetrics') return { cssLayoutViewport: { pageX: 0, pageY: 0, clientWidth: viewport.width, clientHeight: viewport.height } };
+  if (method === 'DOM.getNodeForLocation') { assert.ok(Number.isFinite(params.x) && Number.isFinite(params.y)); return { backendNodeId: 99 }; }
+  if (method === 'DOM.resolveNode') { assert.equal(params.backendNodeId, 99); return { object: { objectId: 'observed-pointer-control' } }; }
+  if (method === 'Runtime.callFunctionOn') {
+    assert.equal(params.objectId, 'observed-pointer-control'); assert.match(params.functionDeclaration, /pointer-verify/);
+    assert.equal(params.arguments[1].value, ref);
+    return { result: { value: { verified: true } } };
+  }
+  return {};
+}
+
 async function fixture(t, { command = async () => ({}), loadURL = async () => {}, loadExtension = async () => ({ id: 'owned-compatibility-extension' }), limits = {}, closeError } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-contained-driver-')), windows = [], session = new EventEmitter(), extensionLoads = [];
   session.extensions = { loadExtension: (...args) => { extensionLoads.push(args); return loadExtension(...args); } };
@@ -259,7 +277,7 @@ test('a detached renderer ref preserves its message across a boundary that loses
     try { return JSON.parse(JSON.stringify(await vm.runInContext(code, context))); }
     catch (cause) { throw JSON.parse(JSON.stringify(cause)); }
   };
-  tab.refs.set('old-media', frame);
+  rememberFixtureRef(driver, tab, 'old-media', frame);
   const browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());
   const result = await createBrowserToolHandler({ browser })({ name: 'relay_browser', arguments: { action: 'click', tabId: tab.id, ref: 'old-media' } });
   assert.equal(result.success, false); assert.equal(result.code, 'BROWSER_REF_STALE');
@@ -355,7 +373,7 @@ test('unexpected renderer failures retain their message without trusting a page-
     try { return JSON.parse(JSON.stringify(await vm.runInContext(code, context))); }
     catch (cause) { throw JSON.parse(JSON.stringify(cause)); }
   };
-  tab.refs.set('media', frame);
+  rememberFixtureRef(driver, tab, 'media', frame);
   const browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());
   const result = await createBrowserToolHandler({ browser })({ name: 'relay_browser', arguments: { action: 'click', tabId: tab.id, ref: 'media' } });
   assert.equal(result.success, false); assert.equal(result.code, 'BROWSER_LAYOUT_FAILED');
@@ -540,6 +558,7 @@ test('direct text enters the observed document through browser input without ech
 test('form edits and hover enforce supplied document identity before touching an observed ref', async t => {
   const { driver } = await fixture(t), tab = driver.newTab('https://careers.example.test/application'); await tab.loading;
   const effects = [], guards = [];
+  rememberFixtureRef(driver, tab, 'observed-field');
   driver.element = async (_tab, args, action) => { effects.push(action); return { frame: {}, result: action === 'fill' ? { filled: true } : action === 'select' ? { selected: args.value } : { x: 20, y: 20 } }; };
   driver.capture = async () => ({ retries: 0 });
   driver.browserPoint = async () => ({ x: 20, y: 20 });
@@ -649,7 +668,8 @@ test('cancelled wheel viewport work never dispatches native input later', async 
 });
 
 test('agent, unguarded, and reference clicks retain their post-action page inspection', async t => {
-  const { driver, windows } = await fixture(t), tab = driver.newTab('https://example.test/'); await tab.loading;
+  const { driver, windows } = await fixture(t, { command: (method, params) => pointerProof(method, params, 'observed-control') }), tab = driver.newTab('https://example.test/'); await tab.loading;
+  rememberFixtureRef(driver, tab, 'observed-control');
   const guard = { tabId: tab.id, expectedUrl: 'https://example.test/', expectedDocumentId: `${tab.id}:${tab.revision}` };
   windows[0].webContents.executeJavaScript = async () => ({ width: 1280, height: 900 });
   let waits = 0, settles = 0, snapshots = 0, disposed = 0;
@@ -801,7 +821,7 @@ async function popupViewportFixture(t, { viewport = { width: 0, height: 0 }, con
     if (method === 'Emulation.setDeviceMetricsOverride') { state.viewport = { width: params.width, height: params.height }; state.emulated = true; }
     await command(method, params, state);
     if (method === 'Emulation.clearDeviceMetricsOverride') state.emulated = false;
-    return {};
+    return pointerProof(method, params, 'complete', state.viewport);
   } });
   const parent = f.driver.newTab('https://parent.example.test/'); await parent.loading;
   const options = parent.window.webContents.openHandler({ url: 'https://identity.example.test/' }).overrideBrowserWindowOptions;
@@ -1255,11 +1275,12 @@ test('navigation invalidates a chooser and a late upload path rejection sends no
 
 test('visible-ref uploads enforce the observed document before reading and again before assigning file bytes', async t => {
   const { driver, windows, directory } = await fixture(t), tab = driver.newTab('https://example.test/'); await tab.loading;
+  rememberFixtureRef(driver, tab, 'observed-file');
   const file = path.join(directory, 'chosen.txt'); await writeFile(file, 'Owned selected bytes');
   const request = { action: 'upload', tabId: tab.id, ref: 'observed-file', expectedUrl: 'https://example.test/', expectedDocumentId: `${tab.id}:${tab.revision}`, paths: [file] }; let checks = 0;
   await assert.rejects(driver.perform({ ...request, expectedDocumentId: 'previous-document' }, { validateUploadPath: async () => { checks++; } }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
   assert.equal(checks, 0);
-  await assert.rejects(driver.perform(request, { validateUploadPath: async () => { if (++checks === 2) tab.revision++; } }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+  await assert.rejects(driver.perform(request, { validateUploadPath: async () => { if (++checks === 2) driver.navigationChanged(tab, true); } }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
   assert.equal(checks, 2); assert.equal(windows[0].protocol.some(item => item.method === 'Runtime.callFunctionOn' || item.method === 'DOM.setFileInputFiles'), false);
 });
 
@@ -1503,11 +1524,12 @@ async function pointerFixture(t, { beforeInput, inputError, nested = false, ifra
     if (method === 'Page.getFrameTree') return sessionId ? { frameTree: { frame: { id: 'owned-frame', url: childURL } } } : { frameTree: { frame: { id: 'root', url: window.url }, childFrames: [{ frame: { id: 'owned-frame', url: childURL } }] } };
     if (method === 'Page.createIsolatedWorld') return { executionContextId: nested ? 41 : 42 };
     if (method === 'Input.dispatchMouseEvent' && params.type === 'mousePressed' && inputError) throw inputError;
-    return {};
+    return pointerProof(method, params, 'current-frame-button', { width: 300, height: 150 });
   } });
   const tab = f.driver.newTab('https://parent.example.test/'); await tab.loading;
   const main = tab.window.webContents.mainFrame, child = { parent: main, processId: 2, routingId: 2, url: childURL, name: '', frames: [], framesInSubtree: [], executeJavaScript: main.executeJavaScript };
   main.url = tab.url; main.frames = [child]; main.framesInSubtree = [main, child];
+  rememberFixtureRef(f.driver, tab, 'current-frame-button', child);
   tab.window.webContents.executeJavaScript = async () => ({ width: 1280, height: 900 });
   const guard = { browser: 'relay', tabId: tab.id, expectedUrl: tab.url, expectedDocumentId: `${tab.id}:${tab.revision}` };
   f.driver.element = async () => ({ frame: child, result: { x: 150, y: 75, viewportWidth: 300, viewportHeight: 150 } });
@@ -1628,4 +1650,106 @@ test('navigation while a local preview is captured retires the image before enco
   const request = { action: 'screenshot', browser: 'relay', tabId: tab.id, expectedUrl: tab.url, expectedDocumentId: tab.id + ':' + tab.revision, preview: true };
   await assert.rejects(f.driver.perform(request, { source: 'user' }), /page changed/);
   assert.equal(encodings, 0);
+});
+
+test('completed owner cleanup closes live and suspended task tabs, removes empty folders and is idempotent', async t => {
+  const { driver, directory } = await fixture(t), owner = taskOwner('completed-cleanup');
+  const first = await driver.perform({ action: 'open', url: 'https://done.example/' }, { owner });
+  const child = await driver.perform({ action: 'open', url: 'https://done.example/child', parentTabId: first.tabId }, { owner });
+  const folderId = driver.tabs.get(first.tabId).folderId;
+  await driver.releaseOwner(owner);
+  const result = await driver.releaseOwner(owner, { status: 'completed' });
+  assert.deepEqual(result.closed, [first.tabId, child.tabId]); assert.equal(driver.tabs.size, 0); assert.equal(driver.folders.has(folderId), false);
+  assert.deepEqual((await driver.releaseOwner(owner, { status: 'completed' })).closed, []);
+  const saved = JSON.parse(await readFile(path.join(directory, 'browser-tabs.json'), 'utf8'));
+  assert.equal(saved.tabs.length, 0); assert.ok(!saved.folders.some(f => f.id === folderId));
+});
+test('completion retains personal, other worker/run, human-used, chat, pending and downloading tabs', async t => {
+  const { driver } = await fixture(t, { limits: { maxLiveTabs: 20, maxTaskTabs: 20 } }), owner = taskOwner('safe-cleanup');
+  const open = async (name, scopedOwner = owner) => (await driver.perform({ action: 'open', url: 'https://' + name + '.example/' }, { owner: scopedOwner })).tabId;
+  const done = await open('done'), pinned = await open('pinned'), pending = await open('pending'), download = await open('download'), chat = await open('chat');
+  const sibling = await open('sibling', taskOwner('safe-cleanup', 'other')), newer = await open('newer', { ...owner, runId: 'newer' });
+  const human = driver.newTab('https://human.example/'); await human.loading;
+  driver.tabs.get(pinned).userPinned = true; driver.tabs.get(pending).pendingInteraction = { kind: 'http_auth', status: 'pending' };
+  driver.tabs.get(chat).purpose = 'chat-mode'; driver.downloads.push({ tabId: download, status: 'downloading' });
+  const folder = driver.tabs.get(done).folderId, result = await driver.releaseOwner(owner, { status: 'completed' });
+  assert.deepEqual(result.closed, [done]); assert.equal(result.retained.length, 3); assert.ok(driver.folders.has(folder));
+  for (const id of [pinned, pending, download, chat, sibling, newer, human.id]) assert.ok(driver.tabs.has(id), id);
+  driver.tabs.get(pending).pendingInteraction = null; driver.downloads[0].status = 'completed';
+});
+test('failed and interrupted cleanup suspends instead of deleting resumable tabs', async t => {
+  const { driver } = await fixture(t), owner = taskOwner('resume-cleanup');
+  for (const status of ['failed', 'interrupted', 'cancelled']) {
+    const tab = await driver.perform({ action: 'open', url: 'https://resume.example/' }, { owner });
+    const result = await driver.releaseOwner(owner, { status });
+    assert.ok(result.suspended.includes(tab.tabId)); assert.ok(driver.tabs.has(tab.tabId)); assert.equal(driver.tabs.get(tab.tabId).window, null);
+  }
+});
+test('paused and awaiting-input cleanup retains the live page without discarding its form state', async t => {
+  const { driver } = await fixture(t), owner = taskOwner('paused-cleanup');
+  const result = await driver.perform({ action: 'open', url: 'https://form.example/' }, { owner });
+  for (const status of ['paused', 'awaiting_input', 'running']) {
+    const receipt = await driver.releaseOwner(owner, { status });
+    assert.equal(receipt.suspended.length, 0); assert.ok(driver.tabs.get(result.tabId).window); assert.equal(receipt.retained.length, 1);
+  }
+});
+
+test('tab diagnostics never evaluate or reload a hung page and preserve ownership boundaries', async t => {
+  const { driver, windows } = await fixture(t); await driver.init();
+  const owner = { taskId: 'debug-task', runId: 'debug-run', nodeId: 'debug-node' };
+  const foreign = { taskId: 'foreign-task', runId: 'foreign-run', nodeId: 'foreign-node' };
+  const browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());
+  const opened = await browser.perform({ action: 'open', browser: 'relay', url: 'https://example.test/' }, { owner });
+  const tab = driver.tabs.get(opened.tabId), wc = windows[0].webContents; wc.id = 101;
+  const before = { commands: windows[0].protocol.length, loads: windows[0].loads.length };
+  wc.emit('console-message', {}, { level:'error', message:'TypeError: failed to fetch', sourceId:'https://example.test/main.js', lineNumber:42 });
+  driver.recordNetwork('response', { webContentsId:101, id:17, url:'https://example.test/backend-api/conversation',statusCode:200,resourceType:'xhr' });
+  wc.emit('unresponsive');
+  let value = await browser.perform({ action:'diagnostics', browser:'relay', tabId:tab.id }, { owner });
+  assert.equal(value.debug.events.length,3); assert.equal(value.debug.events[0].kind,'console');
+  assert.equal(value.debug.events[1].status,200); assert.equal(value.debug.events[2].kind,'unresponsive');
+  assert.deepEqual({ commands:windows[0].protocol.length, loads:windows[0].loads.length },before);
+  await assert.rejects(browser.perform({ action:'diagnostics',tabId:tab.id },{owner:foreign}),{code:'BROWSER_TAB_OWNERSHIP'});
+  await assert.rejects(browser.perform({ action:'debug_reset',tabId:tab.id,expectedUrl:opened.url,expectedDocumentId:'wrong' },{owner}),{code:'BROWSER_INPUT_DOCUMENT_CHANGED'});
+  value=await browser.perform({action:'debug_reset',tabId:tab.id,expectedUrl:opened.url,expectedDocumentId:opened.documentId},{owner});
+  assert.equal(value.debug.events.length,0); assert.equal(value.receipt.clearedThrough,3);
+  let stopped=0;wc.stop=()=>stopped++;
+  await browser.perform({action:'stop',tabId:tab.id,expectedUrl:opened.url,expectedDocumentId:opened.documentId},{owner});assert.equal(stopped,1);
+  tab.credentialCaptureBlocked=true;
+  wc.emit('console-message', {}, {level:'error',message:'must not collect'});
+  await assert.rejects(browser.perform({action:'diagnostics',tabId:tab.id},{owner}),{code:'BROWSER_DIAGNOSTICS_PROTECTED'});
+  tab.credentialCaptureBlocked=false; assert.equal(tab.debugEvidence.snapshot().events.length,0);
+  tab.rendererFailure={reason:'crashed',exitCode:1};
+  value=await browser.perform({action:'diagnostics',tabId:tab.id},{owner}); assert.equal(value.rendererGone,true);
+});
+
+test('explicit ownership changes guard identities, preserve unrelated tabs and follow current cleanup ownership', async t => {
+  const { driver, directory } = await fixture(t); await driver.init();
+  const browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());
+  const owner = { taskId: 'owner-transfer', nodeId: 'node', runId: 'run' };
+  const foreign = { taskId: 'other-transfer', nodeId: 'node', runId: 'run' };
+  const human = driver.newTab('https://example.com/human', { humanCreated: true });
+  const unrelated = driver.newTab('https://example.com/unrelated', { humanCreated: true });
+  const get = () => driver.status().tabs.find(x => x.tabId === human.id);
+  const args = () => ({ action: 'take_ownership', tabId: human.id, expectedUrl: get().url, expectedDocumentId: get().documentId });
+  await assert.rejects(browser.perform({ ...args(), expectedDocumentId: 'wrong' }, { owner }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+  const taken = await browser.perform(args(), { owner });
+  assert.deepEqual(human.owner, owner); assert.equal(human.humanCreated, false); assert.equal(human.userPinned, false);
+  assert.equal(taken.ownershipReceipt.tabId, human.id);
+  assert.equal(unrelated.owner, null);
+  await browser.perform(args(), { owner });
+  await assert.rejects(browser.perform(args(), { owner: foreign }), { code: 'BROWSER_TAB_OWNERSHIP' });
+  const transfer = { ...args(), action: 'transfer_ownership', destination: 'user' };
+  await browser.perform(transfer, { owner });
+  assert.equal(human.owner, null); assert.equal(human.humanCreated, true);
+  await driver.releaseOwner(owner, { status: 'completed' }); assert.ok(driver.tabs.has(human.id));
+  await browser.perform(args(), { owner });
+  const target = driver.newTab('https://example.com/destination', { owner: foreign });
+  await assert.rejects(browser.perform({ ...args(), action: 'transfer_ownership', destination: 'task', destinationTabId: target.id, destinationOwnerKey: 'wrong' }, { owner }), { code: 'BROWSER_DESTINATION_CHANGED' });
+  await browser.perform({ ...args(), action: 'transfer_ownership', destination: 'task', destinationTabId: target.id, destinationOwnerKey: JSON.stringify([foreign.taskId,foreign.nodeId,foreign.runId]) }, { owner });
+  assert.deepEqual(human.owner, foreign);
+  await driver.releaseOwner(owner, { status: 'completed' }); assert.ok(driver.tabs.has(human.id));
+  await driver.releaseOwner(foreign, { status: 'completed' }); assert.equal(driver.tabs.has(human.id), false); assert.ok(driver.tabs.has(unrelated.id));
+  const saved = JSON.parse(await readFile(path.join(directory, 'browser-tabs.json'), 'utf8'));
+  assert.ok(saved.tabs.some(x => x.tabId === unrelated.id));
 });

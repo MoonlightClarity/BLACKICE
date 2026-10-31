@@ -8,6 +8,7 @@ import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
 
 class NativeBrowserFixtureRuntime extends EventEmitter {
+  async runAgent() { assert.fail('Native browser HTTP fixtures must not execute a model.'); }
   status() { return { connected: true, authenticated: true, defaultModel: 'fixture', activeTurns: 0 }; }
   async start() { return this.status(); }
   async close() {}

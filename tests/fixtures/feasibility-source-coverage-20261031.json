@@ -1,0 +1,104 @@
+{
+  "challengeResponses": [],
+  "grounding": [
+    {
+      "field": "objective",
+      "sourceId": "request:inventory-fixture"
+    },
+    {
+      "field": "essentialInputs",
+      "sourceId": "request:inventory-fixture"
+    },
+    {
+      "field": "evidenceRecovery",
+      "sourceId": "viability:continuity"
+    },
+    {
+      "field": "feasiblePath",
+      "sourceId": "viability:workflow"
+    },
+    {
+      "field": "inferenceLimits",
+      "sourceId": "request:inventory-fixture"
+    },
+    {
+      "field": "independentWork",
+      "sourceId": "request:inventory-fixture"
+    },
+    {
+      "field": "recheckWhen",
+      "sourceId": "viability:continuity"
+    }
+  ],
+  "openQuestions": [
+    "Requested-path input.csv rows are unobserved; the captured total 190 (A=105, B=75, C=10) belongs to path ...previous-inventory, not ...current-inventory, so it cannot be adopted as verified for this task."
+  ],
+  "requirements": [
+    {
+      "accuracy": {
+        "consequence": "incorrect or missing rows yield an incorrect total and failed verification",
+        "decisionThreshold": "closing_units = opening_units + received_units - shipped_units exactly for every row; total_units = sum of closings exactly",
+        "evidenceNeeded": "actual rows of input.csv at the requested path",
+        "mode": "exact",
+        "stopWhen": "the requested-path CSV rows are read and the computed JSON is reread and matched",
+        "tolerance": "0 units",
+        "unknownPolicy": "block"
+      },
+      "basis": "user",
+      "checkedSourceIds": [
+        "request:inventory-fixture",
+        "viability:task",
+        "viability:continuity",
+        "cycle:context:inventory-fixture"
+      ],
+      "consequence": "closing_units per SKU and total_units cannot be computed or verified without the actual rows in input.csv at C:\\fixture\\inventory\\input.csv",
+      "dependentNodeIds": [
+        "agent"
+      ],
+      "id": "input_csv_rows_requested_path",
+      "importance": "essential",
+      "inferable": false,
+      "label": "Input CSV rows at the requested path",
+      "omissionAllowed": false,
+      "question": "What are the SKU rows (opening_units, received_units, shipped_units) in input.csv at C:\\fixture\\inventory\\input.csv, or will an agent with local file access read them?",
+      "rationale": "This module has no file-read tool; the only numeric observation in captured sources (total 190, rows A=105/B=75/C=10) is tied to path ...previous-inventory, not the requested ...current-inventory, so the requested-path rows are not observed.",
+      "resolution": "unknown",
+      "sourceIds": [
+        "request:inventory-fixture"
+      ],
+      "value": "unobserved"
+    },
+    {
+      "basis": "user",
+      "checkedSourceIds": [
+        "request:inventory-fixture",
+        "viability:workflow"
+      ],
+      "consequence": "The required output file cannot be created at C:\\fixture\\inventory\\closing-units.json without local write capability",
+      "dependentNodeIds": [
+        "agent"
+      ],
+      "id": "output_file_write_requested_path",
+      "importance": "essential",
+      "inferable": false,
+      "label": "Write access to closing-units.json at the requested path",
+      "omissionAllowed": false,
+      "question": "Will an agent with local file access write closing-units.json to C:\\fixture\\inventory\\closing-units.json?",
+      "rationale": "The requested output path is fixed in the task, but this analytical module has no file-write tool; the workflow record shows an agent node with sandbox danger-full-access, so write capability depends on the agent, not this module.",
+      "resolution": "unknown",
+      "sourceIds": [
+        "request:inventory-fixture"
+      ],
+      "value": "unobserved"
+    }
+  ],
+  "values": {
+    "essentialInputs": "Required: actual rows of input.csv at the exact requested path (SKU, opening_units, received_units, shipped_units), exact integer arithmetic with tolerance 0 units, write access to closing-units.json in the same folder, and reread-and-verify against the CSV using local files only. The folder and file names are fixed hard constraints, not preferences; no personal facts are required.",
+    "evidenceRecovery": "Checked the request objective, viability:task, viability:workflow (agent node with sandbox danger-full-access), viability:continuity (completed prior run reporting total_units 190, rows A=105/B=75/C=10, but at path ...previous-inventory, not the requested ...current-inventory), viability:profile, and cycle context. No read of the requested-path input.csv exists in captured sources.",
+    "feasiblePath": "Route for an operational agent with local file tools: read input.csv → compute each closing exactly → write closing-units.json with rows[{sku, closing_units}] and total_units → reread the JSON → verify each row and total against a fresh CSV recomputation with tolerance 0 → report total and path. This module cannot execute that route (no file tools, requested-path rows unobserved); hand off to the agent.",
+    "independentWork": "Define the computation rule, expected JSON schema, and verification criteria (each closing equals opening+received−shipped exactly; total equals the sum; reread matches CSV-derived rows and total; JSON well-formed). This preparation does not depend on the missing requested-path rows.",
+    "inferenceLimits": "Permitted inference only: closing_units = opening + received − shipped exactly; total_units = sum of row closings; output schema is rows array plus total_units. Do not infer CSV contents, do not treat the prior run's path as the requested path, do not claim verification was performed here, and do not invent personal facts or precision.",
+    "objective": "Complete the local inventory calculation at C:\\fixture\\inventory: read input.csv, compute closing_units = opening_units + received_units - shipped_units per SKU, write closing-units.json with a rows array and total_units equal to the sum, reread the JSON and verify every row and the total against the CSV, then report the verified total and output path. This analytical module has no file/action tools, so it cannot perform the read, write, or verification itself.",
+    "recheckWhen": "Recheck if the requested path or CSV contents change, or the assigned agent reports a different total or path. Checking is sufficient once the requested-path input.csv is read, the JSON written and reread, and every row plus total matches a fresh recomputation with tolerance 0; after that no decision-changing unknown remains."
+  }
+}

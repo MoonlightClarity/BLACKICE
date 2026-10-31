@@ -8,13 +8,14 @@ import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
 import { BrowserWorkspace } from '../lib/browser.mjs';
 import { ProviderRuntime } from '../lib/providers.mjs';
-import { recordFixturePlan } from './fixture-task-plan.mjs';
 
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return{promise,resolve};};
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const waitFor=async(check,label='condition')=>{const deadline=Date.now()+4000;while(Date.now()<deadline){const value=check();if(value)return value;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail(`${label} did not settle`);};
 const jsonResponse=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}});
 const answer=text=>({status:'completed',output:[{type:'message',role:'assistant',content:[{type:'output_text',text}]}],usage:{input_tokens:7,output_tokens:3,total_tokens:10}});
+// These capability fixtures advertise enough context for the real native tool catalog.
+const catalogModel=id=>({id,context_length:262144,top_provider:{max_completion_tokens:4096}});
 const functionCall=(name,args,id='browser-call')=>({status:'completed',output:[{type:'function_call',id:`item-${id}`,call_id:id,name,arguments:JSON.stringify(args)}],usage:{input_tokens:7,output_tokens:3,total_tokens:10}});
 const toolResult=(request,callId)=>{
   const receipt=request.input.find(item=>item.type==='function_call_output'&&item.call_id===callId);
@@ -25,7 +26,7 @@ const toolResult=(request,callId)=>{
   assert.equal(value.error,undefined,text);
   return value;
 };
-const graph=(model='default')=>({id:'capability-flow',name:'Capabilities integration',nodes:[{id:'input',type:'input',name:'Task'},{id:'agent',type:'agent',name:'Agent',prompt:'Inspect the requested result and report verified evidence.',model},{id:'output',type:'output',name:'Result'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:2}});
+const graph=(model='default')=>({id:'capability-flow',name:'Capabilities integration',nodes:[{id:'input',type:'input',name:'Task'},{id:'agent',type:'agent',name:'Agent',prompt:'Inspect the requested result and report verified evidence.',model},{id:'output',type:'output',name:'Result'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:2,planningMode:'off'}});
 
 class FakeCodex extends EventEmitter {
   constructor(ready=false,execute){super();this.ready=ready;this.execute=execute;this.calls=[];this.closed=false;}
@@ -77,27 +78,9 @@ test('HTTP preflight checks each selected provider instead of aggregate runtime 
   const codex=new FakeCodex(false),requests=[];
   const {api,app,settled,runtime}=await application(t,{runtimeFactory:async({dataDir})=>{
     const runtime=await new ProviderRuntime({codex,dataDir,fetchImpl:async(url,options)=>{
+      if(options.method==='GET'){assert.match(url,/\/models$/);return jsonResponse({data:['remote-fixture','offline-fixture'].map(catalogModel)});}
       const body=JSON.parse(options.body);requests.push({url,body});
-      if(requests.length===1){
-        assert.ok(body.tools.find(tool=>tool.name==='relay_task')?.parameters?.properties?.plan);
-        return jsonResponse(functionCall('relay_task',{action:'read'},'default-task-read'));
-      }
-      if(requests.length===2){
-        const current=toolResult(body,'default-task-read');
-        assert.equal(current.plan.origin,'runtime');assert.deepEqual(current.steps,[]);
-        return jsonResponse(functionCall('relay_task',{action:'plan',expectedRevision:current.revision,plan:{layout:'sequence'},steps:[{id:'verify-provider',title:'Verify the selected remote provider',kind:'action',status:'active',operation:{kind:'reasoning',target:'The admitted remote-fixture provider request'},result:'The configured remote provider identifies the admitted model in its received request.',note:'Compare this received request model with remote-fixture and the fixture assertions about the unused offline provider.',doneWhen:'The request observed by this configured provider names remote-fixture.'}]},'default-task-plan'));
-      }
-      if(requests.length===3){
-        const planned=toolResult(body,'default-task-plan');
-        assert.equal(planned.plan.origin,'agent');assert.equal(planned.plan.detail,'detailed');assert.equal(planned.steps[0].id,'verify-provider');
-        assert.equal(body.model,'remote-fixture');
-        return jsonResponse(functionCall('relay_task',{action:'step',expectedRevision:planned.revision,stepId:'verify-provider',status:'done',evidence:'The configured provider received this request with model remote-fixture.'},'default-task-done'));
-      }
-      if(requests.length===4){
-        const completed=toolResult(body,'default-task-done');assert.equal(completed.steps[0].status,'done');
-        return jsonResponse(functionCall('relay_task',{action:'review',expectedRevision:completed.revision,review:{decision:'respond',summary:'The admitted request used remote-fixture on the configured remote provider. The provider selection check is complete; no selected work remains.'}},'default-task-review'));
-      }
-      assert.equal(requests.length,5);assert.equal(toolResult(body,'default-task-review').planningReviews.at(-1).decision,'respond');
+      assert.equal(body.model,'remote-fixture');
       return jsonResponse(answer('Remote provider selected correctly'));
     }}).init();
     await runtime.saveProvider({id:'cloud',type:'openai',models:['remote-fixture'],apiKey:'fixture-private-provider-key'});
@@ -112,63 +95,35 @@ test('HTTP preflight checks each selected provider instead of aggregate runtime 
   }
   const mixed=graph('cloud::remote-fixture');mixed.nodes.splice(2,0,{id:'offline-agent',type:'agent',name:'Offline',prompt:'Must not start',model:'codex-fixture'});mixed.edges.push({source:'input',target:'offline-agent'},{source:'offline-agent',target:'output'});
   assert.equal((await api('/api/runs',{method:'POST',body:{workflow:mixed,input:'Preflight all branches'}})).status,400);
-  assert.equal(requests.length,0,'a bad parallel branch prevents every provider request');assert.equal(codex.calls.length,0);assert.equal(app.engine.listRuns().length,0);
+  assert.equal(requests.length,0,'a bad parallel branch prevents every model request');assert.equal(codex.calls.length,0);assert.equal(app.engine.listRuns().length,0);
   const started=await api('/api/runs',{method:'POST',body:{workflow:graph(),input:'Use the available default'}});
   assert.equal(started.status,201);const run=await settled(started.data.id);
   assert.equal(run.status,'completed',run.error);assert.match(run.output,/Remote provider selected correctly/);
-  assert.equal(requests.length,5);assert.ok(requests.every(request=>request.body.model==='remote-fixture'));assert.equal(codex.calls.length,0);
-  assert.equal(run.nodes.agent.planning.status,'recorded');assert.equal(run.taskState.plan.authoredBy.runId,run.id);
-  assert.equal(run.taskState.planningReviews.at(-1).runId,run.id);
+  assert.equal(requests.length,1);assert.ok(requests.every(request=>request.body.model==='remote-fixture'));assert.equal(codex.calls.length,0);
+  assert.equal(run.nodes.agent.planning.status,'off','Provider admission is independent of automatic planning.');
   assert.equal(runtime.resolveModel('cloud::remote-fixture').available,true);
 });
 
 test('provider HTTP tools registered by the engine invoke the actual browser workspace and return images without persisting pixels in the trace',async t=>{
   const requests=[],driver=new FakeBrowserDriver(async args=>args.action==='screenshot'?{imageUrl:'data:image/png;base64,UElYRUxT'}:{text:'The page shows the verified fixture value'}),personalTab=driver.status().tabs[0];
-  let planRevision,openedTabId;
+  let openedTabId;
   const {api,settled}=await application(t,{driver,runtimeFactory:async({dataDir})=>{
     const runtime=await new ProviderRuntime({codex:new FakeCodex(false),dataDir,fetchImpl:async(_url,options)=>{
+      if(options.method==='GET'){assert.match(_url,/\/models$/);return jsonResponse({data:[catalogModel('tool-fixture')]});}
       const request=JSON.parse(options.body);requests.push(request);
       if(requests.length===1){
-        assert.ok(request.tools.find(tool=>tool.name==='relay_task')?.parameters?.properties?.steps?.items?.properties?.operation,'the provider receives the current operation-aware task schema');
-        return jsonResponse(functionCall('relay_task',{action:'read'},'task-read'));
-      }
-      if(requests.length===2){
-        const current=toolResult(request,'task-read');
-        assert.equal(current.plan.origin,'runtime');assert.deepEqual(current.steps,[]);
-        return jsonResponse(functionCall('relay_task',{action:'plan',expectedRevision:current.revision,plan:{layout:'sequence'},steps:[
-          {id:'open-browser',title:'Open the fixture page',kind:'action',status:'active',operation:{kind:'tool',tool:'relay_browser',action:'open',target:'https://example.test/fixture'},result:'A task-owned tab ID and the observed fixture page text.',note:'Call relay_browser open for https://example.test/fixture and inspect its returned tab ID and text.',doneWhen:'The browser returns a task-owned tab ID and the fixture page text.'},
-          {id:'verify-browser',title:'Capture the fixture page',kind:'action',status:'pending',operation:{kind:'tool',tool:'relay_browser',action:'screenshot',target:'The task-owned tab returned by open-browser'},result:'An actual screenshot from the observed task-owned browser tab.',note:'Call relay_browser screenshot with the tab ID returned by open-browser and inspect its returned image.',doneWhen:'The browser returns the actual screenshot from that task-owned tab.'}
-        ]},'task-plan'));
-      }
-      if(requests.length===3){
-        const planned=toolResult(request,'task-plan');
-        assert.equal(planned.plan.origin,'agent');assert.equal(planned.plan.detail,'detailed');assert.equal(planned.steps[0].id,'open-browser');planRevision=planned.revision;
+        assert.ok(request.tools.some(tool=>tool.name==='relay_browser'),'the selected provider receives the real browser tool schema');
         return jsonResponse(functionCall('relay_browser',{action:'open',url:'https://example.test/fixture'},'open'));
       }
-      if(requests.length===4){
+      if(requests.length===2){
         const opened=toolResult(request,'open');
         assert.ok(opened.tabId);assert.notEqual(opened.tabId,personalTab.tabId);
         assert.equal(opened.text,'The page shows the verified fixture value');openedTabId=opened.tabId;
-        return jsonResponse(functionCall('relay_task',{action:'step',expectedRevision:planRevision,stepId:'open-browser',status:'done',evidence:`Browser open returned task-owned tab ${openedTabId} and the expected fixture page text.`},'open-done'));
-      }
-      if(requests.length===5){
-        const state=toolResult(request,'open-done');assert.equal(state.steps[0].status,'done');
-        return jsonResponse(functionCall('relay_task',{action:'edit',expectedRevision:state.revision,operations:[{type:'update',stepId:'verify-browser',patch:{status:'active',operation:{kind:'tool',tool:'relay_browser',action:'screenshot',target:openedTabId}}}]},'image-plan'));
-      }
-      if(requests.length===6){
-        const state=toolResult(request,'image-plan');planRevision=state.revision;assert.equal(state.steps[1].status,'active');
         return jsonResponse(functionCall('relay_browser',{action:'screenshot',tabId:openedTabId},'image'));
       }
-      if(requests.length===7){
-        const image=toolResult(request,'image');assert.equal(image.tabId,openedTabId);
-        assert.match(JSON.stringify(request.input),/UElYRUxT/,'the actual screenshot reaches the provider before it reports completion');
-        return jsonResponse(functionCall('relay_task',{action:'step',expectedRevision:planRevision,stepId:'verify-browser',status:'done',evidence:`Browser screenshot returned an actual image from task-owned tab ${openedTabId}.`},'image-done'));
-      }
-      if(requests.length===8){
-        const completed=toolResult(request,'image-done');assert.ok(completed.steps.every(step=>step.status==='done'));
-        return jsonResponse(functionCall('relay_task',{action:'review',expectedRevision:completed.revision,review:{decision:'respond',summary:'The browser opened the requested page in its task-owned tab and returned its observed text and actual screenshot. Both planned operations are complete; no selected work remains.'}},'browser-review'));
-      }
-      assert.equal(requests.length,9);assert.equal(toolResult(request,'browser-review').planningReviews.at(-1).decision,'respond');
+      assert.equal(requests.length,3);
+      const image=toolResult(request,'image');assert.equal(image.tabId,openedTabId);
+      assert.match(JSON.stringify(request.input),/UElYRUxT/,'the actual screenshot reaches the provider before it reports completion');
       return jsonResponse(answer('Verified the browser workspace result'));
     }}).init();await runtime.saveProvider({id:'cloud',type:'openai',models:['tool-fixture'],apiKey:'fixture-browser-private-key'});return runtime;
   }});
@@ -179,9 +134,8 @@ test('provider HTTP tools registered by the engine invoke the actual browser wor
   assert.deepEqual(driver.status().tabs.find(tab=>tab.tabId===personalTab.tabId),personalTab);assert.equal(driver.status().activeTab,personalTab.tabId);
   assert.ok(requests[0].tools.some(tool=>tool.name==='relay_browser'));
   assert.ok(requests[0].input.some(item=>String(item.content).includes('BROWSER WORKSPACE')));
-  assert.equal(requests.length,9);assert.equal(run.nodes.agent.planning.status,'recorded');assert.equal(run.taskState.plan.authoredBy.runId,run.id);
-  assert.equal(run.taskState.planningReviews.at(-1).runId,run.id);
-  const wire=JSON.stringify(requests[6].input);assert.match(wire,/The page shows the verified fixture value/);assert.match(wire,/UElYRUxT/,'pixels reach the selected provider as an actual tool result');
+  assert.equal(requests.length,3);assert.equal(run.nodes.agent.planning.status,'off');
+  const wire=JSON.stringify(requests[2].input);assert.match(wire,/The page shows the verified fixture value/);assert.match(wire,/UElYRUxT/,'pixels reach the selected provider as an actual tool result');
   assert.ok(!JSON.stringify(run.events).includes('UElYRUxT'),'trace does not retain screenshot payloads');assert.ok(run.events.some(event=>event.data.type==='browser.action'));
   assert.match(run.output,/Verified the browser workspace result/);
 });
@@ -190,7 +144,6 @@ test('capacity one waits for the cancelled browser driver before allowing anothe
   const released=deferred();let driverSignal;
   const driver=new FakeBrowserDriver((args,{signal})=>{if(args.action!=='snapshot')return{};driverSignal=signal;return released.promise;});
   const {app,api,browser,settled}=await application(t,{driver,maxConcurrentRuns:1,runtimeFactory:async()=>new FakeCodex(true,async options=>{
-    await recordFixturePlan(options);
     options.onEvent({type:'turn',threadId:'working-thread',turnId:'working-turn'});
     const opened=await options.onToolCall({name:'relay_browser',arguments:{action:'open',url:'https://example.test/cancellation'}});assert.equal(opened.success,true,JSON.stringify(opened));
     await options.onToolCall({name:'relay_browser',arguments:{action:'snapshot',tabId:JSON.parse(opened.contentItems[0].text).tabId}});
@@ -214,7 +167,6 @@ test('per-turn tool cancellation reaches the browser even while the outer workfl
   const toolController=new AbortController(),driverEntered=deferred();let driverSignal,outerSignal;
   const driver=new FakeBrowserDriver((args,{signal})=>{if(args.action!=='snapshot')return{};driverSignal=signal;return new Promise((resolve,reject)=>{signal.addEventListener('abort',()=>reject(Object.assign(new Error('Fixture turn aborted'),{name:'AbortError'})),{once:true});driverEntered.resolve();});});
   const {api,settled}=await application(t,{driver,runtimeFactory:async()=>new FakeCodex(true,async options=>{
-    await recordFixturePlan(options);
     outerSignal=options.signal;
     const opened=await options.onToolCall({name:'relay_browser',arguments:{action:'open',url:'https://example.test/turn-cancellation'}});assert.equal(opened.success,true,JSON.stringify(opened));
     await options.onToolCall({name:'relay_browser',arguments:{action:'snapshot',tabId:JSON.parse(opened.contentItems[0].text).tabId}},{signal:toolController.signal});
@@ -230,7 +182,7 @@ test('per-turn tool cancellation reaches the browser even while the outer workfl
 test('provider and browser HTTP routes require local authentication and report bounded actionable errors without exposing keys',async t=>{
   const secret='fixture-api-private-key-value',requests=[];
   const {api,request,driver,dataDir}=await application(t,{runtimeFactory:async({dataDir})=>{
-    const runtime=await new ProviderRuntime({codex:new FakeCodex(true),dataDir,fetchImpl:async(url,options)=>{requests.push({url,options});return url.includes('/models')?jsonResponse({data:[{id:'discovered-fixture'}]}):jsonResponse(answer('Fixture'));}}).init();return runtime;
+    const runtime=await new ProviderRuntime({codex:new FakeCodex(true),dataDir,fetchImpl:async(url,options)=>{requests.push({url,options});return url.includes('/models')?jsonResponse({data:['discovered-fixture','fixture-model'].map(catalogModel)}):jsonResponse(answer('Fixture'));}}).init();return runtime;
   }});
   for(const [route,method,body] of [['/api/providers','GET'],['/api/providers','POST',{}],['/api/providers/cloud','DELETE',{}],['/api/providers/cloud/test','POST',{}],['/api/providers/cloud/models','POST',{}],['/api/browser/status','GET'],['/api/browser/action','POST',{action:'tabs'}],['/api/browser/show','POST',{tabId:'fixture-tab'}]])assert.equal((await request(route,{method,body})).status,401,route);
   const saved=await api('/api/providers',{method:'POST',body:{id:'cloud',type:'openai',name:'Fixture cloud',apiKey:secret,models:['fixture-model']}});
@@ -286,7 +238,7 @@ test('shutdown aborts provider connection checks and model discovery instead of 
   const {app,api,runtime}=await application(t,{runtimeFactory:async({dataDir})=>{
     const runtime=await new ProviderRuntime({codex:new FakeCodex(true),dataDir,fetchImpl:async(_url,{signal})=>{
       signals.push(signal);if(signals.length===2)arrived.resolve();return new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(Object.assign(new Error('Fixture discovery cancelled'),{name:'AbortError'})),{once:true}));
-    }}).init();await runtime.saveProvider({id:'checking',type:'compatible',models:['fixture']});return runtime;
+    }}).init();await runtime.saveProvider({id:'checking',type:'compatible',models:[{id:'fixture',contextWindowTokens:32768,maxOutputTokens:4096}]});assert.equal(signals.length,0,'Known fixture limits do not start setup discovery before the cancellation check.');return runtime;
   }});
   const checking=api('/api/providers/checking/test',{method:'POST',body:{}}),discovering=api('/api/providers/checking/models',{method:'POST',body:{}});await arrived.promise;
   assert.equal(runtime.discoveryControllers.size,2);await app.close();

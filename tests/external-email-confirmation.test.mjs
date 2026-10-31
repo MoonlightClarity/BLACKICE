@@ -32,7 +32,7 @@ test('observed email Message-ID confirms the existing uncertain receipt durably 
   assert.equal(receipt.verification, 'agent-reported-external-evidence'); assert.equal(receipt.evidence, confirmation.evidence);
   assert.equal(receipt.recipientAcknowledged, undefined); assert.equal(receipt.transportAccepted, undefined, 'A generic agent report must not invent machine transport evidence.');
   const reloaded = await f.open(); assert.deepEqual((await reloaded.get('email-task')).externalActions, state.externalActions);
-  const context = await reloaded.getContext('email-task'); assert.match(context, /Confirmed external action/); assert.match(context, /Do not send it again/); assert.doesNotMatch(context, /Uncertain external attempt/);
+  const context = await reloaded.getContext('email-task', { executionGuardrails: true }); assert.match(context, /Confirmed external action/); assert.match(context, /Do not send it again/); assert.doesNotMatch(context, /Uncertain external attempt/);
   await assert.rejects(f.action({ receiptId: prepared.receiptId, operation: 'attempt' }, reloaded), { code: 'EXTERNAL_ACTION_RECONCILE' });
   await assert.rejects(f.action({ receiptId: prepared.receiptId, operation: 'reconcile_absent', evidence: 'Try another send.' }, reloaded), { code: 'EXTERNAL_ACTION_RECONCILE' });
   await assert.rejects(f.action({ ...prepared, receiptId: 'duplicate' }, reloaded), { code: 'EXTERNAL_ACTION_CONFLICT' });

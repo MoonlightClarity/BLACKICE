@@ -38,7 +38,7 @@ async function fixture(t, execute, { available = true, subagents = false, shared
   }
   const tasks = shared ? await new TaskStateStore({ dataDir: root }).init() : undefined;
   const prefs = await new RuntimeSettingsStore({ dataDir: root }).init();
-  await prefs.update({ subagentsEnabled: subagents, maxSubagents: 2, codexHistory: 'codex' });
+  await prefs.update({ subagentsEnabled: subagents, maxSubagents: 2, codexHistory: 'codex', executionGuardrails: shared });
   const browser = { status: () => ({ available: true, contained: true, tabs: [] }), perform: async () => assert.fail('No real browser action is authorized by this engine fixture.'), close: async () => {} };
   const engine = new HarnessEngine({ runtime: new Runtime(), credentials: vault, browser, tasks, dataDir: root, defaultCwd: cwd }); engine.runtimeSettings = prefs; await engine.init();
   const workflow = createMissionWorkflow({ id: 'credential-engine', task: 'Create the authorized account at ' + origin + '.', model: 'fixture', cwd, planningMode: 'off' });

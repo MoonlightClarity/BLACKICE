@@ -120,7 +120,7 @@ export function messagesOfRun(run) {
 }
 const TERMINAL_CHAT_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 export function canContinueRun(run) {
-  return Boolean(run && run.settled === true && TERMINAL_CHAT_STATUSES.has(run.status));
+  return Boolean(run && run.settled === true && (TERMINAL_CHAT_STATUSES.has(run.status)||run.status==='blocked'&&run.viability?.awaitingInput===true));
 }
 export function replyTarget(runs) {
   const history = Array.isArray(runs) ? runs : [];
@@ -137,8 +137,10 @@ export function replyTarget(runs) {
     return { run, active: Boolean(agent), nodeId: agent?.id || null };
   }
   if (canContinueRun(run)) {
-    const agent = [...(run.workflow?.nodes || [])].reverse().find(node =>
-      node.type === 'agent' && TERMINAL_CHAT_STATUSES.has(run.nodes?.[node.id]?.status));
+    const agents=[...(run.workflow?.nodes||[])].reverse().filter(node=>node.type==='agent');
+    const held=run.status==='blocked'&&run.viability?.awaitingInput===true;
+    const agent=(held&&agents.find(node=>run.nodes?.[node.id]?.viabilityHeld===true))
+      ||agents.find(node=>TERMINAL_CHAT_STATUSES.has(run.nodes?.[node.id]?.status));
     // A provider can fail before creating a thread. The engine reconstructs
     // context from saved conversation history, so a thread ID is not required.
     if (agent) return { run, nodeId: agent.id, active: false };
@@ -175,4 +177,110 @@ export function messageLimitsAfterRefresh(previousRuns, nextRuns, limits) {
 export function windowedRuns(runs, count = 12) {
   const n = Math.min(runs.length, Math.max(1, Math.floor(count)));
   return { shown: runs.slice(-n), hidden: runs.length - n };
+}
+
+export const UNKNOWN_CHAT_MODEL = '__saved_model_unknown__';
+const STORAGE_KEY = 'blackice.next.chatModelOverrides';
+export function concreteChatModel(value) {
+  if (typeof value !== 'string') return null;
+  const model=value.trim();
+  return model && model.length<=400 && !['default','codex',UNKNOWN_CHAT_MODEL].includes(model) ? model : null;
+}
+
+/** Preserve bounded authoritative identity before the reader discards raw traces. */
+export function recordedChatModels(run) {
+  const threads=new Map(), result={};
+  for (const event of Array.isArray(run?.events)?run.events:[]) {
+    const data=event?.data||event, id=event?.nodeId||data?.nodeId;
+    const model=data?.type==='thread'&&concreteChatModel(data.model);
+    if (id&&model) threads.set(id,model);
+  }
+  const definitions=new Map((run?.workflow?.nodes||[]).filter(n=>n?.type==='agent').map(n=>[n.id,n]));
+  for (const id of new Set([...definitions.keys(),...Object.keys(run?.nodes||{})])) {
+    const node=run?.nodes?.[id]||{}, definition=definitions.get(id);
+    const evidence=[
+      [node.resolvedModel,'resolvedModel'],
+      [threads.get(id),'thread'],
+      [node.modelEvidence?.model,node.modelEvidence?.source||'saved'],
+      [node.model,'node'],
+      [definition?.model,'workflow'],
+    ].find(([model])=>concreteChatModel(model));
+    if(evidence) result[id]={model:concreteChatModel(evidence[0]),source:evidence[1]};
+  }
+  return result;
+}
+/** Merge one same-run event without losing identity projected from older traces. */
+export function mergeChatRunUpdate(previous, updated) {
+  if (!previous || previous.id!==updated?.id) return previous;
+  const rawNodes=updated.nodes||previous.nodes||{};
+  const fresh=recordedChatModels({...previous,...updated,nodes:rawNodes,events:Array.isArray(updated.events)?updated.events:[]});
+  const remembered=recordedChatModels(previous);
+  const observed=evidence=>['resolvedModel','thread','saved-thread','saved'].includes(evidence?.source);
+  const nodes=Object.fromEntries(Object.entries(rawNodes).map(([id,node])=>{
+    const evidence=observed(fresh[id])?fresh[id]:observed(remembered[id])?remembered[id]:fresh[id]||remembered[id];
+    return [id,{...node,...(evidence?{modelEvidence:evidence}:{})}];
+  }));
+  const result={...previous,status:updated.status??previous.status,settled:updated.settled??previous.settled,
+    nodes,output:updated.output??previous.output,updatedAt:updated.updatedAt||previous.updatedAt};
+  if(Object.hasOwn(updated,'viability'))result.viability=updated.viability?.awaitingInput===true?{awaitingInput:true}:undefined;
+  if(Object.hasOwn(updated,'responseCycle')){
+    const cycle=updated.responseCycle;
+    result.responseCycle=cycle?{state:cycle.state,requestId:cycle.requestId,cycleId:cycle.cycleId,
+      title:String(cycle.title||'').slice(0,240),summary:String(cycle.summary||'').slice(0,1200),
+      planRef:cycle.planRef&&{requestId:cycle.planRef.requestId,nodeId:cycle.planRef.nodeId,nodeRevision:cycle.planRef.nodeRevision,responseId:cycle.planRef.responseId}}:undefined;
+  }
+  return result;
+}
+
+export function conversationModelEvidence(runs=[]) {
+  const target=replyTarget(runs), run=target.run;
+  if(!run) return null;
+  const nodeId=target.nodeId||[...(run.workflow?.nodes||[])].reverse().find(n=>n.type==='agent'&&!run.nodes?.[n.id]?.reused)?.id;
+  if(!nodeId) return null;
+  const saved=recordedChatModels(run)[nodeId];
+  if(saved) return {...saved,runId:run.id,nodeId};
+  // A matching saved thread is evidence; an unrelated older chat model is not.
+  const current=run.nodes?.[nodeId]||{}, threadId=current.threadId||current.resumeThreadId;
+  if(threadId) for(const previous of runs.slice(0,-1).reverse()) {
+    for(const [id,node] of Object.entries(previous.nodes||{})) {
+      if(node.threadId!==threadId&&node.resumeThreadId!==threadId) continue;
+      const prior=recordedChatModels(previous)[id];
+      if(prior) return {...prior,source:'saved-thread',runId:previous.id,nodeId:id};
+    }
+  }
+  return null;
+}
+
+/** Only explicit, unsent choices belong in browser storage, keyed by chat root. */
+export function createConversationModelSelection({storage}={}) {
+  const overrides=new Map(), revisions=new Map();
+  try {
+    const saved=JSON.parse(storage?.getItem(STORAGE_KEY)||'{}');
+    if(saved.version===1) for(const [owner,model] of Object.entries(saved.overrides||{}).slice(-100)) {
+      if(owner&&owner.length<=200&&(concreteChatModel(model)||owner==='new'&&model==='default')) overrides.set(owner,model);
+    }
+  } catch {}
+  const persist=()=>{
+    while(overrides.size>100) overrides.delete(overrides.keys().next().value);
+    try {storage?.setItem(STORAGE_KEY,JSON.stringify({version:1,overrides:Object.fromEntries(overrides)}));} catch {}
+  };
+  return {
+    read(owner,runs=[]) {
+      const explicit=overrides.has(owner);
+      const saved=owner==='new'?null:conversationModelEvidence(runs);
+      return {owner,revision:revisions.get(owner)||0,explicit,
+        model:explicit?overrides.get(owner):owner==='new'?'default':saved?.model||UNKNOWN_CHAT_MODEL,
+        evidence:saved};
+    },
+    choose(owner,value,status={}) {
+      const model=value==='default'&&owner!=='new'?concreteChatModel(status.defaultModel):value;
+      if(!(concreteChatModel(model)||owner==='new'&&model==='default')) throw Error('Choose an available model for this conversation.');
+      overrides.delete(owner);overrides.set(owner,model);revisions.set(owner,(revisions.get(owner)||0)+1);persist();
+      return model;
+    },
+    consume(submitted) {
+      if(!submitted?.explicit||(revisions.get(submitted.owner)||0)!==submitted.revision) return false;
+      overrides.delete(submitted.owner);revisions.set(submitted.owner,submitted.revision+1);persist();return true;
+    },
+  };
 }

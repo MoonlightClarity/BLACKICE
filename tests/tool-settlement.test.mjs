@@ -10,6 +10,7 @@ import { HarnessEngine } from '../lib/engine.mjs';
 import { ProviderRuntime } from '../lib/providers.mjs';
 import { CodexRuntime } from '../lib/codex.mjs';
 import { TaskStateStore } from '../lib/task-state.mjs';
+import { RuntimeSettingsStore } from '../lib/runtime-settings.mjs';
 import { DESKTOP_TOOL } from '../lib/desktop-tools.mjs';
 
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
@@ -32,6 +33,11 @@ async function apiFixture(t, respond) {
   await fs.mkdir(cwd);
   const releases = [], requests = [], cleanups = [];
   const runtime = await new ProviderRuntime({ codex: new OfflineNative(), dataDir, fetchImpl: async (_url, options) => {
+    if (options.method === 'GET') {
+      assert.match(_url, /\/models$/);
+      return new Response(JSON.stringify({ data: ['primary', 'independent'].map(id => ({ id, context_length: 262144, top_provider: { max_completion_tokens: 4096 } })) }), { headers: { 'content-type': 'application/json' } });
+    }
+    assert.equal(options.method, 'POST');
     const request = JSON.parse(options.body); requests.push(request);
     return new Response(JSON.stringify(await respond(request, requests)), { headers: { 'content-type': 'application/json' } });
   } }).init();
@@ -70,7 +76,9 @@ test('API Stop keeps a real pending patch leased, preserves its late receipt, an
     return finalReply('Continuation after actual tool settlement.');
   });
   const tasks = await new TaskStateStore({ dataDir: f.dataDir }).init(), engine = await new HarnessEngine({ runtime: f.runtime, tasks, dataDir: f.dataDir, defaultCwd: f.cwd, maxConcurrentRuns: 2 }).init();
-  f.cleanups.push(() => engine.close(), () => tasks.close());
+  // This case deliberately verifies the guarded sequence receipt during settlement.
+  const settings = await new RuntimeSettingsStore({ dataDir: f.dataDir }).init(); await settings.update({ executionGuardrails: true }); engine.runtimeSettings = settings;
+  f.cleanups.push(() => engine.close(), () => tasks.close(), () => settings.close());
   const file = path.join(f.cwd, 'result.txt'), entered = deferred(), release = f.hold(); await fs.writeFile(file, 'before');
   engine.filePatches.io = { ...fs, rename: async (from, to) => { if (to === file) { entered.resolve(); await release.promise; } return fs.rename(from, to); } };
   const first = engine.startRun({ workflow: graph('fixture::primary'), input: 'Apply the controlled patch once.' }), execution = engine.executions.get(first.id);
@@ -178,6 +186,8 @@ test('native ignores stale turn-object notifications without completing or repla
   const client = new CodexRuntime({ runTimeoutMs: null, spawnImpl() { throw new Error('No process is allowed in this protocol fixture.'); } });
   client.child = {}; Object.assign(client.info, { connected: true, authenticated: true, models: [], defaultModel: 'fixture' });
   client._request = async (method, params) => {
+    if (method === 'config/read') return { config: { plugins: {}, mcp_servers: {}, skills: { config: [] } } };
+    if (method === 'skills/list') return { data: (params.cwds || []).map(cwd => ({ cwd, skills: [], errors: [] })) };
     if (method === 'thread/resume') return { thread: { id: params.threadId }, model: 'fixture' };
     if (method === 'turn/start') return { turn: { id: 'current-turn', status: 'inProgress' } };
     if (method === 'thread/unsubscribe') return {};

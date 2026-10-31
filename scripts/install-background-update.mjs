@@ -339,7 +339,7 @@ function nativeClosed(installed) {
 }
 
 const overlaps = (left, right) => { const a = left.toLowerCase(), b = right.toLowerCase(); return a === b || a.startsWith(b + path.sep) || b.startsWith(a + path.sep); };
-export const installedFile = file => file === 'package.json' || file === 'server.mjs' || documents.has(file) || /^(?:lib|public)\//.test(file) || installedDesktopFiles.has(file) || ['scripts/chatgpt-bridge.mjs', 'scripts/email-oauth-token.mjs', 'scripts/remote-access-cli.mjs', 'scripts/browser-cli.mjs'].includes(file);
+export const installedFile = file => file === 'package.json' || file === 'server.mjs' || documents.has(file) || /^(?:lib|public)\//.test(file) || installedDesktopFiles.has(file) || ['scripts/chatgpt-bridge.mjs', 'scripts/email-oauth-token.mjs', 'scripts/remote-access-cli.mjs', 'scripts/browser-cli.mjs', 'scripts/chatgpt-cli.mjs'].includes(file);
 
 async function directoryRoot(value) {
   const resolved = path.resolve(value), info = await fs.lstat(resolved);

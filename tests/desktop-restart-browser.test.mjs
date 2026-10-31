@@ -9,6 +9,7 @@ import { DesktopRestartController } from '../desktop/restart.mjs';
 
 const held = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 class Runtime extends EventEmitter {
+  async runAgent() { assert.fail('This server fixture must not execute a model.'); }
   status() { return { connected: false, authenticated: false, activeTurns: 0, models: [] }; }
   async start() { return this.status(); }
   async close() {}

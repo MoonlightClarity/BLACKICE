@@ -155,7 +155,7 @@ test('fresh delegated worker catalogs receive v2 and can inspect background deli
 
 test('local email API composes/sends without flags and returns inspectable explicit transport outcomes', async t => {
   const root = await mkdtemp(path.join(tmpdir(), 'blackice-email-api-')), email = fakeStore();
-  class Runtime extends EventEmitter { status() { return { connected: true, authenticated: true, defaultModel: 'fixture' }; } async start() {} async close() {} }
+  class Runtime extends EventEmitter { status() { return { connected: true, authenticated: true, defaultModel: 'fixture' }; } async runAgent() { assert.fail('This server fixture must not execute a model.'); } async start() {} async close() {} }
   const app = await createHarnessServer({ runtime: new Runtime(), email, port: 0, dataDir: path.join(root, 'data'), defaultCwd: path.join(root, 'workspace') }), url = await app.listen();
   t.after(async () => { await app.close(); assert.match(path.basename(root), /^blackice-email-api-/); await rm(root, { recursive: true, force: true }); });
   const home = await fetch(url), cookie = home.headers.get('set-cookie').split(';')[0]; await home.text();

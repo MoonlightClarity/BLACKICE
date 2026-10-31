@@ -118,9 +118,15 @@ export class BrowserRouter extends EventEmitter {
     if (selected.browser === 'firefox') throw fail('Firefox runs in the background without a visible window. Use its page snapshot or screenshot here.', 'BROWSER_HEADLESS');
     throw fail('Browser pages stay contained inside BLACKICE. Use the Observe view to inspect and control them.', 'BROWSER_CONTAINED');
   }
-  async releaseOwner(owner) {
+  async providerKeySource(args, options = {}) {
+    if (this.closed || options.signal?.aborted) throw cancelled();
+    const selected = this.owner(args, this.status());
+    if (selected.browser !== 'relay' || typeof this.drivers.relay?.providerKeySource !== 'function') throw fail('Protected provider key setup is available only in the contained browser.', 'PROVIDER_KEY_SOURCE_UNAVAILABLE');
+    return this.drivers.relay.providerKeySource({ ...args, tabId: selected.nativeId }, options);
+  }
+  async releaseOwner(owner, options = {}) {
     if (this.closed || typeof this.drivers.relay?.releaseOwner !== 'function') return { suspended: [], retained: [], unavailable: true };
-    return this.drivers.relay.releaseOwner(owner);
+    return this.drivers.relay.releaseOwner(owner, options);
   }
   async stopForRestart({ signal, onEffect } = {}) {
     const browsers = {};

@@ -17,17 +17,17 @@ async function fixture(t, schemaVersion) {
   return { store, state, call: args => handler({ name: 'relay_task', arguments: args }) };
 }
 
-test('v7 through v10 advertise the same note limit while cached v6 remains unchanged', async t => {
-  assert.equal(TASK_SCHEMA_VERSION, 10);
-  for (const tool of [7, 8, 9, 10].flatMap(version => [taskToolForVersion(version), taskWorkerToolForVersion(version)])) {
+test('v7 through v12 advertise the same note limit while cached v6 remains unchanged', async t => {
+  assert.equal(TASK_SCHEMA_VERSION, 12);
+  for (const tool of [7, 8, 9, 10, 11, 12].flatMap(version => [false, true].flatMap(executionGuardrails => [taskToolForVersion(version, { executionGuardrails }), taskWorkerToolForVersion(version, { executionGuardrails })]))) {
     const f = tool.inputSchema.properties;
     for (const note of [f.note, f.steps.items.properties.note, f.operations.items.properties.step.properties.note, f.operations.items.properties.patch.properties.note.anyOf[0]]) assert.equal(note.maxLength, 700);
     assert.deepEqual(f.operations.items.properties.patch.properties.note.anyOf[1], { type: 'null' });
   }
-  assert.equal(taskWorkerToolForVersion(10), TASK_WORKER_TOOL);
-  assert.equal(taskWorkerToolForVersion(8).inputSchema.properties.operation, undefined);
-  assert.equal(digest(taskWorkerToolForVersion(6)), 'e27a50b314a227b671c7a82303054e60ab3a3668cbb96e29d88d561633d4173c');
-  assert.equal(taskWorkerToolForVersion(6).inputSchema.properties.note.maxLength, undefined);
+  assert.equal(taskWorkerToolForVersion(TASK_SCHEMA_VERSION, { executionGuardrails: true }), TASK_WORKER_TOOL);
+  assert.equal(taskWorkerToolForVersion(8, { executionGuardrails: true }).inputSchema.properties.operation, undefined);
+  assert.equal(digest(taskWorkerToolForVersion(6, { executionGuardrails: true })), 'e27a50b314a227b671c7a82303054e60ab3a3668cbb96e29d88d561633d4173c');
+  assert.equal(taskWorkerToolForVersion(6, { executionGuardrails: true }).inputSchema.properties.note.maxLength, undefined);
   for (const version of [6, 7, 8, 9, 10]) {
     const f = await fixture(t, version), description = parsed(await f.call({ action: 'describe' }));
     assert.equal(description.schemaVersion, version);

@@ -9,8 +9,8 @@ import {
  METACOGNITION_FIELDS
 } from '../lib/task-plan.mjs';
 import { applyPlanningEdits } from '../lib/planning-edits.mjs';
-import { TaskStateStore, TASK_TOOL, TASK_TOOL_V6, TASK_TOOL_V7, TASK_TOOL_V8, TASK_TOOL_V9, TASK_INSTRUCTIONS,
- TASK_INSTRUCTIONS_V6, TASK_INSTRUCTIONS_V7, TASK_INSTRUCTIONS_V8, TASK_INSTRUCTIONS_V9, TASK_SCHEMA_VERSION,
+import { TaskStateStore, TASK_TOOL, TASK_TOOL_V6, TASK_TOOL_V7, TASK_TOOL_V8, TASK_TOOL_V9, TASK_TOOL_V10, TASK_TOOL_V11, TASK_INSTRUCTIONS,
+ TASK_INSTRUCTIONS_V6, TASK_INSTRUCTIONS_V7, TASK_INSTRUCTIONS_V8, TASK_INSTRUCTIONS_V9, TASK_INSTRUCTIONS_V10, TASK_INSTRUCTIONS_V11, TASK_SCHEMA_VERSION,
  taskToolForVersion, taskInstructionsForVersion } from '../lib/task-state.mjs';
 
 const action={id:'evaluate',title:'Deliver a practically useful recommendation',
@@ -110,25 +110,20 @@ test('saved judgment survives restart with CAS and no fabricated plan-progress e
   assert.deepEqual(recovered.plan.decisionCriteria,criteria);
   assert.equal(recovered.steps[0].status,'pending');
 });
-test('current model instructions are cross-domain, while older tool versions remain byte compatible',()=>{
+test('current guarded model instructions are cross-domain, while older tool versions remain byte compatible',()=>{
   const meta=TASK_TOOL.inputSchema.properties.plan.properties.metacognition.anyOf[0];
   assert.equal(meta.additionalProperties,false);
   assert.ok(meta.properties.goodEnough&&meta.properties.nextProbe&&meta.properties.lesson);
   assert.equal(TASK_TOOL.inputSchema.properties.operations.items.properties.patch.properties.metacognition.anyOf[0].type,'object');
-  assert.equal(TASK_SCHEMA_VERSION,10);
+  assert.equal(TASK_SCHEMA_VERSION,12);
   assert.equal(TASK_TOOL_V6.inputSchema.properties.plan.properties.metacognition,undefined);
   assert.equal(TASK_TOOL_V7.inputSchema.properties.plan.properties.metacognition,undefined);
   assert.equal(TASK_TOOL_V7.inputSchema.properties.plan.properties.decisionCriteria,undefined);
-  assert.equal(taskToolForVersion(7),TASK_TOOL_V7);
-  assert.equal(taskToolForVersion(8),TASK_TOOL_V8);
-  assert.equal(taskToolForVersion(9),TASK_TOOL_V9);
-  assert.equal(taskToolForVersion(10),TASK_TOOL);
+  const guarded={executionGuardrails:true};
+  for(const [version,tool] of [[6,TASK_TOOL_V6],[7,TASK_TOOL_V7],[8,TASK_TOOL_V8],[9,TASK_TOOL_V9],[10,TASK_TOOL_V10],[11,TASK_TOOL_V11],[12,TASK_TOOL]]) assert.equal(taskToolForVersion(version,guarded),tool);
   assert.equal(TASK_TOOL_V8.inputSchema.properties.plan.properties.facts,undefined);
   assert.ok(TASK_TOOL.inputSchema.properties.plan.properties.facts);
-  assert.equal(taskInstructionsForVersion(7),TASK_INSTRUCTIONS_V7);
-  assert.equal(taskInstructionsForVersion(8),TASK_INSTRUCTIONS_V8);
-  assert.equal(taskInstructionsForVersion(9),TASK_INSTRUCTIONS_V9);
-  assert.equal(taskInstructionsForVersion(10),TASK_INSTRUCTIONS);
+  for(const [version,instructions] of [[6,TASK_INSTRUCTIONS_V6],[7,TASK_INSTRUCTIONS_V7],[8,TASK_INSTRUCTIONS_V8],[9,TASK_INSTRUCTIONS_V9],[10,TASK_INSTRUCTIONS_V10],[11,TASK_INSTRUCTIONS_V11],[12,TASK_INSTRUCTIONS]]) assert.equal(taskInstructionsForVersion(version,guarded),instructions);
   assert.equal(TASK_INSTRUCTIONS_V7,TASK_INSTRUCTIONS_V6);
   assert.ok(TASK_INSTRUCTIONS.includes('PRACTICAL JUDGMENT AND METACOGNITION'));
   assert.ok(TASK_INSTRUCTIONS.includes('material_barrier'));

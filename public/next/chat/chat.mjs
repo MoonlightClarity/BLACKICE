@@ -1,56 +1,164 @@
 import { createChatFrame, paintIndex, paintIntroduction, paintHistory, paintModels } from './render.mjs';
-import { summaries, filterSummaries, conversationRuns, rootId, lastRunId, running, CHAT_INDEX_BATCH, CHAT_MESSAGE_BATCH, messageLimitsAfterRefresh, conversationBucket, conversationActionState, conversationManagementTarget, resolveConversationSelection } from './model.mjs';
+import { createGroupedModelPicker } from '../core/model-picker.mjs';
+import { summaries, filterSummaries, conversationRuns, rootId, lastRunId, running, CHAT_INDEX_BATCH, CHAT_MESSAGE_BATCH, messageLimitsAfterRefresh, conversationBucket, conversationActionState, conversationManagementTarget, resolveConversationSelection, mergeChatRunUpdate } from './model.mjs';
 import { submitChat, replyState } from './send.mjs';
 import { createConversationReader } from './reader-client.mjs';
 import { initAttachmentsUI } from '../../attachments-ui.mjs';
 import { escapeHTML } from '../core/dom.mjs';
 import { normalizeChatOptions, validateChatOptions } from './options-model.mjs';
+import { createConversationModelSelection, concreteChatModel } from './model.mjs';
 import { createArtifactViewer } from './artifacts.mjs';
-import { planningActivityForEvent, mergePlanningActivity } from './planning-timeline.mjs';
+import { planningActivityForEvent, mergePlanningActivity, chatProgressPreview } from './planning-timeline.mjs';
+import { createContextControls, conversationContext, contextStatistics, compactionStatistics } from '../core/context-controls.mjs';
 
-export function createChatWorkspace({ mount, api, events, getStatus, notify = () => {} }) {
+// One registry owns spelling, aliases, completion and local dispatch.
+const CHAT_COMMANDS=[
+  {id:'compress',aliases:['compact'],description:'Compress saved conversation context'},
+  {id:'context',aliases:['ctx'],description:'Inspect context and adjust the next response'},
+];
+const commandSuggestions=value=>{
+  const match=String(value||'').trim().match(/^\/([a-z]*)$/i);
+  return match?CHAT_COMMANDS.filter(item=>[item.id,...item.aliases].some(name=>name.startsWith(match[1].toLowerCase()))):[];
+};
+const commandFor=value=>{
+  const match=String(value||'').trim().match(/^\/([^\s]+)(?:\s+([\s\S]*))?$/);
+  if(!match)return null;
+  const name=match[1].toLowerCase(),command=CHAT_COMMANDS.find(item=>item.id===name||item.aliases.includes(name));
+  return command?{command,args:match[2]?.trim()||''}:null;
+};
+
+export function createChatWorkspace({ mount, api, events, getStatus, notify = () => {}, onNavigate }) {
   const view = createChatFrame(mount);
+  const hostWindow=mount.ownerDocument.defaultView||globalThis.window;
+  const modelPicker=createGroupedModelPicker({select:view.model,label:'Model'});
   const reader = createConversationReader({api});
   const artifacts = createArtifactViewer({mount,api,notify});
   view.shell.dataset.reader=reader.usingWorker?'worker':'fallback';
+  const modelSelections=createConversationModelSelection({storage:{getItem:key=>localStorage.getItem(key),setItem:(key,value)=>localStorage.setItem(key,value)}});
   const state = { active:false, selected:null, list:[], runs:[], bucket:'active', count:12,
     loading:false, pending:false, broken:false, connected:false, markdown:null, generation:0,
-    refreshing:false, inputOwner:'new', drafts:new Map(), stream:[], liveTimer:null, listTimer:null,
+    refreshing:false, inputOwner:'new', drafts:new Map(),commandDrafts:new Map(), stream:[], liveTimer:null, listTimer:null,
     dataController:null, unsubscribe:null, lastLoadedAt:0,
     indexLimit:CHAT_INDEX_BATCH, indexQuery:'',messageLimits:new Map(),
     attachmentIds:new Map(), attachmentsPending:false,managing:false,selecting:false,selection:new Map(),visible:[],listRead:0,destroyed:false,inputRevision:0,
-    options:normalizeChatOptions((()=>{try{return JSON.parse(localStorage.getItem('blackice.next.chatOptions')||'{}');}catch{return{};}})()) };
+    options:{...normalizeChatOptions((()=>{try{return JSON.parse(localStorage.getItem('blackice.next.chatOptions')||'{}');}catch{return{};}})()),model:'default'} };
+  let runtimeStatus=getStatus?.()||{};
   const root = () => rootId(state.selected) || 'new';
   const selectedBucket=()=>state.selected?.state||state.bucket;
-  const refreshChoices=(status=getStatus?.()||{})=>{
-    paintModels(view,status,state.options);
+  const contextMount=mount.ownerDocument.createElement('section');
+  view.form.parentElement.insertBefore(contextMount,view.form);
+  const contextControls=createContextControls({mount:contextMount,id:'next-chat-context',api,
+    onClose:()=>view.input.focus({preventScroll:true}),
+    onOperationChange:()=>{if(!state.destroyed)updateHead();},
+    onComplete:(target,result)=>{
+      const run=state.runs.find(item=>item.id===target.runId),node=run?.nodes?.[target.nodeId];
+      if(node){
+        if(result.context)node.contextStatus=contextStatistics(result.context);
+        if(result.compacted)node.lastCompaction=compactionStatistics({...result,at:new Date().toISOString()});
+      }
+      if(state.active&&state.selected&&state.runs.at(-1)?.id===target.runId)void open(state.selected,{refresh:true});
+    }});
+  contextControls.select('new',runtimeStatus.runtimeSettings?.defaultContext);
+  function syncContext({select=false,reconcile=false}={}){
+    const saved=conversationContext(state.runs,runtimeStatus.runtimeSettings?.defaultContext);
+    if(select)contextControls.select(root(),saved.context);
+    else if(reconcile)contextControls.reconcile(saved.context);
+    contextControls.update({status:runtimeStatus,model:state.options.model,contextStatus:saved.contextStatus,
+      lastCompaction:saved.lastCompaction,contextOrigin:saved.contextOrigin,target:saved.target,reason:saved.reason,
+      busy:state.pending||state.managing,loading:state.loading,readonly:selectedBucket()!=='active'});
+  }
+  const refreshChoices=(status=getStatus?.()||runtimeStatus)=>{
+    runtimeStatus=status;
+    state.options.model=modelSelections.read(root(),state.runs).model;
+    const choices=paintModels(view,status,state.options);
+    modelPicker.update({models:choices.models,status,selected:choices.selected.model});
     state.options=normalizeChatOptions({model:view.model.value,effort:view.effort.value,
-      serviceTier:view.tier.value,planningMode:view.plan.value});
+      serviceTier:view.tier.value,planningMode:view.plan.value,planningExecutionMode:view.executionMode.value});
+    if(!state.selected&&!contextControls.dirty)contextControls.reconcile(runtimeStatus.runtimeSettings?.defaultContext);
+    syncContext();
   };
-  const persistOptions=()=>{try{localStorage.setItem('blackice.next.chatOptions',JSON.stringify(state.options));}catch{}};
+  const persistOptions=()=>{try{localStorage.setItem('blackice.next.chatOptions',JSON.stringify({...state.options,model:'default'}));}catch{}};
   try{const saved=JSON.parse(localStorage.getItem('blackice.next.drafts')||'{}');
     for(const [key,value] of Object.entries(saved))if(typeof value==='string'&&value.length<=10000)state.drafts.set(key,value);
   }catch{}
   view.input.value=state.drafts.get('new')||'';
   let draftTimer=null;
-  const saveDraft=()=>{state.drafts.set(state.inputOwner,view.input.value);
+  const saveDraft=()=>{const commandDraft=state.commandDrafts.get(state.inputOwner);if(commandDraft)commandDraft.input=view.input.value;state.drafts.set(state.inputOwner,commandDraft?.draft??view.input.value);
     try{localStorage.setItem('blackice.next.drafts',JSON.stringify(Object.fromEntries([...state.drafts].slice(-50))));}catch{}};
   const scheduleDraft=()=>{clearTimeout(draftTimer);draftTimer=setTimeout(saveDraft,250);};
   const choose = key => {
     if (state.inputOwner === key) return;
-    state.drafts.set(state.inputOwner,view.input.value);
+    saveDraft();closeCommandMenu();
     state.inputOwner=key;
-    view.input.value=state.drafts.get(key)||'';
+    view.input.value=state.commandDrafts.get(key)?.input??state.drafts.get(key)??'';
     resize();
     attachmentsUI?.reset({cancelPending:false});
   };
   const resize = () => { view.input.style.height='auto';view.input.style.height=Math.min(180,Math.max(58,view.input.scrollHeight))+'px'; };
   const showError = error => { state.broken=true;view.hint.classList.add('next-chat-error');view.hint.textContent=String(error?.message||error||'An operation failed.'); };
   const hint = text => { state.broken=false;view.hint.classList.remove('next-chat-error');view.hint.textContent=text; };
+  let shownCommands=[],commandIndex=0;
+  function closeCommandMenu(){
+    view.commandMenu.hidden=true;view.commands.setAttribute('aria-expanded','false');view.input.setAttribute('aria-expanded','false');view.input.removeAttribute('aria-activedescendant');
+  }
+  function selectCommandIndex(index){
+    commandIndex=(index+shownCommands.length)%shownCommands.length;
+    for(const [at,row]of [...view.commandMenu.children].entries())row.setAttribute('aria-selected',String(at===commandIndex));
+    if(shownCommands.length)view.input.setAttribute('aria-activedescendant','next-chat-command-'+shownCommands[commandIndex].id);
+  }
+  function positionCommandMenu(){
+    if(view.commandMenu.hidden)return;
+    const form=view.form.getBoundingClientRect(),area=view.form.parentElement.getBoundingClientRect();
+    const available=area.right-area.left,viewport=hostWindow?.innerWidth||area.right;
+    const width=Math.max(1,Math.min(390,available-16,viewport-16));
+    const left=Math.max(Math.max(8,8-area.left),Math.min(form.left-area.left,available-width-8,viewport-area.left-width-8));
+    view.commandMenu.style.left=left+'px';view.commandMenu.style.width=width+'px';view.commandMenu.style.bottom=Math.max(0,area.bottom-form.top+4)+'px';
+  }
+  function showCommands({all=false}={}){
+    shownCommands=all?CHAT_COMMANDS:commandSuggestions(view.input.value);
+    if(!shownCommands.length){closeCommandMenu();return;}
+    view.commandMenu.innerHTML='';
+    for(const command of shownCommands){
+      const row=mount.ownerDocument.createElement('button');row.type='button';row.id='next-chat-command-'+command.id;row.setAttribute('role','option');row.setAttribute('tabindex','-1');
+      const name=mount.ownerDocument.createElement('strong');name.textContent='/'+command.id;
+      const description=mount.ownerDocument.createElement('span');description.textContent=command.description;
+      row.append(name,description);row.addEventListener('mousedown',event=>event.preventDefault());row.addEventListener('click',()=>insertCommand(command));view.commandMenu.append(row);
+    }
+    view.commandMenu.hidden=false;view.commands.setAttribute('aria-expanded','true');view.input.setAttribute('aria-expanded','true');selectCommandIndex(0);positionCommandMenu();
+  }
+  function insertCommand(command){
+    // A menu command temporarily replaces an ordinary draft. Keep that draft
+    // and its files, then restore it after execution or Escape.
+    if(view.input.value.trim()&&!commandSuggestions(view.input.value).length&&!state.commandDrafts.has(state.inputOwner))state.commandDrafts.set(state.inputOwner,{draft:view.input.value,input:''});
+    view.input.value='/'+command.id;state.inputRevision++;resize();saveDraft();closeCommandMenu();view.input.focus({preventScroll:true});view.input.setSelectionRange(view.input.value.length,view.input.value.length);updateHead();
+  }
+  function consumeCommandInput(owner,revision){
+    if(state.inputOwner!==owner||state.inputRevision!==revision)return;
+    view.input.value=state.commandDrafts.get(owner)?.draft||'';state.commandDrafts.delete(owner);state.inputRevision++;resize();saveDraft();
+  }
+  function dispatchCommand(match){
+    closeCommandMenu();
+    if(match.args){showError('Usage: /'+match.command.id+' (no arguments). Your message and files are unchanged.');return;}
+    const owner=state.inputOwner,revision=state.inputRevision;
+    if(match.command.id==='context'){
+      consumeCommandInput(owner,revision);hint('');contextControls.open();updateHead();return;
+    }
+    syncContext();
+    const result=contextControls.compress();
+    if(!result.accepted){showError(result.reason);return;}
+    consumeCommandInput(owner,revision);hint('');updateHead();
+  }
   const updateHead = () => {
-    const item=state.selected,bucket=selectedBucket(),latest=state.runs.at(-1),busy=state.pending||state.managing;
+    if(view.model.disabled!==state.pending){view.model.disabled=state.pending;refreshChoices(runtimeStatus);}
+    syncContext();
+    const item=state.selected,bucket=selectedBucket(),latest=state.runs.at(-1),busy=state.pending||state.managing||contextControls.isCompacting();
     view.title.textContent=item?.rootTitle||item?.title||'New conversation';
     view.subtitle.textContent=(item&&bucket!=='active'?(bucket==='deleted'?'In Trash':bucket==='archived'?'Archived':'History state unavailable')+' · ':'')+(latest ? latest.status==='completed'?'Saved response':latest.status||'Saved':'Local workspace');
+    const cycle=latest?.responseCycle;
+    const cycleLabel=({paused_after_plan:'Plan ready · paused',needs_evidence:'Planning needs evidence',needs_user_input:'Planning needs your input',failed:'Planning needs attention'})[cycle?.state];
+    view.cycleNotice.hidden=!cycle?.requestId||!cycleLabel;
+    view.cycleStatus.textContent=cycleLabel?cycleLabel+(cycle.title?' · '+cycle.title:''):'';
+    view.openPlan.disabled=busy||!cycle?.requestId;
     view.archive.hidden=!item;
     view.archive.textContent=bucket==='active'?'Archive':'Restore';
     view.archive.disabled=busy||!conversationBucket(bucket);
@@ -64,7 +172,9 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     view.stop.disabled=busy;
     const next=replyState(state.runs);
     view.send.textContent=state.loading?'Loading…':next.active?'Direct':'Send';
-    view.send.disabled=busy||state.loading||Boolean(item&&!state.runs.length)||state.attachmentsPending||bucket!=='active'||!next.canSend;
+    const localContext=commandFor(view.input.value)?.command.id==='context';
+    view.send.disabled=localContext?state.managing||bucket!=='active':busy||state.loading||Boolean(item&&!state.runs.length)||state.attachmentsPending||bucket!=='active'||!next.canSend;
+    view.commands.disabled=state.managing||bucket!=='active';
     view.input.disabled=bucket!=='active'||state.managing;
     view.input.placeholder=bucket==='active'?'Message BLACKICE…':'Restore this conversation to reply';
     drawManagement();
@@ -271,8 +381,9 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     state.selected=item;
     if(!refresh){clearTimeout(state.liveTimer);state.liveTimer=null;state.stream.length=0;
       state.runs=[];state.count=12;state.messageLimits.clear();choose(id);
+      contextControls.select(id,runtimeStatus.runtimeSettings?.defaultContext);
       attachmentsUI.refreshEditability();paintIntroduction(view,'Loading saved conversation…');}
-    updateHead();indexPaint();
+    refreshChoices();updateHead();indexPaint();
     let family;
     try { family=await reader.load(lastRunId(item),{signal:controller.signal}); }
     catch(error){if(controller.signal.aborted||error.name==='AbortError')return;
@@ -294,6 +405,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     const runs=conversationRuns(family);
     state.messageLimits=messageLimitsAfterRefresh(state.runs,runs,state.messageLimits);
     state.runs=runs;state.lastLoadedAt=Date.now();
+    refreshChoices();syncContext({select:!refresh,reconcile:refresh});
     render({preserve:refresh});
     // Resolve names for stored attachment IDs without blocking the transcript.
     if(runs.some(run=>Array.isArray(run.attachmentIds)&&run.attachmentIds.length)) {
@@ -311,14 +423,15 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     state.generation++;state.dataController?.abort();state.loading=false;
     clearTimeout(state.liveTimer);state.liveTimer=null;state.stream.length=0;
     state.selected=null;state.runs=[];state.count=12;state.messageLimits.clear();
-    choose('new');attachmentsUI.refreshEditability();
+    contextControls.select('new',runtimeStatus.runtimeSettings?.defaultContext);
+    choose('new');refreshChoices();attachmentsUI.refreshEditability();
     paintIntroduction(view);indexPaint();updateHead();
     if(focus)view.input.focus({preventScroll:true});
     try {localStorage.removeItem('blackice.next.selected');}catch{}
     hint('Enter to send · Shift+Enter for a new line');
   }
   async function runAction(kind,id) {
-    if(state.pending||state.managing||!state.active)return;
+    if(state.pending||state.managing||contextControls.isCompacting()||!state.active)return;
     state.pending=true;updateHead();hint(kind==='retry'?'Starting retry…':'Requesting Stop…');
     try {
       const suffix=kind==='retry'?'retry':'cancel';
@@ -328,32 +441,39 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     }catch(error){showError(error);}finally{state.pending=false;updateHead();}
   }
   async function send() {
-    if(state.pending||state.managing||state.attachmentsPending||selectedBucket()!=='active')return;
+    const command=commandFor(view.input.value);
+    if(command){dispatchCommand(command);return;}
+    if(state.pending||state.managing||contextControls.isCompacting()||state.attachmentsPending||selectedBucket()!=='active')return;
     if(state.selected&&(state.loading||!state.runs.length)){
       if(state.loading)hint('This conversation is still loading. Your draft is unchanged.');
       else showError('The saved conversation is unavailable. Retry opening it before sending; your draft is unchanged.');
       return;
     }
     const task=view.input.value.trim();if(!task)return;
-    const submittedOwner=state.inputOwner,submittedRevision=state.inputRevision;
+    const submittedOwner=state.inputOwner,submittedRevision=state.inputRevision,submittedContextOwner=root();
     state.pending=true;updateHead();hint('Sending your message…');
     const previous=state.selected,current=state.runs;
     try {
       let status=getStatus?.();
       if(!status?.cwd)status=await api('/api/status');
-      const options=validateChatOptions(status||{},state.options);
-      const result=await submitChat({api,runs:current,task,model:options.model,
-        effort:options.effort,serviceTier:options.serviceTier,
-        planningMode:options.planningMode,attachmentIds:[...(state.attachmentIds.get(root())||[])],
+      const submittedModel=modelSelections.read(submittedContextOwner,current),active=replyState(current).active;
+      const options=active?normalizeChatOptions(state.options):validateChatOptions(status||{},state.options);
+      const context=active?undefined:contextControls.read();
+      const submittedContextRevision=contextControls.revision;
+      const result=await submitChat({api,runs:current,task,model:previous&&!submittedModel.explicit?undefined:options.model,
+        effort:options.effort,serviceTier:options.serviceTier,context,
+        planningMode:options.planningMode,planningExecutionMode:options.planningExecutionMode,attachmentIds:[...(state.attachmentIds.get(root())||[])],
         cwd:(()=>{try{return localStorage.getItem('blackice.next.cwd')||status?.cwd||'';}catch{return status?.cwd||'';}})()});
       const unchanged=state.inputOwner===submittedOwner&&state.inputRevision===submittedRevision;
-      if(unchanged){state.drafts.set(submittedOwner,'');view.input.value='';resize();saveDraft();}
+      if(unchanged)consumeCommandInput(submittedOwner,submittedRevision);
       else saveDraft();
       state.attachmentIds.set(root(),[]);persistAttachments();attachmentsUI.reset({cancelPending:false});
       if(result.mode==='direction') {
         hint(result.receipt.delivery==='queued'?'Direction queued.':'Direction delivered.');
       } else if(result.run?.id) {
+        modelSelections.consume(submittedModel);
         const run=result.run;
+        if(context!==undefined)contextControls.commit(submittedContextOwner,context,submittedContextRevision);
         const item=previous ? {...previous,runId:run.id,latestRunId:run.id}
           : {id:run.taskId||run.id,taskId:run.taskId||run.id,runId:run.id,title:task,updatedAt:new Date().toISOString(),status:run.status};
         if(!previous&&!unchanged&&state.inputOwner===submittedOwner){state.drafts.set(rootId(item),view.input.value);state.drafts.set(submittedOwner,'');state.inputOwner=rootId(item);saveDraft();}
@@ -375,8 +495,12 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     if(!latest)return;
     const marker=[...view.timeline.querySelectorAll('[data-live-output]')].find(node=>node.dataset.liveOutput===latest.id);
     if(!marker)return;
-    if(marker.dataset.streaming!=='true'){marker.dataset.streaming='true';marker.textContent='';marker.classList.add('next-message-body','streaming');}
-    marker.append(marker.ownerDocument.createTextNode(append));
+    // Raw deltas can be interim planning text. Keep their transient preview
+    // small; the accepted message event renders the complete chat response and
+    // retains interim messages in Details, without promoting them to answers.
+    if(marker.dataset.streaming!=='true'){marker.dataset.streaming='true';marker.dataset.streamPreview='';}
+    marker.dataset.streamPreview=(marker.dataset.streamPreview+append).slice(0,512);
+    marker.textContent=chatProgressPreview(marker.dataset.streamPreview);
     const atBottom=view.scroll.scrollHeight-view.scroll.scrollTop-view.scroll.clientHeight<140;
     if(atBottom)view.scroll.scrollTop=view.scroll.scrollHeight;
   }
@@ -391,7 +515,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     if(['conversations.changed','conversations.updated'].includes(event.type)) {
       clearTimeout(state.listTimer);state.listTimer=setTimeout(()=>{void loadList();},800);return;
     }
-    if(event.type==='runtime.status')return;
+    if(event.type==='runtime.status'){refreshChoices(event.data||runtimeStatus);updateHead();return;}
     if(event.type==='run.updated'){
       const updated=event.data?.run||event.data;
       const item=state.list.find(item=>lastRunId(item)===event.runId);
@@ -405,6 +529,24 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     if(!event.runId || !state.runs.some(run=>run.id===event.runId))return;
     const data=event.data || {};
     const currentRun=state.runs.find(run=>run.id===event.runId);
+    if(event.type==='agent.event'&&data.type==='thread'&&concreteChatModel(data.model)){
+      const node=currentRun.nodes?.[event.nodeId];if(node)node.resolvedModel=data.model;
+      refreshChoices();
+    }
+    if(event.type==='agent.event'&&data.type==='context'&&data.context){
+      const node=currentRun.nodes?.[event.nodeId];
+      if(node)node.contextStatus=contextStatistics(data.context);
+      updateHead();
+    }
+    if(event.type==='node.updated'){
+      const node=currentRun.nodes?.[event.nodeId],updated=data.node||data.state||data;
+      if(node){
+        if(updated.contextStatus)node.contextStatus=contextStatistics(updated.contextStatus);
+        if(updated.lastCompaction)node.lastCompaction=compactionStatistics(updated.lastCompaction);
+        if(concreteChatModel(updated.resolvedModel))node.resolvedModel=updated.resolvedModel;
+      }
+      refreshChoices();updateHead();
+    }
     const nextOrder=()=>{
       const previous=currentRun.timelineOrder??Math.max(0,...(currentRun.planningActivity||[]).map(row=>row.order||0),currentRun.precomputedMessages?.at(-1)?.order||0);
       currentRun.timelineOrder=previous+1;return currentRun.timelineOrder;
@@ -453,8 +595,8 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       if(updated?.id===event.runId) {
         const i=state.runs.findIndex(run=>run.id===event.runId);
         if(i>=0) {
-          const old=state.runs[i];state.runs[i]={...old,status:updated.status,settled:updated.settled,
-            nodes:updated.nodes||old.nodes,output:updated.output??old.output,updatedAt:updated.updatedAt||old.updatedAt};
+          const old=state.runs[i];state.runs[i]=mergeChatRunUpdate(old,updated);
+          refreshChoices();
           if(!running(updated)&&running(old)) {
             clearTimeout(settleTimer);
             settleTimer=setTimeout(()=>{if(state.active&&state.selected)void open(state.selected,{refresh:true});},220);
@@ -469,9 +611,15 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     }
   }
   for(const [element,key] of [[view.model,'model'],[view.effort,'effort'],
-    [view.tier,'serviceTier'],[view.plan,'planningMode']])element?.addEventListener('change',()=>{
-      state.options[key]=element.value;refreshChoices();persistOptions();
+    [view.tier,'serviceTier'],[view.plan,'planningMode'],[view.executionMode,'planningExecutionMode']])element?.addEventListener('change',()=>{
+      if(key==='model'){
+        if(state.pending){refreshChoices(runtimeStatus);return;}
+        try{state.options.model=modelSelections.choose(root(),element.value,runtimeStatus);}catch(error){refreshChoices();showError(error);return;}
+      }else state.options[key]=element.value;
+      if(key==='planningExecutionMode'&&element.value==='plan_only'){state.options.planningMode='on';view.plan.value='on';}
+      refreshChoices();persistOptions();
     });
+  view.openPlan.addEventListener('click',()=>{const cycle=state.runs.at(-1)?.responseCycle;if(cycle?.requestId)onNavigate?.('planning',{requestId:cycle.requestId,nodeId:cycle.planRef?.nodeId});});
   view.newButton.addEventListener('click',()=>{if(state.pending||state.managing)return;const changed=state.bucket!=='active';state.bucket='active';view.bucket.value='active';state.selection.clear();state.selecting=false;if(changed){state.list=[];state.indexLimit=CHAT_INDEX_BATCH;}showNew();if(changed)void loadList();});
   // Search the full lightweight catalog after typing settles, but paint only
   // a bounded batch. A keystroke never synchronously rebuilds the sidebar.
@@ -487,12 +635,22 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       state.generation++;showNew({focus:false});void loadList();
   });
   view.form.addEventListener('submit',event=>{event.preventDefault();void send();});
+  view.commands.addEventListener('click',()=>{if(view.commands.disabled)return;if(!view.commandMenu.hidden){closeCommandMenu();return;}showCommands({all:true});view.input.focus({preventScroll:true});});
+  hostWindow.addEventListener('resize',positionCommandMenu);
+  mount.addEventListener('click',event=>{if(event.target!==view.commands&&event.target!==view.input&&!view.commandMenu.contains(event.target))closeCommandMenu();});
   view.input.addEventListener('keydown',event=>{
+    if(event.isComposing)return;
+    if(!view.commandMenu.hidden){
+      if(event.key==='Escape'){event.preventDefault();closeCommandMenu();return;}
+      if(['ArrowDown','ArrowUp'].includes(event.key)){event.preventDefault();selectCommandIndex(commandIndex+(event.key==='ArrowDown'?1:-1));return;}
+      if((event.key==='Tab'||event.key==='Enter')&&!event.shiftKey&&!event.ctrlKey&&!event.altKey&&!event.metaKey){event.preventDefault();insertCommand(shownCommands[commandIndex]);return;}
+    }
+    if(event.key==='Escape'&&state.commandDrafts.has(state.inputOwner)){event.preventDefault();consumeCommandInput(state.inputOwner,state.inputRevision);updateHead();return;}
     if(event.key==='Enter'&&!event.shiftKey&&!event.ctrlKey&&!event.altKey&&!event.isComposing) {
       event.preventDefault();void send();
     }
   });
-  view.input.addEventListener('input',()=>{state.inputRevision++;resize();scheduleDraft();});
+  view.input.addEventListener('input',()=>{state.inputRevision++;resize();scheduleDraft();showCommands();updateHead();});
   view.list.addEventListener('click',event=>{for(const menu of view.list.querySelectorAll('.next-conversation-actions[open]'))if(!menu.contains(event.target))menu.open=false;});
   view.list.addEventListener('toggle',event=>{if(event.target.matches?.('.next-conversation-actions[open]'))event.target.querySelector('.next-conversation-menu')?.scrollIntoView({block:'nearest'});},true);
   view.list.addEventListener('keydown',event=>{
@@ -526,6 +684,8 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       updateHead();
     },
     leave() {
+      closeCommandMenu();
+      modelPicker.close({restoreFocus:false});
       state.active=false;state.generation++;state.listRead++;state.unsubscribe?.();state.unsubscribe=null;
       listRequested=false;listInitialize=null;listController?.abort();
       closeTrash();if(view.renameDialog.open){view.renameDialog.close();if(!state.managing)renameTarget=null;}
@@ -535,9 +695,9 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       clearTimeout(draftTimer);saveDraft();
       state.stream.length=0;
     },
-    updateStatus(status) {refreshChoices(status);},
+    updateStatus(status) {if(status&&typeof status==='object'&&!Array.isArray(status)){refreshChoices(status);updateHead();}},
     openConversationId(id){if(!id)return;const item=state.list.find(row=>rootId(row)===id||lastRunId(row)===id)||{id,runId:id,title:'Conversation'};void open(item);},
     getState() {return {active:state.active,selected:root(),runCount:state.runs.length,listing:state.list.length,selectionCount:state.selection.size,managing:state.managing};},
-    destroy(){this.leave();state.destroyed=true;reader.close();artifacts.destroy();attachmentsUI.destroy();mount.innerHTML='';}
+    destroy(){this.leave();state.destroyed=true;hostWindow.removeEventListener('resize',positionCommandMenu);contextControls.destroy();modelPicker.destroy();reader.close();artifacts.destroy();attachmentsUI.destroy();mount.innerHTML='';}
   };
 }

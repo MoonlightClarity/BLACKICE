@@ -14,7 +14,8 @@ function fakeTimeline() {
     const node = { tagName, ownerDocument: document, className: '', dataset: {}, attributes: {}, children: [], _text: '',
       classList: { add() {} }, append(...children) { this.children.push(...children); },
       replaceChildren(...children) { this.children = children.flatMap(child => child.tagName === '#fragment' ? child.children : [child]); this._text = ''; },
-      setAttribute(name, value) { this.attributes[name] = String(value); }, addEventListener() {} };
+      setAttribute(name, value) { this.attributes[name] = String(value); }, addEventListener() {},
+      querySelectorAll(selector) { assert.equal(selector, 'details[data-disclosure-id]'); return descendants(this, item => item.tagName === 'details' && item.dataset.disclosureId); } };
     Object.defineProperty(node, 'textContent', { get() { return this._text + this.children.map(child => child.textContent).join(''); }, set(value) { this._text = String(value ?? ''); this.children = []; } });
     Object.defineProperty(node, 'innerHTML', { get() { return this._html ?? ''; }, set(value) { this._html = String(value); this._text = ''; this.children = []; } });
     return node;
@@ -35,17 +36,19 @@ test('public records retain Plan → Think → Plan → Think → Respond with t
   assert.deepEqual(run, before);
 });
 
-test('the production renderer interleaves both planning visits and preserves the full dotted outline', () => {
+test('the production renderer preserves both planning visits in expandable history and the full dotted outline', () => {
   const [run] = projectFamily({ runs: [planningReturnRun()] }).runs, timeline = fakeTimeline();
   paintHistory({ timeline }, [run]);
-  assert.deepEqual(descendants(timeline, node => node.className === 'next-chat-phase-title').map(node => node.textContent), ['Plan', 'Think', 'Plan', 'Think', 'Respond']);
+  const history = descendants(timeline, node => node.className === 'next-chat-outline-history')[0];
+  assert.ok(history, 'The saved work remains inspectable in its History disclosure.');
+  assert.deepEqual(descendants(history, node => node.dataset.phase).map(node => node.dataset.phase), ['plan', 'think', 'think', 'plan', 'think']);
   const sources = descendants(timeline, node => node.dataset.activitySource).map(node => node.dataset.activitySource);
   assert.deepEqual(sources, ['plan', 'observation', 'review']);
   assert.deepEqual(descendants(timeline, node => node.dataset.stepNumber).map(node => [node.dataset.stepId, node.dataset.stepNumber]), [['check', '1'], ['amounts', '1.1'], ['calculate', '1.1.1']]);
-  const outline = descendants(timeline, node => node.className === 'next-chat-task-summary')[0];
-  assert.match(outline.textContent, /Saved outline/);
-  assert.equal(descendants(outline, node => node.tagName === 'ol').length, 3, 'parents remain nested instead of flattened numbered rows');
-  assert.equal(descendants(timeline, node => node.dataset.phase === 'respond').length, 1);
+  const outline = descendants(timeline, node => node.className === 'next-chat-details')[0];
+  assert.equal(outline.children[0].textContent, 'Plan');
+  assert.equal(descendants(outline, node => node.className === 'next-chat-plan-outline').length, 3, 'parents remain nested instead of flattened numbered rows');
+  assert.equal(descendants(timeline, node => node.className === 'next-message next-chat-response').length, 1);
   assert.equal(timeline.textContent.split(run.output).length - 1, 1);
 });
 
@@ -76,8 +79,10 @@ test('live projection matches saved chronology, coalesces adjacent phases, and m
   assert.equal(groups.filter(group => group.active).length, 1); assert.equal(groups.at(-1).active, true);
   assert.deepEqual(activity, projectPlanningActivity(run));
   const timeline = fakeTimeline(); paintHistory({ timeline }, [{ ...live, precomputedMessages: messages }]);
-  const active = descendants(timeline, node => node.attributes['aria-current'] === 'step');
-  assert.equal(active.length, 1); assert.equal(active[0].dataset.phase, 'think');
+  const active = descendants(timeline, node => node.attributes.role === 'status');
+  assert.equal(active.length, 1); assert.equal(active[0].dataset.liveOutput, run.id);
+  assert.equal(active[0].attributes['aria-live'], 'polite'); assert.equal(active[0].attributes['aria-atomic'], 'true');
+  assert.ok(active[0].textContent.trim(), 'Running work exposes its current progress to assistive technology.');
 });
 
 test('reading unchanged state adds no fake planning return and old review snapshots keep their original position', () => {

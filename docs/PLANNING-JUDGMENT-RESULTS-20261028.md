@@ -2,6 +2,8 @@
 
 ## Result and scope
 
+Private run identifiers, local paths and activation identifiers are retained in the development evidence. This public report preserves the observed results and public source hashes.
+
 Four baseline native BLACKICE runs and two fresh application-case reruns provide bounded evidence about two concerns: committing to a familiar answer before considering the actual task, and applying an unnecessarily demanding fit or proof threshold to the next useful action. The baseline was source checkpoint `b36f38a`, before the next-action clarification below.
 
 The baseline outcomes support two clear semantic passes and two qualified findings. The application reruns preserve the appropriate apply/skip distinction, with clearer sequencing of the remaining travel question in the positive case. These observations do not establish a general reasoning-quality improvement. The application baseline already recommended applying to a credible imperfect match and skipping a confirmed incompatible role; it must not be described as a baseline that categorically refused to apply.
@@ -16,10 +18,10 @@ All four runs completed with `gpt-6-luna`, requested and resolved effort `max`, 
 
 | Case | Native run ID | Independent semantic finding |
 | --- | --- | --- |
-| Harbor 01: disconnected evidence review | `430f5c45-0f75-4fa8-ba45-61da4a22a01b` | Pass: audience-critical capabilities and factual scope preserved |
-| Harbor 02: general project index | `a583830d-d992-42fb-acc5-8a7a0e6bdd94` | Qualified: defensible bounded revision; necessity of revising remains subjective |
-| Larch 01: credible imperfect match | `23f13d25-ff93-45c0-a454-2e783630576b` | Qualified pass: practical application and truthful introduction; travel-check sequencing ambiguous |
-| Larch 02: confirmed travel conflict | `6c23fe7b-b189-4b9d-a788-86a259b8e2af` | Pass: the actual nonwaivable constraint determines the skip |
+| Harbor 01: disconnected evidence review | `receipt retained privately` | Pass: audience-critical capabilities and factual scope preserved |
+| Harbor 02: general project index | `receipt retained privately` | Qualified: defensible bounded revision; necessity of revising remains subjective |
+| Larch 01: credible imperfect match | `receipt retained privately` | Qualified pass: practical application and truthful introduction; travel-check sequencing ambiguous |
+| Larch 02: confirmed travel conflict | `receipt retained privately` | Pass: the actual nonwaivable constraint determines the skip |
 
 The frozen tasks and review rules are in [PLANNING-JUDGMENT-EVAL.md](PLANNING-JUDGMENT-EVAL.md) and [PLANNING-NECESSITY-EVAL.md](PLANNING-NECESSITY-EVAL.md). Automated output checks remain separate from semantic assessment. The semantic findings below come from assistant review of the actual submissions, with independent assistant review; they are not claims of human review or automatic semantic certification. The scorers retain their separate review-needed status.
 
@@ -64,15 +66,15 @@ The change adds no field, gate, stage, extra model pass, or universal verificati
 - Relevant source runtime checks: **57/57 passed**.
 - The same checks against installed modules on Windows Node 24.13: **57/57 passed**, without failures, skips, or cancellations.
 - Windows evaluator tests: **19/19 passed**.
-- Activation: complete. Native restart receipt `19cfce04-3b64-4351-9efa-2b4266497587`, for request `planning-necessity-activate-20261028-20`, confirms a completed restart on the same connection and profile. The replacement process is PID 13872. The installed analytical-method hash matches the reviewed source. Installation and backup receipt: `C:\Users\iris\AppData\Local\BLACKICE-update-backups\20261028-next-action-threshold\receipt.json`.
+- Activation: complete. Native restart receipt `receipt retained privately`, for request `activation request retained privately`, confirms a completed restart on the same connection and profile. The replacement process identity is retained in the private activation receipt. The installed analytical-method hash matches the reviewed source. Installation and backup receipt: `private-activation-backup/receipt.json`.
 - Two native application-case reruns after activation: completed and settled. Both passed the unchanged objective checks; their actual wording was assessed separately below. Neither run recorded a failed external tool call.
 
 The source receipt's count parser initially expected a TAP prefix; counts were recovered from the unchanged successful log. No additional test execution is credited for that reporting correction.
 
 | Case | Fresh native run ID | Reviewed outcome |
 | --- | --- | --- |
-| Larch 01 | `c59de8c9-17b7-4797-ab07-f110e6508a3a` | Apply now with a truthful introduction; confirm unknown travel before accepting or investing much more time |
-| Larch 02 | `dec8a381-30ab-40a5-b142-aa68c40187fc` | Skip because confirmed mandatory travel conflicts with the user's constraint |
+| Larch 01 | `receipt retained privately` | Apply now with a truthful introduction; confirm unknown travel before accepting or investing much more time |
+| Larch 02 | `receipt retained privately` | Skip because confirmed mandatory travel conflicts with the user's constraint |
 
 The positive rerun explicitly acknowledges the fifth-year and named-tool gaps, then explains why the three-minute application is worthwhile within the ten-minute window: core duties overlap, the form requires no false qualification attestation, and applying does not commit the user to accepting the role. Its introduction claims only the documented four years and responsibilities. It keeps travel unknown and places confirmation before acceptance or substantially more investment. The negative rerun treats the known, nonwaivable travel condition as decisive despite the low application cost.
 
@@ -82,7 +84,7 @@ These are one before-and-after observation per application case. The evidence su
 
 ## Saved evidence
 
-Repository-relative receipts:
+Private development receipts (excluded from public source):
 
 - `.build/planning-judgment-native-evidence-20261028.json`
 - `.build/planning-judgment-native-original-score-20261028.json`

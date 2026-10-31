@@ -13,6 +13,7 @@ topLevelFiles.add('RELEASE-NOTES-2.35.5.md');
 topLevelFiles.add('RELEASE-NOTES-2.35.6.md');
 topLevelFiles.add('RELEASE-NOTES-2.36.0.md');
 topLevelFiles.add('RELEASE-NOTES-2.36.1.md');
+topLevelFiles.add('RELEASE-NOTES-2.37.0.md');
 
 // Match the existing installer inputs without admitting arbitrary native helpers.
 const packagedNativeHelpers = new Set([
@@ -53,17 +54,17 @@ export function nativeRestartCLIOutcome(log, exitCode) {
 }
 
 export function forbiddenWindowsPackagePath(relative) {
-  return relative === 'desktop/build-icon.mjs' || relative.endsWith('.test.mjs') || relative.includes('.currents-backup-') || /(^|\/)(\.git|\.env(?:\..*)?|data|workspace|tests|node_modules)(\/|$)/.test(relative);
+  return relative === 'desktop/build-icon.mjs' || relative.endsWith('.test.mjs') || relative.includes('.currents-backup-') || relative.split('/').some(part => part.endsWith('.ownership-backup')) || /(^|\/)(\.git|\.env(?:\..*)?|data|workspace|tests|node_modules)(\/|$)/.test(relative);
 }
 
 /** The installed-file verifier uses the same runtime families as electron-builder. */
 export function approvedWindowsPackageFile(relative, version) {
   if (typeof relative !== 'string' || relative.includes('\\') || relative.startsWith('/') || relative.split('/').some(part => !part || part === '.' || part === '..') || forbiddenWindowsPackagePath(relative)) return false;
-  return topLevelFiles.has(relative) || packagedNativeHelpers.has(relative) || (/^\d+\.\d+\.\d+$/.test(version) && relative === `RELEASE-NOTES-${version}.md`) || /^(lib|public)\//.test(relative) || /^desktop\/.*\.(mjs|cjs)$/.test(relative) || relative.startsWith('desktop/browser-compatibility/') || relative === 'desktop/icon.ico' || /^scripts\/(generate-noir-background\.mjs|noir-scene\.config\.json|chatgpt-bridge\.mjs|email-oauth-token\.mjs|remote-access-cli\.mjs|browser-cli\.mjs)$/.test(relative);
+  return topLevelFiles.has(relative) || packagedNativeHelpers.has(relative) || (/^\d+\.\d+\.\d+$/.test(version) && relative === `RELEASE-NOTES-${version}.md`) || /^(lib|public)\//.test(relative) || /^desktop\/.*\.(mjs|cjs)$/.test(relative) || relative.startsWith('desktop/browser-compatibility/') || relative === 'desktop/icon.ico' || relative === 'scripts/repair-shortcuts.ps1' || /^scripts\/(generate-noir-background\.mjs|noir-scene\.config\.json|chatgpt-bridge\.mjs|email-oauth-token\.mjs|remote-access-cli\.mjs|browser-cli\.mjs|chatgpt-cli\.mjs)$/.test(relative);
 }
 
 /** Read existing, tracked evidence; never synthesize a passing source-test receipt. */
-export async function readWindowsSourceTestReceipt({ directory, receiptPath, version, appFingerprint, tracked }) {
+export async function readWindowsSourceTestReceipt({ directory, receiptPath, version, appFingerprint, tracked, sourceIndexSha256 }) {
   check(typeof receiptPath === 'string' && /^verification\/[A-Za-z0-9][A-Za-z0-9._-]*\.json$/.test(receiptPath), 'Choose a source-test receipt under verification/.');
   check(tracked?.has(receiptPath), 'Source-test receipt is not tracked in the approved source.');
   const verification = await fs.lstat(path.join(directory, 'verification'));
@@ -74,5 +75,6 @@ export async function readWindowsSourceTestReceipt({ directory, receiptPath, ver
   check(prior.format === 1 && prior.product === 'BLACKICE' && prior.scope === 'source-publication' && prior.version === version && prior.appFingerprint === appFingerprint && prior.fingerprintUnchanged === true && prior.platform === 'win32', 'Prior source test receipt binding mismatch');
   check(tests && ['total', 'passed', 'failed', 'requiredSkipped', 'optionalSkipped', 'cancelled', 'exitCode'].every(key => Number.isSafeInteger(tests[key]) && tests[key] >= 0) && tests.passed > 0 && tests.failed === 0 && tests.requiredSkipped === 0 && tests.cancelled === 0 && tests.exitCode === 0 && tests.total === tests.passed + tests.failed + tests.requiredSkipped + tests.optionalSkipped, 'Prior required tests did not pass');
   check(/^[a-f\d]{64}$/.test(prior.testLogSha256), 'Prior test log provenance missing');
-  return { receiptPath, receiptSha256: createHash('sha256').update(bytes).digest('hex'), checkedAt: prior.checkedAt, platform: prior.platform, node: prior.node, appFingerprint: prior.appFingerprint, tests, testLogSha256: prior.testLogSha256 };
+  if (sourceIndexSha256 !== undefined) check(typeof sourceIndexSha256 === 'string' && /^[a-f\d]{64}$/.test(sourceIndexSha256) && prior.sourceIndexSha256 === sourceIndexSha256, 'Prior source-test inventory binding mismatch');
+  return { receiptPath, receiptSha256: createHash('sha256').update(bytes).digest('hex'), checkedAt: prior.checkedAt, platform: prior.platform, node: prior.node, appFingerprint: prior.appFingerprint, sourceIndexSha256: prior.sourceIndexSha256, tests, testLogSha256: prior.testLogSha256 };
 }

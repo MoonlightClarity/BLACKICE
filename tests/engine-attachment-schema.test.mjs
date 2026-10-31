@@ -134,12 +134,20 @@ test('API continuations receive current attachment tools even when an earlier sc
   const next = await f.settled(f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue through the API provider.' }).id); completed(next); assert.equal(next.nodes.agent.attachmentSchemaVersion, ATTACHMENT_SCHEMA_VERSION); assert.equal(f.runtime.calls[1].threadId, threadId);
 });
 
-test('an explicit fresh native history restart can attach the current schema without changing the old turn', async t => {
-  const f = await fixture(t, async options => { assert.deepEqual(fileTool(options), ATTACHMENT_TOOL); return { output: 'Actual saved result.', threadId: 'native-attachment-thread' }; });
+test('the legacy relay history setting retains the saved native schema and a fresh chat receives current attachment tools', async t => {
+  const f = await fixture(t, async (options, number) => {
+    if (number === 2) assert.deepEqual(fileTool(options).inputSchema.properties.action.enum, ['list', 'read', 'search', 'image']);
+    else assert.deepEqual(fileTool(options), ATTACHMENT_TOOL);
+    return { output: 'Actual saved result.', threadId: 'native-attachment-thread' };
+  });
   const first = await f.settled(f.start().id); completed(first); delete f.engine.runs.get(first.id).nodes.agent.attachmentSchemaVersion;
   f.engine.runtimeSettings = { get: () => ({ codexHistory: 'relay' }) };
-  const next = await f.settled(f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Start the configured fresh history turn.' }).id); completed(next);
-  assert.equal(next.nodes.agent.attachmentSchemaVersion, ATTACHMENT_SCHEMA_VERSION); assert.equal(f.runtime.calls[1].threadId, undefined); assert.equal(next.modelHandoff.reason, 'relay-history'); assert.equal(f.engine.getRun(first.id).nodes.agent.attachmentSchemaVersion, undefined);
+  const next = await f.settled(f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue the saved native history with the legacy setting.' }).id); completed(next);
+  assert.equal(next.nodes.agent.attachmentSchemaVersion, 1); assert.equal(f.runtime.calls[1].threadId, f.threadId);
+  assert.equal(f.runtime.calls[1].codexHistory, 'codex'); assert.equal(next.modelHandoff, undefined);
+  assert.equal(f.engine.getRun(first.id).nodes.agent.attachmentSchemaVersion, undefined);
+  const fresh = await f.settled(f.start().id); completed(fresh);
+  assert.equal(f.runtime.calls[2].threadId, undefined); assert.equal(fresh.nodes.agent.attachmentSchemaVersion, ATTACHMENT_SCHEMA_VERSION);
 });
 
 test('legacy attachment context stays bounded with ten heavily escaped text excerpts', async t => {

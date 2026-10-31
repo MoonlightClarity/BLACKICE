@@ -114,9 +114,9 @@ test('email attempts survive restart and backup recovery without changing identi
   assert.equal(recovered.externalActions[0].status, 'confirmed'); assert.equal(recovered.externalActions[0].fingerprint, fingerprint); assert.equal(recovered.externalActions[0].destination, 'mailto:Hiring%2BResearch@example.invalid');
 });
 
-test('dynamic live describe explains accepted destinations without advertising final receipts to a worker', async t => {
+test('dynamic guarded describe explains accepted destinations without advertising final receipts to a worker', async t => {
   const f = await fixture(t), describe = async options => {
-    const handler = createTaskToolHandler({ store: f.store, taskId: 'email-task', runId: 'email-run', nodeId: 'agent', ...options });
+    const handler = createTaskToolHandler({ store: f.store, taskId: 'email-task', runId: 'email-run', nodeId: 'agent', executionGuardrails: true, ...options });
     const result = await handler({ name: 'relay_task', arguments: { action: 'describe' } }); assert.equal(result.success, true); return JSON.parse(result.contentItems[0].text);
   };
   const current = await describe({ schemaVersion: 7 }); assert.ok(current.externalDestinations.accepted.includes('mailto:single-recipient')); assert.ok(current.externalDestinations.accepted.includes('single bare email address'));
@@ -124,9 +124,28 @@ test('dynamic live describe explains accepted destinations without advertising f
   const worker = await describe({ schemaVersion: 7, worker: true, scopeStepId: 'assigned' }); assert.equal(worker.externalDestinations, undefined);
 });
 
-test('all cached task and worker schemas plus instructions retain their exact legacy hashes', () => {
+test('guarded cached task and worker schemas plus instructions retain their exact legacy hashes', () => {
+  // These fixed historical catalogs predate the separate advisory default.
+  const legacy = { executionGuardrails: true };
   for (const [version, expected] of Object.entries(LEGACY_HASHES)) {
-    assert.equal(hash(taskToolForVersion(Number(version))), expected.tool); assert.equal(hash(taskWorkerToolForVersion(Number(version))), expected.workerTool);
-    assert.equal(hash(taskInstructionsForVersion(Number(version))), expected.instructions); assert.equal(hash(optionalTaskInstructionsForVersion(Number(version))), expected.optionalInstructions);
+    assert.equal(hash(taskToolForVersion(Number(version), legacy)), expected.tool); assert.equal(hash(taskWorkerToolForVersion(Number(version), legacy)), expected.workerTool);
+    assert.equal(hash(taskInstructionsForVersion(Number(version), legacy)), expected.instructions); assert.equal(hash(optionalTaskInstructionsForVersion(Number(version), legacy)), expected.optionalInstructions);
+  }
+});
+
+
+test('legacy worker catalog repair preserves the existing advisory defaults', () => {
+  const expected = {
+    "1": "0d90b698ade04cb72386584686a76f923f16d40ead62a92c3f548983571f7ffd",
+    "2": "93967de4b50bdc837678a95b484a7491cb6daff7fd48aa4df5ff5468f7ed53ec",
+    "3": "788b4ec27ad549ce461771e7034236dda8e32dc3c8f42a5451a253d64e15f8a9",
+    "4": "42510151d491524ca98a80996744f7502ad6856547710cc7f7d77fc48e232730",
+    "5": "e5b2242090996e28114c7c4c6cf5bba86b58893546295938a1f4205cf9932f10"
+  };
+  for (const [savedVersion, sha256] of Object.entries(expected)) {
+    const version = Number(savedVersion);
+    assert.equal(hash(taskWorkerToolForVersion(version)), sha256, `default advisory worker v${version}`);
+    assert.equal(hash(taskWorkerToolForVersion(version, { executionGuardrails: false })), sha256, `explicit advisory worker v${version}`);
+    assert.notEqual(sha256, LEGACY_HASHES[savedVersion].workerTool);
   }
 });

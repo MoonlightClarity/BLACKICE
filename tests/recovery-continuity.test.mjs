@@ -24,8 +24,11 @@ test('Retry after an actual API tool edit and application restart preserves the 
   const directory = await mkdtemp(path.join(tmpdir(), 'relay-recovery-effects-')), cwd = path.join(directory, 'workspace'), dataDir = path.join(directory, 'data'), requests = [], engines = [], runtimes = []; await mkdir(cwd);
   const send = (response, value, status = 200) => { response.writeHead(status, { 'Content-Type': 'application/json' }); response.end(JSON.stringify(value)); };
   const server = createServer(async (request, response) => {
+    // Catalog discovery is not an inference attempt or an external file edit.
+    if (request.method === 'GET' && request.url === '/v1/models') return send(response, { data: [{ id: 'tool-model', context_length: 262144, top_provider: { max_completion_tokens: 4096 } }] });
     let raw = ''; for await (const chunk of request) raw += chunk; const body = JSON.parse(raw); requests.push(body);
-    if (requests.length === 2) return send(response, { error: { message: 'Fixture connection failed after the confirmed edit.' } }, 503);
+    // Both the initial transient rejection and its one automatic retry fail.
+    if (requests.length === 2 || requests.length === 3) return send(response, { error: { message: 'Fixture connection failed after the confirmed edit.' } }, 503);
     const hasReceipt = body.messages.some(message => message.role === 'tool' && message.tool_call_id === 'confirmed-file-edit');
     const message = hasReceipt ? { role: 'assistant', content: 'Verified the previously completed file edit without repeating it.' } : {
       role: 'assistant', content: 'Write the artifact once.', tool_calls: [{ id: 'confirmed-file-edit', type: 'function', function: { name: 'relay_workspace', arguments: JSON.stringify({ action: 'write', path: 'result.txt', text: requests.length === 1 ? 'CONFIRMED_INITIAL_EDIT' : 'DUPLICATE_EDIT_AFTER_LOST_CONTEXT' }) } }],
@@ -46,7 +49,7 @@ test('Retry after an actual API tool edit and application restart preserves the 
   await engine.close(); await runtime.close(); ({ runtime, engine } = await boot());
   const recoveredFirst = engine.getRun(first.id), retried = await settle(engine, engine.retryRun(first.id));
   assert.equal(retried.status, 'completed', retried.error); assert.equal(retried.nodes.agent.threadId, first.nodes.agent.threadId); assert.equal(retried.nodes.agent.resumeThreadId, first.nodes.agent.threadId);
-  assert.equal(requests.length, 3, 'Retry retains the completed tool exchange rather than making another edit request'); assert.equal(await readFile(path.join(cwd, 'result.txt'), 'utf8'), 'CONFIRMED_INITIAL_EDIT'); assert.match(requests[2].messages.at(-1).content, /Resume this interrupted agent conversation/); assert.match(requests[2].messages.at(-1).content, /Verify the current workspace/);
+  assert.equal(requests.length, 4, 'Retry retains the completed tool exchange after the bounded transient retry fails'); assert.deepEqual(requests[2], requests[1], 'The transient retry preserves the same receipt-bearing request.'); assert.equal(await readFile(path.join(cwd, 'result.txt'), 'utf8'), 'CONFIRMED_INITIAL_EDIT'); assert.match(requests[3].messages.at(-1).content, /Resume this interrupted agent conversation/); assert.match(requests[3].messages.at(-1).content, /Verify the current workspace/);
   assert.deepEqual(engine.getRun(first.id), recoveredFirst); assert.equal(retried.taskId, first.id); assert.equal(retried.retryOf, first.id); assert.equal(retried.nodes.agent.usage.totalTokens, 38); assert.equal(retried.nodes.agent.usage.total.totalTokens, 76);
 });
 

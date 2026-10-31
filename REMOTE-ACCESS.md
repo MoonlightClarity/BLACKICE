@@ -1,6 +1,6 @@
 # Remote access for people and agents
 
-BLACKICE 2.30.0 exposes one running workspace through two interfaces: the normal browser application for a human, and a scoped MCP/REST connection for an outside agent. Both use the same chats, durable plans, run results and registered artifacts. Model execution, tool access and credential storage happen on the host computer.
+BLACKICE exposes one running workspace through two interfaces: the normal browser application for a human, and a scoped MCP/REST connection for an outside agent. Both use the same chats, durable plans, run results and registered artifacts. Model execution, tool access and credential storage happen on the host computer.
 
 ## Enable an address
 
@@ -53,7 +53,7 @@ An agent with access to the host computer can issue a code through the installed
 For a person connecting from another browser, the shortest host command is:
 
 ```powershell
-& "$env:LOCALAPPDATA\Programs\Agent Desk\Agent Desk.exe" --access-code
+& "$env:LOCALAPPDATA\Programs\BLACKICE\BLACKICE.exe" --access-code
 ```
 
 It prints the address, one-use code, pairing link, permissions and expiration times. Add `--json` for a machine-readable receipt. Browser codes retain the normal browser pairing flow.
@@ -61,7 +61,7 @@ It prints the address, one-use code, pairing link, permissions and expiration ti
 For an agent that needs to build an app or start other work, issue an **agent** code with explicit task permissions:
 
 ```powershell
-$blackiceExecutable = "$env:LOCALAPPDATA\Programs\Agent Desk\Agent Desk.exe"
+$blackiceExecutable = "$env:LOCALAPPDATA\Programs\BLACKICE\BLACKICE.exe"
 $grant = & $blackiceExecutable remote code --kind agent --scope=read --scope=tasks:write --json | ConvertFrom-Json
 ```
 
@@ -94,7 +94,7 @@ Configure a **Streamable HTTP** client with:
 
 The server supports MCP **2026-07-28**, **2025-11-25** and **2025-06-18**. Current clients use per-request metadata, `MCP-Protocol-Version`, `Mcp-Method` and, for a tool call, `Mcp-Name`. Legacy clients use `initialize` and their negotiated version. Tool calls return JSON promptly; task execution continues in BLACKICE and is followed by reading the returned run ID. There is no legacy HTTP+SSE endpoint or MCP session identifier.
 
-Client software must support a user-configured bearer authorization header. OAuth discovery and an OAuth consent flow are not offered by this release. This is not a claim that every hosted agent connector accepts manually configured credentials.
+Client software must support a user-configured bearer authorization header. The `/mcp` endpoint uses manually configured bearer credentials; the separate `/mcp/chatgpt` endpoint offers the OAuth flow described above. This is not a claim that every hosted agent connector accepts manually configured credentials.
 
 The tool catalog is filtered by the authenticated client's permissions:
 
@@ -185,7 +185,7 @@ Unsaved text remains in the human browser. A short-lived, identity-bound presenc
 **Run in background** hides the current desktop window without stopping its runtime. Reopen BLACKICE normally to display the same instance. To start without a main window:
 
 ```powershell
-& "$env:LOCALAPPDATA\Programs\Agent Desk\Agent Desk.exe" --headless
+& "$env:LOCALAPPDATA\Programs\BLACKICE\BLACKICE.exe" --headless
 ```
 
 The source project also supports `npm run headless`. Electron remains responsible for the saved profile, native credential encryption and contained browser tooling. `node server.mjs` remains a separate developer server; it does not replace the desktop profile/runtime.
@@ -200,3 +200,13 @@ The host must stay on, signed in and able to reach its providers. This mode is n
 - [MCP Streamable HTTP, 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http)
 - [MCP versioning and compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning)
 - [Electron app lifecycle and single-instance behavior](https://www.electronjs.org/docs/latest/api/app)
+
+## Availability while BLACKICE is closed
+
+An enabled BLACKICE profile keeps a small availability responder and its existing owned HTTPS route after the application exits. The main application still owns all execution, model work, browser sessions and OAuth writes. The responder only forwards requests while that application is connected, or returns its availability status. It never starts the application, queues work, replays actions or starts at Windows boot by itself. Explicitly disabling remote access removes the route and stops the responder.
+
+Authenticated connector status distinguishes `closed`, `starting`, `closing` and `unreachable`. A refused HTTP connection alone does not establish that the application is closed. A local lifetime connection clears the proxy target when its owning application disconnects; reopening attaches the new application generation to the same responder and route. Existing grant IDs and scopes are preserved.
+
+An offline action response reports that no action was admitted when the request was never sent. If the connection was lost after delivery may have begun, its outcome, model-start and provider-turn fields are unknown. Read the existing durable job after BLACKICE returns, or retry identical arguments with the same request ID under the same grant. The responder does not replay the request.
+
+Offline authentication reads the existing access-token hashes. Token refresh returns `temporarily_unavailable` until BLACKICE reopens; the responder does not rotate or revoke credentials. The computer and Tailscale must remain reachable for these messages to arrive. Shutdown, sleep, account logoff or a network failure can still prevent an application-level response.

@@ -24,7 +24,7 @@ async function handoffFixture(t,{history,context,reportedWindow,priorContext,nex
 
 test('an explicit 900k window restores saved messages beyond the former 160k-character cutoff',async t=>{
   const history='FIRST_EVIDENCE\n'+'a'.repeat(210000)+'\nMIDDLE_HISTORY_EVIDENCE\n'+'b'.repeat(210000)+'\nLATEST_EVIDENCE',context={preset:'900k'};
-  const{calls,next}=await handoffFixture(t,{history,context,reportedWindow:1000000});assert.equal(next.status,'completed',next.error);assert.equal(calls[1].threadId,undefined);assert.equal(calls[1].codexHistory,'relay');assert.match(calls[1].prompt,/MIDDLE_HISTORY_EVIDENCE/);assert.ok(calls[1].prompt.length>400000);
+  const{calls,next}=await handoffFixture(t,{history,context,reportedWindow:1000000});assert.equal(next.status,'completed',next.error);assert.equal(calls[1].threadId,undefined);assert.equal(calls[1].codexHistory,'codex');assert.match(calls[1].prompt,/MIDDLE_HISTORY_EVIDENCE/);assert.ok(calls[1].prompt.length>400000);
   const continuity=next.nodes.agent.continuity;assert.equal(continuity.truncated,false);assert.equal(continuity.effectiveWindowTokens,900000);assert.equal(continuity.windowSource,'provider-reported');assert.equal(continuity.sourceChars,continuity.retainedChars);assert.equal(continuity.omittedChars,0);assert.equal(continuity.method,'saved-messages');assert.equal(continuity.estimatedInputTokens,estimateContextTokens([[calls[1].developerInstructions,calls[1].prompt],calls[1].dynamicTools]));assert.ok(continuity.estimatedInputTokens<=continuity.inputBudgetTokens);
 });
 

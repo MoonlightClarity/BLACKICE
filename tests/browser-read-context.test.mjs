@@ -112,51 +112,64 @@ test('the actual public read path opts into context and retains observed same-do
 function frameFixture(mainFrame) {
   let activations = 0, settlements = 0, acquisitions = 0;
   const timeouts = [], contents = { getURL: () => 'https://jobs.example.test/role', getTitle: () => 'Role fixture', loadURL: () => assert.fail('Snapshot recovery must never navigate or replay input.') };
-  Object.defineProperty(contents, 'mainFrame', { get() { acquisitions++; return mainFrame(acquisitions); } });
-  const tab = { id: 'tab-one', revision: 7, refs: new Map([['stale-ref', {}]]), suspendedWork: new Set(), window: { isDestroyed: () => false, webContents: contents } };
+  Object.defineProperty(contents, 'mainFrame', { get() { acquisitions++; return mainFrame(); } });
+  const tab = { id: 'tab-one', revision: 7, mainRevision: 7, frameRevisions: new Map(), refs: new Map([['stale-ref', {}]]), suspendedWork: new Set(), window: { isDestroyed: () => false, webContents: contents } };
   const driver = Object.create(ElectronBrowserDriver.prototype);
   Object.assign(driver, { key: '__snapshot_fixture', tabs: new Map([[tab.id, tab]]), activeTab: tab.id, activate: async () => { activations++; }, settle: async () => { settlements++; }, pageWork: async (_tab, work, _signal, timeout) => { timeouts.push(timeout); return work; }, status: () => ({ tabs: [{ tabId: tab.id }] }) });
   return { driver, tab, timeouts, get counts() { return { activations, settlements, acquisitions }; } };
 }
+
 const disposed = () => new Error('Render frame was disposed before WebFrameMain could be accessed');
-const readableFrame = dom => ({ processId: 9, routingId: 12, framesInSubtree: [], executeJavaScript: async code => JSON.parse(JSON.stringify(vm.runInContext(code, dom.context))) });
+const readableFrame = dom => ({ processId: 9, routingId: 12, url: 'https://jobs.example.test/role', framesInSubtree: [], executeJavaScript: async code => JSON.parse(JSON.stringify(vm.runInContext(code, dom.context))) });
+const singleAdmission = f => { assert.equal(f.counts.activations, 1); assert.equal(f.counts.settlements, 1); };
 
 for (const phase of ['enumeration', 'metadata', 'execution']) test(`a disposed frame during ${phase} is reacquired once for the current read without replaying the preceding action`, async () => {
-  const dom = roleFixture(), fresh = readableFrame(dom), stale = { processId: 1, routingId: 2, framesInSubtree: [], executeJavaScript: async () => { throw disposed(); } };
-  Object.defineProperty(stale, 'url', { get() { assert.fail('Error handling must not access disposed frame metadata.'); } });
-  if (phase === 'enumeration') Object.defineProperty(stale, 'framesInSubtree', { get() { throw disposed(); } });
-  if (phase === 'metadata') Object.defineProperty(stale, 'processId', { get() { throw disposed(); } });
-  const f = frameFixture(attempt => attempt === 1 ? stale : fresh);
+  const dom = roleFixture(), fresh = readableFrame(dom); let current, disposals = 0, freshExecutions = 0;
+  const executeFresh = fresh.executeJavaScript; fresh.executeJavaScript = async code => { freshExecutions++; return executeFresh(code); };
+  const stale = { processId: 1, routingId: 2, framesInSubtree: [], executeJavaScript: async () => failDisposed() };
+  const failDisposed = () => { disposals++; current = fresh; throw disposed(); };
+  current = stale;
+  Object.defineProperty(stale, 'url', { get() { assert.equal(current, stale, 'Error handling must not read the disposed frame URL.'); return 'https://jobs.example.test/role'; } });
+  if (phase === 'enumeration') Object.defineProperty(stale, 'framesInSubtree', { get: failDisposed });
+  if (phase === 'metadata') Object.defineProperty(stale, 'processId', { get: failDisposed });
+  const f = frameFixture(() => current);
   const read = await f.driver.perform({ action: 'read', tabId: f.tab.id, query: 'About the role' });
   assert.match(read.frames[0].text, /Three years of Python/); assert.equal(read.frames[0].frame, '9-12');
-  assert.deepEqual(f.counts, { activations: 1, settlements: 1, acquisitions: 2 });
+  singleAdmission(f); assert.equal(disposals, 1); assert.equal(freshExecutions, 1);
+  assert.equal(f.timeouts.length, phase === 'execution' ? 2 : 1, 'Only the failed read is retried.');
   assert.equal(f.tab.refs.has('stale-ref'), false); assert.equal(f.tab.refs.size, 1);
-  assert.ok([...f.tab.refs.keys()].every(ref => ref.startsWith('7-9-12:')));
+  assert.ok([...f.tab.refs.keys()].every(ref => ref.startsWith('7-0-9-12:')));
   assert.ok([...f.tab.refs.values()].every(frame => frame === fresh));
+  assert.ok([...f.tab.refs.keys()].every(ref => f.driver.referenceCurrent(f.tab, ref, read.documentId)));
 });
 
 test('repeated disposal stays bounded, ordinary frame errors are not retried, and partial reads keep their successful frames', async () => {
   let executions = 0;
-  const stale = { processId: 1, routingId: 2, framesInSubtree: [], executeJavaScript: async () => { executions++; throw disposed(); } };
-  Object.defineProperty(stale, 'url', { get() { assert.fail('A disposed URL getter must stay untouched.'); } });
+  const stale = { processId: 1, routingId: 2, url: 'https://jobs.example.test/child', framesInSubtree: [], executeJavaScript: async () => { executions++; throw disposed(); } };
   const repeated = frameFixture(() => stale), failed = await repeated.driver.perform({ action: 'snapshot', tabId: repeated.tab.id });
   assert.deepEqual(failed.frames, []); assert.equal(failed.frameErrors.length, 1); assert.match(failed.frameErrors[0].error, /disposed/);
-  assert.equal(repeated.counts.acquisitions, 2); assert.equal(executions, 2); assert.equal(repeated.tab.refs.size, 0);
-  const ordinary = frameFixture(() => ({ processId: 1, routingId: 2, framesInSubtree: [], executeJavaScript: async () => { throw new Error('Unrelated inspection failure'); } }));
+  singleAdmission(repeated); assert.equal(executions, 2); assert.equal(repeated.timeouts.length, 2); assert.equal(repeated.tab.refs.size, 0);
+  let ordinaryExecutions = 0;
+  const ordinary = frameFixture(() => ordinaryFrame), ordinaryFrame = { processId: 1, routingId: 2, url: 'https://jobs.example.test/role', framesInSubtree: [], executeJavaScript: async () => { ordinaryExecutions++; throw new Error('Unrelated inspection failure'); } };
   const ordinaryFailure = await ordinary.driver.perform({ action: 'read', tabId: ordinary.tab.id });
-  assert.equal(ordinary.counts.acquisitions, 1); assert.match(ordinaryFailure.frameErrors[0].error, /Unrelated inspection failure/);
-  const dom = roleFixture(), fresh = readableFrame(dom); fresh.framesInSubtree = [fresh, stale];
+  singleAdmission(ordinary); assert.equal(ordinaryExecutions, 1); assert.match(ordinaryFailure.frameErrors[0].error, /Unrelated inspection failure/);
+  const dom = roleFixture(), fresh = readableFrame(dom); stale.parent = fresh; fresh.framesInSubtree = [fresh, stale];
+  let mainExecutions = 0; const executeFresh = fresh.executeJavaScript;
+  fresh.executeJavaScript = async code => { mainExecutions++; return executeFresh(code); };
+  executions = 0;
   const partial = frameFixture(() => fresh), result = await partial.driver.perform({ action: 'read', tabId: partial.tab.id });
   assert.equal(result.frames.length, 1); assert.equal(result.frames[0].frame, '9-12'); assert.equal(result.frameErrors.length, 1);
-  assert.equal(partial.counts.acquisitions, 1);
+  singleAdmission(partial); assert.equal(mainExecutions, 1); assert.equal(executions, 1, 'A successful partial observation is not replayed.');
 });
 
 test('frame reacquisition shares the original read deadline and cancellation forbids its retry', async t => {
   let now = 0; t.mock.method(Date, 'now', () => now);
-  const dom = roleFixture(), fresh = readableFrame(dom), stale = { processId: 1, routingId: 2, framesInSubtree: [], executeJavaScript: async () => { await Promise.resolve(); now = 6500; throw disposed(); } };
-  const f = frameFixture(attempt => attempt === 1 ? stale : fresh);
+  const dom = roleFixture(), fresh = readableFrame(dom); let current;
+  const stale = { processId: 1, routingId: 2, url: 'https://jobs.example.test/role', framesInSubtree: [], executeJavaScript: async () => { await Promise.resolve(); now = 6500; current = fresh; throw disposed(); } };
+  current = stale;
+  const f = frameFixture(() => current);
   const read = await f.driver.perform({ action: 'read', tabId: f.tab.id, query: 'About the role' });
-  assert.equal(read.frames.length, 1); assert.deepEqual(f.timeouts, [5000, 500]);
+  assert.equal(read.frames.length, 1); assert.deepEqual(f.timeouts, [5000, 500]); singleAdmission(f);
   const controller = new AbortController(), cancelledFrame = {};
   Object.defineProperty(cancelledFrame, 'framesInSubtree', { get() { controller.abort(); throw disposed(); } });
   const stopped = frameFixture(() => cancelledFrame);
@@ -165,4 +178,18 @@ test('frame reacquisition shares the original read deadline and cancellation for
   assert.equal(stopped.tab.refs.has('stale-ref'), true, 'Cancelling a read does not erase prior observations.');
   await assert.rejects(stopped.driver.element(stopped.tab, { ref: 'stale-ref' }, 'click'), { code: 'BROWSER_REF_STALE' });
   assert.equal(stopped.tab.refs.has('stale-ref'), false, 'A reference whose frame has since been disposed is retired before any action.');
+});
+
+test('replacement during a read publishes only a fresh observation and repeated churn stays bounded', async () => {
+  const dom = roleFixture(), fresh = readableFrame(dom); let current, staleExecutions = 0;
+  const stale = { ...readableFrame(dom), processId: 1, routingId: 2, executeJavaScript: async () => { staleExecutions++; current = fresh; return { elements: [{ ref: 'obsolete-observation' }], text: 'obsolete text' }; } };
+  current = stale;
+  const recovered = frameFixture(() => current), result = await recovered.driver.perform({ action: 'snapshot', tabId: recovered.tab.id });
+  assert.equal(staleExecutions, 1); assert.equal(result.frames[0].frame, '9-12'); assert.equal(recovered.tab.refs.has('obsolete-observation'), false);
+  let churn = 0;
+  const replacement = () => ({ ...readableFrame(dom), processId: 10 + churn, executeJavaScript: async () => { churn++; current = replacement(); return { elements: [{ ref: 'never-publish' }], text: 'changing' }; } });
+  current = replacement();
+  const repeated = frameFixture(() => current);
+  await assert.rejects(repeated.driver.perform({ action: 'snapshot', tabId: repeated.tab.id }), { code: 'BROWSER_SNAPSHOT_DOCUMENT_CHANGED' });
+  assert.equal(churn, 2); assert.equal(repeated.tab.refs.has('never-publish'), false); singleAdmission(repeated);
 });

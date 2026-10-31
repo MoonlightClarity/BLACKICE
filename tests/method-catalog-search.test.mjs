@@ -67,7 +67,7 @@ test('v5 relay_task describes bounded results and exact definitions without chan
   assert.deepEqual(complete.method, BUILTIN_METHODS.find(method => method.id === 'catalyst-ach')); assert.equal(complete.pagination.complete, true); assert.equal(complete.method.steps.length, 6); assert.ok(complete.method.catalog.prerequisites.length); assert.ok(complete.method.provenance);
   response = await call({ action: 'describe', methodId: 'catalyst-ach', methodRevision: 2 }); assert.equal(response.code, 'TASK_METHOD_CONFLICT');
   response = await call({ action: 'describe', methodId: 'catalyst-ach', methodQuery: 'ACH' }); assert.equal(response.success, false);
-  const instructions = taskInstructionsForVersion(5);
+  const instructions = taskInstructionsForVersion(5, { executionGuardrails: true });
   assert.equal(reads, 0); assert.match(instructions, /Choose and adapt automatically/); assert.match(instructions, /two or three methods/); assert.match(instructions, /supply methodSteps/);
 });
 

@@ -60,28 +60,37 @@ const start = async (session, input, model) => {
 const follow = async (session, run, message, model) => {
   const result = await session.api(`/api/runs/${run.id}/continue`, { method: 'POST', body: { nodeId: 'agent', message, ...(model ? { model } : {}) } }); assert.equal(result.status, 201, result.text); return session.settled(result.data.id);
 };
+const persistentDefaults = { codexHistory: 'codex', runTimeoutMs: null, providerIdleTimeoutMs: 300000, defaultEffort: 'default', defaultServiceTier: 'default', defaultContext: { preset: 'model', windowTokens: null, autoCompact: true }, verbosity: 'balanced', subagentsEnabled: false, maxSubagents: 3, connectedGmail: false, executionGuardrails: false, hiddenModelProviders: [] };
+// These session tests exercise the full operational tool catalog, not a small-window model.
+const catalogResponse = () => new Response(JSON.stringify({data:[{id:'api-model',context_length:131072,max_output_tokens:8192}]}),{headers:{'Content-Type':'application/json'}});
+async function recordLegacyHistory(session, id) {
+  const run=session.app.engine.runs.get(id);
+  // Emulate an actual saved record from before persistent history became the default.
+  run.runtimeSettings={...run.runtimeSettings,codexHistory:'relay'};run.nodes.agent.codexHistory='relay';
+  await session.app.engine.persist();await session.app.engine.persistConversation?.(session.app.engine.snapshot(run));
+}
 
-test('Relay-only is the default, follow-ups use saved messages and survive reopening without native resume', async t => {
+test('persistent native history is the default and follow-ups resume the same thread after reopening', async t => {
   const session = await application(t);
-  assert.deepEqual((await session.api('/api/runtime/settings')).data, { codexHistory: 'relay', runTimeoutMs: null, providerIdleTimeoutMs: 300000, defaultEffort: 'default', defaultServiceTier: 'default', defaultContext: { preset: 'model', windowTokens: null, autoCompact: true }, verbosity: 'balanced', subagentsEnabled: false, maxSubagents: 3 });
+  assert.deepEqual((await session.api('/api/runtime/settings')).data, persistentDefaults);
   const first = await start(session, 'USER_HISTORY_MARKER_A: remember the copper rook.');
   const unrelated = await start(session, 'UNRELATED_CONVERSATION_MARKER: a different chat.');
   const second = await follow(session, first, 'USER_HISTORY_MARKER_B: what did I ask you to remember?');
-  assert.equal(first.runtimeSettings.codexHistory, 'relay'); assert.equal(second.runtimeSettings.codexHistory, 'relay');
-  assert.equal(session.runtime.calls[0].codexHistory, 'relay'); assert.equal(session.runtime.calls[2].codexHistory, 'relay');
-  assert.equal(session.runtime.calls[2].threadId, undefined); assert.notEqual(first.nodes.agent.threadId, second.nodes.agent.threadId);
-  assert.equal(second.modelHandoff.reason, 'relay-history');
-  assert.match(session.runtime.calls[2].prompt, /USER_HISTORY_MARKER_A/); assert.match(session.runtime.calls[2].prompt, /ASSISTANT_HISTORY_MARKER_1/);
+  assert.equal(first.runtimeSettings.codexHistory, 'codex'); assert.equal(second.runtimeSettings.codexHistory, 'codex');
+  assert.equal(session.runtime.calls[0].codexHistory, 'codex'); assert.equal(session.runtime.calls[2].codexHistory, 'codex');
+  assert.equal(session.runtime.calls[2].threadId, first.nodes.agent.threadId); assert.equal(first.nodes.agent.threadId, second.nodes.agent.threadId);
+  assert.equal(second.modelHandoff, undefined);
+  assert.match(session.runtime.calls[2].prompt, /USER_HISTORY_MARKER_B/);
   assert.doesNotMatch(session.runtime.calls[2].prompt, /UNRELATED_CONVERSATION_MARKER|ASSISTANT_HISTORY_MARKER_2/);
   assert.equal(session.app.engine.getRun(unrelated.id).parentRunId, undefined);
   const reopened = await session.reopen();
   const third = await follow(reopened, second, 'USER_HISTORY_MARKER_C: continue after reopening.');
-  assert.equal(reopened.runtime.calls[0].codexHistory, 'relay'); assert.equal(reopened.runtime.calls[0].threadId, undefined);
-  assert.match(reopened.runtime.calls[0].prompt, /USER_HISTORY_MARKER_A/); assert.match(reopened.runtime.calls[0].prompt, /USER_HISTORY_MARKER_B/); assert.match(reopened.runtime.calls[0].prompt, /ASSISTANT_HISTORY_MARKER_3/);
+  assert.equal(reopened.runtime.calls[0].codexHistory, 'codex'); assert.equal(reopened.runtime.calls[0].threadId, first.nodes.agent.threadId);
+  assert.equal(third.nodes.agent.threadId, first.nodes.agent.threadId);assert.match(reopened.runtime.calls[0].prompt, /USER_HISTORY_MARKER_C/);
   assert.doesNotMatch(reopened.runtime.calls[0].prompt, /UNRELATED_CONVERSATION_MARKER/); assert.equal(third.taskId, first.id);
 });
 
-test('history settings apply to future starts and transitions use fresh sessions when a private turn is involved', async t => {
+test('legacy preference input is a no-op while an actual legacy conversation migrates once and then resumes persistently', async t => {
   const entered = deferred(), release = deferred();
   const native = new NativeFixture(async (options, { index, threadId, turnId }) => {
     options.onEvent({ type: 'thread', model: options.model, threadId, turnId, codexHistory: options.codexHistory });
@@ -91,40 +100,45 @@ test('history settings apply to future starts and transitions use fresh sessions
     return { output, threadId, turnId, codexHistory: options.codexHistory };
   });
   const session = await application(t, async () => native);
-  const begun = await session.api('/api/runs', { method: 'POST', body: { workflow: flow(), input: 'Started privately.' } }); assert.equal(begun.status, 201);
+  const begun = await session.api('/api/runs', { method: 'POST', body: { workflow: flow(), input: 'LEGACY_ORIGINAL_MARKER: preserve the recorded conversation.' } }); assert.equal(begun.status, 201);
   let first;
   try {
     await waitFor(() => native.calls.length === 1, 'first native start'); await entered.promise;
-    const changed = await session.api('/api/runtime/settings', { method: 'POST', body: { codexHistory: 'codex' } }); assert.equal(changed.status, 200);
-    assert.equal(native.calls[0].codexHistory, 'relay'); assert.equal(session.app.engine.getRun(begun.data.id).runtimeSettings.codexHistory, 'relay');
+    const changed = await session.api('/api/runtime/settings', { method: 'POST', body: { codexHistory: 'relay' } }); assert.equal(changed.status, 200);assert.equal(changed.data.codexHistory,'codex');
+    assert.equal(native.calls[0].codexHistory, 'codex'); assert.equal(session.app.engine.getRun(begun.data.id).runtimeSettings.codexHistory, 'codex');
   } finally { release.resolve(); first = await session.settled(begun.data.id); }
-  const second = await follow(session, first, 'Now use Codex-visible history.');
+  await recordLegacyHistory(session,first.id);
+  const second = await follow(session, first, 'Continue the saved legacy conversation.');
   assert.equal(native.calls[1].codexHistory, 'codex'); assert.equal(native.calls[1].threadId, undefined); assert.equal(second.modelHandoff.reason, 'relay-history');
-  const third = await follow(session, second, 'Resume that visible session.');
+  assert.match(native.calls[1].prompt,/LEGACY_ORIGINAL_MARKER/);assert.match(native.calls[1].prompt,/Policy output 1/);
+  const third = await follow(session, second, 'Resume that persistent session.');
   assert.equal(native.calls[2].threadId, second.nodes.agent.threadId); assert.equal(third.modelHandoff, undefined);
-  assert.equal((await session.api('/api/runtime/settings', { method: 'POST', body: { codexHistory: 'relay' } })).status, 200);
-  const fourth = await follow(session, third, 'Continue privately again.');
-  assert.equal(native.calls[3].codexHistory, 'relay'); assert.equal(native.calls[3].threadId, undefined); assert.equal(fourth.modelHandoff.reason, 'relay-history');
-  assert.match(native.calls[3].prompt, /Started privately/); assert.match(native.calls[3].prompt, /Resume that visible session/);
+  const compatible=await session.api('/api/runtime/settings', { method: 'POST', body: { codexHistory: 'relay' } });assert.equal(compatible.status,200);assert.equal(compatible.data.codexHistory,'codex');
+  const fourth = await follow(session, third, 'Continue without changing the saved native history.');
+  assert.equal(native.calls[3].codexHistory, 'codex'); assert.equal(native.calls[3].threadId, second.nodes.agent.threadId); assert.equal(fourth.modelHandoff, undefined);
+  assert.match(native.calls[3].prompt, /Continue without changing/);
   assert.equal(session.app.engine.getRun(second.id).runtimeSettings.codexHistory, 'codex', 'old admitted snapshots remain unchanged');
-  const reopened = await session.reopen(); assert.deepEqual((await reopened.api('/api/runtime/settings')).data, { codexHistory: 'relay', runTimeoutMs: null, providerIdleTimeoutMs: 300000, defaultEffort: 'default', defaultServiceTier: 'default', defaultContext: { preset: 'model', windowTokens: null, autoCompact: true }, verbosity: 'balanced', subagentsEnabled: false, maxSubagents: 3 });
+  const reopened = await session.reopen(); assert.deepEqual((await reopened.api('/api/runtime/settings')).data, persistentDefaults);
 });
 
 test('API provider conversations retain their own durable sessions through Codex history changes and reopening', async t => {
   const requests = [], natives = [];
   const session = await application(t, async ({ dataDir }) => {
     const codex = new NativeFixture(); natives.push(codex);
-    const runtime = await new ProviderRuntime({ codex, dataDir, fetchImpl: async (url, options) => { requests.push({ url, body: JSON.parse(options.body) }); return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: `API result ${requests.length}` }, finish_reason: 'stop' }] }), { headers: { 'Content-Type': 'application/json' } }); } }).init();
+    const runtime = await new ProviderRuntime({ codex, dataDir, fetchImpl: async (url, options) => { if(new URL(url).pathname.endsWith('/models'))return catalogResponse();requests.push({ url, body: JSON.parse(options.body) }); return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: `API result ${requests.length}` }, finish_reason: 'stop' }] }), { headers: { 'Content-Type': 'application/json' } }); } }).init();
     if (!runtime.store.get('api')) await runtime.saveProvider({ id: 'api', type: 'compatible', baseUrl: 'http://127.0.0.1:11434/v1', models: ['api-model'] });
     await runtime.setDefaultModel('api::api-model'); return runtime;
   });
   const first = await start(session, 'API original task.', 'api::api-model');
+  assert.equal(first.status, 'completed', first.error);
   assert.match(first.nodes.agent.threadId, /^provider_/);
   await session.api('/api/runtime/settings', { method: 'POST', body: { codexHistory: 'codex' } });
   const second = await follow(session, first, 'API visible-policy follow-up.');
+  assert.equal(second.status, 'completed', second.error);
   assert.equal(second.nodes.agent.threadId, first.nodes.agent.threadId); assert.equal(second.modelHandoff, undefined);
   await session.api('/api/runtime/settings', { method: 'POST', body: { codexHistory: 'relay' } });
   const reopened = await session.reopen(), third = await follow(reopened, second, 'API follow-up after reopening.');
+  assert.equal(third.status, 'completed', third.error);
   assert.equal(third.nodes.agent.threadId, first.nodes.agent.threadId); assert.equal(third.modelHandoff, undefined);
   assert.equal(requests.length, 3); assert.equal(natives.reduce((sum, native) => sum + native.calls.length, 0), 0);
   const messages = JSON.stringify(requests[2].body.messages); assert.match(messages, /API original task/); assert.match(messages, /API visible-policy follow-up/); assert.match(messages, /API result 1/); assert.match(messages, /API result 2/);
@@ -134,7 +148,7 @@ test('HTTP native reconnect explicitly starts Codex while preserving a selected 
   const native = new NativeFixture(); let nativeStarts = 0;
   native.start = async () => { nativeStarts++; return native.status(); };
   const session = await application(t, async ({ dataDir }) => {
-    const runtime = await new ProviderRuntime({ codex: native, dataDir }).init();
+    const runtime = await new ProviderRuntime({ codex: native, dataDir, fetchImpl:async url=>{assert.ok(new URL(url).pathname.endsWith('/models'),'Reconnect does not generate a provider response.');return catalogResponse();} }).init();
     await runtime.saveProvider({ id: 'api', type: 'compatible', baseUrl: 'http://127.0.0.1:11434/v1', models: ['api-model'] });
     await runtime.setDefaultModel('api::api-model'); return runtime;
   });
@@ -147,7 +161,7 @@ test('HTTP native reconnect explicitly starts Codex while preserving a selected 
 test('a failure before native session creation can continue on a different provider using the saved user task', async t => {
   const requests = [], codex = new NativeFixture(async () => { throw Object.assign(new Error('Fixture authentication expired before thread creation.'), { code: 'PROVIDER_AUTH' }); });
   const session = await application(t, async ({ dataDir }) => {
-    const runtime = await new ProviderRuntime({ codex, dataDir, fetchImpl: async (_url, options) => { requests.push(JSON.parse(options.body)); return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'Recovered on the chosen API.' }, finish_reason: 'stop' }] }), { headers: { 'Content-Type': 'application/json' } }); } }).init();
+    const runtime = await new ProviderRuntime({ codex, dataDir, fetchImpl: async (url, options) => { if(new URL(url).pathname.endsWith('/models'))return catalogResponse();requests.push(JSON.parse(options.body)); return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'Recovered on the chosen API.' }, finish_reason: 'stop' }] }), { headers: { 'Content-Type': 'application/json' } }); } }).init();
     await runtime.saveProvider({ id: 'recovery', type: 'compatible', baseUrl: 'http://127.0.0.1:11434/v1', models: ['api-model'] }); return runtime;
   });
   const first = await start(session, 'PRE_SESSION_TASK_MARKER: generate a copper rook.');
@@ -158,7 +172,7 @@ test('a failure before native session creation can continue on a different provi
   assert.match(second.nodes.agent.threadId, /^provider_/); assert.equal(codex.calls.length, 1);
 });
 
-test('retrying a failed visible continuation after selecting Relay-only rebuilds saved continuity instead of resuming Codex', async t => {
+test('retrying a failed persistent continuation after legacy preference input resumes the recorded native thread', async t => {
   const native = new NativeFixture(async (options, { index, threadId, turnId }) => {
     options.onEvent({ type: 'thread', model: options.model, threadId, turnId, codexHistory: options.codexHistory });
     const output = index === 2 ? 'RETRY_PARTIAL_MARKER: first action was confirmed before the connection failed.' : `Retry fixture result ${index}`;
@@ -171,15 +185,16 @@ test('retrying a failed visible continuation after selecting Relay-only rebuilds
   const first = await start(session, 'RETRY_ORIGINAL_MARKER: verify the existing artifact.');
   const failed = await follow(session, first, 'RETRY_FOLLOWUP_MARKER: verify the next change.');
   assert.equal(failed.status, 'failed'); assert.equal(native.calls[1].threadId, first.nodes.agent.threadId);
-  await session.api('/api/runtime/settings', { method: 'POST', body: { codexHistory: 'relay' } });
+  const legacy=await session.api('/api/runtime/settings', { method: 'POST', body: { codexHistory: 'relay' } });assert.equal(legacy.data.codexHistory,'codex');
   const requested = await session.api(`/api/runs/${failed.id}/retry`, { method: 'POST', body: {} }); assert.equal(requested.status, 201, requested.text);
   const retried = await session.settled(requested.data.id);
-  assert.equal(retried.status, 'completed', retried.error); assert.equal(retried.runtimeSettings.codexHistory, 'relay'); assert.equal(native.calls[2].threadId, undefined);
-  assert.equal(native.calls[2].codexHistory, 'relay'); assert.match(native.calls[2].prompt, /RETRY_ORIGINAL_MARKER/); assert.match(native.calls[2].prompt, /RETRY_FOLLOWUP_MARKER/); assert.match(native.calls[2].prompt, /RETRY_PARTIAL_MARKER/);
-  assert.equal(retried.nodeHandoffs.agent.reason, 'relay-history'); assert.equal(retried.taskId, first.id);
+  assert.equal(retried.status, 'completed', retried.error); assert.equal(retried.runtimeSettings.codexHistory, 'codex'); assert.equal(native.calls[2].threadId, first.nodes.agent.threadId);
+  assert.equal(native.calls[2].codexHistory, 'codex');assert.match(native.calls[2].prompt,/RETRY_FOLLOWUP_MARKER/);
+  assert.match(JSON.stringify(session.app.engine.getRun(failed.id).events),/RETRY_PARTIAL_MARKER/,'Confirmed partial work remains in the saved transcript.');
+  assert.equal(retried.nodeHandoffs,undefined); assert.equal(retried.taskId, first.id);
 });
 
-test('a failed initial Relay-only turn retains its partial saved messages when Retry starts a new native session', async t => {
+test('a failed saved legacy turn retains all partial messages when Retry migrates to a persistent native session', async t => {
   const native = new NativeFixture(async (options, { index, threadId, turnId }) => {
     options.onEvent({ type: 'thread', model: options.model, threadId, turnId, codexHistory: options.codexHistory });
     if (index === 1) {
@@ -190,9 +205,10 @@ test('a failed initial Relay-only turn retains its partial saved messages when R
   });
   const session = await application(t, async () => native), first = await start(session, 'INITIAL_PRIVATE_TASK_MARKER: perform the requested checks.');
   assert.equal(first.status, 'failed'); assert.equal(first.nodes.agent.resumeThreadId, undefined); assert.ok(first.nodes.agent.threadId);
+  await recordLegacyHistory(session,first.id);
   const requested = await session.api(`/api/runs/${first.id}/retry`, { method: 'POST', body: {} }); assert.equal(requested.status, 201, requested.text);
   const retried = await session.settled(requested.data.id);
-  assert.equal(retried.status, 'completed', retried.error); assert.equal(native.calls[1].codexHistory, 'relay'); assert.equal(native.calls[1].threadId, undefined);
+  assert.equal(retried.status, 'completed', retried.error); assert.equal(native.calls[1].codexHistory, 'codex'); assert.equal(native.calls[1].threadId, undefined);
   assert.match(native.calls[1].prompt, /INITIAL_PRIVATE_TASK_MARKER/); assert.match(native.calls[1].prompt, /INITIAL_PRIVATE_PARTIAL_MARKER/);
   assert.equal(retried.nodeHandoffs.agent.reason, 'relay-history'); assert.equal(retried.taskId, first.id);
 });

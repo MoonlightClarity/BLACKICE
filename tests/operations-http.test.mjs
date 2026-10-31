@@ -6,18 +6,21 @@ import { mkdtemp,readFile,writeFile,rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
-import { recordFixturePlan, finishFixturePlan } from './fixture-task-plan.mjs';
+import { recordFixturePlan } from './fixture-task-plan.mjs';
 
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return{promise,resolve};};
 const until=async(check,label='HTTP operation condition')=>{const end=Date.now()+7000;while(Date.now()<end){const result=await check();if(result)return result;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail(`${label} did not settle`);};
-const workflow=(planningMode='on')=>({id:'http-operation-workflow',name:'HTTP deployed worker',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Worker',prompt:'Write the isolated fixture result and independently read it.',model:'http-fixture-model'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode}});
+const workflow=(planningMode='off')=>({id:'http-operation-workflow',name:'HTTP deployed worker',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Worker',prompt:'Write the isolated fixture result and independently read it.',model:'http-fixture-model'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode}});
 class Desktop extends EventEmitter{status(){return{available:false,enabled:false};}async setEnabled(){return this.status();}}
-async function fixture(t,{execute,maxConcurrentRuns=4,planningMode='on'}={}){
-  const directory=await mkdtemp(path.join(tmpdir(),'relay-operations-http-')),dataDir=path.join(directory,'data'),cwd=path.join(directory,'workspace'),calls=[],apps=[];
+async function fixture(t,{execute,maxConcurrentRuns=4,planningMode='off'}={}){
+  const directory=await mkdtemp(path.join(tmpdir(),'relay-operations-http-')),dataDir=path.join(directory,'data'),cwd=path.join(directory,'workspace'),calls=[],readinessCalls=[],apps=[];
   let app,url,cookie;
   class Runtime extends EventEmitter{
     status(){return{connected:true,authenticated:true,defaultModel:'http-fixture-model',models:[{model:'http-fixture-model'}]};}async start(){return this.status();}async close(){this.closed=true;}
     async runAgent(options){
+      if(options.responseOnly){readinessCalls.push(options);const captured=JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2));
+      assert.equal(captured.module.kind,'viability','Only schedule readiness uses the response-only fixture.');
+      return{output:JSON.stringify({values:Object.fromEntries(captured.template.fields.map(field=>[field.id,field.label+': the supplied isolated fixture task has a local implementation and no missing personal prerequisite.'])),grounding:captured.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId:'viability:task'})),requirements:[],openQuestions:[],challengeResponses:[]}),threadId:'fixture-readiness',turnId:'fixture-readiness-turn'};}
       const index=calls.push(options);
       if(execute)return execute(options,index);
       await recordFixturePlan(options,{title:'Write and verify the isolated operation result',doneWhen:'The actual operation-proof.txt file contains the requested fixture output.'});
@@ -26,7 +29,12 @@ async function fixture(t,{execute,maxConcurrentRuns=4,planningMode='on'}={}){
       assert.equal(write.success,true);
       const read=await options.onToolCall({name:'relay_workspace',arguments:{action:'read',path:'operation-proof.txt'}});
       assert.equal(read.success,true);assert.match(read.contentItems[0].text,/Verified operation side effect/);
-      await finishFixturePlan(options,{summary:'The workspace write succeeded and an independent read returned the operation proof content. Both actual responses are recorded; no work remains for this occurrence.'});
+      // These operations tests record task notes voluntarily with automatic Planning off.
+      // The checked local write/read, not a synthetic planning response, supplies the completion evidence.
+      const task=async arguments_=>{const response=await options.onToolCall({name:'relay_task',arguments:arguments_});assert.equal(response.success,true,response.contentItems?.[0]?.text);return JSON.parse(response.contentItems.find(item=>item.type==='inputText').text);};
+      let state=await task({action:'read'});
+      for(const step of state.steps.filter(step=>(step.kind||'action')==='action'&&!['done','skipped'].includes(step.status)))state=await task({action:'step',expectedRevision:state.revision,stepId:step.id,status:'done',evidence:'The actual workspace write succeeded and an independent read returned the expected operation-proof.txt content.'});
+      await task({action:'review',expectedRevision:state.revision,review:{decision:'respond',summary:'The actual operation-proof.txt write and independent read agreed. This occurrence has no remaining fixture work.'}});
       return{output:content,threadId:options.threadId||'http-fixture-thread'};
     }
   }
@@ -35,7 +43,7 @@ async function fixture(t,{execute,maxConcurrentRuns=4,planningMode='on'}={}){
   const request=async(route,{method='GET',body,auth=true,headers={}}={})=>{const response=await fetch(new URL(route,url),{method,headers:{...(auth?{Cookie:cookie}:{}),...(body===undefined?{}:{'Content-Type':'application/json'}),...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});return{status:response.status,data:await response.json()};};
   const create=async extra=>{const response=await request('/api/operations/deployments',{method:'POST',body:{name:'HTTP fixture operation',input:'Write and verify the isolated fixture result.',cwd,workflow:workflow(planningMode),enabled:true,trigger:{type:'webhook'},...extra}});assert.equal(response.status,201,JSON.stringify(response.data));return response.data;};
   const hook=async(deployment,key,payload,headers={})=>{const secret=(await request(`/api/operations/deployments/${deployment.id}/webhook`)).data;return request(`/hooks/${deployment.id}`,{method:'POST',auth:false,body:payload,headers:{Authorization:`Bearer ${secret.token}`,...(key?{'Idempotency-Key':key}:{}),...headers}});};
-  return{get app(){return app;},get url(){return url;},get cookie(){return cookie;},directory,dataDir,cwd,calls,request,create,hook,async restart(){await app.close();return boot();}};
+  return{get app(){return app;},get url(){return url;},get cookie(){return cookie;},directory,dataDir,cwd,calls,readinessCalls,request,create,hook,async restart(){await app.close();return boot();}};
 }
 
 test('authenticated HTTP config reports exact webhook URLs and requires explicit replay of unknown sends',async t=>{
@@ -83,7 +91,7 @@ test('authenticated HTTP config reports exact webhook URLs and requires explicit
   assert.equal(f.app.operations.getJob(admitted.data.id).outbound.state,'delivered');
 });
 
-for(const codexHistory of ['relay','codex']) test(`repeated cron occurrences retain revised instructions, conversation and Planning task across pause and host restart (${codexHistory})`,async t=>{
+for(const codexHistory of ['relay','codex']) test(`repeated cron occurrences retain revised instructions, conversation and saved task notes across pause and host restart (${codexHistory})`,async t=>{
   const f=await fixture(t),schedule=await f.create({
     name:'Recurring research continuity fixture',
     trigger:{type:'cron',expression:'*/30 * * * *',timezone:'America/New_York'},
@@ -127,8 +135,7 @@ for(const codexHistory of ['relay','codex']) test(`repeated cron occurrences ret
   assert.equal(secondRun.taskId,firstRunId,'both runs share one conversation root and persisted Planning task');
   assert.equal(secondRun.workflow.nodes.find(node=>node.id==='agent').prompt,currentInstructions);
   assert.ok(f.calls[1].prompt.includes(currentInstructions),'the actual resumed model turn receives the current instructions');
-  if(codexHistory==='codex')assert.equal(f.calls[1].threadId,firstRun.nodes.agent.threadId,'native history resumes the provider conversation');
-  else {assert.equal(f.calls[1].threadId,undefined);assert.equal(secondRun.modelHandoff.reason,'relay-history','Relay-only history retains the task while restoring saved context');}
+  assert.equal(f.calls[1].threadId,firstRun.nodes.agent.threadId,'Both current native history and the legacy relay alias resume the persistent conversation');
   assert.equal((await f.app.conversations.get(firstRunId)).workflow.nodes.find(node=>node.id==='agent').prompt,originalPrompt,'prior instructions remain in their original receipt');
   assert.equal(second.continuedFromRunId,firstRunId);
   assert.equal(second.conversationRootId,firstRunId);
@@ -154,12 +161,13 @@ for(const codexHistory of ['relay','codex']) test(`repeated cron occurrences ret
   assert.equal((await f.app.tasks.get(thirdRun.taskId)).planningReviews.at(-1).runId,thirdRunId);
   assert.equal(third.conversationRootId,firstRunId);
   assert.ok(f.calls[2].prompt.includes(currentInstructions),'later occurrences retain the revised instructions');
-  assert.equal(f.calls[2].threadId,codexHistory==='codex'?secondRun.nodes.agent.threadId:undefined);
+  assert.equal(f.calls[2].threadId,secondRun.nodes.agent.threadId);
   const longerFamily=await f.app.conversations.family(thirdRunId);
   assert.equal(longerFamily.rootId,firstRunId);
   assert.deepEqual(longerFamily.runs.map(run=>run.id),[firstRunId,secondRunId,thirdRunId]);
   assert.equal(f.app.conversations.list('active').filter(row=>row.rootId===firstRunId).length,1);
   assert.equal(f.calls.length,3,'three admitted occurrences create three runs but only one conversation');
+  assert.ok(f.readinessCalls.length>=2,'Original and revised instructions each receive their own structured readiness assessment.');
 });
 test('parallel schedules remain independent rather than sharing one active provider thread',async t=>{
   const f=await fixture(t),schedule=await f.create({trigger:{type:'manual'},overlap:'parallel'});

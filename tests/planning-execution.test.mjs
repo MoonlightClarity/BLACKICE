@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
-import { TaskStateStore, createTaskToolHandler } from '../lib/task-state.mjs';
+import { TaskStateStore, createTaskToolHandler, TASK_LIMITS } from '../lib/task-state.mjs';
 import { createPlanningWorkerGuard, wrapPlanningToolHandler } from '../lib/planning-awareness.mjs';
 import { EXECUTION_LIMITS, executionReceipt, appendExecutionReceipt, executionView, executionErrorAnnotations } from '../lib/planning-execution.mjs';
 import { toolResultEvent } from '../lib/tool-outcomes.mjs';
@@ -25,7 +25,7 @@ async function fixture(t) {
   const saved = await store.setPlan(initial.taskId, { plan: { layout: 'sequence' }, steps: [action()] }, { expectedRevision: initial.revision, runId: 'run-one', nodeId: 'agent', schemaVersion: 6 });
   t.after(async () => { for (const item of stores) await item.close(); await rm(directory, { recursive: true, force: true }); });
   return { directory, cwd, store, saved, async reopen() { await store.close(); store = await new TaskStateStore({ dataDir: directory }).init(); stores.push(store); this.store = store; return store; },
-    async guard(executionEnabled = true) { return createPlanningWorkerGuard({ store: this.store, taskId: initial.taskId, runId: 'run-one', nodeId: 'agent', executionEnabled }); } };
+    async guard(executionEnabled = true, executionGuardrails = false) { return createPlanningWorkerGuard({ store: this.store, taskId: initial.taskId, runId: 'run-one', nodeId: 'agent', executionEnabled, executionGuardrails }); } };
 }
 const browserCall = (callId, action, extra = {}) => ({ name: 'relay_browser', callId, arguments: { action, tabId: 'tab-one', ...extra } });
 async function dispatch(guard, call, receipt) {
@@ -88,7 +88,7 @@ test('exact recovery and duplicate receipt replay are precise; changed input/sco
 });
 
 test('human edits are preserved and receipt writes do not create review churn; in-flight scope stays historical', async t => {
-  const f = await fixture(t), guard = await f.guard(), call = browserCall('in-flight', 'upload');
+  const f = await fixture(t), guard = await f.guard(true, true), call = browserCall('in-flight', 'upload');
   assert.equal(await guard.before(call), null);
   const edited = await f.store.editPlan('task-one', { operations: [{ type: 'update', stepId: 'draft', patch: { note: 'Human correction: keep the appendix.', doneWhen: 'The corrected appendix is checked at the destination.' } }] }, { expectedRevision: f.saved.revision, source: 'human' });
   const result = await guard.annotate(call, ok()); assert.equal(result.success, true);
@@ -197,7 +197,7 @@ test('run snapshots adopt independent execution sequence without overwriting equ
   assert.equal(run.taskState.goal, 'New saved human goal'); assert.equal(run.taskState.executionObservations.total, 2);
 });
 
-test('interruption preserves a near-limit human plan and uses only a small journal reference', async t => {
+test('interruption preserves a large human plan within the current limit and uses only a small journal reference', async t => {
   const f = await fixture(t);
   let state = await f.store.get('task-one');
   const steps = Array.from({ length: 24 }, (_, index) => ({ id: 'item-' + index, title: 'Item ' + index, kind: 'action', status: index ? 'pending' : 'active', doneWhen: 'Check this actual output. ' + 'x'.repeat(800), evidence: 'Known evidence. ' + 'y'.repeat(1000) }));
@@ -206,7 +206,7 @@ test('interruption preserves a near-limit human plan and uses only a small journ
   for (let index = 0; index < 20; index++) await dispatch(guard, browserCall('long-' + index, 'fill', { ref: 'field-' + index }), failed());
   const interrupted = await f.store.interrupt('task-one', { runId: 'run-one', nodeId: 'runtime', status: 'cancelled' });
   assert.equal(interrupted.steps.length, 24); assert.equal(interrupted.steps[0].status, 'active');
-  assert.ok(JSON.stringify(interrupted).length < 64000);
+  assert.ok(JSON.stringify(interrupted).length < TASK_LIMITS.stateChars);
   assert.ok(JSON.stringify(interrupted.interruption.executionObservations || {}).length < 500);
   assert.ok(JSON.stringify((await f.store.get('task-one')).executionObservations).length <= 8000);
 });
@@ -292,6 +292,7 @@ test('actual engine tool dispatch publishes journal updates at unchanged plan re
     }
   }
   engine = await new HarnessEngine({ runtime: new Runtime(), tasks: f.store, dataDir: f.directory, defaultCwd: f.cwd }).init();
+  engine.runtimeSettings = { get: () => ({ executionGuardrails: true }) }; // This case explicitly compares guarded On/Off execution journals.
   const workflow = { name: 'Execution integration fixture', settings: { maxParallel: 1 }, nodes: [{ id: 'input', type: 'input' }, { id: 'agent', type: 'agent', model: 'fixture-model', prompt: 'Write a checked fixture.' }, { id: 'output', type: 'output' }], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }] };
   try {
     for (const planningMode of ['on', 'off']) {

@@ -101,6 +101,12 @@ input.on('line', line => {
     case 'account/read':
       reply(id, fixtureAccount);
       break;
+    case 'config/read':
+      reply(id, { config: { plugins: {}, mcp_servers: {}, skills: { config: [] } } });
+      break;
+    case 'skills/list':
+      reply(id, { data: (params.cwds || []).map(cwd => ({ cwd, skills: [], errors: [] })) });
+      break;
     case 'model/list': {
       if (unsupportedHidden && params.includeHidden !== undefined) { send({ id, error: { code: -32602, message: 'unknown field `includeHidden` in model/list parameters' } }); break; }
       if (catalogError) { send({ id, error: catalogError }); break; }

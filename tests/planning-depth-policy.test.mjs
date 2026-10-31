@@ -11,7 +11,8 @@ const action = () => ({
   doneWhen:'The computed subtotal matches the stored value, or the exact discrepancy is reported.'
 });
 const state = steps => ({plan:{detail:'compact',layout:'sequence'},steps});
-const on = (next, previous=state([]), extra={}) => validatePlanningOutline(next,{mode:'on',previous,...extra});
+// These cases exercise the explicitly enabled enforcement policy.
+const on = (next, previous=state([]), extra={}) => validatePlanningOutline(next,{mode:'on',previous,executionGuardrails:true,...extra});
 
 test('On and historical aliases apply maximal substantive detail; Off preserves saved hints',()=>{
   for(const mode of ['on','auto','maximal'])for(const hint of [undefined,'compact','balanced','detailed']){
@@ -78,8 +79,9 @@ test('unchanged historical completions retain their original evidence and proced
 
 test('human edits and Off do not inherit automatic On requirements',()=>{
   const sparse=state([{id:'note',kind:'action',title:'A personal reminder',status:'pending',doneWhen:'Read it later.'}]);
-  assert.equal(validatePlanningOutline(sparse,{mode:'off'}),sparse);
-  assert.equal(validatePlanningOutline(sparse,{mode:'on',source:'human'}),sparse);
+  assert.equal(validatePlanningOutline(sparse,{mode:'on'}),sparse,'the default remains advisory');
+  assert.equal(validatePlanningOutline(sparse,{mode:'off',executionGuardrails:true}),sparse);
+  assert.equal(validatePlanningOutline(sparse,{mode:'on',source:'human',executionGuardrails:true}),sparse);
   assert.equal(validatePlanningOutline(sparse,{}),sparse);
 });
 

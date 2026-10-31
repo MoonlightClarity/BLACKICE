@@ -77,7 +77,7 @@ async function fixture(t, execute) {
   }
   const runtime = new Runtime();
   const engine = await new HarnessEngine({ runtime, tasks, dataDir: directory, defaultCwd: cwd }).init();
-  engine.runtimeSettings = { get: () => ({ codexHistory: 'relay' }) };
+  engine.runtimeSettings = { get: () => ({ codexHistory: 'codex', executionGuardrails: true }) }; // Explicitly exercise the guarded return-to-planning contract.
   context = { engine, runtime, tasks, cwd,
     start: (planningMode = 'on') => engine.startRun({ workflow: graph, input: 'Choose the least expensive feasible workshop pair from the supplied inputs.', planningMode }),
     active: () => engine.listRuns().find(run => run.status === 'running'),

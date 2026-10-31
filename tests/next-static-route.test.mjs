@@ -7,16 +7,17 @@ import path from 'node:path';
 const base=fileURLToPath(new URL('../',import.meta.url));
 const read=relative=>readFile(path.join(base,relative),'utf8');
 
-test('V2 starts by default and the classic frontend remains an explicit recovery route',async()=>{
+test('the current interface starts by default without a Classic fallback control',async()=>{
   const server=await read('server.mjs');
   assert.match(server,/files\['\/'\]\s*=\s*'next\/index\.html'/);
-  assert.match(server,/files\['\/legacy\/'\]\s*=\s*'index\.html'/);
   assert.match(server,/files\['\/next'\]\s*=\s*'next\/index\.html'/);
   assert.match(server,/files\['\/next\/'\]\s*=\s*'next\/index\.html'/);
   const next=await read('public/next/index.html');
   assert.match(next,/\/next\/app\.mjs/);
   assert.doesNotMatch(next,/<script\b[^>]*\/app\.js/);
   assert.match(next,/\/next\/guard\.js/);
+  const settings=await read('public/next/workspaces/settings.mjs');
+  assert.doesNotMatch(next+settings,/href=["']\/legacy\/?["']|Open classic interface|Classic interface fallback/i);
 });
 
 test('every frontend static file is declared in BLACKICE HTTP allowlist',async()=>{

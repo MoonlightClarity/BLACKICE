@@ -1,3 +1,11 @@
+# BLACKICE 2.38.0 — Provider, planning, and Activity checkpoint
+
+Version 2.38.0 brings keyless free-provider setup, per-conversation model continuity, planning completion and recovery corrections, and the Activity workspace. The free-model acceptance checks used the existing profile with selected runtime files matched to source by hash; its host package metadata remained 2.37.0. The complete Windows source gate and fresh verification of the exact 2.38.0 Setup installer are separate checks.
+
+See [the 2.38.0 release notes](RELEASE-NOTES-2.38.0.md) for scope, observed acceptance, and release verification.
+
+---
+
 # BLACKICE 2.35.6 — Planning and judgment checkpoint
 
 This checkpoint brings the completed Planning, analytical-judgment, and recurring-work changes since the last published release, 2.35.2, into one release.

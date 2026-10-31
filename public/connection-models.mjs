@@ -1,6 +1,13 @@
+import { MODEL_LIMIT_SOURCE_LABELS } from './provider-catalog.mjs';
+
+const knownLimitSource = value => Object.hasOwn(MODEL_LIMIT_SOURCE_LABELS, value);
+const retrievedLimitSource = value => knownLimitSource(value) && value !== 'user-configured';
+const copyMetadata = value => value && typeof value === 'object' ? structuredClone(value) : value;
+
 /** Keep known model metadata when users edit the simple model-ID list. */
-export function providerModelsForSave(modelText, capacityText = '', knownModels = []) {
+export function providerModelsForSave(modelText, capacityText = '', knownModels = [], baselineModels = []) {
   const previous = new Map(knownModels.map(model => [typeof model === 'string' ? model : model.id, typeof model === 'string' ? { id: model } : model]));
+  const baseline = new Map(baselineModels.map(model => [typeof model === 'string' ? model : model.id, typeof model === 'string' ? { id: model } : model]));
   const ids = [...new Set(String(modelText || '').split(/[\n,]+/).map(id => id.trim()).filter(Boolean))];
   if (ids.length > 200) throw new Error('Choose up to 200 models for this connection.');
   const capacities = new Map();
@@ -14,15 +21,25 @@ export function providerModelsForSave(modelText, capacityText = '', knownModels 
     if (raw.toLowerCase() === 'unknown') capacities.set(id, null);
     else {
       const numeric = raw.replace(/[,_ ]/g, ''), value = Number(numeric);
-      if (!/^\d+$/.test(numeric) || !Number.isSafeInteger(value) || value < 4096 || value > 4000000) throw new Error(`Capacity for “${id}” must be a whole token count from 4,096 to 4,000,000.`);
+      if (!/^\d+$/.test(numeric) || !Number.isSafeInteger(value) || value <= 0) throw new Error(`Capacity for “${id}” must be a positive whole token count no larger than ${Number.MAX_SAFE_INTEGER.toLocaleString()}.`);
       capacities.set(id, value);
     }
   }
   return ids.map(id => {
     const known = previous.get(id), value = { id, displayName: known?.displayName || known?.name || id };
-    for (const key of ['supportsTools', 'maxOutputTokens', 'inputModalities', 'outputModalities']) if (known?.[key] !== undefined) value[key] = Array.isArray(known[key]) ? [...known[key]] : known[key];
-    const capacity = capacities.has(id) ? capacities.get(id) : known?.contextWindowTokens;
-    if (capacity) { value.contextWindowTokens = capacity; value.contextWindowSource = known?.contextWindowTokens === capacity && known?.contextWindowSource === 'provider-reported' ? 'provider-reported' : 'user-configured'; }
+    for (const key of ['supportsTools', 'aliases', 'publisher', 'isFree', 'freeSource', 'maxOutputTokens', 'maxOutputTokensSource', 'maxOutputObservedAt', 'maxOutputEvidence', 'maxContextWindowTokens', 'runtimeDefaultContextWindowTokens', 'modelLimitLookup', 'inputModalities', 'outputModalities', 'supportedParameters', 'freeVariant', 'pricing', 'pricingSource', 'pricingObservedAt', 'pricingIncomplete']) if (known?.[key] !== undefined) value[key] = copyMetadata(known[key]);
+    const before = baseline.get(id), entered = capacities.get(id);
+    // An untouched visible capacity must not replace a newer catalog report.
+    const unchangedReportedLine = capacities.has(id) && entered === before?.contextWindowTokens && retrievedLimitSource(before?.contextWindowSource) && retrievedLimitSource(known?.contextWindowSource);
+    const capacity = capacities.has(id) && !unchangedReportedLine ? entered : known?.contextWindowTokens;
+    if (capacity) {
+      const unchanged = known?.contextWindowTokens === capacity;
+      value.contextWindowTokens = capacity; value.contextWindowSource = unchanged && knownLimitSource(known?.contextWindowSource) ? known.contextWindowSource : 'user-configured';
+      if (unchanged && retrievedLimitSource(value.contextWindowSource)) {
+        if (known?.contextWindowObservedAt) value.contextWindowObservedAt = known.contextWindowObservedAt;
+        if (known?.contextWindowEvidence) value.contextWindowEvidence = copyMetadata(known.contextWindowEvidence);
+      }
+    } else if (capacity === null) { value.contextWindowTokens = null; value.contextWindowSource = 'unknown'; }
     return value;
   });
 }
@@ -32,7 +49,14 @@ export function mergeDiscoveredProviderModels(knownModels = [], discoveredModels
   return discoveredModels.map(model => {
     const discovered = typeof model === 'string' ? { id: model } : model, previous = known.get(discovered.id);
     const result = { ...previous, ...discovered };
-    if (previous?.contextWindowTokens && previous.contextWindowSource === 'user-configured') { result.contextWindowTokens = previous.contextWindowTokens; result.contextWindowSource = 'user-configured'; }
+    for (const [key, source, observed, evidence] of [['contextWindowTokens', 'contextWindowSource', 'contextWindowObservedAt', 'contextWindowEvidence'], ['maxOutputTokens', 'maxOutputTokensSource', 'maxOutputObservedAt', 'maxOutputEvidence']]) {
+      if (previous?.[key] && (previous[source] === 'user-configured' || discovered[key] == null)) {
+        result[key] = previous[key];
+        for (const metadata of [source, observed, evidence]) if (previous[metadata] !== undefined) result[metadata] = copyMetadata(previous[metadata]); else delete result[metadata];
+      } else if (discovered[key] != null && (discovered[key] !== previous?.[key] || discovered[source] !== undefined)) {
+        for (const metadata of [source, observed, evidence]) if (discovered[metadata] !== undefined) result[metadata] = copyMetadata(discovered[metadata]); else delete result[metadata];
+      }
+    }
     return result;
   });
 }
@@ -49,6 +73,10 @@ export function createProviderModelSelection(initial = []) {
       page = mergeDiscoveredProviderModels([...known.values()], models.slice(0, 200));
       known = new Map([...selected].map(id => [id, known.get(id)])); for (const model of page) known.set(model.id, model);
     },
+    mergeMetadata(models = []) {
+      for (const model of mergeDiscoveredProviderModels([...known.values()], models.slice(0, 200))) if (known.has(model.id)) known.set(model.id, model);
+      page = page.map(model => known.get(model.id) || model);
+    },
     toggle(id, checked) {
       if (!known.has(id)) throw new Error('Load this model before selecting it.');
       if (checked && !selected.has(id) && selected.size >= 200) throw new Error('Choose up to 200 models for this connection.');
@@ -58,7 +86,7 @@ export function createProviderModelSelection(initial = []) {
       const models = providerModelsForSave([...selected, ...String(text || '').split(/[\n,]+/)].join('\n'), '', [...known.values()]);
       for (const model of models) { known.set(model.id, model); selected.add(model.id); }
     },
-    forSave(capacities = '') { return providerModelsForSave([...selected].join('\n'), capacities, [...new Map([...original, ...known]).values()]); },
+    forSave(capacities = '') { return providerModelsForSave([...selected].join('\n'), capacities, [...new Map([...original, ...known]).values()], [...original.values()]); },
   };
 }
 
@@ -85,7 +113,7 @@ export function codexModelAccessDetails(model = {}) {
 }
 
 export function codexModelSourceLabel(model = {}) {
-  return model.source === 'documented' ? 'Documented candidate · not advertised by this catalog' : model.source === 'custom' ? 'Custom model ID' : model.hidden === true ? 'Hidden by Codex' : 'Advertised by Codex';
+  return model.source === 'runtime-candidate' ? 'Runtime metadata candidate · not advertised by this catalog' : model.source === 'documented' ? 'Documented candidate · not advertised by this catalog' : model.source === 'custom' ? 'Custom model ID' : model.hidden === true ? 'Hidden by Codex' : 'Advertised by Codex';
 }
 export function codexModelLifecycleLabel(model = {}) {
   const lifecycle = model.lifecycle || {};

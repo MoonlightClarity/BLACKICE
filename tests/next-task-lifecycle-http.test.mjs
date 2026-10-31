@@ -14,13 +14,19 @@ const workflow=()=>({id:'lifecycle-workflow',name:'Lifecycle fixture template',n
 class QuietRuntime extends EventEmitter{
   status(){return{connected:true,authenticated:true,models:[{model:'fixture'}],defaultModel:'fixture'};}
   async start(){return this.status();}async close(){}
-  async runAgent(){assert.fail('Managing saved work must not start model work.');}
+  async runAgent(options){
+    if(this.allowReadiness&&options.responseOnly){this.readinessCalls++;const captured=JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2));
+      assert.equal(captured.module.kind,'viability','Only schedule readiness uses the response-only fixture.');
+      return{output:JSON.stringify({values:Object.fromEntries(captured.template.fields.map(field=>[field.id,field.label+': the supplied isolated fixture task has a local implementation and no missing personal prerequisite.'])),grounding:captured.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId:'viability:task'})),requirements:[],openQuestions:[],challengeResponses:[]}),threadId:'fixture-readiness',turnId:'fixture-readiness-turn'};}
+    assert.fail('Managing saved work must not start an operational model turn.');
+  }
 }
-async function fixture(t){
+async function fixture(t,{allowReadiness=false}={}){
   const directory=await mkdtemp(path.join(tmpdir(),'blackice-v2-task-lifecycle-')),dataDir=path.join(directory,'data'),cwd=path.join(directory,'workspace'),apps=[];
-  let app,origin,cookie;
+  let app,origin,cookie,runtime;
   async function boot(){
-    app=await createHarnessServer({port:0,dataDir,defaultCwd:cwd,runtime:new QuietRuntime(),autoAttachDesktop:false});apps.push(app);
+    runtime=new QuietRuntime();runtime.allowReadiness=allowReadiness;runtime.readinessCalls=0;
+    app=await createHarnessServer({port:0,dataDir,defaultCwd:cwd,runtime,autoAttachDesktop:false});apps.push(app);
     await app.learning.updateSettings({mode:'off'});await app.operations.pause('Disposable lifecycle verification.');
     origin=await app.listen();const response=await fetch(origin);cookie=response.headers.get('set-cookie').split(';',1)[0];await response.arrayBuffer();
   }
@@ -35,7 +41,7 @@ async function fixture(t){
       input:'Saved request '+id,output:'Saved actual result '+id,workflow:workflow(),nodes:{agent:{status,output:'Saved actual result '+id}},events:[]};
     await app.conversations.capture(run);return run;
   }
-  return{directory,dataDir,cwd,api,seed,get app(){return app;},async restart(){await app.close();await boot();}};
+  return{directory,dataDir,cwd,api,seed,get runtime(){return runtime;},get app(){return app;},async restart(){await app.close();await boot();}};
 }
 
 test('V2 task lifecycle uses real family archive/Trash/restore routes and survives restart without rewriting task or run evidence',async t=>{
@@ -102,10 +108,12 @@ test('real project Archive/Restore guards organization revisions and keeps its t
 });
 
 test('schedule removal and template deletion retain actual job history and saved run/workflow copies',async t=>{
-  const f=await fixture(t),template=await f.api('/api/workflows','POST',workflow());
+  const f=await fixture(t,{allowReadiness:true}),template=await f.api('/api/workflows','POST',workflow());
   await f.seed('template-run');
   const schedule=await f.api('/api/operations/deployments','POST',{name:'Disposable scheduled work',input:'Retain original task',cwd:f.cwd,workflow:template,trigger:{type:'manual'},enabled:false});
   const scheduleCopy=structuredClone(f.app.operations.state.deployments.find(item=>item.id===schedule.id).workflow);
+  const readiness=await f.api('/api/operations/deployments/'+schedule.id+'/readiness','POST',{});
+  assert.equal(readiness.nodes.find(node=>node.id==='viability').readiness.state,'ready');assert.equal(f.runtime.readinessCalls,1);
   const job=await f.api('/api/operations/deployments/'+schedule.id+'/trigger','POST',{});
   assert.equal((await f.api('/api/operations')).jobs.find(item=>item.id===job.id).status,'queued');
   await f.api('/api/workflows/'+template.id,'DELETE',{});

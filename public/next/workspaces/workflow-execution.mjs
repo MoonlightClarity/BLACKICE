@@ -467,6 +467,7 @@ export function createWorkflowActivityUI({mount,api,events,notify=()=>{},getStat
   };
   return {
     enter(){if(active)return;active=true;unsubscribe=events.subscribe(onEvent);void loadWorkflows();paintRun();},
+    openRunId(id){ui.runId.value=String(id||'');return inspect(ui.runId.value);},
     leave(){active=false;revision++;catalogEpoch++;clearTimeout(catalogTimer);catalogTimer=null;readController?.abort();deletionController?.abort();
       for(const controller of loadingFull.values())controller.abort();loadingFull.clear();
       unsubscribe?.();unsubscribe=null;clearTimeout(timer);},

@@ -105,6 +105,7 @@ test('retained editable SVG backdrop is local and CSS uses no remote media',asyn
 test('retained SVG artwork and CSS are served locally with correct MIME types',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'agentdesk-svg-route-'));
  class Runtime extends EventEmitter{
+  async runAgent() { assert.fail('This server fixture must not execute a model.'); }
   status(){return{connected:false,authenticated:false,models:[],defaultModel:'fixture'};}
   async start(){return this.status();}
   async close(){}

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { TaskStateStore, TASK_LIMITS, TASK_TOOL, TASK_TOOL_V3, TASK_TOOL_V8, TASK_TOOL_V9, TASK_SCHEMA_VERSION, LEGACY_TASK_TOOL, TASK_INSTRUCTIONS, TASK_INSTRUCTIONS_V3, LEGACY_TASK_INSTRUCTIONS, createTaskToolHandler, taskToolForVersion, taskInstructionsForVersion } from '../lib/task-state.mjs';
+import { TaskStateStore, TASK_LIMITS, TASK_TOOL, TASK_TOOL_V3, TASK_TOOL_V8, TASK_TOOL_V9, TASK_TOOL_V10, TASK_TOOL_V11, TASK_SCHEMA_VERSION, LEGACY_TASK_TOOL, TASK_INSTRUCTIONS, TASK_INSTRUCTIONS_V3, LEGACY_TASK_INSTRUCTIONS, createTaskToolHandler, taskToolForVersion, taskInstructionsForVersion } from '../lib/task-state.mjs';
 
 async function harness(t) {
   const directory = await mkdtemp(path.join(tmpdir(), 'relay-milestones-test-')), cwd = path.join(directory, 'workspace'); await mkdir(cwd);
@@ -108,15 +108,15 @@ test('legacy records and original step/checkpoint calls retain their optional fi
   state = await other.setStep('milestone-task', 'old-step', { status: 'done' }, actor(state.revision));
   assert.equal(state.steps[0].note, 'Legacy note.'); assert.equal(state.steps[0].doneWhen, undefined); assert.equal(state.progress.done, 1);
   const context = await other.getContext('milestone-task'); assert.match(context, /Next action: Legacy next step\./);
-  assert.equal(TASK_SCHEMA_VERSION, 10); assert.equal(TASK_TOOL.name, LEGACY_TASK_TOOL.name);
-  assert.equal(taskToolForVersion(1), LEGACY_TASK_TOOL); assert.equal(taskToolForVersion(8), TASK_TOOL_V8); assert.equal(taskToolForVersion(9), TASK_TOOL_V9); assert.equal(taskToolForVersion(10), TASK_TOOL);
+  assert.equal(TASK_SCHEMA_VERSION, 12); assert.equal(TASK_TOOL.name, LEGACY_TASK_TOOL.name);
+  for (const [version, tool] of [[1, LEGACY_TASK_TOOL], [8, TASK_TOOL_V8], [9, TASK_TOOL_V9], [10, TASK_TOOL_V10], [11, TASK_TOOL_V11], [12, TASK_TOOL]]) assert.equal(taskToolForVersion(version, { executionGuardrails: true }), tool);
   assert.equal(TASK_TOOL_V8.inputSchema.properties.operation, undefined); assert.ok(TASK_TOOL.inputSchema.properties.operation);
   assert.ok(!taskToolForVersion(5).inputSchema.properties.action.enum.includes('edit')); assert.ok(TASK_TOOL.inputSchema.properties.action.enum.includes('edit'));
   assert.deepEqual(TASK_TOOL_V3.inputSchema.properties.action.enum.filter(action => action !== 'external'), LEGACY_TASK_TOOL.inputSchema.properties.action.enum);
   for (const key of ['doneWhen', 'evidence', 'blockedReason', 'nextAction']) assert.equal(LEGACY_TASK_TOOL.inputSchema.properties[key], undefined);
   for (const key of ['doneWhen', 'evidence', 'blockedReason']) assert.equal(LEGACY_TASK_TOOL.inputSchema.properties.steps.items.properties[key], undefined);
   assert.ok(!LEGACY_TASK_TOOL.inputSchema.properties.status.enum.includes('blocked')); assert.ok(TASK_TOOL.inputSchema.properties.status.enum.includes('blocked'));
-  const v5Instructions = taskInstructionsForVersion(5);
+  const v5Instructions = taskInstructionsForVersion(5, { executionGuardrails: true });
   assert.match(TASK_INSTRUCTIONS_V3, /Simple questions and quick edits need no saved plan/); assert.doesNotMatch(TASK_INSTRUCTIONS, /need no saved plan/); assert.match(v5Instructions, /coordinator owns the shared plan/); assert.match(v5Instructions, /revision conflict/); assert.match(v5Instructions, /one concrete nextAction/);
   assert.match(TASK_INSTRUCTIONS, /LIVE PLANNING WORKSPACE/); assert.match(TASK_INSTRUCTIONS, /A changed revision requires a fresh read/); assert.match(TASK_INSTRUCTIONS, /cannot rewrite another owner’s plan, global goal or checkpoint/);
   assert.ok(!LEGACY_TASK_INSTRUCTIONS.includes('doneWhen')); assert.ok(!LEGACY_TASK_INSTRUCTIONS.includes('nextAction'));
@@ -143,10 +143,13 @@ test('milestone bounds reject invalid criteria, evidence, blockers and next acti
 test('milestone count follows the saved-state budget and enormous arrays stop validation before allocating an unbounded plan', async t => {
   const { store, actor } = await harness(t);
   let state = await store.setPlan('milestone-task', { steps: Array.from({ length: 100 }, (_, index) => ({ title: `Deliver outcome ${index + 1}`, doneWhen: 'The corresponding check passes.' })) }, actor(1));
-  assert.equal(state.steps.length, 100); assert.equal(state.progress.total, 100); assert.ok(JSON.stringify(state).length < TASK_LIMITS.agentStateChars);
-  let visited = 0; const huge = new Proxy([], { get(target, key, receiver) { if (key === 'length') return 1_000_000; if (/^\d+$/.test(String(key))) { visited++; if (visited > 30) throw new Error('Validation did not stop at the state budget.'); return { title: 'Outcome', doneWhen: 'x'.repeat(1000), evidence: 'x'.repeat(2000), note: 'x'.repeat(700) }; } return Reflect.get(target, key, receiver); } });
-  assert.throws(() => store.setPlan('milestone-task', { steps: huge }, actor(state.revision)), { code: 'TASK_STATE_LIMIT' }); assert.ok(visited < 30);
-  await assert.rejects(store.setPlan('milestone-task', { steps: Array.from({ length: 17 }, (_, index) => ({ title: `Deliver outcome ${index}`, doneWhen: 'x'.repeat(1000), evidence: 'x'.repeat(2000) })) }, actor(state.revision)), { code: 'TASK_STATE_LIMIT' });
+  assert.equal(state.steps.length, 100); assert.equal(state.progress.total, 100);
+  const persisted = JSON.parse(await readFile(store.file('milestone-task'), 'utf8')).history.at(-1);
+  assert.ok(JSON.stringify(persisted).length < TASK_LIMITS.agentStateChars, 'the saved-state budget excludes derived availability projections');
+  const maxVisits = Math.ceil(TASK_LIMITS.stateChars / 3700) + 1;
+  let visited = 0; const huge = new Proxy([], { get(target, key, receiver) { if (key === 'length') return 1_000_000; if (/^\d+$/.test(String(key))) { visited++; if (visited > maxVisits) throw new Error('Validation did not stop at the state budget.'); return { title: 'Outcome', doneWhen: 'x'.repeat(1000), evidence: 'x'.repeat(2000), note: 'x'.repeat(700) }; } return Reflect.get(target, key, receiver); } });
+  assert.throws(() => store.setPlan('milestone-task', { steps: huge }, actor(state.revision)), { code: 'TASK_STATE_LIMIT' }); assert.ok(visited <= maxVisits);
+  await assert.rejects(store.setPlan('milestone-task', { steps: Array.from({ length: 80 }, (_, index) => ({ title: `Deliver outcome ${index}`, doneWhen: 'x'.repeat(1000), evidence: 'x'.repeat(2000) })) }, actor(state.revision)), { code: 'TASK_STATE_LIMIT' });
   assert.equal((await store.get('milestone-task')).revision, state.revision);
 });
 
@@ -157,7 +160,8 @@ test('continuity budgets preserve the plan goal, current milestone, reported fin
   for (const maxChars of [512, 800, 1200, 12000]) {
     const context = await store.getContext('milestone-task', { maxChars }); assert.ok(context.length <= maxChars);
     for (const label of ['Plan goal:', 'Current milestone:', 'Done when:', 'Blocked:', 'Reported finding:', 'Next action:']) assert.ok(context.includes(label), `${label} must survive a ${maxChars} character budget`);
-    assert.match(context, /agent-reported/); assert.match(context, /not correctness/); assert.match(context, /Next action: Resume/);
+    assert.match(context, /agent-reported/); assert.match(context, /not correctness/); assert.match(context, /Next action: Resum(?:e|…)/);
+    if (maxChars >= 800) assert.match(context, /Next action: Resume board check\./);
     assert.ok(context.indexOf('Next action:') < (context.indexOf('Milestones:') < 0 ? Infinity : context.indexOf('Milestones:')));
     if (maxChars < 12000) assert.match(context, /shortened/);
   }

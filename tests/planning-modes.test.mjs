@@ -61,7 +61,8 @@ async function fixture(t, execute) {
     }
     async close() {}
   }
-  const runtime = new Runtime(), settings = {}, engine = await new HarnessEngine({ runtime, tasks, dataDir: directory, defaultCwd: cwd }).init();
+  // This suite varies Planning mode with execution guardrails explicitly enabled.
+  const runtime = new Runtime(), settings = { executionGuardrails: true }, engine = await new HarnessEngine({ runtime, tasks, dataDir: directory, defaultCwd: cwd }).init();
   engine.methods = methods; engine.runtimeSettings = { get: () => ({ ...settings }) };
   context = { engine, tasks, methods, runtime, settings, directory, cwd, workflow: graph(),
     start: (value = {}) => context.engine.startRun({ workflow: context.workflow, input: 'Answer this fixture request.', ...value }),
@@ -346,7 +347,7 @@ test('a cron deployment preserves Maximal in the admitted workflow snapshot thro
 
 test('Off keeps optional legacy task tools and external recovery guidance without importing default plan playbooks', () => {
   for (const version of [1, 2, 3, 4, 5]) {
-    const instructions = capabilityGuidance([taskToolForVersion(version)], { planningMode: 'off' });
+    const instructions = capabilityGuidance([taskToolForVersion(version, { executionGuardrails: true })], { planningMode: 'off', executionGuardrails: true });
     assert.match(instructions, /Automatic planning is off/);
     assert.doesNotMatch(instructions, /before operational work or the final answer|save this turn's plan|form a brief operational plan|For substantive work, discover relevant methods/);
     if (version >= 3) assert.match(instructions, /Reconcile uncertain effects before retry/);

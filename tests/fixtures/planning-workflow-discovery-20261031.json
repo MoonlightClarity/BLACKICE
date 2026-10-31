@@ -1,0 +1,63 @@
+{
+  "request": {
+    "acceptanceCriteria": [
+      {
+        "accuracy": {
+          "consequence": "a mismatched row or wrong total_units fails the verify-against-CSV criterion",
+          "decisionThreshold": "each closing_units == opening_units + received_units - shipped_units exactly and total_units == sum of closing_units",
+          "evidenceNeeded": "input.csv rows from the target folder plus a reread comparison of closing-units.json to the CSV",
+          "mode": "exact",
+          "stopWhen": "reread JSON matches CSV-derived rows and total_units exactly",
+          "tolerance": "0 units",
+          "unknownPolicy": "block"
+        },
+        "description": "For every SKU in input.csv under fixture-inventory, closing_units == opening_units + received_units - shipped_units exactly (tolerance 0 units); closing-units.json rows array contains {sku, closing_units} for each SKU; total_units equals the sum of all closing_units; reread JSON matches CSV-derived rows and total.",
+        "id": "ac-1",
+        "label": "CSV-derived closing_units and total verified",
+        "verification": "evidence"
+      }
+    ],
+    "key": "read-compute-verify-inventory",
+    "objective": "Read input.csv from C:\\fixture\\inventory, compute closing_units exactly per SKU, write closing-units.json in the same folder, reread and verify every row and total_units against the CSV, and report the verified total_units and output file path.",
+    "reason": "The input.csv rows are missing from all captured sources and are decision-changing; only the workflow agent with local file access (sandbox danger-full-access) can read them and establish the file effect this analysis module cannot perform.",
+    "required": true,
+    "sourceIds": [
+      "request:inventory-fixture",
+      "response:feasibility-fixture",
+      "cycle:context:inventory-fixture"
+    ],
+    "title": "Read input.csv, compute closing_units, write and verify closing-units.json"
+  },
+  "nestedRequest": {
+    "acceptanceCriteria": [
+      {
+        "accuracy": {
+          "consequence": "missing or misread rows make per-SKU closing_units unverifiable",
+          "decisionThreshold": "every input.csv row is captured exactly with sku and the three unit fields",
+          "evidenceNeeded": "input.csv read from the target folder",
+          "mode": "exact",
+          "stopWhen": "all CSV rows captured exactly",
+          "tolerance": "0 rows/fields",
+          "unknownPolicy": "block"
+        },
+        "description": "Every input.csv row is captured exactly with sku, opening_units, received_units, and shipped_units as stored, tolerance 0 rows/fields.",
+        "id": "ac-1",
+        "label": "CSV rows captured exactly",
+        "verification": "evidence"
+      }
+    ],
+    "key": "csv-rows",
+    "objective": "Obtain the sku, opening_units, received_units, shipped_units rows from input.csv under fixture-inventory so exact per-SKU closing_units and total_units can be computed.",
+    "reason": "The CSV rows are the only missing input; without them closing_units, total_units, and the verified report cannot be produced under unknownPolicy block.",
+    "required": true,
+    "sourceIds": [
+      "request:inventory-fixture",
+      "cycle:context:analytical-child-fixture"
+    ],
+    "title": "Read input.csv rows for the target folder"
+  },
+  "subproblemMaps": [
+    "Direct analytical work suffices to fix the schema, formula, sum rule, folder constraint, and verification steps, so no interpretive subproblem is needed. However, obtaining the missing input.csv rows is a bounded external step only the workflow agent with local file access can perform; it could change the outcome by supplying the verified total_units and output path. Propose one bounded subproblem: read input.csv, compute closing_units exactly, write closing-units.json in the target folder, reread and verify every row and total_units against the CSV, then report total_units and path. Direct work is sufficient for everything else.",
+    "Direct agent work is sufficient: read input.csv, apply the exact per-SKU formula, write closing-units.json in the target folder, reread it, and compare every row and total_units to CSV-derived values with tolerance 0. No child cycle is needed because the work is bounded and unchanged from the stated task; resolution depends only on reading the missing CSV rows."
+  ]
+}

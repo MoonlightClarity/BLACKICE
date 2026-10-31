@@ -14,11 +14,21 @@ const workflow = () => ({ id: 'production-boundary', name: `Workflow ${SECRET}`,
 
 async function fixture(t, { hold = false } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'relay-production-boundaries-')), dataDir = path.join(directory, 'data'), cwd = path.join(directory, 'workspace');
-  const calls = [], waiting = [], apps = [], effects = { browser: 0, desktop: 0, reconnects: 0 }; let app, url, cookie, runtime;
+  const calls = [], readinessCalls = [], waiting = [], apps = [], effects = { browser: 0, desktop: 0, reconnects: 0 }; let app, url, cookie, runtime;
   class Runtime extends EventEmitter {
     status() { return { connected: true, authenticated: true, defaultModel: 'fixture-model', models: [{ model: 'fixture-model' }], providers: [{ id: SECRET, name: SECRET, apiKey: SECRET }], account: { email: `${SECRET}@example.invalid` }, lastError: `Hidden status ${SECRET}` }; }
     async start() { effects.reconnects++; if (this.reconnectError) throw this.reconnectError; return this.status(); }
     async runAgent(options) {
+      if (options.responseOnly) {
+        readinessCalls.push(options);
+        const captured = JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n') + 2));
+        assert.equal(captured.module.kind, 'viability', 'Only webhook readiness uses the analytical fixture.');
+        return { output: JSON.stringify({
+          values: Object.fromEntries(captured.template.fields.map(field => [field.id, field.label + ': this isolated webhook fixture has no missing prerequisite.'])),
+          grounding: captured.template.fields.filter(field => field.grounding === 'required').map(field => ({ field: field.id, sourceId: 'viability:task' })),
+          requirements: [], openQuestions: [], challengeResponses: [],
+        }), threadId: 'boundary-readiness', turnId: 'boundary-readiness-turn' };
+      }
       calls.push(options); const threadId = `fixture-thread-${calls.length}`;
       options.onEvent?.({ type: 'thread', threadId, turnId: `fixture-turn-${calls.length}`, model: 'fixture-model' });
       options.onEvent?.({ type: 'delta', delta: `Chat ${SECRET}` });
@@ -48,7 +58,7 @@ async function fixture(t, { hold = false } = {}) {
       let text = ''; response.setEncoding('utf8'); response.on('data', chunk => { text += chunk; }); response.on('end', () => { try { resolve({ status: response.statusCode, headers: response.headers, data: JSON.parse(text) }); } catch (error) { reject(error); } }); response.on('error', reject);
     }); req.setTimeout(5000, () => req.destroy(new Error('Boundary HTTP request timed out'))); req.on('error', reject); req.end(payload);
   });
-  return { get app() { return app; }, get runtime() { return runtime; }, get url() { return url; }, get cookie() { return cookie; }, directory, dataDir, cwd, calls, waiting, effects, request, start: () => request('/api/runs', { method: 'POST', body: { workflow: workflow(), input: `User task ${SECRET}` } }), async restart() { await app.close(); return boot(); } };
+  return { get app() { return app; }, get runtime() { return runtime; }, get url() { return url; }, get cookie() { return cookie; }, directory, dataDir, cwd, calls, readinessCalls, waiting, effects, request, start: () => request('/api/runs', { method: 'POST', body: { workflow: workflow(), input: `User task ${SECRET}` } }), async restart() { await app.close(); return boot(); } };
 }
 
 test('actual support HTTP export omits chat, path, tool, account and malicious error contents while active work continues', async t => {
@@ -134,7 +144,10 @@ test('maintenance atomically blocks direct engine and delayed HTTP admission, re
 
 test('maintenance rejects valid webhook deliveries before they mutate durable jobs', async t => {
   const context = await fixture(t), { app, request } = context;
-  const deployment = await app.operations.create({ name: 'Fixture webhook', input: 'Do not dispatch during maintenance.', cwd: context.cwd, workflow: workflow(), enabled: true, trigger: { type: 'webhook' } });
+  const created = await request('/api/operations/deployments', { method: 'POST', body: { name: 'Fixture webhook', input: 'Do not dispatch during maintenance.', cwd: context.cwd, workflow: workflow(), enabled: true, trigger: { type: 'webhook' } } });
+  assert.equal(created.status, 201, JSON.stringify(created.data));
+  const deployment = created.data;
+  assert.equal(deployment.enabled, true); assert.equal(context.readinessCalls.length, 1); assert.equal(context.calls.length, 0);
   const token = app.operations.getWebhook(deployment.id).token; await app.beginMaintenance();
   const before = await readFile(path.join(context.dataDir, 'operations.json'), 'utf8');
   const deliveries = await Promise.all(['one', 'two'].map(key => request(`/hooks/${deployment.id}`, { method: 'POST', auth: false, headers: { Authorization: `Bearer ${token}`, 'Idempotency-Key': key }, body: { private: SECRET } })));

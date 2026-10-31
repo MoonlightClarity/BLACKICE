@@ -35,6 +35,16 @@ const prepareRoute = '/api/chatgpt-connector/prepare';
 const checkRoute = '/api/chatgpt-connector/check-connection';
 const confirmRoute = '/api/chatgpt-connector/confirm-connection';
 const prepareConnection = async f => { const response = await f.request(prepareRoute, { body: { confirmPublic: true } }); assert.equal(response.status, 200, await response.clone().text()); assert.equal((await response.json()).setup.ready, true); };
+test('setup identifies missing Tailscale before preparation and reports its error code on failure', async t => {
+  const f = await fixture(t, { serverOptions: { connectionStartup: { snapshot: async () => ({ available: true, checks: [{ key: 'tailscale', installed: false, ok: false }] }) } } });
+  const state = await (await f.request('/api/chatgpt-connector')).json();
+  assert.match(state.setup.checks.find(check => check.key === 'https').detail, /Tailscale is not installed.*sign in/i);
+  f.app.remoteAccess.transport.inspect = async () => { throw Object.assign(new Error('Tailscale is not installed on this computer. Install Tailscale, sign in, and then retry ChatGPT connection setup.'), { code: 'REMOTE_TAILSCALE_MISSING', status: 503 }); };
+  const response = await f.request(prepareRoute, { body: { confirmPublic: true } });
+  assert.equal(response.status, 503);
+  const error = await response.json(); assert.equal(error.code, 'REMOTE_TAILSCALE_MISSING'); assert.match(error.error, /Tailscale is not installed/);
+  assert.equal(f.app.chatGPTConnector.enabled, false);
+});
 const turn = () => new Promise(resolve => setImmediate(resolve));
 const held = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const rawStatus = (f, route, headers = {}) => new Promise((resolve, reject) => {

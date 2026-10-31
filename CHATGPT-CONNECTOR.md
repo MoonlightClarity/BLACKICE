@@ -15,6 +15,16 @@ These host setup and authentication concepts are covered by [OpenAI's custom MCP
 
 New profiles use standard HTTPS port **443**, displayed without a port suffix. Saved **8443** profiles retain their existing URL. Use the exact displayed address; changing the origin invalidates the old grant and requires authorization again. BLACKICE refuses to adopt an unowned root route automatically. A reviewed, explicitly authorized migration must preserve other paths, unrelated routes and their existing public/private exposure. See [Remote access](REMOTE-ACCESS.md).
 
+The installed app also supports `BLACKICE chatgpt --help` from a command line. With BLACKICE running and Tailscale installed and signed in, `BLACKICE chatgpt status` inspects setup; `BLACKICE chatgpt prepare --confirm-public` publishes the authenticated endpoint and enables access; and `BLACKICE chatgpt check` tests public discovery. Status reports the address and pending authorization requests. After matching the code shown on the ChatGPT authorization page, use `BLACKICE chatgpt approve --code=CODE --scope=read` with additional `--scope` options for the requested access you choose. `BLACKICE chatgpt startup` configures available Windows startup prerequisites. These commands do not create or attach the ChatGPT plugin, sign in to Tailscale, or verify a result inside ChatGPT. Use `--profile-dir=PATH` for a custom running profile.
+
+If the Windows GUI executable does not attach its output to the terminal, the bundled command-line helper can be run with Electron's Node mode:
+
+```powershell
+$env:ELECTRON_RUN_AS_NODE = '1'
+& "$env:LOCALAPPDATA\Programs\BLACKICE\BLACKICE.exe" "$env:LOCALAPPDATA\Programs\BLACKICE\resources\app\scripts\chatgpt-cli.mjs" chatgpt status
+Remove-Item Env:ELECTRON_RUN_AS_NODE
+```
+
 The connector retains `chatSurfaceVerification: "not-recorded"`; it cannot independently inspect a ChatGPT conversation. The separate setup guide labels its final state as user-confirmed and stores only a nonce, server address, grant identifier, status receipt time and explicit confirmation time in `chatgpt-setup.json`. It stores no access token, refresh token, cookie, authorization code or password. Matching evidence survives an ordinary restart, but is cleared when its grant is no longer active or its address changes. Damaged optional guide history is preserved before regenerating it, without replacing OAuth storage. No authenticated external-account result is assumed by isolated acceptance checks.
 
 ## Production startup on Windows
@@ -246,3 +256,13 @@ Verify each boundary separately:
 A status result with all seven `grantedScopes` establishes those permissions for that call. It does not prove that a write, command, browser action or publication completed. Those operations need their own actual receipts. If account policy or client authentication prevents the exchange, report the limitation rather than substituting a worker or endpoint-only test.
 
 Official integration requirements: [ChatGPT custom MCP servers](https://developers.openai.com/api/docs/guides/custom-mcp-server), [plugin authentication](https://developers.openai.com/plugins/build/auth), [connecting a plugin](https://developers.openai.com/plugins/deploy/connect-chatgpt), and [file input metadata](https://developers.openai.com/plugins/reference).
+
+## Availability while BLACKICE is closed
+
+An enabled BLACKICE profile keeps a small availability responder and its existing owned HTTPS route after the application exits. The main application still owns all execution, model work, browser sessions and OAuth writes. The responder only forwards requests while that application is connected, or returns its availability status. It never starts the application, queues work, replays actions or starts at Windows boot by itself. Explicitly disabling remote access removes the route and stops the responder.
+
+Authenticated connector status distinguishes `closed`, `starting`, `closing` and `unreachable`. A refused HTTP connection alone does not establish that the application is closed. A local lifetime connection clears the proxy target when its owning application disconnects; reopening attaches the new application generation to the same responder and route. Existing grant IDs and scopes are preserved.
+
+An offline action response reports that no action was admitted when the request was never sent. If the connection was lost after delivery may have begun, its outcome, model-start and provider-turn fields are unknown. Read the existing durable job after BLACKICE returns, or retry identical arguments with the same request ID under the same grant. The responder does not replay the request.
+
+Offline authentication reads the existing access-token hashes. Token refresh returns `temporarily_unavailable` until BLACKICE reopens; the responder does not rotate or revoke credentials. The computer and Tailscale must remain reachable for these messages to arrive. Shutdown, sleep, account logoff or a network failure can still prevent an application-level response.

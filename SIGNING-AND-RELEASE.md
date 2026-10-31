@@ -55,6 +55,26 @@ After finishing runtime changes and setting the release version, use `npm run pa
 
 The **Verify Windows release installer** GitHub workflow accepts an existing draft tag, its exact installer SHA-256, application fingerprint, full source commit, and `source_test_receipt`. Supply a tracked path such as `verification/windows-VERSION.json` containing actual Windows source-test results for that version and fingerprint. The workflow forwards it as `-SourceTestReceipt` to `scripts/verify-windows-release.ps1`; untracked, stale, unsuccessful, or mismatched evidence is rejected. The historical receipt is never selected implicitly. This workflow runs only on a disposable GitHub-hosted Windows VM, checks the actual installer, and attaches sanitized supporting evidence to the existing draft. Publication remains a separate step.
 
+## Requested release automation
+
+The **Build and publish requested Windows release** workflow provides the complete hosted build path. It runs on an explicit change to `.github/release-request.json` on `main`, or a manual dispatch on `main`. Ordinary source commits do not trigger publication.
+
+Finish the current source tests and installed application acceptance first, then commit the sanitized Windows source-test receipt. To request the release, add or update this file with the real fingerprint from that tested source:
+
+```json
+{
+  "format": 1,
+  "version": "2.38.0",
+  "appFingerprint": "<actual application SHA-256>",
+  "sourceTestReceipt": "verification/windows-2.38.0.json",
+  "publish": true
+}
+```
+
+The request is deliberately not created by packaging. The workflow binds the request to its actual triggering commit, checks its version, application fingerprint, tracked release notes, and tracked source-test receipt, installs the locked build dependencies, and builds the Windows candidate. It creates a draft targeting that exact commit, runs `verify-windows-release.ps1` on the fresh GitHub-hosted Windows runner, and attaches the same fixed set of sanitized installer evidence used by the separate verification workflow. Publication requires successful existing release checks and an explicit `publish: true`. Use `false` to leave the verified result as a draft.
+
+A rerun can recover a complete draft only when it targets the same commit and its exact installer, manifest, and checksums agree. A partial draft, another source target, or an already published version is reported for inspection instead of replaced. No browser session or personal token is required: the release actions use the repository's ordinary GitHub Actions token.
+
 ## Optional existing signing identity
 
 Without a signing identity, the installer is explicitly unsigned. Its manifest records `signing.status: "unsigned"`, null publisher fields, and `publisherVerified: false`. Windows has not verified a BLACKICE publisher identity. No signing account or paid service is required for that release policy.
@@ -113,7 +133,7 @@ The receipt is an operator attestation backed by retained test artifacts. The re
 
 ## Updates, rollback, and historical portable bundles
 
-Use **Blackice-<version>-Setup.exe** to install, reinstall, or update the registered Windows program. Verify the exact candidate's installation path, Windows uninstall registration, and shortcuts. Use BLACKICE's Recovery & support controls to make a verified profile backup before rollback or maintenance that may affect profile compatibility. Restoring application files alone does not restore profile data or schema.
+Use **Blackice-<version>-Setup.exe** to install, reinstall, or update the registered Windows program. Verify the exact candidate's installation path, Windows uninstall registration, and shortcuts. Before rollback or profile maintenance, quit BLACKICE and copy the retained `%APPDATA%\Relay` profile folder, or the explicit profile folder chosen for that installation. Back up working folders separately. The release runner verifies backup integrity and a disposable restore as separate installer evidence. Restoring application files alone does not restore profile data or schema.
 
 `scripts/Install-Relay.ps1`, `relay-distribution.json`, and `release:check -- --local` remain compatibility tools for historical Relay portable bundles. Current packaging commands do not produce that format. Its existing `Relay.exe` and manifest identities must remain intact when verifying those older bundles. A local verification report never establishes public release readiness, and a portable deployment test cannot replace the actual Setup.exe installation gate.
 

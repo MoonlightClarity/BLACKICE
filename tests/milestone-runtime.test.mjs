@@ -18,6 +18,8 @@ async function fixture(t,execute){
  const tasks=await new TaskStateStore({dataDir:directory}).init();
  class Runtime extends EventEmitter{constructor(){super();this.calls=[];}status(){return{connected:true,authenticated:true,defaultModel:'fixture'};}async runAgent(options){this.calls.push(options);return execute(options,this.calls.length);}async close(){}}
  const runtime=new Runtime(),engine=await new HarnessEngine({runtime,tasks,dataDir:directory,defaultCwd:cwd}).init();
+ // Native catalog and uncertain-publication assertions exercise explicit execution guardrails.
+ engine.runtimeSettings={get:()=>({executionGuardrails:true})};
  t.after(async()=>{await engine.close();await tasks.close();assert.match(path.basename(directory),/^relay-milestone-runtime-/);await rm(directory,{recursive:true,force:true});});
  const workflow=createMissionWorkflow({id:'milestone-fixture',task:'Deliver a checked result.',cwd});
  return{engine,tasks,runtime,cwd,workflow,settled:id=>wait(()=>engine.getRun(id).settled&&engine.getRun(id))};
@@ -129,6 +131,6 @@ test('milestone stream and HTTP merges keep revision order and reject another ta
 
 test('milestone guidance uses only the fields attached to the selected tool schema',()=>{
  const legacy={name:'relay_task',inputSchema:{properties:{action:{enum:['read','plan','step']},steps:{items:{properties:{title:{type:'string'}}}}}}};
- assert.doesNotMatch(capabilityGuidance([legacy]),/Give milestones an observable doneWhen/);
- const current=structuredClone(legacy);current.inputSchema.properties.steps.items.properties.doneWhen={type:'string'};assert.match(capabilityGuidance([current]),/Give milestones an observable doneWhen/);assert.match(capabilityGuidance([current]),/never an approval gate/);
+ assert.doesNotMatch(capabilityGuidance([legacy],{executionGuardrails:true}),/Give milestones an observable doneWhen/);
+ const current=structuredClone(legacy);current.inputSchema.properties.steps.items.properties.doneWhen={type:'string'};assert.match(capabilityGuidance([current],{executionGuardrails:true}),/Give milestones an observable doneWhen/);assert.match(capabilityGuidance([current],{executionGuardrails:true}),/never an approval gate/);
 });

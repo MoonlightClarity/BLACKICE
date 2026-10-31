@@ -215,6 +215,7 @@ test('query validation rejects malformed input without coercing state, result or
 });
 
 class Runtime extends EventEmitter {
+  async runAgent() { assert.fail('This server fixture must not execute a model.'); }
   status() { return { connected: true, authenticated: true, defaultModel: 'fixture-model', models: [{ id: 'fixture-model', supportsTools: true }] }; }
   async start() { return this.status(); }
   async close() {}
@@ -253,7 +254,7 @@ test('search endpoint enforces the existing local session and exposes the bounde
   finally { app.conversations.stateRecoveryRequired = false; }
 });
 
-test('answers held behind the real planning gate never become searchable while waiting or after a missing plan', async t => {
+test('answers held behind the real planning gate never become searchable while waiting or after a malformed planning response', async t => {
   let release, called = false;
   const hold = new Promise(resolve => { release = resolve; }), runtime = new Runtime();
   runtime.runAgent = async options => { called = true; options.onEvent({ type: 'message', itemId: 'held', phase: 'final_answer', text: 'HELD_PLANNING_NEEDLE' }); await hold; return { output: 'HELD_PLANNING_NEEDLE', threadId: 'fixture-thread' }; };
@@ -266,7 +267,9 @@ test('answers held behind the real planning gate never become searchable while w
     assert.equal(search(app.conversations, 'HELD_PLANNING_NEEDLE').total, 0);
     assert.equal(search(app.conversations, 'visible planning search').total, 1);
     release(); const settled = await until(() => { const value = app.engine.getRun(run.id); return value.settled && value; }); await app.conversations.chain;
-    assert.equal(settled.status, 'failed'); assert.equal(settled.nodes.agent.planning.status, 'missing');
+    assert.equal(settled.status, 'failed');
+    assert.match(settled.error, /Return one JSON object with values, grounding/);
+    assert.equal(settled.nodes.agent.status, 'skipped', 'the malformed planning result prevents dispatch');
     assert.equal(search(app.conversations, 'HELD_PLANNING_NEEDLE').total, 0);
   } finally { release(); }
 });

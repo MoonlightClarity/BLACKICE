@@ -15,7 +15,7 @@ test('an unchanged visible capacity retains provider source; a changed capacity 
   assert.deepEqual(providerModelsForSave('large-model', 'large-model = 900000', [reported]), [{ ...reported, contextWindowTokens: 900000, contextWindowSource: 'user-configured' }]);
 });
 test('unknown clears explicitly while untouched model capacities remain intact', () => {
-  assert.deepEqual(providerModelsForSave('large-model\nlocal-model', 'large-model = unknown', [reported, configured]), [{ id: reported.id, displayName: reported.displayName }, configured]);
+  assert.deepEqual(providerModelsForSave('large-model\nlocal-model', 'large-model = unknown', [reported, configured]), [{ id: reported.id, displayName: reported.displayName, contextWindowTokens: null, contextWindowSource: 'unknown' }, configured]);
 });
 test('removing a model from the simple list removes its metadata without requiring hidden capacity edits', () => {
   assert.deepEqual(providerModelsForSave('local-model', 'large-model = 1000000\nlocal-model = 900000', [reported, configured]), [configured]);
@@ -26,8 +26,14 @@ test('discovery captures real reported metadata, preserves manual overrides, and
 test('capacity validation catches wrong IDs, duplicates and invalid limits without silently dropping entries', () => {
   assert.throws(() => providerModelsForSave('large-model', 'other = 900000'), /missing from the model IDs/);
   assert.throws(() => providerModelsForSave('large-model', 'large-model = 900000\nlarge-model = 900000'), /one capacity/);
-  for (const value of ['1', '4000001', 'NaN', '900000.5', '-900000']) assert.throws(() => providerModelsForSave('large-model', `large-model = ${value}`), /whole token count/);
+  for (const value of ['0', '9007199254740992', 'NaN', '900000.5', '-900000']) assert.throws(() => providerModelsForSave('large-model', `large-model = ${value}`), /whole token count/);
   assert.throws(() => providerModelsForSave('large-model', '900000'), /Capacity line 1/);
+});
+test('declared model context capacities roundtrip independently of application working-budget bounds', () => {
+  for (const contextWindowTokens of [1, 2048, 8000000, Number.MAX_SAFE_INTEGER]) {
+    const model = { ...reported, contextWindowTokens, contextWindowObservedAt: '2026-10-29T08:00:00Z' };
+    assert.deepEqual(providerModelsForSave(model.id, `${model.id} = ${contextWindowTokens.toLocaleString()}`, [model]), [model]);
+  }
 });
 
 test('named provider choices have distinct real endpoints and cloud key requirements', () => {
@@ -69,7 +75,7 @@ test('catalog updates retain user context overrides and omitted metadata on sele
 
 test('model labels and context metadata render as escaped readable checkbox rows', () => {
   const html = renderProviderModelRows([{ id: 'vendor/model<id>', displayName: 'Readable <script>', contextWindowTokens: 900000, supportsTools: true, selected: true }]);
-  assert.match(html, /type="checkbox"/); assert.match(html, / checked/); assert.match(html, /900,000 context/); assert.match(html, /Tools/);
+  assert.match(html, /type="checkbox"/); assert.match(html, / checked/); assert.match(html, /Context window: 900,000 tokens · Source unspecified/); assert.match(html, /Tools/);
   assert.match(html, /Readable &lt;script&gt;/); assert.doesNotMatch(html, /<script>|<textarea/);
 });
 
@@ -594,6 +600,24 @@ test('provider save and test show live progress immediately and stop it without 
   assert.equal(button.disabled, false); assert.equal(calls.length, 2); assert.equal(calls.includes('/api/models/default'), false); assert.ok(submitted);
 });
 
+test('manual model limits returned on save immediately replace unknown details and survive another edit', async t => {
+  const dom = connectionDocument(t), writes = [], report = { id: 'manual-model', displayName: 'Manual model', contextWindowTokens: 65536, contextWindowSource: 'provider-reported', contextWindowObservedAt: '2026-10-29T08:00:00Z', maxOutputTokens: 4096, maxOutputTokensSource: 'provider-reported', maxOutputObservedAt: '2026-10-29T08:00:00Z' };
+  const api = async (url, method, body) => {
+    if (url === '/api/status') return {}; if (!method) return [];
+    if (url === '/api/providers') { writes.push(structuredClone(body)); return { ...body, models: [structuredClone(report)] }; }
+    if (url.endsWith('/test')) return { credentialVerified: false };
+    throw Error('Unexpected manual model request: ' + url);
+  };
+  await openConnections({ api, ...dom }); dom.provider('compatible').onclick();
+  dom.get('#connection-manual-model').value = report.id; dom.get('#connection-add-model').onclick();
+  assert.match(dom.get('#connection-selected').innerHTML, /Context window: Unknown · lookup not run/); assert.match(dom.get('#connection-selected').innerHTML, /Max output: Unknown · lookup not run/); assert.equal(writes.length, 0);
+  await dom.get('#connection-test').onclick();
+  assert.match(dom.get('#connection-selected').innerHTML, /Context window: 65,536 tokens · Provider reported/); assert.match(dom.get('#connection-selected').innerHTML, /Max output: 4,096 tokens · Provider reported/);
+  assert.equal(dom.form().elements.capacities.value, 'manual-model = 65536');
+  dom.form().elements.name.value = 'Renamed connection'; await dom.get('#connection-test').onclick();
+  assert.deepEqual(writes[1].models, [report]); assert.equal(writes[1].name, 'Renamed connection');
+});
+
 test('a failed provider test clears the spinner, reports the actual error and never retries automatically', async t => {
   const dom = connectionDocument(t), check = heldRequest(), calls = [];
   const api = async (url, method, body) => {
@@ -622,4 +646,72 @@ test('native connect has persistent inline progress and a terminal failure prese
   failed = true; connect.reject(Error('Fixture native handshake failed.')); await pending;
   assert.equal(dom.get('#connection-default-model').value, 'api::unsaved'); assert.match(dom.get('#connection-home-error').textContent, /Fixture native handshake failed/);
   assert.match(dom.view.innerHTML, /data-connecting="false"/); assert.deepEqual(calls, ['/api/runtime/reconnect']);
+});
+
+test('connection editor reviews, changes, and clears generic endpoint paths without testing a provider',async t=>{
+  const dom=connectionDocument(t),writes=[];let saved={id:'custom_routes',name:'Custom routes',preset:'compatible',type:'compatible',baseUrl:'https://custom.example/v1',models:[{id:'fixture-model'}],enabled:true,configured:true,maxTokens:8192,maxSteps:null,endpoints:{models:'/catalog',chatCompletions:'/generate'}};
+  const api=async(url,method,body)=>{if(url==='/api/status')return {models:[],codex:{connected:false}};if(url==='/api/providers'&&!method)return [structuredClone(saved)];if(url==='/api/providers'&&method==='POST'){writes.push(structuredClone(body));saved={...saved,...body};return structuredClone(saved);}throw Error('No provider operation expected: '+url);};
+  await openConnections({api,...dom});assert.match(dom.view.innerHTML,/Models: \/catalog.*Chat Completions: \/generate/);await dom.edit(saved.id).onclick();
+  let form=dom.form();assert.equal(form.elements.modelsPath.value,'/catalog');assert.equal(form.elements.chatPath.value,'/generate');assert.equal(writes.length,0);
+  form.elements.name.value='Renamed custom routes';await form.onsubmit({preventDefault(){}});assert.deepEqual(writes[0].endpoints,{models:'/catalog',chatCompletions:'/generate'});
+  await dom.edit(saved.id).onclick();form=dom.form();form.elements.modelsPath.value='/inventory';form.elements.chatPath.value='//other.example/generate';await form.onsubmit({preventDefault(){}});assert.equal(writes.length,1);assert.match(dom.get('#connection-error').textContent,/Endpoint paths/);
+  form.elements.chatPath.value='';await form.onsubmit({preventDefault(){}});assert.deepEqual(writes[1].endpoints,{models:'/inventory'});
+  await dom.edit(saved.id).onclick();form=dom.form();form.elements.modelsPath.value='';await form.onsubmit({preventDefault(){}});assert.deepEqual(writes[2].endpoints,{});assert.doesNotMatch(dom.view.innerHTML,/Models: \/inventory/);
+  await dom.edit(saved.id).onclick();form=dom.form();form.elements.modelsPath.value='/catalog';form.elements.chatPath.value='/generate';form.elements.type.value='openai';form.elements.type.onchange();assert.equal(form.elements.chatPath.disabled,true);
+  await form.onsubmit({preventDefault(){}});assert.deepEqual(writes[3].endpoints,{models:'/catalog'});assert.equal(writes.length,4);
+});
+
+
+test('provider rows report context and maximum output independently with their sources and explicit unknown values',()=>{
+  const html=renderProviderModelRows([{id:'reported',contextWindowTokens:65536,contextWindowSource:'provider-reported',maxOutputTokens:8192,maxOutputTokensSource:'user-configured'},{id:'manual'}]);
+  assert.match(html,/Context window: 65,536 tokens · Provider reported/);
+  assert.match(html,/Max output: 8,192 tokens · User configured/);
+  assert.match(html,/Context window: Unknown · lookup not run/);assert.match(html,/Max output: Unknown · lookup not run/);
+  assert.doesNotMatch(renderProviderModelRows([{id:'missing',contextWindowTokens:null,contextWindowSource:'unknown',maxOutputTokens:null,maxOutputTokensSource:'unknown'}]),/128,000|8,192/);
+});
+
+test('native model details show both known and unknown limits for advertised and custom models',()=>{
+  const html=renderCodexModelRows([{id:'native',source:'advertised',contextWindowTokens:196000,contextWindowSource:'provider-reported',maxOutputTokens:64000,maxOutputTokensSource:'provider-reported'},{id:'manual-native',source:'custom'}]);
+  assert.match(html,/Context window<\/dt><dd>196,000 tokens · Provider reported/);
+  assert.match(html,/Max output<\/dt><dd>64,000 tokens · Provider reported/);
+  assert.match(html,/Context window<\/dt><dd>Unknown · lookup not run/);assert.match(html,/Max output<\/dt><dd>Unknown · lookup not run/);
+});
+
+
+test('editing model IDs and capacities preserves output provenance and reported observation times',()=>{
+  const model={...reported,contextWindowObservedAt:'2026-10-30T12:00:00Z',maxOutputTokens:32000,maxOutputTokensSource:'provider-reported',maxOutputObservedAt:'2026-10-30T12:00:00Z',supportedParameters:['tools'],freeVariant:true,pricing:{prompt:'0',completion:'0'},pricingSource:'provider-reported',pricingObservedAt:'2026-10-30T12:00:00Z'};
+  assert.deepEqual(providerModelsForSave(model.id,'',[model]),[model]);
+  assert.deepEqual(providerModelsForSave(model.id,model.id+' = 1000000',[model]),[model]);
+  const changed=providerModelsForSave(model.id,model.id+' = 900000',[model])[0];
+  assert.equal(changed.contextWindowSource,'user-configured');assert.equal(changed.contextWindowObservedAt,undefined);
+  assert.equal(changed.maxOutputTokens,32000);assert.equal(changed.maxOutputTokensSource,'provider-reported');assert.equal(changed.maxOutputObservedAt,model.maxOutputObservedAt);
+  const cleared=providerModelsForSave(model.id,model.id+' = unknown',[model])[0];assert.equal(cleared.contextWindowTokens,null);assert.equal(cleared.contextWindowSource,'unknown');assert.equal(cleared.contextWindowObservedAt,undefined);assert.equal(cleared.maxOutputTokens,32000);
+});
+
+test('catalog refresh preserves known and manually configured limits when a provider omits capacities',()=>{
+  const model={...reported,contextWindowObservedAt:'2026-10-30T12:00:00Z',maxOutputTokens:1500,maxOutputTokensSource:'user-configured'};
+  const unknown={id:model.id,contextWindowTokens:null,contextWindowSource:'unknown',maxOutputTokens:null,maxOutputTokensSource:'unknown'};
+  assert.deepEqual(mergeDiscoveredProviderModels([model],[unknown]),[model]);
+  const discovered={id:model.id,contextWindowTokens:2000000,contextWindowSource:'provider-reported',contextWindowObservedAt:'2026-10-30T13:00:00Z',maxOutputTokens:10000,maxOutputTokensSource:'provider-reported',maxOutputObservedAt:'2026-10-30T13:00:00Z'};
+  const merged=mergeDiscoveredProviderModels([model],[discovered])[0];assert.equal(merged.contextWindowTokens,2000000);assert.equal(merged.contextWindowObservedAt,discovered.contextWindowObservedAt);assert.equal(merged.maxOutputTokens,1500);assert.equal(merged.maxOutputTokensSource,'user-configured');assert.equal(merged.maxOutputObservedAt,undefined);
+});
+
+test('catalog refresh keeps newer reported capacity when an unchanged advanced line is saved', () => {
+  const original = { id: 'refreshed-model', displayName: 'Refreshed model', contextWindowTokens: 32768, contextWindowSource: 'provider-reported', contextWindowObservedAt: '2026-10-29T12:00:00Z' };
+  const updated = { ...original, contextWindowTokens: 65536, contextWindowObservedAt: '2026-10-30T12:00:00Z', maxOutputTokens: 4096, maxOutputTokensSource: 'provider-reported' };
+  const selection = createProviderModelSelection([original, { id: 'manual-model', contextWindowTokens: 16384, contextWindowSource: 'user-configured' }]);
+  selection.setPage([updated]);
+  const saved = selection.forSave('refreshed-model = 32,768\nmanual-model = 8192');
+  assert.deepEqual(saved[0], updated);
+  assert.equal(saved[1].contextWindowTokens, 8192);
+  assert.equal(saved[1].contextWindowSource, 'user-configured');
+  const override = selection.forSave('refreshed-model = 24576')[0];
+  assert.equal(override.contextWindowTokens, 24576);
+  assert.equal(override.contextWindowSource, 'user-configured');
+  assert.equal(override.contextWindowObservedAt, undefined);
+  const cleared = selection.forSave('refreshed-model = unknown')[0];
+  assert.equal(cleared.contextWindowTokens, null);
+  assert.equal(cleared.contextWindowSource, 'unknown');
+  assert.equal(cleared.contextWindowObservedAt, undefined);
+  assert.throws(() => selection.forSave('refreshed-model = 32768\nrefreshed-model = 32768'), /one capacity/);
 });

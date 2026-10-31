@@ -83,7 +83,7 @@ test('Planning renamed-title matches are added within the visible task allowlist
 test('Planning commits only the requested work edit and publishes continuity without changing execution', async () => {
   const c = context(), value = { expectedRevision: 3, operations: [{ type: 'metadata', patch: { goal: 'A shared goal' } }] };
   const saved = await editPlanningWorkspace(c, 'a', value);
-  assert.equal(saved.revision, 4); assert.deepEqual(c.calls[0], { taskId: 'a', value: { operations: value.operations }, options: { expectedRevision: 3, source: 'human' } });
+  assert.equal(saved.revision, 4); assert.deepEqual(c.calls[0], { taskId: 'a', value: { operations: value.operations }, options: { expectedRevision: 3, source: 'human', executionGuardrails: false } });
   assert.equal(c.engine.runs.get('a-next').status, 'running'); assert.equal(c.engine.runs.get('a-next').taskState.revision, 4); assert.equal(c.events[0][3].type, 'task.state'); assert.equal(c.events[1].type, 'planning.updated');
 });
 test('Planning rejects ambiguous payloads and unavailable chats before writing or publishing', async () => {

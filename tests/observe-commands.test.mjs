@@ -49,6 +49,11 @@ test('an actual provider tool turn preserves redacted command arguments at start
   const command = (process.platform === 'win32' ? "Write-Output 'Actual stdout <svg>';[Console]::Error.WriteLine('Actual stderr');exit 7" : "printf 'Actual stdout <svg>\\n'; printf 'Actual stderr\\n' >&2; exit 7") + ` # ${secret}`;
   const args = { action: 'run', command, cwd: directory }, events = []; let requests = 0;
   const server = createServer(async (request, response) => {
+    if (request.method === 'GET' && request.url === '/v1/models') {
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify({ data: [{ id: 'fixture-model', context_length: 262144, top_provider: { max_completion_tokens: 4096 } }] })); return;
+    }
+    assert.equal(request.method, 'POST'); assert.equal(request.url, '/v1/chat/completions');
     for await (const chunk of request) { /* Drain only this fixture request. */ }
     const body = ++requests === 1 ? { choices: [{ message: { role: 'assistant', content: null, tool_calls: [{ id: 'command-call', type: 'function', function: { name: 'relay_workspace', arguments: JSON.stringify(args) } }] }, finish_reason: 'tool_calls' }] } : { choices: [{ message: { role: 'assistant', content: 'The fixture command returned a verified failure.' }, finish_reason: 'stop' }] };
     response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify(body));
@@ -60,6 +65,7 @@ test('an actual provider tool turn preserves redacted command arguments at start
   await runtime.saveProvider({ id: 'fixture', type: 'compatible', baseUrl: `http://127.0.0.1:${server.address().port}/v1`, apiKey: secret, models: ['fixture-model'] });
   const handler = createWorkspaceToolHandler({ cwd: directory });
   await runtime.runAgent({ cwd: directory, prompt: 'Run the isolated fixture command.', model: 'fixture::fixture-model', dynamicTools: [WORKSPACE_TOOL], onToolCall: handler, onEvent: data => events.push({ type: 'agent.event', runId: 'fixture-run', nodeId: 'agent', at, data }) });
+  assert.equal(requests, 2, 'catalog discovery does not consume either inference response');
   const calls = events.filter(entry => entry.data.item?.type === 'dynamicToolCall'); assert.equal(calls.length, 2);
   for (const call of calls) { const actual = JSON.parse(call.data.item.arguments); assert.equal(actual.action, 'run'); assert.equal(actual.cwd, directory); assert.equal(actual.command, command.replace(secret, '[redacted]')); }
   assert.ok(!JSON.stringify(events).includes(secret));

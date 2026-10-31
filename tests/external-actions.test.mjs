@@ -43,7 +43,7 @@ for(const damage of ['corrupt','missing'])test(`a ${damage} newer primary cannot
 
 test('backup recovery predating the first receipt blocks new prepares until observed reconciliation and persists across normal writes',async t=>{
  const f=await fixture(t);await f.action(prepared);const file=f.store.file('publication');await f.store.close();await rm(file);
- const restored=await f.open();let saved=await restored.get('publication');assert.equal(saved.externalActions,undefined);assert.equal(saved.externalRecovery.required,true);assert.match(await restored.getContext('publication',{maxChars:512}),/newer outcomes may be missing/);
+ const restored=await f.open();let saved=await restored.get('publication');assert.equal(saved.externalActions,undefined);assert.equal(saved.externalRecovery.required,true);assert.match(await restored.getContext('publication',{maxChars:512,executionGuardrails:true}),/newer outcomes may be missing/);
  saved=await restored.checkpoint('publication',{nextAction:'Publish now.'},f.options(saved.revision));const reopened=await f.open();assert.equal((await reopened.get('publication')).externalRecovery.required,true);
  saved=await f.action(prepared,reopened);assert.equal(saved.externalActions[0].status,'uncertain');await assert.rejects(f.action({receiptId:prepared.receiptId,operation:'attempt'},reopened),{code:'EXTERNAL_ACTION_RECONCILE'});
  saved=await f.action({receiptId:prepared.receiptId,operation:'reconcile_absent',evidence:'Fresh own-activity inspection confirms no matching text and screenshot; the original draft remains unsent.'},reopened);assert.equal(saved.externalActions[0].status,'prepared');assert.ok(saved.externalActions[0].recoveryReconciledAt);
@@ -134,7 +134,7 @@ test('unsafe URLs, empty evidence, absent preparation and unbounded receipts are
 
 test('short recovery context warns about uncertainty before an obsolete send nextAction',async t=>{
  const f=await fixture(t);await f.action(prepared);let state=await f.action({receiptId:prepared.receiptId,operation:'attempt'});await f.store.checkpoint('publication',{nextAction:'Click the final Post button.',completed:Array(8).fill('Historical detail. '.repeat(35))},f.options(state.revision));
- for(const maxChars of [512,800,12000]){const context=await f.store.getContext('publication',{maxChars});assert.ok(context.length<=maxChars);assert.match(context,/Uncertain external attempt: blackice-post/);assert.match(context,/Inspect the destination before any retry/);assert.ok(context.indexOf('Uncertain external attempt')<context.indexOf('Next action:'));assert.doesNotMatch(context,/Next action: Click the final Post/);}
+ for(const maxChars of [512,800,12000]){const context=await f.store.getContext('publication',{maxChars,executionGuardrails:true});assert.ok(context.length<=maxChars);assert.match(context,/Uncertain external attempt: blackice-post/);assert.match(context,/Inspect the destination before any retry/);assert.ok(context.indexOf('Uncertain external attempt')<context.indexOf('Next action:'));assert.doesNotMatch(context,/Next action: Click the final Post/);}
 });
 
 test('actual task tool writes external receipts, emits saved state and reports guarded failures',async t=>{
@@ -147,13 +147,13 @@ test('actual task tool writes external receipts, emits saved state and reports g
 test('confirmed effects displace stale send instructions and long receipt IDs cannot bury the retry warning',async t=>{
  const f=await fixture(t);let state=await f.action(prepared);state=await f.store.checkpoint('publication',{nextAction:'Click the final Post button.'},f.options(state.revision));
  state=await f.action({receiptId:prepared.receiptId,operation:'confirm',url:'https://www.linkedin.com/feed/update/urn:li:activity:123/',evidence:'Observed matching exact text and screenshot.'});
- let context=await f.store.getContext('publication',{maxChars:512});assert.match(context,/Confirmed external action: blackice-post/);assert.match(context,/Do not send it again/);assert.doesNotMatch(context,/Next action: Click the final Post/);
+ let context=await f.store.getContext('publication',{maxChars:512,executionGuardrails:true});assert.match(context,/Confirmed external action: blackice-post/);assert.match(context,/Do not send it again/);assert.doesNotMatch(context,/Next action: Click the final Post/);
  for(let index=0;index<7;index++){const receiptId='receipt-'+index+'x'.repeat(110);await f.action({...prepared,receiptId,content:'Distinct authorized publication '+index});await f.action({receiptId,operation:'attempt'});}
- context=await f.store.getContext('publication',{maxChars:512});assert.ok(context.length<=512);assert.match(context,/Inspect the destination before any retry; it may already be published/);
+ context=await f.store.getContext('publication',{maxChars:512,executionGuardrails:true});assert.ok(context.length<=512);assert.match(context,/Inspect the destination before any retry; it may already be published/);
 });
 
-test('external recovery schema and guidance attach only to new native catalogs',()=>{
+test('guarded external recovery schema and guidance attach only to new native catalogs',()=>{
  assert.ok(TASK_TOOL.inputSchema.properties.action.enum.includes('external'));assert.ok(TASK_TOOL.inputSchema.properties.external);assert.equal(PREVIOUS_TASK_TOOL.inputSchema.properties.external,undefined);assert.equal(LEGACY_TASK_TOOL.inputSchema.properties.external,undefined);
  assert.match(TASK_INSTRUCTIONS,/EXTERNAL ACTION RECOVERY/);assert.doesNotMatch(PREVIOUS_TASK_INSTRUCTIONS,/EXTERNAL ACTION RECOVERY/);
- assert.match(capabilityGuidance([TASK_TOOL]),/persist attempt immediately before the final send/);assert.doesNotMatch(capabilityGuidance([PREVIOUS_TASK_TOOL]),/persist attempt immediately before the final send/);
+ assert.match(capabilityGuidance([TASK_TOOL],{executionGuardrails:true}),/persist attempt immediately before the final send/);assert.doesNotMatch(capabilityGuidance([PREVIOUS_TASK_TOOL],{executionGuardrails:true}),/persist attempt immediately before the final send/);
 });

@@ -74,6 +74,8 @@ function passiveNativeFixture(t) {
   client.child = {}; Object.assign(client.info, { connected: true, authenticated: true, models, defaultModel: 'native-wire' });
   client._request = async (method, params = {}) => {
     requests.push({ method, params: structuredClone(params) });
+    if (method === 'config/read') return { config: { plugins: {}, mcp_servers: {}, skills: { config: [] } } };
+    if (method === 'skills/list') return { data: (params.cwds || []).map(cwd => ({ cwd, skills: [], errors: [] })) };
     if (method === 'account/read') return structuredClone(account);
     if (method === 'model/list') { const offset = Number(params.cursor || 0), end = offset + params.limit; return { data: structuredClone(models.slice(offset, end)), nextCursor: end < models.length ? String(end) : null }; }
     if (method === 'thread/start' || method === 'thread/resume') return { thread: { id: params.threadId || `passive-thread-${++nextThread}`, ephemeral: Boolean(params.ephemeral) }, model: params.model };
@@ -434,13 +436,13 @@ test('multiplexed agent runs keep thread results separate', async t => {
   assert.notEqual(alpha.threadId, beta.threadId);
 });
 
-test('Relay-only Codex work creates a confirmed ephemeral session and preserves only the returned context',async t=>{
+test('legacy Relay history input creates a persistent native session and remains resumable',async t=>{
   const{client,requests}=recordedRuntime(t),events=[];
-  const result=await client.runAgent({cwd,prompt:'Relay-only task',codexHistory:'relay',onEvent:event=>events.push(event)});
-  assert.equal(result.codexHistory,'relay');assert.match(result.output,/Relay-only task/);assert.ok(result.context);assert.equal(client.contexts.has(result.threadId),false,'completed private sessions do not accumulate native context state');
-  const start=requests.find(item=>item.method==='thread/start');assert.equal(start.params.ephemeral,true);assert.equal(events.find(event=>event.type==='thread').codexHistory,'relay');assert.equal(events.find(event=>event.type==='thread').resumed,false);
-  assert.equal(requests.filter(item=>item.method==='turn/start').length,1);assert.ok(requests.some(item=>item.method==='thread/unsubscribe'&&item.params.threadId===result.threadId));assert.ok(!requests.some(item=>['thread/archive','thread/delete'].includes(item.method)));
-  await assert.rejects(client.runAgent({cwd,prompt:'READ_PRIOR',threadId:result.threadId}),/not found/,'the fixture discards ephemeral sessions when unsubscribed');
+  const result=await client.runAgent({cwd,prompt:'Legacy history preference task',codexHistory:'relay',onEvent:event=>events.push(event)});
+  assert.equal(result.codexHistory,'codex');assert.match(result.output,/Legacy history preference task/);assert.ok(result.context);assert.equal(client.contexts.has(result.threadId),true);
+  const start=requests.find(item=>item.method==='thread/start');assert.equal(Object.hasOwn(start.params,'ephemeral'),false);assert.equal(events.find(event=>event.type==='thread').codexHistory,'codex');assert.equal(events.find(event=>event.type==='thread').resumed,false);
+  const next=await client.runAgent({cwd,prompt:'READ_PRIOR',threadId:result.threadId,codexHistory:'relay'});assert.equal(next.threadId,result.threadId);assert.match(next.output,/Legacy history preference task/);
+  assert.equal(requests.filter(item=>item.method==='turn/start').length,2);assert.ok(requests.some(item=>item.method==='thread/resume'&&item.params.threadId===result.threadId));assert.ok(!requests.some(item=>['thread/archive','thread/delete'].includes(item.method)));
 });
 
 test('persistent native history remains the library default and retains same-thread continuation',async t=>{
@@ -450,35 +452,36 @@ test('persistent native history remains the library default and retains same-thr
   const second=await client.runAgent({cwd,prompt:'READ_PRIOR',threadId:first.threadId,codexHistory:'codex'});assert.equal(second.threadId,first.threadId);assert.match(second.output,/Persistent by library default/);assert.ok(requests.some(item=>item.method==='thread/resume'));assert.ok(!requests.some(item=>['thread/archive','thread/delete'].includes(item.method)));
 });
 
-test('parallel Relay-only and persistent chats retain their own visibility, events and cache lifetime',async t=>{
-  const{client,requests}=recordedRuntime(t),privateEvents=[],persistentEvents=[],privateStarted=deferred(),persistentStarted=deferred();
-  const privateWork=client.runAgent({cwd,prompt:'WAIT_FOR_STEER private',codexHistory:'relay',onEvent:event=>{privateEvents.push(event);if(event.type==='turn'&&event.status==='inProgress')privateStarted.resolve(event);}});
+test('parallel legacy-input and persistent chats keep independent results, events and saved contexts',async t=>{
+  const{client,requests}=recordedRuntime(t),legacyEvents=[],persistentEvents=[],legacyStarted=deferred(),persistentStarted=deferred();
+  const legacyWork=client.runAgent({cwd,prompt:'WAIT_FOR_STEER legacy',codexHistory:'relay',onEvent:event=>{legacyEvents.push(event);if(event.type==='turn'&&event.status==='inProgress')legacyStarted.resolve(event);}});
   const persistentWork=client.runAgent({cwd,prompt:'WAIT_FOR_STEER persistent',codexHistory:'codex',onEvent:event=>{persistentEvents.push(event);if(event.type==='turn'&&event.status==='inProgress')persistentStarted.resolve(event);}});
-  privateWork.catch(()=>{});persistentWork.catch(()=>{});const[privateTurn,persistentTurn]=await Promise.all([privateStarted.promise,persistentStarted.promise]);assert.notEqual(privateTurn.threadId,persistentTurn.threadId);assert.equal(client.status().activeTurns,2);
-  await client.steerAgent(privateTurn.threadId,'private result');const privateResult=await privateWork;assert.equal(privateResult.codexHistory,'relay');assert.equal(client.contexts.has(privateTurn.threadId),false);assert.equal(client.contexts.has(persistentTurn.threadId),true);assert.equal(client.status().activeTurns,1);
-  await client.steerAgent(persistentTurn.threadId,'persistent result');const persistentResult=await persistentWork;assert.equal(persistentResult.codexHistory,'codex');assert.equal(client.contexts.has(persistentTurn.threadId),true);assert.ok(privateEvents.every(event=>event.threadId===privateTurn.threadId));assert.ok(persistentEvents.every(event=>event.threadId===persistentTurn.threadId));assert.match(privateResult.output,/private result/);assert.doesNotMatch(privateResult.output,/persistent result/);assert.match(persistentResult.output,/persistent result/);
-  assert.deepEqual(requests.filter(item=>item.method==='thread/start').map(item=>item.params.ephemeral),[true,undefined]);
+  legacyWork.catch(()=>{});persistentWork.catch(()=>{});const[legacyTurn,persistentTurn]=await Promise.all([legacyStarted.promise,persistentStarted.promise]);assert.notEqual(legacyTurn.threadId,persistentTurn.threadId);assert.equal(client.status().activeTurns,2);
+  await client.steerAgent(legacyTurn.threadId,'legacy result');const legacyResult=await legacyWork;assert.equal(legacyResult.codexHistory,'codex');assert.equal(client.contexts.has(legacyTurn.threadId),true);assert.equal(client.contexts.has(persistentTurn.threadId),true);assert.equal(client.status().activeTurns,1);
+  await client.steerAgent(persistentTurn.threadId,'persistent result');const persistentResult=await persistentWork;assert.equal(persistentResult.codexHistory,'codex');assert.equal(client.contexts.has(persistentTurn.threadId),true);assert.ok(legacyEvents.every(event=>event.threadId===legacyTurn.threadId));assert.ok(persistentEvents.every(event=>event.threadId===persistentTurn.threadId));assert.match(legacyResult.output,/legacy result/);assert.doesNotMatch(legacyResult.output,/persistent result/);assert.match(persistentResult.output,/persistent result/);
+  assert.deepEqual(requests.filter(item=>item.method==='thread/start').map(item=>Object.hasOwn(item.params,'ephemeral')),[false,false]);
 });
 
-test('private native history rejects resume and invalid visibility before spawning or starting work',async t=>{
+test('invalid native history values are rejected before spawning or starting work',async t=>{
   let spawned=false;const client=runtime(t,{spawnImpl:()=>{spawned=true;throw new Error('Unexpected spawn');}});
-  await assert.rejects(client.runAgent({cwd,prompt:'Must not resume',threadId:'persistent-thread',codexHistory:'relay'}),{code:'CODEX_HISTORY_RESUME'});
   for(const codexHistory of ['private',null,true,{}])await assert.rejects(client.runAgent({cwd,prompt:'Invalid mode',codexHistory}),{code:'INVALID_CODEX_HISTORY'});
   assert.equal(spawned,false);
 });
 
-for(const flag of ['--no-ephemeral','--omit-ephemeral'])test(`Relay-only history fails closed when Codex does not explicitly confirm ephemeral support (${flag})`,async t=>{
+for(const flag of ['--no-ephemeral','--omit-ephemeral'])test(`legacy history preference remains persistent without ephemeral support (${flag})`,async t=>{
   const{client,requests}=recordedRuntime(t,{args:[fixture,flag]});
-  await assert.rejects(client.runAgent({cwd,prompt:'Do not start this private task',codexHistory:'relay'}),error=>error.code==='CODEX_HISTORY_UNSUPPORTED'&&/No agent turn was started/.test(error.message));
-  assert.equal(requests.filter(item=>item.method==='thread/start').length,1);assert.equal(requests.some(item=>item.method==='turn/start'),false);assert.equal(requests.some(item=>item.method==='thread/resume'),false);assert.equal(client.contexts.size,0);assert.equal(client.status().activeTurns,0);assert.ok(requests.some(item=>item.method==='thread/unsubscribe'));assert.ok(!requests.some(item=>['thread/archive','thread/delete'].includes(item.method)));
+  const result=await client.runAgent({cwd,prompt:'Persistent legacy preference task',codexHistory:'relay'});
+  assert.equal(result.codexHistory,'codex');assert.match(result.output,/Persistent legacy preference task/);
+  assert.equal(requests.filter(item=>item.method==='thread/start').length,1);assert.equal(requests.filter(item=>item.method==='turn/start').length,1);assert.equal(Object.hasOwn(requests.find(item=>item.method==='thread/start').params,'ephemeral'),false);assert.equal(client.contexts.has(result.threadId),true);assert.equal(client.status().activeTurns,0);assert.ok(!requests.some(item=>['thread/archive','thread/delete'].includes(item.method)));
 });
 
-test('failed, cancelled and disconnected private turns clear native context without disturbing persistent sessions',async t=>{
-  const{client,requests}=recordedRuntime(t);const persistent=await client.runAgent({cwd,prompt:'Keep persistent context'});
-  await assert.rejects(client.runAgent({cwd,prompt:'FAIL_TURN',codexHistory:'relay'}),/Deliberate fixture failure/);assert.equal(client.contexts.size,1);assert.equal(client.contexts.has(persistent.threadId),true);
-  const controller=new AbortController(),started=deferred();let privateId;
-  const cancelled=client.runAgent({cwd,prompt:'WAIT_FOR_CANCEL',codexHistory:'relay',signal:controller.signal,onEvent:event=>{if(event.type==='thread')privateId=event.threadId;if(event.type==='turn'&&event.status==='inProgress')started.resolve();}});cancelled.catch(()=>{});await started.promise;assert.equal(client.contexts.has(privateId),true);controller.abort();await assert.rejects(cancelled,{name:'AbortError'});assert.equal(client.contexts.has(privateId),false);assert.equal(client.contexts.has(persistent.threadId),true);
-  const disconnected=deferred();const failed=client.runAgent({cwd,prompt:'WAIT_FOR_CANCEL',codexHistory:'relay',onEvent:event=>{if(event.type==='turn'&&event.status==='inProgress')disconnected.resolve();}});failed.catch(()=>{});await disconnected.promise;client.child.kill();await assert.rejects(failed,{code:'CODEX_DISCONNECTED'});assert.equal(client.contexts.size,1);assert.ok(!requests.some(item=>['thread/archive','thread/delete'].includes(item.method)));
+test('failed, cancelled and disconnected legacy-input turns preserve saved contexts and completed sessions',async t=>{
+  const{client,requests}=recordedRuntime(t);const persistent=await client.runAgent({cwd,prompt:'Keep persistent context'});let failedId;
+  await assert.rejects(client.runAgent({cwd,prompt:'FAIL_TURN',codexHistory:'relay',onEvent:event=>{if(event.type==='thread')failedId=event.threadId;}}),/Deliberate fixture failure/);assert.equal(client.contexts.has(failedId),true);assert.equal(client.contexts.has(persistent.threadId),true);
+  const controller=new AbortController(),started=deferred();let cancelledId;
+  const cancelled=client.runAgent({cwd,prompt:'WAIT_FOR_CANCEL',codexHistory:'relay',signal:controller.signal,onEvent:event=>{if(event.type==='thread')cancelledId=event.threadId;if(event.type==='turn'&&event.status==='inProgress')started.resolve();}});cancelled.catch(()=>{});await started.promise;controller.abort();await assert.rejects(cancelled,{name:'AbortError'});assert.equal(client.contexts.has(cancelledId),true);assert.equal(client.contexts.has(persistent.threadId),true);
+  const disconnected=deferred();let disconnectedId;const failed=client.runAgent({cwd,prompt:'WAIT_FOR_CANCEL',codexHistory:'relay',onEvent:event=>{if(event.type==='thread')disconnectedId=event.threadId;if(event.type==='turn'&&event.status==='inProgress')disconnected.resolve();}});failed.catch(()=>{});await disconnected.promise;client.child.kill();await assert.rejects(failed,{code:'CODEX_DISCONNECTED'});
+  for(const id of [persistent.threadId,failedId,cancelledId,disconnectedId])assert.equal(client.contexts.has(id),true);assert.equal(client.status().activeTurns,0);assert.ok(!requests.some(item=>['thread/archive','thread/delete'].includes(item.method)));
 });
 
 test('continuation resumes the same conversation and reports only new usage', async t => {

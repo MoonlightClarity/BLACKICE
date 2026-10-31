@@ -15,7 +15,7 @@ async function fixture(t) {
   t.after(async () => { await store.close(); await rm(directory, { recursive: true, force: true }); });
   const taskId = 'completion-contract';
   await store.ensure({ taskId, runId: 'run-one', cwd, goal: 'Correct one exact phrase.', defaultPlan: true });
-  const handler = createTaskToolHandler({ store, taskId, runId: 'run-one', nodeId: 'agent', planningMode: 'on' });
+  const handler = createTaskToolHandler({ store, taskId, runId: 'run-one', nodeId: 'agent', planningMode: 'on', executionGuardrails: true });
   const call = args => handler({ name: 'relay_task', arguments: args });
   const initial = payload(await call({ action: 'read' }));
   return { store, taskId, call, initial };

@@ -249,5 +249,10 @@ test('a successful schedule Save immediately restores live schedule controls aft
   await f.input('[name="name"]','New schedule');await f.input('[name="input"]','Only explicit work');await f.input('[name="cwd"]','C:\\fixture');
   await f.$('#next-tasks-form').dispatch('submit');await settle();
   assert.equal(schedules.length,1);assert.equal(f.$('#next-tasks-form').inert,false);
-  const controls=f.$('#next-tasks-deployments').querySelectorAll('button');assert.equal(controls.length,4,'Schedule controls include Inspect/edit alongside Run, Disable and Remove');assert.ok(controls.every(node=>!node.disabled));
+  const saved=f.$('#next-tasks-deployments');
+  for(const action of ['inspect','toggle','trigger','readiness','remove']){
+    const control=saved.querySelector('[data-schedule-'+action+'="new-schedule"]');
+    assert.ok(control,'Saved schedule must expose its '+action+' control.');
+    assert.equal(control.disabled,false,'The '+action+' control must be usable after Save refreshes the schedule.');
+  }
 });

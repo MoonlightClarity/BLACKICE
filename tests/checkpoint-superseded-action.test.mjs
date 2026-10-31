@@ -46,7 +46,7 @@ test('uncertain external effects remain the current reconciliation priority over
   state = await f.store.externalAction(state.taskId, { operation: 'attempt', receiptId: 'send-once' }, actor(state));
   state = await f.store.checkpoint(state.taskId, { nextAction: 'Send the prepared application.', nextSteps: [] }, actor(state));
   state = await f.store.setStep(state.taskId, 'finish', { status: 'done', evidence: 'The final reporting action is complete.' }, actor(state));
-  const context = await f.store.getContext(state.taskId); assert.match(context, /Next action: Reconcile external receipts send-once/); assert.match(context, /Do not replay external effects solely from this superseded action/); assert.ok(!context.includes('Next action: Send the prepared application.'));
+  const context = await f.store.getContext(state.taskId); assert.match(context, /Recorded uncertain attempts: send-once\./); assert.match(context, /Preserve their receipts and inspect the destination before repeating the same possible effect/); assert.match(context, /Do not replay external effects solely from this superseded action/); assert.ok(!context.includes('Next action: Send the prepared application.'));
   assert.equal(state.externalActions[0].attempts, 1); assert.equal(state.externalActions[0].status, 'uncertain');
   const restored = await f.open(); assert.equal((await restored.get(state.taskId)).externalActions[0].status, 'uncertain'); assert.ok((await restored.getContext(state.taskId)).includes('Send the prepared application.'));
 });

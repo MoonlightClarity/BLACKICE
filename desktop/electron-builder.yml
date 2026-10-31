@@ -20,6 +20,8 @@ files:
   - scripts/email-oauth-token.mjs
   - scripts/remote-access-cli.mjs
   - scripts/browser-cli.mjs
+  - scripts/chatgpt-cli.mjs
+  - scripts/repair-shortcuts.ps1
   - BROWSER-IMPORT.md
   - CHATGPT-BRIDGE.md
   - CHATGPT-CONNECTOR.md
@@ -56,6 +58,7 @@ files:
   - RELEASE-NOTES-2.36.0.md
   - RELEASE-NOTES-2.36.1.md
   - RELEASE-NOTES-2.37.0.md
+  - RELEASE-NOTES-2.38.0.md
   - PLANNING-ORGANIZATION.md
   - REMOTE-ACCESS.md
   - BROWSER-PROTECTION.md
@@ -65,6 +68,8 @@ files:
   - desktop/icon.ico
   - '!**/*.test.mjs'
   - '!**/*.currents-backup-*'
+  - '!**/*.ownership-backup'
+  - '!**/*.ownership-backup/**/*'
   - '!data{,/**/*}'
   - '!workspace{,/**/*}'
   - '!tests{,/**/*}'

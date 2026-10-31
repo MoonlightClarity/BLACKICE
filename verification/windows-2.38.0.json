@@ -1,0 +1,53 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "scope": "source-publication",
+  "version": "2.38.0",
+  "platform": "win32",
+  "node": "v24.22.2",
+  "startedAt": "2026-10-31T11:10:41.127Z",
+  "checkedAt": "2026-10-31T11:18:54.033Z",
+  "state": "passed",
+  "passed": true,
+  "fullSuite": true,
+  "countsComplete": true,
+  "appFingerprint": "a90b280e69d8b1ac76616f9fcdc36cea8f02d57d707e4d8d3fc45b4fbee16bda",
+  "sourceIndexSha256": "11a0abd83f897a0fb5a16eaef981af1d7fc117ce7f865c94f13cb1f95270aeb3",
+  "sourceFilesVerified": 1172,
+  "testFiles": 504,
+  "testInventorySha256": "a20f68f7bd0ca9f4fc85749ad6ac60b898957123cf7726db696dc5ca1d8b4375",
+  "runnerSha256": "2a3d117052df44b0293eeffae608ede217d43356673f0360aeb0ac26ec0057eb",
+  "fingerprintUnchanged": true,
+  "sourceUnchanged": true,
+  "tests": {
+    "total": 6200,
+    "passed": 6192,
+    "failed": 0,
+    "requiredSkipped": 0,
+    "optionalSkipped": 8,
+    "cancelled": 0,
+    "todo": 0,
+    "exitCode": 0
+  },
+  "testLogSha256": "cee0a71dcdf9b01255f7f4facdf542d852226c90df0a082349d25b407b265019",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "execution": {
+    "kind": "sequential-bounded-groups",
+    "concurrency": 4,
+    "groupCount": 13,
+    "groupSize": 40,
+    "optionalNativeFixtures": false,
+    "uniqueCoverageVerified": true
+  },
+  "optionalSkips": [
+    "Relay-owned sign-in and local storage survive a full process restart without foregrounding",
+    "restored hidden browser tabs defer requests until used and never load closed or replaced pages",
+    "native cross-origin popups redirect, message their opener and follow or close without breaking Observe pins or task routing",
+    "actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases",
+    "live background accessibility actions change only a dedicated non-activating fixture and leave foreground and cursor untouched",
+    "hidden isolated Chromium composer validates real layout and one-click send wiring",
+    "installed Himalaya sends exact MIME to disposable loopback SMTP and strips Bcc headers",
+    "real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart"
+  ],
+  "validationScope": "Complete synthetic Windows source suite. Live free-provider acceptance and installed candidate evidence are separate."
+}

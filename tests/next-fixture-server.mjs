@@ -4,6 +4,7 @@ import { readFile, mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { KnowledgeStore } from '../lib/knowledge.mjs';
 import { createSettingsFixture } from './next-settings-fixture.mjs';
+import { createActivityService } from '../lib/activity.mjs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -122,6 +123,15 @@ export function makeFixture({heavyHistory=false,largeCatalog=false,largeWorkflow
   }
   const json=(res,value,status=200)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value));};
   const settingsFixture=createSettingsFixture({state,json,send:event=>{for(const stream of subscribers)stream.write('data: '+JSON.stringify(event)+'\n\n');}});
+  // Reuse the production read projection over these existing synthetic runs.
+  const activity=createActivityService({
+    conversations:{
+      get entries(){return new Map(state.runs.map(run=>[run.id,run]));},
+      get states(){return Object.fromEntries(Object.entries(state.taskHistoryStates).map(([id,bucket])=>[id,{state:bucket}]));},
+      get:async id=>state.runs.find(run=>run.id===id)||null,
+    },
+    directExecution:{jobs:{snapshot:()=>[],get:async()=>null}},
+  });
   const handler=async(req,res)=>{
     const url=new URL(req.url,'http://localhost');const pathname=url.pathname;
     calls.push(req.method+' '+pathname);
@@ -149,6 +159,16 @@ export function makeFixture({heavyHistory=false,largeCatalog=false,largeWorkflow
       }catch(error){return json(res,{error:error.message},error.status||400);}
     }
     if(pathname==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive'});res.write('data: '+JSON.stringify({type:'runtime.status',data:state.status})+'\n\n');subscribers.add(res);res.on('close',()=>subscribers.delete(res));return;}
+    if(req.method==='GET'&&(pathname==='/api/activity'||pathname.startsWith('/api/activity/'))){
+      try{
+        const query=Object.fromEntries(url.searchParams);
+        for(const name of ['offset','limit'])if(url.searchParams.has(name))query[name]=Number(url.searchParams.get(name));
+        if(pathname==='/api/activity')return json(res,await activity.list(query));
+        const match=pathname.match(/^\/api\/activity\/(runs|tools)\/([^/]+)$/);
+        if(match)return json(res,await activity.detail(match[1],decodeURIComponent(match[2]),query));
+        return json(res,{error:'Unknown activity fixture route'},404);
+      }catch(error){return json(res,{error:error.message},error.status||400);}
+    }
     if(pathname==='/api/status')return json(res,state.status);
     if(pathname==='/api/runtime/settings'&&req.method==='GET')return json(res,state.runtimeSettings);
     if(pathname==='/api/execution/settings'&&req.method==='GET')return json(res,state.executionSettings);

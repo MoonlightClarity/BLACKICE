@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {createHarnessServer} from '../server.mjs';
-import {CONTROL_TOOL,CONTROL_SCHEMA_VERSION,PRE_FAST_CONTROL_TOOL,PRE_FAST_CONTROL_INSTRUCTIONS,LEGACY_CONTROL_TOOL,createControlToolHandler} from '../lib/control-tools.mjs';
+import {CONTROL_TOOL,CONTROL_SCHEMA_VERSION,PRE_ACCURACY_CONTROL_TOOL,PRE_ACCURACY_CONTROL_INSTRUCTIONS,PRE_PROFILE_CONTROL_TOOL,PRE_PROFILE_CONTROL_INSTRUCTIONS,PRE_FAST_CONTROL_TOOL,PRE_FAST_CONTROL_INSTRUCTIONS,LEGACY_CONTROL_TOOL,createControlToolHandler} from '../lib/control-tools.mjs';
 import {validateWorkflow} from '../lib/engine.mjs';
 import {validateObservePresentation} from '../lib/live-edits.mjs';
 
@@ -70,7 +70,7 @@ test('new chat configuration saves speed separately; v3 continuations and Retry 
  });
  await f.app.engine.runtimeSettings.update({codexHistory:'codex'});await f.app.engine.saveWorkflow(validateWorkflow(graph('speed-control')));
  const first=await f.settled(f.app.engine.startRun({workflow:graph('speed-control'),input:'Save future speed settings.'}).id);
- assert.equal(first.status,'completed',first.error);assert.equal(first.nodes.agent.controlSchemaVersion,4);assert.equal(first.workflow.nodes[1].serviceTier,undefined);
+ assert.equal(first.status,'completed',first.error);assert.equal(first.nodes.agent.controlSchemaVersion,CONTROL_SCHEMA_VERSION);assert.equal(first.workflow.nodes[1].serviceTier,undefined);
  f.app.engine.runs.get(first.id).nodes.agent.controlSchemaVersion=3;
  const second=await f.settled(f.app.engine.continueRun(first.id,{nodeId:'agent',message:'Use the saved v3 native catalog.'}).id);assert.equal(second.status,'failed');assert.equal(second.nodes.agent.controlSchemaVersion,3);
  const retried=await f.settled(f.app.engine.retryRun(second.id).id);assert.equal(retried.status,'completed',retried.error);assert.equal(retried.nodes.agent.controlSchemaVersion,3);
@@ -95,7 +95,7 @@ class Desktop extends EventEmitter{status(){return{available:false,enabled:false
 async function fixture(t,execute){
   const directory=await mkdtemp(path.join(tmpdir(),'relay-control-tools-')),dataDir=path.join(directory,'data'),cwd=path.join(directory,'workspace'),calls=[];
   class Runtime extends EventEmitter{status(){return{connected:true,authenticated:true,models:[{model:'control-fixture-model'}],defaultModel:'control-fixture-model'};}async start(){return this.status();}async close(){}async runAgent(options){calls.push(options);return execute?execute(options,calls.length):{output:'Control fixture completed.',threadId:'control-thread'};}}
-  const app=await createHarnessServer({port:0,dataDir,defaultCwd:cwd,runtime:new Runtime(),desktop:new Desktop()});await app.learning.updateSettings({mode:'manual'});
+  const app=await createHarnessServer({port:0,dataDir,defaultCwd:cwd,runtime:new Runtime(),desktop:new Desktop(),taskViability:false});await app.learning.updateSettings({mode:'manual'});
   t.after(async()=>{await app.close();assert.match(path.basename(directory),/^relay-control-tools-/);await rm(directory,{recursive:true,force:true});});
   const settled=id=>until(()=>{const run=app.engine.getRun(id);return run.settled&&run;},'controlled foreground task');
   return{app,cwd,calls,dataDir,settled};
@@ -207,22 +207,22 @@ test('the actual agent gateway pauses operations and explicitly resumes both ope
 
  test('agent-facing execution settings preserve user choices and reject invalid or interrupted writes',async t=>{const{app,cwd}=await fixture(t),handler=createControlToolHandler({engine:app.engine,getOperations:()=>app.operations,validateWorkflow,run:{id:'execution-control',cwd},nodeId:'agent',signal:new AbortController().signal}),invoke=async args=>handler({name:'relay_control',arguments:args});assert.equal(unpack(await invoke({action:'execution_get'})).maxConcurrentRuns,null);const limited=await invoke({action:'execution_set',execution:{maxConcurrentRuns:64}});assert.equal(limited.success,true);assert.equal(unpack(limited).maxConcurrentRuns,64);assert.equal(app.engine.executionStatus().capacity,64);assert.equal((await invoke({action:'execution_set',execution:{maxConcurrentRuns:0}})).success,false);assert.equal(app.engine.executionStatus().capacity,64);const unlimited=await invoke({action:'execution_set',execution:{maxConcurrentRuns:null}});assert.equal(unlimited.success,true);assert.equal(app.engine.executionStatus().unlimited,true);const stopped=new AbortController();stopped.abort();const cancelHandler=createControlToolHandler({engine:app.engine,validateWorkflow,run:{id:'cancelled-control',cwd},nodeId:'agent',signal:stopped.signal}),receipt=await cancelHandler({name:'relay_control',arguments:{action:'execution_set',execution:{maxConcurrentRuns:1}}});assert.equal(receipt.success,false);assert.equal(app.engine.executionSettings().maxConcurrentRuns,null);});
 
-test('agents read and change the same durable history preference without changing active admission',async t=>{
+test('agents read persistent history and legacy preference input cannot change active admission or re-enable temporary sessions',async t=>{
   let chosen;
   const context=await fixture(t,async options=>{
-    assert.equal(options.codexHistory,'relay');
-    assert.equal((await call(options,{action:'catalog'})).runtimeSettings.codexHistory,'relay');
-    assert.deepEqual(await call(options,{action:'runtime_get'}),{codexHistory:'relay',runTimeoutMs:null,providerIdleTimeoutMs:300000,defaultEffort:'default',defaultServiceTier:'default',defaultContext:{preset:'model',windowTokens:null,autoCompact:true},verbosity:'balanced',subagentsEnabled:false,maxSubagents:3});
+    assert.equal(options.codexHistory,'codex');
+    assert.equal((await call(options,{action:'catalog'})).runtimeSettings.codexHistory,'codex');
+    assert.deepEqual(await call(options,{action:'runtime_get'}),{codexHistory:'codex',runTimeoutMs:null,providerIdleTimeoutMs:300000,defaultEffort:'default',defaultServiceTier:'default',defaultContext:{preset:'model',windowTokens:null,autoCompact:true},verbosity:'balanced',subagentsEnabled:false,maxSubagents:3,connectedGmail:false,executionGuardrails:false,hiddenModelProviders:[]});
     await call(options,{action:'runtime_set',runtime:{codexHistory:'invalid'}},false);
-    chosen=await call(options,{action:'runtime_set',runtime:{codexHistory:'codex'}});
+    chosen=await call(options,{action:'runtime_set',runtime:{codexHistory:'relay'}});
     assert.equal(chosen.codexHistory,'codex');
-    assert.equal(options.codexHistory,'relay','the admitted turn retains its selected visibility');
+    assert.equal(options.codexHistory,'codex','the admitted turn retains persistent history');
     return{output:'Preference saved for future turns.',threadId:'runtime-settings-agent'};
   });
   const saved=await context.app.engine.saveWorkflow(graph('runtime-preference'));
-  const run=context.app.engine.startRun({workflow:context.app.engine.listWorkflows().find(item=>item.id==='runtime-preference'),input:{task:'Set future Codex visibility.',cwd:context.cwd}});
+  const run=context.app.engine.startRun({workflow:context.app.engine.listWorkflows().find(item=>item.id==='runtime-preference'),input:{task:'Read persistent native history and accept legacy preference input.',cwd:context.cwd}});
   await context.settled(run.id);
-  assert.equal(context.app.engine.getRun(run.id).runtimeSettings.codexHistory,'relay');
+  assert.equal(context.app.engine.getRun(run.id).runtimeSettings.codexHistory,'codex');
   assert.equal(JSON.parse(await readFile(path.join(context.dataDir,'runtime-settings.json'),'utf8')).codexHistory,'codex');
   assert.match(chosen.applies,/future agent responses/);
 });
@@ -233,7 +233,7 @@ test('agents patch user-selected durations through the real tool without changin
     const tool=options.dynamicTools.find(item=>item.name==='relay_control'),schema=tool.inputSchema.properties.runtime;
     assert.equal(schema.minProperties,1);assert.equal(schema.required,undefined);assert.deepEqual(schema.properties.runTimeoutMs.type,['integer','null']);
     const saved=await call(options,{action:'runtime_set',runtime:{runTimeoutMs:30*86400000,providerIdleTimeoutMs:null}});
-    assert.equal(saved.runTimeoutMs,30*86400000);assert.equal(saved.providerIdleTimeoutMs,null);assert.equal(saved.codexHistory,'relay');assert.match(saved.applies,/active work keeps/);
+    assert.equal(saved.runTimeoutMs,30*86400000);assert.equal(saved.providerIdleTimeoutMs,null);assert.equal(saved.codexHistory,'codex');assert.match(saved.applies,/active work keeps/);
     assert.equal(options.timeoutMs,null,'the admitted turn retains its own budget');assert.equal(options.providerIdleTimeoutMs,300000);
     await call(options,{action:'runtime_set',runtime:{providerIdleTimeoutMs:0}},false);
     await call(options,{action:'runtime_set',runtime:{notASetting:true}},false);
@@ -247,7 +247,7 @@ test('agents patch user-selected durations through the real tool without changin
 
 test('parallel agent runtime patches merge independently and cancellation cannot change the saved preferences',async t=>{
   const {app,cwd}=await fixture(t),make=signal=>createControlToolHandler({engine:app.engine,validateWorkflow,run:{id:'duration-control',cwd},nodeId:'agent',signal}),a=make(new AbortController().signal),b=make(new AbortController().signal);
-  const results=await Promise.all([a({name:'relay_control',arguments:{action:'runtime_set',runtime:{runTimeoutMs:60000}}}),b({name:'relay_control',arguments:{action:'runtime_set',runtime:{codexHistory:'codex'}}})]);assert.ok(results.every(item=>item.success));assert.deepEqual(app.runtimeSettings.get(),{codexHistory:'codex',runTimeoutMs:60000,providerIdleTimeoutMs:300000,defaultEffort:'default',defaultServiceTier:'default',defaultContext:{preset:'model',windowTokens:null,autoCompact:true},verbosity:'balanced',subagentsEnabled:false,maxSubagents:3});
+  const results=await Promise.all([a({name:'relay_control',arguments:{action:'runtime_set',runtime:{runTimeoutMs:60000}}}),b({name:'relay_control',arguments:{action:'runtime_set',runtime:{codexHistory:'codex'}}})]);assert.ok(results.every(item=>item.success));assert.deepEqual(app.runtimeSettings.get(),{codexHistory:'codex',runTimeoutMs:60000,providerIdleTimeoutMs:300000,defaultEffort:'default',defaultServiceTier:'default',defaultContext:{preset:'model',windowTokens:null,autoCompact:true},verbosity:'balanced',subagentsEnabled:false,maxSubagents:3,connectedGmail:false,executionGuardrails:false,hiddenModelProviders:[]});
   const cancelled=new AbortController();cancelled.abort();assert.equal((await make(cancelled.signal)({name:'relay_control',arguments:{action:'runtime_set',runtime:{runTimeoutMs:null}}})).success,false);assert.equal(app.runtimeSettings.get().runTimeoutMs,60000);
 });
 
@@ -277,4 +277,47 @@ test('agents can configure and inspect optional delegation and verbosity without
  assert.equal(done.runtimeSettings.subagentsEnabled,false);
  const settings=context.app.runtimeSettings.get();
  assert.equal(settings.subagentsEnabled,true);assert.equal(settings.maxSubagents,4);assert.equal(settings.verbosity,'detailed');
+});
+
+
+test('current cycle model selection leaves saved v5 native catalogs unchanged on continuation and retry',async t=>{
+ const f=await fixture(t,async(options,index)=>{
+  const definition=options.dynamicTools.find(tool=>tool.name==='relay_control');
+  assert.deepEqual((await call(options,{action:'describe'})).tool,definition);
+  if(index===1){
+   assert.ok(definition.inputSchema.properties.cycle.properties.model);
+   assert.deepEqual(definition.inputSchema.properties.cycle.properties.serviceTier.enum,['default','fast']);
+  }else{
+   assert.deepEqual(definition,PRE_PROFILE_CONTROL_TOOL);assert.ok(options.prompt.includes(PRE_PROFILE_CONTROL_INSTRUCTIONS));
+   const denied=await call(options,{action:'planning_cycle_run',graphRequestId:'fixture-request',cycleId:'fixture-cycle',cycle:{expectedRequestRevision:1,expectedCycleRevision:1,clientRequestId:'v5-cannot-select-profile',model:'fixture-api::fast'}},false);
+   assert.match(denied.error,/saved control schema/);
+  }
+  options.onEvent({type:'thread',threadId:'native-cycle-profile-control'});
+  if(index===2)throw Error('Observed saved-v5 fixture interruption.');
+  return{output:'The saved control catalog was preserved.',threadId:'native-cycle-profile-control'};
+ });
+ await f.app.engine.runtimeSettings.update({codexHistory:'codex'});await f.app.engine.saveWorkflow(validateWorkflow(graph('cycle-profile-control')));
+ const first=await f.settled(f.app.engine.startRun({workflow:graph('cycle-profile-control'),input:'Inspect the current cycle controls.'}).id);
+ assert.equal(first.status,'completed',first.error);assert.equal(first.nodes.agent.controlSchemaVersion,CONTROL_SCHEMA_VERSION);
+ f.app.engine.runs.get(first.id).nodes.agent.controlSchemaVersion=5;
+ const second=await f.settled(f.app.engine.continueRun(first.id,{nodeId:'agent',message:'Continue using this saved v5 native catalog.'}).id);assert.equal(second.status,'failed');assert.equal(second.nodes.agent.controlSchemaVersion,5);
+ const retried=await f.settled(f.app.engine.retryRun(second.id).id);assert.equal(retried.status,'completed',retried.error);assert.equal(retried.nodes.agent.controlSchemaVersion,5);assert.equal(f.calls[2].threadId,'native-cycle-profile-control');
+});
+
+
+test('v7 task accuracy leaves saved v6 native continuations and retries on their exact catalog',async t=>{
+ const f=await fixture(t,async(options,index)=>{
+  const definition=options.dynamicTools.find(tool=>tool.name==='relay_control');
+  assert.deepEqual((await call(options,{action:'describe'})).tool,definition);
+  if(index===1)assert.ok(definition.inputSchema.properties.cycle.properties.plan.properties.acceptanceCriteria.items.properties.accuracy);
+  else{assert.deepEqual(definition,PRE_ACCURACY_CONTROL_TOOL);assert.ok(options.prompt.includes(PRE_ACCURACY_CONTROL_INSTRUCTIONS));assert.equal(definition.inputSchema.properties.cycle.properties.plan.properties.acceptanceCriteria.items.properties.accuracy,undefined);}
+  options.onEvent({type:'thread',threadId:'native-accuracy-control'});
+  if(index===2)throw Error('Observed saved-v6 fixture interruption.');
+  return{output:'The original v6 control catalog remains in force.',threadId:'native-accuracy-control'};
+ });
+ await f.app.engine.runtimeSettings.update({codexHistory:'codex'});
+ const first=await f.settled(f.app.engine.startRun({workflow:graph('accuracy-control'),input:'Inspect current Planning controls.'}).id);assert.equal(first.status,'completed',first.error);assert.equal(first.nodes.agent.controlSchemaVersion,CONTROL_SCHEMA_VERSION);
+ f.app.engine.runs.get(first.id).nodes.agent.controlSchemaVersion=6;
+ const second=await f.settled(f.app.engine.continueRun(first.id,{nodeId:'agent',message:'Continue the saved v6 catalog.'}).id);assert.equal(second.status,'failed');assert.equal(second.nodes.agent.controlSchemaVersion,6);
+ const retried=await f.settled(f.app.engine.retryRun(second.id).id);assert.equal(retried.status,'completed',retried.error);assert.equal(retried.nodes.agent.controlSchemaVersion,6);assert.equal(f.calls[2].threadId,'native-accuracy-control');
 });

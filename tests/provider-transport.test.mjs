@@ -19,11 +19,22 @@ async function harness(t, handler, options = {}) {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'relay-idle-test-')), requests = [], timers = new Set();
   const server = createServer(async (request, response) => {
     let raw = ''; for await (const chunk of request) raw += chunk;
+    // Ordinary catalog onboarding must not advance an inference fixture's response sequence.
+    if (request.method === 'GET' && new URL(request.url, 'http://fixture').pathname.endsWith('/models')) {
+      response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ data: [] })); return;
+    }
     const record = { url: request.url, body: raw ? JSON.parse(raw) : null }; requests.push(record);
     handler?.(record, response, requests.length, timer => timers.add(timer));
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const runtime = await new ProviderRuntime({ codex: new FakeCodex(), dataDir, idleTimeoutMs: 120, ...options }).init();
+  const { fetchImpl = fetch, ...runtimeOptions } = options;
+  const runtime = await new ProviderRuntime({
+    codex: new FakeCodex(), dataDir, idleTimeoutMs: 120,
+    // Supplementary capacity lookup has separate coverage; these fixtures exercise inference transport.
+    modelLimitResolver: { enrich: async (_config, models) => models },
+    ...runtimeOptions,
+    fetchImpl: (url, init) => init?.method === 'GET' && new URL(url).pathname.endsWith('/models') ? fetch(url, init) : fetchImpl(url, init),
+  }).init();
   const provider = await runtime.saveProvider({ id: 'fixture', type: 'compatible', baseUrl: `http://127.0.0.1:${server.address().port}/v1`, models: ['fixture-model'] });
   t.after(async () => { for (const timer of timers) { clearTimeout(timer); clearInterval(timer); } await runtime.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(dataDir, { recursive: true, force: true }); });
   return { runtime, requests, provider, dataDir, run: options => runtime.runAgent({ cwd: dataDir, prompt: 'Disposable local transport fixture.', model: 'fixture::fixture-model', ...options }) };

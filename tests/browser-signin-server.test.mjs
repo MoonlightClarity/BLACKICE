@@ -10,6 +10,7 @@ test('only an authenticated explicit POST reveals Neo; passive status and sign-i
  const base=await mkdtemp(path.join(tmpdir(),'agentdesk-show-neo-'));
  let opens=0;
  class Runtime extends EventEmitter {
+  async runAgent() { assert.fail('This server fixture must not execute a model.'); }
   status(){return{connected:false,authenticated:false,models:[],defaultModel:'test'};}
   async start(){return this.status();}
   async close(){}

@@ -12,7 +12,7 @@ export async function appFingerprint(directory = source) {
   async function visit(relative) {
     // Connector edit backups are recovery artifacts, never executable inputs.
     // Match the installer exclusion while leaving those source backups intact.
-    if (path.basename(relative).includes('.currents-backup-')) return;
+    if (path.basename(relative).includes('.currents-backup-') || path.basename(relative).endsWith('.ownership-backup')) return;
     const file = path.join(directory, relative), info = await fs.lstat(file);
     if (info.isSymbolicLink()) throw Error('Application inputs cannot contain links.');
     if (info.isDirectory()) { for (const entry of (await fs.readdir(file)).sort()) await visit(path.posix.join(relative, entry)); }
@@ -34,12 +34,14 @@ export async function appFingerprint(directory = source) {
   for (const relative of await desktopRuntimeModules(directory)) await visit(relative);
   try { await fs.lstat(path.join(directory, 'scripts/remote-access-cli.mjs')); await visit('scripts/remote-access-cli.mjs'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   try { await fs.lstat(path.join(directory, 'scripts/browser-cli.mjs')); await visit('scripts/browser-cli.mjs'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  try { await fs.lstat(path.join(directory, 'scripts/chatgpt-cli.mjs')); await visit('scripts/chatgpt-cli.mjs'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   // Older builds predate the connector CLI; include it whenever present so a
   // candidate cannot silently omit or change the installed bridge entry point.
   try { await fs.lstat(path.join(directory,'scripts/chatgpt-bridge.mjs')); await visit('scripts/chatgpt-bridge.mjs'); } catch(error) { if(error.code!=='ENOENT')throw error; }
   // Managed mail invokes this installed helper through Electron's Node mode.
   // Older inspected releases do not contain it; whenever present it is bound.
   try { await fs.lstat(path.join(directory, 'scripts/email-oauth-token.mjs')); await visit('scripts/email-oauth-token.mjs'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  try { await fs.lstat(path.join(directory, 'scripts/repair-shortcuts.ps1')); await visit('scripts/repair-shortcuts.ps1'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   records.sort((a,b)=>a.path.localeCompare(b.path, 'en'));
   return createHash('sha256').update(JSON.stringify(records)).digest('hex');
 }

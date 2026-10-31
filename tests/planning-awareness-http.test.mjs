@@ -74,6 +74,8 @@ async function fixture(t, { remote = false, emailEnabled = true } = {}) {
   });
   const email = emailEnabled ? await new AgentEmailStore({ dataDir, runner: async () => { cliCalls++; throw new Error('No mailbox CLI is available in this fixture.'); } }).init() : null;
   app = await createHarnessServer({ port: 0, dataDir, defaultCwd: path.join(root, 'workspace'), runtime: new Runtime(), desktop: new Desktop(), email, remoteAccess: manager, autoAttachDesktop: false });
+  // Exercise the guarded planning worker receipts behind the HTTP awareness routes.
+  await app.runtimeSettings.update({ executionGuardrails: true });
   await app.learning.updateSettings({ mode: 'manual' });
   const url = new URL(await app.listen()), localTarget = { port: Number(url.port), host: url.host };
   const page = await requestAt(localTarget, '/'); assert.equal(page.status, 200);
@@ -113,7 +115,7 @@ async function fixture(t, { remote = false, emailEnabled = true } = {}) {
     { id: 'input', type: 'input', name: 'Task' },
     { id: 'agent', type: 'agent', name: 'Fixture worker', prompt: 'Complete the local fixture task.', model: 'awareness-http-fixture' },
     { id: 'output', type: 'output', name: 'Result' },
-  ], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1 } };
+  ], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1, planningMode: 'off' } };
   const started = await local('/api/runs', { method: 'POST', body: { workflow, input: 'Exercise shared Planning HTTP awareness.' } });
   assert.equal(started.status, 201, started.text);
   const run = await waitFor(() => { const current = app.engine.getRun(started.value.id); return current.settled ? current : null; }, 'The fixture run did not settle.', 7000);

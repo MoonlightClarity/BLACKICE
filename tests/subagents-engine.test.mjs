@@ -28,7 +28,7 @@ const finish=async(engine,id)=>{
   throw Error('Agent did not finish in time.');
 };
 
-test('enabled Relay chats really delegate with bounded child tools and observable outcomes; disabled chats do not',async t=>{
+test('guarded Relay chats really delegate with bounded child tools and observable outcomes; disabled chats do not',async t=>{
   const root=await mkdtemp(path.join(tmpdir(),'relay-delegate-engine-')),cwd=path.join(root,'work'),dataDir=path.join(root,'data');
   await mkdir(cwd);const calls=[],receipts=[];
   class Runtime extends EventEmitter {
@@ -63,7 +63,7 @@ test('enabled Relay chats really delegate with bounded child tools and observabl
   assert.equal(disabled.nodes.agent.output,'No delegation configured.');
   assert.equal(calls.length,1);
   assert.ok(!calls[0].dynamicTools.some(tool=>tool.name==='relay_delegate'));
-  await prefs.update({subagentsEnabled:true,maxSubagents:2,verbosity:'detailed',defaultEffort:'high'});
+  await prefs.update({subagentsEnabled:true,maxSubagents:2,verbosity:'detailed',defaultEffort:'high',executionGuardrails:true});
   const enabled=await finish(engine,engine.startRun({workflow:taskGraph(),input:'Evaluate a change with delegation.',planningMode:'off'}).id);
   assert.equal(enabled.status,'completed',enabled.error);
   assert.match(enabled.nodes.agent.output,/Worker finished/);

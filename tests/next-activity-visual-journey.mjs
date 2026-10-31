@@ -6,8 +6,13 @@ export async function exerciseActivityVisual({evaluate,until,fixture,counts}) {
   const writes=()=>({runs:fixture.state.submittedRuns.length,workflows:fixture.state.postedWorkflows.length,deletes:fixture.state.workflowDeletes.length,tasks:fixture.state.taskLifecycleMutations.length});
   const before=writes();
   await click('[data-space="activity"]');
-  await until(()=>evaluate('Boolean(document.querySelector("#next-activity-tab-workflows"))'),'Activity views ready');
+  await until(()=>evaluate('Boolean(document.querySelector("#next-activity-tab-overview"))'),'Activity views ready');
+  await click('#next-activity-tab-overview');
+  await until(()=>evaluate('document.querySelectorAll("#ac-list [data-ac-key]").length>0'),'Overview loads existing synthetic run metadata');
+  assert.ok(await evaluate('document.querySelectorAll("#ac-list [data-ac-key]").length<=40'),'Overview keeps its metadata page bounded.');
+  assert.equal(await evaluate('document.querySelectorAll(".next-activity-workspace [role=tabpanel]:not([hidden])").length'),1);
   await click('#next-activity-tab-workflows');
+  await until(()=>evaluate('Boolean(document.querySelector("#next-workflow-choice option[value=sample-workflow]"))'),'Workflow catalog loaded after lazy selection');
   await evaluate('(()=>{const field=document.querySelector("#next-workflow-choice");field.value="sample-workflow";field.dispatchEvent(new Event("change",{bubbles:true}));return true})()');
   await until(()=>evaluate('document.querySelectorAll("#next-workflow-map [data-stage-id]").length===3'),'Read-only workflow map ready');
   assert.equal(await evaluate('document.querySelectorAll(".next-activity-workspace [role=tabpanel]:not([hidden])").length'),1);
@@ -37,11 +42,12 @@ export async function exerciseActivityVisual({evaluate,until,fixture,counts}) {
   await until(()=>evaluate('document.querySelector("#next-activity-tab-tasks").getAttribute("aria-selected")==="true" && !document.querySelector("#next-activity-tasks").hidden'),'Keyboard reaches task timeline');
   assert.equal(await evaluate('document.querySelector("#next-activity-workflows").hidden'),true);
   await until(()=>evaluate('Boolean(document.querySelector("#next-activity-tasks-list.next-task-timeline"))'),'Task timeline presentation');
-  await click('#next-activity-tab-apps');
-  await until(()=>evaluate('!document.querySelector("#next-activity-native").hidden && document.querySelector("#next-activity-tasks").hidden'),'Applications selected alone');
+  await evaluate('document.querySelector("#next-activity-tab-tasks").dispatchEvent(new KeyboardEvent("keydown",{key:"Home",bubbles:true}));true');
+  await until(()=>evaluate('document.querySelector("#next-activity-tab-overview").getAttribute("aria-selected")==="true" && !document.querySelector("#next-activity-overview").hidden && document.querySelector("#next-activity-tasks").hidden'),'Home selects Overview alone');
+  await until(()=>evaluate('document.querySelectorAll("#ac-list [data-ac-key]").length>0'),'Overview returns with saved run metadata');
   assert.equal(fixture.state.workflowIndexRequests,workflowReads,'Hidden workflows do not refresh when another Activity surface enters.');
   await click('[data-space="chat"]');await click('[data-space="activity"]');
-  assert.equal(await evaluate('document.querySelector("#next-activity-tab-apps").getAttribute("aria-selected")'),'true','Activity retains its selected surface across workspace navigation.');
+  assert.equal(await evaluate('document.querySelector("#next-activity-tab-overview").getAttribute("aria-selected")'),'true','Activity retains its selected surface across workspace navigation.');
   await click('#next-activity-tab-workflows');
   await until(()=>evaluate('document.querySelectorAll("#next-workflow-map [data-stage-id]").length===3'),'Workflow map returns');
   assert.equal(await evaluate('document.querySelector("#next-workflow-prompt").value'),draft,'Launch draft survives panel and workspace navigation.');
@@ -57,5 +63,5 @@ export async function exerciseActivityVisual({evaluate,until,fixture,counts}) {
   await until(()=>evaluate('document.querySelectorAll("#next-workflow-map [data-stage-id]").length===3 && document.querySelector("#next-workflow-focus-kind").textContent==="Saved workflow"'),'Explicitly return to template');
   assert.deepEqual(writes(),before,'Inspecting saved runs and changing Activity surfaces cannot dispatch writes.');
   await evaluate('(()=>{const field=document.querySelector("#next-workflow-prompt");field.value='+JSON.stringify(originalPrompt)+';field.dispatchEvent(new Event("input",{bubbles:true}));document.querySelector("#next-workflow-launch").open=false;document.querySelector("#next-workflow-run-lookup").open=false;return true})()');
-  counts.activityVisual={selectedSurfaceOnly:true,keyboardTabs:true,readOnlyMap:true,explicitEdit:true,draftPreserved:true,actualRunStatus:true,noImplicitWrites:true};
+  counts.activityVisual={selectedSurfaceOnly:true,overviewMetadata:true,keyboardTabs:true,readOnlyMap:true,explicitEdit:true,draftPreserved:true,actualRunStatus:true,noImplicitWrites:true};
 }

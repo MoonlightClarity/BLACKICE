@@ -1,4 +1,5 @@
 /** Pure editor state helpers, shared by the browser and its regression tests. */
+import { aggregateTokenUsage, tokenUsagePresentation } from './token-usage.mjs';
 export class WorkflowHistory {
   constructor(limit = 80) { this.limit = limit; this.reset(null); }
   reset(value) { this.entries = value ? [JSON.stringify(value)] : []; this.index = this.entries.length - 1; this.group = null; this.changedAt = 0; }
@@ -77,10 +78,16 @@ export function fitWorkflow(nodes, viewport, nodeSize = { width: 224, height: 14
 export function runMetrics(run, now = Date.now()) {
   const nodes = Object.values(run?.nodes || {}), start = Date.parse(run?.startedAt || run?.createdAt);
   const finish = run?.finishedAt ? Date.parse(run.finishedAt) : now;
-  const usage = run?.usage || nodes.filter(node => !node.reused).reduce((sum, node) => {
-    if (node.usage) { sum.totalTokens += Number(node.usage.totalTokens) || 0; sum.reported = true; }
-    return sum;
-  }, { totalTokens: 0, reported: false });
+  const currentNodes = nodes.filter(node => !node.reused);
+  const availabilityAware = Boolean(run?.usage?.availability || currentNodes.some(node => node.usage?.availability));
+  // Older engine summaries contain only numeric accumulators. Node metadata
+  // preserves missing provider measurements until every summary carries it.
+  const usage = availabilityAware
+    ? aggregateTokenUsage(currentNodes.some(node => node.usage) ? currentNodes.map(node => node.usage) : [run?.usage])
+    : run?.usage || currentNodes.reduce((sum, node) => {
+      if (node.usage) { sum.totalTokens += Number(node.usage.totalTokens) || 0; sum.reported = true; }
+      return sum;
+    }, { totalTokens: 0, reported: false });
   return {
     completed: nodes.filter(node => node.status === 'completed').length,
     total: nodes.length,
@@ -88,7 +95,8 @@ export function runMetrics(run, now = Date.now()) {
     reused: nodes.filter(node => node.reused).length,
     durationMs: Number.isFinite(start) && Number.isFinite(finish) ? Math.max(0, finish - start) : null,
     totalTokens: Number(usage.totalTokens) || 0,
-    hasUsage: Boolean(usage.reported || nodes.some(node => node.usage) || Number(usage.totalTokens) > 0)
+    hasUsage: Boolean(usage.reported || nodes.some(node => node.usage) || Number(usage.totalTokens) > 0),
+    ...(availabilityAware ? tokenUsagePresentation(usage) : {})
   };
 }
 

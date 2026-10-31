@@ -5,7 +5,8 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { TaskStateStore, createTaskToolHandler, TASK_LIMITS, TASK_SCHEMA_VERSION, TASK_TOOL, TASK_TOOL_V9, TASK_WORKER_TOOL_V9,
-  TASK_INSTRUCTIONS_V9, taskToolForVersion, taskWorkerToolForVersion, taskInstructionsForVersion } from '../lib/task-state.mjs';
+  TASK_INSTRUCTIONS_V9, TASK_TOOL_V10, TASK_WORKER_TOOL_V10, TASK_INSTRUCTIONS_V10,
+  TASK_TOOL_V11, TASK_WORKER_TOOL_V11, TASK_INSTRUCTIONS_V11, taskToolForVersion, taskWorkerToolForVersion, taskInstructionsForVersion } from '../lib/task-state.mjs';
 import { planningReviewStatus, planningReviewSignature, PLANNING_REVIEW_LIMITS } from '../lib/planning-review.mjs';
 import { createSequentialPlanningGuard, planningSequenceStatus } from '../lib/planning-sequence.mjs';
 
@@ -20,7 +21,7 @@ async function fixture(t) {
   const store = await new TaskStateStore({ dataDir: directory }).init(), taskId = 'review-fixture';
   await store.ensure({ taskId, runId: 'run', nodeId: 'agent', cwd, goal: 'Compare the supplied prices.', defaultPlan: true });
   const context = { workEpoch: 0, directionFingerprint: 'original-request' };
-  const makeHandler = options => createTaskToolHandler({ store, taskId, runId: 'run', nodeId: 'agent', planningMode: 'on', getReviewContext: () => ({ ...context }), ...options });
+  const makeHandler = options => createTaskToolHandler({ store, taskId, runId: 'run', nodeId: 'agent', planningMode: 'on', executionGuardrails: true, getReviewContext: () => ({ ...context }), ...options });
   const handler = makeHandler();
   const call = args => handler({ name: 'relay_task', arguments: args });
   const accept = async args => { const result = await call(args); assert.equal(result.success, true, result.contentItems[0].text); return payload(result); };
@@ -33,16 +34,33 @@ async function fixture(t) {
   return { store, taskId, directory, cwd, context, makeHandler, call, accept, write, plan, finish, review, status };
 }
 
-test('schema 10 exposes review while the schema 9 tool, worker and instructions retain their exact catalog identities', () => {
+test('schema 12 exposes review while the schema 9 tool, worker and instructions retain their exact catalog identities', () => {
   const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-  assert.equal(TASK_SCHEMA_VERSION, 10);
+  assert.equal(TASK_SCHEMA_VERSION, 12);
   assert.ok(TASK_TOOL.inputSchema.properties.action.enum.includes('review'));
   assert.equal(digest(TASK_TOOL_V9), 'f0bf0f289ab9375bdcd9dabbbdb26ca4c1203606860ffa3f55cca41f1cdda43e');
   assert.equal(digest(TASK_WORKER_TOOL_V9), '5afe056db14867f1e5ecfafca46e701123ee2e8352959c6e6feea37ac6c7a7bb');
   assert.equal(digest(TASK_INSTRUCTIONS_V9), '47822f983a3d6747f910c9e1b4f50a4603c5b2cc32b084dcde2ceb24692ccfab');
-  assert.equal(taskToolForVersion(9), TASK_TOOL_V9);
-  assert.equal(taskWorkerToolForVersion(9), TASK_WORKER_TOOL_V9);
-  assert.equal(taskInstructionsForVersion(9), TASK_INSTRUCTIONS_V9);
+  assert.equal(taskToolForVersion(9, { executionGuardrails: true }), TASK_TOOL_V9);
+  assert.equal(taskWorkerToolForVersion(9, { executionGuardrails: true }), TASK_WORKER_TOOL_V9);
+  assert.equal(taskInstructionsForVersion(9, { executionGuardrails: true }), TASK_INSTRUCTIONS_V9);
+});
+
+
+test('published schema 10 and installed schema 11 keep exact coordinator, worker and instruction contracts', () => {
+  const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  const versions = [
+    [10, TASK_TOOL_V10, TASK_WORKER_TOOL_V10, TASK_INSTRUCTIONS_V10,
+      ["921e9517ac27b24a21699b3531e664c4fd12a152bfaa3f20b4c27960b20cfa10","80568736441357c7850ac5660b13c7f101d11f29ad41b5e8431f712a9272c9bd","538c9fa4f74584a3c85fe03f1a9c55941ace99577ee51ed5e92faae304854553"]],
+    [11, TASK_TOOL_V11, TASK_WORKER_TOOL_V11, TASK_INSTRUCTIONS_V11,
+      ["db6910ed43c0effa4fae037f90fe847ffb85d0a19595eaa1d23d2ea79dcb16cc","36f98198c4740d0c55a6346038f5f4ce2e053b25cbec2039c474e08e4d88f281","081e169a862043d2d39156ea1212ba5897c06fdb9e6aaf50bcdf21366fbc25fd"]],
+  ];
+  for (const [version, tool, worker, instructions, hashes] of versions) {
+    assert.deepEqual([tool, worker, instructions].map(digest), hashes, 'Saved schema ' + version + ' retains its exact catalog.');
+    assert.equal(taskToolForVersion(version, { executionGuardrails: true }), tool);
+    assert.equal(taskWorkerToolForVersion(version, { executionGuardrails: true }), worker);
+    assert.equal(taskInstructionsForVersion(version, { executionGuardrails: true }), instructions);
+  }
 });
 
 test('a plan or completion status alone is not a return to planning; explicit review is durable and does not invalidate itself', async t => {
@@ -188,7 +206,7 @@ test('scoped review can hand off observed work while the coordinator owns an unc
 test('a near-limit plan retains room for its mandatory review and old reviews compact before new work', async t => {
   const f = await fixture(t); await f.plan(); await f.finish();
   const raw = JSON.parse(await readFile(f.store.file(f.taskId), 'utf8')).history.at(-1), facts = [];
-  const projected = { ...raw, plan: { ...raw.plan, facts } }, target = 55400;
+  const projected = { ...raw, plan: { ...raw.plan, facts } }, target = TASK_LIMITS.agentStateChars - 600;
   while (JSON.stringify(projected).length < target) {
     const fact = { id: `fixture_value_${facts.length}`, value: 'x'.repeat(2000), evidence: 'Supplied fixture value.' };
     facts.push(fact);
@@ -214,7 +232,7 @@ test('review waits for actual dispatch settlement and reported outcome; uncertai
   const f = await fixture(t);
   const operation = { ...leaf(), operation: { kind: 'tool', tool: 'relay_workspace', action: 'write', target: 'result.txt' }, note: 'Write one exact supplied result to result.txt.' };
   const planned = await f.plan([operation]);
-  const guard = createSequentialPlanningGuard({ store: f.store, taskId: f.taskId, runId: 'run', nodeId: 'agent', schemaVersion: 10 });
+  const guard = createSequentialPlanningGuard({ store: f.store, taskId: f.taskId, runId: 'run', nodeId: 'agent', schemaVersion: 10, executionGuardrails: true });
   const call = { name: 'relay_workspace', arguments: { action: 'write', path: 'result.txt', text: '14.50' }, callId: 'observed-write' };
   assert.equal(await guard.before(call, { expectedRevision: planned.revision }), null);
   assert.equal((await planningSequenceStatus(f.store, f.taskId, planned)).running.length, 1);

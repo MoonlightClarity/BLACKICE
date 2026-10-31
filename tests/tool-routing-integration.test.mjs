@@ -53,6 +53,7 @@ if(method==='account/read')return reply(id,{account:{type:'chatgpt',planType:'fi
 if(method==='model/list')return reply(id,{data:[{id:'routing-native-model',model:'routing-native-model',isDefault:true,supportedReasoningEfforts:[]}],nextCursor:null});
 if(method==='fixture/config'){skillConfig=params.config;configUnavailable=params.unavailable===true;return reply(id,{});}
 if(method==='config/read'){if(configUnavailable)return send({id,error:{code:-32601,message:'config/read unavailable'}});return reply(id,{config:skillConfig});}
+if(method==='skills/list')return reply(id,{data:params.cwds.map(cwd=>({cwd,skills:[{path:process.platform==='win32'?'C:/fixture/browseros-neo/SKILL.md':'/fixture/browseros-neo/SKILL.md'}],errors:[]}))});
 if(method==='thread/start'){const threadId='routing-native-'+(++counter);threads.set(threadId,{instructions:params.developerInstructions||'',tools:params.dynamicTools||[],turns:0});return reply(id,{thread:{id:threadId,...(params.ephemeral===true?{ephemeral:true}:{})},model:'routing-native-model'});}
 if(method==='fixture/restoreLegacyCatalog'){const state=threads.get(params.threadId);state.tools=state.tools.filter(tool=>params.names.includes(tool.name));return reply(id,{names:state.tools.map(tool=>tool.name)});}
 if(method==='thread/resume'){const state=threads.get(params.threadId);if(params.developerInstructions!==undefined)state.instructions=params.developerInstructions;return reply(id,{thread:{id:params.threadId},model:'routing-native-model'});}
@@ -73,11 +74,11 @@ test('engine native follow-up guidance excludes newly available tools that are a
   const first=engine.startRun({workflow:graph('routing-native-model'),input:'NATIVE_ENGINE_FIRST'}),one=await settled(first.id);assert.equal(one.status,'completed',one.error);assert.deepEqual(one.nodes.agent.toolNames,['relay_workspace','relay_control']);
   // Restore both the actual fixture thread and saved run to the pre-control catalog.
   const legacy=await runtime._request('fixture/restoreLegacyCatalog',{threadId:one.nodes.agent.threadId,names:['relay_workspace']});assert.deepEqual(legacy.names,['relay_workspace']);engine.runs.get(first.id).nodes.agent.toolNames=['relay_workspace'];
-  engine.browser={status:()=>({available:true})};engine.connections={list:()=>[],redact:value=>String(value)};const next=engine.continueRun(first.id,{nodeId:'agent',message:'NATIVE_ENGINE_FOLLOWUP'}),two=await settled(next.id);assert.equal(two.status,'completed',two.error);const receipt=JSON.parse(two.nodes.agent.output);assert.deepEqual(receipt.tools,['relay_workspace']);assert.deepEqual(manifest(receipt.instructions).map(item=>item.name),['relay_workspace']);assert.ok(!receipt.instructions.includes('relay_control'));assert.ok(!receipt.instructions.includes('relay_browser'));assert.ok(!receipt.instructions.includes('relay_connections'));assert.equal(two.nodes.agent.threadId,one.nodes.agent.threadId);
+  engine.browser={status:()=>({available:true})};engine.connections={list:()=>[],redact:value=>String(value)};const next=engine.continueRun(first.id,{nodeId:'agent',message:'NATIVE_ENGINE_FOLLOWUP'}),two=await settled(next.id);assert.equal(two.status,'completed',two.error);const receipt=JSON.parse(two.nodes.agent.output);assert.deepEqual(receipt.tools,['relay_workspace']);assert.deepEqual(manifest(receipt.instructions).map(item=>item.name),['relay_workspace']);assert.doesNotMatch(receipt.instructions,/relay_control:|relay_browser:|relay_connections:/);assert.equal(two.nodes.agent.threadId,one.nodes.agent.threadId);
   const records=await wire(),resume=records.find(item=>item.method==='thread/resume');assert.match(resume.params.developerInstructions,/ACTUAL ATTACHED CATALOG/);assert.equal(resume.params.dynamicTools,undefined);const turn=records.filter(item=>item.method==='turn/start').at(-1);assert.equal(occurrences(JSON.stringify(turn.params.input),'NATIVE_ENGINE_FOLLOWUP'),1);assert.equal(occurrences(JSON.stringify(turn.params.input),'CAPABILITY ROUTING — BEFORE ACTION'),0);
 });
 
-test('native relay-history turns keep browser selection in developer instructions and preserve user browser choices', async t => {
+test('the legacy relay history setting preserves native continuation and contained browser routing in developer instructions', async t => {
   const { runtime, directory, cwd, wire, cleanup } = await nativeHarness(t);
   await runtime.start();
   const engine = await new HarnessEngine({ runtime, dataDir: directory, defaultCwd: cwd }).init();
@@ -94,32 +95,33 @@ test('native relay-history turns keep browser selection in developer instruction
   assert.ok(firstReceipt.tools.includes('relay_browser'));
   assert.ok(firstReceipt.tools.includes('relay_connections'));
   assert.match(firstReceipt.instructions, /A tool or method named in a prior assistant plan/);
-  assert.match(firstReceipt.instructions, /For new web work, default to the BLACKICE contained browser/);
-  assert.match(firstReceipt.instructions, /unless the user has selected a browser or profile/);
-  assert.match(firstReceipt.instructions, /broad trigger.*does not by itself establish a user browser choice/);
-  assert.match(firstReceipt.instructions, /unavailable required browser/);
-  assert.match(firstReceipt.instructions, /unavailable optional browser does not block independent work/);
+  assert.match(firstReceipt.instructions, /Use only the BLACKICE contained browser/);
+  assert.match(firstReceipt.instructions, /Never attach or launch Chrome/);
+  assert.match(firstReceipt.instructions, /empty tabs list means this task has no visible pages/);
+  assert.match(firstReceipt.instructions, /complete independent work/);
   assert.equal(one.input, firstInput);
-  const selectedInput = 'Use my existing BrowserOS Neo session for this website.';
+  const selectedInput = 'Continue this website task using only the BLACKICE browser.';
   const second = engine.continueRun(first.id, { nodeId: 'agent', message: selectedInput });
   const two = await settled(second.id);
   assert.equal(two.status, 'completed', two.error);
   assert.equal(two.taskId, one.taskId);
   assert.equal(two.input, selectedInput);
-  assert.equal(two.nodes.agent.codexHistory, 'relay');
+  assert.equal(two.nodes.agent.codexHistory, 'codex');
+  assert.equal(two.nodes.agent.threadId, one.nodes.agent.threadId);
   const secondReceipt = JSON.parse(two.nodes.agent.output);
-  assert.match(secondReceipt.instructions, /Preserve explicit and established user choices/);
-  assert.match(secondReceipt.instructions, /Apply external-browser skill instructions when that browser is actually selected/);
+  assert.match(secondReceipt.instructions, /Use only the BLACKICE contained browser/);
+  assert.match(secondReceipt.instructions, /All website work stays in the BLACKICE contained relay_browser/);
   assert.ok(JSON.stringify(secondReceipt.input).includes(selectedInput));
   assert.deepEqual(manifest(secondReceipt.instructions).map(item => item.name), secondReceipt.tools);
-  const starts = (await wire()).filter(item => item.method === 'thread/start');
-  assert.equal(starts.length, 2, 'relay-history continuations rebuild provider context');
-  for (const record of starts) {
-    assert.match(record.params.developerInstructions, /For new web work, default to the BLACKICE contained browser/);
-    assert.match(record.params.developerInstructions, /unless the user has selected a browser or profile/);
+  const openings = (await wire()).filter(item => ['thread/start', 'thread/resume'].includes(item.method));
+  assert.deepEqual(openings.map(item => item.method), ['thread/start', 'thread/resume'], 'The legacy setting preserves the saved native thread.');
+  for (const record of openings) {
+    assert.match(record.params.developerInstructions, /Use only the BLACKICE contained browser/);
+    assert.match(record.params.developerInstructions, /Native browser adapters are not exposed to this task/);
   }
 });
 
+const browserScopeSkillPath = process.platform === 'win32' ? 'C:/fixture/browseros-neo/SKILL.md' : '/fixture/browseros-neo/SKILL.md';
 const browserScopeTool = { name: 'relay_browser', description: 'Contained browser fixture', inputSchema: { type: 'object', properties: {}, additionalProperties: false } };
 
 test('native contained-browser sessions exclude Neo while preserving existing skill settings across start and resume', async t => {
@@ -131,7 +133,7 @@ test('native contained-browser sessions exclude Neo while preserving existing sk
     { path: 'C:/fixture/browseros-neo/SKILL.md', enabled: true },
   ];
   await runtime._request('fixture/config', { config: { skills: { config: existing } } });
-  const expected = [...existing, { name: 'browseros-neo', enabled: false }];
+  const expected = [...existing, { path: browserScopeSkillPath, enabled: false }];
   const options = { cwd, dynamicTools: [WORKSPACE_TOOL, browserScopeTool] };
   const first = await runtime.runAgent({ ...options, prompt: 'FIRST_SCOPE_MESSAGE' });
   await runtime.runAgent({ ...options, prompt: 'CONTINUED_SCOPE_MESSAGE', threadId: first.threadId, usageBaseline: first.usage.total });
@@ -139,7 +141,11 @@ test('native contained-browser sessions exclude Neo while preserving existing sk
   await runtime.runAgent({ ...options, prompt: 'RELAY_HISTORY_SCOPE_MESSAGE', codexHistory: 'relay' });
   const records = await wire(), openings = records.filter(record => ['thread/start', 'thread/resume'].includes(record.method));
   assert.equal(openings.length, 3);
-  for (const record of openings) assert.deepEqual(record.params.config?.['skills.config'], expected);
+  for (const [index, record] of openings.entries()) {
+    assert.deepEqual(record.params.config?.['skills.config'], index < 2 ? expected : [...expected, { path: browserScopeSkillPath, enabled: false }]);
+    assert.equal(record.params.config?.['features.apps'], false);
+    assert.equal(record.params.config?.['features.remote_plugin'], false);
+  }
   const reads = records.filter(record => record.method === 'config/read');
   assert.equal(reads.length, 3);
   for (const record of reads) assert.deepEqual(record.params, { cwd, includeLayers: false });
@@ -147,25 +153,52 @@ test('native contained-browser sessions exclude Neo while preserving existing sk
   assert.equal(existing[1].enabled, true, 'the inherited configuration was not mutated');
 });
 
-test('native contained-browser scope accepts absent skill settings and leaves nonbrowser invocations alone', async t => {
+test('native browser exclusion accepts absent skill settings and remains active without an attached contained browser', async t => {
   const { runtime, cwd, wire } = await nativeHarness(t);
   await runtime.start();
   await runtime._request('fixture/config', { config: { skills: null } });
   await runtime.runAgent({ cwd, prompt: 'CONTAINED_SCOPE', dynamicTools: [browserScopeTool] });
   await runtime.runAgent({ cwd, prompt: 'NO_BROWSER_SCOPE', dynamicTools: [WORKSPACE_TOOL] });
   const records = await wire(), openings = records.filter(record => record.method === 'thread/start');
-  assert.deepEqual(openings[0].params.config?.['skills.config'], [{ name: 'browseros-neo', enabled: false }]);
-  assert.equal(openings[1].params.config?.['skills.config'], undefined);
-  assert.equal(records.filter(record => record.method === 'config/read').length, 1);
+  for (const opening of openings) {
+    assert.deepEqual(opening.params.config?.['skills.config'], [{ path: browserScopeSkillPath, enabled: false }]);
+    assert.equal(opening.params.config?.['features.apps'], false);
+    assert.equal(opening.params.config?.['features.remote_plugin'], false);
+  }
+  assert.equal(records.filter(record => record.method === 'config/read').length, 2);
+});
+
+
+test('native start and resume keep ambient Chrome plugins and MCP adapters disabled when the contained browser is unavailable', async t => {
+  const { runtime, cwd, wire } = await nativeHarness(t);
+  await runtime.start();
+  const config = {
+    plugins: { 'chrome-tools': { enabled: true } },
+    mcp_servers: { 'custom-browser-alias': { enabled: true, command: 'chrome-devtools-mcp' } },
+  };
+  await runtime._request('fixture/config', { config });
+  const options = { cwd, dynamicTools: [WORKSPACE_TOOL] };
+  const first = await runtime.runAgent({ ...options, prompt: 'No contained browser is attached; prepare local work.' });
+  await runtime.runAgent({ ...options, prompt: 'Continue the same preparation.', threadId: first.threadId, usageBaseline: first.usage.total });
+  const openings = (await wire()).filter(record => ['thread/start', 'thread/resume'].includes(record.method));
+  assert.equal(openings.length, 2);
+  for (const record of openings) {
+    assert.deepEqual(record.params.config?.plugins, { 'chrome-tools': { enabled: false } });
+    assert.deepEqual(record.params.config?.mcp_servers, { 'custom-browser-alias': { enabled: false } });
+    assert.equal(record.params.config?.['features.apps'], false);
+    assert.equal(record.params.config?.['features.remote_plugin'], false);
+  }
+  assert.equal(config.plugins['chrome-tools'].enabled, true);
+  assert.equal(config.mcp_servers['custom-browser-alias'].enabled, true);
 });
 
 test('native contained-browser scope does not start a model turn with unreadable or malformed inherited skill configuration', async t => {
   const { runtime, cwd, wire } = await nativeHarness(t);
   await runtime.start();
   await runtime._request('fixture/config', { unavailable: true });
-  await assert.rejects(runtime.runAgent({ cwd, prompt: 'UNREADABLE_SCOPE', dynamicTools: [browserScopeTool] }), error => error.code === 'CODEX_SKILL_SCOPE_UNAVAILABLE');
+  await assert.rejects(runtime.runAgent({ cwd, prompt: 'UNREADABLE_SCOPE', dynamicTools: [browserScopeTool] }), error => error.code === 'CODEX_CAPABILITY_SCOPE_UNAVAILABLE');
   await runtime._request('fixture/config', { config: { skills: { config: {} } } });
-  await assert.rejects(runtime.runAgent({ cwd, prompt: 'MALFORMED_SCOPE', dynamicTools: [browserScopeTool] }), error => error.code === 'CODEX_SKILL_SCOPE_UNAVAILABLE');
+  await assert.rejects(runtime.runAgent({ cwd, prompt: 'MALFORMED_SCOPE', dynamicTools: [browserScopeTool] }), error => error.code === 'CODEX_CAPABILITY_SCOPE_UNAVAILABLE');
   const records = await wire();
   assert.equal(records.filter(record => ['thread/start', 'thread/resume', 'turn/start'].includes(record.method)).length, 0);
 });

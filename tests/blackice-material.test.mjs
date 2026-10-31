@@ -57,6 +57,7 @@ test('the running application serves only registered theme resources intact with
   class Runtime extends EventEmitter {
     status() { return {connected: false, authenticated: false, models: [], defaultModel: 'fixture'}; }
     async start() { return this.status(); }
+    async runAgent() { assert.fail('The theme HTTP fixture must not execute a model.'); }
     async close() {}
   }
   class Desktop extends EventEmitter {
@@ -67,10 +68,12 @@ test('the running application serves only registered theme resources intact with
   const app = await createHarnessServer({port: 0, dataDir: path.join(root, 'data'), defaultCwd: root, runtime: new Runtime(), desktop: new Desktop(), autoAttachDesktop: false, showBrowserOS: async () => ({shown: false, focused: false, started: false})});
   t.after(async () => { await app.close(); await rm(root, {recursive: true, force: true}); });
   const address = await app.listen();
-  const page = await fetch(new URL('/legacy/', address));
+  const legacy = await fetch(new URL('/legacy/', address), {redirect: 'manual'});
+  assert.equal(legacy.status, 302);
+  assert.equal(legacy.headers.get('location'), '/');
+  const page = await fetch(new URL('/', address));
   assert.equal(page.status, 200);
-  const html = await page.text();
-  for (const pathname of [assetPath, materialPath, stylePath, layoutPath]) assert.ok(html.includes('href="' + pathname + '"'));
+  assert.match(await page.text(), /id="next-app"/, 'legacy navigation reaches the current app shell');
   for (const [pathname, mime] of [[assetPath, 'image/png'], [retainedScenePath, 'image/svg+xml'], [stylePath, 'text/css; charset=utf-8'], [materialPath, 'text/css; charset=utf-8'], [layoutPath, 'text/css; charset=utf-8']]) {
     const [response, head] = await Promise.all([fetch(new URL(pathname, address)), fetch(new URL(pathname, address), {method: 'HEAD'})]);
     assert.equal(response.status, 200, pathname);

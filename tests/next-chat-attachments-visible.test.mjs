@@ -20,6 +20,10 @@ function fakeTimeline() {
       },
       setAttribute(name, value) { this.attributes[name] = String(value); },
       addEventListener() {},
+      querySelectorAll(selector) {
+        assert.equal(selector, 'details[data-disclosure-id]');
+        return this.children.flatMap(child => descendants(child, node => node.tagName === 'details' && node.dataset.disclosureId !== undefined));
+      },
     };
     Object.defineProperty(node, 'textContent', {
       get() { return this._text + this.children.map(child => child.textContent).join(''); },

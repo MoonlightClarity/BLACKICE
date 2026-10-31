@@ -10,7 +10,7 @@ export async function desktopRuntimeModules(directory) {
   async function visit(relative) {
     for (const entry of await fs.readdir(path.join(directory, relative), { withFileTypes: true })) {
       const name = path.posix.join(relative, entry.name);
-      if (entry.name.includes('.currents-backup-') || name === 'desktop/build-icon.mjs') continue;
+      if (entry.name.includes('.currents-backup-') || entry.name.endsWith('.ownership-backup') || name === 'desktop/build-icon.mjs') continue;
       if (entry.isSymbolicLink()) throw new Error('Application inputs cannot contain links.');
       if (entry.isDirectory()) await visit(name);
       else if (entry.isFile() && (/\.(?:mjs|cjs)$/.test(name) || name.startsWith('desktop/browser-compatibility/')) && !name.endsWith('.test.mjs')) files.push(name);

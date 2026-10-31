@@ -20,26 +20,30 @@ import { writeDesktopRuntimeRecord } from './runtime-record.mjs';
 import { createClipboardHandler, isTrustedDesktopSender } from './clipboard.mjs';
 import { desktopRemoteAccessArgs, runRemoteAccessCLI } from '../lib/remote-access-cli.mjs';
 import { desktopBrowserArgs, runBrowserCLI } from '../lib/browser-cli.mjs';
+import { desktopChatGPTArgs, runChatGPTCLI } from '../lib/chatgpt-cli.mjs';
 import { desktopRestartArgs, runDesktopRestartCLI } from '../lib/desktop-restart-cli.mjs';
 import { forceWindowsRestart, windowsProcessIdentity } from '../lib/desktop-hard-restart.mjs';
 import { DESKTOP_RESTART_ORIGIN_ENV } from '../lib/desktop-restart-origin.mjs';
 import { credentialTemporaryProtection } from '../lib/credential-temp-protection.mjs';
 import { DesktopStartup, createStartupIndicator } from './startup.mjs';
 import { createDesktopConnectionStartup } from './connection-startup.mjs';
+import { createDesktopIdleInterruptions } from './idle-interruptions.mjs';
 import { DesktopRendererRecovery } from './renderer-recovery.mjs';
 import { electronExitReceipt } from './electron-exit-diagnostics.mjs';
 import { initializeLocalCrashReporting } from './local-crash-reporting.mjs';
 import { nativeOwnershipPossible, assertNativeParentUnowned, createNativeParentRetainer, createNativeParentCloseHandler, createNativeSafeQuitHandler } from './native-parent-lifetime.mjs';
 import { createLiveBrowserWindow, performBrowserSurface } from './browser-surface.mjs';
 import { createFrontendDevtools } from './frontend-devtools.mjs';
+import { resolveDesktopIcon, repairDesktopShortcut } from './app-icon.mjs';
 
 const accessArgs = desktopRemoteAccessArgs(process.argv, { packaged: app.isPackaged });
 const browserArgs = desktopBrowserArgs(process.argv, { packaged: app.isPackaged });
+const chatGPTArgs = desktopChatGPTArgs(process.argv, { packaged: app.isPackaged });
 const restartArgs = desktopRestartArgs(process.argv, { packaged: app.isPackaged });
-if (accessArgs || browserArgs || restartArgs) {
+if (accessArgs || browserArgs || chatGPTArgs || restartArgs) {
   // A CLI invocation must not initialize a profile, take its lock, show its
   // window, or log the code/credential in desktop diagnostics.
-  const exitCode = await (browserArgs ? runBrowserCLI : accessArgs ? runRemoteAccessCLI : runDesktopRestartCLI)(browserArgs || accessArgs || restartArgs, {
+  const exitCode = await (chatGPTArgs ? runChatGPTCLI : browserArgs ? runBrowserCLI : accessArgs ? runRemoteAccessCLI : runDesktopRestartCLI)(chatGPTArgs || browserArgs || accessArgs || restartArgs, {
     defaultProfile: path.join(app.getPath('appData'), 'Relay'), expectedExecutable: process.execPath,
     appDirectory: app.isPackaged ? undefined : path.dirname(path.dirname(fileURLToPath(import.meta.url))),
     forceFallback: forceWindowsRestart,
@@ -57,6 +61,8 @@ if (accessArgs || browserArgs || restartArgs) {
 } else {
 delete process.env[DESKTOP_RESTART_ORIGIN_ENV];
 const DESKTOP_DIR = path.dirname(fileURLToPath(import.meta.url));
+const DESKTOP_ICON = await resolveDesktopIcon(DESKTOP_DIR);
+const APP_USER_MODEL_ID = 'com.agentdesk.workbench';
 const APP_DIR = path.dirname(DESKTOP_DIR);
 const ACTIVE = new Set(['queued', 'running', 'waiting']);
 let mainWindow, harness, origin, shutdownPromise, didClose = false;
@@ -86,7 +92,7 @@ const processStartedAt = new Date(Date.now() - process.uptime() * 1000).toISOStr
 app.commandLine.removeSwitch('headless');
 
 app.setName('BLACKICE');
-app.setAppUserModelId('com.agentdesk.workbench');
+app.setAppUserModelId(APP_USER_MODEL_ID);
 // Keep existing conversation data and encrypted settings under the historical
 // Relay profile. Presentation can change without moving saved user data.
 // A separate, verified profile migration can happen later if needed.
@@ -113,7 +119,7 @@ app.on('child-process-gone', (_event, details) =>
   recordProcessGone(electronExitReceipt(details?.type, details)));
 // Show the isolated, non-persistent indicator without taking focus before the
 // restart receipt is read; a normal launch may activate it after that check.
-const startup = new DesktopStartup({ headless: launch.headless || launch.background, createIndicator: () => createStartupIndicator({ BrowserWindow, activate: false, icon: path.join(DESKTOP_DIR, 'icon.ico'), onQuit: () => app.quit() }) });
+const startup = new DesktopStartup({ headless: launch.headless || launch.background, createIndicator: () => createStartupIndicator({ BrowserWindow, activate: false, icon: DESKTOP_ICON, onQuit: () => app.quit() }) });
 // Startup phase callbacks update the local indicator only; diagnostic storage
 // and initialization remain authoritative even if the indicator is unavailable.
 diagnostics.onStartupPhase = (phase, outcome) => startup.progress(phase, outcome);
@@ -282,6 +288,7 @@ async function loadWindowState() {
 }
 
 async function startLocalHarness(dataDir, defaultCwd) {
+  const idleInterruptions = createDesktopIdleInterruptions({ dataDir });
   const portFile = path.join(app.getPath('userData'), 'desktop-port.json');
   const connectionStartup = createDesktopConnectionStartup({ platform: process.platform, executable: process.execPath, profileDir: app.getPath('userData'), appDir: APP_DIR, packaged: app.isPackaged,
     loginItem: {
@@ -322,7 +329,7 @@ async function startLocalHarness(dataDir, defaultCwd) {
     const credentialStorage = { ...secretStorage, storageBackend: () => process.platform === 'win32' ? 'dpapi' : process.platform === 'darwin' ? 'keychain' : safeStorage.getSelectedStorageBackend(), isEncryptionAvailable: () => safeStorage.isEncryptionAvailable() };
     try { return await createHarnessServer({ installPath: path.dirname(process.execPath), port: selectedPort, dataDir, defaultCwd, browser, secretStorage, credentialStorage, frontendDevtools,
       protectCredentialTemporaryDirectory: credentialTemporaryProtection({ dataDir }), revealCredentialImportFile: filename => shell.showItemInFolder(filename),
-      openExternal: url => shell.openExternal(url), nativeWindows:null, tokenRuntimeExecutable: process.execPath, diagnostics, desktopLifecycle, desktopRestart, connectionStartup, maintenanceStatus:()=>maintenanceReceipt?{mode:maintenanceReceipt.mode,status:maintenanceReceipt.status,requiresReauthentication:maintenanceReceipt.result?.requiresReauthentication===true}:null, signedBrowser: true, startSignedBrowser: browserOptions => startBackgroundBrowser(browserOptions) }); }
+      openExternal: url => shell.openExternal(url), nativeWindows:null, tokenRuntimeExecutable: process.execPath, diagnostics, desktopLifecycle, desktopRestart, connectionStartup, idleInterruptions, maintenanceStatus:()=>maintenanceReceipt?{mode:maintenanceReceipt.mode,status:maintenanceReceipt.status,requiresReauthentication:maintenanceReceipt.result?.requiresReauthentication===true}:null, signedBrowser: true, startSignedBrowser: browserOptions => startBackgroundBrowser(browserOptions) }); }
     catch (error) { await browser.close(); throw error; }
   };
   let instance = await createInstance(port);
@@ -347,7 +354,7 @@ function createWindow() {
     titleBarStyle: 'hidden',
     titleBarOverlay: { color: '#000000', symbolColor: '#eeeeee', height: 36 },
     show: false, autoHideMenuBar: true,
-    icon: path.join(DESKTOP_DIR, 'icon.ico'),
+    icon: DESKTOP_ICON,
     webPreferences: {
       preload: path.join(DESKTOP_DIR, 'preload.cjs'),
       nodeIntegration: false, contextIsolation: true, sandbox: true,
@@ -466,6 +473,8 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
   process.on('SIGTERM', () => app.quit());
   process.on('SIGINT', () => app.quit());
   app.whenReady().then(async () => {
+    await repairDesktopShortcut({ shell, appData: app.getPath('appData'), executable: process.execPath, iconPath: DESKTOP_ICON, appUserModelId: APP_USER_MODEL_ID })
+      .catch(() => console.warn('BLACKICE could not refresh its Windows shortcut icon.'));
     await startup.showIndicator();
     startup.progress('profile', 'started');
     await startup.step(() => awaitProfileMaintenance({profileDir:app.getPath('userData')}));

@@ -13,3 +13,10 @@ lib/diagnostics.mjs -text
 lib/startup-timing.mjs -text
 public/next/workspaces/activity.mjs -text
 public/next/workspaces/workflow-execution.mjs -text
+
+# Preserve current Windows runtime bytes for the 2.38.0 release checks.
+desktop/main.mjs -text
+server.mjs -text
+public/chatgpt-connector.css -text
+public/next/settings-providers.css -text
+scripts/repair-shortcuts.ps1 -text

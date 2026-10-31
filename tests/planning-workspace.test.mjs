@@ -8,8 +8,8 @@ import { executionReadiness } from '../lib/planning-runtime.mjs';
 import { createSwarmWorkflow } from '../public/swarm-model.mjs';
 
 const action = (id, extra = {}) => ({ id, title: `Produce ${id}`, kind: 'action', parentId: null, status: 'pending', doneWhen: `The ${id} result is checked against the request.`, ...extra });
-const agent = revision => ({ expectedRevision: revision, runId: 'run-a', nodeId: 'coordinator', schemaVersion: TASK_SCHEMA_VERSION });
-const human = revision => ({ expectedRevision: revision, source: 'human' });
+const agent = revision => ({ expectedRevision: revision, runId: 'run-a', nodeId: 'coordinator', schemaVersion: TASK_SCHEMA_VERSION, executionGuardrails: true });
+const human = revision => ({ expectedRevision: revision, source: 'human', executionGuardrails: true });
 const edit = (store, state, operations, options = human(state.revision)) => store.editPlan(state.taskId, { operations }, options);
 async function fixture(t) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-planning-edit-')), cwd = path.join(directory, 'work'); await mkdir(cwd);
@@ -140,7 +140,7 @@ test('verified outside-agent provenance stays distinct from engine actors and ed
   const saved = await edit(store, state, [{ type: 'add', step: action('external-work') }], { expectedRevision: state.revision, source: 'agent', actor });
   assert.deepEqual(saved.provenance.actor, actor); assert.equal(saved.provenance.source, 'agent'); assert.equal(saved.provenance.runId, undefined); assert.equal(saved.plan.authoredBy, undefined);
   await assert.rejects(edit(store, saved, [{ type: 'update', stepId: 'external-work', patch: { title: 'Missing revision' } }], { source: 'agent', actor }), { code: 'TASK_STATE_CONFLICT', currentRevision: saved.revision });
-  assert.equal(taskToolForVersion(5), TASK_TOOL_V5); assert.equal(taskToolForVersion(5).inputSchema.properties.action.enum.includes('edit'), false); assert.equal(taskToolForVersion(6).inputSchema.properties.action.enum.includes('edit'), true);
+  assert.equal(taskToolForVersion(5, { executionGuardrails: true }), TASK_TOOL_V5); assert.equal(taskToolForVersion(5).inputSchema.properties.action.enum.includes('edit'), false); assert.equal(taskToolForVersion(6).inputSchema.properties.action.enum.includes('edit'), true);
 });
 
 test('a 48-worker shared swarm persists every real prerequisite without a dependency clamp or oversized initial state', async t => {

@@ -1,0 +1,9 @@
+# Browser task cleanup protocol
+
+Direct ChatGPT browser ownership is shared across a connector grant, not a conversation. The MCP instructions and browser-action description now require a per-task baseline and exact created-tab ledger, reuse, explicit close on completion, settled job receipts, and final tab verification. Never bulk-close the connection folder. Personal/pre-existing/human ChatGPT pages, other tasks, active forms, downloads, unresolved dialogs and explicitly kept pages are retained. Paused/awaiting-input/failed/interrupted work is not declared complete or blindly closed.
+
+Host lifecycle finalizers pass node/worker outcome to BrowserWorkspace -> BrowserRouter -> ElectronBrowserDriver. Only completed scopes remove safe exact taskId/runId/nodeId pages, including suspended pages, and their now-empty task folders. Human-created/user-interacted pages, chat-mode pages, pending interactions and running downloads are retained. Paused/awaiting_input/running/queued retain live page state. Other outcomes use the existing suspension mechanism rather than deletion. Repeated completion cleanup is safe.
+
+The direct protocol depends on the calling model following the advertised instructions: the connector cannot infer when a remote ChatGPT task ends. It does not close an entire connection when an individual tool job ends.
+
+Validation uses the actual driver with mocked Electron boundary (not a live website integration). No existing user tabs were closed. Changes were installed into the packaged app after exact pre-edit byte comparison confirmed no unrelated differences. Backups and SHA-256 readback manifest are in verification/browser-cleanup-20261030. Root activated them with a verified native non-force restart, request dot-tab-cleanup-activate-20261030-1800, completed 2026-10-30T18:00:20.548Z on the same connection. MCP tool metadata may need app refresh for existing conversations.

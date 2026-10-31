@@ -67,8 +67,8 @@ test('misplaced plan.steps is rejected with the correct field location and never
   assert.equal(payload(corrected).revision, f.state.revision + 1);
 });
 
-test('the live describe read and plan examples execute against the actual current handler', async t => {
-  const f = await fixture(t, { planningMode: 'maximal' });
+test('the guarded describe read and plan examples execute against the actual current handler', async t => {
+  const f = await fixture(t, { planningMode: 'maximal', executionGuardrails: true });
   const described = await f.call({ action: 'describe' }); assert.equal(described.success, true);
   const description = payload(described);
   assert.deepEqual(description.read.example, { action: 'read' });

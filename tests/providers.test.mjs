@@ -9,6 +9,10 @@ import path from 'node:path';
 import { ProviderRuntime, ProviderStore } from '../lib/providers.mjs';
 import { BLACKICE_HARNESS_INSTRUCTIONS } from '../lib/harness-identity.mjs';
 
+// Supplementary capacity lookup is covered by provider-model-fallback tests.
+// Keep ordinary /models onboarding while isolating these generation/continuity fixtures.
+const protocolModelLimitResolver = { enrich: async (_config, models) => models };
+
 class FakeCodex extends EventEmitter {
   constructor(ready = true) { super(); this.ready = ready; this.calls = []; }
   status() { return { connected: this.ready, authenticated: this.ready, defaultModel: 'codex-model', models: [{ id: 'codex-model', model: 'codex-model', displayName: 'Codex test', supportedReasoningEfforts: [] }], activeTurns: 0, lastError: this.ready ? null : 'Codex offline' }; }
@@ -23,20 +27,30 @@ const json = (response, data, status = 200) => { response.writeHead(status, { 'C
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 async function harness(t, handler, options = {}) {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'relay-providers-test-'));
-  const requests = [], server = createServer(async (request, response) => {
-    try { let raw = ''; for await (const chunk of request) raw += chunk; const body = raw ? JSON.parse(raw) : null; const record = { url: request.url, headers: request.headers, body }; requests.push(record); await handler?.(record, response, requests.length); }
+  const { catalog = false, ...runtimeOptions } = options;
+  const requests = [], catalogRequests = [], server = createServer(async (request, response) => {
+    try {
+      let raw = ''; for await (const chunk of request) raw += chunk;
+      const body = raw ? JSON.parse(raw) : null, record = { method: request.method, url: request.url, headers: request.headers, body };
+      if (request.method === 'GET' && new URL(request.url, 'http://fixture').pathname.endsWith('/models')) {
+        catalogRequests.push(record);
+        // Model onboarding uses a real catalog GET without advancing a generation fixture's response sequence.
+        if (!(typeof catalog === 'function' ? catalog(record) : catalog)) return json(response, { data: [] });
+      }
+      requests.push(record); await handler?.(record, response, requests.length);
+    }
     catch (cause) { json(response, { error: { message: cause.message } }, 500); }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const baseUrl = `http://127.0.0.1:${server.address().port}/v1`;
-  const codex = options.codex || new FakeCodex();
-  const runtime = await new ProviderRuntime({ codex, dataDir, ...options }).init();
+  const codex = runtimeOptions.codex || new FakeCodex();
+  const runtime = await new ProviderRuntime({ modelLimitResolver: protocolModelLimitResolver, codex, dataDir, ...runtimeOptions }).init();
   t.after(async () => { await runtime.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); assert.match(path.basename(dataDir), /^relay-providers-test-/); await rm(dataDir, { recursive: true, force: true }); });
-  return { runtime, codex, dataDir, baseUrl, requests, cwd: dataDir };
+  return { runtime, codex, dataDir, baseUrl, requests, catalogRequests, cwd: dataDir };
 }
 async function nativeCatalogHarness(t, codex = new FakeCodex()) {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'relay-native-catalog-test-'));
-  const runtime = await new ProviderRuntime({ codex, dataDir }).init();
+  const runtime = await new ProviderRuntime({ modelLimitResolver: protocolModelLimitResolver, codex, dataDir }).init();
   t.after(async () => { await runtime.close(); assert.match(path.basename(dataDir), /^relay-native-catalog-test-/); await rm(dataDir, { recursive: true, force: true }); });
   return { runtime, codex, dataDir, cwd: dataDir };
 }
@@ -54,7 +68,7 @@ test('custom Codex IDs join every native selection surface without claiming cata
   access = { [id]: { state: 'accepted', checkedAt: '2026-01-01T00:00:00.000Z', scope: 'current-connection' } };
   assert.equal(runtime.codexModelCatalog().models.at(-1).access.state, 'accepted');
   access = { [id]: { state: 'failed', outcome: 'failed' } }; assert.equal(runtime.resolveModel(id).available, true, 'last failure does not invent a permanent access ban');
-  const restored = await new ProviderRuntime({ codex, dataDir }).init(); t.after(() => restored.close());
+  const restored = await new ProviderRuntime({ modelLimitResolver: protocolModelLimitResolver, codex, dataDir }).init(); t.after(() => restored.close());
   assert.equal(restored.status().defaultModelSelection, id); assert.equal(restored.status().defaultModelAvailable, true); assert.deepEqual(restored.status().customCodexModels, [id]);
   await runtime.removeCodexModel(id); assert.equal(runtime.status().defaultModelSelection, id); assert.equal(runtime.status().defaultModelAvailable, false); assert.equal(runtime.status().models.some(model => model.id === id), false);
   await assert.rejects(runtime.runAgent({ cwd, prompt: 'Do not substitute a fallback.', model: 'default' }), { code: 'PROVIDER_UNAVAILABLE' });
@@ -116,7 +130,7 @@ test('an explicit API default is durable, drives real requests, and never silent
   await runtime.saveProvider({ id: 'chosen', type: 'compatible', baseUrl, models: ['chosen-model'] });
   const saved = await runtime.setDefaultModel('chosen::chosen-model'); assert.equal(saved.defaultModelSelection, 'chosen::chosen-model'); assert.equal(saved.defaultModelAvailable, true);
   assert.equal((await runtime.runAgent({ cwd, prompt: 'Use my default.' })).output, 'Saved API default.'); assert.equal(requests[0].body.model, 'chosen-model'); assert.equal(codex.calls.length, 0);
-  const restored = await new ProviderRuntime({ codex: new FakeCodex(), dataDir, ...vault }).init(); t.after(() => restored.close());
+  const restored = await new ProviderRuntime({ modelLimitResolver: protocolModelLimitResolver, codex: new FakeCodex(), dataDir, ...vault }).init(); t.after(() => restored.close());
   assert.equal(restored.status().defaultModel, 'chosen::chosen-model'); assert.equal(restored.resolveModel('default').providerId, 'chosen');
   await restored.saveProvider({ id: 'chosen', enabled: false });
   assert.equal(restored.status().defaultModelSelection, 'chosen::chosen-model'); assert.equal(restored.status().defaultModelAvailable, false); assert.match(restored.status().defaultModelError, /disabled/);
@@ -155,7 +169,7 @@ test('native defaults accept distinct catalog IDs and routing model names withou
     assert.equal(codex.calls.at(-1).model, selected, 'selection validation must not replace the routing identifier');
     assert.equal(JSON.parse(await readFile(path.join(dataDir, 'providers.json'), 'utf8')).defaultModel, selected);
   }
-  const restored = await new ProviderRuntime({ codex, dataDir }).init(); t.after(() => restored.close());
+  const restored = await new ProviderRuntime({ modelLimitResolver: protocolModelLimitResolver, codex, dataDir }).init(); t.after(() => restored.close());
   assert.equal(restored.status().defaultModelSelection, 'wire-secondary');
   assert.equal(restored.status().defaultModelAvailable, true, 'an existing canonical default remains available after restart');
   listed = false;
@@ -183,7 +197,7 @@ test('a saved Codex default stays unavailable when no native default is reported
     await runtime.runAgent({ cwd, prompt: 'Use the explicitly selected hidden model.', model: 'default' }); assert.equal(codex.calls.at(-1).model, selected);
   }
   await runtime.setDefaultModel('codex');
-  const restored = await new ProviderRuntime({ codex, dataDir }).init(); t.after(() => restored.close());
+  const restored = await new ProviderRuntime({ modelLimitResolver: protocolModelLimitResolver, codex, dataDir }).init(); t.after(() => restored.close());
   assert.equal(restored.status().defaultModelSelection, 'codex'); assert.equal(restored.status().defaultModelAvailable, false);
   codex.ready = false; assert.match(restored.status().defaultModelError, /Codex offline/); codex.ready = true;
   defaultModel = 'hidden-wire';
@@ -278,7 +292,7 @@ test('initial automatic selection waits for native startup and stays pinned when
   assert.equal(nativeStarts, 1); assert.equal(runtime.status().automaticDefaultModel, 'codex-model'); assert.equal(runtime.status().defaultModelSource, 'automatic'); assert.equal(runtime.status().defaultModelSelection, null);
   codex.ready = false;
   assert.equal(runtime.resolveModel().providerId, 'codex'); assert.equal(runtime.resolveModel().available, false);
-  const restored = await new ProviderRuntime({ codex: new FakeCodex(false), dataDir }).init(); t.after(() => restored.close());
+  const restored = await new ProviderRuntime({ modelLimitResolver: protocolModelLimitResolver, codex: new FakeCodex(false), dataDir }).init(); t.after(() => restored.close());
   assert.equal(restored.status().automaticDefaultModel, 'codex-model'); assert.equal(restored.status().defaultModelAvailable, false);
   await assert.rejects(restored.start(), /Codex offline/);
   assert.equal(restored.resolveModel().providerId, 'codex', 'a saved automatic selection never silently falls back');
@@ -312,7 +326,7 @@ test('an initial API fallback persists across native recovery, restart and provi
   codex.ready = true;
   assert.equal(runtime.resolveModel().providerId, 'first'); assert.equal(runtime.status().defaultModelSource, 'automatic');
   const restoredCodex = new FakeCodex(); let starts = 0; restoredCodex.start = async () => { starts++; return restoredCodex.status(); };
-  const restored = await new ProviderRuntime({ codex: restoredCodex, dataDir }).init(); t.after(() => restored.close());
+  const restored = await new ProviderRuntime({ modelLimitResolver: protocolModelLimitResolver, codex: restoredCodex, dataDir }).init(); t.after(() => restored.close());
   await restored.start(); assert.equal(starts, 0); assert.equal(restored.resolveModel().providerId, 'first');
   await restored.saveProvider({ id: 'first', enabled: false });
   assert.equal(restored.status().defaultModel, 'first::first-model'); assert.equal(restored.status().defaultModelAvailable, false);
@@ -352,7 +366,7 @@ test('OpenRouter discovery is separate from key verification and actual chat com
     if (request.url.endsWith('/key')) return json(response, { data: { is_free_tier: false, label: secret, is_management_key: false } });
     if (request.url.endsWith('/models')) return json(response, { data: [{ id: 'vendor/agent-model', name: 'Agent model', context_length: 900000, top_provider: { max_completion_tokens: 32000 }, supported_parameters: ['tools', 'tool_choice'], architecture: { input_modalities: ['text', 'image'], output_modalities: ['text'] } }] });
     return json(response, { choices: [{ message: { role: 'assistant', content: 'OpenRouter adapter worked.' }, finish_reason: 'stop' }] });
-  });
+  }, { catalog: true });
   let provider = await runtime.saveProvider({ id: 'router', preset: 'openrouter', baseUrl, models: [] });
   assert.equal(provider.type, 'compatible'); assert.equal(provider.requiresApiKey, true); assert.equal(provider.configured, false);
   const catalog = await runtime.discoverModels('router'); assert.equal(catalog.models[0].supportsTools, true); assert.equal(catalog.models[0].contextWindowTokens, 900000); assert.equal(catalog.models[0].maxOutputTokens, 32000);
@@ -404,7 +418,7 @@ test('OpenRouter rejects invalid, expired and management keys without exposing p
 
 test('large provider catalogs are searched and paged without selecting or silently discarding models after 200', async t => {
   const models = Array.from({ length: 605 }, (_, index) => ({ id: `vendor/model-${index}`, name: `Model ${index}`, supported_parameters: index % 2 ? ['tools'] : ['max_tokens'] }));
-  const { runtime, baseUrl, requests } = await harness(t, (request, response) => json(response, { data: models }));
+  const { runtime, baseUrl, requests } = await harness(t, (request, response) => json(response, { data: models }), { catalog: true });
   await runtime.saveProvider({ id: 'catalog', type: 'compatible', baseUrl, models: ['pinned-model'] });
   const first = await runtime.discoverModels('catalog'); assert.equal(first.models.length, 200); assert.equal(first.totalModels, 605); assert.equal(first.hasMore, true); assert.equal(first.truncated, true);
   const tail = await runtime.discoverModels('catalog', { offset: 600, limit: 100 }); assert.equal(tail.models.length, 5); assert.equal(tail.models.at(-1).id, 'vendor/model-604');
@@ -424,18 +438,18 @@ for (const type of ['openai', 'anthropic', 'compatible']) test(`${type}: custom 
       : type === 'anthropic' ? { content: [{ type: 'text', text: 'Gateway result.' }], stop_reason: 'end_turn' }
         : { choices: [{ message: { role: 'assistant', content: 'Gateway result.' }, finish_reason: 'stop' }] };
     json(response, output);
-  });
+  }, { catalog: true });
   const saved = await runtime.saveProvider({ id: 'gateway', preset: 'compatible', type, baseUrl: `${baseUrl}/tenant/?api-version=2026-01-01&region=west%2F`, headers: { authorization: `Bearer ${secret}`, 'X-Tenant': 'team-fixture', 'api-key': secret }, models: ['gateway-model'] });
   assert.equal(saved.configured, true); assert.equal(saved.requiresApiKey, false); assert.equal(saved.hasApiKey, false); assert.deepEqual(saved.headerNames.sort(), ['X-Tenant', 'api-key', 'authorization'].sort()); assert.equal(saved.hasHeaders, true); assert.ok(!JSON.stringify(saved).includes(secret));
   await runtime.testProvider('gateway'); const result = await runtime.runAgent({ cwd, prompt: 'Use the configured gateway.', model: 'gateway::gateway-model' }); assert.equal(result.output, 'Gateway result.');
   const suffix = type === 'openai' ? 'responses' : type === 'anthropic' ? 'messages' : 'chat/completions';
-  assert.deepEqual(requests.map(request => request.url), [`/v1/tenant/models?api-version=2026-01-01&region=west%2F`, `/v1/tenant/${suffix}?api-version=2026-01-01&region=west%2F`]);
+  assert.deepEqual(requests.map(request => request.url), [`/v1/tenant/models?api-version=2026-01-01&region=west%2F`, `/v1/tenant/models?api-version=2026-01-01&region=west%2F`, `/v1/tenant/${suffix}?api-version=2026-01-01&region=west%2F`]);
   assert.ok(requests.every(request => request.headers.authorization === `Bearer ${secret}` && request.headers['api-key'] === secret && request.headers['x-tenant'] === 'team-fixture'));
   assert.equal(runtime.store.redact(`Echo ${secret}`), 'Echo [redacted]'); assert.ok(!JSON.stringify(runtime.status()).includes(secret));
 });
 
 test('custom authentication headers override generated credentials case-insensitively without duplicating Authorization', async t => {
-  const { runtime, baseUrl, requests } = await harness(t, (request, response) => json(response, { data: [] }));
+  const { runtime, baseUrl, requests } = await harness(t, (request, response) => json(response, { data: [] }), { catalog: true });
   await runtime.saveProvider({ id: 'override', preset: 'compatible', type: 'openai', baseUrl, apiKey: 'unused-standard-key-fixture', headers: { authorization: 'Bearer actual-gateway-key-fixture' } });
   await runtime.discoverModels('override'); assert.equal(requests[0].headers.authorization, 'Bearer actual-gateway-key-fixture');
 });
@@ -464,7 +478,7 @@ for (const type of ['openai', 'anthropic', 'compatible']) {
     assert.ok(!JSON.stringify(events).includes('ZmFrZQ=='), 'screenshot bytes must not enter the run trace');
     assert.equal(requests[0].headers[type === 'anthropic' ? 'x-api-key' : 'authorization'], type === 'anthropic' ? 'private-test-api-key' : 'Bearer private-test-api-key');
     const requestText = JSON.stringify(requests[1].body); assert.ok(requestText.includes('ZmFrZQ==')); assert.ok(requestText.includes('call-a'));
-    const restored = await new ProviderRuntime({ codex: new FakeCodex(), dataDir }).init();
+    const restored = await new ProviderRuntime({ modelLimitResolver: protocolModelLimitResolver, codex: new FakeCodex(), dataDir }).init();
     await restored.saveProvider({ id: 'test', apiKey: 'private-test-api-key' });
     const followup = await restored.runAgent({ cwd, prompt: 'Continue with the previous observation.', model: 'test::real-model', threadId: result.threadId });
     assert.equal(followup.threadId, result.threadId); assert.equal(followup.output, 'Follow-up complete.'); assert.equal(followup.usage.totalTokens, 24); assert.equal(followup.usage.total.totalTokens, 61);
@@ -543,7 +557,7 @@ for (const type of ['openai', 'anthropic', 'compatible']) {
     const dataDir = await mkdtemp(path.join(tmpdir(), 'relay-batch-crash-')), script = path.join(dataDir, 'crash-agent.mjs'), effect = path.join(dataDir, 'effect.txt');
     const calls = [1, 2].map(index => ({ id: `call-${index}`, name: 'relay_observe', arguments: { target: `side-effect-${index}` } }));
     const batch = type === 'openai' ? { status: 'completed', output: calls.map(call => ({ type: 'function_call', call_id: call.id, name: call.name, arguments: JSON.stringify(call.arguments) })) } : type === 'anthropic' ? { content: calls.map(call => ({ type: 'tool_use', id: call.id, name: call.name, input: call.arguments })), stop_reason: 'tool_use' } : { choices: [{ message: { role: 'assistant', content: null, tool_calls: calls.map(call => ({ id: call.id, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.arguments) } })) }, finish_reason: 'tool_calls' }] };
-    await writeFile(script, `import {ProviderRuntime} from ${JSON.stringify(new URL('../lib/providers.mjs', import.meta.url).href)};import{writeFile}from'node:fs/promises';import{EventEmitter}from'node:events';const codex=new EventEmitter();codex.status=()=>({connected:false,authenticated:false,models:[]});codex.close=async()=>{};const runtime=await new ProviderRuntime({codex,dataDir:${JSON.stringify(dataDir)},fetchImpl:async()=>new Response(${JSON.stringify(JSON.stringify(batch))},{headers:{'content-type':'application/json'}})}).init();await runtime.saveProvider({id:'crash',type:${JSON.stringify(type)},baseUrl:'http://127.0.0.1:1/v1',apiKey:'crash-fixture-key',models:['model']});await runtime.runAgent({cwd:${JSON.stringify(dataDir)},prompt:'Crash fixture only.',model:'crash::model',dynamicTools:[${JSON.stringify(tool)}],onToolCall:async call=>{if(call.arguments.target==='side-effect-1'){await writeFile(${JSON.stringify(effect)},'1');return{success:true,contentItems:[{type:'inputText',text:'First side effect confirmed.'}]};}process.stdout.write('SECOND_TOOL_PENDING\\n');await new Promise(()=>{});}});`);
+    await writeFile(script, `import {ProviderRuntime} from ${JSON.stringify(new URL('../lib/providers.mjs', import.meta.url).href)};import{writeFile}from'node:fs/promises';import{EventEmitter}from'node:events';const codex=new EventEmitter();codex.status=()=>({connected:false,authenticated:false,models:[]});codex.close=async()=>{};const runtime=await new ProviderRuntime({modelLimitResolver:{enrich:async(_config,models)=>models},codex,dataDir:${JSON.stringify(dataDir)},fetchImpl:async(_url,options)=>new Response(options.method==='GET'?JSON.stringify({data:[]}):${JSON.stringify(JSON.stringify(batch))},{headers:{'content-type':'application/json'}})}).init();await runtime.saveProvider({id:'crash',type:${JSON.stringify(type)},baseUrl:'http://127.0.0.1:1/v1',apiKey:'crash-fixture-key',models:['model']});await runtime.runAgent({cwd:${JSON.stringify(dataDir)},prompt:'Crash fixture only.',model:'crash::model',dynamicTools:[${JSON.stringify(tool)}],onToolCall:async call=>{if(call.arguments.target==='side-effect-1'){await writeFile(${JSON.stringify(effect)},'1');return{success:true,contentItems:[{type:'inputText',text:'First side effect confirmed.'}]};}process.stdout.write('SECOND_TOOL_PENDING\\n');await new Promise(()=>{});}});`);
     const child = spawn(process.execPath, [script], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     const exited = new Promise(resolve => child.once('exit', resolve)); let stderr = '', killed = false;
     child.stderr.on('data', chunk => { stderr += chunk; });
@@ -561,7 +575,7 @@ for (const type of ['openai', 'anthropic', 'compatible']) {
     assert.equal(saved.pendingToolResults.length, 1); assert.equal(saved.pendingToolResults[0].call.id, 'call-1'); assert.equal(saved.pendingToolResults[0].result.success, true);
     let request, replayed = 0;
     const codex = new FakeCodex(false), final = type === 'openai' ? { status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Recovered.' }] }] } : type === 'anthropic' ? { content: [{ type: 'text', text: 'Recovered.' }], stop_reason: 'end_turn' } : { choices: [{ message: { role: 'assistant', content: 'Recovered.' }, finish_reason: 'stop' }] };
-    const restored = await new ProviderRuntime({ codex, dataDir, fetchImpl: async (_url, options) => { request = JSON.parse(options.body); return new Response(JSON.stringify(final), { headers: { 'content-type': 'application/json' } }); } }).init();
+    const restored = await new ProviderRuntime({ modelLimitResolver: protocolModelLimitResolver, codex, dataDir, fetchImpl: async (_url, options) => { if (options.method === 'GET') return new Response(JSON.stringify({ data: [] }), { headers: { 'content-type': 'application/json' } }); request = JSON.parse(options.body); return new Response(JSON.stringify(final), { headers: { 'content-type': 'application/json' } }); } }).init();
     t.after(() => restored.close()); await restored.saveProvider({ id: 'crash', apiKey: 'crash-fixture-key' });
     const result = await restored.runAgent({ cwd: dataDir, prompt: 'Resume from confirmed receipts.', model: 'crash::model', threadId: saved.id, dynamicTools: [tool], onToolCall: async () => { replayed++; throw Error('A saved tool must not be replayed.'); } });
     assert.equal(result.output, 'Recovered.'); assert.equal(replayed, 0); assert.equal(await readFile(effect, 'utf8'), '1');
@@ -583,7 +597,7 @@ test('unknown tool names are returned as tool failures and cannot invoke handler
 
 test('provider discovery and errors never reveal API keys, and discovery uses the selected endpoint', async t => {
   const secret = 'test-secret-echo-1234567890';
-  const { runtime, baseUrl, requests } = await harness(t, (request, response, index) => index === 1 ? json(response, { data: [{ id: 'model-a' }, { id: 'model-b', name: 'Model B' }] }) : json(response, { error: { message: `Rejected ${secret} and Bearer leaked-token` } }, 401));
+  const { runtime, baseUrl, requests } = await harness(t, (request, response, index) => index === 1 ? json(response, { data: [{ id: 'model-a' }, { id: 'model-b', name: 'Model B' }] }) : json(response, { error: { message: `Rejected ${secret} and Bearer leaked-token` } }, 401), { catalog: true });
   await runtime.saveProvider({ id: 'discover', type: 'openai', baseUrl, apiKey: secret, models: [] });
   const result = await runtime.testProvider('discover'); assert.equal(result.ok, true); assert.equal(result.models.length, 2); assert.equal(requests[0].url, '/v1/models');
   await assert.rejects(runtime.testProvider('discover'), cause => !cause.message.includes(secret) && !cause.message.includes('leaked-token'));
@@ -607,9 +621,9 @@ test('live directions are queued into the same persisted conversation at the nex
 });
 
 test('configuration rejects credential-bearing URLs and plaintext encryption adapters', async t => {
-  const { runtime } = await harness(t, null, { encryptSecret: key => key, decryptSecret: key => key });
+  const { runtime, baseUrl } = await harness(t, null, { encryptSecret: key => key, decryptSecret: key => key });
   await assert.rejects(runtime.saveProvider({ id: 'bad', type: 'openai', baseUrl: 'https://user:secret@example.com/v1', models: ['model'] }), /no credentials/);
-  await assert.rejects(runtime.saveProvider({ id: 'bad', type: 'openai', apiKey: 'example-secret-for-adapter', models: ['model'] }), /plaintext/);
+  await assert.rejects(runtime.saveProvider({ id: 'bad', type: 'openai', baseUrl, apiKey: 'example-secret-for-adapter', models: ['model'] }), /plaintext/);
   assert.equal(runtime.listProviders().length, 0);
 });
 
@@ -738,21 +752,33 @@ for (const type of ['openai', 'anthropic', 'compatible']) {
 
 test('active provider edits are rejected and a pending edit cannot mix a new key with the old endpoint', async t => {
   const encryptionStarted = deferred(), releaseEncryption = deferred(), toolStarted = deferred(), releaseTool = deferred();
+  t.after(() => { releaseEncryption.resolve(); releaseTool.resolve(); });
   const oldKey = 'old-private-provider-key', newKey = 'new-private-provider-key';
   const vault = { encryptSecret: async value => { if (value === newKey) { encryptionStarted.resolve(); await releaseEncryption.promise; } return Buffer.from(`sealed:${value}`); }, decryptSecret: value => String(value).slice(7) };
   const { runtime, baseUrl, cwd, requests } = await harness(t, (request, response, index) => json(response, index === 1 ? { choices: [{ message: { role: 'assistant', content: null, tool_calls: [{ id: 'observe', type: 'function', function: { name: 'relay_observe', arguments: '{"target":"workspace"}' } }] }, finish_reason: 'tool_calls' }] } : { choices: [{ message: { role: 'assistant', content: 'Completed on the original connection.' }, finish_reason: 'stop' }] }), vault);
   await runtime.saveProvider({ id: 'editing', type: 'compatible', baseUrl, apiKey: oldKey, models: ['model'] });
-  // This edit begins first but is delayed while the OS vault encrypts its key.
+  const before = structuredClone(runtime.store.get('editing'));
+  // The delayed edit must recheck activity after encryption and before commit.
   const editing = runtime.saveProvider({ id: 'editing', baseUrl: `${baseUrl}/new-endpoint`, apiKey: newKey });
-  await encryptionStarted.promise;
-  const pending = runtime.runAgent({ cwd, prompt: 'Observe.', model: 'editing::model', dynamicTools: [tool], onToolCall: async () => { toolStarted.resolve(); await releaseTool.promise; return { success: true, contentItems: [{ type: 'inputText', text: 'Observed.' }] }; } });
-  await toolStarted.promise;
-  await assert.rejects(runtime.saveProvider({ id: 'editing', name: 'Cannot edit during work' }), cause => cause.code === 'PROVIDER_BUSY');
-  releaseEncryption.resolve(); await editing; releaseTool.resolve();
+  let pending;
+  try {
+    await encryptionStarted.promise;
+    pending = runtime.runAgent({ cwd, prompt: 'Observe.', model: 'editing::model', dynamicTools: [tool], onToolCall: async () => { toolStarted.resolve(); await releaseTool.promise; return { success: true, contentItems: [{ type: 'inputText', text: 'Observed.' }] }; } });
+    await toolStarted.promise;
+    await assert.rejects(runtime.saveProvider({ id: 'editing', name: 'Cannot edit during work' }), cause => cause.code === 'PROVIDER_BUSY');
+    releaseEncryption.resolve();
+    await assert.rejects(editing, { code: 'PROVIDER_BUSY' });
+    assert.deepEqual(runtime.store.get('editing'), before, 'a rejected delayed edit must preserve the saved connection');
+    assert.equal(runtime.store.key('editing'), oldKey);
+  } finally {
+    releaseEncryption.resolve(); releaseTool.resolve();
+  }
   assert.equal((await pending).output, 'Completed on the original connection.');
   assert.deepEqual(requests.map(request => request.url), ['/v1/chat/completions', '/v1/chat/completions']);
   assert.deepEqual(requests.map(request => request.headers.authorization), [`Bearer ${oldKey}`, `Bearer ${oldKey}`]);
-  assert.equal(runtime.store.key('editing'), newKey);
+  await runtime.saveProvider({ id: 'editing', baseUrl: `${baseUrl}/new-endpoint`, apiKey: newKey });
+  assert.equal(runtime.store.key('editing'), newKey, 'an explicit retry may update the idle provider');
+  assert.equal(runtime.store.get('editing').baseUrl, `${baseUrl}/new-endpoint`);
 });
 
 test('a saved conversation rejects a provider protocol change before sending its transcript', async t => {
@@ -788,7 +814,7 @@ test('saved API conversations bind the endpoint across edits, removal and restar
   await assert.rejects(runtime.runAgent(continuation), { code: 'THREAD_MISMATCH' });
   await assert.rejects(runtime.compactThread(first.threadId), { code: 'THREAD_MISMATCH' });
   assert.equal(await readFile(recordFile, 'utf8'), savedRecord, 'rejected continuation must not edit the original history');
-  const restored = await new ProviderRuntime({ codex, dataDir }).init(); t.after(() => restored.close());
+  const restored = await new ProviderRuntime({ modelLimitResolver: protocolModelLimitResolver, codex, dataDir }).init(); t.after(() => restored.close());
   await assert.rejects(restored.runAgent(continuation), { code: 'THREAD_MISMATCH' });
   await restored.removeProvider('endpoint');
   await restored.saveProvider({ id: 'endpoint', type: 'compatible', baseUrl: `${baseUrl}/replacement`, models: ['model'] });
@@ -862,7 +888,7 @@ for (const fixture of [
     if (request.url.endsWith('/models')) return json(response, { data: [{ id: 'restricted' }, { id: 'healthy' }] });
     if (request.body.model === 'restricted' && !recovered) return json(response, { error: fixture.detail }, fixture.status);
     json(response, { choices: [{ message: { content: `Reply from ${request.body.model}.` }, finish_reason: 'stop' }] });
-  });
+  }, { catalog: true });
   await runtime.saveProvider({ id: 'shared', type: 'compatible', baseUrl, models: ['restricted', 'healthy'] });
   await runtime.setDefaultModel('shared::healthy');
   await assert.rejects(runtime.runAgent({ cwd, prompt: 'Use the restricted model.', model: 'shared::restricted' }), { code: fixture.code });
@@ -881,7 +907,7 @@ for (const fixture of [
   recovered = true;
   assert.equal((await runtime.runAgent({ cwd, prompt: 'Explicitly retry after the model became available.', model: 'shared::restricted' })).output, 'Reply from restricted.');
   assert.equal(runtime.listProviders()[0].modelChecks.restricted.lastFailure, null);
-  assert.equal(requests.length, 4, 'there is exactly one request for each explicit attempt and one catalog test');
+  assert.equal(requests.length, 5, 'there is one onboarding catalog lookup, one catalog test, and one request for each explicit generation attempt');
 });
 
 test('a late model rejection cannot overwrite a parallel sibling’s successful connection evidence', async t => {
@@ -1020,22 +1046,24 @@ for (const type of ['openai', 'anthropic', 'compatible']) test(`${type}: structu
 });
 
 for (const outcome of ['success', 'failure', 'removed']) test(`an old connection test cannot restore stale ${outcome} status after an edit`, async t => {
-  const arrived = deferred(); let pending;
-  const { runtime, baseUrl, requests } = await harness(t, (request, response) => { pending = response; arrived.resolve(); });
+  const arrived = deferred(); let pending, testingCatalog = false;
+  const { runtime, baseUrl, requests, catalogRequests } = await harness(t, (request, response) => { pending = response; arrived.resolve(); }, { catalog: () => testingCatalog });
   await runtime.saveProvider({ id: 'stale', type: 'compatible', baseUrl, apiKey: 'old-check-key-fixture', models: ['model'] });
-  const testing = runtime.testProvider('stale'); await arrived.promise;
+  testingCatalog = true; const testing = runtime.testProvider('stale'); await arrived.promise; testingCatalog = false;
   if (outcome === 'removed') await runtime.removeProvider('stale');
   else await runtime.saveProvider({ id: 'stale', apiKey: 'new-check-key-fixture' });
+  const currentCatalog = runtime.modelCatalogs.get('stale');
   json(pending, outcome === 'failure' ? { error: { message: 'Invalid old credentials.' } } : { data: ['model'] }, outcome === 'failure' ? 401 : 200);
   await assert.rejects(testing, cause => ['PROVIDER_CHANGED', 'PROVIDER_AUTH'].includes(cause.code));
-  assert.equal(requests.length, 1); assert.equal(runtime.checks.has('stale'), false); assert.equal(runtime.modelCatalogs.has('stale'), false);
+  assert.equal(requests.length, 1); assert.equal(catalogRequests.length, outcome === 'removed' ? 2 : 3); assert.equal(runtime.checks.has('stale'), false); assert.equal(runtime.modelCatalogs.get('stale'), currentCatalog, 'the old test cannot replace the current onboarding catalog');
   if (outcome !== 'removed') assert.equal(runtime.listProviders()[0].testedAt, undefined);
 });
 
 test('an older test of the same connection cannot overwrite a newer failure', async t => {
-  const arrived = [deferred(), deferred()], responses = [];
-  const { runtime, baseUrl } = await harness(t, (request, response, index) => { responses[index - 1] = response; arrived[index - 1].resolve(); });
+  const arrived = [deferred(), deferred()], responses = []; let testingCatalog = false;
+  const { runtime, baseUrl } = await harness(t, (request, response, index) => { responses[index - 1] = response; arrived[index - 1].resolve(); }, { catalog: () => testingCatalog });
   await runtime.saveProvider({ id: 'ordering', type: 'compatible', baseUrl, models: ['model'] });
+  testingCatalog = true;
   const older = runtime.testProvider('ordering'); await arrived[0].promise;
   const newer = runtime.testProvider('ordering'); await arrived[1].promise;
   json(responses[1], { error: { message: 'Invalid new test credentials.' } }, 401);
@@ -1133,7 +1161,10 @@ for (const fixture of [
   await assert.rejects(runtime.runAgent({ cwd, model: 'generic::model', prompt: 'Try the exact model once.' }), cause => cause.code === fixture.code && cause.httpStatus === fixture.status && cause.message.includes(`HTTP ${fixture.status}`));
   const provider = runtime.listProviders()[0], receipt = fixture.scope === 'connection' ? provider.lastFailure : provider.modelChecks.model.lastFailure;
   assert.equal(receipt.httpStatus, fixture.status); assert.equal(receipt.scope, fixture.scope);
-  assert.equal(requests.length, 1, 'diagnostics must not retry or switch models');
+  const attempts = fixture.status === 502 ? 2 : 1;
+  assert.equal(requests.length, attempts, 'only a transient HTTP rejection receives one retry');
+  assert.ok(requests.every(request => request.body.model === 'model'), 'diagnostics preserve the selected model');
+  if (attempts === 2) assert.deepEqual(requests[1].body, requests[0].body, 'the retry preserves the exact provider request');
 });
 
 test('a parsed OpenRouter upstream service rejection stays with its model and never exposes raw payloads', async t => {
@@ -1149,7 +1180,9 @@ test('a parsed OpenRouter upstream service rejection stays with its model and ne
   assert.equal((await runtime.runAgent({ cwd, model: 'router-diagnostic::healthy:free', prompt: 'Use the sibling explicitly.' })).output, 'Healthy sibling reply.');
   assert.equal(runtime.listProviders()[0].modelChecks['restricted:free'].lastFailure.code, 'PROVIDER_SERVICE');
   assert.ok(!JSON.stringify(runtime.status()).includes(payload)); assert.ok(!JSON.stringify(runtime.status()).includes(secret));
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 3);
+  assert.deepEqual(requests.map(request => request.body.model), ['restricted:free', 'restricted:free', 'healthy:free']);
+  assert.deepEqual(requests[1].body, requests[0].body, 'recovery repeats the rejected request before the explicit sibling run');
 });
 
 test('large OpenRouter error envelopes retain allowlisted upstream diagnostics without exposing private contents', async t => {
@@ -1213,7 +1246,7 @@ for (const format of ['json', 'sse']) for (const fixture of [
   assert.equal(saved.messages.find(message => message.role === 'assistant').tool_calls[0].function.arguments, fixture.arguments);
   assert.equal(saved.transcript.find(message => message.role === 'assistant').tool_calls[0].function.arguments, fixture.arguments);
   assert.equal(saved.messages.filter(message => message.role === 'tool' && message.tool_call_id === 'reused-call-id').length, 2, 'durable history retains rejected and corrected receipts');
-  const restored = await new ProviderRuntime({ codex: new FakeCodex(), dataDir }).init(); t.after(() => restored.close());
+  const restored = await new ProviderRuntime({ modelLimitResolver: protocolModelLimitResolver, codex: new FakeCodex(), dataDir }).init(); t.after(() => restored.close());
   await restored.saveProvider({ id: 'malformed', apiKey: 'fixture-recovery-key' });
   const continued = await restored.runAgent({ cwd, model: 'malformed::exact:free', threadId: result.threadId, prompt: 'Continue using the saved observations.', dynamicTools: [tool], onToolCall: async () => { throw new Error('Confirmed work must not be repeated.'); } });
   assert.equal(continued.output, 'Continued.'); assert.equal(requests.length, 4); assert.deepEqual(effects, ['sibling', 'corrected']);

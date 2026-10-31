@@ -1,16 +1,18 @@
 import { reasoningChoices, reasoningSupport } from '../../reasoning-model.mjs';
 import { serviceTierSupport } from '../../service-tier-model.mjs';
+import { UNKNOWN_CHAT_MODEL } from './model.mjs';
 
 export const DEFAULT_CHAT_OPTIONS=Object.freeze({
-  model:'default',effort:'default',serviceTier:'default',planningMode:'on',
+  model:'default',effort:'default',serviceTier:'default',planningMode:'on',planningExecutionMode:'automatic',
 });
 export const PLANNING_MODES=Object.freeze(['on','off']);
 export function normalizeChatOptions(value={}){
-  const model=typeof value?.model==='string'&&value.model.length<=180?value.model:'default';
+  const model=typeof value?.model==='string'&&value.model.length<=400?value.model:'default';
   const effort=typeof value?.effort==='string'&&value.effort.length<=25?value.effort:'default';
   const serviceTier=['default','fast'].includes(value?.serviceTier)?value.serviceTier:'default';
   const planningMode=value?.planningMode==='off'?'off':'on';
-  return {model,effort,serviceTier,planningMode};
+  const planningExecutionMode=value?.planningExecutionMode==='plan_only'?'plan_only':'automatic';
+  return {model,effort,serviceTier,planningMode,planningExecutionMode};
 }
 export function resolvedDefaultModel(status={}) {
   const saved=typeof status.defaultModel==='string'&&status.defaultModel.trim()&&status.defaultModel!=='default'?status.defaultModel.trim():null;
@@ -28,6 +30,7 @@ export function chatOptionChoices(status={},raw={}){
     if(typeof id!=='string'||!id||models.some(x=>x.id===id))continue;
     models.push({id,label:item.displayName||id,disabled:item.available===false});
   }
+  if(selected.model!=='default'&&!models.some(item=>item.id===selected.model))models.push({id:selected.model,label:selected.model===UNKNOWN_CHAT_MODEL?'Saved model unknown · choose a model':selected.model+' · unavailable',disabled:true});
   const efforts=reasoningChoices(status,selected.model,selected.effort)
     .map(item=>({id:item.value,label:item.label,disabled:!item.available,verified:item.verified}));
   const fast=serviceTierSupport(status,selected.model,'fast');
@@ -37,6 +40,8 @@ export function chatOptionChoices(status={},raw={}){
 }
 export function validateChatOptions(status={},raw={}){
   const selection=normalizeChatOptions(raw);
+  if(selection.planningMode==='off'&&selection.planningExecutionMode==='plan_only')throw Error('Plan only requires Planning On. Choose On or use Automatic execution.');
+  if(selection.model===UNKNOWN_CHAT_MODEL)throw Error('This chat has no saved model evidence. Choose a model to continue.');
   if(selection.model!=='default'){
     const matching=(status.models||[]).find(m=>(m.id||m.model)===selection.model);
     if(!matching||matching.available===false)throw Error('Choose an available model.');

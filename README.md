@@ -2,9 +2,9 @@
 
 BLACKICE is an open-source Windows application for working with AI agents on real tasks. It brings conversations, files, commands, web browsing, editable plans, reusable knowledge and recurring work into one desktop workspace. You can use an agent inside BLACKICE or connect an ordinary ChatGPT conversation to the tools on your computer.
 
-**2.37.0 source checkpoint for Windows x64. Project overview updated October 29, 2026.**
+**2.38.0 for Windows x64. Project overview updated October 31, 2026.**
 
-**[2.37.0 Windows installer](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.37.0/Blackice-2.37.0-Setup.exe)** · [Release status and verification records](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.37.0) · [Release notes](RELEASE-NOTES-2.37.0.md) · [Checksums](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.37.0/SHA256SUMS.txt)
+**[2.38.0 Windows installer](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.38.0/Blackice-2.38.0-Setup.exe)** · [Release status and verification records](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.38.0) · [Release notes](RELEASE-NOTES-2.38.0.md) · [Checksums](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.38.0/SHA256SUMS.txt)
 
 Installer assets and checksums are published only after fresh verification of the exact Setup executable. Until publication, those asset links may be unavailable. The release page and its attached receipts report the actual publication and verification status.
 
@@ -26,13 +26,13 @@ BLACKICE supplies the workspace and execution tools. You supply the model connec
 ### Install and choose how to work
 
 1. **Install and open BLACKICE.** Run the Windows Setup installer. It installs for your Windows account and creates shortcuts and an Installed apps entry. Keep the application running while using its tools or schedules.
-2. **For an agent inside BLACKICE, configure a model.** Open **Settings → Models**, configure a provider and select a model. Presets include OpenAI, Anthropic, OpenRouter, Ollama, LM Studio and a custom compatible API. Native Codex can also be discovered and selected. Choose your default model and working folder in **Settings → General**. A successful key check confirms the credential; check the particular model you intend to use as well.
-3. **For ChatGPT, connect this computer.** In the current interface, choose **Settings → Open classic interface**, then open **Settings → ChatGPT connector** and follow **Prepare this computer**. The supported setup uses Tailscale and the displayed server address to create the **BLACKICE connection** in ChatGPT. Complete the connection's authorization, attach it to the intended conversation and check that a status request reaches this computer. The [connection guide](CHATGPT-CONNECTOR.md) covers the complete setup and Windows startup options. Reuse a healthy existing connection.
+2. **For an agent inside BLACKICE, configure a model.** Open **Settings → Models**, configure a provider and select a model. Presets include anonymous **Kilo Free** and **Pollinations Classic**, as well as OpenAI, Anthropic, OpenRouter, Ollama, LM Studio and a custom compatible API. Native Codex can also be discovered and selected. Choose your default model and working folder in **Settings → General**. Anonymous presets can be saved with a blank key; providers that require credentials offer a key check. Check the particular model you intend to use as well.
+3. **For ChatGPT, connect this computer.** Open **Settings → ChatGPT connector** and follow **Prepare this computer**. The supported setup uses Tailscale and the displayed server address to create the **BLACKICE connection** in ChatGPT. Complete the connection's authorization, attach it to the intended conversation and check that a status request reaches this computer. The [connection guide](CHATGPT-CONNECTOR.md) covers the complete setup and Windows startup options. Reuse a healthy existing connection.
 4. **Add other tools when needed.** **Settings → Tools** connects local and remote tool servers using MCP, a standard for giving an AI model access to tools. You can enter settings or import a configuration. Import previews and saves the configuration; **Connect** starts the connection separately.
 
 Choose the model setup, the ChatGPT setup, or both. BLACKICE and any required model server or connection service must remain available while work runs.
 
-Model presets configure a connection; they do not install or download the model. Native Codex needs an available configured Codex installation. Ollama and LM Studio need their local model server running. Hosted providers need the appropriate account and credentials.
+Model presets configure a connection; they do not install or download the model. Native Codex needs an available configured Codex installation. Ollama and LM Studio need their local model server running. Hosted providers that require authentication need the appropriate account and credentials. Kilo Free and Pollinations Classic use their anonymous endpoints without a key; availability and provider limits still apply.
 
 ### From a request to a result
 
@@ -54,7 +54,7 @@ Inspect the resulting files and recorded outcomes, then continue the conversatio
 | **Knowledge** | Maintain reusable memories and skills, review changes and restore deleted entries. |
 | **Settings** | Configure models, working folders, identity, tool connections and application preferences. |
 
-**Settings → Open classic interface** opens **`/legacy/`**, using the same saved data. ChatGPT connector setup, Remote access, Password manager and **Recovery & support** currently live in its Settings. Some project execution controls and advanced document features also remain there.
+The current **Settings** workspace includes **General**, **Identity**, **Models**, **Tools**, and **ChatGPT connector**. Older **`/legacy/`** links redirect to the current interface; there is no separate classic interface to open.
 
 ## What you can do
 
@@ -62,7 +62,7 @@ Inspect the resulting files and recorded outcomes, then continue the conversatio
 
 Agents can inspect folders, search and read files, write changes and run Windows commands. Text patches retain a record of the change. Attachments let you bring documents and images into a conversation, and saved outputs can be opened for inspection. Conversation transcripts can be exported as Markdown or JSON.
 
-The document tools support reading and inspecting text, PDF and image content. Other document creation or transformation can use installed programs, commands or connected tools. The current interface includes text and image previews; more advanced document editing and some preview surfaces remain in the classic interface. BLACKICE does not provide a complete built-in replacement for every document application.
+The document tools support reading and inspecting text, PDF and image content. Other document creation or transformation can use installed programs, commands or connected tools. The current interface includes text and image previews. Some advanced document editing and preview controls are not yet exposed in the current workspace. BLACKICE does not provide a complete built-in replacement for every document application.
 
 ### Browse websites and use application windows
 
@@ -78,7 +78,7 @@ The local password manager can save and generate website credentials and fill su
 
 Planning gives the human and agents a shared, editable record of the goal, steps, dependencies, assignments, evidence and observed results. View it as a map or outline and inspect one step at a time. Saved plans can be named, grouped and revisited. The current **Intelligence Planning** view distinguishes analytical assessments, agent working plans and other project plans; **New assessment** starts a saved analytical project.
 
-**Planning is On or Off.** On is the default for BLACKICE agents. Before an operational tool, the agent saves the next concrete action and recursively splits compound work into the smallest meaningful substeps. One eligible leaf is active at a time. Its actual result must be recorded before the next operation. Inspection is a planned step too. Off removes automatic planning and sequential dispatch requirements while keeping saved notes and optional planning tools available. Model reasoning effort is a separate setting.
+**Planning is On or Off.** On is the default for BLACKICE agents and uses Feasibility → Inference → Plan → Think → Respond stages around operational work. Off skips that automatic analytical cycle while keeping saved notes and optional planning tools available. **Guardrails**, under **Settings → General**, is a separate setting and is off by default. With Planning On and Guardrails enabled, execution checks the saved plan, eligible action and recorded outcome before proceeding; with Guardrails off, planning metadata stays advisory. Model reasoning effort is a separate setting.
 
 The plan follows a Python-like algorithm: chronological operations, ordered **IF / ELIF / ELSE**, nested **AND / OR / NOT / Boolean XOR**, and typed comparisons. Unknown information stays unknown rather than selecting ELSE. Thinking and new evidence can send the agent back to planning. **Return to this step** opens another attempt of an earlier leaf or group, preserves its previous results, and flags affected later work for reassessment. [Recursive planning](docs/RECURSIVE-PLANNING.md) documents the exact format, examples, execution checks and limits.
 
@@ -88,11 +88,11 @@ Plan edits are explicit saves, and conflicting edits preserve your draft for rev
 
 ### Coordinate agents and reusable workflows
 
-In **Activity → New workflow**, add and connect agent stages, with optional human-approval and output stages. Configure each agent's model, instructions and assignment, choose which stages depend on others and which can run in parallel, then **Save graph** and **Run workflow**. Agents call their tools as part of those stages. Assignments can describe the scope, inputs, expected result and completion criteria for each worker. The classic interface also includes starter workflow templates and quick team setups.
+In **Activity → New workflow**, add and connect agent stages, with optional human-approval and output stages. Configure each agent's model, instructions and assignment, choose which stages depend on others and which can run in parallel, then **Save graph** and **Run workflow**. Agents call their tools as part of those stages. Assignments can describe the scope, inputs, expected result and completion criteria for each worker.
 
 With Planning On, workflow stages and delegated operational work proceed one at a time. Planning Off retains the workflow's configured parallelism. An older native conversation upgrades its planning tool catalog through an internal continuation while retaining the same BLACKICE conversation and task history.
 
-Agents can delegate parts of a task to other workers. Saved projects organize longer work into tasks, dependencies, implementation and review attempts, and milestones. Plans and run histories let you inspect what each worker did and continue from the recorded state. Project start, pause and retry controls remain in the classic interface. Selecting a node in a map inspects it; running work is a separate action.
+Agents can delegate parts of a task to other workers. Saved projects organize longer work into tasks, dependencies, implementation and review attempts, and milestones. Plans and run histories let you inspect what each worker did and continue from the recorded state. Some project controls are currently available through the backend API and attached tools. Selecting a node in a map inspects it; running work is a separate action.
 
 ### Run work repeatedly and collect results
 
@@ -138,7 +138,7 @@ Each receipt applies to its named source checkpoint or installer artifact. It do
 ### Current limitations and open issues
 
 - **Performance work continues.** Large chat histories have received improvements, but intermittent long startup and visible desktop responsiveness are still areas of investigation. A startup progress display does not establish the cause of a delay.
-- **Some interfaces are still being consolidated.** The classic interface remains necessary for some advanced configuration, browser organization and document features. The desktop is the primary interface; very narrow mobile layouts and arbitrary Windows application compatibility are incomplete.
+- **Some interfaces are still being consolidated.** The current workspace does not yet expose every advanced configuration, browser organization and document control. The desktop is the primary interface; very narrow mobile layouts and arbitrary Windows application compatibility are incomplete.
 - **Web tasks can need human involvement.** Site sign-in, human-verification challenges and missing information can interrupt a workflow. A browser action completing does not by itself establish that an external task succeeded.
 - **ChatGPT desktop approval behavior varies in a reported comparison.** On October 28, 2026, Pro Reasoning prompted for approval on every turn while Extra High did not in the same comparison. The checked connection already allowed all app actions, and BLACKICE had no local per-action approval gate. The cause and wider scope remain unconfirmed.
 - **The installer is unsigned.** A verified publisher signature is not currently part of the public release. Checksums and release evidence accompany the download.
@@ -151,11 +151,11 @@ Saved conversations, plans, knowledge and settings normally live in **`%APPDATA%
 
 BLACKICE's file and command tools use the Windows account's access. Ordinary shell commands are not placed in a separate BLACKICE sandbox, and authorized direct actions do not acquire an extra BLACKICE confirmation each time. Connection authentication, ChatGPT's own app controls, website sign-in and Windows restrictions still apply.
 
-For profile backups, open **Settings → Open classic interface → Settings → Recovery & support**. **Back up & restart** saves the profile; **Restore & restart** restores a chosen backup. Both restart BLACKICE. Files in other working folders need their own backups. **Export support file** is available in the same section for troubleshooting.
+For a manual profile backup, quit BLACKICE and copy **`%APPDATA%\Relay`**, or the custom profile folder you selected, to a separate backup location. Files in other working folders need their own backups. The current interface does not expose the older **Recovery & support** panel; older `/legacy/` links redirect to the current workspace.
 
 Back up the profile and quit BLACKICE before installing an update, then run the new Setup installer. Uninstalling preserves the profile. A move to another Windows account or machine may require signing in to providers and websites again. The [release guide](SIGNING-AND-RELEASE.md) covers packaging and verification.
 
-For access from another device or an external client, the classic Settings also offers **Remote access**. The [remote access guide](REMOTE-ACCESS.md) explains connection setup and the agent API.
+For access from another device or an external client, BLACKICE supports remote connections using its existing authenticated transport. The [remote access guide](REMOTE-ACCESS.md) explains connection setup and the agent API.
 
 ## Build from source
 

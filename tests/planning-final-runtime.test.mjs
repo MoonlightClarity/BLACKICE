@@ -99,6 +99,8 @@ function nativeFixture(t) {
   Object.assign(client.info, { connected: true, authenticated: true, defaultModel: 'fixture-model', models: [{ id: 'fixture-model', model: 'fixture-model', isDefault: true, defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'medium' }], contextWindowTokens: 128000 }] });
   client._request = async (method, params = {}) => {
     requests.push({ method, params: structuredClone(params) });
+    if (method === 'config/read') return { config: { plugins: {}, mcp_servers: {}, skills: { config: [] } } };
+    if (method === 'skills/list') return { data: (params.cwds || []).map(cwd => ({ cwd, skills: [], errors: [] })) };
     if (method === 'thread/start') return { thread: { id: `native-${++nextThread}`, ephemeral: Boolean(params.ephemeral) }, model: params.model };
     if (method === 'turn/start') return { turn: { id: `turn-${++nextTurn}`, status: 'inProgress' } };
     if (['thread/unsubscribe', 'turn/interrupt'].includes(method)) return {};
@@ -121,7 +123,7 @@ function nativeFixture(t) {
   return { client, requests, sent, begin, complete };
 }
 
-test('native relay-only final review continues on one loaded thread with original settings and cumulative usage', async t => {
+test('native final review normalizes legacy history input and keeps one persistent thread with cumulative usage', async t => {
   const f = nativeFixture(t), events = [], candidates = [];
   const { work, state } = await f.begin({ codexHistory: 'relay', onEvent: event => events.push(event), onBeforeFinal: async candidate => { candidates.push(candidate); return candidates.length === 1 ? { continue: true, prompt: 'Reassess the remaining plan.' } : undefined; } });
   f.complete(state, 'Premature native candidate.', 5); await tick();
@@ -133,12 +135,12 @@ test('native relay-only final review continues on one loaded thread with origina
   assert.equal(f.client.status().activeTurns, 1);
   f.complete(state, 'Reassessed native final.', 10);
   const result = await work;
-  assert.equal(result.output, 'Reassessed native final.'); assert.equal(result.codexHistory, 'relay'); assert.equal(result.usage.totalTokens, 10);
+  assert.equal(result.output, 'Reassessed native final.'); assert.equal(result.codexHistory, 'codex'); assert.equal(result.usage.totalTokens, 10);
   assert.deepEqual(candidates.map(row => row.output), ['Premature native candidate.', 'Reassessed native final.']);
   assert.deepEqual(candidates.map(row => row.usage.totalTokens), [5, 10]);
   assert.deepEqual(events.filter(row => row.type === 'message').map(row => row.text), ['Reassessed native final.']);
-  assert.equal(f.requests.filter(row => row.method === 'thread/unsubscribe').length, 1);
-  assert.equal(f.client.status().activeTurns, 0); assert.equal(f.client.contexts.size, 0);
+  assert.equal(f.requests.filter(row => row.method === 'thread/unsubscribe').length, 1, 'Completion releases the subscription while retaining persistent history.');
+  assert.equal(f.client.status().activeTurns, 0); assert.equal(f.client.contexts.has(result.threadId), true);
 });
 
 test('native review waits for admitted operation settlement and never repeats it', async t => {

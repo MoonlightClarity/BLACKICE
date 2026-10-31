@@ -54,6 +54,32 @@ test('MCP discovery publishes the same expanded browser schemas with the existin
   assert.equal(validDirectArguments({ requestId: 'long-prompt', action: 'interaction', promptText: 'x'.repeat(4097) }, tool.inputSchema), false);
 });
 
+test('direct read discovery matches current-page observation while input actions retain their guards', async t => {
+  const { api, calls } = await fixture(t), read = api.tools().find(tool => tool.name === 'blackice_browser_read');
+  const action = api.tools().find(tool => tool.name === 'blackice_browser_action');
+  assert.equal(read.inputSchema.properties.expectedUrl, undefined);
+  assert.equal(read.inputSchema.properties.expectedDocumentId, undefined);
+  assert.match(read.description, /Reads observe the current page/);
+  assert.ok(action.inputSchema.properties.expectedUrl);
+  assert.ok(action.inputSchema.properties.expectedDocumentId);
+  for (const operation of ['read', 'snapshot', 'screenshot']) {
+    const request = { requestId: 'read-contract-' + operation, action: operation, browser: 'relay', tabId: 'one' };
+    assert.equal(validDirectArguments(request, read.inputSchema), true);
+    for (const guards of [{ expectedUrl: 'https://example.test/' }, { expectedDocumentId: 'one:1' }, { expectedUrl: 'https://example.test/', expectedDocumentId: 'one:1' }]) {
+      assert.equal(validDirectArguments({ ...request, ...guards }, read.inputSchema), false);
+      await assert.rejects(api.call('blackice_browser_read', { ...request, ...guards }, client), { code: 'DIRECT_REQUEST_INVALID' });
+    }
+  }
+  assert.equal((await api.listJobs(client)).total, 0, 'Unsupported read guards are rejected before admission.');
+  const request = { requestId: 'read-current-page', action: 'read', browser: 'relay', tabId: 'one', query: 'visible heading' };
+  const job = await api.call('blackice_browser_read', request, client), result = await waitJob(api, job.jobId);
+  assert.equal(result.status, 'succeeded', JSON.stringify(result));
+  assert.deepEqual(result.effects, { possible: false, confirmed: false });
+  assert.deepEqual(calls, [{ action: 'read', browser: 'relay', tabId: 'one', query: 'visible heading' }]);
+  assert.equal((await api.call('blackice_browser_read', request, client)).existing, true);
+  assert.equal(calls.length, 1);
+});
+
 test('authorized direct organization and filtering dispatch once without new grants or local approval', async t => {
   const { api, calls } = await fixture(t), writer = { ...client, scopes: ['read', 'browser:write'] };
   const actions = [

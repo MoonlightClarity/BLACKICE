@@ -102,14 +102,14 @@ test('installer refuses corrupt files or mismatched executable versions before c
 test('installer refuses accidental downgrades before shutdown or mutation but supports deliberate rollback and same-version reinstall', { skip: process.platform !== 'win32' }, async t => {
   const fixture = await installation(t, '2.5.1'); await fixture.run(); const before = await fs.readFile(path.join(fixture.installRoot, 'relay-install.json'), 'utf8');
   await fs.rm(fixture.source, { recursive: true }); await fs.cp(path.join(base, '2.5.0'), fixture.source, { recursive: true });
-  await assert.rejects(fixture.run(), /older\s+than the installed Relay version/); assert.equal(await fs.readFile(path.join(fixture.installRoot, 'relay-install.json'), 'utf8'), before);
+  await assert.rejects(fixture.run(), /older\s+than\s+the\s+installed\s+Relay\s+version/); assert.equal(await fs.readFile(path.join(fixture.installRoot, 'relay-install.json'), 'utf8'), before);
   assert.ok((await fs.readdir(path.dirname(fixture.installRoot))).every(file => !file.includes('.stage-')));
   const rollback = JSON.parse((await fixture.run(['-AllowDowngrade'])).stdout.trim()); assert.equal(rollback.version, '2.5.0'); assert.ok(rollback.previousInstall);
   const reinstalled = JSON.parse((await fixture.run()).stdout.trim()); assert.equal(reinstalled.version, '2.5.0'); assert.ok(reinstalled.previousInstall);
 });
 
 test('publisher-required local installation refuses unsigned executables without creating an install', { skip: process.platform !== 'win32' }, async t => {
-  const fixture = await installation(t); await assert.rejects(fixture.run(['-RequirePublisher', 'Disposable Test Publisher']), /trusted signature from\s+the required publisher/); await assert.rejects(fs.stat(fixture.installRoot), { code: 'ENOENT' });
+  const fixture = await installation(t); await assert.rejects(fixture.run(['-RequirePublisher', 'Disposable Test Publisher']), /trusted\s+signature\s+from\s+the\s+required\s+publisher/); await assert.rejects(fs.stat(fixture.installRoot), { code: 'ENOENT' });
 });
 
 test('two real installer processes serialize the same normalized installation root before version checks and leave busy targets untouched', { skip: process.platform !== 'win32' }, async t => {

@@ -3,7 +3,7 @@ import { runText, messagesOfRun, windowedRuns, windowedMessages, CHAT_MESSAGE_BA
 import { chatOptionChoices } from './options-model.mjs';
 import { createRegisteredArtifactResolver } from '../../conversation-model.mjs';
 import { taskPlanView } from '../../task-plan-model.mjs';
-import { chatTimeline } from './planning-timeline.mjs';
+import { chatDisplayPhases, chatWorkSummary, chatProgressPreview, chatOutlineStatusLabel } from './planning-timeline.mjs';
 
 export function createChatFrame(mount) {
   mount.innerHTML = [
@@ -32,13 +32,14 @@ export function createChatFrame(mount) {
     '<button type="button" id="next-chat-stop" hidden>Stop</button></div></header>',
     '<div class="next-chat-scroll" id="next-chat-scroll"><div class="next-chat-timeline" id="next-chat-timeline">',
     '<div class="next-chat-intro"><h1>What would you like to work on?</h1><p>BLACKICE can use your local workspace, tools, and connected services. Start a conversation or return to saved work.</p></div>',
-    '</div></div><footer class="next-chat-composer-area"><form class="next-chat-compose" id="next-chat-form">',
-    '<textarea id="next-chat-input" class="next-chat-input" aria-label="Message BLACKICE" placeholder="Message BLACKICE…" rows="2"></textarea>',
+    '</div></div><footer class="next-chat-composer-area"><section id="next-chat-cycle-notice" class="next-chat-cycle-notice" hidden><span id="next-chat-cycle-status" role="status"></span><button type="button" id="next-chat-open-plan">Open plan in Planning</button></section><div id="next-chat-command-menu" class="next-chat-command-menu" role="listbox" aria-label="Chat commands" hidden></div><form class="next-chat-compose" id="next-chat-form">',
+    '<textarea id="next-chat-input" class="next-chat-input" aria-label="Message BLACKICE" aria-autocomplete="list" aria-controls="next-chat-command-menu" aria-expanded="false" placeholder="Message BLACKICE…" rows="2"></textarea>',
     '<div id="next-chat-attachments"></div>',
-    '<div class="next-chat-options"><label>Model <select id="next-chat-model"><option value="default">Default</option></select></label>',
+    '<div class="next-chat-options"><button type="button" id="next-chat-commands" class="next-chat-commands" aria-label="Chat commands" title="Chat commands" aria-haspopup="listbox" aria-controls="next-chat-command-menu" aria-expanded="false">/</button><div class="next-chat-model"><span>Model</span><select id="next-chat-model" aria-label="Model"><option value="default">Default</option></select></div>',
     '<label>Reasoning <select id="next-chat-effort"><option value="default">Model default</option></select></label>',
     '<label>Speed <select id="next-chat-tier"><option value="default">Standard</option></select></label>',
     '<label>Planning <select id="next-chat-plan"><option value="on">On</option><option value="off">Off</option></select></label>',
+    '<label>Execution <select id="next-chat-execution-mode" title="Plan only pauses after Plan. Continue explicitly from the saved plan."><option value="automatic">Automatic</option><option value="plan_only">Plan only</option></select></label>',
     '<span class="next-chat-spacer"></span><button class="next-primary" type="submit" id="next-chat-send">Send</button></div></form>',
     '<p id="next-chat-hint" class="next-chat-hint" role="status">Enter to send · Shift+Enter for a new line</p>',
     '</footer></div>',
@@ -60,7 +61,8 @@ export function createChatFrame(mount) {
     trashDialog:find('next-chat-trash-dialog'),trashMessage:find('next-chat-trash-message'),trashCancel:find('next-chat-trash-cancel'),trashConfirm:find('next-chat-trash-confirm'),
     renameDialog:find('next-chat-rename-dialog'),renameForm:find('next-chat-rename-form'),renameInput:find('next-chat-rename-input'),renameError:find('next-chat-rename-error'),renameCancel:find('next-chat-rename-cancel'),renameSave:find('next-chat-rename-save'),
     stop:find('next-chat-stop'),scroll:find('next-chat-scroll'),timeline:find('next-chat-timeline'),
-    form:find('next-chat-form'),input:find('next-chat-input'),attachments:find('next-chat-attachments'),model:find('next-chat-model'),plan:find('next-chat-plan'),
+    cycleNotice:find('next-chat-cycle-notice'),cycleStatus:find('next-chat-cycle-status'),openPlan:find('next-chat-open-plan'),executionMode:find('next-chat-execution-mode'),
+    form:find('next-chat-form'),input:find('next-chat-input'),commands:find('next-chat-commands'),commandMenu:find('next-chat-command-menu'),attachments:find('next-chat-attachments'),model:find('next-chat-model'),plan:find('next-chat-plan'),
     effort:find('next-chat-effort'),tier:find('next-chat-tier'),send:find('next-chat-send'),hint:find('next-chat-hint') };
 }
 
@@ -125,7 +127,7 @@ export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATC
       entry.check?.setAttribute('aria-label','Select '+title);
       entry.summary?.setAttribute('aria-label','Actions for '+title);
     }
-    const status=String(item.status||'Saved').replaceAll('_',' ');
+    const status=String(item.status==='completed'&&item.settled===true?'Response saved':item.status==='completed'&&item.settled===false?'Finishing…':item.status||'Saved').replaceAll('_',' ');
     if(entry.status!==status){setText(entry.statusNode,status);entry.status=status;}
     const date=item.updatedAt||item.createdAt;
     if(entry.date!==date){setText(entry.dateNode,formatDate(date));entry.date=date;}
@@ -198,7 +200,19 @@ export function chatMessagePhases(messages) {
 }
 
 export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, onArtifact, onMoreMessages, messageLimits, getAttachment }={}) {
-  const {shown,hidden}=windowedRuns(runs,count), fragment=view.timeline.ownerDocument.createDocumentFragment();
+  const doc=view.timeline.ownerDocument;
+  const disclosures=new Map(Array.from(view.timeline.querySelectorAll('details[data-disclosure-id]'),node=>[node.dataset.disclosureId,node.open]));
+  const focused=doc.activeElement;
+  const focusId=focused?.tagName==='SUMMARY'?focused.parentElement?.dataset.disclosureId:null;
+  let restoreFocus=null;
+  const disclosure=(parent,key,className)=>{
+    const node=text(parent,'','details',className);node.dataset.disclosureId=key;
+    node.open=disclosures.get(key)===true;
+    const summary=text(node,'','summary');
+    if(key===focusId)restoreFocus=summary;
+    return {node,summary};
+  };
+  const {shown,hidden}=windowedRuns(runs,count), fragment=doc.createDocumentFragment();
   if (hidden > 0) {
     const older=text(fragment,'Show earlier responses ('+hidden+')','button','next-older');
     older.type='button';older.addEventListener('click',()=>onOlder?.());
@@ -245,67 +259,104 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
       more.addEventListener('click',()=>onMoreMessages?.(run.id));
     }
     const state=run===shown.at(-1)?run.taskState:null;
+    const planView=state?taskPlanView(state,{runStatus:run.status,settled:run.settled}):null;
     const resolveArtifact=createRegisteredArtifactResolver(run);
     const appendAssistant=(parent,message)=>{
-      const body=text(parent,'','div','next-message-body next-chat-phase-paragraph');
+      const body=text(parent,'','div','next-message-body');
       if(running(run)||typeof markdown!=='function')body.textContent=message.text;
       else {
         body.innerHTML=markdown(message.text,{resolveArtifact});
         if(onArtifact)body.addEventListener('click',event=>{const link=event.target.closest?.('[data-task-artifact][data-task-id]');if(link&&body.contains(link)){event.preventDefault();onArtifact({taskId:link.dataset.taskId,artifactId:link.dataset.taskArtifact});}});
       }
     };
-    for(const phase of chatTimeline(run,messages)){
+    const phases=chatDisplayPhases(run,messages);
+    const isWork=phase=>phase.phase==='plan'||phase.phase==='think'||phase.provisional;
+    const workPhases=phases.filter(isWork);
+    const progress=chatWorkSummary(workPhases);
+    for(const phase of phases){
       if(phase.phase==='direction'){
         for(const entry of phase.entries){
           const article=text(section,'','article','next-message');article.dataset.role='user';
           text(article,'You','div','next-message-title');text(article,entry.message.text,'div','next-message-body');
         }
-        continue;
-      }
-      const group=text(section,'','section','next-chat-phase');group.dataset.phase=phase.phase;group.dataset.timelineId=phase.id;
-      if(phase.active){group.dataset.state='active';group.setAttribute('aria-current','step');}
-      const provisional=phase.entries.some(entry=>entry.message?.provisional||entry.message?.phase==='unverified_answer');
-      text(group,phase.phase==='plan'?'Plan':phase.phase==='think'?'Think':provisional?'Respond · provisional':'Respond','h3','next-chat-phase-title');
-      if(phase.phase==='think')text(group,'Recorded findings and working updates · provisional','p','next-help');
-      for(const entry of phase.entries){
-        if(entry.message){appendAssistant(group,entry.message);continue;}
-        const item=text(group,'','div','next-chat-phase-paragraph');item.dataset.activityId=entry.id;item.dataset.activitySource=entry.source;
-        const label=[nodeNames.size>1&&nodeNames.get(entry.nodeId),entry.title].filter(Boolean).join(' · ');
-        text(item,label,'strong');
-        if(entry.at)text(item,' · '+new Date(entry.at).toLocaleTimeString(),'span','next-help');
-        text(item,entry.text,'p');
-        if(entry.nextStepId)text(item,'Next saved step: '+entry.nextStepId,'p','next-help');
+      }else if(!isWork(phase)){
+        const article=text(section,'','article','next-message next-chat-response');
+        article.dataset.role='assistant';article.dataset.timelineId=phase.id;
+        for(const entry of phase.entries)appendAssistant(article,entry.message);
       }
     }
-    if (running(run)) {
+    if(running(run)){
       const live=text(section,'','div','next-chat-activity');
-      live.dataset.liveOutput=run.id;
-      live.textContent=run.status==='queued'?'Waiting to start…':'Working…';
+      live.dataset.liveOutput=run.id;live.setAttribute('role','status');
+      live.setAttribute('aria-live','polite');live.setAttribute('aria-atomic','true');
+      const focus=planView?.focus;
+      const current=focus&&['active','blocked'].includes(focus.status)?focus:null;
+      const preview=run.status==='queued'?'Waiting to start…':current?.blockedReason||current?.title||
+        (phases.at(-1)?.phase==='respond'?'Finishing…':progress.preview)||'Working…';
+      live.textContent=chatProgressPreview(preview==='Saved progress'?'Working…':preview);
     }
-    if(state) {
-
-      if(Array.isArray(state.steps)&&state.steps.length){
-        const details=text(section,'','details','next-chat-task-summary');
-        const summary=text(details,'','summary');
-        const actions=state.steps.filter(step=>(step.kind||'action')==='action');
-        const complete=actions.filter(step=>step.status==='completed'||step.status==='done').length;
-        summary.textContent='Saved outline · '+complete+' / '+actions.length+' actions · '+(running(run)?actions.find(step=>step.status==='active')?.title||'Agent working':!actions.length?'No actions recorded':complete===actions.length?'All actions marked done':'Run ended with unfinished work');
-        if(state.updatedAt) text(details,'Last saved plan activity: '+new Date(state.updatedAt).toLocaleTimeString(),'p','next-help');
-        const steps=text(details,'','ol');
+    const hasPlan=Boolean(state&&Array.isArray(state.steps)&&state.steps.length);
+    if(workPhases.length||hasPlan){
+      const {node:audit,summary}=disclosure(section,run.id+':details','next-chat-details');
+      summary.textContent=hasPlan?'Plan':'Details';
+      summary.setAttribute('aria-label',hasPlan?'Plan: expandable steps and evidence':'Details: recorded actions');
+      const body=text(audit,'','div','next-chat-details-body');
+      if(hasPlan){
+        const {done,total,skipped}=planView.progress;
+        text(body,done+' of '+total+' steps complete'+(skipped?' · '+skipped+' skipped':''),'p','next-help next-chat-outline-progress');
         const appendOutline=(list,items)=>{
-          list.setAttribute('style','list-style: none');
           for(const item of items){
-            const row=text(list,'','li');row.dataset.stepId=item.id;row.dataset.stepNumber=item.number;
-            text(row,item.number+' '+item.title,'span');
-            const badge=text(row,item.status||'pending','span','next-status-pill');badge.dataset.state=item.status||'pending';
-            if(item.children.length)appendOutline(text(row,'','ol'),item.children);
+            const row=text(list,'','li','next-chat-outline-item');row.dataset.stepId=item.id;row.dataset.stepNumber=item.number;
+            const fields=[['Done when',item.doneWhen],['Evidence',item.evidence],['Blocked by',item.blockedReason]]
+              .filter(([,value])=>typeof value==='string'&&value.trim());
+            let line,content;
+            if(item.children.length||fields.length){
+              const branch=disclosure(row,run.id+':step:'+item.id,'next-chat-outline-node');
+              line=branch.summary;line.className='next-chat-outline-line';
+              content=text(branch.node,'','div','next-chat-outline-content');
+            }else line=text(row,'','div','next-chat-outline-line next-chat-outline-leaf');
+            text(line,item.number,'span','next-chat-outline-number');
+            text(line,item.title,'span','next-chat-outline-title');
+            const badge=text(line,chatOutlineStatusLabel(item),'small','next-chat-outline-state');badge.dataset.state=item.status||'pending';
+            if(item.isGroup)badge.title='Recorded progress of the saved steps in this group';
+            if(item.children.length)appendOutline(text(content,'','ol','next-chat-plan-outline'),item.children);
+            for(const [label,value]of fields){
+              const field=text(content,'','p','next-chat-outline-evidence');
+              text(field,label+' · ','strong');text(field,value,'span');
+            }
           }
         };
-        appendOutline(steps,taskPlanView(state).roots);
+        appendOutline(text(body,'','ol','next-chat-plan-outline'),planView.roots);
       }
+      if(workPhases.length){
+        const {node:history,summary:historySummary}=disclosure(body,run.id+':history','next-chat-outline-history');
+        historySummary.textContent='History';
+        if(progress.count)text(history,progress.count+' recorded '+(progress.count===1?'update':'updates'),'p','next-help next-chat-details-count');
+        const list=text(history,'','ol','next-chat-audit-outline');
+        for(const phase of phases){
+          if(!isWork(phase)&&phase.phase!=='direction')continue;
+          for(const entry of phase.entries){
+            const row=text(list,'','li');row.dataset.phase=phase.phase;
+            if(!entry.message){row.dataset.activityId=entry.id;row.dataset.activitySource=entry.source;}
+            const {node:record,summary:recordSummary}=disclosure(row,run.id+':activity:'+entry.id,'next-chat-audit-node');
+            const label=entry.message?(phase.phase==='direction'?'You · ':'')+chatProgressPreview(entry.message.text):
+              [nodeNames.size>1&&nodeNames.get(entry.nodeId),entry.title].filter(Boolean).join(' · ');
+            text(recordSummary,label,'span');
+            if(entry.at)text(recordSummary,new Date(entry.at).toLocaleTimeString(),'time','next-help');
+            const content=text(record,'','div','next-chat-outline-evidence');
+            if(entry.message){
+              if(phase.phase==='direction')text(content,entry.message.text,'p');
+              else appendAssistant(content,entry.message);
+            }else text(content,entry.text,'p');
+            if(entry.nextStepId)text(content,'Next saved step: '+entry.nextStepId,'p','next-help');
+          }
+        }
+      }
+    }
+    if(state){
       if(Array.isArray(state.artifacts)&&state.artifacts.length){
-        const details=text(section,'','details','next-chat-task-summary');
-        const summary=text(details,'Files · '+state.artifacts.length,'summary');
+        const {node:details,summary}=disclosure(section,run.id+':files','next-chat-task-summary');
+        summary.textContent='Files · '+state.artifacts.length;
         for(const artifact of state.artifacts){
           if(typeof artifact.id!=='string')continue;
           const file=text(details,'','div','next-chat-saved-file');
@@ -319,18 +370,20 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
       }
     }
     const footer=text(section,'','div','next-turn-meta');
-    const pill=text(footer,run.status||'saved','span','next-status-pill');
+    const pill=text(footer,run.status==='completed'&&run.settled===true?'Response saved':run.status==='completed'&&run.settled===false?'Finishing…':run.status||'saved','span','next-status-pill');
     pill.dataset.state=run.status||'saved';
+    if(run.status==='completed'&&run.settled===true&&hasPlan&&!planView.complete)text(footer,'Unfinished steps','span','next-turn-note');
     if (['failed','cancelled'].includes(run.status) && run.settled===true) {
       const retry=text(footer,'Retry','button');retry.type='button';retry.addEventListener('click',()=>onStop?.('retry',run.id));
     }
     if(running(run)){const stop=text(footer,'Stop','button');stop.type='button';stop.addEventListener('click',()=>onStop?.('stop',run.id));}
   }
   view.timeline.replaceChildren(fragment);
+  restoreFocus?.focus({preventScroll:true});
 }
 export function paintModels(view,status,selected={}) {
   const choices=chatOptionChoices(status||{},typeof selected==='string'?{model:selected}:selected);
-  const fill=(select,items,value)=>{
+  const fill=(select,items,value,{retain=false}={})=>{
     if(!select)return;
     // Runtime status can arrive repeatedly while the model menu is open.
     // Keep the existing option nodes when the choices are unchanged so a
@@ -348,10 +401,10 @@ export function paintModels(view,status,selected={}) {
       }
       select.replaceChildren(fragment);
     }
-    const chosen=items.some(row=>row.id===value&&!row.disabled)?value:'default';
+    const chosen=items.some(row=>row.id===value&&(retain||!row.disabled))?value:'default';
     if(select.value!==chosen)select.value=chosen;
   };
-  fill(view.model,choices.models,choices.selected.model);
+  fill(view.model,choices.models,choices.selected.model,{retain:true});
   if(view.model) {
     const current=choices.defaultInfo;
     const detail=current?.id?'Default resolves to '+current.id+(current.available?'':' (currently unavailable)'):'Default model has not yet been resolved.';
@@ -361,4 +414,6 @@ export function paintModels(view,status,selected={}) {
   fill(view.effort,choices.efforts,choices.selected.effort);
   fill(view.tier,choices.tiers,choices.selected.serviceTier);
   if(view.plan)view.plan.value=choices.selected.planningMode;
+  if(view.executionMode)view.executionMode.value=choices.selected.planningExecutionMode;
+  return choices;
 }

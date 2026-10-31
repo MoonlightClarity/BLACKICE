@@ -39,6 +39,10 @@ async function harness(t, { runtime = new Runtime(), history = 'codex' } = {}) {
 
 test('an existing API conversation accepts 900k, keeps its thread, and can explicitly reset inherited settings to model default', async t => {
   const requests = [], server = createServer(async (request, response) => {
+    if (request.method === 'GET' && request.url === '/v1/models') {
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify({ data: [{ id: 'big', context_length: 1000000, max_output_tokens: 8192 }] })); return;
+    }
     let raw = ''; for await (const chunk of request) raw += chunk; requests.push(JSON.parse(raw));
     response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'Verified API reply.' }, finish_reason: 'stop' }], usage: { prompt_tokens: 40, completion_tokens: 8, total_tokens: 48 } }));
   });

@@ -8,11 +8,14 @@ import { readFile } from 'node:fs/promises';
 const setup = (overrides = {}) => ({ ready: true, stage: 'register', serverUrl: 'https://blackice.example/mcp/chatgpt', chatGPTUrl: 'https://chatgpt.com/plugins', checks: [{ key: 'https', label: 'Public HTTPS', ok: true }], verification: { nonce: 'blackice-connect-fixture', prompt: 'Use BLACKICE blackice_direct_status with nonce "blackice-connect-fixture".' }, ...overrides });
 const current = () => ({ enabled: true, endpoint: 'https://blackice.example/mcp/chatgpt', setup: setup(), remoteAccess: { enabled: true, mode: 'public' }, oauth: { grants: [], requests: [{ id: 'request_one', displayCode: 'ABCD1234', clientLabel: 'ChatGPT', scopes: ['read', 'files:read', 'commands:run'] }] }, pending: { jobs: [] } });
 const tick = () => new Promise(resolve => setImmediate(resolve));
+const passiveRead = args => args.length === 1 && ['/api/chatgpt-connector', '/api/desktop/idle-interruptions'].includes(args[0]);
+const visibleAlert = f => f.mount.querySelectorAll('[role="alert"]').find(node => node.getAttribute('hidden') === null) || null;
 
-test('permission review defaults to read and never implies chat-surface verification', () => {
+test('permission review defaults to all offered permissions and never implies chat-surface verification', () => {
   const html = renderChatGPTConnector({ current: current(), scopes: new Map(), remote: false });
   assert.match(html, /data-connector-scope="read" checked disabled/);
-  assert.doesNotMatch(html, /data-connector-scope="commands:run" checked/);
+  assert.match(html, /data-connector-scope="commands:run" checked/);
+  assert.match(html, /data-connector-scope="files:read" checked/);
   assert.match(html, /not a system sandbox/);
   assert.match(html, /does not verify the ChatGPT conversation/);
   assert.match(html, /ABCD1234/);
@@ -21,6 +24,7 @@ test('permission review defaults to read and never implies chat-surface verifica
 test('focused access controls and permission choices survive polling and submit the exact request', async t => {
   const f = planningDOM(t), calls = [];
   const ui = mountChatGPTConnector({ mount: f.mount, intervalMs: 100000, api: async (...args) => { calls.push(args); return current(); } }); t.after(() => ui.destroy()); await tick();
+  const command = f.$('[data-connector-scope="commands:run"]'); command.checked = false; await command.dispatch('change', {}, true);
   const checkbox = f.$('[data-connector-scope="files:read"]'); checkbox.checked = true; checkbox.focus();
   await checkbox.dispatch('change', {}, true);
   await ui.refresh();
@@ -36,7 +40,12 @@ test('Select all chooses only the current request permissions and never approves
   const ui = mountChatGPTConnector({ mount: f.mount, intervalMs: 100000, api: async (...args) => { calls.push(args); return value; } }); t.after(() => ui.destroy()); await tick();
   const select = f.$('[data-connector-action="select-all-access"][data-connector-id="request_one"]');
   assert.equal(select.type, 'button'); assert.equal(select.textContent, 'Select all'); assert.equal(select.getAttribute('aria-label'), 'Select all permissions for request ABCD1234');
-  assert.equal(f.$('[data-connector-request="request_one"] [data-connector-selection]').textContent, '1 of 7 permissions selected');
+  assert.equal(f.$('[data-connector-request="request_one"] [data-connector-selection]').textContent, '7 of 7 permissions selected');
+  for (const id of ['request_one', 'request_two']) {
+    const checkbox = f.$('[data-connector-request="' + id + '"] [data-connector-scope="files:read"]');
+    checkbox.checked = false; await checkbox.dispatch('change', {}, true);
+  }
+  assert.equal(f.$('[data-connector-request="request_one"] [data-connector-selection]').textContent, '6 of 7 permissions selected');
   select.focus(); await f.click(select);
   const form = f.$('[data-connector-request="request_one"]'), checkboxes = form.querySelectorAll('[data-connector-scope]');
   assert.deepEqual(checkboxes.filter(node => node.checked).map(node => node.dataset.connectorScope), all);
@@ -48,7 +57,7 @@ test('Select all chooses only the current request permissions and never approves
   assert.equal(f.document.activeElement, form.querySelector('[data-connector-action="select-all-access"]'));
   await ui.refresh(true);
   assert.deepEqual(f.$('[data-connector-request="request_one"]').querySelectorAll('[data-connector-scope]').filter(node => node.checked).map(node => node.dataset.connectorScope), all);
-  assert.ok(calls.every(args => args[0] === '/api/chatgpt-connector'), 'selection and polling make no approval or other mutation request');
+  assert.ok(calls.every(passiveRead), 'selection and polling make no approval or other mutation request');
   await f.$('[data-connector-request="request_one"]').dispatch('submit', {}, true); await tick();
   assert.deepEqual(calls.find(args => args[0].endsWith('/approve-access')), ['/api/chatgpt-connector/approve-access', 'POST', { id: 'request_one', scopes: all }]);
 });
@@ -64,7 +73,7 @@ test('Select all remains a choice snapshot and individual changes survive pollin
   assert.equal(f.$('[data-connector-selection]').textContent, '2 of 4 permissions selected');
   await ui.refresh(); assert.equal(f.$('[data-connector-scope="commands:run"]'), command); assert.equal(command.checked, false);
   await ui.refresh(true); assert.equal(f.$('[data-connector-scope="commands:run"]').checked, false); assert.equal(f.$('[data-connector-selection]').textContent, '2 of 4 permissions selected');
-  assert.ok(calls.every(args => args[0] === '/api/chatgpt-connector'));
+  assert.ok(calls.every(passiveRead));
   await f.$('[data-connector-request="request_one"]').dispatch('submit', {}, true); await tick();
   assert.deepEqual(calls.find(args => args[0].endsWith('/approve-access')), ['/api/chatgpt-connector/approve-access', 'POST', { id: 'request_one', scopes: ['read', 'files:read'] }]);
 });
@@ -72,6 +81,7 @@ test('Select all remains a choice snapshot and individual changes survive pollin
 test('Select all ignores busy controls and a request removed while its old form is focused', async t => {
   const f = planningDOM(t), calls = []; let release, value = current(); const pending = new Promise(resolve => { release = resolve; });
   const ui = mountChatGPTConnector({ mount: f.mount, intervalMs: 100000, api: async (...args) => { calls.push(args); return args[0].endsWith('/check-connection') ? pending : value; } }); t.after(() => ui.destroy()); await tick();
+  const optional = f.$('[data-connector-scope="files:read"]'); optional.checked = false; await optional.dispatch('change', {}, true);
   await f.click('[data-connector-action="check-connection"]');
   assert.equal(f.$('[data-connector-action="select-all-access"]').getAttribute('aria-disabled'), 'true');
   await f.click('[data-connector-action="select-all-access"]'); assert.equal(f.$('[data-connector-scope="files:read"]').checked, false);
@@ -79,7 +89,7 @@ test('Select all ignores busy controls and a request removed while its old form 
   const stale = f.$('[data-connector-action="select-all-access"]'); stale.focus(); value = ready(); await ui.refresh();
   assert.equal(f.$('[data-connector-action="select-all-access"]'), stale);
   await f.click(stale); assert.equal(f.$('[data-connector-scope="files:read"]').checked, false);
-  assert.ok(calls.every(args => ['/api/chatgpt-connector', '/api/chatgpt-connector/check-connection'].includes(args[0])));
+  assert.ok(calls.every(args => passiveRead(args) || args[0] === '/api/chatgpt-connector/check-connection' && args[1] === 'POST'));
 });
 
 test('the connector Settings mount retains its exact focused element across app status redraws', t => {
@@ -111,7 +121,7 @@ test('only an explicit setup click requests the fixed host handoff and duplicate
     api: async (...args) => { calls.push(args); return args[0].endsWith('/open-chatgpt') ? pending : { ...current(), canOpenChatGPT: true }; }
   }); t.after(() => ui.destroy()); await tick();
   await ui.refresh(true);
-  assert.ok(calls.every(args => args[0] === '/api/chatgpt-connector'), 'mount and status refresh never open a browser');
+  assert.ok(calls.every(passiveRead), 'mount and status refresh never open a browser');
   await f.click('[data-connector-action="open-chatgpt"]');
   assert.match(f.mount.textContent, /Requesting setup in your default browser/);
   assert.equal(f.$('[data-connector-action="open-chatgpt"]').getAttribute('aria-disabled'), 'true');
@@ -121,7 +131,7 @@ test('only an explicit setup click requests the fixed host handoff and duplicate
   assert.equal(f.$('[data-connector-action="open-chatgpt"]').getAttribute('aria-disabled'), null);
   assert.match(f.$('.connector-receipt').textContent, /was requested/);
   assert.deepEqual(calls.find(args => args[0].endsWith('/open-chatgpt')), ['/api/chatgpt-connector/open-chatgpt', 'POST', {}]);
-  assert.ok(calls.every(args => ['/api/chatgpt-connector', '/api/chatgpt-connector/open-chatgpt'].includes(args[0])), 'no Chat Mode, enable, approval, prompt, or model route is called');
+  assert.ok(calls.every(args => passiveRead(args) || args[0] === '/api/chatgpt-connector/open-chatgpt' && args[1] === 'POST'), 'no Chat Mode, enable, approval, prompt, or model route is called');
 });
 
 test('browser launch failure stays visible without claiming authentication and can be retried', async t => {
@@ -130,7 +140,7 @@ test('browser launch failure stays visible without claiming authentication and c
     api: async path => { if (path.endsWith('/open-chatgpt')) { opened++; throw Error('The default browser could not open setup.'); } return { ...current(), canOpenChatGPT: true }; }
   }); t.after(() => ui.destroy()); await tick();
   await f.click('[data-connector-action="open-chatgpt"]'); await tick();
-  assert.equal(f.$('[role="alert"]').textContent, 'The default browser could not open setup.');
+  assert.equal(visibleAlert(f).textContent, 'The default browser could not open setup.');
   assert.equal(f.$('[data-connector-action="open-chatgpt"]').getAttribute('aria-disabled'), null);
   assert.equal(f.$('.connector-receipt'), null);
   await f.click('[data-connector-action="open-chatgpt"]'); await tick(); assert.equal(opened, 2);
@@ -142,7 +152,7 @@ test('an unconfirmed handoff cannot be rendered as an opened or connected browse
     api: async path => path.endsWith('/open-chatgpt') ? {} : { ...current(), canOpenChatGPT: true }
   }); t.after(() => ui.destroy()); await tick();
   await f.click('[data-connector-action="open-chatgpt"]'); await tick();
-  assert.match(f.$('[role="alert"]').textContent, /not confirmed/);
+  assert.match(visibleAlert(f).textContent, /not confirmed/);
   assert.equal(f.$('.connector-receipt'), null);
 });
 
@@ -152,7 +162,8 @@ test('hosts without an external setup capability expose no launch control', asyn
     api: async (...args) => { calls.push(args); return { ...current(), canOpenChatGPT: false }; }
   }); t.after(() => ui.destroy()); await tick();
   assert.equal(f.$('[data-connector-action="open-chatgpt"]'), null);
-  assert.deepEqual(calls, [['/api/chatgpt-connector']]);
+  assert.deepEqual(calls.map(args => args[0]).sort(), ['/api/chatgpt-connector', '/api/desktop/idle-interruptions']);
+  assert.ok(calls.every(passiveRead));
 });
 
 test('Settings retains the existing connector section without a Chat Mode callback', t => {
@@ -234,7 +245,7 @@ test('confirmed browser handoff stays a user-action hint until an approval or gr
   release({ requested: true, connectionVerified: false }); await tick(); assert.equal(region.getAttribute('data-stage'), 'browser-waiting'); assert.equal(region.getAttribute('data-busy'), 'false');
   state = ready({ oauth: current().oauth }); await ui.refresh(); assert.equal(region.getAttribute('data-stage'), 'approval');
   state = ready({ oauth: { requests: [], grants: [{ id: 'new-grant', scopes: ['read'] }] } }); await ui.refresh(); assert.equal(region.getAttribute('data-stage'), 'authorized');
-  assert.ok(calls.every(args => ['/api/chatgpt-connector', '/api/chatgpt-connector/open-chatgpt'].includes(args[0])));
+  assert.ok(calls.every(args => passiveRead(args) || args[0] === '/api/chatgpt-connector/open-chatgpt' && args[1] === 'POST'));
 });
 
 test('status feedback updates without replacing focused permission controls', async t => {
@@ -327,11 +338,11 @@ test('background status recovery preserves action errors until retry while clear
     return ready();
   } }); t.after(() => ui.destroy()); await tick();
   await f.click('[data-connector-action="open-chatgpt"]'); await tick();
-  await ui.refresh(); assert.match(f.$('[role="alert"]').textContent, /Browser setup could not open/);
+  await ui.refresh(); assert.match(visibleAlert(f).textContent, /Browser setup could not open/);
   launchFails = false; await f.click('[data-connector-action="open-chatgpt"]'); await tick();
-  assert.equal(f.$('[role="alert"]'), null);
-  statusFails = true; await ui.refresh(); assert.match(f.$('[role="alert"]').textContent, /Status is temporarily unavailable/);
-  statusFails = false; await ui.refresh(); assert.equal(f.$('[role="alert"]'), null);
+  assert.equal(visibleAlert(f), null);
+  statusFails = true; await ui.refresh(); assert.match(visibleAlert(f).textContent, /Status is temporarily unavailable/);
+  statusFails = false; await ui.refresh(); assert.equal(visibleAlert(f), null);
 });
 
 test('connection permissions describe direct scoped execution and Windows file access without a local approval setting', () => {
@@ -356,7 +367,7 @@ test('historical local approvals can be cancelled but cannot be approved or repl
   assert.match(f.mount.textContent, /has not been approved or replayed/);
   assert.equal(f.$('[data-connector-action="approve-action"]'), null);
   assert.equal(f.$('[data-connector-action="resolve-action"]'), null);
-  assert.ok(calls.every(args => args[0] === '/api/chatgpt-connector'), 'loading never replays a pending action');
+  assert.ok(calls.every(passiveRead), 'loading never replays a pending action');
   await f.click('[data-connector-action="reject-action"]'); await tick();
   assert.deepEqual(calls.find(args => args[0].endsWith('/reject-action')), ['/api/chatgpt-connector/reject-action', 'POST', { id: 'old-job', interactionId: 'old-interaction' }]);
   assert.ok(calls.every(args => !/approve-action|resolve-action/.test(args[0])));
@@ -409,7 +420,7 @@ test('startup polling never mutates settings and one explicit click waits for ve
     if (args[0].endsWith('/enable-startup')) { await pending; value = ready({ startup: startupState({ ready: true, canEnable: false, checks: startupState().checks.map(check => ({ ...check, ok: true })) }) }); }
     return value;
   } }); t.after(() => ui.destroy()); await tick(); await ui.refresh(true);
-  assert.ok(calls.every(args => args[0] === '/api/chatgpt-connector'));
+  assert.ok(calls.every(passiveRead));
   await f.click('[data-connector-action="enable-startup"]');
   assert.equal(f.$('[data-connector-progress]').getAttribute('data-stage'), 'startup');
   assert.equal(f.$('[data-connector-action="enable-startup"]').getAttribute('aria-disabled'), 'true');
@@ -419,7 +430,7 @@ test('startup polling never mutates settings and one explicit click waits for ve
   release(); await tick();
   assert.equal(f.$('[data-connector-action="enable-startup"]'), null);
   assert.match(f.$('.connector-receipt').textContent, /settings verified/);
-  assert.ok(calls.every(args => ['/api/chatgpt-connector', '/api/chatgpt-connector/enable-startup'].includes(args[0])));
+  assert.ok(calls.every(args => passiveRead(args) || args[0] === '/api/chatgpt-connector/enable-startup' && args[1] === 'POST'));
 });
 
 test('incomplete startup results remain actionable and failed native permission never claims success', async t => {
@@ -432,7 +443,7 @@ test('incomplete startup results remain actionable and failed native permission 
   assert.match(f.$('.connector-receipt').textContent, /still need attention/);
   assert.doesNotMatch(f.$('[data-connector-startup]').textContent, /settings verified/);
   fail = true; await f.click('[data-connector-action="enable-startup"]'); await tick();
-  assert.match(f.$('[role="alert"]').textContent, /Windows permission was declined/);
+  assert.match(visibleAlert(f).textContent, /Windows permission was declined/);
   assert.equal(f.$('.connector-receipt'), null);
   assert.equal(f.$('[data-connector-action="enable-startup"]').getAttribute('aria-disabled'), null);
 });
