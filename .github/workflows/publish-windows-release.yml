@@ -82,11 +82,16 @@ jobs:
           # Older Windows tar delegates zstd to a child that can fail when a
           # selected-member extraction closes its pipe early. Use the native
           # decoder and reject incompatible build images before downloading.
-          $tarExecutable=Join-Path $env:SystemRoot 'System32/tar.exe'
-          if ((Get-Command tar.exe -CommandType Application -ErrorAction Stop).Source -ine $tarExecutable) { throw 'Native and corresponding-source packaging must resolve the same Windows tar.' }
-          $tarVersion=& $tarExecutable --version
-          if ($LASTEXITCODE -ne 0 -or $tarVersion -notmatch 'libzstd/') { throw 'The Windows build image must provide tar with built-in zstd support.' }
+          $tarDirectory=Join-Path $env:SystemRoot 'System32'
+          $env:PATH="$tarDirectory;$env:PATH"
+          $tarDirectory >> $env:GITHUB_PATH
+          $tarExecutable=Join-Path $tarDirectory 'tar.exe'
+          $resolvedTar=(Get-Command tar.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+          Write-Host "Selected archive reader: $resolvedTar"
+          $tarVersion=((& $tarExecutable --version) -join "`n")
           Write-Host $tarVersion
+          if ($resolvedTar -ine $tarExecutable) { throw 'Native and corresponding-source packaging must resolve the same Windows tar.' }
+          if ($LASTEXITCODE -ne 0 -or $tarVersion -notmatch 'libzstd/') { throw 'The Windows build image must provide tar with built-in zstd support.' }
           npm ci --no-audit --no-fund
           if ($LASTEXITCODE -ne 0) { throw 'Locked dependency installation failed.' }
           npm run package:public
