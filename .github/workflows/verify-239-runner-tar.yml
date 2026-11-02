@@ -1,4 +1,4 @@
-name: Reproduce exact draft startup in isolation
+name: Compare exact draft startup working directories
 on:
   push:
     branches: [codex/verify-239-runner-tar]
@@ -8,7 +8,7 @@ permissions:
 jobs:
   exact-startup:
     runs-on: windows-2025
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
@@ -97,12 +97,22 @@ jobs:
           '@
             & $node --input-type=module -e $fingerprint $source (Join-Path $install 'resources/app')
             if ($LASTEXITCODE -ne 0) { throw 'Installed app fingerprint failed.' }
+            foreach($entry in @(@{label='checkout';path=$source},@{label='install';path=$install},@{label='owned-parent';path=$root},@{label='runner-temp';path=$runner})){
+              $item=Get-Item -LiteralPath $entry.path
+              $acl=Get-Acl -LiteralPath $entry.path
+              @{event='ownedDirectoryMetadata';location=$entry.label;reparse=[bool]($item.Attributes -band [IO.FileAttributes]::ReparsePoint);attributes=[string]$item.Attributes;aclProtected=$acl.AreAccessRulesProtected;sddl=$acl.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access);driveType=[string]([IO.DriveInfo]::new([IO.Path]::GetPathRoot($item.FullName))).DriveType} | ConvertTo-Json -Compress
+            }
+            foreach($mode in @('baseline','appdir')){
+            $runtime=Join-Path $root ('runtime-'+$mode)
+            [IO.Directory]::CreateDirectory($runtime) | Out-Null
+            $report=Join-Path $root ('runtime-report-'+$mode+'.json')
+            $runtimeExit=$null
             $observer=Join-Path $root 'exit-observer.mjs'
             $observerSource=@'
           import cp from 'node:child_process';import {syncBuiltinESMExports} from 'node:module';import fs from 'node:fs';import path from 'node:path';
-          const a=process.argv,index=a.indexOf('--exe'),wanted=path.resolve(a[index+1]).toLowerCase(),out=path.join(path.dirname(a[a.indexOf('--report')+1]),'child-exit-observer.jsonl'),original=cp.spawn;
+          const a=process.argv,index=a.indexOf('--exe'),wanted=path.resolve(a[index+1]).toLowerCase(),out=path.join(path.dirname(a[a.indexOf('--report')+1]),'child-exit-observer.jsonl'),original=cp.spawn;const mode=path.basename(a[a.indexOf('--report')+1]).includes('-appdir.')?'appdir':'baseline';
           let events=0;function record(value){try{if(events++<100)fs.appendFileSync(out,JSON.stringify(value)+'\n')}catch{}}
-          cp.spawn=function(file,...rest){const child=Reflect.apply(original,this,[file,...rest]);if(path.resolve(String(file)).toLowerCase()===wanted){record({event:'ownedNativeChildSpawn',pid:child.pid});child.once('exit',(code,signal)=>record({event:'ownedNativeChildExit',pid:child.pid,code,signal}));child.once('error',e=>record({event:'ownedNativeChildError',pid:child.pid,code:/^[A-Z0-9_]+$/.test(e.code||'')?e.code:'UNKNOWN'}));}return child;};syncBuiltinESMExports();
+          cp.spawn=function(file,...rest){const owned=path.resolve(String(file)).toLowerCase()===wanted;if(owned&&mode==='appdir')rest[1]={...(rest[1]||{}),cwd:path.dirname(path.resolve(String(file)))};const child=Reflect.apply(original,this,[file,...rest]);if(owned){record({event:'ownedNativeChildSpawn',mode,pid:child.pid,cwd:mode==='appdir'?'installed-app-directory':'inherited-checkout'});child.once('exit',(code,signal)=>record({event:'ownedNativeChildExit',mode,pid:child.pid,code,signal}));child.once('error',e=>record({event:'ownedNativeChildError',mode,pid:child.pid,code:/^[A-Z0-9_]+$/.test(e.code||'')?e.code:'UNKNOWN'}));}return child;};syncBuiltinESMExports();
           '@
             [IO.File]::WriteAllText($observer,$observerSource,[Text.UTF8Encoding]::new($false))
             $p=[Diagnostics.Process]::new()
@@ -124,7 +134,7 @@ jobs:
             } finally { $p.Dispose() }
             if (Test-Path -LiteralPath $report) {
               $value=[IO.File]::ReadAllText($report) | ConvertFrom-Json
-              @{event='originalVerifierResult';diagnosticOnly=$true;installerAcceptance=$false;nativeStatus=$(if($value.passed -eq $true -and $runtimeExit -eq 0){'PASS'}else{'FAIL'});exitCode=$runtimeExit;value=$value} | ConvertTo-Json -Compress -Depth 20
+              @{event='originalVerifierResult';mode=$mode;diagnosticOnly=$true;installerAcceptance=$false;nativeStatus=$(if($value.passed -eq $true -and $runtimeExit -eq 0){'PASS'}else{'FAIL'});exitCode=$runtimeExit;value=$value} | ConvertTo-Json -Compress -Depth 20
             }
             $trace=Join-Path $root 'child-exit-observer.jsonl'
             if ((Test-Path -LiteralPath $trace) -and (Get-Item -LiteralPath $trace).Length -le 65536) {
@@ -139,7 +149,8 @@ jobs:
               $excerpt=(($keep | Select-Object -First 80 | ForEach-Object {$lines[$_].Substring(0,[Math]::Min(1000,$lines[$_].Length))}) -join [Environment]::NewLine)
               $excerpt=Redact-Excerpt $excerpt
               if($excerpt.Length -gt 16384){$excerpt=$excerpt.Substring(0,16384)}
-              @{event='startupFatalExcerpt';file=$log.Name;redacted=$true;text=$excerpt} | ConvertTo-Json -Compress -Depth 3
+              @{event='startupFatalExcerpt';mode=$mode;file=$log.Name;redacted=$true;text=$excerpt} | ConvertTo-Json -Compress -Depth 3
+            }
             }
           } finally {
             $prefix=[IO.Path]::GetFullPath($install).TrimEnd('\')+'\'
