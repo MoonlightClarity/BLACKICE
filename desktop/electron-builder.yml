@@ -76,6 +76,7 @@ files:
   - RELEASE-NOTES-2.37.0.md
   - RELEASE-NOTES-2.38.0.md
   - RELEASE-NOTES-2.39.0.md
+  - RELEASE-NOTES-2.39.1.md
   - PLANNING-ORGANIZATION.md
   - REMOTE-ACCESS.md
   - BROWSER-PROTECTION.md
@@ -99,9 +100,9 @@ win:
       arch:
         - x64
   signAndEditExecutable: true
-  # BLACKICE starts elevated by default. Browser renderer compatibility under
-  # an administrator token is tracked separately from the Windows launch policy.
-  requestedExecutionLevel: requireAdministrator
+  # Request the highest available rights. The manifest-only Windows diagnostic
+  # kept the administrator parent elevated and allowed restricted Chromium children.
+  requestedExecutionLevel: highestAvailable
 artifactName: Blackice-${version}-Setup.${ext}
 nsis:
   oneClick: false

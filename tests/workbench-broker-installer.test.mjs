@@ -2,14 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 
-test('BLACKICE Electron executable requests administrator elevation by default',async()=>{
+test('BLACKICE requests highest available administrator rights while its installer remains per-user',async()=>{
   const config=await readFile(new URL('../desktop/electron-builder.yml',import.meta.url),'utf8');
   assert.match(config,/^\s*- scripts\/workbench-headless-broker\.ps1\s*$/m);
   assert.doesNotMatch(config,/^\s*- scripts\/install-workbench-headless-broker\.ps1\s*$/m);
   assert.match(config,/^\s*perMachine: false\s*$/m);
   assert.match(config,/^\s*allowElevation: false\s*$/m);
-  assert.match(config,/^\s*requestedExecutionLevel: requireAdministrator\s*$/m);
-  assert.doesNotMatch(config,/^\s*requestedExecutionLevel: asInvoker\s*$/m);
+  assert.match(config,/^\s*requestedExecutionLevel: highestAvailable\s*$/m);
+  assert.match(config,/^\s*signAndEditExecutable: true\s*$/m);
+  assert.doesNotMatch(config,/^\s*requestedExecutionLevel: (?:asInvoker|requireAdministrator)\s*$/m);
 });
 
 test('SYSTEM Workbench task only executes a protected Program Files copy, never a per-user app script',async()=>{

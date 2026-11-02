@@ -163,3 +163,71 @@ test('current source publication requires the exact full tested source inventory
   await f.write(f.prior);
   assert.equal((await readWindowsSourceTestReceipt(f.options)).sourceIndexSha256, undefined, 'historical callers retain their original receipt contract');
 });
+
+
+test('installed manifest gate reads real PE resources without executing them and rejects wrong launch rights', { skip: process.platform !== 'win32' }, async t => {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const directory = await fs.mkdtemp(path.join(tmpdir(), 'blackice-manifest-reader-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const script = path.join(directory, 'read-manifest.ps1');
+  await fs.writeFile(script, String.raw`
+param([string]$Verifier,[string]$Directory)
+$ErrorActionPreference='Stop'
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($Verifier,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'Verifier does not parse.'}
+$names=@('Assert','Get-InstalledExecutionManifest','Assert-InstalledExecutionManifest')
+$functions=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $names -contains $node.Name},$true))
+if($functions.Count -ne 3){throw 'Expected exactly the read-only manifest functions and their assertion helper.'}
+. ([scriptblock]::Create(($functions | ForEach-Object {$_.Extent.Text}) -join [Environment]::NewLine))
+function Hash-File([string]$Path) { $sha=[Security.Cryptography.SHA256]::Create();try{return [BitConverter]::ToString($sha.ComputeHash([IO.File]::ReadAllBytes($Path))).Replace('-','')}finally{$sha.Dispose()} }
+$marker=Join-Path $Directory 'entrypoint-executed.txt'
+$source='public static class NeverExecute { public static void Main() { System.IO.File.WriteAllText(@"'+$marker.Replace('"','""')+'","executed"); } }'
+$provider=[Microsoft.CSharp.CSharpCodeProvider]::new()
+$results=@()
+try {
+  foreach($case in @(
+    @{name='highest';level='highestAvailable';uiAccess='false';allowed=$true},
+    @{name='required';level='requireAdministrator';uiAccess='false';allowed=$false},
+    @{name='invoker';level='asInvoker';uiAccess='false';allowed=$false},
+    @{name='ui-access';level='highestAvailable';uiAccess='true';allowed=$false}
+  )) {
+    $manifest=Join-Path $Directory ($case.name+'.manifest')
+    $xml='<?xml version="1.0" encoding="utf-8"?><assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0"><trustInfo xmlns="urn:schemas-microsoft-com:asm.v3"><security><requestedPrivileges><requestedExecutionLevel level="'+$case.level+'" uiAccess="'+$case.uiAccess+'" /></requestedPrivileges></security></trustInfo></assembly>'
+    [IO.File]::WriteAllText($manifest,$xml,[Text.UTF8Encoding]::new($false))
+    $file=Join-Path $Directory ($case.name+'.exe')
+    $parameters=[CodeDom.Compiler.CompilerParameters]::new()
+    $parameters.GenerateExecutable=$true;$parameters.GenerateInMemory=$false;$parameters.OutputAssembly=$file
+    $parameters.CompilerOptions='/target:winexe /win32manifest:"'+$manifest+'"'
+    $compiled=$provider.CompileAssemblyFromSource($parameters,$source)
+    if($compiled.Errors.HasErrors){throw (($compiled.Errors | ForEach-Object {$_.ErrorText}) -join '; ')}
+    $before=Hash-File $file
+    $read=Get-InstalledExecutionManifest $file
+    if($read.requestedExecutionLevel -cne $case.level -or $read.uiAccess -ne ($case.uiAccess -ceq 'true')){throw 'Actual resource policy did not match its known fixture.'}
+    $allowed=$true
+    try { Assert-InstalledExecutionManifest $read } catch { $allowed=$false }
+    if($allowed -ne $case.allowed){throw 'Execution-level policy gate accepted or rejected the wrong real PE.'}
+    if((Hash-File $file) -cne $before){throw 'Manifest reader changed the PE.'}
+    $moved=$file+'.read-closed';[IO.File]::Move($file,$moved);[IO.File]::Move($moved,$file)
+    $results+=@{name=$case.name;requestedExecutionLevel=$read.requestedExecutionLevel;uiAccess=$read.uiAccess;allowed=$allowed;unchanged=$true;handleReleased=$true;resourceType=$read.manifestResourceType;resourceId=$read.manifestResourceId;resourceBytes=$read.manifestBytes;manifestSha256=$read.manifestSha256}
+  }
+} finally { $provider.Dispose() }
+if(Test-Path -LiteralPath $marker){throw 'A fixture executable ran instead of being read as data.'}
+@{passed=$true;entrypointExecuted=$false;results=$results}|ConvertTo-Json -Depth 6 -Compress
+`, 'utf8');
+  const verifier = new URL('../scripts/verify-windows-release.ps1', import.meta.url);
+  const { fileURLToPath } = await import('node:url');
+  const { stdout } = await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', script, '-Verifier', fileURLToPath(verifier), '-Directory', directory], { windowsHide: true, timeout: 30000, maxBuffer: 32768, encoding: 'utf8' });
+  const result = JSON.parse(stdout.trim());
+  assert.equal(result.passed, true); assert.equal(result.entrypointExecuted, false);
+  assert.deepEqual(result.results.map(row => [row.name, row.requestedExecutionLevel, row.uiAccess, row.allowed]), [
+    ['highest', 'highestAvailable', false, true], ['required', 'requireAdministrator', false, false], ['invoker', 'asInvoker', false, false], ['ui-access', 'highestAvailable', true, false]
+  ]);
+  for (const row of result.results) {
+    assert.equal(row.unchanged, true); assert.equal(row.handleReleased, true);
+    assert.equal(row.resourceType, 24); assert.equal(row.resourceId, 1);
+    assert.ok(row.resourceBytes > 20 && row.resourceBytes <= 65536); assert.match(row.manifestSha256, /^[a-f0-9]{64}$/);
+  }
+});
