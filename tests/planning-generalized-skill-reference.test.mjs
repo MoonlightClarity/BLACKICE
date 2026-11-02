@@ -47,3 +47,23 @@ test('Real-world effects remain distinct from accepted tool calls, and correctio
   assert.match(evidenceReference, /Destination state/);
   assert.match(evidenceReference, /User correction ignored downstream/);
 });
+
+test('A repairable prerequisite never replaces an unfinished external action', () => {
+  assert.match(PLANNING_SKILL_CONTENT, /new prerequisite observation, source lookup, diagnosis or format conversion must be a distinct preparatory leaf/);
+  assert.match(PLANNING_SKILL_CONTENT, /not a replacement for a pending write, delivery, application, or verification/);
+  assert.match(PLANNING_SKILL_CONTENT, /record the work as a next executable step and recheck afterward/);
+  assert.match(PLANNING_SKILL_CONTENT, /An observed stop applies only to the exact operation/);
+});
+
+test('The same skill prioritizes fresh evidence and explains two independent task domains', () => {
+  assert.match(PLANNING_SKILL_CONTENT, /Reuse current evidence/);
+  assert.match(PLANNING_SKILL_CONTENT, /source changes, its scope fails to answer the next operation, or newer evidence contradicts it/);
+  assert.match(PLANNING_SKILL_CONTENT, /Worked job-search example/);
+  assert.match(PLANNING_SKILL_CONTENT, /Worked non-job example/);
+  assert.match(PLANNING_SKILL_CONTENT, /For a code repair/);
+});
+
+test('Installer includes the mandatory Planning reference, not just SKILL.md', () => {
+  const manifest = readFileSync(new URL('../desktop/electron-builder.yml', import.meta.url), 'utf8');
+  assert.match(manifest, /skills\/planning\/\*\*\/\*/);
+});
