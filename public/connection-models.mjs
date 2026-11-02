@@ -128,9 +128,9 @@ export function connectionDefaultModels(status = {}) {
   for (const model of status.models || []) {
     const id = model.id === selected || model.model === selected ? selected : model.id || model.model;
     const native = !String(id).includes('::'), available = typeof model.available === 'boolean' ? model.available : native && codexReady;
-    if (id && available && !seen.has(id)) { values.push({ value: id, label: `${model.displayName || id}${native && model.hidden === true ? ' · Hidden by Codex' : native && model.source === 'custom' ? ' · Custom model ID' : ''}${native && codexModelLifecycleLabel(model) ? ` · ${codexModelLifecycleLabel(model)}` : ''}` }); seen.add(id); }
+    if (id && available && !/^(?:antigravity|qwen_code)::/.test(id) && !seen.has(id)) { values.push({ value: id, label: `${native?'':'Unsupported endpoint · '}${model.displayName || id}${native && model.hidden === true ? ' · Hidden by Codex' : native && model.source === 'custom' ? ' · Custom model ID' : ''}${native && codexModelLifecycleLabel(model) ? ` · ${codexModelLifecycleLabel(model)}` : ''}` }); seen.add(id); }
   }
-  if (!seen.has(selected)) values.push({ value: selected, label: `${selected} · unavailable` });
+  if (!seen.has(selected)) values.push({ value: selected, label: `${selected} · unavailable · previous selection`, disabled: true });
   return values;
 }
 

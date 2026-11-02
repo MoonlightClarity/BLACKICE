@@ -34,7 +34,7 @@ const keys = { alpha: randomUUID(), beta: randomUUID() };
 for (const [id, key] of Object.entries(keys)) {
   await writeFile(path.join(cwd, id + '.txt'), JSON.stringify({ id, key, value: id === 'alpha' ? 17 : 25 }) + '\n');
 }
-const runtime = new CodexRuntime({ cwd, runTimeoutMs: 180_000, requestTimeoutMs: 30_000 });
+const runtime = new CodexRuntime({ isolatedHistory: true, cwd, runTimeoutMs: 180_000, requestTimeoutMs: 30_000 });
 const settings = await new RuntimeSettingsStore({ dataDir }).init();
 await settings.update({ subagentsEnabled: true, maxSubagents: 2, runTimeoutMs: 180_000, verbosity: 'concise' });
 const engine = new HarnessEngine({ runtime, dataDir, defaultCwd: cwd });

@@ -24,13 +24,26 @@ export function resolvedDefaultModel(status={}) {
 export function chatOptionChoices(status={},raw={}){
   const selected=normalizeChatOptions(raw);
   const defaultInfo=resolvedDefaultModel(status);
+  const isRetired=id=>/^(?:antigravity|qwen_code)::/.test(id||'');
   const models=[{id:'default',label:defaultInfo.label,disabled:false}];
   for(const item of status.models||[]){
     const id=item?.id||item?.model;
-    if(typeof id!=='string'||!id||models.some(x=>x.id===id))continue;
-    models.push({id,label:item.displayName||id,disabled:item.available===false});
+    // Catalogs can be cached in a mounted chat even after the runtime has
+    // retired its adapters. Do not offer obsolete native CLIs as choices.
+    if(typeof id!=='string'||!id||isRetired(id)||models.some(x=>x.id===id))continue;
+    const otherEndpoint=id.includes('::')&&item.providerId!=='codex';
+    models.push({id,label:(otherEndpoint?'Unsupported endpoint · ':'')+(item.displayName||id),disabled:item.available===false});
   }
-  if(selected.model!=='default'&&!models.some(item=>item.id===selected.model))models.push({id:selected.model,label:selected.model===UNKNOWN_CHAT_MODEL?'Saved model unknown · choose a model':selected.model+' · unavailable',disabled:true});
+  if(selected.model!=='default'&&!models.some(item=>item.id===selected.model)){
+    const old=isRetired(selected.model);
+    const provider=selected.model.startsWith('antigravity::')?'Antigravity':selected.model.startsWith('qwen_code::')?'Qwen Code':'';
+    // A selected *historical* model is retained in the control for an exact
+    // label, but is never offered as a new selectable model.
+    models.push({id:selected.model,label:old
+      ?provider+' · '+selected.model.split('::').slice(1).join('::')+' · retired (historical chat)'
+      :selected.model===UNKNOWN_CHAT_MODEL?'Saved model unknown · choose a model':selected.model+' · unavailable',
+      disabled:true,historical:old});
+  }
   const efforts=reasoningChoices(status,selected.model,selected.effort)
     .map(item=>({id:item.value,label:item.label,disabled:!item.available,verified:item.verified}));
   const fast=serviceTierSupport(status,selected.model,'fast');

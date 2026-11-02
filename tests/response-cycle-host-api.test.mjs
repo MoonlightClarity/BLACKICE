@@ -51,7 +51,7 @@ test('supervising model uses the same explicit Plan only and Continue service co
 
 test('v5 control bytes stay frozen and cannot silently accept the new cycle-profile fields',async()=>{
   const digest=value=>createHash('sha256').update(typeof value==='string'?value:JSON.stringify(value)).digest('hex');
-  assert.equal(CONTROL_SCHEMA_VERSION,9);assert.equal(digest(PRE_PROFILE_CONTROL_TOOL),'2952769b26c22c9f6da3f83e71877f9bd77aa984159cb45ab3a33b4a6743001f');assert.equal(digest(PRE_PROFILE_CONTROL_INSTRUCTIONS),'99a51bd67f845fda17d7d498781554db4159b17f271556dedbadba06fdb37336');
+  assert.equal(CONTROL_SCHEMA_VERSION,10);assert.equal(digest(PRE_PROFILE_CONTROL_TOOL),'2952769b26c22c9f6da3f83e71877f9bd77aa984159cb45ab3a33b4a6743001f');assert.equal(digest(PRE_PROFILE_CONTROL_INSTRUCTIONS),'99a51bd67f845fda17d7d498781554db4159b17f271556dedbadba06fdb37336');
   const {calls,service}=serviceFixture(),handler=createControlToolHandler({engine:{responseCycle:service},run:{id:'saved-v5'},nodeId:'supervisor',toolDefinition:PRE_PROFILE_CONTROL_TOOL});
   const denied=await handler({name:'relay_control',arguments:{action:'planning_cycle_run',graphRequestId:'request-a',cycleId:'cycle-a',cycle:{expectedRequestRevision:4,expectedCycleRevision:3,clientRequestId:'legacy-profile',model:'fixture-api::fast'}}});
   assert.equal(denied.success,false);assert.match(denied.contentItems[0].text,/saved control schema/);assert.equal(calls.length,0);

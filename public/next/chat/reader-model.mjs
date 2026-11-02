@@ -1,5 +1,5 @@
 import { conversationRuns, messagesOfRun } from './model.mjs';
-import { recordedChatModels } from './model.mjs';
+import { recordedChatModels,projectCyclePlanning } from './model.mjs';
 import { projectPlanningActivity } from './planning-timeline.mjs';
 import { contextOptions, contextStatistics, compactionStatistics } from '../core/context-controls.mjs';
 const records = value => Array.isArray(value) ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item)) : [];
@@ -25,9 +25,10 @@ export function projectFamily(family) {
       planningExecutionMode:run.planningExecutionMode,
       viability:run.viability?.awaitingInput===true?{awaitingInput:true}:undefined,
       responseCycle:run.responseCycle&&{
-        state:run.responseCycle.state,requestId:run.responseCycle.requestId,cycleId:run.responseCycle.cycleId,
+        state:run.responseCycle.state,stage:run.responseCycle.stage,requestId:run.responseCycle.requestId,cycleId:run.responseCycle.cycleId,
         title:String(run.responseCycle.title||'').slice(0,240),summary:String(run.responseCycle.summary||'').slice(0,1200),
-        planRef:run.responseCycle.planRef&&{requestId:run.responseCycle.planRef.requestId,nodeId:run.responseCycle.planRef.nodeId,
+        ...(projectCyclePlanning(run.responseCycle)?{planning:projectCyclePlanning(run.responseCycle)}:{}),
+        planRef:run.responseCycle.planRef&&{requestId:run.responseCycle.planRef.requestId,...(run.responseCycle.planRef.cycleId?{cycleId:run.responseCycle.planRef.cycleId}:{}),nodeId:run.responseCycle.planRef.nodeId,
           nodeRevision:run.responseCycle.planRef.nodeRevision,responseId:run.responseCycle.planRef.responseId},
       },
       attachmentIds:Array.isArray(run.attachmentIds)?run.attachmentIds.filter(id=>typeof id==='string'):[],

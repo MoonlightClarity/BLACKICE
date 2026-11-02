@@ -156,7 +156,7 @@ test('native helper lifetime remains visible until physical close even after std
 test('fixed helper preserves other Tailscale preferences and keeps unattended in the original user context', () => {
   const setup = tailscaleStartupRepairScript();
   assert.match(TAILSCALE_STARTUP_INSPECT, /'get','unattended'/); assert.doesNotMatch(TAILSCALE_STARTUP_INSPECT, /debug prefs/);
-  assert.match(setup, /'set','--unattended=true'/); assert.match(setup, /-Verb RunAs -Wait -PassThru/); assert.doesNotMatch(setup, /\bup\s+--|--reset|auth-key|Set-ExecutionPolicy|Register-ScheduledTask/);
+  assert.match(setup, /'set','--unattended=true'/); assert.match(setup, /# Workbench and startup maintenance must never trigger secondary UAC/); assert.doesNotMatch(setup, /\bup\s+--|--reset|auth-key|Set-ExecutionPolicy|Register-ScheduledTask|Start-Process|-Verb RunAs/);
   assert.match(TAILSCALE_SERVICE_REPAIR, /Set-Service -Name Tailscale -StartupType Automatic/); assert.doesNotMatch(TAILSCALE_SERVICE_REPAIR, /tailscale\.exe|unattended|Get-ScheduledTask/);
 });
 

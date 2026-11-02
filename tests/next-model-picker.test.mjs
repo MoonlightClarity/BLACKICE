@@ -25,10 +25,9 @@ function fixture(t,{models=catalog,selected='default',hidden=[]}={}){
   picker.update({models:choices,status,selected});t.after(()=>picker.destroy());
   const panel=()=>dom.document.querySelector('#test-model-picker'),trigger=()=>dom.$('.next-model-picker-trigger');
   return{...dom,select,picker,changes,choices,panel,trigger,
-    rows:()=>panel().querySelectorAll('[data-model-value]'),groups:()=>panel().querySelectorAll('details'),
+    rows:()=>panel().querySelectorAll('[data-model-value]'),groups:()=>panel().querySelectorAll('details[data-model-provider]'),
     async open(){await trigger().dispatch('click',{},true);},
     async query(value){const input=panel().querySelector('input[type="search"]');input.value=value;await input.dispatch('input',{},true);},
-    async filter(name,checked){const input=panel().querySelector(`[data-model-filter="${name}"]`);input.checked=checked;await input.dispatch('change',{},true);},
     async expand(id){const group=panel().querySelector(`details[data-model-provider="${id}"]`);assert.ok(group,'Provider group exists: '+id);group.open=true;await group.dispatch('toggle');},
     update(next={}){status={...status,...next};picker.update({models:choices,status,selected:select.value});},
   };
@@ -48,17 +47,14 @@ test('provider groups are sorted and collapsed initially, with bounded rows adde
   await f.open();assert.ok(f.groups().every(group=>!group.open),'Reopening starts with collapsed providers.');
 });
 
-test('search, explicit free and capability filters, and context ordering affect discovery without choosing a model',async t=>{
+test('name and provider search retain alphabetical choices without capability filters or limit ordering',async t=>{
   const f=fixture(t);await f.open();await f.query('Alpha');
   assert.deepEqual(f.groups().map(group=>group.dataset.modelProvider),['alpha']);assert.ok(f.groups()[0].open);
-  const sort=f.panel().querySelector('select');sort.value='context-desc';await sort.dispatch('change',{},true);
-  assert.deepEqual(f.rows().map(row=>row.dataset.modelValue),['alpha::paid-high','alpha::free-vision','alpha::free-low','alpha::unknown']);
-  await f.filter('freeOnly',true);assert.deepEqual(f.rows().map(row=>row.dataset.modelValue),['alpha::free-vision','alpha::free-low']);
-  assert.equal(f.panel().querySelector('[data-model-value="default"]'),null,'Automatic is not classified as free.');
-  await f.filter('toolsOnly',true);await f.filter('visionOnly',true);
-  assert.deepEqual(f.rows().map(row=>row.dataset.modelValue),['alpha::free-vision']);
+  assert.equal(f.panel().querySelector('select'),null);assert.equal(f.panel().querySelector('input[type="checkbox"]'),null);
+  assert.deepEqual(f.rows().map(row=>row.dataset.modelValue),['alpha::free-low','alpha::free-vision','alpha::paid-high','alpha::unknown']);
+  await f.query('unknown');assert.deepEqual(f.rows().map(row=>row.dataset.modelValue),['alpha::unknown'],'A model without tools or reported limits remains discoverable.');
   assert.equal(f.select.value,'default');assert.deepEqual(f.changes,[]);
-  await f.rows()[0].dispatch('click',{},true);assert.equal(f.select.value,'alpha::free-vision');assert.deepEqual(f.changes,['alpha::free-vision']);
+  await f.rows()[0].dispatch('click',{},true);assert.equal(f.select.value,'alpha::unknown');assert.deepEqual(f.changes,['alpha::unknown']);
 });
 
 test('hiding a provider retains the active selection and native hidden flags remain separate',async t=>{
@@ -66,7 +62,7 @@ test('hiding a provider retains the active selection and native hidden flags rem
   const f=fixture(t,{models:[...catalog,native],selected:'alpha::free-low'});await f.open();await f.expand('alpha');
   f.update({runtimeSettings:{hiddenModelProviders:['alpha']}});
   assert.equal(f.select.value,'alpha::free-low');assert.deepEqual(f.changes,[]);
-  assert.match(f.trigger().textContent,/free-low/);assert.match(f.trigger().textContent,/Hidden provider/);
+  assert.match(f.trigger().textContent,/free-low/);assert.match(f.trigger().textContent,/Alpha API/);assert.doesNotMatch(f.trigger().textContent,/Hidden provider/);
   assert.equal(f.groups().some(group=>group.dataset.modelProvider==='alpha'),false);
   assert.equal(f.groups().some(group=>group.dataset.modelProvider==='codex'),true,'Native catalog hidden flag does not hide its provider.');
   await f.expand('codex');assert.ok(f.rows().some(row=>row.dataset.modelValue==='native-hidden'));
@@ -74,7 +70,7 @@ test('hiding a provider retains the active selection and native hidden flags rem
 
 test('unavailable or missing selected models stay selected while discovery updates',async t=>{
   const f=fixture(t,{selected:'retired::old'});await f.open();f.update({runtimeSettings:{hiddenModelProviders:['retired']}});
-  assert.equal(f.select.value,'retired::old');assert.match(f.trigger().textContent,/retired::old/);assert.match(f.trigger().textContent,/Unavailable/);assert.deepEqual(f.changes,[]);
+  assert.equal(f.select.value,'retired::old');assert.match(f.trigger().textContent,/retired::old/);assert.deepEqual(f.changes,[]);
   const choices=chatOptionChoices({models:[{id:'offline',available:false}]},{model:'offline'});
   assert.ok(choices.models.some(row=>row.id==='offline'&&row.disabled));assert.equal(choices.selected.model,'offline');
   const missing=chatOptionChoices({models:[]},{model:'saved-but-missing'});
@@ -96,22 +92,36 @@ test('Chat paints retain unavailable and missing native values instead of select
   paintModels({model:select},{models:[{id:'hidden::selected',available:true}],runtimeSettings:{hiddenModelProviders:['hidden']}},{model:'hidden::selected'});assert.equal(select.value,'hidden::selected');
 });
 
-test('model evidence links are outside the selection button and do not switch the active model',async t=>{
-  const sourced=model('alpha::referenced',{contextWindowTokens:400000,contextWindowSource:'model-reference',contextWindowObservedAt:'2026-10-30T12:00:00Z',contextWindowEvidence:{label:'Official catalog',modelId:'underlying-model',url:'https://models.example/model',endpointSpecific:false}});
+test('picker shows model names and providers without capability, pricing or context details',async t=>{
+  const sourced=model('alpha::referenced',{contextWindowTokens:400000,maxOutputTokens:64000,contextWindowSource:'model-reference',contextWindowObservedAt:'2026-10-30T12:00:00Z',contextWindowEvidence:{label:'Official catalog',modelId:'underlying-model',url:'https://models.example/model',endpointSpecific:false},supportsTools:true,inputModalities:['text','image'],...free});
   const f=fixture(t,{models:[sourced],selected:'default'});await f.open();await f.expand('alpha');
-  const row=f.panel().querySelector('[data-model-value="alpha::referenced"]'),link=f.panel().querySelector('[data-model-source]');
-  assert.match(row.textContent,/400,000 tokens · Model reference · Official catalog · Endpoint unconfirmed/);assert.match(row.textContent,/Observed 2026-10-30 12:00:00 UTC/);
-  assert.equal(link.getAttribute('href'),'https://models.example/model');assert.equal(link.closest('button'),null);assert.equal(link.getAttribute('rel'),'noopener noreferrer');
-  await link.dispatch('click',{},true);assert.equal(f.select.value,'default');assert.deepEqual(f.changes,[]);assert.equal(f.panel().hidden,false);
+  const row=f.panel().querySelector('[data-model-value="alpha::referenced"]');
+  assert.equal(row.textContent,'referenced');assert.match(f.groups()[0].querySelector('summary').textContent,/Alpha API/);
+  assert.equal(f.panel().querySelector('[data-model-details]'),null);assert.equal(f.panel().querySelector('a'),null);
+  assert.doesNotMatch(f.panel().textContent,/context|output|Tools|Vision|Free only|Official catalog|Details|Observed|Limits unknown/i);
+  assert.equal(f.select.value,'default');assert.deepEqual(f.changes,[]);
   await row.dispatch('click',{},true);assert.equal(f.select.value,'alpha::referenced');assert.deepEqual(f.changes,['alpha::referenced']);
+  assert.equal(f.trigger().querySelector('.next-model-picker-title').textContent,'referenced');assert.equal(f.trigger().querySelector('.next-model-picker-subtitle').textContent,'Alpha API');
 });
 
-test('runtime windows distinguish the current default and supported maximum while hidden native models remain available',async t=>{
+test('native hidden models remain selectable and unavailable models retain accessible reasons without extra metadata',async t=>{
   const hidden={id:'native-hidden',displayName:'Native hidden',providerId:'codex',hidden:true,available:true,contextWindowTokens:196000,contextWindowSource:'runtime-reported',runtimeDefaultContextWindowTokens:196000,maxContextWindowTokens:1000000};
-  const candidate={id:'native-candidate',displayName:'Candidate',available:false,source:'runtime-candidate'};
+  const candidate={id:'native-candidate',displayName:'Candidate',providerId:'codex',available:false,source:'runtime-candidate',availabilityReason:'This model is not available for the current connection.'};
   const choices=chatOptionChoices({models:[hidden,candidate],codex:{connected:true,authenticated:true}},{model:'native-hidden'});
   assert.ok(choices.models.some(model=>model.id==='native-hidden'));assert.equal(choices.models.find(model=>model.id==='native-candidate').disabled,true,'Unavailable candidates can be displayed but cannot be selected.');
-  const f=fixture(t,{models:[hidden],selected:'native-hidden'});await f.open();await f.expand('codex');const row=f.panel().querySelector('[data-model-value="native-hidden"]');
-  assert.match(row.textContent,/Context window: 196,000 tokens · Runtime reported/);assert.match(row.textContent,/Runtime default context: 196,000/);assert.match(row.textContent,/Maximum supported context: 1,000,000/);assert.match(row.textContent,/Hidden by Codex/);
+  const f=fixture(t,{models:[hidden,candidate],selected:'native-hidden'});await f.open();await f.expand('codex');const row=f.panel().querySelector('[data-model-value="native-hidden"]');
+  assert.equal(row.textContent,'Native hidden✓');assert.equal(row.querySelector('small'),null);
   assert.equal(row.disabled,false);assert.equal(f.select.value,'native-hidden');assert.deepEqual(f.changes,[]);
+  const unavailable=f.panel().querySelector('[data-model-value="native-candidate"]');assert.equal(unavailable.disabled,true);assert.equal(unavailable.textContent,'Candidate');assert.equal(unavailable.getAttribute('aria-description'),candidate.availabilityReason);
+  await unavailable.dispatch('click',{},true);assert.equal(f.select.value,'native-hidden');assert.deepEqual(f.changes,[]);
+});
+
+test('keyboard navigation and focus survive discovery updates with exact model IDs preserved',async t=>{
+  const f=fixture(t,{models:[model('alpha::one'),model('alpha::two')]});await f.open();await f.query('Alpha');
+  const summary=f.groups()[0].querySelector('summary'),row=f.panel().querySelector('[data-model-value="alpha::one"]');
+  summary.focus();await f.panel().dispatch('keydown',{key:'ArrowDown',target:summary},true);assert.equal(f.document.activeElement,row);
+  f.update({models:[model('alpha::one',{contextWindowTokens:128000,supportsTools:false}),model('alpha::two')]});
+  const updated=f.panel().querySelector('[data-model-value="alpha::one"]');assert.equal(f.document.activeElement,updated);assert.equal(updated.textContent,'one');
+  await f.panel().dispatch('keydown',{key:'ArrowDown',target:updated},true);assert.equal(f.document.activeElement.dataset.modelValue,'alpha::two');
+  await updated.dispatch('click',{},true);assert.equal(f.select.value,'alpha::one');assert.deepEqual(f.changes,['alpha::one']);
 });

@@ -52,7 +52,9 @@ test('every reachable V2 browser import is actually served over HTTP, including 
       queue.push({ route: target.pathname + target.search, importer: route });
     }
   }
-  for (const required of ['/next/workspaces/tasks.mjs', '/next/workspaces/planning.mjs',
+  // Planning now loads its visual planning browser. The retired text planning
+  // workspace must not be kept in the browser graph merely for an old test.
+  for (const required of ['/next/workspaces/tasks.mjs', '/next/workspaces/planning-browser.mjs',
     '/next/workspaces/schedule-inspection-model.mjs', '/next/chat/planning-timeline.mjs']) {
     assert.ok(visited.has(required), 'The actual browser import graph must cover ' + required);
   }

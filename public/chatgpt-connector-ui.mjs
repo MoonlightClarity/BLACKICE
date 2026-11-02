@@ -9,7 +9,7 @@ export const connectorPermissions = [
   ['files:write', 'Change files on this computer', 'Import selected attachments, write, patch, and undo files with your Windows account’s access. Absolute file paths are supported.'],
   ['browser:read', 'Read contained browser', 'Read pages and screenshots in BLACKICE’s browser.'],
   ['browser:write', 'Act in contained browser', 'Navigate, click, type, and upload selected files in BLACKICE’s browser.'],
-  ['commands:run', 'Run commands on this computer', 'Execute shell commands with your Windows account’s permissions. The working folder is not a system sandbox.'],
+  ['commands:run', 'Run commands on this computer', 'Run a shell command in the configured workspace. Supports cancellation and saved results.'],
 ];
 const label = scope => connectorPermissions.find(item => item[0] === scope)?.[1] || scope;
 const offeredPermissions = request => connectorPermissions.filter(([scope]) => Array.isArray(request?.scopes) && request.scopes.includes(scope));

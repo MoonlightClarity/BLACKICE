@@ -86,3 +86,36 @@ test('focused limits retain DOM ownership during status refreshes before the fir
   const mount=new Mount(),current=snapshot(),ui=initConfigureUI({mount,getSnapshot:()=>current,api:async()=>settings()});await toggle(mount);
   const active={attached:true,closest:selector=>selector.includes('#configure-runtime-editor')?{}:null};globalThis.document={activeElement:active};const before=mount.writes;current.status.version='2.16';ui.update();assert.equal(mount.writes,before);assert.strictEqual(globalThis.document.activeElement,active);globalThis.document.activeElement=null;ui.update();assert.equal(mount.writes,before+1);ui.destroy();
 });
+
+test('isolated app history is fixed to BLACKICE only even when old persisted preferences or drafts say Codex',()=>{
+  for(const nativeStatus of [{isolatedHistory:true},{codex:{isolatedHistory:true}}]){
+    const current=snapshot();Object.assign(current.status,nativeStatus);current.status.runtimeSettings.codexHistory='codex';
+    const html=renderConfigureView(current,{historyOpen:true,historyDraft:'codex',historyDirty:true});
+    assert.match(html,/Conversation history<span>BLACKICE only/);assert.match(html,/Follow-ups use saved BLACKICE messages and recorded results/);
+    assert.doesNotMatch(html,/Also show in Codex|configure-codex-history|configure-history-editor|BLACKICE \+ Codex/);
+    assert.equal(current.status.runtimeSettings.codexHistory,'codex','Rendering never rewrites saved preference data.');
+  }
+  const generic=snapshot();generic.status.runtimeSettings.codexHistory='codex';
+  assert.match(renderConfigureView(generic),/Also show in Codex/);assert.match(renderConfigureView(generic),/BLACKICE \+ Codex/);
+});
+
+test('isolated history ignores obsolete editor events without reading or writing a bypass preference',async()=>{
+  const mount=new Mount(),current=snapshot(),calls=[];current.status.isolatedHistory=true;
+  const ui=initConfigureUI({mount,getSnapshot:()=>current,api:async(...args)=>{calls.push(args);return settings();}});
+  await mount.event('toggle',{dataset:{configureSection:'history'},open:true});
+  await mount.event('change',{dataset:{configureHistory:'codexHistory'},value:'codex'});
+  await mount.event('submit',{id:'configure-history-editor'});
+  assert.deepEqual(calls,[]);assert.match(mount.innerHTML,/Conversation history<span>BLACKICE only/);
+  assert.doesNotMatch(mount.innerHTML,/Also show in Codex/);ui.destroy();
+});
+
+test('newly reported isolation removes an old history editor and rejects its late generic settings read',async()=>{
+  const mount=new Mount(),current=snapshot(),calls=[];let finishRead;
+  const ui=initConfigureUI({mount,getSnapshot:()=>current,api:async(...args)=>{calls.push(args);return new Promise(resolve=>{finishRead=resolve;});}});
+  const pending=mount.event('toggle',{dataset:{configureSection:'history'},open:true});
+  assert.equal(calls.length,1);assert.match(mount.innerHTML,/Also show in Codex/);
+  current.status.isolatedHistory=true;ui.update();finishRead({...settings(),codexHistory:'codex'});await pending;
+  assert.doesNotMatch(mount.innerHTML,/Also show in Codex|configure-history-editor/);
+  assert.match(mount.innerHTML,/Conversation history<span>BLACKICE only/);
+  await mount.event('submit',{id:'configure-history-editor'});assert.equal(calls.length,1);ui.destroy();
+});

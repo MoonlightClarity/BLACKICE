@@ -1,6 +1,6 @@
 # Task-relative accuracy and Plan only
 
-BLACKICE records the accuracy needed for a requested outcome. Feasibility, Inference, Plan, Think, and Respond carry these targets through their findings and acceptance criteria. Further detail is useful when it could change the result or satisfy an unmet constraint.
+BLACKICE records the accuracy needed for a requested outcome. Inference, Feasibility, Plan, Think, and Respond carry these targets through their findings and acceptance criteria. Further detail is useful when it could change the result or satisfy an unmet constraint.
 
 Use **exact** accuracy for a cutoff, calculation, or other constraint needing an exact result; a **bounded estimate** when an explicit range suffices; and **qualitative** accuracy for a supported explanation without meaningful numerical precision. These choices describe the task's needs, without assigning a probability of correctness.
 

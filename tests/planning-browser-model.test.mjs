@@ -17,7 +17,7 @@ function response(g,id,revision=1,extra={}){
   return {id:id+'-response-'+revision,nodeId:id,kind:n.kind,revision,nodeRevision:n.revision,values:Object.fromEntries(fields.map(f=>[f.id,'Public finding about '+f.label])),grounding:fields.filter(f=>f.grounding==='required').map(f=>({field:f.id,sourceId:'request:'+g.id})),sources:[{id:'request:'+g.id,kind:'user_request',text:g.objective}],inputs:[],challengeResponses:[],openQuestions:[],provenance:{kind:'human',at:'2026-10-30T12:00:00.000Z'},...extra};
 }
 test('module fields express different cognitive tasks rather than a shared done checklist',()=>{
-  assert.deepEqual(PLANNING_MODULE_TEMPLATES.map(t=>t.kind),['cycle','viability','inference','plan','think','respond','frame','inquiry','evidence','comparison','decision','action','synthesis']);
+  assert.deepEqual(PLANNING_MODULE_TEMPLATES.map(t=>t.kind),['cycle','inference','viability','plan','think','respond','frame','inquiry','evidence','comparison','decision','action','synthesis']);
   assert.deepEqual(planningModuleTemplate('decision').fields.map(f=>f.id),['recommendation','strongestAlternative','opportunityCost','keyAssumption','discriminatingObservation','reversalCondition']);
   assert(planningModuleTemplate('inquiry').fields.some(f=>f.id==='competingExplanations'));
   assert(planningModuleTemplate('action').fields.some(f=>f.id==='observedResult'));

@@ -72,7 +72,7 @@ export async function runPlanAcceptance(options) {
   receipt.runtimeSources = Object.fromEntries(await Promise.all(sourceFiles.map(async name => [name, hash(await fs.readFile(path.join(candidate, name)))])));
   let runtime, engine, tasks, methods, settings, child, deadline, result, artifact;
   try {
-    runtime = new CodexRuntime({ cwd, runTimeoutMs: options.timeoutMs, requestTimeoutMs: 20000, approvalTimeoutMs: 15000 });
+    runtime = new CodexRuntime({ isolatedHistory: true, cwd, runTimeoutMs: options.timeoutMs, requestTimeoutMs: 20000, approvalTimeoutMs: 15000 });
     tasks = await new TaskStateStore({ dataDir }).init();
     methods = await new MethodStore({ dataDir, projects: { definition() { throw Error('This acceptance does not create projects.'); }, create() { throw Error('This acceptance does not create projects.'); } } }).init();
     settings = await new RuntimeSettingsStore({ dataDir }).init(); await settings.update({ subagentsEnabled: false, runTimeoutMs: options.timeoutMs, verbosity: 'concise' });

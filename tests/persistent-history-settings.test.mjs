@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {RuntimeSettingsStore,validateRuntimeSettings} from '../lib/runtime-settings.mjs';
-import {CONTROL_TOOL,CONTROL_INSTRUCTIONS,CONTROL_SCHEMA_VERSION,PRE_PERSISTENT_HISTORY_CONTROL_TOOL,PRE_PERSISTENT_HISTORY_CONTROL_INSTRUCTIONS,PRE_CONTEXT_CONTROL_TOOL,PRE_CONTEXT_CONTROL_INSTRUCTIONS,createControlToolHandler} from '../lib/control-tools.mjs';
+import {CONTROL_TOOL,CONTROL_INSTRUCTIONS,CONTROL_SCHEMA_VERSION,PRE_INTENT_CONTROL_TOOL,PRE_INTENT_CONTROL_INSTRUCTIONS,PRE_PERSISTENT_HISTORY_CONTROL_TOOL,PRE_PERSISTENT_HISTORY_CONTROL_INSTRUCTIONS,PRE_CONTEXT_CONTROL_TOOL,PRE_CONTEXT_CONTROL_INSTRUCTIONS,createControlToolHandler} from '../lib/control-tools.mjs';
 
 const digest=value=>createHash('sha256').update(typeof value==='string'?value:JSON.stringify(value)).digest('hex');
 const unpack=result=>JSON.parse(result.contentItems.find(item=>item.type==='inputText').text);
@@ -69,10 +69,11 @@ test('schema9 removes the history choice while schema8 and schema7 tool definiti
   assert.equal(digest(PRE_PERSISTENT_HISTORY_CONTROL_INSTRUCTIONS),'ba1313c52a5b1d6f5c15d1b7be4ee558904a866b2c1d3dab3c37652e60aba263');
   assert.equal(digest(PRE_CONTEXT_CONTROL_TOOL),'b66363382582754f1de21b9390adc92e5ab4639fba8ee6c620c8e967fe4d11a8');
   assert.equal(digest(PRE_CONTEXT_CONTROL_INSTRUCTIONS),'bb2474986bc93c57f706685adcb2a8cda43e4d003761abff1c3b5f3e645f6a9c');
-  assert.equal(CONTROL_SCHEMA_VERSION,9);
+  assert.equal(CONTROL_SCHEMA_VERSION,10);
+  assert.equal(digest(PRE_INTENT_CONTROL_TOOL),'da30de45105fdc491263dc622f52b9659b437f74dc468838de0d53a62f636cf2');assert.equal(digest(PRE_INTENT_CONTROL_INSTRUCTIONS),'47fd9335df24f9391e86ffe944dbe466c8e756aab551e59ce11433c6aa5eeb8d');
   const current=CONTROL_TOOL.inputSchema.properties.runtime.properties,old=PRE_PERSISTENT_HISTORY_CONTROL_TOOL.inputSchema.properties.runtime.properties;
   assert.equal(Object.hasOwn(current,'codexHistory'),false);assert.deepEqual(old.codexHistory.enum,['relay','codex']);
   assert.deepEqual(current.defaultContext.properties.preset.enum,['model','extended','900k','custom']);
   assert.notEqual(current.defaultContext,old.defaultContext,'New schema changes cannot mutate an old native continuation definition.');
-  assert.ok(CONTROL_INSTRUCTIONS.startsWith(PRE_PERSISTENT_HISTORY_CONTROL_INSTRUCTIONS));assert.match(CONTROL_INSTRUCTIONS,/persistent resumable Codex history/);
+  assert.ok(PRE_INTENT_CONTROL_INSTRUCTIONS.startsWith(PRE_PERSISTENT_HISTORY_CONTROL_INSTRUCTIONS));assert.match(CONTROL_INSTRUCTIONS,/persistent resumable Codex history/);assert.match(CONTROL_INSTRUCTIONS,/Inference, Feasibility, Plan/);
 });

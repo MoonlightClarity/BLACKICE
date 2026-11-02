@@ -8,13 +8,15 @@ A Planning request contains real `kind: "cycle"` container nodes. Each container
 
 | Stage | Stored kind | Public output and purpose |
 | --- | --- | --- |
-| Feasibility | `viability` | Existing typed requirements: objective, essential inputs versus preferences, inspected evidence, supported inference, permitted omission, consequential unknowns and dependent work. |
-| Inference | `inference` | Bounded interpretations, alternatives, uncertainties and typed claims distinguishing `observed`, `inferred` and `unknown`. |
+| Inference | `inference` | Real user benefit, intended observable and unwanted outcomes, delegated work and handoff boundary, explicit constraints, evidence and intent hypotheses. |
+| Feasibility | `viability` | Actual resources, tools, target, access, rights, time and data against the inferred objective; confirmed blockers, model-repairable gaps, unknowns needing cheap checks and nonblocking symptoms. |
 | Plan | `plan` | Editable proposed steps, acyclic dependencies, explicit acceptance criteria and unresolved prerequisites. |
 | Think | `think` | Evaluation of available results against current criteria, contrary evidence, uncertainty and concise public decision rationale. |
 | Respond | `respond` | Complete final answer and explicit coverage of every current criterion, including visible limitations. |
 
-For an operational run, `ResponseCycleService.forRun()` prepares Feasibility, Inference and Plan before workflow agents execute. The engine receives the exact recorded Plan body and reference as task context. At the normal workflow completion boundary, `finishRun()` captures actual outputs and tool activity, then drives Think and Respond. The stages run through the response-only Planning runtime with no BLACKICE action tools attached. Workflow agents remain responsible for operations.
+For an operational run, `ResponseCycleService.forRun()` prepares Inference, Feasibility and Plan before workflow agents execute. The engine receives the exact recorded Inference findings, resource Feasibility, Plan body and reference as task context. The user benefit is distinct from activities and criteria: reducing the user's time and effort can be the goal, while installing a usable browser or submitting an appropriate application is concrete work whose result still needs evidence. At the normal workflow completion boundary, `finishRun()` captures actual outputs and tool activity, then drives Think and Respond. The stages run through the response-only Planning runtime with no BLACKICE action tools attached. Workflow agents remain responsible for operations.
+
+New cycles carry `pipelineVersion: 2`. Unstamped saved cycles retain their historical Feasibility-first contract and exact native control versions. Safe unexecuted preparations can upgrade their order while preserving previous responses, edits and attempts as stale history; adopted or executed legacy cycles keep their proof bindings and get a new intent-first root for new operational preparation. Final-only review does not replay operations. Native `relay_control` version 10 supports both saved Plan contracts; versions 7–9 remain frozen.
 
 A standalone analytical cycle has host execution context `required: false`. A linked cycle must have a terminal host execution disposition before its post-work stages can pass. Fatal workflow errors and cancellation save the corresponding cycle settlement without additional model calls. They do not start further response turns merely to complete the five labels.
 

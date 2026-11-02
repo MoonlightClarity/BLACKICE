@@ -1,6 +1,7 @@
 import { text, stableId } from '../core/dom.mjs';
 import { PLANNING_MODULE_TEMPLATES, planningModuleTemplate, projectPlanningRequest, planningOutlineRows } from '../../planning-browser-model.mjs';
-import { createPlanningWorkspace } from './planning.mjs';
+import { responseCycleStages } from '../../response-cycle-model.mjs';
+import { planningModuleXml, planningProgramXml, parsePlanningModuleXml, parsePlanningProgramXml } from '../../planning-program-xml.mjs';
 import { cycleForNode, cycleStageRows, cycleStateLabel, stageOutputSummary, cycleModelSelection, cycleModelRunFields, renderCycleControls, renderStageFindings, renderAccuracyTargets } from './response-cycle-ui.mjs';
 
 const pathFor = id => '/api/planning-browser/requests/' + encodeURIComponent(id);
@@ -11,14 +12,14 @@ const labelFor = value => clean(value).replaceAll('_', ' ');
 const activeWork = assignment => ['queued', 'prepared', 'starting', 'running', 'cancelling'].includes(assignment?.status);
 const conversationKey = item => item?.conversationId || item?.rootId || item?.id || '';
 const responseValues = node => node.response?.values || {};
-const fieldsFor = node => node?.kind ? planningModuleTemplate(node.kind).fields : [];
+const fieldsFor = node => node?.kind ? planningModuleTemplate(node.kind,{pipelineVersion:node.pipelineVersion}).fields : [];
 const attemptFor = (document, nodeId) => (document?.attempts || []).filter(item => item.nodeId === nodeId).at(-1) || null;
-const draftMatches = (draft, node) => draft.title === (node.title || '') && draft.prompt === (node.prompt || '')
+const draftMatches = (draft, node) => draft.title === (node.title || '') && draft.prompt === (node.prompt || '') && draft.doneWhen === (node.doneWhen || '') && draft.skipReason === (node.skipReason || '')
   && JSON.stringify(draft.values) === JSON.stringify(node.response?.values || {})
   && ['grounding', 'openQuestions', 'challengeResponses'].every(key => JSON.stringify(draft[key]) === JSON.stringify(node.response?.[key] || []));
 
 /** A visible, revision-aware document workspace. Opening it never invokes a model. */
-export function createPlanningBrowser({ mount, api, events, notify = () => {}, onNavigate, getStatus = () => ({}), createLegacy = createPlanningWorkspace }) {
+export function createPlanningBrowser({ mount, api, events, notify = () => {}, onNavigate, getStatus = () => ({}) }) {
   mount.replaceChildren();
   const add = (parent, tag, value = '', cls = '') => text(parent, value, tag, cls);
   const button = (parent, value, action, cls = '') => {
@@ -46,10 +47,8 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
   const shell = add(mount, 'div', '', 'planning-browser');
   const header = add(shell, 'header', '', 'pb-header'), heading = add(header, 'div');
   add(heading, 'h1', 'Planning');
-  add(heading, 'p', 'Feasibility, inference, plan, think, and respond — with child cycles for questions that need further work.');
+  add(heading, 'p', 'Infer the intended outcome, check resources, plan, think, and respond — with child cycles for questions that need further work.');
   const headerActions = add(header, 'div', '', 'pb-header-actions');
-  const browserButton = button(headerActions, 'Planning browser', () => showMode('browser'), 'pb-quiet');
-  const legacyButton = button(headerActions, 'Legacy plans', () => showMode('legacy'), 'pb-quiet');
   const refreshButton = button(headerActions, 'Refresh', () => refresh()); refreshButton.dataset.action = 'refresh';
   const layout = add(shell, 'div', '', 'pb-layout');
   const rail = add(layout, 'aside', '', 'pb-rail'); rail.setAttribute('aria-label', 'Planning conversations');
@@ -64,14 +63,13 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
   const createArea = add(workspace, 'section', '', 'pb-create'); createArea.hidden = true;
   const notice = add(workspace, 'p', '', 'pb-notice'); notice.setAttribute('role', 'status'); notice.setAttribute('aria-live', 'polite');
   const detail = add(workspace, 'section', '', 'pb-workspace'); detail.setAttribute('role', 'tabpanel'); detail.id = 'pb-request-panel';
-  const legacyMount = add(shell, 'section', '', 'pb-legacy'); legacyMount.hidden = true;
 
-  let active = false, destroyed = false, mode = 'browser', legacy = null, unsubscribe = null, timer = null;
+  let active = false, destroyed = false, unsubscribe = null, timer = null;
   let catalog = { conversations: [], requests: [], templates: PLANNING_MODULE_TEMPLATES }, conversationId = '', requestId = '', catalogGeneration = 0, catalogController = null, catalogError = '';
   let creatingRequest = false, pendingConversation = null, pendingRequest = null;
   const sessions = new Map(), selectedRequests = new Map(), requestDrafts = new Map();
   const session = id => {
-    if (!sessions.has(id)) sessions.set(id, { document: null, selectedId: '', presentation: 'outline', collapsed: new Set(), drafts: new Map(), creations: new Map(), sourceDraft: { title: '', text: '', url: '' }, pending: new Set(), error: '', notice: '', readGeneration: 0, controller: null });
+    if (!sessions.has(id)) sessions.set(id, { document: null, selectedId: '', presentation: 'outline', collapsed: new Set(), drafts: new Map(), xmlDrafts: new Map(), programDraft: null, creations: new Map(), sourceDraft: { title: '', text: '', url: '' }, pending: new Set(), error: '', notice: '', readGeneration: 0, controller: null });
     return sessions.get(id);
   };
   const requestRows = () => catalog.requests.filter(row => clean(row.conversationId) === conversationId);
@@ -84,7 +82,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
   function draftFor(state, node) {
     let draft = state.drafts.get(node.id);
     if (!draft || !dirty(draft) && (draft.baseRevision !== node.revision || draft.baseResponseId !== (node.response?.id || null))) {
-      draft = { baseRevision: node.revision, baseResponseId: node.response?.id || null, title: node.title || '', prompt: node.prompt || '', values: clone(responseValues(node)), grounding: clone(node.response?.grounding || []), openQuestions: clone(node.response?.openQuestions || []), challengeResponses: clone(node.response?.challengeResponses || []), dirty: false };
+      draft = { baseRevision: node.revision, baseResponseId: node.response?.id || null, title: node.title || '', prompt: node.prompt || '', doneWhen: node.doneWhen || '', skipReason: node.skipReason || '', values: clone(responseValues(node)), grounding: clone(node.response?.grounding || []), openQuestions: clone(node.response?.openQuestions || []), challengeResponses: clone(node.response?.challengeResponses || []), dirty: false };
       state.drafts.set(node.id, draft);
     }
     return draft;
@@ -157,7 +155,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     renderTabs(); renderDetail(); await readRequest(id);
   }
   async function loadCatalog() {
-    if (!active || destroyed || mode !== 'browser') return;
+    if (!active || destroyed) return;
     const generation = ++catalogGeneration; catalogController?.abort(); catalogController = new AbortController();
     try {
       const result = await api('/api/planning-browser', 'GET', undefined, { signal: catalogController.signal });
@@ -187,7 +185,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     } catch (cause) { if (active && generation === catalogGeneration && cause.name !== 'AbortError') { catalogError = cause.message; notice.textContent = catalogError; } }
   }
   async function readRequest(id) {
-    if (!active || destroyed || mode !== 'browser') return;
+    if (!active || destroyed) return;
     const state = session(id), generation = ++state.readGeneration; state.controller?.abort(); state.controller = new AbortController();
     try {
       const result = await api(pathFor(id), 'GET', undefined, { signal: state.controller.signal });
@@ -206,7 +204,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
       const result = await api(route, method, payload);
       accept(result); const message = onAccepted?.(result); state.notice = typeof message === 'string' ? message : 'Saved. The document shows the recorded result.';
     } catch (cause) { state.error = cause.message; }
-    finally { state.pending.delete(key); if (active && mode === 'browser') { renderRail(); renderTabs(); if (id === requestId) renderKeepingFocus(); } }
+    finally { state.pending.delete(key); if (active) { renderRail(); renderTabs(); if (id === requestId) renderKeepingFocus(); } }
   }
   function showRequestForm() {
     createArea.replaceChildren(); createArea.hidden = false;
@@ -240,19 +238,22 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     const draftKey = parentId || 'root', draft = state.creations.get(draftKey) || { kind: 'frame', title: '', prompt: '' }; state.creations.set(draftKey, draft);
     createArea.replaceChildren(); createArea.hidden = false;
     add(createArea, 'h3', parent ? 'Expand “' + parent.title + '”' : 'Add a module');
-    add(createArea, 'p', 'Give the child a distinct contribution to make. Its required response fields depend on the module kind.', 'pb-help');
+    add(createArea, 'p', 'Split compound work into one bounded question or one operation per leaf. Record exactly what observable result will finish it. Expand again whenever a step still bundles research, choice, action, or checking.', 'pb-help');
     const form = add(createArea, 'form', '', 'pb-form'), grid = add(form, 'div', '', 'pb-create-grid');
     const kind = select(grid, 'Module kind', PLANNING_MODULE_TEMPLATES.map(template => [template.kind, template.label]), draft.kind);
     const title = input(grid, 'Module title', draft.title, { required: true, id: 'pb-node-title' });
     const description = add(form, 'p', planningModuleTemplate(kind.value)?.description || '', 'pb-help');
     kind.addEventListener('change', () => { draft.kind = kind.value; description.textContent = planningModuleTemplate(kind.value)?.description || ''; });
-    const prompt = input(form, 'Question or instruction', draft.prompt, { rows: 3, required: true, id: 'pb-node-prompt' });
-    title.addEventListener('input', () => { draft.title = title.value; }); prompt.addEventListener('input', () => { draft.prompt = prompt.value; });
+    const prompt = input(form, 'One bounded question or operation', draft.prompt, { rows: 3, required: true, id: 'pb-node-prompt' });
+    const doneWhen = input(form, 'Observable done when', draft.doneWhen || '', { rows: 2, help: 'Name the verifiable result, file, evidence, or operational state. Required for executable action leaves.' });
+    const refreshDefinition = () => { doneWhen.required = kind.value === 'action'; doneWhen.parentElement.hidden = kind.value === 'cycle'; };
+    kind.addEventListener('change', refreshDefinition); refreshDefinition();
+    title.addEventListener('input', () => { draft.title = title.value; }); prompt.addEventListener('input', () => { draft.prompt = prompt.value; }); doneWhen.addEventListener('input', () => { draft.doneWhen = doneWhen.value; });
     const actions = add(form, 'div', '', 'pb-actions'), save = add(actions, 'button', 'Add module', 'pb-primary'); save.setAttribute('type', 'submit'); save.dataset.action = 'create-node';
     button(actions, 'Cancel', () => { createArea.hidden = true; });
     form.addEventListener('submit', async event => {
-      event.preventDefault(); if (!title.value.trim() || !prompt.value.trim()) return;
-      const body = { kind: kind.value, title: title.value.trim(), prompt: prompt.value.trim(), ...(parent ? { parentId: parent.id, expectedParentRevision: parent.revision } : {}) };
+      event.preventDefault(); if (!title.value.trim() || !prompt.value.trim() || kind.value === 'action' && !doneWhen.value.trim()) return;
+      const body = { kind: kind.value, title: title.value.trim(), prompt: prompt.value.trim(), ...(doneWhen.value.trim() ? { doneWhen: doneWhen.value.trim() } : {}), ...(parent ? { parentId: parent.id, expectedParentRevision: parent.revision } : {}) };
       const before = new Set(state.document.nodes.map(node => node.id)); save.disabled = true;
       await mutate(id, 'child:' + (parentId || 'root'), pathFor(id) + '/nodes', 'POST', body, result => {
         const added = result.nodes.find(node => !before.has(node.id)); if (added) state.selectedId = added.id;
@@ -421,6 +422,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     const labels = {
       ready: 'No essential input remains unresolved in this check.',
       awaiting_input: 'Answer the essential questions below to complete this check.',
+      blocked:'A confirmed prerequisite prevents the affected work. Its diagnostic and remedy are recorded below; independent ready work can continue.',
       needs_evidence: 'This check needs supporting sources before it can guide the next action.',
       stale: 'Inputs changed. Review the current check before using its result.'
     };
@@ -450,6 +452,13 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
       add(preferences, 'p', 'These preferences do not block the work.', 'pb-help');
       const list = add(preferences, 'ul');
       for (const preference of viability.preferences) add(list, 'li', preference.label || preference.id);
+    }
+    for(const [key,label]of [['repairableGaps','Model-repairable prerequisites'],['nonblockingSymptoms','Apparent blockers that do not prevent the goal']])if(viability?.[key]?.length){
+      const group=add(section,'section','','pb-inspector-section');add(group,'h5',label);
+      for(const finding of viability[key]){const row=add(group,'article','','pb-cycle-finding');add(row,'strong',finding.label);add(row,'p',finding.finding,'pb-response-value');add(row,'p',finding.remedy||finding.rationale,'pb-help');}
+    }
+    for(const fact of (viability?.blockingFacts||[]).filter(item=>item.resolution==='blocked')){
+      const row=add(section,'article','','pb-cycle-finding');row.dataset.resourceBlocker=fact.id;add(row,'h5',fact.label);add(row,'p','Diagnostic: '+fact.diagnostic,'pb-response-value');add(row,'p','Affected work: '+fact.consequence,'pb-help');add(row,'p','Remedy: '+fact.remedy,'pb-help');
     }
     if (recoveryIssue || readinessState !== 'awaiting_input') return;
     state.viabilityDrafts ||= new Map();
@@ -512,6 +521,9 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     add(inspector, 'span', (planningModuleTemplate(node.kind)?.label || node.kind) + ' · Revision ' + node.revision, 'pb-eyebrow'); add(inspector, 'h3', node.title || 'Untitled contribution');
     const stateLine = add(inspector, 'div', '', 'pb-status'); pill(stateLine, rowState(node)); add(stateLine, 'span', 'Response readiness · separate from execution');
     if (node.prompt) add(inspector, 'p', node.prompt, 'pb-help pb-selected-question');
+    if (node.doneWhen) add(inspector, 'p', 'Observable completion: ' + node.doneWhen, 'pb-help pb-done-when');
+    if (node.skipReason) note(inspector, 'This optional module is deliberately skipped: ' + node.skipReason, 'warning');
+    if (node.kind === 'action' && !node.doneWhen?.trim()) note(inspector, 'Define an observable completion check before running this action.', 'warning');
     renderViability(inspector, document, node, state);
     if (cycle) renderCycleControls(cycleContext, inspector, document, cycle, state, { planEditor: node.kind === 'plan' });
     if (cycle) renderStageFindings(cycleContext, inspector, document, node, cycle);
@@ -521,7 +533,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
       if (dirty(draft)) { state.error = 'Save or reload your draft before running this module so the worker receives the visible saved prompt and inputs.'; renderKeepingFocus(); return; }
       try { void mutate(document.id, node.id, nodePath(document.id, node.id) + '/run', 'POST', { expectedNodeRevision: node.revision, ...(cycle ? cycleModelRunFields(cycleContext, document, cycle, state) : {}) }); }
       catch (error) { state.error = error.message; renderKeepingFocus(); }
-    }, 'pb-primary'); run.dataset.action = 'run-module'; run.disabled = busy || activeWork(attempt) || Boolean(cycle && (state.pending.has('cycle:' + cycle.id) || ['running', 'waiting_children', 'cancelling'].includes(cycle.state)));
+    }, 'pb-primary'); run.dataset.action = 'run-module'; run.disabled = busy || Boolean(node.skipReason) || node.kind === 'action' && !node.doneWhen?.trim() || activeWork(attempt) || Boolean(cycle && (state.pending.has('cycle:' + cycle.id) || ['running', 'waiting_children', 'cancelling'].includes(cycle.state)));
     if (activeWork(attempt)) { const cancel = button(runtimeActions, 'Cancel worker', () => void mutate(document.id, node.id, nodePath(document.id, node.id) + '/cancel', 'POST', { attemptId: attempt.id })); cancel.dataset.action = 'cancel-worker'; cancel.disabled = busy; }
     if (node.assignment || attempt) {
       const worker = add(inspector, 'div', '', 'pb-worker'), owner = node.assignment;
@@ -556,20 +568,55 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
       button(actions, 'Reload saved module', () => { state.drafts.delete(node.id); renderDetail(); });
       button(actions, 'Keep draft on this revision', () => { draft.baseRevision = node.revision; draft.baseResponseId = node.response?.id || null; renderDetail(); });
     }
-    const definitionEditor = add(inspector, 'details', '', 'pb-definition-editor'); definitionEditor.dataset.disclosureKey = 'definition-editor'; add(definitionEditor, 'summary', 'Edit module prompt');
+    const definitionEditor = add(inspector, 'details', '', 'pb-definition-editor'); definitionEditor.dataset.disclosureKey = 'definition-editor'; add(definitionEditor, 'summary', 'Edit visual module definition');
     const form = add(definitionEditor, 'form', '', 'pb-form');
     const title = input(form, 'Title', draft.title, { required: true }), prompt = input(form, 'Prompt · contribution to make', draft.prompt, { rows: 4, required: true });
-    title.dataset.fieldKey = node.id + ':title'; prompt.dataset.fieldKey = node.id + ':prompt';
-    for (const [element, key] of [[title, 'title'], [prompt, 'prompt']]) element.addEventListener('input', () => { draft[key] = element.value; draft.dirty = true; });
+    const doneWhen = input(form, 'Observable completion check', draft.doneWhen || '', { rows: 2, help: 'Name the observable outcome. A tool attempt alone never proves that outcome.' });
+    const optional = !node.cycleId && !['cycle','viability','inference','plan','think','respond'].includes(node.kind);
+    const skipReason = input(form, 'Skip this optional module (reason)', draft.skipReason || '', { rows: 2, help: 'Skipping is a deliberate omission, not evidence of successful completion. Clear the reason to resume.' });
+    skipReason.disabled = !optional; doneWhen.required = node.kind === 'action';
+    for (const [element, key] of [[title, 'title'], [prompt, 'prompt'], [doneWhen, 'doneWhen'], [skipReason, 'skipReason']]) element.dataset.fieldKey = node.id + ':' + key;
+    for (const [element, key] of [[title, 'title'], [prompt, 'prompt'], [doneWhen, 'doneWhen'], [skipReason, 'skipReason']]) element.addEventListener('input', () => { draft[key] = element.value; draft.dirty = true; });
     const editActions = add(form, 'div', '', 'pb-actions'), savePrompt = add(editActions, 'button', 'Save prompt'); savePrompt.setAttribute('type', 'submit'); savePrompt.disabled = busy || staleDraft;
     form.addEventListener('submit', event => {
-      event.preventDefault(); if (busy || staleDraft || !draft.title.trim() || !draft.prompt.trim()) return;
-      const submitted = { title: draft.title, prompt: draft.prompt };
+      event.preventDefault(); if (busy || staleDraft || !draft.title.trim() || !draft.prompt.trim() || node.kind === 'action' && !draft.doneWhen.trim()) return;
+      const submitted = { title: draft.title, prompt: draft.prompt, doneWhen: draft.doneWhen, skipReason: draft.skipReason };
       void mutate(document.id, node.id, nodePath(document.id, node.id), 'PATCH', { expectedNodeRevision: draft.baseRevision, ...submitted }, result => {
         const saved = result.nodes.find(value => value.id === node.id); if (saved) draft.baseRevision = saved.revision;
         if (saved) draft.dirty = !draftMatches(draft, saved);
       });
     });
+    const xmlSection = add(inspector, 'details', '', 'pb-definition-editor pb-xml-editor');
+    xmlSection.dataset.disclosureKey = 'module-xml';
+    add(xmlSection, 'summary', 'Edit selected module XML');
+    add(xmlSection, 'p', 'The XML form edits the same revisioned module as the visual editor. It cannot rewrite evidence, execution receipts, or other modules.', 'pb-help');
+    const savedXmlDraft = state.xmlDrafts.get(node.id);
+    const xmlDraft = savedXmlDraft && (savedXmlDraft.changed || savedXmlDraft.baseRevision === node.revision) ? savedXmlDraft : { source: planningModuleXml(node), baseRevision: node.revision, changed: false };
+    if (xmlDraft !== savedXmlDraft) state.xmlDrafts.set(node.id, xmlDraft);
+    const xmlSource = input(xmlSection, 'Module definition XML', xmlDraft.source, { rows: 12 });
+    xmlSource.dataset.fieldKey = node.id + ':xml';
+    xmlSource.spellcheck = false;
+    xmlSource.addEventListener('input', () => { xmlDraft.source = xmlSource.value; xmlDraft.changed = true; });
+    if (xmlDraft.baseRevision !== node.revision) note(xmlSection, 'This XML draft is based on an earlier revision. Refresh its source before saving.', 'warning');
+    const xmlActions = add(xmlSection, 'div', '', 'pb-actions');
+    button(xmlActions, 'Reload saved XML', () => { state.xmlDrafts.delete(node.id); renderDetail(); }, 'pb-quiet');
+    const xmlSave = button(xmlActions, 'Save module XML', () => {
+      if (busy || xmlDraft.baseRevision !== node.revision || dirty(draft)) {
+        state.error = 'Resolve unsaved visual changes or a stale XML revision before saving XML.'; renderKeepingFocus(); return;
+      }
+      try {
+        const parsed = parsePlanningModuleXml(xmlDraft.source, { expectedId: node.id });
+        if (node.cycleId && parsed.patch.kind !== node.kind) throw Error('Response-cycle stage kinds are fixed.');
+        if (activeWork(attempt) && parsed.patch.skipReason) throw Error('Stop the active worker before skipping this module.');
+        void mutate(document.id, node.id, nodePath(document.id, node.id), 'PATCH',
+          { expectedNodeRevision: xmlDraft.baseRevision, ...parsed.patch }, () => {
+            state.xmlDrafts.delete(node.id); state.drafts.delete(node.id);
+            return 'Module XML saved and the visual outline updated.';
+          });
+      } catch (error) { state.error = error.message; renderKeepingFocus(); }
+    }, 'pb-primary');
+    xmlSave.dataset.action = 'save-module-xml';
+    xmlSave.disabled = busy || xmlDraft.baseRevision !== node.revision;
     const typedReadiness = ['viability', 'inference', 'plan', 'think', 'respond'].includes(node.kind) || document.viability?.nodeId === node.id;
     const savedPlan = node.kind === 'plan' && cycle && node.response;
     const responseSection = add(inspector, savedPlan ? 'details' : 'section', '', 'pb-inspector-section'); add(responseSection, savedPlan ? 'summary' : 'h4', savedPlan ? 'Recorded Plan fields and provenance' : 'Required questions');
@@ -647,6 +694,69 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
       for (const response of history.slice().reverse()) { const article = add(disclosure, 'article'); renderProvenance(article, response); for (const [key, value] of Object.entries(response.values || {})) { add(article, 'h5', fields.find(field => field.id === key)?.label || key); add(article, 'p', value, 'pb-response-value'); } }
     }
   }
+  function renderPhaseRail(parent, document, state) {
+    const cycle = cycleForNode(document, selectedNode(state))
+      || (document.cycles || []).find(item => !item.parentCycleId)
+      || document.cycles?.[0];
+    if (!cycle?.stageNodeIds) return;
+    const rail = add(parent, 'nav', '', 'pb-phase-rail');
+    rail.setAttribute('aria-label', 'Planning cycle phases');
+    for (const phase of responseCycleStages(cycle)) {
+      const node = document.nodes.find(item => item.id === cycle.stageNodeIds[phase.id]);
+      if (!node) continue;
+      const phaseButton = button(rail, '', () => chooseNode(node.id), 'pb-phase');
+      phaseButton.dataset.phase = phase.id;
+      phaseButton.setAttribute('aria-current', state.selectedId === node.id ? 'step' : 'false');
+      add(phaseButton, 'span', String(phase.order).padStart(2, '0'), 'pb-phase-number');
+      add(phaseButton, 'strong', phase.label);
+      add(phaseButton, 'small', rowState(node) === 'ready' ? 'Recorded' : labelFor(rowState(node)));
+    }
+    const optional = document.nodes.filter(node => !node.cycleId && node.kind !== 'cycle');
+    if (optional.length) {
+      const groups = add(parent, 'div', '', 'pb-optional-phases');
+      add(groups, 'span', 'Optional investigations', 'pb-eyebrow');
+      for (const node of optional) {
+        const item = button(groups, node.title, () => chooseNode(node.id), 'pb-quiet');
+        item.dataset.optionalNode = node.id;
+        if (node.skipReason) add(item, 'small', 'Skipped', 'pb-phase-skipped');
+      }
+    }
+  }
+  function renderProgramXml(parent, document, state) {
+    const section = add(parent, 'section', '', 'pb-program-source');
+    add(section, 'h3', 'Edit the full recursive XML plan');
+    add(section, 'p', 'Edit module titles, prompts, completion checks, skip reasons, and nesting in one atomic revision. Existing IDs and mandatory cycle stages cannot be deleted. Number and state are read-only projections recalculated on save. The evidence ledger is never editable XML.', 'pb-help');
+    const saved = document.programXml || planningProgramXml(document);
+    if (!state.programDraft || !state.programDraft.changed && state.programDraft.baseRevision !== document.revision)
+      state.programDraft = { source: saved, baseRevision: document.revision, changed: false };
+    const draft = state.programDraft, stale = draft.baseRevision !== document.revision;
+    const code = add(section, 'textarea', '', 'pb-program-xml');
+    code.setAttribute('aria-label', 'Editable full planning program XML');
+    code.dataset.fieldKey = document.id + ':program-xml';
+    code.readOnly = false; code.spellcheck = false; code.value = draft.source;
+    code.addEventListener('input', () => { draft.source = code.value; draft.changed = true; });
+    if (stale) note(section, 'Another save changed this planning request. Your XML draft is preserved. Copy any edits you need, then reload the current XML before saving.', 'warning');
+    const actions = add(section, 'div', '', 'pb-actions');
+    button(actions, 'Reload saved XML', () => { state.programDraft = null; renderDetail(); }, 'pb-quiet');
+    const submit = button(actions, 'Save complete XML plan', () => {
+      if (stale || state.pending.has('program') || [...state.drafts.values()].some(dirty)) {
+        state.error = 'Save or discard individual module drafts and reload any stale XML before committing the whole plan.';
+        renderKeepingFocus(); return;
+      }
+      try {
+        const result = parsePlanningProgramXml(draft.source);
+        if (result.requestId !== document.id || result.expectedRevision !== draft.baseRevision)
+          throw Error('This XML is for a different request or saved revision.');
+        void mutate(document.id, 'program', pathFor(document.id) + '/program', 'PUT',
+          { expectedRevision: draft.baseRevision, xml: draft.source }, () => {
+            state.programDraft = null; state.xmlDrafts.clear(); state.drafts.clear();
+            return 'The entire XML planning definition was saved as one revision. The host preserved the recorded results.';
+          });
+      } catch (error) { state.error = error.message; renderKeepingFocus(); }
+    }, 'pb-primary');
+    submit.dataset.action = 'save-program-xml';
+    submit.disabled = stale || state.pending.has('program') || !draft.changed;
+  }
   function renderDetail() {
     const previousState = sessions.get(detail.dataset.requestId), previousInspector = detail.querySelector('.pb-inspector');
     if (previousState && previousInspector?.dataset.selectedNodeId) {
@@ -665,35 +775,30 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     const actions = add(requestHeader, 'div', '', 'pb-actions'); button(actions, '+ Cycle', () => showCycleForm()); button(actions, '+ Module', () => showNodeForm(), 'pb-quiet');
     const conversation = catalog.conversations.find(group => conversationKey(group) === clean(document.conversationId) && group.source === 'conversation' && typeof group.runId === 'string' && group.runId.trim());
     if (conversation) button(actions, 'Open conversation', () => onNavigate?.('chat', { conversationId: conversation.runId }), 'pb-quiet');
+    renderPhaseRail(detail, document, state);
     const content = add(detail, 'div', '', 'pb-content'), canvas = add(content, 'section', '', 'pb-canvas');
     const toolbar = add(canvas, 'div', '', 'pb-canvas-toolbar'), views = add(toolbar, 'div', '', 'pb-view-switch'); views.setAttribute('aria-label', 'Module view');
-    for (const value of ['outline', 'graph']) { const control = button(views, value === 'outline' ? 'Outline' : 'Graph', () => { state.presentation = value; renderDetail(); }); control.dataset.view = value; control.setAttribute('aria-pressed', String(state.presentation === value)); }
+    for (const value of ['outline', 'graph', 'xml']) { const control = button(views, value === 'outline' ? 'Outline' : value === 'graph' ? 'Graph' : 'XML', () => { state.presentation = value; renderDetail(); }); control.dataset.view = value; control.setAttribute('aria-pressed', String(state.presentation === value)); }
     const crumbs = add(toolbar, 'nav', '', 'pb-breadcrumbs'); crumbs.setAttribute('aria-label', 'Module path');
     const byId = nodeIds(document), ancestors = [], seen = new Set(); let currentNode = byId.get(state.selectedId);
     while (currentNode && !seen.has(currentNode.id)) { seen.add(currentNode.id); ancestors.unshift(currentNode); currentNode = byId.get(currentNode.parentId); }
     for (const [index, node] of ancestors.entries()) { if (index) add(crumbs, 'span', '/'); button(crumbs, node.title, () => chooseNode(node.id), 'pb-quiet'); }
     if (!document.nodes.length) { const empty = add(canvas, 'div', '', 'pb-empty'); add(empty, 'h3', 'Begin with a module.'); add(empty, 'p', 'A framing module can establish the objective and what would change the decision. You can then connect specific inquiries and evidence.'); button(empty, 'Add first module', () => showNodeForm(), 'pb-primary'); }
-    else if (state.presentation === 'graph') renderGraph(canvas, document, state); else renderOutline(canvas, document, state);
+    else if (state.presentation === 'graph') renderGraph(canvas, document, state); else if (state.presentation === 'xml') renderProgramXml(canvas, document, state); else renderOutline(canvas, document, state);
     renderInspector(content, document, state);
     const inspectorSession = state.inspectorSessions?.get(state.selectedId), inspector = detail.querySelector('.pb-inspector');
     if (inspectorSession && inspector) { inspector.scrollTop = inspectorSession.top || 0; for (const disclosure of inspector.querySelectorAll('[data-disclosure-key]')) disclosure.open = inspectorSession.open.has(disclosure.dataset.disclosureKey); }
   }
-  function showMode(next) {
-    mode = next; const isLegacy = mode === 'legacy'; layout.hidden = isLegacy; legacyMount.hidden = !isLegacy; refreshButton.hidden = isLegacy;
-    browserButton.setAttribute('aria-pressed', String(!isLegacy)); legacyButton.setAttribute('aria-pressed', String(isLegacy));
-    if (isLegacy) { legacy ||= createLegacy({ mount: legacyMount, api, events, notify, onNavigate, getStatus }); if (active) legacy.enter?.(); }
-    else { legacy?.leave?.(); if (active) void loadCatalog(); }
-  }
-  function refresh() { if (mode === 'browser') return loadCatalog(); }
+  function refresh() { return loadCatalog(); }
   function stopReads() { catalogGeneration++; catalogController?.abort(); for (const state of sessions.values()) { state.readGeneration++; state.controller?.abort(); } }
   search.addEventListener('input', renderRail); archive.addEventListener('change', renderRail);
-  browserButton.setAttribute('aria-pressed', 'true'); legacyButton.setAttribute('aria-pressed', 'false'); renderRail(); renderDetail();
+  renderRail(); renderDetail();
   return {
-    enter() { if (active || destroyed) return; active = true; unsubscribe = events.subscribe(event => { if (!active || mode !== 'browser' || !/^(planning_browser\.|planning-browser\.|planning\.browser\.|conversations\.)/.test(event.type || '')) return; const changedId = event.data?.requestId || event.requestId; if (changedId && changedId !== requestId && sessions.has(changedId)) void readRequest(changedId); clearTimeout(timer); timer = setTimeout(() => void loadCatalog(), 160); }); if (mode === 'legacy') legacy?.enter?.(); else void loadCatalog(); },
-    leave() { active = false; stopReads(); unsubscribe?.(); unsubscribe = null; clearTimeout(timer); legacy?.leave?.(); },
-    destroy() { this.leave(); destroyed = true; legacy?.destroy?.(); sessions.clear(); requestDrafts.clear(); mount.replaceChildren(); },
-    openConversationId(id) { if (!id) return; pendingRequest = null; pendingConversation = id; if (mode !== 'browser') showMode('browser'); else if (active) void loadCatalog(); },
-    openRequestId(id, { nodeId } = {}) { if (!id) return; pendingConversation = null; pendingRequest = { id, nodeId }; if (mode !== 'browser') showMode('browser'); else if (active) void loadCatalog(); },
+    enter() { if (active || destroyed) return; active = true; unsubscribe = events.subscribe(event => { if (!active || !/^(planning_browser\.|planning-browser\.|planning\.browser\.|conversations\.)/.test(event.type || '')) return; const changedId = event.data?.requestId || event.requestId; if (changedId && changedId !== requestId && sessions.has(changedId)) void readRequest(changedId); clearTimeout(timer); timer = setTimeout(() => void loadCatalog(), 160); }); void loadCatalog(); },
+    leave() { active = false; stopReads(); unsubscribe?.(); unsubscribe = null; clearTimeout(timer); },
+    destroy() { this.leave(); destroyed = true; sessions.clear(); requestDrafts.clear(); mount.replaceChildren(); },
+    openConversationId(id) { if (!id) return; pendingRequest = null; pendingConversation = id; if (active) void loadCatalog(); },
+    openRequestId(id, { nodeId } = {}) { if (!id) return; pendingConversation = null; pendingRequest = { id, nodeId }; if (active) void loadCatalog(); },
     updateStatus() { const run = detail.querySelector('[data-action="run-module"]'); if (run) run.textContent = runModuleLabel(); }
   };
 }

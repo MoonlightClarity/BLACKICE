@@ -105,6 +105,12 @@ test('Tasks opens on an honest status board and loads no hidden schedule, workfl
 test('Tasks tabs support keyboard navigation, preserve schedule drafts, and release hidden board subscriptions',async t=>{
   const f=fixture(t);f.component.enter();await settle();assert.equal(f.listeners.size,2);
   await f.key(f.$('#next-tasks-tab-board'),'ArrowRight');await settle();
+  assert.equal(f.$('#next-tasks-tab-timeline').getAttribute('aria-selected'),'true');
+  assert.equal(f.$('#next-tasks-panel-timeline').hidden,false);assert.equal(f.listeners.size,2);
+  assert.equal(f.$('#next-tasks-timeline').dataset.taskPresentation,'timeline');
+  await f.key(f.$('#next-tasks-tab-timeline'),'End');await settle();
+  await f.key(f.$('#next-tasks-tab-jobs'),'ArrowLeft');await settle();
+  await f.key(f.$('#next-tasks-tab-results'),'ArrowLeft');await settle();
   assert.equal(f.$('#next-tasks-tab-schedules').getAttribute('aria-selected'),'true');assert.equal(f.document.activeElement,f.$('#next-tasks-tab-schedules'));
   assert.equal(f.$('#next-tasks-panel-board').hidden,true);assert.equal(f.$('#next-tasks-panel-schedules').hidden,false);assert.equal(f.listeners.size,1);
   assert.equal(f.calls.filter(call=>call.path==='/api/workflows?view=index').length,1);assert.equal(f.calls.some(call=>call.path==='/api/workflows/workflow-a'),false);

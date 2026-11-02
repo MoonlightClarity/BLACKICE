@@ -7,6 +7,7 @@ import { DirectExecutionAPI, validDirectArguments } from '../lib/direct-executio
 import { PlanningBrowserStore } from '../lib/planning-browser.mjs';
 import { createDirectPlanningBrowserTools } from '../lib/direct-planning-browser-tools.mjs';
 import { PLANNING_MODULE_TEMPLATES, planningModuleTemplate } from '../public/planning-browser-model.mjs';
+import {RESPONSE_CYCLE_STAGES} from '../public/response-cycle-model.mjs';
 
 const client = { id: 'synthetic-chatgpt-connection', label: 'Synthetic ChatGPT', kind: 'chatgpt', scopes: ['read', 'planning:write'] };
 const readTool = 'blackice_planning_graph_read', writeTool = 'blackice_planning_graph_write';
@@ -39,6 +40,14 @@ test('read and planning-write scopes expose distinct durable tools and reject ru
     await assert.rejects(f.api.call(writeTool, { ...allowed, ...extra }, client), { code: 'DIRECT_REQUEST_INVALID' });
   }
   assert.equal((await f.api.listJobs(client)).total, 0); assert.equal((await f.store.list()).requests.length, 0);
+});
+
+test('generic graph-write schema exposes each actual stage check while exact module validation remains with the store',async t=>{
+  const f=await fixture(t),definition=f.api.tools(client).find(tool=>tool.name===writeTool);
+  for(const stage of RESPONSE_CYCLE_STAGES)for(const check of stage.checks){
+    const args={requestId:'check-'+check.id,action:'record_response',graphRequestId:'graph-a',nodeId:'stage-one',expectedNodeRevision:1,values:{},checks:[{id:check.id,assessment:'supported',sourceIds:[],note:'The actual module kind still determines whether this check applies.'}]};
+    assert.equal(validDirectArguments(args,definition.inputSchema),true,stage.id+':'+check.id);
+  }
 });
 
 test('a direct edit and a local UI edit share one graph, event stream, and exact recoverable job receipt', async t => {

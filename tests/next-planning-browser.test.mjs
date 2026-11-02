@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createPlanningBrowser } from '../public/next/workspaces/planning-browser.mjs';
 import { PLANNING_MODULE_TEMPLATES, planningModuleTemplate, planningRequestSources, projectPlanningRequest } from '../public/planning-browser-model.mjs';
 import { planningDOM } from './fixture-planning-dom.mjs';
+import { parsePlanningProgramXml } from '../public/planning-program-xml.mjs';
 
 const copy = value => structuredClone(value);
 const waitFor = async read => { const deadline = Date.now() + 4000; while (Date.now() < deadline) { if (read()) return; await new Promise(resolve => setTimeout(resolve, 4)); } throw Error('Planning UI did not settle.'); };
@@ -30,7 +31,17 @@ async function fixture(t, { hook, empty = false, status = {}, initialNodeId = 'f
     assert.ok(document, 'Only known fake requests are read or changed.');
     if (parts.length === 5 && method === 'GET') return projectPlanningRequest(document);
     const node = document.nodes.find(value => value.id === parts[6]);
-    if (method === 'PATCH') { assert.equal(body.expectedNodeRevision, node.revision); Object.assign(node, { title: body.title ?? node.title, prompt: body.prompt ?? node.prompt, revision: node.revision + 1 }); }
+    if (parts[5] === 'program' && method === 'PUT') {
+      assert.equal(body.expectedRevision, document.revision);
+      const parsed = parsePlanningProgramXml(body.xml);
+      assert.equal(parsed.requestId, document.id);
+      document.nodes = parsed.nodes.map(item => {
+        const prior = document.nodes.find(existing => existing.id === item.id);
+        return { ...(prior || { revision: 0 }), ...item, revision: (prior?.revision || 0) + 1 };
+      });
+      document.objective = parsed.objective;
+    }
+    else if (method === 'PATCH') { assert.equal(body.expectedNodeRevision, node.revision); Object.assign(node, { title: body.title ?? node.title, prompt: body.prompt ?? node.prompt, ...(body.doneWhen !== undefined ? { doneWhen: body.doneWhen } : {}), ...(body.skipReason !== undefined ? { skipReason: body.skipReason } : {}), revision: node.revision + 1 }); }
     else if (parts[5] === 'nodes' && parts.length === 6 && method === 'POST') { const parent = document.nodes.find(value => value.id === body.parentId); if (parent) assert.equal(body.expectedParentRevision, parent.revision); document.nodes.push({ id: 'new-' + (++serial), parentId: body.parentId || null, kind: body.kind, title: body.title, prompt: body.prompt, revision: 1 }); }
     else if (parts[7] === 'responses') {
       assert.equal(body.expectedNodeRevision, node.revision); assert.equal(body.provenance, undefined); assert.equal(body.clientRequestId, undefined);
@@ -152,15 +163,69 @@ test('new response identity refreshes a clean form without a prompt revision and
   assert.equal(f.mutations().length, 0, 'Receiving model output is a read and never silently saves a draft.');
 });
 
-test('nested module creation is an explicit parent-revision edit and legacy plans load only when opened', async t => {
+test('nested module creation is an explicit parent-revision edit and no legacy-plan mode remains', async t => {
   const f = await fixture(t), expand = f.mount.querySelectorAll('button').find(button => button.textContent === '+ Expand into a child module');
   await f.click(expand); await f.input('#pb-node-title', 'A further consequential question'); await f.input('#pb-node-prompt', 'What observation would reverse this choice?');
   assert.equal(f.mutations().length, 0);
   await f.$('[data-action="create-node"]').closest('form').dispatch('submit'); await waitFor(() => f.documents.get('request-a').nodes.length === 3);
   const create = f.mutations().at(-1); assert.equal(create.body.parentId, 'frame'); assert.equal(create.body.expectedParentRevision, 1); assert.equal(create.body.expectedRevision, undefined);
   assert.equal(f.calls.filter(call => call.route.endsWith('/run')).length, 0);
-  await f.click(f.mount.querySelectorAll('button').find(button => button.textContent === 'Legacy plans')); assert.deepEqual(f.legacyCalls, ['created', 'enter']);
-  await f.click(f.mount.querySelectorAll('button').find(button => button.textContent === 'Planning browser')); assert.ok(f.legacyCalls.includes('leave'));
+  assert.equal(f.mount.textContent.includes('Legacy plans'), false);
+  assert.deepEqual(f.legacyCalls, [], 'The removed legacy planner is never instantiated.');
+});
+
+test('XML and visual outlines share the saved module, and skipping is reversible without fake completion', async t => {
+  const f = await fixture(t);
+  await f.click('[data-view="xml"]');
+  const program = f.$('.pb-program-xml');
+  assert.equal(program.readOnly, false);
+  assert.match(program.value, /<planning-program version="1"/);
+  assert.match(program.value, /number="1.1"/);
+  assert.equal(f.mutations().length, 0);
+
+  await f.click('[data-view="outline"]');
+  await f.click('[data-node-id="child"]');
+  const field = f.$('[data-field-key="child:xml"]');
+  assert.match(field.value, /<module version="1" id="child">/);
+  await f.input('[data-field-key="child:xml"]', field.value.replace('<skip-reason></skip-reason>', '<skip-reason>Not material now.</skip-reason>'));
+  await f.click('[data-action="save-module-xml"]');
+  await waitFor(() => f.documents.get('request-a').nodes.find(node => node.id === 'child').skipReason === 'Not material now.');
+  assert.equal(f.$('[data-action="run-module"]').disabled, true);
+  assert.match(f.$('[data-node-id="child"]').textContent, /skipped/i);
+
+  const edit = f.$('[data-field-key="child:xml"]');
+  await f.input('[data-field-key="child:xml"]', edit.value.replace('<skip-reason>Not material now.</skip-reason>', '<skip-reason></skip-reason>'));
+  await f.click('[data-action="save-module-xml"]');
+  await waitFor(() => f.documents.get('request-a').nodes.find(node => node.id === 'child').skipReason === '');
+  assert.equal(f.$('[data-action="run-module"]').disabled, false);
+});
+
+test('the full XML plan editor saves one revision, exposes the new hierarchy, and protects stale drafts', async t => {
+  const f = await fixture(t);
+  await f.click('[data-view="xml"]');
+  const source = f.$('[data-field-key="request-a:program-xml"]').value;
+  const changed = source.replace('<title>Define the actual outcome</title>', '<title>Reframe the actual outcome</title>');
+  await f.input('[data-field-key="request-a:program-xml"]', changed);
+  assert.equal(f.mutations().length, 0);
+  await f.click('[data-action="save-program-xml"]');
+  await waitFor(() => f.documents.get('request-a').nodes[0].title === 'Reframe the actual outcome');
+  const save = f.mutations().at(-1);
+  assert.equal(save.method, 'PUT');
+  assert.equal(save.route, '/api/planning-browser/requests/request-a/program');
+  assert.equal(save.body.expectedRevision, 1);
+  assert.equal(f.$('[data-action="save-program-xml"]').disabled, true);
+  await f.click('[data-view="outline"]');
+  assert.match(f.$('[data-node-id="frame"]').textContent, /Reframe the actual outcome/);
+
+  await f.click('[data-view="xml"]');
+  const nextSource = f.$('[data-field-key="request-a:program-xml"]').value;
+  await f.input('[data-field-key="request-a:program-xml"]', nextSource.replace('<title>Reframe the actual outcome</title>', '<title>Local unsaved XML</title>'));
+  f.documents.get('request-a').revision++;
+  await f.refresh();
+  assert.match(f.$('[data-field-key="request-a:program-xml"]').value, /Local unsaved XML/);
+  assert.equal(f.$('[data-action="save-program-xml"]').disabled, true);
+  await f.click(f.mount.querySelectorAll('button').find(node => node.textContent === 'Reload saved XML'));
+  assert.doesNotMatch(f.$('[data-field-key="request-a:program-xml"]').value, /Local unsaved XML/);
 });
 
 test('direct ChatGPT contributions display external origin and their recorded job without claiming a human or Luna runtime response', async t => {
@@ -404,6 +469,21 @@ test('recursive cycles expose ordered stage work, named findings and refinement 
     assert.ok(f.mount.querySelectorAll('button').find(button=>button.textContent==='+ Refine with a child cycle'));
   }
   assert.equal(f.mutations().length,0);
+});
+
+test('intent-first cycles show the actual phase order and confirmed resource diagnostics without asking the human to do routine work',async t=>{
+  const f=await fixture(t,{initialNodeId:cycleIds.cycle,hook:(call,documents)=>{
+    if(call.route!=='/api/planning-browser/requests/request-a'||call.method!=='GET')return;
+    const graph=cycleGraph(documents.get('request-a'));graph.cycles[0].pipelineVersion=2;graph.cycles[0].state='blocked';graph.cycles[0].summary='A required target right is denied; the independent read can continue.';
+    for(const node of graph.nodes)if(node.kind!=='cycle')node.pipelineVersion=2;
+    const node=graph.nodes.find(item=>item.id===cycleIds.feasibility);
+    node.readiness={state:'blocked',viability:{state:'blocked',analysisReady:true,issues:[],preferences:[],repairableGaps:[{id:'read',label:'Malformed read',finding:'Only the prior observation failed.',remedy:'Emit one compact corrected observation under existing authority.'}],nonblockingSymptoms:[],blockingFacts:[{id:'right',label:'Target write right',resolution:'blocked',diagnostic:'The actual target denied the required write.',consequence:'Writing the requested record.',remedy:'Use an authorized alternative or wait for the actual right.'}]}};
+    return graph;
+  }});
+  await f.click('[data-node-id="'+cycleIds.feasibility+'"]');
+  assert.deepEqual(f.$('.pb-phase-rail').querySelectorAll('[data-phase]').map(node=>node.dataset.phase),['inference','feasibility','plan','think','respond']);
+  const blocker=f.$('[data-resource-blocker="right"]');assert.ok(blocker);assert.match(blocker.textContent,/Diagnostic: The actual target denied/);assert.match(blocker.textContent,/Affected work:/);assert.match(blocker.textContent,/Remedy:/);
+  assert.match(f.$('.pb-viability').textContent,/Model-repairable prerequisites/);assert.match(f.$('.pb-viability').textContent,/compact corrected observation/);assert.equal(f.$('[data-action="answer-viability"]'),null);
 });
 
 test('Plan edits preserve typed findings and save separately from exact-revision Continue',async t=>{

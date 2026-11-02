@@ -17,7 +17,9 @@ const clone=value=>structuredClone(value),inputOf=options=>JSON.parse(options.pr
 const fact='Alpha takes 20–30 minutes; Beta takes 40–50. Alpha is faster by a plausible 10–30 minutes.';
 function readable(input){
   const kind=input.module.kind,sourceId=input.sources.find(source=>source.kind==='user_request')?.id||input.sources[0].id;
-  const stage=RESPONSE_CYCLE_STAGES.find(stage=>stage.kind===kind),body={values:Object.fromEntries(input.template.fields.map(field=>[field.id,field.id==='unknowns'||field.id==='unresolvedDependencies'?'None material under the supplied estimates.':fact])),grounding:input.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId})),openQuestions:[],challengeResponses:[],checks:stage.checks.map(check=>({id:check.id,assessment:'supported',sourceIds:[sourceId],note:fact})),subproblems:[],childResults:[]};
+  const stage=RESPONSE_CYCLE_STAGES.find(stage=>stage.kind===kind),body={values:Object.fromEntries(input.template.fields.map(field=>[field.id,field.id==='unknowns'||field.id==='unresolvedDependencies'?'None material under the supplied estimates.':fact])),grounding:input.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId})),openQuestions:[],challengeResponses:[]};
+  if(kind==='viability')return {...body,requirements:[]};
+  Object.assign(body,{checks:stage.checks.map(check=>({id:check.id,assessment:'supported',sourceIds:[sourceId],note:fact})),subproblems:[],childResults:[]});
   if(kind==='inference')body.inferences=[{id:'range-comparison',claim:fact,basis:'inferred',sourceIds:[sourceId],limitation:'These are ranges from the supplied estimates, not exact measured durations.'}];
   if(kind==='plan')Object.assign(body,{acceptanceCriteria:[{id:'faster-range',label:'Compare the supplied ranges',description:fact,verification:'response',accuracy:{mode:'bounded_estimate',tolerance:'Use the supplied duration ranges, without a point estimate.',decisionThreshold:'Alpha is faster throughout the supplied ranges.',evidenceNeeded:'The two supplied ranges.',consequence:'Reversing the comparison would give the wrong recommendation.',unknownPolicy:'range',stopWhen:'The supplied ranges establish the recommendation and plausible savings.'}}],steps:[{id:'explain',label:'Explain the range comparison',description:'Recommend Alpha and state the 10–30 minute plausible saving.',dependsOn:[],criterionIds:['faster-range'],sourceIds:[sourceId]}]});
   return body;
@@ -32,11 +34,11 @@ async function fixture(t,handler){
 
 test('the actual accepted source-only Inference is rejected with captured context and remains structurally inspectable',()=>{
   const body=planningResponseBody(actual.response),sources=actual.attempt.sources;
-  assert.doesNotThrow(()=>parseModuleResponse(body,'inference'));
-  assert.throws(()=>parseModuleResponse(body,'inference',{sources}),{code:'PLANNING_RESPONSE_READABILITY'});
-  assert.throws(()=>parseResponseCycleResponse(body,'inference',{sources}),{code:'PLANNING_RESPONSE_READABILITY'});
+  assert.doesNotThrow(()=>parseModuleResponse(body,'inference',{pipelineVersion:1}));
+  assert.throws(()=>parseModuleResponse(body,'inference',{sources,pipelineVersion:1}),{code:'PLANNING_RESPONSE_READABILITY'});
+  assert.throws(()=>parseResponseCycleResponse(body,'inference',{sources,pipelineVersion:1}),{code:'PLANNING_RESPONSE_READABILITY'});
   assert.throws(()=>validatePlanningModuleResponse(actual.attempt,JSON.stringify(body)),{code:'PLANNING_RESPONSE_READABILITY'});
-  const evaluated=evaluateResponseCycleStage('inference',actual.response,{...actual.attempt.cycleContext,sources,nodeRevision:actual.response.nodeRevision});
+  const evaluated=evaluateResponseCycleStage('inference',actual.response,{...actual.attempt.cycleContext,sources,nodeRevision:actual.response.nodeRevision,pipelineVersion:1});
   assert.equal(evaluated.state,'needs_evidence');assert.equal(evaluated.analysisReady,false);assert.equal(evaluated.dispatchReady,false);
   const issues=planningReadableFindingIssues(body,sources);assert.equal(issues.length,8);assert.ok(issues.some(issue=>issue.path==='checks[0].note'));
   const diagnostic=planningFormatDiagnostic(actual.attempt,JSON.stringify(body),Object.assign(Error('Readable finding required.'),{code:'PLANNING_RESPONSE_READABILITY',issues}));assert.deepEqual(diagnostic.issues,issues);
@@ -117,7 +119,7 @@ test('a source-only finding can receive exactly the existing format repair with 
   assert.equal(f.calls.length,2);assert.equal(result.attempt.status,'completed');assert.equal(saved.attempts[0].validation.code,'PLANNING_RESPONSE_READABILITY');assert.equal(saved.attempts[1].repairOf,saved.attempts[0].id);assert.deepEqual(saved.attempts[1].sources,saved.attempts[0].sources);assert.match(saved.attempts[0].partialOutput,new RegExp(request.id));assert.equal(saved.responses.length,1);
 });
 
-test('the saved historical failure stays readable and an explicit rerun keeps valid Feasibility while replacing only Inference and Plan',async t=>{
+test('the saved historical failure stays readable and explicit intent-first upgrade preserves its prior findings while rerunning the changed contract',async t=>{
   const f=await fixture(t,input=>readable(input)),source=actual.attempt.sources.find(source=>source.kind==='user_request'),contextSource=actual.attempt.sources.find(source=>source.id.startsWith('cycle:context:')),priorSource=actual.attempt.sources.find(source=>source.kind==='response'),cycleId=actual.attempt.cycleContext.cycleId;
   let request=await f.store.create({id:actual.attempt.requestId,conversationId:'historical-fixture',title:actual.attempt.cycleContext.title,objective:source.text,cwd:f.dir});
   const stages=Object.fromEntries(RESPONSE_CYCLE_STAGES.map(stage=>[stage.id,cycleId+'-'+stage.id])),cycle={id:cycleId,title:actual.attempt.cycleContext.title,objective:actual.attempt.cycleContext.objective,stageNodeIds:stages,parentCycleId:null,parentStageId:null,depth:0,planningExecutionMode:'plan_only',state:'failed',acceptanceCriteria:[],sourceIds:null,executionProfile:actual.attempt.cycleExecutionProfile,execution:{required:false,state:'not_required'}};
@@ -132,6 +134,6 @@ test('the saved historical failure stays readable and an explicit rerun keeps va
   assert.equal(before.readiness.cycle.analysisReady,true);assert.equal(bad.readiness.state,'needs_evidence');assert.equal(bad.readiness.cycle.analysisReady,false);assert.deepEqual(bad.response.values,actual.response.values);
   const service=new ResponseCycleService({store:f.store,runner:f.runner});t.after(()=>service.close());
   const done=await service.runCycle(request.id,cycleId,{expectedRequestRevision:request.revision,expectedCycleRevision:request.nodes.find(node=>node.id===cycleId).revision,clientRequestId:'explicit-fix-historical'});
-  assert.deepEqual(f.calls.map(call=>call.input.module.kind),['inference','plan']);assert.equal(done.cycles[0].state,'paused_after_plan');assert.equal(done.nodes.find(node=>node.id===stages.feasibility).response.id,beforeId);
+  assert.deepEqual(f.calls.map(call=>call.input.module.kind),['inference','viability','plan']);assert.equal(done.cycles[0].state,'paused_after_plan');assert.notEqual(done.nodes.find(node=>node.id===stages.feasibility).response.id,beforeId);assert.ok(done.responses.some(response=>response.id===beforeId));assert.equal(done.cycles[0].pipelineVersion,2);
   assert.ok(done.responses.some(response=>response.id===actual.response.id));assert.notEqual(done.nodes.find(node=>node.id===stages.inference).response.id,actual.response.id);assert.equal(done.nodes.find(node=>node.id===stages.plan).response.acceptanceCriteria[0].accuracy.mode,'bounded_estimate');
 });

@@ -60,7 +60,7 @@ const start = async (session, input, model) => {
 const follow = async (session, run, message, model) => {
   const result = await session.api(`/api/runs/${run.id}/continue`, { method: 'POST', body: { nodeId: 'agent', message, ...(model ? { model } : {}) } }); assert.equal(result.status, 201, result.text); return session.settled(result.data.id);
 };
-const persistentDefaults = { codexHistory: 'codex', runTimeoutMs: null, providerIdleTimeoutMs: 300000, defaultEffort: 'default', defaultServiceTier: 'default', defaultContext: { preset: 'model', windowTokens: null, autoCompact: true }, verbosity: 'balanced', subagentsEnabled: false, maxSubagents: 3, connectedGmail: false, executionGuardrails: false, hiddenModelProviders: [] };
+const persistentDefaults = { codexHistory: 'codex', runTimeoutMs: null, providerIdleTimeoutMs: 300000, defaultEffort: 'default', defaultServiceTier: 'default', defaultContext: { preset: 'model', windowTokens: null, autoCompact: true }, verbosity: 'balanced', subagentsEnabled: true, maxSubagents: 3, connectedGmail: false, executionGuardrails: false, hiddenModelProviders: [] };
 // These session tests exercise the full operational tool catalog, not a small-window model.
 const catalogResponse = () => new Response(JSON.stringify({data:[{id:'api-model',context_length:131072,max_output_tokens:8192}]}),{headers:{'Content-Type':'application/json'}});
 async function recordLegacyHistory(session, id) {
@@ -223,4 +223,70 @@ test('conversation exports use authenticated downloadable transcripts without na
   assert.equal(json.text.includes(first.nodes.agent.threadId), false); assert.equal(json.text.includes(second.nodes.agent.threadId), false); assert.equal(json.text.includes('developerInstructions'), false); assert.equal(json.text.includes('runtimeSettings'), false);
   const markdown = await session.api(route + '?format=markdown'); assert.equal(markdown.status, 200); assert.match(markdown.headers.get('content-type'), /text\/markdown/); assert.match(markdown.headers.get('content-disposition'), /\.md"$/); assert.match(markdown.text, /EXPORT_USER_MARKER/); assert.match(markdown.text, /EXPORT_FOLLOWUP_MARKER/);
   assert.equal((await session.api(route + '?format=executable')).status, 400);
+});
+
+function isolatedFixture(execute) {
+  const runtime=new NativeFixture(execute),status=runtime.status.bind(runtime);
+  runtime.status=()=>({...status(),isolatedHistory:true});
+  return runtime;
+}
+
+test('BLACKICE isolation rebuilds native follow-ups from its saved conversation across reopen and older persistent IDs',async t=>{
+  const session=await application(t,async()=>isolatedFixture());
+  const first=await start(session,'PRIVATE_APP_MARKER_A: remember the copper rook.');
+  await start(session,'OTHER_PRIVATE_CHAT_MARKER: unrelated conversation.');
+  // Emulate a BLACKICE conversation created before the isolation repair.
+  const saved=session.app.engine.runs.get(first.id);
+  saved.runtimeSettings.codexHistory='codex';saved.nodes.agent.codexHistory='codex';
+  await session.app.engine.persist();
+  const second=await follow(session,first,'PRIVATE_APP_MARKER_B: what did I ask you to remember?');
+  assert.equal(second.runtimeSettings.codexHistory,'relay');
+  assert.equal(session.runtime.calls[2].codexHistory,'relay');
+  assert.equal(session.runtime.calls[2].threadId,undefined);
+  assert.notEqual(second.nodes.agent.threadId,first.nodes.agent.threadId);
+  assert.equal(second.modelHandoff.reason,'relay-history');
+  assert.match(session.runtime.calls[2].prompt,/PRIVATE_APP_MARKER_A/);
+  assert.match(session.runtime.calls[2].prompt,/ASSISTANT_HISTORY_MARKER_1/);
+  assert.doesNotMatch(session.runtime.calls[2].prompt,/OTHER_PRIVATE_CHAT_MARKER/);
+  const reopened=await session.reopen();
+  const third=await follow(reopened,second,'PRIVATE_APP_MARKER_C: continue after restart.');
+  assert.equal(reopened.runtime.calls[0].codexHistory,'relay');
+  assert.equal(reopened.runtime.calls[0].threadId,undefined);
+  assert.match(reopened.runtime.calls[0].prompt,/PRIVATE_APP_MARKER_A/);
+  assert.match(reopened.runtime.calls[0].prompt,/PRIVATE_APP_MARKER_B/);
+  assert.doesNotMatch(reopened.runtime.calls[0].prompt,/OTHER_PRIVATE_CHAT_MARKER/);
+  assert.equal(third.taskId,first.id);
+});
+
+test('isolated Retry preserves partial evidence without resuming its expired or formerly persistent native thread',async t=>{
+  const native=isolatedFixture(async(options,{index,threadId,turnId})=>{
+    options.onEvent({type:'thread',threadId,turnId,model:options.model,codexHistory:options.codexHistory});
+    if(index===1){
+      options.onEvent({type:'message',threadId,turnId,text:'ISOLATED_PARTIAL_MARKER: a confirmed operation already finished.',phase:'commentary'});
+      throw Object.assign(new Error('Interrupted fixture'),{code:'PROVIDER_NETWORK'});
+    }
+    return {output:'Recovered from app history.',threadId,turnId,codexHistory:options.codexHistory};
+  });
+  const session=await application(t,async()=>native),first=await start(session,'ISOLATED_TASK_MARKER: perform the requested checks.');
+  assert.equal(first.status,'failed');
+  session.app.engine.runs.get(first.id).nodes.agent.codexHistory='codex';
+  const requested=await session.api(`/api/runs/${first.id}/retry`,{method:'POST',body:{}});
+  assert.equal(requested.status,201,requested.text);
+  const retried=await session.settled(requested.data.id);
+  assert.equal(retried.status,'completed',retried.error);
+  assert.equal(native.calls[1].codexHistory,'relay');assert.equal(native.calls[1].threadId,undefined);
+  assert.match(native.calls[1].prompt,/ISOLATED_TASK_MARKER/);assert.match(native.calls[1].prompt,/ISOLATED_PARTIAL_MARKER/);
+  assert.equal(retried.nodeHandoffs.agent.reason,'relay-history');
+});
+
+test('isolated history cannot adopt an old persistent compaction checkpoint or silently recreate one',async t=>{
+  const session=await application(t,async()=>isolatedFixture()),run=await start(session,'ISOLATED_COMPACT_MARKER: preserve my original history.');
+  const before=session.runtime.calls.length;
+  await assert.rejects(session.app.engine.compactRun(run.id,{nodeId:'agent'}),{code:'CODEX_PRIVATE_COMPACTION_UNAVAILABLE'});
+  assert.equal(session.runtime.calls.length,before);
+  assert.equal(session.app.engine.getRun(run.id).nodes.agent.threadId,run.nodes.agent.threadId);
+  let journalRead=false;
+  session.app.engine.readNativeHistoryMigration=async()=>{journalRead=true;throw Error('Old journal must not be adopted');};
+  await session.app.engine.recoverNativeHistoryMigration({workflow:run.workflow,modelHandoff:{sourceRunId:run.id,context:'old persistent checkpoint'}});
+  assert.equal(journalRead,false);
 });

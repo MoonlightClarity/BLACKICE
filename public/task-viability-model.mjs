@@ -1,6 +1,6 @@
 /** Structured public findings for the shared request/schedule readiness check. */
 const field = (id, label, description, grounding = 'prospective') => Object.freeze({ id, label, description, prompt: description, required: true, grounding });
-export const VIABILITY_TEMPLATE = Object.freeze({ kind: 'viability', label: 'Check task readiness', description: 'Find consequential missing facts, reuse actual evidence, and distinguish essential requirements from preferences.', fields: Object.freeze([
+export const VIABILITY_TEMPLATE = Object.freeze({ kind: 'viability', label: 'Check task readiness', description: 'Check actual resources against the intended task before costly work; expose concrete blockers and distinguish model-repairable gaps, unknowns and nonblocking symptoms.', fields: Object.freeze([
   field('objective', 'Requested outcome', 'State the current requested outcome, including any correction or cancellation in later user input.', 'required'),
   field('essentialInputs', 'Essential inputs and preferences', 'Separate actual required inputs and hard constraints from preferences. Match accuracy to the requested decision: exact, a bounded estimate, or qualitative. A preferred qualification is not an essential requirement.', 'required'),
   field('evidenceRecovery', 'Evidence already checked', 'Identify the supplied records, earlier answers and relevant evidence inspected before calling a fact missing.', 'required'),
@@ -98,7 +98,7 @@ export function validateViabilityRequirements(value) {
     ids.add(id);
     if (!['essential', 'preference'].includes(item.importance)) throw fail('A requirement is essential or a preference.');
     if (!['user', 'task', 'external'].includes(item.basis)) throw fail('Record the actual source of the requirement.');
-    if (!['observed', 'inference', 'omission', 'unknown'].includes(item.resolution)) throw fail('Use an observed fact, supported inference, permitted omission, or unknown.');
+    if (!['observed', 'inference', 'omission', 'unknown','blocked','repairable','nonblocking'].includes(item.resolution)) throw fail('Use an observed fact, supported inference, permitted omission, unknown, confirmed blocker, model-repairable gap or nonblocking symptom.');
     if (typeof item.inferable !== 'boolean' || typeof item.omissionAllowed !== 'boolean') throw fail('State whether inference and omission are appropriate.');
     const result = { id, label: text(item.label, 'Requirement', 500, true), importance: item.importance, basis: item.basis,
       consequence: text(item.consequence, 'Consequence', 2000, item.importance === 'essential'), resolution: item.resolution,
@@ -114,43 +114,63 @@ export function viabilityRequirementSchema() {
   const string = { type: 'string' }, strings = { type: 'array', items: string };
   return schemaTree({ type: 'array', items: { type: 'object', additionalProperties: false, required: [...VIABILITY_REQUIREMENT_FIELDS, 'accuracy'], properties: {
     id: string, label: string, importance: { type: 'string', enum: ['essential', 'preference'] }, basis: { type: 'string', enum: ['user', 'task', 'external'] },
-    consequence: string, resolution: { type: 'string', enum: ['observed', 'inference', 'omission', 'unknown'] }, value: string,
+    consequence: string, resolution: { type: 'string', enum: ['observed', 'inference', 'omission', 'unknown','blocked','repairable','nonblocking'] }, value: string,
     sourceIds: strings, checkedSourceIds: strings, rationale: string, inferable: { type: 'boolean' }, omissionAllowed: { type: 'boolean' }, question: string, dependentNodeIds: strings, accuracy: taskAccuracySchema()
   } } });
 }
 const sourceIdentity = source => [source.id, source.contentHash || '', source.text || '', source.revision ?? null];
+const canonicalResponseValue=value=>Array.isArray(value)?value.map(canonicalResponseValue):object(value)?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonicalResponseValue(value[key])])):value;
+const responseSourceIdentity=source=>JSON.stringify(canonicalResponseValue({id:source.id,kind:source.kind,responseId:source.responseId,revision:source.revision,text:source.text??null,contentHash:source.contentHash??null,provenance:source.provenance??null}));
 /** This computes readiness of recorded findings, never truth of the underlying claims. */
-export function evaluateViabilityResponse(response, sources = [], { workflowNodeIds = null } = {}) {
+export function evaluateViabilityResponse(response, sources = [], { workflowNodeIds = null,upstreamResponses=[] } = {}) {
   if (!response) return { state: 'needs_evidence', analysisReady: false, blockingFacts: [], preferences: [], issues: ['No structured readiness response has been recorded.'] };
   let requirements;
   try { requirements = validateViabilityRequirements(response.requirements); }
   catch (error) { return { state: 'needs_evidence', analysisReady: false, blockingFacts: [], preferences: [], issues: [error.message] }; }
   const current = new Map(sources.filter(source => source.kind !== 'response').map(source => [source.id, source]));
   const captured = new Map((response.sources || []).filter(source => source.kind !== 'response').map(source => [source.id, source]));
+  // Response sources are not base facts. Validate only cited, exact current
+  // host-bound inputs; unrelated/self/later responses must not stale the check.
+  const currentResponses=new Map(sources.filter(source=>source.kind==='response').map(source=>[source.id,source]));
+  const capturedResponses=new Map((response.sources||[]).filter(source=>source.kind==='response').map(source=>[source.id,source]));
+  const inputs=(response.inputs||[]).flatMap(input=>[input,...(input.subtree||[])]);
+  const usableUpstream=id=>{
+    const now=currentResponses.get(id),then=capturedResponses.get(id);
+    if(!now||!then||id!=='response:'+now.responseId||now.responseId===response.id||!Number.isSafeInteger(now.revision)||now.revision<1||!['runtime','human','external_agent','supervising_model'].includes(now.provenance?.kind)||responseSourceIdentity(now)!==responseSourceIdentity(then))return false;
+    const bound=upstreamResponses.find(item=>item.nodeId&&item.nodeId!==response.nodeId&&item.responseId===now.responseId&&item.responseRevision===now.revision);
+    return Boolean(bound&&inputs.some(input=>input.nodeId===bound.nodeId&&input.responseId===bound.responseId&&input.responseRevision===bound.responseRevision));
+  };
   const staleSources = [...current.values()].filter(source => !captured.has(source.id) || JSON.stringify(sourceIdentity(source)) !== JSON.stringify(sourceIdentity(captured.get(source.id)))).map(source => source.id);
   for (const source of captured.values()) if (!current.has(source.id)) staleSources.push(source.id);
-  const issues = planningReadableFindingIssues(response, response.sources || []).map(issue => issue.path + ': ' + issue.message), blockingFacts = [], preferences = [];
+  const issues = planningReadableFindingIssues(response, response.sources || []).map(issue => issue.path + ': ' + issue.message), blockingFacts = [], preferences = [],repairableGaps=[],nonblockingSymptoms=[];
   const analysisIssues = [...issues], sourceCoverage = [];
   const suppliedFacts = [...current.values()].filter(source => !source.id.startsWith('request:') && source.id !== 'viability:workflow').map(source => source.id);
   for (const requirement of requirements) {
     if (requirement.importance === 'preference') { preferences.push({ id: requirement.id, label: requirement.label }); continue; }
     const references = [...requirement.sourceIds, ...requirement.checkedSourceIds];
-    const missing = references.filter(id => !captured.has(id) || !current.has(id));
+    const responseReferences=references.filter(id=>capturedResponses.has(id)||currentResponses.has(id));
+    for(const id of responseReferences)if(currentResponses.has(id)&&capturedResponses.has(id)&&responseSourceIdentity(currentResponses.get(id))!==responseSourceIdentity(capturedResponses.get(id))&&!staleSources.includes(id))staleSources.push(id);
+    const missing = references.filter(id => !capturedResponses.has(id)&&!currentResponses.has(id)&&(!captured.has(id) || !current.has(id)));
     let reason, coverageOnly = false;
     if (missing.length) reason = 'A recorded evidence reference is unavailable.';
+    else if(responseReferences.some(id=>!usableUpstream(id)))reason='A cited upstream response is not the unchanged current consumed prerequisite.';
     else if (workflowNodeIds && requirement.dependentNodeIds.some(id => !workflowNodeIds.includes(id))) reason = 'A dependency names a workflow node outside this request.';
     else if (requirement.resolution === 'unknown' && !requirement.checkedSourceIds.length) { reason = 'Inspect the captured sources before treating this essential fact as missing.'; coverageOnly = true; }
     else if (requirement.resolution === 'unknown' && suppliedFacts.some(id => !requirement.checkedSourceIds.includes(id))) { reason = 'Inspect all supplied records and earlier answers before treating this essential fact as missing.'; coverageOnly = true; }
     else if (requirement.resolution === 'unknown') reason = 'An essential fact remains unresolved.';
+    else if (['blocked','repairable','nonblocking'].includes(requirement.resolution)&&(!requirement.value||!requirement.sourceIds.length))reason='A resource classification needs actual diagnostic evidence and a concrete finding.';
+    else if (requirement.resolution === 'blocked') reason = 'A confirmed resource prerequisite prevents the affected work.';
     else if (requirement.resolution === 'inference' && !requirement.inferable) reason = 'This consequential fact cannot responsibly be inferred.';
     else if (requirement.resolution === 'omission' && !requirement.omissionAllowed) reason = 'The requested task does not permit omission of this fact.';
     else if (requirement.resolution === 'omission' && requirement.accuracy && requirement.accuracy.unknownPolicy !== 'omit') reason = 'The saved accuracy target does not permit omission of this essential fact.';
     else if (['observed', 'inference'].includes(requirement.resolution) && (!requirement.value || !requirement.sourceIds.length)) reason = 'A resolved essential fact needs actual captured evidence.';
     else if (requirement.resolution === 'omission' && !requirement.sourceIds.length) reason = 'A permitted omission needs a source supporting that option.';
+    if(!reason&&requirement.resolution==='repairable')repairableGaps.push({id:requirement.id,label:requirement.label,affectedNodeIds:requirement.dependentNodeIds,finding:requirement.value,remedy:requirement.rationale,sourceIds:requirement.sourceIds});
+    if(!reason&&requirement.resolution==='nonblocking')nonblockingSymptoms.push({id:requirement.id,label:requirement.label,finding:requirement.value,rationale:requirement.rationale,sourceIds:requirement.sourceIds});
     if (reason) {
       const question = requirement.question || 'What is the correct ' + requirement.label + '?';
-      blockingFacts.push({ id: requirement.id, label: requirement.label, question, consequence: requirement.consequence, dependentNodeIds: requirement.dependentNodeIds, reason });
-      if (reason !== 'An essential fact remains unresolved.') {
+      blockingFacts.push({ id: requirement.id, label: requirement.label, question, consequence: requirement.consequence, dependentNodeIds: requirement.dependentNodeIds, reason,resolution:requirement.resolution,diagnostic:requirement.value,remedy:requirement.rationale,sourceIds:requirement.sourceIds });
+      if (!['An essential fact remains unresolved.','A confirmed resource prerequisite prevents the affected work.'].includes(reason)) {
         issues.push(reason);
         if (coverageOnly) sourceCoverage.push({ requirementId: requirement.id, missingSourceIds: suppliedFacts.filter(id => !requirement.checkedSourceIds.includes(id)), message: reason });
         else analysisIssues.push(reason);
@@ -160,7 +180,7 @@ export function evaluateViabilityResponse(response, sources = [], { workflowNode
   // Incomplete inspection metadata still holds strict dispatch and factual questions.
   // It is not a reason to prevent a grounded plan from arranging the missing inspection.
   // Never fill checkedSourceIds or change an unknown into an observed fact here.
-  return { state: staleSources.length ? 'stale' : issues.length ? 'needs_evidence' : blockingFacts.length ? 'awaiting_input' : 'ready',
-    analysisReady: !staleSources.length && !analysisIssues.length, analysisIssues, sourceCoverage, blockingFacts, preferences, issues, staleSources };
+  return { state: staleSources.length ? 'stale' : issues.length ? 'needs_evidence' : blockingFacts.some(fact=>fact.resolution==='blocked')?'blocked':blockingFacts.length ? 'awaiting_input' : 'ready',
+    analysisReady: !staleSources.length && !analysisIssues.length, analysisIssues, sourceCoverage, blockingFacts,repairableGaps,nonblockingSymptoms, preferences, issues, staleSources };
 }
 

@@ -20,6 +20,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  if(method==='model/list')return reply(id,{data:[{id:'fixture',model:'fixture',isDefault:true,defaultReasoningEffort:'high',supportedReasoningEfforts:[{reasoningEffort:'high'}]}],nextCursor:null});
  if(method==='config/read')return reply(id,{config:{plugins:{},mcp_servers:{},skills:{config:[]}}});
  if(method==='skills/list')return reply(id,{data:(params.cwds||[]).map(cwd=>({cwd,skills:[],errors:[]}))});
+ if(method==='experimentalFeature/list'){const config=saved.threads[params.threadId]?.config||{};return reply(id,{data:['multi_agent','multi_agent_v2'].map(name=>({name,stage:'stable',enabled:config['features.'+name]!==false})),nextCursor:null});}
  if(method==='thread/start'){
   const threadId='persistent-'+(++saved.counter);saved.threads[threadId]={cwd:params.cwd,model:params.model,config:params.config||{},dynamicTools:params.dynamicTools||[],ephemeral:params.ephemeral===true,turns:0,compactions:0,items:[]};write();return reply(id,{thread:{id:threadId,cwd:params.cwd,ephemeral:params.ephemeral===true},model:params.model});
  }

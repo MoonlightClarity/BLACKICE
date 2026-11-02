@@ -18,10 +18,9 @@ function fixture(kind, { effects = false } = {}) {
   const sources = [source('request:fixture', 'The user requested this concrete outcome.', 'user_request'), source('evidence', 'The host captured the actual fixture observation.')];
   const payload = { values: Object.fromEntries(template.fields.map(field => [field.id, field.label + ': concise public fixture findings.'])), grounding: template.fields.filter(field => field.grounding === 'required').map(field => ({ field: field.id, sourceId: 'evidence' })), openQuestions: [], challengeResponses: [] };
   const context = { sources, nodeRevision: 1, prerequisites: [], children: [], acceptanceCriteria: criteria, criterionResults: [{ criterionId: 'answer', assessment: 'satisfied', sourceIds: ['evidence'], receiptIds: [], rationale: 'The actual fixture observation satisfies the criterion.' }], execution: { required: false }, workflowNodeIds: ['worker'] };
+  if(stage.order>1){const prior = RESPONSE_CYCLE_STAGES[stage.order - 2], previous = { ...source('response:previous', 'Recorded prerequisite findings.', 'response'), responseId: 'previous' };sources.push(previous);context.prerequisites.push({stageId:prior.id,nodeId:prior.id+'-node',responseId:'previous',responseRevision:1,state:'ready',analysisReady:true,dispatchReady:true});}
   if (kind === 'viability' || kind === 'feasibility') payload.requirements = [fact()];
   else {
-    const prior = RESPONSE_CYCLE_STAGES[stage.order - 2], previous = { ...source('response:previous', 'Recorded prerequisite findings.', 'response'), responseId: 'previous' };
-    sources.push(previous); context.prerequisites.push({ stageId: prior.id, nodeId: prior.id + '-node', responseId: 'previous', responseRevision: 1, state: 'ready', analysisReady: true, dispatchReady: true });
     payload.checks = stage.checks.map(check => ({ id: check.id, assessment: check.when === 'effects' && !effects ? 'not_applicable' : 'supported', sourceIds: check.grounding === 'required' ? ['evidence'] : [], note: 'The declared assessment has been completed against the captured fixture.' }));
     payload.subproblems = []; payload.childResults = [];
     if (kind === 'inference') payload.inferences = [{ id: 'bounded_claim', claim: 'The captured evidence supports the bounded finding.', basis: 'inferred', sourceIds: ['evidence'], limitation: 'The fixture does not establish facts beyond its stated scope.' }];
@@ -38,15 +37,31 @@ function fixture(kind, { effects = false } = {}) {
 }
 
 test('the five actual stages have frozen ordered templates and a non-executable cycle container', () => {
-  assert.deepEqual(RESPONSE_CYCLE_STAGES.map(item => item.label), ['Feasibility', 'Inference', 'Plan', 'Think', 'Respond']);
-  assert.deepEqual(RESPONSE_CYCLE_STAGES.map(item => item.kind), ['viability', 'inference', 'plan', 'think', 'respond']);
+  assert.deepEqual(RESPONSE_CYCLE_STAGES.map(item => item.label), ['Inference', 'Feasibility', 'Plan', 'Think', 'Respond']);
+  assert.deepEqual(RESPONSE_CYCLE_STAGES.map(item => item.kind), ['inference','viability', 'plan', 'think', 'respond']);
   assert.deepEqual(RESPONSE_CYCLE_STAGES.map(item => item.order), [1, 2, 3, 4, 5]);
-  assert.equal(RESPONSE_CYCLE_TEMPLATES[0].label, 'Feasibility');
+  assert.equal(RESPONSE_CYCLE_TEMPLATES[0].label, 'Inference');
   assert.equal(RESPONSE_CYCLE_CONTAINER_TEMPLATE.kind, 'cycle');
   assert.deepEqual(RESPONSE_CYCLE_CONTAINER_TEMPLATE.fields, []);
   assert.ok(Object.isFrozen(RESPONSE_CYCLE_STAGES[1].checks));
   assert.throws(() => responseCycleResponseSchema('cycle'), { code: 'RESPONSE_CYCLE_INVALID' });
   assert.match(responseCycleInstructions('think'), /Do not provide private reasoning transcripts/);
+});
+
+test('new intent contract requires the real user benefit and delegated outcome while old same-field findings cannot pass it',()=>{
+  const f=fixture('inference');delete f.payload.values.userBenefit;delete f.payload.values.handoffBoundary;
+  const readiness=f.evaluate();assert.equal(readiness.analysisReady,false);assert.ok(readiness.missingFields.includes('userBenefit'));assert.ok(readiness.missingFields.includes('handoffBoundary'));
+  assert.ok(responseCycleResponseSchema('inference').properties.values.required.includes('userBenefit'));
+  assert.ok(responseCycleResponseSchema('plan').properties.values.required.includes('purposeFit'));assert.ok(responseCycleResponseSchema('think').properties.values.required.includes('benefitAndBurden'));assert.ok(responseCycleResponseSchema('respond').properties.values.required.includes('benefitAndBurden'));
+});
+
+test('current Plan guidance selects attainable proof families and preserves delegated action without rewriting legacy contracts',()=>{
+  const current=responseCycleInstructions('plan'),legacy=responseCycleInstructions('plan',{pipelineVersion:1});
+  assert.match(current,/response-only how-to/);assert.match(current,/host-described proofCapabilities/);
+  assert.match(current,/independently read a shared retained image/);assert.match(current,/Never encode a visual judgment as a hardcoded success Boolean/);
+  assert.doesNotMatch(legacy,/host-described proofCapabilities/);
+  assert.match(responseCycleStage('plan').checks.find(item=>item.id==='outcome_covered').label,/delegated external outcome/);
+  assert.equal(responseCycleStage('plan',{pipelineVersion:1}).checks.find(item=>item.id==='outcome_covered').label,'Connect every acceptance criterion to proposed work');
 });
 
 test('execution mode is caller-neutral, exact and optional only when omitted', () => {
@@ -90,10 +105,9 @@ test('recorded essential unknowns permit analysis but hold operational dispatch'
   assert.equal(unchecked.unresolvedChecks.length, 1);
 });
 
-test('unknown feasibility can flow into inference and Plan without becoming dispatch authority', () => {
-  for (const kind of ['inference', 'plan']) {
+test('unknown feasibility can inform Plan without becoming dispatch authority', () => {
+  for (const kind of ['plan']) {
     const f = fixture(kind); f.context.prerequisites[0].dispatchReady = false;
-    if (kind === 'inference') f.context.prerequisites[0].state = 'awaiting_input';
     const result = f.evaluate(); assert.equal(result.state, 'ready'); assert.equal(result.analysisReady, true); assert.equal(result.dispatchReady, false);
   }
 });
@@ -125,7 +139,7 @@ test('prerequisite state and exact response identity are checked by the host', (
 
 test('actual captured input records can bind a prerequisite without another prose source', () => {
   const f = fixture('plan'); f.sources.splice(f.sources.findIndex(item => item.kind === 'response'), 1);
-  const record = f.record(); record.inputs = [{ nodeId: 'inference-node', responseId: 'previous', responseRevision: 1 }];
+  const record = f.record(); record.inputs = [{ nodeId: f.context.prerequisites[0].nodeId, responseId: 'previous', responseRevision: 1 }];
   assert.equal(f.evaluate(record).state, 'ready'); record.inputs[0].responseRevision = 2;
   assert.equal(f.evaluate(record).state, 'stale');
 });
@@ -277,6 +291,30 @@ test('invalid attempts to waive an applicable effect check are rejected by host 
   f.payload.criterionResults[0].assessment = 'uncertain'; f.payload.criterionResults[0].sourceIds = [];
   f.payload.checks.find(item => item.id === 'effects_verified').assessment = 'not_applicable';
   assert.equal(f.evaluate().state, 'needs_evidence');
+});
+
+test('an accurate blocker supports effect-reporting checks without claiming the requested effect', () => {
+  const think = fixture('think', { effects: true });
+  think.sources.find(item => item.id === 'evidence').text = 'The tool catalog contained no guest control tool. No guest operation was attempted.';
+  think.payload.criterionResults[0] = { criterionId: 'answer', assessment: 'uncertain', sourceIds: ['evidence'], receiptIds: [], rationale: 'The requested guest effect was not observed because the needed tool is unavailable.' };
+  const evaluated = think.evaluate();
+  assert.equal(evaluated.analysisReady, true); assert.equal(evaluated.outcome, 'unresolved');
+  assert.equal(evaluated.issues.length, 0);
+  think.payload.criterionResults[0].assessment = 'satisfied';
+  assert.match(think.evaluate().issues.join(' '), /matching host-observed effect receipt/);
+
+  const respond = fixture('respond', { effects: true });
+  respond.context.criterionResults = [{ criterionId: 'answer', assessment: 'uncertain', sourceIds: ['evidence'], receiptIds: [], rationale: 'No guest effect was observed.' }];
+  respond.payload.values.answer = 'I could not access the required guest control tool. No guest change was made; the requested installation remains unverified.';
+  respond.payload.coverage[0] = { criterionId: 'answer', disposition: 'unresolved', sourceIds: ['evidence'], responseExcerpt: 'No guest change was made', limitation: 'the requested installation remains unverified.' };
+  assert.equal(respond.evaluate().analysisReady, true);
+  assert.equal(respond.evaluate().outcome, 'unresolved');
+  respond.payload.coverage[0].disposition = 'addressed';
+  assert.match(respond.evaluate().issues.join(' '), /host-observed receipt/);
+  for (const kind of ['think', 'respond']) {
+    assert.match(responseCycleInstructions(kind), /captured blocker or no attempted operations can support these checks/);
+    assert.match(responseCycleResponseSchema(kind).properties.checks.description, /effect criteria remain uncertain or unsatisfied/);
+  }
 });
 
 test('bounded parser rejects duplicate structural IDs and oversized payloads', () => {

@@ -29,7 +29,7 @@ const saveReceipt=()=>receiptTail=receiptTail.catch(()=>{}).then(()=>writeFile(r
 const progress=async(event,detail={})=>{const value={event,phase,at:new Date().toISOString(),...detail};receipt.phases.push(value);console.log(JSON.stringify(value));await saveReceipt();};
 const parseResult=response=>{try{return JSON.parse(response.contentItems?.find(item=>item.type==='inputText')?.text);}catch{return null;}};
 function newRuntime(){
- const native=new CodexRuntime({cwd,runTimeoutMs:180000,requestTimeoutMs:30000}),runAgent=native.runAgent.bind(native);
+ const native=new CodexRuntime({isolatedHistory:true,cwd,runTimeoutMs:180000,requestTimeoutMs:30000}),runAgent=native.runAgent.bind(native);
  native.runAgent=async options=>{
   const call={phase,model:options.model,startedAt:new Date().toISOString(),tools:[],nativeItems:[],events:[]};receipt.calls.push(call);await progress('model-start',{call:receipt.calls.length,model:options.model});
   try{

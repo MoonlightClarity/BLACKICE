@@ -27,6 +27,31 @@ export function providerKeyPage(key, prefix, args) {
     state.providerKeySources ||= new Map(); state.providerKeyRefs ||= new WeakMap();
     const valueOf = el => ['INPUT', 'TEXTAREA'].includes(el.tagName) ? String(el.value ?? '').trim() : String(el.textContent ?? '').trim();
     const validValue = value => value.length >= 8 && value.length <= 20000 && !/\s|[\u0000-\u001f\u007f]/.test(value) && !/(?:\*{2,}|[•●…]|\.{3})/.test(value);
+    const staticText = el => ['P', 'SPAN', 'DIV', 'CODE', 'PRE'].includes(el.tagName);
+    const keyLineLabel = /^[ \t]*(?:api[ \t]+)?key[ \t]*:/i;
+    // Only rendered, explicitly labelled text can supply a value from prose.
+    // Keep the raw observation private so even whitespace changes invalidate it.
+    const labeledValueOf = el => {
+      if (!staticText(el) || !visible(el)) return null;
+      const concealed = node => {
+        const style = node.ownerDocument.defaultView.getComputedStyle(node);
+        return node.hasAttribute?.('hidden') || node.hasAttribute?.('inert') || style.display === 'none'
+          || ['hidden', 'collapse'].includes(style.visibility) || style.opacity === '0' || style.contentVisibility === 'hidden';
+      };
+      let ancestor = el, hops = 0;
+      while (ancestor) {
+        if (++hops > 64 || concealed(ancestor)) return null;
+        ancestor = ancestor.parentElement || ancestor.getRootNode?.()?.host || ancestor.ownerDocument.defaultView.frameElement;
+      }
+      const descendants = el.querySelectorAll?.('*') || [];
+      if (descendants.length > 256 || [...descendants].some(concealed)) return null;
+      const text = el.innerText;
+      if (typeof text !== 'string' || text.length > 20000) return null;
+      const lines = text.split(/\r\n|\n|\r/).filter(line => keyLineLabel.test(line));
+      if (lines.length !== 1) return null;
+      const match = /^[ \t]*(?:api[ \t]+)?key[ \t]*:[ \t]*([A-Za-z0-9_+/.=-]{24,20000})[ \t]*$/i.exec(lines[0]);
+      return match && validValue(match[1]) ? { value: match[1], text } : null;
+    };
     const labelOf = el => {
       const labelled = (el.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ');
       return String(el.getAttribute('aria-label') || labelled || (el.labels ? [...el.labels].map(label => label.textContent).join(' ') : '') || el.getAttribute('placeholder') || el.getAttribute('aria-placeholder') || el.getAttribute('data-placeholder') || el.textContent || el.getAttribute('title') || el.getAttribute('alt') || '').replace(/\s+/g, ' ').trim().slice(0, 300);
@@ -93,17 +118,22 @@ export function providerKeyPage(key, prefix, args) {
           return { valid: true, clipboardPrepared: true, captureId: capture.id };
         } catch { capture.cleanup(); return { valid: false }; }
       }
-      const value = valueOf(el);
+      const labeled = source.kind === 'labeled_line' ? labeledValueOf(el) : null;
+      if (source.kind === 'labeled_line' && (!labeled || labeled.text !== source.observedText)) return { valid: false };
+      const value = source.kind === 'labeled_line' ? labeled.value : valueOf(el);
       if (!validValue(value) || value !== source.observedValue) return { valid: false };
-      source.used = true; source.observedValue = null; state.credentialFields.add(el);
+      source.used = true; source.observedValue = null; source.observedText = null; state.credentialFields.add(el);
       return { valid: true, value };
     }
-    const sources = [], roots = [document], seenRoots = new Set(roots); let scanned = 0, shadowScanned = 0;
+    const sources = [], observedSources = [], roots = [document], seenRoots = new Set(roots); let scanned = 0, shadowScanned = 0;
     for (let rootIndex = 0; rootIndex < roots.length && rootIndex < 40; rootIndex++) {
+      const labeledCandidates = [];
       for (const el of roots[rootIndex].querySelectorAll('input,textarea,code,pre,[role="textbox"],[data-api-key],p,span,div')) {
         if (++scanned > 2000 || sources.length >= 32) break;
         if (!visible(el) || el.type === 'hidden') continue;
-        const value = valueOf(el); if (!validValue(value)) continue;
+        const labeled = labeledValueOf(el);
+        if (labeled) { labeledCandidates.push({ element: el, ...labeled }); continue; }
+        const value = valueOf(el); if (!validValue(value) || staticText(el) && keyLineLabel.test(value)) continue;
         const label = String(el.getAttribute('aria-label') || (el.labels ? [...el.labels].map(item => item.textContent).join(' ') : '') || el.getAttribute('placeholder') || '');
         const identified = /api[\s_-]*key|access[\s_-]*token|secret[\s_-]*key/i.test(label) || el.hasAttribute('data-api-key');
         const tokenLeaf = ['P', 'SPAN', 'DIV'].includes(el.tagName) && !el.childElementCount && /^(?=.*[0-9_+/=-])[A-Za-z0-9_+/.=-]{24,}$/.test(value);
@@ -111,8 +141,33 @@ export function providerKeyPage(key, prefix, args) {
         if (!identified && !textSource && !(readOnly && /^[A-Za-z0-9_+/.=-]{24,}$/.test(value))) continue;
         let ref = state.providerKeyRefs.get(el);
         if (!ref) { ref = `${prefix}:${state.documentId}:provider-key-${++state.next}`; state.providerKeyRefs.set(el, ref); }
-        state.elements.set(ref, el); state.providerKeySources.set(ref, { element: el, observedValue: value, used: false }); state.credentialFields.add(el);
+        const source = { element: el, observedValue: value, used: false };
+        state.elements.set(ref, el); state.providerKeySources.set(ref, source); observedSources.push(source); state.credentialFields.add(el);
         sources.push({ ref, sourceKind: 'visible_value', label: `API key ${textSource ? 'text' : 'field'} ${sources.length + 1}`, tag: el.tagName.toLowerCase(), type: ['INPUT', 'TEXTAREA'].includes(el.tagName) ? (el.type || 'textarea') : 'text', readOnly, withinDialog: Boolean(el.closest?.('[role="dialog"],dialog')), identifiedKeyField: identified, valuePresent: true });
+      }
+      // Descendants precede their ancestors. An unrelated code token must not
+      // suppress a labelled source; only the same private value is deduplicated.
+      for (const candidate of labeledCandidates.reverse()) {
+        const el = candidate.element;
+        const equivalent = observedSources.filter(source => source.observedValue === candidate.value && el.contains?.(source.element));
+        if (equivalent.some(source => source.kind === 'labeled_line')) continue;
+        // A bare token child must not discard its surrounding label guard.
+        // Revoke old same-document refs as well as suppressing their metadata.
+        for (const [oldRef, previous] of state.providerKeySources) {
+          if (previous.kind === 'labeled_line' || previous.observedValue !== candidate.value || !el.contains?.(previous.element)) continue;
+          const index = sources.findIndex(source => source.ref === oldRef), observedIndex = observedSources.indexOf(previous);
+          if (index >= 0) sources.splice(index, 1);
+          if (observedIndex >= 0) observedSources.splice(observedIndex, 1);
+          state.providerKeySources.delete(oldRef); state.elements.delete(oldRef);
+          if (state.providerKeyRefs.get(previous.element) === oldRef) state.providerKeyRefs.delete(previous.element);
+          previous.observedValue = null;
+        }
+        if (sources.length >= 32) break;
+        let ref = state.providerKeyRefs.get(el);
+        if (!ref) { ref = prefix + ':' + state.documentId + ':provider-key-' + (++state.next); state.providerKeyRefs.set(el, ref); }
+        const source = { element: el, kind: 'labeled_line', observedValue: candidate.value, observedText: candidate.text, used: false };
+        state.elements.set(ref, el); state.providerKeySources.set(ref, source); observedSources.push(source); state.credentialFields.add(el);
+        sources.push({ ref, sourceKind: 'visible_value', label: 'API key labeled text ' + (sources.length + 1), tag: el.tagName.toLowerCase(), type: 'text', readOnly: true, withinDialog: Boolean(el.closest?.('[role="dialog"],dialog')), identifiedKeyField: true, valuePresent: true });
       }
       for (const dialog of roots[rootIndex].querySelectorAll('[role="dialog"],dialog')) {
         if (sources.length >= 32 || !visible(dialog)) continue;

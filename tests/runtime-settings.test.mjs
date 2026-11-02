@@ -4,12 +4,12 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { RuntimeSettingsStore,validateRuntimeSettings } from '../lib/runtime-settings.mjs';
-const defaults = { codexHistory:'codex', runTimeoutMs:null, providerIdleTimeoutMs:300000, defaultEffort:'default', defaultServiceTier:'default', defaultContext:{preset:'model',windowTokens:null,autoCompact:true}, verbosity:'balanced', subagentsEnabled:false, maxSubagents:3, connectedGmail:false, executionGuardrails:false, hiddenModelProviders:[] };
+const defaults = { codexHistory:'codex', runTimeoutMs:null, providerIdleTimeoutMs:300000, defaultEffort:'default', defaultServiceTier:'default', defaultContext:{preset:'model',windowTokens:null,autoCompact:true}, verbosity:'balanced', subagentsEnabled:true, maxSubagents:3, connectedGmail:false, executionGuardrails:false, hiddenModelProviders:[] };
 const prefs = codexHistory => ({ ...defaults, codexHistory });
 
-async function settingsStore(t){
+async function settingsStore(t,options={}){
   const dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'relay-history-settings-'));
-  const store=new RuntimeSettingsStore({dataDir});await store.init();
+  const store=new RuntimeSettingsStore({dataDir,...options});await store.init();
   t.after(async()=>{await store.close();await fs.rm(dataDir,{recursive:true,force:true});});
   return{store,dataDir};
 }
@@ -26,6 +26,17 @@ test('runtime preferences use persistent native history with no agent deadline a
   for(const value of [null,undefined,[],{},'relay',{codexHistory:true},{codexHistory:'private'},{codexHistory:'relay',defaultModel:'other'},{maxConcurrentRuns:4}])assert.throws(()=>validateRuntimeSettings(value),error=>error.status===400&&error.code==='RUNTIME_SETTINGS_INVALID');
   const{store,dataDir}=await settingsStore(t);assert.deepEqual(store.get(),prefs('codex'));assert.deepEqual(await fs.readdir(dataDir),[],'ordinary startup does not create or touch provider configuration');
   const exposed=store.get();exposed.codexHistory='relay';assert.deepEqual(store.get(),prefs('codex'),'callers cannot mutate saved preferences through the getter');
+});
+
+test('BLACKICE private history is mandatory in exposed settings without rewriting old preferences on startup',async t=>{
+  const {store,dataDir}=await settingsStore(t,{nativeHistoryOwner:'relay'});
+  assert.equal(store.get().codexHistory,'relay');assert.deepEqual(await fs.readdir(dataDir),[]);
+  await store.update({codexHistory:'codex',defaultEffort:'max'});
+  assert.equal(store.get().codexHistory,'relay');assert.equal(store.get().defaultEffort,'max');
+  const before=await fs.readFile(store.file,'utf8');
+  const restarted=await new RuntimeSettingsStore({dataDir,nativeHistoryOwner:'relay'}).init();
+  t.after(()=>restarted.close());
+  assert.equal(restarted.get().codexHistory,'relay');assert.equal(await fs.readFile(store.file,'utf8'),before);
 });
 
 test('legacy history input cannot reactivate temporary sessions and preferences survive restart independently of providers',async t=>{
@@ -119,9 +130,12 @@ test('global reasoning and context defaults persist with max, ultra, 900k, and e
 });
 
 
-test('subagents and verbosity can be independently configured, persist and reject invalid choices', async t => {
+test('subagents default on, preserve explicit opt-outs and persist independent preferences', async t => {
   const {store,dataDir}=await settingsStore(t);
-  assert.equal(store.get().subagentsEnabled,false);
+  assert.equal(store.get().subagentsEnabled,true);
+  await store.update({subagentsEnabled:false});
+  const optedOut=await new RuntimeSettingsStore({dataDir}).init();t.after(()=>optedOut.close());
+  assert.equal(optedOut.get().subagentsEnabled,false,'an explicit disabled preference survives restart');
   const updated=await Promise.all([store.update({subagentsEnabled:true}),store.update({verbosity:'detailed'}),store.update({maxSubagents:4})]);
   assert.equal(updated.at(-1).maxSubagents,4);
   assert.deepEqual({subagentsEnabled:store.get().subagentsEnabled,verbosity:store.get().verbosity,maxSubagents:store.get().maxSubagents},{subagentsEnabled:true,verbosity:'detailed',maxSubagents:4});

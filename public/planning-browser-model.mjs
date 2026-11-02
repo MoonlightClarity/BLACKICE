@@ -1,6 +1,6 @@
 /** Public response contracts and projections; no execution or truth certification. */
 import { VIABILITY_TEMPLATE, validateViabilityRequirements, evaluateViabilityResponse, planningReadableFindingIssues, validatePlanningReadableFindings } from './task-viability-model.mjs';
-import { RESPONSE_CYCLE_CONTAINER_TEMPLATE, RESPONSE_CYCLE_TEMPLATES, RESPONSE_CYCLE_STAGES, responseCycleStage, parseResponseCycleResponse, evaluateResponseCycleStage, analyticalSubproblem } from './response-cycle-model.mjs';
+import { RESPONSE_CYCLE_CONTAINER_TEMPLATE, RESPONSE_CYCLE_TEMPLATES, RESPONSE_CYCLE_STAGES, responseCycleStage, responseCycleStages, responseCycleTemplate, parseResponseCycleResponse, evaluateResponseCycleStage, analyticalSubproblem } from './response-cycle-model.mjs';
 export const PLANNING_BROWSER_VERSION = 1;
 export const PLANNING_BROWSER_LIMITS = Object.freeze({
   requests: 500, nodes: 500, depth: 32, edges: 2000, responses: 1500,
@@ -80,20 +80,21 @@ const allowed = (value,keys,label) => {
   if(!object(value)||Object.keys(value).some(key=>!keys.includes(key)))
     throw planningBrowserError(label+' contains unsupported fields.');
 };
-export function planningModuleTemplate(kind) {
+export function planningModuleTemplate(kind,options={}) {
+  if(['viability','inference','plan','think','respond'].includes(kind))return responseCycleTemplate(kind,options);
   const found=PLANNING_MODULE_TEMPLATES.find(item=>item.kind===kind);
   if(!found)throw planningBrowserError('Choose a declared response module kind.');
   return found;
 }
-export function validateModuleValues(kind,values={}) {
-  const schema=planningModuleTemplate(kind);
+export function validateModuleValues(kind,values={},options={}) {
+  const schema=planningModuleTemplate(kind,options);
   allowed(values,schema.fields.map(item=>item.id),'Response values');
   const normalized={};
   for(const [id,value]of Object.entries(values))normalized[id]=text(value,'Response field '+id,PLANNING_BROWSER_LIMITS.fieldChars);
   return {values:normalized,missingFields:schema.fields.filter(item=>item.required&&!normalized[item.id]).map(item=>item.id)};
 }
-export function parseModuleResponse(output,kind,{sources}={}) {
-  if (['inference','plan','think','respond'].includes(kind)) return parseResponseCycleResponse(output,kind,{sources});
+export function parseModuleResponse(output,kind,{sources,pipelineVersion}={}) {
+  if (['inference','plan','think','respond'].includes(kind)) return parseResponseCycleResponse(output,kind,{sources,pipelineVersion});
   let value=output;
   if(typeof output==='string'){
     if(output.length>PLANNING_BROWSER_LIMITS.responseChars)throw planningBrowserError('Response exceeds its storage bound.');
@@ -103,10 +104,10 @@ export function parseModuleResponse(output,kind,{sources}={}) {
     try{value=JSON.parse(source);}catch{throw planningBrowserError('Return one JSON object with values, grounding, openQuestions and challengeResponses.','PLANNING_RESPONSE_PARSE');}
   }
   allowed(value,['values','grounding','openQuestions','challengeResponses',...(kind==='viability'?['requirements']:[])],'Public module response');
-  const checked=validateModuleValues(kind,value.values??{});
+  const checked=validateModuleValues(kind,value.values??{},{pipelineVersion});
   const grounding=value.grounding??[];
   if(!Array.isArray(grounding)||grounding.length>100)throw planningBrowserError('Grounding must contain at most 100 field/source links.');
-  const fieldIds=new Set(planningModuleTemplate(kind).fields.map(item=>item.id));
+  const fieldIds=new Set(planningModuleTemplate(kind,{pipelineVersion}).fields.map(item=>item.id));
   const seen=new Set();
   const links=grounding.map(item=>{
     allowed(item,['field','sourceId'],'Grounding link');
@@ -170,6 +171,7 @@ export function planningNodeSources(request,nodeId) {
     if(!source.id.startsWith('cycle:'))return !permitted||source.kind==='response'||permitted.has(source.id)||source.id==='request:'+request.id||source.id.startsWith('viability:answer:');
     if(!cycle)return false;
     if(source.id==='cycle:context:'+cycle.id)return true;
+    if(source.id==='cycle:handoff-contract:'+cycle.id)return true;
     if(source.id.startsWith('cycle:child:'+nodeId+':'))return true;
     return ['think','respond'].includes(stage)&&source.id.startsWith('cycle:execution:'+cycle.id+':');
   });
@@ -203,9 +205,9 @@ function planningWorkflowContext(request, cycle, latest) {
 export function planningCycleStageContext(request,nodeId,responses) {
   const cycle=request.responseCycle?.cycles?.find(item=>Object.values(item.stageNodeIds||{}).includes(nodeId));
   if(!cycle)return null;
-  const stageId=Object.entries(cycle.stageNodeIds).find(([,id])=>id===nodeId)?.[0],position=RESPONSE_CYCLE_STAGES.findIndex(stage=>stage.id===stageId);
+  const stages=responseCycleStages(cycle),pipelineVersion=cycle.pipelineVersion||1,stageId=Object.entries(cycle.stageNodeIds).find(([,id])=>id===nodeId)?.[0],position=stages.findIndex(stage=>stage.id===stageId);
   const latest=responses||latestByNode(request.responses),get=id=>latest.get(id);
-  const prerequisites=RESPONSE_CYCLE_STAGES.slice(0,position).map(stage=>{
+  const prerequisites=stages.slice(0,position).map(stage=>{
     const id=cycle.stageNodeIds[stage.id],response=get(id);
     return {stageId:stage.id,nodeId:id,responseId:response?.id,responseRevision:response?.revision,sourceId:response?'response:'+response.id:null,state:response?'recorded':'empty',analysisReady:Boolean(response),dispatchReady:Boolean(response)};
   });
@@ -213,8 +215,9 @@ export function planningCycleStageContext(request,nodeId,responses) {
     const response=get(child.stageNodeIds.respond);
     return {key:child.key||child.id,cycleId:child.id,required:child.required!==false,state:child.state||'pending',analysisReady:child.state==='completed',dispatchReady:child.state==='completed',sourceId:'cycle:child:'+nodeId+':'+child.id,responseId:response?.id,responseRevision:response?.revision,...(child.request?{request:clone(child.request)}:{})};
   });
-  const plan=get(cycle.stageNodeIds.plan),think=get(cycle.stageNodeIds.think),workflow=planningWorkflowContext(request,cycle,latest);
-  return {cycleId:cycle.id,stageId,title:cycle.title,objective:cycle.objective,acceptanceCriteria:plan?.acceptanceCriteria||cycle.acceptanceCriteria||[],...workflow,criterionResults:think?.criterionResults||[],prerequisites,children,recoveryIssue:request.viability?.recoveryIssue||null,
+  const plan=get(cycle.stageNodeIds.plan),think=get(cycle.stageNodeIds.think),inference=get(cycle.stageNodeIds.inference),workflow=planningWorkflowContext(request,cycle,latest);
+  const intendedOutcome=inference?{responseId:inference.id,responseRevision:inference.revision,...Object.fromEntries(['userBenefit','desiredOutcomes','unwantedOutcomes','delegatedWork','constraints','handoffBoundary'].map(key=>[key,inference.values?.[key]??null]))}:null;
+  return {cycleId:cycle.id,stageId,pipelineVersion,title:cycle.title,objective:cycle.objective,intendedOutcome,acceptanceCriteria:plan?.acceptanceCriteria||cycle.acceptanceCriteria||[],...workflow,criterionResults:think?.criterionResults||[],prerequisites,children,recoveryIssue:request.viability?.recoveryIssue||null,
     recursion:{depth:cycle.depth,cycleCount:request.responseCycle.cycles.length,...request.responseCycle.limits},effectReceipts:cycle.effectReceipts||[],execution:cycle.execution||null};
 }
 const latestByNode = records => {
@@ -239,7 +242,8 @@ export function projectPlanningRequest(value) {
     if(memo.has(nodeId))return memo.get(nodeId);
     if(visiting.has('response:'+nodeId))return {state:'blocked',blockedDependencies:[nodeId],missingFields:[],missingGrounding:[],staleInputs:[],openChallenges:[],unresolvedChildren:[],responseRecorded:false,verifiedAction:false};
     const nextVisit=new Set(visiting);nextVisit.add('response:'+nodeId);
-    const node=byId.get(nodeId),response=responses.get(nodeId),schema=planningModuleTemplate(node.kind);
+    const node=byId.get(nodeId),response=responses.get(nodeId),ownerCycle=value.responseCycle?.cycles?.find(item=>item.id===node.cycleId),schema=planningModuleTemplate(node.kind,ownerCycle?{pipelineVersion:ownerCycle.pipelineVersion||1}:{});
+    if(node.skipReason){const result={state:'skipped',skipped:true,skipReason:node.skipReason,missingFields:[],missingGrounding:[],invalidGrounding:[],staleInputs:[],blockedDependencies:[],openChallenges:[],openQuestions:[],unresolvedChildren:[],responseRecorded:false,verifiedAction:false};memo.set(nodeId,result);return result;}
     if(node.kind==='cycle'){
       const unresolved=(children.get(node.id)||[]).filter(id=>!subtreeReady(id,nextVisit));
       const result={state:unresolved.length?'pending':'ready',missingFields:[],missingGrounding:[],invalidGrounding:[],staleInputs:[],blockedDependencies:[],openChallenges:[],openQuestions:[],unresolvedChildren:unresolved,responseRecorded:false,verifiedAction:false,container:true};
@@ -279,7 +283,8 @@ export function projectPlanningRequest(value) {
       const challenger=responses.get(edge.from);
       return !answer||!challenger||!(response?.sources||[]).some(source=>source.id==='response:'+challenger.id);
     }).map(edge=>edge.id);
-    const viability=node.kind==='viability'?evaluateViabilityResponse(response,planningNodeSources(value,nodeId),{workflowNodeIds:value.viability?.workflowNodeIds||null}):null;
+    const cycleContext=planningCycleStageContext(value,nodeId,responses);
+    const viability=node.kind==='viability'?evaluateViabilityResponse(response,planningNodeSources(value,nodeId),{workflowNodeIds:value.viability?.workflowNodeIds||null,upstreamResponses:cycleContext?.prerequisites||[]}):null;
     if(viability&&value.viability?.recoveryIssue){viability.state='needs_evidence';viability.analysisReady=false;viability.issues=[value.viability.recoveryIssue.message];viability.analysisIssues=[...viability.issues];}
     const ownAttempts=attempts.filter(item=>item.nodeId===nodeId);
     const running=ownAttempts.find(item=>item.status==='running');
@@ -290,7 +295,6 @@ export function projectPlanningRequest(value) {
     const unresolvedViabilityAnalysis=state==='ready'&&viability?.analysisReady===true&&!readableIssues.length&&!value.viability?.recoveryIssue;
     if(viability&&state==='ready'&&viability.state!=='ready')state=viability.state;
     if(state==='ready'&&readableIssues.length)state='needs_evidence';
-    const cycleContext=planningCycleStageContext(value,nodeId,responses);
     let cycle=null;
     if(cycleContext){
       cycleContext.prerequisites=cycleContext.prerequisites.map(item=>{const prior=readinessFor(item.nodeId,nextVisit);return {...item,state:prior.state,analysisReady:prior.cycle?.analysisReady??prior.state==='ready',dispatchReady:prior.cycle?.dispatchReady??prior.state==='ready'};});
@@ -307,19 +311,20 @@ export function projectPlanningRequest(value) {
   // allowing a child to use its parent's framing without waiting for itself.
   const subtreeReady=(nodeId,seen=new Set())=>{
     if(seen.has('branch:'+nodeId)||!byId.has(nodeId))return false;
+    if(byId.get(nodeId)?.skipReason)return false;
     const next=new Set(seen);next.add('branch:'+nodeId);
-    return readinessFor(nodeId,next).state==='ready'&&(children.get(nodeId)||[]).every(child=>subtreeReady(child,next));
+    return readinessFor(nodeId,next).state==='ready'&&(children.get(nodeId)||[]).every(child=>byId.get(child)?.skipReason||subtreeReady(child,next));
   };
-  request.nodes=rawNodes.map(node=>({...node,children:children.get(node.id)||[],assignment:assignmentFor(node),response:responses.get(node.id)?clone(responses.get(node.id)):null,readiness:readinessFor(node.id)}));
+  request.nodes=rawNodes.map(node=>({...node,...(node.cycleId?{pipelineVersion:request.responseCycle?.cycles?.find(cycle=>cycle.id===node.cycleId)?.pipelineVersion||1}:{}),children:children.get(node.id)||[],assignment:assignmentFor(node),response:responses.get(node.id)?clone(responses.get(node.id)):null,readiness:readinessFor(node.id)}));
   for(const node of request.nodes){
-    node.readiness.unresolvedChildren=node.children.filter(id=>!subtreeReady(id));
+    node.readiness.unresolvedChildren=node.children.filter(id=>!byId.get(id)?.skipReason&&!subtreeReady(id));
     node.readiness.subtreeReady=subtreeReady(node.id);
   }
   request.sources=planningRequestSources(value);
   request.edges=[...(request.edges||[]),...rawNodes.filter(node=>node.parentId).map(node=>({id:'contains:'+node.parentId+':'+node.id,kind:'contains',from:node.parentId,to:node.id,derived:true}))];
-  request.summary={nodes:request.nodes.length,responses:request.responses?.length||0,running:request.nodes.filter(node=>node.readiness.state==='running').length,ready:request.nodes.filter(node=>node.readiness.state==='ready').length,open:request.nodes.filter(node=>node.readiness.state!=='ready').length};
+  request.summary={nodes:request.nodes.length,responses:request.responses?.length||0,running:request.nodes.filter(node=>node.readiness.state==='running').length,ready:request.nodes.filter(node=>node.readiness.state==='ready').length,skipped:request.nodes.filter(node=>node.readiness.state==='skipped').length,open:request.nodes.filter(node=>!['ready','skipped'].includes(node.readiness.state)).length};
   request.cycles=(request.responseCycle?.cycles||[]).map(cycle=>{
-    const container=request.nodes.find(node=>node.id===cycle.id),stages=RESPONSE_CYCLE_STAGES.map(stage=>request.nodes.find(node=>node.id===cycle.stageNodeIds[stage.id])),plan=stages[2],last=stages[4];
+    const container=request.nodes.find(node=>node.id===cycle.id),stages=responseCycleStages(cycle).map(stage=>request.nodes.find(node=>node.id===cycle.stageNodeIds[stage.id])),plan=stages[2],last=stages[4];
     const current=stages.find(node=>node?.readiness.state==='running')||stages.find(node=>!node?.readiness.cycle?.analysisReady);
     const stale=stages.some(node=>node?.readiness.state==='stale'||node?.readiness.cycle?.state==='stale');
     let state=cycle.state||'pending',inheritedCancellation=null;
@@ -331,9 +336,9 @@ export function projectPlanningRequest(value) {
     else if(stages.some(node=>node?.readiness.state==='running'))state='running';
     else if(stale&&!['failed','cancelled'].includes(state))state='stale';
     else if(state==='completed'&&!last?.readiness.cycle?.analysisReady)state='needs_review';
-    return {...clone(cycle),revision:container?.revision||1,state,planRevision:plan?.revision||null,planResponseId:plan?.response?.id||null,
+    return {...clone(cycle),pipelineVersion:cycle.pipelineVersion||1,legacyPipeline:cycle.pipelineVersion!==2,revision:container?.revision||1,state,planRevision:plan?.revision||null,planResponseId:plan?.response?.id||null,
       progress:{completed:stages.filter(node=>node?.readiness.cycle?.analysisReady).length,total:5,currentStage:current?.cycleStage||null},
-      summary:inheritedCancellation?.summary||(['failed','cancelled','stale','needs_evidence','waiting_children'].includes(state)?cycle.summary:null)||last?.response?.values?.answer||plan?.response?.values?.summary||plan?.response?.values?.approach||cycle.summary||cycle.objective};
+      summary:inheritedCancellation?.summary||(['failed','cancelled','stale','needs_evidence','waiting_children','blocked','awaiting_input'].includes(state)?cycle.summary:null)||last?.response?.values?.answer||plan?.response?.values?.summary||plan?.response?.values?.approach||cycle.summary||cycle.objective};
   });
   return request;
 }

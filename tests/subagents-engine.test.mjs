@@ -58,6 +58,8 @@ test('guarded Relay chats really delegate with bounded child tools and observabl
   const runtime=new Runtime(),engine=new HarnessEngine({runtime,dataDir,defaultCwd:cwd});
   const prefs=await new RuntimeSettingsStore({dataDir}).init();engine.runtimeSettings=prefs;await engine.init();
   t.after(async()=>{await engine.close();await prefs.close();await rm(root,{recursive:true,force:true});});
+  assert.equal(prefs.get().subagentsEnabled,true,'fresh profiles allow delegation by default');
+  await prefs.update({subagentsEnabled:false});
   const disabled=await finish(engine,engine.startRun({workflow:taskGraph(),input:'Evaluate a change.',planningMode:'off'}).id);
   assert.equal(disabled.status,'completed',disabled.error);
   assert.equal(disabled.nodes.agent.output,'No delegation configured.');

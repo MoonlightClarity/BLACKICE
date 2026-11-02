@@ -64,6 +64,8 @@ import { ChatGPTSchedulesAPI } from './lib/chatgpt-schedules.mjs';
 import { ChatGPTSetup, CHATGPT_SETUP_URL } from './lib/chatgpt-setup.mjs';
 import { ChatGPTPlanningAPI } from './lib/chatgpt-planning.mjs';
 import { DirectExecutionAPI } from './lib/direct-execution-api.mjs';
+import { WindowsWorkbench, validateGuestNativeConsoleInput } from './lib/windows-workbench.mjs';
+import { WorkbenchDesktopStream } from './lib/workbench-desktop-stream.mjs';
 import { desktopRestartTool } from './lib/desktop-restart-tool.mjs';
 import { frontendDevtoolsTool } from './lib/frontend-devtools-tool.mjs';
 import { createDesktopRestartBarrier } from './lib/desktop-restart-barrier.mjs';
@@ -90,9 +92,13 @@ export async function createHarnessServer(options = {}) {
   const remoteAccess = options.remoteAccess === false ? null : options.remoteAccess || new RemoteAccessManager({ dataDir, availabilityFactory: options => new RemoteAvailabilityHost(options) });
   await remoteAccess?.init();
   const diagnostics=options.diagnostics||await new DiagnosticsStore({dataDir:path.resolve(dataDir),version:APP_VERSION}).init();
-  const runtimeSettings = options.runtimeSettings || await new RuntimeSettingsStore({ dataDir }).init();
+  const runtimeSettings = options.runtimeSettings || await new RuntimeSettingsStore({ dataDir,
+    nativeHistoryOwner:!options.runtime||options.runtime.status().isolatedHistory===true?'relay':'codex' }).init();
+  // The desktop boots even when Hyper-V is not installed or guest files are unavailable.
+  const workbench = options.workbench || new WindowsWorkbench({ dataDir, sharedRoot: defaultCwd });
+  const workbenchVideo=options.workbenchVideo||new WorkbenchDesktopStream({sharedRoot:defaultCwd});
   const showBrowserOS = options.showBrowserOS || revealBrowserOS;
-  const runtime = options.runtime || new ProviderRuntime({ codex: new CodexRuntime({ getConnectedGmail: () => runtimeSettings.get().connectedGmail }), dataDir, ...options.secretStorage });
+  const runtime = options.runtime || new ProviderRuntime({ codex: new CodexRuntime({ isolatedHistory: true, getConnectedGmail: () => runtimeSettings.get().connectedGmail }), dataDir, ...options.secretStorage });
   await runtime.init?.();
   const desktop = options.desktop || new DesktopController();
   const nativeWindows = options.nativeWindowManager || (options.nativeWindows ? new NativeWindowManager({ ...options.nativeWindows, dataDir }) : null);
@@ -127,7 +133,8 @@ export async function createHarnessServer(options = {}) {
   const emailOAuth = options.emailOAuth || null;
   const email = options.email || null;
   const emailSnapshot = req => email ? ({ ...email.snapshot(), localManagement: req?.headers['x-blackice-remote'] !== '1', setupHints: {} }) : ({ available: false, retired: true });
-  const engine = options.engine || new HarnessEngine({ runtime, dataDir, defaultCwd, desktop, knowledge, browser, identity, connections, tasks, attachments, email, ...(options.maxConcurrentRuns !== undefined ? {maxConcurrentRuns:options.maxConcurrentRuns} : {}) });
+  const engine = options.engine || new HarnessEngine({ runtime, dataDir, defaultCwd, desktop, knowledge, browser, identity, connections, tasks, attachments, email, workbench, ...(options.maxConcurrentRuns !== undefined ? {maxConcurrentRuns:options.maxConcurrentRuns} : {}) });
+  engine.workbench = workbench;
   await startupPhase(diagnostics, 'history', () => engine.init());
   engine.runtimeSettings = runtimeSettings;
   engine.prompts = prompts;
@@ -955,6 +962,12 @@ export async function createHarnessServer(options = {}) {
       }
       if (pathname === '/api/providers' && req.method === 'GET') return json(res, 200, runtime.listProviders?.() || []);
       if (pathname === '/api/providers' && req.method === 'POST') { if (!runtime.saveProvider) throw new Error('Provider connections are unavailable.'); const value = await runtime.saveProvider(await body(req)); runtimeUpdate(); return json(res, 200, value); }
+      // Retired native subscription plugins must never spawn a process, discover
+      // models, or modify saved history. Keep the API tombstone explicit for
+      // existing clients rather than silently activating a different provider.
+      if ((pathname==='/api/subscriptions/models/refresh'||pathname==='/api/subscriptions/models') &&
+          ['GET','POST','DELETE'].includes(req.method))
+        return json(res,410,{error:'The Antigravity and Qwen Code integrations have been retired from BLACKICE. Existing conversations are preserved, but these providers cannot run.'});
       if (pathname === '/api/models/default' && req.method === 'POST') { if (!runtime.setDefaultModel) throw new Error('Default model settings are unavailable.'); const value = await body(req); await runtime.setDefaultModel(value.model); runtimeUpdate(); return json(res, 200, status(req)); }
       const providerMatch = pathname.match(/^\/api\/providers\/([a-zA-Z0-9_-]+)(\/(?:test|models))?$/);
       if (providerMatch && req.method === 'DELETE' && !providerMatch[2]) { await body(req); const value = await runtime.removeProvider(providerMatch[1]); runtimeUpdate(); return json(res, 200, value); }
@@ -1100,6 +1113,163 @@ export async function createHarnessServer(options = {}) {
       if (pathname === '/api/shutdown' && req.method === 'POST' && server.listenerCount('relay.shutdown')) {
         await body(req); json(res, 200, { ok: true }); setImmediate(() => server.emit('relay.shutdown')); return;
       }
+      if(pathname==='/api/workbench/desktop/stream'&&req.method==='GET'){
+        const state=await workbench.status();
+        if(!state.canRunNativeApps)return json(res,503,{error:'Guest desktop is not yet paired.'});
+        workbenchVideo.stream(req,res);return;
+      }
+      if(pathname==='/api/workbench/desktop/status'&&req.method==='GET')
+        return json(res,200,workbenchVideo.status());
+      if(pathname==='/api/workbench/desktop/frame'&&req.method==='GET'){
+        // A one-shot real guest desktop frame is a fallback, never a Hyper-V thumbnail.
+        const live=await workbenchVideo.latest();
+        if(live){res.writeHead(200,{'Content-Type':'image/jpeg','Cache-Control':'no-store',
+          'X-Content-Type-Options':'nosniff'});return res.end(live.bytes)}
+        const result=await workbench.guestAction({kind:'capture',args:{}});
+        if(result?.status!=='completed'||!result.requestId)
+          return json(res,503,{error:'Interactive guest frame is not ready.',requestId:result?.requestId||null});
+        const frame=await workbench.guestFrame(result.requestId);
+        res.writeHead(200,{'Content-Type':'image/png','Cache-Control':'no-store',
+          'X-Content-Type-Options':'nosniff'});return res.end(frame.bytes);
+      }
+      if (pathname === '/api/workbench' && req.method === 'GET') return json(res, 200, await workbench.status());
+      if (pathname === '/api/workbench/media' && req.method === 'GET') return json(res, 200, await workbench.findInstallationMedia());
+      if (pathname === '/api/workbench/media/creator' && req.method === 'POST') {
+        const request=await body(req);
+        if(!request||typeof request!=='object'||Array.isArray(request)||Object.keys(request).length)
+          return json(res,400,{error:'Starting the official Windows media creator takes no arguments.'});
+        return json(res,200,await workbench.launchMicrosoftMediaCreator());
+      }
+      if (pathname === '/api/workbench/config' && req.method === 'POST') {
+        const value = await body(req);
+        if (!value || typeof value !== 'object' || Array.isArray(value) ||
+            Object.keys(value).some(key => !['expectedRevision','folders','mediaPath'].includes(key)))
+          return json(res, 400, {error:'Use the current Workbench revision and supported configuration fields.'});
+        return json(res, 200, await workbench.configure(value));
+      }
+      if (pathname === '/api/workbench/app-sync' && req.method === 'GET')
+        return json(res, 200, await workbench.installedAppSyncStatus());
+      if (pathname === '/api/workbench/app-sync/export' && req.method === 'POST') {
+        await body(req);
+        return json(res, 200, await workbench.refreshInstalledApps());
+      }
+      if (pathname === '/api/workbench/app-sync/discover' && req.method === 'POST') {
+        const value=await body(req);
+        if (!value || typeof value !== 'object' || Array.isArray(value) ||
+            Object.keys(value).some(key=>!['snapshotId','refresh'].includes(key)))
+          return json(res,400,{error:'Choose an existing host inventory and optional refresh.'});
+        return json(res,200,await workbench.discoverInstalledAppAlternatives(value));
+      }
+      const appRecoveryMatch=pathname.match(/^\/api\/workbench\/app-sync\/recovery\/([a-f0-9]{32})$/);
+      if(appRecoveryMatch && req.method==='GET')
+        return json(res,200,await workbench.installedAppRecovery(appRecoveryMatch[1]));
+      if (pathname === '/api/workbench/app-sync/start' && req.method === 'POST') {
+        const value=await body(req);
+        if (!value || typeof value !== 'object' || Array.isArray(value) ||
+            Object.keys(value).some(key=>!['snapshotId'].includes(key)))
+          return json(res, 400, {error:'Choose the saved host app inventory for the guest batch.'});
+        return json(res, 200, await workbench.startInstalledAppBatch(value));
+      }
+      if (pathname === '/api/workbench/app-sync/rebatch' && req.method === 'POST') {
+        await body(req);
+        return json(res, 200, await workbench.rebatchInstalledApps());
+      }
+      const appBatchMatch=pathname.match(/^\/api\/workbench\/app-sync\/runs\/([a-f0-9]{32})$/);
+      if(appBatchMatch && req.method === 'GET')
+        return json(res,200,await workbench.installedAppSyncRun(appBatchMatch[1]));
+      if (pathname === '/api/workbench/prepare-agent' && req.method === 'POST') return json(res, 200, await workbench.prepareGuestAgent());
+      if (pathname === '/api/workbench/pair' && req.method === 'POST') return json(res, 200, await workbench.pairGuest());
+      if(pathname==='/api/workbench/console/control'&&req.method==='POST'){
+        const value=await body(req);
+        if(!value||typeof value!=='object'||Array.isArray(value)||
+           !['take','cede'].includes(value.action)||
+           Object.keys(value).some(k=>!['action','controlToken'].includes(k))||
+           (value.action==='take'&&Object.keys(value).length!==1)||
+           (value.action==='cede'&&(Object.keys(value).length!==2||
+             !/^[a-f0-9-]{36}$/.test(value.controlToken||''))))
+          return json(res,400,{error:'Choose Take control or Cede control with the current guest-control receipt.'});
+        const result=value.action==='take'
+          ?await workbench.takeGuestConsoleControl()
+          :await workbench.cedeGuestConsoleControl(value.controlToken);
+        return json(res,200,result);
+      }
+      if(pathname==='/api/workbench/console/frame'&&req.method==='GET'){
+        const frame=await workbench.guestConsoleFrame();
+        res.writeHead(200,{'Content-Type':frame.contentType||'image/jpeg',
+          'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+        return res.end(frame.bytes);
+      }
+      if(pathname==='/api/workbench/native/frame'&&req.method==='GET'){
+        if(typeof workbench.guestNativeConsoleFrame!=='function')throw Object.assign(new Error('The verified native guest console is not attached.'),{status:503});
+        const frame=await workbench.guestNativeConsoleFrame();
+        res.writeHead(200,{'Content-Type':'image/bmp','Content-Length':frame.bytes.length,
+          'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',
+          'X-Workbench-Width':String(frame.width),'X-Workbench-Height':String(frame.height),'X-Workbench-Sequence':String(frame.sequence)});
+        return res.end(frame.bytes);
+      }
+      if(pathname==='/api/workbench/native/input'&&req.method==='POST'){
+        const input=validateGuestNativeConsoleInput(await body(req));
+        if(typeof workbench.guestNativeConsoleInput!=='function')throw Object.assign(new Error('The verified native guest console is not attached.'),{status:503});
+        return json(res,200,await workbench.guestNativeConsoleInput(input));
+      }
+      if(pathname==='/api/workbench/native/wake'&&req.method==='POST'){
+        const value=await body(req);
+        if(!value||typeof value!=='object'||Array.isArray(value)||
+          Object.keys(value).some(key=>key!=='controlToken')||
+          (value.controlToken!==undefined&&(typeof value.controlToken!=='string'||!/^[a-f0-9-]{36}$/.test(value.controlToken))))
+          return json(res,400,{error:'Wake the native guest display with only the optional current control receipt.'});
+        if(typeof workbench.guestNativeConsoleWake!=='function')throw Object.assign(new Error('The verified native guest console is not attached.'),{status:503});
+        return json(res,200,await workbench.guestNativeConsoleWake(value.controlToken));
+      }
+      if(pathname==='/api/workbench/console/key'&&req.method==='POST'){
+        const value=await body(req);
+        if(!value||typeof value!=='object'||Array.isArray(value)||
+          Object.keys(value).some(k=>!['key','controlToken'].includes(k))||
+          !['ENTER','TAB','SPACE','ESCAPE','UP','DOWN','LEFT','RIGHT','BACKSPACE','F10','F12'].includes(value.key)||
+          (value.controlToken!==undefined&&!/^[a-f0-9-]{36}$/.test(value.controlToken)))
+          return json(res,400,{error:'Choose one supported virtual-guest keyboard key and optional current control receipt.'});
+        return json(res,200,await workbench.guestConsoleKey(value.key,value.controlToken));
+      }
+      if(pathname==='/api/workbench/console/type'&&req.method==='POST'){
+        const value=await body(req);
+        if(!value||typeof value!=='object'||Array.isArray(value)||
+           Object.keys(value).some(k=>!['text','controlToken'].includes(k))||typeof value.text!=='string'||
+           value.text.length<1||value.text.length>200||/[\x00-\x1f\x7f]/.test(value.text)||
+            (value.controlToken!==undefined&&!/^[a-f0-9-]{36}$/.test(value.controlToken)))
+          return json(res,400,{error:'Guest-only text must be 1–200 printable characters.'});
+        return json(res,200,await workbench.guestConsoleType(value.text,value.controlToken));
+      }
+      if(pathname==='/api/workbench/console/click'&&req.method==='POST'){
+        const value=await body(req);
+        if(!value||typeof value!=='object'||Array.isArray(value)||
+           Object.keys(value).some(k=>!['x','y','button','controlToken'].includes(k))||
+           !Number.isInteger(value.x)||!Number.isInteger(value.y)||
+           value.x<0||value.x>=800||value.y<0||value.y>=600||
+           ![1,2,3].includes(value.button)||
+            (value.controlToken!==undefined&&!/^[a-f0-9-]{36}$/.test(value.controlToken)))
+          return json(res,400,{error:'Guest-only click coordinates must be inside the 800×600 verified frame.'});
+        return json(res,200,await workbench.guestConsoleClick(value.x,value.y,value.button,value.controlToken));
+      }
+      if (pathname === '/api/workbench/guest-command' && req.method === 'POST') {
+        const value=await body(req);
+        if (!value || typeof value !== 'object' || Array.isArray(value) ||
+            Object.keys(value).some(key => !['kind','args','controlToken'].includes(key))||
+            (value.controlToken!==undefined&&!/^[a-f0-9-]{36}$/.test(value.controlToken)))
+          return json(res, 400, { error: 'Choose an observed guest command and bounded parameters.' });
+        return json(res, 200, await workbench.guestAction(value));
+      }
+      const guestCommandMatch=pathname.match(/^\/api\/workbench\/guest-command\/([a-f0-9]{32})$/);
+      if (guestCommandMatch && req.method === 'GET')
+        return json(res, 200, await workbench.guestResult(guestCommandMatch[1]));
+      const guestFrameMatch=pathname.match(/^\/api\/workbench\/frame\/([a-f0-9]{32})$/);
+      if (guestFrameMatch && req.method === 'GET') {
+        const result=await workbench.guestFrame(guestFrameMatch[1]);
+        res.writeHead(200,{'Content-Type':'image/png','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+        return res.end(result.bytes);
+      }
+      if (pathname === '/api/workbench/provision' && req.method === 'POST') return json(res, 200, await workbench.provision());
+      if (pathname === '/api/workbench/start' && req.method === 'POST') return json(res, 200, await workbench.start());
+      if (pathname === '/api/workbench/stop' && req.method === 'POST') return json(res, 200, await workbench.stop());
       if (pathname === '/api/runtime/settings' && req.method === 'GET') return json(res, 200, runtimeSettings.get());
       if (pathname === '/api/runtime/settings' && req.method === 'POST') return json(res, 200, await runtimeSettings.update(await body(req)));
       if (pathname === '/api/runtime/reconnect' && req.method === 'POST') {
@@ -1168,7 +1338,7 @@ export async function createHarnessServer(options = {}) {
         res.writeHead(302, { 'Location': '/', 'Cache-Control': 'no-store' });
         return res.end();
       }
-      const files = Object.fromEntries(['coordination-navigation.mjs','coordination-navigation.css','gui-resilience.js','gui-resilience.css','browser-credentials-ui.mjs','browser-credentials.css','chatgpt-connector-ui.mjs','chatgpt-connector.css','model-routes.mjs','clipboard.mjs','email-oauth-ui.mjs','planning-awareness.mjs','planning-workspace-ui.mjs','planning-workspace-model.mjs','planning-browser-model.mjs','task-viability-model.mjs','response-cycle-model.mjs','planning-workspace.css','remote-access-ui.mjs','remote-access.css','icon-symbols.mjs','task-plan-map.mjs','planning-mode.mjs','planning-ontology.mjs','assets/blackice-field.svg','assets/blackice-depth.png','assets/blackice-wordmark.svg','workspace-integrations.mjs','email-ui.mjs', 'email-reader.mjs','email.css','task-plan-model.mjs','task-plan-ui.mjs','task-plan.css','task-method-ui.mjs','task-method.css','blackice-material.css','conversation-layout.css','blackice-information.css','blackice-experience.css','process-model.mjs','process-ui.mjs','assets/blackice-sheet.svg','assets/blackice-slab.svg','application-session-ui.mjs','application-session-model.mjs','application-session.css','project-view-model.mjs','operations-view-model.mjs','workflow-map.mjs','workflow-map.css','projects-ui.mjs','projects.css','tool-outcomes-model.mjs','response-defaults.mjs','repeat-task-model.mjs','task-title.mjs','prompt-template-model.mjs','prompts-ui.mjs','prompts.css','reasoning-model.mjs','service-tier-model.mjs','provider-catalog.mjs','model-browser.mjs','connection-models.mjs','connections.css','draft-store.mjs','svg-preview.mjs','api-client.mjs','run-index-client.mjs','run-index-model.mjs','renderer-scheduler.mjs','artifact-ui.mjs','conversation-attention.mjs','conversation-search.mjs','index.html','app.js','editor-model.mjs','knowledge-ui.mjs','mission-ui.mjs','mission-model.mjs','connections-ui.mjs','browser-ui.mjs','browser-address.mjs','browser-tree-model.mjs','browser-tree.css','identity-ui.mjs','identity.css','learning-ui.mjs','learning.css','context-ui.mjs','context.css','tool-connections-ui.mjs','tool-connections.css','agent-workspace.css','styles.css','brand.css','ux.css','relay-surface.css','agentdesk-noir.css','blackice-components.css','blackice-type.css','knowledge.css','file-patches.css','file-patches-ui.mjs','sidebar.css','sidebar-model.mjs','conversation-bulk-model.mjs','conversation-bulk.css','model-picker.css','model-picker.mjs','workspace.css','attachments-ui.mjs','attachments.css','inbox-ui.mjs','inbox.css','task-state-ui.mjs','task-state.css','conversation-model.mjs','composer-helpers.mjs','run-state-model.mjs','conversation.css','observe-stream.mjs','observe-ui.mjs','observe-model.mjs','observe.css','swarm-model.mjs','schedule-model.mjs','conversation-menu.mjs','advanced-ui.mjs','advanced.css','modes.css','configure-ui.mjs','configure.css','assets/fonts/Oxanium-Variable.ttf','assets/fonts/IBMPlexMono-Regular.ttf','assets/fonts/IBMPlexMono-Medium.ttf','assets/fonts/ShareTechMono-Regular.ttf','assets/blackice-panel-ice.svg','assets/blackice-control-ice.svg','assets/relay-mark.svg','assets/agentdesk-noir-city.svg','assets/relay-field.svg','assets/identity.svg','assets/learning.svg','assets/context.svg','assets/connections.svg'].map(file => [`/${file}`, file])); files['/'] = 'next/index.html'; files['/index.html'] = 'next/index.html';
+      const files = Object.fromEntries(['coordination-navigation.mjs','coordination-navigation.css','gui-resilience.js','gui-resilience.css','browser-credentials-ui.mjs','browser-credentials.css','chatgpt-connector-ui.mjs','chatgpt-connector.css','model-routes.mjs','clipboard.mjs','email-oauth-ui.mjs','planning-awareness.mjs','planning-workspace-ui.mjs','planning-workspace-model.mjs','planning-browser-model.mjs','planning-program-xml.mjs','task-viability-model.mjs','response-cycle-model.mjs','planning-workspace.css','remote-access-ui.mjs','remote-access.css','icon-symbols.mjs','task-plan-map.mjs','planning-mode.mjs','planning-ontology.mjs','assets/blackice-field.svg','assets/blackice-depth.png','assets/blackice-wordmark.svg','workspace-integrations.mjs','email-ui.mjs', 'email-reader.mjs','email.css','task-plan-model.mjs','task-plan-ui.mjs','task-plan.css','task-method-ui.mjs','task-method.css','blackice-material.css','conversation-layout.css','blackice-information.css','blackice-experience.css','process-model.mjs','process-ui.mjs','assets/blackice-sheet.svg','assets/blackice-slab.svg','application-session-ui.mjs','application-session-model.mjs','application-session.css','project-view-model.mjs','operations-view-model.mjs','workflow-map.mjs','workflow-map.css','projects-ui.mjs','projects.css','tool-outcomes-model.mjs','response-defaults.mjs','repeat-task-model.mjs','task-title.mjs','prompt-template-model.mjs','prompts-ui.mjs','prompts.css','reasoning-model.mjs','service-tier-model.mjs','provider-catalog.mjs','model-browser.mjs','connection-models.mjs','connections.css','draft-store.mjs','svg-preview.mjs','api-client.mjs','run-index-client.mjs','run-index-model.mjs','renderer-scheduler.mjs','artifact-ui.mjs','conversation-attention.mjs','conversation-search.mjs','index.html','app.js','editor-model.mjs','knowledge-ui.mjs','mission-ui.mjs','mission-model.mjs','connections-ui.mjs','browser-ui.mjs','browser-address.mjs','browser-tree-model.mjs','browser-tree.css','identity-ui.mjs','identity.css','learning-ui.mjs','learning.css','context-ui.mjs','context.css','tool-connections-ui.mjs','tool-connections.css','agent-workspace.css','styles.css','brand.css','ux.css','relay-surface.css','agentdesk-noir.css','blackice-components.css','blackice-type.css','knowledge.css','file-patches.css','file-patches-ui.mjs','sidebar.css','sidebar-model.mjs','conversation-bulk-model.mjs','conversation-bulk.css','model-picker.css','model-picker.mjs','workspace.css','attachments-ui.mjs','attachments.css','inbox-ui.mjs','inbox.css','task-state-ui.mjs','task-state.css','conversation-model.mjs','composer-helpers.mjs','run-state-model.mjs','conversation.css','observe-stream.mjs','observe-ui.mjs','observe-model.mjs','observe.css','swarm-model.mjs','schedule-model.mjs','conversation-menu.mjs','advanced-ui.mjs','advanced.css','modes.css','configure-ui.mjs','configure.css','assets/fonts/Oxanium-Variable.ttf','assets/fonts/IBMPlexMono-Regular.ttf','assets/fonts/IBMPlexMono-Medium.ttf','assets/fonts/ShareTechMono-Regular.ttf','assets/blackice-panel-ice.svg','assets/blackice-control-ice.svg','assets/relay-mark.svg','assets/agentdesk-noir-city.svg','assets/relay-field.svg','assets/identity.svg','assets/learning.svg','assets/context.svg','assets/connections.svg'].map(file => [`/${file}`, file])); files['/'] = 'next/index.html'; files['/index.html'] = 'next/index.html';
       files['/idle-interruptions-ui.mjs'] = 'idle-interruptions-ui.mjs';
       // The current interface is the only served app shell.
       // Explicit file registration retains the static path boundary.
@@ -1187,8 +1357,8 @@ export async function createHarnessServer(options = {}) {
         'workspaces/workflow-graph-edit.mjs','workspaces/browser-model.mjs','workspaces/browser-native.mjs',
         'browser.css','knowledge.css','workspaces/knowledge.mjs','workspaces/knowledge-model.mjs',
         'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/activity-overview.mjs','workspaces/activity-model.mjs','activity.css','workspaces/settings.mjs','workspaces/settings-restart.mjs',
-        'settings.css','settings-identity.css','settings-providers.css','settings-connections.css',
-        'workspaces/settings-identity.mjs','workspaces/applications.mjs','workspaces/settings-providers.mjs','workspaces/settings-connections.mjs','workspaces/settings-import.mjs'];
+        'settings.css','settings-identity.css','settings-providers.css','settings-connections.css','workbench.css','workspaces/workbench.mjs','workspaces/workbench-guide.mjs',
+        'workspaces/settings-identity.mjs','workspaces/applications.mjs','workspaces/settings-subscriptions.mjs','workspaces/settings-providers.mjs','workspaces/settings-connections.mjs','workspaces/settings-import.mjs'];
       for (const file of nextFiles) files['/next/' + file] = 'next/' + file;
       files['/next'] = 'next/index.html'; files['/next/'] = 'next/index.html';
       files['/native-apps-ui.mjs'] = 'native-apps-ui.mjs';
@@ -1225,11 +1395,12 @@ export async function createHarnessServer(options = {}) {
   const heartbeat = setInterval(() => { for (const res of clients) if(!writeEventStream(res,': heartbeat\n\n'))clients.delete(res); }, 15000);
   heartbeat.unref();
   return {
-    server, engine, runtime, runtimeSettings, desktop, knowledge, prompts, browser,browserProfiles,browserCredentials,browserCredentialMirror,browserCredentialDestinations,applicationWorkspace,nativeWindows, identity, learning, connections, tasks, planningOrganization, planningBrowser, planningBrowserRuntime, taskViability, responseCycle, attachments, email, emailOAuth, emailClient, inbox, conversations, operations,projects,capabilities,liveEdits,diagnostics,supportSnapshot,beginMaintenance,endMaintenance,assertRestartReady,assertRestartPrepared,beginRestart,endRestart,remoteAccess,remoteAgentApi,chatGPTConnector,chatGPTOAuth,directExecution,chatGPTPlanning,connectorSetup,
+    server, engine, runtime, runtimeSettings, workbench, desktop, knowledge, prompts, browser,browserProfiles,browserCredentials,browserCredentialMirror,browserCredentialDestinations,applicationWorkspace,nativeWindows, identity, learning, connections, tasks, planningOrganization, planningBrowser, planningBrowserRuntime, taskViability, responseCycle, attachments, email, emailOAuth, emailClient, inbox, conversations, operations,projects,capabilities,liveEdits,diagnostics,supportSnapshot,beginMaintenance,endMaintenance,assertRestartReady,assertRestartPrepared,beginRestart,endRestart,remoteAccess,remoteAgentApi,chatGPTConnector,chatGPTOAuth,directExecution,chatGPTPlanning,connectorSetup,
     async listen({ waitForRemote = true } = {}) {
       if (typeof waitForRemote !== 'boolean') throw new TypeError('Choose whether to wait for remote startup.');
       await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
       boundPort = server.address().port;
+       if(options.enableWorkbenchVideo!==false&&!options.workbench)await workbenchVideo.startNetwork();
       remoteStartup = remoteAccess ? startupPhase(diagnostics, 'remote-route', () => remoteAccess.attach({ origin: `http://127.0.0.1:${boundPort}`, sessionCookie: `relay_session_${boundPort}=${session}` })) : Promise.resolve();
       // The desktop can open its local workspace while the saved HTTPS route
       // reconnects. RemoteAccessManager continues to own admission and cleanup.
@@ -1247,7 +1418,8 @@ export async function createHarnessServer(options = {}) {
         offPlanningAwareness?.();
         let firstError;
         const cleanup = async operation => { try { await operation(); } catch (error) { firstError ||= error; } };
-        await cleanup(() => connectorSetup.close());
+        await cleanup(() => workbenchVideo.close());
+       await cleanup(() => connectorSetup.close());
         await cleanup(() => remoteAccess?.close());
         await cleanup(() => remoteStartup?.catch(() => {}));
         remoteAgentApi.close();

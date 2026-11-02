@@ -25,15 +25,28 @@ const noSecret = value => assert.equal(JSON.stringify(value).includes(SECRET), f
 function pageFixture() {
   const elements = [], document = {}, window = { origin }, context = { document, window, origin, location: { origin, href: url }, Map, WeakMap, WeakSet, Set, Math, String };
   window.top = window; window.location = context.location;
-  window.getComputedStyle = () => ({ display: 'block', visibility: 'visible' }); document.defaultView = window;
+  window.getComputedStyle = el => ({ display: 'block', visibility: 'visible', opacity: '1', ...el.style }); document.defaultView = window;
   document.querySelectorAll = selector => selector === '[role="dialog"],dialog' ? [] : elements;
   const add = (value = SECRET, label = 'API key') => {
     const el = { tagName: 'INPUT', type: 'text', value, readOnly: true, ownerDocument: document, isConnected: true,
       getBoundingClientRect: () => ({ width: 100, height: 20 }), closest: () => null, getAttribute: name => name === 'aria-label' ? label : null, hasAttribute: () => false };
     elements.push(el); return el;
   };
+  const addText = (rendered, { tagName = 'P', parent = null, textContent = rendered, style = {}, attributes = [] } = {}) => {
+    const el = add('', '');
+    Object.assign(el, { tagName, type: '', readOnly: false, innerText: rendered, textContent, style, parentElement: parent, attributes: new Set(attributes) });
+    el.hasAttribute = name => el.attributes.has(name);
+    el.contains = other => { for (let node = other; node; node = node.parentElement) if (node === el) return true; return false; };
+    el.querySelectorAll = selector => selector === '*' ? elements.filter(other => other !== el && el.contains(other)) : [];
+    el.closest = selector => {
+      if (selector === '[hidden],[inert]') for (let node = el; node; node = node.parentElement) if (node.hasAttribute?.('hidden') || node.hasAttribute?.('inert')) return node;
+      return null;
+    };
+    Object.defineProperty(el, 'childElementCount', { get: () => elements.filter(other => other.parentElement === el).length });
+    return el;
+  };
   vm.createContext(context);
-  return { context, elements, add, run: (args, prefix = '0-0-1-1') => vm.runInContext(`(${providerKeyPage.toString()})('private_ref_state',${JSON.stringify(prefix)},${JSON.stringify({ origin, expectedUrl: url, ...args })})`, context) };
+  return { context, elements, add, addText, run: (args, prefix = '0-0-1-1') => vm.runInContext(`(${providerKeyPage.toString()})('private_ref_state',${JSON.stringify(prefix)},${JSON.stringify({ origin, expectedUrl: url, ...args })})`, context) };
 }
 
 function driverFixture() {
@@ -90,6 +103,170 @@ test('protected source rejects detached nodes and wrong origins without exposing
 test('protected inspection excludes masked keys and ordinary read-only account fields', () => {
   const page = pageFixture(); page.add('sk-or-v1-****hidden****', 'API key'); page.add('sk-or-v1-prefix…suffix', 'API key'); page.add('example@provider.example', 'Account email');
   assert.equal(page.run({ action: 'inspect' }).sources.length, 0);
+});
+
+
+test('one explicit key line inside rendered notice prose exposes fixed metadata and consumes once', () => {
+  for (const label of ['key: ', 'key:', 'API key: ', '  api key:\t']) {
+    const page = pageFixture(); page.addText('Temporary test access\n' + label + SECRET + '\nmodel: example-model');
+    const inspected = page.run({ action: 'inspect' }); noSecret(inspected);
+    assert.equal(inspected.valid, true); assert.equal(inspected.sources.length, 1);
+    assert.equal(inspected.sources[0].sourceKind, 'visible_value');
+    assert.equal(inspected.sources[0].label, 'API key labeled text 1');
+    assert.equal(JSON.stringify(inspected).includes('Temporary test access'), false);
+    const ref = inspected.sources[0].ref;
+    assert.equal(page.run({ action: 'import', ref }).value, SECRET);
+    assert.equal(page.run({ action: 'import', ref }).valid, false);
+    assert.equal(page.context.private_ref_state.providerKeySources.get(ref).observedText, null);
+  }
+});
+
+test('labeled text chooses the innermost equivalent source and supports inline label markup', () => {
+  const page = pageFixture(), outer = page.addText('Notice\nkey: ' + SECRET, { tagName: 'DIV' });
+  const inner = page.addText('key: ' + SECRET, { parent: outer });
+  const inspected = page.run({ action: 'inspect' }); noSecret(inspected); assert.equal(inspected.sources.length, 1);
+  assert.equal(page.context.private_ref_state.providerKeySources.get(inspected.sources[0].ref).element, inner);
+  assert.equal(page.run({ action: 'import', ref: inspected.sources[0].ref }).value, SECRET);
+
+  const inline = pageFixture(), paragraph = inline.addText('key: ' + SECRET);
+  inline.addText('key: ', { tagName: 'SPAN', parent: paragraph });
+  inline.addText(SECRET, { tagName: 'SPAN', parent: paragraph });
+  const sources = inline.run({ action: 'inspect' }).sources; noSecret(sources); assert.equal(sources.length, 1);
+  assert.equal(inline.context.private_ref_state.providerKeySources.get(sources[0].ref).element, paragraph);
+  paragraph.innerText = 'Changed label: ' + SECRET;
+  assert.equal(inline.run({ action: 'import', ref: sources[0].ref }).valid, false);
+});
+
+
+test('a labeled context revokes earlier bare-token refs even when they no longer qualify in the current scan', () => {
+  for (const makeNonLeaf of [false, true]) {
+    const page = pageFixture(), token = page.addText(SECRET, { tagName: 'SPAN' });
+    const oldRef = page.run({ action: 'inspect' }).sources[0].ref;
+    if (makeNonLeaf) page.addText(SECRET, { tagName: 'EM', parent: token });
+    const paragraph = page.addText('Notice\nkey: ' + SECRET); token.parentElement = paragraph;
+    const inspected = page.run({ action: 'inspect' }); noSecret(inspected); assert.equal(inspected.sources.length, 1);
+    const ref = inspected.sources[0].ref; assert.notEqual(ref, oldRef);
+    assert.equal(page.context.private_ref_state.providerKeySources.has(oldRef), false);
+    assert.equal(page.context.private_ref_state.elements.has(oldRef), false);
+    paragraph.innerText = 'Changed notice\nkey: ' + SECRET;
+    const oldResult = page.run({ action: 'import', ref: oldRef }), newResult = page.run({ action: 'import', ref });
+    noSecret(oldResult); noSecret(newResult); assert.equal(oldResult.valid, false); assert.equal(newResult.valid, false);
+  }
+});
+
+test('labeled visibility follows hidden, inert and zero-opacity shadow hosts', () => {
+  for (const options of [{ attributes: ['hidden'] }, { attributes: ['inert'] }, { style: { opacity: '0' } }]) {
+    const page = pageFixture(), host = page.addText('Shadow host', { tagName: 'DIV', ...options });
+    const el = page.addText('Notice\nkey: ' + SECRET); el.getRootNode = () => ({ host });
+    const result = page.run({ action: 'inspect' }); noSecret(result); assert.equal(result.sources.length, 0);
+  }
+});
+
+test('rendered text is not read before concealed ancestry and descendants are rejected', () => {
+  for (const placement of ['self', 'ancestor', 'descendant']) {
+    const page = pageFixture(), el = page.addText('Notice\nkey: ' + SECRET);
+    if (placement === 'self') el.style.opacity = '0';
+    else if (placement === 'ancestor') el.parentElement = page.addText('Hidden parent', { tagName: 'DIV', attributes: ['inert'] });
+    else page.addText('Hidden child', { parent: el, attributes: ['hidden'] });
+    let reads = 0;
+    Object.defineProperty(el, 'innerText', { get() { reads++; return 'Notice\nkey: ' + SECRET; } });
+    const result = page.run({ action: 'inspect' }); noSecret(result); assert.equal(result.sources.length, 0); assert.equal(reads, 0);
+  }
+});
+
+test('an unrelated code value does not suppress a labeled notice key', () => {
+  const page = pageFixture(), other = 'synthetic_catalog_identifier_943851239012';
+  const paragraph = page.addText('Test credential\nkey: ' + SECRET + '\nmodel: ' + other);
+  page.addText(other, { tagName: 'CODE', parent: paragraph });
+  const inspected = page.run({ action: 'inspect' }); noSecret(inspected); assert.equal(inspected.sources.length, 2);
+  const labeled = inspected.sources.find(source => source.label.includes('labeled text'));
+  assert.ok(labeled); assert.equal(page.run({ action: 'import', ref: labeled.ref }).value, SECRET);
+});
+
+test('multiple labeled lines are ambiguous even when another line has an invalid value', () => {
+  for (const second of ['key:', 'key: too short', 'API key: "' + SECRET + '"', 'key: ****masked****', 'key: ' + SECRET]) {
+    const page = pageFixture(); page.addText('Notice\nkey: ' + SECRET + '\n' + second);
+    const result = page.run({ action: 'inspect' }); noSecret(result); assert.equal(result.sources.length, 0);
+  }
+});
+
+test('malformed key lines cannot fall back to the legacy whole-code value path', () => {
+  for (const text of ['key:short', 'key:"' + SECRET + '"', 'key:' + SECRET + '#comment', 'key: ' + SECRET + ' another-token', 'key: ****masked****']) {
+    for (const tagName of ['P', 'CODE', 'PRE']) {
+      const page = pageFixture(); page.addText(text, { tagName });
+      const result = page.run({ action: 'inspect' }); noSecret(result); assert.equal(result.sources.length, 0);
+    }
+  }
+  for (const text of ['Use key: ' + SECRET, 'Authorization: Bearer ' + SECRET, 'password: ' + SECRET, 'token: ' + SECRET]) {
+    const page = pageFixture(); page.addText(text);
+    assert.equal(page.run({ action: 'inspect' }).sources.length, 0);
+  }
+});
+
+test('labeled inspection never substitutes textContent for missing or unrelated rendered text', () => {
+  for (const rendered of [undefined, 'No displayed API credential']) {
+    const page = pageFixture(); page.addText(rendered, { textContent: 'Hidden notice\nkey: ' + SECRET });
+    const result = page.run({ action: 'inspect' }); noSecret(result); assert.equal(result.sources.length, 0);
+  }
+  const page = pageFixture(); page.addText('x'.repeat(20001) + '\nkey: ' + SECRET);
+  assert.equal(page.run({ action: 'inspect' }).sources.length, 0);
+});
+
+test('labeled inspection rejects hidden, inert and visually concealed candidates, ancestors and descendants', () => {
+  for (const options of [
+    { attributes: ['hidden'] }, { attributes: ['inert'] },
+    { style: { display: 'none' } }, { style: { visibility: 'hidden' } },
+    { style: { opacity: '0' } }, { style: { contentVisibility: 'hidden' } },
+  ]) {
+    const page = pageFixture(); page.addText('Notice\nkey: ' + SECRET, options);
+    const result = page.run({ action: 'inspect' }); noSecret(result); assert.equal(result.sources.length, 0);
+    const nested = pageFixture(), parent = nested.addText('Notice\nkey: ' + SECRET, { tagName: 'DIV', ...options });
+    nested.addText('key: ' + SECRET, { parent });
+    assert.equal(nested.run({ action: 'inspect' }).sources.length, 0);
+    const hiddenChild = pageFixture(), visible = hiddenChild.addText('Notice\nkey: ' + SECRET);
+    hiddenChild.addText('private detail', { parent: visible, ...options });
+    assert.equal(hiddenChild.run({ action: 'inspect' }).sources.length, 0);
+  }
+});
+
+test('labeled imports revalidate exact raw rendered text, visibility and ambiguity', () => {
+  const mutations = [
+    (page, el) => { el.innerText = el.innerText.replace(SECRET, 'different_synthetic_key_1234567890'); },
+    (page, el) => { el.innerText = el.innerText.replace('key:', 'password:'); },
+    (page, el) => { el.innerText = el.innerText.replace('Notice', 'Changed notice'); },
+    (page, el) => { el.innerText = ' ' + el.innerText; },
+    (page, el) => { el.innerText += '\n'; },
+    (page, el) => { el.innerText += '\nkey:'; },
+    (page, el) => { el.style.opacity = '0'; },
+    (page, el) => { el.attributes.add('inert'); },
+    (page, el) => { page.addText('hidden detail', { parent: el, attributes: ['hidden'] }); },
+    (page, el) => { el.isConnected = false; },
+  ];
+  for (const mutate of mutations) {
+    const page = pageFixture(), el = page.addText('Notice\nkey: ' + SECRET);
+    const inspected = page.run({ action: 'inspect' }); assert.equal(inspected.sources.length, 1);
+    mutate(page, el);
+    const result = page.run({ action: 'import', ref: inspected.sources[0].ref }); noSecret(result); assert.equal(result.valid, false);
+  }
+});
+
+test('a secret-bearing rendered-text getter failure returns only a sanitized refusal', () => {
+  const page = pageFixture(), el = page.addText('Notice\nkey: ' + SECRET);
+  Object.defineProperty(el, 'innerText', { get() { throw Error(SECRET); } });
+  const result = page.run({ action: 'inspect' }); noSecret(result); assert.equal(result.valid, false);
+});
+
+test('host import of a labeled source keeps the existing protected consumer path and no-secret receipt', async () => {
+  const { driver, page, tab } = driverFixture(); page.elements.length = 0;
+  page.addText('Operator test access\nkey: ' + SECRET);
+  const inspected = await performProviderKeySource(driver, { ...target, action: 'inspect' }, { owner });
+  noSecret(inspected); assert.equal(inspected.sources.length, 1); assert.equal(tab.providerKeyProtected, true);
+  let consumed = 0;
+  const args = { ...target, action: 'import', ref: inspected.sources[0].ref, expectedDocumentId: inspected.documentId };
+  const result = await performProviderKeySource(driver, args, { owner, consume: async value => { assert.equal(value, SECRET); consumed++; return { imported: true }; } });
+  noSecret(result); assert.equal(result.imported, true); assert.equal(consumed, 1);
+  await assert.rejects(performProviderKeySource(driver, args, { owner, consume: () => { consumed++; } }));
+  assert.equal(consumed, 1);
 });
 
 test('click_inspect protects before one real click and explicitly suppresses the automatic snapshot', async () => {
@@ -186,7 +363,7 @@ test('key tool checks encryption before browser access and imports via sanitized
   const browser = { providerKeySource: async (_args, options) => { browserCalls++; await options.beforeDispatch(); return options.consume(SECRET, {}); } };
   const runtime = { store, saveProvider: (value, options) => { assert.equal(options.preserveDefault, true); return store.save(value, options); } };
   const make = isEncryptionAvailable => createDirectProviderSetupTools({ runtime, browser, reauthorize: async () => {}, isEncryptionAvailable })[2];
-  const input = { requestId: 'import-1', ...target, action: 'import', providerId: saved.id, expectedUpdatedAt: saved.updatedAt, expectedDocumentId: 'tab-1:0', ref: 'key-ref' }; delete input.browser;
+  const input = { requestId: 'import-1', ...target, action: 'import', storage: 'encrypted', providerId: saved.id, expectedUpdatedAt: saved.updatedAt, expectedDocumentId: 'tab-1:0', ref: 'key-ref' }; delete input.browser;
   await assert.rejects(make(() => false).execute(input, { client }), { code: 'PROVIDER_SECRET_STORAGE_UNAVAILABLE' }); assert.equal(browserCalls, 0);
   const result = parse(await make(() => true).execute(input, { client })); assert.equal(result.imported, true); assert.equal(result.provider.secretStorage, 'encrypted'); noSecret(result); assert.equal(browserCalls, 1);
 });
@@ -229,7 +406,7 @@ test('actual direct ledger and HTTP adapter share scope validation, saved receip
   const tools = createDirectProviderSetupTools({ runtime, browser, reauthorize: (identity, { scopes }) => api.require(identity, scopes), isEncryptionAvailable: () => true });
   api = new DirectExecutionAPI({ dataDir: directory, allowedRoot: directory, browser, additionalTools: tools, authorizeClient: async identity => identity.id === client.id });
   await api.init();
-  const args = { requestId: 'import-durable-once', action: 'import', tabId: target.tabId, origin, expectedUrl: url, expectedDocumentId: 'tab-1:0', ref: 'key-ref', providerId: saved.id, expectedUpdatedAt: saved.updatedAt };
+  const args = { requestId: 'import-durable-once', action: 'import', storage: 'encrypted', tabId: target.tabId, origin, expectedUrl: url, expectedDocumentId: 'tab-1:0', ref: 'key-ref', providerId: saved.id, expectedUpdatedAt: saved.updatedAt };
   await assert.rejects(api.call('blackice_provider_import_key', args, { ...client, scopes: ['read', 'commands:run', 'browser:read'] }), { code: 'DIRECT_SCOPE_REQUIRED' });
   assert.equal(calls, 0);
   const admitted = await api.call('blackice_provider_import_key', args, client);

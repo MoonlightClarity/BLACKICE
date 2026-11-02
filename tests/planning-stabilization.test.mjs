@@ -66,7 +66,7 @@ async function fixture(t,{unresolvedInference=false,failRespond=false,recovering
 test('unresolved preparatory findings progress to a plan and available work while retaining their uncertainty',async t=>{
  const f=await fixture(t,{unresolvedInference:true}),run=await f.execute();
  assert.equal(run.status,'completed');assert.equal(run.settled,true);assert.equal(f.operationalCalls,1);
- assert.deepEqual(f.calls,['viability','inference','plan','think','respond']);
+ assert.deepEqual(f.calls,['inference','viability','plan','think','respond']);
  const request=await f.store.get(run.responseCycle.requestId),cycle=request.cycles[0],inference=request.nodes.find(node=>node.id===cycle.stageNodeIds.inference);
  assert.equal(inference.response.checks.find(check=>check.id==='uncertainties_bounded').assessment,'unresolved');
  assert.equal(inference.readiness.cycle.analysisReady,true);assert.equal(inference.readiness.cycle.dispatchReady,false);
@@ -98,7 +98,7 @@ test('failed final response remains failed; a public cycle retry republishes the
  await f.archive.chain;f.engine.runs.delete(run.id); // Exercise restoration from the actual archive.
  request=await f.service.runCycle(request.id,cycle.id,payload);cycle=request.cycles.find(item=>item.id===cycle.id);
  assert.equal(cycle.state,'completed');assert.equal(cycle.failure,null);assert.doesNotMatch(cycle.summary,/rate limited|failed/i);assert.equal(f.operationalCalls,1);
- assert.deepEqual(f.calls,['viability','inference','plan','think','respond','respond']);
+ assert.deepEqual(f.calls,['inference','viability','plan','think','respond','respond']);
  const published=f.engine.getRun(run.id);assert.equal(published.status,'completed');assert.equal(published.output,'The result is 17.');
  assert.equal(published.error,undefined);assert.equal(published.errorCode,undefined);assert.equal(published.responseCycle.partial,false);
  assert.equal(published.planningUsage.totalTokens,62);assert.equal(published.usage.totalTokens,79);assert.equal(published.usage.samples,7);
@@ -112,10 +112,44 @@ test('failed final response remains failed; a public cycle retry republishes the
 });
 test('strict dispatch retains the unresolved preparatory dependency while still saving the proposed plan',async t=>{
  const f=await fixture(t,{unresolvedInference:true,executionGuardrails:true}),run=await f.execute();
- assert.equal(run.status,'blocked');assert.equal(f.operationalCalls,0);assert.deepEqual(f.calls,['viability','inference','plan']);
+ assert.equal(run.status,'blocked');assert.equal(f.operationalCalls,0);assert.deepEqual(f.calls,['inference','viability','plan']);
  assert.equal(run.planningUsage.totalTokens,33);
  const request=await f.store.get(run.responseCycle.requestId),plan=request.nodes.find(node=>node.kind==='plan');
  assert.equal(plan.readiness.cycle.analysisReady,true);assert.equal(plan.readiness.cycle.dispatchReady,false);
+});
+
+test('confirmed resource denial blocks costly work even with advisory guardrails and preserves the diagnostic and remedy',async t=>{
+  const f=await fixture(t,{executionGuardrails:false,operation:async()=>assert.fail('The costly operation must not start before its actual prerequisite.'),transformResponse:(body,{input})=>{
+    if(input.module.kind==='viability')body.requirements=[{id:'write-right',label:'Required target write right',importance:'essential',basis:'user',consequence:'Writing the requested result to the protected target.',resolution:'blocked',value:'The captured task states that this target denies the required right.',sourceIds:['viability:task'],checkedSourceIds:input.sources.filter(item=>item.kind!=='response').map(item=>item.id),rationale:'Stop that write; use an already-authorized alternate destination or wait for the actual right. Do not infer guest rights from host elevation.',inferable:false,omissionAllowed:false,question:'',dependentNodeIds:['agent']}];
+  }}),run=await f.execute({input:'Produce result 17 at the protected target, whose write right is denied. Do not elevate or change rights.'});
+  assert.equal(run.status,'blocked');assert.equal(f.operationalCalls,0);assert.deepEqual(f.calls,['inference','viability','plan']);assert.match(run.viability.question,/Blocked: Required target write right/);assert.match(run.viability.question,/Remedy:/);
+  const saved=await f.store.get(run.responseCycle.requestId),cycle=saved.cycles.find(item=>item.id===run.responseCycle.cycleId),feasibility=saved.nodes.find(item=>item.id===cycle.stageNodeIds.feasibility);
+  assert.equal(feasibility.readiness.cycle.dispatchReady,false);assert.equal(feasibility.readiness.viability.blockingFacts[0].resolution,'blocked');assert.equal(saved.cycles.find(item=>item.id===cycle.id).summary.includes('Remedy:'),true);
+});
+
+test('repairable observation gap retains delegated work and benefit through actual preparation, execution and final review',async t=>{
+  const benefit='Save the user time and effort by completing the bounded report without routine handoff.';let operationRan=false,seen=0;
+  const f=await fixture(t,{executionGuardrails:false,operation:async(_options,{dir})=>{operationRan=true;await writeFile(path.join(dir,'compact-observation.json'),JSON.stringify({result:17}));const observed=JSON.parse(await readFile(path.join(dir,'compact-observation.json'),'utf8'));assert.equal(observed.result,17);return 'Observed result: 17.';},transformResponse:(body,{input})=>{
+    if(input.module.kind==='inference'){body.values.userBenefit=benefit;body.values.desiredOutcomes='Deliver the verified report of result 17.';body.values.unwantedOutcomes='Do not make the user repeat the malformed read or perform routine recovery.';body.values.delegatedWork='The owning model performs a compact corrected read, inspects the result and completes the report under existing authority.';body.values.constraints='Preserve the bounded report scope and existing target rights; do not invent facts or new authority.';body.values.handoffBoundary='No human input is needed for the corrected read; ask only if an actual irreducible prerequisite remains after checks.';}
+    else{assert.equal(input.cycle.intendedOutcome.userBenefit,benefit);assert.ok(input.cycle.intendedOutcome.responseId);seen++;}
+    if(input.module.kind==='viability'){assert.ok(input.sources.some(item=>item.kind==='response'&&JSON.parse(item.text).values?.userBenefit===benefit),'Resource preflight consumes the actual prior intent record.');body.requirements=[{id:'compact-read',label:'Malformed prior observation',importance:'essential',basis:'task',consequence:'Establishing the requested result before completing the report.',resolution:'repairable',value:'A retained read was malformed; the owning authorized workflow can emit and inspect a compact primitive observation.',sourceIds:['viability:task'],checkedSourceIds:input.sources.filter(item=>item.kind!=='response').map(item=>item.id),rationale:'Perform one compact corrected observation, verify result 17, then deliver the report; keep the old attempt and do not hand routine recovery back.',inferable:false,omissionAllowed:false,question:'',dependentNodeIds:['agent']}];}
+  }}),run=await f.execute({input:'Complete the report of result 17; the previous oversized read was malformed. Handle ordinary recovery yourself under the existing authority so I do not have to repeat the work.'});
+  assert.equal(run.status,'completed',run.error||run.output);assert.equal(operationRan,true);assert.equal(f.operationalCalls,1);assert.equal(seen,4);assert.equal(run.viability.awaitingInput,false);assert.equal(run.output,'The result is 17.');
+  const saved=await f.store.get(run.responseCycle.requestId),cycle=saved.cycles[0],preflight=saved.nodes.find(item=>item.id===cycle.stageNodeIds.feasibility);assert.equal(preflight.readiness.viability.repairableGaps.length,1);assert.equal(preflight.readiness.viability.blockingFacts.length,0);
+});
+
+test('actual Plan preparation receives host proof taxonomy without changing the delegated outcome or verifier kinds',async t=>{
+  let seen=false;
+  const f=await fixture(t,{transformResponse:(_body,{input,options})=>{
+    if(input.module.kind!=='plan')return;
+    const resource=input.sources.find(item=>item.id==='viability:workbench');assert.ok(resource);
+    const proof=JSON.parse(resource.text).proofCapabilities;
+    assert.equal(proof.nativeCapture.producesEffectReceipt,false);assert.match(proof.nativeCapture.preciseReadback,/guest verifier/);
+    assert.match(options.prompt,/response-only how-to/);assert.match(options.prompt,/Do not silently retag an adopted criterion/);
+    assert.ok(input.cycle.intendedOutcome.userBenefit);seen=true;
+  }});
+  f.engine.workbench={status:async()=>({vmName:'fixture',guest:{running:true,agent:{paired:true}},consoleControl:{owner:'user',revision:1}}),consoleControl:{status:()=>({owner:'user',revision:1})}};
+  const run=await f.execute();assert.equal(run.status,'completed',run.error);assert.equal(seen,true);assert.equal(f.operationalCalls,1);
 });
 
 test('a public Plan-only rerun preserves the paused conversation and performs no operational work',async t=>{
@@ -163,7 +197,7 @@ test('a correct 190 answer repairs mismatched coverage with the same model and n
   else{repaired++;assert.match(JSON.stringify(input.formatRepair),/response\.coverage\[0\]\.responseExcerpt/);assert.match(JSON.stringify(input.formatRepair),/verbatim/);}
  }}),run=await f.execute();
  assert.equal(run.status,'completed',run.error);assert.equal(run.output,'The result is 190.');assert.equal(repaired,1);assert.equal(f.operationalCalls,1);
- assert.deepEqual(f.calls,['viability','inference','plan','think','respond','respond']);
+ assert.deepEqual(f.calls,['inference','viability','plan','think','respond','respond']);
  const request=await f.store.get(run.responseCycle.requestId),attempts=request.attempts.filter(a=>a.node.kind==='respond');
  assert.equal(attempts.length,2);assert.equal(attempts[0].status,'failed');assert.equal(attempts[0].validation.code,'PLANNING_RESPONSE_FORMAT');assert.equal(attempts[1].status,'completed');
  assert.equal(run.planningAttempts.length,6);assert.equal(run.planningUsage.totalTokens,66);assert.equal(run.usage.totalTokens,83);
@@ -212,15 +246,17 @@ function feasibilitySources() {
 function bindRecordedFeasibility(input, directory) {
   const ids = [input.sources.find(item => item.id.startsWith('request:'))?.id, input.sources.find(item => item.id.startsWith('cycle:context:'))?.id];
   assert.ok(ids.every(Boolean), 'the fixture captures the actual request and cycle context');
-  return JSON.parse(JSON.stringify(recordedFeasibility)
+  const historical=JSON.parse(JSON.stringify(recordedFeasibility)
     .replaceAll(recordedRequestId, ids[0]).replaceAll(recordedContextId, ids[1])
     .replaceAll(JSON.stringify(recordedDirectory).slice(1, -1), JSON.stringify(directory).slice(1, -1)));
+  const current=response(input,76);
+  return {...historical,values:{...current.values,...historical.values},grounding:[...current.grounding.filter(link=>!historical.grounding.some(prior=>prior.field===link.field)),...historical.grounding]};
 }
 
 test('recorded source-coverage omissions permit analysis without inventing checked sources or resolved facts', () => {
   const sources = feasibilitySources(), saved = { ...structuredClone(recordedFeasibility), sources };
   const before = structuredClone(saved);
-  const result = evaluateResponseCycleStage('feasibility', saved, { sources, workflowNodeIds: ['agent'] });
+  const result = evaluateResponseCycleStage('feasibility', saved, { sources, workflowNodeIds: ['agent'],pipelineVersion:1 });
   assert.equal(result.analysisReady, true);
   assert.equal(result.dispatchReady, false);
   assert.equal(result.state, 'needs_evidence');
@@ -231,7 +267,7 @@ test('recorded source-coverage omissions permit analysis without inventing check
   assert.deepEqual(result.viability.sourceCoverage[0].missingSourceIds, ['viability:profile']);
   assert.equal(saved.requirements.every(item => item.resolution === 'unknown' && item.value === 'unobserved'), true);
   assert.deepEqual(saved, before, 'evaluation must not fill checkedSourceIds or rewrite the response');
-  assert.doesNotThrow(() => validatePlanningModuleResponse({ node: { kind: 'viability' }, sources, workflowNodeIds: ['agent'] }, JSON.stringify(recordedFeasibility)),
+  assert.doesNotThrow(() => validatePlanningModuleResponse({ node: { kind: 'viability' }, sources, workflowNodeIds: ['agent'],pipelineVersion:1 }, JSON.stringify(recordedFeasibility)),
     'a valid unresolved assessment is not a malformed-output repair request');
 });
 
@@ -281,7 +317,7 @@ test('automatic Chat carries the recorded unknowns into local read-write-reread 
   assert.equal(run.output, 'The result is 76.');
   assert.deepEqual(operations, ['read', 'write', 'reread']);
   assert.equal(f.operationalCalls, 1);
-  assert.deepEqual(f.calls, ['viability', 'inference', 'plan', 'think', 'respond']);
+  assert.deepEqual(f.calls, ['inference', 'viability', 'plan', 'think', 'respond']);
   assert.equal(run.planningUsage.samples, 5);
   assert.equal(run.usage.totalTokens, 72);
   const artifact = JSON.parse(await readFile(path.join(f.dir, 'closing-units.json'), 'utf8'));
@@ -322,7 +358,7 @@ test('strict dispatch still holds recorded source-coverage omissions after savin
   const run = await f.execute();
   assert.equal(run.status, 'blocked');
   assert.equal(f.operationalCalls, 0);
-  assert.deepEqual(f.calls, ['viability', 'inference', 'plan']);
+  assert.deepEqual(f.calls, ['inference', 'viability', 'plan']);
   const request = await f.store.get(run.responseCycle.requestId), cycle = request.cycles[0];
   const plan = request.nodes.find(node => node.id === cycle.stageNodeIds.plan);
   assert.equal(plan.readiness.cycle.analysisReady, true);
@@ -335,9 +371,9 @@ const workflowDiscovery = JSON.parse(await readFile(new URL('./fixtures/planning
 function workflowRequest(input, target = 'workflow') {
   const work = structuredClone(workflowDiscovery.request);
   const current = input.sources.find(item => item.id.startsWith('request:')).id;
-  const feasibility = input.cycle?.prerequisites?.find(item => item.stageId === 'feasibility')?.sourceId || input.sources.find(item => item.kind === 'response')?.id;
+  const feasibility = input.cycle?.prerequisites?.find(item => item.stageId === 'feasibility')?.sourceId || current;
   const context = input.sources.find(item => item.id.startsWith('cycle:context:')).id;
-  work.sourceIds = work.sourceIds.map(id => id.startsWith('request:') ? current : id.startsWith('response:') ? feasibility : context);
+  work.sourceIds = [...new Set(work.sourceIds.map(id => id.startsWith('request:') ? current : id.startsWith('response:') ? feasibility : context))];
   if (target !== undefined) work.executionTarget = target;
   return work;
 }
@@ -540,7 +576,7 @@ test('live run totals include Feasibility, failed format output and its repair b
     const gateway=options.onToolCall;options.onToolCall=(call,scope)=>{if(call.name==='relay_workspace')workspaceCalls++;return gateway(call,scope);};
     return inventoryOperation(options,context);
   },transformResponse:async(body,{input})=>{
-    if(input.module.kind==='inference'){entered.inference=true;await inference.promise;}
+    if(input.module.kind==='viability'){entered.inference=true;await inference.promise;}
     if(input.module.kind==='respond'){
       if(!input.formatRepair)body.coverage[0].responseExcerpt='A quotation absent from the final answer.';
       else{entered.repair=true;await repair.promise;}
@@ -555,7 +591,7 @@ test('live run totals include Feasibility, failed format output and its repair b
   try{
     await waitForUsage(()=>entered.inference);
     let live=await waitForUsage(()=>{const run=f.engine.getRun(accepted.id);return run.planningAttempts?.length===1&&run;});
-    assert.equal(live.settled,false);assert.equal(live.responseCycle,undefined,'Feasibility is counted before the operational binding is exposed');
+    assert.equal(live.settled,false);assert.equal(live.responseCycle?.planning?.planAdopted,false,'Inference is counted before operational plan adoption');
     assert.equal(live.planningUsage.totalTokens,11);assert.equal(live.usage.totalTokens,11);assert.equal(f.operationalCalls,0);
     assert.ok(notifications.some(event=>event.runId===accepted.id&&event.data.settled===false&&event.data.planningUsage.totalTokens===11),'the live SSE event includes the new total');
     inference.release();
@@ -577,7 +613,7 @@ test('live run totals include Feasibility, failed format output and its repair b
     const final=f.engine.getRun(accepted.id);
     assert.equal(final.status,'completed');assert.equal(final.settled,true);assert.equal(final.output,'The result is 76.');
     assert.equal(final.planningUsage.totalTokens,66);assert.equal(final.usage.totalTokens,83);assert.deepEqual(final.planningAttempts.map(item=>item.attemptId),savedIds,'final capture is idempotent');
-    assert.deepEqual(f.calls,['viability','inference','plan','think','respond','respond']);assert.equal(f.operationalCalls,1);assert.equal(workspaceCalls,3,'only the intended read/write/read operations ran');
+    assert.deepEqual(f.calls,['inference','viability','plan','think','respond','respond']);assert.equal(f.operationalCalls,1);assert.equal(workspaceCalls,3,'only the intended read/write/read operations ran');
     assert.equal((await f.archive.get(final.id)).usage.totalTokens,83);
     const published=notifications.length;f.service.runner.emit('updated',event);await Promise.allSettled([...f.service.usageUpdates.values()]);
     assert.equal(notifications.length,published,'late accounting does not republish a settled historical run');

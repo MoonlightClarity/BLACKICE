@@ -2,6 +2,41 @@
 const text = value => typeof value === 'string' ? value : '';
 export const runText = run => typeof run?.input === 'string' ? run.input : text(run?.input?.task);
 export const running = run => ['queued','running','waiting'].includes(run?.status) || run?.settled === false;
+const phaseIds=new Set(['feasibility','inference','plan','think','respond']);
+const evidenceText=value=>typeof value==='string'&&value.length<=200?value:null;
+export function projectCyclePlanning(cycle){
+  const value=cycle?.planning;if(value?.scope!=='planning-cycle'||!Array.isArray(value.stages))return undefined;
+  const seen=new Set(),stages=[];
+  for(const item of value.stages.slice(0,5)){
+    if(!phaseIds.has(item?.stage)||seen.has(item.stage)||item.scope!=='planning-invocation')continue;seen.add(item.stage);
+    stages.push({stage:item.stage,scope:'planning-invocation',status:['succeeded','needs_evidence','stale','failed','cancelled','unconfirmed','unverified'].includes(item.status)?item.status:'unverified',
+      attemptId:evidenceText(item.attemptId),responseId:evidenceText(item.responseId),nodeId:evidenceText(item.nodeId),
+      nodeRevision:Number.isSafeInteger(item.nodeRevision)&&item.nodeRevision>0?item.nodeRevision:null,
+      outputHash:typeof item.outputHash==='string'&&/^[a-f0-9]{64}$/.test(item.outputHash)?item.outputHash:null,
+      structuredResponseValid:item.structuredResponseValid===true,durableResponseRecorded:item.durableResponseRecorded===true,
+      currentForNode:item.currentForNode===true,stageReady:item.stageReady===true});
+  }
+  const ref=value.planRef,planRef=ref&&{requestId:evidenceText(ref.requestId),cycleId:evidenceText(ref.cycleId),nodeId:evidenceText(ref.nodeId),
+    nodeRevision:Number.isSafeInteger(ref.nodeRevision)&&ref.nodeRevision>0?ref.nodeRevision:null,responseId:evidenceText(ref.responseId)};
+  return {scope:'planning-cycle',stages,planAdopted:value.planAdopted===true,...(planRef?{planRef}:{}),taskSuccessVerified:false};
+}
+const checkedPhase=phase=>phase?.status==='succeeded'&&phase.structuredResponseValid&&phase.durableResponseRecorded&&phase.currentForNode&&phase.stageReady&&
+  Boolean(phase.attemptId&&phase.responseId&&phase.outputHash&&phase.nodeRevision);
+export function planningProgressForRun(run){
+  const cycle=run?.responseCycle;
+  if(!cycle?.requestId)return null;
+  const preparing=running(run)&&['preparing','running','evaluating'].includes(cycle.state);
+  const stage={feasibility:'Checking task',inference:'Assessing options',plan:'Preparing plan',think:'Reviewing results',respond:'Preparing response'}[cycle.stage];
+  const proof=projectCyclePlanning(cycle),plan=proof?.stages.find(item=>item.stage==='plan'),checkedPlan=checkedPhase(plan),ref=proof?.planRef;
+  const planAdopted=Boolean(checkedPlan&&proof.planAdopted&&ref&&['requestId','cycleId','nodeId','nodeRevision','responseId'].every(key=>ref[key]===cycle.planRef?.[key])&&
+    ref.requestId===cycle.requestId&&ref.cycleId===cycle.cycleId&&ref.nodeId===plan.nodeId&&ref.nodeRevision===plan.nodeRevision&&ref.responseId===plan.responseId);
+  const label=preparing?'Planning'+(stage?' · '+stage:''):
+    cycle.state==='paused_after_plan'?(checkedPlan?'Plan checked · awaiting review':'Planning result unverified'):
+    cycle.state==='executing'?(planAdopted?'Plan adopted · working on task':'Planning result unverified'):
+    cycle.state==='completed'?(checkedPhase(proof?.stages.find(item=>item.stage==='respond'))?'Planning review completed':'Planning result unverified'):
+    ({needs_evidence:'Planning needs evidence',needs_user_input:'Planning needs your input',failed:'Planning needs attention'})[cycle.state]||'';
+  return {preparing,label,requestId:cycle.requestId,checkedPlan,planAdopted};
+}
 export const rootId = item => item?.taskId || item?.rootId || item?.id || '';
 export const lastRunId = item => item?.runId || item?.latestRunId || item?.id || '';
 export function summaries(value = []) {
@@ -82,6 +117,14 @@ export function messagesOfRun(run) {
     if (d.type === 'message' || d.type === 'item' && d.item?.type === 'agentMessage') {
       const content = text(d.text ?? d.item?.text);
       if (!content.trim()) continue;
+      // The response cycle publishes its checked delivery after the provider's
+      // streamed final. Keep the receipt, but render an unchanged adjacent
+      // final only once. Directions, other speakers and revised answers still
+      // retain their own chronology.
+      const previous = messages.at(-1);
+      if (d.responseCycleFinal === true && previous?.role === 'assistant' &&
+          previous.nodeId === nodeId && previous.phase === 'final_answer' && !previous.provisional &&
+          previous.text.trim() === content.trim()) continue;
       const itemId = d.itemId || d.item?.id;
       const id = itemId ? nodeId + ':' + itemId : anonymous.get(nodeId) || nodeId + ':message-' + serial++;
       const item = entry(id,nodeId); item.text=content;item.phase=d.phase||d.item?.phase||item.phase;if(d.provisional)item.provisional=true;
@@ -225,9 +268,10 @@ export function mergeChatRunUpdate(previous, updated) {
   if(Object.hasOwn(updated,'viability'))result.viability=updated.viability?.awaitingInput===true?{awaitingInput:true}:undefined;
   if(Object.hasOwn(updated,'responseCycle')){
     const cycle=updated.responseCycle;
-    result.responseCycle=cycle?{state:cycle.state,requestId:cycle.requestId,cycleId:cycle.cycleId,
+    result.responseCycle=cycle?{state:cycle.state,stage:cycle.stage,requestId:cycle.requestId,cycleId:cycle.cycleId,
       title:String(cycle.title||'').slice(0,240),summary:String(cycle.summary||'').slice(0,1200),
-      planRef:cycle.planRef&&{requestId:cycle.planRef.requestId,nodeId:cycle.planRef.nodeId,nodeRevision:cycle.planRef.nodeRevision,responseId:cycle.planRef.responseId}}:undefined;
+      ...(projectCyclePlanning(cycle)?{planning:projectCyclePlanning(cycle)}:{}),
+      planRef:cycle.planRef&&{requestId:cycle.planRef.requestId,...(cycle.planRef.cycleId?{cycleId:cycle.planRef.cycleId}:{}),nodeId:cycle.planRef.nodeId,nodeRevision:cycle.planRef.nodeRevision,responseId:cycle.planRef.responseId}}:undefined;
   }
   return result;
 }

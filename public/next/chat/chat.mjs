@@ -1,6 +1,6 @@
-import { createChatFrame, paintIndex, paintIntroduction, paintHistory, paintModels } from './render.mjs';
+import { createChatFrame, paintIndex, paintIntroduction, paintHistory, paintModels, captureChatScroll, restoreChatScroll } from './render.mjs';
 import { createGroupedModelPicker } from '../core/model-picker.mjs';
-import { summaries, filterSummaries, conversationRuns, rootId, lastRunId, running, CHAT_INDEX_BATCH, CHAT_MESSAGE_BATCH, messageLimitsAfterRefresh, conversationBucket, conversationActionState, conversationManagementTarget, resolveConversationSelection, mergeChatRunUpdate } from './model.mjs';
+import { summaries, filterSummaries, conversationRuns, rootId, lastRunId, running, planningProgressForRun, CHAT_INDEX_BATCH, CHAT_MESSAGE_BATCH, messageLimitsAfterRefresh, conversationBucket, conversationActionState, conversationManagementTarget, resolveConversationSelection, mergeChatRunUpdate } from './model.mjs';
 import { submitChat, replyState } from './send.mjs';
 import { createConversationReader } from './reader-client.mjs';
 import { initAttachmentsUI } from '../../attachments-ui.mjs';
@@ -153,12 +153,14 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     syncContext();
     const item=state.selected,bucket=selectedBucket(),latest=state.runs.at(-1),busy=state.pending||state.managing||contextControls.isCompacting();
     view.title.textContent=item?.rootTitle||item?.title||'New conversation';
-    view.subtitle.textContent=(item&&bucket!=='active'?(bucket==='deleted'?'In Trash':bucket==='archived'?'Archived':'History state unavailable')+' · ':'')+(latest ? latest.status==='completed'?'Saved response':latest.status||'Saved':'Local workspace');
+    const planningProgress=planningProgressForRun(latest);
+    view.subtitle.textContent=(item&&bucket!=='active'?(bucket==='deleted'?'In Trash':bucket==='archived'?'Archived':'History state unavailable')+' · ':'')+(planningProgress?.preparing?'Planning':latest ? latest.status==='completed'?'Saved response':latest.status||'Saved':'Local workspace');
     const cycle=latest?.responseCycle;
-    const cycleLabel=({paused_after_plan:'Plan ready · paused',needs_evidence:'Planning needs evidence',needs_user_input:'Planning needs your input',failed:'Planning needs attention'})[cycle?.state];
+    const cycleLabel=planningProgress?.label;
     view.cycleNotice.hidden=!cycle?.requestId||!cycleLabel;
     view.cycleStatus.textContent=cycleLabel?cycleLabel+(cycle.title?' · '+cycle.title:''):'';
-    view.openPlan.disabled=busy||!cycle?.requestId;
+    // Opening the saved graph is read-only and remains available during work.
+    view.openPlan.disabled=!cycle?.requestId;
     view.archive.hidden=!item;
     view.archive.textContent=bucket==='active'?'Archive':'Restore';
     view.archive.disabled=busy||!conversationBucket(bucket);
@@ -353,8 +355,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     }catch { /* Plain, safely escaped messages remain readable. */ }
   }
   function render({preserve=false}={}) {
-    const atBottom=view.scroll.scrollHeight-view.scroll.scrollTop-view.scroll.clientHeight<100;
-    const lastTop=view.scroll.scrollTop,lastHeight=view.scroll.scrollHeight;
+    const position=preserve?captureChatScroll(view):{atBottom:true};
     paintHistory(view,state.runs,{count:state.count,markdown:state.markdown,
       onOlder:()=>{state.count=Math.min(state.runs.length,state.count+12);render({preserve:true});},
       onMoreMessages:id=>{
@@ -368,8 +369,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       getAttachment:id=>attachmentsUI.getMetadata(id),
       onStop:(kind,id)=>{void runAction(kind,id);},
       onArtifact:ref=>{void artifacts.open(ref).catch(showError);} });
-    if(!preserve||atBottom)view.scroll.scrollTop=view.scroll.scrollHeight;
-    else view.scroll.scrollTop=lastTop+Math.max(0,view.scroll.scrollHeight-lastHeight);
+    restoreChatScroll(view,position,{follow:!preserve});
     updateHead();
   }
   async function open(item,{refresh=false}={}) {

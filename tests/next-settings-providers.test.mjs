@@ -241,7 +241,7 @@ test('every saved and newly entered model displays distinct context and output l
   assert.match(saved,/Max output: 16,000 tokens · Provider reported/);
   assert.match(f.$('#next-provider-max-tokens').parentElement.textContent,/Configured output budget/);
   await f.input('#next-provider-manual-model','manual-unknown');await f.click('#next-provider-add-model');
-  const row=f.$('[data-provider-model-id="manual-unknown"]').parentElement;
+  const row=f.$('[data-provider-model-id="manual-unknown"]').closest('.next-provider-model-entry');
   assert.match(row.textContent,/Context window: Unknown · lookup not run/);
   assert.match(row.textContent,/Max output: Unknown · lookup not run/);
   assert.doesNotMatch(row.textContent,/128,000|8,192/);
@@ -252,7 +252,7 @@ test('catalog selection and saved edits retain both limit values, provenance and
   const model={id:'reported-limits',displayName:'Reported limits',contextWindowTokens:262144,contextWindowSource:'provider-reported',contextWindowObservedAt:'2026-10-30T12:00:00Z',maxOutputTokens:32768,maxOutputTokensSource:'provider-reported',maxOutputObservedAt:'2026-10-30T12:00:00Z'};
   const f=await fixture(t,{hook:call=>{if(call.route==='/api/providers/gateway/models')return {models:[model],total:1,offset:0,hasMore:false};}});
   await f.open();await f.click('#next-provider-catalog-load');await until(()=>!f.$('#next-provider-catalog-load').disabled);
-  const input=f.$('[data-provider-model-id="reported-limits"]');assert.match(input.parentElement.textContent,/Context window: 262,144 tokens · Provider reported/);assert.match(input.parentElement.textContent,/Max output: 32,768 tokens · Provider reported/);
+  const input=f.$('[data-provider-model-id="reported-limits"]');assert.match(input.closest('.next-provider-model-entry').textContent,/Context window: 262,144 tokens · Provider reported/);assert.match(input.closest('.next-provider-model-entry').textContent,/Max output: 32,768 tokens · Provider reported/);
   input.checked=true;await input.dispatch('change');await f.click('#next-provider-save');await f.idle();
   let saved=f.writes().find(call=>call.route==='/api/providers'&&call.method==='POST').body.models.find(item=>item.id===model.id);assert.deepEqual(saved,model);
   await f.input('#next-provider-name','Renamed after discovery');await f.click('#next-provider-save');await f.idle();
@@ -284,15 +284,15 @@ test('Manage models reopens a saved endpoint, adds a selection and preserves the
 
 test('model groups start collapsed and retain explicit expansion across selection and provider navigation',async t=>{
   const f=await fixture(t,{hook:call=>{if(call.route==='/api/providers/gateway/models')return {models:[{id:'openai/first',contextWindowTokens:128000},{id:'anthropic/second',contextWindowTokens:200000}],total:2,offset:0,hasMore:false};}});
-  await f.click('[data-provider-manage="gateway"]');await until(()=>f.$('#next-provider-catalog').querySelectorAll('details').length===2);
-  assert.ok(f.$('#next-provider-models').querySelectorAll('details').every(group=>group.open===false));
-  assert.ok(f.$('#next-provider-catalog').querySelectorAll('details').every(group=>group.open===false));
+  await f.click('[data-provider-manage="gateway"]');await until(()=>f.$('#next-provider-catalog').querySelectorAll('details[data-model-group]').length===2);
+  assert.ok(f.$('#next-provider-models').querySelectorAll('details[data-model-group]').every(group=>group.open===false));
+  assert.ok(f.$('#next-provider-catalog').querySelectorAll('details[data-model-group]').every(group=>group.open===false));
   assert.match(f.$('#next-provider-catalog').textContent,/openai/i);assert.match(f.$('#next-provider-catalog').textContent,/anthropic/i);
-  await f.click('#next-provider-catalog-expand');assert.ok(f.$('#next-provider-catalog').querySelectorAll('details').every(group=>group.open));
+  await f.click('#next-provider-catalog-expand');assert.ok(f.$('#next-provider-catalog').querySelectorAll('details[data-model-group]').every(group=>group.open));
   const box=f.$('[data-provider-model-id="openai/first"]');box.checked=true;await box.dispatch('change');
-  assert.ok(f.$('#next-provider-catalog').querySelectorAll('details').every(group=>group.open));
-  await f.open('second');await f.open('gateway');assert.ok(f.$('#next-provider-catalog').querySelectorAll('details').every(group=>group.open));
-  await f.click('#next-provider-catalog-collapse');assert.ok(f.$('#next-provider-catalog').querySelectorAll('details').every(group=>!group.open));
+  assert.ok(f.$('#next-provider-catalog').querySelectorAll('details[data-model-group]').every(group=>group.open));
+  await f.open('second');await f.open('gateway');assert.ok(f.$('#next-provider-catalog').querySelectorAll('details[data-model-group]').every(group=>group.open));
+  await f.click('#next-provider-catalog-collapse');assert.ok(f.$('#next-provider-catalog').querySelectorAll('details[data-model-group]').every(group=>!group.open));
 });
 
 test('catalog search, context sorting and capability filters are sent before server pagination',async t=>{
@@ -533,4 +533,40 @@ test('Kilo preset scopes its catalog while existing custom connection filters an
   await f.open('gateway');await until(()=>!f.$('#next-provider-catalog-load').disabled);
   assert.equal(f.$('#next-provider-catalog-free').checked,false);assert.equal(f.$('#next-provider-catalog-free').disabled,false);
   assert.deepEqual(f.state.providers.find(item=>item.id==='gateway').models,provider().models);
+});
+
+test('compact model rows keep evidence behind independent disclosures while group actions only expand groups',async t=>{
+  const sourced={id:'exact-model',displayName:'exact-model',contextWindowTokens:128000,maxOutputTokens:16000,contextWindowSource:'model-reference',contextWindowObservedAt:'2026-10-30T12:00:00Z',contextWindowEvidence:{label:'Official model reference',url:'https://models.example/exact-model',endpointSpecific:false},supportsTools:true};
+  const f=await fixture(t,{providers:[provider('gateway',{models:[sourced]}),provider('second')]});await f.open();
+  const container=f.$('#next-provider-models'),label=container.querySelector('[data-provider-model-id]').parentElement,details=container.querySelector('[data-model-details]');
+  assert.match(label.textContent,/128K context · 16K output · Tools/);assert.equal(label.querySelectorAll('strong').length,1);assert.equal(label.querySelectorAll('small').length,1);
+  assert.doesNotMatch(label.textContent,/Model reference|Observed|Model ID|Context window:/);assert.equal(details.open,false);assert.equal(details.closest('label'),null);
+  assert.match(details.querySelector('summary').getAttribute('aria-label'),/exact-model/);
+  assert.match(details.textContent,/128,000 tokens · Model reference · Official model reference · Endpoint unconfirmed/);
+  await f.click('#next-provider-selected-expand');assert.ok(container.querySelectorAll('[data-model-group]').every(group=>group.open));assert.equal(details.open,false,'Group expansion keeps model details collapsed.');
+  details.open=true;await details.dispatch('toggle');const link=details.querySelector('[data-model-limit-source]');assert.equal(link.closest('label'),null);await link.dispatch('click',{},true);
+  assert.equal(f.writes().length,0);assert.equal(container.querySelector('[data-provider-model-id]').checked,true);
+  await f.click('#next-provider-selected-collapse');assert.equal(details.open,true,'Closing the group preserves the separate detail preference.');
+  await f.open('second');await f.open('gateway');assert.equal(f.$('#next-provider-models').querySelector('[data-model-details]').open,true);
+});
+
+test('a new custom API saves its exact keyed endpoint and manual model without selecting an unrelated preset',async t=>{
+  const f=await fixture(t);await f.click('#next-provider-new');
+  assert.equal(f.$('#next-provider-preset').value,'compatible');assert.equal(f.$('#next-provider-base-url').value,'');
+  assert.match(f.$('.next-provider-heading').textContent,/API key/);assert.match(f.$('.next-provider-heading').textContent,/Custom API/);
+  await f.input('#next-provider-id','custom_gateway');await f.input('#next-provider-name','Custom gateway');
+  await f.input('#next-provider-base-url','https://gateway.example.cn/v1');await f.input('#next-provider-key','custom-fixture-key');
+  await f.input('#next-provider-manual-model','exact-provider-model');await f.click('#next-provider-add-model');await f.click('#next-provider-save');await f.idle();
+  const saved=f.writes().find(call=>call.route==='/api/providers').body;
+  assert.equal(saved.preset,'compatible');assert.equal(saved.type,'compatible');assert.equal(saved.baseUrl,'https://gateway.example.cn/v1');assert.equal(saved.apiKey,'custom-fixture-key');assert.equal(saved.expectedUpdatedAt,null);
+  assert.deepEqual(saved.models,[{id:'exact-provider-model',displayName:'exact-provider-model'}]);assert.equal(f.$('#next-provider-key').value,'');
+  await f.open('gateway');await f.open('custom_gateway');assert.equal(f.$('#next-provider-base-url').value,saved.baseUrl);assert.equal(f.$('#next-provider-key').value,'');
+  assert.equal(f.writes().length,1,'Saving and reopening do not test inference or write again.');assert.match(f.$('#next-provider-test').textContent,/catalog/i);
+});
+
+test('credential notes distinguish encrypted saved keys from session-only keys',async t=>{
+  const f=await fixture(t,{providers:[provider(),provider('session',{secretStorage:'session'})]});await f.open();
+  assert.match(f.$('#next-provider-key-note').textContent,/API key saved/);
+  await f.open('session');assert.match(f.$('#next-provider-key-note').textContent,/current session/);assert.match(f.$('#next-provider-key-note').textContent,/after restarting/);
+  assert.doesNotMatch(f.$('#next-provider-key-note').textContent,/API key saved/);assert.equal(f.$('#next-provider-key').value,'');assert.equal(f.writes().length,0);
 });

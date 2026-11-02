@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import http from 'node:http';
 import { Readable, Writable } from 'node:stream';
 import { RemoteSessionStore, REMOTE_SCOPES } from '../lib/remote-access-auth.mjs';
-import { desktopRemoteAccessArgs, parseRemoteAccessArgs, createAccessCode, runRemoteAccessCLI, redeemAccessCode, readAccessCode, validateRuntimeOwnership } from '../lib/remote-access-cli.mjs';
+import { desktopRemoteAccessArgs, parseRemoteAccessArgs, createAccessCode, runRemoteAccessCLI, redeemAccessCode, readAccessCode, inspectAccessRuntime, validateRuntimeOwnership } from '../lib/remote-access-cli.mjs';
 
 const localUrl = 'http://127.0.0.1:21345', publicUrl = 'https://blackice.example.test:8443';
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
@@ -121,6 +122,23 @@ test('a stale, public, or differently owned listener is rejected before a local 
   }
   assert.equal(f.calls.length, 0);
   assert.throws(() => validateRuntimeOwnership(f.runtime, { ...f.observed, startedAt: 'invalid' }));
+});
+
+test('Windows limited-query inspection verifies native image, creation time and listener ownership', { skip: process.platform !== 'win32' }, async t => {
+  const server = http.createServer();
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const runtime = { pid: process.pid, executable: process.execPath, startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(), url: `http://127.0.0.1:${server.address().port}` };
+  const observed = await inspectAccessRuntime(runtime);
+  assert.equal(observed.pid, process.pid);
+  assert.equal(path.win32.resolve(observed.executable).toLowerCase(), path.win32.resolve(process.execPath).toLowerCase());
+  assert.ok(Math.abs(Date.parse(observed.startedAt) - Date.parse(runtime.startedAt)) < 5000);
+  assert.deepEqual(observed.listeners, [{ address: '127.0.0.1', pid: process.pid }]);
+  assert.doesNotThrow(() => validateRuntimeOwnership(runtime, observed));
+  for (const changed of [{ executable: 'C:\\foreign\\BLACKICE.exe' }, { pid: process.pid + 1 }, { startedAt: '2000-01-01T00:00:00Z' }]) {
+    assert.throws(() => validateRuntimeOwnership({ ...runtime, ...changed }, observed), { code: 'ACCESS_RUNTIME_OWNERSHIP' });
+  }
+  await assert.rejects(inspectAccessRuntime({ ...runtime, pid: 2147483647 }), { code: 'ACCESS_HOST_NOT_RUNNING' });
 });
 
 test('remote disabled or a host restart prevents code issuance and never enables exposure', async t => {

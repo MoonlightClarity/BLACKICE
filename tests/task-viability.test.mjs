@@ -50,6 +50,57 @@ test('typed readiness separates essential facts, supported inference, omission a
   assert.throws(()=>validateViabilityRequirements([{ready:true}]),{code:'TASK_VIABILITY_INVALID'});
 });
 
+test('resource findings distinguish confirmed blockers, autonomous repairs and misleading symptoms without manufacturing facts',()=>{
+  const sources=[source('viability:task','Complete the delegated result under existing rights; ordinary terms and a needed user-level installation are already authorized.'),source('viability:workflow','The owning workflow can inspect and repair its authorized target.')];
+  const resource=resolution=>requirement({id:'resource',label:'Required utility',resolution,value:resolution==='blocked'?'The actual target denies the required write right.':'The needed utility is absent; the authorized user-level setup route is available.',sourceIds:['viability:task'],checkedSourceIds:sources.map(item=>item.id),rationale:resolution==='blocked'?'The affected write must wait for an authorized right or alternate supported route; continue the independent summary.':'Inspect existing inventory, install only if absent using the authorized route, and verify the destination before the costly dependent operation.',question:''});
+  const blocked=evaluateViabilityResponse(fixtureResponse([resource('blocked')],sources),sources,{workflowNodeIds:['agent']});
+  assert.equal(blocked.state,'blocked');assert.equal(blocked.analysisReady,true);assert.equal(blocked.blockingFacts[0].dependentNodeIds[0],'agent');assert.match(blocked.blockingFacts[0].remedy,/alternate supported route/);
+  const repair=evaluateViabilityResponse(fixtureResponse([resource('repairable')],sources),sources,{workflowNodeIds:['agent']});
+  assert.equal(repair.state,'ready');assert.equal(repair.blockingFacts.length,0);assert.equal(repair.repairableGaps.length,1);assert.match(repair.repairableGaps[0].remedy,/verify the destination/);
+  const misleading=evaluateViabilityResponse(fixtureResponse([resource('nonblocking')],sources),sources,{workflowNodeIds:['agent']});assert.equal(misleading.state,'ready');assert.equal(misleading.nonblockingSymptoms.length,1);
+  const unsupported=resource('blocked');unsupported.sourceIds=[];assert.equal(evaluateViabilityResponse(fixtureResponse([unsupported],sources),sources).state,'needs_evidence','An unsupported obstacle claim cannot masquerade as a confirmed blocker.');
+});
+
+test('only unchanged current host-consumed upstream responses support feasibility, without self or historical response invalidation loops',()=>{
+  const base=source('viability:task','Complete the existing browser verification; preserve installed work and repair the failed observation.');
+  const upstream={id:'response:intent-a',kind:'response',responseId:'intent-a',revision:1,text:'{"values":{"userBenefit":"Offload routine verification."}}',contentHash:'intent-body-hash',provenance:{kind:'runtime',attemptId:'intent-attempt',contentHash:'intent-body-hash'}};
+  const binding={nodeId:'inference-node',responseId:'intent-a',responseRevision:1};
+  const req=requirement({id:'browser_observations',label:'Current browser evidence',resolution:'repairable',value:'Current keyed settings remain to be inspected by the operational owner.',sourceIds:[base.id,upstream.id],checkedSourceIds:[base.id,upstream.id],rationale:'Perform the authorized compact read and inspect its actual result rather than handing the failed observation back.',question:''});
+  const recorded={id:'feasibility-response',nodeId:'feasibility-node',requirements:[req],sources:[base,upstream],inputs:[binding]};
+  const evaluate=(response=recorded,sources=[base,upstream],bindings=[binding])=>evaluateViabilityResponse(response,sources,{workflowNodeIds:['agent'],upstreamResponses:bindings});
+  assert.equal(evaluate().state,'ready');assert.equal(evaluate().repairableGaps.length,1);
+  assert.equal(evaluate(recorded,[base,upstream],[]).analysisReady,false,'A response in the catalog alone is not an allowed upstream input.');
+  assert.equal(evaluate({...recorded,inputs:[]}).analysisReady,false,'A claimed prerequisite must also have an actual captured consumed input.');
+  assert.equal(evaluate({...recorded,inputs:[{nodeId:'parent',responseId:'parent',responseRevision:1,subtree:[binding]}]}).state,'ready','Exact host-captured subtree bindings remain supported.');
+  assert.equal(evaluate(recorded,[base,upstream],[{...binding,responseId:'intent-b',responseRevision:2}]).analysisReady,false,'A superseded intent remains unusable even while its historical source stays in the catalog.');
+  for(const changed of [{...upstream,text:'Altered claim.'},{...upstream,revision:2},{...upstream,provenance:{...upstream.provenance,attemptId:'different-attempt'}},{...upstream,kind:'source'}])assert.equal(evaluate(recorded,[base,changed]).analysisReady,false,'Changed source identity or provenance remains held.');
+  assert.equal(evaluate(recorded,[base]).analysisReady,false,'Missing current upstream evidence is not repaired by its captured snapshot.');
+  assert.equal(evaluate({...recorded,id:'intent-a'}).analysisReady,false,'Self evidence cannot satisfy its own prerequisite.');
+  assert.equal(evaluate({...recorded,nodeId:'inference-node'}).analysisReady,false,'An old response of the same producer is not an upstream prerequisite.');
+  const unrelated={...upstream,id:'response:later',responseId:'later',revision:4};assert.equal(evaluate(recorded,[base,upstream,unrelated]).state,'ready','Uncited later and self responses do not participate in whole-set freshness.');
+  const unknown=structuredClone(recorded);unknown.requirements[0]={...req,resolution:'unknown',value:'',question:'What essential user fact is missing?',checkedSourceIds:[upstream.id]};
+  const unseen=source('viability:profile','A supplied factual record still needs inspection.');const coverage=evaluate({...unknown,sources:[base,upstream,unseen]},[base,upstream,unseen]);assert.equal(coverage.state,'needs_evidence');assert.ok(coverage.sourceCoverage[0].missingSourceIds.includes(unseen.id),'Upstream analysis cannot substitute for inspecting supplied base facts.');
+});
+
+test('safe resource snapshot separates host and guest rights and optional viewer failure preserves known guest facts',async t=>{
+  const workbench={status:async()=>({vmName:'fixture-guest',capability:{canManageVM:true,processElevated:true},guest:{running:true,agent:{paired:true,privileges:{basis:'interactive-guest-agent-token',administratorToken:false,privateToken:'must-not-leak'}}},canRunNativeApps:true,consoleControl:{owner:'agent',revision:7,token:'must-not-leak'}}),guestNativeConsoleStatus:async()=>{throw Object.assign(Error('viewer status unavailable'),{code:'VIEWER_UNAVAILABLE'});}};
+  const f=await fixture(t,{engine:{workbench}}),sources=await f.service.sources({...f.definition,workbench:true}),captured=JSON.parse(sources.find(item=>item.id==='viability:workbench').text);
+  assert.equal(captured.guest.running,true);assert.equal(captured.guest.hostRights.processElevated,true);assert.equal(captured.guest.guestPrivileges.administratorToken,false);assert.equal(captured.guest.guestPrivileges.known,true);assert.equal(captured.viewer.uncertain,true);assert.equal(captured.viewer.code,'VIEWER_UNAVAILABLE');assert.doesNotMatch(JSON.stringify(captured),/must-not-leak/);
+});
+
+test('host proof discovery distinguishes guest observations, reserved control and native visual evidence',async t=>{
+  const workbench={status:async()=>({vmName:'fixture',guest:{running:true,agent:{paired:true}},consoleControl:{owner:'user',revision:1}})};
+  const f=await fixture(t,{engine:{workbench}}),sources=await f.service.sources({...f.definition,workbench:true});
+  const snapshot=JSON.parse(sources.find(item=>item.id==='viability:workbench').text),proof=snapshot.proofCapabilities;
+  for(const family of Object.values(proof).filter(item=>item&&typeof item==='object'&&item.action)){
+    assert.equal(family.contractExposed,snapshot.actions.includes(family.action),'Discovery describes the actual attached action contract.');
+  }
+  assert.deepEqual(proof.guestScript.operators,['equals','notEmpty','includes']);assert.equal(proof.guestScript.requiresCurrentAdoptedPlan,true);
+  assert.match(proof.guestScript.limits,/model-authored usability Boolean/);assert.match(proof.hostControl.criterionSource,/reserved host-owned/);
+  assert.equal(proof.nativeCapture.producesEffectReceipt,false);assert.match(proof.nativeCapture.preciseReadback,/independently read/);
+  assert.match(proof.nativeCapture.visualEvidence,/actual returned or retained pixels/);
+});
+
 test('an unexamined essential fact is source recovery, not a factual question',()=>{
   const sources=[source('viability:task','Requested form')];
   const result=evaluateViabilityResponse(fixtureResponse([requirement({checkedSourceIds:[]})],sources),sources);

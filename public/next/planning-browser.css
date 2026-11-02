@@ -14,6 +14,24 @@
 .planning-browser .pb-quiet{background:transparent;border-color:transparent;color:#bac4d1}
 .planning-browser .pb-quiet[aria-pressed=true],.pb-view-switch button[aria-pressed=true]{background:#3c4552;border-color:#a9b6c5;color:#fff}
 .pb-layout{display:grid;grid-template-columns:252px minmax(0,1fr);min-height:0;flex:1}
+.pb-phase-rail{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;padding:12px 20px;border-bottom:1px solid #313944;background:#1d232c;flex:none}
+.planning-browser .pb-phase{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;padding:10px 12px;text-align:left;border:1px solid #424e60;background:#252e3a}
+.planning-browser .pb-phase[aria-current=step]{border-color:#b5c3d5;background:#354355}
+.pb-phase-number{font-size:10px;letter-spacing:1px;color:#a2b5ca}
+.pb-phase strong{font-size:12px;line-height:1.3}
+.pb-phase small{color:#aebdcc;font-size:10px;overflow-wrap:anywhere}
+.pb-optional-phases{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:8px 22px;border-bottom:1px solid #313944}
+.pb-optional-phases .pb-eyebrow{margin:0 8px 0 0}
+.planning-browser .pb-optional-phases button{font-size:11px;display:flex;gap:6px;align-items:center}
+.pb-phase-skipped{color:#e0bda2}
+.pb-module-number{font-variant-numeric:tabular-nums;color:#a3bad0;min-width:38px;font-weight:500}
+.pb-done-when{border-left:2px solid #819eac;padding-left:9px}
+.pb-program-source{padding:18px;display:flex;flex-direction:column;min-height:0;overflow:hidden;flex:1}
+.pb-program-source h3{margin:0;font-size:15px}
+.planning-browser .pb-program-xml{display:block;flex:1;min-height:120px;resize:none;padding:14px;font:11px/1.55 Consolas,'Courier New',monospace;color:#c4e0d0;background:#151d25;border:1px solid #495767;border-radius:7px;white-space:pre;overflow:auto}
+.planning-browser .pb-xml-editor textarea{font:11px/1.55 Consolas,'Courier New',monospace;white-space:pre;tab-size:2}
+@media(max-width:1100px){.pb-phase-rail{display:flex;overflow-x:auto}.planning-browser .pb-phase{min-width:120px}.pb-optional-phases{overflow-x:auto;flex-wrap:nowrap}}
+
 .pb-rail{min-width:0;overflow:auto;border-right:1px solid #3b4049;background:#1c2028;padding:18px 12px}
 .pb-rail-head{display:flex;align-items:center;justify-content:space-between;margin:0 7px 12px}
 .pb-rail-head h2{margin:0;font-size:12px;font-weight:600;color:#c2cad6}

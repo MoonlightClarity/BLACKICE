@@ -73,6 +73,82 @@ const values = {
   reversalCondition: 'If the representative records cannot be restored exactly, retain the existing workflow and repair the mapping first.'
 };
 
+
+test('Workbench repeatable app-sync endpoints expose history and reject any installation before guest pairing',async t=>{
+  const {local}=await fixture(t);
+  const empty=await local('/api/workbench/app-sync');
+  assert.equal(empty.status,200);
+  assert.equal(empty.value.currentSnapshot,null);
+  assert.deepEqual(empty.value.runs,[]);
+  const start=await local('/api/workbench/app-sync/start',{method:'POST',body:{}});
+  assert.equal(start.status,409,start.text);
+  const repeat=await local('/api/workbench/app-sync/rebatch',{method:'POST',body:{}});
+  assert.equal(repeat.status,409,repeat.text);
+  const fake=await local('/api/workbench/app-sync/runs/00000000000000000000000000000000');
+  assert.equal(fake.status,404);
+  const ui=await local('/next/workspaces/workbench.mjs');
+  assert.equal(ui.status,200);
+  for(const element of ['wb-apps-scan','wb-apps-rebatch','wb-apps-retry'])
+    assert.ok(ui.text.includes(element),element);
+});
+test('Workbench guest endpoints never execute a host app when no interactive Windows guest is paired',async t=>{
+  const {local,runtime}=await fixture(t);
+  const initial=await local('/api/workbench');
+  assert.equal(initial.status,200);
+  const unpaired=await local('/api/workbench/pair',{method:'POST',body:{}});
+  assert.equal(unpaired.status,409);
+  const refused=await local('/api/workbench/guest-command',{method:'POST',
+    body:{kind:'launch',args:{appPath:'C:\\Windows\\System32\\notepad.exe'}}});
+  assert.equal(refused.status,409);
+  const noMedia=await local('/api/workbench/provision',{method:'POST',body:{}});
+  assert.equal(noMedia.status,409);
+  const missingFrame=await local('/api/workbench/frame/00000000000000000000000000000000');
+  assert.equal(missingFrame.status,404);
+  const agent=await local('/api/workbench/prepare-agent',{method:'POST',body:{}});
+  assert.equal(agent.status,200,agent.text);
+  assert.equal(agent.value.prepared,true);
+  const after=await local('/api/workbench');
+  assert.equal(after.status,200);
+  assert.equal(after.value.canRunNativeApps,false);
+  assert.equal(after.value.config.folders[0].guestMountVerified,false);
+  assert.equal(runtime.calls,0,'Workbench setup must not invoke a model or job-search operation.');
+});
+
+test('Workbench tab and host capability API are available before Hyper-V provisioning, with revisioned shared-folder settings',async t=>{
+  const {local,runtime}=await fixture(t);
+  const anonymous=await local('/api/workbench',{authenticated:false});
+  assert.equal(anonymous.status,401);
+  const first=await local('/api/workbench');
+  assert.equal(first.status,200,first.text);
+  assert.equal(first.value.backend,'hyper-v');
+  assert.equal(first.value.guest.displayReady,false);
+  assert.equal(first.value.canRunNativeApps,false,'A VM that is running is not proof of a connected desktop.');
+  assert.equal(first.value.config.folders[0].readWrite,true);
+  for(const [uri,marker] of [
+    ['/next/workspaces/workbench.mjs','createWorkbenchWorkspace'],
+    ['/next/workbench.css','.next-workbench'],
+  ]){
+    const response=await local(uri);
+    assert.equal(response.status,200,uri+': '+response.text.slice(0,200));
+    assert.match(response.text,new RegExp(marker.replaceAll('.','\\.')));
+  }
+  assert.equal(first.value.resources.mode,'adaptive');
+  assert.equal(Object.hasOwn(first.value.config,'profile'),false);
+  const changed=await local('/api/workbench/config',{method:'POST',
+    body:{expectedRevision:first.value.config.revision,mediaPath:'C:\\Installers\\Win11.iso'}});
+  assert.equal(changed.status,200,changed.text);
+  assert.equal(changed.value.config.mediaPath,'C:\\Installers\\Win11.iso');
+  assert.equal(changed.value.config.revision,first.value.config.revision+1);
+  const stale=await local('/api/workbench/config',{method:'POST',
+    body:{expectedRevision:first.value.config.revision,mediaPath:'C:\\Different.iso'}});
+  assert.equal(stale.status,409,stale.text);
+  const unwanted=await local('/api/workbench/config',{method:'POST',
+    body:{expectedRevision:changed.value.config.revision,profile:'intensive'}});
+  assert.equal(unwanted.status,400,'Manual tuning profiles must no longer be accepted.');
+  assert.equal((await local('/api/workbench')).value.config.mediaPath,'C:\\Installers\\Win11.iso');
+  assert.equal(runtime.calls,0,'Workbench readiness never launches an agent.');
+});
+
 test('Planning browser groups concurrent requests by real conversation without launching a model or rewriting legacy work', async t => {
   const { app, local, runtime } = await fixture(t);
   const before = await readFile(app.tasks.file('legacy-plan'));
@@ -221,6 +297,7 @@ test('browser response-cycle imports are served as JavaScript through actual sta
   for (const [route, marker] of [
     ['/task-viability-model.mjs', 'evaluateViabilityResponse'],
     ['/response-cycle-model.mjs', 'planningExecutionModeOf'],
+    ['/planning-program-xml.mjs', 'parsePlanningProgramXml'],
     ['/next/workspaces/response-cycle-ui.mjs', 'planningExecutionMode']
   ]) {
     const result = await local(route);
@@ -265,6 +342,31 @@ test('New request accepts the exact UI payload and creates one inert five-stage 
   const invalid = await local(BASE + '/requests', { method: 'POST', body: { title: 'Invalid mode', objective: 'Reject without saving.', planningExecutionMode: 'unknown', clientRequestId: 'planning_request_invalid' } });
   assert.equal(invalid.status, 400); assert.equal((await app.planningBrowser.list()).requests.length, before);
   assert.equal(runtime.calls, 0);
+});
+
+test('full XML is exposed through a read-only GET and saved atomically through revision-bound PUT', async t => {
+  const { local, runtime } = await fixture(t);
+  const graph = await create(local);
+  const { graph: withNode, node } = await add(local, graph, 'Compare reversible options');
+  const route = BASE + '/requests/' + graph.id + '/program';
+  const source = await local(route);
+  assert.equal(source.status, 200, source.text);
+  assert.equal(source.value.revision, withNode.revision);
+  assert.match(source.value.xml, /<planning-program version="1"/);
+  const xml = source.value.xml.replace('<title>Compare reversible options</title>', '<title>Compare evidence, not labels</title>');
+  const changed = await local(route, { method: 'PUT', body: { expectedRevision: source.value.revision, xml, clientRequestId: 'xml-edit-once' } });
+  assert.equal(changed.status, 200, changed.text);
+  assert.equal(changed.value.nodes.find(item => item.id === node.id).title, 'Compare evidence, not labels');
+  assert.equal(changed.value.revision, withNode.revision + 1);
+  const repeated = await local(route, { method: 'PUT', body: { expectedRevision: source.value.revision, xml, clientRequestId: 'xml-edit-once' } });
+  assert.equal(repeated.status, 200, repeated.text);
+  assert.equal(repeated.value.revision, changed.value.revision);
+  const stale = await local(route, { method: 'PUT', body: { expectedRevision: source.value.revision, xml, clientRequestId: 'xml-edit-stale' } });
+  assert.equal(stale.status, 409, stale.text);
+  const anonymous = await local(route, { method: 'PUT', authenticated: false, body: { expectedRevision: changed.value.revision, xml } });
+  assert.equal(anonymous.status, 401, anonymous.text);
+  assert.equal((await local(route)).value.revision, changed.value.revision);
+  assert.equal(runtime.calls, 0, 'XML planning edits do not silently start models.');
 });
 
 test('New request retries recover a partially saved creation and retain its original execution mode', async t => {

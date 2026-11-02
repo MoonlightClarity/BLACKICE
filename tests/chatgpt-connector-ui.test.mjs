@@ -16,7 +16,8 @@ test('permission review defaults to all offered permissions and never implies ch
   assert.match(html, /data-connector-scope="read" checked disabled/);
   assert.match(html, /data-connector-scope="commands:run" checked/);
   assert.match(html, /data-connector-scope="files:read" checked/);
-  assert.match(html, /not a system sandbox/);
+  assert.match(html, /Run a shell command in the configured workspace\. Supports cancellation and saved results\./);
+  assert.doesNotMatch(html, /not a system sandbox/);
   assert.match(html, /does not verify the ChatGPT conversation/);
   assert.match(html, /ABCD1234/);
 });

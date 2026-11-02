@@ -1,0 +1,15 @@
+{
+  "id": "host-control-restoration",
+  "label": "Human VM control restored",
+  "description": "The host observes USER ownership after this run returns its authorized VM control, with the enabled sharing features restored.",
+  "verification": "effect",
+  "accuracy": {
+    "mode": "exact",
+    "tolerance": "Actual USER ownership and restored enabled sharing.",
+    "decisionThreshold": "Host declaration is established after return if AGENT control was claimed.",
+    "evidenceNeeded": "Current host-owned control/sharing verification receipt.",
+    "consequence": "False completed handback.",
+    "unknownPolicy": "block",
+    "stopWhen": "Required host restoration is verified; if control was never claimed, preserve the contract's nonapplicability reason."
+  }
+}

@@ -13,7 +13,13 @@ function fakeTimeline() {
       tagName, ownerDocument: document, className: '', dataset: {}, attributes: {},
       children: [], _text: '',
       classList: { add() {} },
-      append(...children) { this.children.push(...children); },
+      append(...children) { for(const child of children){child.remove();child.parentElement=this;this.children.push(child);} },
+      insertBefore(child, before) {
+        child.remove();child.parentElement=this;
+        const index=before?this.children.indexOf(before):this.children.length;
+        this.children.splice(index,0,child);
+      },
+      remove() { if(this.parentElement){const siblings=this.parentElement.children;siblings.splice(siblings.indexOf(this),1);this.parentElement=null;} },
       replaceChildren(...children) {
         this.children = children.flatMap(child => child.tagName === '#fragment' ? child.children : [child]);
         this._text = '';
@@ -25,6 +31,8 @@ function fakeTimeline() {
         return this.children.flatMap(child => descendants(child, node => node.tagName === 'details' && node.dataset.disclosureId !== undefined));
       },
     };
+    Object.defineProperty(node, 'childNodes', {get() {return this.children;}});
+    Object.defineProperty(node, 'lastChild', {get() {return this.children.at(-1);}});
     Object.defineProperty(node, 'textContent', {
       get() { return this._text + this.children.map(child => child.textContent).join(''); },
       set(value) { this._text = String(value ?? ''); this.children = []; },

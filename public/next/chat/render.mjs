@@ -199,9 +199,39 @@ export function chatMessagePhases(messages) {
   return {directions,thinking,responding};
 }
 
+const historyViews = new WeakMap();
+
+// Anchor to visible content, rather than adding the transcript's total height
+// change: new output below the reader must not move older text under the cursor.
+export function captureChatScroll(view) {
+  const scroll=view.scroll,top=scroll.scrollTop;
+  const atBottom=scroll.scrollHeight-top-scroll.clientHeight<100;
+  if(atBottom)return {atBottom};
+  const edge=scroll.getBoundingClientRect().top;
+  const turn=Array.from(view.timeline.querySelectorAll('.next-chat-turn'))
+    .find(node=>node.getBoundingClientRect().bottom>edge);
+  const anchor=Array.from(turn?.querySelectorAll('[data-scroll-anchor]')||[])
+    .find(node=>node.getBoundingClientRect().bottom>edge);
+  return {atBottom,top,key:anchor?.dataset.scrollAnchor,offset:anchor?.getBoundingClientRect().top-edge};
+}
+
+export function restoreChatScroll(view,position,{follow=false}={}) {
+  const scroll=view.scroll;
+  if(follow||position.atBottom){scroll.scrollTop=scroll.scrollHeight;return;}
+  const anchor=position.key&&Array.from(view.timeline.querySelectorAll('[data-scroll-anchor]'))
+    .find(node=>node.dataset.scrollAnchor===position.key);
+  if(anchor)scroll.scrollTop+=anchor.getBoundingClientRect().top-scroll.getBoundingClientRect().top-position.offset;
+  else scroll.scrollTop=position.top;
+}
+
 export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, onArtifact, onMoreMessages, messageLimits, getAttachment }={}) {
   const doc=view.timeline.ownerDocument;
-  const disclosures=new Map(Array.from(view.timeline.querySelectorAll('details[data-disclosure-id]'),node=>[node.dataset.disclosureId,node.open]));
+  let cache=historyViews.get(view.timeline);
+  if(!cache){cache={turns:new Map(),disclosures:new Map()};historyViews.set(view.timeline,cache);}
+  // Retain nested disclosure state even while its closed parent is unmounted.
+  const disclosures=cache.disclosures;
+  for(const node of view.timeline.querySelectorAll('details[data-disclosure-id]'))disclosures.set(node.dataset.disclosureId,node.open);
+  cache.callbacks={onOlder,onStop,onArtifact,onMoreMessages};
   const focused=doc.activeElement;
   const focusId=focused?.tagName==='SUMMARY'?focused.parentElement?.dataset.disclosureId:null;
   let restoreFocus=null;
@@ -209,23 +239,43 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
     const node=text(parent,'','details',className);node.dataset.disclosureId=key;
     node.open=disclosures.get(key)===true;
     const summary=text(node,'','summary');
+    node.addEventListener('toggle',()=>{if(node.isConnected)disclosures.set(key,node.open);});
     if(key===focusId)restoreFocus=summary;
     return {node,summary};
   };
-  const {shown,hidden}=windowedRuns(runs,count), fragment=doc.createDocumentFragment();
+  const populate=(node,build)=>{
+    let built=false;
+    const show=()=>{if(node.open&&!built){built=true;build();}};
+    node.addEventListener('toggle',show);show();
+  };
+  const {shown,hidden}=windowedRuns(runs,count), fragment=doc.createDocumentFragment(),order=[],retained=new Set();
   if (hidden > 0) {
     const older=text(fragment,'Show earlier responses ('+hidden+')','button','next-older');
-    older.type='button';older.addEventListener('click',()=>onOlder?.());
+    older.type='button';older.addEventListener('click',()=>cache.callbacks.onOlder?.());order.push(older);
   }
   if (!shown.length) {
     const placeholder=text(fragment,'The conversation has no saved responses yet.','div','next-chat-intro');
     placeholder.dataset.empty='true';
+    order.push(placeholder);
   }
   for (let index=0; index<shown.length; index++) {
     const run=shown[index];
-    const section=text(fragment,'','section','next-chat-turn');section.dataset.runId=run.id;
     const request=runText(run);
     const earlier=index>0?shown[index-1]:undefined;
+    const allMessages=Array.isArray(run.precomputedMessages)?run.precomputedMessages:messagesOfRun(run);
+    const {shown:messages,hidden:olderMessages}=windowedMessages(
+      allMessages,messageLimits?.get(run.id)??CHAT_MESSAGE_BATCH);
+    const signature=[run,run.status,run.settled,run.output,request,run.retryOf,earlier&&runText(earlier),
+      run===shown.at(-1),run.taskState,run.taskState?.revision,run.planningActivity,run.workflow,markdown,
+      messageLimits?.get(run.id),allMessages.length,...(run.attachmentIds||[]).flatMap(id=>[id,getAttachment?.(id)?.name]),
+      ...messages.flatMap(message=>[message.id,message.text,message.phase,message.provisional,message.role,message.at,message.order,message.nodeId,message.direction])];
+    const previous=cache.turns.get(run.id);
+    retained.add(run.id);
+    if(!running(run)&&previous&&signature.length===previous.signature.length&&signature.every((value,i)=>value===previous.signature[i])){
+      order.push(previous.section);continue;
+    }
+    const section=text(fragment,'','section','next-chat-turn');section.dataset.runId=run.id;order.push(section);
+    cache.turns.set(run.id,{section,signature});
     // Build once per visible turn: otherwise each streamed message searches
     // the entire workflow node array for its display name.
     const nodeNames=new Map();
@@ -235,6 +285,7 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
     // Suppress duplicate original prompt when a retry carries the same request.
     if (request && !(run.retryOf && earlier && runText(earlier)===request)) {
       const user=text(section,'','article','next-message');user.dataset.role='user';
+      user.dataset.scrollAnchor=run.id+':request';
       text(user,'You','div','next-message-title');
       text(user,request,'div','next-message-body');
       const fileIds=Array.isArray(run.attachmentIds)?[...new Set(run.attachmentIds)]:[];
@@ -250,13 +301,10 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
         }
       }
     }
-    const allMessages=Array.isArray(run.precomputedMessages)?run.precomputedMessages:messagesOfRun(run);
-    const {shown:messages,hidden:olderMessages}=windowedMessages(
-      allMessages,messageLimits?.get(run.id)??CHAT_MESSAGE_BATCH);
     if(olderMessages>0){
       const more=text(section,'Show earlier messages ('+olderMessages+')','button','next-older next-message-more');
       more.type='button';more.dataset.messageRun=run.id;
-      more.addEventListener('click',()=>onMoreMessages?.(run.id));
+      more.addEventListener('click',()=>cache.callbacks.onMoreMessages?.(run.id));
     }
     const state=run===shown.at(-1)?run.taskState:null;
     const planView=state?taskPlanView(state,{runStatus:run.status,settled:run.settled}):null;
@@ -266,7 +314,7 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
       if(running(run)||typeof markdown!=='function')body.textContent=message.text;
       else {
         body.innerHTML=markdown(message.text,{resolveArtifact});
-        if(onArtifact)body.addEventListener('click',event=>{const link=event.target.closest?.('[data-task-artifact][data-task-id]');if(link&&body.contains(link)){event.preventDefault();onArtifact({taskId:link.dataset.taskId,artifactId:link.dataset.taskArtifact});}});
+        body.addEventListener('click',event=>{const link=event.target.closest?.('[data-task-artifact][data-task-id]');if(link&&body.contains(link)){event.preventDefault();cache.callbacks.onArtifact?.({taskId:link.dataset.taskId,artifactId:link.dataset.taskArtifact});}});
       }
     };
     const phases=chatDisplayPhases(run,messages);
@@ -277,11 +325,13 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
       if(phase.phase==='direction'){
         for(const entry of phase.entries){
           const article=text(section,'','article','next-message');article.dataset.role='user';
+          article.dataset.scrollAnchor=run.id+':'+entry.id;
           text(article,'You','div','next-message-title');text(article,entry.message.text,'div','next-message-body');
         }
       }else if(!isWork(phase)){
         const article=text(section,'','article','next-message next-chat-response');
         article.dataset.role='assistant';article.dataset.timelineId=phase.id;
+        article.dataset.scrollAnchor=run.id+':'+phase.id;
         for(const entry of phase.entries)appendAssistant(article,entry.message);
       }
     }
@@ -300,73 +350,84 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
       const {node:audit,summary}=disclosure(section,run.id+':details','next-chat-details');
       summary.textContent=hasPlan?'Plan':'Details';
       summary.setAttribute('aria-label',hasPlan?'Plan: expandable steps and evidence':'Details: recorded actions');
-      const body=text(audit,'','div','next-chat-details-body');
-      if(hasPlan){
-        const {done,total,skipped}=planView.progress;
-        text(body,done+' of '+total+' steps complete'+(skipped?' · '+skipped+' skipped':''),'p','next-help next-chat-outline-progress');
-        const appendOutline=(list,items)=>{
-          for(const item of items){
-            const row=text(list,'','li','next-chat-outline-item');row.dataset.stepId=item.id;row.dataset.stepNumber=item.number;
-            const fields=[['Done when',item.doneWhen],['Evidence',item.evidence],['Blocked by',item.blockedReason]]
-              .filter(([,value])=>typeof value==='string'&&value.trim());
-            let line,content;
-            if(item.children.length||fields.length){
-              const branch=disclosure(row,run.id+':step:'+item.id,'next-chat-outline-node');
-              line=branch.summary;line.className='next-chat-outline-line';
-              content=text(branch.node,'','div','next-chat-outline-content');
-            }else line=text(row,'','div','next-chat-outline-line next-chat-outline-leaf');
-            text(line,item.number,'span','next-chat-outline-number');
-            text(line,item.title,'span','next-chat-outline-title');
-            const badge=text(line,chatOutlineStatusLabel(item),'small','next-chat-outline-state');badge.dataset.state=item.status||'pending';
-            if(item.isGroup)badge.title='Recorded progress of the saved steps in this group';
-            if(item.children.length)appendOutline(text(content,'','ol','next-chat-plan-outline'),item.children);
-            for(const [label,value]of fields){
-              const field=text(content,'','p','next-chat-outline-evidence');
-              text(field,label+' · ','strong');text(field,value,'span');
+      populate(audit,()=>{
+        const body=text(audit,'','div','next-chat-details-body');
+        if(hasPlan){
+          const {done,total,skipped}=planView.progress;
+          text(body,done+' of '+total+' steps complete'+(skipped?' · '+skipped+' skipped':''),'p','next-help next-chat-outline-progress');
+          const appendOutline=(list,items)=>{
+            for(const item of items){
+              const row=text(list,'','li','next-chat-outline-item');row.dataset.stepId=item.id;row.dataset.stepNumber=item.number;
+              const fields=[['Done when',item.doneWhen],['Evidence',item.evidence],['Blocked by',item.blockedReason]]
+                .filter(([,value])=>typeof value==='string'&&value.trim());
+              let line,content;
+              if(item.children.length||fields.length){
+                const branch=disclosure(row,run.id+':step:'+item.id,'next-chat-outline-node');
+                line=branch.summary;line.className='next-chat-outline-line';
+                content=text(branch.node,'','div','next-chat-outline-content');
+              }else line=text(row,'','div','next-chat-outline-line next-chat-outline-leaf');
+              text(line,item.number,'span','next-chat-outline-number');
+              text(line,item.title,'span','next-chat-outline-title');
+              const badge=text(line,chatOutlineStatusLabel(item),'small','next-chat-outline-state');badge.dataset.state=item.status||'pending';
+              if(item.isGroup)badge.title='Recorded progress of the saved steps in this group';
+              const appendFields=()=>{
+                if(item.children.length)appendOutline(text(content,'','ol','next-chat-plan-outline'),item.children);
+                for(const [label,value]of fields){
+                  const field=text(content,'','p','next-chat-outline-evidence');
+                  text(field,label+' · ','strong');text(field,value,'span');
+                }
+              };
+              if(content)populate(content.parentElement,appendFields);
             }
-          }
-        };
-        appendOutline(text(body,'','ol','next-chat-plan-outline'),planView.roots);
-      }
-      if(workPhases.length){
-        const {node:history,summary:historySummary}=disclosure(body,run.id+':history','next-chat-outline-history');
-        historySummary.textContent='History';
-        if(progress.count)text(history,progress.count+' recorded '+(progress.count===1?'update':'updates'),'p','next-help next-chat-details-count');
-        const list=text(history,'','ol','next-chat-audit-outline');
-        for(const phase of phases){
-          if(!isWork(phase)&&phase.phase!=='direction')continue;
-          for(const entry of phase.entries){
-            const row=text(list,'','li');row.dataset.phase=phase.phase;
-            if(!entry.message){row.dataset.activityId=entry.id;row.dataset.activitySource=entry.source;}
-            const {node:record,summary:recordSummary}=disclosure(row,run.id+':activity:'+entry.id,'next-chat-audit-node');
-            const label=entry.message?(phase.phase==='direction'?'You · ':'')+chatProgressPreview(entry.message.text):
-              [nodeNames.size>1&&nodeNames.get(entry.nodeId),entry.title].filter(Boolean).join(' · ');
-            text(recordSummary,label,'span');
-            if(entry.at)text(recordSummary,new Date(entry.at).toLocaleTimeString(),'time','next-help');
-            const content=text(record,'','div','next-chat-outline-evidence');
-            if(entry.message){
-              if(phase.phase==='direction')text(content,entry.message.text,'p');
-              else appendAssistant(content,entry.message);
-            }else text(content,entry.text,'p');
-            if(entry.nextStepId)text(content,'Next saved step: '+entry.nextStepId,'p','next-help');
-          }
+          };
+          appendOutline(text(body,'','ol','next-chat-plan-outline'),planView.roots);
         }
-      }
+        if(workPhases.length){
+          const {node:history,summary:historySummary}=disclosure(body,run.id+':history','next-chat-outline-history');
+          historySummary.textContent='History';
+          populate(history,()=>{
+            if(progress.count)text(history,progress.count+' recorded '+(progress.count===1?'update':'updates'),'p','next-help next-chat-details-count');
+            const list=text(history,'','ol','next-chat-audit-outline');
+            for(const phase of phases){
+              if(!isWork(phase)&&phase.phase!=='direction')continue;
+              for(const entry of phase.entries){
+                const row=text(list,'','li');row.dataset.phase=phase.phase;
+                if(!entry.message){row.dataset.activityId=entry.id;row.dataset.activitySource=entry.source;}
+                const {node:record,summary:recordSummary}=disclosure(row,run.id+':activity:'+entry.id,'next-chat-audit-node');
+                const label=entry.message?(phase.phase==='direction'?'You · ':'')+chatProgressPreview(entry.message.text):
+                  [nodeNames.size>1&&nodeNames.get(entry.nodeId),entry.title].filter(Boolean).join(' · ');
+                text(recordSummary,label,'span');
+                if(entry.at)text(recordSummary,new Date(entry.at).toLocaleTimeString(),'time','next-help');
+                populate(record,()=>{
+                  const content=text(record,'','div','next-chat-outline-evidence');
+                  if(entry.message){
+                    if(phase.phase==='direction')text(content,entry.message.text,'p');
+                    else appendAssistant(content,entry.message);
+                  }else text(content,entry.text,'p');
+                  if(entry.nextStepId)text(content,'Next saved step: '+entry.nextStepId,'p','next-help');
+                });
+              }
+            }
+          });
+        }
+      });
     }
     if(state){
       if(Array.isArray(state.artifacts)&&state.artifacts.length){
         const {node:details,summary}=disclosure(section,run.id+':files','next-chat-task-summary');
         summary.textContent='Files · '+state.artifacts.length;
-        for(const artifact of state.artifacts){
-          if(typeof artifact.id!=='string')continue;
-          const file=text(details,'','div','next-chat-saved-file');
-          const button=text(file,artifact.title||artifact.fileName||'Saved file','button');
-          button.type='button';
-          button.addEventListener('click',()=>onArtifact?.({
-            taskId:state.taskId||run.taskId,artifactId:artifact.id,
-          }));
-          if(artifact.size!=null)text(file,Number(artifact.size).toLocaleString()+' bytes','span','next-help');
-        }
+        populate(details,()=>{
+          for(const artifact of state.artifacts){
+            if(typeof artifact.id!=='string')continue;
+            const file=text(details,'','div','next-chat-saved-file');
+            const button=text(file,artifact.title||artifact.fileName||'Saved file','button');
+            button.type='button';
+            button.addEventListener('click',()=>cache.callbacks.onArtifact?.({
+              taskId:state.taskId||run.taskId,artifactId:artifact.id,
+            }));
+            if(artifact.size!=null)text(file,Number(artifact.size).toLocaleString()+' bytes','span','next-help');
+          }
+        });
       }
     }
     const footer=text(section,'','div','next-turn-meta');
@@ -374,12 +435,17 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
     pill.dataset.state=run.status||'saved';
     if(run.status==='completed'&&run.settled===true&&hasPlan&&!planView.complete)text(footer,'Unfinished steps','span','next-turn-note');
     if (['failed','cancelled'].includes(run.status) && run.settled===true) {
-      const retry=text(footer,'Retry','button');retry.type='button';retry.addEventListener('click',()=>onStop?.('retry',run.id));
+      const retry=text(footer,'Retry','button');retry.type='button';retry.addEventListener('click',()=>cache.callbacks.onStop?.('retry',run.id));
     }
-    if(running(run)){const stop=text(footer,'Stop','button');stop.type='button';stop.addEventListener('click',()=>onStop?.('stop',run.id));}
+    if(running(run)){const stop=text(footer,'Stop','button');stop.type='button';stop.addEventListener('click',()=>cache.callbacks.onStop?.('stop',run.id));}
   }
-  view.timeline.replaceChildren(fragment);
-  restoreFocus?.focus({preventScroll:true});
+  // Replacing the full transcript throws away Chromium's remembered sizes for
+  // content-visibility turns and forces layout again during the next scroll.
+  for(let i=0;i<order.length;i++)if(view.timeline.childNodes[i]!==order[i])view.timeline.insertBefore(order[i],view.timeline.childNodes[i]||null);
+  while(view.timeline.childNodes.length>order.length)view.timeline.lastChild.remove();
+  for(const id of cache.turns.keys())if(!retained.has(id))cache.turns.delete(id);
+  for(const key of disclosures.keys())if(!shown.some(run=>key.startsWith(run.id+':')))disclosures.delete(key);
+  if(restoreFocus&&doc.activeElement!==focused)restoreFocus.focus({preventScroll:true});
 }
 export function paintModels(view,status,selected={}) {
   const choices=chatOptionChoices(status||{},typeof selected==='string'?{model:selected}:selected);

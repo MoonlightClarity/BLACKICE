@@ -7,6 +7,7 @@ import path from 'node:path';
 import {CodexRuntime} from '../lib/codex.mjs';
 import {ProviderRuntime} from '../lib/providers.mjs';
 import {PLANNING_RESPONSE_DISABLED_FEATURES,planningResponseFeatureConfig,verifyPlanningResponseBoundary,normalizeOutputSchema} from '../lib/response-profile.mjs';
+import {planningSkillInstructions,PLANNING_SKILL_CONTENT} from '../lib/planning-skill.mjs';
 
 const schema={type:'object',additionalProperties:false,properties:{answer:{type:'string'}},required:['answer']};
 const answer='{"answer":"Actual public synthetic result"}';
@@ -43,9 +44,10 @@ function nativeFixture(t,{ignoredFeature,missingFeature,sandbox,approvalPolicy,f
 }
 
 test('native analytical worker verifies actual disabled features and sandbox before its schema-bound turn',async t=>{
-  const f=nativeFixture(t);const result=await f.run();assert.equal(result.output,answer);
+  const f=nativeFixture(t),skill=planningSkillInstructions('on');const result=await f.run({developerInstructions:skill});assert.equal(result.output,answer);
   const opening=f.requests.find(x=>x.method==='thread/start').params,turn=f.requests.find(x=>x.method==='turn/start').params;
   assert.equal(opening.model,'native-exact');assert.equal(opening.allowProviderModelFallback,false);assert.equal(opening.sandbox,'read-only');assert.equal(opening.ephemeral,true);
+  assert.equal(opening.developerInstructions,skill);assert.equal(opening.developerInstructions.split(PLANNING_SKILL_CONTENT).length,2);
   assert.deepEqual(opening.environments,[]);assert.deepEqual(opening.selectedCapabilityRoots,[]);assert.equal(opening.dynamicTools,undefined);
   for(const name of PLANNING_RESPONSE_DISABLED_FEATURES)assert.equal(opening.config['features.'+name],false);
   assert.equal(opening.config.web_search,'disabled');assert.equal(opening.config.plugins.ambient.enabled,false);assert.equal(opening.config.mcp_servers.ambient.enabled,false);

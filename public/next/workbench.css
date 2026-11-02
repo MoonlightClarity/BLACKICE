@@ -1,0 +1,48 @@
+/* Workbench launcher/setup: shared BLACKICE panel, card, field and button theme. */
+.next-workbench .wb-launcher-page{max-width:1100px}
+.next-workbench .wb-launch-card{padding:25px}
+.next-workbench .wb-launch-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px}
+.next-workbench .wb-launch-heading h2{margin:0;font-size:20px}
+.next-workbench .wb-launch-card>p{max-width:720px;color:var(--muted)}
+.next-workbench .wb-launch-actions{margin:20px 0 12px}
+.next-workbench .wb-launch-actions .next-primary{min-height:40px;padding:9px 18px}
+.next-workbench .wb-controls-note{padding-top:12px;border-top:1px solid var(--line)}
+.next-workbench .wb-connection-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;margin:0}
+.next-workbench .wb-connection-summary dt{font-size:11px;color:var(--muted);margin-bottom:5px}
+.next-workbench .wb-connection-summary dd{margin:0;font-size:13px;overflow-wrap:anywhere}
+.next-workbench .wb-advanced-setup>summary{cursor:pointer;font-size:14px;font-weight:600;color:var(--text,inherit)}
+.next-workbench .wb-setup-intro{margin:14px 0 18px}
+.next-workbench .wb-setup-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.next-workbench .wb-setup-grid>.next-card{min-width:0}
+.next-workbench .next-card h2{margin-top:0}
+.next-workbench .wb-field-actions{margin:12px 0}
+.next-workbench #wb-media-candidates{margin:10px 0}
+.next-workbench #wb-media-candidates button{text-align:left;white-space:normal;overflow-wrap:anywhere}
+.next-workbench .wb-folder-list{display:grid;gap:9px;margin-bottom:16px}
+.next-workbench .wb-folder{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px;border:1px solid var(--line);border-radius:5px}
+.next-workbench .wb-folder>div{min-width:0}
+.next-workbench .wb-folder strong,.next-workbench .wb-folder p{overflow-wrap:anywhere}
+.next-workbench .wb-folder p{margin:5px 0}
+.next-workbench .wb-folder button{flex:none}
+.next-workbench .wb-folder-form{display:grid;gap:10px}
+.next-workbench .wb-folder-form button{justify-self:start}
+.next-workbench .wb-checkbox{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px}
+.next-workbench .wb-host-details{margin-top:14px}
+.next-workbench .wb-host-details>summary{cursor:pointer;color:var(--muted);font-size:12px}
+.next-workbench .wb-details{display:grid;grid-template-columns:minmax(120px,1fr) 2fr;gap:8px 16px;margin:14px 0 0}
+.next-workbench .wb-details dt{color:var(--muted)}
+.next-workbench .wb-details dd{margin:0;overflow-wrap:anywhere}
+.next-workbench .wb-blockers{padding-left:20px;color:var(--muted)}
+.next-workbench .wb-blockers li{margin:6px 0}
+.next-workbench .wb-setup-output{padding:12px;background:var(--raised);border:1px solid var(--line);border-radius:5px;color:var(--muted);font-size:11px;max-height:320px;overflow:auto;white-space:pre-wrap}
+.next-workbench .wb-apps-runs{display:grid;gap:9px;margin-top:14px}
+.next-workbench .wb-app-run{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:12px;border:1px solid var(--line);border-radius:5px}
+.next-workbench .wb-app-run p{margin:5px 0 0}
+.next-workbench .wb-app-run button{flex:none}
+.next-workbench .wb-feedback-error{color:#e6af99;border-color:#866257}
+.next-workbench .wb-setup-guide>summary,.next-workbench .wb-guide-agent>summary{cursor:pointer;font-weight:600}
+.next-workbench .wb-guide-steps{display:grid;gap:14px;padding-left:22px;color:var(--muted)}
+.next-workbench .wb-guide-steps strong{color:inherit}
+.next-workbench .wb-setup-guide code{overflow-wrap:anywhere;white-space:normal}
+.next-workbench .wb-guide-agent{border-top:1px solid var(--line);padding-top:12px;margin-top:16px}
+@media(max-width:780px){.next-workbench .wb-setup-grid{grid-template-columns:1fr}.next-workbench .wb-connection-summary{grid-template-columns:1fr;gap:14px}.next-workbench .wb-launch-heading{align-items:flex-start;flex-direction:column}.next-workbench .wb-folder,.next-workbench .wb-app-run{align-items:flex-start;flex-direction:column}.next-workbench .wb-launch-card{padding:18px}}

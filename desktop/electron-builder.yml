@@ -14,17 +14,32 @@ files:
   - server.mjs
   - public/**/*
   - lib/**/*
+  - skills/planning/SKILL.md
   - scripts/generate-noir-background.mjs
   - scripts/noir-scene.config.json
   - scripts/chatgpt-bridge.mjs
   - scripts/email-oauth-token.mjs
   - scripts/remote-access-cli.mjs
   - scripts/browser-cli.mjs
+  - scripts/workbench-guest-agent.ps1
+  - scripts/workbench-guest-display.ps1
+  - scripts/workbench-agent-job.ps1
+  - scripts/workbench-guest-setup.ps1
+  - scripts/workbench-guest-app-batch.ps1
+  - scripts/workbench-desktop-stream.ps1
+  - scripts/install-workbench-guest-video.ps1
+  - scripts/workbench-rdp-preflight.ps1
+  - scripts/workbench-native-host-preflight.ps1
+  - scripts/package-workbench-freerdp.mjs
+  - resources/guest/workbench-guest-video.exe
+  - resources/guest/LICENSE-jpegn.txt
+  - scripts/workbench-headless-broker.ps1
   - scripts/chatgpt-cli.mjs
   - scripts/repair-shortcuts.ps1
   - BROWSER-IMPORT.md
   - CHATGPT-BRIDGE.md
   - CHATGPT-CONNECTOR.md
+  - WORKBENCH-NATIVE-DISPLAY.md
   - desktop/**/*.mjs
   - desktop/**/*.cjs
   - desktop/**/*.cs
@@ -82,7 +97,9 @@ win:
       arch:
         - x64
   signAndEditExecutable: true
-  requestedExecutionLevel: asInvoker
+  # BLACKICE starts elevated by default. Browser renderer compatibility under
+  # an administrator token is tracked separately from the Windows launch policy.
+  requestedExecutionLevel: requireAdministrator
 artifactName: Blackice-${version}-Setup.${ext}
 nsis:
   oneClick: false

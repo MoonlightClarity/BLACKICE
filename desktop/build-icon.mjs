@@ -11,6 +11,8 @@ import path from 'node:path';
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const check = process.argv.includes('--check');
+const workbench = process.argv.includes('--workbench');
+const sourceName = workbench ? 'workbench-icon.svg' : 'icon.svg';
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const sizes = [16, 24, 32, 48, 64, 128, 256];
 let window;
@@ -60,7 +62,7 @@ function encodeIco(images) {
 async function main() {
 try {
   stage('read-vector-source');
-  const source = await readFile(path.join(directory, 'icon.svg'));
+  const source = await readFile(path.join(directory, sourceName));
   const svg = source.toString('utf8');
   if (!/<svg\b/.test(svg) || /<image\b|<script\b|<foreignObject\b|\bhref\s*=|@import|data:/i.test(svg)) {
     throw new Error('The icon source must contain self-contained vector geometry.');
@@ -94,11 +96,15 @@ try {
   const master = images.find(image => image.size === 512).png;
   const ico = encodeIco(images.filter(image => image.size !== 512));
   const manifest = Buffer.from(JSON.stringify({
-    schemaVersion: 1, source: 'icon.svg', sourceSha256: sha256(source),
+    schemaVersion: 1, source: sourceName, sourceSha256: sha256(source),
     renderer: {electron: process.versions.electron, chromium: process.versions.chrome},
     pngSha256: sha256(master), icoSha256: sha256(ico), sizes,
   }, null, 2) + '\n');
-  const outputs = [
+  const outputs = workbench ? [
+    [path.join(directory, 'workbench-icon.png'), master],
+    [path.join(directory, 'workbench-icon.ico'), ico],
+    [path.join(directory, 'workbench-icon.manifest.json'), manifest],
+  ] : [
     [path.join(directory, 'blackice-icon.png'), master],
     [path.join(directory, 'icon.ico'), ico],
     [path.join(directory, 'icon.manifest.json'), manifest],
@@ -111,7 +117,7 @@ try {
     } else await atomicWrite(destination, bytes);
   }
   stage('complete');
-  process.stdout.write(JSON.stringify({ok: true, check, sourceSha256: sha256(source), sizes, nativeFiles: ['blackice-icon.png', 'icon.ico', 'icon.manifest.json']}) + '\n');
+  process.stdout.write(JSON.stringify({ok: true, check, sourceSha256: sha256(source), sizes, nativeFiles: workbench ? ['workbench-icon.png', 'workbench-icon.ico', 'workbench-icon.manifest.json'] : ['blackice-icon.png', 'icon.ico', 'icon.manifest.json']}) + '\n');
 } catch (error) {
   process.stderr.write(`BLACKICE icon build failed during ${phase}: ${error.message}\n`);
   process.exitCode = 1;

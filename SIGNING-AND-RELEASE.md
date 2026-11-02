@@ -14,6 +14,14 @@ When the project is directly inside an `outputs` directory, the candidate is wri
 
 Setup uses the BLACKICE program name, `BLACKICE.exe`, Start menu and Desktop shortcuts, and an Installed apps entry with an uninstaller. The stable application ID, package identity, and `%APPDATA%\Relay` profile directory remain unchanged for installation and data continuity. Do not rename those identifiers as a branding cleanup. Uninstalling preserves profile data.
 
+## Release priorities and Windows Smart App Control
+
+**The current BLACKICE project intentionally ships unsigned Windows builds.** BLACKICE is free and open source, maintained by one person without a signing budget. Code signing is a possible later improvement *after adoption*, not a required milestone or a reason to divert development time from working features. No paid certificate or signing service should be purchased to publish this project.
+
+**Recommended Windows configuration for unsigned builds:** turn **Smart App Control Off** at **Windows Security → App & browser control → Smart App Control settings → Off**. On November 1, 2026, the developer's Windows machine was running Smart App Control in enforcement mode and it **blocked a locally built unsigned BLACKICE installer**, as shown by Code Integrity events 3033/3077. Smart App Control On is therefore not a compatibility target for unsigned BLACKICE releases; **Off is recommended and now configured (registry value 0)**; a freshly compiled unsigned test executable ran without a Code Integrity block, but the Windows policy-refresh command hung, but the previously blocked unsigned NSIS build subsequently succeeded with no new Code Integrity blocks. The installer itself has not been run or verified end-to-end. The setting is system-wide, reducing Windows blocking of other untrusted applications. Switching it back on depends on Windows version and eligibility. The developer's UAC consent setting was separately observed as **Never notify** (`ConsentPromptBehaviorAdmin=0`, `EnableLUA=1`); do not conflate UAC with Smart App Control.
+
+Do not attempt to install incomplete or blocked Setup files. Do not work around this by disabling Defender antivirus, firewall rules or other unrelated protections. Validation of the actual packaged binary and release SHA-256 remains valuable even without code signing.
+
 ## Repeatable source and native verification
 
 Use a clean checkout of the exact source commit on Windows and Node.js 22.12 or newer. Record the source commit, Node/npm versions, native browser version, and test log hashes with the candidate's evidence. `package-lock.json` fixes the desktop build dependencies, including Electron 44.7.2 and electron-builder 26.15.3. Both generated native Chrome connection routes use the shared `chrome-devtools-mcp@1.11.0` pin in `lib/chrome-browser-policy.mjs`; that separately launched adapter is not bundled by the application's npm lockfile. A native browser remains an installed host dependency, so its version must be recorded rather than inferred from the source checkout.
@@ -75,7 +83,9 @@ The request is deliberately not created by packaging. The workflow binds the req
 
 A rerun can recover a complete draft only when it targets the same commit and its exact installer, manifest, and checksums agree. A partial draft, another source target, or an already published version is reported for inspection instead of replaced. No browser session or personal token is required: the release actions use the repository's ordinary GitHub Actions token.
 
-## Optional existing signing identity
+## Deferred signing integration (not a current release requirement)
+
+BLACKICE does not maintain a signing provider, buy signing certificates, or include certificate enrollment in its development roadmap at the current adoption level. Existing optional signing hooks below are retained only for future reuse; do not spend development time on them in the normal unsigned release workflow.
 
 Without a signing identity, the installer is explicitly unsigned. Its manifest records `signing.status: "unsigned"`, null publisher fields, and `publisherVerified: false`. Windows has not verified a BLACKICE publisher identity. No signing account or paid service is required for that release policy.
 

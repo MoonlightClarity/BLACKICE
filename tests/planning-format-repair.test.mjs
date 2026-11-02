@@ -57,6 +57,7 @@ test('one format repair has separate durable receipts, identical captured inputs
   const admitted=await f.runner.start({...options,providerBudget:budget}),finished=await f.runner.wait(options.requestId,admitted.attempt.id);
   assert.equal(f.calls.length,2);assert.equal(budget.used,2);assert.equal(finished.attempt.status,'completed');assert.equal(finished.attemptChain.length,2);
   const saved=await f.store.get(options.requestId),[failed,repaired]=saved.attempts;
+  assert.equal(failed.pipelineVersion,2);assert.equal(repaired.pipelineVersion,2);assert.ok(repaired.template.fields.some(field=>field.id==='resources'),'A standalone v2 resource contract survives format repair.');
   assert.equal(failed.status,'failed');assert.equal(failed.validation.code,'TASK_VIABILITY_INVALID');assert.equal(failed.repairAttemptId,repaired.id);assert.equal(repaired.repairOf,failed.id);assert.equal(repaired.repairIndex,1);assert.equal(repaired.status,'completed');
   for(const key of ['node','template','sources','inputs','challenges','workflowNodeIds'])assert.deepEqual(repaired[key],failed[key]);
   assert.notEqual(failed.metadata.runId,repaired.metadata.runId);assert.notEqual(failed.metadata.threadId,repaired.metadata.threadId);assert.equal(failed.metadata.capabilities.structuredOutputTransport,'response_format');assert.equal(repaired.metadata.capabilities.hostValidationRequired,true);

@@ -11,6 +11,8 @@ ChatGPT owns the conversation and reasoning. BLACKICE supplies direct tools for 
 5. Start a new conversation in ordinary **Chat mode**. Type `@BLACKICE` and choose **Plugins → BLACKICE connection**. A typed name, uploaded source archive, package listing, or Files-only picker does not attach this computer's tools.
 6. Send the setup guide's unique status-check prompt in that conversation. Verify the returned nonce, `app: "BLACKICE"`, `mode: "direct-execution"`, `available: true`, `modelStarted: false` and `providerTurns: false`. Inspect `grantedScopes` for the capabilities you approved. Only after seeing that actual matching result, choose **I see the matching result in ChatGPT** in BLACKICE.
 
+**Command access (`commands:run`):** Run a shell command in the configured workspace. Supports cancellation and saved results.
+
 These host setup and authentication concepts are covered by [OpenAI's custom MCP setup](https://developers.openai.com/api/docs/guides/custom-mcp-server) and [OAuth/CIMD documentation](https://developers.openai.com/plugins/build/auth). Account and workspace policy can affect which controls are available.
 
 New profiles use standard HTTPS port **443**, displayed without a port suffix. Saved **8443** profiles retain their existing URL. Use the exact displayed address; changing the origin invalidates the old grant and requires authorization again. BLACKICE refuses to adopt an unowned root route automatically. A reviewed, explicitly authorized migration must preserve other paths, unrelated routes and their existing public/private exposure. See [Remote access](REMOTE-ACCESS.md).

@@ -1,6 +1,7 @@
 import { text } from '../core/dom.mjs';
 import { workflowCatalogWindow } from './workflow-overview-model.mjs';
 import { createTaskHistory } from './task-lifecycle.mjs';
+import { createWorkflowActivityUI } from './workflow-execution.mjs';
 import { jobLinkedRun } from './tasks-visual-model.mjs';
 import { scheduleTriggerLabel, scheduleEditDraft, scheduleUpdateFromDraft, scheduleJobs } from './schedule-inspection-model.mjs';
 
@@ -11,10 +12,14 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     '<button type="button" id="next-tasks-refresh">Refresh</button></header>',
     '<nav class="next-visual-tabs" role="tablist" aria-label="Tasks views">',
     '<button type="button" role="tab" id="next-tasks-tab-board" aria-selected="true" aria-controls="next-tasks-panel-board">Work board</button>',
+    '<button type="button" role="tab" id="next-tasks-tab-timeline" aria-selected="false" aria-controls="next-tasks-panel-timeline" tabindex="-1">Task timeline</button>',
+    '<button type="button" role="tab" id="next-tasks-tab-workflows" aria-selected="false" aria-controls="next-tasks-panel-workflows" tabindex="-1">Workflows</button>',
     '<button type="button" role="tab" id="next-tasks-tab-schedules" aria-selected="false" aria-controls="next-tasks-panel-schedules" tabindex="-1">Schedules</button>',
     '<button type="button" role="tab" id="next-tasks-tab-results" aria-selected="false" aria-controls="next-tasks-panel-results" tabindex="-1">Results</button>',
     '<button type="button" role="tab" id="next-tasks-tab-jobs" aria-selected="false" aria-controls="next-tasks-panel-jobs" tabindex="-1">Job history</button></nav>',
     '<section id="next-tasks-panel-board" class="next-task-panel" role="tabpanel" aria-labelledby="next-tasks-tab-board"><section id="next-tasks-history"></section></section>',
+    '<section id="next-tasks-panel-timeline" class="next-task-panel" role="tabpanel" aria-labelledby="next-tasks-tab-timeline" hidden><section id="next-tasks-timeline"></section></section>',
+    '<section id="next-tasks-panel-workflows" class="next-task-panel" role="tabpanel" aria-labelledby="next-tasks-tab-workflows" hidden><section id="next-tasks-workflows"></section></section>',
     '<section id="next-tasks-panel-schedules" class="next-task-panel" role="tabpanel" aria-labelledby="next-tasks-tab-schedules" hidden>',
     '<header class="next-task-schedules-head"><h2>Schedules</h2><div class="next-row"><button type="button" id="next-tasks-pause">Pause schedules</button><button type="button" id="next-tasks-resume">Resume</button></div></header>',
     '<p class="next-help" role="status" id="next-tasks-info">Loading schedules…</p>',
@@ -59,7 +64,9 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
   let workflowList=[],workflowLimit=80,workflowQuery='',workflowEpoch=0,workflowTimer=null,workflowLoaded=false,workflowLoading=false;
   let section='board',jobsLimit=35,selectedScheduleId=null,scheduleMode='inspect',editSource=null,editForm=null,editNotice=null;
   const readinessBySchedule=new Map();
-  const sections=['board','schedules','results','jobs'];
+  const sections=['board','timeline','workflows','schedules','results','jobs'];
+  const operationsSection=()=>['schedules','results','jobs'].includes(section);
+  let timeline=null,workflows=null;
   const history=createTaskHistory({mount:$('next-tasks-history'),api,events,notify,onNavigate,prefix:'next-tasks-history',presentation:'board'});
   const humanTime=value=>{
     if(!value)return'Not scheduled';
@@ -79,7 +86,18 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     for(const id of sections){const tab=$('next-tasks-tab-'+id);tab.setAttribute('aria-selected',String(id===section));tab.tabIndex=id===section?0:-1;$('next-tasks-panel-'+id).hidden=id!==section;}
     if(focus)$('next-tasks-tab-'+name).focus();
     if(!active)return;
-    if(section==='board')history.enter();else {history.leave();void refresh();}
+    revision++;clearTimeout(refreshTimer);refreshTimer=null;
+    if(section!=='board')history.leave();
+    if(section!=='timeline')timeline?.leave();
+    if(section!=='workflows')workflows?.leave();
+    if(section==='board')history.enter();
+    else if(section==='timeline'){
+      timeline??=createTaskHistory({mount:$('next-tasks-timeline'),api,events,notify,onNavigate,prefix:'next-tasks-timeline',presentation:'timeline'});
+      timeline.enter();
+    }else if(section==='workflows'){
+      workflows??=createWorkflowActivityUI({mount:$('next-tasks-workflows'),api,events,getStatus,notify,onNavigate});
+      workflows.enter();workflows.updateStatus?.(getStatus?.());
+    }else void refresh();
     if(section==='schedules'&&!workflowLoaded&&!workflowLoading)void fillWorkflows();
   }
   for(const name of sections){
@@ -530,7 +548,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     }
   }
   async function refresh(){
-    if(!active)return;
+    if(!active||!operationsSection())return;
     const generation=++revision;
     try{
       const result=await api('/api/operations');
@@ -591,6 +609,8 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
   view.workflowMore.addEventListener('click',()=>{workflowLimit+=80;paintWorkflowOptions();});
   $('next-tasks-refresh').addEventListener('click',()=>{
     if(section==='board')$('next-tasks-history-refresh').click();
+    else if(section==='timeline')$('next-tasks-timeline-refresh').click();
+    else if(section==='workflows'){workflows?.leave();workflows?.enter();workflows?.updateStatus?.(getStatus?.());}
     else{void refresh();if(section==='schedules')void fillWorkflows();}
   });
   $('next-tasks-jobs-more').addEventListener('click',()=>{jobsLimit+=35;paint();});
@@ -641,11 +661,11 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       if(active)paint();
     }
   });
-  function onEvent(event){if(!active||section==='board'||event.type!=='operations.updated')return;clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>void refresh(),700);}
+  function onEvent(event){if(!active||!operationsSection()||event.type!=='operations.updated')return;clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>void refresh(),700);}
   return{
     enter(){if(active)return;active=true;subscriptions=events.subscribe(onEvent);activateSection(section);},
-    leave(){active=false;revision++;workflowEpoch++;workflowLoaded=false;workflowLoading=false;history.leave();subscriptions?.();subscriptions=null;clearTimeout(refreshTimer);clearTimeout(workflowTimer);workflowTimer=null;},
-    updateStatus(info){if(!view.form.elements.cwd.value)view.form.elements.cwd.value=info?.cwd||'';},
-    destroy(){this.leave();history.destroy();mount.innerHTML='';},
+    leave(){active=false;revision++;workflowEpoch++;workflowLoaded=false;workflowLoading=false;history.leave();timeline?.leave();workflows?.leave();subscriptions?.();subscriptions=null;clearTimeout(refreshTimer);clearTimeout(workflowTimer);workflowTimer=null;},
+    updateStatus(info){if(!view.form.elements.cwd.value)view.form.elements.cwd.value=info?.cwd||'';workflows?.updateStatus?.(info);},
+    destroy(){this.leave();history.destroy();timeline?.destroy();workflows?.destroy();mount.innerHTML='';},
   };
 }

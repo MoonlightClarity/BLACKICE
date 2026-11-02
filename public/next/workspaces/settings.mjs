@@ -21,7 +21,10 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '<div class="next-row"><input class="next-field" style="flex:1;width:auto" id="next-settings-cwd" aria-label="Working directory">',
     '<button type="button" id="next-settings-choose">Choose…</button>',
     '<button type="button" class="next-primary" id="next-settings-save-cwd">Save</button></div></section>',
-    '<section class="next-card"><h2>Default model</h2>',
+    '<section class="next-card"><h2>Model subscriptions</h2>',
+    '<p class="next-help">Codex is the supported native subscription runtime. Choose an exact Codex model; retired native CLI providers are no longer offered. Existing history retains its original labels. BLACKICE never switches to pay-per-token APIs automatically.</p>',
+    '<p id="next-settings-subscription-status" class="next-help" role="status"></p>',
+    '<h3>Default model</h3>',
     '<div class="next-row"><select id="next-settings-model" class="next-field" style="flex:1;width:auto"></select>',
     '<button type="button" class="next-primary" id="next-settings-save-model">Set default</button></div>',
     '<p id="next-settings-model-feedback" class="next-help" role="status"></p></section>',
@@ -69,7 +72,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
   const $=id=>mount.querySelector('#'+id);
   const f={
     cwd:$('next-settings-cwd'),choose:$('next-settings-choose'),saveCwd:$('next-settings-save-cwd'),
-    model:$('next-settings-model'),saveModel:$('next-settings-save-model'),
+    model:$('next-settings-model'),saveModel:$('next-settings-save-model'),subscriptionStatus:$('next-settings-subscription-status'),
     status:$('next-settings-status'),modelFeedback:$('next-settings-model-feedback'),reconnectFeedback:$('next-settings-reconnect-feedback'),
     refresh:$('next-settings-refresh'),reconnect:$('next-settings-reconnect'),
     restartCard:$('next-settings-restart-card'),forceRestart:$('next-settings-force-restart'),checkRestart:$('next-settings-check-restart'),restartFeedback:$('next-settings-restart-feedback'),
@@ -101,7 +104,8 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
   f.checkRestart.addEventListener('click',()=>void restart.check());
   const loaders={
     identity:()=>import('./settings-identity.mjs').then(module=>module.createIdentitySettings),
-    models:()=>import('./settings-providers.mjs').then(module=>module.createProviderSettings),
+    models:()=>Promise.all([import('./settings-providers.mjs'),import('./settings-subscriptions.mjs')]).then(([legacy,focus])=>
+      props=>focus.createSubscriptionModelSettings(props,legacy.createProviderSettings)),
     connections:()=>import('./settings-connections.mjs').then(module=>module.createConnectionSettings),
     connector:()=>import('../../chatgpt-connector-ui.mjs').then(module=>({mount:panelMount,api:panelApi})=>{
       const child=panelMount.ownerDocument.createElement('div');
@@ -172,6 +176,12 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
   function drawStatus(info){
     status={...(info||{}),runtimeSettings:info?.runtimeSettings||runtimeSettings};runtimeSettings=status.runtimeSettings;panels.get('models')?.instance?.updateRuntimeSettings?.(runtimeSettings);
     f.restartCard.hidden=!(status.desktopLifecycle?.available===true && status.desktopLifecycle?.supportsRestart===true && status.desktopLifecycle?.localManagement===true);
+    if(f.subscriptionStatus) {
+      const c=status.codex||status;
+      const native=[c.connected&&c.authenticated?'Codex: ready':'Codex: connect account',
+        ...(status.subscriptionProviders||[]).map(provider=>provider.name.split(' · ')[0]+': '+(provider.configured?'ready':provider.installed?'subscription not configured':'CLI not installed'))];
+      f.subscriptionStatus.textContent=native.join('  ·  ');
+    }
     f.status.textContent='BLACKICE '+(status.version||'')+' · '+
       (status.connected===false?'Model connection unavailable':'Model connection available')+
       ' · '+(status.execution?.activeCount||0)+' active execution(s)';
@@ -185,6 +195,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
       const item=models[index];let option=nodes.get(item.value);
       if(!option){option=f.model.ownerDocument.createElement('option');option.value=item.value;}
       if(option.textContent!==item.label)option.textContent=item.label;
+      option.disabled=item.disabled===true;
       if(f.model.children[index]!==option)f.model.insertBefore(option,f.model.children[index]||null);
       nodes.delete(item.value);
     }

@@ -12,11 +12,6 @@
 .next-model-picker-header strong{font-size:13px}
 .next-model-picker-dismiss{font-size:11px;min-height:28px;padding:3px 7px}
 .next-model-picker-search{flex:none;width:100%;box-sizing:border-box;min-height:36px}
-.next-model-picker-filters{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;flex:none}
-.next-model-picker-sort{display:flex;align-items:center;gap:6px;font-size:11px}
-.next-model-picker-sort select{min-height:30px;max-width:185px;padding:3px 6px;font-size:11px}
-.next-model-picker-check{display:flex;align-items:center;gap:5px;white-space:nowrap;font-size:11px}
-.next-model-picker-check input{width:14px;height:14px;margin:0;accent-color:#8ad1dd}
 .next-model-picker-current,.next-model-picker-summary{margin:0;font-size:11px;color:#a9bcc9;overflow-wrap:anywhere;flex:none}
 .next-model-picker-current{border-bottom:1px solid #263c49;padding-bottom:8px}
 .next-model-picker-results{min-height:0;overflow:auto;overscroll-behavior:contain;flex:1}
@@ -32,15 +27,9 @@
 .next-model-picker-option:disabled{opacity:.6;cursor:default}
 .next-model-picker-option-body{display:flex;flex-direction:column;gap:1px;min-width:0;overflow-wrap:anywhere}
 .next-model-picker-option-body strong{font-size:12px}
-.next-model-picker-option-body small{font-size:10px;color:#a7becd}
-.next-model-picker-option-body .next-model-picker-id{color:#819aa9}
-.next-model-picker-option-body .next-model-picker-flags{color:#a6d2d9}
 .next-model-picker-selected{flex:none;min-width:14px;color:#a4e1dc}
 .next-model-picker-aliases{padding-bottom:6px;margin-bottom:6px;border-bottom:1px solid #263c49}
 .next-model-picker-more{width:100%;min-height:32px;text-align:left;font-size:11px}
 .next-model-picker-entry{min-width:0}
-.next-model-picker-sources{display:flex;flex-direction:column;gap:3px;margin:0 9px 8px;overflow-wrap:anywhere}
-.next-model-picker-sources small{font-size:10px;color:#a7becd}
-.next-model-picker-sources a{color:#a6d2d9;text-decoration:underline;text-underline-offset:2px}
-.next-model-picker-panel :is(button,summary,input,select,a):focus-visible{outline:2px solid #9edbe5;outline-offset:2px}
-@media(max-width:600px){.next-chat-model{max-width:100%;flex:1 1 180px}.next-model-picker-panel{padding:10px}.next-model-picker-filters{gap:8px}.next-model-picker-sort{width:100%}.next-model-picker-sort select{max-width:none;flex:1}}
+.next-model-picker-panel :is(button,summary,input):focus-visible{outline:2px solid #9edbe5;outline-offset:2px}
+@media(max-width:600px){.next-chat-model{max-width:100%;flex:1 1 180px}.next-model-picker-panel{padding:10px}}

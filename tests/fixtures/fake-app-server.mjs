@@ -7,6 +7,7 @@ const notice = (method, params) => send({ method, params });
 const threads = new Map();
 const ephemeralSupport = !process.argv.includes('--no-ephemeral');
 const omitEphemeral = process.argv.includes('--omit-ephemeral');
+const nativeAgents = ['multi_agent', 'multi_agent_v2'];
 const approvals = new Map();
 let nextThread = 1;
 let nextTurn = 1;
@@ -81,6 +82,12 @@ input.on('line', line => {
       reply(id, { threadId });
       break;
     }
+    case 'experimentalFeature/list': {
+      const config = threads.get(params.threadId)?.config || {};
+      const names = [...nativeAgents, 'shell_tool'].filter(name => !process.argv.includes('--no-native-agent-control') || name !== 'multi_agent');
+      reply(id, {data: names.map(name => ({name, stage: 'stable', enabled: process.argv.includes('--ignore-native-agent-control') && nativeAgents.includes(name) ? true : config['features.' + name] !== false})), nextCursor: null});
+      break;
+    }
     case 'fixture/threadState':
       reply(id, { threads: [...threads].map(([threadId, value]) => ({ threadId, ephemeral: value.ephemeral, turnCount: value.turnCount || 0 })) });
       break;
@@ -119,7 +126,7 @@ input.on('line', line => {
     case 'thread/start': {
       const threadId = `fixture-thread-${nextThread++}`;
       const ephemeral = params.ephemeral === true && ephemeralSupport && !omitEphemeral;
-      threads.set(threadId, { dynamicTools: params.dynamicTools || [], ephemeral });
+      threads.set(threadId, { dynamicTools: params.dynamicTools || [], ephemeral, config: params.config || {} });
       const result = { thread: { id: threadId, turns: [], ...(!omitEphemeral ? { ephemeral } : {}) }, model: params.model || 'fixture-model', cwd: params.cwd, approvalPolicy: params.approvalPolicy, sandbox: params.sandbox };
       if (!heldStartOnce && process.argv.includes('--hold-first-thread-start')) { heldStartOnce = true; heldThreadOpen = { id, result }; }
       else reply(id, result);

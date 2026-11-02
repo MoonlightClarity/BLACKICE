@@ -11,6 +11,7 @@ import { TaskInbox } from '../lib/inbox.mjs';
 import { OperationsStore } from '../lib/operations.mjs';
 import { capabilityGuidance } from '../lib/tool-routing.mjs';
 import { BLACKICE_HARNESS_INSTRUCTIONS } from '../lib/harness-identity.mjs';
+import { PLANNING_SKILL_VERSION, PLANNING_SKILL_SHA256, PLANNING_SKILL_CONTENT } from '../lib/planning-skill.mjs';
 
 const graph = () => ({
   id: 'planning-policy-fixture', name: 'Planning policy fixture',
@@ -85,9 +86,45 @@ for (const mode of ['auto', 'on', 'maximal']) test(`${mode} blocks operational t
   const run = await f.settle(f.start({ planningMode: mode }).id);
   assert.equal(run.planningMode, 'on'); assert.equal(run.status, 'failed'); assert.equal(run.nodes.agent.errorCode, 'TASK_PLAN_REQUIRED');
   assert.equal(run.nodes.agent.planning.mode, 'on'); assert.equal(run.nodes.agent.planning.status, 'missing'); assert.equal(run.nodes.agent.output, '');
+  assert.equal(run.nodes.agent.planningSkill?.id, 'blackice-planning');
+  assert.equal(run.nodes.agent.planningSkill?.version, PLANNING_SKILL_VERSION);
+  assert.equal(run.nodes.agent.planningSkill?.sha256, PLANNING_SKILL_SHA256);
+  assert.ok(f.runtime.calls[0].developerInstructions.includes(PLANNING_SKILL_CONTENT));
   assert.equal(run.nodes.agent.usage.totalTokens, 17); assert.equal(run.nodes.agent.threadId, 'planning-mode-thread');
   assert.deepEqual(run.taskState.steps, []); assert.equal(f.runtime.calls.length, 1);
   await assert.rejects(readFile(path.join(f.cwd, 'unplanned.txt')), { code: 'ENOENT' });
+});
+
+test('Planning On still delivers and audits the mandatory skill when sequence guardrails are disabled',async t=>{
+  const f=await fixture(t,async options=>{
+    assert.ok(options.developerInstructions.includes(PLANNING_SKILL_CONTENT));
+    assert.match(options.developerInstructions,/Planning skill is required/);
+    return {output:'The fixture answered without a sequence guard.'};
+  });
+  f.settings.executionGuardrails=false;
+  const run=await f.settle(f.start({planningMode:'on'}).id);
+  finished(run);
+  assert.equal(run.nodes.agent.planningSkill.version,PLANNING_SKILL_VERSION);
+  assert.equal(run.nodes.agent.planningSkill.sha256,PLANNING_SKILL_SHA256);
+  assert.match(run.output,/The fixture answered without a sequence guard\./);
+});
+
+test('coordinator and delegated read-only worker receive the same complete skill without claiming a missing shared plan tool', async t => {
+  const f = await fixture(t, async options => {
+    assert.equal(options.developerInstructions.split(PLANNING_SKILL_CONTENT).length, 2);
+    if (options.prompt.includes('YOUR ASSIGNED TASK:')) {
+      assert.match(options.developerInstructions, /This assigned worker has no shared plan tool/);
+      assert.equal(options.dynamicTools.some(tool => tool.name === 'relay_task'), false);
+      return { output: 'The supplied fixture contains no external action or guest operation.' };
+    }
+    const delegated = await options.onToolCall({ name: 'relay_delegate', arguments: { tasks: [{ id: 'inspect-input', prompt: 'Read the supplied fixture only and report its scope; do not execute commands or edit files.', readOnly: true }] } });
+    assert.equal(delegated.success, true, delegated.contentItems?.[0]?.text);
+    assert.equal(unpack(delegated).completed, 1);
+    return { output: 'The independent read was integrated; no external effect is claimed.' };
+  });
+  Object.assign(f.settings, { executionGuardrails: false, subagentsEnabled: true, maxSubagents: 2 });
+  finished(await f.settle(f.start({ planningMode: 'on' }).id));
+  assert.equal(f.runtime.calls.length, 2);
 });
 
 test('Planning On fails before inference when the selected model cannot call the required tool',async t=>{
@@ -139,7 +176,9 @@ test('Off permits normal operations and final output without creating an automat
     return { output: 'The actual operation is complete.', threadId: 'planning-mode-thread' };
   });
   const run = await f.settle(f.start({ planningMode: 'off' }).id); finished(run);
-  assert.equal(run.planningMode, 'off'); assert.equal(run.nodes.agent.planning.mode, 'off'); assert.equal(run.nodes.agent.planning.status, 'off');
+  assert.equal(run.planningMode, 'off'); assert.equal(run.nodes.agent.planningSkill, undefined);
+  assert.doesNotMatch(f.runtime.calls[0].developerInstructions, /REQUIRED FIRST-PARTY BLACKICE PLANNING SKILL/);
+  assert.equal(run.nodes.agent.planning.mode, 'off'); assert.equal(run.nodes.agent.planning.status, 'off');
   assert.equal(run.taskState.plan, undefined); assert.deepEqual(run.taskState.steps, []); assert.equal(run.taskState.checkpoint, null);
   assert.equal(await readFile(path.join(f.cwd, 'off.txt'), 'utf8'), 'actual off-mode result');
 });

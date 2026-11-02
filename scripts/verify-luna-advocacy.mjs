@@ -210,7 +210,7 @@ async function main(args) {
   if (!selected.length) throw Error('Unknown case: ' + options.case);
   const root = options['output-dir']; await mkdir(root);
   const sourceBefore = await sourceFingerprint();
-  const runtime = new CodexRuntime({ cwd: root, runTimeoutMs: 600000, requestTimeoutMs: 30000 });
+  const runtime = new CodexRuntime({ isolatedHistory: true, cwd: root, runTimeoutMs: 600000, requestTimeoutMs: 30000 });
   const recorder = installNativeRequestRecorder(runtime, { file: path.join(root, 'native-requests.jsonl') });
   const report = { format: 1, model: 'gpt-6-luna', effort: 'max', planningMode, sourceBefore, startedAt: new Date().toISOString(), results: [], live: true, behavioralResult: 'not_determined' };
   try {

@@ -13,7 +13,7 @@ const modules={
   planning:()=>import('./workspaces/planning-browser.mjs').then(m=>m.createPlanningBrowser),
   tasks:()=>import('./workspaces/tasks.mjs').then(m=>m.createTasksWorkspace),
   browser:()=>import('./workspaces/browser.mjs').then(m=>m.createBrowserWorkspace),
-  activity:()=>import('./workspaces/activity.mjs').then(m=>m.createActivityWorkspace),
+  workbench:()=>import('./workspaces/workbench.mjs').then(m=>m.createWorkbenchWorkspace),
   knowledge:()=>import('./workspaces/knowledge.mjs').then(m=>m.createKnowledgeWorkspace),
   settings:()=>import('./workspaces/settings.mjs').then(m=>m.createSettingsWorkspace),
 };
@@ -51,6 +51,8 @@ function openWorkspaceTarget(space){
   else if(conversationId)space?.instance?.openConversationId?.(conversationId);
 }
 async function show(name,{conversationId,requestId,nodeId}={}){
+  // Retired Activity links lead to the shared Tasks workspace.
+  if(name==='activity'){name='tasks';try{history.replaceState(null,'','#tasks');}catch{}}
   if(!modules[name])return;
   const previous=current;const target=++revision;
   const navigation={conversationId,requestId,nodeId};
@@ -106,7 +108,7 @@ for(const tab of tabs){
 }
 window.addEventListener('hashchange',()=>{
   const name=location.hash.slice(1);
-  if(modules[name]&&current!==name)void show(name);
+  if(name==='activity'||(modules[name]&&current!==name))void show(name);
 });
 window.addEventListener('beforeunload',()=>{
   for(const {instance} of spaces.values())instance?.leave?.();
@@ -116,7 +118,8 @@ window.addEventListener('beforeunload',()=>{
 // Painting the shell never waits for a full history parse or an external provider.
 globalThis.blackiceNextGuard?.ready();
 events.start();
-const first=modules[location.hash.slice(1)]?location.hash.slice(1):'chat';
+const requested=location.hash.slice(1);
+const first=requested==='activity'?'tasks':modules[requested]?requested:'chat';
 void show(first);
 void api('/api/status','GET',undefined,{deadlineMs:60000}).then(info=>{
   status=info;spaces.get(current)?.instance?.updateStatus?.(status);

@@ -14,11 +14,21 @@ topLevelFiles.add('RELEASE-NOTES-2.35.6.md');
 topLevelFiles.add('RELEASE-NOTES-2.36.0.md');
 topLevelFiles.add('RELEASE-NOTES-2.36.1.md');
 topLevelFiles.add('RELEASE-NOTES-2.37.0.md');
+topLevelFiles.add('WORKBENCH-NATIVE-DISPLAY.md');
 
 // Match the existing installer inputs without admitting arbitrary native helpers.
 const packagedNativeHelpers = new Set([
   'desktop/make-icon.ps1', 'desktop/native-window-host.cs', 'desktop/native-window-host.ps1',
   'desktop/installed-app-icons.cs', 'desktop/native-app-launcher.cs', 'desktop/native-foreground-guard.cs',
+  'desktop/workbench-elevated-command.ps1', 'desktop/workbench-vmconnect-bridge.cs', 'desktop/workbench-vmconnect-bridge.ps1',
+  // Fixed guest-only helper scripts packaged by the current Workbench build.
+  'scripts/workbench-guest-agent.ps1', 'scripts/workbench-guest-setup.ps1',
+  'scripts/workbench-agent-job.ps1',
+  'scripts/workbench-guest-display.ps1', 'scripts/workbench-desktop-stream.ps1',
+  'scripts/install-workbench-guest-video.ps1', 'scripts/workbench-rdp-preflight.ps1',
+  'scripts/workbench-native-host-preflight.ps1', 'scripts/package-workbench-freerdp.mjs',
+  'resources/guest/workbench-guest-video.exe', 'resources/guest/LICENSE-jpegn.txt',
+  'scripts/workbench-guest-app-batch.ps1', 'scripts/workbench-headless-broker.ps1',
 ]);
 
 // Public native CLI diagnostics contain only enumerated codes, never log text.
@@ -60,7 +70,7 @@ export function forbiddenWindowsPackagePath(relative) {
 /** The installed-file verifier uses the same runtime families as electron-builder. */
 export function approvedWindowsPackageFile(relative, version) {
   if (typeof relative !== 'string' || relative.includes('\\') || relative.startsWith('/') || relative.split('/').some(part => !part || part === '.' || part === '..') || forbiddenWindowsPackagePath(relative)) return false;
-  return topLevelFiles.has(relative) || packagedNativeHelpers.has(relative) || (/^\d+\.\d+\.\d+$/.test(version) && relative === `RELEASE-NOTES-${version}.md`) || /^(lib|public)\//.test(relative) || /^desktop\/.*\.(mjs|cjs)$/.test(relative) || relative.startsWith('desktop/browser-compatibility/') || relative === 'desktop/icon.ico' || relative === 'scripts/repair-shortcuts.ps1' || /^scripts\/(generate-noir-background\.mjs|noir-scene\.config\.json|chatgpt-bridge\.mjs|email-oauth-token\.mjs|remote-access-cli\.mjs|browser-cli\.mjs|chatgpt-cli\.mjs)$/.test(relative);
+  return topLevelFiles.has(relative) || relative === 'skills/planning/SKILL.md' || packagedNativeHelpers.has(relative) || (/^\d+\.\d+\.\d+$/.test(version) && relative === `RELEASE-NOTES-${version}.md`) || /^(lib|public)\//.test(relative) || /^desktop\/.*\.(mjs|cjs)$/.test(relative) || relative.startsWith('desktop/browser-compatibility/') || relative === 'desktop/icon.ico' || relative === 'scripts/repair-shortcuts.ps1' || /^scripts\/(generate-noir-background\.mjs|noir-scene\.config\.json|chatgpt-bridge\.mjs|email-oauth-token\.mjs|remote-access-cli\.mjs|browser-cli\.mjs|chatgpt-cli\.mjs)$/.test(relative);
 }
 
 /** Read existing, tracked evidence; never synthesize a passing source-test receipt. */

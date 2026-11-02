@@ -62,6 +62,10 @@ The application uses Electron. Binary distributions must retain the license and 
 
 Build dependencies installed through npm also retain their own licenses. `package-lock.json` records package versions and declared license expressions, but those metadata entries do not replace the complete notices included with packages or binary distributions.
 
+## Native Windows guest video
+
+BLACKICE's optional Go-based native Windows guest-video executable uses the `github.com/gen2brain/jpegn` JPEG encoder, pinned to **v0.6.2**, under the **MIT License** (copyright 2025 Milan Nikolic). The upstream license text is preserved in [LICENSE-jpegn.txt](resources/guest/LICENSE-jpegn.txt). Module version and integrity hashes are recorded in [go.mod](scripts/workbench-native-stream/go.mod) and [go.sum](scripts/workbench-native-stream/go.sum). Keep the license alongside the binary when redistributing the guest-video component. Other Go dependencies retain their own terms.
+
 ## Redistribution
 
 Include the root [LICENSE](LICENSE), [NOTICE](NOTICE), and this index in source and binary packages. Preserve the third-party license, attribution, source, and provenance files alongside the components they describe. Follow each component's own terms for its redistribution or modification; do not replace upstream notices with the BLACKICE Apache license.

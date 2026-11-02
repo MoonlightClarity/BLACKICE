@@ -93,17 +93,10 @@ try {
   if ($svc.StartMode -ne 'Auto' -or $svc.State -ne 'Running') {
     try { Repair-TailscaleService }
     catch {
-      # Try the current token first. Prompt only for an observed permission
-      # failure, not a missing service, timeout or unrelated service error.
-      $denied = ($_.CategoryInfo.Category -eq 'PermissionDenied')
-      for ($cause = $_.Exception; $null -ne $cause; $cause = $cause.InnerException) {
-        if ($cause -is [UnauthorizedAccessException] -or $cause.NativeErrorCode -eq 5) { $denied = $true }
-      }
-      $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-      if (-not $denied -or $admin) { exit 3 }
-      $serviceArgs = @('-NoLogo','-NoProfile','-NonInteractive','-WindowStyle','Hidden','-EncodedCommand','${encode(TAILSCALE_SERVICE_REPAIR)}')
-      $p = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList $serviceArgs -Verb RunAs -Wait -PassThru -WindowStyle Hidden
-      if ($p.ExitCode -ne 0) { exit 3 }
+      # Workbench and startup maintenance must never trigger secondary UAC or
+      # a separate elevated console. Reopen BLACKICE with administrator rights
+      # when convenient; leave the existing service settings untouched here.
+      exit 3
     }
   }
   # Set the one preference in the ORIGINAL user's context. An elevation using a

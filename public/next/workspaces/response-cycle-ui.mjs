@@ -1,10 +1,8 @@
 import { stableId } from '../core/dom.mjs';
-import { RESPONSE_CYCLE_STAGES } from '../../response-cycle-model.mjs';
+import { RESPONSE_CYCLE_STAGES,responseCycleStages } from '../../response-cycle-model.mjs';
 import { chatOptionChoices, validateChatOptions } from '../chat/options-model.mjs';
 
-export const CYCLE_STAGES = Object.freeze([
-  ['feasibility', 'Feasibility'], ['inference', 'Inference'], ['plan', 'Plan'], ['think', 'Think'], ['respond', 'Respond']
-]);
+export const CYCLE_STAGES = Object.freeze(RESPONSE_CYCLE_STAGES.map(stage=>Object.freeze([stage.id,stage.label])));
 const clone = value => structuredClone(value);
 const brief = value => String(value || '').replace(/\s+/g, ' ').trim().slice(0, 240);
 export function stageOutputSummary(node) {
@@ -42,7 +40,7 @@ export function cycleModelRunFields(ctx, document, cycle, state) {
   return { model: value.model, effort: value.effort, serviceTier: value.serviceTier };
 }
 export function cycleStageRows(document, cycle) {
-  return CYCLE_STAGES.map(([id, label], index) => {
+  return responseCycleStages(cycle).map(({id,label}, index) => {
     const node = document.nodes.find(item => item.id === cycle.stageNodeIds?.[id]);
     return { id, label, number: index + 1, node, state: node?.readiness?.state || 'empty' };
   });
@@ -50,7 +48,7 @@ export function cycleStageRows(document, cycle) {
 export function cycleStateLabel(value) {
   return ({ paused_after_plan: 'Plan ready · paused', waiting_children: 'Working on child questions', completed: 'Cycle completed',
     running: 'Cycle running', failed: 'Cycle needs attention', cancelled: 'Cycle stopped', awaiting_input: 'Waiting for essential facts',
-    needs_evidence: 'Source recovery needed', stale: 'Inputs changed', draft: 'Ready to start', idle: 'Ready to start' })[value] || String(value || 'Ready to start').replaceAll('_', ' ');
+    blocked:'A resource prerequisite blocks affected work',needs_evidence: 'Source recovery needed', stale: 'Inputs changed', draft: 'Ready to start', idle: 'Ready to start' })[value] || String(value || 'Ready to start').replaceAll('_', ' ');
 }
 export function planPayload(response) {
   const keys = ['values', 'grounding', 'openQuestions', 'challengeResponses', 'acceptanceCriteria', 'steps', 'subproblems', 'checks', 'childResults'];
@@ -76,7 +74,7 @@ export function renderAccuracyTargets(ctx, parent, items, heading = 'Saved accur
 }
 export function renderStageFindings(ctx, parent, document, node, cycle) {
   const response = node.response; if (!response) return;
-  const { add, button, showSource } = ctx, stage = RESPONSE_CYCLE_STAGES.find(item => item.kind === node.kind);
+  const { add, button, showSource } = ctx, stage = responseCycleStages(cycle).find(item => item.kind === node.kind);
   const plan = document.nodes.find(item => item.id === cycle?.stageNodeIds?.plan)?.response;
   const criterionLabel = id => plan?.acceptanceCriteria?.find(item => item.id === id)?.label || 'Criterion not available';
   const sources = (holder, ids) => {
@@ -126,6 +124,7 @@ export function renderCycleControls(ctx, parent, document, cycle, state, { stage
   const section = add(parent, 'section', '', 'pb-inspector-section pb-cycle-controls'); section.dataset.cycleId = cycle.id;
   add(section, 'h4', cycle.title || 'Response cycle');
   add(section, 'p', cycleStateLabel(cycle.state), 'pb-cycle-state');
+  if(cycle.pipelineVersion===1||cycle.legacyPipeline)add(section,'p','Historical Feasibility-first pipeline. Recorded results retain their original contract.','pb-help');
   if (cycle.objective) add(section, 'p', cycle.objective, 'pb-help');
   if (cycle.summary) add(section, 'p', brief(cycle.summary), 'pb-response-value');
   const rows = cycleStageRows(document, cycle);

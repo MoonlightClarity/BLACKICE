@@ -52,12 +52,20 @@ test('defaults retain unsupported selected effort and explain effective model ca
  assert.match(html,/value="ultra" selected/);assert.match(html,/doesn't increase a model's supported capacity/);assert.match(html,/routine context compaction automatically/);assert.match(html,/Save preferences/);
 });
 
-test('verbosity and optional subagent concurrency save only changed preferences',async()=>{
+test('subagents default on in the preferences UI, while explicit opt-outs and partial saves stay intact',async()=>{
  let current=structuredClone(initial),patch;
  const editor=createResponseDefaults({getSettings:()=>current,api:async(url,method,value)=>{if(value){patch=value;current={...current,...value};}return structuredClone(current);}});
  await editor.setOpen(true);
  const before=renderResponseDefaults({runtimeSettings:current},editor.state);
+ assert.equal(editor.state.draft.subagentsEnabled,true);
  assert.match(before,/Response length/);assert.match(before,/Allow on-demand subagents/);assert.match(before,/Parallel workers/);
+ assert.match(before,/data-response-default="subagentsEnabled" checked/);
+ editor.input({dataset:{responseDefault:'subagentsEnabled'},checked:false});await editor.save();
+ assert.deepEqual(patch,{subagentsEnabled:false});
+ await editor.reload();assert.equal(editor.state.draft.subagentsEnabled,false);
+ const disabled=renderResponseDefaults({runtimeSettings:current},editor.state);
+ assert.doesNotMatch(disabled,/data-response-default="subagentsEnabled" checked/);
+ assert.match(disabled,/data-response-default="maxSubagents" disabled/);
  editor.input(target('verbosity','detailed'));
  editor.input({dataset:{responseDefault:'subagentsEnabled'},checked:true});
  editor.input(target('maxSubagents','4'));

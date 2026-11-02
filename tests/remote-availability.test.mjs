@@ -118,6 +118,53 @@ test('live proxy preserves application response, credentials and body exactly on
   assert.deepEqual(r.headers['set-cookie'], ['fixture=value']);
 });
 
+test('unknown elevated process presence requires the authenticated current lifetime generation', async t => {
+  let presence = null, calls = 0;
+  const f = await fixture(t, { presence: () => presence });
+  const upstream = http.createServer(async (req, res) => {
+    for await (const _chunk of req) {}
+    calls++; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ fromApplication: true }));
+  });
+  upstream.listen(0, '127.0.0.1'); await once(upstream, 'listening');
+  t.after(() => new Promise(resolve => upstream.close(resolve)));
+  const target = `http://127.0.0.1:${upstream.address().port}`;
+  f.responder.configure(app({ target }));
+  const generation = f.responder.generation;
+  const invoke = () => send(f.port, call('blackice_run_command', { requestId: 'elevated-fixture', command: 'fixture' }));
+  assert.equal((await invoke()).body.result.structuredContent.code, 'BLACKICE_UNREACHABLE');
+  assert.equal(f.responder.connected(generation - 1), false);
+  assert.equal((await invoke()).body.result.structuredContent.code, 'BLACKICE_UNREACHABLE');
+  assert.equal(calls, 0);
+  assert.equal(f.responder.connected(generation), true);
+  assert.equal((await invoke()).body.fromApplication, true);
+  assert.equal(calls, 1);
+  assert.throws(() => f.responder.configure(app({ pid: process.pid + 100, target })), { code: 'BLACKICE_PROCESS_ACTIVE' });
+  presence = false;
+  assert.equal((await invoke()).body.result.structuredContent.code, 'BLACKICE_CLOSED');
+  assert.equal(calls, 1);
+  presence = null;
+  f.responder.disconnected(generation);
+  assert.equal(f.responder.application.target, null);
+  assert.equal((await invoke()).body.result.structuredContent.code, 'BLACKICE_UNREACHABLE');
+  assert.equal(calls, 1);
+});
+
+test('new configuration and explicit offline invalidate the old elevated lifetime identity', async t => {
+  const f = await fixture(t, { presence: () => null });
+  const generation = f.responder.generation;
+  f.responder.connected(generation);
+  assert.equal(f.responder.applicationPresent(), true);
+  f.responder.configure(app());
+  assert.equal(f.responder.applicationPresent(), false);
+  assert.equal(f.responder.connected(generation), false);
+  assert.equal(f.responder.connected(f.responder.generation), true);
+  f.responder.disconnected(generation);
+  assert.equal(f.responder.applicationPresent(), true);
+  f.responder.offline('closing');
+  assert.equal(f.responder.applicationPresent(), false);
+  assert.equal(f.responder.application.target, null);
+});
+
 test('lost delivery is reported uncertain and is never replayed', async t => {
   const f = await fixture(t); let calls = 0;
   const upstream = http.createServer(async (req) => { for await (const _chunk of req) {} calls++; req.socket.destroy(); });

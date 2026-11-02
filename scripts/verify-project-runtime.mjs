@@ -22,7 +22,7 @@ const root = previousReceipt?.root || path.join(outputDir, 'project-live-' + new
 const model = 'gpt-6.1-sol', seed = previousReceipt?.seed || { token: randomUUID(), first: 19, second: 23 }; if (!previousReceipt) await writeFile(path.join(cwd, 'seed.json'), JSON.stringify(seed));
 const receipt = previousReceipt ? { ...previousReceipt, passed: false, planningStartedAt: new Date().toISOString() } : { schema: 1, live: true, model, startedAt: new Date().toISOString(), root, cwd, seed, passed: false, checks: {}, calls: [] };
 class NoDesktop extends EventEmitter { status() { return { available: false, enabled: false }; } async setEnabled() { return this.status(); } }
-const runtime = new CodexRuntime({ cwd, runTimeoutMs: 180000, requestTimeoutMs: 30000 }), original = runtime.runAgent.bind(runtime);
+const runtime = new CodexRuntime({ isolatedHistory: true, cwd, runTimeoutMs: 180000, requestTimeoutMs: 30000 }), original = runtime.runAgent.bind(runtime);
 runtime.runAgent = async options => {
   const call = { model: options.model, role: options.prompt.match(/^You are ([^\n]+)/)?.[1] || 'unknown', startedAt: new Date().toISOString(), tools: [], events: [] }; receipt.calls.push(call);
   try {

@@ -37,6 +37,18 @@ test('runtime fingerprints bind desktop helpers and browser compatibility assets
   assert.equal(await appFingerprint(directory), before, 'build-only, test, and recovery files are excluded on both sides');
 });
 
+test('runtime fingerprints bind every shipped Workbench helper and product resource including edits and omissions', async t => {
+  const directory = await releaseFixture(t);
+  for (const file of ['scripts/workbench-guest-agent.ps1', 'scripts/workbench-guest-setup.ps1', 'scripts/workbench-agent-job.ps1', 'scripts/workbench-guest-app-batch.ps1', 'scripts/workbench-guest-display.ps1', 'scripts/workbench-desktop-stream.ps1', 'scripts/install-workbench-guest-video.ps1', 'scripts/workbench-rdp-preflight.ps1', 'scripts/workbench-native-host-preflight.ps1', 'scripts/workbench-headless-broker.ps1', 'scripts/package-workbench-freerdp.mjs', 'resources/guest/workbench-guest-video.exe', 'resources/guest/LICENSE-jpegn.txt']) {
+    const before = await appFingerprint(directory), target = path.join(directory, file);
+    await fs.mkdir(path.dirname(target), { recursive: true }); await fs.writeFile(target, 'inert packaged-input fixture; never executed');
+    const included = await appFingerprint(directory);
+    assert.notEqual(included, before, file + ' must enter runtime evidence');
+    await fs.appendFile(target, ' changed'); assert.notEqual(await appFingerprint(directory), included, file + ' edits must invalidate old evidence');
+    await fs.rm(target); assert.equal(await appFingerprint(directory), before, file + ' omission must differ from complete source');
+  }
+});
+
 test('release collection rejects inconsistent installer names, publisher identities, and signing policies', async t => {
   const directory = await releaseFixture(t), fingerprint = await appFingerprint(directory), distribution = path.join(directory, 'candidate'); await fs.mkdir(distribution);
   const bytes = Buffer.from('disposable fixture; never executed'), sha256 = createHash('sha256').update(bytes).digest('hex');

@@ -20,7 +20,7 @@ function graph() {
 function addCycle(request, id, {parent, runId, state = 'pending', required = true} = {}) {
   const stageNodeIds = Object.fromEntries(RESPONSE_CYCLE_STAGES.map(stage => [stage.id, id + '-' + stage.id]));
   const value = {
-    id, title: 'Synthetic cycle ' + id, objective: 'Resolve the bounded question for ' + id + '.',
+    id,pipelineVersion:2, title: 'Synthetic cycle ' + id, objective: 'Resolve the bounded question for ' + id + '.',
     parentCycleId: parent?.id || null, parentStageId: parent?.stageNodeIds.inference || null,
     stageNodeIds, depth: parent ? parent.depth + 1 : 0, key: id, required, state,
     acceptanceCriteria: [{id: id + '-answer', label: 'Bounded analytical answer',

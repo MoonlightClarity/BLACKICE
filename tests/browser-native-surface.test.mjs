@@ -122,7 +122,7 @@ test('the native adapter retains one WebContents while reparenting and routes br
   const page = createLiveBrowserWindow({ BaseWindow, WebContentsView, options: { webPreferences: { sandbox: false, offscreen: true, session: 'same-profile' } }, onShortcut: action => shortcuts.push(action) });
   const contents = page.webContents, parent = new BaseWindow();
   assert.equal(page.view.options.webPreferences.offscreen, false);
-  assert.equal(page.view.options.webPreferences.sandbox, true, 'Live pages must keep native window.close instead of targeting their containing BrowserWindow.');
+  assert.equal(page.view.options.webPreferences.sandbox, false, 'Windows Chromium sandbox launch error 57 prevents contained views on this host.');
   assert.equal(page.view.options.webPreferences.session, 'same-profile');
   let prevented = 0;
   const keyboard = () => contents.emit('before-input-event', { preventDefault: () => prevented++ }, { type: 'keyDown', control: true, key: 'l' });

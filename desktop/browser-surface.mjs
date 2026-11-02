@@ -11,7 +11,12 @@ export function createLiveBrowserWindow({ WebContentsView, BaseWindow, options, 
   // renderer replaces it with BrowserWindow.close(), which cannot close a
   // WebContentsView and can instead target its containing shell window.
   const view = new WebContentsView({ ...(options.webContents ? { webContents: options.webContents } : {}),
-    webPreferences: { ...options.webPreferences, sandbox: true, offscreen: false } });
+    // Electron/Chromium sandboxed renderer launch fails on some Windows 11 hosts
+    // (observed SBOX_ERROR_CANNOT_WRITE_VARIABLE_VALUE = 57). Isolate the page
+    // through the dedicated browser partition, contextIsolation, disabled Node
+    // integration and webSecurity while avoiding that Windows sandbox path.
+    // The native view stays hidden and cannot activate the host desktop.
+    webPreferences: { ...options.webPreferences, sandbox: false, offscreen: false } });
   const handle = new EventEmitter();
   let parent = parking, destroyed = false, attached = false;
   handle.webContents = view.webContents;
