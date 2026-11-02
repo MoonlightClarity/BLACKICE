@@ -1,4 +1,4 @@
-name: Compare exact draft startup working directories
+name: Compare exact draft executable execution manifests
 on:
   push:
     branches: [codex/verify-239-runner-tar]
@@ -97,12 +97,99 @@ jobs:
           '@
             & $node --input-type=module -e $fingerprint $source (Join-Path $install 'resources/app')
             if ($LASTEXITCODE -ne 0) { throw 'Installed app fingerprint failed.' }
-            foreach($entry in @(@{label='checkout';path=$source},@{label='install';path=$install},@{label='owned-parent';path=$root},@{label='runner-temp';path=$runner})){
-              $item=Get-Item -LiteralPath $entry.path
-              $acl=Get-Acl -LiteralPath $entry.path
-              @{event='ownedDirectoryMetadata';location=$entry.label;reparse=[bool]($item.Attributes -band [IO.FileAttributes]::ReparsePoint);attributes=[string]$item.Attributes;aclProtected=$acl.AreAccessRulesProtected;sddl=$acl.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access);driveType=[string]([IO.DriveInfo]::new([IO.Path]::GetPathRoot($item.FullName))).DriveType} | ConvertTo-Json -Compress
-            }
-            foreach($mode in @('baseline','appdir')){
+            $manifestSource=@'
+          using System;
+          using System.Collections.Generic;
+          using System.Collections.Concurrent;
+          using System.Diagnostics;
+          using System.Runtime.InteropServices;
+          using System.Text;
+          using System.Text.RegularExpressions;
+          using System.Threading;
+          public static class DiagnosticManifestProbe {
+           delegate bool LanguageCallback(IntPtr module,IntPtr type,IntPtr name,ushort language,IntPtr parameter);
+           [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr LoadLibraryExW(string file,IntPtr reserved,uint flags);
+           [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool EnumResourceLanguagesW(IntPtr module,IntPtr type,IntPtr name,LanguageCallback callback,IntPtr parameter);
+           [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr FindResourceExW(IntPtr module,IntPtr type,IntPtr name,ushort language);
+           [DllImport("kernel32.dll",SetLastError=true)] static extern uint SizeofResource(IntPtr module,IntPtr resource);
+           [DllImport("kernel32.dll",SetLastError=true)] static extern IntPtr LoadResource(IntPtr module,IntPtr resource);
+           [DllImport("kernel32.dll")] static extern IntPtr LockResource(IntPtr resource);
+           [DllImport("kernel32.dll")] static extern bool FreeLibrary(IntPtr module);
+           [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr BeginUpdateResourceW(string file,bool deleteExisting);
+           [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool UpdateResourceW(IntPtr update,IntPtr type,IntPtr name,ushort language,byte[] data,uint length);
+           [DllImport("kernel32.dll",SetLastError=true)] static extern bool EndUpdateResourceW(IntPtr update,bool discard);
+           [DllImport("kernel32.dll",SetLastError=true)] static extern IntPtr OpenProcess(uint access,bool inherit,int pid);
+           [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool QueryFullProcessImageNameW(IntPtr process,uint flags,StringBuilder name,ref uint length);
+           [DllImport("advapi32.dll",SetLastError=true)] static extern bool OpenProcessToken(IntPtr process,uint access,out IntPtr token);
+           [DllImport("advapi32.dll",SetLastError=true)] static extern bool GetTokenInformation(IntPtr token,uint kind,out int elevation,uint length,out uint returned);
+           [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+           public sealed class Manifest { public ushort Language;public string Level;public string Sha256;public byte[] Data;public string Xml;public Encoding Encoding;public byte[] Preamble; }
+           public sealed class Elevation { public int Pid;public bool Elevated; }
+           static readonly Regex Level=new Regex(@"(<(?:[\w.-]+:)?requestedExecutionLevel\b[^>]*\blevel\s*=\s*)([""'])([^""']+)\2",RegexOptions.IgnoreCase);
+           static Exception Error(){return new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());}
+           static string Hash(byte[] data){using(var sha=System.Security.Cryptography.SHA256.Create())return BitConverter.ToString(sha.ComputeHash(data)).Replace("-","").ToLowerInvariant();}
+           public static Manifest Read(string file){
+            IntPtr module=LoadLibraryExW(file,IntPtr.Zero,0x22);if(module==IntPtr.Zero)throw Error();
+            try{
+             var languages=new List<ushort>();LanguageCallback callback=delegate(IntPtr m,IntPtr t,IntPtr n,ushort language,IntPtr p){languages.Add(language);return languages.Count<16;};
+             if(!EnumResourceLanguagesW(module,new IntPtr(24),new IntPtr(1),callback,IntPtr.Zero))throw Error();
+             if(languages.Count!=1)throw new InvalidOperationException("Expected exactly one actual manifest language.");
+             IntPtr resource=FindResourceExW(module,new IntPtr(24),new IntPtr(1),languages[0]);if(resource==IntPtr.Zero)throw Error();
+             uint size=SizeofResource(module,resource);if(size<20||size>1048576)throw new InvalidOperationException("Manifest resource size is unsafe.");
+             IntPtr loaded=LoadResource(module,resource);if(loaded==IntPtr.Zero)throw Error();IntPtr data=LockResource(loaded);if(data==IntPtr.Zero)throw Error();
+             byte[] bytes=new byte[(int)size];Marshal.Copy(data,bytes,0,bytes.Length);Encoding encoding=new UTF8Encoding(false,true);int skip=0;
+             if(bytes[0]==0xef&&bytes[1]==0xbb&&bytes[2]==0xbf)skip=3;
+             else if(bytes[0]==0xff&&bytes[1]==0xfe){encoding=new UnicodeEncoding(false,false,true);skip=2;}
+             else if(bytes[0]==0xfe&&bytes[1]==0xff){encoding=new UnicodeEncoding(true,false,true);skip=2;}
+             else if(bytes[0]==0x3c&&bytes[1]==0){encoding=new UnicodeEncoding(false,false,true);}
+             else if(bytes[0]==0&&bytes[1]==0x3c){encoding=new UnicodeEncoding(true,false,true);}
+             string xml=encoding.GetString(bytes,skip,bytes.Length-skip);var matches=Level.Matches(xml);if(matches.Count!=1)throw new InvalidOperationException("Expected one requested execution level.");
+             byte[] preamble=new byte[skip];Buffer.BlockCopy(bytes,0,preamble,0,skip);
+             return new Manifest{Language=languages[0],Level=matches[0].Groups[3].Value,Sha256=Hash(bytes),Data=bytes,Xml=xml,Encoding=encoding,Preamble=preamble};
+            }finally{FreeLibrary(module);}
+           }
+           public static Manifest ChangeLevel(string file,string level){
+            if(level!="asInvoker"&&level!="highestAvailable")throw new ArgumentException("Only the two diagnostic levels are allowed.");
+            Manifest before=Read(file);if(before.Level!="requireAdministrator")throw new InvalidOperationException("Original manifest is not the exact expected level.");
+            string xml=Level.Replace(before.Xml,m=>m.Groups[1].Value+m.Groups[2].Value+level+m.Groups[2].Value,1);
+            byte[] text=before.Encoding.GetBytes(xml),bytes=new byte[before.Preamble.Length+text.Length];Buffer.BlockCopy(before.Preamble,0,bytes,0,before.Preamble.Length);Buffer.BlockCopy(text,0,bytes,before.Preamble.Length,text.Length);
+            IntPtr update=BeginUpdateResourceW(file,false);if(update==IntPtr.Zero)throw Error();
+            try{
+             if(!UpdateResourceW(update,new IntPtr(24),new IntPtr(1),before.Language,bytes,(uint)bytes.Length))throw Error();
+             bool committed=EndUpdateResourceW(update,false);update=IntPtr.Zero;if(!committed)throw Error();
+            }finally{if(update!=IntPtr.Zero)EndUpdateResourceW(update,true);}
+            Manifest after=Read(file);if(after.Language!=before.Language||after.Level!=level||after.Sha256!=Hash(bytes))throw new InvalidOperationException("Actual manifest readback did not match.");return after;
+           }
+           static volatile bool stop;static Thread watcher;static ConcurrentDictionary<int,bool> elevations=new ConcurrentDictionary<int,bool>();
+           public static void StartWatch(string executable){
+            if(watcher!=null)throw new InvalidOperationException("A diagnostic watcher already exists.");stop=false;elevations.Clear();
+            watcher=new Thread(delegate(){while(!stop){foreach(Process process in Process.GetProcessesByName("BLACKICE")){IntPtr handle=IntPtr.Zero,token=IntPtr.Zero;try{
+              handle=OpenProcess(0x1000,false,process.Id);if(handle==IntPtr.Zero)continue;var name=new StringBuilder(32768);uint length=(uint)name.Capacity;
+              if(!QueryFullProcessImageNameW(handle,0,name,ref length)||!String.Equals(name.ToString(),executable,StringComparison.OrdinalIgnoreCase))continue;
+              if(!OpenProcessToken(handle,8,out token))continue;int elevated;uint returned;if(GetTokenInformation(token,20,out elevated,4,out returned))elevations[process.Id]=elevated!=0;
+             }catch{}finally{if(token!=IntPtr.Zero)CloseHandle(token);if(handle!=IntPtr.Zero)CloseHandle(handle);process.Dispose();}}Thread.Sleep(50);}});watcher.IsBackground=true;watcher.Start();
+           }
+           public static Elevation[] StopWatch(){stop=true;if(watcher!=null){if(!watcher.Join(2000))throw new InvalidOperationException("Diagnostic observer did not stop.");watcher=null;}var result=new List<Elevation>();foreach(var pair in elevations)result.Add(new Elevation{Pid=pair.Key,Elevated=pair.Value});return result.ToArray();}
+          }
+          '@
+            Add-Type -TypeDefinition $manifestSource
+            $original=Join-Path $root 'original-BLACKICE.exe'
+            [IO.File]::Copy($exe,$original,$false)
+            $originalHash=(Get-FileHash -LiteralPath $original).Hash.ToLowerInvariant()
+            if($originalHash -cne 'b6ec3418ce49dba58fbf0e42c6a524591c9c8ff4f5e5d59fbc6a3ec4aca0f0e8'){throw 'Original installed executable differs.'}
+            $signature=Get-AuthenticodeSignature -LiteralPath $exe
+            if($signature.Status -ne 'NotSigned'){throw 'Only the exact unsigned diagnostic executable may be edited.'}
+            $originalManifest=[DiagnosticManifestProbe]::Read($exe)
+            if($originalManifest.Level -cne 'requireAdministrator'){throw 'Actual execution manifest is not requireAdministrator.'}
+            @{event='originalExecutionManifest';diagnosticOnly=$true;resourceType=24;resourceId=1;language=$originalManifest.Language;level=$originalManifest.Level;manifestSha256=$originalManifest.Sha256;exeSha256=$originalHash;signature=[string]$signature.Status} | ConvertTo-Json -Compress
+            foreach($mode in @('requireAdministrator','asInvoker','highestAvailable')){
+            $prefix=[IO.Path]::GetFullPath($install).TrimEnd('\')+'\'
+            if(@(Get-CimInstance Win32_Process | Where-Object {$_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)}).Count -ne 0){throw 'Previous diagnostic native process is still active.'}
+            [IO.File]::Copy($original,$exe,$true)
+            if($mode -ne 'requireAdministrator'){$null=[DiagnosticManifestProbe]::ChangeLevel($exe,$mode)}
+            $actualManifest=[DiagnosticManifestProbe]::Read($exe)
+            if($actualManifest.Level -cne $mode -or $actualManifest.Language -ne $originalManifest.Language){throw 'Diagnostic manifest identity differs.'}
+            @{event='diagnosticExecutionManifest';mode=$mode;diagnosticOnly=$true;installerAcceptance=$false;resourceType=24;resourceId=1;language=$actualManifest.Language;level=$actualManifest.Level;manifestSha256=$actualManifest.Sha256;exeSha256=(Get-FileHash -LiteralPath $exe).Hash.ToLowerInvariant()} | ConvertTo-Json -Compress
             $runtime=Join-Path $root ('runtime-'+$mode)
             [IO.Directory]::CreateDirectory($runtime) | Out-Null
             $report=Join-Path $root ('runtime-report-'+$mode+'.json')
@@ -110,9 +197,9 @@ jobs:
             $observer=Join-Path $root 'exit-observer.mjs'
             $observerSource=@'
           import cp from 'node:child_process';import {syncBuiltinESMExports} from 'node:module';import fs from 'node:fs';import path from 'node:path';
-          const a=process.argv,index=a.indexOf('--exe'),wanted=path.resolve(a[index+1]).toLowerCase(),out=path.join(path.dirname(a[a.indexOf('--report')+1]),'child-exit-observer.jsonl'),original=cp.spawn;const mode=path.basename(a[a.indexOf('--report')+1]).includes('-appdir.')?'appdir':'baseline';
+          const a=process.argv,index=a.indexOf('--exe'),wanted=path.resolve(a[index+1]).toLowerCase(),out=path.join(path.dirname(a[a.indexOf('--report')+1]),'child-exit-observer.jsonl'),original=cp.spawn;const mode=path.basename(a[a.indexOf('--report')+1]).replace('runtime-report-','').replace('.json','');
           let events=0;function record(value){try{if(events++<100)fs.appendFileSync(out,JSON.stringify(value)+'\n')}catch{}}
-          cp.spawn=function(file,...rest){const owned=path.resolve(String(file)).toLowerCase()===wanted;if(owned&&mode==='appdir')rest[1]={...(rest[1]||{}),cwd:path.dirname(path.resolve(String(file)))};const child=Reflect.apply(original,this,[file,...rest]);if(owned){record({event:'ownedNativeChildSpawn',mode,pid:child.pid,cwd:mode==='appdir'?'installed-app-directory':'inherited-checkout'});child.once('exit',(code,signal)=>record({event:'ownedNativeChildExit',mode,pid:child.pid,code,signal}));child.once('error',e=>record({event:'ownedNativeChildError',mode,pid:child.pid,code:/^[A-Z0-9_]+$/.test(e.code||'')?e.code:'UNKNOWN'}));}return child;};syncBuiltinESMExports();
+          cp.spawn=function(file,...rest){const child=Reflect.apply(original,this,[file,...rest]);if(path.resolve(String(file)).toLowerCase()===wanted){record({event:'ownedNativeChildSpawn',mode,pid:child.pid});child.once('exit',(code,signal)=>record({event:'ownedNativeChildExit',mode,pid:child.pid,code,signal}));child.once('error',e=>record({event:'ownedNativeChildError',mode,pid:child.pid,code:/^[A-Z0-9_]+$/.test(e.code||'')?e.code:'UNKNOWN'}));}return child;};syncBuiltinESMExports();
           '@
             [IO.File]::WriteAllText($observer,$observerSource,[Text.UTF8Encoding]::new($false))
             $p=[Diagnostics.Process]::new()
@@ -123,6 +210,7 @@ jobs:
             foreach ($name in @('GH_TOKEN','NODE_OPTIONS','ELECTRON_RUN_AS_NODE')) { [void]$p.StartInfo.Environment.Remove($name) }
             $arguments=@('--import',([uri]::new($observer)).AbsoluteUri,(Join-Path $source 'scripts/verify-installed-runtime.mjs'),'--app-dir',(Join-Path $install 'resources/app'),'--exe',$exe,'--test-root',$runtime,'--report',$report,'--expected-version','2.39.0','--expected-fingerprint','0ae9f24468d3ce0a756836e54fe5c1ffd44c69f56d747ae0c8f65a4010fb5a22','--hidden-only')
             foreach ($argument in $arguments) { $p.StartInfo.ArgumentList.Add($argument) }
+            [DiagnosticManifestProbe]::StartWatch($exe)
             try {
               if (!$p.Start()) { throw 'Original runtime verifier could not start.' }
               $stdout=$p.StandardOutput.ReadToEndAsync();$stderr=$p.StandardError.ReadToEndAsync()
@@ -131,7 +219,7 @@ jobs:
               $runtimeExit=$p.ExitCode
               if ($stdout.IsCompletedSuccessfully) { [IO.File]::WriteAllText((Join-Path $root 'verifier.stdout'),$stdout.Result) }
               if ($stderr.IsCompletedSuccessfully) { [IO.File]::WriteAllText((Join-Path $root 'verifier.stderr'),$stderr.Result) }
-            } finally { $p.Dispose() }
+            } finally { $p.Dispose();$elevations=[DiagnosticManifestProbe]::StopWatch();@{event='ownedNativePrivileges';mode=$mode;samples=@($elevations)} | ConvertTo-Json -Compress -Depth 4 }
             if (Test-Path -LiteralPath $report) {
               $value=[IO.File]::ReadAllText($report) | ConvertFrom-Json
               @{event='originalVerifierResult';mode=$mode;diagnosticOnly=$true;installerAcceptance=$false;nativeStatus=$(if($value.passed -eq $true -and $runtimeExit -eq 0){'PASS'}else{'FAIL'});exitCode=$runtimeExit;value=$value} | ConvertTo-Json -Compress -Depth 20
@@ -153,6 +241,7 @@ jobs:
             }
             }
           } finally {
+            try{$null=[DiagnosticManifestProbe]::StopWatch()}catch{}
             $prefix=[IO.Path]::GetFullPath($install).TrimEnd('\')+'\'
             foreach($process in @(Get-CimInstance Win32_Process | Where-Object {$_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)})){
               $current=Get-CimInstance Win32_Process -Filter ("ProcessId="+$process.ProcessId)
