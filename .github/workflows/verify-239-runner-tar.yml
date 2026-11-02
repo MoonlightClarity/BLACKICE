@@ -1,0 +1,82 @@
+name: Verify isolated Windows native tar
+on:
+  push:
+    branches: [codex/verify-239-runner-tar]
+    paths: [.github/workflows/verify-239-runner-tar.yml]
+permissions:
+  contents: read
+jobs:
+  verify-tar:
+    runs-on: windows-2025
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Verify native decoder and exact pinned archive extraction
+        run: |
+          $ErrorActionPreference='Stop'
+          $PSNativeCommandUseErrorActionPreference=$false
+          $tarDirectory=Join-Path $env:SystemRoot 'System32'
+          $env:PATH="$tarDirectory;$env:PATH"
+          $tarDirectory >> $env:GITHUB_PATH
+          $tarExecutable=Join-Path $tarDirectory 'tar.exe'
+          $resolvedTar=(Get-Command tar.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+          Write-Host "Selected archive reader: $resolvedTar"
+          $tarVersion=((& $tarExecutable --version) -join [Environment]::NewLine)
+          $versionExit=$LASTEXITCODE
+          Write-Host $tarVersion
+          if ($resolvedTar -ine $tarExecutable) { throw 'Archive reader does not resolve to System32.' }
+          if ($versionExit -ne 0 -or $tarVersion -notmatch 'libzstd/') { throw 'Native built-in zstd support is absent.' }
+          $runnerRoot=[IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\')
+          $name='blackice-tar-proof-'+[guid]::NewGuid().ToString('N')
+          $owned=[IO.Path]::GetFullPath((Join-Path $runnerRoot $name))
+          if ([IO.Path]::GetDirectoryName($owned) -ine $runnerRoot -or [IO.Path]::GetFileName($owned) -cne $name) { throw 'Diagnostic folder boundary mismatch.' }
+          [IO.Directory]::CreateDirectory($owned) | Out-Null
+          $archive=Join-Path $owned 'zvbi.pkg.tar.zst'
+          $extracted=Join-Path $owned 'selected'
+          [IO.Directory]::CreateDirectory($extracted) | Out-Null
+          $handler=[Net.Http.HttpClientHandler]::new()
+          $handler.AllowAutoRedirect=$false
+          $client=[Net.Http.HttpClient]::new($handler)
+          $client.Timeout=[TimeSpan]::FromSeconds(90)
+          $cancel=[Threading.CancellationTokenSource]::new(90000)
+          $response=$null;$inputStream=$null;$outputStream=$null
+          try {
+            $url='https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-zvbi-0.2.46-1-any.pkg.tar.zst'
+            $response=$client.GetAsync($url,[Net.Http.HttpCompletionOption]::ResponseHeadersRead,$cancel.Token).GetAwaiter().GetResult()
+            $response.EnsureSuccessStatusCode() | Out-Null
+            if ($response.Content.Headers.ContentLength -and $response.Content.Headers.ContentLength -ne 325424) { throw 'Pinned archive content length differs.' }
+            $inputStream=$response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+            $outputStream=[IO.File]::Open($archive,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+            $buffer=[byte[]]::new(65536);$count=0
+            while (($read=$inputStream.ReadAsync($buffer,0,$buffer.Length,$cancel.Token).GetAwaiter().GetResult()) -gt 0) {
+              $count+=$read
+              if ($count -gt 325424) { throw 'Pinned archive exceeded its byte bound.' }
+              $outputStream.Write($buffer,0,$read)
+            }
+            $outputStream.Dispose();$outputStream=$null
+            if ($count -ne 325424) { throw 'Pinned archive download was incomplete.' }
+            $archiveSha=(Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($archiveSha -cne '310c6ca10acdb65f0ac974216a0476b29ae97e2ed138128ca17bea1263263f7e') { throw 'Pinned archive checksum differs.' }
+            & $tarExecutable -xf $archive -C $extracted -- ucrt64/bin/libzvbi-0.dll ucrt64/share/licenses/zvbi/COPYING.md
+            if ($LASTEXITCODE -ne 0) { throw 'Exact selected-member extraction failed.' }
+            $expected=@(
+              @{path='ucrt64/bin/libzvbi-0.dll';bytes=443711;sha256='8389bdf0a8b482cb6b80e4fe131d49c75779659db3f4afb259f5d6fff0b80e08'},
+              @{path='ucrt64/share/licenses/zvbi/COPYING.md';bytes=78695;sha256='6d679539253897582d38fcd1eabfa670c01c0ece73d8cd3dc97869fcf723f106'}
+            )
+            foreach ($row in $expected) {
+              $file=Join-Path $extracted $row.path
+              $item=Get-Item -LiteralPath $file
+              if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $item.Length -ne $row.bytes -or (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() -cne $row.sha256) { throw 'Extracted selected member differs.' }
+            }
+            if (@(Get-ChildItem -LiteralPath $extracted -File -Recurse).Count -ne 2) { throw 'Unexpected extracted files.' }
+            @{format=1;scope='isolated-native-tar-diagnostic';passed=$true;sourceCommit=$env:GITHUB_SHA;githubRunId=$env:GITHUB_RUN_ID;runnerOS=[Environment]::OSVersion.VersionString;tar=$resolvedTar;tarVersion=$tarVersion;archiveBytes=$count;archiveSha256=$archiveSha;members=$expected;releaseOrVmAction=$false} | ConvertTo-Json -Depth 5 -Compress
+          } finally {
+            if ($outputStream) { $outputStream.Dispose() }
+            if ($inputStream) { $inputStream.Dispose() }
+            if ($response) { $response.Dispose() }
+            $client.Dispose();$handler.Dispose();$cancel.Dispose()
+            if ([IO.Path]::GetDirectoryName($owned) -ine $runnerRoot -or [IO.Path]::GetFileName($owned) -cne $name) { throw 'Diagnostic cleanup boundary mismatch.' }
+            Remove-Item -LiteralPath $owned -Recurse -Force
+          }
