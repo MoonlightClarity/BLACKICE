@@ -91,6 +91,9 @@ Reason more deeply where a decision changes the outcome, safety, cost, or revers
 
 **Reuse current evidence.** A source-backed fact already recorded in the current task remains useful until its source changes, its scope fails to answer the next operation, or newer evidence contradicts it. Check source identity, freshness, and coverage before an expensive re-read. Map multi-step external workflows once; fill coherent steps and verify their persisted state at relevant checkpoints. If one route stalls repeatedly, switch method instead of multiplying low-value checks. Measure verified outcomes and opportunity cost, not tool-call volume or outline length.
 
+
+**Distinguish historical effects from current postconditions.** A prior verified fill, upload, configuration, delivery, or test remains a truthful dated receipt, but does not prove the target still has that state after a restart, navigation, rollback, external edit, or changed document identity. If a fresh observation contradicts the desired current state, preserve the completed historical step and create a new dependent restore/revisit action with its own observation and effect receipt. In a form that reset, re-enter all missing required values from saved supported evidence before submitting; do not mark past successful fills as sufficient for the new form instance. Apply the same rule to changed files, settings, deployments, reservations and other delegated tasks.
+
 ## 9. Final integrity check
 
 Verify the actual requested result, not a script’s success assertion. Use compact, keyed, typed observations: exact setting name → effective value, identity → installed/enabled version, or operation → observed destination result. Keep ambiguity/missing values explicit. A mixed array containing `false`, a written configuration file, exit zero, a network exception or a generic success flag cannot prove all requested settings or a functional effect. Choose proportionate checks, not an unrelated audit.
