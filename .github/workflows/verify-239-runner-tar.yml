@@ -1,4 +1,4 @@
-name: Read isolated draft runtime evidence
+name: Reproduce exact draft startup in isolation
 on:
   push:
     branches: [codex/verify-239-runner-tar]
@@ -6,58 +6,152 @@ on:
 permissions:
   contents: write
 jobs:
-  read-draft-evidence:
+  exact-startup:
     runs-on: windows-2025
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - name: Read exact failed installer evidence without changing the draft
+      - uses: actions/checkout@v7
+        with:
+          ref: 5f578fcb70214cf6cac787707ea43d3906d4fd0a
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.2'
+          package-manager-cache: false
+      - name: Read only the exact draft Setup
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference='Stop'
-          $PSNativeCommandUseErrorActionPreference=$false
-          $repo='MoonlightClarity/BLACKICE'
-          $target='5f578fcb70214cf6cac787707ea43d3906d4fd0a'
-          $releaseId=431574215
-          $expected=@(
-            @{name='blackice-runtime-validation.json';id=702065914;bytes=1507;sha256='8fe9f776408d54476c74cce459388f04a87fa8e23c792d468dc3d248758aa35b'},
-            @{name='blackice-windows-install-validation.json';id=702065909;bytes=3318;sha256='7b674f10078bf4d6fb607d34e0d30518af0f472fce281405ef4f0fef8975dc7c'},
-            @{name='blackice-native-workbench-integrity.json';id=702065945;bytes=485;sha256='5680eccd427d636593ac554c6142494b9128522e119c43cae45709316d45af8d'},
-            @{name='blackice-source-test-provenance.json';id=702065913;bytes=872;sha256='d637743f54a3d7263d644936731e287efac577ad29a3a0b540eac82c9886268f'}
-          )
-          function Read-ExactRelease {
-            $raw=gh api "repos/$repo/releases/$releaseId"
-            if ($LASTEXITCODE -ne 0) { throw 'Draft metadata read failed.' }
-            $release=$raw | ConvertFrom-Json
-            if ($release.id -ne $releaseId -or $release.draft -ne $true -or $release.tag_name -cne 'v2.39.0' -or $release.target_commitish -cne $target) { throw 'Draft identity changed.' }
-            foreach ($row in $expected) {
-              $matches=@($release.assets | Where-Object name -CEQ $row.name)
-              if ($matches.Count -ne 1 -or $matches[0].id -ne $row.id -or $matches[0].state -cne 'uploaded' -or $matches[0].size -ne $row.bytes -or $matches[0].digest -cne ('sha256:'+$row.sha256)) { throw 'Exact diagnostic asset identity changed.' }
+          $raw=gh api repos/MoonlightClarity/BLACKICE/releases/431574215
+          if ($LASTEXITCODE -ne 0) { throw 'Draft read failed.' }
+          $release=$raw | ConvertFrom-Json
+          if ($release.id -ne 431574215 -or $release.draft -ne $true -or $release.tag_name -cne 'v2.39.0' -or $release.target_commitish -cne '5f578fcb70214cf6cac787707ea43d3906d4fd0a') { throw 'Draft identity changed.' }
+          $assets=@($release.assets | Where-Object name -CEQ 'Blackice-2.39.0-Setup.exe')
+          if ($assets.Count -ne 1 -or $assets[0].id -ne 702063316 -or $assets[0].size -ne 154423063 -or $assets[0].digest -cne 'sha256:c16a3f3d47be4c1f2b25f4100d42d8518d999ceeb3b2e1888bd615f553b74d6f') { throw 'Exact draft Setup changed.' }
+          $root=Join-Path $env:RUNNER_TEMP ('blackice-startup-diag-'+[guid]::NewGuid().ToString('N'))
+          [IO.Directory]::CreateDirectory($root) | Out-Null
+          "BLACKICE_STARTUP_DIAG=$root" >> $env:GITHUB_ENV
+          gh release download v2.39.0 --repo MoonlightClarity/BLACKICE --dir $root --pattern Blackice-2.39.0-Setup.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Exact Setup download failed.' }
+          $setup=Join-Path $root 'Blackice-2.39.0-Setup.exe'
+          if ((Get-Item -LiteralPath $setup).Length -ne 154423063 -or (Get-FileHash -LiteralPath $setup).Hash.ToLowerInvariant() -cne 'c16a3f3d47be4c1f2b25f4100d42d8518d999ceeb3b2e1888bd615f553b74d6f') { throw 'Exact Setup checksum failed.' }
+      - name: Run original hidden offline verifier and print only redacted failure diagnostics
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Remove-Item Env:GH_TOKEN,Env:NODE_OPTIONS,Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          $root=[IO.Path]::GetFullPath($env:BLACKICE_STARTUP_DIAG)
+          $runner=[IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\')
+          if ([IO.Path]::GetDirectoryName($root) -ine $runner -or [IO.Path]::GetFileName($root) -notmatch '^blackice-startup-diag-[a-f0-9]{32}$') { throw 'Owned diagnostic path mismatch.' }
+          $source=Join-Path $env:GITHUB_WORKSPACE 'source'
+          if ((& git -C $source rev-parse HEAD).Trim() -cne '5f578fcb70214cf6cac787707ea43d3906d4fd0a') { throw 'Checkout is not the exact frozen source.' }
+          $install=Join-Path $root 'install'
+          $runtime=Join-Path $root 'runtime'
+          [IO.Directory]::CreateDirectory($runtime) | Out-Null
+          $report=Join-Path $root 'runtime-report.json'
+          $exe=Join-Path $install 'BLACKICE.exe'
+          $node=(Get-Command node.exe -CommandType Application | Select-Object -First 1).Source
+          $setup=Join-Path $root 'Blackice-2.39.0-Setup.exe'
+          $installed=$false;$forced=$false;$runtimeExit=$null
+          function Wait-OwnedSetup([string]$File,[string]$Arguments) {
+            $job=Start-Job -ArgumentList $File,$Arguments -ScriptBlock {
+              param($File,$Arguments)
+              $p=Start-Process -FilePath $File -ArgumentList $Arguments -Wait -PassThru -WindowStyle Hidden
+              [int]$p.ExitCode
             }
-            return $release
+            try {
+              $done=Wait-Job $job -Timeout 180
+              if (!$done -or $job.State -ne 'Completed') { throw 'Owned setup process tree exceeded its bound.' }
+              $codes=@(Receive-Job $job -ErrorAction Stop)
+              if ($codes.Count -ne 1 -or $codes[0] -ne 0) { throw 'Owned setup returned nonzero exit.' }
+            } finally {
+              if ($job.State -eq 'Running') { Stop-Job $job }
+              Remove-Job $job -Force
+            }
           }
-          $null=Read-ExactRelease
-          $root=[IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\')
-          $name='blackice-draft-read-'+[guid]::NewGuid().ToString('N')
-          $owned=[IO.Path]::GetFullPath((Join-Path $root $name))
-          if ([IO.Path]::GetDirectoryName($owned) -ine $root -or [IO.Path]::GetFileName($owned) -cne $name) { throw 'Diagnostic folder boundary mismatch.' }
-          [IO.Directory]::CreateDirectory($owned) | Out-Null
-          try {
-            foreach ($row in $expected) {
-              gh release download v2.39.0 --repo $repo --dir $owned --pattern $row.name
-              if ($LASTEXITCODE -ne 0) { throw 'Draft JSON download failed.' }
-              $file=Join-Path $owned $row.name
-              $item=Get-Item -LiteralPath $file
-              if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $item.Length -gt 1000000 -or $item.Length -ne $row.bytes) { throw 'Diagnostic JSON file is not bounded and exact.' }
-              $hash=(Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
-              if ($hash -cne $row.sha256) { throw 'Diagnostic asset bytes differ.' }
-              $value=[IO.File]::ReadAllText($file) | ConvertFrom-Json
-              @{event='draftEvidence';name=$row.name;assetId=$row.id;bytes=$item.Length;sha256=$hash;value=$value} | ConvertTo-Json -Compress -Depth 40
+          function Redact-Excerpt([string]$Text) {
+            foreach ($prefix in @($root,$source,$env:RUNNER_TEMP,$env:USERPROFILE,$env:APPDATA)) {
+              if ($prefix) {
+                $Text=[regex]::Replace($Text,[regex]::Escape($prefix),'<owned>','IgnoreCase')
+                $Text=[regex]::Replace($Text,[regex]::Escape($prefix.Replace('\','/')),'<owned>','IgnoreCase')
+              }
             }
-            $null=Read-ExactRelease
-            @{event='draftEvidenceReadCompleted';releaseId=$releaseId;draft=$true;tag='v2.39.0';target=$target;files=$expected.Count;releaseEdits=$false;vmActions=$false} | ConvertTo-Json -Compress
+            $Text=[regex]::Replace($Text,'(?i)https?://(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?[^\s"''<>]*','<loopback>')
+            $Text=[regex]::Replace($Text,'(?i)Bearer\s+[A-Za-z0-9._~+/-]+=*','Bearer <redacted>')
+            $Text=[regex]::Replace($Text,'(?i)((?:cookie|set-cookie|token|password|api[-_]?key|authorization)\s*["'']?\s*[:=]\s*)(?:"[^"]*"|''[^'']*''|[^\s,;]+)','$1<redacted>')
+            return $Text
+          }
+          try {
+            Wait-OwnedSetup $setup "/S /currentuser /D=$install"
+            $installed=$true
+            $fingerprint=@'
+          import {pathToFileURL} from 'node:url';
+          const [source,app]=process.argv.slice(1);
+          const {appFingerprint}=await import(pathToFileURL(source+'/scripts/release-check.mjs'));
+          const expected='0ae9f24468d3ce0a756836e54fe5c1ffd44c69f56d747ae0c8f65a4010fb5a22';
+          if(await appFingerprint(source)!==expected||await appFingerprint(app)!==expected)throw Error('Installed source fingerprint differs.');
+          console.log(JSON.stringify({event:'exactInstalledFingerprint',passed:true,appFingerprint:expected}));
+          '@
+            & $node --input-type=module -e $fingerprint $source (Join-Path $install 'resources/app')
+            if ($LASTEXITCODE -ne 0) { throw 'Installed app fingerprint failed.' }
+            $observer=Join-Path $root 'exit-observer.mjs'
+            $observerSource=@'
+          import cp from 'node:child_process';import {syncBuiltinESMExports} from 'node:module';import fs from 'node:fs';import path from 'node:path';
+          const a=process.argv,index=a.indexOf('--exe'),wanted=path.resolve(a[index+1]).toLowerCase(),out=path.join(path.dirname(a[a.indexOf('--report')+1]),'child-exit-observer.jsonl'),original=cp.spawn;
+          let events=0;function record(value){try{if(events++<100)fs.appendFileSync(out,JSON.stringify(value)+'\n')}catch{}}
+          cp.spawn=function(file,...rest){const child=Reflect.apply(original,this,[file,...rest]);if(path.resolve(String(file)).toLowerCase()===wanted){record({event:'ownedNativeChildSpawn',pid:child.pid});child.once('exit',(code,signal)=>record({event:'ownedNativeChildExit',pid:child.pid,code,signal}));child.once('error',e=>record({event:'ownedNativeChildError',pid:child.pid,code:/^[A-Z0-9_]+$/.test(e.code||'')?e.code:'UNKNOWN'}));}return child;};syncBuiltinESMExports();
+          '@
+            [IO.File]::WriteAllText($observer,$observerSource,[Text.UTF8Encoding]::new($false))
+            $p=[Diagnostics.Process]::new()
+            $p.StartInfo=[Diagnostics.ProcessStartInfo]::new($node)
+            $p.StartInfo.UseShellExecute=$false;$p.StartInfo.CreateNoWindow=$true
+            $p.StartInfo.RedirectStandardOutput=$true;$p.StartInfo.RedirectStandardError=$true
+            $p.StartInfo.WorkingDirectory=$source
+            foreach ($name in @('GH_TOKEN','NODE_OPTIONS','ELECTRON_RUN_AS_NODE')) { [void]$p.StartInfo.Environment.Remove($name) }
+            $arguments=@('--import',([uri]::new($observer)).AbsoluteUri,(Join-Path $source 'scripts/verify-installed-runtime.mjs'),'--app-dir',(Join-Path $install 'resources/app'),'--exe',$exe,'--test-root',$runtime,'--report',$report,'--expected-version','2.39.0','--expected-fingerprint','0ae9f24468d3ce0a756836e54fe5c1ffd44c69f56d747ae0c8f65a4010fb5a22','--hidden-only')
+            foreach ($argument in $arguments) { $p.StartInfo.ArgumentList.Add($argument) }
+            try {
+              if (!$p.Start()) { throw 'Original runtime verifier could not start.' }
+              $stdout=$p.StandardOutput.ReadToEndAsync();$stderr=$p.StandardError.ReadToEndAsync()
+              if (!$p.WaitForExit(360000)) { $p.Kill($true);$forced=$true;throw 'Original runtime verifier exceeded six minutes.' }
+              [void]$stdout.Wait(5000);[void]$stderr.Wait(5000)
+              $runtimeExit=$p.ExitCode
+              if ($stdout.IsCompletedSuccessfully) { [IO.File]::WriteAllText((Join-Path $root 'verifier.stdout'),$stdout.Result) }
+              if ($stderr.IsCompletedSuccessfully) { [IO.File]::WriteAllText((Join-Path $root 'verifier.stderr'),$stderr.Result) }
+            } finally { $p.Dispose() }
+            if (Test-Path -LiteralPath $report) {
+              $value=[IO.File]::ReadAllText($report) | ConvertFrom-Json
+              @{event='originalVerifierResult';diagnosticOnly=$true;installerAcceptance=$false;nativeStatus=$(if($value.passed -eq $true -and $runtimeExit -eq 0){'PASS'}else{'FAIL'});exitCode=$runtimeExit;value=$value} | ConvertTo-Json -Compress -Depth 20
+            }
+            $trace=Join-Path $root 'child-exit-observer.jsonl'
+            if ((Test-Path -LiteralPath $trace) -and (Get-Item -LiteralPath $trace).Length -le 65536) {
+              foreach ($line in [IO.File]::ReadAllLines($trace)) { $null=$line | ConvertFrom-Json;Write-Host $line }
+            }
+            foreach ($log in @(Get-ChildItem -LiteralPath $runtime -Recurse -File | Where-Object {$_.Name -in @('private-native.log','private-errors.log')})) {
+              $stream=[IO.File]::OpenRead($log.FullName)
+              try { if($stream.Length -gt 262144){[void]$stream.Seek(-262144,[IO.SeekOrigin]::End)};$reader=[IO.BinaryReader]::new($stream);$bytes=$reader.ReadBytes(262144) } finally { $stream.Dispose() }
+              $text=[Text.Encoding]::UTF8.GetString($bytes)
+              $lines=$text -split '\r?\n';$keep=[Collections.Generic.SortedSet[int]]::new()
+              for($i=0;$i -lt $lines.Count;$i++){if($lines[$i] -match '(?i)Error|Exception|ERR_MODULE|Cannot find|BLACKICE.*start|fatal'){foreach($j in ([Math]::Max(0,$i-1))..([Math]::Min($lines.Count-1,$i+2))){[void]$keep.Add($j)}}}
+              $excerpt=(($keep | Select-Object -First 80 | ForEach-Object {$lines[$_].Substring(0,[Math]::Min(1000,$lines[$_].Length))}) -join [Environment]::NewLine)
+              $excerpt=Redact-Excerpt $excerpt
+              if($excerpt.Length -gt 16384){$excerpt=$excerpt.Substring(0,16384)}
+              @{event='startupFatalExcerpt';file=$log.Name;redacted=$true;text=$excerpt} | ConvertTo-Json -Compress -Depth 3
+            }
           } finally {
-            if ([IO.Path]::GetDirectoryName($owned) -ine $root -or [IO.Path]::GetFileName($owned) -cne $name) { throw 'Diagnostic cleanup boundary mismatch.' }
-            Remove-Item -LiteralPath $owned -Recurse -Force
+            $prefix=[IO.Path]::GetFullPath($install).TrimEnd('\')+'\'
+            foreach($process in @(Get-CimInstance Win32_Process | Where-Object {$_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)})){
+              $current=Get-CimInstance Win32_Process -Filter ("ProcessId="+$process.ProcessId)
+              if($current -and $current.CreationDate -eq $process.CreationDate -and $current.ExecutablePath -ceq $process.ExecutablePath){Stop-Process -Id $current.ProcessId -Force -ErrorAction SilentlyContinue;$forced=$true}
+            }
+            if($installed){
+              $uninstallers=@(Get-ChildItem -LiteralPath $install -File -Filter 'Uninstall*.exe' -ErrorAction SilentlyContinue)
+              if($uninstallers.Count -eq 1 -and [IO.Path]::GetDirectoryName($uninstallers[0].FullName) -ieq $install){Wait-OwnedSetup $uninstallers[0].FullName '/S /currentuser'}
+            }
+            @{event='diagnosticCleanup';diagnosticOnly=$true;forcedTerminationUsed=$forced;installationRemoved=!(Test-Path -LiteralPath $install);releaseEdits=$false;vmActions=$false} | ConvertTo-Json -Compress
+            if ([IO.Path]::GetDirectoryName($root) -ine $runner -or [IO.Path]::GetFileName($root) -notmatch '^blackice-startup-diag-[a-f0-9]{32}$') { throw 'Diagnostic cleanup boundary mismatch.' }
+            Remove-Item -LiteralPath $root -Recurse -Force
           }
