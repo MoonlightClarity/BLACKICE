@@ -14,6 +14,7 @@ topLevelFiles.add('RELEASE-NOTES-2.35.6.md');
 topLevelFiles.add('RELEASE-NOTES-2.36.0.md');
 topLevelFiles.add('RELEASE-NOTES-2.36.1.md');
 topLevelFiles.add('RELEASE-NOTES-2.37.0.md');
+topLevelFiles.add('RELEASE-NOTES-2.38.0.md');
 topLevelFiles.add('WORKBENCH-NATIVE-DISPLAY.md');
 
 // Match the existing installer inputs without admitting arbitrary native helpers.
@@ -27,6 +28,7 @@ const packagedNativeHelpers = new Set([
   'scripts/workbench-guest-display.ps1', 'scripts/workbench-desktop-stream.ps1',
   'scripts/install-workbench-guest-video.ps1', 'scripts/workbench-rdp-preflight.ps1',
   'scripts/workbench-native-host-preflight.ps1', 'scripts/package-workbench-freerdp.mjs',
+  'scripts/package-workbench-native.mjs', 'resources/workbench-native/package.json',
   'resources/guest/workbench-guest-video.exe', 'resources/guest/LICENSE-jpegn.txt',
   'scripts/workbench-guest-app-batch.ps1', 'scripts/workbench-headless-broker.ps1',
 ]);

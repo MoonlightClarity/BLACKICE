@@ -28,7 +28,7 @@ test('contained ownership and sign-in pause retain BLACKICE-only task browser ro
   async runAgent(options){
    assert.match(options.prompt,/BACKGROUND WORKSPACE/);assert.match(options.developerInstructions,/contained (?:relay_browser|browser)/);
    assert.match(options.prompt,/Use only the BLACKICE contained browser/);
-   assert.match(options.prompt,/Do not call Chrome/);
+   assert.match(options.prompt,/Do not call host Chrome/);
    assert.match(options.prompt,/Preserve an in-progress form/);
    assert.deepEqual(options.dynamicTools.find(tool=>tool.name==='relay_connections').inputSchema.properties.action.enum,['connections','tools','call']);
    const foreign=await options.onToolCall({name:'relay_browser',arguments:{action:'read',tabId:'personal-tab'}});assert.equal(foreign.success,false);assert.equal(foreign.code,'BROWSER_TAB_OWNERSHIP');assert.equal(pages,0);

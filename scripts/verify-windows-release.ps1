@@ -217,6 +217,7 @@ check(Number(process.versions.node.split('.')[0])>=22,'Node 22 or newer required
 const sha=b=>createHash('sha256').update(b).digest('hex');
 const save=async(n,v)=>fs.writeFile(path.join(out,n),JSON.stringify(v,null,2)+'\n');
 const {appFingerprint}=await import(pathToFileURL(path.join(src,'scripts/release-check.mjs')));
+const {verifyInstalledWorkbenchNative,selfTestWorkbenchNative}=await import(pathToFileURL(path.join(src,'scripts/package-workbench-native.mjs')));
 const {approvedWindowsPackageFile,forbiddenWindowsPackagePath,readWindowsSourceTestReceipt}=await import(pathToFileURL(path.join(src,'scripts/windows-release-inputs.mjs')));
 const source=await appFingerprint(src), installed=await appFingerprint(app);
 check(source===expected&&installed===source,'Source/installed fingerprint mismatch');
@@ -237,6 +238,9 @@ async function walk(relative='') {
   }
 }
 await walk();
+const native=await verifyInstalledWorkbenchNative({appDirectory:app,resourcesDirectory:path.join(install,'resources'),systemDirectory:path.join(process.env.SystemRoot,'System32')});
+native.selfTest=await selfTestWorkbenchNative({directory:path.join(install,'resources/workbench-native'),systemDirectory:path.join(process.env.SystemRoot,'System32')});
+await save('blackice-native-workbench-integrity.json',{format:1,product:'BLACKICE',...native,vmConnectionAttempted:false});
 const licenses=['LICENSE','NOTICE','THIRD-PARTY-NOTICES.md','lib/vendor/ADBLOCK-NOTICES.md','lib/vendor/adblock-source.json','lib/vendor/adblock-filter-data.json','lib/vendor/catalyst/LICENSE.txt','lib/vendor/catalyst/NOTICE.md','lib/vendor/catalyst/LICENSES.md','lib/vendor/pdfium/LICENSE-wrapper.md','lib/vendor/pdfium/LICENSE-PDFium.txt','lib/vendor/pdfium/provenance.json',...['ibmplexmono','oxanium','sharetechmono'].map(n=>`public/assets/fonts/${n}-OFL.txt`)];
 const notices=licenses.map(p=>{const record=records.find(r=>r.path===p);check(record?.bytes>0,'Required upstream notice/source missing');return record});
 for(const name of ['LICENSE.electron.txt','LICENSES.chromium.html']) {

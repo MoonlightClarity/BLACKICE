@@ -59,7 +59,11 @@ $beforeAcl=[IO.File]::GetAccessControl($file).GetSecurityDescriptorSddlForm([Sec
 $publisher=[BLACKICEPublisherFixture]::Start($file)
 $timer=[Diagnostics.Stopwatch]::StartNew();$reads=0;$failures=0;$last=0;$regressions=0
 try{
- while($timer.ElapsedMilliseconds -lt 2500){
+ # Exercise a minimum number of atomic publications, rather than imposing an
+ # incidental local-disk throughput target on a flushed SMB transport. The
+ # owned fixture still has the same 30-second outer process deadline.
+ while($timer.ElapsedMilliseconds -lt 2500 -or $reads -lt 50 -or [BLACKICEPublisherFixture]::Writes -lt 50){
+  if([BLACKICEPublisherFixture]::Error){throw ('Fixture publisher failed: '+[BLACKICEPublisherFixture]::Error)}
   try{
    $value=Read-JobJson $file 16000
    if($value.sequence -lt $last){$regressions++}
@@ -119,7 +123,9 @@ async function execute(base){
     return receipt;
   }finally{
     if(linked)await fs.unlink(path.join(root,'linked')).catch(()=>{});
-    assert.ok(path.resolve(root).startsWith(path.resolve(base)+path.sep));assert.match(path.basename(root),/^blackice-publisher-/);
+    const relative=path.relative(path.resolve(base),path.resolve(root));
+    assert.ok(relative&&!path.isAbsolute(relative)&&relative!=='..'&&!relative.startsWith('..'+path.sep));
+    assert.equal(path.dirname(relative),'.');assert.equal(relative,path.basename(root));assert.match(path.basename(root),/^blackice-publisher-/);
     assert.equal(path.dirname(path.resolve(local)).toLowerCase(),path.resolve(os.tmpdir()).toLowerCase());assert.match(path.basename(local),/^blackice-publisher-source-/);
     await fs.rm(root,{recursive:true,force:true});await fs.rm(local,{recursive:true,force:true});
   }

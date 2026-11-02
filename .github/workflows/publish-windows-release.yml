@@ -41,6 +41,7 @@ jobs:
           $request=$raw | ConvertFrom-Json
           "RELEASE_TAG=$($request.tag)" >> $env:GITHUB_ENV
           "RELEASE_VERSION=$($request.version)" >> $env:GITHUB_ENV
+          "NATIVE_SOURCE_ARCHIVE=Blackice-$($request.version)-Native-Sources.tar" >> $env:GITHUB_ENV
           "EXPECTED_FINGERPRINT=$($request.appFingerprint)" >> $env:GITHUB_ENV
           "SOURCE_TEST_RECEIPT=$($request.sourceTestReceipt)" >> $env:GITHUB_ENV
           "EXPECTED_SOURCE_INDEX_SHA256=$($request.sourceIndexSha256)" >> $env:GITHUB_ENV
@@ -83,6 +84,20 @@ jobs:
           npm run package:public
           if ($LASTEXITCODE -ne 0) { throw 'Windows packaging failed.' }
 
+      - name: Package the complete matching native dependency sources
+        if: steps.draft.outputs.reuse == 'false'
+        run: |
+          $ErrorActionPreference='Stop'
+          $sources=Join-Path $PWD '.build/native-source-companion'
+          $cache=Join-Path $PWD '.build/native-source-cache'
+          node scripts/package-workbench-native-sources.mjs "--output-dir=$sources" "--cache-dir=$cache"
+          if ($LASTEXITCODE -ne 0) { throw 'Complete corresponding-source packaging failed.' }
+          foreach ($name in @($env:NATIVE_SOURCE_ARCHIVE,'SOURCE-INDEX.json','blackice-native-sources.json')) {
+            $target=Join-Path $env:BLACKICE_DISTRIBUTION $name
+            if (Test-Path -LiteralPath $target) { throw 'A native source output already exists.' }
+            Copy-Item -LiteralPath (Join-Path $sources $name) -Destination $target
+          }
+
       - name: Recover the same complete draft candidate
         if: steps.draft.outputs.reuse == 'true'
         env:
@@ -91,7 +106,7 @@ jobs:
           $ErrorActionPreference='Stop'
           New-Item -ItemType Directory -Path $env:BLACKICE_DISTRIBUTION -Force | Out-Null
           $setup="Blackice-$env:RELEASE_VERSION-Setup.exe"
-          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --dir $env:BLACKICE_DISTRIBUTION --pattern $setup --pattern blackice-public-release.json --pattern SHA256SUMS.txt
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --dir $env:BLACKICE_DISTRIBUTION --pattern $setup --pattern blackice-public-release.json --pattern SHA256SUMS.txt --pattern $env:NATIVE_SOURCE_ARCHIVE --pattern SOURCE-INDEX.json --pattern blackice-native-sources.json
           if ($LASTEXITCODE -ne 0) { throw 'Draft is incomplete or download failed; inspect its assets before recovery.' }
 
       - name: Verify candidate bytes and write exact checksums
@@ -99,12 +114,31 @@ jobs:
           REUSE_DRAFT: ${{ steps.draft.outputs.reuse }}
         run: |
           $ErrorActionPreference='Stop'
+          $nativeRaw=node scripts/release-native-source-assets.mjs "--directory=$env:BLACKICE_DISTRIBUTION"
+          if ($LASTEXITCODE -ne 0) { throw 'Native corresponding-source asset verification failed.' }
+          $native=$nativeRaw | ConvertFrom-Json
+          "EXPECTED_NATIVE_SOURCE_SHA256=$($native.archiveSha256)" >> $env:GITHUB_ENV
+          "EXPECTED_NATIVE_INDEX_SHA256=$($native.indexSha256)" >> $env:GITHUB_ENV
+          "EXPECTED_NATIVE_METADATA_SHA256=$($native.metadataSha256)" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Path $env:BLACKICE_EVIDENCE -Force | Out-Null
+          $native | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $env:BLACKICE_EVIDENCE 'blackice-native-source-validation.json') -Encoding utf8NoBOM
+          $manifestPath=Join-Path $env:BLACKICE_DISTRIBUTION 'blackice-public-release.json'
+          $releaseManifest=Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -AsHashtable
+          $sourceBinding=@{archiveName=$env:NATIVE_SOURCE_ARCHIVE;archiveSha256=$native.archiveSha256;indexSha256=$native.indexSha256;metadataSha256=$native.metadataSha256}
+          if ($env:REUSE_DRAFT -eq 'true') {
+            foreach ($key in $sourceBinding.Keys) {
+              if ($releaseManifest.nativeCorrespondingSources[$key] -cne $sourceBinding[$key]) { throw 'Draft source companion binding differs.' }
+            }
+          } else {
+            $releaseManifest.nativeCorrespondingSources=$sourceBinding
+            $releaseManifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
+          }
           $raw=node scripts/release-request.mjs --request .github/release-request.json --source-commit $env:GITHUB_SHA --distribution $env:BLACKICE_DISTRIBUTION
           if ($LASTEXITCODE -ne 0) { throw 'Candidate/source binding failed.' }
           $candidate=$raw | ConvertFrom-Json
           "EXPECTED_SHA256=$($candidate.installerSha256)" >> $env:GITHUB_ENV
           $checksums=@()
-          foreach ($name in @($candidate.installerName,'blackice-public-release.json')) {
+          foreach ($name in @($candidate.installerName,'blackice-public-release.json',$env:NATIVE_SOURCE_ARCHIVE,'SOURCE-INDEX.json','blackice-native-sources.json')) {
             $hash=(Get-FileHash -LiteralPath (Join-Path $env:BLACKICE_DISTRIBUTION $name) -Algorithm SHA256).Hash.ToLowerInvariant()
             $checksums+="$hash  $name"
           }
@@ -142,7 +176,10 @@ jobs:
           $setup=Join-Path $env:BLACKICE_DISTRIBUTION "Blackice-$env:RELEASE_VERSION-Setup.exe"
           $manifest=Join-Path $env:BLACKICE_DISTRIBUTION 'blackice-public-release.json'
           $checksums=Join-Path $env:BLACKICE_DISTRIBUTION 'SHA256SUMS.txt'
-          gh release create $env:RELEASE_TAG $setup $manifest $checksums --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --draft --title "BLACKICE $env:RELEASE_VERSION" --notes-file "RELEASE-NOTES-$env:RELEASE_VERSION.md"
+          $nativeSources=Join-Path $env:BLACKICE_DISTRIBUTION $env:NATIVE_SOURCE_ARCHIVE
+          $sourceIndex=Join-Path $env:BLACKICE_DISTRIBUTION 'SOURCE-INDEX.json'
+          $nativeMetadata=Join-Path $env:BLACKICE_DISTRIBUTION 'blackice-native-sources.json'
+          gh release create $env:RELEASE_TAG $setup $manifest $checksums $nativeSources $sourceIndex $nativeMetadata --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --draft --title "BLACKICE $env:RELEASE_VERSION" --notes-file "RELEASE-NOTES-$env:RELEASE_VERSION.md"
           if ($LASTEXITCODE -ne 0) { throw 'Draft creation or asset upload failed; inspect before retrying.' }
           $raw=gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json databaseId
           if ($LASTEXITCODE -ne 0) { throw 'Draft receipt lookup failed.' }
@@ -170,7 +207,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Draft recheck failed.' }
           $release=$raw | ConvertFrom-Json
           if (!$release.isDraft -or $release.databaseId -ne [long]$env:RELEASE_DATABASE_ID -or $release.targetCommitish -cne $env:GITHUB_SHA) { throw 'Release changed; evidence upload stopped.' }
-          $names=@('blackice-github-validation.json','blackice-windows-install-validation.json','blackice-runtime-integrity.json','blackice-source-test-provenance.json','blackice-runtime-validation.json','blackice-release-receipts.json','blackice-public-readiness.json')
+          $names=@('blackice-github-validation.json','blackice-windows-install-validation.json','blackice-runtime-integrity.json','blackice-source-test-provenance.json','blackice-runtime-validation.json','blackice-release-receipts.json','blackice-public-readiness.json','blackice-native-workbench-integrity.json','blackice-native-source-validation.json')
           $files=@()
           foreach ($name in $names) {
             $file=Join-Path $env:BLACKICE_EVIDENCE $name
@@ -195,10 +232,12 @@ jobs:
           $downloads=Join-Path $env:RUNNER_TEMP ('blackice-publication-assets-' + [guid]::NewGuid().ToString('N'))
           New-Item -ItemType Directory -Path $downloads | Out-Null
           $setup="Blackice-$env:RELEASE_VERSION-Setup.exe"
-          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --dir $downloads --pattern $setup --pattern blackice-public-release.json --pattern SHA256SUMS.txt
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --dir $downloads --pattern $setup --pattern blackice-public-release.json --pattern SHA256SUMS.txt --pattern $env:NATIVE_SOURCE_ARCHIVE --pattern SOURCE-INDEX.json --pattern blackice-native-sources.json
           if ($LASTEXITCODE -ne 0) { throw 'Final draft asset download failed; publication stopped.' }
           node scripts/release-request.mjs --request .github/release-request.json --source-commit $env:GITHUB_SHA --publication-assets $downloads
           if ($LASTEXITCODE -ne 0) { throw 'Draft asset bytes changed after installer verification.' }
+          node scripts/release-native-source-assets.mjs "--directory=$downloads" "--expected-archive-sha256=$env:EXPECTED_NATIVE_SOURCE_SHA256" "--expected-index-sha256=$env:EXPECTED_NATIVE_INDEX_SHA256" "--expected-metadata-sha256=$env:EXPECTED_NATIVE_METADATA_SHA256"
+          if ($LASTEXITCODE -ne 0) { throw 'Corresponding source assets changed before publication.' }
           node scripts/release-request.mjs --request .github/release-request.json --source-commit $env:GITHUB_SHA --github-tag verify
           if ($LASTEXITCODE -ne 0) { throw 'Release tag changed before publication.' }
           $raw=gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft,databaseId,targetCommitish

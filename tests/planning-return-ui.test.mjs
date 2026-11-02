@@ -11,18 +11,50 @@ import { renderObserveFeed } from '../public/observe-ui.mjs';
 function fakeTimeline() {
   const document = { createElement: element, createDocumentFragment: () => element('#fragment') };
   function element(tagName) {
-    const node = { tagName, ownerDocument: document, className: '', dataset: {}, attributes: {}, children: [], _text: '',
-      classList: { add() {} }, append(...children) { this.children.push(...children); },
-      replaceChildren(...children) { this.children = children.flatMap(child => child.tagName === '#fragment' ? child.children : [child]); this._text = ''; },
-      setAttribute(name, value) { this.attributes[name] = String(value); }, addEventListener() {},
+    const listeners = new Map();
+    const node = { tagName, ownerDocument: document, parentNode: null, className: '', dataset: {}, attributes: {}, children: [], _text: '',
+      classList: { add() {} },
+      append(...children) {
+        for (const child of children) {
+          if (child.tagName === '#fragment') { this.append(...[...child.children]); continue; }
+          child.remove(); child.parentNode = this; this.children.push(child);
+        }
+      },
+      insertBefore(child, before) {
+        assert.ok(before == null || this.children.includes(before), 'The reference node must belong to this parent.');
+        if (child === before) return child;
+        if (child.tagName === '#fragment') { for (const item of [...child.children]) this.insertBefore(item, before); return child; }
+        child.remove(); const index = before == null ? this.children.length : this.children.indexOf(before);
+        child.parentNode = this; this.children.splice(index, 0, child); return child;
+      },
+      remove() {
+        if (!this.parentNode) return;
+        const siblings = this.parentNode.children, index = siblings.indexOf(this);
+        if (index >= 0) siblings.splice(index, 1); this.parentNode = null;
+      },
+      replaceChildren(...children) { for (const child of [...this.children]) child.remove(); this.append(...children); this._text = ''; },
+      setAttribute(name, value) { this.attributes[name] = String(value); },
+      addEventListener(type, listener) { const list = listeners.get(type) || []; list.push(listener); listeners.set(type, list); },
+      dispatchEvent(event) { for (const listener of listeners.get(event.type) || []) listener.call(this, event); return true; },
       querySelectorAll(selector) { assert.equal(selector, 'details[data-disclosure-id]'); return descendants(this, item => item.tagName === 'details' && item.dataset.disclosureId); } };
-    Object.defineProperty(node, 'textContent', { get() { return this._text + this.children.map(child => child.textContent).join(''); }, set(value) { this._text = String(value ?? ''); this.children = []; } });
-    Object.defineProperty(node, 'innerHTML', { get() { return this._html ?? ''; }, set(value) { this._html = String(value); this._text = ''; this.children = []; } });
+    Object.defineProperty(node, 'parentElement', { get() { return this.parentNode?.tagName === '#fragment' ? null : this.parentNode; } });
+    Object.defineProperty(node, 'isConnected', { get() { return this.tagName === 'main' || this.parentNode?.isConnected === true; } });
+    Object.defineProperty(node, 'childNodes', { get() { return this.children; } });
+    Object.defineProperty(node, 'lastChild', { get() { return this.children.at(-1) || null; } });
+    Object.defineProperty(node, 'textContent', { get() { return this._text + this.children.map(child => child.textContent).join(''); }, set(value) { this.replaceChildren(); this._text = String(value ?? ''); } });
+    Object.defineProperty(node, 'innerHTML', { get() { return this._html ?? ''; }, set(value) { this.replaceChildren(); this._html = String(value); } });
     return node;
   }
   return element('main');
 }
 const descendants = (node, predicate) => [...(predicate(node) ? [node] : []), ...node.children.flatMap(child => descendants(child, predicate))];
+function expandDetails(timeline) {
+  for (;;) {
+    const closed = descendants(timeline, node => node.tagName === 'details' && !node.open);
+    if (!closed.length) return;
+    for (const node of closed) { node.open = true; node.dispatchEvent({ type: 'toggle' }); }
+  }
+}
 
 test('public records retain Plan → Think → Plan → Think → Respond with timestamps, sources, and only one final answer', () => {
   const run = planningReturnRun(), before = structuredClone(run), messages = messagesOfRun(run), groups = chatTimeline(run, messages);
@@ -39,6 +71,7 @@ test('public records retain Plan → Think → Plan → Think → Respond with t
 test('the production renderer preserves both planning visits in expandable history and the full dotted outline', () => {
   const [run] = projectFamily({ runs: [planningReturnRun()] }).runs, timeline = fakeTimeline();
   paintHistory({ timeline }, [run]);
+  expandDetails(timeline);
   const history = descendants(timeline, node => node.className === 'next-chat-outline-history')[0];
   assert.ok(history, 'The saved work remains inspectable in its History disclosure.');
   assert.deepEqual(descendants(history, node => node.dataset.phase).map(node => node.dataset.phase), ['plan', 'think', 'think', 'plan', 'think']);

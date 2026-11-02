@@ -71,5 +71,9 @@ test('desktop wiring grants browser permissions and preserves the scoped native 
   assert.match(source, /return isTrustedDesktopSender\(event, mainWindow, origin\)/);
   assert.match(source, /setPermissionRequestHandler\([^\n]*callback\(true\)/);
   assert.match(source, /setPermissionCheckHandler\(\(\) => true\)/);
-  assert.doesNotMatch(source, /clipboard\.(?:read|readText|readHTML|readImage|availableFormats)\s*\(/);
+  // Workbench sharing has separate ownership/focus checks; renderer clipboard
+  // IPC remains a scoped writer, with no read channel or read-capable handler.
+  const boundarySource=await readFile(new URL('../desktop/clipboard.mjs',import.meta.url),'utf8');
+  assert.doesNotMatch(boundarySource, /\b(?:readText|readHTML|readImage|availableFormats)\s*\(/);
+  assert.doesNotMatch(source, /ipcMain\.handle\(['"]relay:(?:read-clipboard|clipboard-read)['"]/);
 });
