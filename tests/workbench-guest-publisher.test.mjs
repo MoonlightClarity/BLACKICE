@@ -29,7 +29,7 @@ public static class BLACKICEPublisherFixture {
   Stop=false;Writes=0;Error=null;
   var thread=new System.Threading.Thread(delegate(){
    try{while(!Stop){int value=Writes+1;BLACKICEGuestJson.Publish(file,Json(value));Writes=value;System.Threading.Thread.Sleep(2);}}
-   catch(System.Exception exception){Error=exception.GetType().FullName+":"+exception.Message;}
+   catch(System.Exception exception){Error=exception.GetType().FullName+":"+exception.Message+" native="+(exception is System.ComponentModel.Win32Exception?((System.ComponentModel.Win32Exception)exception).NativeErrorCode:0)+" hresult=0x"+exception.HResult.ToString("X8");}
   });thread.IsBackground=true;thread.Start();return thread;
  }
  public static string Json(int value){return "{\"sequence\":"+value+",\"inverse\":"+(-value)+",\"payload\":\""+value+":"+new string('x',4096)+"\"}";}
@@ -63,7 +63,7 @@ try{
  # incidental local-disk throughput target on a flushed SMB transport. The
  # owned fixture still has the same 30-second outer process deadline.
  while($timer.ElapsedMilliseconds -lt 2500 -or $reads -lt 50 -or [BLACKICEPublisherFixture]::Writes -lt 50){
-  if([BLACKICEPublisherFixture]::Error){throw ('Fixture publisher failed: '+[BLACKICEPublisherFixture]::Error)}
+  if([BLACKICEPublisherFixture]::Error){throw ('Fixture publisher failed: '+[BLACKICEPublisherFixture]::Error+' reads='+$reads+' writes='+[BLACKICEPublisherFixture]::Writes+' readFailures='+$failures+' regressions='+$regressions+' elapsedMs='+$timer.ElapsedMilliseconds)}
   try{
    $value=Read-JobJson $file 16000
    if($value.sequence -lt $last){$regressions++}
