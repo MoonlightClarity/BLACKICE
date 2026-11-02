@@ -2,7 +2,7 @@
 
 BLACKICE is an open-source Windows application for working with AI agents on real tasks. It brings conversations, files, commands, web browsing, editable plans, reusable knowledge and recurring work into one desktop workspace. You can use an agent inside BLACKICE or connect an ordinary ChatGPT conversation to the tools on your computer.
 
-**2.38.0 for Windows x64. Project overview updated October 31, 2026.**
+**Latest tagged release: 2.38.0 for Windows x64. Project overview updated November 2, 2026.**
 
 **[2.38.0 Windows installer](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.38.0/Blackice-2.38.0-Setup.exe)** · [Release status and verification records](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.38.0) · [Release notes](RELEASE-NOTES-2.38.0.md) · [Checksums](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.38.0/SHA256SUMS.txt)
 
@@ -17,11 +17,11 @@ BLACKICE is usable today and remains under active development. The application i
 | Where you work | How it works |
 | --- | --- |
 | **In ChatGPT** | ChatGPT does the reasoning and calls BLACKICE's tools for files, commands, browsing and shared plans. BLACKICE performs those actions and returns saved results to the same conversation. This direct connection does not start a second AI model. |
-| **Inside BLACKICE** | Choose one of three official subscription-backed agent runtimes: Codex, Antigravity, or Qwen Code. BLACKICE retains conversation history, planning and workspace tools while the runtime handles inference under your account allowance. |
+| **Inside BLACKICE** | Use native Codex integration as the primary agent runtime for conversations, plans and tools. Historical model connections remain recorded so past conversations retain their original model identity. |
 
-BLACKICE supplies the workspace and execution tools. You supply the model connection or use the connected ChatGPT conversation. Provider accounts, model availability and any provider charges are separate from installing BLACKICE. **A subscription is a provider connection, not a model:** Antigravity and Qwen Code can each supply multiple selectable models, with exact model IDs retained per conversation. Refresh Antigravity's official CLI model list or save exact Qwen Code model IDs in Settings → Models; old CLI-default conversations keep their original route.
+BLACKICE supplies the workspace and execution tools. For the native Codex path, your existing Codex/ChatGPT account supplies model access. The direct ChatGPT connector uses the model in the calling ChatGPT conversation and starts no additional model worker. The selected model and provider belong to each conversation: changing a default for new chats must not silently relabel older ones. Saved API-provider configurations remain for compatibility, but they are not automatic metered fallbacks.
 
-**Product direction:** BLACKICE is a personal, autonomy-first agent, not enterprise software or an API marketplace. The supported model path is **Codex, Antigravity, and Qwen Code** through their official subscription-backed CLIs. Security protections remain optional compatibility concessions, not obstacles to routine autonomous work. Pay-as-you-go APIs, unstable free gateways and hardware-dependent local models are not part of the new default. Old API credentials and conversation history are retained, disabled and hidden for compatibility. [Three subscription runtimes](docs/three-subscription-runtimes-20261031.md) · [Legacy provider setup](docs/provider-setup-20261030.md).
+**Product direction:** BLACKICE is an open-source, personal, autonomy-first agent workspace. Current development is specialized around Codex and a bidirectional relationship between Codex and BLACKICE tools; a conversation can live in either environment. Antigravity and Qwen Code integrations were retired; their past conversations are preserved but those integrations can no longer execute. Some older provider and setup documents describe historical experiments rather than the supported direction. The 2.38.0 release notes record that checkpoint, while later working-tree changes are identified separately below.
 
 ## Workbench: persistent Windows applications
 
@@ -34,19 +34,19 @@ For one-time prerequisites, elevation/reboot, guest installation, shared folders
 ### Install and choose how to work
 
 1. **Install and open BLACKICE.** Run the Windows Setup installer. It installs for your Windows account and creates shortcuts and an Installed apps entry. Keep the application running while using its tools or schedules.
-2. **For an agent inside BLACKICE, choose a subscription-backed runtime.** Open **Settings → General → Model subscriptions**. Codex uses your ChatGPT sign-in. Antigravity uses the official signed-in Antigravity CLI. Qwen Code uses its official CLI with a configured QwenCloud Token Plan or Alibaba Coding Plan subscription; Qwen Desktop alone does not establish access. Choose your default and working directory in General. A disconnected subscription remains visible but unavailable instead of silently switching to a metered API.
+2. **For an agent inside BLACKICE, configure Codex.** Sign into Codex with the account you intend to use, then choose the native Codex model and working folder in Settings. BLACKICE retains the selected route on each saved conversation; an unavailable historical model remains identifiable instead of being replaced silently by a newer default. Older API-provider connections are compatibility options, not automatic fallback services.
 3. **For ChatGPT, connect this computer.** Open **Settings → ChatGPT connector** and follow **Prepare this computer**. The supported setup uses Tailscale and the displayed server address to create the **BLACKICE connection** in ChatGPT. Complete the connection's authorization, attach it to the intended conversation and check that a status request reaches this computer. The [connection guide](CHATGPT-CONNECTOR.md) covers the complete setup and Windows startup options. Reuse a healthy existing connection.
 4. **Add other tools when needed.** **Settings → Tools** connects local and remote tool servers using MCP, a standard for giving an AI model access to tools. You can enter settings or import a configuration. Import previews and saves the configuration; **Connect** starts the connection separately.
 
 Choose the model setup, the ChatGPT setup, or both. BLACKICE and any required model server or connection service must remain available while work runs.
 
-Supported native runtimes use their own provider accounts and usage caps. BLACKICE will not incur metered API charges as a fallback when subscription limits are reached. Previously saved API connections are available only under the **Legacy API connections** disclosure in Settings → Models; they are preserved for historical compatibility rather than advertised as new model options.
+Native Codex uses the limits and terms of your account. BLACKICE does not automatically spend money on metered APIs when Codex is unavailable. Previously saved API connections can be retained under legacy model settings, but they are distinct from the Codex-first path.
 
 ### From a request to a result
 
 Open **Chat**, start a conversation, attach relevant files and describe the outcome you want. For example, ask for a comparison of documents, a researched report, an update to local files or a recurring review of new information. With the direct connection, make the request in the ChatGPT conversation where BLACKICE is attached instead.
 
-With Planning on, an agent inside BLACKICE records its intended work before proceeding. You can inspect the steps, edit the saved plan and follow what is happening. The agent can read files, use the browser, run commands and call connected tools. Outputs and execution history remain available for review.
+When Planning is required, an agent inside BLACKICE records its intended work and eligible substeps before proceeding. In advisory mode, the same planning workspace is available without blocking routine actions. You can inspect the steps, edit the saved plan and follow what is happening. The agent can read files, use the browser, run commands and call connected tools. Outputs and execution history remain available for review.
 
 Inspect the resulting files and recorded outcomes, then continue the conversation to refine the work. For repeated work, save a workflow in **Activity**, then use **Tasks → Schedules → Create a schedule** to select it. Review later results in **Tasks → Results**. A prepared form, an uploaded file and a confirmed submission are different outcomes; the saved record should show which actually happened.
 
@@ -87,7 +87,7 @@ The local password manager can save and generate website credentials and fill su
 
 Planning gives the human and agents a shared, editable record of the goal, steps, dependencies, assignments, evidence and observed results. View it as a map or outline and inspect one step at a time. Saved plans can be named, grouped and revisited. The current **Intelligence Planning** view distinguishes analytical assessments, agent working plans and other project plans; **New assessment** starts a saved analytical project.
 
-**Planning is On or Off.** On is the default for BLACKICE agents and uses Inference → Feasibility → Plan → Think → Respond stages around operational work. Off skips that automatic analytical cycle while keeping saved notes and optional planning tools available. **Guardrails**, under **Settings → General**, is a separate setting and is off by default. With Planning On and Guardrails enabled, execution checks the saved plan, eligible action and recorded outcome before proceeding; with Guardrails off, planning metadata stays advisory. Model reasoning effort is a separate setting.
+**Planning enforcement is being consolidated into Forced / Advisory / Off.** In the current local development checkout, **Forced** requires a saved executable plan and one recorded atomic step at a time, **Advisory** makes planning available without blocking operations, and **Off** disables automatic planning requirements. This three-state implementation has source tests but is **not included in the tagged 2.38.0 release**, whose published source uses On/Off and a separate legacy guardrail setting. Planning enforcement and model reasoning effort are independent. The previous execution-guardrail setting remains a separate compatibility control, not a synonym for Forced planning.
 
 Inference first records the real benefit to the user, concrete requested outcomes, unwanted outcomes and delegated work within explicit constraints. Feasibility then preflights actual tools, access, rights, data and time, making confirmed blockers and model-repairable gaps visible before costly dependent work. A failed read, installable program or already-authorized ordinary terms are not automatic reasons to hand routine work back to the user. Concrete outcomes still need their own evidence; a broad benefit claim does not prove completion.
 
@@ -127,34 +127,29 @@ Chat preserves conversation history, drafts and attachments across navigation. C
 
 ## Current project state
 
-### What this source checkpoint includes
+### What is included and what is newer
 
-The **2.37.0 source checkpoint** adds recursive planning:
+The **2.38.0 tagged checkpoint** extends the 2.37.0 recursive planning work with model-provider persistence, per-conversation model identity, planning-response recovery, durable completion reporting, and a consolidated Activity view. Source and installed acceptance checks in the [2.38.0 release notes](RELEASE-NOTES-2.38.0.md) cover bounded cases including a Nemotron conversation retaining its identity when the new-chat default changed, a planning run that recovered its final response, and preservation of already-completed tool actions without blind replay. These do not prove reliability for every model or site.
 
-- **Executable substeps.** Plans use nested parent/child groups and concrete operations. Conditional choices support ordered IF/ELIF/ELSE, nested AND/OR/NOT/XOR, comparisons and membership tests over recorded observations.
-- **One operation at a time.** The runtime requires an eligible active leaf and its actual outcome before the next operation. Revisiting earlier work preserves previous attempts and puts dependent work back up for review without automatically repeating its effects.
-- **A return to planning before the answer.** After work, the agent records whether to continue, respond or report a genuine blocker. Changed work or user directions invalidate an earlier review. A premature final response resumes the same task for reassessment.
-- **Chronology and hierarchy in the interface.** Chat retains successive planning and working phases, and the outline follows the saved tree with numbers such as 1.1 and 1.1.1. Public planning activity survives conversation reopening and execution-history rollover.
+The **2.37.0 planning baseline** introduced nested executable substeps, chronological IF/ELIF/ELSE decisions, Boolean logic, one eligible operation at a time, and returning from thinking/execution to planning before final response. Saved outlines use hierarchical labels such as 1.1 and 1.1.1. See [recursive planning](docs/RECURSIVE-PLANNING.md) and [dogfood findings](docs/PLANNING-DOGFOOD-2026-10-29.md).
 
-The [2.37.0 release notes](RELEASE-NOTES-2.37.0.md), [planning contract](docs/RECURSIVE-PLANNING.md) and [bounded dogfood findings](docs/PLANNING-DOGFOOD-2026-10-29.md) describe the behavior and its limits. Earlier browser, conversation and workflow improvements remain described in the [2.36.1 notes](RELEASE-NOTES-2.36.1.md).
+**Post-2.38 local development (not a released claim):** the working checkout now implements the Forced / Advisory / Off planning choice and separates mandatory plan checkpoints from a legacy external-action toggle; current regression tests exercise that distinction. Codex-centered integration and user-directed automation are still being refined through hands-on development. Treat a local test, working-tree modification, or installed-runtime observation as evidence for that narrow case, not proof of a released installer.
 
 ### Verification and publication
 
-The [source verification record](https://github.com/MoonlightClarity/BLACKICE/blob/v2.37.0/verification/windows-2.37.0.json) identifies the tested source checkpoint, its file and runtime fingerprints, complete test inventory, outcome counts and test-log hashes. The Windows run passed 5,265 tests across 430 test files, with eight predefined optional integrations skipped and no failures, cancellations or required skips.
+The [2.38.0 release notes](RELEASE-NOTES-2.38.0.md) describe source and installer verification requirements and the acceptance observations attached to that checkpoint. The older [2.37.0 source verification record](https://github.com/MoonlightClarity/BLACKICE/blob/v2.37.0/verification/windows-2.37.0.json) reports 5,265 passing tests across 430 test files with eight predefined optional integrations skipped; **that count applies only to 2.37.0**, not newer changes.
 
-Publishing the Windows installer also requires fresh verification of that exact Setup executable: installation, shortcuts and registration, startup, restart, shutdown, profile backup and restore, clean removal, and comparison of its packaged application files with the release source. The [release page](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.37.0) reports the actual installer status and provides its verification records. A development installation, source test pass or model trial does not establish that the Setup installer passed.
-
-Each receipt applies to its named source checkpoint or installer artifact. It does not establish that every website, desktop application or model-driven task has been proven to work.
+A source-test pass, an existing development installation, and successful operation on one model do not establish that a newly built Windows Setup executable passed fresh install, restart, backup/restore and clean-uninstall checks. Confirm an installer with its matching release page, published receipts and checksums before treating it as verified.
 
 ### Current limitations and open issues
 
 - **Performance work continues.** Large chat histories have received improvements, but intermittent long startup and visible desktop responsiveness are still areas of investigation. A startup progress display does not establish the cause of a delay.
-- **Some interfaces are still being consolidated.** The current workspace does not yet expose every advanced configuration, browser organization and document control. The desktop is the primary interface; very narrow mobile layouts and arbitrary Windows application compatibility are incomplete.
+- **Some interfaces are still being consolidated.** Planning-enforcement controls, browser organization, document tooling, and multi-step agent handoffs continue to evolve. The desktop is the primary interface; very narrow mobile layouts and arbitrary Windows application compatibility are incomplete.
 - **Web tasks can need human involvement.** Site sign-in, human-verification challenges and missing information can interrupt a workflow. A browser action completing does not by itself establish that an external task succeeded.
 - **ChatGPT desktop approval behavior varies in a reported comparison.** On October 28, 2026, Pro Reasoning prompted for approval on every turn while Extra High did not in the same comparison. The checked connection already allowed all app actions, and BLACKICE had no local per-action approval gate. The cause and wider scope remain unconfirmed.
 - **Unsigned Windows builds are intentional.** BLACKICE is a one-person, free/open-source project with no signing budget. Signing is deferred until adoption justifies it; feature development comes first. **Smart App Control Off is recommended** for unsigned installs: its enforcement mode was observed blocking a local BLACKICE installer. Compatibility with Smart App Control On is unverified and likely problematic; Off is now set on the development host, and an unsigned test executable ran without a Code Integrity block; the unsigned BLACKICE NSIS packaging now succeeds with Smart App Control Off; Setup installation remains untested. This choice affects all Windows applications, not only BLACKICE. See [Windows releases](SIGNING-AND-RELEASE.md).
 
-The former reverse ChatGPT Bridge, browser-driven ChatGPT model provider, Thunderbird/Himalaya email integration and standalone Methods interface are retired. Their historical files may remain for compatibility. The supported ChatGPT direction is **ChatGPT calling BLACKICE**, email uses the browser, and analytical work uses shared Planning.
+The former reverse ChatGPT Bridge, browser-driven ChatGPT model provider, Antigravity and Qwen Code integrations, Thunderbird/Himalaya email integration and standalone Methods interface are retired. Their historical files may remain for compatibility. The supported ChatGPT direction is **ChatGPT calling BLACKICE**, email uses the browser, and analytical work uses shared Planning.
 
 ## Your data, background operation and updates
 
@@ -187,7 +182,7 @@ npm run desktop
 | Connect ChatGPT, enable connection startup and recover interrupted actions | [ChatGPT connector](CHATGPT-CONNECTOR.md) |
 | Remote connections and the agent API | [Remote access](REMOTE-ACCESS.md) |
 | Browser profiles, passwords and optional filtering | [Import](BROWSER-IMPORT.md), [passwords](BROWSER-PASSWORDS.md), [filtering](BROWSER-PROTECTION.md) |
-| Plans, human edits and agent coordination | [Shared editing](PLANNING-AWARENESS.md), [organization](PLANNING-ORGANIZATION.md), [practical judgment](docs/METACOGNITION.md) |
+| Plans, human edits and agent coordination | [Shared editing](PLANNING-AWARENESS.md), [recursive planning](docs/RECURSIVE-PLANNING.md), [organization](PLANNING-ORGANIZATION.md), [practical judgment](docs/METACOGNITION.md) |
 | Current desktop interface and performance work | [Frontend](FRONTEND-V2.md), [performance](PERFORMANCE.md), [development tools](docs/frontend-development.md) |
 | Packaging, installation checks and release evidence | [Windows releases](SIGNING-AND-RELEASE.md) |
 
