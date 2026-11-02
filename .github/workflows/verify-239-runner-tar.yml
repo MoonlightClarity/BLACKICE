@@ -4,7 +4,7 @@ on:
     branches: [codex/verify-239-runner-tar]
     paths: [.github/workflows/verify-239-runner-tar.yml]
 permissions:
-  contents: read
+  contents: write
 jobs:
   read-draft-evidence:
     runs-on: windows-2025
