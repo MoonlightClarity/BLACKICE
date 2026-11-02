@@ -20,7 +20,7 @@ test('Historical job-search lessons are examples, not global disqualification ru
   assert.match(evidenceReference, /Non-job illustration/);
   assert.match(evidenceReference, /Job-search illustration/);
   assert.match(evidenceReference, /time-indexed and revisable/);
-  assert.match(evidenceReference, /third party's likely acceptance|third party's stated preferences|third party's preferences/i);
+  assert.match(evidenceReference, /another party's likely acceptance|A third party's stated preferences|third party's preferences/i);
   assert.match(evidenceReference, /Do not self-reject/);
   assert.match(evidenceReference, /never invent a credential|never manufacture a credential|never manufacture.*credential/i);
 });
