@@ -67,3 +67,16 @@ test('Installer includes the mandatory Planning reference, not just SKILL.md', (
   const manifest = readFileSync(new URL('../desktop/electron-builder.yml', import.meta.url), 'utf8');
   assert.match(manifest, /skills\/planning\/\*\*\/\*/);
 });
+
+
+test('historical external effects do not imply current postconditions after restart', () => {
+  assert.match(PLANNING_SKILL_CONTENT, /Distinguish historical effects from current postconditions/);
+  assert.match(PLANNING_SKILL_CONTENT, /does not prove the target still has that state after a restart/);
+  assert.match(PLANNING_SKILL_CONTENT, /preserve the completed historical step and create a new dependent restore\/revisit action/);
+  assert.match(PLANNING_SKILL_CONTENT, /changed files, settings, deployments, reservations and other delegated tasks/);
+});
+
+test('reset form is repaired from evidence without treating past fills as current', () => {
+  assert.match(PLANNING_SKILL_CONTENT, /In a form that reset, re-enter all missing required values/);
+  assert.match(PLANNING_SKILL_CONTENT, /do not mark past successful fills as sufficient for the new form instance/);
+});
