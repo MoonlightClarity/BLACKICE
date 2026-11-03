@@ -130,8 +130,9 @@ test('browser screenshot tools return pixels only as image content and errors st
 
 test('browser failure receipts retain non-Error messages and never collapse unknown rejections to an empty object', async () => {
   const stale = 'This element ref is stale. Take a new snapshot and choose its current ref.';
+  const staleRecovery = { nextCall: { action: 'snapshot', browser: 'relay', tabId: 'one' }, refSource: 'frames[].elements[].ref' };
   for (const [reason, expected] of [
-    [Object.assign(new Error(stale), { code: 'BROWSER_REF_STALE', actionDispatched: false }), { error: stale, code: 'BROWSER_REF_STALE', actionDispatched: false }],
+    [Object.assign(new Error(stale), { code: 'BROWSER_REF_STALE', actionDispatched: false }), { error: `${stale} Do not reuse this ref. Observe the current page, then select the intended control's ref from frames[].elements[].ref. No page input was dispatched.`, code: 'BROWSER_REF_STALE', actionDispatched: false, recovery: staleRecovery }],
     [Object.assign(new Error('The page changed before input.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', inputDispatched: false }), { error: 'The page changed before input.', code: 'BROWSER_INPUT_DOCUMENT_CHANGED', inputDispatched: false }],
     [Object.assign(new Error('The response was lost after input.'), { inputDispatched: true }), { error: 'The response was lost after input.', code: 'BROWSER_ACTION_FAILED', inputDispatched: true }],
     [stale, { error: stale, code: 'BROWSER_ACTION_FAILED' }],

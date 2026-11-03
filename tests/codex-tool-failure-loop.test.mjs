@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { CodexRuntime, CODEX_DYNAMIC_TOOL_LIMITS, codexRepeatedToolFailure } from '../lib/codex.mjs';
 
 const errorReceipt = Object.freeze({ success: false, code: 'INVALID_TASK_VIEW', contentItems: [{ type: 'inputText', text: 'Use the returned expectedRevision and viewHash; restart the first page when absent.' }] });
+const staleRefReceipt = Object.freeze({ success: false, code: 'BROWSER_REF_STALE', contentItems: [{ type: 'inputText', text: JSON.stringify({ error: 'Take a fresh snapshot.', code: 'BROWSER_REF_STALE', actionDispatched: false }) }] });
 const goodReceipt = Object.freeze({ success: true, contentItems: [{ type: 'inputText', text: '{"ok":true}' }] });
 const call = (offset, action = 'read') => ({ name: 'relay_task', arguments: { action, view: 'full', offset, expectedRevision: 316 } });
 
@@ -31,9 +32,9 @@ test('successful calls and different failure types reset the consecutive failure
   assert.equal(state.dynamicToolFailure.count, 1);
 });
 
-function fixture(onToolCall = async () => errorReceipt) {
+function fixture(onToolCall = async () => errorReceipt, tool = 'relay_task') {
   const state = {
-    turnId: 'test-turn', dynamicTools: [{ type: 'function', name: 'relay_task' }],
+    turnId: 'test-turn', dynamicTools: [{ type: 'function', name: tool }],
     toolController: new AbortController(), onToolCall, messages: new Map(),
     approvalCancels: new Set(), done: false
   };
@@ -47,14 +48,20 @@ function fixture(onToolCall = async () => errorReceipt) {
   const invoke = (offset, action = 'read') =>
     CodexRuntime.prototype._dynamicToolCall.call(runtime, {
       id: offset + 1, params: { threadId: 'test-thread', turnId: 'test-turn', callId: 'failure-' + offset + '-' + action,
-        tool: 'relay_task', arguments: { action, view: 'full', offset, expectedRevision: 316 } }
+        tool, arguments: { action, view: 'full', offset, expectedRevision: 316 } }
     });
-  return { state, events, replies, cancellations, invoke };
+  const notifyItem = (type, index) => CodexRuntime.prototype._notification.call(runtime, 'item/started', {
+    threadId: 'test-thread', turnId: 'test-turn', item: { id: `${type}-${index}`, type },
+  });
+  return { state, events, replies, cancellations, invoke, notifyItem };
 }
 
 test('Codex adapter interrupts a repeated invalid view read rather than sending unlimited tool calls', async () => {
   const f = fixture();
-  for (let i = 0; i < CODEX_DYNAMIC_TOOL_LIMITS.repeatedFailure; i++) await f.invoke(i * 9);
+  for (let i = 0; i < CODEX_DYNAMIC_TOOL_LIMITS.repeatedFailure; i++) {
+    if (i) f.notifyItem('reasoning', i);
+    await f.invoke(i * 9);
+  }
   assert.equal(f.state.cancelError?.code, 'CODEX_TOOL_FAILURE_LOOP');
   assert.equal(f.cancellations.length, 1);
   assert.equal(f.replies.length, CODEX_DYNAMIC_TOOL_LIMITS.repeatedFailure);
@@ -62,6 +69,39 @@ test('Codex adapter interrupts a repeated invalid view read rather than sending 
   assert.equal(f.events.filter(event => event.type === 'tool.result').length, CODEX_DYNAMIC_TOOL_LIMITS.repeatedFailure);
   await f.invoke(10000);
   assert.equal(f.state.dynamicToolCallCount, CODEX_DYNAMIC_TOOL_LIMITS.repeatedFailure);
+  assert.equal(f.cancellations.length, 1);
+});
+
+test('serialized tool calls with no intervening model progress share one recovery opportunity', async () => {
+  const f = fixture(async () => staleRefReceipt, 'relay_browser');
+  for (let i = 0; i < CODEX_DYNAMIC_TOOL_LIMITS.repeatedFailure; i++) {
+    f.notifyItem('dynamicToolCall', i);
+    await f.invoke(i);
+  }
+  assert.equal(f.cancellations.length, 0);
+  assert.equal(f.replies.length, CODEX_DYNAMIC_TOOL_LIMITS.repeatedFailure);
+  assert.equal(f.state.dynamicToolFailure.count, 1);
+  assert.equal(f.state.dynamicToolFailure.total, CODEX_DYNAMIC_TOOL_LIMITS.repeatedFailure);
+  f.notifyItem('reasoning', 'after-batch');
+  await f.invoke(100);
+  assert.equal(f.state.dynamicToolFailure.count, 2, 'a later model item marks a new recovery opportunity');
+});
+
+test('a silent repeated failure remains bounded even if the model emits no progress item', async () => {
+  const f = fixture(async () => staleRefReceipt, 'relay_browser');
+  for (let i = 0; i < CODEX_DYNAMIC_TOOL_LIMITS.silentFailure; i++) await f.invoke(i);
+  assert.equal(f.state.cancelError?.code, 'CODEX_TOOL_FAILURE_LOOP');
+  assert.equal(f.state.dynamicToolFailure.count, 1);
+  assert.equal(f.state.dynamicToolFailure.total, CODEX_DYNAMIC_TOOL_LIMITS.silentFailure);
+  assert.equal(f.cancellations.length, 1);
+});
+
+test('stale browser failures with uncertain effects retain the strict eight-call stop', async () => {
+  const uncertain = { ...staleRefReceipt, contentItems: [{ type: 'inputText', text: JSON.stringify({ error: 'Inspect the page.', code: 'BROWSER_REF_STALE' }) }] };
+  const f = fixture(async () => uncertain, 'relay_browser');
+  for (let i = 0; i < CODEX_DYNAMIC_TOOL_LIMITS.repeatedFailure; i++) await f.invoke(i);
+  assert.equal(f.state.cancelError?.code, 'CODEX_TOOL_FAILURE_LOOP');
+  assert.equal(f.state.dynamicToolFailure.count, CODEX_DYNAMIC_TOOL_LIMITS.repeatedFailure);
   assert.equal(f.cancellations.length, 1);
 });
 

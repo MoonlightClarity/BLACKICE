@@ -281,7 +281,11 @@ test('a detached renderer ref preserves its message across a boundary that loses
   const browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());
   const result = await createBrowserToolHandler({ browser })({ name: 'relay_browser', arguments: { action: 'click', tabId: tab.id, ref: 'old-media' } });
   assert.equal(result.success, false); assert.equal(result.code, 'BROWSER_REF_STALE');
-  assert.deepEqual(JSON.parse(result.contentItems[0].text), { error: 'This element ref is stale. Take a new snapshot and choose its current ref.', code: 'BROWSER_REF_STALE' });
+  assert.deepEqual(JSON.parse(result.contentItems[0].text), {
+    error: 'This element ref is stale. Take a new snapshot and choose its current ref. Do not reuse this ref. Observe the current page, then select the intended control\'s ref from frames[].elements[].ref. Inspect the page for effects before any retry.',
+    code: 'BROWSER_REF_STALE',
+    recovery: { nextCall: { action: 'snapshot', browser: 'relay', tabId: tab.id }, refSource: 'frames[].elements[].ref' },
+  });
   assert.equal(tab.window.protocol.some(item => item.method.startsWith('Input.')), false, 'A detached target must fail before browser input.');
   assert.equal(tab.window.captureArgs, undefined, 'A detached target must fail before pointer preparation.');
 });
@@ -333,7 +337,7 @@ test('same-document accumulated refs have a bounded recent lifetime', async t =>
   assert.equal(groups.flat().length, 810);
   assert.equal(f.tab.refs.size, 800);
   assert.equal(f.context[f.driver.key].elements.size, 800);
-  await assert.rejects(f.driver.element(f.tab, { ref: groups[0][0].ref, value: 'yes' }, 'select'), { code: 'BROWSER_REF_STALE' });
+  await assert.rejects(f.driver.element(f.tab, { ref: groups[0][0].ref, value: 'yes' }, 'select'), { code: 'BROWSER_REF_STALE', actionDispatched: false });
   await f.driver.element(f.tab, { ref: groups[2].at(-1).ref, value: 'yes' }, 'select');
   assert.equal(f.controls.at(-1).value, 'yes');
 });

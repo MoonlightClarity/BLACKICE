@@ -1155,7 +1155,7 @@ export class ElectronBrowserDriver extends EventEmitter {
   async element(tab, args, action, signal, extra = {}) {
     if (typeof args.ref !== 'string' || !this.referenceCurrent(tab, args.ref)) {
       if (typeof args.ref === 'string') { tab.refs.delete(args.ref); tab.refContexts?.delete(args.ref); }
-      throw Object.assign(error('Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE' });
+      throw Object.assign(error('Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE', actionDispatched: false });
     }
     const frame = tab.refs.get(args.ref);
     let result;
