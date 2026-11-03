@@ -14,7 +14,7 @@ files:
   - server.mjs
   - public/**/*
   - lib/**/*
-  - skills/planning/SKILL.md
+  - skills/planning/**/*
   - scripts/generate-noir-background.mjs
   - scripts/noir-scene.config.json
   - scripts/chatgpt-bridge.mjs
