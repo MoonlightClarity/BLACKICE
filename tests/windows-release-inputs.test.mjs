@@ -231,3 +231,22 @@ if(Test-Path -LiteralPath $marker){throw 'A fixture executable ran instead of be
     assert.ok(row.resourceBytes > 20 && row.resourceBytes <= 65536); assert.match(row.manifestSha256, /^[a-f0-9]{64}$/);
   }
 });
+
+
+test('planning skill package includes only its reviewed reference and rejects arbitrary neighboring files', async () => {
+  const reference = 'skills/planning/references/evidence-preserving-execution.md';
+  assert.equal(approvedWindowsPackageFile(reference, '9.8.7'), true);
+  assert.equal((await fs.stat(new URL('../' + reference, import.meta.url))).isFile(), true);
+  for (const file of ['skills/planning/references/private.md', 'skills/planning/references/evidence-preserving-execution.mjs', 'skills/planning/references/evidence-preserving-execution.md.bak', 'skills/planning/references/evidence-preserving-execution.md.currents-backup-private', 'skills/planning/references/../SKILL.md', 'skills/unapproved/references/evidence-preserving-execution.md']) assert.equal(approvedWindowsPackageFile(file, '9.8.7'), false, file);
+  // The builder includes the full planning skill tree, so every future addition
+  // must receive its own review instead of silently bypassing this exact allowlist.
+  async function inspect(relative) {
+    for (const entry of await fs.readdir(new URL('../' + relative + '/', import.meta.url), { withFileTypes: true })) {
+      const file = relative + '/' + entry.name;
+      if (forbiddenWindowsPackagePath(file)) continue;
+      if (entry.isDirectory()) await inspect(file);
+      else assert.equal(approvedWindowsPackageFile(file, '9.8.7'), true, file);
+    }
+  }
+  await inspect('skills/planning');
+});

@@ -51,7 +51,7 @@ test('runtime fingerprints bind every shipped Workbench helper and product resou
 
 test('native sibling inventory and bundled planning skill invalidate runtime evidence on edits or omission', async t => {
   const directory=await releaseFixture(t);
-  for(const relative of ['resources/workbench-native/package.json','skills/planning/SKILL.md']){
+  for(const relative of ['resources/workbench-native/package.json','skills/planning/SKILL.md','skills/planning/references/evidence-preserving-execution.md']){
     const before=await appFingerprint(directory),file=path.join(directory,relative);
     await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,'bound fixture');
     const included=await appFingerprint(directory);assert.notEqual(included,before);
