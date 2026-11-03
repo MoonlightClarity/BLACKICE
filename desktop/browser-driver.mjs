@@ -748,7 +748,7 @@ export class ElectronBrowserDriver extends EventEmitter {
           : this.downloads.some(item => item.tabId === tab.id && item.status === 'downloading') ? 'A download is still running.' : null;
         if (reason) { retained.push({ tabId: tab.id, reason }); continue; }
         folders.add(tab.folderId); this.closeTab(tab); closed.push(tab.id);
-      } else if (status === 'failed' || status === 'cancelled') {
+      } else if (status === 'failed' || status === 'cancelled' || status === 'awaiting-user') {
         // A failed worker cannot transfer its own tab. Release the exact saved
         // page to the person for a future explicit take_ownership. Never replay
         // an uncertain input, interrupt an active dialog or stop a download.
@@ -759,7 +759,9 @@ export class ElectronBrowserDriver extends EventEmitter {
         }
         // Preserve pages a person has interacted with; ordinary agent-only
         // tabs remain subject to the existing suspend-on-failure policy.
-        if (!tab.userPinned && !tab.humanCreated) {
+        // Preserve the live verification/login challenge for the person in Observe.
+        // A terminal failure still suspends ordinary idle agent-only tabs.
+        if (status !== 'awaiting-user' && !tab.userPinned && !tab.humanCreated) {
           const result = this.suspendTab(tab, { automatic: true });
           if (!result.suspended) { retained.push({ tabId: tab.id, reason: result.reason }); continue; }
           suspended.push(tab.id);
