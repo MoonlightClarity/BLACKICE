@@ -51,6 +51,6 @@ test('legacy native discovery preserves its manual connection while background r
   assert.equal(app.engine.getRun(run.id).status,'completed','an ordinary model turn can still finish when native background readiness is unverified');
   assert.doesNotMatch(runtime.prompts[0], /EXISTING BROWSER SESSION/, 'ordinary tasks use the configured connection instructions instead of the legacy session block');
   assert.match(runtime.prompts[0], /Use only the BLACKICE contained browser via relay_browser/);
-  assert.match(runtime.prompts[0], /Do not call Chrome, Neo, imported native profiles or any other external browser/, 'Preserving a manually discovered connection does not expose it as an agent browser fallback.');
+  assert.match(runtime.prompts[0], /Do not call host Chrome, Neo, imported native profiles or any other host\/external browser/, 'Preserving a manually discovered connection does not expose it as an agent browser fallback.');
   assert.equal(methods.filter(method => method === 'tools/call').length, 4, 'Discovery and explicit reconnect/start only read the browser inventory');
 });

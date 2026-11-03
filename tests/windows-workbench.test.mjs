@@ -194,3 +194,29 @@ test('dedicated Hyper-V guest can be started headlessly with bounded dynamic mem
   assert.match(scripts[1],/Stop-VM -Name 'BLACKICE-Workbench' -Confirm:\$false -ErrorAction Stop(?:\r?\n|$)/);
   assert.doesNotMatch(scripts[1],/-(?:Shutdown|Force|TurnOff|Save)\b/i,'Plain Stop-VM requests a graceful guest shutdown without forced power loss or save.');
 });
+
+
+test('app batches reject known missing pairing/capability before any expensive host probe or reservation',async t=>{
+  const {dir}=await fixture(t);let probes=0,reservations=0;
+  for(const agent of [{paired:false,capabilities:[]},{paired:true,capabilities:['capture','launch'] }]){
+    const wb=new WindowsWorkbench({dataDir:path.join(dir,'negative-'+String(agent.paired)),probe:async()=>{probes++;throw Error('An unpaired request must not probe Hyper-V')},guestBridgeFactory:({sharedRoot})=>({workspace:path.resolve(sharedRoot),agentStatus:async()=>agent}),appSyncFactory:()=>{reservations++;throw Error('No inventory/export/reservation is authorized')}});
+    await assert.rejects(wb.startInstalledAppBatch(),{code:'WORKBENCH_APP_SYNC_GUEST_UNAVAILABLE'});
+    await assert.rejects(wb.rebatchInstalledApps(),{code:'WORKBENCH_APP_SYNC_GUEST_UNAVAILABLE'});
+  }
+  assert.equal(probes,0);assert.equal(reservations,0);
+});
+test('paired batch admission still refreshes cached host and current agent before reserving or dispatching',async t=>{
+  const {dir}=await fixture(t),shared=path.join(dir,'paired-workspace'),trace=[];
+  const agent={online:true,paired:true,sharedReadWriteVerified:true,displayReady:true,capabilities:['capture','launch','batch_install']};
+  const observed=host({hyperVModuleInstalled:true,vmServiceRunning:true,vmExists:true,vmState:'Running',shareExists:true,sharePath:shared});
+  const wb=new WindowsWorkbench({dataDir:path.join(dir,'paired-config'),sharedRoot:shared,probe:async()=>{trace.push('fresh-host');return observed},guestBridgeFactory:()=>({workspace:path.resolve(shared),agentStatus:async()=>{trace.push('agent');return agent},request:async(kind)=>{assert.equal(kind,'batch_install');trace.push('dispatch');return{status:'completed'}}}),appSyncFactory:()=>({workspace:path.resolve(shared),reserve:async()=>{trace.push('reserve');return{runId:'a'.repeat(32),snapshotId:'b'.repeat(32),manifestSha256:'c'.repeat(64)}},markDispatch:async()=>({status:'queued'})})});
+  wb.lastProbe=observed;wb.probedAt=Date.now();
+  assert.equal((await wb.startInstalledAppBatch()).status,'queued');
+  assert.deepEqual(trace,['agent','fresh-host','agent','reserve','dispatch']);
+});
+test('pairing lost during fresh host validation refuses a batch before any reservation or guest request',async t=>{
+  const {dir}=await fixture(t),shared=path.join(dir,'lost-pair-workspace'),trace=[];let paired=true;
+  const wb=new WindowsWorkbench({dataDir:path.join(dir,'lost-pair-config'),sharedRoot:shared,probe:async()=>{trace.push('fresh-host');paired=false;return host({hyperVModuleInstalled:true,vmServiceRunning:true,vmExists:true,vmState:'Running',shareExists:true,sharePath:shared})},guestBridgeFactory:()=>({workspace:path.resolve(shared),agentStatus:async()=>{trace.push('agent');return{online:true,paired,sharedReadWriteVerified:true,capabilities:['capture','launch','batch_install']}},request:async()=>{assert.fail('An unpaired guest cannot receive a batch')}}),appSyncFactory:()=>{assert.fail('An unpaired guest cannot reserve a batch')}});
+  await assert.rejects(wb.startInstalledAppBatch(),{code:'WORKBENCH_APP_SYNC_GUEST_UNAVAILABLE'});
+  assert.deepEqual(trace,['agent','fresh-host','agent']);
+});

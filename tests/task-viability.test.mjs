@@ -107,6 +107,22 @@ test('safe resource snapshot separates host and guest rights and optional viewer
   assert.equal(captured.guest.running,true);assert.equal(captured.guest.hostRights.processElevated,true);assert.equal(captured.guest.guestPrivileges.administratorToken,false);assert.equal(captured.guest.guestPrivileges.known,true);assert.equal(captured.viewer.uncertain,true);assert.equal(captured.viewer.code,'VIEWER_UNAVAILABLE');assert.doesNotMatch(JSON.stringify(captured),/must-not-leak/);
 });
 
+test('ordinary planning discovers VM tools without host probes; explicitly granted VM tasks collect actual state',async t=>{
+  let statusCalls=0,viewerCalls=0;
+  const workbench={status:async()=>{statusCalls++;return{vmName:'fixture-guest',guest:{running:true,agent:{paired:true}},canRunNativeApps:true,consoleControl:{owner:'agent',revision:3}};},guestNativeConsoleStatus:async()=>{viewerCalls++;return{attached:false,openAvailable:true};}};
+  const f=await fixture(t,{engine:{workbench}});
+  for(const grant of [undefined,false]){
+    const records=await f.service.sources({...f.definition,...(grant===undefined?{}:{workbench:grant})});
+    const snapshot=JSON.parse(records.find(r=>r.id==='viability:workbench').text);
+    assert.equal(snapshot.tool,'relay_workbench');assert.ok(snapshot.actions.includes('status'));
+    assert.equal(snapshot.explicitTaskControlGrant,false);assert.equal(snapshot.guest.availability,'not-probed');
+    assert.equal(statusCalls,0);assert.equal(viewerCalls,0);
+  }
+  const records=await f.service.sources({...f.definition,workbench:true}),snapshot=JSON.parse(records.find(r=>r.id==='viability:workbench').text);
+  assert.equal(statusCalls,1);assert.equal(viewerCalls,1);assert.equal(snapshot.explicitTaskControlGrant,true);
+  assert.equal(snapshot.guest.running,true);assert.equal(snapshot.guest.paired,true);assert.equal(snapshot.viewer.openAvailable,true);
+});
+
 test('host proof discovery distinguishes guest observations, reserved control and native visual evidence',async t=>{
   const workbench={status:async()=>({vmName:'fixture',guest:{running:true,agent:{paired:true}},consoleControl:{owner:'user',revision:1}})};
   const f=await fixture(t,{engine:{workbench}}),sources=await f.service.sources({...f.definition,workbench:true});

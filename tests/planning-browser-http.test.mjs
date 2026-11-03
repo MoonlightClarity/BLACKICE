@@ -8,6 +8,8 @@ import { tmpdir } from 'node:os';
 import { createHarnessServer } from '../server.mjs';
 import { handlePlanningBrowserHttp, planningBrowserCatalog } from '../lib/planning-browser-http.mjs';
 import { RemoteAccessManager } from '../lib/remote-access.mjs';
+import { WindowsWorkbench } from '../lib/windows-workbench.mjs';
+import { WorkbenchGuestBridge } from '../lib/workbench-guest-bridge.mjs';
 import { createRemoteTransportFixture } from './fixtures/remote-transport.mjs';
 
 class Runtime extends EventEmitter {
@@ -39,9 +41,24 @@ async function fixture(t, extra = {}) {
   const transport = createRemoteTransportFixture();
   const remoteAccess = new RemoteAccessManager({ dataDir: directory, transport: transport.transport, defaultHttpsPort: 8443 });
   const runtime = new Runtime();
+  const workbenchCalls={probes:0,commands:0};
+  // Keep the real HTTP, Workbench and guest-file contracts. Only the OS
+  // boundary is deterministic: this unit fixture must not query a user's VM.
+  const workbench=new WindowsWorkbench({dataDir:directory,sharedRoot:directory,
+    probe:async()=>{workbenchCalls.probes++;return {
+      windows:true,edition:'Windows 11 Pro fixture',hostName:'FIXTUREHOST',
+      logicalProcessors:8,totalMemoryMiB:16384,freeMemoryMiB:12000,freeDiskGiB:100,
+      hypervisorPresent:true,hyperVModuleInstalled:true,hyperVFeatureEnabled:true,
+      vmServiceRunning:true,vmQueryAuthorized:true,processElevated:false,
+      vmExists:false,vmState:'NotInstalled',shareExists:false,sharePath:''
+    }},
+    command:async()=>{workbenchCalls.commands++;throw Error('HTTP fixtures must not execute host commands.');},
+    mediaInspector:async()=>{throw Error('This owned fixture has no installation media.');},
+    guestBridgeFactory:({sharedRoot})=>{assert.equal(path.resolve(sharedRoot),path.resolve(directory));return new WorkbenchGuestBridge({sharedRoot});}
+  });
   let app;
-  t.after(async () => { try { await app?.close(); assert.equal(runtime.calls, 0); } finally { await rm(directory, { recursive: true, force: true }); } });
-  app = await createHarnessServer({ port: 0, dataDir: directory, defaultCwd: directory, runtime, desktop: new Desktop(), remoteAccess, autoAttachDesktop: false, ...extra });
+  t.after(async () => { try { await app?.close(); assert.equal(runtime.calls, 0); assert.equal(workbenchCalls.commands,0); } finally { await rm(directory, { recursive: true, force: true }); } });
+  app = await createHarnessServer({ port: 0, dataDir: directory, defaultCwd: directory, runtime, desktop: new Desktop(), remoteAccess, workbench, autoAttachDesktop: false, ...extra });
   await app.learning.updateSettings({ mode: 'manual' });
   await app.tasks.ensure({ taskId: 'legacy-plan', runId: 'legacy-plan', cwd: directory, goal: 'Preserve this original task.', defaultPlan: true });
   await app.conversations.capture({

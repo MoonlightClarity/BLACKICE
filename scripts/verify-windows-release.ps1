@@ -27,6 +27,72 @@ function Under-Path([string]$File, [string]$Directory) {
   return $File -and [IO.Path]::GetFullPath($File).StartsWith(
     [IO.Path]::GetFullPath($Directory).TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)
 }
+# Inspect the installed PE as data only; never execute or modify its resources.
+function Get-InstalledExecutionManifest([string]$Path) {
+  if (-not ('BLACKICEInstalledManifestResource' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+public static class BLACKICEInstalledManifestResource {
+ public sealed class Resource { public ushort Language;public byte[] Bytes; }
+ delegate bool LanguageCallback(IntPtr module,IntPtr type,IntPtr name,ushort language,IntPtr parameter);
+ [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr LoadLibraryExW(string file,IntPtr reserved,uint flags);
+ [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool EnumResourceLanguagesW(IntPtr module,IntPtr type,IntPtr name,LanguageCallback callback,IntPtr parameter);
+ [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr FindResourceExW(IntPtr module,IntPtr type,IntPtr name,ushort language);
+ [DllImport("kernel32.dll",SetLastError=true)] static extern uint SizeofResource(IntPtr module,IntPtr resource);
+ [DllImport("kernel32.dll",SetLastError=true)] static extern IntPtr LoadResource(IntPtr module,IntPtr resource);
+ [DllImport("kernel32.dll")] static extern IntPtr LockResource(IntPtr resource);
+ [DllImport("kernel32.dll")] static extern bool FreeLibrary(IntPtr module);
+ static Exception Error(){return new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());}
+ public static Resource Read(string file){
+  // LOAD_LIBRARY_AS_DATAFILE|LOAD_LIBRARY_AS_IMAGE_RESOURCE; execute no code.
+  IntPtr module=LoadLibraryExW(file,IntPtr.Zero,0x22);if(module==IntPtr.Zero)throw Error();
+  try{
+   var languages=new List<ushort>();LanguageCallback callback=delegate(IntPtr m,IntPtr t,IntPtr n,ushort language,IntPtr p){languages.Add(language);return languages.Count<16;};
+   if(!EnumResourceLanguagesW(module,new IntPtr(24),new IntPtr(1),callback,IntPtr.Zero))throw Error();
+   if(languages.Count!=1)throw new InvalidOperationException("Expected exactly one actual executable manifest language.");
+   IntPtr resource=FindResourceExW(module,new IntPtr(24),new IntPtr(1),languages[0]);if(resource==IntPtr.Zero)throw Error();
+   uint size=SizeofResource(module,resource);if(size<20||size>65536)throw new InvalidOperationException("Executable manifest resource exceeds its bound.");
+   IntPtr loaded=LoadResource(module,resource);if(loaded==IntPtr.Zero)throw Error();IntPtr data=LockResource(loaded);if(data==IntPtr.Zero)throw Error();
+   byte[] bytes=new byte[(int)size];Marshal.Copy(data,bytes,0,bytes.Length);return new Resource{Language=languages[0],Bytes=bytes};
+  }finally{FreeLibrary(module);}
+ }
+}
+'@
+  }
+  $item=Get-Item -LiteralPath $Path -ErrorAction Stop
+  if($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'Executable manifest requires an ordinary owned file.'}
+  $resource=[BLACKICEInstalledManifestResource]::Read($item.FullName)
+  # The builder's actual resource is UTF-8; decode strictly and never resolve XML entities.
+  $text=[Text.UTF8Encoding]::new($false,$true).GetString($resource.Bytes).TrimStart([char]0xfeff).TrimEnd([char]0)
+  $settings=[Xml.XmlReaderSettings]::new()
+  $settings.DtdProcessing=[Xml.DtdProcessing]::Prohibit
+  $settings.XmlResolver=$null
+  $settings.MaxCharactersInDocument=65536
+  $textReader=[IO.StringReader]::new($text)
+  $reader=[Xml.XmlReader]::Create($textReader,$settings)
+  try{
+    $document=[Xml.XmlDocument]::new();$document.XmlResolver=$null;$document.Load($reader)
+    $nodes=$document.SelectNodes("//*[local-name()='requestedExecutionLevel']")
+    if($nodes.Count -ne 1){throw 'Executable manifest requires exactly one requested execution level.'}
+    $namespaces=[Xml.XmlNamespaceManager]::new($document.NameTable)
+    $namespaces.AddNamespace('assembly','urn:schemas-microsoft-com:asm.v1')
+    $namespaces.AddNamespace('trust','urn:schemas-microsoft-com:asm.v3')
+    $execution=$document.SelectSingleNode('/assembly:assembly/trust:trustInfo/trust:security/trust:requestedPrivileges/trust:requestedExecutionLevel',$namespaces)
+    if($null -eq $execution -or -not [object]::ReferenceEquals($execution,$nodes[0])){throw 'Executable manifest execution policy is outside the Windows trust structure.'}
+    $level=$execution.GetAttribute('level');$uiAccess=$execution.GetAttribute('uiAccess')
+    if($level -cnotin @('asInvoker','highestAvailable','requireAdministrator') -or $uiAccess -cnotin @('true','false')){throw 'Executable manifest execution policy is invalid.'}
+    $hash=[Security.Cryptography.SHA256]::Create()
+    try{$digest=[BitConverter]::ToString($hash.ComputeHash($resource.Bytes)).Replace('-','').ToLowerInvariant()}finally{$hash.Dispose()}
+    return @{requestedExecutionLevel=$level;uiAccess=($uiAccess -ceq 'true');manifestResourceType=24;manifestResourceId=1;manifestLanguage=[int]$resource.Language;manifestBytes=$resource.Bytes.Length;manifestSha256=$digest}
+  }finally{$reader.Dispose();$textReader.Dispose()}
+}
+
+function Assert-InstalledExecutionManifest($Manifest) {
+  Assert ($Manifest.requestedExecutionLevel -ceq 'highestAvailable' -and $Manifest.uiAccess -is [bool] -and $Manifest.uiAccess -eq $false) 'Installed executable must request highestAvailable with uiAccess false.'
+}
+
 $guid = 'd614cce4-27be-5cb2-b718-e6d9659f75c3'
 function Get-Registration {
   foreach ($hive in @('CurrentUser','LocalMachine')) {
@@ -178,6 +244,10 @@ try {
   $binary=(Get-Item -LiteralPath $exe).VersionInfo
   Assert ($binary.ProductVersion -match ('^'+[regex]::Escape($version)+'(?:\.0)?(?:\+\S+)?$')) 'Installed executable version mismatch.'
   $report.executable=@{name='BLACKICE.exe';productVersion=$binary.ProductVersion;fileVersion=$binary.FileVersion;sha256=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()}
+  $stage='executable-manifest'
+  $executionManifest=Get-InstalledExecutionManifest $exe
+  foreach($name in $executionManifest.Keys){$report.executable[$name]=$executionManifest[$name]}
+  Assert-InstalledExecutionManifest $executionManifest
   $stage='registration'
   $registrations=@(Get-Registration)
   Assert (@($registrations | Where-Object hive -eq 'LocalMachine').Count -eq 0) 'Per-user install wrote machine registration.'
@@ -217,6 +287,7 @@ check(Number(process.versions.node.split('.')[0])>=22,'Node 22 or newer required
 const sha=b=>createHash('sha256').update(b).digest('hex');
 const save=async(n,v)=>fs.writeFile(path.join(out,n),JSON.stringify(v,null,2)+'\n');
 const {appFingerprint}=await import(pathToFileURL(path.join(src,'scripts/release-check.mjs')));
+const {verifyInstalledWorkbenchNative,selfTestWorkbenchNative}=await import(pathToFileURL(path.join(src,'scripts/package-workbench-native.mjs')));
 const {approvedWindowsPackageFile,forbiddenWindowsPackagePath,readWindowsSourceTestReceipt}=await import(pathToFileURL(path.join(src,'scripts/windows-release-inputs.mjs')));
 const source=await appFingerprint(src), installed=await appFingerprint(app);
 check(source===expected&&installed===source,'Source/installed fingerprint mismatch');
@@ -237,6 +308,9 @@ async function walk(relative='') {
   }
 }
 await walk();
+const native=await verifyInstalledWorkbenchNative({appDirectory:app,resourcesDirectory:path.join(install,'resources'),systemDirectory:path.join(process.env.SystemRoot,'System32')});
+native.selfTest=await selfTestWorkbenchNative({directory:path.join(install,'resources/workbench-native'),systemDirectory:path.join(process.env.SystemRoot,'System32')});
+await save('blackice-native-workbench-integrity.json',{format:1,product:'BLACKICE',...native,vmConnectionAttempted:false});
 const licenses=['LICENSE','NOTICE','THIRD-PARTY-NOTICES.md','lib/vendor/ADBLOCK-NOTICES.md','lib/vendor/adblock-source.json','lib/vendor/adblock-filter-data.json','lib/vendor/catalyst/LICENSE.txt','lib/vendor/catalyst/NOTICE.md','lib/vendor/catalyst/LICENSES.md','lib/vendor/pdfium/LICENSE-wrapper.md','lib/vendor/pdfium/LICENSE-PDFium.txt','lib/vendor/pdfium/provenance.json',...['ibmplexmono','oxanium','sharetechmono'].map(n=>`public/assets/fonts/${n}-OFL.txt`)];
 const notices=licenses.map(p=>{const record=records.find(r=>r.path===p);check(record?.bytes>0,'Required upstream notice/source missing');return record});
 for(const name of ['LICENSE.electron.txt','LICENSES.chromium.html']) {

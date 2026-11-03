@@ -55,6 +55,11 @@ export async function appFingerprint(directory = source) {
   ]) {
     try { await fs.lstat(path.join(directory, relative)); await visit(relative); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
+  // The small native product inventory binds every sibling helper/runtime byte;
+  // the installed integrity check verifies that complete external resource tree.
+  for (const relative of ['resources/workbench-native/package.json', 'skills/planning/SKILL.md']) {
+    try { await fs.lstat(path.join(directory, relative)); await visit(relative); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
   records.sort((a,b)=>a.path.localeCompare(b.path, 'en'));
   return createHash('sha256').update(JSON.stringify(records)).digest('hex');
 }

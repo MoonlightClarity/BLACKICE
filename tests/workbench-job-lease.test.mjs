@@ -6,6 +6,7 @@ import os from 'node:os';
 import {setTimeout as delay} from 'node:timers/promises';
 import {createWorkbenchJobLease} from '../lib/workbench-job-lease.mjs';
 import {spawn} from 'node:child_process';
+import {pathToFileURL} from 'node:url';
 
 async function fixture(t){
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'blackice-job-lease-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
@@ -59,11 +60,33 @@ async function waitFor(predicate,description,timeoutMs=4000){
   while(Date.now()<until){if(await predicate())return;await delay(10)}
   assert.fail(description);
 }
-async function windowsReader(t,f,{deleteShare=false}={}){
+
+// Observe a genuine Windows sharing failure inside this owned worker. The
+// manager bytes and actual worker remain unchanged; no error is synthesized.
+async function leaseWithObservedWindowsRetry(f){
+  const directory=path.join(f.root,'observed-worker'),retryMarker=path.join(f.root,'rename-retry.json');
+  await fs.mkdir(directory);
+  const managerFile=path.join(directory,'workbench-job-lease.mjs');
+  const managerBytes=await fs.readFile(new URL('../lib/workbench-job-lease.mjs',import.meta.url));
+  await fs.writeFile(managerFile,managerBytes,{flag:'wx'});
+  assert.deepEqual(await fs.readFile(managerFile),managerBytes);
+  const workerUrl=new URL('../lib/workbench-job-lease-worker.mjs',import.meta.url).href;
+  const loader='import fs from "node:fs";import path from "node:path";\n'+
+    'const rename=fs.renameSync;\n'+
+    'fs.renameSync=function(source,target){try{return rename(source,target)}catch(error){'+
+    'if(path.resolve(target)==='+JSON.stringify(path.resolve(f.folder,'lease.json'))+'&&["EPERM","EACCES","EBUSY"].includes(error.code)&&fs.existsSync('+JSON.stringify(path.join(f.root,'locked.ready'))+'))'+
+    'fs.writeFileSync('+JSON.stringify(retryMarker)+',JSON.stringify({code:error.code,readerReady:true}));throw error;}};\n'+
+    'await import('+JSON.stringify(workerUrl)+');\n';
+  await fs.writeFile(path.join(directory,'workbench-job-lease-worker.mjs'),loader,{flag:'wx'});
+  const {createWorkbenchJobLease:observed}=await import(pathToFileURL(managerFile).href);
+  return {lease:observed(f),retryMarker};
+}
+
+async function windowsReader(t,f,{deleteShare=false,retryMarker}={}){
   await fs.mkdir(f.root,{recursive:true});
   const suffix=deleteShare?'delete':'locked',script=path.join(f.root,'reader-'+suffix+'.ps1');
   const ready=path.join(f.root,suffix+'.ready'),release=path.join(f.root,suffix+'.release');
-  await fs.writeFile(script,`param([string]$Target,[string]$Ready,[string]$Release,[switch]$DeleteShare)
+  await fs.writeFile(script,`param([string]$Target,[string]$Ready,[string]$Release,[switch]$DeleteShare,[string]$RetryMarker)
 $ErrorActionPreference='Stop'
 $share=[System.IO.FileShare]::ReadWrite
 if($DeleteShare){$share=$share -bor [System.IO.FileShare]::Delete}
@@ -71,11 +94,14 @@ $handle=[System.IO.File]::Open($Target,[System.IO.FileMode]::Open,[System.IO.Fil
 try {
   [System.IO.File]::WriteAllText($Ready,'ready')
   $until=[DateTime]::UtcNow.AddSeconds(5)
-  while(-not [System.IO.File]::Exists($Release) -and [DateTime]::UtcNow -lt $until){Start-Sleep -Milliseconds 5}
+  while(-not [System.IO.File]::Exists($Release) -and [DateTime]::UtcNow -lt $until){
+    if($RetryMarker -and [System.IO.File]::Exists($RetryMarker)){break}
+    Start-Sleep -Milliseconds 5
+  }
 } finally {$handle.Dispose()}
 `);
   const executable=path.join(process.env.SystemRoot||'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
-  const child=spawn(executable,['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',script,'-Target',path.join(f.folder,'lease.json'),'-Ready',ready,'-Release',release,...deleteShare?['-DeleteShare']:[]],{windowsHide:true,stdio:'ignore'});
+  const child=spawn(executable,['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',script,'-Target',path.join(f.folder,'lease.json'),'-Ready',ready,'-Release',release,...(deleteShare?['-DeleteShare']:[]),...(retryMarker?['-RetryMarker',retryMarker]:[])],{windowsHide:true,stdio:'ignore'});
   let spawnError;child.on('error',error=>{spawnError=error});
   const exited=new Promise(resolve=>child.once('exit',resolve));
   let released=false;
@@ -85,9 +111,12 @@ try {
   return {unlock};
 }
 test('Windows non-delete-share readers are retried briefly and persistent contention reports only a replace code',{skip:process.platform!=='win32'},async t=>{
-  const f=await fixture(t),lease=createWorkbenchJobLease(f);await lease.ready;t.after(()=>lease.stop().catch(()=>{}));
-  const reader=await windowsReader(t,f),initial=await fs.readFile(path.join(f.folder,'lease.json'),'utf8');
-  await delay(115);await reader.unlock();
+  const f=await fixture(t),{lease,retryMarker}=await leaseWithObservedWindowsRetry(f);await lease.ready;t.after(()=>lease.stop().catch(()=>{}));
+  const reader=await windowsReader(t,f,{retryMarker}),initial=await fs.readFile(path.join(f.folder,'lease.json'),'utf8');
+  await waitFor(async()=>{try{return JSON.parse(await fs.readFile(retryMarker,'utf8')).code}catch(error){if(error.code==='ENOENT')return false;throw error}},'the actual worker did not observe Windows replacement contention');
+  const retry=JSON.parse(await fs.readFile(retryMarker,'utf8'));assert.ok(['EPERM','EACCES','EBUSY'].includes(retry.code));assert.equal(retry.readerReady,true);
+  t.diagnostic('Actual Windows rename contention: '+retry.code+'; the owned reader handle was acquired.');
+  await reader.unlock();
   await waitFor(async()=>await fs.readFile(path.join(f.folder,'lease.json'),'utf8')!==initial,'lease did not resume after a short reader lock');
   assert.equal(lease.error,null,'short Windows share contention must not cancel a healthy job');
   const persistent=await windowsReader(t,{...f,root:path.join(f.root,'persistent')});
@@ -98,6 +127,7 @@ test('Windows non-delete-share readers are retried briefly and persistent conten
   const stopped=await fs.readFile(path.join(f.folder,'lease.json'),'utf8');await delay(200);
   assert.equal(await fs.readFile(path.join(f.folder,'lease.json'),'utf8'),stopped);
   await persistent.unlock();await assert.rejects(lease.stop(),{code:'WORKBENCH_JOB_LEASE'});
+  await fs.rm(retryMarker,{force:true});
   assert.deepEqual(await fs.readdir(f.folder),['lease.json']);
 });
 test('Windows delete-share readers either permit replacement or produce bounded fail-closed diagnostics',{skip:process.platform!=='win32'},async t=>{

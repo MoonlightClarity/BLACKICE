@@ -26,7 +26,7 @@ function fixture(t,{outcome='partial',afterWrite}={}){
   const service=new ResponseCycleService({store:{runtimeWriter:()=>writer,get:async()=>structuredClone(request)},runner:{start:()=>{throw Error('This transport fixture must not start a provider.');}}});
   service.drive=async()=>{captured.push(structuredClone(request.sources));return structuredClone(request);};
   t.after(()=>service.close());
-  const run={id:'record-run',planningMode:'on',responseCycle:{requestId:request.id,cycleId:'cycle-current',planRef:{requestId:request.id,nodeId:'plan-current',nodeRevision:1,responseId:'plan-response'}}};
+  const run={id:'record-run',planningMode:'on',responseCycle:{requestId:request.id,cycleId:'cycle-current',planRef:{requestId:request.id,cycleId:'cycle-current',nodeId:'plan-current',nodeRevision:1,responseId:'plan-response'}}};
   return {service,run,captured,get request(){return structuredClone(request);}};
 }
 function projected(f){

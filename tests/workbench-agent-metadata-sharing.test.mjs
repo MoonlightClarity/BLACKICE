@@ -11,7 +11,7 @@ import {createWorkbenchJobLease} from '../lib/workbench-job-lease.mjs';
 const supervisor=fileURLToPath(new URL('../scripts/workbench-agent-job.ps1',import.meta.url));
 const shell=path.join(process.env.SystemRoot||'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
 const readerSource=String.raw`
-param([string]$Source,[string]$Workspace,[string]$Folder,[string]$Ready,[string]$Go,[int]$DeadlineMs=5000)
+param([string]$Source,[string]$Workspace,[string]$Folder,[string]$Ready,[string]$Go,[string]$RetryReady,[int]$DeadlineMs=5000)
 $ErrorActionPreference='Stop'
 $text=[IO.File]::ReadAllText($Source);$tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseInput($text,[ref]$tokens,[ref]$errors)
@@ -24,7 +24,13 @@ $script:agentReads=0;$script:leaseReads=0;$script:transientReads=0
 function Read-JobJson([string]$File,[int]$Limit=8192){
   if([IO.Path]::GetFileName($File) -eq 'agent-state.json'){$script:agentReads++}
   if([IO.Path]::GetFileName($File) -eq 'lease.json'){$script:leaseReads++}
-  try{& $script:realReader $File $Limit}catch{
+  try{
+    $value=& $script:realReader $File $Limit
+    if([IO.Path]::GetFileName($File) -eq 'lease.json' -and $script:transientReads -gt 0 -and $RetryReady -and ![IO.File]::Exists($RetryReady)){
+      [IO.File]::WriteAllText($RetryReady,'contended metadata retry read the live lease')
+    }
+    return $value
+  }catch{
     $transient=$false
     for($e=$_.Exception;$e;$e=$e.InnerException){if($e -is [UnauthorizedAccessException] -or ($e -is [IO.IOException] -and ([int64]$e.HResult -band 65535) -in @(2,3,32,33,303))){$transient=$true}}
     if($transient){$script:transientReads++};throw
@@ -73,8 +79,8 @@ async function fixture(t,{locked=true,deadlineMs=5000,changed=false,malformed=fa
   await fs.writeFile(file,malformed?'{':JSON.stringify({version:1,agentId:(changed?'d':'b').repeat(32),sessionId:2,interactive:true,guestRoot:workspace,heartbeatAt:new Date().toISOString()}));
   const readerFile=path.join(root,'reader.ps1'),holderFile=path.join(root,'holder.ps1');await fs.writeFile(readerFile,readerSource);await fs.writeFile(holderFile,holderSource);
   const lease=createWorkbenchJobLease({folder,jobId,scopeHash:'c'.repeat(64),lifetimeMs:10000});await lease.ready;
-  const ready=path.join(root,'reader.ready'),go=path.join(root,'reader.go'),lockedReady=path.join(root,'holder.ready'),release=path.join(root,'holder.release');
-  const reader=child(readerFile,['-Source',supervisor,'-Workspace',workspace,'-Folder',folder,'-Ready',ready,'-Go',go,'-DeadlineMs',String(deadlineMs)]);
+  const ready=path.join(root,'reader.ready'),go=path.join(root,'reader.go'),retryReady=path.join(root,'reader.retry-ready'),lockedReady=path.join(root,'holder.ready'),release=path.join(root,'holder.release');
+  const reader=child(readerFile,['-Source',supervisor,'-Workspace',workspace,'-Folder',folder,'-Ready',ready,'-Go',go,'-RetryReady',retryReady,'-DeadlineMs',String(deadlineMs)]);
   let holder=null,unlocked=false;
   const unlock=async()=>{if(unlocked)return;unlocked=true;if(holder){await fs.writeFile(release,'release');const result=await holder.done;assert.equal(result.code,0,result.stderr)}};
   t.after(async()=>{
@@ -88,7 +94,7 @@ async function fixture(t,{locked=true,deadlineMs=5000,changed=false,malformed=fa
   const start=()=>fs.writeFile(go,'go');
   const result=async()=>{const value=await reader.done;assert.equal(value.code,0,value.stderr);const receipt=JSON.parse(value.stdout.trim());
     for(const key of ['supervisorEntryExecuted','childStarted','nativeTypeCreated'])assert.equal(receipt[key],false);return receipt};
-  return {root,workspace,bridge,folder,file,lease,start,result,unlock};
+  return {root,workspace,bridge,folder,file,lease,start,result,unlock,retryReady};
 }
 
 test('actual metadata guard recovers from a real 350 ms Windows share violation while the guest-job lease remains live',{skip:process.platform!=='win32'},async t=>{
@@ -105,7 +111,9 @@ test('persistent metadata sharing denial fails closed within the monotonic one-s
   assert.equal(receipt.metadataPhase,'transport_exhausted');assert.equal(receipt.diagnosticTagged,true);
 });
 test('cancellation interrupts contended metadata retries without waiting for the file to unlock',{skip:process.platform!=='win32'},async t=>{
-  const f=await fixture(t);await f.start();await delay(100);await fs.writeFile(path.join(f.folder,'cancel.json'),JSON.stringify({version:1,jobId:'a'.repeat(32),scopeHash:'c'.repeat(64),requestedAt:new Date().toISOString(),reason:'fixture'}));
+  const f=await fixture(t);await f.start();
+  await until(()=>exists(f.retryReady),'The contended metadata reader did not reach a live lease retry.');
+  await fs.writeFile(path.join(f.folder,'cancel.json'),JSON.stringify({version:1,jobId:'a'.repeat(32),scopeHash:'c'.repeat(64),requestedAt:new Date().toISOString(),reason:'fixture'}));
   const receipt=await f.result();assert.equal(receipt.accepted,false);assert.ok(receipt.elapsedMs<600);assert.ok(receipt.leaseReads>0);await f.unlock();
   assert.equal(receipt.metadataPhase,'authorization_ended');assert.equal(receipt.diagnosticTagged,true);
 });

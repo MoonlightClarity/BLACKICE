@@ -107,6 +107,6 @@ test('UAC power-user recommendation is documented without changing Windows setti
   assert.match(docs,/ConsentPromptBehaviorAdmin=0/);
   assert.match(docs,/EnableLUA=1/);
   assert.match(docs,/UAC prompts enabled and `EnableLUA=0` remain untested/);
-  assert.match(docs,/default.*requireAdministrator/i);
+  assert.match(docs,/default.*highestAvailable/i);
   assert.doesNotMatch(docs,/Both choices are supported/);
 });

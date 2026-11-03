@@ -49,6 +49,17 @@ test('runtime fingerprints bind every shipped Workbench helper and product resou
   }
 });
 
+test('native sibling inventory and bundled planning skill invalidate runtime evidence on edits or omission', async t => {
+  const directory=await releaseFixture(t);
+  for(const relative of ['resources/workbench-native/package.json','skills/planning/SKILL.md']){
+    const before=await appFingerprint(directory),file=path.join(directory,relative);
+    await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,'bound fixture');
+    const included=await appFingerprint(directory);assert.notEqual(included,before);
+    await fs.appendFile(file,' changed');assert.notEqual(await appFingerprint(directory),included);
+    await fs.rm(file);assert.equal(await appFingerprint(directory),before);
+  }
+});
+
 test('release collection rejects inconsistent installer names, publisher identities, and signing policies', async t => {
   const directory = await releaseFixture(t), fingerprint = await appFingerprint(directory), distribution = path.join(directory, 'candidate'); await fs.mkdir(distribution);
   const bytes = Buffer.from('disposable fixture; never executed'), sha256 = createHash('sha256').update(bytes).digest('hex');

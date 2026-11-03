@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "scope": "local-preview",
+  "helperSha256": "9787280bbd0ff9cb50fd506d1492585730ac7c30f89bc61032477f9d241807e7",
+  "sourceSha256": "ce114f40a69e6fe9fa13701930485c75b699d1399752fa1d99ceaa765c6b8220",
+  "runtimeManifestSha256": "6f626df59c1cfb05a8464bdf56deb7f39f552e51497c1050941a087c0747b1bb",
+  "detachedControls": true,
+  "presentation": "detached-native-window",
+  "presentationEvidence": {
+    "basis": "buffered-self-test+hidden-lifecycle",
+    "visibleCompositionProven": false,
+    "physicalInputToPhotonProven": false,
+    "hiddenLifecycleVerified": true,
+    "bufferedPresentationSelfTestVerified": true,
+    "detachedControlsSelfTestVerified": true,
+    "detachedControlsAvailableInHiddenSession": true,
+    "temporalPresentationMeasured": false,
+    "selfTestFlags": [
+      "diagnosticCallbacksVerified",
+      "vmConnectProtocolVerified",
+      "classicGraphicsVerified",
+      "sampleVerified",
+      "ownershipReleaseVerified",
+      "presentationVerified",
+      "fixtureClipVerified",
+      "fixtureGdiVerified",
+      "fixtureRestoreVerified",
+      "wakeVerified",
+      "frameHealthVerified",
+      "detachedVerified",
+      "detachedControlsVerified",
+      "clipboardVerified",
+      "bufferedPresentationVerified"
+    ]
+  },
+  "timingBasis": "decoded-surface",
+  "checks": {
+    "sameConsolePixels": true,
+    "inputOwnership": true,
+    "noHostActivation": true,
+    "motionAndLatency": true,
+    "lifecycle": true
+  },
+  "measured": {
+    "width": 1024,
+    "height": 768,
+    "framesPerSecond": 58.997040708438085,
+    "metric": "checksum-valid decoded markers",
+    "wholeDesktopAtomicityProven": false,
+    "guestPaintFramesPerSecond": 61.5176428541946,
+    "verifiedClicks": 30,
+    "p50Ms": 54.91159999999945,
+    "p95Ms": 71.5048999999999
+  },
+  "fullAcceptance": false,
+  "remaining": [
+    "visible composition on this build",
+    "temporal front-surface presentation on this build",
+    "1920x1080 performance",
+    "physical input-to-photon measurement",
+    "automatic clipboard sharing on this build",
+    "automatic guest resolution on this build",
+    "clean-host distribution"
+  ],
+  "recordedAt": "2026-11-02T02:01:41.214Z"
+}

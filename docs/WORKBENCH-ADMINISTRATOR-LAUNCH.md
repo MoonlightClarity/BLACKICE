@@ -1,8 +1,8 @@
 # Workbench: browser-compatible, hidden administrator operations
 
-BLACKICE launches its **Electron desktop application with administrator elevation by default**. The Windows executable uses `requestedExecutionLevel: requireAdministrator`. Earlier elevated builds triggered Browser-tab Chromium launch error 740, and a separately sandboxed browser view failed with renderer exit code 57; fixing Browser compatibility is a follow-up rather than a reason to delay the elevation default.
+BLACKICE requests **the highest available Windows rights by default**, using `requestedExecutionLevel: highestAvailable`. In the manifest-only Windows diagnostic, both the primary and restarted BLACKICE processes remained elevated on the tested administrator runner, while restricted Chromium child processes ran without administrator rights. The `requireAdministrator` comparison failed GPU-child startup with Chromium launch error 18; changing only the execution-level resource repaired the observed startup failure without changing GPU flags, sandbox flags, the working directory or ACLs. This is bounded runtime evidence, not a compatibility claim for every Windows account or UAC configuration.
 
-Workbench's established Hyper-V helper remains available as **a short-lived hidden administrator PowerShell child**, even though BLACKICE itself now requests administrator rights. The existing guest, its VHDX and workspace are retained. Elevated Browser renderer compatibility must be revalidated separately.
+Workbench's established Hyper-V helper remains available as **a short-lived hidden administrator PowerShell child**. Actual administrator-token and `Get-VM` checks still decide whether host operations are available; the manifest is not proof of access and does not elevate the guest. The existing guest, its VHDX and workspace are retained. The successful manifest diagnostic covered strictly hidden startup, restart, window-state preservation, shutdown, profile backup and diagnostics; it did not establish visible desktop compatibility on every host.
 
 ## Project priorities and observed Windows settings
 
@@ -16,7 +16,7 @@ These choices affect the entire Windows computer, including other programs. They
 
 ## Startup and guest operation
 
-1. Install or launch **BLACKICE normally**. Its executable now requests administrator rights on launch (`requireAdministrator`); the NSIS installer remains per-user. Browser renderer compatibility under the elevated token is a separate follow-up.
+1. Install or launch **BLACKICE normally**. Its executable requests `highestAvailable` rights; the NSIS installer remains per-user. On the tested administrator runner, the primary and restarted processes retained administrator tokens. Verify actual runtime and Workbench access on the current host.
 2. Open **Workbench**. Confirm that its hidden Hyper-V helper reports an administrator token and `Get-VM` inventory access. If authorization fails, the VM inventory remains **Unknown**, never `NotInstalled`.
 3. Reuse the existing `BLACKICE-Workbench` VM, its VHDX/AVHDX checkpoint chain, and existing Windows installation. Never reset or recreate them because a query failed.
 4. When the guest is verified Running, use the **headless guest screen and synthetic keyboard/mouse**. The developer's VM has already reached an interactive Windows 11 desktop with local guest account `BLACKICE`. Live screenshots (800 × 600), guest-only keyboard, text and clicks were verified without VMConnect or host input.
@@ -38,9 +38,9 @@ The user may inspect the VM at any time, including while the agent owns input. A
 ## Known limitations and verification
 
 - The Browser-tab repair switches the contained WebContentsView to `sandbox: false` because the previous `sandbox: true` view failed to start on the tested machine with Chromium exit code 57. Its browser profile remains separate, Node integration disabled, context isolation enabled, and page web-security setting enabled.
-- The Electron executable now defaults to **requireAdministrator**; previous Browser renderer failures under elevation remain a separate compatibility task.
+- The Electron executable defaults to **highestAvailable**. The successful manifest-only diagnostic retained elevated primary processes and working restricted children; it does not waive actual runtime or Hyper-V access checks.
 - The guest Windows desktop is confirmed; the SMB mount, guest agent, Windows app inventory, and bidirectional file round trip are **not yet confirmed**.
 - Windows may render a temporary “Not Responding” ghost window if BLACKICE stalls. That separate, intermittent focus issue still requires diagnosis.
-- BLACKICE requests an administrator token on startup, but readiness checks do not silently change UAC, antivirus, firewall, VM lifecycle, host input, or Windows reboot settings.
+- BLACKICE requests the highest available token on startup, but readiness checks do not silently change UAC, antivirus, firewall, VM lifecycle, host input, or Windows reboot settings.
 
 This is a **use-at-your-own-risk** configuration, described from actual observations rather than hypothetical compatibility claims.

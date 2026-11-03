@@ -268,7 +268,7 @@ test('answers held behind the real planning gate never become searchable while w
     assert.equal(search(app.conversations, 'visible planning search').total, 1);
     release(); const settled = await until(() => { const value = app.engine.getRun(run.id); return value.settled && value; }); await app.conversations.chain;
     assert.equal(settled.status, 'failed');
-    assert.match(settled.error, /Return one JSON object with values, grounding/);
+    assert.match(settled.error, /Return one JSON object matching the declared stage schema/);
     assert.equal(settled.nodes.agent.status, 'skipped', 'the malformed planning result prevents dispatch');
     assert.equal(search(app.conversations, 'HELD_PLANNING_NEEDLE').total, 0);
   } finally { release(); }

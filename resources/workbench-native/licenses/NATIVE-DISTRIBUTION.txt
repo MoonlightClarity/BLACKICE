@@ -1,0 +1,34 @@
+BLACKICE native Workbench distribution terms
+
+The bundled workbench-freerdp-client.exe links to the GPL-3.0-or-later
+FFmpeg build identified in redistribution.json through its FreeRDP runtime.
+This combined native Workbench program is conveyed under the GNU General
+Public License, version 3 or, at your option, any later version. You may copy,
+modify and redistribute the covered native program under those terms.
+The complete GPLv3 text is included at licenses/ffmpeg/COPYING.GPLv3.
+The covered program is provided without warranty; see that license for the
+complete terms, warranty exclusions, and your rights and obligations.
+
+BLACKICE-authored source files retain their original Apache License 2.0
+copyright and license notices. The root LICENSE and NOTICE and the source
+files preserve those notices. Conveying the combined native binary under
+GPLv3 does not remove those source notices or replace the licenses of its
+upstream components. Their own copyright, patent, attribution and license
+notices remain applicable and are preserved alongside this notice.
+
+Complete corresponding source, matching build recipes, patches, configuration,
+original Rust lockfiles, checksum-verified crate sources and BLACKICE native
+build inputs are provided as Blackice-2.39.0-Native-Sources.tar on the same
+BLACKICE v2.39.0 GitHub release as the installer, at no additional charge:
+https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.39.0
+SOURCE-INDEX.json and blackice-native-sources.json identify the exact source
+archive and binary/runtime identities; SHA256SUMS.txt records release hashes.
+Keep this source download available whenever the corresponding installer is
+made available. No password, private key, paid account or proprietary tool is
+required to unpack the source archive.
+
+This notice applies to the combined native Workbench program and covered
+native libraries. It does not relicense the separate Electron application,
+Electron/Chromium, guest-video helper, fonts, filter lists or other independent
+components; those retain the terms and notices supplied with each component.
+Native behavioral acceptance remains local-preview/fullAcceptance:false.

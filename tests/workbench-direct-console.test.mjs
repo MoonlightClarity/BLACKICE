@@ -79,12 +79,12 @@ test('direct console preserves rejected guest receipts, never silently retries',
   assert.equal(count,1);
 });
 
-test('the setup guide documents default elevation and guest-only administrator operations',async()=>{
+test('the setup guide documents highest available rights and guest-only administrator operations',async()=>{
   const guide=await readFile(new URL('../public/next/workspaces/workbench-guide.mjs',import.meta.url),'utf8');
   const host=await readFile(new URL('../lib/windows-workbench.mjs',import.meta.url),'utf8');
   const script=await readFile(new URL('../scripts/workbench-headless-broker.ps1',import.meta.url),'utf8');
-  assert.match(guide,/requireAdministrator/);
-  assert.match(guide,/Elevated BLACKICE by default/);
+  assert.match(guide,/highestAvailable/);
+  assert.match(guide,/Elevated BLACKICE on the tested administrator host/);
   assert.match(guide,/Administrator BLACKICE desktop/);
   assert.match(guide,/UAC/);
   assert.doesNotMatch(host,/new WorkbenchHeadlessBroker\(/);

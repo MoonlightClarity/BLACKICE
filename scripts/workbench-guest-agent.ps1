@@ -89,7 +89,7 @@ public static class BLACKICEGuestJson {
     int code=Marshal.GetLastWin32Error();
     if((code!=5&&code!=32&&code!=33&&code!=303)||clock.ElapsedMilliseconds>=250)
      throw new System.ComponentModel.Win32Exception(code,"Guest metadata replacement was not confirmed.");
-    System.Threading.Thread.Sleep((int)Math.Min(10,Math.Max(1,250-clock.ElapsedMilliseconds)));
+    System.Threading.Thread.Sleep((int)Math.Min(1,Math.Max(1,250-clock.ElapsedMilliseconds)));
    }
   }finally{try{System.IO.File.Delete(temporary);}catch{}}
  }

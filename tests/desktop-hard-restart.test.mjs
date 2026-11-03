@@ -200,7 +200,7 @@ test('an owned PowerShell command and its helper survive termination of their fr
       fs.appendFileSync(events,JSON.stringify({pid:process.pid})+'\\n');
       const identity=await (await import(${JSON.stringify(moduleUrl)})).windowsProcessIdentity();
       fs.writeFileSync(path.join(profile,'desktop-runtime.json'),JSON.stringify({pid:process.pid,startedAt:new Date().toISOString(),executable:process.execPath,version:'1.0.0',url:'http://127.0.0.1:21900',profileMode:'custom',capabilities:{electron:true},lifecycle:{mode:'headless'},hardRestart:{identity,args:[appDir,'--profile-dir',profile,'--headless']}}));
-      if(process.argv.includes('--owned')) { spawn('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-File',${JSON.stringify(command)}],{windowsHide:true,stdio:['ignore','pipe','pipe']}); while(true){} }
+      if(process.argv.includes('--owned')) { spawn('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',${JSON.stringify(command)}],{windowsHide:true,stdio:['ignore','pipe','pipe']}); while(true){} }
       setInterval(()=>{if(fs.existsSync(stop))app.quit()},100);
     });
   `);
