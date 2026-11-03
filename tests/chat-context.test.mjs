@@ -169,4 +169,5 @@ test('pre-defaults version-two start receipts retain their original normalized m
   const stored=engine.runs.get(first.id);stored.metadata.clientRequestHashVersion=2;stored.metadata.clientRequestHash=createHash('sha256').update(JSON.stringify(canonical({kind:'start',workflow:normalized,task:request.input,cwd,attachmentIds:[],planningMode:'off'}))).digest('hex');engine.clientRequests.delete(request.requestId);engine.rememberClientRequest(stored);
   engine.runtimeSettings={get:()=>({defaultEffort:'ultra',defaultContext:{preset:'900k'}})};
   assert.equal(engine.startRun(request).id,first.id);assert.equal(runtime.calls.length,1);assert.throws(()=>engine.startRun({...request,input:'Changed task.'}),{code:'RUN_REQUEST_CONFLICT'});
+  for(const planningMode of ['forced','advisory']) assert.throws(()=>engine.startRun({...request,planningMode}),{code:'RUN_REQUEST_CONFLICT'});
 });

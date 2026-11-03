@@ -187,7 +187,7 @@ test('admitted run budgets stay immutable while future continuations and retries
   const admittedSettings = await settings.update({ codexHistory: 'codex', runTimeoutMs: 10000, providerIdleTimeoutMs: 2000, defaultEffort:'default', defaultContext:{preset:'model',windowTokens:null,autoCompact:true} });
   const first = engine.startRun({ workflow: flow, input: 'First admitted task.' }); await until(() => calls.length === 1);
   await settings.update({ runTimeoutMs: null, providerIdleTimeoutMs: null }); assert.equal(calls[0].timeoutMs, 10000); assert.equal(calls[0].providerIdleTimeoutMs, 2000); assert.equal(calls[0].signal.aborted, false);
-  gate.resolve(); await engine.executions.get(first.id); assert.deepEqual(engine.getRun(first.id).runtimeSettings, admittedSettings, 'The admitted run retains the entire normalized settings snapshot after future settings change.');
+  gate.resolve(); await engine.executions.get(first.id); assert.deepEqual(engine.getRun(first.id).runtimeSettings, {...admittedSettings,planningGuardrails:false}, 'The admitted run retains the entire normalized settings snapshot after future settings change.');
   const next = engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue the verified result.' }); await engine.executions.get(next.id);
   assert.equal(calls[1].timeoutMs, null); assert.equal(calls[1].providerIdleTimeoutMs, null);
   shouldFail = true; const failed = engine.startRun({ workflow: flow, input: 'A recoverable task.' }); await engine.executions.get(failed.id); assert.equal(engine.getRun(failed.id).status, 'failed');

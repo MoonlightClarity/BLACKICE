@@ -1,3 +1,4 @@
+import { uiRegistry, prepareUIExpression } from './frontend-ui-controls.mjs';
 import { Session } from 'node:inspector';
 import { performance, monitorEventLoopDelay } from 'node:perf_hooks';
 
@@ -19,8 +20,11 @@ function snapshotExpression(options = {}) {
     textLimit: limit(options.textLimit, 50000, 'snapshotOptions.textLimit'),
     controlLimit: limit(options.controlLimit, 500, 'snapshotOptions.controlLimit'),
   };
-  return `(${function snapshot({ textLimit, controlLimit }) {
-    const bodyText = document.body?.innerText || '';
+  return `(${function snapshot({ textLimit, controlLimit }, registry) {
+    const sensitive = node => node.type === 'password' || /(?:password|one-time-code)/i.test(node.autocomplete || '');
+    const secrets = [...document.querySelectorAll('input,textarea')].filter(sensitive).flatMap(node => [node.value, node.textContent]).filter(value => typeof value === 'string' && value.length);
+    const redact = value => secrets.reduce((text, secret) => text.split(secret).join('[redacted]'), String(value || ''));
+    const bodyText = redact(document.body?.innerText || '');
     const nodes = [...document.querySelectorAll('button,input,select,textarea,a[href],summary,[role="button"],[role="tab"]')];
     const controls = nodes.slice(0, controlLimit).map(node => {
       const box = node.getBoundingClientRect(), style = getComputedStyle(node);
@@ -45,11 +49,11 @@ function snapshotExpression(options = {}) {
         }
       }
       return {
-        tag: node.tagName.toLowerCase(), id: node.id || null, name: node.getAttribute('name'),
+        ref: registry.ref(node), tag: node.tagName.toLowerCase(), id: node.id || null, name: node.getAttribute('name'),
         type: node.getAttribute('type'), role: node.getAttribute('role'),
         ariaLabel: node.getAttribute('aria-label'), title: node.getAttribute('title'),
-        text: node.innerText || node.textContent || '',
-        value: 'value' in node ? node.value : undefined,
+        text: sensitive(node) ? '[redacted]' : redact(node.innerText || node.textContent || ''),
+        value: 'value' in node ? (sensitive(node) ? '[redacted]' : redact(node.value)) : undefined,
         checked: 'checked' in node ? node.checked : undefined,
         disabled: 'disabled' in node ? node.disabled : undefined,
         ariaSelected: node.getAttribute('aria-selected'), ariaExpanded: node.getAttribute('aria-expanded'),
@@ -62,12 +66,12 @@ function snapshotExpression(options = {}) {
       };
     });
     return {
-      url: location.href, title: document.title, readyState: document.readyState,
+      documentId: registry.documentId, url: location.href, title: document.title, readyState: document.readyState,
       viewport: { width: innerWidth, height: innerHeight, devicePixelRatio, scrollX, scrollY },
       text: bodyText.slice(0, textLimit), textCharacters: bodyText.length, textTruncated: bodyText.length > textLimit,
       controls, controlCount: nodes.length, controlsTruncated: nodes.length > controlLimit,
     };
-  }.toString()})(${JSON.stringify(settings)})`;
+  }.toString()})(${JSON.stringify(settings)}, (${uiRegistry.toString()})())`;
 }
 
 /** Native owner developer access. Authorization and durable execution belong to the caller. */
@@ -75,7 +79,7 @@ export function createFrontendDevtools({ getWindow, getAppMetrics, inspectorSess
   if (typeof getWindow !== 'function') throw new TypeError('Frontend developer access needs getWindow.');
   if (typeof inspectorSessionFactory !== 'function') throw new TypeError('inspectorSessionFactory must be a function.');
 
-  let closed = false, frontend = null, main = null;
+  let closed = false, frontend = null, main = null, uiInteractionActive = false;
   let eventLimit = DEFAULT_EVENT_LIMIT, eventByteLimit = DEFAULT_EVENT_BYTES, eventBytes = 0, sequence = 0;
   const events = [], overflow = { totalDropped: 0, frontend: 0, main: 0, lastDroppedSequence: 0, serializationErrors: 0 };
   let lastSerializationError = null;
@@ -234,6 +238,89 @@ export function createFrontendDevtools({ getWindow, getAppMetrics, inspectorSess
     } : {}), result: result ?? {} };
   }
 
+  async function interact(args, signal) {
+    if ((args.target && args.target !== 'frontend') || args.sessionId) throw failure('UI helpers target the top-level frontend. Use raw CDP for subtargets.', 'FRONTEND_UI_TARGET_REQUIRED');
+    const operations = ['click', 'fill', 'press', 'scroll', 'drag'];
+    if (!operations.includes(args.operation)) throw new TypeError('Unknown UI operation.');
+    if (!args.ref || !args.expectedDocumentId || typeof args.expectedUrl !== 'string') throw new TypeError('UI actions require ref, expectedDocumentId and expectedUrl from a snapshot.');
+    if (args.operation === 'fill' && typeof args.text !== 'string') throw new TypeError('fill requires text.');
+    if (args.operation === 'drag' && !args.destinationRef) throw new TypeError('drag requires destinationRef.');
+    const keys = { Enter: 13, Tab: 9, Escape: 27, Backspace: 8, Delete: 46, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Home: 36, End: 35, PageUp: 33, PageDown: 34, ' ': 32 };
+    if (args.operation === 'press' && !Object.hasOwn(keys, args.key)) throw new TypeError('Unsupported key. Use a navigation/editing key or raw CDP.');
+    if (args.operation === 'scroll' && (![args.deltaX ?? 0, args.deltaY ?? 0].every(Number.isFinite) || Math.max(Math.abs(args.deltaX ?? 0), Math.abs(args.deltaY ?? 0)) > 10000)) throw new TypeError('Scroll deltas must be finite and at most 10000 pixels.');
+    const steps = [];
+    let heldKey = null, effectsMayHaveOccurred = false;
+    async function observed(ref = args.ref) {
+      const receipt = await command('frontend', 'Runtime.evaluate', { expression: prepareUIExpression({ ...args, ref }), returnByValue: true }, undefined, signal);
+      const value = receipt.result.result?.value;
+      if (!value?.ok) throw failure(value?.error?.message || 'UI target inspection failed.', value?.error?.code || 'FRONTEND_UI_INSPECTION_FAILED');
+      return value;
+    }
+    async function input(method, params) {
+      if (signal?.aborted) throw Object.assign(new Error('Cancelled before input.'), { code: 'ABORT_ERR' });
+      effectsMayHaveOccurred = true;
+      if (method === 'Input.dispatchKeyEvent' && params.type === 'keyDown') heldKey = params;
+      await command('frontend', method, params, undefined, signal); steps.push(method);
+      if (method === 'Input.dispatchKeyEvent' && params.type === 'keyUp') heldKey = null;
+    }
+    const before = await observed();
+    let mouseDown = false;
+    try {
+      if (args.operation === 'scroll') {
+        await input('Input.dispatchMouseEvent', { type: 'mouseWheel', x: before.x, y: before.y, deltaX: args.deltaX ?? 0, deltaY: args.deltaY ?? 0 });
+      } else if (args.operation === 'press') {
+        effectsMayHaveOccurred = true;
+        await command('frontend', 'Runtime.evaluate', { expression: prepareUIExpression({ ...args, focus: true }), returnByValue: true }, undefined, signal);
+        const focused = await observed();
+        if (!focused.focused) throw failure('The target did not receive focus; no keyboard input was sent.', 'FRONTEND_UI_FOCUS_FAILED');
+        await input('Input.dispatchKeyEvent', { type: 'keyDown', key: args.key, windowsVirtualKeyCode: keys[args.key] });
+        await input('Input.dispatchKeyEvent', { type: 'keyUp', key: args.key, windowsVirtualKeyCode: keys[args.key] });
+      } else {
+        const destination = args.operation === 'drag' ? await observed(args.destinationRef) : before;
+        await input('Input.dispatchMouseEvent', { type: 'mouseMoved', x: before.x, y: before.y });
+        const current = await observed();
+        if (current.x !== before.x || current.y !== before.y) throw failure('The target moved after observation. Take a fresh snapshot.', 'FRONTEND_UI_MOVED');
+        mouseDown = true;
+        await input('Input.dispatchMouseEvent', { type: 'mousePressed', x: before.x, y: before.y, button: 'left', buttons: 1, clickCount: 1 });
+        if (args.operation === 'drag') {
+          const currentDestination = await observed(args.destinationRef);
+          if (currentDestination.x !== destination.x || currentDestination.y !== destination.y) throw failure('The drag destination moved. Take a fresh snapshot.', 'FRONTEND_UI_MOVED');
+          await input('Input.dispatchMouseEvent', { type: 'mouseMoved', x: destination.x, y: destination.y, button: 'left', buttons: 1 });
+        }
+        await input('Input.dispatchMouseEvent', { type: 'mouseReleased', x: destination.x, y: destination.y, button: 'left', buttons: 0, clickCount: 1 });
+        mouseDown = false;
+        if (args.operation === 'fill') {
+          const focused = await observed();
+          if (!focused.focused) throw failure('The target did not receive focus; no keyboard input was sent.', 'FRONTEND_UI_FOCUS_FAILED');
+          {
+            await input('Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', code: 'KeyA', modifiers: 2, windowsVirtualKeyCode: 65 });
+            await input('Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', modifiers: 2, windowsVirtualKeyCode: 65 });
+            const current = await observed();
+            if (!current.focused) throw failure('Focus changed before typing.', 'FRONTEND_UI_FOCUS_FAILED');
+            if (args.text) await input('Input.insertText', { text: args.text });
+            else {
+              await input('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Backspace', windowsVirtualKeyCode: 8 });
+              await input('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', windowsVirtualKeyCode: 8 });
+            }
+          }
+        }
+      }
+    } catch (error) {
+      error.data = { ...(error.data || {}), operation: args.operation, ref: args.ref, dispatchedSteps: steps, effectsMayHaveOccurred };
+      throw error;
+    } finally {
+      if (heldKey) await command('frontend', 'Input.dispatchKeyEvent', { ...heldKey, type: 'keyUp', modifiers: 0 }, undefined, undefined).catch(() => {});
+      // Release a held pointer even if cancellation stopped the multi-step gesture.
+      if (mouseDown) await command('frontend', 'Input.dispatchMouseEvent', { type: 'mouseReleased', x: before.x, y: before.y, button: 'left', buttons: 0 }, undefined, undefined).catch(() => {});
+    }
+    let after;
+    try { after = await command('frontend', 'Runtime.evaluate', { expression: `({url:location.href, documentId:(${uiRegistry.toString()})().documentId})`, returnByValue: true }, undefined, signal); }
+    catch (error) { error.data = { ...(error.data || {}), operation: args.operation, ref: args.ref, dispatchedSteps: steps, effectsMayHaveOccurred }; throw error; }
+    return { target: 'frontend', operation: args.operation, ref: args.ref, before, after: after.result.result?.value ?? null,
+      dispatchedSteps: steps, inputDispatched: true, applicationEffectVerified: false,
+      note: 'Input was dispatched. Inspect the resulting snapshot or screenshot to verify the application outcome.' };
+  }
+
   async function state() {
     const window = windowOf({ required: false }), contents = window?.webContents;
     let metrics = null, metricsError = null;
@@ -300,6 +387,11 @@ export function createFrontendDevtools({ getWindow, getAppMetrics, inspectorSess
           buffered: events.length, bytes: eventBytes, eventLimit, eventByteLimit,
           overflow: { ...overflow }, lastSerializationError,
         };
+      }
+      case 'interact': {
+        if (uiInteractionActive) throw failure('Another UI interaction is in progress. Inspect its receipt before retrying.', 'FRONTEND_UI_BUSY');
+        uiInteractionActive = true;
+        try { return await interact(args, signal); } finally { uiInteractionActive = false; }
       }
       case 'cdp': return command(target, args.method, args.params ?? {}, args.sessionId, signal);
       case 'evaluate': {

@@ -106,11 +106,11 @@ test('Forced automatic Planning delegates unknown saved-record checks to the ope
   assert.equal(result.responseCycle.state,'executing');
 
   const blocked=await fixture(t,{amend:(body,input)=>{
-    if(input.module.kind==='viability')body.requirements=[requirement(input,'blocked')];
+    if(input.module.kind==='viability')body.requirements=[{...requirement(input,'blocked'),stopKind:'user_prohibited',value:'The user explicitly prohibited access to the saved records.',rationale:'The required saved-record access is expressly prohibited by the current user instruction; the owning workflow must not perform it.'}];
     return body;
   }});
-  const held=await blocked.prepare('automatic',{planningEnforcement:'forced',runtimeSettings:{planningGuardrails:true,executionGuardrails:false}});
-  assert.equal(held.result.state,'blocked','a confirmed unavailable resource is not waved away');
+  const held=await blocked.prepare('automatic',{input:'Explain the supplied bounded problem using the saved records. Do not access the saved records: I explicitly prohibit that access.',planningEnforcement:'forced',runtimeSettings:{planningGuardrails:true,executionGuardrails:false}});
+  assert.equal(held.result.state,'blocked','an explicitly prohibited operation is not waved away');
   assert.notEqual(held.result.ownerChecksDeferred,true);
 });
 

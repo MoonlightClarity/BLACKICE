@@ -34,6 +34,8 @@ const optionalWindowsSourceTests = new Set([
   'hidden isolated Chromium composer validates real layout and one-click send wiring',
   'installed Himalaya sends exact MIME to disposable loopback SMTP and strips Bcc headers',
   'real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart',
+  // This integration fixture explicitly requires an owner-supplied existing SMB share.
+  'same-directory native replacement is also exercised on an explicitly supplied existing SMB share',
 ]);
 
 export async function verifyReleaseSource(request, directory) {

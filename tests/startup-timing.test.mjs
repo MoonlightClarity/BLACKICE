@@ -83,3 +83,11 @@ test('every supported phase records a bounded integer duration and invalid opera
   await assert.rejects(startupPhase(diagnostics, 'history', null), { name: 'TypeError', message: 'A startup phase requires an operation.' });
   assert.equal(events.length, before);
 });
+
+test('browser owner recovery is a supported bounded startup phase', async () => {
+  const events = [], value = { recovered: [] };
+  assert.equal(await startupPhase({ record: event => events.push(event) }, 'browser-owner-recovery', () => value), value);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].phase, 'browser-owner-recovery');
+  assert.equal(events[0].outcome, 'ready');
+});

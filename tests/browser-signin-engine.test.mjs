@@ -21,6 +21,7 @@ test('contained sign-in blocks external browser fallback while independent integ
   status(){return{connected:true,authenticated:true,defaultModel:'model-test',models:[{id:'model-test',model:'model-test',available:true}]};}
   async runAgent(options){
    assert.match(options.prompt,/WEBSITE SIGN-IN AND VERIFICATION/);
+   assert.match(options.developerInstructions,/an employer-direct ATS route and any observed email or magic-link login option/);
    assert.equal(options.dynamicTools.some(tool=>tool.name==='relay_browser_signin'),true);
    const reported=await options.onToolCall({name:'relay_browser_signin',arguments:{site:'https://www.linkedin.com/feed/',reason:'sign-in',evidence:'login-redirect'}});
    assert.equal(reported.success,true);
@@ -54,6 +55,59 @@ test('contained sign-in blocks external browser fallback while independent integ
  await engine.persist();
  const contents=JSON.parse(await readFile(path.join(dataDir,'runs.json'),'utf8'));
  assert.equal(contents.find(item=>item.id===run.id)?.browserSignIn?.origin,'https://www.linkedin.com');
+});
+
+test('native social-login report inspects an owned email alternative and keeps the site unpaused',async t=>{
+ const root=await mkdtemp(path.join(tmpdir(),'blackice-email-fallback-')),cwd=path.join(root,'work'),dataDir=path.join(root,'data');
+ await mkdir(cwd);
+ let owner=null,snapshots=0,clicks=0;
+ const browser={
+  status:()=>({available:true,contained:true,tabs:[{tabId:'auth-tab',url:'https://www.linkedin.com/login',documentId:'auth-tab:1',browser:'relay',purpose:'ordinary',folderId:'task-auth',owner}],activeTab:'auth-tab',folders:[{id:'task-auth',kind:'task',taskId:owner?.taskId}]}),
+  perform:async (args,context)=>{
+   assert.equal(args.tabId,'auth-tab');
+   assert.equal(context?.owner?.nodeId,'agent');
+   if(args.action==='snapshot'){
+     snapshots++;
+     return{tabId:'auth-tab',frames:[{elements:[
+      {role:'button',name:'Continue with LinkedIn',ref:'social-1',disabled:false},
+      {role:'button',name:'Continue with email',ref:'email-2',disabled:false}
+     ]}]};
+   }
+   if(args.action==='click'){
+     clicks++;assert.equal(args.ref,'email-2');
+     return{tabId:'auth-tab',actionDispatched:true};
+   }
+   throw Error('Unexpected website action '+args.action);
+  },
+  close:async()=>{}
+ };
+ class Runtime extends EventEmitter{
+  status(){return{connected:true,authenticated:true,defaultModel:'fixture',models:[{id:'fixture',model:'fixture',available:true}]};}
+  async runAgent(options){
+   assert.match(options.prompt,/Recover the existing applicant email from a verified saved resume/);
+   const result=await options.onToolCall({name:'relay_browser_signin',arguments:{site:'https://www.linkedin.com/login',reason:'sign-in',evidence:'login-form'}});
+   assert.equal(result.success,true);
+   const finding=JSON.parse(result.contentItems[0].text);
+   assert.equal(finding.recorded,false);
+   assert.equal(finding.emailSignInAvailable,true);
+   const clicked=await options.onToolCall({name:'relay_browser',arguments:{action:'click',browser:'relay',tabId:'auth-tab',ref:'email-2',expectedUrl:'https://www.linkedin.com/login',expectedDocumentId:'auth-tab:1'}});
+   assert.equal(clicked.success,true,JSON.stringify(clicked));
+   return{output:'The contained page offered an email login; I selected it once without submitting an application or claiming authentication.'};
+  }
+ }
+ const engine=new HarnessEngine({runtime:new Runtime(),dataDir,defaultCwd:cwd,browser});
+ await engine.init();t.after(async()=>{await engine.close();await rm(root,{recursive:true,force:true})});
+ const task='Inspect https://www.linkedin.com/login and use an observed email-login alternative rather than giving up on social login; do not submit applications.';
+ const workflow=createMissionWorkflow({task,model:'fixture',cwd,id:'email-fallback-fixture',planningMode:'off'});
+ const started=engine.startRun({workflow,input:task});
+ const startRun=engine.getRun(started.id);owner={taskId:startRun.taskId||startRun.id,runId:startRun.id,nodeId:'agent'};
+ let run;
+ for(let i=0;i<90;i++){run=engine.getRun(started.id);if(run?.settled)break;await new Promise(resolve=>setTimeout(resolve,20));}
+ assert.equal(run.status,'completed',run.error);
+ assert.equal(run.browserSignIn,undefined,'no human blocker should be stored while email sign-in is available');
+ assert.equal(snapshots,1,'only one read-only alternative inspection');
+ assert.equal(clicks,1,'the observed email option was clicked once');
+ assert.doesNotMatch(run.nodes.agent.output,/application submitted|sign-in completed/i);
 });
 
 test('guarded delegated workers preserve the contained challenge while independent integrations remain usable',async t=>{

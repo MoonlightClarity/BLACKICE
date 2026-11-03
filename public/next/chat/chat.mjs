@@ -157,7 +157,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     view.subtitle.textContent=(item&&bucket!=='active'?(bucket==='deleted'?'In Trash':bucket==='archived'?'Archived':'History state unavailable')+' · ':'')+(planningProgress?.preparing?'Planning':latest ? latest.status==='completed'?'Saved response':latest.status||'Saved':'Local workspace');
     const cycle=latest?.responseCycle;
     const cycleLabel=planningProgress?.label;
-    view.cycleNotice.hidden=!cycle?.requestId||!cycleLabel;
+    view.cycleNotice.hidden=bucket!=='active'||!planningProgress?.showNotice;
     view.cycleStatus.textContent=cycleLabel?cycleLabel+(cycle.title?' · '+cycle.title:''):'';
     // Opening the saved graph is read-only and remains available during work.
     view.openPlan.disabled=!cycle?.requestId;

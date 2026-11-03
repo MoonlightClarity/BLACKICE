@@ -46,6 +46,8 @@ test('the five actual stages have frozen ordered templates and a non-executable 
   assert.ok(Object.isFrozen(RESPONSE_CYCLE_STAGES[1].checks));
   assert.throws(() => responseCycleResponseSchema('cycle'), { code: 'RESPONSE_CYCLE_INVALID' });
   assert.match(responseCycleInstructions('think'), /Do not provide private reasoning transcripts/);
+  assert.match(responseCycleInstructions('inference'), /visible email-login or magic-link controls/);
+  assert.match(responseCycleInstructions('inference'), /Do not ask which email to use when one sourced address is unambiguous/);
 });
 
 test('new intent contract requires the real user benefit and delegated outcome while old same-field findings cannot pass it',()=>{

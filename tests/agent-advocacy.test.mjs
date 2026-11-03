@@ -82,7 +82,7 @@ test('actual engine wiring supplies advocacy guidance and only the contained bro
     assert.ok(options.developerInstructions.startsWith(BLACKICE_HARNESS_INSTRUCTIONS));
     assert.match(options.developerInstructions, /FORM COMPLETION/);
     assert.match(options.developerInstructions, /Do not stop to ask routine profile questions such as nationality/);
-    assert.match(options.developerInstructions, /without turning it into a question for the user/);
+    assert.match(options.developerInstructions, /Do not substitute an approval request, a routine form-profile question or an offer to continue/);
     assert.match(options.developerInstructions, /without asking whether to start, proceed or continue/);
     assert.equal(options.onApproval, undefined);
     const connectionTool = options.dynamicTools.find(tool => tool.name === 'relay_connections');

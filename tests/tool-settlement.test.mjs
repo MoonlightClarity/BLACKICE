@@ -103,10 +103,15 @@ test('API Stop keeps a real pending patch leased, preserves its late receipt, an
   const actual = stopped.events.find(event => event.data?.type === 'tool.result' && event.data.callId === 'held-patch');
   assert.equal(actual.data.success, true); assert.equal(actual.data.duringSettlement, true);
   const item = stopped.events.find(event => event.data?.item?.id === 'held-patch' && event.data.item.status === 'completed');
-  const receipt = JSON.parse(item.data.item.contentItems[0].text);
-  assert.equal(receipt.status, 'applied'); assert.equal(receipt.path, file); assert.equal((await engine.filePatches.get(receipt.id)).afterHash, receipt.afterHash);
+  assert.equal(item.data.item.contentItems, undefined, 'The saved timeline is a bounded index, not another copy of full tool content.');
   const transcript = await f.runtime.readThread(threadId);
   const retainedToolItems = transcript.messages.find(message => message.tool_call_id === 'held-patch').content.split('\n').map(text => JSON.parse(text));
+  const receipt = retainedToolItems[0];
+  const fullResult = transcript.messages.find(message => message.tool_call_id === 'held-patch').content;
+  assert.equal(item.data.item.resultExcerpt, fullResult.slice(0, 300));
+  assert.equal(item.data.item.fullResultSha256, (await import('node:crypto')).createHash('sha256').update(fullResult).digest('hex'));
+  assert.ok(item.data.item.fullResultSha256, 'The compact timeline binds the retained full result.');
+  assert.equal(receipt.status, 'applied'); assert.equal(receipt.path, file); assert.equal((await engine.filePatches.get(receipt.id)).afterHash, receipt.afterHash);
   assert.equal(retainedToolItems[0].afterHash, receipt.afterHash);
   assert.ok(retainedToolItems.some(item => item.type === 'planning.sequence' && item.stepId === 'patch'));
   assert.match(transcript.messages.find(message => message.tool_call_id === 'must-not-start').content, /interrupted/);

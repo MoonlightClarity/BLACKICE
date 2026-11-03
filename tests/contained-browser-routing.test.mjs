@@ -17,12 +17,12 @@ test('contained browser exposes screenshot-relative visual control input with it
 
 test('contained ownership and sign-in pause retain BLACKICE-only task browser routing',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'blackice-contained-routing-')),cwd=path.join(root,'workspace');await mkdir(cwd);
- let native=0,pages=0,refreshes=0;
+ let native=0,pages=0,refreshes=0,snapshots=0;
  const catalog=[{name:'tabs',inputSchema:{type:'object'}},{name:'run',description:'BrowserOS neo SDK: browser.pages.list() and browser.cdp().',inputSchema:{type:'object'}}];
  const config={id:'browseros-neo',name:'BrowserOS Neo',enabled:true,connected:true,toolCount:catalog.length},client={tools:catalog,connected:true};
  const connections={redact:String,signedBrowser:{available:true,connectionId:config.id},configs:new Map([[config.id,config]]),clients:new Map([[config.id,client]]),refreshSignedBrowser:async()=>{refreshes++;return{available:true};},list:()=>[config],status:()=>({}),connect:async()=>client,tools:async()=>({tools:catalog}),call:async(_id,name,args,options)=>{options.onDispatch?.();native++;return{content:[{type:'text',text:JSON.stringify({name,args})}]};},close:async()=>{}};
  let tabs=[{tabId:'personal-tab',url:'https://personal.example/'}];
- const browser={status:()=>({available:true,contained:true,tabs,activeTab:'personal-tab'}),perform:async(args,options)=>{pages++;assert.equal(args.browser,'relay');assert.ok(options.owner?.taskId);assert.ok(options.owner?.runId);assert.ok(options.owner?.nodeId);tabs.push({tabId:'contained-tab',url:args.url,owner:{...options.owner}});return{tabId:'contained-tab',url:args.url};},close:async()=>{}};
+ const browser={status:()=>({available:true,contained:true,tabs,activeTab:'personal-tab'}),perform:async(args,options)=>{assert.equal(args.browser,'relay');assert.ok(options.owner?.taskId);assert.ok(options.owner?.runId);assert.ok(options.owner?.nodeId);if(args.action==='snapshot'){snapshots++;assert.equal(args.tabId,'contained-tab');return{tabId:'contained-tab',url:'https://example.com/',text:'Password sign-in form'};}assert.equal(args.action,'open');pages++;tabs.push({tabId:'contained-tab',url:args.url,owner:{...options.owner}});return{tabId:'contained-tab',url:args.url};},close:async()=>{}};
  class Runtime extends EventEmitter{
   status(){return{connected:true,authenticated:true,defaultModel:'demo',models:[{id:'demo',model:'demo',available:true}]};}
   async runAgent(options){
@@ -47,5 +47,5 @@ test('contained ownership and sign-in pause retain BLACKICE-only task browser ro
  const engine=new HarnessEngine({runtime:new Runtime(),dataDir:path.join(root,'data'),defaultCwd:cwd,connections,browser});await engine.init();
  t.after(async()=>{await engine.close();await rm(root,{recursive:true,force:true});});
  const task='Inspect https://example.com/ using only the BLACKICE browser.';const started=engine.startRun({workflow:createMissionWorkflow({task,model:'demo',cwd,id:'contained-routing',planningMode:'off'}),input:task});
- await engine.executions.get(started.id);const result=engine.getRun(started.id);assert.equal(result.status,'completed',result.error);assert.equal(result.browserSignIn.browser,'relay');assert.equal(native,0);assert.equal(refreshes,0,'native work is dispatched only through explicit gateway calls');assert.equal(pages,1);
+ await engine.executions.get(started.id);const result=engine.getRun(started.id);assert.equal(result.status,'completed',result.error);assert.equal(result.browserSignIn.browser,'relay');assert.equal(native,0);assert.equal(refreshes,0,'native work is dispatched only through explicit gateway calls');assert.equal(pages,1);assert.equal(snapshots,1);
 });

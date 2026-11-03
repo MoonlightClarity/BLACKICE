@@ -392,6 +392,7 @@ test('an upgraded legacy start receipt replays its original admission using save
   runtime.resolveModel = () => { throw new Error('Legacy replay must not consult the current provider/default.'); };
   const restored = await new HarnessEngine({ runtime, dataDir, defaultCwd: cwd }).init(); engines.push(restored);
   assert.equal(restored.startRun(request).id, first.id); assert.equal(runtime.calls.length, 1);
+  for (const planningMode of ['forced', 'advisory']) assert.throws(() => restored.startRun({ ...request, planningMode }), { code: 'RUN_REQUEST_CONFLICT' });
   for (const changed of [{ input: 'A different send.' }, { metadata: { inboxId: 'different-inbox' } }, { workflow: workflow({ nodes: [node('input', 'input'), { ...node('agent', 'agent', 'AGENT_MARKER'), model: 'primary::vendor/original' }, node('output', 'output')] }) }]) assert.throws(() => restored.startRun({ ...request, ...changed }), { code: 'RUN_REQUEST_CONFLICT' });
   const saved = restored.runs.get(first.id), resolved = saved.nodes.agent.resolvedModel;
   delete saved.nodes.agent.resolvedModel; saved.events = [];
@@ -418,6 +419,7 @@ test('legacy continuation receipts survive restart and default changes without c
     runtime.resolveModel = () => { throw new Error('Recovered continuation cannot resolve a new default.'); };
     const restored = await new HarnessEngine({ runtime, dataDir, defaultCwd: cwd }).init(); engines.push(restored);
     assert.equal(restored.continueRun(first.id, request).id, next.id);
+    for (const planningMode of ['forced', 'advisory']) assert.throws(() => restored.continueRun(first.id, { ...request, planningMode }), { code: 'RUN_REQUEST_CONFLICT' });
     for (const changed of [{ message: 'Changed follow-up.' }, { model: 'model-c' }, { prompt: 'Changed agent instructions.' }]) assert.throws(() => restored.continueRun(first.id, { ...request, ...changed }), { code: 'RUN_REQUEST_CONFLICT' });
     if (explicitDefault) assert.throws(() => restored.continueRun(first.id, { ...request, model: 'model-b' }), { code: 'RUN_REQUEST_CONFLICT' }, 'explicit default remains part of the legacy authored intent');
     assert.equal(runtime.calls.length, 2);

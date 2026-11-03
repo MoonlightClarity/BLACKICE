@@ -21,3 +21,21 @@ The startup migration boundary accepts already-compacted histories in the safe r
 Targeted regressions cover terminal ownership classification, browser handback, guarded future takeover, busy/protected tabs, failure reporting, ownership API compatibility, run-history migration, and repeated startup. Installed application verification and the Windows NSIS installer are separate gates from source-level tests.
 
 This source checkpoint does **not** itself claim a fresh NSIS installer has been installed, its runtime acceptance has passed, or the GitHub release has already been published. The release workflow remains responsible for a matching full-source verification receipt and Windows candidate validation before publication.
+
+## Chat response validation and email sign-in recovery
+
+Final-response validation now distinguishes analytical answers from action plans, preserves bounded coverage evidence, and records transferred browser-tab observations without replaying actions.
+
+Broad job-application requests now activate browser sign-in guidance. Before recording a human sign-in blocker, a task-owned tab receives one read-only, same-origin inspection for an observed email or magic-link alternative. The recovery guidance reuses a single sourced applicant email and scoped mailbox access when authorized, without inventing credentials, bypassing CAPTCHA, or duplicating submissions. Targeted regressions cover these paths; actual site availability remains dependent on the observed page.
+
+## Quiet historical planning notices and compatibility
+
+Historical failed planning cycles no longer leave a generic attention banner above later messages. Active progress and current review/input requests remain visible; archived task evidence is retained.
+
+Startup now recognizes the browser-owner recovery phase. Legacy request receipts preserve their historical replay identity, older task schemas retain their original instruction contracts, and explicitly shared workflows preserve their ownership and dependencies with Planning Off.
+
+The source suite includes native hidden viewport and protocol checks. The explicitly opt-in SMB-share integration fixture requires an owner-supplied share and is reported separately when unavailable.
+
+## Guarded frontend controls
+
+The existing frontend MCP tool now supports document-bound snapshots and guarded click, fill, press, scroll and drag requests while retaining raw CDP access and existing grants. Native Electron verification covers click, fill, clear, keyboard, scrolling, stale-document rejection and snapshot visibility. Native drag remains unverified.

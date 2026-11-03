@@ -267,7 +267,7 @@ for (const version of [1, 2, 3]) test(`saved native task schema v${version} rema
       await finishFixturePlan(options, { state, summary: 'The initial task catalog is current and the fixture answer is ready. A later explicit Planning Off continuation will exercise its retained historical catalog separately.' });
       return { output: 'Original turn.', threadId: context.threadId };
     }
-    assert.deepEqual(options.dynamicTools.find(tool => tool.name === 'relay_task'), taskToolForVersion(version, { executionGuardrails: true }));
+    assert.deepEqual(options.dynamicTools.find(tool => tool.name === 'relay_task'), taskToolForVersion(version, { executionGuardrails: false }));
     assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|branching outline is the default/);
     assert.equal((await call(options, 'relay_workspace', { action: 'write', path: 'legacy.txt', text: `v${version}` })).success, true);
     const unsupported = await call(options, 'relay_task', { action: 'describe' }); assert.equal(unsupported.success, false);

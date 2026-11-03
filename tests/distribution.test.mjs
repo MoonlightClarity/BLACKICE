@@ -172,7 +172,7 @@ Invoke-RelayInstallation -Source $FixtureSource -InstallRoot $FixtureInstall -De
 });
 test('installer rejects overlapping roots, unrelated destination data and junctions without modifying them', { skip: process.platform !== 'win32' }, async t => {
   const fixture = await installation(t); await fs.mkdir(fixture.installRoot, { recursive: true }); const sentinel = path.join(fixture.installRoot, 'unrelated.txt'); await fs.writeFile(sentinel, 'preserve');
-  await assert.rejects(fixture.run(), /unrelated files/); assert.equal(await fs.readFile(sentinel, 'utf8'), 'preserve');
+  await assert.rejects(fixture.run(), /unrelated\s+files/); assert.equal(await fs.readFile(sentinel, 'utf8'), 'preserve');
   await fs.rm(fixture.installRoot, { recursive: true });
   const outside = path.join(fixture.directory, 'outside'); await fs.mkdir(outside); await fs.writeFile(path.join(outside, 'sentinel.txt'), 'outside untouched'); const junction = path.join(fixture.source, 'external'); await fs.symlink(outside, junction, 'junction');
   try { await assert.rejects(fixture.run(), /link or junction/); assert.equal(await fs.readFile(path.join(outside, 'sentinel.txt'), 'utf8'), 'outside untouched'); }

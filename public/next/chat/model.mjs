@@ -34,8 +34,13 @@ export function planningProgressForRun(run){
     cycle.state==='paused_after_plan'?(checkedPlan?'Plan checked · awaiting review':'Planning result unverified'):
     cycle.state==='executing'?(planAdopted?'Plan adopted · working on task':'Planning result unverified'):
     cycle.state==='completed'?(checkedPhase(proof?.stages.find(item=>item.stage==='respond'))?'Planning review completed':'Planning result unverified'):
-    ({needs_evidence:'Planning needs evidence',needs_user_input:'Planning needs your input',failed:'Planning needs attention'})[cycle.state]||'';
-  return {preparing,label,requestId:cycle.requestId,checkedPlan,planAdopted};
+    ({needs_evidence:'Planning needs evidence',needs_user_input:'Planning needs your input'})[cycle.state]||'';
+  // A saved cycle is evidence, not a persistent notification. Keep explicit
+  // plan review and input holds actionable, but never alert on historical failure.
+  const actionable=cycle.state==='paused_after_plan'||
+    cycle.state==='needs_user_input'&&run.status==='blocked';
+  const showNotice=Boolean(label&&(running(run)||actionable));
+  return {preparing,label,showNotice,requestId:cycle.requestId,checkedPlan,planAdopted};
 }
 export const rootId = item => item?.taskId || item?.rootId || item?.id || '';
 export const lastRunId = item => item?.runId || item?.latestRunId || item?.id || '';

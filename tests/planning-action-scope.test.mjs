@@ -31,7 +31,7 @@ test('planning and execution keep outcome, evidence and consequence in the suppl
     assert.match(instruction, /Plan backward from (?:their|the user’s) desired outcome/);
     assert.match(instruction, /opportunity cost/);
     assert.match(instruction, /(?:Preserve|preserve) (?:their actual|actual user) constraints/);
-    assert.match(instruction, /(?:realistic ability|could realistically do the work)/);
+    assert.match(instruction, /(?:realistic ability|demonstrated or realistically transferable ability|could realistically do the work)/);
   }
   assert.doesNotMatch(BLACKICE_HARNESS_INSTRUCTIONS, /prioritize avoiding catastrophic failure.*in that order/);
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /likelihood and severity together/);

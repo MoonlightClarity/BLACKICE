@@ -227,3 +227,55 @@ test('destroyed frontend releases listeners without calling invalid native debug
   assert.doesNotThrow(() => controller.close());
   assert.equal(window.closes, 0);
 });
+
+
+const uiArgs = { action: 'interact', operation: 'click', ref: 'ui-1', expectedUrl: 'http://app/#chat', expectedDocumentId: 'doc-1' };
+function uiDebugger() {
+  return new FakeDebugger({ handle: async (method) => method === 'Runtime.evaluate'
+    ? { result: { value: { ok: true, documentId: 'doc-1', url: 'http://app/#chat', ref: 'ui-1', x: 20, y: 30, focused: true } } } : {} });
+}
+test('UI click dispatches native mouse events and makes no claim of application success', async t => {
+  const debug = uiDebugger(), { controller } = setup(t, { debug });
+  const receipt = await controller.execute(uiArgs);
+  assert.deepEqual(debug.calls.filter(x => x.method.startsWith('Input')).map(x => x.params.type), ['mouseMoved', 'mousePressed', 'mouseReleased']);
+  assert.equal(receipt.inputDispatched, true); assert.equal(receipt.applicationEffectVerified, false);
+});
+test('UI stale document and missing identity never dispatch input', async t => {
+  const debug = new FakeDebugger({ handle: async () => ({ result: { value: { ok: false, error: { message: 'stale', code: 'FRONTEND_UI_STALE_DOCUMENT' } } } }) });
+  const { controller } = setup(t, { debug });
+  await assert.rejects(controller.execute(uiArgs), { code: 'FRONTEND_UI_STALE_DOCUMENT' });
+  await assert.rejects(controller.execute({ ...uiArgs, expectedDocumentId: '' }));
+  assert.equal(debug.calls.filter(x => x.method.startsWith('Input')).length, 0);
+});
+test('UI fill sends text through native insertion and excludes it from receipt', async t => {
+  const debug = uiDebugger(), { controller } = setup(t, { debug });
+  const receipt = await controller.execute({ ...uiArgs, operation: 'fill', text: 'ordinary test text' });
+  assert.equal(debug.calls.find(x => x.method === 'Input.insertText').params.text, 'ordinary test text');
+  assert.ok(!JSON.stringify(receipt).includes('ordinary test text'));
+});
+test('UI validates keys, scroll deltas and subtargets before dispatch', async t => {
+  const { controller, debug } = setup(t);
+  for (const extra of [{ operation: 'press', key: 'BadKey' }, { operation: 'scroll', deltaY: Infinity }, { sessionId: 'subtarget' }, { target: 'main' }])
+    await assert.rejects(controller.execute({ ...uiArgs, ...extra }));
+  assert.equal(debug.calls.length, 0);
+});
+test('UI drag releases pointer on intermediate failure and reports partial effects', async t => {
+  const debug = uiDebugger(), original = debug.handle; let moves = 0;
+  debug.handle = async (method, params) => {
+    if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseMoved' && ++moves === 2) throw new Error('transport failed');
+    return original(method, params);
+  };
+  const { controller } = setup(t, { debug });
+  await assert.rejects(controller.execute({ ...uiArgs, operation: 'drag', destinationRef: 'ui-2' }), error => error.data.effectsMayHaveOccurred);
+  assert.equal(debug.calls.at(-1).params.type, 'mouseReleased');
+});
+test('UI refuses overlapping helper gestures instead of interleaving input', async t => {
+  const pending = deferred(), debug = uiDebugger(), original = debug.handle;
+  let blocked = true;
+  debug.handle = async (method, params) => { if (blocked && method === 'Runtime.evaluate') { blocked = false; await pending.promise; } return original(method, params); };
+  const { controller } = setup(t, { debug });
+  const first = controller.execute(uiArgs);
+  await assert.rejects(controller.execute(uiArgs), { code: 'FRONTEND_UI_BUSY' });
+  pending.resolve(); await first;
+  assert.equal((await controller.execute(uiArgs)).inputDispatched, true);
+});
