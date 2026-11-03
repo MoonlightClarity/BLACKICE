@@ -1,0 +1,27 @@
+name: BLACKICE one-time verified history import
+on:
+  push:
+    branches:
+      - transfer/blackice-2.39.6-20261103
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify and import the exact local commit graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "9a11bf08293d6ced602f3b74785eabb2caa7ed79123ca2b69eb36cc888f1e5a7  .github/import/blackice-upload.bundle" | sha256sum -c -
+          git bundle verify .github/import/blackice-upload.bundle
+          git fetch .github/import/blackice-upload.bundle HEAD:refs/heads/imported-checkpoint
+          test "$(git rev-parse refs/heads/imported-checkpoint)" = "c5c358a75d0563c15f4978963d9de1feeb99515f"
+          git merge-base --is-ancestor "fb76484ac21a3cb0a0f1708e092478d779b76146" "c5c358a75d0563c15f4978963d9de1feeb99515f"
+          git push origin refs/heads/imported-checkpoint:refs/heads/checkpoint/blackice-2.39.6-import-20261103
