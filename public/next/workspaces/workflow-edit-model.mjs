@@ -2,10 +2,10 @@
  * Never rewire edges, regenerate node IDs, or drop unknown engine metadata.
  */
 export const WORKFLOW_REASONING_EFFORTS = Object.freeze(['default','none','minimal','low','medium','high','xhigh','max','ultra']);
-export const WORKFLOW_PLANNING_MODES = Object.freeze(['on','off']);
+export const WORKFLOW_PLANNING_MODES = Object.freeze(['forced','advisory','off']);
 export const WORKFLOW_PLAN_DETAILS = Object.freeze(['compact','balanced','detailed']);
 const workflowReasoning=new Set(WORKFLOW_REASONING_EFFORTS);
-const workflowPlanning=new Set(WORKFLOW_PLANNING_MODES);
+const workflowPlanning=new Set([...WORKFLOW_PLANNING_MODES,'on','auto','maximal']);
 const workflowDetails=new Set(WORKFLOW_PLAN_DETAILS);
 
 export function applyWorkflowStageEdits(workflow, {name, nodes = {}, workflowSettings} = {}) {
@@ -112,8 +112,8 @@ export function applyWorkflowStageEdits(workflow, {name, nodes = {}, workflowSet
           throw Error('Maximum parallel stages must be 1–1,000, or blank for no limit.');
         settings.maxParallel=value;
       }else if(field==='planningMode'){
-        if(value===null)delete settings.planningMode;
-        else if(workflowPlanning.has(value))settings.planningMode=value;
+        if(value===null){ delete settings.planningMode; delete settings.planningEnforcement; }
+        else if(workflowPlanning.has(value)){ settings.planningMode=value==='off'?'off':'on'; if(WORKFLOW_PLANNING_MODES.includes(value))settings.planningEnforcement=value; else delete settings.planningEnforcement; }
         else throw Error('Choose a supported task planning mode.');
       }else if(field==='planDetail'){
         if(value===null)delete settings.planDetail;

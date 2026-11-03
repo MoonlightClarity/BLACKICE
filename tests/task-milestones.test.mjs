@@ -149,7 +149,7 @@ test('milestone count follows the saved-state budget and enormous arrays stop va
   const maxVisits = Math.ceil(TASK_LIMITS.stateChars / 3700) + 1;
   let visited = 0; const huge = new Proxy([], { get(target, key, receiver) { if (key === 'length') return 1_000_000; if (/^\d+$/.test(String(key))) { visited++; if (visited > maxVisits) throw new Error('Validation did not stop at the state budget.'); return { title: 'Outcome', doneWhen: 'x'.repeat(1000), evidence: 'x'.repeat(2000), note: 'x'.repeat(700) }; } return Reflect.get(target, key, receiver); } });
   assert.throws(() => store.setPlan('milestone-task', { steps: huge }, actor(state.revision)), { code: 'TASK_STATE_LIMIT' }); assert.ok(visited <= maxVisits);
-  await assert.rejects(store.setPlan('milestone-task', { steps: Array.from({ length: 80 }, (_, index) => ({ title: `Deliver outcome ${index}`, doneWhen: 'x'.repeat(1000), evidence: 'x'.repeat(2000) })) }, actor(state.revision)), { code: 'TASK_STATE_LIMIT' });
+  assert.throws(() => store.setPlan('milestone-task', { steps: Array.from({ length: 160 }, (_, index) => ({ title: `Deliver outcome ${index}`, doneWhen: 'x'.repeat(1000), evidence: 'x'.repeat(2000), note: 'x'.repeat(700) })) }, actor(state.revision)), { code: 'TASK_STATE_LIMIT' });
   assert.equal((await store.get('milestone-task')).revision, state.revision);
 });
 

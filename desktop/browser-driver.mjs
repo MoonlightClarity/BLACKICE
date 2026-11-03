@@ -1,5 +1,6 @@
 import { BrowserWindow, session } from 'electron';
 import { ownershipAction, ownershipChange } from '../lib/browser-ownership.mjs';
+import { returnTerminalBrowserTab } from '../lib/browser-owner-recovery.mjs';
 import { EventEmitter } from 'node:events';
 import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
@@ -737,7 +738,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     return { suspended: true };
   }
   async releaseOwner(context, { status } = {}) {
-    const owner = browserOwner(context), suspended = [], retained = [], closed = [], folders = new Set();
+    const owner = browserOwner(context), suspended = [], retained = [], released = [], closed = [], folders = new Set();
     if (!owner) throw capacityError('A host browser owner is required for cleanup.', 'BROWSER_OWNER_INVALID');
     for (const tab of [...this.tabs.values()]) if (tab.purpose !== 'chat-mode' && sameOwner(tab.owner, owner) && tab.owner.runId === owner.runId) {
       if (['paused', 'awaiting_input', 'running', 'queued'].includes(status)) { retained.push({ tabId: tab.id, reason: 'This task is not finished; preserve its live page state.' }); continue; }
@@ -747,11 +748,36 @@ export class ElectronBrowserDriver extends EventEmitter {
           : this.downloads.some(item => item.tabId === tab.id && item.status === 'downloading') ? 'A download is still running.' : null;
         if (reason) { retained.push({ tabId: tab.id, reason }); continue; }
         folders.add(tab.folderId); this.closeTab(tab); closed.push(tab.id);
+      } else if (status === 'failed' || status === 'cancelled') {
+        // A failed worker cannot transfer its own tab. Release the exact saved
+        // page to the person for a future explicit take_ownership. Never replay
+        // an uncertain input, interrupt an active dialog or stop a download.
+        const busy = tab.pendingInteraction || tab.suspendedWork.size
+          || this.downloads.some(item => item.tabId === tab.id && item.status === 'downloading');
+        if (busy || tab.protectedContent) {
+          retained.push({ tabId: tab.id, reason: 'An interaction, download or protected page still needs inspection.' }); continue;
+        }
+        // Preserve pages a person has interacted with; ordinary agent-only
+        // tabs remain subject to the existing suspend-on-failure policy.
+        if (!tab.userPinned && !tab.humanCreated) {
+          const result = this.suspendTab(tab, { automatic: true });
+          if (!result.suspended) { retained.push({ tabId: tab.id, reason: result.reason }); continue; }
+          suspended.push(tab.id);
+        }
+        folders.add(tab.folderId);
+        const restored = returnTerminalBrowserTab(tab, { folderId: DEFAULT_FOLDER });
+        if (!restored) { retained.push({ tabId: tab.id, reason: 'The tab cannot yet change ownership.' }); continue; }
+        for (const child of this.tabs.values()) if (child.parentTabId === tab.id) child.parentTabId = null;
+        for (const [key, id] of this.ownerActiveTabs) if (id === tab.id) this.ownerActiveTabs.delete(key);
+        tab.ownershipReceipt = { action: 'terminal_owner_released', tabId: tab.id,
+          previousOwner: restored.previousOwner, owner: null, status, at: new Date().toISOString() };
+        released.push(tab.id);
       } else {
-        const result = this.suspendTab(tab, { automatic: true }); if (result.suspended) suspended.push(tab.id); else retained.push({ tabId: tab.id, reason: result.reason });
+        const result = this.suspendTab(tab, { automatic: true });
+        if (result.suspended) suspended.push(tab.id); else retained.push({ tabId: tab.id, reason: result.reason });
       }
     }
-    if (closed.length) {
+    if (closed.length || released.length) {
       for (const id of folders) {
         const folder = this.folders.get(id);
         if (folder?.kind === 'task' && folder.taskId === owner.taskId && ![...this.tabs.values()].some(tab => tab.folderId === id)) this.folders.delete(id);
@@ -760,7 +786,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
     await this.writeChain;
     if (this.persistenceError) throw Object.assign(error('Browser cleanup ran, but its saved folder state could not be confirmed.'), { code: 'BROWSER_SAVE_FAILED' });
-    return { suspended, retained, ...(status === 'completed' ? { closed } : {}) };
+    return { suspended, retained, released, ...(status === 'completed' ? { closed } : {}) };
   }
   async organize(args, source, context) {
     const owner = source === 'user' ? null : browserOwner(context);

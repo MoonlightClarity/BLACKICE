@@ -95,6 +95,49 @@ for (const mode of ['auto', 'on', 'maximal']) test(`${mode} blocks operational t
   await assert.rejects(readFile(path.join(f.cwd, 'unplanned.txt')), { code: 'ENOENT' });
 });
 
+test('Forced and Advisory determine plan-before-tool enforcement per conversation', async t => {
+  const attempts = [];
+  const f = await fixture(t, async options => {
+    const receipt = await call(options, 'relay_workspace', { action: 'write', path: 'planning-policy.txt', text: 'The requested policy was observed.' });
+    attempts.push(receipt);
+    return { output: 'The policy was exercised.', threadId: 'planning-policy-thread-' + attempts.length };
+  });
+  f.settings.executionGuardrails = false;
+  const forced = await f.settle(f.start({ planningMode: 'forced' }).id);
+  assert.equal(forced.planningMode, 'on');
+  assert.equal(forced.planningEnforcement, 'forced');
+  assert.equal(forced.runtimeSettings.executionGuardrails, false, 'Forced planning must not rewrite the legacy external-action switch');
+  assert.equal(forced.runtimeSettings.planningGuardrails, true);
+  assert.equal(attempts[0].code, 'TASK_PLAN_REQUIRED');
+  assert.equal(forced.nodes.agent.errorCode, 'TASK_PLAN_REQUIRED');
+  f.settings.executionGuardrails = true;
+  const advisory = await f.settle(f.start({ planningMode: 'advisory' }).id);
+  assert.equal(advisory.planningMode, 'on');
+  assert.equal(advisory.planningEnforcement, 'advisory');
+  assert.equal(advisory.runtimeSettings.executionGuardrails, true, 'Advisory planning must not rewrite the legacy external-action switch');
+  assert.equal(advisory.runtimeSettings.planningGuardrails, false);
+  assert.equal(attempts[1].success, true);
+  finished(advisory);
+});
+
+test('a saved historical Advisory conversation keeps its captured guardrail state across a changed global default', async t => {
+  const f = await fixture(t, async options => {
+    const receipt = await call(options, 'relay_workspace', { action: 'write', path: 'legacy-advisory.txt', text: 'Scoped to the saved chat.' });
+    assert.equal(receipt.success, true, 'An existing advisory thread does not unexpectedly switch into forced planning.');
+    return { output: 'Completed using the saved mode.', threadId: 'legacy-advisory-thread' };
+  });
+  f.settings.executionGuardrails = false;
+  const first = await f.settle(f.start({ planningMode: 'on' }).id);
+  finished(first);
+  assert.equal(first.runtimeSettings.planningGuardrails, false);
+  f.settings.executionGuardrails = true;
+  const next = await f.settle(f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue this existing request.' }).id);
+  finished(next);
+  assert.equal(next.planningEnforcement, undefined);
+  assert.equal(next.runtimeSettings.executionGuardrails, false);
+  assert.equal(next.runtimeSettings.planningGuardrails, false);
+});
+
 test('Planning On still delivers and audits the mandatory skill when sequence guardrails are disabled',async t=>{
   const f=await fixture(t,async options=>{
     assert.ok(options.developerInstructions.includes(PLANNING_SKILL_CONTENT));
@@ -169,8 +212,9 @@ test('Off permits normal operations and final output without creating an automat
     assert.match(options.developerInstructions, /TASK PLANNING MODE: OFF/);
     assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|Maintain the current task outline|form a brief operational plan|For substantive work, discover relevant methods/);
     assert.doesNotMatch(options.prompt, /DEFAULT TASK OUTLINE|METHOD DISCOVERY AND ADAPTATION/);
-    assert.match(options.prompt, /OPTIONAL TASK NOTES/); assert.match(options.prompt, /EXTERNAL ACTION RECOVERY/);
-    assert.deepEqual(options.dynamicTools.find(tool => tool.name === 'relay_task'), TASK_TOOL, 'Off preserves native tool schema identity');
+    assert.match(options.prompt, /EXECUTION GUARDRAILS: OFF|OPTIONAL TASK NOTES/); assert.match(options.prompt, /EXTERNAL ACTION RECOVERY/);
+    const optionalTaskTool = options.dynamicTools.find(tool => tool.name === 'relay_task');
+    assert.equal(optionalTaskTool.name, 'relay_task'); assert.match(optionalTaskTool.description, /Optional compact auditable task context/, 'Explicit Off does not advertise mandatory planning.');
     options.onEvent({ type: 'delta', delta: 'The actual operation is complete.' });
     const response = await call(options, 'relay_workspace', { action: 'write', path: 'off.txt', text: 'actual off-mode result' }); assert.equal(response.success, true);
     return { output: 'The actual operation is complete.', threadId: 'planning-mode-thread' };
@@ -232,7 +276,8 @@ test('Off continuation preserves the exact prior tree, evidence, notes and nativ
       saved = await completeAndReview(options, saved);
       oldTools = options.dynamicTools;
     } else if (number === 2) {
-      assert.equal(options.threadId, 'planning-mode-thread'); assert.deepEqual(options.dynamicTools, oldTools);
+      assert.equal(options.threadId, 'planning-mode-thread'); assert.deepEqual(options.dynamicTools.map(item => item.name), oldTools.map(item => item.name));
+      assert.notDeepEqual(options.dynamicTools, oldTools, 'Explicit Off uses an advisory tool schema without rewriting earlier tool history.');
       assert.match(options.developerInstructions, /overrides older default-outline mandates/);
       assert.equal((await call(options, 'relay_workspace', { action: 'write', path: 'continued.txt', text: 'continued without automatic plan' })).success, true);
     } else {

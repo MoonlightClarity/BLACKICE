@@ -27,6 +27,7 @@ import { connectorBrowserOwner } from './lib/connector-browser-owner.mjs';
 import { createDirectPlanningBrowserTools } from './lib/direct-planning-browser-tools.mjs';
 import { PromptTemplateStore } from './lib/prompt-templates.mjs';
 import { BrowserWorkspace } from './lib/browser.mjs';
+import { recoverTerminalBrowserOwners } from './lib/browser-owner-recovery.mjs';
 import { ProviderRuntime } from './lib/providers.mjs';
 import { CHAT_MODE_RETIRED_MESSAGE } from './lib/retired-models.mjs';
 import { IdentityStore } from './lib/identity.mjs';
@@ -136,6 +137,11 @@ export async function createHarnessServer(options = {}) {
   const engine = options.engine || new HarnessEngine({ runtime, dataDir, defaultCwd, desktop, knowledge, browser, identity, connections, tasks, attachments, email, workbench, ...(options.maxConcurrentRuns !== undefined ? {maxConcurrentRuns:options.maxConcurrentRuns} : {}) });
   engine.workbench = workbench;
   await startupPhase(diagnostics, 'history', () => engine.init());
+  // The history loader has now marked interrupted runs terminal. Reconcile
+  // their saved browser owners before accepting new tasks, without replaying
+  // any page action or touching owners whose run state is unknown or active.
+  const terminalBrowserRecovery = await startupPhase(diagnostics, 'browser-owner-recovery', () => recoverTerminalBrowserOwners(browser, engine.runs));
+  for (const failure of terminalBrowserRecovery.failures) await diagnostics.recordError('browser', 'terminal_owner_recovery_failed', new Error(failure.message));
   engine.runtimeSettings = runtimeSettings;
   engine.prompts = prompts;
   engine.email = email;

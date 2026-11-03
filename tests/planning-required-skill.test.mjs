@@ -19,6 +19,9 @@ test('Planning On loads the same mandatory first-party skill in both guarded and
   for (const phrase of ['Defamiliarize', 'observable', 'ELIF', 'Return to Planning', 'skip', 'opportunity']) {
     assert.match(PLANNING_SKILL_CONTENT.toLowerCase(), new RegExp(phrase.toLowerCase()));
   }
+  assert.match(PLANNING_SKILL_CONTENT, /A required answer may use the best defensible source-linked inference/);
+  assert.match(PLANNING_SKILL_CONTENT, /Ordinary residual uncertainty never creates a stop or user question/);
+  assert.match(PLANNING_SKILL_CONTENT, /Reserve stops for the exact closed conditions/);
   assert.match(planningSkillInstructions('on'), /REQUIRED FIRST-PARTY BLACKICE PLANNING SKILL v3/);
   assert.match(planningSkillInstructions('maximal'), /mandatory for this turn/);
   assert.equal(planningSkillInstructions('off'), '');

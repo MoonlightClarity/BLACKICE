@@ -330,7 +330,7 @@ test('bounded plans reject enormous arrays before traversal, overdeep trees and 
   assert.throws(() => normalizeTaskPlan({ steps: huge }), { code: 'TASK_PLAN_LIMIT' }); assert.equal(visited, 0);
   const deep = Array.from({ length: TASK_PLAN_LIMITS.depth }, (_, index) => group(`g${index}`, 'sequence', { parentId: index ? `g${index - 1}` : null })); deep.push(action('leaf', { parentId: deep.at(-1).id }));
   assert.throws(() => normalize(deep), /nested plan levels/);
-  assert.throws(() => normalize(Array.from({ length: 80 }, (_, index) => action(`a${index}`, { evidence: 'x'.repeat(2000), doneWhen: 'x'.repeat(1000), note: 'x'.repeat(700) })), { layout: 'parallel' }), { code: 'TASK_PLAN_LIMIT' });
+  assert.throws(() => normalize(Array.from({ length: 120 }, (_, index) => action(`a${index}`, { evidence: 'x'.repeat(2000), doneWhen: 'x'.repeat(1000), note: 'x'.repeat(700) })), { layout: 'parallel' }), { code: 'TASK_PLAN_LIMIT' });
   assert.throws(() => runtimeTaskPlan('verbose'), /compact, balanced or detailed/);
 });
 

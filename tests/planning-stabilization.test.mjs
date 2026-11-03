@@ -120,7 +120,7 @@ test('strict dispatch retains the unresolved preparatory dependency while still 
 
 test('confirmed resource denial blocks costly work even with advisory guardrails and preserves the diagnostic and remedy',async t=>{
   const f=await fixture(t,{executionGuardrails:false,operation:async()=>assert.fail('The costly operation must not start before its actual prerequisite.'),transformResponse:(body,{input})=>{
-    if(input.module.kind==='viability')body.requirements=[{id:'write-right',label:'Required target write right',importance:'essential',basis:'user',consequence:'Writing the requested result to the protected target.',resolution:'blocked',value:'The captured task states that this target denies the required right.',sourceIds:['viability:task'],checkedSourceIds:input.sources.filter(item=>item.kind!=='response').map(item=>item.id),rationale:'Stop that write; use an already-authorized alternate destination or wait for the actual right. Do not infer guest rights from host elevation.',inferable:false,omissionAllowed:false,question:'',dependentNodeIds:['agent']}];
+    if(input.module.kind==='viability')body.requirements=[{id:'write-right',label:'Required target write right',importance:'essential',basis:'user',consequence:'Writing the requested result to the protected target.',resolution:'blocked',stopKind:'target_denied',value:'The captured task states that this target denies the required right.',sourceIds:['viability:task'],checkedSourceIds:input.sources.filter(item=>item.kind!=='response').map(item=>item.id),rationale:'Stop that write; use an already-authorized alternate destination or wait for the actual right. Do not infer guest rights from host elevation.',inferable:false,omissionAllowed:false,question:'',dependentNodeIds:['agent']}];
   }}),run=await f.execute({input:'Produce result 17 at the protected target, whose write right is denied. Do not elevate or change rights.'});
   assert.equal(run.status,'blocked');assert.equal(f.operationalCalls,0);assert.deepEqual(f.calls,['inference','viability','plan']);assert.match(run.viability.question,/Blocked: Required target write right/);assert.match(run.viability.question,/Remedy:/);
   const saved=await f.store.get(run.responseCycle.requestId),cycle=saved.cycles.find(item=>item.id===run.responseCycle.cycleId),feasibility=saved.nodes.find(item=>item.id===cycle.stageNodeIds.feasibility);
@@ -351,13 +351,14 @@ test('automatic Chat carries the recorded unknowns into local read-write-reread 
   assert.equal((await f.archive.get(run.id)).output, run.output);
 });
 
-test('strict dispatch still holds recorded source-coverage omissions after saving a usable plan', async t => {
+test('strict dispatch defers recoverable source omissions but rejects unplanned owner output', async t => {
   const f = await fixture(t, { resultValue: 76, executionGuardrails: true, transformResponse: (body, { input }) => {
     if (input.module.kind === 'viability') Object.assign(body, bindRecordedFeasibility(input, f.dir));
   } });
   const run = await f.execute();
-  assert.equal(run.status, 'blocked');
-  assert.equal(f.operationalCalls, 0);
+  assert.equal(run.status, 'failed', run.error);
+  assert.equal(run.errorCode, 'TASK_PLAN_REQUIRED', 'owner cannot satisfy Forced Planning with an unsupported bare answer');
+  assert.equal(f.operationalCalls, 1, 'owner is allowed to inspect recoverable missing source evidence');
   assert.deepEqual(f.calls, ['inference', 'viability', 'plan']);
   const request = await f.store.get(run.responseCycle.requestId), cycle = request.cycles[0];
   const plan = request.nodes.find(node => node.id === cycle.stageNodeIds.plan);

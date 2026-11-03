@@ -38,7 +38,7 @@ export function createChatFrame(mount) {
     '<div class="next-chat-options"><button type="button" id="next-chat-commands" class="next-chat-commands" aria-label="Chat commands" title="Chat commands" aria-haspopup="listbox" aria-controls="next-chat-command-menu" aria-expanded="false">/</button><div class="next-chat-model"><span>Model</span><select id="next-chat-model" aria-label="Model"><option value="default">Default</option></select></div>',
     '<label>Reasoning <select id="next-chat-effort"><option value="default">Model default</option></select></label>',
     '<label>Speed <select id="next-chat-tier"><option value="default">Standard</option></select></label>',
-    '<label>Planning <select id="next-chat-plan"><option value="on">On</option><option value="off">Off</option></select></label>',
+    '<label>Planning <select id="next-chat-plan" title="Forced requires real planned steps; Advisory is optional."><option value="forced">Forced</option><option value="advisory">Advisory</option><option value="off">Off</option></select></label>',
     '<label>Execution <select id="next-chat-execution-mode" title="Plan only pauses after Plan. Continue explicitly from the saved plan."><option value="automatic">Automatic</option><option value="plan_only">Plan only</option></select></label>',
     '<span class="next-chat-spacer"></span><button class="next-primary" type="submit" id="next-chat-send">Send</button></div></form>',
     '<p id="next-chat-hint" class="next-chat-hint" role="status">Enter to send · Shift+Enter for a new line</p>',

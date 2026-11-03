@@ -15,9 +15,12 @@ const text = (value, label, max = 4000, required = false) => {
   if (typeof value !== 'string' || value.includes('\0') || value.length > max || required && !value.trim()) throw fail(label + ' must be bounded text.');
   return value.trim();
 };
-const list = (value, label, max = 40) => {
+const list = (value, label, max = 40, { evidenceRefs = false } = {}) => {
   if (!Array.isArray(value) || value.length > max) throw fail(label + ' must be a bounded list.');
   const values = value.map(item => text(item, label, 300, true));
+  // Repeating one exact source ID cannot increase evidentiary coverage.
+  // Canonicalize these references instead of spending provider retries on syntax.
+  if (evidenceRefs) return [...new Set(values)];
   if (new Set(values).size !== values.length) throw fail(label + ' cannot contain duplicates.');
   return values;
 };
@@ -87,12 +90,14 @@ export function taskAccuracySchema() {
     evidenceNeeded: string, consequence: string, unknownPolicy: { type: 'string', enum: ['block', 'assumption', 'range', 'omit'] }, stopWhen: string
   } }, { type: 'null' }] });
 }
+/** The only agent-authored stop claims recognized by readiness. Uncertainty is not one. */
+export const PLANNING_STOP_KINDS = Object.freeze(['user_prohibited', 'target_denied', 'known_false_certification', 'human_control_taken', 'unreconciled_dispatch']);
 export const VIABILITY_REQUIREMENT_FIELDS = Object.freeze(['id', 'label', 'importance', 'basis', 'consequence', 'resolution', 'value', 'sourceIds', 'checkedSourceIds', 'rationale', 'inferable', 'omissionAllowed', 'question', 'dependentNodeIds']);
 export function validateViabilityRequirements(value) {
   if (!Array.isArray(value) || value.length > 60) throw fail('Readiness needs at most 60 explicit requirement findings.');
   const ids = new Set();
   return value.map(item => {
-    if (!object(item) || Object.keys(item).some(key => !VIABILITY_REQUIREMENT_FIELDS.includes(key) && key !== 'accuracy') || VIABILITY_REQUIREMENT_FIELDS.some(key => !Object.hasOwn(item, key))) throw fail('Use the declared readiness requirement fields.');
+    if (!object(item) || Object.keys(item).some(key => !VIABILITY_REQUIREMENT_FIELDS.includes(key) && key !== 'accuracy' && key !== 'stopKind') || VIABILITY_REQUIREMENT_FIELDS.some(key => !Object.hasOwn(item, key))) throw fail('Use the declared readiness requirement fields.');
     const id = text(item.id, 'Requirement ID', 120, true);
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id) || ids.has(id)) throw fail('Requirements need unique stable IDs.');
     ids.add(id);
@@ -102,20 +107,24 @@ export function validateViabilityRequirements(value) {
     if (typeof item.inferable !== 'boolean' || typeof item.omissionAllowed !== 'boolean') throw fail('State whether inference and omission are appropriate.');
     const result = { id, label: text(item.label, 'Requirement', 500, true), importance: item.importance, basis: item.basis,
       consequence: text(item.consequence, 'Consequence', 2000, item.importance === 'essential'), resolution: item.resolution,
-      value: text(item.value, 'Resolved value'), sourceIds: list(item.sourceIds, 'Evidence source IDs'), checkedSourceIds: list(item.checkedSourceIds, 'Checked source IDs', 100),
+      value: text(item.value, 'Resolved value'), sourceIds: list(item.sourceIds, 'Evidence source IDs', 40, { evidenceRefs: true }), checkedSourceIds: list(item.checkedSourceIds, 'Checked source IDs', 100, { evidenceRefs: true }),
       rationale: text(item.rationale, 'Resolution rationale', 4000, true), inferable: item.inferable, omissionAllowed: item.omissionAllowed,
       question: text(item.question, 'Public factual question', 2000), dependentNodeIds: list(item.dependentNodeIds, 'Dependent workflow node IDs', 100) };
     const accuracy = validateTaskAccuracy(item.accuracy); if (accuracy) result.accuracy = accuracy;
-    if (result.importance === 'essential' && result.resolution === 'unknown' && !result.question) throw fail('An unresolved essential fact needs a specific public factual question.');
+    if (item.stopKind !== undefined && item.stopKind !== null) {
+      if (!PLANNING_STOP_KINDS.includes(item.stopKind)) throw fail('A stop must name an allowed concrete stop condition.');
+      result.stopKind = item.stopKind;
+    }
+    // An unknown can be preserved for the owning worker without manufacturing a user question.
     return result;
   });
 }
 export function viabilityRequirementSchema() {
   const string = { type: 'string' }, strings = { type: 'array', items: string };
-  return schemaTree({ type: 'array', items: { type: 'object', additionalProperties: false, required: [...VIABILITY_REQUIREMENT_FIELDS, 'accuracy'], properties: {
+  return schemaTree({ type: 'array', items: { type: 'object', additionalProperties: false, required: [...VIABILITY_REQUIREMENT_FIELDS, 'stopKind', 'accuracy'], properties: {
     id: string, label: string, importance: { type: 'string', enum: ['essential', 'preference'] }, basis: { type: 'string', enum: ['user', 'task', 'external'] },
     consequence: string, resolution: { type: 'string', enum: ['observed', 'inference', 'omission', 'unknown','blocked','repairable','nonblocking'] }, value: string,
-    sourceIds: strings, checkedSourceIds: strings, rationale: string, inferable: { type: 'boolean' }, omissionAllowed: { type: 'boolean' }, question: string, dependentNodeIds: strings, accuracy: taskAccuracySchema()
+    sourceIds: strings, checkedSourceIds: strings, rationale: string, inferable: { type: 'boolean' }, omissionAllowed: { type: 'boolean' }, question: string, dependentNodeIds: strings, stopKind: { anyOf: [{ type: 'string', enum: [...PLANNING_STOP_KINDS] }, { type: 'null' }] }, accuracy: taskAccuracySchema()
   } } });
 }
 const sourceIdentity = source => [source.id, source.contentHash || '', source.text || '', source.revision ?? null];
@@ -142,11 +151,18 @@ export function evaluateViabilityResponse(response, sources = [], { workflowNode
   };
   const staleSources = [...current.values()].filter(source => !captured.has(source.id) || JSON.stringify(sourceIdentity(source)) !== JSON.stringify(sourceIdentity(captured.get(source.id)))).map(source => source.id);
   for (const source of captured.values()) if (!current.has(source.id)) staleSources.push(source.id);
-  const issues = planningReadableFindingIssues(response, response.sources || []).map(issue => issue.path + ': ' + issue.message), blockingFacts = [], preferences = [],repairableGaps=[],nonblockingSymptoms=[];
+  const issues = planningReadableFindingIssues(response, response.sources || []).map(issue => issue.path + ': ' + issue.message), blockingFacts = [], preferences = [],repairableGaps=[],nonblockingSymptoms=[],unresolvedFacts=[],unverifiedStopClaims=[];
   const analysisIssues = [...issues], sourceCoverage = [];
   const suppliedFacts = [...current.values()].filter(source => !source.id.startsWith('request:') && source.id !== 'viability:workflow').map(source => source.id);
   for (const requirement of requirements) {
     if (requirement.importance === 'preference') { preferences.push({ id: requirement.id, label: requirement.label }); continue; }
+    // Preserve unknown facts for the owning run; automatic execution defers their resolution.
+    if (requirement.resolution === 'unknown') unresolvedFacts.push({ id: requirement.id, label: requirement.label, question: requirement.question, consequence: requirement.consequence, affectedNodeIds: requirement.dependentNodeIds, checkedSourceIds: requirement.checkedSourceIds, rationale: requirement.rationale });
+    // The model cannot manufacture a stop from generic caution or a missing answer.
+    if (requirement.resolution === 'blocked' && !requirement.stopKind) {
+      unverifiedStopClaims.push({ id: requirement.id, label: requirement.label, reason: 'No concrete stopKind was identified.', sourceIds: requirement.sourceIds });
+      continue;
+    }
     const references = [...requirement.sourceIds, ...requirement.checkedSourceIds];
     const responseReferences=references.filter(id=>capturedResponses.has(id)||currentResponses.has(id));
     for(const id of responseReferences)if(currentResponses.has(id)&&capturedResponses.has(id)&&responseSourceIdentity(currentResponses.get(id))!==responseSourceIdentity(capturedResponses.get(id))&&!staleSources.includes(id))staleSources.push(id);
@@ -181,6 +197,6 @@ export function evaluateViabilityResponse(response, sources = [], { workflowNode
   // It is not a reason to prevent a grounded plan from arranging the missing inspection.
   // Never fill checkedSourceIds or change an unknown into an observed fact here.
   return { state: staleSources.length ? 'stale' : issues.length ? 'needs_evidence' : blockingFacts.some(fact=>fact.resolution==='blocked')?'blocked':blockingFacts.length ? 'awaiting_input' : 'ready',
-    analysisReady: !staleSources.length && !analysisIssues.length, analysisIssues, sourceCoverage, blockingFacts,repairableGaps,nonblockingSymptoms, preferences, issues, staleSources };
+    analysisReady: !staleSources.length && !analysisIssues.length, analysisIssues, sourceCoverage, blockingFacts,repairableGaps,nonblockingSymptoms,unresolvedFacts,unverifiedStopClaims, preferences, issues, staleSources };
 }
 

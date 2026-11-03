@@ -363,6 +363,26 @@ test('exact deduction from stipulated room capacities needs no invented external
   }
 });
 
+test('a negative history inferred from a sufficiently complete record is ready, not a user-input blocker', () => {
+  const f = fixture('viability');
+  f.sources[0].text = 'For this fictional application, choose Yes or No to whether the applicant previously worked for Harbor Labs.';
+  f.sources[1].text = 'Applicant career history is detailed from first employment through the current role: Meridian Research (2017-2021), Cloud Finch (2021-2024), and Mesa Quality (2024-present). No Harbor Labs or related contract work is recorded.';
+  f.payload.requirements = [fact({
+    label: 'Prior Harbor Labs employment', basis: 'user', resolution: 'inference', inferable: true,
+    value: 'No', sourceIds: ['evidence'], checkedSourceIds: ['request:fixture', 'evidence'],
+    rationale: 'The career history covers the relevant employment period and names each employer, with no Harbor Labs or related contract entry. No contradictory history appears in the available fixture; No is a supported negative inference, not a directly observed universal negative.',
+    question: ''
+  })];
+  const sufficient = f.evaluate();
+  assert.equal(sufficient.state, 'ready');
+  assert.equal(sufficient.dispatchReady, true);
+  assert.equal(sufficient.viability.blockingFacts.length, 0);
+  f.payload.requirements[0].resolution = 'unknown';
+  f.payload.requirements[0].value = '';
+  f.payload.requirements[0].question = 'Was there prior employment with Harbor Labs?';
+  assert.equal(f.evaluate().state, 'awaiting_input', 'An unnecessary unknown classification can still block; Planning must select supported inference.');
+});
+
 test('an unresolved exact eligibility boundary stays blocked despite a nearby numerical range', () => {
   const f = fixture('viability'); f.sources[1].text = 'The requirement is age at least 18; the available record establishes only age between 17 and 19.';
   f.payload.requirements = [fact({ label: 'Age eligibility', resolution: 'unknown', value: '', sourceIds: [], question: 'What is the verified age at the eligibility date?',

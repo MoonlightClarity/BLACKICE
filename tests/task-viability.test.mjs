@@ -50,9 +50,28 @@ test('typed readiness separates essential facts, supported inference, omission a
   assert.throws(()=>validateViabilityRequirements([{ready:true}]),{code:'TASK_VIABILITY_INVALID'});
 });
 
+test('duplicate evidence citations canonicalize without weakening type, capacity or provenance checks',()=>{
+  const sources=[source('viability:task','The saved criteria can be checked by the owner.'),source('viability:profile','The user supplied background for the form.')];
+  const repeated=requirement({id:'saved_records',label:'Read saved criteria',resolution:'repairable',value:'The owner can read saved records before selecting roles.',sourceIds:['viability:task','viability:task'],checkedSourceIds:['viability:task','viability:profile','viability:task','viability:profile'],rationale:'Read the existing records; an identical citation adds no proof.',question:''});
+  const [normalized]=validateViabilityRequirements([repeated]);
+  assert.deepEqual(normalized.sourceIds,['viability:task']);
+  assert.deepEqual(normalized.checkedSourceIds,['viability:task','viability:profile']);
+  const result=evaluateViabilityResponse(fixtureResponse([repeated],sources),sources,{workflowNodeIds:['agent']});
+  assert.equal(result.state,'ready');
+  assert.equal(result.repairableGaps.length,1);
+  assert.throws(()=>validateViabilityRequirements([{...repeated,checkedSourceIds:['viability:task',null]}]),{code:'TASK_VIABILITY_INVALID'});
+  assert.throws(()=>validateViabilityRequirements([{...repeated,checkedSourceIds:Array(101).fill('viability:task')}]),{code:'TASK_VIABILITY_INVALID'});
+  const unsupported={...repeated,sourceIds:['missing-source','missing-source']};
+  assert.equal(evaluateViabilityResponse(fixtureResponse([unsupported],sources),sources).state,'needs_evidence','canonicalizing a repeated reference does not establish its source provenance');
+});
+
 test('resource findings distinguish confirmed blockers, autonomous repairs and misleading symptoms without manufacturing facts',()=>{
-  const sources=[source('viability:task','Complete the delegated result under existing rights; ordinary terms and a needed user-level installation are already authorized.'),source('viability:workflow','The owning workflow can inspect and repair its authorized target.')];
-  const resource=resolution=>requirement({id:'resource',label:'Required utility',resolution,value:resolution==='blocked'?'The actual target denies the required write right.':'The needed utility is absent; the authorized user-level setup route is available.',sourceIds:['viability:task'],checkedSourceIds:sources.map(item=>item.id),rationale:resolution==='blocked'?'The affected write must wait for an authorized right or alternate supported route; continue the independent summary.':'Inspect existing inventory, install only if absent using the authorized route, and verify the destination before the costly dependent operation.',question:''});
+  const sources=[source('viability:task','Complete the delegated result under existing rights; ordinary terms and a needed user-level installation are already authorized. The actual protected target denied the requested write.'),source('viability:workflow','The owning workflow can inspect and repair its authorized target.')];
+  const resource=resolution=>requirement({id:'resource',label:'Required utility',resolution,...(resolution==='blocked'?{stopKind:'target_denied'}:{}),value:resolution==='blocked'?'The actual target denies the required write right.':'The needed utility is absent; the authorized user-level setup route is available.',sourceIds:['viability:task'],checkedSourceIds:sources.map(item=>item.id),rationale:resolution==='blocked'?'The affected write must wait for an authorized right or alternate supported route; continue the independent summary.':'Inspect existing inventory, install only if absent using the authorized route, and verify the destination before the costly dependent operation.',question:''});
+  const untyped={...resource('blocked')};delete untyped.stopKind;
+  const untypedResult=evaluateViabilityResponse(fixtureResponse([untyped],sources),sources,{workflowNodeIds:['agent']});
+  assert.equal(untypedResult.state,'ready','generic concerns must not manufacture a stop');
+  assert.equal(untypedResult.unverifiedStopClaims.length,1);
   const blocked=evaluateViabilityResponse(fixtureResponse([resource('blocked')],sources),sources,{workflowNodeIds:['agent']});
   assert.equal(blocked.state,'blocked');assert.equal(blocked.analysisReady,true);assert.equal(blocked.blockingFacts[0].dependentNodeIds[0],'agent');assert.match(blocked.blockingFacts[0].remedy,/alternate supported route/);
   const repair=evaluateViabilityResponse(fixtureResponse([resource('repairable')],sources),sources,{workflowNodeIds:['agent']});

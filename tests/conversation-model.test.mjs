@@ -70,41 +70,45 @@ test('legacy Maximal keeps its saved model but planning activation no longer sel
   }
 });
 
-test('On/Off is the effective planning vocabulary and Auto/Maximal are legacy On aliases', () => {
-  assert.deepEqual(PLANNING_MODES, ['on', 'off']); assert.deepEqual(PLANNING_INPUT_MODES, ['on','off','auto','maximal']); assert.equal(normalizePlanningMode(undefined), 'on'); assert.equal(normalizePlanningMode('MAXIMAL'), 'on');
+test('Off, Advisory, Forced are choices; legacy On/Auto/Maximal retain the On contract', () => {
+  assert.deepEqual(PLANNING_MODES, ['forced', 'advisory', 'off']);
+  assert.deepEqual(PLANNING_INPUT_MODES, ['forced','advisory','off','on','auto','maximal']);
+  assert.equal(normalizePlanningMode(undefined), 'on'); assert.equal(normalizePlanningMode('MAXIMAL'), 'on');
   for (const mode of PLANNING_MODES) assert.equal(normalizePlanningMode(mode), mode === 'off' ? 'off' : 'on');
   assert.equal(planningModeDetail('maximal', 'compact'), 'detailed'); assert.equal(planningModeDetail('auto'), 'detailed');
 });
 
-test('planning mode follows an explicit draft, admitted run, workflow and preference without confusing depth or reasoning', () => {
-  assert.equal(selectedConversationPlanningMode(), 'on'); assert.equal(selectedConversationPlanningMode({}, { planningMode: 'off' }), 'off');
-  assert.equal(selectedConversationPlanningMode({}, { planningMode: 'off' }, { workflow: { settings: { planningMode: 'on' } } }), 'on');
-  assert.equal(selectedConversationPlanningMode({}, {}, { planningMode: 'maximal', workflow: { settings: { planningMode: 'on' } } }), 'on');
+test('explicit Planning choices survive while historical On reads as Advisory, without changing reasoning', () => {
+  assert.equal(selectedConversationPlanningMode(), 'forced'); assert.equal(selectedConversationPlanningMode({}, { planningMode: 'off' }), 'off');
+  assert.equal(selectedConversationPlanningMode({}, { planningMode: 'off' }, { workflow: { settings: { planningMode: 'on' } } }), 'advisory');
+  assert.equal(selectedConversationPlanningMode({}, {}, { planningMode: 'maximal', workflow: { settings: { planningMode: 'on' } } }), 'advisory');
   assert.equal(selectedConversationPlanningMode({ planningMode: 'off', planDetail: 'detailed', effort: 'ultra' }, {}, { planningMode: 'maximal' }), 'off');
-  assert.equal(selectedConversationPlanningMode({}, {}, { nodes: { worker: { planning: { mode: 'on' } } } }), 'on');
+  assert.equal(selectedConversationPlanningMode({}, {}, { nodes: { worker: { planning: { mode: 'on' } } } }), 'advisory');
+  assert.equal(selectedConversationPlanningMode({}, {}, { planningEnforcement: 'forced', planningMode: 'on' }), 'forced');
+  assert.equal(selectedConversationPlanningMode({}, {}, { planningMode: 'on', runtimeSettings: { executionGuardrails: true } }), 'forced');
 });
 
-test('On uses full substantive detail despite legacy compact hints while Off omits the override', () => {
-  assert.deepEqual(conversationPlanningConfig(), { planningMode: 'on' });
+test('Forced and Advisory both keep full substantive detail, Off omits the override', () => {
+  assert.deepEqual(conversationPlanningConfig(), { planningMode: 'forced' });
   const run = { planningMode: 'maximal', planDetail: 'detailed', taskState: { plan: { detail: 'detailed' } } };
-  assert.deepEqual(conversationPlanningConfig({ planningMode: 'auto' }, {}, run), { planningMode: 'on' });
-  assert.deepEqual(conversationPlanningConfig({}, {}, { planDetail: 'compact' }), { planningMode: 'on', planDetail: 'detailed' });
-  assert.deepEqual(conversationPlanningConfig({ planDetail: 'compact', planningMode: 'maximal' }), { planningMode: 'on', planDetail: 'detailed' });
+  assert.deepEqual(conversationPlanningConfig({ planningMode: 'auto' }, {}, run), { planningMode: 'advisory' });
+  assert.deepEqual(conversationPlanningConfig({}, {}, { planDetail: 'compact' }), { planningMode: 'advisory', planDetail: 'detailed' });
+  assert.deepEqual(conversationPlanningConfig({ planDetail: 'compact', planningMode: 'maximal' }), { planningMode: 'advisory', planDetail: 'detailed' });
   assert.deepEqual(conversationPlanningConfig({ planDetail: 'detailed', planningMode: 'off' }), { planningMode: 'off' });
-  assert.deepEqual(conversationPlanningConfig({ planningMode: 'auto' }, {}, { ...run, input: { planDetail: 'compact' } }), { planningMode: 'on', planDetail: 'detailed' });
+  assert.deepEqual(conversationPlanningConfig({ planningMode: 'auto' }, {}, { ...run, input: { planDetail: 'compact' } }), { planningMode: 'advisory', planDetail: 'detailed' });
 });
 
-test('draft restoration preserves exact modes and removes malformed values without mutating saved source', () => {
+test('draft restoration preserves explicit choices and maps historical On to Advisory', () => {
   const source = { planningMode: 'on', conversationDrafts: { new: { task: 'Task', planningMode: 'off', planDetail: 'compact' }, invalid: { planningMode: 'OFF' } } }, before = structuredClone(source), restored = restoreConversationDrafts(source);
-  assert.equal(restored.prefs.planningMode, 'on'); assert.equal(restored.drafts.new.planningMode, 'off'); assert.equal(restored.drafts.new.planDetail, 'compact'); assert.equal(restored.drafts.invalid.planningMode, undefined); assert.deepEqual(source, before);
+  assert.equal(restored.prefs.planningMode, 'advisory'); assert.equal(restored.drafts.new.planningMode, 'off'); assert.equal(restored.drafts.new.planDetail, 'compact'); assert.equal(restored.drafts.invalid.planningMode, undefined); assert.deepEqual(source, before);
 });
 
-test('historical Auto and Maximal preferences restore as On without changing saved inputs', () => {
+test('historical Auto and Maximal preferences restore as Advisory without changing inputs', () => {
   const old = {planningMode:'maximal',conversationDrafts:{new:{task:'Inspect a task',planningMode:'auto'},old:{task:'Old chat',planningMode:'maximal'}}};
   const before=structuredClone(old),restored=restoreConversationDrafts(old);
-  assert.equal(restored.prefs.planningMode,'on');
-  assert.equal(restored.drafts.new.planningMode,'on');
-  assert.equal(restored.drafts.old.planningMode,'on');
+  assert.equal(restored.prefs.planningMode,'advisory');
+  assert.equal(restored.drafts.new.planningMode,'advisory');
+  assert.equal(restored.drafts.old.planningMode,'advisory');
   assert.deepEqual(old,before);
 });
 test('plan detail follows explicit draft, saved task, workflow, saved plan and preference before its balanced default', () => {

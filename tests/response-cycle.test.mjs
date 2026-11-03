@@ -79,6 +79,67 @@ test('actual Infer-to-Feasibility response citation passes once and carries sour
   const cycle=request.cycles[0],feasibility=request.nodes.find(node=>node.id===cycle.stageNodeIds.feasibility);assert.equal(feasibility.readiness.cycle.analysisReady,true);assert.equal(feasibility.readiness.viability.repairableGaps.length,1);assert.equal(feasibility.readiness.viability.blockingFacts.length,0);
 });
 
+test('Forced automatic Planning delegates unknown saved-record checks to the operational owner without treating them as answered',async t=>{
+  const requirement=(input,resolution)=>({
+    id:'saved_rules',label:'Saved eligibility rules and browser availability',importance:'essential',basis:'user',
+    consequence:'Read saved records and check actual capabilities before dependent external work.',
+    resolution,value:'The analytical preflight has not read the saved records; the operational owner can perform that check.',
+    sourceIds:['viability:task'],checkedSourceIds:input.sources.filter(source=>source.kind!=='response').map(source=>source.id),
+    rationale:'The owning workflow can use the attached record and capability tools to investigate before dependent work.',
+    inferable:false,omissionAllowed:false,
+    question:resolution==='unknown'?'What are the saved search criteria and accessible resources?':'',
+    dependentNodeIds:['agent']
+  });
+  const f=await fixture(t,{amend:(body,input)=>{
+    if(input.module.kind==='viability')body.requirements=[requirement(input,'unknown')];
+    return body;
+  }});
+  const {result,request}=await f.prepare('automatic',{planningEnforcement:'forced',runtimeSettings:{planningGuardrails:true,executionGuardrails:false}});
+  const cycle=request.cycles[0],readiness=request.nodes.find(node=>node.id===cycle.stageNodeIds.feasibility).readiness.viability;
+  assert.equal(readiness.state,'awaiting_input','the unknown is not invented or silently marked resolved');
+  assert.equal(readiness.blockingFacts.length,1);
+  assert.equal(result.state,'executing','the owner is allowed to perform the missing checks');
+  assert.equal(result.ownerChecksDeferred,true);
+  assert.equal(result.awaitingInput,false);
+  assert.equal(result.question,'');
+  assert.deepEqual(result.blockedNodeIds,[]);
+  assert.equal(result.responseCycle.state,'executing');
+
+  const blocked=await fixture(t,{amend:(body,input)=>{
+    if(input.module.kind==='viability')body.requirements=[requirement(input,'blocked')];
+    return body;
+  }});
+  const held=await blocked.prepare('automatic',{planningEnforcement:'forced',runtimeSettings:{planningGuardrails:true,executionGuardrails:false}});
+  assert.equal(held.result.state,'blocked','a confirmed unavailable resource is not waved away');
+  assert.notEqual(held.result.ownerChecksDeferred,true);
+});
+
+test('Forced automatic Planning starts owner source checks when preflight citations are incomplete',async t=>{
+  const f=await fixture(t,{amend:(body,input)=>{
+    if(input.module.kind==='viability')body.requirements=[{
+      id:'owner_check',label:'Saved records and browser availability',
+      importance:'essential',basis:'task',
+      consequence:'Inspect saved records and the permitted browser before dependent work.',
+      resolution:'unknown',value:'The analytical preflight did not inspect all owner-accessible records.',
+      sourceIds:['viability:task'],checkedSourceIds:['viability:task'],
+      rationale:'The operational owner has an actionable inspection path and should check actual records and capabilities without asking the user to repeat them.',
+      inferable:false,omissionAllowed:false,question:'What saved records and browser capabilities are available?',
+      dependentNodeIds:['agent']
+    }];
+    return body;
+  }});
+  const {result,request}=await f.prepare('automatic',{planningEnforcement:'forced',runtimeSettings:{planningGuardrails:true,executionGuardrails:false}});
+  const cycle=request.cycles[0],readiness=request.nodes.find(node=>node.id===cycle.stageNodeIds.feasibility).readiness.viability;
+  assert.equal(readiness.state,'needs_evidence','uninspected source coverage remains visibly unresolved');
+  assert.equal(readiness.analysisReady,true,'the only missing work is an operational source check');
+  assert.ok(readiness.sourceCoverage.length>0);
+  assert.equal(readiness.blockingFacts[0].resolution,'unknown');
+  assert.equal(result.state,'executing','a model-recoverable source read cannot become a human question');
+  assert.equal(result.ownerChecksDeferred,true);
+  assert.equal(result.awaitingInput,false);
+  assert.deepEqual(result.blockedNodeIds,[]);
+});
+
 test('new preparation forks an executed legacy root without rewriting its plan, attempts, execution or proof bindings',async t=>{
   const f=await fixture(t),old=f.run('automatic','historical-run');
   let request=await f.taskViability.ensure({scope:'request',scopeId:old.id,conversationId:old.taskId,definition:{input:old.input,cwd:old.cwd,workflow:old.workflow,attachmentIds:[]},linkedRunId:old.id});

@@ -3,14 +3,14 @@ import { serviceTierSupport } from '../../service-tier-model.mjs';
 import { UNKNOWN_CHAT_MODEL } from './model.mjs';
 
 export const DEFAULT_CHAT_OPTIONS=Object.freeze({
-  model:'default',effort:'default',serviceTier:'default',planningMode:'on',planningExecutionMode:'automatic',
+  model:'default',effort:'default',serviceTier:'default',planningMode:'forced',planningExecutionMode:'automatic',
 });
-export const PLANNING_MODES=Object.freeze(['on','off']);
+export const PLANNING_MODES=Object.freeze(['forced','advisory','off']);
 export function normalizeChatOptions(value={}){
   const model=typeof value?.model==='string'&&value.model.length<=400?value.model:'default';
   const effort=typeof value?.effort==='string'&&value.effort.length<=25?value.effort:'default';
   const serviceTier=['default','fast'].includes(value?.serviceTier)?value.serviceTier:'default';
-  const planningMode=value?.planningMode==='off'?'off':'on';
+  const planningMode=PLANNING_MODES.includes(value?.planningMode)?value.planningMode:['on','auto','maximal'].includes(value?.planningMode)?'advisory':'forced';
   const planningExecutionMode=value?.planningExecutionMode==='plan_only'?'plan_only':'automatic';
   return {model,effort,serviceTier,planningMode,planningExecutionMode};
 }

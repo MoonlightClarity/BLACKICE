@@ -106,13 +106,27 @@ test('explicit plan only retains its pause with advisory execution settings',asy
   assert.equal(result.advisory,undefined);
 });
 
-test('enforced readiness retains a genuine unresolved fact hold',async t=>{
+test('enforced readiness defers an unknown workspace fact to the owner instead of asking prematurely',async t=>{
   const f=await fixture(t,{executionGuardrails:true}),result=await f.service.forRun(f.run());
-  assert.equal(result.awaitingInput,true);
-  assert.deepEqual(result.blockedNodeIds,['agent']);
-  assert.equal(result.advisory,undefined);
-  assert.equal(result.question,provisionalQuestion+'\nThis enables identify the requested project in the summary.');
-  assert.equal(f.operations.length,0);
+  assert.equal(result.ownerChecksDeferred,true);
+  assert.equal(result.state,'executing');
+  assert.equal(result.awaitingInput,false);
+  assert.deepEqual(result.blockedNodeIds,[]);
+  assert.equal(result.advisory,undefined,'the hold is deferred for owner investigation, not downgraded to advisory');
+  assert.equal(result.question,'');
+  assert.equal(f.operations.length,0,'preflight itself must not perform the operational file read');
+});
+
+test('a genuinely unavailable record does not turn uncertain delegated work into a user-input hold',async t=>{
+  const f=await fixture(t,{executionGuardrails:true});
+  await rm(path.join(f.dir,'project.txt'));
+  const result=await f.service.forRun(f.run());
+  assert.equal(result.ownerChecksDeferred,true,'the operational owner may choose the best available next action');
+  assert.equal(result.awaitingInput,false);
+  assert.deepEqual(result.blockedNodeIds,[]);
+  assert.equal(result.question,'');
+  assert.equal(result.state,'executing');
+  assert.equal(f.operations.length,0,'the Planning preflight does not fabricate an observation');
 });
 
 test('explicit source read errors and technical failures are not converted into advisory permission',async t=>{

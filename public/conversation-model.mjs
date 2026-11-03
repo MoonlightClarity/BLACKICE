@@ -1,7 +1,7 @@
 import { taskTitle } from './task-title.mjs';
 import { REASONING_LEVELS, reasoningSelectionSupported } from './reasoning-model.mjs';
 import { newerTaskState } from './run-state-model.mjs';
-import { PLANNING_INPUT_MODES, normalizePlanningMode, planningModeDetail, selectPlanningEffort } from './planning-mode.mjs';
+import { PLANNING_INPUT_MODES, planningChoice, planningModeDetail, selectPlanningEffort } from './planning-mode.mjs';
 import { serviceTierSupport } from './service-tier-model.mjs';
 export const isActiveRun = run => ['queued', 'running', 'waiting'].includes(run?.status);
 // A terminal status can arrive before its tools release the conversation and execution slot.
@@ -96,7 +96,7 @@ export const selectedConversationEffort = (draft = {}, agent, appDefault = 'defa
 export const selectedConversationServiceTier = (draft = {}, agent, run, status = {}, selection = draft.model || agent?.resolvedModel || agent?.model || 'default') => ['default', 'fast'].includes(draft.serviceTier) ? draft.serviceTier : ['default', 'fast'].includes(agent?.serviceTier) ? agent.serviceTier : !run && status.runtimeSettings?.defaultServiceTier === 'fast' && serviceTierSupport(status, selection, 'fast').available ? 'fast' : undefined;
 export const conversationPlanDetails = ['compact', 'balanced', 'detailed'];
 export const selectedConversationPlanDetail = (draft = {}, preferences = {}, run) => [draft.planDetail, run?.planDetail, run?.workflow?.settings?.planDetail, run?.taskState?.plan?.detail, preferences.planDetail, 'balanced'].find(value => conversationPlanDetails.includes(value));
-export const selectedConversationPlanningMode = (draft = {}, preferences = {}, run) => normalizePlanningMode([draft.planningMode, run?.planningMode, run?.input?.planningMode, run?.workflow?.settings?.planningMode, ...Object.values(run?.nodes || {}).map(node => node.planning?.mode), preferences.planningMode, 'on'].find(value => PLANNING_INPUT_MODES.includes(value)));
+export const selectedConversationPlanningMode = (draft = {}, preferences = {}, run) => planningChoice([draft.planningMode, run?.planningEnforcement, run?.planningMode === 'on' && run?.runtimeSettings?.executionGuardrails === true ? 'forced' : run?.planningMode, run?.input?.planningMode, run?.workflow?.settings?.planningMode, ...Object.values(run?.nodes || {}).map(node => node.planning?.mode), preferences.planningMode].find(value => PLANNING_INPUT_MODES.includes(value)), { fallback: run ? 'advisory' : 'forced' });
 // Effective runtime detail is not an explicit preference. In particular, going
 // from Maximal to Auto must let the next agent scale its own outline again.
 export const conversationPlanDetailHint = (draft = {}, preferences = {}, run) => [draft.planDetail, run?.input?.planDetail, run?.workflow?.settings?.planDetail, !PLANNING_INPUT_MODES.includes(run?.planningMode) ? run?.planDetail : undefined, !PLANNING_INPUT_MODES.includes(run?.planningMode) ? run?.taskState?.plan?.detail : undefined, preferences.planDetail].find(value => conversationPlanDetails.includes(value));
@@ -127,7 +127,7 @@ export function restoreConversationDrafts(saved = {}) {
     if (!conversationEfforts.includes(draft.effort)) delete draft.effort;
     if (!['default', 'fast'].includes(draft.serviceTier)) delete draft.serviceTier;
     if (!conversationPlanDetails.includes(draft.planDetail)) delete draft.planDetail;
-    if (PLANNING_INPUT_MODES.includes(draft.planningMode)) draft.planningMode = normalizePlanningMode(draft.planningMode);
+    if (PLANNING_INPUT_MODES.includes(draft.planningMode)) draft.planningMode = planningChoice(draft.planningMode);
     else delete draft.planningMode;
     if (!draft.context || typeof draft.context !== 'object' || Array.isArray(draft.context)) delete draft.context;
   }
@@ -135,7 +135,7 @@ export function restoreConversationDrafts(saved = {}) {
   const prefs = { model: 'default', modelPreferenceVersion: 2, cwd: typeof saved.cwd === 'string' ? saved.cwd : '', desktop: Boolean(saved.desktop) };
   for (const key of ['desktopConfigured', 'context']) if (saved[key] !== undefined) prefs[key] = saved[key];
   if (conversationPlanDetails.includes(saved.planDetail)) prefs.planDetail = saved.planDetail;
-  if (PLANNING_INPUT_MODES.includes(saved.planningMode)) prefs.planningMode = normalizePlanningMode(saved.planningMode);
+  if (PLANNING_INPUT_MODES.includes(saved.planningMode)) prefs.planningMode = planningChoice(saved.planningMode);
   return { prefs, drafts };
 }
 

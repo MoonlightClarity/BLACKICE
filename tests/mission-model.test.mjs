@@ -58,15 +58,15 @@ test('Mission preserves explicit Fast and Standard independently of max reasonin
   assert.equal(Object.hasOwn(createMissionWorkflow({ task: 'Legacy omitted speed' }).nodes[1], 'serviceTier'), false);
   assert.throws(() => createMissionWorkflow({ task: 'Invalid speed', serviceTier: 'priority' }), /Standard or Fast/);
 });
-test('Mission recipes persist the planning mode without embedding an unconditional plan mandate', () => {
-  for (const planningMode of ['maximal', 'on', 'auto', 'off']) {
+test('Mission recipes accept all three planning choices and legacy aliases without prompt coaching', () => {
+  for (const planningMode of ['forced', 'advisory', 'off', 'maximal', 'on', 'auto']) {
     const workflow = validateWorkflow(createMissionWorkflow({ id: `mode_${planningMode}`, task: 'Handle this request.', planningMode }));
     assert.equal(workflow.settings.planningMode, planningMode === 'off' ? 'off' : 'on'); assert.equal(workflow.settings.planDetail, undefined);
     assert.match(workflow.nodes[1].prompt, /Follow the selected planning mode/); assert.doesNotMatch(workflow.nodes[1].prompt, /Use the attached task tool to keep a visible plan/);
   }
   assert.equal(createMissionWorkflow({ task: 'Default mode' }).settings.planningMode, 'on');
   assert.equal(createMissionWorkflow({ task: 'Legacy hint', planDetail: 'compact' }).settings.planDetail, 'compact');
-  assert.throws(() => createMissionWorkflow({ task: 'Invalid mode', planningMode: 'OFF' }), /Choose Planning On or Off/);
+  assert.throws(() => createMissionWorkflow({ task: 'Invalid mode', planningMode: 'OFF' }), /Choose Planning Off, Advisory, or Forced/);
 });
 test('New task hides an old result while an actual running task always stays visible', () => {
   const completed = { id: 'done', status: 'completed' }, running = { id: 'active', status: 'running' };

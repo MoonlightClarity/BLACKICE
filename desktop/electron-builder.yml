@@ -14,7 +14,7 @@ files:
   - server.mjs
   - public/**/*
   - lib/**/*
-  - skills/planning/SKILL.md
+  - skills/planning/**/*
   - scripts/generate-noir-background.mjs
   - scripts/noir-scene.config.json
   - scripts/chatgpt-bridge.mjs
@@ -74,6 +74,7 @@ files:
   - RELEASE-NOTES-2.36.1.md
   - RELEASE-NOTES-2.37.0.md
   - RELEASE-NOTES-2.38.0.md
+  - RELEASE-NOTES-2.39.6.md
   - PLANNING-ORGANIZATION.md
   - REMOTE-ACCESS.md
   - BROWSER-PROTECTION.md

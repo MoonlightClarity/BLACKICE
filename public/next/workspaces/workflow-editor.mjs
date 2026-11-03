@@ -123,7 +123,10 @@ export function createWorkflowEditor({mount,api,getBusy=()=>false,onSaved=()=>{}
     const option=field=>Object.hasOwn(edits,field)?edits[field]:currentSettings[field];
     ui.parallel.value=option('maxParallel')===null||option('maxParallel')===undefined
       ?'':String(option('maxParallel'));
-    ui.planning.value=option('planningMode')===undefined?'inherit':option('planningMode')==='off'?'off':'on';
+    const policy = Object.hasOwn(edits,'planningMode') && edits.planningMode !== null
+      ? edits.planningMode : Object.hasOwn(edits,'planningMode') && edits.planningMode === null
+        ? 'inherit' : currentSettings.planningEnforcement || (currentSettings.planningMode === 'off' ? 'off' : currentSettings.planningMode === 'on' ? 'advisory' : 'inherit');
+    ui.planning.value=policy;
     ui.detail.value=option('planDetail')??'inherit';
   }
   function populateStages(preferred=''){

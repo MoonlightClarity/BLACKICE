@@ -616,7 +616,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
         if(state.pending){refreshChoices(runtimeStatus);return;}
         try{state.options.model=modelSelections.choose(root(),element.value,runtimeStatus);}catch(error){refreshChoices();showError(error);return;}
       }else state.options[key]=element.value;
-      if(key==='planningExecutionMode'&&element.value==='plan_only'){state.options.planningMode='on';view.plan.value='on';}
+      if(key==='planningExecutionMode'&&element.value==='plan_only'){state.options.planningMode='forced';view.plan.value='forced';}
       refreshChoices();persistOptions();
     });
   view.openPlan.addEventListener('click',()=>{const cycle=state.runs.at(-1)?.responseCycle;if(cycle?.requestId)onNavigate?.('planning',{requestId:cycle.requestId,nodeId:cycle.planRef?.nodeId});});
