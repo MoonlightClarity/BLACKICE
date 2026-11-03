@@ -35,6 +35,21 @@ function response(input,resultValue=17){
  if(stage.id==='respond'){body.values.answer='The result is '+resultValue+'.';body.coverage=criteria.map(item=>({criterionId:item.id,disposition:'addressed',sourceIds:[sourceId],responseExcerpt:body.values.answer,limitation:''}));}
  return body;
 }
+test('final coverage accepts truthful paraphrase of a limitation but still requires an exact quoted answer excerpt', () => {
+  const sources = [{ id: 'cycle:execution:synthetic:projection:1', kind: 'response', text: 'The receipt is unconfirmed.' }];
+  const input = { module: { kind: 'respond' }, template: responseCycleTemplate('respond'), sources, cycle: {} };
+  const body = response(input);
+  body.values.answer = 'Status remains pending because the employer receipt is not independently confirmed.';
+  body.coverage = [{ criterionId: 'answer', disposition: 'partial', sourceIds: [sources[0].id],
+    responseExcerpt: 'receipt is not independently confirmed',
+    limitation: 'The source system did not return a definitive employer acknowledgement, leaving acceptance unresolved.' }];
+  const attempt = { node: { kind: 'respond' }, template: input.template, sources, challenges: [], workflowNodeIds: [], cycleContext: {} };
+  assert.equal(validatePlanningModuleResponse(attempt, JSON.stringify(body)).values.answer, body.values.answer);
+  body.coverage[0].responseExcerpt = 'the employer definitively accepted';
+  assert.throws(() => validatePlanningModuleResponse(attempt, JSON.stringify(body)), error =>
+    error.code === 'PLANNING_RESPONSE_FORMAT' && error.issues[0].path.endsWith('.responseExcerpt'));
+});
+
 async function fixture(t,{unresolvedInference=false,failRespond=false,recoveringSource=false,executionGuardrails=false,resultValue=17,transformResponse,operation}={}){
  const dir=await mkdtemp(path.join(os.tmpdir(),'blackice-stabilization-'));
  const calls=[];let operationalCalls=0,respondFailed=false,sourceUnavailable=recoveringSource;

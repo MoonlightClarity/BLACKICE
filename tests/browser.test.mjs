@@ -352,6 +352,34 @@ test('task browser ownership is host-bound, rechecked at dispatch and cannot be 
   assert.equal(calls.length, 1); assert.equal(calls[0].args.tabId, 'a'); assert.deepEqual(calls[0].options.owner, owner);
 });
 
+test('successful transfer to Personal returns a verified receipt instead of falsely reporting a changed tab', async t => {
+  const owner = { taskId: 'jobgether', nodeId: 'agent', runId: 'run' };
+  const tab = { tabId: 'page', browser: 'relay', url: 'https://jobs.lever.co/jobgether/example/apply',
+    documentId: 'page:3', folderId: 'task-folder', owner: { ...owner }, purpose: 'ordinary' };
+  const driver = {
+    status: () => ({ contained: true, available: true, tabs: [tab], activeTab: 'page',
+      folders: [{ id: 'task-folder', taskId: owner.taskId, kind: 'task' }, { id: 'folder_user', kind: 'user' }] }),
+    perform: async args => {
+      assert.equal(args.action, 'transfer_ownership');
+      const previousOwner = { ...tab.owner };
+      tab.owner = null; tab.folderId = 'folder_user';
+      return { ...driver.status(), tabId: tab.tabId,
+        ownershipReceipt: { action: args.action, tabId: tab.tabId, url: tab.url,
+          documentId: tab.documentId, previousOwner, owner: null, folderId: tab.folderId } };
+    },
+  };
+  const browser = new BrowserWorkspace({ driver });
+  t.after(() => browser.close());
+  const args = { action: 'transfer_ownership', browser: 'relay', tabId: tab.tabId,
+    expectedUrl: tab.url, expectedDocumentId: tab.documentId, destination: 'user' };
+  const result = await browser.perform(args, { owner });
+  assert.equal(result.transferred, true);
+  assert.equal(result.ownershipReceipt.owner, null);
+  assert.equal(result.folderId, 'folder_user');
+  assert.equal(Object.hasOwn(result, 'tabs'), false, 'a departed task cannot read the new owner\'s inventory');
+  await assert.rejects(browser.perform({ action: 'snapshot', tabId: tab.tabId }, { owner }), { code: 'BROWSER_TAB_OWNERSHIP' });
+});
+
 test('task cleanup runs after active browser work and receives only trusted exact owner context', async t => {
   const owner = { taskId: 'task', runId: 'run', nodeId: 'node' }, held = deferred(), events = [];
   const browser = new BrowserWorkspace({ driver: { status: () => ({ tabs: [{ tabId: 'page', owner }], activeTab: 'page' }), perform: async args => { events.push(args.action); await held.promise; return { tabId: 'page' }; }, releaseOwner: async supplied => { events.push('cleanup'); assert.deepEqual(supplied, owner); return { suspended: ['page'], retained: [] }; } } });
