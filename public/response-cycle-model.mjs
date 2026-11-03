@@ -372,7 +372,12 @@ export function evaluateResponseCycleStage(stageOrKind, response, context = {}) 
   const hasEffects = hostCriteria.some(item => item.verification === 'effect');
   for (const check of value.checks) {
     for (const sourceId of check.sourceIds) reference(sourceId);
-    const definition = stage.checks.find(item => item.id === check.id), applicable = definition.when !== 'effects' || hasEffects;
+    const definition = stage.checks.find(item => item.id === check.id),
+      // No challenge edge exists for this analysis: not_applicable is a
+      // truthful finding, not an unresolved mandatory challenge. An observed
+      // challenge still requires its own substantive assessment and evidence.
+      unobservedChallenge = check.id === 'challenge_considered' && !(context.challenges || []).length,
+      applicable = (definition.when !== 'effects' || hasEffects) && !unobservedChallenge;
     // Preparatory uncertainty informs the plan without claiming resolved evidence.
     if (check.assessment === 'unresolved' && stage.phase === 'prepare') result.unresolvedChecks.push({id:check.id,label:definition.label,note:check.note});
     else if (check.assessment === 'unresolved' || applicable && check.assessment === 'not_applicable') result.issues.push('An applicable check is unresolved: ' + definition.label + '.');

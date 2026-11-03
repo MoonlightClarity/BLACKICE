@@ -71,6 +71,19 @@ test('execution mode is caller-neutral, exact and optional only when omitted', (
   for (const value of [null, '', 'approval', 'Automatic', false]) assert.throws(() => planningExecutionModeOf(value), { code: 'PLANNING_EXECUTION_MODE_INVALID', status: 400 });
 });
 
+test('a Think stage with no captured challenge can accurately mark the challenge check not applicable', () => {
+  const f = fixture('think');
+  const challenge = f.payload.checks.find(item => item.id === 'challenge_considered');
+  assert.ok(challenge);
+  challenge.assessment = 'not_applicable';
+  challenge.note = 'There are no captured challenge edges; the strongestChallenge field still describes the actual remaining uncertainty.';
+  const noChallenge = f.evaluate(f.record(), { challenges: [] });
+  assert.equal(noChallenge.analysisReady, true, noChallenge.issues.join(' | '));
+  const observedChallenge = f.evaluate(f.record(), { challenges: [{ edgeId: 'counterexample-1' }] });
+  assert.equal(observedChallenge.analysisReady, false);
+  assert.ok(observedChallenge.issues.some(item => item.includes('Address the strongest material challenge')));
+});
+
 test('valid evidence-bound stage fixtures are accepted and schema closes every object', () => {
   const visit = schema => { if (schema.type === 'object') { assert.equal(schema.additionalProperties, false); assert.deepEqual(schema.required, Object.keys(schema.properties)); for (const child of Object.values(schema.properties)) visit(child); } if (schema.items) visit(schema.items); for (const child of schema.anyOf || []) visit(child); };
   for (const { kind } of RESPONSE_CYCLE_STAGES) {
