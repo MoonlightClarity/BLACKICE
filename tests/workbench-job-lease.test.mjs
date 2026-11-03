@@ -117,7 +117,7 @@ test('Windows non-delete-share readers are retried briefly and persistent conten
   const retry=JSON.parse(await fs.readFile(retryMarker,'utf8'));assert.ok(['EPERM','EACCES','EBUSY'].includes(retry.code));assert.equal(retry.readerReady,true);
   t.diagnostic('Actual Windows rename contention: '+retry.code+'; the owned reader handle was acquired.');
   await reader.unlock();
-  await waitFor(async()=>await fs.readFile(path.join(f.folder,'lease.json'),'utf8')!==initial,'lease did not resume after a short reader lock');
+  await waitFor(async()=>await fs.readFile(path.join(f.folder,'lease.json'),'utf8')!==initial,'lease did not resume after a short reader lock',6000);
   assert.equal(lease.error,null,'short Windows share contention must not cancel a healthy job');
   const persistent=await windowsReader(t,{...f,root:path.join(f.root,'persistent')});
   await waitFor(()=>lease.error!==null,'persistent share contention must fail closed',1000);

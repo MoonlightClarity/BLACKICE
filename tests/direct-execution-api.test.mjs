@@ -226,7 +226,7 @@ test('browser failures keep actionable durable messages, uncertainty and exact r
     const pending = await api.call('blackice_browser_action', request, client), done = await waitJob(api, pending.jobId);
     assert.equal(done.status, 'failed'); assert.equal(done.error.code, 'DIRECT_TOOL_FAILED');
     const receipt = JSON.parse(done.result.text.text);
-    assert.equal(receipt.error, stale); assert.equal(receipt.code, possible ? 'BROWSER_ACTION_FAILED' : 'BROWSER_REF_STALE');
+    assert.ok(receipt.error.startsWith(stale)); if (!possible) assert.match(receipt.error, /Do not reuse this ref\..*No page input was dispatched\./); assert.equal(receipt.code, possible ? 'BROWSER_ACTION_FAILED' : 'BROWSER_REF_STALE');
     assert.equal(receipt.actionDispatched, possible ? undefined : false);
     assert.deepEqual(done.effects, { possible, confirmed: false });
     const replay = await api.call('blackice_browser_action', request, client);

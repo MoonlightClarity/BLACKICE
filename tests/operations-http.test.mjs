@@ -6,6 +6,7 @@ import { mkdtemp,readFile,writeFile,rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
+import { fixtureDeploymentReadiness } from './fixture-deployment-readiness.mjs';
 import { recordFixturePlan } from './fixture-task-plan.mjs';
 
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return{promise,resolve};};
@@ -18,9 +19,11 @@ async function fixture(t,{execute,maxConcurrentRuns=4,planningMode='off'}={}){
   class Runtime extends EventEmitter{
     status(){return{connected:true,authenticated:true,defaultModel:'http-fixture-model',models:[{model:'http-fixture-model'}]};}async start(){return this.status();}async close(){this.closed=true;}
     async runAgent(options){
-      if(options.responseOnly){readinessCalls.push(options);const captured=JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2));
-      assert.equal(captured.module.kind,'viability','Only schedule readiness uses the response-only fixture.');
-      return{output:JSON.stringify({values:Object.fromEntries(captured.template.fields.map(field=>[field.id,field.label+': the supplied isolated fixture task has a local implementation and no missing personal prerequisite.'])),grounding:captured.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId:'viability:task'})),requirements:[],openQuestions:[],challengeResponses:[]}),threadId:'fixture-readiness',turnId:'fixture-readiness-turn'};}
+      if(options.responseOnly){
+        const captured=JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2));
+        readinessCalls.push({ ...options, stage: captured.module.kind });
+        return {output:JSON.stringify(fixtureDeploymentReadiness(captured)),threadId:'fixture-readiness',turnId:'fixture-readiness-turn'};
+      }
       const index=calls.push(options);
       if(execute)return execute(options,index);
       await recordFixturePlan(options,{title:'Write and verify the isolated operation result',doneWhen:'The actual operation-proof.txt file contains the requested fixture output.'});
@@ -60,6 +63,7 @@ test('authenticated HTTP config reports exact webhook URLs and requires explicit
   assert.equal(invalid.data.deliveryTarget.url,'http://localhost:9229/secret');
   const schedule=await f.create({trigger:{type:'manual'},deliveryTarget:{type:'webhook',url:secret},
     missedRunPolicy:{onResume:'once',maxAgeSeconds:3600}});
+  assert.deepEqual(f.readinessCalls.map(call=>call.stage),['inference','viability']);
   assert.deepEqual(schedule.deliveryTarget,{type:'webhook',url:secret,host:'alerts.example.com',configured:true});
   assert.deepEqual(schedule.missedRunPolicy,{onResume:'once',maxAgeSeconds:3600});
   assert.equal(schedule.deliveryTarget.url,secret);
@@ -167,7 +171,8 @@ for(const codexHistory of ['relay','codex']) test(`repeated cron occurrences ret
   assert.deepEqual(longerFamily.runs.map(run=>run.id),[firstRunId,secondRunId,thirdRunId]);
   assert.equal(f.app.conversations.list('active').filter(row=>row.rootId===firstRunId).length,1);
   assert.equal(f.calls.length,3,'three admitted occurrences create three runs but only one conversation');
-  assert.ok(f.readinessCalls.length>=2,'Original and revised instructions each receive their own structured readiness assessment.');
+  assert.ok(f.readinessCalls.filter(call=>call.stage==='inference').length>=2,'Original and revised instructions each receive their own Inference assessment.');
+  assert.ok(f.readinessCalls.filter(call=>call.stage==='viability').length>=2,'Original and revised instructions each receive their own structured readiness assessment.');
 });
 test('parallel schedules remain independent rather than sharing one active provider thread',async t=>{
   const f=await fixture(t),schedule=await f.create({trigger:{type:'manual'},overlap:'parallel'});

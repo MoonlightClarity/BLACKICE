@@ -59,8 +59,10 @@ async function fixture(t, { hook, empty = false, status = {}, initialNodeId = 'f
   t.after(() => workspace.destroy()); workspace.enter(); await waitFor(() => empty ? calls.length && dom.$('.pb-empty') : dom.$('[data-selected-node-id="' + initialNodeId + '"]'));
   return { ...dom, api, workspace, documents, calls, navigation, legacyCalls, listeners,
     mutations: () => calls.filter(call => call.method !== 'GET'),
-    async selectRequest(id) { await dom.click('[data-request-id="' + id + '"]'); await waitFor(() => dom.$('[data-request-id="' + id + '"]')?.getAttribute('aria-selected') === 'true' && dom.$('[data-selected-node-id="frame"]')); },
-    async fillResponse(kind = 'frame', prefix = 'Synthetic answer') { for (const field of planningModuleTemplate(kind).fields) { await dom.input('[data-response-field="' + field.id + '"]', prefix + ': ' + field.label); const source = dom.$('[data-grounding-field="' + field.id + '"]'); if (source) { source.value = 'request:' + dom.$('[role="tab"][aria-selected="true"]').dataset.requestId; await source.dispatch('change'); } } },
+    hasRequest(id) { const picker = dom.$('.pb-request-picker select'); return [...(picker?.children || [])].some(option => option.value === id); },
+    requestSelected(id) { return dom.$('.pb-request-picker select')?.value === id; },
+    async selectRequest(id) { const picker = dom.$('.pb-request-picker select'); assert.ok([...picker.children].some(option => option.value === id)); picker.value = id; await picker.dispatch('change'); await waitFor(() => picker.value === id && dom.$('[data-selected-node-id="frame"]')); },
+    async fillResponse(kind = 'frame', prefix = 'Synthetic answer') { for (const field of planningModuleTemplate(kind).fields) { await dom.input('[data-response-field="' + field.id + '"]', prefix + ': ' + field.label); const source = dom.$('[data-grounding-field="' + field.id + '"]'); if (source) { source.value = 'request:' + dom.$('.pb-request-picker select').value; await source.dispatch('change'); } } },
     async submitResponse() { await dom.$('[data-action="save-response"]').closest('form').dispatch('submit'); },
     async refresh() { await dom.click('[data-action="refresh"]'); await new Promise(resolve => setTimeout(resolve, 10)); },
     async emit(id) { for (const callback of listeners) callback({ type: 'planning.browser.updated', data: { requestId: id } }); await new Promise(resolve => setTimeout(resolve, 190)); }
@@ -141,7 +143,7 @@ test('only explicit run clicks launch workers; concurrent requests stay independ
   await f.click('[data-action="run-module"]'); await waitFor(() => f.documents.get('request-b').attempts.length === 1);
   assert.match(f.mount.textContent, /Runtime: running/); assert.match(f.mount.textContent, /configured-model/);
   gate.resolve(); await waitFor(() => f.documents.get('request-a').attempts.length === 1);
-  assert.ok(f.$('[data-request-id="request-b"][aria-selected="true"]'), 'A late receipt does not switch the selected request.');
+  assert.ok(f.requestSelected('request-b'), 'A late receipt does not switch the selected request.');
   assert.equal(f.$('[data-action="run-module"]').disabled, true);
   await f.click('[data-action="cancel-worker"]'); await waitFor(() => f.documents.get('request-b').attempts[0].status === 'cancelled');
   assert.equal(f.documents.get('request-a').attempts[0].status, 'running');
@@ -238,10 +240,10 @@ test('direct ChatGPT contributions display external origin and their recorded jo
 });
 
 test('opening an archived conversation preserves the request grouping and never invents a model result', async t => {
-  const f = await fixture(t); await f.click('[data-conversation-id="conversation-c"]'); await waitFor(() => f.$('[data-request-id="request-c"]') && f.$('[data-selected-node-id="frame"]'));
-  assert.equal(f.$('[data-request-id="request-a"]'), null); assert.match(f.mount.textContent, /Synthetic archive/);
+  const f = await fixture(t); await f.click('[data-conversation-id="conversation-c"]'); await waitFor(() => f.hasRequest('request-c') && f.$('[data-selected-node-id="frame"]'));
+  assert.equal(f.hasRequest('request-a'), false); assert.match(f.mount.textContent, /Synthetic archive/);
   assert.equal(f.$('[data-response-field="objective"]').value, ''); assert.equal(f.mutations().length, 0);
-  f.workspace.leave(); f.workspace.enter(); await waitFor(() => f.$('[data-request-id="request-c"][aria-selected="true"]'));
+  f.workspace.leave(); f.workspace.enter(); await waitFor(() => f.requestSelected('request-c'));
   assert.equal(f.mutations().length, 0);
 });
 
@@ -250,14 +252,14 @@ test('a first independent request selects the actual conversation group created 
   await f.input('#pb-request-title', 'Synthetic independent request'); await f.input('#pb-request-objective', 'Inspect a general question before choosing an action.');
   await f.$('[data-action="create-request"]').closest('form').dispatch('submit');
   await waitFor(() => f.$('[data-conversation-id="planning_generated"][aria-current="true"]'));
-  assert.ok(f.$('[data-request-id="created-1"][aria-selected="true"]'));
+  assert.ok(f.requestSelected('created-1'));
   assert.equal(f.mutations().length, 1); assert.equal(f.mutations()[0].route, '/api/planning-browser/requests');
 });
 
 test('catalog corruption warnings retain readable requests and identify damaged records without starting recovery work', async t => {
   const f = await fixture(t, { hook: (call, documents) => call.route === '/api/planning-browser' ? { conversations: [{ id: 'conversation-a', title: 'Readable synthetic conversation', state: 'active' }], requests: [...documents.values()].map(row => ({ id: row.id, conversationId: row.conversationId, title: row.title, revision: row.revision })), templates: PLANNING_MODULE_TEMPLATES, errors: [{ id: 'damaged-fixture', message: 'Malformed saved graph' }] } : undefined });
   assert.match(f.$('.pb-notice').textContent, /damaged-fixture: Malformed saved graph/); assert.match(f.$('.pb-notice').textContent, /Available requests remain visible/);
-  assert.ok(f.$('[data-node-id="frame"]')); assert.ok(f.$('[data-request-id="request-b"]')); assert.equal(f.mutations().length, 0);
+  assert.ok(f.$('[data-node-id="frame"]')); assert.ok(f.hasRequest('request-b')); assert.equal(f.mutations().length, 0);
 });
 
 test('module run labels follow configured model changes without starting or overriding a worker', async t => {
@@ -529,9 +531,9 @@ test('a stale Plan edit remains visible and cannot silently continue or overwrit
 test('exact request navigation focuses the requested stage without opening another conversation or starting work',async t=>{
   const f=await fixture(t);
   f.workspace.openRequestId('request-a',{nodeId:'child'});await waitFor(()=>f.$('[data-selected-node-id="child"]'));
-  assert.equal(f.$('[data-request-id="request-a"]').getAttribute('aria-selected'),'true');
+  assert.equal(String(f.requestSelected('request-a')),'true');
   f.workspace.leave();const count=f.calls.length;f.workspace.openRequestId('request-c',{nodeId:'frame'});await new Promise(resolve=>setTimeout(resolve,10));assert.equal(f.calls.length,count);
-  f.workspace.enter();await waitFor(()=>f.$('[data-request-id="request-c"]')?.getAttribute('aria-selected')==='true'&&f.$('[data-selected-node-id="frame"]'));
+  f.workspace.enter();await waitFor(()=>f.requestSelected('request-c')&&f.$('[data-selected-node-id="frame"]'));
   assert.equal(f.navigation.length,0);assert.equal(f.mutations().length,0);
 });
 
@@ -709,12 +711,12 @@ test('explicit request, stage, and manual conversation selection survive unrelat
   status.runtimeSettings.defaultModel='updated-fixture-model';f.workspace.updateStatus({activeConversationId:'conversation-c'});
   for(const callback of f.listeners)callback({type:'conversations.updated',data:{conversationId:'conversation-c',activeConversationId:'conversation-c'}});
   await new Promise(resolve=>setTimeout(resolve,190));
-  assert.ok(f.$('[data-request-id="request-a"][aria-selected="true"]'));assert.ok(f.$('[data-selected-node-id="child"]'));
+  assert.ok(f.requestSelected('request-a'));assert.ok(f.$('[data-selected-node-id="child"]'));
   assert.match(f.$('[data-action="run-module"]').textContent,/updated-fixture-model/);
-  await f.selectRequest('request-b');await f.emit('request-c');assert.ok(f.$('[data-request-id="request-b"][aria-selected="true"]'));
-  await f.click('[data-conversation-id="conversation-c"]');await waitFor(()=>f.$('[data-request-id="request-c"][aria-selected="true"]'));
+  await f.selectRequest('request-b');await f.emit('request-c');assert.ok(f.requestSelected('request-b'));
+  await f.click('[data-conversation-id="conversation-c"]');await waitFor(()=>f.requestSelected('request-c'));
   await f.emit('request-a');f.workspace.updateStatus({activeConversationId:'conversation-a'});
-  assert.ok(f.$('[data-conversation-id="conversation-c"][aria-current="true"]'));assert.ok(f.$('[data-request-id="request-c"][aria-selected="true"]'));
+  assert.ok(f.$('[data-conversation-id="conversation-c"][aria-current="true"]'));assert.ok(f.requestSelected('request-c'));
   assert.equal(f.mutations().length,0);assert.equal(f.navigation.length,0);
 });
 
@@ -722,10 +724,10 @@ test('a newer manual conversation selection supersedes a delayed conversation-na
   const gate=deferred();let hold=false;
   const f=await fixture(t,{hook:async call=>{if(hold&&call.route==='/api/planning-browser'){hold=false;await gate.promise;}}});
   t.after(()=>gate.resolve());hold=true;f.workspace.openConversationId('conversation-a');
-  await f.click('[data-conversation-id="conversation-c"]');await waitFor(()=>f.$('[data-request-id="request-c"][aria-selected="true"]'));
+  await f.click('[data-conversation-id="conversation-c"]');await waitFor(()=>f.requestSelected('request-c'));
   gate.resolve();await new Promise(resolve=>setTimeout(resolve,25));
   assert.ok(f.$('[data-conversation-id="conversation-c"][aria-current="true"]'),'The older pending conversation must not replace the later manual selection.');
-  assert.ok(f.$('[data-request-id="request-c"][aria-selected="true"]'));assert.equal(f.mutations().length,0);
+  assert.ok(f.requestSelected('request-c'));assert.equal(f.mutations().length,0);
 });
 
 test('newer manual request or stage selection supersedes a delayed exact-request link',async t=>{
@@ -735,7 +737,7 @@ test('newer manual request or stage selection supersedes a delayed exact-request
     t.after(()=>gate.resolve());hold=true;f.workspace.openRequestId('request-a',{nodeId:'child'});
     if(select==='request')await f.selectRequest('request-b');else await f.click('[data-node-id="frame"]');
     gate.resolve();await new Promise(resolve=>setTimeout(resolve,25));
-    assert.ok(f.$('[data-request-id="'+(select==='request'?'request-b':'request-a')+'"][aria-selected="true"]'),'The older link must not replace the later selected request.');
+    assert.ok(f.requestSelected(select==='request'?'request-b':'request-a'),'The older link must not replace the later selected request.');
     assert.ok(f.$('[data-selected-node-id="frame"]'),'The older link must not replace the later selected stage.');assert.equal(f.mutations().length,0);
   });
 });
@@ -748,7 +750,7 @@ test('a delayed conversation link leaves the current request usable until the ta
     if(select==='request')await f.selectRequest('request-b');else await f.click('[data-node-id="child"]');
     gate.resolve();await new Promise(resolve=>setTimeout(resolve,25));
     assert.ok(f.$('[data-conversation-id="conversation-a"][aria-current="true"]'));
-    assert.ok(f.$('[data-request-id="'+(select==='request'?'request-b':'request-a')+'"][aria-selected="true"]'));
+    assert.ok(f.requestSelected(select==='request'?'request-b':'request-a'));
     assert.ok(f.$('[data-selected-node-id="'+(select==='request'?'frame':'child')+'"]'));assert.equal(f.mutations().length,0);
   });
 });

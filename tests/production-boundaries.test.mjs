@@ -6,6 +6,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
+import { fixtureDeploymentReadiness } from './fixture-deployment-readiness.mjs';
 
 const SECRET = 'PRIVATE_SUPPORT_BOUNDARY_MARKER';
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
@@ -20,14 +21,9 @@ async function fixture(t, { hold = false } = {}) {
     async start() { effects.reconnects++; if (this.reconnectError) throw this.reconnectError; return this.status(); }
     async runAgent(options) {
       if (options.responseOnly) {
-        readinessCalls.push(options);
-        const captured = JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n') + 2));
-        assert.equal(captured.module.kind, 'viability', 'Only webhook readiness uses the analytical fixture.');
-        return { output: JSON.stringify({
-          values: Object.fromEntries(captured.template.fields.map(field => [field.id, field.label + ': this isolated webhook fixture has no missing prerequisite.'])),
-          grounding: captured.template.fields.filter(field => field.grounding === 'required').map(field => ({ field: field.id, sourceId: 'viability:task' })),
-          requirements: [], openQuestions: [], challengeResponses: [],
-        }), threadId: 'boundary-readiness', turnId: 'boundary-readiness-turn' };
+        const captured=JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2));
+        readinessCalls.push({ ...options, stage: captured.module.kind });
+        return { output:JSON.stringify(fixtureDeploymentReadiness(captured)), threadId:'boundary-readiness', turnId:'boundary-readiness-turn' };
       }
       calls.push(options); const threadId = `fixture-thread-${calls.length}`;
       options.onEvent?.({ type: 'thread', threadId, turnId: `fixture-turn-${calls.length}`, model: 'fixture-model' });
@@ -147,7 +143,7 @@ test('maintenance rejects valid webhook deliveries before they mutate durable jo
   const created = await request('/api/operations/deployments', { method: 'POST', body: { name: 'Fixture webhook', input: 'Do not dispatch during maintenance.', cwd: context.cwd, workflow: workflow(), enabled: true, trigger: { type: 'webhook' } } });
   assert.equal(created.status, 201, JSON.stringify(created.data));
   const deployment = created.data;
-  assert.equal(deployment.enabled, true); assert.equal(context.readinessCalls.length, 1); assert.equal(context.calls.length, 0);
+  assert.equal(deployment.enabled, true); assert.deepEqual(context.readinessCalls.map(call => call.stage), ['inference', 'viability']); assert.equal(context.calls.length, 0);
   const token = app.operations.getWebhook(deployment.id).token; await app.beginMaintenance();
   const before = await readFile(path.join(context.dataDir, 'operations.json'), 'utf8');
   const deliveries = await Promise.all(['one', 'two'].map(key => request(`/hooks/${deployment.id}`, { method: 'POST', auth: false, headers: { Authorization: `Bearer ${token}`, 'Idempotency-Key': key }, body: { private: SECRET } })));

@@ -5,6 +5,7 @@ import { mkdtemp,readFile,rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHarnessServer } from '../server.mjs';
+import { fixtureDeploymentReadiness } from './fixture-deployment-readiness.mjs';
 import { changeTaskState,createTaskHistory } from '../public/next/workspaces/task-lifecycle.mjs';
 import { planningDOM } from './fixture-planning-dom.mjs';
 
@@ -15,9 +16,11 @@ class QuietRuntime extends EventEmitter{
   status(){return{connected:true,authenticated:true,models:[{model:'fixture'}],defaultModel:'fixture'};}
   async start(){return this.status();}async close(){}
   async runAgent(options){
-    if(this.allowReadiness&&options.responseOnly){this.readinessCalls++;const captured=JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2));
-      assert.equal(captured.module.kind,'viability','Only schedule readiness uses the response-only fixture.');
-      return{output:JSON.stringify({values:Object.fromEntries(captured.template.fields.map(field=>[field.id,field.label+': the supplied isolated fixture task has a local implementation and no missing personal prerequisite.'])),grounding:captured.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId:'viability:task'})),requirements:[],openQuestions:[],challengeResponses:[]}),threadId:'fixture-readiness',turnId:'fixture-readiness-turn'};}
+    if(this.allowReadiness&&options.responseOnly){
+      const captured=JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2));
+      this.readinessCalls.push({ ...options, stage: captured.module.kind });
+      return {output:JSON.stringify(fixtureDeploymentReadiness(captured)),threadId:'fixture-readiness',turnId:'fixture-readiness-turn'};
+    }
     assert.fail('Managing saved work must not start an operational model turn.');
   }
 }
@@ -25,7 +28,7 @@ async function fixture(t,{allowReadiness=false}={}){
   const directory=await mkdtemp(path.join(tmpdir(),'blackice-v2-task-lifecycle-')),dataDir=path.join(directory,'data'),cwd=path.join(directory,'workspace'),apps=[];
   let app,origin,cookie,runtime;
   async function boot(){
-    runtime=new QuietRuntime();runtime.allowReadiness=allowReadiness;runtime.readinessCalls=0;
+    runtime=new QuietRuntime();runtime.allowReadiness=allowReadiness;runtime.readinessCalls=[];
     app=await createHarnessServer({port:0,dataDir,defaultCwd:cwd,runtime,autoAttachDesktop:false});apps.push(app);
     await app.learning.updateSettings({mode:'off'});await app.operations.pause('Disposable lifecycle verification.');
     origin=await app.listen();const response=await fetch(origin);cookie=response.headers.get('set-cookie').split(';',1)[0];await response.arrayBuffer();
@@ -113,7 +116,7 @@ test('schedule removal and template deletion retain actual job history and saved
   const schedule=await f.api('/api/operations/deployments','POST',{name:'Disposable scheduled work',input:'Retain original task',cwd:f.cwd,workflow:template,trigger:{type:'manual'},enabled:false});
   const scheduleCopy=structuredClone(f.app.operations.state.deployments.find(item=>item.id===schedule.id).workflow);
   const readiness=await f.api('/api/operations/deployments/'+schedule.id+'/readiness','POST',{});
-  assert.equal(readiness.nodes.find(node=>node.id==='viability').readiness.state,'ready');assert.equal(f.runtime.readinessCalls,1);
+  assert.equal(readiness.nodes.find(node=>node.id==='viability').readiness.state,'ready');assert.deepEqual(f.runtime.readinessCalls.map(call=>call.stage),['inference','viability']);
   const job=await f.api('/api/operations/deployments/'+schedule.id+'/trigger','POST',{});
   assert.equal((await f.api('/api/operations')).jobs.find(item=>item.id===job.id).status,'queued');
   await f.api('/api/workflows/'+template.id,'DELETE',{});

@@ -17,6 +17,7 @@ topLevelFiles.add('RELEASE-NOTES-2.37.0.md');
 topLevelFiles.add('RELEASE-NOTES-2.38.0.md');
 topLevelFiles.add('RELEASE-NOTES-2.39.0.md');
 topLevelFiles.add('RELEASE-NOTES-2.39.1.md');
+for (const patch of [8, 9, 10, 11, 12, 13, 14, 15]) topLevelFiles.add('RELEASE-NOTES-2.39.' + patch + '.md');
 topLevelFiles.add('WORKBENCH-NATIVE-DISPLAY.md');
 
 // Match the existing installer inputs without admitting arbitrary native helpers.
