@@ -3,6 +3,8 @@ productName: BLACKICE
 copyright: Copyright 2026 BLACKICE
 asar: false
 npmRebuild: false
+toolsets:
+  nsis: "1.2.1"
 directories:
   output: .build/desktop
   buildResources: desktop
@@ -77,7 +79,7 @@ files:
   - RELEASE-NOTES-2.38.0.md
   - RELEASE-NOTES-2.39.0.md
   - RELEASE-NOTES-2.39.1.md
-  - RELEASE-NOTES-2.39.7.md
+  - RELEASE-NOTES-2.39.8.md
   - PLANNING-ORGANIZATION.md
   - REMOTE-ACCESS.md
   - BROWSER-PROTECTION.md
