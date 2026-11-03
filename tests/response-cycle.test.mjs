@@ -114,6 +114,43 @@ test('Forced automatic Planning delegates unknown saved-record checks to the ope
   assert.notEqual(held.result.ownerChecksDeferred,true);
 });
 
+test('managed automatic Planning runs owner access checks without asking a generic question',async t=>{
+  const managedCase=async (makeRequirement,input='Check the requested sources and complete the delegated work.')=>{
+    const f=await fixture(t,{amend:(body,captured)=>{
+      if(captured.module.kind==='viability')body.requirements=[makeRequirement(captured)];
+      return body;
+    }});
+    // Deployment admission is covered separately; this isolates the response-cycle
+    // decision while retaining managed provenance on the run under preparation.
+    const ordinaryPreflight=f.taskViability.forRun.bind(f.taskViability);
+    f.taskViability.forRun=(run,options)=>ordinaryPreflight({...run,metadata:undefined},options);
+    return f.prepare('automatic',{input,metadata:{managedBy:'operations',inboxId:'managed-fixture'},runtimeSettings:{planningGuardrails:true}});
+  };
+  const unknown=(captured,question='')=>({
+    id:'operational_access',label:'Operational workflow access',importance:'essential',basis:'task',
+    consequence:'Check required files and action channels before dependent work.',resolution:'unknown',value:'',sourceIds:[],
+    checkedSourceIds:captured.sources.filter(source=>source.kind!=='response').map(source=>source.id),
+    rationale:'The analytical preflight cannot probe runtime tools; the owning workflow can check each channel.',
+    inferable:false,omissionAllowed:false,question,dependentNodeIds:['agent']
+  });
+  const delegated=await managedCase(captured=>unknown(captured));
+  assert.equal(delegated.request.nodes.find(node=>node.kind==='viability').readiness.viability.state,'awaiting_input','the unknown remains recorded');
+  assert.equal(delegated.result.state,'executing');
+  assert.equal(delegated.result.ownerChecksDeferred,true);
+  assert.equal(delegated.result.awaitingInput,false);
+  assert.equal(delegated.result.question,'');
+  assert.deepEqual(delegated.result.blockedNodeIds,[]);
+
+  const missingFact=await managedCase(captured=>({...unknown(captured,'What residential address should the required form use?'),id:'required_address',label:'Required residential address',basis:'user'}));
+  assert.equal(missingFact.result.state,'awaiting_input','a specific authored factual question still holds the managed run');
+  assert.notEqual(missingFact.result.ownerChecksDeferred,true);
+  assert.match(missingFact.result.question,/residential address/);
+
+  const denied=await managedCase(captured=>({...unknown(captured),id:'prohibited_source',resolution:'blocked',value:'The user expressly prohibited this source.',sourceIds:['viability:task'],stopKind:'user_prohibited',rationale:'The current request explicitly prohibits this source.'}),'Explain the supplied evidence. Do not access the saved source.');
+  assert.equal(denied.result.state,'blocked','an explicit denial still holds the managed run');
+  assert.notEqual(denied.result.ownerChecksDeferred,true);
+});
+
 test('Forced automatic Planning starts owner source checks when preflight citations are incomplete',async t=>{
   const f=await fixture(t,{amend:(body,input)=>{
     if(input.module.kind==='viability')body.requirements=[{

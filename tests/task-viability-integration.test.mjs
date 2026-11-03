@@ -73,6 +73,32 @@ test('disabled drafts save, direct enable requires a check, and checked manual d
   const job=await f.operations.trigger(draft.id,{idempotencyKey:'manual-fixture'});await f.operations.poll();const running=await until(()=>f.operations.getJob(job.id).attempts.at(-1)?.runId,'scheduled fake run admitted');await f.finish(running);await f.operations.poll();assert.equal(f.operations.getJob(job.id).status,'completed');assert.equal(f.agents().length,1);assert.equal(f.checks().length,1);assert.equal(f.operations.getDeployment(draft.id).enabled,false);
 });
 
+test('schedule admission preserves an unknown owner access check and lets its worker probe it',async t=>{
+  const f=await fixture(t),ordinaryRunAgent=f.runtime.runAgent.bind(f.runtime);
+  f.runtime.runAgent=async options=>{
+    const result=await ordinaryRunAgent(options);
+    if(!options.responseOnly)return result;
+    const captured=JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2)),body=JSON.parse(result.output);
+    body.requirements=[{id:'runtime_access',label:'Access to task sources and channels',importance:'essential',basis:'task',
+      consequence:'Check sources and action channels before dependent work.',resolution:'unknown',value:'',sourceIds:[],
+      checkedSourceIds:captured.sources.filter(source=>source.kind!=='response').map(source=>source.id),
+      rationale:'The analytical preflight has no action tools; the assigned worker must probe actual access.',
+      inferable:false,omissionAllowed:false,question:'',dependentNodeIds:['dependent']}];
+    return{...result,output:JSON.stringify(body)};
+  };
+  const saved=await f.service.saveDeployment(f.operations,{...f.definition,input:'Check source access and complete the delegated work.',enabled:true});
+  assert.equal(saved.enabled,true);
+  const request=await f.store.get(saved.viabilityRef.requestId);
+  assert.equal(readinessNode(request).readiness.viability.state,'awaiting_input','admission does not claim actual access was observed');
+  await f.service.assertDeployment(saved);
+  const job=await f.operations.trigger(saved.id,{idempotencyKey:'owner-access-fixture'});
+  await f.operations.poll();const runId=await until(()=>f.operations.getJob(job.id).attempts.at(-1)?.runId,'managed owner run');
+  const run=await f.finish(runId);await f.operations.poll();
+  assert.equal(run.status,'completed');
+  assert.equal(f.operations.getJob(job.id).status,'completed');
+  assert.equal(f.agents().length,1);
+});
+
 test('enabled intent remains disabled until its exact factual answer and never enables a changed draft',async t=>{
   const f=await fixture(t);f.runtime.needsAddress=true;
   const blocked=await f.service.saveDeployment(f.operations,{...f.definition,enabled:true});assert.equal(blocked.enabled,false);assert.equal(blocked.readiness.state,'awaiting_input');assert.match(blocked.readiness.question,/residential address/);

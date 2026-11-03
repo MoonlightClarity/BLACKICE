@@ -127,6 +127,17 @@ export function viabilityRequirementSchema() {
     sourceIds: strings, checkedSourceIds: strings, rationale: string, inferable: { type: 'boolean' }, omissionAllowed: { type: 'boolean' }, question: string, dependentNodeIds: strings, stopKind: { anyOf: [{ type: 'string', enum: [...PLANNING_STOP_KINDS] }, { type: 'null' }] }, accuracy: taskAccuracySchema()
   } } });
 }
+/** Admission may delegate unasked unknown checks to the owning workflow without claiming they are resolved. */
+export function deferredOwnerChecks(response, readiness) {
+  if (!readiness?.analysisReady || !['awaiting_input', 'needs_evidence'].includes(readiness.state) || !readiness.blockingFacts?.length) return false;
+  const requirements = new Map((response?.requirements || []).map(item => [item.id, item]));
+  return readiness.blockingFacts.every(fact => {
+    const requirement = requirements.get(fact.id);
+    return fact.resolution === 'unknown' && requirement?.resolution === 'unknown'
+      && typeof requirement.question === 'string' && !requirement.question.trim()
+      && requirement.dependentNodeIds?.length > 0;
+  });
+}
 const sourceIdentity = source => [source.id, source.contentHash || '', source.text || '', source.revision ?? null];
 const canonicalResponseValue=value=>Array.isArray(value)?value.map(canonicalResponseValue):object(value)?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonicalResponseValue(value[key])])):value;
 const responseSourceIdentity=source=>JSON.stringify(canonicalResponseValue({id:source.id,kind:source.kind,responseId:source.responseId,revision:source.revision,text:source.text??null,contentHash:source.contentHash??null,provenance:source.provenance??null}));
