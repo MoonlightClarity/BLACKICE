@@ -279,14 +279,35 @@ test('a successful tool call without a matching observed effect cannot satisfy a
   assert.equal(f.evaluate().state, 'needs_evidence');
 });
 
-test('a truthful partial final response is deliverable and exposes its limitations in the answer', () => {
+test('a truthful partial final response can paraphrase its recorded limitation in the answer excerpt', () => {
   const f = fixture('respond'); f.context.criterionResults[0].assessment = 'uncertain';
   f.payload.values.answer = 'The evidence is incomplete. The required fact remains unknown.';
   f.payload.coverage[0] = { criterionId: 'answer', disposition: 'unresolved', sourceIds: ['evidence'], responseExcerpt: 'The evidence is incomplete.', limitation: 'The required fact remains unknown.' };
   let result = f.evaluate(); assert.equal(result.state, 'ready'); assert.equal(result.outcome, 'unresolved');
   f.payload.coverage[0].disposition = 'addressed'; result = f.evaluate(); assert.equal(result.state, 'needs_evidence');
   f.payload.coverage[0].disposition = 'unresolved'; f.payload.values.answer = 'The evidence is incomplete.';
-  assert.equal(f.evaluate().state, 'needs_evidence');
+  assert.equal(f.evaluate().state, 'ready', 'the public excerpt already discloses incompleteness without repeating the private wording');
+  f.payload.coverage[0].responseExcerpt = 'The required fact remains unknown.';
+  assert.equal(f.evaluate().state, 'needs_evidence', 'the public excerpt still has to occur in the answer');
+  f.payload.coverage[0].responseExcerpt = 'The evidence is incomplete.';
+  f.payload.coverage[0].limitation = '';
+  assert.equal(f.evaluate().state, 'needs_evidence', 'unresolved coverage still needs a stated limitation');
+});
+
+test('recurring job result can report partial applications and contact with separately worded coverage limits', () => {
+  const f = fixture('respond');
+  f.context.acceptanceCriteria = [criterion('applications'), criterion('contacts')];
+  f.context.criterionResults = ['applications', 'contacts'].map(criterionId => ({ criterionId, assessment: 'uncertain', sourceIds: ['evidence'], receiptIds: [], rationale: 'The captured result does not establish every final effect.' }));
+  f.payload.values.answer = 'Two applications were reported, but exact submission confirmations are unavailable. One employer message was reported; recipient and delivery evidence remain unavailable.';
+  f.payload.coverage = [
+    { criterionId: 'applications', disposition: 'partial', sourceIds: ['evidence'], responseExcerpt: 'Two applications were reported, but exact submission confirmations are unavailable.', limitation: 'The capture does not prove the submitted posting identities or destination outcomes.' },
+    { criterionId: 'contacts', disposition: 'unresolved', sourceIds: ['evidence'], responseExcerpt: 'One employer message was reported; recipient and delivery evidence remain unavailable.', limitation: 'The outreach count does not establish receipt by the employer.' },
+  ];
+  assert.ok(f.payload.coverage.every(item => !f.payload.values.answer.includes(item.limitation)));
+  const result = f.evaluate();
+  assert.equal(result.state, 'ready');
+  assert.equal(result.outcome, 'unresolved');
+  assert.deepEqual(result.issues, []);
 });
 
 test('final coverage needs exact answer excerpts, every criterion and current effect receipts', () => {
