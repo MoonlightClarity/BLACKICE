@@ -1,0 +1,35 @@
+{
+    "format":  1,
+    "product":  "BLACKICE",
+    "version":  "2.39.6",
+    "sourceCommit":  "fa11fce451e5423e644ea03c652bdee504b34afe",
+    "appFingerprint":  "7ccea20b6bbdb315411ecd2989b7366e100fd0d8b90883de1039a28fcca1c84d",
+    "artifact":  {
+                     "name":  "Blackice-2.39.6-Setup.exe",
+                     "localRelativePath":  "dist/Blackice-Public-Windows/Blackice-2.39.6-Setup.exe",
+                     "size":  154498382,
+                     "sha256":  "2646314429af7ac81f622137cd1ccc949640c5d94febbf61fdc49c6b2ca0f684"
+                 },
+    "build":  {
+                  "builtAt":  "2026-11-03T07:29:31.324Z",
+                  "signing":  "unsigned",
+                  "publisherVerified":  false,
+                  "packageManifest":  "dist/Blackice-Public-Windows/blackice-public-release.json",
+                  "verifiedChecksum":  true,
+                  "sourceFingerprintMatched":  true
+              },
+    "validation":  {
+                       "sourceFocusedTests":  "64 passed; 0 failed after upstream merge",
+                       "freshInstallerInstallation":  "not performed",
+                       "releasePublication":  "not performed",
+                       "verifiedReleaseAsset":  "not yet uploaded",
+                       "notes":  "Candidate archive only: not a passing Windows source-test or installer-acceptance receipt"
+                   },
+    "sourceArchive":  {
+                          "name":  "Blackice-2.39.6-Source.zip",
+                          "localRelativePath":  "dist/Blackice-Public-Windows/Blackice-2.39.6-Source.zip",
+                          "size":  20678898,
+                          "sha256":  "64fac2302471c2d0f052ac3d0974eb3f91785ad3d4ed362ce3b44a452ed651ac",
+                          "sourceCommit":  "fa11fce451e5423e644ea03c652bdee504b34afe"
+                      }
+}
