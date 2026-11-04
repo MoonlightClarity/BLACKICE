@@ -1,0 +1,66 @@
+{
+  "format": 1,
+  "status": "focused_checks_passed",
+  "releaseGateStatus": "passed",
+  "modelCalled": false,
+  "limitation": "These focused runs overlap product areas and are not a complete release gate or behavioral pass.",
+  "runs": [
+    {
+      "files": [
+        "tests/provider-structured-output.test.mjs",
+        "tests/planning-response-profile.test.mjs",
+        "tests/user-cost-decision.test.mjs"
+      ],
+      "scope": "Compatible schema projection and unsafe-oneOf fallback; unchanged native/Responses paths; actual host blockedOptionIds duplicate rejection; provider SSE errors remain errors.",
+      "tests": 51,
+      "pass": 51,
+      "fail": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "durationMs": 712.318,
+      "capturedStdoutSha256": "6b58e5dc481139a5804cb2fb2146e343c65db30dc0e0dbf60fcc53a3ffa9f0c7"
+    },
+    {
+      "files": [
+        "tests/planning-recursive-integration.test.mjs",
+        "tests/planning-review.test.mjs"
+      ],
+      "scope": "Guarded malformed relay_task edit rejects JSON-string operations, preserves plan and returned-operation ledger, and permits normal valid-array recovery.",
+      "tests": 22,
+      "pass": 22,
+      "fail": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "durationMs": 7964.0621,
+      "capturedStdoutSha256": "c35ab872b016be580b9de9ab855d9b5cd61ea494c219fffb86e16623f657397c"
+    },
+    {
+      "files": [
+        "tests/verify-free-advocacy.test.mjs",
+        "tests/advocacy-planning-setup.test.mjs"
+      ],
+      "scope": "Full Forced service setup; deadline cancellation/settlement; anonymous free setup; actual Planning wire at32768; more than16 mocked execution turns succeed under64 with existing execution reserve.",
+      "tests": 6,
+      "pass": 6,
+      "fail": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "durationMs": 2606.0788,
+      "capturedStdoutSha256": "b8e652e733438b544f7ab7c2eb675a94b502591cdd099d510403571bd1c8631f"
+    },
+    {
+      "files": [
+        "tests/engine-task-plan.test.mjs"
+      ],
+      "scope": "Current missing-plan leaf/operation guidance with existing mandatory planning behavior.",
+      "tests": 19,
+      "pass": 19,
+      "fail": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "durationMs": 10948.191,
+      "capturedStdoutSha256": "2e81011e22781f93f54bcd03cc664d0f1b3c4748c99eab9dcae1b7e0645bf020"
+    }
+  ],
+  "releaseGateReceipt": "../windows-2.39.17.json"
+}

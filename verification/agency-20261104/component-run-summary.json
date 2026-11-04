@@ -1,0 +1,76 @@
+{
+  "format": 1,
+  "kind": "sanitized_original_run_summary",
+  "originalReportSha256": "53532bda9143f98121675b7d2106aa1885c1be36fc5db3e04ee22b922aae5548",
+  "evaluationKind": "decision_component_no_tools",
+  "mandatoryExecutionCycle": "not_run",
+  "status": "failed",
+  "originalBehavioralResult": "not_assessed",
+  "semanticReview": "separate_semantic-review.json",
+  "model": "eval-kilo-free::nvidia/nemotron-3.5-super-vl:free",
+  "modelId": "nvidia/nemotron-3.5-super-vl:free",
+  "responseModelIds": [
+    "nvidia/nemotron-3.5-super-vl:free"
+  ],
+  "effort": "default",
+  "budgets": {
+    "providerMaxTokens": 65536,
+    "timeoutMs": 900000,
+    "maxSteps": 1,
+    "maximumInferenceRequests": 1
+  },
+  "startedAt": "2026-11-04T19:06:13.361Z",
+  "finishedAt": "2026-11-04T19:09:09.547Z",
+  "catalog": {
+    "url": "https://ai-gateway.kilo.ai/api/v1/models",
+    "checkedAt": "2026-11-04T19:06:13.909Z",
+    "modelId": "nvidia/nemotron-3.5-super-vl:free",
+    "contextLength": 1000000,
+    "maxCompletionTokens": 131072,
+    "pricing": {
+      "prompt": "0",
+      "completion": "0"
+    }
+  },
+  "inference": {
+    "requestsAttempted": 1,
+    "postCount": 1,
+    "httpStatus": 200,
+    "http200Response": true,
+    "requestedAt": "2026-11-04T19:06:14.426Z",
+    "finishedAt": "2026-11-04T19:09:09.500Z",
+    "observedWireMaxTokens": [
+      65536
+    ],
+    "attachedTools": 0,
+    "finalJsonReturned": true,
+    "aggregateHostAccepted": false,
+    "timeoutObserved": false
+  },
+  "usage": {
+    "inputTokens": 4446,
+    "outputTokens": 11709,
+    "totalTokens": 16155,
+    "cachedInputTokens": 0,
+    "reasoningOutputTokens": 8523,
+    "samples": 1,
+    "availability": {
+      "inputTokens": "reported",
+      "outputTokens": "reported",
+      "totalTokens": "reported",
+      "cachedInputTokens": "reported",
+      "reasoningOutputTokens": "reported"
+    },
+    "modelContextWindow": null
+  },
+  "nativeCalls": {
+    "startCalls": 0,
+    "runCalls": 0
+  },
+  "captureComplete": true,
+  "error": {
+    "message": "personal-backup-proportionality: the task explicitly requires a decision assessment."
+  },
+  "originalHostValidationArtifactPresent": false,
+  "limitation": "HTTP200 and returned JSON establish transport/output evidence only. Original aggregate validation failed; no execution was run."
+}

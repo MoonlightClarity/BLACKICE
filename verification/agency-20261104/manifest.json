@@ -1,0 +1,251 @@
+{
+  "format": 1,
+  "bundleKind": "sanitized_agency_evidence",
+  "createdAt": "2026-11-04T19:26:17.109Z",
+  "originalComponentStatus": "failed",
+  "mandatoryExecutionCycle": "not_run",
+  "fullForcedFormOutcome": "objective_failed",
+  "sourceGate": {
+    "receipt": "verification/windows-2.39.17.json",
+    "receiptSha256": "a1089b248d7276b42eb97d4544e2835171bbe11b9c13d0d4bd1bb3192f8e2c19",
+    "checkedAt": "2026-11-04T19:23:49.844Z",
+    "status": "passed",
+    "sourceCommit": "1162e3136dfc7681e2e72c5c022af48767521b15",
+    "appFingerprint": "eacfa5c845901152a47d2e51465e88d41d2e04d342964dea983191decb447477",
+    "sourceIndex": "ef113d04adfce740fad0f0e057bda98a376cd1190aa261a44219b8504af61f9c",
+    "files": 614,
+    "tests": 7038,
+    "passed": 7029,
+    "failed": 0,
+    "optionalSkipped": 9,
+    "requiredSkipped": 0,
+    "cancelled": 0,
+    "todo": 0,
+    "publication": "pending",
+    "installerVerification": "pending",
+    "activation": "pending"
+  },
+  "componentSnapshotFingerprint": "d6867bdac97796028ad40af3354391f65dc9e6bbdec066688413694d0b7a0d9b",
+  "originalArtifacts": {
+    "preparationManifestSha256": "2016a00ed041fe2da50bfa09ac59a0fa5518dfc2daea1773b679aed2c34d8c48",
+    "preparationArtifactHashes": {
+      "input-cases.json": "12f51709410974677959ab5984751ffb498c8e2f6cb3a1f1a4c69b415eab3296",
+      "output-schema.json": "81813b6a0a8a4ef7c6a1397790a6bee8df6b261ffa20d2bbb03ca1b8ea3548db",
+      "method.json": "38a01a64b250d86709d6f0f5b08f67f7e5a2b9a2162dbb2fd8b14c075b87332b",
+      "request.json": "1c8b3245307d5e58931a4ce135fd374ca4ac85f8cdcc82830bd78135617152bd",
+      "prompt.txt": "103b2a1621ce98401a814f4414199fe95a074b3f23fb0c92b62c5a6578a4744c",
+      "developer-instructions.txt": "56e92ac320a7c2c4077748ea1e49ec0ab78ff047cf57a9a5c1e66e1055104f9a",
+      "runner-source.mjs": "f3458b3675fd5f316d1e9e322ad88ac54c4c7dc83e1698c73200e542bf601449",
+      "source-manifest.json": "74b9d0f048614b03705d6610c533181fc4d5ec281bb348d80705fa5597a96c1c",
+      "offline-validation.json": "bf08d9c4667030770e0b675ff11deea7abe05e3b437e5ea3c5165d54c49951c9",
+      "offline-wire-validation.json": "e6f91535d4b277f61eefc4ccc85a42c332eb66f53af26f627bd5c56f34cbd044"
+    },
+    "componentReportSha256": "53532bda9143f98121675b7d2106aa1885c1be36fc5db3e04ee22b922aae5548",
+    "componentApiRequestsSha256": "f5c6568d84e219ee7455ecc535ad15a002210c6ac2fe0ab333f240271873dc9e",
+    "formReportSha256": "8bce46d59006d6283da1607ac3acacd835efb680d2b828b7e01c90e145cfe04c",
+    "formCaseSha256": "287e440fe74f942e4adb766fd450a36c933d90dd506d0167a0abedf8724e2adc",
+    "formApiRequestsSha256": "c77d7ef890322e8e122f19c5e040845444ce53f719226d0aab7bd90175bade4d"
+  },
+  "fixtureSources": [
+    {
+      "path": "scripts/fixtures/outcome-disclosure-cases.json",
+      "sha256": "3be20ee1e56316f27f8a313f062aafb35bb4af3ec7e7031a20d2a8a1988e0918",
+      "selectedIds": [
+        "sql-regression",
+        "sql-material-question",
+        "realistic-role"
+      ]
+    },
+    {
+      "path": "scripts/fixtures/agency-decision-cases.json",
+      "sha256": "1639f7a1a7ad3476fdd2b7c8243389f0d428b60acec3f8ea9630b86584ea2c92",
+      "selectedIds": [
+        "personal-backup-proportionality",
+        "useful-clarification"
+      ]
+    },
+    {
+      "path": "scripts/fixtures/outcome-holdout-cases.json",
+      "sha256": "8989dcd4017075b3720f5505efe750891c062cf92340f61f2a9862f7b1cd678e",
+      "selectedIds": [
+        "negotiation-discretion",
+        "recovery-by-effect"
+      ]
+    }
+  ],
+  "coreSourceHashes": {
+    "public/planning-user-agency.mjs": "19c2191934556f55316a9a50fb64c2946869b24a340d9d8ac59d5dbd91a4f4f8",
+    "public/user-cost-decision.mjs": "9fb7bc362f93770a77cd60e1aff48aa9537ef9810f5a64eda750142a236dd733",
+    "public/response-cycle-model.mjs": "3b52ac45984dd1997b3a6141712efb5c0136d26488b00e6b1c7b79a85cdd8245",
+    "public/planning-browser-model.mjs": "7ba83afea3e841f797b196ba59575fe7c55332177b9acff851af3f8e296d3f5a",
+    "lib/planning-browser-runtime.mjs": "6a1524f2ba2d8e491822ba09df19f7176e2a927cc9d93d4d98db639653c37170",
+    "lib/providers.mjs": "85cd8e833308b5b98240cf72c6c7254b157ce136f0e73c41b1b871aff3abb80b",
+    "lib/provider-output-schema.mjs": "8b1277bd22d548a64905543140dfb83935f036fac01ef25c5c12acd75b4a44e7",
+    "lib/engine.mjs": "a56836a09057c1c5de1fc81e7fbbea62b23a4a9a0d13f0f4eaea5c4bb83b7ebd",
+    "lib/planning-sequence.mjs": "54bf1005f9abc0aa4ef81914122319a86876595babd806eb007e42309300912e",
+    "scripts/verify-free-advocacy.mjs": "249e7dd8f9a13e48b595c22b0623d50790099167633e131a77f9f4b42d9469f5",
+    "scripts/outcome-eval-support.mjs": "3126c87a5f5de78a13f0541295ec3c6e132f9b4fbf6126b683f42ae1895ca2d9",
+    "skills/planning/SKILL.md": "739ba0eabbfee794d453b57fdd238d032ee23828c96d3ec0d834f262471f2c5b"
+  },
+  "coreSnapshotHashesMatchCurrent": true,
+  "originalHostValidationArtifactPresent": false,
+  "reviewedRunner": {
+    "path": "../verify-agency-component-20261104.mjs",
+    "sha256": "f3458b3675fd5f316d1e9e322ad88ac54c4c7dc83e1698c73200e542bf601449",
+    "handling": "exact_copy"
+  },
+  "documentation": {
+    "RELEASE-NOTES-2.39.17.md": {
+      "sha256": "22cc11efd93bc69e89d2a49cb6ec7b67ddc9bbe91b3c6d2136e800332a86f720",
+      "bytes": 5760
+    },
+    "docs/agency-behavior-report-20261104.md": {
+      "sha256": "3a0197a7d6451ae0deff20ffe0d9e14c8288fdd2298ca44250a32f598a5d8b46",
+      "bytes": 10705
+    },
+    "docs/agency-behavior-methods-20261104.md": {
+      "sha256": "819348561a1b7d98577de3c77857539612107930bc1f4a6c98f660d45eead9e8",
+      "bytes": 13064
+    }
+  },
+  "artifacts": {
+    "input-cases.json": {
+      "sha256": "12f51709410974677959ab5984751ffb498c8e2f6cb3a1f1a4c69b415eab3296",
+      "bytes": 11593,
+      "handling": "exact_copy",
+      "sourceArtifact": "prepared/input-cases.json",
+      "originalSha256": "12f51709410974677959ab5984751ffb498c8e2f6cb3a1f1a4c69b415eab3296"
+    },
+    "request.json": {
+      "sha256": "1c8b3245307d5e58931a4ce135fd374ca4ac85f8cdcc82830bd78135617152bd",
+      "bytes": 238674,
+      "handling": "exact_copy",
+      "sourceArtifact": "prepared/request.json",
+      "originalSha256": "1c8b3245307d5e58931a4ce135fd374ca4ac85f8cdcc82830bd78135617152bd"
+    },
+    "prompt.txt": {
+      "sha256": "103b2a1621ce98401a814f4414199fe95a074b3f23fb0c92b62c5a6578a4744c",
+      "bytes": 11767,
+      "handling": "exact_copy",
+      "sourceArtifact": "prepared/prompt.txt",
+      "originalSha256": "103b2a1621ce98401a814f4414199fe95a074b3f23fb0c92b62c5a6578a4744c"
+    },
+    "developer-instructions.txt": {
+      "sha256": "56e92ac320a7c2c4077748ea1e49ec0ab78ff047cf57a9a5c1e66e1055104f9a",
+      "bytes": 8622,
+      "handling": "exact_copy",
+      "sourceArtifact": "prepared/developer-instructions.txt",
+      "originalSha256": "56e92ac320a7c2c4077748ea1e49ec0ab78ff047cf57a9a5c1e66e1055104f9a"
+    },
+    "output-schema.json": {
+      "sha256": "81813b6a0a8a4ef7c6a1397790a6bee8df6b261ffa20d2bbb03ca1b8ea3548db",
+      "bytes": 207653,
+      "handling": "exact_copy",
+      "sourceArtifact": "prepared/output-schema.json",
+      "originalSha256": "81813b6a0a8a4ef7c6a1397790a6bee8df6b261ffa20d2bbb03ca1b8ea3548db"
+    },
+    "method.json": {
+      "sha256": "38a01a64b250d86709d6f0f5b08f67f7e5a2b9a2162dbb2fd8b14c075b87332b",
+      "bytes": 1836,
+      "handling": "exact_copy",
+      "sourceArtifact": "prepared/method.json",
+      "originalSha256": "38a01a64b250d86709d6f0f5b08f67f7e5a2b9a2162dbb2fd8b14c075b87332b"
+    },
+    "offline-validation.json": {
+      "sha256": "bf08d9c4667030770e0b675ff11deea7abe05e3b437e5ea3c5165d54c49951c9",
+      "bytes": 524,
+      "handling": "exact_copy",
+      "sourceArtifact": "prepared/offline-validation.json",
+      "originalSha256": "bf08d9c4667030770e0b675ff11deea7abe05e3b437e5ea3c5165d54c49951c9"
+    },
+    "offline-wire-validation.json": {
+      "sha256": "e6f91535d4b277f61eefc4ccc85a42c332eb66f53af26f627bd5c56f34cbd044",
+      "bytes": 222,
+      "handling": "exact_copy",
+      "sourceArtifact": "prepared/offline-wire-validation.json",
+      "originalSha256": "e6f91535d4b277f61eefc4ccc85a42c332eb66f53af26f627bd5c56f34cbd044"
+    },
+    "model-output.json": {
+      "sha256": "ebdf771c38101f974a07d00fb6ab22fb3e5b4e51f592b1005cec67edd83c4dd5",
+      "bytes": 15029,
+      "handling": "exact_copy",
+      "sourceArtifact": "component-run/model-output.json",
+      "originalSha256": "ebdf771c38101f974a07d00fb6ab22fb3e5b4e51f592b1005cec67edd83c4dd5"
+    },
+    "model-output.txt": {
+      "sha256": "b0e85398be41ee3e88038ea7679cfa65381e397d4287745efe497132e74aefe9",
+      "bytes": 13012,
+      "handling": "exact_copy",
+      "sourceArtifact": "component-run/model-output.txt",
+      "originalSha256": "b0e85398be41ee3e88038ea7679cfa65381e397d4287745efe497132e74aefe9"
+    },
+    "wire-request.json": {
+      "sha256": "c58854ead3795e330510c94b17e82578adf7c110b6a529abbbbcc99503a0d7d9",
+      "bytes": 257278,
+      "handling": "exact_parsed_request_body_rendered_as_json",
+      "sourceArtifact": "component-run/api-requests.json",
+      "sourceSha256": "f5c6568d84e219ee7455ecc535ad15a002210c6ac2fe0ab333f240271873dc9e",
+      "headersExcluded": true,
+      "responseBodyExcluded": true
+    },
+    "component-run-summary.json": {
+      "sha256": "e468192fde63504d917fe3fece7e9954b8c628dcecc3708b32ac8e8c9dd1cb1a",
+      "bytes": 2306,
+      "handling": "allowlisted_summary"
+    },
+    "component-validation-error.json": {
+      "sha256": "022d4d21bc679b21356cdbdb707578297d9cdaeeca4f0ea9a1efab62c9149ce5",
+      "bytes": 790,
+      "handling": "allowlisted_summary"
+    },
+    "component-posthoc-validation.json": {
+      "sha256": "f636458cea84d45d226c05f6fe3d3ff0fab66c98018f73ee752cae805dcc03f5",
+      "bytes": 2825,
+      "handling": "new_model_free_diagnostic"
+    },
+    "semantic-review.json": {
+      "sha256": "6bdd22eca34948ee76087ca271c8aaa1f88fc4ae1889637c1f141b281f83860e",
+      "bytes": 5380,
+      "handling": "new_qualitative_review"
+    },
+    "forced-form-summary.json": {
+      "sha256": "6c8d608d0e752ac55d1f03d215ccb671ae2afe2690d98dd8a16baf10a602f2c4",
+      "bytes": 5167,
+      "handling": "allowlisted_summary_with_unique_primary_receipt_counts_and_independent_trace_review"
+    },
+    "regression-summary.json": {
+      "sha256": "a4ea9f2865538520eb7ef486d5a61441f64b9f70d62fd0627cc90b480c1883f9",
+      "bytes": 2409,
+      "handling": "focused_completed_receipt_summary"
+    },
+    "evidence-map.md": {
+      "sha256": "d0428d88bb25b4bf4aba3d0cc6bdfb6cc2ae4f86786168b6867c4dcf19da3c48",
+      "bytes": 3481,
+      "handling": "new_documentation"
+    },
+    "bundle-validation.json": {
+      "sha256": "a715164199c1d5f0f3033fcfa303df0921e198bed30f64d14e4fe5a7b75c1a3a",
+      "bytes": 974,
+      "handling": "new_model_free_bundle_check"
+    }
+  },
+  "exclusions": [
+    "source_clone",
+    "raw_provider_reasoning",
+    "raw_events",
+    "raw_headers",
+    "raw_profiles",
+    "session_identifiers",
+    "absolute_local_paths"
+  ],
+  "caveat": "Input/output copies are exact; summaries and post-hoc review are explicitly labeled. Source-gate success is not model behavioral success. Publication, installer verification, and activation remain pending.",
+  "componentPreparationContext": {
+    "observedSourceCommit": "42295f3062dece27aedbd62f38b3c5bc5824fc1c",
+    "preparedAt": "2026-11-04T19:02:26.540Z",
+    "attribution": "Observed checkout context at component preparation; recorded after the run. Original exact-copy preparation artifacts did not contain a commit field and are unchanged.",
+    "laterSourceGateCommit": "1162e3136dfc7681e2e72c5c022af48767521b15",
+    "laterDelta": "Release packaging and the r2 gate runner only; application fingerprint unchanged.",
+    "appFingerprintUnchanged": true
+  },
+  "revisedAt": "2026-11-04T19:31:02.252Z"
+}

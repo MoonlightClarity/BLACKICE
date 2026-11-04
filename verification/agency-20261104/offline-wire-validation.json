@@ -1,0 +1,12 @@
+{
+  "status": "passed",
+  "modelCalled": false,
+  "networkCalled": false,
+  "mockedPostCount": 1,
+  "actualSerializedMaxTokens": 65536,
+  "attachedTools": 0,
+  "nativeCalls": {
+    "startCalls": 0,
+    "runCalls": 0
+  }
+}

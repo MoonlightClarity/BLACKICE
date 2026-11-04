@@ -1,0 +1,21 @@
+{
+  "status": "passed",
+  "modelCalled": false,
+  "checks": [
+    "seven-case envelope accepted",
+    "host rejects nonpreferred choice",
+    "host rejects string checkpoint",
+    "host rejects duplicate blocked IDs",
+    "supplied estimate changes rejected"
+  ],
+  "behavioralResult": "not_assessed",
+  "acceptedCases": [
+    "sql-regression",
+    "sql-material-question",
+    "realistic-role",
+    "personal-backup-proportionality",
+    "useful-clarification",
+    "negotiation-discretion",
+    "recovery-by-effect"
+  ]
+}

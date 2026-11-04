@@ -1,0 +1,41 @@
+{
+  "format": 1,
+  "evaluationKind": "decision_component_no_tools",
+  "mandatoryExecutionCycle": "not_run",
+  "tools": [],
+  "native": false,
+  "model": "eval-kilo-free::nvidia/nemotron-3.5-super-vl:free",
+  "modelId": "nvidia/nemotron-3.5-super-vl:free",
+  "effort": "default",
+  "budgets": {
+    "providerMaxTokens": 65536,
+    "timeoutMs": 900000,
+    "maxSteps": 1,
+    "maximumInferenceRequests": 1
+  },
+  "cases": [
+    "sql-regression",
+    "sql-material-question",
+    "realistic-role",
+    "personal-backup-proportionality",
+    "useful-clarification",
+    "negotiation-discretion",
+    "recovery-by-effect"
+  ],
+  "expectedAnswerFieldsIncluded": false,
+  "fixtureProjection": [
+    "id",
+    "task",
+    "files"
+  ],
+  "validation": "Original exported user-agency checkpoint normalization and user-cost validation; source-number fidelity for the two supplied illustrative comparisons. No model retry or coerced JSON strings.",
+  "limitations": [
+    "One guided response; no execution, tool use, saved-plan maintenance, dispatch recovery, or task completion is demonstrated.",
+    "The cases share one context and fixed order, so responses are not statistically independent and may prime each other.",
+    "One malformed case invalidates aggregate host acceptance; all raw case outputs remain available for individual semantic review.",
+    "The guidance is explicitly supplied; this measures instructed decision drafting, not unprompted policy recall.",
+    "Host checks do not prove unsupplied estimates, causal claims, audience-appropriate wording or factual completeness.",
+    "Drafted choices are generated before host feedback. Inconsistency is a recorded failure, not an automatic repair.",
+    "All original end-to-end failures remain separate evidence. A component-valid response is never an end-to-end pass."
+  ]
+}

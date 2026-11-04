@@ -1,0 +1,79 @@
+{
+  "format": 1,
+  "kind": "posthoc_per_case_unchanged_validator_diagnostic",
+  "createdAt": "2026-11-04T19:26:17.109Z",
+  "modelCalled": false,
+  "originalAggregateStatus": "failed",
+  "originalHostValidationArtifactPresent": false,
+  "originalOutputSha256": "ebdf771c38101f974a07d00fb6ab22fb3e5b4e51f592b1005cec67edd83c4dd5",
+  "validatorRunnerSha256": "f3458b3675fd5f316d1e9e322ad88ac54c4c7dc83e1698c73200e542bf601449",
+  "sourceHashes": {
+    "public/planning-user-agency.mjs": "19c2191934556f55316a9a50fb64c2946869b24a340d9d8ac59d5dbd91a4f4f8",
+    "public/user-cost-decision.mjs": "9fb7bc362f93770a77cd60e1aff48aa9537ef9810f5a64eda750142a236dd733"
+  },
+  "procedure": "Apply original validateComponent to each original case alone using unchanged snapshot module; do not mutate or repair the output.",
+  "structurallyAccepted": 4,
+  "rejected": 3,
+  "cases": [
+    {
+      "id": "sql-regression",
+      "status": "structurally_accepted",
+      "hostResult": "host_valid_semantic_review_needed",
+      "declaredAction": "proceed",
+      "decisionRequired": false,
+      "behavioralPass": false
+    },
+    {
+      "id": "sql-material-question",
+      "status": "structurally_accepted",
+      "hostResult": "host_valid_semantic_review_needed",
+      "declaredAction": "proceed",
+      "decisionRequired": false,
+      "behavioralPass": false
+    },
+    {
+      "id": "realistic-role",
+      "status": "structurally_accepted",
+      "hostResult": "host_valid_semantic_review_needed",
+      "declaredAction": "proceed",
+      "decisionRequired": false,
+      "behavioralPass": false
+    },
+    {
+      "id": "personal-backup-proportionality",
+      "status": "rejected",
+      "error": {
+        "code": null,
+        "message": "personal-backup-proportionality: the task explicitly requires a decision assessment."
+      },
+      "behavioralPass": false
+    },
+    {
+      "id": "useful-clarification",
+      "status": "rejected",
+      "error": {
+        "code": "USER_AGENCY_COMPARISON_REQUIRED",
+        "message": "Only routine clear progress may omit a cost comparison; asking or deferring requires the comparison."
+      },
+      "behavioralPass": false
+    },
+    {
+      "id": "negotiation-discretion",
+      "status": "rejected",
+      "error": {
+        "code": "USER_AGENCY_COMPARISON_REQUIRED",
+        "message": "Name the compared decision that determines this next action."
+      },
+      "behavioralPass": false
+    },
+    {
+      "id": "recovery-by-effect",
+      "status": "structurally_accepted",
+      "hostResult": "host_valid_semantic_review_needed",
+      "declaredAction": "proceed",
+      "decisionRequired": false,
+      "behavioralPass": false
+    }
+  ],
+  "limitation": "These later structural accepts are not original aggregate acceptance, semantic passes, or successful mandatory execution."
+}

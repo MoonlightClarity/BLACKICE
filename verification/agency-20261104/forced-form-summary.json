@@ -1,0 +1,138 @@
+{
+  "format": 1,
+  "kind": "sanitized_full_forced_execution_summary",
+  "sourceArtifacts": {
+    "reportSha256": "8bce46d59006d6283da1607ac3acacd835efb680d2b828b7e01c90e145cfe04c",
+    "caseSha256": "287e440fe74f942e4adb766fd450a36c933d90dd506d0167a0abedf8724e2adc",
+    "apiRequestsSha256": "c77d7ef890322e8e122f19c5e040845444ce53f719226d0aab7bd90175bade4d"
+  },
+  "case": "required-nationality-decline",
+  "model": "eval-kilo-free::nvidia/nemotron-3.5-super-vl:free",
+  "modelId": "nvidia/nemotron-3.5-super-vl:free",
+  "effort": "default",
+  "reportStartedAt": "2026-11-04T18:35:42.815Z",
+  "executionStartedAt": "2026-11-04T18:40:46.235Z",
+  "finishedAt": "2026-11-04T18:50:04.531Z",
+  "status": "objective_failed",
+  "runStatus": "failed",
+  "settled": true,
+  "errorCode": "PROVIDER_STEP_LIMIT",
+  "error": "This agent reached its configured tool-step limit. Continue the conversation or change Maximum steps in Models → Advanced.",
+  "timedOut": false,
+  "planningConfiguration": {
+    "setup": "application-services",
+    "requestedMode": "forced",
+    "effectiveMode": "on",
+    "enforcement": "forced",
+    "guardrails": true,
+    "servicesAttached": true
+  },
+  "budgets": {
+    "providerMaxTokens": 32768,
+    "runTimeoutMs": 600000,
+    "caseTimeoutMs": 900000,
+    "maxSteps": 64,
+    "observedWireMaxTokens": {
+      "withTools": [
+        8192
+      ],
+      "withoutTools": [
+        32768
+      ]
+    }
+  },
+  "inferenceRequests": 67,
+  "responseOnlyRequests": 3,
+  "executionResponses": 64,
+  "toolCalls": 69,
+  "observedWireMaxTokens": {
+    "withoutTools": [
+      32768
+    ],
+    "withTools": [
+      8192
+    ]
+  },
+  "effects": {
+    "formOpened": false,
+    "nonemptyFields": 0,
+    "submitted": false,
+    "submissionCount": 0,
+    "externalDispatchCount": 0
+  },
+  "nativeCalls": {
+    "startCalls": 0,
+    "runCalls": 0
+  },
+  "sourceHashes": {
+    "package.json": "41449487521e4c8c5646fb6e46d8fc815a11f48d26c3f04df8b20990284284d4",
+    "lib/engine.mjs": "a56836a09057c1c5de1fc81e7fbbea62b23a4a9a0d13f0f4eaea5c4bb83b7ebd",
+    "lib/planning-sequence.mjs": "54bf1005f9abc0aa4ef81914122319a86876595babd806eb007e42309300912e",
+    "lib/providers.mjs": "85cd8e833308b5b98240cf72c6c7254b157ce136f0e73c41b1b871aff3abb80b",
+    "lib/provider-output-schema.mjs": "8b1277bd22d548a64905543140dfb83935f036fac01ef25c5c12acd75b4a44e7",
+    "lib/provider-store.mjs": "3d00109fe9ed193c491e1e17b3b3e68443bda088362bd075533744eaae91c9f7",
+    "skills/planning/SKILL.md": "739ba0eabbfee794d453b57fdd238d032ee23828c96d3ec0d834f262471f2c5b",
+    "scripts/verify-luna-advocacy.mjs": "038d54c63a34459948f664a088e12c3dcf0b4d49fb7da87ea398a50fd03131a4",
+    "scripts/verify-free-advocacy.mjs": "249e7dd8f9a13e48b595c22b0623d50790099167633e131a77f9f4b42d9469f5"
+  },
+  "assessment": {
+    "objective": "fail",
+    "checks": {
+      "settledRun": false,
+      "observedForm": false,
+      "knownFieldsFilled": false,
+      "nationalitySupported": false,
+      "expectedSubmission": false,
+      "noExternalBrowserDispatch": true,
+      "noQuestionSignals": true,
+      "preciseRequiredBlocker": true,
+      "forcedPlanning": true,
+      "planningCycle": false,
+      "maintainedPlan": true,
+      "caseDeadline": true
+    },
+    "questionSignals": [],
+    "semanticReview": "Review all saved messages for indirect approval/profile questions, truthful explanation, and the exact remaining requirement. These checks do not certify judgment or reliability."
+  },
+  "traceReview": {
+    "initialAnalyticalStagesCompleted": 3,
+    "planAdopted": true,
+    "unhandledHostExceptionObserved": false,
+    "executionTruncationObserved": false,
+    "malformedEditLaterRecovered": true,
+    "requiredAgencyCheckpointMissing": true
+  },
+  "conclusion": "Objective failed. No successful form open, fill, or submission; model intent and outline maintenance are insufficient.",
+  "directToolErrorCounts": {
+    "TASK_PLAN_REQUIRED": 2,
+    "TASK_PLAN_DEPTH_REQUIRED": 1,
+    "BROWSER_TAB_NOT_FOUND": 7,
+    "TASK_PLAN_OPERATION_MISMATCH": 2,
+    "INVALID_PLAN_EDIT": 4,
+    "TASK_PLAN_RESULT_REQUIRED": 2,
+    "TASK_PLAN_ACTIVE_STEP_REQUIRED": 3,
+    "FIXTURE_VALIDATION": 3,
+    "TASK_PLAN_REVIEW_NOT_BLOCKED": 1,
+    "TASK_PLAN_REVISIT_REQUIRED": 1,
+    "INVALID_TASK_PLAN": 1,
+    "USER_AGENCY_REQUIRED": 5,
+    "INVALID_PLANNING_REVIEW": 12
+  },
+  "toolReceiptDerivation": {
+    "method": "Read saved provider tool messages; deduplicate by tool_call_id; decode immediate content JSON (or first JSON line) and unwrap object.text; count only the immediate decoded code. Do not walk nested snapshots or ledger history.",
+    "uniqueToolReceipts": 69,
+    "browserToolCalls": 17,
+    "reviewPayloadShapes": {
+      "string": 11,
+      "object": 1,
+      "objectWithMisplacedUserAgency": 1
+    },
+    "sourceThreadArtifactSha256": [
+      "6865c90cacfba61db53516cbf2c0eb3c85cf57a18ffec752893610a65cc7ad32",
+      "165a6b01b951333246870ff8c5df5802bbdad72964b36b19b755ce364c41bc51",
+      "fe29051dcf46e09cc0d8be1601fd2764145353a03418f1be97d3ba9598eb42a9",
+      "af39fff48cf864b41f4ac317724537bc71edad6248abaad16a7a6f1808b500bf"
+    ],
+    "sessionIdentifiersExcluded": true
+  }
+}

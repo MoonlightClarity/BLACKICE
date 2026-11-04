@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "kind": "original_validation_failure_summary",
+  "originalReportStatus": "failed",
+  "originalReportSha256": "53532bda9143f98121675b7d2106aa1885c1be36fc5db3e04ee22b922aae5548",
+  "originalOutputSha256": "ebdf771c38101f974a07d00fb6ab22fb3e5b4e51f592b1005cec67edd83c4dd5",
+  "error": {
+    "message": "personal-backup-proportionality: the task explicitly requires a decision assessment."
+  },
+  "originalHostValidationArtifactPresent": false,
+  "explanation": "The runner wrote final output, then validateComponent threw at the required backup assessment before host-validation.json was written. No original aggregate acceptance result is fabricated.",
+  "posthocDiagnostic": "component-posthoc-validation.json",
+  "modelRetried": false,
+  "originalOutputChanged": false
+}

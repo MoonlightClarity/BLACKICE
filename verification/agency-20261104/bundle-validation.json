@@ -1,0 +1,31 @@
+{
+  "format": 1,
+  "status": "passed",
+  "checkedAt": "2026-11-04T19:26:17.109Z",
+  "modelCalled": false,
+  "networkCalled": false,
+  "exactInputAndOutputCopies": 10,
+  "reviewedRunnerByteIdentical": true,
+  "wireRequestBodyPreserved": true,
+  "originalAggregateFailurePreserved": true,
+  "originalHostValidationArtifactAbsent": true,
+  "posthocValidationSeparate": true,
+  "structuralAcceptsAreBehaviorPasses": false,
+  "sensitiveValuePatternScan": "passed",
+  "omittedByAllowlist": [
+    "raw_provider_reasoning",
+    "response_bodies_containing_reasoning",
+    "events",
+    "headers",
+    "profile_data",
+    "session_identifiers",
+    "absolute_local_paths",
+    "source_clone"
+  ],
+  "coreSnapshotHashesMatchCurrent": true,
+  "completeSourceGateReceiptHashVerified": true,
+  "recheckedAt": "2026-11-04T19:31:02.251Z",
+  "directUniqueToolReceiptCountsVerified": true,
+  "reviewPayloadTypesVerified": true,
+  "observedPreparationContextCommitRecordedSeparately": true
+}
