@@ -1,0 +1,246 @@
+{
+  "format": 1,
+  "recordType": "release_and_existing_runtime_completion",
+  "product": "BLACKICE",
+  "version": "2.39.17",
+  "recordedAt": "2026-11-04T19:47:56.000Z",
+  "recordedAtMeaning": "Capture time of the saved final runtime observations; not the restart completion time.",
+  "sourceCommit": "8c85f45b9294d2280a1212e07a2f83d7d6f0b831",
+  "release": {
+    "repository": "MoonlightClarity/BLACKICE",
+    "tag": "v2.39.17",
+    "url": "https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.39.17",
+    "sourceCommit": "8c85f45b9294d2280a1212e07a2f83d7d6f0b831",
+    "draft": false,
+    "publishedAt": "2026-11-04T19:39:22Z",
+    "verifiedAt": "2026-11-04T19:40:36.983Z",
+    "workflow": {
+      "path": ".github/workflows/publish-windows-release.yml",
+      "githubRunId": "41898296728",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/MoonlightClarity/BLACKICE/actions/runs/41898296728",
+      "headCommit": "8c85f45b9294d2280a1212e07a2f83d7d6f0b831",
+      "tagCommit": "8c85f45b9294d2280a1212e07a2f83d7d6f0b831"
+    },
+    "installer": {
+      "name": "Blackice-2.39.17-Setup.exe",
+      "url": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.17/Blackice-2.39.17-Setup.exe",
+      "sizeBytes": 154465457,
+      "sha256": "a0f9e953a136f66afb341564e70f4ea90cd1d59dcb1c558d4b8f31cd7c03cdff",
+      "signingStatus": "unsigned",
+      "rootVerification": {
+        "method": "GitHub asset digest, published SHA256SUMS and installer workflow binding",
+        "downloadedInstallerBinaryAgain": false
+      },
+      "disposableCiValidation": {
+        "passed": true,
+        "platform": "win32",
+        "checkedAt": "2026-11-04T19:38:01.2253366Z",
+        "installExitCode": 0,
+        "uninstallExitCode": 0,
+        "cleanupPassed": true,
+        "filesRemaining": 0,
+        "registrationsRemaining": 0,
+        "shortcutsRemaining": 0
+      }
+    },
+    "publicReadiness": {
+      "passed": true,
+      "publicReleaseReady": true,
+      "classification": "ready-for-public-release-unsigned",
+      "checkedAt": "2026-11-04T19:39:00.374Z",
+      "appFingerprint": "eacfa5c845901152a47d2e51465e88d41d2e04d342964dea983191decb447477",
+      "requiredGatesPassed": true,
+      "receiptUrl": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.17/blackice-public-readiness.json"
+    },
+    "publicationStatusBasis": "Verified GitHub release metadata. Prepublication build/readiness assets retain their historical build-time publication flags."
+  },
+  "sourceGate": {
+    "receipt": "verification/windows-2.39.17.json",
+    "receiptSha256": "a1089b248d7276b42eb97d4544e2835171bbe11b9c13d0d4bd1bb3192f8e2c19",
+    "frozenSourceCommit": "1162e3136dfc7681e2e72c5c022af48767521b15",
+    "releaseSourceCommit": "8c85f45b9294d2280a1212e07a2f83d7d6f0b831",
+    "files": 614,
+    "tests": {
+      "total": 7038,
+      "passed": 7029,
+      "failed": 0,
+      "requiredSkipped": 0,
+      "optionalSkipped": 9,
+      "cancelled": 0,
+      "todo": 0,
+      "exitCode": 0
+    },
+    "appFingerprint": "eacfa5c845901152a47d2e51465e88d41d2e04d342964dea983191decb447477",
+    "sourceIndexSha256": "ef113d04adfce740fad0f0e057bda98a376cd1190aa261a44219b8504af61f9c",
+    "rerunInPublishingWorkflow": false
+  },
+  "runtimeActivation": {
+    "method": "five_file_existing_desktop_runtime_activation",
+    "status": "applied",
+    "appliedAt": "2026-11-04T19:41:47.886Z",
+    "existingDesktopInstallerRun": false,
+    "before": {
+      "version": "2.39.16",
+      "appFingerprint": "fbf7dc618371aa52c5745c1768e54542dfa1a9a2b92428380e02c624ce5359ef"
+    },
+    "after": {
+      "version": "2.39.17",
+      "appFingerprint": "eacfa5c845901152a47d2e51465e88d41d2e04d342964dea983191decb447477",
+      "sourceCommit": "8c85f45b9294d2280a1212e07a2f83d7d6f0b831"
+    },
+    "files": [
+      {
+        "path": "lib/engine.mjs",
+        "beforeSha256": "0a87b1f5b75bbbbb1288c3849f670dc09783689c5688b8e3e94d10abff20db2b",
+        "afterSha256": "a56836a09057c1c5de1fc81e7fbbea62b23a4a9a0d13f0f4eaea5c4bb83b7ebd",
+        "bytes": 226964,
+        "applied": true
+      },
+      {
+        "path": "lib/planning-sequence.mjs",
+        "beforeSha256": "c95ad024ae8c8dbc2c2cdaff8e797a1f3c751d10975f4066597a3981b219bcf4",
+        "afterSha256": "54bf1005f9abc0aa4ef81914122319a86876595babd806eb007e42309300912e",
+        "bytes": 31933,
+        "applied": true
+      },
+      {
+        "path": "lib/provider-output-schema.mjs",
+        "beforeSha256": "c46268c4bb96c5913ded522a9c8931b5e37c31011a223b9a8df25977dc93d290",
+        "afterSha256": "8b1277bd22d548a64905543140dfb83935f036fac01ef25c5c12acd75b4a44e7",
+        "bytes": 3822,
+        "applied": true
+      },
+      {
+        "path": "lib/providers.mjs",
+        "beforeSha256": "6932eb39fae37ca490c24d890544c1c878b03dcb8880e5fc64e6d3e337102417",
+        "afterSha256": "85cd8e833308b5b98240cf72c6c7254b157ce136f0e73c41b1b871aff3abb80b",
+        "bytes": 119788,
+        "applied": true
+      },
+      {
+        "path": "package.json",
+        "beforeSha256": "d048bd9cb4946f2c840ff5941988fc19c1415bd6815d88b47f2bddda739672ad",
+        "afterSha256": "fe8f058905dbca4b2c19324cb4c88ce6302fb661d5e8b5bc17b6f17dfc6f30b7",
+        "bytes": 686,
+        "applied": true
+      }
+    ],
+    "capturedFileVerification": {
+      "filesVerified": 5,
+      "allMatch": true,
+      "fingerprint": "eacfa5c845901152a47d2e51465e88d41d2e04d342964dea983191decb447477"
+    },
+    "nativeRestart": {
+      "provider": "electron",
+      "status": "completed",
+      "requestedAt": "2026-11-04T19:43:00.224Z",
+      "completedAt": "2026-11-04T19:44:26.320Z",
+      "processChanged": true,
+      "profilePreserved": true,
+      "modePreserved": true
+    },
+    "capturedHealth": {
+      "desktopVersion": "2.39.17",
+      "apiVersion": "2.39.17",
+      "httpStatus": 200,
+      "connected": true,
+      "activeTurns": 0,
+      "nativeConnectionAvailable": true
+    }
+  },
+  "behavior": {
+    "fullForcedForm": "objective_failed",
+    "formExecutionResponses": 64,
+    "formToolCalls": 69,
+    "formOpened": false,
+    "formFilled": false,
+    "formSubmitted": false,
+    "decisionComponent": "failed_aggregate_validation",
+    "componentOriginalHostValidationArtifactPresent": false,
+    "posthocStructuralAccepted": 4,
+    "posthocStructuralRejected": 3,
+    "structuralAcceptanceIsBehavioralPass": false,
+    "centralSemanticFailures": [
+      "General SQL familiarity answer volunteered an unrequested production-experience deficit.",
+      "Role assessment imposed an unsupported credential gate/HOLD and omitted the fit/degree drafts it claimed to prepare."
+    ],
+    "newModelInferenceRequested": false,
+    "nativeModelStartedInCapturedObservation": false,
+    "nativeProviderTurnsInCapturedObservation": false,
+    "report": "docs/agency-behavior-report-20261104.md",
+    "methods": "docs/agency-behavior-methods-20261104.md",
+    "evidenceManifest": "verification/agency-20261104/manifest.json"
+  },
+  "chronology": "This completion record follows the unchanged candidate reports, whose publication and activation fields were pending when written. Source verification, publication, CI installer validation, and runtime activation do not change the recorded behavioral failures.",
+  "evidence": {
+    "capturedRuntimeObservationSha256": "88f0a77d2abaa302c3d7a24c692a8808e5c276dae168cc7c61ed881c4e247163",
+    "activationReceiptSha256": "f503758a69cdd9ffeaff106595e9e1485f0a8793873d2649b379b3ed7657f139",
+    "releaseVerificationSummarySha256": "dd1fefee35da9606d89f694eddf761d7229ae6e6e518cd0a0c63beceb9c30288",
+    "originalBehaviorEvidenceManifestSha256": "942ac4b3df4b69e239c849375d7ab40531beb4706617a5816de5f2266a1b77d4",
+    "publicAssets": {
+      "blackice-public-release.json": {
+        "sha256": "a439bd360f33ac83dda60f3321f35fcab6a8733943644c7ed474da3bb4e56f7c",
+        "bytes": 954,
+        "url": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.17/blackice-public-release.json"
+      },
+      "SHA256SUMS.txt": {
+        "sha256": "082c7d9cf95df814078a599278c0bb293d2bbbc3f07bd6546d49cfa7d11fe58c",
+        "bytes": 474,
+        "url": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.17/SHA256SUMS.txt"
+      },
+      "blackice-github-validation.json": {
+        "sha256": "2f51a36e007a32e2b1eb8e9703b45417cc156aaeed547796ae7cfc27f1df5b6a",
+        "bytes": 770,
+        "url": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.17/blackice-github-validation.json"
+      },
+      "blackice-windows-install-validation.json": {
+        "sha256": "a8aacb0064efb529825fe00ee6fad8d970275029f35b4a6825169ebb21f89ae5",
+        "bytes": 3293,
+        "url": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.17/blackice-windows-install-validation.json"
+      },
+      "blackice-runtime-integrity.json": {
+        "sha256": "d6a73c8edb0201d61adba8c48fdcdfc5a472b6df0f06313d46f4a6227d8f38f0",
+        "bytes": 3498,
+        "url": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.17/blackice-runtime-integrity.json"
+      },
+      "blackice-source-test-provenance.json": {
+        "sha256": "d817305b369d97f5eabbaa33a7020c12f5a4f02cb6915b660c9f0af49e57b4e7",
+        "bytes": 870,
+        "url": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.17/blackice-source-test-provenance.json"
+      },
+      "blackice-runtime-validation.json": {
+        "sha256": "6bf4ce11a0ea15824f6797831e47b6f694205bbc5961c8c0846dafa9bb2cb1eb",
+        "bytes": 3044,
+        "url": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.17/blackice-runtime-validation.json"
+      },
+      "blackice-release-receipts.json": {
+        "sha256": "8a4e818712223e7e8dd6059797153262ff73b461334e14b18c3de0879ff8321f",
+        "bytes": 2725,
+        "url": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.17/blackice-release-receipts.json"
+      },
+      "blackice-public-readiness.json": {
+        "sha256": "e4b803b150010b8dea41b163c4ef900e1babbf7ff9e4bf49a32fa21b68c28b5d",
+        "bytes": 2359,
+        "url": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.17/blackice-public-readiness.json"
+      },
+      "blackice-native-workbench-integrity.json": {
+        "sha256": "5680eccd427d636593ac554c6142494b9128522e119c43cae45709316d45af8d",
+        "bytes": 485,
+        "url": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.17/blackice-native-workbench-integrity.json"
+      },
+      "blackice-native-source-validation.json": {
+        "sha256": "4e95f61441073278331083932ba5cf572a1be8280fbf69ffc688ffbf95c69852",
+        "bytes": 528,
+        "url": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.17/blackice-native-source-validation.json"
+      },
+      "blackice-native-sources.json": {
+        "sha256": "c5ef637402f18efa8e8ea72b40c51740c2e2b70a0d8c2944fe3f65d8a67db5e3",
+        "bytes": 716,
+        "url": "https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.17/blackice-native-sources.json"
+      }
+    }
+  }
+}
