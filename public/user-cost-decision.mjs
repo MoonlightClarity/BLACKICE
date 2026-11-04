@@ -61,6 +61,9 @@ const costSchema = {
   type: 'object', additionalProperties: false, required: ['value', 'basis'],
   properties: { value: nullableNumber(USER_COST_MAX_UNITS), basis: stringSchema, zeroCostJustification: stringSchema },
 };
+const severityAnchorDescription = 'Deterministic label for raw conditional risk.severity, never probability * severity. '
+  + USER_COST_ANCHORS.map(({ id, minExclusive, maxInclusive }) => `${id}: ${minExclusive === null ? `severity = ${maxInclusive}` : `${minExclusive} < severity <= ${maxInclusive}`}.`).join(' ')
+  + ' unknown: severity is null. Do not change a supplied severity to fit a label.';
 
 /** Shared by the direct tool schema and persisted planning decision schema. */
 export const USER_COST_DECISION_SCHEMA = {
@@ -90,16 +93,17 @@ export const USER_COST_DECISION_SCHEMA = {
         required: ['id', 'action', 'reversibility', 'outcome', 'risks', 'delayCost', 'interruptionCost', 'opportunityCost'],
         properties: {
           id: idSchema,
-          action: { type: 'string', enum: ['proceed', 'ask', 'defer'] },
+          action: { type: 'string', enum: ['proceed', 'ask', 'defer'], description: 'Every ask option needs a complete clarification object, even when unselected or unhelpful. A question without information value remains an ask option to compare honestly.' },
           reversibility: { type: 'string', enum: ['reversible', 'partly_reversible', 'irreversible'] },
           outcome: stringSchema,
           risks: {
             type: 'array', maxItems: 32,
+            description: 'List distinct consequences supported by task evidence or supplied assumptions. Use [] when none are established. Do not pad with generic categories, no-risk sentinels or unknown placeholders for unsupplied consequences. Use null estimates only for an actual relevant consequence with an unknown estimate. Count each loss once; named delay, interruption and opportunity costs belong in their separate fields.',
             items: {
               type: 'object', additionalProperties: false,
               required: ['id', 'probability', 'severity', 'probabilityBasis', 'severityBasis'],
               properties: {
-                id: idSchema, probability: nullableNumber(1), severity: nullableNumber(USER_COST_MAX_UNITS),
+                id: idSchema, probability: nullableNumber(1), severity: { ...nullableNumber(USER_COST_MAX_UNITS), description: 'Conditional loss if this event occurs, in minute-equivalent user-loss units, before multiplying by probability. Preserve supplied severity; null means this actual consequence has no known estimate.' },
                 probabilityRange: rangeSchema(1), severityRange: rangeSchema(USER_COST_MAX_UNITS),
                 probabilityBasis: {
                   type: 'object', additionalProperties: false, required: ['kind', 'rationale'],
@@ -114,19 +118,22 @@ export const USER_COST_DECISION_SCHEMA = {
                   type: 'object', additionalProperties: false,
                   required: ['anchor', 'consequence', 'conversionBasis'],
                   properties: {
-                    anchor: { type: 'string', enum: [...USER_COST_ANCHORS.map((item) => item.id), 'unknown'] },
+                    anchor: { type: 'string', enum: [...USER_COST_ANCHORS.map((item) => item.id), 'unknown'], description: severityAnchorDescription },
                     consequence: stringSchema, conversionBasis: stringSchema,
                   },
                 },
               },
             },
           },
-          delayCost: costSchema, interruptionCost: costSchema, opportunityCost: costSchema,
+          delayCost: { ...costSchema, description: 'Direct cost of waiting on the common comparison horizon. Preserve supplied values and count this loss once, excluding any loss already represented in risks or another cost field.' },
+          interruptionCost: { ...costSchema, description: 'User attention or disruption from asking or interrupting, counted once here. Do not duplicate the same loss in a risk row. Preserve supplied values and basis; zero-cost asking needs its explicit zeroCostJustification.' },
+          opportunityCost: { ...costSchema, description: 'Distinct foregone progress or opportunity on the common horizon. Preserve supplied values and exclude losses already counted as delay, interruption or risk.' },
           clarification: {
             type: 'object', additionalProperties: false,
+            description: 'Required for every ask option, including unselected or unhelpful questions. Supply all four fields. If no new information is needed or the answer cannot change the action, state that honestly; do not invent information value. For proceed or defer, omit this field in direct inputs or use null in a strict provider response.',
             required: ['baselineOptionId', 'informationNeeded', 'howAnswerChangesAction', 'residualRiskBasis'],
             properties: {
-              baselineOptionId: idSchema, informationNeeded: stringSchema,
+              baselineOptionId: { ...idSchema, description: 'Exact id of a proceed option in this same options array; it is the baseline for the value of asking.' }, informationNeeded: stringSchema,
               howAnswerChangesAction: stringSchema, residualRiskBasis: stringSchema,
             },
           },
@@ -213,7 +220,8 @@ function validateInput(input) {
       if (risk.severity === null) {
         if (risk.severityBasis.anchor !== 'unknown') invalid(riskPath, 'unknown severity requires the unknown anchor');
       } else if (!anchor || risk.severity > anchor.maxInclusive || (anchor.minExclusive !== null && risk.severity <= anchor.minExclusive)) {
-        invalid(riskPath, 'severity does not match its concrete consequence anchor');
+        const requiredAnchor = USER_COST_ANCHORS.find(item => risk.severity <= item.maxInclusive && (item.minExclusive === null || risk.severity > item.minExclusive));
+        invalid(riskPath, 'severity does not match its concrete consequence anchor. Raw conditional severity ' + risk.severity + ' requires severityBasis.anchor:"' + requiredAnchor.id + '"; do not classify probability * severity or change the supplied severity.');
       }
       validateRange(risk.probabilityRange, risk.probability, `${riskPath}.probabilityRange`);
       validateRange(risk.severityRange, risk.severity, `${riskPath}.severityRange`);
@@ -362,10 +370,18 @@ export function evaluateUserCostDecision(input) {
   const provenUnhelpfulQuestion = (option) => asksWithoutInformationValue(option) && option.informationValue.worthInterrupting === false;
   const unresolved = eligible.filter((option) => !provenUnhelpfulQuestion(option) && (option.totalCost === null || (asksWithoutInformationValue(option) && option.informationValue.worthInterrupting === null)));
   const rankable = rankOptions(eligible.filter((option) => option.totalCost !== null && !asksWithoutInformationValue(option)));
-  // Do not hide a known-cost question whose information value is unresolved.
-  // Nor let an unknown whose domain lower bound exceeds the best known cost
-  // stall progress. Keep the central estimate null in either case.
-  const materiallyIncomplete = unresolved.filter((option) => !rankable[0] || numericCompare(option.totalRange.min, rankable[0].totalCost) <= 0);
+  // Unknowns retain their null central estimates. A lower bound above the
+  // known winner, or a tied bound that loses the existing preference order,
+  // cannot change that choice. A bound below the exact known minimum remains
+  // material: it could shift the fixed-minimum rounding-tolerance groups.
+  const knownMinimum = rankable.length ? Math.min(...rankable.map(option => option.totalCost)) : null;
+  const materiallyIncomplete = unresolved.filter((option) => {
+    const winner = rankable[0];
+    if (!winner) return true;
+    const lower = option.totalRange.min, compared = numericCompare(lower, winner.totalCost);
+    if (compared > 0) return false;
+    return compared < 0 || lower < knownMinimum || optionPreference(option, winner) < 0;
+  });
   const status = eligible.length === 0 ? 'no_eligible_option' : materiallyIncomplete.length ? 'needs_estimates' : 'evaluated';
   const winner = status === 'evaluated' ? rankable[0] || null : null;
   const overlappingOptions = winner ? eligible.filter((option) => option.optionId !== winner.optionId && option.totalRange.min !== null && winner.totalRange.max !== null && numericCompare(option.totalRange.min, winner.totalRange.max) <= 0).map((option) => option.optionId) : [];

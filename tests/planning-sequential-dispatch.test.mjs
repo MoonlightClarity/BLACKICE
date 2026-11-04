@@ -71,6 +71,74 @@ test('a saved revision alone does not reconcile or replay a completed call', asy
   assert.equal(f.effects, 1);
 });
 
+test('result recovery names the current step update without completing a partially performed criterion', async t => {
+  const first = { ...leaf('first', 'active'), result: 'Both fixture outputs are written.', doneWhen: 'Both first.txt and second.txt contain their requested outputs.' };
+  const f = await fixture(t, { schemaVersion: 13, layout: 'parallel', steps: [first, leaf('second')] }), worker = await f.guard();
+  const originalReceipt = await worker.dispatch(call('first'));
+  assert.equal(originalReceipt.success, true);
+  let state = await worker.task({ action: 'read' });
+  state = await worker.task({ action: 'edit', expectedRevision: state.revision, operations: [{ type: 'metadata', patch: { focusStepId: 'first' } }] });
+  state = await worker.task({ action: 'step', expectedRevision: state.revision, stepId: 'first', evidence: 'first.txt was written; second.txt has not been written.' });
+  const beforeState = await readFile(f.store.file('task-one'), 'utf8'), beforeLedger = await readFile(f.sequenceFile(), 'utf8');
+  const rejected = await worker.dispatch(call('second'));
+  assert.equal(rejected.code, 'TASK_PLAN_RESULT_REQUIRED');
+  const diagnostic = body(rejected), { recovery } = diagnostic;
+  assert.deepEqual(recovery.arguments, { action: 'step', expectedRevision: state.revision, stepId: 'first' });
+  assert.equal(recovery.tool, 'relay_task');
+  assert.equal(Object.hasOwn(recovery.arguments, 'status'), false, 'The hint must not choose completion on behalf of the agent.');
+  assert.deepEqual(recovery.outcomes.done.requiredFields, ['evidence']);
+  assert.deepEqual(recovery.outcomes.blocked.requiredFields, ['blockedReason']);
+  assert.deepEqual(recovery.outcomes.skipped.requiredFields, ['skipReason']);
+  assert.match(recovery.outcomes.done.when, /criterion.*satisfied/);
+  assert.ok(diagnostic.message.includes(JSON.stringify(recovery.arguments)));
+  assert.match(diagnostic.message, /top level/);
+  assert.match(diagnostic.message, /Evidence alone on an active step does not record a terminal outcome/);
+  assert.equal(await readFile(f.store.file('task-one'), 'utf8'), beforeState);
+  assert.equal(await readFile(f.sequenceFile(), 'utf8'), beforeLedger, 'A recovery diagnostic cannot mutate the original dispatch receipt.');
+  assert.equal(f.effects, 1);
+  state = await worker.task({ ...recovery.arguments, status: 'blocked', blockedReason: 'Only the first output was written; the second output remains.', evidence: 'first.txt contains first. No second output has been dispatched.' });
+  const recorded = state.steps.find(step => step.id === 'first');
+  assert.equal(recorded.status, 'blocked');
+  for (const key of recovery.preserveFields) assert.deepEqual(recorded[key], first[key]);
+  const { reported, ...preserved } = JSON.parse(await readFile(f.sequenceFile(), 'utf8')).records[0];
+  assert.deepEqual(preserved, JSON.parse(beforeLedger).records[0]);
+  assert.deepEqual(reported, { revision: state.revision, confirmed: false });
+  assert.deepEqual(await worker.dispatch(call('first')), originalReceipt, 'An exact replay returns the existing receipt without repeating its effect.');
+  assert.equal(f.effects, 1);
+  state = await worker.task({ action: 'step', expectedRevision: state.revision, stepId: 'second', status: 'active' });
+  assert.equal((await worker.dispatch({ ...call('remaining-output'), arguments: call('second').arguments })).success, true);
+  assert.equal(f.effects, 2);
+  assert.equal(await readFile(path.join(f.cwd, 'first.txt'), 'utf8'), 'first');
+  assert.equal(await readFile(path.join(f.cwd, 'second.txt'), 'utf8'), 'second');
+});
+
+test('a rejected redefinition supplies an actionable outcome update and preserves the dispatched definition', async t => {
+  const f = await fixture(t, { schemaVersion: 13 }), worker = await f.guard();
+  await worker.dispatch(call('first'));
+  const state = await worker.task({ action: 'read' });
+  const beforeState = await readFile(f.store.file('task-one'), 'utf8'), beforeLedger = await readFile(f.sequenceFile(), 'utf8');
+  const operations = [{ type: 'update', stepId: 'first', patch: { note: 'Redefine this already dispatched operation as new work.' } }];
+  let failure;
+  await assert.rejects(f.store.editPlan('task-one', { operations }, { expectedRevision: state.revision, schemaVersion: 13, source: 'human', executionGuardrails: true }), error => {
+    failure = error; return error.code === 'TASK_PLAN_RESULT_REQUIRED' && error.status === 409;
+  });
+  assert.deepEqual(failure.recovery.arguments, { action: 'step', expectedRevision: state.revision, stepId: 'first' });
+  const receipt = await worker.dispatch({ name: 'relay_task', arguments: { action: 'edit', expectedRevision: state.revision, operations } });
+  assert.equal(receipt.code, 'TASK_PLAN_RESULT_REQUIRED');
+  assert.ok(body(receipt).error.includes(JSON.stringify(failure.recovery.arguments)), 'The concrete recovery call also survives task-tool error serialization.');
+  assert.match(body(receipt).error, /status:"done" with evidence only when the saved doneWhen is satisfied/);
+  assert.equal(await readFile(f.store.file('task-one'), 'utf8'), beforeState);
+  assert.equal(await readFile(f.sequenceFile(), 'utf8'), beforeLedger);
+  const recorded = await worker.task({ ...failure.recovery.arguments, status: 'done', evidence: 'The actual first write returned success, and first.txt contains first.' });
+  const completed = recorded.steps.find(step => step.id === 'first');
+  assert.equal(completed.status, 'done');
+  for (const key of failure.recovery.preserveFields) assert.deepEqual(completed[key], state.steps.find(step => step.id === 'first')[key]);
+  const { reported, ...preserved } = JSON.parse(await readFile(f.sequenceFile(), 'utf8')).records[0];
+  assert.deepEqual(preserved, JSON.parse(beforeLedger).records[0]);
+  assert.deepEqual(reported, { revision: recorded.revision, confirmed: true });
+  assert.equal(f.effects, 1);
+});
+
 test('concurrent guards reserve one task operation atomically', async t => {
   const f = await fixture(t); let enter, release, executions = 0;
   const entered = new Promise(resolve => { enter = resolve; }), held = new Promise(resolve => { release = resolve; });
@@ -176,7 +244,11 @@ test('explicit revisit opens one new attempt after the actual earlier outcome is
   let state = await worker.task({ action: 'read' });
   const premature = await worker.dispatch({ name: 'relay_task', arguments: { action: 'edit', expectedRevision: state.revision, operations: [{ type: 'revisit', stepId: 'first', reason: 'New thinking changes the operation.' }] } });
   assert.equal(premature.code, 'TASK_PLAN_RESULT_REQUIRED');
-  state = await worker.task({ action: 'step', expectedRevision: state.revision, stepId: 'first', status: 'done', evidence: 'The first actual write returned its expected fixture result.' });
+  const recovery = body(premature).recovery;
+  assert.deepEqual(recovery.arguments, { action: 'step', expectedRevision: state.revision, stepId: 'first' });
+  assert.equal((await f.store.get('task-one')).revision, state.revision);
+  assert.equal(JSON.parse(await readFile(f.sequenceFile(), 'utf8')).records.length, 1);
+  state = await worker.task({ ...recovery.arguments, status: 'done', evidence: 'The first actual write returned its expected fixture result.' });
   state = await worker.task({ action: 'edit', expectedRevision: state.revision, operations: [{ type: 'revisit', stepId: 'first', reason: 'Reassess the earlier checked write under the new requirement.' }] });
   assert.equal(state.steps[0].attempt, 2); assert.equal(state.steps[0].pastAttempts[0].status, 'done');
   state = await worker.task({ action: 'step', expectedRevision: state.revision, stepId: 'first', status: 'active' });
@@ -225,7 +297,12 @@ for (const claimedDone of [false, true]) test(`an effect followed by AbortError 
   const record = JSON.parse(await readFile(f.sequenceFile(), 'utf8')).records[0];
   assert.equal(record.status, 'running'); assert.equal(record.success, undefined);
   let state = await worker.task({ action: 'read' });
-  state = await worker.task({ action: 'step', expectedRevision: state.revision, stepId: 'first', ...(claimedDone
+  const resultRequired = await worker.dispatch(call('premature-retry'));
+  assert.equal(resultRequired.code, 'TASK_PLAN_RESULT_REQUIRED');
+  const recovery = body(resultRequired).recovery;
+  assert.deepEqual(recovery.arguments, { action: 'step', expectedRevision: state.revision, stepId: 'first' });
+  assert.match(recovery.instruction, /neither reconciles an interrupted effect nor authorizes a retry/);
+  state = await worker.task({ ...recovery.arguments, ...(claimedDone
     ? { status: 'done', evidence: 'The wrapper threw AbortError; the model claims this completed the action without a fresh observation.' }
     : { status: 'blocked', blockedReason: 'The handler was interrupted after dispatch; its actual effect is unknown.' }) });
   state = await worker.task({ action: 'edit', expectedRevision: state.revision, operations: [{ type: 'revisit', stepId: 'first', reason: 'Reassess the interrupted operation before deciding on a retry.' }] });

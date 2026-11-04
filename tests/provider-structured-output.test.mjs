@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
@@ -8,8 +9,8 @@ import { ProviderRuntime } from '../lib/providers.mjs';
 import { compatibleWireOutputSchema, strictProviderSchema } from '../lib/provider-output-schema.mjs';
 import { planningModuleOutputSchema, validatePlanningModuleResponse } from '../lib/planning-browser-runtime.mjs';
 import { responseCycleTemplate } from '../public/response-cycle-model.mjs';
-import { evaluateUserAgencyCheckpoint } from '../public/planning-user-agency.mjs';
-import { evaluateUserCostDecision } from '../public/user-cost-decision.mjs';
+import { evaluateUserAgencyCheckpoint, USER_AGENCY_OUTPUT_SCHEMA } from '../public/planning-user-agency.mjs';
+import { evaluateUserCostDecision, USER_COST_ANCHORS, USER_COST_DECISION_SCHEMA } from '../public/user-cost-decision.mjs';
 
 const schema = { type: 'object', additionalProperties: false, required: ['answer', 'accuracy'], properties: {
   answer: { type: 'string' }, accuracy: { anyOf: [{ type: 'object', additionalProperties: false, required: ['tolerance'], properties: { tolerance: { type: 'string' } } }, { type: 'null' }] }
@@ -139,6 +140,66 @@ test('actual five-stage schemas remain recursively closed and fully required, in
   }
   assert.equal(strictProviderSchema(schema), true);
   assert.equal(strictProviderSchema({ ...schema, properties: { answer: { type: 'string', enum: [] }, accuracy: schema.properties.accuracy } }), false);
+});
+
+test('decision guidance preserves the original raw, strict-output and compatible-wire contracts apart from descriptions', () => {
+  const withoutDescriptions = value => Array.isArray(value) ? value.map(withoutDescriptions)
+    : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'description').map(([key, item]) => [key, withoutDescriptions(item)])) : value;
+  const digest = value => createHash('sha256').update(JSON.stringify(withoutDescriptions(value))).digest('hex');
+  // Captured before the descriptions-only change. This includes every type,
+  // enum, required field, null branch, numeric bound and collection constraint.
+  assert.deepEqual([USER_COST_DECISION_SCHEMA, USER_AGENCY_OUTPUT_SCHEMA, compatibleWireOutputSchema(USER_AGENCY_OUTPUT_SCHEMA)].map(digest), [
+    '186662352ec15a5006ce8effa6ddea6c447aeab470612cd42ef78f5172b719ba',
+    'b342edb11fbb4e7b7b46f5280d71886bc4575fe09141a8cac0e403dacbb31af2',
+    '2a1db21985562ee86cd46889bdfcd6424635ea5417e77bc74aa8404470adfbbf'
+  ]);
+  assert.equal(strictProviderSchema(USER_AGENCY_OUTPUT_SCHEMA), true);
+});
+
+test('anchor guidance stays attached to raw conditional severity and reflects every authoritative interval', () => {
+  const fields = USER_COST_DECISION_SCHEMA.properties.options.items.properties;
+  const risk = fields.risks.items.properties, description = risk.severityBasis.properties.anchor.description;
+  assert.match(risk.severity.description, /Conditional loss.*before multiplying by probability/);
+  assert.match(description, /raw conditional risk\.severity, never probability \* severity/);
+  for (const anchor of USER_COST_ANCHORS) {
+    const interval = anchor.minExclusive === null ? `severity = ${anchor.maxInclusive}` : `${anchor.minExclusive} < severity <= ${anchor.maxInclusive}`;
+    assert.ok(description.includes(`${anchor.id}: ${interval}.`), anchor.id);
+  }
+  assert.match(description, /unknown: severity is null/);
+  assert.match(fields.risks.description, /Use \[\] when none are established/);
+  assert.match(fields.risks.description, /unknown placeholders for unsupplied consequences/);
+  assert.match(fields.interruptionCost.description, /Do not duplicate the same loss in a risk row/);
+  assert.match(fields.clarification.description, /every ask option, including unselected or unhelpful/);
+});
+
+test('actual Planning wire preserves decision field guidance including the nullable clarification wrapper', async t => {
+  const template = responseCycleTemplate('viability');
+  const attempt = { node: { kind: 'viability' }, template, userAgencyVersion: 1, sources: [], challenges: [], workflowNodeIds: [] };
+  const body = {
+    values: Object.fromEntries(template.fields.map(field => [field.id, 'A bounded synthetic finding supports this field.'])),
+    grounding: [], openQuestions: [], challengeResponses: [], requirements: [],
+    userAgency: { version: 1, audience: 'internal', userBenefit: 'Complete the supplied synthetic comparison.',
+      representation: { actualQuestion: 'Report the already checked synthetic result.', requiredFacts: [], relevantClaims: [], privateFindings: [], userReport: [] },
+      action: 'proceed', decisionRequired: false, decisionReason: 'The synthetic result is checked and needs no further decision.', decisions: [], chosenDecisionId: null }
+  };
+  const original = planningModuleOutputSchema(attempt), before = structuredClone(original);
+  const f = await fixture(t, { outputSchema: original, output: JSON.stringify(body) });
+  const result = await f.runtime.runAgent(f.options);
+  validatePlanningModuleResponse(attempt, JSON.parse(result.output));
+  const wire = f.requests.find(request => request.method === 'POST').body.response_format.json_schema.schema;
+  const fields = wire.properties.userAgency.properties.decisions.items.properties.input.properties.options.items.properties;
+  const raw = USER_COST_DECISION_SCHEMA.properties.options.items.properties;
+  for (const key of ['action', 'risks', 'delayCost', 'interruptionCost', 'opportunityCost', 'clarification']) {
+    assert.equal(typeof raw[key].description, 'string', key);
+    assert.equal(fields[key].description, raw[key].description, key);
+  }
+  assert.equal(fields.clarification.anyOf[0].description, raw.clarification.description);
+  assert.equal(fields.clarification.anyOf[1].type, 'null');
+  assert.equal(fields.clarification.anyOf[0].properties.baselineOptionId.description, raw.clarification.properties.baselineOptionId.description);
+  const wireRisk = fields.risks.items.properties, rawRisk = raw.risks.items.properties;
+  assert.equal(wireRisk.severity.description, rawRisk.severity.description);
+  assert.equal(wireRisk.severityBasis.properties.anchor.description, rawRisk.severityBasis.properties.anchor.description);
+  assert.deepEqual(original, before, 'Provider conversion does not mutate the source schema.');
 });
 
 test('strict agency output preserves unknown estimates while only optional null markers become absent', () => {

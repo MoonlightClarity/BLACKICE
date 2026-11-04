@@ -113,7 +113,7 @@ async function main(args) {
     setup = await createFreeEvaluationRuntime({ root });
     report.catalog = setup.catalog;
     report.sourceHashes = {};
-    for (const file of ['package.json', 'lib/engine.mjs', 'lib/planning-sequence.mjs', 'lib/providers.mjs', 'lib/provider-output-schema.mjs', 'lib/provider-store.mjs', 'skills/planning/SKILL.md', 'scripts/verify-luna-advocacy.mjs', 'scripts/verify-free-advocacy.mjs']) {
+    for (const file of ['package.json', 'lib/engine.mjs', 'lib/planning-sequence.mjs', 'lib/providers.mjs', 'lib/provider-output-schema.mjs', 'lib/provider-store.mjs', 'public/planning-user-agency.mjs', 'public/user-cost-decision.mjs', 'skills/planning/SKILL.md', 'scripts/verify-luna-advocacy.mjs', 'scripts/verify-free-advocacy.mjs']) {
       report.sourceHashes[file] = hash(await fs.readFile(new URL('../' + file, import.meta.url)));
     }
     report.status = 'running';

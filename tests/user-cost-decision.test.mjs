@@ -337,6 +337,77 @@ test('nonnegative unknown domains prove domination without an explicit range', (
   assert.deepEqual(row(unknownFriction, 'uncertain').totalRange, { min: 10, max: 1_000_110 });
 });
 
+test('unknown alternatives that can only tie and lose the preference order do not stall progress', () => {
+  for (const base of [0, 7]) {
+    const proceed = option('proceed', 'proceed', [], base);
+    const defer = option('defer', 'defer');
+    defer.delayCost = cost(base);
+    defer.opportunityCost = cost(null, 'Foregone opportunity is unknown and nonnegative.');
+    const irreversible = option('irreversible', 'proceed', [risk(null, 20)]);
+    irreversible.reversibility = 'irreversible';
+    irreversible.delayCost = cost(base);
+    for (const options of [[proceed, defer, irreversible], [irreversible, defer, proceed]]) {
+      const input = { decision: 'Continue when all unknown alternatives lose even at their lower bounds.', assumptions: [], hardConstraints: [], options };
+      const before = structuredClone(input), result = evaluateUserCostDecision(input);
+      assert.equal(result.status, 'evaluated');
+      assert.equal(result.recommendedOptionId, 'proceed');
+      assert.equal(result.recommendedCost, base);
+      assert.equal(row(result, 'defer').opportunityCost.value, null);
+      assert.equal(row(result, 'irreversible').riskCosts[0].probability, null);
+      assert.equal(result.unknowns.length, 2);
+      assert.deepEqual(input, before, 'The domain proof does not replace unknown values.');
+      assert.equal(assertUserCostChoice(input, 'proceed').preferredAction, 'proceed');
+      // Resolve both independent unknowns at the boundary, an interior value,
+      // and the maximum. Every completion preserves the same actual winner.
+      for (const opportunity of [0, 3, USER_COST_MAX_UNITS]) for (const probability of [0, 0.5, 1]) {
+        const completed = structuredClone(input);
+        completed.options.find(item => item.id === 'defer').opportunityCost.value = opportunity;
+        const consequence = completed.options.find(item => item.id === 'irreversible').risks[0];
+        consequence.probability = probability; consequence.probabilityBasis.kind = 'assumption';
+        assert.equal(evaluateUserCostDecision(completed).recommendedOptionId, 'proceed');
+      }
+    }
+  }
+});
+
+test('unknown alternatives remain material when their cost or tie preference can change the winner', () => {
+  for (const kind of ['lower_cost', 'stable_id', 'reversibility']) {
+    const known = option('b', 'proceed', [], 7), unknown = option('a', 'proceed');
+    unknown.delayCost = cost(kind === 'lower_cost' ? 6 : 7);
+    unknown.opportunityCost = cost(null);
+    if (kind === 'reversibility') known.reversibility = 'irreversible';
+    const input = { decision: 'Resolve a genuinely decision-changing unknown.', assumptions: [], hardConstraints: [], options: [known, unknown] };
+    assert.equal(evaluateUserCostDecision(input).status, 'needs_estimates');
+    assert.throws(() => assertUserCostChoice(input, 'b'), /refinement/);
+    const boundary = structuredClone(input); boundary.options[1].opportunityCost.value = 0;
+    assert.equal(evaluateUserCostDecision(boundary).recommendedOptionId, 'a');
+    boundary.options[1].opportunityCost.value = 10;
+    assert.equal(evaluateUserCostDecision(boundary).recommendedOptionId, 'b');
+  }
+});
+
+test('unknown bounds cannot silently shift the fixed-minimum rounding group', () => {
+  const known = [option('c', 'proceed', [], 1), option('b', 'proceed', [], 1 + 6 * Number.EPSILON)];
+  const uncertain = option('z', 'proceed', [{ ...risk(null, 1), probabilityRange: { min: 1 - 4 * Number.EPSILON, max: 1 } }]);
+  const input = { decision: 'Keep a decision-changing minimum explicit.', assumptions: [], hardConstraints: [], options: [...known, uncertain] };
+  assert.equal(evaluateUserCostDecision(input).status, 'needs_estimates');
+  const completed = structuredClone(input), consequence = completed.options[2].risks[0];
+  consequence.probabilityBasis.kind = 'assumption';
+  consequence.probability = consequence.probabilityRange.min;
+  assert.equal(evaluateUserCostDecision(completed).recommendedOptionId, 'c');
+  consequence.probability = consequence.probabilityRange.max;
+  assert.equal(evaluateUserCostDecision(completed).recommendedOptionId, 'b');
+});
+
+test('anchor mismatch gives the exact conditional-severity correction without repairing input', () => {
+  const input = comparison(0.1, 80), before = structuredClone(input);
+  input.options[0].risks[0].severityBasis.anchor = 'bounded_rework';
+  before.options[0].risks[0].severityBasis.anchor = 'bounded_rework';
+  assert.throws(() => evaluateUserCostDecision(input), error => error.code === 'INVALID_USER_COST_DECISION'
+    && /Raw conditional severity 80 requires severityBasis.anchor:"substantial_rework"/.test(error.message));
+  assert.deepEqual(input, before);
+});
+
 test('overflowing break-even thresholds are explicit and survive JSON serialization', () => {
   const input = comparison(0.5, Number.MIN_VALUE);
   const result = evaluateUserCostDecision(input);

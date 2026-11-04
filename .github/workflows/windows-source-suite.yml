@@ -1,0 +1,129 @@
+name: Verify Windows source suite 2.39.18
+
+on:
+  push:
+    branches: [fix/agency-execution-20261104]
+    # Importing only the completed receipt cannot change the tested source.
+    # Do not ignore verification/**: it contains the executable gate runner.
+    paths-ignore: ['verification/windows-2.39.18.json']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-source-suite-fix-agency-execution-20261104
+  cancel-in-progress: false
+
+jobs:
+  source-suite:
+    if: github.repository == 'MoonlightClarity/BLACKICE' && github.ref == 'refs/heads/fix/agency-execution-20261104'
+    runs-on: windows-2025
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: source
+    env:
+      EXPECTED_SOURCE_COMMIT: ${{ github.sha }}
+      # Reviewed runtime fingerprint; CI recomputes it on the exact pushed source.
+      EXPECTED_FINGERPRINT: f03faed01d6cb4e9f1d43678ac05baaf328994468a9883fd8f5280d4cdf7551c
+      SOURCE_SUITE_RUNNER: verification/release-source-suite-20261104-v23918-r1.mjs
+      SOURCE_SUITE_OUTPUT: verification/release-source-suite-20261104-v23918-r1
+      SOURCE_TEST_RECEIPT: verification/windows-2.39.18.json
+    steps:
+      - name: Fetch the exact pushed source without persisted credentials
+        working-directory: ${{ github.workspace }}
+        run: |
+          $ErrorActionPreference='Stop'
+          if ($env:GITHUB_EVENT_NAME -cne 'push' -or $env:GITHUB_REF -cne 'refs/heads/fix/agency-execution-20261104' -or
+              $env:EXPECTED_SOURCE_COMMIT -cnotmatch '^[a-f0-9]{40}$' -or $env:EXPECTED_FINGERPRINT -cnotmatch '^[a-f0-9]{64}$') { throw 'Source suite requires this branch push, its exact commit and a reviewed candidate fingerprint.' }
+          if ($env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or $env:GITHUB_SERVER_URL -cne 'https://github.com') { throw 'Use a fresh GitHub-hosted Windows runner.' }
+          $source=Join-Path $env:GITHUB_WORKSPACE 'source'
+          if (Test-Path -LiteralPath $source) { throw 'Source checkout already exists.' }
+          git init $source
+          if ($LASTEXITCODE -ne 0) { throw 'git init failed.' }
+          git -C $source config core.autocrlf false
+          if ($LASTEXITCODE -ne 0) { throw 'git configuration failed.' }
+          git -C $source remote add origin "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY.git"
+          if ($LASTEXITCODE -ne 0) { throw 'git remote failed.' }
+          git -C $source fetch --no-tags --depth=1 origin $env:EXPECTED_SOURCE_COMMIT
+          if ($LASTEXITCODE -ne 0) { throw 'Exact source fetch failed.' }
+          git -C $source checkout --detach FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Exact source checkout failed.' }
+          $actual=(git -C $source rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -cne $env:EXPECTED_SOURCE_COMMIT) { throw 'Fetched source SHA mismatch.' }
+          "BLACKICE_SOURCE=$source" >> $env:GITHUB_ENV
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.2'
+          package-manager-cache: false
+
+      - name: Verify candidate identity and install locked dependencies
+        run: |
+          $ErrorActionPreference='Stop'
+          $identity=node -p 'JSON.stringify({platform:process.platform,node:process.version})'
+          if ($LASTEXITCODE -ne 0) { throw 'Node identity read failed.' }
+          $identity=$identity | ConvertFrom-Json
+          if ($identity.platform -cne 'win32' -or $identity.node -cne 'v24.22.2') { throw 'Pinned Windows Node v24.22.2 is required.' }
+          $raw=node scripts/release-check.mjs --fingerprint
+          if ($LASTEXITCODE -ne 0) { throw 'Application fingerprint read failed.' }
+          $candidate=$raw | ConvertFrom-Json
+          if ($candidate.version -cne '2.39.18' -or $candidate.appFingerprint -cne $env:EXPECTED_FINGERPRINT) { throw 'The pushed application does not match the reviewed 2.39.18 candidate.' }
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'Locked dependency installation failed.' }
+          git diff --quiet HEAD --
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation changed tracked source.' }
+
+      - name: Prepare the complete frozen source inventory
+        id: prepare
+        run: |
+          $ErrorActionPreference='Stop'
+          node $env:SOURCE_SUITE_RUNNER prepare --fingerprint $env:EXPECTED_FINGERPRINT --source-commit $env:EXPECTED_SOURCE_COMMIT
+          if ($LASTEXITCODE -ne 0) { throw 'Source suite preparation failed.' }
+
+      - name: Run every source-test group exactly once
+        run: |
+          $ErrorActionPreference='Stop'
+          $state=Get-Content -Raw -LiteralPath (Join-Path $env:SOURCE_SUITE_OUTPUT 'state.json') | ConvertFrom-Json
+          if ($state.groups.Count -lt 1) { throw 'No source-test groups were prepared.' }
+          for ($index=0; $index -lt $state.groups.Count; $index++) {
+            node $env:SOURCE_SUITE_RUNNER batch $index
+            if ($LASTEXITCODE -ne 0) { throw "Source suite group $index failed; its evidence is preserved. No group is retried or skipped." }
+          }
+
+      - name: Finish and verify the versioned source-test receipt
+        run: |
+          $ErrorActionPreference='Stop'
+          node $env:SOURCE_SUITE_RUNNER finish
+          if ($LASTEXITCODE -ne 0) { throw 'Complete source-suite gate failed.' }
+          $receipt=Get-Content -Raw -LiteralPath $env:SOURCE_TEST_RECEIPT | ConvertFrom-Json
+          if (!$receipt.passed -or !$receipt.fullSuite -or !$receipt.countsComplete -or !$receipt.sourceUnchanged -or
+              !$receipt.fingerprintUnchanged -or !$receipt.optionalSkipPolicyValid -or !$receipt.execution.uniqueCoverageVerified -or
+              $receipt.sourceCommit -cne $env:EXPECTED_SOURCE_COMMIT -or $receipt.appFingerprint -cne $env:EXPECTED_FINGERPRINT -or
+              $receipt.version -cne '2.39.18' -or $receipt.platform -cne 'win32' -or $receipt.node -cne 'v24.22.2' -or
+              $receipt.tests.failed -ne 0 -or $receipt.tests.requiredSkipped -ne 0 -or $receipt.tests.cancelled -ne 0 -or
+              $receipt.tests.todo -ne 0 -or $receipt.tests.exitCode -ne 0) { throw 'Final source receipt is incomplete or has a mismatched candidate.' }
+          "## Windows source suite`n`nSource: $env:EXPECTED_SOURCE_COMMIT`n`nFingerprint: $env:EXPECTED_FINGERPRINT`n`nPassed: $($receipt.tests.passed). Optional skips: $($receipt.tests.optionalSkipped). Required skips: $($receipt.tests.requiredSkipped).`n`nThis receipt covers synthetic source tests. Live model acceptance and exact installed-candidate verification remain separate." >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Preserve the receipt and complete or failed batch evidence
+        id: evidence
+        if: ${{ always() && steps.prepare.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: blackice-source-suite-2.39.18-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            source/verification/windows-2.39.18.json
+            source/verification/release-source-suite-20261104-v23918-r1/
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: false
+
+      - name: Record artifact retrieval information
+        if: ${{ always() && steps.evidence.outcome == 'success' }}
+        env:
+          EVIDENCE_URL: ${{ steps.evidence.outputs.artifact-url }}
+          EVIDENCE_ID: ${{ steps.evidence.outputs.artifact-id }}
+          EVIDENCE_DIGEST: ${{ steps.evidence.outputs.artifact-digest }}
+        run: |
+          "Artifact: $env:EVIDENCE_URL`n`nArtifact ID: $env:EVIDENCE_ID`n`nArtifact SHA-256: $env:EVIDENCE_DIGEST`n`nThe artifact is evidence, not a release. No version, tag, release or repository file is changed by this workflow." >> $env:GITHUB_STEP_SUMMARY
