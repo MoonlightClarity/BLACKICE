@@ -356,7 +356,11 @@ export function evaluateUserCostDecision(input) {
   }
   const eligible = comparableCosts.filter((option) => option.eligible);
   const asksWithoutInformationValue = (option) => option.action === 'ask' && option.informationValue.baselineEligible && option.informationValue.worthInterrupting !== true;
-  const unresolved = eligible.filter((option) => option.totalCost === null || (asksWithoutInformationValue(option) && option.informationValue.worthInterrupting === null));
+  // A question already proven no better than its eligible proceed baseline
+  // cannot make a missing estimate material. Preserve its unknown values,
+  // but do not require refining them before proceeding.
+  const provenUnhelpfulQuestion = (option) => asksWithoutInformationValue(option) && option.informationValue.worthInterrupting === false;
+  const unresolved = eligible.filter((option) => !provenUnhelpfulQuestion(option) && (option.totalCost === null || (asksWithoutInformationValue(option) && option.informationValue.worthInterrupting === null)));
   const rankable = rankOptions(eligible.filter((option) => option.totalCost !== null && !asksWithoutInformationValue(option)));
   // Do not hide a known-cost question whose information value is unresolved.
   // Nor let an unknown whose domain lower bound exceeds the best known cost

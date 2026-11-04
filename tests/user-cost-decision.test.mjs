@@ -272,6 +272,25 @@ test('bounded unknown proceed cost cannot hide a cheaper useful question', () =>
   assert.equal(assertUserCostChoice(input, 'ask').preferredAction, 'ask');
 });
 
+test('a provably unhelpful question cannot demand estimates for its unknown interruption cost', () => {
+  for (const baseCost of [0, 7]) {
+    const proceed = option('proceed', 'proceed', [], baseCost);
+    const ask = option('ask', 'ask', [], 0);
+    ask.opportunityCost = cost(baseCost, 'The same already-known cost applies to both options.');
+    ask.interruptionCost = cost(null, 'Extra user attention is unknown but cannot reduce this option\'s cost.');
+    const input = { decision: 'Continue when clarification cannot improve the outcome.', assumptions: [], hardConstraints: [], options: [proceed, ask] };
+    const result = evaluateUserCostDecision(input);
+    assert.equal(result.status, 'evaluated');
+    assert.equal(result.recommendedOptionId, 'proceed');
+    assert.equal(result.recommendedCost, baseCost);
+    assert.equal(row(result, 'ask').totalCost, null, 'the unknown is preserved rather than imputed');
+    assert.equal(row(result, 'ask').informationValue.worthInterrupting, false);
+    assert.equal(row(result, 'ask').informationValue.evaluationBasis, 'proven_bounds');
+    assert.ok(result.unknowns.some(item => item.optionId === 'ask' && item.path === 'interruptionCost'));
+    assert.equal(assertUserCostChoice(input, 'proceed').preferredAction, 'proceed');
+  }
+});
+
 test('a question with unresolved information value remains an unresolved candidate', () => {
   const input = comparison(null, 100);
   input.options[0].risks[0].probabilityRange = { min: 0, max: 1 };
