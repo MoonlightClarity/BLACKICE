@@ -102,7 +102,7 @@ test('actual engine wiring supplies advocacy guidance and only the contained bro
     assert.equal(unpack(receipt).submitted, true);
     return { output: 'Submitted and verified the fictional application.', threadId: 'advocacy-fixture-thread' };
   });
-  const result = await runAdvocacyCase({ runtime, root, item: known, planningMode: 'off', model: 'fixture-model' });
+  const result = await runAdvocacyCase({ runtime, root, item: known, planningMode: 'off', fullPlanning: false, model: 'fixture-model' });
   assert.equal(result.status, 'completed', result.error);
   assert.equal(result.assessment.objective, 'pass');
   assert.equal(result.inputIntegrity, true);

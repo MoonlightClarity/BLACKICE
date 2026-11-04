@@ -6,20 +6,9 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { installNativeRequestRecorder } from './outcome-native-receipts.mjs';
+import { parseOutcomeOptions, snapshotOutcomeSources } from './outcome-eval-support.mjs';
 
-const args = process.argv.slice(2), options = {};
-for (let i = 0; i < args.length; i += 2) {
-  if (!args[i]?.startsWith('--') || !args[i + 1] || args[i + 1].startsWith('--')) throw Error('Use --option value pairs.');
-  options[args[i].slice(2)] = args[i + 1];
-}
-for (const key of Object.keys(options)) if (!['baseline', 'candidate', 'root', 'case-file', 'modes', 'ids', 'dependencies'].includes(key)) throw Error('Unknown option: ' + key);
-if (!options.baseline || !options.candidate || !options.root) throw Error('Usage: node scripts/outcome-live-eval.mjs --baseline SOURCE --candidate SOURCE --root UNUSED_DIRECTORY [--modes on,off] [--ids CASE,CASE]');
-const root = path.resolve(options.root);
-const sources = { baseline: path.resolve(options.baseline), candidate: path.resolve(options.candidate) };
-const modes = (options.modes || 'on').split(',');
-if (!modes.length || modes.some(mode => !['on', 'off'].includes(mode)) || new Set(modes).size !== modes.length) throw Error('Planning modes must be on, off, or on,off.');
-if (!options['case-file']) throw Error('Supply --case-file with an explicit local fixture file.');
-const caseFile = path.resolve(options['case-file']);
+const { options, root, sources, modes, caseFile, dependencies } = parseOutcomeOptions(process.argv.slice(2));
 const caseFileBytes = await fs.readFile(caseFile);
 const allCases = JSON.parse(caseFileBytes.toString('utf8'));
 const ids = options.ids ? options.ids.split(',') : allCases.map(item => item.id);
@@ -44,35 +33,15 @@ const log = async value => {
 };
 const saveStatus = async status => {
   const file = path.join(root, 'status.json'), temporary = file + '.tmp';
-  await fs.writeFile(temporary, json({ status, updatedAt: new Date().toISOString(), failure, completed: results.length, planned: cases.length * modes.length * 2, results: results.map(({ events, plan, ...rest }) => rest) }));
+  await fs.writeFile(temporary, json({ status, updatedAt: new Date().toISOString(), failure, completed: results.length, planned: cases.length * modes.length * Object.keys(sources).length, results: results.map(({ events, plan, ...rest }) => rest) }));
   await fs.rename(temporary, file);
-};
-const snapshot = async (source, target) => {
-  await fs.mkdir(target);
-  for (const directory of ['lib', 'public']) await fs.cp(path.join(source, directory), path.join(target, directory), { recursive: true });
-  for (const file of ['server.mjs', 'package.json']) await fs.copyFile(path.join(source, file), path.join(target, file));
-  const files = {};
-  async function walk(directory, relative = '') {
-    const entries = (await fs.readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
-    for (const entry of entries) {
-      const key = relative ? relative + '/' + entry.name : entry.name;
-      if (entry.isDirectory()) await walk(path.join(directory, entry.name), key);
-      else if (entry.isFile()) files[key] = hash(await fs.readFile(path.join(directory, entry.name)));
-    }
-  }
-  await walk(target);
-  const dependencies = await fs.realpath(options.dependencies || path.join(sources.baseline, 'node_modules'));
-  await fs.symlink(dependencies, path.join(target, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
-  return { fingerprint: hash(json(files)), files, dependencies };
 };
 try {
   await saveStatus('preparing');
-  const snapshots = {};
-  for (const [variant, source] of Object.entries(sources)) snapshots[variant] = await snapshot(source, path.join(root, 'source-' + variant));
-  const changedFiles = [...new Set([...Object.keys(snapshots.baseline.files), ...Object.keys(snapshots.candidate.files)])].filter(file => snapshots.baseline.files[file] !== snapshots.candidate.files[file]);
+  const { snapshots, changedFiles } = await snapshotOutcomeSources({ sources, root, dependencies });
   const evaluator = {};
-  for (const file of ['outcome-live-eval.mjs', 'outcome-native-receipts.mjs']) evaluator[file] = hash(await fs.readFile(new URL(file, import.meta.url)));
-  await fs.writeFile(path.join(root, 'manifest.json'), json({ format: 2, sources, model: 'gpt-6-luna', effort: 'max', planningModes: modes, snapshots, changedFiles, evaluator, fixture: { path: caseFile, sha256: hash(caseFileBytes), bytes: caseFileBytes.length }, cases: cases.map(item => ({ id: item.id, task: item.task, taskSha256: hash(item.task), review: item.review, inputSha256: Object.fromEntries(Object.entries(item.files).map(([name, text]) => [name, hash(text)])) })) }));
+  for (const file of ['outcome-live-eval.mjs', 'outcome-eval-support.mjs', 'outcome-native-receipts.mjs']) evaluator[file] = hash(await fs.readFile(new URL(file, import.meta.url)));
+  await fs.writeFile(path.join(root, 'manifest.json'), json({ format: 2, sources, variants: Object.keys(sources), model: 'gpt-6-luna', effort: 'max', planningModes: modes, snapshots, changedFiles, evaluator, fixture: { path: caseFile, sha256: hash(caseFileBytes), bytes: caseFileBytes.length }, cases: cases.map(item => ({ id: item.id, task: item.task, taskSha256: hash(item.task), review: item.review, inputSha256: Object.fromEntries(Object.entries(item.files).map(([name, text]) => [name, hash(text)])) })) }));
   await fs.mkdir(path.join(root, 'native-requests'));
   for (const variant of Object.keys(sources)) {
     const source = path.join(root, 'source-' + variant);

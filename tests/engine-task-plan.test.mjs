@@ -119,6 +119,12 @@ test('ordinary work publishes an honest root before inference and requires a dur
     assert.ok(run.events.some(event => event.data?.type === 'task.state' && event.data.state.plan.origin === 'runtime'));
     const denied = await call(options, 'relay_workspace', { action: 'write', path: 'result.txt', text: 'premature' });
     assert.equal(denied.success, false); assert.equal(denied.code, 'TASK_PLAN_REQUIRED'); assert.match(payload(denied).message, /without asking the user for approval/);
+    const recovery = payload(denied).message;
+    assert.match(recovery, /id, title, kind:"action", status:"active", result, note and doneWhen/);
+    assert.match(recovery, /operation:\{kind:"tool",tool,action,target\}/);
+    assert.match(recovery, /operation:\{kind:"reasoning",target\}/);
+    assert.match(recovery, /one concrete primary operation per leaf/);
+    assert.match(recovery, /separate calls for different targets or actions, save separate leaves/);
     await assert.rejects(readFile(path.join(context.cwd, 'result.txt')), { code: 'ENOENT' });
     assert.equal((await context.tasks.get(run.taskId)).revision, initial.revision);
     let state = await savePlan(options, [toolLeaf('deliver', 'write', 'result.txt'), toolLeaf('inspect', 'read', 'result.txt', 'pending')]);

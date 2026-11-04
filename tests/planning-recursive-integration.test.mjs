@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { TaskStateStore, createTaskToolHandler, TASK_SCHEMA_VERSION, taskToolForVersion } from '../lib/task-state.mjs';
@@ -256,4 +256,44 @@ test('cached schema 8 stays stable while executable operations remain available 
   receipt = await newHandler({ name: 'relay_task', arguments: { action: 'step', expectedRevision: revision, stepId: 'legacy', operation: { kind: 'reasoning', target: 'The original comparison with one recorded reference.' } } });
   assert.equal(receipt.success, true, receipt.contentItems[0].text);
   assert.equal(payload(receipt).steps[0].operation.kind, 'reasoning');
+});
+
+test('guarded relay_task edit rejects JSON-encoded operations without changing the plan or dispatch ledger', async t => {
+  const f = await fixture(t, TASK_SCHEMA_VERSION);
+  const options = { schemaVersion: TASK_SCHEMA_VERSION, executionGuardrails: true, planningMode: 'on' };
+  const read = { ...action('read', { status: 'active' }), operation: { kind: 'tool', tool: 'relay_workspace', action: 'read', target: 'source.txt' } };
+  const state = await f.store.setPlan(f.taskId, { plan: { layout: 'sequence' }, steps: [read] }, { ...options, expectedRevision: f.initial.revision });
+  const guard = createSequentialPlanningGuard({ ...options, store: f.store, taskId: f.taskId, runId: 'run', nodeId: 'agent' });
+  const sourceCall = { name: 'relay_workspace', callId: 'observed-source', arguments: { action: 'read', path: 'source.txt' } };
+  assert.equal(await guard.before(sourceCall, { expectedRevision: state.revision }), null);
+  await guard.after(sourceCall, { success: true, contentItems: [{ type: 'inputText', text: 'The supplied source returned its observed value.' }] });
+  const before = await f.store.get(f.taskId), ledgerPath = f.store.file(f.taskId) + '.sequence';
+  const ledgerBefore = await readFile(ledgerPath, 'utf8');
+  const operations = [{ type: 'update', stepId: 'read', patch: { status: 'done', evidence: 'The supplied source returned its observed value.' } }];
+  let handled = 0;
+  const dispatch = async args => {
+    const call = { name: 'relay_task', arguments: JSON.stringify(args) };
+    const originalArguments = call.arguments;
+    const denied = await guard.before(call, { expectedRevision: state.revision });
+    assert.equal(call.arguments, originalArguments, 'The guard must not coerce or rewrite model arguments.');
+    if (denied) return denied;
+    handled++;
+    return guard.after(call, await f.call(args));
+  };
+  for (const malformed of [JSON.stringify(operations), {}, null, [null], ['update']]) {
+    const receipt = await dispatch({ action: 'edit', expectedRevision: state.revision, operations: malformed });
+    assert.equal(receipt.success, false);
+    assert.equal(receipt.code, 'INVALID_PLAN_EDIT');
+    assert.match(payload(receipt).message, /JSON array of plan edit objects/);
+    assert.doesNotMatch(receipt.contentItems[0].text, /some is not a function|Cannot read/);
+    assert.deepEqual(await f.store.get(f.taskId), before);
+    assert.equal(await readFile(ledgerPath, 'utf8'), ledgerBefore);
+  }
+  assert.equal(handled, 0, 'Malformed edits must stop before the mutation handler.');
+  const valid = await dispatch({ action: 'edit', expectedRevision: state.revision, operations });
+  assert.equal(valid.success, true, valid.contentItems[0].text);
+  assert.equal(handled, 1);
+  assert.equal(payload(valid).steps[0].status, 'done');
+  assert.equal(payload(valid).steps[0].evidence, operations[0].patch.evidence);
+  assert.equal(payload(valid).revision, state.revision + 1);
 });

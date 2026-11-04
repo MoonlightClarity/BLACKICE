@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { ProviderRuntime } from '../lib/providers.mjs';
-import { strictProviderSchema } from '../lib/provider-output-schema.mjs';
+import { compatibleWireOutputSchema, strictProviderSchema } from '../lib/provider-output-schema.mjs';
 import { planningModuleOutputSchema, validatePlanningModuleResponse } from '../lib/planning-browser-runtime.mjs';
 import { responseCycleTemplate } from '../public/response-cycle-model.mjs';
 import { evaluateUserAgencyCheckpoint } from '../public/planning-user-agency.mjs';
@@ -23,7 +23,7 @@ class Native extends EventEmitter {
 }
 const response = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
 
-async function fixture(t, { parameters = supported, openrouter = false, catalogError = false, inferenceError = false, blockCatalog = false, outputSchema = schema } = {}) {
+async function fixture(t, { parameters = supported, openrouter = false, catalogError = false, inferenceError = false, inferenceSseError = false, blockCatalog = false, outputSchema = schema, output = answer } = {}) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'provider-output-schema-')), requests = [], events = [];
   let catalogEntered;
   const entered = new Promise(resolve => { catalogEntered = resolve; });
@@ -40,7 +40,8 @@ async function fixture(t, { parameters = supported, openrouter = false, catalogE
       return response({ data: [{ id: 'exact-model', ...(parameters === null ? {} : { supported_parameters: parameters }) }] });
     }
     if (inferenceError) return response({ error: { message: 'Synthetic schema unsupported', code: 'unsupported_parameter' } }, 400);
-    return response({ id: 'synthetic-reply', choices: [{ index: 0, message: { role: 'assistant', content: answer }, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 4 } });
+    if (inferenceSseError) return new Response('data: ' + JSON.stringify({ error: { message: 'Synthetic grammar error: Unimplemented keys: ["uniqueItems"]' } }) + '\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    return response({ id: 'synthetic-reply', choices: [{ index: 0, message: { role: 'assistant', content: output }, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 4 } });
   };
   // Exercise capability discovery here; public model-limit reference lookup has separate coverage.
   const runtimes = [], make = async () => { const runtime = await new ProviderRuntime({ codex: new Native(), dataDir: dir, fetchImpl, modelLimitResolver: { enrich: async (_config, models) => models } }).init(); runtimes.push(runtime); return runtime; };
@@ -189,4 +190,106 @@ test('strict agency output preserves unknown estimates while only optional null 
   assert.throws(() => validatePlanningModuleResponse(attempt, missing), { code: 'INVALID_USER_COST_DECISION' });
   const ungroundedAsk = structuredClone(payload); ungroundedAsk.userAgency.decisions[0].input.options[1].action = 'ask';
   assert.throws(() => validatePlanningModuleResponse(attempt, ungroundedAsk), { code: 'INVALID_USER_COST_DECISION' }, 'A null clarification cannot satisfy an ask requirement.');
+});
+
+test('compatible wire projection preserves property names, literal data and all other schema constraints', () => {
+  const original = {
+    type: 'object', additionalProperties: false, required: ['uniqueItems', 'choice', 'literal'],
+    properties: {
+      uniqueItems: { type: 'boolean', const: true },
+      choice: { anyOf: [{ type: 'null' }, { allOf: [{ anyOf: [
+        { type: 'array', minItems: 1, maxItems: 3, uniqueItems: true, items: { type: 'string', enum: ['a', 'b'] } },
+        { type: 'string', const: 'none' },
+      ] }] }] },
+      literal: { oneOf: [{ const: { uniqueItems: true } }, { enum: [{ uniqueItems: false }] }], examples: [{ uniqueItems: false }] },
+    },
+  };
+  const before = structuredClone(original), expected = structuredClone(original);
+  delete expected.properties.choice.anyOf[1].allOf[0].anyOf[0].uniqueItems;
+  assert.deepEqual(compatibleWireOutputSchema(original), expected);
+  assert.deepEqual(original, before, 'the source contract is not the wire projection');
+});
+
+test('actual Planning wire omits unsupported uniqueness while host acceptance rejects duplicate blocked IDs', async t => {
+  const cost = value => ({ value, basis: 'Synthetic comparison only.', zeroCostJustification: null });
+  const option = (id, action, loss) => ({ id, action, reversibility: 'reversible', outcome: 'Synthetic ' + action,
+    risks: [], delayCost: cost(0), interruptionCost: cost(0), opportunityCost: cost(loss), clarification: null });
+  const input = {
+    decision: 'Compare the two synthetic actions.', horizon: null, assumptions: ['Synthetic fixture; no real action is performed.'],
+    hardConstraints: [{ id: 'fixture-rule', kind: 'user_constraint', rule: 'The synthetic owner excludes the proceed option.',
+      source: 'Explicit synthetic fixture request.', observedViolation: 'Proceed is the excluded option.', blockedOptionIds: ['proceed'] }],
+    options: [option('proceed', 'proceed', 0), option('defer', 'defer', 1)],
+  };
+  const template = responseCycleTemplate('viability');
+  const attempt = { node: { kind: 'viability' }, template, userAgencyVersion: 1, sources: [], challenges: [], workflowNodeIds: [] };
+  const payload = {
+    values: Object.fromEntries(template.fields.map(field => [field.id, 'A bounded synthetic finding supports this field.'])),
+    grounding: [], openQuestions: [], challengeResponses: [], requirements: [],
+    userAgency: { version: 1, audience: 'internal', userBenefit: 'Compare this synthetic request using its supplied constraint.',
+      representation: { actualQuestion: 'Which synthetic option is eligible?', requiredFacts: [], relevantClaims: [], privateFindings: [], userReport: [] },
+      action: 'defer', decisionRequired: true, decisionReason: 'The supplied fixture constraint excludes proceed.',
+      decisions: [{ id: 'synthetic', input, selectedOptionId: 'defer' }], chosenDecisionId: 'synthetic' },
+  };
+  const original = planningModuleOutputSchema(attempt), before = structuredClone(original);
+  const blocked = value => value.properties.userAgency.properties.decisions.items.properties.input.properties.hardConstraints.items.properties.blockedOptionIds;
+  assert.equal(blocked(original).uniqueItems, true);
+  for (const duplicate of [false, true]) {
+    const body = structuredClone(payload);
+    if (duplicate) body.userAgency.decisions[0].input.hardConstraints[0].blockedOptionIds.push('proceed');
+    const f = await fixture(t, { outputSchema: original, output: JSON.stringify(body) });
+    const result = await f.runtime.runAgent(f.options), wire = f.requests.find(request => request.method === 'POST').body.response_format.json_schema.schema;
+    const expected = structuredClone(original); delete blocked(expected).uniqueItems;
+    assert.deepEqual(wire, expected, 'only the unsupported grammar keyword changes on this actual Planning schema');
+    assert.equal(strictProviderSchema(wire), true);
+    assert.deepEqual(original, before);
+    assert.equal(f.events.find(event => event.type === 'capabilities').hostValidationRequired, true);
+    if (duplicate) assert.throws(() => validatePlanningModuleResponse(attempt, result.output), error => error.code === 'INVALID_USER_COST_DECISION' && /items must be unique/.test(error.message));
+    else assert.deepEqual(validatePlanningModuleResponse(attempt, result.output).userAgency.decisions[0].input.hardConstraints[0].blockedOptionIds, ['proceed']);
+  }
+});
+
+test('native handoff preserves uniqueness in its original output schema', async t => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'provider-native-schema-')), native = new Native();
+  const original = { type: 'object', additionalProperties: false, required: ['ids'], properties: { ids: { type: 'array', uniqueItems: true, items: { type: 'string' } } } };
+  let received;
+  native.runAgent = async options => { received = structuredClone(options.outputSchema); return { output: '{"ids":["one"]}' }; };
+  const runtime = await new ProviderRuntime({ codex: native, dataDir: dir, fetchImpl: () => { throw Error('Native handoff must not issue HTTP.'); } }).init();
+  t.after(async () => { await runtime.close(); await rm(dir, { recursive: true, force: true }); });
+  await runtime.runAgent({ model: 'native', cwd: dir, prompt: 'Return a synthetic unique ID.', responseOnly: true, dynamicTools: [], outputSchema: original });
+  assert.deepEqual(received, original);
+  assert.equal(received.properties.ids.uniqueItems, true);
+});
+
+test('an HTTP 200 SSE provider error is a failure without retry or schema downgrade', async t => {
+  const f = await fixture(t, { inferenceSseError: true });
+  await assert.rejects(f.runtime.runAgent(f.options), error => error.code === 'PROVIDER_ERROR' && /Unimplemented keys/.test(error.message));
+  const inference = f.requests.filter(request => request.method === 'POST');
+  assert.equal(inference.length, 1);
+  assert.equal(inference[0].body.response_format.type, 'json_schema');
+});
+
+test('exclusive-branch uniqueness uses explicit host fallback instead of narrowing the wire grammar', async t => {
+  const unique = { type: 'array', uniqueItems: true, items: { type: 'string' } };
+  const ordinary = { type: 'array', minItems: 2, items: { type: 'string' } };
+  const wrapped = items => ({ type: 'object', additionalProperties: false, required: ['groups'], properties: {
+    groups: { type: 'array', items: { anyOf: [items, { type: 'null' }] } },
+  } });
+  // Duplicates match only the ordinary branch. Removing uniqueness would make
+  // them match both branches and incorrectly fail oneOf, including when nested.
+  for (const nested of [false, true]) {
+    const original = { type: 'object', additionalProperties: false, required: ['ids'], properties: {
+      ids: { oneOf: nested ? [wrapped(unique), wrapped(ordinary)] : [unique, ordinary] },
+    } };
+    const before = structuredClone(original), output = JSON.stringify({ ids: nested ? { groups: [['x', 'x']] } : ['x', 'x'] });
+    const f = await fixture(t, { outputSchema: original, output });
+    assert.equal(strictProviderSchema(original), true);
+    assert.equal(compatibleWireOutputSchema(original), null);
+    assert.equal((await f.runtime.runAgent(f.options)).output, output);
+    assert.equal(f.requests.find(request => request.method === 'POST').body.response_format, undefined);
+    const capabilities = f.events.find(event => event.type === 'capabilities');
+    assert.equal(capabilities.structuredOutput, 'prompt-and-host-validation');
+    assert.equal(capabilities.structuredOutputReason, 'schema_uniqueness_projection_unsafe');
+    assert.equal(capabilities.hostValidationRequired, true);
+    assert.deepEqual(original, before);
+  }
 });
