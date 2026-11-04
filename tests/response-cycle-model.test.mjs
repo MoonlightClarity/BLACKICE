@@ -90,7 +90,7 @@ test('valid evidence-bound stage fixtures are accepted and schema closes every o
   const visit = schema => { if (schema.type === 'object') { assert.equal(schema.additionalProperties, false); assert.deepEqual(schema.required, Object.keys(schema.properties)); for (const child of Object.values(schema.properties)) visit(child); } if (schema.items) visit(schema.items); for (const child of schema.anyOf || []) visit(child); };
   for (const { kind } of RESPONSE_CYCLE_STAGES) {
     const f = fixture(kind); const parsed = parseResponseCycleResponse(JSON.stringify(f.payload), kind);
-    assert.deepEqual(parsed.missingFields, []); visit(responseCycleResponseSchema(kind));
+    assert.deepEqual(parsed.missingFields, []); visit(responseCycleResponseSchema(kind)); visit(responseCycleResponseSchema(kind,{requireUserAgency:true}));
     const result = f.evaluate(); assert.equal(result.state, 'ready', kind + ': ' + JSON.stringify(result)); assert.equal(result.analysisReady, true); assert.equal(result.dispatchReady, true);
   }
   assert.ok(!responseCycleResponseSchema('viability').properties.checks);

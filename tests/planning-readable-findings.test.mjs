@@ -1,3 +1,4 @@
+import { fixtureUserAgency } from './fixture-user-agency.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
@@ -17,7 +18,7 @@ const clone=value=>structuredClone(value),inputOf=options=>JSON.parse(options.pr
 const fact='Alpha takes 20–30 minutes; Beta takes 40–50. Alpha is faster by a plausible 10–30 minutes.';
 function readable(input){
   const kind=input.module.kind,sourceId=input.sources.find(source=>source.kind==='user_request')?.id||input.sources[0].id;
-  const stage=RESPONSE_CYCLE_STAGES.find(stage=>stage.kind===kind),body={values:Object.fromEntries(input.template.fields.map(field=>[field.id,field.id==='unknowns'||field.id==='unresolvedDependencies'?'None material under the supplied estimates.':fact])),grounding:input.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId})),openQuestions:[],challengeResponses:[]};
+  const stage=RESPONSE_CYCLE_STAGES.find(stage=>stage.kind===kind),body={userAgency:fixtureUserAgency(),values:Object.fromEntries(input.template.fields.map(field=>[field.id,field.id==='unknowns'||field.id==='unresolvedDependencies'?'None material under the supplied estimates.':fact])),grounding:input.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId})),openQuestions:[],challengeResponses:[]};
   if(kind==='viability')return {...body,requirements:[]};
   Object.assign(body,{checks:stage.checks.map(check=>({id:check.id,assessment:'supported',sourceIds:[sourceId],note:fact})),subproblems:[],childResults:[]});
   if(kind==='inference')body.inferences=[{id:'range-comparison',claim:fact,basis:'inferred',sourceIds:[sourceId],limitation:'These are ranges from the supplied estimates, not exact measured durations.'}];

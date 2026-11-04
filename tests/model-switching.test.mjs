@@ -56,7 +56,7 @@ test('switching models discards a capacity learned from the old model and uses t
 });
 
 test('engine model changes resume only within a provider and hand actual saved text to a new provider thread', async t => {
-  const { engine: makeEngine, runtime, codex, requests } = await fixture(t), engine = await makeEngine(), history = [];
+  const { engine: makeEngine, runtime, codex, requests } = await fixture(t, 'compatible', undefined, { modelBContext: 64000 }), engine = await makeEngine(), history = [];
   let run = engine.startRun({ workflow: createMissionWorkflow({ id: 'switch-chat', task: 'ORIGINAL_TASK', model: 'codex-a', planningMode: 'off' }), input: 'ORIGINAL_TASK' }); await engine.executions.get(run.id); run = engine.getRun(run.id); history.push(run);
   const variants = ['codex-b', 'primary::model-a', 'primary::model-b', 'secondary::model-a', 'codex-a'];
   for (const [index, model] of variants.entries()) {
@@ -96,7 +96,7 @@ test('retrying a failed provider handoff retains actual history without resuming
 });
 
 test('the actual provider transcript resolves a legacy default-model run without model receipts', async t => {
-  const { engine: makeEngine, runtime, requests } = await fixture(t), engine = await makeEngine();
+  const { engine: makeEngine, runtime, requests } = await fixture(t, 'compatible', undefined, { modelBContext: 64000 }), engine = await makeEngine();
   const first = engine.startRun({ workflow: createMissionWorkflow({ id: 'legacy-model-chat', task: 'LEGACY_ACTUAL_CONTEXT', model: 'primary::model-a', planningMode: 'off' }), input: 'LEGACY_ACTUAL_CONTEXT' }); await engine.executions.get(first.id);
   const legacy = engine.runs.get(first.id); legacy.workflow.nodes.find(node => node.id === 'agent').model = 'default'; delete legacy.nodes.agent.resolvedModel; legacy.events = legacy.events.filter(event => event.data?.type !== 'thread'); const original = engine.getRun(first.id);
   const threadModel = await runtime.savedThreadModel(original.nodes.agent.threadId); assert.equal(threadModel, 'primary::model-a');

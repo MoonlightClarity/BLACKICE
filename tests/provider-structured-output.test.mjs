@@ -6,8 +6,10 @@ import path from 'node:path';
 import os from 'node:os';
 import { ProviderRuntime } from '../lib/providers.mjs';
 import { strictProviderSchema } from '../lib/provider-output-schema.mjs';
-import { planningModuleOutputSchema } from '../lib/planning-browser-runtime.mjs';
+import { planningModuleOutputSchema, validatePlanningModuleResponse } from '../lib/planning-browser-runtime.mjs';
 import { responseCycleTemplate } from '../public/response-cycle-model.mjs';
+import { evaluateUserAgencyCheckpoint } from '../public/planning-user-agency.mjs';
+import { evaluateUserCostDecision } from '../public/user-cost-decision.mjs';
 
 const schema = { type: 'object', additionalProperties: false, required: ['answer', 'accuracy'], properties: {
   answer: { type: 'string' }, accuracy: { anyOf: [{ type: 'object', additionalProperties: false, required: ['tolerance'], properties: { tolerance: { type: 'string' } } }, { type: 'null' }] }
@@ -123,9 +125,10 @@ test('an analytical context checkpoint does not inherit the stage output schema'
 });
 
 test('actual five-stage schemas remain recursively closed and fully required, including nullable accuracy', () => {
-  for (const kind of ['viability', 'inference', 'plan', 'think', 'respond']) {
-    const actual = planningModuleOutputSchema({ node: { kind }, template: responseCycleTemplate(kind), sources: [{ id: 'source:one' }], challenges: [] });
+  for (const userAgencyVersion of [undefined, 1]) for (const kind of ['viability', 'inference', 'plan', 'think', 'respond']) {
+    const actual = planningModuleOutputSchema({ node: { kind }, ...(userAgencyVersion ? { userAgencyVersion } : {}), template: responseCycleTemplate(kind), sources: [{ id: 'source:one' }], challenges: [] });
     assert.equal(strictProviderSchema(actual), true, kind);
+    assert.equal(Object.hasOwn(actual.properties, 'userAgency'), userAgencyVersion === 1, 'Only current attempts require the checkpoint.');
     const visit = entry => {
       if (!entry || typeof entry !== 'object') return;
       if (entry.type === 'object') { assert.equal(entry.additionalProperties, false, kind); assert.deepEqual([...entry.required].sort(), Object.keys(entry.properties).sort(), kind); }
@@ -135,4 +138,55 @@ test('actual five-stage schemas remain recursively closed and fully required, in
   }
   assert.equal(strictProviderSchema(schema), true);
   assert.equal(strictProviderSchema({ ...schema, properties: { answer: { type: 'string', enum: [] }, accuracy: schema.properties.accuracy } }), false);
+});
+
+test('strict agency output preserves unknown estimates while only optional null markers become absent', () => {
+  const cost = value => ({ value, basis: 'Synthetic minute-equivalent estimate; not an observed user cost.', zeroCostJustification: null });
+  const input = {
+    decision: 'Compare a synthetic action against deferring it.', horizon: null,
+    assumptions: ['Synthetic fixture: probability, severity and delay central estimates remain unknown.'], hardConstraints: [],
+    options: [
+      {
+        id: 'proceed', action: 'proceed', reversibility: 'reversible', outcome: 'Make synthetic progress with unresolved correction cost.',
+        risks: [{
+          id: 'correction', probability: null, severity: null, probabilityRange: null, severityRange: null,
+          probabilityBasis: { kind: 'unknown', rationale: 'No central probability estimate in this fixture.', source: null, events: null, trials: null },
+          severityBasis: { anchor: 'unknown', consequence: 'Possible correction work.', conversionBasis: 'No central correction-effort estimate in this fixture.' },
+        }],
+        delayCost: cost(null), interruptionCost: cost(0), opportunityCost: cost(0), clarification: null,
+      },
+      {
+        id: 'defer', action: 'defer', reversibility: 'reversible', outcome: 'Lose four synthetic units of opportunity.',
+        risks: [], delayCost: cost(0), interruptionCost: cost(0), opportunityCost: cost(4), clarification: null,
+      },
+    ],
+  };
+  const userAgency = {
+    version: 1, audience: 'internal', userBenefit: 'Preserve unknown estimates without inventing a user interruption.',
+    representation: { actualQuestion: 'Which synthetic action has lower user cost?', requiredFacts: [], relevantClaims: [], privateFindings: [], userReport: [] },
+    action: 'investigate', decisionRequired: true, decisionReason: 'A useful internal estimate is still needed.',
+    decisions: [{ id: 'synthetic', input, selectedOptionId: null }], chosenDecisionId: 'synthetic',
+  };
+  const template = responseCycleTemplate('viability');
+  const attempt = { node: { kind: 'viability' }, template, userAgencyVersion: 1, sources: [], challenges: [], workflowNodeIds: [] };
+  const payload = { values: Object.fromEntries(template.fields.map(field => [field.id, 'A bounded synthetic finding supports this field.'])), grounding: [], openQuestions: [], challengeResponses: [], requirements: [], userAgency };
+  const parsed = validatePlanningModuleResponse(attempt, JSON.stringify(payload)), saved = parsed.userAgency.decisions[0].input;
+  assert.equal(strictProviderSchema(planningModuleOutputSchema(attempt)), true);
+  assert.equal(saved.options[0].risks[0].probability, null);
+  assert.equal(saved.options[0].risks[0].severity, null);
+  assert.equal(saved.options[0].delayCost.value, null);
+  assert.equal(saved.options[0].interruptionCost.value, 0);
+  assert.equal(Object.hasOwn(saved, 'horizon'), false);
+  assert.equal(Object.hasOwn(saved.options[0], 'clarification'), false);
+  assert.equal(Object.hasOwn(saved.options[0].risks[0], 'probabilityRange'), false);
+  assert.equal(Object.hasOwn(saved.options[0].risks[0].probabilityBasis, 'events'), false);
+  assert.equal(evaluateUserAgencyCheckpoint(parsed.userAgency).comparisons[0].evaluation.status, 'needs_estimates');
+  assert.throws(() => evaluateUserCostDecision(input), { code: 'INVALID_USER_COST_DECISION' }, 'The raw decision contract is unchanged.');
+
+  const unknown = structuredClone(payload); unknown.userAgency.decisions[0].input.totalCost = null;
+  assert.throws(() => validatePlanningModuleResponse(attempt, unknown), { code: 'INVALID_USER_COST_DECISION' });
+  const missing = structuredClone(payload); delete missing.userAgency.decisions[0].input.options[0].risks[0].probability;
+  assert.throws(() => validatePlanningModuleResponse(attempt, missing), { code: 'INVALID_USER_COST_DECISION' });
+  const ungroundedAsk = structuredClone(payload); ungroundedAsk.userAgency.decisions[0].input.options[1].action = 'ask';
+  assert.throws(() => validatePlanningModuleResponse(attempt, ungroundedAsk), { code: 'INVALID_USER_COST_DECISION' }, 'A null clarification cannot satisfy an ask requirement.');
 });

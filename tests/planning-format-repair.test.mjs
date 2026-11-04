@@ -1,3 +1,4 @@
+import { fixtureUserAgency } from './fixture-user-agency.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
@@ -15,7 +16,7 @@ const profile={model:'fixture-free::small-fast',effort:'default',serviceTier:'de
 const criterion={id:'room-choice',label:'Qualifying room',description:'Identify South from the supplied fictional capacities and show the two-seat difference.',verification:'response',accuracy:{mode:'exact',tolerance:'',decisionThreshold:'At least five seats.',evidenceNeeded:'The capacities supplied in the fictional task.',consequence:'Choosing fewer than five seats would fail the task.',unknownPolicy:'block',stopWhen:'The supplied capacities determine the qualifying room and difference.'}};
 function correct(input){
   const sourceId=input.sources.find(source=>source.kind==='user_request')?.id||input.sources[0].id;
-  const body={values:Object.fromEntries(input.template.fields.map(field=>[field.id,field.id==='objective'?'Choose the fictional room that seats five from the supplied capacities.':'The supplied fictional facts support South with 6 seats; North has 4, a difference of 2.'])),grounding:input.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId})),openQuestions:[],challengeResponses:[]};
+  const body={userAgency:fixtureUserAgency(),values:Object.fromEntries(input.template.fields.map(field=>[field.id,field.id==='objective'?'Choose the fictional room that seats five from the supplied capacities.':'The supplied fictional facts support South with 6 seats; North has 4, a difference of 2.'])),grounding:input.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId})),openQuestions:[],challengeResponses:[]};
   if(input.module.kind==='viability')return {...body,requirements:[{id:'capacity',label:'Room capacity',importance:'essential',basis:'task',consequence:'The selected room must seat five.',resolution:'observed',value:'North has 4 seats; South has 6 seats.',sourceIds:[sourceId],checkedSourceIds:input.sources.filter(source=>source.kind!=='response').map(source=>source.id),rationale:'These exact fictional capacities were supplied in the request.',inferable:false,omissionAllowed:false,question:'',dependentNodeIds:[],accuracy:criterion.accuracy}]};
   const stage=RESPONSE_CYCLE_STAGES.find(stage=>stage.kind===input.module.kind);
   Object.assign(body,{checks:stage.checks.map(check=>({id:check.id,assessment:check.when==='effects'?'not_applicable':'supported',sourceIds:check.grounding==='required'&&check.when!=='effects'?[sourceId]:[],note:'The supplied scenario supports this bounded analytical check.'})),subproblems:[],childResults:[]});
@@ -25,6 +26,7 @@ function correct(input){
 }
 function malformed(input,{requirements=true}={}){
   const value=JSON.parse(actual.partialOutput.replace(/^```json\s*/,'').replace(/\s*```$/,''));
+  value.userAgency=fixtureUserAgency();
   const source=input.sources[0].id;value.grounding=value.grounding.map(link=>({...link,sourceId:source}));
   value.requirements=requirements?value.requirements.map(item=>({...item,sourceId:source})):[];
   return '```json\n'+JSON.stringify(value)+'\n```';

@@ -7,6 +7,7 @@ import path from 'node:path';
 import { HarnessEngine } from '../lib/engine.mjs';
 import { TaskStateStore, TASK_SCHEMA_VERSION } from '../lib/task-state.mjs';
 import { recordFixturePlan } from './fixture-task-plan.mjs';
+import { fixtureDeferredUserAgency } from './fixture-user-agency.mjs';
 
 const payload = receipt => JSON.parse(receipt.contentItems[0].text);
 const tool = (options, name, args, callId) => options.onToolCall({ name, arguments: args, callId });
@@ -19,7 +20,9 @@ async function reviewCurrent(options, decision = 'respond') {
   return task(options, { action: 'review', expectedRevision: current.revision, review: {
     decision, summary: decision === 'blocked'
       ? 'The fixture compared all actual responses: the recorded missing-file action remains blocked, independent checks are complete, and no ready work remains.'
-      : 'The actual saved receipts and separate assertions cover this fixture request; no further operation is needed before the final handoff.'
+      : 'The actual saved receipts and separate assertions cover this fixture request; no further operation is needed before the final handoff.',
+    ...(decision === 'blocked' && options.dynamicTools?.find(item => item.name === 'relay_task')?.inputSchema?.properties?.review?.properties?.userAgency
+      ? { userAgency: fixtureDeferredUserAgency('The actual missing-file read returned a missing-file error; independent write and read checks are complete.') } : {})
   } });
 }
 const leaf = (id, status, action = 'write') => ({ id, title: `Perform ${id}`, kind: 'action', status,

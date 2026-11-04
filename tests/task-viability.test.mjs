@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {fixtureUserAgency,fixtureAskingUserAgency} from './fixture-user-agency.mjs';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
@@ -18,7 +19,8 @@ const node=request=>request.nodes.find(item=>item.id==='viability');
 const ref=request=>({requestId:request.id,responseId:node(request).response.id});
 const parsePrompt=options=>JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2));
 function output(captured,requirements){
-  return JSON.stringify({values:Object.fromEntries(captured.template.fields.map(field=>[field.id,field.label+': a public finding based on the captured fixture records.'])),grounding:captured.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId:'viability:task'})),requirements,openQuestions:[],challengeResponses:[]});
+  const missing=requirements.find(item=>item.id==='address'&&item.importance==='essential'&&item.resolution==='unknown'&&item.question);
+  return JSON.stringify({userAgency:missing?fixtureAskingUserAgency(missing.question):fixtureUserAgency(),values:Object.fromEntries(captured.template.fields.map(field=>[field.id,field.label+': a public finding based on the captured fixture records.'])),grounding:captured.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId:'viability:task'})),requirements,openQuestions:[],challengeResponses:[]});
 }
 async function fixture(t,{findings,attachments,profile='The user has recorded a name but no residential address.',identity,engine}={}){
   const directory=await mkdtemp(path.join(os.tmpdir(),'task-viability-fixture-'));

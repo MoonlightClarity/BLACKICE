@@ -8,10 +8,13 @@ function context() {
     { id: 'b-turn', taskId: 'b', title: 'Archived chat', state: 'archived', status: 'completed', updatedAt: '2026-10-19T09:00:00Z' },
     { id: 'c-turn', taskId: 'c', title: 'Discarded chat', state: 'deleted', status: 'failed', updatedAt: '2026-10-19T08:00:00Z' },
   ];
-  const runs = new Map([['a-next', { id: 'a-next', taskId: 'a', input: 'Continue working', status: 'running', createdAt: '2026-10-19T10:01:00Z', updatedAt: '2026-10-19T10:01:00Z' }]]), calls = [], events = [];
-  return { entries, calls, events, conversations: { list: () => structuredClone(entries), status: () => ({ healthy: true }) },
+  const runs = new Map([['a-next', { id: 'a-next', taskId: 'a', input: 'Continue working', status: 'running', createdAt: '2026-10-19T10:01:00Z', updatedAt: '2026-10-19T10:01:00Z' }]]), calls = [], discoveryCalls = [], events = [];
+  return { entries, calls, discoveryCalls, events, conversations: { list: () => structuredClone(entries), status: () => ({ healthy: true }) },
     engine: { runs, listRuns: () => [...runs.values()].map(run => structuredClone(run)), adoptTaskState: (run, state) => { if ((run.taskState?.revision || 0) >= state.revision) return false; run.taskState = structuredClone(state); return true; }, notify: (...args) => events.push(args) },
-    tasks: { async listPlans(options) { calls.push(options); return { plans: options.taskIds.map(taskId => ({ taskId, revision: 3, goal: 'Saved ' + taskId, progress: { total: 2, done: 0 } })), total: options.taskIds.length, limit: options.limit, offset: options.offset, nextOffset: null, hasMore: false, errors: [], healthy: true }; }, async editPlan(taskId, value, options) { calls.push({ taskId, value, options }); return { taskId, revision: options.expectedRevision + 1, steps: [], progress: { done: 0, total: 0 } }; } }, onUpdated: event => events.push(event) };
+    tasks: { async listPlans(options) {
+      // This saved-chat fixture contains no standalone planning documents.
+      if (options.standaloneOnly) { discoveryCalls.push(options); return { plans: [], total: 0, limit: options.limit, offset: options.offset, nextOffset: null, hasMore: false, errors: [], healthy: true }; }
+      calls.push(options); return { plans: options.taskIds.map(taskId => ({ taskId, revision: 3, goal: 'Saved ' + taskId, progress: { total: 2, done: 0 } })), total: options.taskIds.length, limit: options.limit, offset: options.offset, nextOffset: null, hasMore: false, errors: [], healthy: true }; }, async editPlan(taskId, value, options) { calls.push({ taskId, value, options }); return { taskId, revision: options.expectedRevision + 1, steps: [], progress: { done: 0, total: 0 } }; } }, onUpdated: event => events.push(event) };
 }
 test('Planning catalog query uses exact fields and bounded pagination', () => {
   assert.deepEqual(planningQuery(new URLSearchParams()), { query: '', state: 'active', limit: 40, offset: 0 });
@@ -67,6 +70,7 @@ test('Planning raw-map metadata exactly matches legacy snapshot order, timestamp
 });
 test('Planning filters saved-chat buckets before store pagination', async () => {
   const c = context(), result = await listPlanningWorkspace(c, planningQuery(new URLSearchParams()));
+  assert.deepEqual(c.discoveryCalls, [{ standaloneOnly: true, limit: 200, offset: 0 }]);
   assert.deepEqual(c.calls[0].taskIds, ['a']); assert.deepEqual(result.plans.map(plan => plan.bucket), ['active']); assert.equal(result.plans[0].running, true);
   const trash = await listPlanningWorkspace(c, planningQuery(new URLSearchParams('state=deleted'))); assert.deepEqual(c.calls[1].taskIds, ['c']); assert.equal(trash.plans[0].editable, false);
   const all = await listPlanningWorkspace(c, planningQuery(new URLSearchParams('state=all'))); assert.deepEqual(all.plans.map(plan => plan.bucket), ['active', 'archived']);
@@ -89,7 +93,11 @@ test('Planning commits only the requested work edit and publishes continuity wit
 test('Planning rejects ambiguous payloads and unavailable chats before writing or publishing', async () => {
   const c = context(), value = { expectedRevision: 3, operations: [{ type: 'metadata', patch: { goal: 'Continue the saved task' } }] };
   for (const input of [null, [], { ...value, status: 'completed' }, { ...value, expectedRevision: '3' }, { ...value, operations: [] }]) await assert.rejects(editPlanningWorkspace(c, 'a', input), { status: 400 });
-  await assert.rejects(editPlanningWorkspace(c, 'c', value), { status: 409, code: 'PLANNING_CHAT_READ_ONLY' }); await assert.rejects(editPlanningWorkspace(c, 'missing', value), { status: 404 }); assert.equal(c.calls.length, 0); assert.equal(c.events.length, 0);
+  await assert.rejects(editPlanningWorkspace(c, 'c', value), { status: 409, code: 'PLANNING_CHAT_READ_ONLY' });
+  assert.equal(c.discoveryCalls.length, 0);
+  await assert.rejects(editPlanningWorkspace(c, 'missing', value), { status: 404 });
+  assert.deepEqual(c.discoveryCalls, [{ standaloneOnly: true, limit: 200, offset: 0, taskIds: ['missing'] }]);
+  assert.equal(c.calls.length, 0); assert.equal(c.events.length, 0);
 });
 test('Planning revision conflict does not overwrite a live run view or broadcast a successful save', async () => {
   const c = context(), before = structuredClone(c.engine.runs.get('a-next'));

@@ -1,3 +1,4 @@
+import { fixtureUserAgency, fixtureDeferredUserAgency } from './fixture-user-agency.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
@@ -25,7 +26,7 @@ const workflow=(resultValue=17)=>({id:'stabilization-fixture',name:'Stabilizatio
 function response(input,resultValue=17){
  const stage=RESPONSE_CYCLE_STAGES.find(stage=>stage.kind===input.module.kind);
  const sourceId=(stage.order>=4?input.sources.find(source=>source.id.startsWith('cycle:execution:')):null)?.id||input.sources.find(source=>source.id==='viability:task')?.id||input.sources[0].id;
- const body={values:Object.fromEntries(input.template.fields.map(field=>[field.id,field.label+': the supplied bounded evidence supports this assessment.'])),grounding:input.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId})),openQuestions:[],challengeResponses:[]};
+ const body={userAgency:fixtureUserAgency(),values:Object.fromEntries(input.template.fields.map(field=>[field.id,field.label+': the supplied bounded evidence supports this assessment.'])),grounding:input.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId})),openQuestions:[],challengeResponses:[]};
  if(stage.id==='feasibility')return {...body,requirements:[]};
  Object.assign(body,{checks:stage.checks.map(check=>({id:check.id,assessment:check.when==='effects'?'not_applicable':'supported',sourceIds:check.grounding==='required'&&check.when!=='effects'?[sourceId]:[],note:'The supplied evidence supports this assessment.'})),subproblems:[],childResults:(input.cycle?.children||[]).filter(child=>['completed','failed','cancelled'].includes(child.state)).map(child=>({key:child.key,sourceId:child.sourceId,summary:'The child returned a bounded analytical finding.',usedFor:'Carry its findings and pending workflow requirements into the parent plan.'}))});
  const criteria=stage.id==='plan'&&input.cycle?.requiredAcceptanceCriteria?.length?input.cycle.requiredAcceptanceCriteria:input.cycle?.acceptanceCriteria?.length?input.cycle.acceptanceCriteria:[{id:'answer',label:'Requested answer',description:'Report the supplied result of '+resultValue+'.',verification:'response'}];
@@ -135,7 +136,10 @@ test('strict dispatch retains the unresolved preparatory dependency while still 
 
 test('confirmed resource denial blocks costly work even with advisory guardrails and preserves the diagnostic and remedy',async t=>{
   const f=await fixture(t,{executionGuardrails:false,operation:async()=>assert.fail('The costly operation must not start before its actual prerequisite.'),transformResponse:(body,{input})=>{
-    if(input.module.kind==='viability')body.requirements=[{id:'write-right',label:'Required target write right',importance:'essential',basis:'user',consequence:'Writing the requested result to the protected target.',resolution:'blocked',stopKind:'target_denied',value:'The captured task states that this target denies the required right.',sourceIds:['viability:task'],checkedSourceIds:input.sources.filter(item=>item.kind!=='response').map(item=>item.id),rationale:'Stop that write; use an already-authorized alternate destination or wait for the actual right. Do not infer guest rights from host elevation.',inferable:false,omissionAllowed:false,question:'',dependentNodeIds:['agent']}];
+    if(input.module.kind==='viability'){
+      body.userAgency=fixtureDeferredUserAgency('The supplied task states the protected target denies the required write right and explicitly forbids changing rights.');
+      body.requirements=[{id:'write-right',label:'Required target write right',importance:'essential',basis:'user',consequence:'Writing the requested result to the protected target.',resolution:'blocked',stopKind:'target_denied',value:'The captured task states that this target denies the required right.',sourceIds:['viability:task'],checkedSourceIds:input.sources.filter(item=>item.kind!=='response').map(item=>item.id),rationale:'Stop that write; use an already-authorized alternate destination or wait for the actual right. Do not infer guest rights from host elevation.',inferable:false,omissionAllowed:false,question:'',dependentNodeIds:['agent']}];
+    }
   }}),run=await f.execute({input:'Produce result 17 at the protected target, whose write right is denied. Do not elevate or change rights.'});
   assert.equal(run.status,'blocked');assert.equal(f.operationalCalls,0);assert.deepEqual(f.calls,['inference','viability','plan']);assert.match(run.viability.question,/Blocked: Required target write right/);assert.match(run.viability.question,/Remedy:/);
   const saved=await f.store.get(run.responseCycle.requestId),cycle=saved.cycles.find(item=>item.id===run.responseCycle.cycleId),feasibility=saved.nodes.find(item=>item.id===cycle.stageNodeIds.feasibility);

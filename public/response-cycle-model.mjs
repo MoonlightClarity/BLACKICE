@@ -5,7 +5,7 @@
  * by the host from its current records, never copied from the model response.
  */
 import { VIABILITY_TEMPLATE, validateViabilityRequirements, viabilityRequirementSchema, evaluateViabilityResponse, validateTaskAccuracy, taskAccuracySchema, validatePlanningReadableFindings } from './task-viability-model.mjs';
-import { USER_AGENCY_GUIDANCE, USER_AGENCY_CHECKPOINT_SCHEMA, normalizeUserAgencyCheckpoint, evaluateUserAgencyCheckpoint, assertUserAgencyDispatchConsistency } from './planning-user-agency.mjs';
+import { USER_AGENCY_GUIDANCE, USER_AGENCY_CHECKPOINT_SCHEMA, USER_AGENCY_OUTPUT_SCHEMA, normalizeUserAgencyCheckpoint, evaluateUserAgencyCheckpoint, assertUserAgencyDispatchConsistency } from './planning-user-agency.mjs';
 
 const freeze = value => {
   if (value && typeof value === 'object') { for (const item of Object.values(value)) freeze(item); Object.freeze(value); }
@@ -271,16 +271,12 @@ const criterionSchema = () => schemaObject({ id: s, label: s, description: s, ve
 const effectReportingGuidance = 'The effects_verified and effects_reported checks assess whether the records and answer accurately distinguish attempted operations from observed effects. A captured blocker or no attempted operations can support these checks while effect criteria remain uncertain or unsatisfied. Missing requested effects alone do not make the reporting check unresolved. A satisfied effect criterion or addressed effect still requires its matching host-observed effect receipt; never invent one.';
 export function responseCycleResponseSchema(stageOrKind,{pipelineVersion=RESPONSE_CYCLE_PIPELINE_VERSION,requireUserAgency=false}={}) {
   const stage = responseCycleStage(stageOrKind,{pipelineVersion}), properties = {
-    userAgency: USER_AGENCY_CHECKPOINT_SCHEMA,
+    ...(requireUserAgency ? { userAgency: USER_AGENCY_OUTPUT_SCHEMA } : {}),
     values: schemaObject(Object.fromEntries(responseCycleTemplate(stage.kind,{pipelineVersion}).fields.map(item => [item.id, s]))),
     grounding: { type: 'array', items: schemaObject({ field: enumSchema(responseCycleTemplate(stage.kind,{pipelineVersion}).fields.map(item => item.id)), sourceId: s }) }, openQuestions: ss,
     challengeResponses: { type: 'array', items: schemaObject({ edgeId: s, disposition: enumSchema(['addressed', 'open']), note: s }) }
   };
-  const finish = fields => {
-    const result = schemaObject(fields);
-    if (!requireUserAgency) result.required = result.required.filter(key => key !== 'userAgency');
-    return schemaTree(result);
-  };
+  const finish = fields => schemaTree(schemaObject(fields));
   if (stage.kind === 'viability') return finish({ ...properties, requirements: viabilityRequirementSchema() });
   Object.assign(properties, {
     checks: { type: 'array', items: schemaObject({ id: enumSchema(stage.checks.map(item => item.id)), assessment: enumSchema(['supported', 'unresolved', 'not_applicable']), sourceIds: ss, note: s }) },
@@ -295,11 +291,15 @@ export function responseCycleResponseSchema(stageOrKind,{pipelineVersion=RESPONS
   return finish(properties);
 }
 
-/** Editing can target either saved version; the store validates that exact cycle. */
-export function responseCyclePlanEditSchema(){
-  const current=responseCycleResponseSchema('plan',{pipelineVersion:2,requireUserAgency:true}),legacy=responseCycleResponseSchema('plan',{pipelineVersion:1,requireUserAgency:true});
+/** Editing can target either saved version; omit user agency only for a frozen pre-agency control catalog. */
+export function responseCyclePlanEditSchema({includeUserAgency=true}={}){
+  const current=responseCycleResponseSchema('plan',{pipelineVersion:2}),legacy=responseCycleResponseSchema('plan',{pipelineVersion:1});
   current.properties.values={anyOf:[legacy.properties.values,current.properties.values]};
   current.properties.grounding.items.properties.field.enum=[...new Set([...legacy.properties.grounding.items.properties.field.enum,...current.properties.grounding.items.properties.field.enum])];
+  if(includeUserAgency){
+    current.properties={userAgency:schemaTree(USER_AGENCY_CHECKPOINT_SCHEMA),...current.properties};
+    current.required=['userAgency',...current.required];
+  }
   return current;
 }
 

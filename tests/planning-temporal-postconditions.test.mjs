@@ -4,7 +4,7 @@ import { PLANNING_SKILL_CONTENT, validatePlanningSkill, planningSkillInstruction
 
 test('time-indexed effect receipts never substitute for current external state', () => {
   const skill = validatePlanningSkill(PLANNING_SKILL_CONTENT);
-  assert.equal(skill.version, 3);
+  assert.equal(skill.version, 4);
   assert.match(skill.content, /Distinguish historical effects from current postconditions/);
   assert.match(skill.content, /does not prove the target still has that state after a restart/);
   assert.match(skill.content, /preserve the completed historical step and create a new dependent restore\/revisit action/);

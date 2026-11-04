@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { fixtureDeferredUserAgency } from './fixture-user-agency.mjs';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, readFile, writeFile, readdir, rm } from 'node:fs/promises';
@@ -43,9 +44,12 @@ async function completeAndReview(options, state, decision = 'respond') {
   state ||= await task(options, { action: 'read' });
   const active = state.steps.find(step => (step.kind || 'action') === 'action' && step.status === 'active');
   if (active) state = await task(options, { action: 'step', expectedRevision: state.revision, stepId: active.id, status: 'done', evidence: 'The supplied fixture request was compared with the saved prospective criterion and the result is ready for this turn.' });
-  return task(options, { action: 'review', expectedRevision: state.revision, review: { decision, summary: decision === 'blocked'
+  const summary = decision === 'blocked'
     ? 'The supplied input gap remains a real blocker and there is no independent ready action that can resolve it.'
-    : 'The actual result covers this fixture request; completed history is preserved and no further work is needed before the answer.' } });
+    : 'The actual result covers this fixture request; completed history is preserved and no further work is needed before the answer.';
+  return task(options, { action: 'review', expectedRevision: state.revision, review: { decision, summary,
+    ...(decision === 'blocked' && options.dynamicTools?.find(item => item.name === 'relay_task')?.inputSchema?.properties?.review?.properties?.userAgency
+      ? { userAgency: fixtureDeferredUserAgency(summary) } : {}) } });
 }
 const finished = run => assert.equal(run.status, 'completed', run.error || run.nodes.agent.error);
 async function fixture(t, execute) {

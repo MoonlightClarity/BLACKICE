@@ -35,6 +35,23 @@ export const USER_AGENCY_CHECKPOINT_SCHEMA = freeze(schemaObject({
   chosenDecisionId: nullableId
 }));
 
+// Provider output must name every field. Optional raw decision inputs use null only as an absence marker.
+const strictOutputSchema = schema => {
+  const result = { ...schema };
+  if (schema.type === 'object') {
+    const required = new Set(schema.required || []);
+    result.properties = Object.fromEntries(Object.entries(schema.properties || {}).map(([key, value]) => {
+      const child = strictOutputSchema(value);
+      return [key, required.has(key) ? child : { anyOf: [child, { type: 'null' }] }];
+    }));
+    result.required = Object.keys(result.properties);
+  }
+  if (schema.items) result.items = strictOutputSchema(schema.items);
+  for (const key of ['anyOf', 'oneOf', 'allOf']) if (schema[key]) result[key] = schema[key].map(strictOutputSchema);
+  return result;
+};
+export const USER_AGENCY_OUTPUT_SCHEMA = freeze(strictOutputSchema(USER_AGENCY_CHECKPOINT_SCHEMA));
+
 const fail = (message, code = 'USER_AGENCY_INVALID') => Object.assign(new Error(message), { code, status: 400 });
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const keys = (value, expected, label) => {
@@ -53,6 +70,17 @@ const list = (value, label) => {
   if (!Array.isArray(value) || value.length > 24) throw fail(label + ' must be a bounded list.');
   return value.map(item => text(item, label, true));
 };
+
+// Normalize the strict provider representation without changing required unknown estimates, inventing values,
+// or discarding unknown keys. The unchanged evaluator still enforces every contextual requirement.
+function normalizeOptionalDecisionFields(value, schema = USER_COST_DECISION_SCHEMA) {
+  if (Array.isArray(value) && schema.items) return value.map(item => normalizeOptionalDecisionFields(item, schema.items));
+  if (!object(value) || !schema.properties || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) return value;
+  const required = new Set(schema.required || []);
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key, item]) => !(item === null && Object.hasOwn(schema.properties, key) && !required.has(key)))
+    .map(([key, item]) => [key, Object.hasOwn(schema.properties, key) ? normalizeOptionalDecisionFields(item, schema.properties[key]) : item]));
+}
 
 /** Pure normalization. Never accepts caller-authored totals or a claimed recommendation. */
 export function normalizeUserAgencyCheckpoint(value, { required = false } = {}) {
@@ -80,9 +108,10 @@ export function normalizeUserAgencyCheckpoint(value, { required = false } = {}) 
     seen.add(decisionId);
     const selectedOptionId = item.selectedOptionId === null ? null : id(item.selectedOptionId, 'Selected option ID');
     // The pure evaluator validates all inputs before the raw record is copied.
-    const evaluation = selectedOptionId === null ? evaluateUserCostDecision(item.input) : assertUserCostChoice(item.input, selectedOptionId);
+    const input = normalizeOptionalDecisionFields(item.input);
+    const evaluation = selectedOptionId === null ? evaluateUserCostDecision(input) : assertUserCostChoice(input, selectedOptionId);
     evaluations.set(decisionId, evaluation);
-    return { id: decisionId, input: JSON.parse(JSON.stringify(item.input)), selectedOptionId };
+    return { id: decisionId, input: JSON.parse(JSON.stringify(input)), selectedOptionId };
   });
   const chosenDecisionId = value.chosenDecisionId === null ? null : id(value.chosenDecisionId, 'Chosen decision ID');
   const result = { version: USER_AGENCY_CONTRACT_VERSION, audience: value.audience, userBenefit: text(value.userBenefit, 'User benefit', true), representation,

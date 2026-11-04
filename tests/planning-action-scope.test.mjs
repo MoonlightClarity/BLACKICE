@@ -46,7 +46,8 @@ test('representation guidance distinguishes audience relevance from material fac
     assert.match(instruction, /do not invent a question/i);
     assert.match(instruction, /Answer material factual questions accurately/);
   }
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Keep candid assessment private; do not volunteer [^\n.]+private limits[^\n.]+question does not require/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Report actual failures and material limitations candidly to the user/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /keep internal assessment separate from counterparty-facing content; do not volunteer [^\n.]+private limits[^\n.]+question does not require/);
   assert.match(PLANNING_DEPTH_INSTRUCTIONS, /Leave out true but unhelpful facts[^\n.]+question does not require/);
   assert.match(PLANNING_DEPTH_INSTRUCTIONS, /Keep private assessment and negotiating limits distinct from what is sent/);
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /never invent qualifications, results, endorsements or personal history/);

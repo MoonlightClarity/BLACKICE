@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {fixtureUserAgency,fixtureDeferredUserAgency,fixtureAskingUserAgency} from './fixture-user-agency.mjs';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm,readFile} from 'node:fs/promises';
 import os from 'node:os';
@@ -19,7 +20,7 @@ const workflow=()=>({id:'fixture',name:'Fixture workflow',nodes:[{id:'input',typ
 const captured=options=>JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2));
 function response(input){
   const stage=responseCycleStage(input.module.kind,{pipelineVersion:input.cycle?.pipelineVersion}),sourceId=input.sources.find(source=>source.id==='viability:task')?.id||input.sources[0].id;
-  const body={values:Object.fromEntries(input.template.fields.map(field=>[field.id,field.label+': a bounded public finding from the fixture evidence.'])),grounding:input.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId})),openQuestions:[],challengeResponses:[]};
+  const body={userAgency:fixtureUserAgency(),values:Object.fromEntries(input.template.fields.map(field=>[field.id,field.label+': a bounded public finding from the fixture evidence.'])),grounding:input.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId})),openQuestions:[],challengeResponses:[]};
   if(stage.id==='feasibility')return {...body,requirements:[]};
   Object.assign(body,{checks:stage.checks.map(check=>({id:check.id,assessment:check.when==='effects'?'not_applicable':'supported',sourceIds:check.grounding==='required'&&check.when!=='effects'?[sourceId]:[],note:'Fixture observation supports this bounded check.'})),subproblems:[],childResults:(input.cycle?.children||[]).filter(child=>['completed','failed','cancelled'].includes(child.state)).map(child=>({key:child.key,sourceId:child.sourceId,summary:'The child supplied a bounded result.',usedFor:'Resolve the named subproblem.'}))});
   if(stage.id==='inference')body.inferences=[{id:'finding',claim:'The captured question has a bounded answer.',basis:'inferred',sourceIds:[sourceId],limitation:'This is a synthetic fixture.'}];
@@ -28,6 +29,11 @@ function response(input){
   if(stage.id==='think')body.criterionResults=criteria.map(item=>({criterionId:item.id,assessment:'satisfied',sourceIds:[sourceId],receiptIds:[],rationale:'The synthetic result addresses the defined criterion.'}));
   if(stage.id==='respond'){body.values.answer='The bounded answer is supported by the recorded fixture results.';body.coverage=criteria.map(item=>({criterionId:item.id,disposition:'addressed',sourceIds:[sourceId],responseExcerpt:body.values.answer,limitation:''}));}
   return body;
+}
+function fixtureProhibitedSourceAgency(requirement){
+  const checkpoint=fixtureDeferredUserAgency(requirement.value);
+  checkpoint.decisions[0].input.hardConstraints=[{id:'prohibited-source',kind:'user_constraint',rule:requirement.rationale,source:requirement.sourceIds.join(', '),observedViolation:requirement.value,blockedOptionIds:['proceed']}];
+  return checkpoint;
 }
 async function fixture(t,{amend}={}){
   const dir=await mkdtemp(path.join(os.tmpdir(),'response-cycle-')),store=await new PlanningBrowserStore({dataDir:dir}).init(),calls=[],runs=new Map(),admitted=new Map();let uncertain=false,profile='Recorded fixture facts.',identityReads=0;
@@ -106,7 +112,7 @@ test('Forced automatic Planning delegates unknown saved-record checks to the ope
   assert.equal(result.responseCycle.state,'executing');
 
   const blocked=await fixture(t,{amend:(body,input)=>{
-    if(input.module.kind==='viability')body.requirements=[{...requirement(input,'blocked'),stopKind:'user_prohibited',value:'The user explicitly prohibited access to the saved records.',rationale:'The required saved-record access is expressly prohibited by the current user instruction; the owning workflow must not perform it.'}];
+    if(input.module.kind==='viability'){body.requirements=[{...requirement(input,'blocked'),stopKind:'user_prohibited',value:'The user explicitly prohibited access to the saved records.',rationale:'The required saved-record access is expressly prohibited by the current user instruction; the owning workflow must not perform it.'}];body.userAgency=fixtureProhibitedSourceAgency(body.requirements[0]);}
     return body;
   }});
   const held=await blocked.prepare('automatic',{input:'Explain the supplied bounded problem using the saved records. Do not access the saved records: I explicitly prohibit that access.',planningEnforcement:'forced',runtimeSettings:{planningGuardrails:true,executionGuardrails:false}});
@@ -117,7 +123,7 @@ test('Forced automatic Planning delegates unknown saved-record checks to the ope
 test('managed automatic Planning runs owner access checks without asking a generic question',async t=>{
   const managedCase=async (makeRequirement,input='Check the requested sources and complete the delegated work.')=>{
     const f=await fixture(t,{amend:(body,captured)=>{
-      if(captured.module.kind==='viability')body.requirements=[makeRequirement(captured)];
+      if(captured.module.kind==='viability'){body.requirements=[makeRequirement(captured)];if(body.requirements[0].resolution==='blocked'&&body.requirements[0].stopKind)body.userAgency=fixtureProhibitedSourceAgency(body.requirements[0]);else if(body.requirements[0].id==='required_address')body.userAgency=fixtureAskingUserAgency(body.requirements[0].question);}
       return body;
     }});
     // Deployment admission is covered separately; this isolates the response-cycle
@@ -212,7 +218,7 @@ test('final delivery receives the original human request and direct operational 
   const candidate='Message received. Was “tets” a test, or did you want me to do something specific?';
   const question='Was “tets” a test, or did you want me to do something specific?';
   const f=await fixture(t,{amend:(body,input)=>{
-    if(input.module.kind==='think')body.criterionResults=body.criterionResults.map(item=>({...item,assessment:'uncertain',rationale:'The user has not yet clarified the intended task.'}));
+    if(input.module.kind==='think'){body.criterionResults=body.criterionResults.map(item=>({...item,assessment:'uncertain',rationale:'The user has not yet clarified the intended task.'}));body.userAgency=fixtureAskingUserAgency(question);}
     if(input.module.kind==='respond'){
       const source=input.sources.find(item=>item.id.startsWith('cycle:execution:')&&JSON.parse(item.text).projection?.userDelivery);
       assert.ok(source,'The final response must have an explicit human delivery context, not only worker audit records.');
@@ -221,7 +227,7 @@ test('final delivery receives the original human request and direct operational 
       assert.equal(delivery.objective.ranges.map(item=>item.text).join(''),'tets');
       assert.equal(delivery.candidateAnswer.ranges.map(item=>item.text).join(''),candidate);
       assert.deepEqual(delivery.candidateSourceNodeIds,['agent']);
-      body.values.answer=candidate;
+      body.values.answer=candidate;body.userAgency=fixtureAskingUserAgency(question);
       body.coverage=body.coverage.map(item=>({...item,disposition:'unresolved',sourceIds:[source.id],responseExcerpt:question,limitation:question}));
     }
     return body;
@@ -693,6 +699,7 @@ test('useful child answer cannot erase an essential unknown before continuation'
     if(input.module.kind==='viability'&&input.cycle?.objective==='Check the required residential address for the proposed action.'){
       const supplied=input.sources.find(source=>source.id.startsWith('viability:answer:cycle-'));
       body.requirements=[{id:'address',label:'Residential address',importance:'essential',basis:'task',consequence:'Complete the required address field.',resolution:supplied?'observed':'unknown',value:supplied?.text||'',sourceIds:supplied?[supplied.id]:[],checkedSourceIds:input.sources.filter(source=>source.kind!=='response').map(source=>source.id),rationale:supplied?'The user supplied the requested fact.':'The captured records do not supply the required fact.',inferable:false,omissionAllowed:false,question:supplied?'':'Which residential address should be used?',dependentNodeIds:['agent']}];
+      if(!supplied)body.userAgency=fixtureAskingUserAgency(body.requirements[0].question);
     }
     return body;
   }}),{request,result}=await f.prepare('plan_only'),cycle=request.cycles[0],child=request.cycles.find(item=>item.parentCycleId);
@@ -724,6 +731,7 @@ test('automatic nested answer refreshes the existing child before its parent and
     if(input.module.kind==='viability'&&input.cycle?.objective==='Resolve the required location for this bounded task.'){
       const answer=input.sources.find(source=>source.id.startsWith('viability:answer:cycle-'));
       body.requirements=[{id:'location',label:'Required location',importance:'essential',basis:'task',consequence:'Complete the location-specific step.',resolution:answer?'observed':'unknown',value:answer?.text||'',sourceIds:answer?[answer.id]:[],checkedSourceIds:input.sources.filter(source=>source.kind!=='response').map(source=>source.id),rationale:answer?'The user supplied the required location.':'The sources have no required location.',inferable:false,omissionAllowed:false,question:answer?'':'Which location should this use?',dependentNodeIds:['agent']}];
+      if(!answer)body.userAgency=fixtureAskingUserAgency(body.requirements[0].question);
     }return body;
   }}),{request,result}=await f.prepare('automatic');assert.equal(result.state,'waiting_children');assert.equal(result.awaitingInput,true);
   f.engine.resumeViabilityRun=(id,value)=>{if(!f.admitted.has(value.requestId))f.admitted.set(value.requestId,{id:'resumed-'+f.admitted.size,from:id});return f.admitted.get(value.requestId);};

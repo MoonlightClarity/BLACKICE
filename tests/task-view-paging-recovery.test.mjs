@@ -19,7 +19,7 @@ test('a speculative nonzero Planning offset is rejected with an actionable first
 });
 
 test('mandatory Planning skill teaches cursor-copying and explicitly prohibits speculative offsets', () => {
-  assert.equal(validatePlanningSkill(PLANNING_SKILL_CONTENT).version, 3);
+  assert.equal(validatePlanningSkill(PLANNING_SKILL_CONTENT).version, 4);
   assert.match(PLANNING_SKILL_CONTENT, /Paged Planning reads use exact returned cursors/);
   assert.match(PLANNING_SKILL_CONTENT, /copy the returned nextRead object verbatim/);
   assert.match(PLANNING_SKILL_CONTENT, /Do not invent or increment page offsets/);

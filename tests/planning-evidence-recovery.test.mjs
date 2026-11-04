@@ -1,3 +1,4 @@
+import { fixtureUserAgency } from './fixture-user-agency.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
@@ -21,7 +22,7 @@ const workflow=()=>({id:'recovery-fixture',name:'Evidence recovery fixture',node
 
 function analyticalResponse(input){
   const stage=RESPONSE_CYCLE_STAGES.find(item=>item.kind===input.module.kind),sourceId=input.sources.find(source=>source.id==='viability:task')?.id||input.sources[0].id;
-  const body={values:Object.fromEntries(input.template.fields.map(field=>[field.id,field.label+': bounded finding from the captured fixture records.'])),grounding:input.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId})),openQuestions:[],challengeResponses:[]};
+  const body={userAgency:fixtureUserAgency(),values:Object.fromEntries(input.template.fields.map(field=>[field.id,field.label+': bounded finding from the captured fixture records.'])),grounding:input.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId})),openQuestions:[],challengeResponses:[]};
   if(stage.id==='feasibility')return {...body,requirements:[{
     id:'project-marker',label:'Project marker',importance:'essential',basis:'task',consequence:'Identify the requested project in the summary.',resolution:'unknown',value:'',sourceIds:[],checkedSourceIds:input.sources.filter(source=>source.kind!=='response').map(source=>source.id),rationale:'The initial supplied snapshot does not contain the project record.',inferable:false,omissionAllowed:false,question:provisionalQuestion,dependentNodeIds:['agent'],accuracy:null,
   }]};

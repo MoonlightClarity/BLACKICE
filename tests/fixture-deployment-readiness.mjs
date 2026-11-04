@@ -13,7 +13,24 @@ export function fixtureDeploymentReadiness(captured, details = 'The isolated fix
     values: Object.fromEntries(fields.map(field => [field.id, field.label + ': ' + details])),
     grounding: fields.filter(field => field.grounding === 'required').map(field => ({ field: field.id, sourceId })),
     openQuestions: [],
-    challengeResponses: []
+    challengeResponses: [],
+    userAgency: {
+      version: 1,
+      audience: 'internal',
+      userBenefit: 'Check the saved fixture deployment readiness without starting operational work.',
+      representation: {
+        actualQuestion: 'Can the isolated fixture deployment proceed with the captured task and workflow?',
+        requiredFacts: ['The captured task supplies the bounded purpose and permitted actions.'],
+        relevantClaims: [details],
+        privateFindings: [],
+        userReport: []
+      },
+      action: 'proceed',
+      decisionRequired: false,
+      decisionReason: 'The isolated readiness fixture has a clear task, an executable local workflow and no decision-changing uncertainty.',
+      decisions: [],
+      chosenDecisionId: null
+    }
   };
   if (kind === 'viability') return { ...result, requirements: [] };
   return {

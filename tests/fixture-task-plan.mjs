@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { fixtureDeferredUserAgency } from './fixture-user-agency.mjs';
 
 /** Tool integration fixtures model the complete Planning On protocol through
  * the real gateway: prepare, save one concrete call, execute, record its actual
@@ -106,5 +107,7 @@ export async function finishFixturePlan(options, { state, decision = 'respond', 
     return JSON.parse(response.contentItems.find(item => item.type === 'inputText').text);
   };
   state ||= await call({ action: 'read' });
-  return call({ action: 'review', expectedRevision: state.revision, review: { decision, summary } });
+  return call({ action: 'review', expectedRevision: state.revision, review: { decision, summary,
+    ...(decision === 'blocked' && tool.inputSchema.properties.review?.properties?.userAgency
+      ? { userAgency: fixtureDeferredUserAgency(summary) } : {}) } });
 }

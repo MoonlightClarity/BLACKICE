@@ -1,3 +1,4 @@
+import { fixtureUserAgency } from './fixture-user-agency.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -21,7 +22,7 @@ const workflow=()=>({id:'admission-fixture',name:'Planning admission fixture',no
 function checkedResponse(input){
   const stage=RESPONSE_CYCLE_STAGES.find(item=>item.kind===input.module.kind);
   const sourceId=input.sources.find(source=>source.id==='viability:task')?.id||input.sources[0].id;
-  const body={values:Object.fromEntries(input.template.fields.map(field=>[field.id,field.label+': supported fixture finding.'])),grounding:input.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId})),openQuestions:[],challengeResponses:[]};
+  const body={userAgency:fixtureUserAgency(),values:Object.fromEntries(input.template.fields.map(field=>[field.id,field.label+': supported fixture finding.'])),grounding:input.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId})),openQuestions:[],challengeResponses:[]};
   if(stage.id==='feasibility')return {...body,requirements:[]};
   Object.assign(body,{checks:stage.checks.map(check=>({id:check.id,assessment:check.when==='effects'?'not_applicable':'supported',sourceIds:check.grounding==='required'&&check.when!=='effects'?[sourceId]:[],note:'The captured fixture evidence supports this check.'})),subproblems:[],childResults:[]});
   if(stage.id==='inference')body.inferences=[{id:'finding',claim:'The bounded task can be answered.',basis:'inferred',sourceIds:[sourceId],limitation:'Synthetic fixture evidence.'}];

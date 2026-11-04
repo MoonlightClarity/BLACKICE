@@ -1,3 +1,4 @@
+import { fixtureUserAgency } from './fixture-user-agency.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
@@ -31,7 +32,7 @@ async function fixture(t,{onCapture,historyError}={}){
   const engine={listRuns:()=>{historyReads++;if(historyError)throw historyError;return structuredClone(retained);}};
   const runtime={runAgent:async options=>{
     const input=JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2));calls.push(input);await onCapture?.(input);
-    return {output:JSON.stringify({values:Object.fromEntries(input.template.fields.map(field=>[field.id,field.label+': a bounded fixture finding.'])),grounding:input.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId:'viability:task'})),requirements:[],openQuestions:[],challengeResponses:[]}),threadId:'analysis-fixture',turnId:'analysis-'+calls.length};
+    return {output:JSON.stringify({userAgency:fixtureUserAgency(),values:Object.fromEntries(input.template.fields.map(field=>[field.id,field.label+': a bounded fixture finding.'])),grounding:input.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId:'viability:task'})),requirements:[],openQuestions:[],challengeResponses:[]}),threadId:'analysis-fixture',turnId:'analysis-'+calls.length};
   }};
   const settings={defaultModel:'fixture-model',defaultEffort:'low',maxSubagents:2};
   const runner=new PlanningBrowserRuntime({store,runtime,defaultCwd:dir,getSettings:()=>settings});

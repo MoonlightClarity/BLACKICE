@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { fixtureDeferredUserAgency } from './fixture-user-agency.mjs';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
@@ -35,7 +36,9 @@ async function complete(options, state, id = 'compare', evidence = 'Option B cos
   return task(options, { action: 'step', expectedRevision: state.revision, stepId: id, status: 'done', evidence });
 }
 async function review(options, state, decision = 'respond', summary = 'The supplied goal and constraints are covered by the saved comparison; no consequential question remains before answering.', nextStepId) {
-  return task(options, { action: 'review', expectedRevision: state.revision, review: { decision, summary, ...(nextStepId ? { nextStepId } : {}) } });
+  return task(options, { action: 'review', expectedRevision: state.revision, review: { decision, summary, ...(nextStepId ? { nextStepId } : {}),
+    ...(decision === 'blocked' && options.dynamicTools?.find(item => item.name === 'relay_task')?.inputSchema?.properties?.review?.properties?.userAgency
+      ? { userAgency: fixtureDeferredUserAgency(summary) } : {}) } });
 }
 const answer = (options, text, id) => {
   options.onEvent({ type: 'delta', itemId: id, delta: text });

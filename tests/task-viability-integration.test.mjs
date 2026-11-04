@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {fixtureUserAgency,fixtureAskingUserAgency} from './fixture-user-agency.mjs';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
@@ -28,7 +29,7 @@ class Runtime extends EventEmitter{
     this.calls.push(options);
     if(options.responseOnly){
       const captured=JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2));const found=captured.sources.find(source=>source.id.startsWith('viability:answer:'));
-      const output={values:Object.fromEntries(captured.template.fields.map(field=>[field.id,field.label+': public fixture findings.'])),grounding:captured.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId:'viability:task'})),requirements:this.needsAddress?[requirement(captured.sources,found)]:[],openQuestions:[],challengeResponses:[]};
+      const output={userAgency:this.needsAddress&&!found?fixtureAskingUserAgency(requirement(captured.sources,found).question):fixtureUserAgency(),values:Object.fromEntries(captured.template.fields.map(field=>[field.id,field.label+': public fixture findings.'])),grounding:captured.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId:'viability:task'})),requirements:this.needsAddress?[requirement(captured.sources,found)]:[],openQuestions:[],challengeResponses:[]};
       return{output:JSON.stringify(output),threadId:'fixture-check-thread',turnId:'fixture-turn-'+this.calls.length};
     }
     return{output:options.prompt.includes('INDEPENDENT_MARKER')?'Independent public requirements summarized.':'Requested dependent work completed.',threadId:'fixture-agent-thread-'+this.calls.length};
@@ -165,7 +166,7 @@ test('concurrent managed jobs have independent cycles and isolated final executi
     const input=JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2)),stage=RESPONSE_CYCLE_STAGES.find(stage=>stage.kind===input.module.kind),sourceId=input.sources.find(source=>source.id==='viability:task')?.id||input.sources[0].id;
     captured.push(input);
     if(stage.id==='inference'&&input.sources.some(source=>source.id==='viability:task'&&source.text.includes('RUN_A_SENTINEL'))){blockedA=true;await gate;}
-    const body={values:Object.fromEntries(input.template.fields.map(field=>[field.id,field.label+': a checked public fixture result.'])),grounding:input.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId})),openQuestions:[],challengeResponses:[]};
+    const body={userAgency:fixtureUserAgency(),values:Object.fromEntries(input.template.fields.map(field=>[field.id,field.label+': a checked public fixture result.'])),grounding:input.template.fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId})),openQuestions:[],challengeResponses:[]};
     if(stage.id==='feasibility')body.requirements=[];
     else{
       Object.assign(body,{checks:stage.checks.map(check=>({id:check.id,assessment:check.when==='effects'?'not_applicable':'supported',sourceIds:check.grounding==='required'&&check.when!=='effects'?[sourceId]:[],note:'Bounded synthetic evidence supports this check.'})),subproblems:[],childResults:[]});
