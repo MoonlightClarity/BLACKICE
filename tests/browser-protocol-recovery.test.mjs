@@ -78,6 +78,26 @@ test('host-verified owned active-tab routing remains usable and recovery does no
   assert.equal(f.calls.length, 1, 'A recovery hint does not select an unrelated or reserved page.');
 });
 
+test('missing keyboard keys fail before admission and recovery preserves the observed button ref', async t => {
+  const f = fixture(t, { ownedTab: true });
+  const target = { tabId: 'observed-owned', ref: 'observed-button', expectedUrl: 'https://example.test/source', expectedDocumentId: 'observed-document' };
+  for (const key of [undefined, null, '', '  ', 13, {}]) {
+    const result = await f.call({ action: 'press', ...target, key });
+    assert.equal(result.code, 'BROWSER_VALIDATION');
+    assert.equal(payload(result).actionDispatched, false);
+    assert.match(payload(result).error, /keyboard action and requires key/);
+    assert.match(payload(result).error, /action:"click" with its exact snapshot ref/);
+  }
+  assert.deepEqual(f.calls, []); assert.deepEqual(f.admissions, []);
+  await assert.rejects(f.browser.perform({ action: 'press', browser: 'relay', ...target }, { source: 'user' }), error => error.code === 'BROWSER_VALIDATION' && error.actionDispatched === false);
+  assert.deepEqual(f.calls, [], 'Programmatic calls also reject the missing key before reaching the driver.');
+  assert.equal((await f.call({ action: 'click', ...target })).success, true);
+  assert.deepEqual(f.calls[0], { action: 'click', browser: 'relay', ...target });
+  assert.equal((await f.call({ action: 'press', ...target, key: 'Enter' })).success, true);
+  assert.equal(f.calls[1].key, 'Enter');
+  assert.equal(f.admissions.length, 2, 'Only the two valid requests reach admission.');
+});
+
 test('navigation diagnostics preserve programmatic URL inputs and established address normalization for local user calls', async t => {
   const f = fixture(t, { ownedTab: true });
   const destinations = [

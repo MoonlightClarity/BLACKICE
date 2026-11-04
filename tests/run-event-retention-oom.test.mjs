@@ -35,7 +35,10 @@ test('heavy tool result events are indexed while real assistant messages remain 
       contentItems:[{type:'inputText',text:'z'.repeat(800000)}]}
   }};
   const small=compactRunEvent(giant);
-  assert.ok(JSON.stringify(small).length<1300);
+  assert.ok(Buffer.byteLength(JSON.stringify(small),'utf8')<RUN_EVENT_LIMITS.maxAuxiliaryEventBytes);
+  assert.ok(small.data.item.retainedResult.retainedChars<=4096);
+  assert.equal(small.data.item.retainedResult.length,800000);
+  assert.equal(small.data.item.retainedResult.truncated,true);
   assert.equal(small.data.item.action,'snapshot');
   assert.equal(small.data.item.target,'tab-a');
   assert.equal(small.data.item.omittedChars,800000-300);

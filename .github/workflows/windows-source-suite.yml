@@ -26,9 +26,9 @@ jobs:
     env:
       EXPECTED_SOURCE_COMMIT: ${{ github.sha }}
       # Reviewed runtime fingerprint; CI recomputes it on the exact pushed source.
-      EXPECTED_FINGERPRINT: f03faed01d6cb4e9f1d43678ac05baaf328994468a9883fd8f5280d4cdf7551c
-      SOURCE_SUITE_RUNNER: verification/release-source-suite-20261104-v23918-r1.mjs
-      SOURCE_SUITE_OUTPUT: verification/release-source-suite-20261104-v23918-r1
+      EXPECTED_FINGERPRINT: 50f97f9a112ddd34d57c86d71b4091611e9b6da5677e76859bd5e76001211f2c
+      SOURCE_SUITE_RUNNER: verification/release-source-suite-20261104-v23918-r2.mjs
+      SOURCE_SUITE_OUTPUT: verification/release-source-suite-20261104-v23918-r2
       SOURCE_TEST_RECEIPT: verification/windows-2.39.18.json
     steps:
       - name: Fetch the exact pushed source without persisted credentials
@@ -114,7 +114,7 @@ jobs:
           name: blackice-source-suite-2.39.18-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             source/verification/windows-2.39.18.json
-            source/verification/release-source-suite-20261104-v23918-r1/
+            source/verification/release-source-suite-20261104-v23918-r2/
           if-no-files-found: error
           retention-days: 90
           overwrite: false

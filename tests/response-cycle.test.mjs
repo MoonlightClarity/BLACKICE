@@ -13,6 +13,7 @@ import {RESPONSE_CYCLE_STAGES,responseCycleStage,LEGACY_RESPONSE_CYCLE_STAGES,pa
 import {planningResponseBody} from '../public/planning-browser-model.mjs';
 import {verificationScriptHash} from '../lib/workbench-effect-verification.mjs';
 import {observationRun} from './fixtures/planning-guest-observation.mjs';
+import {retainRunEvent,compactRunHistory} from '../lib/run-event-retention.mjs';
 
 const criterion={id:'answer',label:'Requested answer',description:'Provide a supported answer to the bounded question.',verification:'response'};
 const actualHostControlCriterion=JSON.parse(await readFile(new URL('./fixtures/planning-host-control-accuracy.json',import.meta.url),'utf8'));
@@ -54,6 +55,28 @@ async function standalone(f,purpose='Explain a bounded synthetic marker.'){
   const created=await f.service.createCycle(request.id,{title:'Synthetic response cycle',purpose,planningExecutionMode:'plan_only',expectedRequestRevision:request.revision,clientRequestId:'standalone-cycle'});
   return {request:created,cycle:created.cycles[0]};
 }
+
+test('the actual final-review prompt receives complete small readbacks from retained run history',async t=>{
+  const resultText=JSON.stringify({path:'synthetic-answer.json',size:1234,sha256:'a'.repeat(64),truncated:false,content:'Observed synthetic content. '.repeat(36)+'Final material sentence remains visible.'});
+  assert.ok(resultText.length>300&&resultText.length<4096);
+  let delivered=false;
+  const f=await fixture(t,{amend:(body,input)=>{
+    if(input.module.kind==='think'){
+      const bodies=projectionBodies(input.sources),calls=bodies.flatMap(item=>item.calls||[]),texts=bodies.flatMap(item=>item.texts||[]);
+      const call=calls.find(item=>item.callId==='retained-readback');assert.ok(call);
+      assert.equal(call.observationCount,1);
+      const observed=texts.find(item=>item.id===call.observations[0].textRef);
+      assert.equal(observed.truncated,false);assert.equal(observed.ranges.map(item=>item.text).join(''),resultText);
+      delivered=true;
+    }
+    return body;
+  }}),{run}=await f.prepare();
+  run.nodes={agent:{status:'completed',output:'The candidate answer is not itself proof of the file effect.'}};run.events=[];
+  retainRunEvent(run,{type:'agent.event',runId:run.id,nodeId:'agent',at:'2026-11-04T00:00:00Z',data:{type:'item',stage:'completed',item:{type:'dynamicToolCall',id:'retained-readback',tool:'relay_workspace',arguments:JSON.stringify({action:'read',path:'synthetic-answer.json'}),status:'completed',success:true,contentItems:[{type:'inputText',text:resultText}]}}});
+  compactRunHistory(run);compactRunHistory(run);
+  await f.service.finishRun(run,{outputs:recordedExecutionOutputs(run)});
+  assert.equal(delivered,true,'The real ResponseCycleService/PlanningBrowserRuntime prompt must carry the captured text, not just a manually projected fixture.');
+});
 
 test('real graph runs all five stages across actual execution boundary with typed data intact',async t=>{
   const f=await fixture(t),{run,result,request}=await f.prepare();
