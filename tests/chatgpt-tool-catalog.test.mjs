@@ -22,7 +22,8 @@ const provider = tools => ({ tools: () => tools, call: unavailable });
 test('the full native catalog retains the exact 28-tool public contract and fingerprint', () => {
   // Bind the reviewed public definitions, including recursive planning,
   // bounded contained diagnostics, exact-identity ownership/debug controls,
-  // the cleanup protocol and the explicit relay default for credential fill.
+  // the cleanup protocol, the explicit relay default for credential fill, and
+  // the reviewed planning descriptions/optional selected-content references.
   // The complete fingerprint catches unreviewed contract changes.
   // Only definitions are constructed: no storage or native adapter is opened.
   const execution = new DirectExecutionAPI({ dataDir: '/unused-catalog-fixture', additionalTools: [
@@ -43,7 +44,7 @@ test('the full native catalog retains the exact 28-tool public contract and fing
     'blackice_get_swarm_plan', 'blackice_get_plan_groups', 'blackice_edit_plan', 'blackice_edit_plan_groups',
   ]);
   assert.deepEqual(catalog.status(), {
-    sha256: 'b4d87908bed59f0d05c1a0d3b59f054966ac218a408752b67d6e93779f7f0135',
+    sha256: 'b8e032c5dfd07a7315d21e7292b34e68302b4fe6d128da8b6da66754e282d8bc',
     toolCount: 28,
     serverVersion: '2.33.5',
   });
