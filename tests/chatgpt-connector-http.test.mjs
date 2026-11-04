@@ -22,9 +22,10 @@ async function fixture(t, { prepare, serverOptions = {} } = {}) {
   const transport = createRemoteTransportFixture(), remoteAccess = new RemoteAccessManager({ dataDir, transport: transport.transport, defaultHttpsPort: 8443 });
   const desktop = new EventEmitter(); desktop.status = () => ({ available: false, enabled: false }); desktop.setEnabled = async () => desktop.status();
   const runtime = new Runtime();
-  const app = await createHarnessServer({ port: 0, dataDir, defaultCwd: path.join(root, 'workspace'), runtime, desktop, remoteAccess, autoAttachDesktop: false, ...serverOptions });
-  const url = await app.listen(), home = await fetch(url), cookie = home.headers.get('set-cookie').split(';')[0]; await home.text();
+  // Connector HTTP fixtures do not use the optional Hyper-V video transport.
+  const app = await createHarnessServer({ port: 0, dataDir, defaultCwd: path.join(root, 'workspace'), runtime, desktop, remoteAccess, autoAttachDesktop: false, enableWorkbenchVideo: false, ...serverOptions });
   t.after(async () => { await app.close(); await fs.rm(root, { recursive: true, force: true }); });
+  const url = await app.listen(), home = await fetch(url), cookie = home.headers.get('set-cookie').split(';')[0]; await home.text();
   const request = (route, { body, headers = {}, method = body === undefined ? 'GET' : 'POST' } = {}) => fetch(url + route, { method, headers: { Cookie: cookie, ...headers, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   return { root, dataDir, app, runtime, url, request, cookie, transport };
 }
@@ -408,8 +409,46 @@ test('shutdown closes setup before connector teardown and drains an admitted con
   f.app.chatGPTConnector.close = async () => { events.push('connector'); return connectorClose(); };
   const checking = f.request(checkRoute, { body: {} }); await entered.promise; let drained = false;
   const closing = f.app.close().then(() => { drained = true; }); await turn(); assert.equal(drained, false);
-  assert.equal((await f.request(checkRoute, { body: {} })).status, 503); gate.resolve(); assert.equal((await checking).status, 200); await closing;
+  const rejected = await f.request(checkRoute, { body: {} }), rejectedBody = await rejected.text();
+  gate.resolve(); const admitted = await checking, admittedBody = await admitted.text(); await closing;
+  assert.equal(rejected.status, 503, rejectedBody); assert.equal(admitted.status, 200, admittedBody);
   assert.equal(drained, true); assert.deepEqual(events, ['setup', 'connector']);
+});
+
+for (const [action, route, body] of [
+  ['check', checkRoute, {}],
+  ['confirmation', confirmRoute, { nonce: 'blackice-connect-11111111-1111-4111-8111-111111111111' }],
+]) test(`shutdown keeps connector storage open until an admitted ${action} response snapshot completes`, async t => {
+  const snapshotEntered = held(), releaseSnapshot = held(), setupClosed = held(), events = [];
+  const setup = setupStub({ async close() { events.push('setup'); setupClosed.resolve(); } });
+  // Isolate local connector teardown from the optional remote adapter. A later
+  // rejected HTTP request then gives queued teardown microtasks an explicit I/O boundary.
+  const f = await fixture(t, { serverOptions: { chatGPTSetup: setup, remoteAccess: false } });
+  const pendingInteractions = f.app.directExecution.pendingInteractions.bind(f.app.directExecution);
+  f.app.directExecution.pendingInteractions = async () => {
+    snapshotEntered.resolve(); await releaseSnapshot.promise;
+    const result = await pendingInteractions(); events.push('snapshot'); return result;
+  };
+  const connectorClose = f.app.chatGPTConnector.close.bind(f.app.chatGPTConnector);
+  f.app.chatGPTConnector.close = async () => { events.push('connector'); return connectorClose(); };
+  let checking, closing;
+  try {
+    checking = f.request(route, { body });
+    await Promise.race([snapshotEntered.promise, checking.then(response => { throw Error(`Request completed before its response-snapshot barrier: HTTP ${response.status}.`); })]);
+    closing = f.app.close(); await setupClosed.promise;
+    const rejected = await f.request(route, { body }), rejectedBody = await rejected.text();
+    const beforeRelease = [...events];
+    releaseSnapshot.resolve();
+    const admitted = await checking, admittedBody = await admitted.text(); await closing;
+    assert.equal(rejected.status, 503, rejectedBody);
+    assert.equal(admitted.status, 200, admittedBody);
+    assert.deepEqual(beforeRelease, ['setup']);
+    assert.deepEqual(events, ['setup', 'snapshot', 'connector']);
+    assert.equal(JSON.parse(admittedBody).pending.available, true);
+  } finally {
+    releaseSnapshot.resolve();
+    await Promise.allSettled([checking, closing].filter(Boolean));
+  }
 });
 
 

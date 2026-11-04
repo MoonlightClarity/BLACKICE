@@ -427,6 +427,7 @@ export async function createHarnessServer(options = {}) {
   });
   remoteAccess?.attachConnector?.(chatGPTConnector);
   const connectorSetup = options.chatGPTSetup || await new ChatGPTSetup({ dataDir: path.resolve(dataDir), connector: chatGPTConnector, remoteAccess, isClosing: connectorClosing }).init();
+  const connectorSetupOperations = new Set();
   chatGPTConnector.onAuthenticatedToolCall = receipt => Promise.resolve().then(() => connectorSetup.record?.(receipt)).catch(error => diagnostics.recordError('chatgpt-connector', 'setup_receipt_failed', error));
   let connectorOpening = null, connectorPreparing = null;
   const connectorStartupSnapshot = async () => {
@@ -717,8 +718,8 @@ export async function createHarnessServer(options = {}) {
             if (action === 'check-connection') await connectorSetup.check(); else await connectorSetup.confirm(value.nonce);
             return connectorSnapshot();
           });
-          fileMutations.add(pending);
-          try { return json(res, 200, await pending); } finally { fileMutations.delete(pending); }
+          fileMutations.add(pending); connectorSetupOperations.add(pending);
+          try { return json(res, 200, await pending); } finally { fileMutations.delete(pending); connectorSetupOperations.delete(pending); }
         }
         if (action === 'open-chatgpt') {
           if (typeof options.openExternal !== 'function') return json(res, 409, { error: 'Open the BLACKICE plugin in your normal browser; this host cannot launch it.' });
@@ -1425,7 +1426,9 @@ export async function createHarnessServer(options = {}) {
         let firstError;
         const cleanup = async operation => { try { await operation(); } catch (error) { firstError ||= error; } };
         await cleanup(() => workbenchVideo.close());
-       await cleanup(() => connectorSetup.close());
+        await cleanup(() => connectorSetup.close());
+        // Setup cancellation does not cover the HTTP operation's final connector snapshot.
+        await cleanup(() => Promise.allSettled([...connectorSetupOperations]));
         await cleanup(() => remoteAccess?.close());
         await cleanup(() => remoteStartup?.catch(() => {}));
         remoteAgentApi.close();

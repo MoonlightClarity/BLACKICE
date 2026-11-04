@@ -26,7 +26,7 @@ jobs:
     env:
       EXPECTED_SOURCE_COMMIT: ${{ github.sha }}
       # Reviewed runtime fingerprint; CI recomputes it on the exact pushed source.
-      EXPECTED_FINGERPRINT: 50f97f9a112ddd34d57c86d71b4091611e9b6da5677e76859bd5e76001211f2c
+      EXPECTED_FINGERPRINT: 8acd93fefd58870db468d815ec426ac627d17dc20542d8e137c4810c1a415569
       SOURCE_SUITE_RUNNER: verification/release-source-suite-20261104-v23918-r2.mjs
       SOURCE_SUITE_OUTPUT: verification/release-source-suite-20261104-v23918-r2
       SOURCE_TEST_RECEIPT: verification/windows-2.39.18.json
