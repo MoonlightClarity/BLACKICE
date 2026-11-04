@@ -4,9 +4,9 @@ BLACKICE is an open-source Windows workspace for AI agents that work with files,
 
 The project is built for personal, user-directed automation. Its focus is practical outcomes, shared human/agent control and continuity across longer tasks.
 
-**Current public release: 2.39.15 for Windows x64. Overview updated November 4, 2026.**
+**Current public release: 2.39.16 for Windows x64. Overview updated November 4, 2026.**
 
-**[Download the Windows installer](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.15/Blackice-2.39.15-Setup.exe)** · [Latest release](https://github.com/MoonlightClarity/BLACKICE/releases/latest) · [2.39.15 release notes](RELEASE-NOTES-2.39.15.md) · [Checksums](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.15/SHA256SUMS.txt)
+**[Download the Windows installer](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.16/Blackice-2.39.16-Setup.exe)** · [Latest release](https://github.com/MoonlightClarity/BLACKICE/releases/latest) · [2.39.16 release notes](RELEASE-NOTES-2.39.16.md) · [Checksums](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.16/SHA256SUMS.txt)
 
 [Getting started](#getting-started) · [Workspace](#find-your-way-around) · [Planning](#planning-and-practical-judgment) · [Recurring work](#workflows-agents-and-recurring-work) · [Project state](#current-project-state) · [Build from source](#build-from-source)
 
@@ -27,9 +27,9 @@ The former browser-driven ChatGPT model provider, Antigravity and Qwen Code nati
 
 ### Install
 
-Download and run **Blackice-2.39.15-Setup.exe**, then open BLACKICE. The per-user installer creates Desktop and Start menu shortcuts and an Installed apps entry.
+Download and run **Blackice-2.39.16-Setup.exe**, then open BLACKICE. The per-user installer creates Desktop and Start menu shortcuts and an Installed apps entry.
 
-The current release is unsigned. Signing is deferred until adoption justifies it. See [Windows releases](SIGNING-AND-RELEASE.md) for packaging and Windows compatibility details, and the [release page](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.39.15) for verification of the published installer.
+The current release is unsigned. Signing is deferred until adoption justifies it. See [Windows releases](SIGNING-AND-RELEASE.md) for packaging and Windows compatibility details, and the [release page](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.39.16) for verification of the published installer.
 
 Keep BLACKICE running while using its tools or schedules. Workbench's Hyper-V guest is an optional setup for native application work; it is not required to start a conversation or use ordinary file and browser tools.
 
@@ -89,6 +89,8 @@ Executable plans support recursively decomposed steps with hierarchical labels s
 
 The runtime's user-advocacy guidance asks agents to work backward from the user's intended outcome, distinguish hard constraints from preferences, and weigh likely benefit, effort, downside and the opportunity cost of waiting. Judgment records can capture uncertainty, a useful next check and what was learned. These are instructions and recorded decision structures, not a guarantee that every model will judge a situation well.
 
+For consequential proceed, ask or defer decisions, BLACKICE recomputes expected user cost from explicit probability and consequence estimates plus delay, interruption and opportunity costs on one shared scale. Selected choices must match the computed recommendation; changing the choice requires revised evidence or assumptions and recalculation. Unknown estimates remain unknown. ChatGPT and other external agents can create standalone plans, save these comparisons and revise them through the shared planning tools without starting another model. Revision checks reject stale edits.
+
 Completion is tied to evidence for the requested outcomes. The current release also accepts a final answer that plainly explains unfinished criteria, without requiring the user-facing answer to repeat internal limitation text verbatim.
 
 See [recursive planning](docs/RECURSIVE-PLANNING.md), [practical judgment](docs/METACOGNITION.md) and [shared plan editing](PLANNING-AWARENESS.md). Plan edits are explicit saves with revision checks. Use execution controls to stop an action already underway; editing its plan guides subsequent work.
@@ -119,9 +121,9 @@ Workbench uses a **persistent Windows guest on Hyper-V** for native application 
 
 The installer includes the native FreeRDP viewer, which opens a separate **BLACKICE Agentic Workbench** window using the same guest. User/agent control ownership is shared across the guest tools and native input. The native window provides **Take/Cede** controls, plain-text clipboard sharing and automatic guest sizing when the paired guest supports them. Clipboard sharing and automatic sizing follow user-control ownership.
 
-**The native viewer is a preview.** The 2.39.15 release verifies its installed files and self-test; that check did not connect to a VM. Current acceptance is `local-preview` with `fullAcceptance: false`. Full visible-display and live guest-session acceptance remains incomplete. Installing the app does not by itself configure Hyper-V, install a guest or pair its agent.
+**The native viewer is a preview.** The 2.39.16 release verifies its installed files and self-test; that check did not connect to a VM. Current acceptance is `local-preview` with `fullAcceptance: false`. Full visible-display and live guest-session acceptance remains incomplete. Installing the app does not by itself configure Hyper-V, install a guest or pair its agent.
 
-Use the [Workbench setup guide](WORKBENCH-SETUP.md) for prerequisites and setup, the [native display document](WORKBENCH-NATIVE-DISPLAY.md) for architecture and recorded preview limits, and the [published native integrity receipt](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.15/blackice-native-workbench-integrity.json) for what the current installer actually verified. Earlier design-document statements that the native runtime is not bundled predate this release.
+Use the [Workbench setup guide](WORKBENCH-SETUP.md) for prerequisites and setup, the [native display document](WORKBENCH-NATIVE-DISPLAY.md) for architecture and recorded preview limits, and the [published native integrity receipt](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.16/blackice-native-workbench-integrity.json) for what the current installer actually verified. Earlier design-document statements that the native runtime is not bundled predate this release.
 
 ## Workflows, agents and recurring work
 
@@ -158,17 +160,17 @@ Direct actions have saved job IDs and results. After a disconnect, inspect the e
 
 ## Current project state
 
-The source checkout targets **2.39.16**, adding quantified user-cost decisions, externally editable standalone plans, compatible planning schemas and bounded recovery from transient planning-lock failures. Its [Windows source suite](verification/windows-2.39.16.json) passed 7,014 tests with zero failures or required skips and nine optional skips across 611 test files. [2.39.16 release notes](RELEASE-NOTES-2.39.16.md) describe the changes. The installer is published only after the release workflow verifies its exact bytes and installation; the [release page](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.39.16) records that outcome.
+**2.39.16 was published on November 4, 2026**, adding quantified user-cost decisions, externally editable standalone plans, compatible planning schemas and bounded recovery from transient planning-lock failures. The [release workflow](https://github.com/MoonlightClarity/BLACKICE/actions/runs/41868542123) verified the exact installer and completed publication. [Release notes](RELEASE-NOTES-2.39.16.md), the [release page](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.39.16) and the evidence below identify the checked source and installer.
 
-BLACKICE is under active development. This overview describes the public **2.39.15** checkpoint and its published evidence; later development checkouts can contain additional work.
+BLACKICE is under active development. This overview describes the public **2.39.16** checkpoint and its published evidence; later development checkouts can contain additional work.
 
 Recent releases improved scheduled readiness checks, recovery from stale browser references, disclosure of partial results and the handling of explicitly retried operations. See [2.39.13](RELEASE-NOTES-2.39.13.md), [2.39.14](RELEASE-NOTES-2.39.14.md) and [2.39.15](RELEASE-NOTES-2.39.15.md).
 
-| Verification for 2.39.15 | Recorded scope |
+| Verification for 2.39.16 | Recorded scope |
 | --- | --- |
-| [Windows source suite](https://github.com/MoonlightClarity/BLACKICE/blob/v2.39.15/verification/windows-2.39.15.json) | 6,957 passed, zero failed and nine optional skips across 606 test files. This is the recorded synthetic source suite for that release. |
-| [Published installer](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.15/blackice-windows-install-validation.json) and [release receipts](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.15/blackice-release-receipts.json) | Exact Setup installation, installed integrity, Windows registration/shortcuts, clean uninstall with profile preservation, and profile backup/restore checks passed. |
-| [Native Workbench](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.15/blackice-native-workbench-integrity.json) | Bundled native files and self-test verified; limited preview acceptance, without a live VM connection during that check. |
+| [Windows source suite](https://github.com/MoonlightClarity/BLACKICE/blob/v2.39.16/verification/windows-2.39.16.json) | 7,014 passed, zero failed, zero required skips and nine optional skips across 611 test files. This is the recorded synthetic source suite for that release. |
+| [Published installer](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.16/blackice-windows-install-validation.json) and [release receipts](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.16/blackice-release-receipts.json) | Exact Setup installation, installed integrity, Windows registration/shortcuts, clean uninstall with profile preservation, and profile backup/restore checks passed. |
+| [Native Workbench](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.16/blackice-native-workbench-integrity.json) | Bundled native files and self-test verified; limited preview acceptance, without a live VM connection during that check. |
 
 These records establish their stated checks. Live provider availability, arbitrary websites, visible desktop behavior and application compatibility require their own observations. Performance on large histories, advanced UI coverage and agent handoffs continue to be refined. Windows is the supported desktop target.
 
@@ -211,4 +213,4 @@ The main implementation lives in `desktop/` (Electron and native integration), `
 | Frontend and development | [Frontend](FRONTEND-V2.md), [UI controls](docs/FRONTEND-UI-CONTROLS.md), [development tools](docs/frontend-development.md) |
 | Packaging and release evidence | [Windows releases](SIGNING-AND-RELEASE.md), [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) |
 
-BLACKICE's original source is licensed under [Apache License 2.0](LICENSE). Bundled components retain their own licenses; see [Third-party notices](THIRD-PARTY-NOTICES.md). Corresponding native sources are included as a separate archive on the [release page](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.39.15).
+BLACKICE's original source is licensed under [Apache License 2.0](LICENSE). Bundled components retain their own licenses; see [Third-party notices](THIRD-PARTY-NOTICES.md). Corresponding native sources are included as a separate archive on the [release page](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.39.16).
