@@ -14,7 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 test('Planning On loads the same mandatory first-party skill in both guarded and unguarded instructions', () => {
-  assert.equal(PLANNING_SKILL_VERSION, 3);
+  assert.equal(PLANNING_SKILL_VERSION, 4);
   assert.equal(createHash('sha256').update(PLANNING_SKILL_CONTENT).digest('hex'), PLANNING_SKILL_SHA256);
   for (const phrase of ['Defamiliarize', 'observable', 'ELIF', 'Return to Planning', 'skip', 'opportunity']) {
     assert.match(PLANNING_SKILL_CONTENT.toLowerCase(), new RegExp(phrase.toLowerCase()));
@@ -22,14 +22,14 @@ test('Planning On loads the same mandatory first-party skill in both guarded and
   assert.match(PLANNING_SKILL_CONTENT, /A required answer may use the best defensible source-linked inference/);
   assert.match(PLANNING_SKILL_CONTENT, /Ordinary residual uncertainty never creates a stop or user question/);
   assert.match(PLANNING_SKILL_CONTENT, /Reserve stops for the exact closed conditions/);
-  assert.match(planningSkillInstructions('on'), /REQUIRED FIRST-PARTY BLACKICE PLANNING SKILL v3/);
+  assert.match(planningSkillInstructions('on'), /REQUIRED FIRST-PARTY BLACKICE PLANNING SKILL v4/);
   assert.match(planningSkillInstructions('maximal'), /mandatory for this turn/);
   assert.equal(planningSkillInstructions('off'), '');
   for (const guarded of [true, false]) {
     const result = defaultPlanInstructions('detailed', 12, 'on', guarded);
-    assert.match(result, /REQUIRED FIRST-PARTY BLACKICE PLANNING SKILL v3/);
+    assert.match(result, /REQUIRED FIRST-PARTY BLACKICE PLANNING SKILL v4/);
     assert.equal(result.split(PLANNING_SKILL_CONTENT).length, 2, 'the complete packaged skill is delivered exactly once');
-    assert.ok(result.includes('END REQUIRED BLACKICE PLANNING SKILL v3 sha256=' + PLANNING_SKILL_SHA256));
+    assert.ok(result.includes('END REQUIRED BLACKICE PLANNING SKILL v4 sha256=' + PLANNING_SKILL_SHA256));
     assert.match(result, /## 6\. Run the plan/);
     assert.doesNotMatch(result, /TASK PLANNING MODE: OFF/);
   }
@@ -57,17 +57,17 @@ test('all Planning-tab workers receive the complete mandatory skill with no-tool
 test('BLACKICE validates its own versioned contract and rejects incomplete or incompatible packaged skills', () => {
   const descriptor = validatePlanningSkill(PLANNING_SKILL_CONTENT);
   assert.equal(descriptor.id, 'blackice-planning');
-  assert.equal(descriptor.version, 3);
+  assert.equal(descriptor.version, 4);
   assert.equal(descriptor.appliesWhen, 'planning_mode_on');
   assert.equal(descriptor.sha256, PLANNING_SKILL_SHA256);
   assert.equal(descriptor.content, PLANNING_SKILL_CONTENT);
   const invalid = [
-    PLANNING_SKILL_CONTENT.replace('version: 3', 'version: 1'),
+    PLANNING_SKILL_CONTENT.replace('version: 4', 'version: 1'),
     PLANNING_SKILL_CONTENT.replace('applies_when: planning_mode_on', 'applies_when: all_runs'),
     PLANNING_SKILL_CONTENT.replace('name: blackice-planning', 'name: blackice-planning\nname: blackice-planning'),
     PLANNING_SKILL_CONTENT.replace(/description: [^\n]+/, 'description: '),
     PLANNING_SKILL_CONTENT.replace('## 6. Run the plan', '## Run the plan'),
-    PLANNING_SKILL_CONTENT.replace('<!-- blackice-planning:v3:complete -->', ''),
+    PLANNING_SKILL_CONTENT.replace('<!-- blackice-planning:v4:complete -->', ''),
     PLANNING_SKILL_CONTENT + '\nUnversioned instruction after the completeness marker.',
     PLANNING_SKILL_CONTENT + 'x'.repeat(32768)
   ];

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { TaskStateStore, TASK_LIMITS, TASK_TOOL, TASK_TOOL_V3, TASK_TOOL_V8, TASK_TOOL_V9, TASK_TOOL_V10, TASK_TOOL_V11, TASK_SCHEMA_VERSION, LEGACY_TASK_TOOL, TASK_INSTRUCTIONS, TASK_INSTRUCTIONS_V3, LEGACY_TASK_INSTRUCTIONS, createTaskToolHandler, taskToolForVersion, taskInstructionsForVersion } from '../lib/task-state.mjs';
+import { TaskStateStore, TASK_LIMITS, TASK_TOOL, TASK_TOOL_V3, TASK_TOOL_V8, TASK_TOOL_V9, TASK_TOOL_V10, TASK_TOOL_V11, TASK_TOOL_V12, TASK_SCHEMA_VERSION, LEGACY_TASK_TOOL, TASK_INSTRUCTIONS, TASK_INSTRUCTIONS_V3, LEGACY_TASK_INSTRUCTIONS, createTaskToolHandler, taskToolForVersion, taskInstructionsForVersion } from '../lib/task-state.mjs';
 
 async function harness(t) {
   const directory = await mkdtemp(path.join(tmpdir(), 'relay-milestones-test-')), cwd = path.join(directory, 'workspace'); await mkdir(cwd);
@@ -108,8 +108,8 @@ test('legacy records and original step/checkpoint calls retain their optional fi
   state = await other.setStep('milestone-task', 'old-step', { status: 'done' }, actor(state.revision));
   assert.equal(state.steps[0].note, 'Legacy note.'); assert.equal(state.steps[0].doneWhen, undefined); assert.equal(state.progress.done, 1);
   const context = await other.getContext('milestone-task'); assert.match(context, /Next action: Legacy next step\./);
-  assert.equal(TASK_SCHEMA_VERSION, 12); assert.equal(TASK_TOOL.name, LEGACY_TASK_TOOL.name);
-  for (const [version, tool] of [[1, LEGACY_TASK_TOOL], [8, TASK_TOOL_V8], [9, TASK_TOOL_V9], [10, TASK_TOOL_V10], [11, TASK_TOOL_V11], [12, TASK_TOOL]]) assert.equal(taskToolForVersion(version, { executionGuardrails: true }), tool);
+  assert.equal(TASK_SCHEMA_VERSION, 13); assert.equal(TASK_TOOL.name, LEGACY_TASK_TOOL.name);
+  for (const [version, tool] of [[1, LEGACY_TASK_TOOL], [8, TASK_TOOL_V8], [9, TASK_TOOL_V9], [10, TASK_TOOL_V10], [11, TASK_TOOL_V11], [12, TASK_TOOL_V12], [13, TASK_TOOL]]) assert.equal(taskToolForVersion(version, { executionGuardrails: true }), tool);
   assert.equal(TASK_TOOL_V8.inputSchema.properties.operation, undefined); assert.ok(TASK_TOOL.inputSchema.properties.operation);
   assert.ok(!taskToolForVersion(5).inputSchema.properties.action.enum.includes('edit')); assert.ok(TASK_TOOL.inputSchema.properties.action.enum.includes('edit'));
   assert.deepEqual(TASK_TOOL_V3.inputSchema.properties.action.enum.filter(action => action !== 'external'), LEGACY_TASK_TOOL.inputSchema.properties.action.enum);

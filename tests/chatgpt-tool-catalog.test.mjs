@@ -43,7 +43,7 @@ test('the full native catalog retains the exact 28-tool public contract and fing
     'blackice_get_swarm_plan', 'blackice_get_plan_groups', 'blackice_edit_plan', 'blackice_edit_plan_groups',
   ]);
   assert.deepEqual(catalog.status(), {
-    sha256: '474cf0918763e7d89e4e7c0d80f4a04a4be59cb48a31d30f44d16655f9644a37',
+    sha256: 'b4d87908bed59f0d05c1a0d3b59f054966ac218a408752b67d6e93779f7f0135',
     toolCount: 28,
     serverVersion: '2.33.5',
   });

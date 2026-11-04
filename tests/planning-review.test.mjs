@@ -12,6 +12,18 @@ import { createSequentialPlanningGuard, planningSequenceStatus } from '../lib/pl
 
 const payload = receipt => JSON.parse(receipt.contentItems[0].text);
 const outcome = 'The supplied values were compared; the observed subtotal is 14.50.';
+const blockedAgency = reason => {
+  const cost = (value, basis) => ({ value, basis });
+  const option = (id, action, delay, interruption) => ({ id, action, reversibility: 'reversible', outcome: 'Retain the affected task and its honest current status.', risks: [],
+    delayCost: cost(delay, 'Illustrative waiting cost in minute-equivalent user-loss units.'), interruptionCost: cost(interruption, 'Illustrative user attention cost.'), opportunityCost: cost(0, 'No independent ready work remains in this fixture.'),
+    ...(action === 'ask' ? { clarification: { baselineOptionId: 'proceed', informationNeeded: 'Whether the unavailable prerequisite can be supplied.', howAnswerChangesAction: 'Resume only if that prerequisite is supplied.', residualRiskBasis: 'The saved blocker remains until independently resolved.' } } : {}) });
+  return { version: 1, audience: 'user', userBenefit: 'Preserve accurate outcomes while avoiding duplicate work.',
+    representation: { actualQuestion: 'Report the checked task status.', requiredFacts: [reason], relevantClaims: [], privateFindings: [], userReport: [reason] },
+    action: 'defer', decisionRequired: true, decisionReason: 'An observed prerequisite prevents proceeding, and bounded deferral costs less than interrupting in this fixture.', chosenDecisionId: 'blocked_action',
+    decisions: [{ id: 'blocked_action', selectedOptionId: 'defer', input: { decision: 'Handle the actual unavailable prerequisite.', assumptions: ['Costs are illustrative test inputs, not observed frequencies.'],
+      hardConstraints: [{ id: 'observed_blocker', kind: 'verified_requirement', rule: 'The required input or reconciliation must exist before the affected operation.', source: 'Saved blocked action in this test.', observedViolation: reason, blockedOptionIds: ['proceed'] }],
+      options: [option('proceed', 'proceed', 0, 0), option('defer', 'defer', 2, 0), option('ask', 'ask', 0, 3)] } }] };
+};
 const leaf = (id = 'compare', status = 'active', parentId = null) => ({ id, kind: 'action', parentId, status,
   title: `Compare the supplied values for ${id}`, operation: { kind: 'reasoning', target: `The supplied price pair for ${id}.` },
   result: 'The checked subtotal and any discrepancy.', note: 'Add the two supplied decimal prices and compare the sum against the supplied subtotal.',
@@ -34,9 +46,9 @@ async function fixture(t) {
   return { store, taskId, directory, cwd, context, makeHandler, call, accept, write, plan, finish, review, status };
 }
 
-test('schema 12 exposes review while the schema 9 tool, worker and instructions retain their exact catalog identities', () => {
+test('schema 13 exposes review while the schema 9 tool, worker and instructions retain their exact catalog identities', () => {
   const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-  assert.equal(TASK_SCHEMA_VERSION, 12);
+  assert.equal(TASK_SCHEMA_VERSION, 13);
   assert.ok(TASK_TOOL.inputSchema.properties.action.enum.includes('review'));
   assert.equal(digest(TASK_TOOL_V9), 'f0bf0f289ab9375bdcd9dabbbdb26ca4c1203606860ffa3f55cca41f1cdda43e');
   assert.equal(digest(TASK_WORKER_TOOL_V9), '5afe056db14867f1e5ecfafca46e701123ee2e8352959c6e6feea37ac6c7a7bb');
@@ -134,7 +146,9 @@ test('blocked needs an actual reported obstacle and cannot abandon independent r
   const rejected = await f.call({ action: 'review', expectedRevision: blocked.revision, review: { decision: 'blocked', summary: 'One input is absent.' } });
   assert.equal(rejected.code, 'TASK_PLAN_REVIEW_NOT_BLOCKED');
   await f.write({ action: 'step', stepId: 'other', status: 'active' }); await f.finish('other');
-  const reviewed = await f.review('blocked');
+  const missing = await f.call({ action: 'review', expectedRevision: (await f.store.get(f.taskId)).revision, review: { decision: 'blocked', summary: 'The actual input remains unavailable.' } });
+  assert.equal(missing.code, 'USER_AGENCY_REQUIRED');
+  const reviewed = await f.review('blocked', { userAgency: blockedAgency('The necessary second input is absent after available checks.') });
   assert.equal(f.status(reviewed).ready, true);
   assert.equal(reviewed.steps.find(step => step.id === 'compare').status, 'blocked');
 });
@@ -241,7 +255,7 @@ test('review waits for actual dispatch settlement and reported outcome; uncertai
   assert.equal((await f.call({ action: 'review', expectedRevision: planned.revision, review: { decision: 'respond', summary: 'The outcome has not been saved.' } })).code, 'TASK_PLAN_RESULT_REQUIRED');
   const blocked = await f.write({ action: 'step', stepId: 'compare', status: 'blocked', blockedReason: 'The dispatched write has no confirmed response; its effect remains uncertain and cannot currently be inspected.' });
   assert.equal((await planningSequenceStatus(f.store, f.taskId, blocked)).uncertain.length, 1);
-  const reviewed = await f.review('blocked', { summary: 'The write result was lost; the saved action remains blocked with its effect uncertain. No completion is claimed.' });
+  const reviewed = await f.review('blocked', { summary: 'The write result was lost; the saved action remains blocked with its effect uncertain. No completion is claimed.', userAgency: blockedAgency('The prior dispatch is unreconciled and its destination cannot currently be inspected.') });
   assert.equal(f.status(reviewed).ready, true);
   assert.equal(reviewed.planningReviews.at(-1).sequenceSignature, (await planningSequenceStatus(f.store, f.taskId, reviewed)).signature);
 });

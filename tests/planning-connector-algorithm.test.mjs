@@ -114,7 +114,8 @@ for (const surface of ['remote', 'chatgpt']) {
   });
 
   test(`${surface} API rejects malformed recursive values before saving any part of an edit`, async t => {
-    const f = await fixture(t, surface); const state = await f.edit(initialEdits());
+    const f = await fixture(t, surface); await f.edit(initialEdits());
+    const state = await f.tasks.get('algorithm-task'); // Compare durable state, excluding the API's derived planningContract guidance.
     const malformed = [
       { type: 'update', stepId: 'fast', patch: { operation: [{ kind: 'reasoning', target: 'A compound operation' }] } },
       { type: 'update', stepId: 'fast', patch: { operation: { kind: 'reasoning', target: 'Bounded question', tool: 'relay_workspace' } } },

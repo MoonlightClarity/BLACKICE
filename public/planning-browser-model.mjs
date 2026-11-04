@@ -1,6 +1,7 @@
 /** Public response contracts and projections; no execution or truth certification. */
 import { VIABILITY_TEMPLATE, validateViabilityRequirements, evaluateViabilityResponse, planningReadableFindingIssues, validatePlanningReadableFindings } from './task-viability-model.mjs';
 import { RESPONSE_CYCLE_CONTAINER_TEMPLATE, RESPONSE_CYCLE_TEMPLATES, RESPONSE_CYCLE_STAGES, responseCycleStage, responseCycleStages, responseCycleTemplate, parseResponseCycleResponse, evaluateResponseCycleStage, analyticalSubproblem } from './response-cycle-model.mjs';
+import { normalizeUserAgencyCheckpoint, evaluateUserAgencyCheckpoint, assertUserAgencyDispatchConsistency } from './planning-user-agency.mjs';
 export const PLANNING_BROWSER_VERSION = 1;
 export const PLANNING_BROWSER_LIMITS = Object.freeze({
   requests: 500, nodes: 500, depth: 32, edges: 2000, responses: 1500,
@@ -93,8 +94,8 @@ export function validateModuleValues(kind,values={},options={}) {
   for(const [id,value]of Object.entries(values))normalized[id]=text(value,'Response field '+id,PLANNING_BROWSER_LIMITS.fieldChars);
   return {values:normalized,missingFields:schema.fields.filter(item=>item.required&&!normalized[item.id]).map(item=>item.id)};
 }
-export function parseModuleResponse(output,kind,{sources,pipelineVersion}={}) {
-  if (['inference','plan','think','respond'].includes(kind)) return parseResponseCycleResponse(output,kind,{sources,pipelineVersion});
+export function parseModuleResponse(output,kind,{sources,pipelineVersion,requireUserAgency=false}={}) {
+  if (['inference','plan','think','respond'].includes(kind)) return parseResponseCycleResponse(output,kind,{sources,pipelineVersion,requireUserAgency});
   let value=output;
   if(typeof output==='string'){
     if(output.length>PLANNING_BROWSER_LIMITS.responseChars)throw planningBrowserError('Response exceeds its storage bound.');
@@ -103,7 +104,7 @@ export function parseModuleResponse(output,kind,{sources,pipelineVersion}={}) {
     if(fence)source=fence[1];
     try{value=JSON.parse(source);}catch{throw planningBrowserError('Return one JSON object with values, grounding, openQuestions and challengeResponses.','PLANNING_RESPONSE_PARSE');}
   }
-  allowed(value,['values','grounding','openQuestions','challengeResponses',...(kind==='viability'?['requirements']:[])],'Public module response');
+  allowed(value,['values','grounding','openQuestions','challengeResponses',...(kind==='viability'?['requirements','userAgency']:[])],'Public module response');
   const checked=validateModuleValues(kind,value.values??{},{pipelineVersion});
   const grounding=value.grounding??[];
   if(!Array.isArray(grounding)||grounding.length>100)throw planningBrowserError('Grounding must contain at most 100 field/source links.');
@@ -121,7 +122,8 @@ export function parseModuleResponse(output,kind,{sources,pipelineVersion}={}) {
   const challenges=value.challengeResponses??[];
   if(!Array.isArray(challenges)||challenges.length>100)throw planningBrowserError('Use at most 100 challenge responses.');
   const challengeIds=new Set();
-  const result={...checked,...(kind==='viability'?{requirements:validateViabilityRequirements(value.requirements)}:{}),grounding:links,
+  const userAgency=kind==='viability'?normalizeUserAgencyCheckpoint(value.userAgency,{required:requireUserAgency}):null;
+  const result={...checked,...(userAgency?{userAgency}:{}),...(kind==='viability'?{requirements:validateViabilityRequirements(value.requirements)}:{}),grounding:links,
     openQuestions:questions.map(item=>text(item,'Open question',2000,true)),
     challengeResponses:challenges.map(item=>{
       allowed(item,['edgeId','disposition','note'],'Challenge response');
@@ -129,6 +131,7 @@ export function parseModuleResponse(output,kind,{sources,pipelineVersion}={}) {
       if(challengeIds.has(item.edgeId))throw planningBrowserError('Challenge responses must name distinct edges.');challengeIds.add(item.edgeId);
       return {edgeId:text(item.edgeId,'Challenge ID',160,true),disposition:item.disposition,note:text(item.note,'Challenge response note',4000,true)};
     })};
+  if(kind==='viability')assertUserAgencyDispatchConsistency(userAgency,result.requirements,{required:requireUserAgency});
   return sources===undefined?result:validatePlanningReadableFindings(result,sources);
 }
 export function planningRequestSources(request) {
@@ -157,7 +160,7 @@ export function planningRequestSources(request) {
 
 /** Stored public content only; execution metadata can never be supplied as an answer. */
 export function planningResponseBody(response) {
-  const keys=['values','grounding','openQuestions','challengeResponses','requirements','checks','subproblems','childResults','acceptanceCriteria','steps','inferences','criterionResults','coverage'];
+  const keys=['values','grounding','openQuestions','challengeResponses','requirements','checks','subproblems','childResults','acceptanceCriteria','steps','inferences','criterionResults','coverage','userAgency'];
   return Object.fromEntries(keys.filter(key=>Object.hasOwn(response,key)).map(key=>[key,clone(response[key])]));
 }
 
@@ -217,7 +220,8 @@ export function planningCycleStageContext(request,nodeId,responses) {
   });
   const plan=get(cycle.stageNodeIds.plan),think=get(cycle.stageNodeIds.think),inference=get(cycle.stageNodeIds.inference),workflow=planningWorkflowContext(request,cycle,latest);
   const intendedOutcome=inference?{responseId:inference.id,responseRevision:inference.revision,...Object.fromEntries(['userBenefit','desiredOutcomes','unwantedOutcomes','delegatedWork','constraints','handoffBoundary'].map(key=>[key,inference.values?.[key]??null]))}:null;
-  return {cycleId:cycle.id,stageId,pipelineVersion,title:cycle.title,objective:cycle.objective,intendedOutcome,acceptanceCriteria:plan?.acceptanceCriteria||cycle.acceptanceCriteria||[],...workflow,criterionResults:think?.criterionResults||[],prerequisites,children,recoveryIssue:request.viability?.recoveryIssue||null,
+  const userAgencyHistory=stages.flatMap(stage=>{const response=get(cycle.stageNodeIds[stage.id]);if(!response?.userAgency)return [];const evaluation=evaluateUserAgencyCheckpoint(response.userAgency);return [{stageId:stage.id,responseId:response.id,responseRevision:response.revision,...evaluation}];});
+  return {cycleId:cycle.id,stageId,pipelineVersion,title:cycle.title,objective:cycle.objective,intendedOutcome,userAgencyHistory,acceptanceCriteria:plan?.acceptanceCriteria||cycle.acceptanceCriteria||[],...workflow,criterionResults:think?.criterionResults||[],prerequisites,children,recoveryIssue:request.viability?.recoveryIssue||null,
     recursion:{depth:cycle.depth,cycleCount:request.responseCycle.cycles.length,...request.responseCycle.limits},effectReceipts:cycle.effectReceipts||[],execution:cycle.execution||null};
 }
 const latestByNode = records => {

@@ -1,3 +1,11 @@
+# BLACKICE 2.39.16 — Quantified user-agency planning
+
+This release adds a shared expected-user-cost evaluator, native planning checkpoints, and standalone plans callable through the existing direct ChatGPT connection. It compares action and inaction, accounts for interruption and opportunity cost, and separates counterparty-facing representation from private task assessment.
+
+See [the 2.39.16 release notes](RELEASE-NOTES-2.39.16.md) for the changes and the release's exact verification records.
+
+---
+
 # BLACKICE 2.38.0 — Provider, planning, and Activity checkpoint
 
 Version 2.38.0 brings keyless free-provider setup, per-conversation model continuity, planning completion and recovery corrections, and the Activity workspace. The free-model acceptance checks used the existing profile with selected runtime files matched to source by hash; its host package metadata remained 2.37.0. The complete Windows source gate and fresh verification of the exact 2.38.0 Setup installer are separate checks.

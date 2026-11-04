@@ -228,7 +228,7 @@ test('schema 9 IF/ELIF/ELSE evaluates typed comparisons in order and stops on an
 });
 
 test('cached schema 8 stays stable while executable operations remain available from schema 9 onward', async t => {
-  assert.equal(TASK_SCHEMA_VERSION, 12);
+  assert.equal(TASK_SCHEMA_VERSION, 13);
   const old = taskToolForVersion(8, { executionGuardrails: true }).inputSchema, current = taskToolForVersion(9, { executionGuardrails: true }).inputSchema;
   assert.equal(old.properties.operation, undefined);
   assert.equal(old.properties.plan.properties.facts, undefined);

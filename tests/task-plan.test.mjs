@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { normalizeTaskPlan, runtimeTaskPlan, taskPlanProgress, TASK_PLAN_LIMITS } from '../lib/task-plan.mjs';
-import { TaskStateStore, TASK_TOOL, TASK_TOOL_V10, TASK_TOOL_V11, TASK_SCHEMA_VERSION, TASK_TOOL_V9, TASK_TOOL_V6, TASK_TOOL_V5, TASK_TOOL_V4, TASK_TOOL_V3, PREVIOUS_TASK_TOOL, LEGACY_TASK_TOOL, TASK_INSTRUCTIONS, TASK_INSTRUCTIONS_V10, TASK_INSTRUCTIONS_V11, TASK_INSTRUCTIONS_V9, TASK_INSTRUCTIONS_V6, TASK_INSTRUCTIONS_V5, TASK_INSTRUCTIONS_V4, TASK_INSTRUCTIONS_V3, PREVIOUS_TASK_INSTRUCTIONS, LEGACY_TASK_INSTRUCTIONS, taskToolForVersion, taskInstructionsForVersion, createTaskToolHandler } from '../lib/task-state.mjs';
+import { TaskStateStore, TASK_TOOL, TASK_TOOL_V10, TASK_TOOL_V11, TASK_TOOL_V12, TASK_SCHEMA_VERSION, TASK_TOOL_V9, TASK_TOOL_V6, TASK_TOOL_V5, TASK_TOOL_V4, TASK_TOOL_V3, PREVIOUS_TASK_TOOL, LEGACY_TASK_TOOL, TASK_INSTRUCTIONS, TASK_INSTRUCTIONS_V10, TASK_INSTRUCTIONS_V11, TASK_INSTRUCTIONS_V12, TASK_INSTRUCTIONS_V9, TASK_INSTRUCTIONS_V6, TASK_INSTRUCTIONS_V5, TASK_INSTRUCTIONS_V4, TASK_INSTRUCTIONS_V3, PREVIOUS_TASK_INSTRUCTIONS, LEGACY_TASK_INSTRUCTIONS, taskToolForVersion, taskInstructionsForVersion, createTaskToolHandler } from '../lib/task-state.mjs';
 import { BUILTIN_METHODS, BUILTIN_TASK_TYPES, BUILTIN_STEP_TYPES } from '../lib/process-ontology.mjs';
 import { MethodStore } from '../lib/methods.mjs';
 
@@ -204,13 +204,13 @@ test('task tool versions 1 through 6 retain their exact native catalogs and inst
     [TASK_TOOL_V6, TASK_INSTRUCTIONS_V6, 'a690b71995ce9e64e720e2b6c476592e75b2f342e62def14e885e6de03ed46d6', '6c56b3ff76f9ea9822c66d6a3b1254083ca86c1ef9f944fd256cea8e60e625d6']
   ];
   expected.forEach(([tool, instructions, toolHash, instructionHash], index) => { assert.equal(taskToolForVersion(index + 1, { executionGuardrails: true }), tool); assert.equal(taskInstructionsForVersion(index + 1, { executionGuardrails: true }), instructions); assert.equal(digest(tool), toolHash); assert.equal(digest(instructions), instructionHash); });
-  assert.equal(TASK_SCHEMA_VERSION, 12);
-  for (const [version, tool, instructions] of [[9, TASK_TOOL_V9, TASK_INSTRUCTIONS_V9], [10, TASK_TOOL_V10, TASK_INSTRUCTIONS_V10], [11, TASK_TOOL_V11, TASK_INSTRUCTIONS_V11], [12, TASK_TOOL, TASK_INSTRUCTIONS]]) {
+  assert.equal(TASK_SCHEMA_VERSION, 13);
+  for (const [version, tool, instructions] of [[9, TASK_TOOL_V9, TASK_INSTRUCTIONS_V9], [10, TASK_TOOL_V10, TASK_INSTRUCTIONS_V10], [11, TASK_TOOL_V11, TASK_INSTRUCTIONS_V11], [12, TASK_TOOL_V12, TASK_INSTRUCTIONS_V12], [13, TASK_TOOL, TASK_INSTRUCTIONS]]) {
     assert.equal(taskToolForVersion(version, { executionGuardrails: true }), tool); assert.equal(taskInstructionsForVersion(version, { executionGuardrails: true }), instructions);
   }
   assert.ok(TASK_TOOL.inputSchema.properties.action.enum.includes('describe')); assert.ok(TASK_TOOL.inputSchema.properties.steps.items.properties.kind);
   assert.equal(taskToolForVersion(8).inputSchema.properties.steps.items.properties.operation, undefined);
-  assert.throws(() => taskToolForVersion(13), { code: 'TASK_SCHEMA_UNSUPPORTED' }); assert.match(TASK_INSTRUCTIONS, /normal way to work on every request/); assert.doesNotMatch(TASK_INSTRUCTIONS, /need no saved plan/);
+  assert.throws(() => taskToolForVersion(TASK_SCHEMA_VERSION + 1), { code: 'TASK_SCHEMA_UNSUPPORTED' }); assert.match(TASK_INSTRUCTIONS, /normal way to work on every request/); assert.doesNotMatch(TASK_INSTRUCTIONS, /need no saved plan/);
 });
 
 test('legacy handlers reject new actions and schema fields instead of silently executing undeclared capabilities', async t => {

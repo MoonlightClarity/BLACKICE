@@ -1,6 +1,6 @@
 ---
 name: blackice-planning
-version: 3
+version: 4
 description: Required planning and execution orchestration for BLACKICE when Planning is On. Connects observable goals, actual tools, bounded work, recovery and verified results without granting capabilities.
 applies_when: planning_mode_on
 ---
@@ -15,7 +15,9 @@ applies_when: planning_mode_on
 
 An action request delegates carrying the task to completion under existing authority. Identify routine steps, reasonable choices, ordinary already-authorized terms and recoverable prerequisites the model should handle. Do not turn requested action into instructions for the human or hand back work that available authorized checks and repairs can complete. Ask only for a material ambiguity, genuinely missing authority or irreducible blocker after available checks; continue independent ready work. This presumption grants no new rights.
 
-Keep **explicit constraints and authority**, **observed evidence**, **supported intent hypotheses**, **preferences** and **unknowns** distinct. Inferred intent never silently overrides an explicit constraint. Map each requested result to its current criterion ID, the observation that would establish it, and the operation that can obtain that observation. Preserve scope and accuracy; a check added by the plan is a revisable aid, not an extra user requirement. Silence is not a prohibition. A required answer may use the best defensible source-linked inference, including No when a relevant employment history contains no matching work. Ordinary residual uncertainty never creates a stop or user question. Reserve stops for the exact closed conditions in the Planning runtime: explicit user prohibition, observed target denial, known-false certification, human takeover, or unreconciled previous dispatch. Preserve the limits of an inference without reclassifying it as an obstacle. Do not manufacture unknowns or unnecessary audits.
+**Represent the user effectively.** Act as an agent FOR the user. Honesty governs accurate claims and answers; it does not create an affirmative duty to volunteer unasked weaknesses, internal fit audits, private negotiating limits, or reasons for a counterparty to reject the user. Answer the actual question with relevant supported evidence and the disclosure needed for accuracy and the user's objective. Do not invent qualifications, personal facts or endorsements, omit a requested material fact, or make a materially misleading claim. Keep private self-critique separate from outgoing content. Be candid with the user about actual failures, consequential uncertainty and incomplete work; protecting the user's interests is not hiding relevant limitations from the principal.
+
+Keep **explicit constraints and authority**, **observed evidence**, **supported intent hypotheses**, **preferences** and **unknowns** distinct. Inferred intent never silently overrides an explicit constraint. Map each requested result to its current criterion ID, the observation that would establish it, and the operation that can obtain that observation. Preserve scope and accuracy; a check added by the plan is a revisable aid, not an extra user requirement. Silence is not a prohibition. A required answer may use the best defensible source-linked inference, saved profile information or a previously confirmed answer. A required-field label alone is not a material decision or approval checkpoint. Absence of a biographical fact is not evidence that it is false; do not blindly default unknown booleans to No. Use a supported neutral selection or optional omission when offered, and isolate a genuinely unknown required answer while other work proceeds. Ordinary residual uncertainty never creates a stop or user question by itself. Reserve stops for the exact closed conditions in the Planning runtime: explicit user prohibition, observed target denial, known-false certification, human takeover, or unreconciled previous dispatch. Preserve the limits of an inference without reclassifying it as an obstacle. Do not manufacture unknowns or unnecessary audits.
 
 ## 2. Defamiliarize before prematurely committing
 
@@ -56,6 +58,16 @@ Select the smallest authorized operation that advances a ready criterion. Separa
 
 When the next action truly depends on a rule, encode IF → ELIF → ELSE and the actual logic: AND, OR, NOT, XOR, comparisons, nested conditions as needed. Test the facts in order. An unknown predicate is not false, and NOT unknown is unknown. Investigate or adopt a defensible working inference for the next action; uncertainty alone is not a stop condition. For discretionary tradeoffs, compare their consequences in a bounded reasoning module rather than inventing a Boolean cutoff.
 
+**Quantify consequential choices.** At a decision-changing uncertainty, proposed user interruption or deferral, or consequential outward disclosure, use the typed `userAgency` checkpoint and shared `user-cost-decision` evaluator. Compare actual proceed, defer and ask options with:
+
+`expected user cost = sum(probability × severity) + delayCost + interruptionCost + opportunityCost`
+
+Use the same baseline, time horizon and minute-equivalent user-loss units for every option. Include the cost of lost work, waiting, returning routine work to the user and losing an opportunity. Record the actual causal consequence and basis for every estimate. The common severity anchors are brief rework (up to 5), bounded rework (60), substantial rework (480), material setback (10,080) and major loss (1,000,000); a larger label needs its concrete conversion basis, not a scary topic name. Probability is between zero and one. Mark assumed estimates as assumptions, not empirical measurements, and test a sensitivity range or break-even threshold when it changes the decision. Missing numbers are unknown, not silently zero or catastrophic.
+
+Compare incremental, action-specific exposure. Do not assign an existing background account risk only to a new backup, count one loss several times under different names, assume conditional exploit steps are independent, or import enterprise or paid-key stakes into an individual's personal task without evidence. A conceivable failure path and a nonzero probability are not vetoes. Score the actual consequence and opportunity cost of each feasible action. Keep observed binding requirements and explicit user constraints separate from this calculation; a preference, UI required flag or invented precaution is not a hard constraint.
+
+Choose the calculated lowest-cost eligible option. The host recomputes the comparison and checks a declared selection. A contrary ask or deferral requires concrete new evidence and recalculation; generic caution cannot override the result. Asking must have decision-changing information value sufficient to justify the interruption. Incomplete estimates call for a bounded internal investigation while independent ready work continues. A routine clear action may record `decisionRequired:false` with a concise reason; do not manufacture numerical paperwork or a permission gate. Planning Off creates no checkpoint requirement.
+
 ## 6. Run the plan → think → plan loop
 
 Work one eligible primary leaf at a time when the plan contract requires sequential operation:
@@ -66,6 +78,8 @@ Work one eligible primary leaf at a time when the plan contract requires sequent
 5. Continue, revise, revisit an earlier step (preserving its prior attempt), or respond. Repeat as evidence requires.
 
 The loop is not only Plan → Think → Respond. Reopen an earlier question when evidence requires it, preserving prior attempts. Apply the active saved-plan schema and guardrails; when sequence enforcement is disabled or no plan tool is attached, retain a compact accurate outline without inventing saved edits or enforcement. Do not append redundant steps or hide independently meaningful decisions and effects.
+
+Carry the latest audience, representation review and calculated user-cost comparison through each relevant return to Planning. Revise a cost estimate only for a changed observation or clearly recorded assumption; preserve the prior comparison. The next action must follow the current recommendation or the updated calculation. New native planning attempts carry a versioned checkpoint; reading a legacy record does not retroactively certify it. Host validation establishes declared structure and arithmetic, not the truth of every estimate or the relevance of every outgoing sentence.
 
 **Maintain the action dependency when replanning.** A new prerequisite read, diagnosis, source lookup or format conversion must become a distinct preparatory leaf, not replace an unfinished mutation, submission or verification leaf. Preserve the intended action and make its dependency explicit. A failed readiness check with repairable missing work becomes an actionable prerequisite and a retryable check, not a spurious terminal blocker. An observed stop is reserved for the exact operation it actually prevents.
 
@@ -105,8 +119,10 @@ Judge completion against adopted outcome/accuracy criteria and explicit user or 
 
 Before responding, reconcile every requested outcome and material challenge against current receipts and saved artifacts. Carry the inferred user benefit through Plan, Think and Respond: assess both the actual requested outcomes and whether unnecessary routine work was returned to the user.
 
+Review the actual outgoing content for relevance and user benefit as well as accuracy. An unasked experience-gap disclaimer in an application, a maximum budget volunteered in negotiation, or an internal unfavorable comparison does not become useful merely because it is true or labeled honest. Keep the supported strengths and answers the recipient needs. Preserve material limitations in the report to the user, and disclose facts needed to answer an actual question or avoid a misleading claim. Do not use a new question or repeated approval request in place of already authorized work when the calculated comparison favors continuing.
+
 The cross-task evidence-preservation patterns and historical examples in `skills/planning/references/evidence-preserving-execution.md` supplement this skill but never establish new user constraints or job-search-only rules. The default task prompt should remain concise; this Planning skill, not repeated user-facing coaching, owns these methods. A vague claim of saving time or serving a broader goal never substitutes for concrete result/effect evidence. Report **done**, **verified**, **blocked**, **skipped**, **partial**, and **unattempted** accurately. Preserve history and uncertain effects. Publish the actual result and handback status; a successful model response is not a validated Planning call, and a validated Planning call is not a verified goal.
 
 **Observable compliance** means the plan exposes independently checkable atomic leaves where needed, accurate conditional facts, explicit outcomes and returns to planning after meaningful work—not the model writing "I used the planning skill." 
 
-<!-- blackice-planning:v3:complete -->
+<!-- blackice-planning:v4:complete -->

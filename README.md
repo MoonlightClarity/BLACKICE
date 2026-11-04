@@ -2,9 +2,9 @@
 
 BLACKICE is an open-source Windows application for working with AI agents on real tasks. It brings conversations, files, commands, web browsing, editable plans, reusable knowledge and recurring work into one desktop workspace. You can use an agent inside BLACKICE or connect an ordinary ChatGPT conversation to the tools on your computer.
 
-**Latest tagged release: 2.38.0 for Windows x64. Project overview updated November 2, 2026.**
+**Latest tagged release: 2.39.16 for Windows x64. Project overview updated November 4, 2026.**
 
-**[2.38.0 Windows installer](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.38.0/Blackice-2.38.0-Setup.exe)** · [Release status and verification records](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.38.0) · [Release notes](RELEASE-NOTES-2.38.0.md) · [Checksums](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.38.0/SHA256SUMS.txt)
+**[2.39.16 Windows installer](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.16/Blackice-2.39.16-Setup.exe)** · [Release status and verification records](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.39.16) · [Release notes](RELEASE-NOTES-2.39.16.md) · [Checksums](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.16/SHA256SUMS.txt)
 
 Installer assets and checksums are published only after fresh verification of the exact Setup executable. Until publication, those asset links may be unavailable. The release page and its attached receipts report the actual publication and verification status.
 

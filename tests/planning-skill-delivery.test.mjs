@@ -47,6 +47,6 @@ for (const type of ['openai', 'anthropic', 'compatible']) test(type + ': complet
     const delivered = wireInstructions(body);
     assert.equal(delivered, instructions);
     assert.equal(delivered.split(PLANNING_SKILL_CONTENT).length, 2);
-    assert.ok(delivered.includes('END REQUIRED BLACKICE PLANNING SKILL v3 sha256=' + PLANNING_SKILL_SHA256));
+    assert.ok(delivered.includes('END REQUIRED BLACKICE PLANNING SKILL v4 sha256=' + PLANNING_SKILL_SHA256));
   }
 });

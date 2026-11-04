@@ -18,7 +18,7 @@ async function fixture(t, schemaVersion) {
 }
 
 test('v7 through v12 advertise the same note limit while cached v6 remains unchanged', async t => {
-  assert.equal(TASK_SCHEMA_VERSION, 12);
+  assert.equal(TASK_SCHEMA_VERSION, 13);
   for (const tool of [7, 8, 9, 10, 11, 12].flatMap(version => [false, true].flatMap(executionGuardrails => [taskToolForVersion(version, { executionGuardrails }), taskWorkerToolForVersion(version, { executionGuardrails })]))) {
     const f = tool.inputSchema.properties;
     for (const note of [f.note, f.steps.items.properties.note, f.operations.items.properties.step.properties.note, f.operations.items.properties.patch.properties.note.anyOf[0]]) assert.equal(note.maxLength, 700);
