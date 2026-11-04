@@ -12,6 +12,8 @@
 - Let an authenticated external agent create a standalone shared plan through the existing planning connection, without starting a BLACKICE model or run.
 - Persist quantitative assessments, user-agency checkpoints, revisions, and actor history in the canonical plan store. Plans remain discoverable after reopening the application.
 - Expose the same calculation and guidance to native and external agents. Preserve revision conflicts, recursive edits, existing saved plans, cached tool schemas, and Planning Off behavior.
+- Keep shared guidance compact enough for the existing 32k model-handoff cases while retaining the full numerical planning contract and candid reporting to the user.
+- Recover from transient Windows lock acquisition failures before a plan edit without repeating a saved edit or weakening ownership and revision checks.
 
 ## Verification
 
