@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { readMtreeChecksums } from '../scripts/verify-workbench-compiler.mjs';
 
 test('compiler verification reads archive SHA-256 and size with mtree defaults and escaped names', () => {
@@ -24,6 +25,9 @@ test('compiler verification refuses traversal, absent hashes, symlink payloads, 
 test('compiler lock pins a separate complete GCC package set and original FreeRDP headers', async () => {
   const lock = JSON.parse(await readFile(new URL('../docs/workbench-freerdp-compiler.lock.json', import.meta.url), 'utf8'));
   assert.equal(lock.compiler.name, 'mingw-w64-ucrt-x86_64-gcc');
+  const headerLockBytes = await readFile(new URL('../' + lock.freerdpHeaders.lock, import.meta.url));
+  assert.equal(createHash('sha256').update(headerLockBytes).digest('hex'), lock.freerdpHeaders.sha256.toLowerCase(),
+    'The compiler must pin the exact dependency-lock bytes in the canonical checkout.');
   const inventory = lock.packages.filter(value => value.startsWith('mingw-w64-ucrt-x86_64-'));
   assert.equal(inventory.length, lock.packageArtifacts.length);
   for (const entry of inventory) assert.ok(lock.packageArtifacts.some(artifact => artifact.file === entry.replace(' ', '-') + '-any.pkg.tar.zst'));

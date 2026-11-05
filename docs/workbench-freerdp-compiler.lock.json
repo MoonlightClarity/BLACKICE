@@ -197,7 +197,7 @@
   ],
   "freerdpHeaders": {
     "lock": "docs/workbench-freerdp-dependencies.lock.json",
-    "sha256": "542A737771A277119E20672CA67AD5307908F8865659B0D8FFD29609450E18E5",
+    "sha256": "86FE9B607EF90A48D26EA73F931F322692BFCC2E5403AA550A7FE2B3E0C1CB87",
     "version": "3.32.2-1"
   }
 }

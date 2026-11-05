@@ -11,7 +11,8 @@ const success = text => ({ success: true, contentItems: [{ type: 'inputText', te
 function request(bridge, payload, { method = 'POST', headers = {}, suffix = '' } = {}) {
   return new Promise((resolve, reject) => {
     const authorization = Object.fromEntries(bridge.server.headers.map(item => [item.name, item.value]));
-    const req = http.request(bridge.server.url + suffix, { method, headers: { ...authorization, 'Content-Type': 'application/json', ...headers } }, res => {
+    const session = payload?.method !== 'initialize' && bridge.sessionId ? { 'Mcp-Session-Id': bridge.sessionId } : {};
+    const req = http.request(bridge.server.url + suffix, { method, headers: { ...authorization, ...session, 'Content-Type': 'application/json', ...headers } }, res => {
       const chunks = []; res.on('data', chunk => chunks.push(chunk)); res.on('error', reject);
       res.on('end', () => { const text = Buffer.concat(chunks).toString('utf8'); let body; try { body = text ? JSON.parse(text) : undefined; } catch { body = text; } resolve({ status: res.statusCode, headers: res.headers, body, text }); });
     });
@@ -19,13 +20,42 @@ function request(bridge, payload, { method = 'POST', headers = {}, suffix = '' }
   });
 }
 const rpc = (bridge, id, method, params = {}, options) => request(bridge, { jsonrpc: '2.0', id, method, params }, options);
+async function mcpClient(bridge) {
+  const response = await rpc(bridge, 0, 'initialize', { protocolVersion: '2025-06-18' });
+  assert.equal(response.status, 200);
+  assert.equal(typeof response.headers['mcp-session-id'], 'string');
+  const client = { ...bridge, sessionId: response.headers['mcp-session-id'] };
+  assert.equal((await request(client, { jsonrpc: '2.0', method: 'notifications/initialized' })).status, 202);
+  return client;
+}
 async function fixture(t, options = {}) {
   const events = [], calls = [];
-  const bridge = await createVibeToolBridge({ tools: [tool], onToolCall: async call => { calls.push(call); return success('ok'); }, onEvent: event => events.push(event), ...options });
-  t.after(() => bridge.close());
+  const owner = await createVibeToolBridge({ tools: [tool], onToolCall: async call => { calls.push(call); return success('ok'); }, onEvent: event => events.push(event), ...options });
+  t.after(() => owner.close());
+  const bridge = await mcpClient(owner);
   const catalog = (await rpc(bridge, 1, 'tools/list')).body.result.tools;
   return { bridge, events, calls, catalog, remote: catalog[0]?.name };
 }
+
+test('fresh MCP HTTP sessions can reuse JSON-RPC ids without collisions or stale read receipts', async t => {
+  const { bridge, remote, calls } = await fixture(t);
+  const open = () => rpc(bridge, 0, 'initialize', { protocolVersion: '2025-06-18' });
+  const invoke = (session, value) => rpc(bridge, 1, 'tools/call', { name: remote, arguments: { action: 'read', value } },
+    { headers: session.headers['mcp-session-id'] ? { 'Mcp-Session-Id': session.headers['mcp-session-id'] } : {} });
+  const first = await open(), firstCall = await invoke(first, 1);
+  assert.equal(firstCall.body.result?.isError, false);
+  const second = await open(), secondCall = await invoke(second, 2);
+  assert.equal(secondCall.body.error, undefined, JSON.stringify(secondCall.body.error));
+  assert.equal(secondCall.body.result?.isError, false);
+  assert.equal(calls.length, 2);
+  const third = await open(), thirdCall = await invoke(third, 1);
+  assert.equal(thirdCall.body.result?.isError, false);
+  assert.equal(calls.length, 3, 'A fresh session must perform a new read even when its arguments match an earlier read.');
+  assert.deepEqual(calls.map(call => call.arguments.value), [1, 2, 1]);
+  const ids = [first, second, third].map(response => response.headers['mcp-session-id']);
+  assert.ok(ids.every(id => typeof id === 'string' && id.length > 0));
+  assert.equal(new Set(ids).size, 3);
+});
 
 test('bridge binds only loopback, negotiates supported MCP protocols and preserves exact schemas', async t => {
   const { bridge, catalog } = await fixture(t);
@@ -187,4 +217,60 @@ test('native invocation guidance maps the actual served catalog and keeps endpoi
   assert.match(bridge.instructions, /Use these mapped functions instead of inventing tools\.relay_\*/);
   assert.equal(bridge.instructions.includes(bridge.server.url), false);
   assert.equal(bridge.instructions.includes(bridge.server.headers[0].value), false);
+});
+
+test('missing, unknown and terminated MCP sessions cannot invoke a tool', async t => {
+  const { bridge, remote, calls } = await fixture(t);
+  const params = { name: remote, arguments: { action: 'read', value: 1 } };
+  assert.equal((await rpc({ ...bridge, sessionId: null }, 1, 'tools/call', params)).status, 400);
+  assert.equal((await rpc({ ...bridge, sessionId: 'unknown' }, 1, 'tools/call', params)).status, 404);
+  const closed = await request(bridge, undefined, { method: 'DELETE' });
+  assert.equal(closed.status, 204);
+  assert.equal((await rpc(bridge, 1, 'tools/call', params)).status, 404);
+  assert.equal((await request(bridge, undefined, { method: 'DELETE' })).status, 404);
+  assert.equal(calls.length, 0);
+  const next = await mcpClient(bridge);
+  assert.equal((await rpc(next, 1, 'tools/call', params)).body.result.isError, false);
+  assert.equal(calls.length, 1);
+});
+
+test('MCP cancellation and DELETE are scoped to the owning session while real pending results drain', async t => {
+  const entered = [deferred(), deferred()], release = [deferred(), deferred()], signals = [];
+  const { bridge, remote } = await fixture(t, { onToolCall: async (call, { signal }) => {
+    const index = call.arguments.value - 1;
+    if (index < 2) { signals[index] = signal; entered[index].resolve(); await release[index].promise; }
+    return success('Observed result ' + call.arguments.value);
+  } });
+  const second = await mcpClient(bridge);
+  const a = rpc(bridge, 1, 'tools/call', { name: remote, arguments: { action: 'read', value: 1 } });
+  await entered[0].promise;
+  const b = rpc(second, 1, 'tools/call', { name: remote, arguments: { action: 'read', value: 2 } });
+  await entered[1].promise;
+  await request(second, { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 1 } });
+  assert.equal(signals[0].aborted, false);
+  assert.equal(signals[1].aborted, true);
+  assert.equal((await request(bridge, undefined, { method: 'DELETE' })).status, 204);
+  assert.equal(signals[0].aborted, true);
+  release.forEach(item => item.resolve());
+  const receipts = await Promise.all([a, b]);
+  assert.deepEqual(receipts.map(item => item.body.result.content[0].text), ['Observed result 1', 'Observed result 2']);
+  await bridge.settle();
+  assert.equal((await rpc(bridge, 2, 'tools/list')).status, 404);
+  const later = await rpc(second, 2, 'tools/call', { name: remote, arguments: { action: 'read', value: 3 } });
+  assert.equal(later.body.result.content[0].text, 'Observed result 3');
+});
+
+test('active MCP sessions are bounded and deleting one releases its slot', async t => {
+  const bridge = await createVibeToolBridge();
+  t.after(() => bridge.close());
+  const ids = [];
+  for (let i = 0; i < 512; i++) {
+    const response = await rpc(bridge, 0, 'initialize', { protocolVersion: '2025-06-18' });
+    assert.equal(response.status, 200);
+    ids.push(response.headers['mcp-session-id']);
+  }
+  assert.equal(new Set(ids).size, 512);
+  assert.equal((await rpc(bridge, 0, 'initialize')).status, 503);
+  assert.equal((await request({ ...bridge, sessionId: ids[0] }, undefined, { method: 'DELETE' })).status, 204);
+  assert.equal((await rpc(bridge, 0, 'initialize')).status, 200);
 });

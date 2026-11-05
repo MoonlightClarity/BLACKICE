@@ -4,15 +4,15 @@ BLACKICE is an open-source Windows workspace for AI agents that work with files,
 
 The project is built for personal, user-directed automation. Its focus is practical outcomes, shared human/agent control and continuity across longer tasks.
 
-**Current source version: 2.39.20 for Windows x64. Overview updated November 5, 2026.**
+**Current source version: 2.39.21 for Windows x64. Overview updated November 5, 2026.**
 
-**[Download the latest published Windows installer](https://github.com/MoonlightClarity/BLACKICE/releases/latest)** · [2.39.20 source release notes](RELEASE-NOTES-2.39.20.md) · [Published checksums](https://github.com/MoonlightClarity/BLACKICE/releases/latest/download/SHA256SUMS.txt)
+**[Download the latest published Windows installer](https://github.com/MoonlightClarity/BLACKICE/releases/latest)** · [2.39.21 source release notes](RELEASE-NOTES-2.39.21.md) · [Published checksums](https://github.com/MoonlightClarity/BLACKICE/releases/latest/download/SHA256SUMS.txt)
 
 [Getting started](#getting-started) · [Workspace](#find-your-way-around) · [Planning](#planning-and-practical-judgment) · [Recurring work](#workflows-agents-and-recurring-work) · [Project state](#current-project-state) · [Build from source](#build-from-source)
 
 ## Two ways to work
 
-**Source and installer versions:** This overview describes the 2.39.20 source. The latest release page identifies the published Windows installer and its matching verification; source preparation does not establish installer publication.
+**Source and installer versions:** This overview describes the 2.39.21 source. The latest release page identifies the published Windows installer and its matching verification; source preparation does not establish installer publication.
 
 | Where you work | What runs there |
 | --- | --- |
@@ -174,6 +174,8 @@ For a manual backup, quit BLACKICE and copy the profile folder, or your selected
 Direct actions have saved job IDs and results. After a disconnect, inspect the existing result before retrying an uncertain action. Saved plan revisions likewise allow human and agent edits to be checked against the current state. The [connector guide](CHATGPT-CONNECTOR.md) explains action recovery and native restart.
 
 ## Current project state
+
+**The 2.39.21 source repairs the handoff from accepted Forced plans to operational execution.** The [2.39.21 release notes](RELEASE-NOTES-2.39.21.md) describe native response-only refinement, validated prospective plan leaves, exact saved-outline delivery and current-revision checks.
 
 **The 2.39.20 source improves MCP discovery compatibility.** The [2.39.20 release notes](RELEASE-NOTES-2.39.20.md) describe bodyless HEAD OAuth challenges, exact default HTTPS port matching and the version 7 managed helper upgrade.
 

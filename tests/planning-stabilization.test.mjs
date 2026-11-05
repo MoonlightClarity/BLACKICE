@@ -15,10 +15,12 @@ import {TaskViability} from '../lib/task-viability.mjs';
 import {ResponseCycleService} from '../lib/response-cycle.mjs';
 import {RESPONSE_CYCLE_STAGES,evaluateResponseCycleStage,parseResponseCycleResponse,responseCycleResponseSchema,responseCycleTemplate} from '../public/response-cycle-model.mjs';
 import {tokenUsageMeasurement} from '../public/token-usage.mjs';
+import {normalizeOutputSchema,validateResponseOnlyOptions} from '../lib/response-profile.mjs';
 import {planningCycleStageContext,projectPlanningRequest} from '../public/planning-browser-model.mjs';
 
 const planUsage=tokenUsageMeasurement({inputTokens:7,outputTokens:4,totalTokens:11});
 const operationalUsage=tokenUsageMeasurement({inputTokens:13,outputTokens:4,totalTokens:17});
+const handoffUsage=tokenUsageMeasurement({inputTokens:19,outputTokens:4,totalTokens:23});
 const failedUsage=tokenUsageMeasurement({inputTokens:5,outputTokens:2,totalTokens:7});
 const workflow=(resultValue=17)=>({id:'stabilization-fixture',name:'Stabilization fixture',nodes:[
  {id:'input',type:'input'},{id:'agent',type:'agent',name:'Worker',model:'fixture::free',effort:'low',prompt:'Return the supplied result of '+resultValue+'.'},{id:'output',type:'output'}
@@ -53,12 +55,32 @@ test('final coverage accepts truthful paraphrase of a limitation but still requi
 
 async function fixture(t,{unresolvedInference=false,failRespond=false,recoveringSource=false,executionGuardrails=false,resultValue=17,transformResponse,operation}={}){
  const dir=await mkdtemp(path.join(os.tmpdir(),'blackice-stabilization-'));
- const calls=[];let operationalCalls=0,respondFailed=false,sourceUnavailable=recoveringSource;
+ const calls=[],handoffs=[],operationalEntries=[];let operationalCalls=0,respondFailed=false,sourceUnavailable=recoveringSource;
  const settings={defaultModel:'fixture::free',defaultEffort:'low',runTimeoutMs:null,executionGuardrails};
  const runtime={
   status:()=>({connected:true,authenticated:true,defaultModel:settings.defaultModel,models:[{id:'fixture::free',model:'fixture::free',defaultReasoningEffort:'low'}]}),
   resolveModel:model=>({available:true,providerId:'fixture',model:model==='default'?settings.defaultModel.split('::')[1]:model.split('::')[1]||model}),
   runAgent:async options=>{
+   if(options.responseOnly&&options.prompt.includes('NATIVE PLAN EXECUTION HANDOFF')){
+    validateResponseOnlyOptions(options);assert.equal(options.outputSchema?.type,'object');normalizeOutputSchema(options.outputSchema);
+    const input=JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2)),current=input.currentTask;
+    assert.ok(current&&Number.isSafeInteger(current.revision)&&Array.isArray(current.steps));
+    assert.ok(input.adoptedPlan?.planRef&&input.taskPlanSchema?.properties?.steps);
+    handoffs.push({input,usage:handoffUsage});
+    return {output:JSON.stringify({action:'plan',expectedRevision:current.revision,plan:{layout:'sequence',detail:'detailed',taskType:'general'},steps:[{
+      id:'fixture-native-preparation',title:'Identify the next observation for the supplied result',kind:'action',parentId:null,status:'active',
+      operation:{kind:'reasoning',target:'Identify the exact next observation needed to establish the supplied bounded result.'},
+      result:'The specific next observation and evidence needed for this requested result.',
+      note:'Inspect the supplied task and accepted Plan, identify the next real observation, and retain any missing evidence as unknown. No operation or result is claimed completed here.',
+      doneWhen:'The next observation and its expected evidence are identified from the supplied task before operational dispatch.'
+    }]}),usage:handoffUsage,threadId:'fixture-native-handoff'};
+   }
+   if(!options.responseOnly&&executionGuardrails){
+    const active=engine.listRuns().find(run=>run.status==='running'),state=await tasks.get(active.taskId);
+    assert.ok(options.prompt.includes('ACCEPTED EXECUTION OUTLINE SNAPSHOT'));
+    assert.ok(state.steps.some(step=>step.status==='active'&&step.operation),'The native handoff must be saved before the owner starts.');
+    operationalEntries.push({revision:state.revision,steps:state.steps});
+   }
    if(!options.responseOnly){operationalCalls++;options.onEvent?.({type:'thread',threadId:'provider_fixture_'+operationalCalls,model:options.model,providerId:'fixture'});const output=operation?await operation(options,{dir,operationalCalls}):'Observed result: '+resultValue+'.';options.onEvent?.({type:'usage',usage:operationalUsage});return {output,usage:operationalUsage,threadId:'provider_fixture_'+operationalCalls};}
    const input=JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2));calls.push(input.module.kind);
    if(input.module.kind==='respond'&&failRespond&&!respondFailed){respondFailed=true;options.onEvent?.({type:'usage',usage:failedUsage});throw Object.assign(Error('Fixture final response was rate limited.'),{code:'PROVIDER_RATE_LIMIT'});}
@@ -77,7 +99,7 @@ async function fixture(t,{unresolvedInference=false,failRespond=false,recovering
  const service=new ResponseCycleService({store,runner,taskViability,engine,conversations:archive,getSettings:()=>settings});engine.responseCycle=service;
  t.after(async()=>{await engine.close();await archive.close();await runner.close();await service.close();await taskViability.close();await store.close();await tasks?.close();await rm(dir,{recursive:true,force:true});});
  const execute=async(overrides={})=>{const accepted=engine.startRun({workflow:workflow(resultValue),input:'Report the supplied result of '+resultValue+'.',requestId:'stabilization-test',...overrides});await engine.executions.get(accepted.id);await archive.chain;return engine.getRun(accepted.id);};
- return{dir,engine,archive,store,service,settings,calls,execute,get operationalCalls(){return operationalCalls;},recoverSource:()=>{sourceUnavailable=false;}};
+ return{dir,engine,archive,store,service,settings,calls,handoffs,operationalEntries,tasks,execute,get operationalCalls(){return operationalCalls;},recoverSource:()=>{sourceUnavailable=false;}};
 }
 test('unresolved preparatory findings progress to a plan and available work while retaining their uncertainty',async t=>{
  const f=await fixture(t,{unresolvedInference:true}),run=await f.execute();
@@ -370,13 +392,26 @@ test('automatic Chat carries the recorded unknowns into local read-write-reread 
   assert.equal((await f.archive.get(run.id)).output, run.output);
 });
 
-test('strict dispatch defers recoverable source omissions but rejects unplanned owner output', async t => {
-  const f = await fixture(t, { resultValue: 76, executionGuardrails: true, transformResponse: (body, { input }) => {
+test('strict dispatch defers recoverable source omissions but rejects unsupported owner output after handoff', async t => {
+  let requestedReview;
+  const f = await fixture(t, { resultValue: 76, executionGuardrails: true, operation: async options => {
+    const output='Unsupported bare result: 76.';
+    requestedReview=await options.onBeforeFinal({output});
+    // A provider returning despite the host continuation must not publish an unsupported answer.
+    return output;
+  }, transformResponse: (body, { input }) => {
     if (input.module.kind === 'viability') Object.assign(body, bindRecordedFeasibility(input, f.dir));
   } });
   const run = await f.execute();
   assert.equal(run.status, 'failed', run.error);
-  assert.equal(run.errorCode, 'TASK_PLAN_REQUIRED', 'owner cannot satisfy Forced Planning with an unsupported bare answer');
+  assert.equal(requestedReview?.continue, true, 'The real final hook must reject the unsupported candidate and request reassessment.');
+  assert.match(requestedReview.prompt, /^RETURN TO PLANNING BEFORE THE FINAL RESPONSE/);
+  assert.equal(run.errorCode, 'TASK_PLAN_REASSESSMENT_REQUIRED', 'A saved handoff does not authorize an unsupported bare answer without completed work and fresh reassessment.');
+  assert.equal(f.handoffs.length, 1);assert.equal(f.operationalEntries.length, 1);
+  assert.equal(run.nodes.agent.planningHandoff.state, 'delivered');
+  assert.equal(run.output, '', 'The unsupported owner answer must remain unpublished.');
+  const task=await f.tasks.get(run.taskId);
+  assert.equal(task.steps.some(step=>step.status==='done'),false,'The runtime must not invent completion to accept a bare answer.');
   assert.equal(f.operationalCalls, 1, 'owner is allowed to inspect recoverable missing source evidence');
   assert.deepEqual(f.calls, ['inference', 'viability', 'plan']);
   const request = await f.store.get(run.responseCycle.requestId), cycle = request.cycles[0];
@@ -475,7 +510,9 @@ test('recorded operational child pattern repairs its missing target once and rea
   assert.equal(request.cycles.length, 1, 'workflow work must not create an analytical child');
   assert.equal(request.attempts.length, 6);
   assert.equal(request.attempts.filter(item => item.status === 'failed').length, 1);
-  assert.equal(run.planningUsage.samples, 6); assert.equal(run.usage.totalTokens, 83);
+  assert.equal(f.handoffs.length, 1);assert.equal(f.operationalEntries.length, 1);
+  assert.equal(run.nodes.agent.planningHandoff.attempts[0].usage.totalTokens, 23);
+  assert.equal(run.planningUsage.samples, 7); assert.equal(run.planningUsage.totalTokens, 89); assert.equal(run.usage.totalTokens, 106);
   const inference = request.nodes.find(node => node.id === cycle.stageNodeIds.inference), plan = request.nodes.find(node => node.id === cycle.stageNodeIds.plan);
   assert.equal(inference.response.subproblems[0].executionTarget, 'workflow');
   assert.deepEqual(inference.readiness.cycle.unresolvedChildren, []);
@@ -498,6 +535,7 @@ test('a useful analytical child can hand operational criteria to its owner witho
   await writeInventory(f.dir);
   const run = await f.execute();
   assert.equal(run.status, 'completed', run.error || run.output); assert.equal(f.operationalCalls, 1);
+  assert.equal(f.handoffs.length, 1);assert.equal(f.operationalEntries.length, 1);
   const request = await f.store.get(run.responseCycle.requestId), root = request.cycles.find(item => !item.parentCycleId), child = request.cycles.find(item => item.parentCycleId === root.id);
   assert.equal(request.cycles.length, 2, 'a child discovering workflow work must not create another analyst');
   const final = request.nodes.find(node => node.id === child.stageNodeIds.respond), plan = request.nodes.find(node => node.id === root.stageNodeIds.plan);
@@ -617,13 +655,14 @@ test('live run totals include Feasibility, failed format output and its repair b
     inference.release();
     await waitForUsage(()=>entered.repair);
     live=await waitForUsage(()=>{const run=f.engine.getRun(accepted.id);return run.planningAttempts?.length===5&&run;});
-    assert.equal(live.settled,false);assert.equal(live.planningUsage.totalTokens,55);assert.equal(live.operationalUsage.totalTokens,17);assert.equal(live.usage.totalTokens,72);
+    assert.equal(live.settled,false);assert.equal(live.planningUsage.totalTokens,78);assert.equal(live.operationalUsage.totalTokens,17);assert.equal(live.usage.totalTokens,95);
+    assert.equal(f.handoffs.length,1);assert.equal(live.nodes.agent.planningHandoff.attempts[0].usage.totalTokens,23,'Native refinement usage is counted while final-format repair is still held.');
     const request=await f.store.get(live.responseCycle.requestId),failed=request.attempts.find(item=>item.repairAttemptId);
     assert.equal(failed.status,'failed');assert.ok(live.planningAttempts.some(item=>item.attemptId===failed.id),'the failed original is counted while its repair is held');
     repair.release();
     await waitForUsage(()=>entered.publish);
     live=await waitForUsage(()=>{const run=f.engine.getRun(accepted.id);return run.planningAttempts?.length===6&&run;});
-    assert.equal(live.settled,false);assert.equal(live.planningUsage.totalTokens,66);assert.equal(live.usage.totalTokens,83);
+    assert.equal(live.settled,false);assert.equal(live.planningUsage.totalTokens,89);assert.equal(live.usage.totalTokens,106);
     const savedIds=live.planningAttempts.map(item=>item.attemptId);
     const event={data:{requestId:live.responseCycle.requestId,workerStatus:'completed'}};
     f.service.runner.emit('updated',event);f.service.runner.emit('updated',event);
@@ -632,9 +671,9 @@ test('live run totals include Feasibility, failed format output and its repair b
     publish.release();await execution;await f.archive.chain;
     const final=f.engine.getRun(accepted.id);
     assert.equal(final.status,'completed');assert.equal(final.settled,true);assert.equal(final.output,'The result is 76.');
-    assert.equal(final.planningUsage.totalTokens,66);assert.equal(final.usage.totalTokens,83);assert.deepEqual(final.planningAttempts.map(item=>item.attemptId),savedIds,'final capture is idempotent');
+    assert.equal(final.planningUsage.totalTokens,89);assert.equal(final.usage.totalTokens,106);assert.deepEqual(final.planningAttempts.map(item=>item.attemptId),savedIds,'final capture is idempotent');
     assert.deepEqual(f.calls,['inference','viability','plan','think','respond','respond']);assert.equal(f.operationalCalls,1);assert.equal(workspaceCalls,3,'only the intended read/write/read operations ran');
-    assert.equal((await f.archive.get(final.id)).usage.totalTokens,83);
+    assert.equal((await f.archive.get(final.id)).usage.totalTokens,106);
     const published=notifications.length;f.service.runner.emit('updated',event);await Promise.allSettled([...f.service.usageUpdates.values()]);
     assert.equal(notifications.length,published,'late accounting does not republish a settled historical run');
     const listeners=f.service.runner.listenerCount('updated');await f.service.close();
