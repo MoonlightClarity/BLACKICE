@@ -1,3 +1,11 @@
+# BLACKICE 2.39.19 — Visible Mistral replies with Planning Off
+
+This source release repairs native Mistral turns that completed without a visible answer and were incorrectly labelled “Response saved.” It adds one bounded answer-only recovery in the same native session and makes Chat completion status and saved-history rendering reflect the response actually available. Windows native session saves use extended-length paths while preserving the existing home, and follow-up readiness requires acknowledged session closure and an observed graceful process exit. Shutdown also lets accepted automatic-startup requests finish reading their results before connector services close.
+
+See [the 2.39.19 release notes](RELEASE-NOTES-2.39.19.md) for the behavior and verification scope. Windows installer publication and exact-artifact evidence are handled by the release workflow.
+
+---
+
 # BLACKICE 2.39.18 — Native Mistral Vibe and optional model connections
 
 This source release adds native Mistral Vibe Code with account model discovery and selectable model choices, actionable optional API connections, and targeted browser and MCP authorization repairs. Existing defaults and saved model identities are preserved. Incoming Mistral Chat MCP remains blocked by external reachability in the tested setup.

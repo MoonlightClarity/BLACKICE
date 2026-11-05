@@ -138,7 +138,7 @@ async function workspaceChecks(){
     eventStatus(f,catalog[0],'completed');
     const changed=observer.takeRecords();observer.disconnect();
     check(changed.length>0&&changed.every(record=>row.contains(record.target)),'Actual status changes must touch only the changed row');
-    check(row.querySelector('.next-conversation-meta').textContent.includes('Response saved'),'Actual run status must update immediately');
+    check(row.querySelector('.next-conversation-meta').textContent.includes('Finished'),'Actual run status must update immediately');
     checks.largeCatalogLiveEvents={catalogSize:20000,unchangedEvents:1000,eventMs,unchangedMutations,statusMutations:changed.length};
     f.query('#next-chat-select').click();f.query('#next-chat-bulk-all').click();
     check(f.query('#next-chat-bulk-count').textContent==='80 selected','Select visible must select only the mounted batch');
@@ -165,11 +165,11 @@ async function workspaceChecks(){
     const fresh=make('fresh-burst','running');f.emit({type:'conversations.updated'});
     await until(()=>f.listReads.length===4,'Status race read');
     eventStatus(f,fresh,'completed');
-    check(f.query('.next-conversation-meta').textContent.includes('Response saved'),'New status must paint before the slow read settles');
+    check(f.query('.next-conversation-meta').textContent.includes('Finished'),'New status must paint before the slow read settles');
     f.listReads[3].resolve([fresh]);await until(()=>f.listReads.length===5,'Fresh read after status event');
-    check(f.query('.next-conversation-meta').textContent.includes('Response saved'),'Older catalog response must not revert a newer status');
+    check(f.query('.next-conversation-meta').textContent.includes('Finished'),'Older catalog response must not revert a newer status');
     f.listReads[4].resolve([make('fresh-burst')]);await until(()=>active===0,'Status follow-up settled');
-    check(f.query('.next-conversation-meta').textContent.includes('Response saved'),'Follow-up must retain current status');
+    check(f.query('.next-conversation-meta').textContent.includes('Finished'),'Follow-up must retain current status');
     checks.statusOvertakesRead=true;
 
     // Simulate a response already completing when its old bucket is aborted.

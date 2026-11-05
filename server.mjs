@@ -193,6 +193,7 @@ export async function createHarnessServer(options = {}) {
   const clients = new Set();
   const knowledgeMutations = new Set();
   const fileMutations = new Set();
+  const connectorStartupResponses = new Set();
   let connectorStartupEnabling = null;
   const mutateKnowledge = operation => { const pending = Promise.resolve().then(operation); knowledgeMutations.add(pending); pending.then(() => knowledgeMutations.delete(pending), () => knowledgeMutations.delete(pending)); return pending; };
   let boundPort = port, closePromise, remoteStartup, maintenanceRequested=false, remoteAgentApi, chatGPTConnector, directExecution;
@@ -684,8 +685,10 @@ export async function createHarnessServer(options = {}) {
             const settled = () => { if (connectorStartupEnabling === pending) connectorStartupEnabling = null; fileMutations.delete(pending); };
             pending.then(settled, settled);
           }
-          await connectorStartupEnabling;
-          return json(res, 200, await connectorSnapshot());
+          const response = connectorStartupEnabling.then(() => connectorSnapshot());
+          connectorStartupResponses.add(response); fileMutations.add(response);
+          try { return json(res, 200, await response); }
+          finally { connectorStartupResponses.delete(response); fileMutations.delete(response); }
         }
         if (action === 'prepare') {
           if (!remoteAccess) return json(res, 503, { error: 'Public HTTPS is unavailable in this runtime.' });
@@ -1439,6 +1442,10 @@ export async function createHarnessServer(options = {}) {
         let firstError;
         const cleanup = async operation => { try { await operation(); } catch (error) { firstError ||= error; } };
         await cleanup(() => workbenchVideo.close());
+        // Admitted startup responses still read connector services after the
+        // Windows helper settles. Wait for every response, including failures,
+        // before teardown; other mutations retain their cancellation order.
+        await Promise.allSettled([...connectorStartupResponses]);
        await cleanup(() => connectorSetup.close());
         await cleanup(() => remoteAccess?.close());
         await cleanup(() => remoteStartup?.catch(() => {}));

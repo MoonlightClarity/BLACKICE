@@ -1,7 +1,7 @@
 import { createChatFrame, paintIndex, paintIntroduction, paintHistory, paintModels, captureChatScroll, restoreChatScroll } from './render.mjs';
 import { createGroupedModelPicker } from '../core/model-picker.mjs';
 import { enableProviderForModel } from '../../provider-availability.mjs';
-import { summaries, filterSummaries, conversationRuns, rootId, lastRunId, running, planningProgressForRun, CHAT_INDEX_BATCH, CHAT_MESSAGE_BATCH, messageLimitsAfterRefresh, conversationBucket, conversationActionState, conversationManagementTarget, resolveConversationSelection, mergeChatRunUpdate } from './model.mjs';
+import { summaries, filterSummaries, conversationRuns, rootId, lastRunId, running, planningProgressForRun, CHAT_INDEX_BATCH, CHAT_MESSAGE_BATCH, messageLimitsAfterRefresh, conversationBucket, conversationActionState, conversationManagementTarget, resolveConversationSelection, mergeChatRunUpdate, chatHeaderStatus } from './model.mjs';
 import { submitChat, replyState } from './send.mjs';
 import { createConversationReader } from './reader-client.mjs';
 import { initAttachmentsUI } from '../../attachments-ui.mjs';
@@ -159,7 +159,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     const item=state.selected,bucket=selectedBucket(),latest=state.runs.at(-1),busy=state.pending||state.managing||contextControls.isCompacting();
     view.title.textContent=item?.rootTitle||item?.title||'New conversation';
     const planningProgress=planningProgressForRun(latest);
-    view.subtitle.textContent=(item&&bucket!=='active'?(bucket==='deleted'?'In Trash':bucket==='archived'?'Archived':'History state unavailable')+' · ':'')+(planningProgress?.preparing?'Planning':latest ? latest.status==='completed'?'Saved response':latest.status||'Saved':'Local workspace');
+    view.subtitle.textContent=(item&&bucket!=='active'?(bucket==='deleted'?'In Trash':bucket==='archived'?'Archived':'History state unavailable')+' · ':'')+chatHeaderStatus(latest);
     const cycle=latest?.responseCycle;
     const cycleLabel=planningProgress?.label;
     view.cycleNotice.hidden=bucket!=='active'||!planningProgress?.showNotice;

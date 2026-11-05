@@ -27,10 +27,10 @@ class ResponseCapture extends Writable {
   writeHead(status, headers = {}) { this.statusCode = status; for (const [name, value] of Object.entries(headers)) this.setHeader(name, value); this.headersSent = true; }
   _write(part, _encoding, done) { this.parts.push(Buffer.from(part)); done(); }
 }
-async function fixture(t, connectionStartup) {
+async function fixture(t, connectionStartup, options = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-startup-api-'));
   const desktop = new EventEmitter(); desktop.status = () => ({ available: false, enabled: false }); desktop.setEnabled = async () => desktop.status();
-  const app = await createHarnessServer({ port: 0, runtime: new Runtime(), desktop, connectionStartup, dataDir: path.join(directory, 'data'), defaultCwd: path.join(directory, 'workspace'), remoteAccess: false, autoAttachDesktop: false, emailExecutableHint: null });
+  const app = await createHarnessServer({ ...options, port: 0, runtime: new Runtime(), desktop, connectionStartup, dataDir: path.join(directory, 'data'), defaultCwd: path.join(directory, 'workspace'), remoteAccess: false, autoAttachDesktop: false, emailExecutableHint: null });
   t.after(async () => { app.endRestart(); app.endMaintenance(); await app.close(); await rm(directory, { recursive: true, force: true }); });
   // Exercise the actual server request handler without a network listener.
   // Existing connector HTTP tests cover the Node socket and remote gateway.
@@ -177,3 +177,59 @@ test('shutdown waits for the admitted startup helper and never requests a second
   } finally { finish.resolve(); }
   assert.equal((await first).status, 200); await closing; assert.equal(closed, true);
 });
+
+for (const failFirst of [false, true]) {
+  test('shutdown drains coalesced startup response snapshots' + (failFirst ? ' after one snapshot fails' : ' before closing connector services'), async t => {
+    const entered = held(), finish = held(), shutdownEntered = held();
+    const snapshotsEntered = [held(), held()], finishSnapshots = [held(), held()];
+    let changes = 0, snapshots = 0, setupClosing = false, connectorClosing = false, closed = false;
+    const f = await fixture(t, { async snapshot() { return startup(); }, async enable() { changes++; entered.resolve(); await finish.promise; } }, {
+      // This is the first shutdown dependency. Its synchronous completion makes
+      // the next teardown boundary observable without timing or real OS work.
+      workbenchVideo: { close() { shutdownEntered.resolve(); } },
+    });
+    const snapshot = f.app.connectorSetup.snapshot.bind(f.app.connectorSetup);
+    const closeSetup = f.app.connectorSetup.close.bind(f.app.connectorSetup);
+    const closeConnector = f.app.chatGPTConnector.close.bind(f.app.chatGPTConnector);
+    f.app.connectorSetup.snapshot = async () => {
+      const index = snapshots++;
+      assert.ok(index < 2, 'Only the two admitted startup responses read setup.');
+      snapshotsEntered[index].resolve(); await finishSnapshots[index].promise;
+      if (failFirst && index === 0) throw Object.assign(new Error('Fixture startup response failed.'), { status: 503 });
+      return snapshot();
+    };
+    f.app.connectorSetup.close = () => { setupClosing = true; return closeSetup(); };
+    f.app.chatGPTConnector.close = () => { connectorClosing = true; return closeConnector(); };
+    let first, second, closing;
+    try {
+      first = f.request(action, { body: {} }); await entered.promise;
+      second = f.request(action, { body: {} }); await tick();
+      finish.resolve(); await Promise.all(snapshotsEntered.map(gate => gate.promise));
+      assert.equal(changes, 1);
+      closing = f.app.close().then(() => { closed = true; });
+      await shutdownEntered.promise; await tick();
+      assert.equal(setupClosing, false, 'Setup must stay available through admitted response snapshots.');
+      assert.equal(connectorClosing, false, 'Connector storage must stay available through admitted response snapshots.');
+      assert.equal(closed, false);
+      assert.equal((await f.request(action, { body: {} })).status, 503);
+      assert.equal(changes, 1, 'Shutdown must not admit a second startup helper.');
+      finishSnapshots[0].resolve();
+      const firstResponse = await first;
+      assert.equal(firstResponse.status, failFirst ? 503 : 200);
+      if (!failFirst) assert.equal(firstResponse.data.startup.busy, false);
+      await tick();
+      assert.equal(setupClosing, false, 'A failed or completed response must not release another response snapshot.');
+      assert.equal(connectorClosing, false);
+      assert.equal(closed, false);
+      finishSnapshots[1].resolve();
+      const secondResponse = await second;
+      assert.equal(secondResponse.status, 200);
+      assert.equal(secondResponse.data.startup.busy, false);
+      await closing;
+      assert.equal(closed, true); assert.equal(setupClosing, true); assert.equal(connectorClosing, true);
+    } finally {
+      finish.resolve(); for (const gate of finishSnapshots) gate.resolve();
+      await Promise.allSettled([first, second, closing].filter(Boolean));
+    }
+  });
+}

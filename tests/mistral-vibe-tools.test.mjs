@@ -166,3 +166,25 @@ test('an already cancelled owner and invalid tool catalogs fail before a listene
   await assert.rejects(createVibeToolBridge({ tools: [tool, tool], onToolCall: async () => success('unused') }), { code: 'VIBE_TOOL_SCHEMA' });
   await assert.rejects(createVibeToolBridge({ tools: [tool] }), { code: 'VIBE_TOOL_CALLBACK' });
 });
+
+
+test('native invocation guidance maps the actual served catalog and keeps endpoint credentials private', async t => {
+  const tools = [
+    { ...tool, name: 'relay_workspace' },
+    { type: 'namespace', name: 'fixture', tools: [{ ...tool, name: 'read', description: 'Namespaced fixture read' }] },
+  ];
+  const { bridge, catalog, calls } = await fixture(t, { tools });
+  assert.equal(bridge.toolBindings.length, 2);
+  for (const binding of bridge.toolBindings) {
+    const remote = binding.nativeName.slice('mcp_blackice.'.length);
+    assert.ok(catalog.some(entry => entry.name === remote));
+    assert.ok(bridge.instructions.includes('await tools.' + binding.nativeName + '(arguments)'));
+    const response = await rpc(bridge, binding.nativeName, 'tools/call', { name: remote, arguments: { action: 'read' } });
+    assert.equal(response.body.result.isError, false);
+    assert.equal(calls.at(-1).name, binding.name);
+    assert.equal(calls.at(-1).namespace, binding.namespace);
+  }
+  assert.match(bridge.instructions, /Use these mapped functions instead of inventing tools\.relay_\*/);
+  assert.equal(bridge.instructions.includes(bridge.server.url), false);
+  assert.equal(bridge.instructions.includes(bridge.server.headers[0].value), false);
+});

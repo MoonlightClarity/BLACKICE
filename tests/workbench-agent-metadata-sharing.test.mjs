@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {spawn} from 'node:child_process';
 import {setTimeout as delay} from 'node:timers/promises';
+import {performance} from 'node:perf_hooks';
 import {fileURLToPath} from 'node:url';
 import {createWorkbenchJobLease} from '../lib/workbench-job-lease.mjs';
 
@@ -21,18 +22,24 @@ if(!$guard -or $guard -match 'Add-Type|CreateJobObject|Start-Process|Invoke-Expr
 . ([scriptblock]::Create($guard))
 $script:realReader=(Get-Command Read-JobJson).ScriptBlock
 $script:agentReads=0;$script:leaseReads=0;$script:transientReads=0
+$script:leaseReadFailures=0;$script:lastLeaseReadFailure=$null;$script:retryReadyElapsedMs=$null
 function Read-JobJson([string]$File,[int]$Limit=8192){
   if([IO.Path]::GetFileName($File) -eq 'agent-state.json'){$script:agentReads++}
   if([IO.Path]::GetFileName($File) -eq 'lease.json'){$script:leaseReads++}
   try{
     $value=& $script:realReader $File $Limit
     if([IO.Path]::GetFileName($File) -eq 'lease.json' -and $script:transientReads -gt 0 -and $RetryReady -and ![IO.File]::Exists($RetryReady)){
+      $script:retryReadyElapsedMs=$clock.Elapsed.TotalMilliseconds
       [IO.File]::WriteAllText($RetryReady,'contended metadata retry read the live lease')
     }
     return $value
   }catch{
-    $transient=$false
-    for($e=$_.Exception;$e;$e=$e.InnerException){if($e -is [UnauthorizedAccessException] -or ($e -is [IO.IOException] -and ([int64]$e.HResult -band 65535) -in @(2,3,32,33,303))){$transient=$true}}
+    $transient=$false;$leaseFailureKind='other';$leaseFailureCode=$null
+    for($e=$_.Exception;$e;$e=$e.InnerException){
+      if($e -is [UnauthorizedAccessException] -or ($e -is [IO.IOException] -and ([int64]$e.HResult -band 65535) -in @(2,3,32,33,303))){$transient=$true}
+      if($e -is [UnauthorizedAccessException] -or $e -is [IO.IOException]){$leaseFailureKind=if($e -is [UnauthorizedAccessException]){'access'}else{'io'};$leaseFailureCode=([int64]$e.HResult -band 65535)}
+    }
+    if([IO.Path]::GetFileName($File) -eq 'lease.json'){$script:leaseReadFailures++;$script:lastLeaseReadFailure=@{kind=$leaseFailureKind;nativeCode=$leaseFailureCode}}
     if($transient){$script:transientReads++};throw
   }
 }
@@ -53,7 +60,8 @@ try{Assert-JobAgent $context;$accepted=$true}catch{
   $tagged=([string]$_.ErrorDetails.Message -like 'Agent-state metadata*') -or ($_.Exception.Message -like 'Agent-state metadata*')
 }
 @{accepted=$accepted;elapsedMs=$clock.Elapsed.TotalMilliseconds;agentReads=$script:agentReads;leaseReads=$script:leaseReads;
-  transientReads=$script:transientReads;errorKind=$errorKind;metadataPhase=$context.AgentMetadataFailure;diagnosticTagged=$tagged;supervisorEntryExecuted=$false;childStarted=$false;nativeTypeCreated=($null -ne ('BLACKICEAgentJob' -as [type]))}|ConvertTo-Json -Compress
+  transientReads=$script:transientReads;errorKind=$errorKind;metadataPhase=$context.AgentMetadataFailure;diagnosticTagged=$tagged;
+  leaseFailure=$context.LeaseFailure;leaseReadFailures=$script:leaseReadFailures;lastLeaseReadFailure=$script:lastLeaseReadFailure;retryReadyElapsedMs=$script:retryReadyElapsedMs;supervisorEntryExecuted=$false;childStarted=$false;nativeTypeCreated=($null -ne ('BLACKICEAgentJob' -as [type]))}|ConvertTo-Json -Compress
 `;
 const holderSource=String.raw`
 param([string]$File,[string]$Ready,[string]$Release)
@@ -73,33 +81,37 @@ function child(script,args){
   return {process,done};
 }
 async function fixture(t,{locked=true,deadlineMs=5000,changed=false,malformed=false}={}){
+  const begun=performance.now(),timing={},mark=name=>{timing[name]=Math.round((performance.now()-begun)*1000)/1000};
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'blackice-metadata-share-')),workspace=path.join(root,'workspace');
   const bridge=path.join(workspace,'.blackice-workbench'),jobId='a'.repeat(32),folder=path.join(bridge,'agent-jobs',jobId),file=path.join(bridge,'agent-state.json');
   await fs.mkdir(folder,{recursive:true});
-  await fs.writeFile(file,malformed?'{':JSON.stringify({version:1,agentId:(changed?'d':'b').repeat(32),sessionId:2,interactive:true,guestRoot:workspace,heartbeatAt:new Date().toISOString()}));
+  const heartbeatAtMs=Date.now();mark('heartbeatCreatedMs');
+  await fs.writeFile(file,malformed?'{':JSON.stringify({version:1,agentId:(changed?'d':'b').repeat(32),sessionId:2,interactive:true,guestRoot:workspace,heartbeatAt:new Date(heartbeatAtMs).toISOString()}));
   const readerFile=path.join(root,'reader.ps1'),holderFile=path.join(root,'holder.ps1');await fs.writeFile(readerFile,readerSource);await fs.writeFile(holderFile,holderSource);
-  const lease=createWorkbenchJobLease({folder,jobId,scopeHash:'c'.repeat(64),lifetimeMs:10000});await lease.ready;
+  const lease=createWorkbenchJobLease({folder,jobId,scopeHash:'c'.repeat(64),lifetimeMs:10000});await lease.ready;mark('leaseReadyMs');
   const ready=path.join(root,'reader.ready'),go=path.join(root,'reader.go'),retryReady=path.join(root,'reader.retry-ready'),lockedReady=path.join(root,'holder.ready'),release=path.join(root,'holder.release');
   const reader=child(readerFile,['-Source',supervisor,'-Workspace',workspace,'-Folder',folder,'-Ready',ready,'-Go',go,'-RetryReady',retryReady,'-DeadlineMs',String(deadlineMs)]);
   let holder=null,unlocked=false;
-  const unlock=async()=>{if(unlocked)return;unlocked=true;if(holder){await fs.writeFile(release,'release');const result=await holder.done;assert.equal(result.code,0,result.stderr)}};
+  const unlock=async()=>{if(unlocked)return;unlocked=true;mark('unlockRequestedMs');if(holder){await fs.writeFile(release,'release');const result=await holder.done;assert.equal(result.code,0,result.stderr)}mark('unlockCompletedMs')};
   t.after(async()=>{
     await unlock().catch(()=>{});await lease.stop().catch(()=>{});
     if(reader.process.exitCode===null)reader.process.kill();if(holder?.process.exitCode===null)holder.process.kill();
     await Promise.allSettled([reader.done,holder?.done]);
     assert.ok(path.resolve(root).startsWith(path.resolve(os.tmpdir())+path.sep));await fs.rm(root,{recursive:true,force:true});
   });
-  await until(()=>exists(ready),'Reader did not load the isolated source guards.');
-  if(locked){holder=child(holderFile,['-File',file,'-Ready',lockedReady,'-Release',release]);await until(()=>exists(lockedReady),'Read-only fixture holder did not acquire its private metadata file.')}
-  const start=()=>fs.writeFile(go,'go');
-  const result=async()=>{const value=await reader.done;assert.equal(value.code,0,value.stderr);const receipt=JSON.parse(value.stdout.trim());
+  await until(()=>exists(ready),'Reader did not load the isolated source guards.');mark('readerReadyMs');
+  if(locked){holder=child(holderFile,['-File',file,'-Ready',lockedReady,'-Release',release]);await until(()=>exists(lockedReady),'Read-only fixture holder did not acquire its private metadata file.');mark('holderLockedMs')}
+  const start=async()=>{mark('startRequestedMs');await fs.writeFile(go,'go');mark('startWrittenMs')};
+  const result=async()=>{const value=await reader.done;mark('resultReceivedMs');assert.equal(value.code,0,value.stderr);const receipt=JSON.parse(value.stdout.trim());
     for(const key of ['supervisorEntryExecuted','childStarted','nativeTypeCreated'])assert.equal(receipt[key],false);return receipt};
-  return {root,workspace,bridge,folder,file,lease,start,result,unlock,retryReady};
+  const diagnostics=()=>({timing:{...timing},heartbeatAgeMs:Date.now()-heartbeatAtMs,leaseError:lease.error?{code:lease.error.code,stage:lease.error.leaseStage,nativeCode:lease.error.leaseCode}:null});
+  return {root,workspace,bridge,folder,file,lease,start,result,unlock,retryReady,diagnostics};
 }
 
 test('actual metadata guard recovers from a real 350 ms Windows share violation while the guest-job lease remains live',{skip:process.platform!=='win32'},async t=>{
   const f=await fixture(t);await f.start();await delay(350);await f.unlock();const receipt=await f.result();
-  assert.equal(receipt.accepted,true);assert.ok(receipt.elapsedMs>=250&&receipt.elapsedMs<1500);assert.ok(receipt.transientReads>0);assert.ok(receipt.agentReads>1);assert.ok(receipt.leaseReads>0);
+  const diagnostic=JSON.stringify({receipt,fixture:f.diagnostics()});t.diagnostic(diagnostic);
+  assert.equal(receipt.accepted,true,diagnostic);assert.ok(receipt.elapsedMs>=250&&receipt.elapsedMs<1500,diagnostic);assert.ok(receipt.transientReads>0);assert.ok(receipt.agentReads>1);assert.ok(receipt.leaseReads>0);
 });
 test('persistent metadata sharing denial fails closed within the monotonic one-second retry budget',{skip:process.platform!=='win32'},async t=>{
   const f=await fixture(t);await f.lease.stop();

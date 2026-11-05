@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { MistralVibeRuntime, vibeModelCatalog, vibeIsolationConfig, vibeAccountCatalog } from '../lib/mistral-vibe.mjs';
+import { MistralVibeRuntime, vibeModelCatalog, vibeIsolationConfig, vibeAccountCatalog, vibeNativeHome } from '../lib/mistral-vibe.mjs';
 
 const configOptions = [
   { id: 'model', currentValue: 'mistral-medium-3.5', options: [{ value: 'mistral-medium-3.5', name: 'Mistral Medium 3.5', description: 'mistral-vibe-cli-latest' }] },
@@ -14,7 +14,10 @@ const deferred = () => { let resolve, reject; const promise = new Promise((yes, 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 class FakeConnection extends EventEmitter {
-  constructor(options, fixture) { super(); this.options = options; this.fixture = fixture; this.calls = []; this.closed = false; this.turn = 0; }
+  constructor(options, fixture) {
+    super(); this.options = options; this.fixture = fixture; this.calls = []; this.closed = false; this.turn = 0;
+    this.terminated = new Promise(resolve => { this.resolveTerminated = resolve; });
+  }
   async initialize() {
     const home = this.options.env.VIBE_HOME;
     if (home) {
@@ -73,7 +76,20 @@ class FakeConnection extends EventEmitter {
     return { stopReason: 'end_turn', usage: { inputTokens: this.totals * 10, outputTokens: this.totals * 2, totalTokens: this.totals * 12, cachedReadTokens: 0 } };
   }
   notify(method, params) { this.calls.push({ method, params, notification: true }); }
-  async close() { if (this.closed) return; if (this.fixture.closeGate) await this.fixture.closeGate.promise; if (this.closed) return; this.closed = true; this.emit('exit', { code: 0 }); }
+  finishExit(result = { closed: true, graceful: true, forced: false, exitCode: 0, signal: null }) {
+    if (this.closed) return this.closeResult;
+    this.closeResult = result; this.closed = true; this.resolveTerminated(result);
+    this.emit('exit', { code: result.exitCode, signal: result.signal });
+    return result;
+  }
+  async close() {
+    if (this.closed) return this.closeResult;
+    this.fixture.closeEntered?.resolve();
+    if (this.fixture.closeFailure) throw this.fixture.closeFailure;
+    if (this.fixture.closeGate) await this.fixture.closeGate.promise;
+    if (this.closed) return this.closeResult;
+    return this.finishExit(this.fixture.closeResult);
+  }
 }
 
 async function fixture(t, extras = {}) {
@@ -635,4 +651,411 @@ test('catalog-only remaining context is unknown before and after the first nativ
   assert.equal(contexts.at(-1).estimatedInputTokens, 20, 'retain the actual native active-context count');
   assert.equal(contexts.at(-1).remainingTokens, null);
   assert.match(contexts.at(-1).estimateMethod, /native remaining context is unknown/);
+});
+
+
+test('blank visible output gets one answer-only continuation in the same model and native session', async t => {
+  const events = [], reviewed = [];
+  const f = await fixture(t, { onPrompt: c => {
+    if (c.turn === 1) {
+      c.message('Progress before the missing answer.', 'progress');
+      return c.answer(' \n\t');
+    }
+    return c.answer('Visible recovered answer.');
+  } });
+  const result = await f.runtime.runAgent(input({
+    effort: 'none', onEvent: event => events.push(event),
+    onBeforeFinal: candidate => { reviewed.push(candidate.output); return null; },
+  }));
+  assert.equal(result.output, 'Visible recovered answer.');
+  assert.equal(result.usage.totalTokens, 24);
+  assert.equal(result.model, 'mistral-vibe::mistral-medium-3.5');
+  assert.equal(result.effort, 'none');
+  const connection = f.connections[0], prompts = connection.calls.filter(call => call.method === 'session/prompt');
+  assert.equal(f.connections.length, 1);
+  assert.equal(prompts.length, 2);
+  assert.equal(prompts[0].params.sessionId, prompts[1].params.sessionId);
+  assert.match(prompts[1].params.prompt[0].text, /answer-only continuation/);
+  assert.notEqual(prompts[1].params.prompt[0].text, input().prompt);
+  assert.equal(connection.calls.filter(call => call.method === 'session/set_config_option' && call.params.configId === 'thinking').length, 1);
+  assert.deepEqual(reviewed, ['Visible recovered answer.']);
+  assert.deepEqual(events.filter(event => event.type === 'response.recovery').map(event => [event.attempt, event.maxAttempts]), [[1, 1]]);
+  assert.deepEqual(events.filter(event => event.type === 'message' && event.phase === 'final_answer').map(event => event.text), ['Visible recovered answer.']);
+  assert.deepEqual(events.filter(event => event.type === 'message' && event.phase === 'commentary').map(event => event.text), ['Progress before the missing answer.']);
+  assert.equal(events.filter(event => event.type === 'turn' && event.status === 'completed').length, 1);
+});
+
+test('repeated empty or invisible output fails visibly, retains measured usage, and remains resumable without replay', async t => {
+  for (const blank of ['', ' ', '\n\t\u00a0', '\u200b\u2060']) {
+    const events = [];
+    const f = await fixture(t, { onPrompt: c => c.answer(blank) });
+    await assert.rejects(f.runtime.runAgent(input({ onEvent: event => events.push(event) })), { code: 'MISTRAL_VIBE_EMPTY_RESPONSE' });
+    assert.equal(f.connections[0].calls.filter(call => call.method === 'session/prompt').length, 2);
+    assert.equal(events.some(event => event.type === 'message' && event.phase === 'final_answer'), false);
+    assert.equal(events.some(event => event.type === 'turn' && event.status === 'completed'), false);
+    assert.equal(events.filter(event => event.type === 'response.recovery').length, 1);
+    const threadId = events.find(event => event.type === 'thread').threadId;
+    const saved = JSON.parse(await fs.readFile(path.join(f.runtime.root, 'threads', threadId, 'thread.json'), 'utf8'));
+    assert.equal(saved.state, 'ready');
+    assert.equal(saved.usage.totalTokens, 24);
+    assert.equal(events.filter(event => event.type === 'usage').at(-1).usage.totalTokens, 24);
+    f.onPrompt = c => c.answer('Explicit follow-up answer.');
+    const continued = await f.runtime.runAgent(input({ threadId, prompt: 'Give the saved result now.' }));
+    assert.equal(continued.output, 'Explicit follow-up answer.');
+    assert.equal(continued.threadId, threadId);
+    assert.equal(continued.usage.totalTokens, 12);
+    const calls = f.connections[1].calls;
+    assert.equal(calls.filter(call => call.method === 'session/prompt').length, 1);
+    assert.equal(calls.find(call => call.method === 'session/prompt').params.prompt[0].text, 'Give the saved result now.');
+    assert.ok(calls.some(call => call.method === 'session/load'));
+  }
+});
+
+test('a tool-only ending does not turn preceding commentary into a final answer', async t => {
+  const events = [];
+  const f = await fixture(t, { onPrompt: c => {
+    if (c.turn !== 1) return c.answer('The confirmed operation is complete.');
+    c.message('I will inspect the fixture.', 'progress-before-tool');
+    c.emit('notification', { method: 'session/update', params: { sessionId: c.sessionId, update: { sessionUpdate: 'tool_call', toolCallId: 'fixture-tool', _meta: { tool_name: 'mcp_blackice.fixture' } } } });
+    c.totals++;
+    c.fixture.sessions.set(c.sessionId, c.totals);
+    c.usage();
+    return { stopReason: 'end_turn', usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12, cachedReadTokens: 0 } };
+  } });
+  const result = await f.runtime.runAgent(input({ onEvent: event => events.push(event) }));
+  assert.equal(result.output, 'The confirmed operation is complete.');
+  assert.deepEqual(events.filter(event => event.type === 'message' && event.phase === 'final_answer').map(event => event.text), [result.output]);
+  assert.equal(events.find(event => event.type === 'message' && event.text === 'I will inspect the fixture.').phase, 'commentary');
+  assert.equal(events.filter(event => event.type === 'response.recovery').length, 1);
+});
+
+test('answer recovery refuses native permissions and direct bridge callbacks without repeating a confirmed action', async t => {
+  let bridgeOptions, hostCalls = 0;
+  const f = await fixture(t, {
+    toolBridgeFactory: async options => {
+      bridgeOptions = options;
+      return { server: { type: 'http', name: 'blackice', url: 'http://127.0.0.1:1/mcp', headers: [] }, toolNames: new Set(['mcp_blackice.fixture']), settle: async () => {}, close: async () => {} };
+    },
+    onPrompt: async c => {
+      const result = await bridgeOptions.onToolCall({ name: 'fixture_write', arguments: { value: 1 }, callId: 'call-' + c.turn }, { signal: bridgeOptions.signal });
+      if (c.turn === 1) {
+        assert.equal(result.success, true);
+        return c.answer(' ');
+      }
+      assert.equal(result.success, false);
+      assert.equal(result.code, 'MISTRAL_VIBE_ANSWER_ONLY');
+      c.emit('notification', { method: 'session/update', params: { sessionId: c.sessionId, update: { sessionUpdate: 'tool_call', toolCallId: 'repeated-action', _meta: { tool_name: 'mcp_blackice.fixture' } } } });
+      const permission = await c.options.onRequest('session/request_permission', { sessionId: c.sessionId, toolCall: { toolCallId: 'repeated-action' }, options: [{ kind: 'allow_once', optionId: 'yes' }, { kind: 'reject_once', optionId: 'no' }] });
+      assert.deepEqual(permission, { outcome: { outcome: 'selected', optionId: 'no' } });
+      return c.answer('One confirmed action; no repeated action.');
+    },
+  });
+  const result = await f.runtime.runAgent(input({ dynamicTools: [{ name: 'fixture_write', inputSchema: { type: 'object', properties: {} } }], onToolCall: async () => { hostCalls++; return { success: true, contentItems: [{ type: 'inputText', text: 'Confirmed once' }] }; } }));
+  assert.equal(result.output, 'One confirmed action; no repeated action.');
+  assert.equal(hostCalls, 1);
+  assert.equal(result.usage.totalTokens, 24);
+});
+
+test('steering during an answer repair starts its explicit next request with normal tool access', async t => {
+  let threadId, bridgeOptions, hostCalls = 0;
+  const events = [];
+  const f = await fixture(t, {
+    toolBridgeFactory: async options => {
+      bridgeOptions = options;
+      return { server: { type: 'http', name: 'blackice', url: 'http://127.0.0.1:1/mcp', headers: [] }, toolNames: new Set(['mcp_blackice.fixture']), settle: async () => {}, close: async () => {} };
+    },
+    onPrompt: async c => {
+      if (c.turn === 1) return c.answer(' ');
+      if (c.turn === 2) {
+        await f.runtime.steerAgent(threadId, 'Perform the newly requested fixture read.');
+        return c.answer('Recovered initial answer.');
+      }
+      const receipt = await bridgeOptions.onToolCall({ name: 'fixture_read', arguments: {}, callId: 'new-user-action' }, { signal: bridgeOptions.signal });
+      assert.equal(receipt.success, true);
+      return c.answer('New direction completed.');
+    },
+  });
+  const result = await f.runtime.runAgent(input({ dynamicTools: [{ name: 'fixture_read', inputSchema: { type: 'object', properties: {} } }], onToolCall: async () => { hostCalls++; return { success: true, contentItems: [{ type: 'inputText', text: 'New read' }] }; }, onEvent: event => { events.push(event); if (event.type === 'thread') threadId = event.threadId; } }));
+  const prompts = f.connections[0].calls.filter(call => call.method === 'session/prompt');
+  assert.equal(prompts.length, 3);
+  assert.equal(prompts[2].params.prompt[0].text, 'Perform the newly requested fixture read.');
+  assert.equal(result.output, 'New direction completed.');
+  assert.equal(hostCalls, 1);
+  assert.equal(events.filter(event => event.type === 'response.recovery').length, 1);
+  assert.deepEqual(events.filter(event => event.type === 'message' && event.phase === 'final_answer').map(event => event.text), [result.output]);
+});
+
+test('a pending user direction takes precedence over repair of an empty completed answer', async t => {
+  let threadId;
+  const events = [];
+  const f = await fixture(t, { onPrompt: async c => {
+    if (c.turn === 1) {
+      await f.runtime.steerAgent(threadId, 'Use this explicit new direction.');
+      return c.answer(' ');
+    }
+    return c.answer('Direction received.');
+  } });
+  const result = await f.runtime.runAgent(input({ onEvent: event => { events.push(event); if (event.type === 'thread') threadId = event.threadId; } }));
+  assert.equal(result.output, 'Direction received.');
+  assert.equal(f.connections[0].calls.filter(call => call.method === 'session/prompt')[1].params.prompt[0].text, 'Use this explicit new direction.');
+  assert.equal(events.some(event => event.type === 'response.recovery'), false);
+});
+
+test('Stop during answer repair cannot publish a late answer or mark the turn complete', async t => {
+  const entered = deferred(), release = deferred(), controller = new AbortController(), events = [];
+  const f = await fixture(t, { onPrompt: async c => {
+    if (c.turn === 1) return c.answer(' ');
+    entered.resolve();
+    await release.promise;
+    return c.answer('Late answer must not appear.');
+  } });
+  const running = f.runtime.runAgent(input({ signal: controller.signal, onEvent: event => events.push(event) }));
+  const rejected = assert.rejects(running, { code: 'ABORTED' });
+  await entered.promise;
+  controller.abort(Object.assign(Error('Stopped'), { code: 'ABORTED' }));
+  await rejected;
+  release.resolve();
+  await tick();
+  assert.equal(events.filter(event => event.type === 'response.recovery').length, 1);
+  assert.equal(events.some(event => event.type === 'message' && event.phase === 'final_answer'), false);
+  assert.equal(events.some(event => event.type === 'turn' && event.status === 'completed'), false);
+  assert.equal(events.some(event => event.type === 'delta' && event.delta.includes('Late answer')), false);
+});
+
+test('native developer instructions bind shared tool names to the actual MCP invocation and request visible replies', async t => {
+  const f = await fixture(t);
+  const result = await f.runtime.runAgent(input({
+    dynamicTools: [{ name: 'relay_fixture', description: 'Fixture only', inputSchema: { type: 'object', properties: {} } }],
+    onToolCall: async () => ({ success: true, contentItems: [{ type: 'inputText', text: 'unused' }] }),
+  }));
+  assert.equal(result.output, 'answer 1');
+  const nativePrompt = await fs.readFile(path.join(f.connections[0].options.env.VIBE_HOME, 'prompts', 'blackice.md'), 'utf8');
+  assert.match(nativePrompt, /BLACKICE TOOLS IN MISTRAL VIBE/);
+  assert.match(nativePrompt, /"name":"relay_fixture".*await tools\.mcp_blackice\.blackice_relay_fixture_[a-f0-9]{16}\(arguments\)/);
+  assert.match(nativePrompt, /BLACKICE RESPONSE DELIVERY/);
+  assert.match(nativePrompt, /Finish the current request with visible assistant text/);
+  assert.match(nativePrompt, /Native file_system and shell functions.*disabled/);
+});
+
+
+test('omitted ACP message IDs and invisible post-tool chunks cannot promote prior progress to a final answer', async t => {
+  for (const blank of ' \n\u200b') {
+    const events = [];
+    const f = await fixture(t, { onPrompt: c => {
+      if (c.turn !== 1) return c.answer('Visible answer after the confirmed tool.');
+      const chunk = text => c.emit('notification', { method: 'session/update', params: { sessionId: c.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } } } });
+      chunk('Checking the fixture.');
+      c.emit('notification', { method: 'session/update', params: { sessionId: c.sessionId, update: { sessionUpdate: 'tool_call', toolCallId: 'fixture-tool', _meta: { tool_name: 'mcp_blackice.fixture' } } } });
+      chunk(blank);
+      c.totals++;
+      c.fixture.sessions.set(c.sessionId, c.totals);
+      c.usage();
+      return { stopReason: 'end_turn', usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12, cachedReadTokens: 0 } };
+    } });
+    const result = await f.runtime.runAgent(input({ onEvent: event => events.push(event) }));
+    assert.equal(result.output, 'Visible answer after the confirmed tool.');
+    assert.equal(f.connections[0].calls.filter(call => call.method === 'session/prompt').length, 2);
+    assert.equal(events.filter(event => event.type === 'response.recovery').length, 1);
+    assert.deepEqual(events.filter(event => event.type === 'message' && event.phase === 'final_answer').map(event => event.text), [result.output]);
+    assert.equal(events.find(event => event.type === 'message' && event.text.startsWith('Checking the fixture.')).phase, 'commentary');
+  }
+});
+
+
+test('Windows native homes use extended paths for drive and UNC locations without changing non-Windows homes', () => {
+  assert.equal(vibeNativeHome('C:\\Users\\owner\\Relay\\data\\home', 'win32'), '\\\\?\\C:\\Users\\owner\\Relay\\data\\home');
+  assert.equal(vibeNativeHome('\\\\server\\share\\Relay\\home', 'win32'), '\\\\?\\UNC\\server\\share\\Relay\\home');
+  assert.equal(vibeNativeHome('\\\\?\\C:\\owned\\home', 'win32'), '\\\\?\\C:\\owned\\home');
+  assert.equal(vibeNativeHome('/home/owner/Relay/home', 'linux'), '/home/owner/Relay/home');
+});
+
+test('new and saved native sessions keep the same long owned home and original journal files', async t => {
+  const f = await fixture(t);
+  f.runtime.root = path.join(f.dir, 'long-owned-home-' + 'n'.repeat(60));
+  const first = await f.runtime.runAgent(input());
+  const home = path.join(f.runtime.root, 'threads', first.threadId, 'home');
+  const nativeSessionId = (await f.runtime._readThread(first.threadId)).nativeSessionId;
+  const journal = path.join(home, 'logs', 'session', 'unified', nativeSessionId, 'chunks', '.' + 'a'.repeat(64) + '.json.' + 'b'.repeat(16) + '.tmp');
+  assert.ok(journal.length > 260);
+  await fs.mkdir(path.dirname(journal), { recursive: true });
+  await fs.writeFile(journal, 'owned fixture native history');
+  const saved = await f.runtime.runAgent(input({ threadId: first.threadId, prompt: 'Explicit saved-session follow-up' }));
+  assert.equal(saved.threadId, first.threadId);
+  assert.equal(await fs.readFile(journal, 'utf8'), 'owned fixture native history');
+  assert.equal(f.connections[0].options.env.VIBE_HOME, vibeNativeHome(home));
+  assert.equal(f.connections[1].options.env.VIBE_HOME, f.connections[0].options.env.VIBE_HOME);
+  assert.equal(f.connections[1].calls.find(call => call.method === 'session/load').params.sessionId, nativeSessionId);
+  assert.equal(f.connections[1].calls.some(call => call.method === 'session/new'), false);
+});
+
+test('accepted answers wait for both native close acknowledgement and actual graceful exit before ready or completed', async t => {
+  const closeRequested = deferred(), closeAcknowledged = deferred(), closeEntered = deferred(), closeGate = deferred(), events = [];
+  let threadId, returned = false;
+  const f = await fixture(t, {
+    closeEntered, closeGate,
+    handler: async (_connection, method) => {
+      if (method !== 'session/close') return;
+      closeRequested.resolve(); await closeAcknowledged.promise; return {};
+    },
+  });
+  const running = f.runtime.runAgent(input({ onEvent: event => { events.push(event); if (event.type === 'thread') threadId = event.threadId; } }));
+  running.then(() => { returned = true; });
+  await closeRequested.promise;
+  assert.equal((await f.runtime._readThread(threadId)).state, 'running');
+  assert.equal(returned, false);
+  assert.equal(f.runtime.status().activeTurns, 1);
+  assert.deepEqual(events.filter(event => event.phase === 'final_answer').map(event => event.text), ['answer 1']);
+  assert.equal(events.some(event => event.type === 'turn' && event.status === 'completed'), false);
+  closeAcknowledged.resolve();
+  await closeEntered.promise;
+  assert.equal((await f.runtime._readThread(threadId)).state, 'running');
+  assert.equal(returned, false);
+  closeGate.resolve();
+  const result = await running;
+  assert.equal(result.output, 'answer 1');
+  assert.equal((await f.runtime._readThread(threadId)).state, 'ready');
+  assert.equal(f.runtime.status().activeTurns, 0);
+  assert.equal(events.filter(event => event.type === 'turn' && event.status === 'completed').length, 1);
+  assert.equal(f.connections[0].calls.filter(call => call.method === 'session/close').length, 1);
+});
+
+test('failed native close acknowledgement preserves the accepted answer and usage but prevents unsafe resume', async t => {
+  let threadId; const events = [];
+  const f = await fixture(t, { handler: (_connection, method) => {
+    if (method === 'session/close') throw Object.assign(Error('fixture persistence failed'), { code: 'NATIVE_SAVE_FAILED' });
+  } });
+  await assert.rejects(f.runtime.runAgent(input({ onEvent: event => { events.push(event); if (event.type === 'thread') threadId = event.threadId; } })), { code: 'MISTRAL_VIBE_PERSISTENCE' });
+  const record = await f.runtime._readThread(threadId);
+  assert.equal(record.state, 'uncertain');
+  assert.equal(record.usage.totalTokens, 12);
+  assert.deepEqual(events.filter(event => event.phase === 'final_answer').map(event => event.text), ['answer 1']);
+  assert.equal(events.some(event => event.type === 'turn' && event.status === 'completed'), false);
+  assert.equal(f.connections[0].calls.filter(call => call.method === 'session/close').length, 1);
+  assert.equal(f.runtime.status().activeTurns, 0);
+  await assert.rejects(f.runtime.runAgent(input({ threadId, prompt: 'Must not replay' })), { code: 'MISTRAL_VIBE_TURN_UNCERTAIN' });
+  assert.equal(f.connections.length, 1);
+});
+
+test('a forced native exit cannot be treated as a clean saved answer even after session close acknowledged', async t => {
+  let threadId; const events = [];
+  const f = await fixture(t, { closeResult: { closed: true, graceful: false, forced: true, exitCode: null, signal: 'SIGTERM' } });
+  await assert.rejects(f.runtime.runAgent(input({ onEvent: event => { events.push(event); if (event.type === 'thread') threadId = event.threadId; } })), error => {
+    assert.equal(error.code, 'MISTRAL_VIBE_PERSISTENCE');
+    assert.deepEqual(error.persistence, { sessionClosed: true, closed: true, graceful: false, forced: true });
+    return true;
+  });
+  assert.equal((await f.runtime._readThread(threadId)).state, 'uncertain');
+  assert.deepEqual(events.filter(event => event.phase === 'final_answer').map(event => event.text), ['answer 1']);
+  assert.equal(events.some(event => event.type === 'turn' && event.status === 'completed'), false);
+  assert.equal(f.runtime.status().activeTurns, 0);
+});
+
+test('an unconfirmed native exit retains the lease, reports bounded shutdown failure, and releases only on actual termination', { timeout: 5000 }, async t => {
+  let threadId;
+  const f = await fixture(t, { closeFailure: Object.assign(Error('fixture process is still alive'), { code: 'MISTRAL_VIBE_CLOSE_UNCONFIRMED' }) });
+  await assert.rejects(f.runtime.runAgent(input({ onEvent: event => { if (event.type === 'thread') threadId = event.threadId; } })), { code: 'MISTRAL_VIBE_PERSISTENCE' });
+  assert.equal(f.connections[0].closed, false);
+  assert.equal(f.runtime.status().activeTurns, 1);
+  assert.equal((await f.runtime._readThread(threadId)).state, 'uncertain');
+  await assert.rejects(f.runtime.close(), { code: 'MISTRAL_VIBE_CLOSE_UNCONFIRMED' });
+  assert.equal(f.runtime.runs.size, 1);
+  f.connections[0].finishExit({ closed: true, graceful: false, forced: true, exitCode: 1, signal: null });
+  await tick();
+  assert.equal(f.runtime.status().activeTurns, 0);
+  assert.equal((await f.runtime._readThread(threadId)).state, 'uncertain', 'A later exit cannot retroactively confirm persistence.');
+  await f.runtime.close();
+});
+
+test('a load failure before prompt admission preserves the saved ready session for an explicit retry', async t => {
+  const f = await fixture(t);
+  const first = await f.runtime.runAgent(input());
+  const originalSessionId = (await f.runtime._readThread(first.threadId)).nativeSessionId;
+  f.handler = (_connection, method) => {
+    if (method === 'session/load') throw Object.assign(Error('fixture native path failed before admission'), { code: 'ENOENT' });
+  };
+  await assert.rejects(f.runtime.runAgent(input({ threadId: first.threadId, prompt: 'Unadmitted follow-up' })), { code: 'ENOENT' });
+  assert.equal((await f.runtime._readThread(first.threadId)).state, 'ready');
+  assert.equal(f.connections[1].calls.some(call => call.method === 'session/prompt'), false);
+  assert.equal(f.runtime.status().activeTurns, 0);
+  f.handler = null;
+  const retry = await f.runtime.runAgent(input({ threadId: first.threadId, prompt: 'New explicit follow-up' }));
+  assert.equal(retry.threadId, first.threadId);
+  const connection = f.connections[2];
+  assert.equal(connection.calls.find(call => call.method === 'session/load').params.sessionId, originalSessionId);
+  assert.equal(connection.calls.filter(call => call.method === 'session/prompt').length, 1);
+  assert.equal(connection.calls.find(call => call.method === 'session/prompt').params.prompt[0].text, 'New explicit follow-up');
+});
+
+test('exhausted empty-answer recovery only leaves a resumable session after confirmed persistence', async t => {
+  let threadId;
+  const f = await fixture(t, { onPrompt: c => c.answer(' '), handler: (_connection, method) => {
+    if (method === 'session/close') throw Error('fixture final flush failed');
+  } });
+  await assert.rejects(f.runtime.runAgent(input({ onEvent: event => { if (event.type === 'thread') threadId = event.threadId; } })), { code: 'MISTRAL_VIBE_PERSISTENCE' });
+  assert.equal((await f.runtime._readThread(threadId)).state, 'uncertain');
+  assert.equal(f.connections[0].calls.filter(call => call.method === 'session/prompt').length, 2);
+  assert.equal(f.connections[0].calls.filter(call => call.method === 'session/close').length, 1);
+});
+
+test('a late usage delivery error cannot replace the original cancellation or strand a terminated native lease', async t => {
+  let threadId;
+  const f = await fixture(t, { onPrompt: c => {
+    c.totals++; c.usage();
+    throw Object.assign(Error('original cancellation'), { code: 'ABORTED' });
+  } });
+  await assert.rejects(f.runtime.runAgent(input({ onEvent: event => {
+    if (event.type === 'thread') threadId = event.threadId;
+    if (event.type === 'usage' && event.duringSettlement) throw Error('fixture event sink failed');
+  } })), { code: 'ABORTED' });
+  assert.equal(f.runtime.status().activeTurns, 0);
+  assert.equal(f.connections[0].closed, true);
+  assert.equal((await f.runtime._readThread(threadId)).usage.totalTokens, 12);
+  assert.equal((await f.runtime._readThread(threadId)).state, 'uncertain');
+  await f.runtime.close();
+});
+
+test('Stop during the final ready-state save cannot publish a late completed turn', { timeout: 5000 }, async t => {
+  const controller = new AbortController(), saving = deferred(), release = deferred(), events = [];
+  const f = await fixture(t);
+  const save = f.runtime._saveThread.bind(f.runtime);
+  f.runtime._saveThread = async record => {
+    if (record.state === 'ready' && f.connections.some(connection => connection.closed)) {
+      saving.resolve(); await release.promise;
+    }
+    return save(record);
+  };
+  let threadId;
+  const running = f.runtime.runAgent(input({ signal: controller.signal, onEvent: event => {
+    events.push(event); if (event.type === 'thread') threadId = event.threadId;
+  } }));
+  const rejected = assert.rejects(running, { code: 'ABORTED' });
+  await saving.promise;
+  controller.abort(Object.assign(Error('Stopped while saving final readiness'), { code: 'ABORTED' }));
+  release.resolve();
+  await rejected;
+  assert.equal(events.some(event => event.type === 'turn' && event.status === 'completed'), false);
+  assert.equal((await f.runtime._readThread(threadId)).state, 'uncertain');
+  assert.equal(f.runtime.status().activeTurns, 0);
+});
+
+test('a cleanup status observer cannot replace persistence failure or reject delayed termination bookkeeping', async t => {
+  for (const delayed of [false, true]) {
+    let threadId, observed = 0;
+    const f = await fixture(t, delayed
+      ? { closeFailure: Object.assign(Error('fixture process still alive'), { code: 'MISTRAL_VIBE_CLOSE_UNCONFIRMED' }) }
+      : { closeResult: { closed: true, graceful: false, forced: true, exitCode: 1, signal: null } });
+    const listener = status => { if (status.activeTurns === 0) { observed++; throw Error('fixture cleanup status listener failed'); } };
+    f.runtime.on('status', listener);
+    await assert.rejects(f.runtime.runAgent(input({ onEvent: event => { if (event.type === 'thread') threadId = event.threadId; } })), { code: 'MISTRAL_VIBE_PERSISTENCE' });
+    if (delayed) {
+      assert.equal(f.runtime.status().activeTurns, 1);
+      f.connections[0].finishExit({ closed: true, graceful: false, forced: true, exitCode: 1, signal: null });
+      await tick();
+    }
+    f.runtime.off('status', listener);
+    assert.equal(observed, 1);
+    assert.equal(f.runtime.status().activeTurns, 0);
+    assert.equal((await f.runtime._readThread(threadId)).state, 'uncertain');
+    await f.runtime.close();
+  }
 });

@@ -84,3 +84,83 @@ test('safe errors remove auth bearer values and delegated sign-in tokens', () =>
   for (const value of ['private-secret', 'one-time', 'other-token', 'private-key']) assert.equal(safe.includes(value), false);
   assert.match(safe, /\[redacted\]/);
 });
+
+function shutdownFixture({ startError = null, closeGraceMs = 5, closeKillTimeoutMs = 1000 } = {}) {
+  const child = new EventEmitter();
+  child.stdin = new PassThrough(); child.stdout = new PassThrough(); child.stderr = new PassThrough();
+  let killed, killCount = 0, exitSent = false;
+  const killRequested = new Promise(resolve => { killed = resolve; });
+  child.kill = () => { killCount++; killed(); return true; };
+  const connection = new VibeAcpConnection({
+    command: 'synthetic-shutdown-only', cwd: process.cwd(), env: {},
+    closeGraceMs, closeKillTimeoutMs,
+    spawnImpl: () => { queueMicrotask(() => child.emit(startError ? 'error' : 'spawn', startError)); return child; },
+  });
+  const exit = (code = 0, signal = null) => { if (!exitSent) { exitSent = true; child.emit('exit', code, signal); } };
+  return { connection, child, exit, killRequested, get killCount() { return killCount; } };
+}
+
+test('ACP graceful shutdown reports the actual zero exit without forced termination', async () => {
+  const f = transport();
+  await f.connection.started;
+  assert.deepEqual(await f.connection.close(), { closed: true, graceful: true, forced: false, exitCode: 0, signal: null });
+  assert.equal(f.connection.closed, true);
+});
+
+test('ACP forced shutdown stays pending until its owned child actually exits', async t => {
+  const f = shutdownFixture();
+  t.after(async () => { f.exit(); await f.connection.close().catch(() => {}); });
+  await f.connection.started;
+  let settled = false;
+  const closing = f.connection.close();
+  closing.then(() => { settled = true; }, () => { settled = true; });
+  assert.strictEqual(f.connection.close(), closing, 'Repeated close calls must share the same termination.');
+  await f.killRequested;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.killCount, 1);
+  assert.equal(settled, false, 'Sending a termination signal is not evidence of process exit.');
+  assert.equal(f.connection.closed, false);
+  f.exit(1, 'SIGTERM');
+  assert.deepEqual(await closing, { closed: true, graceful: false, forced: true, exitCode: 1, signal: 'SIGTERM' });
+  assert.equal(f.connection.closed, true);
+});
+
+test('ACP unconfirmed termination rejects instead of claiming the process has closed', async t => {
+  const f = shutdownFixture({ closeKillTimeoutMs: 15 });
+  t.after(() => f.exit(1, 'SIGTERM'));
+  await f.connection.started;
+  const closing = f.connection.close();
+  await assert.rejects(closing, { code: 'MISTRAL_VIBE_CLOSE_UNCONFIRMED' });
+  assert.equal(f.connection.closed, false);
+  assert.equal(f.killCount, 1);
+  assert.strictEqual(f.connection.close(), closing);
+});
+
+test('ACP shutdown preserves a pending request cancellation and the first protocol failure', async t => {
+  for (const kind of ['cancel', 'failure']) {
+    const f = shutdownFixture(), controller = new AbortController();
+    t.after(async () => { f.exit(); await f.connection.close().catch(() => {}); });
+    const cause = Object.assign(Error(kind === 'cancel' ? 'User stopped the operation' : 'Original protocol failure'), { code: kind === 'cancel' ? 'ABORTED' : 'MISTRAL_VIBE_PROTOCOL' });
+    const pending = f.connection.request('pending', {}, { signal: controller.signal, timeoutMs: null });
+    const rejected = assert.rejects(pending, error => error === cause);
+    await f.connection.started;
+    if (kind === 'cancel') controller.abort(cause);
+    else f.connection.fail(cause);
+    await rejected;
+    const closing = f.connection.close();
+    await f.killRequested;
+    f.exit(1, 'SIGTERM');
+    await closing;
+    assert.equal(f.connection.pending.size, 0);
+    if (kind === 'failure') assert.strictEqual(f.connection.failure, cause);
+  }
+});
+
+test('ACP startup failure has no owned process to kill and cannot claim graceful persistence', async () => {
+  const error = Object.assign(Error('Synthetic executable not found'), { code: 'ENOENT' });
+  const f = shutdownFixture({ startError: error });
+  await assert.rejects(f.connection.started, cause => cause === error);
+  assert.deepEqual(await f.connection.close(), { closed: true, graceful: false, forced: false, exitCode: null, signal: null, notStarted: true });
+  assert.equal(f.killCount, 0);
+  assert.equal(f.connection.failure.code, 'MISTRAL_VIBE_START_FAILED');
+});

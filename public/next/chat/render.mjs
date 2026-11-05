@@ -1,5 +1,5 @@
 import { text, formatDate } from '../core/dom.mjs';
-import { runText, messagesOfRun, windowedRuns, windowedMessages, CHAT_MESSAGE_BATCH, rootId, lastRunId, running, CHAT_INDEX_BATCH, conversationIndexWindow } from './model.mjs';
+import { runText, messagesOfRun, chatResponseState, windowedRuns, windowedMessages, CHAT_MESSAGE_BATCH, rootId, lastRunId, running, CHAT_INDEX_BATCH, conversationIndexWindow } from './model.mjs';
 import { chatOptionChoices } from './options-model.mjs';
 import { createRegisteredArtifactResolver } from '../../conversation-model.mjs';
 import { taskPlanView } from '../../task-plan-model.mjs';
@@ -127,7 +127,7 @@ export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATC
       entry.check?.setAttribute('aria-label','Select '+title);
       entry.summary?.setAttribute('aria-label','Actions for '+title);
     }
-    const status=String(item.status==='completed'&&item.settled===true?'Response saved':item.status==='completed'&&item.settled===false?'Finishing…':item.status||'Saved').replaceAll('_',' ');
+    const status=String(item.status==='completed'&&item.settled===true?'Finished':item.status==='completed'&&item.settled===false?'Finishing…':item.status||'Saved').replaceAll('_',' ');
     if(entry.status!==status){setText(entry.statusNode,status);entry.status=status;}
     const date=item.updatedAt||item.createdAt;
     if(entry.date!==date){setText(entry.dateNode,formatDate(date));entry.date=date;}
@@ -263,10 +263,12 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
     const request=runText(run);
     const earlier=index>0?shown[index-1]:undefined;
     const allMessages=Array.isArray(run.precomputedMessages)?run.precomputedMessages:messagesOfRun(run);
+    const delivery=chatResponseState(run,allMessages);
     const {shown:messages,hidden:olderMessages}=windowedMessages(
       allMessages,messageLimits?.get(run.id)??CHAT_MESSAGE_BATCH);
     const signature=[run,run.status,run.settled,run.output,request,run.retryOf,earlier&&runText(earlier),
       run===shown.at(-1),run.taskState,run.taskState?.revision,run.planningActivity,run.workflow,markdown,
+      delivery.missing,delivery.pausedAfterPlan,delivery.needsFollowup,delivery.errors.join('\n'),
       messageLimits?.get(run.id),allMessages.length,...(run.attachmentIds||[]).flatMap(id=>[id,getAttachment?.(id)?.name]),
       ...messages.flatMap(message=>[message.id,message.text,message.phase,message.provisional,message.role,message.at,message.order,message.nodeId,message.direction])];
     const previous=cache.turns.get(run.id);
@@ -430,11 +432,23 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
         });
       }
     }
+    if(delivery.needsFollowup||delivery.errors.length){
+      const note=text(section,'','div','next-chat-result-note');
+      if(delivery.missing)text(note,'This turn ended without a response. Send a follow-up to continue this conversation.','p','next-help');
+      else if(delivery.needsFollowup&&!delivery.errors.length)text(note,'The turn failed before a response was received. Send a follow-up to continue this conversation.','p','next-help');
+      for(const error of delivery.errors)text(note,error,'p','next-chat-error');
+      if(delivery.needsFollowup&&run===shown.at(-1)&&view.input){
+        const followup=text(note,'Write a follow-up','button');followup.type='button';
+        // Preserve the draft and saved context. Never replay an empty turn's tools.
+        followup.addEventListener('click',()=>view.input.focus());
+      }
+    }
     const footer=text(section,'','div','next-turn-meta');
-    const pill=text(footer,run.status==='completed'&&run.settled===true?'Response saved':run.status==='completed'&&run.settled===false?'Finishing…':run.status||'saved','span','next-status-pill');
+    const completedLabel=delivery.missing?'No response received':delivery.pausedAfterPlan?'Plan ready':'Response saved';
+    const pill=text(footer,run.status==='completed'&&run.settled===true?completedLabel:run.status==='completed'&&run.settled===false?'Finishing…':run.status||'saved','span','next-status-pill');
     pill.dataset.state=run.status||'saved';
     if(run.status==='completed'&&run.settled===true&&hasPlan&&!planView.complete)text(footer,'Unfinished steps','span','next-turn-note');
-    if (['failed','cancelled'].includes(run.status) && run.settled===true) {
+    if (['failed','cancelled'].includes(run.status) && run.settled===true && !delivery.needsFollowup) {
       const retry=text(footer,'Retry','button');retry.type='button';retry.addEventListener('click',()=>cache.callbacks.onStop?.('retry',run.id));
     }
     if(running(run)){const stop=text(footer,'Stop','button');stop.type='button';stop.addEventListener('click',()=>cache.callbacks.onStop?.('stop',run.id));}

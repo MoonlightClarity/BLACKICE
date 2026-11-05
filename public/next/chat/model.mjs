@@ -1,5 +1,6 @@
 /** Conversation shaping independent of the legacy interface and execution views. */
 const text = value => typeof value === 'string' ? value : '';
+const hasVisibleChatText = value => typeof value === 'string' && /[^\s\p{Default_Ignorable_Code_Point}]/u.test(value);
 export const runText = run => typeof run?.input === 'string' ? run.input : text(run?.input?.task);
 export const running = run => ['queued','running','waiting'].includes(run?.status) || run?.settled === false;
 const phaseIds=new Set(['feasibility','inference','plan','think','respond']);
@@ -121,7 +122,7 @@ export function messagesOfRun(run) {
     }
     if (d.type === 'message' || d.type === 'item' && d.item?.type === 'agentMessage') {
       const content = text(d.text ?? d.item?.text);
-      if (!content.trim()) continue;
+      if (!hasVisibleChatText(content)) continue;
       // The response cycle publishes its checked delivery after the provider's
       // streamed final. Keep the receipt, but render an unchanged adjacent
       // final only once. Directions, other speakers and revised answers still
@@ -148,7 +149,7 @@ export function messagesOfRun(run) {
   }
   for (const node of run?.workflow?.nodes || []) {
     if (node.type !== 'agent' || run.nodes?.[node.id]?.reused) continue;
-    const output = text(run.nodes?.[node.id]?.output); if (!output.trim()) continue;
+    const output = text(run.nodes?.[node.id]?.output); if (!hasVisibleChatText(output)) continue;
     const shown = assistantMessages.get(node.id)||[];
     if (shown.some(m => m.text.trim() === output.trim())) continue;
     const combined = shown.map(m=>m.text).join('');
@@ -162,9 +163,39 @@ export function messagesOfRun(run) {
       assistantMessages.get(node.id).push(saved);
     }
   }
-  if (!messages.some(m=>m.role==='assistant') && text(run?.output).trim())
+  // Aggregate output can contain only agent headings when a provider returned
+  // whitespace. Known empty agent outputs must not become an invented answer.
+  // Older saves without per-agent output still retain their aggregate fallback.
+  const agentStates=(run?.workflow?.nodes||[]).filter(node=>node.type==='agent'&&!run.nodes?.[node.id]?.reused).map(node=>run.nodes?.[node.id]);
+  const emptyAgentOutputs=agentStates.length>0&&agentStates.every(node=>typeof node?.output==='string'&&!hasVisibleChatText(node.output));
+  if (!messages.some(m=>m.role==='assistant'&&hasVisibleChatText(m.text)) && !emptyAgentOutputs && hasVisibleChatText(run?.output))
     messages.push({ id:'saved-result',role:'assistant',text:run.output,phase:'final_answer',order:(run?.events?.length||0)+messages.length,at:run.finishedAt||run.updatedAt });
-  return messages.filter(m=>m.text.trim());
+  return messages.filter(m=>hasVisibleChatText(m.text));
+}
+/** Only a bounded public error message crosses the archived-chat reader. */
+export function chatErrorText(value) {
+  return typeof value==='string'?value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g,'').trim().slice(0,2000):'';
+}
+/** A finished turn is not proof that the provider delivered an answer. */
+export function chatResponseState(run, messages=[]) {
+  const hasResponse=messages.some(message=>message.role==='assistant'&&hasVisibleChatText(message.text)&&!message.provisional&&
+    !['commentary','working','progress','unverified_answer'].includes(message.phase));
+  const completed=run?.status==='completed'&&run?.settled===true;
+  const pausedAfterPlan=completed&&run.responseCycle?.state==='paused_after_plan';
+  const missing=completed&&!pausedAfterPlan&&!hasResponse;
+  const failed=run?.status==='failed'&&run?.settled===true;
+  const errors=failed?[...new Set([run.error,...Object.values(run.nodes||{}).filter(node=>node?.status==='failed').map(node=>node.error)]
+    .map(chatErrorText).filter(Boolean))].slice(0,4):[];
+  return {hasResponse,missing,pausedAfterPlan,errors,needsFollowup:missing||failed&&!hasResponse};
+}
+/** Keep the conversation header consistent with the delivered-response timeline. */
+export function chatHeaderStatus(run) {
+  if (!run) return 'Local workspace';
+  if (planningProgressForRun(run)?.preparing) return 'Planning';
+  if (run.status!=='completed') return run.status||'Saved';
+  if (run.settled===false) return 'Finishing';
+  const response=chatResponseState(run,messagesOfRun(run));
+  return response.pausedAfterPlan?'Plan ready':response.hasResponse?'Saved response':response.missing?'No response received':'Finished';
 }
 const TERMINAL_CHAT_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 export function canContinueRun(run) {
@@ -266,10 +297,11 @@ export function mergeChatRunUpdate(previous, updated) {
   const observed=evidence=>['resolvedModel','thread','saved-thread','saved'].includes(evidence?.source);
   const nodes=Object.fromEntries(Object.entries(rawNodes).map(([id,node])=>{
     const evidence=observed(fresh[id])?fresh[id]:observed(remembered[id])?remembered[id]:fresh[id]||remembered[id];
-    return [id,{...node,...(evidence?{modelEvidence:evidence}:{})}];
+    return [id,{...node,...(Object.hasOwn(node,'error')?{error:chatErrorText(node.error)||undefined}:{}),...(evidence?{modelEvidence:evidence}:{})}];
   }));
   const result={...previous,status:updated.status??previous.status,settled:updated.settled??previous.settled,
     nodes,output:updated.output??previous.output,updatedAt:updated.updatedAt||previous.updatedAt};
+  if(Object.hasOwn(updated,'error'))result.error=chatErrorText(updated.error)||undefined;
   if(Object.hasOwn(updated,'viability'))result.viability=updated.viability?.awaitingInput===true?{awaitingInput:true}:undefined;
   if(Object.hasOwn(updated,'responseCycle')){
     const cycle=updated.responseCycle;

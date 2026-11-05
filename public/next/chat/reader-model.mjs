@@ -1,5 +1,5 @@
 import { conversationRuns, messagesOfRun } from './model.mjs';
-import { recordedChatModels,projectCyclePlanning } from './model.mjs';
+import { recordedChatModels,projectCyclePlanning,chatErrorText } from './model.mjs';
 import { projectPlanningActivity } from './planning-timeline.mjs';
 import { contextOptions, contextStatistics, compactionStatistics } from '../core/context-controls.mjs';
 const records = value => Array.isArray(value) ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item)) : [];
@@ -16,12 +16,13 @@ export function projectFamily(family) {
         turnId:node.turnId,turnStatus:node.turnStatus,runtimePhase:node.runtimePhase,model:models[id]?.model,resolvedModel:node.resolvedModel,
         modelEvidence:models[id],
         contextStatus:contextStatistics(node.contextStatus||node.context),lastCompaction:compactionStatistics(node.lastCompaction),
-        output:node.output},
+        output:node.output,...(chatErrorText(node.error)?{error:chatErrorText(node.error)}:{})},
     ]));
     return {
       id:run.id,taskId:run.taskId,parentRunId:run.parentRunId,retryOf:run.retryOf,
       createdAt:run.createdAt,updatedAt:run.updatedAt,
       input:run.input,status:run.status,settled:run.settled,output:run.output,
+      ...(chatErrorText(run.error)?{error:chatErrorText(run.error)}:{}),
       planningExecutionMode:run.planningExecutionMode,
       viability:run.viability?.awaitingInput===true?{awaitingInput:true}:undefined,
       responseCycle:run.responseCycle&&{
