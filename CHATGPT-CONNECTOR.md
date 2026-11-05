@@ -29,26 +29,17 @@ Remove-Item Env:ELECTRON_RUN_AS_NODE
 
 The connector retains `chatSurfaceVerification: "not-recorded"`; it cannot independently inspect a ChatGPT conversation. The separate setup guide labels its final state as user-confirmed and stores only a nonce, server address, grant identifier, status receipt time and explicit confirmation time in `chatgpt-setup.json`. It stores no access token, refresh token, cookie, authorization code or password. Matching evidence survives an ordinary restart, but is cleared when its grant is no longer active or its address changes. Damaged optional guide history is preserved before regenerating it, without replacing OAuth storage. No authenticated external-account result is assumed by isolated acceptance checks.
 
-## Mistral and other MCP chats
+## MCP authorization
 
-BLACKICE exposes standards-based OAuth and the existing server URL ending in `/mcp/chatgpt` for additional MCP clients, including the Mistral setup below. Keep the current ChatGPT connection; adding a second client does not replace its grant or change its request and job identifiers.
+BLACKICE exposes MCP Streamable HTTP and OAuth at the displayed server URL ending in `/mcp/chatgpt`. It supports dynamic client registration with public, HTTP Basic and POST client authentication, alongside ChatGPT's fixed CIMD identity. Each client receives its own grant; registering another client does not replace an existing grant or change its request and job identifiers.
 
-**2.39.18 verification limit:** The tested Mistral Chat setup failed its external reachability check before a request reached BLACKICE. End-to-end Mistral Chat MCP operation remains unverified. The protocol support and steps below describe the connection path; they do not establish that the external service can reach this computer.
+Existing ChatGPT grants and registered-client grants survive normal token renewal and app restart. The local availability helper upgrades on native startup after its prior application releases it, retaining the same public port and stored grants.
 
-1. In Mistral, open **Connectors → Add Connector → Custom MCP Connector**. Use **BLACKICE** as the name and paste the exact server URL from BLACKICE Settings.
-2. Use automatic OAuth discovery. BLACKICE supports dynamic client registration with public, HTTP Basic and POST client authentication, alongside ChatGPT’s fixed CIMD identity. No manually invented client credentials are needed.
-3. Match Mistral’s pending request code in **BLACKICE Settings → ChatGPT connector**, review the offered permissions, and allow the access for this connection. The request displays the app label and callback origin. Each client receives its own grant.
-4. Ask Mistral to call `blackice_direct_status` with a unique nonce. Verify that the actual returned result matches the nonce and reports the expected `grantedScopes`, `available: true`, `modelStarted: false` and `providerTurns: false`. A connector card or a discovered tool catalog alone does not establish a completed tool call.
+## Models inside BLACKICE
 
-The reasoning runs in the connected chat. BLACKICE executes its authorized tools directly; no BLACKICE model API key is used for this direction. Existing ChatGPT grants and registered-client grants survive normal token renewal and app restart. The local availability helper upgrades on native startup after its prior application releases it, retaining the same public port and stored grants.
+For work inside BLACKICE, **Mistral Vibe Code** is a native account connection under **Settings → Models**. Sign in through BLACKICE's browser and refresh its models; only the catalog reported by the authenticated official CLI supplies its model choices. This native connection does not use the incoming MCP gateway.
 
-This is the incoming **Mistral Chat → BLACKICE MCP** connection. It does not make Mistral Chat a selectable inference model inside BLACKICE, and it does not configure a Mistral API key.
-
-Both cloud chats use the same remote-access route. If that gateway is unavailable, they cannot reach the desktop through it. For work inside BLACKICE, a separate **Mistral Vibe Code** native account connection is available under **Settings → Models**. Sign in through BLACKICE's browser and refresh its models; only the catalog reported by the authenticated official CLI supplies its model choices. This native connection does not use the incoming MCP gateway.
-
-**Mistral API**, **OpenRouter** and compatible endpoints remain optional API connections, configured separately with credentials when required. A cloud-chat connector, a native Vibe account connection and an API connection are independent choices. Adding any of them keeps the existing model default and saved chat identities. See [Mistral model connection setup](README.md#choose-the-mistral-connection-for-your-task).
-
-See [Mistral custom MCP connectors](https://docs.mistral.ai/vibe/work/connectors/mcp-connectors) for the current account-side setup.
+**Mistral API**, **OpenRouter** and compatible endpoints are optional API connections, configured separately with credentials when required. Native account connections and API connections keep the existing model default and saved chat identities when added. See [Mistral model connection setup](README.md#choose-the-mistral-connection-for-your-task).
 
 ## Production startup on Windows
 

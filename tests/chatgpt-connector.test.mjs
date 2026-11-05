@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
+import { createServer, request as httpRequest } from 'node:http';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -199,6 +200,155 @@ test('unauthenticated GET discovery probes return the OAuth metadata challenge w
   assert.equal((await get({}, '/mcp/chatgpt?unexpected=true')).statusCode, 405); assert.equal(authentications, 2);
   setClosing(true); assert.equal((await get()).statusCode, 503); assert.equal(authentications, 2);
   assert.deepEqual(calls, []); assert.equal((await connector.status()).lastAuthenticatedToolCall, null);
+});
+
+async function headProbe(connector, { method = 'HEAD', url = '/mcp/chatgpt', headers = {} } = {}) {
+  const req = Readable.from([Buffer.from('not a JSON-RPC request')]);
+  Object.assign(req, { method, url, headers });
+  const response = new Response();
+  await connector.handle(req, response);
+  return response;
+}
+
+test('HEAD discovery returns bodyless OAuth challenges before transport parsing or execution', async t => {
+  const { connector, calls, revoked } = await fixture(t);
+  connector.readBody = () => assert.fail('HEAD discovery must not parse a request body.');
+  const probes = [
+    {},
+    { accept: 'text/plain', 'content-type': 'text/plain', 'mcp-protocol-version': 'unsupported', 'mcp-method': 'tools/call' },
+  ];
+  for (const headers of probes) {
+    const response = await headProbe(connector, { headers });
+    assert.equal(response.statusCode, 401);
+    assert.match(response.headers['www-authenticate'], /^Bearer resource_metadata="https:\/\/owned\.example\/\.well-known\/oauth-protected-resource"/);
+    assert.match(response.headers['www-authenticate'], /scope="read"/);
+    assert.equal(response.headers['cache-control'], 'no-store');
+    assert.equal(response.headers['content-type'], 'application/json; charset=utf-8');
+    assert.equal(response.body, '');
+  }
+  for (const authorization of ['', 'Basic invalid-fixture', 'Bearer invalid-fixture']) {
+    const response = await headProbe(connector, { headers: { authorization } });
+    assert.equal(response.statusCode, 401);
+    assert.match(response.headers['www-authenticate'], /error="invalid_token"/);
+    assert.match(response.headers['www-authenticate'], /resource_metadata=/);
+    assert.match(response.headers['www-authenticate'], /scope="read"/);
+    assert.equal(response.body, '');
+  }
+  const status = await connector.status();
+  assert.equal(status.authDiagnostics.linkingChallenges, probes.length);
+  assert.equal(status.authDiagnostics.invalidBearerChallenges, 3);
+  assert.equal(status.authDiagnostics.lastChallenge.method, 'HEAD');
+  assert.equal(status.lastAuthenticatedToolCall, null);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(revoked, []);
+});
+
+test('authenticated HEAD remains POST-only and all HEAD rejection branches are bodyless', async t => {
+  const { connector, oauth, calls, setClient, setClosing } = await fixture(t);
+  connector.readBody = () => assert.fail('A HEAD probe must never reach MCP parsing.');
+  let authentications = 0;
+  const authenticate = oauth.authenticateRequest;
+  oauth.authenticateRequest = async req => { authentications++; return authenticate(req); };
+  setClient({ id: 'unchanged-head-grant', scopes: ['read'] });
+  const authenticated = await headProbe(connector, { headers: { authorization: 'Bearer fixture' } });
+  assert.equal(authenticated.statusCode, 405);
+  assert.equal(authenticated.headers.allow, 'POST');
+  assert.equal(authenticated.headers['www-authenticate'], undefined);
+  assert.equal(authenticated.body, '');
+  assert.equal(authentications, 1);
+
+  const rejected = [];
+  rejected.push([await headProbe(connector, { headers: { origin: 'https://attacker.example' } }), 403]);
+  rejected.push([await headProbe(connector, { url: '/mcp/chatgpt?unexpected=true' }), 405]);
+  setClosing(true);
+  rejected.push([await headProbe(connector), 503]);
+  setClosing(false);
+  connector.healthy = false;
+  rejected.push([await headProbe(connector), 503]);
+  connector.healthy = true;
+  await connector.setEnabled(false);
+  rejected.push([await headProbe(connector), 503]);
+  await connector.setEnabled(true);
+  await connector.close();
+  rejected.push([await headProbe(connector), 503]);
+  for (const [response, expectedStatus] of rejected) {
+    assert.equal(response.statusCode, expectedStatus);
+    assert.equal(response.headers['www-authenticate'], undefined);
+    assert.equal(response.headers['cache-control'], 'no-store');
+    assert.equal(response.body, '');
+  }
+  assert.equal(authentications, 1, 'Earlier route guards must reject without authentication.');
+  assert.deepEqual(calls, []);
+  assert.equal((await connector.status()).lastAuthenticatedToolCall, null);
+});
+
+test('HEAD discovery does not relax unrelated HTTP methods or query handling', async t => {
+  const { connector, oauth, calls } = await fixture(t);
+  connector.readBody = () => assert.fail('Unsupported methods must not parse a request body.');
+  oauth.authenticateRequest = () => assert.fail('Unsupported probes must not authenticate.');
+  for (const method of ['PUT', 'DELETE', 'OPTIONS']) {
+    const response = await headProbe(connector, { method });
+    assert.equal(response.statusCode, 405);
+    assert.equal(response.headers.allow, 'POST');
+    assert.equal(response.headers['www-authenticate'], undefined);
+    assert.match(response.json().error, /Use MCP Streamable HTTP POST/);
+  }
+  for (const method of ['GET', 'HEAD']) {
+    const response = await headProbe(connector, { method, url: '/mcp/chatgpt?unexpected=true' });
+    assert.equal(response.statusCode, 405);
+    assert.equal(response.headers.allow, 'POST');
+    assert.equal(response.headers['www-authenticate'], undefined);
+    if (method === 'HEAD') assert.equal(response.body, '');
+    else assert.match(response.json().error, /Use MCP Streamable HTTP POST/);
+  }
+  assert.deepEqual(calls, []);
+  assert.equal(connector.authStatus().linkingChallenges, 0);
+});
+
+test('real HTTP HEAD discovery exposes OAuth metadata and completes without a payload', { timeout: 10000 }, async t => {
+  const { connector, calls, setClient } = await fixture(t);
+  connector.readBody = () => assert.fail('Wire HEAD probes must not parse MCP bodies.');
+  const server = createServer((req, res) => {
+    Promise.resolve(connector.handle(req, res)).catch(error => res.destroy(error));
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  t.after(() => new Promise((resolve, reject) => {
+    server.close(error => error ? reject(error) : resolve());
+    server.closeAllConnections();
+  }));
+  const probe = headers => new Promise((resolve, reject) => {
+    const request = httpRequest({
+      host: '127.0.0.1', port: server.address().port, path: '/mcp/chatgpt',
+      method: 'HEAD', headers, agent: false,
+    }, response => {
+      let bodyBytes = 0;
+      response.on('data', chunk => { bodyBytes += chunk.length; });
+      response.once('error', reject);
+      response.once('end', () => resolve({ status: response.statusCode, headers: response.headers, bodyBytes }));
+    });
+    request.once('error', reject);
+    request.setTimeout(2000, () => request.destroy(Error('Loopback HEAD response did not complete.')));
+    request.end();
+  });
+  for (const headers of [{}, { authorization: 'Bearer invalid-fixture' }]) {
+    const response = await probe(headers);
+    assert.equal(response.status, 401);
+    assert.match(response.headers['www-authenticate'], /resource_metadata="https:\/\/owned\.example\/\.well-known\/oauth-protected-resource"/);
+    assert.match(response.headers['www-authenticate'], /scope="read"/);
+    assert.equal(response.headers['cache-control'], 'no-store');
+    assert.equal(response.bodyBytes, 0);
+  }
+  setClient({ id: 'wire-head-grant', scopes: ['read'] });
+  const authenticated = await probe({ authorization: 'Bearer fixture' });
+  assert.equal(authenticated.status, 405);
+  assert.equal(authenticated.headers.allow, 'POST');
+  assert.equal(authenticated.headers['www-authenticate'], undefined);
+  assert.equal(authenticated.bodyBytes, 0);
+  assert.deepEqual(calls, []);
+  assert.equal((await connector.status()).lastAuthenticatedToolCall, null);
 });
 
 test('an authenticated read echoes the exact request/result pair and uses direct execution', async t => {

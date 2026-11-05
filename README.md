@@ -4,15 +4,15 @@ BLACKICE is an open-source Windows workspace for AI agents that work with files,
 
 The project is built for personal, user-directed automation. Its focus is practical outcomes, shared human/agent control and continuity across longer tasks.
 
-**Current source version: 2.39.19 for Windows x64. Overview updated November 5, 2026.**
+**Current source version: 2.39.20 for Windows x64. Overview updated November 5, 2026.**
 
-**[Download the latest published Windows installer](https://github.com/MoonlightClarity/BLACKICE/releases/latest)** · [2.39.19 source release notes](RELEASE-NOTES-2.39.19.md) · [Published checksums](https://github.com/MoonlightClarity/BLACKICE/releases/latest/download/SHA256SUMS.txt)
+**[Download the latest published Windows installer](https://github.com/MoonlightClarity/BLACKICE/releases/latest)** · [2.39.20 source release notes](RELEASE-NOTES-2.39.20.md) · [Published checksums](https://github.com/MoonlightClarity/BLACKICE/releases/latest/download/SHA256SUMS.txt)
 
 [Getting started](#getting-started) · [Workspace](#find-your-way-around) · [Planning](#planning-and-practical-judgment) · [Recurring work](#workflows-agents-and-recurring-work) · [Project state](#current-project-state) · [Build from source](#build-from-source)
 
 ## Two ways to work
 
-**Source and installer versions:** This overview describes the 2.39.19 source. The latest release page identifies the published Windows installer and its matching verification; source preparation does not establish installer publication.
+**Source and installer versions:** This overview describes the 2.39.20 source. The latest release page identifies the published Windows installer and its matching verification; source preparation does not establish installer publication.
 
 | Where you work | What runs there |
 | --- | --- |
@@ -49,7 +49,6 @@ Keep BLACKICE running while using its tools or schedules. Workbench's Hyper-V gu
 | --- | --- | --- |
 | **Mistral Vibe Code** | A native model inside BLACKICE, using the official Vibe CLI and your Mistral account. | Install the official CLI, then use **Settings → Models → Mistral Vibe Code → Sign in**. Sign-in opens in BLACKICE's browser. Choose **Refresh connection and models**, then select a reported model in Chat. |
 | **Mistral API** | An optional model API endpoint called by BLACKICE. | Use the **Mistral API** card under **Optional API connections** and supply the API credentials required by that account. |
-| **Mistral Work → BLACKICE MCP** | A separate incoming MCP connector intended to let Mistral Work call BLACKICE tools. | Use the persistent Tailscale endpoint from BLACKICE Settings. The current Work setup still fails server reachability; OAuth and an actual tool call must be verified separately. See the [setup and verification limits](CHATGPT-CONNECTOR.md#mistral-and-other-mcp-chats). This does not add Mistral Work as a model in BLACKICE's picker. |
 
 The native Vibe model catalog and reasoning choices come from the authenticated CLI session, with Vibe's official account model catalog enabled. Available models and reasoning settings depend on the signed-in account; aliases reported by that catalog preserve existing saved model identities when duplicate entries are merged. BLACKICE does not substitute a guessed model list or the separate Mistral API catalog. Before a catalog is ready, **Set up Mistral Vibe Code** in the model picker opens the account card without changing the selected model.
 
@@ -176,9 +175,9 @@ Direct actions have saved job IDs and results. After a disconnect, inspect the e
 
 ## Current project state
 
-**The 2.39.19 source repairs empty native Mistral replies, Windows session saves and Chat completion status.** The [2.39.19 release notes](RELEASE-NOTES-2.39.19.md) describe bounded reply recovery, long-path support, confirmed native-session closure, saved-history rendering and the observed Planning Off follow-up. [2.39.18](RELEASE-NOTES-2.39.18.md) records the native Mistral and optional API additions. The [latest release page](https://github.com/MoonlightClarity/BLACKICE/releases/latest) identifies the published installer and its own verification.
+**The 2.39.20 source improves MCP discovery compatibility.** The [2.39.20 release notes](RELEASE-NOTES-2.39.20.md) describe bodyless HEAD OAuth challenges, exact default HTTPS port matching and the version 7 managed helper upgrade.
 
-**Incoming Mistral Work → BLACKICE MCP remains unconnected in the current live verification.** A fresh custom-connector setup still failed server reachability; no OAuth connection or actual tool call was established. Incoming setup and tool-call acceptance must be verified separately. On the verification machine, Tailscale's automatic Windows service startup, unattended mode and saved background Funnel were already configured, and the endpoint remained usable after a BLACKICE application restart. A Windows reboot was not exercised.
+**The 2.39.19 source repairs empty native Mistral Vibe Code replies, Windows session saves and Chat completion status.** The [2.39.19 release notes](RELEASE-NOTES-2.39.19.md) describe bounded reply recovery, long-path support, confirmed native-session closure, saved-history rendering and the observed Planning Off follow-up. [2.39.18](RELEASE-NOTES-2.39.18.md) records the native Mistral and optional API additions. The [latest release page](https://github.com/MoonlightClarity/BLACKICE/releases/latest) identifies the published installer and its own verification.
 
 **Historical checkpoint: 2.39.16 was published on November 4, 2026**, adding quantified user-cost decisions, externally editable standalone plans, compatible planning schemas and bounded recovery from transient planning-lock failures. The [release workflow](https://github.com/MoonlightClarity/BLACKICE/actions/runs/41868542123) verified the exact installer and completed publication. [Release notes](RELEASE-NOTES-2.39.16.md), the [release page](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.39.16) and the evidence below identify the checked source and installer.
 

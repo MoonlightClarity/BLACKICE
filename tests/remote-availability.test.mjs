@@ -427,7 +427,7 @@ test('detached responder survives application process exit, reattaches and stops
   await assert.rejects(fs.stat(path.join(p.dataDir, 'remote-availability.json')), { code: 'ENOENT' });
 });
 
-for (const responderVersion of [undefined, 2, 3, 4, 5]) test('native startup gracefully replaces idle responder ' + (responderVersion ?? 'unversioned') + ' on the same port with both grants intact', async t => {
+for (const responderVersion of [undefined, 2, 3, 4, 5, 6]) test('native startup gracefully replaces idle responder ' + (responderVersion ?? 'unversioned') + ' on the same port with both grants intact', async t => {
   const p = await profile(), file = path.join(p.dataDir, 'chatgpt-oauth.json');
   await fs.writeFile(file, JSON.stringify(registeredState(p.value, 'client_secret_post')));
   const before = await fs.readFile(file);
@@ -621,7 +621,7 @@ test('early rejection diagnostics are available only on authenticated local cont
   t.after(async () => { await host.stop().catch(() => {}); await fs.rm(p.dataDir, { recursive: true, force: true }); });
   await host.attach(app({ state: 'starting', target: null }));
   const initial = await availabilityControl(host.marker, 'ping');
-  assert.equal(initial.state.responderVersion, 6);
+  assert.equal(initial.state.responderVersion, 7);
   assert.equal(initial.earlyRejections.total, 0);
   const rejected = await send(host.port, call('blackice_direct_status'), { headers: { Origin: 'https://chat.mistral.ai' } });
   assert.equal(rejected.status, 403); assert.equal('earlyRejections' in rejected.body, false);
@@ -634,4 +634,44 @@ test('early rejection diagnostics are available only on authenticated local cont
   assert.equal(publicStatus.status, 200); assert.equal('earlyRejections' in publicStatus.body.result.structuredContent, false);
   const lifecycle = await availabilityControl(host.marker, 'configure', app({ state: 'starting', target: null }));
   assert.equal('earlyRejections' in lifecycle, false);
+});
+
+test('availability accepts the canonical HTTPS authority and explicit default port without widening access', async t => {
+  const f = await fixture(t, { presence: () => false }), host = new URL(origin).host;
+  const endpoint = '/.well-known/oauth-protected-resource/mcp/chatgpt';
+  const before = await fs.readFile(path.join(f.dataDir, 'chatgpt-oauth.json'));
+  for (const authority of [host, host + ':443']) {
+    const metadata = await send(f.port, '', { method: 'GET', endpoint, headers: { Host: authority, Authorization: undefined } });
+    assert.equal(metadata.status, 200, authority); assert.equal(metadata.body.resource, origin + '/mcp/chatgpt');
+    for (const Authorization of [undefined, 'Bearer invalid']) {
+      const anonymous = await send(f.port, call('blackice_direct_status'), { headers: { Host: authority, Authorization } });
+      assert.equal(anonymous.status, 401); assert.equal(anonymous.body.code, 'CHATGPT_AUTH_REQUIRED');
+      assert.ok(anonymous.headers['www-authenticate'].includes('resource_metadata="' + origin + endpoint + '"'));
+    }
+    const authorized = await send(f.port, call('blackice_direct_status'), { headers: { Host: authority } });
+    assert.equal(authorized.status, 200); assert.equal(authorized.body.result.structuredContent.connectionId, connectionId);
+    const head = await send(f.port, '', { method: 'HEAD', headers: { Host: authority, Authorization: undefined } });
+    assert.equal(head.status, 405, 'Authority handling preserves the offline responder method policy.');
+    assert.equal(head.body, null);
+  }
+  const rejected = ['wrong.example', host + ':80', host + ':8443', host + ':0443', host + ':443:443',
+    host + '.', host + '@wrong.example', 'wrong.example@' + host, host + '/path', host + '?x=1',
+    host + '#fragment', host + '%3A443', 'https://' + host, host + ', ' + host];
+  for (const authority of rejected) {
+    const response = await send(f.port, '', { method: 'GET', endpoint, headers: { Host: authority, Authorization: undefined } });
+    assert.equal(response.status, 403, authority);
+  }
+  for (const Origin of ['https://wrong.example', origin + ':443', 'null']) {
+    const response = await send(f.port, call('blackice_direct_status'), { headers: { Host: host + ':443', Origin } });
+    assert.equal(response.status, 403, 'An accepted Host must not broaden the exact Origin rule.');
+  }
+  assert.deepEqual(await fs.readFile(path.join(f.dataDir, 'chatgpt-oauth.json')), before);
+  const other = new RemoteAvailabilityResponder({ dataDir: f.dataDir, origin: origin + ':8443', presence: () => false });
+  try {
+    await other.listen(); other.configure(app());
+    assert.equal((await send(other.port, '', { method: 'GET', endpoint, headers: { Host: host + ':8443', Authorization: undefined } })).status, 200);
+    for (const authority of [host, host + ':443', host + ':8443:443']) {
+      assert.equal((await send(other.port, '', { method: 'GET', endpoint, headers: { Host: authority, Authorization: undefined } })).status, 403, authority);
+    }
+  } finally { await other.close(); }
 });

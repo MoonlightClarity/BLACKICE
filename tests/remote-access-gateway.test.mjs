@@ -10,8 +10,8 @@ import { REMOTE_SCOPES } from '../lib/remote-access-auth.mjs';
 import { REMOTE_COOKIE, machineRemotePath, forwardedIdentityPath } from '../lib/remote-access-gateway.mjs';
 import { createRemoteTransportFixture } from './fixtures/remote-transport.mjs';
 
-async function fixture(t, { enabled = true, now = Date.now } = {}) {
-  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'blackice-remote-gateway-')), transport = createRemoteTransportFixture(), requests = [];
+async function fixture(t, { enabled = true, now = Date.now, httpsPort = 8443, transportConfig } = {}) {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'blackice-remote-gateway-')), transport = createRemoteTransportFixture({ config: transportConfig }), requests = [];
   let manager;
   const backend = http.createServer((req, res) => {
     const client = forwardedIdentityPath(new URL(req.url, 'http://127.0.0.1').pathname, req.method, 'browser') ? manager.authorizeForward(req) : null;
@@ -22,7 +22,7 @@ async function fixture(t, { enabled = true, now = Date.now } = {}) {
   t.after(async () => { await manager?.close(); backend.closeAllConnections(); if (backend.listening) await new Promise(resolve => backend.close(resolve)); await fs.rm(dataDir, { recursive: true, force: true }); });
   await new Promise((resolve, reject) => { backend.once('error', reject); backend.listen(0, '127.0.0.1', resolve); });
   const origin = `http://127.0.0.1:${backend.address().port}`, localCookie = `relay_session_${backend.address().port}=${'a'.repeat(64)}`;
-  manager = await new RemoteAccessManager({ dataDir, transport: transport.transport, now, defaultHttpsPort: 8443 }).init(); await manager.attach({ origin, sessionCookie: localCookie });
+  manager = await new RemoteAccessManager({ dataDir, transport: transport.transport, now, defaultHttpsPort: httpsPort }).init(); await manager.attach({ origin, sessionCookie: localCookie });
   if (enabled) await manager.enable();
   function request(route, { method = 'GET', headers = {}, body } = {}) {
     const encoded = body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body);
@@ -243,4 +243,43 @@ test('graceful shutdown preserves credential hashes and enabled mode for the sam
   const manager = await new RemoteAccessManager({ dataDir: first.dataDir, transport: first.transport.transport, defaultHttpsPort: 8443 }).init(); t.after(() => manager.close());
   await manager.attach({ origin: first.origin, sessionCookie: first.localCookie }); assert.equal(manager.status().enabled, true); assert.deepEqual(manager.sessions.authenticate(issued.token, 'agent').scopes, REMOTE_SCOPES);
   assert.ok(!JSON.stringify(manager.status()).includes(issued.token));
+});
+
+for (const httpsPort of [443, 8443]) test('gateway preserves strict HTTPS authority and protected HEAD routing on port ' + httpsPort, async t => {
+  const { manager, request, requests } = await fixture(t, { httpsPort, ...(httpsPort === 443 ? { transportConfig: {} } : {}) });
+  const publicUrl = new URL(manager.status().url), host = publicUrl.hostname, calls = [];
+  const endpoint = '/mcp/chatgpt', metadataPath = '/.well-known/oauth-protected-resource/mcp/chatgpt';
+  manager.attachConnector({ setOrigin() {}, matches: pathname => [endpoint, metadataPath].includes(pathname), async handle(req, res) {
+    calls.push({ method: req.method, headers: { ...req.headers } }); req.resume();
+    if (req.url === metadataPath) { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ resource: publicUrl.origin + endpoint })); }
+    res.writeHead(401, { 'WWW-Authenticate': 'Bearer resource_metadata="' + publicUrl.origin + metadataPath + '"', 'Content-Type': 'application/json' });
+    res.end(req.method === 'HEAD' ? undefined : '{"code":"CHATGPT_AUTH_REQUIRED"}');
+  } });
+  const accepted = httpsPort === 443 ? [host, host + ':443'] : [host + ':8443'];
+  for (const authority of accepted) {
+    const metadata = await request(metadataPath, { headers: { Host: authority } });
+    assert.equal(metadata.status, 200, authority); assert.equal(metadata.value.resource, publicUrl.origin + endpoint);
+    for (const method of ['HEAD', 'POST']) {
+      const response = await request(endpoint, { method, headers: { Host: authority }, ...(method === 'POST' ? { body: {} } : {}) });
+      assert.equal(response.status, 401, 'The exact connector authentication response must reach the client.');
+      assert.ok(response.headers['www-authenticate'].includes(publicUrl.origin + metadataPath));
+      if (method === 'HEAD') assert.equal(response.text, '');
+    }
+    assert.equal((await request('/api/status', { headers: { Host: authority } })).status, 401);
+    assert.equal((await request('/api/agent/status', { headers: { Host: authority, Authorization: 'Bearer invalid' } })).status, 401);
+    assert.equal((await request('/api/settings', { method: 'POST', headers: { Host: authority, Origin: 'https://wrong.example' }, body: {} })).status, 403);
+  }
+  const admitted = calls.length;
+  const rejected = ['wrong.example', host + ':80', host + ':0443', host + ':443:443', host + '.',
+    host + '@wrong.example', 'wrong.example@' + host, host + '/path', host + '?x=1', host + '#fragment',
+    host + '%3A443', 'https://' + host, host + ', ' + host, ...(httpsPort === 443 ? [host + ':8443'] : [host, host + ':443'])];
+  for (const authority of rejected) {
+    assert.equal((await request(endpoint, { method: 'HEAD', headers: { Host: authority } })).status, 403, authority);
+  }
+  assert.equal(calls.length, admitted, 'Rejected authorities must not reach connector handling.');
+  for (const call of calls) {
+    assert.equal(call.headers.cookie, undefined); assert.equal(call.headers['x-blackice-forward'], undefined);
+    assert.equal(call.headers.authorization, undefined);
+  }
+  assert.deepEqual(requests, [], 'No unauthenticated request may reach the local application.');
 });

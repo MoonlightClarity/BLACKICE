@@ -1,3 +1,13 @@
+# BLACKICE 2.39.20 — MCP discovery compatibility
+
+This source release adds bodyless OAuth challenges for incoming MCP HEAD probes and accepts the exact default HTTPS port spelling in the owned availability and OAuth/MCP routes. The managed availability helper advances from version 6 to version 7 while retaining the existing persistent Tailscale setup, endpoint and OAuth grants. Native Mistral Vibe Code behavior from 2.39.19 is preserved.
+
+**Limitation:** Mistral Work is not a supported incoming connection. Its latest website verification returned `server_unreachable` for the correct endpoint; no website OAuth connection or tool call completed.
+
+See [the 2.39.20 release notes](RELEASE-NOTES-2.39.20.md) for the protocol behavior and verification scope. Full Windows source verification and exact-installer evidence remain separate release gates.
+
+---
+
 # BLACKICE 2.39.19 — Visible Mistral replies with Planning Off
 
 This source release repairs native Mistral turns that completed without a visible answer and were incorrectly labelled “Response saved.” It adds one bounded answer-only recovery in the same native session and makes Chat completion status and saved-history rendering reflect the response actually available. Windows native session saves use extended-length paths while preserving the existing home, and follow-up readiness requires acknowledged session closure and an observed graceful process exit. Shutdown also lets accepted automatic-startup requests finish reading their results before connector services close.
