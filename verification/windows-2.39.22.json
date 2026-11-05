@@ -1,0 +1,152 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "scope": "source-publication",
+  "version": "2.39.22",
+  "platform": "win32",
+  "node": "v24.22.1",
+  "startedAt": "2026-11-05T16:38:42.151Z",
+  "checkedAt": "2026-11-05T16:49:43.874Z",
+  "state": "passed",
+  "passed": true,
+  "fullSuite": true,
+  "countsComplete": true,
+  "appFingerprint": "de35e7349e5333821c78145cdbd5f6a2957eed0446a58035516f8024b9fc351f",
+  "sourceIndexSha256": "3f7ad452771cb9f1e0bdb19e755f7dbe3c25b04928931e612d5a013ae1bf0ca4",
+  "sourceFilesVerified": 1447,
+  "testFiles": 630,
+  "testInventorySha256": "748b912408778d90d5de5c1092ddb1e93132d1752bc84e09d3707c938431f06e",
+  "runnerSha256": "4024039adf08bfd436fa6ba1e94b2d108b6b187e2caffe6fd96e0579e369f5db",
+  "fingerprintUnchanged": true,
+  "sourceUnchanged": true,
+  "dependencySetup": {
+    "electron": "44.7.2",
+    "electronBuilder": "26.15.3",
+    "electronExecutable": "node_modules/electron/dist/electron.exe",
+    "electronBytes": 245589504,
+    "python": {
+      "version": "3.12.14",
+      "sqlite3Verified": true,
+      "configuration": "PLANNING_BEHAVIOR_PYTHON"
+    },
+    "native": {
+      "helperSha256": "164088921c1de5141d2a34d8ec7fb4d3cb32d8fb326ca3f0d023c686d44a1b0c",
+      "buildReceiptSha256": "2abd8fed4e39d2d9b516be131ffb52dc688ee6dc4abc9c78ef6fad07f974946f",
+      "runtimeManifestSha256": "9d2785640416c71bf5a11313daddc87f01f117c211ebf83dd5233df0727fb9f2",
+      "compilerVerificationSha256": "65852c2d7eeaccc93215ce04bec8b542daaca4537dcca12bd236d9dfbe921365",
+      "selfTestPassed": true,
+      "networkStarted": false,
+      "foregroundUnchanged": true,
+      "liveVmVerified": false
+    }
+  },
+  "preparationHistory": {
+    "previousPublishedRelease": {
+      "version": "2.39.21",
+      "sourceCommit": "44d54347ccf367d6585c4ad79d63d12c1850da79",
+      "receipt": "verification/windows-2.39.21.json",
+      "receiptSha256": "9715c2a1c00ccaf17e81ee30d2f29f6adaa44495610a2503212801b657ce879c",
+      "appFingerprint": "6a8e6fe5f88bfcc59d799df027e44b3e94d1bdd2e64deec3d7056a79323e5d1c",
+      "sourceIndexSha256": "81af7a7557de0e1eaeb5f45093ff649d72a448247e1872eeb939194b23877ef1",
+      "tests": {
+        "total": 7245,
+        "passed": 7234,
+        "failed": 0,
+        "requiredSkipped": 0,
+        "optionalSkipped": 11,
+        "cancelled": 0,
+        "todo": 0,
+        "exitCode": 0
+      }
+    },
+    "reusedPrerequisites": [
+      "Retained the exact locked Electron and electron-builder installation from the prior verified release.",
+      "Reused the documented Python interpreter with a bounded sqlite3 preflight for this attempt.",
+      "Reused the actual native helper only after checking its source, compiler lock, runtime lock, executable and manifest bindings."
+    ],
+    "priorEvidenceDisposition": "The published 2.39.21 receipt and all earlier source-attempt logs remain unchanged as historical evidence. They are not counted as tests for this release. This receipt contains only the new complete attempt against its own final source freeze.",
+    "precedingIncompleteAttempt": {
+      "directory": "release-2.39.22-source-tests-1",
+      "state": "incomplete-held",
+      "fullSuite": false,
+      "releaseEligible": false,
+      "completedGroups": 12,
+      "totalGroups": 16,
+      "completedFiles": 480,
+      "totalFiles": 630,
+      "tests": {
+        "total": 5877,
+        "passed": 5867,
+        "failed": 0,
+        "optionalSkipped": 10,
+        "requiredSkipped": 0,
+        "cancelled": 0,
+        "todo": 0
+      },
+      "appFingerprint": "adf217009ea8c78015e83b45502b63ac2940eb439b3d84c8e5963d02bac562fc",
+      "sourceIndexSha256": "771d27d12ed732ba3e1f61b913248f9ed70e456e50b837868a4dd0d50811b34b",
+      "heldCheckpointSha256": "eee4afd7009be757563b01dc0c84c1618f4400b10f5fcc2a96f318bd7e5493cd",
+      "baselineSha256": "24488086a6827c86445d4d152f5d88fc6daac32d74645f7c51369384d5895011",
+      "disposition": "Retained as incomplete historical evidence only; none of these tests are counted in the fresh source gate."
+    },
+    "precedingPassedSourceAttempt": {
+      "directory": "release-2.39.22-source-tests-2",
+      "state": "passed",
+      "scope": "source-publication",
+      "fullSuite": true,
+      "tests": {
+        "total": 7268,
+        "passed": 7257,
+        "failed": 0,
+        "requiredSkipped": 0,
+        "optionalSkipped": 11,
+        "cancelled": 0,
+        "todo": 0,
+        "exitCode": 0
+      },
+      "appFingerprint": "4500e9c3bbb52c57c5ff134fcd3e32cb2f06fb9fd7f72c78fc4f62eaefdef916",
+      "sourceIndexSha256": "ed5524f1e0850bb789d7601ef3f6a0ee08ff90b2d15d9ad4c6017bf59cafcf9f",
+      "receiptCopy": "source-test-receipt.json",
+      "receiptSha256": "d7d1e9195be019d57d32fe07ebb72eb3d22b35f845f118d292b471fd065badf0",
+      "requestCopy": "release-request.json",
+      "requestSha256": "f83c43df754aa08a372f50e5f6e2303b29a67c6fc9e023a24bfd90714ac34d62",
+      "testLogSha256": "bb558f012c9dbcd27fdd7aec9e2a74f31f3aaa1be2003efd8340914b86800aef",
+      "checkedAt": "2026-11-05T16:21:11.660Z",
+      "disposition": "Retained as passed synthetic evidence for its exact earlier frozen tree. Its separate native failure does not relabel this source pass; none of its tests count toward the fresh gate."
+    }
+  },
+  "tests": {
+    "total": 7288,
+    "passed": 7277,
+    "failed": 0,
+    "requiredSkipped": 0,
+    "optionalSkipped": 11,
+    "cancelled": 0,
+    "todo": 0,
+    "exitCode": 0
+  },
+  "testLogSha256": "735304f085eda16d5fc5798bac536aca9d9111edb88c55d647f928b04661a08f",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "execution": {
+    "kind": "sequential-bounded-groups",
+    "concurrency": 4,
+    "groupCount": 16,
+    "groupSize": 40,
+    "uniqueCoverageVerified": true,
+    "batchEvidenceVerified": true
+  },
+  "optionalSkips": [
+    "Relay-owned sign-in and local storage survive a full process restart without foregrounding",
+    "live contained input updates application state and delivers editing keys without OS focus",
+    "offscreen contained input updates application state and delivers editing keys without OS focus",
+    "restored hidden browser tabs defer requests until used and never load closed or replaced pages",
+    "native popups preserve OAuth routing and remain independent when their opener closes",
+    "actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases",
+    "live background accessibility actions change only a dedicated non-activating fixture and leave foreground and cursor untouched",
+    "hidden isolated Chromium composer validates real layout and one-click send wiring",
+    "installed Himalaya sends exact MIME to disposable loopback SMTP and strips Bcc headers",
+    "real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart",
+    "same-directory native replacement is also exercised on an explicitly supplied existing SMB share"
+  ],
+  "validationScope": "Complete synthetic Windows source suite. Native provider acceptance and exact installed candidate evidence are separate."
+}
