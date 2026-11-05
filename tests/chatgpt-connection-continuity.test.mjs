@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { createServer } from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { ChatGPTConnector } from '../lib/chatgpt-connector.mjs';
 import { ChatGPTOAuth, CHATGPT_OAUTH_CLIENT_ID, CHATGPT_OAUTH_SCOPES } from '../lib/chatgpt-oauth.mjs';
 import { DirectExecutionAPI } from '../lib/direct-execution-api.mjs';
@@ -153,6 +153,87 @@ async function assertIdentityAndCatalog(who, grantId, catalog, fingerprint) {
   assert.deepEqual(status.toolCatalog, fingerprint);
   assert.deepEqual((await who.result('tools/list')).tools, catalog);
 }
+
+test('a dynamically registered chat executes direct tools independently and both grants survive refresh and restart', async t => {
+  const f = await fixture(t), redirectUri = 'https://chat.mistral.example/oauth/callback';
+  const original = client(f.current, f.tokens, 'existing-chatgpt');
+  await original.initialize();
+  const catalog = (await original.result('tools/list')).tools, fingerprint = f.current.connector.catalogStatus();
+  const registrationResponse = await fetch(f.current.url + '/chatgpt/oauth/register', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_name: 'Independent MCP chat', redirect_uris: [redirectUri], token_endpoint_auth_method: 'none', grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'] }),
+  });
+  const registration = await registrationResponse.json();
+  assert.equal(registrationResponse.status, 201, JSON.stringify(registration));
+  assert.equal(f.current.oauth.status().grants.length, 1, 'Registration alone grants no access.');
+  const verifier = randomBytes(32).toString('base64url');
+  const params = new URLSearchParams({
+    client_id: registration.client_id, redirect_uri: redirectUri, response_type: 'code', state: 'independent-chat-consent',
+    code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256',
+    resource: RESOURCE, scope: CHATGPT_OAUTH_SCOPES.join(' '),
+  });
+  const authorization = await fetch(f.current.url + '/chatgpt/oauth/authorize?' + params, { redirect: 'manual' });
+  assert.equal(authorization.status, 200);
+  await authorization.text();
+  const cookie = authorization.headers.get('set-cookie')?.split(';')[0];
+  assert.ok(cookie, 'Consent remains bound to its browser.');
+  const pending = f.current.oauth.status().requests.find(item => item.clientLabel === 'Independent MCP chat');
+  assert.ok(pending);
+  assert.equal(pending.clientOrigin, 'https://chat.mistral.example');
+  await f.current.oauth.approve(pending.id, { scopes: [...CHATGPT_OAUTH_SCOPES] });
+  const decisionResponse = await fetch(f.current.url + '/chatgpt/oauth/pending/' + pending.id, { headers: { Cookie: cookie } });
+  const decision = await decisionResponse.json();
+  assert.equal(decisionResponse.status, 200);
+  const code = new URL(decision.redirect).searchParams.get('code');
+  assert.ok(code);
+  const tokenResponse = await fetch(f.current.url + '/chatgpt/oauth/token', {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'authorization_code', client_id: registration.client_id, redirect_uri: redirectUri, code, code_verifier: verifier, resource: RESOURCE }),
+  });
+  const registeredTokens = await tokenResponse.json();
+  assert.equal(tokenResponse.status, 200, JSON.stringify(registeredTokens));
+  const grant = f.current.oauth.status().grants.find(item => item.id !== f.grantId);
+  assert.ok(grant);
+  assert.equal(grant.kind, 'mcp');
+  const independent = client(f.current, registeredTokens, 'registered-chat');
+  await independent.initialize();
+  await assertIdentityAndCatalog(independent, grant.id, catalog, fingerprint);
+  await assertIdentityAndCatalog(original, f.grantId, catalog, fingerprint);
+  const nonce = 'independent-provider-proof';
+  const proof = await independent.tool('blackice_direct_status', { nonce });
+  assert.equal(proof.nonce, nonce);
+  assert.equal(proof.modelStarted, false);
+  assert.equal(proof.providerTurns, false);
+  const request = { requestId: 'registered-chat-write-once', action: 'write', path: 'registered.txt', text: 'A registered chat executed this direct action.' };
+  const admitted = await independent.tool('blackice_workspace_write', request);
+  assert.equal((await settle(independent, admitted.jobId)).status, 'succeeded');
+  assert.equal(await fs.readFile(path.join(f.workspace, request.path), 'utf8'), request.text);
+
+  f.advance(registeredTokens.expires_in * 1000 + 1);
+  const refresh = async (clientId, tokens) => {
+    const response = await fetch(f.current.url + '/chatgpt/oauth/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'refresh_token', client_id: clientId, refresh_token: tokens.refresh_token, resource: RESOURCE }),
+    });
+    const renewed = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(renewed));
+    return renewed;
+  };
+  const registeredRenewed = await refresh(registration.client_id, registeredTokens);
+  const originalRenewed = await refresh(CHATGPT_OAUTH_CLIENT_ID, f.tokens);
+  await f.reopen();
+  assert.equal(f.current.oauth.status().grants.length, 2);
+  const restoredIndependent = client(f.current, registeredRenewed, 'registered-after-restart');
+  const restoredOriginal = client(f.current, originalRenewed, 'chatgpt-after-restart');
+  await assertIdentityAndCatalog(restoredIndependent, grant.id, catalog, fingerprint);
+  await assertIdentityAndCatalog(restoredOriginal, f.grantId, catalog, fingerprint);
+  assert.equal((await restoredIndependent.tool('blackice_get_job', { jobId: admitted.jobId })).status, 'succeeded');
+  const replay = await restoredIndependent.tool('blackice_workspace_write', request);
+  assert.equal(replay.existing, true);
+  assert.equal(replay.jobId, admitted.jobId);
+  const otherOwner = await restoredOriginal.result('tools/call', { name: 'blackice_get_job', arguments: { jobId: admitted.jobId } });
+  assert.equal(otherOwner.isError, true, 'A different provider grant cannot read this chat\'s job.');
+});
 
 test('independent MCP clients, token renewal and reconstruction retain one grant, the full catalog and completed action identity', async t => {
   const f = await fixture(t);

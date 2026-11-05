@@ -2,6 +2,7 @@ import {text} from '../core/dom.mjs';
 import {PROVIDER_PRESETS,getProviderPreset,isOpenRouterProvider,modelLimitDetails,modelLimitReferences,modelLimitLookupSummary} from '../../provider-catalog.mjs';
 import {createProviderModelSelection,providerHeadersForSave,codexModelAccessLabel,codexModelSourceLabel} from '../../connection-models.mjs';
 import {MODEL_SORTS,groupModels,modelIsFree} from '../../model-browser.mjs';
+import {providerCredentialsReady,enableProviderConnection} from '../../provider-availability.mjs';
 
 const PAGE=80,LIST_PAGE=40,SEARCH_DELAY=180,NEW_DRAFT='__new_provider_draft__';
 const compactTokens=value=>new Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:1}).format(value);
@@ -29,7 +30,8 @@ function validateEndpointPaths(paths){for(const value of Object.values(paths)){i
 /** Drafts and credentials live only in this component's memory. Reads never save. */
 export function createProviderSettings({mount,api,events,notify=()=>{},onChanged=()=>{},getRuntimeSettings=()=>null,onRuntimeSettings=()=>{}}) {
   mount.innerHTML=`<section id="next-provider-root" class="next-providers" aria-label="Model connections">
-    <header class="next-provider-heading"><div><h2>Other endpoints · unsupported</h2><p class="next-help">Optional advanced integration. Connect a Custom API or other compatible external endpoint using its API address, model ID and API key or other credentials. BLACKICE officially supports Codex only; third-party endpoint behavior and limits are not guaranteed. Existing connections remain available.</p></div><div class="next-row"><button type="button" id="next-provider-refresh">Refresh connections</button><button type="button" id="next-provider-new">Connect another endpoint</button></div></header>
+    <header class="next-provider-heading"><div><h2>API connections</h2><p class="next-help">Optional providers for your chats. Choose a provider or connect a Custom API or local model server. Add an API key or other credentials only when the provider requires them.</p></div><div class="next-row"><button type="button" id="next-provider-refresh">Refresh connections</button><button type="button" id="next-provider-new">Connect another endpoint</button></div></header>
+    <div class="next-row" aria-label="Quick API setup"><button type="button" id="next-provider-openrouter">Set up OpenRouter</button><button type="button" id="next-provider-mistral">Set up Mistral API</button></div>
     <p id="next-provider-info" role="status" aria-live="polite"></p>
     <div class="next-provider-layout"><aside aria-label="Saved API connections"><label class="next-label">Find a connection<input id="next-provider-filter" class="next-field" type="search" maxlength="100"></label><ul id="next-provider-list" class="next-provider-list"></ul><button type="button" id="next-provider-more" hidden>Show more connections</button><details id="next-provider-hidden" class="next-provider-hidden" hidden><summary>Hidden providers <span id="next-provider-hidden-count"></span></summary><p class="next-help">Restore a provider to show it in model menus. Its saved connection and running conversations are retained.</p><ul id="next-provider-hidden-list" class="next-provider-list"></ul></details></aside>
     <section id="next-provider-editor" class="next-card" aria-label="Connection editor"><p id="next-provider-empty" class="next-help">Choose a connection or add one.</p>
@@ -40,7 +42,7 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
       <div class="next-provider-fields"><label class="next-label">Preset<select id="next-provider-preset" class="next-field"></select></label><label class="next-label">API protocol<select id="next-provider-protocol" class="next-field"><option value="compatible">OpenAI compatible</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select></label><label class="next-label">Connection name<input id="next-provider-name" class="next-field" maxlength="100" required></label><label class="next-label">Connection ID<input id="next-provider-id" class="next-field" maxlength="40" spellcheck="false" required></label></div>
       <label class="next-label">API address<input id="next-provider-base-url" class="next-field" type="url" spellcheck="false" placeholder="https://api.example.com/v1" required></label>
       <details class="next-provider-advanced"><summary>Custom endpoint paths</summary><div class="next-stack"><p class="next-help">Optional paths on this API address’s origin. Blank uses standard paths relative to the API address.</p><label class="next-label">Model catalog path<input id="next-provider-models-path" class="next-field" maxlength="2000" spellcheck="false" placeholder="/models"></label><label class="next-label">Chat Completions path<input id="next-provider-chat-path" class="next-field" maxlength="2000" spellcheck="false" placeholder="/chat/completions"></label><p class="next-help">Chat Completions paths apply to the OpenAI compatible protocol.</p></div></details>
-      <label class="next-label">API key<input id="next-provider-key" class="next-field" type="password" autocomplete="new-password" maxlength="20000" aria-describedby="next-provider-key-note"></label><p id="next-provider-key-note" class="next-help"></p><label class="next-row"><input id="next-provider-clear-key" type="checkbox">Remove saved API key</label>
+      <label class="next-label">API key<input id="next-provider-key" class="next-field" type="password" autocomplete="new-password" maxlength="20000" aria-describedby="next-provider-key-note"></label><p id="next-provider-key-note" class="next-help"></p><p id="next-provider-setup-links" class="next-help"></p><label class="next-row"><input id="next-provider-clear-key" type="checkbox">Remove saved API key</label>
       <details class="next-provider-advanced"><summary>Request headers and limits</summary><div class="next-stack"><p id="next-provider-header-note" class="next-help"></p><label class="next-label">Replacement request headers<textarea id="next-provider-headers" class="next-field" rows="3" spellcheck="false" autocomplete="off" placeholder="Header-Name: value"></textarea></label><p class="next-help">Blank keeps saved headers. Replacement headers replace the whole saved set.</p><label class="next-row"><input id="next-provider-clear-headers" type="checkbox">Remove saved headers</label><div class="next-provider-fields"><label class="next-label">Configured output budget<input id="next-provider-max-tokens" class="next-field" type="number" min="1" max="128000" step="1"></label><label class="next-label">Maximum tool steps<input id="next-provider-max-steps" class="next-field" type="number" min="1" step="1" placeholder="No application limit"></label></div><p class="next-help">The configured output budget applies per response, up to the model’s maximum output. Model limits and their sources are shown below.</p><label class="next-label">Model context capacities<textarea id="next-provider-capacities" class="next-field" rows="3" placeholder="model-id = 900000" spellcheck="false"></textarea></label><p class="next-help">BLACKICE looks up model limits when models are saved or refreshed. Enter a capacity only to override a retrieved value. Unlisted capacities are preserved. Use model-id = unknown to clear one.</p></div></details>
       <label class="next-row"><input id="next-provider-enabled" type="checkbox">Use this connection</label>
       </div></details>
@@ -52,7 +54,7 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
     <details id="next-provider-codex" class="next-card next-provider-codex"><summary>Codex model IDs and checks</summary><button type="button" id="next-provider-codex-hide">Hide Codex from model menus</button><p class="next-help">Add an exact native Codex model ID, including one absent from the catalog. Codex decides whether it can serve each request.</p><div class="next-provider-inline"><label class="next-label">Exact Codex model ID<input id="next-provider-codex-id" class="next-field" maxlength="400" spellcheck="false" autocomplete="off"></label><button type="button" id="next-provider-codex-add">Add model ID</button><button type="button" id="next-provider-codex-check">Try model</button></div><p class="next-help">Try model sends one short text request and may use your account’s quota. It has a 45-second deadline. Its result describes that request and account.</p><div class="next-provider-inline"><label class="next-label">Find Codex models<input id="next-provider-codex-filter" class="next-field" type="search" maxlength="200"></label><button type="button" id="next-provider-codex-read">Refresh model list and limits</button></div><p id="next-provider-codex-status" class="next-help" role="status" aria-live="polite">Refresh the model list to retrieve native model limits and check status.</p><p id="next-provider-codex-error" role="alert"></p><ul id="next-provider-codex-list" class="next-provider-list"></ul><button type="button" id="next-provider-codex-more" hidden>Show more models</button></details>
   </section>`;
   const $=id=>mount.querySelector('#next-provider-'+id);
-  const f=Object.fromEntries(['root','refresh','new','info','filter','list','more','hidden','hidden-count','hidden-list','manage-models','limits-refresh','hide','connection-details','selected-expand','selected-collapse','catalog-panel','catalog-sort','catalog-min-context','catalog-free','catalog-tools','catalog-vision','catalog-expand','catalog-collapse','catalog-clear','editor','empty','form','title','stale','preset','protocol','name','id','base-url','models-path','chat-path','key','key-note','clear-key','header-note','headers','clear-headers','max-tokens','max-steps','capacities','enabled','models','model-count','manual-model','add-model','catalog-search','catalog-load','catalog','catalog-prev','catalog-next','catalog-page','receipt','error','save','test','discard','delete','codex','codex-hide','codex-id','codex-add','codex-check','codex-filter','codex-read','codex-status','codex-error','codex-list','codex-more'].map(id=>[id,$(id)]));
+  const f=Object.fromEntries(['root','refresh','new','openrouter','mistral','setup-links','info','filter','list','more','hidden','hidden-count','hidden-list','manage-models','limits-refresh','hide','connection-details','selected-expand','selected-collapse','catalog-panel','catalog-sort','catalog-min-context','catalog-free','catalog-tools','catalog-vision','catalog-expand','catalog-collapse','catalog-clear','editor','empty','form','title','stale','preset','protocol','name','id','base-url','models-path','chat-path','key','key-note','clear-key','header-note','headers','clear-headers','max-tokens','max-steps','capacities','enabled','models','model-count','manual-model','add-model','catalog-search','catalog-load','catalog','catalog-prev','catalog-next','catalog-page','receipt','error','save','test','discard','delete','codex','codex-hide','codex-id','codex-add','codex-check','codex-filter','codex-read','codex-status','codex-error','codex-list','codex-more'].map(id=>[id,$(id)]));
   const drafts=new Map();
   let runtimeSettings=copy(getRuntimeSettings()||{});
   const hiddenProviders=()=>new Set(Array.isArray(runtimeSettings.hiddenModelProviders)?runtimeSettings.hiddenModelProviders:[]);
@@ -83,7 +85,7 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
   function controls(){
     const draft=current();
     for(const control of f.form.querySelectorAll('input,select,textarea,button'))control.disabled=busy;
-    f.new.disabled=busy;f.refresh.disabled=busy||listBusy;f.filter.disabled=busy;f.more.disabled=busy;
+    f.new.disabled=busy;f.openrouter.disabled=busy;f.mistral.disabled=busy;f.refresh.disabled=busy||listBusy;f.filter.disabled=busy;f.more.disabled=busy;
     for(const button of [...f.list.querySelectorAll('button'),...f['hidden-list'].querySelectorAll('button')])button.disabled=busy;
     f['codex-hide'].disabled=busy;
     if(draft){
@@ -116,6 +118,11 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
       const endpoints=endpointSummary(provider);if(endpoints)add(button,'span',endpoints,'next-help');
       button.addEventListener('click',()=>{if(!busy)select(provider.id);});
       const actions=add(row,'div','', 'next-row next-provider-row-actions'),manage=add(actions,'button','Manage models');manage.type='button';manage.dataset.providerManage=provider.id;
+      if(provider.enabled===false&&providerCredentialsReady(provider)){
+        const enable=add(actions,'button','Enable connection');enable.type='button';enable.dataset.providerEnable=provider.id;enable.addEventListener('click',()=>void enableConnection(provider.id));
+      }else if(!providerCredentialsReady(provider)){
+        const setup=add(actions,'button','Set up connection');setup.type='button';setup.dataset.providerSetup=provider.id;setup.addEventListener('click',()=>openSetup(provider));
+      }
       manage.addEventListener('click',()=>{if(!busy)select(provider.id,{focusCatalog:true});});
       const hide=add(actions,'button','Hide');hide.type='button';hide.dataset.providerHide=provider.id;hide.setAttribute('aria-label','Hide '+provider.name+' from model menus');hide.addEventListener('click',()=>void setProviderHidden(provider.id,true));
     }
@@ -124,6 +131,30 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
     for(const provider of hiddenEntries){const row=add(f['hidden-list'],'li','', 'next-provider-hidden-row');add(row,'strong',provider.name);const restore=add(row,'button','Restore');restore.type='button';restore.dataset.providerRestore=provider.id;restore.setAttribute('aria-label','Restore '+provider.name+' to model menus');restore.addEventListener('click',()=>void setProviderHidden(provider.id,false));}
     f.hidden.hidden=!hiddenEntries.length;f['hidden-count'].textContent=String(hiddenEntries.length);f.codex.hidden=hidden.has('codex');
     f.more.hidden=visible.length<=listLimit;controls();
+  }
+  function openSetup(provider){
+    if(busy)return;cancelCatalog();
+    if(!drafts.has(provider.id))drafts.set(provider.id,makeDraft(provider));
+    selected=provider.id;current().connectionDetailsOpen=true;paintList();paintEditor();f.key.focus();
+  }
+  function startPreset(id){
+    if(busy)return;const preset=getProviderPreset(id);if(!preset)return;
+    const saved=providers.find(provider=>presetFor(provider).id===id||provider.type===preset.type&&provider.baseUrl===preset.baseUrl);if(saved){openSetup(saved);return;}
+    cancelCatalog();const key=NEW_DRAFT+':'+id;
+    if(!drafts.has(key)){
+      const draft=makeDraft();Object.assign(draft,{id:providers.some(provider=>provider.id===id)?newId():id,name:preset.name,preset:id,type:preset.type,baseUrl:preset.baseUrl,freeOnly:Boolean(preset.freeOnly)});
+      draft.baseline=JSON.stringify(settings(draft));drafts.set(key,draft);
+    }
+    selected=key;paintList();paintEditor();f.key.focus();
+  }
+  async function enableConnection(id){
+    if(!active||destroyed||busy)return;const provider=providers.find(item=>item.id===id);if(!provider)return;
+    busy=true;cancelCatalog();status(f.info,'Enabling connection…');controls();
+    try{
+      const saved=await enableProviderConnection(api,provider);if(destroyed)return;
+      applyProviders(providers.map(item=>item.id===id?saved:item),{browse:false});notifyChanged();status(f.info,'Connection enabled. The default model and existing chats are unchanged.');
+    }catch(error){if(!destroyed)status(f.info,safeError(error),true);}
+    finally{busy=false;if(!destroyed)controls();}
   }
   async function setProviderHidden(id,hide){
     if(!active||destroyed||busy)return;busy=true;cancelCatalog();status(f.info,hide?'Hiding provider from model menus…':'Restoring provider to model menus…');controls();
@@ -189,8 +220,11 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
   function feedback(){const draft=current();if(!draft)return;status(f.receipt,draft.receipt);status(f.error,draft.error,true);}
   function savedNotes(){
     const draft=current();if(!draft)return;const saved=draft.saved;
-    f['key-note'].textContent=saved?.hasApiKey?(saved.secretStorage==='file'?`Using profile .env (${saved.credentialVariable||'provider API key'}). The file value takes precedence; edit the file to change it.`:saved.secretStorage==='environment'?`Using environment variable ${saved.credentialVariable||'API key'}.` :saved.secretStorage==='session'?'API key available for the current session. Enter it again after restarting BLACKICE.':'API key saved. Leave blank to keep it.'):getProviderPreset(draft.preset)?.anonymous?'No API key is required for this free preset. Save the connection, then select its models.':'Enter this provider’s API key if required. Profile .env keys are also detected automatically.';
+    f['key-note'].textContent=saved?.hasApiKey?(saved.secretStorage==='file'?`Using profile .env (${saved.credentialVariable||'provider API key'}). The file value takes precedence; edit the file to change it.`:saved.secretStorage==='environment'?`Using environment variable ${saved.credentialVariable||'API key'}.` :saved.secretStorage==='session'?'API key available for the current session. Enter it again after restarting BLACKICE.':'API key saved. Leave blank to keep it.'):getProviderPreset(draft.preset)?.anonymous?'No API key is required for this free preset. Save the connection, then select its models.':getProviderPreset(draft.preset)?.requiresApiKey?'Add an API key or supported authorization header for this provider. Profile .env keys are also detected automatically.':'API key optional. Add credentials only if this endpoint requires them.';
     f.key.placeholder=saved?.hasApiKey?(saved.secretStorage==='session'?'Current session · leave blank to keep':'Saved · leave blank to keep'):getProviderPreset(draft.preset)?.anonymous?'No API key required':'API key';
+    f['setup-links'].replaceChildren();
+    const setupPreset=getProviderPreset(draft.preset),setupUrl=setupPreset?.keyUrl||setupPreset?.docsUrl;
+    if(setupUrl){const link=add(f['setup-links'],'a',setupPreset?.keyUrl?'Open provider key settings':'Open provider setup guide');link.setAttribute('href',setupUrl);link.setAttribute('target','_blank');link.setAttribute('rel','noopener noreferrer');}
     f['header-note'].textContent=saved?.hasHeaders?`Saved header names: ${(saved.headerNames||[]).join(', ')}. Values stay hidden.`:'No saved request headers.';
     f.stale.hidden=!draft.conflict;
     f.stale.textContent=draft.removed?'This connection was removed elsewhere. Your draft is kept. Reload saved settings closes this draft.':'Saved settings changed elsewhere. Your draft is kept. Reload saved settings before saving.';
@@ -385,6 +419,7 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
   f['catalog-panel'].addEventListener('toggle',()=>{const draft=current();if(draft)draft.catalogOpen=f['catalog-panel'].open;});
   for(const scope of ['selected','catalog']){f[scope+'-expand'].addEventListener('click',()=>expandGroups(scope,true));f[scope+'-collapse'].addEventListener('click',()=>expandGroups(scope,false));}
   f['add-model'].addEventListener('click',()=>{if(busy)return;const draft=current();if(!draft)return;try{if(!modelId(draft.manual))throw Error('Enter an exact model ID, up to 256 characters.');draft.selection.addManual(draft.manual);draft.manual='';f['manual-model'].value='';draft.error='';draft.receipt='Model ID added. Save selected models to look up its limits.';}catch(error){draft.error=safeError(error);}paintModels();feedback();controls();});
+  for(const id of ['openrouter','mistral'])f[id].addEventListener('click',()=>startPreset(id));
   f.new.addEventListener('click',()=>{if(busy)return;cancelCatalog();if(!drafts.has(NEW_DRAFT))drafts.set(NEW_DRAFT,makeDraft());selected=NEW_DRAFT;paintList();paintEditor();});
   f.discard.addEventListener('click',()=>void reloadSaved());
   f.save.addEventListener('click',()=>void mutate('save'));f.delete.addEventListener('click',()=>void mutate('delete'));f.test.addEventListener('click',()=>void mutate('test'));

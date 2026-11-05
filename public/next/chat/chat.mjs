@@ -1,5 +1,6 @@
 import { createChatFrame, paintIndex, paintIntroduction, paintHistory, paintModels, captureChatScroll, restoreChatScroll } from './render.mjs';
 import { createGroupedModelPicker } from '../core/model-picker.mjs';
+import { enableProviderForModel } from '../../provider-availability.mjs';
 import { summaries, filterSummaries, conversationRuns, rootId, lastRunId, running, planningProgressForRun, CHAT_INDEX_BATCH, CHAT_MESSAGE_BATCH, messageLimitsAfterRefresh, conversationBucket, conversationActionState, conversationManagementTarget, resolveConversationSelection, mergeChatRunUpdate } from './model.mjs';
 import { submitChat, replyState } from './send.mjs';
 import { createConversationReader } from './reader-client.mjs';
@@ -30,7 +31,11 @@ const commandFor=value=>{
 export function createChatWorkspace({ mount, api, events, getStatus, notify = () => {}, onNavigate }) {
   const view = createChatFrame(mount);
   const hostWindow=mount.ownerDocument.defaultView||globalThis.window;
-  const modelPicker=createGroupedModelPicker({select:view.model,label:'Model'});
+  const modelPicker=createGroupedModelPicker({select:view.model,label:'Model',onSetupProvider:typeof onNavigate==='function'?id=>onNavigate('settings',{modelProviderId:id}):undefined,onEnableProvider:async id=>{
+    const owner=root(),fresh=await enableProviderForModel(api,runtimeStatus,id);
+    if(state.destroyed||!state.active||root()!==owner)return null;
+    refreshChoices(fresh);return fresh;
+  }});
   const reader = createConversationReader({api});
   const artifacts = createArtifactViewer({mount,api,notify});
   view.shell.dataset.reader=reader.usingWorker?'worker':'fallback';

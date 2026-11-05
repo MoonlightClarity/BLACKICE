@@ -12,6 +12,8 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { HarnessEngine } from './lib/engine.mjs';
 import { startupPhase } from './lib/startup-timing.mjs';
 import { CodexRuntime } from './lib/codex.mjs';
+import { MistralVibeRuntime } from './lib/mistral-vibe.mjs';
+import { createMistralVibeHttp } from './lib/mistral-vibe-http.mjs';
 import { DesktopController } from './lib/desktop.mjs';
 import { NativeWindowManager } from './lib/native-window-tools.mjs';
 import { KnowledgeStore } from './lib/knowledge.mjs';
@@ -99,11 +101,12 @@ export async function createHarnessServer(options = {}) {
   const workbench = options.workbench || new WindowsWorkbench({ dataDir, sharedRoot: defaultCwd });
   const workbenchVideo=options.workbenchVideo||new WorkbenchDesktopStream({sharedRoot:defaultCwd});
   const showBrowserOS = options.showBrowserOS || revealBrowserOS;
-  const runtime = options.runtime || new ProviderRuntime({ codex: new CodexRuntime({ isolatedHistory: true, getConnectedGmail: () => runtimeSettings.get().connectedGmail }), dataDir, ...options.secretStorage });
+  const runtime = options.runtime || new ProviderRuntime({ codex: new CodexRuntime({ isolatedHistory: true, getConnectedGmail: () => runtimeSettings.get().connectedGmail }), mistralVibe: options.mistralVibe === false ? null : options.mistralVibe || new MistralVibeRuntime({ dataDir, workspaceDir: defaultCwd }), dataDir, ...options.secretStorage });
   await runtime.init?.();
   const desktop = options.desktop || new DesktopController();
   const nativeWindows = options.nativeWindowManager || (options.nativeWindows ? new NativeWindowManager({ ...options.nativeWindows, dataDir }) : null);
   const browser = options.browser || new BrowserWorkspace();
+  const mistralVibeHttp = createMistralVibeHttp({ runtime, browser, defaultCwd, readBody: body, sendJSON: json, getStatus: () => status(), onStatus: () => runtimeUpdate() });
   const applicationWorkspace=options.applicationWorkspace||await new ApplicationWorkspace({dataDir,runtime:options.applicationRuntime,catalog:options.applicationCatalog}).init();
   const knowledge = options.knowledge || new KnowledgeStore({ dataDir });
   await knowledge.init();
@@ -585,6 +588,7 @@ export async function createHarnessServer(options = {}) {
       if(pathname==='/api/method-types'&&req.method==='POST')return json(res,201,await methods.createType(await body(req)));
       const methodTypeMatch=pathname.match(/^\/api\/method-types\/([a-zA-Z0-9_-]+)$/);
       if(methodTypeMatch&&req.method==='PUT')return json(res,200,await methods.updateType(methodTypeMatch[1],await body(req)));
+      if (await mistralVibeHttp(req, res, pathname)) return;
       if(pathname==='/api/codex/models/check'&&req.method==='POST'){
         const value=await body(req);
         if(!value||Array.isArray(value)||Object.keys(value).length!==1||typeof value.model!=='string')return json(res,400,{error:'Supply one exact model ID as {model}.'});
@@ -975,6 +979,15 @@ export async function createHarnessServer(options = {}) {
           ['GET','POST','DELETE'].includes(req.method))
         return json(res,410,{error:'The Antigravity and Qwen Code integrations have been retired from BLACKICE. Existing conversations are preserved, but these providers cannot run.'});
       if (pathname === '/api/models/default' && req.method === 'POST') { if (!runtime.setDefaultModel) throw new Error('Default model settings are unavailable.'); const value = await body(req); await runtime.setDefaultModel(value.model); runtimeUpdate(); return json(res, 200, status(req)); }
+      const enableProviderMatch = pathname.match(/^\/api\/providers\/([a-z][a-z0-9_-]{0,39})\/enable$/);
+      if (enableProviderMatch && req.method === 'POST') {
+        const value = await body(req);
+        if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => key !== 'expectedUpdatedAt') || typeof value.expectedUpdatedAt !== 'string' || !value.expectedUpdatedAt)
+          return json(res, 400, { error: 'Use the saved connection revision to enable it.' });
+        if (!runtime.enableProvider) throw new Error('Provider connections are unavailable.');
+        const saved = await runtime.enableProvider(enableProviderMatch[1], { expectedUpdatedAt: value.expectedUpdatedAt });
+        runtimeUpdate(); return json(res, 200, saved);
+      }
       const providerMatch = pathname.match(/^\/api\/providers\/([a-zA-Z0-9_-]+)(\/(?:test|models))?$/);
       if (providerMatch && req.method === 'DELETE' && !providerMatch[2]) { await body(req); const value = await runtime.removeProvider(providerMatch[1]); runtimeUpdate(); return json(res, 200, value); }
       if (providerMatch?.[2] && req.method === 'POST') { const value = await body(req); const result = providerMatch[2] === '/test' ? await runtime.testProvider(providerMatch[1]) : await runtime.discoverModels(providerMatch[1], value); runtimeUpdate(); return json(res, 200, result); }
@@ -1351,6 +1364,7 @@ export async function createHarnessServer(options = {}) {
       files['/assets/blackice-dark-ice.png'] = 'assets/blackice-dark-ice.png';
       files['/assets/blackice-v2-mark.svg'] = 'assets/blackice-v2-mark.svg';
       files['/token-usage.mjs'] = 'token-usage.mjs';
+      files['/provider-availability.mjs'] = 'provider-availability.mjs';
       const nextFiles = ['index.html','base.css','chat.css','chat-management.css','brand.css','work-visual.css','intelligence-planning.css','intelligence-map.css','controls.css','layout-fixes.css','planning-ontology.css','planning-browser.css','guard.js','app.mjs',
         'core/api.mjs','core/dom.mjs','core/events.mjs','core/model-picker.mjs','core/context-controls.mjs','model-picker.css',
         'chat/chat.mjs','chat/model.mjs','chat/render.mjs','chat/send.mjs','chat/planning-timeline.mjs',

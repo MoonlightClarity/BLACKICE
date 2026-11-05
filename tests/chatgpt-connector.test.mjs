@@ -44,28 +44,73 @@ async function post(connector, payload, headers = {}) {
 }
 const rpc = (method, params = {}, id = 'request-one') => ({ jsonrpc: '2.0', id, method, params });
 
-test('public discovery advertises exact OAuth scopes but never executes a user tool', async t => {
+test('every anonymous POST receives an OAuth challenge before headers, body or protocol are parsed', async t => {
   const { connector, calls } = await fixture(t);
+  connector.readBody = () => assert.fail('Anonymous discovery must not read the request body.');
+  const probes = [
+    { payload: rpc('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'fixture', version: '1' } }) },
+    { payload: rpc('tools/list') },
+    { payload: rpc('tools/call', { name: 'blackice_direct_status' }) },
+    { payload: rpc('server/discover'), headers: { 'mcp-protocol-version': 'unsupported', 'mcp-method': 'mismatch' } },
+  ];
+  for (const { payload, headers } of probes) {
+    const response = await post(connector, payload, headers);
+    assert.equal(response.statusCode, 401);
+    assert.match(response.headers['www-authenticate'], /resource_metadata=/);
+    assert.match(response.headers['www-authenticate'], /scope="read"/);
+    assert.equal(response.json().code, 'CHATGPT_AUTH_REQUIRED');
+    assert.equal(response.json().result, undefined);
+  }
+  for (const headers of [{}, { accept: 'text/plain', 'content-type': 'text/plain', 'mcp-protocol-version': 'unsupported' }]) {
+    const req = Readable.from([Buffer.from('not-json')]);
+    Object.assign(req, { method: 'POST', url: '/mcp/chatgpt?unexpected=true', headers });
+    const response = new Response(); await connector.handle(req, response);
+    assert.equal(response.statusCode, 401); assert.match(response.headers['www-authenticate'], /resource_metadata=/);
+  }
+  assert.deepEqual(calls, []);
+  assert.equal(connector.authStatus().linkingChallenges, probes.length + 2);
+  assert.equal((await connector.status()).lastAuthenticatedToolCall, null);
+});
+
+test('supplied invalid credentials receive the existing HTTP challenge before initialization or body parsing', async t => {
+  const { connector, calls } = await fixture(t);
+  connector.readBody = () => assert.fail('Invalid credentials must not reach MCP parsing.');
+  for (const method of ['initialize', 'tools/list', 'server/discover']) {
+    const response = await post(connector, rpc(method), { authorization: 'Bearer invalid-fixture', accept: '' });
+    assert.equal(response.statusCode, 401);
+    assert.match(response.headers['www-authenticate'], /error="invalid_token"/);
+    assert.equal(response.json().code, 'CHATGPT_AUTH_REQUIRED');
+  }
+  assert.equal(connector.authStatus().invalidBearerChallenges, 3);
+  assert.equal(connector.authStatus().linkingChallenges, 0); assert.deepEqual(calls, []);
+});
+
+test('authenticated discovery advertises exact OAuth scopes but never executes a user tool', async t => {
+  const { connector, calls, setClient } = await fixture(t);
+  setClient({ id: 'catalog-grant', scopes: ['read'] });
   const result = (await post(connector, rpc('tools/list'))).json().result;
   assert.equal(result.tools.length, 2); assert.deepEqual(result.tools[1].securitySchemes, [{ type: 'oauth2', scopes: ['read', 'browser:write', 'files:read'] }]);
   assert.equal(Object.hasOwn(result.tools[1], 'scope'), false); assert.equal(Object.hasOwn(result.tools[1], 'requiredScopes'), false);
-  const unauthenticated = (await post(connector, rpc('tools/call', { name: 'blackice_direct_status', arguments: { nonce: 'proof-one' } }))).json();
-  assert.equal(unauthenticated.result.isError, true); assert.match(unauthenticated.result._meta['mcp/www_authenticate'][0], /resource_metadata=/); assert.deepEqual(calls, []);
+  setClient(null);
+  const unauthenticated = await post(connector, rpc('tools/call', { name: 'blackice_direct_status', arguments: { nonce: 'proof-one' } }));
+  assert.equal(unauthenticated.statusCode, 401); assert.match(unauthenticated.headers['www-authenticate'], /resource_metadata=/); assert.deepEqual(calls, []);
 });
 
 test('a pending native restart keeps authenticated receipt reads and cancellation available without admitting new work', async t => {
   const { connector, execution, setClient, setClosing, calls } = await fixture(t);
   const definitions = new DirectExecutionAPI({ dataDir: path.dirname(connector.file) });
   execution.tools = () => definitions.tools();
+  setClient({ id: 'pending-restart-owner', scopes: [...DIRECT_EXECUTION_SCOPES] });
   const original = JSON.stringify((await post(connector, rpc('tools/list'))).json().result.tools);
   const fingerprint = connector.catalogStatus();
   let pending = true; connector.isRestartPending = () => pending; setClosing(true);
   assert.equal(JSON.stringify((await post(connector, rpc('tools/list'))).json().result.tools), original);
   assert.deepEqual(connector.catalogStatus(), fingerprint);
   const controls = ['blackice_direct_status', 'blackice_get_job', 'blackice_list_jobs', 'blackice_cancel_job'];
+  setClient(null);
   for (const name of controls) {
-    const missing = (await post(connector, rpc('tools/call', { name, arguments: {} }))).json().result;
-    assert.equal(missing.isError, true); assert.ok(missing._meta['mcp/www_authenticate']);
+    const missing = await post(connector, rpc('tools/call', { name, arguments: {} }));
+    assert.equal(missing.statusCode, 401); assert.ok(missing.headers['www-authenticate']);
   }
   assert.deepEqual(calls, []);
   setClient({ id: 'pending-restart-owner', scopes: [...DIRECT_EXECUTION_SCOPES] });
@@ -86,7 +131,8 @@ test('a pending native restart keeps authenticated receipt reads and cancellatio
 });
 
 test('every advertised definition mirrors OAuth metadata without changing scopes, annotations or catalog stability', async t => {
-  const { connector, execution, calls } = await fixture(t);
+  const { connector, execution, calls, setClient } = await fixture(t);
+  setClient({ id: 'catalog-grant', scopes: ['read'] });
   const unavailable = () => assert.fail('Catalog inspection must not execute an adapter.');
   const definitions = new DirectExecutionAPI({ dataDir: path.dirname(connector.file), additionalTools: [
     chatGPTFileImportTool({ directory: path.join(path.dirname(connector.file), 'unused-imports') }),
@@ -169,9 +215,10 @@ test('the actual direct/planning catalog is stable across nonce probes, status, 
   const definitions = new DirectExecutionAPI({ dataDir: path.dirname(connector.file) });
   execution.tools = () => definitions.tools(); connector.planning = new ChatGPTPlanningAPI({});
   const list = async headers => (await post(connector, rpc('tools/list'), headers)).json().result.tools;
+  const sameGrant = { id: 'stable-fixture-grant', scopes: [...DIRECT_EXECUTION_SCOPES] };
+  setClient(sameGrant);
   const original = await list(), serialized = JSON.stringify(original);
   const expected = { sha256: createHash('sha256').update(serialized).digest('hex'), toolCount: original.length, serverVersion: '2.33.0' };
-  const sameGrant = { id: 'stable-fixture-grant', scopes: [...DIRECT_EXECUTION_SCOPES] };
   for (const nonce of ['first-fixture-probe', 'second-fixture-probe']) {
     setClient(sameGrant);
     const result = (await post(connector, rpc('tools/call', { name: 'blackice_direct_status', arguments: { nonce } }), { authorization: 'Bearer valid-fixture-credential' })).json().result;
@@ -222,7 +269,7 @@ test('invalid supplied bearer credentials receive HTTP 401 without invoking link
   const status = await connector.status();
   assert.equal(status.authDiagnostics.invalidBearerChallenges, 1); assert.equal(status.authDiagnostics.linkingChallenges, 0);
   assert.deepEqual(Object.keys(status.authDiagnostics.lastChallenge).sort(), ['at', 'kind', 'method', 'statusCode', 'tool']);
-  assert.equal(status.authDiagnostics.lastChallenge.tool, 'blackice_direct_status');
+  assert.equal(status.authDiagnostics.lastChallenge.tool, null, 'invalid credentials are rejected before parsing a tool name');
   assert.ok(!JSON.stringify(status).includes(secret)); assert.ok(!JSON.stringify(status).includes('private-fixture-argument'));
   status.authDiagnostics.lastChallenge.kind = 'caller-mutation'; assert.equal((await connector.status()).authDiagnostics.lastChallenge.kind, 'invalidBearerChallenges');
   setClient({ id: 'same-grant', scopes: ['read'] });
@@ -259,7 +306,8 @@ test('only successful authenticated tools notify setup and optional receipt fail
 });
 
 test('MCP modern routing and result metadata agree while legacy initialize stays supported', async t => {
-  const { connector } = await fixture(t);
+  const { connector, setClient } = await fixture(t);
+  setClient({ id: 'protocol-grant', scopes: ['read'] });
   const legacy = (await post(connector, rpc('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'Test', version: '1' } }))).json();
   assert.equal(legacy.result.protocolVersion, '2025-11-25');
   const request = rpc('server/discover', { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {} } });
@@ -305,6 +353,37 @@ test('a valid grant narrowed before dispatch requests the missing scope without 
   assert.equal(status.scopeChallenges, 1);
   assert.equal(status.invalidBearerChallenges, 0);
   assert.equal(status.authorizationLostChallenges, 0);
+});
+
+test('registered MCP clients receive standard scope challenges before any action executes', async t => {
+  const { connector, oauth, setClient, calls } = await fixture(t);
+  oauth.challenge = (scopes, error) => 'Bearer error="' + error + '", scope="' + scopes.join(' ') + '"';
+  setClient({ id: 'registered-one', kind: 'mcp', scopes: ['read'] });
+  let response = await post(connector, rpc('tools/call', { name: 'blackice_browser_upload', arguments: {} }), { authorization: 'Bearer registered-token' });
+  assert.equal(response.statusCode, 403);
+  assert.match(response.headers['www-authenticate'], /error="insufficient_scope"/);
+  assert.match(response.headers['www-authenticate'], /browser:write files:read/);
+  assert.equal(response.json().code, 'CHATGPT_SCOPE_REQUIRED');
+  setClient({ id: 'registered-one', kind: 'mcp', scopes: ['read', 'browser:write', 'files:read'] });
+  oauth.getClient = async () => ({ id: 'registered-one', kind: 'mcp', scopes: ['read'] });
+  response = await post(connector, rpc('tools/call', { name: 'blackice_browser_upload', arguments: {} }), { authorization: 'Bearer registered-token' });
+  assert.equal(response.statusCode, 403);
+  assert.match(response.headers['www-authenticate'], /error="insufficient_scope"/);
+  assert.deepEqual(calls, []);
+  assert.equal(connector.authStatus().scopeChallenges, 2);
+  assert.equal(connector.authStatus().invalidBearerChallenges, 0);
+});
+
+test('registered MCP clients receive a standard challenge for additional saved-result scopes', async t => {
+  const { connector, oauth, execution, setClient } = await fixture(t);
+  setClient({ id: 'registered-one', kind: 'mcp', scopes: ['read'] });
+  oauth.challenge = (scopes, error) => 'Bearer error="' + error + '", scope="' + scopes.join(' ') + '"';
+  execution.call = async () => { throw Object.assign(Error('Saved result needs file access.'), { status: 403, code: 'DIRECT_SCOPE_REQUIRED', requiredScopes: ['files:read'] }); };
+  const response = await post(connector, rpc('tools/call', { name: 'blackice_direct_status', arguments: {} }), { authorization: 'Bearer registered-token' });
+  assert.equal(response.statusCode, 403);
+  assert.match(response.headers['www-authenticate'], /error="insufficient_scope"/);
+  assert.match(response.headers['www-authenticate'], /read files:read/);
+  assert.equal(response.json().code, 'DIRECT_SCOPE_REQUIRED');
 });
 
 test('maintenance blocks OAuth writes and tracks already admitted OAuth work until settled', async t => {

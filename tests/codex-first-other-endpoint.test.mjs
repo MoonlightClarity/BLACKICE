@@ -22,7 +22,7 @@ test('chat picker excludes retired native CLIs even when the mounted client has 
   const opts=chatOptionChoices(cachedStatus,{model:'default'});
   assert.deepEqual(opts.models.map(x=>x.id),['default','gpt-6.1-sol',external]);
   assert.equal(opts.models.find(x=>x.id===external).disabled,false);
-  assert.match(opts.models.find(x=>x.id===external).label,/Unsupported endpoint/);
+  assert.equal(opts.models.find(x=>x.id===external).label,'Other endpoint model');
   assert.doesNotThrow(()=>validateChatOptions(cachedStatus,{model:external,effort:'default'}));
 });
 
@@ -38,19 +38,19 @@ test('official Codex and explicitly enabled other endpoint stay selectable in ge
   const choices=connectionDefaultModels({...cachedStatus,defaultModelSelection:'codex'});
   assert.ok(choices.some(x=>x.value==='codex'));
   assert.ok(choices.some(x=>x.value==='gpt-6.1-sol'));
-  assert.ok(choices.some(x=>x.value===external&&!x.disabled&&/Unsupported endpoint/.test(x.label)));
+  assert.ok(choices.some(x=>x.value===external&&!x.disabled&&x.label==='Other endpoint model'));
   assert.ok(!choices.some(x=>[ant,qwen].includes(x.value)));
 });
 
-test('models page always uses Codex first and keeps optional unsupported endpoint editor',async()=>{
+test('models page exposes optional API settings and retains native retirement controls',async()=>{
   const settings=await readFile(new URL('../public/next/workspaces/settings.mjs',import.meta.url),'utf8');
   const focus=await readFile(new URL('../public/next/workspaces/settings-subscriptions.mjs',import.meta.url),'utf8');
   const providers=await readFile(new URL('../public/next/workspaces/settings-providers.mjs',import.meta.url),'utf8');
   const picker=await readFile(new URL('../public/next/core/model-picker.mjs',import.meta.url),'utf8');
   assert.doesNotMatch(settings,/status\.subscriptionFocus===true\s*\?/);
   assert.match(settings,/focus\.createSubscriptionModelSettings/);
-  assert.match(focus,/Connect another endpoint · unsupported \(optional\)/);
-  assert.match(providers,/Other endpoints · unsupported/);
+  assert.match(focus,/Optional API connections/);
+  assert.match(providers,/<h2>API connections<\/h2>/);
   assert.match(providers,/id="next-provider-new"/);
   assert.match(picker,/\!\/\^\(\?:antigravity\|qwen_code\)::\//);
 });

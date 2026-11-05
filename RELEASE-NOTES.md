@@ -1,3 +1,11 @@
+# BLACKICE 2.39.18 — Native Mistral Vibe and optional model connections
+
+This source release adds native Mistral Vibe Code with account model discovery and selectable model choices, actionable optional API connections, and targeted browser and MCP authorization repairs. Existing defaults and saved model identities are preserved. Incoming Mistral Chat MCP remains blocked by external reachability in the tested setup.
+
+See [the 2.39.18 release notes](RELEASE-NOTES-2.39.18.md) for the changes, observed native model checks and verification limits. Windows installer publication and exact-artifact evidence are handled by the release workflow.
+
+---
+
 # BLACKICE 2.39.16 — Quantified user-agency planning
 
 This release adds a shared expected-user-cost evaluator, native planning checkpoints, and standalone plans callable through the existing direct ChatGPT connection. It compares action and inaction, accounts for interruption and opportunity cost, and separates counterparty-facing representation from private task assessment.

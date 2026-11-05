@@ -21,7 +21,7 @@ async function listen(server) {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
-async function launchFixture({ dataDir, origin, identityOrigin }) {
+async function launchFixture({ dataDir, origin, identityOrigin, mode }) {
   const environment = { ...process.env };
   delete environment.ELECTRON_RUN_AS_NODE;
   // Electron and Chromium write directly to a file. There is no stdout pipe to
@@ -30,7 +30,9 @@ async function launchFixture({ dataDir, origin, identityOrigin }) {
   const log = await open(logPath, 'wx');
   let timeout, stopTimer, exit, timedOut = false;
   try {
-    const child = spawn(require('electron'), [fixtureFile, `--fixture-data=${dataDir}`, `--fixture-origin=${origin}`, `--fixture-identity-origin=${identityOrigin}`], { env: environment, windowsHide: true, shell: false, stdio: ['ignore', log.fd, log.fd] });
+    const target = mode ? fileURLToPath(new URL('./fixtures/browser-tab-lifetime-live.mjs', import.meta.url)) : fixtureFile;
+    const fixtureArgs = [target, `--fixture-data=${dataDir}`, ...(mode ? [`--fixture-mode=${mode}`] : [`--fixture-origin=${origin}`, `--fixture-identity-origin=${identityOrigin}`])];
+    const child = spawn(require('electron'), fixtureArgs, { env: environment, windowsHide: true, shell: false, stdio: ['ignore', log.fd, log.fd] });
     const completed = new Promise((resolve, reject) => {
       child.once('error', reject);
       child.once('close', (code, signal) => resolve({ code, signal }));
@@ -55,7 +57,7 @@ async function launchFixture({ dataDir, origin, identityOrigin }) {
   return result;
 }
 
-test('native cross-origin popups redirect, message their opener and follow or close without breaking Observe pins or task routing', { skip: !enabled && 'Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.', timeout: 100000 }, async t => {
+test('native popups preserve OAuth routing and remain independent when their opener closes', { skip: !enabled && 'Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.', timeout: 170000 }, async t => {
   const tempRoot = path.resolve(tmpdir()), dataDir = await mkdtemp(path.join(tempRoot, 'relay-browser-popup-'));
   assert.ok(path.resolve(dataDir).startsWith(`${tempRoot}${path.sep}`));
   let passed = false, origin, identityOrigin;
@@ -125,6 +127,14 @@ test('native cross-origin popups redirect, message their opener and follow or cl
     for (const [site, route] of [['app', '/parent'], ['identity', '/identity'], ['identity', '/complete'], ['app', '/feed']]) {
       assert.equal(requests.filter(request => request.site === site && request.route === route && request.flow === flow.flow).length, 1, `${flow.flow} must request ${site}${route} exactly once`);
     }
+  }
+  for (const mode of ['live', 'offscreen']) {
+    const lifetime = await launchFixture({ dataDir: await mkdtemp(path.join(dataDir, 'lifetime-' + mode + '-')), mode });
+    assert.equal(lifetime.mode, mode); assert.equal(lifetime.onlyLoopback, true); assert.equal(lifetime.liveProfileAccessed, false);
+    for (const check of ['opener-and-child-are-distinct-documents', 'closing-parent-retains-child-document-and-unsent-state',
+      'surviving-tab-state-persists', 'explicit-child-close-preserves-unrelated-tab'])
+      assert.ok(lifetime.checks.includes(check), mode + ': ' + check);
+    if (mode === 'live') assert.ok(lifetime.checks.includes('child-attached-in-contained-host'));
   }
   passed = true;
 });

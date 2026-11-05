@@ -1,25 +1,27 @@
 # BLACKICE
 
-BLACKICE is an open-source Windows workspace for AI agents that work with files, commands, websites, plans and recurring tasks. Use Codex inside BLACKICE, or let a ChatGPT conversation call BLACKICE's tools on your computer. Conversations, editable plans, execution history and results stay available so you can inspect the work and continue it.
+BLACKICE is an open-source Windows workspace for AI agents that work with files, commands, websites, plans and recurring tasks. Use Codex or Mistral Vibe Code inside BLACKICE, or let a connected ChatGPT conversation call BLACKICE's tools on your computer. Conversations, editable plans, execution history and results stay available so you can inspect the work and continue it.
 
 The project is built for personal, user-directed automation. Its focus is practical outcomes, shared human/agent control and continuity across longer tasks.
 
-**Current public release: 2.39.16 for Windows x64. Overview updated November 4, 2026.**
+**Current source version: 2.39.18 for Windows x64. Overview updated November 5, 2026.**
 
-**[Download the Windows installer](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.16/Blackice-2.39.16-Setup.exe)** · [Latest release](https://github.com/MoonlightClarity/BLACKICE/releases/latest) · [2.39.16 release notes](RELEASE-NOTES-2.39.16.md) · [Checksums](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.16/SHA256SUMS.txt)
+**[Download the latest published Windows installer](https://github.com/MoonlightClarity/BLACKICE/releases/latest)** · [2.39.18 source release notes](RELEASE-NOTES-2.39.18.md) · [Published checksums](https://github.com/MoonlightClarity/BLACKICE/releases/latest/download/SHA256SUMS.txt)
 
 [Getting started](#getting-started) · [Workspace](#find-your-way-around) · [Planning](#planning-and-practical-judgment) · [Recurring work](#workflows-agents-and-recurring-work) · [Project state](#current-project-state) · [Build from source](#build-from-source)
 
 ## Two ways to work
 
+**Source and installer versions:** This overview describes the 2.39.18 source. The latest release page identifies the published Windows installer and its matching verification; source preparation does not establish installer publication.
+
 | Where you work | What runs there |
 | --- | --- |
-| **Inside BLACKICE** | Codex is the supported native agent runtime. Work in saved conversations, attach files, use tools, edit plans and inspect results in the desktop workspace. |
-| **In ChatGPT** | ChatGPT owns the conversation and reasoning. BLACKICE executes requested file, command, browser and planning actions on your computer and returns their saved results. Ordinary direct tool calls do not start another model. |
+| **Inside BLACKICE** | Codex and Mistral Vibe Code use native account connections. Optional API connections are also available. Work in saved conversations, attach files, use tools, edit plans and inspect results in the desktop workspace. |
+| **In ChatGPT** | The connected chat owns the conversation and reasoning. BLACKICE executes requested file, command, browser and planning actions on your computer and returns their saved results. Ordinary direct tool calls do not start another model. |
 
 You can use either route or both. The direct connection also has an explicit **start a BLACKICE chat** action for delegating a task to a new saved conversation and its selected agent. That action uses model access; it is separate from ordinary direct execution.
 
-Codex uses the account you configure. Advanced users can explicitly add a compatible API endpoint under **Settings → Models → Connect another endpoint**. Those integrations are optional and unsupported; their availability and compatibility depend on the endpoint. BLACKICE does not silently switch to a paid API fallback. Saved conversations retain their provider and model identity when the default for new conversations changes.
+Native account connections and optional API connections are managed separately under **Settings → Models**. **Mistral API**, **OpenRouter** and other compatible endpoints are selectable API connections; add credentials only when the provider requires them. A saved connection with the required credentials can be enabled from its card or the model picker. Model access still depends on the provider and account. Adding, enabling or refreshing a connection keeps the current default and each saved conversation's provider and model identity.
 
 The former browser-driven ChatGPT model provider, Antigravity and Qwen Code native runtimes are retired. Historical conversations remain identifiable. The supported ChatGPT connection is ChatGPT calling BLACKICE's tools.
 
@@ -27,19 +29,31 @@ The former browser-driven ChatGPT model provider, Antigravity and Qwen Code nati
 
 ### Install
 
-Download and run **Blackice-2.39.16-Setup.exe**, then open BLACKICE. The per-user installer creates Desktop and Start menu shortcuts and an Installed apps entry.
+Download and run the published `Blackice-<version>-Setup.exe` from the latest release page, then open BLACKICE. The per-user installer creates Desktop and Start menu shortcuts and an Installed apps entry.
 
-The current release is unsigned. Signing is deferred until adoption justifies it. See [Windows releases](SIGNING-AND-RELEASE.md) for packaging and Windows compatibility details, and the [release page](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.39.16) for verification of the published installer.
+Windows builds are unsigned under the project's current release policy. Signing is deferred until adoption justifies it. See [Windows releases](SIGNING-AND-RELEASE.md) for packaging and Windows compatibility details, and the [release page](https://github.com/MoonlightClarity/BLACKICE/releases/latest) for verification of the published installer.
 
 Keep BLACKICE running while using its tools or schedules. Workbench's Hyper-V guest is an optional setup for native application work; it is not required to start a conversation or use ordinary file and browser tools.
 
 ### Use an agent inside BLACKICE
 
-1. Configure and sign into Codex with the account you intend to use, then select its model under **Settings → Models**.
+1. Connect your chosen native account under **Settings → Models**, or configure an optional API connection. Select an available model in **Chat**; use **Settings → General** only when you intend to change the default for new conversations.
 2. Choose the working folder for the task.
 3. Open **Chat**, start a conversation, attach relevant files and describe the result you want.
 4. Choose **Forced**, **Advisory** or **Off** for Planning. Reasoning effort is a separate setting.
 5. Follow the saved plan and execution history, inspect the outputs and continue the conversation as needed.
+
+### Choose the Mistral connection for your task
+
+| Connection | Where it is used | Setup |
+| --- | --- | --- |
+| **Mistral Vibe Code** | A native model inside BLACKICE, using the official Vibe CLI and your Mistral account. | Install the official CLI, then use **Settings → Models → Mistral Vibe Code → Sign in**. Sign-in opens in BLACKICE's browser. Choose **Refresh connection and models**, then select a reported model in Chat. |
+| **Mistral API** | An optional model API endpoint called by BLACKICE. | Use the **Mistral API** card under **Optional API connections** and supply the API credentials required by that account. |
+| **Mistral Chat → BLACKICE MCP** | A separate incoming MCP connector intended to let Mistral Chat call BLACKICE tools. | Protocol support is present; the tested Mistral Chat setup remains blocked by external reachability. See the [setup and verification limits](CHATGPT-CONNECTOR.md#mistral-and-other-mcp-chats). This does not add Mistral Chat as a model in BLACKICE's picker. |
+
+The native Vibe model catalog and reasoning choices come from the authenticated CLI session, with Vibe's official account model catalog enabled. Available models and reasoning settings depend on the signed-in account; aliases reported by that catalog preserve existing saved model identities when duplicate entries are merged. BLACKICE does not substitute a guessed model list or the separate Mistral API catalog. Before a catalog is ready, **Set up Mistral Vibe Code** in the model picker opens the account card without changing the selected model.
+
+Saved Vibe conversations retain their native session and model. Vibe manages context automatically; manual compaction and custom context presets or thresholds are currently unsupported by this adapter. Use **Model default**. An existing custom draft remains visible until you explicitly choose **Use native automatic context**; BLACKICE preserves the saved history. Selecting a different provider or model requires the normal conversation handoff.
 
 For additional integrations, **Settings → Tools** can connect local and remote MCP tool servers. Importing a configuration saves it for inspection; connecting starts the configured server connection.
 
@@ -123,7 +137,7 @@ The installer includes the native FreeRDP viewer, which opens a separate **BLACK
 
 **The native viewer is a preview.** The 2.39.16 release verifies its installed files and self-test; that check did not connect to a VM. Current acceptance is `local-preview` with `fullAcceptance: false`. Full visible-display and live guest-session acceptance remains incomplete. Installing the app does not by itself configure Hyper-V, install a guest or pair its agent.
 
-Use the [Workbench setup guide](WORKBENCH-SETUP.md) for prerequisites and setup, the [native display document](WORKBENCH-NATIVE-DISPLAY.md) for architecture and recorded preview limits, and the [published native integrity receipt](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.16/blackice-native-workbench-integrity.json) for what the current installer actually verified. Earlier design-document statements that the native runtime is not bundled predate this release.
+Use the [Workbench setup guide](WORKBENCH-SETUP.md) for prerequisites and setup, the [native display document](WORKBENCH-NATIVE-DISPLAY.md) for architecture and recorded preview limits, and the [published native integrity receipt](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.16/blackice-native-workbench-integrity.json) for what that 2.39.16 installer verified. Earlier design-document statements that the native runtime is not bundled predate that release.
 
 ## Workflows, agents and recurring work
 
@@ -160,13 +174,15 @@ Direct actions have saved job IDs and results. After a disconnect, inspect the e
 
 ## Current project state
 
-**2.39.16 was published on November 4, 2026**, adding quantified user-cost decisions, externally editable standalone plans, compatible planning schemas and bounded recovery from transient planning-lock failures. The [release workflow](https://github.com/MoonlightClarity/BLACKICE/actions/runs/41868542123) verified the exact installer and completed publication. [Release notes](RELEASE-NOTES-2.39.16.md), the [release page](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.39.16) and the evidence below identify the checked source and installer.
+**The 2.39.18 source adds native Mistral Vibe Code, account model discovery, optional API activation, and browser and MCP authorization repairs.** The [2.39.18 release notes](RELEASE-NOTES-2.39.18.md) describe the implemented changes, observed model checks and remaining incoming Mistral Chat limitation. The [latest release page](https://github.com/MoonlightClarity/BLACKICE/releases/latest) identifies the published installer and its own verification.
 
-BLACKICE is under active development. This overview describes the public **2.39.16** checkpoint and its published evidence; later development checkouts can contain additional work.
+**Historical checkpoint: 2.39.16 was published on November 4, 2026**, adding quantified user-cost decisions, externally editable standalone plans, compatible planning schemas and bounded recovery from transient planning-lock failures. The [release workflow](https://github.com/MoonlightClarity/BLACKICE/actions/runs/41868542123) verified the exact installer and completed publication. [Release notes](RELEASE-NOTES-2.39.16.md), the [release page](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.39.16) and the evidence below identify the checked source and installer.
+
+The verification table below records the historical **2.39.16** checkpoint. Current source and installer acceptance are bound separately to the tested source and exact Setup artifact through the [Windows release workflow](SIGNING-AND-RELEASE.md).
 
 Recent releases improved scheduled readiness checks, recovery from stale browser references, disclosure of partial results and the handling of explicitly retried operations. See [2.39.13](RELEASE-NOTES-2.39.13.md), [2.39.14](RELEASE-NOTES-2.39.14.md) and [2.39.15](RELEASE-NOTES-2.39.15.md).
 
-| Verification for 2.39.16 | Recorded scope |
+| Historical verification for 2.39.16 | Recorded scope |
 | --- | --- |
 | [Windows source suite](https://github.com/MoonlightClarity/BLACKICE/blob/v2.39.16/verification/windows-2.39.16.json) | 7,014 passed, zero failed, zero required skips and nine optional skips across 611 test files. This is the recorded synthetic source suite for that release. |
 | [Published installer](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.16/blackice-windows-install-validation.json) and [release receipts](https://github.com/MoonlightClarity/BLACKICE/releases/download/v2.39.16/blackice-release-receipts.json) | Exact Setup installation, installed integrity, Windows registration/shortcuts, clean uninstall with profile preservation, and profile backup/restore checks passed. |
@@ -213,4 +229,4 @@ The main implementation lives in `desktop/` (Electron and native integration), `
 | Frontend and development | [Frontend](FRONTEND-V2.md), [UI controls](docs/FRONTEND-UI-CONTROLS.md), [development tools](docs/frontend-development.md) |
 | Packaging and release evidence | [Windows releases](SIGNING-AND-RELEASE.md), [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) |
 
-BLACKICE's original source is licensed under [Apache License 2.0](LICENSE). Bundled components retain their own licenses; see [Third-party notices](THIRD-PARTY-NOTICES.md). Corresponding native sources are included as a separate archive on the [release page](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.39.16).
+BLACKICE's original source is licensed under [Apache License 2.0](LICENSE). Bundled components retain their own licenses; see [Third-party notices](THIRD-PARTY-NOTICES.md). Corresponding native sources are included as a separate archive on the [matching release page](https://github.com/MoonlightClarity/BLACKICE/releases/latest).

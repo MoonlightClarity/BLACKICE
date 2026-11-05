@@ -43,7 +43,7 @@ test('the full native catalog retains the exact 28-tool public contract and fing
     'blackice_get_swarm_plan', 'blackice_get_plan_groups', 'blackice_edit_plan', 'blackice_edit_plan_groups',
   ]);
   assert.deepEqual(catalog.status(), {
-    sha256: 'b4d87908bed59f0d05c1a0d3b59f054966ac218a408752b67d6e93779f7f0135',
+    sha256: 'fac46a7bb350722efdca7274a23a09757e13f426c85195d59bc89a4421374b14',
     toolCount: 28,
     serverVersion: '2.33.5',
   });
@@ -55,7 +55,9 @@ test('the full native catalog retains the exact 28-tool public contract and fing
   assert.equal(read.inputSchema.properties.limit.maximum,256);
   assert.equal(read.inputSchema.properties.expectedUrl,undefined);
   assert.equal(read.inputSchema.properties.expectedDocumentId,undefined);
-  const action=catalog.tools().find(tool=>tool.name==='blackice_browser_action').inputSchema;
+  const browserAction=catalog.tools().find(tool=>tool.name==='blackice_browser_action');
+  assert.match(browserAction.description,/Preserve personal\/pre-existing tabs, the human calling chat tab/);
+  const action=browserAction.inputSchema;
   for(const name of ['take_ownership','transfer_ownership','debug_reset','stop'])assert.ok(action.properties.action.enum.includes(name));
   assert.deepEqual(action.properties.destination.enum,['user','task']);
   assert.equal(action.properties.destinationOwnerKey.maxLength,650);

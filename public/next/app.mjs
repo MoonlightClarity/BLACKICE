@@ -46,16 +46,17 @@ function updateTabs(name){
   }
 }
 function openWorkspaceTarget(space){
-  const {conversationId,requestId,nodeId}=space?.navigation||{};
+  const {conversationId,requestId,nodeId,modelProviderId}=space?.navigation||{};
+  if(modelProviderId){space?.instance?.openModelProvider?.(modelProviderId);return;}
   if(requestId)space?.instance?.openRequestId?.(requestId,{nodeId});
   else if(conversationId)space?.instance?.openConversationId?.(conversationId);
 }
-async function show(name,{conversationId,requestId,nodeId}={}){
+async function show(name,{conversationId,requestId,nodeId,modelProviderId}={}){
   // Retired Activity links lead to the shared Tasks workspace.
   if(name==='activity'){name='tasks';try{history.replaceState(null,'','#tasks');}catch{}}
   if(!modules[name])return;
   const previous=current;const target=++revision;
-  const navigation={conversationId,requestId,nodeId};
+  const navigation={conversationId,requestId,nodeId,modelProviderId};
   if(previous===name){const space=spaces.get(name);if(space){space.navigation=navigation;openWorkspaceTarget(space);}return;}
   if(previous && spaces.has(previous)){
     const item=spaces.get(previous);

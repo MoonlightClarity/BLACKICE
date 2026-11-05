@@ -31,8 +31,7 @@ export function chatOptionChoices(status={},raw={}){
     // Catalogs can be cached in a mounted chat even after the runtime has
     // retired its adapters. Do not offer obsolete native CLIs as choices.
     if(typeof id!=='string'||!id||isRetired(id)||models.some(x=>x.id===id))continue;
-    const otherEndpoint=id.includes('::')&&item.providerId!=='codex';
-    models.push({id,label:(otherEndpoint?'Unsupported endpoint · ':'')+(item.displayName||id),disabled:item.available===false});
+    models.push({id,label:item.displayName||id,disabled:item.available===false});
   }
   if(selected.model!=='default'&&!models.some(item=>item.id===selected.model)){
     const old=isRetired(selected.model);
@@ -57,7 +56,7 @@ export function validateChatOptions(status={},raw={}){
   if(selection.model===UNKNOWN_CHAT_MODEL)throw Error('This chat has no saved model evidence. Choose a model to continue.');
   if(selection.model!=='default'){
     const matching=(status.models||[]).find(m=>(m.id||m.model)===selection.model);
-    if(!matching||matching.available===false)throw Error('Choose an available model.');
+    if(!matching||matching.available===false)throw Error(matching?.availabilityReason||'Choose an available model.');
   }
   const reason=reasoningSupport(status,selection.model,selection.effort);
   if(!reason.available)throw Error(reason.error||'This reasoning level is not available for the selected model.');

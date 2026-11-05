@@ -28,7 +28,10 @@ export function validateReleaseRequest(value, context = {}) {
 const optionalWindowsSourceTests = new Set([
   'Relay-owned sign-in and local storage survive a full process restart without foregrounding',
   'restored hidden browser tabs defer requests until used and never load closed or replaced pages',
-  'native cross-origin popups redirect, message their opener and follow or close without breaking Observe pins or task routing',
+  'native popups preserve OAuth routing and remain independent when their opener closes',
+  // These disposable Electron input fixtures explicitly opt in through RELAY_LIVE_BROWSER_QA.
+  'live contained input updates application state and delivers editing keys without OS focus',
+  'offscreen contained input updates application state and delivers editing keys without OS focus',
   'actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases',
   'live background accessibility actions change only a dedicated non-activating fixture and leave foreground and cursor untouched',
   'hidden isolated Chromium composer validates real layout and one-click send wiring',

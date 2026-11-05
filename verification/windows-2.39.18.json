@@ -1,0 +1,688 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "scope": "source-publication",
+  "version": "2.39.18",
+  "platform": "win32",
+  "node": "v24.22.1",
+  "startedAt": "2026-11-05T00:39:33.782Z",
+  "checkedAt": "2026-11-05T01:04:57.721Z",
+  "state": "passed",
+  "passed": true,
+  "fullSuite": true,
+  "countsComplete": true,
+  "appFingerprint": "5b424d19bc53758aab3f201381ef7de526804b2dc0cce953c0e8b3b831e54d80",
+  "sourceIndexSha256": "3bb4431adeee7e3142b7990dbfb9c0295671ad4dfe8f67940e589a4835ed8fc8",
+  "sourceFilesVerified": 1443,
+  "testFiles": 628,
+  "testInventorySha256": "10fb43fa0e4b7c1ab14d936231eb4a7da7aa543d0147b9e74324214932ed8660",
+  "runnerSha256": "6892552a19a0368c374de3c1d674b2593c25c010218559d71bc35511b168a3d9",
+  "fingerprintUnchanged": true,
+  "sourceUnchanged": true,
+  "tests": {
+    "total": 7185,
+    "passed": 7174,
+    "failed": 0,
+    "requiredSkipped": 0,
+    "optionalSkipped": 11,
+    "cancelled": 0,
+    "todo": 0,
+    "exitCode": 0
+  },
+  "testLogSha256": "34c52079b0ac9d42c96d768941fd4d118713065909ae87052c4f1b63e60cc6a6",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "execution": {
+    "kind": "sequential-bounded-groups-with-verified-reuse",
+    "concurrency": 4,
+    "groupCount": 16,
+    "groupSize": 40,
+    "optionalNativeFixtures": false,
+    "reuse": {
+      "format": 1,
+      "sourceRun": "2.39.18-r3",
+      "sourceRunnerSha256": "bfc595eaacd45fdd92a11d40f0b8c93ecc3d86c6975366a7f618220e2f614523",
+      "sourceStateSha256": "baa75d78cc453cd0bbad2117af75af78d473931d6b6fb62e39d529396f0bfdcd",
+      "sourceInventoryFileSha256": "61310cb22100b319ee2dd4a56b01cbc844e4570d504c4943ab9be206b44b5bca",
+      "sourceIndexSha256": "3bb4431adeee7e3142b7990dbfb9c0295671ad4dfe8f67940e589a4835ed8fc8",
+      "verifiedAt": "2026-11-05T01:04:17.451Z",
+      "importedGroupCount": 15,
+      "importedTestFiles": 600,
+      "importedTests": 6966,
+      "importedPassed": 6955,
+      "importedOptionalSkipped": 11,
+      "excludedGroups": [
+        {
+          "index": 15,
+          "reason": "required-native-prerequisites-missing",
+          "tests": 219,
+          "passed": 217,
+          "failed": 2,
+          "requiredSkipped": 0
+        }
+      ],
+      "upstreamReuse": {
+        "format": 1,
+        "sourceRun": "2.39.18-r2",
+        "sourceRunnerSha256": "9771b30a977a29fc242763885666d609bb335bfcf965bd4f2e080ddb87be86c2",
+        "sourceStateSha256": "c7e7446f2f6dcd86427379d8486a32823561b33efc75685cb03acefa36437f0a",
+        "sourceInventoryFileSha256": "61310cb22100b319ee2dd4a56b01cbc844e4570d504c4943ab9be206b44b5bca",
+        "sourceIndexSha256": "3bb4431adeee7e3142b7990dbfb9c0295671ad4dfe8f67940e589a4835ed8fc8",
+        "verifiedAt": "2026-11-05T00:59:36.129Z",
+        "importedGroupCount": 14,
+        "importedTestFiles": 560,
+        "importedTests": 6695,
+        "importedPassed": 6685,
+        "importedOptionalSkipped": 10,
+        "excludedGroups": [
+          {
+            "index": 14,
+            "reason": "required-native-prerequisites-missing",
+            "tests": 271,
+            "passed": 264,
+            "failed": 0,
+            "requiredSkipped": 6
+          }
+        ],
+        "groups": [
+          {
+            "index": 0,
+            "startedAt": "2026-11-05T00:39:39.389Z",
+            "finishedAt": "2026-11-05T00:40:06.081Z",
+            "testFiles": 40,
+            "counts": {
+              "tests": 602,
+              "suites": 0,
+              "pass": 601,
+              "fail": 0,
+              "cancelled": 0,
+              "skipped": 1,
+              "todo": 0
+            },
+            "requiredSkipped": 0,
+            "optionalSkipped": 1,
+            "recordSha256": "8f3dfd1a304499a985a33a478a1d5950c1aba5d7839d910a9e92d7cb291d8ae1",
+            "tapSha256": "59ef92726ffebbec5ea7fc7899ef2e277b7c21b4d7083e8e00b4e7977698b7c0",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "index": 1,
+            "startedAt": "2026-11-05T00:40:11.843Z",
+            "finishedAt": "2026-11-05T00:40:31.043Z",
+            "testFiles": 40,
+            "counts": {
+              "tests": 310,
+              "suites": 0,
+              "pass": 306,
+              "fail": 0,
+              "cancelled": 0,
+              "skipped": 4,
+              "todo": 0
+            },
+            "requiredSkipped": 0,
+            "optionalSkipped": 4,
+            "recordSha256": "bbb0372f199df94a3c2f31385a74cfcab9095c767bdf5f1b886a0e9d84d35259",
+            "tapSha256": "6cda0e0379b264b5329caafe7e79f2cdeed613bfbe424a0883580445d3e122d0",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "index": 2,
+            "startedAt": "2026-11-05T00:40:42.823Z",
+            "finishedAt": "2026-11-05T00:40:55.491Z",
+            "testFiles": 40,
+            "counts": {
+              "tests": 560,
+              "suites": 0,
+              "pass": 559,
+              "fail": 0,
+              "cancelled": 0,
+              "skipped": 1,
+              "todo": 0
+            },
+            "requiredSkipped": 0,
+            "optionalSkipped": 1,
+            "recordSha256": "8b354bb4d881a08aff3838c6311c24c7533bf7d81a3c720525606f5bac06d59f",
+            "tapSha256": "01f795f13470fcc06ee1c1fbcd35416d4bf9903a4f7b667fc098ee6780f59938",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "index": 3,
+            "startedAt": "2026-11-05T00:41:14.977Z",
+            "finishedAt": "2026-11-05T00:41:25.916Z",
+            "testFiles": 40,
+            "counts": {
+              "tests": 428,
+              "suites": 0,
+              "pass": 428,
+              "fail": 0,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "requiredSkipped": 0,
+            "optionalSkipped": 0,
+            "recordSha256": "d719714aade50b175d1b70cdb34ec3baeaea2d8b1be6aeeb2bc1f7f9fb11e69c",
+            "tapSha256": "5cea2dec32195a9c5d7139255f42d30ab9dc1d6656f269284fc72ca930048ab9",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "index": 4,
+            "startedAt": "2026-11-05T00:41:44.103Z",
+            "finishedAt": "2026-11-05T00:42:19.379Z",
+            "testFiles": 40,
+            "counts": {
+              "tests": 494,
+              "suites": 0,
+              "pass": 491,
+              "fail": 0,
+              "cancelled": 0,
+              "skipped": 3,
+              "todo": 0
+            },
+            "requiredSkipped": 0,
+            "optionalSkipped": 3,
+            "recordSha256": "4d5fb34ae639cde1b385a29d66c6ee8f2160a90850905737042d5c166557e354",
+            "tapSha256": "8b0daf2eaa0367f60dd09121e4321235ebff975e0667f7aeee25cb0885d484e5",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "index": 5,
+            "startedAt": "2026-11-05T00:42:38.990Z",
+            "finishedAt": "2026-11-05T00:42:57.210Z",
+            "testFiles": 40,
+            "counts": {
+              "tests": 502,
+              "suites": 0,
+              "pass": 501,
+              "fail": 0,
+              "cancelled": 0,
+              "skipped": 1,
+              "todo": 0
+            },
+            "requiredSkipped": 0,
+            "optionalSkipped": 1,
+            "recordSha256": "ccb02d10f8160a08ceb9a288c5553bdafa3ecf4b1d78c444fb3cd12eab6215dd",
+            "tapSha256": "572903f5eb98c4fdf123a843dffe79408a93f7c9b262e2c28f5e7757bee74967",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "index": 6,
+            "startedAt": "2026-11-05T00:43:12.177Z",
+            "finishedAt": "2026-11-05T00:43:23.985Z",
+            "testFiles": 40,
+            "counts": {
+              "tests": 605,
+              "suites": 0,
+              "pass": 605,
+              "fail": 0,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "requiredSkipped": 0,
+            "optionalSkipped": 0,
+            "recordSha256": "fd67247acd770eb79a9d68df28dc24bbc6ef032990666dc2cb23c88ef93d6904",
+            "tapSha256": "2bd108b14a0bd54fbd2c5b86070d48968c380b836de495e41986949f90160a78",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "index": 7,
+            "startedAt": "2026-11-05T00:43:43.794Z",
+            "finishedAt": "2026-11-05T00:43:50.688Z",
+            "testFiles": 40,
+            "counts": {
+              "tests": 405,
+              "suites": 0,
+              "pass": 405,
+              "fail": 0,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "requiredSkipped": 0,
+            "optionalSkipped": 0,
+            "recordSha256": "8efb800977b9933857f537ef2ec0c5fdcce4894aca134bfee8503ec358b2544d",
+            "tapSha256": "1023727c432edc03f367d050cc1c915b369a26b69091530179fcdf2dc1cbd207",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "index": 8,
+            "startedAt": "2026-11-05T00:44:17.314Z",
+            "finishedAt": "2026-11-05T00:44:52.927Z",
+            "testFiles": 40,
+            "counts": {
+              "tests": 449,
+              "suites": 0,
+              "pass": 449,
+              "fail": 0,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "requiredSkipped": 0,
+            "optionalSkipped": 0,
+            "recordSha256": "c5b793893f8b299213754dfd13cd1a6787802038926f8213096fd7cee65298bc",
+            "tapSha256": "7f22c2cd5c6c9aacc588d0f0cff6c04213e86d35175210575c93ae11023df059",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "index": 9,
+            "startedAt": "2026-11-05T00:44:59.347Z",
+            "finishedAt": "2026-11-05T00:45:17.261Z",
+            "testFiles": 40,
+            "counts": {
+              "tests": 384,
+              "suites": 2,
+              "pass": 384,
+              "fail": 0,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "requiredSkipped": 0,
+            "optionalSkipped": 0,
+            "recordSha256": "e6848305c7d1fae1b41ce318541577a4d3f48e09f81100929b3d53168a9509de",
+            "tapSha256": "b8d0b9822699b92c9c26d15507c27d8975cd2126a0f28bd723c3ff6369cb501d",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "index": 10,
+            "startedAt": "2026-11-05T00:45:28.362Z",
+            "finishedAt": "2026-11-05T00:46:14.010Z",
+            "testFiles": 40,
+            "counts": {
+              "tests": 410,
+              "suites": 0,
+              "pass": 410,
+              "fail": 0,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "requiredSkipped": 0,
+            "optionalSkipped": 0,
+            "recordSha256": "2797b826ace3cd4fd1d53d9909d3c5e4ce0bc698bf0b92a6ef0848a02f299387",
+            "tapSha256": "e6c316611bd1b13f5a4b0e558efdc54632265c5161c665ad9d91cac153ec7ec4",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "index": 11,
+            "startedAt": "2026-11-05T00:46:25.672Z",
+            "finishedAt": "2026-11-05T00:46:44.669Z",
+            "testFiles": 40,
+            "counts": {
+              "tests": 699,
+              "suites": 0,
+              "pass": 699,
+              "fail": 0,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "requiredSkipped": 0,
+            "optionalSkipped": 0,
+            "recordSha256": "82036c2887f8ea60158a588e5ad4196dd734175dc94975ec9d9f999a63b23419",
+            "tapSha256": "365de03292eb08e898e087dae1d1dc65dd305616f2b32e5ae5e2fc40145545d1",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "index": 12,
+            "startedAt": "2026-11-05T00:47:01.259Z",
+            "finishedAt": "2026-11-05T00:47:51.944Z",
+            "testFiles": 40,
+            "counts": {
+              "tests": 470,
+              "suites": 0,
+              "pass": 470,
+              "fail": 0,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "requiredSkipped": 0,
+            "optionalSkipped": 0,
+            "recordSha256": "5236be36c928b0a15695d07d53422774e94d0baa63d2f8a677ff25a2d55eee29",
+            "tapSha256": "01801ea50faafb45591e9a956f64b9c336ea2aa66dce2bdb714cefae092bdcbb",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "index": 13,
+            "startedAt": "2026-11-05T00:48:02.122Z",
+            "finishedAt": "2026-11-05T00:48:21.158Z",
+            "testFiles": 40,
+            "counts": {
+              "tests": 377,
+              "suites": 0,
+              "pass": 377,
+              "fail": 0,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "requiredSkipped": 0,
+            "optionalSkipped": 0,
+            "recordSha256": "93cfea2bcebf35dfee74abad511aa076471af28c4bbd33745911f00e53ef1659",
+            "tapSha256": "8e8f1582166e84d4b28fcc0103c1541f1ffec39b69244acda8eafab3a83cac9f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "groups": [
+        {
+          "index": 0,
+          "startedAt": "2026-11-05T00:39:39.389Z",
+          "finishedAt": "2026-11-05T00:40:06.081Z",
+          "testFiles": 40,
+          "counts": {
+            "tests": 602,
+            "suites": 0,
+            "pass": 601,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 1,
+            "todo": 0
+          },
+          "requiredSkipped": 0,
+          "optionalSkipped": 1,
+          "recordSha256": "8f3dfd1a304499a985a33a478a1d5950c1aba5d7839d910a9e92d7cb291d8ae1",
+          "tapSha256": "59ef92726ffebbec5ea7fc7899ef2e277b7c21b4d7083e8e00b4e7977698b7c0",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "index": 1,
+          "startedAt": "2026-11-05T00:40:11.843Z",
+          "finishedAt": "2026-11-05T00:40:31.043Z",
+          "testFiles": 40,
+          "counts": {
+            "tests": 310,
+            "suites": 0,
+            "pass": 306,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 4,
+            "todo": 0
+          },
+          "requiredSkipped": 0,
+          "optionalSkipped": 4,
+          "recordSha256": "bbb0372f199df94a3c2f31385a74cfcab9095c767bdf5f1b886a0e9d84d35259",
+          "tapSha256": "6cda0e0379b264b5329caafe7e79f2cdeed613bfbe424a0883580445d3e122d0",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "index": 2,
+          "startedAt": "2026-11-05T00:40:42.823Z",
+          "finishedAt": "2026-11-05T00:40:55.491Z",
+          "testFiles": 40,
+          "counts": {
+            "tests": 560,
+            "suites": 0,
+            "pass": 559,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 1,
+            "todo": 0
+          },
+          "requiredSkipped": 0,
+          "optionalSkipped": 1,
+          "recordSha256": "8b354bb4d881a08aff3838c6311c24c7533bf7d81a3c720525606f5bac06d59f",
+          "tapSha256": "01f795f13470fcc06ee1c1fbcd35416d4bf9903a4f7b667fc098ee6780f59938",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "index": 3,
+          "startedAt": "2026-11-05T00:41:14.977Z",
+          "finishedAt": "2026-11-05T00:41:25.916Z",
+          "testFiles": 40,
+          "counts": {
+            "tests": 428,
+            "suites": 0,
+            "pass": 428,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "requiredSkipped": 0,
+          "optionalSkipped": 0,
+          "recordSha256": "d719714aade50b175d1b70cdb34ec3baeaea2d8b1be6aeeb2bc1f7f9fb11e69c",
+          "tapSha256": "5cea2dec32195a9c5d7139255f42d30ab9dc1d6656f269284fc72ca930048ab9",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "index": 4,
+          "startedAt": "2026-11-05T00:41:44.103Z",
+          "finishedAt": "2026-11-05T00:42:19.379Z",
+          "testFiles": 40,
+          "counts": {
+            "tests": 494,
+            "suites": 0,
+            "pass": 491,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 3,
+            "todo": 0
+          },
+          "requiredSkipped": 0,
+          "optionalSkipped": 3,
+          "recordSha256": "4d5fb34ae639cde1b385a29d66c6ee8f2160a90850905737042d5c166557e354",
+          "tapSha256": "8b0daf2eaa0367f60dd09121e4321235ebff975e0667f7aeee25cb0885d484e5",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "index": 5,
+          "startedAt": "2026-11-05T00:42:38.990Z",
+          "finishedAt": "2026-11-05T00:42:57.210Z",
+          "testFiles": 40,
+          "counts": {
+            "tests": 502,
+            "suites": 0,
+            "pass": 501,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 1,
+            "todo": 0
+          },
+          "requiredSkipped": 0,
+          "optionalSkipped": 1,
+          "recordSha256": "ccb02d10f8160a08ceb9a288c5553bdafa3ecf4b1d78c444fb3cd12eab6215dd",
+          "tapSha256": "572903f5eb98c4fdf123a843dffe79408a93f7c9b262e2c28f5e7757bee74967",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "index": 6,
+          "startedAt": "2026-11-05T00:43:12.177Z",
+          "finishedAt": "2026-11-05T00:43:23.985Z",
+          "testFiles": 40,
+          "counts": {
+            "tests": 605,
+            "suites": 0,
+            "pass": 605,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "requiredSkipped": 0,
+          "optionalSkipped": 0,
+          "recordSha256": "fd67247acd770eb79a9d68df28dc24bbc6ef032990666dc2cb23c88ef93d6904",
+          "tapSha256": "2bd108b14a0bd54fbd2c5b86070d48968c380b836de495e41986949f90160a78",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "index": 7,
+          "startedAt": "2026-11-05T00:43:43.794Z",
+          "finishedAt": "2026-11-05T00:43:50.688Z",
+          "testFiles": 40,
+          "counts": {
+            "tests": 405,
+            "suites": 0,
+            "pass": 405,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "requiredSkipped": 0,
+          "optionalSkipped": 0,
+          "recordSha256": "8efb800977b9933857f537ef2ec0c5fdcce4894aca134bfee8503ec358b2544d",
+          "tapSha256": "1023727c432edc03f367d050cc1c915b369a26b69091530179fcdf2dc1cbd207",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "index": 8,
+          "startedAt": "2026-11-05T00:44:17.314Z",
+          "finishedAt": "2026-11-05T00:44:52.927Z",
+          "testFiles": 40,
+          "counts": {
+            "tests": 449,
+            "suites": 0,
+            "pass": 449,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "requiredSkipped": 0,
+          "optionalSkipped": 0,
+          "recordSha256": "c5b793893f8b299213754dfd13cd1a6787802038926f8213096fd7cee65298bc",
+          "tapSha256": "7f22c2cd5c6c9aacc588d0f0cff6c04213e86d35175210575c93ae11023df059",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "index": 9,
+          "startedAt": "2026-11-05T00:44:59.347Z",
+          "finishedAt": "2026-11-05T00:45:17.261Z",
+          "testFiles": 40,
+          "counts": {
+            "tests": 384,
+            "suites": 2,
+            "pass": 384,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "requiredSkipped": 0,
+          "optionalSkipped": 0,
+          "recordSha256": "e6848305c7d1fae1b41ce318541577a4d3f48e09f81100929b3d53168a9509de",
+          "tapSha256": "b8d0b9822699b92c9c26d15507c27d8975cd2126a0f28bd723c3ff6369cb501d",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "index": 10,
+          "startedAt": "2026-11-05T00:45:28.362Z",
+          "finishedAt": "2026-11-05T00:46:14.010Z",
+          "testFiles": 40,
+          "counts": {
+            "tests": 410,
+            "suites": 0,
+            "pass": 410,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "requiredSkipped": 0,
+          "optionalSkipped": 0,
+          "recordSha256": "2797b826ace3cd4fd1d53d9909d3c5e4ce0bc698bf0b92a6ef0848a02f299387",
+          "tapSha256": "e6c316611bd1b13f5a4b0e558efdc54632265c5161c665ad9d91cac153ec7ec4",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "index": 11,
+          "startedAt": "2026-11-05T00:46:25.672Z",
+          "finishedAt": "2026-11-05T00:46:44.669Z",
+          "testFiles": 40,
+          "counts": {
+            "tests": 699,
+            "suites": 0,
+            "pass": 699,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "requiredSkipped": 0,
+          "optionalSkipped": 0,
+          "recordSha256": "82036c2887f8ea60158a588e5ad4196dd734175dc94975ec9d9f999a63b23419",
+          "tapSha256": "365de03292eb08e898e087dae1d1dc65dd305616f2b32e5ae5e2fc40145545d1",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "index": 12,
+          "startedAt": "2026-11-05T00:47:01.259Z",
+          "finishedAt": "2026-11-05T00:47:51.944Z",
+          "testFiles": 40,
+          "counts": {
+            "tests": 470,
+            "suites": 0,
+            "pass": 470,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "requiredSkipped": 0,
+          "optionalSkipped": 0,
+          "recordSha256": "5236be36c928b0a15695d07d53422774e94d0baa63d2f8a677ff25a2d55eee29",
+          "tapSha256": "01801ea50faafb45591e9a956f64b9c336ea2aa66dce2bdb714cefae092bdcbb",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "index": 13,
+          "startedAt": "2026-11-05T00:48:02.122Z",
+          "finishedAt": "2026-11-05T00:48:21.158Z",
+          "testFiles": 40,
+          "counts": {
+            "tests": 377,
+            "suites": 0,
+            "pass": 377,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "requiredSkipped": 0,
+          "optionalSkipped": 0,
+          "recordSha256": "93cfea2bcebf35dfee74abad511aa076471af28c4bbd33745911f00e53ef1659",
+          "tapSha256": "8e8f1582166e84d4b28fcc0103c1541f1ffec39b69244acda8eafab3a83cac9f",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "index": 14,
+          "startedAt": "2026-11-05T00:59:41.977Z",
+          "finishedAt": "2026-11-05T01:00:04.468Z",
+          "testFiles": 40,
+          "counts": {
+            "tests": 271,
+            "suites": 0,
+            "pass": 270,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 1,
+            "todo": 0
+          },
+          "requiredSkipped": 0,
+          "optionalSkipped": 1,
+          "recordSha256": "6812b91ada5f650db930ca51e43657e927ddda3fdf8da8397c0e28dccba66c30",
+          "tapSha256": "88fc46920a291d64db9fb9848b63aacf527f290a9a4ceb5607108066915e89d7",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    "uniqueCoverageVerified": true
+  },
+  "optionalSkips": [
+    "Relay-owned sign-in and local storage survive a full process restart without foregrounding",
+    "live contained input updates application state and delivers editing keys without OS focus",
+    "offscreen contained input updates application state and delivers editing keys without OS focus",
+    "restored hidden browser tabs defer requests until used and never load closed or replaced pages",
+    "native popups preserve OAuth routing and remain independent when their opener closes",
+    "actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases",
+    "live background accessibility actions change only a dedicated non-activating fixture and leave foreground and cursor untouched",
+    "hidden isolated Chromium composer validates real layout and one-click send wiring",
+    "installed Himalaya sends exact MIME to disposable loopback SMTP and strips Bcc headers",
+    "real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart",
+    "same-directory native replacement is also exercised on an explicitly supplied existing SMB share"
+  ],
+  "validationScope": "Complete synthetic Windows source suite: 15 hash-verified reused groups and 1 freshly executed groups against unchanged source. Native provider acceptance and installed candidate evidence are separate."
+}

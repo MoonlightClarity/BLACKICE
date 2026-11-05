@@ -77,6 +77,24 @@ function keyboardModifiers(value) {
   if (!Array.isArray(value) || value.length > 4 || new Set(value).size !== value.length || value.some(item => !Object.hasOwn(INPUT_MODIFIERS, item))) throw error('Use the supported keyboard modifiers: Alt, Control, Meta or Shift.');
   return value.reduce((mask, item) => mask | INPUT_MODIFIERS[item], 0);
 }
+function printableKeyEvent(value, modifiers) {
+  let entry;
+  if (/^[a-z]$/i.test(value)) entry = [value.toLowerCase(), value.toUpperCase(), 'Key' + value.toUpperCase(), value.toUpperCase().charCodeAt(0)];
+  else {
+    const pairs = [
+      ...Array.from('0123456789', (key, index) => [key, ')!@#$%^&*('[index], 'Digit' + key, 48 + index]),
+      [' ', ' ', 'Space', 32], ['`', '~', 'Backquote', 192], ['-', '_', 'Minus', 189], ['=', '+', 'Equal', 187],
+      ['[', '{', 'BracketLeft', 219], [']', '}', 'BracketRight', 221], ['\\', '|', 'Backslash', 220],
+      [';', ':', 'Semicolon', 186], ["'", '"', 'Quote', 222], [',', '<', 'Comma', 188],
+      ['.', '>', 'Period', 190], ['/', '?', 'Slash', 191],
+    ];
+    entry = pairs.find(([plain, shifted]) => value === plain || value === shifted);
+  }
+  if (!entry) return null;
+  const [plain, shifted, code, windowsVirtualKeyCode] = entry;
+  const text = modifiers & 8 ? shifted : value;
+  return { key: text, code, windowsVirtualKeyCode, modifiers: modifiers | (text !== plain ? 8 : 0), text, unmodifiedText: text };
+}
 const containedWindowOptions = browserSession => ({
   width: 1280, height: 900, useContentSize: true, show: false, focusable: false, skipTaskbar: true,
   frame: false, fullscreenable: false, minimizable: false, maximizable: false, backgroundColor: '#000000', autoHideMenuBar: true, title: 'BLACKICE contained browser',
@@ -625,15 +643,16 @@ export class ElectronBrowserDriver extends EventEmitter {
       } } catch { /* Let Chromium handle invalid or relative popup URLs. */ }
       try { if (url && url !== 'about:blank') browserURL(url); if (this.closed || !this.compatibilityLoaded) return { action: 'deny' }; }
       catch { return { action: 'deny' }; }
-      // Preserve window.opener for OAuth while rendering the popup only inside BLACKICE.
-      if (this.liveSurface) return { action: 'allow', createWindow: options => {
+      // Preserve the OAuth opener relationship, but give each browser tab its own
+      // lifetime. Closing the source page must not destroy its opened pages.
+      if (this.liveSurface) return { action: 'allow', outlivesOpener: true, createWindow: options => {
         const child = this.createSurfaceWindow({ ...containedWindowOptions(this.session), ...options,
           webPreferences: { ...containedWindowOptions(this.session).webPreferences, ...options.webPreferences, session: this.session, offscreen: false } });
         try { this.newTab(url || 'about:blank', { window: child, owner: tab.owner, humanCreated, providerKeyProtected: tab.providerKeyProtected === true, folderId: tab.folderId, parentTabId: tab.id }); }
         catch (cause) { child.destroy(); throw cause; }
         return child.webContents;
       } };
-      return { action: 'allow', overrideBrowserWindowOptions: containedWindowOptions(this.session) };
+      return { action: 'allow', outlivesOpener: true, overrideBrowserWindowOptions: containedWindowOptions(this.session) };
     });
     wc.on('did-create-window', (child, details) => {
       const humanCreated = tab.humanCreated || tab.humanSurface === true;
@@ -1317,6 +1336,25 @@ export class ElectronBrowserDriver extends EventEmitter {
       if (objectId) void this.cdp(tab, 'Runtime.releaseObject', { objectId }, undefined, undefined, sessionId).catch(() => {});
     }
   }
+  async focusForInput(tab, signal, expected) {
+    if (!tab.window?.liveSurface) return null;
+    await this.ensureContained(tab, signal);
+    this.assertInputDocument(tab, expected);
+    const wc = tab.window.webContents, debugger_ = wc.debugger;
+    // Parked native views can accept text while silently dropping editing keys.
+    // Emulate page focus for this action only; never activate an OS window or
+    // leave a background page focused after automation returns.
+    const release = async () => {
+      if (wc.isDestroyed() || !debugger_.isAttached()) return;
+      try { await bounded(debugger_.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: false }), undefined, 1500); }
+      catch { tab.inputWarning = 'Browser input focus cleanup could not be confirmed. Inspect or reload before continuing.'; }
+    };
+    try {
+      await bounded(debugger_.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true }), signal);
+      this.assertInputDocument(tab, expected); cancel(signal);
+      return release;
+    } catch (reason) { await release(); throw reason; }
+  }
   async ensureContained(tab, signal) {
     if (tab.rendererFailure) throw rendererFailure(tab);
     cancel(signal); const wc = tab.window.webContents;
@@ -1661,7 +1699,12 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (['type', 'press', 'click', 'hover', 'fill', 'select', 'upload'].includes(args.action)) this.assertInputDocument(tab, args);
     if (args.action === 'type' && (typeof args.text !== 'string' || !args.text.length || args.text.length > 16384 || typeof args.expectedDocumentId !== 'string' || typeof args.expectedUrl !== 'string')) throw error('Type 1–16384 characters into a field on the current observed page.');
     const navigation = ['click','press','reload','back','forward'].includes(args.action) ? this.watchNavigation(tab, signal) : null;
+    let releaseInputFocus;
     try {
+    if (['type', 'press', 'fill'].includes(args.action)) {
+      const expected = args.expectedDocumentId === undefined && args.expectedUrl === undefined ? { expectedDocumentId: inputDocumentId(tab), expectedUrl: tab.window.webContents.getURL() } : args;
+      releaseInputFocus = await this.focusForInput(tab, signal, expected);
+    }
     if (args.action === 'open') await this.pageWork(tab, tab.loading, signal, 20000);
     if (['navigate', 'reload', 'back', 'forward'].includes(args.action)) {
       tab.loadError = null; tab.navigationDispatched = true;
@@ -1735,17 +1778,24 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (args.action === 'press') {
       const rawKey = String(args.key || ''), key = rawKey.toLowerCase() === 'a' ? 'A' : rawKey, modifiers = keyboardModifiers(args.modifiers);
       const keys = { Enter: { code: 'Enter', windowsVirtualKeyCode: 13 }, Tab: { code: 'Tab', windowsVirtualKeyCode: 9 }, Escape: { code: 'Escape', windowsVirtualKeyCode: 27 }, Backspace: { code: 'Backspace', windowsVirtualKeyCode: 8 }, Delete: { code: 'Delete', windowsVirtualKeyCode: 46 }, Home: { code: 'Home', windowsVirtualKeyCode: 36 }, End: { code: 'End', windowsVirtualKeyCode: 35 }, PageUp: { code: 'PageUp', windowsVirtualKeyCode: 33 }, PageDown: { code: 'PageDown', windowsVirtualKeyCode: 34 }, ArrowDown: { code: 'ArrowDown', windowsVirtualKeyCode: 40 }, ArrowUp: { code: 'ArrowUp', windowsVirtualKeyCode: 38 }, ArrowLeft: { code: 'ArrowLeft', windowsVirtualKeyCode: 37 }, ArrowRight: { code: 'ArrowRight', windowsVirtualKeyCode: 39 }, Space: { code: 'Space', windowsVirtualKeyCode: 32 }, A: { code: 'KeyA', windowsVirtualKeyCode: 65 } };
-      if (!Object.hasOwn(keys, key) || key === 'A' && (!(modifiers & 6) || modifiers & 1)) throw error('Use a supported editing or navigation key, or Control/Meta+A to select all. Use type or fill for text.');
+      // Printable press delivers the full trusted keyboard sequence. Bulk fill
+      // and type retain their efficient insertion path. Modified shortcuts must
+      // never also insert their letter; preserve the existing Control/Meta+A
+      // contract and reject other modified printable shortcuts.
+      const printable = modifiers & 7 ? null : printableKeyEvent(rawKey === 'Space' ? ' ' : rawKey, modifiers);
+      if (!printable && (!Object.hasOwn(keys, key) || key === 'A' && (!(modifiers & 6) || modifiers & 1))) throw error('Use one printable character, a supported editing/navigation key, or Control/Meta+A to select all. Use type or fill for longer text.');
       if (args.ref) await this.element(tab, args, 'focus', signal);
       const eventKey = key === 'Space' ? ' ' : key === 'A' && !(modifiers & 8) ? 'a' : key;
+      const down = printable || { key: eventKey, ...keys[key], modifiers };
+      const { text: _text, unmodifiedText: _unmodifiedText, ...up } = down;
       try {
-        await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyDown', key: eventKey, ...keys[key], modifiers }, signal, args);
+        await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyDown', ...down }, signal, args);
         if (key === 'Enter') await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'char', text: '\r', key: 'Enter', ...keys[key], modifiers }, signal, args);
       } finally {
-        try { await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyUp', key: eventKey, ...keys[key], modifiers }, AbortSignal.timeout(1500)); }
+        try { await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyUp', ...up }, AbortSignal.timeout(1500)); }
         catch { tab.inputWarning = 'Browser key release could not be confirmed. Inspect or reload before continuing.'; }
       }
-      cancel(signal); receipt = { pressed: key };
+      cancel(signal); receipt = { pressed: printable && rawKey !== 'Space' ? printable.key : key };
       if (args.expectedDocumentId !== undefined) return { ...this.interactionReceipt(tab), receipt: { ...receipt, ...(args.modifiers?.length ? { modifiers: [...args.modifiers] } : {}), input: 'browser protocol', ...(tab.externalHandoff !== externalBefore ? { externalHandoff: { status: tab.externalHandoff.status } } : {}) } };
     }
     if (args.action === 'scroll') {
@@ -1849,7 +1899,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     const result = await this.snapshot(tab, args.query, signal, { readContext: args.action === 'read' });
     if (['open', 'navigate', 'reload', 'back', 'forward'].includes(args.action)) { this.persist(); await this.savedStatus(); }
     return { ...result, ...(receipt ? { receipt } : {}), tabs: this.status().tabs };
-    } finally { navigation?.dispose(); }
+    } finally { navigation?.dispose(); await releaseInputFocus?.(); }
     } catch (reason) {
       if (recoveringRenderer && !tab.window && !tab.rendererFailure) { tab.rendererFailure = recoveringRenderer; throw reason; }
       if (tab.rendererFailure) throw rendererFailure(tab, true);

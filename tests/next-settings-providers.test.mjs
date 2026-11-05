@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createProviderSettings} from '../public/next/workspaces/settings-providers.mjs';
 import {planningDOM} from './fixture-planning-dom.mjs';
+import {createSubscriptionModelSettings} from '../public/next/workspaces/settings-subscriptions.mjs';
 
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 async function until(read){for(let i=0;i<100;i++){if(read())return;await settle();}throw Error('Provider settings did not settle.');}
@@ -569,4 +570,56 @@ test('credential notes distinguish encrypted saved keys from session-only keys',
   assert.match(f.$('#next-provider-key-note').textContent,/API key saved/);
   await f.open('session');assert.match(f.$('#next-provider-key-note').textContent,/current session/);assert.match(f.$('#next-provider-key-note').textContent,/after restarting/);
   assert.doesNotMatch(f.$('#next-provider-key-note').textContent,/API key saved/);assert.equal(f.$('#next-provider-key').value,'');assert.equal(f.writes().length,0);
+});
+
+test('Mistral and OpenRouter setup buttons open optional drafts without saving or discarding other drafts',async t=>{
+  const f=await fixture(t,{providers:[]});
+  await f.click('#next-provider-mistral');
+  assert.equal(f.$('#next-provider-mistral').textContent,'Set up Mistral API');assert.equal(f.$('#next-provider-name').value,'Mistral API');
+  assert.equal(f.$('#next-provider-preset').value,'mistral');assert.equal(f.$('#next-provider-protocol').value,'compatible');
+  assert.equal(f.$('#next-provider-base-url').value,'https://api.mistral.ai/v1');assert.equal(f.$('#next-provider-key').value,'');
+  assert.equal(f.$('#next-provider-connection-details').open,true);assert.match(f.$('#next-provider-key-note').textContent,/API key/);
+  assert.match(f.$('#next-provider-setup-links a').getAttribute('href'),/^https:\/\/docs\.mistral\.ai\//);
+  await f.input('#next-provider-name','My Mistral draft');
+  await f.click('#next-provider-openrouter');assert.equal(f.$('#next-provider-preset').value,'openrouter');
+  await f.click('#next-provider-mistral');assert.equal(f.$('#next-provider-name').value,'My Mistral draft');
+  assert.deepEqual(f.state.providers,[]);assert.equal(f.writes().length,0);assert.equal(f.changed,0);
+});
+
+test('ready disabled APIs have a direct enable action that sends no key, models, or default changes',async t=>{
+  const saved=provider('optional_router',{preset:'openrouter',enabled:false,configured:false,credentialsReady:true,requiresApiKey:true});
+  const f=await fixture(t,{providers:[saved],hook:async(call,state)=>{
+    if(call.route==='/api/providers/optional_router/enable'){
+      assert.equal(call.method,'POST');assert.deepEqual(call.body,{expectedUpdatedAt:saved.updatedAt});
+      state.providers[0]={...state.providers[0],enabled:true,configured:true,updatedAt:'2026-10-25T11:00:00Z'};
+      return structuredClone(state.providers[0]);
+    }
+  }});
+  assert.equal(f.writes().length,0);
+  await f.click('[data-provider-enable="optional_router"]');await f.idle();
+  assert.equal(f.state.providers[0].enabled,true);assert.equal(f.state.providers[0].hasApiKey,true);
+  assert.deepEqual(f.state.providers[0].models,saved.models);assert.equal(f.changed,1);
+  assert.deepEqual(f.writes().map(call=>call.route),['/api/providers/optional_router/enable']);
+  assert.match(f.$('#next-provider-info').textContent,/default model and existing chats are unchanged/);
+});
+
+test('a missing-key API connection offers setup without being enabled or duplicated',async t=>{
+  const saved=provider('mistral_saved',{name:'Mistral',preset:'mistral',baseUrl:'https://api.mistral.ai/v1',enabled:false,configured:false,hasApiKey:false,hasHeaders:false,headerNames:[],requiresApiKey:true,credentialsReady:false});
+  const f=await fixture(t,{providers:[saved]});
+  assert.equal(f.$('[data-provider-enable="mistral_saved"]'),null);
+  await f.click('[data-provider-setup="mistral_saved"]');
+  assert.equal(f.$('#next-provider-id').value,'mistral_saved');assert.equal(f.$('#next-provider-connection-details').open,true);
+  assert.equal(f.document.activeElement,f.$('#next-provider-key'));assert.equal(f.writes().length,0);
+  await f.click('#next-provider-mistral');assert.equal(f.$('#next-provider-id').value,'mistral_saved');
+  assert.equal(f.state.providers.length,1);assert.equal(f.state.providers[0].enabled,false);assert.equal(f.writes().length,0);
+});
+
+test('optional API settings are visible and entered when Models settings opens',async t=>{
+  const f=planningDOM(t);let entered=0,left=0;
+  f.mount.replaceChildren=function(...nodes){for(const child of [...this.children])child.remove();this.textContent='';this.append(...nodes);};
+  const panel=createSubscriptionModelSettings({mount:f.mount,api:async()=>({codex:{connected:false,authenticated:false}})},()=>({enter(){entered++;},leave(){left++;},destroy(){}}));
+  t.after(()=>panel.destroy());panel.enter();await settle();
+  const section=f.$('#next-connect-another-endpoint');assert.equal(section.open,true);
+  assert.match(section.querySelector('summary').textContent,/Optional API connections/);assert.equal(entered,1);
+  panel.leave();assert.equal(left,1);
 });

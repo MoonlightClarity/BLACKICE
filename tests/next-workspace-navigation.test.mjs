@@ -29,3 +29,14 @@ test('conversation navigation remains compatible and never substitutes a request
   await app.show('chat',{requestId:'planning-request'});
   assert.deepEqual(opened,['persisted-run']);
 });
+
+test('native account setup navigation survives lazy Settings loading without changing a conversation target',async()=>{
+  let resolve;const pending=new Promise(done=>{resolve=done;}),providers=[],conversations=[];
+  const app=routing({settings:()=>pending});
+  await app.show('settings',{modelProviderId:'mistral-vibe'});
+  resolve(()=>({enter(){},updateStatus(){},openModelProvider:id=>providers.push(id),openConversationId:id=>conversations.push(id)}));
+  await app.spaces.get('settings').loading;
+  assert.deepEqual(providers,['mistral-vibe']);assert.deepEqual(conversations,[]);
+  await app.show('settings',{modelProviderId:'mistral-vibe'});
+  assert.deepEqual(providers,['mistral-vibe','mistral-vibe']);assert.deepEqual(conversations,[]);
+});

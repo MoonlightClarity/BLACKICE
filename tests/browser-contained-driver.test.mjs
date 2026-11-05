@@ -745,6 +745,70 @@ test('direct input rejects a changed URL or a same-URL replacement document', as
   assert.equal(windows[0].protocol.some(item => item.method.startsWith('Input.')), false);
 });
 
+test('parked native input scopes focus emulation without activating an operating-system window', async t => {
+  const { driver, windows } = await fixture(t), tab = driver.newTab('https://input.example.test/');
+  await tab.loading; tab.window.liveSurface = true;
+  const expected = { expectedUrl: 'https://input.example.test/', expectedDocumentId: `${tab.id}:${tab.revision}` };
+  windows[0].protocol.length = 0;
+  await driver.perform({ action: 'press', tabId: tab.id, key: 'a', modifiers: ['Control'], ...expected });
+  assert.deepEqual(windows[0].protocol.map(call => [call.method, call.params?.enabled ?? call.params?.type]), [
+    ['Emulation.setFocusEmulationEnabled', true],
+    ['Input.dispatchKeyEvent', 'keyDown'], ['Input.dispatchKeyEvent', 'keyUp'],
+    ['Emulation.setFocusEmulationEnabled', false],
+  ]);
+  assert.equal(windows[0].visible, false);
+});
+
+test('native input releases emulated focus on cancellation, document change, and failed dispatch', async t => {
+  for (const failure of ['cancel', 'navigation', 'dispatch']) await t.test(failure, async t => {
+    const controller = new AbortController(); let tab, armed = false;
+    const { driver, windows } = await fixture(t, { command: async (method, params) => {
+      if (!armed) return {};
+      if (method === 'Emulation.setFocusEmulationEnabled' && params.enabled) {
+        if (failure === 'cancel') controller.abort();
+        if (failure === 'navigation') tab.revision++;
+      }
+      if (failure === 'dispatch' && method === 'Input.dispatchKeyEvent' && params.type === 'keyDown') throw Error('Fixture input dispatch failed');
+      return {};
+    } });
+    tab = driver.newTab('https://input.example.test/'); await tab.loading; tab.window.liveSurface = true;
+    const expected = { expectedUrl: 'https://input.example.test/', expectedDocumentId: `${tab.id}:${tab.revision}` };
+    windows[0].protocol.length = 0; armed = true;
+    await assert.rejects(driver.perform({ action: 'press', tabId: tab.id, key: 'Backspace', ...expected }, { signal: controller.signal }),
+      failure === 'cancel' ? { name: 'AbortError' } : failure === 'navigation' ? { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' } : /Fixture input dispatch failed/);
+    const calls = windows[0].protocol;
+    assert.deepEqual(calls.filter(call => call.method === 'Emulation.setFocusEmulationEnabled').map(call => call.params.enabled), [true, false]);
+    if (failure !== 'dispatch') assert.equal(calls.some(call => call.method.startsWith('Input.')), false);
+    else assert.ok(calls.some(call => call.method === 'Input.dispatchKeyEvent' && call.params.type === 'keyUp'));
+    assert.equal(windows[0].visible, false);
+  });
+});
+
+test('printable press maps letters, shifted symbols, and Space to trusted keyboard text without repeating text on release', async t => {
+  const { driver, windows } = await fixture(t), tab = driver.newTab('https://input.example.test/'); await tab.loading;
+  const expected = { expectedUrl: 'https://input.example.test/', expectedDocumentId: `${tab.id}:${tab.revision}` };
+  const cases = [
+    ['b', [], 'b', 'KeyB', 66, 0], ['B', [], 'B', 'KeyB', 66, 8], ['a', ['Shift'], 'A', 'KeyA', 65, 8],
+    ['1', ['Shift'], '!', 'Digit1', 49, 8], ['@', [], '@', 'Digit2', 50, 8],
+    ['?', [], '?', 'Slash', 191, 8], ['\\', [], '\\', 'Backslash', 220, 0],
+    ["'", [], "'", 'Quote', 222, 0], ['"', [], '"', 'Quote', 222, 8],
+    ['Space', [], ' ', 'Space', 32, 0], [' ', [], ' ', 'Space', 32, 0],
+  ];
+  for (const [key, modifiers, character, code, virtualKey, mask] of cases) {
+    windows[0].protocol.length = 0;
+    await driver.perform({ action: 'press', tabId: tab.id, key, modifiers, ...expected });
+    const calls = windows[0].protocol.filter(call => call.method === 'Input.dispatchKeyEvent');
+    assert.equal(calls.length, 2);
+    assert.deepEqual(calls[0].params, { type: 'keyDown', key: character, code, windowsVirtualKeyCode: virtualKey, modifiers: mask, text: character, unmodifiedText: character });
+    assert.deepEqual(calls[1].params, { type: 'keyUp', key: character, code, windowsVirtualKeyCode: virtualKey, modifiers: mask });
+  }
+  for (const modifier of ['Control', 'Meta']) {
+    windows[0].protocol.length = 0;
+    await driver.perform({ action: 'press', tabId: tab.id, key: 'a', modifiers: [modifier], ...expected });
+    assert.ok(windows[0].protocol.filter(call => call.method === 'Input.dispatchKeyEvent').every(call => !Object.hasOwn(call.params, 'text') && !Object.hasOwn(call.params, 'unmodifiedText')));
+  }
+});
+
 test('document identity is checked again after the asynchronous containment guard', async t => {
   const { driver, windows } = await fixture(t), tab = driver.newTab('https://signin.example.test/'); await tab.loading;
   const expected = { expectedUrl: 'https://signin.example.test/', expectedDocumentId: `${tab.id}:${tab.revision}` };
@@ -781,7 +845,7 @@ test('editing keys retain modifiers and release keys without scanning a password
     assert.equal(result.frames, undefined); assert.equal(result.documentId, expected.expectedDocumentId);
   }
   const count = windows[0].protocol.length;
-  for (const value of [{ key: 'a' }, { key: 'v', modifiers: ['Control'] }, { key: '__proto__' }, { key: 'Tab', modifiers: ['Control', 'Control'] }]) await assert.rejects(driver.perform({ action: 'press', tabId: tab.id, ...expected, ...value }));
+  for (const value of [{ key: 'ab' }, { key: 'v', modifiers: ['Control'] }, { key: 'b', modifiers: ['Meta'] }, { key: 'b', modifiers: ['Alt'] }, { key: '__proto__' }, { key: 'Tab', modifiers: ['Control', 'Control'] }]) await assert.rejects(driver.perform({ action: 'press', tabId: tab.id, ...expected, ...value }));
   assert.equal(windows[0].protocol.length, count); assertContained(windows[0]);
 });
 

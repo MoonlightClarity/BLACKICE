@@ -103,3 +103,41 @@ test('the app factory null status cannot revoke General’s own initial model di
   gate.resolve(status());await until(()=>dom.$('#next-settings-model').value==='fixture::model');
   assert.deepEqual(dom.$('#next-settings-model').children.map(option=>option.value),['default','codex','fixture::model','native-model']);
 });
+
+test('picker account setup opens the native Models card and refresh preserves unsaved defaults and API drafts',async t=>{
+  let refreshed;
+  const f=await fixture(t,({route})=>{
+    if(route==='/api/providers')return{providers:[],encryptionAvailable:true};
+    if(route.startsWith('/api/codex/models'))return{models:[]};
+    if(route==='/api/subscriptions/mistral-vibe/refresh')return{status:refreshed,provider:refreshed.subscriptionProviders[0]};
+  });
+  const provider={id:'mistral-vibe',name:'Mistral Vibe Code',type:'subscription-cli',installed:true,authenticated:false,connected:false,available:false,models:[],loginState:'idle'};
+  f.info.subscriptionProviders=[provider];f.workspace.updateStatus(f.info);
+  Object.getPrototypeOf(f.mount).replaceChildren=function(...nodes){for(const child of [...this.children])child.remove();this.textContent='';this.append(...nodes);};
+  await f.workspace.openModelProvider('not-a-native-provider');
+  assert.equal(f.$('#next-settings-section-general').getAttribute('aria-selected'),'true');
+  const selector=f.$('#next-settings-model');selector.value='native-model';await selector.dispatch('change');
+  await f.input('#next-runtime-idle','13');
+  await f.$('.next-model-picker-trigger').dispatch('click',{},true);
+  const action=f.document.querySelector('[data-model-setup-provider="mistral-vibe"]');assert.ok(action);
+  await action.dispatch('click',{},true);await settle();
+  assert.equal(f.$('#next-settings-section-models').getAttribute('aria-selected'),'true');
+  assert.equal(f.$('#next-mistral-vibe').isConnected,true);assert.equal(f.document.activeElement?.id,'next-mistral-vibe');
+  assert.equal(selector.value,'native-model');assert.equal(f.$('#next-runtime-idle').value,'13');
+  const apiDraft=f.$('#next-provider-key');apiDraft.value='fixture-unsent-api-draft';await apiDraft.dispatch('input',{},true);
+  const reported=[
+    {id:'fixture-native-model/2026:exact',displayName:'Fixture large model'},
+    {id:'fixture-native-medium/2026:exact',displayName:'Fixture medium model'},
+    {id:'fixture-native-hosted/2026:exact',displayName:'Fixture hosted model'},
+  ];
+  const nativeModels=reported.map(model=>({...model,id:'mistral-vibe::'+model.id,available:true,providerId:'mistral-vibe',providerType:'subscription-cli'}));
+  refreshed={...f.info,subscriptionProviders:[{...provider,authenticated:true,connected:true,available:true,models:reported}],models:[...f.info.models,...nativeModels]};
+  Object.assign(f.info,refreshed);
+  await f.click('#next-mistral-vibe-refresh');
+  assert.match(f.$('#next-mistral-vibe-status').textContent,/Ready/);
+  assert.deepEqual(selector.children.filter(option=>option.value.startsWith('mistral-vibe::')).map(option=>option.value),nativeModels.map(model=>model.id),'Every refreshed native catalog choice reaches the default model choices.');
+  assert.equal(selector.value,'native-model');assert.equal(apiDraft.value,'fixture-unsent-api-draft');
+  await f.click('#next-settings-section-general');await settle();
+  assert.equal(selector.value,'native-model');assert.equal(f.$('#next-runtime-idle').value,'13');
+  assert.deepEqual(f.calls.filter(call=>call.method!=='GET').map(call=>call.route),['/api/subscriptions/mistral-vibe/refresh']);
+});

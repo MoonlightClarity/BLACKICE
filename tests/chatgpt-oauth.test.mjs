@@ -8,6 +8,7 @@ import { createServer } from 'node:http';
 import { createHash, createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { runInNewContext } from 'node:vm';
 import { ChatGPTOAuth, CHATGPT_OAUTH_CLIENT_ID as CLIENT, CHATGPT_OAUTH_REDIRECT as REDIRECT, CHATGPT_OAUTH_SCOPES as SCOPES } from '../lib/chatgpt-oauth.mjs';
+import { OAUTH_CLIENT_AUTH_METHODS } from '../lib/mcp-oauth-clients.mjs';
 
 const ORIGIN = 'https://owned.example';
 const RESOURCE = ORIGIN + '/mcp/chatgpt';
@@ -27,10 +28,10 @@ async function setup(t, options = {}) {
   return { oauth, dataDir, calls, revoked, advance: ms => { clock += ms; }, now: () => clock };
 }
 
-async function route(oauth, method, url, { form, raw, headers = {}, enabled = true } = {}) {
-  const body = raw !== undefined ? raw : form ? new URLSearchParams(form).toString() : '';
+async function route(oauth, method, url, { form, json, raw, headers = {}, enabled = true } = {}) {
+  const body = raw !== undefined ? raw : json !== undefined ? JSON.stringify(json) : form ? new URLSearchParams(form).toString() : '';
   const req = Readable.from(body ? [Buffer.from(body)] : []);
-  req.method = method; req.url = url; req.headers = { ...(form || raw !== undefined ? { 'content-type': 'application/x-www-form-urlencoded' } : {}), ...headers };
+  req.method = method; req.url = url; req.headers = { ...(json !== undefined ? { 'content-type': 'application/json' } : form || raw !== undefined ? { 'content-type': 'application/x-www-form-urlencoded' } : {}), ...headers };
   req.rawHeaders = Object.entries(req.headers).flat();
   const result = { status: null, headers: {}, body: '' };
   const res = { destroyed: false, writeHead(status, values) { result.status = status; for (const [key, value] of Object.entries(values || {})) result.headers[key.toLowerCase()] = value; }, setHeader(key, value) { result.headers[key.toLowerCase()] = value; }, end(value = '') { result.body += value; } };
@@ -85,8 +86,9 @@ test('metadata binds the exact resource, issuer, S256 and current public CIMD cl
   }
   const result = await route(oauth, 'GET', '/.well-known/oauth-authorization-server');
   assert.equal(result.json.issuer, ORIGIN); assert.equal(result.json.authorization_endpoint, ORIGIN + '/chatgpt/oauth/authorize');
-  assert.deepEqual(result.json.code_challenge_methods_supported, ['S256']); assert.deepEqual(result.json.token_endpoint_auth_methods_supported, ['none']);
-  assert.equal(result.json.authorization_response_iss_parameter_supported, true); assert.equal(result.json.client_id_metadata_document_supported, true); assert.equal(result.json.registration_endpoint, undefined);
+  assert.deepEqual(result.json.code_challenge_methods_supported, ['S256']); assert.deepEqual(result.json.token_endpoint_auth_methods_supported, OAUTH_CLIENT_AUTH_METHODS);
+  assert.deepEqual(result.json.revocation_endpoint_auth_methods_supported, OAUTH_CLIENT_AUTH_METHODS);
+  assert.equal(result.json.authorization_response_iss_parameter_supported, true); assert.equal(result.json.client_id_metadata_document_supported, true); assert.equal(result.json.registration_endpoint, ORIGIN + '/chatgpt/oauth/register');
   assert.equal(calls.length, 0); assert.deepEqual(oauth.status().defaultScopes, ['read']);
   assert.match(oauth.challenge(['commands:run']), /scope="read commands:run"/);
   assert.match(oauth.challenge(), /error="invalid_token", error_description="Connect or reconnect BLACKICE to continue\."/);
@@ -120,7 +122,7 @@ test('CIMD fetch is pinned, credential-free, redirect-free and strictly verified
 
 test('CIMD method intersection supports actual plural metadata and legacy none-only clients', async t => {
   const { oauth, calls } = await setup(t);
-  await begin(oauth); assert.equal(calls.length, 1); assert.deepEqual(oauth.metadata('/.well-known/oauth-authorization-server').token_endpoint_auth_methods_supported, ['none']);
+  await begin(oauth); assert.equal(calls.length, 1); assert.deepEqual(oauth.metadata('/.well-known/oauth-authorization-server').token_endpoint_auth_methods_supported, OAUTH_CLIENT_AUTH_METHODS);
   oauth.clientCache = null; oauth.fetcher = async () => response(metadata({ token_endpoint_auth_methods_supported: undefined, token_endpoint_auth_method: 'none' }));
   await begin(oauth, { state: 'legacy-none' });
   oauth.clientCache = null; oauth.fetcher = async () => response(metadata({ token_endpoint_auth_methods_supported: undefined }));

@@ -7,19 +7,22 @@ const compactTokens=value=>positive(value)?value%1000===0?(value/1000).toLocaleS
 const presets=new Set(['model','extended','custom','900k']);
 const bounds={outputReserveTokens:[256,128000],headroomTokens:[128,256000],compactAtTokens:[256,4000000],keepRecentTokens:[256,256000]};
 const fieldLabels={outputReserveTokens:'Output reserve',headroomTokens:'Safety headroom',compactAtTokens:'Compression trigger',keepRecentTokens:'Recent context to keep'};
+const nativeContextReason='Mistral Vibe Code manages context automatically. Manual compression and custom context settings are unavailable; saved history is preserved.';
+const unsupportedNativeContext=value=>value.preset!=='model'||value.autoCompact!==true||Object.keys(bounds).some(key=>value[key]!==undefined);
 
 /** The catalog describes capacity; a recorded context snapshot describes one turn. */
 export function contextModelInfo(status={},selection='default'){
   const selected=selection==='default'?status.defaultModel:selection==='codex'?(status.codex?.defaultModel||status.codex?.models?.find(model=>model.isDefault)?.model||status.models?.find(model=>model.isDefault&&!String(model.id||model.model).includes('::'))?.model):selection;
   const id=typeof selected==='string'?selected:'';
   const model=[...(status.models||[]),...(status.codex?.models||[])].find(item=>(item.id||item.model)===id)||{};
-  const native=id?!id.includes('::'):!String(selection).includes('::');
+  const automaticOnly=model.providerType==='subscription-cli'&&model.providerId==='mistral-vibe'||!model.providerType&&id.startsWith('mistral-vibe::')&&!(status.providers||[]).some(provider=>provider.id==='mistral-vibe');
+  const native=automaticOnly||(id?!id.includes('::'):!String(selection).includes('::'));
   const defaultWindow=model.contextWindowSource==='user-configured'&&positive(model.contextWindowTokens)?model.contextWindowTokens:positive(model.runtimeDefaultContextWindowTokens)||positive(model.contextWindowTokens);
-  const maxWindow=native?positive(model.maxContextWindowTokens):defaultWindow;
+  const maxWindow=automaticOnly?null:native?positive(model.maxContextWindowTokens):defaultWindow;
   const percent=Number(model.effectiveContextWindowPercent);
   const provider=(status.providers||[]).find(item=>item.id===id.split('::')[0]);
-  return {id,native,defaultWindow,maxWindow,percent:native&&percent>0&&percent<=100?percent:null,
-    outputLimit:Math.min(positive(model.maxOutputTokens)||8192,positive(provider?.maxTokens)||8192,8192),
+  return {id,native,automaticOnly,defaultWindow,maxWindow,percent:native&&!automaticOnly&&percent>0&&percent<=100?percent:null,
+    outputLimit:automaticOnly?null:Math.min(positive(model.maxOutputTokens)||8192,positive(provider?.maxTokens)||8192,8192),
     source:model.contextWindowSource||(native&&defaultWindow?'runtime-reported':'unknown'),name:model.displayName||id||'Selected model'};
 }
 
@@ -32,6 +35,10 @@ export function contextOptions(value={}){
 
 export function validateContextOptions(value={},info={}){
   const result=contextOptions(value);
+  if(info.automaticOnly){
+    if(unsupportedNativeContext(result))throw Error('Mistral Vibe Code cannot apply this custom context draft. Choose Use native automatic context before sending.');
+    return result;
+  }
   const check=(name,input,min,max)=>{
     if(!Number.isSafeInteger(input)||input<min||input>max)throw Error(name+' must be a whole token count from '+tokens(min)+' to '+tokens(max)+'.');
   };
@@ -46,6 +53,7 @@ export function validateContextOptions(value={},info={}){
 }
 
 export function contextBudgetPreview(options={},info={}){
+  if(info.automaticOnly)return{window:positive(info.defaultWindow),requested:null,usable:info.source==='account-catalog'?null:positive(info.defaultWindow),estimated:false,capped:false};
   const value=contextOptions(options),requested=value.preset==='extended'?info.maxWindow||info.defaultWindow:value.preset==='model'?info.defaultWindow:positive(Number(value.windowTokens));
   const cap=info.native?info.maxWindow||info.defaultWindow:info.defaultWindow||info.maxWindow;
   const window=positive(requested)?Math.min(requested,cap||Infinity):null;
@@ -54,6 +62,7 @@ export function contextBudgetPreview(options={},info={}){
 }
 
 function contextInputBudget(options,info){
+  if(info.automaticOnly)return null;
   const usable=contextBudgetPreview(options,info).usable;
   if(!usable)return null;
   const output=options.outputReserveTokens??Math.max(256,Math.min(info.outputLimit||8192,8192,Math.floor(usable*.2)));
@@ -155,10 +164,11 @@ export function createContextControls({mount,id='next-context',scope='chat',api,
     '<span id="'+id+'-summary" class="next-help"></span>',
     '</div><div id="'+id+'-body" class="next-context-body" hidden>',
     '<p class="next-help">'+(defaults?'Default context for new conversations. Existing conversations keep their saved context settings.':'These settings apply to your next response. /compress uses this conversation’s saved settings.')+'</p>',
-    '<div class="next-settings-grid"><label class="next-label">Context budget<select class="next-field" id="'+id+'-preset"><option value="model">Model default</option><option value="extended">Extended</option><option value="custom">Custom</option><option value="900k" hidden>Legacy 900k request</option></select></label>',
+    '<div id="'+id+'-budget-controls" class="next-settings-grid"><label class="next-label">Context budget<select class="next-field" id="'+id+'-preset"><option value="model">Model default</option><option value="extended">Extended</option><option value="custom">Custom</option><option value="900k" hidden>Legacy 900k request</option></select></label>',
     '<label class="next-label" id="'+id+'-window-label" hidden>Custom budget (tokens)<input class="next-field" type="number" min="4096" max="4000000" step="1" id="'+id+'-window"></label></div>',
     '<p id="'+id+'-capacity" class="next-help"></p><p id="'+id+'-budget-note" class="next-help"></p>',
-    '<label class="next-row"><input type="checkbox" id="'+id+'-auto"><span id="'+id+'-auto-label"></span></label>',
+    '<button type="button" id="'+id+'-native-reset" hidden>Use native automatic context</button>',
+    '<label id="'+id+'-auto-row" class="next-row"><input type="checkbox" id="'+id+'-auto"><span id="'+id+'-auto-label"></span></label>',
     '<p id="'+id+'-auto-help" class="next-help"></p>',
     '<div id="'+id+'-api-options" class="next-settings-grid"><label class="next-label"><span id="'+id+'-trigger-label">Compression trigger (tokens)</span><input class="next-field" type="number" min="256" max="4000000" step="1" placeholder="Automatic" id="'+id+'-trigger"></label>',
     '<label class="next-label" id="'+id+'-recent-label">Recent context to keep (tokens)<input class="next-field" type="number" min="256" max="256000" step="1" placeholder="Automatic" id="'+id+'-recent"></label></div>',
@@ -172,7 +182,7 @@ export function createContextControls({mount,id='next-context',scope='chat',api,
     '</div>',
   ].join('');
   const $=suffix=>mount.querySelector('#'+id+'-'+suffix);
-  const f={heading:$('heading'),toggle:$('toggle'),body:$('body'),summary:$('summary'),stop:$('stop'),preset:$('preset'),window:$('window'),windowLabel:$('window-label'),capacity:$('capacity'),budgetNote:$('budget-note'),auto:$('auto'),autoLabel:$('auto-label'),autoHelp:$('auto-help'),triggerLabel:$('trigger-label'),triggerHelp:$('trigger-help'),recentLabel:$('recent-label'),trigger:$('trigger'),recent:$('recent'),advanced:$('advanced'),reserve:$('reserve'),headroom:$('headroom'),saved:$('saved'),warnings:$('warnings'),feedback:$('feedback'),result:$('result')};
+  const f={budgetControls:$('budget-controls'),apiOptions:$('api-options'),autoRow:$('auto-row'),nativeReset:$('native-reset'),heading:$('heading'),toggle:$('toggle'),body:$('body'),summary:$('summary'),stop:$('stop'),preset:$('preset'),window:$('window'),windowLabel:$('window-label'),capacity:$('capacity'),budgetNote:$('budget-note'),auto:$('auto'),autoLabel:$('auto-label'),autoHelp:$('auto-help'),triggerLabel:$('trigger-label'),triggerHelp:$('trigger-help'),recentLabel:$('recent-label'),trigger:$('trigger'),recent:$('recent'),advanced:$('advanced'),reserve:$('reserve'),headroom:$('headroom'),saved:$('saved'),warnings:$('warnings'),feedback:$('feedback'),result:$('result')};
   let base=contextOptions(),info=contextModelInfo(),snapshot={},dirty=false,revision=0,owner=null,destroyed=false,expanded=false;
   const drafts=new Map();
   const compaction=api&&!defaults?createContextCompaction({api,onChange:target=>{draw();onOperationChange(target);},onComplete}):null;
@@ -183,15 +193,18 @@ export function createContextControls({mount,id='next-context',scope='chat',api,
   };
   function draw(){
     if(destroyed)return;
-    const value=draft(),preview=contextBudgetPreview(value,info),target=snapshot.target,operation=compaction?.state(target?.key),busy=snapshot.busy===true||snapshot.loading===true;
+    const value=draft(),preview=contextBudgetPreview(value,info),target=snapshot.target,operation=compaction?.state(target?.key),busy=snapshot.busy===true||snapshot.loading===true,automatic=info.automaticOnly===true,unsupported=automatic&&unsupportedNativeContext(value);
     for(const option of f.preset.children){
       if(option.value==='model')option.textContent='Model default'+(info.defaultWindow?' — '+tokens(info.defaultWindow)+' tokens':'');
       if(option.value==='extended'){option.textContent='Extended'+(info.maxWindow?' — '+tokens(info.maxWindow)+' tokens':' — maximum unavailable');option.disabled=!info.maxWindow;}
       if(option.value==='900k')option.hidden=value.preset!=='900k';
+      if(option.value!=='model')option.disabled=automatic||option.value==='extended'&&!info.maxWindow;
     }
     f.windowLabel.hidden=value.preset!=='custom';
     f.summary.textContent=(value.preset==='extended'?'Extended':value.preset==='custom'?'Custom':value.preset==='900k'?'Legacy 900k':'Model default')+' · '+compactTokens(preview.window)+' tokens'+(dirty?(defaults?' · unsaved default':' · next response'):'');
+    if(automatic)f.summary.textContent='Native automatic context · '+(info.source==='account-catalog'?'catalog limit ':'')+compactTokens(info.defaultWindow)+' tokens'+(unsupported?' · unsupported draft retained':'');
     f.capacity.textContent=info.name+' · Default capacity: '+tokens(info.defaultWindow)+' tokens · Maximum: '+tokens(info.maxWindow)+' tokens'+(info.source==='model-reference'?' · published model reference':info.source==='user-configured'?' · user configured':'');
+    if(automatic)f.capacity.textContent=info.name+' · '+(info.source==='account-catalog'?'Catalog context limit: ':'CLI-reported context: ')+tokens(info.defaultWindow)+' tokens.'+(info.source==='account-catalog'?' Native automatic management determines the working window.':'');
     const notes=[];
     if(preview.capped)notes.push('Requested '+tokens(preview.requested)+' tokens; this route caps the budget at '+tokens(preview.window)+'.');
     if(value.preset==='extended'&&!info.maxWindow)notes.push(info.defaultWindow?'The maximum is unavailable. This route will use its known default capacity.':'Resolve this model’s capacity before choosing Extended.');
@@ -202,13 +215,19 @@ export function createContextControls({mount,id='next-context',scope='chat',api,
     const inputBudget=contextInputBudget(value,info);
     if(inputBudget!==null&&inputBudget<256)notes.push('Output reserve and safety headroom leave too little input space. Adjust them in Advanced budgets.');
     else if(inputBudget!==null&&value.compactAtTokens>inputBudget)notes.push('The saved trigger exceeds the estimated input allowance of '+tokens(inputBudget)+' tokens. Lower it before using this budget.');
+    if(automatic){
+      const retained=[value.preset!=='model'?'Preset: '+value.preset:'',value.windowTokens?'Custom budget: '+tokens(value.windowTokens):'',!value.autoCompact?'Automatic compression: off':'',...Object.keys(bounds).filter(key=>value[key]!==undefined).map(key=>fieldLabels[key]+': '+String(value[key]))].filter(Boolean);
+      notes.splice(0,notes.length,nativeContextReason,...(unsupported?['Unsupported draft retained: '+retained.join(' · ')+'. Use native automatic context to clear these settings explicitly.']:[]));
+    }
     f.budgetNote.textContent=notes.join(' ');
-    f.autoLabel.textContent=defaults?'Automatically compress saved history when needed':info.native?'Compress imported saved history automatically':'Automatically compress conversation context';
-    f.autoHelp.textContent=defaults?'For API models, this also enables automatic summaries. Codex continues to manage its own automatic compaction.':info.native?'Codex manages automatic compaction during native turns. This option controls BLACKICE’s compression when saved history is restored.':'BLACKICE summarizes older exchanges near the input budget and keeps recent context. Compression uses the selected model; saved messages remain available.';
-    f.triggerLabel.textContent=info.native?'Requested Codex compaction trigger (tokens)':'BLACKICE summary trigger (tokens)';
-    f.triggerHelp.textContent=info.native?'Blank uses the runtime’s calculated default for the selected budget. Codex may compact earlier.':'Blank uses BLACKICE’s calculated summary threshold for this input budget.';
+    f.budgetControls.hidden=automatic&&!unsupported;f.apiOptions.hidden=automatic;f.autoRow.hidden=automatic;f.advanced.hidden=automatic;
+    f.nativeReset.hidden=!unsupported;f.nativeReset.disabled=busy||snapshot.readonly===true;
+    f.autoLabel.textContent=automatic?'Native automatic context management':defaults?'Automatically compress saved history when needed':info.native?'Compress imported saved history automatically':'Automatically compress conversation context';
+    f.autoHelp.textContent=automatic?nativeContextReason:defaults?'For API models, this also enables automatic summaries. Codex continues to manage its own automatic compaction.':info.native?'Codex manages automatic compaction during native turns. This option controls BLACKICE’s compression when saved history is restored.':'BLACKICE summarizes older exchanges near the input budget and keeps recent context. Compression uses the selected model; saved messages remain available.';
+    f.triggerLabel.textContent=automatic?'Native automatic context management':info.native?'Requested Codex compaction trigger (tokens)':'BLACKICE summary trigger (tokens)';
+    f.triggerHelp.textContent=automatic?'Custom compression thresholds are unavailable for this native connection.':info.native?'Blank uses the runtime’s calculated default for the selected budget. Codex may compact earlier.':'Blank uses BLACKICE’s calculated summary threshold for this input budget.';
     f.recentLabel.hidden=info.native;
-    for(const input of [f.preset,f.window,f.auto,f.trigger,f.recent,f.reserve,f.headroom])input.disabled=busy||snapshot.readonly===true;
+    for(const input of [f.preset,f.window,f.auto,f.trigger,f.recent,f.reserve,f.headroom])input.disabled=automatic||busy||snapshot.readonly===true;
     const current=snapshot.contextStatus||{},parts=[];
     if(!defaults){
       if(positive(current.nativeConfiguredWindowTokens))parts.push('Saved configured window: '+tokens(current.nativeConfiguredWindowTokens));
@@ -235,8 +254,9 @@ export function createContextControls({mount,id='next-context',scope='chat',api,
   }
   function load(value){base=contextOptions(value);f.preset.value=base.preset;f.window.value=base.preset==='custom'?String(base.windowTokens??''):'';f.auto.checked=base.autoCompact;f.trigger.value=String(base.compactAtTokens??'');f.recent.value=String(base.keepRecentTokens??'');f.reserve.value=String(base.outputReserveTokens??'');f.headroom.value=String(base.headroomTokens??'');f.advanced.open=base.outputReserveTokens!==undefined||base.headroomTokens!==undefined;dirty=false;revision++;draw();}
   function changed(){dirty=true;revision++;draw();onChange(draft(),revision);}
-  function setExpanded(value,{focus=false}={}){expanded=Boolean(value);draw();if(focus&&expanded)f.preset.focus();if(!expanded&&!defaults)onClose();}
+  function setExpanded(value,{focus=false}={}){expanded=Boolean(value);draw();if(focus&&expanded)(info.automaticOnly?(f.nativeReset.hidden?f.toggle:f.nativeReset):f.preset).focus();if(!expanded&&!defaults)onClose();}
   f.toggle.addEventListener('click',()=>setExpanded(!expanded));
+  f.nativeReset.addEventListener('click',()=>{if(destroyed||!info.automaticOnly||f.nativeReset.hidden||f.nativeReset.disabled)return;load({});changed();});
   for(const input of [f.preset,f.auto])input.addEventListener('change',changed);
   for(const input of [f.window,f.trigger,f.recent,f.reserve,f.headroom])input.addEventListener('input',changed);
   mount.addEventListener('keydown',event=>{if(event.key==='Escape'&&!defaults){event.preventDefault();event.stopPropagation();setExpanded(false);}else if(event.key==='Enter'&&event.target?.tagName!=='BUTTON'){event.preventDefault();event.stopPropagation();}});
@@ -266,6 +286,7 @@ export function createContextControls({mount,id='next-context',scope='chat',api,
     compress(){
       if(destroyed||!compaction)return{accepted:false,reason:'Context compression is unavailable.'};
       if(compaction.state(snapshot.target?.key)?.pending)return{accepted:true,pending:true};
+      if(contextModelInfo(snapshot.status||{},snapshot.target?.model||snapshot.model||'default').automaticOnly)return{accepted:false,reason:nativeContextReason};
       const reason=snapshot.loading?'Loading saved conversation…':snapshot.busy?'Wait for the current action to finish.':snapshot.readonly?'Restore this conversation before compressing it.':snapshot.target?.reason||snapshot.reason||(!snapshot.target?'Send a message to create a saved conversation first.':'');
       if(reason)return{accepted:false,reason};
       void compaction.start({...snapshot.target});return{accepted:true};

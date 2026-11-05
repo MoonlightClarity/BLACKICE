@@ -88,6 +88,65 @@ async function settledConnectorJob(f, grant, jobId) {
   assert.fail('The disposable direct action did not settle.');
 }
 
+test('the public gateway challenges anonymous MCP discovery and preserves authenticated initialization and execution on the same grant', async t => {
+  const f = await fixture(t), [grant] = await approvedDirectGrants(f);
+  const origin = f.app.chatGPTConnector.origin;
+  const headers = { Accept: 'application/json, text/event-stream', 'Content-Type': 'application/json' };
+  const initialize = { jsonrpc: '2.0', id: 'fixture-initialize', method: 'initialize', params: {
+    protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'Fixture MCP client', version: '1' },
+  } };
+  const list = { jsonrpc: '2.0', id: 'fixture-catalog', method: 'tools/list', params: {} };
+  const request = ({ body = '', headers: extra = {}, route = '/mcp/chatgpt', method = 'POST' } = {}) => new Promise((resolve, reject) => {
+    const payload = typeof body === 'string' ? body : JSON.stringify(body);
+    const req = http.request({ hostname: '127.0.0.1', port: f.app.remoteAccess.gateway.port, path: route, method,
+      headers: { Host: new URL(origin).host, 'Content-Length': Buffer.byteLength(payload), ...extra } }, res => {
+      let value = ''; res.setEncoding('utf8'); res.on('data', chunk => { value += chunk; });
+      res.once('end', () => resolve({ status: res.statusCode, headers: res.headers, body: JSON.parse(value) }));
+    });
+    req.once('error', reject); req.end(payload);
+  });
+  for (const probe of [
+    { body: initialize, headers }, { body: list, headers }, {},
+    { body: 'not-json', headers: { Accept: 'text/plain', 'MCP-Protocol-Version': 'unsupported' } },
+  ]) {
+    const response = await request(probe);
+    assert.equal(response.status, 401);
+    assert.equal(response.headers['www-authenticate'], f.app.chatGPTOAuth.challenge(['read']));
+    assert.equal(response.body.code, 'CHATGPT_AUTH_REQUIRED'); assert.equal(response.body.result, undefined);
+  }
+  const metadata = await request({ method: 'GET', route: '/.well-known/oauth-protected-resource/mcp/chatgpt' });
+  assert.equal(metadata.status, 200); assert.equal(metadata.body.resource, origin + '/mcp/chatgpt');
+  const oauthMetadata = await request({ method: 'GET', route: '/.well-known/oauth-authorization-server' });
+  assert.equal(oauthMetadata.status, 200); assert.equal(oauthMetadata.body.issuer, origin);
+  const invalid = await request({ body: initialize, headers: { Authorization: 'Bearer invalid-fixture' } });
+  assert.equal(invalid.status, 401); assert.match(invalid.headers['www-authenticate'], /error="invalid_token"/);
+  assert.equal((await request({ headers: { Origin: 'https://attacker.example' } })).status, 403);
+  assert.equal((await f.app.chatGPTConnector.status()).lastAuthenticatedToolCall, null);
+  const authorized = { ...headers, Authorization: 'Bearer ' + grant.token };
+  const initialized = await request({ body: initialize, headers: authorized });
+  assert.equal(initialized.status, 200); assert.equal(initialized.body.id, initialize.id);
+  assert.equal(initialized.body.result.protocolVersion, initialize.params.protocolVersion);
+  const catalog = await request({ body: list, headers: authorized });
+  assert.equal(catalog.status, 200); assert.ok(catalog.body.result.tools.some(tool => tool.name === 'blackice_direct_status'));
+  assert.equal((await f.app.chatGPTConnector.status()).lastAuthenticatedToolCall, null, 'handshakes do not execute tools');
+  const result = await connectorTool(f, grant, 'blackice_direct_status', { nonce: 'same-grant-after-initialize' });
+  assert.equal(result.structuredContent.connectionId, grant.client.id);
+  assert.deepEqual(result.structuredContent.grantedScopes, grant.client.scopes);
+  assert.equal(result.structuredContent.nonce, 'same-grant-after-initialize');
+  assert.equal(f.app.chatGPTOAuth.getClient(grant.client.id).id, grant.client.id);
+  assert.deepEqual(f.app.chatGPTOAuth.getClient(grant.client.id).scopes, grant.client.scopes);
+  assert.equal((await request({ body: initialize, headers: { Authorization: authorized.Authorization } })).status, 406);
+  assert.equal((await request({ body: 'not-json', headers: authorized })).status, 400);
+  const modern = { jsonrpc: '2.0', id: 'modern-discovery', method: 'server/discover', params: {
+    _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {} },
+  } };
+  const modernHeaders = { ...authorized, 'MCP-Protocol-Version': '2026-07-28', 'MCP-Method': 'server/discover' };
+  const discovered = await request({ body: modern, headers: modernHeaders });
+  assert.equal(discovered.status, 200); assert.equal(discovered.body.result.resultType, 'complete');
+  assert.equal((await request({ body: modern, headers: { ...modernHeaders, 'MCP-Method': 'tools/call' } })).status, 400);
+  assert.equal(f.runtime.agentCalls, 0); assert.equal(f.app.engine.listRuns().length, 0);
+});
+
 test('authenticated scoped commands and writes execute directly without a local approval setting', async t => {
   const f = await fixture(t), [grant] = await approvedDirectGrants(f);
   const status = await connectorTool(f, grant, 'blackice_direct_status', { nonce: 'no-local-action-approval' });

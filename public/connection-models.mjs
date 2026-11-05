@@ -1,4 +1,5 @@
 import { MODEL_LIMIT_SOURCE_LABELS } from './provider-catalog.mjs';
+import { readyDisabledProvider } from './provider-availability.mjs';
 
 const knownLimitSource = value => Object.hasOwn(MODEL_LIMIT_SOURCE_LABELS, value);
 const retrievedLimitSource = value => knownLimitSource(value) && value !== 'user-configured';
@@ -128,7 +129,7 @@ export function connectionDefaultModels(status = {}) {
   for (const model of status.models || []) {
     const id = model.id === selected || model.model === selected ? selected : model.id || model.model;
     const native = !String(id).includes('::'), available = typeof model.available === 'boolean' ? model.available : native && codexReady;
-    if (id && available && !/^(?:antigravity|qwen_code)::/.test(id) && !seen.has(id)) { values.push({ value: id, label: `${native?'':'Unsupported endpoint · '}${model.displayName || id}${native && model.hidden === true ? ' · Hidden by Codex' : native && model.source === 'custom' ? ' · Custom model ID' : ''}${native && codexModelLifecycleLabel(model) ? ` · ${codexModelLifecycleLabel(model)}` : ''}` }); seen.add(id); }
+    if (id && (available || readyDisabledProvider(status, id)) && !/^(?:antigravity|qwen_code)::/.test(id) && !seen.has(id)) { values.push({ value: id, ...(!available ? { disabled: true } : {}), label: `${model.displayName || id}${native && model.hidden === true ? ' · Hidden by Codex' : native && model.source === 'custom' ? ' · Custom model ID' : ''}${native && codexModelLifecycleLabel(model) ? ` · ${codexModelLifecycleLabel(model)}` : ''}` }); seen.add(id); }
   }
   if (!seen.has(selected)) values.push({ value: selected, label: `${selected} · unavailable · previous selection`, disabled: true });
   return values;

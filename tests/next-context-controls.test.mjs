@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {planningDOM} from './fixture-planning-dom.mjs';
-import {createContextControls,createContextCompaction,contextModelInfo,contextBudgetPreview,conversationContext} from '../public/next/core/context-controls.mjs';
+import {createContextControls,createContextCompaction,contextModelInfo,contextBudgetPreview,validateContextOptions,conversationContext} from '../public/next/core/context-controls.mjs';
 import {projectFamily} from '../public/next/chat/reader-model.mjs';
 import {submitChat} from '../public/next/chat/send.mjs';
 import {createChatWorkspace} from '../public/next/chat/chat.mjs';
@@ -26,6 +26,86 @@ function controls(t,options={}){
   t.after(()=>control.destroy());control.update({status:info(),model:'gpt-6-luna'});
   return {...dom,control,calls,changed};
 }
+
+
+const vibeSelection='mistral-vibe::fixture-reported-model';
+const vibeInfo=()=>({...info(),subscriptionProviders:[{id:'mistral-vibe',type:'subscription-cli',available:true}],models:[...info().models,{
+  id:vibeSelection,model:'fixture-reported-model',providerId:'mistral-vibe',providerType:'subscription-cli',displayName:'CLI-reported fixture model',
+  available:true,contextWindowTokens:202144,contextWindowSource:'runtime-reported',
+}]});
+
+test('Vibe context uses only reported capacity and accepts Model default without API budget controls',()=>{
+  const status=vibeInfo(),native=contextModelInfo(status,vibeSelection);
+  assert.equal(native.native,true);assert.equal(native.automaticOnly,true);assert.equal(native.defaultWindow,202144);
+  assert.equal(native.maxWindow,null);assert.equal(native.outputLimit,null);assert.equal(native.percent,null);
+  assert.deepEqual(contextBudgetPreview({preset:'extended',compactAtTokens:20000},native),{window:202144,requested:null,usable:202144,estimated:false,capped:false});
+  assert.deepEqual(validateContextOptions({},native),{preset:'model',windowTokens:null,autoCompact:true});
+  assert.deepEqual(validateContextOptions({preset:'model',windowTokens:null,autoCompact:true},native),{preset:'model',windowTokens:null,autoCompact:true});
+  for(const options of [{preset:'extended'},{preset:'custom',windowTokens:64000},{autoCompact:false},{compactAtTokens:64000},{outputReserveTokens:4096},{keepRecentTokens:4000}])
+    assert.throws(()=>validateContextOptions(options,native),/Use native automatic context/);
+  assert.equal(contextModelInfo({models:[]},vibeSelection).automaticOnly,true,'A saved native identity retains its restriction while catalog data is loading.');
+  assert.equal(contextModelInfo({providers:[{id:'mistral-vibe'}],models:[]},vibeSelection).automaticOnly,false,'A grandfathered API provider keeps its exact namespace.');
+  assert.equal(contextModelInfo({models:[{id:vibeSelection,providerId:'mistral-vibe',providerType:'openai-compatible'}]},vibeSelection).automaticOnly,false);
+  assert.equal(status.defaultModel,'gpt-6-luna');
+});
+
+test('Vibe catalog context limits are labelled separately from an observed native working window',t=>{
+  const f=controls(t),status=vibeInfo(),catalogModel=status.models.find(model=>model.id===vibeSelection);
+  Object.assign(catalogModel,{displayName:'Catalog fixture model',contextWindowTokens:1048576,contextWindowSource:'account-catalog'});
+  const native=contextModelInfo(status,vibeSelection);
+  assert.equal(native.source,'account-catalog');
+  assert.deepEqual(contextBudgetPreview({preset:'model'},native),{window:1048576,requested:null,usable:null,estimated:false,capped:false});
+  f.control.update({status,model:vibeSelection});f.control.open();
+  assert.match(f.$('#fixture-context-capacity').textContent,/Catalog context limit: 1,048,576 tokens/);
+  assert.match(f.$('#fixture-context-capacity').textContent,/Native automatic management determines the working window/);
+  assert.doesNotMatch(f.$('#fixture-context-capacity').textContent,/CLI-reported context/);
+  assert.match(f.$('#fixture-context-summary').textContent,/catalog limit 1,048,576 tokens/);
+  assert.deepEqual(f.control.read(),{preset:'model',windowTokens:null,autoCompact:true});
+  assert.equal(f.$('#fixture-context-api-options').hidden,true);assert.equal(f.$('#fixture-context-native-reset').hidden,true);
+  f.control.update({status:vibeInfo()});
+  assert.match(f.$('#fixture-context-capacity').textContent,/CLI-reported context: 202,144 tokens/);
+  assert.doesNotMatch(f.$('#fixture-context-summary').textContent,/catalog limit/);
+  assert.equal(f.control.dirty,false);assert.equal(f.changed.length,0);assert.equal(f.calls.length,0);
+  assert.equal(status.defaultModel,'gpt-6-luna');
+});
+
+test('Vibe context hides unsupported controls and guards compression by the saved conversation model',async t=>{
+  const f=controls(t),status=vibeInfo();f.control.update({status,model:vibeSelection});f.control.open();
+  assert.deepEqual(f.control.read(),{preset:'model',windowTokens:null,autoCompact:true});
+  for(const suffix of ['budget-controls','api-options','auto-row','advanced','native-reset'])assert.equal(f.$('#fixture-context-'+suffix).hidden,true,suffix);
+  assert.match(f.$('#fixture-context-capacity').textContent,/CLI-reported context: 202,144/);
+  assert.doesNotMatch(f.$('#fixture-context-capacity').textContent,/Maximum/);
+  assert.match(f.$('#fixture-context-budget-note').textContent,/manages context automatically.*saved history is preserved/);
+  assert.equal(f.document.activeElement,f.$('#fixture-context-toggle'));
+  const savedVibe={key:'vibe:agent',runId:'vibe',nodeId:'agent',model:vibeSelection,reason:''};
+  f.control.update({model:'gpt-6-luna',target:savedVibe});
+  assert.deepEqual(f.control.compress(),{accepted:false,reason:'Mistral Vibe Code manages context automatically. Manual compression and custom context settings are unavailable; saved history is preserved.'});
+  assert.equal(f.calls.length,0,'No compaction request is sent for a saved Vibe thread.');
+  f.control.update({model:vibeSelection,target:{key:'api:agent',runId:'api',nodeId:'agent',model:'first::gpt-6-luna',reason:''}});
+  assert.equal(f.control.compress().accepted,true,'Selecting Vibe for the next response does not change the saved API target.');
+  await tick();assert.equal(f.calls.length,1);assert.equal(f.calls[0][0],'/api/runs/api/compact');assert.equal(f.changed.length,0);
+});
+
+test('Vibe retains an unsupported draft until an explicit available reset, without changing model or defaults',async t=>{
+  const f=controls(t),status=vibeInfo(),original={preset:'custom',windowTokens:140000,autoCompact:false,compactAtTokens:56000,keepRecentTokens:10000,outputReserveTokens:4096,headroomTokens:1024};
+  f.control.select('draft-owner',original);f.control.update({status,model:vibeSelection});f.control.open();
+  assert.equal(f.$('#fixture-context-preset').value,'custom');assert.equal(f.$('#fixture-context-window').value,'140000');
+  assert.equal(f.$('#fixture-context-budget-controls').hidden,false);assert.equal(f.$('#fixture-context-preset').disabled,true);
+  assert.equal(f.$('#fixture-context-native-reset').hidden,false);assert.equal(f.document.activeElement,f.$('#fixture-context-native-reset'));
+  assert.match(f.$('#fixture-context-budget-note').textContent,/Unsupported draft retained: Preset: custom.*140,000.*Automatic compression: off.*56000.*10000/);
+  assert.throws(()=>f.control.read(),/Use native automatic context/);assert.equal(f.control.dirty,false);assert.equal(f.changed.length,0);
+  f.control.update({model:'gpt-6-luna'});assert.deepEqual(f.control.read(),original);
+  f.control.update({model:vibeSelection,busy:true});await f.click('#fixture-context-native-reset');
+  assert.equal(f.$('#fixture-context-window').value,'140000');assert.equal(f.changed.length,0);
+  f.control.update({busy:false,readonly:true});await f.click('#fixture-context-native-reset');assert.equal(f.changed.length,0);
+  f.control.update({readonly:false});await f.click('#fixture-context-native-reset');
+  assert.deepEqual(f.control.read(),{preset:'model',windowTokens:null,autoCompact:true});
+  assert.equal(f.control.dirty,true);assert.equal(f.changed.length,1);assert.equal(f.$('#fixture-context-native-reset').hidden,true);
+  assert.equal(f.$('#fixture-context-api-options').hidden,true);
+  assert.deepEqual(original,{preset:'custom',windowTokens:140000,autoCompact:false,compactAtTokens:56000,keepRecentTokens:10000,outputReserveTokens:4096,headroomTokens:1024});
+  assert.equal(status.defaultModel,'gpt-6-luna');assert.equal(status.defaultModelSelection,'gpt-6-luna');
+  assert.equal(contextModelInfo(status,vibeSelection).id,vibeSelection);
+});
 
 test('native capacity, allowance estimate and route identity stay distinct across three endpoints',()=>{
   const status=info(),native=contextModelInfo(status,'gpt-6-luna');

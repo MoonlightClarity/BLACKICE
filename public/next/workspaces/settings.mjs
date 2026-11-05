@@ -1,6 +1,7 @@
 import { connectionDefaultModels } from '../../connection-models.mjs';
 import { createForceRestart } from './settings-restart.mjs';
 import { createGroupedModelPicker } from '../core/model-picker.mjs';
+import { enableProviderForModel } from '../../provider-availability.mjs';
 import { createContextControls } from '../core/context-controls.mjs';
 
 const REASONING=['default','none','minimal','low','medium','high','xhigh','max','ultra'];
@@ -22,7 +23,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '<button type="button" id="next-settings-choose">Choose…</button>',
     '<button type="button" class="next-primary" id="next-settings-save-cwd">Save</button></div></section>',
     '<section class="next-card"><h2>Model subscriptions</h2>',
-    '<p class="next-help">Codex is the supported native subscription runtime. Choose an exact Codex model; retired native CLI providers are no longer offered. Existing history retains its original labels. BLACKICE never switches to pay-per-token APIs automatically.</p>',
+    '<p class="next-help">Choose a Codex or Mistral Vibe Code model, or use an optional API connection. Your saved chats retain their selected models. Set up providers in Models; adding or enabling a connection keeps the current default.</p>',
     '<p id="next-settings-subscription-status" class="next-help" role="status"></p>',
     '<h3>Default model</h3>',
     '<div class="next-row"><select id="next-settings-model" class="next-field" style="flex:1;width:auto"></select>',
@@ -87,7 +88,11 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     modelDirty=false,modelRevision=0,runtimeDirty=false,runtimeRevision=0,executionDirty=false,executionRevision=0,statusRead=0;
   const pending=new Set(),panels=new Map(),sectionButtons=[...mount.querySelectorAll('[data-settings-section]')];
   let runtimeSettings=status.runtimeSettings||{};
-  const modelPicker=createGroupedModelPicker({select:f.model,label:'Default model'});
+  const modelPicker=createGroupedModelPicker({select:f.model,label:'Default model',onSetupProvider:openModelProvider,onEnableProvider:async id=>{
+    const fresh=await enableProviderForModel(api,status,id);
+    if(destroyed||!active)return null;
+    drawStatus(fresh);return fresh;
+  }});
   const contextDefaults=createContextControls({mount:$('next-runtime-context'),id:'next-runtime-context',scope:'defaults'});
   const refreshModelPicker=()=>{const selected=f.model.value||status.defaultModelSelection||'default';modelPicker.update({models:connectionDefaultModels({...status,defaultModelSelection:selected}),status:{...status,runtimeSettings},selected});contextDefaults.update({status,model:selected});};
   function updateRuntimeSettings(value){
@@ -156,11 +161,16 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     if(!panel.instance){
       if(!panel.loading)panel.loading=loaders[name]().then(factory=>{
         if(destroyed)return;
-        panel.instance=factory({mount:$('next-settings-'+name),api,events,notify,onChanged:()=>void refreshStatus(),getRuntimeSettings:()=>runtimeSettings,onRuntimeSettings:value=>{generation++;statusRead++;updateRuntimeSettings(value);}});
+        panel.instance=factory({mount:$('next-settings-'+name),api,events,notify,onChanged:()=>void refreshStatus(),onStatus:value=>{if(active&&!destroyed){statusRead++;drawStatus(value);}},getRuntimeSettings:()=>runtimeSettings,onRuntimeSettings:value=>{generation++;statusRead++;updateRuntimeSettings(value);}});
       }).catch(error=>{panels.delete(name);if(active&&section===name){$('next-settings-'+name).textContent='This section could not open. '+error.message;notify(error.message,true);}});
       await panel.loading;
     }
-    if(active&&section===name&&token===sectionRevision)panel.instance?.enter?.();
+    if(active&&section===name&&token===sectionRevision){panel.instance?.updateStatus?.(status);panel.instance?.enter?.();}
+  }
+  async function openModelProvider(id){
+    if(id!=='mistral-vibe'||destroyed||!active)return;
+    await selectSection('models');
+    if(active&&!destroyed&&section==='models')panels.get('models')?.instance?.focusProvider?.(id);
   }
   sectionButtons.forEach((button,index)=>{
     button.addEventListener('click',()=>void selectSection(button.dataset.settingsSection));
@@ -175,12 +185,12 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     });
   });
   function drawStatus(info){
-    status={...(info||{}),runtimeSettings:info?.runtimeSettings||runtimeSettings};runtimeSettings=status.runtimeSettings;panels.get('models')?.instance?.updateRuntimeSettings?.(runtimeSettings);
+    status={...(info||{}),runtimeSettings:info?.runtimeSettings||runtimeSettings};runtimeSettings=status.runtimeSettings;panels.get('models')?.instance?.updateRuntimeSettings?.(runtimeSettings);panels.get('models')?.instance?.updateStatus?.(status);
     f.restartCard.hidden=!(status.desktopLifecycle?.available===true && status.desktopLifecycle?.supportsRestart===true && status.desktopLifecycle?.localManagement===true);
     if(f.subscriptionStatus) {
       const c=status.codex||status;
       const native=[c.connected&&c.authenticated?'Codex: ready':'Codex: connect account',
-        ...(status.subscriptionProviders||[]).map(provider=>provider.name.split(' · ')[0]+': '+(provider.configured?'ready':provider.installed?'subscription not configured':'CLI not installed'))];
+        ...(status.subscriptionProviders||[]).map(provider=>(provider.name||provider.id)+': '+(provider.available===true?'ready':provider.installed!==true?'CLI not installed':provider.authenticated!==true?'sign in required':'refresh connection and models'))];
       f.subscriptionStatus.textContent=native.join('  ·  ');
     }
     f.status.textContent='BLACKICE '+(status.version||'')+' · '+
@@ -332,6 +342,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
   },f.reconnectFeedback));
   f.refresh.addEventListener('click',()=>void load());
   return {
+    openModelProvider,
     enter(){if(destroyed||active)return;active=true;drawStatus(getStatus?.()||status);void selectSection(section);},
     leave(){modelPicker.close({restoreFocus:false});active=false;generation++;sectionRevision++;panels.get(section)?.instance?.leave?.();},
     updateStatus(value){if(active&&value&&typeof value==='object'&&!Array.isArray(value)){statusRead++;drawStatus(value);}},

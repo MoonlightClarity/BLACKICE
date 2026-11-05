@@ -323,8 +323,28 @@ test('exact source verification rejects matching-index partial receipts and prov
     await assert.rejects(verifyReleaseSource(value, directory), /skipped test/);
   }
   const optional = 'Relay-owned sign-in and local storage survive a full process restart without foregrounding';
-  await save({ ...receipt, optionalSkips: [optional], tests: { ...receipt.tests, total: 3, optionalSkipped: 1 } });
-  assert.equal((await verifyReleaseSource(value, directory)).tests.optionalSkipped, 1);
+  const nativeOptional = [
+    'native popups preserve OAuth routing and remain independent when their opener closes',
+    'live contained input updates application state and delivers editing keys without OS focus',
+    'offscreen contained input updates application state and delivers editing keys without OS focus',
+  ];
+  for (const name of [optional, ...nativeOptional]) {
+    await save({ ...receipt, optionalSkips: [name], tests: { ...receipt.tests, total: 3, optionalSkipped: 1 } });
+    assert.equal((await verifyReleaseSource(value, directory)).tests.optionalSkipped, 1, name);
+  }
+  await save({ ...receipt, optionalSkips: nativeOptional, tests: { ...receipt.tests, total: 5, optionalSkipped: 3 } });
+  assert.equal((await verifyReleaseSource(value, directory)).tests.optionalSkipped, 3);
+  for (const optionalSkips of [
+    ['native cross-origin popups redirect, message their opener and follow or close without breaking Observe pins or task routing'],
+    ['live contained input updates application state'],
+    [nativeOptional[0], nativeOptional[0]],
+    [...nativeOptional, 'An unrelated required native test'],
+  ]) {
+    await save({ ...receipt, optionalSkips, tests: { ...receipt.tests, total: 2 + optionalSkips.length, optionalSkipped: optionalSkips.length } });
+    await assert.rejects(verifyReleaseSource(value, directory), /skipped test/);
+  }
+  await save({ ...receipt, optionalSkips: nativeOptional, tests: { ...receipt.tests, total: 6, optionalSkipped: 3, requiredSkipped: 1 } });
+  await assert.rejects(verifyReleaseSource(value, directory), /required|failed|pass/i);
   await save(receipt);
   assert.equal((await verifyReleaseSource(value, directory)).tests.passed, 2);
 });

@@ -117,8 +117,10 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
   const pageAddress=tab=>tab?.url==='about:blank'?'':tab?.url||'';
   function paintAddress(force=false){
     const draft=addressDrafts.get(addressKey());
-    if(draft?.dirty)ui.url.value=draft.value;
-    else if(force||document.activeElement!==ui.url)ui.url.value=openingBlank?'':pageAddress(current());
+    // Native page focus can leave the shell's activeElement on this input.
+    // Only an unsent draft blocks synchronization with the observed page URL.
+    const value=draft?.dirty?draft.value:openingBlank?'':pageAddress(current());
+    if(force||ui.url.value!==value)ui.url.value=value;
   }
   const challengeKey=challenge=>JSON.stringify([challenge.tabId,challenge.challengeId||challenge.id]);
   function tabChallenge(tab){
