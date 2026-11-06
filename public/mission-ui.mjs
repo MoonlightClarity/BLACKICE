@@ -879,7 +879,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
       card.dataset.signature = blockerSignature;
       const label = blocker.reason === 'verification' ? 'Verification required' : blocker.reason === 'permission' ? 'Website permission needed' : 'Sign-in required';
       const contained=blocker.browser==='relay';
-      card.innerHTML = `<span class="conversation-browser-signin-copy"><strong>${label}</strong><small>${escape(blocker.hostname)} · ${contained?'Sign in using the contained BLACKICE browser in Observe. The task waits for your follow-up.':'The agent reported a blocker. BrowserOS stays in the background until you choose to open it.'}</small></span><div class="conversation-browser-signin-actions"><button type="button" data-mission-action="${contained?'browser-signin-observe':'browser-signin-open'}">${contained?'Sign in inside Observe':'Open BrowserOS'}</button><button type="button" data-mission-action="browser-signin-resume"${mode.live || state.selecting ? ' disabled' : ''}>Prepare to resume</button></div>`;
+      card.innerHTML = `<span class="conversation-browser-signin-copy"><strong>${label}</strong><small>${escape(blocker.hostname)} · ${contained?'BLACKICE retains browser responsibility. The site requires an unsupported prerequisite; the agent should inspect available recovery routes and report the precise blocker.':'The agent reported a blocker. BrowserOS stays in the background until you choose to open it.'}</small></span><div class="conversation-browser-signin-actions"><button type="button" data-mission-action="${contained?'browser-signin-observe':'browser-signin-open'}">${contained?'Inspect browser state':'Open BrowserOS'}</button><button type="button" data-mission-action="browser-signin-resume"${mode.live || state.selecting ? ' disabled' : ''}>Prepare to resume</button></div>`;
     }
     const banner = $('#conversation-state-banner'), bannerSignature = JSON.stringify([bucket, state.managing]); banner.hidden = bucket === 'active'; if (banner.dataset.signature !== bannerSignature) { banner.dataset.signature = bannerSignature; banner.innerHTML = bucket === 'active' ? '' : `<span>${bucket === 'deleted' ? 'In Trash' : 'Archived'}</span><button type="button" data-mission-action="restore-conversation"${state.managing ? ' disabled' : ''}>Restore to reply</button>`; }
     const chooser = $('#conversation-composer-agent'), signature = JSON.stringify([mode.agents.map(node => [node.id, node.name]), mode.agent?.id]); chooser.hidden = mode.agents.length < 2; if (chooser.dataset.signature !== signature) { chooser.dataset.signature = signature; chooser.innerHTML = mode.agents.length > 1 ? `<label>Reply to <select id="conversation-agent" aria-label="Agent for this reply">${mode.agents.map(node => `<option value="${escape(node.id)}"${node.id === mode.agent?.id ? ' selected' : ''}>${escape(node.name)}</option>`).join('')}</select></label>` : ''; }
@@ -1106,7 +1106,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
         const mode=composerMode(getSnapshot()),blocker=!state.forceNew&&selectedState()==='active'?mode.run?.browserSignIn:null;
         if(!blocker||blocker.status!=='awaiting-user')return;
         if(blocker.browser==='relay'){
-          if(!onObserve){toast('Open Observe to sign in inside the contained BLACKICE browser.',true);return;}
+          if(!onObserve){toast('Observe is unavailable for inspecting this blocker. BLACKICE retains responsibility for website actions.',true);return;}
           button.disabled=true;try{await onObserve(mode.run.id);}finally{if(button.isConnected)button.disabled=false;}
           return;
         }
@@ -1121,7 +1121,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
         const blocker = !state.forceNew && selectedState() === 'active' ? composerMode(getSnapshot()).run?.browserSignIn : null;
         if (!blocker || blocker.status !== 'awaiting-user' || state.sending || state.selecting || state.capturing || composerMode(getSnapshot()).live) return;
         if (draft().task.trim()) { toast('Your unsent message is preserved. Send or clear it before resuming this task.'); $('#mission-task').focus({preventScroll:true}); return; }
-        const text = `I have handled the sign-in or verification for ${blocker.hostname} in ${blocker.browser==='relay'?'the contained BLACKICE browser in Observe':'BrowserOS Neo'}. Reinspect the website to confirm access. Before continuing the original task, check whether any intended public action already happened so nothing is duplicated. Continue only the remaining authorized work, and verify the actual result.`;
+        const text = `BLACKICE must revisit the unresolved ${blocker.reason} prerequisite for ${blocker.hostname} in the contained BLACKICE browser. Reinspect the website and supported authentication paths without delegating browser actions to the user. Before continuing the original task, check whether any intended public action already happened so nothing is duplicated. Continue only the remaining authorized work, and verify the actual result.`;
         const applied=applyPromptDraft(capturePromptDraft(),text); if (!applied.applied) toast(applied.error,true);
         return;
       }

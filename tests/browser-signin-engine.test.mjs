@@ -111,6 +111,60 @@ test('native social-login report inspects an owned email alternative and keeps t
  assert.doesNotMatch(run.nodes.agent.output,/application submitted|sign-in completed/i);
 });
 
+test('a previously recorded sign-in blocker clears when the agent discovers an email route',async t=>{
+  const root=await mkdtemp(path.join(tmpdir(),'blackice-email-unblock-')),cwd=path.join(root,'work'),dataDir=path.join(root,'data');
+  await mkdir(cwd);
+  const url='https://accounts.example.org/login';
+  let owner=null,emailVisible=false,snapshots=0,clicks=0;
+  const browser={
+    status:()=>({available:true,contained:true,tabs:[{tabId:'email-tab',url,documentId:'email-tab:1',browser:'relay',purpose:'ordinary',folderId:'task-folder',owner}],activeTab:'email-tab',folders:[{id:'task-folder',kind:'task',taskId:owner?.taskId}]}),
+    perform:async args=>{
+      if(args.action==='snapshot'){
+        snapshots++;
+        return {tabId:'email-tab',url,documentId:'email-tab:1',frames:[{elements:[
+          emailVisible
+            ? {role:'button',name:'Continue with email',ref:'email-option',disabled:false}
+            : {role:'button',name:'Continue with Google',ref:'social-only',disabled:false}
+        ]}]};
+      }
+      if(args.action==='click'){
+        clicks++;
+        assert.equal(args.tabId,'email-tab');
+        assert.equal(args.ref,'email-option');
+        return {tabId:'email-tab',url,documentId:'email-tab:1',actionDispatched:true};
+      }
+      throw Error('Unexpected browser action: '+args.action);
+    },
+    close:async()=>{}
+  };
+  class Runtime extends EventEmitter {
+    status(){return {connected:true,authenticated:true,defaultModel:'fixture',models:[{id:'fixture',model:'fixture',available:true}]};}
+    async runAgent(options){
+      const reported=await options.onToolCall({name:'relay_browser_signin',arguments:{site:url,reason:'sign-in',evidence:'login-form'}});
+      assert.equal(reported.success,true);
+      assert.equal(JSON.parse(reported.contentItems[0].text).recorded,true,'no email route was initially present');
+      emailVisible=true;
+      const clicked=await options.onToolCall({name:'relay_browser',arguments:{action:'click',browser:'relay',tabId:'email-tab',ref:'email-option',expectedUrl:url,expectedDocumentId:'email-tab:1'}});
+      assert.equal(clicked.success,true,JSON.stringify(clicked));
+      return {output:'Used the now-visible email option without handing browser work to the user.'};
+    }
+  }
+  const engine=new HarnessEngine({runtime:new Runtime(),dataDir,defaultCwd:cwd,browser});
+  await engine.init();
+  t.after(async()=>{await engine.close();await rm(root,{recursive:true,force:true});});
+  const task='Use email sign-in at '+url+' rather than asking the user to operate the browser.';
+  const workflow=createMissionWorkflow({task,model:'fixture',cwd,id:'email-unblock-fixture',planningMode:'off'});
+  const started=engine.startRun({workflow,input:task});
+  const running=engine.getRun(started.id);
+  owner={taskId:running.taskId||running.id,runId:running.id,nodeId:'agent'};
+  let run;
+  for(let i=0;i<110;i++){run=engine.getRun(started.id);if(run?.settled)break;await new Promise(resolve=>setTimeout(resolve,20));}
+  assert.equal(run?.status,'completed',run?.error);
+  assert.equal(run.browserSignIn,undefined,'an observed email route clears a stale human blocker');
+  assert.ok(snapshots>=2,'recheck site after the previously reported blocker');
+  assert.equal(clicks,1,'the email route was clicked exactly once');
+});
+
 test('guarded delegated workers preserve the contained challenge while independent integrations remain usable',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'agentdesk-delegated-auth-')),cwd=path.join(root,'work'),dataDir=path.join(root,'data');
  await mkdir(cwd);

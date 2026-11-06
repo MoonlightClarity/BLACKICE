@@ -1,6 +1,5 @@
 import { BrowserWindow, session } from 'electron';
 import { ownershipAction, ownershipChange } from '../lib/browser-ownership.mjs';
-import { returnTerminalBrowserTab } from '../lib/browser-owner-recovery.mjs';
 import { EventEmitter } from 'node:events';
 import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
@@ -794,7 +793,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     const owner = browserOwner(context), suspended = [], retained = [], released = [], closed = [], folders = new Set();
     if (!owner) throw capacityError('A host browser owner is required for cleanup.', 'BROWSER_OWNER_INVALID');
     for (const tab of [...this.tabs.values()]) if (tab.purpose !== 'chat-mode' && sameOwner(tab.owner, owner) && tab.owner.runId === owner.runId) {
-      if (['paused', 'awaiting_input', 'running', 'queued'].includes(status)) { retained.push({ tabId: tab.id, reason: 'This task is not finished; preserve its live page state.' }); continue; }
+      if (['paused', 'awaiting_input', 'running', 'queued', 'awaiting-user'].includes(status)) { retained.push({ tabId: tab.id, reason: 'BLACKICE retains this agent-owned browser page and its live state; no user browser handoff is permitted.' }); continue; }
       // Ending an engine run does not end its durable task. Preserve the live
       // document for a supported Continue, including uncertain external effects.
       // Explicit human handbacks and ordinary terminal cleanup keep their policy.
@@ -807,32 +806,21 @@ export class ElectronBrowserDriver extends EventEmitter {
           : this.downloads.some(item => item.tabId === tab.id && item.status === 'downloading') ? 'A download is still running.' : null;
         if (reason) { retained.push({ tabId: tab.id, reason }); continue; }
         folders.add(tab.folderId); this.closeTab(tab); closed.push(tab.id);
-      } else if (status === 'failed' || status === 'cancelled' || status === 'awaiting-user') {
-        // A failed worker cannot transfer its own tab. Release the exact saved
-        // page to the person for a future explicit take_ownership. Never replay
-        // an uncertain input, interrupt an active dialog or stop a download.
+      } else if (status === 'failed' || status === 'cancelled') {
+        // A failed or cancelled run is not authority to hand off its unfinished
+        // browser steps. Retain task ownership for a future agent continuation.
+        // Suspending only idle agent pages bounds resources; pending interactions,
+        // protected pages and in-flight downloads remain untouched and inspectable.
         const busy = tab.pendingInteraction || tab.suspendedWork.size
           || this.downloads.some(item => item.tabId === tab.id && item.status === 'downloading');
         if (busy || tab.protectedContent) {
-          retained.push({ tabId: tab.id, reason: 'An interaction, download or protected page still needs inspection.' }); continue;
+          retained.push({ tabId: tab.id, reason: 'The agent-owned interaction or protected page still needs inspection.' }); continue;
         }
-        // Preserve pages a person has interacted with; ordinary agent-only
-        // tabs remain subject to the existing suspend-on-failure policy.
-        // Preserve the live verification/login challenge for the person in Observe.
-        // A terminal failure still suspends ordinary idle agent-only tabs.
-        if (status !== 'awaiting-user' && !tab.userPinned && !tab.humanCreated) {
-          const result = this.suspendTab(tab, { automatic: true });
-          if (!result.suspended) { retained.push({ tabId: tab.id, reason: result.reason }); continue; }
-          suspended.push(tab.id);
-        }
-        folders.add(tab.folderId);
-        const restored = returnTerminalBrowserTab(tab, { folderId: DEFAULT_FOLDER });
-        if (!restored) { retained.push({ tabId: tab.id, reason: 'The tab cannot yet change ownership.' }); continue; }
-        for (const child of this.tabs.values()) if (child.parentTabId === tab.id) child.parentTabId = null;
-        for (const [key, id] of this.ownerActiveTabs) if (id === tab.id) this.ownerActiveTabs.delete(key);
-        tab.ownershipReceipt = { action: 'terminal_owner_released', tabId: tab.id,
-          previousOwner: restored.previousOwner, owner: null, status, at: new Date().toISOString() };
-        released.push(tab.id);
+        const result = this.suspendTab(tab, { automatic: true });
+        if (result.suspended && !result.alreadySuspended) suspended.push(tab.id);
+        retained.push({ tabId: tab.id, reason: result.suspended
+          ? 'The agent-owned page is preserved for recovery or continuation.'
+          : result.reason || 'The agent-owned page remains available for recovery.' });
       } else {
         const result = this.suspendTab(tab, { automatic: true });
         if (result.suspended) suspended.push(tab.id); else retained.push({ tabId: tab.id, reason: result.reason });

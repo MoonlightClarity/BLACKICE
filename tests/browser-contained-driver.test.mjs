@@ -1809,7 +1809,9 @@ test('explicit ownership changes guard identities, preserve unrelated tabs and f
   await browser.perform(args(), { owner });
   await assert.rejects(browser.perform(args(), { owner: foreign }), { code: 'BROWSER_TAB_OWNERSHIP' });
   const transfer = { ...args(), action: 'transfer_ownership', destination: 'user' };
-  await browser.perform(transfer, { owner });
+  await assert.rejects(browser.perform(transfer, { owner }), { code: 'BROWSER_USER_HANDOFF_FORBIDDEN', actionDispatched: false });
+  assert.deepEqual(human.owner, owner);
+  await browser.perform(transfer, { owner, source: 'user' });
   assert.equal(human.owner, null); assert.equal(human.humanCreated, true);
   await driver.releaseOwner(owner, { status: 'completed' }); assert.ok(driver.tabs.has(human.id));
   await browser.perform(args(), { owner });
@@ -1823,7 +1825,7 @@ test('explicit ownership changes guard identities, preserve unrelated tabs and f
   assert.ok(saved.tabs.some(x => x.tabId === unrelated.id));
 });
 
-test('completed agent with unresolved CAPTCHA hands back the same live page instead of closing or replaying it', async t => {
+test('unresolved CAPTCHA retains the agent-owned live page instead of handing it to the user', async t => {
   const { driver, directory } = await fixture(t); await driver.init();
   const owner = { taskId: 'job-search', nodeId: 'agent', runId: 'captured-run' };
   const url = 'https://jobs.lever.co/jobgether/synthetic-job/apply';
@@ -1832,25 +1834,27 @@ test('completed agent with unresolved CAPTCHA hands back the same live page inst
   const before = driver.status().tabs.find(item => item.tabId === tab.id);
   assert.ok(liveWindow && !liveWindow.isDestroyed());
   const receipt = await driver.releaseOwner(owner, { status: 'awaiting-user' });
-  assert.deepEqual(receipt.released, [tab.id]);
+  assert.deepEqual(receipt.released, []);
+  assert.deepEqual(receipt.retained.map(item=>item.tabId), [tab.id]);
   assert.equal(receipt.closed?.length || 0, 0);
   assert.ok(driver.tabs.has(tab.id));
-  assert.equal(tab.window, liveWindow, 'verification page remains live for Observe');
+  assert.equal(tab.window, liveWindow, 'the verification page remains live for the agent');
   assert.equal(tab.window.isDestroyed(), false, 'no forced page reload or challenge loss');
-  assert.equal(tab.owner, null, 'ownership is returned to the person');
-  assert.equal(tab.folderId, 'folder_user');
-  assert.equal(tab.humanCreated, true);
-  assert.equal(tab.userPinned, true);
+  assert.deepEqual(tab.owner, owner, 'BLACKICE keeps the task browser ownership');
+  assert.notEqual(tab.folderId, 'folder_user');
+  assert.equal(tab.humanCreated, false);
+  assert.notEqual(tab.userPinned, true, 'the agent-owned tab was not pinned for a human handoff');
   const after = driver.status().tabs.find(item => item.tabId === tab.id);
   assert.equal(after.url, url);
   assert.equal(after.documentId, before.documentId);
   const saved = JSON.parse(await readFile(path.join(directory, 'browser-tabs.json'), 'utf8'));
-  assert.ok(saved.tabs.some(item => item.tabId === tab.id && item.owner == null));
-  const next = driver.newTab('https://example.org/completed', { owner });
+  assert.ok(saved.tabs.some(item => item.tabId === tab.id && item.owner?.taskId === owner.taskId));
+  const independent = { taskId: 'independent-task', nodeId: 'agent', runId: 'independent-run' };
+  const next = driver.newTab('https://example.org/completed', { owner: independent });
   await next.loading;
-  const cleaned = await driver.releaseOwner(owner, { status: 'completed' });
+  const cleaned = await driver.releaseOwner(independent, { status: 'completed' });
   assert.ok(cleaned.closed.includes(next.id), 'unrelated completed work still follows normal tab cleanup');
-  assert.ok(driver.tabs.has(tab.id), 'the unresolved human-owned challenge is not removed by later cleanup');
+  assert.ok(driver.tabs.has(tab.id), 'the unresolved agent-owned challenge remains in the original task');
 });
 
 for (const status of ['failed', 'cancelled']) test('continuation cleanup retains the exact live owner after ' + status, async t => {
@@ -1888,21 +1892,22 @@ for (const status of ['failed', 'cancelled']) test('continuation cleanup retains
     { code: 'BROWSER_TAB_OWNERSHIP' });
 });
 
-test('continuation retention preserves explicit human handback and default terminal cleanup', async t => {
+test('terminal cleanup retains agent-owned pages and only closes truly completed work', async t => {
   const { driver } = await fixture(t); await driver.init();
   for (const options of [{ status: 'failed' }, { status: 'awaiting-user', retainForContinuation: true }]) {
     const owner = { taskId: 'cleanup-' + options.status, nodeId: 'agent', runId: 'original-run' };
     const tab = driver.newTab('https://example.test/cleanup', { owner }); await tab.loading;
     const liveWindow = tab.window, before = driver.status().tabs.find(item => item.tabId === tab.id);
     const receipt = await driver.releaseOwner(owner, options);
-    assert.deepEqual(receipt.released, [tab.id]);
-    assert.equal(tab.owner, null);
-    assert.equal(tab.folderId, 'folder_user');
+    assert.deepEqual(receipt.released, []);
+    assert.deepEqual(receipt.retained.map(item=>item.tabId), [tab.id]);
+    assert.deepEqual(tab.owner, owner);
+    assert.notEqual(tab.folderId, 'folder_user');
     assert.equal(driver.status().tabs.find(item => item.tabId === tab.id).url, before.url);
     if (options.status === 'awaiting-user') {
-      assert.equal(tab.window, liveWindow);
+      assert.equal(tab.window, liveWindow, 'unresolved challenges retain their live browser');
       assert.equal(driver.status().tabs.find(item => item.tabId === tab.id).documentId, before.documentId);
-    } else assert.deepEqual(receipt.suspended, [tab.id], 'default terminal cleanup still suspends and returns the page');
+    } else assert.deepEqual(receipt.suspended, [tab.id], 'idle failed work may suspend but must not hand off');
   }
   const owner = { taskId: 'completed-cleanup', nodeId: 'agent', runId: 'run' };
   const tab = driver.newTab('https://example.test/completed', { owner }); await tab.loading;
