@@ -1481,7 +1481,7 @@ test('sign-in blocker is quiet, saved with the chat, and opens Neo only after a 
  assert.equal(opened,1,'an explicit click, not an agent event, opens the window');
  assert.equal(h.starts.length,0);
  await h.action('browser-signin-resume');
- assert.match(h.ui.getDraft().task,/I have handled the sign-in/);
+ assert.match(h.ui.getDraft().task,/BLACKICE must revisit the unresolved/);
  assert.match(h.ui.getDraft().task,/check whether any intended public action already happened/);
  assert.equal(h.starts.length,0,'preparing a retry does not send or publish');
  await h.action('browser-signin-resume');
@@ -1506,21 +1506,21 @@ test('sign-in notice does not touch drafts or auto-open when user resumes unrela
 test('contained sign-in uses Observe only and prepares an unsent follow-up without opening Neo',async t=>{
  const run=fixtureRun('contained-login-required','completed');run.browserSignIn={origin:'https://linkedin.com',hostname:'linkedin.com',reason:'sign-in',evidence:'login-form',status:'awaiting-user',browser:'relay'};
  const observed=[];let nativeOpened=0;const f=missionFixture(t,savedDrafts('')),h=mountMission(f,statusSnapshot([run]),{observe:async id=>observed.push(id),openBrowserOS:async()=>{nativeOpened++;return{shown:true};}});await turn();const card=f.element('#conversation-browser-signin');
- assert.equal(card.hidden,false);assert.match(card.innerHTML,/Sign in inside Observe/);assert.match(card.innerHTML,/data-mission-action="browser-signin-observe"/);assert.doesNotMatch(card.innerHTML,/Open BrowserOS|data-mission-action="browser-signin-open"/);assert.deepEqual(observed,[]);assert.equal(nativeOpened,0);
+ assert.equal(card.hidden,false);assert.match(card.innerHTML,/Inspect browser state/);assert.match(card.innerHTML,/data-mission-action="browser-signin-observe"/);assert.doesNotMatch(card.innerHTML,/Open BrowserOS|data-mission-action="browser-signin-open"/);assert.deepEqual(observed,[]);assert.equal(nativeOpened,0);
  await h.action('browser-signin-observe');assert.deepEqual(observed,[run.id]);assert.equal(nativeOpened,0);assert.equal(h.starts.length,0);assert.equal(h.mutations.length,0);
  await h.action('browser-signin-open');assert.deepEqual(observed,[run.id,run.id]);assert.equal(nativeOpened,0,'even a stale legacy action cannot reveal Neo for a contained blocker');
- await h.action('browser-signin-resume');assert.match(h.ui.getDraft().task,/contained BLACKICE browser in Observe/);assert.doesNotMatch(h.ui.getDraft().task,/BrowserOS|Neo/);assert.match(h.ui.getDraft().task,/check whether any intended public action already happened/);assert.equal(h.starts.length,0);assert.equal(h.queued.length,0);assert.equal(h.mutations.length,0);assert.equal(nativeOpened,0);
+ await h.action('browser-signin-resume');assert.match(h.ui.getDraft().task,/contained BLACKICE browser/);assert.doesNotMatch(h.ui.getDraft().task,/BrowserOS|Neo/);assert.match(h.ui.getDraft().task,/check whether any intended public action already happened/);assert.equal(h.starts.length,0);assert.equal(h.queued.length,0);assert.equal(h.mutations.length,0);assert.equal(nativeOpened,0);
 });
 
 test('contained sign-in cannot fall back to native Neo when Observe is unavailable',async t=>{
  const run=fixtureRun('contained-login-without-route','completed');run.browserSignIn={origin:'https://example.com',hostname:'example.com',reason:'verification',evidence:'verification-page',status:'awaiting-user',browser:'relay'};let nativeOpened=0;
- const f=missionFixture(t,savedDrafts('')),h=mountMission(f,statusSnapshot([run]),{openBrowserOS:async()=>{nativeOpened++;return{shown:true};}});await turn();await h.action('browser-signin-observe');await h.action('browser-signin-open');assert.equal(nativeOpened,0);assert.match(h.errors.at(-1).message,/Open Observe/);assert.equal(h.starts.length,0);assert.equal(h.mutations.length,0);
+ const f=missionFixture(t,savedDrafts('')),h=mountMission(f,statusSnapshot([run]),{openBrowserOS:async()=>{nativeOpened++;return{shown:true};}});await turn();await h.action('browser-signin-observe');await h.action('browser-signin-open');assert.equal(nativeOpened,0);assert.match(h.errors.at(-1).message,/Observe is unavailable/);assert.equal(h.starts.length,0);assert.equal(h.mutations.length,0);
 });
 
 test('a same-site blocker changing from legacy Neo to contained mode refreshes its route and label',async t=>{
  const run=fixtureRun('changed-browser-login','completed');run.browserSignIn={origin:'https://example.com',hostname:'example.com',reason:'sign-in',evidence:'login-form',status:'awaiting-user'};let nativeOpened=0;const observed=[];
  const f=missionFixture(t,savedDrafts('')),h=mountMission(f,statusSnapshot([run]),{observe:async id=>observed.push(id),openBrowserOS:async()=>{nativeOpened++;return{shown:true};}});await turn();const card=f.element('#conversation-browser-signin');assert.match(card.innerHTML,/Open BrowserOS/);
- run.browserSignIn.browser='relay';h.ui.update();assert.match(card.innerHTML,/Sign in inside Observe/);assert.doesNotMatch(card.innerHTML,/Open BrowserOS/);await h.action('browser-signin-observe');assert.deepEqual(observed,[run.id]);assert.equal(nativeOpened,0);
+ run.browserSignIn.browser='relay';h.ui.update();assert.match(card.innerHTML,/Inspect browser state/);assert.doesNotMatch(card.innerHTML,/Open BrowserOS/);await h.action('browser-signin-observe');assert.deepEqual(observed,[run.id]);assert.equal(nativeOpened,0);
 });
 
 test('a held direction allows chat and New navigation, keeps its own composer locked, and returns its error only to its origin', async t => {

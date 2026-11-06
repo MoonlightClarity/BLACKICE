@@ -1,12 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { collectTerminalBrowserOwners, recoverTerminalBrowserOwners, returnTerminalBrowserTab } from '../lib/browser-owner-recovery.mjs';
-import { ownershipChange } from '../lib/browser-ownership.mjs';
+import { collectTerminalBrowserOwners, recoverTerminalBrowserOwners } from '../lib/browser-owner-recovery.mjs';
+
 
 const original = { taskId: 'task-1', nodeId: 'agent', runId: 'run-failed' };
-const resumed = { taskId: 'new-task', nodeId: 'bridge', runId: 'new-run' };
 
-test('only verifiably failed/cancelled runs qualify for startup tab recovery', async () => {
+test('only verified failed/cancelled runs are inspected at startup without browser handoff', async () => {
   const tabs = [
     { tabId: 'failed-a', owner: original },
     { tabId: 'failed-b', owner: original },
@@ -26,43 +25,39 @@ test('only verifiably failed/cancelled runs qualify for startup tab recovery', a
   ]);
   const seen = [];
   const browser = { status: () => ({ tabs }), releaseOwner: async (owner, opts) => {
-    seen.push([owner.runId, opts.status]);
-    return { released: [owner.runId], retained: [] };
+    seen.push([owner.runId, opts.status, opts.retainForContinuation]);
+    return { released: [], retained: [{ tabId: owner.runId }] };
   } };
   const available = collectTerminalBrowserOwners(browser.status(), runs);
   assert.deepEqual(available.map(o => o.owner.runId), ['run-failed', 'run-cancelled']);
   const result = await recoverTerminalBrowserOwners(browser, runs);
-  assert.deepEqual(seen, [['run-failed', 'failed'], ['run-cancelled', 'cancelled']]);
-  assert.equal(result.released, 2);
+  assert.deepEqual(seen, [['run-failed', 'failed', true], ['run-cancelled', 'cancelled', true]]);
+  assert.equal(result.released, 0);
+  assert.equal(result.retained, 2);
   assert.equal(result.checked, 2);
   assert.equal(result.failures.length, 0);
 });
 
-test('terminal tab handback keeps the saved document and permits an explicit future takeover', () => {
-  const tab = { tabId: 'waymo', id: 'waymo', url: 'https://example.org/apply', documentId: 'waymo:17', folderId: 'task-folder',
-    owner: { ...original }, parentTabId: 'parent', humanCreated: false, userPinned: false, suspendedWork: new Set() };
-  const receipt = returnTerminalBrowserTab(tab, { folderId: 'folder_user' });
-  assert.deepEqual(receipt.previousOwner, original);
-  assert.equal(tab.owner, null);
-  assert.equal(tab.folderId, 'folder_user');
-  assert.equal(tab.parentTabId, null);
-  assert.equal(tab.humanCreated, true);
-  assert.equal(tab.userPinned, true);
-  assert.equal(tab.url, 'https://example.org/apply');
+test('startup recovery never assigns an agent browser tab to the user', async () => {
+  const tab = { tabId: 'waymo', id: 'waymo', url: 'https://example.org/apply', documentId: 'waymo:17',
+    folderId: 'task-folder', owner: { ...original }, parentTabId: 'parent', humanCreated: false, userPinned: false };
+  const runs = new Map([[original.runId, { id: original.runId, taskId: original.taskId, status: 'failed' }]]);
+  const browser = {
+    status: () => ({ tabs: [tab] }),
+    releaseOwner: async (owner, options) => {
+      assert.deepEqual(owner, original);
+      assert.equal(options.retainForContinuation, true);
+      return { suspended: [], retained: [{ tabId: tab.id }], released: [] };
+    },
+  };
+  const result = await recoverTerminalBrowserOwners(browser, runs);
+  assert.equal(result.checked, 1);
+  assert.equal(result.released, 0);
+  assert.equal(result.retained, 1);
+  assert.deepEqual(tab.owner, original);
+  assert.equal(tab.folderId, 'task-folder');
   assert.equal(tab.documentId, 'waymo:17');
-  assert.equal(ownershipChange({ action: 'take_ownership', tabId: tab.tabId, expectedUrl: tab.url,
-    expectedDocumentId: tab.documentId }, { tabs: [tab] }, resumed).owner.taskId, 'new-task');
-});
-
-test('busy, protected and already-human tabs are not silently reclaimed', () => {
-  for (const value of [
-    { pendingInteraction: { kind: 'alert' } }, { suspendedWork: new Set(['pending']) },
-    { purpose: 'chat-mode' }, { protectedContent: true }, { owner: null },
-  ]) {
-    const tab = { id: 'one', owner: { ...original }, folderId: 'task-folder', ...value };
-    assert.equal(returnTerminalBrowserTab(tab, { folderId: 'folder_user' }), null);
-    assert.equal(tab.folderId, 'task-folder');
-  }
+  assert.equal(tab.humanCreated, false);
 });
 
 test('recovery is non-destructive on unsupported adapters and records individual failures', async () => {

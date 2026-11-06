@@ -57,7 +57,7 @@ test('verification receipt names verification rather than asking for an unrelate
   assert.equal(reports.length,1);
 });
 
-test('completed run with an unresolved verification returns its browser scope for human inspection',async t=>{
+test('completed run with unresolved verification retains the browser scope for agent continuation',async t=>{
   const root=await mkdtemp(path.join(tmpdir(),'blackice-verification-pause-'));
   const cwd=path.join(root,'workspace'),dataDir=path.join(root,'data'); await mkdir(cwd);
   const calls=[], releases=[];
@@ -94,6 +94,6 @@ test('completed run with an unresolved verification returns its browser scope fo
   assert.equal(run?.status,'completed',run?.error);
   assert.deepEqual(calls,['tabs']);
   assert.equal(releases.length,1);
-  assert.equal(releases[0].options.status,'awaiting-user');
+  assert.equal(releases[0].options.status,'paused', 'a reported blocker preserves the agent-owned page instead of handing it off');
   assert.equal(run.browserSignIn.reason,'verification');
 });

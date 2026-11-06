@@ -353,7 +353,7 @@ test('task browser ownership is host-bound, rechecked at dispatch and cannot be 
   assert.equal(calls.length, 1); assert.equal(calls[0].args.tabId, 'a'); assert.deepEqual(calls[0].options.owner, owner);
 });
 
-test('successful transfer to Personal returns a verified receipt instead of falsely reporting a changed tab', async t => {
+test('agent cannot hand off a browser tab; voluntary user transfer retains a verified receipt', async t => {
   const owner = { taskId: 'jobgether', nodeId: 'agent', runId: 'run' };
   const tab = { tabId: 'page', browser: 'relay', url: 'https://jobs.lever.co/jobgether/example/apply',
     documentId: 'page:3', folderId: 'task-folder', owner: { ...owner }, purpose: 'ordinary' };
@@ -373,11 +373,18 @@ test('successful transfer to Personal returns a verified receipt instead of fals
   t.after(() => browser.close());
   const args = { action: 'transfer_ownership', browser: 'relay', tabId: tab.tabId,
     expectedUrl: tab.url, expectedDocumentId: tab.documentId, destination: 'user' };
-  const result = await browser.perform(args, { owner });
-  assert.equal(result.transferred, true);
+  assert.deepEqual(BROWSER_TOOL.inputSchema.properties.destination.enum, ['task']);
+  const agent = await createBrowserToolHandler({ browser, owner })({ name: 'relay_browser', arguments: args });
+  assert.equal(agent.success, false);
+  assert.equal(agent.code, 'BROWSER_USER_HANDOFF_FORBIDDEN');
+  assert.equal(JSON.parse(agent.contentItems[0].text).actionDispatched, false);
+  await assert.rejects(browser.perform(args, { owner }), { code: 'BROWSER_USER_HANDOFF_FORBIDDEN', actionDispatched: false });
+  assert.deepEqual(tab.owner, owner);
+  const result = await browser.perform(args, { owner, source: 'user' });
+  assert.equal(result.ownershipReceipt.action, 'transfer_ownership');
   assert.equal(result.ownershipReceipt.owner, null);
-  assert.equal(result.folderId, 'folder_user');
-  assert.equal(Object.hasOwn(result, 'tabs'), false, 'a departed task cannot read the new owner\'s inventory');
+  assert.equal(result.ownershipReceipt.folderId, 'folder_user');
+  assert.equal(Object.hasOwn(result, 'tabs'), true, 'a voluntary user transfer may show the local browser inventory to that same user');
   await assert.rejects(browser.perform({ action: 'snapshot', tabId: tab.tabId }, { owner }), { code: 'BROWSER_TAB_OWNERSHIP' });
 });
 
