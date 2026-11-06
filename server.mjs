@@ -24,7 +24,8 @@ import { TaskViability } from './lib/task-viability.mjs';
 import { ResponseCycleService } from './lib/response-cycle.mjs';
 import { createDirectResponseCycleTools } from './lib/direct-response-cycle-tools.mjs';
 import { createDirectProviderSetupTools } from './lib/provider-setup-tools.mjs';
-import { providerSetupHTTP } from './lib/provider-setup-http.mjs';
+import { providerSetupHTTP, providerPreviewHTTP } from './lib/provider-setup-http.mjs';
+import { searchAPIProviderDirectory } from './lib/provider-directory.mjs';
 import { connectorBrowserOwner } from './lib/connector-browser-owner.mjs';
 import { createDirectPlanningBrowserTools } from './lib/direct-planning-browser-tools.mjs';
 import { PromptTemplateStore } from './lib/prompt-templates.mjs';
@@ -974,6 +975,29 @@ export async function createHarnessServer(options = {}) {
         });
         return json(res, result.status, result.body);
       }
+      if (pathname === '/api/provider-directory' && req.method === 'GET') {
+        const query = new URL(req.url, `http://${host}`).searchParams;
+        try {
+          return json(res, 200, await searchAPIProviderDirectory({
+            query: query.get('query') || query.get('q') || '', auth: query.get('auth') || 'any', source: query.get('source') || 'all',
+            offset: Number(query.get('offset') || 0), limit: Number(query.get('limit') || 30),
+            freeModelsOnly: query.get('freeModelsOnly') === 'true', refresh: query.get('refresh') === 'true',
+          }));
+        } catch (cause) { return json(res, cause.status || 400, { error: cause.message, code: cause.code || 'API_DIRECTORY_ERROR' }); }
+      }
+      if (pathname === '/api/providers/preview') {
+        const controller = new AbortController();
+        const abort = () => controller.abort(Object.assign(new Error('Provider connection check cancelled.'), { code: 'ABORT_ERR', name: 'AbortError' }));
+        const closed = () => { if (!res.writableEnded) abort(); };
+        req.once('aborted', abort); res.once('close', closed);
+        try {
+          const result = await providerPreviewHTTP({
+            runtime, method: req.method,
+            value: req.method === 'POST' ? await body(req, 150000) : undefined, signal: controller.signal,
+          });
+          return json(res, result.status, result.body);
+        } finally { req.removeListener('aborted', abort); res.removeListener('close', closed); }
+      }
       if (pathname === '/api/providers' && req.method === 'GET') return json(res, 200, runtime.listProviders?.() || []);
       if (pathname === '/api/providers' && req.method === 'POST') { if (!runtime.saveProvider) throw new Error('Provider connections are unavailable.'); const value = await runtime.saveProvider(await body(req)); runtimeUpdate(); return json(res, 200, value); }
       // Retired native subscription plugins must never spawn a process, discover
@@ -1383,7 +1407,7 @@ export async function createHarnessServer(options = {}) {
         'browser.css','knowledge.css','workspaces/knowledge.mjs','workspaces/knowledge-model.mjs',
         'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/activity-overview.mjs','workspaces/activity-model.mjs','activity.css','workspaces/settings.mjs','workspaces/settings-restart.mjs',
         'settings.css','settings-identity.css','settings-providers.css','settings-connections.css','workbench.css','workspaces/workbench.mjs','workspaces/workbench-guide.mjs',
-        'workspaces/settings-identity.mjs','workspaces/applications.mjs','workspaces/settings-subscriptions.mjs','workspaces/settings-providers.mjs','workspaces/settings-connections.mjs','workspaces/settings-import.mjs'];
+        'workspaces/settings-identity.mjs','workspaces/applications.mjs','workspaces/settings-subscriptions.mjs','workspaces/settings-providers.mjs','workspaces/settings-provider-directory.mjs','workspaces/settings-connections.mjs','workspaces/settings-import.mjs'];
       for (const file of nextFiles) files['/next/' + file] = 'next/' + file;
       files['/next'] = 'next/index.html'; files['/next/'] = 'next/index.html';
       files['/native-apps-ui.mjs'] = 'native-apps-ui.mjs';

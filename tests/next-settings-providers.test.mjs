@@ -7,6 +7,7 @@ import {createSubscriptionModelSettings} from '../public/next/workspaces/setting
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 async function until(read){for(let i=0;i<100;i++){if(read())return;await settle();}throw Error('Provider settings did not settle.');}
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
+const previewResult=(body,extra={})=>({ok:true,catalogAvailable:true,models:[{id:'preview-model',displayName:'Preview model',supportsTools:true}],selectedModels:[],offset:body.offset??0,total:1,totalModels:1,returned:1,hasMore:false,credentialVerified:false,modelAccessVerified:false,verification:'catalog-only',checkedAt:'2026-11-06T13:00:00Z',fetchedAt:'2026-11-06T13:00:00Z',sourceUrl:'https://gateway.example/v1/models',method:'GET',...extra});
 const provider=(id='gateway',extra={})=>({id,name:'Saved gateway',preset:'compatible',type:'compatible',baseUrl:'https://gateway.example/v1',enabled:true,maxTokens:8192,maxSteps:null,
   configured:true,requiresApiKey:false,hasApiKey:true,hasHeaders:true,headerNames:['X-Gateway-Key'],secretStorage:'encrypted',updatedAt:'2026-10-25T10:00:00Z',
   models:[{id:'saved-model',displayName:'Saved model',contextWindowTokens:128000,contextWindowSource:'provider-reported',supportsTools:true,maxOutputTokens:16000,maxOutputTokensSource:'provider-reported',contextWindowObservedAt:'2026-10-25T09:00:00Z',maxOutputObservedAt:'2026-10-25T09:00:00Z',inputModalities:['text'],outputModalities:['text']}],...extra});
@@ -23,6 +24,7 @@ async function fixture(t,{providers=[provider(),provider('second',{name:'Second 
     if(route==='/api/runtime/settings'&&method==='GET')return structuredClone(state.runtimeSettings);
     if(route==='/api/runtime/settings'&&method==='POST'){state.runtimeSettings={...state.runtimeSettings,...body};return structuredClone(state.runtimeSettings);}
     if(route==='/api/providers'&&method==='GET')return structuredClone(state.providers);
+    if(route==='/api/providers/preview'&&method==='POST')return previewResult(body);
     if(route==='/api/providers'&&method==='POST'){
       const previous=state.providers.find(item=>item.id===body.id),{apiKey,headers,expectedUpdatedAt,...value}=body;
       if(Object.hasOwn(body,'expectedUpdatedAt')&&(previous?.updatedAt??null)!==expectedUpdatedAt)throw Object.assign(Error('Provider changed before saving.'),{code:'PROVIDER_CHANGED',status:409});
@@ -47,7 +49,7 @@ async function fixture(t,{providers=[provider(),provider('second',{name:'Second 
   };
   const panel=createProviderSettings({mount:dom.mount,api,events:{subscribe(handler){subscribers.add(handler);return()=>subscribers.delete(handler);}},notify:value=>notices.push(value),onChanged:()=>{changed++;},getRuntimeSettings:()=>state.runtimeSettings,onRuntimeSettings:value=>{state.runtimeSettings=structuredClone(value);}});
   t.after(()=>panel.destroy());panel.enter();await until(()=>dom.$('[data-provider-id]')||state.providers.length===0&&!dom.$('#next-provider-refresh').disabled);
-  return {...dom,panel,calls,state,notices,subscribers,get changed(){return changed;},writes:()=>calls.filter(call=>call.method!=='GET'&&!/^\/api\/providers\/[^/]+\/models$/.test(call.route)),
+  return {...dom,panel,calls,state,notices,subscribers,get changed(){return changed;},writes:()=>calls.filter(call=>call.method!=='GET'&&call.route!=='/api/providers/preview'&&!/^\/api\/providers\/[^/]+\/models$/.test(call.route)),
     async open(id='gateway'){await dom.click(`[data-provider-id="${id}"]`);await settle();},
     async idle(){await until(()=>!dom.$('#next-provider-new').disabled);},
     emit(type='runtime.status',data){for(const handler of subscribers)handler({type,...(data?{data}:{} )});}};
@@ -125,14 +127,15 @@ test('catalog opens automatically and is paged, selected IDs and metadata surviv
   await f.click('#next-provider-save');await f.idle();const saved=f.calls.find(call=>call.route==='/api/providers'&&call.method==='POST').body.models;
   assert.equal(saved.length,2);assert.equal(saved.find(item=>item.id==='first-model').contextWindowSource,'provider-reported');
   const defaults={sort:'name',freeOnly:false,toolsOnly:false,visionOnly:false,minContextTokens:0};
-  assert.deepEqual(f.calls.filter(call=>call.route.startsWith('/api/providers/')&&call.route.endsWith('/models')).map(call=>call.body),[{...defaults,query:'',offset:0,limit:80},{...defaults,query:'',offset:80,limit:80},{...defaults,query:'searched',offset:0,limit:80}]);
+  assert.deepEqual(f.calls.filter(call=>call.route.startsWith('/api/providers/')&&call.route.endsWith('/models')).map(call=>call.body),[{...defaults,query:'',offset:0,limit:80,refresh:true},{...defaults,query:'',offset:80,limit:80},{...defaults,query:'searched',offset:0,limit:80}]);
 });
 
 test('late catalog results cannot alter another connection or a newer search; unsaved settings never trigger implicit save',async t=>{
   const catalog=deferred();const f=await fixture(t,{hook:call=>{if(call.route==='/api/providers/gateway/models')return catalog.promise;}});await f.open();
   await f.click('#next-provider-catalog-load');await f.open('second');catalog.resolve({models:[{id:'wrong-provider-model'}],total:1,offset:0});await settle();await settle();
   assert.equal(f.$('[data-provider-model-id="wrong-provider-model"]'),null);await f.input('#next-provider-key','draft-only');
-  assert.equal(f.$('#next-provider-catalog-load').disabled,true);await f.click('#next-provider-catalog-load');assert.equal(f.calls.filter(call=>call.route==='/api/providers/second/models').length,1,'Only the automatic read on opening the saved connection occurred.');
+  assert.equal(f.$('#next-provider-catalog-load').disabled,false);await f.click('#next-provider-catalog-load');await until(()=>f.$('[data-provider-model-id="preview-model"]'));assert.equal(f.calls.filter(call=>call.route==='/api/providers/second/models').length,1,'Only the automatic read on opening the saved connection used the saved catalog route.');
+  assert.equal(f.calls.filter(call=>call.route==='/api/providers/preview').at(-1).body.connection.apiKey,'draft-only');
   assert.equal(f.calls.filter(call=>call.route==='/api/providers'&&call.method==='POST').length,0);
 });
 
@@ -153,15 +156,17 @@ test('invalid limits, conflicting secret replacement/clear and malformed headers
   assert.equal(f.writes().length,0);assert.equal(f.$('#next-provider-key').value,'new-key');assert.match(f.$('#next-provider-error').textContent,/Header line 1/);
 });
 
-test('Test uses saved settings once and distinguishes credentials from untested model access',async t=>{
-  const f=await fixture(t);await f.open();await f.click('#next-provider-test');await f.idle();assert.equal(f.writes().length,1);
-  assert.equal(f.writes()[0].route,'/api/providers/gateway/test');assert.match(f.$('#next-provider-receipt').textContent,/API key verified/);assert.match(f.$('#next-provider-receipt').textContent,/Model access was not tested/);
-  await f.input('#next-provider-name','Unsaved name');assert.equal(f.$('#next-provider-test').disabled,true);await f.click('#next-provider-test');assert.equal(f.writes().length,1);
+test('Check connection previews the current settings and distinguishes credentials from untested model access',async t=>{
+  const f=await fixture(t,{hook:call=>call.route==='/api/providers/preview'?previewResult(call.body,{credentialVerified:true,verification:'credentials-and-catalog'}):undefined});await f.open();await f.click('#next-provider-test');await until(()=>!f.$('#next-provider-test').disabled);assert.equal(f.writes().length,0);
+  const read=f.calls.find(call=>call.route==='/api/providers/preview');assert.equal(read.body.connection.expectedUpdatedAt,provider().updatedAt);assert.equal(Object.hasOwn(read.body.connection,'apiKey'),false);
+  assert.match(f.$('#next-provider-receipt').textContent,/Credentials verified/);assert.match(f.$('#next-provider-receipt').textContent,/Model generation was not tested/);
+  await f.input('#next-provider-name','Unsaved name');assert.equal(f.$('#next-provider-test').disabled,false);await f.click('#next-provider-test');await until(()=>!f.$('#next-provider-test').disabled);
+  assert.equal(f.calls.filter(call=>call.route==='/api/providers/preview').length,2);assert.equal(f.calls.filter(call=>call.route==='/api/providers/preview').at(-1).body.connection.name,'Unsaved name');assert.equal(f.writes().length,0);
 });
 
 test('catalog-only Test never claims an API key or a model was verified; removal is explicit',async t=>{
-  const f=await fixture(t,{hook:call=>{if(call.route.endsWith('/test'))return {ok:true,credentialVerified:false,modelAccessVerified:false};}});await f.open();await f.click('#next-provider-test');await f.idle();
-  assert.match(f.$('#next-provider-receipt').textContent,/API key and model access were not verified/);await f.click('#next-provider-delete');await f.idle();
+  const f=await fixture(t);await f.open();await f.click('#next-provider-test');await until(()=>!f.$('#next-provider-test').disabled);
+  assert.match(f.$('#next-provider-receipt').textContent,/API key validity was not independently verified/);assert.match(f.$('#next-provider-receipt').textContent,/Model generation was not tested/);await f.click('#next-provider-delete');await f.idle();
   assert.equal(f.state.providers.length,1);assert.equal(f.$('[data-provider-id="gateway"]'),null);assert.equal(f.$('#next-provider-form').hidden,true);assert.equal(f.changed,1);
 });
 
@@ -214,7 +219,7 @@ test('custom endpoint paths are visible, preserved on save, editable, and explic
   assert.equal(f.$('#next-provider-models-path').value,'/catalog');assert.equal(f.$('#next-provider-chat-path').value,'/generate');assert.equal(f.writes().length,0);
   await f.input('#next-provider-name','Custom endpoint connection');await f.click('#next-provider-save');await f.idle();
   assert.deepEqual(f.writes()[0].body.endpoints,endpoints);assert.equal(Object.hasOwn(f.writes()[0].body,'apiKey'),false);
-  await f.input('#next-provider-models-path','/inventory');assert.equal(f.$('#next-provider-catalog-load').disabled,true);
+  await f.input('#next-provider-models-path','/inventory');assert.equal(f.$('#next-provider-catalog-load').disabled,false);
   await f.open('second');await f.open();assert.equal(f.$('#next-provider-models-path').value,'/inventory');
   await f.input('#next-provider-chat-path','');await f.click('#next-provider-save');await f.idle();assert.deepEqual(f.writes()[1].body.endpoints,{models:'/inventory'});
   await f.input('#next-provider-models-path','');await f.click('#next-provider-save');await f.idle();assert.deepEqual(f.writes()[2].body.endpoints,{});
@@ -344,7 +349,7 @@ test('opening a saved provider always browses its full catalog and reopening cle
   for(const id of ['free','tools','vision']){f.$('#next-provider-catalog-'+id).checked=true;await f.$('#next-provider-catalog-'+id).dispatch('change');}
   await f.click('#next-provider-catalog-load');await until(()=>!f.$('#next-provider-catalog-load').disabled);
   await f.open();await until(()=>!f.$('#next-provider-catalog-load').disabled);reads=f.calls.filter(call=>call.route==='/api/providers/gateway/models');
-  assert.deepEqual(reads.at(-1).body,{query:'',sort:'name',freeOnly:false,toolsOnly:false,visionOnly:false,minContextTokens:0,offset:0,limit:80});
+  assert.deepEqual(reads.at(-1).body,{query:'',sort:'name',freeOnly:false,toolsOnly:false,visionOnly:false,minContextTokens:0,offset:0,limit:80,refresh:true});
   for(const id of ['saved-model','additional'])assert.equal(f.$('#next-provider-catalog').querySelector(`[data-provider-model-id="${id}"]`).checked,true);
   assert.equal(f.$('#next-provider-catalog-search').value,'');assert.equal(f.$('#next-provider-catalog-min-context').value,'');
   const before=reads.length;await f.click('[data-provider-manage="gateway"]');await until(()=>!f.$('#next-provider-catalog-load').disabled);assert.equal(f.calls.filter(call=>call.route==='/api/providers/gateway/models').length,before+1,'Manage starts one unfiltered browse, without a duplicate read.');
@@ -362,7 +367,7 @@ test('explicit metadata refresh enriches selected models outside the current cat
   const link=selected.querySelector('a');assert.equal(link.getAttribute('href'),'https://models.example/model');assert.equal(link.getAttribute('rel'),'noopener noreferrer');assert.equal(link.closest('label'),null);
   assert.match(link.textContent,/underlying-model/);assert.equal(selected.querySelectorAll('input').length,1);assert.equal(f.$('[data-provider-model-id="saved-model"]').checked,true);assert.equal(f.writes().length,0);
   fail=true;await f.click('#next-provider-limits-refresh');await until(()=>!f.$('#next-provider-limits-refresh').disabled);
-  assert.equal(f.$('#next-provider-limits-refresh').textContent,'Retry model limits');assert.match(f.$('#next-provider-receipt').textContent,/selected models and edits are kept.*Retry model limits/);
+  assert.equal(f.$('#next-provider-limits-refresh').textContent,'Retry model limits');assert.match(f.$('#next-provider-receipt').textContent,/selected models.*kept.*Retry model limits/);
   assert.match(f.$('#next-provider-models').textContent,/400,000/);const count=f.calls.length;await settle();await settle();assert.equal(f.calls.length,count,'No automatic retry occurs.');
 });
 
@@ -393,7 +398,7 @@ test('selected metadata can resolve while the full provider catalog is unavailab
   await f.open();await until(()=>!f.$('#next-provider-limits-refresh').disabled);
   assert.match(f.$('#next-provider-models').textContent,/200,000 tokens · Model reference · Official model documentation · Endpoint unconfirmed/);
   assert.match(f.$('#next-provider-catalog').textContent,/Provider catalog unavailable/);assert.match(f.$('#next-provider-catalog-page').textContent,/Full provider catalog unavailable/);
-  assert.match(f.$('#next-provider-receipt').textContent,/Lookup results for selected models/);assert.match(f.$('#next-provider-error').textContent,/Models endpoint timed out/);
+  assert.match(f.$('#next-provider-receipt').textContent,/Provider catalog unavailable.*selections and edits are kept/);assert.match(f.$('#next-provider-error').textContent,/Models endpoint timed out/);
   assert.doesNotMatch(f.$('#next-provider-receipt').textContent,/Catalog loaded|Model limits refreshed/);assert.equal(f.$('#next-provider-limits-refresh').textContent,'Retry model limits');
   assert.equal(f.writes().length,0);assert.equal(f.$('[data-provider-model-id="saved-model"]').checked,true);
 });
@@ -414,8 +419,9 @@ test('provider snapshots update a clean open editor in both directions without e
 });
 
 test('external changes preserve dirty drafts and credentials while preventing a stale save until explicit reload',async t=>{
-  const f=await fixture(t);await f.open();await f.input('#next-provider-name','Local draft');await f.input('#next-provider-key','private-unsaved-key');
+  const f=await fixture(t);await f.open();await f.input('#next-provider-name','Local draft');
   let box=f.$('[data-provider-model-id="catalog-model"]');box.checked=true;await box.dispatch('change');
+  await f.input('#next-provider-key','private-unsaved-key');assert.equal(f.$('#next-provider-catalog').querySelector('[data-provider-model-id="catalog-model"]'),null,'Editing the key clears stale catalog candidates while keeping selected models.');
   f.state.providers[0]=provider('gateway',{name:'External revision',updatedAt:'2026-10-25T12:00:00Z',models:[{id:'external-only'}]});
   f.emit('runtime.status',{providers:structuredClone(f.state.providers)});await settle();
   assert.equal(f.$('#next-provider-name').value,'Local draft');assert.equal(f.$('#next-provider-key').value,'private-unsaved-key');assert.equal(f.$('[data-provider-model-id="catalog-model"]').checked,true);
@@ -491,37 +497,37 @@ test('disabled connections without credentials can browse and select public cata
   assert.match(f.$('[data-provider-id="public_catalog"]').textContent,/Disabled/);assert.equal(f.$('#next-provider-catalog-load').disabled,false);
   const box=f.$('[data-provider-model-id="catalog-model"]');box.checked=true;await box.dispatch('change');await f.click('#next-provider-save');await f.idle();
   assert.equal(f.writes()[0].body.enabled,false);assert.equal(f.writes()[0].body.expectedUpdatedAt,provider().updatedAt);assert.equal(Object.hasOwn(f.writes()[0].body,'apiKey'),false);
-  assert.match(f.$('#next-provider-receipt').textContent,/when this connection is configured and enabled/);assert.equal(f.calls.some(call=>call.route.endsWith('/test')||call.route.endsWith('/check')),false);
+  assert.match(f.$('#next-provider-receipt').textContent,/Connection and selected models saved/);assert.equal(f.state.providers[0].enabled,false);assert.equal(f.calls.some(call=>call.route.endsWith('/test')||call.route.endsWith('/check')),false);
   await f.input('#next-provider-catalog-search','cancel on leave');f.panel.leave();const count=f.calls.length;await new Promise(resolve=>setTimeout(resolve,220));assert.equal(f.calls.length,count);
 });
 
 
-test('anonymous free presets save endpoints and blank credentials before opening a scoped model catalog', async t => {
+test('anonymous free-model connections retain their scoped catalog and metadata across save and reopen', async t => {
   const freeModel={id:'openai-fast',displayName:'Free model',supportsTools:true,isFree:true,freeSource:'provider-reported',aliases:['gpt-oss-20b'],inputModalities:['text'],outputModalities:['text']};
   const f=await fixture(t,{hook:async(call)=>call.route.endsWith('/models')&&call.route.startsWith('/api/providers/')?{models:[freeModel],offset:0,total:1,hasMore:false}:undefined});
   const before=structuredClone(f.state.providers);
   await f.click('#next-provider-new');
-  f.$('#next-provider-preset').value='pollinations_classic';await f.$('#next-provider-preset').dispatch('change');
-  assert.equal(f.$('#next-provider-base-url').value,'https://text.pollinations.ai');
-  assert.equal(f.$('#next-provider-models-path').value,'/models');assert.equal(f.$('#next-provider-chat-path').value,'/openai');
-  assert.match(f.$('#next-provider-key-note').textContent,/No API key is required/);
+  f.$('#next-provider-preset').value='kilo_free';await f.$('#next-provider-preset').dispatch('change');
+  assert.equal(f.$('#next-provider-base-url').value,'https://ai-gateway.kilo.ai/api/v1');
+  assert.equal(f.$('#next-provider-models-path').value,'');assert.equal(f.$('#next-provider-chat-path').value,'');
+  assert.match(f.$('#next-provider-key-note').textContent,/anonymous|no API key/i);
   assert.equal(f.$('#next-provider-catalog-free').checked,true);assert.equal(f.$('#next-provider-catalog-free').disabled,true);
-  await f.input('#next-provider-id','free_classic_test');await f.click('#next-provider-save');await f.idle();
+  await f.input('#next-provider-id','free_kilo_metadata');await f.click('#next-provider-save');await f.idle();
   await until(()=>f.$('#next-provider-catalog').querySelector('[data-provider-model-id="openai-fast"]'));
   const savedCall=f.calls.find(call=>call.route==='/api/providers'&&call.method==='POST');
-  assert.equal(Object.hasOwn(savedCall.body,'apiKey'),false);assert.equal(savedCall.body.preset,'pollinations_classic');
-  assert.deepEqual(savedCall.body.endpoints,{models:'/models',chatCompletions:'/openai'});
-  assert.deepEqual(f.state.providers.filter(item=>item.id!=='free_classic_test'),before);
-  assert.equal(f.calls.find(call=>call.route==='/api/providers/free_classic_test/models').body.freeOnly,true);
+  assert.equal(Object.hasOwn(savedCall.body,'apiKey'),false);assert.equal(savedCall.body.preset,'kilo_free');
+  assert.deepEqual(savedCall.body.endpoints,{});
+  assert.deepEqual(f.state.providers.filter(item=>item.id!=='free_kilo_metadata'),before);
+  assert.equal(f.calls.find(call=>call.route==='/api/providers/free_kilo_metadata/models').body.freeOnly,true);
   const toggle=f.$('#next-provider-catalog').querySelector('[data-provider-model-id="openai-fast"]');toggle.checked=true;await toggle.dispatch('change');
   await f.click('#next-provider-save');await f.idle();
-  let saved=f.state.providers.find(item=>item.id==='free_classic_test');
+  let saved=f.state.providers.find(item=>item.id==='free_kilo_metadata');
   assert.equal(saved.models.length,1);assert.equal(saved.models[0].isFree,true);assert.equal(saved.models[0].freeSource,'provider-reported');assert.deepEqual(saved.models[0].aliases,['gpt-oss-20b']);
-  await f.open('gateway');await f.open('free_classic_test');await until(()=>!f.$('#next-provider-catalog-load').disabled);
+  await f.open('gateway');await f.open('free_kilo_metadata');await until(()=>!f.$('#next-provider-catalog-load').disabled);
   assert.equal(f.$('#next-provider-catalog-free').checked,true);
-  await f.click('#next-provider-catalog-clear');await until(()=>f.calls.filter(call=>call.route==='/api/providers/free_classic_test/models').length>=3);
-  assert.equal(f.calls.filter(call=>call.route==='/api/providers/free_classic_test/models').at(-1).body.freeOnly,true);
-  assert.equal(f.state.providers.find(item=>item.id==='free_classic_test').models[0].id,'openai-fast');
+  await f.click('#next-provider-catalog-clear');await until(()=>f.calls.filter(call=>call.route==='/api/providers/free_kilo_metadata/models').length>=3);
+  assert.equal(f.calls.filter(call=>call.route==='/api/providers/free_kilo_metadata/models').at(-1).body.freeOnly,true);
+  assert.equal(f.state.providers.find(item=>item.id==='free_kilo_metadata').models[0].id,'openai-fast');
 });
 
 test('Kilo preset scopes its catalog while existing custom connection filters and models stay independent', async t => {
@@ -554,7 +560,7 @@ test('compact model rows keep evidence behind independent disclosures while grou
 test('a new custom API saves its exact keyed endpoint and manual model without selecting an unrelated preset',async t=>{
   const f=await fixture(t);await f.click('#next-provider-new');
   assert.equal(f.$('#next-provider-preset').value,'compatible');assert.equal(f.$('#next-provider-base-url').value,'');
-  assert.match(f.$('.next-provider-heading').textContent,/API key/);assert.match(f.$('.next-provider-heading').textContent,/Custom API/);
+  assert.match(f.$('.next-provider-heading').textContent,/custom compatible API/i);assert.equal(f.$('#next-provider-key').type,'password');
   await f.input('#next-provider-id','custom_gateway');await f.input('#next-provider-name','Custom gateway');
   await f.input('#next-provider-base-url','https://gateway.example.cn/v1');await f.input('#next-provider-key','custom-fixture-key');
   await f.input('#next-provider-manual-model','exact-provider-model');await f.click('#next-provider-add-model');await f.click('#next-provider-save');await f.idle();
@@ -562,7 +568,7 @@ test('a new custom API saves its exact keyed endpoint and manual model without s
   assert.equal(saved.preset,'compatible');assert.equal(saved.type,'compatible');assert.equal(saved.baseUrl,'https://gateway.example.cn/v1');assert.equal(saved.apiKey,'custom-fixture-key');assert.equal(saved.expectedUpdatedAt,null);
   assert.deepEqual(saved.models,[{id:'exact-provider-model',displayName:'exact-provider-model'}]);assert.equal(f.$('#next-provider-key').value,'');
   await f.open('gateway');await f.open('custom_gateway');assert.equal(f.$('#next-provider-base-url').value,saved.baseUrl);assert.equal(f.$('#next-provider-key').value,'');
-  assert.equal(f.writes().length,1,'Saving and reopening do not test inference or write again.');assert.match(f.$('#next-provider-test').textContent,/catalog/i);
+  assert.equal(f.writes().length,1,'Saving and reopening do not test inference or write again.');assert.match(f.$('#next-provider-test').textContent,/Check connection/i);
 });
 
 test('credential notes distinguish encrypted saved keys from session-only keys',async t=>{
@@ -579,7 +585,7 @@ test('Mistral and OpenRouter setup buttons open optional drafts without saving o
   assert.equal(f.$('#next-provider-preset').value,'mistral');assert.equal(f.$('#next-provider-protocol').value,'compatible');
   assert.equal(f.$('#next-provider-base-url').value,'https://api.mistral.ai/v1');assert.equal(f.$('#next-provider-key').value,'');
   assert.equal(f.$('#next-provider-connection-details').open,true);assert.match(f.$('#next-provider-key-note').textContent,/API key/);
-  assert.match(f.$('#next-provider-setup-links a').getAttribute('href'),/^https:\/\/docs\.mistral\.ai\//);
+  assert.ok([...f.$('#next-provider-setup-links').querySelectorAll('a')].some(link=>/^https:\/\/docs\.mistral\.ai\//.test(link.getAttribute('href'))));
   await f.input('#next-provider-name','My Mistral draft');
   await f.click('#next-provider-openrouter');assert.equal(f.$('#next-provider-preset').value,'openrouter');
   await f.click('#next-provider-mistral');assert.equal(f.$('#next-provider-name').value,'My Mistral draft');
@@ -622,4 +628,122 @@ test('optional API settings are visible and entered when Models settings opens',
   const section=f.$('#next-connect-another-endpoint');assert.equal(section.open,true);
   assert.match(section.querySelector('summary').textContent,/Optional API connections/);assert.equal(entered,1);
   panel.leave();assert.equal(left,1);
+});
+
+test('draft preview discovers and selects live models before a single save without changing the default',async t=>{
+  const runtimeSettings={model:'native-model',hiddenModelProviders:[]};
+  const model={id:'live-model',displayName:'Live model',supportsTools:true,contextWindowTokens:262144,contextWindowSource:'provider-reported',contextWindowObservedAt:'2026-11-06T13:00:00Z',aliases:['live-alias']};
+  const f=await fixture(t,{providers:[],runtimeSettings,hook:call=>call.route==='/api/providers/preview'?previewResult(call.body,{models:[model],credentialVerified:true,verification:'credentials-and-catalog'}):undefined});
+  await f.click('#next-provider-new');await f.input('#next-provider-id','new_gateway');await f.input('#next-provider-name','New gateway');
+  await f.input('#next-provider-base-url','https://gateway.example/v1');await f.input('#next-provider-key','synthetic-draft-key');await f.input('#next-provider-headers','X-Gateway-Key: synthetic-draft-header');
+  assert.equal(f.$('#next-provider-test').disabled,false);await f.click('#next-provider-test');await until(()=>f.$('[data-provider-model-id="live-model"]'));
+  const read=f.calls.find(call=>call.route==='/api/providers/preview');
+  assert.equal(read.method,'POST');assert.equal(read.body.connection.id,'new_gateway');assert.equal(read.body.connection.expectedUpdatedAt,null);
+  assert.equal(read.body.connection.baseUrl,'https://gateway.example/v1');assert.equal(read.body.connection.apiKey,'synthetic-draft-key');assert.deepEqual(read.body.connection.headers,{'X-Gateway-Key':'synthetic-draft-header'});
+  assert.deepEqual(f.state.providers,[]);assert.equal(f.writes().length,0);assert.equal(f.changed,0);assert.deepEqual(f.state.runtimeSettings,runtimeSettings);
+  assert.equal(f.$('#next-provider-key').value,'synthetic-draft-key');assert.match(f.$('#next-provider-receipt').textContent,/Credentials verified/i);assert.match(f.$('#next-provider-receipt').textContent,/Model generation was not tested/i);
+  const box=f.$('[data-provider-model-id="live-model"]');box.checked=true;await box.dispatch('change');await f.click('#next-provider-save');await f.idle();
+  const saves=f.calls.filter(call=>call.route==='/api/providers'&&call.method==='POST');assert.equal(saves.length,1);assert.deepEqual(saves[0].body.models,[model]);
+  assert.equal(saves[0].body.apiKey,'synthetic-draft-key');assert.deepEqual(saves[0].body.headers,{'X-Gateway-Key':'synthetic-draft-header'});assert.equal(f.state.providers.length,1);assert.equal(f.$('#next-provider-key').value,'');
+  assert.deepEqual(f.state.runtimeSettings,runtimeSettings);assert.equal(f.calls.some(call=>call.route==='/api/runtime/settings'&&call.method==='POST'),false);
+  assert.equal(f.calls.some(call=>call.route.endsWith('/test')||call.route.endsWith('/check')),false,'Draft discovery only reads the catalog; it does not run an inference check.');
+});
+
+test('changed saved connections preview the current draft and inherit credentials through the exact saved revision',async t=>{
+  const original=provider();const f=await fixture(t,{providers:[original]});await f.open();
+  await f.input('#next-provider-models-path','/inventory');await f.input('#next-provider-name','Draft gateway');
+  assert.equal(f.$('#next-provider-catalog-load').disabled,false);await f.click('#next-provider-catalog-load');await until(()=>f.$('[data-provider-model-id="preview-model"]'));
+  const read=f.calls.filter(call=>call.route==='/api/providers/preview').at(-1);
+  assert.equal(read.body.connection.id,original.id);assert.equal(read.body.connection.expectedUpdatedAt,original.updatedAt);assert.equal(read.body.connection.name,'Draft gateway');
+  assert.deepEqual(read.body.connection.endpoints,{models:'/inventory'});assert.equal(Object.hasOwn(read.body.connection,'apiKey'),false);assert.equal(Object.hasOwn(read.body.connection,'headers'),false);
+  assert.deepEqual(f.state.providers,[original]);assert.equal(f.writes().length,0);assert.equal(f.changed,0);assert.ok(f.$('[data-provider-model-id="saved-model"]'));
+  await f.input('#next-provider-key','synthetic-replacement-key');await f.input('#next-provider-headers','Authorization: Bearer synthetic-replacement-header');
+  await f.click('#next-provider-test');await until(()=>f.calls.filter(call=>call.route==='/api/providers/preview').length===2&&!f.$('#next-provider-test').disabled);
+  const replacement=f.calls.filter(call=>call.route==='/api/providers/preview').at(-1).body.connection;
+  assert.equal(replacement.apiKey,'synthetic-replacement-key');assert.deepEqual(replacement.headers,{Authorization:'Bearer synthetic-replacement-header'});assert.deepEqual(f.state.providers,[original]);
+});
+
+test('late draft previews are aborted after an endpoint edit and cannot populate the new connection catalog',async t=>{
+  const pending=deferred();const f=await fixture(t,{providers:[],hook:call=>{
+    if(call.route!=='/api/providers/preview')return;
+    return call.body.connection.baseUrl==='https://first.example/v1'?pending.promise:previewResult(call.body,{models:[{id:'second-endpoint-model'}]});
+  }});
+  await f.click('#next-provider-new');await f.input('#next-provider-base-url','https://first.example/v1');await f.click('#next-provider-catalog-load');
+  await until(()=>f.calls.some(call=>call.route==='/api/providers/preview'));const first=f.calls.find(call=>call.route==='/api/providers/preview');
+  await f.input('#next-provider-base-url','https://second.example/v1');assert.equal(first.options.signal.aborted,true);
+  pending.resolve(previewResult(first.body,{models:[{id:'first-endpoint-stale-model'}]}));await settle();await settle();assert.equal(f.$('[data-provider-model-id="first-endpoint-stale-model"]'),null);
+  await f.click('#next-provider-catalog-load');await until(()=>f.$('[data-provider-model-id="second-endpoint-model"]'));
+  assert.equal(f.calls.filter(call=>call.route==='/api/providers/preview').at(-1).body.connection.baseUrl,'https://second.example/v1');assert.equal(f.writes().length,0);assert.deepEqual(f.state.providers,[]);
+});
+
+test('draft preview errors preserve selected models and private form values without a save or automatic retry',async t=>{
+  const f=await fixture(t,{providers:[],hook:call=>{if(call.route==='/api/providers/preview')throw Object.assign(Error('Unauthorized synthetic-preview-key synthetic-preview-header'),{code:'PROVIDER_AUTH',status:401});}});
+  await f.click('#next-provider-new');await f.input('#next-provider-base-url','https://gateway.example/v1');await f.input('#next-provider-key','synthetic-preview-key');await f.input('#next-provider-headers','X-Key: synthetic-preview-header');
+  await f.input('#next-provider-manual-model','manual-model');await f.click('#next-provider-add-model');await f.click('#next-provider-test');await until(()=>f.$('#next-provider-error').textContent.includes('Unauthorized'));
+  const error=f.$('#next-provider-error').textContent;assert.doesNotMatch(error,/synthetic-preview-key|synthetic-preview-header/);assert.match(error,/\[redacted\]/);
+  assert.equal(f.$('#next-provider-key').value,'synthetic-preview-key');assert.equal(f.$('#next-provider-headers').value,'X-Key: synthetic-preview-header');assert.ok(f.$('[data-provider-model-id="manual-model"]'));
+  assert.equal(f.writes().length,0);assert.equal(f.calls.filter(call=>call.route==='/api/providers/preview').length,1);assert.deepEqual(f.state.providers,[]);assert.equal(f.changed,0);
+  f.panel.leave();f.panel.enter();await settle();await settle();assert.equal(f.calls.filter(call=>call.route==='/api/providers/preview').length,1,'Entering Settings does not replay a failed draft preview.');
+});
+
+test('public draft catalog discovery never claims that credentials or model access were verified',async t=>{
+  const f=await fixture(t,{providers:[]});await f.click('#next-provider-new');await f.input('#next-provider-base-url','https://gateway.example/v1');await f.click('#next-provider-test');
+  await until(()=>f.$('[data-provider-model-id="preview-model"]'));const receipt=f.$('#next-provider-receipt').textContent;
+  assert.doesNotMatch(receipt,/API key verified|credentials verified/i);assert.match(receipt,/catalog/i);assert.match(receipt,/not verified|not tested/i);
+  assert.equal(f.writes().length,0);assert.equal(f.changed,0);assert.deepEqual(f.state.providers,[]);
+});
+
+test('a preview revision conflict preserves the draft and blocks stale saves until an explicit reload',async t=>{
+  const f=await fixture(t,{providers:[provider()],hook:(call,state)=>{
+    if(call.route==='/api/providers/preview'){
+      state.providers[0]={...state.providers[0],name:'New saved name',updatedAt:'2026-11-06T13:30:00Z'};
+      throw Object.assign(Error('Saved connection changed before preview.'),{code:'PROVIDER_CHANGED',status:409});
+    }
+  }});
+  await f.open();await f.input('#next-provider-name','My unsaved name');await f.input('#next-provider-key','synthetic-conflict-key');await f.click('#next-provider-test');
+  await until(()=>!f.$('#next-provider-stale').hidden);assert.equal(f.$('#next-provider-name').value,'My unsaved name');assert.equal(f.$('#next-provider-key').value,'synthetic-conflict-key');
+  assert.equal(f.$('#next-provider-save').disabled,true);await f.click('#next-provider-save');assert.equal(f.writes().length,0);
+  await f.click('#next-provider-discard');await until(()=>f.$('#next-provider-name').value==='New saved name');assert.equal(f.$('#next-provider-key').value,'');assert.equal(f.$('#next-provider-stale').hidden,true);
+  assert.equal(f.calls.filter(call=>call.route==='/api/providers/preview').length,1);assert.equal(f.writes().length,0);
+});
+
+test('retired presets are absent from new setup and remain identifiable on existing saved connections',async t=>{
+  const legacy=provider('legacy_pollinations',{preset:'pollinations_classic',name:'Legacy Pollinations',baseUrl:'https://text.pollinations.ai',endpoints:{models:'/models',chatCompletions:'/openai'},hasApiKey:false,hasHeaders:false,headerNames:[]});
+  const f=await fixture(t,{providers:[legacy]});await f.click('#next-provider-new');
+  assert.equal([...f.$('#next-provider-preset').querySelectorAll('option')].some(option=>option.value==='pollinations_classic'),false);
+  await f.open('legacy_pollinations');assert.equal(f.$('#next-provider-preset').value,'pollinations_classic');assert.equal(f.$('#next-provider-base-url').value,legacy.baseUrl);
+  assert.equal(f.$('#next-provider-models-path').value,'/models');assert.equal(f.$('#next-provider-chat-path').value,'/openai');assert.deepEqual(f.state.providers,[legacy]);assert.equal(f.writes().length,0);
+  const selected=[...f.$('#next-provider-preset').querySelectorAll('option')].find(option=>option.value==='pollinations_classic');assert.ok(selected);assert.match(selected.textContent,/legacy|retired|classic/i);
+  await f.click('#next-provider-new');assert.equal([...f.$('#next-provider-preset').querySelectorAll('option')].some(option=>option.value==='pollinations_classic'),false);
+});
+
+test('fresh provider catalogs flag removed saved models but preserve selections and the default',async t=>{
+  const f=await fixture(t,{providers:[provider()],hook:call=>{
+    if(call.route==='/api/providers/gateway/models')return {
+      models:[{id:'replacement-model',displayName:'Current model',supportsTools:true}],
+      selectedModels:[...provider().models],selectedPresence:[{id:'saved-model',listed:false}],
+      catalogAvailable:true,offset:0,total:1,hasMore:false,fetchedAt:'2026-11-06T16:00:00Z',
+    };
+  }});
+  await f.open();
+  await until(()=>f.$('#next-provider-model-count').textContent.includes('no longer listed'));
+  assert.equal(f.$('[data-provider-model-id="saved-model"]').checked,true);
+  assert.match(f.$('#next-provider-models').textContent,/Not listed by the last successful live catalog/);
+  assert.match(f.$('#next-provider-receipt').textContent,/no longer listed by the provider/);
+  assert.match(f.$('#next-provider-catalog-page').textContent,/Fetched/);
+  assert.equal(f.calls.find(call=>call.route==='/api/providers/gateway/models').body.refresh,true);
+  assert.equal(f.writes().length,0,'Reading current metadata must never remove or save models');
+  assert.equal(f.changed,0,'Automatic browsing must not change the default or runtime selection');
+});
+
+test('legacy service URLs on custom saved connections show migration guidance without changing their identity',async t=>{
+  const original=provider('custom_pollinations',{preset:'compatible',name:'My saved Pollinations',baseUrl:'https://text.pollinations.ai',endpoints:{models:'/models',chatCompletions:'/openai'},hasApiKey:false,hasHeaders:false,headerNames:[]});
+  const f=await fixture(t,{providers:[original]});await f.open('custom_pollinations');
+  assert.equal(f.$('#next-provider-preset').value,'compatible');assert.equal(f.$('#next-provider-id').value,original.id);assert.equal(f.$('#next-provider-base-url').value,original.baseUrl);
+  assert.equal(f.$('#next-provider-legacy').hidden,false);assert.match(f.$('#next-provider-legacy').textContent,/legacy/i);assert.equal(f.$('#next-provider-replacement').hidden,false);
+  assert.deepEqual(f.state.providers,[original]);assert.equal(f.writes().length,0);assert.equal(f.changed,0);
+  await f.click('#next-provider-replacement');
+  assert.equal(f.$('#next-provider-preset').value,'pollinations');assert.equal(f.$('#next-provider-base-url').value,'https://gen.pollinations.ai/v1');
+  assert.equal(f.$('#next-provider-id').value,original.id);assert.equal(f.$('#next-provider-name').value,original.name);assert.equal(f.$('[data-provider-model-id="saved-model"]').checked,true);
+  assert.deepEqual(f.state.providers,[original]);assert.equal(f.writes().length,0,'Explicit migration fills a reviewable draft; it does not save or duplicate the connection.');
 });

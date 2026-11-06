@@ -371,9 +371,15 @@ test('OpenRouter discovery is separate from key verification and actual chat com
   assert.equal(provider.type, 'compatible'); assert.equal(provider.requiresApiKey, true); assert.equal(provider.configured, false);
   const catalog = await runtime.discoverModels('router'); assert.equal(catalog.models[0].supportsTools, true); assert.equal(catalog.models[0].contextWindowTokens, 900000); assert.equal(catalog.models[0].maxOutputTokens, 32000);
   await assert.rejects(runtime.testProvider('router'), { code: 'PROVIDER_KEY_REQUIRED' }); assert.equal(requests.length, 1, 'a public catalog is not an authentication check');
+  const saveStart = requests.length;
   provider = await runtime.saveProvider({ id: 'router', apiKey: secret, models: catalog.models }); assert.equal(provider.configured, true);
+  const saveRequests = requests.slice(saveStart);
+  assert.deepEqual(saveRequests.map(request => [request.method, request.url]), [['GET', '/v1/models']], 'changing credentials revalidates provider-reported model metadata during save');
+  assert.ok(saveRequests.every(request => request.headers.authorization === `Bearer ${secret}`)); assert.equal(provider.modelLimitDiscovery.status, 'reported');
+  const checkStart = requests.length;
   const checked = await runtime.testProvider('router'); assert.equal(checked.credentialVerified, true); assert.equal(checked.modelAccessVerified, false); assert.equal(checked.verification, 'credentials-and-catalog');
-  assert.deepEqual(requests.slice(1).map(request => request.url), ['/v1/key', '/v1/models']); assert.ok(requests.slice(1).every(request => request.headers.authorization === `Bearer ${secret}`));
+  const checkRequests = requests.slice(checkStart);
+  assert.deepEqual(checkRequests.map(request => request.url), ['/v1/key', '/v1/models']); assert.ok(checkRequests.every(request => request.headers.authorization === `Bearer ${secret}`));
   assert.ok(!JSON.stringify(checked).includes(secret)); assert.ok(!JSON.stringify(runtime.status()).includes(secret));
   await runtime.setDefaultModel('router::vendor/agent-model');
   assert.equal((await runtime.runAgent({ cwd, prompt: 'Run through OpenRouter.' })).output, 'OpenRouter adapter worked.');

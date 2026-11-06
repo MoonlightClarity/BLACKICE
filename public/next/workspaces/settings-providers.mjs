@@ -3,19 +3,25 @@ import {PROVIDER_PRESETS,getProviderPreset,isOpenRouterProvider,modelLimitDetail
 import {createProviderModelSelection,providerHeadersForSave,codexModelAccessLabel,codexModelSourceLabel} from '../../connection-models.mjs';
 import {MODEL_SORTS,groupModels,modelIsFree} from '../../model-browser.mjs';
 import {providerCredentialsReady,enableProviderConnection} from '../../provider-availability.mjs';
+import {createProviderDirectoryUI} from './settings-provider-directory.mjs';
 
 const PAGE=80,LIST_PAGE=40,SEARCH_DELAY=180,NEW_DRAFT='__new_provider_draft__';
 const compactTokens=value=>new Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:1}).format(value);
 const compactModelSummary=model=>{
   const context=Number.isSafeInteger(model.contextWindowTokens)&&model.contextWindowTokens>0,output=Number.isSafeInteger(model.maxOutputTokens)&&model.maxOutputTokens>0;
   const limits=context||output?[context?compactTokens(model.contextWindowTokens)+' context':'Context unknown',output?compactTokens(model.maxOutputTokens)+' output':'Output unknown']:['Limits unknown'];
-  return [...limits,typeof model.supportsTools==='boolean'?(model.supportsTools?'Tools':'No tools'):null,model.inputModalities?.includes('image')?'Vision':null,modelIsFree(model)?'Free':null].filter(Boolean).join(' · ');
+  return [...limits,typeof model.supportsTools==='boolean'?(model.supportsTools?'Tools':'No tools'):null,model.inputModalities?.includes('image')?'Vision':null,modelIsFree(model)?(model.pricing?'Zero price reported':'Free model access reported'):null].filter(Boolean).join(' · ');
 };
 
 const copy=value=>structuredClone(value);
 const presetFor=value=>getProviderPreset(value?.preset)||
   (isOpenRouterProvider(value)?getProviderPreset('openrouter'):null)||
   PROVIDER_PRESETS.find(item=>item.baseUrl&&item.baseUrl===value?.baseUrl)||getProviderPreset('compatible');
+const setupPresetFor=value=>{
+  const preset=getProviderPreset(value?.preset);
+  if(preset?.id!=='compatible')return preset;
+  return PROVIDER_PRESETS.find(item=>item.deprecated&&item.type===value.type&&item.baseUrl.replace(/\/+$/,'')===String(value.baseUrl||'').replace(/\/+$/,''))||preset;
+};
 const capacityLines=models=>models.filter(model=>model.contextWindowTokens).map(model=>`${model.id} = ${model.contextWindowTokens}`).join('\n');
 const newId=()=>`api_${globalThis.crypto?.randomUUID?.().replaceAll('-','').slice(0,12)||Math.random().toString(36).slice(2,14)}`;
 const modelId=value=>typeof value==='string'&&value.trim()&&value.length<=256&&!/[\r\n\x00]/.test(value)&&!value.includes('::');
@@ -23,6 +29,7 @@ const nativeId=value=>typeof value==='string'&&value.length>0&&value.length<=400
 const endpointPaths=(models,chat,type)=>({...(String(models||'').trim()?{models:String(models).trim()}:{}),...(type==='compatible'&&String(chat||'').trim()?{chatCompletions:String(chat).trim()}:{})});
 const endpointSummary=provider=>[provider.endpoints?.models&&'Models: '+provider.endpoints.models,provider.type==='compatible'&&provider.endpoints?.chatCompletions&&'Chat Completions: '+provider.endpoints.chatCompletions].filter(Boolean).join(' · ');
 const selectedIds=models=>JSON.stringify((models||[]).map(model=>model.id).sort());
+const sameOrigin=(left,right)=>{try{return new URL(left).origin===new URL(right).origin;}catch{return false;}};
 const definition=provider=>JSON.stringify([provider.id,provider.name,provider.preset,provider.type,provider.baseUrl,provider.endpoints,provider.enabled,provider.maxTokens,provider.maxSteps,provider.hasApiKey,provider.hasHeaders,provider.headerNames,provider.updatedAt,
   (provider.models||[]).map(model=>[model.id,model.contextWindowSource==='user-configured'?model.contextWindowTokens:null,model.maxOutputTokensSource==='user-configured'?model.maxOutputTokens:null])]);
 function validateEndpointPaths(paths){for(const value of Object.values(paths)){if(value.length>2000||!value.startsWith('/')||value.startsWith('//')||/[?#\\\x00-\x20\x7f]/.test(value))throw Error('Endpoint paths must start with one / and contain no URL, query, fragment, backslash, or whitespace.');}return paths;}
@@ -30,8 +37,9 @@ function validateEndpointPaths(paths){for(const value of Object.values(paths)){i
 /** Drafts and credentials live only in this component's memory. Reads never save. */
 export function createProviderSettings({mount,api,events,notify=()=>{},onChanged=()=>{},getRuntimeSettings=()=>null,onRuntimeSettings=()=>{}}) {
   mount.innerHTML=`<section id="next-provider-root" class="next-providers" aria-label="Model connections">
-    <header class="next-provider-heading"><div><h2>API connections</h2><p class="next-help">Optional providers for your chats. Choose a provider or connect a Custom API or local model server. Add an API key or other credentials only when the provider requires them.</p></div><div class="next-row"><button type="button" id="next-provider-refresh">Refresh connections</button><button type="button" id="next-provider-new">Connect another endpoint</button></div></header>
+    <header class="next-provider-heading"><div><h2>API connections</h2><p class="next-help">Choose a supported provider or a custom compatible API. Check the connection, load its current models, select the ones you want, then save.</p></div><div class="next-row"><button type="button" id="next-provider-refresh">Refresh connections</button><button type="button" id="next-provider-new">Connect another endpoint</button></div></header>
     <div class="next-row" aria-label="Quick API setup"><button type="button" id="next-provider-openrouter">Set up OpenRouter</button><button type="button" id="next-provider-mistral">Set up Mistral API</button></div>
+    <div id="next-provider-directory-root"></div>
     <p id="next-provider-info" role="status" aria-live="polite"></p>
     <div class="next-provider-layout"><aside aria-label="Saved API connections"><label class="next-label">Find a connection<input id="next-provider-filter" class="next-field" type="search" maxlength="100"></label><ul id="next-provider-list" class="next-provider-list"></ul><button type="button" id="next-provider-more" hidden>Show more connections</button><details id="next-provider-hidden" class="next-provider-hidden" hidden><summary>Hidden providers <span id="next-provider-hidden-count"></span></summary><p class="next-help">Restore a provider to show it in model menus. Its saved connection and running conversations are retained.</p><ul id="next-provider-hidden-list" class="next-provider-list"></ul></details></aside>
     <section id="next-provider-editor" class="next-card" aria-label="Connection editor"><p id="next-provider-empty" class="next-help">Choose a connection or add one.</p>
@@ -39,7 +47,8 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
       <h3 id="next-provider-title">Connection</h3><p id="next-provider-stale" class="next-help" hidden>Saved settings changed. Your draft is kept; Reload saved settings replaces it.</p>
       <div class="next-row next-provider-manage-actions"><button type="button" id="next-provider-manage-models" class="next-primary">Manage models / Add models</button><button type="button" id="next-provider-limits-refresh">Refresh model limits</button><button type="button" id="next-provider-hide">Hide provider from model menus</button></div>
       <details id="next-provider-connection-details" class="next-provider-advanced"><summary>Connection settings · address, API key and limits</summary><div class="next-stack">
-      <div class="next-provider-fields"><label class="next-label">Preset<select id="next-provider-preset" class="next-field"></select></label><label class="next-label">API protocol<select id="next-provider-protocol" class="next-field"><option value="compatible">OpenAI compatible</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select></label><label class="next-label">Connection name<input id="next-provider-name" class="next-field" maxlength="100" required></label><label class="next-label">Connection ID<input id="next-provider-id" class="next-field" maxlength="40" spellcheck="false" required></label></div>
+      <div class="next-provider-fields"><label class="next-label">Provider<select id="next-provider-preset" class="next-field"></select></label><label class="next-label">API protocol<select id="next-provider-protocol" class="next-field"><option value="compatible">OpenAI Chat Completions compatible</option><option value="openai">OpenAI Responses</option><option value="anthropic">Anthropic Messages</option></select></label><label class="next-label">Connection name<input id="next-provider-name" class="next-field" maxlength="100" required></label><label class="next-label">Connection ID<input id="next-provider-id" class="next-field" maxlength="40" spellcheck="false" required></label></div>
+      <div id="next-provider-support" class="next-provider-support" aria-label="Provider setup details"></div><p id="next-provider-legacy" class="next-help" hidden></p><button type="button" id="next-provider-replacement" hidden>Use current provider settings</button>
       <label class="next-label">API address<input id="next-provider-base-url" class="next-field" type="url" spellcheck="false" placeholder="https://api.example.com/v1" required></label>
       <details class="next-provider-advanced"><summary>Custom endpoint paths</summary><div class="next-stack"><p class="next-help">Optional paths on this API address’s origin. Blank uses standard paths relative to the API address.</p><label class="next-label">Model catalog path<input id="next-provider-models-path" class="next-field" maxlength="2000" spellcheck="false" placeholder="/models"></label><label class="next-label">Chat Completions path<input id="next-provider-chat-path" class="next-field" maxlength="2000" spellcheck="false" placeholder="/chat/completions"></label><p class="next-help">Chat Completions paths apply to the OpenAI compatible protocol.</p></div></details>
       <label class="next-label">API key<input id="next-provider-key" class="next-field" type="password" autocomplete="new-password" maxlength="20000" aria-describedby="next-provider-key-note"></label><p id="next-provider-key-note" class="next-help"></p><p id="next-provider-setup-links" class="next-help"></p><label class="next-row"><input id="next-provider-clear-key" type="checkbox">Remove saved API key</label>
@@ -47,15 +56,16 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
       <label class="next-row"><input id="next-provider-enabled" type="checkbox">Use this connection</label>
       </div></details>
       <section aria-label="Selected models"><div class="next-provider-group-heading"><h3>Selected models <span id="next-provider-model-count" class="next-help"></span></h3><div class="next-row"><button type="button" id="next-provider-selected-expand">Expand all</button><button type="button" id="next-provider-selected-collapse">Collapse all</button></div></div><div id="next-provider-models" class="next-provider-models"></div><div class="next-provider-inline"><label class="next-label">Exact model ID<input id="next-provider-manual-model" class="next-field" maxlength="256" spellcheck="false"></label><button type="button" id="next-provider-add-model">Add model ID</button></div><p class="next-help">If the provider does not list models, add its exact model ID here.</p></section>
-      <details id="next-provider-catalog-panel" class="next-provider-catalog-panel"><summary>Add models from this connection</summary><div class="next-stack"><p class="next-help">Uses the saved API address and key. Save connection setting changes first. Search, sorting and filters apply to the entire catalog before pages are shown.</p><div class="next-provider-inline"><label class="next-label">Search all models<input id="next-provider-catalog-search" class="next-field" type="search" maxlength="256" placeholder="Name, provider or exact ID"></label><button type="button" id="next-provider-catalog-load">Search catalog</button></div><div class="next-provider-catalog-filters"><label class="next-label">Sort models<select id="next-provider-catalog-sort" class="next-field"></select></label><label class="next-label">Minimum context tokens<input id="next-provider-catalog-min-context" class="next-field" type="number" min="0" step="1" placeholder="Any context size"></label><label class="next-row"><input id="next-provider-catalog-free" type="checkbox">Free only</label><label class="next-row"><input id="next-provider-catalog-tools" type="checkbox">Tools</label><label class="next-row"><input id="next-provider-catalog-vision" type="checkbox">Vision input</label></div><div class="next-row"><button type="button" id="next-provider-catalog-expand">Expand all</button><button type="button" id="next-provider-catalog-collapse">Collapse all</button><button type="button" id="next-provider-catalog-clear">Clear filters</button></div><div id="next-provider-catalog" class="next-provider-models"></div><div class="next-row"><button type="button" id="next-provider-catalog-prev">Previous</button><span id="next-provider-catalog-page" class="next-help"></span><button type="button" id="next-provider-catalog-next">Next</button></div></div></details>
+      <details id="next-provider-catalog-panel" class="next-provider-catalog-panel"><summary>Add models from this connection</summary><div class="next-stack"><p class="next-help">Uses the address and credentials in this form. You can load models before saving. Search, sorting and filters apply to the entire catalog; unknown capabilities are not treated as supported.</p><div class="next-provider-inline"><label class="next-label">Search all models<input id="next-provider-catalog-search" class="next-field" type="search" maxlength="256" placeholder="Name, provider or exact ID"></label><button type="button" id="next-provider-catalog-load">Search catalog</button></div><div class="next-provider-catalog-filters"><label class="next-label">Sort models<select id="next-provider-catalog-sort" class="next-field"></select></label><label class="next-label">Minimum context tokens<input id="next-provider-catalog-min-context" class="next-field" type="number" min="0" step="1" placeholder="Any context size"></label><label class="next-row"><input id="next-provider-catalog-free" type="checkbox">Free or zero-price models</label><label class="next-row"><input id="next-provider-catalog-tools" type="checkbox">Tools</label><label class="next-row"><input id="next-provider-catalog-vision" type="checkbox">Vision input</label></div><div class="next-row"><button type="button" id="next-provider-catalog-expand">Expand all</button><button type="button" id="next-provider-catalog-collapse">Collapse all</button><button type="button" id="next-provider-catalog-clear">Clear filters</button></div><div id="next-provider-catalog" class="next-provider-models"></div><div class="next-row"><button type="button" id="next-provider-catalog-prev">Previous</button><span id="next-provider-catalog-page" class="next-help"></span><button type="button" id="next-provider-catalog-next">Next</button></div></div></details>
       <p id="next-provider-receipt" role="status" aria-live="polite"></p><p id="next-provider-error" role="alert"></p>
-      <footer class="next-row"><button type="button" id="next-provider-save" class="next-primary">Save connection</button><button type="button" id="next-provider-test" title="Checks the saved model catalog. Does not run a model.">Check saved catalog</button><button type="button" id="next-provider-discard">Reload saved settings</button><button type="button" id="next-provider-delete">Remove connection</button></footer>
+      <footer class="next-row"><button type="button" id="next-provider-save" class="next-primary">Save connection</button><button type="button" id="next-provider-test" title="Checks this connection and loads its live model catalog without saving or running a model.">Check connection</button><button type="button" id="next-provider-discard">Reload saved settings</button><button type="button" id="next-provider-delete">Remove connection</button></footer>
     </form></section></div>
     <details id="next-provider-codex" class="next-card next-provider-codex"><summary>Codex model IDs and checks</summary><button type="button" id="next-provider-codex-hide">Hide Codex from model menus</button><p class="next-help">Add an exact native Codex model ID, including one absent from the catalog. Codex decides whether it can serve each request.</p><div class="next-provider-inline"><label class="next-label">Exact Codex model ID<input id="next-provider-codex-id" class="next-field" maxlength="400" spellcheck="false" autocomplete="off"></label><button type="button" id="next-provider-codex-add">Add model ID</button><button type="button" id="next-provider-codex-check">Try model</button></div><p class="next-help">Try model sends one short text request and may use your account’s quota. It has a 45-second deadline. Its result describes that request and account.</p><div class="next-provider-inline"><label class="next-label">Find Codex models<input id="next-provider-codex-filter" class="next-field" type="search" maxlength="200"></label><button type="button" id="next-provider-codex-read">Refresh model list and limits</button></div><p id="next-provider-codex-status" class="next-help" role="status" aria-live="polite">Refresh the model list to retrieve native model limits and check status.</p><p id="next-provider-codex-error" role="alert"></p><ul id="next-provider-codex-list" class="next-provider-list"></ul><button type="button" id="next-provider-codex-more" hidden>Show more models</button></details>
   </section>`;
   const $=id=>mount.querySelector('#next-provider-'+id);
-  const f=Object.fromEntries(['root','refresh','new','openrouter','mistral','setup-links','info','filter','list','more','hidden','hidden-count','hidden-list','manage-models','limits-refresh','hide','connection-details','selected-expand','selected-collapse','catalog-panel','catalog-sort','catalog-min-context','catalog-free','catalog-tools','catalog-vision','catalog-expand','catalog-collapse','catalog-clear','editor','empty','form','title','stale','preset','protocol','name','id','base-url','models-path','chat-path','key','key-note','clear-key','header-note','headers','clear-headers','max-tokens','max-steps','capacities','enabled','models','model-count','manual-model','add-model','catalog-search','catalog-load','catalog','catalog-prev','catalog-next','catalog-page','receipt','error','save','test','discard','delete','codex','codex-hide','codex-id','codex-add','codex-check','codex-filter','codex-read','codex-status','codex-error','codex-list','codex-more'].map(id=>[id,$(id)]));
+  const f=Object.fromEntries(['root','refresh','new','openrouter','mistral','directory-root','setup-links','support','legacy','replacement','info','filter','list','more','hidden','hidden-count','hidden-list','manage-models','limits-refresh','hide','connection-details','selected-expand','selected-collapse','catalog-panel','catalog-sort','catalog-min-context','catalog-free','catalog-tools','catalog-vision','catalog-expand','catalog-collapse','catalog-clear','editor','empty','form','title','stale','preset','protocol','name','id','base-url','models-path','chat-path','key','key-note','clear-key','header-note','headers','clear-headers','max-tokens','max-steps','capacities','enabled','models','model-count','manual-model','add-model','catalog-search','catalog-load','catalog','catalog-prev','catalog-next','catalog-page','receipt','error','save','test','discard','delete','codex','codex-hide','codex-id','codex-add','codex-check','codex-filter','codex-read','codex-status','codex-error','codex-list','codex-more'].map(id=>[id,$(id)]));
   const drafts=new Map();
+
   let runtimeSettings=copy(getRuntimeSettings()||{});
   const hiddenProviders=()=>new Set(Array.isArray(runtimeSettings.hiddenModelProviders)?runtimeSettings.hiddenModelProviders:[]);
   let active=false,destroyed=false,selected=null,providers=[],listLimit=LIST_PAGE,listBusy=false,listSequence=0,listAbort,unsubscribe=null;
@@ -78,7 +88,7 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
     const selection=createProviderModelSelection(value.models||[]),capacities=capacityLines(selection.selected());
     const draft={saved:provider?copy(provider):null,id:value.id,name:value.name,preset:presetFor(value).id,type:value.type,baseUrl:value.baseUrl,modelsPath:value.endpoints?.models||'',chatPath:value.endpoints?.chatCompletions||'',
       enabled:value.enabled!==false,maxTokens:String(value.maxTokens??8192),maxSteps:value.maxSteps==null?'':String(value.maxSteps),key:'',headers:'',clearKey:false,clearHeaders:false,
-      selection,capacities,originalCapacities:capacities,originalModels:JSON.stringify(selection.forSave()),catalog:null,query:'',sort:'name',freeOnly:Boolean(presetFor(value).freeOnly),toolsOnly:false,visionOnly:false,minContextTokens:'',expanded:{selected:new Set(),catalog:new Set()},modelDetails:{selected:new Set(),catalog:new Set()},connectionDetailsOpen:!provider,catalogOpen:false,limitsNeedRetry:(value.models||[]).some(model=>['partial','unresolved','unavailable'].includes(model.modelLimitLookup?.status)),manual:'',receipt:'',error:''};
+      selection,capacities,originalCapacities:capacities,originalModels:JSON.stringify(selection.forSave()),catalog:null,catalogPresence:null,catalogFetchedAt:null,query:'',sort:'name',freeOnly:Boolean(presetFor(value).freeOnly)||presetFor(value).id==='openrouter'&&/\bfree\b/i.test(value.name||''),toolsOnly:presetFor(value).id==='openrouter'&&/\bfree\b/i.test(value.name||''),visionOnly:false,minContextTokens:'',expanded:{selected:new Set(),catalog:new Set()},modelDetails:{selected:new Set(),catalog:new Set()},connectionDetailsOpen:!provider,catalogOpen:false,limitsNeedRetry:(value.models||[]).some(model=>['partial','unresolved','unavailable'].includes(model.modelLimitLookup?.status)),manual:'',receipt:'',error:''};
     draft.baseline=JSON.stringify(settings(draft));return draft;
   }
   function notifyChanged(){try{Promise.resolve(onChanged()).catch(()=>{if(active)status(f.info,'Model choices could not refresh; use Refresh connections.',true);});}catch{if(active)status(f.info,'Model choices could not refresh; use Refresh connections.',true);}}
@@ -86,16 +96,18 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
     const draft=current();
     for(const control of f.form.querySelectorAll('input,select,textarea,button'))control.disabled=busy;
     f.new.disabled=busy;f.openrouter.disabled=busy;f.mistral.disabled=busy;f.refresh.disabled=busy||listBusy;f.filter.disabled=busy;f.more.disabled=busy;
+
     for(const button of [...f.list.querySelectorAll('button'),...f['hidden-list'].querySelectorAll('button')])button.disabled=busy;
     f['codex-hide'].disabled=busy;
     if(draft){
       f['chat-path'].disabled=busy||draft.type!=='compatible';
       f['catalog-free'].disabled=busy||getProviderPreset(draft.preset)?.freeOnly===true;
       f.id.disabled=busy||Boolean(draft.saved);f.save.disabled=busy||draft.conflict===true||!changed(draft);
-      f.test.disabled=busy||draft.conflict===true||!draft.saved||changed(draft);f.delete.disabled=busy||draft.conflict===true||!draft.saved;
+      f.test.disabled=busy||catalogBusy||draft.conflict===true||!draft.baseUrl.trim();f.delete.disabled=busy||draft.conflict===true||!draft.saved;
       f.discard.disabled=busy||listBusy;f.delete.hidden=!draft.saved;
-      const canCatalog=Boolean(draft.saved)&&!draft.conflict&&!settingsChanged(draft)&&!busy&&!catalogBusy;
+      const canCatalog=Boolean(draft.baseUrl.trim())&&!draft.conflict&&!busy&&!catalogBusy;
       f['manage-models'].disabled=!canCatalog;f['limits-refresh'].disabled=!canCatalog;f['limits-refresh'].textContent=draft.limitsNeedRetry?'Retry model limits':'Refresh model limits';f.hide.disabled=busy||!draft.saved;f.hide.hidden=!draft.saved;
+      f['manage-models'].textContent=draft.saved?'Manage models / Add models':'Load models';
       f.hide.textContent=hiddenProviders().has(draft.id)?'Restore provider to model menus':'Hide provider from model menus';
       f.save.textContent=draft.saved&&!settingsChanged(draft)?'Save selected models':'Save connection';
       f['catalog-load'].disabled=!canCatalog;f['catalog-prev'].disabled=!canCatalog||draft.catalogPending===true||!draft.catalog?.offset;
@@ -142,10 +154,30 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
     const saved=providers.find(provider=>presetFor(provider).id===id||provider.type===preset.type&&provider.baseUrl===preset.baseUrl);if(saved){openSetup(saved);return;}
     cancelCatalog();const key=NEW_DRAFT+':'+id;
     if(!drafts.has(key)){
-      const draft=makeDraft();Object.assign(draft,{id:providers.some(provider=>provider.id===id)?newId():id,name:preset.name,preset:id,type:preset.type,baseUrl:preset.baseUrl,freeOnly:Boolean(preset.freeOnly)});
+      const draft=makeDraft();Object.assign(draft,{id:providers.some(provider=>provider.id===id)?newId():id,name:preset.name,preset:id,type:preset.type,baseUrl:preset.baseUrl,modelsPath:preset.endpoints?.models||'',chatPath:preset.endpoints?.chatCompletions||'',freeOnly:Boolean(preset.freeOnly)});
       draft.baseline=JSON.stringify(settings(draft));drafts.set(key,draft);
     }
     selected=key;paintList();paintEditor();f.key.focus();
+  }
+  function chooseDirectoryProvider(entry){
+    if(!active||destroyed||busy||!entry)return;
+    if(entry.supported===true&&typeof entry.preset==='string'){startPreset(entry.preset);return;}
+    if(entry.compatibility!=='index-reported-compatible'||entry.protocol!=='compatible'||!entry.baseUrl)return;
+    let target;try{target=new URL(entry.baseUrl);}catch{return;}
+    if(!['https:','http:'].includes(target.protocol)||target.username||target.password)return;
+    const saved=providers.find(provider=>provider.type==='compatible'&&provider.baseUrl===entry.baseUrl);
+    if(saved){openSetup(saved);return;}
+    cancelCatalog();
+    const key=NEW_DRAFT+':external:'+entry.providerId;
+    if(!drafts.has(key)){
+      const draft=makeDraft();
+      Object.assign(draft,{id:newId(),name:String(entry.name||'Model API').slice(0,100),preset:'compatible',
+        type:'compatible',baseUrl:entry.baseUrl,modelsPath:'',chatPath:'',freeOnly:false,toolsOnly:false,
+        connectionDetailsOpen:true,
+        receipt:'External index only: compatible protocol is reported, not verified. Enter credentials, load live models, check the connection, then save if it works.'});
+      draft.baseline=JSON.stringify(settings(draft));drafts.set(key,draft);
+    }
+    selected=key;paintList();paintEditor();f['connection-details'].open=true;f.key.focus();
   }
   async function enableConnection(id){
     if(!active||destroyed||busy)return;const provider=providers.find(item=>item.id===id);if(!provider)return;
@@ -192,13 +224,14 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
     const entry=add(parent,'div','','next-provider-model-entry'),label=add(entry,'label','', 'next-provider-model'),name=model.displayName||model.id;
     const input=add(label,'input');input.type='checkbox';input.checked=chosen;input.dataset.providerModelId=model.id;
     const body=add(label,'span');add(body,'strong',name);add(body,'small',compactModelSummary(model),'next-provider-model-summary');
+    if(scope==='selected'&&draft.catalogPresence?.get(model.id)===false)add(body,'small','Not listed by the last successful live catalog · selection preserved','next-provider-model-unlisted');
     const details=add(entry,'details','','next-provider-model-details');details.dataset.modelDetails=model.id;details.dataset.detailScope=scope;details.open=draft.modelDetails[scope].has(model.id);
     const summary=add(details,'summary','Details');summary.setAttribute('aria-label','Model details for '+name);
     const content=add(details,'div','','next-provider-model-detail-content');
     if(name!==model.id)add(content,'small','Model ID: '+model.id,'next-provider-model-id');
     limitDetails(content,model);
     if(typeof model.supportsTools==='boolean')add(content,'small',model.supportsTools?'Provider reports tools':'Provider reports no tools');
-    if(modelIsFree(model))add(content,'small',model.pricing?'Free · provider-reported pricing':'Free · provider-reported access');
+    if(modelIsFree(model))add(content,'small',model.pricing?'Zero price · provider-reported pricing':'Free model access · provider reported');
     limitSources(content,model);
     details.addEventListener('toggle',()=>{details.open?draft.modelDetails[scope].add(model.id):draft.modelDetails[scope].delete(model.id);});
     input.addEventListener('change',()=>{
@@ -209,22 +242,33 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
   function paintModels(){
     const draft=current();if(!draft)return;
     f.models.replaceChildren();f.catalog.replaceChildren();const chosen=draft.selection.selected(),ids=new Set(chosen.map(item=>item.id));
-    f['model-count'].textContent=`${chosen.length} / 200`;
+    const notListed=draft.catalogPresence?[...draft.catalogPresence].filter(([id,listed])=>listed===false&&ids.has(id)).length:0;
+    f['model-count'].textContent=`${chosen.length} / 200${notListed?` · ${notListed} no longer listed`:''}`;
     paintGroups(f.models,chosen,draft,'selected');
-    if(!chosen.length)add(f.models,'p','No models selected. Add an exact ID or search the saved connection.','next-help');
+    if(!chosen.length)add(f.models,'p','No models selected. Load this connection’s models or add an exact model ID.','next-help');
     paintGroups(f.catalog,draft.selection.page(),draft,'catalog');
     if(!draft.selection.page().length)add(f.catalog,'p',draft.catalog?.available===false?'Provider catalog unavailable. Selected models are kept. Use Retry model limits to try again.':draft.catalog?'No models match these filters.':'Search the catalog to find models.','next-help');
     const page=draft.catalog;
-    f['catalog-page'].textContent=draft.catalogPending?(page?'Updating results… previous results are shown until the new search completes.':'Searching the full catalog…'):page?.available===false?'Full provider catalog unavailable · selected IDs kept':page?`${page.total?`${page.offset+1}–${page.offset+page.returned} of ${page.total} matching models`:'No matches'} · whole catalog filtered · selections kept across pages`:'';
+    f['catalog-page'].textContent=draft.catalogFetchedAt&&draft.catalog?.available?`Fetched ${new Date(draft.catalogFetchedAt).toLocaleString()} · `:'';
+    f['catalog-page'].textContent+=draft.catalogPending?(page?'Updating results… previous results are shown until the new search completes.':'Searching the full catalog…'):page?.available===false?'Full provider catalog unavailable · selected IDs kept':page?`${page.total?`${page.offset+1}–${page.offset+page.returned} of ${page.total} matching models`:'No matches'} · whole catalog filtered · selections kept across pages`:'';
   }
   function feedback(){const draft=current();if(!draft)return;status(f.receipt,draft.receipt);status(f.error,draft.error,true);}
   function savedNotes(){
     const draft=current();if(!draft)return;const saved=draft.saved;
-    f['key-note'].textContent=saved?.hasApiKey?(saved.secretStorage==='file'?`Using profile .env (${saved.credentialVariable||'provider API key'}). The file value takes precedence; edit the file to change it.`:saved.secretStorage==='environment'?`Using environment variable ${saved.credentialVariable||'API key'}.` :saved.secretStorage==='session'?'API key available for the current session. Enter it again after restarting BLACKICE.':'API key saved. Leave blank to keep it.'):getProviderPreset(draft.preset)?.anonymous?'No API key is required for this free preset. Save the connection, then select its models.':getProviderPreset(draft.preset)?.requiresApiKey?'Add an API key or supported authorization header for this provider. Profile .env keys are also detected automatically.':'API key optional. Add credentials only if this endpoint requires them.';
-    f.key.placeholder=saved?.hasApiKey?(saved.secretStorage==='session'?'Current session · leave blank to keep':'Saved · leave blank to keep'):getProviderPreset(draft.preset)?.anonymous?'No API key required':'API key';
+    const setupPreset=setupPresetFor(draft),canKeepCredential=saved?.hasApiKey&&sameOrigin(saved.baseUrl,draft.baseUrl)&&saved.type===draft.type;
+    f['key-note'].textContent=saved?.hasApiKey&&!canKeepCredential?'The API target or protocol changed. Enter credentials for this connection; its previous credentials will not be sent to the new target.':canKeepCredential?(saved.secretStorage==='file'?`Using profile .env (${saved.credentialVariable||'provider API key'}). Enter a key here to override it for this connection.`:saved.secretStorage==='environment'?`Using environment variable ${saved.credentialVariable||'API key'}. Enter a key here to override it for this connection.`:saved.secretStorage==='session'?'API key available for the current session. Enter it again after restarting BLACKICE.':'API key saved. Leave blank to keep it.'):(setupPreset?.authNote||(setupPreset?.requiresApiKey?'Add an API key or supported authorization header for this provider. Profile .env keys are also detected automatically.':'API key optional. Add credentials only if this endpoint requires them.'));
+    if(draft.clearKey)f['key-note'].textContent='The API key will be removed when you save. Profile and environment keys will stay unused for this connection until you enter a replacement key.';
+    else if(draft.key.trim())f['key-note'].textContent='Connection checks use the key entered here. Save the connection to keep it.';
+    f.key.placeholder=canKeepCredential?(saved.secretStorage==='session'?'Current session · leave blank to keep':'Saved · leave blank to keep'):setupPreset?.anonymous?'Optional API key':'API key';
     f['setup-links'].replaceChildren();
-    const setupPreset=getProviderPreset(draft.preset),setupUrl=setupPreset?.keyUrl||setupPreset?.docsUrl;
-    if(setupUrl){const link=add(f['setup-links'],'a',setupPreset?.keyUrl?'Open provider key settings':'Open provider setup guide');link.setAttribute('href',setupUrl);link.setAttribute('target','_blank');link.setAttribute('rel','noopener noreferrer');}
+    for(const [url,label]of [[setupPreset?.keyUrl,'Get an API key'],[setupPreset?.docsUrl,'Official API documentation']])if(url){const link=add(f['setup-links'],'a',label);link.setAttribute('href',url);link.setAttribute('target','_blank');link.setAttribute('rel','noopener noreferrer');}
+    f.support.replaceChildren();
+    add(f.support,'strong',(setupPreset?.id!=='compatible'&&setupPreset?.protocolLabel)||({compatible:'OpenAI Chat Completions compatible',openai:'OpenAI Responses',anthropic:'Anthropic Messages'}[draft.type]));
+    if(setupPreset?.billingNote)add(f.support,'p',setupPreset.billingNote,'next-help');
+    if(setupPreset?.reviewedAt)add(f.support,'small','Documentation checked '+setupPreset.reviewedAt+'. Model availability is read from the provider.','next-help');
+    const replacement=getProviderPreset(setupPreset?.replacementId);
+    f.legacy.hidden=!setupPreset?.deprecated;f.legacy.textContent=setupPreset?.deprecated?'This connection uses a legacy API address.'+(replacement?' Use '+replacement.name+' for the current service.':' Check the provider documentation before using it.'):'';
+    f.replacement.hidden=!replacement;f.replacement.textContent=replacement?'Use '+replacement.name+' settings':'Use current provider settings';
     f['header-note'].textContent=saved?.hasHeaders?`Saved header names: ${(saved.headerNames||[]).join(', ')}. Values stay hidden.`:'No saved request headers.';
     f.stale.hidden=!draft.conflict;
     f.stale.textContent=draft.removed?'This connection was removed elsewhere. Your draft is kept. Reload saved settings closes this draft.':'Saved settings changed elsewhere. Your draft is kept. Reload saved settings before saving.';
@@ -233,6 +277,7 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
   function paintEditor(){
     const draft=current();f.form.hidden=!draft;f.empty.hidden=Boolean(draft);if(!draft){controls();return;}
     f.title.textContent=draft.saved?'Edit '+draft.saved.name:'New connection';
+    f.preset.replaceChildren();for(const preset of PROVIDER_PRESETS){if((preset.hidden||preset.deprecated)&&preset.id!==draft.preset)continue;const option=add(f.preset,'option',preset.name+(preset.deprecated?' · legacy':''));option.value=preset.id;}
     for(const [field,key]of Object.entries({preset:'preset',protocol:'type',name:'name',id:'id','base-url':'baseUrl','models-path':'modelsPath','chat-path':'chatPath',key:'key',headers:'headers','max-tokens':'maxTokens','max-steps':'maxSteps',capacities:'capacities','catalog-search':'query','manual-model':'manual'}))f[field].value=draft[key];
     f.enabled.checked=draft.enabled;f['clear-key'].checked=draft.clearKey;f['clear-headers'].checked=draft.clearHeaders;
     f['catalog-sort'].value=draft.sort;f['catalog-min-context'].value=draft.minContextTokens;f['catalog-free'].checked=draft.freeOnly;f['catalog-tools'].checked=draft.toolsOnly;f['catalog-vision'].checked=draft.visionOnly;
@@ -249,6 +294,17 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
     if(catalogBusy&&current())current().receipt='Model lookup paused. Search or refresh again; selected IDs and edits are kept.';
     if(current())current().catalogPending=false;
     catalogSequence++;catalogAbort?.abort();catalogAbort=null;catalogBusy=false;
+  }
+  function connectionEdited(draft){
+    cancelCatalog();draft.catalog=null;draft.catalogPresence=null;draft.catalogFetchedAt=null;draft.catalogStarted=false;draft.selection.setPage([]);draft.error='';draft.receipt='Connection settings changed. Check the connection or load its current models.';
+    paintModels();savedNotes();feedback();controls();
+  }
+  function applyPreset(draft,preset){
+    const previous=getProviderPreset(draft.preset),sameTarget=sameOrigin(draft.baseUrl,preset.baseUrl)&&draft.type===preset.type;
+    if(draft.name===previous?.name)draft.name=preset.name;
+    draft.preset=preset.id;draft.type=preset.type;draft.baseUrl=preset.baseUrl;draft.modelsPath=preset.endpoints?.models||'';draft.chatPath=preset.endpoints?.chatCompletions||'';draft.freeOnly=preset.freeOnly===true;
+    if(!sameTarget){draft.key='';draft.headers='';draft.clearKey=false;draft.clearHeaders=false;}
+    connectionEdited(draft);paintEditor();
   }
   function keepBrowser(next,previous){
     for(const key of ['query','sort','freeOnly','toolsOnly','visionOnly','minContextTokens','expanded','modelDetails','connectionDetailsOpen','catalogOpen'])next[key]=previous[key];
@@ -305,24 +361,22 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
   }
   async function mutate(action){
     const draft=current();if(!active||destroyed||busy||!draft)return;
-    let value;try{if(draft.conflict)throw Error('Saved settings changed elsewhere. Reload saved settings before saving. Your draft is kept.');if(action==='save')value=payload(draft);else if(!draft.saved)return;else if(action==='test'&&changed(draft))throw Error('Save your changes before testing the connection.');}
+    let value;try{if(draft.conflict)throw Error('Saved settings changed elsewhere. Reload saved settings before saving. Your draft is kept.');if(action==='save')value=payload(draft);else if(!draft.saved)return;}
     catch(error){draft.error=safeError(error);feedback();return;}
     let browseAfterSave=false;
-    busy=true;cancelCatalog();listSequence++;listAbort?.abort();listBusy=false;draft.error='';draft.receipt=action==='delete'?'Removing connection…':action==='test'?'Testing saved connection…':'Saving connection…';feedback();controls();
+    busy=true;cancelCatalog();listSequence++;listAbort?.abort();listBusy=false;draft.error='';draft.receipt=action==='delete'?'Removing connection…':'Saving connection…';feedback();controls();
     try{
       if(action==='save'){
         const saved=await api('/api/providers','POST',value);if(destroyed)return;
-        const oldKey=selected,next=keepBrowser(makeDraft(saved),draft);browseAfterSave=!draft.saved;next.catalogOpen=draft.catalogOpen||browseAfterSave;next.receipt=saved.models?.length?'Connection saved. Selected models are available when this connection is configured and enabled.':'Connection saved with no selected models. Choose models below, then Save selected models.';
+        const oldKey=selected,next=keepBrowser(makeDraft(saved),draft);browseAfterSave=!draft.saved&&!draft.catalog?.available;next.catalogOpen=draft.catalogOpen||browseAfterSave;next.receipt=saved.models?.length?'Connection and selected models saved.':'Connection saved with no selected models. Choose models below, then Save selected models.';
+        if(draft.catalog?.available){next.catalog=copy(draft.catalog);next.selection.setPage(draft.selection.page());}
         drafts.delete(oldKey);draft.key='';draft.headers='';drafts.set(saved.id,next);selected=saved.id;
         providers=providers.filter(item=>item.id!==saved.id);providers.push(copy(saved));notifyChanged();notify('Connection saved.');
       }else if(action==='delete'){
         await api(path(draft.saved.id),'DELETE',{});if(destroyed)return;
         providers=providers.filter(item=>item.id!==draft.saved.id);drafts.delete(selected);draft.key='';draft.headers='';selected=null;notifyChanged();notify('Connection removed.');
-      }else{
-        const result=await api(path(draft.saved.id)+'/test','POST',{});if(destroyed)return;
-        draft.receipt=result.credentialVerified===true?'API key verified; catalog reachable. Model access was not tested.':getProviderPreset(draft.preset)?.anonymous?'Free model catalog reachable. This preset requires no API key. Model access was not tested.':'Catalog reachable. API key and model access were not verified.';
       }
-    }catch(error){if(!destroyed){if(error?.code==='PROVIDER_CHANGED'||error?.status===409){draft.conflict=true;stale=true;draft.error='Saved settings changed elsewhere. Your draft is kept. Reload saved settings before saving.';}else draft.error=safeError(error);draft.receipt=action==='test'?'Test did not complete. No model access was verified.':'The action did not complete successfully. Your draft is kept. Refresh connections to inspect saved state before retrying.';}}
+    }catch(error){if(!destroyed){if(error?.code==='PROVIDER_CHANGED'||error?.status===409){draft.conflict=true;stale=true;draft.error='Saved settings changed elsewhere. Your draft is kept. Reload saved settings before saving.';}else draft.error=safeError(error);draft.receipt='The action did not complete successfully. Your draft is kept. Refresh connections to inspect saved state before retrying.';}}
     finally{busy=false;if(active&&!destroyed){paintList();paintEditor();if(stale)void load();if(browseAfterSave)void catalog(0);}}
   }
   function catalogOptions(draft){
@@ -331,25 +385,38 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
     return {query:draft.query.trim(),sort:draft.sort,freeOnly:draft.freeOnly||getProviderPreset(draft.preset)?.freeOnly===true,toolsOnly:draft.toolsOnly,visionOnly:draft.visionOnly,minContextTokens};
   }
   async function manageModels({focus=true}={}){
-    const draft=current();if(!draft?.saved||busy)return;cancelCatalog();
-    draft.query='';draft.sort='name';draft.freeOnly=Boolean(getProviderPreset(draft.preset)?.freeOnly);draft.toolsOnly=false;draft.visionOnly=false;draft.minContextTokens='';draft.catalog=null;draft.selection.setPage([]);draft.catalogOpen=true;
-    paintEditor();if(focus)f['catalog-search'].focus();await catalog(0);
+    const draft=current();if(!draft||busy)return;cancelCatalog();
+    draft.query='';draft.sort='name';draft.freeOnly=Boolean(getProviderPreset(draft.preset)?.freeOnly)||draft.preset==='openrouter'&&/\bfree\b/i.test(draft.name||'');draft.toolsOnly=draft.preset==='openrouter'&&/\bfree\b/i.test(draft.name||'');draft.visionOnly=false;draft.minContextTokens='';draft.catalog=null;draft.selection.setPage([]);draft.catalogOpen=true;
+    paintEditor();if(focus)f['catalog-search'].focus();await catalog(0,{refresh:Boolean(draft.saved),automatic:true});
   }
-  async function catalog(offset=0,{refresh=false}={}){
+  async function catalog(offset=0,{refresh=false,preview=false,automatic=false}={}){
     if(catalogTimer!==null){clearTimeout(catalogTimer);catalogTimer=null;}
-    const draft=current();if(!active||destroyed||busy||catalogBusy||!draft?.saved||draft.conflict||settingsChanged(draft))return;
-    let options;try{options=catalogOptions(draft);}catch(error){draft.catalogPending=false;draft.error=safeError(error);paintModels();feedback();controls();return;}
-    const fingerprint=JSON.stringify(options),key=selected,token=++catalogSequence,controller=new AbortController();catalogAbort=controller;catalogBusy=true;draft.catalogPending=true;draft.catalogOpen=true;f['catalog-panel'].open=true;draft.error='';draft.receipt=refresh?'Refreshing model limits…':'Loading model catalog…';paintModels();feedback();controls();
-    try{const result=await api(path(draft.saved.id)+'/models','POST',{...options,offset,limit:PAGE,...(refresh?{refresh:true}:{})},{signal:controller.signal});
+    const draft=current();if(!active||destroyed||busy||catalogBusy||!draft||draft.conflict)return;
+    const usePreview=preview||settingsChanged(draft);
+    let options,connection;try{options=catalogOptions(draft);if(usePreview)connection=payload(draft);}catch(error){draft.catalogPending=false;draft.error=safeError(error);paintModels();feedback();controls();return;}
+    const fingerprint=JSON.stringify(options),key=selected,token=++catalogSequence,controller=new AbortController();catalogAbort=controller;catalogBusy=true;draft.catalogStarted=true;draft.catalogPending=true;draft.catalogOpen=true;f['catalog-panel'].open=true;draft.error='';draft.receipt=usePreview?'Checking connection and loading live models…':refresh?'Refreshing model limits…':'Loading model catalog…';paintModels();feedback();controls();
+    try{const result=await api(usePreview?'/api/providers/preview':path(draft.saved.id)+'/models','POST',{...options,offset,limit:PAGE,...(usePreview?{connection}:{}),...(refresh?{refresh:true}:{})},{signal:controller.signal});
       if(!active||destroyed||token!==catalogSequence||key!==selected||fingerprint!==JSON.stringify(catalogOptions(draft)))return;
       const page=(result.models||[]).slice(0,PAGE);draft.selection.setPage(page);if(Array.isArray(result.selectedModels))draft.selection.mergeMetadata(result.selectedModels);draft.catalog={available:result.catalogAvailable!==false,offset:result.offset??offset,total:result.total??page.length,returned:page.length,hasMore:result.hasMore===true,groups:Array.isArray(result.groups)?result.groups:[]};
+      draft.catalogPresence=draft.catalog.available&&Array.isArray(result.selectedPresence)?new Map(result.selectedPresence.map(item=>[item.id,item.listed===true])):null;draft.catalogFetchedAt=result.fetchedAt||null;
       const checked=[...draft.selection.selected(),...page];draft.limitsNeedRetry=!draft.catalog.available||checked.some(model=>['partial','unresolved','unavailable'].includes(model.modelLimitLookup?.status));
-      draft.receipt=!draft.catalog.available?'Provider catalog unavailable. Lookup results for selected models are shown below. Current selections and edits are kept. Use Retry model limits to try again.':(refresh?'Model limits refreshed. Current selections and edits are kept.':'Catalog loaded using the saved connection. Existing selections are kept; Save selected models applies your changes.')+(draft.limitsNeedRetry?' Some limits were not found or lookup was unavailable. Use Retry model limits to try again.':'');
-      draft.catalogPending=false;if(!draft.catalog.available&&result.catalogError)draft.error=safeError(result.catalogError);paintModels();feedback();if(refresh||Array.isArray(result.selectedModels))notifyChanged();
-    }catch(error){if(active&&!destroyed&&token===catalogSequence&&key===selected){draft.error=safeError(error);draft.limitsNeedRetry=true;draft.receipt=refresh?'Model limits could not refresh. Your selected models and edits are kept. Use Retry model limits to try again.':'Catalog unavailable. Your selected models are kept. Use Retry model limits to try again.';feedback();}}
-    finally{if(token===catalogSequence){catalogBusy=false;catalogAbort=null;draft.catalogPending=false;if(active&&!destroyed){paintModels();controls();}}}
+      if(!draft.catalog.available)draft.receipt='Provider catalog unavailable. Current selections and edits are kept. You can keep an exact model ID or retry the connection.';
+      else if(usePreview){
+        const preset=getProviderPreset(draft.preset),verification=result.credentialVerified===true?'Credentials verified; live catalog loaded.':preset?.catalogAuthentication==='public'?'Public catalog loaded; API key validity was not verified.':'Live catalog loaded; API key validity was not independently verified.';
+        const at=result.checkedAt||result.fetchedAt,checkedAt=at&&Number.isFinite(Date.parse(at))?' Checked '+new Date(at).toLocaleString()+'.':'';
+        draft.receipt=verification+' Model generation was not tested.'+checkedAt+' Select models and save when ready.';
+        if(Array.isArray(result.warnings)&&result.warnings.length)draft.receipt+=' '+result.warnings.map(warning=>safeError(warning)).join(' ');
+      }else draft.receipt=(refresh?'Model limits refreshed. Current selections and edits are kept.':'Catalog loaded using the saved connection. Existing selections are kept; Save selected models applies your changes.')+(draft.limitsNeedRetry?' Some limits were not found or lookup was unavailable. Use Retry model limits to try again.':'');
+      if(draft.catalogPresence){const notListed=[...draft.catalogPresence].filter(([,listed])=>listed===false).length;if(notListed)draft.receipt+=` ${notListed} saved ID${notListed===1?' is':'s are'} no longer listed by the provider. Nothing was removed.`;}
+      draft.catalogPending=false;if(!draft.catalog.available&&result.catalogError)draft.error=safeError(result.catalogError);paintModels();feedback();if(!usePreview&&!automatic&&(refresh||Array.isArray(result.selectedModels)))notifyChanged();
+    }catch(error){if(active&&!destroyed&&token===catalogSequence&&key===selected){
+      if(error?.code==='PROVIDER_CHANGED'||error?.status===409){draft.conflict=true;stale=true;draft.error='Saved settings changed elsewhere. Your draft is kept. Reload saved settings before saving.';}
+      else draft.error=safeError(error);
+      draft.limitsNeedRetry=true;draft.receipt=usePreview?'Connection check did not complete. Your connection, credentials and selected models remain in this draft.':'Catalog unavailable. Your selected models are kept. Use Retry model limits to try again.';feedback();
+    }}
+    finally{if(token===catalogSequence){catalogBusy=false;catalogAbort=null;draft.catalogPending=false;if(active&&!destroyed){savedNotes();paintModels();controls();}}}
   }
-  function filtersChanged({immediate=false}={}){const draft=current();if(!draft)return;cancelCatalog();if(!draft.saved||draft.conflict||settingsChanged(draft)){paintModels();controls();return;}draft.catalogPending=true;draft.receipt='Updating model results…';draft.error='';paintModels();feedback();controls();catalogTimer=setTimeout(()=>{catalogTimer=null;void catalog(0);},immediate?0:SEARCH_DELAY);}
+  function filtersChanged({immediate=false}={}){const draft=current();if(!draft)return;cancelCatalog();if(draft.conflict||!draft.baseUrl.trim()||!draft.catalog&&!draft.catalogStarted){paintModels();controls();return;}draft.catalogPending=true;draft.receipt='Updating model results…';draft.error='';paintModels();feedback();controls();catalogTimer=setTimeout(()=>{catalogTimer=null;void catalog(0);},immediate?0:SEARCH_DELAY);}
   async function reloadSaved(){
     if(busy||listBusy)return;const draft=current(),key=selected;if(!draft)return;cancelCatalog();
     if(draft.saved&&!await load())return;if(destroyed||selected!==key)return;
@@ -400,13 +467,13 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
     finally{busy=false;if(active&&!destroyed){paintCodex();controls();if(stale)void load();}}
   }
   for(const sort of MODEL_SORTS){const option=add(f['catalog-sort'],'option',sort.label);option.value=sort.id;}
-  for(const preset of PROVIDER_PRESETS){const option=add(f.preset,'option',preset.name+(preset.anonymous?' · no API key':''));option.value=preset.id;}
   f.form.addEventListener('submit',event=>event.preventDefault());
   f.form.addEventListener('keydown',event=>{if(event.key==='Enter'&&event.target.tagName==='INPUT'&&event.target.type!=='checkbox')event.preventDefault();});
-  for(const [field,key]of Object.entries({name:'name',id:'id','base-url':'baseUrl','models-path':'modelsPath','chat-path':'chatPath',key:'key',headers:'headers','max-tokens':'maxTokens','max-steps':'maxSteps',capacities:'capacities','manual-model':'manual'}))f[field].addEventListener('input',()=>{if(busy)return;const draft=current();if(draft){draft[key]=f[field].value;if(!['capacities','manual'].includes(key))cancelCatalog();feedback();controls();}});
-  for(const [field,key]of Object.entries({enabled:'enabled','clear-key':'clearKey','clear-headers':'clearHeaders'}))f[field].addEventListener('change',()=>{if(busy)return;const draft=current();if(draft){draft[key]=f[field].checked;cancelCatalog();feedback();controls();}});
-  f.preset.addEventListener('change',()=>{if(busy)return;const draft=current(),preset=getProviderPreset(f.preset.value);if(!draft||!preset)return;const previous=getProviderPreset(draft.preset);if(draft.name===previous?.name)draft.name=preset.name;draft.preset=preset.id;draft.type=preset.type;draft.baseUrl=preset.baseUrl;draft.modelsPath=preset.endpoints?.models||'';draft.chatPath=preset.endpoints?.chatCompletions||'';draft.freeOnly=preset.freeOnly===true;cancelCatalog();draft.catalog=null;draft.selection.setPage([]);paintEditor();});
-  f.protocol.addEventListener('change',()=>{if(busy)return;const draft=current();if(!draft)return;draft.type=f.protocol.value;if(getProviderPreset(draft.preset)?.type!==draft.type){draft.preset='compatible';f.preset.value='compatible';}cancelCatalog();feedback();controls();});
+  for(const [field,key]of Object.entries({name:'name',id:'id','base-url':'baseUrl','models-path':'modelsPath','chat-path':'chatPath',key:'key',headers:'headers','max-tokens':'maxTokens','max-steps':'maxSteps',capacities:'capacities','manual-model':'manual'}))f[field].addEventListener('input',()=>{if(busy)return;const draft=current();if(draft){draft[key]=f[field].value;if(['baseUrl','modelsPath','chatPath','key','headers'].includes(key))connectionEdited(draft);else{if(!['capacities','manual'].includes(key))cancelCatalog();feedback();controls();}}});
+  for(const [field,key]of Object.entries({enabled:'enabled','clear-key':'clearKey','clear-headers':'clearHeaders'}))f[field].addEventListener('change',()=>{if(busy)return;const draft=current();if(draft){draft[key]=f[field].checked;if(key!=='enabled')connectionEdited(draft);else{cancelCatalog();feedback();controls();}}});
+  f.preset.addEventListener('change',()=>{if(busy)return;const draft=current(),preset=getProviderPreset(f.preset.value);if(draft&&preset)applyPreset(draft,preset);});
+  f.replacement.addEventListener('click',()=>{if(busy)return;const draft=current(),preset=getProviderPreset(setupPresetFor(draft)?.replacementId);if(draft&&preset)applyPreset(draft,preset);});
+  f.protocol.addEventListener('change',()=>{if(busy)return;const draft=current();if(!draft)return;draft.type=f.protocol.value;if(getProviderPreset(draft.preset)?.type!==draft.type){draft.preset='compatible';draft.freeOnly=false;}connectionEdited(draft);paintEditor();});
   f['catalog-search'].addEventListener('input',()=>{const draft=current();if(draft){draft.query=f['catalog-search'].value;filtersChanged();}});
   f['catalog-search'].addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();void catalog(0);}});
   f['catalog-sort'].addEventListener('change',()=>{const draft=current();if(draft){draft.sort=f['catalog-sort'].value;filtersChanged({immediate:true});}});
@@ -422,7 +489,7 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
   for(const id of ['openrouter','mistral'])f[id].addEventListener('click',()=>startPreset(id));
   f.new.addEventListener('click',()=>{if(busy)return;cancelCatalog();if(!drafts.has(NEW_DRAFT))drafts.set(NEW_DRAFT,makeDraft());selected=NEW_DRAFT;paintList();paintEditor();});
   f.discard.addEventListener('click',()=>void reloadSaved());
-  f.save.addEventListener('click',()=>void mutate('save'));f.delete.addEventListener('click',()=>void mutate('delete'));f.test.addEventListener('click',()=>void mutate('test'));
+  f.save.addEventListener('click',()=>void mutate('save'));f.delete.addEventListener('click',()=>void mutate('delete'));f.test.addEventListener('click',()=>void catalog(0,{preview:true,refresh:true}));
   f['catalog-load'].addEventListener('click',()=>void catalog(0));f['catalog-prev'].addEventListener('click',()=>void catalog(Math.max(0,(current()?.catalog?.offset||0)-PAGE)));f['catalog-next'].addEventListener('click',()=>void catalog((current()?.catalog?.offset||0)+PAGE));
   f.filter.addEventListener('input',()=>{listLimit=LIST_PAGE;paintList();});f.more.addEventListener('click',()=>{listLimit+=LIST_PAGE;paintList();});f.refresh.addEventListener('click',()=>void load());
   f['codex-add'].addEventListener('click',()=>void codexAction('POST'));f['codex-check'].addEventListener('click',()=>void codexAction('check'));f['codex-read'].addEventListener('click',()=>void readCodex());
@@ -433,10 +500,11 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
     if(Array.isArray(latest)){listSequence++;listAbort?.abort();listAbort=null;listBusy=false;applyProviders(latest);}
     else if(!listBusy)void load();
   };
+  const providerDirectory=createProviderDirectoryUI({mount:f['directory-root'],api,onChoose:chooseDirectoryProvider});
   return {
     updateRuntimeSettings(value){if(destroyed||!value||typeof value!=='object')return;runtimeSettings=copy(value);if(active)paintList();},
-    enter(){if(destroyed||active)return;runtimeSettings=copy(getRuntimeSettings()||runtimeSettings);active=true;unsubscribe=events?.subscribe?.(onEvent)||null;paintList();paintEditor();paintCodex();if(!loaded||stale)void load();},
-    leave(){active=false;unsubscribe?.();unsubscribe=null;stale=true;listSequence++;listAbort?.abort();listAbort=null;listBusy=false;cancelCatalog();if(codexBusy)status(f['codex-status'],'Status read paused. Refresh model list and limits to load the current result.');codexSequence++;codexAbort?.abort();codexAbort=null;codexBusy=false;},
-    destroy(){this.leave();destroyed=true;for(const draft of drafts.values()){draft.key='';draft.headers='';}drafts.clear();f.key.value='';f.headers.value='';mount.replaceChildren();},
+    enter(){if(destroyed||active)return;runtimeSettings=copy(getRuntimeSettings()||runtimeSettings);active=true;unsubscribe=events?.subscribe?.(onEvent)||null;paintList();paintEditor();paintCodex();providerDirectory.enter();if(!loaded||stale)void load();},
+    leave(){providerDirectory.leave();active=false;unsubscribe?.();unsubscribe=null;stale=true;listSequence++;listAbort?.abort();listAbort=null;listBusy=false;cancelCatalog();if(codexBusy)status(f['codex-status'],'Status read paused. Refresh model list and limits to load the current result.');codexSequence++;codexAbort?.abort();codexAbort=null;codexBusy=false;},
+    destroy(){this.leave();providerDirectory.destroy();destroyed=true;for(const draft of drafts.values()){draft.key='';draft.headers='';}drafts.clear();f.key.value='';f.headers.value='';mount.replaceChildren();},
   };
 }
