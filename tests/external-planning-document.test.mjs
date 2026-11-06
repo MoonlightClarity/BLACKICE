@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ChatGPTPlanningAPI } from '../lib/chatgpt-planning.mjs';
 import { RemoteAgentAPI, validRemoteArguments } from '../lib/remote-agent-api.mjs';
-import { TaskStateStore, TASK_TOOL, TASK_TOOL_V10, TASK_TOOL_V11, TASK_TOOL_V12 } from '../lib/task-state.mjs';
+import { TaskStateStore, TASK_TOOL_V13 as TASK_TOOL, TASK_TOOL_V10, TASK_TOOL_V11, TASK_TOOL_V12 } from '../lib/task-state.mjs';
 import { listPlanningWorkspace } from '../lib/planning-workspace.mjs';
 import { projectNativeTaskResult, TASK_TOOL_VIEW_LIMITS } from '../lib/task-tool-view.mjs';
 

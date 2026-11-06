@@ -1,10 +1,11 @@
+// Historical schema-13 protocol regression; schema-14 behavior has separate canonical-contract and production-engine acceptance coverage.
 import { fixtureUserAgency } from './fixture-user-agency.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {HarnessEngine} from '../lib/engine.mjs';
+import {HarnessEngine} from './fixture-legacy-planning-engine.mjs';
 import {PlanningBrowserStore} from '../lib/planning-browser.mjs';
 import {PlanningBrowserRuntime} from '../lib/planning-browser-runtime.mjs';
 import {TaskViability} from '../lib/task-viability.mjs';

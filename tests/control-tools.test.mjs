@@ -71,7 +71,13 @@ test('new chat configuration saves speed separately; v3 continuations and Retry 
  await f.app.engine.runtimeSettings.update({codexHistory:'codex'});await f.app.engine.saveWorkflow(validateWorkflow(graph('speed-control')));
  const first=await f.settled(f.app.engine.startRun({workflow:graph('speed-control'),input:'Save future speed settings.'}).id);
  assert.equal(first.status,'completed',first.error);assert.equal(first.nodes.agent.controlSchemaVersion,CONTROL_SCHEMA_VERSION);assert.equal(first.workflow.nodes[1].serviceTier,undefined);
- f.app.engine.runs.get(first.id).nodes.agent.controlSchemaVersion=3;
+ // This simulated retained catalog predates Planning14 and its host catalog hash.
+ const legacyRun = f.app.engine.runs.get(first.id);
+ assert.equal(legacyRun.planningContractVersion, 14, 'Fresh production runs still use Planning14.');
+ assert.ok(!legacyRun.taskState?.contract, 'Do not relabel an existing canonical plan as a historical fixture.');
+ legacyRun.planningContractVersion = 13; legacyRun.nodes.agent.taskSchemaVersion = 13;
+ delete legacyRun.nodes.agent.providerExecutionContract;
+ legacyRun.nodes.agent.controlSchemaVersion=3;
  const second=await f.settled(f.app.engine.continueRun(first.id,{nodeId:'agent',message:'Use the saved v3 native catalog.'}).id);assert.equal(second.status,'failed');assert.equal(second.nodes.agent.controlSchemaVersion,3);
  const retried=await f.settled(f.app.engine.retryRun(second.id).id);assert.equal(retried.status,'completed',retried.error);assert.equal(retried.nodes.agent.controlSchemaVersion,3);
  assert.equal(f.calls[2].threadId,'native-speed-control');assert.equal(f.app.runtimeSettings.get().defaultServiceTier,'fast');
@@ -87,7 +93,13 @@ test('old native control catalogs keep truthful schemas through continuation and
  });
  await f.app.engine.runtimeSettings.update({codexHistory:'codex'});
  const first=await f.settled(f.app.engine.startRun({workflow:graph(),input:'Read configuration.'}).id);assert.equal(first.nodes.agent.controlSchemaVersion,CONTROL_SCHEMA_VERSION);assert.equal(first.status,'completed',first.error);
- delete f.app.engine.runs.get(first.id).nodes.agent.controlSchemaVersion;
+ // This simulated retained catalog predates Planning14 and its host catalog hash.
+ const legacyRun = f.app.engine.runs.get(first.id);
+ assert.equal(legacyRun.planningContractVersion, 14, 'Fresh production runs still use Planning14.');
+ assert.ok(!legacyRun.taskState?.contract, 'Do not relabel an existing canonical plan as a historical fixture.');
+ legacyRun.planningContractVersion = 13; legacyRun.nodes.agent.taskSchemaVersion = 13;
+ delete legacyRun.nodes.agent.providerExecutionContract;
+ delete legacyRun.nodes.agent.controlSchemaVersion;
  const second=await f.settled(f.app.engine.continueRun(first.id,{nodeId:'agent',message:'Read retained schema.'}).id);assert.equal(second.nodes.agent.controlSchemaVersion,1);assert.equal(second.status,'failed');
  const retry=await f.settled(f.app.engine.retryRun(second.id).id);assert.equal(retry.nodes.agent.controlSchemaVersion,1);assert.equal(retry.status,'completed');assert.equal(retry.nodes.agent.threadId,'native-control-catalog');assert.equal(f.calls[2].threadId,'native-control-catalog');
 });
@@ -300,7 +312,13 @@ test('current cycle model selection leaves saved v5 native catalogs unchanged on
  await f.app.engine.runtimeSettings.update({codexHistory:'codex'});await f.app.engine.saveWorkflow(validateWorkflow(graph('cycle-profile-control')));
  const first=await f.settled(f.app.engine.startRun({workflow:graph('cycle-profile-control'),input:'Inspect the current cycle controls.'}).id);
  assert.equal(first.status,'completed',first.error);assert.equal(first.nodes.agent.controlSchemaVersion,CONTROL_SCHEMA_VERSION);
- f.app.engine.runs.get(first.id).nodes.agent.controlSchemaVersion=5;
+ // This simulated retained catalog predates Planning14 and its host catalog hash.
+ const legacyRun = f.app.engine.runs.get(first.id);
+ assert.equal(legacyRun.planningContractVersion, 14, 'Fresh production runs still use Planning14.');
+ assert.ok(!legacyRun.taskState?.contract, 'Do not relabel an existing canonical plan as a historical fixture.');
+ legacyRun.planningContractVersion = 13; legacyRun.nodes.agent.taskSchemaVersion = 13;
+ delete legacyRun.nodes.agent.providerExecutionContract;
+ legacyRun.nodes.agent.controlSchemaVersion=5;
  const second=await f.settled(f.app.engine.continueRun(first.id,{nodeId:'agent',message:'Continue using this saved v5 native catalog.'}).id);assert.equal(second.status,'failed');assert.equal(second.nodes.agent.controlSchemaVersion,5);
  const retried=await f.settled(f.app.engine.retryRun(second.id).id);assert.equal(retried.status,'completed',retried.error);assert.equal(retried.nodes.agent.controlSchemaVersion,5);assert.equal(f.calls[2].threadId,'native-cycle-profile-control');
 });
@@ -318,7 +336,13 @@ test('v7 task accuracy leaves saved v6 native continuations and retries on their
  });
  await f.app.engine.runtimeSettings.update({codexHistory:'codex'});
  const first=await f.settled(f.app.engine.startRun({workflow:graph('accuracy-control'),input:'Inspect current Planning controls.'}).id);assert.equal(first.status,'completed',first.error);assert.equal(first.nodes.agent.controlSchemaVersion,CONTROL_SCHEMA_VERSION);
- f.app.engine.runs.get(first.id).nodes.agent.controlSchemaVersion=6;
+ // This simulated retained catalog predates Planning14 and its host catalog hash.
+ const legacyRun = f.app.engine.runs.get(first.id);
+ assert.equal(legacyRun.planningContractVersion, 14, 'Fresh production runs still use Planning14.');
+ assert.ok(!legacyRun.taskState?.contract, 'Do not relabel an existing canonical plan as a historical fixture.');
+ legacyRun.planningContractVersion = 13; legacyRun.nodes.agent.taskSchemaVersion = 13;
+ delete legacyRun.nodes.agent.providerExecutionContract;
+ legacyRun.nodes.agent.controlSchemaVersion=6;
  const second=await f.settled(f.app.engine.continueRun(first.id,{nodeId:'agent',message:'Continue the saved v6 catalog.'}).id);assert.equal(second.status,'failed');assert.equal(second.nodes.agent.controlSchemaVersion,6);
  const retried=await f.settled(f.app.engine.retryRun(second.id).id);assert.equal(retried.status,'completed',retried.error);assert.equal(retried.nodes.agent.controlSchemaVersion,6);assert.equal(f.calls[2].threadId,'native-accuracy-control');
 });

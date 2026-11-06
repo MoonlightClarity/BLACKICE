@@ -26,7 +26,9 @@ function element(tag, value = '', options = {}) {
   };
 }
 function domFixture(children, protectedFields = []) {
-  const key = '__snapshot_fixture', document = { title: 'Role fixture', readyState: 'complete', documentElement: { children: [element('body', '', { children })] }, getElementById: () => null };
+  const descendants = nodes => nodes.flatMap(node => [node, ...descendants(node.children || [])]);
+  const key = '__snapshot_fixture', document = { forms: [], title: 'Role fixture', readyState: 'complete', documentElement: { children: [element('body', '', { children })] }, getElementById: () => null,
+    querySelectorAll: selector => selector === 'input,select,textarea' ? descendants(children).filter(node => ['INPUT', 'SELECT', 'TEXTAREA'].includes(node.tagName)) : [] };
   const context = vm.createContext({ document, location: { href: 'https://jobs.example.test/role' }, getComputedStyle: el => ({ display: el.hidden ? 'none' : 'block', visibility: el.invisible ? 'hidden' : 'visible' }), [key]: { document, prefix: 'old', credentialFields: new WeakSet(protectedFields) } });
   const run = (query = '', readContext = false) => JSON.parse(JSON.stringify(vm.runInContext(`(${snapshotSource})(${JSON.stringify(key)},"current",${JSON.stringify(query)},${readContext})`, context)));
   return { key, context, run };

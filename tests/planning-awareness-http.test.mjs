@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createHarnessServer } from '../server.mjs';
+import { createHarnessServer } from './fixture-legacy-harness-server.mjs';
 import { AgentEmailStore } from '../lib/agent-email.mjs';
 import { RemoteAccessManager } from '../lib/remote-access.mjs';
 import { createRemoteTransportFixture } from './fixtures/remote-transport.mjs';

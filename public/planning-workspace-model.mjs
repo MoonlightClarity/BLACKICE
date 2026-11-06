@@ -1,4 +1,5 @@
 import { createPlanningAwarenessController } from './planning-awareness.mjs';
+import { isPlanContractTask, normalizePlanContract } from './planning-contract-model.mjs';
 
 const clone = value => structuredClone(value);
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -23,7 +24,98 @@ export function planningCatalogOutline(plans = [], organization = {}, { groupId 
     .filter(group => (!groupId || group.id === groupId) && (!needle || group.plans.length || group.name.toLocaleLowerCase().includes(needle)));
 }
 
+/** Authored intent only. Epochs, operations and outcomes stay with the host. */
+export function planningContractIntent(task) {
+  const contract = clone(task.contract); delete contract.planEpoch; return contract;
+}
+const planningItems = task => isPlanContractTask(task) ? task.contract.workItems : task.steps;
+
+export function planningContractDraftValues(contract, workItemId = null) {
+  if (!workItemId) return Object.fromEntries([
+    ['goal', contract.goal],
+    ...contract.criteria.flatMap(item => [[`criterionLabel:${item.id}`, item.label || ''], [`criterionDescription:${item.id}`, item.description]]),
+    ...contract.instructions.map(item => [`instruction:${item.id}`, item.text]),
+  ]);
+  const item = contract.workItems.find(value => value.id === workItemId);
+  return item ? { title: item.title, objective: item.objective, owner: item.owner, resourceKeys: item.resourceKeys.join('\n'), effects: [...item.effects], dependsOn: [...item.dependsOn], criterionIds: [...item.criterionIds] } : null;
+}
+
+export function newPlanningContractWorkItem(contract, id) {
+  const first = contract.workItems[0] || { resourceKeys: [], effects: ['observe'] };
+  return { id, title: '', objective: '', owner: 'coordinator', resourceKeys: [...first.resourceKeys], effects: [...first.effects], dependsOn: [], criterionIds: [contract.criteria[0].id] };
+}
+
+/** Apply selected form fields while retaining IDs, bindings and untouched intent. */
+export function applyPlanningContractFields(contract, workItemId, values, fields = Object.keys(values)) {
+  if (!workItemId) {
+    for (const key of fields) {
+      if (key === 'goal') { contract.goal = values[key]; continue; }
+      const [kind, id] = key.split(':'), collection = kind === 'instruction' ? contract.instructions : contract.criteria;
+      const item = collection.find(item => item.id === id);
+      if (!item) throw Error('This criterion or instruction was removed. Review the saved plan before applying this draft.');
+      if (kind === 'instruction') item.text = values[key];
+      else if (kind === 'criterionDescription') item.description = values[key];
+      else if (kind === 'criterionLabel') { if (values[key]) item.label = values[key]; else delete item.label; }
+      else throw Error('Unknown plan field.');
+    }
+    return contract;
+  }
+  const item = contract.workItems.find(item => item.id === workItemId);
+  if (!item) throw Error('This work item was removed. Review the saved plan before applying this draft.');
+  for (const key of fields) {
+    if (!['title', 'objective', 'owner', 'resourceKeys', 'effects', 'dependsOn', 'criterionIds'].includes(key)) throw Error('Unknown work item field.');
+    item[key] = key === 'resourceKeys' ? String(values[key]).split(/\r?\n/).map(value => value.trim()).filter(Boolean) : clone(values[key]);
+  }
+  return contract;
+}
+
+export function removePlanningContractWorkItem(contract, id) {
+  contract.workItems = contract.workItems.filter(item => item.id !== id);
+  for (const item of contract.workItems) item.dependsOn = item.dependsOn.filter(dependency => dependency !== id);
+  return contract;
+}
+
+/** Three-way field merge keeps concurrent intent and retains edits to removed items. */
+export function mergePlanningContractDraft(previous, edited, latest) {
+  const result = clone(latest), detached = [];
+  if (!equal(previous.goal, edited.goal)) result.goal = edited.goal;
+  for (const collection of ['criteria', 'workItems', 'instructions']) {
+    const before = new Map(previous[collection].map(item => [item.id, item])), mine = new Map(edited[collection].map(item => [item.id, item]));
+    result[collection] = latest[collection].filter(item => !before.has(item.id) || mine.has(item.id)).map(item => {
+      const old = before.get(item.id), edit = mine.get(item.id);
+      if (!old || !edit) {
+        if (!old && edit && !equal(item, edit)) detached.push({ id: edit.id, title: edit.title || edit.label || edit.id, note: JSON.stringify(edit, null, 2) });
+        return clone(item);
+      }
+      const merged = clone(item);
+      for (const key of new Set([...Object.keys(old), ...Object.keys(edit)])) if (key !== 'id' && !equal(old[key], edit[key])) {
+        if (own(edit, key)) merged[key] = clone(edit[key]); else delete merged[key];
+      }
+      return merged;
+    });
+    const ids = new Set(latest[collection].map(item => item.id));
+    for (const item of edited[collection]) if (!ids.has(item.id)) {
+      if (!before.has(item.id)) result[collection].push(clone(item));
+      else if (!equal(before.get(item.id), item)) detached.push({ id: item.id, title: item.title || item.label || item.id, note: JSON.stringify(item, null, 2) });
+    }
+  }
+  return { contract: result, detached };
+}
+
+function planningContractEditOperations(task, draft) {
+  const contract = planningContractIntent(task);
+  if (draft.mode === 'remove') removePlanningContractWorkItem(contract, draft.stepId);
+  else {
+    const fields = draft.mode === 'add' ? Object.keys(draft.values) : planningChangedFields(draft);
+    if (!fields.length) return [];
+    if (draft.mode === 'add') contract.workItems.push(newPlanningContractWorkItem(contract, draft.stepId));
+    applyPlanningContractFields(contract, draft.stepId, draft.values, fields);
+  }
+  return [{ type: 'replace_contract', contract: normalizePlanContract(contract) }];
+}
+
 export function planningDraftValues(task, stepId = null) {
+  if (isPlanContractTask(task)) return planningContractDraftValues(task.contract, stepId);
   if (!stepId) return { goal: task.goal || '', layout: task.plan?.layout || 'sequence', detail: task.plan?.detail || 'balanced', selectedChildId: task.plan?.selectedChildId || '' };
   const step = task.steps?.find(item => item.id === stepId);
   if (!step) return null;
@@ -37,8 +129,9 @@ export function planningChangedFields(draft) {
 }
 
 /** Build only the edits the person made. Runtime ownership and receipts are never copied. */
-export function planningEditOperations(draft) {
+export function planningEditOperations(draft, task) {
   if (!draft) return [];
+  if (isPlanContractTask(task)) return planningContractEditOperations(task, draft);
   const value = draft.values, changes = new Set(planningChangedFields(draft));
   const requireText = (text, label) => { if (!String(text || '').trim()) throw new Error(`${label} is required.`); return String(text).trim(); };
   if (draft.mode === 'remove') return [{ type: 'remove', stepId: draft.stepId }];
@@ -269,15 +362,15 @@ export function createPlanningWorkspaceController({ api, onChange = () => {}, on
     awareness.stopEditing();
     if (parentId && !GROUPS.includes(item.task.steps.find(step => step.id === parentId)?.kind)) parentId = null;
     if (!item.drafts.has('new')) {
-      const values = { title: '', kind: 'action', doneWhen: '', result: '', condition: '', parentId: parentId || '', beforeId: '', dependsOn: [], children: [{ title: '', doneWhen: '', condition: '' }, { title: '', doneWhen: '', condition: '' }] };
-      item.drafts.set('new', { key: 'new', stepId: createId(), mode: 'add', values: clone(values), original: clone(values), revision: item.task.revision, dirty: true, error: '', receipt: '', busy: false, conflict: false, review: false });
+      const stepId = createId(), values = isPlanContractTask(item.task) ? planningContractDraftValues({ ...item.task.contract, workItems: [newPlanningContractWorkItem(item.task.contract, stepId)] }, stepId) : { title: '', kind: 'action', doneWhen: '', result: '', condition: '', parentId: parentId || '', beforeId: '', dependsOn: [], children: [{ title: '', doneWhen: '', condition: '' }, { title: '', doneWhen: '', condition: '' }] };
+      item.drafts.set('new', { key: 'new', stepId, mode: 'add', values: clone(values), original: clone(values), revision: item.task.revision, dirty: true, error: '', receipt: '', busy: false, conflict: false, review: false });
     }
     item.editorKey = 'new'; state.pane = 'edit'; notify('editor'); return true;
   }
   function discard() {
     const item = entry(), current = draft(); if (!item || current?.busy) return false;
     awareness.stopEditing();
-    const next = current?.mode === 'add' || !item.task.steps.some(step => step.id === current?.stepId) ? null : current.stepId;
+    const next = current?.mode === 'add' || !planningItems(item.task).some(step => step.id === current?.stepId) ? null : current.stepId;
     item.drafts.delete(item.editorKey); selectEditor(next); return true;
   }
   function schedulePoll() {
@@ -366,7 +459,7 @@ export function createPlanningWorkspaceController({ api, onChange = () => {}, on
   }
   function applyReviewedDraft() {
     const current = draft(), task = entry()?.task; if (!current?.review || !task || current.busy || !editable()) return false;
-    if (current.mode !== 'add' && current.stepId && !task.steps.some(step => step.id === current.stepId)) { current.error = 'This step was removed. Copy the text you need, then discard this draft or add a new step.'; notify('review'); return false; }
+    if (current.mode !== 'add' && current.stepId && !planningItems(task).some(step => step.id === current.stepId)) { current.error = 'This step was removed. Copy the text you need, then discard this draft or add a new step.'; notify('review'); return false; }
     const changes = planningChangedFields(current), latest = current.mode === 'add' ? clone(current.original) : planningDraftValues(task, current.stepId), values = clone(latest);
     for (const key of changes) values[key] = clone(current.values[key]);
     current.original = clone(latest); current.values = values; current.revision = task.revision; current.review = false; current.conflict = false; current.uncertain = false; current.error = ''; current.dirty = current.mode === 'add' || planningChangedFields(current).length > 0; notify('editor'); return true;
@@ -375,9 +468,9 @@ export function createPlanningWorkspaceController({ api, onChange = () => {}, on
     const item = entry(), current = draft(), id = state.taskId; if (!editable() || !current || current.busy) return false;
     if (current.revision !== item.task.revision || current.conflict || current.uncertain) { current.conflict = true; current.error = 'Review the latest saved revision before applying your edits.'; notify('review'); return false; }
     let operations;
-    try { operations = remove ? [{ type: 'remove', stepId: current.stepId }] : planningEditOperations(current); if (!operations.length) return false; }
+    try { operations = planningEditOperations(remove ? { ...current, mode: 'remove' } : current, item.task); if (!operations.length) return false; }
     catch (error) { current.error = error.message; notify('error'); return false; }
-    const removedTitle = remove ? item.task.steps.find(step => step.id === current.stepId)?.title || 'Step' : '';
+    const removedTitle = remove ? planningItems(item.task).find(step => step.id === current.stepId)?.title || 'Step' : '';
     const editingLease = awareness.leaseId();
     current.busy = true; current.error = ''; current.receipt = ''; notify('saving');
     try {

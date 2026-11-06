@@ -233,11 +233,12 @@ if(Test-Path -LiteralPath $marker){throw 'A fixture executable ran instead of be
 });
 
 
-test('planning skill package includes only its reviewed reference and rejects arbitrary neighboring files', async () => {
-  const reference = 'skills/planning/references/evidence-preserving-execution.md';
-  assert.equal(approvedWindowsPackageFile(reference, '9.8.7'), true);
-  assert.equal((await fs.stat(new URL('../' + reference, import.meta.url))).isFile(), true);
-  for (const file of ['skills/planning/references/private.md', 'skills/planning/references/evidence-preserving-execution.mjs', 'skills/planning/references/evidence-preserving-execution.md.bak', 'skills/planning/references/evidence-preserving-execution.md.currents-backup-private', 'skills/planning/references/../SKILL.md', 'skills/unapproved/references/evidence-preserving-execution.md']) assert.equal(approvedWindowsPackageFile(file, '9.8.7'), false, file);
+test('planning skill package includes only reviewed contract and reference documents and rejects arbitrary neighbors', async () => {
+  for (const reviewed of ['skills/planning/CONTRACT-V2.md', 'skills/planning/references/evidence-preserving-execution.md']) {
+    assert.equal(approvedWindowsPackageFile(reviewed, '9.8.7'), true, reviewed);
+    assert.equal((await fs.stat(new URL('../' + reviewed, import.meta.url))).isFile(), true);
+  }
+  for (const file of ['skills/planning/CONTRACT-V3.md', 'skills/planning/CONTRACT-V2.md.bak', 'skills/planning/CONTRACT-V2.mjs', 'skills/planning/references/private.md', 'skills/planning/references/evidence-preserving-execution.mjs', 'skills/planning/references/evidence-preserving-execution.md.bak', 'skills/planning/references/evidence-preserving-execution.md.currents-backup-private', 'skills/planning/references/../SKILL.md', 'skills/unapproved/references/evidence-preserving-execution.md']) assert.equal(approvedWindowsPackageFile(file, '9.8.7'), false, file);
   // The builder includes the full planning skill tree, so every future addition
   // must receive its own review instead of silently bypassing this exact allowlist.
   async function inspect(relative) {

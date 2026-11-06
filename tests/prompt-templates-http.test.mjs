@@ -95,7 +95,14 @@ test('real engine attaches relay_prompts while older native catalogs keep their 
     return { output: 'Native catalog checked.', threadId: 'native-saved-prompt-thread' };
   });
   await app.runtimeSettings.update({ codexHistory: 'codex' }); const first = app.engine.startRun({ workflow: graph, input: 'Check optional prompt tooling' }); const firstRun = await settled(first.id); assert.equal(firstRun.status, 'completed', firstRun.error);
-  const internal = app.engine.runs.get(first.id); internal.nodes.agent.toolNames = internal.nodes.agent.toolNames.filter(name => name !== 'relay_prompts');
+  const internal = app.engine.runs.get(first.id);
+  // This retained native catalog predates Planning14 and its host catalog hash.
+  assert.equal(internal.planningContractVersion, 14, 'Fresh production runs still use Planning14.');
+  assert.ok(!internal.taskState?.contract, 'Do not relabel an existing canonical plan as a historical fixture.');
+  internal.planningContractVersion = 13;
+  internal.nodes.agent.taskSchemaVersion = 13;
+  delete internal.nodes.agent.providerExecutionContract;
+  internal.nodes.agent.toolNames = internal.nodes.agent.toolNames.filter(name => name !== 'relay_prompts');
   const continued = app.engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue this older catalog' }); assert.equal((await settled(continued.id)).status, 'completed'); assert.equal(seen.length, 2);
   assert.deepEqual(seen[1], seen[0].filter(name => name !== 'relay_prompts'), 'a successful continuation must not expand the saved native tool catalog');
 });

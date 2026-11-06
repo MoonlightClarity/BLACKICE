@@ -1,3 +1,4 @@
+// Historical schema-13 protocol regression; schema-14 behavior has separate canonical-contract and production-engine acceptance coverage.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
@@ -11,7 +12,7 @@ import {
 import { applyPlanningEdits } from '../lib/planning-edits.mjs';
 import { TaskStateStore, TASK_TOOL, TASK_TOOL_V6, TASK_TOOL_V7, TASK_TOOL_V8, TASK_TOOL_V9, TASK_TOOL_V10, TASK_TOOL_V11, TASK_TOOL_V12, TASK_INSTRUCTIONS,
  TASK_INSTRUCTIONS_V6, TASK_INSTRUCTIONS_V7, TASK_INSTRUCTIONS_V8, TASK_INSTRUCTIONS_V9, TASK_INSTRUCTIONS_V10, TASK_INSTRUCTIONS_V11, TASK_INSTRUCTIONS_V12, TASK_SCHEMA_VERSION,
- taskToolForVersion, taskInstructionsForVersion } from '../lib/task-state.mjs';
+ taskToolForVersion, taskInstructionsForVersion } from './fixture-legacy-task-state.mjs';
 
 const action={id:'evaluate',title:'Deliver a practically useful recommendation',
   kind:'action',parentId:null,dependsOn:[],status:'pending',

@@ -49,7 +49,7 @@ test('fresh candidate snapshots load the real server and mandatory Planning reso
   await assert.rejects(fs.stat(path.join(root, 'source-baseline')), { code: 'ENOENT' });
   const target = path.join(root, 'source-candidate');
   const expectedSkill = await fs.readFile(path.join(source, 'skills', 'planning', 'SKILL.md'), 'utf8');
-  for (const relative of ['skills/planning/SKILL.md', 'skills/planning/references/evidence-preserving-execution.md']) {
+  for (const relative of ['skills/planning/SKILL.md', 'skills/planning/CONTRACT-V2.md', 'skills/planning/references/evidence-preserving-execution.md', 'desktop/browser-submission-observation.mjs']) {
     const original = await fs.readFile(path.join(source, relative));
     const copied = await fs.readFile(path.join(target, relative));
     assert.deepEqual(copied, original);

@@ -130,11 +130,36 @@ test('the saved historical failure stays readable and explicit intent-first upgr
   raw.responses=[{id:beforeId,nodeId:stages.feasibility,kind:'viability',revision:1,nodeRevision:1,...body,inputs:[],sources:[clone(source),clone(contextSource)],provenance:{kind:'human',author:'synthetic historical fixture',at:'2026-10-30T00:00:00Z',contentHash:hash(JSON.stringify(body))},verifiedAction:false},clone(actual.response)];
   raw.attempts=[clone(actual.attempt)];raw.nodes.find(node=>node.id===stages.inference).revision=actual.response.nodeRevision;
   raw.edges=actual.attempt.inputs.map(input=>({id:input.edgeId,kind:'consumes',from:stages.inference,to:input.nodeId,sourceResponseId:input.responseId,sourceResponseRevision:input.responseRevision,freshness:'latest'}));
-  await writeFile(f.store.file(request.id),JSON.stringify(raw));
+  const historicalBytes=JSON.stringify(raw);await writeFile(f.store.file(request.id),historicalBytes);
   request=await f.store.get(request.id);const before=request.nodes.find(node=>node.id===stages.feasibility),bad=request.nodes.find(node=>node.id===stages.inference);
+  assert.equal(await readFile(f.store.file(request.id),'utf8'),historicalBytes,'Reading historical findings preserves the saved bytes exactly.');
   assert.equal(before.readiness.cycle.analysisReady,true);assert.equal(bad.readiness.state,'needs_evidence');assert.equal(bad.readiness.cycle.analysisReady,false);assert.deepEqual(bad.response.values,actual.response.values);
   const service=new ResponseCycleService({store:f.store,runner:f.runner});t.after(()=>service.close());
   const done=await service.runCycle(request.id,cycleId,{expectedRequestRevision:request.revision,expectedCycleRevision:request.nodes.find(node=>node.id===cycleId).revision,clientRequestId:'explicit-fix-historical'});
   assert.deepEqual(f.calls.map(call=>call.input.module.kind),['inference','viability','plan']);assert.equal(done.cycles[0].state,'paused_after_plan');assert.notEqual(done.nodes.find(node=>node.id===stages.feasibility).response.id,beforeId);assert.ok(done.responses.some(response=>response.id===beforeId));assert.equal(done.cycles[0].pipelineVersion,2);
   assert.ok(done.responses.some(response=>response.id===actual.response.id));assert.notEqual(done.nodes.find(node=>node.id===stages.inference).response.id,actual.response.id);assert.equal(done.nodes.find(node=>node.id===stages.plan).response.acceptanceCriteria[0].accuracy.mode,'bounded_estimate');
+});
+
+test('stored canonical Plans retain their captured contract shape while historical findings remain readable',async t=>{
+  const f=await fixture(t,()=>{throw Error('Reading a saved contract must not start provider work.');});
+  const cycleId='canonical-load',stages=Object.fromEntries(RESPONSE_CYCLE_STAGES.map(stage=>[stage.id,cycleId+'-'+stage.id]));
+  let request=await f.store.create({conversationId:'canonical-load-fixture',title:'Compare the supplied ranges',objective:fact});
+  request=await f.store.runtimeWriter().configureResponseCycle(request.id,{
+    createCycle:{id:cycleId,title:'Compare the ranges',objective:fact,stageNodeIds:stages,parentCycleId:null,parentStageId:null,depth:0,pipelineVersion:2,planningExecutionMode:'plan_only',state:'pending',acceptanceCriteria:[],sourceIds:null,execution:{required:false,state:'not_required'}},
+    rootPatch:{rootCycleId:cycleId},
+    sources:[{id:'cycle:execution-contract:'+cycleId,kind:'source',label:'Current host contract shape',text:JSON.stringify({taskSchemaVersion:14,contractVersion:2})}]
+  });
+  const body=readable({module:{kind:'plan'},template:planningModuleTemplate('plan'),sources:[{id:'request:'+request.id,kind:'user_request'}]});
+  delete body.acceptanceCriteria;delete body.steps;
+  body.contract={contractVersion:2,goal:fact,criteria:[{id:'compare',kind:'judgment',description:'The recommendation compares the supplied ranges.'}],
+    workItems:[{id:'explain',title:'Explain the range comparison',objective:'Recommend Alpha and state the plausible saving.',owner:'coordinator',resourceKeys:['workspace:fixture'],effects:['observe'],dependsOn:[],criterionIds:['compare']}],instructions:[]};
+  const saved=await f.store.recordHumanResponse(request.id,stages.plan,body,{expectedNodeRevision:1});
+  assert.deepEqual(saved.responses.at(-1).contract,body.contract);
+  const bytes=await readFile(f.store.file(request.id),'utf8'),reopened=await f.store.get(request.id);
+  assert.deepEqual(reopened.responses.at(-1).contract,body.contract);assert.equal(await readFile(f.store.file(request.id),'utf8'),bytes);
+  const missing=JSON.parse(bytes);delete missing.responses.at(-1).contract;
+  assert.throws(()=>f.store._validate(missing),{code:'RESPONSE_CYCLE_INVALID'});
+  const inconsistent=JSON.parse(bytes);inconsistent.responses.at(-1).steps[0].description='An unrelated operation.';
+  assert.throws(()=>f.store._validate(inconsistent),/disagrees with the canonical contract/);
+  assert.equal(f.calls.length,0);
 });

@@ -37,6 +37,56 @@ async function fixture(t, options = {}) {
   return { bridge, events, calls, catalog, remote: catalog[0]?.name };
 }
 
+test('delivery observer sees exact MCP projection after HTTP finish and cached replay does not re-execute', async t => {
+  const delivered = []; let executions = 0;
+  const { bridge, remote } = await fixture(t, {
+    onToolCall: async () => { executions++; assert.equal(delivered.length, 0); return { success: true, contentItems: [
+      { type: 'inputText', text: '{"taskSchemaVersion":14,"contractVersion":2,"exact":"receipt"}' },
+      { type: 'inputImage', imageUrl: 'https://unsupported.invalid/image.png' },
+    ] }; },
+    onToolResultDelivered: value => delivered.push(value),
+  });
+  const invoke = () => rpc(bridge, 61, 'tools/call', { name: remote, arguments: { action: 'read' } });
+  const first = await invoke();
+  assert.equal(delivered.length, 1);
+  assert.deepEqual(delivered[0].result.contentItems.map(item => item.text), first.body.result.content.map(item => item.text));
+  assert.match(delivered[0].result.contentItems[1].text, /cannot be sent inline/);
+  const replay = await invoke();
+  assert.deepEqual(replay.body, first.body);
+  assert.equal(executions, 1); assert.equal(delivered.length, 2);
+  assert.equal(delivered[0].call.callId, delivered[1].call.callId);
+});
+
+test('disconnected MCP response is unacknowledged until its cached receipt is actually delivered', async t => {
+  const started = deferred(), release = deferred(), delivered = []; let executions = 0;
+  const { bridge, remote } = await fixture(t, {
+    onToolCall: async () => { executions++; started.resolve(); await release.promise; return success('retained exact result'); },
+    onToolResultDelivered: value => delivered.push(value),
+  });
+  const payload = { jsonrpc: '2.0', id: 62, method: 'tools/call', params: { name: remote, arguments: { action: 'write' } } };
+  const headers = Object.fromEntries(bridge.server.headers.map(item => [item.name, item.value]));
+  let disconnected;
+  const closed = new Promise(resolve => { disconnected = resolve; });
+  const req = http.request(bridge.server.url, { method: 'POST', headers: { ...headers, 'Mcp-Session-Id': bridge.sessionId, 'Content-Type': 'application/json' } });
+  req.on('error', disconnected); req.end(JSON.stringify(payload));
+  await started.promise; req.destroy(new Error('fixture disconnect')); await closed; await tick(); await tick();
+  release.resolve(); await bridge.settle(); await tick();
+  assert.equal(delivered.length, 0); assert.equal(executions, 1);
+  const replay = await request(bridge, payload);
+  assert.equal(replay.body.result.content[0].text, 'retained exact result');
+  assert.equal(delivered.length, 1); assert.equal(executions, 1);
+});
+
+test('delivery observer failure does not alter a returned MCP receipt or replay an effect', async t => {
+  let executions = 0, observed = 0;
+  const { bridge, remote } = await fixture(t, {
+    onToolCall: async () => { executions++; return success('committed'); },
+    onToolResultDelivered: () => { observed++; throw new Error('observer fixture'); },
+  });
+  for (let pass = 0; pass < 2; pass++) assert.equal((await rpc(bridge, 63, 'tools/call', { name: remote, arguments: { action: 'write' } })).body.result.content[0].text, 'committed');
+  assert.equal(executions, 1); assert.equal(observed, 2);
+});
+
 test('fresh MCP HTTP sessions can reuse JSON-RPC ids without collisions or stale read receipts', async t => {
   const { bridge, remote, calls } = await fixture(t);
   const open = () => rpc(bridge, 0, 'initialize', { protocolVersion: '2025-06-18' });

@@ -213,7 +213,8 @@ test('query snapshots retain recent observed DOM refs within a bounded document 
     getAttribute: () => null, getBoundingClientRect: () => ({ width: 10, height: 10 }),
     children: [], childNodes: [], tabIndex: 0,
   }));
-  const document = { documentElement: { children: controls }, title: 'Large page', readyState: 'complete', getElementById: () => null };
+  const document = { forms: [], documentElement: { children: controls }, title: 'Large page', readyState: 'complete', getElementById: () => null,
+    querySelectorAll: () => [] }; // This fixture contains buttons only, with no receipt records or validation fields.
   const context = vm.createContext({ document, location: { href: 'https://example.test/' }, getComputedStyle: () => ({ display: 'block', visibility: 'visible' }) });
   const start = source.indexOf('function pageSnapshot('), end = source.indexOf('\nfunction elementAction(', start);
   vm.runInContext(source.slice(start, end), context);

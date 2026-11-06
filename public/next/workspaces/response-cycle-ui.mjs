@@ -1,5 +1,7 @@
 import { stableId } from '../core/dom.mjs';
 import { RESPONSE_CYCLE_STAGES,responseCycleStages } from '../../response-cycle-model.mjs';
+import { CONTRACT_EFFECTS, PLAN_CONTRACT_LIMITS, normalizePlanContract, validatePlanContractFeasibility } from '../../planning-contract-model.mjs';
+import { mergePlanningContractDraft, newPlanningContractWorkItem, removePlanningContractWorkItem } from '../../planning-workspace-model.mjs';
 import { chatOptionChoices, validateChatOptions } from '../chat/options-model.mjs';
 
 export const CYCLE_STAGES = Object.freeze(RESPONSE_CYCLE_STAGES.map(stage=>Object.freeze([stage.id,stage.label])));
@@ -51,8 +53,96 @@ export function cycleStateLabel(value) {
     blocked:'A resource prerequisite blocks affected work',needs_evidence: 'Source recovery needed', stale: 'Inputs changed', draft: 'Ready to start', idle: 'Ready to start' })[value] || String(value || 'Ready to start').replaceAll('_', ' ');
 }
 export function planPayload(response) {
-  const keys = ['values', 'grounding', 'openQuestions', 'challengeResponses', 'acceptanceCriteria', 'steps', 'subproblems', 'checks', 'childResults'];
+  const keys = ['values', 'grounding', 'openQuestions', 'challengeResponses', 'subproblems', 'checks', 'childResults', 'userAgency',
+    ...(response?.contract ? ['contract'] : ['acceptanceCriteria', 'steps'])];
   return Object.fromEntries(keys.filter(key => Object.hasOwn(response || {}, key)).map(key => [key, clone(response[key])]));
+}
+
+function rebasePlanDraft(draft, previous, response) {
+  const latest = planPayload(response);
+  if (Boolean(previous.contract) !== Boolean(latest.contract)) throw Error('The saved Plan format changed. Reload it after preserving your local edits.');
+  if (!latest.contract) return;
+  const merged = mergePlanningContractDraft(previous.contract, draft.plan.contract, latest.contract);
+  const values = clone(latest.values || {});
+  for (const key of new Set([...Object.keys(previous.values || {}), ...Object.keys(draft.plan.values || {})])) {
+    if (JSON.stringify(previous.values?.[key]) !== JSON.stringify(draft.plan.values?.[key])) {
+      if (Object.hasOwn(draft.plan.values || {}, key)) values[key] = clone(draft.plan.values[key]); else delete values[key];
+    }
+  }
+  draft.plan = { ...latest, values, contract: merged.contract };
+  draft.original = latest;
+  draft.detached = [...(draft.detached || []), ...merged.detached];
+  draft.dirty = JSON.stringify(draft.plan) !== JSON.stringify(latest);
+}
+
+function renderCanonicalPlanFields(ctx, form, contract, { cycleId, edit, dirty, render }) {
+  const { add, button, input, select } = ctx;
+  const choice = (holder, label, object, key, choices) => {
+    const field = select(holder, label, choices, object[key]);
+    field.dataset.fieldKey = 'cycle-plan:' + cycleId + ':' + object.id + ':' + key;
+    field.addEventListener('change', () => { object[key] = field.value; dirty(); }); return field;
+  };
+  const optional = (holder, label, object, key) => {
+    const field = edit(holder, label, object, key);
+    field.addEventListener('input', () => { if (!field.value) delete object[key]; }); return field;
+  };
+  const choices = (holder, label, object, key, available) => {
+    const group = add(holder, 'fieldset', '', 'pb-form'); add(group, 'legend', label);
+    if (!available.length) add(group, 'p', 'No choices recorded.', 'pb-help');
+    for (const [id, title] of available) {
+      const line = add(group, 'label', '', 'pb-field'), check = add(line, 'input'); check.setAttribute('type', 'checkbox');
+      check.checked = object[key].includes(id); check.dataset.fieldKey = 'cycle-plan:' + cycleId + ':' + object.id + ':' + key + ':' + id;
+      add(line, 'span', title);
+      check.addEventListener('change', () => { object[key] = check.checked ? [...new Set([...object[key], id])] : object[key].filter(value => value !== id); dirty(); });
+    }
+  };
+  const intent = add(form, 'section', '', 'pb-inspector-section'); intent.dataset.canonicalPlan = cycleId;
+  add(intent, 'h5', 'Execution contract');
+  edit(intent, 'Task objective', contract, 'goal', { rows: 4, required: true }, 'contract');
+  const criteria = add(intent, 'section', '', 'pb-inspector-section'); add(criteria, 'h5', 'Outcome criteria');
+  for (const criterion of contract.criteria) {
+    const row = add(criteria, 'div', '', 'pb-card'); row.dataset.contractCriterion = criterion.id;
+    optional(row, 'Criterion label', criterion, 'label');
+    edit(row, 'What needs to be established', criterion, 'description', { rows: 3, required: true });
+    choice(row, 'Evidence needed', criterion, 'kind', [['observation', 'Observation'], ['source-coverage', 'Source coverage'], ['external-confirmation', 'External confirmation'], ['judgment', 'Judgment']]);
+    optional(row, 'Resource scope', criterion, 'resourceKey');
+    const count = input(row, 'Required count', criterion.targetCount ?? '', { help: 'Leave blank for one. Count distinct observed outcomes.' });
+    count.setAttribute('type', 'number'); count.setAttribute('min', '1'); count.setAttribute('max', '1000'); count.setAttribute('step', '1');
+    count.dataset.fieldKey = 'cycle-plan:' + cycleId + ':' + criterion.id + ':targetCount';
+    count.addEventListener('input', () => { if (count.value === '') delete criterion.targetCount; else criterion.targetCount = Number(count.value); dirty(); });
+    if (criterion.receiptBinding) {
+      const binding = add(row, 'details', '', 'pb-history'); add(binding, 'summary', 'Saved confirmation matching');
+      add(binding, 'pre', JSON.stringify(criterion.receiptBinding, null, 2), 'pb-provenance');
+      button(binding, 'Clear saved confirmation matching', () => { delete criterion.receiptBinding; dirty(); render(); });
+    }
+    button(row, 'Remove criterion', () => { contract.criteria = contract.criteria.filter(item => item !== criterion); for (const item of contract.workItems) item.criterionIds = item.criterionIds.filter(id => id !== criterion.id); dirty(); render(); });
+  }
+  const addCriterion = button(criteria, '+ Outcome criterion', () => { contract.criteria.push({ id: stableId('criterion'), kind: 'judgment', description: '' }); dirty(); render(); });
+  addCriterion.disabled = contract.criteria.length >= PLAN_CONTRACT_LIMITS.criteria;
+  const work = add(intent, 'section', '', 'pb-inspector-section'); add(work, 'h5', 'Work items and dependencies');
+  for (const [index, item] of contract.workItems.entries()) {
+    const row = add(work, 'details', '', 'pb-history'); row.open = !item.title; row.dataset.planWorkItem = item.id; row.dataset.disclosureKey = 'plan-work-item:' + item.id;
+    add(row, 'summary', (index + 1) + '. ' + (item.title || 'New work item'));
+    edit(row, 'Work item title', item, 'title', { required: true }); edit(row, 'Objective', item, 'objective', { rows: 3, required: true });
+    edit(row, 'Owner', item, 'owner', { required: true });
+    const resources = edit(row, 'Resources · one per line', { id: item.id, resourceKeys: item.resourceKeys.join('\n') }, 'resourceKeys', { rows: 3, required: true });
+    resources.addEventListener('input', () => { item.resourceKeys = resources.value.split(/\r?\n/).map(value => value.trim()).filter(Boolean); });
+    choices(row, 'Allowed work', item, 'effects', CONTRACT_EFFECTS.map(effect => [effect, { observe: 'Read and observe', interact: 'Interact', commit: 'Commit changes', opaque: 'Run opaque operations' }[effect]]));
+    choices(row, 'Waits for', item, 'dependsOn', contract.workItems.filter(other => other !== item).map(other => [other.id, other.title || 'Untitled work item']));
+    choices(row, 'Outcome criteria', item, 'criterionIds', contract.criteria.map(criterion => [criterion.id, criterion.label || criterion.description || 'Untitled criterion']));
+    button(row, 'Remove work item', () => { removePlanningContractWorkItem(contract, item.id); dirty(); render(); });
+  }
+  const addWork = button(work, '+ Work item', () => { const item = newPlanningContractWorkItem(contract, stableId('work')); item.owner = contract.workItems[0]?.owner || item.owner; contract.workItems.push(item); dirty(); render(); });
+  addWork.disabled = contract.workItems.length >= PLAN_CONTRACT_LIMITS.workItems || !contract.criteria.length;
+  const instructions = add(intent, 'section', '', 'pb-inspector-section'); add(instructions, 'h5', 'Instructions');
+  for (const [index, instruction] of contract.instructions.entries()) {
+    const row = add(instructions, 'div', '', 'pb-card'); row.dataset.contractInstruction = instruction.id;
+    edit(row, 'Instruction ' + (index + 1), instruction, 'text', { rows: 3, required: true });
+    choice(row, 'Handling', instruction, 'handling', [['preserve', 'Preserve requirement'], ['audit', 'Record audit findings']]);
+    button(row, 'Remove instruction', () => { contract.instructions = contract.instructions.filter(item => item !== instruction); dirty(); render(); });
+  }
+  const addInstruction = button(instructions, '+ Instruction', () => { contract.instructions.push({ id: stableId('instruction'), text: '', handling: 'preserve' }); dirty(); render(); });
+  addInstruction.disabled = contract.instructions.length >= PLAN_CONTRACT_LIMITS.instructions;
 }
 const accuracyModes = [['exact', 'Exact'], ['bounded_estimate', 'Bounded estimate'], ['qualitative', 'Qualitative']];
 const uncertaintyPolicies = [['block', 'Resolve before proceeding'], ['assumption', 'Allow a stated, supported assumption'], ['range', 'Allow a supported range'], ['omit', 'Allow an explicit omission']];
@@ -211,18 +301,34 @@ function renderPlanEditor(ctx, parent, document, cycle, node, state) {
   let draft = state.cyclePlanDrafts.get(cycle.id);
   const changed = value => value.requestRevision !== document.revision || value.nodeRevision !== node.revision || value.responseId !== node.response?.id;
   if (!draft || !draft.dirty && changed(draft)) {
-    draft = { plan: planPayload(node.response), requestRevision: document.revision, nodeRevision: node.revision, responseId: node.response.id, dirty: false };
+    const plan = planPayload(node.response);
+    draft = { plan, original: clone(plan), detached: draft?.detached || [], requestRevision: document.revision, nodeRevision: node.revision, responseId: node.response.id, dirty: false };
     state.cyclePlanDrafts.set(cycle.id, draft);
   }
   const stale = changed(draft), pending = state.pending.has('cycle:' + cycle.id);
+  const editable = ['paused_after_plan', 'planned', 'needs_review', 'stale'].includes(cycle.state);
   const section = add(parent, 'section', '', 'pb-inspector-section pb-cycle-plan');
   add(section, 'h4', 'Edit the saved Plan');
   add(section, 'p', 'Plan revision ' + node.revision + ' · Changes are saved separately from Continue.', 'pb-help');
-  const dirty = () => { draft.dirty = true; for (const control of parent.querySelectorAll('[data-cycle-continue]')) control.disabled = true; };
+  const dirty = () => { draft.dirty = true; draft.error = ''; for (const control of parent.querySelectorAll('[data-cycle-continue]')) control.disabled = true; };
   if (stale) {
     add(section, 'p', 'The plan or its inputs changed. Your edits are preserved. Review the current version before saving.', 'pb-note');
     button(section, 'Reload saved plan', () => { state.cyclePlanDrafts.delete(cycle.id); render(); });
-    button(section, 'Keep edits on current revision', () => { draft.requestRevision = document.revision; draft.nodeRevision = node.revision; draft.responseId = node.response.id; render(); });
+    button(section, 'Keep edits on current revision', () => {
+      try {
+        if (draft.plan.contract) rebasePlanDraft(draft, draft.original, node.response);
+        draft.requestRevision = document.revision; draft.nodeRevision = node.revision; draft.responseId = node.response.id; draft.error = '';
+      } catch (error) { draft.error = error.message; }
+      render();
+    });
+  }
+  if (!editable) add(section, 'p', 'Editing is available when planning is paused or ready for review.', 'pb-help');
+  if (draft.error) add(section, 'p', draft.error, 'pb-note');
+  if (draft.detached?.length) {
+    const notes = add(section, 'details', '', 'pb-history'); notes.open = true; add(notes, 'summary', 'Retained local edits');
+    add(notes, 'p', 'These items changed or were removed from the saved Plan. Your local text is retained here for review.', 'pb-help');
+    for (const item of draft.detached) { add(notes, 'h5', item.title); add(notes, 'pre', item.note, 'pb-provenance'); }
+    button(notes, 'Discard retained notes', () => { draft.detached = []; render(); });
   }
   const form = add(section, 'form', '', 'pb-form'); form.dataset.cyclePlanForm = cycle.id; form.inert = pending;
   const edit = (holder, label, object, key, options = {}, ownerId = object.id || 'values') => {
@@ -230,7 +336,9 @@ function renderPlanEditor(ctx, parent, document, cycle, node, state) {
     field.addEventListener('input', () => { object[key] = field.value; dirty(); }); return field;
   };
   draft.plan.values ||= {};
-  for (const field of fieldsFor(node)) edit(form, field.label, draft.plan.values, field.id, { rows: 3, required: field.required, help: field.description || field.prompt });
+  for (const field of fieldsFor(node)) edit(form, field.label, draft.plan.values, field.id, { rows: 3, required: field.required, help: draft.plan.contract && field.id === 'validation' ? 'Explain the observations, source coverage, confirmations, and judgments needed to establish the contract outcomes.' : field.description || field.prompt });
+  if (draft.plan.contract) renderCanonicalPlanFields(ctx, form, draft.plan.contract, { cycleId: cycle.id, edit, dirty, render });
+  else {
   const checklist = (holder, label, choices, selected, save) => {
     let values = [...selected];
     const detail = add(holder, 'details', '', 'pb-history'); add(detail, 'summary', label);
@@ -276,13 +384,34 @@ function renderPlanEditor(ctx, parent, document, cycle, node, state) {
     button(row, 'Remove step', () => { draft.plan.steps = draft.plan.steps.filter(item => item !== step); for (const item of draft.plan.steps) item.dependsOn = item.dependsOn.filter(id => id !== step.id); dirty(); render(); });
   }
   button(steps, '+ Planned step', () => { draft.plan.steps.push({ id: stableId('step'), label: '', description: '', dependsOn: [], criterionIds: [], sourceIds: [] }); dirty(); render(); });
-  const save = add(form, 'button', 'Save plan', 'pb-primary'); save.setAttribute('type', 'submit'); save.dataset.cyclePlanSave = cycle.id; save.disabled = pending || stale;
+  }
+  const save = add(form, 'button', 'Save plan', 'pb-primary'); save.setAttribute('type', 'submit'); save.dataset.cyclePlanSave = cycle.id; save.disabled = pending || stale || !editable;
+  if (!editable) {
+    // Preserve native disclosure controls and selectable text while preventing edits.
+    for (const field of form.querySelectorAll('input, textarea, select, button')) {
+      if (field.tagName === 'TEXTAREA' || field.tagName === 'INPUT' && !['checkbox', 'radio'].includes(field.type)) field.readOnly = true;
+      else field.disabled = true;
+    }
+  }
   form.addEventListener('submit', event => {
-    event.preventDefault(); if (pending || stale || !draft.dirty) return;
-    const submitted = JSON.stringify(draft.plan);
-    void submit('plan', { expectedRequestRevision: document.revision, expectedCycleRevision: document.nodes.find(item => item.id === cycle.id).revision, expectedPlanRevision: draft.nodeRevision, expectedPlanResponseId: draft.responseId, plan: clone(draft.plan) }).then(() => {
-      if (JSON.stringify(draft.plan) === submitted && state.document?.nodes.find(item => item.id === node.id)?.response?.id !== draft.responseId) state.cyclePlanDrafts.delete(cycle.id);
+    event.preventDefault(); if (pending || state.pending.has('cycle:' + cycle.id) || stale || !editable || !draft.dirty) return;
+    let payload;
+    try { payload = planPayload(draft.plan); if (payload.contract) payload.contract = validatePlanContractFeasibility(normalizePlanContract(payload.contract)); }
+    catch (error) { draft.error = error.message; render(); return; }
+    const submitted = clone(draft.plan), responseId = draft.responseId;
+    void submit('plan', { expectedRequestRevision: document.revision, expectedCycleRevision: document.nodes.find(item => item.id === cycle.id).revision, expectedPlanRevision: draft.nodeRevision, expectedPlanResponseId: responseId, plan: payload }).then(result => {
+      const accepted = result?.nodes?.find(item => item.id === node.id);
+      if (!accepted?.response || accepted.response.id === responseId || state.cyclePlanDrafts.get(cycle.id) !== draft) return;
+      const latest = state.document?.revision >= result.revision ? state.document : result;
+      const saved = latest.nodes.find(item => item.id === node.id);
+      if (draft.plan.contract && saved?.response?.contract) {
+        rebasePlanDraft(draft, submitted, saved.response);
+        draft.requestRevision = latest.revision; draft.nodeRevision = saved.revision; draft.responseId = saved.response.id;
+        if (!draft.dirty && !draft.detached.length) state.cyclePlanDrafts.delete(cycle.id);
+      } else if (JSON.stringify(draft.plan) === JSON.stringify(submitted)) state.cyclePlanDrafts.delete(cycle.id);
       render();
+    }).catch(error => {
+      draft.error = error.message; render();
     });
   });
 }

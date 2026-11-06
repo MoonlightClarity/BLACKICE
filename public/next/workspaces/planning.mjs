@@ -1,3 +1,6 @@
+import { isPlanContractTask } from '../../planning-contract-model.mjs';
+import { planningContractDraftValues, applyPlanningContractFields, newPlanningContractWorkItem, removePlanningContractWorkItem } from '../../planning-workspace-model.mjs';
+import { renderPlanningContractFields } from '../../planning-workspace-ui.mjs';
 import { text, escapeHTML } from '../core/dom.mjs';
 import { renderRecordedAnalyticPasses } from './tradecraft-timeline.mjs';
 import { projectPlanningOntology } from '../../planning-ontology.mjs';
@@ -384,8 +387,10 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
     if (detailError) { const message = el(box, 'p', detailError, 'next-help'); message.setAttribute('role', 'alert'); button(box, 'Retry loading plan', () => void select(plan, { force: true })); }
     if (!full) return;
     const draft = draftFor(full), editable = plan.bucket !== 'deleted' && plan.editable !== false && !detailError && Number.isSafeInteger(draft.base.revision), state = sessionFor(plan);
+    const canonical = isPlanContractTask(draft.latest);
     const savedProgress = draft.latest.progress || taskPlanView(draft.latest).progress;
-    progress(box, savedProgress.done || 0, savedProgress.total || 0, (savedProgress.done || 0) + ' of ' + (savedProgress.total || 0) + ' planned steps done');
+    progress(box, savedProgress.done || 0, savedProgress.total || 0, (savedProgress.done || 0) + ' of ' + (savedProgress.total || 0) + (canonical ? ' work items complete' : ' planned steps done'));
+    if (!canonical) {
     recordedOntology(box, draft.latest, state);
     // Decision policies are first-class saved Planning metadata, not implicit
     // exclusions inferred from a job posting's use of the word "required".
@@ -528,12 +533,16 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
       techniqueTimeline.open = Boolean(state.techniqueTimelineOpen);
       techniqueTimeline.addEventListener('toggle', () => { state.techniqueTimelineOpen = techniqueTimeline.open; });
     }
+    }
     const form = el(box, 'form', '', 'next-plan-edit'); form.id = 'next-planning-edit';
+    if (canonical) canonicalConversationEditor(form, draft, editable);
+    else {
     conversationVisual(form, plan, draft, editable);
     const goalDisclosure = el(form, 'details', '', 'next-plan-goal-disclosure'); goalDisclosure.id = 'next-planning-goal-disclosure'; goalDisclosure.open = state.goalOpen; el(goalDisclosure, 'summary', 'Shared goal');
     goalDisclosure.addEventListener('toggle', () => { state.goalOpen = goalDisclosure.open; });
     const label = el(goalDisclosure, 'label', 'Goal', 'next-label'), goal = el(label, 'textarea', '', 'next-field'); goal.id = 'next-planning-goal'; goal.rows = 2; goal.maxLength = 2000; goal.value = draft.goal; goal.readOnly = !editable;
     goal.addEventListener('input', () => { draft.goal = goal.value; updateDraftControls(draft, editable); });
+    }
     const actions = el(form, 'div', '', 'next-plan-save-actions next-row'), save = el(actions, 'button', 'Save plan changes', 'next-primary'); save.type = 'submit'; save.id = 'next-planning-save';
     button(actions, 'Discard changes', () => { if (pending) return; drafts.set(key(plan), createPlanningDraft(draft.latest)); drawDetail(); }, 'next-planning-discard');
     button(actions, 'Open conversation', () => onNavigate?.('chat', { conversationId: plan.taskId }));
@@ -543,14 +552,14 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
       button(conflict, 'Use saved version', () => { if (pending) return; drafts.set(key(plan), createPlanningDraft(draft.latest)); drawDetail(); });
       button(conflict, 'Keep draft against latest version', () => { if (pending) return; Object.assign(draft, rebasePlanningDraft(draft)); drawDetail(); });
     }
-    if (draft.detachedNotes.length) { const detached = el(form, 'details', '', 'next-plan-detached-notes'); el(detached, 'summary', 'Retained notes for removed steps (' + draft.detachedNotes.length + ')'); for (const note of draft.detachedNotes) detailField(detached, note.title, note.note); el(detached, 'p', 'These local notes are retained for reference and are not sent as edits to removed steps.', 'next-help'); }
+    if (draft.detachedNotes.length) { const detached = el(form, 'details', '', 'next-plan-detached-notes'); el(detached, 'summary', 'Retained edits for removed work (' + draft.detachedNotes.length + ')'); for (const note of draft.detachedNotes) detailField(detached, note.title, note.note); el(detached, 'p', 'These local notes are retained for reference and are not sent as edits to removed steps.', 'next-help'); }
     updateDraftControls(draft, editable);
     form.addEventListener('submit', async event => {
       event.preventDefault(); if (!active || !editable || pending || draft.latest.revision !== draft.base.revision) return;
       let operations;
       try { operations = planningDraftOperations(draft); } catch (cause) { draft.error = cause.message; updateDraftControls(draft, editable); return; }
       if (!operations.length) { receipt.textContent = 'No changes to save.'; return; }
-      const submitted = { goal: draft.goal, notes: new Map(draft.notes), revisit: draft.revisit ? { ...draft.revisit } : null }; pending = true; generation++; updateDraftControls(draft, editable); receipt.textContent = 'Saving…'; paint();
+      const submitted = { ...(draft.contract ? { contract: structuredClone(draft.contract) } : {}), goal: draft.goal, notes: new Map(draft.notes), revisit: draft.revisit ? { ...draft.revisit } : null }; pending = true; generation++; updateDraftControls(draft, editable); receipt.textContent = 'Saving…'; paint();
       try {
         const saved = await api('/api/tasks/' + encodeURIComponent(plan.taskId) + '/plan/edit', 'POST', { expectedRevision: draft.base.revision, operations });
         if (!Array.isArray(saved?.steps) || saved.taskId !== plan.taskId) throw Error('The save receipt did not contain this plan. Refresh to inspect its saved state.');
@@ -563,6 +572,31 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
       finally { pending = false; if (active) { paint(); drawDetail({ retainFocus: true }); } }
     });
   }
+  function canonicalConversationEditor(form, draft, editable) {
+    const task = { ...draft.latest, contract: { ...draft.contract, goal: draft.goal } };
+    const appendEditor = (parent, id) => {
+      const fields = el(parent, 'fieldset', '', 'next-plan-contract-fields'); fields.disabled = !editable;
+      fields.innerHTML = renderPlanningContractFields(task, { stepId: id, values: planningContractDraftValues(task.contract, id) });
+      const update = event => {
+        const field = event.target.dataset.planningField; if (!field) return;
+        let value = event.target.value;
+        if (event.target.dataset.planningChoice) value = [...fields.querySelectorAll('input[data-planning-choice]')].filter(input => input.dataset.planningChoice === field && input.checked).map(input => input.value);
+        applyPlanningContractFields(draft.contract, id, { [field]: value });
+        if (!id && field === 'goal') draft.goal = value;
+        updateDraftControls(draft, editable);
+      };
+      fields.addEventListener('input', update); fields.addEventListener('change', update);
+    };
+    appendEditor(form, null);
+    for (const item of draft.contract.workItems) {
+      const section = el(form, 'details', '', 'next-plan-goal-disclosure'); el(section, 'summary', item.title || 'New work item'); appendEditor(section, item.id);
+      if (editable) button(section, 'Remove work item from draft', () => { removePlanningContractWorkItem(draft.contract, item.id); drawDetail({ retainFocus: true }); });
+    }
+    if (editable) button(form, 'Add work item', () => {
+      const id = 'work-' + globalThis.crypto.randomUUID(); draft.contract.workItems.push(newPlanningContractWorkItem(draft.contract, id)); drawDetail({ retainFocus: true });
+    });
+  }
+
   function paint() {
     elements.list.replaceChildren(); if (!items.length) el(elements.list, 'p', elements.type.value === 'analysis' ? 'No intelligence assessments yet. Start with a priority intelligence question.' : 'No matching plans in this view.', 'next-empty');
     for (const item of items) {

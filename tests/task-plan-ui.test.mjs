@@ -77,6 +77,34 @@ const update = (ui, state, extra = {}) => ui.update({ taskState: state, runId: `
 const mappedNode = (f, id) => f.mount.querySelectorAll('[data-plan-map-node]').find(element => element.dataset.planMapNode === id);
 const mapCanvas = f => f.mount.querySelector('.task-plan-map-canvas');
 
+test('canonical work-item UI preserves DOM focus, history disclosure and guidance drafts across journal-only updates', async t => {
+  const f = planDOM(t), guided = [], ui = initTaskPlanUI({ mount: f.mount, onDraftDirection: value => guided.push(value) });
+  const state = { taskId: 'contract-ui', revision: 4, goal: 'Register for two workshops.', steps: [],
+    contract: { contractVersion: 2, planEpoch: 2, goal: 'Register for two workshops.',
+      criteria: [{ id: 'registered', kind: 'external-confirmation', description: 'Distinct enrollments', targetCount: 2 }],
+      workItems: [{ id: 'inspect', title: 'Inspect catalog', objective: 'Read the options.', owner: 'coordinator', resourceKeys: ['origin:https://portal.test'], effects: ['observe'], dependsOn: [], criterionIds: [] },
+        { id: 'forms', title: 'Complete forms', objective: 'Submit and verify.', owner: 'coordinator', resourceKeys: ['origin:https://portal.test'], effects: ['observe', 'interact', 'commit'], dependsOn: ['inspect'], criterionIds: ['registered'] }], instructions: [] },
+    contractRuntime: { version: 1, planEpoch: 2, journalSeq: 8, focuses: [{ workItemId: 'forms' }],
+      workItems: [{ id: 'inspect', status: 'satisfied', operationCount: 2 }, { id: 'forms', status: 'running', ready: true, operationCount: 6 }],
+      criteria: [{ id: 'registered', observedCount: 0, targetCount: 2, satisfied: false, reason: 'Awaiting evidence.' }],
+      operations: [{ operationId: 'op1', workItemId: 'forms', tool: 'relay_browser', action: 'fill', deliveryState: 'returned', effectState: 'confirmed' }],
+      unresolved: [], findings: [] } };
+  const before = structuredClone(state); update(ui, state, { planningMode: 'forced' });
+  assert.equal(f.mount.querySelector('.task-plan-tree').getAttribute('aria-label'), 'Work items');
+  assert.equal(f.control('view-map'), undefined); assert.match(f.region('header').innerHTML, /Planning Forced/);
+  await f.click(f.node('inspect')); const row = f.node('inspect'); row.focus(); f.viewport().scrollTop = 48;
+  const history = f.mount.querySelector('[data-plan-disclosure="operation-history"]'); history.open = true;
+  const next = structuredClone(state); next.contractRuntime.journalSeq++; next.contractRuntime.criteria[0].observedCount = 1;
+  next.contractRuntime.operations.push({ operationId: 'op2', workItemId: 'forms', tool: 'relay_browser', action: 'read', deliveryState: 'returned', effectState: 'not-applicable' });
+  update(ui, next, { planningMode: 'forced' });
+  assert.equal(f.node('inspect'), row); assert.equal(document.activeElement, row); assert.equal(f.viewport().scrollTop, 48);
+  assert.equal(f.mount.querySelector('[data-plan-disclosure="operation-history"]').open, true);
+  assert.match(f.region('inspector').innerHTML, /Work item 1/);
+  await f.click(f.control('guide'));
+  assert.equal(guided.length, 1); assert.equal(guided[0].step, next.contract.workItems[0]);
+  assert.deepEqual(state, before); assert.deepEqual(next.steps, []); ui.destroy();
+});
+
 test('Enlarge and Escape restore the existing outline, selection, scroll and focused size control', async t => {
   const f = planDOM(t), changes = [], ui = initTaskPlanUI({ mount: f.mount, onEnlargedChange: value => changes.push(value) }), state = plan(), before = structuredClone(state); update(ui, state);
   await f.click(f.node('inspect')); f.viewport().scrollTop = 86;

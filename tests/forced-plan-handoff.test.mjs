@@ -1,3 +1,4 @@
+// Historical schema-13 protocol regression; current canonical evidence and handoff have separate acceptance.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -5,10 +6,10 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { HarnessEngine } from '../lib/engine.mjs';
+import { HarnessEngine } from './fixture-legacy-planning-engine.mjs';
 import { MethodStore } from '../lib/methods.mjs';
 import { normalizeTaskPlan } from '../lib/task-plan.mjs';
-import { TaskStateStore, createTaskToolHandler, TASK_TOOL } from '../lib/task-state.mjs';
+import { TaskStateStore, createTaskToolHandler, TASK_TOOL } from './fixture-legacy-task-state.mjs';
 import { prepareExecutionPlanHandoff, executionOutlineHash } from '../lib/planning-execution-handoff.mjs';
 import { PlanningBrowserStore } from '../lib/planning-browser.mjs';
 import { PlanningBrowserRuntime } from '../lib/planning-browser-runtime.mjs';

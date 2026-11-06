@@ -1,3 +1,4 @@
+// Historical schema-13 regression; canonical schema-14 behavior has separate production-engine acceptance.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -7,7 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ProviderRuntime } from '../lib/providers.mjs';
 import { CodexRuntime } from '../lib/codex.mjs';
-import { HarnessEngine } from '../lib/engine.mjs';
+import { HarnessEngine } from './fixture-legacy-planning-engine.mjs';
 import { KnowledgeStore } from '../lib/knowledge.mjs';
 import { WORKSPACE_TOOL } from '../lib/workspace-tools.mjs';
 import { capabilityGuidance } from '../lib/tool-routing.mjs';

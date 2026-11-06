@@ -11,7 +11,10 @@ const {createPlanningWorkerGuard,wrapPlanningToolHandler}=await import(moduleUrl
 const {createSequentialPlanningGuard}=await import(moduleUrl('planning-sequence.mjs'));
 const {createPlanningCompletionController}=await import(moduleUrl('planning-completion.mjs'));
 const {RuntimeSettingsStore,validateRuntimeSettings}=await import(moduleUrl('runtime-settings.mjs'));
-const {HarnessEngine,defaultPlanInstructions}=await import(moduleUrl('engine.mjs'));
+const {HarnessEngine:CurrentHarnessEngine,defaultPlanInstructions}=await import(moduleUrl('engine.mjs'));
+// Historical sequence-guardrail fixtures retain their captured schema-13 protocol.
+// Canonical schema-14 modes/delegation have separate production-engine coverage.
+class HarnessEngine extends CurrentHarnessEngine { dispatchRun(run) { if(run.planningContractVersion===14)run.planningContractVersion=13; return super.dispatchRun(run); } }
 const {planningSkillInstructions}=await import(moduleUrl('planning-skill.mjs'));
 const assertSequenceGuardrailsDisabled=options=>{
   if(options.dynamicTools?.some(tool=>tool.name==='relay_task')){

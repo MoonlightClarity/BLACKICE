@@ -177,7 +177,13 @@ test('a saved native conversation keeps its original tools while a new chat rece
   const first = app.engine.startRun({workflow: graph, input: 'Inspect the available tool catalog.'}); await app.engine.executions.get(first.id);
   const original = app.engine.getRun(first.id); assert.equal(original.status, 'completed', original.error);
   // Model an existing native conversation whose saved catalog predates relay_apps.
-  app.engine.runs.get(first.id).nodes.agent.toolNames = original.nodes.agent.toolNames.filter(name => name !== APPLICATION_TOOL.name);
+  // This simulated retained catalog predates Planning14 and its host catalog hash.
+  const legacyRun = app.engine.runs.get(first.id);
+  assert.equal(legacyRun.planningContractVersion, 14, 'Fresh production runs still use Planning14.');
+  assert.ok(!legacyRun.taskState?.contract, 'Do not relabel an existing canonical plan as a historical fixture.');
+  legacyRun.planningContractVersion = 13; legacyRun.nodes.agent.taskSchemaVersion = 13;
+  delete legacyRun.nodes.agent.providerExecutionContract;
+  legacyRun.nodes.agent.toolNames = original.nodes.agent.toolNames.filter(name => name !== APPLICATION_TOOL.name);
   const next = app.engine.continueRun(first.id, {nodeId: 'agent', message: 'Continue with the tools this native session originally had.'}); await app.engine.executions.get(next.id);
   assert.equal(app.engine.getRun(next.id).status, 'completed', app.engine.getRun(next.id).error);
   const fresh = app.engine.startRun({workflow: graph, input: 'A fresh chat may use the new application tool.'}); await app.engine.executions.get(fresh.id);

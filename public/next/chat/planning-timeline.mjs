@@ -18,6 +18,31 @@ const reviewRows = (runId, state, order = 0) => (Array.isArray(state?.planningRe
 
 /** Project only public saved planning actions and reported findings. Never read
  * provider reasoning items, tool arguments, raw tool results, or private notes. */
+
+function contractActivity(runId, event, previousState, order) {
+  const state = event.data.state, view = taskPlanView(state), before = previousState?.contract?.contractVersion === 2 ? taskPlanView(previousState) : null;
+  const at = time(event.at) || time(state.updatedAt), nodeId = clean(event.data.workerId || event.nodeId, 120), rows = [];
+  if (!before || before.planEpoch !== view.planEpoch) {
+    rows.push({ id: `plan:${runId}:epoch:${view.planEpoch}`, phase: 'plan', source: 'plan', at, order, nodeId,
+      revision: state.revision, title: before ? 'Plan revised' : 'Saved plan',
+      text: clean(view.nodes.slice(0, 8).map(item => item.number + ' ' + item.title).join(' · ')) });
+  }
+  const earlier = new Map((before?.criteria || []).map(item => [item.id, item]));
+  for (const item of view.criteria) {
+    const prior = earlier.get(item.id);
+    if (!item.observedCount || prior && prior.observedCount === item.observedCount && prior.satisfied === item.satisfied) continue;
+    rows.push({ id: `outcome:${runId}:${view.planEpoch}:${item.id}:${item.observedCount}:${item.satisfied}`, phase: 'think', source: 'outcome', at, order: order + .1, nodeId,
+      revision: state.revision, criterionId: clean(item.id, 120), title: 'Outcome evidence',
+      text: clean((item.description || item.id) + ': ' + item.observedCount + ' / ' + item.targetCount + ' recorded.'),
+      observedCount: item.observedCount, targetCount: item.targetCount, ...(item.satisfied ? { status: 'done' } : {}) });
+  }
+  const findings = new Set((before?.findings || []).map(item => item.id));
+  for (const item of view.findings) if (!findings.has(item.id) && clean(item.message)) rows.push({
+    id: `finding:${runId}:contract:${item.id}`, phase: 'think', source: 'observation', at: time(item.at) || at, order: order + .2, nodeId,
+    title: clean(item.ruleId, 300) || 'Recorded instruction finding', text: clean(item.message) });
+  return rows;
+}
+
 export function planningActivityForEvent(runId, event, previousState = null, order = 0) {
   const data = event?.data || {}, nodeId = clean(data.workerId || event?.nodeId, 120), at = time(event?.at);
   if (data.type === 'item' && data.stage === 'started' && data.item?.type === 'agentMessage' && data.item.phase === 'final_answer' && clean(data.item.id, 120) && at) {
@@ -33,6 +58,7 @@ export function planningActivityForEvent(runId, event, previousState = null, ord
       text: clean(data.reviewReason) || 'Reassess the saved findings before the final response.', status: data.reviewStatus }];
   }
   if (data.type !== 'task.state' || !data.state || typeof data.state !== 'object') return [];
+  if (data.state.contract?.contractVersion === 2) return contractActivity(runId, event, previousState, order);
   const state = data.state, rows = [], steps = stepList(state), prior = new Map(stepList(previousState).map(step => [step.id, step]));
   const actorNodeId = state.provenance?.runId === runId ? clean(state.provenance.nodeId, 120) || nodeId : nodeId;
   const currentAuthorship = state.plan?.authoredBy?.runId ? state.plan.authoredBy.runId === runId : state.provenance?.runId === runId;
@@ -74,7 +100,7 @@ export function mergePlanningActivity(previous = [], additions = []) {
 // serialized task snapshot or an arbitrary provider/tool payload.
 function publicActivity(value) {
   if (!value || typeof value !== 'object') return null;
-  const phase = ({ plan: 'plan', review: 'plan', observation: 'think', composition: 'think', 'runtime-reassessment': 'plan' })[value.source];
+  const phase = ({ plan: 'plan', review: 'plan', observation: 'think', outcome: 'think', composition: 'think', 'runtime-reassessment': 'plan' })[value.source];
   const id = clean(value.id, 500);
   if (!phase || value.phase !== phase || !id) return null;
   return { id, phase, source: value.source, at: time(value.at),
@@ -82,6 +108,7 @@ function publicActivity(value) {
     title: clean(value.title, 300), text: clean(value.text),
     ...(Number.isSafeInteger(value.revision) && value.revision > 0 ? { revision: value.revision } : {}),
     ...(clean(value.stepId, 120) ? { stepId: clean(value.stepId, 120) } : {}),
+    ...(value.source === 'outcome' && clean(value.criterionId, 120) ? { criterionId: clean(value.criterionId, 120), observedCount: Number.isSafeInteger(value.observedCount) && value.observedCount >= 0 ? value.observedCount : 0, targetCount: Number.isSafeInteger(value.targetCount) && value.targetCount > 0 ? value.targetCount : 1 } : {}),
     ...(['continue', 'respond', 'blocked'].includes(value.decision) ? { decision: value.decision } : {}),
     ...(value.decision === 'continue' && clean(value.nextStepId, 120) ? { nextStepId: clean(value.nextStepId, 120) } : {}),
     ...(['done', 'blocked', 'continuing', 'stalled', 'required', 'stale'].includes(value.status) ? { status: value.status } : {}) };
@@ -89,11 +116,18 @@ function publicActivity(value) {
 
 export function projectPlanningActivity(run, { previousState = null } = {}) {
   const saved = (Array.isArray(run?.planningActivity) ? run.planningActivity : []).filter(row =>
-    typeof row?.id === 'string' && ['plan', 'finding', 'review', 'return', 'composition'].some(prefix => row.id.startsWith(`${prefix}:${run?.id}:`)));
+    typeof row?.id === 'string' && ['plan', 'finding', 'outcome', 'review', 'return', 'composition'].some(prefix => row.id.startsWith(`${prefix}:${run?.id}:`)));
   let rows = mergePlanningActivity([], saved);
   const recordedRevision = rows.length && Number.isSafeInteger(run?.planningActivityRevision) ? run.planningActivityRevision : 0;
   for (const [order, event] of (Array.isArray(run?.events) ? run.events : []).entries()) {
-    if (event?.data?.type === 'task.state' && Number(event.data.state?.revision) <= Math.max(recordedRevision, Number(previousState?.revision) || 0)) continue;
+    if (event?.data?.type === 'task.state') {
+      const incoming = event.data.state;
+      if (incoming?.contract?.contractVersion === 2) {
+        if (previousState?.contract?.contractVersion === 2 && (incoming.revision < previousState.revision
+          || incoming.revision === previousState.revision && incoming.contract.planEpoch === previousState.contract.planEpoch
+          && (incoming.contractRuntime?.journalSeq ?? -1) <= (previousState.contractRuntime?.journalSeq ?? -1))) continue;
+      } else if (Number(incoming?.revision) <= Math.max(recordedRevision, Number(previousState?.revision) || 0)) continue;
+    }
     const additions = planningActivityForEvent(run.id, event, previousState || (event?.data?.type === 'item' ? run.taskState : null), Number.isFinite(event?.timelineOrder) ? event.timelineOrder : order);
     if (additions.length) rows = mergePlanningActivity(rows, additions);
     if (event?.data?.type === 'task.state' && event.data.state) previousState = event.data.state;

@@ -1,10 +1,11 @@
+// Historical schema-13 guarded-worker regression; current canonical behavior has separate engine acceptance.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { HarnessEngine } from '../lib/engine.mjs';
+import { HarnessEngine } from './fixture-legacy-planning-engine.mjs';
 import { TaskStateStore } from '../lib/task-state.mjs';
 import { TaskInbox } from '../lib/inbox.mjs';
 import { OperationsStore } from '../lib/operations.mjs';

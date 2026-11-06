@@ -1,10 +1,11 @@
+// Historical schema-13 protocol regression; schema-14 behavior has separate canonical-contract and production-engine acceptance coverage.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PlanningAwareness, planningRelevance, createPlanningWorkerGuard, wrapPlanningToolHandler } from '../lib/planning-awareness.mjs';
-import { TaskStateStore, createTaskToolHandler } from '../lib/task-state.mjs';
+import { TaskStateStore, createTaskToolHandler } from './fixture-legacy-task-state.mjs';
 import { readPlanningAwareness, updatePlanningPresence } from '../lib/planning-workspace.mjs';
 
 const action = (id, parentId = null) => ({ id, title: id, parentId, kind: 'action', status: 'pending', dependsOn: [], doneWhen: `${id} has an observed result.` });

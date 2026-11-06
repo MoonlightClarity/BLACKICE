@@ -1,10 +1,11 @@
+// Historical schema-13 protocol regression; current canonical evidence and handoff have separate acceptance.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,rm,readFile,writeFile,utimes} from 'node:fs/promises';
 import {promises as io} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {TaskStateStore,createTaskToolHandler,TASK_TOOL,PREVIOUS_TASK_TOOL,LEGACY_TASK_TOOL,TASK_INSTRUCTIONS,PREVIOUS_TASK_INSTRUCTIONS} from '../lib/task-state.mjs';
+import {TaskStateStore,createTaskToolHandler,TASK_TOOL,PREVIOUS_TASK_TOOL,LEGACY_TASK_TOOL,TASK_INSTRUCTIONS,PREVIOUS_TASK_INSTRUCTIONS} from './fixture-legacy-task-state.mjs';
 import {capabilityGuidance} from '../lib/tool-routing.mjs';
 import {newerTaskState} from '../public/run-state-model.mjs';
 

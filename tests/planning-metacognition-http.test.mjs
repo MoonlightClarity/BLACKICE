@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
-import { TASK_SCHEMA_VERSION } from '../lib/task-state.mjs';
+import { TASK_SCHEMA_VERSION } from './fixture-legacy-task-state.mjs';
 
 class Runtime extends EventEmitter {
   status(){return{connected:true,authenticated:true,models:[{model:'metacognition-fixture'}],defaultModel:'metacognition-fixture'};}

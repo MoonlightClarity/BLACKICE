@@ -461,14 +461,51 @@ test('maintenance drains setup writes and blocks all new onboarding operations',
   assert.equal((await f.request('/api/chatgpt-connector')).status, 200); pendingWrite.resolve(); await maintenance; assert.equal(drained, true); f.app.endMaintenance();
 });
 
-test('shutdown closes setup before connector teardown and drains an admitted connection check', async t => {
-  const gate = held(), entered = held(), events = [], setup = setupStub({ async check() { entered.resolve(); await gate.promise; }, async close() { events.push('setup'); } });
-  const f = await fixture(t, { serverOptions: { chatGPTSetup: setup } }), connectorClose = f.app.chatGPTConnector.close.bind(f.app.chatGPTConnector);
-  f.app.chatGPTConnector.close = async () => { events.push('connector'); return connectorClose(); };
-  const checking = f.request(checkRoute, { body: {} }); await entered.promise; let drained = false;
-  const closing = f.app.close().then(() => { drained = true; }); await turn(); assert.equal(drained, false);
-  assert.equal((await f.request(checkRoute, { body: {} })).status, 503); gate.resolve(); assert.equal((await checking).status, 200); await closing;
-  assert.equal(drained, true); assert.deepEqual(events, ['setup', 'connector']);
+test('shutdown closes setup before connector teardown and drains admitted checks and confirmations through their response snapshot', async t => {
+  for (const [action, route, body] of [
+    ['check', checkRoute, {}],
+    ['confirm', confirmRoute, { nonce: 'blackice-connect-11111111-1111-4111-8111-111111111111' }],
+  ]) await t.test(action, { timeout: 10000 }, async t => {
+    const operationGate = held(), entered = held(), setupClosed = held(), snapshotGate = held(), snapshotEntered = held(), events = [];
+    const operate = async () => { entered.resolve(); await operationGate.promise; };
+    const setup = setupStub({ check: operate, confirm: operate, async close() { events.push('setup'); setupClosed.resolve(); } });
+    const f = await fixture(t, { serverOptions: { chatGPTSetup: setup } });
+    const remoteClose = f.app.remoteAccess.close.bind(f.app.remoteAccess), connectorClose = f.app.chatGPTConnector.close.bind(f.app.chatGPTConnector);
+    f.app.remoteAccess.close = async () => { events.push('remote'); return remoteClose(); };
+    f.app.chatGPTConnector.close = async () => { events.push('connector'); return connectorClose(); };
+    const pendingInteractions = f.app.directExecution.pendingInteractions.bind(f.app.directExecution);
+    f.app.directExecution.pendingInteractions = async () => {
+      events.push('snapshot'); snapshotEntered.resolve(); await snapshotGate.promise;
+      return pendingInteractions();
+    };
+    const checking = f.request(route, { body }).then(async response => ({ status: response.status, body: await response.text() }));
+    let closing, drained = false;
+    checking.catch(() => {});
+    try {
+      await entered.promise;
+      closing = f.app.close().then(() => { drained = true; }); closing.catch(() => {});
+      await setupClosed.promise; await turn();
+      assert.equal(drained, false);
+      const blocked = await f.request(route, { body });
+      assert.equal(blocked.status, 503, await blocked.text());
+      assert.deepEqual(events, ['setup'], 'Dependency teardown must wait for the admitted operation.');
+      operationGate.resolve(); await snapshotEntered.promise; await turn();
+      assert.equal(drained, false);
+      assert.deepEqual(events, ['setup', 'snapshot'], 'Dependency teardown must also wait for the complete response snapshot.');
+      snapshotGate.resolve();
+      const response = await checking;
+      assert.equal(response.status, 200, response.body);
+      await closing;
+      assert.equal(drained, true);
+      assert.deepEqual(events, ['setup', 'snapshot', 'remote', 'connector']);
+    } finally {
+      operationGate.resolve(); snapshotGate.resolve();
+      const [response, shutdown] = await Promise.allSettled([checking, closing]);
+      if (response.status === 'rejected') t.diagnostic('Admitted response failed: ' + response.reason);
+      else if (response.value.status !== 200) t.diagnostic('Admitted HTTP ' + response.value.status + ': ' + response.value.body);
+      if (shutdown.status === 'rejected') t.diagnostic('Shutdown failed: ' + shutdown.reason);
+    }
+  });
 });
 
 

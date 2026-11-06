@@ -1,9 +1,10 @@
+// Historical schema-13 regression; canonical schema-14 behavior has separate production-engine acceptance.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { TaskStateStore, TASK_TOOL, createTaskToolHandler } from '../lib/task-state.mjs';
+import { TaskStateStore, TASK_TOOL, createTaskToolHandler } from './fixture-legacy-task-state.mjs';
 
 const payload = result => JSON.parse(result.contentItems.find(item => item.type === 'inputText').text);
 const action = () => ({ id: 'inspect', title: 'Inspect the requested result', kind: 'action', status: 'pending', doneWhen: 'The requested result has been inspected.' });

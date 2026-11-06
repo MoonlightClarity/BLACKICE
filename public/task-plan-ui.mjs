@@ -1,6 +1,7 @@
 import { taskPlanView, planKindLabel, planAncestors, visiblePlanNodes, reconcilePlanSession, selectPlanStep, togglePlanBranch, planKeyboard, planStepContext, savedPlanNotes, planLogicFields, planBranchText, planAttemptHistory } from './task-plan-model.mjs';
 import { taskPlanMap, renderTaskPlanMapSVG, taskPlanExport, planMapZoom, planMapFitZoom, reconcilePlanMapSession } from './task-plan-map.mjs';
 import { planningModeLabel } from './planning-mode.mjs';
+import { renderContractHeader, renderContractInspector, renderContractJournal } from './planning-contract-ui.mjs';
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 const paths = {
@@ -35,10 +36,11 @@ export function installTaskPlanStyles() {
   const link = document.createElement('link'); link.id = 'blackice-task-plan-styles'; link.rel = 'stylesheet'; link.href = '/task-plan.css'; document.head.append(link);
 }
 
-const phaseCopy = view => ({ preparing: 'Preparing the plan', unavailable: 'Conversation only', missing: 'Plan not recorded', empty: 'No saved steps yet', off: 'Planning off', working: view.active.length > 1 ? `${view.active.length} steps in progress` : 'In progress', closing: 'Closing unused paths', blocked: 'Needs attention', complete: 'Plan complete', paused: view.planningEnabled ? 'Progress saved' : 'Planning off · saved notes' }[view.phase]);
+const phaseCopy = view => view.contractVersion === 2 ? ({ working: 'In progress', complete: 'Outcomes satisfied', blocked: 'Needs attention', paused: 'Progress saved' }[view.phase] || 'Task plan') : ({ preparing: 'Preparing the plan', unavailable: 'Conversation only', missing: 'Plan not recorded', empty: 'No saved steps yet', off: 'Planning off', working: view.active.length > 1 ? `${view.active.length} steps in progress` : 'In progress', closing: 'Closing unused paths', blocked: 'Needs attention', complete: 'Plan complete', paused: view.planningEnabled ? 'Progress saved' : 'Planning off · saved notes' }[view.phase]);
 const button = (action, label, glyph, extra = '') => `<button type="button" class="task-plan-control" data-plan-action="${action}" ${extra}>${glyph ? icon(glyph, 16) : ''}<span>${escape(label)}</span></button>`;
 
 export function renderPlanHeader(view, options = {}) {
+  if (view.contractVersion === 2) return renderContractHeader(view);
   const title = view.title.length > 160 ? `${view.title.slice(0, 157)}…` : view.title;
   const expandedGoal = view.goal.length > title.length || title.length > 64 || /\n/.test(view.goal);
   const goal = expandedGoal ? `<details class="task-plan-goal" data-plan-disclosure="goal"><summary><h2>${escape(title)}</h2><span class="task-plan-goal-toggle"><span>Full task</span>${icon('chevron', 14)}</span></summary><p class="task-plan-goal-text" tabindex="0" role="region" aria-label="Full task">${escape(view.goal)}</p></details>` : `<h2>${escape(title)}</h2>`;
@@ -61,6 +63,7 @@ function field(label, value, modifier = '') {
 export function renderPlanInspector(view, session, options = {}, prefix = 'task-plan') {
   const step = view.byId.get(session.selectedId);
   if (!step) return '';
+  if (view.contractVersion === 2) return renderContractInspector(view, step, prefix) + (options.canGuide && options.onDraftDirection ? `<div class="task-plan-detail-actions">${button('guide', 'Guide this work item', 'guide')}<span>Opens a draft</span></div>` : '');
   const path = planAncestors(view, step.id).map(id => view.byId.get(id));
   const breadcrumbs = path.length ? `<nav class="task-plan-breadcrumbs" aria-label="Step parents">${path.map(parent => `<button type="button" data-plan-action="select" data-step-id="${escape(parent.id)}" title="${escape(parent.title)}">${escape(parent.number)} ${escape(parent.title)}</button>`).join(`<span aria-hidden="true">${icon('chevron', 10)}</span>`)}</nav>` : '';
   const dependencies = step.dependsOn.map(id => view.byId.get(id)).filter(Boolean);
@@ -77,7 +80,7 @@ export function renderPlanInspector(view, session, options = {}, prefix = 'task-
 function renderInspectorTray(view, session, expanded, compact, prefix) {
   const step = view.byId.get(session.selectedId);
   if (!step) return '';
-  return `<button type="button" class="task-plan-inspector-toggle" data-plan-action="details" aria-expanded="${expanded}" aria-controls="${prefix}-detail-body"><span class="task-plan-inspector-selection"><small>${step.isGroup ? 'Branch' : 'Step'} ${escape(step.number)} · ${escape(step.statusLabel)}</small><strong id="${prefix}-inspector-title">${escape(step.title)}</strong></span><span class="task-plan-inspector-toggle-label">${compact && expanded ? session.presentation === 'map' ? 'Back to map' : 'Back to outline' : expanded ? 'Hide details' : 'Details'}${icon('chevron', 15)}</span></button>`;
+  return `<button type="button" class="task-plan-inspector-toggle" data-plan-action="details" aria-expanded="${expanded}" aria-controls="${prefix}-detail-body"><span class="task-plan-inspector-selection"><small>${step.contractWorkItem ? 'Work item' : step.isGroup ? 'Branch' : 'Step'} ${escape(step.number)} · ${escape(step.statusLabel)}</small><strong id="${prefix}-inspector-title">${escape(step.title)}</strong></span><span class="task-plan-inspector-toggle-label">${compact && expanded ? session.presentation === 'map' ? 'Back to map' : 'Back to outline' : expanded ? 'Hide details' : 'Details'}${icon('chevron', 15)}</span></button>`;
 }
 
 function renderEmpty(view) {
@@ -184,6 +187,7 @@ export function initTaskPlanUI({ mount, onArtifact, onMethod, onDraftDirection, 
   function render({ announce = false } = {}) {
     if (destroyed) return;
     session = reconcilePlanMapSession(view, session);
+    if (view.contractVersion === 2) session = { ...session, presentation: 'outline', mapFocusId: null };
     // Native details toggles are queued; read the owned DOM before replacing it.
     captureGoalDisclosure();
     if (session.inspectorStepId !== session.selectedId) { session.inspectorStepId = session.selectedId; session.inspectorTop = 0; inspector.scrollTop = 0; }
@@ -191,10 +195,11 @@ export function initTaskPlanUI({ mount, onArtifact, onMethod, onDraftDirection, 
     const canvas = mapCanvas();
     if (currentKey === renderedKey && session.presentation === 'map' && canvas && !region('map').hidden) { session.mapScrollTop = canvas.scrollTop; session.mapScrollLeft = canvas.scrollLeft; }
     mount.dataset.planPhase = view.phase; mount.dataset.planTask = view.taskId; mount.dataset.planOrigin = view.origin;
+    tree.setAttribute('aria-label', view.contractVersion === 2 ? 'Work items' : 'Task steps');
     const expanded = detailsExpanded(), mapped = session.presentation === 'map'; mount.dataset.planCompact = String(compact); mount.dataset.planDetails = expanded ? 'open' : 'closed'; mount.dataset.planPresentation = session.presentation;
     replaceRegion('header', renderPlanHeader(view, options()));
     const goal = $('[data-plan-disclosure="goal"]'); if (goal) goal.open = session.goalOpen === true; renderedKey = currentKey;
-    replaceRegion('toolbar', `${view.nodes.length ? `<div class="task-plan-view-tabs" role="tablist" aria-label="Plan view"><button id="${prefix}-outline-tab" type="button" role="tab" data-plan-action="view-outline" aria-controls="${prefix}-outline" aria-selected="${!mapped}" tabindex="${mapped ? '-1' : '0'}">${icon('sequence', 14)}<span>Outline</span></button><button id="${prefix}-map-tab" type="button" role="tab" data-plan-action="view-map" aria-controls="${prefix}-map-panel" aria-selected="${mapped}" tabindex="${mapped ? '0' : '-1'}">${icon('map', 14)}<span>Mind map</span></button></div>` : '<span class="task-plan-outline-label">Steps and branches</span>'}<div class="task-plan-outline-actions">${view.focus ? button('current', 'Current step', 'focus', `title="Locate ${escape(view.focus.title)}"`) : ''}<details class="task-plan-menu" data-plan-disclosure="menu"><summary aria-label="Plan actions" title="Plan actions">${icon('more', 18)}</summary><div>${view.nodes.some(node => node.isGroup) ? button('expand-all', 'Expand all branches', 'expand') + button('collapse-all', 'Collapse all branches', 'collapse') : ''}${view.nodes.length ? button('export-svg', 'Export editable SVG', 'download') + button('export-mm', 'Export Freeplane (.mm)', 'download') : ''}${onOpenPlanning ? button('planning', 'Open Planning', 'plan') : ''}<p>Viewing and expanding steps starts no work.</p></div></details></div>`);
+    replaceRegion('toolbar', view.contractVersion === 2 ? `<span class="task-plan-outline-label">Work items</span><div class="task-plan-outline-actions">${view.focus ? button('current', 'Current work item', 'focus') : ''}${onOpenPlanning ? button('planning', 'Open Planning', 'plan') : ''}<span>Viewing a work item starts no work.</span></div>` : `${view.nodes.length ? `<div class="task-plan-view-tabs" role="tablist" aria-label="Plan view"><button id="${prefix}-outline-tab" type="button" role="tab" data-plan-action="view-outline" aria-controls="${prefix}-outline" aria-selected="${!mapped}" tabindex="${mapped ? '-1' : '0'}">${icon('sequence', 14)}<span>Outline</span></button><button id="${prefix}-map-tab" type="button" role="tab" data-plan-action="view-map" aria-controls="${prefix}-map-panel" aria-selected="${mapped}" tabindex="${mapped ? '0' : '-1'}">${icon('map', 14)}<span>Mind map</span></button></div>` : '<span class="task-plan-outline-label">Steps and branches</span>'}<div class="task-plan-outline-actions">${view.focus ? button('current', 'Current step', 'focus', `title="Locate ${escape(view.focus.title)}"`) : ''}<details class="task-plan-menu" data-plan-disclosure="menu"><summary aria-label="Plan actions" title="Plan actions">${icon('more', 18)}</summary><div>${view.nodes.some(node => node.isGroup) ? button('expand-all', 'Expand all branches', 'expand') + button('collapse-all', 'Collapse all branches', 'collapse') : ''}${view.nodes.length ? button('export-svg', 'Export editable SVG', 'download') + button('export-mm', 'Export Freeplane (.mm)', 'download') : ''}${onOpenPlanning ? button('planning', 'Open Planning', 'plan') : ''}<p>Viewing and expanding steps starts no work.</p></div></details></div>`);
     region('toolbar').hidden = compact && expanded; region('toolbar').inert = compact && expanded;
     viewport.hidden = compact && expanded; viewport.inert = compact && expanded;
     region('empty').hidden = view.nodes.length > 0; tree.hidden = !view.nodes.length || mapped; tree.inert = tree.hidden;
@@ -205,12 +210,12 @@ export function initTaskPlanUI({ mount, onArtifact, onMethod, onDraftDirection, 
     inspector.hidden = externalInspector || !session.selectedId;
     replaceRegion('inspector', session.selectedId ? renderInspectorTray(view, session, expanded, compact, prefix) + `<div id="${prefix}-detail-body" class="task-plan-detail-body"${expanded ? '' : ' hidden inert'}>${renderPlanInspector(view, session, options(), prefix)}</div>` : '');
     if (detailBody()) { detailBody().hidden = !expanded; detailBody().inert = !expanded; }
-    replaceRegion('footer', `${view.state.interruption ? `<p class="task-plan-interruption">${icon('blocked', 14)}<span>${escape(view.state.interruption.reason || 'Work stopped. The saved plan is kept.')}</span></p>` : ''}<div class="task-plan-footer-line">${!view.planningEnabled ? '<p>Automatic planning is off. Saved steps and notes are kept.</p>' : ''}${current.canContinue && current.settled && !view.live && !view.complete && onContinue ? button('continue', 'Draft next action', 'guide') : ''}${current.canRepeat && current.settled && !view.live && view.complete && current.runStatus === 'completed' && onRepeat ? button('repeat', 'Make repeatable', 'method') : ''}</div>`);
-    region('footer').hidden = !view.state.interruption && view.planningEnabled && !(current.canContinue && current.settled && !view.live && !view.complete && onContinue) && !(current.canRepeat && current.settled && !view.live && view.complete && current.runStatus === 'completed' && onRepeat);
+    replaceRegion('footer', `${view.contractVersion === 2 ? renderContractJournal(view) : ''}${view.state.interruption ? `<p class="task-plan-interruption">${icon('blocked', 14)}<span>${escape(view.state.interruption.reason || 'Work stopped. The saved plan is kept.')}</span></p>` : ''}<div class="task-plan-footer-line">${!view.planningEnabled ? '<p>Automatic planning is off. Saved steps and notes are kept.</p>' : ''}${current.canContinue && current.settled && !view.live && !view.complete && onContinue ? button('continue', 'Draft next action', 'guide') : ''}${current.canRepeat && current.settled && !view.live && view.complete && current.runStatus === 'completed' && onRepeat ? button('repeat', 'Make repeatable', 'method') : ''}</div>`);
+    region('footer').hidden = view.contractVersion !== 2 && (!view.state.interruption && view.planningEnabled && !(current.canContinue && current.settled && !view.live && !view.complete && onContinue) && !(current.canRepeat && current.settled && !view.live && view.complete && current.runStatus === 'completed' && onRepeat));
     viewport.scrollTop = scrollTop; viewport.scrollLeft = scrollLeft; inspector.scrollTop = expanded ? inspectorTop : 0;
     if (mapped && mapCanvas()) { mapCanvas().scrollTop = session.mapScrollTop || 0; mapCanvas().scrollLeft = session.mapScrollLeft || 0; }
     restoreFocus(token); saveSession();
-    if (announce) region('announcement').textContent = `${phaseCopy(view)}. ${view.progress.done} of ${view.progress.total} steps done${view.progress.skipped ? `, ${view.progress.skipped} skipped` : ''}.`;
+    if (announce) region('announcement').textContent = `${phaseCopy(view)}. ${view.progress.done} of ${view.progress.total} ${view.contractVersion === 2 ? 'work items satisfied' : 'steps done'}${view.progress.skipped ? `, ${view.progress.skipped} skipped` : ''}.`;
   }
   function hasTextSelection() {
     const selection = typeof window !== 'undefined' ? window.getSelection?.() : null;
@@ -268,11 +273,12 @@ export function initTaskPlanUI({ mount, onArtifact, onMethod, onDraftDirection, 
     return true;
   }
   function setPresentation(value, { focusTab = false } = {}) {
-    if (!['outline', 'map'].includes(value) || !view.nodes.length) return;
+    if (!['outline', 'map'].includes(value) || !view.nodes.length || view.contractVersion === 2 && value === 'map') return;
     recordScroll(); session.presentation = value; render();
     if (focusTab) $(`[data-plan-action="view-${value}"]`)?.focus({ preventScroll: true });
   }
   function focusMap(id) {
+    if (view.contractVersion === 2) return false;
     if (id !== null && !view.byId.has(id)) return false;
     recordScroll(); session = { ...session, presentation: 'map', mapFocusId: id, mapZoom: 1 };
     if (id) { session = selectPlanStep(view, session, id); if (view.byId.get(id).isGroup) session = togglePlanBranch(view, session, id, true); }

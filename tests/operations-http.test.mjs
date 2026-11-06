@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import { mkdtemp,readFile,writeFile,rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createHarnessServer } from '../server.mjs';
+import { createHarnessServer } from './fixture-legacy-harness-server.mjs';
 import { fixtureDeploymentReadiness } from './fixture-deployment-readiness.mjs';
 import { recordFixturePlan } from './fixture-task-plan.mjs';
 

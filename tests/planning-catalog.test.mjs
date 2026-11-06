@@ -11,7 +11,7 @@ function context() {
   const runs = new Map([['a-next', { id: 'a-next', taskId: 'a', input: 'Continue working', status: 'running', createdAt: '2026-10-19T10:01:00Z', updatedAt: '2026-10-19T10:01:00Z' }]]), calls = [], discoveryCalls = [], events = [];
   return { entries, calls, discoveryCalls, events, conversations: { list: () => structuredClone(entries), status: () => ({ healthy: true }) },
     engine: { runs, listRuns: () => [...runs.values()].map(run => structuredClone(run)), adoptTaskState: (run, state) => { if ((run.taskState?.revision || 0) >= state.revision) return false; run.taskState = structuredClone(state); return true; }, notify: (...args) => events.push(args) },
-    tasks: { async listPlans(options) {
+    tasks: { async get(taskId) { return { taskId, taskSchemaVersion: 13, revision: 3, goal: 'Saved ' + taskId, steps: [] }; }, async listPlans(options) {
       // This saved-chat fixture contains no standalone planning documents.
       if (options.standaloneOnly) { discoveryCalls.push(options); return { plans: [], total: 0, limit: options.limit, offset: options.offset, nextOffset: null, hasMore: false, errors: [], healthy: true }; }
       calls.push(options); return { plans: options.taskIds.map(taskId => ({ taskId, revision: 3, goal: 'Saved ' + taskId, progress: { total: 2, done: 0 } })), total: options.taskIds.length, limit: options.limit, offset: options.offset, nextOffset: null, hasMore: false, errors: [], healthy: true }; }, async editPlan(taskId, value, options) { calls.push({ taskId, value, options }); return { taskId, revision: options.expectedRevision + 1, steps: [], progress: { done: 0, total: 0 } }; } }, onUpdated: event => events.push(event) };
@@ -87,7 +87,7 @@ test('Planning renamed-title matches are added within the visible task allowlist
 test('Planning commits only the requested work edit and publishes continuity without changing execution', async () => {
   const c = context(), value = { expectedRevision: 3, operations: [{ type: 'metadata', patch: { goal: 'A shared goal' } }] };
   const saved = await editPlanningWorkspace(c, 'a', value);
-  assert.equal(saved.revision, 4); assert.deepEqual(c.calls[0], { taskId: 'a', value: { operations: value.operations }, options: { expectedRevision: 3, source: 'human', executionGuardrails: false } });
+  assert.equal(saved.revision, 4); assert.deepEqual(c.calls[0], { taskId: 'a', value: { operations: value.operations }, options: { expectedRevision: 3, source: 'human', executionGuardrails: false, actor: { type: 'human-client', id: 'local-user', name: 'Local user' } } });
   assert.equal(c.engine.runs.get('a-next').status, 'running'); assert.equal(c.engine.runs.get('a-next').taskState.revision, 4); assert.equal(c.events[0][3].type, 'task.state'); assert.equal(c.events[1].type, 'planning.updated');
 });
 test('Planning rejects ambiguous payloads and unavailable chats before writing or publishing', async () => {

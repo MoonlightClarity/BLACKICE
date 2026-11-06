@@ -1,10 +1,11 @@
+// Historical schema-13 protocol regression; schema-14 behavior has separate canonical-contract and production-engine acceptance coverage.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { TaskStateStore, TASK_SCHEMA_VERSION, TASK_WORKER_TOOL, taskToolForVersion, taskWorkerToolForVersion, createTaskToolHandler } from '../lib/task-state.mjs';
+import { TaskStateStore, TASK_SCHEMA_VERSION, TASK_WORKER_TOOL, taskToolForVersion, taskWorkerToolForVersion, createTaskToolHandler } from './fixture-legacy-task-state.mjs';
 
 const parsed = response => JSON.parse(response.contentItems[0].text);
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');

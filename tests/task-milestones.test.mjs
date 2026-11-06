@@ -1,9 +1,10 @@
+// Historical schema-13 regression; canonical schema-14 behavior has separate production-engine acceptance.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { TaskStateStore, TASK_LIMITS, TASK_TOOL, TASK_TOOL_V3, TASK_TOOL_V8, TASK_TOOL_V9, TASK_TOOL_V10, TASK_TOOL_V11, TASK_TOOL_V12, TASK_SCHEMA_VERSION, LEGACY_TASK_TOOL, TASK_INSTRUCTIONS, TASK_INSTRUCTIONS_V3, LEGACY_TASK_INSTRUCTIONS, createTaskToolHandler, taskToolForVersion, taskInstructionsForVersion } from '../lib/task-state.mjs';
+import { TaskStateStore, TASK_LIMITS, TASK_TOOL, TASK_TOOL_V3, TASK_TOOL_V8, TASK_TOOL_V9, TASK_TOOL_V10, TASK_TOOL_V11, TASK_TOOL_V12, TASK_SCHEMA_VERSION, LEGACY_TASK_TOOL, TASK_INSTRUCTIONS, TASK_INSTRUCTIONS_V3, LEGACY_TASK_INSTRUCTIONS, createTaskToolHandler, taskToolForVersion, taskInstructionsForVersion } from './fixture-legacy-task-state.mjs';
 
 async function harness(t) {
   const directory = await mkdtemp(path.join(tmpdir(), 'relay-milestones-test-')), cwd = path.join(directory, 'workspace'); await mkdir(cwd);

@@ -1,9 +1,10 @@
+// Historical schema-13 protocol regression; current canonical evidence and handoff have separate acceptance.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { TaskStateStore, createTaskToolHandler } from '../lib/task-state.mjs';
+import { TaskStateStore, createTaskToolHandler } from './fixture-legacy-task-state.mjs';
 
 const parsed = result => JSON.parse(result.contentItems[0].text);
 const prepare = { receiptId: 'one-send', operation: 'prepare', destination: 'https://example.invalid/compose', content: 'The exact authorized content.' };

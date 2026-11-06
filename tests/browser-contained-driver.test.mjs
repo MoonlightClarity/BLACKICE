@@ -299,7 +299,8 @@ async function observedSelectFixture(t, names) {
     getBoundingClientRect() { return { x: 0, y: 0, width: 100, height: 20 }; },
     dispatchEvent() {},
   }));
-  const document = { title: 'Form', readyState: 'complete', documentElement: { children: controls }, getElementById: () => null };
+  const document = { forms: [], title: 'Form', readyState: 'complete', documentElement: { children: controls }, getElementById: () => null,
+    querySelectorAll: selector => selector === 'input,select,textarea' ? controls : [] };
   const context = vm.createContext({ document, location: { href: tab.url }, getComputedStyle: () => ({ display: 'block', visibility: 'visible' }), Event: class Event { constructor(type, options) { this.type = type; this.options = options; } } });
   const frame = tab.window.webContents.mainFrame;
   frame.executeJavaScript = async code => JSON.parse(JSON.stringify(await vm.runInContext(code, context)));
@@ -1850,4 +1851,60 @@ test('completed agent with unresolved CAPTCHA hands back the same live page inst
   const cleaned = await driver.releaseOwner(owner, { status: 'completed' });
   assert.ok(cleaned.closed.includes(next.id), 'unrelated completed work still follows normal tab cleanup');
   assert.ok(driver.tabs.has(tab.id), 'the unresolved human-owned challenge is not removed by later cleanup');
+});
+
+for (const status of ['failed', 'cancelled']) test('continuation cleanup retains the exact live owner after ' + status, async t => {
+  const { driver } = await fixture(t); await driver.init();
+  const browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());
+  const owner = { taskId: 'continuation-' + status, nodeId: 'agent', runId: 'original-run' };
+  const first = await browser.perform({ action: 'open', url: 'https://example.test/uncertain-submission' }, { owner });
+  const tab = driver.tabs.get(first.tabId), liveWindow = tab.window, loads = [...liveWindow.loads];
+  const receipt = await browser.releaseOwner(owner, { status, retainForContinuation: true });
+  assert.deepEqual(receipt.suspended, []);
+  assert.deepEqual(receipt.released, []);
+  assert.deepEqual(receipt.retained.map(item => item.tabId), [tab.id]);
+  assert.equal(tab.window, liveWindow, 'a continuation keeps the live document rather than reloading the last URL');
+  assert.equal(liveWindow.isDestroyed(), false);
+  assert.deepEqual(tab.owner, owner);
+  assert.equal(driver.status().tabs.find(item => item.tabId === tab.id).documentId, first.documentId);
+
+  for (const foreign of [{ ...owner, taskId: 'another-task' }, { ...owner, nodeId: 'another-worker' }]) {
+    await assert.rejects(browser.perform({ action: 'read', tabId: tab.id }, { owner: foreign }), { code: 'BROWSER_TAB_OWNERSHIP' });
+  }
+  const continued = { ...owner, runId: 'continued-run' };
+  const current = await browser.perform({ action: 'read', tabId: tab.id }, { owner: continued });
+  assert.equal(current.documentId, first.documentId);
+  assert.deepEqual(liveWindow.loads, loads, 'the supported continuation observes the existing page without another load');
+  assert.deepEqual(tab.owner, continued, 'only the run lease changes within the same task and worker');
+  assert.deepEqual((await browser.releaseOwner(owner, { status: 'completed' })).closed, []);
+  assert.equal(tab.window, liveWindow, 'late cleanup of the original run cannot close the continued run page');
+
+  await browser.perform({ action: 'transfer_ownership', tabId: tab.id, expectedUrl: current.url,
+    expectedDocumentId: current.documentId, destination: 'user' }, { source: 'user' });
+  assert.equal(tab.owner, null);
+  await browser.releaseOwner(continued, { status: 'cancelled', retainForContinuation: true });
+  assert.equal(tab.owner, null, 'explicit human ownership cannot be reclaimed by later continuation cleanup');
+  await assert.rejects(browser.perform({ action: 'read', tabId: tab.id }, { owner: { ...continued, runId: 'later-run' } }),
+    { code: 'BROWSER_TAB_OWNERSHIP' });
+});
+
+test('continuation retention preserves explicit human handback and default terminal cleanup', async t => {
+  const { driver } = await fixture(t); await driver.init();
+  for (const options of [{ status: 'failed' }, { status: 'awaiting-user', retainForContinuation: true }]) {
+    const owner = { taskId: 'cleanup-' + options.status, nodeId: 'agent', runId: 'original-run' };
+    const tab = driver.newTab('https://example.test/cleanup', { owner }); await tab.loading;
+    const liveWindow = tab.window, before = driver.status().tabs.find(item => item.tabId === tab.id);
+    const receipt = await driver.releaseOwner(owner, options);
+    assert.deepEqual(receipt.released, [tab.id]);
+    assert.equal(tab.owner, null);
+    assert.equal(tab.folderId, 'folder_user');
+    assert.equal(driver.status().tabs.find(item => item.tabId === tab.id).url, before.url);
+    if (options.status === 'awaiting-user') {
+      assert.equal(tab.window, liveWindow);
+      assert.equal(driver.status().tabs.find(item => item.tabId === tab.id).documentId, before.documentId);
+    } else assert.deepEqual(receipt.suspended, [tab.id], 'default terminal cleanup still suspends and returns the page');
+  }
+  const owner = { taskId: 'completed-cleanup', nodeId: 'agent', runId: 'run' };
+  const tab = driver.newTab('https://example.test/completed', { owner }); await tab.loading;
+  assert.deepEqual((await driver.releaseOwner(owner, { status: 'completed', retainForContinuation: true })).closed, [tab.id]);
 });

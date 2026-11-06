@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { HarnessEngine } from '../lib/engine.mjs';
+import { HarnessEngine } from './fixture-legacy-planning-engine.mjs';
 import { TaskStateStore } from '../lib/task-state.mjs';
 import { createHarnessServer } from '../server.mjs';
 import { missionProgress } from '../public/mission-model.mjs';

@@ -1,3 +1,15 @@
+/* Outcome criteria and actual history are separate from the semantic outline. */
+html[data-blackice-ui] body #app .task-plan-outcomes { margin-block: 12px 4px; }
+html[data-blackice-ui] body #app .task-plan-outcomes h3 { margin: 0 0 6px; font-size: 12px; }
+html[data-blackice-ui] body #app .task-plan-outcomes ul { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.5; }
+html[data-blackice-ui] body #app .task-plan-outcomes li { margin-block: 4px; overflow-wrap: anywhere; }
+html[data-blackice-ui] body #app .task-plan-operation-history { min-width: 0; max-width: 100%; overflow: auto; margin-block: 10px; }
+html[data-blackice-ui] body #app .task-plan-operation-history summary { cursor: pointer; font-weight: 600; font-size: 12px; }
+html[data-blackice-ui] body #app .task-plan-operation-history p { font-size: 12px; line-height: 1.5; }
+html[data-blackice-ui] body #app .task-plan-operation-history table { width: 100%; border-collapse: collapse; font-size: 11px; }
+html[data-blackice-ui] body #app .task-plan-operation-history th,
+html[data-blackice-ui] body #app .task-plan-operation-history td { padding: 7px; text-align: left; vertical-align: top; border-bottom: 1px solid #92b5c52e; overflow-wrap: anywhere; }
+
 /* Outline and map share the same saved task, selection and details tray. */
 html[data-blackice-ui] body #app .task-plan-view-tabs {
   display: inline-flex; flex: 0 0 auto; gap: 3px; padding: 3px;

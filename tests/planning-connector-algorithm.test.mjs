@@ -6,7 +6,7 @@ import path from 'node:path';
 import { RemoteAgentAPI, validRemoteArguments } from '../lib/remote-agent-api.mjs';
 import { ChatGPTPlanningAPI } from '../lib/chatgpt-planning.mjs';
 import { createChatGPTToolCatalog } from '../lib/chatgpt-tool-catalog.mjs';
-import { TaskStateStore, TASK_TOOL, taskToolForVersion } from '../lib/task-state.mjs';
+import { TaskStateStore, TASK_TOOL_V13 as TASK_TOOL, taskToolForVersion } from '../lib/task-state.mjs';
 
 const client = { id: 'algorithm-client', kind: 'agent', label: 'Connected planning client', scopes: ['read', 'planning:write'] };
 const literal = value => ({ value });

@@ -1,3 +1,5 @@
+import { TASK_SCHEMA_VERSION as CURRENT_TASK_SCHEMA_VERSION } from '../lib/task-state.mjs';
+// Historical schema-13 regression; canonical schema-14 behavior has separate production-engine acceptance.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
@@ -5,7 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { normalizeTaskPlan, runtimeTaskPlan, taskPlanProgress, TASK_PLAN_LIMITS } from '../lib/task-plan.mjs';
-import { TaskStateStore, TASK_TOOL, TASK_TOOL_V10, TASK_TOOL_V11, TASK_TOOL_V12, TASK_SCHEMA_VERSION, TASK_TOOL_V9, TASK_TOOL_V6, TASK_TOOL_V5, TASK_TOOL_V4, TASK_TOOL_V3, PREVIOUS_TASK_TOOL, LEGACY_TASK_TOOL, TASK_INSTRUCTIONS, TASK_INSTRUCTIONS_V10, TASK_INSTRUCTIONS_V11, TASK_INSTRUCTIONS_V12, TASK_INSTRUCTIONS_V9, TASK_INSTRUCTIONS_V6, TASK_INSTRUCTIONS_V5, TASK_INSTRUCTIONS_V4, TASK_INSTRUCTIONS_V3, PREVIOUS_TASK_INSTRUCTIONS, LEGACY_TASK_INSTRUCTIONS, taskToolForVersion, taskInstructionsForVersion, createTaskToolHandler } from '../lib/task-state.mjs';
+import { TaskStateStore, TASK_TOOL, TASK_TOOL_V10, TASK_TOOL_V11, TASK_TOOL_V12, TASK_SCHEMA_VERSION, TASK_TOOL_V9, TASK_TOOL_V6, TASK_TOOL_V5, TASK_TOOL_V4, TASK_TOOL_V3, PREVIOUS_TASK_TOOL, LEGACY_TASK_TOOL, TASK_INSTRUCTIONS, TASK_INSTRUCTIONS_V10, TASK_INSTRUCTIONS_V11, TASK_INSTRUCTIONS_V12, TASK_INSTRUCTIONS_V9, TASK_INSTRUCTIONS_V6, TASK_INSTRUCTIONS_V5, TASK_INSTRUCTIONS_V4, TASK_INSTRUCTIONS_V3, PREVIOUS_TASK_INSTRUCTIONS, LEGACY_TASK_INSTRUCTIONS, taskToolForVersion, taskInstructionsForVersion, createTaskToolHandler } from './fixture-legacy-task-state.mjs';
 import { BUILTIN_METHODS, BUILTIN_TASK_TYPES, BUILTIN_STEP_TYPES } from '../lib/process-ontology.mjs';
 import { MethodStore } from '../lib/methods.mjs';
 
@@ -210,7 +212,7 @@ test('task tool versions 1 through 6 retain their exact native catalogs and inst
   }
   assert.ok(TASK_TOOL.inputSchema.properties.action.enum.includes('describe')); assert.ok(TASK_TOOL.inputSchema.properties.steps.items.properties.kind);
   assert.equal(taskToolForVersion(8).inputSchema.properties.steps.items.properties.operation, undefined);
-  assert.throws(() => taskToolForVersion(TASK_SCHEMA_VERSION + 1), { code: 'TASK_SCHEMA_UNSUPPORTED' }); assert.match(TASK_INSTRUCTIONS, /normal way to work on every request/); assert.doesNotMatch(TASK_INSTRUCTIONS, /need no saved plan/);
+  assert.throws(() => taskToolForVersion(CURRENT_TASK_SCHEMA_VERSION + 1), { code: 'TASK_SCHEMA_UNSUPPORTED' }); assert.match(TASK_INSTRUCTIONS, /normal way to work on every request/); assert.doesNotMatch(TASK_INSTRUCTIONS, /need no saved plan/);
 });
 
 test('legacy handlers reject new actions and schema fields instead of silently executing undeclared capabilities', async t => {

@@ -43,7 +43,8 @@ test('the full native catalog retains the exact 28-tool public contract and fing
     'blackice_get_swarm_plan', 'blackice_get_plan_groups', 'blackice_edit_plan', 'blackice_edit_plan_groups',
   ]);
   assert.deepEqual(catalog.status(), {
-    sha256: 'fac46a7bb350722efdca7274a23a09757e13f426c85195d59bc89a4421374b14',
+    // Reviewed canonical criterion evidence units and bounded effect guidance; schema 13 stays frozen.
+    sha256: 'd2034c0ddeff8fe6d9823685e84a18b5b82020a2907b3af457b7f38462076af0',
     toolCount: 28,
     serverVersion: '2.33.5',
   });
@@ -72,6 +73,15 @@ test('the full native catalog retains the exact 28-tool public contract and fing
   assert.equal(edits.add.step.properties.branch.properties.if.$ref,'#/$defs/planExpression');
   assert.deepEqual(planning.$defs.planExpression.anyOf.filter(value=>value.properties).map(value=>Object.keys(value.properties)[0]),['fact','and','or','not','xor','compare']);
   assert.equal(edits.revisit.reason.minLength,1);
+  const replacement=planning.properties.operations.items.oneOf.find(operation=>operation.properties.type.const==='replace_contract');
+  assert.deepEqual(replacement.required,['type','contract']);
+  assert.equal(replacement.additionalProperties,false);
+  assert.equal(edits.replace_contract.contract.additionalProperties,false);
+  assert.equal(edits.replace_contract.contract.properties.contractVersion.const,2);
+  assert.equal(edits.replace_contract.contract.properties.workItems.minItems,1);
+  assert.equal(edits.replace_contract.contract.properties.planEpoch,undefined);
+  assert.equal(edits.replace_contract.contract.properties.runtime,undefined);
+  assert.equal(edits.replace_contract.contract.properties.outcomes,undefined);
 });
 
 test('each provider is sampled once and dispatch remains paired with its captured definition', async () => {

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { TaskStateStore, createTaskToolHandler, TASK_SCHEMA_VERSION, TASK_TOOL_V5, taskToolForVersion } from '../lib/task-state.mjs';
+import { TaskStateStore, createTaskToolHandler, TASK_SCHEMA_VERSION, TASK_TOOL_V5, taskToolForVersion } from './fixture-legacy-task-state.mjs';
 import { executionReadiness } from '../lib/planning-runtime.mjs';
 import { createSwarmWorkflow } from '../public/swarm-model.mjs';
 

@@ -84,7 +84,7 @@ test('saved v4 tools retain their declared compact catalog while rejecting field
 
 test('an unhealthy optional library falls back to the actual bundled methods and says which catalog was loaded', async () => {
   const methods = { status: () => ({ healthy: false, error: 'Saved custom file cannot be read.' }), ontology() { assert.fail('Unavailable custom vocabulary must not be used.'); }, list() { assert.fail('Unavailable custom definitions must not be used.'); } };
-  const handler = createTaskToolHandler({ store: {}, taskId: 'fallback-task', methods });
+  const handler = createTaskToolHandler({ store: {}, taskId: 'fallback-task', methods, schemaVersion: 13 });
   const response = await handler({ name: 'relay_task', arguments: { action: 'describe', methodQuery: 'ACH' } }); assert.equal(response.success, true);
   const page = JSON.parse(response.contentItems[0].text); assert.equal(page.libraryStatus.source, 'builtin-methods'); assert.equal(page.libraryStatus.healthy, false); assert.equal(page.methods[0].id, 'catalyst-ach');
   assert.deepEqual(page.ontology.taskTypes.map(item => item.id), BUILTIN_TASK_TYPES.map(item => item.id)); assert.deepEqual(page.ontology.stepTypes.map(item => item.id), BUILTIN_STEP_TYPES.map(item => item.id));

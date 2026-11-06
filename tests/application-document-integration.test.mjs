@@ -211,7 +211,13 @@ test('Planning Off native application catalogs without a version marker retain t
   const first = f.app.engine.startRun({ workflow: graph, planningMode: 'off', input: 'Check the initially attached application schema.' }); await f.app.engine.executions.get(first.id); assert.equal(f.app.engine.getRun(first.id).nodes.agent.applicationSchemaVersion, APPLICATION_SCHEMA_VERSION);
   // An actual pre-upgrade native conversation has relay_apps in its catalog but
   // predates the newly persisted schema marker.
-  delete f.app.engine.runs.get(first.id).nodes.agent.applicationSchemaVersion; f.model.expectedApplicationSchemaVersion = 1;
+  // This simulated retained catalog predates Planning14 and its host catalog hash.
+  const legacyRun = f.app.engine.runs.get(first.id);
+  assert.equal(legacyRun.planningContractVersion, 14, 'Fresh production runs still use Planning14.');
+  assert.ok(!legacyRun.taskState?.contract, 'Do not relabel an existing canonical plan as a historical fixture.');
+  legacyRun.planningContractVersion = 13; legacyRun.nodes.agent.taskSchemaVersion = 13;
+  delete legacyRun.nodes.agent.providerExecutionContract;
+  delete legacyRun.nodes.agent.applicationSchemaVersion; f.model.expectedApplicationSchemaVersion = 1;
   const continued = f.app.engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue the same native application conversation.' }); await f.app.engine.executions.get(continued.id); const interrupted = f.app.engine.getRun(continued.id);
   assert.equal(interrupted.status, 'failed'); assert.equal(interrupted.nodes.agent.resumeApplicationSchemaVersion, 1); assert.equal(interrupted.nodes.agent.applicationSchemaVersion, 1);
   const retry = f.app.engine.retryRun(continued.id); await f.app.engine.executions.get(retry.id); const finished = f.app.engine.getRun(retry.id); assert.equal(finished.status, 'completed', finished.error); assert.equal(finished.nodes.agent.resumeApplicationSchemaVersion, 1); assert.equal(finished.nodes.agent.applicationSchemaVersion, 1); assert.equal(turns, 3); assert.equal(f.runtime.calls.length, 0);
@@ -234,7 +240,14 @@ test('native version two application catalogs retain saved-text actions through 
 test('legacy Relay preference input preserves the native catalog while fresh chats receive version two', async t => {
   const f = await fixture(t); await f.app.runtimeSettings.update({ codexHistory: 'codex' });
   f.model.execute = async options => { options.onEvent({ type: 'thread', threadId: 'native-upgrade-application-thread' }); return { output: 'Recorded an original native application conversation.', threadId: 'native-upgrade-application-thread', codexHistory: 'codex' }; };
-  const original = f.app.engine.startRun({ workflow: graph, input: 'Record a pre-upgrade native session.' }); await f.app.engine.executions.get(original.id); delete f.app.engine.runs.get(original.id).nodes.agent.applicationSchemaVersion;
+  const original = f.app.engine.startRun({ workflow: graph, input: 'Record a pre-upgrade native session.' }); await f.app.engine.executions.get(original.id);
+  // This simulated retained catalog predates Planning14 and its host catalog hash.
+  const legacyRun = f.app.engine.runs.get(original.id);
+  assert.equal(legacyRun.planningContractVersion, 14, 'Fresh production runs still use Planning14.');
+  assert.ok(!legacyRun.taskState?.contract, 'Do not relabel an existing canonical plan as a historical fixture.');
+  legacyRun.planningContractVersion = 13; legacyRun.nodes.agent.taskSchemaVersion = 13;
+  delete legacyRun.nodes.agent.providerExecutionContract;
+  delete legacyRun.nodes.agent.applicationSchemaVersion;
   const savedOriginal = f.app.engine.getRun(original.id);
   await f.app.runtimeSettings.update({ codexHistory: 'relay' });
   assert.equal(f.app.runtimeSettings.get().codexHistory, 'codex', 'Legacy preference input normalizes to persistent native history.');

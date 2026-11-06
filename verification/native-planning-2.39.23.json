@@ -1,0 +1,252 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "version": "2.39.23",
+  "scope": "native-planning",
+  "status": "native-operational-acceptance-incomplete",
+  "passed": false,
+  "complete": false,
+  "recordedAt": "2026-11-06T03:19:32.311Z",
+  "frozenCandidateBinding": {
+    "appFingerprint": "db8b7a13a64e3820245e1a8f2ef84ca298f744bdedaf40bbb191eeed08706b6d",
+    "sourceIndexSha256": "f6a5401ed009635889b8dd85db33687e93eabce14a4235fb4b00f6206b86c4b5",
+    "sourceRecords": 1484
+  },
+  "passedCases": [
+    {
+      "case": "city-tolerance-plan-only",
+      "status": "passed",
+      "model": "mistral-vibe::mistral-large-4-0",
+      "planningEnforcement": "forced",
+      "planningExecutionMode": "plan_only",
+      "capturedRun": {
+        "planningContractVersion": 14
+      },
+      "acceptedPlan": {
+        "contractVersion": 2
+      },
+      "versionMeaning": "The captured run planningContractVersion is the host/tool schema version; the accepted Plan contractVersion is the canonical plan format.",
+      "startedOperationalWork": false,
+      "completionBoundary": "paused_after_plan",
+      "planAdopted": false,
+      "stageResults": [
+        {
+          "stage": "inference",
+          "status": "passed",
+          "model": "mistral-vibe::mistral-large-4-0",
+          "outputSha256": "2b28dee50b862c1668645727b3551fd72a10ca3762a00e866dc0d31a12eed021"
+        },
+        {
+          "stage": "feasibility",
+          "status": "passed",
+          "model": "mistral-vibe::mistral-large-4-0",
+          "outputSha256": "44f33175c646984f57b5d47cff8e526edb28dc884b4a5ba98f3c1713b597fb8e"
+        },
+        {
+          "stage": "plan",
+          "status": "passed",
+          "model": "mistral-vibe::mistral-large-4-0",
+          "outputSha256": "80700d86de31677d99b680f5584c0706ad595dda618c07f9073049f9b13cd2e5"
+        }
+      ],
+      "operationalToolCalls": 0,
+      "externalEffects": 0,
+      "claim": "The supplied offline fictional city-option probe preserves authorized field alternatives through Infer, Feasibility and canonical Plan while retaining an independent exact count and destination-confirmation target.",
+      "limitation": "This Plan-only result establishes no completed application, enrollment, live form selection, or operational acceptance.",
+      "admissionBinding": {
+        "appFingerprint": "db8b7a13a64e3820245e1a8f2ef84ca298f744bdedaf40bbb191eeed08706b6d",
+        "sourceIndexSha256": "f6a5401ed009635889b8dd85db33687e93eabce14a4235fb4b00f6206b86c4b5"
+      },
+      "evidenceSha256": {
+        "verdict": "f9e6df750c58fa5e77e6f71f721bfd0c30f8bec349f95a59b0d07b83dc3620f1",
+        "capturedRun": "4a6070d29a6a2f59f83a786a93269345b7be0777242b4bfc6ab5a3559aca3eb1",
+        "acceptedPlan": "955f0643b85a1728500715233a4a5aeef4ad0877090b4c857b14915be56014ed",
+        "index": "b3d88cc91a2bf408eeaef8b6b4e5b4126ae52dae3d6b9a165c33a8a188784317"
+      }
+    }
+  ],
+  "requiredOperationalCases": [
+    {
+      "case": "workshop-four",
+      "targetNewCount": 4,
+      "expectedPriorRecords": 2,
+      "passed": false,
+      "status": "cancelled-at-user-direction",
+      "complete": false,
+      "actualModel": "openrouter_free::nvidia/nemotron-3.5-super-vl:free",
+      "providerType": "compatible",
+      "planningEnforcement": "forced",
+      "planningExecutionMode": "automatic",
+      "capturedRun": {
+        "planningContractVersion": 14
+      },
+      "acceptedPlan": {
+        "contractVersion": 2,
+        "initialContractEvidenceSha256": "ae464e75a329a281a6aa6bf13025c1fac95d861113b591799199ce6df5d5dd7a"
+      },
+      "context": {
+        "preset": "model",
+        "autoCompact": true,
+        "outputReserveTokens": 65536
+      },
+      "configuredProviderMaxTokens": 65536,
+      "admittedAt": "2026-11-06T02:57:57.640Z",
+      "operationalStartedAt": "2026-11-06T03:03:10.558Z",
+      "finishedAt": "2026-11-06T03:12:38.507Z",
+      "settled": true,
+      "fixtureClosedAt": "2026-11-06T03:13:11.830Z",
+      "stageResults": [
+        {
+          "stage": "inference",
+          "status": "passed",
+          "outputTokens": 7108,
+          "reasoningTokens": 4735,
+          "outputSha256": "eb894a7f52f5383ba9af02b966976f3234d035c7926e5cef0a8e736da7017641"
+        },
+        {
+          "stage": "feasibility",
+          "status": "passed",
+          "outputTokens": 18818,
+          "reasoningTokens": 15329
+        },
+        {
+          "stage": "plan",
+          "status": "passed",
+          "outputTokens": 11736,
+          "outputSha256": "308cdb06dc7fd6ea51e407d3dcf525eae7c86b003993f50a6b82f8d229e44052"
+        },
+        {
+          "stage": "execution",
+          "status": "cancelled-incomplete"
+        },
+        {
+          "stage": "think",
+          "status": "unverified"
+        },
+        {
+          "stage": "respond",
+          "status": "unverified"
+        }
+      ],
+      "confirmedNewOutcomes": 0,
+      "priorExclusionVerified": null,
+      "duplicateOutcomes": 0,
+      "unresolvedOperations": 1,
+      "finalAssessmentVerified": false,
+      "taskSuccessVerified": false,
+      "oracle": {
+        "logEntries": 18,
+        "httpGetRequests": 9,
+        "httpPostRequests": 1,
+        "nonRequestEvents": 8,
+        "validationReturnedEvents": 1,
+        "priorRecords": 2,
+        "newEffects": 0,
+        "newUniqueOutcomes": 0,
+        "duplicateNewOutcomes": 0,
+        "lostReceiptUsed": false
+      },
+      "hostJournal": {
+        "taskRevision": 8,
+        "planEpoch": 6,
+        "journalRevision": 65,
+        "operations": 19,
+        "notApplicable": 8,
+        "confirmedInteractions": 9,
+        "absent": 1,
+        "unconfirmed": 1
+      },
+      "uncertaintyDisposition": "The host retained one unconfirmed submission. The independent fixture oracle recorded zero new effects; that result was not substituted for host reconciliation.",
+      "admissionBinding": {
+        "appFingerprint": "db8b7a13a64e3820245e1a8f2ef84ca298f744bdedaf40bbb191eeed08706b6d",
+        "sourceIndexSha256": "f6a5401ed009635889b8dd85db33687e93eabce14a4235fb4b00f6206b86c4b5",
+        "sourceRecords": 1484
+      },
+      "evidenceSha256": {
+        "verdict": "f91146a4f63c47c4adffccccc83eac741994973b208c99fd00a8260249c207f2",
+        "index": "4fb6c021e9cd568d15bf0281b6f15f893f9708a2dd226a77faa0cd1e4d5431c0",
+        "terminalObservation": "d014bca20b097d3447df8241d056d06718849cb865f04b75d402e41e1d3beccd"
+      }
+    },
+    {
+      "case": "workshop-twenty",
+      "targetNewCount": 20,
+      "expectedPriorRecords": 2,
+      "passed": false,
+      "status": "not-run",
+      "reason": "Further native acceptance testing ended at user direction.",
+      "actualModel": null,
+      "confirmedNewOutcomes": null,
+      "finalAssessmentVerified": false
+    },
+    {
+      "case": "workshop-native-text",
+      "targetNewCount": 1,
+      "expectedPriorRecords": 2,
+      "passed": false,
+      "status": "not-run",
+      "reason": "Further native acceptance testing ended at user direction.",
+      "actualModel": null,
+      "confirmedNewOutcomes": null,
+      "finalAssessmentVerified": false
+    }
+  ],
+  "historicalFailedAttempts": [
+    {
+      "case": "workshop-four",
+      "status": "failed",
+      "countsAsAcceptancePass": false,
+      "model": "mistral-vibe::mistral-large-4-0",
+      "finishedAt": "2026-11-06T02:13:24.846Z",
+      "failure": {
+        "code": "MISTRAL_VIBE_RPC",
+        "httpStatus": 402,
+        "type": "billing_vibe_budget_exhausted"
+      },
+      "operationalStarted": true,
+      "confirmedNewOutcomes": 0,
+      "priorRecords": 2,
+      "httpPosts": 0,
+      "unresolvedOperations": 0,
+      "admissionBinding": {
+        "appFingerprint": "db8b7a13a64e3820245e1a8f2ef84ca298f744bdedaf40bbb191eeed08706b6d",
+        "sourceIndexSha256": "f6a5401ed009635889b8dd85db33687e93eabce14a4235fb4b00f6206b86c4b5"
+      },
+      "evidenceSha256": {
+        "index": "de11402248960fa7c2b345566b02a80e561c4355fabc9aca0623533031b74937"
+      }
+    },
+    {
+      "case": "workshop-four",
+      "status": "failed",
+      "countsAsAcceptancePass": false,
+      "model": "openrouter_free::nvidia/nemotron-3.5-super-vl:free",
+      "finishedAt": "2026-11-06T02:50:40.326Z",
+      "failure": {
+        "code": "PROVIDER_TRUNCATED",
+        "stage": "plan",
+        "configuredOutputBudget": 8192
+      },
+      "capturedRun": {
+        "planningContractVersion": 14
+      },
+      "operationalStarted": false,
+      "planAdopted": false,
+      "confirmedNewOutcomes": 0,
+      "priorRecords": 2,
+      "httpPosts": 0,
+      "evidenceSha256": {
+        "verdict": "65f9a98b10ebb37d3a56311883d14e2f41a76e063bb2330cfeee51cc06207081",
+        "index": "273c52bf60044ca47fb8d90b22b740788759ea3632064b6f1b12ed91b609e5ee"
+      }
+    }
+  ],
+  "disposition": {
+    "publicationRequested": true,
+    "reason": "Native testing ended at user direction; publish the current version with the complete source-suite result and the actual limited native evidence.",
+    "nativeAcceptanceWaivedForThisPublication": true,
+    "claimsFullNativeOperationalAcceptance": false,
+    "hostedInstallerVerificationRequired": true
+  },
+  "validationScope": "Actual installed native Chat and disposable fixtures. The city case passed at the Plan-only boundary. Operational native acceptance is incomplete and is separate from the complete synthetic Windows source suite."
+}

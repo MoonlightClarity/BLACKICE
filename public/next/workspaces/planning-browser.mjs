@@ -205,6 +205,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
       const payload = /\/(responses|cancel)$/.test(route) ? body : { ...body, clientRequestId: body.clientRequestId || stableId('planning') };
       const result = await api(route, method, payload);
       accept(result); const message = onAccepted?.(result); state.notice = typeof message === 'string' ? message : 'Saved. The document shows the recorded result.';
+      return result;
     } catch (cause) { state.error = cause.message; }
     finally { state.pending.delete(key); if (active) { renderRail(); renderTabs(); if (id === requestId) renderKeepingFocus(); } }
   }
@@ -646,7 +647,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     const savedPlan = node.kind === 'plan' && cycle && node.response;
     const responseSection = add(inspector, savedPlan ? 'details' : 'section', '', 'pb-inspector-section'); add(responseSection, savedPlan ? 'summary' : 'h4', savedPlan ? 'Recorded Plan fields and provenance' : 'Required questions');
     if (savedPlan) responseSection.dataset.disclosureKey = 'saved-plan-fields';
-    add(responseSection, 'p', typedReadiness ? node.kind === 'plan' ? 'These are the saved Plan fields. Use Edit the saved Plan to change its steps, dependencies, acceptance criteria, and sources.' : ['inference', 'think', 'respond'].includes(node.kind) ? 'These saved fields belong to the complete structured stage response. Run the stage or use the shared structured response API to record a new version.' : 'These saved fields describe the complete readiness check. Use the factual Answer controls above to supply missing facts, or run this module to produce a new complete check.' : 'These fields make the module’s contribution inspectable. Record an answer or the exact missing input; unsupported claims stay visible.', 'pb-help');
+    add(responseSection, 'p', typedReadiness ? node.kind === 'plan' ? (node.response?.contract ? 'These are the saved Plan fields. Use Edit the saved Plan to change its objective, outcome criteria, work items, resources, and instructions.' : 'These are the saved Plan fields. Use Edit the saved Plan to change its steps, dependencies, acceptance criteria, and sources.') : ['inference', 'think', 'respond'].includes(node.kind) ? 'These saved fields belong to the complete structured stage response. Run the stage or use the shared structured response API to record a new version.' : 'These saved fields describe the complete readiness check. Use the factual Answer controls above to supply missing facts, or run this module to produce a new complete check.' : 'These fields make the module’s contribution inspectable. Record an answer or the exact missing input; unsupported claims stay visible.', 'pb-help');
     renderProvenance(responseSection, node.response);
     const responseForm = add(responseSection, 'form', '', 'pb-form'), controls = new Map();
     for (const field of fields) {

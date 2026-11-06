@@ -4,7 +4,7 @@ import {EventEmitter} from 'node:events';
 import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {createHarnessServer} from '../server.mjs';
+import {createHarnessServer} from './fixture-legacy-harness-server.mjs';
 
 const until=async(check,label='project condition')=>{const end=Date.now()+7000;while(Date.now()<end){const value=await check();if(value)return value;await new Promise(resolve=>setTimeout(resolve,10));}assert.fail(`${label} did not settle`);};
 class Desktop extends EventEmitter{status(){return{available:false,enabled:false};}async setEnabled(){return this.status();}}

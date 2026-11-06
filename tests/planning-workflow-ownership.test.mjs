@@ -336,3 +336,62 @@ test('new-attempt workflow criterion validation rejects changes while ignoring o
   assert.throws(() => validatePlanningModuleResponse(exactAttempt, changedAccuracy),
     {code: 'PLANNING_RESPONSE_FORMAT'}, 'a real accuracy change is still rejected');
 });
+
+
+test('canonical Plan preserves required accuracy and rejects dropped or changed inherited metadata', async () => {
+  const {validatePlanningModuleResponse} = await import('../lib/planning-browser-runtime.mjs');
+  const {planningResponseBody} = await import('../public/planning-browser-model.mjs');
+  const f = criterionIdentityFixture(), legacy = planningResponseBody(f.plan.response);
+  const accuracy = { mode: 'exact', tolerance: 'No unverified outcomes.',
+    decisionThreshold: 'The requested distinct outcome is observed.',
+    evidenceNeeded: 'A matching destination confirmation bound to the admitted operation.',
+    consequence: 'An unverified claim would misstate completion.', unknownPolicy: 'block',
+    stopWhen: 'The requested outcome is established by retained host evidence.' };
+  const required = {...f.required, verification: 'effect', accuracy};
+  const cycleContext = context(f.request, f.root);
+  cycleContext.workflowRequests[0].acceptanceCriteria = [copy(required)];
+  cycleContext.requiredAcceptanceCriteria = cycleContext.requiredAcceptanceCriteria.map(item => item.id === required.id ? copy(required) : item);
+  legacy.acceptanceCriteria = legacy.acceptanceCriteria.map(item => item.id === required.id ? copy(required) : item);
+  const marker = {id: 'cycle:execution-contract:accuracy-fixture', kind: 'source',
+    text: JSON.stringify({taskSchemaVersion: 14, contractVersion: 2})};
+  const attempt = {node: {kind: 'plan'}, pipelineVersion: 2,
+    sources: [...f.plan.response.sources, marker], challenges: [], workflowNodeIds: [], cycleContext};
+  const body = copy(legacy);
+  body.contract = {contractVersion: 2, goal: f.request.objective,
+    criteria: body.acceptanceCriteria.map(item => ({id: item.id, label: item.label, description: item.description,
+      kind: item.verification === 'effect' ? 'external-confirmation' : item.verification === 'response' ? 'judgment' : 'observation',
+      ...(item.accuracy ? {accuracy: copy(item.accuracy)} : {})})),
+    workItems: [{id: 'workflow', title: 'Complete the requested workflow', objective: 'Observe the inputs and establish the requested result.',
+      owner: 'coordinator', resourceKeys: ['origin:https://fixture.invalid'], effects: ['observe', 'interact', 'commit'],
+      dependsOn: [], criterionIds: body.acceptanceCriteria.map(item => item.id)}], instructions: []};
+  delete body.acceptanceCriteria; delete body.steps;
+  const before = copy(body), accepted = validatePlanningModuleResponse(attempt, body);
+  assert.deepEqual(accepted.acceptanceCriteria.find(item => item.id === required.id), required);
+  assert.deepEqual(accepted.contract.criteria.find(item => item.id === required.id).accuracy, accuracy);
+  assert.deepEqual(body, before, 'Validation preserves the authored contract.');
+  const reject = changed => assert.throws(() => validatePlanningModuleResponse(attempt, changed), error =>
+    error.code === 'PLANNING_RESPONSE_FORMAT' && error.issues.some(issue => issue.path.startsWith('response.contract.criteria')));
+  const missing = copy(body); delete missing.contract.criteria.find(item => item.id === required.id).accuracy;
+  reject(missing); // The repaired native Plan failed at this exact representation boundary.
+  for (const field of Object.keys(accuracy)) {
+    const changed = copy(body), target = changed.contract.criteria.find(item => item.id === required.id).accuracy;
+    target[field] = field === 'mode' ? 'qualitative' : field === 'unknownPolicy' ? 'assumption' : target[field] + ' Changed.';
+    reject(changed);
+  }
+  for (const change of [{description: 'A different requested outcome.'}, {label: 'A different label.'}, {kind: 'judgment'}]) {
+    const changed = copy(body); Object.assign(changed.contract.criteria.find(item => item.id === required.id), change); reject(changed);
+  }
+  const reordered = copy(body), target = reordered.contract.criteria.find(item => item.id === required.id);
+  target.accuracy = Object.fromEntries(Object.entries(target.accuracy).reverse());
+  assert.deepEqual(validatePlanningModuleResponse(attempt, reordered).acceptanceCriteria.find(item => item.id === required.id), required);
+  const competing = copy(body); competing.acceptanceCriteria = copy(accepted.acceptanceCriteria);
+  competing.acceptanceCriteria.find(item => item.id === required.id).accuracy.stopWhen = 'An incompatible second criterion.';
+  assert.throws(() => validatePlanningModuleResponse(attempt, competing), /disagrees with the canonical contract/);
+  const legacyAttempt = {...attempt, sources: f.plan.response.sources};
+  const legacyAccepted = validatePlanningModuleResponse(legacyAttempt, legacy);
+  assert.deepEqual(legacyAccepted.acceptanceCriteria.find(item => item.id === required.id), required);
+  assert.equal(Object.hasOwn(legacyAccepted, 'contract'), false, 'Unstamped historical Plans retain their existing shape.');
+  const legacyChanged = copy(legacy); legacyChanged.acceptanceCriteria.find(item => item.id === required.id).accuracy.unknownPolicy = 'omit';
+  assert.throws(() => validatePlanningModuleResponse(legacyAttempt, legacyChanged), error => error.code === 'PLANNING_RESPONSE_FORMAT'
+    && error.issues.some(issue => issue.path.startsWith('response.acceptanceCriteria')), 'Legacy diagnostics keep their authored field path.');
+});

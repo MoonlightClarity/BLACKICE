@@ -11,6 +11,27 @@ import vm from 'node:vm';
 const source = await fs.readFile(new URL('../desktop/browser-driver.mjs', import.meta.url), 'utf8');
 const elementSource = source.slice(source.indexOf('function elementAction('), source.indexOf('\nasync function elementActionResult('));
 
+test('native select type and value rejection prove no input while a real selection still dispatches', () => {
+  for (const kind of ['custom', 'missing', 'valid']) {
+    const events = [], field = { isConnected: true, tagName: kind === 'custom' ? 'BUTTON' : 'SELECT',
+      getAttribute: () => null, options: [{ value: 'actual' }], value: '',
+      dispatchEvent(event) { events.push(event.type); } };
+    const context = vm.createContext({ fixture: { elements: new Map([['field', field]]) }, Event: class { constructor(type) { this.type = type; } } });
+    const value = kind === 'missing' ? 'not-present' : 'actual';
+    const result = vm.runInContext('(' + elementSource + ')("fixture","field","select",' + JSON.stringify({ value }) + ')', context);
+    if (kind === 'valid') { assert.equal(result.selected, 'actual'); assert.deepEqual(events, ['input', 'change']); }
+    else { assert.equal(result.__blackiceElementError.inputDispatched, false); assert.equal(field.value, ''); assert.deepEqual(events, []); }
+  }
+});
+
+test('generic renderer exceptions cannot manufacture a trusted no-input annotation', async () => {
+  const wrapper = source.slice(source.indexOf('async function elementActionResult('), source.indexOf('\n// Host-only credential path.'));
+  const context = vm.createContext({});
+  const result = await vm.runInContext('(' + wrapper + ')(() => { throw Object.assign(new Error("after an unknown effect"), { inputDispatched:false }); },null,"fixture","field","select",{})', context);
+  assert.equal(result.__blackiceElementError.code, 'BROWSER_ELEMENT_ACTION_FAILED');
+  assert.equal(result.__blackiceElementError.inputDispatched, undefined);
+});
+
 test('ordinary field fill prepares focused replacement without a native value setter or synthetic input', () => {
   const calls = [], field = { isConnected: true, tagName: 'INPUT', type: 'text', getAttribute: () => null, getRootNode: () => ({}), focus() { calls.push('focus'); context.document.activeElement = this; }, select() { calls.push('select'); }, dispatchEvent() { calls.push('synthetic event'); } };
   const context = vm.createContext({ fixture: { elements: new Map([['field', field]]) }, document: { activeElement: null }, HTMLInputElement: class {}, HTMLTextAreaElement: class {}, InputEvent: class {}, Event: class {} });

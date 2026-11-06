@@ -1,6 +1,7 @@
 /** Public response contracts and projections; no execution or truth certification. */
 import { VIABILITY_TEMPLATE, validateViabilityRequirements, evaluateViabilityResponse, planningReadableFindingIssues, validatePlanningReadableFindings } from './task-viability-model.mjs';
 import { RESPONSE_CYCLE_CONTAINER_TEMPLATE, RESPONSE_CYCLE_TEMPLATES, RESPONSE_CYCLE_STAGES, responseCycleStage, responseCycleStages, responseCycleTemplate, parseResponseCycleResponse, evaluateResponseCycleStage, analyticalSubproblem } from './response-cycle-model.mjs';
+import { canonicalCycleTaskContext } from './planning-contract-cycle-model.mjs';
 import { normalizeUserAgencyCheckpoint, evaluateUserAgencyCheckpoint, assertUserAgencyDispatchConsistency } from './planning-user-agency.mjs';
 export const PLANNING_BROWSER_VERSION = 1;
 export const PLANNING_BROWSER_LIMITS = Object.freeze({
@@ -160,7 +161,7 @@ export function planningRequestSources(request) {
 
 /** Stored public content only; execution metadata can never be supplied as an answer. */
 export function planningResponseBody(response) {
-  const keys=['values','grounding','openQuestions','challengeResponses','requirements','checks','subproblems','childResults','acceptanceCriteria','steps','inferences','criterionResults','coverage','userAgency'];
+  const keys=['values','grounding','openQuestions','challengeResponses','requirements','checks','subproblems','childResults','acceptanceCriteria','steps','inferences','criterionResults','coverage','userAgency','contract'];
   return Object.fromEntries(keys.filter(key=>Object.hasOwn(response,key)).map(key=>[key,clone(response[key])]));
 }
 
@@ -175,6 +176,7 @@ export function planningNodeSources(request,nodeId) {
     if(!cycle)return false;
     if(source.id==='cycle:context:'+cycle.id)return true;
     if(source.id==='cycle:handoff-contract:'+cycle.id)return true;
+    if(source.id==='cycle:execution-contract:'+cycle.id)return true;
     if(source.id.startsWith('cycle:child:'+nodeId+':'))return true;
     return ['think','respond'].includes(stage)&&source.id.startsWith('cycle:execution:'+cycle.id+':');
   });
@@ -219,10 +221,18 @@ export function planningCycleStageContext(request,nodeId,responses) {
     return {key:child.key||child.id,cycleId:child.id,required:child.required!==false,state:child.state||'pending',analysisReady:child.state==='completed',dispatchReady:child.state==='completed',sourceId:'cycle:child:'+nodeId+':'+child.id,responseId:response?.id,responseRevision:response?.revision,...(child.request?{request:clone(child.request)}:{})};
   });
   const plan=get(cycle.stageNodeIds.plan),think=get(cycle.stageNodeIds.think),inference=get(cycle.stageNodeIds.inference),workflow=planningWorkflowContext(request,cycle,latest);
+  let canonical=['think','respond'].includes(stageId)?canonicalCycleTaskContext(request.sources||[],{cycleId:cycle.id,runId:cycle.execution?.runId||cycle.linkedRunId,
+    planRef:{requestId:request.id,cycleId:cycle.id,nodeId:cycle.stageNodeIds.plan,nodeRevision:request.nodes.find(node=>node.id===cycle.stageNodeIds.plan)?.revision,responseId:plan?.id||null}}):null;
+  if(!canonical&&['think','respond'].includes(stageId)&&['completed','failed','cancelled','unknown'].includes(cycle.execution?.state)&&
+      (request.sources||[]).some(source=>source.id==='cycle:execution-contract:'+cycle.id)){
+    canonical={invalid:true,sourceId:'cycle:execution:'+cycle.id+':canonical-contract',reason:'The current host canonical execution snapshot is missing; historical Plan text cannot replace it.'};
+  }
   const intendedOutcome=inference?{responseId:inference.id,responseRevision:inference.revision,...Object.fromEntries(['userBenefit','desiredOutcomes','unwantedOutcomes','delegatedWork','constraints','handoffBoundary'].map(key=>[key,inference.values?.[key]??null]))}:null;
   const userAgencyHistory=stages.flatMap(stage=>{const response=get(cycle.stageNodeIds[stage.id]);if(!response?.userAgency)return [];const evaluation=evaluateUserAgencyCheckpoint(response.userAgency);return [{stageId:stage.id,responseId:response.id,responseRevision:response.revision,...evaluation}];});
-  return {cycleId:cycle.id,stageId,pipelineVersion,title:cycle.title,objective:cycle.objective,intendedOutcome,userAgencyHistory,acceptanceCriteria:plan?.acceptanceCriteria||cycle.acceptanceCriteria||[],...workflow,criterionResults:think?.criterionResults||[],prerequisites,children,recoveryIssue:request.viability?.recoveryIssue||null,
-    recursion:{depth:cycle.depth,cycleCount:request.responseCycle.cycles.length,...request.responseCycle.limits},effectReceipts:cycle.effectReceipts||[],execution:cycle.execution||null};
+  const effectReceipts=(cycle.effectReceipts||[]).filter(receipt=>!receipt.canonicalContract||canonical&&!canonical.invalid&&receipt.sourceId===canonical.sourceId&&receipt.proofSha256===canonical.sourceHash&&
+    receipt.canonicalContract.taskId===canonical.taskId&&receipt.canonicalContract.planEpoch===canonical.planEpoch&&receipt.canonicalContract.journalSeq===canonical.journalSeq&&receipt.canonicalContract.contractSha256===canonical.contractSha256);
+  return {cycleId:cycle.id,stageId,pipelineVersion,title:cycle.title,objective:cycle.objective,intendedOutcome,userAgencyHistory,acceptanceCriteria:canonical&&!canonical.invalid?canonical.acceptanceCriteria:plan?.acceptanceCriteria||cycle.acceptanceCriteria||[],...workflow,criterionResults:think?.criterionResults||[],prerequisites,children,recoveryIssue:request.viability?.recoveryIssue||null,
+    ...(canonical?{canonicalExecution:canonical}:{}),recursion:{depth:cycle.depth,cycleCount:request.responseCycle.cycles.length,...request.responseCycle.limits},effectReceipts,execution:cycle.execution||null};
 }
 const latestByNode = records => {
   const map=new Map();

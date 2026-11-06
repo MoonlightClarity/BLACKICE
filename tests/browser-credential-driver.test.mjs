@@ -22,7 +22,8 @@ function fixture() {
   const context = vm.createContext({ origin, location: { origin, href: url }, writes, events });
   vm.runInContext(`
     window=globalThis; top=window; parent=window;
-    document={}; document.defaultView=window;
+    document={forms:[]}; document.defaultView=window;
+    document.querySelectorAll=selector=>selector==='input,select,textarea'?[password,confirmation,username]:[];
     getComputedStyle=el=>({display:el.hidden?'none':'block',visibility:'visible',opacity:'1'});
     class FixtureEvent { constructor(type,options={}) { this.type=type; Object.assign(this,options); } }
     Event=FixtureEvent; InputEvent=FixtureEvent;

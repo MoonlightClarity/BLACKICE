@@ -1,0 +1,103 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "scope": "source-publication",
+  "version": "2.39.23",
+  "platform": "win32",
+  "node": "v24.22.1",
+  "startedAt": "2026-11-06T02:04:55.644Z",
+  "checkedAt": "2026-11-06T03:15:08.068Z",
+  "state": "passed",
+  "passed": true,
+  "fullSuite": true,
+  "countsComplete": true,
+  "appFingerprint": "db8b7a13a64e3820245e1a8f2ef84ca298f744bdedaf40bbb191eeed08706b6d",
+  "sourceIndexSha256": "f6a5401ed009635889b8dd85db33687e93eabce14a4235fb4b00f6206b86c4b5",
+  "sourceFilesVerified": 1484,
+  "testFiles": 650,
+  "testInventorySha256": "602c293bdea2d146d1dfa3de68cb1f53923afa00c16717ea4302af85fb7f4f33",
+  "runnerSha256": "f356befa2b8f97f2e42d96d4fc38745b4c7dbed4b1ea37f37239a23e8c019b7d",
+  "fingerprintUnchanged": true,
+  "sourceUnchanged": true,
+  "dependencySetup": {
+    "electron": "44.7.2",
+    "electronBuilder": "26.15.3",
+    "electronExecutable": "node_modules/electron/dist/electron.exe",
+    "electronBytes": 245589504,
+    "python": {
+      "version": "3.12.14",
+      "sqlite3Verified": true,
+      "configuration": "PLANNING_BEHAVIOR_PYTHON"
+    },
+    "native": {
+      "helperSha256": "164088921c1de5141d2a34d8ec7fb4d3cb32d8fb326ca3f0d023c686d44a1b0c",
+      "buildReceiptSha256": "2abd8fed4e39d2d9b516be131ffb52dc688ee6dc4abc9c78ef6fad07f974946f",
+      "runtimeManifestSha256": "9d2785640416c71bf5a11313daddc87f01f117c211ebf83dd5233df0727fb9f2",
+      "compilerVerificationSha256": "65852c2d7eeaccc93215ce04bec8b542daaca4537dcca12bd236d9dfbe921365",
+      "selfTestPassed": true,
+      "networkStarted": false,
+      "foregroundUnchanged": true,
+      "liveVmVerified": false
+    }
+  },
+  "preparationHistory": {
+    "previousPublishedRelease": {
+      "version": "2.39.22",
+      "sourceCommit": "4df03d1b7eff8f5c7afecee7cc7037581e177942",
+      "receipt": "verification/windows-2.39.22.json",
+      "receiptSha256": "aca7d442c24854cdbac423ae03b066d2602f889b81d608b84a1e5bcaadd118cc",
+      "appFingerprint": "de35e7349e5333821c78145cdbd5f6a2957eed0446a58035516f8024b9fc351f",
+      "sourceIndexSha256": "3f7ad452771cb9f1e0bdb19e755f7dbe3c25b04928931e612d5a013ae1bf0ca4",
+      "tests": {
+        "total": 7288,
+        "passed": 7277,
+        "failed": 0,
+        "requiredSkipped": 0,
+        "optionalSkipped": 11,
+        "cancelled": 0,
+        "todo": 0,
+        "exitCode": 0
+      }
+    },
+    "reusedPrerequisites": [
+      "Reused the exact locked Electron and electron-builder installation after version and executable checks.",
+      "Verified the documented Python interpreter and sqlite3.",
+      "Verified native helper source, dependency locks, executable, runtime manifest and isolated self-test receipt."
+    ],
+    "priorEvidenceDisposition": "Prior release receipts and continuation diagnostic logs remain historical evidence. None are counted toward this fresh complete source gate."
+  },
+  "tests": {
+    "total": 7538,
+    "passed": 7527,
+    "failed": 0,
+    "requiredSkipped": 0,
+    "optionalSkipped": 11,
+    "cancelled": 0,
+    "todo": 0,
+    "exitCode": 0
+  },
+  "testLogSha256": "ff38363ae676ff9b0ac6698df8bd147795c051a334a6438a8f0e4b3a04c817c1",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "execution": {
+    "kind": "sequential-bounded-groups",
+    "concurrency": 4,
+    "groupCount": 18,
+    "groupSize": 40,
+    "uniqueCoverageVerified": true,
+    "batchEvidenceVerified": true
+  },
+  "optionalSkips": [
+    "Relay-owned sign-in and local storage survive a full process restart without foregrounding",
+    "live contained input updates application state and delivers editing keys without OS focus",
+    "offscreen contained input updates application state and delivers editing keys without OS focus",
+    "restored hidden browser tabs defer requests until used and never load closed or replaced pages",
+    "native popups preserve OAuth routing and remain independent when their opener closes",
+    "actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases",
+    "live background accessibility actions change only a dedicated non-activating fixture and leave foreground and cursor untouched",
+    "hidden isolated Chromium composer validates real layout and one-click send wiring",
+    "installed Himalaya sends exact MIME to disposable loopback SMTP and strips Bcc headers",
+    "real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart",
+    "same-directory native replacement is also exercised on an explicitly supplied existing SMB share"
+  ],
+  "validationScope": "Complete synthetic Windows source suite. Native provider acceptance and exact installed candidate evidence are separate."
+}

@@ -1,11 +1,12 @@
+// Historical schema-13 milestone and saved native catalog regression.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
 import {mkdtemp,mkdir,rm} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
-import {HarnessEngine} from '../lib/engine.mjs';
-import {TaskStateStore,TASK_SCHEMA_VERSION} from '../lib/task-state.mjs';
+import {HarnessEngine} from './fixture-legacy-planning-engine.mjs';
+import {TaskStateStore,TASK_SCHEMA_VERSION} from './fixture-legacy-task-state.mjs';
 import {createMissionWorkflow} from '../public/mission-model.mjs';
 import {capabilityGuidance} from '../lib/tool-routing.mjs';
 import {newerTaskState,reduceRunEvent,adoptFetchedRun} from '../public/run-state-model.mjs';

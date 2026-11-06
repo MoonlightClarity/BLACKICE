@@ -6,7 +6,7 @@ export const PLANNING_MODES = Object.freeze(['forced', 'advisory', 'off']);
 export const PLANNING_INPUT_MODES = Object.freeze([...PLANNING_MODES, 'on', 'auto', 'maximal']);
 export const isPlanningMode = value => PLANNING_INPUT_MODES.includes(value);
 export const PLANNING_MODE_OPTIONS = Object.freeze([
-  Object.freeze({ value: 'forced', label: 'Forced', description: 'Require a saved, executable plan before operations; work one atomic step at a time and record results. No extra user approval.' }),
+  Object.freeze({ value: 'forced', label: 'Forced', description: 'Require a current saved plan before work proceeds, and track progress against its outcomes. No extra user approval.' }),
   Object.freeze({ value: 'advisory', label: 'Advisory', description: 'Planning is available and encouraged, but does not block operations.' }),
   Object.freeze({ value: 'off', label: 'Off', description: 'No automatic Planning requirement. Existing plans remain available.' }),
 ]);

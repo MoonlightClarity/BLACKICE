@@ -1,10 +1,11 @@
+// Historical schema-13 guarded-worker regression; current canonical behavior has separate engine acceptance.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
 import {mkdtemp,mkdir,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {HarnessEngine} from '../lib/engine.mjs';
+import {HarnessEngine} from './fixture-legacy-planning-engine.mjs';
 import {createMissionWorkflow} from '../public/mission-model.mjs';
 
 test('contained sign-in blocks external browser fallback while independent integrations remain usable',async t=>{

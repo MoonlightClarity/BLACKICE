@@ -1,6 +1,7 @@
 // Presentation state for the saved operational plan. This never infers completed
 // work from a model response, tool message, or the end of a run.
 import { normalizePlanningMode } from './planning-mode.mjs';
+import { contractTaskPlanView } from './planning-contract-view.mjs';
 const STATUS = new Set(['pending', 'active', 'blocked', 'done', 'skipped']);
 const GROUPS = new Set(['sequence', 'parallel', 'choice']);
 const copySet = value => new Set(value instanceof Set ? value : Array.isArray(value) ? value : []);
@@ -88,6 +89,7 @@ export function savedPlanNotes(taskState) {
 }
 
 export function taskPlanView(taskState, { goal = '', runStatus = '', settled = false, planningMode = 'on', planningAvailable = true, planningStatus = '', planningMessage = '' } = {}) {
+  if (taskState?.contract?.contractVersion === 2) return contractTaskPlanView(taskState, { goal, runStatus, settled, planningMode, planningAvailable, planningStatus, planningMessage });
   const state = taskState || {}, plan = state.plan || {}, byId = new Map(), roots = [];
   planningMode = planningStatus === 'off' ? 'off' : normalizePlanningMode(planningMode);
   const planningEnabled = planningMode !== 'off';

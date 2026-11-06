@@ -32,9 +32,9 @@ export function parseOutcomeOptions(args) {
 
 async function snapshotSource(source, target, dependencyRoot) {
   await fs.mkdir(target);
-  // Planning loads its packaged skill during module import. Preserve the whole
-  // skill tree, including references, as part of the executable source snapshot.
-  for (const directory of ['lib', 'public', 'skills']) await fs.cp(path.join(source, directory), path.join(target, directory), { recursive: true });
+  // Server imports include shared desktop modules and the packaged Planning skill.
+  // Preserve those dependency families, including reviewed skill references.
+  for (const directory of ['lib', 'public', 'desktop', 'skills']) await fs.cp(path.join(source, directory), path.join(target, directory), { recursive: true });
   for (const file of ['server.mjs', 'package.json']) await fs.copyFile(path.join(source, file), path.join(target, file));
   const files = {};
   async function walk(directory, relative = '') {

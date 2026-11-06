@@ -5,7 +5,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHarnessServer } from '../server.mjs';
-import { createTaskToolHandler, TASK_SCHEMA_VERSION } from '../lib/task-state.mjs';
+import { createTaskToolHandler, TASK_SCHEMA_VERSION } from './fixture-legacy-task-state.mjs';
 
 class Runtime extends EventEmitter {
   calls = 0;

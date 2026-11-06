@@ -80,6 +80,21 @@ export class BrowserRouter extends EventEmitter {
     if (args.browser && args.browser !== owner.browser) throw fail('This tab belongs to a different browser. Use its listed browser and tab ID.', 'BROWSER_TAB_MISMATCH');
     return { ...owner, tabId };
   }
+  async observeOperation(args, options = {}) {
+    if (this.closed) throw fail('The browser workspace has closed.', 'BROWSER_CLOSED');
+    if (options.signal?.aborted) throw cancelled();
+    const status = this.status();
+    if (['open', 'tabs', 'downloads', 'folder_create', 'folder_rename', 'folder_close'].includes(args.action)) return status;
+    const selected = this.owner(args, status);
+    if (selected.browser !== 'relay') throw fail('Host operation inspection requires the contained browser.', 'BROWSER_CONTAINED_ONLY');
+    const driver = this.drivers[selected.browser];
+    if (typeof driver?.observeOperation !== 'function') return status;
+    const nativeArgs = { ...args, tabId: selected.nativeId }; delete nativeArgs.browser;
+    const result = await driver.observeOperation(nativeArgs, options);
+    if (this.closed) throw fail('The browser workspace closed during inspection.', 'BROWSER_CLOSED');
+    if (options.signal?.aborted) throw cancelled();
+    return { ...result, tabId: selected.tabId };
+  }
   async perform(args, options = {}) {
     if (this.closed) throw fail('The browser workspace has closed.', 'BROWSER_CLOSED');
     if (options.signal?.aborted) throw cancelled();

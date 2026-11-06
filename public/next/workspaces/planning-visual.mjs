@@ -1,20 +1,24 @@
 import { text } from '../core/dom.mjs';
 import { buildWorkflowMapModel } from '../../workflow-map.mjs';
 import { projectViewModel } from '../../project-view-model.mjs';
+import { isPlanContractTask, normalizePlanContract } from '../../planning-contract-model.mjs';
+import { planningContractIntent, mergePlanningContractDraft } from '../../planning-workspace-model.mjs';
 
 const note = step => String(step.note || '');
 
 /** Drafts keep a full revision, never a metadata-only catalog row. */
 export function createPlanningDraft(plan) {
   if (!Array.isArray(plan?.steps)) throw Error('Load the saved plan before editing it.');
-  return { base: plan, latest: plan, goal: String(plan.goal || ''), notes: new Map(plan.steps.map(step => [step.id, note(step)])), revisit: null, detachedNotes: [], error: '' };
+  return { ...(isPlanContractTask(plan) ? { contract: planningContractIntent(plan) } : {}), base: plan, latest: plan, goal: String(plan.goal || ''), notes: new Map(plan.steps.map(step => [step.id, note(step)])), revisit: null, detachedNotes: [], error: '' };
 }
 
 export function planningDraftDirty(draft) {
+  if (draft.contract) return JSON.stringify({ ...draft.contract, goal: draft.goal }) !== JSON.stringify(planningContractIntent(draft.base));
   return Boolean(draft.revisit) || draft.goal !== String(draft.base.goal || '') || draft.base.steps.some(step => (draft.notes.get(step.id) || '') !== note(step));
 }
 
 export function planningDraftOperations(draft) {
+  if (draft.contract) return planningDraftDirty(draft) ? [{ type: 'replace_contract', contract: normalizePlanContract({ ...draft.contract, goal: draft.goal }) }] : [];
   const operations = [];
   if (draft.revisit) {
     if (!draft.base.steps.some(step => step.id === draft.revisit.stepId)) throw Error('The step to revisit is no longer in this plan. Review the saved version.');
@@ -36,6 +40,11 @@ export function acceptPlanningSnapshot(draft, plan) {
 
 /** Explicit rebase preserves edits by saved step ID and retains removed notes. */
 export function rebasePlanningDraft(draft) {
+  if (draft.contract) {
+    if (!isPlanContractTask(draft.latest)) throw Error('The saved plan format changed. Review the saved version before editing.');
+    const merged = mergePlanningContractDraft(planningContractIntent(draft.base), { ...draft.contract, goal: draft.goal }, planningContractIntent(draft.latest));
+    return { ...draft, base: draft.latest, contract: merged.contract, goal: merged.contract.goal, detachedNotes: [...draft.detachedNotes, ...merged.detached], error: 'Draft kept. Save explicitly to apply it to the latest revision.' };
+  }
   const previous = draft.base, latest = draft.latest, old = new Map(previous.steps.map(step => [step.id, step])), ids = new Set(latest.steps.map(step => step.id));
   const detachedNotes = [...draft.detachedNotes];
   for (const step of previous.steps) if (!ids.has(step.id) && (draft.notes.get(step.id) || '') !== note(step)) {
@@ -55,6 +64,10 @@ export function rebasePlanningDraft(draft) {
 /** A delayed receipt cannot consume text typed after its submitted version. */
 export function commitPlanningDraft(draft, saved, submitted) {
   const latest = draft.latest.revision > saved.revision ? draft.latest : saved;
+  if (draft.contract) {
+    const merged = mergePlanningContractDraft({ ...submitted.contract, goal: submitted.goal }, { ...draft.contract, goal: draft.goal }, planningContractIntent(saved));
+    return { ...draft, base: saved, latest, contract: merged.contract, goal: merged.contract.goal, detachedNotes: [...draft.detachedNotes, ...merged.detached], error: 'Saved revision ' + saved.revision + '.' };
+  }
   return {
     ...draft, base: saved, latest,
     goal: draft.goal === submitted.goal ? String(saved.goal || '') : draft.goal,

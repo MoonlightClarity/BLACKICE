@@ -68,7 +68,22 @@ export function newerTaskState(previous, incoming, taskId) {
   const valid = value => value && typeof value === 'object' && !Array.isArray(value) && typeof taskId === 'string' && taskId.length > 0 && value.taskId === taskId && Number.isSafeInteger(value.revision) && value.revision > 0;
   const saved = valid(previous) ? previous : undefined;
   if (!valid(incoming)) return saved;
-  const plan = saved && saved.revision >= incoming.revision ? saved : incoming;
+  const sameContractEpoch = saved?.contract?.contractVersion === 2 && incoming.contract?.contractVersion === 2
+    && Number.isSafeInteger(saved.contract.planEpoch) && saved.contract.planEpoch === incoming.contract.planEpoch;
+  let plan = saved && saved.revision >= incoming.revision ? saved : incoming;
+  if (sameContractEpoch) {
+    const journalSeq = state => state.contractRuntime?.planEpoch === state.contract.planEpoch
+      && Number.isSafeInteger(state.contractRuntime.journalSeq) && state.contractRuntime.journalSeq >= 0 ? state.contractRuntime.journalSeq : -1;
+    const savedSeq = journalSeq(saved), incomingSeq = journalSeq(incoming);
+    const projection = incomingSeq > savedSeq ? incoming : savedSeq >= 0 ? saved : null;
+    // Material revisions and operation receipts advance independently. Keep the
+    // committed plan, and move its journal-derived progress as one snapshot.
+    if (projection && projection !== plan && journalSeq(projection) > journalSeq(plan)) plan = { ...plan,
+      contractRuntime: projection.contractRuntime,
+      ...(Object.hasOwn(projection, 'progress') ? { progress: projection.progress } : {}),
+      ...(Object.hasOwn(projection, 'availableWork') ? { availableWork: projection.availableWork } : {}),
+    };
+  }
   const previousExecution = saved?.executionObservations, incomingExecution = incoming.executionObservations;
   const previousTotal = previousExecution?.total || 0, incomingTotal = incomingExecution?.total || 0;
   let execution = incomingExecution && (!previousExecution || incomingTotal > previousTotal) ? incomingExecution : previousExecution;

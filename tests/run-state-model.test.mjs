@@ -321,3 +321,32 @@ test('selected live output and background chat routing retain independently newe
   const rejected = reduceRunCollection(receipt, routed('background', { type: 'task.state', state: { taskId: 'shared-task', revision: 99, steps: [] } }));
   assert.equal(rejected.runs[0].taskState.revision, 4); assert.equal(rejected.currentRun.taskState.revision, 5);
 });
+
+test('contract journal progress stays monotonic across delayed material revisions', () => {
+  const saved = { taskId: 'shared-task', revision: 5,
+    contract: { contractVersion: 2, planEpoch: 4, goal: 'Keep the committed goal.' },
+    contractRuntime: { planEpoch: 4, journalSeq: 8, criteria: [{ id: 'read', satisfied: false }] },
+    progress: { done: 0, journalSeq: 8 }, availableWork: [{ id: 'read', ready: true }] };
+  const receipt = { ...saved, revision: 4, contract: { ...saved.contract, goal: 'Stale material contents.' },
+    contractRuntime: { planEpoch: 4, journalSeq: 9, criteria: [{ id: 'read', satisfied: true }] },
+    progress: { done: 1, journalSeq: 9 }, availableWork: [] };
+  for (const [previous, incoming] of [[saved, receipt], [receipt, saved]]) {
+    const merged = newerTaskState(previous, incoming, 'shared-task');
+    assert.equal(merged.revision, 5);
+    assert.strictEqual(merged.contract, saved.contract, 'The newer material revision remains authoritative.');
+    assert.strictEqual(merged.contractRuntime, receipt.contractRuntime);
+    assert.strictEqual(merged.progress, receipt.progress);
+    assert.strictEqual(merged.availableWork, receipt.availableWork);
+  }
+  const raw = { taskId: 'shared-task', revision: 6, contract: saved.contract, checkpoint: 'Current checkpoint' };
+  const hydrated = newerTaskState(receipt, raw, 'shared-task');
+  assert.equal(hydrated.revision, 6);
+  assert.equal(hydrated.checkpoint, 'Current checkpoint');
+  assert.strictEqual(hydrated.contractRuntime, receipt.contractRuntime);
+  assert.strictEqual(hydrated.progress, receipt.progress);
+  const nextEpoch = { ...saved, revision: 6, contract: { ...saved.contract, planEpoch: 5 },
+    contractRuntime: { planEpoch: 5, journalSeq: 2 }, progress: { done: 0, journalSeq: 2 }, availableWork: [] };
+  assert.strictEqual(newerTaskState(receipt, nextEpoch, 'shared-task'), nextEpoch, 'Prior-epoch progress cannot cross a material Plan change.');
+  const foreign = { ...receipt, contractRuntime: { planEpoch: 99, journalSeq: 100 } };
+  assert.strictEqual(newerTaskState(saved, foreign, 'shared-task'), saved, 'A projection for another epoch is ineligible.');
+});

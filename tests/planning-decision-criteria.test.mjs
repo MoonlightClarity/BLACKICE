@@ -1,8 +1,9 @@
+// Historical schema-13 protocol regression; schema-14 behavior has separate canonical-contract and production-engine acceptance coverage.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeTaskPlan, normalizeDecisionCriteria } from '../lib/task-plan.mjs';
 import { applyPlanningEdits } from '../lib/planning-edits.mjs';
-import { TASK_TOOL, TASK_TOOL_V6, TaskStateStore, TASK_SCHEMA_VERSION } from '../lib/task-state.mjs';
+import { TASK_TOOL, TASK_TOOL_V6, TaskStateStore, TASK_SCHEMA_VERSION } from './fixture-legacy-task-state.mjs';
 import { mkdtemp,mkdir,rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
