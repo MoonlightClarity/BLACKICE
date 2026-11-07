@@ -1,0 +1,56 @@
+name: Publish BLACKICE 2.39.25 verified hotfix
+
+on:
+  push:
+    tags:
+      - 'v2.39.25'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.ref == 'refs/tags/v2.39.25'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout previously verified artifact bytes
+        uses: actions/checkout@v4
+        with:
+          ref: release-artifacts/v2.39.25
+          fetch-depth: 1
+          lfs: true
+
+      - name: Verify complete installer and source checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          git lfs pull
+          sed 's/\r$//' SHA256SUMS.txt > SHA256SUMS.lf
+          sha256sum --check SHA256SUMS.lf
+          test "$(wc -c < Blackice-2.39.25-Setup.exe)" -eq 154918196
+          test "$(wc -c < Blackice-2.39.25-Runtime-Source.zip)" -eq 15659005
+          test "$(sha256sum Blackice-2.39.25-Setup.exe | cut -d' ' -f1)" = '0e2db751c1960defebaaaecf7461478332fac25b7d101e6be8fb0e82b33d1d5d'
+          test "$(sha256sum Blackice-2.39.25-Runtime-Source.zip | cut -d' ' -f1)" = '52fe151e271f317c0b5b4a0331bc8b09964ef9b2060aabfcdb204e0edcb883da'
+          jq -e '.version == "2.39.25" and .verifiedLocalInstall.passed == true and .repair.stagedJsonFilesWithBOM == 0' blackice-hotfix-manifest.json
+
+      - name: Publish release with the verified files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view v2.39.25 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'The release already exists. Refusing to publish a duplicate.'
+            exit 1
+          fi
+          gh release create v2.39.25 \
+            Blackice-2.39.25-Setup.exe \
+            Blackice-2.39.25-Runtime-Source.zip \
+            Blackice-2.39.25-Setup.exe.blockmap \
+            blackice-hotfix-manifest.json \
+            SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --title 'BLACKICE 2.39.25 — error diagnostics and model-switch recovery' \
+            --notes-file Release-Notes.md \
+            --latest
