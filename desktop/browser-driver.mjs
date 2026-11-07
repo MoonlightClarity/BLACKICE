@@ -44,6 +44,7 @@ const uploadMimeTypes = new Map(Object.entries({
   '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   '.ppt': 'application/vnd.ms-powerpoint', '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp',
+  '.mp4': 'video/mp4',
   '.zip': 'application/zip', '.json': 'application/json',
 }));
 const uploadRejected = () => Object.assign(error('Delivery of the selected files could not be verified at this file input. Inspect the page before another upload.'), { code: 'BROWSER_UPLOAD_REJECTED' });
