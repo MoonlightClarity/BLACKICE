@@ -1,0 +1,4 @@
+0e2db751c1960defebaaaecf7461478332fac25b7d101e6be8fb0e82b33d1d5d  Blackice-2.39.25-Setup.exe
+52fe151e271f317c0b5b4a0331bc8b09964ef9b2060aabfcdb204e0edcb883da  Blackice-2.39.25-Runtime-Source.zip
+0cf2743ad0f477a50f987eab2f073abb0051e0c7bc5fb3756e2f55052a0fa09a  Blackice-2.39.25-Setup.exe.blockmap
+adda27f17c8db5e24888fdcf2d20e6e2bd59ed92f5e615e5d02429d3fd8c147b  blackice-hotfix-manifest.json

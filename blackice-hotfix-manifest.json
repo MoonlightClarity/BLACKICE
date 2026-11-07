@@ -1,0 +1,68 @@
+{
+    "format":  1,
+    "product":  "BLACKICE",
+    "version":  "2.39.25",
+    "baseRuntime":  "2.39.24 installed",
+    "builder":  "electron-builder 26.15.3 / Electron 44.7.2",
+    "origin":  "current installed application, patched in place; not older 2.39.6 source tree",
+    "mode":  "verified local candidate",
+    "published":  false,
+    "installed":  false,
+    "codeSigning":  "unsigned",
+    "appFileVersions":  "setup, exe, package: 2.39.25",
+    "checks":  "684 installed application files identical to stage except versioned package.json and added release notes",
+    "tests":  {
+                  "source_model_continuation":  {
+                                                    "passed":  38,
+                                                    "failed":  0
+                                                },
+                  "installed_pre_agent_failure":  {
+                                                      "passed":  3,
+                                                      "failed":  0
+                                                  },
+                  "source_http_429_model_switch":  {
+                                                       "passed":  1,
+                                                       "failed":  0
+                                                   },
+                  "installed_http_429_model_switch":  {
+                                                          "passed":  1,
+                                                          "failed":  0
+                                                      },
+                  "generic_error_display":  {
+                                                "passed":  10,
+                                                "failed":  0
+                                            }
+              },
+    "artifact":  {
+                     "sha256":  "0E2DB751C1960DEFEBAAAECF7461478332FAC25B7D101E6BE8FB0E82B33D1D5D",
+                     "name":  "Blackice-2.39.25-Setup.exe",
+                     "bytes":  154918196
+                 },
+    "sourceSnapshot":  {
+                           "name":  "Blackice-2.39.25-Runtime-Source.zip",
+                           "bytes":  15659005,
+                           "sha256":  "52FE151E271F317C0B5B4A0331BC8B09964EF9B2060AABFCDB204E0EDCB883DA",
+                           "kind":  "verified runtime source snapshot",
+                           "verified":  true
+                       },
+    "installationBlocker":  "Other BLACKICE browser jobs still awaiting input; no forced restart or installation was performed",
+    "repair":  {
+                   "at":  "2026-11-06T23:56:10.4109486Z",
+                   "reason":  "Removed UTF-8 BOM from Electron startup package.json; rebuilt installer and runtime source",
+                   "stagedPackageJsonFirstByte":  123,
+                   "stagedJsonFilesWithBOM":  0,
+                   "supersededInstallerSha256":  "7821E388EFB05CBB32F5A9BC53CAA9C5E424CD8D3E3BFA2FE2D62B28CA18703B",
+                   "supersededSourceSha256":  "3B43F0F5C4EC44EC12EDBE4F5644C131961F211C8F2542953A63AA0BB4AC2351",
+                   "previousBuildBackup":  "C:\\Users\\user\\AppData\\Local\\Temp\\blackice-2.39.25-model-recovery-build-20261106\\superseded-defective-release",
+                   "repairedInstallerInstalled":  true
+               },
+    "currentInstallation":  "BLACKICE 2.39.25 locally installed from the repaired BOM-free setup; executable and package versions match; saved profile preserved",
+    "verifiedLocalInstall":  {
+                                 "passed":  true,
+                                 "completedAt":  "2026-11-07T00:02:27.1555933Z",
+                                 "setupHash":  "0e2db751c1960defebaaaecf7461478332fac25b7d101e6be8fb0e82b33d1d5d",
+                                 "profilePreserved":  true,
+                                 "packageBomFree":  true,
+                                 "version":  "2.39.25"
+                             }
+}
