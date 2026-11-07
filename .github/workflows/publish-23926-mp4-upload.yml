@@ -37,7 +37,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $package = Get-Content package.json -Raw | ConvertFrom-Json
-          $lock = Get-Content package-lock.json -Raw | ConvertFrom-Json
+          $lock = Get-Content package-lock.json -Raw | ConvertFrom-Json -AsHashtable
           if ($package.version -ne '2.39.26' -or $lock.version -ne '2.39.26') {
             throw 'Version metadata does not match 2.39.26.'
           }
