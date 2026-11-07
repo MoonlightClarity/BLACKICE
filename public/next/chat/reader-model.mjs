@@ -3,6 +3,9 @@ import { recordedChatModels,projectCyclePlanning,chatErrorText } from './model.m
 import { projectPlanningActivity } from './planning-timeline.mjs';
 import { contextOptions, contextStatistics, compactionStatistics } from '../core/context-controls.mjs';
 const records = value => Array.isArray(value) ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item)) : [];
+// Saved run failures are user-facing diagnostics, not internal event traces.
+const diagnosticText = value => typeof value === 'string' ? value.slice(0, 12000) : typeof value?.message === 'string' ? value.message.slice(0, 12000) : undefined;
+const diagnosticCode = value => typeof value === 'string' || typeof value === 'number' ? String(value).slice(0, 120) : undefined;
 
 /** Convert a full archived execution family into a chat-only transfer.
  * Full event traces remain in the backend and are never sent to the UI thread.
@@ -12,7 +15,7 @@ export function projectFamily(family) {
   const projected=runs.map(run=>{
     const messages=messagesOfRun(run),models=recordedChatModels(run);
     const nodes=Object.fromEntries(Object.entries(run.nodes||{}).map(([id,node])=>[
-      id,{status:node.status,viabilityHeld:node.viabilityHeld===true,threadId:node.threadId,resumeThreadId:node.resumeThreadId,codexHistory:node.codexHistory,
+      id,{status:node.status,error:diagnosticText(node.error),errorCode:diagnosticCode(node.errorCode),viabilityHeld:node.viabilityHeld===true,threadId:node.threadId,resumeThreadId:node.resumeThreadId,codexHistory:node.codexHistory,
         turnId:node.turnId,turnStatus:node.turnStatus,runtimePhase:node.runtimePhase,model:models[id]?.model,resolvedModel:node.resolvedModel,
         modelEvidence:models[id],
         contextStatus:contextStatistics(node.contextStatus||node.context),lastCompaction:compactionStatistics(node.lastCompaction),
@@ -22,6 +25,7 @@ export function projectFamily(family) {
       id:run.id,taskId:run.taskId,parentRunId:run.parentRunId,retryOf:run.retryOf,
       createdAt:run.createdAt,updatedAt:run.updatedAt,
       input:run.input,status:run.status,settled:run.settled,output:run.output,
+      error:diagnosticText(run.error),errorCode:diagnosticCode(run.errorCode),
       ...(chatErrorText(run.error)?{error:chatErrorText(run.error)}:{}),
       planningExecutionMode:run.planningExecutionMode,
       viability:run.viability?.awaitingInput===true?{awaitingInput:true}:undefined,

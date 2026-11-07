@@ -5,6 +5,20 @@ import { createRegisteredArtifactResolver } from '../../conversation-model.mjs';
 import { taskPlanView } from '../../task-plan-model.mjs';
 import { chatDisplayPhases, chatWorkSummary, chatProgressPreview, chatOutlineStatusLabel } from './planning-timeline.mjs';
 
+// A failed run should show the diagnostic it actually saved, regardless of
+// provider, model, tool or failure code. Keep the message as plain text.
+export function chatRunError(run) {
+  if (!run) return null;
+  const failedNodes=Object.values(run.nodes||{}).filter(node=>node?.status==='failed');
+  if(run.status!=='failed'&&!run.error&&!failedNodes.length) return null;
+  const sources=[run.error,...failedNodes.map(node=>node.error)];
+  const raw=sources.find(value=>typeof value==='string'&&value.trim()||typeof value?.message==='string'&&value.message.trim());
+  const message=(typeof raw==='string'?raw:raw?.message)?.trim()||'This operation failed without a recorded error message.';
+  const codes=[run.errorCode,...failedNodes.map(node=>node.errorCode),typeof raw==='object'?raw?.code:null];
+  const code=codes.find(value=>typeof value==='string'&&value.trim()||Number.isFinite(value));
+  return {message,code:code==null?null:String(code)};
+}
+
 export function createChatFrame(mount) {
   mount.innerHTML = [
     '<div class="next-chat" id="next-chat"><aside class="next-chat-sidebar">',
@@ -266,7 +280,8 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
     const delivery=chatResponseState(run,allMessages);
     const {shown:messages,hidden:olderMessages}=windowedMessages(
       allMessages,messageLimits?.get(run.id)??CHAT_MESSAGE_BATCH);
-    const signature=[run,run.status,run.settled,run.output,request,run.retryOf,earlier&&runText(earlier),
+    const failure=chatRunError(run);
+    const signature=[run,run.status,run.settled,run.output,failure?.message,failure?.code,request,run.retryOf,earlier&&runText(earlier),
       run===shown.at(-1),run.taskState,run.taskState?.revision,run.planningActivity,run.workflow,markdown,
       delivery.missing,delivery.pausedAfterPlan,delivery.needsFollowup,delivery.errors.join('\n'),
       messageLimits?.get(run.id),allMessages.length,...(run.attachmentIds||[]).flatMap(id=>[id,getAttachment?.(id)?.name]),
@@ -336,6 +351,15 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
         article.dataset.scrollAnchor=run.id+':'+phase.id;
         for(const entry of phase.entries)appendAssistant(article,entry.message);
       }
+    }
+    if(failure){
+      const panel=text(section,'','div','next-chat-run-error');
+      panel.dataset.scrollAnchor=run.id+':error';
+      panel.setAttribute('role','alert');
+      const heading=text(panel,'','div','next-chat-run-error-heading');
+      text(heading,'Error','strong');
+      if(failure.code)text(heading,failure.code,'code','next-chat-run-error-code');
+      text(panel,failure.message,'p','next-chat-run-error-message');
     }
     if(running(run)){
       const live=text(section,'','div','next-chat-activity');

@@ -131,3 +131,7 @@
 .next-chat-command-menu strong{font:600 12px/1.4 Consolas,monospace;color:#dfedf7}
 .next-chat-command-menu span{font-size:11px;color:#b8cad7}
 @media(max-width:700px){.next-context-controls{padding:7px 9px}.next-context-heading{gap:6px}.next-context-heading>span{flex-basis:100%;order:3}.next-context-controls .next-settings-grid{grid-template-columns:1fr}}
+.next-chat-run-error{margin:14px 0;padding:12px 14px;border:1px solid #995f60;border-radius:9px;background:rgba(130,44,50,.12);color:#f1d6d2;white-space:normal}
+.next-chat-run-error-heading{display:flex;flex-wrap:wrap;align-items:center;gap:9px;font-size:12px}
+.next-chat-run-error-code{color:#eab1aa;font-size:11px;overflow-wrap:anywhere}
+.next-chat-run-error-message{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.55;user-select:text}

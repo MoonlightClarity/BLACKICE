@@ -601,6 +601,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
         const i=state.runs.findIndex(run=>run.id===event.runId);
         if(i>=0) {
           const old=state.runs[i];state.runs[i]=mergeChatRunUpdate(old,updated);
+          if(updated.status==='failed')render({preserve:true});
           refreshChoices();
           if(!running(updated)&&running(old)) {
             clearTimeout(settleTimer);

@@ -219,6 +219,10 @@ export function replyTarget(runs) {
     const agents=[...(run.workflow?.nodes||[])].reverse().filter(node=>node.type==='agent');
     const held=run.status==='blocked'&&run.viability?.awaitingInput===true;
     const agent=(held&&agents.find(node=>run.nodes?.[node.id]?.viabilityHeld===true))
+      ||(run.status==='failed'&&agents.find(node=>run.nodes?.[node.id]?.status==='failed'))
+      // A provider or planning failure can settle the overall run before its
+      // selected agent starts; keep that agent available for a model switch.
+      ||(run.status==='failed'&&agents.find(node=>!TERMINAL_CHAT_STATUSES.has(run.nodes?.[node.id]?.status)))
       ||agents.find(node=>TERMINAL_CHAT_STATUSES.has(run.nodes?.[node.id]?.status));
     // A provider can fail before creating a thread. The engine reconstructs
     // context from saved conversation history, so a thread ID is not required.
@@ -302,6 +306,7 @@ export function mergeChatRunUpdate(previous, updated) {
   const result={...previous,status:updated.status??previous.status,settled:updated.settled??previous.settled,
     nodes,output:updated.output??previous.output,updatedAt:updated.updatedAt||previous.updatedAt};
   if(Object.hasOwn(updated,'error'))result.error=chatErrorText(updated.error)||undefined;
+  if(Object.hasOwn(updated,'errorCode'))result.errorCode=updated.errorCode;
   if(Object.hasOwn(updated,'viability'))result.viability=updated.viability?.awaitingInput===true?{awaitingInput:true}:undefined;
   if(Object.hasOwn(updated,'responseCycle')){
     const cycle=updated.responseCycle;
