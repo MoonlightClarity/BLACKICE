@@ -30,8 +30,8 @@ async function complete(f,jobId,changes={}){const folder=path.join(f.root,'.blac
 
 test('verification metadata leaves the frozen tool catalog and instructions byte-identical',()=>{
   const sha=value=>createHash('sha256').update(value).digest('hex');
-  assert.equal(sha(JSON.stringify(WORKBENCH_AGENT_TOOL)),'c6d372e60f46a6d69b97fb8af2ff366c00a24aa9c4cca94db9bdbaece93bedfa');
-  assert.equal(sha(WORKBENCH_AGENT_INSTRUCTIONS),'68af7ae9c85547fc14393246e5dcdad09cdfcf4a6026469734746c39c5d296d8');
+  assert.equal(sha(JSON.stringify(WORKBENCH_AGENT_TOOL)),'af3ed98103c83ad463a33d7f89d8437c8129fcf8f02d6c21ac6f9eb24a739930');
+  assert.equal(sha(WORKBENCH_AGENT_INSTRUCTIONS),'6183c2f93d6ec453cd0d94d44ac318a5302f1528cfb92c7e55798863ba397718');
 });
 
 test('existing primitive equality, case-sensitive substrings and trimmed-string checks retain their semantics',()=>{

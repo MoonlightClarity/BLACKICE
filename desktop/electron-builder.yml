@@ -27,6 +27,8 @@ files:
   - scripts/workbench-guest-display.ps1
   - scripts/workbench-agent-job.ps1
   - scripts/workbench-guest-setup.ps1
+  - scripts/workbench-guest-pair-bootstrap.ps1
+  - scripts/workbench-guest-reconnect.ps1
   - scripts/workbench-guest-app-batch.ps1
   - scripts/workbench-desktop-stream.ps1
   - scripts/install-workbench-guest-video.ps1
@@ -97,6 +99,7 @@ files:
   - RELEASE-NOTES-2.39.23.md
   - RELEASE-NOTES-2.39.24.md
   - RELEASE-NOTES-2.39.25.md
+  - RELEASE-NOTES-2.39.26.md
   - PLANNING-ORGANIZATION.md
   - REMOTE-ACCESS.md
   - BROWSER-PROTECTION.md

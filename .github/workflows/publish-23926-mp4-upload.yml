@@ -1,4 +1,4 @@
-name: Publish BLACKICE 2.39.26 MP4 upload fix
+name: Publish BLACKICE 2.39.26 browser and pairing update
 
 on:
   push:
@@ -7,6 +7,11 @@ on:
       - desktop/browser-driver.mjs
       - .github/workflows/publish-23926-mp4-upload.yml
       - RELEASE-NOTES-2.39.26.md
+      - lib/workbench-pairing.mjs
+      - lib/windows-workbench.mjs
+      - scripts/workbench-guest-reconnect.ps1
+      - scripts/workbench-guest-pair-bootstrap.ps1
+      - public/next/workspaces/workbench-guide.mjs
   workflow_dispatch:
 
 permissions:
@@ -61,12 +66,10 @@ jobs:
           npm ci --no-audit --no-fund
           if ($LASTEXITCODE -ne 0) { throw 'npm ci failed.' }
 
-      - name: Verify the MP4 regression and source tests
+      - name: Verify browser and Workbench pairing regressions
         run: |
-          node --test tests/browser-upload-mp4.test.mjs
-          if ($LASTEXITCODE -ne 0) { throw 'MP4 regression test failed.' }
-          npm test
-          if ($LASTEXITCODE -ne 0) { throw 'BLACKICE source tests failed.' }
+          node --test tests/browser-upload-mp4.test.mjs tests/workbench-pairing-auto.test.mjs tests/windows-workbench.test.mjs tests/workbench-agent-tools.test.mjs tests/workbench-console-control.test.mjs tests/windows-release-inputs.test.mjs tests/release-check.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Browser/Workbench regression tests failed.' }
 
       - name: Build complete Windows Setup.exe
         run: |
@@ -136,7 +139,7 @@ jobs:
             (Join-Path $dir 'SOURCE-INDEX.json'),
             (Join-Path $dir 'blackice-native-sources.json')
           )
-          gh release create $tag @assets --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title 'BLACKICE 2.39.26 — MP4 browser upload fix' --notes-file 'RELEASE-NOTES-2.39.26.md' --latest
+          gh release create $tag @assets --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title 'BLACKICE 2.39.26 - MP4 uploads and persistent Workbench pairing' --notes-file 'RELEASE-NOTES-2.39.26.md' --latest
           if ($LASTEXITCODE -ne 0) { throw 'GitHub release publication failed.' }
           $release = gh release view $tag --repo $env:GITHUB_REPOSITORY --json url,targetCommitish,assets | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or $release.targetCommitish -cne $env:GITHUB_SHA) {

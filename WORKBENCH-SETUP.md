@@ -43,21 +43,16 @@ After Hyper-V management works, use Workbench to provision the dedicated BLACKIC
 
 In Workbench choose **Prepare guest files**. The host puts guest-agent.ps1, guest-setup.ps1 and host-info.json into the .blackice-workbench folder of the actual BLACKICE working directory.
 
-**Still manual:** create an authenticated SMB share limited to this host folder, configure VM-to-host network reachability and authorize a Windows account. Do not expose the entire host disk or open SMB to public networks. Check existing shares before creating one. Example elevated host PowerShell for the default workspace:
+**Automatic pairing is the normal path.** Open the existing running Workbench VM and use **Pair & auto-repair**, or let an explicitly authorized agent call the Workbench auto_pair action. BLACKICE should handle this entire chain without requesting a password or manual guest setup:
 
-~~~powershell
-$workspace=Join-Path $env:APPDATA 'Relay\workspace'
-$account="$env:USERDOMAIN\$env:USERNAME"
-New-SmbShare -Name 'BLACKICE-Workspace' -Path $workspace -ChangeAccess $account
-~~~
+1. Prepare the guest agent in the configured host workspace. Reuse or create the dedicated BLACKICEWBLink host account and its BLACKICE-Workspace share, generate a working password, and apply its read/write folder rights.
+2. Deliver the guest-local pairing bootstrap, generated credential and reconnect watcher via the Hyper-V **Guest Service Interface** (Copy-VMFile). This works even if W: is absent or mapped to a stale Default Switch IP. Do not bootstrap by requiring the broken W: mount.
+3. Transfer authorized VM input to the agent, use only the native Workbench guest input surface to start the guest-local pairing bootstrap, and return the user's previous input ownership afterward.
+4. Inside the guest, save the generated share credential to the guest user's Windows credential store (encrypted through Export-Clixml), connect W: and verify real bidirectional read/write access. Run W:\.blackice-workbench\guest-setup.ps1 and complete BLACKICE's host-to-guest-to-host nonce challenge.
+5. Install a **guest-local** reconnect watcher that starts at every guest user sign-in and checks the shared drive every 15 seconds while signed in. On guest resume, hostname/IP changes, lost SMB sessions or agent crashes, it removes a stale W: session, resolves the current host by name with an actual gateway fallback, reconnects with the saved credential, and relaunches the guest agent/video process when needed. The watchdog must not depend on W: to launch.
+6. Verify W: again after an actual disconnect/reconnect test. A one-time mount is not finished work. Report separate outcomes for the Hyper-V bootstrap, current W: mount, persistent watcher, agent heartbeat, pairing receipt and file read/write roundtrip.
 
-On a customized installation, use the actual working directory shown in Workbench. Inside the signed-in **guest**, authenticate to the host SMB share, map it as W:, and execute:
-
-~~~powershell
-& 'W:\.blackice-workbench\guest-setup.ps1'
-~~~
-
-The guest agent must run in the guest's interactive session, not on the host. Choose **Pair guest** in host Workbench. Require an actual host-to-guest-to-host challenge, fresh heartbeat, guest window/screenshot and verified bidirectional file read/write.
+Do not turn pairing into a manual password prompt; the explicitly authorized agent may create and use the dedicated host-share password. The VM, user applications and VHDX are never recreated to repair a disconnected share. Windows still requires an interactive guest login for native desktop access.
 
 ## Step 5 — Run the native app smoke test
 

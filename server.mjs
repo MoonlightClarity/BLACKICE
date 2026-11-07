@@ -1226,6 +1226,7 @@ export async function createHarnessServer(options = {}) {
         return json(res,200,await workbench.installedAppSyncRun(appBatchMatch[1]));
       if (pathname === '/api/workbench/prepare-agent' && req.method === 'POST') return json(res, 200, await workbench.prepareGuestAgent());
       if (pathname === '/api/workbench/pair' && req.method === 'POST') return json(res, 200, await workbench.pairGuest());
+      if (pathname === '/api/workbench/auto-pair' && req.method === 'POST') {await body(req);return json(res,200,await workbench.autoPairGuest());}
       if(pathname==='/api/workbench/console/control'&&req.method==='POST'){
         const value=await body(req);
         if(!value||typeof value!=='object'||Array.isArray(value)||

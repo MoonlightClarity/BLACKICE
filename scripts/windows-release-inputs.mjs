@@ -17,7 +17,7 @@ topLevelFiles.add('RELEASE-NOTES-2.37.0.md');
 topLevelFiles.add('RELEASE-NOTES-2.38.0.md');
 topLevelFiles.add('RELEASE-NOTES-2.39.0.md');
 topLevelFiles.add('RELEASE-NOTES-2.39.1.md');
-for (const patch of [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]) topLevelFiles.add('RELEASE-NOTES-2.39.' + patch + '.md');
+for (const patch of [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]) topLevelFiles.add('RELEASE-NOTES-2.39.' + patch + '.md');
 topLevelFiles.add('WORKBENCH-NATIVE-DISPLAY.md');
 
 // Match the existing installer inputs without admitting arbitrary native helpers.
@@ -27,6 +27,7 @@ const packagedNativeHelpers = new Set([
   'desktop/workbench-elevated-command.ps1', 'desktop/workbench-vmconnect-bridge.cs', 'desktop/workbench-vmconnect-bridge.ps1',
   // Fixed guest-only helper scripts packaged by the current Workbench build.
   'scripts/workbench-guest-agent.ps1', 'scripts/workbench-guest-setup.ps1',
+  'scripts/workbench-guest-pair-bootstrap.ps1', 'scripts/workbench-guest-reconnect.ps1',
   'scripts/workbench-agent-job.ps1',
   'scripts/workbench-guest-display.ps1', 'scripts/workbench-desktop-stream.ps1',
   'scripts/install-workbench-guest-video.ps1', 'scripts/workbench-rdp-preflight.ps1',

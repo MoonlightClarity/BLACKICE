@@ -32,7 +32,7 @@ export function createWorkbenchWorkspace({mount,api,notify=()=>{}}){
     '<form id="wb-add-folder" class="wb-folder-form"><label class="next-label">Additional existing host folder<input class="next-field" id="wb-host-path" placeholder="C:\\Users\\…\\Documents" spellcheck="false" required></label>',
     '<label class="wb-checkbox"><input type="checkbox" id="wb-read-write" checked>Read and write</label><button type="submit">Add mapping</button></form></section></div>',
     '<section class="next-card"><h2>Guest connection</h2><p id="wb-guest-setup" class="next-help"></p>',
-    '<div class="next-row"><button id="wb-prepare-agent" type="button">Prepare guest files</button><button id="wb-pair" type="button" disabled>Pair guest</button></div><pre id="wb-setup-output" class="wb-setup-output" hidden></pre></section>',
+    '<div class="next-row"><button id="wb-prepare-agent" type="button">Prepare guest files</button><button id="wb-pair" type="button" disabled>Pair &amp; auto-repair</button></div><pre id="wb-setup-output" class="wb-setup-output" hidden></pre></section>',
     '<section class="next-card"><h2>Installed apps</h2><p class="next-help">Rescan and install missing guest apps without rebuilding Windows.</p>',
     '<div class="next-row"><button id="wb-apps-scan" type="button">Rescan &amp; discover installers</button><button id="wb-apps-rebatch" type="button" disabled>Rescan &amp; install missing</button>',
     '<button id="wb-apps-retry" type="button" disabled>Re-batch saved inventory</button><button id="wb-apps-review" type="button" disabled>Review installer matches</button></div>',
@@ -55,7 +55,7 @@ export function createWorkbenchWorkspace({mount,api,notify=()=>{}}){
     els['open-window'].disabled=!active||pending||loading||nativeBusy||!nativeAvailable||!status?.canReadGuestConsole||status?.consoleControl?.owner==='none';
     els['open-window'].textContent=nativeBusy?'Opening Workbench…':nativeReceipt?.connected===true?'Show Workbench':'Open Workbench';
     els.start.hidden=status?.canStart!==true;els.start.disabled=!active||pending||loading||status?.canStart!==true;
-    els['prepare-agent'].disabled=pending||loading||!status?.canPrepareAgent;els.pair.disabled=pending||loading||!status?.canPair;
+    els['prepare-agent'].disabled=pending||loading||!status?.canPrepareAgent;els.pair.disabled=pending||loading||!status?.guest?.running||!status?.capability?.canManageVM||!status?.canReadGuestConsole;
     els.provision.disabled=pending||loading||!status?.canProvision;
     els['save-iso'].disabled=pending||loading||!status;els['find-iso'].disabled=pending||loading||mediaBusy;
     for(const button of els['media-candidates'].querySelectorAll('button'))button.disabled=pending||mediaBusy;
@@ -102,7 +102,7 @@ export function createWorkbenchWorkspace({mount,api,notify=()=>{}}){
     els['guest-status'].textContent=agent.paired?'Paired · session '+agent.guestSessionId:guest.running?'Pairing needed':'Windows not running';
     els['files-status'].textContent=agent.sharedReadWriteVerified?'Connected':folders.some(folder=>folder.guestMountVerified)?'Guest mount verified':'Setup needed';
     els['guest-setup'].textContent=agent.paired?'The interactive guest and shared workspace are paired.':
-      'Map '+(folders[0]?.expectedGuestUNC||'the shared workspace')+' to W: in Windows, then run W:\\.blackice-workbench\\guest-setup.ps1 and pair the guest.';
+      'Select Pair & auto-repair. BLACKICE provisions the host share login, copies setup through Hyper-V, and maintains W: across login, resume and host-IP changes.';
     paintWindow();
   }
   function paintAppSync(){
@@ -230,7 +230,7 @@ export function createWorkbenchWorkspace({mount,api,notify=()=>{}}){
   }
   async function setupOperation(route){
     if(pending||!active)return;pending=true;showError(null);lock();
-    try{const result=await api(route,'POST',{});if(!destroyed){els['setup-output'].hidden=false;els['setup-output'].textContent=JSON.stringify(result,null,2).slice(0,4200);await refresh();}}
+    try{const result=await api(route,'POST',{}, {deadlineMs:route.endsWith('/auto-pair')?105000:30000});if(!destroyed){els['setup-output'].hidden=false;els['setup-output'].textContent=JSON.stringify(result,null,2).slice(0,4200);await refresh();}}
     catch(error){showError(error)}finally{pending=false;if(!destroyed)lock();}
   }
   async function readNativeCapability(value){
@@ -271,7 +271,7 @@ export function createWorkbenchWorkspace({mount,api,notify=()=>{}}){
   els['find-iso'].addEventListener('click',()=>void findMedia());
   els.provision.addEventListener('click',()=>void mutate('/api/workbench/provision',{}));
   els['prepare-agent'].addEventListener('click',()=>void setupOperation('/api/workbench/prepare-agent'));
-  els.pair.addEventListener('click',()=>void setupOperation('/api/workbench/pair'));
+  els.pair.addEventListener('click',()=>void setupOperation('/api/workbench/auto-pair'));
   els['vm-settings'].addEventListener('toggle',()=>{if(active&&els['vm-settings'].open)void loadAppSync();});
   els['apps-scan'].addEventListener('click',()=>void executeAppSync('scan'));
   els['apps-rebatch'].addEventListener('click',()=>void executeAppSync('rebatch'));

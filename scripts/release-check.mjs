@@ -46,6 +46,7 @@ export async function appFingerprint(directory = source) {
   // and installed bytes equally; older builds may predate individual helpers.
   for (const relative of [
     'scripts/workbench-guest-agent.ps1', 'scripts/workbench-guest-setup.ps1',
+    'scripts/workbench-guest-pair-bootstrap.ps1', 'scripts/workbench-guest-reconnect.ps1',
     'scripts/workbench-agent-job.ps1', 'scripts/workbench-guest-app-batch.ps1',
     'scripts/workbench-guest-display.ps1', 'scripts/workbench-desktop-stream.ps1',
     'scripts/install-workbench-guest-video.ps1', 'scripts/workbench-rdp-preflight.ps1',
