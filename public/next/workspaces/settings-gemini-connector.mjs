@@ -30,7 +30,7 @@ export function createGeminiConnectorSettings({ mount, api, notify = () => {} } 
   function saveSelections() {
     for (const form of mount.querySelectorAll('[data-gemini-request]')) {
       const id = form.dataset.geminiRequest;
-      selected.set(id, [...form.querySelectorAll('[data-gemini-scope]:checked')].map(node => node.dataset.geminiScope));
+      selected.set(id, [...form.querySelectorAll('[data-gemini-scope]')].filter(node => node.checked).map(node => node.dataset.geminiScope));
     }
   }
   function render() {
@@ -174,7 +174,7 @@ export function createGeminiConnectorSettings({ mount, api, notify = () => {} } 
     const form = event.target.closest('[data-gemini-request]');
     if (!form || !mount.contains(form)) return;
     event.preventDefault();
-    const scopes = [...form.querySelectorAll('[data-gemini-scope]:checked')].map(node => node.dataset.geminiScope);
+    const scopes = [...form.querySelectorAll('[data-gemini-scope]')].filter(node => node.checked).map(node => node.dataset.geminiScope);
     void execute('approve', form.dataset.geminiRequest, scopes);
   }
   mount.addEventListener('click', onClick);
