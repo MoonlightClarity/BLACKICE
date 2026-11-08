@@ -18,6 +18,8 @@ async function fixture(t,options={}){
   const window={isDestroyed:()=>options.anchorDestroyed===true};
   const workbench=new WindowsWorkbench({dataDir:path.resolve('fixture-agent-open-viewer'),probe:async()=>assert.fail('No live host inventory.'),consoleController:{frame:()=>assert.fail('No legacy capture.')}});
   workbench.config={vmName:'Fixture VM'};
+  // Status in this isolated viewer fixture must not probe the actual Hyper-V host.
+  workbench.status=async()=>({vmName:'Fixture VM',guest:{running:true,agent:{paired:true}},consoleControl:workbench.consoleControl.status(),blockers:[]});
   const paired={state:{vmName:'Fixture VM',capability:{}},agent:{guestName:'GUEST',guestSessionId:2}};
   let contextReads=0;
   const jobs={context:async()=>{contextReads++;if(options.offline)throw Error('SMB unavailable');return paired;}};
