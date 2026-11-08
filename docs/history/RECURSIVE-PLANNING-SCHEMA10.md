@@ -8,7 +8,7 @@
 
 Planning On uses the saved task as a revisable work tree. The agent decomposes work before attempting it, performs one eligible operation, records the actual outcome, and returns to planning to reassess the result and remaining work. Before the final response, that return is an explicit saved review. Thinking or evidence can send the agent back to an earlier step while retaining the earlier attempt and its reported effects.
 
-This guide describes task-tool schema 10, including the executable branches and revisit operations introduced in schema 9. The broader standard for substantive reasoning remains in [PLANNING-DEPTH.md](PLANNING-DEPTH.md).
+This guide describes task-tool schema 10, including the executable branches and revisit operations introduced in schema 9. The broader standard for substantive reasoning remains in [PLANNING-DEPTH.md](../PLANNING-DEPTH.md).
 
 ## The unit of work
 
@@ -285,4 +285,4 @@ Saved evidence and Boolean facts are reported observations. Structural validatio
 
 The main implementation is in `lib/planning-policy.mjs`, `lib/task-plan.mjs`, `lib/planning-logic.mjs`, `lib/planning-revisit.mjs`, `lib/planning-review.mjs`, `lib/planning-completion.mjs`, `lib/planning-sequence.mjs`, `lib/planning-edits.mjs`, `lib/task-state.mjs`, and `lib/engine.mjs`.
 
-Relevant tests are `tests/planning-logic.test.mjs`, `tests/planning-recursive-integration.test.mjs`, `tests/planning-recursive-ui.test.mjs`, `tests/planning-review.test.mjs`, `tests/planning-sequential-dispatch.test.mjs`, `tests/planning-sequential-engine.test.mjs`, `tests/planning-completion-contract.test.mjs`, and `tests/planning-note-limit.test.mjs`. These exercise condition evaluation, revisions and revisits, review freshness and scope, preserved history, dispatch/recovery behavior, native catalog handoffs, editor behavior, and completion contracts. Actual model behavior requires the separate evaluations described in [PLANNING-BEHAVIOR-EVAL.md](PLANNING-BEHAVIOR-EVAL.md).
+Relevant tests are `tests/planning-logic.test.mjs`, `tests/planning-recursive-integration.test.mjs`, `tests/planning-recursive-ui.test.mjs`, `tests/planning-review.test.mjs`, `tests/planning-sequential-dispatch.test.mjs`, `tests/planning-sequential-engine.test.mjs`, `tests/planning-completion-contract.test.mjs`, and `tests/planning-note-limit.test.mjs`. These exercise condition evaluation, revisions and revisits, review freshness and scope, preserved history, dispatch/recovery behavior, native catalog handoffs, editor behavior, and completion contracts. Actual model behavior requires the separate evaluations described in [PLANNING-BEHAVIOR-EVAL.md](../PLANNING-BEHAVIOR-EVAL.md).
