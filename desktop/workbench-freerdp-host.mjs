@@ -312,9 +312,20 @@ export class WorkbenchFreeRDPHost {
     if(this.closed)return {...this.last,cleanup:this.cleanupReceipt()};
     const deadline=Date.now()+this.closeTimeoutMs;
     let timer;
-    try{if(worker&&!life?.exited&&!this.uncertain)await Promise.race([this.dispatch('close').catch(()=>{}),life.exit,new Promise(resolve=>{
-      timer=setTimeout(resolve,Math.max(1,Math.floor(this.closeTimeoutMs/2)));
-    })])}
+    try{
+      if(worker&&!life?.exited&&!this.uncertain){
+        // The native close reply is an acknowledgement, not proof that the
+        // helper process has exited. Give the acknowledged shutdown the rest
+        // of its bounded deadline before falling back to forced termination.
+        await Promise.race([this.dispatch('close').catch(()=>{}),life.exit,new Promise(resolve=>{
+          timer=setTimeout(resolve,Math.max(1,Math.floor(this.closeTimeoutMs/2)));
+        })]);
+        clearTimeout(timer);
+        if(life&&!life.exited)await Promise.race([life.exit,new Promise(resolve=>{
+          timer=setTimeout(resolve,Math.max(1,deadline-Date.now()));
+        })]);
+      }
+    }
     finally{
       clearTimeout(timer);
       this.closed=true;this.prepared=false;this.worker=null;

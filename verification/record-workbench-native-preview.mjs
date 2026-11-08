@@ -117,6 +117,8 @@ function verifyHiddenLifecycleEvidence(session,hidden,build){
   requireEvidence(hidden.anchorClose?.anchorDestroyed===true&&hidden.anchorClose.sessionSurvived===true&&
     hidden.anchorClose.frameAvailable===true&&hidden.anchorClose.ownerUnchanged===true&&hidden.anchorClose.sameHelperPid===true&&
     hidden.anchorClose.sameWindowHwnd===true&&hidden.explicitClose?.exited===true&&hidden.sessionClose?.exited===true&&
+    hidden.explicitClose?.forced!==true&&hidden.sessionClose?.forced!==true&&
+    hidden.explicitClose?.signal==null&&hidden.sessionClose?.signal==null&&
     hidden.after?.childAlive===false&&hidden.after.parentAlive===false,
     'The hidden session must survive anchor closure and exit cleanly on explicit close.');
   requireEvidence(typeof session.preflight?.vmId==='string'&&session.preflight.vmId.length>0&&hidden.preflight?.vmId===session.preflight.vmId,
