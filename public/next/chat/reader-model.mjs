@@ -4,7 +4,9 @@ import { projectPlanningActivity } from './planning-timeline.mjs';
 import { contextOptions, contextStatistics, compactionStatistics } from '../core/context-controls.mjs';
 const records = value => Array.isArray(value) ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item)) : [];
 // Saved run failures are user-facing diagnostics, not internal event traces.
-const diagnosticText = value => typeof value === 'string' ? value.slice(0, 12000) : typeof value?.message === 'string' ? value.message.slice(0, 12000) : undefined;
+// Only explicitly recorded string diagnostics may cross to the chat reader.
+// An arbitrary error object can contain private fields even when it has a message.
+const diagnosticText = value => typeof value === 'string' ? value.slice(0, 12000) : undefined;
 const diagnosticCode = value => typeof value === 'string' || typeof value === 'number' ? String(value).slice(0, 120) : undefined;
 
 /** Convert a full archived execution family into a chat-only transfer.
