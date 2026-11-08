@@ -134,7 +134,7 @@ test('CIMD method intersection supports actual plural metadata and legacy none-o
 test('owner approval defaults to read and callback carries exact state and issuer', async t => {
   const { oauth, dataDir } = await setup(t);
   const value = await grant(oauth, { requestedScopes: 'read files:read commands:run' });
-  assert.deepEqual(value.client.scopes, ['read']); assert.equal(value.tokens.scope, 'read');
+  assert.deepEqual(value.client.scopes, SCOPES); assert.equal(value.tokens.scope, 'read');
   assert.equal(value.callback.searchParams.get('state'), 'owned-state-123'); assert.equal(value.callback.searchParams.get('iss'), ORIGIN);
   assert.match(value.result.headers['set-cookie'], /Secure; HttpOnly; SameSite=Strict/);
   assert.match(value.result.headers['content-security-policy'], /script-src 'self'/); assert.doesNotMatch(value.result.body, /<script[^>]*>[^<]/);
@@ -142,11 +142,11 @@ test('owner approval defaults to read and callback carries exact state and issue
   const disk = await fs.readFile(path.join(dataDir, 'chatgpt-oauth.json'), 'utf8');
   for (const secret of [value.tokens.access_token, value.tokens.refresh_token, value.code, value.cookie.split('=')[1]]) assert.ok(!disk.includes(secret));
   assert.ok(!disk.includes('owned-state-123')); assert.match(disk, /"hash": "[a-f0-9]{64}"/);
-  assert.deepEqual(oauth.status().grants[0].scopes, ['read']);
+  assert.deepEqual(oauth.status().grants[0].scopes, SCOPES);
   const script = await route(oauth, 'GET', '/chatgpt/oauth/consent.js'); assert.match(script.body, /location\.replace/); assert.match(script.body, /credentials:'same-origin'/);
 });
 
-test('owner may approve only requested known scopes and snapshots cannot enlarge a grant', async t => {
+test('owner approval records requested wire scopes without constraining the connected tool catalog', async t => {
   const { oauth } = await setup(t);
   const request = await begin(oauth, { scope: 'read files:read commands:run' });
   await assert.rejects(oauth.approve(request.id, { scopes: ['read', 'files:write'] }), /requested BLACKICE permissions/);
@@ -154,8 +154,8 @@ test('owner may approve only requested known scopes and snapshots cannot enlarge
   await oauth.approve(request.id, { scopes: ['read', 'commands:run'] });
   const poll = await route(oauth, 'GET', '/chatgpt/oauth/pending/' + request.id, { headers: { cookie: request.cookie } });
   const tokens = (await exchange(oauth, new URL(poll.json.redirect).searchParams.get('code'))).json;
-  const client = await oauth.authenticateRequest(bearer(tokens.access_token)); assert.deepEqual(client.scopes, ['read', 'commands:run']);
-  client.scopes.push('files:write'); assert.equal(oauth.isAuthorized(client, { requiredScopes: ['files:write'] }), false);
+  const client = await oauth.authenticateRequest(bearer(tokens.access_token)); assert.deepEqual(client.scopes, SCOPES);
+  client.scopes.push('forged-scope'); assert.equal(oauth.getClient(client.id).scopes.includes('forged-scope'), false); assert.deepEqual(oauth.grants[0].scopes, ['read', 'commands:run']);
 });
 
 test('request IDs do not authorize polling; browser nonce and same origin are required', async t => {
@@ -362,7 +362,7 @@ test('retry receipts bind exact requested scope and resource without revoking a 
   assert.equal((await refresh(oauth, value.tokens.refresh_token, { scope: 'read commands:run' })).json.error, 'invalid_request');
   assert.equal((await refresh(oauth, value.tokens.refresh_token, { resource: 'https://other.example/mcp/chatgpt', scope: 'read' })).json.error, 'invalid_target');
   assert.equal((await refresh(oauth, value.tokens.refresh_token, { client_id: 'https://other.example/client.json', scope: 'read' })).json.error, 'invalid_client');
-  assert.deepEqual((await oauth.authenticateRequest(bearer(first.json.access_token))).scopes, ['read']); assert.deepEqual(revoked, []);
+  assert.deepEqual((await oauth.authenticateRequest(bearer(first.json.access_token))).scopes, SCOPES); assert.deepEqual(revoked, []);
 });
 
 test('protected retry receipts survive restart while grant records remain hash-only', async t => {
@@ -456,12 +456,12 @@ test('explicit revocation and expiry cannot be undone by a protected retry recei
   });
 });
 
-test('refresh can attenuate permissions but never enlarge them or change resource', async t => {
+test('refresh may attenuate wire token scopes without reducing connected tool capabilities or changing resource', async t => {
   const { oauth } = await setup(t); const value = await grant(oauth, { requestedScopes: 'read commands:run', scopes: ['read', 'commands:run'] });
   assert.equal((await refresh(oauth, value.tokens.refresh_token, { scope: 'read files:write' })).json.error, 'invalid_scope');
   assert.equal((await refresh(oauth, value.tokens.refresh_token, { resource: 'https://other.example/mcp/chatgpt' })).json.error, 'invalid_target');
   const result = await refresh(oauth, value.tokens.refresh_token, { scope: 'read' }); assert.equal(result.status, 200); assert.equal(result.json.scope, 'read');
-  assert.equal(oauth.isAuthorized(value.client, { requiredScopes: ['commands:run'] }), false); assert.deepEqual((await oauth.authenticateRequest(bearer(value.tokens.access_token))).scopes, ['read']);
+  assert.equal(oauth.isAuthorized(value.client, { requiredScopes: ['commands:run'] }), true); assert.deepEqual((await oauth.authenticateRequest(bearer(value.tokens.access_token))).scopes, SCOPES);
 });
 
 test('access expiry and absolute grant expiry fail closed', async t => {

@@ -44,7 +44,7 @@ test('the full native catalog retains the exact 28-tool public contract and fing
   ]);
   assert.deepEqual(catalog.status(), {
     // Reviewed canonical criterion evidence units and bounded effect guidance; schema 13 stays frozen.
-    sha256: 'd2034c0ddeff8fe6d9823685e84a18b5b82020a2907b3af457b7f38462076af0',
+    sha256: 'c2deb4b3c3b76b4447bee7a203d87918731fd1339aa56ee0d5be4dde4d980208',
     toolCount: 28,
     serverVersion: '2.33.5',
   });
@@ -167,7 +167,7 @@ test('scope aliases and existing metadata preserve their wire representation and
   const tools = catalog.tools();
   assert.deepEqual(tools.map(tool => tool.name), ['blackice_first', 'blackice_second', 'blackice_third', 'blackice_fourth']);
   assert.deepEqual(tools.map(tool => tool.securitySchemes[0].scopes), [
-    ['read', 'files:write'], ['read', 'planning:write'], ['read', 'browser:read'], ['read'],
+    ['read'], ['read'], ['read'], ['read'],
   ]);
   for (const tool of tools) {
     for (const key of ['scope', 'requiredScope', 'requiredScopes', 'scopes']) assert.equal(Object.hasOwn(tool, key), false);

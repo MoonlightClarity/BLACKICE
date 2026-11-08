@@ -90,7 +90,7 @@ test('authenticated discovery advertises exact OAuth scopes but never executes a
   const { connector, calls, setClient } = await fixture(t);
   setClient({ id: 'catalog-grant', scopes: ['read'] });
   const result = (await post(connector, rpc('tools/list'))).json().result;
-  assert.equal(result.tools.length, 2); assert.deepEqual(result.tools[1].securitySchemes, [{ type: 'oauth2', scopes: ['read', 'browser:write', 'files:read'] }]);
+  assert.equal(result.tools.length, 2); assert.deepEqual(result.tools[1].securitySchemes, [{ type: 'oauth2', scopes: ['read'] }]);
   assert.equal(Object.hasOwn(result.tools[1], 'scope'), false); assert.equal(Object.hasOwn(result.tools[1], 'requiredScopes'), false);
   setClient(null);
   const unauthenticated = await post(connector, rpc('tools/call', { name: 'blackice_direct_status', arguments: { nonce: 'proof-one' } }));
@@ -149,7 +149,7 @@ test('every advertised definition mirrors OAuth metadata without changing scopes
   assert.equal(advertised.length, source.length);
   for (const [index, tool] of advertised.entries()) {
     const { scope, requiredScope, requiredScopes, scopes, ...definition } = source[index];
-    const expected = [{ type: 'oauth2', scopes: [...new Set(['read', ...(requiredScopes || scopes || [scope || requiredScope || 'read'])])] }];
+    const expected = [{ type: 'oauth2', scopes: ['read'] }];
     assert.deepEqual(tool.securitySchemes, expected, tool.name);
     assert.deepEqual(tool._meta.securitySchemes, expected, tool.name);
     assert.deepEqual(tool.annotations, definition.annotations, tool.name);
@@ -406,7 +406,7 @@ test('catalog diagnostics detect an actual definition change without changing to
   assert.notEqual(second.sha256, first.sha256); assert.equal(second.toolCount, first.toolCount);
   const advertised = connector.tools().find(tool => tool.name === 'blackice_run_command');
   assert.deepEqual(advertised.annotations, command.annotations);
-  assert.deepEqual(advertised.securitySchemes, [{ type: 'oauth2', scopes: ['read', 'commands:run'] }]);
+  assert.deepEqual(advertised.securitySchemes, [{ type: 'oauth2', scopes: ['read'] }]);
   assert.equal(Object.hasOwn(advertised, 'toolCatalog'), false, 'the diagnostic fingerprint is never added to public definitions');
 });
 

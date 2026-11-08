@@ -19,6 +19,32 @@ export function nativeBrowserSelection(status,previous) {
     .find(id=>tabs.some(tab=>tab.tabId===id))||null;
 }
 
+// A website-created OAuth popup must become the visible tab when its opener
+// is the page the person is viewing. Ignore unrelated task/background popups
+// and already-known child tabs so an ordinary refresh never steals focus.
+export function nativeBrowserPopupHandoff(previousTabs,currentTabs,selected) {
+  if(!selected||!Array.isArray(previousTabs)||!Array.isArray(currentTabs))return null;
+  const known=new Set(previousTabs.map(tab=>tab.tabId));
+  const children=currentTabs.filter(tab=>tab?.parentTabId===selected
+    &&!known.has(tab.tabId)&&tab.suspended!==true);
+  return children.length===1?children[0].tabId:null;
+}
+
+// When an OAuth popup closes itself, follow its surviving opener rather than
+// an unrelated global active tab. Keep explicit personal selection otherwise.
+export function nativeBrowserPopupReturn(previousTabs,currentTabs,selected) {
+  if(!selected||!Array.isArray(previousTabs)||!Array.isArray(currentTabs)
+    ||currentTabs.some(tab=>tab.tabId===selected))return null;
+  const old=new Map(previousTabs.map(tab=>[tab.tabId,tab]));
+  const live=new Set(currentTabs.map(tab=>tab.tabId));
+  const visited=new Set([selected]);let parent=old.get(selected)?.parentTabId;
+  while(parent&&!visited.has(parent)){
+    if(live.has(parent))return parent;
+    visited.add(parent);parent=old.get(parent)?.parentTabId;
+  }
+  return null;
+}
+
 /** Coalesce geometry updates without queueing stale page attachments. Hide is
  * dispatched immediately; the native host also revokes pending attachments. */
 export function createNativeBrowserSurface({surface,onError=()=>{},onAttached=()=>{}}) {
@@ -107,7 +133,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
   };
   let active=false,destroyed=false,selected=null,tabs=[],downloads=[],busy=false,openingBlank=null,
     generation=0,refreshSequence=0,pendingSelection=null,addressRevision=0,selectionRevision=0,unsubscribe=null,
-    refreshTimer=null,geometryFrame=null,tabLimit=80,downloadsKey='',emptyKey='',pendingNavigation=null,authKey=null,
+    refreshTimer=null,geometryFrame=null,geometryTimer=null,tabLimit=80,downloadsKey='',emptyKey='',pendingNavigation=null,authKey=null,
     activeOperation=null,newTabDrain=false,failedBlankDraft=null,deferredError=null,surfaceReady=false,preferBackendSelection=false;
   const tabNodes=new Map();
   const addressDrafts=new Map(),newTabRequests=[];
@@ -197,12 +223,21 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
   });
   function geometry(){
     geometryFrame=null;
+    if(geometryTimer!==null){window.clearTimeout(geometryTimer);geometryTimer=null;}
     if(!active||!surfaceReady||mount.hidden||!current()){surface.hide();return;}
     const bounds=nativePageBounds(ui.page.getBoundingClientRect(),{width:window.innerWidth,height:window.innerHeight});
     surface.show(selected,bounds);
   }
   function scheduleGeometry(){
-    if(active&&geometryFrame===null)geometryFrame=window.requestAnimationFrame(geometry);
+    if(!active||geometryFrame!==null||geometryTimer!==null)return;
+    // Chromium suspends animation frames in hidden/unfocused renderers. OAuth
+    // popups must still attach to BLACKICE before the window regains focus.
+    if(!document.hidden)geometryFrame=window.requestAnimationFrame(geometry);
+    geometryTimer=window.setTimeout(()=>{
+      geometryTimer=null;
+      if(geometryFrame!==null){window.cancelAnimationFrame(geometryFrame);geometryFrame=null;}
+      geometry();
+    },document.hidden?32:250);
   }
   function renderTabs(){
     const visible=tabs.slice(0,tabLimit);
@@ -293,12 +328,15 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
   }
   function applyStatus(data,{preferred}={}){
     if(!active||!data||!Array.isArray(data.tabs))return;
-    const previous=selected;tabs=nativeBrowserTabs(data);
+    const previous=selected,previousTabs=tabs;tabs=nativeBrowserTabs(data);
+    const popup=nativeBrowserPopupHandoff(previousTabs,tabs,previous);
+    const opener=nativeBrowserPopupReturn(previousTabs,tabs,previous);
     const liveChallenges=new Set(tabs.map(tabChallenge).filter(Boolean).map(challengeKey));
     for(const collection of [authDrafts,authAnswered,authFocused])for(const key of collection.keys())if(!liveChallenges.has(key))collection.delete(key);
     if(authKey&&!liveChallenges.has(authKey)){authKey=null;ui.authUser.value='';ui.authPassword.value='';}
     downloads=(Array.isArray(data.downloads)?data.downloads:[]).filter(item=>item&&(!item.browser||item.browser==='relay'));
-    selected=[preferred,pendingSelection,preferBackendSelection?nativeBrowserSelection(data):null,selected].find(id=>tabs.some(tab=>tab.tabId===id))||nativeBrowserSelection(data,selected);
+    selected=[preferred,popup,opener,pendingSelection,preferBackendSelection?nativeBrowserSelection(data):null,selected].find(id=>tabs.some(tab=>tab.tabId===id))||nativeBrowserSelection(data,selected);
+    if((popup&&selected===popup)||(opener&&selected===opener)){selectionRevision++;pendingSelection=selected;}
     preferBackendSelection=false;surfaceReady=true;
     if(!tabs.some(tab=>tab.tabId===pendingSelection))pendingSelection=null;
     for(const key of addressDrafts.keys())if(typeof key==='string'&&!tabs.some(tab=>tab.tabId===key))addressDrafts.delete(key);
@@ -418,6 +456,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
     leave(){saveAuthDraft();active=false;generation++;refreshSequence++;pendingSelection=null;
       unsubscribe?.();unsubscribe=null;clearTimeout(refreshTimer);refreshTimer=null;
       if(geometryFrame!==null)window.cancelAnimationFrame(geometryFrame);geometryFrame=null;
+      if(geometryTimer!==null)window.clearTimeout(geometryTimer);geometryTimer=null;
       ui.page.dataset.attached='false';surface.hide();},
     destroy(){this.leave();destroyed=true;newTabRequests.length=0;addressDrafts.clear();authDrafts.clear();ui.authUser.value='';ui.authPassword.value='';surface.destroy();observer?.disconnect();unsubscribeShortcut?.();
       document.removeEventListener('keydown',keydown);window.removeEventListener('resize',scheduleGeometry);

@@ -11,88 +11,75 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 const passiveRead = args => args.length === 1 && ['/api/chatgpt-connector', '/api/desktop/idle-interruptions'].includes(args[0]);
 const visibleAlert = f => f.mount.querySelectorAll('[role="alert"]').find(node => node.getAttribute('hidden') === null) || null;
 
-test('permission review defaults to all offered permissions and never implies chat-surface verification', () => {
+test('connection approval grants the tool catalog without granular permission controls', () => {
   const html = renderChatGPTConnector({ current: current(), scopes: new Map(), remote: false });
-  assert.match(html, /data-connector-scope="read" checked disabled/);
-  assert.match(html, /data-connector-scope="commands:run" checked/);
-  assert.match(html, /data-connector-scope="files:read" checked/);
-  assert.match(html, /Run a shell command in the configured workspace\. Supports cancellation and saved results\./);
-  assert.doesNotMatch(html, /not a system sandbox/);
+  assert.doesNotMatch(html, /data-connector-scope=/);
+  assert.doesNotMatch(html, /select-all-access/);
+  assert.match(html, /Connecting this app grants full BLACKICE MCP tool access/);
+  assert.match(html, /Connect with full BLACKICE access/);
   assert.match(html, /does not verify the ChatGPT conversation/);
   assert.match(html, /ABCD1234/);
 });
-
-test('focused access controls and permission choices survive polling and submit the exact request', async t => {
+test('focused connect button survives passive polling and approves the exact wire request', async t => {
   const f = planningDOM(t), calls = [];
-  const ui = mountChatGPTConnector({ mount: f.mount, intervalMs: 100000, api: async (...args) => { calls.push(args); return current(); } }); t.after(() => ui.destroy()); await tick();
-  const command = f.$('[data-connector-scope="commands:run"]'); command.checked = false; await command.dispatch('change', {}, true);
-  const checkbox = f.$('[data-connector-scope="files:read"]'); checkbox.checked = true; checkbox.focus();
-  await checkbox.dispatch('change', {}, true);
+  const ui = mountChatGPTConnector({ mount: f.mount, intervalMs: 100000, api: async (...args) => { calls.push(args); return current(); } });
+  t.after(() => ui.destroy()); await tick();
+  const form = f.$('[data-connector-request="request_one"]');
+  const confirmation = form.querySelector('button[type="submit"]');
+  assert.ok(confirmation);
+  confirmation.focus();
   await ui.refresh();
-  assert.equal(f.$('[data-connector-scope="files:read"]'), checkbox); assert.equal(document.activeElement, checkbox); assert.equal(checkbox.checked, true);
-  await checkbox.closest('form').dispatch('submit', {}, true); await tick();
-  assert.deepEqual(calls.find(item => item[0].endsWith('/approve-access')), ['/api/chatgpt-connector/approve-access', 'POST', { id: 'request_one', scopes: ['read', 'files:read'] }]);
+  assert.equal(f.$('[data-connector-request="request_one"]').querySelector('button[type="submit"]'), confirmation);
+  assert.equal(f.document.activeElement, confirmation);
+  await form.dispatch('submit', {}, true); await tick();
+  assert.deepEqual(calls.find(item => item[0].endsWith('/approve-access')),
+    ['/api/chatgpt-connector/approve-access', 'POST', { id: 'request_one', scopes: ['read', 'files:read', 'commands:run'] }]);
 });
-
-test('Select all chooses only the current request permissions and never approves access', async t => {
-  const f = planningDOM(t), calls = [], all = ['read', 'planning:write', 'files:read', 'files:write', 'browser:read', 'browser:write', 'commands:run'];
-  const value = current(); value.oauth.requests[0].scopes = [...all, 'unsupported:scope'];
-  value.oauth.requests.push({ id: 'request_two', displayCode: 'SECOND12', scopes: ['read', 'files:read'] });
-  const ui = mountChatGPTConnector({ mount: f.mount, intervalMs: 100000, api: async (...args) => { calls.push(args); return value; } }); t.after(() => ui.destroy()); await tick();
-  const select = f.$('[data-connector-action="select-all-access"][data-connector-id="request_one"]');
-  assert.equal(select.type, 'button'); assert.equal(select.textContent, 'Select all'); assert.equal(select.getAttribute('aria-label'), 'Select all permissions for request ABCD1234');
-  assert.equal(f.$('[data-connector-request="request_one"] [data-connector-selection]').textContent, '7 of 7 permissions selected');
-  for (const id of ['request_one', 'request_two']) {
-    const checkbox = f.$('[data-connector-request="' + id + '"] [data-connector-scope="files:read"]');
-    checkbox.checked = false; await checkbox.dispatch('change', {}, true);
-  }
-  assert.equal(f.$('[data-connector-request="request_one"] [data-connector-selection]').textContent, '6 of 7 permissions selected');
-  select.focus(); await f.click(select);
-  const form = f.$('[data-connector-request="request_one"]'), checkboxes = form.querySelectorAll('[data-connector-scope]');
-  assert.deepEqual(checkboxes.filter(node => node.checked).map(node => node.dataset.connectorScope), all);
-  assert.equal(form.querySelector('[data-connector-scope="read"]').disabled, true);
-  assert.equal(form.querySelector('[data-connector-selection]').textContent, '7 of 7 permissions selected');
-  assert.equal(form.querySelector('[data-connector-selection]').getAttribute('aria-live'), 'polite');
-  assert.equal(f.$('[data-connector-scope="unsupported:scope"]'), null);
-  assert.equal(f.$('[data-connector-request="request_two"] [data-connector-scope="files:read"]').checked, false);
-  assert.equal(f.document.activeElement, form.querySelector('[data-connector-action="select-all-access"]'));
-  await ui.refresh(true);
-  assert.deepEqual(f.$('[data-connector-request="request_one"]').querySelectorAll('[data-connector-scope]').filter(node => node.checked).map(node => node.dataset.connectorScope), all);
-  assert.ok(calls.every(passiveRead), 'selection and polling make no approval or other mutation request');
+test('ChatGPT approval renders only its own requests even when Claude is connecting', async t => {
+  const f = planningDOM(t), calls = [], value = current();
+  value.oauth.requests.push({ id: 'pending-claude', displayCode: 'SECOND12', clientLabel: 'Claude', scopes: ['read'] });
+  const html = renderChatGPTConnector({ current: value, scopes: new Map() });
+  assert.match(html, /ABCD1234/);
+  assert.doesNotMatch(html, /SECOND12|pending-claude/);
+  const ui = mountChatGPTConnector({ mount: f.mount, intervalMs: 100000,
+    api: async (...args) => { calls.push(args); return value; } });
+  t.after(() => ui.destroy()); await tick();
+  assert.ok(f.$('[data-connector-request="request_one"]'));
+  assert.equal(f.$('[data-connector-request="pending-claude"]'), null);
   await f.$('[data-connector-request="request_one"]').dispatch('submit', {}, true); await tick();
-  assert.deepEqual(calls.find(args => args[0].endsWith('/approve-access')), ['/api/chatgpt-connector/approve-access', 'POST', { id: 'request_one', scopes: all }]);
+  assert.deepEqual(calls.find(args => args[0].endsWith('/approve-access')),
+    ['/api/chatgpt-connector/approve-access', 'POST', { id: 'request_one', scopes: ['read', 'files:read', 'commands:run'] }]);
 });
-
-test('Select all remains a choice snapshot and individual changes survive polling', async t => {
+test('newly requested transport scopes remain part of the same one-step connection', async t => {
   const f = planningDOM(t), calls = []; let value = current();
-  const ui = mountChatGPTConnector({ mount: f.mount, intervalMs: 100000, api: async (...args) => { calls.push(args); return value; } }); t.after(() => ui.destroy()); await tick();
-  await f.click('[data-connector-action="select-all-access"]');
-  value = current(); value.oauth.requests[0].scopes.push('files:write'); await ui.refresh(true);
-  assert.equal(f.$('[data-connector-scope="files:write"]').checked, false, 'newly offered permissions are not silently selected by a previous click');
-  assert.equal(f.$('[data-connector-selection]').textContent, '3 of 4 permissions selected');
-  const command = f.$('[data-connector-scope="commands:run"]'); command.checked = false; command.focus(); await command.dispatch('change', {}, true);
-  assert.equal(f.$('[data-connector-selection]').textContent, '2 of 4 permissions selected');
-  await ui.refresh(); assert.equal(f.$('[data-connector-scope="commands:run"]'), command); assert.equal(command.checked, false);
-  await ui.refresh(true); assert.equal(f.$('[data-connector-scope="commands:run"]').checked, false); assert.equal(f.$('[data-connector-selection]').textContent, '2 of 4 permissions selected');
+  const ui = mountChatGPTConnector({ mount: f.mount, intervalMs: 100000,
+    api: async (...args) => { calls.push(args); return value; } });
+  t.after(() => ui.destroy()); await tick();
+  value = current(); value.oauth.requests[0].scopes.push('files:write');
+  await ui.refresh(true);
+  const form = f.$('[data-connector-request="request_one"]');
+  assert.ok(form);
+  assert.equal(form.querySelectorAll('[data-connector-scope]').length, 0);
+  assert.match(form.textContent, /Connect with full BLACKICE access/);
   assert.ok(calls.every(passiveRead));
-  await f.$('[data-connector-request="request_one"]').dispatch('submit', {}, true); await tick();
-  assert.deepEqual(calls.find(args => args[0].endsWith('/approve-access')), ['/api/chatgpt-connector/approve-access', 'POST', { id: 'request_one', scopes: ['read', 'files:read'] }]);
+  await form.dispatch('submit', {}, true); await tick();
+  assert.deepEqual(calls.find(args => args[0].endsWith('/approve-access')),
+    ['/api/chatgpt-connector/approve-access', 'POST', { id: 'request_one', scopes: ['read', 'files:read', 'commands:run', 'files:write'] }]);
 });
-
-test('Select all ignores busy controls and a request removed while its old form is focused', async t => {
-  const f = planningDOM(t), calls = []; let release, value = current(); const pending = new Promise(resolve => { release = resolve; });
-  const ui = mountChatGPTConnector({ mount: f.mount, intervalMs: 100000, api: async (...args) => { calls.push(args); return args[0].endsWith('/check-connection') ? pending : value; } }); t.after(() => ui.destroy()); await tick();
-  const optional = f.$('[data-connector-scope="files:read"]'); optional.checked = false; await optional.dispatch('change', {}, true);
+test('busy connection controls cannot submit and obsolete requests vanish after refresh', async t => {
+  const f = planningDOM(t), calls = [];
+  let release, value = current(); const pending = new Promise(resolve => { release = resolve; });
+  const ui = mountChatGPTConnector({ mount: f.mount, intervalMs: 100000,
+    api: async (...args) => { calls.push(args); return args[0].endsWith('/check-connection') ? pending : value; } });
+  t.after(() => ui.destroy()); await tick();
   await f.click('[data-connector-action="check-connection"]');
-  assert.equal(f.$('[data-connector-action="select-all-access"]').getAttribute('aria-disabled'), 'true');
-  await f.click('[data-connector-action="select-all-access"]'); assert.equal(f.$('[data-connector-scope="files:read"]').checked, false);
+  const form = f.$('[data-connector-request="request_one"]');
+  assert.equal(form.querySelector('button[type="submit"]').getAttribute('aria-disabled'), 'true');
   release(value); await tick();
-  const stale = f.$('[data-connector-action="select-all-access"]'); stale.focus(); value = ready(); await ui.refresh();
-  assert.equal(f.$('[data-connector-action="select-all-access"]'), stale);
-  await f.click(stale); assert.equal(f.$('[data-connector-scope="files:read"]').checked, false);
+  value = ready(); await ui.refresh();
+  assert.equal(f.$('[data-connector-request="request_one"]'), null);
   assert.ok(calls.every(args => passiveRead(args) || args[0] === '/api/chatgpt-connector/check-connection' && args[1] === 'POST'));
 });
-
 test('the connector Settings mount retains its exact focused element across app status redraws', t => {
   const f = planningDOM(t), instances = [];
   const snapshot = { status: { connected: false, chatGPTConnector: { available: true, enabled: false }, runtimeSettings: {} }, workflows: [] };
@@ -183,7 +170,7 @@ test('Settings retains the existing connector section without a Chat Mode callba
 const ready = (overrides = {}) => ({ ...current(), canOpenChatGPT: true, oauth: { requests: [], grants: [] }, ...overrides });
 
 test('connector progress names observed stages without treating endpoint enablement as a connected chat', () => {
-  const active = { id: 'active-grant' }, receipt = { clientId: active.id, tool: 'blackice_direct_status', at: '2026-10-20T20:00:00.000Z' };
+  const active = { id: 'active-grant', kind: 'chatgpt' }, receipt = { clientId: active.id, tool: 'blackice_direct_status', at: '2026-10-20T20:00:00.000Z' };
   for (const [state, key, busy] of [
     [{ current: ready(), loading: true }, 'checking', true],
     [{ current: ready(), checking: true }, 'checking', true],
@@ -245,20 +232,24 @@ test('confirmed browser handoff stays a user-action hint until an approval or gr
   assert.equal(region.getAttribute('data-stage'), 'opening'); assert.equal(region.getAttribute('data-busy'), 'true');
   release({ requested: true, connectionVerified: false }); await tick(); assert.equal(region.getAttribute('data-stage'), 'browser-waiting'); assert.equal(region.getAttribute('data-busy'), 'false');
   state = ready({ oauth: current().oauth }); await ui.refresh(); assert.equal(region.getAttribute('data-stage'), 'approval');
-  state = ready({ oauth: { requests: [], grants: [{ id: 'new-grant', scopes: ['read'] }] } }); await ui.refresh(); assert.equal(region.getAttribute('data-stage'), 'authorized');
+  state = ready({ oauth: { requests: [], grants: [{ id: 'new-grant', kind: 'chatgpt', scopes: ['read'] }] } }); await ui.refresh(); assert.equal(region.getAttribute('data-stage'), 'authorized');
   assert.ok(calls.every(args => passiveRead(args) || args[0] === '/api/chatgpt-connector/open-chatgpt' && args[1] === 'POST'));
 });
 
-test('status feedback updates without replacing focused permission controls', async t => {
+test('status feedback updates without replacing the focused connect control', async t => {
   const f = planningDOM(t); let state = { ...current(), canOpenChatGPT: true };
-  const ui = mountChatGPTConnector({ mount: f.mount, intervalMs: 100000, api: async () => state }); t.after(() => ui.destroy()); await tick();
-  const checkbox = f.$('[data-connector-scope="files:read"]'), region = f.$('[data-connector-progress]'); checkbox.checked = true; checkbox.focus();
-  await checkbox.dispatch('change', {}, true);
-  state = ready({ oauth: { requests: [], grants: [{ id: 'new-grant', scopes: ['read'] }] } }); await ui.refresh();
-  assert.equal(f.$('[data-connector-scope="files:read"]'), checkbox); assert.equal(f.document.activeElement, checkbox); assert.equal(checkbox.checked, true);
-  assert.equal(f.$('[data-connector-progress]'), region); assert.equal(region.getAttribute('data-stage'), 'authorized');
+  const ui = mountChatGPTConnector({ mount: f.mount, intervalMs: 100000, api: async () => state });
+  t.after(() => ui.destroy()); await tick();
+  const form = f.$('[data-connector-request="request_one"]');
+  const confirmation = form.querySelector('button[type="submit"]');
+  const region = f.$('[data-connector-progress]'); confirmation.focus();
+  state = ready({ oauth: { requests: [], grants: [{ id: 'new-grant', kind: 'chatgpt', scopes: ['read'] }] } });
+  await ui.refresh();
+  assert.equal(f.$('[data-connector-request="request_one"]').querySelector('button[type="submit"]'), confirmation);
+  assert.equal(f.document.activeElement, confirmation);
+  assert.equal(f.$('[data-connector-progress]'), region);
+  assert.equal(region.getAttribute('data-stage'), 'authorized');
 });
-
 test('approval submission keeps a connection hint during the browser exchange gap and disabling clears it', async t => {
   const f = planningDOM(t); let state = { ...current(), canOpenChatGPT: true };
   const ui = mountChatGPTConnector({ mount: f.mount, intervalMs: 100000, api: async path => {
@@ -293,7 +284,7 @@ test('preparation waits for explicit public consent and copies the current compu
 });
 
 test('the exact server prompt is copied and matching receipt requires a separate confirmation click', async t => {
-  const f = planningDOM(t), calls = [], copied = [], grant = { id: 'approved-connection', scopes: ['read'] };
+  const f = planningDOM(t), calls = [], copied = [], grant = { id: 'approved-connection', kind: 'chatgpt', scopes: ['read'] };
   const verification = { nonce: 'server-issued-nonce', prompt: 'Exact server prompt with server-issued-nonce' };
   let value = ready({ oauth: { requests: [], grants: [grant] }, setup: setup({ verification }) });
   const ui = mountChatGPTConnector({ mount: f.mount, intervalMs: 100000, copy: async text => copied.push(text), api: async (...args) => {
@@ -347,7 +338,7 @@ test('background status recovery preserves action errors until retry while clear
 });
 
 test('connection permissions describe direct scoped execution and Windows file access without a local approval setting', () => {
-  const value = ready({ oauth: { requests: current().oauth.requests, grants: [{ id: 'existing-grant', scopes: ['read', 'files:read', 'files:write', 'commands:run'] }] } });
+  const value = ready({ oauth: { requests: current().oauth.requests, grants: [{ id: 'existing-grant', kind: 'chatgpt', scopes: ['read', 'files:read', 'files:write', 'commands:run'] }] } });
   const html = renderChatGPTConnector({ current: value, scopes: new Map() });
   assert.match(html, /without a separate BLACKICE approval prompt/);
   assert.match(html, /plugin permission is configured separately/);
@@ -357,7 +348,7 @@ test('connection permissions describe direct scoped execution and Windows file a
   assert.doesNotMatch(html, /data-connector-policy|action-policy|Ask for each action|Allow actions in granted scopes/);
   assert.doesNotMatch(html, /after local approval|require local approval|limited to the configured workspace|inside the configured workspace/);
   assert.match(html, /data-connector-action="revoke" data-connector-id="existing-grant"/);
-  assert.match(html, /Allow selected access/, 'OAuth connection consent remains available');
+  assert.match(html, /Connect with full BLACKICE access/, 'Connection-level consent remains available');
 });
 
 test('historical local approvals can be cancelled but cannot be approved or replayed through Settings', async t => {

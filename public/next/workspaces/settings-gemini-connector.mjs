@@ -63,7 +63,7 @@ export function createGeminiConnectorSettings({ mount, api, notify = () => {} } 
         '<div class="next-stack"><p><strong>Active Google grant</strong></p>'
         + '<p class="next-help">Grant: <code>' + escape(grant.id) + '</code><br>Last used: ' + escape(readableTime(grant.lastUsedAt))
         + '<br>Grant expires: ' + escape(readableTime(grant.expiresAt)) + '</p>'
-        + '<p class="next-help">Permissions: ' + escape((grant.scopes || []).map(scope => SCOPES[scope] || scope).join(' · ')) + '</p>'
+        + '<p class="next-help">Connection access: All BLACKICE MCP tools.</p>'
         + '<div class="next-row"><button type="button" data-gemini-action="disconnect" data-gemini-grant="' + escape(grant.id) + '"' + (locked ? ' disabled' : '') + '>'
         + (confirmRevoke === grant.id ? 'Keep Gemini connected' : 'Disconnect Gemini only') + '</button>'
         + (confirmRevoke === grant.id ? '<button type="button" data-gemini-action="confirm-disconnect" data-gemini-grant="' + escape(grant.id) + '"' + (locked ? ' disabled' : '') + '>Confirm disconnect Gemini</button>' : '')
@@ -74,12 +74,8 @@ export function createGeminiConnectorSettings({ mount, api, notify = () => {} } 
         return '<form class="next-stack" data-gemini-request="' + escape(request.id) + '"><h3>Pending Google request</h3>'
           + '<p>Match this request code in Gemini: <strong><code>' + escape(request.displayCode) + '</code></strong></p>'
           + '<p class="next-help">Callback: ' + escape(request.clientOrigin || 'Google') + '</p>'
-          + (request.scopes || []).map(scope =>
-            '<label class="next-row"><input type="checkbox" data-gemini-scope="' + escape(scope) + '"'
-            + (chosen.includes(scope) ? ' checked' : '') + (scope === 'read' ? ' disabled' : '')
-            + '> ' + escape(SCOPES[scope] || scope) + '</label>'
-          ).join('')
-          + '<div class="next-row"><button type="submit" class="next-primary"' + (locked ? ' disabled' : '') + '>Allow selected access</button>'
+          + '<p class="next-help">Connecting Gemini grants access to all BLACKICE MCP tools, including plans, local files, browser control, and commands.</p>'
+          + '<div class="next-row"><button type="submit" class="next-primary"' + (locked ? ' disabled' : '') + '>Connect Gemini</button>'
           + '<button type="button" data-gemini-action="decline" data-gemini-request-id="' + escape(request.id) + '"' + (locked ? ' disabled' : '') + '>Decline Google request</button></div></form>';
       }).join('') : '') + '</section>'
       + '<section class="next-card"><h3>Test Gemini tool execution</h3>'
@@ -145,7 +141,7 @@ export function createGeminiConnectorSettings({ mount, api, notify = () => {} } 
           const request = googleRequests(latest).find(value => value.id === id);
           if (!request) throw Error('This Google request is no longer pending.');
           if (action === 'approve') {
-            const allowed = ['read', ...(scopes || []).filter(scope => scope !== 'read' && request.scopes.includes(scope))];
+            const allowed = request.scopes || ['read'];
             await api('/api/chatgpt-connector/approve-access', 'POST', { id: request.id, scopes: allowed });
             receipt = 'Google request approved. Complete the redirect in Gemini.';
           } else {

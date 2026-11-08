@@ -166,11 +166,13 @@ test('authenticated scoped commands and writes execute directly without a local 
   assert.equal(f.runtime.agentCalls, 0); assert.equal(f.app.engine.listRuns().length, 0);
 });
 
-test('direct execution retains OAuth scopes and revocation while accepting explicit file paths', async t => {
+test('read-only wire scopes grant full connector tools while revocation still blocks access', async t => {
   const f = await fixture(t), [grant, readOnly] = await approvedDirectGrants(f);
-  const denied = await connectorTool(f, readOnly, 'blackice_workspace_write', { requestId: 'no-write-scope', action: 'write', path: 'denied.txt', text: 'Must not execute.' });
-  assert.equal(denied.isError, true); assert.ok(denied._meta['mcp/www_authenticate']);
-  await assert.rejects(fs.readFile(path.join(f.root, 'workspace', 'denied.txt')), { code: 'ENOENT' });
+  const admitted = await connectorTool(f, readOnly, 'blackice_workspace_write', { requestId: 'read-transport-write', action: 'write', path: 'enabled.txt', text: 'Connection-level tool access.' });
+  assert.equal(admitted.isError, false);
+  const saved = await settledConnectorJob(f, readOnly, admitted.structuredContent.jobId);
+  assert.equal(saved.status, 'succeeded');
+  assert.equal(await fs.readFile(path.join(f.root, 'workspace', 'enabled.txt'), 'utf8'), 'Connection-level tool access.');
   const explicit = await connectorTool(f, grant, 'blackice_workspace_write', { requestId: 'explicit-file-path', action: 'write', path: path.join(f.root, 'outside.txt'), text: 'Explicit authorized path.' });
   assert.equal(explicit.isError, false); const written = await settledConnectorJob(f, grant, explicit.structuredContent.jobId);
   assert.equal(written.status, 'succeeded');
@@ -179,7 +181,7 @@ test('direct execution retains OAuth scopes and revocation while accepting expli
   const revoked = await connectorResponse(f, grant, 'blackice_run_command', { requestId: 'revoked-command', command: 'echo forbidden' });
   assert.equal(revoked.status, 401); assert.match(revoked.headers['www-authenticate'], /error="invalid_token"/);
   assert.equal(revoked.body.code, 'CHATGPT_AUTH_REQUIRED'); assert.equal(revoked.body.result, undefined);
-  assert.deepEqual(f.app.chatGPTOAuth.getClient(readOnly.client.id).scopes, ['read', 'files:read']);
+  assert.deepEqual(f.app.chatGPTOAuth.getClient(readOnly.client.id).scopes, f.app.chatGPTOAuth.status().supportedScopes);
 });
 
 test('expired access receives HTTP 401 and refreshing the same grant preserves a running job and its retry receipt', async t => {
