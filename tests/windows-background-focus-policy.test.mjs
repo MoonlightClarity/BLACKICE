@@ -86,7 +86,7 @@ test('unsigned single-maintainer release documentation makes SAC Off recommended
   assert.match(releaseDoc,/Code Integrity events 3033\/3077/);
   assert.match(releaseDoc,/previously blocked unsigned NSIS build subsequently succeeded/);
   assert.match(releaseDoc,/No paid certificate or signing service/);
-  assert.match(readme,/Signing is deferred until adoption/);
+  assert.match(readme,/Current public Windows installers are unsigned/);
   assert.doesNotMatch(releaseDoc,/Smart App Control On is a supported configuration/);
 });
 

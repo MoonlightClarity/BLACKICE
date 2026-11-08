@@ -39,6 +39,6 @@ test('existing media search visits one ordinary nested installer directory and n
 
 test('the actual Workbench app carries a complete setup and repeated-install guide for people and LLMs',()=>{
   for(const phrase of ['Setup guide','hidden administrator helper','Take control','Cede control','official Microsoft Windows 11 download page',
-    'guest-setup.ps1','Pair the guest','Re-batch saved inventory','Instructions for an LLM','Windows guest licensing'])
+    'guest bootstrap','Pair &amp; auto-repair','Re-batch saved inventory','Instructions for an LLM','Windows guest licensing'])
     assert.ok(workbenchSetupGuideMarkup.includes(phrase),'Missing in-app step: '+phrase);
 });
