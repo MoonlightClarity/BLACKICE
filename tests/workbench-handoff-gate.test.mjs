@@ -21,7 +21,7 @@ async function fixture(t,options={}){
   const control=new WorkbenchConsoleControl(),auth={scope:'configured-vm',control:'agent',source:'explicit-user-task',consumed:true,agentRevision:0};
   const events=[],effects=new Set(),bindings=new Map();let restored=0,contextFailure=null;
   const c={state:{vmName:'Fixture VM',capability:{}},agent:{guestName:'GUEST',guestSessionId:2,agentId:'a'.repeat(32)},bridge:{request:async()=>({status:'completed',agentId:'a'.repeat(32),guestSessionId:2,result:{windows:[]}})}};
-  const workbench={consoleControl:control,nativeConsoleAdapter:{open:async()=>{},surface:async()=>({width:2,height:2}),input:async(_,check)=>{check();return {accepted:true};}},
+  const workbench={consoleControl:control,status:async()=>({vmName:'Fixture VM',guest:{running:true,agent:{paired:true}},consoleControl:control.status(),blockers:[]}),nativeConsoleAdapter:{open:async()=>{},surface:async()=>({width:2,height:2}),input:async(_,check)=>{check();return {accepted:true};}},
     guestNativeConsoleOpen:async check=>{check();return {opened:true,displayReady:true};},guestNativeConsoleFrame:async()=>bmp(),
     guestNativeConsoleWake:async(_,check)=>{check();return {surface:{sequence:1},wake:{queued:true}};},
     onAgentControlRestored:async receipt=>{restored++;assert.equal(receipt.owner,'user');assert.equal(typeof receipt.controlToken,'string');}};
