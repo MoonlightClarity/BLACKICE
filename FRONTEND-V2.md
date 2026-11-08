@@ -1,5 +1,7 @@
 # BLACKICE Frontend V2
 
+> **Implementation history:** This guide records the frontend V2 adoption in 2.35.2. For the currently published 2.39.27 navigation, including the independent **Gemini connector** settings panel and updated Workbench, use [README](README.md), [Gemini connector](docs/GEMINI-CONNECTOR.md) and [Workbench setup](WORKBENCH-SETUP.md).
+
 V2 is the default interface in BLACKICE 2.35.2. It replaces the accumulated renderer with a small shell and independently mounted workspaces while retaining the existing local profile and execution/storage APIs. It does not migrate saved data.
 
 ## Routes and lifecycle

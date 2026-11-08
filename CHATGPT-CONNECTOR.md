@@ -29,6 +29,9 @@ Remove-Item Env:ELECTRON_RUN_AS_NODE
 
 The connector retains `chatSurfaceVerification: "not-recorded"`; it cannot independently inspect a ChatGPT conversation. The separate setup guide labels its final state as user-confirmed and stores only a nonce, server address, grant identifier, status receipt time and explicit confirmation time in `chatgpt-setup.json`. It stores no access token, refresh token, cookie, authorization code or password. Matching evidence survives an ordinary restart, but is cleared when its grant is no longer active or its address changes. Damaged optional guide history is preserved before regenerating it, without replacing OAuth storage. No authenticated external-account result is assumed by isolated acceptance checks.
 
+### Other MCP clients and independent authorization
+
+These steps are **specific to ChatGPT**. BLACKICE 2.39.27 also supports **Google Gemini → BLACKICE** through the same already-published MCP server, with an independently approved Google OAuth grant. Its setup and revocation are managed in **Settings → Gemini connector**, not the ChatGPT panel. Disconnecting Google does not revoke ChatGPT and vice versa. See [Gemini setup](docs/GEMINI-CONNECTOR.md).
 ## MCP authorization
 
 BLACKICE exposes MCP Streamable HTTP and OAuth at the displayed server URL ending in `/mcp/chatgpt`. It supports dynamic client registration with public, HTTP Basic and POST client authentication, alongside ChatGPT's fixed CIMD identity. Each client receives its own grant; registering another client does not replace an existing grant or change its request and job identifiers.
@@ -248,6 +251,8 @@ The local `BLACKICE browser` command line reaches the same host-owned tools and 
 **Import into Neo…** remains a native browser-data chooser for category-based import. Data imported there belongs to Neo. Connected-browser tools can use that Neo session; contained Electron tabs continue to have their own profile. See [BROWSER-IMPORT.md](BROWSER-IMPORT.md).
 
 ## Planning and swarms
+
+In **canonical contract v2** (shipped in 2.39.23), the connector reads the same authoritative plan of cohesive work items, criteria, dependencies, revisions and host-owned execution evidence as the desktop. A direct plan edit does not become an operation receipt. For canonical tasks, use the returned current revision with the sole `replace_contract` operation and omit host-owned `planEpoch`; older tasks retain their actual legacy graph-edit contract. See [current planning](docs/RECURSIVE-PLANNING.md).
 
 The connector reads the same durable plan outline, dependencies, groups, and revisions as the desktop. Active plans are the default. Renaming or regrouping changes organization metadata separately from plan content; stale revisions fail with a conflict rather than overwriting another edit. Editing a plan does not start a worker, clear a stopped worker's interruption, or create a false execution receipt. Swarm summaries expose bounded task/attempt metadata; detailed saved output is retrieved separately.
 

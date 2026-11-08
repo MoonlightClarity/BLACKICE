@@ -2,6 +2,7 @@
 
 BLACKICE uses one semi-structured process graph for the human, native agent and assigned swarm workers. Durable plan content and transient collaboration signals have separate lifecycles.
 
+**Contract note (2.39.23 and later):** New canonical tasks use a single intent contract of work items and a distinct host operation journal. Earlier tasks preserve their original step-graph semantics. The presence and revision concepts below do not require one plan leaf per tool operation; review the actual task's contract before using legacy `relay_task` edits. For current authoring see [Recursive planning](docs/RECURSIVE-PLANNING.md).
 ## Editing presence
 
 Actual human input publishes the selected saved step ID and a generated editor ID. It does not publish draft text, claimed identity, completion status or an acknowledgement. The server derives identity from the local session or verified paired browser.

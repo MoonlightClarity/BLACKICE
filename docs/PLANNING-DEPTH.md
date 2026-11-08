@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Planning On means the strongest useful deliberation for the actual task. Off disables the automatic planning requirements. Response length and provider reasoning effort remain independent controls. An atomic request may have one action; a complex request needs the material questions and checks that can change its result.
+The strongest useful deliberation is a quality goal, not a separate technical guarantee. Current modes are **Forced**, **Advisory** and **Off**: Forced gates actions on applicable planned work, Advisory does not require that gate, and Off disables automatic planning requirements. Response length and provider reasoning effort remain independent controls. An atomic request may have one action; a complex request needs the material questions and checks that can change its result.
 
 This contract addresses ceremonial compliance: a plan exists, a comparison is named, and work is marked done without demonstrating the substantive operation. It does not certify private reasoning or semantic correctness.
 
@@ -16,16 +16,15 @@ For example, “rewrite the request helper to stop duplicates” assumes the cau
 
 Saved context labels a plan goal, planned output and reported finding separately. Predictions and reported completion are not independent proof. This distinction must survive continuation and compaction, including when automatic planning is Off.
 
-## Enforced work-record behavior
+## Enforced work and outcome records
 
-New agent-authored actions admitted under Planning On must have a prospective work product (`result`), a concrete procedure (`note`), and an observable completion criterion (`doneWhen`). A procedure that literally repeats the title, promised result, or criterion is rejected. This detects an obvious empty scaffold, not every possible paraphrase.
+**Current canonical contract (v2, from 2.39.23):** the Plan records cohesive work items, resource/effect scopes, dependencies, instructions and evidence criteria. One work item may require several real tool operations. The host records the actual operation lifecycle separately; it does not require a model-authored leaf and completion note for every read, input or click.
 
-An action cannot first appear as done. Its procedure must be saved before its completion. If the procedure or criterion changes, save that revised work unfinished before claiming its result. Literal copies of the promise, procedure, or completion criterion cannot serve as observed completion evidence.
+Forced planning requires an applicable owned work item. The host can reject mismatched resources, effects, dependencies, stale plan context and unsupported effect claims. Completion must be measured against the selected criterion using the actual journal: observed sources, destination confirmations or evidence-grounded judgments. A model's `done` label, an attempted submission or a reported outcome is not independent confirmation.
 
-The current turn must actually read the plan and record current work. Rebranding only previous completed actions does not establish a new prospective plan. Existing completed work, human edits, other workers' ownership, and Off behavior are preserved.
+Earlier task-schema-10 plans used a different prospective `result` / `note` / `doneWhen` leaf contract and a single primary dispatch per leaf attempt. That text is preserved in [the historical schema-10 guide](history/RECURSIVE-PLANNING-SCHEMA10.md) for frozen legacy sessions. It is not the instruction set for a new contract-v2 task.
 
-None of these checks proves that a source was understood, a comparison was fair, or the claimed result was true. Runtime tool observations establish which operation ran, not the truth of an inference or destination acceptance.
-
+None of these checks independently proves semantic understanding, a fair comparison or that every website accepted the intended result. Runtime receipts show what was observed or dispatched; final claims must stay within that evidence.
 ## What substantive thinking must produce
 
 For a material decision, the useful intermediate product is a bounded piece of the actual task. Examples include competing paragraphs, a current and proposed design, comparable resource allocations, or rival causal predictions.

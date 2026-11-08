@@ -1,5 +1,7 @@
 # Browser data import
 
+> **Current-session distinction (2.39.27):** BLACKICE's contained Browser, connected external Chromium sessions and BrowserOS Neo have distinct data/session boundaries. An imported Neo or Chrome profile is not proof of a logged-in contained tab. The retired ChatGPT browser model provider is not restored by an import. See [the current README](README.md) and [ChatGPT connector](CHATGPT-CONNECTOR.md).
+
 ## Full selected Chromium profile
 
 BLACKICE can copy a complete selected Chrome, Edge, Brave, or Neo profile into a separate browser directory and connect it through the official Chrome DevTools MCP server. The imported copy runs with the **same browser executable as its source**. It does not run inside Electron's contained browser.

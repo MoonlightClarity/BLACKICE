@@ -23,6 +23,13 @@ For ordinary ChatGPT Chat mode, use **Settings → ChatGPT connector** to prepar
 
 After connecting, select BLACKICE in the intended Chat conversation and send the setup guide's unique status-test prompt. Confirm the guide only after the matching nonce and actual status result appear in that conversation. Successful endpoint discovery alone does not prove that ChatGPT can invoke the tools. See [Direct ChatGPT connector setup](CHATGPT-CONNECTOR.md) for the full steps.
 
+## Connect Gemini
+
+BLACKICE 2.39.27 adds **Settings → Gemini connector**, independent from **Settings → ChatGPT connector**. Google Gemini uses the same already-published HTTPS MCP server, but its Google OAuth request, granted scopes, expiration and revocation are separate from ChatGPT's grant. Adding or disconnecting Gemini does not authorize, replace or disconnect ChatGPT.
+
+Open Gemini's connector setup from BLACKICE's **Gemini connector** panel, use the **Shared MCP endpoint** displayed there, match the Google pending authorization code, and choose **Allow selected access**. Then verify a real `blackice_direct_status` tool result from Gemini; a successful OAuth grant alone is insufficient evidence of execution. The panel includes a copyable nonce probe and a two-step **Disconnect Gemini only** action.
+
+See [full Gemini setup](docs/GEMINI-CONNECTOR.md) and [2.39.27 release notes](RELEASE-NOTES-2.39.27.md).
 ## Connect a human browser
 
 1. Select **Create pairing code** in the host's Remote access settings.

@@ -3,7 +3,14 @@
 **Priority: compatibility first, low friction second, disk and memory use third.**
 Default backend is a **persistent Windows guest on Hyper-V**, not the restricted private Win32 desktop. This supports a much wider range of installed Windows applications, although hardware drivers, GPU features, anti-VM, DRM and some licensing schemes can still impose compatibility limits.
 
-**Current implementation, October 31, 2026:** The development host has a Microsoft-created and SHA-256-verified Windows ISO and a persistent Generation 2 `BLACKICE-Workbench` Hyper-V guest. Windows 11 Pro installation started inside that VM. No authenticated host SMB share or guest agent pairing has been verified, and guest Windows installation completion has not been confirmed. **Hard requirement: zero interruption of the host desktop.** The experimental elevation path caused foreground PowerShell/UAC interruptions and is disabled. Workbench status now uses only its existing background token, and VM mutations are disabled whenever that token lacks Hyper-V authority. Never mistake a running VM for a signed-in, controllable guest.
+**Current state as of 2.39.27 (November 7, 2026):** The existing development guest reached an interactive Windows desktop. Release 2.39.26 verified **Pair & auto-repair** on that guest: a fresh guest-agent heartbeat and pairing challenge, bidirectional shared-folder access, a guest screenshot, and automatic remount of `W:` after a deliberate disconnect. The running guest, installed applications and virtual disk were preserved. These observations do **not** establish that a new user's VM is ready, that every application works or that the separate native viewer has passed full visible/physical acceptance. Always inspect this machine's live Workbench readiness and observed receipts. Do not drive or interrupt the host desktop to stand in for guest control.
+
+## Current setup shortcut
+
+For a supported Windows host with an **already installed, signed-in guest**, open **Workbench**, inspect the current guest status and use **Pair & auto-repair**. BLACKICE prepares a dedicated host share account and credential, sends bootstrap files with Hyper-V `Copy-VMFile` even if `W:` is missing, starts the guest agent, and installs a guest-local reconnect watcher. The watcher checks the share every 15 seconds while signed in and can recover from stale mounts and host-IP changes. Verify its heartbeat and host↔guest read/write test before describing pairing as complete.
+
+For a new guest, follow Steps 1–3 first. Do not recreate an existing VM to fix pairing. Use the [in-app Workbench Setup guide](public/next/workspaces/workbench-guide.mjs) for current UI labels; this Markdown page provides the accompanying operational reference.
+
 
 ## Step 1 — Check existing Windows prerequisites
 
@@ -33,7 +40,7 @@ If the existing background Windows token cannot query Hyper-V, **Workbench must 
 
 First choose **Find existing ISO** in Workbench. BLACKICE searches common local download/media folders and validates plausible Windows 11 installation images without copying or downloading them. When it finds exactly one, it can reuse and save that path; with multiple candidates, choose one. The installed host Windows operating system cannot be used as a bootable VM installer without creating separate installation media or a prepared guest image.
 
-If no reusable ISO exists, choose **Get Windows ISO · Microsoft wizard** in Workbench. BLACKICE reuses or downloads the official Windows 11 Media Creation Tool from Microsoft's documented endpoint (`https://go.microsoft.com/fwlink/?linkid=2156295`), validates its Microsoft Authenticode digital signature on every use and starts Microsoft's interactive wizard. Select **ISO file, not USB**, save it to Downloads, then choose **Find existing ISO** again; the common default name `Windows.iso` is recognized. No host Windows upgrade, product-key selection or license acceptance is silently performed by BLACKICE. If the wizard cannot be used, the Workbench link to https://www.microsoft.com/software-download/windows11 remains an independent direct-ISO fallback. This wizard is a separate step from installing Windows in the eventual guest; the installed host OS alone is not bootable guest media. Follow Windows guest licensing. ISO checks currently verify ISO structure and file size, not Microsoft's provenance or installer contents.
+If no reusable ISO exists, obtain official Windows 11 installation media from [Microsoft's Windows 11 download page](https://www.microsoft.com/software-download/windows11), then run **Find existing ISO** again. The current in-app setup guide does **not** automatically launch Microsoft's interactive Media Creation wizard or take host desktop focus. The common `Windows.iso` name is recognized. The installed host OS alone is not bootable guest media; follow guest Windows licensing. BLACKICE checks ISO structure and size, which do not independently prove origin or full contents.
 
 ## Step 3 — Provision once, persist forever
 
@@ -76,9 +83,9 @@ winget import --import-file "W:\blackice-host-apps.json" --no-upgrade --ignore-u
 
 Installed packages are not the same thing as all host apps. Workbench's **Rescan & discover installers** action also searches Windows Package Manager for applications that the initial export could not recognize. It uses the installed application's Windows publisher metadata to verify any otherwise exact-name catalog match. Matching names with different publishers (for example two unrelated programs named Reveal) are **not** automatically substituted. Hardware drivers, OS components and companion services are tracked separately from user applications. Verified matches are appended to a separate, checksum-bound immutable guest import manifest; the original host inventory remains unchanged. Unmatched programs, ambiguous editions, required user intervention, software licenses and failures stay visible as **exceptions**, not successes.
 
-## Step 7 — **Re-batch installed apps whenever requested**
+## Step 7 — **Rescan and re-batch missing apps whenever requested**
 
-The application sync must **never be one-shot**. After the first batch, expose a normal Workbench **Sync installed apps / Re-batch missing apps** action, which may be used repeatedly: after installing more host apps, after troubleshooting an exception, or months later.
+The application sync must **never be one-shot**. After the first batch, expose a normal Workbench **Rescan & install missing / Re-batch saved inventory** action, which may be used repeatedly: after installing more host apps, after troubleshooting an exception, or months later.
 
 Each pass must:
 

@@ -1,5 +1,7 @@
 # Windows application support in BLACKICE 2.22
 
+> **Historical 2.22 test report (October 18, 2026).** These private-desktop observations are not the current general application setup instructions. BLACKICE 2.39.27 also has an optional persistent Hyper-V Windows **Workbench**; see [Workbench setup](WORKBENCH-SETUP.md), [2.39.26 pairing results](RELEASE-NOTES-2.39.26.md) and [native-display limitations](WORKBENCH-NATIVE-DISPLAY.md).
+
 BLACKICE can show and operate a compatible native application inside its Activity surface while its windows live on an inactive private Windows desktop. That is an application compatibility adapter, not a general Windows VM or a file/network sandbox.
 
 ## Actual checks on October 18, 2026

@@ -1,6 +1,6 @@
 # Browser tabs and request protection
 
-BLACKICE provides a tab strip and optional embedded ad and tracker filtering in **Activity → Browser**. Browsing starts unfiltered; people and authorized agents can enable filtering when wanted.
+BLACKICE provides a tab strip and optional embedded ad and tracker filtering in **Browser**. Browsing starts unfiltered; people and authorized agents can enable filtering when wanted.
 
 ## Tabs
 
