@@ -181,3 +181,18 @@ test('another host cannot replay a persisted running attempt or assume its provi
   f.calls[0].resolve({output:publicOutput('request-a')});await Promise.all(f.runner.activePromises());
   const completed=await second.start(options);assert.equal(completed.attempt.status,'completed');assert.equal(foreignCalls,0);
 });
+
+
+test('protected helper verifies actual selected model before claiming or dispatching and preserves normal calls',async t=>{
+ const f=await fixture(t);await f.request('protected');await f.request('normal');
+ f.runner.runtime.supportsHostOnlyToolDispatch=({model})=>model==='fixture::safe';
+ assert.equal(f.runner.supportsHostOnlyToolDispatch(),true);
+ await assert.rejects(f.runner.start({requestId:'protected',nodeId:'frame',expectedNodeRevision:1,model:'native',hostOnlyTools:true}),{code:'HOST_ONLY_TRANSPORT_UNSUPPORTED'});
+ assert.equal((await f.store.get('protected')).attempts.length,0);assert.equal(f.calls.length,0);
+ const a=await f.runner.start({requestId:'protected',nodeId:'frame',expectedNodeRevision:1,model:'fixture::safe',hostOnlyTools:true});
+ const b=await f.runner.start({requestId:'normal',nodeId:'frame',expectedNodeRevision:1,model:'native'});
+ assert.equal(f.calls[0].options.hostOnlyTools,true);assert.equal(f.calls[0].options.responseOnly,true);assert.deepEqual(f.calls[0].options.dynamicTools,[]);
+ assert.equal(f.calls[1].options.hostOnlyTools,undefined);
+ f.calls[0].resolve({output:publicOutput('protected')});f.calls[1].resolve({output:publicOutput('normal')});
+ await Promise.all([f.runner.wait('protected',a.attempt.id),f.runner.wait('normal',b.attempt.id)]);
+});

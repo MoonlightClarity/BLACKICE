@@ -117,7 +117,7 @@ export function observePageReceiptRecords(bindings) {
   };
   const output = [];
   let json, jsonRead = false;
-  for (const binding of (Array.isArray(bindings) ? bindings : []).slice(0, 200)) {
+  for (const binding of (Array.isArray(bindings) && bindings.length<=320 ? bindings : [])) {
     try {
       let records;
       if (['dom', 'dom-text'].includes(binding.format)) {

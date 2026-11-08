@@ -863,3 +863,31 @@ test('first-class VM fake job flows through actual engine callbacks and durable 
   const historical=await call('guest_job',{jobId:job.jobId});assert.equal(historical.success,true);assert.equal(data(historical).verification.status,'not_revalidated');assert.equal((await f.store.get(result.requestId)).cycles[0].effectReceipts.length,2,'Read-only inspection under USER issues no new effect proof.');
   await handler.close();assert.equal(launches,1,'No VM process is actually launched by this fake bridge test.');
 });
+
+
+test('protected preparation and final review preserve host-only dispatch through every response stage',async t=>{
+ const f=await fixture(t);f.runtime.supportsHostOnlyToolDispatch=({model})=>model==='fixture::safe';f.settings.defaultModel='fixture::safe';
+ const run=f.run();run.workflow.nodes.find(n=>n.type==='agent').model='fixture::safe';
+ assert.equal(f.service.supportsHostOnlyToolDispatch(),true);
+ const result=await f.service.forRun(run,{hostOnlyTools:true});
+ run.viability=result;run.responseCycle={...result.responseCycle,requestId:result.requestId,cycleId:result.cycleId,planRef:result.planRef};
+ const final=await f.service.finishRun(run,{hostOnlyTools:true,outputs:[{nodeId:'agent',title:'Fixture',status:'completed',output:'Observed fixture result.',toolReceipts:[]}]});
+ assert.equal(final.state,'completed');assert.deepEqual(f.calls.map(c=>c.input.module.kind),['inference','viability','plan','think','respond']);
+ for(const c of f.calls){assert.equal(c.options.hostOnlyTools,true);assert.equal(c.options.model,'fixture::safe');assert.deepEqual(c.options.dynamicTools,[]);}
+});
+test('protected readiness rejects an unsupported saved helper route without starting a provider',async t=>{
+ const f=await fixture(t);f.runtime.supportsHostOnlyToolDispatch=()=>false;
+ await assert.rejects(f.service.forRun(f.run(),{hostOnlyTools:true}),{code:'HOST_ONLY_TRANSPORT_UNSUPPORTED'});assert.equal(f.calls.length,0);
+});
+
+test('protected recursive stages and child aggregation retain host-only transport',async t=>{
+  const f=await fixture(t,{amend:(body,input)=>{
+    if(input.module.kind==='inference'&&input.cycle?.objective==='Explain the supplied bounded problem.'){
+      body.subproblems=[{executionTarget:'analysis',key:'check-assumption',title:'Check the pivotal assumption',objective:'Determine whether the supplied premise supports the intended interpretation.',reason:'The interpretation depends on this premise.',required:true,sourceIds:[input.sources.find(source=>source.id==='viability:task').id],acceptanceCriteria:[criterion]}];
+    }
+    return body;
+  }});f.runtime.supportsHostOnlyToolDispatch=({model})=>model==='fixture::safe';f.settings.defaultModel='fixture::safe';const run=f.run('plan_only');run.workflow.nodes.find(n=>n.type==='agent').model='fixture::safe';const result=await f.service.forRun(run,{hostOnlyTools:true}),request=await f.store.get(result.requestId);for(const call of f.calls)assert.equal(call.options.hostOnlyTools,true);
+  assert.equal(result.pausedAfterPlan,true);assert.equal(request.cycles.length,2);const child=request.cycles.find(item=>item.parentCycleId);
+  assert.equal(child.state,'completed');assert.equal(f.calls.length,9);const parent=request.nodes.find(node=>node.id===child.parentStageId);assert.equal(parent.response.childResults[0].key,'check-assumption');
+  const childCalls=f.calls.filter(call=>call.input.cycle?.cycleId===child.id);assert.deepEqual(childCalls.map(call=>call.input.module.kind),['inference','viability','plan','think','respond']);assert.ok(childCalls[0].input.sources.some(source=>source.id==='viability:task'));assert.equal(childCalls[0].input.sources.some(source=>source.id==='viability:profile'),false);
+});

@@ -19,7 +19,7 @@ const definition = (name, extra = {}) => ({
 const unavailable = () => assert.fail('Discovery must not execute a tool.');
 const provider = tools => ({ tools: () => tools, call: unavailable });
 
-test('the full native catalog retains the exact 28-tool public contract and fingerprint', () => {
+test('the configured catalog retains the exact 30-tool public contract and fingerprint', () => {
   // Bind the reviewed public definitions, including recursive planning,
   // bounded contained diagnostics, exact-identity ownership/debug controls,
   // the cleanup protocol and the explicit relay default for credential fill.
@@ -36,19 +36,26 @@ test('the full native catalog retains the exact 28-tool public contract and fing
   assert.deepEqual(catalog.tools().map(tool => tool.name), [
     'blackice_direct_status', 'blackice_list_jobs', 'blackice_get_job', 'blackice_cancel_job',
     'blackice_workspace_read', 'blackice_workspace_write', 'blackice_run_command', 'blackice_browser_read',
-    'blackice_browser_action', 'blackice_browser_upload', 'blackice_import_file', 'blackice_connected_browser_read',
+    'blackice_browser_action', 'blackice_browser_upload', 'blackice_task_contract', 'blackice_task_context', 'blackice_import_file', 'blackice_connected_browser_read',
     'blackice_connected_browser_action', 'blackice_profile_list', 'blackice_profile_import', 'blackice_profile_connect',
     'blackice_restart', 'blackice_credentials_list', 'blackice_credentials_generate', 'blackice_credentials_fill',
     'blackice_list_plans', 'blackice_get_plan', 'blackice_get_run_result', 'blackice_list_swarm_plans',
     'blackice_get_swarm_plan', 'blackice_get_plan_groups', 'blackice_edit_plan', 'blackice_edit_plan_groups',
   ]);
   assert.deepEqual(catalog.status(), {
-    // Reviewed canonical criterion evidence units and bounded effect guidance; schema 13 stays frozen.
-    sha256: 'c2deb4b3c3b76b4447bee7a203d87918731fd1339aa56ee0d5be4dde4d980208',
-    toolCount: 28,
+    // Reviewed explicit task/context tools, canonical source binding, and bounded receipt alternatives.
+    sha256: 'b3deda858992802fbc35e9ebf96c1866f85d21ed07d0a2d28ebd25fdd923522d',
+    toolCount: 30,
     serverVersion: '2.33.5',
   });
   assert.equal(createHash('sha256').update(JSON.stringify(catalog.tools())).digest('hex'), catalog.status().sha256);
+  // DirectExecutionAPI always registers these two tools. This fixture does not install
+  // the separately supplied native attachment extension or graph/cycle services.
+  const contexts=catalog.tools().find(tool=>tool.name==='blackice_task_context');
+  assert.deepEqual(contexts.inputSchema.oneOf.map(branch=>branch.properties.action.const),['issue','read','revoke']);
+  assert.equal(catalog.tools().some(tool=>tool.name==='blackice_native_task_context'),false);
+  const contracts=catalog.tools().find(tool=>tool.name==='blackice_task_contract');
+  assert.ok(contracts.inputSchema.oneOf.some(branch=>branch.properties.action.const==='bind_plan'));
   const read=catalog.tools().find(tool=>tool.name==='blackice_browser_read');
   assert.equal(read.annotations.readOnlyHint,true);
   assert.ok(read.inputSchema.properties.action.enum.includes('diagnostics'));

@@ -1,3 +1,4 @@
+import {NativeTaskContextBridge,createNativeTaskContextTool} from './lib/native-task-context-bridge.mjs';
 import http from 'node:http';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -158,7 +159,7 @@ export async function createHarnessServer(options = {}) {
     const id = engine.clientRequestRunId?.(value?.requestId);
     if (id && !engine.runs.has(id)) engine.restoreArchivedRun(await conversations.get(id));
   };
-  const inbox = options.inbox || new TaskInbox({ dataDir, engine, createWorkflow: item => createMissionWorkflow({ id: `inbox-${item.id}`, task: item.input, cwd: item.cwd }) }); await inbox.init();
+  const inbox = options.inbox || new TaskInbox({ dataDir, engine, createWorkflow: item => createMissionWorkflow({ id: `inbox-${item.id}`, task: item.input, cwd: item.cwd }) });
   const taskViability=options.taskViability===false?null:options.taskViability||new TaskViability({store:planningBrowser,runner:planningBrowserRuntime,engine,attachments,identity,conversations,getSettings:()=>runtimeSettings.get(),onUpdated:event=>sendEvent(event)});
   engine.taskViability=taskViability;
   const responseCycle=options.responseCycle===false||!taskViability?null:options.responseCycle||new ResponseCycleService({store:planningBrowser,runner:planningBrowserRuntime,taskViability,engine,conversations,getSettings:()=>runtimeSettings.get(),onUpdated:event=>sendEvent(event)});
@@ -167,7 +168,7 @@ export async function createHarnessServer(options = {}) {
   // Restore an intentionally unpaused scheduler after a clean host restart.
   // OperationsStore still fails closed on conflicting, interrupted or uncertain receipts,
   // preserves explicit Stop, and journals overdue occurrences instead of replaying them.
-  await operations.init({preservePausedState:true});
+  // Start the scheduler only after native task admission and connector authority are ready.
   engine.operations=operations;
   const projects=await new ProjectStore({dataDir,engine,isPaused:()=>Boolean(engine.maintenanceRequested)}).init();
   guardArchivedProjectExecution(projects, planningOrganization);
@@ -405,12 +406,12 @@ export async function createHarnessServer(options = {}) {
   engine.credentials = browserCredentials;
   const emailClient = options.emailClient || null;
   directExecution = options.directExecution || await startupPhase(diagnostics, 'direct-jobs', () => new DirectExecutionAPI({
-    dataDir: path.resolve(dataDir), allowedRoot: defaultCwd, browser, patchStore: engine.filePatches,
+    dataDir: path.resolve(dataDir), allowedRoot: defaultCwd, browser, patchStore: engine.filePatches, taskStore:tasks,
     isClosing: connectorClosing, onChange: connectorChanged,
     ...(options.desktopRestart ? { desktopRestart: options.desktopRestart, restartStatus: context => options.desktopRestart.status({ ownerId: context.canRestart ? context.ownerId : undefined }) } : {}),
     // Vault health can change between startups or recover during this process.
     // Keep its tool definitions stable; every credential action checks the store.
-    additionalTools: [...createDirectPlanningBrowserTools({ store: planningBrowser, getCatalog: () => planningBrowserCatalog({ store: planningBrowser, conversations, runtime, runtimeSettings }), onChange: sendEvent }), ...createDirectResponseCycleTools({service:responseCycle,onChange:sendEvent}), ...createDirectProviderSetupTools({ runtime, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes), isEncryptionAvailable: () => options.credentialStorage?.isEncryptionAvailable?.() === true, browserOwnerForClient: client => client.id === LOCAL_BROWSER_CLIENT.id && client.kind === LOCAL_BROWSER_CLIENT.kind ? null : connectorBrowserOwner(client.id) }), chatGPTFileImportTool({ directory: path.join(defaultCwd, 'blackice-imports') }), chatGPTStartChatTool({ engine, attachments, defaultCwd, isClosing: connectorClosing }), ...createDirectConnectedBrowserTools({ manager: connections, connectChrome: options.connectChromeBrowser }), ...createDirectBrowserProfileTools({ profiles: browserProfiles, manager: connections, onChange: refreshBrowserProfiles }), ...(options.desktopRestart ? [desktopRestartTool({ restart: options.desktopRestart, getJob: id => directExecution.jobs.get(id) })] : []), ...(options.frontendDevtools ? [frontendDevtoolsTool({ frontend: options.frontendDevtools, artifactDirectory: path.join(dataDir, 'frontend-development') })] : []), ...createDirectBrowserCredentialTools({ vault: browserCredentials, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes) })],
+    additionalTools: [createNativeTaskContextTool({getBridge:()=>engine.nativeTaskContextBridge}), ...createDirectPlanningBrowserTools({ store: planningBrowser, getCatalog: () => planningBrowserCatalog({ store: planningBrowser, conversations, runtime, runtimeSettings }), onChange: sendEvent }), ...createDirectResponseCycleTools({service:responseCycle,onChange:sendEvent}), ...createDirectProviderSetupTools({ runtime, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes), isEncryptionAvailable: () => options.credentialStorage?.isEncryptionAvailable?.() === true, browserOwnerForClient: client => client.id === LOCAL_BROWSER_CLIENT.id && client.kind === LOCAL_BROWSER_CLIENT.kind ? null : connectorBrowserOwner(client.id) }), chatGPTFileImportTool({ directory: path.join(defaultCwd, 'blackice-imports') }), chatGPTStartChatTool({ engine, attachments, defaultCwd, isClosing: connectorClosing }), ...createDirectConnectedBrowserTools({ manager: connections, connectChrome: options.connectChromeBrowser }), ...createDirectBrowserProfileTools({ profiles: browserProfiles, manager: connections, onChange: refreshBrowserProfiles }), ...(options.desktopRestart ? [desktopRestartTool({ restart: options.desktopRestart, getJob: id => directExecution.jobs.get(id) })] : []), ...(options.frontendDevtools ? [frontendDevtoolsTool({ frontend: options.frontendDevtools, artifactDirectory: path.join(dataDir, 'frontend-development') })] : []), ...createDirectBrowserCredentialTools({ vault: browserCredentials, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes) })],
     authorizeClient: async (client, { requiredScopes }) => {
       if (client.id === 'local-browser-tools' && client.kind === 'local-browser') return !connectorClosing() && requiredScopes.every(scope => LOCAL_BROWSER_CLIENT.scopes.includes(scope));
       if (client.id === LOCAL_FRONTEND_CLIENT.id && client.kind === LOCAL_FRONTEND_CLIENT.kind) return Boolean(options.frontendDevtools) && !connectorClosing() && requiredScopes.every(scope => LOCAL_FRONTEND_CLIENT.scopes.includes(scope));
@@ -418,10 +419,13 @@ export async function createHarnessServer(options = {}) {
       return Boolean(chatGPTConnector?.enabled && current && requiredScopes.every(scope => current.scopes.includes(scope)));
     },
   }).init());
+  if(directExecution.taskRuntime)engine.nativeTaskContextBridge=new NativeTaskContextBridge({runtime:directExecution.taskRuntime,tasks,planSource:directExecution.planSource,canEnforceProtectedDispatch:({nativeTaskId,runId})=>{const selected=runId?engine.runs.get(runId):[...engine.runs.values()].filter(run=>(run.taskId||run.id)===nativeTaskId).at(-1);return Boolean(selected&&selected.workflow.nodes.filter(node=>node.type==='agent').every(node=>runtime.supportsHostOnlyToolDispatch?.({model:node.model})===true));},isActive:id=>[...engine.runs.values()].some(run=>(run.taskId||run.id)===id&&run.settled!==true),reauthorize:(client,scopes)=>directExecution.require(client,scopes)});
   const activityService = createActivityService({ conversations, engine, directExecution });
   const chatGPTPlanning = new ChatGPTPlanningAPI({ tasks, conversations, engine, planningOrganization, projects, onUpdated: sendEvent, isClosing: connectorClosing });
   const chatGPTSchedules = new ChatGPTSchedulesAPI({ operations, isClosing: connectorClosing });
   chatGPTConnector = await new ChatGPTConnector({ dataDir: path.resolve(dataDir), execution: directExecution, planning: chatGPTPlanning, schedules: chatGPTSchedules, oauth: chatGPTOAuth, version: APP_VERSION, isClosing: connectorClosing, isRestartPending: () => options.desktopRestart?.isPending?.() === true, onChange: connectorChanged }).init();
+  await inbox.init();
+  await operations.init({preservePausedState:true});
   const connectorRevocations = new Map();
   chatGPTOAuth.on?.('updated', connectorChanged);
   chatGPTOAuth.on?.('revoked', ids => {

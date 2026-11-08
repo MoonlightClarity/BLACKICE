@@ -40,12 +40,20 @@ async function waitJob(api, jobId, who = client) {
   throw new Error('The fixture job did not settle.');
 }
 
-test('MCP discovery publishes the same expanded browser schemas with the existing scopes', async t => {
-  const { api, directory } = await fixture(t), connector = new ChatGPTConnector({ dataDir: directory, execution: api, planning: { tools: () => [], call: async () => { throw new Error('Discovery must not execute planning tools.'); } }, oauth: {} });
+test('MCP discovery preserves browser schemas and advertises transport scope without granting action scopes', async t => {
+  const { api, directory, calls } = await fixture(t), connector = new ChatGPTConnector({ dataDir: directory, execution: api, planning: { tools: () => [], call: async () => { throw new Error('Discovery must not execute planning tools.'); } }, oauth: {} });
   for (const [name, scope] of [['blackice_browser_action', 'browser:write'], ['blackice_browser_read', 'browser:read']]) {
     const runtime = api.tools().find(tool => tool.name === name), exposed = connector.tools().find(tool => tool.name === name);
-    assert.deepEqual(exposed.inputSchema, runtime.inputSchema); assert.deepEqual(exposed.securitySchemes, [{ type: 'oauth2', scopes: ['read', scope] }]);
+    assert.deepEqual(exposed.inputSchema, runtime.inputSchema);
+    // MCP discovery advertises the shared OAuth transport authorization, not the action grant.
+    assert.deepEqual(exposed.securitySchemes, [{ type: 'oauth2', scopes: ['read'] }]);
+    assert.deepEqual(exposed._meta.securitySchemes, exposed.securitySchemes);
+    const transportOnly={...client,scopes:['read']};
+    const args={requestId:'transport-only-'+scope.replace(':','-'),action:name==='blackice_browser_read'?'tabs':'folder_create',...(name==='blackice_browser_action'?{name:'Denied folder'}:{})};
+    await assert.rejects(api.call(name,args,transportOnly),error=>error.code==='DIRECT_SCOPE_REQUIRED'&&error.scope===scope&&JSON.stringify(error.requiredScopes)===JSON.stringify(['read',scope]));
   }
+  assert.deepEqual(calls,[],'Transport-only discovery authorization must not dispatch browser actions.');
+  assert.equal((await api.listJobs(client)).total,0,'Missing action scopes fail before durable admission.');
   const tool = api.tools().find(tool => tool.name === 'blackice_browser_action');
   for (const action of ['interaction', 'folder_create', 'folder_rename', 'folder_close', 'tab_move', 'suspend', 'protection']) assert.ok(tool.inputSchema.properties.action.enum.includes(action));
   assert.equal(tool.inputSchema.properties.password, undefined);

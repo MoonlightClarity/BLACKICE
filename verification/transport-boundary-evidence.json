@@ -1,0 +1,82 @@
+{
+  "date": "2026-11-08",
+  "version": "codex-cli 0.167.0-alpha.3.2",
+  "source": "Installed official Codex executable; temporary isolated CODEX_HOME; synthetic localhost Responses endpoint; no real provider/model invocation",
+  "threadStartFields": [
+    "allowProviderModelFallback",
+    "approvalPolicy",
+    "approvalsReviewer",
+    "baseInstructions",
+    "config",
+    "cwd",
+    "daybreakEnabled",
+    "developerInstructions",
+    "dynamicTools",
+    "environments",
+    "ephemeral",
+    "experimentalRawEvents",
+    "historyMode",
+    "mockExperimentalField",
+    "model",
+    "modelProvider",
+    "multiAgentMode",
+    "permissions",
+    "personality",
+    "projectId",
+    "runtimeWorkspaceRoots",
+    "sandbox",
+    "selectedCapabilityRoots",
+    "serviceName",
+    "serviceTier",
+    "sessionStartSource",
+    "threadSource"
+  ],
+  "disabledFeatureNames": [
+    "shell_tool",
+    "shell_snapshot",
+    "browser_use",
+    "browser_use_external",
+    "browser_use_full_cdp_access",
+    "computer_use",
+    "in_app_browser",
+    "in_app_chat",
+    "in_app_local_automation",
+    "image_generation",
+    "view_image",
+    "multi_agent",
+    "multi_agent_v2",
+    "apps",
+    "remote_plugin",
+    "plugins",
+    "hooks",
+    "code_mode_host",
+    "code_mode",
+    "code_mode_only",
+    "skill_search",
+    "skill_mcp_dependency_install",
+    "tool_suggest",
+    "goals",
+    "sleep_tool",
+    "memories",
+    "request_permissions_tool",
+    "default_mode_request_user_input",
+    "standalone_web_search"
+  ],
+  "advertisedTools": [
+    {
+      "path": "/v1/responses",
+      "model": "synthetic-test",
+      "tools": [
+        {
+          "type": "function",
+          "name": "request_user_input"
+        },
+        {
+          "type": "function",
+          "name": "relay_browser"
+        }
+      ]
+    }
+  ],
+  "conclusion": "No protocol global tool allowlist. Restricted capture still includes request_user_input outside host dynamic tool. Current Codex transport is not enabled for protected host-only tasks."
+}

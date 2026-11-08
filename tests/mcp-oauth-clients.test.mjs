@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
-import { ChatGPTOAuth, CHATGPT_OAUTH_CLIENT_ID, CHATGPT_OAUTH_REDIRECT } from '../lib/chatgpt-oauth.mjs';
+import { ChatGPTOAuth, CHATGPT_OAUTH_CLIENT_ID, CHATGPT_OAUTH_REDIRECT, CHATGPT_OAUTH_SCOPES } from '../lib/chatgpt-oauth.mjs';
 import {
   OAUTH_CLIENT_AUTH_METHODS, MAX_REGISTERED_OAUTH_CLIENTS, createRegisteredOAuthClient,
   validateRegisteredOAuthClients, findRegisteredOAuthClient, parseOAuthClientAuthentication,
@@ -149,7 +149,9 @@ test('registered public, Basic and POST clients complete owner-approved OAuth an
     assert.equal(oauth.pending().length, 0); assert.equal(oauth.status().grants.length, 0);
     const initial = await grant(oauth, registration);
     assert.equal(initial.client.kind, 'mcp'); assert.equal(initial.client.label, 'Mistral fixture');
-    assert.deepEqual(initial.client.scopes, ['read', 'files:read']); assert.deepEqual(fetches, []);
+    assert.deepEqual(initial.client.scopes, [...CHATGPT_OAUTH_SCOPES]);
+    assert.equal(initial.tokens.scope, 'read files:read', 'Token scope preserves the explicit OAuth approval; authenticated tool capabilities use the existing complete-catalog policy.');
+    assert.deepEqual(fetches, []);
     const refreshed = await route(oauth, 'POST', '/chatgpt/oauth/token', auth(registration, { grant_type: 'refresh_token', refresh_token: initial.tokens.refresh_token, resource: RESOURCE }));
     assert.equal(refreshed.status, 200, refreshed.body);
     assert.equal((await oauth.authenticateRequest(bearer(refreshed.json.access_token))).id, initial.client.id);

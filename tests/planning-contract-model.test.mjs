@@ -309,3 +309,17 @@ test('observed absence-only bindings are valid for DOM, JSON and native text wit
   }
   assert.deepEqual(normalizePlanContract(withBinding()).criteria[1].receiptBinding, binding(), 'Existing stored positive bindings remain unchanged.');
 });
+
+
+test('bounded receipt alternatives retain one criterion target across sites and legacy remains exclusive',()=>{
+ const plan=draft();const criterion=plan.criteria[1];delete criterion.resourceKey;criterion.targetCount=5;
+ criterion.receiptBindings=[binding(),{...binding(),format:'json',resourceKey:'origin:https://other.test',record:'/receipts'}];
+ const saved=normalizePlanContract(plan);assert.equal(saved.criteria[1].targetCount,5);assert.equal(saved.criteria[1].receiptBindings.length,2);assert.equal(saved.criteria[1].receiptBinding,undefined);
+ for(const variants of [[],Array(9).fill(binding()),[binding(),binding()]]){const bad=structuredClone(plan);bad.criteria[1].receiptBindings=variants;assert.throws(()=>normalizePlanContract(bad),{code:'TASK_CONTRACT_INVALID'});}
+ const both=structuredClone(plan);both.criteria[1].receiptBinding=binding();assert.throws(()=>normalizePlanContract(both),{code:'TASK_CONTRACT_INVALID'});
+ const observation=structuredClone(plan);observation.criteria[1].kind='observation';assert.throws(()=>normalizePlanContract(observation),{code:'TASK_CONTRACT_INVALID'});
+ const scoped=structuredClone(plan);scoped.criteria[1].resourceKey=binding().resourceKey;assert.throws(()=>normalizePlanContract(scoped),{code:'TASK_CONTRACT_INVALID'});
+ assert.deepEqual(PLAN_CONTRACT_SCHEMA.properties.criteria.items.not,{required:['receiptBinding','receiptBindings']});
+});
+
+test('receipt variant duplicate detection ignores incoming object property order',()=>{const plan=draft();delete plan.criteria[1].resourceKey;const original=binding(),reordered=Object.fromEntries(Object.entries(original).reverse());plan.criteria[1].receiptBindings=[original,reordered];assert.throws(()=>normalizePlanContract(plan),{code:'TASK_CONTRACT_INVALID'});});

@@ -336,3 +336,27 @@ test('a newly observed source version invalidates a queued commit prerequisite a
   const operation = (await readContractJournal(f.tasks, f.taskId)).records.find(row => row.tool === 'fixture_commit');
   assert.equal(operation.deliveryState, 'cancelled-before-dispatch'); assert.equal(operation.effectState, 'absent');
 });
+
+test('host shared admission runs inside native canonical dispatch lock after original guard checks',async t=>{
+ const f=await fixture(t),item=call('relay_workspace',{action:'list',path:'.'});
+ assert.equal(await f.guard.before(item,{}),null);const context=f.guard.dispatchContext(item,{});
+ assert.equal(context.canonicalAdmission,true);let admitted=0;
+ await context.onOperationDispatch(context.operationDescriptor,{onAdmission:async({state,operation})=>{
+  assert.ok(f.tasks.lockOwners.has(f.taskId));assert.equal(state.taskId,f.taskId);assert.equal(operation.deliveryState,'reserved');admitted++;
+ }});
+ assert.equal(admitted,1);assert.equal((await readContractJournal(f.tasks,f.taskId)).records.at(-1).deliveryState,'dispatched');
+});
+test('native stale plan rejects before shared admission and cannot mark effect dispatched',async t=>{
+ const f=await fixture(t),item=call('relay_workspace',{action:'list',path:'.'});
+ assert.equal(await f.guard.before(item,{}),null);const context=f.guard.dispatchContext(item,{});
+ const state=await f.tasks.get(f.taskId),contract=structuredClone(state.contract);delete contract.planEpoch;contract.workItems[0].objective='A changed relevant instruction';
+ await f.tasks.setContract(f.taskId,contract,{expectedRevision:state.revision,schemaVersion:14,runId:f.runId,nodeId:f.nodeId});
+ let admitted=0;await assert.rejects(context.onOperationDispatch(context.operationDescriptor,{onAdmission:()=>{admitted++;}}),{code:'TASK_CONTRACT_REVIEW_REQUIRED'});
+ assert.equal(admitted,0);assert.equal((await readContractJournal(f.tasks,f.taskId)).records.at(-1).deliveryState,'reserved');
+});
+test('shared admission denial leaves original native reservation undispatched',async t=>{
+ const f=await fixture(t),item=call('relay_workspace',{action:'list',path:'.'});
+ assert.equal(await f.guard.before(item,{}),null);const context=f.guard.dispatchContext(item,{});
+ await assert.rejects(context.onOperationDispatch(context.operationDescriptor,{onAdmission:()=>{throw Object.assign(Error('shared conflict'),{code:'SHARED_CONFLICT'});}}),{code:'SHARED_CONFLICT'});
+ assert.equal((await readContractJournal(f.tasks,f.taskId)).records.at(-1).deliveryState,'reserved');
+});

@@ -732,3 +732,49 @@ test('real DOM text extraction requires one connected visible record and normali
     records = [records[0], records[0]]; assert.ok(read().every(value => value.ambiguous));
   } finally { globalThis.document = previousDocument; globalThis.getComputedStyle = previousStyle; }
 });
+
+
+async function alternativeConfirmation({bindings,batches,observed=form(),document={}}){
+ const descriptor=await describeHostOperation(browserCall(),{browserObservation:observed});
+ const browserObservation={current:true,tabId:'relay:one',documentId:'one:2',url:'https://portal.test/tenant-a/confirmation',receipts:batches,...document};
+ return normalizeHostOperationResult(result({documentId:browserObservation.documentId,url:browserObservation.url}),{call:browserCall(),descriptor,browserObservation,criteria:[{id:'one-goal',kind:'external-confirmation',targetCount:2,receiptBindings:bindings}],commitments:[{operationId:'op-alt',deliveryState:'returned',effectState:'unknown',commit:descriptor.commit}]});
+}
+test('receipt alternatives select observed site without splitting a criterion and equivalent formats count one fact',async()=>{
+ const first=binding(),second=binding({format:'json',record:'/receipts',resourceKey:'origin:https://other.test'});
+ const other=form();other.url='https://other.test/form';other.control.form.action='https://other.test/enroll';
+ const mapped=await alternativeConfirmation({bindings:[first,second],batches:[{bindingKey:browserReceiptBindingKey(second),records:[receiptRecord({destination:'https://other.test/enroll'})]}],observed:other,document:{url:'https://other.test/receipt'}});
+ assert.equal(confirmations(mapped).length,1);assert.equal(confirmations(mapped)[0].resourceKey,'origin:https://other.test');
+ const sameSite={...second,resourceKey:first.resourceKey};const duplicate=await alternativeConfirmation({bindings:[first,sameSite],batches:[first,sameSite].map(b=>({bindingKey:browserReceiptBindingKey(b),records:[receiptRecord()]}))});
+ assert.equal(confirmations(duplicate).length,1);
+});
+test('conflicting matching variants stay uncertain and a fresh consistent observation can resolve',async()=>{
+ const positive=binding(),negative=binding({record:'#second',confirmedValues:[],absentValues:['confirmed']});
+ const batches=[positive,negative].map(b=>({bindingKey:browserReceiptBindingKey(b),records:[receiptRecord()]}));
+ const conflict=await alternativeConfirmation({bindings:[positive,negative],batches});assert.equal(confirmations(conflict).length,0);assert.equal(conflict.effectState,'unconfirmed');
+ const fresh=await alternativeConfirmation({bindings:[positive,negative],batches:[batches[0],{bindingKey:browserReceiptBindingKey(negative),records:[]}],document:{documentId:'one:3'}});
+ assert.equal(confirmations(fresh).length,1);assert.equal(fresh.effectState,'confirmed');
+});
+test('structured and native-text alternatives conflict before either path can authorize success',async()=>{
+ const f=await nativeTextFixture(),structured=binding({confirmedValues:[],absentValues:['confirmed']}),native=nativeTextBinding();
+ const observation={...f.browserObservation,receipts:[{bindingKey:browserReceiptBindingKey(structured),records:[receiptRecord()]},{bindingKey:browserReceiptBindingKey(native),records:[{status:'Your enrollment is confirmed.'}]}]};
+ const mapped=await normalizeHostOperationResult(result({documentId:observation.documentId,url:observation.url}),{call:browserCall(),descriptor:f.descriptor,browserObservation:observation,criteria:[{id:'same-goal',kind:'external-confirmation',receiptBindings:[structured,native]}],commitments:[f.commitment]});
+ assert.equal(confirmations(mapped).length,0);assert.equal(mapped.effectState,'unconfirmed');
+});
+test('native receipt refinement preserves its original fact alias and rejects changing the subject identity',async()=>{
+ const f=await nativeTextFixture(),first=await nativeTextResult(f),prior=confirmations(first)[0];assert.ok(prior);
+ const retained=[{...f.commitment,evidence:first.evidence}],selector={...nativeTextBinding(),record:'#renamed-success'};
+ const same=await nativeTextResult(f,{receiptBinding:selector,commitments:retained});assert.equal(confirmations(same)[0].confirmation.outcomeId,prior.confirmation.outcomeId);
+ const changed=await nativeTextResult(f,{receiptBinding:{...selector,outcomeFields:['participantId']},commitments:retained});assert.equal(confirmations(changed).length,0);
+});
+
+test('missing or failed matching alternative cannot silently become first-match confirmation',async()=>{const positive=binding(),other=binding({record:'#other'});for(const extra of [[],[{bindingKey:browserReceiptBindingKey(other),records:[],unavailable:true}],[{bindingKey:browserReceiptBindingKey(other),records:[],overflow:true}]]){const mapped=await alternativeConfirmation({bindings:[positive,other],batches:[{bindingKey:browserReceiptBindingKey(positive),records:[receiptRecord()]},...extra]});assert.equal(confirmations(mapped).length,0);}});
+test('one conflicting target does not suppress independent criterion confirmation',async()=>{
+ const first=await describeHostOperation(browserCall(),{browserObservation:form()}),otherForm=form();otherForm.control.form.payloadDigest=hash('other');otherForm.control.form.identityDigests[1].digest=hash('w2');const second=await describeHostOperation(browserCall(),{browserObservation:otherForm});
+ const positive=binding({confirmedValues:['confirmed','success']}),negative=binding({record:'#other',confirmedValues:[],absentValues:['confirmed']}),independent=binding({record:'#independent',confirmedValues:['success']});
+ const otherRecord=receiptRecord({status:'success',outcomeId:'p1:w2',identityValues:[{name:'participantId',field:'data-participant',value:'p1'},{name:'workshopId',field:'data-workshop',value:'w2'}]});
+ const browserObservation={current:true,documentId:'one:2',url:'https://portal.test/confirmation',receipts:[{bindingKey:browserReceiptBindingKey(positive),records:[receiptRecord()]},{bindingKey:browserReceiptBindingKey(negative),records:[receiptRecord()]},{bindingKey:browserReceiptBindingKey(independent),records:[otherRecord]}]};
+ const mapped=await normalizeHostOperationResult(result({documentId:'one:2'}),{call:browserCall(),descriptor:first,browserObservation,criteria:[{id:'conflicting',kind:'external-confirmation',receiptBindings:[positive,negative]},{id:'independent',kind:'external-confirmation',receiptBinding:independent}],commitments:[first,second].map((descriptor,i)=>({operationId:'op-'+i,deliveryState:'returned',effectState:'unknown',commit:descriptor.commit}))});
+ assert.equal(confirmations(mapped).length,1);assert.equal(confirmations(mapped)[0].confirmation.effectKey,second.commit.effectKey);assert.equal(mapped.effectState,'unconfirmed');
+});
+
+test('production receipt extractor processes all 320 bounded alternatives and never truncates oversized input',()=>{const saved=globalThis.document;globalThis.document={querySelectorAll:()=>[]};try{const bindings=Array.from({length:320},(_,i)=>binding({record:'#receipt-'+i}));const observed=observePageReceiptRecords(bindings);assert.equal(observed.length,320);assert.deepEqual(observed.at(-1),{records:[]});assert.deepEqual(observePageReceiptRecords([...bindings,binding()]),[]);}finally{if(saved===undefined)delete globalThis.document;else globalThis.document=saved;}});

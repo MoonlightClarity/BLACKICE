@@ -1254,14 +1254,15 @@ export class ElectronBrowserDriver extends EventEmitter {
       catch (reason) { throw Object.assign(reason, { actionDispatched: false }); }
       if (control?.form) control = { ...control, form: { ...control.form, documentId } };
     }
-    const bindings = receiptBindings.filter(value => value && ['dom', 'json', 'dom-text'].includes(value.format)).slice(0, 200);
+    if(receiptBindings.length>320)throw capacityError('Receipt alternatives exceed the bounded host limit.','BROWSER_RECEIPT_CAPACITY');
+    const bindings = receiptBindings.filter(value => value && ['dom', 'json', 'dom-text'].includes(value.format));
     let receipts = [];
     if (bindings.length) {
       const frame = tab.window.webContents.mainFrame, stamp = this.frameStamp(tab, frame);
       const observed = await this.pageWork(tab, frame.executeJavaScript(
         `(${observePageReceiptRecords.toString()})(${JSON.stringify(bindings)})`), signal);
       if (!this.frameStampCurrent(tab, stamp)) throw capacityError('The receipt frame changed during inspection.', 'BROWSER_INPUT_DOCUMENT_CHANGED');
-      receipts = bindings.map((binding, index) => ({ bindingKey: browserReceiptBindingKey(binding), ...(observed?.[index] || { records: [] }) }));
+      receipts = bindings.map((binding, index) => ({ bindingKey: browserReceiptBindingKey(binding), ...(observed?.[index] || { records: [], unavailable:true }) }));
     }
     const submission = await this.currentSubmissionObservations(tab, signal);
     cancel(signal);
