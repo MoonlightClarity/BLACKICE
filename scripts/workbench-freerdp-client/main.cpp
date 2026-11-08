@@ -42,6 +42,34 @@ struct Input { enum Kind { Mouse, Key, Release, ReleaseMouse } kind; UINT16 flag
 struct PaintingClip { HWND hwnd, parent; DWORD pid; LONG_PTR added; HANDLE process; };
 struct PaintBuffer { HDC dc = nullptr; HBITMAP bitmap = nullptr; HGDIOBJ original = nullptr; void* bits = nullptr; LONG width = 0, height = 0; UINT64 sequence = 0; LONG sourceHeight = 0; bool valid = false; };
 enum WorkbenchControl { ControlOwner = 4101, ControlWake, ControlPower, ControlClipboard, ControlFit, ControlBlackice, ControlStatus };
+// Match BLACKICE's monochrome renderer theme (public/next theme variables).
+// The Windows guest keeps its own appearance; these colors belong to the host viewer.
+namespace WorkbenchTheme {
+constexpr COLORREF chrome = RGB(16, 17, 18);
+constexpr COLORREF raised = RGB(37, 43, 51);
+constexpr COLORREF pressed = RGB(66, 77, 91);
+constexpr COLORREF border = RGB(77, 85, 96);
+constexpr COLORREF text = RGB(230, 234, 239);
+constexpr COLORREF muted = RGB(163, 173, 186);
+constexpr COLORREF disabled = RGB(122, 132, 145);
+constexpr COLORREF accent = RGB(203, 210, 218);
+constexpr COLORREF accentText = RGB(21, 26, 33);
+}
+void styleWorkbenchFrame(HWND hwnd) {
+  // Windows 11 title bars otherwise remain bright against the dark BLACKICE viewer.
+  HMODULE dwm = LoadLibraryW(L"dwmapi.dll");
+  if (!dwm) return;
+  using SetAttribute = HRESULT (WINAPI*)(HWND, DWORD, LPCVOID, DWORD);
+  auto set = reinterpret_cast<SetAttribute>(GetProcAddress(dwm, "DwmSetWindowAttribute"));
+  if (set) {
+    BOOL dark = TRUE;
+    set(hwnd, 20, &dark, sizeof(dark)); // DWMWA_USE_IMMERSIVE_DARK_MODE
+    COLORREF caption = WorkbenchTheme::chrome, ink = WorkbenchTheme::text;
+    set(hwnd, 35, &caption, sizeof(caption)); // DWMWA_CAPTION_COLOR
+    set(hwnd, 36, &ink, sizeof(ink)); // DWMWA_TEXT_COLOR
+  }
+  FreeLibrary(dwm);
+}
 struct State {
   HWND control = nullptr, child = nullptr, parent = nullptr, ownedParent = nullptr;
   HWND launcherAnchor = nullptr;
@@ -306,6 +334,55 @@ void updateDetachedTitle() {
   }
   if (title != state.windowTitle) { state.windowTitle = title; SetWindowTextW(state.ownedParent, title.c_str()); }
 }
+// Owner-drawn buttons keep native keyboard/tab activation and BN_CLICKED events,
+// while matching BLACKICE cards, borders and monochrome actions.
+void drawWorkbenchButton(const DRAWITEMSTRUCT* item) {
+  if (!item || item->CtlType != ODT_BUTTON) return;
+  HDC dc = item->hDC; RECT rect = item->rcItem;
+  UINT dpi = GetDpiForWindow(item->hwndItem); if (!dpi) dpi = 96;
+  auto px = [dpi](int value) { return std::max(1, MulDiv(value, dpi, 96)); };
+  bool disabled = (item->itemState & ODS_DISABLED) || !IsWindowEnabled(item->hwndItem);
+  bool pressed = (item->itemState & ODS_SELECTED) != 0;
+  bool focused = (item->itemState & ODS_FOCUS) != 0;
+  bool primary = item->CtlID == ControlBlackice && !disabled;
+  bool toggle = item->CtlID == ControlClipboard || item->CtlID == ControlFit;
+  bool checked = item->CtlID == ControlClipboard ? state.controlsClipboard : item->CtlID == ControlFit && state.controlsFit;
+  COLORREF face = primary ? WorkbenchTheme::accent : pressed ? WorkbenchTheme::pressed : WorkbenchTheme::raised;
+  COLORREF border = focused && !disabled ? WorkbenchTheme::accent : WorkbenchTheme::border;
+  COLORREF ink = disabled ? WorkbenchTheme::disabled : primary ? WorkbenchTheme::accentText : WorkbenchTheme::text;
+  HBRUSH fill = CreateSolidBrush(face);
+  HPEN outline = CreatePen(PS_SOLID, px(1), border);
+  HGDIOBJ priorBrush = SelectObject(dc, fill), priorPen = SelectObject(dc, outline);
+  RoundRect(dc, rect.left + px(1), rect.top + px(1), rect.right - px(1), rect.bottom - px(1), px(8), px(8));
+  SelectObject(dc, priorBrush); SelectObject(dc, priorPen);
+  DeleteObject(fill); DeleteObject(outline);
+  HFONT previousFont = (HFONT)SelectObject(dc, state.controlsFont);
+  int previousMode = SetBkMode(dc, TRANSPARENT); COLORREF previousText = SetTextColor(dc, ink);
+  wchar_t label[128]{}; GetWindowTextW(item->hwndItem, label, 128);
+  RECT labelRect = rect;
+  if (toggle) {
+    int boxSize = px(13), x = rect.left + px(10), y = rect.top + (rect.bottom - rect.top - boxSize) / 2;
+    HBRUSH checkFill = CreateSolidBrush(checked && !disabled ? WorkbenchTheme::accent : WorkbenchTheme::raised);
+    HPEN checkOutline = CreatePen(PS_SOLID, px(1), checked && !disabled ? WorkbenchTheme::accent : WorkbenchTheme::muted);
+    priorBrush = SelectObject(dc, checkFill); priorPen = SelectObject(dc, checkOutline);
+    RoundRect(dc, x, y, x + boxSize, y + boxSize, px(4), px(4));
+    SelectObject(dc, priorBrush); SelectObject(dc, priorPen);
+    DeleteObject(checkFill); DeleteObject(checkOutline);
+    if (checked) {
+      HPEN mark = CreatePen(PS_SOLID, px(2), disabled ? WorkbenchTheme::disabled : WorkbenchTheme::accentText);
+      HGDIOBJ previous = SelectObject(dc, mark);
+      MoveToEx(dc, x + px(3), y + px(6), nullptr); LineTo(dc, x + px(5), y + px(9)); LineTo(dc, x + px(10), y + px(3));
+      SelectObject(dc, previous); DeleteObject(mark);
+    }
+    labelRect.left = x + boxSize + px(6);
+    labelRect.right -= px(4);
+  }
+  DrawTextW(dc, label, -1, &labelRect, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX | (toggle ? DT_LEFT : DT_CENTER));
+  if (focused && !disabled) {
+    RECT focus = rect; InflateRect(&focus, -px(4), -px(4)); DrawFocusRect(dc, &focus);
+  }
+  SetTextColor(dc, previousText); SetBkMode(dc, previousMode); SelectObject(dc, previousFont);
+}
 void controlText(HWND hwnd, const std::wstring& value) {
   if (!IsWindow(hwnd)) return; wchar_t previous[512]{}; GetWindowTextW(hwnd, previous, 512);
   if (value != previous) SetWindowTextW(hwnd, value.c_str());
@@ -325,10 +402,8 @@ void updateWorkbenchControls() {
   controlEnable(state.clipboardButton, enabled && state.connected && state.userInput);
   controlEnable(state.fitButton, enabled && state.connected && state.userInput);
   controlEnable(state.blackiceButton, state.controlsEnabled && !state.closing);
-  if (SendMessageW(state.clipboardButton, BM_GETCHECK, 0, 0) != (state.controlsClipboard ? BST_CHECKED : BST_UNCHECKED))
-    SendMessageW(state.clipboardButton, BM_SETCHECK, state.controlsClipboard ? BST_CHECKED : BST_UNCHECKED, 0);
-  if (SendMessageW(state.fitButton, BM_GETCHECK, 0, 0) != (state.controlsFit ? BST_CHECKED : BST_UNCHECKED))
-    SendMessageW(state.fitButton, BM_SETCHECK, state.controlsFit ? BST_CHECKED : BST_UNCHECKED, 0);
+  // Native BUTTON controls repaint themselves on text, focus and enabled-state
+  // changes. Avoid invalidating every button on each 50 ms health tick.
 }
 void layoutWorkbenchControls(HWND root) {
   if (!IsWindow(state.controlsStatus)) { state.controlsHeight = 0; return; }
@@ -345,19 +420,19 @@ void layoutWorkbenchControls(HWND root) {
 }
 void createWorkbenchControls(HWND root) {
   if (state.presentationProbe) return;
-  state.controlsBrush = CreateSolidBrush(RGB(246,248,252)); UINT dpi = GetDpiForWindow(root); if (!dpi) dpi = 96;
+  state.controlsBrush = CreateSolidBrush(WorkbenchTheme::chrome); UINT dpi = GetDpiForWindow(root); if (!dpi) dpi = 96;
   state.controlsFont = CreateFontW(-MulDiv(10, dpi, 72), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
   auto create = [&](const wchar_t* cls, const wchar_t* name, int id, DWORD style) {
     HWND hwnd = CreateWindowExW(0, cls, name, WS_CHILD | WS_VISIBLE | style, 0, 0, 1, 1, root, (HMENU)(INT_PTR)id, GetModuleHandleW(nullptr), nullptr);
     if (hwnd) SendMessageW(hwnd, WM_SETFONT, (WPARAM)state.controlsFont, FALSE); return hwnd;
   };
   state.controlsStatus = create(L"STATIC", L"Connecting", ControlStatus, SS_LEFT | SS_ENDELLIPSIS);
-  state.ownerButton = create(L"BUTTON", L"Take control", ControlOwner, WS_TABSTOP | BS_PUSHBUTTON);
-  state.wakeButton = create(L"BUTTON", L"Wake display", ControlWake, WS_TABSTOP | BS_PUSHBUTTON);
-  state.powerButton = create(L"BUTTON", L"Shut down", ControlPower, WS_TABSTOP | BS_PUSHBUTTON);
-  state.clipboardButton = create(L"BUTTON", L"Share clipboard", ControlClipboard, WS_TABSTOP | BS_AUTOCHECKBOX);
-  state.fitButton = create(L"BUTTON", L"Fit to window", ControlFit, WS_TABSTOP | BS_AUTOCHECKBOX);
-  state.blackiceButton = create(L"BUTTON", L"Open BLACKICE", ControlBlackice, WS_TABSTOP | BS_PUSHBUTTON);
+  state.ownerButton = create(L"BUTTON", L"Take control", ControlOwner, WS_TABSTOP | BS_OWNERDRAW);
+  state.wakeButton = create(L"BUTTON", L"Wake display", ControlWake, WS_TABSTOP | BS_OWNERDRAW);
+  state.powerButton = create(L"BUTTON", L"Shut down", ControlPower, WS_TABSTOP | BS_OWNERDRAW);
+  state.clipboardButton = create(L"BUTTON", L"Share clipboard", ControlClipboard, WS_TABSTOP | BS_OWNERDRAW);
+  state.fitButton = create(L"BUTTON", L"Fit to window", ControlFit, WS_TABSTOP | BS_OWNERDRAW);
+  state.blackiceButton = create(L"BUTTON", L"Open BLACKICE", ControlBlackice, WS_TABSTOP | BS_OWNERDRAW);
   layoutWorkbenchControls(root); updateWorkbenchControls();
 }
 bool workbenchControlEvent(UINT id, HWND source) {
@@ -369,8 +444,8 @@ bool workbenchControlEvent(UINT id, HWND source) {
   else if (id == ControlWake && source == state.wakeButton) action = "wake";
   else if (id == ControlPower && source == state.powerButton) action = state.controlsPower == "off" ? "start" : "shutdown";
   else if (id == ControlBlackice && source == state.blackiceButton) action = "openBlackice";
-  else if (id == ControlClipboard && source == state.clipboardButton) { action = "clipboard"; toggle = true; enabled = SendMessageW(source, BM_GETCHECK, 0, 0) == BST_CHECKED; }
-  else if (id == ControlFit && source == state.fitButton) { action = "fit"; toggle = true; enabled = SendMessageW(source, BM_GETCHECK, 0, 0) == BST_CHECKED; }
+  else if (id == ControlClipboard && source == state.clipboardButton) { action = "clipboard"; toggle = true; enabled = !state.controlsClipboard; }
+  else if (id == ControlFit && source == state.fitButton) { action = "fit"; toggle = true; enabled = !state.controlsFit; }
   if (!action || state.controlSequence >= INT_MAX) return false;
   cJSON* event = cJSON_CreateObject(); cJSON_AddStringToObject(event, "event", "nativeControl"); cJSON_AddStringToObject(event, "action", action);
   cJSON_AddNumberToObject(event, "sequence", ++state.controlSequence);
@@ -885,7 +960,10 @@ void handleRequest(cJSON* o) {
     if (!state.detached || !IsWindow(state.controlsStatus) || (power != "running" && power != "off" && power != "unknown") || message.size() > 640 || wide(message).size() > 160 ||
         message.find_first_of("\r\n") != std::string::npos) { reply(id, nullptr, "ARGUMENTS", "Workbench controls need a bounded state for the owned detached window."); return; }
     state.controlsEnabled = cJSON_IsTrue(get(p, "enabled")); state.controlsBusy = cJSON_IsTrue(get(p, "busy"));
-    state.controlsClipboard = cJSON_IsTrue(get(p, "clipboardEnabled")); state.controlsFit = cJSON_IsTrue(get(p, "fitEnabled"));
+    bool clipboard = cJSON_IsTrue(get(p, "clipboardEnabled")), fit = cJSON_IsTrue(get(p, "fitEnabled"));
+    if (clipboard != state.controlsClipboard && IsWindow(state.clipboardButton)) InvalidateRect(state.clipboardButton, nullptr, FALSE);
+    if (fit != state.controlsFit && IsWindow(state.fitButton)) InvalidateRect(state.fitButton, nullptr, FALSE);
+    state.controlsClipboard = clipboard; state.controlsFit = fit;
     state.controlsPower = power; state.controlsMessage = message; updateWorkbenchControls(); reply(id, status()); return;
   }
   if ((action == "bounds" || action == "visible" || action == "input" || action == "capture" || action == "sample" || action == "wake" || action == "clipboard") && !IsWindow(state.child)) { reply(id, nullptr, "NOT_PREPARED", "Create the native child viewport first."); return; }
@@ -1105,7 +1183,7 @@ LRESULT CALLBACK childProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
   return DefWindowProcW(hwnd, message, wp, lp);
 }
 LRESULT CALLBACK detachedProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
-  if (message == WM_CREATE) { setWorkbenchIcons(hwnd); createWorkbenchControls(hwnd); return 0; }
+  if (message == WM_CREATE) { styleWorkbenchFrame(hwnd); setWorkbenchIcons(hwnd); createWorkbenchControls(hwnd); return 0; }
   if (message == WM_DESTROY) {
     if (state.iconLarge) DestroyIcon(state.iconLarge); if (state.iconSmall) DestroyIcon(state.iconSmall); state.iconLarge = state.iconSmall = nullptr;
     if (state.controlsFont) DeleteObject(state.controlsFont); if (state.controlsBrush) DeleteObject(state.controlsBrush);
@@ -1114,10 +1192,19 @@ LRESULT CALLBACK detachedProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
   }
   if (message == WM_PAINT && IsWindow(state.controlsStatus)) {
     PAINTSTRUCT paint{}; HDC dc = BeginPaint(hwnd, &paint); RECT strip{}; GetClientRect(hwnd, &strip); strip.bottom = state.controlsHeight;
-    FillRect(dc, &strip, state.controlsBrush); EndPaint(hwnd, &paint); return 0;
+    FillRect(dc, &strip, state.controlsBrush);
+    RECT separator{0, std::max(0L, state.controlsHeight - 1), strip.right, state.controlsHeight};
+    HBRUSH line = CreateSolidBrush(WorkbenchTheme::border);
+    FillRect(dc, &separator, line); DeleteObject(line);
+    EndPaint(hwnd, &paint); return 0;
+  }
+  if (message == WM_DRAWITEM) {
+    auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lp);
+    if (item && item->CtlType == ODT_BUTTON) { drawWorkbenchButton(item); return TRUE; }
   }
   if ((message == WM_CTLCOLORSTATIC || message == WM_CTLCOLORBTN) && state.controlsBrush) {
-    SetTextColor((HDC)wp, RGB(28,39,55)); SetBkColor((HDC)wp, RGB(246,248,252)); return (LRESULT)state.controlsBrush;
+    SetTextColor((HDC)wp, WorkbenchTheme::muted); SetBkColor((HDC)wp, WorkbenchTheme::chrome);
+    return (LRESULT)state.controlsBrush;
   }
   if (message == WM_COMMAND && HIWORD(wp) == BN_CLICKED) { workbenchControlEvent(LOWORD(wp), (HWND)lp); return 0; }
   if (message == WM_SIZE) { fitDetachedChild(); return 0; }

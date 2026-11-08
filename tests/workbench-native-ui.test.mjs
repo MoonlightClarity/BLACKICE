@@ -99,7 +99,7 @@ test('folder mapping and explicit preparation/pairing retain their existing setu
   const f=await fixture(t);await f.enter();f.el('host-path').value='C:\\Files\\Example';f.el('read-write').checked=true;f.el('add-folder').emit('submit');await tick();
   const config=f.apiCalls.find(call=>call.route==='/api/workbench/config').body;assert.equal(config.expectedRevision,1);assert.equal(config.folders.length,2);assert.equal(config.folders[1].hostPath,'C:\\Files\\Example');assert.equal(config.folders[1].readWrite,true);
   f.el('prepare-agent').emit('click');await tick();f.el('pair').emit('click');await tick();
-  for(const route of ['/api/workbench/prepare-agent','/api/workbench/pair'])assert.deepEqual(f.apiCalls.find(call=>call.route===route).body,{});
+  for(const route of ['/api/workbench/prepare-agent','/api/workbench/auto-pair'])assert.deepEqual(f.apiCalls.find(call=>call.route===route).body,{});
   assert.equal(f.apiCalls.some(call=>/guest-command|native\/input|console\/control|desktop\/stream/.test(call.route)),false);
 });
 test('app inventory is lazy and scan/discovery/rebatch/retry remain explicit under Advanced setup',async t=>{

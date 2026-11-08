@@ -116,8 +116,14 @@ $until=[DateTime]::UtcNow.AddSeconds(60);while([DateTime]::UtcNow -lt $until){$h
     return {add,result,stop:async()=>{stopped=true;child.kill();await Promise.race([new Promise(resolve=>child.once('close',resolve)),delay(1000)]);
       result.ownedProcessIds=[...owned];result.noOwnedForegroundActivation=result.samples>=2&&!result.error&&result.ownedProcessForegroundSamples===0;}};
   };
-  const exit=async worker=>worker.exitCode!==null?{exited:true,exitCode:worker.exitCode}:Promise.race([
-    new Promise(resolve=>worker.once('exit',code=>resolve({exited:true,exitCode:code}))),delay(6000).then(()=>({exited:false}))]);
+  // A Node child may finish with a termination signal and leave exitCode=null.
+  // The native host has already awaited its exit event; do not misreport a
+  // confirmed signaled exit as a still-live helper.
+  const exit=async worker=>worker.exitCode!==null||worker.signalCode!==null?
+    {exited:true,exitCode:worker.exitCode,signal:worker.signalCode||null,forced:worker.signalCode!==null}:
+    Promise.race([
+      new Promise(resolve=>worker.once('exit',(code,signal)=>resolve({exited:true,exitCode:code,signal:signal||null,forced:!!signal}))),
+      delay(6000).then(()=>({exited:false,exitCode:worker.exitCode,signal:worker.signalCode||null}))]);
   const finish=async code=>{
     if(finishing)return;finishing=true;clearTimeout(watchdog);
     try{await viewer?.destroy()}catch{report.cleanupError='The probe helper did not close cleanly.';report.passed=false;code=1}

@@ -2,11 +2,11 @@
   "schema": 1,
   "scope": "local-preview",
   "fullAcceptance": false,
-  "helperSourceSha256": "ce114f40a69e6fe9fa13701930485c75b699d1399752fa1d99ceaa765c6b8220",
+  "helperSourceSha256": "6ec1ad78c223e4819c762b46f45c15b2226f0a2e3e8310d140430900f97e6fc8",
   "descriptor": {
     "schema": 1,
     "helper": "workbench-freerdp-client.exe",
-    "helperSha256": "9787280bbd0ff9cb50fd506d1492585730ac7c30f89bc61032477f9d241807e7",
+    "helperSha256": "97f51946277c34701d57ec62dc0dbd6f9ea7881a4699e755c6c8ee53eabe8f02",
     "runtime": "runtime",
     "runtimeManifestSha256": "6f626df59c1cfb05a8464bdf56deb7f39f552e51497c1050941a087c0747b1bb",
     "dependencyLock": "dependency-lock.json",
@@ -16,8 +16,8 @@
   "sourceFiles": [
     {
       "path": "acceptance.json",
-      "bytes": 2185,
-      "sha256": "e44137dc3ed175761e0eb1c616894cf6c1bf60a0b1c23ae1481f3b8225c22e0e"
+      "bytes": 2844,
+      "sha256": "88a86411c135e6de42ab4ba92aba8685e0054e3aa8a72ac9f73f1b659bd1088c"
     },
     {
       "path": "dependency-lock.json",
@@ -186,15 +186,15 @@
     },
     {
       "path": "workbench-freerdp-client.exe",
-      "bytes": 963992,
-      "sha256": "9787280bbd0ff9cb50fd506d1492585730ac7c30f89bc61032477f9d241807e7"
+      "bytes": 969140,
+      "sha256": "97f51946277c34701d57ec62dc0dbd6f9ea7881a4699e755c6c8ee53eabe8f02"
     }
   ],
   "files": [
     {
       "path": "acceptance.json",
-      "bytes": 2185,
-      "sha256": "e44137dc3ed175761e0eb1c616894cf6c1bf60a0b1c23ae1481f3b8225c22e0e"
+      "bytes": 2844,
+      "sha256": "88a86411c135e6de42ab4ba92aba8685e0054e3aa8a72ac9f73f1b659bd1088c"
     },
     {
       "path": "dependency-lock.json",
@@ -349,7 +349,7 @@
     {
       "path": "native-display.json",
       "bytes": 440,
-      "sha256": "fa0b72fb9ff453bae69f3bce718a7e314c49e748b19a8bea1f5ad490c564d9c0"
+      "sha256": "d69b399e0ec034fffe6a20ea2dcbabccd20a6731a7022984590085a77fd0181f"
     },
     {
       "path": "redistribution.json",
@@ -1273,8 +1273,8 @@
     },
     {
       "path": "workbench-freerdp-client.exe",
-      "bytes": 963992,
-      "sha256": "9787280bbd0ff9cb50fd506d1492585730ac7c30f89bc61032477f9d241807e7"
+      "bytes": 969140,
+      "sha256": "97f51946277c34701d57ec62dc0dbd6f9ea7881a4699e755c6c8ee53eabe8f02"
     }
   ],
   "archives": [

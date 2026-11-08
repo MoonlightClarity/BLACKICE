@@ -135,6 +135,8 @@ test('hidden lifecycle rejects shown windows, input, lost owner, another VM and 
     e=>{e.hidden.attached.windowVisible=true},e=>{e.hidden.attached.connected=false},
     e=>{e.hidden.hiddenLifecycle.windowNeverShown=false},e=>{e.hidden.hiddenLifecycle.agentFrameApiAvailable=false},
     e=>{e.hidden.anchorClose.sameHelperPid=false},e=>{e.hidden.sessionClose.exited=false},
+    e=>{e.hidden.explicitClose.forced=true},e=>{e.hidden.sessionClose.forced=true},
+    e=>{e.hidden.explicitClose.signal='SIGTERM'},e=>{e.hidden.sessionClose.signal='SIGTERM'},
     e=>{e.hidden.after.childAlive=true},e=>{e.hidden.preflight.vmId='another-vm'},
     e=>{e.hidden.noOwnedForegroundActivation=false},
   ];

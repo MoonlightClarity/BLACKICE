@@ -25,7 +25,7 @@ function fixture(reply,options={}){
     spawns.push({exe,args,options,child});return child;
   };
   const host=new WorkbenchFreeRDPHost({helperPath:path.resolve('fixture-native.exe'),helperSha256:hash,
-    runtimeDirectory:path.resolve('fixture-runtime'),readFileImpl:async()=>bytes,spawnImpl,timeoutMs:40,...options});
+    runtimeDirectory:path.resolve('fixture-runtime'),readFileImpl:async()=>bytes,spawnImpl,timeoutMs:40,closeTimeoutMs:45,...options});
   const handle=Buffer.alloc(8);handle.writeBigUInt64LE(123n);
   const window={getNativeWindowHandle:()=>handle,isDestroyed:()=>false,getContentSize:()=>[1000,800]};
   return {host,window,calls,spawns};
@@ -45,6 +45,26 @@ test('an acknowledged native failure retains only bounded connection diagnostics
     connectionProgress:{state:'CONNECTION_STATE_NLA',tlsFinished:true,readBytes:321,path:'C:/private'},surface:{sequence:0,width:800,height:600,bytes:'private'}}})+'\n');
   await rejected;assert.equal(f.calls.filter(c=>c.action==='connect').length,1);
   const closed=await f.host.close();assert.equal(closed.cleanup.confirmed,true);assert.equal(closed.cleanup.exited,true);assert.equal(closed.cleanup.exitCode,0);
+});
+test('acknowledged close allows a natural native exit instead of immediately sending a kill',async()=>{
+  let f;
+  f=fixture(request=>{
+    if(request.action==='close'){
+      setTimeout(()=>f.spawns[0].child.emit('exit',0,null),12);
+      return {closed:true};
+    }
+    return nativeResult(request);
+  },{closeTimeoutMs:100});
+  await f.host.prepare(bounds,f.window);
+  const child=f.spawns[0].child;
+  const closed=await f.host.close();
+  assert.equal(f.calls.filter(call=>call.action==='close').length,1);
+  assert.equal(closed.cleanup.confirmed,true);
+  assert.equal(closed.cleanup.exited,true);
+  assert.equal(closed.cleanup.forced,false);
+  assert.equal(closed.cleanup.exitCode,0);
+  assert.equal(closed.cleanup.signal,null);
+  assert.equal(child.killed,false);
 });
 test('a kill request is not exit proof; later actual exit updates cleanup without respawning',async()=>{
   const f=fixture(undefined,{closeTimeoutMs:20});await f.host.prepare(bounds,f.window);
