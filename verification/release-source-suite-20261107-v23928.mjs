@@ -68,7 +68,17 @@ if(mode==='prepare'){
   await fs.mkdir(output);
   try{await fs.access(stateFile);throw Error('Suite state already exists; inspect it instead of replacing it.');}catch(e){if(e.code!=='ENOENT')throw e;}
   const files=await testFiles(),sources=await inventory(),size=40,groups=[];
-  for(let i=0;i<files.length;i+=size)groups.push(files.slice(i,i+size));
+  // The native planning-workflow acceptance file runs real multi-outcome
+  // fixture scenarios. Keep it in its own bounded group rather than making
+  // unrelated test files share its ~100-second execution budget.
+  const slow='tests/planning-workflow-acceptance.test.mjs';
+  if(!files.includes(slow))throw Error('The known long-running acceptance test is absent from the test inventory.');
+  let current=[];
+  for(const file of files){
+    if(file===slow){if(current.length){groups.push(current);current=[];}groups.push([file]);continue;}
+    current.push(file);if(current.length===size){groups.push(current);current=[];}
+  }
+  if(current.length)groups.push(current);
   const state={format:1,product:'BLACKICE',scope:'source-publication',version:targetVersion,sourceCommit:binding.sourceCommit,
     platform:process.platform,node:process.version,startedAt:new Date().toISOString(),state:'prepared',testFiles:files.length,
     appFingerprint:actualFingerprint,sourceIndexSha256:sha(JSON.stringify(sources)),sourceFilesVerified:sources.length,
