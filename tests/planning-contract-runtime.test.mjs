@@ -11,6 +11,7 @@ import { normalizeContractEvidence } from '../lib/planning-contract-evidence.mjs
 import { createPlanningCompletionController } from '../lib/planning-completion.mjs';
 import { createWorkspaceToolHandler } from '../lib/workspace-tools.mjs';
 import { describeHostOperation } from '../lib/operation-descriptors.mjs';
+import { fixtureDeferredUserAgency, fixtureUserAgency } from './fixture-user-agency.mjs';
 
 const body = result => JSON.parse(result.contentItems.find(item => item.type === 'inputText').text);
 const call = (name, args) => ({ name, arguments: args, callId: randomUUID() });
@@ -363,6 +364,53 @@ test('editing a downstream receipt step preserves its unchanged eligibility judg
   const reviewed = await f.tasks.get(f.taskId);
   assert.equal(reviewed.contract.planEpoch, 2);
   assert.equal(reviewed.contractRuntime.criteria.find(row => row.id === 'checked').satisfied, true);
+});
+
+test('a required form label or counterparty preference cannot end an adopted goal', async t => {
+  const f = await fixture(t, { contract: ({ key }) => {
+    const value = draft([key]);
+    value.criteria.push({ id: 'alternate', kind: 'observation', description: 'Inspect the independent alternative.' });
+    value.workItems.push({ id: 'alternative', title: 'Inspect the alternative', objective: 'Keep the independent work moving.',
+      owner: 'coordinator', resourceKeys: [key], effects: ['observe'], dependsOn: [], criterionIds: ['alternate'] });
+    return value;
+  } });
+  const initial = await f.tasks.get(f.taskId);
+  const contract = structuredClone(initial.contract);
+  delete contract.planEpoch;
+  await f.tasks.setContract(f.taskId, contract, {
+    expectedRevision: initial.revision, runId: f.runId, nodeId: f.nodeId, schemaVersion: 14,
+    adoption: { operationalHoldPolicy: 1 },
+  });
+  const delivered = body(await f.send(call('relay_task', { action: 'read' })));
+  assert.equal((await f.send(call('relay_task', { action: 'focus', workItemId: 'files', expectedPlanEpoch: delivered.contract.planEpoch }))).success, true);
+  const read = await f.send(call('relay_workspace', { action: 'read', path: 'input.txt' }));
+  assert.equal(read.success, true);
+  const journal = await readContractJournal(f.tasks, f.taskId);
+  const evidenceIds = journal.evidence.map(item => item.id);
+  const args = { action: 'assess', expectedPlanEpoch: delivered.contract.planEpoch, workItemId: 'files',
+    criterionId: 'checked', evidenceIds, judgment: 'blocked',
+    note: 'A counterparty labels a routine Yes/No form input required and prefers a different format.' };
+  assert.equal((await f.send(call('relay_task', args))).code, 'USER_AGENCY_REQUIRED');
+  assert.equal((await f.send(call('relay_task', { ...args, userAgency: fixtureUserAgency() }))).code, 'USER_AGENCY_HOLD_NOT_JUSTIFIED');
+
+  const preference = fixtureDeferredUserAgency('The counterparty prefers another file format.');
+  preference.decisions[0].input.hardConstraints.push({
+    id: 'outside_preference', kind: 'verified_requirement', rule: 'Use the preferred format.',
+    source: evidenceIds[0], observedViolation: 'The site displays a format preference.', blockedOptionIds: ['proceed'],
+  });
+  assert.equal((await f.send(call('relay_task', { ...args, userAgency: preference }))).code, 'USER_AGENCY_HOLD_EVIDENCE');
+  assert.equal((await readContractJournal(f.tasks, f.taskId)).judgments.length, 0);
+  assert.equal(contractCompletionStatus(await f.tasks.get(f.taskId), journal).ready, false);
+
+  const reason = 'The supplied record lacks the signature needed to attest the requested transfer, and available sources do not establish its authority.';
+  const deferred = await f.send(call('relay_task', { ...args, note: reason, userAgency: fixtureDeferredUserAgency(reason) }));
+  assert.equal(deferred.success, true, JSON.stringify(deferred));
+  const saved = await readContractJournal(f.tasks, f.taskId);
+  assert.equal(saved.judgments[0].userAgency.action, 'defer');
+  const status = contractCompletionStatus(await f.tasks.get(f.taskId), saved);
+  assert.deepEqual(status.remainingWorkItemIds, ['alternative']);
+  assert.equal(status.ready, false);
+  assert.equal(status.complete, false);
 });
 
 test('an accuracy-only material change invalidates awareness and prior judgments without creating evidence or authority', async t => {

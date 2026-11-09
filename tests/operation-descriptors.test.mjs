@@ -615,6 +615,21 @@ test('host dispatch callback persistence failure is proven absent and does not w
   assert.equal((await handler.normalizeOperationResult(returned, { call: operation, descriptor })).effectState, 'absent');
 });
 
+test('explicit subfolders retain the task workspace scope for reads only', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'descriptor-subfolder-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const cwd = path.join(directory, 'workspace');
+  await fs.mkdir(path.join(cwd, 'records'), { recursive: true });
+  await fs.mkdir(path.join(directory, 'other'));
+  const descriptor = args => describeHostOperation(call('relay_workspace', args), { cwd });
+  const task = await descriptor({ action: 'list', path: '.' });
+  const workspaceKey = task.resources.find(resource => resource.key.startsWith('workspace:')).key;
+  const scopes = result => result.resources.find(resource => !resource.scopeOnly && resource.key.startsWith('path:')).scopeKeys;
+  assert.ok(scopes(await descriptor({ action: 'read', cwd: 'records', path: 'local.txt' })).includes(workspaceKey));
+  assert.ok(!scopes(await descriptor({ action: 'write', cwd: 'records', path: 'local.txt', text: 'new' })).includes(workspaceKey));
+  assert.ok(!scopes(await descriptor({ action: 'read', cwd: '../other', path: 'outside.txt' })).includes(workspaceKey));
+});
+
 const nativeTextBinding = extra => ({ version: 1, format: 'dom-text', resourceKey: 'origin:https://portal.test', record: '#status',
   confirmedValues: ['Your enrollment is confirmed.'], absentValues: ['Please correct the highlighted fields.'], history: false,
   outcomeFields: ['participantId', 'workshopId'], ...extra });
