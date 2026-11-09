@@ -6,7 +6,7 @@ import { createTaskHistory } from '../public/next/workspaces/task-lifecycle.mjs'
 import { planningDOM } from './fixture-planning-dom.mjs';
 
 const settle=async()=>{for(let i=0;i<5;i++)await new Promise(resolve=>setImmediate(resolve));};
-function fixture(t,{history=false,presentation='board',hook}={}){
+function fixture(t,{history=false,presentation='board',hook,status={}}={}){
   const dom=planningDOM(t),prototype=Object.getPrototypeOf(dom.mount);
   Object.defineProperty(prototype,'type',{get(){return this.getAttribute('type')||this.tagName.toLowerCase();},set(value){this.setAttribute('type',value);},configurable:true});
   prototype.replaceChildren=function(...nodes){for(const child of [...this.children])child.remove();this.rawText='';this.append(...nodes);};
@@ -69,7 +69,7 @@ function fixture(t,{history=false,presentation='board',hook}={}){
     throw Error('Unexpected '+method+' '+path);
   };
   const component=(history?createTaskHistory:createTasksWorkspace)({mount:dom.mount,api,presentation,
-    events:{subscribe(listener){listeners.add(listener);return()=>listeners.delete(listener);}},getStatus:()=>({cwd:'C:\\fixture'}),
+    events:{subscribe(listener){listeners.add(listener);return()=>listeners.delete(listener);}},getStatus:()=>({cwd:'C:\\fixture',...status}),
     notify:(...args)=>notifications.push(args),onNavigate:(...args)=>navigation.push(args)});
   t.after(()=>component.destroy());
   return{...dom,component,calls,listeners,tasks,jobs,schedule,removedSchedules,navigation,notifications,async clickReady(selector){await dom.click(selector);await settle();}};
@@ -425,4 +425,105 @@ test('editing clock-aligned cron shows readable timing before any technical expr
   assert.equal(form.querySelector('[name=expression]').closest('label').hidden,false);
   assert.equal(form.elements.expression.value,'*/15 * * * *');
   assert.equal(f.calls.some(c=>c.method!=='GET'),false);
+});
+
+const chatStatus={defaultModel:'gpt-6-luna',models:[
+  {id:'gpt-6-luna',displayName:'GPT-6 Luna',available:true,providerId:'codex',
+    supportsReasoningSelection:true,supportedReasoningEfforts:['default','high','ultra'],
+    serviceTiers:[{id:'priority'}],contextWindowTokens:100000,maxContextWindowTokens:300000},
+  {id:'gpt-5.6',displayName:'GPT-5.6',available:true,providerId:'codex',
+    supportsReasoningSelection:true,supportedReasoningEfforts:['default','high','ultra'],
+    serviceTiers:[{id:'priority'}],contextWindowTokens:100000,maxContextWindowTokens:300000},
+],runtimeSettings:{defaultContext:{preset:'model',autoCompact:true}}};
+
+test('new schedule configures Chat model, reasoning, speed, planning, execution and context without a saved workflow',async t=>{
+  const f=fixture(t,{status:chatStatus});
+  f.component.enter();await settle();await f.clickReady('#next-tasks-tab-schedules');
+  const form=f.$('#next-tasks-form'),fields=form.elements;
+  assert.equal(fields.taskType.value,'chat');
+  assert.equal(f.$('#next-tasks-workflow-fields').hidden,true);
+  fields.name.value='Scheduled intelligence';
+  fields.input.value='Review new evidence';
+  fields.agentModel.value='gpt-6-luna';await fields.agentModel.dispatch('change',{},true);
+  fields.agentEffort.value='high';
+  fields.agentServiceTier.value='fast';
+  fields.planningMode.value='forced';
+  fields.planningExecutionMode.value='plan_only';
+  fields.contextPreset.value='custom';await fields.contextPreset.dispatch('change',{},true);
+  fields.contextWindowTokens.value='200000';
+  fields.contextAutoCompact.checked=false;
+  fields.contextCompactAtTokens.value='100000';
+  await form.dispatch('submit');await settle();
+  const call=f.calls.find(c=>c.path==='/api/operations/deployments'&&c.method==='POST');
+  assert.ok(call,f.$('#next-tasks-preview-output').textContent);
+  const {payload}=call,agent=payload.workflow.nodes.find(n=>n.type==='agent');
+  assert.equal(payload.workflow.nodes.length,3);
+  assert.equal(payload.input,'Review new evidence');
+  assert.equal(payload.planningExecutionMode,'plan_only');
+  assert.equal(agent.model,'gpt-6-luna');
+  assert.equal(agent.effort,'high');
+  assert.equal(agent.serviceTier,'fast');
+  assert.equal(payload.workflow.settings.planningMode,'on');
+  assert.equal(payload.workflow.settings.planningEnforcement,'forced');
+  assert.equal(payload.workflow.settings.planningExecutionMode,'plan_only');
+  assert.equal(payload.workflow.settings.context.windowTokens,200000);
+  assert.equal(agent.context.autoCompact,false);
+  assert.equal(agent.context.compactAtTokens,100000);
+  assert.deepEqual(payload.attachmentIds,[]);
+  assert.equal(f.calls.some(c=>c.path.startsWith('/api/workflows/')&&c.path!=='/api/workflows?view=index'),false);
+});
+
+test('Chat schedules infer their name from the task instead of requiring a second input',async t=>{
+  const f=fixture(t,{status:chatStatus});f.component.enter();await settle();
+  await f.clickReady('#next-tasks-tab-schedules');
+  const form=f.$('#next-tasks-form');
+  assert.equal(form.elements.name.hasAttribute('required'),false);
+  form.elements.input.value='Daily competitive intelligence report\nPrioritize new evidence';
+  await form.dispatch('submit');await settle();
+  const saved=f.calls.find(call=>call.path==='/api/operations/deployments'&&call.method==='POST');
+  assert.ok(saved);
+  assert.equal(saved.payload.name,'Daily competitive intelligence report');
+});
+
+test('schedule explicitly using a saved workflow retains its own multi-agent configuration',async t=>{
+  const f=fixture(t,{status:chatStatus});
+  f.component.enter();await settle();await f.clickReady('#next-tasks-tab-schedules');
+  const form=f.$('#next-tasks-form'),fields=form.elements;
+  fields.taskType.value='workflow';await fields.taskType.dispatch('change',{},true);
+  assert.equal(f.$('#next-tasks-workflow-fields').hidden,false);
+  assert.equal(f.$('#next-tasks-chat-fields').hidden,true);
+  fields.name.value='Saved research process';fields.input.value='Run existing process';
+  await form.dispatch('submit');await settle();
+  const call=f.calls.find(c=>c.path==='/api/operations/deployments'&&c.method==='POST');
+  assert.ok(call,f.$('#next-tasks-preview-output').textContent);
+  assert.equal(call.payload.workflow.id,'workflow-a');
+  assert.equal(Object.hasOwn(call.payload,'planningExecutionMode'),false);
+  assert.equal(f.calls.some(c=>c.path==='/api/workflows/workflow-a'),true);
+});
+
+test('editing a schedule updates Chat profile without altering pinned attachments or already admitted work',async t=>{
+  const f=fixture(t,{status:chatStatus});
+  f.component.enter();await settle();await f.clickReady('#next-tasks-tab-schedules');
+  await f.clickReady('[data-schedule-inspect="schedule-a"]');
+  await f.clickReady('[data-schedule-edit-open="schedule-a"]');
+  const form=f.$('[data-schedule-edit="schedule-a"]'),fields=form.elements;
+  fields.agentModel.value='gpt-5.6';await fields.agentModel.dispatch('change',{},true);
+  fields.agentEffort.value='ultra';fields.agentServiceTier.value='fast';
+  fields.planningMode.value='forced';fields.planningExecutionMode.value='plan_only';
+  fields.contextPreset.value='custom';await fields.contextPreset.dispatch('change',{},true);
+  fields.contextWindowTokens.value='200000';
+  await form.dispatch('submit');await settle();
+  const call=f.calls.find(c=>c.path==='/api/operations/deployments/schedule-a'&&c.method==='PUT');
+  assert.ok(call,form.textContent.slice(-500));
+  assert.equal(call.payload.planningExecutionMode,'plan_only');
+  const agent=call.payload.workflow.nodes.find(n=>n.type==='agent');
+  assert.equal(agent.model,'gpt-5.6');
+  assert.equal(agent.effort,'ultra');
+  assert.equal(agent.serviceTier,'fast');
+  assert.equal(call.payload.workflow.settings.planningEnforcement,'forced');
+  assert.equal(call.payload.workflow.settings.planningExecutionMode,'plan_only');
+  assert.equal(agent.context.windowTokens,200000);
+  assert.equal(Object.hasOwn(call.payload,'attachmentIds'),false);
+  assert.deepEqual(f.schedule.attachmentIds,['source-file']);
+  assert.equal(f.schedule.revision,2);
 });

@@ -8,6 +8,7 @@ import path from 'node:path';
 import { createHarnessServer } from './fixture-legacy-harness-server.mjs';
 import { fixtureDeploymentReadiness } from './fixture-deployment-readiness.mjs';
 import { recordFixturePlan } from './fixture-task-plan.mjs';
+import {createScheduledChatWorkflow} from '../public/next/workspaces/schedule-chat-options.mjs';
 
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return{promise,resolve};};
 const until=async(check,label='HTTP operation condition')=>{const end=Date.now()+7000;while(Date.now()<end){const result=await check();if(result)return result;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail(`${label} did not settle`);};
@@ -48,6 +49,34 @@ async function fixture(t,{execute,maxConcurrentRuns=4,planningMode='off'}={}){
   const hook=async(deployment,key,payload,headers={})=>{const secret=(await request(`/api/operations/deployments/${deployment.id}/webhook`)).data;return request(`/hooks/${deployment.id}`,{method:'POST',auth:false,body:payload,headers:{Authorization:`Bearer ${secret.token}`,...(key?{'Idempotency-Key':key}:{}),...headers}});};
   return{get app(){return app;},get url(){return url;},get cookie(){return cookie;},directory,dataDir,cwd,calls,readinessCalls,request,create,hook,async restart(){await app.close();return boot();}};
 }
+
+test('scheduled Chat configurations persist model, planning, execution and context through the real deployment API',async t=>{
+  const f=await fixture(t);
+  const task='Check the sources and write a fresh report';
+  const workflow=createScheduledChatWorkflow({task,cwd:f.cwd,
+    options:{model:'http-fixture-model',effort:'default',serviceTier:'default',
+      planningMode:'forced',planningExecutionMode:'plan_only'},
+    context:{preset:'custom',windowTokens:65536,autoCompact:false,compactAtTokens:30000}});
+  const response=await f.request('/api/operations/deployments',{method:'POST',body:{
+    name:'Scheduled Chat fixture',input:task,cwd:f.cwd,workflow,
+    planningExecutionMode:'plan_only',enabled:false,trigger:{type:'interval',everySeconds:1800}
+  }});
+  assert.equal(response.status,201,JSON.stringify(response.data));
+  const saved=(await f.request('/api/operations/deployments/'+response.data.id)).data;
+  assert.equal(saved.planningExecutionMode,'plan_only');
+  assert.equal(saved.workflow.settings.planningMode,'on');
+  assert.equal(saved.workflow.settings.planningEnforcement,'forced');
+  assert.equal(saved.workflow.settings.planningExecutionMode,'plan_only');
+  assert.equal(saved.workflow.settings.context.windowTokens,65536);
+  assert.equal(saved.workflow.nodes.find(node=>node.type==='agent').model,'http-fixture-model');
+  assert.equal(saved.workflow.nodes.find(node=>node.type==='agent').context.autoCompact,false);
+  assert.deepEqual(saved.trigger,{type:'interval',everySeconds:1800});
+  await f.restart();
+  const restored=f.app.operations.getDeployment(response.data.id);
+  assert.equal(restored.workflow.settings.planningEnforcement,'forced');
+  assert.equal(restored.workflow.nodes.find(node=>node.type==='agent').context.windowTokens,65536);
+  assert.equal(f.calls.length,0,'Saving a disabled Chat schedule does not execute the agent');
+});
 
 test('authenticated HTTP config reports exact webhook URLs and requires explicit replay of unknown sends',async t=>{
   const f=await fixture(t),sent=[];

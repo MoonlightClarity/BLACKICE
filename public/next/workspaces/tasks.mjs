@@ -5,6 +5,9 @@ import { createWorkflowActivityUI } from './workflow-execution.mjs';
 import { jobLinkedRun } from './tasks-visual-model.mjs';
 import { scheduleTriggerLabel, scheduleEditDraft, scheduleUpdateFromDraft, scheduleJobs } from './schedule-inspection-model.mjs';
 import { scheduleTriggerFromDraft, scheduleDraftFromTrigger } from '../../schedule-model.mjs';
+import { scheduleChatOptionsMarkup, initScheduleChatOptions, createScheduledChatWorkflow, chatProfileFromDeployment, applyChatProfileToWorkflow } from './schedule-chat-options.mjs';
+import { initAttachmentsUI } from '../../attachments-ui.mjs';
+import { escapeHTML } from '../core/dom.mjs';
 
 export function createTasksWorkspace({mount,api,events,getStatus,notify,onNavigate}) {
   mount.innerHTML=[
@@ -29,11 +32,17 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     '<details class="next-card next-schedule-removed" id="next-tasks-removed" hidden><summary>Removed schedules (audit history)</summary><div id="next-tasks-removed-list"></div></details>',
     '<details class="next-card" style="margin-top:15px" id="next-tasks-create"><summary>Create a schedule</summary>',
     '<form id="next-tasks-form" class="next-stack" style="margin-top:15px">',
-    '<label class="next-label">Name<input required class="next-field" name="name" maxlength="160"></label>',
+    '<label class="next-label">Name (optional)<input class="next-field" name="name" maxlength="160" placeholder="Uses the first line of the task"></label>',
     '<label class="next-label">Task instructions<textarea class="next-field" name="input" rows="3" required></textarea></label>',
+    '<label class="next-label">Task type<select class="next-field" name="taskType"><option value="chat">Chat task</option><option value="workflow">Saved workflow (multi-agent)</option></select></label>',
+    '<div class="next-stack" id="next-tasks-workflow-fields" hidden>',
+    '<p class="next-help">A saved workflow retains its pinned agent models, planning settings, and workflow steps.</p>',
     '<label class="next-label">Find saved workflow<input class="next-field" id="next-tasks-workflow-search" type="search" placeholder="Search saved workflows"></label>',
-    '<label class="next-label">Saved workflow<select class="next-field" name="workflow" required></select></label>',
+    '<label class="next-label">Saved workflow<select class="next-field" name="workflow"></select></label>',
     '<button id="next-tasks-workflow-more" type="button" hidden>Show more workflows</button>',
+    '</div>',
+    '<div id="next-tasks-chat-fields">',scheduleChatOptionsMarkup(),'</div>',
+    '<div class="next-stack"><h4>Files for each run</h4><div id="next-tasks-attachments"></div></div>',
     '<label class="next-label">When<select class="next-field" name="trigger"><option value="interval">Every interval</option><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekly">Every week</option><option value="cron">Custom schedule (advanced)</option><option value="manual">Only when I run it</option><option value="webhook">When a webhook arrives</option></select></label>',
     '<div class="next-row" data-schedule-for="interval"><label class="next-label">Repeat every<input class="next-field" name="intervalAmount" type="number" min="1" step="1" value="30"></label><label class="next-label">Unit<select class="next-field" name="intervalUnit"><option value="minutes">Minutes</option><option value="hours">Hours</option><option value="days">Days</option><option value="seconds">Seconds</option></select></label></div>',
     '<label class="next-label" data-schedule-for="daily weekdays weekly">Time of day<input class="next-field" name="time" type="time" value="09:00"></label>',
@@ -42,6 +51,14 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     '<label class="next-label" data-schedule-for="cron">Advanced cron expression<input class="next-field" name="expression" value="0 9 * * *" placeholder="minute hour day month weekday"></label>',
     '<label class="next-label" data-schedule-for="daily weekdays weekly cron">Timezone<input class="next-field" name="timezone" value="America/New_York"></label>',
     '<label class="next-label">Working folder<input class="next-field" name="cwd" required></label>',
+    '<details><summary>Run limits, overlap and retries</summary>',
+    '<label class="next-label">Overlapping scheduled runs<select class="next-field" name="overlap"><option value="queue">Queue in order</option><option value="skip">Skip while busy</option><option value="parallel">Allow parallel runs</option></select></label>',
+    '<label class="next-label">Retry attempts<input class="next-field" type="number" min="0" max="3" name="maxAttempts" value="0"></label>',
+    '<label class="next-label">Retry backoff (seconds)<input class="next-field" type="number" min="1" max="3600" name="backoffSeconds" value="30"></label>',
+    '<label class="next-label">Maximum admitted jobs (optional)<input class="next-field" type="number" min="1" name="maxIterations"></label>',
+    '<label class="next-label">Run for seconds after activation (optional)<input class="next-field" type="number" min="1" name="runForSeconds"></label>',
+    '<label class="next-label">End time (ISO with timezone, optional)<input class="next-field" name="endAt"></label>',
+    '</details>',
     '<label class="next-label">After a clean restart or explicit resume<select class="next-field" name="catchUpPolicy"><option value="skip">Skip missed occurrences (default)</option><option value="once">Run one missed occurrence</option></select></label>',
     '<label class="next-label next-catchup-age" hidden>Maximum missed-run age in seconds<input class="next-field" type="number" min="60" max="604800" name="catchUpMaxAge" value="86400"></label>',
     '<label class="next-label">Result destination<select class="next-field" name="outboundType"><option value="local">BLACKICE local Results (default)</option><option value="webhook">HTTPS webhook (opt-in)</option></select></label>',
@@ -63,12 +80,32 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
   const view={info:$('next-tasks-info'),deployments:$('next-tasks-deployments'),jobs:$('next-tasks-jobs'),results:$('next-tasks-results'),
     pause:$('next-tasks-pause'),resume:$('next-tasks-resume'),form:$('next-tasks-form'),
     preview:$('next-tasks-preview-output'),detail:$('next-tasks-schedule-detail'),workflow:mount.querySelector('[name=workflow]'),
-    workflowSearch:$('next-tasks-workflow-search'),workflowMore:$('next-tasks-workflow-more')};
+    workflowSearch:$('next-tasks-workflow-search'),workflowMore:$('next-tasks-workflow-more'),
+    workflowFields:$('next-tasks-workflow-fields'),chatFields:$('next-tasks-chat-fields'),
+    attachments:$('next-tasks-attachments')};
   const add=(parent,tag,label,cls)=>text(parent,label,tag,cls);
   let active=false,busy=false,revision=0,subscriptions=null,refreshTimer=null,snapshot=null,mutationError='';
   let workflowList=[],workflowLimit=80,workflowQuery='',workflowEpoch=0,workflowTimer=null,workflowLoaded=false,workflowLoading=false;
   let section='board',jobsLimit=35,selectedScheduleId=null,scheduleMode='inspect',editSource=null,editForm=null,editNotice=null;
   const readinessBySchedule=new Map();
+  const createChatProfile=initScheduleChatOptions(view.chatFields,{getStatus});
+  let createAttachmentIds=[],createAttachmentPending=false,createAttachmentsUI=null,editAttachmentsUI=null;
+  const chooseTaskType=()=>{
+    const isWorkflow=view.form.elements.taskType.value==='workflow';
+    view.workflowFields.hidden=!isWorkflow;
+    view.chatFields.hidden=isWorkflow;
+    view.workflow.required=isWorkflow;
+  };
+  view.form.elements.taskType.addEventListener('change',chooseTaskType);chooseTaskType();
+  const initCreateAttachments=()=>{
+    if(createAttachmentsUI)return;
+    createAttachmentsUI=initAttachmentsUI({mount:view.attachments,api,getDraftKey:()=> 'schedule-create',
+      getIds:()=>createAttachmentIds,setIds:async ids=>{createAttachmentIds=ids;},
+      onPendingChange:pending=>{createAttachmentPending=pending;},
+      canEdit:()=>!busy,
+      pickFiles:globalThis.window?.relayDesktop?.pickFiles?()=>window.relayDesktop.pickFiles():undefined,
+      escape:escapeHTML,icon:()=>'',toast:notify});
+  };
   const sections=['board','timeline','workflows','schedules','results','jobs'];
   const operationsSection=()=>['schedules','results','jobs'].includes(section);
   let timeline=null,workflows=null;
@@ -103,7 +140,11 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       workflows??=createWorkflowActivityUI({mount:$('next-tasks-workflows'),api,events,getStatus,notify,onNavigate});
       workflows.enter();workflows.updateStatus?.(getStatus?.());
     }else void refresh();
-    if(section==='schedules'&&!workflowLoaded&&!workflowLoading)void fillWorkflows();
+    if(section==='schedules'){
+      initCreateAttachments();
+      createChatProfile.refresh();
+      if(!workflowLoaded&&!workflowLoading)void fillWorkflows();
+    }
   }
   for(const name of sections){
     const tab=$('next-tasks-tab-'+name);
@@ -210,6 +251,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
         :'Editing saved revision '+editSource.revision+'. Your changes are not yet applied.';
       return;
     }
+    editAttachmentsUI?.destroy();editAttachmentsUI=null;
     view.detail.replaceChildren();
     const top=add(view.detail,'div','','next-schedule-detail-head');
     add(top,'h3',selected.name||'Scheduled task');
@@ -284,13 +326,25 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       scheduleField(form,'Maximum admitted jobs (optional)','maxIterations',draft.maxIterations,{type:'number'});
       scheduleField(form,'Run for seconds after activation (optional)','runForSeconds',draft.runForSeconds,{type:'number'});
       scheduleField(form,'End time (ISO with timezone; optional)','endAt',draft.endAt);
+      let editChatProfile=null;
       if(draft.agentModel!==null){
-        scheduleField(form,'Agent model','agentModel',draft.agentModel,{required:true});
-        scheduleField(form,'Agent reasoning effort','agentEffort',draft.agentEffort,{tag:'select',choices:[
-          ['','Use app setting'],['default','Model default'],['none','None'],['minimal','Minimal'],['low','Low'],['medium','Medium'],['high','High'],['xhigh','Extra high'],['max','Max'],['ultra','Ultra']
-        ]});
-        add(form,'p','A model change updates only future job admissions. Complex multi-agent graphs should be edited in Workflows.','next-help');
-      }
+        const settings=chatProfileFromDeployment(original);
+        const profileHost=add(form,'div','','next-schedule-chat-controls');
+        profileHost.innerHTML=scheduleChatOptionsMarkup();
+        editChatProfile=initScheduleChatOptions(profileHost,{getStatus,
+          options:settings.options,context:settings.context});
+      }else add(form,'p','Multi-agent workflow: individual models and reasoning settings are pinned by the saved workflow. Edit those agents in Workflows.','next-help');
+      const attachmentsHost=add(form,'div','','next-schedule-attachments');
+      add(attachmentsHost,'h4','Attached files for future runs');
+      let editAttachmentIds=[...(original.attachmentIds||[])],editAttachmentPending=false;
+      const attachMount=add(attachmentsHost,'div','','next-schedule-file-composer');
+      editAttachmentsUI=initAttachmentsUI({mount:attachMount,api,
+        getDraftKey:()=> 'schedule-edit:'+selected.id,
+        getIds:()=>editAttachmentIds,setIds:async ids=>{editAttachmentIds=ids;},
+        onPendingChange:pending=>{editAttachmentPending=pending;},
+        canEdit:()=>!busy,
+        pickFiles:globalThis.window?.relayDesktop?.pickFiles?()=>window.relayDesktop.pickFiles():undefined,
+        escape:escapeHTML,icon:()=>'',toast:notify});
       const enabledLabel=add(form,'label','','next-schedule-checkbox');
       const enabled=enabledLabel.ownerDocument.createElement('input');enabled.type='checkbox';enabled.setAttribute('name','enabled');enabled.checked=draft.enabled;enabledLabel.append(enabled);
       add(enabledLabel,'span','Enable future scheduled runs');
@@ -311,7 +365,9 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
         if(draft.agentModel!==null){
           values.agentModel=fields.namedItem('agentModel').value;
           values.agentEffort=fields.namedItem('agentEffort').value;
+          values.chatProfile=editChatProfile.read();
         }
+        values.attachmentIds=[...editAttachmentIds];
         return values;
       };
       preview.addEventListener('click',async()=>{
@@ -327,6 +383,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       reload.addEventListener('click',()=>{editSource=structuredClone(selectedSchedule());editForm=null;paintScheduleDetail();});
       form.addEventListener('submit',async event=>{
         event.preventDefault();if(busy)return;
+        if(editAttachmentPending){output.textContent='Let the current file upload finish before saving.';return;}
         let proposed;
         try{proposed=scheduleUpdateFromDraft(original,currentDraft());}catch(error){output.textContent=error.message;return;}
         busy=true;save.disabled=true;preview.disabled=true;reload.disabled=true;output.textContent='Saving changes...';
@@ -367,6 +424,14 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     if(selected.overdue)detailRow(facts,'Overdue since',humanTime(selected.overdueSince));
     detailRow(facts,'Dispatcher',status.paused?'Paused':status.blockedReason||'Ready');
     detailRow(facts,'Trigger',scheduleTriggerLabel(selected.trigger));
+    if((selected.workflow?.nodes||[]).filter(node=>node.type==='agent').length===1){
+      const profile=chatProfileFromDeployment(selected).options;
+      detailRow(facts,'Model',profile.model);
+      detailRow(facts,'Reasoning',profile.effort);
+      detailRow(facts,'Speed',profile.serviceTier==='fast'?'Fast':'Standard');
+      detailRow(facts,'Planning',profile.planningMode);
+      detailRow(facts,'Execution',profile.planningExecutionMode==='plan_only'?'Plan only':'Automatic');
+    }
     detailRow(facts,'Next scheduled run',humanTime(selected.nextAt));
     detailRow(facts,'Overlap',selected.overlap||'parallel');
     detailRow(facts,'Retry',String(selected.retry?.maxAttempts??0)+' attempts · '+String(selected.retry?.backoffSeconds??30)+'s backoff');
@@ -676,15 +741,23 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
   view.form.addEventListener('submit',async event=>{
     event.preventDefault();if(busy)return;
     const fields=view.form.elements,id=fields.workflow.value;
-    if(!workflowList.some(item=>item.id===id)){
+    const isWorkflow=fields.taskType.value==='workflow';
+    if(isWorkflow&&!workflowList.some(item=>item.id===id)){
       view.preview.textContent='Choose a saved workflow.';return;
     }
-    let selectedTrigger;
+    if(createAttachmentPending){view.preview.textContent='Let the current file upload finish before saving.';return;}
+    let selectedTrigger,chatSettings;
+    try{if(!isWorkflow)chatSettings=createChatProfile.read();}
+    catch(error){view.preview.textContent=error.message;return;}
     try{selectedTrigger=trigger();}catch(error){view.preview.textContent=error.message;return;}
     const request={
-      name:fields.name.value.trim(),input:fields.input.value.trim(),
+      name:fields.name.value.trim()||fields.input.value.trim().split(/\r?\n/)[0].slice(0,160),input:fields.input.value.trim(),
       cwd:fields.cwd.value.trim(),trigger:selectedTrigger,enabled:fields.enabled.checked,
-      overlap:'queue',retry:{maxAttempts:0,backoffSeconds:30},
+      attachmentIds:[...createAttachmentIds],overlap:fields.overlap.value,
+      retry:{maxAttempts:Number(fields.maxAttempts.value),backoffSeconds:Number(fields.backoffSeconds.value)},
+      limits:{maxIterations:fields.maxIterations.value.trim()?Number(fields.maxIterations.value):null,
+        runForSeconds:fields.runForSeconds.value.trim()?Number(fields.runForSeconds.value):null,
+        endAt:fields.endAt.value.trim()||null},
       missedRunPolicy:{onResume:fields.catchUpPolicy.value,maxAgeSeconds:Number(fields.catchUpMaxAge.value)},
       deliveryTarget:fields.outboundType.value==='webhook'
         ?{type:'webhook',url:fields.outboundUrl.value.trim()}
@@ -692,11 +765,18 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     };
     busy=true;view.form.inert=true;
     try{
-      // Never send a metadata-only workflow as a scheduled execution graph.
-      // Fetch only the selected saved graph, once, before the explicit POST.
-      const workflow=await api('/api/workflows/'+encodeURIComponent(id));
-      if(!workflow||workflow.id!==id||!Array.isArray(workflow.nodes)||!Array.isArray(workflow.edges))
-        throw Error('The selected saved workflow could not be verified. Refresh before scheduling.');
+      // Chat tasks use the exact Chat workflow constructor and its selected execution profile.
+      // Saved workflows retain their own multi-agent configuration, without replacing the source.
+      let workflow;
+      if(isWorkflow){
+        workflow=await api('/api/workflows/'+encodeURIComponent(id));
+        if(!workflow||workflow.id!==id||!Array.isArray(workflow.nodes)||!Array.isArray(workflow.edges))
+          throw Error('The selected saved workflow could not be verified. Refresh before scheduling.');
+      }else{
+        workflow=createScheduledChatWorkflow({task:request.input,cwd:request.cwd,
+          options:chatSettings.options,context:chatSettings.context});
+        request.planningExecutionMode=chatSettings.options.planningExecutionMode;
+      }
       const saved=await api('/api/operations/deployments','POST',{...request,workflow});
       rememberReadiness(saved);
       await refresh();
@@ -704,6 +784,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       if(typeof saved?.enabled==='boolean')fields.enabled.checked=saved.enabled;
       if(fields.name.value.trim()===request.name)fields.name.value='';
       if(fields.input.value.trim()===request.input)fields.input.value='';
+      createAttachmentIds=[];createAttachmentsUI?.reset();
       if(request.deliveryTarget.type==='webhook'){fields.outboundUrl.value='';fields.outboundType.value='local';updateOutboundCreate();}
       notify(scheduleSavedMessage(saved));
     }catch(error){
@@ -717,7 +798,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
   return{
     enter(){if(active)return;active=true;subscriptions=events.subscribe(onEvent);activateSection(section);},
     leave(){active=false;revision++;workflowEpoch++;workflowLoaded=false;workflowLoading=false;history.leave();timeline?.leave();workflows?.leave();subscriptions?.();subscriptions=null;clearTimeout(refreshTimer);clearTimeout(workflowTimer);workflowTimer=null;},
-    updateStatus(info){if(!view.form.elements.cwd.value)view.form.elements.cwd.value=info?.cwd||'';workflows?.updateStatus?.(info);},
-    destroy(){this.leave();history.destroy();timeline?.destroy();workflows?.destroy();mount.innerHTML='';},
+    updateStatus(info){if(!view.form.elements.cwd.value)view.form.elements.cwd.value=info?.cwd||'';createChatProfile.refresh();workflows?.updateStatus?.(info);},
+    destroy(){this.leave();history.destroy();timeline?.destroy();workflows?.destroy();createAttachmentsUI?.destroy();editAttachmentsUI?.destroy();mount.innerHTML='';},
   };
 }

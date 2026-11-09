@@ -140,3 +140,19 @@ test('schedule editor accepts readable time and quantity fields while retaining 
   interval.intervalAmount='0';
   assert.throws(()=>scheduleUpdateFromDraft(original,interval),/interval/i);
 });
+
+test('inspecting or resaving an unchanged Chat profile never rewrites the pinned workflow or attachments',()=>{
+  const original=deployment(),draft=scheduleEditDraft(original);
+  const options={model:'gpt-6-luna',effort:'high',serviceTier:'default',
+    planningMode:'advisory',planningExecutionMode:'automatic'};
+  draft.chatProfile={options,context:{preset:'model',windowTokens:null,autoCompact:true}};
+  draft.attachmentIds=[...original.attachmentIds];
+  const unchanged=scheduleUpdateFromDraft(original,draft);
+  assert.equal(Object.hasOwn(unchanged,'workflow'),false);
+  assert.equal(Object.hasOwn(unchanged,'planningExecutionMode'),false);
+  assert.equal(Object.hasOwn(unchanged,'attachmentIds'),false);
+  const added={...draft,attachmentIds:['resume','new-source']};
+  assert.deepEqual(scheduleUpdateFromDraft(original,added).attachmentIds,['resume','new-source']);
+  const noFile={...draft,attachmentIds:[]};
+  assert.deepEqual(scheduleUpdateFromDraft(original,noFile).attachmentIds,[]);
+});

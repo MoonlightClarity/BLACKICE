@@ -1,4 +1,5 @@
 import {scheduleLabel,scheduleTriggerFromDraft} from '../../schedule-model.mjs';
+import {applyChatProfileToWorkflow,chatProfileFromDeployment} from './schedule-chat-options.mjs';
 
 // Pure schedule inspector/editor helpers. Never change an admitted job or its snapshot.
 const agents = workflow => (workflow?.nodes || []).filter(node => node.type === 'agent');
@@ -110,6 +111,27 @@ export function scheduleUpdateFromDraft(deployment, draft) {
       else delete agent.effort;
       payload.workflow = workflow;
     }
+  }
+  if(draft.chatProfile){
+    const saved=chatProfileFromDeployment(deployment);
+    const profileChanged=JSON.stringify(draft.chatProfile.options)!==JSON.stringify(saved.options);
+    const contextChanged=JSON.stringify(draft.chatProfile.context)!==JSON.stringify(saved.context);
+    if(profileChanged||contextChanged){
+      const proposed=applyChatProfileToWorkflow(deployment.workflow,draft.chatProfile.options,
+        contextChanged?draft.chatProfile.context:undefined);
+      if(JSON.stringify(proposed)!==JSON.stringify(deployment.workflow))payload.workflow=proposed;
+    }
+    if(draft.chatProfile.options.planningExecutionMode!==(deployment.planningExecutionMode||
+       deployment.workflow?.settings?.planningExecutionMode||'automatic'))
+      payload.planningExecutionMode=draft.chatProfile.options.planningExecutionMode;
+  }
+  if(draft.attachmentIds!==undefined){
+    const selected=draft.attachmentIds;
+    if(!Array.isArray(selected)||selected.length>10||new Set(selected).size!==selected.length||
+      selected.some(id=>typeof id!=='string'||!/^[a-zA-Z0-9_-]{1,160}$/.test(id)))
+      throw Error('Use up to ten valid attached files.');
+    if(JSON.stringify(selected)!==JSON.stringify(deployment.attachmentIds||[]))
+      payload.attachmentIds=[...selected];
   }
   // Omitted workflow and attachmentIds intentionally retain their exact saved values.
   return payload;
