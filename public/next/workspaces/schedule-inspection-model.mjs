@@ -1,4 +1,4 @@
-import {scheduleLabel,scheduleTriggerFromDraft} from '../../schedule-model.mjs';
+import {scheduleDraftFromTrigger,scheduleLabel,scheduleTriggerFromDraft} from '../../schedule-model.mjs';
 import {createMissionWorkflow} from '../../mission-model.mjs';
 import {DEFAULT_CHAT_OPTIONS,chatOptionChoices,normalizeChatOptions,validateChatOptions} from '../chat/options-model.mjs';
 import {contextOptions,contextModelInfo,validateContextOptions} from '../core/context-controls.mjs';
@@ -35,7 +35,7 @@ export function scheduleEditDraft(deployment) {
     enabled: deployment.enabled === true,
     triggerType: trigger.type || 'manual',
     expression: trigger.type === 'cron' ? trigger.expression : '0 9 * * *',
-    timezone: trigger.type === 'cron' ? trigger.timezone : 'America/New_York',
+    timezone: scheduleDraftFromTrigger(trigger).timezone,
     everySeconds: trigger.type === 'interval' ? String(trigger.everySeconds) : '3600',
     overlap: deployment.overlap || 'parallel',
     maxAttempts: String(deployment.retry?.maxAttempts ?? 0),
@@ -101,7 +101,7 @@ export function scheduleUpdateFromDraft(deployment, draft) {
     else if(previousDestination!=='webhook')throw Error('Enter the HTTPS webhook URL for external delivery.');
   }else throw Error('Choose local results or an HTTPS webhook.');
   const existingAgents = agents(deployment.workflow);
-  if (existingAgents.length === 1 && draft.agentModel !== null && draft.agentModel !== undefined) {
+  if (!draft.chatProfile && existingAgents.length === 1 && draft.agentModel !== null && draft.agentModel !== undefined) {
     const model = required(draft.agentModel, 'Agent model');
     const effort = String(draft.agentEffort ?? '');
     if (!['', 'default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(effort)) {
@@ -118,16 +118,16 @@ export function scheduleUpdateFromDraft(deployment, draft) {
   }
   if(draft.chatProfile){
     const saved=chatProfileFromDeployment(deployment);
-    const profileChanged=JSON.stringify(draft.chatProfile.options)!==JSON.stringify(saved.options);
+    const profile=normalizeChatOptions(draft.chatProfile.options);
+    const profileChanged=Object.keys(saved.options).some(key=>profile[key]!==saved.options[key]);
     const contextChanged=JSON.stringify(draft.chatProfile.context)!==JSON.stringify(saved.context);
     if(profileChanged||contextChanged){
-      const proposed=applyChatProfileToWorkflow(deployment.workflow,draft.chatProfile.options,
-        contextChanged?draft.chatProfile.context:undefined);
+      const proposed=applyChatProfileToWorkflow(deployment.workflow,profile,
+        contextChanged?draft.chatProfile.context:undefined,saved.options);
       if(JSON.stringify(proposed)!==JSON.stringify(deployment.workflow))payload.workflow=proposed;
     }
-    if(draft.chatProfile.options.planningExecutionMode!==(deployment.planningExecutionMode||
-       deployment.workflow?.settings?.planningExecutionMode||'automatic'))
-      payload.planningExecutionMode=draft.chatProfile.options.planningExecutionMode;
+    if(profile.planningExecutionMode!==saved.options.planningExecutionMode)
+      payload.planningExecutionMode=profile.planningExecutionMode;
   }
   if(draft.attachmentIds!==undefined){
     const selected=draft.attachmentIds;
@@ -160,7 +160,7 @@ export const scheduleChatOptionsMarkup=()=>[
     '<option value="automatic">Automatic</option><option value="plan_only">Plan only</option></select></label>',
   '<details data-schedule-context><summary>Context and compression settings</summary>',
     '<label class="next-label">Context budget<select class="next-field" name="contextPreset">',
-      '<option value="model">Model default</option><option value="extended">Extended</option><option value="custom">Custom</option></select></label>',
+      '<option value="model">Model default</option><option value="extended">Extended</option><option value="custom">Custom</option><option value="900k" hidden>Legacy 900k request</option></select></label>',
     '<label class="next-label" data-schedule-context-window>Custom context (tokens)<input class="next-field" type="number" min="4096" max="4000000" step="1" name="contextWindowTokens"></label>',
     '<label class="next-label"><input type="checkbox" name="contextAutoCompact"> Automatically compress when needed</label>',
     '<label class="next-label">Compression trigger (tokens, optional)<input class="next-field" type="number" min="256" max="4000000" name="contextCompactAtTokens"></label>',
@@ -183,20 +183,26 @@ export function chatProfileFromDeployment(deployment={}){
   }),context:contextOptions(node.context||settings.context||{}),agentCount:agents(workflow).length};
 }
 
-export function applyChatProfileToWorkflow(workflow,options,context){
+export function applyChatProfileToWorkflow(workflow,options,context,previousOptions={}){
   const profile=normalizeChatOptions(options),copy=structuredClone(workflow);
   const agentNodes=agents(copy);
   if(agentNodes.length!==1)throw Error('Chat settings require a single-agent task. For a multi-agent workflow, configure individual agents in Workflows.');
   const node=agentNodes[0];
-  node.model=profile.model;
-  node.effort=profile.effort;
-  node.serviceTier=profile.serviceTier;
-  copy.settings={...copy.settings,planningMode:profile.planningMode==='off'?'off':'on',
-    planningExecutionMode:profile.planningExecutionMode};
-  if(profile.planningMode==='off')delete copy.settings.planningEnforcement;
-  else copy.settings.planningEnforcement=profile.planningMode;
+  for(const key of ['model','effort','serviceTier'])
+    if(profile[key]!==previousOptions[key])node[key]=profile[key];
+  if(profile.planningMode!==previousOptions.planningMode){
+    copy.settings??={};
+    copy.settings.planningMode=profile.planningMode==='off'?'off':'on';
+    if(profile.planningMode==='off')delete copy.settings.planningEnforcement;
+    else copy.settings.planningEnforcement=profile.planningMode;
+  }
+  if(profile.planningExecutionMode!==previousOptions.planningExecutionMode){
+    copy.settings??={};
+    copy.settings.planningExecutionMode=profile.planningExecutionMode;
+  }
   if(context!==undefined){
     const saved=contextOptions(context);
+    copy.settings??={};
     copy.settings.context=saved;
     node.context=structuredClone(saved);
   }
@@ -222,7 +228,7 @@ export function initScheduleChatOptions(mount,{getStatus=()=>({}),options=DEFAUL
     reserve:field('contextOutputReserveTokens'),headroom:field('contextHeadroomTokens')};
   const saved=normalizeChatOptions(options),savedContext=contextOptions(context||getStatus()?.runtimeSettings?.defaultContext||{});
   f.planning.value=saved.planningMode;f.execution.value=saved.planningExecutionMode;
-  f.preset.value=savedContext.preset==='900k'?'custom':savedContext.preset;
+  f.preset.value=savedContext.preset;
   f.window.value=String(savedContext.windowTokens||'');
   f.auto.checked=savedContext.autoCompact;
   for(const [key,property]of [['trigger','compactAtTokens'],['recent','keepRecentTokens'],
@@ -250,6 +256,7 @@ export function initScheduleChatOptions(mount,{getStatus=()=>({}),options=DEFAUL
     for(const option of f.preset.querySelectorAll('option')){
       if(option.value==='extended')option.disabled=!info.maxWindow||info.automaticOnly;
       if(option.value==='custom')option.disabled=info.automaticOnly;
+      if(option.value==='900k')option.hidden=f.preset.value!=='900k';
     }
     const custom=f.preset.value==='custom';
     f.window.closest('label').hidden=!custom;
@@ -257,12 +264,9 @@ export function initScheduleChatOptions(mount,{getStatus=()=>({}),options=DEFAUL
     if(help)help.textContent=info.automaticOnly
       ?'This model manages context automatically. Custom context and compression settings are unavailable.'
       :'Model default follows the selected model. Extended uses its reported maximum; Custom sets a token budget.';
-    for(const input of [f.window,f.auto,f.trigger,f.recent,f.reserve,f.headroom])
+    for(const input of [f.preset,f.auto,f.trigger,f.recent,f.reserve,f.headroom])
       input.disabled=info.automaticOnly;
-    if(info.automaticOnly){
-      f.preset.value='model';f.auto.checked=true;f.window.value='';
-      for(const input of [f.trigger,f.recent,f.reserve,f.headroom])input.value='';
-    }
+    f.window.disabled=!custom||info.automaticOnly;
   };
   f.model.addEventListener('change',()=>sync());
   f.preset.addEventListener('change',()=>sync());
@@ -275,11 +279,10 @@ export function initScheduleChatOptions(mount,{getStatus=()=>({}),options=DEFAUL
       const status=getStatus()||{};
       const chosen={model:f.model.value,effort:f.effort.value,serviceTier:f.tier.value,
         planningMode:f.planning.value,planningExecutionMode:f.execution.value};
-      // A saved model may be temporarily unavailable; editing unrelated fields must not retarget it.
-      const historical=chosen.model!=='default'&&chosen.model===saved.model&&
-        !(status.models||[]).some(item=>(item.id||item.model)===chosen.model&&item.available!==false);
+      // Preserve pinned selections when editing unrelated fields, even if the catalog has changed.
+      const sameSavedModel=context!==undefined&&chosen.model===saved.model;
       let profile;
-      if(historical){
+      if(sameSavedModel){
         profile=normalizeChatOptions(chosen);
         if(profile.planningMode==='off'&&profile.planningExecutionMode==='plan_only')
           throw Error('Plan only requires Planning On.');
@@ -299,7 +302,9 @@ export function initScheduleChatOptions(mount,{getStatus=()=>({}),options=DEFAUL
         compactAtTokens:parse(f.trigger),keepRecentTokens:parse(f.recent),
         outputReserveTokens:parse(f.reserve),headroomTokens:parse(f.headroom)};
       const info=contextModelInfo(getStatus()||{},profile.model);
-      const selectedContext=validateContextOptions(raw,info);
+      const unchangedContext=JSON.stringify(contextOptions(raw))===JSON.stringify(savedContext);
+      const selectedContext=sameSavedModel&&unchangedContext?savedContext:
+        info.automaticOnly?contextOptions():validateContextOptions(raw,info);
       return{options:profile,context:selectedContext};
     },
     values:f,

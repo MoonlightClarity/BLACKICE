@@ -316,6 +316,22 @@ test('Schedule revision conflicts preserve unsaved edits until explicit reload',
   assert.equal(f.schedule.revision,3);
 });
 
+test('a timing edit preserves the legacy Chat context preset with an unavailable model catalog',async t=>{
+  const f=fixture(t);
+  const agent=f.schedule.workflow.nodes.find(node=>node.type==='agent');
+  agent.context={preset:'900k',windowTokens:900000,autoCompact:false};
+  f.component.enter();await settle();await f.clickReady('#next-tasks-tab-schedules');
+  await f.clickReady('[data-schedule-inspect="schedule-a"]');
+  await f.clickReady('[data-schedule-edit-open="schedule-a"]');
+  const form=f.$('[data-schedule-edit="schedule-a"]');
+  assert.equal(form.elements.contextPreset.value,'900k');
+  form.elements.time.value='10:00';
+  await form.dispatch('submit');await settle();
+  const {payload}=f.calls.find(call=>call.method==='PUT');
+  assert.equal(payload.trigger.expression,'0 10 * * *');
+  assert.equal(Object.hasOwn(payload,'workflow'),false);
+});
+
 test('Saved job receipts are expandable without a run-history fetch',async t=>{
   const f=fixture(t);f.component.enter();await settle();await f.clickReady('#next-tasks-tab-jobs');
   const receipt=f.$('[data-job-inspect="job-0"]');
@@ -389,9 +405,12 @@ test('human scheduling controls create exact repeating intervals and reveal cron
   f.component.enter();await settle();
   await f.clickReady('#next-tasks-tab-schedules');
   const form=f.$('#next-tasks-form'),fields=form.elements;
-  assert.equal(fields.trigger.value,'interval');
+  assert.equal(fields.trigger.value,'daily');
+  assert.equal(fields.intervalAmount.disabled,true);
+  fields.trigger.value='interval';await fields.trigger.dispatch('change',{},true);
   assert.equal(fields.intervalAmount.value,'30');
   assert.equal(fields.intervalUnit.value,'minutes');
+  assert.equal(fields.intervalAmount.disabled,false);
   assert.equal(form.querySelector('[data-schedule-for="interval"]').hidden,false);
   assert.equal(form.querySelector('[data-schedule-for="cron"]').hidden,true);
   fields.name.value='Repeating source review';
@@ -402,10 +421,28 @@ test('human scheduling controls create exact repeating intervals and reveal cron
   assert.deepEqual(created.payload.trigger,{type:'interval',everySeconds:1800});
   fields.trigger.value='daily';await fields.trigger.dispatch('change',{},true);
   assert.equal(form.querySelector('[data-schedule-for="interval"]').hidden,true);
+  assert.equal(fields.intervalAmount.disabled,true);
   assert.equal(form.querySelector('[name=time]').closest('label').hidden,false);
   fields.trigger.value='cron';await fields.trigger.dispatch('change',{},true);
   assert.equal(form.querySelector('[data-schedule-for="cron"]').hidden,false);
   assert.equal(form.querySelector('[data-schedule-for="interval"]').hidden,true);
+});
+
+test('schedule creation uses the device time zone and shows intervals in local time',async t=>{
+  const occurrence=new Date('2026-11-09T18:00:00.000Z');
+  const f=fixture(t,{hook:call=>{
+    if(call.path==='/api/operations/schedule-preview'){
+      const iso=occurrence.toISOString();
+      return {occurrences:[{at:occurrence.getTime(),iso,local:iso}]};
+    }
+  }});
+  f.component.enter();await settle();
+  await f.clickReady('#next-tasks-tab-schedules');
+  const fields=f.$('#next-tasks-form').elements;
+  assert.equal(fields.timezone.value,Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC');
+  fields.trigger.value='interval';await fields.trigger.dispatch('change',{},true);
+  await f.clickReady('#next-tasks-preview');
+  assert.equal(f.$('#next-tasks-preview-output').textContent,occurrence.toLocaleString());
 });
 
 test('editing clock-aligned cron shows readable timing before any technical expression',async t=>{

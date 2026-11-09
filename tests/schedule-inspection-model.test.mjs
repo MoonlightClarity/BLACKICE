@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { scheduleTriggerLabel, scheduleEditDraft, scheduleUpdateFromDraft, scheduleJobs } from '../public/next/workspaces/schedule-inspection-model.mjs';
+import { chatProfileFromDeployment, scheduleTriggerLabel, scheduleEditDraft, scheduleUpdateFromDraft, scheduleJobs } from '../public/next/workspaces/schedule-inspection-model.mjs';
 
 const deployment = () => ({
   id:'schedule-one',revision:4,name:'Daily job search',input:'Find and rank new roles',cwd:'C:\\work',enabled:true,
@@ -155,4 +155,23 @@ test('inspecting or resaving an unchanged Chat profile never rewrites the pinned
   assert.deepEqual(scheduleUpdateFromDraft(original,added).attachmentIds,['resume','new-source']);
   const noFile={...draft,attachmentIds:[]};
   assert.deepEqual(scheduleUpdateFromDraft(original,noFile).attachmentIds,[]);
+});
+
+test('editing one Chat setting preserves other legacy workflow defaults',()=>{
+  const original=deployment();
+  const savedAgent=original.workflow.nodes.find(node=>node.type==='agent');
+  delete savedAgent.effort;
+  delete savedAgent.serviceTier;
+  const draft=scheduleEditDraft(original);
+  draft.chatProfile=chatProfileFromDeployment(original);
+  draft.agentEffort='default';
+  assert.equal(Object.hasOwn(scheduleUpdateFromDraft(original,draft),'workflow'),false);
+
+  draft.chatProfile.options.model='gpt-5.6';
+  const changed=scheduleUpdateFromDraft(original,draft).workflow;
+  const agent=changed.nodes.find(node=>node.type==='agent');
+  assert.equal(agent.model,'gpt-5.6');
+  assert.equal(Object.hasOwn(agent,'effort'),false);
+  assert.equal(Object.hasOwn(agent,'serviceTier'),false);
+  assert.deepEqual(changed.settings,original.workflow.settings);
 });

@@ -24,15 +24,21 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     '<section id="next-tasks-panel-timeline" class="next-task-panel" role="tabpanel" aria-labelledby="next-tasks-tab-timeline" hidden><section id="next-tasks-timeline"></section></section>',
     '<section id="next-tasks-panel-workflows" class="next-task-panel" role="tabpanel" aria-labelledby="next-tasks-tab-workflows" hidden><section id="next-tasks-workflows"></section></section>',
     '<section id="next-tasks-panel-schedules" class="next-task-panel" role="tabpanel" aria-labelledby="next-tasks-tab-schedules" hidden>',
-    '<header class="next-task-schedules-head"><h2>Schedules</h2><div class="next-row"><button type="button" id="next-tasks-pause">Pause schedules</button><button type="button" id="next-tasks-resume">Resume</button></div></header>',
+    '<header class="next-task-schedules-head"><h2>Schedules</h2><div class="next-row"><button type="button" id="next-tasks-pause">Pause schedules</button><button type="button" id="next-tasks-resume">Resume</button><button type="button" class="next-primary" id="next-tasks-new-schedule" aria-expanded="false" aria-controls="next-tasks-create">New schedule</button></div></header>',
     '<p class="next-help" role="status" id="next-tasks-info">Loading schedules…</p>',
-    '<h2>Scheduled work</h2><div id="next-tasks-deployments" class="next-grid"></div>',
-    '<section id="next-tasks-schedule-detail" class="next-card next-schedule-inspector" aria-label="Schedule inspection and editing" hidden></section>',
-    '<details class="next-card next-schedule-removed" id="next-tasks-removed" hidden><summary>Removed schedules (audit history)</summary><div id="next-tasks-removed-list"></div></details>',
-    '<details class="next-card" style="margin-top:15px" id="next-tasks-create"><summary>Create a schedule</summary>',
-    '<form id="next-tasks-form" class="next-stack" style="margin-top:15px">',
+    '<section class="next-card next-schedule-create" id="next-tasks-create" aria-labelledby="next-tasks-create-heading" hidden>',
+    '<header class="next-schedule-detail-head"><h3 id="next-tasks-create-heading">New schedule</h3><button type="button" id="next-tasks-close-create">Close</button></header>',
+    '<form id="next-tasks-form" class="next-stack">',
+    '<label class="next-label">What should BLACKICE do?<textarea class="next-field" name="input" rows="3" required placeholder="For example, summarize new items in the project folder."></textarea></label>',
+    '<label class="next-label">Repeat<select class="next-field" name="trigger"><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekly">Every week</option><option value="interval">At regular intervals</option><option value="cron">Custom schedule (advanced)</option><option value="manual">Only when I run it</option><option value="webhook">When a webhook arrives</option></select></label>',
+    '<div class="next-row next-schedule-timing"><label class="next-label" data-schedule-for="daily weekdays weekly">Time of day<input class="next-field" name="time" type="time" value="09:00"></label>',
+    '<label class="next-label" data-schedule-for="weekly">Day of week<select class="next-field" name="weekday"><option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option></select></label>',
+    '<label class="next-label" data-schedule-for="daily weekdays weekly cron">Time zone<input class="next-field" name="timezone"></label></div>',
+    '<div class="next-row" data-schedule-for="interval"><label class="next-label">Repeat every<input class="next-field" name="intervalAmount" type="number" min="1" step="1" value="30"></label><label class="next-label">Unit<select class="next-field" name="intervalUnit"><option value="minutes">Minutes</option><option value="hours">Hours</option><option value="days">Days</option><option value="seconds">Seconds</option></select></label></div>',
+    '<p class="next-help" data-schedule-for="interval">Intervals repeat after elapsed time. Choose Every day or Every week to run at the same local clock time.</p>',
+    '<label class="next-label" data-schedule-for="cron">Advanced cron expression<input class="next-field" name="expression" value="0 9 * * *" placeholder="minute hour day month weekday"></label>',
+    '<details id="next-tasks-create-options"><summary>More options</summary><div class="next-stack">',
     '<label class="next-label">Name (optional)<input class="next-field" name="name" maxlength="160" placeholder="Uses the first line of the task"></label>',
-    '<label class="next-label">Task instructions<textarea class="next-field" name="input" rows="3" required></textarea></label>',
     '<label class="next-label">Task type<select class="next-field" name="taskType"><option value="chat">Chat task</option><option value="workflow">Saved workflow (multi-agent)</option></select></label>',
     '<div class="next-stack" id="next-tasks-workflow-fields" hidden>',
     '<p class="next-help">A saved workflow retains its pinned agent models, planning settings, and workflow steps.</p>',
@@ -40,15 +46,8 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     '<label class="next-label">Saved workflow<select class="next-field" name="workflow"></select></label>',
     '<button id="next-tasks-workflow-more" type="button" hidden>Show more workflows</button>',
     '</div>',
-    '<div id="next-tasks-chat-fields">',scheduleChatOptionsMarkup(),'</div>',
+    '<fieldset id="next-tasks-chat-fields" style="min-width:0;margin:0;padding:0;border:0">',scheduleChatOptionsMarkup(),'</fieldset>',
     '<div class="next-stack"><h4>Files for each run</h4><div id="next-tasks-attachments"></div></div>',
-    '<label class="next-label">When<select class="next-field" name="trigger"><option value="interval">Every interval</option><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekly">Every week</option><option value="cron">Custom schedule (advanced)</option><option value="manual">Only when I run it</option><option value="webhook">When a webhook arrives</option></select></label>',
-    '<div class="next-row" data-schedule-for="interval"><label class="next-label">Repeat every<input class="next-field" name="intervalAmount" type="number" min="1" step="1" value="30"></label><label class="next-label">Unit<select class="next-field" name="intervalUnit"><option value="minutes">Minutes</option><option value="hours">Hours</option><option value="days">Days</option><option value="seconds">Seconds</option></select></label></div>',
-    '<label class="next-label" data-schedule-for="daily weekdays weekly">Time of day<input class="next-field" name="time" type="time" value="09:00"></label>',
-    '<label class="next-label" data-schedule-for="weekly">Day of week<select class="next-field" name="weekday"><option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option></select></label>',
-    '<p class="next-help" data-schedule-for="interval">Intervals repeat after elapsed time. Choose Daily or Weekly to run at the same local clock time.</p>',
-    '<label class="next-label" data-schedule-for="cron">Advanced cron expression<input class="next-field" name="expression" value="0 9 * * *" placeholder="minute hour day month weekday"></label>',
-    '<label class="next-label" data-schedule-for="daily weekdays weekly cron">Timezone<input class="next-field" name="timezone" value="America/New_York"></label>',
     '<label class="next-label">Working folder<input class="next-field" name="cwd" required></label>',
     '<details><summary>Run limits, overlap and retries</summary>',
     '<label class="next-label">Overlapping scheduled runs<select class="next-field" name="overlap"><option value="queue">Queue in order</option><option value="skip">Skip while busy</option><option value="parallel">Allow parallel runs</option></select></label>',
@@ -63,10 +62,16 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     '<label class="next-label">Result destination<select class="next-field" name="outboundType"><option value="local">BLACKICE local Results (default)</option><option value="webhook">HTTPS webhook (opt-in)</option></select></label>',
     '<label class="next-label next-outbound-url" hidden>HTTP(S) webhook URL<input class="next-field" type="url" name="outboundUrl" autocomplete="off" placeholder="https://alerts.example.com/receive"></label>',
     '<p class="next-help">Opting in sends the saved result excerpt and job outcome to that HTTPS endpoint. Its URL is kept private in inspection views. No external delivery occurs by default.</p>',
-    '<label><input type="checkbox" name="enabled"> Enable after creation</label>',
-    '<div class="next-row"><button type="button" id="next-tasks-preview">Preview next runs</button><button type="submit" class="next-primary">Save schedule</button></div>',
+    '</div></details>',
+    '<label class="next-schedule-checkbox"><input type="checkbox" name="enabled" aria-describedby="next-tasks-enable-help"> Enable after saving</label>',
+    '<p class="next-help" id="next-tasks-enable-help">Leave unchecked to save a draft.</p>',
+    '<div class="next-row"><button type="submit" class="next-primary">Save schedule</button><button type="button" id="next-tasks-preview">Preview next runs</button></div>',
     '<p class="next-help" role="status" id="next-tasks-preview-output"></p>',
-    '</form></details></section>',
+    '</form></section>',
+    '<h2>Scheduled work</h2><div id="next-tasks-deployments" class="next-grid"></div>',
+    '<section id="next-tasks-schedule-detail" class="next-card next-schedule-inspector" aria-label="Schedule inspection and editing" hidden></section>',
+    '<details class="next-card next-schedule-removed" id="next-tasks-removed" hidden><summary>Removed schedules (audit history)</summary><div id="next-tasks-removed-list"></div></details>',
+    '</section>',
     '<section id="next-tasks-panel-results" class="next-task-panel" role="tabpanel" aria-labelledby="next-tasks-tab-results" hidden>',
     '<h2>Scheduled results</h2><p class="next-help">Results are available locally in BLACKICE. They are not automatically sent to ChatGPT or another destination. Mark reviewed only after inspecting the result.</p>',
     '<p class="next-help" id="next-tasks-results-count" role="status"></p><div id="next-tasks-results" class="next-task-job-list"></div></section>',
@@ -89,10 +94,23 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
   const readinessBySchedule=new Map();
   const createChatProfile=initScheduleChatOptions(view.chatFields,{getStatus});
   let createAttachmentIds=[],createAttachmentPending=false,createAttachmentsUI=null,editAttachmentsUI=null;
+  const createPanel=$('next-tasks-create'),newSchedule=$('next-tasks-new-schedule');
+  function toggleCreate(open){
+    if(busy)return;
+    createPanel.hidden=!open;
+    newSchedule.setAttribute('aria-expanded',String(open));
+    (open?view.form.elements.input:newSchedule).focus();
+  }
+  newSchedule.addEventListener('click',()=>toggleCreate(createPanel.hidden));
+  $('next-tasks-close-create').addEventListener('click',()=>toggleCreate(false));
+  view.form.addEventListener('invalid',event=>{
+    for(let details=event.target.closest('details');details;details=details.parentElement.closest('details'))
+      details.open=true;
+  },true);
   const chooseTaskType=()=>{
     const isWorkflow=view.form.elements.taskType.value==='workflow';
     view.workflowFields.hidden=!isWorkflow;
-    view.chatFields.hidden=isWorkflow;
+    view.chatFields.hidden=view.chatFields.disabled=isWorkflow;
     view.workflow.required=isWorkflow;
   };
   view.form.elements.taskType.addEventListener('change',chooseTaskType);chooseTaskType();
@@ -114,6 +132,10 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     const date=new Date(typeof value==='number'?value:Date.parse(value));
     return Number.isFinite(date.getTime())?date.toLocaleString():'Not scheduled';
   };
+  const previewTimes=(result,trigger)=>(result.occurrences||[]).map(entry=>{
+    const local=humanTime(entry.at??entry.iso??entry.local);
+    return trigger.type==='interval'?local:entry.local||local;
+  }).join(' · ')||'No upcoming runs.';
   async function execute(path,method,payload){
     if(busy)return;
     busy=true;mutationError='';revision++;paint();
@@ -269,7 +291,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
         tag:'select',choices:[['skip','Skip missed occurrences (default)'],['once','Run one missed occurrence']]
       });
       const maxAge=scheduleField(form,'Maximum missed-run age in seconds','catchUpMaxAge',draft.catchUpMaxAge,{type:'number'});
-      const showRecovery=()=>{maxAge.parentElement.hidden=recovery.value!=='once';};
+      const showRecovery=()=>{maxAge.parentElement.hidden=maxAge.disabled=recovery.value!=='once';};
       recovery.addEventListener('change',showRecovery);showRecovery();
       const outboundType=scheduleField(form,'Result destination','outboundType',draft.outboundType,{
         tag:'select',choices:[['local','BLACKICE local Results (default)'],['webhook','HTTP(S) webhook (opt-in)']]
@@ -279,7 +301,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       const showOutbound=()=>{outboundUrl.parentElement.hidden=outboundType.value!=='webhook';};
       outboundType.addEventListener('change',showOutbound);showOutbound();
       add(form,'p','Opt-in external delivery sends the saved result excerpt and outcome. Previously admitted jobs retain their original destination.','next-help');
-      const recurrence=scheduleDraftFromTrigger(original.trigger,'America/New_York');
+      const recurrence=scheduleDraftFromTrigger(original.trigger);
       const existingCustom=original.trigger?.type==='cron'&&recurrence.trigger==='cron';
       const triggerControl=scheduleField(form,'When','triggerType',recurrence.trigger,{tag:'select',choices:[
         ['interval','Every interval'],['daily','Every day'],['weekdays','Weekdays'],['weekly','Every week'],
@@ -290,7 +312,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       const cronToggle=add(form,'button','Edit advanced cron expression');cronToggle.type='button';
       let showCronSyntax=!existingCustom;
       const cronExpression=scheduleField(form,'Advanced cron expression (five fields)','expression',draft.expression);
-      const timezone=scheduleField(form,'Timezone','timezone',draft.timezone);
+      const timezone=scheduleField(form,'Time zone','timezone',draft.timezone);
       const intervalAmount=scheduleField(form,'Repeat every','intervalAmount',recurrence.intervalAmount,{type:'number'});
       intervalAmount.min='1';intervalAmount.step='1';
       const intervalUnit=scheduleField(form,'Interval unit','intervalUnit',recurrence.intervalUnit,{tag:'select',choices:[
@@ -311,6 +333,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
         intervalAmount.parentElement.hidden=intervalUnit.parentElement.hidden=!repeating;
         intervalNote.hidden=!repeating;
         intervalAmount.required=repeating;
+        intervalAmount.disabled=!repeating;
         atTime.parentElement.hidden=!calendar;
         weekday.parentElement.hidden=kind!=='weekly';
       };
@@ -360,12 +383,9 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
         for(const key of ['name','input','cwd','triggerType','expression','timezone','intervalAmount','intervalUnit','time','weekday','overlap','maxAttempts','backoffSeconds','maxIterations','runForSeconds','endAt','outboundType','outboundUrl','catchUpPolicy','catchUpMaxAge']){
           values[key]=fields.namedItem(key).value;
         }
+        if(maxAge.disabled)values.catchUpMaxAge=draft.catchUpMaxAge;
         values.enabled=fields.namedItem('enabled').checked;
-        if(draft.agentModel!==null){
-          values.agentModel=fields.namedItem('agentModel').value;
-          values.agentEffort=fields.namedItem('agentEffort').value;
-          values.chatProfile=editChatProfile.read();
-        }
+        if(editChatProfile)values.chatProfile=editChatProfile.read();
         values.attachmentIds=[...editAttachmentIds];
         return values;
       };
@@ -375,7 +395,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
           const proposal=scheduleUpdateFromDraft(original,currentDraft());
           if(!['cron','interval'].includes(proposal.trigger.type)){output.textContent='This trigger runs manually or through a webhook.';return;}
           const data=await api('/api/operations/schedule-preview','POST',{trigger:proposal.trigger,count:3});
-          output.textContent=(data.occurrences||[]).map(entry=>entry.local||humanTime(entry.at||entry.iso)).join(' · ')||'No upcoming runs.';
+          output.textContent=previewTimes(data,proposal.trigger);
         }catch(error){output.textContent=error.message;}
       });
       cancel.addEventListener('click',()=>{scheduleMode='inspect';editSource=null;editForm=null;paintScheduleDetail();});
@@ -410,7 +430,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       preview.addEventListener('click',async()=>{
         previewOutput.textContent='Checking the saved schedule...';
         try{const response=await api('/api/operations/schedule-preview','POST',{trigger:selected.trigger,count:3});
-          previewOutput.textContent=(response.occurrences||[]).map(item=>item.local||humanTime(item.at||item.iso)).join(' · ')||'No upcoming runs.';
+           previewOutput.textContent=previewTimes(response,selected.trigger);
         }catch(error){previewOutput.textContent=error.message;}
       });
     }
@@ -704,13 +724,15 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     for(const field of view.form.querySelectorAll('[data-schedule-for]'))
       field.hidden=!field.dataset.scheduleFor.split(' ').includes(kind);
     view.form.elements.intervalAmount.required=kind==='interval';
+    view.form.elements.intervalAmount.disabled=kind!=='interval';
   };
+  view.form.elements.timezone.value=scheduleDraftFromTrigger().timezone;
   view.form.elements.trigger.addEventListener('change',updateTriggerCreate);updateTriggerCreate();
   const catchUpCreate=view.form.querySelector('[name=catchUpPolicy]'),catchUpCreateMaxAge=view.form.querySelector('[name=catchUpMaxAge]');
-  const updateCatchUpCreate=()=>{catchUpCreateMaxAge.closest('label').hidden=catchUpCreate.value!=='once';};
+  const updateCatchUpCreate=()=>{catchUpCreateMaxAge.closest('label').hidden=catchUpCreateMaxAge.disabled=catchUpCreate.value!=='once';};
   catchUpCreate.addEventListener('change',updateCatchUpCreate);updateCatchUpCreate();
   const outboundCreate=view.form.querySelector('[name=outboundType]'),outboundCreateUrl=view.form.querySelector('[name=outboundUrl]');
-  const updateOutboundCreate=()=>{outboundCreateUrl.closest('label').hidden=outboundCreate.value!=='webhook';};
+  const updateOutboundCreate=()=>{outboundCreateUrl.closest('label').hidden=outboundCreateUrl.disabled=outboundCreate.value!=='webhook';};
   outboundCreate.addEventListener('change',updateOutboundCreate);updateOutboundCreate();
   view.workflowSearch.addEventListener('input',()=>{
     clearTimeout(workflowTimer);
@@ -734,7 +756,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
         return;
       }
       const data=await api('/api/operations/schedule-preview','POST',{trigger:selected,count:3});
-      view.preview.textContent=(data.occurrences||[]).map(entry=>entry.local||humanTime(entry.at||entry.iso)).join(' · ')||'No upcoming runs.';
+      view.preview.textContent=previewTimes(data,selected);
     }catch(error){view.preview.textContent=error.message;}
   });
   view.form.addEventListener('submit',async event=>{
@@ -757,7 +779,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       limits:{maxIterations:fields.maxIterations.value.trim()?Number(fields.maxIterations.value):null,
         runForSeconds:fields.runForSeconds.value.trim()?Number(fields.runForSeconds.value):null,
         endAt:fields.endAt.value.trim()||null},
-      missedRunPolicy:{onResume:fields.catchUpPolicy.value,maxAgeSeconds:Number(fields.catchUpMaxAge.value)},
+      missedRunPolicy:{onResume:fields.catchUpPolicy.value,maxAgeSeconds:fields.catchUpMaxAge.disabled?86400:Number(fields.catchUpMaxAge.value)},
       deliveryTarget:fields.outboundType.value==='webhook'
         ?{type:'webhook',url:fields.outboundUrl.value.trim()}
         :{type:'local'},
@@ -779,8 +801,8 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       const saved=await api('/api/operations/deployments','POST',{...request,workflow});
       rememberReadiness(saved);
       await refresh();
-      view.preview.textContent=scheduleSavedMessage(saved,'Saved. Schedule available above.');
-      if(typeof saved?.enabled==='boolean')fields.enabled.checked=saved.enabled;
+      view.preview.textContent=scheduleSavedMessage(saved,saved.enabled?'Schedule saved and enabled.':'Draft saved. Enable it from Scheduled work when ready.');
+      fields.enabled.checked=false;
       if(fields.name.value.trim()===request.name)fields.name.value='';
       if(fields.input.value.trim()===request.input)fields.input.value='';
       createAttachmentIds=[];createAttachmentsUI?.reset();

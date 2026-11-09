@@ -170,6 +170,11 @@
 .next-schedule-job button{min-height:28px;font-size:11px}
 .next-schedule-job>p{flex-basis:100%}
 .next-schedule-edit-form{max-width:780px;margin:10px 0}
+.next-schedule-create{max-width:720px}
+.next-schedule-create .next-schedule-timing>.next-label{flex:1;min-width:min(140px,100%)}
+.next-schedule-create textarea{resize:vertical}
+.next-schedule-create .next-help{margin:0}
+.next-schedule-create #next-tasks-preview-output:empty{display:none}
 .next-schedule-edit-form .next-schedule-field{display:grid;gap:5px}
 .next-schedule-edit-form .next-field{width:100%;min-width:0}
 .next-schedule-edit-form textarea.next-field{min-height:145px;resize:vertical;white-space:pre-wrap}

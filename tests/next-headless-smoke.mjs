@@ -183,7 +183,12 @@ try {
   await until(()=>evaluate('Boolean(document.querySelector("#next-tasks-form"))'),'Tasks workspace');
   assert.equal(await evaluate('document.querySelector("#next-tasks-tab-board").getAttribute("aria-selected")'),'true');
   assert.equal(fixture.state.workflowIndexRequests,0,'The default work board must not load schedule workflow catalogs.');
-  await evaluate('document.querySelector("#next-tasks-tab-schedules").click();document.querySelector("#next-tasks-create").open=true;true');
+  await evaluate('document.querySelector("#next-tasks-tab-schedules").click();true');
+  assert.equal(await evaluate('document.querySelector("#next-tasks-create").hidden'),true);
+  await evaluate('document.querySelector("#next-tasks-new-schedule").click();true');
+  assert.equal(await evaluate('document.activeElement === document.querySelector("#next-tasks-form [name=input]")'),true);
+  assert.equal(await evaluate('document.querySelector("#next-tasks-create-options").open'),false);
+  assert.equal(await evaluate('document.querySelector("#next-tasks-form [name=trigger]").value'),'daily');
   await until(()=>fixture.state.workflowIndexRequests>=1,'Tasks workflow metadata loaded without graph catalog');
   assert.equal(fixture.state.workflowFullListRequests,0,'Tasks startup must not download all saved workflow graphs.');
   assert.equal(fixture.state.workflowDetailRequests.length,0,'Tasks must not fetch any full workflow before scheduling.');
@@ -199,7 +204,7 @@ try {
     counts.tasksCatalogWindowed=true;
   }
   await until(()=>evaluate('Boolean(document.querySelector("#next-tasks-form [name=workflow] option[value=sample-workflow]"))'),'Tasks workflow choices hydrated before submitting the schedule');
-  await evaluate('(()=>{const form=document.querySelector("#next-tasks-form");form.elements.workflow.value="sample-workflow";form.elements.name.value="Fixture scheduled review";form.elements.input.value="Review saved evidence";form.elements.cwd.value="C:\\\\fixture";form.elements.enabled.checked=false;form.requestSubmit();return true})()');
+  await evaluate('(()=>{const form=document.querySelector("#next-tasks-form");document.querySelector("#next-tasks-create-options").open=true;form.elements.taskType.value="workflow";form.elements.taskType.dispatchEvent(new Event("change"));form.elements.workflow.value="sample-workflow";form.elements.name.value="Fixture scheduled review";form.elements.input.value="Review saved evidence";form.elements.cwd.value="C:\\\\fixture";form.elements.enabled.checked=false;form.requestSubmit();return true})()');
   await until(()=>fixture.state.scheduledWrites.length===1,'Tasks schedule full graph fetched only on explicit Save');
   const scheduled=fixture.state.scheduledWrites[0];
   assert.equal(scheduled.workflow.id,'sample-workflow');
