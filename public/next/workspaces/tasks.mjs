@@ -3,9 +3,8 @@ import { workflowCatalogWindow } from './workflow-overview-model.mjs';
 import { createTaskHistory } from './task-lifecycle.mjs';
 import { createWorkflowActivityUI } from './workflow-execution.mjs';
 import { jobLinkedRun } from './tasks-visual-model.mjs';
-import { scheduleTriggerLabel, scheduleEditDraft, scheduleUpdateFromDraft, scheduleJobs } from './schedule-inspection-model.mjs';
+import { scheduleTriggerLabel, scheduleEditDraft, scheduleUpdateFromDraft, scheduleJobs, scheduleChatOptionsMarkup, initScheduleChatOptions, createScheduledChatWorkflow, chatProfileFromDeployment } from './schedule-inspection-model.mjs';
 import { scheduleTriggerFromDraft, scheduleDraftFromTrigger } from '../../schedule-model.mjs';
-import { scheduleChatOptionsMarkup, initScheduleChatOptions, createScheduledChatWorkflow, chatProfileFromDeployment, applyChatProfileToWorkflow } from './schedule-chat-options.mjs';
 import { initAttachmentsUI } from '../../attachments-ui.mjs';
 import { escapeHTML } from '../core/dom.mjs';
 

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createScheduledChatWorkflow,applyChatProfileToWorkflow,chatProfileFromDeployment,scheduleChatOptionsMarkup
-} from '../public/next/workspaces/schedule-chat-options.mjs';
+} from '../public/next/workspaces/schedule-inspection-model.mjs';
 
 const profile={model:'gpt-6-luna',effort:'high',serviceTier:'fast',planningMode:'forced',planningExecutionMode:'plan_only'};
 const context={preset:'custom',windowTokens:100000,autoCompact:false,
