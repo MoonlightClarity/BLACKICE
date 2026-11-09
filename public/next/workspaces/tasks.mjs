@@ -534,7 +534,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       :'Schedules ready · '+(status.enabled||0)+' active · '+(status.running||0)+' running'+(status.ticker?.lastSuccessAt?' · Last tick: '+humanTime(status.ticker.lastSuccessAt):''));
     view.deployments.replaceChildren();
     const deployments=Array.isArray(snapshot.deployments)?snapshot.deployments:[];
-    if(!deployments.length)add(view.deployments,'p','No saved schedules yet. Create one below.','next-empty');
+    if(!deployments.length)add(view.deployments,'p','No saved schedules yet. Select New schedule to get started.','next-empty');
     for(const task of deployments){
       const card=add(view.deployments,'article','','next-card');
       add(card,'h3',task.name||'Scheduled task');
