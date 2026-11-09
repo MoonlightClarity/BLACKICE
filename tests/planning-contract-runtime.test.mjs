@@ -150,9 +150,17 @@ test('a persistent goal gets a recovery turn but repeated identical evidence can
   const f = await fixture(t), updates = [];
   const completion = createPlanningCompletionController({ store: f.tasks, taskId: f.taskId, runId: f.runId, nodeId: f.nodeId,
     schemaVersion: 14, executionGuardrails: true, persistentGoal: true, onUpdate: update => updates.push(update) });
-  for (let index = 0; index < 3; index++) {
+  for (let index = 0; index < 4; index++) {
     assert.equal((await f.send(call('relay_workspace', { action: 'read', path: 'input.txt' }))).success, true);
     if (index < 2) assert.equal((await completion.beforeFinal()).continue, true);
+    else if (index === 2) {
+      const recovery = await completion.beforeFinal();
+      assert.equal(recovery.continue, true);
+      assert.match(recovery.prompt, /Try a different concrete observation/);
+      assert.match(recovery.prompt, /"workItem":"files"/);
+      assert.match(recovery.prompt, /Actual file evidence supports the requested preparation/);
+      assert.equal(updates.at(-1).goalStatus, 'active');
+    }
     else await assert.rejects(completion.beforeFinal(), { code: 'TASK_CONTRACT_INCOMPLETE' });
   }
   assert.equal(updates.at(-1).goalStatus, 'blocked');
