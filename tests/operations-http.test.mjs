@@ -8,7 +8,7 @@ import path from 'node:path';
 import { createHarnessServer } from './fixture-legacy-harness-server.mjs';
 import { fixtureDeploymentReadiness } from './fixture-deployment-readiness.mjs';
 import { recordFixturePlan } from './fixture-task-plan.mjs';
-import {createScheduledChatWorkflow} from '../public/next/workspaces/schedule-chat-options.mjs';
+import {createScheduledChatWorkflow} from '../public/next/workspaces/schedule-inspection-model.mjs';
 
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return{promise,resolve};};
 const until=async(check,label='HTTP operation condition')=>{const end=Date.now()+7000;while(Date.now()<end){const result=await check();if(result)return result;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail(`${label} did not settle`);};
