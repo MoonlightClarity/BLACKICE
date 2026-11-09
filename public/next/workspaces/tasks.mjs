@@ -132,6 +132,12 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     const date=new Date(typeof value==='number'?value:Date.parse(value));
     return Number.isFinite(date.getTime())?date.toLocaleString():'Not scheduled';
   };
+  const jobFailureSummary=error=>{
+    const message=String(error?.message||error);
+    return /invalid_json_schema/i.test(message)
+      ?'BLACKICE sent a request the model could not accept. The job receipt has technical details.'
+      :message;
+  };
   const previewTimes=(result,trigger)=>(result.occurrences||[]).map(entry=>{
     const local=humanTime(entry.at??entry.iso??entry.local);
     return trigger.type==='interval'?local:entry.local||local;
@@ -264,8 +270,11 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
           checking=false;
           await start();
         }
-        mutationError='Run requested. Follow it in Job history.';
-        await refresh();notify(mutationError);
+        await refresh();
+        const status=snapshot?.status;
+        mutationError=status?.blockedReason?'Run queued. Select Resume schedules and inbox to start it.':
+          status?.paused?'Run queued. Select Resume to start it.':'Run requested. Follow it in Job history.';
+        notify(mutationError);
       }else{
         const ready=await requestReadiness(task);
         notify(ready?'This task is ready to run.':'Review what the task needs before it can run.');
@@ -554,7 +563,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
         const open=add(row,'button',linked.current?'Open run':'Open previous attempt');open.type='button';open.dataset.scheduleRunId=linked.runId;
         open.addEventListener('click',()=>onNavigate?.('chat',{conversationId:linked.runId}));
       }
-      if(job.error)add(row,'p',String(job.error?.message||job.error),'next-help');
+      if(job.error)add(row,'p',jobFailureSummary(job.error),'next-help');
     }
     if(total>jobs.length)add(view.detail,'p','Showing '+jobs.length+' of '+total+' jobs. Open the Job history tab for additional runs.','next-help');
   }
@@ -562,7 +571,8 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     if(!snapshot)return;
     const status=snapshot.status||{},enabled=status.paused!==true;
     view.pause.disabled=!enabled||busy;
-    view.resume.disabled=enabled||busy;
+    view.resume.disabled=(enabled&&!status.blockedReason)||busy;
+    view.resume.textContent=status.blockedReason?'Resume schedules and inbox':'Resume';
     view.info.textContent=scheduleProgress||mutationError|| (status.healthy===false?status.error||'Task storage needs attention.'
       :status.paused?'Schedules paused: '+(status.pauseReason||'manual pause')
       :status.blockedReason?'Dispatch blocked: '+status.blockedReason
@@ -627,7 +637,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       const state=add(title,'span',delivery.state==='acknowledged'?'Reviewed':'Awaiting review','next-status-pill');
       state.dataset.state=delivery.state==='acknowledged'?'saved':'running';
       add(card,'p','Agent outcome: '+(delivery.outcome||result.status||'unknown')+' · Available: '+humanTime(delivery.availableAt),'next-help');
-      if(delivery.error)add(card,'p','Run error: '+delivery.error,'next-help');
+      if(delivery.error)add(card,'p',jobFailureSummary(delivery.error),'next-help');
       const outbound=(snapshot.jobs||[]).find(item=>item.id===result.id)?.outbound;
       if(outbound){
         add(card,'p','HTTPS webhook '+outbound.state+' · '+outbound.host
@@ -677,7 +687,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       add(top,'strong',deployments.find(d=>d.id===job.deploymentId)?.name||removed.find(d=>d.id===job.deploymentId)?.name||job.deploymentName||job.name||job.id);
       const badge=add(top,'span',job.status||'unknown','next-status-pill');badge.dataset.state=job.status||'unknown';
       const linked=jobLinkedRun(job);
-      add(row,'p',humanTime(job.createdAt)+(linked?.attemptNumber?' · Attempt '+linked.attemptNumber:'')+(job.error?' · '+(job.error?.message||job.error):''),'next-task-job-meta');
+      add(row,'p',humanTime(job.createdAt)+(linked?.attemptNumber?' · Attempt '+linked.attemptNumber:'')+(job.error?' · '+jobFailureSummary(job.error):''),'next-task-job-meta');
       const actions=add(row,'div','','next-task-job-actions');
       if(linked){const open=add(actions,'button',linked.current?'Open task':'Open previous attempt');open.type='button';open.dataset.jobRunId=linked.runId;open.addEventListener('click',()=>onNavigate?.('chat',{conversationId:linked.runId}));}
       const receipt=add(row,'details','','next-task-menu');receipt.dataset.jobInspect=job.id;
@@ -785,7 +795,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
   });
   $('next-tasks-jobs-more').addEventListener('click',()=>{jobsLimit+=35;paint();});
   view.pause.addEventListener('click',()=>void execute('/api/operations/pause','POST',{reason:'Paused from Tasks workspace.'}));
-  view.resume.addEventListener('click',()=>void execute('/api/operations/resume','POST',{}));
+  view.resume.addEventListener('click',()=>void execute('/api/operations/resume','POST',{resumeInbox:Boolean(snapshot?.status?.blockedReason)}));
   $('next-tasks-preview').addEventListener('click',async()=>{
     try{
       const selected=trigger();

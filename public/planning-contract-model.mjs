@@ -55,6 +55,48 @@ export const PLAN_CONTRACT_SCHEMA = Object.freeze(obj({
     id: identifier, text: textSchema(4000), handling: { type: 'string', enum: ['preserve', 'audit'] },
   }), PLAN_CONTRACT_LIMITS.instructions),
 }));
+/** Model output requires every property; null marks an omitted optional field. */
+export function planContractResponseSchema() {
+  const visit = schema => {
+    const result = clone(schema);
+    if (object(schema.properties) && schema.type === 'object') {
+      result.properties = Object.fromEntries(Object.entries(schema.properties).map(([key, field]) => {
+        const mapped = visit(field);
+        if (schema.required.includes(key) || mapped.anyOf?.some(branch => branch.type === 'null')) return [key, mapped];
+        return [key, { anyOf: [mapped, { type: 'null' }] }];
+      }));
+      result.required = Object.keys(result.properties);
+      // The host still enforces these conditions on the decoded contract.
+      delete result.not;
+      if (schema.anyOf?.every(branch => Object.keys(branch).every(key => key === 'properties' || key === 'required'))) delete result.anyOf;
+    } else if (schema.anyOf) result.anyOf = schema.anyOf.map(visit);
+    if (schema.items) result.items = visit(schema.items);
+    return result;
+  };
+  return visit(PLAN_CONTRACT_SCHEMA);
+}
+
+/** Strip only declared optional null markers before ordinary plan validation. */
+export function normalizePlanContractResponse(value) {
+  const decode = (item, schema) => {
+    if (Array.isArray(item) && schema.items) return item.map(entry => decode(entry, schema.items));
+    if (!object(item)) return item;
+    // Receipt alternatives are distinguished by their format field.
+    const branch = schema.anyOf?.find(candidate => {
+      const format = candidate.properties?.format;
+      return format && (format.const === item.format || format.enum?.includes(item.format));
+    });
+    if (branch) return decode(item, branch);
+    if (!schema.properties) return item;
+    return Object.fromEntries(Object.entries(item).flatMap(([key, entry]) => {
+      const field = Object.hasOwn(schema.properties, key) ? schema.properties[key] : null;
+      if (field && entry === null && !schema.required.includes(key)) return [];
+      return [[key, field ? decode(entry, field) : entry]];
+    }));
+  };
+  return normalizePlanContract(decode(value, PLAN_CONTRACT_SCHEMA));
+}
+
 function keys(value, allowed, required, label) {
   if (!object(value)) throw fail(label + ' must be an object.');
   const unknown = Object.keys(value).filter(key => !allowed.includes(key));

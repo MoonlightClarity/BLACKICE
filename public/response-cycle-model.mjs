@@ -1,4 +1,4 @@
-import { PLAN_CONTRACT_SCHEMA, normalizePlanContract, contractPlanProjection } from './planning-contract-model.mjs';
+import { planContractResponseSchema, normalizePlanContractResponse, contractPlanProjection } from './planning-contract-model.mjs';
 /**
  * Public, bounded findings for response cycles. This module performs no work,
  * grants no authority, and never treats a model's claim as an execution receipt.
@@ -259,7 +259,7 @@ export function parseResponseCycleResponse(output, stageOrKind, { sources,pipeli
   }), 'id', 'Inferences');
   if (stage.kind === 'plan') {
     if (canonicalPlan) {
-      result.contract = normalizePlanContract(value.contract);
+      result.contract = normalizePlanContractResponse(value.contract);
       const projected = contractPlanProjection(result.contract, [canonicalPlanSource(sources).id]);
       for (const key of ['acceptanceCriteria', 'steps']) if (value[key] !== undefined && canonical(value[key]) !== canonical(projected[key])) throw fail('The supplied ' + key + ' disagrees with the canonical contract. These views are host-derived.');
       Object.assign(result, projected);
@@ -295,7 +295,7 @@ export function responseCycleResponseSchema(stageOrKind,{pipelineVersion=RESPONS
   });
   if (stage.kind === 'think' || stage.kind === 'respond') properties.checks.description = effectReportingGuidance;
   if (stage.kind === 'inference') properties.inferences = { type: 'array', items: schemaObject({ id: s, claim: s, basis: enumSchema(['observed', 'inferred', 'unknown']), sourceIds: ss, limitation: s }) };
-  if (stage.kind === 'plan') { if (planningContractVersion === 14) properties.contract = schemaTree(PLAN_CONTRACT_SCHEMA); else Object.assign(properties, { acceptanceCriteria: { type: 'array', items: criterionSchema() }, steps: { type: 'array', items: schemaObject({ id: s, label: s, description: s, dependsOn: ss, criterionIds: ss, sourceIds: ss }) } }); }
+  if (stage.kind === 'plan') { if (planningContractVersion === 14) properties.contract = planContractResponseSchema(); else Object.assign(properties, { acceptanceCriteria: { type: 'array', items: criterionSchema() }, steps: { type: 'array', items: schemaObject({ id: s, label: s, description: s, dependsOn: ss, criterionIds: ss, sourceIds: ss }) } }); }
   if (stage.kind === 'think') properties.criterionResults = { type: 'array', items: schemaObject({ criterionId: s, assessment: enumSchema(['satisfied', 'unsatisfied', 'uncertain']), sourceIds: ss, receiptIds: ss, rationale: s }) };
   if (stage.kind === 'respond') properties.coverage = { type: 'array', items: schemaObject({ criterionId: s, disposition: enumSchema(['addressed', 'partial', 'unresolved']), sourceIds: ss, responseExcerpt: s, limitation: s }) };
   return finish(properties);

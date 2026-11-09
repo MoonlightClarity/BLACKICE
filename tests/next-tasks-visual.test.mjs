@@ -6,7 +6,7 @@ import { createTaskHistory } from '../public/next/workspaces/task-lifecycle.mjs'
 import { planningDOM } from './fixture-planning-dom.mjs';
 
 const settle=async()=>{for(let i=0;i<5;i++)await new Promise(resolve=>setImmediate(resolve));};
-function fixture(t,{history=false,presentation='board',hook,status={}}={}){
+function fixture(t,{history=false,presentation='board',hook,status={},operationsStatus={}}={}){
   const dom=planningDOM(t),prototype=Object.getPrototypeOf(dom.mount);
   Object.defineProperty(prototype,'type',{get(){return this.getAttribute('type')||this.tagName.toLowerCase();},set(value){this.setAttribute('type',value);},configurable:true});
   prototype.replaceChildren=function(...nodes){for(const child of [...this.children])child.remove();this.rawText='';this.append(...nodes);};
@@ -45,7 +45,7 @@ function fixture(t,{history=false,presentation='board',hook,status={}}={}){
     if(path==='/api/operations'){
       const found=jobs.filter(item=>item.delivery?.destination==='local-inbox'&&['available','acknowledged'].includes(item.delivery.state));
       return{status:{healthy:true,paused:false,enabled:0,running:0,availableResults:found.filter(item=>item.delivery.state==='available').length,
-        ticker:{state:'running',lastAttemptAt:'2026-10-25T10:02:00Z',lastSuccessAt:'2026-10-25T10:02:00Z'}},
+        ticker:{state:'running',lastAttemptAt:'2026-10-25T10:02:00Z',lastSuccessAt:'2026-10-25T10:02:00Z'},...operationsStatus},
         deployments:[structuredClone(schedule)],removedDeployments:structuredClone(removedSchedules),jobs:structuredClone(jobs),
         results:{total:found.length,available:found.filter(item=>item.delivery.state==='available').length,
           acknowledged:found.filter(item=>item.delivery.state==='acknowledged').length,
@@ -412,6 +412,37 @@ test('an uncertain Run now response is never retried or mistaken for a readiness
   await f.clickReady('[data-schedule-trigger="schedule-a"]');
   assert.deepEqual(f.calls.filter(call=>call.method==='POST').map(call=>call.path.split('/').at(-1)),['trigger']);
   assert.match(f.$('#next-tasks-info').textContent,/Check Job history before trying again/);
+});
+
+test('a paused Run now points to the action that resumes both the scheduler and task inbox',async t=>{
+  const operationsStatus={paused:true,blockedReason:'Emergency stop requested. Resume the inbox when ready.'};
+  const f=fixture(t,{operationsStatus,hook:async call=>{
+    if(call.path.endsWith('/trigger'))return{id:'new-job',status:'queued'};
+    if(call.path.endsWith('/resume')){
+      assert.deepEqual(call.payload,{resumeInbox:true});
+      Object.assign(operationsStatus,{paused:false,blockedReason:null});
+      return operationsStatus;
+    }
+  }});f.component.enter();await settle();await f.clickReady('#next-tasks-tab-schedules');
+  await f.clickReady('[data-schedule-trigger="schedule-a"]');
+  assert.match(f.$('#next-tasks-info').textContent,/Run queued.*Resume schedules and inbox/);
+  assert.equal(f.$('#next-tasks-resume').textContent,'Resume schedules and inbox');
+  await f.clickReady('#next-tasks-resume');
+  assert.match(f.$('#next-tasks-info').textContent,/Schedules ready/);
+  assert.equal(f.calls.filter(call=>call.path.endsWith('/trigger')).length,1);
+});
+
+test('job summaries translate incompatible model requests while keeping the exact receipt',async t=>{
+  const detail='{"error":{"code":"invalid_json_schema","message":"criteria.items.not is unsupported"}}';
+  const f=fixture(t,{hook:async(call,{jobs})=>{
+    if(call.path==='/api/operations'){jobs[0].error=detail;jobs[0].delivery.error=detail;}
+  }});f.component.enter();await settle();await f.clickReady('#next-tasks-tab-jobs');
+  const row=f.$('[data-job-id="job-0"]');
+  assert.match(row.querySelector('.next-task-job-meta').textContent,/BLACKICE sent a request the model could not accept/);
+  assert.doesNotMatch(row.querySelector('.next-task-job-meta').textContent,/invalid_json_schema/);
+  assert.match(row.querySelector('details').textContent,/invalid_json_schema/);
+  await f.clickReady('#next-tasks-tab-results');
+  assert.doesNotMatch(f.$('#next-tasks-results').textContent,/invalid_json_schema/);
 });
 
 test('a blocked Enable shows returned factual questions and never claims the schedule was enabled',async t=>{

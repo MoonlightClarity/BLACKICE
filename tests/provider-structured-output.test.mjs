@@ -192,22 +192,39 @@ test('strict agency output preserves unknown estimates while only optional null 
   assert.throws(() => validatePlanningModuleResponse(attempt, ungroundedAsk), { code: 'INVALID_USER_COST_DECISION' }, 'A null clarification cannot satisfy an ask requirement.');
 });
 
-test('compatible wire projection preserves property names, literal data and all other schema constraints', () => {
+test('strict wire projection keeps supported constraints and never traverses literal data', () => {
   const original = {
-    type: 'object', additionalProperties: false, required: ['uniqueItems', 'choice', 'literal'],
+    type: 'object', additionalProperties: false, required: ['uniqueItems', 'not', 'choice', 'literal'],
+    not: { required: ['literal', 'choice'] },
+    allOf: [{ properties: { literal: { enum: ['not'] } } }],
     properties: {
       uniqueItems: { type: 'boolean', const: true },
-      choice: { anyOf: [{ type: 'null' }, { allOf: [{ anyOf: [
+      not: { type: 'string', const: 'not' },
+      choice: { anyOf: [
+        { type: 'null' },
         { type: 'array', minItems: 1, maxItems: 3, uniqueItems: true, items: { type: 'string', enum: ['a', 'b'] } },
-        { type: 'string', const: 'none' },
-      ] }] }] },
-      literal: { oneOf: [{ const: { uniqueItems: true } }, { enum: [{ uniqueItems: false }] }], examples: [{ uniqueItems: false }] },
+      ] },
+      literal: { type: 'string', enum: ['uniqueItems', 'not', 'allOf'] },
     },
   };
   const before = structuredClone(original), expected = structuredClone(original);
-  delete expected.properties.choice.anyOf[1].allOf[0].anyOf[0].uniqueItems;
+  delete expected.not;
+  delete expected.allOf;
+  delete expected.properties.choice.anyOf[1].uniqueItems;
   assert.deepEqual(compatibleWireOutputSchema(original), expected);
   assert.deepEqual(original, before, 'the source contract is not the wire projection');
+});
+
+test('strict wire falls back for unencodable shapes instead of forwarding unsupported grammar', () => {
+  for (const property of [
+    { type: 'array', items: { type: 'string' }, unevaluatedItems: false },
+    { type: 'string', oneOf: [{ const: 'a' }, { const: 'b' }] },
+    { allOf: [{ type: 'string' }] },
+    { type: 'unknown' },
+    { type: 'object', properties: { name: { type: 'string' } }, required: [], additionalProperties: false },
+  ]) {
+    assert.equal(compatibleWireOutputSchema({ type: 'object', additionalProperties: false, properties: { property }, required: ['property'] }), null);
+  }
 });
 
 test('actual Planning wire omits unsupported uniqueness while host acceptance rejects duplicate blocked IDs', async t => {

@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { taskAccuracySchema, validateTaskAccuracy } from '../public/task-viability-model.mjs';
+import { parseResponseCycleResponse, responseCycleStage } from '../public/response-cycle-model.mjs';
 import {
   PLAN_CONTRACT_VERSION, PLAN_CONTRACT_SCHEMA, PLAN_CONTRACT_LIMITS,
-  normalizePlanContract, isPlanContractTask, contractPlanProjection,
+  normalizePlanContract, normalizePlanContractResponse, isPlanContractTask, contractPlanProjection,
 } from '../public/planning-contract-model.mjs';
 
 const draft = () => ({
@@ -35,6 +36,39 @@ const withBinding = () => {
 const accuracyTarget = () => ({ mode: 'exact', tolerance: 'No unverified outcomes.', decisionThreshold: 'The required distinct outcome count is observed.',
   evidenceNeeded: 'Matching host-observed destination confirmations.', consequence: 'An inaccurate count would misstate completion.',
   unknownPolicy: 'block', stopWhen: 'The declared target is established by the retained evidence.' });
+
+test('canonical model null markers preserve optionality without weakening host receipt rules', () => {
+  const original = draft();
+  const candidate = structuredClone(original);
+  Object.assign(candidate.criteria[0], { label: null, accuracy: null, targetCount: null, receiptBinding: null, receiptBindings: null });
+  const criterion = candidate.criteria[1];
+  Object.assign(criterion, { label: null, accuracy: null, receiptBinding: null, receiptBindings: [{
+    ...binding(), absentValues: null, destination: null, prior: null, identity: null,
+  }] });
+  const sources = [{ id: 'cycle:execution-contract:fixture', text: JSON.stringify({ taskSchemaVersion: 14, contractVersion: 2 }) }];
+  const stage = responseCycleStage('plan');
+  const result = parseResponseCycleResponse({
+    values: {}, checks: stage.checks.map(check => ({ id: check.id, assessment: 'supported', sourceIds: [], note: 'Synthetic Plan check.' })),
+    subproblems: [], childResults: [], contract: candidate,
+  }, 'plan', { sources });
+  const parsed = result.contract;
+  assert.equal(result.acceptanceCriteria[1].verification, 'effect');
+  assert.deepEqual(parsed.criteria[0], normalizePlanContract(original).criteria[0]);
+  assert.deepEqual(parsed.criteria[1].receiptBindings[0].confirmedValues, ['confirmed']);
+  for (const field of ['absentValues', 'destination', 'prior', 'identity']) assert.equal(Object.hasOwn(parsed.criteria[1].receiptBindings[0], field), false);
+  assert.equal(criterion.receiptBindings[0].destination, null);
+  assert.throws(() => normalizePlanContract(candidate), { code: 'TASK_CONTRACT_INVALID' }, 'direct host authoring rules stay unchanged');
+
+  const both = structuredClone(candidate);
+  both.criteria[1].receiptBinding = binding();
+  assert.throws(() => normalizePlanContractResponse(both), /Use receiptBinding or receiptBindings/);
+  const noObservedStatus = structuredClone(candidate);
+  noObservedStatus.criteria[1].receiptBindings[0].confirmedValues = [];
+  assert.throws(() => normalizePlanContractResponse(noObservedStatus), /at least one observed confirmed or absent value/);
+  const wrongRequired = structuredClone(candidate);
+  wrongRequired.criteria[1].receiptBindings[0].status = null;
+  assert.throws(() => normalizePlanContractResponse(wrongRequired), { code: 'TASK_CONTRACT_INVALID' });
+});
 
 test('canonical criteria retain declared task accuracy in the derived Plan without changing verification', () => {
   const input = withBinding(); input.criteria[1].accuracy = accuracyTarget();

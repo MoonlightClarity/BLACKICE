@@ -70,6 +70,36 @@ test('one format repair has separate durable receipts, identical captured inputs
   const replay=await restored.start(options),result=await restored.wait(options.requestId,replay.attempt.id);assert.equal(result.attempt.id,repaired.id);assert.equal(result.attempt.status,'completed');assert.equal(f.calls.length,2);
 });
 
+test('Inference repair distinguishes a routine authorized observation from investigating a decision', async t => {
+  const f = await fixture(t, ({ input, index, options }) => {
+    const body = correct(input);
+    body.userAgency.decisionReason = 'The request is clear and the owning workflow can read the named file. Its contents are not captured yet.';
+    assert.match(options.prompt, /action:"proceed", decisionRequired:false, decisions:\[\], chosenDecisionId:null/);
+    assert.match(options.prompt, /handing an authorized observation to the owning workflow when its result is still unknown/);
+    if (index === 1) body.userAgency.action = 'investigate';
+    else {
+      assert.equal(input.formatRepair.diagnostic.code, 'USER_AGENCY_COMPARISON_REQUIRED');
+      assert.ok(input.formatRepair.diagnostic.issues.some(issue =>
+        issue.path === 'response.userAgency' && issue.message.includes('action:"proceed"') &&
+        issue.message.includes('decisionRequired:true and a chosen comparison')));
+    }
+    return JSON.stringify(body);
+  });
+  const cycleService = new ResponseCycleService({ store: f.store, runner: f.runner });
+  t.after(() => cycleService.close());
+  const request = await cycleService.createCycle(f.request.id, {
+    title: 'Read the named file', purpose: 'Read only verification-input.txt and report its exact contents.',
+    planningExecutionMode: 'plan_only', expectedRequestRevision: f.request.revision, clientRequestId: 'file-read-inference'
+  });
+  const node = request.nodes.find(item => item.id === request.cycles[0].stageNodeIds.inference);
+  const claim = await f.runner.start({ requestId: request.id, nodeId: node.id,
+    expectedNodeRevision: node.revision, clientRequestId: 'file-read-interpretation', ...profile });
+  const finished = await f.runner.wait(request.id, claim.attempt.id);
+  assert.equal(finished.attempt.status, 'completed');
+  assert.equal(f.calls.length, 2);
+  assert.equal(finished.request.nodes.find(item => item.id === node.id).response.userAgency.action, 'proceed');
+});
+
 test('invalid references are never sanitized and one unsuccessful repair is the hard limit',async t=>{
   const f=await fixture(t,({input})=>malformed(input,{requirements:false})),{options}=await addModule(f),budget={used:0,max:10};
   const admitted=await f.runner.start({...options,providerBudget:budget}),finished=await f.runner.wait(options.requestId,admitted.attempt.id),saved=await f.store.get(options.requestId);

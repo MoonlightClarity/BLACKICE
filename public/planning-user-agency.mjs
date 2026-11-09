@@ -117,7 +117,10 @@ export function normalizeUserAgencyCheckpoint(value, { required = false } = {}) 
   const result = { version: USER_AGENCY_CONTRACT_VERSION, audience: value.audience, userBenefit: text(value.userBenefit, 'User benefit', true), representation,
     action: value.action, decisionRequired: value.decisionRequired, decisionReason: text(value.decisionReason, 'Decision reason', true), decisions, chosenDecisionId };
   if (!result.decisionRequired) {
-    if (decisions.length || chosenDecisionId !== null || result.action !== 'proceed') throw fail('Only routine clear progress may omit a cost comparison; asking or deferring requires the comparison.', 'USER_AGENCY_COMPARISON_REQUIRED');
+    if (decisions.length || chosenDecisionId !== null || result.action !== 'proceed') {
+      const message = 'For routine authorized progress, use action:"proceed", decisionRequired:false, decisions:[], and chosenDecisionId:null. An authorized observation can proceed even when its result is unknown. Asking, deferring, or investigating a decision requires decisionRequired:true and a chosen comparison.';
+      throw Object.assign(fail(message, 'USER_AGENCY_COMPARISON_REQUIRED'), { issues: [{ path: 'response.userAgency', message }] });
+    }
     return result;
   }
   if (!chosenDecisionId || !seen.has(chosenDecisionId)) throw fail('Name the compared decision that determines this next action.', 'USER_AGENCY_COMPARISON_REQUIRED');

@@ -23,7 +23,8 @@ async function fixture(t,{execute,readinessFailure,maxConcurrentRuns=4,planningM
       if(options.responseOnly){
         const captured=JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2));
         readinessCalls.push({ ...options, stage: captured.module.kind });
-        if (readinessFailure) throw readinessFailure;
+        const failure = typeof readinessFailure === 'function' ? readinessFailure(captured) : readinessFailure;
+        if (failure) throw failure;
         return {output:JSON.stringify(fixtureDeploymentReadiness(captured)),threadId:'fixture-readiness',turnId:'fixture-readiness-turn'};
       }
       const index=calls.push(options);
@@ -106,6 +107,36 @@ test('a disabled schedule can pass readiness and run once without enabling recur
   assert.deepEqual(state.jobs.map(job => job.id), [admitted.data.id]);
   assert.equal(state.deployments.find(item => item.id === draft.id).enabled, false);
   assert.equal(f.calls.length, 1);
+});
+
+test('an explicit readiness check retries a saved failed inference without starting or enabling the schedule', async t => {
+  let rejectInference = true;
+  const f = await fixture(t, {
+    readinessFailure: ({ module }) => rejectInference && module.kind === 'inference'
+      ? Object.assign(Error('invalid_json_schema: uniqueItems'), { code: 'invalid_json_schema' }) : null
+  });
+  const draft = await f.create({ enabled: false, trigger: { type: 'interval', everySeconds: 1800 } });
+  const route = '/api/operations/deployments/' + draft.id + '/readiness';
+  const check = () => f.request(route, { method: 'POST', body: {} });
+
+  const failed = await check();
+  assert.equal(failed.status, 503);
+  assert.deepEqual(f.readinessCalls.map(call => call.stage), ['inference']);
+
+  rejectInference = false;
+  await f.restart();
+  const recovered = await check();
+  assert.equal(recovered.status, 200, JSON.stringify(recovered.data));
+  assert.equal(recovered.data.viabilityAction.canRun, true);
+  assert.equal(recovered.data.viabilityAction.deployment.enabled, false);
+  assert.deepEqual(f.readinessCalls.map(call => call.stage), ['inference', 'inference', 'viability']);
+  const inference = recovered.data.nodes.find(node => node.kind === 'inference');
+  const attempts = recovered.data.attempts.filter(attempt => attempt.nodeId === inference.id);
+  assert.deepEqual(attempts.map(attempt => attempt.status), ['failed', 'completed']);
+  assert.notEqual(attempts[0].clientRequestId, attempts[1].clientRequestId);
+  const state = (await f.request('/api/operations')).data;
+  assert.equal(state.jobs.length, 0);
+  assert.equal(f.calls.length, 0);
 });
 
 test('a readiness error while enabling reports the saved disabled draft', async t => {

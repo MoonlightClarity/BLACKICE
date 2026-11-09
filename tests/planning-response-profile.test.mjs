@@ -137,6 +137,56 @@ test('Codex and the Responses API send the actual Planning schema without its un
   assert.equal(blockedIds(original).uniqueItems, true, 'host validation retains the original uniqueness requirement');
 });
 
+test('every production Planning stage uses closed provider grammar, including the current canonical contract', async t => {
+  const sources = [{ id: 'cycle:execution-contract:fixture', text: JSON.stringify({ taskSchemaVersion: 14, contractVersion: 2 }) }];
+  const forbidden = new Set(['allOf', 'not', 'oneOf', 'uniqueItems', 'dependentRequired', 'dependentSchemas', 'if', 'then', 'else']);
+  const check = entry => {
+    for (const key of Object.keys(entry)) assert.equal(forbidden.has(key), false, 'unsupported keyword ' + key);
+    if (entry.type === 'object') {
+      assert.equal(entry.additionalProperties, false);
+      assert.deepEqual([...entry.required].sort(), Object.keys(entry.properties).sort());
+    }
+    for (const value of Object.values(entry.properties || {})) check(value);
+    if (entry.items) check(entry.items);
+    for (const branch of entry.anyOf || []) check(branch);
+  };
+  for (const kind of ['viability', 'inference', 'plan', 'think', 'respond']) {
+    const original = planningModuleOutputSchema({ node: { kind }, template: responseCycleTemplate(kind), userAgencyVersion: 1, sources, challenges: [] });
+    const native = nativeFixture(t);
+    const api = await apiFixture(t);
+    await native.run({ outputSchema: original });
+    await api.runtime.runAgent({ ...api.options, outputSchema: original });
+    const wire = native.requests.find(request => request.method === 'turn/start').params.outputSchema;
+    assert.ok(wire, kind + ' must use provider schema rather than fallback');
+    assert.deepEqual(api.requests.find(request => request.body).body.text.format.schema, wire, kind);
+    check(wire);
+    if (kind === 'plan') {
+      const criteria = wire.properties.contract.properties.criteria.items;
+      assert.ok(criteria.required.includes('receiptBinding'));
+      assert.ok(criteria.required.includes('receiptBindings'));
+      assert.ok(criteria.properties.receiptBinding.anyOf.some(branch => branch.type === 'null'));
+      assert.ok(criteria.properties.receiptBindings.anyOf.some(branch => branch.type === 'null'));
+    }
+  }
+});
+
+test('native and Responses fallback supply the full schema without sending unsupported strict grammar', async t => {
+  const original = {
+    ...schema, properties: { answer: { oneOf: [{ type: 'string', const: 'a' }, { type: 'string', const: 'b' }] } },
+  };
+  const native = nativeFixture(t);
+  const api = await apiFixture(t);
+  await native.run({ outputSchema: original });
+  await api.runtime.runAgent({ ...api.options, outputSchema: original });
+  const turn = native.requests.find(request => request.method === 'turn/start').params;
+  const body = api.requests.find(request => request.body).body;
+  assert.equal(turn.outputSchema, undefined);
+  assert.equal(body.text, undefined);
+  assert.ok(turn.input[0].text.includes(JSON.stringify(original)));
+  assert.ok(body.instructions.includes(JSON.stringify(original)));
+  assert.equal(native.events.find(event => event.type === 'capabilities').structuredOutput, 'prompt-and-host-validation');
+});
+
 test('invented API tool calls are rejected before callbacks, without a fallback or another provider step',async t=>{
   const f=await apiFixture(t,{toolCall:true});let calls=0;
   await assert.rejects(f.runtime.runAgent({...f.options,onToolCall:()=>{calls++;}}),{code:'PLANNING_RESPONSE_ONLY_VIOLATION'});
