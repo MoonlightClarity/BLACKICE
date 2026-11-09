@@ -232,6 +232,27 @@ test('only external-confirmation criteria generate effect receipts, never ground
   assert.equal(result.effectReceipts.length, 0);
 });
 
+test('the canonical review context carries only judgment IDs pinned by the verified adoption', () => {
+  const input = fixture(), { contract, contractAdoption } = input.taskState;
+  contract.criteria.push({ id: 'eligibility', kind: 'judgment', description: 'Verify eligibility before enrolling.' },
+    { id: 'other', kind: 'judgment', description: 'Check an independent fact.' });
+  contract.workItems.push({ ...contract.workItems[0], id: 'screen', effects: ['observe'], dependsOn: [], criterionIds: ['eligibility', 'other'] });
+  contract.workItems[0].dependsOn.push('screen');
+  const { planEpoch, ...acceptedContract } = contract;
+  input.acceptedPlan.contract = structuredClone(acceptedContract);
+  contractAdoption.sourceSha256 = canonicalContractHash(input.acceptedPlan);
+  contractAdoption.acceptedContractSha256 = canonicalContractHash(acceptedContract);
+  contractAdoption.commitPrerequisiteIds = ['eligibility', 'enrolled', 'unknown'];
+  const result = buildCanonicalCycleEvidence(input);
+  assert.deepEqual(result.data.commitPrerequisiteIds, ['eligibility']);
+  const options = { cycleId: 'cycle-1', runId: input.run.id, planRef: input.planRef };
+  assert.deepEqual(canonicalCycleTaskContext(result.sources, options).commitPrerequisiteIds, ['eligibility']);
+  const corrupted = structuredClone(result.sources), data = JSON.parse(corrupted[0].text);
+  data.commitPrerequisiteIds.push('enrolled');
+  corrupted[0].text = JSON.stringify(data);
+  assert.equal(canonicalCycleTaskContext(corrupted, options).invalid, true);
+});
+
 test('large canonical evidence is split without truncation and reconstructed only from complete matching parts', () => {
   const input = fixture();
   input.taskState.contract.instructions = Array.from({ length: 30 }, (_, i) => ({ id: `instruction-${i}`, text: 'Preserve actual observed evidence and report unknowns. '.repeat(50).trim(), handling: 'preserve' }));

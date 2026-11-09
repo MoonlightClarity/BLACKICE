@@ -6,6 +6,7 @@ import {
   evaluateResponseCycleStage, validatePlanRevision, planningExecutionModeOf, responseCycleInstructions
 } from '../public/response-cycle-model.mjs';
 import { validateTaskAccuracy, validateViabilityRequirements, taskAccuracySchema } from '../public/task-viability-model.mjs';
+import { validatePlanningModuleResponse } from '../lib/planning-browser-runtime.mjs';
 
 const clone = value => structuredClone(value);
 const criterion = (id = 'answer', verification = 'response') => ({ id, label: 'Requested outcome', description: 'Answer the requested bounded question with actual findings.', verification });
@@ -359,6 +360,46 @@ test('a verified internal observation does not require repeating file bookkeepin
   assert.equal(f.evaluate(record, { ...context, requiredAcceptanceCriteria: [internal] }).state, 'needs_evidence');
   canonicalExecution.criteria[0].satisfied = false;
   assert.equal(f.evaluate(record, context).state, 'needs_evidence');
+});
+
+test('Respond may omit a host-pinned eligibility judgment quote while requiring exact confirmed outcome text', () => {
+  const f = fixture('respond', { effects: true });
+  const gateId = 'listing_and_application_runtime', gate = criterion(gateId), effect = f.context.acceptanceCriteria[0];
+  const proof = source('receipt:effect', 'The destination confirmed one new outcome.', 'effect_receipt');
+  f.sources.push(proof);
+  f.context.criterionResults.unshift({ ...f.context.criterionResults[0], criterionId: gateId });
+  f.context.criterionResults[1].receiptIds = ['effect-a'];
+  f.context.effectReceipts = [{ id: 'effect-a', criterionIds: [effect.id], state: 'succeeded', effectVerified: true, sourceId: proof.id }];
+  f.context.requiredAcceptanceCriteria = [effect];
+  f.context.canonicalExecution = { sourceId: 'evidence', acceptanceCriteria: [gate, effect], commitPrerequisiteIds: [gateId],
+    contract: { criteria: [{ id: gateId, kind: 'judgment' }, { id: effect.id, kind: 'external-confirmation' }] },
+    criteria: [{ id: gateId, satisfied: true }, { id: effect.id, satisfied: true }] };
+  f.payload.coverage[0].sourceIds = [proof.id];
+  f.payload.coverage.unshift({ criterionId: gateId, disposition: 'addressed', sourceIds: ['evidence'],
+    responseExcerpt: 'The current listing and application form were both inspected.', limitation: '' });
+
+  const attempt = { node: { kind: 'respond' }, sources: f.sources, cycleContext: f.context };
+  const response = validatePlanningModuleResponse(attempt, f.payload);
+  assert.equal(response.coverage[0].responseExcerpt, '');
+  assert.equal(response.coverage[1].responseExcerpt, f.payload.coverage[1].responseExcerpt);
+  assert.equal(f.evaluate({ ...f.record(), coverage: response.coverage }).state, 'ready');
+
+  const invalidEffect = clone(f.payload);
+  invalidEffect.coverage[1].responseExcerpt = 'An outcome quote copied from evidence instead of the answer.';
+  f.context.canonicalExecution.commitPrerequisiteIds.push(effect.id);
+  f.context.requiredAcceptanceCriteria = [];
+  const rejectsQuoteAt = index => error => error.code === 'PLANNING_RESPONSE_FORMAT' &&
+    error.issues.some(issue => issue.path === `response.coverage[${index}].responseExcerpt`);
+  assert.throws(() => validatePlanningModuleResponse(attempt, invalidEffect), rejectsQuoteAt(1));
+
+  f.context.requiredAcceptanceCriteria.push(gate);
+  assert.throws(() => validatePlanningModuleResponse(attempt, f.payload), rejectsQuoteAt(0));
+  f.context.requiredAcceptanceCriteria.pop();
+  f.context.canonicalExecution.criteria[0].satisfied = false;
+  assert.throws(() => validatePlanningModuleResponse(attempt, f.payload), rejectsQuoteAt(0));
+  f.context.canonicalExecution.criteria[0].satisfied = true;
+  f.context.canonicalExecution.commitPrerequisiteIds = [];
+  assert.throws(() => validatePlanningModuleResponse(attempt, f.payload), rejectsQuoteAt(0));
 });
 
 test('invalid attempts to waive an applicable effect check are rejected by host criteria', () => {
