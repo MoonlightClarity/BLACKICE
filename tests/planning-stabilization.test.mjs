@@ -236,7 +236,7 @@ test('a correct 190 answer repairs mismatched coverage with the same model and n
   if(input.module.kind!=='respond')return;
   assert.equal(options.responseOnly,true);assert.deepEqual(options.dynamicTools,[]);assert.equal(options.model,'fixture::free');
   if(!input.formatRepair)body.coverage[0].responseExcerpt='total_units 190 = 105+75+10';
-  else{repaired++;assert.match(JSON.stringify(input.formatRepair),/response\.coverage\[0\]\.responseExcerpt/);assert.match(JSON.stringify(input.formatRepair),/verbatim/);}
+  else{repaired++;assert.match(JSON.stringify(input.formatRepair),/response\.coverage\[0\]\.responseExcerpt/);assert.match(JSON.stringify(input.formatRepair),/exact substring from values\.answer/);}
  }}),run=await f.execute();
  assert.equal(run.status,'completed',run.error);assert.equal(run.output,'The result is 190.');assert.equal(repaired,1);assert.equal(f.operationalCalls,1);
  assert.deepEqual(f.calls,['inference','viability','plan','think','respond','respond']);
