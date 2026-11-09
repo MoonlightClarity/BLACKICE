@@ -1,3 +1,5 @@
+import {scheduleLabel,scheduleTriggerFromDraft} from '../../schedule-model.mjs';
+
 // Pure schedule inspector/editor helpers. Never change an admitted job or its snapshot.
 const agents = workflow => (workflow?.nodes || []).filter(node => node.type === 'agent');
 const required = (value, label) => {
@@ -15,9 +17,7 @@ const integer = (value, label, min, max, optional = false) => {
 };
 
 export function scheduleTriggerLabel(trigger = {}) {
-  if (trigger.type === 'cron') return trigger.expression + ' · ' + trigger.timezone;
-  if (trigger.type === 'interval') return 'Every ' + trigger.everySeconds + ' seconds';
-  return trigger.type || 'manual';
+  return scheduleLabel(trigger);
 }
 
 export function scheduleEditDraft(deployment) {
@@ -51,7 +51,9 @@ export function scheduleUpdateFromDraft(deployment, draft) {
   if (!Number.isSafeInteger(deployment?.revision) || deployment.revision < 1) throw Error('Reload the schedule before editing.');
   const type = draft.triggerType;
   let trigger;
-  if (type === 'cron') trigger = { type, expression: required(draft.expression, 'Cron expression'), timezone: required(draft.timezone, 'Timezone') };
+  if (['daily','weekdays','weekly'].includes(type)) trigger = scheduleTriggerFromDraft({...draft,trigger:type});
+  else if (type === 'cron') trigger = { type, expression: required(draft.expression, 'Cron expression'), timezone: required(draft.timezone, 'Timezone') };
+  else if (type === 'interval' && Object.hasOwn(draft,'intervalAmount')) trigger = scheduleTriggerFromDraft({...draft,trigger:type});
   else if (type === 'interval') trigger = { type, everySeconds: integer(draft.everySeconds, 'Interval seconds', 1, Number.MAX_SAFE_INTEGER) };
   else if (type === 'manual' || type === 'webhook') trigger = { type };
   else throw Error('Choose a supported trigger.');

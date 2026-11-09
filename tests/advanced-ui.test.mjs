@@ -209,7 +209,7 @@ test('schedule previews are read only, keep the newest choice and cannot update 
 
 test('saved schedules describe local recurrence, next time and pause state in the manager',async t=>{
   const deployment={id:'calendar',name:'Morning task',revision:1,input:'Read actual work',cwd:'C:\\fixture',workflow:workflow(),trigger:{type:'cron',expression:'0 9 * * 1-5',timezone:'America/New_York'},overlap:'parallel',retry:{maxAttempts:0,backoffSeconds:30},enabled:true,nextAt:Date.UTC(2026,9,19,13)},f=fixture(t,{deployments:[deployment],api:path=>path==='/api/operations'?{status:{paused:true,running:0,queued:0},deployments:[deployment],jobs:[]}:undefined});
-  await f.ui.openOperations();const html=f.elements.get('#operations-view').innerHTML;assert.match(html,/Weekdays at 09:00/);assert.match(html,/America\/New_York/);assert.match(html,/Next:/);assert.match(html,/Schedules are paused/);assert.match(html,/data-op="schedule"/);assert.match(f.modals.at(-1).html,/Schedules &amp; cronjobs/);
+  await f.ui.openOperations();const html=f.elements.get('#operations-view').innerHTML;assert.match(html,/Weekdays at 9:00 AM/);assert.match(html,/America\/New_York/);assert.match(html,/Next:/);assert.match(html,/Schedules are paused/);assert.match(html,/data-op="schedule"/);assert.match(f.modals.at(-1).html,/Schedules &amp; cronjobs/);
 });
 
 test('swarm creation starts from a single goal and hands that task directly to the run callback',async t=>{

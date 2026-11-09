@@ -12,15 +12,38 @@ test('simple calendar choices become actual local cron schedules',()=>{
 
 test('editing calendar and existing interval triggers round-trips without changing their meaning',()=>{
   for(const trigger of [{type:'manual'},{type:'webhook'},{type:'interval',everySeconds:125},{type:'cron',expression:'5 9 * * *',timezone:'Europe/London'},{type:'cron',expression:'0 0 * * 1-5',timezone:'UTC'},{type:'cron',expression:'59 23 * * 6',timezone:'Asia/Tokyo'},{type:'cron',expression:'*/15 9-17 * * 1-5',timezone:'America/New_York'}])assert.deepEqual(scheduleTriggerFromDraft(scheduleDraftFromTrigger(trigger)),trigger);
-  assert.match(scheduleLabel({type:'cron',expression:'5 9 * * *',timezone:'UTC'}),/Daily at 09:05/);
-  assert.match(scheduleLabel({type:'cron',expression:'5 9 * * *',timezone:'UTC'}),/5 9 \* \* \*/);
+  assert.match(scheduleLabel({type:'cron',expression:'5 9 * * *',timezone:'UTC'}),/Daily at 9:05 AM/);
+  assert.doesNotMatch(scheduleLabel({type:'cron',expression:'5 9 * * *',timezone:'UTC'}),/5 9 \* \* \*/);
   assert.deepEqual(scheduleTriggerFromDraft({trigger:'interval',seconds:'1'}),{type:'interval',everySeconds:1});
   assert.deepEqual(scheduleTriggerFromDraft({trigger:'interval',seconds:String(31*86400)}),{type:'interval',everySeconds:31*86400});
   assert.match(scheduleLabel({type:'cron',expression:'0 9 * * 1-5',timezone:'UTC'}),/Weekdays/);
-  assert.match(scheduleLabel({type:'cron',expression:'0 9 * * 0',timezone:'UTC'}),/Sun at/);
+  assert.match(scheduleLabel({type:'cron',expression:'0 9 * * 0',timezone:'UTC'}),/Sunday at/);
 });
 
 test('invalid calendar input fails locally and custom syntax is delegated to the server parser',()=>{
   for(const draft of [{trigger:'daily',time:'24:00',timezone:'UTC'},{trigger:'daily',time:'10:60',timezone:'UTC'},{trigger:'daily',time:'9:00',timezone:'UTC'},{trigger:'weekly',time:'09:00',weekday:'7',timezone:'UTC'},{trigger:'cron',expression:'',timezone:'UTC'},{trigger:'daily',time:'09:00',timezone:''},{trigger:'interval',seconds:'1.2'},{trigger:'interval',seconds:'0'},{trigger:'other'}])assert.throws(()=>scheduleTriggerFromDraft(draft));
   assert.equal(scheduleTriggerFromDraft({trigger:'cron',expression:'server validates this',timezone:'UTC'}).expression,'server validates this');
+});
+
+test('readable intervals preserve exact cadence rather than approximating with cron',()=>{
+  for(const [amount,unit,seconds] of [['5','minutes',300],['30','minutes',1800],['45','minutes',2700],['2','hours',7200],['3','days',259200],['125','seconds',125]]){
+    const trigger=scheduleTriggerFromDraft({trigger:'interval',intervalAmount:amount,intervalUnit:unit});
+    assert.deepEqual(trigger,{type:'interval',everySeconds:seconds});
+    assert.deepEqual(scheduleTriggerFromDraft(scheduleDraftFromTrigger(trigger)),trigger);
+    assert.match(scheduleLabel(trigger),/^Every /);
+  }
+  assert.equal(scheduleLabel({type:'interval',everySeconds:1800}),'Every 30 minutes');
+  assert.equal(scheduleLabel({type:'interval',everySeconds:3600}),'Every hour');
+  for(const [amount,unit] of [['0','minutes'],['1.5','hours'],['-1','days'],['4','fortnights'],['99999999999999999','seconds']])
+    assert.throws(()=>scheduleTriggerFromDraft({trigger:'interval',intervalAmount:amount,intervalUnit:unit}));
+});
+
+test('everyday descriptions hide cron syntax without rewriting saved expressions',()=>{
+  const zone='America/New_York';
+  assert.equal(scheduleLabel({type:'cron',expression:'0 5 * * *',timezone:zone}),'Daily at 5:00 AM · '+zone);
+  assert.equal(scheduleLabel({type:'cron',expression:'*/15 * * * *',timezone:zone}),'Every 15 minutes · '+zone);
+  assert.equal(scheduleLabel({type:'cron',expression:'0 */2 * * *',timezone:zone}),'Every 2 hours · '+zone);
+  const advanced={type:'cron',expression:'*/7 9-17 * * 1-5',timezone:zone};
+  assert.equal(scheduleLabel(advanced),'Custom schedule · '+zone);
+  assert.deepEqual(scheduleTriggerFromDraft(scheduleDraftFromTrigger(advanced)),advanced);
 });

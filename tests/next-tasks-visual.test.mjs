@@ -188,7 +188,7 @@ test('Schedules inspection shows saved cron, model, instructions and linked rece
   await f.clickReady('#next-tasks-tab-schedules');await f.clickReady('[data-schedule-inspect="schedule-a"]');
   const detail=f.$('#next-tasks-schedule-detail');
   assert.equal(detail.hidden,false);
-  for(const fragment of ['Scheduled review','0 9 * * *','America/New_York','gpt-6-luna','Review saved evidence','schedule-a','Saved job history (80)'])
+  for(const fragment of ['Scheduled review','Daily at 9:00 AM','America/New_York','gpt-6-luna','Review saved evidence','schedule-a','Saved job history (80)'])
     assert.ok(detail.textContent.includes(fragment),fragment+' visible in inspection');
   assert.ok(f.$('[data-schedule-run-id="actual-0"]'));
   await f.clickReady('[data-schedule-run-id="actual-0"]');
@@ -272,7 +272,7 @@ test('Schedule editor previews changes, preserves pinned attachments and only wr
   const form=f.$('[data-schedule-edit="schedule-a"]');assert.ok(form);
   const set=(key,value)=>{const el=form.querySelector('[name="'+key+'"]');assert.ok(el,key);el.value=value;};
   set('name','Daily research');set('input','Check original evidence and write fresh leads.');
-  set('expression','30 10 * * MON-FRI');set('timezone','America/New_York');
+  set('triggerType','cron');set('expression','30 10 * * MON-FRI');set('timezone','America/New_York');
   set('maxAttempts','1');set('backoffSeconds','45');set('maxIterations','12');
   set('overlap','queue');set('agentModel','gpt-6-luna');set('agentEffort','ultra');
   form.querySelector('[name="enabled"]').checked=true;
@@ -382,4 +382,28 @@ test('source recovery is shown before personal factual questions and checking al
   const card=f.$('[data-schedule-readiness-state="needs_evidence"]');
   assert.match(card.textContent,/Read the supplied document/);assert.doesNotMatch(card.textContent,/Which address should/);
   assert.equal(f.calls.some(call=>call.method==='PUT'||call.path.endsWith('/trigger')),false);
+});
+
+test('human scheduling controls create exact repeating intervals and reveal cron only when chosen',async t=>{
+  const f=fixture(t);
+  f.component.enter();await settle();
+  await f.clickReady('#next-tasks-tab-schedules');
+  const form=f.$('#next-tasks-form'),fields=form.elements;
+  assert.equal(fields.trigger.value,'interval');
+  assert.equal(fields.intervalAmount.value,'30');
+  assert.equal(fields.intervalUnit.value,'minutes');
+  assert.equal(form.querySelector('[data-schedule-for="interval"]').hidden,false);
+  assert.equal(form.querySelector('[data-schedule-for="cron"]').hidden,true);
+  fields.name.value='Repeating source review';
+  fields.input.value='Review original evidence.';
+  await form.dispatch('submit');await settle();
+  const created=f.calls.find(call=>call.path==='/api/operations/deployments'&&call.method==='POST');
+  assert.ok(created);
+  assert.deepEqual(created.payload.trigger,{type:'interval',everySeconds:1800});
+  fields.trigger.value='daily';await fields.trigger.dispatch('change',{},true);
+  assert.equal(form.querySelector('[data-schedule-for="interval"]').hidden,true);
+  assert.equal(form.querySelector('[name=time]').closest('label').hidden,false);
+  fields.trigger.value='cron';await fields.trigger.dispatch('change',{},true);
+  assert.equal(form.querySelector('[data-schedule-for="cron"]').hidden,false);
+  assert.equal(form.querySelector('[data-schedule-for="interval"]').hidden,true);
 });

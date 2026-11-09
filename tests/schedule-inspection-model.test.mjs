@@ -15,9 +15,9 @@ const deployment = () => ({
 
 test('cron inspection reads stored facts without modifying the saved schedule',()=>{
   const original=deployment(),before=structuredClone(original);
-  assert.equal(scheduleTriggerLabel(original.trigger),'0 9 * * * · America/New_York');
-  assert.equal(scheduleTriggerLabel({type:'interval',everySeconds:120}),'Every 120 seconds');
-  assert.equal(scheduleTriggerLabel({type:'webhook'}),'webhook');
+  assert.equal(scheduleTriggerLabel(original.trigger),'Daily at 9:00 AM · America/New_York');
+  assert.equal(scheduleTriggerLabel({type:'interval',everySeconds:120}),'Every 2 minutes');
+  assert.equal(scheduleTriggerLabel({type:'webhook'}),'When a webhook arrives');
   const draft=scheduleEditDraft(original);
   assert.equal(draft.agentModel,'gpt-6-luna');assert.equal(draft.agentEffort,'high');
   assert.equal(draft.maxIterations,'10');
@@ -118,4 +118,25 @@ test('history inspection uses recorded deployment IDs and preserves original rec
   const result=scheduleJobs({jobs},'schedule-one',1);
   assert.equal(result.total,2);assert.deepEqual(result.jobs,[jobs[1]]);
   assert.deepEqual(jobs,before);
+});
+
+test('schedule editor accepts readable time and quantity fields while retaining revisions',()=>{
+  const original=deployment();
+  const interval=scheduleEditDraft(original);
+  interval.triggerType='interval';
+  interval.intervalAmount='45';
+  interval.intervalUnit='minutes';
+  const every45=scheduleUpdateFromDraft(original,interval);
+  assert.deepEqual(every45.trigger,{type:'interval',everySeconds:2700});
+  assert.equal(every45.expectedRevision,4);
+  const daily=scheduleEditDraft(original);
+  daily.triggerType='daily';daily.time='05:30';
+  assert.deepEqual(scheduleUpdateFromDraft(original,daily).trigger,
+    {type:'cron',expression:'30 5 * * *',timezone:'America/New_York'});
+  const weekly=scheduleEditDraft(original);
+  weekly.triggerType='weekly';weekly.time='18:00';weekly.weekday='5';
+  assert.deepEqual(scheduleUpdateFromDraft(original,weekly).trigger,
+    {type:'cron',expression:'0 18 * * 5',timezone:'America/New_York'});
+  interval.intervalAmount='0';
+  assert.throws(()=>scheduleUpdateFromDraft(original,interval),/interval/i);
 });
