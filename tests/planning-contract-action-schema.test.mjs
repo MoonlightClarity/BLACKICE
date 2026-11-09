@@ -68,6 +68,7 @@ test('native MCP describe delivers exact action fields and distinguishes the two
   const described = parsed(reply);
   assert.deepEqual(described.schema, f.advertised.inputSchema);
   assert.deepEqual(described.actionFields.plan, ['action', 'expectedRevision', 'contract']);
+  assert.deepEqual(described.actionFields.bind_receipt, ['action', 'expectedRevision', 'workItemId', 'criterionId', 'receiptBinding']);
   assert.deepEqual(described.actionFields.focus, ['action', 'expectedPlanEpoch', 'workItemId']);
   assert.deepEqual(described.actionFields.review, ['action']);
   assert.deepEqual(Object.keys(described.actionFields).sort(), [...described.schema.properties.action.enum].sort());
@@ -77,13 +78,13 @@ test('native MCP describe delivers exact action fields and distinguishes the two
   assert.match(described.note, /plan accepts only action, expectedRevision and contract/);
   assert.match(described.schema.properties.expectedPlanEpoch.description, /only for focus and assess/);
   assert.match(described.schema.properties.expectedPlanEpoch.description, /Omit this field.*including plan/);
-  assert.match(described.schema.properties.expectedRevision.description, /plan, checkpoint and artifact/);
+  assert.match(described.schema.properties.expectedRevision.description, /plan, bind_receipt, checkpoint and artifact/);
   assert.match(described.schema.properties.expectedRevision.description, /read.*only with view=contract/);
   assert.equal(described.schema.properties.contract.additionalProperties, false);
   assert.equal(Object.hasOwn(described.schema.properties.contract.properties, 'planEpoch'), false);
   assert.match(described.schema.properties.contract.description, /authorable canonical intent/);
   assert.match(described.schema.properties.contract.description, /Omit host-owned contract\.planEpoch/);
-  assert.match(described.note, /omit host-owned contract\.planEpoch even when copying a read contract/);
+  assert.match(described.note, /omit host-owned contract\.planEpoch/);
   assert.deepEqual(TASK_WORKER_TOOL.inputSchema, TASK_TOOL.inputSchema);
   assert.match(TASK_WORKER_TOOL.description, /plan accepts only action, expectedRevision and contract/);
   assert.equal(described.schema.oneOf, undefined);
