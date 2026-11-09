@@ -653,10 +653,14 @@ test('native text confirmation retains a real first-POST correlation before a bi
   assert.equal(confirmations(first).length, 0);
   const correlation = first.evidence.find(value => value.validation?.source === 'native-form-navigation');
   assert.equal(correlation.validation.correlation.requestId, 'actual-request');
+  assert.equal(correlation.resourceKey, fixture.descriptor.commit.destinationKey);
   assert.equal(first.effectState, 'unconfirmed');
   const commitment = { ...fixture.commitment, deliveryState: 'returned', evidence: first.evidence };
   const later = await nativeTextResult(fixture, { observation: { submissionCorrelations: [] }, commitments: [commitment] });
   const proof = confirmations(later)[0];
+  const observation = later.evidence.find(value => value.validation?.source === 'native-form-navigation');
+  assert.equal(observation.resourceKey, 'url:' + fixture.browserObservation.url);
+  assert.equal(observation.validation.correlation.destinationKey, fixture.descriptor.commit.destinationKey);
   assert.equal(confirmations(later).length, 1);
   assert.equal(proof.confirmation.effectKey, fixture.descriptor.commit.effectKey);
   assert.equal(proof.validation.source, 'host-correlated-native-form-text');

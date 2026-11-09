@@ -341,6 +341,30 @@ test('a relevant human change needs a newly delivered contract, while receipts a
   assert.equal((await f.send(call('relay_workspace', { action: 'read', path: 'input.txt' }))).success, true);
 });
 
+test('editing a downstream receipt step preserves its unchanged eligibility judgment', async t => {
+  const f = await fixture(t, { contract: ({ key }) => {
+    const value = draft([key]);
+    value.workItems[0].effects = ['observe'];
+    value.criteria.push({ id: 'receipt', kind: 'observation', description: 'Read the destination record.' });
+    value.workItems.push({ id: 'report', title: 'Check the result', objective: 'Read the observed result.', owner: 'coordinator',
+      resourceKeys: [key], effects: ['observe'], dependsOn: ['files'], criterionIds: ['receipt'] });
+    return value;
+  } });
+  assert.equal((await f.send(call('relay_task', { action: 'focus', workItemId: 'files', expectedPlanEpoch: 1 }))).success, true);
+  assert.equal((await f.send(call('relay_workspace', { action: 'read', path: 'input.txt' }))).success, true);
+  const journal = await readContractJournal(f.tasks, f.taskId);
+  assert.equal((await f.send(call('relay_task', { action: 'assess', workItemId: 'files', criterionId: 'checked', expectedPlanEpoch: 1,
+    judgment: 'satisfied', evidenceIds: journal.evidence.map(row => row.id), note: 'The retained input supports the assessment.' }))).success, true);
+  const state = body(await f.send(call('relay_task', { action: 'read' })));
+  const next = structuredClone(state.contract);
+  delete next.planEpoch;
+  next.workItems[1].objective = 'Read the exact destination record.';
+  assert.equal((await f.send(call('relay_task', { action: 'plan', expectedRevision: state.revision, contract: next }))).success, true);
+  const reviewed = await f.tasks.get(f.taskId);
+  assert.equal(reviewed.contract.planEpoch, 2);
+  assert.equal(reviewed.contractRuntime.criteria.find(row => row.id === 'checked').satisfied, true);
+});
+
 test('an accuracy-only material change invalidates awareness and prior judgments without creating evidence or authority', async t => {
   const f = await fixture(t, { contract: ({ key }) => {
     const value = draft([key]); value.criteria[0].accuracy = accuracyTarget(); value.workItems[0].effects = ['observe']; return value;
