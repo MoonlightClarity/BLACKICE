@@ -147,6 +147,18 @@ test('a scoped plan repair can extend completion after a real browser observatio
   assert.equal(await f.guard.before(open), null, 'the refined plan admits the observation through the normal host guard');
 });
 
+test('a denied tab inventory guides research to the authorized page without widening scope', async t => {
+  const url = 'https://jobs.ashbyhq.com/example', origin = 'origin:https://jobs.ashbyhq.com';
+  const f = await fixture(t, { contract: () => draft([origin]) });
+  const before = await readContractJournal(f.tasks, f.taskId);
+  const denied = await f.send(call('relay_browser', { action: 'tabs' }));
+  assert.equal(denied.code, 'TASK_CONTRACT_SCOPE');
+  assert.match(body(denied).resourceGuidance, /open that URL directly and read it using the returned tab ID/);
+  assert.deepEqual(await readContractJournal(f.tasks, f.taskId), before);
+  assert.equal(await f.guard.before(call('relay_browser', { action: 'open', url })), null);
+  assert.equal((await f.guard.before(call('relay_browser', { action: 'open', url: 'https://unrelated.example/' }))).code, 'TASK_CONTRACT_SCOPE');
+});
+
 test('a scope repair cannot repeat the same grant or use unrelated material edits as progress', async t => {
   const f = await fixture(t, { scope: 'file' });
   const target = 'input.txt', read = () => f.send(call('relay_workspace', { action: 'read', path: target }));
