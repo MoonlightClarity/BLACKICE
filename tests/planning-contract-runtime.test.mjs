@@ -299,12 +299,22 @@ test('assess accepts host-scoped evidence and rejects irrelevant positive citati
     value.criteria.push({ id: 'foreign', kind: 'judgment', resourceKey: 'workspace:/unrelated-workspace', description: 'Review another workspace.' });
     value.workItems[0].criterionIds.push('foreign');
     value.workItems.push({ ...structuredClone(value.workItems[0]), id: 'other-item', criterionIds: ['checked'] });
+    value.workItems.push({ ...structuredClone(value.workItems[0]), id: 'private-item', owner: 'another-worker', criterionIds: ['checked'] });
     return value;
   } });
   await f.send(call('relay_task', { action: 'focus', workItemId: 'files', expectedPlanEpoch: 1 }));
   await f.send(call('relay_workspace', { action: 'read', path: 'input.txt' }));
   const before = await readContractJournal(f.tasks, f.taskId), evidenceIds = before.evidence.map(row => row.id);
   const assess = extra => f.send(call('relay_task', { action: 'assess', workItemId: 'files', criterionId: 'checked', expectedPlanEpoch: 1, judgment: 'satisfied', evidenceIds, note: 'The supplied input supports this qualitative review.', ...extra }));
+  const wrongOwner = await assess({ workItemId: 'missing-item' });
+  assert.equal(wrongOwner.code, 'TASK_CONTRACT_OWNERSHIP');
+  assert.deepEqual(body(wrongOwner).recovery.assessments, [
+    { workItemId: 'files', criterionId: 'checked', evidenceIds },
+    { workItemId: 'other-item', criterionId: 'checked', evidenceIds: [] },
+  ]);
+  const missingEvidence = await assess({ evidenceIds: ['missing-evidence'] });
+  assert.equal(missingEvidence.code, 'TASK_CONTRACT_EVIDENCE_REQUIRED');
+  assert.deepEqual(body(missingEvidence).recovery.assessments[0], { workItemId: 'files', criterionId: 'checked', evidenceIds });
   for (const [extra, reason] of [[{ criterionId: 'foreign' }, /no retained host scope binding/], [{ workItemId: 'other-item' }, /belongs to work item files/]]) {
     const rejected = await assess(extra);
     assert.equal(rejected.success, false);
@@ -622,12 +632,17 @@ test('an adopted condition blocks the next commitment until this run records its
   } });
   await f.send(call('relay_task', { action: 'read' }));
   const submit = call('fixture_commit', { action: 'submit', target: 'after-current-check' });
-  assert.equal((await f.guard.before(submit)).code, 'TASK_CONTRACT_PREREQUISITE');
+  const denied = await f.guard.before(submit);
+  assert.equal(denied.code, 'TASK_CONTRACT_PREREQUISITE');
+  assert.deepEqual(body(denied).recovery.assessments, [{ workItemId: 'files', criterionId: 'checked', evidenceIds: [] }]);
   const observe = () => call('relay_workspace', { action: 'read', path: 'input.txt' });
   assert.equal((await f.send(observe())).success, true);
   const assess = evidenceId => call('relay_task', { action: 'assess', expectedPlanEpoch: planEpoch, workItemId: 'files',
     criterionId: 'checked', judgment: 'satisfied', note: 'Current fixture input satisfies the condition.', evidenceIds: [evidenceId] });
   const prior = await readContractJournal(f.tasks, f.taskId);
+  const observedDenial = await f.guard.before(submit);
+  assert.equal(observedDenial.code, 'TASK_CONTRACT_PREREQUISITE');
+  assert.deepEqual(body(observedDenial).recovery.assessments, [{ workItemId: 'files', criterionId: 'checked', evidenceIds: prior.evidence.map(row => row.id) }]);
   assert.equal((await f.send(assess(prior.evidence[0].id))).success, true);
   const first = await f.tasks.get(f.taskId);
   assert.equal(first.contractRuntime.criteria.find(row => row.id === 'checked').satisfied, true);
@@ -645,7 +660,9 @@ test('an adopted condition blocks the next commitment until this run records its
   const handler = createTaskToolHandler({ store: f.tasks, taskId: f.taskId, runId, nodeId: f.nodeId, schemaVersion: 14 });
   const read = call('relay_task', { action: 'read' });
   next.observeToolDelivery({ call: read, result: await handler(read) });
-  assert.equal((await next.before(submit)).code, 'TASK_CONTRACT_PREREQUISITE');
+  const staleDenial = await next.before(submit);
+  assert.equal(staleDenial.code, 'TASK_CONTRACT_PREREQUISITE');
+  assert.deepEqual(body(staleDenial).recovery.assessments, [{ workItemId: 'files', criterionId: 'checked', evidenceIds: [] }]);
   assert.equal((await readContractJournal(f.tasks, f.taskId)).records.length, prior.records.length);
 
   const inspection = observe();
