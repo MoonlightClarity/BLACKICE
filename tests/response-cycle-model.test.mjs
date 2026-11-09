@@ -333,6 +333,21 @@ test('final coverage needs exact answer excerpts, every criterion and current ef
   assert.equal(effect.evaluate().state, 'ready');
 });
 
+test('a verified internal observation does not require repeating file bookkeeping in the answer', () => {
+  const f = fixture('respond'), internal = criterion('answer', 'evidence');
+  const canonicalExecution = { sourceId: 'evidence', acceptanceCriteria: [internal],
+    contract: { criteria: [{ id: 'answer', kind: 'observation' }] }, criteria: [{ id: 'answer', satisfied: true }] };
+  const context = { ...f.context, canonicalExecution };
+  f.payload.coverage[0].responseExcerpt = 'Both named files were observed.';
+  const result = parseResponseCycleResponse(f.payload, 'respond', { cycleContext: context });
+  assert.equal(result.coverage[0].responseExcerpt, '');
+  const record = { ...f.record(), coverage: result.coverage };
+  assert.equal(f.evaluate(record, context).state, 'ready');
+  assert.equal(f.evaluate(record, { ...context, requiredAcceptanceCriteria: [internal] }).state, 'needs_evidence');
+  canonicalExecution.criteria[0].satisfied = false;
+  assert.equal(f.evaluate(record, context).state, 'needs_evidence');
+});
+
 test('invalid attempts to waive an applicable effect check are rejected by host criteria', () => {
   const f = fixture('think', { effects: true });
   f.payload.criterionResults[0].assessment = 'uncertain'; f.payload.criterionResults[0].sourceIds = [];

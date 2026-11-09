@@ -95,16 +95,38 @@ export function normalizePlanContractResponse(value, prerequisites = []) {
     }));
   };
   const decoded = decode(value, PLAN_CONTRACT_SCHEMA);
-  if (Array.isArray(decoded?.criteria) && Array.isArray(decoded.workItems)) {
+  if (prerequisites.length && Array.isArray(decoded?.criteria) && Array.isArray(decoded.workItems) &&
+      decoded.workItems.every(item => Array.isArray(item?.effects) && Array.isArray(item.criterionIds) && Array.isArray(item.dependsOn))) {
+    const committing = decoded.workItems.filter(item => item.effects.includes('commit') || item.effects.includes('opaque'));
+    let generated;
     for (const required of prerequisites) {
       const index = decoded.criteria.findIndex(item => item?.id === required.id);
-      if (index < 0 && !decoded.workItems.some(item => Array.isArray(item?.criterionIds) && item.criterionIds.includes(required.id))) continue;
+      if (!committing.length && index < 0 && !decoded.workItems.some(item => item.criterionIds.includes(required.id))) continue;
       const original = decoded.criteria[index];
-      const criterion = { ...original, id: required.id, kind: 'judgment', label: required.label, description: required.description };
+      const criterion = { ...original, id: required.id, kind: 'judgment', label: required.label, description: required.description, targetCount: 1 };
       if (required.accuracy) criterion.accuracy = required.accuracy;
       else delete criterion.accuracy;
       if (index < 0) decoded.criteria.push(criterion);
       else decoded.criteria[index] = criterion;
+      if (!committing.length) continue;
+      let owner = decoded.workItems.find(item => !committing.includes(item) && item.effects.includes('observe') && item.criterionIds.includes(required.id));
+      if (!owner) {
+        if (!generated) {
+          const basis = committing.find(item => item.criterionIds.includes(required.id)) || committing[0];
+          const taken = new Set(decoded.workItems.map(item => item.id));
+          let id = 'check-eligibility';
+          for (let suffix = 2; taken.has(id); suffix++) id = 'check-eligibility-' + suffix;
+          generated = { id, title: 'Check conditions before acting', objective: 'Assess the saved eligibility conditions from current relevant evidence.',
+            owner: basis.owner, resourceKeys: basis.resourceKeys, effects: ['observe'], dependsOn: [], criterionIds: [] };
+          decoded.workItems.push(generated);
+        }
+        owner = generated;
+        owner.criterionIds.push(required.id);
+      }
+      for (const item of committing) {
+        item.criterionIds = item.criterionIds.filter(id => id !== required.id);
+        if (!item.dependsOn.includes(owner.id)) item.dependsOn.push(owner.id);
+      }
     }
   }
   return normalizePlanContract(decoded);

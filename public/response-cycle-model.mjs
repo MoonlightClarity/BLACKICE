@@ -212,11 +212,18 @@ function criterionResults(value) {
   }), 'criterionId', 'Criterion results');
 }
 export function canonicalPlanSource(sources = []) { return sources.find(source => { if (!/^cycle:execution-contract:/.test(source?.id || '')) return false; try { const value = JSON.parse(source.text); return value.taskSchemaVersion === 14 && value.contractVersion === 2; } catch { return false; } }); }
+export function internalObservationCoverage(context, { criterionId, disposition }) {
+  const execution = context?.canonicalExecution;
+  if (disposition !== 'addressed' || !execution || execution.invalid || context.requiredAcceptanceCriteria?.some(criterion => criterion.id === criterionId)) return false;
+  const criterion = execution.contract?.criteria.find(item => item.id === criterionId);
+  return ['observation', 'source-coverage'].includes(criterion?.kind) &&
+    execution.criteria?.some(item => item.id === criterionId && item.satisfied) === true;
+}
 const BASE_KEYS = ['values', 'grounding', 'openQuestions', 'challengeResponses', 'userAgency'];
 const STAGE_KEYS = { viability: ['requirements'], inference: ['inferences'], plan: ['acceptanceCriteria', 'steps'], think: ['criterionResults'], respond: ['coverage'] };
 const COMMON_KEYS = ['checks', 'subproblems', 'childResults'];
 /** Parse model-authored findings only. Host sources, state and receipts are excluded. */
-export function parseResponseCycleResponse(output, stageOrKind, { sources,pipelineVersion=RESPONSE_CYCLE_PIPELINE_VERSION,requireUserAgency=false,commitPrerequisites } = {}) {
+export function parseResponseCycleResponse(output, stageOrKind, { sources,pipelineVersion=RESPONSE_CYCLE_PIPELINE_VERSION,requireUserAgency=false,cycleContext } = {}) {
   const stage = responseCycleStage(stageOrKind,{pipelineVersion}), template = responseCycleTemplate(stage.kind,{pipelineVersion});
   let value = output;
   if (typeof value === 'string') {
@@ -259,7 +266,7 @@ export function parseResponseCycleResponse(output, stageOrKind, { sources,pipeli
   }), 'id', 'Inferences');
   if (stage.kind === 'plan') {
     if (canonicalPlan) {
-      result.contract = normalizePlanContractResponse(value.contract, commitPrerequisites);
+      result.contract = normalizePlanContractResponse(value.contract, cycleContext?.commitPrerequisites);
       const projected = contractPlanProjection(result.contract, [canonicalPlanSource(sources).id]);
       for (const key of ['acceptanceCriteria', 'steps']) if (value[key] !== undefined && canonical(value[key]) !== canonical(projected[key])) throw fail('The supplied ' + key + ' disagrees with the canonical contract. These views are host-derived.');
       Object.assign(result, projected);
@@ -269,7 +276,10 @@ export function parseResponseCycleResponse(output, stageOrKind, { sources,pipeli
   if (stage.kind === 'respond') result.coverage = unique(array(value.coverage, 'Final outcome coverage', RESPONSE_CYCLE_LIMITS.criteria).map(item => {
     const fields = ['criterionId', 'disposition', 'sourceIds', 'responseExcerpt', 'limitation']; allowed(item, fields, 'Coverage record', fields);
     const disposition = choice(item.disposition, ['addressed', 'partial', 'unresolved'], 'Coverage disposition');
-    return { criterionId: id(item.criterionId, 'Criterion ID'), disposition, sourceIds: strings(item.sourceIds, 'Answer evidence', 100, disposition === 'addressed' ? 1 : 0), responseExcerpt: text(item.responseExcerpt, 'Exact excerpt from the final answer', 2000, true), limitation: text(item.limitation, 'Disclosed limitation', 2000, disposition !== 'addressed') };
+    const responseExcerpt = text(item.responseExcerpt, 'Exact excerpt from the final answer', 2000, disposition !== 'addressed');
+    return { criterionId: id(item.criterionId, 'Criterion ID'), disposition, sourceIds: strings(item.sourceIds, 'Answer evidence', 100, disposition === 'addressed' ? 1 : 0),
+      responseExcerpt: internalObservationCoverage(cycleContext, item) && !values.answer?.includes(responseExcerpt) ? '' : responseExcerpt,
+      limitation: text(item.limitation, 'Disclosed limitation', 2000, disposition !== 'addressed') };
   }), 'criterionId', 'Final outcome coverage');
   return sources === undefined ? result : validatePlanningReadableFindings(result, sources);
 }
@@ -482,7 +492,7 @@ export function evaluateResponseCycleStage(stageOrKind, response, context = {}) 
       for (const sourceId of coverage.sourceIds) reference(sourceId);
       const criterion = hostCriteria.find(item => item.id === coverage.criterionId), finding = evaluatedCriteria.find(item => item.criterionId === coverage.criterionId);
       if (!criterion || !finding) result.issues.push('Final coverage needs a current assessed plan criterion.');
-      if (!value.values.answer?.includes(coverage.responseExcerpt)) result.issues.push('A coverage excerpt is absent from the final answer.');
+      if (coverage.responseExcerpt ? !value.values.answer?.includes(coverage.responseExcerpt) : !internalObservationCoverage(context, coverage)) result.issues.push('A coverage excerpt is absent from the final answer.');
       // responseExcerpt is the exact public passage for this criterion. Its
       // limitation may restate the same gap in different words; requiring both
       // strings verbatim rejected honest partial answers after real execution.
@@ -531,7 +541,7 @@ export function responseCycleInstructions(stageOrKind,{pipelineVersion=RESPONSE_
     stage.kind === 'think' ? 'A guest verification receipt attests execution of its exact recorded script and the captured comparisons. Inspect that script and its observations against the criterion: a literal success value, authored assertion or command exit code alone does not establish the requested real-world effect. If the verification did not actually inspect the effect, keep the criterion uncertain even when a receipt exists.' : '',
     stage.kind === 'think' || stage.kind === 'respond' ? effectReportingGuidance : '',
     stage.kind === 'think' || stage.kind === 'respond' ? 'When a canonical execution snapshot is supplied, its current planEpoch, criteria, host evidence and outcome accounting are authoritative. The earlier accepted Plan is immutable authoring provenance. Report only achievements supported by the current host criterion rows; unique confirmed outcomes exclude prior, unlinked and duplicate records. Unresolved admitted effects remain uncertain even when other criteria are satisfied.' : '',
-    stage.kind === 'respond' ? 'Deliver the full answer in values.answer. It is published verbatim as the assistant reply to the original human user, not as a review for another worker. Address the user directly. The execution projection userDelivery identifies the original request and the operational candidate reply; retain supported useful content from that reply and revise only what the recorded results require. Do not replace a direct answer or clarification question with a third-person assessment of the recorded output, instructions to the owning agent, or a plan to ask the question later. If a genuinely missing answer warrants interruption under the calculated user-cost comparison, ask the necessary question directly in this answer; a required field or residual uncertainty alone does not justify it. For every criterion, copy a responseExcerpt verbatim from the answer. For a partial or unresolved criterion, that excerpt must tell the user what remains incomplete or uncertain; limitation may restate the same gap in different words and need not appear verbatim. Never upgrade a failed or uncertain effect to an achieved outcome.' : '',
+    stage.kind === 'respond' ? 'Deliver the full answer in values.answer. It is published verbatim as the assistant reply to the original human user, not as a review for another worker. Address the user directly. The execution projection userDelivery identifies the original request and the operational candidate reply; retain supported useful content from that reply and revise only what the recorded results require. Do not replace a direct answer or clarification question with a third-person assessment of the recorded output, instructions to the owning agent, or a plan to ask the question later. If a genuinely missing answer warrants interruption under the calculated user-cost comparison, ask the necessary question directly in this answer; a required field or residual uncertainty alone does not justify it. Copy a responseExcerpt verbatim for each user-facing outcome. For an internal observation already verified by the host, use an empty responseExcerpt if the user did not ask you to report the observation. For a partial or unresolved criterion, that excerpt must tell the user what remains incomplete or uncertain; limitation may restate the same gap in different words and need not appear verbatim. Never upgrade a failed or uncertain effect to an achieved outcome.' : '',
     stage.kind !== 'viability' ? 'Request only bounded useful subproblems. The host binds children, enforces recursion budgets and derives their state. Aggregate required terminal child results using their current supplied result source IDs; do not manufacture child completion.' : ''
   ].filter(Boolean).join('\n');
 }

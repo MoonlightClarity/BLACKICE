@@ -95,8 +95,8 @@ export function validateModuleValues(kind,values={},options={}) {
   for(const [id,value]of Object.entries(values))normalized[id]=text(value,'Response field '+id,PLANNING_BROWSER_LIMITS.fieldChars);
   return {values:normalized,missingFields:schema.fields.filter(item=>item.required&&!normalized[item.id]).map(item=>item.id)};
 }
-export function parseModuleResponse(output,kind,{sources,pipelineVersion,requireUserAgency=false,commitPrerequisites}={}) {
-  if (['inference','plan','think','respond'].includes(kind)) return parseResponseCycleResponse(output,kind,{sources,pipelineVersion,requireUserAgency,commitPrerequisites});
+export function parseModuleResponse(output,kind,{sources,pipelineVersion,requireUserAgency=false,cycleContext}={}) {
+  if (['inference','plan','think','respond'].includes(kind)) return parseResponseCycleResponse(output,kind,{sources,pipelineVersion,requireUserAgency,cycleContext});
   let value=output;
   if(typeof output==='string'){
     if(output.length>PLANNING_BROWSER_LIMITS.responseChars)throw planningBrowserError('Response exceeds its storage bound.');

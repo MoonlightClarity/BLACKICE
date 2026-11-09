@@ -198,12 +198,14 @@ test('automatic canonical handoff delivers the same city tolerance and guidance 
   assert.deepEqual(f.adoptedTask.contractRuntime.outcomes, []);
 });
 
-test('a commitment condition survives Feasibility and the host rejects an unguarded Plan', { timeout: 20000 }, async t => {
+test('the host separates an eligibility condition from a commitment even if the model groups them', { timeout: 20000 }, async t => {
   const f = await fixture(t, { mode: 'automatic', conditional: 'combined' });
-  assert.equal(f.run.errorCode, 'PLANNING_RESPONSE_FORMAT');
-  assert.match(f.run.error, /make every committing item wait/);
-  assert.deepEqual(f.calls.map(call => call.input.module.kind), ['inference', 'viability', 'plan', 'plan']);
-  assert.equal(f.operationalCalls, 0);
+  assert.equal(f.run.errorCode, 'FIXTURE_STOP_AFTER_HANDOFF', f.run.error);
+  assert.deepEqual(f.calls.map(call => call.input.module.kind), ['inference', 'viability', 'plan']);
+  assert.equal(f.operationalCalls, 1);
+  const items = f.adoptedTask.contract.workItems, check = items.find(item => item.criterionIds.includes('authorized-city'));
+  assert.deepEqual(check.effects, ['observe']);
+  assert.deepEqual(items.find(item => item.effects.includes('commit')).dependsOn, [check.id]);
   assert.equal(f.journal.records.length, 0);
 });
 
@@ -213,7 +215,7 @@ test('an adopted prerequisite remains required through an operational edit', { t
   assert.deepEqual(f.adoptedTask.contractAdoption.commitPrerequisiteIds, ['authorized-city']);
   assert.ok(f.adoptedTask.contractAdoption.requiredCriterionIds.includes('authorized-city'));
   assert.deepEqual(f.adoptedTask.contract.criteria.find(criterion => criterion.id === 'authorized-city'), {
-    id: 'authorized-city', kind: 'judgment', label: 'Authorized city alternatives', description: 'Authorized city alternatives',
+    id: 'authorized-city', kind: 'judgment', label: 'Authorized city alternatives', description: 'Authorized city alternatives', targetCount: 1,
     accuracy: requiredCriteria[1].accuracy
   });
   assert.equal(f.task.contract.workItems.find(item => item.effects.includes('commit')).dependsOn[0], 'inspect-prerequisite');
