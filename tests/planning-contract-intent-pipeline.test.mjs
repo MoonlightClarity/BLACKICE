@@ -191,6 +191,7 @@ test('automatic canonical handoff delivers the same city tolerance and guidance 
   const f = await fixture(t, { mode: 'automatic' });
   assert.equal(f.run.status, 'failed'); assert.equal(f.run.errorCode, 'FIXTURE_STOP_AFTER_HANDOFF', f.run.error);
   assert.equal(f.operationalCalls, 1); assert.deepEqual(f.toolCalls, [['relay_task', 'read']]);
+  assert.equal(f.run.nodes.agent.planning.goalStatus, 'active', 'Reading the adopted plan cannot erase the active goal.');
   assertIntentAndProofBoundary(f.adoptedTask.contract);
   assert.equal(f.task.contractAdoption.planRef.responseId, f.run.responseCycle.planRef.responseId);
   assert.equal(f.adoptedTask.contractRuntime.criteria.find(item => item.id === 'applications-confirmed').observedCount, 0);
