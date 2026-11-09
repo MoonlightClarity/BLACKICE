@@ -88,7 +88,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     workflowFields:$('next-tasks-workflow-fields'),chatFields:$('next-tasks-chat-fields'),
     attachments:$('next-tasks-attachments')};
   const add=(parent,tag,label,cls)=>text(parent,label,tag,cls);
-  let active=false,busy=false,revision=0,subscriptions=null,refreshTimer=null,snapshot=null,mutationError='';
+  let active=false,busy=false,revision=0,subscriptions=null,refreshTimer=null,snapshot=null,mutationError='',scheduleProgress='';
   let workflowList=[],workflowLimit=80,workflowQuery='',workflowEpoch=0,workflowTimer=null,workflowLoaded=false,workflowLoading=false;
   let section='board',jobsLimit=35,selectedScheduleId=null,scheduleMode='inspect',editSource=null,editForm=null,editNotice=null;
   const readinessBySchedule=new Map();
@@ -219,30 +219,67 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     const check=readinessFor(task);if(!check)return;
     const section=add(parent,'section','','next-schedule-readiness');section.dataset.scheduleReadinessState=check.state;section.dataset.scheduleReadinessFor=task.id;
     add(section,'h4','Task readiness');
-    const labels={ready:'The recorded check has no unresolved essential inputs.',awaiting_input:'Essential facts are still needed.',needs_evidence:'The check needs usable source evidence.',stale:'The saved check needs to be refreshed.',recorded:'A readiness check is recorded in Planning.'};
-    add(section,'p',labels[check.state]||'Review the saved readiness check.','next-help');
+    const labels={ready:'Ready to run.',awaiting_input:'BLACKICE needs an answer before this task can run.',needs_evidence:'BLACKICE needs to verify the source material before this task can run.',check_failed:'The check could not finish.',stale:'The saved check needs to be refreshed.',recorded:'A readiness check is recorded in Planning.'};
+    add(section,'p',check.canRun&&check.state!=='ready'?'This task can start. BLACKICE will check the remaining details during the run.':labels[check.state]||'Review the saved readiness check.','next-help');
     if(check.question)add(section,'p',check.question,'next-help next-schedule-readiness-question');
     if(check.requestId){
       const open=add(section,'button','Open readiness in Planning');open.type='button';open.dataset.scheduleReadinessOpen=task.id;
       open.addEventListener('click',()=>onNavigate?.('planning',{requestId:check.requestId,nodeId:check.nodeId||'viability'}));
     }
   }
-  async function checkReadiness(task){
-    if(busy)return;busy=true;mutationError='';revision++;paint();
+  async function requestReadiness(task){
+    scheduleProgress='Checking what this task needs before it can run…';paint();
+    const graph=await api('/api/operations/deployments/'+encodeURIComponent(task.id)+'/readiness','POST',{});
+    if(!graph?.id||!Array.isArray(graph.nodes))throw Error('The readiness check did not return its saved Planning request.');
+    const nodeId=graph.viability?.nodeId||'viability',node=graph.nodes.find(item=>item.id===nodeId),finding=node?.readiness?.viability;
+    const state=graph.viability?.recoveryIssue?'needs_evidence':finding?.state||node?.readiness?.state||'needs_evidence';
+    const question=graph.viability?.recoveryIssue?.message||(state==='awaiting_input'?(finding?.blockingFacts||[]).map(fact=>fact.question+(fact.consequence?'\n'+fact.consequence:'')).join('\n\n'):(finding?.issues||[]).join('\n'));
+    if(graph.viabilityAction?.deployment)rememberReadiness(graph.viabilityAction.deployment);
+    await refresh();
+    const saved=(snapshot?.deployments||[]).find(item=>item.id===task.id)||graph.viabilityAction?.deployment||task;
+    readinessBySchedule.set(task.id,{state,canRun:graph.viabilityAction?.canRun,requestId:graph.id,nodeId,question,deploymentRevision:saved.revision});
+    selectedScheduleId=task.id;scheduleMode='inspect';editSource=null;editForm=null;editNotice=null;
+    return graph.viabilityAction?.canRun??(state==='ready');
+  }
+  async function checkReadiness(task,{run=false}={}){
+    if(busy)return;
+    busy=true;mutationError='';revision++;
+    let checking=!run;
+    const start=()=>{
+      scheduleProgress='Requesting a run…';paint();
+      return api('/api/operations/deployments/'+encodeURIComponent(task.id)+'/trigger','POST',{idempotencyKey});
+    };
+    const idempotencyKey=run?globalThis.crypto.randomUUID():null;
     try{
-      const graph=await api('/api/operations/deployments/'+encodeURIComponent(task.id)+'/readiness','POST',{});
-      if(!graph?.id||!Array.isArray(graph.nodes))throw Error('The readiness check did not return its saved Planning request.');
-      const nodeId=graph.viability?.nodeId||'viability',node=graph.nodes.find(item=>item.id===nodeId),finding=node?.readiness?.viability;
-      const state=graph.viability?.recoveryIssue?'needs_evidence':finding?.state||node?.readiness?.state||'needs_evidence';
-      const question=graph.viability?.recoveryIssue?.message||(state==='awaiting_input'?(finding?.blockingFacts||[]).map(fact=>fact.question+(fact.consequence?'\n'+fact.consequence:'')).join('\n\n'):(finding?.issues||[]).join('\n'));
-      if(graph.viabilityAction?.deployment)rememberReadiness(graph.viabilityAction.deployment);
-      await refresh();
-      const saved=(snapshot?.deployments||[]).find(item=>item.id===task.id)||graph.viabilityAction?.deployment||task;
-      readinessBySchedule.set(task.id,{state,requestId:graph.id,nodeId,question,deploymentRevision:saved.revision});
-      selectedScheduleId=task.id;scheduleMode='inspect';editSource=null;editForm=null;editNotice=null;
-      notify(state==='ready'?'Readiness check recorded.':'Readiness check recorded. Review the remaining questions or source recovery.');
-    }catch(error){mutationError=error.message;notify(error.message,true);}
-    finally{busy=false;if(active)paint();}
+      if(run){
+        try{await start();}
+        catch(error){
+          // These rejections occur before a job is saved. Never retry an uncertain request.
+          if(!['TASK_VIABILITY_REQUIRED','TASK_VIABILITY_STALE','TASK_VIABILITY_BLOCKED'].includes(error.code))throw error;
+          checking=true;
+          if(!await requestReadiness(task)){
+            mutationError='The job did not start. Review what the task needs below.';
+            notify(mutationError);return;
+          }
+          checking=false;
+          await start();
+        }
+        mutationError='Run requested. Follow it in Job history.';
+        await refresh();notify(mutationError);
+      }else{
+        const ready=await requestReadiness(task);
+        notify(ready?'This task is ready to run.':'Review what the task needs before it can run.');
+      }
+    }catch(error){
+      if(error.code==='TASK_VIABILITY_INFERENCE_FAILED'||/invalid_json_schema/i.test(error.message)){
+        mutationError='BLACKICE could not finish checking this task. Your schedule is still saved. No job was started.';
+      }else if(run&&!checking&&error.uncertain){
+        mutationError='BLACKICE could not confirm the run. Check Job history before trying again.';
+      }else{
+        mutationError=checking?'The readiness check could not finish. '+(error.cause?.message||error.message):error.message;
+      }
+      notify(mutationError,true);
+    }finally{scheduleProgress='';busy=false;if(active)paint();}
   }
   function readinessButton(parent,task){
     const check=add(parent,'button','Check readiness');check.type='button';check.disabled=busy;check.dataset.scheduleReadiness=task.id;
@@ -526,7 +563,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     const status=snapshot.status||{},enabled=status.paused!==true;
     view.pause.disabled=!enabled||busy;
     view.resume.disabled=enabled||busy;
-    view.info.textContent=mutationError|| (status.healthy===false?status.error||'Task storage needs attention.'
+    view.info.textContent=scheduleProgress||mutationError|| (status.healthy===false?status.error||'Task storage needs attention.'
       :status.paused?'Schedules paused: '+(status.pauseReason||'manual pause')
       :status.blockedReason?'Dispatch blocked: '+status.blockedReason
       :status.ticker?.state==='stale'?'Scheduler heartbeat stale. Last successful tick: '+humanTime(status.ticker.lastSuccessAt)
@@ -555,7 +592,8 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       }));
       const triggerButton=add(controls,'button','Run now');
       triggerButton.type='button';triggerButton.disabled=busy;triggerButton.dataset.scheduleTrigger=task.id;
-      triggerButton.addEventListener('click',()=>void execute('/api/operations/deployments/'+encodeURIComponent(task.id)+'/trigger','POST',{}));
+      triggerButton.title=task.enabled?'Run this task once now.':'Run once without enabling future runs.';
+      triggerButton.addEventListener('click',()=>void checkReadiness(task,{run:true}));
       readinessButton(controls,task);
       showReadiness(card,task);
       const removal=add(card,'details','','next-help');

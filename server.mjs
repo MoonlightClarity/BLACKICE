@@ -1440,7 +1440,8 @@ export async function createHarnessServer(options = {}) {
       // deliberate reload. Do not expose arbitrary internal/provider codes.
       const emailRegistrationConflict = error.status === 409 && error.code === 'EMAIL_OAUTH_REVISION_CONFLICT' && ['/api/email/oauth/config', '/api/email/oauth/begin'].includes(pathname);
       const emailDeliveryError = /^\/api\/email\/(?:compose|send|deliveries(?:\/[a-zA-Z0-9_-]+)?)$/.test(pathname) && typeof error.code === 'string' && /^[A-Z0-9_]{1,100}$/.test(error.code);
-      if (!res.headersSent) json(res, error.status || (/not found/i.test(error.message) ? 404 : 400), { error: error.message, ...(emailRegistrationConflict ? { code: 'EMAIL_OAUTH_REVISION_CONFLICT' } : emailDeliveryError || pathname === '/api/chatgpt-connector/prepare' && error.code === 'REMOTE_TAILSCALE_MISSING' ? { code: error.code } : {}) });
+      const scheduleReadinessError = /^\/api\/operations\/deployments(?:\/[A-Za-z0-9_-]+(?:\/(?:readiness|trigger))?)?$/.test(pathname) && /^TASK_VIABILITY_[A-Z_]+$/.test(error.code || '');
+      if (!res.headersSent) json(res, error.status || (/not found/i.test(error.message) ? 404 : 400), { error: error.message, ...(emailRegistrationConflict ? { code: 'EMAIL_OAUTH_REVISION_CONFLICT' } : emailDeliveryError || scheduleReadinessError || pathname === '/api/chatgpt-connector/prepare' && error.code === 'REMOTE_TAILSCALE_MISSING' ? { code: error.code } : {}) });
       else res.end();
     }
   });

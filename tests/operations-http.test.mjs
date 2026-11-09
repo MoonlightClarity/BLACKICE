@@ -14,7 +14,7 @@ const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;})
 const until=async(check,label='HTTP operation condition')=>{const end=Date.now()+7000;while(Date.now()<end){const result=await check();if(result)return result;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail(`${label} did not settle`);};
 const workflow=(planningMode='off')=>({id:'http-operation-workflow',name:'HTTP deployed worker',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Worker',prompt:'Write the isolated fixture result and independently read it.',model:'http-fixture-model'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode}});
 class Desktop extends EventEmitter{status(){return{available:false,enabled:false};}async setEnabled(){return this.status();}}
-async function fixture(t,{execute,maxConcurrentRuns=4,planningMode='off'}={}){
+async function fixture(t,{execute,readinessFailure,maxConcurrentRuns=4,planningMode='off'}={}){
   const directory=await mkdtemp(path.join(tmpdir(),'relay-operations-http-')),dataDir=path.join(directory,'data'),cwd=path.join(directory,'workspace'),calls=[],readinessCalls=[],apps=[];
   let app,url,cookie;
   class Runtime extends EventEmitter{
@@ -23,6 +23,7 @@ async function fixture(t,{execute,maxConcurrentRuns=4,planningMode='off'}={}){
       if(options.responseOnly){
         const captured=JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2));
         readinessCalls.push({ ...options, stage: captured.module.kind });
+        if (readinessFailure) throw readinessFailure;
         return {output:JSON.stringify(fixtureDeploymentReadiness(captured)),threadId:'fixture-readiness',turnId:'fixture-readiness-turn'};
       }
       const index=calls.push(options);
@@ -76,6 +77,47 @@ test('scheduled Chat configurations persist model, planning, execution and conte
   assert.equal(restored.workflow.settings.planningEnforcement,'forced');
   assert.equal(restored.workflow.nodes.find(node=>node.type==='agent').context.windowTokens,65536);
   assert.equal(f.calls.length,0,'Saving a disabled Chat schedule does not execute the agent');
+});
+
+test('a disabled schedule can pass readiness and run once without enabling recurrence', async t => {
+  const f = await fixture(t);
+  const draft = await f.create({ enabled: false, trigger: { type: 'interval', everySeconds: 1800 } });
+  const route = '/api/operations/deployments/' + draft.id;
+  const post = action => f.request(route + '/' + action, { method: 'POST', body: {} });
+
+  const blocked = await post('trigger');
+  assert.equal(blocked.status, 409);
+  assert.equal(blocked.data.code, 'TASK_VIABILITY_REQUIRED');
+  assert.equal((await f.request('/api/operations')).data.jobs.length, 0);
+  assert.equal(f.calls.length, 0);
+
+  const checked = await post('readiness');
+  assert.equal(checked.status, 200, JSON.stringify(checked.data));
+  assert.equal(checked.data.viabilityAction.canRun, true);
+  assert.equal(checked.data.viabilityAction.deployment.enabled, false);
+  assert.deepEqual(f.readinessCalls.map(call => call.stage), ['inference', 'viability']);
+  assert.equal(f.calls.length, 0, 'Checking readiness alone does not run the scheduled work.');
+
+  const admitted = await post('trigger');
+  assert.equal(admitted.status, 202, JSON.stringify(admitted.data));
+  assert.equal(admitted.data.source, 'manual');
+  await until(() => f.app.operations.getJob(admitted.data.id).status === 'completed');
+  const state = (await f.request('/api/operations')).data;
+  assert.deepEqual(state.jobs.map(job => job.id), [admitted.data.id]);
+  assert.equal(state.deployments.find(item => item.id === draft.id).enabled, false);
+  assert.equal(f.calls.length, 1);
+});
+
+test('a readiness error while enabling reports the saved disabled draft', async t => {
+  const f = await fixture(t, { readinessFailure: Error('invalid_json_schema: uniqueItems') });
+  const draft = await f.create({ trigger: { type: 'interval', everySeconds: 1800 } });
+  assert.equal(draft.enabled, false);
+  assert.equal(draft.readiness.state, 'check_failed');
+  assert.match(draft.readiness.question, /Future runs are off/);
+  assert.doesNotMatch(draft.readiness.question, /invalid_json_schema|uniqueItems/);
+  const state = (await f.request('/api/operations')).data;
+  assert.deepEqual(state.deployments.map(item => item.id), [draft.id]);
+  assert.equal(state.jobs.length, 0);
 });
 
 test('authenticated HTTP config reports exact webhook URLs and requires explicit replay of unknown sends',async t=>{

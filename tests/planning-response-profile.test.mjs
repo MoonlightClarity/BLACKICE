@@ -8,6 +8,8 @@ import {CodexRuntime} from '../lib/codex.mjs';
 import {ProviderRuntime} from '../lib/providers.mjs';
 import {PLANNING_RESPONSE_DISABLED_FEATURES,planningResponseFeatureConfig,verifyPlanningResponseBoundary,normalizeOutputSchema} from '../lib/response-profile.mjs';
 import {planningSkillInstructions,PLANNING_SKILL_CONTENT} from '../lib/planning-skill.mjs';
+import { planningModuleOutputSchema } from '../lib/planning-browser-runtime.mjs';
+import { responseCycleTemplate } from '../public/response-cycle-model.mjs';
 
 const schema={type:'object',additionalProperties:false,properties:{answer:{type:'string'}},required:['answer']};
 const answer='{"answer":"Actual public synthetic result"}';
@@ -111,6 +113,28 @@ async function apiFixture(t,{toolCall=false,type='openai'}={}){
 test('Responses API receives the exact structured schema and no operational tools',async t=>{
   const f=await apiFixture(t);const result=await f.runtime.runAgent(f.options);assert.equal(result.output,answer);assert.equal(f.requests.filter(request => request.body).length,1);
   const body=f.requests.find(request => request.body).body;assert.equal(body.model,'exact-model');assert.deepEqual(body.tools,[]);assert.equal(body.tool_choice,'none');assert.deepEqual(body.text.format.schema,schema);assert.equal(body.text.format.strict,true);
+});
+
+test('Codex and the Responses API send the actual Planning schema without its unsupported uniqueness keyword', async t => {
+  const attempt = { node: { kind: 'viability' }, template: responseCycleTemplate('viability'),
+    userAgencyVersion: 1, sources: [], challenges: [], workflowNodeIds: [] };
+  const original = planningModuleOutputSchema(attempt);
+  const expected = structuredClone(original);
+  const blockedIds = schema => schema.properties.userAgency.properties.decisions.items.properties.input
+    .properties.hardConstraints.items.properties.blockedOptionIds;
+  assert.equal(blockedIds(original).uniqueItems, true);
+  delete blockedIds(expected).uniqueItems;
+
+  const native = nativeFixture(t);
+  assert.equal((await native.run({ outputSchema: original })).output, answer);
+  assert.deepEqual(native.requests.find(request => request.method === 'turn/start').params.outputSchema, expected);
+
+  const api = await apiFixture(t);
+  assert.equal((await api.runtime.runAgent({ ...api.options, outputSchema: original })).output, answer);
+  const format = api.requests.find(request => request.body).body.text.format;
+  assert.equal(format.strict, true);
+  assert.deepEqual(format.schema, expected);
+  assert.equal(blockedIds(original).uniqueItems, true, 'host validation retains the original uniqueness requirement');
 });
 
 test('invented API tool calls are rejected before callbacks, without a fallback or another provider step',async t=>{

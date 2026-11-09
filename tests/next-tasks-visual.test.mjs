@@ -361,6 +361,59 @@ test('an explicit schedule readiness check preserves disabled state and links th
   assert.equal(f.calls.some(call=>call.path.endsWith('/trigger')),false);
 });
 
+test('Run now checks a draft and admits one job without enabling recurrence',async t=>{
+  let triggerCalls=0;
+  const f=fixture(t,{hook:async(call,{schedule})=>{
+    if(call.path.endsWith('/trigger')&&++triggerCalls===1)throw Object.assign(Error('Readiness required'),{code:'TASK_VIABILITY_REQUIRED'});
+    if(call.path.endsWith('/readiness')){
+      schedule.revision++;
+      const graph=readinessGraph(schedule,'ready');
+      graph.viabilityAction.canRun=true;
+      return graph;
+    }
+    if(call.path.endsWith('/trigger'))return{id:'new-job',status:'queued'};
+  }});f.component.enter();await settle();await f.clickReady('#next-tasks-tab-schedules');
+  await f.clickReady('[data-schedule-trigger="schedule-a"]');
+  const actions=f.calls.filter(call=>call.method==='POST');
+  assert.deepEqual(actions.map(call=>call.path.split('/').at(-1)),['trigger','readiness','trigger']);
+  assert.ok(actions[0].payload.idempotencyKey);
+  assert.equal(actions[2].payload.idempotencyKey,actions[0].payload.idempotencyKey);
+  assert.equal(f.schedule.enabled,false);
+  assert.match(f.$('#next-tasks-info').textContent,/Run requested.*Job history/);
+});
+
+test('Run now shows the actual missing fact and does not send a second trigger',async t=>{
+  const f=fixture(t,{hook:async(call,{schedule})=>{
+    if(call.path.endsWith('/trigger'))throw Object.assign(Error('Readiness required'),{code:'TASK_VIABILITY_REQUIRED'});
+    if(call.path.endsWith('/readiness'))return readinessGraph(schedule);
+  }});f.component.enter();await settle();await f.clickReady('#next-tasks-tab-schedules');
+  await f.clickReady('[data-schedule-trigger="schedule-a"]');
+  assert.equal(f.calls.filter(call=>call.path.endsWith('/trigger')).length,1);
+  assert.match(f.$('#next-tasks-info').textContent,/job did not start/);
+  assert.match(f.$('#next-tasks-schedule-detail').textContent,/Which address should the report use/);
+});
+
+test('Run now explains a failed readiness check without leaking provider details',async t=>{
+  const f=fixture(t,{hook:async call=>{
+    if(call.path.endsWith('/trigger'))throw Object.assign(Error('Readiness required'),{code:'TASK_VIABILITY_REQUIRED'});
+    if(call.path.endsWith('/readiness'))throw Object.assign(Error('invalid_json_schema: uniqueItems'),{code:'TASK_VIABILITY_INFERENCE_FAILED'});
+  }});f.component.enter();await settle();await f.clickReady('#next-tasks-tab-schedules');
+  await f.clickReady('[data-schedule-trigger="schedule-a"]');
+  const message=f.$('#next-tasks-info').textContent;
+  assert.match(message,/could not finish checking.*schedule is still saved.*No job was started/);
+  assert.doesNotMatch(message,/invalid_json_schema|uniqueItems/);
+  assert.equal(f.calls.filter(call=>call.path.endsWith('/trigger')).length,1);
+});
+
+test('an uncertain Run now response is never retried or mistaken for a readiness rejection',async t=>{
+  const f=fixture(t,{hook:async call=>{
+    if(call.path.endsWith('/trigger'))throw Object.assign(Error('Connection timed out'),{uncertain:true});
+  }});f.component.enter();await settle();await f.clickReady('#next-tasks-tab-schedules');
+  await f.clickReady('[data-schedule-trigger="schedule-a"]');
+  assert.deepEqual(f.calls.filter(call=>call.method==='POST').map(call=>call.path.split('/').at(-1)),['trigger']);
+  assert.match(f.$('#next-tasks-info').textContent,/Check Job history before trying again/);
+});
+
 test('a blocked Enable shows returned factual questions and never claims the schedule was enabled',async t=>{
   const f=fixture(t,{hook:async(call,{schedule})=>{
     if(call.path==='/api/operations/deployments/schedule-a'&&call.method==='PUT'){
