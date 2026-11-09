@@ -131,6 +131,51 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
     }
     el(disclosure, 'p', ontology.note, 'next-help next-plan-ontology-note');
   }
+  function canonicalOntology(parent, ontology, state) {
+    const disclosure = el(parent, 'details', '', 'next-plan-ontology');
+    disclosure.open = state.ontologyOpen !== false;
+    el(disclosure, 'summary', 'Work, permissions, and evidence', 'next-plan-ontology-summary');
+    disclosure.addEventListener('toggle', () => { state.ontologyOpen = disclosure.open; });
+    el(disclosure, 'p', ontology.note, 'next-help next-plan-ontology-note');
+    if (!ontology.runtimeCurrent) el(disclosure, 'p', 'Evidence for this plan version is not available yet.', 'next-help');
+    const grid = el(disclosure, 'div', '', 'next-plan-ontology-grid');
+    const work = el(grid, 'section', '', 'next-plan-ontology-lane');
+    const evidence = el(grid, 'section', '', 'next-plan-ontology-lane');
+    el(work, 'h3', 'Planned work');
+    el(evidence, 'h3', 'What counts as evidence');
+    const workTitles = new Map(ontology.nodes.map(item => [item.id, item.title]));
+    const criterionTitles = new Map(ontology.criteria.map(item => [item.id, item.title]));
+    const rowText = (row, content) => el(row, 'p', content, 'next-help next-plan-ontology-type next-plan-detail-text');
+    for (const item of ontology.nodes) {
+      const row = el(work, 'div', '', 'next-plan-ontology-item');
+      el(row, 'strong', item.title, 'next-plan-detail-text');
+      badge(row, item.statusLabel, item.status === 'blocked' ? 'failed' : item.status);
+      if (item.objective) rowText(row, item.objective);
+      if (item.dependsOn.length) rowText(row, 'Depends on ' + item.dependsOn.map(id => workTitles.get(id)).filter(Boolean).join(', '));
+      if (item.criterionIds.length) rowText(row, 'Checks ' + item.criterionIds.map(id => criterionTitles.get(id)).filter(Boolean).join(', '));
+      if (item.permissions.length) {
+        const label = item.scoped ? 'Allowed in this plan' : 'Allowed across the listed resources';
+        el(row, 'strong', label, 'next-plan-ontology-type next-plan-detail-text');
+        const list = el(row, 'ul', '', 'next-plan-ontology-type next-plan-detail-text');
+        for (const permission of item.permissions) {
+          const confirmation = criterionTitles.get(permission.confirmationCriterionId);
+          const resources = permission.resources.length ? ' on ' + permission.resources.join(', ') : '';
+          el(list, 'li', permission.label + resources + (confirmation ? ' · Confirmation needs ' + confirmation : ''));
+        }
+      }
+      if (item.unresolvedCount) rowText(row, item.unresolvedCount === 1 ? 'One action still needs an effect check.' : item.unresolvedCount + ' actions still need an effect check.');
+    }
+    for (const criterion of ontology.criteria) {
+      const row = el(evidence, 'div', '', 'next-plan-ontology-item');
+      el(row, 'strong', criterion.title, 'next-plan-detail-text');
+      badge(row, criterion.satisfied ? 'Met' : 'Pending evidence', criterion.satisfied ? 'done' : 'pending');
+      if (criterion.description !== criterion.title) rowText(row, criterion.description);
+      rowText(row, criterion.label + ' · ' + criterion.observedCount + ' of ' + criterion.targetCount + ' ' + criterion.unit);
+      if (criterion.resource) rowText(row, 'Source ' + criterion.resource);
+      if (criterion.evidenceCount) rowText(row, criterion.evidenceCount === 1 ? 'One supporting record' : criterion.evidenceCount + ' supporting records');
+      if (criterion.receipt) rowText(row, criterion.receipt);
+    }
+  }
   function progress(parent, done, total, label) {
     const row = el(parent, 'div', '', 'next-plan-progress');
     const meter = el(row, 'progress', ''); meter.max = Math.max(1, total || 0); meter.value = done || 0;
@@ -388,8 +433,11 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
     if (!full) return;
     const draft = draftFor(full), editable = plan.bucket !== 'deleted' && plan.editable !== false && !detailError && Number.isSafeInteger(draft.base.revision), state = sessionFor(plan);
     const canonical = isPlanContractTask(draft.latest);
-    const savedProgress = draft.latest.progress || taskPlanView(draft.latest).progress;
+    const ontology = canonical ? projectPlanningOntology(draft.latest) : null;
+    const savedProgress = ontology ? { total: ontology.nodes.length, done: ontology.nodes.filter(item => item.status === 'satisfied').length }
+      : draft.latest.progress || taskPlanView(draft.latest).progress;
     progress(box, savedProgress.done || 0, savedProgress.total || 0, (savedProgress.done || 0) + ' of ' + (savedProgress.total || 0) + (canonical ? ' work items complete' : ' planned steps done'));
+    if (ontology) canonicalOntology(box, ontology, state);
     if (!canonical) {
     recordedOntology(box, draft.latest, state);
     // Decision policies are first-class saved Planning metadata, not implicit

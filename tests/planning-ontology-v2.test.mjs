@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { createPlanningWorkspace } from '../public/next/workspaces/planning.mjs';
+import { planningDOM } from './fixture-planning-dom.mjs';
 const root = new URL('../', import.meta.url);
 const module = async path => import(new URL(path, root).href);
 const visual = await module('public/next/workspaces/planning-visual.mjs');
@@ -157,6 +159,81 @@ test('standalone technical work and unfinished analytical judgment remain distin
   assert.equal(projected.lanes.unclassified.length,1);
   assert.ok(projected.edges.some(edge=>edge.kind==='depends_on' && edge.from==='analysis' && edge.to==='tech'));
   assert.ok(!projected.edges.some(edge=>edge.kind==='supports'));
+});
+
+function releasePlan() {
+  const local = 'workspace:c:/release', portal = 'origin:https://registry.test';
+  const goal = 'Review and release a package';
+  return { taskId: 'release-plan', revision: 3, goal, steps: [],
+    contract: { contractVersion: 2, planEpoch: 1, goal, instructions: [],
+      workItems: [
+        { id: 'test', title: 'Check the release tests', objective: 'Read the test report.', owner: 'agent', resourceKeys: [local], effects: ['observe'], dependsOn: [], criterionIds: ['assessment'] },
+        { id: 'release', title: 'Release the package', objective: 'Prepare and publish the reviewed package.', owner: 'agent', resourceKeys: [local, portal], effects: ['observe', 'commit'], dependsOn: ['test'], criterionIds: ['receipt'], operationScopes: [
+          { effect: 'observe', resourceKeys: [local, portal] }, { effect: 'commit', resourceKeys: [portal], confirmationCriterionId: 'receipt' },
+        ] },
+      ],
+      criteria: [
+        { id: 'assessment', kind: 'judgment', label: 'Tests support a release', description: 'Check the reviewed test results.', resourceKey: local },
+        { id: 'receipt', kind: 'external-confirmation', label: 'Registry receipt', description: 'Find one confirmation from the registry.', resourceKey: portal, receiptBinding: { format: 'json', confirmedValues: ['published'], status: 'INTERNAL_SELECTOR' } },
+      ] },
+    contractRuntime: { version: 1, planEpoch: 1, workItems: [{ id: 'test', status: 'satisfied' }, { id: 'release', status: 'running', unresolvedCount: 1 }],
+      criteria: [{ id: 'assessment', satisfied: true, observedCount: 1, evidenceIds: ['PRIVATE_RECORD_ID'] }, { id: 'receipt', satisfied: false, observedCount: 0 }],
+      operations: [{ workItemId: 'release', success: true, effectState: 'unconfirmed', rawResult: 'PRIVATE_RESULT' }],
+    },
+  };
+}
+
+test('canonical ontology separates scoped permissions, checked criteria and confirmed outcomes', () => {
+  const saved = releasePlan(), before = structuredClone(saved);
+  const view = ontology.projectPlanningOntology(saved);
+  assert.equal(view.kind, 'canonical');
+  assert.equal(view.runtimeCurrent, true);
+  assert.deepEqual(view.nodes.map(node => [node.id, node.status, node.scoped]), [['test', 'satisfied', false], ['release', 'running', true]]);
+  assert.deepEqual(view.nodes[1].permissions.map(row => [row.effect, row.resources, row.confirmationCriterionId]), [
+    ['observe', ['c:/release', 'https://registry.test'], null], ['commit', ['https://registry.test'], 'receipt'],
+  ]);
+  assert.deepEqual(view.edges, [
+    { kind: 'checks', from: 'test', to: 'assessment' }, { kind: 'depends_on', from: 'release', to: 'test' },
+    { kind: 'checks', from: 'release', to: 'receipt' },
+  ]);
+  assert.deepEqual(view.criteria.map(row => [row.satisfied, row.observedCount, row.evidenceCount]), [[true, 1, 1], [false, 0, 0]]);
+  assert.match(view.criteria[1].receipt, /confirmation in the destination’s reply/);
+  assert.doesNotMatch(JSON.stringify(view), /PRIVATE_|INTERNAL_SELECTOR/);
+  assert.deepEqual(saved, before);
+
+  saved.contract.planEpoch++;
+  const revised = ontology.projectPlanningOntology(saved);
+  assert.equal(revised.runtimeCurrent, false);
+  assert.ok(revised.nodes.every(row => row.status === 'pending' && row.unresolvedCount === 0));
+  assert.ok(revised.criteria.every(row => !row.satisfied && row.observedCount === 0));
+});
+
+test('current Planning displays canonical work and evidence without adding edit controls', async t => {
+  const dom = planningDOM(t), saved = releasePlan(), calls = [];
+  const prototype = Object.getPrototypeOf(dom.mount);
+  Object.defineProperty(prototype, 'type', { get() { return this.getAttribute('type'); }, set(value) { this.setAttribute('type', value); }, configurable: true });
+  prototype.replaceChildren = function (...nodes) { for (const child of [...this.children]) child.remove(); this.rawText = ''; this.append(...nodes); };
+  const ui = createPlanningWorkspace({ mount: dom.mount, events: { subscribe: () => () => {} }, api: async (route, method = 'GET') => {
+    calls.push(method);
+    if (route.startsWith('/api/planning?')) return { plans: [{ taskId: saved.taskId, goal: saved.goal, revision: saved.revision, bucket: 'active' }] };
+    if (route === '/api/tasks/release-plan') return structuredClone(saved);
+    throw Error('Unexpected route ' + route);
+  } });
+  t.after(() => ui.destroy());
+  dom.$('#next-planning-type').value = 'conversation';
+  ui.enter();
+  await new Promise(resolve => setImmediate(resolve));
+  const summary = dom.$('.next-plan-ontology');
+  assert.ok(summary?.open);
+  assert.match(summary.textContent, /Work, permissions, and evidence/);
+  assert.match(summary.textContent, /Depends on Check the release tests/);
+  assert.match(summary.textContent, /Make the final change on https:\/\/registry\.test · Confirmation needs Registry receipt/);
+  assert.match(summary.textContent, /Registry receiptPending evidence/);
+  assert.match(summary.textContent, /0 of 1 new confirmations/);
+  assert.match(summary.textContent, /One action still needs an effect check/);
+  assert.equal(summary.querySelectorAll('button, input, select, textarea').length, 0);
+  assert.doesNotMatch(dom.mount.textContent, /no steps yet/);
+  assert.ok(calls.every(method => method === 'GET'));
 });
 
 test('Planning final CSS neutralizes prototype blue and wraps long analytical text', () => {
