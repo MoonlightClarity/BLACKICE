@@ -407,3 +407,22 @@ test('human scheduling controls create exact repeating intervals and reveal cron
   assert.equal(form.querySelector('[data-schedule-for="cron"]').hidden,false);
   assert.equal(form.querySelector('[data-schedule-for="interval"]').hidden,true);
 });
+
+test('editing clock-aligned cron shows readable timing before any technical expression',async t=>{
+  const f=fixture(t);
+  f.schedule.trigger={type:'cron',expression:'*/15 * * * *',timezone:'America/New_York'};
+  f.component.enter();await settle();await f.clickReady('#next-tasks-tab-schedules');
+  assert.match(f.$('#next-tasks-deployments').textContent,/Every 15 minutes/);
+  await f.clickReady('[data-schedule-inspect="schedule-a"]');
+  await f.clickReady('[data-schedule-edit-open="schedule-a"]');
+  const form=f.$('[data-schedule-edit="schedule-a"]');
+  assert.equal(form.elements.triggerType.value,'cron');
+  assert.equal(form.querySelector('[name=expression]').closest('label').hidden,true);
+  assert.match(form.textContent,/Current timing: Every 15 minutes/);
+  const technical=[...form.querySelectorAll('button')].find(b=>b.textContent==='Edit advanced cron expression');
+  assert.ok(technical);
+  await f.clickReady(technical);
+  assert.equal(form.querySelector('[name=expression]').closest('label').hidden,false);
+  assert.equal(form.elements.expression.value,'*/15 * * * *');
+  assert.equal(f.calls.some(c=>c.method!=='GET'),false);
+});

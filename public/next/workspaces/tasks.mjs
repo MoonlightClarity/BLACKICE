@@ -239,10 +239,15 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       outboundType.addEventListener('change',showOutbound);showOutbound();
       add(form,'p','Opt-in external delivery sends the saved result excerpt and outcome. Previously admitted jobs retain their original destination.','next-help');
       const recurrence=scheduleDraftFromTrigger(original.trigger,'America/New_York');
+      const existingCustom=original.trigger?.type==='cron'&&recurrence.trigger==='cron';
       const triggerControl=scheduleField(form,'When','triggerType',recurrence.trigger,{tag:'select',choices:[
         ['interval','Every interval'],['daily','Every day'],['weekdays','Weekdays'],['weekly','Every week'],
-        ['cron','Custom schedule (advanced)'],['manual','Only when I run it'],['webhook','When a webhook arrives']
+        ['cron',existingCustom?'Keep existing timing':'Custom schedule (advanced)'],
+        ['manual','Only when I run it'],['webhook','When a webhook arrives']
       ]});
+      const cronSummary=add(form,'p','Current timing: '+scheduleTriggerLabel(original.trigger),'next-help');
+      const cronToggle=add(form,'button','Edit advanced cron expression');cronToggle.type='button';
+      let showCronSyntax=!existingCustom;
       const cronExpression=scheduleField(form,'Advanced cron expression (five fields)','expression',draft.expression);
       const timezone=scheduleField(form,'Timezone','timezone',draft.timezone);
       const intervalAmount=scheduleField(form,'Repeat every','intervalAmount',recurrence.intervalAmount,{type:'number'});
@@ -257,7 +262,10 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       ]});
       const updateTriggerFields=()=>{
         const kind=triggerControl.value,calendar=['daily','weekdays','weekly'].includes(kind),repeating=kind==='interval';
-        cronExpression.parentElement.hidden=kind!=='cron';
+        cronExpression.parentElement.hidden=!(kind==='cron'&&showCronSyntax);
+        cronToggle.hidden=kind!=='cron'||!existingCustom;
+        cronToggle.textContent=showCronSyntax?'Hide advanced cron expression':'Edit advanced cron expression';
+        cronSummary.hidden=kind!=='cron'||!existingCustom;
         timezone.parentElement.hidden=!(calendar||kind==='cron');
         intervalAmount.parentElement.hidden=intervalUnit.parentElement.hidden=!repeating;
         intervalNote.hidden=!repeating;
@@ -265,6 +273,10 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
         atTime.parentElement.hidden=!calendar;
         weekday.parentElement.hidden=kind!=='weekly';
       };
+      cronToggle.addEventListener('click',()=>{
+        showCronSyntax=!showCronSyntax;
+        updateTriggerFields();
+      });
       triggerControl.addEventListener('change',updateTriggerFields);updateTriggerFields();
       scheduleField(form,'Overlap handling','overlap',draft.overlap,{tag:'select',choices:[['skip','Skip while busy'],['queue','Queue each occurrence'],['parallel','Allow parallel runs']]});
       scheduleField(form,'Automatic retry attempts (0-3)','maxAttempts',draft.maxAttempts,{type:'number'});
