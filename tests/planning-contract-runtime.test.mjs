@@ -399,6 +399,8 @@ test('a required form label or counterparty preference cannot end an adopted goa
     source: evidenceIds[0], observedViolation: 'The site displays a format preference.', blockedOptionIds: ['proceed'],
   });
   assert.equal((await f.send(call('relay_task', { ...args, userAgency: preference }))).code, 'USER_AGENCY_HOLD_EVIDENCE');
+  preference.decisions[0].input.hardConstraints[0].kind = 'user_constraint';
+  assert.equal((await f.send(call('relay_task', { ...args, userAgency: preference }))).code, 'USER_AGENCY_HOLD_EVIDENCE');
   assert.equal((await readContractJournal(f.tasks, f.taskId)).judgments.length, 0);
   assert.equal(contractCompletionStatus(await f.tasks.get(f.taskId), journal).ready, false);
 

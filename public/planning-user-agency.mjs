@@ -182,11 +182,13 @@ export function verifyOperationalHold(value, { evidence, criterionId, requiredCr
   const observed = new Map(evidence.map(item => [item.id, item]));
   for (const constraint of decision.input.hardConstraints) {
     const source = observed.get(constraint.source);
-    const pinnedUserConstraint = constraint.kind === 'user_constraint' && constraint.source === 'criterion:' + criterionId && requiredCriterionIds.includes(criterionId);
-    if (!source && !pinnedUserConstraint)
-      throw fail('A binding constraint needs the ID of cited evidence from this work item, or its exact required user criterion.', 'USER_AGENCY_HOLD_EVIDENCE');
-    if (constraint.kind === 'verified_requirement' && source?.kind !== 'validation' && source?.confirmation?.status !== 'absent')
+    const pinnedUserConstraint = constraint.source === 'criterion:' + criterionId && requiredCriterionIds.includes(criterionId);
+    if (constraint.kind === 'user_constraint') {
+      if (!pinnedUserConstraint)
+        throw fail('A user constraint must name this exact user-required criterion. An outside preference cannot establish user authority.', 'USER_AGENCY_HOLD_EVIDENCE');
+    } else if (source?.kind !== 'validation' && source?.confirmation?.status !== 'absent') {
       throw fail('A counterparty preference or required field label is insufficient to disqualify proceeding. Compare the actual user consequences, or cite an observed rejection.', 'USER_AGENCY_HOLD_EVIDENCE');
+    }
   }
   return checkpoint;
 }
