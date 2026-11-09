@@ -66,6 +66,17 @@ test('current Plan guidance selects attainable proof families and preserves dele
   assert.equal(responseCycleStage('plan',{pipelineVersion:1}).checks.find(item=>item.id==='outcome_covered').label,'Connect every acceptance criterion to proposed work');
 });
 
+test('current Planning guidance preserves conditional prerequisites and supports contextual inference', () => {
+  for (const stage of RESPONSE_CYCLE_STAGES) {
+    const prompt = responseCycleInstructions(stage.kind);
+    assert.match(prompt, /A minimum that applies when a value is disclosed does not require the value to be disclosed/);
+    assert.match(prompt, /Interpret the whole relevant description before treating a condition as unknown/);
+    assert.match(prompt, /Check for contrary evidence and label an inference distinctly from an explicit statement/);
+    assert.match(prompt, /A missing phrase alone is insufficient, and contrary duties or policies override the inference/);
+    assert.match(prompt, /Keep independently required counts, identities and receipt evidence exact/);
+  }
+});
+
 test('execution mode is caller-neutral, exact and optional only when omitted', () => {
   assert.equal(planningExecutionModeOf(undefined), undefined);
   assert.equal(planningExecutionModeOf('automatic'), 'automatic');
