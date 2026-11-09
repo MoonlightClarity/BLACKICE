@@ -4,7 +4,7 @@ import { taskAccuracySchema, validateTaskAccuracy } from '../public/task-viabili
 import { parseResponseCycleResponse, responseCycleStage } from '../public/response-cycle-model.mjs';
 import {
   PLAN_CONTRACT_VERSION, PLAN_CONTRACT_SCHEMA, PLAN_CONTRACT_LIMITS, CONTRACT_AUTHORING_GUIDANCE, CONTRACT_INSTRUCTIONS,
-  normalizePlanContract, normalizePlanContractResponse, isPlanContractTask, contractPlanProjection,
+  normalizePlanContract, normalizePlanContractResponse, planContractResponseSchema, workItemOperationScopes, isPlanContractTask, contractPlanProjection,
 } from '../public/planning-contract-model.mjs';
 
 const draft = () => ({
@@ -37,16 +37,76 @@ const accuracyTarget = () => ({ mode: 'exact', tolerance: 'No unverified outcome
   evidenceNeeded: 'Matching host-observed destination confirmations.', consequence: 'An inaccurate count would misstate completion.',
   unknownPolicy: 'block', stopWhen: 'The declared target is established by the retained evidence.' });
 
-test('an operational browser commit gets a receipt criterion when the model supplied only a judgment', () => {
+test('a new Plan does not infer confirmation criteria from a work item capability', () => {
   const input = draft(), item = input.workItems[0];
   item.resourceKeys = ['origin:https://example.test'];
   input.criteria[1].kind = 'judgment';
   const result = normalizePlanContractResponse(input, [], { requireBrowserReceipts: true });
-  const proof = result.criteria.find(criterion => criterion.kind === 'external-confirmation');
-  assert.equal(proof.id, 'confirm-form');
-  assert.equal(proof.receiptBinding, undefined);
-  assert.deepEqual(result.workItems[0].criterionIds, ['submitted', proof.id]);
-  assert.deepEqual(result.workItems[1], normalizePlanContract(input).workItems[1]);
+  assert.deepEqual(result, normalizePlanContract(input));
+
+  item.resourceKeys.push('workspace:/registry');
+  item.effects = ['observe', 'opaque'];
+  item.operationScopes = [
+    { effect: 'observe', resourceKeys: ['origin:https://example.test'] },
+    { effect: 'opaque', resourceKeys: ['workspace:/registry'] },
+  ];
+  assert.deepEqual(normalizePlanContractResponse(input, [], { requireBrowserReceipts: true }), normalizePlanContract(input));
+
+  delete item.operationScopes;
+  input.criteria.push({ id: 'confirm-form', kind: 'external-confirmation', description: 'Historical confirmation criterion.' });
+  item.criterionIds.push('confirm-form');
+  assert.deepEqual(normalizePlanContract(input).criteria.at(-1), input.criteria.at(-1));
+});
+
+const withOperationScopes = () => {
+  const input = draft(), item = input.workItems[0];
+  const [first] = item.resourceKeys, second = 'web:https://example.test/tenant/b/submit';
+  input.criteria.push({ id: 'submitted-b', kind: 'external-confirmation', description: 'Receive confirmation from destination B.', resourceKey: second });
+  item.resourceKeys.push(second);
+  item.criterionIds.push('submitted-b');
+  item.operationScopes = [
+    { effect: 'observe', resourceKeys: [first, second] },
+    { effect: 'interact', resourceKeys: [first, second] },
+    { effect: 'commit', resourceKeys: [first], confirmationCriterionId: 'submitted' },
+    { effect: 'commit', resourceKeys: [second], confirmationCriterionId: 'submitted-b' },
+  ];
+  return input;
+};
+
+test('typed operation scopes preserve distinct destinations and support legacy work items', () => {
+  const input = withOperationScopes();
+  const [form, history] = normalizePlanContract(input).workItems;
+  assert.deepEqual(form.operationScopes, input.workItems[0].operationScopes);
+  assert.deepEqual(workItemOperationScopes(form, 'commit'), form.operationScopes.slice(2));
+  assert.deepEqual(workItemOperationScopes(form, 'opaque'), []);
+  assert.equal(Object.hasOwn(history, 'operationScopes'), false);
+  assert.deepEqual(workItemOperationScopes(history, 'observe'), [{ effect: 'observe', resourceKeys: history.resourceKeys }]);
+  assert.deepEqual(workItemOperationScopes(history, 'commit'), []);
+  const schema = planContractResponseSchema().properties.workItems.items;
+  assert.ok(schema.required.includes('operationScopes'));
+  assert.ok(schema.properties.operationScopes.anyOf.some(branch => branch.type === 'null'));
+  input.workItems[0].operationScopes[0].confirmationCriterionId = null;
+  input.workItems[1].operationScopes = null;
+  assert.deepEqual(normalizePlanContractResponse(input).workItems, [form, history]);
+});
+
+test('typed operation scopes cannot widen authority or name an unrelated proof', () => {
+  for (const [alter, message] of [
+    [item => { item.operationScopes = item.operationScopes.slice(0, 2); }, /cover every declared/],
+    [item => item.operationScopes[1].effect = 'opaque', /declared work item effect/],
+    [item => item.operationScopes[0].resourceKeys.push('origin:https://unrelated.test'), /declared work item resource keys/],
+    [item => item.operationScopes[0].confirmationCriterionId = 'submitted', /Only commit scopes/],
+    [item => delete item.operationScopes[2].confirmationCriterionId, /valid stable identifier/],
+    [item => item.operationScopes[2].confirmationCriterionId = 'history-read', /external-confirmation criterion owned/],
+    [item => item.operationScopes[2].confirmationCriterionId = 'external-elsewhere', /external-confirmation criterion owned/],
+    [item => { item.criterionIds.push('history-read'); item.operationScopes[2].confirmationCriterionId = 'history-read'; }, /external-confirmation criterion owned/],
+  ]) {
+    const input = withOperationScopes();
+    input.criteria.push({ id: 'external-elsewhere', kind: 'external-confirmation', description: 'A different work item owns this confirmation.' });
+    input.workItems[1].criterionIds.push('external-elsewhere');
+    alter(input.workItems[0]);
+    assert.throws(() => normalizePlanContract(input), { code: 'TASK_CONTRACT_INVALID', message });
+  }
 });
 
 test('a browser work item shares its existing page-read scope with its same-owner eligibility prerequisite', () => {
@@ -67,6 +127,40 @@ test('a browser work item shares its existing page-read scope with its same-owne
   assert.deepEqual(item('form').resourceKeys, submit.resourceKeys);
 });
 
+test('typed browser page propagation takes only planned commit scopes and preserves explicitly scoped readers', () => {
+  const input = draft(), [form] = input.workItems;
+  const target = 'origin:https://submit.example.test', research = 'origin:https://research.example.test';
+  const workspace = 'workspace:/registry';
+  form.resourceKeys = [target, research, workspace];
+  form.effects.push('opaque');
+  form.operationScopes = [
+    { effect: 'observe', resourceKeys: [target, research] },
+    { effect: 'interact', resourceKeys: [target] },
+    { effect: 'commit', resourceKeys: [target], confirmationCriterionId: 'submitted' },
+    { effect: 'opaque', resourceKeys: [workspace] },
+  ];
+  for (const id of ['eligibility', 'typed-reader']) {
+    input.criteria.push({ id, kind: 'judgment', description: 'Assess eligibility from the observed records.' });
+    input.workItems.push({ id, title: 'Inspect eligibility', objective: 'Read the relevant source.', owner: form.owner,
+      resourceKeys: [workspace], effects: ['observe'], dependsOn: [], criterionIds: [id] });
+    form.dependsOn.push(id);
+  }
+  input.workItems.at(-1).operationScopes = [{ effect: 'observe', resourceKeys: [workspace] }];
+  const result = normalizePlanContractResponse(input, [], { requireBrowserReceipts: true });
+  assert.deepEqual(result.workItems[2].resourceKeys, [workspace, target, 'browser:relay']);
+  assert.deepEqual(result.workItems[3].resourceKeys, [workspace]);
+});
+
+test('a generated prerequisite does not inherit typed commit-only resources', () => {
+  const input = withOperationScopes(), [form] = input.workItems;
+  form.operationScopes[0].resourceKeys = [form.resourceKeys[0]];
+  const condition = { id: 'eligible', label: 'Eligibility', description: 'Check the saved eligibility conditions.' };
+  const result = normalizePlanContractResponse(input, [condition]);
+  const prerequisite = result.workItems.find(item => item.criterionIds.includes(condition.id));
+  assert.deepEqual(prerequisite.resourceKeys, form.operationScopes[0].resourceKeys);
+  assert.ok(result.workItems[0].dependsOn.includes(prerequisite.id));
+});
+
 test('attachment repair keeps exact scopes and does not give an attachment-set scope to another owner', () => {
   const input = draft(), [form, history] = input.workItems;
   const exact = 'attachment:sha256:' + 'a'.repeat(64), other = 'attachment:sha256:' + 'b'.repeat(64);
@@ -81,6 +175,21 @@ test('attachment repair keeps exact scopes and does not give an attachment-set s
   const result = normalizePlanContractResponse(input, [], options);
   assert.deepEqual(result.workItems[0].resourceKeys, form.resourceKeys);
   assert.deepEqual(result.workItems[1].resourceKeys, ['file:history.csv', exact, attachmentSet]);
+});
+
+test('typed attachment repair grants the current host attachment set only for observation', () => {
+  const input = withOperationScopes(), [form] = input.workItems;
+  const exact = 'attachment:sha256:' + 'a'.repeat(64), stale = 'attachment:sha256:' + 'b'.repeat(64);
+  const attachmentSet = 'attachments:' + 'c'.repeat(64);
+  const options = { attachedReadScope: { resourceKey: attachmentSet, files: [{ resourceKey: exact }] } };
+  form.resourceKeys.push(stale);
+  form.operationScopes[0].resourceKeys.push(stale);
+  form.operationScopes[1].resourceKeys.push(stale);
+  const result = normalizePlanContractResponse(input, [], options).workItems[0];
+  assert.deepEqual(result.resourceKeys, [...form.resourceKeys, attachmentSet]);
+  assert.deepEqual(workItemOperationScopes(result, 'observe')[0].resourceKeys,
+    [...form.operationScopes[0].resourceKeys.filter(key => key !== stale), attachmentSet]);
+  assert.deepEqual(workItemOperationScopes(result, 'interact')[0], form.operationScopes[1]);
 });
 
 test('canonical model null markers preserve optionality without weakening host receipt rules', () => {

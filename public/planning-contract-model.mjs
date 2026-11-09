@@ -3,7 +3,7 @@ import { taskAccuracySchema, validateTaskAccuracy, TASK_ACCURACY_SCOPE_GUIDANCE 
 // Canonical intent contract. This pure module is shared by host validation and UI.
 // Operation receipts and evidence never become model-authored plan fields.
 export const PLAN_CONTRACT_VERSION = 2;
-export const PLAN_CONTRACT_LIMITS = Object.freeze({ workItems: 80, criteria: 40, instructions: 80, resources: 32, receiptBindings: 8, chars: 120000 });
+export const PLAN_CONTRACT_LIMITS = Object.freeze({ workItems: 80, criteria: 40, instructions: 80, resources: 32, operationScopes: 64, receiptBindings: 8, chars: 120000 });
 export const CONTRACT_EFFECTS = Object.freeze(['observe', 'interact', 'commit', 'opaque']);
 const clone = value => structuredClone(value);
 const object = value => Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -50,7 +50,12 @@ export const PLAN_CONTRACT_SCHEMA = Object.freeze(obj({
     effects: { ...arraySchema({ type: 'string', enum: CONTRACT_EFFECTS }, CONTRACT_EFFECTS.length, 1), description: 'Declare task-authorized effects needed inside this work item\'s listed resources. Include observe for its own verification and recovery. Include opaque when authorized browser behavior cannot be classified before dispatch; this does not expand resource access or bypass dependencies, evidence requirements or uncertain-effect protection.' },
     dependsOn: arraySchema(identifier, PLAN_CONTRACT_LIMITS.workItems),
     criterionIds: arraySchema(identifier, PLAN_CONTRACT_LIMITS.criteria, 1),
-  }), PLAN_CONTRACT_LIMITS.workItems, 1),
+    operationScopes: { ...arraySchema(obj({
+      effect: { type: 'string', enum: CONTRACT_EFFECTS },
+      resourceKeys: arraySchema(textSchema(2048), PLAN_CONTRACT_LIMITS.resources, 1),
+      confirmationCriterionId: identifier,
+    }, ['effect', 'resourceKeys']), PLAN_CONTRACT_LIMITS.operationScopes, 1), description: 'Assign each declared effect only to the listed work-item resources it needs. Each planned commit scope names the external-confirmation criterion owned by this work item. Other scopes omit confirmationCriterionId.' },
+  }, ['id', 'title', 'objective', 'owner', 'resourceKeys', 'effects', 'dependsOn', 'criterionIds']), PLAN_CONTRACT_LIMITS.workItems, 1),
   instructions: arraySchema(obj({
     id: identifier, text: textSchema(4000), handling: { type: 'string', enum: ['preserve', 'audit'] },
   }), PLAN_CONTRACT_LIMITS.instructions),
@@ -116,8 +121,12 @@ export function normalizePlanContractResponse(value, prerequisites = [], { requi
           const taken = new Set(decoded.workItems.map(item => item.id));
           let id = 'check-eligibility';
           for (let suffix = 2; taken.has(id); suffix++) id = 'check-eligibility-' + suffix;
+          const typed = Object.hasOwn(basis, 'operationScopes');
+          const readKeys = typed
+            ? [...new Set(workItemOperationScopes(basis, 'observe').flatMap(scope => scope.resourceKeys))] : basis.resourceKeys;
+          if (typed && !readKeys.length) throw fail('Give the eligibility prerequisite its own observation work item with resources for the saved conditions.');
           generated = { id, title: 'Check conditions before acting', objective: 'Assess the saved eligibility conditions from current relevant evidence.',
-            owner: basis.owner, resourceKeys: basis.resourceKeys, effects: ['observe'], dependsOn: [], criterionIds: [] };
+            owner: basis.owner, resourceKeys: readKeys, effects: ['observe'], dependsOn: [], criterionIds: [] };
           decoded.workItems.push(generated);
         }
         owner = generated;
@@ -130,52 +139,55 @@ export function normalizePlanContractResponse(value, prerequisites = [], { requi
     }
   }
   if (requireBrowserReceipts && Array.isArray(decoded?.criteria) && Array.isArray(decoded.workItems)) {
-    const ids = new Set(decoded.criteria.map(criterion => criterion?.id));
     const judgments = new Set(decoded.criteria.filter(criterion => criterion?.kind === 'judgment').map(criterion => criterion.id));
-    const receiptIds = new Set(decoded.criteria.filter(criterion => criterion?.kind === 'external-confirmation').map(criterion => criterion.id));
     const byId = new Map(decoded.workItems.map(item => [item?.id, item]));
     for (const item of decoded.workItems) {
-      if (!Array.isArray(item?.effects) || !item.effects.includes('commit') || !Array.isArray(item.criterionIds) || !Array.isArray(item.resourceKeys) ||
-          !item.resourceKeys.some(key => /^(?:(?:origin|url):https?:|destination:|form:|document:|tab:|browser:relay$)/.test(key))) continue;
-      if (item.effects.includes('observe') && Array.isArray(item.dependsOn)) {
-        const pageScopes = item.resourceKeys.filter(key => /^(?:origin|url):https?:\/\//.test(key));
-        for (const id of item.dependsOn) {
-          const prerequisite = byId.get(id);
-          if (!pageScopes.length || prerequisite?.owner !== item.owner || !Array.isArray(prerequisite.effects) ||
-              prerequisite.effects.some(effect => effect === 'commit' || effect === 'opaque') || !prerequisite.effects.includes('observe') ||
-              !Array.isArray(prerequisite.resourceKeys) || !Array.isArray(prerequisite.criterionIds) ||
-              !prerequisite.criterionIds.some(id => judgments.has(id))) continue;
-          const scopes = [...new Set([...prerequisite.resourceKeys, ...pageScopes, 'browser:relay'])];
-          prerequisite.resourceKeys = scopes.slice(0, PLAN_CONTRACT_LIMITS.resources);
-        }
+      if (!Array.isArray(item?.effects) || !item.effects.includes('observe') || !Array.isArray(item.dependsOn) ||
+          !Array.isArray(item.resourceKeys)) continue;
+      const pageScopes = workItemOperationScopes(item, 'commit').flatMap(scope => scope.resourceKeys)
+        .filter(key => typeof key === 'string' && /^(?:origin|url):https?:\/\//.test(key));
+      if (!pageScopes.length) continue;
+      for (const id of item.dependsOn) {
+        const prerequisite = byId.get(id);
+        if (prerequisite?.owner !== item.owner || !Array.isArray(prerequisite.effects) ||
+            prerequisite.effects.some(effect => effect === 'commit' || effect === 'opaque') || !prerequisite.effects.includes('observe') ||
+            !Array.isArray(prerequisite.resourceKeys) || Object.hasOwn(prerequisite, 'operationScopes') ||
+            !Array.isArray(prerequisite.criterionIds) || !prerequisite.criterionIds.some(id => judgments.has(id))) continue;
+        const scopes = [...new Set([...prerequisite.resourceKeys, ...pageScopes, 'browser:relay'])];
+        prerequisite.resourceKeys = scopes.slice(0, PLAN_CONTRACT_LIMITS.resources);
       }
-      if (item.criterionIds.some(id => receiptIds.has(id))) continue;
-      const base = 'confirm-' + String(item.id).slice(0, 100);
-      let id = base;
-      for (let suffix = 2; ids.has(id); suffix++) id = base + '-' + suffix;
-      ids.add(id);
-      item.criterionIds.push(id);
-      decoded.criteria.push({ id, kind: 'external-confirmation', label: 'Confirm the browser result',
-        description: 'Verify the outcome of ' + String(item.title) + ' using the destination’s receipt.' });
     }
   }
   const attachedSetKey = attachedReadScope?.resourceKey;
   if (/^attachments:[a-f0-9]{64}$/.test(attachedSetKey || '') && Array.isArray(decoded?.workItems)) {
     const readers = decoded.workItems.filter(item => (item?.owner === 'coordinator' || coordinator && item?.owner === coordinator) &&
       Array.isArray(item.effects) && item.effects.includes('observe') && Array.isArray(item.resourceKeys));
-    const declared = new Set(readers.flatMap(item => item.resourceKeys));
+    const readKeys = item => workItemOperationScopes(item, 'observe').flatMap(scope => scope.resourceKeys);
+    const declared = new Set(readers.flatMap(readKeys));
     if (!declared.has(attachedSetKey)) {
       const exactFiles = new Set((attachedReadScope.files || []).map(file => file.resourceKey));
       const staleKey = key => typeof key === 'string' && key.startsWith('attachment:sha256:') && !exactFiles.has(key);
       const hasUnscopedFile = [...exactFiles].some(key => !declared.has(key));
-      const repair = hasUnscopedFile && readers.find(item => item.resourceKeys.some(staleKey));
+      const repair = hasUnscopedFile && readers.find(item => readKeys(item).some(staleKey));
       if (repair) {
         // Keep the declared reader and substitute the host's current read-only attachment set.
-        repair.resourceKeys = [...repair.resourceKeys.filter(key => !staleKey(key)), attachedSetKey];
+        const readScopes = Object.hasOwn(repair, 'operationScopes') ? workItemOperationScopes(repair, 'observe') : [];
+        const otherKeys = new Set(Array.isArray(repair.operationScopes) ? repair.operationScopes
+          .filter(scope => scope?.effect !== 'observe' && Array.isArray(scope?.resourceKeys)).flatMap(scope => scope.resourceKeys) : []);
+        repair.resourceKeys = [...new Set([...repair.resourceKeys.filter(key => !staleKey(key) || otherKeys.has(key)), attachedSetKey])];
+        for (const scope of readScopes) {
+          if (scope.resourceKeys.some(staleKey)) {
+            scope.resourceKeys = [...new Set([...scope.resourceKeys.filter(key => !staleKey(key)), attachedSetKey])];
+          }
+        }
       } else if (![...exactFiles].some(key => declared.has(key))) {
-        const candidates = readers.filter(item => item.resourceKeys.length < PLAN_CONTRACT_LIMITS.resources);
+        const candidates = readers.filter(item => item.resourceKeys.includes(attachedSetKey) || item.resourceKeys.length < PLAN_CONTRACT_LIMITS.resources);
         const selected = candidates.find(item => !item.effects.includes('commit') && !item.effects.includes('opaque')) || candidates[0];
-        selected?.resourceKeys.push(attachedSetKey);
+        if (selected) {
+          if (!selected.resourceKeys.includes(attachedSetKey)) selected.resourceKeys.push(attachedSetKey);
+          const scope = Object.hasOwn(selected, 'operationScopes') ? workItemOperationScopes(selected, 'observe')[0] : null;
+          scope?.resourceKeys.push(attachedSetKey);
+        }
       }
     }
   }
@@ -204,6 +216,13 @@ function list(value, label, max, min = 0) {
 function unique(values, label) {
   if (new Set(values).size !== values.length) throw fail(label + ' must be unique.');
   return values;
+}
+export function workItemOperationScopes(item, effect) {
+  if (!Array.isArray(item?.effects) || !item.effects.includes(effect)) return [];
+  if (Object.hasOwn(item, 'operationScopes')) {
+    return Array.isArray(item.operationScopes) ? item.operationScopes.filter(scope => scope?.effect === effect && Array.isArray(scope.resourceKeys)) : [];
+  }
+  return Array.isArray(item.resourceKeys) ? [{ effect, resourceKeys: item.resourceKeys }] : [];
 }
 export function receiptBindingsForCriterion(criterion) {
   if (criterion?.receiptBinding !== undefined && criterion?.receiptBindings !== undefined) return [];
@@ -269,18 +288,39 @@ export function normalizePlanContract(value, { allowEpoch = false } = {}) {
   });
   unique(criteria.map(item => item.id), 'Criterion IDs');
   const criterionIds = new Set(criteria.map(item => item.id)), covered = new Set();
+  const confirmationIds = new Set(criteria.filter(item => item.kind === 'external-confirmation').map(item => item.id));
   const workItems = list(value.workItems, 'Work items', PLAN_CONTRACT_LIMITS.workItems, 1).map(item => {
     const fields = ['id', 'title', 'objective', 'owner', 'resourceKeys', 'effects', 'dependsOn', 'criterionIds'];
-    keys(item, fields, fields, 'Work item');
+    keys(item, [...fields, 'operationScopes'], fields, 'Work item');
     const resourceKeys = unique(list(item.resourceKeys, 'Resource keys', PLAN_CONTRACT_LIMITS.resources, 1).map(key => text(key, 'Resource key', 2048)), 'Resource keys');
     if (resourceKeys.some(key => key === '*' || key.includes('://*'))) throw fail('Use a bounded exact resource or adapter-declared ancestor key, not a wildcard.');
     const effects = unique([...list(item.effects, 'Allowed effects', CONTRACT_EFFECTS.length, 1)], 'Allowed effects');
     if (effects.some(effect => !CONTRACT_EFFECTS.includes(effect))) throw fail('Work items may name only supported operation effect classes.');
     const ids = unique(list(item.criterionIds, 'Work item criteria', PLAN_CONTRACT_LIMITS.criteria, 1).map(value => id(value, 'Covered criterion')), 'Covered criteria');
     for (const criterion of ids) { if (!criterionIds.has(criterion)) throw fail('Work item names an unknown criterion: ' + criterion + '.'); covered.add(criterion); }
-    return { id: id(item.id, 'Work item ID'), title: text(item.title, 'Work item title', 200), objective: text(item.objective, 'Work item objective', 4000),
+    const result = { id: id(item.id, 'Work item ID'), title: text(item.title, 'Work item title', 200), objective: text(item.objective, 'Work item objective', 4000),
       owner: id(item.owner, 'Work item owner'), resourceKeys, effects,
       dependsOn: unique(list(item.dependsOn, 'Dependencies', PLAN_CONTRACT_LIMITS.workItems).map(value => id(value, 'Dependency ID')), 'Dependencies'), criterionIds: ids };
+    if (Object.hasOwn(item, 'operationScopes')) {
+      result.operationScopes = list(item.operationScopes, 'Operation scopes', PLAN_CONTRACT_LIMITS.operationScopes, 1).map(scope => {
+        keys(scope, ['effect', 'resourceKeys', 'confirmationCriterionId'], ['effect', 'resourceKeys'], 'Operation scope');
+        if (!effects.includes(scope.effect)) throw fail('An operation scope must use a declared work item effect.');
+        const scopedKeys = unique(list(scope.resourceKeys, 'Operation scope resource keys', PLAN_CONTRACT_LIMITS.resources, 1)
+          .map(key => text(key, 'Operation scope resource key', 2048)), 'Operation scope resource keys');
+        if (scopedKeys.some(key => !resourceKeys.includes(key))) throw fail('Operation scopes must use declared work item resource keys.');
+        if (scope.effect !== 'commit') {
+          if (Object.hasOwn(scope, 'confirmationCriterionId')) throw fail('Only commit scopes may name a confirmation criterion.');
+          return { effect: scope.effect, resourceKeys: scopedKeys };
+        }
+        const confirmationCriterionId = id(scope.confirmationCriterionId, 'Commit scope confirmation criterion');
+        if (!ids.includes(confirmationCriterionId) || !confirmationIds.has(confirmationCriterionId)) {
+          throw fail('A commit scope must name an external-confirmation criterion owned by its work item.');
+        }
+        return { effect: scope.effect, resourceKeys: scopedKeys, confirmationCriterionId };
+      });
+      if (effects.some(effect => !workItemOperationScopes(result, effect).length)) throw fail('Operation scopes must cover every declared work item effect.');
+    }
+    return result;
   });
   unique(workItems.map(item => item.id), 'Work item IDs');
   const byId = new Map(workItems.map(item => [item.id, item])), done = new Set(), visiting = [];
@@ -348,5 +388,6 @@ export function contractPlanProjection(value, sourceIds = []) {
   };
 }
 export const CONTRACT_AUTHORING_GUIDANCE = "Choose criterion kinds by their actual evidence mechanism. observation counts distinct resources observed by the host; it does not count eligible items or facts mentioned inside a document. Use an evidence-backed judgment for semantic sufficiency, eligibility, comparisons and other conclusions; each owning work item contributes at most one judgment. source-coverage certifies complete delivered ranges for one exact concrete versioned source, with targetCount omitted or 1; workspace: and origin: are scope selectors, not coverage sources. external-confirmation counts distinct new destination-confirmed effects, excluding prior, absent, duplicate and unlinked records. Keep already-established workflow ownership, execution configuration and user authorization as captured constraints or instructions; do not invent a completion prerequisite to re-prove them unless the user expressly requests that verification. Preserve real task-relevant prerequisites and the complete inherited criteria. Declare only task-authorized effects within each work item's bounded resources. Include observe for its own verification and recovery. Include opaque when task-authorized browser behavior cannot be classified before dispatch; opaque does not expand resource access or bypass dependencies, evidence requirements or uncertain-effect protection."
+  + " Use operationScopes to bind each effect to its specific resources, especially when one item combines local work, browsing or different destinations. For an intended external commitment, scope commit to that destination and name the owning external-confirmation criterion in confirmationCriterionId. Reading, preparing or locally recording information does not itself require an external confirmation."
   + " For task-authorized public research, give the owning work item observe and a concrete browser scope for the first useful source. Use an actual origin from the captured evidence or a real public search or first-party catalog entry point. A workspace scope covers local files only. The browser:relay scope covers tab inventory, while page content needs its own resource scope. If distinct observations are required, tie their criteria to the actual sources so unrelated reads cannot satisfy them. Keep suggested alternatives and exploratory leads optional. Open explicit HTTP(S) URLs and read or snapshot the pages for observation. When evidence identifies a needed new origin or narrower URL, materially revise that same work item with the exact resource, preserving prior IDs and evidence, then read the revised contract before using it. Research scope does not authorize form submissions, messages, or other commitments.";
 export const CONTRACT_INSTRUCTIONS = "Use the accepted canonical work items. A work item permits cohesive interactions within its saved resources and effects; do not create or complete a plan node for each field or click. The host records actual operations automatically. Read or revise the plan only for material changes; change focus at work-item boundaries. Tool return is not external confirmation. Inspect actual results, keep uncertainty, and cite returned evidence IDs for judgments. Record ordinary audit findings without turning them into new authority barriers. Stop prevents further execution. Keep an effectful work item cohesive through its own authorized verification and recovery observations; include observe on that owning item when those reads are needed. An initial Plan may omit receipt bindings before the destination format is known. Use either legacy receiptBinding or receiptBindings with up to eight observed site/format alternatives under the SAME criterion and targetCount, never both. Omit criterion resourceKey for alternatives spanning different destination resources; each binding and work-item resource scope remain explicit. Conflicting matching variants are uncertainty, not first-match proof. For browser outcomes, inspect ordinary read/snapshot frames[].semanticRecords (observed selectors, attributes and visible text) and frames[].forms (form actions and actual control names). After an unconfirmed browser commitment and discovery of the visible receipt, use relay_task bind_receipt with the current revision, owning workItemId, criterionId and one observed receiptBinding. The scoped update preserves the goal, other criteria, owners and effects. Focus the owning item at the returned plan epoch and read the same response or actual history again. A read owned by a separate item cannot establish this criterion. DOM/JSON bindings need observed record/status/outcome/destination fields and identity mappings from receipt fields to actual submitted form-field names. dom-text requires a unique observed visible selector, exact normalized text, history:false and observed outcomeFields; only host-correlated native POST request/document evidence can support it, never arbitrary AJAX text. Use only observed status values. confirmedValues may be empty only with nonempty observed absentValues; this can reconcile a rejection but cannot count success. Extend the positive mapping only after observing a positive result. An existing binding does not make an unmapped response evidence: inspect, materially refine and re-observe. Keep an uncertain operation intact and do not repeat a conflicting write until the host proves absence; preserve confirmed outcomes without repetition. Empty history, an HTTP error or error prose alone does not prove absence. If the supported observations cannot establish a mapping, keep the uncertainty and explain that concrete limitation while continuing independent work." + ' ' + CONTRACT_AUTHORING_GUIDANCE + ' ' + TASK_ACCURACY_SCOPE_GUIDANCE;
