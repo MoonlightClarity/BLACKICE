@@ -1,4 +1,4 @@
-import { planContractResponseSchema, normalizePlanContractResponse, contractPlanProjection } from './planning-contract-model.mjs';
+import { planContractResponseSchema, normalizePlanContractResponse, contractPlanProjection, assertCommitPrerequisites } from './planning-contract-model.mjs';
 /**
  * Public, bounded findings for response cycles. This module performs no work,
  * grants no authority, and never treats a model's claim as an execution receipt.
@@ -390,6 +390,10 @@ export function evaluateResponseCycleStage(stageOrKind, response, context = {}) 
         const planned = value.acceptanceCriteria.find(item => item.id === required.id);
         const workflowRequired = (context.workflowRequests || []).some(work => work.requiredForPlan !== false && (work.acceptanceCriteria || []).some(item => canonical(item) === canonical(required)));
         if (!planned || (workflowRequired ? canonical(planned) !== canonical(required) : planned.description !== required.description || planned.verification !== required.verification || required.accuracy && canonical(planned.accuracy) !== canonical(required.accuracy))) result.issues.push('Preserve the host-requested acceptance criterion and its accuracy target: ' + required.label + '.');
+      }
+      if (value.contract) {
+        const prerequisites = context.commitPrerequisites || [];
+        assertCommitPrerequisites(value.contract, prerequisites.map(item => item.id), prerequisites);
       }
     } catch (error) { result.issues.push(error.message); }
   }

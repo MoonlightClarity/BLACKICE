@@ -221,6 +221,10 @@ export function planningCycleStageContext(request,nodeId,responses) {
     return {key:child.key||child.id,cycleId:child.id,required:child.required!==false,state:child.state||'pending',analysisReady:child.state==='completed',dispatchReady:child.state==='completed',sourceId:'cycle:child:'+nodeId+':'+child.id,responseId:response?.id,responseRevision:response?.revision,...(child.request?{request:clone(child.request)}:{})};
   });
   const plan=get(cycle.stageNodeIds.plan),think=get(cycle.stageNodeIds.think),inference=get(cycle.stageNodeIds.inference),workflow=planningWorkflowContext(request,cycle,latest);
+  const feasibility=get(cycle.stageNodeIds.feasibility||cycle.stageNodeIds.viability);
+  const commitPrerequisites=(feasibility?.requirements||[]).filter(item=>item.commitPrerequisite===true).map(item=>({
+    id:item.id,label:item.label.slice(0,200),description:item.label,verification:'response',...(item.accuracy?{accuracy:clone(item.accuracy)}:{})
+  }));
   let canonical=['think','respond'].includes(stageId)?canonicalCycleTaskContext(request.sources||[],{cycleId:cycle.id,runId:cycle.execution?.runId||cycle.linkedRunId,
     planRef:{requestId:request.id,cycleId:cycle.id,nodeId:cycle.stageNodeIds.plan,nodeRevision:request.nodes.find(node=>node.id===cycle.stageNodeIds.plan)?.revision,responseId:plan?.id||null}}):null;
   if(!canonical&&['think','respond'].includes(stageId)&&['completed','failed','cancelled','unknown'].includes(cycle.execution?.state)&&
@@ -231,7 +235,7 @@ export function planningCycleStageContext(request,nodeId,responses) {
   const userAgencyHistory=stages.flatMap(stage=>{const response=get(cycle.stageNodeIds[stage.id]);if(!response?.userAgency)return [];const evaluation=evaluateUserAgencyCheckpoint(response.userAgency);return [{stageId:stage.id,responseId:response.id,responseRevision:response.revision,...evaluation}];});
   const effectReceipts=(cycle.effectReceipts||[]).filter(receipt=>!receipt.canonicalContract||canonical&&!canonical.invalid&&receipt.sourceId===canonical.sourceId&&receipt.proofSha256===canonical.sourceHash&&
     receipt.canonicalContract.taskId===canonical.taskId&&receipt.canonicalContract.planEpoch===canonical.planEpoch&&receipt.canonicalContract.journalSeq===canonical.journalSeq&&receipt.canonicalContract.contractSha256===canonical.contractSha256);
-  return {cycleId:cycle.id,stageId,pipelineVersion,title:cycle.title,objective:cycle.objective,intendedOutcome,userAgencyHistory,acceptanceCriteria:canonical&&!canonical.invalid?canonical.acceptanceCriteria:plan?.acceptanceCriteria||cycle.acceptanceCriteria||[],...workflow,criterionResults:think?.criterionResults||[],prerequisites,children,recoveryIssue:request.viability?.recoveryIssue||null,
+  return {cycleId:cycle.id,stageId,pipelineVersion,title:cycle.title,objective:cycle.objective,intendedOutcome,userAgencyHistory,acceptanceCriteria:canonical&&!canonical.invalid?canonical.acceptanceCriteria:plan?.acceptanceCriteria||cycle.acceptanceCriteria||[],...workflow,...(stageId==='plan'&&commitPrerequisites.length?{commitPrerequisites}:{}),criterionResults:think?.criterionResults||[],prerequisites,children,recoveryIssue:request.viability?.recoveryIssue||null,
     ...(canonical?{canonicalExecution:canonical}:{}),recursion:{depth:cycle.depth,cycleCount:request.responseCycle.cycles.length,...request.responseCycle.limits},effectReceipts,execution:cycle.execution||null};
 }
 const latestByNode = records => {

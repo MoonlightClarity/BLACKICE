@@ -6,11 +6,12 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { HarnessEngine } from '../lib/engine.mjs';
-import { TaskStateStore } from '../lib/task-state.mjs';
+import { createTaskToolHandler, TaskStateStore } from '../lib/task-state.mjs';
 import { PlanningBrowserStore } from '../lib/planning-browser.mjs';
 import { PlanningBrowserRuntime } from '../lib/planning-browser-runtime.mjs';
 import { TaskViability } from '../lib/task-viability.mjs';
 import { ResponseCycleService } from '../lib/response-cycle.mjs';
+import { adoptExecutionPlanContract, executionOutlineHash } from '../lib/planning-execution-handoff.mjs';
 import { readContractJournal } from '../lib/planning-contract-runtime.mjs';
 import { createMissionWorkflow } from '../public/mission-model.mjs';
 import { responseCycleStage } from '../public/response-cycle-model.mjs';
@@ -42,7 +43,7 @@ const requiredCriteria = [
 const copy = value => structuredClone(value);
 const captured = options => JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n') + 2));
 
-function analyticalResponse(input, { strictCity = false, workspaceKey } = {}) {
+function analyticalResponse(input, { strictCity = false, workspaceKey, conditional = null } = {}) {
   const stage = responseCycleStage(input.module.kind, { pipelineVersion: input.cycle?.pipelineVersion });
   const sourceId = input.sources.find(source => source.id === 'viability:task')?.id || input.sources[0].id;
   const body = { userAgency: fixtureUserAgency(),
@@ -58,7 +59,8 @@ function analyticalResponse(input, { strictCity = false, workspaceKey } = {}) {
       value: locationPermission + ' The operational owner still needs to observe the form options.', sourceIds: [sourceId, inference.sourceId],
       checkedSourceIds: input.sources.filter(source => source.kind !== 'response').map(source => source.id),
       rationale: 'The supplied request resolves permission. An unobserved literal option is not evidence that the authorized task is infeasible.',
-      inferable: false, omissionAllowed: false, question: '', dependentNodeIds: ['agent'], stopKind: null, accuracy: copy(requiredCriteria[1].accuracy) }] };
+      inferable: false, omissionAllowed: false, question: '', dependentNodeIds: ['agent'], stopKind: null, accuracy: copy(requiredCriteria[1].accuracy),
+      ...(conditional ? { commitPrerequisite: true } : {}) }] };
   }
   Object.assign(body, { checks: stage.checks.map(check => ({ id: check.id,
     assessment: check.when === 'effects' ? 'not_applicable' : 'supported',
@@ -85,11 +87,22 @@ function analyticalResponse(input, { strictCity = false, workspaceKey } = {}) {
         dependsOn: [], criterionIds: requiredCriteria.map(item => item.id) }],
       instructions: [{ id: 'city-alternatives', text: locationPermission + ' Preserve all other supplied facts and the exact new-confirmation count.', handling: 'preserve' }] };
     if (strictCity) body.contract.criteria.find(item => item.id === 'city-permission').accuracy.tolerance = 'Only the exact string Oak Hollow is acceptable.';
+    if (conditional) {
+      const [gate] = input.cycle.commitPrerequisites;
+      assert.equal(gate.id, 'authorized-city', 'Feasibility must deliver the typed condition to Plan.');
+      const { verification, ...criterion } = gate;
+      body.contract.criteria.push({ ...criterion, kind: 'judgment' });
+      const commit = body.contract.workItems[0];
+      if (conditional === 'valid') {
+        body.contract.workItems.push({ ...commit, id: 'inspect-prerequisite', effects: ['observe'], criterionIds: [gate.id] });
+        commit.dependsOn = ['inspect-prerequisite'];
+      } else commit.criterionIds.push(gate.id);
+    }
   }
   return body;
 }
 
-async function fixture(t, { mode = 'plan_only', strictCity = false } = {}) {
+async function fixture(t, { mode = 'plan_only', strictCity = false, conditional = null } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-intent-pipeline-')), cwd = path.join(directory, 'workspace');
   await mkdir(cwd);
   const tasks = await new TaskStateStore({ dataDir: directory }).init();
@@ -106,7 +119,7 @@ async function fixture(t, { mode = 'plan_only', strictCity = false } = {}) {
         assert.ok(options.prompt.includes(TASK_ACCURACY_SCOPE_GUIDANCE), 'Each actual current stage receives the shared accuracy-scope guidance.');
         assert.ok(input.sources.some(source => source.text.includes(locationPermission)), 'The stage retains the original explicit user permission.');
         const workspaceKey = 'workspace:' + (process.platform === 'win32' ? cwd.replaceAll('\\', '/').toLowerCase() : cwd);
-        return { output: JSON.stringify(analyticalResponse(input, { strictCity, workspaceKey })), threadId: 'fixture-intent-planning', turnId: randomUUID() };
+        return { output: JSON.stringify(analyticalResponse(input, { strictCity, workspaceKey, conditional })), threadId: 'fixture-intent-planning', turnId: randomUUID() };
       }
       operationalCalls++;
       assert.equal(mode, 'automatic', 'Plan only must never enter an operational worker.');
@@ -134,7 +147,7 @@ async function fixture(t, { mode = 'plan_only', strictCity = false } = {}) {
   const accepted = engine.startRun({ workflow, input: request, planningMode: 'forced', planningExecutionMode: mode, requestId: 'intent-pipeline-' + mode + '-' + strictCity });
   await engine.executions.get(accepted.id);
   const run = engine.getRun(accepted.id), saved = await store.get(run.responseCycle.requestId), cycle = saved.cycles.find(item => item.id === run.responseCycle.cycleId);
-  return { run, saved, cycle, calls, operationalCalls, toolCalls, adoptedTask, finalCheck,
+  return { run, saved, cycle, calls, operationalCalls, toolCalls, adoptedTask, finalCheck, tasks,
     journal: await readContractJournal(tasks, run.taskId), task: operationalCalls ? await tasks.get(run.taskId) : null };
 }
 
@@ -184,4 +197,98 @@ test('automatic canonical handoff delivers the same city tolerance and guidance 
   assert.equal(f.adoptedTask.contractRuntime.criteria.every(item => item.satisfied === false), true);
   assert.equal(f.journal.records.length, 0); assert.equal(f.journal.evidence.length, 0);
   assert.deepEqual(f.adoptedTask.contractRuntime.outcomes, []);
+});
+
+test('a commitment condition survives Feasibility and the host rejects an unguarded Plan', { timeout: 20000 }, async t => {
+  const f = await fixture(t, { mode: 'automatic', conditional: 'combined' });
+  assert.equal(f.run.errorCode, 'PLANNING_RESPONSE_FORMAT');
+  assert.match(f.run.error, /make every committing item wait/);
+  assert.deepEqual(f.calls.map(call => call.input.module.kind), ['inference', 'viability', 'plan', 'plan']);
+  assert.equal(f.operationalCalls, 0);
+  assert.equal(f.journal.records.length, 0);
+});
+
+test('an adopted prerequisite remains required through an operational edit', { timeout: 20000 }, async t => {
+  const f = await fixture(t, { mode: 'automatic', conditional: 'valid' });
+  assert.equal(f.run.errorCode, 'FIXTURE_STOP_AFTER_HANDOFF', f.run.error);
+  assert.deepEqual(f.adoptedTask.contractAdoption.commitPrerequisiteIds, ['authorized-city']);
+  assert.ok(f.adoptedTask.contractAdoption.requiredCriterionIds.includes('authorized-city'));
+  assert.equal(f.task.contract.workItems.find(item => item.effects.includes('commit')).dependsOn[0], 'inspect-prerequisite');
+  const { planEpoch, ...contract } = copy(f.task.contract);
+  contract.workItems.find(item => item.effects.includes('commit')).dependsOn = [];
+  await assert.rejects(f.tasks.setContract(f.run.taskId, contract, { expectedRevision: f.task.revision, schemaVersion: 14 }),
+    { code: 'TASK_CONTRACT_INVALID', message: /make every committing item wait/ });
+});
+
+test('an operational refinement cannot narrow the adopted goal or weaken inherited outcomes', { timeout: 20000 }, async t => {
+  const f = await fixture(t, { mode: 'automatic' });
+  const { taskId, id: runId } = f.run;
+  const relayTask = createTaskToolHandler({ store: f.tasks, taskId, runId, nodeId: 'agent', schemaVersion: 14 });
+  const authorable = (state, change) => {
+    const { planEpoch, ...contract } = copy(state.contract);
+    change(contract);
+    return contract;
+  };
+  const refine = (state, change) => relayTask({ name: 'relay_task', arguments: {
+    action: 'plan', expectedRevision: state.revision, contract: authorable(state, change)
+  } });
+  const original = f.task;
+  assert.deepEqual(original.contractAdoption.requiredCriterionIds, ['applications-confirmed', 'city-permission']);
+  const narrowed = await refine(original, contract => { contract.goal = 'List available jobs instead of applying.'; });
+  assert.equal(narrowed.code, 'TASK_CONTRACT_GOAL_CHANGE');
+  const checkpoint = await relayTask({ name: 'relay_task', arguments: {
+    action: 'checkpoint', expectedRevision: original.revision, goal: 'List available jobs instead of applying.'
+  } });
+  assert.equal(checkpoint.code, 'TASK_CONTRACT_GOAL_CHANGE');
+  for (const change of [
+    contract => { contract.criteria.shift(); contract.workItems[0].criterionIds.shift(); },
+    contract => { contract.criteria[0].targetCount = 1; },
+    contract => { contract.criteria[0].kind = 'observation'; },
+    contract => { contract.criteria[1].accuracy.tolerance = 'Only Oak Hollow is acceptable.'; }
+  ]) assert.equal((await refine(original, change)).code, 'TASK_CONTRACT_CRITERION_CHANGE');
+  assert.equal((await f.tasks.get(taskId)).revision, original.revision);
+
+  const result = await refine(original, contract => {
+    const receiptResource = 'browser:https://applications.example.invalid/receipt';
+    contract.workItems[0].resourceKeys.push(receiptResource);
+    contract.workItems[0].objective += ' Inspect the observed confirmation route.';
+    contract.criteria[0].resourceKey = receiptResource;
+    contract.criteria[0].receiptBinding = { version: 1, format: 'json', resourceKey: receiptResource,
+      record: 'receipt', status: 'status', confirmedValues: ['confirmed'], outcomeId: 'id', history: false };
+    contract.criteria.push({ id: 'source-review', kind: 'observation', description: 'Inspect the application source.' });
+    contract.workItems[0].criterionIds.push('source-review');
+  });
+  assert.equal(result.success, true, JSON.stringify(result));
+  const refined = await f.tasks.get(taskId);
+  assert.equal(refined.contract.goal, request);
+  assert.equal(refined.contract.planEpoch, original.contract.planEpoch + 1);
+  assert.equal(refined.contract.criteria[0].receiptBinding.status, 'status');
+  assert.equal(refined.contractRuntime.criteria[0].satisfied, false);
+  assert.deepEqual(refined.contractAdoption, original.contractAdoption);
+
+  const revised = await f.tasks.setContract(taskId, authorable(refined, contract => {
+    contract.goal = 'Submit one new application at the same authorized destination.';
+    Object.assign(contract.criteria[0], {
+      label: 'One new confirmed application', description: 'Obtain and report one distinct new destination confirmation.',
+      targetCount: 1, accuracy: undefined
+    });
+  }), { expectedRevision: refined.revision, source: 'human', schemaVersion: 14 });
+  assert.equal(revised.contract.goal, 'Submit one new application at the same authorized destination.');
+  assert.equal(revised.contract.criteria[0].targetCount, 1);
+  assert.equal((await refine(revised, contract => { contract.goal = request; })).code, 'TASK_CONTRACT_GOAL_CHANGE');
+  assert.equal((await refine(revised, contract => { contract.criteria[0].targetCount = 2; })).code, 'TASK_CONTRACT_CRITERION_CHANGE');
+
+  const plan = { contract: authorable(revised, contract => {
+    contract.goal = 'Inspect the saved application source and report the result.';
+    contract.criteria = contract.criteria.filter(criterion => criterion.id === 'source-review');
+    contract.workItems[0].criterionIds = ['source-review'];
+    contract.workItems[0].effects = ['observe'];
+  }) };
+  const planRef = { ...f.run.responseCycle.planRef, cycleId: 'revised-cycle', responseId: 'revised-plan' };
+  const { snapshot } = await adoptExecutionPlanContract({ store: f.tasks, taskId, runId: 'revised-run', nodeId: 'agent',
+    getSource: async () => ({ planRef, plan, sha256: executionOutlineHash(plan), requiredCriterionIds: ['source-review'] }) });
+  assert.equal(snapshot.contract.goal, plan.contract.goal);
+  assert.deepEqual(snapshot.contractAdoption.planRef, planRef);
+  assert.deepEqual(snapshot.contractAdoption.requiredCriterionIds, ['source-review']);
+  assert.equal((await refine(snapshot, contract => { contract.criteria[0].description = 'Read a different source.'; })).code, 'TASK_CONTRACT_CRITERION_CHANGE');
 });

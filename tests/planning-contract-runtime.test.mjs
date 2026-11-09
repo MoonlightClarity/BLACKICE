@@ -115,6 +115,50 @@ test('default canonical completion grants up to twelve continuations for fresh h
   assert.equal(updates.at(-1).complete, false);
 });
 
+test('an adopted goal keeps the same request open past the usual limit until evidence supports completion', async t => {
+  const f = await fixture(t), updates = [];
+  const completion = createPlanningCompletionController({ store: f.tasks, taskId: f.taskId, runId: f.runId, nodeId: f.nodeId,
+    schemaVersion: 14, executionGuardrails: true, persistentGoal: true, onUpdate: update => updates.push(update) });
+  for (let index = 0; index < 15; index++) {
+    const target = 'goal-input-' + index + '.txt';
+    await fs.writeFile(path.join(f.cwd, target), 'Required evidence ' + index);
+    assert.equal((await f.send(call('relay_workspace', { action: 'read', path: target }))).success, true);
+    assert.equal((await completion.beforeFinal()).continue, true);
+    assert.equal(updates.at(-1).goalStatus, 'active');
+  }
+  const journal = await readContractJournal(f.tasks, f.taskId);
+  const decision = await f.send(call('relay_task', { action: 'assess', expectedPlanEpoch: 1, workItemId: 'files',
+    criterionId: 'checked', judgment: 'satisfied', note: 'The supplied files support the result.',
+    evidenceIds: journal.evidence.filter(row => row.kind === 'observation').map(row => row.id) }));
+  assert.equal(decision.success, true, JSON.stringify(decision));
+  assert.equal(await completion.beforeFinal(), null);
+  assert.equal(updates.at(-1).goalStatus, 'complete');
+  assert.equal(updates.at(-1).complete, true);
+  assert.equal(journal.records.length, 15);
+  assert.ok(journal.records.every(row => row.runId === f.runId));
+
+  const blocked = await f.send(call('relay_task', { action: 'assess', expectedPlanEpoch: 1, workItemId: 'files',
+    criterionId: 'checked', judgment: 'blocked', note: 'The supplied files no longer support the requested result.',
+    evidenceIds: [journal.evidence[0].id] }));
+  assert.equal(blocked.success, true);
+  assert.equal(await completion.beforeFinal(), null);
+  assert.equal(updates.at(-1).goalStatus, 'blocked');
+  assert.equal(updates.at(-1).complete, false);
+});
+
+test('a persistent goal gets a recovery turn but repeated identical evidence cannot keep it running', async t => {
+  const f = await fixture(t), updates = [];
+  const completion = createPlanningCompletionController({ store: f.tasks, taskId: f.taskId, runId: f.runId, nodeId: f.nodeId,
+    schemaVersion: 14, executionGuardrails: true, persistentGoal: true, onUpdate: update => updates.push(update) });
+  for (let index = 0; index < 3; index++) {
+    assert.equal((await f.send(call('relay_workspace', { action: 'read', path: 'input.txt' }))).success, true);
+    if (index < 2) assert.equal((await completion.beforeFinal()).continue, true);
+    else await assert.rejects(completion.beforeFinal(), { code: 'TASK_CONTRACT_INCOMPLETE' });
+  }
+  assert.equal(updates.at(-1).goalStatus, 'blocked');
+  assert.equal(updates.at(-1).complete, false);
+});
+
 async function refineFixturePlan(f, refine) {
   const state = body(await f.send(call('relay_task', { action: 'read' })));
   const contract = structuredClone(state.contract);
@@ -474,6 +518,60 @@ const commitDescriptor = item => {
     commit: { effectKey: digest('effect:' + target), destinationKey: 'https://fixture.invalid/' + target, formKey: 'form:' + target, documentKey: 'document:' + target, payloadDigest: digest('payload:' + target), attachmentDigests: [] } };
 };
 const raceAdapter = { describeOperation: async item => commitDescriptor(item) };
+
+test('an adopted condition blocks the next commitment until this run records its own evidence', async t => {
+  const f = await fixture(t, { operationAdapter: () => raceAdapter, contract: ({ key }) => {
+    const value = draft([key]);
+    value.workItems[0].effects = ['observe'];
+    value.criteria.push({ id: 'receipt', kind: 'external-confirmation', description: 'Verify the external result.' });
+    value.workItems.push({ id: 'commit', title: 'Commit result', objective: 'Use the current input.', owner: 'coordinator',
+      resourceKeys: [raceOrigin], effects: ['commit'], dependsOn: ['files'], criterionIds: ['receipt'] });
+    return value;
+  } });
+  const original = await f.tasks.get(f.taskId), { planEpoch, ...contract } = original.contract;
+  await f.tasks.setContract(f.taskId, contract, { expectedRevision: original.revision, schemaVersion: 14, adoption: {
+    runId: f.runId, planRef: { cycleId: 'first-occurrence' }, freshEvidence: true,
+    requiredCriterionIds: ['checked'], commitPrerequisiteIds: ['checked']
+  } });
+  await f.send(call('relay_task', { action: 'read' }));
+  const submit = call('fixture_commit', { action: 'submit', target: 'after-current-check' });
+  assert.equal((await f.guard.before(submit)).code, 'TASK_CONTRACT_PREREQUISITE');
+  const observe = () => call('relay_workspace', { action: 'read', path: 'input.txt' });
+  assert.equal((await f.send(observe())).success, true);
+  const assess = evidenceId => call('relay_task', { action: 'assess', expectedPlanEpoch: planEpoch, workItemId: 'files',
+    criterionId: 'checked', judgment: 'satisfied', note: 'Current fixture input satisfies the condition.', evidenceIds: [evidenceId] });
+  const prior = await readContractJournal(f.tasks, f.taskId);
+  assert.equal((await f.send(assess(prior.evidence[0].id))).success, true);
+  const first = await f.tasks.get(f.taskId);
+  assert.equal(first.contractRuntime.criteria.find(row => row.id === 'checked').satisfied, true);
+
+  const runId = 'next-run';
+  await f.tasks.setContract(f.taskId, contract, { expectedRevision: first.revision, schemaVersion: 14, adoption: {
+    ...first.contractAdoption, runId, planRef: { cycleId: 'next-occurrence' }
+  } });
+  const second = await f.tasks.get(f.taskId);
+  assert.equal(second.contractRuntime.criteria.find(row => row.id === 'checked').satisfied, false);
+  const next = await createPlanningWorkerGuard({ store: f.tasks, taskId: f.taskId, runId, nodeId: f.nodeId,
+    cwd: f.cwd, schemaVersion: 14, executionGuardrails: true, coordinator: true,
+    getOperationAdapter: item => item.name === 'relay_workspace' ? f.workspace : raceAdapter });
+  t.after(() => next.finish('finished'));
+  const handler = createTaskToolHandler({ store: f.tasks, taskId: f.taskId, runId, nodeId: f.nodeId, schemaVersion: 14 });
+  const read = call('relay_task', { action: 'read' });
+  next.observeToolDelivery({ call: read, result: await handler(read) });
+  assert.equal((await next.before(submit)).code, 'TASK_CONTRACT_PREREQUISITE');
+  assert.equal((await readContractJournal(f.tasks, f.taskId)).records.length, prior.records.length);
+
+  const inspection = observe();
+  assert.equal(await next.before(inspection), null);
+  const observation = await f.workspace(inspection, next.dispatchContext(inspection));
+  await next.annotate(inspection, observation);
+  const fresh = await readContractJournal(f.tasks, f.taskId);
+  const evidence = fresh.evidence.find(row => row.operationId === fresh.records.find(record => record.runId === runId).operationId);
+  assert.equal((await handler(assess(evidence.id))).success, true);
+  assert.equal(await next.before(submit), null);
+  await next.dispatchContext(submit).onOperationDispatch(commitDescriptor(submit));
+  assert.equal((await readContractJournal(f.tasks, f.taskId)).records.at(-1).deliveryState, 'dispatched');
+});
 
 test('concurrent live reservations cannot both occupy the last outcome slot, and dispatch excludes its own slot', async t => {
   const value = draft([raceOrigin]); value.criteria = [{ id: 'checked', kind: 'external-confirmation', resourceKey: raceOrigin, targetCount: 1, description: 'Exactly one distinct outcome is requested.' }];

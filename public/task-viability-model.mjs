@@ -105,7 +105,7 @@ export function validateViabilityRequirements(value) {
   if (!Array.isArray(value) || value.length > 60) throw fail('Readiness needs at most 60 explicit requirement findings.');
   const ids = new Set();
   return value.map(item => {
-    if (!object(item) || Object.keys(item).some(key => !VIABILITY_REQUIREMENT_FIELDS.includes(key) && key !== 'accuracy' && key !== 'stopKind') || VIABILITY_REQUIREMENT_FIELDS.some(key => !Object.hasOwn(item, key))) throw fail('Use the declared readiness requirement fields.');
+    if (!object(item) || Object.keys(item).some(key => !VIABILITY_REQUIREMENT_FIELDS.includes(key) && !['accuracy', 'stopKind', 'commitPrerequisite'].includes(key)) || VIABILITY_REQUIREMENT_FIELDS.some(key => !Object.hasOwn(item, key))) throw fail('Use the declared readiness requirement fields.');
     const id = text(item.id, 'Requirement ID', 120, true);
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id) || ids.has(id)) throw fail('Requirements need unique stable IDs.');
     ids.add(id);
@@ -119,6 +119,11 @@ export function validateViabilityRequirements(value) {
       rationale: text(item.rationale, 'Resolution rationale', 4000, true), inferable: item.inferable, omissionAllowed: item.omissionAllowed,
       question: text(item.question, 'Public factual question', 2000), dependentNodeIds: list(item.dependentNodeIds, 'Dependent workflow node IDs', 100) };
     const accuracy = validateTaskAccuracy(item.accuracy); if (accuracy) result.accuracy = accuracy;
+    if (item.commitPrerequisite != null && typeof item.commitPrerequisite !== 'boolean') throw fail('A commitment prerequisite flag must be true or false.');
+    if (item.commitPrerequisite === true) {
+      if (item.importance !== 'essential') throw fail('A preference cannot be a prerequisite to an external commitment.');
+      result.commitPrerequisite = true;
+    }
     if (item.stopKind !== undefined && item.stopKind !== null) {
       if (!PLANNING_STOP_KINDS.includes(item.stopKind)) throw fail('A stop must name an allowed concrete stop condition.');
       result.stopKind = item.stopKind;
@@ -129,10 +134,10 @@ export function validateViabilityRequirements(value) {
 }
 export function viabilityRequirementSchema() {
   const string = { type: 'string' }, strings = { type: 'array', items: string };
-  return schemaTree({ type: 'array', items: { type: 'object', additionalProperties: false, required: [...VIABILITY_REQUIREMENT_FIELDS, 'stopKind', 'accuracy'], properties: {
+  return schemaTree({ type: 'array', items: { type: 'object', additionalProperties: false, required: [...VIABILITY_REQUIREMENT_FIELDS, 'stopKind', 'accuracy', 'commitPrerequisite'], properties: {
     id: string, label: string, importance: { type: 'string', enum: ['essential', 'preference'] }, basis: { type: 'string', enum: ['user', 'task', 'external'] },
     consequence: string, resolution: { type: 'string', enum: ['observed', 'inference', 'omission', 'unknown','blocked','repairable','nonblocking'] }, value: string,
-    sourceIds: strings, checkedSourceIds: strings, rationale: string, inferable: { type: 'boolean' }, omissionAllowed: { type: 'boolean' }, question: string, dependentNodeIds: strings, stopKind: { anyOf: [{ type: 'string', enum: [...PLANNING_STOP_KINDS] }, { type: 'null' }] }, accuracy: taskAccuracySchema()
+    sourceIds: strings, checkedSourceIds: strings, rationale: string, inferable: { type: 'boolean' }, omissionAllowed: { type: 'boolean' }, question: string, dependentNodeIds: strings, stopKind: { anyOf: [{ type: 'string', enum: [...PLANNING_STOP_KINDS] }, { type: 'null' }] }, accuracy: taskAccuracySchema(), commitPrerequisite: { type: 'boolean' }
   } } });
 }
 /** Admission may delegate unasked unknown checks to the owning workflow without claiming they are resolved. */

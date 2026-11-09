@@ -50,6 +50,24 @@ test('actual host evidence produces a current canonical source and a bound exter
   assert.equal(context.criteria[0].observedCount, 1);
 });
 
+test('a new scheduled occurrence cannot count a confirmation from the previous occurrence', () => {
+  const input = fixture();
+  input.taskState.contractAdoption.freshEvidence = true;
+  input.journal.records[0].dispatchedAt = '2026-11-05T17:59:00Z';
+  assert.equal(buildCanonicalCycleEvidence(input).data.complete, true);
+
+  const previousRun = input.run.id;
+  input.run.id = 'run-2';
+  input.planRef.cycleId = 'cycle-2';
+  input.taskState.contractAdoption.runId = input.run.id;
+  const next = buildCanonicalCycleEvidence(input);
+  assert.equal(next.data.complete, false);
+  assert.equal(next.data.outcomes[0].status, 'confirmed');
+  assert.equal(next.data.outcomes[0].isNew, false);
+  assert.equal(next.effectReceipts.length, 0);
+  assert.equal(input.journal.records[0].runId, previousRun);
+});
+
 for (const kind of ['observation', 'judgment']) test('final review and live progress use the same retained host scopes for ' + kind, async () => {
   const input = fixture(), resourceKey = 'origin:https://portal.test';
   input.taskState.contract.goal = 'Inspect the workshop catalog.';

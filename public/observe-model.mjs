@@ -155,6 +155,11 @@ export function normalizeObserveEvent(event, index = 0) {
       title: status === 'current' ? 'Planning reviewed' : status === 'stalled' ? 'Planning review stalled' : status === 'continuing' ? 'Return to planning' : 'Planning review needed',
       detail: status === 'current' ? [label(data.review?.decision), brief(data.review?.summary)].filter(Boolean).join(' · ') : brief(data.reviewReason),
       status: status === 'current' ? 'completed' : status === 'stalled' ? 'failed' : status === 'continuing' ? 'running' : 'recorded' };
+    if (data.persistentGoal && ['active', 'blocked', 'complete'].includes(data.goalStatus)) {
+      const titles = { active: 'Working toward the goal', blocked: 'Goal needs attention', complete: 'Goal verified' };
+      const statuses = { active: 'running', blocked: 'recorded', complete: 'completed' };
+      Object.assign(row, { title: titles[data.goalStatus], detail: brief(data.reviewReason), status: statuses[data.goalStatus] });
+    }
   }
   if (!row) return null;
   return { ...row, key: row.key || `event-${index}`, nodeId: row.nodeId || event.nodeId || null, at: typeof event.at === 'string' ? event.at : data.at || null, title: brief(row.title, 100), detail: brief(row.detail) };

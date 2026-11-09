@@ -52,6 +52,12 @@ export function planningActivityForEvent(runId, event, previousState = null, ord
     return [];
   }
   if (data.type === 'planning.reassessment') {
+    if (data.persistentGoal && ['active', 'blocked', 'complete'].includes(data.goalStatus)) {
+      const titles = { active: 'Working toward the goal', blocked: 'Goal needs attention', complete: 'Goal verified' };
+      const statuses = { active: 'continuing', blocked: 'blocked', complete: 'done' };
+      return [{ id: `goal:${runId}:${nodeId}:${Number(data.returnCount) || 0}:${data.goalStatus}`, phase: 'plan', source: 'runtime-reassessment', at, order, nodeId,
+        title: titles[data.goalStatus], text: clean(data.reviewReason), status: statuses[data.goalStatus] }];
+    }
     if (!['continuing', 'stalled', 'required', 'stale'].includes(data.reviewStatus)) return [];
     return [{ id: `return:${runId}:${nodeId}:${Number(data.returnCount) || 0}:${data.reviewStatus}`, phase: 'plan', source: 'runtime-reassessment', at, order, nodeId,
       title: data.reviewStatus === 'stalled' ? 'Planning return stalled' : 'Return to planning',

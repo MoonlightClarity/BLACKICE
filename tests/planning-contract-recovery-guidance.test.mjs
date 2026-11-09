@@ -6,7 +6,7 @@ import os from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { TaskStateStore, createTaskToolHandler } from '../lib/task-state.mjs';
 import { createPlanningWorkerGuard, wrapPlanningToolHandler } from '../lib/planning-awareness.mjs';
-import { readContractJournal } from '../lib/planning-contract-runtime.mjs';
+import { createContractCompletionController, readContractJournal } from '../lib/planning-contract-runtime.mjs';
 import { BrowserWorkspace, createBrowserToolHandler } from '../lib/browser.mjs';
 import { browserReceiptBindingKey } from '../lib/operation-descriptors.mjs';
 import { observePageReceiptRecords } from '../desktop/browser-operation-observation.mjs';
@@ -27,12 +27,12 @@ const contract = () => ({ contractVersion: 2, goal: 'Complete one authorized enr
 // A deterministic observed page drives the production browser handler, descriptor,
 // receipt extractor, normalizer, task store and operation journal. It supplies no
 // external-confirmation evidence and cannot select an effect identity for a proof.
-async function fixture(t, { format = 'dom', lostSecondResponse = false } = {}) {
+async function fixture(t, { format = 'dom', lostSecondResponse = false, initialLocation = 'invalid', ownerCanObserve = false } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'blackice-binding-recovery-'));
   const tasks = new TaskStateStore({ dataDir: path.join(root, 'data') }), taskId = 'recovery-task', runId = 'recovery-run', nodeId = 'coordinator-node';
   const controller = new AbortController(), tracker = new BrowserSubmissionObservations();
   const page = { documentId: 'one:1', loaderId: 'form-loader', frameId: 'actual-frame', url: action,
-    location: 'invalid', status: null, text: '', outcome: 'p1:w1', participant: 'p1', prior: 'false', destination: '/tenant-a/enroll', correlation: true };
+    location: initialLocation, status: null, text: '', outcome: 'p1:w1', participant: 'p1', prior: 'false', destination: '/tenant-a/enroll', correlation: true };
   let commits = 0, interactions = 0;
   const formFields = () => [['participantId', 'p1'], ['workshopId', 'w1'], ['location', page.location]];
   const form = () => ({ id: 'form-1', documentId: page.documentId, action, method: 'POST', enctype: 'application/x-www-form-urlencoded', target: '_self',
@@ -98,7 +98,9 @@ async function fixture(t, { format = 'dom', lostSecondResponse = false } = {}) {
     return result;
   };
   const initial = await send(call('relay_task', { action: 'read' }));
-  assert.equal((await send(call('relay_task', { action: 'plan', expectedRevision: body(initial).revision, contract: contract() }))).success, true);
+  const authored = contract();
+  if (ownerCanObserve) authored.workItems[0].effects.push('observe');
+  assert.equal((await send(call('relay_task', { action: 'plan', expectedRevision: body(initial).revision, contract: authored }))).success, true);
   await focus('enroll');
   t.after(async () => { await guard.finish('finished'); await tasks.close?.(); await fs.rm(root, { recursive: true, force: true }); });
   const bindingFrom = observed => {
@@ -110,12 +112,99 @@ async function fixture(t, { format = 'dom', lostSecondResponse = false } = {}) {
         identity: [{ field: 'data-participant', formField: fields.find(name => name === 'participantId') }, { field: 'data-workshop', formField: fields.find(name => name === 'workshopId') }] };
   };
   return { send, state, journal, focus, refine, page, bindingFrom,
+    completion: () => createContractCompletionController({ store: tasks, taskId, runId, nodeId, signal: controller.signal }),
+    bind: args => send(call('relay_task', { action: 'bind_receipt', workItemId: 'enroll', criterionId: 'receipt', ...args })),
+    adoptNextOccurrence: async () => {
+      const current = await state(), { planEpoch, ...contract } = current.contract;
+      await tasks.setContract(taskId, contract, { expectedRevision: current.revision, schemaVersion: 14, adoption: {
+        runId: 'next-occurrence', planRef: { cycleId: 'next-cycle' }, freshEvidence: true, requiredCriterionIds: ['receipt']
+      } });
+      return state();
+    },
     browse: (action, extra = {}) => send(call('relay_browser', { action, browser: 'relay', tabId: 'relay:one', ...extra })),
     counts: () => ({ commits, interactions }) };
 }
 
 const receiptCriterion = state => state.contractRuntime.criteria.find(item => item.id === 'receipt');
 const commitsOf = journal => journal.records.filter(item => item.effect === 'commit');
+
+test('completion returns the exact unbound positive submission for authored recovery without replay', async t => {
+  const f = await fixture(t, { initialLocation: 'valid', ownerCanObserve: true }), before = await f.state();
+  const noPending = await f.bind({ expectedRevision: before.revision, receiptBinding: {} });
+  assert.equal(noPending.code, 'TASK_CONTRACT_RECEIPT_NOT_PENDING');
+  const first = await f.browse('click', { ref: 'submit' });
+  const { recovery, note } = operation(first);
+  assert.match(note, /Use bind_receipt/);
+  assert.equal(recovery.reason, 'receipt-binding-missing');
+  assert.equal(receiptCriterion(await f.state()).observedCount, 0, 'A visible success has not established confirmation.');
+  const original = commitsOf(await f.journal())[0];
+  assert.equal(original.effectState, 'unconfirmed');
+  const completion = f.completion(), next = await completion.beforeFinal();
+  assert.equal(next.continue, true);
+  assert.match(next.prompt, /Use the tools to reconcile this exact retained browser submission before returning/);
+  const instruction = JSON.parse(next.prompt.slice(next.prompt.lastIndexOf('\n') + 1));
+  assert.deepEqual(instruction, recovery);
+  assert.equal(instruction.operationId, original.operationId);
+  assert.equal(instruction.destinationKey, 'destination:' + action);
+  assert.deepEqual(instruction.bindReceipt, { tool: 'relay_task', action: 'bind_receipt', expectedRevision: before.revision, workItemId: 'enroll', criterionId: 'receipt' });
+  assert.match(instruction.steps[1], /relay_task \{"action":"read"\}/);
+  assert.match(instruction.steps[3], /current expectedPlanEpoch from the returned state, then relay_browser read or snapshot/);
+  assert.equal((await f.browse('click', { ref: 'submit' })).code, 'TASK_CONTRACT_EFFECT_UNCERTAIN');
+
+  const binding = f.bindingFrom(body(first));
+  binding.confirmedValues = binding.absentValues;
+  delete binding.absentValues;
+  const wrongOwner = await f.bind({ expectedRevision: before.revision, workItemId: 'discover', receiptBinding: binding });
+  assert.equal(wrongOwner.code, 'TASK_CONTRACT_OWNERSHIP');
+  const saved = await f.bind({ expectedRevision: before.revision, receiptBinding: binding });
+  assert.equal(saved.success, true, JSON.stringify(saved));
+  const updated = await f.state();
+  const expected = structuredClone(before.contract);
+  expected.criteria[0].receiptBinding = binding;
+  expected.planEpoch++;
+  assert.deepEqual(updated.contract, expected, 'The scoped edit preserves every other criterion, item and instruction.');
+  assert.equal(updated.revision, before.revision + 1);
+  assert.equal((await f.bind({ expectedRevision: before.revision, receiptBinding: binding })).code, 'TASK_STATE_CONFLICT');
+  assert.equal(receiptCriterion(await f.state()).observedCount, 0, 'Saving a binding does not confirm an effect.');
+  await f.focus('enroll');
+  const currentDocument = f.page.documentId;
+  f.page.participant = 'different-subject';
+  const mismatch = await f.browse('read');
+  assert.equal(operation(mismatch).recovery.reason, 'receipt-not-matched');
+  assert.equal(operation(mismatch).recovery.criteria[0].bindingState, 'confirmation-only');
+  assert.equal(receiptCriterion(await f.state()).observedCount, 0);
+  f.page.participant = 'p1';
+  await f.browse('read');
+  const [reconciled] = commitsOf(await f.journal());
+  assert.equal(f.page.documentId, currentDocument);
+  assert.equal(reconciled.operationId, original.operationId);
+  assert.deepEqual(reconciled.commit, original.commit);
+  assert.equal(reconciled.effectState, 'confirmed');
+  assert.equal(receiptCriterion(await f.state()).observedCount, 1);
+  const remaining = await completion.beforeFinal();
+  assert.equal(remaining.continue, true, 'Independent observation remains available after receipt recovery.');
+  assert.doesNotMatch(remaining.prompt, /browser-receipt-recovery/);
+  await f.focus('discover');
+  await f.browse('read');
+  assert.equal(await completion.beforeFinal(), null);
+  assert.deepEqual(f.counts(), { commits: 1, interactions: 0 });
+});
+
+test('a later occurrence can bind an older unresolved submission for the same owned item', async t => {
+  const f = await fixture(t, { initialLocation: 'valid', ownerCanObserve: true });
+  const first = await f.browse('click', { ref: 'submit' }), original = commitsOf(await f.journal())[0];
+  assert.equal(operation(first).effectState, 'unconfirmed');
+  const occurrence = await f.adoptNextOccurrence();
+  assert.deepEqual(occurrence.contractRuntime.unresolved, [], 'The new occurrence excludes old submissions from its own accounting.');
+  const observed = f.bindingFrom(body(first));
+  observed.confirmedValues = observed.absentValues;
+  delete observed.absentValues;
+  const patched = await f.bind({ expectedRevision: occurrence.revision, receiptBinding: observed });
+  assert.equal(patched.success, true, JSON.stringify(patched));
+  assert.deepEqual((await f.state()).contract.criteria[0].receiptBinding, observed);
+  assert.deepEqual(commitsOf(await f.journal()), [original], 'Authoring does not reconcile or replay the older effect.');
+  assert.equal(receiptCriterion(await f.state()).observedCount, 0);
+});
 
 test('an initially unbound browser submission is recovered by observed binding and owning-item refinement without replay', async t => {
   const f = await fixture(t), first = await f.browse('click', { ref: 'submit' }), submitted = operation(first);
@@ -151,7 +240,12 @@ test('an initially unbound browser submission is recovered by observed binding a
   assert.equal(operation(second).effectState, 'unconfirmed'); assert.equal(operation(second).recovery.criteria[0].bindingState, 'absence-only');
   assert.equal(receiptCriterion(await f.state()).observedCount, 0, 'An observed positive response is unmapped by an absence-only binding.');
   const observedPositive = body(second).frames[0].semanticRecords[0].attributes['data-status'];
-  await f.refine(next => { next.criteria[0].receiptBinding.confirmedValues = [observedPositive]; });
+  const observedBinding = f.bindingFrom(body(second));
+  observedBinding.confirmedValues = [observedPositive];
+  delete observedBinding.absentValues;
+  const patched = await f.bind({ expectedRevision: (await f.state()).revision, receiptBinding: observedBinding });
+  assert.equal(patched.success, true, JSON.stringify(patched));
+  assert.deepEqual((await f.state()).contract.criteria[0].receiptBinding.absentValues, ['validation-rejected']);
   await f.focus('enroll');
   const savedPage = structuredClone(f.page);
   Object.assign(f.page, { status: 'validation-rejected', text: rejection });

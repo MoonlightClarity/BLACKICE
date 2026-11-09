@@ -43,6 +43,6 @@ export function canonicalCycleTaskContext(sources, { cycleId, runId, planRef } =
     return { sourceId: id, sourceHash: source.contentHash, taskId: data.taskId, runId: data.runId, planRef: data.planRef,
       contract, planEpoch: data.planEpoch, journalSeq: data.journalSeq, contractSha256: data.contractSha256,
       acceptanceCriteria: contractPlanProjection(contract).acceptanceCriteria,
-      criteria: data.criteria, outcomes: data.outcomes, unresolved: data.unresolved, complete };
+      criteria: data.criteria, outcomes: data.outcomes, unresolved: data.unresolved, ...(Array.isArray(data.blockers) ? { blockers: data.blockers } : {}), complete };
   } catch { return invalid('The complete canonical review evidence could not be read.'); }
 }

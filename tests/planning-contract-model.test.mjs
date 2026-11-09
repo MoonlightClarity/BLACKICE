@@ -196,8 +196,8 @@ test('work-item scope does not accept wildcard authority, unsupported effect lab
 });
 
 test('canonical planning and execution explain how to expand bounded public research scope', () => {
-  assert.match(CONTRACT_AUTHORING_GUIDANCE, /observe and a concrete browser scope.*origin:https:\/\/careers\.example\.test/);
-  assert.match(CONTRACT_AUTHORING_GUIDANCE, /browser:relay covers tab inventory/);
+  assert.match(CONTRACT_AUTHORING_GUIDANCE, /observe and a concrete browser scope.*actual origin from the captured evidence/);
+  assert.match(CONTRACT_AUTHORING_GUIDANCE, /browser:relay scope covers tab inventory/);
   assert.match(CONTRACT_AUTHORING_GUIDANCE, /revise that same work item with the exact resource, preserving prior IDs and evidence/);
   assert.match(CONTRACT_AUTHORING_GUIDANCE, /Research scope does not authorize form submissions, messages, or other commitments/);
   assert.ok(CONTRACT_INSTRUCTIONS.includes(CONTRACT_AUTHORING_GUIDANCE));
