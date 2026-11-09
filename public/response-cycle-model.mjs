@@ -216,7 +216,7 @@ const BASE_KEYS = ['values', 'grounding', 'openQuestions', 'challengeResponses',
 const STAGE_KEYS = { viability: ['requirements'], inference: ['inferences'], plan: ['acceptanceCriteria', 'steps'], think: ['criterionResults'], respond: ['coverage'] };
 const COMMON_KEYS = ['checks', 'subproblems', 'childResults'];
 /** Parse model-authored findings only. Host sources, state and receipts are excluded. */
-export function parseResponseCycleResponse(output, stageOrKind, { sources,pipelineVersion=RESPONSE_CYCLE_PIPELINE_VERSION,requireUserAgency=false } = {}) {
+export function parseResponseCycleResponse(output, stageOrKind, { sources,pipelineVersion=RESPONSE_CYCLE_PIPELINE_VERSION,requireUserAgency=false,commitPrerequisites } = {}) {
   const stage = responseCycleStage(stageOrKind,{pipelineVersion}), template = responseCycleTemplate(stage.kind,{pipelineVersion});
   let value = output;
   if (typeof value === 'string') {
@@ -259,7 +259,7 @@ export function parseResponseCycleResponse(output, stageOrKind, { sources,pipeli
   }), 'id', 'Inferences');
   if (stage.kind === 'plan') {
     if (canonicalPlan) {
-      result.contract = normalizePlanContractResponse(value.contract);
+      result.contract = normalizePlanContractResponse(value.contract, commitPrerequisites);
       const projected = contractPlanProjection(result.contract, [canonicalPlanSource(sources).id]);
       for (const key of ['acceptanceCriteria', 'steps']) if (value[key] !== undefined && canonical(value[key]) !== canonical(projected[key])) throw fail('The supplied ' + key + ' disagrees with the canonical contract. These views are host-derived.');
       Object.assign(result, projected);

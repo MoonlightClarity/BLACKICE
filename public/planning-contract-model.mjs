@@ -77,7 +77,7 @@ export function planContractResponseSchema() {
 }
 
 /** Strip only declared optional null markers before ordinary plan validation. */
-export function normalizePlanContractResponse(value) {
+export function normalizePlanContractResponse(value, prerequisites = []) {
   const decode = (item, schema) => {
     if (Array.isArray(item) && schema.items) return item.map(entry => decode(entry, schema.items));
     if (!object(item)) return item;
@@ -94,7 +94,20 @@ export function normalizePlanContractResponse(value) {
       return [[key, field ? decode(entry, field) : entry]];
     }));
   };
-  return normalizePlanContract(decode(value, PLAN_CONTRACT_SCHEMA));
+  const decoded = decode(value, PLAN_CONTRACT_SCHEMA);
+  if (Array.isArray(decoded?.criteria) && Array.isArray(decoded.workItems)) {
+    for (const required of prerequisites) {
+      const index = decoded.criteria.findIndex(item => item?.id === required.id);
+      if (index < 0 && !decoded.workItems.some(item => Array.isArray(item?.criterionIds) && item.criterionIds.includes(required.id))) continue;
+      const original = decoded.criteria[index];
+      const criterion = { ...original, id: required.id, kind: 'judgment', label: required.label, description: required.description };
+      if (required.accuracy) criterion.accuracy = required.accuracy;
+      else delete criterion.accuracy;
+      if (index < 0) decoded.criteria.push(criterion);
+      else decoded.criteria[index] = criterion;
+    }
+  }
+  return normalizePlanContract(decoded);
 }
 
 function keys(value, allowed, required, label) {
@@ -242,7 +255,7 @@ export function assertCommitPrerequisites(contract, prerequisiteIds, expected = 
     const required = expected.find(item => item.id === id);
     if (required && (criterion?.label !== required.label || criterion.description !== required.description ||
         JSON.stringify(criterion.accuracy) !== JSON.stringify(required.accuracy))) {
-      throw fail('Copy eligibility condition "' + id + '" and its accuracy exactly from cycle.commitPrerequisites.');
+      throw fail('Include eligibility condition "' + id + '" on the prerequisite work item. BLACKICE carries its definition from Feasibility.');
     }
     const owners = contract.workItems.filter(item => item.criterionIds.includes(id));
     const owner = owners[0];

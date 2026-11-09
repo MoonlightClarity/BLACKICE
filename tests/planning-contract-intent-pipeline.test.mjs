@@ -90,8 +90,6 @@ function analyticalResponse(input, { strictCity = false, workspaceKey, condition
     if (conditional) {
       const [gate] = input.cycle.commitPrerequisites;
       assert.equal(gate.id, 'authorized-city', 'Feasibility must deliver the typed condition to Plan.');
-      const { verification, ...criterion } = gate;
-      body.contract.criteria.push({ ...criterion, kind: 'judgment' });
       const commit = body.contract.workItems[0];
       if (conditional === 'valid') {
         body.contract.workItems.push({ ...commit, id: 'inspect-prerequisite', effects: ['observe'], criterionIds: [gate.id] });
@@ -214,6 +212,10 @@ test('an adopted prerequisite remains required through an operational edit', { t
   assert.equal(f.run.errorCode, 'FIXTURE_STOP_AFTER_HANDOFF', f.run.error);
   assert.deepEqual(f.adoptedTask.contractAdoption.commitPrerequisiteIds, ['authorized-city']);
   assert.ok(f.adoptedTask.contractAdoption.requiredCriterionIds.includes('authorized-city'));
+  assert.deepEqual(f.adoptedTask.contract.criteria.find(criterion => criterion.id === 'authorized-city'), {
+    id: 'authorized-city', kind: 'judgment', label: 'Authorized city alternatives', description: 'Authorized city alternatives',
+    accuracy: requiredCriteria[1].accuracy
+  });
   assert.equal(f.task.contract.workItems.find(item => item.effects.includes('commit')).dependsOn[0], 'inspect-prerequisite');
   const { planEpoch, ...contract } = copy(f.task.contract);
   contract.workItems.find(item => item.effects.includes('commit')).dependsOn = [];
