@@ -1,3 +1,5 @@
+import { USER_AGENCY_CONTRACT_VERSION } from './planning-user-agency.mjs';
+
 /** Structured public findings for the shared request/schedule readiness check. */
 export const TASK_ACCURACY_SCOPE_GUIDANCE = [
   'Scope each accuracy requirement to the outcome or criterion it governs. An exact count, identity match or confirmation requirement does not make unrelated input fields require literal text or finer precision.',
@@ -140,14 +142,20 @@ export function viabilityRequirementSchema() {
     sourceIds: strings, checkedSourceIds: strings, rationale: string, inferable: { type: 'boolean' }, omissionAllowed: { type: 'boolean' }, question: string, dependentNodeIds: strings, stopKind: { anyOf: [{ type: 'string', enum: [...PLANNING_STOP_KINDS] }, { type: 'null' }] }, accuracy: taskAccuracySchema(), commitPrerequisite: { type: 'boolean' }
   } } });
 }
+/** An open fact does not itself justify interrupting the user. */
+export function normalizeViabilityQuestions(requirements, checkpoint, { required = false } = {}) {
+  if (!required || checkpoint?.action === 'ask') return requirements;
+  return requirements.map(item => item.importance === 'essential' && item.resolution === 'unknown' && item.question ? { ...item, question: '' } : item);
+}
 /** Admission may delegate unasked unknown checks to the owning workflow without claiming they are resolved. */
 export function deferredOwnerChecks(response, readiness) {
   if (!readiness?.analysisReady || !['awaiting_input', 'needs_evidence'].includes(readiness.state) || !readiness.blockingFacts?.length) return false;
   const requirements = new Map((response?.requirements || []).map(item => [item.id, item]));
   return readiness.blockingFacts.every(fact => {
     const requirement = requirements.get(fact.id);
+    const question = response?.userAgencyVersion === USER_AGENCY_CONTRACT_VERSION ? fact.question : requirement?.question;
     return fact.resolution === 'unknown' && requirement?.resolution === 'unknown'
-      && typeof requirement.question === 'string' && !requirement.question.trim()
+      && typeof question === 'string' && !question.trim()
       && requirement.dependentNodeIds?.length > 0;
   });
 }
@@ -157,8 +165,9 @@ const responseSourceIdentity=source=>JSON.stringify(canonicalResponseValue({id:s
 /** This computes readiness of recorded findings, never truth of the underlying claims. */
 export function evaluateViabilityResponse(response, sources = [], { workflowNodeIds = null,upstreamResponses=[] } = {}) {
   if (!response) return { state: 'needs_evidence', analysisReady: false, blockingFacts: [], preferences: [], issues: ['No structured readiness response has been recorded.'] };
+  const checkedAgency = response.userAgencyVersion === USER_AGENCY_CONTRACT_VERSION;
   let requirements;
-  try { requirements = validateViabilityRequirements(response.requirements); }
+  try { requirements = normalizeViabilityQuestions(validateViabilityRequirements(response.requirements), response.userAgency, { required: checkedAgency }); }
   catch (error) { return { state: 'needs_evidence', analysisReady: false, blockingFacts: [], preferences: [], issues: [error.message] }; }
   const current = new Map(sources.filter(source => source.kind !== 'response').map(source => [source.id, source]));
   const captured = new Map((response.sources || []).filter(source => source.kind !== 'response').map(source => [source.id, source]));
@@ -197,6 +206,7 @@ export function evaluateViabilityResponse(response, sources = [], { workflowNode
     else if (workflowNodeIds && requirement.dependentNodeIds.some(id => !workflowNodeIds.includes(id))) reason = 'A dependency names a workflow node outside this request.';
     else if (requirement.resolution === 'unknown' && !requirement.checkedSourceIds.length) { reason = 'Inspect the captured sources before treating this essential fact as missing.'; coverageOnly = true; }
     else if (requirement.resolution === 'unknown' && suppliedFacts.some(id => !requirement.checkedSourceIds.includes(id))) { reason = 'Inspect all supplied records and earlier answers before treating this essential fact as missing.'; coverageOnly = true; }
+    else if (requirement.resolution === 'unknown' && checkedAgency && !requirement.question && !requirement.dependentNodeIds.length) reason = 'An unresolved fact needs a bounded owner check or a justified question.';
     else if (requirement.resolution === 'unknown') reason = 'An essential fact remains unresolved.';
     else if (['blocked','repairable','nonblocking'].includes(requirement.resolution)&&(!requirement.value||!requirement.sourceIds.length))reason='A resource classification needs actual diagnostic evidence and a concrete finding.';
     else if (requirement.resolution === 'blocked') reason = 'A confirmed resource prerequisite prevents the affected work.';
@@ -208,7 +218,7 @@ export function evaluateViabilityResponse(response, sources = [], { workflowNode
     if(!reason&&requirement.resolution==='repairable')repairableGaps.push({id:requirement.id,label:requirement.label,affectedNodeIds:requirement.dependentNodeIds,finding:requirement.value,remedy:requirement.rationale,sourceIds:requirement.sourceIds});
     if(!reason&&requirement.resolution==='nonblocking')nonblockingSymptoms.push({id:requirement.id,label:requirement.label,finding:requirement.value,rationale:requirement.rationale,sourceIds:requirement.sourceIds});
     if (reason) {
-      const question = requirement.question || 'What is the correct ' + requirement.label + '?';
+      const question = requirement.question || (checkedAgency ? '' : 'What is the correct ' + requirement.label + '?');
       blockingFacts.push({ id: requirement.id, label: requirement.label, question, consequence: requirement.consequence, dependentNodeIds: requirement.dependentNodeIds, reason,resolution:requirement.resolution,diagnostic:requirement.value,remedy:requirement.rationale,sourceIds:requirement.sourceIds });
       if (!['An essential fact remains unresolved.','A confirmed resource prerequisite prevents the affected work.'].includes(reason)) {
         issues.push(reason);

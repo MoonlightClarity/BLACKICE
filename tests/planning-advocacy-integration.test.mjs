@@ -6,6 +6,7 @@ import path from 'node:path';
 import { USER_AGENCY_GUIDANCE, USER_AGENCY_CHECKPOINT_SCHEMA, normalizeUserAgencyCheckpoint, evaluateUserAgencyCheckpoint } from '../public/planning-user-agency.mjs';
 import { parseResponseCycleResponse, responseCycleTemplate, responseCycleStage } from '../public/response-cycle-model.mjs';
 import { planningCycleStageContext, parseModuleResponse } from '../public/planning-browser-model.mjs';
+import { deferredOwnerChecks, evaluateViabilityResponse } from '../public/task-viability-model.mjs';
 import { PlanningBrowserStore } from '../lib/planning-browser.mjs';
 import { planningModuleOutputSchema, validatePlanningModuleResponse, planningFormatDiagnostic } from '../lib/planning-browser-runtime.mjs';
 import { normalizePlanningReview, appendPlanningReview, validateSavedPlanningReviews } from '../lib/planning-review.mjs';
@@ -143,6 +144,49 @@ test('a typed essential stop cannot hide behind a routine or contrary proceed ch
   assert.ok(parseModuleResponse(legacy, 'viability'), 'historical records retain their declared contract');
   body.requirements[0].importance = 'preference'; body.userAgency = checkpoint();
   assert.equal(parseModuleResponse(body, 'viability', { requireUserAgency: true }).userAgency.action, 'proceed', 'a preference is not an essential dispatch stop');
+});
+
+test('only a justified ask turns an essential unknown into a user question', () => {
+  const delivery = comparison(0.4, 100);
+  delivery.options.find(item => item.id === 'ask').clarification.informationNeeded = 'The intended address for this delivery.';
+  const cases = [
+    { id: 'catalog_form', label: 'Routine publisher form field', question: 'Which catalog format should the publisher form use?',
+      rationale: 'Inspect the accepted sample and use its ordinary format before publishing.', agency: checkpoint({ input: comparison() }) },
+    { id: 'archive_record', label: 'Archive output convention', question: 'Where do you keep the older comparison files?',
+      rationale: 'Inspect the current workspace for the files before deciding whether another step would help.',
+      agency: checkpoint({ input: comparison(null, 5), action: 'investigate', selectedOptionId: null }) },
+    { id: 'delivery_destination', label: 'Irreducible private delivery destination', question: 'Which of your two addresses should receive the delivery?',
+      rationale: 'The authorized records contain two plausible destinations and no current selection. Sending to the wrong address materially affects the user.',
+      agency: checkpoint({ input: delivery, action: 'ask' }) },
+  ];
+  const sources = [{ id: 'supplied-record', kind: 'source', text: 'Captured evidence for the bounded task.' }];
+  for (const { id, label, question, rationale, agency } of cases) {
+    const body = response('viability', agency);
+    body.requirements = [{ id, label, importance: 'essential', basis: 'task', consequence: 'Select a correct result for the affected operation.',
+      resolution: 'unknown', value: '', sourceIds: [], checkedSourceIds: ['supplied-record'], rationale,
+      inferable: false, omissionAllowed: false, question, dependentNodeIds: ['worker'] }];
+    const ask = agency.action === 'ask';
+    for (const parse of [parseModuleResponse, parseResponseCycleResponse]) {
+      const parsed = parse(body, 'viability', { requireUserAgency: true });
+      assert.equal(parsed.requirements[0].question, ask ? question : '');
+      const stored = { ...parsed, userAgencyVersion: 1, sources };
+      const readiness = evaluateViabilityResponse(stored, sources, { workflowNodeIds: ['worker'] });
+      assert.equal(readiness.unresolvedFacts[0].id, id);
+      assert.equal(readiness.blockingFacts[0].question, ask ? question : '');
+      assert.equal(deferredOwnerChecks(stored, readiness), !ask);
+      if (!ask) {
+        const unassigned = { ...stored, requirements: [{ ...stored.requirements[0], dependentNodeIds: [] }] };
+        const unassignedReadiness = evaluateViabilityResponse(unassigned, sources);
+        assert.equal(unassignedReadiness.state, 'needs_evidence');
+        assert.equal(unassignedReadiness.blockingFacts[0].question, '');
+        assert.equal(deferredOwnerChecks(unassigned, unassignedReadiness), false);
+      }
+    }
+    const legacy = { ...body, sources }; delete legacy.userAgency;
+    const legacyReadiness = evaluateViabilityResponse(legacy, sources, { workflowNodeIds: ['worker'] });
+    assert.equal(legacyReadiness.blockingFacts[0].question, question);
+    assert.equal(deferredOwnerChecks(legacy, legacyReadiness), false);
+  }
 });
 
 test('format recovery accepts nullable numerical estimates and empirical integer counts', () => {

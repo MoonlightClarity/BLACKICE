@@ -239,7 +239,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     if(!graph?.id||!Array.isArray(graph.nodes))throw Error('The readiness check did not return its saved Planning request.');
     const nodeId=graph.viability?.nodeId||'viability',node=graph.nodes.find(item=>item.id===nodeId),finding=node?.readiness?.viability;
     const state=graph.viability?.recoveryIssue?'needs_evidence':finding?.state||node?.readiness?.state||'needs_evidence';
-    const question=graph.viability?.recoveryIssue?.message||(state==='awaiting_input'?(finding?.blockingFacts||[]).map(fact=>fact.question+(fact.consequence?'\n'+fact.consequence:'')).join('\n\n'):(finding?.issues||[]).join('\n'));
+    const question=graph.viability?.recoveryIssue?.message||(state==='awaiting_input'?(finding?.blockingFacts||[]).filter(fact=>fact.question).map(fact=>fact.question+(fact.consequence?'\n'+fact.consequence:'')).join('\n\n'):(finding?.issues||[]).join('\n'));
     if(graph.viabilityAction?.deployment)rememberReadiness(graph.viabilityAction.deployment);
     await refresh();
     const saved=(snapshot?.deployments||[]).find(item=>item.id===task.id)||graph.viabilityAction?.deployment||task;

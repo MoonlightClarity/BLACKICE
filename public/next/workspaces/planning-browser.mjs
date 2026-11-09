@@ -425,12 +425,13 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     const recoveryIssue = document.viability?.nodeId === node.id ? document.viability.recoveryIssue : null;
     if (!viability && !recoveryIssue) return;
     const readinessState = recoveryIssue ? 'needs_evidence' : viability.state;
+    const questions = (viability?.blockingFacts || []).filter(fact => fact.question);
     const section = add(parent, 'section', '', 'pb-inspector-section pb-viability');
     section.dataset.viabilityState = readinessState;
     add(section, 'h4', document.viability?.scope === 'deployment' ? 'Schedule setup' : 'Task viability');
     const labels = {
       ready: 'No essential input remains unresolved in this check.',
-      awaiting_input: 'Answer the essential questions below to complete this check.',
+      awaiting_input: questions.length ? 'Answer the essential questions below to complete this check.' : 'BLACKICE will check the remaining details during the run.',
       blocked:'A confirmed prerequisite prevents the affected work. Its diagnostic and remedy are recorded below; independent ready work can continue.',
       needs_evidence: 'This check needs supporting sources before it can guide the next action.',
       stale: 'Inputs changed. Review the current check before using its result.'
@@ -471,7 +472,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     }
     if (recoveryIssue || readinessState !== 'awaiting_input') return;
     state.viabilityDrafts ||= new Map();
-    for (const fact of viability.blockingFacts || []) {
+    for (const fact of questions) {
       const key = node.id + ':' + fact.id, responseId = node.response?.id || null;
       let draft = state.viabilityDrafts.get(key);
       if (!draft) { draft = { answer: '', nodeRevision: node.revision, responseId, submission: null }; state.viabilityDrafts.set(key, draft); }

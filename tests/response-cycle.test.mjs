@@ -120,8 +120,8 @@ test('Forced automatic Planning delegates unknown saved-record checks to the ope
   assert.notEqual(held.result.ownerChecksDeferred,true);
 });
 
-test('managed automatic Planning runs owner access checks without asking a generic question',async t=>{
-  const managedCase=async (makeRequirement,input='Check the requested sources and complete the delegated work.')=>{
+test('automatic Planning delegates owner checks and holds only justified user questions',async t=>{
+  const prepareCase=async (makeRequirement,input='Check the requested sources and complete the delegated work.',managed=true)=>{
     const f=await fixture(t,{amend:(body,captured)=>{
       if(captured.module.kind==='viability'){body.requirements=[makeRequirement(captured)];if(body.requirements[0].resolution==='blocked'&&body.requirements[0].stopKind)body.userAgency=fixtureProhibitedSourceAgency(body.requirements[0]);else if(body.requirements[0].id==='required_address')body.userAgency=fixtureAskingUserAgency(body.requirements[0].question);}
       return body;
@@ -130,7 +130,7 @@ test('managed automatic Planning runs owner access checks without asking a gener
     // decision while retaining managed provenance on the run under preparation.
     const ordinaryPreflight=f.taskViability.forRun.bind(f.taskViability);
     f.taskViability.forRun=(run,options)=>ordinaryPreflight({...run,metadata:undefined},options);
-    return f.prepare('automatic',{input,metadata:{managedBy:'operations',inboxId:'managed-fixture'},runtimeSettings:{planningGuardrails:true}});
+    return f.prepare('automatic',{input,...(managed?{metadata:{managedBy:'operations',inboxId:'managed-fixture'}}:{}),runtimeSettings:{planningGuardrails:true}});
   };
   const unknown=(captured,question='')=>({
     id:'operational_access',label:'Operational workflow access',importance:'essential',basis:'task',
@@ -139,20 +139,23 @@ test('managed automatic Planning runs owner access checks without asking a gener
     rationale:'The analytical preflight cannot probe runtime tools; the owning workflow can check each channel.',
     inferable:false,omissionAllowed:false,question,dependentNodeIds:['agent']
   });
-  const delegated=await managedCase(captured=>unknown(captured));
+  const delegated=await prepareCase(captured=>unknown(captured,'Can you tell me which ordinary tool to use?'));
   assert.equal(delegated.request.nodes.find(node=>node.kind==='viability').readiness.viability.state,'awaiting_input','the unknown remains recorded');
+  assert.equal(delegated.request.nodes.find(node=>node.kind==='viability').response.requirements[0].question,'');
   assert.equal(delegated.result.state,'executing');
   assert.equal(delegated.result.ownerChecksDeferred,true);
   assert.equal(delegated.result.awaitingInput,false);
   assert.equal(delegated.result.question,'');
   assert.deepEqual(delegated.result.blockedNodeIds,[]);
 
-  const missingFact=await managedCase(captured=>({...unknown(captured,'What residential address should the required form use?'),id:'required_address',label:'Required residential address',basis:'user'}));
-  assert.equal(missingFact.result.state,'awaiting_input','a specific authored factual question still holds the managed run');
-  assert.notEqual(missingFact.result.ownerChecksDeferred,true);
-  assert.match(missingFact.result.question,/residential address/);
+  for (const managed of [true,false]) {
+    const missingFact=await prepareCase(captured=>({...unknown(captured,'What residential address should the required form use?'),id:'required_address',label:'Required residential address',basis:'user'}),undefined,managed);
+    assert.equal(missingFact.result.state,'awaiting_input');
+    assert.notEqual(missingFact.result.ownerChecksDeferred,true);
+    assert.match(missingFact.result.question,/residential address/);
+  }
 
-  const denied=await managedCase(captured=>({...unknown(captured),id:'prohibited_source',resolution:'blocked',value:'The user expressly prohibited this source.',sourceIds:['viability:task'],stopKind:'user_prohibited',rationale:'The current request explicitly prohibits this source.'}),'Explain the supplied evidence. Do not access the saved source.');
+  const denied=await prepareCase(captured=>({...unknown(captured),id:'prohibited_source',resolution:'blocked',value:'The user expressly prohibited this source.',sourceIds:['viability:task'],stopKind:'user_prohibited',rationale:'The current request explicitly prohibits this source.'}),'Explain the supplied evidence. Do not access the saved source.');
   assert.equal(denied.result.state,'blocked','an explicit denial still holds the managed run');
   assert.notEqual(denied.result.ownerChecksDeferred,true);
 });

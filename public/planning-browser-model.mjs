@@ -1,5 +1,5 @@
 /** Public response contracts and projections; no execution or truth certification. */
-import { VIABILITY_TEMPLATE, validateViabilityRequirements, evaluateViabilityResponse, planningReadableFindingIssues, validatePlanningReadableFindings } from './task-viability-model.mjs';
+import { VIABILITY_TEMPLATE, validateViabilityRequirements, normalizeViabilityQuestions, evaluateViabilityResponse, planningReadableFindingIssues, validatePlanningReadableFindings } from './task-viability-model.mjs';
 import { RESPONSE_CYCLE_CONTAINER_TEMPLATE, RESPONSE_CYCLE_TEMPLATES, RESPONSE_CYCLE_STAGES, responseCycleStage, responseCycleStages, responseCycleTemplate, parseResponseCycleResponse, evaluateResponseCycleStage, analyticalSubproblem } from './response-cycle-model.mjs';
 import { canonicalCycleTaskContext } from './planning-contract-cycle-model.mjs';
 import { normalizeUserAgencyCheckpoint, evaluateUserAgencyCheckpoint, assertUserAgencyDispatchConsistency } from './planning-user-agency.mjs';
@@ -124,7 +124,7 @@ export function parseModuleResponse(output,kind,{sources,pipelineVersion,require
   if(!Array.isArray(challenges)||challenges.length>100)throw planningBrowserError('Use at most 100 challenge responses.');
   const challengeIds=new Set();
   const userAgency=kind==='viability'?normalizeUserAgencyCheckpoint(value.userAgency,{required:requireUserAgency}):null;
-  const result={...checked,...(userAgency?{userAgency}:{}),...(kind==='viability'?{requirements:validateViabilityRequirements(value.requirements)}:{}),grounding:links,
+  const result={...checked,...(userAgency?{userAgency}:{}),...(kind==='viability'?{requirements:normalizeViabilityQuestions(validateViabilityRequirements(value.requirements),userAgency,{required:requireUserAgency})}:{}),grounding:links,
     openQuestions:questions.map(item=>text(item,'Open question',2000,true)),
     challengeResponses:challenges.map(item=>{
       allowed(item,['edgeId','disposition','note'],'Challenge response');
