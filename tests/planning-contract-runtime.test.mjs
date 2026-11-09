@@ -6,8 +6,9 @@ import os from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { TaskStateStore, createTaskToolHandler } from '../lib/task-state.mjs';
 import { createPlanningWorkerGuard, wrapPlanningToolHandler } from '../lib/planning-awareness.mjs';
-import { readContractJournal, contractCompletionStatus, contractRuntimeView } from '../lib/planning-contract-runtime.mjs';
+import { readContractJournal, contractCompletionStatus, contractRuntimeView, createContractCompletionController } from '../lib/planning-contract-runtime.mjs';
 import { normalizeContractEvidence } from '../lib/planning-contract-evidence.mjs';
+import { createPlanningCompletionController } from '../lib/planning-completion.mjs';
 import { createWorkspaceToolHandler } from '../lib/workspace-tools.mjs';
 import { describeHostOperation } from '../lib/operation-descriptors.mjs';
 
@@ -55,6 +56,80 @@ test('actual workspace operations append their own lifecycle without structural 
   assert.equal(current.revision, initial.revision); assert.equal(current.contract.planEpoch, initial.contract.planEpoch);
   assert.equal(journal.records.length, 3); assert.ok(journal.records.every(row => row.deliveryState === 'returned' && row.resultDigest));
   assert.ok(journal.records.every(row => row.dispatchedAt && row.finishedAt)); assert.ok(journal.evidence.length >= 2);
+});
+
+test('completion keeps working after distinct host reads and stops on repeated or failed reads', async t => {
+  const f = await fixture(t), updates = [];
+  await fs.writeFile(path.join(f.cwd, 'second.txt'), 'another actual fixture input');
+  const completion = createContractCompletionController({ store: f.tasks, taskId: f.taskId, nodeId: f.nodeId,
+    signal: f.controller.signal, onUpdate: update => updates.push(update) });
+  const read = (target, options = {}) => f.send(call('relay_workspace', { action: 'read', path: target, ...options }));
+  assert.equal((await read('input.txt')).success, true);
+  assert.equal((await completion.beforeFinal()).continue, true);
+  assert.equal((await read('second.txt')).success, true);
+  assert.equal((await completion.beforeFinal()).continue, true, 'an unsatisfied criterion can need several distinct host reads');
+  assert.deepEqual(updates.map(row => row.returnCount), [1, 2]);
+  assert.ok(updates.every(row => row.complete === false), 'observations alone must not satisfy the requested judgment');
+
+  assert.equal((await read('second.txt', { startLine: 1, lineCount: 1 })).success, true, 'same delivered lines with different arguments');
+  assert.equal((await read('missing.txt')).success, false);
+  assert.equal((await f.send(call('relay_task', { action: 'focus', workItemId: 'files', expectedPlanEpoch: 1 }))).success, true);
+  await assert.rejects(completion.beforeFinal(), { code: 'TASK_CONTRACT_INCOMPLETE', message: /No new host-observed progress/ });
+  assert.equal(updates.at(-1).stopReason, 'no_new_progress');
+  await assert.rejects(completion.assertReady(), { code: 'TASK_CONTRACT_INCOMPLETE' });
+});
+
+test('continued observation progress counts newly covered lines and still respects the return cap', async t => {
+  const f = await fixture(t);
+  await fs.writeFile(path.join(f.cwd, 'long.txt'), ['one', 'two', 'three', 'four', 'five'].join(String.fromCharCode(10)));
+  const read = async (startLine, lineCount) => {
+    const result = await f.send(call('relay_workspace', { action: 'read', path: 'long.txt', startLine, lineCount }));
+    assert.equal(result.success, true);
+  };
+  const completion = createContractCompletionController({ store: f.tasks, taskId: f.taskId, nodeId: f.nodeId, maxReturns: 2 });
+  await read(1, 2);
+  assert.equal((await completion.beforeFinal()).continue, true);
+  await read(2, 2);
+  assert.equal((await completion.beforeFinal()).continue, true, 'partially overlapping ranges can still add new lines');
+  await read(4, 1);
+  await assert.rejects(completion.beforeFinal(), { code: 'TASK_CONTRACT_INCOMPLETE', message: /reached its continuation limit/ }, 'new evidence cannot override an explicit continuation cap');
+  const duplicate = createContractCompletionController({ store: f.tasks, taskId: f.taskId, nodeId: f.nodeId });
+  assert.equal((await duplicate.beforeFinal()).continue, true);
+  await read(1, 4);
+  await assert.rejects(duplicate.beforeFinal(), { code: 'TASK_CONTRACT_INCOMPLETE' }, 'a different page spanning only covered lines is not new progress');
+});
+
+test('default canonical completion grants up to twelve continuations for fresh host observations', async t => {
+  const f = await fixture(t), updates = [];
+  const completion = createPlanningCompletionController({ store: f.tasks, taskId: f.taskId, nodeId: f.nodeId,
+    schemaVersion: 14, executionGuardrails: true, onUpdate: update => updates.push(update) });
+  for (let index = 0; index < 13; index++) {
+    const target = 'input-' + index + '.txt';
+    await fs.writeFile(path.join(f.cwd, target), 'Actual fixture input ' + index);
+    assert.equal((await f.send(call('relay_workspace', { action: 'read', path: target }))).success, true);
+    if (index < 12) assert.equal((await completion.beforeFinal()).continue, true);
+    else await assert.rejects(completion.beforeFinal(), { code: 'TASK_CONTRACT_INCOMPLETE', message: /reached its continuation limit/ });
+  }
+  assert.equal(updates.at(-1).stopReason, 'continuation_limit');
+  assert.equal(updates.at(-1).returnCount, 12);
+  assert.equal(updates.at(-1).complete, false);
+});
+
+test('a new judgment without a new host observation cannot extend the ordinary cap', async t => {
+  const f = await fixture(t, { contract: ({ key }) => {
+    const value = draft([key]);
+    value.criteria.push({ id: 'remaining', kind: 'judgment', description: 'A second requested review remains.' });
+    value.workItems[0].criterionIds.push('remaining');
+    return value;
+  } });
+  const completion = createContractCompletionController({ store: f.tasks, taskId: f.taskId, nodeId: f.nodeId,
+    maxReturns: 1, maxObservationReturns: 2 });
+  assert.equal((await f.send(call('relay_workspace', { action: 'read', path: 'input.txt' }))).success, true);
+  assert.equal((await completion.beforeFinal()).continue, true);
+  const journal = await readContractJournal(f.tasks, f.taskId);
+  assert.equal((await f.send(call('relay_task', { action: 'assess', workItemId: 'files', expectedPlanEpoch: 1,
+    criterionId: 'checked', judgment: 'satisfied', note: 'The fixture supports the completed review.', evidenceIds: journal.evidence.map(item => item.id) }))).success, true);
+  await assert.rejects(completion.beforeFinal(), { code: 'TASK_CONTRACT_INCOMPLETE', message: /reached its continuation limit/ });
 });
 
 test('a workspace observation prerequisite is established by a real file read without a material plan edit', async t => {
@@ -272,7 +347,16 @@ test('a lost actual write receipt stays uncertain across worker turnover and blo
   const next = await createPlanningWorkerGuard({ store: f.tasks, taskId: f.taskId, runId: 'continued-run', nodeId: f.nodeId, cwd: f.cwd, schemaVersion: 14, executionGuardrails: true, coordinator: true, getOperationAdapter: () => f.workspace });
   next.observeToolDelivery({ call: call('relay_task', { action: 'read' }), result: await f.handler(call('relay_task', { action: 'read' })) });
   assert.equal((await next.before(call('relay_workspace', { action: 'write', path: 'written-once.txt', text: 'duplicate effect' }))).code, 'TASK_CONTRACT_EFFECT_UNCERTAIN');
-  assert.equal(await next.before(call('relay_workspace', { action: 'read', path: 'written-once.txt' })), null);
+  const completion = createContractCompletionController({ store: f.tasks, taskId: f.taskId, nodeId: f.nodeId,
+    maxReturns: 1, maxObservationReturns: 2 });
+  assert.equal((await completion.beforeFinal()).continue, true);
+  const inspection = call('relay_workspace', { action: 'read', path: 'written-once.txt' });
+  assert.equal(await next.before(inspection), null);
+  const inspected = await f.workspace(inspection, next.dispatchContext(inspection));
+  assert.equal(inspected.success, true);
+  await next.annotate(inspection, inspected);
+  await assert.rejects(completion.beforeFinal(), { code: 'TASK_CONTRACT_INCOMPLETE', message: /reached its continuation limit/ },
+    'an unresolved effect keeps the original bound even when additional observation is available');
   const status = contractCompletionStatus(await f.tasks.get(f.taskId), await readContractJournal(f.tasks, f.taskId));
   assert.equal(status.complete, false); assert.equal(status.outcome, 'uncertain');
   assert.equal(await fs.readFile(path.join(f.cwd, 'written-once.txt'), 'utf8'), 'actual single effect'); next.finish('finished');

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { taskAccuracySchema, validateTaskAccuracy } from '../public/task-viability-model.mjs';
 import { parseResponseCycleResponse, responseCycleStage } from '../public/response-cycle-model.mjs';
 import {
-  PLAN_CONTRACT_VERSION, PLAN_CONTRACT_SCHEMA, PLAN_CONTRACT_LIMITS,
+  PLAN_CONTRACT_VERSION, PLAN_CONTRACT_SCHEMA, PLAN_CONTRACT_LIMITS, CONTRACT_AUTHORING_GUIDANCE, CONTRACT_INSTRUCTIONS,
   normalizePlanContract, normalizePlanContractResponse, isPlanContractTask, contractPlanProjection,
 } from '../public/planning-contract-model.mjs';
 
@@ -193,6 +193,14 @@ test('work-item scope does not accept wildcard authority, unsupported effect lab
     const input = draft(); input.workItems[0][field] = true;
     assert.throws(() => normalizePlanContract(input), /undeclared/);
   }
+});
+
+test('canonical planning and execution explain how to expand bounded public research scope', () => {
+  assert.match(CONTRACT_AUTHORING_GUIDANCE, /observe and a concrete browser scope.*origin:https:\/\/careers\.example\.test/);
+  assert.match(CONTRACT_AUTHORING_GUIDANCE, /browser:relay covers tab inventory/);
+  assert.match(CONTRACT_AUTHORING_GUIDANCE, /revise that same work item with the exact resource, preserving prior IDs and evidence/);
+  assert.match(CONTRACT_AUTHORING_GUIDANCE, /Research scope does not authorize form submissions, messages, or other commitments/);
+  assert.ok(CONTRACT_INSTRUCTIONS.includes(CONTRACT_AUTHORING_GUIDANCE));
 });
 
 test('ordinary audit handling remains separate from resource and effect permissions', () => {

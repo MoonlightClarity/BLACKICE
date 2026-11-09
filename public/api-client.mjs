@@ -3,10 +3,17 @@ export function createApiClient({ fetcher = globalThis.fetch, timeoutMs = 30000 
   return async function api(path, method = 'GET', body) {
     const options = method && typeof method === 'object' && !Array.isArray(method) ? method : {};
     if (options === method) { method = options.method ?? 'GET'; body = options.body === undefined ? body : options.body; }
-    const deadlineMs = options.timeoutMs === undefined ? timeoutMs : options.timeoutMs;
-    if (!Number.isFinite(deadlineMs) || deadlineMs <= 0 || options.timeoutMs !== undefined && deadlineMs > 60000) throw new Error('Choose a request deadline of up to 60 seconds.');
     if (typeof method !== 'string' || !['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(method.toUpperCase())) throw new Error('Choose a supported request method.');
     method = method.toUpperCase();
+    // Readiness may run both Inference and Feasibility. A PUT can also
+    // inherit an enabled schedule, which makes the server check readiness.
+    const checksSchedule = typeof path === 'string' && (
+      method === 'POST' && (/^\/api\/operations\/deployments\/[A-Za-z0-9_-]+\/readiness$/.test(path)
+        || path === '/api/operations/deployments' && body?.enabled === true)
+      || method === 'PUT' && /^\/api\/operations\/deployments\/[A-Za-z0-9_-]+$/.test(path) && body?.enabled !== false
+    );
+    const deadlineMs = options.timeoutMs === undefined ? (checksSchedule ? 180_000 : timeoutMs) : options.timeoutMs;
+    if (!Number.isFinite(deadlineMs) || deadlineMs <= 0 || options.timeoutMs !== undefined && deadlineMs > 60000) throw new Error('Choose a request deadline of up to 60 seconds.');
     const mutation = !['GET', 'HEAD'].includes(method), controller = new AbortController();
     const headers = new Headers(options.headers); if (mutation) headers.set('Content-Type', 'application/json');
     const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;

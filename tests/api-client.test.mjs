@@ -79,3 +79,38 @@ test('a bounded per-request deadline can cover a native check without changing o
   for (const timeoutMs of [0, -1, Infinity, '50000', 60001]) await assert.rejects(api('/api/codex/models/check', { method: 'POST', timeoutMs }), /deadline/);
   assert.equal(calls.length, 2); assert.equal(calls[0].options.method, 'POST'); assert.deepEqual(JSON.parse(calls[0].options.body), { model: 'fixture' });
 });
+
+test('schedule checks can await a slow provider without extending draft, trigger or ordinary requests', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const calls = [];
+  const api = createApiClient({ fetcher: (path, options) => new Promise(resolve => calls.push({ path, options, resolve })) });
+  const base = '/api/operations/deployments';
+  const extended = [
+    api(base + '/saved/readiness', 'post', {}),
+    api(base, { method: 'POST', body: { enabled: true } }),
+    api(base + '/saved', 'PUT', { enabled: true }),
+    api(base + '/saved', 'PUT', { name: 'Potentially enabled schedule' }),
+  ];
+  const ordinary = [
+    api(base + '/saved/trigger', 'POST', {}),
+    api(base, 'POST', { enabled: false }),
+    api(base + '/saved', 'PUT', { enabled: false }),
+    api('/api/status'),
+  ].map(promise => assert.rejects(promise, { code: 'API_TIMEOUT' }));
+
+  t.mock.timers.tick(49_000);
+  await Promise.all(ordinary);
+  assert.equal(calls.length, 8);
+  assert.ok(calls.slice(0, 4).every(call => !call.options.signal.aborted));
+  for (const call of calls.slice(0, 4)) call.resolve({ ok: true, json: async () => ({ completed: true }) });
+  assert.deepEqual(await Promise.all(extended), Array.from({ length: 4 }, () => ({ completed: true })));
+
+  const timeout = assert.rejects(api(base + '/other/readiness', 'POST', {}), error =>
+    error.code === 'API_TIMEOUT' && error.uncertain === true);
+  t.mock.timers.tick(179_999);
+  assert.equal(calls[8].options.signal.aborted, false);
+  t.mock.timers.tick(1);
+  await timeout;
+  assert.equal(calls[8].options.signal.aborted, true);
+  assert.equal(calls.length, 9, 'A timed-out readiness request must not be replayed.');
+});
