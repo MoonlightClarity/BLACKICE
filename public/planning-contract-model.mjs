@@ -77,7 +77,7 @@ export function planContractResponseSchema() {
 }
 
 /** Strip only declared optional null markers before ordinary plan validation. */
-export function normalizePlanContractResponse(value, prerequisites = [], { requireBrowserReceipts = false } = {}) {
+export function normalizePlanContractResponse(value, prerequisites = [], { requireBrowserReceipts = false, attachedReadScope, coordinator } = {}) {
   const decode = (item, schema) => {
     if (Array.isArray(item) && schema.items) return item.map(entry => decode(entry, schema.items));
     if (!object(item)) return item;
@@ -131,11 +131,25 @@ export function normalizePlanContractResponse(value, prerequisites = [], { requi
   }
   if (requireBrowserReceipts && Array.isArray(decoded?.criteria) && Array.isArray(decoded.workItems)) {
     const ids = new Set(decoded.criteria.map(criterion => criterion?.id));
+    const judgments = new Set(decoded.criteria.filter(criterion => criterion?.kind === 'judgment').map(criterion => criterion.id));
     const receiptIds = new Set(decoded.criteria.filter(criterion => criterion?.kind === 'external-confirmation').map(criterion => criterion.id));
+    const byId = new Map(decoded.workItems.map(item => [item?.id, item]));
     for (const item of decoded.workItems) {
-      if (!Array.isArray(item?.effects) || !item.effects.includes('commit') || !Array.isArray(item.criterionIds) ||
-          item.criterionIds.some(id => receiptIds.has(id)) || !Array.isArray(item.resourceKeys) ||
+      if (!Array.isArray(item?.effects) || !item.effects.includes('commit') || !Array.isArray(item.criterionIds) || !Array.isArray(item.resourceKeys) ||
           !item.resourceKeys.some(key => /^(?:(?:origin|url):https?:|destination:|form:|document:|tab:|browser:relay$)/.test(key))) continue;
+      if (item.effects.includes('observe') && Array.isArray(item.dependsOn)) {
+        const pageScopes = item.resourceKeys.filter(key => /^(?:origin|url):https?:\/\//.test(key));
+        for (const id of item.dependsOn) {
+          const prerequisite = byId.get(id);
+          if (!pageScopes.length || prerequisite?.owner !== item.owner || !Array.isArray(prerequisite.effects) ||
+              prerequisite.effects.some(effect => effect === 'commit' || effect === 'opaque') || !prerequisite.effects.includes('observe') ||
+              !Array.isArray(prerequisite.resourceKeys) || !Array.isArray(prerequisite.criterionIds) ||
+              !prerequisite.criterionIds.some(id => judgments.has(id))) continue;
+          const scopes = [...new Set([...prerequisite.resourceKeys, ...pageScopes, 'browser:relay'])];
+          prerequisite.resourceKeys = scopes.slice(0, PLAN_CONTRACT_LIMITS.resources);
+        }
+      }
+      if (item.criterionIds.some(id => receiptIds.has(id))) continue;
       const base = 'confirm-' + String(item.id).slice(0, 100);
       let id = base;
       for (let suffix = 2; ids.has(id); suffix++) id = base + '-' + suffix;
@@ -143,6 +157,15 @@ export function normalizePlanContractResponse(value, prerequisites = [], { requi
       item.criterionIds.push(id);
       decoded.criteria.push({ id, kind: 'external-confirmation', label: 'Confirm the browser result',
         description: 'Verify the outcome of ' + String(item.title) + ' using the destination’s receipt.' });
+    }
+  }
+  if (/^attachments:[a-f0-9]{64}$/.test(attachedReadScope || '') && Array.isArray(decoded?.workItems)) {
+    const readers = decoded.workItems.filter(item => (item?.owner === 'coordinator' || coordinator && item?.owner === coordinator) &&
+      Array.isArray(item.effects) && item.effects.includes('observe') && Array.isArray(item.resourceKeys));
+    if (!readers.some(item => item.resourceKeys.some(key => key === attachedReadScope || /^attachment:sha256:/.test(key)))) {
+      const candidates = readers.filter(item => item.resourceKeys.length < PLAN_CONTRACT_LIMITS.resources);
+      const selected = candidates.find(item => !item.effects.includes('commit') && !item.effects.includes('opaque')) || candidates[0];
+      selected?.resourceKeys.push(attachedReadScope);
     }
   }
   return normalizePlanContract(decoded);

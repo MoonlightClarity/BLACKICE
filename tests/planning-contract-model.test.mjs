@@ -49,6 +49,24 @@ test('an operational browser commit gets a receipt criterion when the model supp
   assert.deepEqual(result.workItems[1], normalizePlanContract(input).workItems[1]);
 });
 
+test('a browser work item shares its existing page-read scope with its same-owner eligibility prerequisite', () => {
+  const input = draft(), [submit, history] = input.workItems;
+  submit.resourceKeys = ['origin:https://example.test', 'destination:https://example.test/form'];
+  submit.dependsOn.push('eligibility', 'other-owner');
+  for (const [id, owner] of [['eligibility', 'coordinator'], ['other-owner', 'reviewer']]) {
+    input.criteria.push({ id, kind: 'judgment', description: 'Assess eligibility from the observed records.' });
+    input.workItems.push({ id, title: 'Inspect eligibility', objective: 'Read the relevant source.', owner,
+      resourceKeys: ['workspace:/fixture'], effects: ['observe'], dependsOn: [], criterionIds: [id] });
+  }
+  const result = normalizePlanContractResponse(input, [], { requireBrowserReceipts: true });
+  const item = id => result.workItems.find(row => row.id === id);
+  assert.deepEqual(item('eligibility').resourceKeys, ['workspace:/fixture', 'origin:https://example.test', 'browser:relay']);
+  assert.deepEqual(item('eligibility').effects, ['observe']);
+  assert.deepEqual(item('other-owner').resourceKeys, ['workspace:/fixture']);
+  assert.deepEqual(item('history').resourceKeys, history.resourceKeys);
+  assert.deepEqual(item('form').resourceKeys, submit.resourceKeys);
+});
+
 test('canonical model null markers preserve optionality without weakening host receipt rules', () => {
   const original = draft();
   const candidate = structuredClone(original);

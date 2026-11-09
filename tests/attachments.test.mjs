@@ -7,6 +7,7 @@ import { deflateSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
 import { AttachmentStore, ATTACHMENT_LIMITS, inspectAttachment, createAttachmentToolHandler } from '../lib/attachments.mjs';
 import { initAttachmentsUI } from '../public/attachments-ui.mjs';
+import { attachmentResourceKey, attachmentSetResourceKey, describeHostOperation } from '../lib/operation-descriptors.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const crc = bytes => { let value = 0xffffffff; for (const byte of bytes) { value ^= byte; for (let bit = 0; bit < 8; bit++) value = value & 1 ? value >>> 1 ^ 0xedb88320 : value >>> 1; } return (value ^ 0xffffffff) >>> 0; };
@@ -77,6 +78,30 @@ test('tool access is scoped to this run and image pixels are returned only on an
   const viewed = await invoke(handler, { action: 'image', attachmentId: image.id }); assert.equal(viewed.contentItems[1].type, 'inputImage'); assert.deepEqual(Buffer.from(viewed.contentItems[1].imageUrl.split(',')[1], 'base64'), png());
   await assert.rejects(invoke(handler, { action: 'read', attachmentId: other.id }), /not attached/); await assert.rejects(invoke(handler, { action: 'image', attachmentId: text.id }), /attachment is text/);
   const read = await invoke(handler, { action: 'read', attachmentId: text.id }); assert.match(read.contentItems[0].text, /Attached evidence/); assert.equal(events.at(-1).type, 'attachment'); assert.equal(events.at(-1).status, 'completed'); assert.equal(Object.hasOwn(events.at(-1), 'content'), false);
+});
+
+test('attachment read descriptors use only the attached immutable file and its exact inventory', async t => {
+  const { store, dataDir } = await setup(t), first = await upload(store, 'task.txt', 'Attached evidence'),
+    other = await upload(store, 'unrelated.txt', 'Other task private data');
+  const handler = createAttachmentToolHandler({ store, attachmentIds: [first.id], cwd: dataDir });
+  const scopeKey = attachmentSetResourceKey([first.id]), key = attachmentResourceKey(first.sha256);
+  const call = (action, attachmentId = first.id) => ({ name: 'relay_files', arguments: { action, attachmentId } });
+  assert.notEqual(scopeKey, attachmentSetResourceKey([first.id, other.id]));
+  assert.deepEqual((await handler.describeOperation(call('list'))).resources, [{ key: scopeKey, access: 'read' }]);
+  for (const action of ['read', 'search', 'read_bytes', 'image']) {
+    const descriptor = await handler.describeOperation(call(action));
+    assert.equal(descriptor.effect, 'observe');
+    assert.deepEqual(descriptor.resources, [{ key, access: 'read', scopeKeys: [scopeKey] }]);
+  }
+  await assert.rejects(handler.describeOperation(call('read', other.id)), { status: 403 });
+  assert.equal((await describeHostOperation(call('read'))).effect, 'opaque', 'A call alone does not establish an attached resource.');
+  assert.deepEqual(await handler.describeOperation(call('export')), await describeHostOperation(call('export')), 'Export retains its existing write descriptor.');
+  let admission;
+  const observed = await handler(call('read'), { onOperationDispatch: descriptor => { admission = descriptor; } });
+  assert.equal(observed.success, true);
+  assert.match(observed.contentItems[0].text, /Attached evidence/);
+  assert.equal(admission.effect, 'observe');
+  assert.equal(admission.resources[0].key, key);
 });
 
 test('prompt excerpts are bounded after JSON escaping and do not preload image pixels', async t => {

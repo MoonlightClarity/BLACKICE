@@ -5,7 +5,7 @@ import { planContractResponseSchema, normalizePlanContractResponse, contractPlan
  * Evaluator context (sources, stage/child state, budgets and receipts) is supplied
  * by the host from its current records, never copied from the model response.
  */
-import { VIABILITY_TEMPLATE, validateViabilityRequirements, viabilityRequirementSchema, evaluateViabilityResponse, validateTaskAccuracy, taskAccuracySchema, validatePlanningReadableFindings, TASK_ACCURACY_SCOPE_GUIDANCE } from './task-viability-model.mjs';
+import { VIABILITY_TEMPLATE, validateViabilityRequirements, viabilityRequirementSchema, evaluateViabilityResponse, deferredOwnerChecks, validateTaskAccuracy, taskAccuracySchema, validatePlanningReadableFindings, TASK_ACCURACY_SCOPE_GUIDANCE } from './task-viability-model.mjs';
 import { USER_AGENCY_GUIDANCE, USER_AGENCY_CHECKPOINT_SCHEMA, USER_AGENCY_OUTPUT_SCHEMA, normalizeUserAgencyCheckpoint, evaluateUserAgencyCheckpoint, assertUserAgencyDispatchConsistency } from './planning-user-agency.mjs';
 
 const freeze = value => {
@@ -266,8 +266,14 @@ export function parseResponseCycleResponse(output, stageOrKind, { sources,pipeli
   }), 'id', 'Inferences');
   if (stage.kind === 'plan') {
     if (canonicalPlan) {
-      result.contract = normalizePlanContractResponse(value.contract, cycleContext?.commitPrerequisites, { requireBrowserReceipts: Boolean(cycleContext?.workflowOwner) });
-      const projected = contractPlanProjection(result.contract, [canonicalPlanSource(sources).id]);
+      const source = canonicalPlanSource(sources), authoring = JSON.parse(source.text);
+      const operational = Boolean(cycleContext?.workflowOwner), agents = authoring.workflow?.agents || [];
+      result.contract = normalizePlanContractResponse(value.contract, cycleContext?.commitPrerequisites, {
+        requireBrowserReceipts: operational,
+        attachedReadScope: operational ? authoring.attachmentScope?.resourceKey : null,
+        coordinator: authoring.workflow?.coordinatorNodeId || (agents.length === 1 ? agents[0].id : null),
+      });
+      const projected = contractPlanProjection(result.contract, [source.id]);
       for (const key of ['acceptanceCriteria', 'steps']) if (value[key] !== undefined && canonical(value[key]) !== canonical(projected[key])) throw fail('The supplied ' + key + ' disagrees with the canonical contract. These views are host-derived.');
       Object.assign(result, projected);
     } else Object.assign(result, validatePlanRevision({ acceptanceCriteria: value.acceptanceCriteria, steps: value.steps }));
@@ -383,9 +389,11 @@ export function evaluateResponseCycleStage(stageOrKind, response, context = {}) 
     result.unresolvedChecks.push(...(viability.sourceCoverage || []).map(item => ({ id: item.requirementId, label: 'Supplied source inspection', note: item.message, sourceIds: item.missingSourceIds })));
     const valid = !result.blockedDependencies.length && !result.staleSources.length && !result.staleInputs.length && !result.issues.length && !result.missingFields.length && !result.missingGrounding.length && !result.invalidReferences.length;
     result.analysisReady = valid && viability.analysisReady === true;
-    result.dispatchReady = valid && prerequisitesDispatch && viability.state === 'ready';
-    result.state = !valid ? result.staleSources.length || result.staleInputs.length ? 'stale' : 'needs_evidence' : viability.state;
-    result.outcome = result.dispatchReady ? 'satisfied' : 'unresolved'; return result;
+    const defer = valid && pipelineVersion !== 1 && Boolean(context.workflowOwner) && deferredOwnerChecks(response, viability);
+    if (defer) result.ownerChecksDeferred = true;
+    result.dispatchReady = valid && prerequisitesDispatch && (viability.state === 'ready' || defer);
+    result.state = !valid ? result.staleSources.length || result.staleInputs.length ? 'stale' : 'needs_evidence' : defer ? 'ready' : viability.state;
+    result.outcome = result.dispatchReady && !defer ? 'satisfied' : 'unresolved'; return result;
   }
 
   const canonicalExecution = ['think','respond'].includes(stage.kind) ? context.canonicalExecution : null;

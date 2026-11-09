@@ -47,6 +47,16 @@ test('changed revision or hash cannot mix into an existing material read', () =>
   assert.throws(() => contractDeliveryPage(saved, { ...args, viewHash: '0'.repeat(64) }), { code: 'TASK_STATE_CONFLICT' });
 });
 
+test('an initial contract view returns the current snapshot or manifest without page pins', () => {
+  for (const saved of [state(contract()), state(contract(40, 800))]) {
+    const args = { action: 'read', view: 'contract' };
+    assert.deepEqual(contractDeliveryPage(saved, args), projectContractTaskState(saved));
+    for (const pageFields of [{ offset: 0 }, { charCount: 8000 }, { expectedRevision: saved.revision }])
+      assert.throws(() => contractDeliveryPage(saved, { ...args, ...pageFields }), { code: 'TASK_STATE_CONFLICT' });
+    assert.throws(() => contractDeliveryPage(saved, { ...args, limit: 1 }), { code: 'TASK_CONTRACT_DELIVERY_INVALID' });
+  }
+});
+
 test('a missing or corrupt contract page remains unread', () => {
   const saved = state(contract(60, 900)), seen = [], deliver = createContractDeliveryTracker(saved.taskId, snapshot => seen.push(snapshot));
   let args = projectContractTaskState(saved).contractDelivery.nextRead, index = 0;

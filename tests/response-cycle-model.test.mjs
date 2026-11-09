@@ -131,6 +131,19 @@ test('recorded essential unknowns permit analysis but hold operational dispatch'
   assert.equal(unchecked.unresolvedChecks.length, 1);
 });
 
+test('a linked worker can investigate an unasked condition without an input hold', () => {
+  const f = fixture('viability');
+  f.payload.requirements = [fact({ resolution: 'unknown', value: '', sourceIds: [] })];
+  const owner = { workflowOwner: { cycleId: 'current', runId: 'run' } };
+  assert.equal(f.evaluate().dispatchReady, false, 'Standalone analysis cannot perform the missing check.');
+  const result = f.evaluate(f.record(), owner);
+  assert.equal(result.dispatchReady, true);
+  assert.equal(result.ownerChecksDeferred, true);
+  assert.equal(result.outcome, 'unresolved');
+  f.payload.requirements[0].question = 'What private fact must the user provide?';
+  assert.equal(f.evaluate(f.record(), owner).dispatchReady, false);
+});
+
 test('unknown feasibility can inform Plan without becoming dispatch authority', () => {
   for (const kind of ['plan']) {
     const f = fixture(kind); f.context.prerequisites[0].dispatchReady = false;

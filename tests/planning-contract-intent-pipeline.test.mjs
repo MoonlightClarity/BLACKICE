@@ -11,6 +11,8 @@ import { PlanningBrowserStore } from '../lib/planning-browser.mjs';
 import { PlanningBrowserRuntime } from '../lib/planning-browser-runtime.mjs';
 import { TaskViability } from '../lib/task-viability.mjs';
 import { ResponseCycleService } from '../lib/response-cycle.mjs';
+import { AttachmentStore } from '../lib/attachments.mjs';
+import { attachmentResourceKey, attachmentSetResourceKey } from '../lib/operation-descriptors.mjs';
 import { adoptExecutionPlanContract, executionOutlineHash } from '../lib/planning-execution-handoff.mjs';
 import { readContractJournal } from '../lib/planning-contract-runtime.mjs';
 import { createMissionWorkflow } from '../public/mission-model.mjs';
@@ -43,7 +45,7 @@ const requiredCriteria = [
 const copy = value => structuredClone(value);
 const captured = options => JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n') + 2));
 
-function analyticalResponse(input, { strictCity = false, workspaceKey, conditional = null } = {}) {
+function analyticalResponse(input, { strictCity = false, workspaceKey, conditional = null, attachmentScope } = {}) {
   const stage = responseCycleStage(input.module.kind, { pipelineVersion: input.cycle?.pipelineVersion });
   const sourceId = input.sources.find(source => source.id === 'viability:task')?.id || input.sources[0].id;
   const body = { userAgency: fixtureUserAgency(),
@@ -87,6 +89,11 @@ function analyticalResponse(input, { strictCity = false, workspaceKey, condition
         dependsOn: [], criterionIds: requiredCriteria.map(item => item.id) }],
       instructions: [{ id: 'city-alternatives', text: locationPermission + ' Preserve all other supplied facts and the exact new-confirmation count.', handling: 'preserve' }] };
     if (strictCity) body.contract.criteria.find(item => item.id === 'city-permission').accuracy.tolerance = 'Only the exact string Oak Hollow is acceptable.';
+    if (attachmentScope) {
+      body.contract.criteria.push({ id: 'attached-profile', kind: 'observation', description: 'Read the current immutable attached profile.', resourceKey: attachmentScope.files[0].resourceKey });
+      body.contract.workItems.push({ id: 'inspect-attachment', title: 'Read the attached profile', objective: 'Read the supplied attachment.',
+        owner: 'agent', resourceKeys: [workspaceKey], effects: ['observe'], dependsOn: [], criterionIds: ['attached-profile'] });
+    }
     if (conditional) {
       const [gate] = input.cycle.commitPrerequisites;
       assert.equal(gate.id, 'authorized-city', 'Feasibility must deliver the typed condition to Plan.');
@@ -100,11 +107,13 @@ function analyticalResponse(input, { strictCity = false, workspaceKey, condition
   return body;
 }
 
-async function fixture(t, { mode = 'plan_only', strictCity = false, conditional = null } = {}) {
+async function fixture(t, { mode = 'plan_only', strictCity = false, conditional = null, attach = false } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-intent-pipeline-')), cwd = path.join(directory, 'workspace');
   await mkdir(cwd);
   const tasks = await new TaskStateStore({ dataDir: directory }).init();
   const store = await new PlanningBrowserStore({ dataDir: directory }).init();
+  const attachments = attach ? await new AttachmentStore({ dataDir: directory }).init() : undefined;
+  const attached = attachments ? await attachments.importBytes({ name: 'demo-profile.txt', bytes: Buffer.from('Bounded attached profile fixture.') }) : null;
   const settings = { defaultModel: 'fixture-intent', defaultEffort: 'low', runTimeoutMs: null, executionGuardrails: false, subagentsEnabled: false };
   const calls = [], toolCalls = []; let operationalCalls = 0, adoptedTask = null, finalCheck = null, engine;
   class Runtime extends EventEmitter {
@@ -117,7 +126,14 @@ async function fixture(t, { mode = 'plan_only', strictCity = false, conditional 
         assert.ok(options.prompt.includes(TASK_ACCURACY_SCOPE_GUIDANCE), 'Each actual current stage receives the shared accuracy-scope guidance.');
         assert.ok(input.sources.some(source => source.text.includes(locationPermission)), 'The stage retains the original explicit user permission.');
         const workspaceKey = 'workspace:' + (process.platform === 'win32' ? cwd.replaceAll('\\', '/').toLowerCase() : cwd);
-        return { output: JSON.stringify(analyticalResponse(input, { strictCity, workspaceKey, conditional })), threadId: 'fixture-intent-planning', turnId: randomUUID() };
+        const executionSource = input.sources.find(source => source.id.startsWith('cycle:execution-contract:'));
+        const attachmentScope = executionSource && JSON.parse(executionSource.text).attachmentScope;
+        if (input.module.kind === 'plan') {
+          if (attached) assert.deepEqual(attachmentScope, { tool: 'relay_files', effect: 'observe', resourceKey: attachmentSetResourceKey([attached.id]),
+            files: [{ id: attached.id, name: attached.name, resourceKey: attachmentResourceKey(attached.sha256) }] });
+          else assert.equal(attachmentScope, undefined, 'An empty run does not advertise an attached scope.');
+        }
+        return { output: JSON.stringify(analyticalResponse(input, { strictCity, workspaceKey, conditional, attachmentScope })), threadId: 'fixture-intent-planning', turnId: randomUUID() };
       }
       operationalCalls++;
       assert.equal(mode, 'automatic', 'Plan only must never enter an operational worker.');
@@ -127,6 +143,14 @@ async function fixture(t, { mode = 'plan_only', strictCity = false, conditional 
       await options.onToolResultDelivered?.({ call, result });
       assert.equal(result.success, true, JSON.stringify(result));
       adoptedTask = JSON.parse(result.contentItems.find(item => item.type === 'inputText').text);
+      if (attached) {
+        const invoke = action => options.onToolCall({ name: 'relay_files', arguments: { action, attachmentId: attached.id }, callId: randomUUID() }, { signal: options.signal });
+        const read = await invoke('read');
+        assert.equal(read.success, true, JSON.stringify(read));
+        assert.match(read.contentItems[0].text, /Bounded attached profile fixture/);
+        const denied = await invoke('export');
+        assert.equal(denied.code, 'TASK_CONTRACT_SCOPE', 'An attachment observation scope cannot export files.');
+      }
       finalCheck = await options.onBeforeFinal({ output: 'No applications have been performed by this fixture.' });
       assert.equal(finalCheck?.continue, true, 'Permitted city tolerance cannot satisfy the unperformed application count or receipt requirements.');
       throw Object.assign(new Error('Fixture stopped after inspecting the canonical handoff; no application operation was dispatched.'), { code: 'FIXTURE_STOP_AFTER_HANDOFF' });
@@ -134,20 +158,32 @@ async function fixture(t, { mode = 'plan_only', strictCity = false, conditional 
     async close() {}
   }
   const runtime = new Runtime();
-  engine = await new HarnessEngine({ runtime, tasks, dataDir: directory, defaultCwd: cwd }).init();
+  engine = await new HarnessEngine({ runtime, tasks, attachments, dataDir: directory, defaultCwd: cwd }).init();
   engine.runtimeSettings = { get: () => settings };
   const runner = new PlanningBrowserRuntime({ store, runtime, defaultCwd: cwd, getSettings: () => settings });
-  const viability = new TaskViability({ store, runner, engine, identity: { read: async () => ({ content: 'No personal profile or external result is supplied by this deterministic fixture.' }) }, getSettings: () => settings });
+  const viability = new TaskViability({ store, runner, engine, attachments, identity: { read: async () => ({ content: 'No personal profile or external result is supplied by this deterministic fixture.' }) }, getSettings: () => settings });
   const service = new ResponseCycleService({ store, runner, taskViability: viability, engine, getSettings: () => settings });
   engine.responseCycle = service;
-  t.after(async () => { await engine.close(); await runner.close(); await service.close(); await viability.close(); await store.close(); await tasks.close(); await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => { await engine.close(); await runner.close(); await service.close(); await viability.close(); await store.close(); await tasks.close(); await attachments?.close(); await rm(directory, { recursive: true, force: true }); });
   const workflow = createMissionWorkflow({ id: 'intent-pipeline', task: request, model: 'fixture-intent', cwd, planningMode: 'forced' });
-  const accepted = engine.startRun({ workflow, input: request, planningMode: 'forced', planningExecutionMode: mode, requestId: 'intent-pipeline-' + mode + '-' + strictCity });
+  const accepted = engine.startRun({ workflow, input: attached ? { task: request, attachmentIds: [attached.id] } : request,
+    planningMode: 'forced', planningExecutionMode: mode, requestId: 'intent-pipeline-' + mode + '-' + strictCity });
   await engine.executions.get(accepted.id);
   const run = engine.getRun(accepted.id), saved = await store.get(run.responseCycle.requestId), cycle = saved.cycles.find(item => item.id === run.responseCycle.cycleId);
-  return { run, saved, cycle, calls, operationalCalls, toolCalls, adoptedTask, finalCheck, tasks,
+  return { run, saved, cycle, calls, operationalCalls, toolCalls, adoptedTask, finalCheck, tasks, attached,
     journal: await readContractJournal(tasks, run.taskId), task: operationalCalls ? await tasks.get(run.taskId) : null };
 }
+
+test('automatic canonical execution reads a supplied attachment within its actual observation scope', { timeout: 20000 }, async t => {
+  const f = await fixture(t, { mode: 'automatic', attach: true });
+  assert.equal(f.run.errorCode, 'FIXTURE_STOP_AFTER_HANDOFF', f.run.error);
+  const [operation] = f.journal.records;
+  assert.equal(f.journal.records.length, 1);
+  assert.equal(operation.tool, 'relay_files');
+  assert.equal(operation.effect, 'observe');
+  assert.equal(operation.workItemId, 'inspect-attachment');
+  assert.ok(f.journal.evidence.some(item => item.resourceKey === attachmentResourceKey(f.attached.sha256) && item.sourceVersion === f.attached.sha256));
+});
 
 function assertIntentAndProofBoundary(contract) {
   assert.equal(contract.contractVersion, 2);

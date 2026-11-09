@@ -319,6 +319,7 @@ export function projectPlanningRequest(value) {
       cycleContext.children=cycleContext.children.map(item=>{const child=value.responseCycle.cycles.find(child=>child.id===item.cycleId),childResponse=readinessFor(child.stageNodeIds.respond,nextVisit),complete=childResponse.cycle?.analysisReady===true&&child.state==='completed';return {...item,state:complete?'completed':['failed','cancelled'].includes(child.state)?child.state:childResponse.state,analysisReady:complete,dispatchReady:complete&&childResponse.cycle?.dispatchReady===true,workflowHandoff:childResponse.cycle?.workflowHandoff||null,outcome:childResponse.cycle?.outcome||'unresolved'};});
       cycle=evaluateResponseCycleStage(cycleContext.stageId,response,{...cycleContext,sources:planningNodeSources(value,nodeId),nodeRevision:node.revision,workflowNodeIds:value.viability?.workflowNodeIds||null});
       if(!['ready','awaiting_input'].includes(state)&&!unresolvedViabilityAnalysis){cycle.analysisReady=false;cycle.dispatchReady=false;cycle.state=state;}
+      if(cycle.ownerChecksDeferred&&cycle.dispatchReady)state='ready';
       if(!running&&['ready','awaiting_input','needs_evidence'].includes(state)&&!cycle.analysisReady)state=cycle.state;
     }
     const result={state,...(viability?{viability}:{}),...(cycle?{cycle}:{}),issues:readableIssues,missingFields,missingGrounding,invalidGrounding,staleInputs,blockedDependencies:[...new Set(blockedDependencies)],openChallenges,openQuestions:clone(response?.openQuestions||[]),unresolvedChildren:[],responseRecorded:Boolean(response),verifiedAction:false,
