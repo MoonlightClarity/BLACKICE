@@ -54,6 +54,8 @@ test('the form whole-case deadline cancels and settles an active Planning call',
     assert.match(path.basename(root), /^blackice-advocacy-deadline-/);
     await rm(root, { recursive: true, force: true });
   });
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const deadlineMs = 500;
   class WaitingAdmission extends EventEmitter {
     calls = []; closes = 0;
     status() { return { connected: true, authenticated: true, isolatedHistory: true, defaultModel: 'fixture-model',
@@ -66,6 +68,8 @@ test('the form whole-case deadline cancels and settles an active Planning call',
         const abort = () => reject(Object.assign(Error('Synthetic cancelled admission.'), { name: 'AbortError', code: 'ABORT_ERR' }));
         if (options.signal.aborted) return abort();
         options.signal.addEventListener('abort', abort, { once: true });
+        // Advance the deadline only after the synthetic Planning call is active.
+        t.mock.timers.tick(deadlineMs);
       });
     }
     async close() { this.closes++; }
@@ -73,7 +77,7 @@ test('the form whole-case deadline cancels and settles an active Planning call',
   const runtime = new WaitingAdmission();
   const result = await runAdvocacyCase({ runtime, root,
     item: ADVOCACY_CASES.find(item => item.id === 'required-nationality-decline'),
-    model: 'fixture-model', effort: 'default', timeoutMs: 500, runTimeoutMs: 10000 });
+    model: 'fixture-model', effort: 'default', timeoutMs: deadlineMs, runTimeoutMs: 10000 });
   assert.ok(runtime.calls.length > 0);
   assert.equal(result.timedOut, true);
   assert.equal(result.status, 'cancelled');
