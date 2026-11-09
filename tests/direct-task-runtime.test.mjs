@@ -78,6 +78,18 @@ test('different observed target establishes independent baseline and permits one
  assert.equal((await f.execute()).success,true);assert.equal(f.counts().commits,2);
  assert.equal((await f.measure('second')).criteria[0].observedCount,1);
 });
+test('direct browser binding cannot substitute a different receipt criterion for the matched typed commit',async t=>{
+ const f=await fixture(t),draft=contract(),item=draft.workItems[0],target='url:'+action;
+ draft.criteria.push({...draft.criteria[0],id:'other-receipt'});item.criterionIds.push('other-receipt');item.resourceKeys.push(target);
+ item.operationScopes=[{effect:'observe',resourceKeys:[origin]},{effect:'interact',resourceKeys:[origin]},{effect:'commit',resourceKeys:[target],confirmationCriterionId:'receipt'}];
+ await f.runtime().create({ownerId,taskId:'task',contract:draft});
+ const args={ownerId,taskId:'task',tabId,workItemId:'enroll',identityFields:['participantId','workshopId'],ref:'submit',expectedUrl:f.page.url,expectedDocumentId:f.page.documentId};
+ await assert.rejects(f.runtime().bind({...args,criterionId:'other-receipt'}),{code:'DIRECT_TASK_SCOPE'});
+ const bound=await f.runtime().bind({...args,criterionId:'receipt'});
+ assert.equal(bound.criterionId,'receipt');
+ assert.equal((await f.execute()).success,true);
+ assert.equal(f.counts().commits,1);
+});
 test('missing baseline does not block an initial attempt, but missing confirmation never counts or permits retry',async t=>{
  const f=await fixture(t),b=await f.bind();f.page.status=null;f.page.missingReceipt=true;
  assert.equal((await f.reconcile(b)).accepted,0);

@@ -644,6 +644,118 @@ const commitDescriptor = item => {
 };
 const raceAdapter = { describeOperation: async item => commitDescriptor(item) };
 
+test('typed effect scopes permit the declared read and write without borrowing other effects’ resources', async t => {
+  const f = await fixture(t, { contract: async ({ cwd }) => {
+    const key = async target => (await describeHostOperation(call('relay_workspace', { action: 'read', path: target }), { cwd }))
+      .resources.find(resource => !resource.scopeOnly).key;
+    const readKey = await key('input.txt'), writeKey = await key('output.txt');
+    const value = draft([readKey, writeKey]);
+    Object.assign(value.workItems[0], { effects: ['observe', 'interact'], operationScopes: [
+      { effect: 'observe', resourceKeys: [readKey] }, { effect: 'interact', resourceKeys: [writeKey] },
+    ] });
+    return value;
+  } });
+  assert.equal((await f.send(call('relay_workspace', { action: 'read', path: 'input.txt' }))).success, true);
+  assert.equal((await f.send(call('relay_workspace', { action: 'write', path: 'input.txt', text: 'forbidden' }))).code, 'TASK_CONTRACT_SCOPE');
+  assert.equal((await f.send(call('relay_workspace', { action: 'write', path: 'output.txt', text: 'permitted' }))).success, true);
+  assert.equal((await f.send(call('relay_workspace', { action: 'read', path: 'output.txt' }))).code, 'TASK_CONTRACT_SCOPE');
+  assert.equal(await fs.readFile(path.join(f.cwd, 'input.txt'), 'utf8'), 'actual fixture input\n');
+  assert.equal(await fs.readFile(path.join(f.cwd, 'output.txt'), 'utf8'), 'permitted');
+  assert.equal((await readContractJournal(f.tasks, f.taskId)).records.length, 2);
+});
+
+const typedCommitPlan = (sameScope = false) => {
+  const targets = ['first', 'second'], value = draft(targets.map(target => 'form:' + target));
+  value.criteria = targets.map(target => ({ id: target, kind: 'external-confirmation', description: 'Verify the ' + target + ' result.' }));
+  Object.assign(value.workItems[0], { effects: ['commit'], criterionIds: targets,
+    operationScopes: targets.map(target => ({ effect: 'commit', resourceKeys: ['form:' + (sameScope ? 'first' : target)], confirmationCriterionId: target })) });
+  return value;
+};
+
+test('typed commits reserve and count only the one confirmation criterion bound to their observed target', async t => {
+  const adapter = { ...raceAdapter, normalizeOperationResult: async (_result, { descriptor }) => ({ effectState: 'confirmed', evidence: [{
+    kind: 'external-confirmation', resourceKey: descriptor.commit.formKey,
+    confirmation: { outcomeId: descriptor.commit.destinationKey, effectKey: descriptor.commit.effectKey, status: 'confirmed' },
+  }] }) };
+  const f = await fixture(t, { contract: typedCommitPlan(), operationAdapter: () => adapter });
+  const submits = ['first', 'second'].map(target => call('fixture_commit', { action: 'submit', target }));
+  for (const submit of submits) assert.equal(await f.guard.before(submit), null, 'one pending criterion must not take the other criterion’s slot');
+  for (const submit of submits) await f.guard.dispatchContext(submit).onOperationDispatch(commitDescriptor(submit));
+  await f.guard.annotate(submits[0], { success: true, contentItems: [] });
+  let journal = await readContractJournal(f.tasks, f.taskId);
+  assert.deepEqual(journal.records.map(row => [row.confirmationCriterionId, row.criteria.map(criterion => criterion.id)]), [['first', ['first']], ['second', ['second']]]);
+  const state = await f.tasks.get(f.taskId);
+  assert.deepEqual(contractRuntimeView(state, journal).criteria.map(row => row.observedCount), [1, 0]);
+  await f.guard.annotate(submits[1], { success: true, contentItems: [] });
+  journal = await readContractJournal(f.tasks, f.taskId);
+  assert.deepEqual(contractRuntimeView(state, journal).criteria.map(row => row.observedCount), [1, 1]);
+});
+
+test('a typed commit with overlapping different confirmation scopes is refused before reservation', async t => {
+  const f = await fixture(t, { contract: typedCommitPlan(true), operationAdapter: () => raceAdapter });
+  const denied = await f.guard.before(call('fixture_commit', { action: 'submit', target: 'first' }));
+  assert.equal(denied.code, 'TASK_CONTRACT_COMMIT_SCOPE_AMBIGUOUS');
+  assert.deepEqual((await readContractJournal(f.tasks, f.taskId)).records, []);
+});
+
+test('a queued typed commitment cannot switch its confirmation criterion after a material scope edit', async t => {
+  const f = await fixture(t, { contract: typedCommitPlan(), operationAdapter: () => raceAdapter });
+  const submit = call('fixture_commit', { action: 'submit', target: 'first' });
+  assert.equal(await f.guard.before(submit), null);
+  await refineFixturePlan(f, item => {
+    const [first, second] = item.operationScopes;
+    [first.confirmationCriterionId, second.confirmationCriterionId] = [second.confirmationCriterionId, first.confirmationCriterionId];
+  });
+  await assert.rejects(f.guard.dispatchContext(submit).onOperationDispatch(commitDescriptor(submit)), { code: 'TASK_CONTRACT_COMMIT_SCOPE_AMBIGUOUS' });
+  await f.guard.annotate(submit, { success: false, contentItems: [] });
+  const [record] = (await readContractJournal(f.tasks, f.taskId)).records;
+  assert.equal(record.confirmationCriterionId, 'first');
+  assert.equal(record.deliveryState, 'cancelled-before-dispatch');
+});
+
+test('a validated same-item hold fences only its exact target at reservation and dispatch', async t => {
+  const keys = new Map();
+  const descriptorFor = submit => {
+    const descriptor = commitDescriptor(submit);
+    return { ...descriptor, resources: [{ key: keys.get(submit.arguments.target), access: 'write' }] };
+  };
+  const f = await fixture(t, { operationAdapter: () => ({ describeOperation: async submit => descriptorFor(submit) }), contract: async ({ cwd }) => {
+    for (const [target, path] of [['first', 'input.txt'], ['second', 'output.txt']]) {
+      const read = await describeHostOperation(call('relay_workspace', { action: 'read', path }), { cwd });
+      keys.set(target, read.resources.find(resource => !resource.scopeOnly).key);
+    }
+    const value = typedCommitPlan(), item = value.workItems[0];
+    value.criteria.push({ id: 'eligibility', kind: 'judgment', description: 'Assess the first target.', resourceKey: keys.get('first') });
+    item.criterionIds.push('eligibility');
+    item.resourceKeys = [...keys.values()];
+    item.effects.unshift('observe');
+    item.operationScopes = [{ effect: 'observe', resourceKeys: [keys.get('first')] }, ...item.operationScopes.map(scope => ({
+      ...scope, resourceKeys: [keys.get(scope.confirmationCriterionId)],
+    }))];
+    return value;
+  } });
+  const read = () => f.send(call('relay_workspace', { action: 'read', path: 'input.txt' }));
+  assert.equal((await read()).success, true);
+  const observed = await readContractJournal(f.tasks, f.taskId);
+  const submit = target => call('fixture_commit', { action: 'submit', target });
+  const queued = submit('first');
+  assert.equal(await f.guard.before(queued), null);
+  const note = 'Current source evidence supports a bounded deferral for the first target.';
+  const state = await f.tasks.get(f.taskId);
+  const assessed = await f.send(call('relay_task', { action: 'assess', workItemId: 'files', criterionId: 'eligibility',
+    expectedPlanEpoch: state.contract.planEpoch, judgment: 'blocked', evidenceIds: observed.records[0].evidenceIds,
+    note, userAgency: fixtureDeferredUserAgency(note) }));
+  assert.equal(assessed.success, true, JSON.stringify(assessed));
+  await assert.rejects(f.guard.dispatchContext(queued).onOperationDispatch(descriptorFor(queued)), { code: 'TASK_CONTRACT_OPERATION_HELD' });
+  await f.guard.annotate(queued, { success: false, contentItems: [] });
+  assert.equal((await f.guard.before(submit('first'))).code, 'TASK_CONTRACT_OPERATION_HELD');
+  assert.equal((await read()).success, true);
+  const independent = submit('second');
+  assert.equal(await f.guard.before(independent), null);
+  await f.guard.dispatchContext(independent).onOperationDispatch(descriptorFor(independent));
+  await f.guard.annotate(independent, { success: true, contentItems: [] });
+});
+
 test('an adopted condition blocks the next commitment until this run records its own evidence', async t => {
   const f = await fixture(t, { operationAdapter: () => raceAdapter, contract: ({ key }) => {
     const value = draft([key]);

@@ -661,6 +661,26 @@ async function nativeTextResult(fixture, { receiptBinding = nativeTextBinding(),
     browserObservation, criteria: [{ id: 'native-receipt', kind: 'external-confirmation', receiptBinding }], commitments });
 }
 
+test('native and structured receipts can only reconcile the criterion chosen for an actual commitment', async () => {
+  const fixture = await nativeTextFixture();
+  const operation = browserCall('read');
+  for (const [receiptBinding, record] of [
+    [nativeTextBinding(), { status: 'Your enrollment is confirmed.' }],
+    [binding({ history: true }), receiptRecord()],
+  ]) {
+    const browserObservation = { ...fixture.browserObservation, receipts: [{ bindingKey: browserReceiptBindingKey(receiptBinding), records: [record] }] };
+    const descriptor = await describeHostOperation(operation, { browserObservation });
+    const commitments = [{ ...fixture.commitment, confirmationCriterionId: 'assigned' }];
+    const normalize = id => normalizeHostOperationResult(result({ documentId: browserObservation.documentId, url: browserObservation.url }), {
+      call: operation, descriptor, browserObservation, commitments, criteria: [{ id, kind: 'external-confirmation', receiptBinding }],
+    });
+    assert.deepEqual(confirmations(await normalize('different')), []);
+    const proof = confirmations(await normalize('assigned'));
+    assert.equal(proof.length, 1);
+    assert.equal(proof[0].confirmation.effectKey, fixture.commitment.commit.effectKey);
+  }
+});
+
 test('native text confirmation retains a real first-POST correlation before a binding exists and reconciles on a later read', async () => {
   const fixture = await nativeTextFixture();
   const first = await normalizeHostOperationResult(result({ documentId: 'one:2', url: fixture.browserObservation.url }), {
