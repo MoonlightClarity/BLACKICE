@@ -141,6 +141,11 @@ test('an adopted goal keeps the same request open past the usual limit until evi
     criterionId: 'checked', judgment: 'blocked', note: 'The supplied files no longer support the requested result.',
     evidenceIds: [journal.evidence[0].id] }));
   assert.equal(blocked.success, true);
+  const recheck = await completion.beforeFinal();
+  assert.equal(recheck.continue, true);
+  assert.match(recheck.prompt, /whether any stated condition for the requirement applies/);
+  assert.match(recheck.prompt, /The supplied files no longer support the requested result/);
+  assert.equal(updates.at(-1).goalStatus, 'active');
   assert.equal(await completion.beforeFinal(), null);
   assert.equal(updates.at(-1).goalStatus, 'blocked');
   assert.equal(updates.at(-1).complete, false);

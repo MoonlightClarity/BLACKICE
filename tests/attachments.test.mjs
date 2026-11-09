@@ -111,6 +111,19 @@ test('prompt excerpts are bounded after JSON escaping and do not preload image p
   const image = await store.importBytes({ name: 'red.png', bytes: png() }); assert.doesNotMatch(await store.prompt([image.id]), /base64|iVBOR/);
 });
 
+test('short attached guidance remains intact when there is room beside another file', async t => {
+  const { store } = await setup(t);
+  const condition = 'Use the minimum only when the provider discloses a numeric rate.';
+  const guidance = 'Operational background and examples.\n'.repeat(115) + condition;
+  const files = await Promise.all([
+    upload(store, 'background.txt', 'Background record.\n'.repeat(450)),
+    upload(store, 'guidance.txt', guidance),
+  ]);
+  const prompt = await store.prompt(files.map(file => file.id));
+  assert.ok(prompt.length <= ATTACHMENT_LIMITS.promptChars);
+  assert.ok(prompt.includes(condition));
+});
+
 test('tampered or missing saved copies are detected and reattaching exact bytes repairs the immutable copy', async t => {
   const { store, dataDir } = await setup(t), entry = await upload(store, 'notes.txt', 'Original'), file = path.join(dataDir, 'attachments', 'blobs', `${entry.sha256}.txt`);
   await fs.writeFile(file, 'Modified'); await assert.rejects(store.bytes(entry.id), /integrity|changed/);
