@@ -67,6 +67,22 @@ test('a browser work item shares its existing page-read scope with its same-owne
   assert.deepEqual(item('form').resourceKeys, submit.resourceKeys);
 });
 
+test('attachment repair keeps exact scopes and does not give an attachment-set scope to another owner', () => {
+  const input = draft(), [form, history] = input.workItems;
+  const exact = 'attachment:sha256:' + 'a'.repeat(64), other = 'attachment:sha256:' + 'b'.repeat(64);
+  const attachmentSet = 'attachments:' + 'c'.repeat(64);
+  const options = { attachedReadScope: { resourceKey: attachmentSet, files: [{ resourceKey: exact }, { resourceKey: other }] } };
+  form.owner = 'other-worker';
+  form.resourceKeys.push(other.slice(0, -1));
+  history.resourceKeys.push(exact);
+  assert.deepEqual(normalizePlanContractResponse(input, [], options), normalizePlanContract(input));
+
+  history.resourceKeys.push(other.slice(0, -1));
+  const result = normalizePlanContractResponse(input, [], options);
+  assert.deepEqual(result.workItems[0].resourceKeys, form.resourceKeys);
+  assert.deepEqual(result.workItems[1].resourceKeys, ['file:history.csv', exact, attachmentSet]);
+});
+
 test('canonical model null markers preserve optionality without weakening host receipt rules', () => {
   const original = draft();
   const candidate = structuredClone(original);

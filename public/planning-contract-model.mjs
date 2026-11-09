@@ -159,13 +159,24 @@ export function normalizePlanContractResponse(value, prerequisites = [], { requi
         description: 'Verify the outcome of ' + String(item.title) + ' using the destination’s receipt.' });
     }
   }
-  if (/^attachments:[a-f0-9]{64}$/.test(attachedReadScope || '') && Array.isArray(decoded?.workItems)) {
+  const attachedSetKey = attachedReadScope?.resourceKey;
+  if (/^attachments:[a-f0-9]{64}$/.test(attachedSetKey || '') && Array.isArray(decoded?.workItems)) {
     const readers = decoded.workItems.filter(item => (item?.owner === 'coordinator' || coordinator && item?.owner === coordinator) &&
       Array.isArray(item.effects) && item.effects.includes('observe') && Array.isArray(item.resourceKeys));
-    if (!readers.some(item => item.resourceKeys.some(key => key === attachedReadScope || /^attachment:sha256:/.test(key)))) {
-      const candidates = readers.filter(item => item.resourceKeys.length < PLAN_CONTRACT_LIMITS.resources);
-      const selected = candidates.find(item => !item.effects.includes('commit') && !item.effects.includes('opaque')) || candidates[0];
-      selected?.resourceKeys.push(attachedReadScope);
+    const declared = new Set(readers.flatMap(item => item.resourceKeys));
+    if (!declared.has(attachedSetKey)) {
+      const exactFiles = new Set((attachedReadScope.files || []).map(file => file.resourceKey));
+      const staleKey = key => typeof key === 'string' && key.startsWith('attachment:sha256:') && !exactFiles.has(key);
+      const hasUnscopedFile = [...exactFiles].some(key => !declared.has(key));
+      const repair = hasUnscopedFile && readers.find(item => item.resourceKeys.some(staleKey));
+      if (repair) {
+        // Keep the declared reader and substitute the host's current read-only attachment set.
+        repair.resourceKeys = [...repair.resourceKeys.filter(key => !staleKey(key)), attachedSetKey];
+      } else if (![...exactFiles].some(key => declared.has(key))) {
+        const candidates = readers.filter(item => item.resourceKeys.length < PLAN_CONTRACT_LIMITS.resources);
+        const selected = candidates.find(item => !item.effects.includes('commit') && !item.effects.includes('opaque')) || candidates[0];
+        selected?.resourceKeys.push(attachedSetKey);
+      }
     }
   }
   return normalizePlanContract(decoded);

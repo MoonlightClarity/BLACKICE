@@ -45,7 +45,7 @@ const requiredCriteria = [
 const copy = value => structuredClone(value);
 const captured = options => JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n') + 2));
 
-function analyticalResponse(input, { strictCity = false, workspaceKey, conditional = null, attachmentScope } = {}) {
+function analyticalResponse(input, { strictCity = false, workspaceKey, conditional = null, attachmentScope, misspellAttachment } = {}) {
   const stage = responseCycleStage(input.module.kind, { pipelineVersion: input.cycle?.pipelineVersion });
   const sourceId = input.sources.find(source => source.id === 'viability:task')?.id || input.sources[0].id;
   const body = { userAgency: fixtureUserAgency(),
@@ -91,8 +91,9 @@ function analyticalResponse(input, { strictCity = false, workspaceKey, condition
     if (strictCity) body.contract.criteria.find(item => item.id === 'city-permission').accuracy.tolerance = 'Only the exact string Oak Hollow is acceptable.';
     if (attachmentScope) {
       body.contract.criteria.push({ id: 'attached-profile', kind: 'observation', description: 'Read the current immutable attached profile.', resourceKey: attachmentScope.files[0].resourceKey });
+      const resourceKeys = misspellAttachment ? [workspaceKey, attachmentScope.files[0].resourceKey.slice(0, -7), attachmentScope.files[1].resourceKey] : [workspaceKey];
       body.contract.workItems.push({ id: 'inspect-attachment', title: 'Read the attached profile', objective: 'Read the supplied attachment.',
-        owner: 'agent', resourceKeys: [workspaceKey], effects: ['observe'], dependsOn: [], criterionIds: ['attached-profile'] });
+        owner: 'agent', resourceKeys, effects: ['observe'], dependsOn: [], criterionIds: ['attached-profile'] });
     }
     if (conditional) {
       const [gate] = input.cycle.commitPrerequisites;
@@ -114,6 +115,10 @@ async function fixture(t, { mode = 'plan_only', strictCity = false, conditional 
   const store = await new PlanningBrowserStore({ dataDir: directory }).init();
   const attachments = attach ? await new AttachmentStore({ dataDir: directory }).init() : undefined;
   const attached = attachments ? await attachments.importBytes({ name: 'demo-profile.txt', bytes: Buffer.from('Bounded attached profile fixture.') }) : null;
+  const misspellAttachment = attach === 'misspelled-key';
+  const guidance = misspellAttachment ? await attachments.importBytes({ name: 'demo-guidance.txt', bytes: Buffer.from('Bounded attached guidance fixture.') }) : null;
+  const unattached = misspellAttachment ? await attachments.importBytes({ name: 'unattached.txt', bytes: Buffer.from('Out-of-scope fixture.') }) : null;
+  const runFiles = [attached, guidance].filter(Boolean);
   const settings = { defaultModel: 'fixture-intent', defaultEffort: 'low', runTimeoutMs: null, executionGuardrails: false, subagentsEnabled: false };
   const calls = [], toolCalls = []; let operationalCalls = 0, adoptedTask = null, finalCheck = null, engine;
   class Runtime extends EventEmitter {
@@ -129,11 +134,11 @@ async function fixture(t, { mode = 'plan_only', strictCity = false, conditional 
         const executionSource = input.sources.find(source => source.id.startsWith('cycle:execution-contract:'));
         const attachmentScope = executionSource && JSON.parse(executionSource.text).attachmentScope;
         if (input.module.kind === 'plan') {
-          if (attached) assert.deepEqual(attachmentScope, { tool: 'relay_files', effect: 'observe', resourceKey: attachmentSetResourceKey([attached.id]),
-            files: [{ id: attached.id, name: attached.name, resourceKey: attachmentResourceKey(attached.sha256) }] });
+          if (attached) assert.deepEqual(attachmentScope, { tool: 'relay_files', effect: 'observe', resourceKey: attachmentSetResourceKey(runFiles.map(file => file.id)),
+            files: runFiles.map(file => ({ id: file.id, name: file.name, resourceKey: attachmentResourceKey(file.sha256) })) });
           else assert.equal(attachmentScope, undefined, 'An empty run does not advertise an attached scope.');
         }
-        return { output: JSON.stringify(analyticalResponse(input, { strictCity, workspaceKey, conditional, attachmentScope })), threadId: 'fixture-intent-planning', turnId: randomUUID() };
+        return { output: JSON.stringify(analyticalResponse(input, { strictCity, workspaceKey, conditional, attachmentScope, misspellAttachment })), threadId: 'fixture-intent-planning', turnId: randomUUID() };
       }
       operationalCalls++;
       assert.equal(mode, 'automatic', 'Plan only must never enter an operational worker.');
@@ -144,10 +149,12 @@ async function fixture(t, { mode = 'plan_only', strictCity = false, conditional 
       assert.equal(result.success, true, JSON.stringify(result));
       adoptedTask = JSON.parse(result.contentItems.find(item => item.type === 'inputText').text);
       if (attached) {
-        const invoke = action => options.onToolCall({ name: 'relay_files', arguments: { action, attachmentId: attached.id }, callId: randomUUID() }, { signal: options.signal });
+        const invoke = (action, file = attached) => options.onToolCall({ name: 'relay_files', arguments: { action, attachmentId: file.id }, callId: randomUUID() }, { signal: options.signal });
         const read = await invoke('read');
         assert.equal(read.success, true, JSON.stringify(read));
         assert.match(read.contentItems[0].text, /Bounded attached profile fixture/);
+        if (guidance) assert.equal((await invoke('read', guidance)).success, true);
+        if (unattached) await assert.rejects(invoke('read', unattached), /This file is not attached to the current task/);
         const denied = await invoke('export');
         assert.equal(denied.code, 'TASK_CONTRACT_SCOPE', 'An attachment observation scope cannot export files.');
       }
@@ -166,11 +173,11 @@ async function fixture(t, { mode = 'plan_only', strictCity = false, conditional 
   engine.responseCycle = service;
   t.after(async () => { await engine.close(); await runner.close(); await service.close(); await viability.close(); await store.close(); await tasks.close(); await attachments?.close(); await rm(directory, { recursive: true, force: true }); });
   const workflow = createMissionWorkflow({ id: 'intent-pipeline', task: request, model: 'fixture-intent', cwd, planningMode: 'forced' });
-  const accepted = engine.startRun({ workflow, input: attached ? { task: request, attachmentIds: [attached.id] } : request,
+  const accepted = engine.startRun({ workflow, input: attached ? { task: request, attachmentIds: runFiles.map(file => file.id) } : request,
     planningMode: 'forced', planningExecutionMode: mode, requestId: 'intent-pipeline-' + mode + '-' + strictCity });
   await engine.executions.get(accepted.id);
   const run = engine.getRun(accepted.id), saved = await store.get(run.responseCycle.requestId), cycle = saved.cycles.find(item => item.id === run.responseCycle.cycleId);
-  return { run, saved, cycle, calls, operationalCalls, toolCalls, adoptedTask, finalCheck, tasks, attached,
+  return { run, saved, cycle, calls, operationalCalls, toolCalls, adoptedTask, finalCheck, tasks, attached, guidance,
     journal: await readContractJournal(tasks, run.taskId), task: operationalCalls ? await tasks.get(run.taskId) : null };
 }
 
@@ -183,6 +190,21 @@ test('automatic canonical execution reads a supplied attachment within its actua
   assert.equal(operation.effect, 'observe');
   assert.equal(operation.workItemId, 'inspect-attachment');
   assert.ok(f.journal.evidence.some(item => item.resourceKey === attachmentResourceKey(f.attached.sha256) && item.sourceVersion === f.attached.sha256));
+});
+
+test('a correct attachment key does not suppress repair of a misspelled key on the same reader', { timeout: 20000 }, async t => {
+  const f = await fixture(t, { mode: 'automatic', attach: 'misspelled-key' });
+  assert.equal(f.run.errorCode, 'FIXTURE_STOP_AFTER_HANDOFF', f.run.error);
+  const scope = attachmentSetResourceKey([f.attached.id, f.guidance.id]);
+  const reader = f.task.contract.workItems.find(item => item.id === 'inspect-attachment');
+  assert.ok(reader.resourceKeys.includes(scope));
+  assert.ok(reader.resourceKeys.includes(attachmentResourceKey(f.guidance.sha256)));
+  assert.ok(!reader.resourceKeys.includes(attachmentResourceKey(f.attached.sha256).slice(0, -7)));
+  assert.ok(f.task.contract.workItems.filter(item => item.id !== reader.id).every(item => !item.resourceKeys.includes(scope)));
+  assert.deepEqual(f.journal.records.map(operation => [operation.tool, operation.effect, operation.workItemId]), [
+    ['relay_files', 'observe', 'inspect-attachment'], ['relay_files', 'observe', 'inspect-attachment'],
+  ]);
+  assert.deepEqual(f.journal.evidence.map(item => [item.resourceKey, item.sourceVersion]), [f.attached, f.guidance].map(file => [attachmentResourceKey(file.sha256), file.sha256]));
 });
 
 function assertIntentAndProofBoundary(contract) {
