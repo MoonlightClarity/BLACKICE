@@ -1,7 +1,7 @@
 {
   "format": 1,
-  "version": "2.39.35",
-  "appFingerprint": "a16842b560ecb0474f998fd2837888cbf145984cafb092efd3c79f40fe4a294e",
-  "sourceTestReceipt": "verification/windows-2.39.35.json",
+  "version": "2.39.36",
+  "appFingerprint": "034a93b39b91fbbd3af8126adc4406048bf935fa1741dc7c2f541f6e83c23861",
+  "sourceTestReceipt": "verification/windows-2.39.36.json",
   "publish": true
 }
