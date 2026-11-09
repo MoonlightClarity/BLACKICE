@@ -103,6 +103,16 @@ async function requestFor(f, mode, names = ['resume.PDF']) {
   return { request: { action: 'upload', tabId: f.tab.id, ref: 'observed-file', expectedUrl: f.tab.window.url, expectedDocumentId: `${f.tab.id}:${f.tab.revision}`, paths: files }, bytes };
 }
 
+test('upload validation identifies local failures before any page input', async t => {
+  const f = await fixture(t), { request } = await requestFor(f, 'ref');
+  for (const override of [{ ref: undefined }, { chooserId: 'another-target' }, { paths: [] }, { paths: ['relative.pdf'] }, { paths: [f.directory] }]) {
+    await assert.rejects(f.driver.perform({ ...request, ...override }), { code: 'BROWSER_VALIDATION', actionDispatched: false });
+  }
+  await assert.rejects(f.driver.perform({ ...request, paths: [path.join(f.directory, 'missing.pdf')] }), { code: 'ENOENT', actionDispatched: false });
+  assert.deepEqual(f.input.events, []);
+  assert.equal(f.input.received.length, 0);
+});
+
 for (const mode of ['ref', 'chooser']) {
   test(`${mode}: actual driver constructs byte-identical PDF File and truthful name/type/size receipt`, async t => {
     const f = await fixture(t), { request, bytes } = await requestFor(f, mode);
@@ -178,7 +188,7 @@ for (const mode of ['ref', 'chooser']) {
     ['non-string retained MIME type', value => ({ ...value, uploaded: [{ name: 'site.txt', size: 1, type: null }] })],
   ]) test(`${mode}: host validation rejects ${label}`, async t => {
     const f = await fixture(t, { transformReceipt }), { request } = await requestFor(f, mode, ['first.pdf', 'second.pdf']);
-    await assert.rejects(f.driver.perform(request), { code: 'BROWSER_UPLOAD_REJECTED' });
+    await assert.rejects(f.driver.perform(request), error => error.code === 'BROWSER_UPLOAD_REJECTED' && error.actionDispatched !== false);
     if (mode === 'chooser') assert.equal(f.tab.pendingInteraction, null);
   });
 }

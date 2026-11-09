@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview } from '../lib/browser.mjs';
+import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview, validateBrowserUploadRequest } from '../lib/browser.mjs';
 import { captureHiddenPage } from './browser-capture.mjs';
 import { loadBrowserCompatibility } from './browser-compatibility.mjs';
 import { BrowserDiagnostics } from '../lib/browser-diagnostics.mjs';
@@ -1723,6 +1723,7 @@ export class ElectronBrowserDriver extends EventEmitter {
   }
   async perform(args, { signal, source = 'agent', owner: context, validateUploadPath, suppressResultSnapshot = false, operationDescriptor, operationId } = {}) {
     cancel(signal);
+    if (args.action === 'upload') validateBrowserUploadRequest(args);
     const preview = validateBrowserPreview({ ...args, browser: args.browser ?? 'relay' }, source);
     const wheel = browserWheelScroll(args);
     // The router removes its transport selector before entering this adapter.
@@ -1808,7 +1809,10 @@ export class ElectronBrowserDriver extends EventEmitter {
     // Reloading a saved page already dispatches its one navigation in activate.
     // A failed activation cannot be cleared by the no-op "already reloaded" arm.
     if (tab.loadError && (resumed && args.action === 'reload' || !['navigate', 'reload', 'back', 'forward'].includes(args.action))) throw navigationFailure(tab);
-    if (['type', 'press', 'click', 'hover', 'fill', 'select', 'upload'].includes(args.action)) this.assertInputDocument(tab, args);
+    if (['type', 'press', 'click', 'hover', 'fill', 'select', 'upload'].includes(args.action)) {
+      try { this.assertInputDocument(tab, args); }
+      catch (cause) { throw args.action === 'upload' ? Object.assign(cause, { actionDispatched: false }) : cause; }
+    }
     if (args.action === 'type' && (typeof args.text !== 'string' || !args.text.length || args.text.length > 16384 || typeof args.expectedDocumentId !== 'string' || typeof args.expectedUrl !== 'string')) throw error('Type 1–16384 characters into a field on the current observed page.');
     const navigation = ['click','press','reload','back','forward'].includes(args.action) ? this.watchNavigation(tab, signal) : null;
     let releaseInputFocus;
@@ -1935,30 +1939,35 @@ export class ElectronBrowserDriver extends EventEmitter {
       else receipt = await bounded(tab.window.webContents.executeJavaScript(`(async()=>{await (${smoothPageScroll.toString()})(document.scrollingElement||document.documentElement,${movement.top},${movement.left});return {scrollY,scrollX};})()`), signal);
     }
     if (args.action === 'upload') {
-      if (!Array.isArray(args.paths) || !args.paths.length || args.paths.length > 10) throw error('Supply 1–10 absolute local file paths.');
-      if (Boolean(args.ref) === Boolean(args.chooserId)) throw error('Choose exactly one observed input ref or pending chooser ID.');
-      const chooser = args.chooserId ? this.currentInteraction(tab, args) : null;
-      if (chooser && (chooser.kind !== 'file_chooser' || chooser.status !== 'pending' || !chooser.multiple && args.paths.length > 1)) throw error('Choose files matching this exact pending file input.');
+      const invalid = message => capacityError(message, 'BROWSER_VALIDATION');
       const files = []; let total = 0;
-      for (const file of args.paths) {
-        if (typeof file !== 'string' || !path.isAbsolute(file)) throw error('Upload paths must be absolute.');
-        cancel(signal); if (validateUploadPath) await validateUploadPath(file);
-        const stat = await fs.lstat(file); total += stat.size;
-        if (!stat.isFile() || total > 20 * 1024 * 1024) throw error('Upload regular files totalling at most 20 MB.');
-        const handle = await fs.open(file, 'r'); let bytes;
-        try {
-          const opened = await handle.stat();
-          if (!opened.isFile() || opened.dev !== stat.dev || opened.ino !== stat.ino) throw error('An upload file changed before it could be opened. Choose its current contents explicitly.');
-          const boundedBytes = Buffer.alloc(stat.size + 1); let length = 0;
-          while (length < boundedBytes.length) { cancel(signal); const result = await handle.read(boundedBytes, length, boundedBytes.length - length, null); if (!result.bytesRead) break; length += result.bytesRead; }
-          bytes = boundedBytes.subarray(0, length);
-        } finally { await handle.close(); }
-        const after = await fs.lstat(file);
-        if (!after.isFile() || after.dev !== stat.dev || after.ino !== stat.ino || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs || bytes.length !== stat.size) throw error('An upload file changed while it was being read. Choose its current contents explicitly.');
-        if (validateUploadPath) await validateUploadPath(file); cancel(signal);
-        files.push({ name: path.basename(file), size: bytes.length, type: uploadMimeTypes.get(path.extname(file).toLowerCase()) || 'application/octet-stream', data: bytes.toString('base64') });
+      let chooser;
+      try {
+        chooser = args.chooserId ? this.currentInteraction(tab, args) : null;
+        if (chooser && (chooser.kind !== 'file_chooser' || chooser.status !== 'pending' || !chooser.multiple && args.paths.length > 1)) throw invalid('Choose files matching this exact pending file input.');
+        for (const file of args.paths) {
+          if (typeof file !== 'string' || !path.isAbsolute(file)) throw invalid('Upload paths must be absolute.');
+          cancel(signal); if (validateUploadPath) await validateUploadPath(file);
+          const stat = await fs.lstat(file); total += stat.size;
+          if (!stat.isFile() || total > 20 * 1024 * 1024) throw invalid('Upload regular files totalling at most 20 MB.');
+          const handle = await fs.open(file, 'r'); let bytes;
+          try {
+            const opened = await handle.stat();
+            if (!opened.isFile() || opened.dev !== stat.dev || opened.ino !== stat.ino) throw invalid('An upload file changed before it could be opened. Choose its current contents explicitly.');
+            const boundedBytes = Buffer.alloc(stat.size + 1); let length = 0;
+            while (length < boundedBytes.length) { cancel(signal); const result = await handle.read(boundedBytes, length, boundedBytes.length - length, null); if (!result.bytesRead) break; length += result.bytesRead; }
+            bytes = boundedBytes.subarray(0, length);
+          } finally { await handle.close(); }
+          const after = await fs.lstat(file);
+          if (!after.isFile() || after.dev !== stat.dev || after.ino !== stat.ino || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs || bytes.length !== stat.size) throw invalid('An upload file changed while it was being read. Choose its current contents explicitly.');
+          if (validateUploadPath) await validateUploadPath(file); cancel(signal);
+          files.push({ name: path.basename(file), size: bytes.length, type: uploadMimeTypes.get(path.extname(file).toLowerCase()) || 'application/octet-stream', data: bytes.toString('base64') });
+        }
+        this.assertInputDocument(tab, args);
+      } catch (cause) {
+        // No file input has been assigned and no page input event has fired.
+        throw Object.assign(cause instanceof Error ? cause : error(String(cause)), { actionDispatched: false });
       }
-      this.assertInputDocument(tab, args);
       if (chooser) {
         this.currentInteraction(tab, args);
         const target = tab.interactionTarget, resolved = await this.cdp(tab, 'DOM.resolveNode', { backendNodeId: target.backendNodeId }, signal);

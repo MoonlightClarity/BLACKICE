@@ -62,7 +62,13 @@ test('chooser uploads require a fresh document and preserve only the host upload
   const browser = fixtureWorkspace({ driver: { status: () => ({ available: true, contained: true }), perform: async (args, options) => { calls.push({ args, validator: options.validateUploadPath }); return { receipt: { uploaded: true } }; } } }); t.after(() => browser.close());
   const request = { action: 'upload', browser: 'relay', tabId: 'owned-tab', chooserId: 'browser_input_11111111-1111-4111-8111-111111111111', expectedUrl: 'https://example.test/', expectedDocumentId: 'owned-tab:2', paths: ['/owned/file.txt'] };
   for (const extra of [{ ref: 'other-input' }, { expectedDocumentId: undefined }, { expectedUrl: undefined }, { chooserId: 'guessed' }, { browser: 'firefox' }, { action: 'click' }]) await assert.rejects(browser.perform({ ...request, ...extra }), { code: 'BROWSER_VALIDATION' });
-  const result = await createBrowserToolHandler({ browser, validateUploadPath: validator })({ name: 'relay_browser', arguments: request });
+  const handler = createBrowserToolHandler({ browser, validateUploadPath: validator });
+  const missingTarget = { name: 'relay_browser', arguments: { ...request, chooserId: undefined } };
+  const denied = await handler(missingTarget, { onOperationDispatch: () => assert.fail('Invalid upload must not dispatch') });
+  assert.equal(denied.code, 'BROWSER_VALIDATION');
+  assert.equal(JSON.parse(denied.contentItems[0].text).actionDispatched, false);
+  assert.equal((await handler.normalizeOperationResult(denied, { call: missingTarget })).effectState, 'absent');
+  const result = await handler({ name: 'relay_browser', arguments: request });
   assert.equal(result.success, true); assert.equal(calls.length, 1); assert.equal(calls[0].validator, validator); assert.equal(calls[0].args.validateUploadPath, undefined);
 });
 
