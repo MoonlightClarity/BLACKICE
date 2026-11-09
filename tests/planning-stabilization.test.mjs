@@ -368,8 +368,11 @@ test('automatic Chat carries the recorded unknowns into local read-write-reread 
   const feasibility = request.nodes.find(node => node.id === cycle.stageNodeIds.feasibility);
   const final = request.nodes.find(node => node.id === cycle.stageNodeIds.respond);
   assert.equal(feasibility.readiness.cycle.analysisReady, true);
-  assert.equal(feasibility.readiness.cycle.dispatchReady, false);
+  assert.equal(feasibility.readiness.cycle.dispatchReady, true, 'the current checkpoint permits the owner to inspect the missing sources');
+  assert.equal(feasibility.readiness.cycle.ownerChecksDeferred, true);
+  assert.equal(feasibility.readiness.cycle.outcome, 'unresolved');
   assert.equal(feasibility.response.requirements.every(item => item.resolution === 'unknown' && item.value === 'unobserved'), true);
+  assert.equal(feasibility.response.requirements.every(item => item.question === ''), true);
   assert.equal(feasibility.response.requirements[0].checkedSourceIds.includes('viability:profile'), false);
   assert.equal(final.readiness.cycle.analysisReady, true);
   assert.equal(final.readiness.cycle.outcome, 'satisfied');
@@ -418,8 +421,11 @@ test('strict dispatch defers recoverable source omissions but rejects unsupporte
   const request = await f.store.get(run.responseCycle.requestId), cycle = request.cycles[0];
   const plan = request.nodes.find(node => node.id === cycle.stageNodeIds.plan);
   assert.equal(plan.readiness.cycle.analysisReady, true);
-  assert.equal(plan.readiness.cycle.dispatchReady, false);
-  assert.equal(request.nodes.find(node => node.id === cycle.stageNodeIds.feasibility).readiness.viability.issues.length, 2);
+  assert.equal(plan.readiness.cycle.dispatchReady, true, 'the approved owner inspection may start');
+  const feasibility = request.nodes.find(node => node.id === cycle.stageNodeIds.feasibility);
+  assert.equal(feasibility.readiness.cycle.ownerChecksDeferred, true);
+  assert.equal(feasibility.readiness.cycle.outcome, 'unresolved');
+  assert.equal(feasibility.readiness.viability.issues.length, 2);
 });
 
 
