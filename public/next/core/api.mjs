@@ -1,6 +1,8 @@
+import { apiDefaultDeadline } from '../../api-client.mjs';
+
 /** The existing BLACKICE API remains authoritative. Never retry a mutation. */
 export function createApi({ fetcher = globalThis.fetch, defaultDeadlineMs = 30000 } = {}) {
-  return async function request(path, method = 'GET', payload, { signal, deadlineMs = defaultDeadlineMs } = {}) {
+  return async function request(path, method = 'GET', payload, { signal, deadlineMs = apiDefaultDeadline(path, method, payload, defaultDeadlineMs) } = {}) {
     if (typeof path !== 'string' || !path.startsWith('/api/')) throw Error('Invalid BLACKICE API path.');
     if (!['GET', 'POST', 'DELETE', 'PATCH', 'PUT'].includes(method)) throw Error('Unsupported request method.');
     const controller = new AbortController();

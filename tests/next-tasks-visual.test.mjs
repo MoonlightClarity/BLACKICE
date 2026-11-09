@@ -2,11 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TASK_BOARD_LANES,savedTaskLane,savedTaskStatus,taskBoard,jobLinkedRun } from '../public/next/workspaces/tasks-visual-model.mjs';
 import { createTasksWorkspace } from '../public/next/workspaces/tasks.mjs';
+import { createApi } from '../public/next/core/api.mjs';
 import { createTaskHistory } from '../public/next/workspaces/task-lifecycle.mjs';
 import { planningDOM } from './fixture-planning-dom.mjs';
 
 const settle=async()=>{for(let i=0;i<5;i++)await new Promise(resolve=>setImmediate(resolve));};
-function fixture(t,{history=false,presentation='board',hook,status={},operationsStatus={}}={}){
+function fixture(t,{history=false,presentation='board',hook,status={},operationsStatus={},useNextApi=false}={}){
   const dom=planningDOM(t),prototype=Object.getPrototypeOf(dom.mount);
   Object.defineProperty(prototype,'type',{get(){return this.getAttribute('type')||this.tagName.toLowerCase();},set(value){this.setAttribute('type',value);},configurable:true});
   prototype.replaceChildren=function(...nodes){for(const child of [...this.children])child.remove();this.rawText='';this.append(...nodes);};
@@ -68,7 +69,18 @@ function fixture(t,{history=false,presentation='board',hook,status={},operations
     if(path.startsWith('/api/operations/')&&method==='POST')return{ok:true};
     throw Error('Unexpected '+method+' '+path);
   };
-  const component=(history?createTaskHistory:createTasksWorkspace)({mount:dom.mount,api,presentation,
+  const workspaceApi = useNextApi ? createApi({ fetcher: async (path, { method, body, signal }) => {
+    let response;
+    try {
+      const data = await api(path, method, body === undefined ? undefined : JSON.parse(body));
+      response = { ok: true, json: async () => data };
+    } catch (error) {
+      response = { ok: false, status: error.status || 409, json: async () => ({ code: error.code, error: error.message }) };
+    }
+    signal.throwIfAborted();
+    return response;
+  } }) : api;
+  const component=(history?createTaskHistory:createTasksWorkspace)({mount:dom.mount,api:workspaceApi,presentation,
     events:{subscribe(listener){listeners.add(listener);return()=>listeners.delete(listener);}},getStatus:()=>({cwd:'C:\\fixture',...status}),
     notify:(...args)=>notifications.push(args),onNavigate:(...args)=>navigation.push(args)});
   t.after(()=>component.destroy());
@@ -361,11 +373,13 @@ test('an explicit schedule readiness check preserves disabled state and links th
   assert.equal(f.calls.some(call=>call.path.endsWith('/trigger')),false);
 });
 
-test('Run now checks a draft and admits one job without enabling recurrence',async t=>{
+test('Run now waits for slow readiness in the active client and admits one job without enabling recurrence',async t=>{
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   let triggerCalls=0;
-  const f=fixture(t,{hook:async(call,{schedule})=>{
+  const f=fixture(t,{useNextApi:true,hook:async(call,{schedule})=>{
     if(call.path.endsWith('/trigger')&&++triggerCalls===1)throw Object.assign(Error('Readiness required'),{code:'TASK_VIABILITY_REQUIRED'});
     if(call.path.endsWith('/readiness')){
+      await new Promise(resolve=>setTimeout(resolve,41_000));
       schedule.revision++;
       const graph=readinessGraph(schedule,'ready');
       graph.viabilityAction.canRun=true;
@@ -374,6 +388,10 @@ test('Run now checks a draft and admits one job without enabling recurrence',asy
     if(call.path.endsWith('/trigger'))return{id:'new-job',status:'queued'};
   }});f.component.enter();await settle();await f.clickReady('#next-tasks-tab-schedules');
   await f.clickReady('[data-schedule-trigger="schedule-a"]');
+  t.mock.timers.tick(40_000);await settle();
+  assert.equal(triggerCalls,1);
+  assert.match(f.$('#next-tasks-info').textContent,/Checking what this task needs/);
+  t.mock.timers.tick(1_000);await settle();
   const actions=f.calls.filter(call=>call.method==='POST');
   assert.deepEqual(actions.map(call=>call.path.split('/').at(-1)),['trigger','readiness','trigger']);
   assert.ok(actions[0].payload.idempotencyKey);
