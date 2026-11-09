@@ -173,6 +173,34 @@ test('a persistent goal gets a recovery turn but repeated identical evidence can
   assert.equal(updates.at(-1).complete, false);
 });
 
+test('a persistent goal can consume one new workspace command result after its ordinary recovery', async t => {
+  for (const hasOutput of [true, false]) await t.test(hasOutput ? 'captured output' : 'empty output', async t => {
+    const f = await fixture(t), updates = [];
+    const completion = createPlanningCompletionController({ store: f.tasks, taskId: f.taskId, runId: f.runId, nodeId: f.nodeId,
+      schemaVersion: 14, executionGuardrails: true, persistentGoal: true, onUpdate: update => updates.push(update) });
+    assert.equal((await f.send(call('relay_workspace', { action: 'read', path: 'input.txt' }))).success, true);
+    assert.equal((await completion.beforeFinal()).continue, true);
+    assert.equal((await completion.beforeFinal()).continue, true);
+    assert.match((await completion.beforeFinal()).prompt, /Try a different concrete observation/);
+
+    const run = command => f.send(call('relay_workspace', { action: 'run', command }));
+    assert.equal((await run(hasOutput ? 'echo fixture-command-output' : 'exit 0')).success, true);
+    const journal = await readContractJournal(f.tasks, f.taskId), command = journal.records.at(-1);
+    assert.equal(command.effect, 'opaque');
+    assert.equal(journal.evidence.find(row => row.operationId === command.operationId).validation.workspaceCommandOutput, hasOutput ? true : undefined);
+    if (hasOutput) {
+      const recovery = await completion.beforeFinal();
+      assert.equal(recovery.continue, true);
+      assert.match(recovery.prompt, /Do not rerun the command/);
+      assert.ok(recovery.prompt.includes(command.operationId));
+      assert.equal(updates.at(-1).goalStatus, 'active');
+      assert.equal((await run('echo different-output')).success, true);
+    }
+    await assert.rejects(completion.beforeFinal(), { code: 'TASK_CONTRACT_INCOMPLETE' });
+    assert.equal(updates.at(-1).stopReason, 'no_new_progress');
+  });
+});
+
 async function refineFixturePlan(f, refine) {
   const state = body(await f.send(call('relay_task', { action: 'read' })));
   const contract = structuredClone(state.contract);
