@@ -8,7 +8,7 @@ import {PlanningBrowserStore} from '../lib/planning-browser.mjs';
 import {PlanningBrowserRuntime,planningModuleOutputSchema,planningModulePrompt,planningFormatDiagnostic,validatePlanningModuleResponse,PLANNING_MAX_FORMAT_REPAIRS} from '../lib/planning-browser-runtime.mjs';
 import {ResponseCycleService} from '../lib/response-cycle.mjs';
 import {parseModuleResponse} from '../public/planning-browser-model.mjs';
-import {RESPONSE_CYCLE_STAGES} from '../public/response-cycle-model.mjs';
+import {RESPONSE_CYCLE_STAGES,responseCycleStage,responseCycleTemplate} from '../public/response-cycle-model.mjs';
 
 const actual=JSON.parse(await readFile(new URL('./fixtures/planning-invalid-feasibility.json',import.meta.url),'utf8'));
 const inputOf=options=>JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2));
@@ -98,6 +98,75 @@ test('Inference repair distinguishes a routine authorized observation from inves
   assert.equal(finished.attempt.status, 'completed');
   assert.equal(f.calls.length, 2);
   assert.equal(finished.request.nodes.find(item => item.id === node.id).response.userAgency.action, 'proceed');
+});
+
+test('canonical Plan repair identifies an inherited evidence criterion mistyped as judgment', () => {
+  const required = {
+    id: 'verified_candidates', label: 'Evidence-backed candidate assessment',
+    description: 'Report examined current official listings with direct links, disclosed location and compensation, fit, open questions, and next step; or list examined candidates and reasons none qualify.',
+    verification: 'evidence',
+    accuracy: {
+      mode: 'qualitative',
+      tolerance: 'Assess each examined candidate against the stated role and employment gates; preserve undisclosed terms as unknown.',
+      decisionThreshold: 'Recommend only where evidence supports the stated gates; otherwise mark unverified or exclude when a hard gate fails.',
+      evidenceNeeded: 'Current official listing page content and focused registry/history evidence for discovered candidates.',
+      consequence: "Unsupported currency, fit, or duplicate claims could misdirect the user's search.",
+      unknownPolicy: 'omit',
+      stopWhen: 'Stop when examined candidates are assessed and relevant duplicate or uncertain outcomes are reconciled.'
+    }
+  };
+  const sources = [{ id: 'cycle:execution-contract:fixture', kind: 'source',
+    text: JSON.stringify({ taskSchemaVersion: 14, contractVersion: 2 }) }];
+  const template = responseCycleTemplate('plan');
+  const attempt = { node: { kind: 'plan' }, pipelineVersion: 2, template, sources,
+    cycleContext: { workflowRequests: [{ requiredForPlan: true, acceptanceCriteria: [required] }] } };
+  const inferencePrompt = planningModulePrompt({ ...attempt, node: { kind: 'inference' }, template: responseCycleTemplate('inference') });
+  assert.match(inferencePrompt, /verification:"evidence" for actual observations or complete coverage/);
+  assert.match(inferencePrompt, /verification:"response" for an assessment, eligibility decision, comparison, or other conclusion backed by those observations/);
+  const planPrompt = planningModulePrompt(attempt);
+  assert.match(planPrompt, /inherited verification determines kind and takes precedence/);
+  assert.match(planPrompt, /evidence uses "observation" or "source-coverage"/);
+  assert.match(planPrompt, /add a separate evidence-backed judgment/);
+
+  const { verification, ...authored } = required;
+  const body = {
+    values: {}, checks: responseCycleStage('plan').checks.map(check => ({
+      id: check.id, assessment: 'supported', sourceIds: [], note: 'The bounded Plan covers the requested research.'
+    })), subproblems: [], childResults: [],
+    contract: { contractVersion: 2, goal: 'Inspect official listings and assess relevant candidates.',
+      criteria: [{ ...authored, kind: 'judgment',
+        description: 'Assess examined current official listings against the captured profile and employment gates; report direct links, disclosed location and compensation, fit, open questions, and next steps, or explain why examined candidates do not qualify.' }],
+      workItems: [{ id: 'research', title: 'Review official listings', objective: 'Read and assess the available listings.',
+        owner: 'coordinator', resourceKeys: ['origin:https://example.test'], effects: ['observe'], dependsOn: [], criterionIds: [required.id] }],
+      instructions: [] }
+  };
+  const kindPath = 'response.contract.criteria[0].kind';
+  const diagnosticFor = () => {
+    let diagnostic;
+    const output = JSON.stringify(body);
+    assert.throws(() => validatePlanningModuleResponse(attempt, output), error => {
+      assert.equal(error.code, 'PLANNING_RESPONSE_FORMAT');
+      diagnostic = planningFormatDiagnostic(attempt, output, error);
+      assert.equal(diagnostic.issues[0].path, kindPath);
+      assert.match(diagnostic.issues[0].message, /Use "observation" or "source-coverage" to preserve inherited verification "evidence"/);
+      assert.match(diagnostic.issues[0].message, /The kind "judgment" projects to "response"/);
+      return true;
+    });
+    return diagnostic;
+  };
+  const first = diagnosticFor();
+  assert.match(first.issues[1].message, /including its ID, label, description, verification and declared accuracy fields/);
+  body.contract.criteria[0].description = authored.description;
+  const repairedMetadataOnly = diagnosticFor();
+  assert.equal(repairedMetadataOnly.issues.some(issue => issue.message.startsWith('Preserve the complete required workflow criterion exactly')), false);
+
+  body.contract.criteria[0].kind = 'observation';
+  body.contract.criteria.push({ id: 'candidate_assessment', kind: 'judgment',
+    description: 'Assess candidates against the role and employment requirements using observed listing details.' });
+  body.contract.workItems[0].criterionIds.push('candidate_assessment');
+  const accepted = validatePlanningModuleResponse(attempt, JSON.stringify(body));
+  assert.deepEqual(accepted.acceptanceCriteria[0], required);
+  assert.equal(accepted.acceptanceCriteria[1].verification, 'response');
 });
 
 test('invalid references are never sanitized and one unsuccessful repair is the hard limit',async t=>{
