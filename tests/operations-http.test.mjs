@@ -14,11 +14,11 @@ const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;})
 const until=async(check,label='HTTP operation condition')=>{const end=Date.now()+7000;while(Date.now()<end){const result=await check();if(result)return result;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail(`${label} did not settle`);};
 const workflow=(planningMode='off')=>({id:'http-operation-workflow',name:'HTTP deployed worker',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Worker',prompt:'Write the isolated fixture result and independently read it.',model:'http-fixture-model'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode}});
 class Desktop extends EventEmitter{status(){return{available:false,enabled:false};}async setEnabled(){return this.status();}}
-async function fixture(t,{execute,readinessFailure,maxConcurrentRuns=4,planningMode='off'}={}){
+async function fixture(t,{execute,readinessFailure,modelStatus,maxConcurrentRuns=4,planningMode='off'}={}){
   const directory=await mkdtemp(path.join(tmpdir(),'relay-operations-http-')),dataDir=path.join(directory,'data'),cwd=path.join(directory,'workspace'),calls=[],readinessCalls=[],apps=[];
   let app,url,cookie;
   class Runtime extends EventEmitter{
-    status(){return{connected:true,authenticated:true,defaultModel:'http-fixture-model',models:[{model:'http-fixture-model'}]};}async start(){return this.status();}async close(){this.closed=true;}
+    status(){const selected=modelStatus?.()||{defaultModel:'http-fixture-model'};return{connected:true,authenticated:true,models:[{model:selected.defaultModel}],...selected};}async start(){return this.status();}async close(){this.closed=true;}
     async runAgent(options){
       if(options.responseOnly){
         const captured=JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2));
@@ -30,7 +30,7 @@ async function fixture(t,{execute,readinessFailure,maxConcurrentRuns=4,planningM
       const index=calls.push(options);
       if(execute)return execute(options,index);
       await recordFixturePlan(options,{title:'Write and verify the isolated operation result',doneWhen:'The actual operation-proof.txt file contains the requested fixture output.'});
-      options.onEvent({type:'thread',threadId:options.threadId||'http-fixture-thread',model:'http-fixture-model'});
+      options.onEvent({type:'thread',threadId:options.threadId||'http-fixture-thread',model:options.model||'http-fixture-model'});
       const content=`Verified operation side effect ${index}.\n`,write=await options.onToolCall({name:'relay_workspace',arguments:{action:'write',path:'operation-proof.txt',text:content}});
       assert.equal(write.success,true);
       const read=await options.onToolCall({name:'relay_workspace',arguments:{action:'read',path:'operation-proof.txt'}});
@@ -276,6 +276,47 @@ for(const codexHistory of ['relay','codex']) test(`repeated cron occurrences ret
   assert.ok(f.readinessCalls.filter(call=>call.stage==='inference').length>=2,'Original and revised instructions each receive their own Inference assessment.');
   assert.ok(f.readinessCalls.filter(call=>call.stage==='viability').length>=2,'Original and revised instructions each receive their own structured readiness assessment.');
 });
+test('an interval using Default continues its managed run only while that model stays available and unchanged', async t => {
+  let defaultModel = 'http-fixture-model', defaultModelAvailable = true;
+  const f = await fixture(t, { modelStatus: () => ({ defaultModel, defaultModelAvailable }) });
+  const scheduledWorkflow = workflow();
+  scheduledWorkflow.nodes.find(node => node.type === 'agent').model = 'default';
+  const schedule = await f.create({ workflow: scheduledWorkflow, trigger: { type: 'interval', everySeconds: 3600 }, overlap: 'queue' });
+  const trigger = '/api/operations/deployments/' + schedule.id + '/trigger';
+  const completed = async (route, body) => {
+    const admitted = await f.request(route, { method: 'POST', body });
+    assert.ok([201, 202].includes(admitted.status), JSON.stringify(admitted.data));
+    return until(() => {
+      const job = f.app.operations.getJob(admitted.data.id);
+      return job.status === 'completed' && job;
+    }, 'completed recurring Default run');
+  };
+
+  const first = await completed(trigger, { idempotencyKey: 'default-first' });
+  const firstRun = await f.app.conversations.get(first.attempts.at(-1).runId);
+  assert.equal(firstRun.workflow.nodes.find(node => node.type === 'agent').model, 'http-fixture-model');
+  const second = await completed('/api/operations/jobs/' + first.id + '/retry', {});
+  assert.equal(second.continuedFromRunId, firstRun.id);
+  assert.equal(second.conversationRootId, firstRun.id);
+
+  const latest = f.app.operations.state.jobs.find(job => job.id === second.id);
+  defaultModelAvailable = false;
+  assert.equal(await f.app.operations.continuationFor({ ...latest, id: 'unavailable-default-check' }), null);
+  defaultModelAvailable = true;
+  defaultModel = 'different-fixture-model';
+  const third = await completed(trigger, { idempotencyKey: 'default-changed' });
+  const thirdRun = await f.app.conversations.get(third.attempts.at(-1).runId);
+  assert.equal(thirdRun.workflow.nodes.find(node => node.type === 'agent').model, defaultModel);
+  assert.equal(third.continuedFromRunId, undefined);
+  assert.notEqual(third.conversationRootId, firstRun.id);
+
+  defaultModel = 'http-fixture-model';
+  const fourth = await completed(trigger, { idempotencyKey: 'default-changed-again' });
+  assert.equal(fourth.continuedFromRunId, undefined, 'Returning to a model must not skip over the latest run.');
+  assert.notEqual(fourth.conversationRootId, firstRun.id);
+  assert.equal((await f.request('/api/operations/deployments/' + schedule.id)).data.workflow.nodes.find(node => node.type === 'agent').model, 'default');
+});
+
 test('parallel schedules remain independent rather than sharing one active provider thread',async t=>{
   const f=await fixture(t),schedule=await f.create({trigger:{type:'manual'},overlap:'parallel'});
   const trigger=async key=>{

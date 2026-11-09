@@ -115,6 +115,81 @@ test('default canonical completion grants up to twelve continuations for fresh h
   assert.equal(updates.at(-1).complete, false);
 });
 
+async function refineFixturePlan(f, refine) {
+  const state = body(await f.send(call('relay_task', { action: 'read' })));
+  const contract = structuredClone(state.contract);
+  delete contract.planEpoch;
+  refine(contract.workItems[0]);
+  const result = await f.send(call('relay_task', { action: 'plan', expectedRevision: state.revision, contract }));
+  assert.equal(result.success, true, JSON.stringify(result));
+}
+
+test('a scoped plan repair can extend completion after a real browser observation was denied', async t => {
+  const origin = 'origin:https://jobs.ashbyhq.com';
+  const f = await fixture(t, { operationAdapter: () => ({ describeOperation: item => describeHostOperation(item, { browserObservation: { tabs: [] } }) }) });
+  const completion = createPlanningCompletionController({ store: f.tasks, taskId: f.taskId, runId: f.runId, nodeId: f.nodeId,
+    schemaVersion: 14, executionGuardrails: true });
+  for (let index = 0; index < 4; index++) {
+    const target = 'input-' + index + '.txt';
+    await fs.writeFile(path.join(f.cwd, target), 'Actual fixture input ' + index);
+    assert.equal((await f.send(call('relay_workspace', { action: 'read', path: target }))).success, true);
+    assert.equal((await completion.beforeFinal()).continue, true);
+  }
+  const open = call('relay_browser', { action: 'open', url: 'https://jobs.ashbyhq.com/example' });
+  const before = await readContractJournal(f.tasks, f.taskId);
+  assert.equal((await f.send(open)).code, 'TASK_CONTRACT_SCOPE');
+  await refineFixturePlan(f, item => item.resourceKeys.push(origin));
+  assert.deepEqual(await readContractJournal(f.tasks, f.taskId), before, 'refinement dispatches no operation and creates no evidence');
+
+  const result = await completion.beforeFinal();
+  assert.equal(result.continue, true);
+  assert.match(result.prompt, /updated scope now permits a previously blocked observation/);
+  assert.equal(await f.guard.before(open), null, 'the refined plan admits the observation through the normal host guard');
+});
+
+test('a scope repair cannot repeat the same grant or use unrelated material edits as progress', async t => {
+  const f = await fixture(t, { scope: 'file' });
+  const target = 'input.txt', read = () => f.send(call('relay_workspace', { action: 'read', path: target }));
+  const descriptor = await describeHostOperation({ name: 'relay_workspace', arguments: { action: 'read', path: target } }, { cwd: f.cwd });
+  const key = descriptor.resources.find(resource => resource.key.startsWith('path:') && !resource.scopeOnly).key;
+  const unrelated = 'origin:https://unrelated.example';
+  const completion = createContractCompletionController({ store: f.tasks, taskId: f.taskId, runId: f.runId, nodeId: f.nodeId,
+    maxReturns: 1, maxObservationReturns: 4 });
+
+  assert.equal((await completion.beforeFinal()).continue, true);
+  assert.equal((await read()).code, 'TASK_CONTRACT_SCOPE');
+  await refineFixturePlan(f, item => item.resourceKeys.push(key));
+  assert.equal((await completion.beforeFinal()).continue, true);
+  await refineFixturePlan(f, item => { item.resourceKeys = item.resourceKeys.filter(scope => scope !== key); });
+  assert.equal((await read()).code, 'TASK_CONTRACT_SCOPE');
+  await refineFixturePlan(f, item => {
+    item.title = 'Read changed requirements';
+    item.resourceKeys = [unrelated, key, ...item.resourceKeys].reverse();
+  });
+  await assert.rejects(completion.beforeFinal(), { code: 'TASK_CONTRACT_INCOMPLETE', message: /No new host-observed progress/ });
+});
+
+test('an actual scope repair respects explicit caps and cannot extend while an operation is live', async t => {
+  for (const live of [false, true]) {
+    await t.test(live ? 'live operation' : 'explicit cap', async t => {
+      const f = await fixture(t, { scope: 'file' });
+      const target = 'input.txt', read = call('relay_workspace', { action: 'read', path: target });
+      const descriptor = await describeHostOperation(read, { cwd: f.cwd });
+      const key = descriptor.resources.find(resource => resource.key.startsWith('path:') && !resource.scopeOnly).key;
+      const completion = live
+        ? createContractCompletionController({ store: f.tasks, taskId: f.taskId, runId: f.runId, nodeId: f.nodeId, maxReturns: 1, maxObservationReturns: 2 })
+        : createPlanningCompletionController({ store: f.tasks, taskId: f.taskId, runId: f.runId, nodeId: f.nodeId, schemaVersion: 14, executionGuardrails: true, maxReturns: 1 });
+
+      assert.equal((await completion.beforeFinal()).continue, true);
+      assert.equal((await f.send(read)).code, 'TASK_CONTRACT_SCOPE');
+      if (live) assert.equal(await f.guard.before(call('relay_workspace', { action: 'write', path: 'allowed.txt', text: 'never dispatched' })), null);
+      await refineFixturePlan(f, item => item.resourceKeys.push(key));
+      await assert.rejects(completion.beforeFinal(), { code: 'TASK_CONTRACT_INCOMPLETE', message: /continuation limit/ });
+      await assert.rejects(fs.stat(path.join(f.cwd, 'allowed.txt')), { code: 'ENOENT' });
+    });
+  }
+});
+
 test('a new judgment without a new host observation cannot extend the ordinary cap', async t => {
   const f = await fixture(t, { contract: ({ key }) => {
     const value = draft([key]);
