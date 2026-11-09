@@ -61,7 +61,7 @@ test('Gemini-only disconnect checks latest client identity and never revokes Cha
   assert.match(f.mount.textContent, /Google: Not connected/);
 });
 
-test('Pending Google authorization shows only Google request and submits only selected scopes', async t => {
+test('Pending Google authorization isolates its request and submits its exact full-access scopes', async t => {
   const input = status();
   input.oauth.requests = [
     { id:'chatgpt-request', clientLabel:'ChatGPT', scopes:['read','commands:run'], displayCode:'CHAT1111' },
@@ -70,7 +70,7 @@ test('Pending Google authorization shows only Google request and submits only se
   input.oauth.grants = [chatgpt];
   const f = mount(t, input, async ([url, method, body], state) => {
     if(url==='/api/chatgpt-connector/approve-access'){
-      assert.deepEqual(body,{id:'google-request',scopes:['read','files:read']});
+      assert.deepEqual(body,{id:'google-request',scopes:['read','files:read','commands:run']});
       state.current.oauth.requests = state.current.oauth.requests.filter(x => x.id !== 'google-request');
       return structuredClone(state.current);
     }
@@ -78,11 +78,15 @@ test('Pending Google authorization shows only Google request and submits only se
   await settle();
   assert.match(f.mount.textContent,/GOOG2222/);
   assert.doesNotMatch(f.mount.textContent,/CHAT1111/);
-  const command = f.$('[data-gemini-scope="commands:run"]');
-  command.checked = false;
-  await command.closest('form').dispatch('submit',{},true);
+  const form = f.$('[data-gemini-request="google-request"]');
+  assert.ok(form);
+  assert.equal(f.$('[data-gemini-request="chatgpt-request"]'), null);
+  assert.equal(form.querySelectorAll('[data-gemini-scope]').length, 0);
+  assert.match(form.textContent, /Connecting Gemini grants access to all BLACKICE MCP tools/);
+  await form.dispatch('submit',{},true);
   await settle();
-  assert.deepEqual(f.writes()[0], ['/api/chatgpt-connector/approve-access','POST',{id:'google-request',scopes:['read','files:read']}]);
+  assert.equal(f.writes().length, 1);
+  assert.deepEqual(f.writes()[0], ['/api/chatgpt-connector/approve-access','POST',{id:'google-request',scopes:['read','files:read','commands:run']}]);
   assert.match(f.mount.textContent,/ChatGPT: 1 separate active grant/);
 });
 

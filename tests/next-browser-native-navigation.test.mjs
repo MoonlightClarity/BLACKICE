@@ -14,6 +14,7 @@ async function fixture(t) {
   dom.document.defaultView = win;
   Object.assign(win, {
     innerWidth: 1000, innerHeight: 800,
+    setTimeout, clearTimeout,
     requestAnimationFrame: callback => setTimeout(callback, 0),
     cancelAnimationFrame: id => clearTimeout(id),
     relayDesktop: { async browserSurface(request) {
