@@ -27,7 +27,7 @@ const contract = () => ({ contractVersion: 2, goal: 'Complete one authorized enr
 // A deterministic observed page drives the production browser handler, descriptor,
 // receipt extractor, normalizer, task store and operation journal. It supplies no
 // external-confirmation evidence and cannot select an effect identity for a proof.
-async function fixture(t, { format = 'dom', lostSecondResponse = false, initialLocation = 'invalid', ownerCanObserve = false } = {}) {
+async function fixture(t, { format = 'dom', lostSecondResponse = false, initialLocation = 'invalid', ownerCanObserve = false, initialReceiptKind = 'external-confirmation' } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'blackice-binding-recovery-'));
   const tasks = new TaskStateStore({ dataDir: path.join(root, 'data') }), taskId = 'recovery-task', runId = 'recovery-run', nodeId = 'coordinator-node';
   const controller = new AbortController(), tracker = new BrowserSubmissionObservations();
@@ -99,6 +99,7 @@ async function fixture(t, { format = 'dom', lostSecondResponse = false, initialL
   };
   const initial = await send(call('relay_task', { action: 'read' }));
   const authored = contract();
+  authored.criteria[0].kind = initialReceiptKind;
   if (ownerCanObserve) authored.workItems[0].effects.push('observe');
   assert.equal((await send(call('relay_task', { action: 'plan', expectedRevision: body(initial).revision, contract: authored }))).success, true);
   await focus('enroll');
@@ -114,6 +115,11 @@ async function fixture(t, { format = 'dom', lostSecondResponse = false, initialL
   return { send, state, journal, focus, refine, page, bindingFrom,
     completion: () => createContractCompletionController({ store: tasks, taskId, runId, nodeId, signal: controller.signal }),
     bind: args => send(call('relay_task', { action: 'bind_receipt', workItemId: 'enroll', criterionId: 'receipt', ...args })),
+    reserveSubmission: async () => {
+      const item = call('relay_browser', { action: 'click', browser: 'relay', tabId: 'relay:one', ref: 'submit' });
+      assert.equal(await guard.before(item), null);
+      return async () => guard.annotate(item, await browserHandler(item, guard.dispatchContext(item)));
+    },
     adoptNextOccurrence: async () => {
       const current = await state(), { planEpoch, ...contract } = current.contract;
       await tasks.setContract(taskId, contract, { expectedRevision: current.revision, schemaVersion: 14, adoption: {
@@ -204,6 +210,60 @@ test('a later occurrence can bind an older unresolved submission for the same ow
   assert.deepEqual((await f.state()).contract.criteria[0].receiptBinding, observed);
   assert.deepEqual(commitsOf(await f.journal()), [original], 'Authoring does not reconcile or replay the older effect.');
   assert.equal(receiptCriterion(await f.state()).observedCount, 0);
+});
+
+test('recovery accepts the same originally misclassified criterion without creating a new effect', async t => {
+  const f = await fixture(t, { initialLocation: 'valid', ownerCanObserve: true, initialReceiptKind: 'judgment' });
+  const first = await f.browse('click', { ref: 'submit' }), original = commitsOf(await f.journal())[0];
+  assert.deepEqual(original.criteria.map(({ id, kind }) => ({ id, kind })), [{ id: 'receipt', kind: 'judgment' }]);
+  assert.equal(operation(first).recovery.reason, 'receipt-criterion-required');
+  assert.deepEqual(operation(first).recovery.recordedCriterionIds, ['receipt']);
+  await f.refine(next => {
+    next.criteria[0].kind = 'external-confirmation';
+    next.criteria.push({ ...next.criteria[0], id: 'new-receipt' });
+    next.workItems[0].criterionIds.push('new-receipt');
+  });
+  const read = await f.browse('read');
+  assert.equal(operation(read).recovery.bindReceipt.criterionId, 'receipt');
+  assert.deepEqual(operation(read).recovery.criteria.map(item => item.criterionId), ['receipt']);
+  const observed = f.bindingFrom(body(first));
+  observed.confirmedValues = observed.absentValues;
+  delete observed.absentValues;
+  const current = await f.state();
+  const unrelated = await f.bind({ expectedRevision: current.revision, criterionId: 'new-receipt', receiptBinding: observed });
+  assert.equal(unrelated.code, 'TASK_CONTRACT_RECEIPT_NOT_PENDING');
+  assert.equal((await f.bind({ expectedRevision: current.revision, receiptBinding: observed })).success, true);
+  assert.equal(receiptCriterion(await f.state()).observedCount, 0);
+  await f.focus('enroll');
+  f.page.participant = 'other-subject';
+  await f.browse('read');
+  assert.equal(receiptCriterion(await f.state()).observedCount, 0);
+  f.page.participant = 'p1';
+  await f.browse('read');
+  const [verified] = commitsOf(await f.journal());
+  assert.equal(verified.effectState, 'confirmed');
+  assert.deepEqual(verified.commit, original.commit);
+  assert.deepEqual(verified.criteria, original.criteria, 'Historical criteria remain immutable.');
+  assert.equal(receiptCriterion(await f.state()).observedCount, 1);
+  assert.deepEqual(f.counts(), { commits: 1, interactions: 0 });
+});
+
+test('adopted browser submission requires a receipt criterion at reservation and actual dispatch', async t => {
+  const f = await fixture(t, { initialReceiptKind: 'judgment' });
+  const dispatch = await f.reserveSubmission();
+  await f.adoptNextOccurrence();
+  const afterAdoption = await dispatch();
+  assert.equal(afterAdoption.code, 'TASK_CONTRACT_RECEIPT_REQUIRED');
+  assert.equal(body(afterAdoption).actionDispatched, false);
+  const afterRace = await f.journal();
+  assert.equal(afterRace.records.length, 1);
+  assert.equal(afterRace.records[0].deliveryState, 'cancelled-before-dispatch');
+  const denied = await f.browse('click', { ref: 'submit' });
+  assert.equal(denied.code, 'TASK_CONTRACT_RECEIPT_REQUIRED');
+  assert.equal(body(denied).workItemId, 'enroll');
+  assert.match(body(denied).message, /Attach an external-confirmation criterion/);
+  assert.deepEqual(await f.journal(), afterRace, 'The reservation rejection does not journal a new operation.');
+  assert.deepEqual(f.counts(), { commits: 0, interactions: 0 });
 });
 
 test('an initially unbound browser submission is recovered by observed binding and owning-item refinement without replay', async t => {

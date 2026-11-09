@@ -37,6 +37,18 @@ const accuracyTarget = () => ({ mode: 'exact', tolerance: 'No unverified outcome
   evidenceNeeded: 'Matching host-observed destination confirmations.', consequence: 'An inaccurate count would misstate completion.',
   unknownPolicy: 'block', stopWhen: 'The declared target is established by the retained evidence.' });
 
+test('an operational browser commit gets a receipt criterion when the model supplied only a judgment', () => {
+  const input = draft(), item = input.workItems[0];
+  item.resourceKeys = ['origin:https://example.test'];
+  input.criteria[1].kind = 'judgment';
+  const result = normalizePlanContractResponse(input, [], { requireBrowserReceipts: true });
+  const proof = result.criteria.find(criterion => criterion.kind === 'external-confirmation');
+  assert.equal(proof.id, 'confirm-form');
+  assert.equal(proof.receiptBinding, undefined);
+  assert.deepEqual(result.workItems[0].criterionIds, ['submitted', proof.id]);
+  assert.deepEqual(result.workItems[1], normalizePlanContract(input).workItems[1]);
+});
+
 test('canonical model null markers preserve optionality without weakening host receipt rules', () => {
   const original = draft();
   const candidate = structuredClone(original);

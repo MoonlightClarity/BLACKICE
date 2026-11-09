@@ -266,7 +266,7 @@ export function parseResponseCycleResponse(output, stageOrKind, { sources,pipeli
   }), 'id', 'Inferences');
   if (stage.kind === 'plan') {
     if (canonicalPlan) {
-      result.contract = normalizePlanContractResponse(value.contract, cycleContext?.commitPrerequisites);
+      result.contract = normalizePlanContractResponse(value.contract, cycleContext?.commitPrerequisites, { requireBrowserReceipts: Boolean(cycleContext?.workflowOwner) });
       const projected = contractPlanProjection(result.contract, [canonicalPlanSource(sources).id]);
       for (const key of ['acceptanceCriteria', 'steps']) if (value[key] !== undefined && canonical(value[key]) !== canonical(projected[key])) throw fail('The supplied ' + key + ' disagrees with the canonical contract. These views are host-derived.');
       Object.assign(result, projected);

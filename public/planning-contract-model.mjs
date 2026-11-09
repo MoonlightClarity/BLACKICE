@@ -77,7 +77,7 @@ export function planContractResponseSchema() {
 }
 
 /** Strip only declared optional null markers before ordinary plan validation. */
-export function normalizePlanContractResponse(value, prerequisites = []) {
+export function normalizePlanContractResponse(value, prerequisites = [], { requireBrowserReceipts = false } = {}) {
   const decode = (item, schema) => {
     if (Array.isArray(item) && schema.items) return item.map(entry => decode(entry, schema.items));
     if (!object(item)) return item;
@@ -127,6 +127,22 @@ export function normalizePlanContractResponse(value, prerequisites = []) {
         item.criterionIds = item.criterionIds.filter(id => id !== required.id);
         if (!item.dependsOn.includes(owner.id)) item.dependsOn.push(owner.id);
       }
+    }
+  }
+  if (requireBrowserReceipts && Array.isArray(decoded?.criteria) && Array.isArray(decoded.workItems)) {
+    const ids = new Set(decoded.criteria.map(criterion => criterion?.id));
+    const receiptIds = new Set(decoded.criteria.filter(criterion => criterion?.kind === 'external-confirmation').map(criterion => criterion.id));
+    for (const item of decoded.workItems) {
+      if (!Array.isArray(item?.effects) || !item.effects.includes('commit') || !Array.isArray(item.criterionIds) ||
+          item.criterionIds.some(id => receiptIds.has(id)) || !Array.isArray(item.resourceKeys) ||
+          !item.resourceKeys.some(key => /^(?:(?:origin|url):https?:|destination:|form:|document:|tab:|browser:relay$)/.test(key))) continue;
+      const base = 'confirm-' + String(item.id).slice(0, 100);
+      let id = base;
+      for (let suffix = 2; ids.has(id); suffix++) id = base + '-' + suffix;
+      ids.add(id);
+      item.criterionIds.push(id);
+      decoded.criteria.push({ id, kind: 'external-confirmation', label: 'Confirm the browser result',
+        description: 'Verify the outcome of ' + String(item.title) + ' using the destination’s receipt.' });
     }
   }
   return normalizePlanContract(decoded);
