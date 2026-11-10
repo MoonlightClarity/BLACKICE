@@ -20,6 +20,7 @@ const draftMatches = (draft, node) => draft.title === (node.title || '') && draf
 
 /** Runtime activity is separate from saved/archived lifecycle and response readiness. */
 export function planningRequestActivity(request = {}) {
+  if (request.execution?.source === 'planning-runtime') return request.execution.state || 'unknown';
   // Detailed reads have the newest attempt per module. Catalogs carry the host's
   // exact running count; assignments and response readiness are not execution.
   if (Array.isArray(request.attempts)) {
@@ -36,14 +37,19 @@ export function planningRequestActivity(request = {}) {
 }
 export function planningConversationActivity(conversation = {}, requests = []) {
   const states = requests.map(planningRequestActivity), status = conversation.status;
-  if (states.includes('running') || status === 'running' && conversation.settled !== true) return 'running';
-  if (states.includes('stopping') || status === 'cancelling' && conversation.settled !== true) return 'stopping';
-  if (states.includes('queued') || ['queued', 'prepared', 'starting'].includes(status) && conversation.settled !== true) return 'queued';
+  if (states.includes('running')) return 'running';
+  if (states.includes('stopping')) return 'stopping';
+  if (states.includes('repairing')) return 'repairing';
+  if (states.includes('queued')) return 'queued';
+  if (states.includes('unknown')) return 'unknown';
+  if (status === 'running' && conversation.settled !== true) return 'running';
+  if (status === 'cancelling' && conversation.settled !== true) return 'stopping';
+  if (['queued', 'prepared', 'starting'].includes(status) && conversation.settled !== true) return 'queued';
   if (status === 'failed' || states.includes('failed')) return 'failed';
   return 'idle';
 }
-const responseStateLabel = state => ({ empty: 'Not started', failed: 'Failed', cancelled: 'Stopped', running: 'Running', ready: 'Response ready' }[state] || labelFor(state));
-const activityLabel = state => ({ running: 'Running', stopping: 'Stopping', queued: 'Queued', failed: 'Needs attention', idle: 'Idle' }[state] || 'Idle');
+const responseStateLabel = state => ({ admitting: 'Queued', queued: 'Queued', repairing: 'Repairing', cancelling: 'Stopping', stopping: 'Stopping', unknown: 'Status unknown', empty: 'Not started', failed: 'Failed', cancelled: 'Stopped', running: 'Running', ready: 'Response ready' }[state] || labelFor(state));
+const activityLabel = state => ({ running: 'Running', stopping: 'Stopping', queued: 'Queued', repairing: 'Repairing', unknown: 'Status unknown', failed: 'Needs attention', idle: 'Idle' }[state] || 'Idle');
 
 /** A visible, revision-aware document workspace. Opening it never invokes a model. */
 export function createPlanningBrowser({ mount, api, events, notify = () => {}, onNavigate, getStatus = () => ({}) }) {
@@ -149,14 +155,15 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     for (const row of catalog.conversations) groups.set(conversationKey(row), row);
     for (const row of catalog.requests) if (!groups.has(clean(row.conversationId))) groups.set(clean(row.conversationId), { id: row.conversationId, title: row.conversationTitle || (row.conversationId ? 'Conversation ' + row.conversationId : 'Independent requests'), state: 'active' });
     if (!groups.size) groups.set('', { id: '', title: 'Independent requests', state: 'active' });
-    let running = 0;
+    let running = 0, unknown = 0;
     const entries = [...groups].map(([id, row]) => {
       const requests = catalog.requests.filter(item => clean(item.conversationId) === id);
       const activity = planningConversationActivity(row, requests);
       if (activity === 'running') running++;
+      if (activity === 'unknown') unknown++;
       return { id, row, requests, activity };
     });
-    activitySummary.textContent = catalogUnavailable ? 'Activity unavailable' : !catalogLoaded ? 'Loading activity…' : running ? running + ' running' : 'No work running';
+    activitySummary.textContent = catalogUnavailable ? 'Activity unavailable' : !catalogLoaded ? 'Loading activity…' : running ? running + ' running' : unknown ? 'Execution status unknown' : 'No work running';
     activitySummary.dataset.state = running ? 'running' : 'idle';
     filterHelp.textContent = archive.value === 'running' ? 'Only work with a running execution.' : archive.value === 'archived' ? 'Archived conversations are kept for reference.' : 'Saved includes idle and finished work.';
     for (const { id, row, requests, activity } of entries) {
@@ -346,7 +353,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     });
     title.focus?.();
   }
-  function rowState(node) { return node.readiness?.state || 'empty'; }
+  function rowState(node) { return node.executionStatus || node.readiness?.state || 'empty'; }
   function displayModuleTitle(node) {
     const label = planningModuleTemplate(node.kind)?.label || labelFor(node.kind);
     if (['viability', 'inference', 'plan', 'think', 'respond'].includes(node.kind)) return label;
@@ -359,7 +366,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     const title = add(top, 'strong', displayModuleTitle(node), 'pb-module-title'); title.title = node.title || '';
     const meta = add(parent, 'span', '', 'pb-module-meta'); add(meta, 'span', planningModuleTemplate(node.kind)?.label || node.kind, 'pb-module-kind');
     const cycle = cycleForNode(current()?.document || { nodes: [], cycles: [] }, node);
-    if (node.kind === 'cycle' && cycle) { add(meta, 'span', cycleStateLabel(cycle.state)); add(meta, 'span', cycleStageRows(current().document, cycle).filter(row => row.node?.response).length + '/5 stages recorded'); }
+    if (node.kind === 'cycle' && cycle) { add(meta, 'span', cycleStateLabel(cycle.state, cycle.executionStatus)); add(meta, 'span', cycleStageRows(current().document, cycle).filter(row => row.node?.response).length + '/5 stages recorded'); }
     else pill(meta, rowState(node));
     if (node.assignment) { const owner = add(meta, 'span', node.assignment.label || node.assignment.name || 'Assigned worker', 'pb-module-owner'); owner.title = owner.textContent; }
     const openChildren = node.kind === 'cycle'
@@ -613,7 +620,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     if (node.assignment || attempt) {
       const worker = add(inspector, 'div', '', 'pb-worker'), owner = node.assignment;
       add(worker, 'strong', owner ? 'Owner: ' + (owner.label || owner.name || 'Assigned worker') + (owner.inherited ? ' · inherited branch' : '') : 'Module worker');
-      if (attempt) add(worker, 'p', 'Runtime: ' + labelFor(attempt.status || 'recorded'));
+      if (attempt) add(worker, 'p', 'Runtime: ' + (attempt.workerStatus === 'unknown' ? 'Status unknown' : labelFor(attempt.workerStatus || attempt.status || 'recorded')));
       const metadata = attempt?.metadata || {}, model = metadata.model, requestedModel = attempt?.model || attempt?.modelId || owner?.model;
       if (model) add(worker, 'p', 'Model: ' + model);
       else if (requestedModel) add(worker, 'p', 'Requested model: ' + (requestedModel === 'default' ? 'configured default' : requestedModel));
