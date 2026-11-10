@@ -822,6 +822,27 @@ test('explicit operation retry reads an opaque external effect from a settled jo
   assert.equal(engine.calls.length,1);
 });
 
+for(const version of [14,2])test(`an incompatible journal with an empty run projection uses the saved run schema ${version}`,async t=>{
+  const f=await harness(t),{operations,engine,create}=f,deployment=await create({retry:{maxAttempts:0,backoffSeconds:1}}),job=await operations.trigger(deployment.id);
+  await operations.poll();const runId=operations.getJob(job.id).attempts[0].runId;
+  await canonicalRetryJournal(t,f,runId,[]);
+  const run=engine.runs.get(runId);
+  run.planningContractVersion=version;
+  delete run.taskState;
+  await writeFile(engine.tasks.file(run.taskId)+'.sequence',JSON.stringify({version:2}));
+  engine.finish(runId,'failed');await operations.poll();
+  if(version===14){
+    await assert.rejects(operations.retryJob(job.id),{code:'EXTERNAL_ACTION_RECONCILE',status:409,runId});
+    assert.equal(operations.getJob(job.id).retryHold.journalRecovery,true);
+    assert.equal(operations.snapshot().jobs.length,1);
+  }else{
+    const retry=await operations.retryJob(job.id);
+    assert.equal(retry.retryOf,job.id);
+    assert.equal(operations.getJob(job.id).retryHold,undefined);
+  }
+  assert.equal(engine.calls.length,1);
+});
+
 test('local work, observation and known absence do not fence a fresh scheduled retry',async t=>{
   const f=await harness(t),{operations,engine,create,advance}=f,deployment=await create({retry:{maxAttempts:1,backoffSeconds:1}}),job=await operations.trigger(deployment.id);
   await operations.poll();const runId=operations.getJob(job.id).attempts[0].runId;
