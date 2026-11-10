@@ -27,7 +27,7 @@ const target=await until(async()=>(await(await fetch('http://127.0.0.1:'+port+'/
 await new Promise((resolve,reject)=>{ws=new WebSocket(target.webSocketDebuggerUrl);ws.addEventListener('open',resolve,{once:true});ws.addEventListener('error',reject,{once:true});ws.addEventListener('message',event=>{const p=JSON.parse(event.data);if(p.id&&pending.has(p.id)){const j=pending.get(p.id);pending.delete(p.id);p.error?j.reject(Error(p.error.message)):j.resolve(p.result);}if(p.method==='Runtime.exceptionThrown')errors.push(p.params.exceptionDetails?.text||'Page exception');});});
 await send('Runtime.enable');await send('Page.enable');await until(()=>evaluate('Boolean(document.querySelector("[data-phase=plan]"))'),'planning workspace');
 await click('[data-phase=plan]');assert.equal(await evaluate('document.querySelector(".pb-intent-panel").open'),false);
-await shot('01-desktop',1440,1000);await shot('02-tablet',1024,900);await shot('03-mobile',390,900);await shot('04-small-mobile',320,900);
+await shot('01-desktop',1440,1000);await shot('02-tablet',1024,900);await shot('03-mobile',390,900);assert.equal(await evaluate('getComputedStyle(document.querySelector(".pb-rail")).overflowY'),'visible');await shot('04-small-mobile',320,900);
 await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
 await filter('running');assert.equal(await evaluate('document.querySelectorAll(".pb-conversation").length'),0);assert.equal(await evaluate('document.querySelector(".pb-activity-summary").textContent'),'No work running');
 await shot('05-idle-filter',1440,1000);
