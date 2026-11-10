@@ -43,8 +43,8 @@ test('the configured catalog retains the exact 30-tool public contract and finge
     'blackice_get_swarm_plan', 'blackice_get_plan_groups', 'blackice_edit_plan', 'blackice_edit_plan_groups',
   ]);
   assert.deepEqual(catalog.status(), {
-    // Reviewed explicit task/context tools, canonical source binding, and bounded receipt alternatives.
-    sha256: 'b3deda858992802fbc35e9ebf96c1866f85d21ed07d0a2d28ebd25fdd923522d',
+    // Reviewed explicit task/context tools, source binding, receipt alternatives and optional operation scopes.
+    sha256: 'e1445fa822126a6939a107c0f4a89fd68ad4e30337cf0e94c4209b7550503bc8',
     toolCount: 30,
     serverVersion: '2.33.5',
   });
@@ -86,6 +86,10 @@ test('the configured catalog retains the exact 30-tool public contract and finge
   assert.equal(edits.replace_contract.contract.additionalProperties,false);
   assert.equal(edits.replace_contract.contract.properties.contractVersion.const,2);
   assert.equal(edits.replace_contract.contract.properties.workItems.minItems,1);
+  const workItem=edits.replace_contract.contract.properties.workItems.items;
+  assert.equal(workItem.required.includes('operationScopes'),false);
+  assert.deepEqual(workItem.properties.operationScopes.items.required,['effect','resourceKeys']);
+  assert.ok(workItem.properties.operationScopes.items.properties.confirmationCriterionId);
   assert.equal(edits.replace_contract.contract.properties.planEpoch,undefined);
   assert.equal(edits.replace_contract.contract.properties.runtime,undefined);
   assert.equal(edits.replace_contract.contract.properties.outcomes,undefined);
