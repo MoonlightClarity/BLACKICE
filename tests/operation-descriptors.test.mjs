@@ -817,3 +817,15 @@ test('one conflicting target does not suppress independent criterion confirmatio
 });
 
 test('production receipt extractor processes all 320 bounded alternatives and never truncates oversized input',()=>{const saved=globalThis.document;globalThis.document={querySelectorAll:()=>[]};try{const bindings=Array.from({length:320},(_,i)=>binding({record:'#receipt-'+i}));const observed=observePageReceiptRecords(bindings);assert.equal(observed.length,320);assert.deepEqual(observed.at(-1),{records:[]});assert.deepEqual(observePageReceiptRecords([...bindings,binding()]),[]);}finally{if(saved===undefined)delete globalThis.document;else globalThis.document=saved;}});
+
+test('native application control labels bind classification to the inspected operation', async () => {
+  const observed = form({ url: 'https://jobs.ashbyhq.com/exampleco/11111111-1111-4111-8111-111111111111', title: 'Operations Analyst | ExampleCo' });
+  observed.control.form.submitLabel = 'Next';
+  const next = await describeHostOperation(browserCall(), { browserObservation: observed });
+  assert.equal(next.applicationPage.submission, 'intermediate');
+  observed.control.form.submitLabel = 'Submit Application';
+  const submit = await describeHostOperation(browserCall(), { browserObservation: observed });
+  assert.equal(submit.applicationPage.submission, 'final');
+  assert.notEqual(submit.operationKey, next.operationKey, 'label changes invalidate queued input');
+  assert.equal(submit.commit.effectKey, next.commit.effectKey, 'receipt correlation does not change');
+});

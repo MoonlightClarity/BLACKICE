@@ -1269,7 +1269,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     cancel(signal);
     if (documentId !== inputDocumentId(tab) || url !== tab.window.webContents.getURL())
       throw capacityError('The observed document changed during inspection.', 'BROWSER_INPUT_DOCUMENT_CHANGED');
-    return { current: true, tabId: tab.id, documentId, url, ...(control ? { control } : {}), ...(receipts.length ? { receipts } : {}), ...submission };
+    return { current: true, tabId: tab.id, documentId, url, title: String(tab.window.webContents.getTitle()).slice(0, 1000), ...(control ? { control } : {}), ...(receipts.length ? { receipts } : {}), ...submission };
   }
   async armSubmissionObservation(tab, operationDescriptor, operationId, signal) {
     const commit = operationDescriptor?.commit;

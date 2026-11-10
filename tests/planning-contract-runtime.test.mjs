@@ -996,3 +996,49 @@ test('shared admission denial leaves original native reservation undispatched',a
  await assert.rejects(context.onOperationDispatch(context.operationDescriptor,{onAdmission:()=>{throw Object.assign(Error('shared conflict'),{code:'SHARED_CONFLICT'});}}),{code:'SHARED_CONFLICT'});
  assert.equal((await readContractJournal(f.tasks,f.taskId)).records.at(-1).deliveryState,'reserved');
 });
+
+const applicationUrl = 'https://jobs.ashbyhq.com/history-fixture/11111111-1111-4111-8111-111111111111';
+const applicationDescriptor = item => {
+  const descriptor = commitDescriptor(item);
+  return { ...descriptor, applicationPage: { url: applicationUrl, title: 'History Fixture - Operations Analyst', submission: 'final' },
+    commit: { ...descriptor.commit, pageUrl: applicationUrl, destinationKey: 'destination:' + applicationUrl + '/application' } };
+};
+const applicationAdapter = { describeOperation: async item => applicationDescriptor(item) };
+
+test('native Planning blocks an older history match before browser dispatch but leaves observations available', async t => {
+  const f = await fixture(t, { contract: typedCommitPlan(), operationAdapter: () => applicationAdapter });
+  await fs.writeFile(path.join(f.cwd, 'job_search_older.jsonl'), JSON.stringify({ url: applicationUrl, status: 'submitted_confirmed' }));
+  const denied = await f.guard.before(call('relay_browser', { action: 'click', target: 'first' }));
+  assert.equal(denied.code, 'APPLICATION_HISTORY_PRIOR');
+  assert.equal((await readContractJournal(f.tasks, f.taskId)).records.length, 0);
+});
+
+test('native Planning rechecks history at final dispatch and does not claim an operation denied before input', async t => {
+  const f = await fixture(t, { contract: typedCommitPlan(), operationAdapter: () => applicationAdapter });
+  const submit = call('relay_browser', { action: 'click', target: 'first' });
+  assert.equal(await f.guard.before(submit), null);
+  await fs.writeFile(path.join(f.cwd, 'job_search_restored.json'), JSON.stringify({ url: applicationUrl, status: 'APPLIED' }));
+  await assert.rejects(f.guard.dispatchContext(submit).onOperationDispatch(applicationDescriptor(submit)), { code: 'APPLICATION_HISTORY_PRIOR' });
+  await f.guard.annotate(submit, { success: false, contentItems: [] });
+  const [record] = (await readContractJournal(f.tasks, f.taskId)).records;
+  assert.equal(record.deliveryState, 'cancelled-before-dispatch');
+});
+
+test('native Planning persists one requisition claim across different payloads and reconciles host non-dispatch', async t => {
+  let noInput = false;
+  const adapter = { ...applicationAdapter, normalizeOperationResult: async () => ({ effectState: noInput ? 'absent' : 'unknown',
+    ...(noInput ? { actionDispatched: false } : {}), evidence: [] }) };
+  const f = await fixture(t, { contract: typedCommitPlan(), operationAdapter: () => adapter });
+  const first = call('relay_browser', { action: 'click', target: 'first' });
+  assert.equal(await f.guard.before(first), null);
+  await f.guard.dispatchContext(first).onOperationDispatch(applicationDescriptor(first));
+  assert.equal((await f.guard.before(call('relay_browser', { action: 'click', target: 'second' }))).code, 'APPLICATION_HISTORY_RESERVED');
+  noInput = true;
+  await f.guard.annotate(first, { success: false, contentItems: [] });
+  const second = call('relay_browser', { action: 'click', target: 'second' });
+  assert.equal(await f.guard.before(second), null);
+  await f.guard.dispatchContext(second).onOperationDispatch(applicationDescriptor(second));
+  noInput = false;
+  await f.guard.annotate(second, { success: false, contentItems: [] }, { uncertain: true });
+  assert.equal((await f.guard.before(call('relay_browser', { action: 'click', target: 'first' }))).code, 'APPLICATION_HISTORY_RESERVED');
+});

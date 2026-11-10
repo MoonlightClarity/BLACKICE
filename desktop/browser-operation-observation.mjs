@@ -71,7 +71,7 @@ export async function inspectObservedFormControl(el, state, args) {
     const requestPayloadDigest = method === 'POST' && enctype === 'application/x-www-form-urlencoded' && attachmentDigests.length === 0
       ? await textHash(payload.map(([name, value]) => [name.replace(/\r\n|\r|\n/g, '\r\n'), value.replace(/\r\n|\r|\n/g, '\r\n')])) : undefined;
     return { ...basic, kind: ['GET', 'HEAD'].includes(method) ? 'form-navigation' : method === 'POST' ? 'form-submit' : 'opaque',
-      form: { id: state.formIds.get(form), action, method, enctype, target, ...(navigationUrl ? { navigationUrl } : {}),
+      form: { id: state.formIds.get(form), action, method, enctype, target, submitLabel: String(el.getAttribute?.('aria-label') || el.innerText || el.textContent || el.value || '').trim().slice(0, 200), ...(navigationUrl ? { navigationUrl } : {}),
         payloadDigest: await textHash({ method, enctype, target, payload }), payloadSource: 'observed-native-controls', attachmentDigests, identityDigests,
         ...(requestPayloadDigest ? { requestPayloadDigest } : {}) } };
   } catch { return { ...basic, kind: 'opaque' }; }
