@@ -52,11 +52,12 @@ export function planningActivityForEvent(runId, event, previousState = null, ord
     return [];
   }
   if (data.type === 'planning.reassessment') {
-    if (data.persistentGoal && ['active', 'blocked', 'complete'].includes(data.goalStatus)) {
-      const titles = { active: 'Working toward the goal', blocked: 'Goal needs attention', complete: 'Goal verified' };
-      const statuses = { active: 'continuing', blocked: 'blocked', complete: 'done' };
-      return [{ id: `goal:${runId}:${nodeId}:${Number(data.returnCount) || 0}:${data.goalStatus}`, phase: 'plan', source: 'runtime-reassessment', at, order, nodeId,
-        title: titles[data.goalStatus], text: clean(data.reviewReason), status: statuses[data.goalStatus] }];
+    const goalStatus = data.goalStatus === 'blocked' && data.reviewStatus === 'stalled' ? 'stalled' : data.goalStatus;
+    if (data.persistentGoal && ['active', 'blocked', 'stalled', 'complete'].includes(goalStatus)) {
+      const titles = { active: 'Working toward the goal', blocked: 'Goal needs attention', stalled: 'Goal progress stalled', complete: 'Goal verified' };
+      const statuses = { active: 'continuing', blocked: 'blocked', stalled: 'stalled', complete: 'done' };
+      return [{ id: `goal:${runId}:${nodeId}:${Number(data.returnCount) || 0}:${goalStatus}`, phase: 'plan', source: 'runtime-reassessment', at, order, nodeId,
+        title: titles[goalStatus], text: clean(data.reviewReason), status: statuses[goalStatus] }];
     }
     if (!['continuing', 'stalled', 'required', 'stale'].includes(data.reviewStatus)) return [];
     return [{ id: `return:${runId}:${nodeId}:${Number(data.returnCount) || 0}:${data.reviewStatus}`, phase: 'plan', source: 'runtime-reassessment', at, order, nodeId,

@@ -155,6 +155,24 @@ test('actual replanning, revisiting a leaf, and saved continue review retain the
   assert.equal(groups[2].entries.length, 2, 'adjacent plan mutation and review share one heading without erasing either receipt');
 });
 
+test('Chat and Observe distinguish stalled goal progress from a recorded blocker', () => {
+  const runId = 'live';
+  const event = (goalStatus, reviewStatus, reviewReason) => ({ type: 'agent.event', runId, nodeId: 'agent',
+    at: '2026-10-29T12:00:04.000Z', data: { type: 'planning.reassessment', persistentGoal: true, goalStatus, reviewStatus, reviewReason } });
+  for (const goalStatus of ['stalled', 'blocked']) {
+    const stalled = event(goalStatus, 'stalled', 'Owned work remains available. No new progress was recorded.');
+    assert.equal(planningActivityForEvent(runId, stalled)[0].title, 'Goal progress stalled');
+    assert.equal(planningActivityForEvent(runId, stalled)[0].status, 'stalled');
+    assert.equal(normalizeObserveEvent(stalled).title, 'Goal progress stalled');
+    assert.equal(normalizeObserveEvent(stalled).status, 'failed');
+  }
+  const blocked = event('blocked', 'current', 'The recorded condition prevents the remaining work.');
+  assert.equal(planningActivityForEvent(runId, blocked)[0].title, 'Goal needs attention');
+  assert.equal(planningActivityForEvent(runId, blocked)[0].status, 'blocked');
+  assert.equal(normalizeObserveEvent(blocked).title, 'Goal needs attention');
+  assert.equal(normalizeObserveEvent(blocked).status, 'recorded');
+});
+
 test('Observe labels real review calls and runtime returns and admits both to its live activity feed', () => {
   const runId = 'live', at = '2026-10-29T12:00:04.000Z';
   const event = data => ({ type: 'agent.event', runId, nodeId: 'agent', at, data });

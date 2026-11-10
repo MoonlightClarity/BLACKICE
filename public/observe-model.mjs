@@ -155,10 +155,11 @@ export function normalizeObserveEvent(event, index = 0) {
       title: status === 'current' ? 'Planning reviewed' : status === 'stalled' ? 'Planning review stalled' : status === 'continuing' ? 'Return to planning' : 'Planning review needed',
       detail: status === 'current' ? [label(data.review?.decision), brief(data.review?.summary)].filter(Boolean).join(' · ') : brief(data.reviewReason),
       status: status === 'current' ? 'completed' : status === 'stalled' ? 'failed' : status === 'continuing' ? 'running' : 'recorded' };
-    if (data.persistentGoal && ['active', 'blocked', 'complete'].includes(data.goalStatus)) {
-      const titles = { active: 'Working toward the goal', blocked: 'Goal needs attention', complete: 'Goal verified' };
-      const statuses = { active: 'running', blocked: 'recorded', complete: 'completed' };
-      Object.assign(row, { title: titles[data.goalStatus], detail: brief(data.reviewReason), status: statuses[data.goalStatus] });
+    const goalStatus = data.goalStatus === 'blocked' && data.reviewStatus === 'stalled' ? 'stalled' : data.goalStatus;
+    if (data.persistentGoal && ['active', 'blocked', 'stalled', 'complete'].includes(goalStatus)) {
+      const titles = { active: 'Working toward the goal', blocked: 'Goal needs attention', stalled: 'Goal progress stalled', complete: 'Goal verified' };
+      const statuses = { active: 'running', blocked: 'recorded', stalled: 'failed', complete: 'completed' };
+      Object.assign(row, { title: titles[goalStatus], detail: brief(data.reviewReason), status: statuses[goalStatus] });
     }
   }
   if (!row) return null;

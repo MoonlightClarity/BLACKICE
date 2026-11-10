@@ -169,7 +169,10 @@ test('a persistent goal gets a recovery turn but repeated identical evidence can
     }
     else await assert.rejects(completion.beforeFinal(), { code: 'TASK_CONTRACT_INCOMPLETE' });
   }
-  assert.equal(updates.at(-1).goalStatus, 'blocked');
+  assert.equal(updates.at(-1).goalStatus, 'stalled');
+  assert.equal(updates.at(-1).ready, false);
+  assert.deepEqual(updates.at(-1).remainingWorkItemIds, ['files']);
+  assert.match(updates.at(-1).reviewReason, /Owned work remains available.*No new host-observed progress/);
   assert.equal(updates.at(-1).complete, false);
 });
 
@@ -198,6 +201,7 @@ test('a persistent goal can consume one new workspace command result after its o
     }
     await assert.rejects(completion.beforeFinal(), { code: 'TASK_CONTRACT_INCOMPLETE' });
     assert.equal(updates.at(-1).stopReason, 'no_new_progress');
+    assert.equal(updates.at(-1).goalStatus, 'stalled');
   });
 });
 
