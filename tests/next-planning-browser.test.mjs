@@ -14,7 +14,7 @@ const request = (id, conversationId, child = false) => ({
   edges: [], sources: [], responses: [], assignments: [], attempts: [], history: []
 });
 
-async function fixture(t, { hook, empty = false, status = {}, initialNodeId = 'frame' } = {}) {
+async function fixture(t, { hook, empty = false, status = {}, initialNodeId = 'frame', overview = false } = {}) {
   const dom = planningDOM(t), prototype = Object.getPrototypeOf(dom.mount), type = Object.getOwnPropertyDescriptor(prototype, 'type');
   Object.defineProperty(prototype, 'type', { get: type.get, set(value) { this.setAttribute('type', value); } });
   prototype.replaceChildren = function (...children) { for (const child of this.children) child.parentElement = null; this.children = []; this.rawText = ''; this.markup = ''; this.append(...children); };
@@ -56,12 +56,13 @@ async function fixture(t, { hook, empty = false, status = {}, initialNodeId = 'f
     document.revision++; return projectPlanningRequest(document);
   };
   const workspace = createPlanningBrowser({ mount: dom.mount, api, events: { subscribe(callback) { listeners.add(callback); return () => listeners.delete(callback); } }, onNavigate: (...args) => navigation.push(args), getStatus: () => ({ cwd: 'C:\\synthetic', ...status }), createLegacy: () => { legacyCalls.push('created'); return { enter() { legacyCalls.push('enter'); }, leave() { legacyCalls.push('leave'); }, destroy() { legacyCalls.push('destroy'); } }; } });
-  t.after(() => workspace.destroy()); workspace.enter(); await waitFor(() => empty ? calls.length && dom.$('.pb-empty') : dom.$('[data-selected-node-id="' + initialNodeId + '"]'));
+  t.after(() => workspace.destroy()); workspace.enter(); await waitFor(() => empty ? calls.length && dom.$('.pb-empty') : dom.$('nav.pb-page-nav'));
+  if (!empty && !overview) { await dom.click('button[data-page="steps"]'); await waitFor(() => dom.$('[data-selected-node-id="' + initialNodeId + '"]')); }
   return { ...dom, api, workspace, documents, calls, navigation, legacyCalls, listeners,
     mutations: () => calls.filter(call => call.method !== 'GET'),
     hasRequest(id) { const picker = dom.$('.pb-request-picker select'); return [...(picker?.children || [])].some(option => option.value === id); },
     requestSelected(id) { return dom.$('.pb-request-picker select')?.value === id; },
-    async selectRequest(id) { const picker = dom.$('.pb-request-picker select'); assert.ok([...picker.children].some(option => option.value === id)); picker.value = id; await picker.dispatch('change'); await waitFor(() => picker.value === id && dom.$('[data-selected-node-id="frame"]')); },
+    async selectRequest(id) { const picker = dom.$('.pb-request-picker select'); assert.ok([...picker.children].some(option => option.value === id)); picker.value = id; await picker.dispatch('change'); await waitFor(() => dom.$('.pb-request-picker select')?.value === id && dom.$('button[data-page="steps"]')); await dom.click('button[data-page="steps"]'); await waitFor(() => dom.$('[data-selected-node-id="frame"]')); },
     async fillResponse(kind = 'frame', prefix = 'Synthetic answer') { for (const field of planningModuleTemplate(kind).fields) { await dom.input('[data-response-field="' + field.id + '"]', prefix + ': ' + field.label); const source = dom.$('[data-grounding-field="' + field.id + '"]'); if (source) { source.value = 'request:' + dom.$('.pb-request-picker select').value; await source.dispatch('change'); } } },
     async submitResponse() { await dom.$('[data-action="save-response"]').closest('form').dispatch('submit'); },
     async refresh() { await dom.click('[data-action="refresh"]'); await new Promise(resolve => setTimeout(resolve, 10)); },
@@ -240,7 +241,7 @@ test('direct ChatGPT contributions display external origin and their recorded jo
 });
 
 test('opening an archived conversation preserves the request grouping and never invents a model result', async t => {
-  const f = await fixture(t); f.$('#pb-conversation-view').value = 'all'; await f.$('#pb-conversation-view').dispatch('change'); await f.click('[data-conversation-id="conversation-c"]'); await waitFor(() => f.hasRequest('request-c') && f.$('[data-selected-node-id="frame"]'));
+  const f = await fixture(t); f.$('#pb-conversation-view').value = 'all'; await f.$('#pb-conversation-view').dispatch('change'); await f.click('[data-conversation-id="conversation-c"]'); await waitFor(() => f.hasRequest('request-c') && f.$('button[data-page="steps"]')); await f.click('button[data-page="steps"]'); await waitFor(() => f.$('[data-selected-node-id="frame"]'));
   assert.equal(f.hasRequest('request-a'), false); assert.match(f.mount.textContent, /Synthetic archive/);
   assert.equal(f.$('[data-response-field="objective"]').value, ''); assert.equal(f.mutations().length, 0);
   f.workspace.leave(); f.workspace.enter(); await waitFor(() => f.requestSelected('request-c'));
@@ -882,10 +883,124 @@ test('Saved, Running now and Archived are separate views and update after execut
 
 test('the outcome brief starts collapsed and remains expanded after a refresh', async t => {
   const f = await fixture(t);
+  await f.click('button[data-page="overview"]');
   let brief = f.$('[data-disclosure-key="intent-brief"]');
   assert.equal(brief.open, false);
   brief.open = true; await brief.dispatch('toggle');
   await f.refresh();
   assert.equal(f.$('[data-disclosure-key="intent-brief"]').open, true);
+  assert.equal(f.mutations().length, 0);
+});
+
+test('Overview is the default read-only landing view and refresh preserves its navigation', async t => {
+  const f = await fixture(t, { overview: true });
+  assert.ok(f.$('.pb-overview'));
+  assert.equal(f.$('.pb-inspector'), null);
+  assert.equal(f.$('button[data-page="overview"]').getAttribute('aria-current'), 'page');
+  assert.equal(f.$('button[data-page="steps"]').getAttribute('aria-current'), 'false');
+  assert.equal(f.$('.pb-more').open, false);
+  assert.equal(f.$('[data-view="xml"]').closest('details'), f.$('.pb-more'));
+  await f.refresh();
+  assert.ok(f.$('.pb-overview'));
+  await f.click('[data-overview-node="child"]');
+  assert.ok(f.$('[data-selected-node-id="child"]'));
+  assert.equal(f.$('button[data-page="steps"]').getAttribute('aria-current'), 'page');
+  await f.click('button[data-page="overview"]');
+  assert.ok(f.$('.pb-overview'));
+  assert.equal(f.mutations().length, 0, 'Overview navigation and refresh never launch work or save data.');
+});
+
+test('Overview round trips preserve response, source, XML drafts and inspector disclosure state', async t => {
+  const f = await fixture(t);
+  await f.input('[data-response-field="objective"]', 'Unsaved response in steps');
+  f.$('[data-disclosure-key="source-editor"]').open = true;
+  await f.input('[data-field-key="request-a:source:title"]', 'Unsaved source');
+  await f.click('[data-view="xml"]');
+  const xml = f.$('.pb-program-xml').value.replace('<title>Define the actual outcome</title>', '<title>Unsaved XML title</title>');
+  await f.input('[data-field-key="request-a:program-xml"]', xml);
+  await f.click('button[data-page="overview"]');
+  await f.refresh();
+  assert.ok(f.$('.pb-overview'));
+  await f.click('button[data-page="steps"]');
+  assert.equal(f.$('.pb-program-xml').value, xml);
+  await f.click('[data-view="outline"]');
+  assert.equal(f.$('[data-response-field="objective"]').value, 'Unsaved response in steps');
+  assert.equal(f.$('[data-field-key="request-a:source:title"]').value, 'Unsaved source');
+  assert.equal(f.$('[data-disclosure-key="source-editor"]').open, true);
+  assert.equal(f.mutations().length, 0);
+});
+
+test('new requests start on Overview while previously selected request pages are remembered', async t => {
+  const f = await fixture(t);
+  const choose = async id => {
+    const picker = f.$('.pb-request-picker select');
+    picker.value = id;
+    await picker.dispatch('change');
+    await waitFor(() => f.$('.pb-request-picker select')?.value === id && f.$('button[data-page="steps"]'));
+  };
+  await choose('request-b');
+  assert.ok(f.$('.pb-overview'));
+  await choose('request-a');
+  assert.ok(f.$('.pb-inspector'));
+  await f.click('button[data-page="overview"]');
+  await choose('request-b');
+  await choose('request-a');
+  assert.ok(f.$('.pb-overview'));
+  assert.equal(f.mutations().length, 0);
+});
+test('a later Overview selection supersedes pending request and conversation links', async t => {
+  for (const target of ['request', 'conversation']) await t.test(target, async t => {
+    const gate = deferred(); let hold = false;
+    const f = await fixture(t, { hook: async call => {
+      if (hold && call.route === '/api/planning-browser') { hold = false; await gate.promise; }
+    } });
+    t.after(() => gate.resolve());
+    hold = true;
+    if (target === 'request') f.workspace.openRequestId('request-a', { nodeId: 'child' });
+    else f.workspace.openConversationId('conversation-c');
+    await f.click('button[data-page="overview"]');
+    gate.resolve();
+    await new Promise(resolve => setTimeout(resolve, 25));
+    assert.ok(f.requestSelected('request-a'), 'A pending link must not replace newer manual navigation.');
+    assert.ok(f.$('.pb-overview'), 'A pending stage link must not reopen Steps after Overview is chosen.');
+    assert.equal(f.mutations().length, 0);
+  });
+});
+test('Overview reading position and focused navigation survive refresh and stage round trips', async t => {
+  const f = await fixture(t, { overview: true });
+  f.$('.pb-overview').scrollTop = 425;
+  f.$('[data-overview-node="child"]').focus();
+  await f.refresh();
+  assert.equal(f.$('.pb-overview').scrollTop, 425);
+  assert.equal(f.document.activeElement, f.$('[data-overview-node="child"]'));
+  await f.click('[data-overview-node="child"]');
+  assert.equal(f.document.activeElement, f.$('.pb-inspector h3'));
+  assert.equal(f.document.activeElement.getAttribute('tabindex'), '-1');
+  assert.equal(f.document.activeElement.focusOptions.preventScroll, true);
+  await f.click('button[data-page="overview"]');
+  assert.equal(f.$('.pb-overview').scrollTop, 425);
+  assert.equal(f.document.activeElement, f.$('button[data-page="overview"]'));
+  await f.refresh();
+  assert.equal(f.document.activeElement, f.$('button[data-page="overview"]'));
+  assert.equal(f.$('.pb-overview').scrollTop, 425);
+  assert.equal(f.mutations().length, 0);
+});
+
+test('Overview reading positions belong to their own request', async t => {
+  const f = await fixture(t, { overview: true });
+  const choose = async id => {
+    const picker = f.$('.pb-request-picker select');
+    picker.value = id;
+    await picker.dispatch('change');
+    await waitFor(() => f.requestSelected(id) && f.$('.pb-overview'));
+  };
+  f.$('.pb-overview').scrollTop = 320;
+  await choose('request-b');
+  assert.equal(f.$('.pb-overview').scrollTop, 0);
+  f.$('.pb-overview').scrollTop = 170;
+  await choose('request-a');
+  assert.equal(f.$('.pb-overview').scrollTop, 320);
+  await choose('request-b');
+  assert.equal(f.$('.pb-overview').scrollTop, 170);
   assert.equal(f.mutations().length, 0);
 });

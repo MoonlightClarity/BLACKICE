@@ -281,7 +281,10 @@ export function renderCycleControls(ctx, parent, document, cycle, state, { stage
   const pendingKey = 'cycle:' + cycle.id, pending = state.pending.has(pendingKey);
   const active = ['running', 'waiting_children', 'cancelling'].includes(cycle.state);
   const selection = cycleModelSelection(ctx, document, cycle, state), choices = chatOptionChoices(selection.status, selection.selected);
-  const modelFields = add(section, 'div', '', 'pb-form-grid pb-cycle-model');
+  const settings = add(section, 'details', '', 'pb-model-settings'); settings.dataset.disclosureKey = 'model-settings:' + cycle.id;
+  settings.open = !selection.bound && !active;
+  add(settings, 'summary', 'Model and execution settings');
+  const modelFields = add(settings, 'div', '', 'pb-form-grid pb-cycle-model');
   const modelLocked = selection.bound || pending || active || Boolean(plan?.response && ['paused_after_plan', 'stale', 'needs_review'].includes(cycle.state));
   const modelChoice = (label, key, items, dataKey) => {
     const options = [...items];
@@ -305,13 +308,13 @@ export function renderCycleControls(ctx, parent, document, cycle, state, { stage
   modelChoice('Model', 'model', choices.models, 'cycleModel');
   modelChoice('Reasoning effort', 'effort', choices.efforts, 'cycleEffort');
   modelChoice('Speed', 'serviceTier', choices.tiers, 'cycleServiceTier');
-  add(section, 'p', selection.bound
+  add(settings, 'p', selection.bound
     ? 'These model settings are saved for this cycle and its child cycles. Create a new independent cycle to choose different settings.'
     : 'Run saves these model settings for this cycle and its child cycles. The application default stays unchanged.', 'pb-help');
   state.cycleModes ||= new Map();
-  const mode = select(section, 'Execution', [['automatic', 'Automatic'], ['plan_only', 'Plan only']], state.cycleModes.get(cycle.id) || cycle.planningExecutionMode || 'automatic');
+  const mode = select(settings, 'Execution', [['automatic', 'Automatic'], ['plan_only', 'Plan only']], state.cycleModes.get(cycle.id) || cycle.planningExecutionMode || 'automatic');
   mode.dataset.cycleMode = cycle.id; mode.disabled = pending || active || cycle.state === 'paused_after_plan';
-  const modeHelp = add(section, 'p', '', 'pb-help');
+  const modeHelp = add(settings, 'p', '', 'pb-help');
   const explainMode = () => { modeHelp.textContent = mode.value === 'plan_only' ? 'Plan only pauses after the saved Plan. You or a supervising model can edit it, then explicitly continue from its current revision.' : 'Automatic continues through the five stages and their required child cycles.'; };
   mode.addEventListener('change', () => { state.cycleModes.set(cycle.id, mode.value); explainMode(); }); explainMode();
   const submit = (action, body) => {

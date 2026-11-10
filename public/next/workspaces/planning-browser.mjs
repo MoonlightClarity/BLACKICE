@@ -80,12 +80,22 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
   const shell = add(mount, 'div', '', 'planning-browser');
   const header = add(shell, 'header', '', 'pb-header'), heading = add(header, 'div');
   add(heading, 'h1', 'Planning');
-  add(heading, 'p', 'Follow the work, review the evidence, and choose the next step.');
+  add(heading, 'p', 'Your work, at a glance.');
+  shell.dataset.navigation = 'overview-v1';
   const headerActions = add(header, 'div', '', 'pb-header-actions');
   const activitySummary = add(headerActions, 'span', '', 'pb-activity-summary'); activitySummary.setAttribute('role', 'status');
   const refreshButton = button(headerActions, 'Refresh', () => refresh()); refreshButton.dataset.action = 'refresh';
+  const listToggle = button(headerActions, 'Conversations', () => {
+    const open = shell.dataset.sidebarOpen === 'true';
+    shell.dataset.sidebarOpen = String(!open);
+    listToggle.setAttribute('aria-expanded', String(!open));
+    if (!open) search.focus?.({ preventScroll: true });
+  }, 'pb-quiet pb-list-toggle');
+  listToggle.setAttribute('aria-controls', 'pb-conversation-rail');
+  listToggle.setAttribute('aria-expanded', 'false');
   const layout = add(shell, 'div', '', 'pb-layout');
   const rail = add(layout, 'aside', '', 'pb-rail'); rail.setAttribute('aria-label', 'Planning conversations');
+  rail.id = 'pb-conversation-rail';
   const railHead = add(rail, 'div', '', 'pb-rail-head'); add(railHead, 'h2', 'Conversations');
   const search = input(rail, 'Find a conversation', '', { id: 'pb-conversation-search' }); search.setAttribute('type', 'search');
   search.placeholder = 'Search conversations';
@@ -110,7 +120,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
   let creatingRequest = false, pendingConversation = null, pendingRequest = null;
   const sessions = new Map(), selectedRequests = new Map(), requestDrafts = new Map();
   const session = id => {
-    if (!sessions.has(id)) sessions.set(id, { document: null, selectedId: '', presentation: 'outline', collapsed: new Set(), drafts: new Map(), xmlDrafts: new Map(), programDraft: null, creations: new Map(), sourceDraft: { title: '', text: '', url: '' }, pending: new Set(), error: '', notice: '', readGeneration: 0, controller: null, intentOpen: false, originalRequestOpen: false });
+    if (!sessions.has(id)) sessions.set(id, { document: null, selectedId: '', presentation: 'outline', page: 'overview', collapsed: new Set(), drafts: new Map(), xmlDrafts: new Map(), programDraft: null, creations: new Map(), sourceDraft: { title: '', text: '', url: '' }, pending: new Set(), error: '', notice: '', readGeneration: 0, controller: null, intentOpen: false, originalRequestOpen: false });
     return sessions.get(id);
   };
   const requestRows = () => catalog.requests.filter(row => clean(row.conversationId) === conversationId);
@@ -144,9 +154,12 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
   function renderKeepingFocus() {
     const focused = mount.ownerDocument.activeElement, key = detail.contains(focused) ? focused?.dataset?.fieldKey : null;
     const start = focused?.selectionStart, end = focused?.selectionEnd;
+    const navigationKey = detail.contains(focused) ? ['page', 'overviewNode', 'action'].find(name => focused?.dataset?.[name]) : null;
+    const navigationValue = navigationKey && focused.dataset[navigationKey];
     const inspectorTop = detail.querySelector('.pb-inspector')?.scrollTop || 0;
     renderDetail();
     if (key) { const replacement = [...detail.querySelectorAll('[data-field-key]')].find(element => element.dataset.fieldKey === key); replacement?.focus?.({ preventScroll: true }); if (Number.isInteger(start) && Number.isInteger(end)) replacement?.setSelectionRange?.(start, end); }
+    if (!key && navigationKey) [...detail.querySelectorAll('button')].find(element => element.dataset[navigationKey] === navigationValue)?.focus?.({ preventScroll: true });
     const inspector = detail.querySelector('.pb-inspector'); if (inspector) inspector.scrollTop = inspectorTop;
   }
   function renderRail() {
@@ -202,6 +215,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
   function chooseConversation(id) {
     pendingConversation = null; pendingRequest = null;
     conversationId = clean(id); createArea.hidden = true; detail.scrollTop = 0;
+    shell.dataset.sidebarOpen = 'false'; listToggle.setAttribute('aria-expanded', 'false');
     const rows = requestRows(), remembered = selectedRequests.get(conversationId);
     requestId = rows.some(row => row.id === remembered) ? remembered : rows[0]?.id || '';
     renderRail(); renderTabs(); renderDetail();
@@ -226,7 +240,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
         const target = pendingRequest; pendingRequest = null; requestId = target.id;
         const state = session(requestId), row = catalog.requests.find(item => item.id === requestId);
         conversationId = clean(row?.conversationId || state.document?.conversationId);
-        if (target.nodeId) state.selectedId = target.nodeId;
+        if (target.nodeId) { state.selectedId = target.nodeId; state.page = 'steps'; }
         renderRail(); renderTabs(); renderKeepingFocus();
         await readRequest(requestId);
         if (!active || destroyed || generation !== catalogGeneration || requestId !== target.id) return;
@@ -326,9 +340,11 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
   function chooseNode(id) {
     const state = current(), byId = nodeIds(state?.document); if (!byId.has(id)) return;
     pendingConversation = null; pendingRequest = null;
-    state.selectedId = id; const seen = new Set(); let parent = byId.get(id)?.parentId;
+    const fromOverview = state.page === 'overview';
+    state.selectedId = id; state.page = 'steps'; if (state.presentation === 'xml') state.presentation = 'outline'; detail.scrollTop = 0; const seen = new Set(); let parent = byId.get(id)?.parentId;
     while (parent && !seen.has(parent)) { seen.add(parent); state.collapsed.delete(parent); parent = byId.get(parent)?.parentId; }
     renderDetail();
+    if (fromOverview) { const heading = detail.querySelector('.pb-inspector h3'); heading?.setAttribute('tabindex', '-1'); heading?.focus?.({ preventScroll: true }); }
   }
   function showCycleForm(parent = null) {
     const document = current()?.document, state = current(); if (!document) return;
@@ -607,7 +623,12 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     if (node.skipReason) note(inspector, 'This optional module is deliberately skipped: ' + node.skipReason, 'warning');
     if (node.kind === 'action' && !node.doneWhen?.trim()) note(inspector, 'Define an observable completion check before running this action.', 'warning');
     renderViability(inspector, document, node, state);
-    if (cycle) renderCycleControls(cycleContext, inspector, document, cycle, state, { planEditor: node.kind === 'plan' });
+    if (cycle) {
+      const controls = add(inspector, 'details', '', 'pb-cycle-settings'); controls.dataset.disclosureKey = 'cycle-settings';
+      controls.open = cycle.state === 'paused_after_plan' && node.kind === 'plan';
+      add(controls, 'summary', 'Run controls and model settings');
+      renderCycleControls(cycleContext, controls, document, cycle, state, { planEditor: node.kind === 'plan' });
+    }
     if (cycle) renderStageFindings(cycleContext, inspector, document, node, cycle);
     const runtimeActions = add(inspector, 'div', '', 'pb-actions pb-run-actions');
     const cycleSelection = cycle && cycleModelSelection(cycleContext, document, cycle, state);
@@ -701,7 +722,19 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     xmlSave.disabled = busy || xmlDraft.baseRevision !== node.revision;
     const typedReadiness = ['viability', 'inference', 'plan', 'think', 'respond'].includes(node.kind) || document.viability?.nodeId === node.id;
     const savedPlan = node.kind === 'plan' && cycle && node.response;
-    const responseSection = add(inspector, savedPlan ? 'details' : 'section', '', 'pb-inspector-section'); add(responseSection, savedPlan ? 'summary' : 'h4', savedPlan ? 'Recorded Plan fields and provenance' : 'Required questions');
+    const responseSection = add(inspector, typedReadiness ? 'details' : 'section', '', 'pb-inspector-section pb-response-fields');
+    add(responseSection, typedReadiness ? 'summary' : 'h4', savedPlan ? 'Recorded Plan fields and provenance' : typedReadiness ? 'All recorded fields and sources' : 'Required questions');
+    if (typedReadiness) responseSection.dataset.disclosureKey = 'recorded-fields';
+    if (typedReadiness && node.response) {
+      const reading = add(inspector, 'section', '', 'pb-saved-reading');
+      add(reading, 'h4', 'Saved response');
+      for (const field of fields) {
+        const value = node.response.values?.[field.id]; if (!clean(value).trim()) continue;
+        const entry = add(reading, 'article', '', 'pb-reading-field');
+        add(entry, 'h5', field.label); add(entry, 'p', clean(value), 'pb-response-value');
+      }
+      inspector.insertBefore(reading, responseSection);
+    }
     if (savedPlan) responseSection.dataset.disclosureKey = 'saved-plan-fields';
     add(responseSection, 'p', typedReadiness ? node.kind === 'plan' ? (node.response?.contract ? 'These are the saved Plan fields. Use Edit the saved Plan to change its objective, outcome criteria, work items, resources, and instructions.' : 'These are the saved Plan fields. Use Edit the saved Plan to change its steps, dependencies, acceptance criteria, and sources.') : ['inference', 'think', 'respond'].includes(node.kind) ? 'These saved fields belong to the complete structured stage response. Run the stage or use the shared structured response API to record a new version.' : 'These saved fields describe the complete readiness check. Use the factual Answer controls above to supply missing facts, or run this module to produce a new complete check.' : 'These fields make the module’s contribution inspectable. Record an answer or the exact missing input; unsupported claims stay visible.', 'pb-help');
     renderProvenance(responseSection, node.response);
@@ -883,8 +916,82 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     submit.dataset.action = 'save-program-xml';
     submit.disabled = stale || state.pending.has('program') || !draft.changed;
   }
+  function switchPage(page) {
+    const state = current(); if (!state) return;
+    pendingConversation = null; pendingRequest = null;
+    state.page = page; detail.scrollTop = 0; renderDetail();
+    detail.querySelector('[data-page="' + page + '"]')?.focus?.({ preventScroll: true });
+  }
+  function renderOverview(parent, document, state) {
+    const overview = add(parent, 'section', '', 'pb-overview');
+    overview.setAttribute('aria-label', 'Request overview');
+    const cycle = rootCycle(document), activity = planningRequestActivity(document);
+    const stages = cycle ? cycleStageRows(document, cycle) : [];
+    const needsAttention = activity === 'failed' || cycle?.state === 'failed';
+    const attempts = [...(document.attempts || [])].reverse();
+    const target = document.nodes.find(node => node.executionStatus === 'running')
+      || document.nodes.find(node => node.id === attempts.find(item => ['running', 'failed', 'cancelling'].includes(item.status))?.nodeId)
+      || stages.find(row => row.node && !row.node.response)?.node
+      || stages.at(-1)?.node || document.nodes[0];
+    const statusCard = add(overview, 'section', '', 'pb-overview-status'); statusCard.dataset.state = needsAttention ? 'failed' : activity;
+    const copy = add(statusCard, 'div');
+    add(copy, 'span', 'CURRENT STATUS', 'pb-eyebrow');
+    const statusTitle = activity === 'running' ? 'Work is running'
+      : needsAttention ? 'This request needs attention'
+      : activity === 'queued' ? 'Waiting to start'
+      : activity === 'stopping' ? 'Stopping work'
+      : activity === 'repairing' ? 'Repairing a response'
+      : activity === 'unknown' ? 'Execution status is unavailable'
+      : cycle?.state === 'completed' ? 'The response is ready to review'
+      : cycle?.state === 'paused_after_plan' ? 'The plan is ready for review' : 'No work is running';
+    add(copy, 'h3', statusTitle);
+    const message = needsAttention ? 'Open the affected step to see what happened and decide how to continue.'
+      : activity === 'running' ? 'You can inspect progress without interrupting the current work.'
+      : activity === 'unknown' ? 'Refresh to check execution. Saved responses remain available below.'
+      : cycle?.state === 'paused_after_plan' ? 'Review the saved plan before choosing to continue.'
+      : 'Review the saved responses below. Opening a step does not start work.';
+    add(copy, 'p', message);
+    if (target) button(statusCard, needsAttention ? 'Review affected step' : activity === 'running' ? 'Inspect current step' : 'Review steps',
+      () => chooseNode(target.id), 'pb-primary').dataset.action = 'review-current-step';
+    const columns = add(overview, 'div', '', 'pb-overview-columns');
+    const progress = add(columns, 'section', '', 'pb-overview-progress');
+    const progressHeading = add(progress, 'div', '', 'pb-section-heading');
+    add(progressHeading, 'h3', cycle ? 'Response progress' : 'Saved steps');
+    if (stages.length) add(progressHeading, 'span', stages.filter(row => row.node?.response).length + ' / ' + stages.length + ' recorded', 'pb-muted');
+    const descriptions = { inference: 'Understand the requested outcome', feasibility: 'Check what is possible', plan: 'Choose the work to do', think: 'Evaluate the results', respond: 'Prepare the answer' };
+    const rows = stages.length ? stages : document.nodes.filter(node => node.kind !== 'cycle').map((node,index) => ({ id:node.id, node, label:node.title || 'Untitled step', number:index+1 }));
+    const stepList = add(progress, 'ol', '', 'pb-progress-list');
+    for (const row of rows) {
+      if (!row.node) continue;
+      const item = add(stepList, 'li');
+      const control = button(item, '', () => chooseNode(row.node.id), 'pb-progress-step');
+      control.dataset.overviewNode = row.node.id;
+      add(control, 'span', String(row.number), 'pb-progress-number');
+      const name = add(control, 'span', '', 'pb-progress-copy');
+      add(name, 'strong', row.label); if (descriptions[row.id]) add(name, 'small', descriptions[row.id]);
+      pill(control, rowState(row.node) === 'ready' ? 'Recorded' : responseStateLabel(rowState(row.node)), rowState(row.node));
+    }
+    if (!rows.length) add(progress, 'p', 'No steps have been added yet. Use More options to add the first step.', 'pb-help');
+    add(progress, 'p', 'Recorded responses are not proof that an external action succeeded.', 'pb-overview-footnote');
+    const finding = add(columns, 'section', '', 'pb-overview-finding');
+    add(finding, 'h3', 'Saved finding');
+    const latest = [...document.nodes].reverse().find(node => node.response && stageOutputSummary(node));
+    const result = latest && stageOutputSummary(latest);
+    if (result) {
+      add(finding, 'span', result.label, 'pb-eyebrow');
+      pill(finding, rowState(latest) === 'ready' ? 'Recorded' : responseStateLabel(rowState(latest)), rowState(latest));
+      add(finding, 'p', result.text, 'pb-finding-text');
+      button(finding, 'Read full response', () => chooseNode(latest.id), 'pb-quiet').dataset.action = 'read-latest-response';
+    } else {
+      add(finding, 'p', 'No stage finding has been recorded yet.', 'pb-help');
+      add(finding, 'p', 'Results appear here as the work progresses.', 'pb-overview-footnote');
+    }
+    renderIntentBrief(overview, document, state);
+    overview.scrollTop = state.overviewTop || 0;
+  }
   function renderDetail() {
-    const previousState = sessions.get(detail.dataset.requestId), previousInspector = detail.querySelector('.pb-inspector');
+    const previousState = sessions.get(detail.dataset.requestId), previousInspector = detail.querySelector('.pb-inspector'), previousOverview = detail.querySelector('.pb-overview');
+    if (previousState && previousOverview) previousState.overviewTop = previousOverview.scrollTop;
     if (previousState && previousInspector?.dataset.selectedNodeId) {
       previousState.inspectorSessions ||= new Map(); previousState.inspectorSessions.set(previousInspector.dataset.selectedNodeId, { top: previousInspector.scrollTop, open: new Set([...previousInspector.querySelectorAll('[data-disclosure-key]')].filter(element => element.open).map(element => element.dataset.disclosureKey)) });
     }
@@ -896,38 +1003,55 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     }
     if (!state.document) { add(detail, 'p', state.error || 'Opening saved request…', 'pb-empty'); return; }
     const document = state.document, requestHeader = add(detail, 'header', '', 'pb-request-header'), summary = add(requestHeader, 'div', '', 'pb-request-summary');
-    add(summary, 'span', 'SAVED PLANNING REQUEST', 'pb-eyebrow');
     const fullTitle = clean(document.title || 'Untitled request').trim();
-    const conciseTitle = fullTitle.length > 84 ? fullTitle.slice(0, 81).trimEnd() + '…' : fullTitle;
-    const title = add(summary, 'h2', conciseTitle); title.title = fullTitle;
-    const cycleState = rootCycle(document);
+    const title = add(summary, 'h2', fullTitle); title.title = fullTitle;
     const requestStatus = add(summary, 'div', '', 'pb-status');
     pill(requestStatus, activityLabel(planningRequestActivity(document)), planningRequestActivity(document));
-    if (cycleState && !['failed', 'running'].includes(cycleState.state)) add(requestStatus, 'span', cycleStateLabel(cycleState.state));
-    add(requestStatus, 'span', (document.nodes || []).length + ' modules');
-    add(requestStatus, 'span', 'Revision ' + document.revision);
-    const actions = add(requestHeader, 'div', '', 'pb-actions'); button(actions, '+ Cycle', () => showCycleForm()); button(actions, '+ Module', () => showNodeForm(), 'pb-quiet');
+    add(requestStatus, 'span', (document.nodes || []).filter(node => node.kind !== 'cycle').length + ' steps');
+    const actions = add(requestHeader, 'div', '', 'pb-actions');
     const conversation = catalog.conversations.find(group => conversationKey(group) === clean(document.conversationId) && group.source === 'conversation' && typeof group.runId === 'string' && group.runId.trim());
     if (conversation) button(actions, 'Open conversation', () => onNavigate?.('chat', { conversationId: conversation.runId }), 'pb-quiet');
-    renderIntentBrief(detail, document, state);
-    renderPhaseRail(detail, document, state);
+    const more = add(actions, 'details', '', 'pb-more'); add(more, 'summary', 'More options');
+    const menu = add(more, 'div', '', 'pb-more-menu');
+    button(menu, '+ Cycle', () => { more.open = false; showCycleForm(); });
+    button(menu, '+ Module', () => { more.open = false; showNodeForm(); });
+    const source = button(menu, 'Edit full plan XML', () => { state.presentation = 'xml'; switchPage('steps'); });
+    source.dataset.view = 'xml';
+    add(menu, 'small', 'Saved revision ' + document.revision, 'pb-muted');
+    const pageNav = add(detail, 'nav', '', 'pb-page-nav'); pageNav.setAttribute('aria-label', 'Request views');
+    for (const [page, label] of [['overview', 'Overview'], ['steps', 'Steps & evidence']]) {
+      const tab = button(pageNav, label, () => switchPage(page), 'pb-page-tab');
+      tab.dataset.page = page; tab.setAttribute('aria-current', state.page === page ? 'page' : 'false');
+    }
+    detail.dataset.page = state.page;
+    if (state.page === 'overview') { renderOverview(detail, document, state); return; }
     const content = add(detail, 'div', '', 'pb-content'), canvas = add(content, 'section', '', 'pb-canvas');
     const toolbar = add(canvas, 'div', '', 'pb-canvas-toolbar'), structureHeading = add(toolbar, 'div', '', 'pb-structure-heading');
-    add(structureHeading, 'h3', 'Plan structure'); add(structureHeading, 'p', 'Choose a module to inspect its instructions, saved result, evidence, and progress.');
+    add(structureHeading, 'h3', 'Steps');
     const tools = add(toolbar, 'div', '', 'pb-structure-tools'), views = add(tools, 'div', '', 'pb-view-switch'); views.setAttribute('aria-label', 'Plan structure view');
-    for (const value of ['outline', 'graph', 'xml']) { const control = button(views, value === 'outline' ? 'Outline' : value === 'graph' ? 'Graph' : 'XML', () => { state.presentation = value; renderDetail(); }); control.dataset.view = value; control.setAttribute('aria-pressed', String(state.presentation === value)); }
-    const crumbs = add(tools, 'nav', '', 'pb-breadcrumbs'); crumbs.setAttribute('aria-label', 'Selected module path');
+    for (const value of ['outline', 'graph']) { const control = button(views, value === 'outline' ? 'List' : 'Graph', () => { state.presentation = value; renderDetail(); }); control.dataset.view = value; control.setAttribute('aria-pressed', String(state.presentation === value)); }
+    renderPhaseRail(canvas, document, state);
+    const crumbs = add(canvas, 'nav', '', 'pb-breadcrumbs'); crumbs.setAttribute('aria-label', 'Selected module path');
     const byId = nodeIds(document), ancestors = [], seen = new Set(); let currentNode = byId.get(state.selectedId);
     while (currentNode && !seen.has(currentNode.id)) { seen.add(currentNode.id); ancestors.unshift(currentNode); currentNode = byId.get(currentNode.parentId); }
     for (const [index, node] of ancestors.entries()) { if (index) add(crumbs, 'span', '/'); button(crumbs, node.title, () => chooseNode(node.id), 'pb-quiet'); }
-    if (!document.nodes.length) { const empty = add(canvas, 'div', '', 'pb-empty'); add(empty, 'h3', 'Begin with a module.'); add(empty, 'p', 'A framing module can establish the objective and what would change the decision. You can then connect specific inquiries and evidence.'); button(empty, 'Add first module', () => showNodeForm(), 'pb-primary'); }
-    else if (state.presentation === 'graph') renderGraph(canvas, document, state); else if (state.presentation === 'xml') renderProgramXml(canvas, document, state); else renderOutline(canvas, document, state);
+    if (!document.nodes.length) { const empty = add(canvas, 'div', '', 'pb-empty'); add(empty, 'h3', 'Begin with a step.'); button(empty, 'Add first module', () => showNodeForm(), 'pb-primary'); }
+    else if (state.presentation === 'graph') renderGraph(canvas, document, state);
+    else if (state.presentation === 'xml') renderProgramXml(canvas, document, state);
+    else {
+      const outline = add(canvas, 'details', '', 'pb-all-modules'); outline.dataset.disclosureKey = 'all-modules';
+      outline.open = !rootCycle(document) || state.outlineOpen === true;
+      outline.addEventListener('toggle', () => { state.outlineOpen = outline.open; });
+      add(outline, 'summary', 'All modules and child work (' + document.nodes.length + ')');
+      renderOutline(outline, document, state);
+    }
     renderInspector(content, document, state);
     const inspectorSession = state.inspectorSessions?.get(state.selectedId), inspector = detail.querySelector('.pb-inspector');
     if (inspectorSession && inspector) { inspector.scrollTop = inspectorSession.top || 0; for (const disclosure of inspector.querySelectorAll('[data-disclosure-key]')) disclosure.open = inspectorSession.open.has(disclosure.dataset.disclosureKey); }
   }
   function refresh() { return loadCatalog(); }
   function stopReads() { catalogGeneration++; catalogController?.abort(); for (const state of sessions.values()) { state.readGeneration++; state.controller?.abort(); } }
+  rail.addEventListener('keydown', event => { if (event.key === 'Escape' && shell.dataset.sidebarOpen === 'true') { shell.dataset.sidebarOpen = 'false'; listToggle.setAttribute('aria-expanded', 'false'); listToggle.focus?.({ preventScroll: true }); } });
   search.addEventListener('input', renderRail); archive.addEventListener('change', renderRail);
   renderRail(); renderDetail();
   return {
