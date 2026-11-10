@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createPlanningBrowser } from '../public/next/workspaces/planning-browser.mjs';
+import { createPlanningBrowser, planningRequestActivity, planningConversationActivity } from '../public/next/workspaces/planning-browser.mjs';
 import { PLANNING_MODULE_TEMPLATES, planningModuleTemplate, planningRequestSources, projectPlanningRequest } from '../public/planning-browser-model.mjs';
 import { planningDOM } from './fixture-planning-dom.mjs';
 import { parsePlanningProgramXml } from '../public/planning-program-xml.mjs';
@@ -240,7 +240,7 @@ test('direct ChatGPT contributions display external origin and their recorded jo
 });
 
 test('opening an archived conversation preserves the request grouping and never invents a model result', async t => {
-  const f = await fixture(t); await f.click('[data-conversation-id="conversation-c"]'); await waitFor(() => f.hasRequest('request-c') && f.$('[data-selected-node-id="frame"]'));
+  const f = await fixture(t); f.$('#pb-conversation-view').value = 'all'; await f.$('#pb-conversation-view').dispatch('change'); await f.click('[data-conversation-id="conversation-c"]'); await waitFor(() => f.hasRequest('request-c') && f.$('[data-selected-node-id="frame"]'));
   assert.equal(f.hasRequest('request-a'), false); assert.match(f.mount.textContent, /Synthetic archive/);
   assert.equal(f.$('[data-response-field="objective"]').value, ''); assert.equal(f.mutations().length, 0);
   f.workspace.leave(); f.workspace.enter(); await waitFor(() => f.requestSelected('request-c'));
@@ -714,7 +714,7 @@ test('explicit request, stage, and manual conversation selection survive unrelat
   assert.ok(f.requestSelected('request-a'));assert.ok(f.$('[data-selected-node-id="child"]'));
   assert.match(f.$('[data-action="run-module"]').textContent,/updated-fixture-model/);
   await f.selectRequest('request-b');await f.emit('request-c');assert.ok(f.requestSelected('request-b'));
-  await f.click('[data-conversation-id="conversation-c"]');await waitFor(()=>f.requestSelected('request-c'));
+  f.$('#pb-conversation-view').value = 'all'; await f.$('#pb-conversation-view').dispatch('change'); await f.click('[data-conversation-id="conversation-c"]');await waitFor(()=>f.requestSelected('request-c'));
   await f.emit('request-a');f.workspace.updateStatus({activeConversationId:'conversation-a'});
   assert.ok(f.$('[data-conversation-id="conversation-c"][aria-current="true"]'));assert.ok(f.requestSelected('request-c'));
   assert.equal(f.mutations().length,0);assert.equal(f.navigation.length,0);
@@ -724,7 +724,7 @@ test('a newer manual conversation selection supersedes a delayed conversation-na
   const gate=deferred();let hold=false;
   const f=await fixture(t,{hook:async call=>{if(hold&&call.route==='/api/planning-browser'){hold=false;await gate.promise;}}});
   t.after(()=>gate.resolve());hold=true;f.workspace.openConversationId('conversation-a');
-  await f.click('[data-conversation-id="conversation-c"]');await waitFor(()=>f.requestSelected('request-c'));
+  f.$('#pb-conversation-view').value = 'all'; await f.$('#pb-conversation-view').dispatch('change'); await f.click('[data-conversation-id="conversation-c"]');await waitFor(()=>f.requestSelected('request-c'));
   gate.resolve();await new Promise(resolve=>setTimeout(resolve,25));
   assert.ok(f.$('[data-conversation-id="conversation-c"][aria-current="true"]'),'The older pending conversation must not replace the later manual selection.');
   assert.ok(f.requestSelected('request-c'));assert.equal(f.mutations().length,0);
@@ -836,4 +836,56 @@ test('feasibility shows the requirement accuracy target without turning it into 
   }});
   assert.match(visibleText(f.$('.pb-viability')),/Requirement accuracy targets/);assert.match(visibleText(f.$('.pb-viability')),/no real-room check is needed/);
   assert.equal(f.$('[data-action="answer-viability"]'),null);assert.equal(f.mutations().length,0);
+});
+
+test('Planning activity never treats saved lifecycle, assignment or readiness as running', () => {
+  assert.equal(planningConversationActivity({ state: 'active' }), 'idle');
+  assert.equal(planningConversationActivity({ state: 'active', status: 'completed', settled: true }), 'idle');
+  assert.equal(planningConversationActivity({ state: 'archived', status: 'running', settled: false }), 'running');
+  assert.equal(planningConversationActivity({ status: 'running', settled: true }), 'idle');
+  assert.equal(planningRequestActivity({ cycles: [{ state: 'running' }], assignments: [{ status: 'running' }], nodes: [{ readiness: { state: 'ready' } }], attempts: [] }), 'idle');
+  for (const status of ['queued', 'prepared', 'starting']) assert.equal(planningRequestActivity({ attempts: [{ nodeId: 'a', status }] }), 'queued');
+  assert.equal(planningRequestActivity({ attempts: [{ nodeId: 'a', status: 'cancelling' }] }), 'stopping');
+  assert.equal(planningRequestActivity({ summary: { running: 1 } }), 'running');
+  assert.equal(planningRequestActivity({ attempts: [{ nodeId: 'a', status: 'running' }, { nodeId: 'a', status: 'completed' }], summary: { running: 1 } }), 'idle');
+  assert.equal(planningRequestActivity({ attempts: [{ nodeId: 'a', status: 'failed' }, { nodeId: 'b', status: 'running' }] }), 'running');
+});
+
+test('Saved, Running now and Archived are separate views and update after execution settles', async t => {
+  let status = 'running', running = 1;
+  const f = await fixture(t, { hook: (call, documents) => {
+    if (call.route !== '/api/planning-browser') return;
+    return {
+      conversations: [{ id: 'conversation-a', title: 'Working request', state: 'active', status, settled: status === 'failed' }, { id: 'conversation-c', title: 'Saved archive', state: 'archived', status: 'completed', settled: true }],
+      requests: [...documents.values()].map(row => ({ id: row.id, conversationId: row.conversationId, title: row.title, revision: row.revision, summary: { running: row.id === 'request-b' ? running : 0 } })),
+      templates: PLANNING_MODULE_TEMPLATES
+    };
+  } });
+  const view = f.$('#pb-conversation-view');
+  assert.equal(view.value, 'active');
+  assert.equal(view.children.find(option => option.value === 'active').textContent, 'Saved');
+  assert.equal(f.$('[data-conversation-id="conversation-a"]').dataset.activity, 'running');
+  assert.equal(f.$('[data-conversation-id="conversation-c"]'), null);
+  view.value = 'running'; await view.dispatch('change');
+  assert.equal(f.mount.querySelectorAll('.pb-conversation').length, 1);
+  status = 'failed'; running = 0; await f.refresh();
+  assert.equal(f.mount.querySelectorAll('.pb-conversation').length, 0);
+  assert.match(f.$('.pb-list').textContent, /Nothing running right now/);
+  assert.equal(f.$('.pb-activity-summary').textContent, 'No work running');
+  view.value = 'active'; await view.dispatch('change');
+  assert.equal(f.$('[data-conversation-id="conversation-a"]').dataset.activity, 'failed');
+  view.value = 'archived'; await view.dispatch('change');
+  assert.equal(f.mount.querySelectorAll('.pb-conversation').length, 1);
+  assert.equal(f.$('[data-conversation-id="conversation-c"]').dataset.activity, 'idle');
+  assert.equal(f.mutations().length, 0);
+});
+
+test('the outcome brief starts collapsed and remains expanded after a refresh', async t => {
+  const f = await fixture(t);
+  let brief = f.$('[data-disclosure-key="intent-brief"]');
+  assert.equal(brief.open, false);
+  brief.open = true; await brief.dispatch('toggle');
+  await f.refresh();
+  assert.equal(f.$('[data-disclosure-key="intent-brief"]').open, true);
+  assert.equal(f.mutations().length, 0);
 });

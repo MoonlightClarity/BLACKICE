@@ -408,3 +408,19 @@ test('New request retries recover a partially saved creation and retain its orig
   assert.equal(replay.status, 201, replay.text); assert.equal(replay.value.revision, resumed.value.revision);
   assert.equal((await app.planningBrowser.list()).requests.length, 1); assert.equal(runtime.calls, 0);
 });
+
+test('Planning catalog keeps lifecycle and actual execution status distinct', async () => {
+  const result = await planningBrowserCatalog({
+    store: { list: async () => ({ requests: [] }) },
+    conversations: { list: () => [
+      { id: 'idle', state: 'active', status: 'completed', settled: true },
+      { id: 'live', state: 'active', status: 'running', settled: false },
+      { id: 'old', state: 'archived', status: 'failed', settled: true }
+    ] }
+  });
+  assert.deepEqual(result.conversations.map(({ state, status, settled }) => ({ state, status, settled })), [
+    { state: 'active', status: 'completed', settled: true },
+    { state: 'active', status: 'running', settled: false },
+    { state: 'archived', status: 'failed', settled: true }
+  ]);
+});

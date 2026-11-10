@@ -18,6 +18,33 @@ const draftMatches = (draft, node) => draft.title === (node.title || '') && draf
   && JSON.stringify(draft.values) === JSON.stringify(node.response?.values || {})
   && ['grounding', 'openQuestions', 'challengeResponses'].every(key => JSON.stringify(draft[key]) === JSON.stringify(node.response?.[key] || []));
 
+/** Runtime activity is separate from saved/archived lifecycle and response readiness. */
+export function planningRequestActivity(request = {}) {
+  // Detailed reads have the newest attempt per module. Catalogs carry the host's
+  // exact running count; assignments and response readiness are not execution.
+  if (Array.isArray(request.attempts)) {
+    const latest = new Map();
+    for (const attempt of request.attempts) latest.set(attempt.nodeId, attempt);
+    const attempts = [...latest.values()];
+    if (attempts.some(item => item.status === 'running')) return 'running';
+    if (attempts.some(item => item.status === 'cancelling')) return 'stopping';
+    if (attempts.some(item => ['queued', 'prepared', 'starting'].includes(item.status))) return 'queued';
+    if (attempts.some(item => item.status === 'failed')) return 'failed';
+    return 'idle';
+  }
+  return Number(request.summary?.running) > 0 ? 'running' : 'idle';
+}
+export function planningConversationActivity(conversation = {}, requests = []) {
+  const states = requests.map(planningRequestActivity), status = conversation.status;
+  if (states.includes('running') || status === 'running' && conversation.settled !== true) return 'running';
+  if (states.includes('stopping') || status === 'cancelling' && conversation.settled !== true) return 'stopping';
+  if (states.includes('queued') || ['queued', 'prepared', 'starting'].includes(status) && conversation.settled !== true) return 'queued';
+  if (status === 'failed' || states.includes('failed')) return 'failed';
+  return 'idle';
+}
+const responseStateLabel = state => ({ empty: 'Not started', failed: 'Failed', cancelled: 'Stopped', running: 'Running', ready: 'Response ready' }[state] || labelFor(state));
+const activityLabel = state => ({ running: 'Running', stopping: 'Stopping', queued: 'Queued', failed: 'Needs attention', idle: 'Idle' }[state] || 'Idle');
+
 /** A visible, revision-aware document workspace. Opening it never invokes a model. */
 export function createPlanningBrowser({ mount, api, events, notify = () => {}, onNavigate, getStatus = () => ({}) }) {
   mount.replaceChildren();
@@ -42,19 +69,23 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     if (selected) element.value = selected;
     return element;
   };
-  const pill = (parent, value, state = value) => { const span = add(parent, 'span', value === 'ready' ? 'Response ready' : labelFor(value), 'pb-pill'); span.dataset.state = state; return span; };
+  const pill = (parent, value, state = value) => { const span = add(parent, 'span', responseStateLabel(value), 'pb-pill'); span.dataset.state = state; return span; };
   const note = (parent, message, tone = '') => { const element = add(parent, 'p', message, 'pb-note'); if (tone) element.dataset.tone = tone; return element; };
   const shell = add(mount, 'div', '', 'planning-browser');
   const header = add(shell, 'header', '', 'pb-header'), heading = add(header, 'div');
   add(heading, 'h1', 'Planning');
-  add(heading, 'p', 'Infer the intended outcome, check resources, plan, think, and respond — with child cycles for questions that need further work.');
+  add(heading, 'p', 'Follow the work, review the evidence, and choose the next step.');
   const headerActions = add(header, 'div', '', 'pb-header-actions');
+  const activitySummary = add(headerActions, 'span', '', 'pb-activity-summary'); activitySummary.setAttribute('role', 'status');
   const refreshButton = button(headerActions, 'Refresh', () => refresh()); refreshButton.dataset.action = 'refresh';
   const layout = add(shell, 'div', '', 'pb-layout');
   const rail = add(layout, 'aside', '', 'pb-rail'); rail.setAttribute('aria-label', 'Planning conversations');
   const railHead = add(rail, 'div', '', 'pb-rail-head'); add(railHead, 'h2', 'Conversations');
   const search = input(rail, 'Find a conversation', '', { id: 'pb-conversation-search' }); search.setAttribute('type', 'search');
-  const archive = select(rail, 'Show', [['all', 'All conversations'], ['active', 'Active'], ['archived', 'Archived']]);
+  search.placeholder = 'Search conversations';
+  const archive = select(rail, 'View', [['active', 'Saved'], ['running', 'Running now'], ['archived', 'Archived'], ['all', 'All conversations']], 'active');
+  archive.id = 'pb-conversation-view';
+  const filterHelp = add(rail, 'p', 'Saved includes idle and finished work.', 'pb-filter-help');
   const list = add(rail, 'nav', '', 'pb-list'); list.setAttribute('aria-label', 'Conversation list');
   const workspace = add(layout, 'main', '', 'pb-workspace');
   const tabRow = add(workspace, 'div', '', 'pb-tabs-row');
@@ -62,17 +93,18 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
   add(requestPicker, 'span', 'Saved request', 'pb-field-title');
   const requestSelect = add(requestPicker, 'select', '', 'pb-input');
   requestSelect.setAttribute('aria-label', 'Saved planning request');
-  const newRequestButton = button(tabRow, '+ Request', () => showRequestForm()); newRequestButton.dataset.action = 'new-request';
+  const newRequestButton = button(railHead, '+ Request', () => showRequestForm()); newRequestButton.dataset.action = 'new-request';
   const createArea = add(workspace, 'section', '', 'pb-create'); createArea.hidden = true;
   const notice = add(workspace, 'p', '', 'pb-notice'); notice.setAttribute('role', 'status'); notice.setAttribute('aria-live', 'polite');
   const detail = add(workspace, 'section', '', 'pb-workspace pb-request-panel'); detail.setAttribute('role', 'region'); detail.setAttribute('aria-label', 'Selected planning request'); detail.id = 'pb-request-panel';
 
   let active = false, destroyed = false, unsubscribe = null, timer = null;
   let catalog = { conversations: [], requests: [], templates: PLANNING_MODULE_TEMPLATES }, conversationId = '', requestId = '', catalogGeneration = 0, catalogController = null, catalogError = '';
+  let catalogLoaded = false, catalogUnavailable = false;
   let creatingRequest = false, pendingConversation = null, pendingRequest = null;
   const sessions = new Map(), selectedRequests = new Map(), requestDrafts = new Map();
   const session = id => {
-    if (!sessions.has(id)) sessions.set(id, { document: null, selectedId: '', presentation: 'outline', collapsed: new Set(), drafts: new Map(), xmlDrafts: new Map(), programDraft: null, creations: new Map(), sourceDraft: { title: '', text: '', url: '' }, pending: new Set(), error: '', notice: '', readGeneration: 0, controller: null, intentOpen: true, originalRequestOpen: false });
+    if (!sessions.has(id)) sessions.set(id, { document: null, selectedId: '', presentation: 'outline', collapsed: new Set(), drafts: new Map(), xmlDrafts: new Map(), programDraft: null, creations: new Map(), sourceDraft: { title: '', text: '', url: '' }, pending: new Set(), error: '', notice: '', readGeneration: 0, controller: null, intentOpen: false, originalRequestOpen: false });
     return sessions.get(id);
   };
   const requestRows = () => catalog.requests.filter(row => clean(row.conversationId) === conversationId);
@@ -117,18 +149,35 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     for (const row of catalog.conversations) groups.set(conversationKey(row), row);
     for (const row of catalog.requests) if (!groups.has(clean(row.conversationId))) groups.set(clean(row.conversationId), { id: row.conversationId, title: row.conversationTitle || (row.conversationId ? 'Conversation ' + row.conversationId : 'Independent requests'), state: 'active' });
     if (!groups.size) groups.set('', { id: '', title: 'Independent requests', state: 'active' });
-    for (const [id, row] of groups) {
-      const title = row.title || row.rootTitle || row.name || 'Conversation';
-      if (query && !title.toLowerCase().includes(query) || archive.value !== 'all' && (row.state || row.bucket || 'active') !== archive.value) continue;
-      const count = catalog.requests.filter(item => clean(item.conversationId) === id).length;
-      const control = button(list, '', () => chooseConversation(id), 'pb-conversation'); control.dataset.conversationId = id;
-      control.setAttribute('aria-current', String(id === conversationId));
-      add(control, 'strong', title); add(control, 'small', count + (count === 1 ? ' request' : ' requests') + ((row.state || row.bucket) === 'archived' ? ' · Archived' : ''));
+    let running = 0;
+    const entries = [...groups].map(([id, row]) => {
+      const requests = catalog.requests.filter(item => clean(item.conversationId) === id);
+      const activity = planningConversationActivity(row, requests);
+      if (activity === 'running') running++;
+      return { id, row, requests, activity };
+    });
+    activitySummary.textContent = catalogUnavailable ? 'Activity unavailable' : !catalogLoaded ? 'Loading activity…' : running ? running + ' running' : 'No work running';
+    activitySummary.dataset.state = running ? 'running' : 'idle';
+    filterHelp.textContent = archive.value === 'running' ? 'Only work with a running execution.' : archive.value === 'archived' ? 'Archived conversations are kept for reference.' : 'Saved includes idle and finished work.';
+    for (const { id, row, requests, activity } of entries) {
+      const title = row.title || row.rootTitle || row.name || 'Conversation', archived = (row.state || row.bucket) === 'archived';
+      if (query && !title.toLowerCase().includes(query)) continue;
+      if (archive.value === 'running' && activity !== 'running' || archive.value === 'active' && archived || archive.value === 'archived' && !archived) continue;
+      const control = button(list, '', () => chooseConversation(id), 'pb-conversation'); control.dataset.conversationId = id; control.dataset.activity = activity;
+      control.setAttribute('aria-current', String(id === conversationId)); control.title = title;
+      add(control, 'strong', title);
+      const meta = add(control, 'span', '', 'pb-conversation-meta');
+      add(meta, 'small', requests.length + (requests.length === 1 ? ' request' : ' requests') + (archived ? ' · Archived' : ''));
+      pill(meta, activityLabel(activity), activity);
     }
-    if (!list.children.length) add(list, 'p', 'No matching conversations.', 'pb-help');
+    if (!list.children.length) {
+      const empty = add(list, 'div', '', 'pb-list-empty');
+      add(empty, 'strong', archive.value === 'running' && !query ? 'Nothing running right now' : 'No matching conversations');
+      add(empty, 'p', archive.value === 'running' ? 'Choose Saved to review previous work.' : 'Try a different search or view.', 'pb-help');
+    }
   }
   function renderTabs() {
-    const rows = requestRows(); requestPicker.hidden = rows.length < 2;
+    const rows = requestRows(); requestPicker.hidden = rows.length < 2; tabRow.hidden = rows.length < 2;
     requestSelect.replaceChildren();
     const titleCounts = new Map();
     for (const row of rows) { const title = clean(row.title || 'Planning request'); titleCounts.set(title, (titleCounts.get(title) || 0) + 1); }
@@ -163,7 +212,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
       const result = await api('/api/planning-browser', 'GET', undefined, { signal: catalogController.signal });
       if (!active || destroyed || generation !== catalogGeneration) return;
       if (!Array.isArray(result?.requests) || !Array.isArray(result?.conversations)) throw Error('Planning returned an unreadable catalog.');
-      catalog = { ...result, templates: result.templates || PLANNING_MODULE_TEMPLATES };
+      catalog = { ...result, templates: result.templates || PLANNING_MODULE_TEMPLATES }; catalogLoaded = true; catalogUnavailable = false;
       const damaged = Array.isArray(result.errors) ? result.errors : [];
       catalogError = damaged.length ? damaged.length + ' saved request' + (damaged.length === 1 ? '' : 's') + ' could not be read. Available requests remain visible.\n' + damaged.slice(0, 3).map(row => clean(row.id || row.requestId || 'Unknown request') + ': ' + clean(row.message || row.code || 'Unreadable saved graph').slice(0, 240)).join('\n') + (damaged.length > 3 ? '\n' + (damaged.length - 3) + ' more unreadable requests.' : '') : '';
       if (pendingRequest) {
@@ -184,7 +233,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
       if (!rows.some(row => row.id === requestId)) requestId = rows.find(row => row.id === selectedRequests.get(conversationId))?.id || rows[0]?.id || '';
       renderRail(); renderTabs(); renderKeepingFocus();
       if (requestId) await readRequest(requestId);
-    } catch (cause) { if (active && generation === catalogGeneration && cause.name !== 'AbortError') { catalogError = cause.message; notice.textContent = catalogError; } }
+    } catch (cause) { if (active && generation === catalogGeneration && cause.name !== 'AbortError') { catalogError = cause.message; catalogUnavailable = true; renderRail(); notice.textContent = catalogError; } }
   }
   async function readRequest(id) {
     if (!active || destroyed) return;
@@ -194,7 +243,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
       if (!active || destroyed || generation !== state.readGeneration) return;
       if (result.id !== id) throw Error('Planning returned a different request.');
       accept(result);
-      if (id === requestId) { renderTabs(); renderKeepingFocus(); }
+      if (id === requestId) { renderRail(); renderTabs(); renderKeepingFocus(); }
     } catch (cause) { if (active && generation === state.readGeneration && cause.name !== 'AbortError') { state.error = cause.message; if (id === requestId) renderKeepingFocus(); } }
   }
   async function mutate(id, key, route, method, body, onAccepted) {
@@ -312,8 +361,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     const cycle = cycleForNode(current()?.document || { nodes: [], cycles: [] }, node);
     if (node.kind === 'cycle' && cycle) { add(meta, 'span', cycleStateLabel(cycle.state)); add(meta, 'span', cycleStageRows(current().document, cycle).filter(row => row.node?.response).length + '/5 stages recorded'); }
     else pill(meta, rowState(node));
-    if (node.readiness?.state === 'running') add(meta, 'span', 'Worker active');
-    if (node.assignment) add(meta, 'span', node.assignment.label || node.assignment.name || 'Assigned worker');
+    if (node.assignment) { const owner = add(meta, 'span', node.assignment.label || node.assignment.name || 'Assigned worker', 'pb-module-owner'); owner.title = owner.textContent; }
     const openChildren = node.kind === 'cycle'
       ? (current()?.document?.cycles || []).filter(child => child.parentCycleId === node.id && child.state !== 'completed').length
       : node.readiness?.unresolvedChildren?.length || 0;
@@ -537,7 +585,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
       add(fullTitle, 'summary', 'Inspect the full saved module title');
       add(fullTitle, 'p', node.title, 'pb-response-value');
     }
-    const stateLine = add(inspector, 'div', '', 'pb-status'); pill(stateLine, rowState(node)); add(stateLine, 'span', 'Response readiness · separate from execution');
+    const stateLine = add(inspector, 'div', '', 'pb-status'); pill(stateLine, rowState(node)); add(stateLine, 'span', 'Saved response status');
     if (node.prompt) {
       const brief = add(inspector, 'details', '', 'pb-stage-brief');
       brief.open = state.stagePromptOpen?.get(node.id) ?? false;
@@ -736,7 +784,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
       phaseButton.setAttribute('aria-current', state.selectedId === node.id ? 'step' : 'false');
       add(phaseButton, 'span', String(phase.order).padStart(2, '0'), 'pb-phase-number');
       add(phaseButton, 'strong', phase.label);
-      const phaseStatus = rowState(node) === 'ready' ? 'Recorded' : labelFor(rowState(node));
+      const phaseStatus = rowState(node) === 'ready' ? 'Recorded' : responseStateLabel(rowState(node));
       add(phaseButton, 'small', phaseStatus);
       phaseButton.setAttribute('aria-label', phase.label + ', ' + phaseStatus + (state.selectedId === node.id ? ', selected' : ''));
     }
@@ -760,10 +808,10 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     const values = inference?.response?.values || {};
     const source = (document.sources || []).find(item => item.id === 'request:' + document.id);
     const panel = add(parent, 'details', '', 'pb-intent-panel'); panel.dataset.disclosureKey = 'intent-brief';
-    panel.open = state.intentOpen ?? true;
+    panel.open = state.intentOpen ?? false;
     panel.addEventListener('toggle', () => { state.intentOpen = panel.open; });
     const summary = add(panel, 'summary', '', 'pb-intent-summary');
-    add(summary, 'strong', 'Inspect the intended outcome and boundaries');
+    add(summary, 'strong', 'Outcome and boundaries');
     add(summary, 'span', inference?.response ? 'Saved inference · compare with the request' : 'Inference not recorded yet');
     const grid = add(panel, 'div', '', 'pb-intent-grid');
     const cards = [
@@ -847,7 +895,8 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     const title = add(summary, 'h2', conciseTitle); title.title = fullTitle;
     const cycleState = rootCycle(document);
     const requestStatus = add(summary, 'div', '', 'pb-status');
-    if (cycleState) add(requestStatus, 'span', cycleStateLabel(cycleState.state));
+    pill(requestStatus, activityLabel(planningRequestActivity(document)), planningRequestActivity(document));
+    if (cycleState && !['failed', 'running'].includes(cycleState.state)) add(requestStatus, 'span', cycleStateLabel(cycleState.state));
     add(requestStatus, 'span', (document.nodes || []).length + ' modules');
     add(requestStatus, 'span', 'Revision ' + document.revision);
     const actions = add(requestHeader, 'div', '', 'pb-actions'); button(actions, '+ Cycle', () => showCycleForm()); button(actions, '+ Module', () => showNodeForm(), 'pb-quiet');
