@@ -220,6 +220,31 @@ export function internalObservationCoverage(context, { criterionId, disposition 
     criterion?.kind === 'judgment' && execution.commitPrerequisiteIds?.includes(criterionId);
   return Boolean(internal && execution.criteria?.some(item => item.id === criterionId && item.satisfied === true));
 }
+const MAX_COVERAGE_EXCERPT_CHARS = 2000;
+const coverageSentences = typeof Intl.Segmenter === 'function' ? new Intl.Segmenter('und', { granularity: 'sentence' }) : null;
+const completeSentence = /\p{Sentence_Terminal}[\p{P}\p{M}]*$/u;
+function contiguousAnswerExcerpt(answer, excerpt) {
+  if (!coverageSentences || !answer || !excerpt || answer.includes(excerpt)) return excerpt;
+  const fragments = [...coverageSentences.segment(excerpt)].map(({ segment }) => segment.trim());
+  if (fragments.length < 2 || fragments.length > 8 || fragments.some(fragment => !completeSentence.test(fragment))) return excerpt;
+  const matches = new Map();
+  for (const { segment, index } of coverageSentences.segment(answer)) {
+    const sentence = segment.trim();
+    if (!fragments.includes(sentence)) continue;
+    if (matches.has(sentence)) return excerpt;
+    const start = index + segment.indexOf(sentence);
+    matches.set(sentence, { start, end: start + sentence.length });
+  }
+  let first, last;
+  for (const fragment of fragments) {
+    const match = matches.get(fragment);
+    if (!match || last && match.start < last.end) return excerpt;
+    first ??= match;
+    last = match;
+  }
+  // Store the actual contiguous answer text, including any intervening sentences.
+  return last.end - first.start <= MAX_COVERAGE_EXCERPT_CHARS ? answer.slice(first.start, last.end) : excerpt;
+}
 const BASE_KEYS = ['values', 'grounding', 'openQuestions', 'challengeResponses', 'userAgency'];
 const STAGE_KEYS = { viability: ['requirements'], inference: ['inferences'], plan: ['acceptanceCriteria', 'steps'], think: ['criterionResults'], respond: ['coverage'] };
 const COMMON_KEYS = ['checks', 'subproblems', 'childResults'];
@@ -284,9 +309,10 @@ export function parseResponseCycleResponse(output, stageOrKind, { sources,pipeli
   if (stage.kind === 'respond') result.coverage = unique(array(value.coverage, 'Final outcome coverage', RESPONSE_CYCLE_LIMITS.criteria).map(item => {
     const fields = ['criterionId', 'disposition', 'sourceIds', 'responseExcerpt', 'limitation']; allowed(item, fields, 'Coverage record', fields);
     const disposition = choice(item.disposition, ['addressed', 'partial', 'unresolved'], 'Coverage disposition');
-    const responseExcerpt = text(item.responseExcerpt, 'Exact excerpt from the final answer', 2000, disposition !== 'addressed');
+    const responseExcerpt = text(item.responseExcerpt, 'Exact excerpt from the final answer', MAX_COVERAGE_EXCERPT_CHARS, disposition !== 'addressed');
     return { criterionId: id(item.criterionId, 'Criterion ID'), disposition, sourceIds: strings(item.sourceIds, 'Answer evidence', 100, disposition === 'addressed' ? 1 : 0),
-      responseExcerpt: internalObservationCoverage(cycleContext, item) && !values.answer?.includes(responseExcerpt) ? '' : responseExcerpt,
+      responseExcerpt: internalObservationCoverage(cycleContext, item) && !values.answer?.includes(responseExcerpt)
+        ? '' : contiguousAnswerExcerpt(values.answer, responseExcerpt),
       limitation: text(item.limitation, 'Disclosed limitation', 2000, disposition !== 'addressed') };
   }), 'criterionId', 'Final outcome coverage');
   return sources === undefined ? result : validatePlanningReadableFindings(result, sources);

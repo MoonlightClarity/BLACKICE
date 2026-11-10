@@ -347,6 +347,52 @@ test('final coverage needs exact answer excerpts, every criterion and current ef
   assert.equal(effect.evaluate().state, 'ready');
 });
 
+test('Respond materializes uniquely matched verbatim coverage sentences as one exact answer passage', () => {
+  const f = fixture('respond', { effects: true });
+  const proof = source('receipt:effect', 'The destination confirmed the result.', 'effect_receipt');
+  f.sources.push(proof);
+  f.context.criterionResults[0].receiptIds = ['effect-a'];
+  f.context.effectReceipts = [{ id: 'effect-a', criterionIds: ['answer'], state: 'succeeded', effectVerified: true, sourceId: proof.id }];
+  const first = 'The destination confirmed the result **fixture-001**.';
+  const middle = 'Two other items did not meet the stated conditions.';
+  const last = 'No holds remain.';
+  const passage = [first, middle, last].join(' ');
+  f.payload.values.answer = 'Here are the outcomes. ' + passage + ' Full records are available.';
+  Object.assign(f.payload.coverage[0], { sourceIds: [proof.id], responseExcerpt: first + ' ' + last, limitation: 'No other effect was confirmed.' });
+  const before = clone(f.payload);
+  const response = validatePlanningModuleResponse({ node: { kind: 'respond' }, sources: f.sources, cycleContext: f.context }, f.payload);
+  assert.equal(response.values.answer, before.values.answer);
+  assert.deepEqual(response.coverage[0], { ...before.coverage[0], responseExcerpt: passage });
+  assert.deepEqual(f.payload, before);
+  const record = { ...f.record(), coverage: response.coverage };
+  assert.equal(f.evaluate(record).state, 'ready');
+  assert.equal(f.evaluate(record, { effectReceipts: [] }).state, 'needs_evidence', 'An exact quote cannot substitute for a destination receipt.');
+});
+
+test('Respond rejects missing, rewritten, repeated, reordered, partial and oversized coverage passages', () => {
+  const f = fixture('respond');
+  const first = 'The recorded result is verified.';
+  const middle = 'The other result remains open.';
+  const last = 'No holds remain.';
+  const full = [first, middle, last].join(' ');
+  const excerpt = first + ' ' + last;
+  const cases = [
+    [full, first + ' A result absent from the answer.'],
+    [full, 'The recorded result was verified. ' + last],
+    [[first, middle, first, middle, last].join(' '), excerpt],
+    [full, last + ' ' + first],
+    [full.slice(0, -1), excerpt.slice(0, -1)],
+    [[first, 'Unrelated detail '.repeat(125) + 'continues.', last].join(' '), excerpt],
+  ];
+  const attempt = { node: { kind: 'respond' }, sources: f.sources, cycleContext: f.context };
+  for (const [answer, responseExcerpt] of cases) {
+    f.payload.values.answer = answer;
+    f.payload.coverage[0].responseExcerpt = responseExcerpt;
+    assert.throws(() => validatePlanningModuleResponse(attempt, f.payload), error =>
+      error.code === 'PLANNING_RESPONSE_FORMAT' && error.issues.some(issue => issue.path === 'response.coverage[0].responseExcerpt'));
+  }
+});
+
 test('a verified internal observation does not require repeating file bookkeeping in the answer', () => {
   const f = fixture('respond'), internal = criterion('answer', 'evidence');
   const canonicalExecution = { sourceId: 'evidence', acceptanceCriteria: [internal],
