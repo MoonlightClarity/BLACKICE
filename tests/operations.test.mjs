@@ -7,6 +7,7 @@ import path from 'node:path';
 import { OperationsStore, OPERATIONS_LIMITS } from '../lib/operations.mjs';
 import { TaskInbox } from '../lib/inbox.mjs';
 import { TaskStateStore } from '../lib/task-state.mjs';
+import { CONTRACT_JOURNAL_VERSION } from '../lib/planning-contract-runtime.mjs';
 
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return{promise,resolve};};
 const until=async(check,label='operation condition')=>{const end=Date.now()+5000;while(Date.now()<end){const value=await check();if(value)return value;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail(`${label} did not settle`);};
@@ -34,6 +35,20 @@ async function externalReceipt(t,{directory,cwd,engine},runId,{status='uncertain
   if(status==='confirmed')await action({receiptId:'fixture-publication',operation:'confirm',url:'https://example.com/updates/one',evidence:'Read the exact fixture text at its resulting URL.'});
   if(backupRecovery){await store.close();await rm(store.file(runId));const restored=await new TaskStateStore({dataDir:directory}).init();t.after(()=>restored.close());engine.runs.get(runId).taskState=await restored.get(runId);}
   else engine.runs.get(runId).taskState=await store.get(runId);
+}
+
+async function canonicalRetryJournal(t,{directory,engine},runId,records){
+  const store=await new TaskStateStore({dataDir:directory}).init();t.after(()=>store.close());
+  engine.tasks=store;
+  const run=engine.runs.get(runId),taskId='shared-planning-task';
+  run.taskId=taskId;
+  run.taskState={taskSchemaVersion:14,contractRuntime:{journalSeq:0,operations:[],outcomes:[],unresolved:[]}};
+  await writeFile(store.file(taskId)+'.sequence',JSON.stringify({
+    version:CONTRACT_JOURNAL_VERSION,policy:'work-items-v2',taskId,journalSeq:records.length,evidence:[],focuses:[],judgments:[],findings:[],progress:[],
+    records:records.map((record,index)=>({runId,operationId:'canonical-'+(index+1),journalSeq:index+1,
+      tool:'relay_browser',action:'click',dispatchedAt:new Date().toISOString(),deliveryState:'returned',
+      resources:[{key:'url:https://example.com/fixture',access:'write'}],evidenceIds:[],...record})),
+  }));
 }
 
 test('outbound webhook is opt-in, pins its exact saved destination, and reports its URL in local receipts',async t=>{
@@ -773,6 +788,58 @@ test('an old retry-wait receipt is inspected before its fresh task can dispatch'
   const f=await harness(t),{operations,engine,create,advance,options,directory}=f,deployment=await create({retry:{maxAttempts:1,backoffSeconds:1}}),job=await operations.trigger(deployment.id);await operations.poll();const runId=operations.getJob(job.id).attempts[0].runId;engine.finish(runId,'failed');await operations.poll();assert.equal(operations.getJob(job.id).status,'retry_wait');await operations.close();await externalReceipt(t,f,runId,{status:'confirmed'});
   const saved=JSON.parse(await readFile(path.join(directory,'operations.json'),'utf8'));assert.equal(saved.jobs[0].retryHold,undefined);advance(100000);const restored=await new OperationsStore(options).init();restored.kick=()=>{};
   try{assert.equal(restored.getJob(job.id).status,'failed');assert.equal(restored.getJob(job.id).retryHold.receipts[0].status,'confirmed');await restored.resume();await restored.poll();assert.equal(engine.calls.length,1);assert.equal(restored.getJob(job.id).attempts.length,1);}finally{await restored.close();}
+});
+
+test('scheduled retry checks the exact durable canonical dispatch despite a stale run projection',async t=>{
+  const f=await harness(t),{operations,engine,create,advance}=f,deployment=await create({retry:{maxAttempts:1,backoffSeconds:1}}),job=await operations.trigger(deployment.id);
+  await operations.poll();const runId=operations.getJob(job.id).attempts[0].runId;
+  await canonicalRetryJournal(t,f,runId,[
+    {effect:'opaque',effectState:'unknown'},
+    {effect:'commit',effectState:'unconfirmed',deliveryState:'dispatched',commit:{effectKey:'publication'}},
+    {effect:'commit',effectState:'confirmed',commit:{effectKey:'previous-publication'}},
+  ]);
+  engine.finish(runId,'failed',{error:'The original run stopped.'});await operations.poll();
+  assert.equal(operations.getJob(job.id).status,'retry_wait');
+  advance(1000);await operations.poll();
+  const saved=operations.getJob(job.id);
+  assert.equal(saved.status,'failed');
+  assert.equal(saved.error,'The original run stopped.');
+  assert.equal(saved.nextAttemptAt,null);
+  assert.deepEqual(saved.retryHold.receipts,[{id:'canonical-1',status:'uncertain'},{id:'canonical-2',status:'uncertain'},{id:'canonical-3',status:'confirmed'}]);
+  assert.equal(saved.retryHold.taskId,'shared-planning-task');
+  assert.equal(operations.status().paused,false);
+  assert.equal(engine.calls.length,1);
+});
+
+test('explicit operation retry reads an opaque external effect from a settled journal',async t=>{
+  const f=await harness(t),{operations,engine,create}=f,deployment=await create({retry:{maxAttempts:0,backoffSeconds:1}}),job=await operations.trigger(deployment.id);
+  await operations.poll();const runId=operations.getJob(job.id).attempts[0].runId;
+  await canonicalRetryJournal(t,f,runId,[{effect:'opaque',effectState:'unknown'}]);
+  engine.finish(runId,'failed');await operations.poll();
+  await assert.rejects(operations.retryJob(job.id),{code:'EXTERNAL_ACTION_RECONCILE',status:409,runId});
+  assert.deepEqual(operations.getJob(job.id).retryHold.receipts,[{id:'canonical-1',status:'uncertain'}]);
+  assert.equal(operations.snapshot().jobs.length,1);
+  assert.equal(engine.calls.length,1);
+});
+
+test('local work, observation and known absence do not fence a fresh scheduled retry',async t=>{
+  const f=await harness(t),{operations,engine,create,advance}=f,deployment=await create({retry:{maxAttempts:1,backoffSeconds:1}}),job=await operations.trigger(deployment.id);
+  await operations.poll();const runId=operations.getJob(job.id).attempts[0].runId;
+  await canonicalRetryJournal(t,f,runId,[
+    {effect:'observe',effectState:'not-applicable',action:'read',resources:[{key:'url:https://example.com/fixture',access:'read'}]},
+    {effect:'opaque',effectState:'unknown',tool:'relay_workspace',action:'run',resources:[{key:'path:/work/local.txt',access:'write'}]},
+    {effect:'opaque',effectState:'confirmed'},
+    {effect:'opaque',effectState:'absent'},
+    {effect:'commit',effectState:'absent',reconciliationEvidenceIds:['proof-of-absence'],commit:{effectKey:'proved-absent'}},
+    {effect:'commit',effectState:'unconfirmed',deliveryState:'reserved',dispatchedAt:null,commit:{effectKey:'never-sent'}},
+    {effect:'commit',effectState:'confirmed',runId:'older-independent-occurrence',commit:{effectKey:'older'}},
+  ]);
+  engine.finish(runId,'failed');await operations.poll();advance(1000);await operations.poll();
+  const saved=operations.getJob(job.id);
+  assert.equal(saved.status,'running');
+  assert.equal(saved.retryHold,undefined);
+  assert.equal(saved.attempts.length,2);
+  assert.equal(engine.calls.length,2);
 });
 
 test('backup recovery before a saved attempt holds new operation tasks even when the older backup only contains a draft',async t=>{
