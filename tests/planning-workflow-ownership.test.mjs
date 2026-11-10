@@ -145,14 +145,15 @@ test('new analytical children cannot take a workflow effect and get an exact cor
   const body = planningResponseBody(saved), attempt = { node: {kind:'inference'}, pipelineVersion: 2, sources: saved.sources };
   assert.throws(() => validatePlanningModuleResponse(attempt, body), error => {
     assert.equal(error.code, 'PLANNING_RESPONSE_FORMAT');
-    assert.deepEqual(error.issues.map(issue => issue.path), ['response.subproblems[0].acceptanceCriteria[1].verification']);
+    assert.deepEqual(error.issues.map(issue => issue.path), ['response.subproblems[0].acceptanceCriteria[1].verification', 'response.childResults[0]']);
     assert.match(error.issues[0].message, /effect unchanged.*workflow subproblem/);
     return true;
   });
   const corrected = copy(body);
   corrected.subproblems[0].acceptanceCriteria.pop();
+  corrected.childResults = []; // New children have no terminal host result to aggregate yet.
   assert.equal(validatePlanningModuleResponse(attempt, corrected).subproblems[1].acceptanceCriteria[1].verification, 'effect');
-  const prior = {...attempt, cycleContext: {children: [{key: child.key, request: child.request}]}};
+  const prior = {...attempt, cycleContext: {children: [{key: child.key, request: child.request, required: true, state: child.state, sourceId: body.childResults[0].sourceId}]}};
   assert.equal(validatePlanningModuleResponse(prior, body).subproblems[0].acceptanceCriteria[1].verification, 'effect',
     'An exact historical child remains readable and retainable.');
 });

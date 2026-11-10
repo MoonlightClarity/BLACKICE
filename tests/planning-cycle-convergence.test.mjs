@@ -213,3 +213,33 @@ test('explicit retry can replace a historical changed child binding before resum
     }
   });
 });
+
+
+test('combined child diagnostics retain established specific error messages',()=>{
+  for(const kind of ['missing-target','workflow-rebind','external-effect','combined']){
+    const {input,attempt,body}=unit(),original=childRequest(input.sources[0].id);
+    body.subproblems=[structuredClone(original)];
+    let expected;
+    if(kind==='missing-target'){delete body.subproblems[0].executionTarget;expected=/must declare where its work can actually execute/;}
+    if(kind==='workflow-rebind'){
+      input.cycle.children=[{key:original.key,state:'running',required:true,request:original}];
+      body.subproblems[0].executionTarget='workflow';expected=/analytical child cannot be rebound/;
+    }
+    if(kind==='external-effect'||kind==='combined'){
+      body.subproblems[0].acceptanceCriteria[0].verification='effect';expected=/analytical child cannot establish/;
+    }
+    if(kind==='combined'){
+      input.sources.push({id:'failed-child-result',kind:'source',text:'The child failed without observed effects.'});
+      input.cycle.children=[{key:original.key,state:'failed',required:true,sourceId:'failed-child-result',request:original}];
+    }
+    assert.throws(()=>validatePlanningModuleResponse(attempt,JSON.stringify(body)),error=>{
+      assert.equal(error.code,'PLANNING_RESPONSE_FORMAT');assert.match(error.message,expected);
+      if(kind==='combined'){
+        assert.ok(error.issues.some(item=>item.path==='response.subproblems[0]'));
+        assert.ok(error.issues.some(item=>item.path.endsWith('.verification')));
+        assert.ok(error.issues.some(item=>item.path==='response.childResults'));
+      }
+      return true;
+    });
+  }
+});
