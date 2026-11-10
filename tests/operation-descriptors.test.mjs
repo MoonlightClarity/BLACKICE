@@ -419,7 +419,7 @@ test('valid host-observed field link and form classifications remain unchanged',
   ]) {
     for (const action of ['click', 'press']) {
       const descriptor = await describeHostOperation(browserCall(action, action === 'press' ? { key: 'Enter' } : {}), { browserObservation: form({ control }) });
-      assert.equal(descriptor.effect, expected, control.kind + ' ' + action);
+      assert.equal(descriptor.effect, control.kind === 'field' && action === 'press' ? 'opaque' : expected, control.kind + ' ' + action);
       if (expected === 'commit') {
         assert.equal(descriptor.commit.destinationKey, 'destination:https://portal.test/tenant-a/enroll');
         assert.equal(descriptor.commit.payloadDigest, form().control.form.payloadDigest);
@@ -828,4 +828,38 @@ test('native application control labels bind classification to the inspected ope
   assert.equal(submit.applicationPage.submission, 'final');
   assert.notEqual(submit.operationKey, next.operationKey, 'label changes invalidate queued input');
   assert.equal(submit.commit.effectKey, next.commit.effectKey, 'receipt correlation does not change');
+});
+
+test('native normalization preserves boolean non-dispatch facts without trusting external tools', async () => {
+  const descriptor = await describeHostOperation(browserCall(), { browserObservation: form() });
+  for (const flag of ['actionDispatched', 'inputDispatched']) {
+    for (const success of [false, true]) {
+      const value = await normalizeHostOperationResult(result({ [flag]: false }, success), { call: browserCall(), descriptor });
+      assert.equal(value.effectState, 'absent'); assert.equal(value[flag], false);
+    }
+    for (const operation of [call('external_tool', {}), call('relay_browser', {}, { namespace: 'external' })]) {
+      const value = await normalizeHostOperationResult(result({ [flag]: false }, false), { call: operation, descriptor });
+      assert.equal(value.effectState, 'unknown'); assert.equal(value[flag], undefined);
+    }
+    for (const value of ['false', 0, null]) {
+      const normalized = await normalizeHostOperationResult(result({ [flag]: value }, false), { call: browserCall(), descriptor });
+      assert.equal(normalized.effectState, 'unknown'); assert.equal(normalized[flag], undefined);
+    }
+  }
+});
+
+test('inspected native field Enter is opaque while ordinary field input stays available', async () => {
+  const field = { isConnected: true, tagName: 'INPUT', type: 'text', name: 'name', value: 'Example',
+    form: { isConnected: true, method: 'post', action: 'https://portal.test/apply' } };
+  for (const [action, key, modifiers, expected] of [
+    ['press', 'Enter', [], 'opaque'], ['press', 'Enter', ['Control'], 'opaque'],
+    ['press', 'Tab', [], 'interact'], ['press', 'ArrowDown', [], 'interact'],
+    ['press', 'a', [], 'interact'], ['click', undefined, [], 'interact'],
+  ]) {
+    const args = { action, ref: 'e1', key, modifiers };
+    const control = await inspectObservedFormControl(field, {}, args);
+    assert.equal(control.kind, 'field');
+    const descriptor = await describeHostOperation(browserCall(action, { key, modifiers }), { browserObservation: form({ control }) });
+    assert.equal(descriptor.effect, expected);
+  }
 });

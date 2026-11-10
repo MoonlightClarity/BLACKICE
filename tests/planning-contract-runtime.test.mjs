@@ -11,6 +11,8 @@ import { normalizeContractEvidence } from '../lib/planning-contract-evidence.mjs
 import { createPlanningCompletionController } from '../lib/planning-completion.mjs';
 import { createWorkspaceToolHandler } from '../lib/workspace-tools.mjs';
 import { describeHostOperation } from '../lib/operation-descriptors.mjs';
+import { createBrowserToolHandler } from '../lib/browser.mjs';
+import { inspectObservedFormControl } from '../desktop/browser-operation-observation.mjs';
 import { fixtureDeferredUserAgency, fixtureUserAgency } from './fixture-user-agency.mjs';
 
 const body = result => JSON.parse(result.contentItems.find(item => item.type === 'inputText').text);
@@ -1041,4 +1043,47 @@ test('native Planning persists one requisition claim across different payloads a
   noInput = false;
   await f.guard.annotate(second, { success: false, contentItems: [] }, { uncertain: true });
   assert.equal((await f.guard.before(call('relay_browser', { action: 'click', target: 'first' }))).code, 'APPLICATION_HISTORY_RESERVED');
+});
+
+for (const flag of ['actionDispatched', 'inputDispatched']) {
+  test('production browser normalization releases the shared claim after ' + flag + ':false', async t => {
+    const browser = createBrowserToolHandler({ browser: {} });
+    const adapter = { ...applicationAdapter, normalizeOperationResult: browser.normalizeOperationResult };
+    const f = await fixture(t, { contract: typedCommitPlan(), operationAdapter: () => adapter });
+    const first = call('relay_browser', { action: 'click', target: 'first' });
+    assert.equal(await f.guard.before(first), null);
+    await f.guard.dispatchContext(first).onOperationDispatch(applicationDescriptor(first));
+    assert.equal((await f.guard.before(call('relay_browser', { action: 'click', target: 'second' }))).code, 'APPLICATION_HISTORY_RESERVED');
+    await f.guard.annotate(first, { success: false, contentItems: [{ type: 'inputText', text: JSON.stringify({ [flag]: false }) }] });
+    const journal = await readContractJournal(f.tasks, f.taskId);
+    assert.equal(journal.records[0].deliveryState, 'returned');
+    assert.equal(journal.records[0].effectState, 'absent');
+    const second = call('relay_browser', { action: 'click', target: 'second' });
+    assert.equal(await f.guard.before(second), null);
+    await f.guard.dispatchContext(second).onOperationDispatch(applicationDescriptor(second));
+    await f.guard.annotate(second, { success: false, contentItems: [{ type: 'inputText', text: JSON.stringify({ actionDispatched: true }) }] });
+    assert.equal((await f.guard.before(call('relay_browser', { action: 'click', target: 'third' }))).code, 'APPLICATION_HISTORY_RESERVED');
+  });
+}
+
+test('native field Enter cannot bypass the application gate while typing and reading remain available', async t => {
+  const field = { isConnected: true, tagName: 'INPUT', type: 'text', name: 'name', value: 'Example',
+    form: { isConnected: true, method: 'post', action: applicationUrl + '/application' } };
+  const adapter = { describeOperation: async item => {
+    const args = item.arguments;
+    const control = await inspectObservedFormControl(field, {}, args);
+    return describeHostOperation(item, { browserObservation: { current: true, tabId: 'relay:history',
+      documentId: 'history:1', url: applicationUrl, control } });
+  } };
+  const f = await fixture(t, { contract: draft(['origin:https://jobs.ashbyhq.com']), operationAdapter: () => adapter });
+  await fs.writeFile(path.join(f.cwd, 'application_older.json'), JSON.stringify({ url: applicationUrl, status: 'APPLIED' }));
+  const enter = call('relay_browser', { action: 'press', key: 'Enter', ref: 'e1', tabId: 'relay:history' });
+  const denied = await f.guard.before(enter);
+  assert.equal(denied.code, 'APPLICATION_HISTORY_UNINSPECTED');
+  assert.equal((await readContractJournal(f.tasks, f.taskId)).records.length, 0);
+  for (const args of [{ action: 'press', key: 'a', ref: 'e1' }, { action: 'read' }]) {
+    const item = call('relay_browser', { ...args, tabId: 'relay:history' });
+    assert.equal(await f.guard.before(item), null);
+    await f.guard.annotate(item, { success: false, contentItems: [] });
+  }
 });
