@@ -26,6 +26,7 @@ test('only verifiably failed/cancelled runs qualify for startup tab recovery', a
   ]);
   const seen = [];
   const browser = { status: () => ({ tabs }), releaseOwner: async (owner, opts) => {
+    assert.equal(opts.retainForContinuation, true, 'startup preserves the continuing worker scope');
     seen.push([owner.runId, opts.status]);
     return { released: [owner.runId], retained: [] };
   } };

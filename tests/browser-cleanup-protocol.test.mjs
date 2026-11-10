@@ -14,5 +14,5 @@ test('host completion status reaches both worker and node browser finalizers', a
   assert.match(engine, /const handback = status === 'completed'/);
   assert.match(engine, /releaseOwner\(\{ taskId, runId: run.id, nodeId \}, \{ status: handback \? 'awaiting-user' : status, retainForContinuation: status === 'failed' \|\| status === 'cancelled' \}\)/);
   assert.match(engine, /releaseBrowserOwner\(delegatedPlanNodeId\(node.id, task.id\), result.status\)/);
-  assert.match(engine, /releaseBrowserOwner\(node.id, run.nodes\[node.id\]\?\.status\)/);
+  assert.match(engine, /releaseBrowserOwner\(node.id, cleanupStatus \|\| run.nodes\[node.id\]\?\.status\)/);
 });

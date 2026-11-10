@@ -1025,3 +1025,36 @@ test('continuations validate revised agent instructions and deliver them on the 
   assert.ok(runtime.calls[2].prompt.includes(prompt));
   assert.equal(runtime.calls.length,3);
 });
+
+
+test('failed node browser finalization sees failure rather than stale running state', async t => {
+  const releases = [];
+  const browser = { status: () => ({ available: true, contained: true, tabs: [] }),
+    releaseOwner: async (owner, options) => { releases.push({ owner, options }); return { retained: [] }; } };
+  const runtime = new FakeRuntime(async () => { throw new Error('fixture provider failure'); });
+  const { engine } = await harness(t, runtime, { browser });
+  const started = engine.startRun({ workflow: workflow(), input: 'Inspect the current page.' });
+  await engine.executions.get(started.id);
+  assert.equal(engine.getRun(started.id).status, 'failed');
+  assert.equal(releases.length, 1);
+  assert.equal(releases[0].options.status, 'failed');
+  assert.equal(releases[0].options.retainForContinuation, true);
+});
+
+for (const resolves of [false, true]) test('cancelled node browser finalization retains scope when runtime ' + (resolves ? 'resolves' : 'rejects'), async t => {
+  const releases = [], entered = deferred();
+  const browser = { status: () => ({ available: true, contained: true, tabs: [] }),
+    releaseOwner: async (owner, options) => { releases.push({ owner, options }); return { retained: [] }; } };
+  const runtime = new FakeRuntime(async options => {
+    entered.resolve();
+    return new Promise((resolve, reject) => options.signal.addEventListener('abort', () => resolves ? resolve({ output: 'Stopped.' }) : reject(options.signal.reason), { once: true }));
+  });
+  const { engine } = await harness(t, runtime, { browser });
+  const started = engine.startRun({ workflow: workflow(), input: 'Inspect the current page.' });
+  await entered.promise; engine.cancelRun(started.id);
+  await engine.executions.get(started.id);
+  assert.equal(engine.getRun(started.id).status, 'cancelled');
+  assert.equal(releases.length, 1);
+  assert.equal(releases[0].options.status, 'cancelled');
+  assert.equal(releases[0].options.retainForContinuation, true);
+});

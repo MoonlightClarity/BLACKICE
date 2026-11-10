@@ -1908,3 +1908,50 @@ test('continuation retention preserves explicit human handback and default termi
   const tab = driver.newTab('https://example.test/completed', { owner }); await tab.loading;
   assert.deepEqual((await driver.releaseOwner(owner, { status: 'completed', retainForContinuation: true })).closed, [tab.id]);
 });
+
+
+for (const status of ['failed', 'cancelled']) test('startup recovery keeps ' + status + ' task tabs owned and reusable without Personal promotion', async t => {
+  const { recoverTerminalBrowserOwners } = await import('../lib/browser-owner-recovery.mjs');
+  const { driver, directory, windows } = await fixture(t); await driver.init();
+  const owner = { taskId: 'startup-continuation', nodeId: 'agent', runId: 'failed-run' };
+  const opened = await driver.perform({ action: 'open', url: 'https://example.test/application' }, { owner });
+  const folder = driver.tabs.get(opened.tabId).folderId;
+  await driver.releaseOwner(owner, { status, retainForContinuation: true });
+  await driver.close();
+  const restored = new driver.constructor({ dataDir: directory, downloadDir: path.join(directory, 'downloads') });
+  try {
+    await restored.init();
+    const count = windows.length;
+    const receipt = await recoverTerminalBrowserOwners(restored, new Map([[owner.runId, { id: owner.runId, taskId: owner.taskId, status }]]));
+    const tab = restored.tabs.get(opened.tabId);
+    assert.equal(receipt.released, 0);
+    assert.equal(receipt.retained, 1);
+    assert.deepEqual(tab.owner, owner);
+    assert.equal(tab.folderId, folder);
+    assert.equal(tab.humanCreated, false);
+    assert.equal(windows.length, count, 'startup never loads or replays the website');
+    const continued = { ...owner, runId: 'continued-run' };
+    await restored.perform({ action: 'read', tabId: tab.id }, { owner: continued });
+    assert.equal(restored.tabs.size, 1, 'Continue reuses the original page identity');
+    assert.deepEqual(tab.owner, continued);
+    assert.deepEqual((await restored.releaseOwner(owner, { status: 'completed' })).closed, [], 'old cleanup cannot remove the new lease');
+    assert.deepEqual((await restored.releaseOwner(continued, { status: 'completed' })).closed, [tab.id]);
+  } finally { await restored.close(); }
+});
+
+test('a user-kept task tab remains protected from completion cleanup after restart', async t => {
+  const { driver, directory } = await fixture(t); await driver.init();
+  const owner = { taskId: 'kept-restart', nodeId: 'agent', runId: 'run' };
+  const opened = await driver.perform({ action: 'open', url: 'https://example.test/user-kept' }, { owner });
+  await driver.perform({ action: 'scroll', tabId: opened.tabId, direction: 'down' }, { source: 'user' });
+  assert.equal(driver.tabs.get(opened.tabId).userPinned, true);
+  await driver.close();
+  const restored = new driver.constructor({ dataDir: directory, downloadDir: path.join(directory, 'downloads') });
+  try {
+    await restored.init();
+    const receipt = await restored.releaseOwner(owner, { status: 'completed' });
+    assert.deepEqual(receipt.closed, []);
+    assert.equal(receipt.retained[0].tabId, opened.tabId);
+    assert.equal(restored.tabs.get(opened.tabId).userPinned, true);
+  } finally { await restored.close(); }
+});
