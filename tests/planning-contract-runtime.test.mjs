@@ -556,6 +556,67 @@ test('missing observe is diagnosed explicitly and is not implied by interact or 
   assert.deepEqual(await readContractJournal(f.tasks, f.taskId), before);
 });
 
+test('a denied shell identifies matching workspace permissions without granting effects or another goal loop', async t => {
+  const origin = 'origin:https://portal.test';
+  const f = await fixture(t, { contract: ({ key }) => {
+    const value = draft([key]);
+    value.criteria.push({ id: 'receipt', kind: 'external-confirmation', description: 'The remote destination confirms the authorized change.', resourceKey: origin });
+    value.workItems[0].effects = ['observe'];
+    value.workItems[0].operationScopes = [{ effect: 'observe', resourceKeys: [key] }];
+    value.workItems.push({ ...value.workItems[0], id: 'publish', title: 'Publish the prepared result',
+      resourceKeys: [key, origin], effects: ['observe', 'interact', 'commit', 'opaque'], dependsOn: ['files'], criterionIds: ['receipt'],
+      operationScopes: ['observe', 'interact', 'commit', 'opaque'].map(effect => ({ effect, resourceKeys: [origin],
+        ...(effect === 'commit' ? { confirmationCriterionId: 'receipt' } : {}) })) });
+    return value;
+  } });
+  const read = await f.send(call('relay_workspace', { action: 'read', path: 'input.txt' }));
+  assert.equal(read.success, true);
+  const readJournal = await readContractJournal(f.tasks, f.taskId);
+  const assessment = await f.send(call('relay_task', { action: 'assess', expectedPlanEpoch: 1, workItemId: 'files',
+    criterionId: 'checked', judgment: 'satisfied', note: 'The input was read.', evidenceIds: [readJournal.evidence[0].id] }));
+  assert.equal(assessment.success, true, JSON.stringify(assessment));
+  await f.send(call('relay_task', { action: 'focus', workItemId: 'publish', expectedPlanEpoch: 1 }));
+  const before = await readContractJournal(f.tasks, f.taskId);
+  const planned = (await f.tasks.get(f.taskId)).contract;
+  const command = process.platform === 'win32' ? 'Set-Content fixture-sentinel.txt unsafe' : 'printf unsafe > fixture-sentinel.txt';
+  const denied = await f.send(call('relay_workspace', { action: 'run', command })), detail = body(denied);
+  assert.equal(denied.code, 'TASK_CONTRACT_SCOPE');
+  assert.equal(detail.operation.effect, 'opaque');
+  assert.equal(detail.resourceRelation, 'in-owned-work-item-envelope');
+  assert.deepEqual(detail.matchingWorkItemIds, []);
+  assert.deepEqual(detail.resourceMatchingWorkItems, [
+    { workItemId: 'files', status: 'satisfied', scopes: planned.workItems[0].operationScopes },
+    { workItemId: 'publish', status: 'pending', scopes: [] },
+  ]);
+  assert.equal(detail.workspaceRecovery.boundary, 'unconfined-workspace-shell');
+  assert.equal(detail.workspaceRecovery.dispatched, false);
+  assert.deepEqual(detail.workspaceRecovery.boundedAlternatives.map(({ effect, existingMatchingScope }) => ({ effect, existingMatchingScope })),
+    [{ effect: 'observe', existingMatchingScope: true }, { effect: 'interact', existingMatchingScope: false }]);
+  assert.equal(JSON.stringify(detail).includes(command), false);
+  const foreign = body(await f.guard.before(call('relay_browser', { action: 'open', url: 'https://unrelated.example/' })));
+  assert.equal(foreign.scopeReason, 'resource-not-covered');
+  assert.equal(foreign.resourceRelation, 'outside-owned-work-item-envelopes');
+  assert.equal(foreign.workspaceRecovery, undefined);
+  const write = await f.send(call('relay_workspace', { action: 'write', path: 'fixture-sentinel.txt', text: 'unsafe' }));
+  assert.equal(write.code, 'TASK_CONTRACT_SCOPE');
+  await assert.rejects(fs.stat(path.join(f.cwd, 'fixture-sentinel.txt')), { code: 'ENOENT' });
+  assert.deepEqual(await readContractJournal(f.tasks, f.taskId), before);
+  assert.deepEqual((await f.tasks.get(f.taskId)).contract, planned);
+
+  const goal = createContractCompletionController({ store: f.tasks, taskId: f.taskId, runId: f.runId, nodeId: f.nodeId, persistentGoal: true });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const ordinary = await goal.beforeFinal();
+    assert.equal(ordinary.continue, true);
+    assert.doesNotMatch(ordinary.prompt, /latestWorkspaceScopeDenial/);
+  }
+  const recovery = await goal.beforeFinal();
+  assert.equal(recovery.continue, true);
+  assert.match(recovery.prompt, /"workItem":"publish"/);
+  assert.match(recovery.prompt, /"latestWorkspaceScopeDenial".*"boundary":"unconfined-workspace-shell"/);
+  assert.equal(recovery.prompt.includes(command), false);
+  await assert.rejects(goal.beforeFinal(), { code: 'TASK_CONTRACT_INCOMPLETE' });
+});
+
 test('multiple matching owned items request focus without a material edit or operation dispatch', async t => {
   const f = await fixture(t, { contract: ({ key }) => {
     const value = draft([key]); value.workItems[0].effects = ['interact'];
