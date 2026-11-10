@@ -428,8 +428,16 @@ test('a required form label or counterparty preference cannot end an adopted goa
   const args = { action: 'assess', expectedPlanEpoch: delivered.contract.planEpoch, workItemId: 'files',
     criterionId: 'checked', evidenceIds, judgment: 'blocked',
     note: 'A counterparty labels a routine Yes/No form input required and prefers a different format.' };
-  assert.equal((await f.send(call('relay_task', args))).code, 'USER_AGENCY_REQUIRED');
-  assert.equal((await f.send(call('relay_task', { ...args, userAgency: fixtureUserAgency() }))).code, 'USER_AGENCY_HOLD_NOT_JUSTIFIED');
+  const missingComparison = await f.send(call('relay_task', args));
+  assert.equal(missingComparison.code, 'USER_AGENCY_REQUIRED');
+  const rejectedHold = await f.send(call('relay_task', { ...args, userAgency: fixtureUserAgency() }));
+  assert.equal(rejectedHold.code, 'USER_AGENCY_HOLD_NOT_JUSTIFIED');
+  for (const rejection of [missingComparison, rejectedHold]) {
+    const info = body(rejection);
+    assert.equal(info.holdRecorded, false);
+    assert.deepEqual(info.recovery.assessments, [{ workItemId: 'files', criterionId: 'checked', evidenceIds }]);
+    assert.equal(info.recovery.expectedPlanEpoch, delivered.contract.planEpoch);
+  }
 
   const preference = fixtureDeferredUserAgency('The counterparty prefers another file format.');
   preference.decisions[0].input.hardConstraints.push({
