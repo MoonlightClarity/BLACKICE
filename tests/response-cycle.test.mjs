@@ -73,6 +73,29 @@ test('real graph runs all five stages across actual execution boundary with type
   assert.ok(f.calls[3].input.sources.some(source=>source.id.startsWith('cycle:execution:')));assert.equal(f.calls[2].input.sources.some(source=>source.id.startsWith('cycle:execution:')),false);
 });
 
+test('an unmatched saved analysis-effect ownership issue is reported without requesting user facts',async t=>{
+  const f=await fixture(t),drive=f.service.drive.bind(f.service);
+  f.service.drive=async(...args)=>{
+    const current=await drive(...args),cycle=current.cycles.find(item=>item.id===args[1]);
+    if(args[2]?.through==='plan'){
+      const plan=current.nodes.find(node=>node.id===cycle.stageNodeIds.plan);
+      assert.equal(plan.readiness.cycle.analysisReady,true);
+      plan.readiness.cycle.dispatchReady=false;
+      plan.readiness.cycle.analysisEffectOwnershipIssues=[{childKey:'legacy-analysis',criterionIds:['fixture-effect']}];
+    }
+    return current;
+  };
+  const {result,request}=await f.prepare();
+  assert.equal(result.state,'failed');
+  assert.equal(result.awaitingInput,false);
+  assert.equal(result.question,'');
+  assert.equal(result.error.code,'RESPONSE_CYCLE_ANALYSIS_EFFECT_OWNERSHIP');
+  const cycle=request.cycles.find(item=>item.id===result.cycleId);
+  assert.equal(cycle.failure.code,result.error.code);
+  assert.equal(cycle.pendingIntent,null);
+  assert.ok(request.nodes.find(node=>node.id===cycle.stageNodeIds.plan).response);
+});
+
 test('actual Infer-to-Feasibility response citation passes once and carries source-bound intent into the adopted Plan',async t=>{
   const f=await fixture(t,{amend:(body,input)=>{
     if(input.module.kind==='viability'){
