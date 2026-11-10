@@ -22,7 +22,7 @@ export const VIABILITY_TEMPLATE = Object.freeze({ kind: 'viability', label: 'Che
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = message => Object.assign(new Error(message), { code: 'TASK_VIABILITY_INVALID', status: 400 });
 const text = (value, label, max = 4000, required = false) => {
-  if (typeof value !== 'string' || value.includes('\0') || value.length > max || required && !value.trim()) throw fail(label + ' must be bounded text.');
+  if (typeof value !== 'string' || value.includes('\0') || value.length > max || required && !value.trim()) throw fail(label + ' must be ' + (required ? 'nonempty ' : '') + 'bounded text (at most ' + max + ' characters, without null characters).');
   return value.trim();
 };
 const list = (value, label, max = 40, { evidenceRefs = false } = {}) => {
@@ -83,6 +83,9 @@ export function validatePlanningReadableFindings(value, sources = []) {
 }
 const schemaTree = value => JSON.parse(JSON.stringify(value));
 export const TASK_ACCURACY_FIELDS = Object.freeze(['mode', 'tolerance', 'decisionThreshold', 'evidenceNeeded', 'consequence', 'unknownPolicy', 'stopWhen']);
+export const TASK_ACCURACY_REQUIRED_TEXT_FIELDS = Object.freeze(['evidenceNeeded', 'consequence', 'stopWhen']);
+const accuracyTextSchema = (description, required = false) => ({ type: 'string', minLength: required ? 1 : 0, maxLength: 2000,
+  pattern: required ? '^[^\\u0000]*[^\\s\\u0000][^\\u0000]*$' : '^[^\\u0000]*$', description });
 /** The target describes sufficient accuracy; it does not certify a claim or fill missing facts. */
 export function validateTaskAccuracy(value) {
   if (value === undefined || value === null) return undefined;
@@ -100,10 +103,17 @@ export function validateTaskAccuracy(value) {
     consequence: text(value.consequence, 'Consequence of being wrong', 2000, true), unknownPolicy: value.unknownPolicy, stopWhen: text(value.stopWhen, 'Sufficient checking condition', 2000, true) };
 }
 export function taskAccuracySchema() {
-  const string = { type: 'string' };
+  const descriptions = {
+    tolerance: 'State the permitted deviation. This must be nonempty for bounded_estimate; it may be empty only when immaterial for exact or qualitative.',
+    decisionThreshold: 'State what changes the decision. This may be empty only when immaterial.',
+    evidenceNeeded: 'State the actual sources or observations needed to assess this target. This must be nonempty; do not invent completed observations.',
+    consequence: 'State the task-specific consequence of being wrong. This must be nonempty.',
+    stopWhen: 'State when checking is sufficient for this target. This must be nonempty.'
+  };
   return schemaTree({ anyOf: [{ type: 'object', additionalProperties: false, required: [...TASK_ACCURACY_FIELDS], properties: {
-    mode: { type: 'string', enum: ['exact', 'bounded_estimate', 'qualitative'] }, tolerance: string, decisionThreshold: string,
-    evidenceNeeded: string, consequence: string, unknownPolicy: { type: 'string', enum: ['block', 'assumption', 'range', 'omit'] }, stopWhen: string
+    mode: { type: 'string', enum: ['exact', 'bounded_estimate', 'qualitative'] },
+    ...Object.fromEntries(Object.entries(descriptions).filter(([key]) => key !== 'stopWhen').map(([key, description]) => [key, accuracyTextSchema(description, TASK_ACCURACY_REQUIRED_TEXT_FIELDS.includes(key))])),
+    unknownPolicy: { type: 'string', enum: ['block', 'assumption', 'range', 'omit'] }, stopWhen: accuracyTextSchema(descriptions.stopWhen, true)
   } }, { type: 'null' }] });
 }
 /** The only agent-authored stop claims recognized by readiness. Uncertainty is not one. */

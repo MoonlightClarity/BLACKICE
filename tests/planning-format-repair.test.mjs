@@ -265,3 +265,25 @@ test('concurrent manual stages share the atomic durable cycle attempt cap',async
   await f.runner.wait(request.id,accepted[0].value.attempt.id);
   assert.equal(f.calls.length,1);assert.equal((await f.store.get(request.id)).attempts.length,1);
 });
+
+test('blank accuracy evidence gets one precise repair and is never silently defaulted', async t => {
+  const f = await fixture(t, ({ input, index }) => {
+    const body = structuredClone(correct(input));
+    if (index === 1) body.requirements[0].accuracy.evidenceNeeded = '';
+    else {
+      const issues = input.formatRepair.diagnostic.issues;
+      assert.ok(issues.some(issue => issue.path === 'response.requirements[0].accuracy.evidenceNeeded' && /nonempty/.test(issue.message)));
+      assert.equal(JSON.parse(input.formatRepair.previousOutput).requirements[0].accuracy.evidenceNeeded, '');
+    }
+    return JSON.stringify(body);
+  });
+  const { options } = await addModule(f), budget = { used: 0, max: 2 };
+  const admitted = await f.runner.start({ ...options, providerBudget: budget });
+  const finished = await f.runner.wait(options.requestId, admitted.attempt.id);
+  assert.equal(finished.attempt.status, 'completed');
+  assert.equal(f.calls.length, 2); assert.equal(budget.used, 2);
+  const saved = await f.store.get(options.requestId);
+  assert.equal(saved.attempts[0].status, 'failed');
+  assert.equal(JSON.parse(saved.attempts[0].partialOutput).requirements[0].accuracy.evidenceNeeded, '');
+  assert.equal(saved.responses[0].requirements[0].accuracy.evidenceNeeded, criterion.accuracy.evidenceNeeded);
+});
