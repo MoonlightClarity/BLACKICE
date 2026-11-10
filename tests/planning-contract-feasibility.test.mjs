@@ -172,6 +172,36 @@ test('a fresh executable Plan requires its own committing work for every new con
   assert.doesNotThrow(() => write(plan));
 });
 
+test('an executable Plan keeps exact workflow criteria when an analysis child repeats them', () => {
+  const plan = draft(1, 1, 'external-confirmation'), [result] = plan.criteria;
+  result.label = 'Publication confirmation';
+  plan.workItems[0].effects.push('commit');
+  const workflow = {
+    key: 'publish-fixture', title: 'Publish the fixture', objective: 'Publish through the authorized portal.',
+    reason: 'The owning workflow can perform this operation.', required: true, executionTarget: 'workflow',
+    sourceIds: ['request:fixture'], acceptanceCriteria: [{ id: result.id, label: result.label,
+      description: result.description, verification: 'effect' }],
+  };
+  const child = { ...structuredClone(workflow), executionTarget: 'analysis',
+    objective: 'Finish the work described above.', reason: 'The result is required for this task.' };
+  const attempt = executablePlanAttempt();
+  attempt.cycleContext.workflowRequests = [{ ...workflow, requiredForPlan: true }];
+  const output = stageBody('plan', 'fixture', plan);
+  output.subproblems = [child];
+  const accepted = validatePlanningModuleResponse(attempt, output);
+  assert.deepEqual(accepted.subproblems, []);
+  assert.deepEqual(accepted.acceptanceCriteria, workflow.acceptanceCriteria);
+  assert.deepEqual(accepted.contract, normalizePlanContract(plan));
+
+  const different = structuredClone(output);
+  different.subproblems[0].acceptanceCriteria[0].description = 'An additional external effect is required.';
+  assert.throws(() => validatePlanningModuleResponse(attempt, different), /analytical child cannot establish/);
+  const noOwner = executablePlanAttempt();
+  assert.throws(() => validatePlanningModuleResponse(noOwner, output), /analytical child cannot establish/);
+  const prior = { ...attempt, cycleContext: { ...attempt.cycleContext, children: [{ key: child.key, request: child }] } };
+  assert.deepEqual(validatePlanningModuleResponse(prior, output).subproblems, [child]);
+});
+
 test('fresh typed Plans identify the unused envelope field without granting shell scope', () => {
   const attempt = executablePlanAttempt();
   const plan = draft(1), [item] = plan.workItems, [destination] = item.resourceKeys;

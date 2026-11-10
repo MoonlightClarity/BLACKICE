@@ -187,6 +187,18 @@ export const analyticalSubproblem = value => value?.executionTarget !== 'workflo
 export const analyticalSubproblems = value => (value || []).filter(analyticalSubproblem);
 export const analysisEffectCriteria = value => analyticalSubproblem(value) ? (value?.acceptanceCriteria || []).filter(item => item.verification === 'effect') : [];
 export const sameSubproblemRequest = (left, right) => Boolean(left && right && canonical({ ...left, executionTarget: left.executionTarget ?? 'analysis' }) === canonical({ ...right, executionTarget: right.executionTarget ?? 'analysis' }));
+
+function repeatsOwnedWorkflow(child, context, planCriteria) {
+  if (!analysisEffectCriteria(child).length || context.children?.some(item => item.key === child.key)) return false;
+  const matching = (context.workflowRequests || []).filter(item => item.key === child.key && item.executionTarget === 'workflow');
+  if (matching.length !== 1) return false;
+  const [workflow] = matching;
+  return workflow.requiredForPlan !== false && workflow.required === child.required && workflow.title === child.title &&
+    canonical(workflow.sourceIds) === canonical(child.sourceIds) &&
+    canonical(workflow.acceptanceCriteria) === canonical(child.acceptanceCriteria) &&
+    child.acceptanceCriteria.every(criterion => planCriteria.some(item => canonical(item) === canonical(criterion)));
+}
+
 function subproblems(value) {
   const fields = ['key', 'title', 'objective', 'reason', 'required', 'sourceIds', 'acceptanceCriteria'];
   return unique(array(value, 'Subproblem requests', RESPONSE_CYCLE_LIMITS.subproblems).map(item => {
@@ -305,6 +317,10 @@ export function parseResponseCycleResponse(output, stageOrKind, { sources,pipeli
       const projected = contractPlanProjection(result.contract, [source.id]);
       for (const key of ['acceptanceCriteria', 'steps']) if (value[key] !== undefined && canonical(value[key]) !== canonical(projected[key])) throw fail('The supplied ' + key + ' disagrees with the canonical contract. These views are host-derived.');
       Object.assign(result, projected);
+      // An already-owned executable request can be echoed in the model's
+      // analysis list. Exact criteria still belong to the executable Plan.
+      if (operational) result.subproblems = result.subproblems.filter(child =>
+        !repeatsOwnedWorkflow(child, cycleContext, result.acceptanceCriteria));
     } else Object.assign(result, validatePlanRevision({ acceptanceCriteria: value.acceptanceCriteria, steps: value.steps }));
   }
   if (stage.kind === 'think') result.criterionResults = criterionResults(value.criterionResults);
