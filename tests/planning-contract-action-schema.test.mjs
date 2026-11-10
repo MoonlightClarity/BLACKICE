@@ -91,7 +91,7 @@ test('native MCP describe delivers exact action fields and distinguishes the two
   assert.equal(described.schema.if, undefined);
 });
 
-test('native MCP plan rejects both host epoch fields and correction succeeds without weakening the host allowlist', async t => {
+test('native MCP keeps top-level concurrency fields and fresh contracts strict', async t => {
   const f = await fixture(t);
   for (const goal of ['Review the supplied material.', 'Review the additional supplied material.']) {
     const before = await f.tasks.get(f.taskId), draft = contract(goal);
@@ -101,10 +101,12 @@ test('native MCP plan rejects both host epoch fields and correction succeeds wit
     assert.equal(parsed(rejected).code, 'TASK_CONTRACT_INVALID');
     assert.match(parsed(rejected).error, /unexpected fields: expectedPlanEpoch/);
     assert.match(parsed(rejected).error, /Allowed fields: action, expectedRevision, contract\./);
-    const nested = await f.call({ action: 'plan', expectedRevision: before.revision,
-      contract: { ...draft, planEpoch: before.contract?.planEpoch || 1 } });
-    assert.equal(nested.isError, true);
-    assert.equal(parsed(nested).code, 'TASK_CONTRACT_INVALID');
+    if (!before.contract) {
+      const nested = await f.call({ action: 'plan', expectedRevision: before.revision,
+        contract: { ...draft, planEpoch: 1 } });
+      assert.equal(nested.isError, true);
+      assert.equal(parsed(nested).code, 'TASK_CONTRACT_INVALID');
+    }
     const unchanged = await f.tasks.get(f.taskId);
     assert.equal(unchanged.revision, before.revision);
     assert.deepEqual(unchanged.contract, before.contract);
@@ -132,6 +134,48 @@ test('native MCP plan rejects both host epoch fields and correction succeeds wit
     assert.equal(parsed(unknown).code, 'TASK_CONTRACT_INVALID');
   }
   assert.equal((await f.tasks.get(f.taskId)).revision, after.revision);
+});
+
+test('native MCP plan accepts a copied epoch only at the exact saved revision', async t => {
+  const f = await fixture(t), initial = await f.tasks.get(f.taskId);
+  const seeded = await f.call({ action: 'plan', expectedRevision: initial.revision, contract: contract('Review the supplied material.') });
+  assert.equal(seeded.isError, false, JSON.stringify(seeded));
+  const read = parsed(await f.call({ action: 'read' }));
+  const exact = await f.call({ action: 'plan', expectedRevision: read.revision, contract: read.contract });
+  assert.equal(exact.isError, false, JSON.stringify(exact));
+  const unchanged = parsed(exact);
+  assert.equal(unchanged.revision, read.revision + 1);
+  assert.deepEqual(unchanged.contract, read.contract);
+
+  const stale = await f.call({ action: 'plan', expectedRevision: read.revision, contract: read.contract });
+  assert.equal(stale.isError, true);
+  assert.equal(parsed(stale).code, 'TASK_STATE_CONFLICT');
+  const edited = { ...unchanged.contract, instructions: [
+    { id: 'supporting-passages', text: 'Report the exact supporting passages.', handling: 'audit' },
+  ] };
+  const changedReply = await f.call({ action: 'plan', expectedRevision: unchanged.revision, contract: edited });
+  assert.equal(changedReply.isError, false, JSON.stringify(changedReply));
+  const changed = parsed(changedReply);
+  assert.equal(changed.revision, unchanged.revision + 1);
+  assert.equal(changed.contract.planEpoch, unchanged.contract.planEpoch + 1);
+  assert.deepEqual(changed.contract.instructions, edited.instructions);
+
+  const mismatch = await f.call({ action: 'plan', expectedRevision: changed.revision, contract: edited });
+  assert.equal(mismatch.isError, true);
+  assert.equal(parsed(mismatch).code, 'TASK_CONTRACT_EPOCH_CONFLICT');
+  for (const planEpoch of [null, 0, 1.5, String(changed.contract.planEpoch)]) {
+    const malformed = await f.call({ action: 'plan', expectedRevision: changed.revision, contract: { ...changed.contract, planEpoch } });
+    assert.equal(malformed.isError, true);
+    assert.equal(parsed(malformed).code, 'TASK_CONTRACT_INVALID');
+  }
+  const extra = await f.call({ action: 'plan', expectedRevision: changed.revision, contract: { ...changed.contract, journalSeq: 1 } });
+  assert.equal(extra.isError, true);
+  assert.match(parsed(extra).error, /undeclared fields: journalSeq/);
+  assert.throws(() => f.tasks.setContract(f.taskId, changed.contract,
+    { schemaVersion: 14, expectedRevision: changed.revision, adoption: {} }), { code: 'TASK_CONTRACT_INVALID' });
+  const saved = await f.tasks.get(f.taskId);
+  assert.equal(saved.revision, changed.revision);
+  assert.deepEqual(saved.contract, changed.contract);
 });
 
 test('native MCP prior binding guidance identifies pre-existing records without adding defaults or predicates', async t => {
