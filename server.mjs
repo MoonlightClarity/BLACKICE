@@ -164,7 +164,8 @@ export async function createHarnessServer(options = {}) {
   engine.taskViability=taskViability;
   const responseCycle=options.responseCycle===false||!taskViability?null:options.responseCycle||new ResponseCycleService({store:planningBrowser,runner:planningBrowserRuntime,taskViability,engine,conversations,getSettings:()=>runtimeSettings.get(),onUpdated:event=>sendEvent(event)});
   engine.responseCycle=responseCycle;
-  const operations=options.operations||new OperationsStore({dataDir,inbox,engine,conversationArchive:conversations,taskViability});
+  let providerStartupPending=true;
+  const operations=options.operations||new OperationsStore({dataDir,inbox,engine,conversationArchive:conversations,taskViability,providerStartupPending:()=>providerStartupPending});
   // Restore an intentionally unpaused scheduler after a clean host restart.
   // OperationsStore still fails closed on conflicting, interrupted or uncertain receipts,
   // preserves explicit Stop, and journals overdue occurrences instead of replaying them.
@@ -1463,7 +1464,11 @@ export async function createHarnessServer(options = {}) {
       else void remoteStartup.catch(() => {});
       await diagnostics.record({component:'server',event:'ready'});
       // Listening is independent of provider startup so connection errors are visible in the UI.
-      Promise.resolve().then(() => runtime.start()).then(() => { runtimeUpdate(); inbox.kick(); }).catch(error => { void diagnostics.recordError('runtime','runtime_failed',error);console.error('Agent connection failed; see support diagnostics.'); runtimeUpdate(); });
+      Promise.resolve().then(() => runtime.start()).then(() => inbox.kick()).finally(() => {
+        providerStartupPending=false;
+        operations.kick?.();
+        runtimeUpdate();
+      }).catch(error => { void diagnostics.recordError('runtime','runtime_failed',error);console.error('Agent connection failed; see support diagnostics.'); });
       return `http://127.0.0.1:${boundPort}`;
     },
     async close() {

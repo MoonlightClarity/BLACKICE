@@ -14,11 +14,12 @@ const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;})
 const until=async(check,label='HTTP operation condition')=>{const end=Date.now()+7000;while(Date.now()<end){const result=await check();if(result)return result;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail(`${label} did not settle`);};
 const workflow=(planningMode='off')=>({id:'http-operation-workflow',name:'HTTP deployed worker',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Worker',prompt:'Write the isolated fixture result and independently read it.',model:'http-fixture-model'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode}});
 class Desktop extends EventEmitter{status(){return{available:false,enabled:false};}async setEnabled(){return this.status();}}
-async function fixture(t,{execute,readinessFailure,modelStatus,maxConcurrentRuns=4,planningMode='off'}={}){
+async function fixture(t,{execute,readinessFailure,modelStatus,modelResolver,runtimeStart,maxConcurrentRuns=4,planningMode='off'}={}){
   const directory=await mkdtemp(path.join(tmpdir(),'relay-operations-http-')),dataDir=path.join(directory,'data'),cwd=path.join(directory,'workspace'),calls=[],readinessCalls=[],apps=[];
   let app,url,cookie;
   class Runtime extends EventEmitter{
-    status(){const selected=modelStatus?.()||{defaultModel:'http-fixture-model'};return{connected:true,authenticated:true,models:[{model:selected.defaultModel}],...selected};}async start(){return this.status();}async close(){this.closed=true;}
+    constructor(){super();if(modelResolver)this.resolveModel=modelResolver;}
+    status(){const selected=modelStatus?.()||{defaultModel:'http-fixture-model'};return{connected:true,authenticated:true,models:[{model:selected.defaultModel}],...selected};}async start(){await runtimeStart?.();return this.status();}async close(){this.closed=true;}
     async runAgent(options){
       if(options.responseOnly){
         const captured=JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2));
@@ -315,6 +316,58 @@ test('an interval using Default continues its managed run only while that model 
   assert.equal(fourth.continuedFromRunId, undefined, 'Returning to a model must not skip over the latest run.');
   assert.notEqual(fourth.conversationRootId, firstRun.id);
   assert.equal((await f.request('/api/operations/deployments/' + schedule.id)).data.workflow.nodes.find(node => node.type === 'agent').model, 'default');
+});
+
+test('restart waits for the selected default before persisting a scheduled continuation and runs independent ready models',async t=>{
+  const model='http-fixture-model',independent='cloud::ready',entered=deferred(),ready=deferred();
+  let restarting=false,available=true;
+  const f=await fixture(t,{
+    modelStatus:()=>({defaultModel:available?model:null,defaultModelAvailable:available,
+      codex:{connected:available,authenticated:available,connection:{phase:available?'ready':'idle'}}}),
+    modelResolver:value=>value===independent
+      ?{providerId:'cloud',model:'ready',available:true}
+      :{providerId:'codex',model,available},
+    runtimeStart:async()=>{if(restarting){entered.resolve();await ready.promise;}},
+  });
+  t.after(()=>ready.resolve());
+  const recurring=workflow(),other=workflow();
+  recurring.nodes.find(node=>node.type==='agent').model='default';
+  other.nodes.find(node=>node.type==='agent').model=independent;
+  const schedule=await f.create({workflow:recurring,trigger:{type:'interval',everySeconds:3600},overlap:'queue'});
+  const otherSchedule=await f.create({workflow:other,trigger:{type:'manual'}});
+  const trigger=async(id,key)=>(await f.request('/api/operations/deployments/'+id+'/trigger',{
+    method:'POST',body:{idempotencyKey:key}})).data;
+  const completed=id=>until(()=>{const job=f.app.operations.getJob(id);return job.status==='completed'&&job;});
+  const first=await completed((await trigger(schedule.id,'startup-first')).id);
+  const firstRun=await f.app.conversations.get(first.attempts[0].runId);
+  assert.equal(firstRun.workflow.nodes.find(node=>node.type==='agent').model,model);
+
+  f.app.operations.engineBusy=()=>true;
+  const queued=await trigger(schedule.id,'startup-waiting');
+  assert.equal(f.app.operations.getJob(queued.id).status,'queued');
+  assert.deepEqual(f.app.operations.getJob(queued.id).attempts,[]);
+  const readyJob=await trigger(otherSchedule.id,'startup-independent');
+  available=false;restarting=true;
+  await f.restart();
+  await entered.promise;
+  try{
+    await f.app.operations.poll();
+    await completed(readyJob.id);
+    assert.deepEqual(f.app.operations.getJob(queued.id),queued,'Waiting does not create a dispatch attempt or change the job identity.');
+    assert.equal(f.app.inbox.getByEnqueueKey('operation:'+queued.id+':1'),null);
+    assert.equal(f.app.inbox.status().paused,false);
+    assert.equal(f.app.operations.status().paused,false);
+    assert.equal(f.calls.length,2);
+    assert.equal(f.calls.at(-1).model,independent);
+  }finally{available=true;ready.resolve();}
+
+  const continued=await completed(queued.id);
+  assert.equal(continued.continuedFromRunId,firstRun.id);
+  assert.equal(continued.conversationRootId,firstRun.id);
+  assert.deepEqual(f.app.inbox.get(continued.attempts[0].inboxId).continueFrom,{runId:firstRun.id,nodeId:'agent'});
+  assert.equal(continued.attempts.length,1);
+  assert.equal(f.calls.length,3);
+  assert.equal(f.calls.at(-1).threadId,'http-fixture-thread');
 });
 
 test('parallel schedules remain independent rather than sharing one active provider thread',async t=>{

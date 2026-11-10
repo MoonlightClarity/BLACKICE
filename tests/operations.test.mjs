@@ -499,6 +499,26 @@ test('operations use free agent capacity and a queued job needs only one slot to
   const {operations,engine,create}=await harness(t,{capacity:2});const deployment=await create(),first=await operations.trigger(deployment.id),second=await operations.trigger(deployment.id);engine.runs.set('foreground',{id:'foreground',status:'running',settled:false});engine.executions.set('foreground',true);await operations.poll();assert.equal(engine.calls.length,1);assert.equal(operations.getJob(first.id).status,'running');assert.equal(operations.getJob(second.id).status,'queued');await operations.poll();assert.equal(engine.calls.length,1);engine.finish('foreground','completed',{settled:false});await operations.poll();assert.equal(engine.calls.length,1);engine.finish('foreground');await operations.poll();assert.equal(engine.calls.length,2);assert.equal(operations.getJob(first.id).status,'running');assert.equal(operations.getJob(second.id).status,'running');assert.equal(engine.executions.size,2);
 });
 
+test('a manual job waiting for its default model does not spin the idle dispatcher',async t=>{
+  const {operations,inbox,engine,create}=await harness(t);
+  let initializing=true;
+  engine.runtime={status:()=>({connected:false,authenticated:false,defaultModel:null,defaultModelInitializing:initializing})};
+  const deployment=await create({workflow:workflow('default'),trigger:{type:'manual'}});
+  const job=await operations.trigger(deployment.id);
+  const wakes=[];operations.kick=delay=>wakes.push(delay);
+  await operations.poll();
+  assert.equal(operations.hasPendingWork(),true,'A job waiting for startup still counts as pending work.');
+  assert.deepEqual(operations.getJob(job.id).attempts,[]);
+  assert.equal(inbox.getByEnqueueKey('operation:'+job.id+':1'),null);
+  assert.deepEqual(wakes,[],'With no due schedule or retry, the dispatcher waits for a readiness event.');
+
+  initializing=false;
+  engine.startRun=()=>{throw Object.assign(new Error('The configured default is unavailable.'),{status:400});};
+  await operations.poll();
+  assert.equal(operations.getJob(job.id).status,'failed','A settled connection failure still uses the existing error path.');
+  assert.match(operations.getJob(job.id).error,/configured default is unavailable/);
+});
+
 test('an operation losing its final admission slot remains queued without pausing either scheduler',async t=>{
   const {operations,inbox,engine,create}=await harness(t);const deployment=await create(),job=await operations.trigger(deployment.id),entered=deferred(),release=deferred(),save=inbox.save.bind(inbox);let delayed=false;inbox.save=async next=>{if(!delayed&&next.items.some(item=>item.status==='dispatching')){delayed=true;entered.resolve();await release.promise;}return save(next);};const polling=operations.poll();await entered.promise;engine.runs.set('foreground',{id:'foreground',status:'running',settled:false});engine.executions.set('foreground',true);release.resolve();await polling;assert.equal(operations.getJob(job.id).status,'queued');assert.equal(operations.status().paused,false);assert.equal(inbox.status().paused,false);assert.equal(engine.calls.length,0);engine.finish('foreground');await operations.poll();assert.equal(operations.getJob(job.id).status,'running');assert.equal(engine.calls.length,1);assert.equal(inbox.snapshot().items.length,1);
 });
