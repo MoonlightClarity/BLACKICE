@@ -99,6 +99,40 @@ test('both canonical forms expose work intent and never offer editable runtime s
   assert.doesNotMatch(work + root, /data-planning-field="(?:status|evidence|planEpoch|runtime)"/);
 });
 
+test('editing a command target keeps its submission permission and proof separate', () => {
+  const task = state();
+  const item = task.contract.workItems[1];
+  const destination = item.resourceKeys[0];
+  item.resourceKeys.push('workspace:fixture');
+  item.effects = ['opaque', 'commit'];
+  item.operationScopes = [
+    { effect: 'opaque', resourceKeys: ['workspace:fixture'] },
+    { effect: 'commit', resourceKeys: [destination], confirmationCriterionId: 'confirmed' },
+  ];
+  const local = draft(task, item.id);
+  const fields = renderPlanningContractFields(task, local);
+  assert.match(fields, /data-planning-field="scopeResources:0"/);
+  assert.match(fields, /data-planning-field="scopeCriterion:1"/);
+  assert.doesNotMatch(fields, /data-planning-choice="effects"/);
+
+  local.values['scopeResources:0'] = 'workspace:separate';
+  const [edit] = planningEditOperations(local, task);
+  assert.deepEqual(edit.contract.workItems[1].operationScopes, [
+    { effect: 'opaque', resourceKeys: ['workspace:separate'] },
+    { effect: 'commit', resourceKeys: [destination], confirmationCriterionId: 'confirmed' },
+  ]);
+  assert.deepEqual(edit.contract.criteria, task.contract.criteria);
+
+  const latest = planningContractIntent(task);
+  latest.workItems[1].operationScopes[0].resourceKeys = ['workspace:another-editor'];
+  latest.workItems[1].resourceKeys = [destination, 'workspace:another-editor'];
+  edit.contract.workItems[1].title = 'My local title';
+  const rebased = mergePlanningContractDraft(planningContractIntent(task), edit.contract, latest);
+  assert.deepEqual(rebased.contract.workItems[1].operationScopes, latest.workItems[1].operationScopes);
+  assert.equal(rebased.contract.workItems[1].title, 'My local title');
+  assert.match(rebased.detached[0].note, /workspace:separate/);
+});
+
 test('canonical three-way review merges unrelated remote edits and retains text for remotely removed work', () => {
   const previous = contract(), edited = structuredClone(previous), latest = structuredClone(previous); edited.workItems[0].title = 'My revised source title'; latest.workItems[1].objective = 'Shared updated verification'; latest.criteria[1].receiptBinding.record = 'newReceipt';
   const merged = mergePlanningContractDraft(previous, edited, latest);

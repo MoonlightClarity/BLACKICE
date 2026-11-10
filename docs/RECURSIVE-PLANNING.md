@@ -10,7 +10,7 @@ BLACKICE retains **one authoritative saved intent contract**, shared by the prep
 | --- | --- |
 | `goal` | The result the task is trying to achieve |
 | `criteria` | Evidence needed to say whether the result was achieved |
-| `workItems` | Cohesive pieces of work with an objective, owner, resource keys, allowed effects, dependencies and criterion IDs |
+| `workItems` | Cohesive pieces of work with an objective, owner, operation permissions by target, dependencies and criteria |
 | `instructions` | Requirements to preserve or assess while working |
 
 A work item can cover an entire form or a complete source inspection. The model can inspect a form, enter several fields, correct validation, submit once and verify the destination **within that same appropriate work item**. The host journals the separate operations; the plan does not need a new leaf or a model-authored completion status after each keystroke.
@@ -51,6 +51,8 @@ The current contract recognizes four criterion mechanisms:
 | **Judgment** | A supported semantic assessment grounded in relevant host evidence |
 
 A click is not a completed application; a successful tool return is not proof that a remote server accepted a change; a previous record is not a newly completed result. An empty response or timeout does not prove the action failed. The host preserves uncertainty until appropriate verification can confirm or refute the effect.
+
+An operation scope ties an allowed operation to the resources it can touch. A planned commitment also names the criterion its receipt can satisfy. For example, a release plan can read a package registry, run tests in a local workspace, and publish only to the specified registry destination. Reading the registry and running tests do not create a publication receipt requirement of their own. The Planning view shows permissions and required evidence separately. Saved plans that predate operation scopes retain their existing permissions.
 
 For exact schema fields and receipt matching, read [Planning contract v2](planning-contract-v2-20261105.md) and `public/planning-contract-model.mjs`. For substantive decision quality, see [Planning depth](PLANNING-DEPTH.md) and [Metacognition](METACOGNITION.md).
 

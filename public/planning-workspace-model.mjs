@@ -8,6 +8,17 @@ const validId = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]
 const validGroupId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,120}$/.test(value) && !['all', 'ungrouped'].includes(value);
 const GROUPS = ['sequence', 'parallel', 'choice'];
 const STEP_FIELDS = ['title', 'kind', 'doneWhen', 'result', 'note', 'condition', 'status', 'evidence', 'blockedReason', 'skipReason', 'parentId', 'beforeId', 'dependsOn', 'selectedChildId', 'revisitReason'];
+const SCOPE_FIELDS = ['operationScopes', 'effects', 'resourceKeys'];
+const sameScope = (left, right) => SCOPE_FIELDS.every(key => equal(left[key], right[key]));
+export const PLANNING_OPERATION_LABELS = Object.freeze({ observe: 'Read or check', interact: 'Prepare or edit', commit: 'Submit or commit', opaque: 'Run a command or another unclassified action' });
+export const planningResourceLines = value => String(value).split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+
+export function setPlanningOperationScopes(item, scopes) {
+  item.operationScopes = scopes;
+  item.effects = [...new Set(scopes.map(scope => scope.effect))];
+  item.resourceKeys = [...new Set(scopes.flatMap(scope => scope.resourceKeys))];
+  return item;
+}
 
 /** Grouping belongs to the saved-plan catalog, independently of executable steps. */
 export function planningCatalogOutline(plans = [], organization = {}, { groupId = '', query = '' } = {}) {
@@ -37,7 +48,12 @@ export function planningContractDraftValues(contract, workItemId = null) {
     ...contract.instructions.map(item => [`instruction:${item.id}`, item.text]),
   ]);
   const item = contract.workItems.find(value => value.id === workItemId);
-  return item ? { title: item.title, objective: item.objective, owner: item.owner, resourceKeys: item.resourceKeys.join('\n'), effects: [...item.effects], dependsOn: [...item.dependsOn], criterionIds: [...item.criterionIds] } : null;
+  if (!item) return null;
+  const scopes = item.operationScopes ? Object.fromEntries(item.operationScopes.flatMap((scope, index) => [
+    [`scopeResources:${index}`, scope.resourceKeys.join('\n')],
+    ...(scope.effect === 'commit' ? [[`scopeCriterion:${index}`, scope.confirmationCriterionId || '']] : []),
+  ])) : { resourceKeys: item.resourceKeys.join('\n'), effects: [...item.effects] };
+  return { title: item.title, objective: item.objective, owner: item.owner, ...scopes, dependsOn: [...item.dependsOn], criterionIds: [...item.criterionIds] };
 }
 
 export function newPlanningContractWorkItem(contract, id) {
@@ -63,8 +79,19 @@ export function applyPlanningContractFields(contract, workItemId, values, fields
   const item = contract.workItems.find(item => item.id === workItemId);
   if (!item) throw Error('This work item was removed. Review the saved plan before applying this draft.');
   for (const key of fields) {
+    const scopeField = /^(scopeResources|scopeCriterion):(\d+)$/.exec(key);
+    if (scopeField) {
+      const scope = item.operationScopes?.[Number(scopeField[2])];
+      if (!scope || (scopeField[1] === 'scopeCriterion' && scope.effect !== 'commit')) throw Error('This permission changed. Review the saved work item before editing it.');
+      if (scopeField[1] === 'scopeResources') scope.resourceKeys = planningResourceLines(values[key]);
+      else if (values[key]) scope.confirmationCriterionId = values[key];
+      else delete scope.confirmationCriterionId;
+      setPlanningOperationScopes(item, item.operationScopes);
+      continue;
+    }
     if (!['title', 'objective', 'owner', 'resourceKeys', 'effects', 'dependsOn', 'criterionIds'].includes(key)) throw Error('Unknown work item field.');
-    item[key] = key === 'resourceKeys' ? String(values[key]).split(/\r?\n/).map(value => value.trim()).filter(Boolean) : clone(values[key]);
+    if (item.operationScopes && ['resourceKeys', 'effects'].includes(key)) throw Error('Edit the targets for each allowed operation.');
+    item[key] = key === 'resourceKeys' ? planningResourceLines(values[key]) : clone(values[key]);
   }
   return contract;
 }
@@ -88,7 +115,14 @@ export function mergePlanningContractDraft(previous, edited, latest) {
         return clone(item);
       }
       const merged = clone(item);
+      const typedScope = collection === 'workItems' && [old, edit, item].some(value => own(value, 'operationScopes'));
+      const scopeConflict = typedScope && !sameScope(old, edit) && !sameScope(old, item) && !sameScope(edit, item);
+      if (scopeConflict) {
+        const permissions = Object.fromEntries(SCOPE_FIELDS.filter(key => own(edit, key)).map(key => [key, edit[key]]));
+        detached.push({ id: edit.id, title: edit.title, note: 'Your unsaved permissions\n' + JSON.stringify(permissions, null, 2) });
+      }
       for (const key of new Set([...Object.keys(old), ...Object.keys(edit)])) if (key !== 'id' && !equal(old[key], edit[key])) {
+        if (scopeConflict && SCOPE_FIELDS.includes(key)) continue;
         if (own(edit, key)) merged[key] = clone(edit[key]); else delete merged[key];
       }
       return merged;

@@ -1,6 +1,6 @@
 import { initTaskPlanUI } from './task-plan-ui.mjs';
 import { taskPlanView, planKindLabel, planLogicFields } from './task-plan-model.mjs';
-import { createPlanningWorkspaceController, planningDraftDiff, planningCatalogOutline } from './planning-workspace-model.mjs';
+import { createPlanningWorkspaceController, planningDraftDiff, planningCatalogOutline, newPlanningContractWorkItem, PLANNING_OPERATION_LABELS } from './planning-workspace-model.mjs';
 import { planningAwarenessView } from './planning-awareness.mjs';
 import { coordinationNavigation } from './coordination-navigation.mjs';
 import { isPlanContractTask } from './planning-contract-model.mjs';
@@ -46,9 +46,18 @@ export function renderPlanningContractFields(task, draft) {
     + `<details class="planning-field-disclosure" data-planning-disclosure="criteria"><summary>Outcome criteria · ${contract.criteria.length}</summary>${contract.criteria.map(item => textField(`criterionLabel:${item.id}`, 'Criterion label', value[`criterionLabel:${item.id}`], { max: 200, input: true }) + textField(`criterionDescription:${item.id}`, 'What needs to be established', value[`criterionDescription:${item.id}`], { max: 2000, required: true, rows: 3 })).join('')}</details>`
     + (contract.instructions.length ? `<details class="planning-field-disclosure" data-planning-disclosure="instructions"><summary>Instructions · ${contract.instructions.length}</summary>${contract.instructions.map((item, index) => textField(`instruction:${item.id}`, 'Instruction ' + (index + 1), value[`instruction:${item.id}`], { max: 4000, required: true, rows: 3 })).join('')}</details>` : '');
   const choices = (key, label, items) => `<fieldset class="planning-dependencies"><legend>${escape(label)}</legend>${items.map(([id, title]) => `<label><input type="checkbox" data-planning-field="${key}" data-planning-choice="${key}" value="${escape(id)}"${value[key].includes(id) ? ' checked' : ''}><span>${escape(title)}</span></label>`).join('') || '<p>None available.</p>'}</fieldset>`;
+  const item = contract.workItems.find(work => work.id === draft.stepId) || newPlanningContractWorkItem(contract, draft.stepId);
+  const confirmations = contract.criteria.filter(criterion => criterion.kind === 'external-confirmation' && value.criterionIds.includes(criterion.id));
+  const permissions = item.operationScopes ? item.operationScopes.map((scope, index) => {
+    const target = `scopeResources:${index}`, proof = `scopeCriterion:${index}`;
+    const confirmation = scope.effect === 'commit' ? selectField(proof, 'Confirmation needed', option('', 'Choose a confirmation', value[proof])
+      + confirmations.map(criterion => option(criterion.id, criterion.label || criterion.description, value[proof])).join(''), 'required') : '';
+    return `<fieldset class="planning-dependencies"><legend>${escape(PLANNING_OPERATION_LABELS[scope.effect])}</legend>${textField(target, 'Targets · one per line', value[target], { max: 65536, rows: 2, required: true })}${confirmation}</fieldset>`;
+  }).join('') : textField('resourceKeys', 'Resources · one per line', value.resourceKeys, { max: 65536, rows: 3, required: true })
+    + choices('effects', 'Allowed work', [['observe', 'Read and observe'], ['interact', 'Interact'], ['commit', 'Commit changes'], ['opaque', 'Run opaque operations']]);
   return textField('title', 'Work item title', value.title, { max: 200, input: true, required: true })
     + textField('objective', 'Objective', value.objective, { max: 4000, rows: 4, required: true })
-    + `<details class="planning-field-disclosure" data-planning-disclosure="work-scope"><summary>Scope and dependencies</summary>${textField('owner', 'Owner', value.owner, { max: 120, input: true, required: true })}${textField('resourceKeys', 'Resources · one per line', value.resourceKeys, { max: 65536, rows: 3, required: true })}${choices('effects', 'Allowed work', [['observe', 'Read and observe'], ['interact', 'Interact'], ['commit', 'Commit changes'], ['opaque', 'Run opaque operations']])}${choices('dependsOn', 'Waits for', contract.workItems.filter(item => item.id !== draft.stepId).map(item => [item.id, item.title]))}${choices('criterionIds', 'Outcome criteria', contract.criteria.map(item => [item.id, item.label || item.description]))}</details>`;
+    + `<details class="planning-field-disclosure" data-planning-disclosure="work-scope"><summary>Scope and dependencies</summary>${textField('owner', 'Owner', value.owner, { max: 120, input: true, required: true })}${permissions}${choices('dependsOn', 'Waits for', contract.workItems.filter(item => item.id !== draft.stepId).map(item => [item.id, item.title]))}${choices('criterionIds', 'Outcome criteria', contract.criteria.map(item => [item.id, item.label || item.description]))}</details>`;
 }
 
 export function renderPlanningEditor(task, draft, { editable = true } = {}) {

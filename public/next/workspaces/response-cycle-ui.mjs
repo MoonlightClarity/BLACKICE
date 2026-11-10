@@ -1,7 +1,7 @@
 import { stableId } from '../core/dom.mjs';
 import { RESPONSE_CYCLE_STAGES,responseCycleStages } from '../../response-cycle-model.mjs';
 import { CONTRACT_EFFECTS, PLAN_CONTRACT_LIMITS, normalizePlanContract, validatePlanContractFeasibility } from '../../planning-contract-model.mjs';
-import { mergePlanningContractDraft, newPlanningContractWorkItem, removePlanningContractWorkItem } from '../../planning-workspace-model.mjs';
+import { mergePlanningContractDraft, newPlanningContractWorkItem, removePlanningContractWorkItem, setPlanningOperationScopes, planningResourceLines, PLANNING_OPERATION_LABELS } from '../../planning-workspace-model.mjs';
 import { chatOptionChoices, validateChatOptions } from '../chat/options-model.mjs';
 
 export const CYCLE_STAGES = Object.freeze(RESPONSE_CYCLE_STAGES.map(stage=>Object.freeze([stage.id,stage.label])));
@@ -115,7 +115,14 @@ function renderCanonicalPlanFields(ctx, form, contract, { cycleId, edit, dirty, 
       add(binding, 'pre', JSON.stringify(criterion.receiptBinding, null, 2), 'pb-provenance');
       button(binding, 'Clear saved confirmation matching', () => { delete criterion.receiptBinding; dirty(); render(); });
     }
-    button(row, 'Remove criterion', () => { contract.criteria = contract.criteria.filter(item => item !== criterion); for (const item of contract.workItems) item.criterionIds = item.criterionIds.filter(id => id !== criterion.id); dirty(); render(); });
+    button(row, 'Remove criterion', () => {
+      contract.criteria = contract.criteria.filter(item => item !== criterion);
+      for (const item of contract.workItems) {
+        item.criterionIds = item.criterionIds.filter(id => id !== criterion.id);
+        for (const scope of item.operationScopes || []) if (scope.confirmationCriterionId === criterion.id) delete scope.confirmationCriterionId;
+      }
+      dirty(); render();
+    });
   }
   const addCriterion = button(criteria, '+ Outcome criterion', () => { contract.criteria.push({ id: stableId('criterion'), kind: 'judgment', description: '' }); dirty(); render(); });
   addCriterion.disabled = contract.criteria.length >= PLAN_CONTRACT_LIMITS.criteria;
@@ -125,9 +132,46 @@ function renderCanonicalPlanFields(ctx, form, contract, { cycleId, edit, dirty, 
     add(row, 'summary', (index + 1) + '. ' + (item.title || 'New work item'));
     edit(row, 'Work item title', item, 'title', { required: true }); edit(row, 'Objective', item, 'objective', { rows: 3, required: true });
     edit(row, 'Owner', item, 'owner', { required: true });
-    const resources = edit(row, 'Resources · one per line', { id: item.id, resourceKeys: item.resourceKeys.join('\n') }, 'resourceKeys', { rows: 3, required: true });
-    resources.addEventListener('input', () => { item.resourceKeys = resources.value.split(/\r?\n/).map(value => value.trim()).filter(Boolean); });
-    choices(row, 'Allowed work', item, 'effects', CONTRACT_EFFECTS.map(effect => [effect, { observe: 'Read and observe', interact: 'Interact', commit: 'Commit changes', opaque: 'Run opaque operations' }[effect]]));
+    const confirmations = contract.criteria.filter(criterion => criterion.kind === 'external-confirmation');
+    const scoped = scopes => { setPlanningOperationScopes(item, scopes); dirty(); };
+    if (item.operationScopes) {
+      const permissions = add(row, 'section', '', 'pb-form'); add(permissions, 'h6', 'Allowed work by target');
+      for (const [scopeIndex, scope] of item.operationScopes.entries()) {
+        const entry = add(permissions, 'fieldset', '', 'pb-form'); add(entry, 'legend', 'Permission ' + (scopeIndex + 1));
+        const prefix = 'cycle-plan:' + cycleId + ':' + item.id + ':scope:' + scopeIndex;
+        const effect = select(entry, 'Allowed operation', Object.entries(PLANNING_OPERATION_LABELS), scope.effect);
+        effect.dataset.fieldKey = prefix + ':effect';
+        effect.addEventListener('change', () => {
+          scope.effect = effect.value;
+          if (scope.effect !== 'commit') delete scope.confirmationCriterionId;
+          scoped(item.operationScopes); render();
+        });
+        const targets = edit(entry, 'Targets · one per line', { id: item.id + '-scope-' + scopeIndex, targets: scope.resourceKeys.join('\n') }, 'targets', { rows: 2, required: true });
+        targets.addEventListener('input', () => { scope.resourceKeys = planningResourceLines(targets.value); scoped(item.operationScopes); });
+        if (scope.effect === 'commit') {
+          const proof = select(entry, 'Confirmation needed', [['', 'Choose a confirmation'], ...confirmations.map(criterion => [criterion.id, criterion.label || criterion.description])], scope.confirmationCriterionId || '');
+          proof.dataset.fieldKey = prefix + ':confirmation'; proof.required = true;
+          proof.addEventListener('change', () => {
+            if (proof.value) { scope.confirmationCriterionId = proof.value; item.criterionIds = [...new Set([...item.criterionIds, proof.value])]; }
+            else delete scope.confirmationCriterionId;
+            scoped(item.operationScopes); render();
+          });
+        }
+        const remove = button(entry, 'Remove permission', () => { scoped(item.operationScopes.filter(other => other !== scope)); render(); });
+        remove.disabled = item.operationScopes.length === 1;
+      }
+      const addPermission = button(permissions, 'Add permission', () => { scoped([...item.operationScopes, { effect: 'observe', resourceKeys: [] }]); render(); });
+      addPermission.disabled = item.operationScopes.length >= PLAN_CONTRACT_LIMITS.operationScopes;
+    } else {
+      const resources = edit(row, 'Resources · one per line', { id: item.id, resourceKeys: item.resourceKeys.join('\n') }, 'resourceKeys', { rows: 3, required: true });
+      resources.addEventListener('input', () => { item.resourceKeys = planningResourceLines(resources.value); });
+      choices(row, 'Allowed work', item, 'effects', CONTRACT_EFFECTS.map(effect => [effect, { observe: 'Read and observe', interact: 'Interact', commit: 'Commit changes', opaque: 'Run opaque operations' }[effect]]));
+      button(row, 'Set permissions by operation', () => {
+        const owned = confirmations.filter(criterion => item.criterionIds.includes(criterion.id));
+        scoped(item.effects.map(effect => ({ effect, resourceKeys: [...item.resourceKeys], ...(effect === 'commit' && owned.length === 1 ? { confirmationCriterionId: owned[0].id } : {}) })));
+        render();
+      });
+    }
     choices(row, 'Waits for', item, 'dependsOn', contract.workItems.filter(other => other !== item).map(other => [other.id, other.title || 'Untitled work item']));
     choices(row, 'Outcome criteria', item, 'criterionIds', contract.criteria.map(criterion => [criterion.id, criterion.label || criterion.description || 'Untitled criterion']));
     button(row, 'Remove work item', () => { removePlanningContractWorkItem(contract, item.id); dirty(); render(); });

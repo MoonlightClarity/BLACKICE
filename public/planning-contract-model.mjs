@@ -163,9 +163,36 @@ export function normalizePlanContractResponse(value, prerequisites = [], { requi
     const readers = decoded.workItems.filter(item => (item?.owner === 'coordinator' || coordinator && item?.owner === coordinator) &&
       Array.isArray(item.effects) && item.effects.includes('observe') && Array.isArray(item.resourceKeys));
     const readKeys = item => workItemOperationScopes(item, 'observe').flatMap(scope => scope.resourceKeys);
+    const files = (attachedReadScope.files || []).filter(file => /^attachment:sha256:[a-f0-9]{64}$/.test(file?.resourceKey || ''));
+    const exactFiles = new Set(files.map(file => file.resourceKey));
+    const sourceReferences = new Map(files.filter(file => typeof file.id === 'string')
+      .map(file => ['viability:attachment:' + file.id, file.resourceKey]));
+    const fileCoverage = new Map();
+    for (const criterion of Array.isArray(decoded.criteria) ? decoded.criteria : []) {
+      if (criterion?.kind !== 'source-coverage') continue;
+      const resourceKey = sourceReferences.get(criterion.resourceKey) || criterion.resourceKey;
+      if (!exactFiles.has(resourceKey)) continue;
+      criterion.resourceKey = resourceKey;
+      fileCoverage.set(criterion.id, resourceKey);
+    }
+    // An explicitly named source belongs to the work that must establish its coverage.
+    for (const item of readers) {
+      const assigned = new Set(readKeys(item));
+      if (assigned.has(attachedSetKey)) continue;
+      const sources = new Set((Array.isArray(item.criterionIds) ? item.criterionIds : []).map(id => fileCoverage.get(id)));
+      for (const key of sources) {
+        if (!key || assigned.has(key)) continue;
+        if (!item.resourceKeys.includes(key) && item.resourceKeys.length >= PLAN_CONTRACT_LIMITS.resources) continue;
+        if (Object.hasOwn(item, 'operationScopes')) {
+          const scope = workItemOperationScopes(item, 'observe').find(row => row.resourceKeys.length < PLAN_CONTRACT_LIMITS.resources);
+          if (!scope) continue;
+          scope.resourceKeys.push(key);
+        }
+        if (!item.resourceKeys.includes(key)) item.resourceKeys.push(key);
+      }
+    }
     const declared = new Set(readers.flatMap(readKeys));
     if (!declared.has(attachedSetKey)) {
-      const exactFiles = new Set((attachedReadScope.files || []).map(file => file.resourceKey));
       const staleKey = key => typeof key === 'string' && key.startsWith('attachment:sha256:') && !exactFiles.has(key);
       const hasUnscopedFile = [...exactFiles].some(key => !declared.has(key));
       const repair = hasUnscopedFile && readers.find(item => readKeys(item).some(staleKey));
@@ -349,6 +376,7 @@ export function validatePlanContractFeasibility(contract) {
     if (criterion.kind === 'source-coverage') {
       if (target > 1) throw fail('Source coverage criterion ' + criterion.id + ' requires one exact concrete source; targetCount must be omitted or 1. Use separate criteria for separate sources.');
       if (/^(?:workspace|origin):/i.test(criterion.resourceKey || '')) throw fail('Source coverage criterion ' + criterion.id + ' uses a scope selector. Choose the exact concrete source that produces a source version and delivered ranges; workspace: and origin: cannot establish source coverage.');
+      if (/^viability:attachment:/.test(criterion.resourceKey || '')) throw fail('Source coverage criterion ' + criterion.id + ' needs the exact immutable resource key of an attached file. Choose the matching attachmentScope.files entry.');
     }
     if (criterion.kind !== 'judgment') continue;
     const workItems = new Set(contract.workItems.filter(item => item.criterionIds.includes(criterion.id)).map(item => item.id));

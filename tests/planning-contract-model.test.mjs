@@ -4,7 +4,7 @@ import { taskAccuracySchema, validateTaskAccuracy } from '../public/task-viabili
 import { parseResponseCycleResponse, responseCycleStage } from '../public/response-cycle-model.mjs';
 import {
   PLAN_CONTRACT_VERSION, PLAN_CONTRACT_SCHEMA, PLAN_CONTRACT_LIMITS, CONTRACT_AUTHORING_GUIDANCE, CONTRACT_INSTRUCTIONS,
-  normalizePlanContract, normalizePlanContractResponse, planContractResponseSchema, workItemOperationScopes, isPlanContractTask, contractPlanProjection,
+  normalizePlanContract, normalizePlanContractResponse, planContractResponseSchema, validatePlanContractFeasibility, workItemOperationScopes, isPlanContractTask, contractPlanProjection,
 } from '../public/planning-contract-model.mjs';
 
 const draft = () => ({
@@ -190,6 +190,19 @@ test('typed attachment repair grants the current host attachment set only for ob
   assert.deepEqual(workItemOperationScopes(result, 'observe')[0].resourceKeys,
     [...form.operationScopes[0].resourceKeys.filter(key => key !== stale), attachmentSet]);
   assert.deepEqual(workItemOperationScopes(result, 'interact')[0], form.operationScopes[1]);
+});
+
+test('coverage of a supplied release brief resolves to its exact source and stays with its reader', () => {
+  const input = withOperationScopes(), [work, history] = input.workItems;
+  const resourceKey = 'attachment:sha256:' + 'a'.repeat(64), attachmentSet = 'attachments:' + 'c'.repeat(64);
+  input.criteria.push({ id: 'brief-read', kind: 'source-coverage', description: 'Read the release brief fully.', resourceKey: 'viability:attachment:file_brief' });
+  work.criterionIds.push('brief-read');
+  const result = normalizePlanContractResponse(input, [], { attachedReadScope: { resourceKey: attachmentSet, files: [{ id: 'file_brief', resourceKey }] } });
+  assert.equal(result.criteria.at(-1).resourceKey, resourceKey);
+  assert.ok(workItemOperationScopes(result.workItems[0], 'observe')[0].resourceKeys.includes(resourceKey));
+  assert.deepEqual(workItemOperationScopes(result.workItems[0], 'commit'), workItemOperationScopes(work, 'commit'));
+  assert.deepEqual(result.workItems[1].resourceKeys, history.resourceKeys);
+  assert.throws(() => validatePlanContractFeasibility(normalizePlanContractResponse(input)), /exact immutable resource key/);
 });
 
 test('canonical model null markers preserve optionality without weakening host receipt rules', () => {
