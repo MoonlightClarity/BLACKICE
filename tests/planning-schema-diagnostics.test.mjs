@@ -17,8 +17,8 @@ const planBody = () => ({
     workItems: [{ id: 'compare', title: 'Compare capacities', objective: 'Use the supplied fictional capacities.', owner: 'agent', resourceKeys: ['context:fictional-rooms'], effects: ['observe'], dependsOn: [], criterionIds: ['comparison'], operationScopes: null }], instructions: [] }
 });
 
-test('shared accuracy schema advertises the same nonempty and bounded text obligations as the host', () => {
-  const schema = taskAccuracySchema(), fields = schema.anyOf[0].properties;
+test('attempt-generation accuracy schema advertises the same nonempty and bounded text obligations as the host', () => {
+  const schema = taskAccuracySchema({ generation: true }), fields = schema.anyOf[0].properties;
   for (const key of TASK_ACCURACY_REQUIRED_TEXT_FIELDS) {
     assert.equal(fields[key].minLength, 1); assert.equal(fields[key].maxLength, 2000);
     assert.match(fields[key].description, /nonempty/);
@@ -38,7 +38,7 @@ test('shared accuracy schema advertises the same nonempty and bounded text oblig
 });
 
 test('missing accuracy fields tell the first repair which ones cannot be empty', () => {
-  const issues = planningSchemaIssues({ mode: 'qualitative' }, taskAccuracySchema());
+  const issues = planningSchemaIssues({ mode: 'qualitative' }, taskAccuracySchema({ generation: true }));
   assert.equal(issues[0].path, 'response');
   assert.match(issues[0].message, /These fields require nonempty text: evidenceNeeded, consequence, stopWhen/);
   assert.ok(!issues.some(issue => /Expected null/.test(issue.message)));
@@ -47,9 +47,9 @@ test('missing accuracy fields tell the first repair which ones cannot be empty',
 test('mode-dependent tolerance and optional text bounds retain strict validation', () => {
   const value = { ...accuracy(), mode: 'bounded_estimate', tolerance: ' \t' };
   assert.throws(() => validateTaskAccuracy(value));
-  assert.deepEqual(planningSchemaIssues(value, taskAccuracySchema()), [{ path: 'response.tolerance', message: 'A bounded_estimate requires nonempty tolerance text describing the permitted deviation.' }]);
-  value.tolerance = 'Within one seat.'; assert.deepEqual(planningSchemaIssues(value, taskAccuracySchema()), []);
-  for (const key of ['tolerance', 'decisionThreshold']) assert.ok(planningSchemaIssues({ ...accuracy(), [key]: 'x'.repeat(2001) }, taskAccuracySchema()).some(issue => issue.path.endsWith('.' + key)));
+  assert.deepEqual(planningSchemaIssues(value, taskAccuracySchema({ generation: true })), [{ path: 'response.tolerance', message: 'A bounded_estimate requires nonempty tolerance text describing the permitted deviation.' }]);
+  value.tolerance = 'Within one seat.'; assert.deepEqual(planningSchemaIssues(value, taskAccuracySchema({ generation: true })), []);
+  for (const key of ['tolerance', 'decisionThreshold']) assert.ok(planningSchemaIssues({ ...accuracy(), [key]: 'x'.repeat(2001) }, taskAccuracySchema({ generation: true })).some(issue => issue.path.endsWith('.' + key)));
 });
 
 test('nullable integers are numbers in JavaScript and valid counts must not receive false repair hints', () => {
@@ -98,4 +98,17 @@ test('the observed blank-evidence repair failure identifies both nested fields a
   const valid = planBody(); assert.doesNotThrow(() => validatePlanningModuleResponse(attempt, JSON.stringify(valid)));
   assert.deepEqual(planningSchemaIssues(valid, planningModuleOutputSchema(attempt)), []);
   assert.ok(compatibleWireOutputSchema(planningModuleOutputSchema(attempt)), 'New bounds remain eligible for supported structured-output transports.');
+});
+
+test('public historical accuracy contracts stay unchanged while only attempt schemas get generation bounds', () => {
+  const original = taskAccuracySchema(), before = JSON.stringify(original);
+  const publicFields = original.anyOf[0].properties;
+  for (const key of ['tolerance', 'decisionThreshold', 'evidenceNeeded', 'consequence', 'stopWhen']) assert.deepEqual(publicFields[key], { type: 'string' });
+  const schema = planningModuleOutputSchema(planAttempt());
+  const generated = schema.properties.contract.properties.criteria.items.properties.accuracy.anyOf[0].properties;
+  assert.equal(generated.evidenceNeeded.minLength, 1);
+  assert.equal(generated.evidenceNeeded.maxLength, 2000);
+  assert.match(generated.evidenceNeeded.description, /nonempty/);
+  assert.equal(JSON.stringify(taskAccuracySchema()), before);
+  assert.equal(JSON.stringify(original), before);
 });

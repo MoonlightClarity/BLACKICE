@@ -102,7 +102,16 @@ export function validateTaskAccuracy(value) {
     decisionThreshold: text(value.decisionThreshold, 'Decision threshold', 2000), evidenceNeeded: text(value.evidenceNeeded, 'Evidence needed', 2000, true),
     consequence: text(value.consequence, 'Consequence of being wrong', 2000, true), unknownPolicy: value.unknownPolicy, stopWhen: text(value.stopWhen, 'Sufficient checking condition', 2000, true) };
 }
-export function taskAccuracySchema() {
+export function taskAccuracySchema({ generation = false } = {}) {
+  // Public/native tool catalogs include historical contracts with pinned bytes.
+  // Tighten only this attempt's response-generation copy, never those catalogs.
+  if (!generation) {
+    const string = { type: 'string' };
+    return schemaTree({ anyOf: [{ type: 'object', additionalProperties: false, required: [...TASK_ACCURACY_FIELDS], properties: {
+      mode: { type: 'string', enum: ['exact', 'bounded_estimate', 'qualitative'] }, tolerance: string, decisionThreshold: string,
+      evidenceNeeded: string, consequence: string, unknownPolicy: { type: 'string', enum: ['block', 'assumption', 'range', 'omit'] }, stopWhen: string
+    } }, { type: 'null' }] });
+  }
   const descriptions = {
     tolerance: 'State the permitted deviation. This must be nonempty for bounded_estimate; it may be empty only when immaterial for exact or qualitative.',
     decisionThreshold: 'State what changes the decision. This may be empty only when immaterial.',
