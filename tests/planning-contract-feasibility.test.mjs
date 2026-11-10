@@ -6,7 +6,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { normalizePlanContract, validatePlanContractFeasibility, contractPlanProjection } from '../public/planning-contract-model.mjs';
 import { PlanningBrowserStore } from '../lib/planning-browser.mjs';
-import { validatePlanningModuleResponse } from '../lib/planning-browser-runtime.mjs';
+import { planningFormatDiagnostic, validatePlanningModuleResponse } from '../lib/planning-browser-runtime.mjs';
 import { TaskStateStore } from '../lib/task-state.mjs';
 import { planningModuleTemplate, planningResponseBody } from '../public/planning-browser-model.mjs';
 import { RESPONSE_CYCLE_STAGES, responseCycleStage } from '../public/response-cycle-model.mjs';
@@ -55,6 +55,75 @@ function stageBody(kind, requestId, contract = draft(1)) {
   if (kind === 'plan') body.contract = contract;
   return body;
 }
+
+function executablePlanAttempt({ currentContract = null, commitPrerequisites = [], effectReceipts = [] } = {}) {
+  return {
+    node: { kind: 'plan' }, pipelineVersion: 2,
+    cycleContext: { workflowOwner: { runId: 'fixture-run' }, commitPrerequisites, effectReceipts },
+    sources: [{ id: 'request:fixture', kind: 'source', text: 'Request and authority for the task.' },
+      { id: 'cycle:execution-contract:fixture', kind: 'source', text: JSON.stringify({ taskSchemaVersion: 14, contractVersion: 2, currentContract }) }],
+  };
+}
+
+test('prerequisite migration identifies action rows that lose their only criterion', () => {
+  const commitPrerequisites = [{ id: 'catalog-reviewed', label: 'Catalog reviewed', description: 'Check the current catalog before committing.' }];
+  const attempt = executablePlanAttempt({ commitPrerequisites });
+  const contract = draft(1, 2);
+  for (const item of contract.workItems) item.effects.push('commit');
+  const initial = structuredClone(contract);
+  const output = JSON.stringify(stageBody('plan', 'fixture', contract));
+  assert.throws(() => validatePlanningModuleResponse(attempt, output), error => {
+    assert.equal(error.code, 'TASK_CONTRACT_INVALID');
+    const diagnostic = planningFormatDiagnostic(attempt, output, error);
+    const migrationIssues = diagnostic.issues.slice(0, 2);
+    assert.deepEqual(migrationIssues.map(issue => issue.path),
+      ['response.contract.workItems[0].criterionIds', 'response.contract.workItems[1].criterionIds']);
+    for (const [index, issue] of migrationIssues.entries()) {
+      assert.match(issue.message, new RegExp('catalog-reviewed.*review-' + (index + 1) + '.*separate criterion'));
+    }
+    return true;
+  });
+  assert.deepEqual(contract, initial);
+
+  contract.criteria.push({ id: 'result-confirmed', kind: 'external-confirmation', description: 'The authorized operation receives confirmation.' });
+  for (const item of contract.workItems) item.criterionIds.push('result-confirmed');
+  const { contract: repaired } = validatePlanningModuleResponse(attempt, JSON.stringify(stageBody('plan', 'fixture', contract)));
+  const prerequisite = repaired.workItems.find(item => item.criterionIds.includes('catalog-reviewed'));
+  assert.deepEqual(prerequisite.effects, ['observe']);
+  assert.ok(repaired.workItems.filter(item => item.effects.includes('commit')).every(item =>
+    item.criterionIds.includes('result-confirmed') && item.dependsOn.includes(prerequisite.id)));
+});
+
+test('a fresh executable Plan requires its own committing work for every new confirmation', () => {
+  const attempt = executablePlanAttempt();
+  const plan = draft(1, 1, 'external-confirmation');
+  const write = (contract, context = attempt) => validatePlanningModuleResponse(context, JSON.stringify(stageBody('plan', 'fixture', contract)));
+  const missing = error => {
+    assert.equal(error.code, 'TASK_CONTRACT_INVALID');
+    assert.deepEqual(error.issues.map(issue => issue.path), ['response.contract.criteria[0]']);
+    assert.match(error.issues[0].message, /catalog-reviewed.*commit permission/);
+    return true;
+  };
+  assert.throws(() => write(plan), missing);
+  assert.doesNotThrow(() => write(plan, executablePlanAttempt({ currentContract: plan })));
+  assert.doesNotThrow(() => write(plan, executablePlanAttempt({ effectReceipts: [{ id: 'existing-receipt' }] })));
+
+  const [item] = plan.workItems;
+  item.effects.push('commit');
+  assert.doesNotThrow(() => write(plan), 'A legacy commit owner already covers the criterion.');
+  const [first] = item.resourceKeys;
+  const second = 'origin:https://other.fixture.test';
+  plan.criteria.push({ id: 'another-result', kind: 'external-confirmation', resourceKey: second, description: 'Another authorized operation receives confirmation.' });
+  item.resourceKeys.push(second);
+  item.criterionIds.push('another-result');
+  item.operationScopes = [
+    { effect: 'observe', resourceKeys: item.resourceKeys },
+    { effect: 'commit', resourceKeys: [second], confirmationCriterionId: 'another-result' },
+  ];
+  assert.throws(() => write(plan), missing);
+  item.operationScopes.push({ effect: 'commit', resourceKeys: [first], confirmationCriterionId: 'catalog-reviewed' });
+  assert.doesNotThrow(() => write(plan));
+});
 
 async function planningFixture(t) {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'blackice-feasibility-plan-'));

@@ -81,8 +81,8 @@ export function planContractResponseSchema() {
   return visit(PLAN_CONTRACT_SCHEMA);
 }
 
-/** Strip only declared optional null markers before ordinary plan validation. */
-export function normalizePlanContractResponse(value, prerequisites = [], { requireBrowserReceipts = false, attachedReadScope, coordinator } = {}) {
+/** Decode a Plan response and apply the host's captured context before validation. */
+export function normalizePlanContractResponse(value, prerequisites = [], { requireBrowserReceipts = false, requireConfirmationOwners = false, attachedReadScope, coordinator } = {}) {
   const decode = (item, schema) => {
     if (Array.isArray(item) && schema.items) return item.map(entry => decode(entry, schema.items));
     if (!object(item)) return item;
@@ -103,6 +103,7 @@ export function normalizePlanContractResponse(value, prerequisites = [], { requi
   if (prerequisites.length && Array.isArray(decoded?.criteria) && Array.isArray(decoded.workItems) &&
       decoded.workItems.every(item => Array.isArray(item?.effects) && Array.isArray(item.criterionIds) && Array.isArray(item.dependsOn))) {
     const committing = decoded.workItems.filter(item => item.effects.includes('commit') || item.effects.includes('opaque'));
+    const issues = [];
     let generated;
     for (const required of prerequisites) {
       const index = decoded.criteria.findIndex(item => item?.id === required.id);
@@ -133,10 +134,16 @@ export function normalizePlanContractResponse(value, prerequisites = [], { requi
         owner.criterionIds.push(required.id);
       }
       for (const item of committing) {
-        item.criterionIds = item.criterionIds.filter(id => id !== required.id);
+        const before = item.criterionIds;
+        item.criterionIds = before.filter(id => id !== required.id);
+        if (before.length && !item.criterionIds.length) issues.push({
+          path: 'response.contract.workItems[' + decoded.workItems.indexOf(item) + '].criterionIds',
+          message: 'BLACKICE moved prerequisite "' + required.id + '" off work item "' + item.id + '" to observation work. Give this item a separate criterion for its authorized result. If it only observes, declare only its observation effects.',
+        });
         if (!item.dependsOn.includes(owner.id)) item.dependsOn.push(owner.id);
       }
     }
+    if (issues.length) throw Object.assign(fail('An action work item has no result criterion after its prerequisite was separated.'), { issues });
   }
   if (requireBrowserReceipts && Array.isArray(decoded?.criteria) && Array.isArray(decoded.workItems)) {
     const judgments = new Set(decoded.criteria.filter(criterion => criterion?.kind === 'judgment').map(criterion => criterion.id));
@@ -218,7 +225,21 @@ export function normalizePlanContractResponse(value, prerequisites = [], { requi
       }
     }
   }
-  return normalizePlanContract(decoded);
+  const contract = normalizePlanContract(decoded);
+  if (requireConfirmationOwners) {
+    const issues = [];
+    for (const [index, criterion] of contract.criteria.entries()) {
+      if (criterion.kind !== 'external-confirmation') continue;
+      const canCommit = contract.workItems.some(item => item.criterionIds.includes(criterion.id) &&
+        workItemOperationScopes(item, 'commit').some(scope => !item.operationScopes || scope.confirmationCriterionId === criterion.id));
+      if (!canCommit) issues.push({
+        path: 'response.contract.criteria[' + index + ']',
+        message: 'Confirmation criterion "' + criterion.id + '" needs a work item that owns it and declares commit permission for the authorized destination. Bind its typed commit scope to this criterion. If the task only observes an existing result, use its observation or judgment criterion and preserve any inherited effect requirement.',
+      });
+    }
+    if (issues.length) throw Object.assign(fail('An external confirmation has no work item that can produce its effect.'), { issues });
+  }
+  return contract;
 }
 
 function keys(value, allowed, required, label) {

@@ -271,6 +271,7 @@ export function parseResponseCycleResponse(output, stageOrKind, { sources,pipeli
       const operational = Boolean(cycleContext?.workflowOwner), agents = authoring.workflow?.agents || [];
       result.contract = normalizePlanContractResponse(value.contract, cycleContext?.commitPrerequisites, {
         requireBrowserReceipts: operational,
+        requireConfirmationOwners: operational && authoring.currentContract === null && !cycleContext.effectReceipts?.length,
         attachedReadScope: operational ? authoring.attachmentScope : null,
         coordinator: authoring.workflow?.coordinatorNodeId || (agents.length === 1 ? agents[0].id : null),
       });
