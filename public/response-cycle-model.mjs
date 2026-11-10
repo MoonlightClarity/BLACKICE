@@ -558,8 +558,11 @@ export function evaluateResponseCycleStage(stageOrKind, response, context = {}) 
   result.dispatchReady = result.analysisReady && prerequisitesDispatch && childDispatch && !result.unresolvedChecks.length && !workflowPending && !workflowUnavailable;
   if(stage.kind==='respond'&&result.analysisReady&&context.workflowOwner&&context.workflowOwner.cycleId!==context.cycleId){
     const pending=value.coverage.filter(item=>item.disposition!=='addressed').map(item=>item.criterionId);
+    const inherited=(context.inheritedAnalysisWorkflowCriteria||[]).filter(item=>
+      value.coverage.some(row=>row.criterionId===item.id&&row.disposition==='unresolved') &&
+      evaluatedCriteria.some(row=>row.criterionId===item.id&&row.assessment==='uncertain'));
     const work=[...(context.workflowRequests||[]).flatMap(item=>item.requiredForPlan===false?[]:item.acceptanceCriteria||[]),
-      ...(context.inheritedAnalysisWorkflowCriteria||[])];
+      ...inherited];
     const delegated=hostCriteria.filter(item=>pending.includes(item.id));
     if(pending.length&&delegated.length===pending.length&&delegated.every(item=>work.some(required=>canonical(required)===canonical(item))))result.workflowHandoff={ownerCycleId:context.workflowOwner.cycleId,criteria:delegated};
   }

@@ -58,7 +58,7 @@ function context(request, cycle) {
   return planningCycleStageContext(request, cycle.stageNodeIds.plan);
 }
 
-function completeAnalysis(request, cycle, {workflowRequests = [], transformCriteria, uncertain = false, inferenceChildren = []} = {}) {
+function completeAnalysis(request, cycle, {workflowRequests = [], transformCriteria, uncertain = false, negativeCriterionId, inferenceChildren = []} = {}) {
   for (const stage of RESPONSE_CYCLE_STAGES) {
     const template = responseCycleTemplate(stage.id), sourceId = 'request:' + request.id;
     const sources = planningNodeSources(request, cycle.stageNodeIds[stage.id]);
@@ -98,7 +98,8 @@ function completeAnalysis(request, cycle, {workflowRequests = [], transformCrite
         });
       }
       if (stage.id === 'think') body.criterionResults = assessedCriteria.map(item => ({
-        criterionId: item.id, assessment: uncertain ? 'uncertain' : 'satisfied', sourceIds: [sourceId], receiptIds: [],
+        criterionId: item.id, assessment: item.id === negativeCriterionId ? 'unsatisfied' : uncertain ? 'uncertain' : 'satisfied',
+        sourceIds: [sourceId], receiptIds: [],
         rationale: 'The captured synthetic premises establish the requested analytical conclusion.'
       }));
       if (stage.id === 'respond') {
@@ -119,7 +120,7 @@ function completeAnalysis(request, cycle, {workflowRequests = [], transformCrite
   cycle.state = 'completed';
 }
 
-function analysisOwnershipFixture({ exact = true } = {}) {
+function analysisOwnershipFixture({ exact = true, negative = false } = {}) {
   const request = graph(), root = addCycle(request, 'root', {runId: 'fixture-run-a'});
   const child = addCycle(request, 'child', {parent: root});
   const effect = {...criterion('publication', 'The official destination confirms the requested publication.'), verification: 'effect'};
@@ -134,7 +135,7 @@ function analysisOwnershipFixture({ exact = true } = {}) {
     key: child.key, sourceId, summary: 'The analysis could not establish the external result.',
     usedFor: 'Preserve the uncertainty and use the independently declared workflow.'
   }] });
-  completeAnalysis(request, child, { uncertain: true });
+  completeAnalysis(request, child, { uncertain: true, ...(negative ? { negativeCriterionId: effect.id } : {}) });
   return { request, root, child, effect };
 }
 
@@ -157,15 +158,16 @@ test('new analytical children cannot take a workflow effect and get an exact cor
 });
 
 test('a retained analysis-effect mismatch hands back only exact workflow criteria without claiming success', () => {
-  for (const exact of [true, false]) {
-    const { request, root, child, effect } = analysisOwnershipFixture({ exact });
+  for (const options of [{ exact: true }, { exact: false }, { exact: true, negative: true }]) {
+    const { request, root, child, effect } = analysisOwnershipFixture(options), canHandoff = options.exact && !options.negative;
     const before = copy(request), view = projectPlanningRequest(request), node = id => view.nodes.find(item => item.id === id);
     const response = node(child.stageNodeIds.respond), inference = node(root.stageNodeIds.inference), plan = node(root.stageNodeIds.plan);
     assert.equal(response.readiness.cycle.outcome, 'unresolved');
     assert.deepEqual(response.response.coverage.map(row => row.disposition), ['unresolved', 'unresolved']);
-    assert.equal(response.readiness.cycle.workflowHandoff?.criteria.some(row => row.id === effect.id), exact || undefined);
-    assert.equal(plan.readiness.cycle.dispatchReady, exact);
-    if (!exact) assert.deepEqual(inference.readiness.cycle.analysisEffectOwnershipIssues,
+    assert.equal(Boolean(response.readiness.cycle.workflowHandoff), canHandoff);
+    if (canHandoff) assert.ok(response.readiness.cycle.workflowHandoff.criteria.some(row => row.id === effect.id));
+    assert.equal(plan.readiness.cycle.dispatchReady, canHandoff);
+    if (!canHandoff) assert.deepEqual(inference.readiness.cycle.analysisEffectOwnershipIssues,
       [{childKey: child.key, criterionIds: [effect.id]}]);
     assert.deepEqual(request, before);
   }
