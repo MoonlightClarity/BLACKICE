@@ -48,6 +48,8 @@ const captured = options => JSON.parse(options.prompt.slice(options.prompt.lastI
 function analyticalResponse(input, { strictCity = false, workspaceKey, conditional = null, attachmentScope, misspellAttachment } = {}) {
   const stage = responseCycleStage(input.module.kind, { pipelineVersion: input.cycle?.pipelineVersion });
   const sourceId = input.sources.find(source => source.id === 'viability:task')?.id || input.sources[0].id;
+  const collision = conditional === 'collision';
+  const inheritedCriteria = collision ? [requiredCriteria[0], { ...requiredCriteria[1], verification: 'evidence' }] : requiredCriteria;
   const body = { userAgency: fixtureUserAgency(),
     values: Object.fromEntries(input.template.fields.map(field => [field.id,
       field.label + ': preserve the user-authorized city alternatives while obtaining exactly 20 distinct new destination confirmations. No application has been performed.'])),
@@ -56,7 +58,7 @@ function analyticalResponse(input, { strictCity = false, workspaceKey, condition
   if (stage.id === 'feasibility') {
     const inference = input.cycle.prerequisites.find(item => item.stageId === 'inference');
     assert.ok(input.sources.some(source => source.id === inference?.sourceId));
-    return { ...body, requirements: [{ id: 'authorized-city', label: 'Authorized city alternatives', importance: 'essential', basis: 'user',
+    return { ...body, requirements: [{ id: collision ? 'city-permission' : 'authorized-city', label: 'Authorized city alternatives', importance: 'essential', basis: 'user',
       consequence: 'Preserve the location flexibility already authorized while checking actual form options.', resolution: 'observed',
       value: locationPermission + ' The operational owner still needs to observe the form options.', sourceIds: [sourceId, inference.sourceId],
       checkedSourceIds: input.sources.filter(source => source.kind !== 'response').map(source => source.id),
@@ -74,14 +76,14 @@ function analyticalResponse(input, { strictCity = false, workspaceKey, condition
       limitation: 'This authorizes the two choices for this field only. It does not establish any form availability, application or confirmation.' }];
     body.subproblems = [{ key: 'application-workflow', title: 'Complete the authorized applications', objective: request,
       reason: 'Application operations belong to the operational owner after preparation.', required: true, executionTarget: 'workflow',
-      sourceIds: [sourceId], acceptanceCriteria: copy(requiredCriteria) }];
+      sourceIds: [sourceId], acceptanceCriteria: copy(inheritedCriteria) }];
   }
   if (stage.id === 'plan') {
-    assert.deepEqual(input.cycle.requiredAcceptanceCriteria, requiredCriteria,
+    assert.deepEqual(input.cycle.requiredAcceptanceCriteria, inheritedCriteria,
       'The actual Infer workflow request must reach Plan as required criteria, including both accuracy scopes.');
     body.contract = { contractVersion: 2, goal: request,
       criteria: input.cycle.requiredAcceptanceCriteria.map(item => ({ id: item.id, label: item.label,
-        description: item.description, kind: item.verification === 'effect' ? 'external-confirmation' : 'judgment',
+        description: item.description, kind: { effect: 'external-confirmation', evidence: 'observation', response: 'judgment' }[item.verification],
         targetCount: item.verification === 'effect' ? 20 : 1, accuracy: copy(item.accuracy) })),
       workItems: [{ id: 'complete-applications', title: 'Complete the requested applications',
         objective: 'Inspect the profile and actual form, use an authorized city alternative, submit new applications and verify distinct confirmations.',
@@ -97,7 +99,7 @@ function analyticalResponse(input, { strictCity = false, workspaceKey, condition
     }
     if (conditional) {
       const [gate] = input.cycle.commitPrerequisites;
-      assert.equal(gate.id, 'authorized-city', 'Feasibility must deliver the typed condition to Plan.');
+      assert.equal(gate.id, collision ? 'prerequisite-city-permission' : 'authorized-city', 'Feasibility must deliver the typed condition to Plan.');
       const commit = body.contract.workItems[0];
       if (conditional === 'valid') {
         body.contract.workItems.push({ ...commit, id: 'inspect-prerequisite', effects: ['observe'], criterionIds: [gate.id] });
@@ -267,6 +269,24 @@ test('the host separates an eligibility condition from a commitment even if the 
   assert.deepEqual(check.effects, ['observe']);
   assert.deepEqual(items.find(item => item.effects.includes('commit')).dependsOn, [check.id]);
   assert.equal(f.journal.records.length, 0);
+});
+
+test('an inherited observation and a Feasibility gate with the same ID survive Plan and adoption separately', { timeout: 20000 }, async t => {
+  const f = await fixture(t, { mode: 'automatic', conditional: 'collision' });
+  assert.equal(f.run.errorCode, 'FIXTURE_STOP_AFTER_HANDOFF', f.run.error);
+  assert.deepEqual(f.calls.map(call => call.input.module.kind), ['inference', 'viability', 'plan']);
+  const inherited = { ...requiredCriteria[1], verification: 'evidence' };
+  const plan = f.saved.nodes.find(node => node.id === f.cycle.stageNodeIds.plan);
+  assert.deepEqual(plan.response.acceptanceCriteria.find(item => item.id === inherited.id), inherited);
+  const gateId = 'prerequisite-city-permission';
+  const { contractAdoption, contract } = f.adoptedTask;
+  assert.deepEqual(contractAdoption.commitPrerequisiteIds, [gateId]);
+  assert.ok([inherited.id, gateId].every(id => contractAdoption.requiredCriterionIds.includes(id)));
+  assert.equal(contract.criteria.find(item => item.id === inherited.id).kind, 'observation');
+  assert.equal(contract.criteria.find(item => item.id === gateId).kind, 'judgment');
+  const owner = contract.workItems.find(item => item.criterionIds.includes(gateId));
+  assert.deepEqual(owner.effects, ['observe']);
+  assert.ok(contract.workItems.find(item => item.effects.includes('commit')).dependsOn.includes(owner.id));
 });
 
 test('an adopted prerequisite remains required through an operational edit', { timeout: 20000 }, async t => {

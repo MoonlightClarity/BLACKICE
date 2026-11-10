@@ -225,6 +225,20 @@ export function planningCycleStageContext(request,nodeId,responses) {
   const commitPrerequisites=(feasibility?.requirements||[]).filter(item=>item.commitPrerequisite===true).map(item=>({
     id:item.id,label:item.label.slice(0,200),description:item.label,verification:'response',...(item.accuracy?{accuracy:clone(item.accuracy)}:{})
   }));
+  if(stageId==='plan'&&commitPrerequisites.length){
+    const inherited=new Map(workflow.requiredAcceptanceCriteria.map(item=>[item.id,item]));
+    const reserved=new Set([...inherited.keys(),...commitPrerequisites.map(item=>item.id)]);
+    for(const prerequisite of commitPrerequisites){
+      const required=inherited.get(prerequisite.id);
+      if(!required||workflowRequirementIdentity(required)===workflowRequirementIdentity(prerequisite))continue;
+      // A Feasibility gate must not rewrite a separately inherited outcome.
+      const base='prerequisite-'+prerequisite.id.slice(0,100);
+      let id=base;
+      for(let suffix=2;reserved.has(id);suffix++)id=base+'-'+suffix;
+      prerequisite.id=id;
+      reserved.add(id);
+    }
+  }
   let canonical=['think','respond'].includes(stageId)?canonicalCycleTaskContext(request.sources||[],{cycleId:cycle.id,runId:cycle.execution?.runId||cycle.linkedRunId,
     planRef:{requestId:request.id,cycleId:cycle.id,nodeId:cycle.stageNodeIds.plan,nodeRevision:request.nodes.find(node=>node.id===cycle.stageNodeIds.plan)?.revision,responseId:plan?.id||null}}):null;
   if(!canonical&&['think','respond'].includes(stageId)&&['completed','failed','cancelled','unknown'].includes(cycle.execution?.state)&&
