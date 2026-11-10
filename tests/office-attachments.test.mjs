@@ -8,6 +8,7 @@ import path from 'node:path';
 import { inspectWordDocument, WORD_MIME } from '../lib/office-documents.mjs';
 import { inspectAttachment, AttachmentStore, createAttachmentToolHandler } from '../lib/attachments.mjs';
 import { TaskViability } from '../lib/task-viability.mjs';
+import { attachmentResourceKey, normalizeHostOperationResult } from '../lib/operation-descriptors.mjs';
 
 const digest = x => createHash('sha256').update(x).digest('hex');
 const crcTable = Array.from({length:256},(_,i)=>{let c=i;for(let j=0;j<8;j++)c=(c&1)?0xedb88320^(c>>>1):c>>>1;return c>>>0});
@@ -57,6 +58,18 @@ test('DOCX original is parsed before planning into paragraphs, tables and header
   assert.equal(tools.success,true);
   const shown=JSON.parse(tools.contentItems[0].text);
   assert.equal(shown.attachment.sha256,digest(bytes));
+  const coverage = async args => {
+    const call = { name:'relay_files', arguments:{action:'read',attachmentId:entry.id,...args} };
+    const result = await handler(call), descriptor = await handler.describeOperation(call);
+    const { evidence } = await normalizeHostOperationResult(result, { call, descriptor });
+    return evidence.find(row => row.kind === 'source-coverage');
+  };
+  const line = await coverage({ startLine:1, lineCount:1 });
+  assert.deepEqual(line.coverage, { unit:'lines', start:0, end:1, total:shown.totalLines });
+  const prefix = await coverage({ startChar:0, charCount:5 }), suffix = await coverage({ startChar:5 });
+  assert.deepEqual(prefix.coverage, { unit:'characters', start:0, end:5, total:parsed.text.length });
+  assert.deepEqual(suffix.coverage, { unit:'characters', start:5, end:parsed.text.length, total:parsed.text.length });
+  assert.ok([line,prefix,suffix].every(row => row.resourceKey === attachmentResourceKey(entry.sha256) && row.sourceVersion === entry.sha256));
   const fresh=await new AttachmentStore({dataDir:dir}).init();t.after(()=>fresh.close());
   assert.equal((await fresh.read(entry.id)).attachment.kind,'document');
 });

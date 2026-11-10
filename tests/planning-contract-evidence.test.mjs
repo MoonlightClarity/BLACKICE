@@ -50,7 +50,7 @@ test('normalization rejects model-supplied bindings, unknown fields, invalid tim
     { start: 0, end: 4, total: 3 }, { start: 0, end: 1.5, total: 3 },
     { start: 0, end: 1, total: Number.MAX_SAFE_INTEGER + 1 },
   ]) assert.throws(() => bind({ ...input, coverage: { unit: 'lines', ...range } }), TypeError);
-  assert.throws(() => bind({ ...input, coverage: { unit: 'pages', start: 0, end: 1, total: 1 } }), TypeError);
+  assert.throws(() => bind({ ...input, coverage: { unit: 'frames', start: 0, end: 1, total: 1 } }), TypeError);
 });
 
 test('adapter metadata rejects getters, prototypes, circular or unbounded values', () => {

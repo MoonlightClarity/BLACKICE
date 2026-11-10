@@ -90,7 +90,7 @@ function analyticalResponse(input, { strictCity = false, workspaceKey, condition
       instructions: [{ id: 'city-alternatives', text: locationPermission + ' Preserve all other supplied facts and the exact new-confirmation count.', handling: 'preserve' }] };
     if (strictCity) body.contract.criteria.find(item => item.id === 'city-permission').accuracy.tolerance = 'Only the exact string Oak Hollow is acceptable.';
     if (attachmentScope) {
-      body.contract.criteria.push({ id: 'attached-profile', kind: 'observation', description: 'Read the current immutable attached profile.', resourceKey: attachmentScope.files[0].resourceKey });
+      body.contract.criteria.push({ id: 'attached-profile', kind: misspellAttachment ? 'observation' : 'source-coverage', description: 'Read the current immutable attached profile.', resourceKey: attachmentScope.files[0].resourceKey });
       const resourceKeys = misspellAttachment ? [workspaceKey, attachmentScope.files[0].resourceKey.slice(0, -7), attachmentScope.files[1].resourceKey] : [workspaceKey];
       body.contract.workItems.push({ id: 'inspect-attachment', title: 'Read the attached profile', objective: 'Read the supplied attachment.',
         owner: 'agent', resourceKeys, effects: ['observe'], dependsOn: [], criterionIds: ['attached-profile'] });
@@ -189,7 +189,8 @@ test('automatic canonical execution reads a supplied attachment within its actua
   assert.equal(operation.tool, 'relay_files');
   assert.equal(operation.effect, 'observe');
   assert.equal(operation.workItemId, 'inspect-attachment');
-  assert.ok(f.journal.evidence.some(item => item.resourceKey === attachmentResourceKey(f.attached.sha256) && item.sourceVersion === f.attached.sha256));
+  assert.ok(f.journal.evidence.some(item => item.kind === 'source-coverage' && item.resourceKey === attachmentResourceKey(f.attached.sha256) &&
+    item.sourceVersion === f.attached.sha256 && item.coverage.end === item.coverage.total));
 });
 
 test('a correct attachment key does not suppress repair of a misspelled key on the same reader', { timeout: 20000 }, async t => {
@@ -204,7 +205,8 @@ test('a correct attachment key does not suppress repair of a misspelled key on t
   assert.deepEqual(f.journal.records.map(operation => [operation.tool, operation.effect, operation.workItemId]), [
     ['relay_files', 'observe', 'inspect-attachment'], ['relay_files', 'observe', 'inspect-attachment'],
   ]);
-  assert.deepEqual(f.journal.evidence.map(item => [item.resourceKey, item.sourceVersion]), [f.attached, f.guidance].map(file => [attachmentResourceKey(file.sha256), file.sha256]));
+  assert.deepEqual(f.journal.evidence.filter(item => item.kind === 'source-coverage').map(item => [item.resourceKey, item.sourceVersion]),
+    [f.attached, f.guidance].map(file => [attachmentResourceKey(file.sha256), file.sha256]));
 });
 
 function assertIntentAndProofBoundary(contract) {

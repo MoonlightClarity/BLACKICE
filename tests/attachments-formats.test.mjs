@@ -7,6 +7,8 @@ import { createHash } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
 import { AttachmentStore, ATTACHMENT_LIMITS, createAttachmentToolHandler, inspectAttachment } from '../lib/attachments.mjs';
 import { renderPdfPage } from '../lib/pdf-documents.mjs';
+import { attachmentResourceKey, normalizeHostOperationResult } from '../lib/operation-descriptors.mjs';
+import { evaluateContractCriteria, normalizeContractEvidence } from '../lib/planning-contract-evidence.mjs';
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const invoke = (handler, args) => handler({ name: 'relay_files', arguments: args });
@@ -39,6 +41,58 @@ function document(pages) {
   const xref = `xref\n0 ${objects.length}\n0000000000 65535 f \n${offsets.slice(1).map(offset => `${String(offset).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${size}\n%%EOF\n`;
   parts.push(Buffer.from(xref)); return Buffer.concat(parts);
 }
+
+test('only complete selectable pages from exact immutable PDF reads establish source coverage', async t => {
+  const { store } = await fixture(t);
+  const entry = await store.importBytes({ name: 'two-pages.pdf', bytes: document(['First page actual text', 'Second page actual text']) });
+  const blank = await store.importBytes({ name: 'blank-page.pdf', bytes: document(['First page actual text', '']) });
+  const handler = createAttachmentToolHandler({ store, attachmentIds: [entry.id, blank.id] });
+  const read = async (args, { file = entry, change } = {}) => {
+    const call = { name: 'relay_files', arguments: { action: 'read', attachmentId: file.id, ...args } };
+    const descriptor = await handler.describeOperation(call), result = await handler(call);
+    if (change) {
+      const body = data(result); change(body); result.contentItems[0].text = JSON.stringify(body);
+    }
+    return (await normalizeHostOperationResult(result, { call, descriptor })).evidence;
+  };
+  const ranges = rows => rows.filter(row => row.kind === 'source-coverage').map(row => row.coverage);
+  const resourceKey = attachmentResourceKey(entry.sha256);
+  const contract = { criteria: [{ id: 'complete', kind: 'source-coverage', resourceKey }], workItems: [{ id: 'read', criterionIds: ['complete'] }] };
+  const complete = (...reads) => evaluateContractCriteria(contract, reads.flatMap((rows, index) => rows.map(row => normalizeContractEvidence(row, {
+    operationId: 'operation-' + index, workItemId: 'read', at: '2026-11-09T00:00:00.000Z',
+  })))).criteria[0].satisfied;
+  const prefix = await read({ charCount: 5 }), suffix = await read({ startChar: 5 });
+  assert.deepEqual(ranges(prefix), []); assert.deepEqual(ranges(suffix), []);
+  const first = await read({ pageCount: 1 }), second = await read({ startPage: 2 });
+  assert.deepEqual(ranges(first), [{ unit: 'pages', start: 0, end: 1, total: 2 }]);
+  assert.deepEqual(ranges(second), [{ unit: 'pages', start: 1, end: 2, total: 2 }]);
+  assert.ok([...first, ...second].every(row => row.resourceKey === resourceKey && row.sourceVersion === entry.sha256));
+  assert.equal(complete(prefix, suffix, second), false);
+  assert.equal(complete(first, second), true);
+  assert.deepEqual(ranges(await read({}, { file: blank })), [{ unit: 'pages', start: 0, end: 1, total: 2 }]);
+  for (const args of [{ action: 'read_bytes' }, { action: 'search', query: 'page' }, { action: 'image', page: 1 }]) {
+    assert.deepEqual(ranges(await read(args)), []);
+  }
+  assert.deepEqual(ranges(await read({}, { change: body => { body.attachment.sha256 = blank.sha256; } })), []);
+  assert.deepEqual(ranges(await read({}, { change: body => { body.attachment.id = blank.id; } })), []);
+});
+
+test('a truncated text line contributes no line coverage while exact character reads retain their ranges', async t => {
+  const { store } = await fixture(t);
+  const text = 'First line\n' + 'x'.repeat(ATTACHMENT_LIMITS.readChars + 5);
+  const entry = await store.importBytes({ name: 'long-line.txt', bytes: Buffer.from(text) });
+  const handler = createAttachmentToolHandler({ store, attachmentIds: [entry.id] });
+  const ranges = async args => {
+    const call = { name: 'relay_files', arguments: { action: 'read', attachmentId: entry.id, ...args } };
+    const descriptor = await handler.describeOperation(call), result = await handler(call);
+    const { evidence } = await normalizeHostOperationResult(result, { call, descriptor });
+    return evidence.filter(row => row.kind === 'source-coverage').map(row => row.coverage);
+  };
+  assert.deepEqual(await ranges({}), [{ unit: 'lines', start: 0, end: 1, total: 2 }]);
+  assert.deepEqual(await ranges({ startLine: 2 }), []);
+  assert.deepEqual(await ranges({ charCount: ATTACHMENT_LIMITS.readChars }), [{ unit: 'characters', start: 0, end: ATTACHMENT_LIMITS.readChars, total: text.length }]);
+  assert.deepEqual(await ranges({ startChar: ATTACHMENT_LIMITS.readChars }), [{ unit: 'characters', start: ATTACHMENT_LIMITS.readChars, end: text.length, total: text.length }]);
+});
 
 test('arbitrary extensions and binary contents survive upload, restart and byte pagination exactly', async t => {
   const { store, directory } = await fixture(t);
