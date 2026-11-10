@@ -153,6 +153,12 @@ test('completion returns the exact unbound positive submission for authored reco
   assert.equal(instruction.operationId, original.operationId);
   assert.equal(instruction.destinationKey, 'destination:' + action);
   assert.deepEqual(instruction.bindReceipt, { tool: 'relay_task', action: 'bind_receipt', expectedRevision: before.revision, workItemId: 'enroll', criterionId: 'receipt' });
+  assert.deepEqual(instruction.receiptBindingFields, [
+    { formats: ['dom', 'json'], required: ['version', 'format', 'resourceKey', 'record', 'status', 'confirmedValues', 'outcomeId', 'history'],
+      optional: ['destination', 'absentValues', 'prior', 'identity'] },
+    { formats: ['dom-text'], required: ['version', 'format', 'resourceKey', 'record', 'confirmedValues', 'history', 'outcomeFields'],
+      optional: ['absentValues'] },
+  ]);
   assert.match(instruction.steps[1], /relay_task \{"action":"read"\}/);
   assert.match(instruction.steps[3], /current expectedPlanEpoch from the returned state, then relay_browser read or snapshot/);
   assert.equal((await f.browse('click', { ref: 'submit' })).code, 'TASK_CONTRACT_EFFECT_UNCERTAIN');
