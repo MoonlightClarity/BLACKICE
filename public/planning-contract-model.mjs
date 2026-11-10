@@ -82,7 +82,7 @@ export function planContractResponseSchema() {
 }
 
 /** Decode a Plan response and apply the host's captured context before validation. */
-export function normalizePlanContractResponse(value, prerequisites = [], { requireBrowserReceipts = false, requireConfirmationOwners = false, attachedReadScope, coordinator } = {}) {
+export function normalizePlanContractResponse(value, prerequisites = [], { requireBrowserReceipts = false, requireConfirmationOwners = false, previousExecutablePlan, attachedReadScope, coordinator } = {}) {
   const decode = (item, schema) => {
     if (Array.isArray(item) && schema.items) return item.map(entry => decode(entry, schema.items));
     if (!object(item)) return item;
@@ -226,6 +226,29 @@ export function normalizePlanContractResponse(value, prerequisites = [], { requi
     }
   }
   const contract = normalizePlanContract(decoded);
+  // Only host-linked authoring supplies a baseline: null on first adoption, or the retained executable Plan.
+  if (previousExecutablePlan !== undefined) {
+    const previousItems = new Map((previousExecutablePlan?.workItems || []).map(item => [item.id, item]));
+    const unusedResources = item => {
+      if (!item?.operationScopes) return [];
+      const scoped = new Set(item.operationScopes.flatMap(scope => scope.resourceKeys));
+      return item.resourceKeys.filter(key => !scoped.has(key));
+    };
+    const scopeIssues = [];
+    for (const [index, item] of contract.workItems.entries()) {
+      const previous = previousItems.get(item.id);
+      const grandfathered = new Set(unusedResources(previous?.owner === item.owner ? previous : null));
+      for (const resourceKey of unusedResources(item)) {
+        if (grandfathered.has(resourceKey)) continue;
+        const inputIndex = value.workItems[index]?.resourceKeys.findIndex(key => key.trim() === resourceKey) ?? -1;
+        scopeIssues.push({
+          path: 'response.contract.workItems[' + index + '].resourceKeys' + (inputIndex >= 0 ? '[' + inputIndex + ']' : ''),
+          message: 'This resource is unused by the operation scopes on work item "' + item.id + '". Remove it unless a specific authorized bounded operation needs it. Use that operation’s matching scope and actual target.',
+        });
+      }
+    }
+    if (scopeIssues.length) throw Object.assign(fail('A new Plan lists resources outside its typed operation scopes.'), { issues: scopeIssues });
+  }
   if (requireConfirmationOwners) {
     const issues = [];
     for (const [index, criterion] of contract.criteria.entries()) {

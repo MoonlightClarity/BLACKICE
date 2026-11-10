@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { normalizePlanContract, validatePlanContractFeasibility, contractPlanProjection } from '../public/planning-contract-model.mjs';
 import { PlanningBrowserStore } from '../lib/planning-browser.mjs';
 import { planningFormatDiagnostic, validatePlanningModuleResponse } from '../lib/planning-browser-runtime.mjs';
+import { matchingWorkItemOperationScopes } from '../lib/operation-descriptors.mjs';
 import { TaskStateStore } from '../lib/task-state.mjs';
 import { planningModuleTemplate, planningResponseBody } from '../public/planning-browser-model.mjs';
 import { RESPONSE_CYCLE_STAGES, responseCycleStage } from '../public/response-cycle-model.mjs';
@@ -56,12 +57,12 @@ function stageBody(kind, requestId, contract = draft(1)) {
   return body;
 }
 
-function executablePlanAttempt({ currentContract = null, commitPrerequisites = [], effectReceipts = [] } = {}) {
+function executablePlanAttempt({ currentContract = null, commitPrerequisites = [], effectReceipts = [], attachmentScope } = {}) {
   return {
     node: { kind: 'plan' }, pipelineVersion: 2,
     cycleContext: { workflowOwner: { runId: 'fixture-run' }, commitPrerequisites, effectReceipts },
     sources: [{ id: 'request:fixture', kind: 'source', text: 'Request and authority for the task.' },
-      { id: 'cycle:execution-contract:fixture', kind: 'source', text: JSON.stringify({ taskSchemaVersion: 14, contractVersion: 2, currentContract }) }],
+      { id: 'cycle:execution-contract:fixture', kind: 'source', text: JSON.stringify({ taskSchemaVersion: 14, contractVersion: 2, currentContract, attachmentScope }) }],
   };
 }
 
@@ -123,6 +124,60 @@ test('a fresh executable Plan requires its own committing work for every new con
   assert.throws(() => write(plan), missing);
   item.operationScopes.push({ effect: 'commit', resourceKeys: [first], confirmationCriterionId: 'catalog-reviewed' });
   assert.doesNotThrow(() => write(plan));
+});
+
+test('fresh typed Plans identify the unused envelope field without granting shell scope', () => {
+  const attempt = executablePlanAttempt();
+  const plan = draft(1), [item] = plan.workItems, [destination] = item.resourceKeys;
+  const workspace = 'workspace:/fixture';
+  item.resourceKeys.push(workspace);
+  item.effects.push('opaque');
+  item.operationScopes = [{ effect: 'observe', resourceKeys: [destination] }, { effect: 'opaque', resourceKeys: [destination] }];
+  const shell = { effect: 'opaque', resources: [{ key: 'path:/fixture', access: 'write', scopeKeys: [workspace] }] };
+  const output = value => JSON.stringify(stageBody('plan', 'fixture', value));
+  assert.deepEqual(matchingWorkItemOperationScopes(item, shell), []);
+  assert.throws(() => validatePlanningModuleResponse(attempt, output(plan)), error => {
+    assert.equal(error.code, 'TASK_CONTRACT_INVALID');
+    const diagnostic = planningFormatDiagnostic(attempt, output(plan), error);
+    assert.equal(diagnostic.issues[0].path, 'response.contract.workItems[0].resourceKeys[1]');
+    assert.match(diagnostic.issues[0].message, /unused by the operation scopes on work item "review-1"/);
+    return true;
+  });
+
+  const older = normalizePlanContract({ ...plan, planEpoch: 2 }, { allowEpoch: true });
+  assert.deepEqual(older.workItems[0], item, 'Stored typed contracts retain their original fields.');
+  const nextOccurrence = executablePlanAttempt({ currentContract: older });
+  assert.deepEqual(validatePlanningModuleResponse(nextOccurrence, output(plan)).contract.workItems[0], item);
+  const changed = structuredClone(plan);
+  changed.workItems[0].resourceKeys.push('workspace:/independent-fixture');
+  assert.throws(() => validatePlanningModuleResponse(nextOccurrence, output(changed)), error => {
+    assert.equal(error.code, 'TASK_CONTRACT_INVALID');
+    assert.deepEqual(error.issues.map(issue => issue.path), ['response.contract.workItems[0].resourceKeys[2]']);
+    return true;
+  });
+  const legacy = structuredClone(plan);
+  delete legacy.workItems[0].operationScopes;
+  assert.deepEqual(validatePlanningModuleResponse(attempt, output(legacy)).contract.workItems[0], legacy.workItems[0]);
+
+  const fixed = structuredClone(plan);
+  fixed.workItems[0].resourceKeys.pop();
+  const accepted = validatePlanningModuleResponse(attempt, output(fixed)).contract.workItems[0];
+  assert.deepEqual(accepted.operationScopes, item.operationScopes);
+  assert.deepEqual(matchingWorkItemOperationScopes(accepted, shell), []);
+});
+
+test('fresh typed envelopes are checked after captured attachment observation scope is supplied', () => {
+  const plan = draft(1), [item] = plan.workItems, [destination] = item.resourceKeys;
+  const attachedSet = 'attachments:' + 'a'.repeat(64);
+  item.owner = 'coordinator';
+  item.resourceKeys.push(attachedSet);
+  item.operationScopes = [{ effect: 'observe', resourceKeys: [destination] }];
+  const attempt = executablePlanAttempt({ attachmentScope: { resourceKey: attachedSet,
+    files: [{ id: 'fixture-file', resourceKey: 'attachment:sha256:' + 'b'.repeat(64) }] } });
+  const response = validatePlanningModuleResponse(attempt, JSON.stringify(stageBody('plan', 'fixture', plan)));
+  assert.deepEqual(response.contract.workItems[0].operationScopes, [{ effect: 'observe', resourceKeys: [destination, attachedSet] }]);
+  assert.deepEqual(response.contract.workItems[0].resourceKeys, item.resourceKeys);
+  assert.deepEqual(item.operationScopes[0].resourceKeys, [destination], 'The saved response proposal is not mutated.');
 });
 
 async function planningFixture(t) {
