@@ -319,6 +319,79 @@ test('scoped qualitative assessment cannot reuse another assigned work item’s 
   assert.equal(checkContractJudgmentEvidence(contract, [observed], judgment('work-b')).valid, false);
 });
 
+function prerequisiteRead() {
+  const workspace = 'workspace:/work/project', target = 'path:/work/project/profile.json';
+  const item = (id, key, dependsOn, criterionIds) => ({ id, owner: 'coordinator', effects: ['observe'],
+    resourceKeys: [key], operationScopes: [{ effect: 'observe', resourceKeys: [key] }], dependsOn, criterionIds });
+  const contract = plan('judgment', { resourceKey: workspace }, [
+    item('source', workspace, [], ['review-source']), item('gate', target, ['source'], ['criterion']),
+  ]);
+  contract.criteria.push({ id: 'review-source', kind: 'observation', description: 'Observe the actual source.' });
+  const observed = bind({ kind: 'observation', resourceKey: target }, { workItemId: 'source' });
+  const operation = { operationId: observed.operationId, workItemId: 'source', deliveryState: 'returned', success: true,
+    effect: 'observe', effectState: 'not-applicable', dispatchedAt: at, finishedAt: at,
+    resources: [{ key: workspace, access: 'read', scopeOnly: true }, { key: target, access: 'read', scopeKeys: [workspace] }],
+    evidenceIds: [observed.id], planCycleId: 'current' };
+  return { contract, operation, observed, target };
+}
+
+function checkPrerequisiteRead({ contract, operation, observed }, expected, currentOperation = row => row.planCycleId === 'current') {
+  const judgment = { workItemId: 'gate', criterionId: 'criterion', judgment: 'satisfied', evidenceIds: [observed.id] };
+  const options = { operations: [operation], currentOperation };
+  assert.equal(checkContractJudgmentEvidence(contract, [observed], judgment, options).valid, expected);
+  assert.equal(evaluateContractCriteria(contract, [observed], { ...options, judgments: [judgment] }).criteria[0].satisfied, expected);
+}
+
+test('a same-owner typed judgment may reuse a directly depended-on concrete read', () => {
+  const f = prerequisiteRead();
+  const saved = JSON.stringify(f);
+  checkPrerequisiteRead(f, true);
+  assert.equal(JSON.stringify(f), saved, 'reuse leaves the original receipt and its owner intact');
+  checkPrerequisiteRead(f, false, row => row.planCycleId === 'different-cycle');
+  for (const change of [
+    ({ contract }) => { contract.workItems[0].owner = 'different-owner'; },
+    ({ contract }) => { contract.workItems[0].effects.push('interact'); },
+    ({ contract }) => { contract.workItems[1].dependsOn = ['middle']; contract.workItems.push({ id: 'middle', dependsOn: ['source'], criterionIds: [] }); },
+    ({ contract }) => { delete contract.workItems[0].operationScopes; },
+    ({ contract }) => { delete contract.workItems[1].operationScopes; },
+    ({ contract }) => { contract.workItems[0].operationScopes[0].resourceKeys = ['discovery']; },
+    ({ contract }) => { contract.workItems[1].operationScopes[0].resourceKeys = ['discovery']; },
+    ({ contract }) => { contract.workItems[1].operationScopes[0].resourceKeys = ['path:/work/other']; },
+    ({ contract, operation }) => {
+      operation.resources.push({ key: 'path:/work/project/another.json', access: 'read', scopeKeys: contract.workItems[0].resourceKeys });
+      contract.workItems[1].operationScopes.push({ effect: 'observe', resourceKeys: ['path:/work/project/another.json'] });
+    },
+    ({ operation }) => { operation.effect = 'interact'; },
+    ({ operation }) => { operation.effectState = 'unknown'; },
+    ({ operation }) => { operation.deliveryState = 'interrupted'; },
+    ({ operation }) => { operation.success = false; },
+    ({ operation }) => { operation.verificationError = { code: 'UNVERIFIED' }; },
+    ({ operation }) => { delete operation.dispatchedAt; },
+    ({ operation }) => { delete operation.finishedAt; },
+    ({ operation }) => { operation.evidenceIds = []; },
+    ({ operation }) => { operation.resources[1].scopeOnly = true; },
+    ({ operation }) => { operation.resources[1].access = 'write'; },
+  ]) {
+    const changed = structuredClone(f);
+    change(changed);
+    checkPrerequisiteRead(changed, false);
+  }
+});
+
+test('reuse only accepts observations and complete source coverage, never effect or validation evidence', () => {
+  const f = prerequisiteRead();
+  const share = (fields, allowed) => {
+    const observed = bind({ resourceKey: f.target, ...fields }, { operationId: f.operation.operationId, workItemId: 'source' });
+    checkPrerequisiteRead({ ...f, observed, operation: { ...f.operation, evidenceIds: [observed.id] } }, allowed);
+  };
+  share({ kind: 'source-coverage', sourceVersion: 'v1', coverage: { unit: 'lines', start: 0, end: 2, total: 2 } }, true);
+  share({ kind: 'source-coverage', sourceVersion: 'v1', coverage: { unit: 'lines', start: 0, end: 1, total: 2 } }, false);
+  share({ kind: 'source-coverage', coverage: { unit: 'lines', start: 0, end: 2, total: 2 } }, false);
+  share({ kind: 'validation', validation: { success: true } }, false);
+  share({ kind: 'external-confirmation', confirmation: { outcomeId: 'test', status: 'confirmed' } }, false);
+  share({ kind: 'observation', validation: { source: 'native-form-navigation' } }, false);
+});
+
 test('host scope membership does not broaden external confirmation identity or count rules', () => {
   const key = 'origin:https://portal.test', observed = receipt('actual-outcome', { resourceKey: 'destination:https://portal.test/enroll' });
   const operation = { operationId: observed.operationId, workItemId: observed.workItemId, deliveryState: 'returned', success: true,

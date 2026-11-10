@@ -890,6 +890,56 @@ test('an adopted condition blocks the next commitment until this run records its
   assert.equal((await readContractJournal(f.tasks, f.taskId)).records.at(-1).deliveryState, 'dispatched');
 });
 
+test('the current gate can assess a typed prerequisite read without repeating it', async t => {
+  const f = await fixture(t, { operationAdapter: () => raceAdapter, contract: ({ key }) => {
+    const value = draft([key]);
+    const operationScopes = [{ effect: 'observe', resourceKeys: [key] }];
+    Object.assign(value.workItems[0], { effects: ['observe'], operationScopes, criterionIds: ['seen'] });
+    value.criteria.push({ id: 'seen', kind: 'observation', resourceKey: key, description: 'Observe the current fixture.' },
+      { id: 'receipt', kind: 'external-confirmation', description: 'Verify the external result.' });
+    value.workItems.push({ id: 'gate', title: 'Check evidence', objective: 'Assess the current fixture.', owner: 'coordinator',
+      resourceKeys: [key], effects: ['observe'], operationScopes, dependsOn: ['files'], criterionIds: ['checked'] },
+    { id: 'commit', title: 'Commit result', objective: 'Use the current input.', owner: 'coordinator',
+      resourceKeys: [raceOrigin], effects: ['commit'], dependsOn: ['gate'], criterionIds: ['receipt'] });
+    return value;
+  } });
+  const original = await f.tasks.get(f.taskId), { planEpoch, ...contract } = original.contract;
+  await f.tasks.setContract(f.taskId, contract, { expectedRevision: original.revision, schemaVersion: 14, adoption: {
+    runId: f.runId, planRef: { cycleId: 'current-occurrence' }, freshEvidence: true,
+    requiredCriterionIds: ['checked'], commitPrerequisiteIds: ['checked']
+  } });
+  await f.send(call('relay_task', { action: 'read' }));
+  assert.equal((await f.send(call('relay_task', { action: 'focus', expectedPlanEpoch: planEpoch, workItemId: 'files' }))).success, true);
+  assert.equal((await f.send(call('relay_workspace', { action: 'read', path: 'input.txt' }))).success, true);
+  const prior = await readContractJournal(f.tasks, f.taskId);
+  assert.equal(prior.records.length, 1);
+  assert.equal(prior.records[0].workItemId, 'files');
+  const submit = call('fixture_commit', { action: 'submit', target: 'after-typed-review' });
+  const denied = await f.guard.before(submit);
+  assert.equal(denied.code, 'TASK_CONTRACT_PREREQUISITE');
+  assert.deepEqual(body(denied).recovery.assessments.map(row => ({ ...row, evidenceIds: [...row.evidenceIds].sort() })),
+    [{ workItemId: 'gate', criterionId: 'checked', evidenceIds: prior.evidence.map(row => row.id).sort() }]);
+  const assess = call('relay_task', { action: 'assess', expectedPlanEpoch: planEpoch, workItemId: 'gate', criterionId: 'checked',
+    judgment: 'satisfied', note: 'The current fixture supports the prerequisite.', evidenceIds: [prior.evidence[0].id] });
+  const accepted = await f.send(assess);
+  assert.equal(accepted.success, true, JSON.stringify(accepted));
+  const current = await f.tasks.get(f.taskId);
+  assert.equal(current.contractRuntime.criteria.find(row => row.id === 'checked').satisfied, true);
+  assert.equal((await readContractJournal(f.tasks, f.taskId)).records.length, 1, 'the gate reuses the evidence without dispatching another read');
+  assert.equal(await f.guard.before(submit), null);
+  await f.guard.dispatchContext(submit).onOperationDispatch(commitDescriptor(submit));
+  await f.guard.annotate(submit, { success: true, contentItems: [] });
+
+  const reviewed = await f.tasks.get(f.taskId);
+  const nextRunId = 'next-run';
+  await f.tasks.setContract(f.taskId, contract, { expectedRevision: reviewed.revision, schemaVersion: 14, adoption: {
+    ...reviewed.contractAdoption, runId: nextRunId, planRef: { cycleId: 'next-occurrence' }
+  } });
+  const handler = createTaskToolHandler({ store: f.tasks, taskId: f.taskId, runId: nextRunId, nodeId: f.nodeId, schemaVersion: 14 });
+  assert.equal((await handler(assess)).code, 'TASK_CONTRACT_EVIDENCE_INELIGIBLE');
+  assert.equal((await f.tasks.get(f.taskId)).contractRuntime.criteria.find(row => row.id === 'checked').satisfied, false);
+});
+
 test('concurrent live reservations cannot both occupy the last outcome slot, and dispatch excludes its own slot', async t => {
   const value = draft([raceOrigin]); value.criteria = [{ id: 'checked', kind: 'external-confirmation', resourceKey: raceOrigin, targetCount: 1, description: 'Exactly one distinct outcome is requested.' }];
   const f = await fixture(t, { contract: value, operationAdapter: () => raceAdapter });
