@@ -81,6 +81,34 @@ export function planContractResponseSchema() {
   return visit(PLAN_CONTRACT_SCHEMA);
 }
 
+function consolidatePrerequisiteObservers(workItems, observers, prerequisite, previousPlan) {
+  if (previousPlan === undefined || previousPlan?.criteria?.some(item => item.id === prerequisite.id)) return null;
+  const owner = observers[0].owner;
+  if (observers.some(item => item.owner !== owner || item.effects.length !== 1 ||
+      !item.criterionIds.some(id => id !== prerequisite.id))) return null;
+  const scopes = observers.flatMap(item => workItemOperationScopes(item, 'observe'));
+  if (observers.some(item => !workItemOperationScopes(item, 'observe').length) ||
+      scopes.some(scope => !scope.resourceKeys.length || scope.resourceKeys.some(key => typeof key !== 'string' || !key.trim()))) return null;
+  const resourceKeys = [...new Set(scopes.flatMap(scope => scope.resourceKeys.map(key => key.trim())))];
+  // Keep each original scope separate. A new combined scope could admit a
+  // multi-resource operation no existing scope permits.
+  const distinctScopes = [...new Map(scopes.map(scope => {
+    const keys = scope.resourceKeys.map(key => key.trim());
+    return [JSON.stringify([...keys].sort()), { effect: 'observe', resourceKeys: keys }];
+  })).values()];
+  if (workItems.length >= PLAN_CONTRACT_LIMITS.workItems || resourceKeys.length > PLAN_CONTRACT_LIMITS.resources ||
+      distinctScopes.length > PLAN_CONTRACT_LIMITS.operationScopes) return null;
+  const taken = new Set(workItems.map(item => item.id));
+  const prefix = 'check-' + prerequisite.id.slice(0, 100);
+  let id = prefix;
+  for (let suffix = 2; taken.has(id); suffix++) id = prefix + '-' + suffix;
+  const gate = { id, title: prerequisite.label, objective: prerequisite.description, owner, resourceKeys,
+    effects: ['observe'], dependsOn: observers.map(item => item.id), criterionIds: [prerequisite.id], operationScopes: distinctScopes };
+  for (const item of observers) item.criterionIds = item.criterionIds.filter(id => id !== prerequisite.id);
+  workItems.push(gate);
+  return gate;
+}
+
 /** Decode a Plan response and apply the host's captured context before validation. */
 export function normalizePlanContractResponse(value, prerequisites = [], { requireBrowserReceipts = false, requireConfirmationOwners = false, previousExecutablePlan, attachedReadScope, coordinator } = {}) {
   const decode = (item, schema) => {
@@ -115,7 +143,10 @@ export function normalizePlanContractResponse(value, prerequisites = [], { requi
       if (index < 0) decoded.criteria.push(criterion);
       else decoded.criteria[index] = criterion;
       if (!committing.length) continue;
-      let owner = decoded.workItems.find(item => !committing.includes(item) && item.effects.includes('observe') && item.criterionIds.includes(required.id));
+      const observers = decoded.workItems.filter(item => !committing.includes(item) && item.effects.includes('observe') && item.criterionIds.includes(required.id));
+      let owner = observers.length > 1
+        ? consolidatePrerequisiteObservers(decoded.workItems, observers, required, previousExecutablePlan) || observers[0]
+        : observers[0];
       if (!owner) {
         if (!generated) {
           const basis = committing.find(item => item.criterionIds.includes(required.id)) || committing[0];

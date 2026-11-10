@@ -95,6 +95,52 @@ test('prerequisite migration identifies action rows that lose their only criteri
     item.criterionIds.includes('result-confirmed') && item.dependsOn.includes(prerequisite.id)));
 });
 
+test('several same-owner observations can contribute to one newly pinned prerequisite', () => {
+  const prerequisite = { id: 'ready-to-publish', label: 'Ready to publish', description: 'Check local and portal records before publishing.' };
+  const local = 'workspace:/fixture', portal = 'origin:https://fixture.test';
+  const plan = draft(1);
+  const [first] = plan.workItems;
+  first.resourceKeys = [local];
+  first.operationScopes = [{ effect: 'observe', resourceKeys: [local] }];
+  delete plan.criteria[0].resourceKey;
+  plan.criteria.push({ id: 'portal-reviewed', kind: 'observation', description: 'Review the portal.', resourceKey: portal },
+    { id: 'receipt', kind: 'external-confirmation', description: 'The portal confirms publication.', resourceKey: portal });
+  plan.workItems.push({ ...first, id: 'read-portal', resourceKeys: [portal], dependsOn: [first.id], criterionIds: ['portal-reviewed'],
+    operationScopes: [{ effect: 'observe', resourceKeys: [portal] }] },
+  { ...first, id: 'publish', resourceKeys: [portal], effects: ['commit'], dependsOn: ['read-portal'], criterionIds: ['receipt'],
+    operationScopes: [{ effect: 'commit', resourceKeys: [portal], confirmationCriterionId: 'receipt' }] });
+  const previous = normalizePlanContract(plan);
+  for (const item of plan.workItems.slice(0, 2)) item.criterionIds.push(prerequisite.id);
+  plan.criteria.push({ id: prerequisite.id, kind: 'judgment', description: prerequisite.description });
+
+  const author = (candidate, currentContract = previous) => validatePlanningModuleResponse(
+    executablePlanAttempt({ currentContract, commitPrerequisites: [prerequisite] }),
+    JSON.stringify(stageBody('plan', 'fixture', candidate))).contract;
+  const accepted = author(plan);
+  assert.deepEqual(accepted.workItems.slice(0, 2), previous.workItems.slice(0, 2), 'Keep the existing observation work and ownership.');
+  const gates = accepted.workItems.filter(item => item.criterionIds.includes(prerequisite.id));
+  assert.equal(gates.length, 1);
+  const [gate] = gates;
+  assert.deepEqual(gate.dependsOn, [first.id, 'read-portal']);
+  assert.deepEqual(gate.operationScopes, [...first.operationScopes, ...plan.workItems[1].operationScopes]);
+  assert.deepEqual(accepted.workItems[2], { ...previous.workItems[2], dependsOn: ['read-portal', gate.id] });
+  const localRead = { key: local, access: 'read' }, portalRead = { key: portal, access: 'read' };
+  for (const resource of [localRead, portalRead])
+    assert.equal(matchingWorkItemOperationScopes(gate, { effect: 'observe', resources: [resource] }).length, 1);
+  assert.deepEqual(matchingWorkItemOperationScopes(gate, { effect: 'observe', resources: [localRead, portalRead] }), []);
+  assert.deepEqual(matchingWorkItemOperationScopes(gate, { effect: 'opaque', resources: [localRead] }), []);
+  assert.deepEqual(author(plan), accepted, 'The gate identity must be reproducible.');
+
+  const differentOwner = structuredClone(plan);
+  differentOwner.workItems[1].owner = 'another-worker';
+  assert.throws(() => author(differentOwner), /Put prerequisite/);
+  const solePurpose = structuredClone(plan);
+  solePurpose.workItems[1].criterionIds = [prerequisite.id];
+  solePurpose.criteria = solePurpose.criteria.filter(item => item.id !== 'portal-reviewed');
+  assert.throws(() => author(solePurpose), /Put prerequisite/);
+  assert.throws(() => author(plan, accepted), /Put prerequisite/, 'An existing pinned judgment is not relocated.');
+});
+
 test('a fresh executable Plan requires its own committing work for every new confirmation', () => {
   const attempt = executablePlanAttempt();
   const plan = draft(1, 1, 'external-confirmation');
