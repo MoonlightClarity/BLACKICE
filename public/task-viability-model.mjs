@@ -86,7 +86,13 @@ export const TASK_ACCURACY_FIELDS = Object.freeze(['mode', 'tolerance', 'decisio
 /** The target describes sufficient accuracy; it does not certify a claim or fill missing facts. */
 export function validateTaskAccuracy(value) {
   if (value === undefined || value === null) return undefined;
-  if (!object(value) || Object.keys(value).some(key => !TASK_ACCURACY_FIELDS.includes(key)) || TASK_ACCURACY_FIELDS.some(key => !Object.hasOwn(value, key))) throw fail('Use the declared task accuracy fields.');
+  if (!object(value)) throw fail('Use the declared task accuracy fields: accuracy must be null or a complete object, never a mode string or list.');
+  const missing = TASK_ACCURACY_FIELDS.filter(key => !Object.hasOwn(value, key));
+  const unexpected = Object.keys(value).filter(key => !TASK_ACCURACY_FIELDS.includes(key));
+  if (missing.length || unexpected.length) throw fail('Use the declared task accuracy fields.' +
+    (missing.length ? ' Missing: ' + missing.join(', ') + '.' : '') +
+    (unexpected.length ? ' Unexpected: ' + unexpected.join(', ') + '.' : '') +
+    ' Preserve inherited accuracy targets; otherwise use null only when no explicit target is needed.');
   if (!['exact', 'bounded_estimate', 'qualitative'].includes(value.mode)) throw fail('Accuracy must be exact, bounded_estimate or qualitative.');
   if (!['block', 'assumption', 'range', 'omit'].includes(value.unknownPolicy)) throw fail('State whether unresolved uncertainty blocks, permits a stated assumption or range, or permits omission.');
   return { mode: value.mode, tolerance: text(value.tolerance, 'Accuracy tolerance', 2000, value.mode === 'bounded_estimate'),
