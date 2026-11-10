@@ -682,6 +682,29 @@ test('changed evidence rejects exact-plan continuation before operational admiss
   await assert.rejects(f.service.continueCycle(request.id,cycle.id,payload),{code:'RESPONSE_CYCLE_PLAN_CONFLICT'});assert.equal(f.admitted.size,0);assert.equal(f.calls.length,3);
 });
 
+for(const required of [false,true])test((required?'required':'optional')+' pending child preserves authoritative parent readiness on the final refinement pass',async t=>{
+  const subproblem={executionTarget:'analysis',key:'pending-review',title:'Review a bounded detail',objective:'Check one optional supporting premise.',reason:'A bounded review may improve the answer.',required,sourceIds:[],acceptanceCriteria:[criterion]};
+  const f=await fixture(t,{amend:(body,input)=>{
+    if(input.module.kind==='inference')body.subproblems=[subproblem];
+    return body;
+  }}),{request,cycle}=await standalone(f);
+  const created=await f.service.createCurrent(request.id,{parentNodeId:cycle.stageNodeIds.inference,title:subproblem.title,purpose:subproblem.objective,planningExecutionMode:'automatic',clientRequestId:'pending-child-fixture'},
+    {internal:true,key:subproblem.key,required,acceptanceCriteria:subproblem.acceptanceCriteria,sourceIds:subproblem.sourceIds,subproblemRequest:subproblem});
+  const child=created.cycles.find(item=>item.parentCycleId===cycle.id);let childDrives=0;
+  f.service.drive=async(requestId,cycleId)=>{
+    assert.equal(cycleId,child.id);childDrives++;
+    return f.store.runtimeWriter().configureResponseCycle(requestId,{cyclePatch:{id:cycleId,state:'needs_evidence',summary:'The bounded child still needs captured evidence.'}});
+  };
+  const result=await f.service.runStage(request.id,cycle.id,'inference',{budget:{used:0,max:10,maxPasses:1},runKey:'final-pass-fixture'});
+  const parent=result.nodes.find(item=>item.id===cycle.stageNodeIds.inference),pending=result.cycles.find(item=>item.id===child.id);
+  assert.equal(parent.readiness.cycle.analysisReady,!required);
+  assert.equal(parent.readiness.cycle.dispatchReady,!required);
+  assert.equal(pending.state,'needs_evidence');
+  assert.equal(f.calls.length,1,'Only the synthetic parent response runs; pending children are not promoted to success.');
+  assert.ok(childDrives>0);
+  assert.equal(f.admitted.size,0);
+});
+
 test('recursive child gets bounded parent evidence, runs the five stages, and is explicitly aggregated',async t=>{
   const f=await fixture(t,{amend:(body,input)=>{
     if(input.module.kind==='inference'&&input.cycle?.objective==='Explain the supplied bounded problem.'){
