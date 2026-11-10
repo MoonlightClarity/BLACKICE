@@ -1,6 +1,6 @@
 /** Public response contracts and projections; no execution or truth certification. */
 import { VIABILITY_TEMPLATE, validateViabilityRequirements, normalizeViabilityQuestions, evaluateViabilityResponse, planningReadableFindingIssues, validatePlanningReadableFindings } from './task-viability-model.mjs';
-import { RESPONSE_CYCLE_CONTAINER_TEMPLATE, RESPONSE_CYCLE_TEMPLATES, RESPONSE_CYCLE_STAGES, responseCycleStage, responseCycleStages, responseCycleTemplate, parseResponseCycleResponse, evaluateResponseCycleStage, analyticalSubproblem } from './response-cycle-model.mjs';
+import { RESPONSE_CYCLE_CONTAINER_TEMPLATE, RESPONSE_CYCLE_TEMPLATES, RESPONSE_CYCLE_STAGES, responseCycleStage, responseCycleStages, responseCycleTemplate, parseResponseCycleResponse, evaluateResponseCycleStage, analyticalSubproblem, analysisEffectCriteria } from './response-cycle-model.mjs';
 import { canonicalCycleTaskContext } from './planning-contract-cycle-model.mjs';
 import { normalizeUserAgencyCheckpoint, evaluateUserAgencyCheckpoint, assertUserAgencyDispatchConsistency } from './planning-user-agency.mjs';
 export const PLANNING_BROWSER_VERSION = 1;
@@ -204,7 +204,17 @@ function planningWorkflowContext(request, cycle, latest) {
     if(prior&&workflowRequirementIdentity(prior)!==workflowRequirementIdentity(criterion))workflowCriterionConflicts.push(criterion.id);
     else if(!prior){const value=clone(criterion);byCriterion.set(value.id,value);requiredAcceptanceCriteria.push(value);}
   }
-  return {workflowRequests,requiredAcceptanceCriteria,workflowCriterionConflicts:[...new Set(workflowCriterionConflicts)],workflowOwner:owner?{cycleId:owner.id,runId:owner.linkedRunId,execution:clone(owner.execution||{})}:null};
+  // A retained analytical child can duplicate obligations that its already
+  // declared workflow owner can perform. Let the child hand back those exact
+  // unresolved criteria without reclassifying its findings as satisfied.
+  const inheritedAnalysisWorkflowCriteria = owner && owner.id !== cycle.id && analysisEffectCriteria(cycle.request).length
+    ? (latest.get(owner.stageNodeIds.inference)?.subproblems || [])
+      .filter(work => !analyticalSubproblem(work) && work.required !== false)
+      .flatMap(work => work.acceptanceCriteria || [])
+      .filter(criterion => cycle.request.acceptanceCriteria.some(item => workflowRequirementIdentity(item) === workflowRequirementIdentity(criterion)))
+    : [];
+  return {workflowRequests,requiredAcceptanceCriteria,workflowCriterionConflicts:[...new Set(workflowCriterionConflicts)],workflowOwner:owner?{cycleId:owner.id,runId:owner.linkedRunId,execution:clone(owner.execution||{})}:null,
+    ...(inheritedAnalysisWorkflowCriteria.length ? { inheritedAnalysisWorkflowCriteria: clone(inheritedAnalysisWorkflowCriteria) } : {})};
 }
 
 export function planningCycleStageContext(request,nodeId,responses) {

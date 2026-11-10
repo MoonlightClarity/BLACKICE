@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {planningCycleStageContext, planningNodeSources, projectPlanningRequest} from '../public/planning-browser-model.mjs';
+import {planningCycleStageContext, planningNodeSources, planningResponseBody, projectPlanningRequest} from '../public/planning-browser-model.mjs';
 import {RESPONSE_CYCLE_STAGES, responseCycleTemplate} from '../public/response-cycle-model.mjs';
+import {validatePlanningModuleResponse} from '../lib/planning-browser-runtime.mjs';
 
 const copy = value => structuredClone(value);
 const criterion = (id, description = 'Inspect the specified fixture record and report its actual contents.') => ({
@@ -57,13 +58,15 @@ function context(request, cycle) {
   return planningCycleStageContext(request, cycle.stageNodeIds.plan);
 }
 
-function completeAnalysis(request, cycle, {workflowRequests = [], transformCriteria} = {}) {
+function completeAnalysis(request, cycle, {workflowRequests = [], transformCriteria, uncertain = false, inferenceChildren = []} = {}) {
   for (const stage of RESPONSE_CYCLE_STAGES) {
     const template = responseCycleTemplate(stage.id), sourceId = 'request:' + request.id;
     const sources = planningNodeSources(request, cycle.stageNodeIds[stage.id]);
     const prior = RESPONSE_CYCLE_STAGES.slice(0, stage.order - 1).map(item =>
       request.responses.find(response => response.nodeId === cycle.stageNodeIds[item.id]));
     const assessedCriteria = request.responses.find(response => response.nodeId === cycle.stageNodeIds.plan)?.acceptanceCriteria || cycle.acceptanceCriteria;
+    const hasEffects = (stage.id === 'plan' ? context(request, cycle).requiredAcceptanceCriteria : assessedCriteria)
+      .some(item => item.verification === 'effect');
     const body = {
       values: Object.fromEntries(template.fields.map(field =>
         [field.id, 'The supplied synthetic premises support a bounded analytical conclusion.'])),
@@ -74,8 +77,8 @@ function completeAnalysis(request, cycle, {workflowRequests = [], transformCrite
     else {
       Object.assign(body, {
         checks: stage.checks.map(check => ({
-          id: check.id, assessment: check.when === 'effects' ? 'not_applicable' : 'supported',
-          sourceIds: check.grounding === 'required' && check.when !== 'effects' ? [sourceId] : [],
+          id: check.id, assessment: check.when === 'effects' && !hasEffects ? 'not_applicable' : 'supported',
+          sourceIds: check.grounding === 'required' && (check.when !== 'effects' || hasEffects) ? [sourceId] : [],
           note: 'The captured synthetic premises support this bounded assessment.'
         })), subproblems: [], childResults: []
       });
@@ -83,7 +86,7 @@ function completeAnalysis(request, cycle, {workflowRequests = [], transformCrite
         id: 'supported-conclusion', claim: 'The supplied premises determine the bounded analytical conclusion.',
         basis: 'inferred', sourceIds: [sourceId], limitation: 'This result concerns only the synthetic premises.'
       }];
-      if (stage.id === 'inference') body.subproblems = copy(workflowRequests);
+      if (stage.id === 'inference') { body.subproblems = copy(workflowRequests); body.childResults = copy(inferenceChildren); }
       if (stage.id === 'plan') {
         const requiredCriteria = context(request, cycle).requiredAcceptanceCriteria;
         const plannedCriteria = transformCriteria ? transformCriteria(copy(requiredCriteria)) : copy(requiredCriteria);
@@ -95,14 +98,14 @@ function completeAnalysis(request, cycle, {workflowRequests = [], transformCrite
         });
       }
       if (stage.id === 'think') body.criterionResults = assessedCriteria.map(item => ({
-        criterionId: item.id, assessment: 'satisfied', sourceIds: [sourceId], receiptIds: [],
+        criterionId: item.id, assessment: uncertain ? 'uncertain' : 'satisfied', sourceIds: [sourceId], receiptIds: [],
         rationale: 'The captured synthetic premises establish the requested analytical conclusion.'
       }));
       if (stage.id === 'respond') {
         body.values.answer = 'The supplied synthetic premises establish the bounded analytical conclusion.';
         body.coverage = assessedCriteria.map(item => ({
-          criterionId: item.id, disposition: 'addressed', sourceIds: [sourceId],
-          responseExcerpt: body.values.answer, limitation: ''
+          criterionId: item.id, disposition: uncertain ? 'unresolved' : 'addressed', sourceIds: [sourceId],
+          responseExcerpt: body.values.answer, limitation: uncertain ? 'The supplied evidence cannot prove the effect.' : ''
         }));
       }
     }
@@ -115,6 +118,58 @@ function completeAnalysis(request, cycle, {workflowRequests = [], transformCrite
   }
   cycle.state = 'completed';
 }
+
+function analysisOwnershipFixture({ exact = true } = {}) {
+  const request = graph(), root = addCycle(request, 'root', {runId: 'fixture-run-a'});
+  const child = addCycle(request, 'child', {parent: root});
+  const effect = {...criterion('publication', 'The official destination confirms the requested publication.'), verification: 'effect'};
+  child.acceptanceCriteria = [criterion('source-review'), effect];
+  child.request = { key: child.key, title: child.title, objective: child.objective, reason: 'Record the unresolved bounded findings.',
+    required: true, executionTarget: 'analysis', sourceIds: ['request:' + request.id], acceptanceCriteria: copy(child.acceptanceCriteria) };
+  const work = { ...copy(child.request), key: 'own-publication', executionTarget: 'workflow',
+    acceptanceCriteria: exact ? copy(child.acceptanceCriteria) : [child.acceptanceCriteria[0], {...effect, description: 'A different effect.'}] };
+  const sourceId = 'cycle:child:' + root.stageNodeIds.inference + ':' + child.id;
+  request.sources.push({ id: sourceId, kind: 'source', title: 'Retained child result', text: 'The analytical result remains unresolved.' });
+  completeAnalysis(request, root, { workflowRequests: [child.request, work], uncertain: true, inferenceChildren: [{
+    key: child.key, sourceId, summary: 'The analysis could not establish the external result.',
+    usedFor: 'Preserve the uncertainty and use the independently declared workflow.'
+  }] });
+  completeAnalysis(request, child, { uncertain: true });
+  return { request, root, child, effect };
+}
+
+test('new analytical children cannot take a workflow effect and get an exact correction path', () => {
+  const { request, root, child } = analysisOwnershipFixture();
+  const saved = request.responses.find(row => row.nodeId === root.stageNodeIds.inference);
+  const body = planningResponseBody(saved), attempt = { node: {kind:'inference'}, pipelineVersion: 2, sources: saved.sources };
+  assert.throws(() => validatePlanningModuleResponse(attempt, body), error => {
+    assert.equal(error.code, 'PLANNING_RESPONSE_FORMAT');
+    assert.deepEqual(error.issues.map(issue => issue.path), ['response.subproblems[0].acceptanceCriteria[1].verification']);
+    assert.match(error.issues[0].message, /effect unchanged.*workflow subproblem/);
+    return true;
+  });
+  const corrected = copy(body);
+  corrected.subproblems[0].acceptanceCriteria.pop();
+  assert.equal(validatePlanningModuleResponse(attempt, corrected).subproblems[1].acceptanceCriteria[1].verification, 'effect');
+  const prior = {...attempt, cycleContext: {children: [{key: child.key, request: child.request}]}};
+  assert.equal(validatePlanningModuleResponse(prior, body).subproblems[0].acceptanceCriteria[1].verification, 'effect',
+    'An exact historical child remains readable and retainable.');
+});
+
+test('a retained analysis-effect mismatch hands back only exact workflow criteria without claiming success', () => {
+  for (const exact of [true, false]) {
+    const { request, root, child, effect } = analysisOwnershipFixture({ exact });
+    const before = copy(request), view = projectPlanningRequest(request), node = id => view.nodes.find(item => item.id === id);
+    const response = node(child.stageNodeIds.respond), inference = node(root.stageNodeIds.inference), plan = node(root.stageNodeIds.plan);
+    assert.equal(response.readiness.cycle.outcome, 'unresolved');
+    assert.deepEqual(response.response.coverage.map(row => row.disposition), ['unresolved', 'unresolved']);
+    assert.equal(response.readiness.cycle.workflowHandoff?.criteria.some(row => row.id === effect.id), exact || undefined);
+    assert.equal(plan.readiness.cycle.dispatchReady, exact);
+    if (!exact) assert.deepEqual(inference.readiness.cycle.analysisEffectOwnershipIssues,
+      [{childKey: child.key, criterionIds: [effect.id]}]);
+    assert.deepEqual(request, before);
+  }
+});
 
 function criterionIdentityFixture(transformCriteria) {
   const request = graph(), root = addCycle(request, 'root', {runId: 'fixture-run-a'});

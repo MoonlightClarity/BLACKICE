@@ -185,6 +185,7 @@ export function validatePlanRevision(value) {
 }
 export const analyticalSubproblem = value => value?.executionTarget !== 'workflow';
 export const analyticalSubproblems = value => (value || []).filter(analyticalSubproblem);
+export const analysisEffectCriteria = value => analyticalSubproblem(value) ? (value?.acceptanceCriteria || []).filter(item => item.verification === 'effect') : [];
 export const sameSubproblemRequest = (left, right) => Boolean(left && right && canonical({ ...left, executionTarget: left.executionTarget ?? 'analysis' }) === canonical({ ...right, executionTarget: right.executionTarget ?? 'analysis' }));
 function subproblems(value) {
   const fields = ['key', 'title', 'objective', 'reason', 'required', 'sourceIds', 'acceptanceCriteria'];
@@ -480,7 +481,14 @@ export function evaluateResponseCycleStage(stageOrKind, response, context = {}) 
     if (!required) continue;
     if (!terminalChild(child)) { result.unresolvedChildren.push(child.key); childDispatch = false; continue; }
     if (child.state !== 'completed') result.childFailures.push({ key: child.key, state: child.state });
-    if ((child.state !== 'completed' || child.outcome !== 'satisfied' || child.dispatchReady !== true) && !workflowChildHandoffReady(child, context)) childDispatch = false;
+    if ((child.state !== 'completed' || child.outcome !== 'satisfied' || child.dispatchReady !== true) && !workflowChildHandoffReady(child, context)) {
+      childDispatch = false;
+      const misplaced = analysisEffectCriteria(child.request);
+      if (misplaced.length) {
+        result.analysisEffectOwnershipIssues ||= [];
+        result.analysisEffectOwnershipIssues.push({ childKey: child.key, criterionIds: misplaced.map(item => item.id) });
+      }
+    }
     const aggregate = value.childResults.find(item => item.key === child.key);
     if (!aggregate || !child.sourceId || aggregate.sourceId !== child.sourceId) result.issues.push('Aggregate the current required child result: ' + child.key + '.');
   }
@@ -550,7 +558,8 @@ export function evaluateResponseCycleStage(stageOrKind, response, context = {}) 
   result.dispatchReady = result.analysisReady && prerequisitesDispatch && childDispatch && !result.unresolvedChecks.length && !workflowPending && !workflowUnavailable;
   if(stage.kind==='respond'&&result.analysisReady&&context.workflowOwner&&context.workflowOwner.cycleId!==context.cycleId){
     const pending=value.coverage.filter(item=>item.disposition!=='addressed').map(item=>item.criterionId);
-    const work=(context.workflowRequests||[]).flatMap(item=>item.requiredForPlan===false?[]:item.acceptanceCriteria||[]);
+    const work=[...(context.workflowRequests||[]).flatMap(item=>item.requiredForPlan===false?[]:item.acceptanceCriteria||[]),
+      ...(context.inheritedAnalysisWorkflowCriteria||[])];
     const delegated=hostCriteria.filter(item=>pending.includes(item.id));
     if(pending.length&&delegated.length===pending.length&&delegated.every(item=>work.some(required=>canonical(required)===canonical(item))))result.workflowHandoff={ownerCycleId:context.workflowOwner.cycleId,criteria:delegated};
   }
