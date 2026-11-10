@@ -14,7 +14,7 @@ const styles = production.match(/<link[^>]+rel="stylesheet"[^>]*>/g).join('');
 const topbar = production.match(/<header class="next-topbar">[\s\S]*?<\/header>/)[0]
   .replace('data-space="chat" role="tab" aria-selected="true"', 'data-space="chat" role="tab" aria-selected="false"')
   .replace('data-space="planning" role="tab" aria-selected="false"', 'data-space="planning" role="tab" aria-selected="true"')
-  .replace('Starting.', 'UI preview');
+  .replace(/(<span id="next-health"[^>]*>)[^<]*/, '$1UI preview');
 html = html.replace(/<link[^>]+rel="stylesheet"[^>]*>/g, '').replace('<style>', styles + '<style>');
 html = html.replace('<div id="app"></div>', '<div class="next-shell">' + topbar + '<main class="next-content" id="next-stage"><section class="next-space"><div id="app"></div></section></main></div>');
 html = html.replace('#app{height:100vh;', '#app{height:100%;');
@@ -27,6 +27,48 @@ const evaluate=async expression=>{const r=await send('Runtime.evaluate',{express
 const click=selector=>evaluate('document.querySelector('+JSON.stringify(selector)+').click();true');
 const filter=value=>evaluate('(()=>{const e=document.querySelector("#pb-conversation-view");e.value='+JSON.stringify(value)+';e.dispatchEvent(new Event("change",{bubbles:true}));return true;})()');
 const shot=async(name,width,height)=>{await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});await sleep(150);const bounds=await evaluate('({width:innerWidth,scroll:document.documentElement.scrollWidth,body:document.body.scrollWidth})');assert.ok(bounds.scroll<=width+1&&bounds.body<=width+1,JSON.stringify(bounds));const navigation=await evaluate('(()=>{const box=document.querySelector(".next-tabs").getBoundingClientRect();return {top:box.top,bottom:box.bottom};})()');assert.ok(navigation.top>=0&&navigation.bottom<=65,"Workspace navigation must remain fully visible: "+JSON.stringify(navigation));const r=await send('Page.captureScreenshot',{format:'jpeg',quality:80,captureBeyondViewport:false});await writeFile(path.join(out,name+'.jpg'),Buffer.from(r.data,'base64'));await writeFile(path.join(out,name+'.base64'),r.data);checks.push({name,width,height,bounds});};
+
+const themeChecks={};
+const addThemeReferences=()=>evaluate('(()=>{const refs=document.createElement("div");refs.id="theme-references";refs.style.cssText="position:fixed;left:-10000px;top:0;width:220px;pointer-events:none";refs.innerHTML=\'<button id="theme-button">Control</button><button id="theme-primary" class="next-primary">Primary</button><select id="theme-select"><option>Saved</option></select><div id="theme-sidebar" class="next-chat-sidebar"></div><div id="theme-header" class="next-chat-head"></div><div id="theme-card" class="next-card"></div><button id="theme-selected" class="next-conversation" aria-current="true"><strong class="next-conversation-title">Selected</strong><small class="next-conversation-meta">Saved</small></button>\';document.body.append(refs);return true})()');
+const readPalette=()=>evaluate('(()=>{const read=q=>{const e=document.querySelector(q);if(!e)return null;const c=getComputedStyle(e);return {background:c.backgroundColor,image:c.backgroundImage,color:c.color,border:c.borderTopColor}};return {primary:read(".pb-primary"),primaryReference:read("#theme-primary"),button:read(".pb-header button"),buttonReference:read("#theme-button"),field:read(".pb-rail .pb-input"),fieldReference:read("#theme-select"),sidebar:read(".pb-rail"),sidebarReference:read("#theme-sidebar"),header:read(".pb-header"),headerReference:read("#theme-header"),card:read(".pb-overview-finding"),cardReference:read("#theme-card"),selected:read(".pb-conversation[aria-current=true]"),selectedReference:read("#theme-selected"),selectedReferenceMeta:read("#theme-selected .next-conversation-meta"),selectedMeta:read(".pb-conversation[aria-current=true] small"),selectedPill:read(".pb-conversation[aria-current=true] .pb-pill"),pill:read(".pb-pill"),muted:read(".pb-progress-copy small"),progress:read(".pb-progress-step"),theme:getComputedStyle(document.querySelector(".planning-browser")).getPropertyValue("--planning-theme-version").trim()}})()');
+const rgb=value=>(value.match(/[\d.]+/g)||[]).map(Number);
+const luminance=value=>{const c=rgb(value).slice(0,3).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722};
+const ratio=(a,b)=>{const x=luminance(a),y=luminance(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05)};
+let themeDocument;
+const forcePseudo=async(selector,pseudoClasses)=>{themeDocument ||= await send('DOM.getDocument');const node=await send('DOM.querySelector',{nodeId:themeDocument.root.nodeId,selector});await send('CSS.forcePseudoState',{nodeId:node.nodeId,forcedPseudoClasses:pseudoClasses});};
+const normalPalette=async()=>{
+ await addThemeReferences();const p=await readPalette();assert.equal(p.theme,'1');
+ for(const key of ['primary','button'])for(const property of ['background','image','color','border'])assert.equal(p[key][property],p[key+'Reference'][property],key+' shared '+property);
+ for(const key of ['sidebar','header','card','selected'])assert.equal(p[key].image,p[key+'Reference'].image,key+' shared surface');
+ for(const property of ['background','color'])assert.equal(p.field[property],p.fieldReference[property],'native field '+property);
+ const primaryStops=p.primary.image.match(/rgba?\([^)]+\)/g);assert.ok(primaryStops?.length>=2);
+ const contrast={primary:Math.min(...primaryStops.map(stop=>ratio(p.primary.color,stop))),muted:ratio(p.muted.color,p.progress.background),pill:ratio(p.pill.color,p.pill.background)};
+ for(const [name,value]of Object.entries(contrast))assert.ok(value>=4.5,name+' contrast '+value);
+ themeChecks.normal={palette:p,contrast};
+ await send('DOM.enable');await send('CSS.enable');
+ await forcePseudo('.pb-primary',['hover']);await forcePseudo('#theme-primary',['hover']);const hover=await readPalette();for(const property of ['background','image','color','border'])assert.equal(hover.primary[property],hover.primaryReference[property],'primary hover '+property);await forcePseudo('.pb-primary',[]);await forcePseudo('#theme-primary',[]);
+ await forcePseudo('.pb-conversation[aria-current=true]',['hover']);const selectionHover=await readPalette();assert.equal(selectionHover.selected.image,p.selected.image,'Selected navigation keeps its material on hover.');await forcePseudo('.pb-conversation[aria-current=true]',[]);themeChecks.hover=true;
+ const inherited=await evaluate('(()=>{const r=document.documentElement;const before=r.getAttribute("style");r.style.setProperty("--panel","rgb(31, 32, 33)");r.style.setProperty("--muted","rgb(220, 220, 220)");r.style.setProperty("--next-primary-background","rgb(210, 180, 140)");r.style.setProperty("--next-primary-foreground","rgb(12, 13, 14)");const result={panel:getComputedStyle(document.querySelector(".pb-progress-step")).backgroundColor,muted:getComputedStyle(document.querySelector(".pb-progress-copy small")).color,primary:getComputedStyle(document.querySelector(".pb-primary")).backgroundColor,primaryText:getComputedStyle(document.querySelector(".pb-primary")).color};if(before===null)r.removeAttribute("style");else r.setAttribute("style",before);return result})()');
+ assert.deepEqual(inherited,{panel:'rgb(31, 32, 33)',muted:'rgb(220, 220, 220)',primary:'rgb(210, 180, 140)',primaryText:'rgb(12, 13, 14)'});themeChecks.tokenInheritance=true;
+};
+const accessiblePalettes=async()=>{
+ await click('button[data-page=overview]');
+ await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-contrast',value:'more'},{name:'prefers-reduced-transparency',value:'reduce'}]});
+ const opaque=await readPalette();for(const key of ['sidebar','header','card','selected'])assert.equal(opaque[key].image,'none',key+' opaque mode');themeChecks.opaque=true;await shot('09-overview-high-contrast',1440,900);
+ for(const scheme of ['light','dark']){
+  await send('Emulation.setEmulatedMedia',{features:[{name:'forced-colors',value:'active'},{name:'prefers-color-scheme',value:scheme}]});
+  const p=await readPalette();for(const property of ['background','image','color','border'])assert.equal(p.primary[property],p.primaryReference[property],'forced '+scheme+' primary '+property);
+  assert.equal(p.sidebar.background,p.sidebarReference.background,'forced sidebar');assert.equal(p.header.background,p.headerReference.background,'forced header');assert.equal(p.card.background,p.cardReference.background,'forced card');
+  assert.equal(p.selected.background,p.selectedReference.background,'forced selected background');assert.equal(p.selected.color,p.selectedReference.color,'forced selected foreground');assert.equal(p.selectedMeta.color,p.selected.color,'selected metadata contrast in '+scheme);assert.equal(p.selectedReferenceMeta.color,p.selectedReference.color,'shared selected metadata contrast in '+scheme);assert.ok(ratio(p.selectedPill.color,p.selectedPill.background)>=4.5,'selected status pill contrast in '+scheme);
+  themeChecks['forced-'+scheme]=p;await shot('10-overview-forced-'+scheme,1440,900);
+ }
+ await click('[data-overview-node=plan]');await shot('11-step-forced-dark',1440,900);
+ await click('[data-view=graph]');await shot('12-graph-forced-dark',1440,900);
+ await click('button[data-page=overview]');await click('.pb-more>summary');await shot('13-menu-forced-dark',390,900);
+ await send('Emulation.setEmulatedMedia',{features:[]});await send('Emulation.setDeviceMetricsOverride',{width:1440,height:900,deviceScaleFactor:1,mobile:false});
+ await click('.pb-more>summary');
+};
+
 const directory=await mkdtemp(path.join(tmpdir(),'blackice-planning-ui-'));
 try{
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const profile=path.join(directory,'edge');await mkdir(profile);
@@ -40,6 +82,7 @@ await until(()=>evaluate('Boolean(document.querySelector(".pb-overview"))'),'rea
 assert.equal(await evaluate('Boolean(document.querySelector(".pb-inspector"))'),false,'Default overview does not render the technical editor.');
 assert.equal(await evaluate('document.querySelectorAll(".pb-progress-step").length'),5);
 assert.equal(await evaluate('document.querySelector(".pb-intent-panel").open'),false);
+await normalPalette();
 await shot('01-overview-desktop',1440,900);
 await shot('02-overview-tablet',1024,900);
 await shot('03-overview-mobile',390,900);
@@ -70,11 +113,12 @@ await shot('08-advanced-xml',1440,900);await click('[data-view=outline]');
 await click('[data-action=new-request]');assert.equal(await evaluate('document.querySelector(".pb-create").hidden'),false);
 await evaluate('[...document.querySelectorAll(".pb-create button")].find(e=>e.textContent==="Cancel").click();true');
 assert.equal(await evaluate('document.querySelector(".pb-create").hidden'),true);
+await accessiblePalettes();
 const layout=await evaluate('({sheets:document.styleSheets.length,version:getComputedStyle(document.querySelector(".planning-browser")).getPropertyValue("--planning-navigation-version").trim(),top:document.querySelector(".planning-browser").getBoundingClientRect().top})');
 assert.equal(layout.version,'3');assert.ok(layout.sheets>=20,'The full shipped CSS stack is loaded.');
 assert.equal(layout.top,64,'Planning has no decorative dead space above its content.');
 assert.deepEqual(await evaluate('window.mutations'),[]);assert.deepEqual(errors,[]);
-await writeFile(path.join(out,'report.json'),JSON.stringify({checks,errors,layout,readOnly:true,syntheticData:true,filterTransitions:true,views:true,cancel:true},null,2));
-console.log('PASS '+JSON.stringify({checks,errors,layout,readOnly:true}));
+await writeFile(path.join(out,'report.json'),JSON.stringify({checks,errors,layout,themeChecks,readOnly:true,syntheticData:true,filterTransitions:true,views:true,cancel:true},null,2));
+console.log('PASS '+JSON.stringify({checks,errors,layout,themeModes:Object.keys(themeChecks),readOnly:true}));
 }catch(e){console.error(e.stack||e);process.exitCode=1;}
 finally{try{await send('Browser.close')}catch{}try{ws?.close()}catch{}await sleep(200);server.closeAllConnections();await new Promise(r=>server.close(r));await rm(directory,{recursive:true,force:true,maxRetries:10,retryDelay:300}).catch(()=>{});}
