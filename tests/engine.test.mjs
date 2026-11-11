@@ -788,6 +788,8 @@ test('resume retains completed independent branches and runs unfinished descenda
   });
   const first = engine.startRun({ workflow: graph, input: { task: 'original task', cwd } });
   await waitFor(() => engine.getRun(first.id).nodes.healthyOut.status === 'completed', 'healthy branch completes');
+  // The healthy branch can finish before this independent provider call starts.
+  await waitFor(() => attempts === 1, 'flaky runtime consumes its deferred failure before rejection');
   failure.reject(new Error('temporary provider failure'));
   await waitFor(() => engine.getRun(first.id).settled, 'failed execution settles');
   graph.nodes.find(item => item.id === 'flaky').prompt = 'CHANGED_DRAFT';
