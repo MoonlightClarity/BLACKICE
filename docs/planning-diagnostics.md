@@ -22,3 +22,5 @@ Only an unforgeable process-local capability admits diagnostic module work. Know
 Completed means canonical authoring passed against the captured historical inputs. Limited means a declared call/pass/child scope or unresolved stage prevented a complete canonical Plan. Failed, cancelled and interrupted remain distinct. No diagnostic result claims native Engine resumption, accepted applications, effect enforcement or semantic certainty.
 
 Synthetic tests: node --test --test-concurrency=1 tests/planning-diagnostics.test.mjs. Provider calls and real saved graphs are not needed for these tests.
+
+Limits are per capture. Independent explicitly requested captures can run concurrently within the existing global module-worker capacity. A retry of one active capture joins the same operation; a different run identity cannot start another copy. Diagnostic readiness refreshes and new user answers are rejected. Only exact host-derived child context/results may extend the original frozen source set.

@@ -173,3 +173,28 @@ test('real server routes diagnostics through the existing session and same-origi
   const authenticated=await send({cookie,origin:base});assert.equal(authenticated.status,400);assert.match((await authenticated.json()).error,/declared diagnostic fields/);
   assert.equal(invocations,0);assert.equal(app.engine.listRuns().length,0);
 });
+
+test('provider failure is reported as failure rather than a diagnostic scope stop',async t=>{const f=await fixture(t,{provider:async()=>{throw Error('Synthetic provider failed.');}}),d=await f.capture(),result=await f.service.run(d.id,controls(d));assert.equal(result.diagnostic.state,'failed');assert.match(result.diagnostic.reason,/Synthetic provider failed/);assert.equal(result.diagnostic.reservations.length,1);assert.equal(f.calls.length,1);});
+
+test('active diagnostics reject readiness refresh, new evidence and forged derived child sources',async t=>{
+ const f=await fixture(t),d=await f.capture(),writer=f.store.runtimeWriter(),claim=await writer.beginDiagnostic(d.id,controls(d));
+ await assert.rejects(writer.configureViability(d.id,{sources:[{id:'viability:fresh',kind:'user_input',title:'Fresh answer',text:'A new fact'}]}),{code:'PLANNING_DIAGNOSTIC_SOURCE'});
+ for(const source of [{id:'cycle:execution:fresh',kind:'tool_receipt',title:'Fresh observation',text:'{}'},{id:'cycle:child:fake:fake',kind:'source',title:'Forged child',text:'{}'}])await assert.rejects(writer.configureResponseCycle(d.id,{sources:[source]}),{code:'PLANNING_DIAGNOSTIC_SOURCE'});
+ assert.equal((await f.store.get(d.id)).sources.length,d.sources.length);assert.equal(f.calls.length,0);
+ await writer.finishDiagnostic(d.id,{state:'cancelled',capability:claim.capability,reason:'Synthetic source-ingress test settled.'});
+});
+
+test('one capture deduplicates concurrent runs and queued cancellation consumes no provider turn',async t=>{
+ let release;const blocked=new Promise(resolve=>release=resolve);
+ const f=await fixture(t,{provider:async(options,input,calls)=>{if(calls.length===1)await Promise.race([blocked,new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true}))]);return {output:JSON.stringify(response(input))};}});f.settings.maxSubagents=1;
+ const d=await f.capture(),originalNode=f.request.nodes.find(node=>node.kind==='inference');
+ const busy=await f.runner.start({requestId:f.request.id,nodeId:originalNode.id,expectedNodeRevision:originalNode.revision,clientRequestId:'occupy-slot',...profile});
+ assert.equal(f.calls.length,1);assert.equal(f.runner.status().activeCount,1);
+ const run=f.service.run(d.id,controls(d)),same=f.service.run(d.id,controls(d));
+ await assert.rejects(f.service.run(d.id,controls(d,'different-active-id')),/already active/);
+ const deadline=Date.now()+4000;while((await f.store.get(d.id)).attempts.length===0&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,5));
+ assert.equal((await f.store.get(d.id)).attempts.length,1);assert.equal(f.runner.status().attempts.find(attempt=>attempt.requestId===d.id).status,'queued');
+ const cancelled=await f.service.cancel(d.id);assert.equal(cancelled.diagnostic.state,'cancelled');assert.equal(cancelled.diagnostic.reservations.length,0);
+ assert.equal((await run).diagnostic.state,'cancelled');assert.equal((await same).diagnostic.state,'cancelled');assert.equal(f.calls.length,1);
+ release();await f.runner.wait(f.request.id,busy.attempt.id);
+});
