@@ -5,7 +5,7 @@ import {EventEmitter} from 'node:events';
 import {mkdtemp,rm,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {verificationScriptHash} from '../lib/workbench-effect-verification.mjs';
+import {verificationScriptHash} from '../lib/historical-guest-verification.mjs';
 import {planningReviewObservationSources,capturePlanningGuestObservationEvents,PLANNING_REVIEW_OBSERVATION_LIMITS} from '../lib/planning-review-observations.mjs';
 import {ConversationArchive} from '../lib/conversations.mjs';
 import {observationRun} from './fixtures/planning-guest-observation.mjs';

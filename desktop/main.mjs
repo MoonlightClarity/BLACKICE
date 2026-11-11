@@ -33,12 +33,6 @@ import { electronExitReceipt } from './electron-exit-diagnostics.mjs';
 import { initializeLocalCrashReporting } from './local-crash-reporting.mjs';
 import { nativeOwnershipPossible, assertNativeParentUnowned, createNativeParentRetainer, createNativeParentCloseHandler, createNativeSafeQuitHandler } from './native-parent-lifetime.mjs';
 import { createLiveBrowserWindow, performBrowserSurface } from './browser-surface.mjs';
-import { WorkbenchNativeSurface } from './workbench-native-surface.mjs';
-import { createWorkbenchLauncherCloseHandler } from './workbench-native-lifetime.mjs';
-import { createWorkbenchClipboardTransfer } from '../lib/workbench-clipboard.mjs';
-import { WorkbenchClipboardSharing } from './workbench-clipboard-sharing.mjs';
-import { WorkbenchGuestResolution } from '../lib/workbench-guest-resolution.mjs';
-import { WorkbenchNativeControls, createWorkbenchControlPreferences } from './workbench-native-controls.mjs';
 import { createFrontendDevtools } from './frontend-devtools.mjs';
 import { resolveDesktopIcon, repairDesktopShortcut } from './app-icon.mjs';
 
@@ -72,21 +66,6 @@ const APP_USER_MODEL_ID = 'com.agentdesk.workbench';
 const APP_DIR = path.dirname(DESKTOP_DIR);
 const ACTIVE = new Set(['queued', 'running', 'waiting']);
 let mainWindow, harness, origin, shutdownPromise, didClose = false;
-let workbenchClipboardSharing=null,workbenchResolution=null,workbenchClipboardTransfer=null,workbenchFeaturesTimer=null,workbenchFeaturesBusy=false;
-let workbenchNativeControls=null;
-let workbenchFeaturePreferences={clipboardEnabled:true,resolutionEnabled:true};
-let workbenchControlPreferenceStore=null;
-const vmConsole = new WorkbenchNativeSurface({
-  detachedWindow: true,
-  appDirectory: APP_DIR, resourcesDirectory: process.resourcesPath, isPackaged: app.isPackaged,
-  getWorkbench: () => harness?.workbench, getWindow: () => mainWindow,
-  scaleFactor: host => screen.getDisplayMatching(host.getBounds()).scaleFactor * (host.webContents.getZoomFactor() || 1),
-  contentScaleFactor: host => host.webContents.getZoomFactor() || 1,
-  onControl:(event,context)=>{
-    if(!workbenchNativeControls)throw Error('Workbench controls are still starting.');
-    return workbenchNativeControls.perform(event,context);
-  },
-});
 const frontendDevtools = createFrontendDevtools({ getWindow: () => mainWindow, getAppMetrics: () => app.getAppMetrics() });
 app.on('will-quit', () => { try { frontendDevtools.close(); } catch (error) { console.error('BLACKICE frontend developer cleanup:', error.message); } });
 // Native Applications was retired: no external window manager, COM host or
@@ -145,7 +124,7 @@ const startup = new DesktopStartup({ headless: launch.headless || launch.backgro
 // and initialization remain authoritative even if the indicator is unavailable.
 diagnostics.onStartupPhase = (phase, outcome) => startup.progress(phase, outcome);
 const desktopLifecycle = new DesktopLifecycle({ headless: launch.headless, background: launch.background, showInactive: launch.showInactive, getWindow: () => mainWindow, createWindow, saveWindow: saveWindowState,
-  beforeBackground:async()=>{if(!vmConsole.detachedWindow)await vmConsole.hide();if(nativeOwnershipPossible(nativeApps))await nativeApps.visibleState(false);},quit: () => app.quit(), restart: async () => {
+  beforeBackground:async()=>{if(nativeOwnershipPossible(nativeApps))await nativeApps.visibleState(false);},quit: () => app.quit(), restart: async () => {
   if (!desktopRestart) throw new Error('BLACKICE is still starting. Try restart after it is ready.');
   await desktopRestart.request({ requestId: randomUUID(), ownerId: 'local' });
   const receipt = await desktopRestart.waitForHandoff();
@@ -153,12 +132,7 @@ const desktopLifecycle = new DesktopLifecycle({ headless: launch.headless, backg
 } });
 desktopLifecycle.on('updated', () => { if (runtimeRecord && !shutdownPromise) void saveRuntimeRecord(); });
 const retainNativeParent=createNativeParentRetainer({host:nativeApps,background:()=>desktopLifecycle.background()});
-const retainDetachedWorkbench=()=>vmConsole.detachedWindow&&Boolean(vmConsole.native)&&!vmConsole.destroyed&&!shutdownPromise&&!didClose&&!desktopLifecycle.quitting;
-const launcherWindowClosed=()=>{
-  if(didClose)return;
-  if(retainDetachedWorkbench())void desktopLifecycle.background().catch(error=>diagnostics.recordError('workbench','launcher_background_failed',error));
-  else desktopLifecycle.windowClosed();
-};
+const launcherWindowClosed=()=>{if(!didClose)desktopLifecycle.windowClosed();};
 
 function saveRuntimeRecord() {
   if (!runtimeRecord) return runtimeWriteChain;
@@ -195,96 +169,6 @@ function trustedSender(event) {
   return isTrustedDesktopSender(event, mainWindow, origin);
 }
 
-function workbenchFeaturesStatus(){
-  const value=workbenchClipboardSharing?.status()||{enabled:false,active:false,reason:'disabled'};
-  const messages={sharing:'Text clipboard shared',disabled:'Text clipboard sharing off',
-    'waiting-for-user-window':'Text clipboard pauses until you control and focus Workbench',
-    'waiting-for-new-copy':'Waiting for the copied text',
-    'clipboard-has-no-text':'Clipboard contains no plain text',
-    WORKBENCH_CLIPBOARD_TEXT:'Text clipboard supports up to 64K characters',
-    WORKBENCH_CLIPBOARD_CHANGED:'Clipboard changed during transfer; copy again',
-    WORKBENCH_CLIPBOARD_UNAVAILABLE:'Clipboard helper is unavailable',
-    WORKBENCH_CLIPBOARD_FORMAT:'Only plain text is shared',
-    WORKBENCH_CLIPBOARD_EMPTY:'Clipboard contains no plain text'};
-  return {clipboard:{...value,state:value.active?'sharing':value.reason,
-    message:messages[value.reason]||(value.active?'Text clipboard shared':'Text clipboard sharing is paused')},
-    resolution:workbenchResolution?.status()||{enabled:false,state:'disabled'}};
-}
-async function pollWorkbenchFeatures(){
-  if(workbenchFeaturesBusy||shutdownPromise||!workbenchClipboardSharing||!workbenchResolution)return;
-  workbenchFeaturesBusy=true;
-  try{
-    const native=await vmConsole.status();
-    void workbenchClipboardSharing.observe(native).catch(()=>{});
-    workbenchResolution.observe(native);
-    await workbenchNativeControls?.refresh(native);
-  }catch{}finally{workbenchFeaturesBusy=false;}
-}
-async function initializeWorkbenchFeatures(){
-  const workbench=harness.workbench;
-  workbenchControlPreferenceStore=createWorkbenchControlPreferences(path.join(app.getPath('userData'),'workbench-native-controls.json'));
-  try{workbenchFeaturePreferences=await workbenchControlPreferenceStore.load()}
-  catch(error){workbenchFeaturePreferences={clipboardEnabled:false,resolutionEnabled:false};void diagnostics.recordError('workbench','preferences_invalid',error).catch(()=>{});}
-  const readHostClipboard=()=>({formats:clipboard.availableFormats(),text:clipboard.readText()});
-  workbenchClipboardTransfer=createWorkbenchClipboardTransfer({getWorkbench:()=>harness?.workbench,
-    readHostClipboard,writeHostText:text=>clipboard.writeText(text),
-    getGuestState:async current=>{
-      const [native,agent]=await Promise.all([vmConsole.status(),current.bridge().agentStatus()]);
-      return {canRunNativeApps:native.accepted===true&&native.detached===true&&native.connected===true&&native.displayReady===true&&agent.paired===true,
-        guest:{running:native.connected===true,agent}};
-    }});
-  workbenchClipboardSharing=new WorkbenchClipboardSharing({workbench,transfer:workbenchClipboardTransfer,
-    getNativeStatus:()=>vmConsole.status(),setNativeClipboard:enabled=>vmConsole.configureClipboard(enabled),
-    finishNativePaste:value=>vmConsole.completeClipboardPaste(value),
-    hostClipboardState:()=>{const snapshot=readHostClipboard();return {hasText:snapshot.formats.includes('text/plain')&&snapshot.text.length>0,
-      fingerprint:createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')};}});
-  workbenchResolution=new WorkbenchGuestResolution({workbench,getNativeStatus:()=>vmConsole.status()});
-  workbenchNativeControls=new WorkbenchNativeControls({getWorkbench:()=>harness?.workbench,getNativeStatus:()=>vmConsole.status(),
-    configureNativeControls:value=>vmConsole.configureControls(value),getPreferences:()=>({...workbenchFeaturePreferences}),
-    setPreferences:async value=>{await workbenchControlPreferenceStore.save(value);workbenchFeaturePreferences={...value}},
-    applyFeatures:async receipt=>{
-      const user=receipt?.owner==='user',token=user?{controlToken:receipt.controlToken}:{};
-      const assertReceipt=()=>workbench.consoleControl.assert(user?receipt.controlToken:undefined,receipt.revision);
-      assertReceipt();
-      await workbenchClipboardSharing.configure({enabled:user&&workbenchFeaturePreferences.clipboardEnabled,...token});
-      assertReceipt();
-      workbenchResolution.configure({enabled:user&&workbenchFeaturePreferences.resolutionEnabled,...token});
-    },
-    openBlackice:()=>desktopLifecycle.show({activate:true}),
-    afterStart:()=>vmConsole.perform({action:'attach'},mainWindow)});
-  // This callback stays in the main process. The model sees the owner/revision,
-  // while only the clipboard and sizing controllers receive the private token.
-  workbench.onAgentControlRestored=async receipt=>{
-    workbenchNativeControls.assertReceipt(workbench,receipt);
-    await workbenchNativeControls.applyFeatures(receipt);
-    workbenchNativeControls.lastConfig=null;
-    await workbenchNativeControls.refresh(await vmConsole.status());
-  };
-  workbenchFeaturesTimer=setInterval(()=>void pollWorkbenchFeatures(),150);workbenchFeaturesTimer.unref?.();
-}
-async function performWorkbenchFeatures(event,request){
-  if(!trustedSender(event)||!request||typeof request!=='object'||Array.isArray(request))throw Error('Workbench feature requests must come from BLACKICE.');
-  if(request.action==='status'&&Object.keys(request).length===1)return workbenchFeaturesStatus();
-  if(request.action==='configure'){
-    if(Object.keys(request).some(key=>!['action','clipboardEnabled','resolutionEnabled','controlToken'].includes(key))||
-      typeof request.clipboardEnabled!=='boolean'||typeof request.resolutionEnabled!=='boolean')throw Error('Choose Workbench clipboard and window sizing settings.');
-    if(request.clipboardEnabled||request.resolutionEnabled){
-      if(harness.workbench.consoleControl.status().owner!=='user')throw Error('Take control to enable Workbench clipboard and window sizing.');
-      harness.workbench.consoleControl.assert(request.controlToken);
-    }
-    const preferences={clipboardEnabled:request.clipboardEnabled,resolutionEnabled:request.resolutionEnabled};
-    await workbenchControlPreferenceStore.save(preferences);workbenchFeaturePreferences=preferences;
-    await workbenchClipboardSharing.configure({enabled:request.clipboardEnabled,...(request.controlToken?{controlToken:request.controlToken}:{})});
-    workbenchResolution.configure({enabled:request.resolutionEnabled,...(request.controlToken?{controlToken:request.controlToken}:{})});
-    workbenchFeaturePreferences={clipboardEnabled:request.clipboardEnabled,resolutionEnabled:request.resolutionEnabled};
-    if(workbenchNativeControls)workbenchNativeControls.lastConfig=null;
-    void pollWorkbenchFeatures();return workbenchFeaturesStatus();
-  }
-  if(request.action==='clipboard'&&Object.keys(request).every(key=>['action','direction','controlToken'].includes(key)))
-    return workbenchClipboardTransfer({direction:request.direction,controlToken:request.controlToken});
-  throw Error('Unsupported Workbench feature request.');
-}
-
 function handle(channel, fn) {
   ipcMain.handle(channel, (event, ...args) => {
     if (!trustedSender(event) || args.length !== 0) throw new Error('BLACKICE desktop request is not allowed.');
@@ -316,11 +200,8 @@ async function detachDesktop() {
 async function shutdown() {
   if (shutdownPromise) return shutdownPromise;
   shutdownPromise = (async () => {
-    clearInterval(workbenchFeaturesTimer);workbenchFeaturesTimer=null;
-    workbenchNativeControls?.close();workbenchResolution?.close();await workbenchClipboardSharing?.close().catch(()=>{});
     // Managed applications retain their real hidden parent in this same
     // instance. Ordinary quit never detaches them onto the Windows desktop.
-    await vmConsole.destroy().catch(error => diagnostics.recordError('workbench', 'native_console_close_failed', error));
     assertNativeParentUnowned(nativeApps);
     await nativeApps.close();
     rendererRecovery?.stop();
@@ -486,9 +367,9 @@ function createWindow() {
   });
   mainWindow.removeMenu();
   const contents = mainWindow.webContents;
-  contents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame) { hideBrowserSurface(); if(!vmConsole.detachedWindow)void vmConsole.hide().catch(error=>diagnostics.recordError('workbench','native_console_hide_failed',error)); } });
-  contents.on('render-process-gone', () => { hideBrowserSurface(); if(!vmConsole.detachedWindow)void vmConsole.hide().catch(error=>diagnostics.recordError('workbench','native_console_hide_failed',error)); });
-  window.on('closed', () => { hideBrowserSurface(); if(!vmConsole.detachedWindow)void vmConsole.close().catch(() => {}); });
+  contents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame) hideBrowserSurface(); });
+  contents.on('render-process-gone', () => { hideBrowserSurface(); });
+  window.on('closed', () => { hideBrowserSurface(); });
   contents.setWindowOpenHandler(({ url }) => {
     try {
       const target = new URL(url);
@@ -542,8 +423,7 @@ function createWindow() {
     onError:error=>{void diagnostics.recordError('native-apps','detach_failed',error);},
     onAllowed:()=>{recovery.stop();void saveWindowState();}
   });
-  mainWindow.on('close',createWorkbenchLauncherCloseHandler({shouldRetain:retainDetachedWorkbench,background:()=>desktopLifecycle.background(),ordinary:ordinaryClose,
-    onError:error=>{void diagnostics.recordError('workbench','launcher_background_failed',error);}}));
+  mainWindow.on('close',ordinaryClose);
   mainWindow.on('closed', () => { mainWindow = null; launcherWindowClosed(); });
   return recovery.loadInitial();
 }
@@ -655,25 +535,13 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
     startup.progress('profile', 'ready');
     const local = await startup.step(() => startupPhase(diagnostics, 'local-harness', () => startLocalHarness(dataDir, defaultCwd)), value => value.instance.close());
     harness = local.instance;
-    // Native display is optional. Missing development artifacts or incomplete
-    // local preview checks never prevent Chat, Planning, Browser or streaming.
-    await vmConsole.bindWorkbench().catch(error => diagnostics.recordError('workbench', 'native_bindings_unavailable', error));
-    await initializeWorkbenchFeatures();
     await startup.step(() => harness.desktop.setEnabled(true));
     harness.server.on('relay.shutdown', () => app.quit());
     origin = local.url;
     ipcMain.handle('relay:write-clipboard', createClipboardHandler({ trustedSender, writeText: text => clipboard.writeText(text) }));
-    ipcMain.handle('relay:workbench-features',performWorkbenchFeatures);
     ipcMain.handle('relay:browser-surface', (event, request) => {
       if (!trustedSender(event)) throw new Error('Browser surface requests must come from BLACKICE.');
       return performBrowserSurface(harness?.browser?.driver, mainWindow, request);
-    });
-    ipcMain.handle('relay:vm-surface', async (event, request) => {
-      if (!trustedSender(event)) throw new Error('VM console requests must come from BLACKICE.');
-      // Only a verified child-first local preview can attach. Renderer requests
-      // cannot choose executable paths, grant VM rights, pin certificates, or
-      // change the authoritative server input owner.
-      return vmConsole.perform(request, mainWindow);
     });
     handle('relay:minimize', () => mainWindow.minimize());
     handle('relay:maximize', () => {

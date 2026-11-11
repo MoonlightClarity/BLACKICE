@@ -222,9 +222,9 @@ test('the source index binds tests, build scripts, lockfile and workflows as wel
   }
 });
 
-test('source inventory binds native product assets and the bundled skill while retaining older fixture compatibility', async t => {
+test('source inventory binds bundled planning skills without obsolete VM payloads', async t => {
   const directory=await sourceIndexFixture(t),before=await releaseSourceIndex(directory);
-  for(const relative of ['resources/workbench-native/workbench-freerdp-client.exe','resources/workbench-native/package.json','skills/planning/SKILL.md']){
+  for(const relative of ['skills/planning/SKILL.md']){
     const file=path.join(directory,relative);await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,'test source input');
     const added=await releaseSourceIndex(directory);assert.notEqual(added.sourceIndexSha256,before.sourceIndexSha256);assert.ok(added.records.some(r=>r.path===relative));
     await fs.appendFile(file,' changed');assert.notEqual((await releaseSourceIndex(directory)).sourceIndexSha256,added.sourceIndexSha256);await fs.rm(file);
