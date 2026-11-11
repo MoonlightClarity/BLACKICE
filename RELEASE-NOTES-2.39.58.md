@@ -1,6 +1,7 @@
 # BLACKICE 2.39.58
 
 - Expose shared Planning lifecycle, canonical contract editing, execution readback, and cancellation through native and direct tool surfaces.
+- Permit the seven existing Planning read actions through read-only worker guards while preserving write, run, and cancel restrictions.
 - Preserve request identity, saved cancellation outcomes, and evidence-only projections across those surfaces.
 - Extend bounded field repair to the two declared scalar families while preserving already-valid values and durable raw/base/merged provenance.
 - Include a complete missing-field, enum, and duplicate-member checklist in the existing full-response repair turn, without adding another repair attempt.
