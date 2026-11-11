@@ -42,7 +42,7 @@ export function projectFamily(family) {
       },
       attachmentIds:Array.isArray(run.attachmentIds)?run.attachmentIds.filter(id=>typeof id==='string'):[],
       workflow:{id:run.workflow?.id,name:run.workflow?.name,
-        settings:{...(run.workflow?.settings?.context?{context:contextOptions(run.workflow.settings.context)}:{}),codexHistory:run.workflow?.settings?.codexHistory},
+        settings:{...(run.workflow?.settings?.context?{context:contextOptions(run.workflow.settings.context)}:{}),codexHistory:run.workflow?.settings?.codexHistory,planningExecutionMode:run.workflow?.settings?.planningExecutionMode},
         nodes:(run.workflow?.nodes||[]).map(n=>({id:n.id,type:n.type,name:n.name,model:n.model,codexHistory:n.codexHistory,
           ...(n.context?{context:contextOptions(n.context)}:{})}))},
       // The worker returns bounded task metadata, never an entire state history

@@ -3,6 +3,21 @@ import { VIABILITY_TEMPLATE, validateViabilityRequirements, normalizeViabilityQu
 import { RESPONSE_CYCLE_CONTAINER_TEMPLATE, RESPONSE_CYCLE_TEMPLATES, RESPONSE_CYCLE_STAGES, responseCycleStage, responseCycleStages, responseCycleTemplate, parseResponseCycleResponse, evaluateResponseCycleStage, analyticalSubproblem, analysisEffectCriteria } from './response-cycle-model.mjs';
 import { canonicalCycleTaskContext } from './planning-contract-cycle-model.mjs';
 import { normalizeUserAgencyCheckpoint, evaluateUserAgencyCheckpoint, assertUserAgencyDispatchConsistency } from './planning-user-agency.mjs';
+export const LEGACY_PLANNING_RETIRED_MESSAGE = 'The automatic Planning pipeline is retired. Saved results remain readable; use current modular graphs for new work.';
+export function legacyPlanningError() {
+  return Object.assign(new Error(LEGACY_PLANNING_RETIRED_MESSAGE), { code: 'PLANNING_CYCLE_RETIRED', status: 410 });
+}
+/** Host orchestration metadata, never a module kind or a caller-chosen ID. */
+export function isLegacyPlanningRequest(request) {
+  const cycle = value => value && typeof value === 'object' && value.stageNodeIds && typeof value.stageNodeIds === 'object' && !Array.isArray(value.stageNodeIds);
+  return Boolean(request?.planningExecutionMode === 'plan_only' || request?.diagnostic || request?.viability?.definition || request?.responseCycle?.rootCycleId ||
+    (Array.isArray(request?.responseCycle?.cycles) && request.responseCycle.cycles.some(cycle)) ||
+    (Array.isArray(request?.cycles) && request.cycles.some(cycle)));
+}
+export function assertCurrentPlanningRequest(request) {
+  if (isLegacyPlanningRequest(request)) throw legacyPlanningError();
+}
+
 export const PLANNING_BROWSER_VERSION = 1;
 export const PLANNING_BROWSER_LIMITS = Object.freeze({
   requests: 500, nodes: 500, depth: 32, edges: 2000, responses: 1500,

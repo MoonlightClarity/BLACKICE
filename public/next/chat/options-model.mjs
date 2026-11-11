@@ -13,7 +13,7 @@ export function normalizeChatOptions(value={}){
   const effort=typeof value?.effort==='string'&&value.effort.length<=25?value.effort:'default';
   const serviceTier=['default','fast'].includes(value?.serviceTier)?value.serviceTier:'default';
   const planningMode=value?.planningMode==='off'?'off':'ontology';
-  const planningExecutionMode='automatic';
+  const planningExecutionMode=value?.planningExecutionMode??'automatic';
   return {model,effort,serviceTier,planningMode,planningExecutionMode,...(planningMode==='ontology'||value?.planningOntology!==undefined?{planningOntology:normalizePlanningOntology(value?.planningOntology)}:{})};
 }
 /**
@@ -30,6 +30,11 @@ export function restoreChatPlanningOptions(raw={},runtimeDefault){
     ...(oldForcedDefault?{planningMode:'ontology'}:{}),
     planningOntology:saved.planningOntology??runtimeDefault,
   });
+}
+/** Reading a saved run must not erase a no-execution constraint. */
+export function savedChatExecutionMode(run,fallback='automatic'){
+  const modes=[run?.planningExecutionMode,run?.workflow?.settings?.planningExecutionMode];
+  return modes.includes('plan_only')?'plan_only':modes.find(value=>value!==undefined)??fallback;
 }
 export function resolvedDefaultModel(status={}) {
   const saved=typeof status.defaultModel==='string'&&status.defaultModel.trim()&&status.defaultModel!=='default'?status.defaultModel.trim():null;

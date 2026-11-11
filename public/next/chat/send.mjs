@@ -8,10 +8,11 @@ import {assertExecutablePlanningMode} from '../../response-cycle-model.mjs';
  */
 export async function submitChat({ api, runs, task, model, effort = 'default', serviceTier = 'default', planningMode, planningExecutionMode = 'automatic', planningOntology, cwd = '', attachmentIds=[], context }) {
   const chosenPlanningMode = planningMode==='off'?'off':'ontology';
-  planningExecutionMode=assertExecutablePlanningMode(planningExecutionMode);
+  const latest=replyTarget(runs);
+  planningExecutionMode=assertExecutablePlanningMode(planningExecutionMode,latest.run?.planningExecutionMode,latest.run?.workflow?.settings?.planningExecutionMode);
   if(!Array.isArray(attachmentIds)||attachmentIds.length>10||attachmentIds.some(id=>typeof id!=='string'||!/^[A-Za-z0-9_-]{1,160}$/.test(id)))throw Error('Invalid attached files.');
   if (typeof task !== 'string' || !task.trim()) throw Error('Enter a message first.');
-  const content = task.trim(), latest = replyTarget(runs);
+  const content = task.trim();
   if (latest.run && latest.active) {
     if(attachmentIds.length)throw Error('Files cannot be added to live direction. Send them with the next response.');
     if (!latest.nodeId) throw Error('The working agent cannot receive direction yet.');

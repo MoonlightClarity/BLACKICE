@@ -148,13 +148,13 @@ export function planningExecutionModeOf(value) {
   if (value !== 'automatic' && value !== 'plan_only') throw fail('Choose automatic or plan_only execution.', 'PLANNING_EXECUTION_MODE_INVALID');
   return value; // Historical snapshots remain readable; execution admission checks this separately.
 }
-/** A retired non-execution mode must never be upgraded to a run. */
-export function assertExecutablePlanningMode(value) {
-  const requested=planningExecutionModeOf(value);
-  if(requested==='plan_only')throw Object.assign(
-    new Error('Plan-only execution has been retired. No run or operation was admitted. Select Automatic explicitly to execute work. Saved plan-only records remain readable.'),
+/** Reject every retained no-execution intent before choosing a source. */
+export function assertExecutablePlanningMode(...values) {
+  if(values.includes('plan_only'))throw Object.assign(
+    new Error('Plan-only execution has been retired. No run or operation was admitted. Start a new Automatic request to execute work. Saved plan-only records remain readable.'),
     {status:400,code:'PLANNING_EXECUTION_MODE_RETIRED'}
   );
+  const requested=values.map(planningExecutionModeOf).find(value=>value!==undefined);
   return requested??'automatic';
 }
 export function responseCycleStage(stageOrKind, {pipelineVersion=RESPONSE_CYCLE_PIPELINE_VERSION}={}) {

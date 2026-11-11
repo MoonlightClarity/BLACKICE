@@ -6,7 +6,7 @@ import { submitChat, replyState } from './send.mjs';
 import { createConversationReader } from './reader-client.mjs';
 import { initAttachmentsUI } from '../../attachments-ui.mjs';
 import { escapeHTML } from '../core/dom.mjs';
-import { normalizeChatOptions, validateChatOptions, restoreChatPlanningOptions } from './options-model.mjs';
+import { normalizeChatOptions, validateChatOptions, restoreChatPlanningOptions, savedChatExecutionMode } from './options-model.mjs';
 import { PLANNING_ONTOLOGY_MODULES, normalizePlanningOntology, PLANNING_MODULE_STATES } from '../../planning-module-policy.mjs';
 import { readConversationOntology, saveConversationOntology, transferNewOntology, gridOntologyState, updatedGridOntology } from './ontology-preferences.mjs';
 import { createConversationModelSelection, concreteChatModel } from './model.mjs';
@@ -49,10 +49,22 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     indexLimit:CHAT_INDEX_BATCH, indexQuery:'',messageLimits:new Map(),
     attachmentIds:new Map(), attachmentsPending:false,managing:false,selecting:false,selection:new Map(),visible:[],listRead:0,destroyed:false,inputRevision:0,
     options:{...restoreChatPlanningOptions((()=>{try{return JSON.parse(localStorage.getItem('blackice.next.chatOptions')||'{}');}catch{return{};}})(),getStatus?.()?.runtimeSettings?.planningOntology),model:'default'} };
+  let newPlanningExecutionMode=state.options.planningExecutionMode;
+  const executionNotice=mount.ownerDocument.createElement('section');
+  executionNotice.setAttribute('id','next-chat-execution-notice');
+  executionNotice.className='next-chat-cycle-notice';executionNotice.hidden=true;
+  const executionExplanation=mount.ownerDocument.createElement('span');
+  executionExplanation.textContent='This new draft was saved as Plan-only, which is retired. Automatic can run tools when you send. Saved requests are unchanged.';
+  const enableAutomatic=mount.ownerDocument.createElement('button');
+  enableAutomatic.setAttribute('id','next-chat-enable-automatic');enableAutomatic.setAttribute('type','button');
+  enableAutomatic.textContent='Enable Automatic for new draft';
+  executionNotice.append(executionExplanation,enableAutomatic);
+  view.form.parentElement.insertBefore(executionNotice,view.form);
   const ontologyRows=new Map();
   const restoreOntology=(conversationId,runs=[])=>{
     const selected=readConversationOntology({conversationId,runs,storage:localStorage,
       defaults:runtimeStatus.runtimeSettings?.planningOntology});
+    state.options.planningExecutionMode=savedChatExecutionMode(runs.at(-1),conversationId==='new'?newPlanningExecutionMode:'automatic');
     state.options.planningMode=selected.planningMode;
     state.options.planningOntology=selected.planningOntology;
     view.plan.value=selected.planningMode;
@@ -145,7 +157,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     if(!state.selected&&!contextControls.dirty)contextControls.reconcile(runtimeStatus.runtimeSettings?.defaultContext);
     syncContext();
   };
-  const persistOptions=()=>{try{const {planningOntology,planningMode,...general}=state.options;localStorage.setItem('blackice.next.chatOptions',JSON.stringify({...general,model:'default'}));}catch{}};
+  const persistOptions=()=>{try{const {planningOntology,planningMode,...general}=state.options;localStorage.setItem('blackice.next.chatOptions',JSON.stringify({...general,model:'default',planningExecutionMode:newPlanningExecutionMode}));}catch{}};
   try{const saved=JSON.parse(localStorage.getItem('blackice.next.drafts')||'{}');
     for(const [key,value] of Object.entries(saved))if(typeof value==='string'&&value.length<=10000)state.drafts.set(key,value);
   }catch{}
@@ -220,6 +232,8 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     if(view.model.disabled!==state.pending){view.model.disabled=state.pending;refreshChoices(runtimeStatus);}
     syncContext();
     const item=state.selected,bucket=selectedBucket(),latest=state.runs.at(-1),busy=state.pending||state.managing||contextControls.isCompacting();
+    executionNotice.hidden=Boolean(item)||root()!=='new'||bucket!=='active'||state.options.planningExecutionMode!=='plan_only';
+    enableAutomatic.disabled=busy||state.loading||state.attachmentsPending;
     view.title.textContent=item?.rootTitle||item?.title||'New conversation';
     const planningProgress=planningProgressForRun(latest);
     view.subtitle.textContent=(item&&bucket!=='active'?(bucket==='deleted'?'In Trash':bucket==='archived'?'Archived':'History state unavailable')+' · ':'')+chatHeaderStatus(latest);
@@ -689,6 +703,12 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       if(key==='planningMode'||key==='planningExecutionMode')persistOntology();
       refreshChoices();persistOptions();
     });
+  enableAutomatic.addEventListener('click',()=>{
+    if(state.destroyed||!state.active||state.selected||root()!=='new'||selectedBucket()!=='active'||state.pending||state.managing||state.loading||state.attachmentsPending||contextControls.isCompacting()||state.options.planningExecutionMode!=='plan_only')return;
+    newPlanningExecutionMode='automatic';state.options.planningExecutionMode='automatic';
+    persistOptions();refreshChoices();updateHead();
+    hint('Automatic enabled for this new draft. Send to start work.');
+  });
   view.openPlan.addEventListener('click',()=>{const cycle=state.runs.at(-1)?.responseCycle;if(cycle?.requestId)onNavigate?.('planning',{requestId:cycle.requestId,nodeId:cycle.planRef?.nodeId});});
   view.newButton.addEventListener('click',()=>{if(state.pending||state.managing)return;const changed=state.bucket!=='active';state.bucket='active';view.bucket.value='active';state.selection.clear();state.selecting=false;if(changed){state.list=[];state.indexLimit=CHAT_INDEX_BATCH;}showNew();if(changed)void loadList();});
   // Search the full lightweight catalog after typing settles, but paint only

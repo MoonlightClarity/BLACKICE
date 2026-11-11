@@ -1,11 +1,12 @@
-import {planningModuleTemplate} from '../public/planning-browser-model.mjs';
+import {planningProgramXml} from '../public/planning-program-xml.mjs';
+import {planningModuleTemplate,planningNodeSources} from '../public/planning-browser-model.mjs';
 import {responseCycleStage,RESPONSE_CYCLE_STAGES} from '../public/response-cycle-model.mjs';
 import {fixtureUserAgency} from './fixture-user-agency.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHarnessServer } from '../server.mjs';
@@ -237,7 +238,7 @@ test('browser response-cycle imports are served as JavaScript through actual sta
     ['/task-viability-model.mjs', 'evaluateViabilityResponse'],
     ['/response-cycle-model.mjs', 'planningExecutionModeOf'],
     ['/planning-program-xml.mjs', 'parsePlanningProgramXml'],
-    ['/next/workspaces/response-cycle-ui.mjs', 'planningExecutionMode']
+    ['/next/workspaces/response-cycle-ui.mjs', 'stageOutputSummary']
   ]) {
     const result = await local(route);
     assert.equal(result.status, 200, route + ': ' + result.text.slice(0, 200));
@@ -248,39 +249,19 @@ test('browser response-cycle imports are served as JavaScript through actual sta
   assert.equal(runtime.calls, 0);
 });
 
-test('New request accepts the exact UI payload and creates one inert five-stage cycle in the selected mode', async t => {
+test('New request creates one inert modular graph and preserves idempotency without an automatic cycle', async t => {
   const { app, local, directory, runtime } = await fixture(t);
-  for (const planningExecutionMode of ['automatic', 'plan_only']) {
-    const payload = {
-      ...(planningExecutionMode === 'plan_only' ? { conversationId: 'legacy-plan' } : {}),
-      title: 'Compare the fixture migration options',
-      objective: 'Explain the available options and the evidence needed to choose safely.',
-      planningExecutionMode, cwd: directory, clientRequestId: 'planning_request_fixture_' + planningExecutionMode
-    };
-    const [first, concurrent] = await Promise.all([
-      local(BASE + '/requests', { method: 'POST', body: payload }),
-      local(BASE + '/requests', { method: 'POST', body: payload })
-    ]);
-    for (const result of [first, concurrent]) assert.equal(result.status, 201, result.text);
-    assert.equal(concurrent.value.id, first.value.id);
-    assert.equal(concurrent.value.revision, first.value.revision);
-    const graph = first.value, cycle = graph.cycles[0];
-    assert.equal(graph.title, payload.title); assert.equal(graph.objective, payload.objective);
-    assert.equal(graph.cycles.length, 1); assert.equal(graph.nodes.length, 6);
-    assert.equal(cycle.title, payload.title); assert.equal(cycle.objective, payload.objective);
-    assert.equal(cycle.planningExecutionMode, planningExecutionMode);
-    assert.equal(graph.responseCycle.rootCycleId, cycle.id);
-    assert.deepEqual(['feasibility', 'inference', 'plan', 'think', 'respond'].map(stage => graph.nodes.find(node => node.id === cycle.stageNodeIds[stage]).kind), ['viability', 'inference', 'plan', 'think', 'respond']);
-    assert.equal(graph.attempts.length, 0); assert.equal(graph.responses.length, 0);
-    const retry = await local(BASE + '/requests', { method: 'POST', body: payload });
-    assert.equal(retry.status, 201, retry.text); assert.equal(retry.value.id, graph.id); assert.equal(retry.value.revision, graph.revision);
-    const conflict = await local(BASE + '/requests', { method: 'POST', body: { ...payload, planningExecutionMode: planningExecutionMode === 'automatic' ? 'plan_only' : 'automatic' } });
-    assert.equal(conflict.status, 409); assert.equal(conflict.value.code, 'PLANNING_IDEMPOTENCY_CONFLICT');
-  }
-  const before = (await app.planningBrowser.list()).requests.length;
-  const invalid = await local(BASE + '/requests', { method: 'POST', body: { title: 'Invalid mode', objective: 'Reject without saving.', planningExecutionMode: 'unknown', clientRequestId: 'planning_request_invalid' } });
-  assert.equal(invalid.status, 400); assert.equal((await app.planningBrowser.list()).requests.length, before);
-  assert.equal(runtime.calls, 0);
+  app.responseCycle.createCycle = () => { throw Error('Retired orchestration must not be called.'); };
+  const payload = {title:'Compare fixture options',objective:'Record a modular analysis.',cwd:directory,clientRequestId:'modular-create'};
+  const [first,repeated] = await Promise.all([local(BASE+'/requests',{method:'POST',body:payload}),local(BASE+'/requests',{method:'POST',body:payload})]);
+  assert.equal(first.status,201,first.text);assert.equal(repeated.status,201,repeated.text);
+  assert.equal(first.value.id,repeated.value.id);assert.equal(first.value.revision,repeated.value.revision);
+  assert.equal(first.value.title,payload.title);assert.equal(first.value.objective,payload.objective);
+  assert.deepEqual(first.value.nodes,[]);assert.deepEqual(first.value.cycles,[]);
+  assert.deepEqual(first.value.attempts,[]);assert.deepEqual(first.value.responses,[]);
+  const conflict=await local(BASE+'/requests',{method:'POST',body:{...payload,objective:'Different request'}});
+  assert.equal(conflict.status,409);assert.equal(conflict.value.code,'PLANNING_IDEMPOTENCY_CONFLICT');
+  assert.equal((await app.planningBrowser.list()).requests.length,1);assert.equal(runtime.calls,0);
 });
 
 test('full XML is exposed through a read-only GET and saved atomically through revision-bound PUT', async t => {
@@ -308,27 +289,17 @@ test('full XML is exposed through a read-only GET and saved atomically through r
   assert.equal(runtime.calls, 0, 'XML planning edits do not silently start models.');
 });
 
-test('New request retries recover a partially saved creation and retain its original execution mode', async t => {
+test('obsolete automatic and plan-only request payloads are retired before any partial graph creation', async t => {
   const { app, local, directory, runtime } = await fixture(t);
-  const createCycle = app.responseCycle.createCycle.bind(app.responseCycle);
-  let interrupted = false;
-  app.responseCycle.createCycle = async (...args) => {
-    if (!interrupted) { interrupted = true; throw Object.assign(Error('Fixture delivery stopped after the request was saved.'), { status: 503, code: 'FIXTURE_INTERRUPTED' }); }
-    return createCycle(...args);
-  };
-  const payload = { title: 'Inspect the migration plan', objective: 'Prepare an editable checked plan.', planningExecutionMode: 'plan_only', cwd: directory, clientRequestId: 'planning_request_partial' };
-  const first = await local(BASE + '/requests', { method: 'POST', body: payload });
-  assert.equal(first.status, 503);
-  const catalog = await app.planningBrowser.list(); assert.equal(catalog.requests.length, 1);
-  const saved = await app.planningBrowser.get(catalog.requests[0].id); assert.equal(saved.nodes.length, 0);
-  const changed = await local(BASE + '/requests', { method: 'POST', body: { ...payload, planningExecutionMode: 'automatic' } });
-  assert.equal(changed.status, 409); assert.equal(changed.value.code, 'PLANNING_IDEMPOTENCY_CONFLICT');
-  const resumed = await local(BASE + '/requests', { method: 'POST', body: payload });
-  assert.equal(resumed.status, 201, resumed.text); assert.equal(resumed.value.id, saved.id); assert.equal(resumed.value.conversationId, saved.conversationId);
-  assert.equal(resumed.value.cycles.length, 1); assert.equal(resumed.value.cycles[0].planningExecutionMode, 'plan_only');
-  const replay = await local(BASE + '/requests', { method: 'POST', body: payload });
-  assert.equal(replay.status, 201, replay.text); assert.equal(replay.value.revision, resumed.value.revision);
-  assert.equal((await app.planningBrowser.list()).requests.length, 1); assert.equal(runtime.calls, 0);
+  let cycleCalls=0;app.responseCycle.createCycle=()=>{cycleCalls++;throw Error('No retired dispatch');};
+  for(const planningExecutionMode of ['automatic','plan_only','unknown',null]){
+    const payload={title:'Old request',objective:'Do not admit legacy work.',planningExecutionMode,cwd:directory,clientRequestId:'old-create-'+String(planningExecutionMode)};
+    for(let repeat=0;repeat<2;repeat++){
+      const result=await local(BASE+'/requests',{method:'POST',body:payload});
+      assert.equal(result.status,410,result.text);assert.equal(result.value.code,'PLANNING_CYCLE_RETIRED');
+    }
+  }
+  assert.equal((await app.planningBrowser.list()).requests.length,0);assert.equal(cycleCalls,0);assert.equal(runtime.calls,0);
 });
 
 test('Planning catalog keeps lifecycle and actual execution status distinct', async () => {
@@ -378,11 +349,11 @@ test('host wiring exposes native graph tools and keeps attached direct evidence 
   const revoked = await f.local('/api/tasks/legacy-plan'); assert.equal(revoked.status, 200); assert.equal(revoked.value.directExecution, undefined);
 });
 
-test('host-context canonical Plan human response round trips through HTTP without execution',async t=>{
+test('host-context canonical Plan remains readable and rejects new human responses through HTTP',async t=>{
  const {app,local,runtime}=await fixture(t,{enableWorkbenchVideo:false});
  const graph=await create(local,'Canonical Plan'),cycleId='http-canonical',stages=Object.fromEntries(RESPONSE_CYCLE_STAGES.map(stage=>[stage.id,cycleId+'-'+stage.id])),nodeId=stages.plan;
  // Only a host-captured canonical cycle source selects this contract shape.
- // No worker or provider invocation is needed to author its human response.
+ // Import historical evidence directly without invoking the retired service.
  const configured=await app.planningBrowser.runtimeWriter().configureResponseCycle(graph.id,{
   createCycle:{id:cycleId,title:'Canonical Plan',objective:graph.objective,stageNodeIds:stages,parentCycleId:null,parentStageId:null,depth:0,pipelineVersion:2,planningExecutionMode:'plan_only',state:'pending',acceptanceCriteria:[],sourceIds:null,execution:{required:false,state:'not_required'}},
   sources:[{id:'cycle:execution-contract:'+cycleId,kind:'source',label:'Canonical authoring contract',text:JSON.stringify({taskSchemaVersion:14,contractVersion:2})}]});
@@ -395,19 +366,25 @@ test('host-context canonical Plan human response round trips through HTTP withou
   grounding:fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId})),openQuestions:[],challengeResponses:[],subproblems:[],childResults:[],
   checks:stage.checks.map(check=>({id:check.id,assessment:check.when==='effects'?'not_applicable':'supported',sourceIds:check.grounding==='required'&&check.when!=='effects'?[sourceId]:[],note:'The bounded review preserves the requested outcome and its evidence requirements.'})),contract,expectedNodeRevision:added.node.revision};
  const route=BASE+'/requests/'+graph.id+'/nodes/'+nodeId+'/responses';
- const saved=await local(route,{method:'POST',body});assert.equal(saved.status,200,saved.text);
- const response=saved.value.nodes.find(node=>node.id===nodeId).response;
- assert.equal(response.contract.goal,contract.goal);assert.equal(response.contract.workItems[0].id,'review');assert.equal(response.provenance.kind,'human');assert.equal(response.verifiedAction,false);
+ const raw=JSON.parse(await readFile(app.planningBrowser.file(graph.id),'utf8'));
+ const {expectedNodeRevision,...responseBody}=body;
+ raw.responses=[app.planningBrowser._response(raw,raw.nodes.find(node=>node.id===nodeId),responseBody,{kind:'human',author:'historical-fixture',at:new Date().toISOString(),contentHash:'0'.repeat(64)},[],planningNodeSources(raw,nodeId))];
+ raw.programXml=planningProgramXml(raw);app.planningBrowser._validate(raw);
+ await writeFile(app.planningBrowser.file(graph.id),JSON.stringify(raw));
+ const before=await readFile(app.planningBrowser.file(graph.id),'utf8');
  const reread=await local(BASE+'/requests/'+graph.id);assert.equal(reread.status,200,reread.text);
- assert.deepEqual(reread.value.nodes.find(node=>node.id===nodeId).response.contract,response.contract);
+ const response=reread.value.nodes.find(node=>node.id===nodeId).response;
+ assert.equal(response.contract.goal,contract.goal);assert.equal(response.contract.workItems[0].id,'review');assert.equal(response.provenance.kind,'human');assert.equal(response.verifiedAction,false);
+ for(const candidate of [body,{...body,contract:{...contract,workItems:[{...contract.workItems[0],criterionIds:['missing']}]}}]){
+  const denied=await local(route,{method:'POST',body:candidate});
+  assert.equal(denied.status,410,denied.text);assert.equal(denied.value.code,'PLANNING_CYCLE_RETIRED');
+ }
+ assert.equal(await readFile(app.planningBrowser.file(graph.id),'utf8'),before);
  const persisted=await app.planningBrowser.get(graph.id);assert.equal(persisted.attempts.length,0);assert.equal(runtime.calls,0);
- const revision=persisted.nodes.find(node=>node.id===nodeId).revision;
- const invalid=await local(route,{method:'POST',body:{...body,expectedNodeRevision:revision,contract:{...contract,workItems:[{...contract.workItems[0],criterionIds:['missing']}]}}});
- assert.equal(invalid.status,400,invalid.text);assert.equal((await app.planningBrowser.get(graph.id)).revision,persisted.revision);
- const stale=await local(route,{method:'POST',body});assert.equal(stale.status,409,stale.text);
- const independent=await add(local,graph,'Independent Plan','plan');
- const unsupported=await local(BASE+'/requests/'+graph.id+'/nodes/'+independent.node.id+'/responses',{method:'POST',body:{...body,expectedNodeRevision:independent.node.revision}});
+ // Caller-supplied canonical contracts cannot turn an independent Plan into a host-owned cycle.
+ const independentGraph=await create(local,'Independent graph'),independent=await add(local,independentGraph,'Independent Plan','plan');
+ const unsupported=await local(BASE+'/requests/'+independentGraph.id+'/nodes/'+independent.node.id+'/responses',{method:'POST',body:{...body,expectedNodeRevision:independent.node.revision}});
  assert.equal(unsupported.status,400,unsupported.text);assert.equal(unsupported.value.code,'RESPONSE_CYCLE_INVALID');
- assert.equal((await app.planningBrowser.get(graph.id)).nodes.find(node=>node.id===independent.node.id).response,null);
+ assert.equal((await app.planningBrowser.get(independentGraph.id)).nodes.find(node=>node.id===independent.node.id).response,null);
 
 });
