@@ -19,7 +19,7 @@ const definition = (name, extra = {}) => ({
 const unavailable = () => assert.fail('Discovery must not execute a tool.');
 const provider = tools => ({ tools: () => tools, call: unavailable });
 
-test('the configured catalog retains the exact 30-tool public contract and fingerprint', () => {
+test('the configured catalog retains 30 tools with only the reviewed canonical creation delta', () => {
   // Bind the reviewed public definitions, including recursive planning,
   // bounded contained diagnostics, exact-identity ownership/debug controls,
   // the cleanup protocol and the explicit relay default for credential fill.
@@ -44,11 +44,26 @@ test('the configured catalog retains the exact 30-tool public contract and finge
   ]);
   assert.deepEqual(catalog.status(), {
     // Reviewed explicit task/context tools, source binding, receipt alternatives and optional operation scopes.
-    sha256: 'e1445fa822126a6939a107c0f4a89fd68ad4e30337cf0e94c4209b7550503bc8',
+    sha256: 'd4acb0fd8a4e2bf55a60230222896534311914bf2eb723db13bd5fab5c28c0dc',
     toolCount: 30,
     serverVersion: '2.33.5',
   });
   assert.equal(createHash('sha256').update(JSON.stringify(catalog.tools())).digest('hex'), catalog.status().sha256);
+
+  // Review the exact intentional delta, rather than accepting unrelated changes
+  // behind a new aggregate hash. All previous tool definitions must still hash
+  // to the preceding reviewed contract after undoing only canonical creation.
+  const previousTools = structuredClone(catalog.tools());
+  const previousEdit = previousTools.find(tool => tool.name === 'blackice_edit_plan');
+  const currentCreateDescription = 'At expectedRevision 0 use the sole create_contract operation with a complete canonical contract, or legacy create with goal and steps.';
+  const previousCreateDescription = 'At expectedRevision 0 use the sole explicit create operation with goal and steps.';
+  assert.ok(previousEdit.description.includes(currentCreateDescription));
+  previousEdit.description = previousEdit.description.replace(currentCreateDescription, previousCreateDescription);
+  const currentOperations = previousEdit.inputSchema.properties.operations.items.oneOf;
+  assert.equal(currentOperations.filter(operation => operation.properties.type.const === 'create_contract').length, 1);
+  previousEdit.inputSchema.properties.operations.items.oneOf = currentOperations.filter(operation => operation.properties.type.const !== 'create_contract');
+  assert.equal(createHash('sha256').update(JSON.stringify(previousTools)).digest('hex'), 'e1445fa822126a6939a107c0f4a89fd68ad4e30337cf0e94c4209b7550503bc8');
+
   // DirectExecutionAPI always registers these two tools. This fixture does not install
   // the separately supplied native attachment extension or graph/cycle services.
   const contexts=catalog.tools().find(tool=>tool.name==='blackice_task_context');
@@ -93,6 +108,15 @@ test('the configured catalog retains the exact 30-tool public contract and finge
   assert.equal(edits.replace_contract.contract.properties.planEpoch,undefined);
   assert.equal(edits.replace_contract.contract.properties.runtime,undefined);
   assert.equal(edits.replace_contract.contract.properties.outcomes,undefined);
+  const creation=planning.properties.operations.items.oneOf.find(operation=>operation.properties.type.const==='create_contract');
+  assert.deepEqual(creation.required,['type','contract']);
+  assert.equal(creation.additionalProperties,false);
+  assert.deepEqual(edits.create_contract.contract,edits.replace_contract.contract);
+  assert.ok(edits.create_contract.userAgency);
+  assert.equal(edits.create_contract.contract.properties.planEpoch,undefined);
+  assert.equal(edits.create_contract.contract.properties.runtime,undefined);
+  assert.equal(edits.create_contract.contract.properties.outcomes,undefined);
+
 });
 
 test('each provider is sampled once and dispatch remains paired with its captured definition', async () => {
