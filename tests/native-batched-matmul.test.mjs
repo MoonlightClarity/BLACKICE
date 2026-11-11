@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { inflateSync } from 'node:zlib';
 import { NativeBatchedMatmul, referenceBatchedMatmul } from '../lib/native-inference/batched-matmul.mjs';
 
 const sample = (rows, cols, tokens) => ({
@@ -65,4 +68,19 @@ test('invalid layouts and oversized input are rejected before SIMD dispatch', as
     new Float32Array(2), 1, {
       signal: { throwIfAborted() { throw new Error('cancelled'); } },
     }), /cancelled/);
+});
+
+test('compressed SIMD bundle matches its source and compiled binary hashes', async () => {
+  const root = new URL('../lib/native-inference/kernels/', import.meta.url);
+  const manifest = JSON.parse(await readFile(new URL('matmul-simd.manifest.json', root), 'utf8'));
+  const encoded = await readFile(new URL('matmul-simd.wasm.zlib.b64', root), 'utf8');
+  const source = await readFile(new URL('../scripts/native-kernels/matmul-simd.c', import.meta.url));
+  const wasm = inflateSync(Buffer.from(encoded.trim(), 'base64'));
+  const sha = content => createHash('sha256').update(content).digest('hex');
+  assert.equal(sha(source), manifest.sourceSha256);
+  assert.equal(sha(Buffer.from(encoded)), manifest.compressedTextSha256);
+  assert.equal(sha(wasm), manifest.wasmSha256);
+  assert.equal(wasm.length, manifest.wasmBytes);
+  assert.equal(WebAssembly.validate(wasm), true);
+  assert.equal(manifest.quantizationRequested, false);
 });
