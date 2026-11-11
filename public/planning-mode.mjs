@@ -1,33 +1,26 @@
 import { REASONING_LEVELS, reasoningModel } from './reasoning-model.mjs';
 
 /** One user-facing Planning choice; legacy records retain their existing execution contract. */
-export const PLANNING_MODES = Object.freeze(['ontology', 'off', 'forced', 'advisory']);
+export const PLANNING_MODES = Object.freeze(['ontology', 'off']);
 /** On/Auto/Maximal remain accepted as historical aliases, not new user choices. */
-export const PLANNING_INPUT_MODES = Object.freeze([...PLANNING_MODES, 'on', 'auto', 'maximal']);
+export const PLANNING_INPUT_MODES = Object.freeze([...PLANNING_MODES, 'forced', 'advisory', 'on', 'auto', 'maximal']);
 export const isPlanningMode = value => PLANNING_INPUT_MODES.includes(value);
 export const PLANNING_MODE_OPTIONS = Object.freeze([
   Object.freeze({ value: 'ontology', label: 'Modules', description: 'Configure independent Mandatory / Optional / Forbidden modules. No forced planning contract.' }),
   Object.freeze({ value: 'off', label: 'Off', description: 'No automatic Planning requirement. Existing plans remain available.' }),
-  Object.freeze({ value: 'forced', label: 'Forced', description: 'Historical saved mode: require a current plan before work proceeds.' }),
-  Object.freeze({ value: 'advisory', label: 'Advisory', description: 'Historical saved mode: planning is available without blocking operations.' }),
 ]);
 /** Explicit three-state choices; null means preserve the legacy run policy. */
-export const planningEnforcementOf = value => ['forced','advisory','off'].includes(value) ? value : null;
+export const planningEnforcementOf = () => null; // The old mandatory planning contract is retired.
 /** Separate enforced Planning from legacy, broader execution checkpoints. */
-export function planningGuardrailsRequired(mode, enforcement, legacyGuardrails = false) {
-  if (normalizePlanningMode(mode) === 'off') return false;
-  if (enforcement === 'forced') return true;
-  if (enforcement === 'advisory') return false;
-  return legacyGuardrails === true;
-}
+export function planningGuardrailsRequired() { return false; }
 export function planningChoice(value, { fallback = 'ontology' } = {}) {
   if (PLANNING_MODES.includes(value)) return value;
-  return ['on', 'auto', 'maximal'].includes(value) ? 'advisory' : fallback;
+  return PLANNING_INPUT_MODES.includes(value) ? 'ontology' : PLANNING_MODES.includes(fallback)?fallback:'ontology';
 }
 /** Internal planning contract stays On/Off while enforcement is selected per run. */
-export function normalizePlanningMode(value, { fallback = 'on' } = {}) {
+export function normalizePlanningMode(value, { fallback = 'off' } = {}) {
   const selected = isPlanningMode(value) ? value : fallback;
-  return selected === 'off' || selected === 'ontology' ? 'off' : 'on';
+  return 'off'; // Historical On/Forced/Advisory is inert; only modular methods remain.
 }
 export const planningModeLabel = value => PLANNING_MODE_OPTIONS.find(option => option.value === planningChoice(value)).label;
 export const planningModeDescription = value => PLANNING_MODE_OPTIONS.find(option => option.value === planningChoice(value)).description;

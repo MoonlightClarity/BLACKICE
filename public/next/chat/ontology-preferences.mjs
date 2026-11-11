@@ -2,15 +2,15 @@ import {normalizePlanningOntology} from '../../planning-module-policy.mjs';
 
 const key=id=>'blackice.next.chatOntology.'+id;
 const validId=id=>typeof id==='string'&&/^[a-zA-Z0-9_-]{1,120}$/.test(id);
-const modes=new Set(['ontology','off','forced','advisory']);
+const modes=new Set(['ontology','off']);
 
 /** The current conversation wins; the application default is a fallback only. */
 export function readConversationOntology({conversationId='new',runs=[],defaults,storage}={}){
   let draft=null;
   if(validId(conversationId))try{
     const stored=JSON.parse(storage?.getItem(key(conversationId))||'null');
-    if(stored&&typeof stored==='object'&&!Array.isArray(stored)&&modes.has(stored.planningMode)){
-      draft={planningMode:stored.planningMode,planningOntology:normalizePlanningOntology(stored.planningOntology)};
+    if(stored&&typeof stored==='object'&&!Array.isArray(stored)){
+      draft={planningMode:stored.planningMode==='off'?'off':'ontology',planningOntology:normalizePlanningOntology(stored.planningOntology)};
     }
   }catch{}
   const ordered=Array.isArray(runs)?runs:[];
@@ -18,9 +18,8 @@ export function readConversationOntology({conversationId='new',runs=[],defaults,
   const priorPolicy=[...ordered].reverse().find(run=>run?.planningOntology)?.planningOntology;
   const persistedMode=latest
     ?latest.planningOntology?'ontology'
-      :modes.has(latest.planningEnforcement)?latest.planningEnforcement
-      :latest.planningMode==='off'?'off'
-      :latest.planningMode==='on'?'advisory':'ontology'
+      :latest.planningMode==='off' && !['forced','advisory'].includes(latest.planningEnforcement)?'off'
+      :'ontology'
     :'ontology';
   return {
     planningMode:draft?.planningMode||persistedMode,

@@ -139,7 +139,15 @@
 /* Small per-module checkboxes integrated into the normal Chat composer. */
 .next-chat-ontology-inline{max-width:840px;margin:2px auto 0;padding:0 3px 2px;font-size:11px;color:var(--text-muted,#b8c3cf)}
 .next-chat-ontology-inline[hidden]{display:none!important}
-.next-chat-ontology-head{display:flex;align-items:center;gap:10px;min-height:20px;margin:0 0 4px;opacity:.9}
+.next-chat-ontology-toggle{display:inline-flex;align-items:center;gap:5px;min-height:18px;padding:1px 5px;border-radius:4px;cursor:pointer;user-select:none;font-size:10px;line-height:1.25}
+.next-chat-ontology-toggle::-webkit-details-marker{display:none}
+.next-chat-ontology-toggle::before{content:"▸";font-size:11px}
+.next-chat-ontology-inline[open] .next-chat-ontology-toggle::before{content:"▾"}
+.next-chat-ontology-toggle>span{opacity:.7;font-size:9px}
+.next-chat-ontology-toggle:hover{background:rgba(127,127,127,.14)}
+.next-chat-ontology-toggle:focus-visible{outline:2px solid var(--accent,#8fb9d3);outline-offset:1px}
+.next-chat-ontology-content{padding-top:5px}
+.next-chat-ontology-head{display:flex;justify-content:flex-end;align-items:center;gap:8px;min-height:18px;margin:4px 0 0;opacity:.9}
 .next-chat-ontology-head>span:first-child{font-size:10px;letter-spacing:.01em}
 .next-chat-ontology-head>button{font-size:10px;line-height:1.2;padding:2px 6px;border:0;background:transparent;color:inherit;text-decoration:underline;text-underline-offset:2px}
 .next-chat-ontology-head>span[role=status]{font-size:10px}

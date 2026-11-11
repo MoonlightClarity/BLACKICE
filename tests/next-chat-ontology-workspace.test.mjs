@@ -82,6 +82,9 @@ test('mounted Chat composer uses 36 compact checkboxes and persists only the cur
  const workspace=createChatWorkspace({mount:dom.mount,api,events:{subscribe:()=>()=>{}},getStatus:()=>status});
  t.after(()=>{workspace.destroy();if(oldStorage===undefined)delete globalThis.localStorage;else globalThis.localStorage=oldStorage;if(oldWorker===undefined)delete globalThis.Worker;else globalThis.Worker=oldWorker;});
  const grid=dom.$('#next-chat-ontology-modules'),rows=grid.children;
+ const disclosure=dom.$('#next-chat-ontology-inline');
+ assert.equal(disclosure.tagName,'DETAILS');
+ assert.equal(disclosure.open,false,'initial composer stays compact');
  assert.equal(rows.length,9);
  assert.equal(grid.querySelectorAll('input[type="checkbox"]').length,36);
  const option=(label,choice)=>grid.querySelectorAll('input').find(input=>input.getAttribute('aria-label')===label+' '+choice);
@@ -95,6 +98,7 @@ test('mounted Chat composer uses 36 compact checkboxes and persists only the cur
  assert.equal(mandatory.checked,true);
  assert.equal(option('Feasibility','forbidden').checked,false);
  assert.equal(option('Intent inference','auto').checked,true);
+ assert.equal(disclosure.open,false,'editing configuration never expands the panel implicitly');
  assert.equal(JSON.parse(stored.get('blackice.next.chatOntology.new')).planningOntology.modules.feasibility,'mandatory');
  assert.equal(JSON.parse(stored.get('blackice.next.chatOptions')||'{}').planningOntology,undefined);
  await dom.click('#next-chat-ontology-default');await new Promise(resolve=>setTimeout(resolve,0));

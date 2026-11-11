@@ -1,13 +1,14 @@
 import { stableId } from '../core/dom.mjs';
 import { replyTarget, canContinueRun } from './model.mjs';
 import {normalizePlanningOntology} from '../../planning-module-policy.mjs';
+import {assertExecutablePlanningMode} from '../../response-cycle-model.mjs';
 
 /** Send once; the existing server executes and persists the real run.
  * Failures preserve unsent drafts, and no mutation is silently replayed.
  */
 export async function submitChat({ api, runs, task, model, effort = 'default', serviceTier = 'default', planningMode, planningExecutionMode = 'automatic', planningOntology, cwd = '', attachmentIds=[], context }) {
-  const chosenPlanningMode = planningMode ?? (planningExecutionMode === 'plan_only' ? 'forced' : 'ontology');
-  if(!['automatic','plan_only'].includes(planningExecutionMode)||['off','ontology'].includes(chosenPlanningMode)&&planningExecutionMode==='plan_only')throw Error('Plan only requires Planning On.');
+  const chosenPlanningMode = planningMode==='off'?'off':'ontology';
+  planningExecutionMode=assertExecutablePlanningMode(planningExecutionMode);
   if(!Array.isArray(attachmentIds)||attachmentIds.length>10||attachmentIds.some(id=>typeof id!=='string'||!/^[A-Za-z0-9_-]{1,160}$/.test(id)))throw Error('Invalid attached files.');
   if (typeof task !== 'string' || !task.trim()) throw Error('Enter a message first.');
   const content = task.trim(), latest = replyTarget(runs);

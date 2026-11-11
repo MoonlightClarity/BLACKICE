@@ -96,13 +96,14 @@ export const selectedConversationEffort = (draft = {}, agent, appDefault = 'defa
 export const selectedConversationServiceTier = (draft = {}, agent, run, status = {}, selection = draft.model || agent?.resolvedModel || agent?.model || 'default') => ['default', 'fast'].includes(draft.serviceTier) ? draft.serviceTier : ['default', 'fast'].includes(agent?.serviceTier) ? agent.serviceTier : !run && status.runtimeSettings?.defaultServiceTier === 'fast' && serviceTierSupport(status, selection, 'fast').available ? 'fast' : undefined;
 export const conversationPlanDetails = ['compact', 'balanced', 'detailed'];
 export const selectedConversationPlanDetail = (draft = {}, preferences = {}, run) => [draft.planDetail, run?.planDetail, run?.workflow?.settings?.planDetail, run?.taskState?.plan?.detail, preferences.planDetail, 'balanced'].find(value => conversationPlanDetails.includes(value));
-export const selectedConversationPlanningMode = (draft = {}, preferences = {}, run) => planningChoice([draft.planningMode, run?.planningEnforcement, run?.planningMode === 'on' && run?.runtimeSettings?.executionGuardrails === true ? 'forced' : run?.planningMode, run?.input?.planningMode, run?.workflow?.settings?.planningMode, ...Object.values(run?.nodes || {}).map(node => node.planning?.mode), preferences.planningMode].find(value => PLANNING_INPUT_MODES.includes(value)), { fallback: run ? 'advisory' : 'forced' });
+export const selectedConversationPlanningMode = (draft = {}, preferences = {}, run) => planningChoice([draft.planningMode, run?.planningEnforcement, run?.planningMode === 'on' && run?.runtimeSettings?.executionGuardrails === true ? 'forced' : run?.planningMode, run?.input?.planningMode, run?.workflow?.settings?.planningMode, ...Object.values(run?.nodes || {}).map(node => node.planning?.mode), preferences.planningMode].find(value => PLANNING_INPUT_MODES.includes(value)), { fallback: 'ontology' });
 // Effective runtime detail is not an explicit preference. In particular, going
 // from Maximal to Auto must let the next agent scale its own outline again.
 export const conversationPlanDetailHint = (draft = {}, preferences = {}, run) => [draft.planDetail, run?.input?.planDetail, run?.workflow?.settings?.planDetail, !PLANNING_INPUT_MODES.includes(run?.planningMode) ? run?.planDetail : undefined, !PLANNING_INPUT_MODES.includes(run?.planningMode) ? run?.taskState?.plan?.detail : undefined, preferences.planDetail].find(value => conversationPlanDetails.includes(value));
 export const conversationPlanningConfig = (draft = {}, preferences = {}, run) => {
-  const planningMode = selectedConversationPlanningMode(draft, preferences, run), detail = conversationPlanDetailHint(draft, preferences, run);
-  return { planningMode, ...(detail === undefined || planningMode === 'off' ? {} : { planDetail: planningModeDetail(planningMode, detail) }) };
+  const planningMode = selectedConversationPlanningMode(draft, preferences, run);
+  // Saved detail hints are archival metadata, never runtime Planning instructions.
+  return { planningMode };
 };
 export function conversationReasoningChoice({ draft = {}, preferences = {}, run, agent, status = {} } = {}) {
   // A new turn has no steering target until its thread and turn receipts arrive.

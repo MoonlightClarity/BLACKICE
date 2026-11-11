@@ -42,13 +42,13 @@ test('each ontology module is individually Mandatory / Optional / Forbidden and 
   assert.equal(createMissionWorkflow({task:'Do useful work'}).settings.planningMode,'off');
 });
 
-test('old Forced new-chat preference migrates to Modules without altering explicit modern legacy selections',()=>{
+test('old Forced new-chat preference migrates to Modules even when it had an explicit stored policy',()=>{
   const defaultPolicy=normalizePlanningOntology({modules:{inference:'mandatory',anti_overalignment:'mandatory'}});
   const migrated=restoreChatPlanningOptions({model:'default',planningMode:'forced',planningExecutionMode:'automatic'},defaultPolicy);
   assert.equal(migrated.planningMode,'ontology');
   assert.deepEqual(migrated.planningOntology,defaultPolicy);
   const explicitLegacy=restoreChatPlanningOptions({planningMode:'forced',planningOntology:defaultPolicy},null);
-  assert.equal(explicitLegacy.planningMode,'forced');
+  assert.equal(explicitLegacy.planningMode,'ontology');
   const explicitOff=restoreChatPlanningOptions({planningMode:'off'},defaultPolicy);
   assert.equal(explicitOff.planningMode,'off');
   const newChat=restoreChatPlanningOptions({},defaultPolicy);

@@ -312,11 +312,11 @@ export function renderCycleControls(ctx, parent, document, cycle, state, { stage
     ? 'These model settings are saved for this cycle and its child cycles. Create a new independent cycle to choose different settings.'
     : 'Run saves these model settings for this cycle and its child cycles. The application default stays unchanged.', 'pb-help');
   state.cycleModes ||= new Map();
-  const mode = select(settings, 'Execution', [['automatic', 'Automatic'], ['plan_only', 'Plan only']], state.cycleModes.get(cycle.id) || cycle.planningExecutionMode || 'automatic');
+  const mode = {value:'automatic',disabled:true,dataset:{}};
   mode.dataset.cycleMode = cycle.id; mode.disabled = pending || active || cycle.state === 'paused_after_plan';
   const modeHelp = add(settings, 'p', '', 'pb-help');
-  const explainMode = () => { modeHelp.textContent = mode.value === 'plan_only' ? 'Plan only pauses after the saved Plan. You or a supervising model can edit it, then explicitly continue from its current revision.' : 'Automatic continues through the five stages and their required child cycles.'; };
-  mode.addEventListener('change', () => { state.cycleModes.set(cycle.id, mode.value); explainMode(); }); explainMode();
+  const explainMode = () => { modeHelp.textContent = 'Previous cycle records are read-only; new Chat runs use modular reasoning directly.'; };
+  explainMode();
   const submit = (action, body) => {
     state.cycleSubmissions ||= new Map();
     const fingerprint = JSON.stringify(body), key = cycle.id + ':' + action;

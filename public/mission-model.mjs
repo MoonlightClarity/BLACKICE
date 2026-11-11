@@ -102,13 +102,14 @@ export function latestMissionActivity(run) {
   return '';
 }
 export function createMissionWorkflow({ task, model = 'default', effort, serviceTier, cwd = '', desktop = false, id, context, planDetail, planningMode = 'ontology' }) {
-  if (!isPlanningMode(planningMode)) throw new Error('Choose Planning Modules or Off. Older Forced and Advisory modes remain compatible.');
+  if (!isPlanningMode(planningMode)) throw new Error('Choose Planning Modules or Off.');
+  planningMode=planningMode==='off'?'off':'ontology';
   if (serviceTier !== undefined && !['default', 'fast'].includes(serviceTier)) throw new Error('Choose Standard or Fast mode.');
   const title = taskTitle(task, { max: 80, fallback: 'New mission' });
   return { id, name: title, description: 'A focused task started from Mission.', version: 1,
     nodes: [{ id: 'input', type: 'input', name: 'Your task', x: 40, y: 100 },
       { id: 'agent', type: 'agent', name: 'BLACKICE agent', role: 'Task owner', model, ...(effort===undefined?{}:{effort}), ...(serviceTier===undefined?{}:{serviceTier}), sandbox: 'danger-full-access', desktop: Boolean(desktop), x: 340, y: 100,
-        prompt: 'Complete the user task end to end. Inspect the available context, use the workspace and connected tools when useful, and verify the result. Follow the selected planning mode and its attached runtime instructions; preserve existing task notes when automatic planning is off. When planning is enabled, keep the saved outline specific to this task, reuse a suitable method when useful, and record actual progress and evidence. Continue authorized work without requesting approval for each step. Keep user-facing updates concrete and concise. Lead the final answer with the outcome, make checked wins visible, and give one concrete next action only when something remains. Put detailed evidence after the main result. Report blockers, errors and limitations plainly. Never claim an action or verification you did not perform.' },
+        prompt: 'Complete the authorized task end to end using the available context, workspace and connected tools. Follow the independently selected modular reasoning methods without a mandatory planning contract or saved plan. Never invent hard gates, disqualifiers, or approval checkpoints. If an operation has a real blocker, defer only that leaf and continue independent work. Verify consequential effects using available evidence. Lead with the outcome, report partial work accurately, and never claim an action or verification you did not perform.' },
       { id: 'output', type: 'output', name: 'Your result', x: 640, y: 100 }],
     edges: [{ id: 'task-agent', source: 'input', target: 'agent' }, { id: 'agent-result', source: 'agent', target: 'output' }], settings: { cwd, maxParallel: 1, planningMode: ['off','ontology'].includes(planningMode) ? 'off' : 'on', ...(planningEnforcementOf(planningMode) ? { planningEnforcement: planningMode } : {}), ...(context?{context}: {}), ...(planDetail===undefined?{}:{planDetail}) } };
 }

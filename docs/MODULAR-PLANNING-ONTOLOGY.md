@@ -1,10 +1,10 @@
 # Modular Planning Ontology
 
-The old Forced Planning contract is no longer the default for new BLACKICE Chat requests. New conversations use the independent ontology policy. Historical Forced, Advisory, and Plan-only conversations retain their saved compatibility behaviors; no existing task history is rewritten.
+Forced Planning and its response-cycle admission contract are retired. New BLACKICE Chat conversations use the independent module ontology. Historical Forced, Advisory and Plan-only records remain readable as history but cannot activate the old planner. A new request explicitly selecting Plan-only is rejected before admission; it is never silently upgraded to Automatic.
 
 ## Control surface
 
-In Chat, select **Planning → Modules**. A small three-column grid appears directly below the normal Chat controls. Every module has four mutually exclusive checkbox choices: **M** (Mandatory), **O** (Optional), **F** (Forbidden), and **A** (Auto). Auto allows the model to choose a task-local state for that module without another model pass. Choosing Optional makes the method available without requiring it; selecting Mandatory or Forbidden keeps that explicit user choice authoritative. This replaces the older large explanation pane and global Auto checkbox. **Save default** persists the displayed grid as the application fallback. Settings resolve in this order: **unsent conversation override > saved conversation run > application defaults**. Changes to one conversation never silently alter another; a new conversation starts from defaults unless it has its own unsent draft.
+In Chat, select **Planning → Modules**. A small **Modules** disclosure sits below the normal Chat controls, **collapsed by default**. Expanding it reveals the three-column checkbox grid; collapsing it does not change module selections or conversation-level persistence. Every module has four mutually exclusive checkbox choices: **M** (Mandatory), **O** (Optional), **F** (Forbidden), and **A** (Auto). Auto allows the model to choose a task-local state for that module without another model pass. Choosing Optional makes the method available without requiring it; selecting Mandatory or Forbidden keeps that explicit user choice authoritative. This replaces the older large explanation pane and global Auto checkbox. **Save default** persists the displayed grid as the application fallback. Settings resolve in this order: **unsent conversation override > saved conversation run > application defaults**. Changes to one conversation never silently alter another; a new conversation starts from defaults unless it has its own unsent draft.
 
 The default modules are Intent inference, Feasibility, Task decomposition, Conditional logic, Recursive reassessment, Metacognition, Anti-overalignment calibration, Outcome verification, and Subagent orchestration. They default to Auto except **Anti-overalignment calibration**, which defaults to Mandatory. Users can override it, including Forbidden.
 
@@ -26,6 +26,10 @@ Before a potentially duplicate application, inspect saved submission records and
 
 Even when nothing can proceed at that moment, report a bounded partial result and unresolved work rather than claiming the entire goal is completed. Do not invent extra user-approval gates. This policy cannot authorize making an unsupported material declaration.
 
+## Operational safeguards outside Planning
+
+Application-history checks, native effect reservations, deduplication, durable UNKNOWN states and effect receipts run in an independent operational layer without an attached planning contract. Recognized job applications reserve their requisition before dispatch; unrelated applications continue even if one receipt is uncertain. Workspace writes use verified file bytes and hashes, and a successful tool return is not external confirmation. See [Independent operational effect protections](OPERATIONAL-EFFECT-PROTECTIONS.md).
+
 ## Direct ChatGPT tools
 
 - `blackice_planning_ontology` with `action:get` reads the saved default policy and available module catalog; `action:set` stores a replacement default policy for future chats.
@@ -34,4 +38,4 @@ Even when nothing can proceed at that moment, report a bounded partial result an
 
 ## Regression requirements
 
-The test suite covers policy validation, saved default persistence, direct get/set, model instructions, forbidden tool routing, normal workspace actions without forced plan admission, continuation inheritance, strict minimum-scope stop language, and legacy Plan-only / Forced compatibility. These are host and instruction tests; a real model-level task benchmark is still required to measure behavioral compliance and latency under realistic ambiguity.
+The test suite covers policy validation, per-conversation persistence, direct get/set, forbidden tool routing, execution without forced plan admission, strict minimum-scope blocking, operational reservations and receipts, historical record readability, and rejection of retired Plan-only actions. Long-running cron and native-context tests also verify continuity and protection from duplicate effects. Model-level behavioral and latency benchmarks remain separate future evaluation work.

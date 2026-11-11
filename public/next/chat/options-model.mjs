@@ -2,17 +2,18 @@ import { reasoningChoices, reasoningSupport } from '../../reasoning-model.mjs';
 import { serviceTierSupport } from '../../service-tier-model.mjs';
 import { UNKNOWN_CHAT_MODEL } from './model.mjs';
 import {normalizePlanningOntology} from '../../planning-module-policy.mjs';
+import {assertExecutablePlanningMode} from '../../response-cycle-model.mjs';
 
 export const DEFAULT_CHAT_OPTIONS=Object.freeze({
   model:'default',effort:'default',serviceTier:'default',planningMode:'ontology',planningExecutionMode:'automatic',planningOntology:normalizePlanningOntology(),
 });
-export const PLANNING_MODES=Object.freeze(['ontology','off','forced','advisory']);
+export const PLANNING_MODES=Object.freeze(['ontology','off']);
 export function normalizeChatOptions(value={}){
   const model=typeof value?.model==='string'&&value.model.length<=400?value.model:'default';
   const effort=typeof value?.effort==='string'&&value.effort.length<=25?value.effort:'default';
   const serviceTier=['default','fast'].includes(value?.serviceTier)?value.serviceTier:'default';
-  const planningMode=PLANNING_MODES.includes(value?.planningMode)?value.planningMode:['on','auto','maximal'].includes(value?.planningMode)?'advisory':'ontology';
-  const planningExecutionMode=value?.planningExecutionMode==='plan_only'?'plan_only':'automatic';
+  const planningMode=value?.planningMode==='off'?'off':'ontology';
+  const planningExecutionMode='automatic';
   return {model,effort,serviceTier,planningMode,planningExecutionMode,...(planningMode==='ontology'||value?.planningOntology!==undefined?{planningOntology:normalizePlanningOntology(value?.planningOntology)}:{})};
 }
 /**
@@ -23,7 +24,7 @@ export function normalizeChatOptions(value={}){
  */
 export function restoreChatPlanningOptions(raw={},runtimeDefault){
   const saved=raw&&typeof raw==='object'&&!Array.isArray(raw)?raw:{};
-  const oldForcedDefault=saved.planningMode==='forced'&&saved.planningOntology===undefined;
+  const oldForcedDefault=['forced','advisory','on','auto','maximal'].includes(saved.planningMode);
   return normalizeChatOptions({
     ...saved,
     ...(oldForcedDefault?{planningMode:'ontology'}:{}),
@@ -67,8 +68,8 @@ export function chatOptionChoices(status={},raw={}){
   return {models,efforts,tiers,selected,defaultInfo};
 }
 export function validateChatOptions(status={},raw={}){
+  assertExecutablePlanningMode(raw?.planningExecutionMode);
   const selection=normalizeChatOptions(raw);
-  if(['off','ontology'].includes(selection.planningMode)&&selection.planningExecutionMode==='plan_only')throw Error('Plan only requires Planning On. Choose On or use Automatic execution.');
   if(selection.model===UNKNOWN_CHAT_MODEL)throw Error('This chat has no saved model evidence. Choose a model to continue.');
   if(selection.model!=='default'){
     const matching=(status.models||[]).find(m=>(m.id||m.model)===selection.model);

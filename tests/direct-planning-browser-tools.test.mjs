@@ -28,6 +28,26 @@ async function fixture(t) {
   return { api, store, tools, events, send, write, read, create, add };
 }
 
+test('ChatGPT receives discoverable root-level action fields while exact per-action validation remains strict',async t=>{
+  const f=await fixture(t);
+  for(const name of [readTool,writeTool]){
+    const schema=f.api.tools(client).find(tool=>tool.name===name).inputSchema;
+    assert.equal(schema.type,'object');
+    assert.ok(schema.properties?.action?.enum?.length>2);
+    assert.ok(schema.properties?.requestId?.pattern);
+    assert.ok(schema.properties?.graphRequestId?.type);
+    assert.ok(Array.isArray(schema.oneOf)&&schema.oneOf.length>2);
+  }
+  const write=f.api.tools(client).find(tool=>tool.name===writeTool).inputSchema;
+  assert.ok(write.properties.expectedNodeRevision);
+  assert.ok(write.properties.nodeId);
+  assert.ok(write.properties.title);
+  const read=f.api.tools(client).find(tool=>tool.name===readTool).inputSchema;
+  assert.ok(read.properties.limit);
+  assert.equal(validDirectArguments({requestId:'schema-demo',action:'get'},read),false);
+  assert.equal(validDirectArguments({requestId:'schema-demo',action:'get',graphRequestId:'graph-a'},read),true);
+});
+
 test('read and planning-write scopes expose distinct durable tools and reject runtime/provenance overrides before admission', async t => {
   const f = await fixture(t), readOnly = { ...client, scopes: ['read'] };
   assert.ok(f.api.tools(readOnly).some(tool => tool.name === readTool)); assert.ok(!f.api.tools(readOnly).some(tool => tool.name === writeTool));

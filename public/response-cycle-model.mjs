@@ -146,7 +146,16 @@ const canonical = value => JSON.stringify((function ordered(item) {
 export function planningExecutionModeOf(value) {
   if (value === undefined) return undefined;
   if (value !== 'automatic' && value !== 'plan_only') throw fail('Choose automatic or plan_only execution.', 'PLANNING_EXECUTION_MODE_INVALID');
-  return value;
+  return value; // Historical snapshots remain readable; execution admission checks this separately.
+}
+/** A retired non-execution mode must never be upgraded to a run. */
+export function assertExecutablePlanningMode(value) {
+  const requested=planningExecutionModeOf(value);
+  if(requested==='plan_only')throw Object.assign(
+    new Error('Plan-only execution has been retired. No run or operation was admitted. Select Automatic explicitly to execute work. Saved plan-only records remain readable.'),
+    {status:400,code:'PLANNING_EXECUTION_MODE_RETIRED'}
+  );
+  return requested??'automatic';
 }
 export function responseCycleStage(stageOrKind, {pipelineVersion=RESPONSE_CYCLE_PIPELINE_VERSION}={}) {
   const stage = (pipelineVersion===1?LEGACY_RESPONSE_CYCLE_STAGES:RESPONSE_CYCLE_STAGES).find(item => item.id === stageOrKind || item.kind === stageOrKind);

@@ -53,105 +53,69 @@ async function fixture(t,{execute,readinessFailure,modelStatus,modelResolver,run
   return{get app(){return app;},get url(){return url;},get cookie(){return cookie;},directory,dataDir,cwd,calls,readinessCalls,request,create,hook,async restart(){await app.close();return boot();}};
 }
 
-test('scheduled Chat configurations persist model, planning, execution and context through the real deployment API',async t=>{
-  const f=await fixture(t);
-  const task='Check the sources and write a fresh report';
-  const workflow=createScheduledChatWorkflow({task,cwd:f.cwd,
-    options:{model:'http-fixture-model',effort:'default',serviceTier:'default',
-      planningMode:'forced',planningExecutionMode:'plan_only'},
+test('scheduled Chat configuration persists modular reasoning without a readiness gate',async t=>{
+  const f=await fixture(t),task='Check sources and write a fresh report';
+  const scheduled=createScheduledChatWorkflow({task,cwd:f.cwd,
+    options:{model:'http-fixture-model',effort:'default',serviceTier:'default',planningMode:'ontology',planningExecutionMode:'automatic'},
     context:{preset:'custom',windowTokens:65536,autoCompact:false,compactAtTokens:30000}});
   const response=await f.request('/api/operations/deployments',{method:'POST',body:{
-    name:'Scheduled Chat fixture',input:task,cwd:f.cwd,workflow,
-    planningExecutionMode:'plan_only',enabled:false,trigger:{type:'interval',everySeconds:1800}
+    name:'Scheduled Chat fixture',input:task,cwd:f.cwd,workflow:scheduled,
+    planningExecutionMode:'automatic',enabled:false,trigger:{type:'interval',everySeconds:1800}
   }});
   assert.equal(response.status,201,JSON.stringify(response.data));
   const saved=(await f.request('/api/operations/deployments/'+response.data.id)).data;
-  assert.equal(saved.planningExecutionMode,'plan_only');
-  assert.equal(saved.workflow.settings.planningMode,'on');
-  assert.equal(saved.workflow.settings.planningEnforcement,'forced');
-  assert.equal(saved.workflow.settings.planningExecutionMode,'plan_only');
+  assert.equal(saved.planningExecutionMode,'automatic');
+  assert.equal(saved.workflow.settings.planningMode,'off');
+  assert.equal(saved.workflow.settings.planningEnforcement,undefined);
+  assert.equal(saved.workflow.settings.planningExecutionMode,'automatic');
+  assert.equal(saved.workflow.settings.planningOntology.modules.anti_overalignment,'mandatory');
   assert.equal(saved.workflow.settings.context.windowTokens,65536);
   assert.equal(saved.workflow.nodes.find(node=>node.type==='agent').model,'http-fixture-model');
-  assert.equal(saved.workflow.nodes.find(node=>node.type==='agent').context.autoCompact,false);
   assert.deepEqual(saved.trigger,{type:'interval',everySeconds:1800});
   await f.restart();
   const restored=f.app.operations.getDeployment(response.data.id);
-  assert.equal(restored.workflow.settings.planningEnforcement,'forced');
+  assert.equal(restored.workflow.settings.planningOntology.modules.anti_overalignment,'mandatory');
   assert.equal(restored.workflow.nodes.find(node=>node.type==='agent').context.windowTokens,65536);
-  assert.equal(f.calls.length,0,'Saving a disabled Chat schedule does not execute the agent');
+  assert.equal(f.calls.length,0);
+  assert.equal(f.readinessCalls.length,0,'no mandatory inference or viability model pass');
 });
 
-test('a disabled schedule can pass readiness and run once without enabling recurrence', async t => {
-  const f = await fixture(t);
-  const draft = await f.create({ enabled: false, trigger: { type: 'interval', everySeconds: 1800 } });
-  const route = '/api/operations/deployments/' + draft.id;
-  const post = action => f.request(route + '/' + action, { method: 'POST', body: {} });
-
-  const blocked = await post('trigger');
-  assert.equal(blocked.status, 409);
-  assert.equal(blocked.data.code, 'TASK_VIABILITY_REQUIRED');
-  assert.equal((await f.request('/api/operations')).data.jobs.length, 0);
-  assert.equal(f.calls.length, 0);
-
-  const checked = await post('readiness');
-  assert.equal(checked.status, 200, JSON.stringify(checked.data));
-  assert.equal(checked.data.viabilityAction.canRun, true);
-  assert.equal(checked.data.viabilityAction.deployment.enabled, false);
-  assert.deepEqual(f.readinessCalls.map(call => call.stage), ['inference', 'viability']);
-  assert.equal(f.calls.length, 0, 'Checking readiness alone does not run the scheduled work.');
-
-  const admitted = await post('trigger');
-  assert.equal(admitted.status, 202, JSON.stringify(admitted.data));
-  assert.equal(admitted.data.source, 'manual');
-  await until(() => f.app.operations.getJob(admitted.data.id).status === 'completed');
-  const state = (await f.request('/api/operations')).data;
-  assert.deepEqual(state.jobs.map(job => job.id), [admitted.data.id]);
-  assert.equal(state.deployments.find(item => item.id === draft.id).enabled, false);
-  assert.equal(f.calls.length, 1);
+test('a disabled schedule can manually execute without readiness and does not enable recurrence',async t=>{
+  const f=await fixture(t),draft=await f.create({enabled:false,trigger:{type:'interval',everySeconds:1800}});
+  const route='/api/operations/deployments/'+draft.id;
+  const admitted=await f.request(route+'/trigger',{method:'POST',body:{}});
+  assert.equal(admitted.status,202,JSON.stringify(admitted.data));
+  await until(()=>f.app.operations.getJob(admitted.data.id).status==='completed');
+  assert.equal(f.app.operations.getDeployment(draft.id).enabled,false);
+  assert.equal(f.calls.length,1);
+  assert.equal(f.readinessCalls.length,0);
 });
 
-test('an explicit readiness check retries a saved failed inference without starting or enabling the schedule', async t => {
-  let rejectInference = true;
-  const f = await fixture(t, {
-    readinessFailure: ({ module }) => rejectInference && module.kind === 'inference'
-      ? Object.assign(Error('invalid_json_schema: uniqueItems'), { code: 'invalid_json_schema' }) : null
-  });
-  const draft = await f.create({ enabled: false, trigger: { type: 'interval', everySeconds: 1800 } });
-  const route = '/api/operations/deployments/' + draft.id + '/readiness';
-  const check = () => f.request(route, { method: 'POST', body: {} });
-
-  const failed = await check();
-  assert.equal(failed.status, 503);
-  assert.deepEqual(f.readinessCalls.map(call => call.stage), ['inference']);
-
-  rejectInference = false;
-  await f.restart();
-  const recovered = await check();
-  assert.equal(recovered.status, 200, JSON.stringify(recovered.data));
-  assert.equal(recovered.data.viabilityAction.canRun, true);
-  assert.equal(recovered.data.viabilityAction.deployment.enabled, false);
-  assert.deepEqual(f.readinessCalls.map(call => call.stage), ['inference', 'inference', 'viability']);
-  const inference = recovered.data.nodes.find(node => node.kind === 'inference');
-  const attempts = recovered.data.attempts.filter(attempt => attempt.nodeId === inference.id);
-  assert.deepEqual(attempts.map(attempt => attempt.status), ['failed', 'completed']);
-  assert.notEqual(attempts[0].clientRequestId, attempts[1].clientRequestId);
-  const state = (await f.request('/api/operations')).data;
-  assert.equal(state.jobs.length, 0);
-  assert.equal(f.calls.length, 0);
+test('the retired readiness endpoint cannot launch an extra inference pass or block independent work',async t=>{
+  const f=await fixture(t,{readinessFailure:Error('invalid_json_schema: uniqueItems')});
+  const draft=await f.create({enabled:false,trigger:{type:'interval',everySeconds:1800}});
+  const response=await f.request('/api/operations/deployments/'+draft.id+'/readiness',{method:'POST',body:{}});
+  assert.equal(response.status,410);
+  assert.equal(response.data.code,'TASK_VIABILITY_RETIRED');
+  assert.equal(f.readinessCalls.length,0);
+  const admitted=await f.request('/api/operations/deployments/'+draft.id+'/trigger',{method:'POST',body:{}});
+  assert.equal(admitted.status,202);
+  await until(()=>f.app.operations.getJob(admitted.data.id).status==='completed');
+  assert.equal(f.calls.length,1);
+  assert.equal(f.readinessCalls.length,0);
 });
 
-test('a readiness error while enabling reports the saved disabled draft', async t => {
-  const f = await fixture(t, { readinessFailure: Error('invalid_json_schema: uniqueItems') });
-  const draft = await f.create({ trigger: { type: 'interval', everySeconds: 1800 } });
-  assert.equal(draft.enabled, false);
-  assert.equal(draft.readiness.state, 'check_failed');
-  assert.match(draft.readiness.question, /Future runs are off/);
-  assert.doesNotMatch(draft.readiness.question, /invalid_json_schema|uniqueItems/);
-  const state = (await f.request('/api/operations')).data;
-  assert.deepEqual(state.deployments.map(item => item.id), [draft.id]);
-  assert.equal(state.jobs.length, 0);
+test('enabled schedules do not fail because the old planning model rejects a JSON schema',async t=>{
+  const f=await fixture(t,{readinessFailure:Error('invalid_json_schema: uniqueItems')});
+  const deployment=await f.create({trigger:{type:'interval',everySeconds:1800}});
+  assert.equal(deployment.enabled,true);
+  assert.equal(f.readinessCalls.length,0);
+  const admitted=await f.request('/api/operations/deployments/'+deployment.id+'/trigger',{method:'POST',body:{}});
+  assert.equal(admitted.status,202);
+  await until(()=>f.app.operations.getJob(admitted.data.id).status==='completed');
+  assert.equal(f.calls.length,1);
+  assert.equal(f.readinessCalls.length,0);
 });
-
 test('authenticated HTTP config reports exact webhook URLs and requires explicit replay of unknown sends',async t=>{
   const f=await fixture(t),sent=[];
   f.app.operations.outboundTransport=async value=>{
@@ -166,7 +130,7 @@ test('authenticated HTTP config reports exact webhook URLs and requires explicit
   assert.equal(invalid.data.deliveryTarget.url,'http://localhost:9229/secret');
   const schedule=await f.create({trigger:{type:'manual'},deliveryTarget:{type:'webhook',url:secret},
     missedRunPolicy:{onResume:'once',maxAgeSeconds:3600}});
-  assert.deepEqual(f.readinessCalls.map(call=>call.stage),['inference','viability']);
+  assert.equal(f.readinessCalls.length,0,'webhook setup never invokes the retired readiness pipeline');
   assert.deepEqual(schedule.deliveryTarget,{type:'webhook',url:secret,host:'alerts.example.com',configured:true});
   assert.deepEqual(schedule.missedRunPolicy,{onResume:'once',maxAgeSeconds:3600});
   assert.equal(schedule.deliveryTarget.url,secret);
@@ -274,8 +238,7 @@ for(const codexHistory of ['relay','codex']) test(`repeated cron occurrences ret
   assert.deepEqual(longerFamily.runs.map(run=>run.id),[firstRunId,secondRunId,thirdRunId]);
   assert.equal(f.app.conversations.list('active').filter(row=>row.rootId===firstRunId).length,1);
   assert.equal(f.calls.length,3,'three admitted occurrences create three runs but only one conversation');
-  assert.ok(f.readinessCalls.filter(call=>call.stage==='inference').length>=2,'Original and revised instructions each receive their own Inference assessment.');
-  assert.ok(f.readinessCalls.filter(call=>call.stage==='viability').length>=2,'Original and revised instructions each receive their own structured readiness assessment.');
+  assert.equal(f.readinessCalls.length,0,'cron continuation does not invoke a preflight planner');
 });
 test('an interval using Default continues its managed run only while that model stays available and unchanged', async t => {
   let defaultModel = 'http-fixture-model', defaultModelAvailable = true;

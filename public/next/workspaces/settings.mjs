@@ -46,7 +46,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '<p class="next-help" id="next-runtime-gmail-help">Allow native agents to read your connected Gmail for authorized tasks, including email verification. This uses your existing connection.</p>',
     '<details class="next-compatibility"><summary>Legacy execution compatibility</summary>',
      '<label class="next-row"><input type="checkbox" id="next-runtime-guardrails" aria-describedby="next-runtime-guardrails-help"> External-action checkpoints</label>',
-    '<p class="next-help" id="next-runtime-guardrails-help">Compatibility for earlier On/Off conversations and separate subagent external-send behavior. New conversations choose Planning Off, Advisory, or Forced in Chat; Forced does not need this switch.</p></details>',
+    '<p class="next-help" id="next-runtime-guardrails-help">Optional legacy external-send compatibility only. Planning uses independent Modules or Off; this switch never creates a plan contract.</p></details>',
     '<div id="next-runtime-context"></div>',
     '<div class="next-row"><button type="submit" class="next-primary">Save runtime preferences</button>',
     '<span class="next-help" id="next-runtime-feedback" role="status"></span></div>',

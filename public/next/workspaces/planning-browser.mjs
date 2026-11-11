@@ -286,9 +286,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     const form = add(createArea, 'form', '', 'pb-form');
     const title = input(form, 'Request title', draft.title, { required: true, id: 'pb-request-title' });
     const objective = input(form, 'What should this request establish or change?', draft.objective, { rows: 3, required: true, id: 'pb-request-objective', help: 'Record the intended contribution. Adding the request does not start a model.' });
-    const mode = select(form, 'Execution', [['automatic', 'Automatic'], ['plan_only', 'Plan only']], draft.planningExecutionMode || 'automatic');
-    mode.dataset.fieldKey = 'new-cycle-mode'; mode.addEventListener('change', () => { draft.planningExecutionMode = mode.value; });
-    add(form, 'p', 'Plan only pauses after Plan for inspection or editing by you or a supervising model. Continue is explicit and uses the saved plan revision.', 'pb-help');
+    const mode = {value:'automatic'}; // Archived cycles remain readable, but new cycles never use Plan-only.
     title.addEventListener('input', () => { draft.title = title.value; }); objective.addEventListener('input', () => { draft.objective = objective.value; });
     const actions = add(form, 'div', '', 'pb-actions'), save = add(actions, 'button', 'Create request', 'pb-primary'); save.setAttribute('type', 'submit'); save.dataset.action = 'create-request';
     button(actions, 'Cancel', () => { createArea.hidden = true; });
@@ -354,7 +352,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     const title = input(form, 'Child question or contribution', '', { required: true });
     const purpose = input(form, 'What must this cycle establish?', '', { rows: 3, required: true });
     const owning = parent && cycleForNode(document, parent);
-    const mode = select(form, 'Execution', [['automatic', 'Automatic'], ['plan_only', 'Plan only']], owning?.planningExecutionMode || 'automatic');
+    const mode = {value:'automatic'};
     const save = add(form, 'button', 'Create cycle', 'pb-primary'); save.setAttribute('type', 'submit'); save.dataset.action = 'create-cycle';
     button(form, 'Cancel', () => { createArea.hidden = true; });
     let submission = null;

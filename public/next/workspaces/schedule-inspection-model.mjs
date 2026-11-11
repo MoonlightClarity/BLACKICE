@@ -4,6 +4,7 @@ import {DEFAULT_CHAT_OPTIONS,chatOptionChoices,normalizeChatOptions,validateChat
 import {contextOptions,contextModelInfo,validateContextOptions} from '../core/context-controls.mjs';
 import {reasoningSupport} from '../../reasoning-model.mjs';
 import {serviceTierSupport} from '../../service-tier-model.mjs';
+import {assertExecutablePlanningMode} from '../../response-cycle-model.mjs';
 
 // Pure schedule inspector/editor helpers. Never change an admitted job or its snapshot.
 const agents = workflow => (workflow?.nodes || []).filter(node => node.type === 'agent');
@@ -118,8 +119,9 @@ export function scheduleUpdateFromDraft(deployment, draft) {
   }
   if(draft.chatProfile){
     const saved=chatProfileFromDeployment(deployment);
+    assertExecutablePlanningMode(draft.chatProfile.options?.planningExecutionMode);
     const profile=normalizeChatOptions(draft.chatProfile.options);
-    const profileChanged=Object.keys(saved.options).some(key=>profile[key]!==saved.options[key]);
+    const profileChanged=Object.keys(saved.options).some(key=>key==='planningOntology'?JSON.stringify(profile[key])!==JSON.stringify(saved.options[key]):profile[key]!==saved.options[key]);
     const contextChanged=JSON.stringify(draft.chatProfile.context)!==JSON.stringify(saved.context);
     if(profileChanged||contextChanged){
       const proposed=applyChatProfileToWorkflow(deployment.workflow,profile,
@@ -155,9 +157,8 @@ export const scheduleChatOptionsMarkup=()=>[
   '<label class="next-label">Reasoning<select class="next-field" name="agentEffort"></select></label>',
   '<label class="next-label">Speed<select class="next-field" name="agentServiceTier"></select></label>',
   '<label class="next-label">Planning<select class="next-field" name="planningMode">',
-    '<option value="forced">Forced</option><option value="advisory">Advisory</option><option value="off">Off</option></select></label>',
-  '<label class="next-label">Execution<select class="next-field" name="planningExecutionMode">',
-    '<option value="automatic">Automatic</option><option value="plan_only">Plan only</option></select></label>',
+    '<option value="ontology">Modules</option><option value="off">Off</option></select></label>',
+  '<input type="hidden" name="planningExecutionMode" value="automatic">',
   '<details data-schedule-context><summary>Context and compression settings</summary>',
     '<label class="next-label">Context budget<select class="next-field" name="contextPreset">',
       '<option value="model">Model default</option><option value="extended">Extended</option><option value="custom">Custom</option><option value="900k" hidden>Legacy 900k request</option></select></label>',
@@ -175,15 +176,15 @@ export const scheduleChatOptionsMarkup=()=>[
 export function chatProfileFromDeployment(deployment={}){
   const workflow=deployment.workflow||{},node=agents(workflow)[0]||{};
   const settings=workflow.settings||{};
-  const planningMode=settings.planningMode==='off'?'off':
-    settings.planningEnforcement==='forced'?'forced':settings.planningEnforcement==='advisory'?'advisory':'advisory';
+  const planningMode=settings.planningOntology?'ontology':settings.planningMode==='off'&&!settings.planningEnforcement?'off':'ontology';
   return {options:normalizeChatOptions({
     model:node.model||'default',effort:node.effort||'default',serviceTier:node.serviceTier||'default',
-    planningMode,planningExecutionMode:deployment.planningExecutionMode||settings.planningExecutionMode||'automatic'
+    planningMode,planningExecutionMode:'automatic',...(settings.planningOntology?{planningOntology:settings.planningOntology}:{})
   }),context:contextOptions(node.context||settings.context||{}),agentCount:agents(workflow).length};
 }
 
 export function applyChatProfileToWorkflow(workflow,options,context,previousOptions={}){
+  assertExecutablePlanningMode(options?.planningExecutionMode);
   const profile=normalizeChatOptions(options),copy=structuredClone(workflow);
   const agentNodes=agents(copy);
   if(agentNodes.length!==1)throw Error('Chat settings require a single-agent task. For a multi-agent workflow, configure individual agents in Workflows.');
@@ -192,10 +193,11 @@ export function applyChatProfileToWorkflow(workflow,options,context,previousOpti
     if(profile[key]!==previousOptions[key])node[key]=profile[key];
   if(profile.planningMode!==previousOptions.planningMode){
     copy.settings??={};
-    copy.settings.planningMode=profile.planningMode==='off'?'off':'on';
-    if(profile.planningMode==='off')delete copy.settings.planningEnforcement;
-    else copy.settings.planningEnforcement=profile.planningMode;
+    copy.settings.planningMode='off';
+    delete copy.settings.planningEnforcement;
   }
+  if(profile.planningMode==='ontology')copy.settings.planningOntology=profile.planningOntology;
+  else delete copy.settings.planningOntology;
   if(profile.planningExecutionMode!==previousOptions.planningExecutionMode){
     copy.settings??={};
     copy.settings.planningExecutionMode=profile.planningExecutionMode;
@@ -210,8 +212,8 @@ export function applyChatProfileToWorkflow(workflow,options,context,previousOpti
 }
 
 export function createScheduledChatWorkflow({task,cwd,options=DEFAULT_CHAT_OPTIONS,context}){
+  assertExecutablePlanningMode(options?.planningExecutionMode);
   const profile=normalizeChatOptions(options);
-  if(profile.planningMode==='off'&&profile.planningExecutionMode==='plan_only')throw Error('Plan only requires Planning On.');
   const created=createMissionWorkflow({task,cwd,model:profile.model,effort:profile.effort,
     serviceTier:profile.serviceTier,planningMode:profile.planningMode,
     id:'scheduled_chat_'+crypto.randomUUID()});
@@ -270,22 +272,17 @@ export function initScheduleChatOptions(mount,{getStatus=()=>({}),options=DEFAUL
   };
   f.model.addEventListener('change',()=>sync());
   f.preset.addEventListener('change',()=>sync());
-  f.execution.addEventListener('change',()=>{
-    if(f.execution.value==='plan_only')f.planning.value='forced';
-  });
   sync({first:true});
   return{
     read(){
       const status=getStatus()||{};
-      const chosen={model:f.model.value,effort:f.effort.value,serviceTier:f.tier.value,
+      const chosen={model:f.model.value,effort:f.effort.value,serviceTier:f.tier.value,planningOntology:saved.planningOntology,
         planningMode:f.planning.value,planningExecutionMode:f.execution.value};
       // Preserve pinned selections when editing unrelated fields, even if the catalog has changed.
       const sameSavedModel=context!==undefined&&chosen.model===saved.model;
       let profile;
       if(sameSavedModel){
         profile=normalizeChatOptions(chosen);
-        if(profile.planningMode==='off'&&profile.planningExecutionMode==='plan_only')
-          throw Error('Plan only requires Planning On.');
         const reason=reasoningSupport(status,profile.model,profile.effort);
         const tier=serviceTierSupport(status,profile.model,profile.serviceTier);
         if(!reason.available&&profile.effort!==saved.effort)throw Error(reason.error);

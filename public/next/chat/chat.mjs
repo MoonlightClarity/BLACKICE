@@ -686,7 +686,6 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
         if(state.pending){refreshChoices(runtimeStatus);return;}
         try{state.options.model=modelSelections.choose(root(),element.value,runtimeStatus);}catch(error){refreshChoices();showError(error);return;}
       }else state.options[key]=element.value;
-      if(key==='planningExecutionMode'&&element.value==='plan_only'){state.options.planningMode='forced';view.plan.value='forced';}
       if(key==='planningMode'||key==='planningExecutionMode')persistOntology();
       refreshChoices();persistOptions();
     });

@@ -14,6 +14,12 @@ test('small grid exposes every module as an independent M/O/F/Auto checkbox choi
  assert.equal(frame.ontologyInline?.id,'next-chat-ontology-inline');
  assert.equal(frame.ontologyModules?.id,'next-chat-ontology-modules');
  assert.equal(frame.ontologyInline.hidden,false);
+ assert.equal(frame.ontologyInline.tagName,'DETAILS');
+ assert.equal(frame.ontologyInline.open,false,'modules are collapsed on initial render');
+ assert.equal(frame.ontologyInline.hasAttribute('open'),false);
+ assert.ok(frame.ontologyInline.querySelector('summary'),'native summary gives a keyboard-accessible expand/collapse control');
+ assert.match(frame.ontologyInline.querySelector('summary').textContent,/Modules/);
+ assert.equal(frame.ontologyModules.closest('details'),frame.ontologyInline,'the entire checkbox grid stays inside the disclosure');
  assert.equal(frame.ontologyAuto,undefined,'no global model-selection checkbox');
  assert.equal(frame.ontologyToggle,undefined,'the oversized configuration panel is gone');
  assert.doesNotMatch(frame.shell.innerHTML,/Configure modules|Mandatory, Optional or Forbidden per module|next-chat-ontology-panel/);
@@ -81,7 +87,7 @@ test('conversation draft > saved conversation run > application defaults, with n
  assert.equal(edited.planningOntology.modules.decomposition,'optional');
  assert.equal(readConversationOntology({conversationId:'two',storage:mem,defaults}).planningOntology.modules.decomposition,'forbidden');
  assert.equal(readConversationOntology({conversationId:'two',storage:mem,runs:[{id:'r2',planningMode:'off'}],defaults}).planningMode,'off');
- assert.equal(readConversationOntology({conversationId:'two',storage:mem,runs:[{id:'r2',planningMode:'on',planningEnforcement:'forced'}],defaults}).planningMode,'forced');
+ assert.equal(readConversationOntology({conversationId:'two',storage:mem,runs:[{id:'r2',planningMode:'on',planningEnforcement:'forced'}],defaults}).planningMode,'ontology');
  const followup=readConversationOntology({conversationId:'one',storage:mem,
   runs:[{id:'a1',planningOntology:savedA},{id:'a2',planningMode:'off'}],defaults});
  assert.equal(followup.planningMode,'ontology','conversation override remains authoritative');

@@ -53,16 +53,16 @@ test('Mission creates a real valid graph while preserving selected model and des
 test('Mission preserves explicit Fast and Standard independently of max reasoning', () => {
   for (const serviceTier of ['fast', 'default']) {
     const checked = validateWorkflow(createMissionWorkflow({ id: `speed_${serviceTier}`, task: 'Use the chosen processing speed.', model: 'native', effort: 'max', serviceTier, planningMode: 'on' }));
-    assert.equal(checked.nodes[1].serviceTier, serviceTier); assert.equal(checked.nodes[1].effort, 'max'); assert.equal(checked.settings.planningMode, 'on');
+    assert.equal(checked.nodes[1].serviceTier, serviceTier); assert.equal(checked.nodes[1].effort, 'max'); assert.equal(checked.settings.planningMode, 'off');
   }
   assert.equal(Object.hasOwn(createMissionWorkflow({ task: 'Legacy omitted speed' }).nodes[1], 'serviceTier'), false);
   assert.throws(() => createMissionWorkflow({ task: 'Invalid speed', serviceTier: 'priority' }), /Standard or Fast/);
 });
-test('Mission recipes accept all three planning choices and legacy aliases without prompt coaching', () => {
+test('Mission treats old planning aliases as modular rather than forced', () => {
   for (const planningMode of ['ontology','forced', 'advisory', 'off', 'maximal', 'on', 'auto']) {
     const workflow = validateWorkflow(createMissionWorkflow({ id: `mode_${planningMode}`, task: 'Handle this request.', planningMode }));
-    assert.equal(workflow.settings.planningMode, ['off','ontology'].includes(planningMode) ? 'off' : 'on'); assert.equal(workflow.settings.planDetail, undefined);
-    assert.match(workflow.nodes[1].prompt, /Follow the selected planning mode/); assert.doesNotMatch(workflow.nodes[1].prompt, /Use the attached task tool to keep a visible plan/);
+    assert.equal(workflow.settings.planningMode, 'off'); assert.equal(workflow.settings.planDetail, undefined);
+    assert.match(workflow.nodes[1].prompt, /modular reasoning methods/); assert.doesNotMatch(workflow.nodes[1].prompt, /Use the attached task tool to keep a visible plan/);
   }
   assert.equal(createMissionWorkflow({ task: 'Default mode' }).settings.planningMode, 'off');
   assert.equal(createMissionWorkflow({ task: 'Legacy hint', planDetail: 'compact' }).settings.planDetail, 'compact');

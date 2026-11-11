@@ -149,8 +149,14 @@ test('actual engine continuation uses explicit native attachment and shared outc
   status(){return {connected:true,authenticated:true,defaultModel:'fixture::host-only',models:[{id:'fixture::host-only',supportsTools:true}]};}
   async runAgent(options){
    const invoke=(name,args)=>options.onToolCall({name,arguments:args,callId:'call-'+(++callSequence)+'-'+name},{signal:options.signal});
-   if(stage++===0){const state=payload(await invoke('relay_task',{action:'read'}));const saved=await invoke('relay_task',{action:'plan',expectedRevision:state.revision,contract:contract()});assert.equal(saved.success,true,JSON.stringify(saved));return {output:'Plan saved.',threadId:'native-fixture-first'};}
+   const phase=stage++;
+   if(phase===0){const state=payload(await invoke('relay_task',{action:'read'}));const saved=await invoke('relay_task',{action:'plan',expectedRevision:state.revision,contract:contract()});assert.equal(saved.success,true,JSON.stringify(saved));return {output:'Plan saved.',threadId:'native-fixture-first'};}
    assert.equal(options.hostOnlyTools,true);
+   if(phase>=2){
+     const repeat=await invoke('relay_browser',{action:'click',browser:'relay',tabId,ref:'submit',expectedUrl:f.page.url,expectedDocumentId:f.page.documentId});
+     assert.equal(repeat.success,false,'attached native outcome blocks an attempted repeat');
+     return {output:'Previously completed effect preserved; no second submission.',threadId:'native-fixture-third'};
+   }
    const denied=await invoke('relay_connections',{action:'call',name:'opaque'});assert.equal(denied.success,false);assert.equal(payload(denied).code,'NATIVE_TASK_ADAPTER_UNSUPPORTED');
    const result=await invoke('relay_browser',{action:'click',browser:'relay',tabId,ref:'submit',expectedUrl:f.page.url,expectedDocumentId:f.page.documentId});
    assert.equal(result.success,true,JSON.stringify(result));assert.equal((await options.onBeforeFinal({output:'Verified enrollment.'}))??null,null);
@@ -172,7 +178,10 @@ test('actual engine continuation uses explicit native attachment and shared outc
  await engine.nativeTaskContextBridge.attach({nativeTaskId,expectedNativeRevision:(await tasks.get(nativeTaskId)).revision,taskContext:handle.taskContext,client});
  let helperCalls=0;engine.responseCycle={forRun:async()=>{helperCalls++;return null;}};
  const blocked=engine.continueRun(next.id,{nodeId:'agent',message:'Inspect protected work.',planningMode:'off'});await engine.executions.get(blocked.id);
- assert.equal(engine.getRun(blocked.id).status,'failed');assert.equal(engine.getRun(blocked.id).errorCode,'NATIVE_TASK_READINESS_BOUNDARY');assert.equal(helperCalls,0);assert.equal(stage,2);
+ assert.equal(engine.getRun(blocked.id).status,'completed',engine.getRun(blocked.id).error);
+ assert.equal(helperCalls,0,'the removed readiness pipeline must not run');
+ assert.equal(stage,3);
+ assert.equal(f.counts().commits,1,'explicit attached outcomes must block repeat commits');
 });
 
 test('explicit idle detach preserves UNKNOWN evidence and fences stale native sessions',async t=>{
