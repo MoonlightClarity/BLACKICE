@@ -4,9 +4,9 @@ The old Forced Planning contract is no longer the default for new BLACKICE Chat 
 
 ## Control surface
 
-In Chat, select **Planning → Modules**, then **Configure modules**. Each module has **Mandatory**, **Optional**, and **Forbidden** states. **Automatic selection** permits the model to choose a task-local state for *user-Optional* modules; it cannot rewrite user-Mandatory or user-Forbidden states. Turn automatic selection off to leave Optional methods idle unless specifically requested. **Save as default** persists choices for future conversations. Per-chat selections are captured on run admission and inherited by ordinary continuations, rather than changing under a running response.
+In Chat, select **Planning → Modules**. A small three-column grid appears directly below the normal Chat controls. Every module has four mutually exclusive checkbox choices: **M** (Mandatory), **O** (Optional), **F** (Forbidden), and **A** (Auto). Auto allows the model to choose a task-local state for that module without another model pass. Choosing Optional makes the method available without requiring it; selecting Mandatory or Forbidden keeps that explicit user choice authoritative. This replaces the older large explanation pane and global Auto checkbox. **Save default** persists the displayed grid as the application fallback. Settings resolve in this order: **unsent conversation override > saved conversation run > application defaults**. Changes to one conversation never silently alter another; a new conversation starts from defaults unless it has its own unsent draft.
 
-The default modules are Intent inference, Feasibility, Task decomposition, Conditional logic, Recursive reassessment, Metacognition, Anti-overalignment calibration, Outcome verification, and Subagent orchestration. They default to Optional except **Anti-overalignment calibration**, which defaults to Mandatory. Users can override it, including Forbidden.
+The default modules are Intent inference, Feasibility, Task decomposition, Conditional logic, Recursive reassessment, Metacognition, Anti-overalignment calibration, Outcome verification, and Subagent orchestration. They default to Auto except **Anti-overalignment calibration**, which defaults to Mandatory. Users can override it, including Forbidden.
 
 ## Runtime behavior
 

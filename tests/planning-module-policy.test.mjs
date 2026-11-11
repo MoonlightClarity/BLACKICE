@@ -17,16 +17,16 @@ const content=response=>JSON.parse(response.contentItems[0].text);
 
 test('each ontology module is individually Mandatory / Optional / Forbidden and auto selection is independent',()=>{
   const base=normalizePlanningOntology();
-  assert.equal(base.autoSelect,true);
+  assert.equal(base.autoSelect,false);
   assert.equal(PLANNING_ONTOLOGY_MODULES.length,9);
   assert.equal(base.modules.anti_overalignment,'mandatory');
-  assert.ok(PLANNING_ONTOLOGY_MODULES.filter(module=>module.id!=='anti_overalignment').every(module=>base.modules[module.id]==='optional'));
+  assert.ok(PLANNING_ONTOLOGY_MODULES.filter(module=>module.id!=='anti_overalignment').every(module=>base.modules[module.id]==='auto'));
   const custom=normalizePlanningOntology({autoSelect:false,modules:{inference:'mandatory',decomposition:'forbidden',subagents:'forbidden'}});
   assert.equal(custom.modules.inference,'mandatory');
-  assert.equal(custom.modules.feasibility,'optional');
+  assert.equal(custom.modules.feasibility,'auto');
   assert.equal(custom.modules.decomposition,'forbidden');
   const instructions=planningOntologyInstructions(custom);
-  assert.match(instructions,/MANUAL SELECTION/);
+  assert.match(instructions,/AUTOMATIC SELECTION/);
   assert.match(instructions,/MANDATORY.*Intent inference/);
   assert.match(instructions,/FORBIDDEN.*Task decomposition/);
   assert.match(instructions,/does not require a saved plan/i);
@@ -86,7 +86,7 @@ test('direct ChatGPT ontology tool reads and saves the same runtime default atom
   const tool=planningOntologyDirectTool({runtimeSettings:settings});
   assert.equal(tool.definition.name,'blackice_planning_ontology');
   const initial=content(await tool.execute({requestId:'ont-get-1',action:'get'}));
-  assert.equal(initial.policy.modules.verification,'optional');
+  assert.equal(initial.policy.modules.verification,'auto');
   assert.equal(initial.modules.length,9);
   const selected={autoSelect:false,modules:{verification:'mandatory',decomposition:'forbidden',subagents:'forbidden'}};
   const result=content(await tool.execute({requestId:'ont-set-1',action:'set',ontology:selected}));

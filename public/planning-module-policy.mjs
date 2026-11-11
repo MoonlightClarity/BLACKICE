@@ -1,5 +1,5 @@
 /** Lightweight module policy. This is not the legacy planning contract or a task admission gate. */
-export const PLANNING_MODULE_STATES = Object.freeze(['mandatory', 'optional', 'forbidden']);
+export const PLANNING_MODULE_STATES = Object.freeze(['mandatory', 'optional', 'forbidden', 'auto']);
 export const PLANNING_ONTOLOGY_MODULES = Object.freeze([
   { id: 'inference', label: 'Intent inference', description: 'Infer the intended outcome, constraints and relevant context without a separate model pass.' },
   { id: 'feasibility', label: 'Feasibility', description: 'Check real capabilities, dependencies and actual blockers proportionally.' },
@@ -13,8 +13,8 @@ export const PLANNING_ONTOLOGY_MODULES = Object.freeze([
 ]);
 export const DEFAULT_PLANNING_ONTOLOGY = Object.freeze({
   version: 1,
-  autoSelect: true,
-  modules: Object.freeze(Object.fromEntries(PLANNING_ONTOLOGY_MODULES.map(({id}) => [id, id === 'anti_overalignment' ? 'mandatory' : 'optional']))),
+  autoSelect: false, // Compatibility input; Auto is now independently selectable per module.
+  modules: Object.freeze(Object.fromEntries(PLANNING_ONTOLOGY_MODULES.map(({id}) => [id, id === 'anti_overalignment' ? 'mandatory' : 'auto']))),
 });
 const ids = new Set(PLANNING_ONTOLOGY_MODULES.map(({id}) => id));
 const validRecord = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -22,7 +22,7 @@ const validRecord = value => value && typeof value === 'object' && !Array.isArra
 /** Invalid policies never silently escalate to mandatory or relax forbidden. */
 export function normalizePlanningOntology(value, { strict = false } = {}) {
   const invalid = message => { throw Object.assign(new Error(message), {code:'PLANNING_ONTOLOGY_INVALID',status:400}); };
-  if (value === undefined || value === null) return { version:1, autoSelect:true, modules:{...DEFAULT_PLANNING_ONTOLOGY.modules} };
+  if (value === undefined || value === null) return { version:1, autoSelect:DEFAULT_PLANNING_ONTOLOGY.autoSelect, modules:{...DEFAULT_PLANNING_ONTOLOGY.modules} };
   if (!validRecord(value) || Object.keys(value).some(key => !['version','autoSelect','modules'].includes(key)))
     return invalid('Choose a Planning ontology with autoSelect and named modules.');
   if (value.version !== undefined && value.version !== 1) return invalid('Unsupported Planning ontology version.');
@@ -35,7 +35,7 @@ export function normalizePlanningOntology(value, { strict = false } = {}) {
     modules[id]=state;
   }
   if (strict && Object.keys(value.modules || {}).length !== ids.size) return invalid('Supply every module state when saving a complete ontology.');
-  return {version:1,autoSelect:value.autoSelect!==false,modules};
+  return {version:1,autoSelect:value.autoSelect===undefined?DEFAULT_PLANNING_ONTOLOGY.autoSelect:value.autoSelect,modules};
 }
 /**
  * Stop decisions are local to the smallest genuinely blocked operation.
@@ -66,11 +66,12 @@ const descriptions = {
 /** No full planning cycle, saved contract, extra model request or forced review is necessary. */
 export function planningOntologyInstructions(config) {
   const policy=normalizePlanningOntology(config);
-  const mandatory=[],optional=[],forbidden=[];
+  const mandatory=[],optional=[],forbidden=[],automatic=[];
   for(const {id,label} of PLANNING_ONTOLOGY_MODULES){
     const value=`${label}: ${descriptions[id]}`;
     if(policy.modules[id]==='mandatory')mandatory.push(value);
     else if(policy.modules[id]==='forbidden')forbidden.push(value);
+    else if(policy.modules[id]==='auto'||policy.autoSelect)automatic.push(value);
     else optional.push(value);
   }
   const parts=[
@@ -78,10 +79,8 @@ export function planningOntologyInstructions(config) {
     'This policy does not require a saved plan, task-state checkpoint, recursive step ledger, or separate model call before work. Take useful action directly. Keep the response timely. A module is a method, not a new mandatory provider round trip.',
     mandatory.length?'MANDATORY: Apply these methods where their subject exists; do not create artificial work just to show a method. '+mandatory.join('; '):'No mandatory reasoning modules.',
     forbidden.length?'FORBIDDEN: Do not invoke or emulate these optional planning methods, including through another selected method. '+forbidden.join('; '):'No forbidden planning methods.',
-    policy.autoSelect
-      ? 'AUTOMATIC SELECTION: For each user-Optional module, the model may select task-local Mandatory, Optional or Forbidden based on expected value, complexity, available tools and time. User-Mandatory and user-Forbidden remain fixed. Resolve inline, without a separate selection pass or planning contract; do not pretend the temporary choice changes saved defaults.'
-      : 'MANUAL SELECTION: Do not proactively use OPTIONAL modules. They are available only when expressly requested for this task by the user.',
-    optional.length?'OPTIONAL: '+optional.join('; '):'No optional planning modules.',
+    automatic.length?'AUTOMATIC SELECTION: For each Auto module, the model may select task-local Mandatory, Optional or Forbidden based on value, complexity, tools and time. Mandatory and Forbidden user selections remain fixed. Resolve inline, without a separate selection pass or planning contract; do not change the saved policy. '+automatic.join('; '):'No Auto modules.',
+    optional.length?'OPTIONAL: Available but nonblocking. Use only when directly helpful or requested; never invoke an additional selection pass. '+optional.join('; '):'No manually Optional modules.',
     'Explicit user module states take precedence over automatic selection. A forbidden module is never implied by a mandatory one. Missing module capabilities should be reported accurately, not presented as model unavailability. Preserve factual accuracy and real user constraints without inventing approval checkpoints.',
   ];
   return parts.join('\n');

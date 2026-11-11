@@ -29,6 +29,8 @@ export function projectFamily(family) {
       input:run.input,status:run.status,settled:run.settled,output:run.output,
       error:diagnosticText(run.error),errorCode:diagnosticCode(run.errorCode),
       ...(chatErrorText(run.error)?{error:chatErrorText(run.error)}:{}),
+      planningMode:run.planningMode,planningEnforcement:run.planningEnforcement,
+      ...(run.planningOntology?{planningOntology:run.planningOntology}:{}),
       planningExecutionMode:run.planningExecutionMode,
       viability:run.viability?.awaitingInput===true?{awaitingInput:true}:undefined,
       responseCycle:run.responseCycle&&{
