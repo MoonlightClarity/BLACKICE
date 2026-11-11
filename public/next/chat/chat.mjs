@@ -7,6 +7,7 @@ import { createConversationReader } from './reader-client.mjs';
 import { initAttachmentsUI } from '../../attachments-ui.mjs';
 import { escapeHTML } from '../core/dom.mjs';
 import { normalizeChatOptions, validateChatOptions } from './options-model.mjs';
+import { PLANNING_ONTOLOGY_MODULES, normalizePlanningOntology, PLANNING_MODULE_STATES } from '../../planning-module-policy.mjs';
 import { createConversationModelSelection, concreteChatModel } from './model.mjs';
 import { createArtifactViewer } from './artifacts.mjs';
 import { planningActivityForEvent, mergePlanningActivity, chatProgressPreview } from './planning-timeline.mjs';
@@ -46,7 +47,48 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     dataController:null, unsubscribe:null, lastLoadedAt:0,
     indexLimit:CHAT_INDEX_BATCH, indexQuery:'',messageLimits:new Map(),
     attachmentIds:new Map(), attachmentsPending:false,managing:false,selecting:false,selection:new Map(),visible:[],listRead:0,destroyed:false,inputRevision:0,
-    options:{...normalizeChatOptions((()=>{try{return JSON.parse(localStorage.getItem('blackice.next.chatOptions')||'{}');}catch{return{};}})()),model:'default'} };
+    options:{...normalizeChatOptions((()=>{try{const saved=JSON.parse(localStorage.getItem('blackice.next.chatOptions')||'{}');return {...saved,planningOntology:saved.planningOntology??getStatus?.()?.runtimeSettings?.planningOntology};}catch{return {planningOntology:getStatus?.()?.runtimeSettings?.planningOntology};}})()),model:'default'} };
+  const ontologyRows=new Map();
+  const commitOntology=patch=>{state.options.planningOntology=normalizePlanningOntology({...state.options.planningOntology,...patch});persistOptions();reflectOntology();};
+  function reflectOntology(){
+    const policy=normalizePlanningOntology(state.options.planningOntology);
+    state.options.planningOntology=policy;
+    view.ontologyAuto.checked=policy.autoSelect;
+    view.ontologyToggle.disabled=state.options.planningMode!=='ontology';
+    if(view.ontologyToggle.disabled){view.ontologyPanel.hidden=true;view.ontologyToggle.setAttribute('aria-expanded','false');}
+    for(const [id,select] of ontologyRows)select.value=policy.modules[id];
+  }
+  for(const module of PLANNING_ONTOLOGY_MODULES){
+    const label=mount.ownerDocument.createElement('label');
+    label.className='next-chat-ontology-module';
+    const info=mount.ownerDocument.createElement('span');
+    const name=mount.ownerDocument.createElement('strong');name.textContent=module.label;
+    const explanation=mount.ownerDocument.createElement('small');explanation.textContent=module.description;
+    info.append(name,explanation);
+    const select=mount.ownerDocument.createElement('select');
+    select.className='next-field';
+    select.setAttribute('aria-label',module.label+' requirement');
+    for(const mode of PLANNING_MODULE_STATES){const option=mount.ownerDocument.createElement('option');option.value=mode;option.textContent=mode[0].toUpperCase()+mode.slice(1);select.append(option);}
+    select.addEventListener('change',()=>commitOntology({modules:{...state.options.planningOntology.modules,[module.id]:select.value}}));
+    label.append(info,select);view.ontologyModules.append(label);ontologyRows.set(module.id,select);
+  }
+  view.ontologyToggle.addEventListener('click',()=>{
+    if(view.ontologyToggle.disabled)return;
+    const expanded=view.ontologyPanel.hidden;
+    view.ontologyPanel.hidden=!expanded;
+    view.ontologyToggle.setAttribute('aria-expanded',String(expanded));
+  });
+  view.ontologyAuto.addEventListener('change',()=>commitOntology({autoSelect:view.ontologyAuto.checked}));
+  view.ontologySave.addEventListener('click',async()=>{
+    if(state.pending)return;
+    view.ontologySave.disabled=true;view.ontologyStatus.textContent='Saving…';
+    try{
+      const saved=await api('/api/runtime/settings','POST',{planningOntology:normalizePlanningOntology(state.options.planningOntology)});
+      view.ontologyStatus.textContent=saved?.planningOntology?'Default saved.':'Saved.';
+    }catch(error){view.ontologyStatus.textContent=error.message||'Could not save default.';}
+    finally{view.ontologySave.disabled=false;}
+  });
+  reflectOntology();
   let runtimeStatus=getStatus?.()||{};
   const root = () => rootId(state.selected) || 'new';
   const selectedBucket=()=>state.selected?.state||state.bucket;
@@ -78,7 +120,8 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     const choices=paintModels(view,status,state.options);
     modelPicker.update({models:choices.models,status,selected:choices.selected.model});
     state.options=normalizeChatOptions({model:view.model.value,effort:view.effort.value,
-      serviceTier:view.tier.value,planningMode:view.plan.value,planningExecutionMode:view.executionMode.value});
+      serviceTier:view.tier.value,planningMode:view.plan.value,planningExecutionMode:view.executionMode.value,planningOntology:state.options.planningOntology});
+    reflectOntology();
     if(!state.selected&&!contextControls.dirty)contextControls.reconcile(runtimeStatus.runtimeSettings?.defaultContext);
     syncContext();
   };
@@ -467,7 +510,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       const submittedContextRevision=contextControls.revision;
       const result=await submitChat({api,runs:current,task,model:previous&&!submittedModel.explicit?undefined:options.model,
         effort:options.effort,serviceTier:options.serviceTier,context,
-        planningMode:options.planningMode,planningExecutionMode:options.planningExecutionMode,attachmentIds:[...(state.attachmentIds.get(root())||[])],
+        planningMode:options.planningMode,planningOntology:options.planningOntology,planningExecutionMode:options.planningExecutionMode,attachmentIds:[...(state.attachmentIds.get(root())||[])],
         cwd:(()=>{try{return localStorage.getItem('blackice.next.cwd')||status?.cwd||'';}catch{return status?.cwd||'';}})()});
       const unchanged=state.inputOwner===submittedOwner&&state.inputRevision===submittedRevision;
       if(unchanged)consumeCommandInput(submittedOwner,submittedRevision);

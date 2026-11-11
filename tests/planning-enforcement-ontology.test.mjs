@@ -6,10 +6,10 @@ import { validateWorkflow } from '../lib/engine.mjs';
 import { applyWorkflowStageEdits } from '../public/next/workspaces/workflow-edit-model.mjs';
 import { delegatedWorkerInstructions } from '../lib/task-state.mjs';
 
-test('Off, Advisory and Forced are the exact three visible choices', () => {
-  assert.deepEqual(PLANNING_MODES, ['forced', 'advisory', 'off']);
-  assert.deepEqual(PLANNING_MODE_OPTIONS.map(option => option.label), ['Forced', 'Advisory', 'Off']);
-  assert.equal(planningChoice(undefined), 'forced');
+test('Modular Planning replaces Forced as the default while legacy choices remain readable', () => {
+  assert.deepEqual(PLANNING_MODES, ['ontology', 'off', 'forced', 'advisory']);
+  assert.deepEqual(PLANNING_MODE_OPTIONS.map(option => option.label), ['Modules', 'Off', 'Forced', 'Advisory']);
+  assert.equal(planningChoice(undefined), 'ontology');
   assert.equal(planningChoice('on'), 'advisory');
   assert.equal(planningChoice('auto'), 'advisory');
   assert.equal(planningChoice('maximal'), 'advisory');
@@ -27,18 +27,20 @@ test('Forced Planning is independent of legacy external-action guardrails', () =
   assert.equal(normalizePlanningMode('forced'), 'on');
   assert.equal(normalizePlanningMode('advisory'), 'on');
   assert.equal(normalizePlanningMode('off'), 'off');
+  assert.equal(normalizePlanningMode('ontology'), 'off');
+  assert.equal(planningGuardrailsRequired('ontology',null,true),false);
 });
 
 test('workflow admission preserves three-state policy instead of collapsing to internal On', () => {
   for (const mode of PLANNING_MODES) {
     const authored = createMissionWorkflow({ id: 'policy_'+mode, task: 'Carry out a supported task.', model:'fixture-model', planningMode:mode });
     const saved = validateWorkflow(authored);
-    assert.equal(saved.settings.planningMode, mode === 'off' ? 'off' : 'on');
-    assert.equal(saved.settings.planningEnforcement, mode);
+    assert.equal(saved.settings.planningMode, ['off','ontology'].includes(mode) ? 'off' : 'on');
+    assert.equal(saved.settings.planningEnforcement, mode==='ontology' ? undefined : mode);
   }
   const legacy = createMissionWorkflow({ id:'legacy', task:'Historical task', planningMode:'on' });
   assert.equal(validateWorkflow(legacy).settings.planningEnforcement, undefined);
-  assert.equal(validateWorkflow(createMissionWorkflow({ id:'new-default', task:'New task' })).settings.planningEnforcement, 'forced');
+  assert.equal(validateWorkflow(createMissionWorkflow({ id:'new-default', task:'New task' })).settings.planningEnforcement, undefined);
 });
 
 test('workflow edit round-trip retains explicit policy with unchanged stage identity', () => {

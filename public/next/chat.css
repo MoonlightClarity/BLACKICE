@@ -135,3 +135,16 @@
 .next-chat-run-error-heading{display:flex;flex-wrap:wrap;align-items:center;gap:9px;font-size:12px}
 .next-chat-run-error-code{color:#eab1aa;font-size:11px;overflow-wrap:anywhere}
 .next-chat-run-error-message{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.55;user-select:text}
+
+/* Modular Planning ontology: editable per chat without a blocking planning view. */
+.next-chat-ontology-panel{margin:8px 0 0;padding:14px 16px;border:1px solid var(--next-border,rgba(127,127,127,.3));border-radius:12px;background:var(--next-card,transparent);max-height:45vh;overflow:auto}
+.next-chat-ontology-panel[hidden]{display:none}
+.next-chat-ontology-header,.next-chat-ontology-footer{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.next-chat-ontology-header span,.next-chat-ontology-footer span{font-size:.82rem;opacity:.75}
+.next-chat-ontology-auto{display:flex;align-items:center;gap:8px;margin:12px 0}
+.next-chat-ontology-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}
+.next-chat-ontology-module{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px;border:1px solid var(--next-border,rgba(127,127,127,.2));border-radius:9px;min-width:0}
+.next-chat-ontology-module span{display:flex;flex-direction:column;gap:3px;min-width:0}
+.next-chat-ontology-module small{font-size:.75rem;opacity:.72;line-height:1.3}
+.next-chat-ontology-module select{width:115px;min-width:115px}
+.next-chat-ontology-footer{margin-top:12px}

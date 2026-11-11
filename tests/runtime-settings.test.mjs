@@ -4,7 +4,8 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { RuntimeSettingsStore,validateRuntimeSettings } from '../lib/runtime-settings.mjs';
-const defaults = { codexHistory:'codex', runTimeoutMs:null, providerIdleTimeoutMs:300000, defaultEffort:'default', defaultServiceTier:'default', defaultContext:{preset:'model',windowTokens:null,autoCompact:true}, verbosity:'balanced', subagentsEnabled:true, maxSubagents:3, connectedGmail:false, executionGuardrails:false, hiddenModelProviders:[] };
+import {normalizePlanningOntology} from '../public/planning-module-policy.mjs';
+const defaults = { codexHistory:'codex', runTimeoutMs:null, providerIdleTimeoutMs:300000, defaultEffort:'default', defaultServiceTier:'default', defaultContext:{preset:'model',windowTokens:null,autoCompact:true}, verbosity:'balanced', subagentsEnabled:true, maxSubagents:3, connectedGmail:false, executionGuardrails:false, planningOntology:normalizePlanningOntology(), hiddenModelProviders:[] };
 const prefs = codexHistory => ({ ...defaults, codexHistory });
 
 async function settingsStore(t,options={}){

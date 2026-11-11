@@ -71,10 +71,10 @@ test('legacy Maximal keeps its saved model but planning activation no longer sel
 });
 
 test('Off, Advisory, Forced are choices; legacy On/Auto/Maximal retain the On contract', () => {
-  assert.deepEqual(PLANNING_MODES, ['forced', 'advisory', 'off']);
-  assert.deepEqual(PLANNING_INPUT_MODES, ['forced','advisory','off','on','auto','maximal']);
+  assert.deepEqual(PLANNING_MODES, ['ontology','off','forced','advisory']);
+  assert.deepEqual(PLANNING_INPUT_MODES, ['ontology','off','forced','advisory','on','auto','maximal']);
   assert.equal(normalizePlanningMode(undefined), 'on'); assert.equal(normalizePlanningMode('MAXIMAL'), 'on');
-  for (const mode of PLANNING_MODES) assert.equal(normalizePlanningMode(mode), mode === 'off' ? 'off' : 'on');
+  for (const mode of PLANNING_MODES) assert.equal(normalizePlanningMode(mode), ['ontology','off'].includes(mode) ? 'off' : 'on');
   assert.equal(planningModeDetail('maximal', 'compact'), 'detailed'); assert.equal(planningModeDetail('auto'), 'detailed');
 });
 
