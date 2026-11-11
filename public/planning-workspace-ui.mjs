@@ -40,7 +40,21 @@ export function renderPlanningAwareness(task, draft, state, { now = Date.now() }
   return editing || receipts || error ? `<section class="planning-awareness" aria-label="Shared editing">${editing}${receipts}${error}</section>` : '';
 }
 
-export function renderPlanningContractFields(task, draft) {
+export function renderPlanningDirectExecution(task) {
+  const value=task?.directExecution;
+  if(value?.provenance!=='host-direct-outcome-store' || value.authority!=='evidence-projection-only')return '';
+  const criteria=value.measurement?.criteria||[],unknown=(value.bindings||[]).filter(b=>b.unresolvedEffect||b.effectState==='UNKNOWN').length;
+  return '<section class="planning-direct-evidence" aria-label="Direct execution evidence"><details><summary>Direct execution evidence' + (value.sourceStatus==='stale'?' · Historical plan snapshot':'') + '</summary>'
+    + '<p>Host observations and dispatch receipts only. Canonical completion is unchanged.</p>'
+    + (value.sourceStatus==='stale'?'<p role="status">These receipts refer to saved source revision '+escape(value.source?.revision)+', not current revision '+escape(value.currentSource?.revision)+'.</p>':'')
+    + (unknown?'<p role="status">'+unknown+' UNKNOWN or unresolved effects. Reconcile evidence before repeating an action.</p>':'')
+    + '<ul>'+criteria.map(c=>'<li>'+escape(c.id)+': '+escape(c.observedCount)+' distinct host-confirmed outcomes / '+escape(c.targetCount)+' requested. '+escape(c.reason)+'</li>').join('')+'</ul>'
+    + '<p>'+escape((value.operations||[]).length)+' retained dispatch or evidence records. A receipt is not a successful execution claim.</p></details></section>';
+}
+export function renderPlanningContractFields(task,draft){
+  return (!draft.stepId?renderPlanningDirectExecution(task):"")+renderPlanningContractFieldsOnly(task,draft);
+}
+function renderPlanningContractFieldsOnly(task, draft) {
   const contract = task.contract, value = draft.values;
   if (!draft.stepId) return textField('goal', 'Task objective', value.goal, { max: 4000, rows: 4, required: true })
     + `<details class="planning-field-disclosure" data-planning-disclosure="criteria"><summary>Outcome criteria · ${contract.criteria.length}</summary>${contract.criteria.map(item => textField(`criterionLabel:${item.id}`, 'Criterion label', value[`criterionLabel:${item.id}`], { max: 200, input: true }) + textField(`criterionDescription:${item.id}`, 'What needs to be established', value[`criterionDescription:${item.id}`], { max: 2000, required: true, rows: 3 })).join('')}</details>`

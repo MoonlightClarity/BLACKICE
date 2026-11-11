@@ -1,6 +1,6 @@
 import { isPlanContractTask } from '../../planning-contract-model.mjs';
 import { planningContractDraftValues, applyPlanningContractFields, newPlanningContractWorkItem, removePlanningContractWorkItem } from '../../planning-workspace-model.mjs';
-import { renderPlanningContractFields } from '../../planning-workspace-ui.mjs';
+import { renderPlanningContractFields, renderPlanningDirectExecution } from '../../planning-workspace-ui.mjs';
 import { text, escapeHTML } from '../core/dom.mjs';
 import { renderRecordedAnalyticPasses } from './tradecraft-timeline.mjs';
 import { projectPlanningOntology } from '../../planning-ontology.mjs';
@@ -438,6 +438,8 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
       : draft.latest.progress || taskPlanView(draft.latest).progress;
     progress(box, savedProgress.done || 0, savedProgress.total || 0, (savedProgress.done || 0) + ' of ' + (savedProgress.total || 0) + (canonical ? ' work items complete' : ' planned steps done'));
     if (ontology) canonicalOntology(box, ontology, state);
+    const directEvidence=renderPlanningDirectExecution(draft.latest);
+    if(directEvidence)el(box,'div','','next-plan-direct-evidence').innerHTML=directEvidence;
     if (!canonical) {
     recordedOntology(box, draft.latest, state);
     // Decision policies are first-class saved Planning metadata, not implicit
