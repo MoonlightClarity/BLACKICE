@@ -8,7 +8,7 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
     return el;
   };
   const label = (name, control) => { const el = node('label', name, 'next-label'); el.append(control); return el; };
-  const button = name => { const el = node('button', name); el.type = 'button'; return el; };
+  const button = name => { const el = node('button', name); el.setAttribute('type', 'button'); return el; };
   const card = node('section', '', 'next-card next-stack');
   card.setAttribute('aria-label', 'Local model loading');
   card.append(node('h2', 'Local models'),
@@ -28,13 +28,13 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
   const load = button('Load & add to BLACKICE'); load.id = 'next-local-load'; load.className = 'next-primary';
   const unload = button('Unload'); unload.id = 'next-local-unload';
   choiceRow.append(label('Local model', models), load, unload);
-  const context = node('input', '', 'next-field'); context.type = 'number'; context.min = '128'; context.max = '262144';
+  const context = node('input', '', 'next-field'); context.setAttribute('type', 'number'); context.min = '128'; context.max = '262144';
   context.placeholder = 'Runtime default'; context.id = 'next-local-context'; context.style.maxWidth = '180px';
   const contextHelp = node('p', 'Optional context window for the next load. Leave blank to use the runtime default. Unloading does not delete model files or BLACKICE conversations.', 'next-help');
   const importDetails = node('details', '', 'next-provider-advanced');
   const summary = node('summary', 'Import local weights into Ollama');
   const importHelp = node('p', 'Select an existing .gguf file or a folder with config.json and .safetensors files. Enter its absolute path; the source precision is not deliberately reduced. Supported architectures depend on your Ollama version.', 'next-help');
-  const sourcePath = node('input', '', 'next-field'); sourcePath.type = 'text'; sourcePath.id = 'next-local-source-path'; sourcePath.placeholder = 'C:\\Models\\my-model or /home/me/models/my-model'; sourcePath.spellcheck = false;
+  const sourcePath = node('input', '', 'next-field'); sourcePath.setAttribute('type', 'text'); sourcePath.id = 'next-local-source-path'; sourcePath.placeholder = 'C:\\Models\\my-model or /home/me/models/my-model'; sourcePath.spellcheck = false;
   const alias = node('input', '', 'next-field'); alias.id = 'next-local-import-name'; alias.placeholder = 'my-local-model'; alias.spellcheck = false;
   const importButton = button('Import & load'); importButton.id = 'next-local-import'; importButton.className = 'next-primary';
   const importRow = node('div', '', 'next-row'); importRow.append(importButton);
@@ -48,7 +48,7 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
   function updateChoices() {
     const value = selected();
     const previous = models.value;
-    models.replaceChildren();
+    for (const child of [...models.children]) child.remove();
     for (const model of value.models || []) {
       const option = node('option', (model.displayName || model.id) + (model.loaded ? ' · Loaded' : ' · On disk'));
       option.value = model.id; models.append(option);
@@ -115,6 +115,6 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
   return {
     enter() { if (!alive || active) return; active = true; void refreshCatalog(); },
     leave() { active = false; generation++; },
-    destroy() { this.leave(); alive = false; mount.replaceChildren(); },
+    destroy() { this.leave(); alive = false; for (const child of [...mount.children]) child.remove(); },
   };
 }

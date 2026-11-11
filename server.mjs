@@ -28,6 +28,7 @@ import { createDirectProviderSetupTools } from './lib/provider-setup-tools.mjs';
 import { providerSetupHTTP, providerPreviewHTTP } from './lib/provider-setup-http.mjs';
 import { LocalModelManager } from './lib/local-model-manager.mjs';
 import { BuiltinInferenceManager } from './lib/native-inference/backends.mjs';
+import { nativeInferenceHTTP } from './lib/native-inference/http.mjs';
 import { localModelHTTP } from './lib/local-model-http.mjs';
 import { searchAPIProviderDirectory } from './lib/provider-directory.mjs';
 import { connectorBrowserOwner } from './lib/connector-browser-owner.mjs';
@@ -976,7 +977,20 @@ export async function createHarnessServer(options = {}) {
       if (connectionMatch && !connectionMatch[2] && req.method === 'DELETE') { await body(req); return json(res, 200, await connections.remove(connectionMatch[1])); }
       if (connectionMatch?.[2] === 'tools' && req.method === 'GET') return json(res, 200, await connections.tools(connectionMatch[1], { query: new URL(req.url, `http://${host}`).searchParams.get('query') || '' }));
       if (['connect','disconnect'].includes(connectionMatch?.[2]) && req.method === 'POST') { const value = await body(req); if (connectionMatch[2] === 'disconnect') return json(res, 200, await connections.disconnect(connectionMatch[1])); await connections.connect(connectionMatch[1], { reconnect: value.reconnect === true }); return json(res, 200, connections.list().find(item => item.id === connectionMatch[1])); }
-      if (pathname === '/api/native-inference/status' && req.method === 'GET') return json(res, 200, await nativeInference.status());
+      if (pathname === '/api/native-inference/status' || /^\/api\/native-inference\/(?:load|generate|cancel|unload)$/.test(pathname)) {
+        const controller = new AbortController();
+        const onDisconnect = () => { if (!res.writableEnded) controller.abort(); };
+        res.once('close', onDisconnect);
+        try {
+          const result = await nativeInferenceHTTP({
+            manager: nativeInference, pathname, method: req.method,
+            remote: req.headers['x-blackice-remote'] === '1',
+            value: req.method === 'POST' ? await body(req, 150000) : undefined,
+            signal: controller.signal,
+          });
+          return json(res, result.status, result.body);
+        } finally { res.removeListener('close', onDisconnect); }
+      }
       if (pathname === '/api/local-models' || /^\/api\/local-models\/(?:load|unload|import)$/.test(pathname)) {
         const result = await localModelHTTP({
           manager: localModels, runtime, pathname, method: req.method,
@@ -1428,7 +1442,7 @@ export async function createHarnessServer(options = {}) {
         'browser.css','knowledge.css','workspaces/knowledge.mjs','workspaces/knowledge-model.mjs',
         'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/activity-overview.mjs','workspaces/activity-model.mjs','activity.css','workspaces/settings.mjs','workspaces/settings-gemini-connector.mjs','workspaces/settings-claude-connector.mjs','workspaces/settings-restart.mjs',
         'settings.css','settings-identity.css','settings-providers.css','settings-connections.css','workbench.css','workspaces/workbench.mjs','workspaces/workbench-guide.mjs',
-        'workspaces/settings-identity.mjs','workspaces/applications.mjs','workspaces/settings-subscriptions.mjs','workspaces/settings-local-models.mjs','workspaces/settings-providers.mjs','workspaces/settings-provider-directory.mjs','workspaces/settings-connections.mjs','workspaces/settings-import.mjs'];
+        'workspaces/settings-identity.mjs','workspaces/applications.mjs','workspaces/settings-subscriptions.mjs','workspaces/settings-native-models.mjs','workspaces/settings-local-models.mjs','workspaces/settings-providers.mjs','workspaces/settings-provider-directory.mjs','workspaces/settings-connections.mjs','workspaces/settings-import.mjs'];
       for (const file of nextFiles) files['/next/' + file] = 'next/' + file;
       files['/next'] = 'next/index.html'; files['/next/'] = 'next/index.html';
       files['/native-apps-ui.mjs'] = 'native-apps-ui.mjs';
@@ -1516,6 +1530,8 @@ export async function createHarnessServer(options = {}) {
         await cleanup(() => browser.cancel());
         await cleanup(() => signedIntegration?.close());
         await cleanup(() => planningBrowserRuntime.close());
+        // Cancel and dispose native model workers before tearing down the runtime.
+        await cleanup(() => nativeInference.close());
         await cleanup(() => engine.close());
         await cleanup(() => nativeWindows?.close());
         await cleanup(() => applicationWorkspace.close());

@@ -1,4 +1,5 @@
 import { createLocalModelSettings } from './settings-local-models.mjs';
+import { createNativeModelSettings } from './settings-native-models.mjs';
 
 /** Native account settings stay separate from optional API connections. */
 export function createSubscriptionModelSettings(props, createLegacy) {
@@ -48,8 +49,10 @@ export function createSubscriptionModelSettings(props, createLegacy) {
   );
   const legacyMount=element('div');
   advanced.append(legacyMount);
+  const nativeEngineMount=element('div');
   const localMount=element('div');
-  mount.append(header,native,localMount,advanced);
+  mount.append(header,native,nativeEngineMount,localMount,advanced);
+  const nativeEngine=createNativeModelSettings({mount:nativeEngineMount,api});
   const local=createLocalModelSettings({mount:localMount,api,onChanged:()=>props.onChanged?.()});
   const legacy=createLegacy({...props,mount:legacyMount});
   let active=false,destroyed=false,revision=0,expanded=false,currentStatus=null,busy=null,operationError='';
@@ -126,11 +129,11 @@ export function createSubscriptionModelSettings(props, createLegacy) {
   advanced.addEventListener('toggle',toggle);
   render();
   return {
-    enter(){if(destroyed||active)return;active=true;local.enter();render();void load();toggle();},
-    leave(){active=false;revision++;local.leave();render();if(expanded){legacy.leave?.();expanded=false;}},
+    enter(){if(destroyed||active)return;active=true;nativeEngine.enter();local.enter();render();void load();toggle();},
+    leave(){active=false;revision++;nativeEngine.leave();local.leave();render();if(expanded){legacy.leave?.();expanded=false;}},
     updateStatus,
     focusProvider(id){if(id==='mistral-vibe'&&!destroyed&&active)native.focus({preventScroll:false});},
     updateRuntimeSettings(value){legacy.updateRuntimeSettings?.(value);},
-    destroy(){if(destroyed)return;this.leave();destroyed=true;local.destroy();legacy.destroy?.();advanced.removeEventListener('toggle',toggle);mount.replaceChildren();}
+    destroy(){if(destroyed)return;this.leave();destroyed=true;nativeEngine.destroy();local.destroy();legacy.destroy?.();advanced.removeEventListener('toggle',toggle);mount.replaceChildren();}
   };
 }

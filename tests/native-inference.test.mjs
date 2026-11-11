@@ -182,26 +182,38 @@ test('llama.cpp uses a standalone binary with an ephemeral prompt file, never Ol
   await assert.rejects(() => engine.generate({ modelPath: 'some-model.gguf', prompt: 'hello' }), /absolute path/);
 });
 
-test('server exposes read-only native readiness without running inference on the main loop', async () => {
+test('server exposes worker-backed native lifecycle without changing the existing provider runtime', async () => {
   const source = await readFile(new URL('../server.mjs', import.meta.url), 'utf8');
   assert.match(source, /\/api\/native-inference\/status/);
-  assert.doesNotMatch(source, /\/api\/native-inference\/generate/);
+  assert.ok(source.includes('load|generate|cancel|unload'));
+  assert.match(source, /nativeInferenceHTTP/);
+  assert.match(source, /nativeInference\.close\(\)/);
 });
 
 test('native manager never silently replaces BLACKICE inference with llama.cpp', async () => {
+  const routed = [];
   const manager = new BuiltinInferenceManager({
     llamaCpp: { available: async () => false },
-    modelLoader: async () => ({ config: modelConfig, ...tensors }),
+    workerFactory: options => ({
+      async load() { routed.push({ action: 'load', options }); return { sourcePrecision: ['F32'], maxContext: 64 }; },
+      async generate({ tokenIds, maxNewTokens, prompt }) {
+        routed.push({ action: 'generate', tokenIds, maxNewTokens, prompt });
+        return { backend: 'blackice', completed: true, tokenIds: [0], text: 'a', promptTokens: tokenIds?.length || 1 };
+      },
+      async unload() { routed.push({ action: 'unload' }); },
+    }),
   });
   const status = await manager.status();
   assert.equal(status.engines[0].id, 'blackice');
+  assert.equal(status.engines[0].workerIsolated, true);
   assert.equal(status.engines[1].available, false);
   assert.equal(status.engines[0].productionReady, false);
   await assert.rejects(() => manager.load({ backend: 'llama.cpp', modelPath: path.resolve('missing.gguf') }), /not been bundled/);
   const { id } = await manager.load({ backend: 'blackice', modelPath: path.resolve('mock-qwen3') });
   const result = await manager.generate({ id, tokenIds: [0], maxTokens: 1 });
-  assert.deepEqual(result, { backend: 'blackice', tokens: [0] });
-  await assert.rejects(() => manager.generate({ id, prompt: 'hi', maxTokens: 1 }), /pretokenized integer IDs/);
-  assert.equal(manager.unload(id).unloaded, true);
+  assert.deepEqual(result, { backend: 'blackice', completed: true, tokenIds: [0], text: 'a', promptTokens: 1 });
+  assert.deepEqual(routed.map(entry => entry.action), ['load', 'generate']);
+  assert.equal((await manager.unload(id)).unloaded, true);
+  assert.equal(routed.at(-1).action, 'unload');
   assert.equal((await manager.status()).sessions.length, 0);
 });

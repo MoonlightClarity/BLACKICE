@@ -1,66 +1,91 @@
-# BLACKICE-owned inference + llama.cpp backend
+# BLACKICE native inference: independent Qwen3 plus llama.cpp
 
-## Decision
+## Design
 
-BLACKICE is not a front end for Ollama, LM Studio, or llama.cpp. It owns the engine-selection contract, model lifecycle, inference state, KV-cache policy, tokenizer integration, streaming, and planning integration. Two separate model execution implementations share that contract:
+BLACKICE owns its model lifecycle, tokenizer, weight loader, transformer math, KV caching and worker orchestration. The independently authored BLACKICE reference engine **does not call** llama.cpp, Ollama or LM Studio.
 
-1. **BLACKICE Reference** — code we wrote, initially Qwen3-only, independently implementing model math and reading Safetensors.
-2. **llama.cpp** — separate upstream source pinned as a Git submodule and invoked through a BLACKICE-bundled binary once built. This supplies model compatibility and a performance/accuracy baseline, not the implementation of the BLACKICE engine.
+Two backends can be explicitly selected:
 
-Ollama and LM Studio remain optional compatibility connections. Neither is necessary for the two native backends.
+- **BLACKICE Qwen3 reference:** our own Safetensors reader (F16/BF16/F32), Qwen3 byte-level BPE tokenizer, transformer forward pass and CPU worker.
+- **llama.cpp:** MIT-licensed upstream Git submodule, separate GGUF loader/kernels and an optional BLACKICE-bundled llama-cli process. It is not the implementation of our reference engine.
 
-## Current implementation state
+Ollama and LM Studio remain optional compatibility providers, never prerequisites for these backends. Failure does not silently switch to another backend.
 
-| Capability | BLACKICE Reference | Bundled llama.cpp |
+## Current capabilities and limits
+
+| Capability | BLACKICE reference | llama.cpp |
 | --- | --- | --- |
-| Engine code | lib/native-inference/reference-qwen3.mjs | third_party/llama.cpp (upstream MIT source) |
-| Weight format | Safetensors F16, BF16 or F32 | GGUF |
-| Loader | Independent validated header / shard reader, lazy weight decoding | Upstream llama.cpp loader |
-| Transformer math | Independent Qwen3 RMSNorm, Q/K normalization, RoPE, GQA, KV cache, SiLU-gated MLP, output logits | Upstream implementation |
-| Inference input | Pretokenized integer IDs only | Text through bundled llama-cli |
-| CPU | Reference implementation (slow) | Buildable CPU implementation |
-| GPU | **Not implemented yet** | Upstream CUDA backend can be built |
-| Production chat integration | **Not implemented yet** | **Not implemented yet** |
-| Binary included in current installer | Not exposed as an installed feature | **No** — source is pinned, binary build remains necessary |
+| Model format | Safetensors F16/BF16/F32 | GGUF |
+| Transformer math | RMSNorm, Q/K norms, RoPE, GQA, KV cache, SiLU-gated MLP, output logits | Upstream |
+| Tokenizer | Own NFC, byte-level BPE, special tokens, limited text chat framing | Upstream |
+| Execution | Dedicated CPU worker, shared-memory cancellation | Separate CLI process |
+| Input | Text, system/user/assistant messages, or token IDs | Plain text |
+| CUDA | Not yet implemented | Upstream support, not built locally |
+| Production chat model picker | Not yet integrated | Not yet integrated |
+| Ready for production | No | No (binary not built) |
 
-GET /api/native-inference/status reports both native engines and their readiness without starting a model. No load/generate HTTP route is exposed until execution moves off the Electron main thread.
+An **experimental native inference** section is present in Settings > Models in the development branch. It does not modify existing default model settings or stored chat identities. It defaults to a one-token preview, because the reference engine is extremely slow with real weights.
 
-The source code is a tested engineering foundation, not an assertion that BLACKICE can now run Qwen3 end-to-end in Chat. In particular, the reference engine requires a tokenizer and isolated inference worker before exposing it to normal user conversations. No external model invocation is hidden inside the reference engine.
+Local API routes:
 
-## Precision
+- GET /api/native-inference/status
+- POST /api/native-inference/load
+- POST /api/native-inference/generate
+- POST /api/native-inference/cancel
+- POST /api/native-inference/unload
 
-No 4-bit, 8-bit, or GGUF quantization step is performed by the reference loader. The original F16/BF16/F32 tensor bytes are decoded into Float32Array for numerical computation. Widening in memory is not weight quantization. We should add a separate explicit BF16 to FP16 conversion path for the Shadowdancer target if the downloaded source weights are BF16. That transformation should record per-tensor source and destination types and verify that no quantization was requested.
+The reference backend loads and generates on a Node worker, not Electron's main event loop. Model cancellation uses a shared-memory flag, and BLACKICE shutdown cancels generation before worker disposal. Token/text callbacks stream internally; the experimental HTTP response currently delivers the final JSON result, not incremental SSE.
 
-For llama.cpp, source Safetensors can be converted to GGUF F16 with the upstream conversion script and its --outtype f16 option; this is a container conversion, not a 4-bit/8-bit quantization. Exact numerical equality is not guaranteed when converting BF16 to FP16 because the floating-point formats represent different values.
+## Actual Shadowdancer Qwen3 0.6B Abliterated weights
 
-## How to test the code today
+The development environment downloaded the mlabonne/Qwen3-0.6B-abliterated source checkpoint. It has 310 **F32** tensors. BLACKICE converted the whole checkpoint to FP16 using its own chunked conversion code.
 
-From a BLACKICE checkout with Node.js 22+: node --test tests/native-inference.test.mjs
+- Original weight file: 2,384,234,968 bytes.
+- Converted FP16 file: 1,192,134,784 bytes.
+- Finite overflow count: 0.
+- Quantization requested: false.
+- The original file and tokenizer were preserved. The output config says float16.
+- Source and output SHA-256 hashes, tensor count and conversion details are recorded beside the output in fp16-conversion.json.
 
-The tests cover explicit backend selection, independent Qwen3 matvec/RMSNorm/GQA/RoPE/MLP, deterministic CPU token generation, cancellation without partial KV-cache commits, lazy Safetensors loading, precision handling, malformed files, and standalone llama.cpp CLI dispatch.
+Model weights are stored in the local BLACKICE workspace, not in GitHub.
 
-## Preparing the llama.cpp binary
+The real first-party CPU worker produced greedy token 21806 (decoded text: " Answer") for the raw prompt "Hello" using the FP16 model. A subsequent **actual BLACKICE HTTP server** test loaded, generated the same token and unloaded that checkpoint end-to-end, completing in about 20.9 seconds including setup and teardown.
 
-The dependency is pinned in .gitmodules and its Git tree is retained outside the app bundle.
+This proves that the loader, tokenizer, independent transformer code, worker and local HTTP path can execute together on real model weights. **It does not prove numerical parity** with PyTorch or llama.cpp, nor usable production performance.
 
-1. git submodule update --init third_party/llama.cpp
-2. In PowerShell, run .\scripts\build-native-llama.ps1 -Backend cpu
-3. After installing an NVIDIA CUDA toolkit and supported C++ compiler, run .\scripts\build-native-llama.ps1 -Backend cuda
+## Testing and conversion
 
-The script needs CMake and a C/C++ toolchain; it stages resources/native-inference/llama.cpp/llama-cli.exe, required adjacent DLLs, the MIT LICENSE and a SHA-256/source-revision manifest. The Windows public-packaging script includes that binary directory only if a valid executable is staged. --require-native-inference explicitly fails a build if the binary is absent, preventing a source-only release from being represented as bundled native inference.
+Run in a checkout with Node 22+:
 
-LlamaCppBackend launches only that bundled executable (or an explicitly configured development executable), passes prompts through an ephemeral file instead of command-line arguments, streams text chunks, supports cancellation, and never selects Ollama or LM Studio.
+    node --test tests/native-inference.test.mjs tests/native-qwen3-tokenizer.test.mjs tests/native-fp16-conversion.test.mjs tests/native-qwen3-worker.test.mjs tests/native-inference-http.test.mjs tests/native-inference-server.test.mjs tests/next-settings-native-models.test.mjs
 
-## Next acceptance gates
+The official tokenizer test fixture can be enabled with BLACKICE_QWEN3_FIXTURE_DIR pointing at the downloaded tokenizer.json directory.
 
-1. **Tokenizer:** independently load/verify Qwen3 tokenizer and ChatML formatting. Compare token IDs against a known-good tokenizer before any chat integration.
-2. **Reference parity:** compare one-token logits and KV-cache state for real F16 Qwen3 weights against a reference on the same inputs. Validate end-to-end text before calling it production ready.
-3. **Isolation:** run reference inference on a worker thread or separate process. CPU matrix operations must never block BLACKICE's Electron main loop. Preserve cancellation, timeouts and progress on both sides.
-4. **Performance:** add owned C++/SIMD kernels, then optional CUDA FP16 kernels; retain the JS reference as a numerical oracle. Model memory, token speed, and GPU offload should be measurable, not guessed.
-5. **Bundling:** build, sign/test where configured, and include llama.cpp binaries plus licenses in a new installer. Probe the packaged executable in the installed app rather than assuming source availability.
-6. **Routing:** wire both engines into the existing provider-model selector, streaming tool-call handling and persistent per-chat model identity. Selection is explicit: if BLACKICE native fails, report the failure; do not silently switch to llama.cpp, a cloud API, or another precision.
-7. **Shadowdancer integration:** keep recursive planning and context-folder state above the inference backend, so clearing/reloading planning context behaves identically with either local engine.
+The expensive real-model HTTP test requires BLACKICE_QWEN3_ABLITERATED_FP16_DIR pointing at a model directory containing config.json, tokenizer.json and the 310-tensor FP16 model.safetensors file. Without that, the test skips.
 
-## Why the boundary matters
+To convert a model directory explicitly, without overwriting its source:
 
-A common lifecycle interface lets us run the same token-ID tests and compare logits, latency, peak memory, sampling and cancellation behavior without confusing two different implementations. llama.cpp can be the compatibility baseline while BLACKICE's engine becomes more capable. Its existence must not prevent independent development of model loading, attention kernels, or caching policies.
+    node scripts/convert-native-model-fp16.mjs --source ABSOLUTE_SOURCE_DIRECTORY --output NEW_ABSOLUTE_OUTPUT_DIRECTORY
+
+To probe the worker directly:
+
+    node scripts/probe-native-qwen3.mjs --model ABSOLUTE_FP16_MODEL_DIRECTORY --prompt Hello --tokens 1 --context 64 --timeout 90000
+
+The F16 source tensor bytes are widened to Float32Array for numerical operations. Widening is not weight quantization. Conversion from BF16/F32 to FP16 uses IEEE754 rounding, preserves originals, and never requests 4-bit or 8-bit quantization.
+
+## Separate pinned llama.cpp dependency
+
+llama.cpp is pinned at aa75ff3239f9cc675b081697deda9e1b112345c6. Its MIT license is preserved in the source and copied beside the built executable.
+
+    git submodule update --init third_party/llama.cpp
+    .\scripts\build-native-llama.ps1 -Backend cpu
+
+The build requires CMake and a C/C++ compiler, which were unavailable on this Windows development machine. Thus **no llama.cpp executable is built or verified** and the current installed Windows release does not include it. The source packaging script can include a staged executable and can require one explicitly with --require-native-inference.
+
+## Outstanding acceptance gates
+
+1. Compare token IDs, one-token logits and multi-position KV-cache state against a trusted implementation using the exact same FP16 checkpoint. Correct-looking output is insufficient.
+2. Implement optimized first-party CPU kernels and optional CUDA FP16 kernels; keep JavaScript as a numerical reference.
+3. Measure throughput and memory use on the actual host and establish multi-session lifetime behavior.
+4. Integrate with the normal model picker, persistent per-conversation model identities, tool-call streaming and Shadowdancer's recursive planning/context system without silently replacing models.
+5. Build, verify and package llama.cpp CPU/CUDA binaries and publish a tested installer.
