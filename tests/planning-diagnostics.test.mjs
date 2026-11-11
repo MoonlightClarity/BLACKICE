@@ -35,15 +35,22 @@ async function fixture(t,{amend,provider,attachments=false}={}){
   let request=await cycles.createCycle(original.id,{title:'Synthetic native cycle',purpose:original.objective,planningExecutionMode:'plan_only',expectedRequestRevision:original.revision,clientRequestId:'native-cycle'});
   const cycleId=request.cycles[0].id;
   const workflow={id:'fixture-workflow',nodes:[{id:'agent',type:'agent',model:profile.model,effort:profile.effort}],edges:[],settings:{planningMode:'on'}};
-  const authoring={taskSchemaVersion:14,contractVersion:2,workspaceResourceKey:'workspace:fixture',initialOwner:'coordinator',currentContract:null,workflow:{coordinatorNodeId:null,agents:[{id:'agent',label:'Fixture agent'}]},...(attachments?{attachmentScope:{tool:'relay_files',effect:'observe',resourceKey:'attachment-set:fixture',files:[{id:'attached-record',name:'Synthetic record',sha256:'a'.repeat(64),resourceKey:'attachment:'+'a'.repeat(64)}]}}:{})};
+  const authoring={taskSchemaVersion:14,contractVersion:2,workspaceResourceKey:'workspace:fixture',initialOwner:'coordinator',currentContract:null,workflow:{coordinatorNodeId:null,agents:[{id:'agent',label:'Fixture agent'}]}};
   request=await store.runtimeWriter().configureResponseCycle(original.id,{cyclePatch:{id:cycleId,linkedRunId:'native-run',execution:{required:true,state:'failed',runId:'native-run'},executionProfile:profile},rootPatch:{linkedRunId:'native-run'},sources:[{id:'cycle:execution-contract:'+cycleId,kind:'source',title:'Host canonical authoring capture',text:JSON.stringify(authoring)}]});
   request=await store.runtimeWriter().configureViability(original.id,{viability:{scope:'request',scopeId:'native-run',nodeId:request.cycles[0].stageNodeIds.feasibility,fingerprint:'a'.repeat(64),workflowNodeIds:['agent']},sources:[{id:'viability:task',kind:'user_input',title:'Original synthetic task',text:'Explain the supplied synthetic record.'},{id:'viability:profile',kind:'source',title:'Synthetic supplied record',text:'The measured fixture value is 7. No external observation is implied.'}]});
   const run={id:'native-run',input:original.objective,cwd:dir,workflow,attachmentIds:attachments?['attached-record']:[],planningContractVersion:14,responseCycle:{requestId:request.id,cycleId,planRef:{requestId:request.id,cycleId,nodeId:request.cycles[0].stageNodeIds.plan,nodeRevision:1,responseId:null}}};
+  // Produce the actual native source shape before the diagnostic exists. All
+  // subsequent capture/run work uses the throwing Engine proxy, not discovery.
+  let attachmentSnapshots=0;
+  if(attachments){
+    cycles.engine={attachments:{snapshot:async ids=>{attachmentSnapshots++;assert.deepEqual(ids,run.attachmentIds);return ids.map(id=>({id,name:'Synthetic record',sha256:'a'.repeat(64)}));}}};
+    try{request=await cycles.supplyExecutionContract(request,request.cycles[0],run);}finally{cycles.engine=engine;}
+  }
   let runReads=0;
   const service=new PlanningDiagnostics({store,cycles,runner,getSettings:()=>settings,readRun:async id=>{assert.equal(id,run.id);runReads++;return structuredClone(run);}});
   t.after(async()=>{await service.close();await runner.close();await cycles.close();await store.close();await rm(dir,{recursive:true,force:true});});
   const capture=extra=>service.capture({sourceRequestId:request.id,sourceCycleId:cycleId,expectedSourceRevision:request.revision,clientRequestId:'capture-fixture',limits,profile,...extra});
-  return {dir,store,runner,cycles,service,request,run,capture,calls,settings,get runReads(){return runReads;}};
+  return {dir,store,runner,cycles,service,request,run,capture,calls,settings,get runReads(){return runReads;},get attachmentSnapshots(){return attachmentSnapshots;}};
 }
 const controls=(request,id='run-fixture')=>({expectedRevision:request.revision,captureHash:request.diagnostic.captureHash,clientRequestId:id});
 
@@ -59,6 +66,57 @@ test('capture is immutable, exact, historical, unlinked and inert',async t=>{
   const node=d.nodes.find(n=>n.kind==='inference');
   await assert.rejects(f.runner.start({requestId:d.id,nodeId:node.id,expectedNodeRevision:node.revision,clientRequestId:'ordinary',diagnosticCapability:{}}),{code:'PLANNING_DIAGNOSTIC_ADMISSION'});
   assert.equal(f.calls.length,0);
+});
+
+test('actual native attachment publisher shape is captured without rediscovery or rewritten provenance',async t=>{
+  const f=await fixture(t,{attachments:true}),source=f.request.sources.find(item=>item.id.startsWith('cycle:execution-contract:')),body=JSON.parse(source.text);
+  assert.equal(f.attachmentSnapshots,1);assert.equal(Object.hasOwn(body.attachmentScope.files[0],'sha256'),false);
+  assert.equal(body.attachmentScope.files[0].resourceKey,'attachment:sha256:'+'a'.repeat(64));
+  const d=await f.capture(),mapping=d.diagnostic.capture.sourceMapping.find(item=>item.sourceId===source.id),copied=d.sources.find(item=>item.id===mapping.diagnosticSourceId);
+  assert.equal(f.attachmentSnapshots,1);assert.equal(f.calls.length,0);assert.equal(copied.text,source.text);assert.deepEqual(copied.provenance,source.provenance);
+  assert.equal(mapping.sourceHash,mapping.diagnosticSourceHash);
+});
+
+test('native attachment identities reject missing, wrong, colliding and mismatched records',async t=>{
+  const cases=[
+    ['missing-file',body=>{body.attachmentScope.files=[];}],
+    ['wrong-id',body=>{body.attachmentScope.files[0].id='unrelated-record';}],
+    ['duplicate-id',body=>{body.attachmentScope.files.push(structuredClone(body.attachmentScope.files[0]));}],
+    ['extra-id',body=>{body.attachmentScope.files.push({...body.attachmentScope.files[0],id:'unrelated-record'});}],
+    ['missing-key',body=>{delete body.attachmentScope.files[0].resourceKey;}],
+    ['wrong-key-format',body=>{body.attachmentScope.files[0].resourceKey='attachment:'+'a'.repeat(64);}],
+    ['uppercase-key',body=>{body.attachmentScope.files[0].resourceKey='attachment:sha256:'+'A'.repeat(64);}],
+    ['key-suffix',body=>{body.attachmentScope.files[0].resourceKey+=':extra';}],
+    ['key-newline',body=>{body.attachmentScope.files[0].resourceKey+='\n';}],
+    ['missing-saved-file-id',body=>{delete body.attachmentScope.files[0].id;}],
+    ['raw-hash-mismatch',body=>{body.attachmentScope.files[0].sha256='b'.repeat(64);}],
+    ['raw-hash-null',body=>{body.attachmentScope.files[0].sha256=null;}],
+    ['wrong-set-key',body=>{body.attachmentScope.resourceKey='attachments:unrelated';}],
+    ['wrong-effect',body=>{body.attachmentScope.effect='commit';}],
+  ];
+  for(const [name,amend] of cases)await t.test(name,async t=>{
+    const f=await fixture(t,{attachments:true}),source=f.request.sources.find(item=>item.id.startsWith('cycle:execution-contract:')),body=JSON.parse(source.text);amend(body);
+    const changed=await f.store.runtimeWriter().configureResponseCycle(f.request.id,{sources:[{id:source.id,kind:source.kind,title:source.title,text:JSON.stringify(body)}]});
+    await assert.rejects(f.capture({expectedSourceRevision:changed.revision}),{code:'PLANNING_DIAGNOSTIC_BINDING'});
+    assert.equal(f.calls.length,0);assert.equal(f.attachmentSnapshots,1);
+  });
+  await t.test('duplicate-saved-run-id',async t=>{
+    const f=await fixture(t,{attachments:true});f.run.attachmentIds.push(f.run.attachmentIds[0]);
+    await assert.rejects(f.capture(),{code:'PLANNING_DIAGNOSTIC_BINDING'});assert.equal(f.attachmentSnapshots,1);
+  });
+});
+
+test('matching optional raw hashes and separate native IDs with identical bytes remain valid',async t=>{
+  const f=await fixture(t,{attachments:true}),source=f.request.sources.find(item=>item.id.startsWith('cycle:execution-contract:')),body=JSON.parse(source.text);
+  body.attachmentScope.files[0].sha256='a'.repeat(64);
+  let changed=await f.store.runtimeWriter().configureResponseCycle(f.request.id,{sources:[{id:source.id,kind:source.kind,title:source.title,text:JSON.stringify(body)}]});
+  const d=await f.capture({expectedSourceRevision:changed.revision});assert.equal(d.diagnostic.state,'captured');assert.equal(f.attachmentSnapshots,1);
+  const {attachmentSetResourceKey}=await import('../lib/operation-descriptors.mjs');
+  f.run.attachmentIds.push('identical-content-copy');body.attachmentScope.files.push({...body.attachmentScope.files[0],id:'identical-content-copy'});
+  body.attachmentScope.resourceKey=attachmentSetResourceKey(f.run.attachmentIds);
+  changed=await f.store.runtimeWriter().configureResponseCycle(f.request.id,{sources:[{id:source.id,kind:source.kind,title:source.title,text:JSON.stringify(body)}]});
+  assert.equal((await f.capture({expectedSourceRevision:changed.revision,clientRequestId:'separate-native-identities'})).diagnostic.state,'captured');
+  assert.equal(f.attachmentSnapshots,1);assert.equal(f.calls.length,0);
 });
 
 test('same real stage pipeline validates canonical authoring without execution ownership or publication',async t=>{
