@@ -177,24 +177,26 @@ for(const mode of ['off','ontology'])test('real delegated native worker has inde
     status(){return{connected:true,authenticated:true,defaultModel:'fixture',models:[{id:'fixture',supportsTools:true}]};}
     async runAgent(options){turns++;
       if(options.prompt.startsWith('You are a short-lived BLACKICE subagent.')){
-        assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_effects'));driver.owner={taskId:parentId,runId:parentId,nodeId:delegatedPlanNodeId('agent','receipt-worker')};
+        assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_effects'));
+        if(options.prompt.includes('Inspect the synthetic receipt catalog only.'))return{output:'Independent receipt catalog inspection complete',threadId:'catalog-receipt-thread'};
+        driver.owner={taskId:parentId,runId:parentId,nodeId:delegatedPlanNodeId('agent','receipt-worker')};
         const response=await options.onToolCall(call('click','worker-submit'));assert.equal(response.success,false);const operationId=note(response).operationId;
         const observed=await options.onToolCall({name:'relay_effects',callId:'worker-receipt',arguments:{action:'reconcile',operationId,tabId:'tab',receiptBinding:binding}});
         assert.equal(observed.success,true);assert.equal(parse(observed).operation.nodeId,driver.owner.nodeId);assert.equal(parse(observed).operation.state,'unknown');
         return{output:'Observed the exact native response; business outcome remains uncertain',threadId:'worker-receipt-thread'};
       }
       assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_delegate'));
-      const delegated=await options.onToolCall({name:'relay_delegate',callId:'launch-receipt-worker',arguments:{tasks:[{id:'receipt-worker',prompt:'Dispatch one synthetic native form and inspect the exact retained response.'}]}});
-      assert.equal(delegated.success,true);assert.equal(parse(delegated).results[0].status,'completed',parse(delegated).results[0].error);
+      const delegated=await options.onToolCall({name:'relay_delegate',callId:'launch-receipt-worker',arguments:{tasks:[{id:'receipt-worker',prompt:'Dispatch one synthetic native form and inspect the exact retained response.'},{id:'catalog-worker',prompt:'Inspect the synthetic receipt catalog only. Do not dispatch a form.'}]}});
+      assert.equal(delegated.success,true);assert.equal(parse(delegated).results[0].status,'completed',parse(delegated).results[0].error);assert.equal(parse(delegated).results[1].status,'completed',parse(delegated).results[1].error);
       const own=await options.onToolCall({name:'relay_effects',callId:'parent-receipts',arguments:{action:'list'}});assert.equal(parse(own).operations.length,0,'parent cannot read another worker’s receipt payload');
       return{output:'Worker response is recorded; no extra planning turn',threadId:'parent-receipt-thread'};
     }async close(){}
   }
-  const engine=await new HarnessEngine({runtime:new Runtime(),browser,tasks,dataDir:directory,defaultCwd:cwd}).init();engine.runtimeSettings={get:()=>({executionGuardrails:false,subagentsEnabled:true,maxParallelAgents:1})};
+  const engine=await new HarnessEngine({runtime:new Runtime(),browser,tasks,dataDir:directory,defaultCwd:cwd}).init();engine.runtimeSettings={get:()=>({executionGuardrails:false,subagentsEnabled:true,maxSubagents:3})};
   t.after(async()=>{await engine.close();await tasks.close();await browser.close();await rm(directory,{recursive:true,force:true});});
   const started=engine.startRun({workflow:createMissionWorkflow({task:'Delegate one native response inspection',model:'fixture',cwd,planningMode:mode}),input:{task:'Delegate one native response inspection',cwd,planningMode:mode}});parentId=started.id;driver.owner={taskId:parentId,runId:parentId,nodeId:'agent'};
   let done;for(let i=0;i<300;i++){done=engine.getRun(started.id);if(done.settled)break;await new Promise(resolve=>setTimeout(resolve,10));}
-  assert.equal(done.status,'completed',done.error||done.nodes.agent.error);assert.equal(turns,2);assert.equal(driver.dispatches,1);
+  assert.equal(done.status,'completed',done.error||done.nodes.agent.error);assert.equal(turns,3);assert.equal(driver.dispatches,1);
 });
 
 
