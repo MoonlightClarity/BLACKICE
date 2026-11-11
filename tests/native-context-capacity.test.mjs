@@ -10,7 +10,7 @@ import { normalizeContextOptions, contextSnapshot, nativeContextSnapshot } from 
 import { CodexRuntime } from '../lib/codex.mjs';
 import { HarnessEngine } from '../lib/engine.mjs';
 import { ProviderRuntime } from '../lib/providers.mjs';
-import { CONTROL_TOOL, CONTROL_SCHEMA_VERSION,PRE_USER_AGENCY_CONTROL_TOOL,PRE_USER_AGENCY_CONTROL_INSTRUCTIONS,PRE_INTENT_CONTROL_TOOL,PRE_INTENT_CONTROL_INSTRUCTIONS, PRE_PERSISTENT_HISTORY_CONTROL_TOOL, PRE_PERSISTENT_HISTORY_CONTROL_INSTRUCTIONS, PRE_CONTEXT_CONTROL_TOOL, PRE_CONTEXT_CONTROL_INSTRUCTIONS, PRE_PROFILE_CONTROL_TOOL, PRE_ACCURACY_CONTROL_TOOL, createControlToolHandler } from '../lib/control-tools.mjs';
+import { CONTROL_TOOL, CONTROL_SCHEMA_VERSION,PRE_CANONICAL_CONTROL_TOOL,PRE_CANONICAL_CONTROL_INSTRUCTIONS,PRE_USER_AGENCY_CONTROL_TOOL,PRE_USER_AGENCY_CONTROL_INSTRUCTIONS,PRE_INTENT_CONTROL_TOOL,PRE_INTENT_CONTROL_INSTRUCTIONS, PRE_PERSISTENT_HISTORY_CONTROL_TOOL, PRE_PERSISTENT_HISTORY_CONTROL_INSTRUCTIONS, PRE_CONTEXT_CONTROL_TOOL, PRE_CONTEXT_CONTROL_INSTRUCTIONS, PRE_PROFILE_CONTROL_TOOL, PRE_ACCURACY_CONTROL_TOOL, createControlToolHandler } from '../lib/control-tools.mjs';
 import { RuntimeSettingsStore } from '../lib/runtime-settings.mjs';
 
 const cwd = fileURLToPath(new URL('..', import.meta.url));
@@ -36,8 +36,8 @@ test('current control tools advertise and persist Extended through runtime_set/g
   assert.equal(described.success, true);
   assert.ok(described.value.tool.inputSchema.properties.runtime.properties.defaultContext.properties.preset.enum.includes('extended'));
   for (const historical of [PRE_PROFILE_CONTROL_TOOL, PRE_ACCURACY_CONTROL_TOOL, PRE_CONTEXT_CONTROL_TOOL]) assert.deepEqual(historical.inputSchema.properties.runtime.properties.defaultContext.properties.preset.enum, ['model', '900k', 'custom']);
-  assert.equal(CONTROL_SCHEMA_VERSION, 11);
-  assert.ok(described.value.tool.inputSchema.properties.cycle.properties.plan.required.includes('userAgency'));
+  assert.equal(CONTROL_SCHEMA_VERSION,12);
+  assert.ok((described.value.tool.inputSchema.properties.cycle.properties.plan.anyOf||[described.value.tool.inputSchema.properties.cycle.properties.plan]).every(schema=>schema.required.includes('userAgency')));
   assert.equal(createHash('sha256').update(JSON.stringify(PRE_USER_AGENCY_CONTROL_TOOL)).digest('hex'), '106c35f68bd3c88f672670f81a2c26d2f4d939d546171ca59d0b16620fbec9a3');
   assert.equal(createHash('sha256').update(PRE_USER_AGENCY_CONTROL_INSTRUCTIONS).digest('hex'), 'f75bbc182b049c0c7b918e663f6813409c87008e09a8e1e170cc1081b230a68f');
   assert.equal(createHash('sha256').update(JSON.stringify(PRE_CONTEXT_CONTROL_TOOL)).digest('hex'), 'b66363382582754f1de21b9390adc92e5ab4639fba8ee6c620c8e967fe4d11a8');
@@ -54,7 +54,7 @@ test('current control tools advertise and persist Extended through runtime_set/g
   assert.equal(invalid.success, false); assert.equal(settings.get().defaultContext.preset, '900k');
 });
 
-for(const savedVersion of [7,8,9,10])test('a new engine turn gets schema11 while a saved schema'+savedVersion+' native continuation keeps its exact old tool', async t => {
+for(const savedVersion of [7,8,9,10,11])test('a new engine turn gets schema12 while a saved schema'+savedVersion+' native continuation keeps its exact old tool', async t => {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-context-schema-')), calls = [], runtime = new EventEmitter();
   runtime.status = () => ({ connected: true, authenticated: true, defaultModel: 'fixture', models: [model] });
   runtime.runAgent = async options => { calls.push(options); const threadId = options.threadId || 'schema-fixture-thread'; options.onEvent({ type: 'thread', threadId, model: 'fixture', effort: 'high', codexHistory: 'codex' }); return { output: 'Local schema fixture.', threadId, codexHistory: 'codex' }; };
@@ -70,8 +70,8 @@ for(const savedVersion of [7,8,9,10])test('a new engine turn gets schema11 while
   const follow = engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue the recorded schema'+savedVersion+' fixture.' }); await engine.executions.get(follow.id);
   assert.equal(engine.getRun(follow.id).status, 'completed'); assert.equal(engine.getRun(follow.id).nodes.agent.controlSchemaVersion, savedVersion);
   assert.equal(calls[1].threadId, 'schema-fixture-thread');
-  assert.deepEqual(calls[1].dynamicTools.find(tool => tool.name === 'relay_control'), savedVersion===10?PRE_USER_AGENCY_CONTROL_TOOL:savedVersion===9?PRE_INTENT_CONTROL_TOOL:savedVersion===8?PRE_PERSISTENT_HISTORY_CONTROL_TOOL:PRE_CONTEXT_CONTROL_TOOL);
-  assert.ok(calls[1].prompt.includes(savedVersion===10?PRE_USER_AGENCY_CONTROL_INSTRUCTIONS:savedVersion===9?PRE_INTENT_CONTROL_INSTRUCTIONS:savedVersion===8?PRE_PERSISTENT_HISTORY_CONTROL_INSTRUCTIONS:PRE_CONTEXT_CONTROL_INSTRUCTIONS));
+  assert.deepEqual(calls[1].dynamicTools.find(tool => tool.name === 'relay_control'), savedVersion===11?PRE_CANONICAL_CONTROL_TOOL:savedVersion===10?PRE_USER_AGENCY_CONTROL_TOOL:savedVersion===9?PRE_INTENT_CONTROL_TOOL:savedVersion===8?PRE_PERSISTENT_HISTORY_CONTROL_TOOL:PRE_CONTEXT_CONTROL_TOOL);
+  assert.ok(calls[1].prompt.includes(savedVersion===11?PRE_CANONICAL_CONTROL_INSTRUCTIONS:savedVersion===10?PRE_USER_AGENCY_CONTROL_INSTRUCTIONS:savedVersion===9?PRE_INTENT_CONTROL_INSTRUCTIONS:savedVersion===8?PRE_PERSISTENT_HISTORY_CONTROL_INSTRUCTIONS:PRE_CONTEXT_CONTROL_INSTRUCTIONS));
 });
 
 test('native raw default, supported maximum and expected usable window stay separate', () => {

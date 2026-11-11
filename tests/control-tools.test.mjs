@@ -328,7 +328,7 @@ test('v7 task accuracy leaves saved v6 native continuations and retries on their
  const f=await fixture(t,async(options,index)=>{
   const definition=options.dynamicTools.find(tool=>tool.name==='relay_control');
   assert.deepEqual((await call(options,{action:'describe'})).tool,definition);
-  if(index===1)assert.ok(definition.inputSchema.properties.cycle.properties.plan.properties.acceptanceCriteria.items.properties.accuracy);
+  if(index===1)assert.ok(definition.inputSchema.properties.cycle.properties.plan.anyOf.find(schema=>schema.properties.acceptanceCriteria).properties.acceptanceCriteria.items.properties.accuracy);
   else{assert.deepEqual(definition,PRE_ACCURACY_CONTROL_TOOL);assert.ok(options.prompt.includes(PRE_ACCURACY_CONTROL_INSTRUCTIONS));assert.equal(definition.inputSchema.properties.cycle.properties.plan.properties.acceptanceCriteria.items.properties.accuracy,undefined);}
   options.onEvent({type:'thread',threadId:'native-accuracy-control'});
   if(index===2)throw Error('Observed saved-v6 fixture interruption.');

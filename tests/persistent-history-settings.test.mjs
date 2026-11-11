@@ -69,7 +69,7 @@ test('schema9 removes the history choice while schema8 and schema7 tool definiti
   assert.equal(digest(PRE_PERSISTENT_HISTORY_CONTROL_INSTRUCTIONS),'ba1313c52a5b1d6f5c15d1b7be4ee558904a866b2c1d3dab3c37652e60aba263');
   assert.equal(digest(PRE_CONTEXT_CONTROL_TOOL),'b66363382582754f1de21b9390adc92e5ab4639fba8ee6c620c8e967fe4d11a8');
   assert.equal(digest(PRE_CONTEXT_CONTROL_INSTRUCTIONS),'bb2474986bc93c57f706685adcb2a8cda43e4d003761abff1c3b5f3e645f6a9c');
-  assert.equal(CONTROL_SCHEMA_VERSION,11);
+  assert.equal(CONTROL_SCHEMA_VERSION,12);
   assert.equal(digest(PRE_INTENT_CONTROL_TOOL),'da30de45105fdc491263dc622f52b9659b437f74dc468838de0d53a62f636cf2');assert.equal(digest(PRE_INTENT_CONTROL_INSTRUCTIONS),'47fd9335df24f9391e86ffe944dbe466c8e756aab551e59ce11433c6aa5eeb8d');
   const current=CONTROL_TOOL.inputSchema.properties.runtime.properties,old=PRE_PERSISTENT_HISTORY_CONTROL_TOOL.inputSchema.properties.runtime.properties;
   assert.equal(Object.hasOwn(current,'codexHistory'),false);assert.deepEqual(old.codexHistory.enum,['relay','codex']);

@@ -44,14 +44,14 @@ test('supervising model uses the same explicit Plan only and Continue service co
   const result=await handler({name:'relay_control',arguments:{action:'planning_cycle_run',graphRequestId:'request-a',cycleId:'cycle-a',cycle:{expectedRequestRevision:4,expectedCycleRevision:3,planningExecutionMode:'plan_only',model:'fixture-api::fast',effort:'minimal',serviceTier:'default',clientRequestId:'supervised-plan'}}});
   assert.equal(result.success,true);assert.equal(calls[0].method,'runCycle');assert.equal(calls[0].args[2].planningExecutionMode,'plan_only');assert.equal(calls[0].args[3].actor.type,'agent');
   assert.equal(calls[0].args[2].model,'fixture-api::fast');assert.equal(calls[0].args[2].effort,'minimal');assert.equal(calls[0].args[2].serviceTier,'default');
-  assert.ok(CONTROL_TOOL.inputSchema.properties.action.enum.includes('planning_cycle_continue'));assert.equal(CONTROL_TOOL.inputSchema.properties.cycle.properties.plan.additionalProperties,false);
+  assert.ok(CONTROL_TOOL.inputSchema.properties.action.enum.includes('planning_cycle_continue'));assert.ok(CONTROL_TOOL.inputSchema.properties.cycle.properties.plan.anyOf.every(schema=>schema.additionalProperties===false));
   const factual={expectedRequestRevision:4,nodeId:'child-feasibility',requirementId:'address',answer:'123 Fixture Road',expectedNodeRevision:2,expectedResponseId:'child-response',clientRequestId:'supervised-answer'};
   const answer=await handler({name:'relay_control',arguments:{action:'planning_cycle_answer',graphRequestId:'request-a',cycle:factual}});assert.equal(answer.success,true);assert.equal(calls.at(-1).method,'answerQuestion');assert.deepEqual(calls.at(-1).args[1],factual);assert.equal(calls.at(-1).args[2].actor.type,'agent');
 });
 
 test('v5 control bytes stay frozen and cannot silently accept the new cycle-profile fields',async()=>{
   const digest=value=>createHash('sha256').update(typeof value==='string'?value:JSON.stringify(value)).digest('hex');
-  assert.equal(CONTROL_SCHEMA_VERSION,11);assert.equal(digest(PRE_PROFILE_CONTROL_TOOL),'2952769b26c22c9f6da3f83e71877f9bd77aa984159cb45ab3a33b4a6743001f');assert.equal(digest(PRE_PROFILE_CONTROL_INSTRUCTIONS),'99a51bd67f845fda17d7d498781554db4159b17f271556dedbadba06fdb37336');
+  assert.equal(CONTROL_SCHEMA_VERSION,12);assert.equal(digest(PRE_PROFILE_CONTROL_TOOL),'2952769b26c22c9f6da3f83e71877f9bd77aa984159cb45ab3a33b4a6743001f');assert.equal(digest(PRE_PROFILE_CONTROL_INSTRUCTIONS),'99a51bd67f845fda17d7d498781554db4159b17f271556dedbadba06fdb37336');
   const {calls,service}=serviceFixture(),handler=createControlToolHandler({engine:{responseCycle:service},run:{id:'saved-v5'},nodeId:'supervisor',toolDefinition:PRE_PROFILE_CONTROL_TOOL});
   const denied=await handler({name:'relay_control',arguments:{action:'planning_cycle_run',graphRequestId:'request-a',cycleId:'cycle-a',cycle:{expectedRequestRevision:4,expectedCycleRevision:3,clientRequestId:'legacy-profile',model:'fixture-api::fast'}}});
   assert.equal(denied.success,false);assert.match(denied.contentItems[0].text,/saved control schema/);assert.equal(calls.length,0);
@@ -63,7 +63,7 @@ test('v6 control bytes remain exact while v7 exposes accuracy only in the curren
   assert.equal(digest(PRE_ACCURACY_CONTROL_TOOL),'a4cbdedee08e48d79eace164e2ff8fd82dce403b1d681a3c10d76ad4db659284');
   assert.equal(digest(PRE_ACCURACY_CONTROL_INSTRUCTIONS),'d34e9220c2dacd8f929710f1ab270bbc786aa79d951563af803b6ad93bf356d6');
   assert.equal(PRE_ACCURACY_CONTROL_TOOL.inputSchema.properties.cycle.properties.plan.properties.acceptanceCriteria.items.properties.accuracy,undefined);
-  assert.ok(CONTROL_TOOL.inputSchema.properties.cycle.properties.plan.properties.acceptanceCriteria.items.properties.accuracy);
+  assert.ok(CONTROL_TOOL.inputSchema.properties.cycle.properties.plan.anyOf.find(schema=>schema.properties.acceptanceCriteria).properties.acceptanceCriteria.items.properties.accuracy);
   const {calls,service}=serviceFixture(),handler=createControlToolHandler({engine:{responseCycle:service},run:{id:'saved-v6'},nodeId:'supervisor',toolDefinition:PRE_ACCURACY_CONTROL_TOOL});
   const denied=await handler({name:'relay_control',arguments:{action:'planning_cycle_edit_plan',graphRequestId:'request-a',cycleId:'cycle-a',cycle:{expectedRequestRevision:4,expectedCycleRevision:3,clientRequestId:'legacy-accuracy',plan:{acceptanceCriteria:[{id:'fixture',accuracy:null}]}}}});
   assert.equal(denied.success,false);assert.match(denied.contentItems[0].text,/saved control schema/);assert.equal(calls.length,0);
