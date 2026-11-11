@@ -439,4 +439,3 @@ test('initial malformed exact function data gets only the existing full-response
   assert.equal(failedThread.messages.some(item => item.role === 'assistant'), false);
   noEffects(f);
 });
-
