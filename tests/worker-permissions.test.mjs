@@ -109,3 +109,20 @@ test('a read-only policy rejects unrecognized tools and malformed arguments with
   assert.equal(readOnlyToolDenial({ name: 'relay_email', arguments: { action: 'read' } }, false), null);
   assert.equal(readOnlyToolDenial({ name: 'relay_connections', arguments: { action: 'call', readOnlyHint: true } }, false).code, 'TASK_PLAN_READ_ONLY');
 });
+
+
+test('read-only Planning graph allowlist accepts only declared observation actions',()=>{
+ for(const action of ['list','templates','get','program','attempts','source','response_history']){
+  assert.equal(readOnlyToolDenial({name:'relay_planning_read',arguments:{action}},false),null);
+  assert.equal(readOnlyToolDenial({name:'relay_planning_read',arguments:JSON.stringify({action})},false),null);
+ }
+ for(const [name,argumentsValue] of [
+  ['relay_planning_read',{action:'create_request'}],['relay_planning_read',{action:'update_module'}],
+  ['relay_planning_read',{}],['relay_planning_read','{bad'],
+  ['relay_planning_write',{action:'create_request'}],['relay_planning_write',{action:'get'}],
+  ['relay_planning_module',{action:'run'}],['relay_planning_module',{action:'cancel'}],
+ ]){
+  const denied=readOnlyToolDenial({name,arguments:argumentsValue},false);
+  assert.equal(denied.code,'TASK_PLAN_READ_ONLY');assert.equal(data(denied).actionDispatched,false);
+ }
+});

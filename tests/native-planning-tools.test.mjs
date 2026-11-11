@@ -134,3 +134,43 @@ for(const mismatch of ['reread_revision','projected_revision','projected_task'])
  f.engine.projectPlanningState=async state=>{projected++;return {...state,directExecution:{available:true,confirmedCount:1,sourceStatus:'current',currentSource:{taskId:mismatch==='projected_task'?'another-task':state.taskId,revision:state.revision+(mismatch==='projected_revision'?1:0)}}};};
  await f.run();
 });
+
+
+test('read-only native coordinator can inspect every graph view while all mutations remain denied',async t=>{
+ let f,observed=false;
+ f=await fixture(t,async o=>{
+  assert.equal(o.sandbox,'read-only');
+  const tool=o.dynamicTools.find(value=>value.name==='relay_planning_read');assert.ok(tool);
+  assert.ok(!o.dynamicTools.some(value=>['relay_planning_write','relay_planning_module'].includes(value.name)));
+  const run=[...f.engine.runs.values()].at(-1),conversationId=run.taskId||run.id;
+  await f.store.create({id:'read-only-own',conversationId,title:'Read-only fixture',objective:'Inspect saved evidence without changing it.'});
+  await f.store.addNode('read-only-own',{id:'frame',kind:'frame',title:'Saved frame',prompt:'Read the recorded facts.'},{actor:{type:'human',id:'fixture'}});
+  await f.store.addSource('read-only-own',{title:'Saved fact',text:'An inert source for the read-only fixture.'},{actor:{type:'human',id:'fixture'}});
+  const before=await f.store.get('read-only-own');
+  const cases={
+   list:{},templates:{},get:{graphRequestId:'read-only-own',nodeId:'frame'},
+   program:{graphRequestId:'read-only-own'},attempts:{graphRequestId:'read-only-own',nodeId:'frame'},
+   source:{graphRequestId:'read-only-own',sourceId:before.sources[0].id},
+   response_history:{graphRequestId:'read-only-own',nodeId:'frame'},
+  };
+  assert.deepEqual(tool.inputSchema.oneOf.map(value=>value.properties.action.const).sort(),Object.keys(cases).sort());
+  for(const [action,args] of Object.entries(cases)){
+   const result=await o.onToolCall({name:'relay_planning_read',arguments:{requestId:'read-only-'+action,action,...args}});
+   assert.equal(result.success,true,JSON.stringify({action,result}));
+  }
+  for(const [name,action] of [['relay_planning_write','update_module'],['relay_planning_module','run'],['relay_planning_module','cancel'],['relay_planning_read','update_module']]){
+   const result=await o.onToolCall({name,arguments:{requestId:'denied-'+action,action,graphRequestId:'read-only-own',nodeId:'frame',expectedNodeRevision:1,title:'Must not change'}});
+   assert.equal(result.success,false);assert.equal(result.code,'TASK_PLAN_READ_ONLY');assert.equal(payload(result).actionDispatched,false);
+  }
+  assert.deepEqual(await f.store.get('read-only-own'),before);assert.equal(f.events.length,0);observed=true;
+  return {output:'Saved graph inspected without mutations.'};
+ });
+ // Workflow admission normalizes ordinary agents to full access. Inject the host's
+ // independent read-only execution configuration without changing that policy.
+ const execute=f.engine.execute.bind(f.engine);
+ f.engine.execute=(run,controller)=>{run.workflow.nodes.find(node=>node.id==='agent').sandbox='read-only';return execute(run,controller);};
+ const workflow=graph();
+ const run=f.engine.startRun({workflow,input:'Inspect the shared graph read-only.',planningMode:'off'});
+ await f.engine.executions.get(run.id);assert.equal(f.engine.getRun(run.id).status,'completed',JSON.stringify(f.engine.getRun(run.id)));
+ assert.equal(observed,true);
+});
