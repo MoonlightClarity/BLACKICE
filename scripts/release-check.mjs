@@ -42,23 +42,7 @@ export async function appFingerprint(directory = source) {
   // Older inspected releases do not contain it; whenever present it is bound.
   try { await fs.lstat(path.join(directory, 'scripts/email-oauth-token.mjs')); await visit('scripts/email-oauth-token.mjs'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   try { await fs.lstat(path.join(directory, 'scripts/repair-shortcuts.ps1')); await visit('scripts/repair-shortcuts.ps1'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  // These exact Workbench inputs are shipped by electron-builder. Bind source
-  // and installed bytes equally; older builds may predate individual helpers.
-  for (const relative of [
-    'scripts/workbench-guest-agent.ps1', 'scripts/workbench-guest-setup.ps1',
-    'scripts/workbench-guest-pair-bootstrap.ps1', 'scripts/workbench-guest-reconnect.ps1',
-    'scripts/workbench-agent-job.ps1', 'scripts/workbench-guest-app-batch.ps1',
-    'scripts/workbench-guest-display.ps1', 'scripts/workbench-desktop-stream.ps1',
-    'scripts/install-workbench-guest-video.ps1', 'scripts/workbench-rdp-preflight.ps1',
-    'scripts/workbench-native-host-preflight.ps1', 'scripts/workbench-headless-broker.ps1',
-    'scripts/package-workbench-freerdp.mjs', 'resources/guest/workbench-guest-video.exe',
-    'resources/guest/LICENSE-jpegn.txt',
-  ]) {
-    try { await fs.lstat(path.join(directory, relative)); await visit(relative); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  }
-  // The small native product inventory binds every sibling helper/runtime byte;
-  // the installed integrity check verifies that complete external resource tree.
-  for (const relative of ['resources/workbench-native/package.json', 'skills/planning/SKILL.md', 'skills/planning/CONTRACT-V2.md', 'skills/planning/references/evidence-preserving-execution.md']) {
+  for (const relative of ['skills/planning/SKILL.md', 'skills/planning/CONTRACT-V2.md', 'skills/planning/references/evidence-preserving-execution.md']) {
     try { await fs.lstat(path.join(directory, relative)); await visit(relative); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   records.sort((a,b)=>a.path.localeCompare(b.path, 'en'));

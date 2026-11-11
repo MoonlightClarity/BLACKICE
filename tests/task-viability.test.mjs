@@ -103,41 +103,6 @@ test('only unchanged current host-consumed upstream responses support feasibilit
   const unseen=source('viability:profile','A supplied factual record still needs inspection.');const coverage=evaluate({...unknown,sources:[base,upstream,unseen]},[base,upstream,unseen]);assert.equal(coverage.state,'needs_evidence');assert.ok(coverage.sourceCoverage[0].missingSourceIds.includes(unseen.id),'Upstream analysis cannot substitute for inspecting supplied base facts.');
 });
 
-test('safe resource snapshot separates host and guest rights and optional viewer failure preserves known guest facts',async t=>{
-  const workbench={status:async()=>({vmName:'fixture-guest',capability:{canManageVM:true,processElevated:true},guest:{running:true,agent:{paired:true,privileges:{basis:'interactive-guest-agent-token',administratorToken:false,privateToken:'must-not-leak'}}},canRunNativeApps:true,consoleControl:{owner:'agent',revision:7,token:'must-not-leak'}}),guestNativeConsoleStatus:async()=>{throw Object.assign(Error('viewer status unavailable'),{code:'VIEWER_UNAVAILABLE'});}};
-  const f=await fixture(t,{engine:{workbench}}),sources=await f.service.sources({...f.definition,workbench:true}),captured=JSON.parse(sources.find(item=>item.id==='viability:workbench').text);
-  assert.equal(captured.guest.running,true);assert.equal(captured.guest.hostRights.processElevated,true);assert.equal(captured.guest.guestPrivileges.administratorToken,false);assert.equal(captured.guest.guestPrivileges.known,true);assert.equal(captured.viewer.uncertain,true);assert.equal(captured.viewer.code,'VIEWER_UNAVAILABLE');assert.doesNotMatch(JSON.stringify(captured),/must-not-leak/);
-});
-
-test('ordinary planning discovers VM tools without host probes; explicitly granted VM tasks collect actual state',async t=>{
-  let statusCalls=0,viewerCalls=0;
-  const workbench={status:async()=>{statusCalls++;return{vmName:'fixture-guest',guest:{running:true,agent:{paired:true}},canRunNativeApps:true,consoleControl:{owner:'agent',revision:3}};},guestNativeConsoleStatus:async()=>{viewerCalls++;return{attached:false,openAvailable:true};}};
-  const f=await fixture(t,{engine:{workbench}});
-  for(const grant of [undefined,false]){
-    const records=await f.service.sources({...f.definition,...(grant===undefined?{}:{workbench:grant})});
-    const snapshot=JSON.parse(records.find(r=>r.id==='viability:workbench').text);
-    assert.equal(snapshot.tool,'relay_workbench');assert.ok(snapshot.actions.includes('status'));
-    assert.equal(snapshot.explicitTaskControlGrant,false);assert.equal(snapshot.guest.availability,'not-probed');
-    assert.equal(statusCalls,0);assert.equal(viewerCalls,0);
-  }
-  const records=await f.service.sources({...f.definition,workbench:true}),snapshot=JSON.parse(records.find(r=>r.id==='viability:workbench').text);
-  assert.equal(statusCalls,1);assert.equal(viewerCalls,1);assert.equal(snapshot.explicitTaskControlGrant,true);
-  assert.equal(snapshot.guest.running,true);assert.equal(snapshot.guest.paired,true);assert.equal(snapshot.viewer.openAvailable,true);
-});
-
-test('host proof discovery distinguishes guest observations, reserved control and native visual evidence',async t=>{
-  const workbench={status:async()=>({vmName:'fixture',guest:{running:true,agent:{paired:true}},consoleControl:{owner:'user',revision:1}})};
-  const f=await fixture(t,{engine:{workbench}}),sources=await f.service.sources({...f.definition,workbench:true});
-  const snapshot=JSON.parse(sources.find(item=>item.id==='viability:workbench').text),proof=snapshot.proofCapabilities;
-  for(const family of Object.values(proof).filter(item=>item&&typeof item==='object'&&item.action)){
-    assert.equal(family.contractExposed,snapshot.actions.includes(family.action),'Discovery describes the actual attached action contract.');
-  }
-  assert.deepEqual(proof.guestScript.operators,['equals','notEmpty','includes']);assert.equal(proof.guestScript.requiresCurrentAdoptedPlan,true);
-  assert.match(proof.guestScript.limits,/model-authored usability Boolean/);assert.match(proof.hostControl.criterionSource,/reserved host-owned/);
-  assert.equal(proof.nativeCapture.producesEffectReceipt,false);assert.match(proof.nativeCapture.preciseReadback,/independently read/);
-  assert.match(proof.nativeCapture.visualEvidence,/actual returned or retained pixels/);
-});
-
 test('an unexamined essential fact is source recovery, not a factual question',()=>{
   const sources=[source('viability:task','Requested form')];
   const result=evaluateViabilityResponse(fixtureResponse([requirement({checkedSourceIds:[]})],sources),sources);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {evaluateWorkbenchAssertions,validateWorkbenchVerification,assertWorkbenchVerificationBinding,validateWorkbenchControlVerification,verificationScriptHash} from '../lib/workbench-effect-verification.mjs';
+import {evaluateWorkbenchAssertions,validateWorkbenchVerification,assertWorkbenchVerificationBinding,validateWorkbenchControlVerification,verificationScriptHash} from '../lib/historical-guest-verification.mjs';
 
 const context={planRef:{requestId:'request-a',cycleId:'cycle-a',nodeId:'plan-a',nodeRevision:4,responseId:'response-a'},criterionIds:['installed','extension']};
 function record(){

@@ -40,7 +40,7 @@ test('2.33.14 permits its current notes and preserved 2.33.13 notes without appr
 });
 
 test('Windows installer native helpers use exact approved paths without permitting arbitrary PowerShell or C# files', async () => {
-  for (const file of ['desktop/make-icon.ps1', 'desktop/native-window-host.cs', 'desktop/native-window-host.ps1', 'desktop/installed-app-icons.cs', 'desktop/native-app-launcher.cs', 'desktop/native-foreground-guard.cs', 'scripts/workbench-guest-agent.ps1', 'scripts/workbench-guest-setup.ps1', 'scripts/workbench-guest-app-batch.ps1', 'scripts/workbench-headless-broker.ps1']) {
+  for (const file of ['desktop/make-icon.ps1', 'desktop/native-window-host.cs', 'desktop/native-window-host.ps1', 'desktop/installed-app-icons.cs', 'desktop/native-app-launcher.cs', 'desktop/native-foreground-guard.cs']) {
     assert.equal(approvedWindowsPackageFile(file, '2.35.2'), true, file);
     assert.equal((await fs.stat(new URL('../' + file, import.meta.url))).isFile(), true, file);
   }
@@ -49,12 +49,10 @@ test('Windows installer native helpers use exact approved paths without permitti
   }
 });
 
-test('Workbench package policy admits exact shipped helpers/resources while rejecting arbitrary native paths', async () => {
-  for (const file of ['WORKBENCH-NATIVE-DISPLAY.md', 'desktop/workbench-elevated-command.ps1', 'desktop/workbench-vmconnect-bridge.cs', 'desktop/workbench-vmconnect-bridge.ps1', 'scripts/workbench-agent-job.ps1', 'scripts/workbench-guest-display.ps1', 'scripts/workbench-desktop-stream.ps1', 'scripts/install-workbench-guest-video.ps1', 'scripts/workbench-rdp-preflight.ps1', 'scripts/workbench-native-host-preflight.ps1', 'scripts/package-workbench-freerdp.mjs', 'resources/guest/workbench-guest-video.exe', 'resources/guest/LICENSE-jpegn.txt']) {
-    assert.equal(approvedWindowsPackageFile(file, '2.38.0'), true, file);
-    assert.equal((await fs.stat(new URL('../' + file, import.meta.url))).isFile(), true, file);
+test('retired VM files are never approved for Windows packaging', () => {
+  for (const file of ['WORKBENCH-NATIVE-DISPLAY.md','desktop/workbench-elevated-command.ps1','desktop/workbench-vmconnect-bridge.cs','scripts/workbench-guest-agent.ps1','scripts/workbench-headless-broker.ps1','scripts/package-workbench-freerdp.mjs','lib/workbench-agent-tools.mjs','lib/windows-workbench.mjs','resources/guest/workbench-guest-video.exe','resources/workbench-native/package.json','public/next/workbench.css','public/next/workspaces/workbench.mjs']) {
+    assert.equal(approvedWindowsPackageFile(file, '2.39.60'), false, file);
   }
-  for (const file of ['resources/guest/unapproved.exe', 'resources/guest/LICENSE-unapproved.txt', 'scripts/workbench-unapproved.ps1', 'desktop/workbench-unapproved.cs', '.build/workbench-guest-video.exe', 'WORKBENCH-PRIVATE-PROOF.md']) assert.equal(approvedWindowsPackageFile(file, '2.38.0'), false, file);
 });
 
 test('all actual desktop native sources matched by builder globs have exact package approval', async () => {

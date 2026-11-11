@@ -4,8 +4,8 @@ import {mkdtemp,rm,writeFile,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
-import {workbenchFramePng} from '../lib/workbench-agent-tools.mjs';
-import {inspectWorkbenchPng,retainWorkbenchCapture,readRetainedWorkbenchCapture} from '../lib/workbench-capture.mjs';
+import {workbenchFramePng} from './fixtures/legacy-bmp-to-png.mjs';
+import {inspectWorkbenchPng,retainWorkbenchCapture,readRetainedWorkbenchCapture} from '../lib/historical-guest-capture.mjs';
 import {preparePlanningReviewMedia,loadPlanningReviewMedia,retainedPlanningCaptures,validatePlanningImageDelivery} from '../lib/planning-review-media.mjs';
 
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');

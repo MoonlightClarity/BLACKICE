@@ -17,8 +17,6 @@ contextBridge.exposeInMainWorld('relayDesktop', Object.freeze({
   },
   detachDesktop: () => ipcRenderer.invoke('relay:detach-desktop'),
   browserSurface: request => ipcRenderer.invoke('relay:browser-surface', request),
-  vmSurface: request => ipcRenderer.invoke('relay:vm-surface', request),
-  workbenchFeatures: request => ipcRenderer.invoke('relay:workbench-features', request),
   onBrowserShortcut: callback => {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, action) => { if (['address', 'new-tab', 'close-tab', 'reload', 'back', 'forward', 'next-tab', 'previous-tab'].includes(action)) callback(action); };

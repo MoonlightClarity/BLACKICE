@@ -8,7 +8,6 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { HarnessEngine } from './fixture-legacy-planning-engine.mjs';
 import { TaskStateStore } from './fixture-legacy-task-state.mjs';
-import { WorkbenchConsoleControl } from '../lib/workbench-console-control.mjs';
 
 const graph = {
   id: 'planning-return-fixture', name: 'Return to planning fixture', settings: { maxParallel: 1 },
@@ -95,49 +94,6 @@ async function fixture(t, execute) {
   t.after(async () => { await engine.close(); await tasks.close(); await rm(directory, { recursive: true, force: true }); });
   return context;
 }
-
-test('current adopted VM effects enforce bounded same-session completion with Guardrails Off',async t=>{
-  const planRef={requestId:'current-request',cycleId:'current-cycle',nodeId:'current-plan',nodeRevision:4,responseId:'current-response'};
-  let pending=['browser','settings'],returns=0;
-  const f=await fixture(t,async(options,{pass,continuationPrompt},context)=>{
-    assert.equal(typeof options.onBeforeFinal,'function');
-    if(pass===1){
-      let state=await prepare(options);state=await complete(options,state,'compare','Previously saved unrelated task-step result.');
-      answer(options,'Prematurely finished after successful surface and record reads.','vm-premature');
-      assert.equal(context.active().nodes.agent.output,'','Guardrails Off must still withhold a premature final candidate.');
-      return {output:'Prematurely finished.'};
-    }
-    assert.equal(pass,2);assert.match(continuationPrompt,/browser.*settings/);
-    pending=[]; // Trusted current-proof provider; detailed receipt validation has its own actual-handler fixture.
-    const returned=await options.onToolCall({name:'relay_workbench',arguments:{action:'return_user_control',expectedRevision:0,handoff:{reason:'completed',planRef}}});
-    assert.equal(returned.success,true,returned.contentItems[0].text);returns++;
-    answer(options,'Current guest results verified; user control restored.','vm-complete');return {output:'Current guest results verified; user control restored.'};
-  });
-  f.engine.runtimeSettings={get:()=>({codexHistory:'codex',executionGuardrails:false})};
-  const control=new WorkbenchConsoleControl();f.engine.workbench={consoleControl:control,onAgentControlRestored:async()=>{}};
-  const readiness=async(run,args)=>({ready:pending.length===0,planRef,pendingCriterionIds:[...pending],progressKey:pending.join(','),reason:pending.length?'Current effects pending: '+pending.join(', '):'Current host proof fixture is ready.'});
-  f.engine.responseCycle={
-    forRun:async run=>{run.workbenchAuthorization={scope:'configured-vm',control:'agent',source:'explicit-user-task',consumed:true,agentRevision:0};return {skipped:false,requestId:planRef.requestId,cycleId:planRef.cycleId,planRef,blockedNodeIds:[],state:'executing'};},
-    getHandoffReadiness:readiness,
-    withHandoffReadiness:async(run,args,dispatch)=>dispatch(await readiness(run,args)),
-    finishRun:async()=>({state:'completed',output:'Final review records the observed result.'}),
-  };
-  const run=await f.settle(f.start().id);
-  assert.equal(run.status,'completed',run.error);assert.equal(f.runtime.calls.length,1);assert.equal(f.runtime.passes.length,2);assert.equal(returns,1);assert.equal(control.status().owner,'user');
-  assert.equal(run.runtimeSettings.executionGuardrails,false);assert.equal(answerEvents(run).some(row=>JSON.stringify(row.data).includes('Prematurely finished')),false);
-  assert.equal(run.nodes.agent.goalCompletion.status,'effects_ready');
-});
-
-test('unchanged current goal proof stops bounded continuation and safely returns only owned VM control',async t=>{
-  const planRef={requestId:'p',cycleId:'c',nodeId:'n',nodeRevision:1,responseId:'r'};
-  const f=await fixture(t,async(options,{pass})=>{answer(options,'Unverified candidate '+pass,'stalled-'+pass);return {output:'Unverified candidate '+pass};});
-  f.engine.runtimeSettings={get:()=>({codexHistory:'codex',executionGuardrails:false})};
-  const control=new WorkbenchConsoleControl();let restored=0;f.engine.workbench={consoleControl:control,onAgentControlRestored:async()=>{restored++;}};
-  f.engine.responseCycle={forRun:async run=>{run.workbenchAuthorization={scope:'configured-vm',control:'agent',source:'explicit-user-task',consumed:true,agentRevision:0};return {skipped:false,requestId:'p',cycleId:'c',planRef,state:'executing'};},getHandoffReadiness:async()=>({ready:false,planRef,pendingCriterionIds:['settings'],progressKey:'unchanged-settings-proof',reason:'Settings are unverified.'})};
-  const run=await f.settle(f.start().id);
-  assert.equal(run.status,'failed');assert.equal(run.errorCode,'TASK_GOAL_INCOMPLETE');assert.equal(f.runtime.calls.length,1);assert.equal(f.runtime.passes.length,2);
-  assert.equal(control.status().owner,'user');assert.equal(restored,1);assert.equal(run.workbenchAuthorization.handoff.reason,'trusted-stalled');assert.equal(answerEvents(run).length,0);
-});
 
 for (const completedFirst of [false, true]) test(`a ${completedFirst ? 'status-only completed' : 'still active'} reasoning leaf cannot bypass the return to planning`, async t => {
   let firstTaskId;

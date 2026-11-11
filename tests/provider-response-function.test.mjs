@@ -381,7 +381,7 @@ test('resuming ordinary conversation sends prior data as text, never replays res
 });
 
 
-import { workbenchFramePng } from '../lib/workbench-agent-tools.mjs';
+import { workbenchFramePng } from './fixtures/legacy-bmp-to-png.mjs';
 test('failed image-bearing stream never persists separately echoed small image fragments', async t => {
   const b = Buffer.alloc(58); b.write('BM'); b.writeUInt32LE(58, 2); b.writeUInt32LE(54, 10); b.writeUInt32LE(40, 14);
   b.writeInt32LE(1, 18); b.writeInt32LE(-1, 22); b.writeUInt16LE(1, 26); b.writeUInt16LE(32, 28); b[54] = 91; b[55] = 43; b[56] = 17;

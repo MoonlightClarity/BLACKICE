@@ -111,7 +111,7 @@ export async function releaseSourceIndex(directory) {
   }
   for (const relative of ['.gitattributes', '.gitignore', 'package.json', 'package-lock.json', 'server.mjs',
     'lib', 'public', 'desktop', 'scripts', 'tests', '.github/workflows']) await visit(relative);
-  for (const relative of ['resources/workbench-native', 'skills/planning/SKILL.md']) {
+  for (const relative of ['skills/planning/SKILL.md']) {
     try { await fs.lstat(path.join(directory, relative)); await visit(relative); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   records.sort((a, b) => a.path.localeCompare(b.path, 'en'));

@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {verificationScriptHash} from '../../lib/workbench-effect-verification.mjs';
+import {verificationScriptHash} from '../../lib/historical-guest-verification.mjs';
 const sha=text=>createHash('sha256').update(text).digest('hex');
 const ref={requestId:'request-a',cycleId:'cycle-a',nodeId:'plan-a',nodeRevision:4,responseId:'response-a'};
 export function observationRun(values=[{uninstallEntries:[],executableHits:[],pathCommands:[],appx:[]}],options={}){
