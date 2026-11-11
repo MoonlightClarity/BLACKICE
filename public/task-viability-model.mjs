@@ -102,6 +102,23 @@ export function validateTaskAccuracy(value) {
     decisionThreshold: text(value.decisionThreshold, 'Decision threshold', 2000), evidenceNeeded: text(value.evidenceNeeded, 'Evidence needed', 2000, true),
     consequence: text(value.consequence, 'Consequence of being wrong', 2000, true), unknownPolicy: value.unknownPolicy, stopWhen: text(value.stopWhen, 'Sufficient checking condition', 2000, true) };
 }
+/** Field-local authoring guidance only. This never selects a value or changes validation. */
+export function taskAccuracyFieldDescription(field, { mode } = {}) {
+  const descriptions = {
+    mode: 'Choose the precision category for this criterion. The separate tolerance field describes permitted variation; the category alone does not describe a tolerance.',
+    decisionThreshold: 'Describe the criterion-specific boundary or condition that would change the decision or acceptance result. This is a decision rule, distinct from permitted variation. Use an empty string only when such a boundary is immaterial.',
+    evidenceNeeded: 'Identify the actual sources or observations needed to assess this criterion. Use nonempty, task-specific text. Needed evidence is not a claim that an observation or action has already occurred.',
+    consequence: 'Explain the task-specific consequence of getting this criterion wrong. Use nonempty text.',
+    unknownPolicy: 'Choose how unresolved uncertainty may be handled for this criterion: block means unresolved uncertainty prevents satisfaction; assumption means an explicitly supported assumption is permitted; range means a supported range is permitted; omit means omission is permitted. Use only permissions supported by the captured task and preserve any inherited policy.',
+    stopWhen: 'Describe the criterion-specific condition under which checking is sufficient. Use nonempty text; this is a stopping condition, not a claim that checking is already complete.'
+  };
+  if (field !== 'tolerance') return descriptions[field] || '';
+  const role = 'Describe the permitted deviation, range, granularity or equivalence for this criterion, including applicable units or conditions. This explanatory text has a different role from the precision category. Preserve inherited tolerances and permitted equivalents. ';
+  if (mode === 'bounded_estimate') return role + 'The captured precision requires a bounded estimate and stays unchanged. Provide nonempty text describing its permitted variation.';
+  if (mode === 'exact' || mode === 'qualitative') return role + 'The captured precision is ' + mode + ' and stays unchanged. Choose an empty string only when a tolerance statement is immaterial; the host does not make that choice.';
+  return role + 'If the chosen precision requires a bounded estimate, provide nonempty text. Otherwise choose an empty string only when a tolerance statement is immaterial.';
+}
+
 export function taskAccuracySchema({ generation = false } = {}) {
   // Public/native tool catalogs include historical contracts with pinned bytes.
   // Tighten only this attempt's response-generation copy, never those catalogs.
@@ -112,17 +129,11 @@ export function taskAccuracySchema({ generation = false } = {}) {
       evidenceNeeded: string, consequence: string, unknownPolicy: { type: 'string', enum: ['block', 'assumption', 'range', 'omit'] }, stopWhen: string
     } }, { type: 'null' }] });
   }
-  const descriptions = {
-    tolerance: 'State the permitted deviation. This must be nonempty for bounded_estimate; it may be empty only when immaterial for exact or qualitative.',
-    decisionThreshold: 'State what changes the decision. This may be empty only when immaterial.',
-    evidenceNeeded: 'State the actual sources or observations needed to assess this target. This must be nonempty; do not invent completed observations.',
-    consequence: 'State the task-specific consequence of being wrong. This must be nonempty.',
-    stopWhen: 'State when checking is sufficient for this target. This must be nonempty.'
-  };
+  const descriptions = Object.fromEntries(['tolerance', 'decisionThreshold', 'evidenceNeeded', 'consequence', 'stopWhen'].map(field => [field, taskAccuracyFieldDescription(field)]));
   return schemaTree({ anyOf: [{ type: 'object', additionalProperties: false, required: [...TASK_ACCURACY_FIELDS], properties: {
-    mode: { type: 'string', enum: ['exact', 'bounded_estimate', 'qualitative'] },
+    mode: { type: 'string', enum: ['exact', 'bounded_estimate', 'qualitative'], description: taskAccuracyFieldDescription('mode') },
     ...Object.fromEntries(Object.entries(descriptions).filter(([key]) => key !== 'stopWhen').map(([key, description]) => [key, accuracyTextSchema(description, TASK_ACCURACY_REQUIRED_TEXT_FIELDS.includes(key))])),
-    unknownPolicy: { type: 'string', enum: ['block', 'assumption', 'range', 'omit'] }, stopWhen: accuracyTextSchema(descriptions.stopWhen, true)
+    unknownPolicy: { type: 'string', enum: ['block', 'assumption', 'range', 'omit'], description: taskAccuracyFieldDescription('unknownPolicy') }, stopWhen: accuracyTextSchema(descriptions.stopWhen, true)
   } }, { type: 'null' }] });
 }
 /** The only agent-authored stop claims recognized by readiness. Uncertainty is not one. */
