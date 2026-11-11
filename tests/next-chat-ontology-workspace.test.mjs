@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {planningDOM} from './fixture-planning-dom.mjs';
 import {createChatWorkspace} from '../public/next/chat/chat.mjs';
 import {normalizePlanningOntology} from '../public/planning-module-policy.mjs';
+import {projectFamily} from '../public/next/chat/reader-model.mjs';
 
 function testDOM(t){
  const dom=planningDOM(t),prototype=Object.getPrototypeOf(dom.mount),append=prototype.append,type=Object.getOwnPropertyDescriptor(prototype,'type');
@@ -16,6 +17,54 @@ function testDOM(t){
  dom.document.createDocumentFragment=()=>dom.element('#fragment');
  return dom;
 }
+
+
+test('switching saved conversations restores each policy ahead of changing global defaults',async t=>{
+ const dom=testDOM(t),stored=new Map(),oldStorage=globalThis.localStorage,oldWorker=globalThis.Worker;
+ globalThis.localStorage={getItem:key=>stored.get(key)||null,setItem:(key,value)=>stored.set(key,String(value)),removeItem:key=>stored.delete(key)};
+ const a=normalizePlanningOntology({modules:{inference:'mandatory'}}),b=normalizePlanningOntology({modules:{inference:'forbidden'}});
+ const defaults=normalizePlanningOntology({modules:{inference:'auto'}});
+ const families=new Map(['one','two'].map((id,i)=>[id,{rootId:id,state:'active',runs:[{
+   id,taskId:id,createdAt:'2026-11-11T12:00:00Z',input:'A task',status:'completed',settled:true,
+   planningMode:'off',planningOntology:i===0?a:b,events:[],
+   workflow:{nodes:[{id:'agent',type:'agent',name:'Agent',model:'fixture'}]},
+   nodes:{agent:{status:'completed',threadId:'thread-'+id,output:'Done'}}
+ }]}]));
+ globalThis.Worker=class{
+   handlers=new Map();cancelled=new Set();
+   addEventListener(type,handler){this.handlers.set(type,handler);}
+   postMessage(packet){
+     if(packet.type==='cancel'){this.cancelled.add(packet.id);return;}
+     queueMicrotask(()=>{if(!this.cancelled.has(packet.id))this.handlers.get('message')?.({data:{id:packet.id,ok:true,family:projectFamily(structuredClone(families.get(packet.runId)))}});});
+   }
+   terminate(){}
+ };
+ const status={cwd:'C:\\fixture',defaultModel:'fixture',models:[{id:'fixture',available:true}],runtimeSettings:{planningOntology:defaults}};
+ const api=async(route,method)=>{
+   if(route.startsWith('/api/conversations?'))return{conversations:[]};
+   if(route==='/api/attachments')return[];
+   if(route==='/api/status')return status;
+   throw Error('Unexpected API '+route);
+ };
+ const workspace=createChatWorkspace({mount:dom.mount,api,events:{subscribe:()=>()=>{}},getStatus:()=>status});
+ t.after(()=>{workspace.destroy();if(oldStorage===undefined)delete globalThis.localStorage;else globalThis.localStorage=oldStorage;if(oldWorker===undefined)delete globalThis.Worker;else globalThis.Worker=oldWorker;});
+ workspace.enter();
+ const wait=async id=>{for(let i=0;i<50;i++){if(workspace.getState().selected===id&&workspace.getState().runCount===1)return;await new Promise(r=>setTimeout(r,5));}throw Error('Conversation did not open '+id);};
+ const find=(label,choice)=>dom.$('#next-chat-ontology-modules').querySelectorAll('input').find(x=>x.getAttribute('aria-label')===label+' '+choice);
+ workspace.openConversationId('one');await wait('one');
+ assert.equal(find('Intent inference','mandatory').checked,true);
+ const blocked=find('Subagent orchestration','forbidden');blocked.checked=true;await blocked.dispatch('change');
+ assert.equal(JSON.parse(stored.get('blackice.next.chatOntology.one')).planningOntology.modules.subagents,'forbidden');
+ workspace.openConversationId('two');await wait('two');
+ assert.equal(find('Intent inference','forbidden').checked,true);
+ assert.equal(find('Subagent orchestration','auto').checked,true,'other chat cannot inherit first chat edit');
+ status.runtimeSettings.planningOntology=normalizePlanningOntology({modules:{subagents:'mandatory'}});
+ workspace.updateStatus(status);
+ assert.equal(find('Intent inference','forbidden').checked,true,'saved conversation wins over changed application default');
+ workspace.openConversationId('one');await wait('one');
+ assert.equal(find('Intent inference','mandatory').checked,true);
+ assert.equal(find('Subagent orchestration','forbidden').checked,true);
+});
 
 test('mounted Chat composer uses 36 compact checkboxes and persists only the current conversation',async t=>{
  const dom=testDOM(t),stored=new Map(),oldStorage=globalThis.localStorage,oldWorker=globalThis.Worker;

@@ -24,6 +24,12 @@ test('small grid exposes every module as an independent M/O/F/Auto checkbox choi
  assert.match(css,/\.next-chat-ontology-choice>input\{appearance:auto/);
 });
 
+test('the Chat module and every new browser import are registered with the server static allowlist',()=>{
+ const server=readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
+ for(const route of ["'chat/chat.mjs'","'chat/ontology-preferences.mjs'","'chat/reader-model.mjs'","'planning-module-policy.mjs'"])
+   assert.ok(server.includes(route),'Missing served module '+route);
+});
+
 test('one module selection affects only that cell, preserving unrelated user selections',()=>{
  const defaults=normalizePlanningOntology();
  assert.equal(defaults.modules.anti_overalignment,'mandatory');

@@ -1442,7 +1442,7 @@ export async function createHarnessServer(options = {}) {
       const nextFiles = ['index.html','base.css','chat.css','chat-management.css','brand.css','work-visual.css','intelligence-planning.css','intelligence-map.css','controls.css','layout-fixes.css','planning-ontology.css','planning-browser.css','guard.js','app.mjs',
         'core/api.mjs','core/dom.mjs','core/events.mjs','core/model-picker.mjs','core/context-controls.mjs','model-picker.css',
         'chat/chat.mjs','chat/model.mjs','chat/render.mjs','chat/send.mjs','chat/planning-timeline.mjs',
-        'chat/options-model.mjs','chat/artifacts.mjs','parity.css',
+        'chat/options-model.mjs','chat/ontology-preferences.mjs','chat/artifacts.mjs','parity.css',
         'chat/reader-model.mjs','chat/reader-worker.mjs','chat/reader-client.mjs',
         // Native hosting UI assets are registered at the public root below.
         'workspaces/planning.mjs','workspaces/planning-browser.mjs','workspaces/response-cycle-ui.mjs','workspaces/tradecraft-timeline.mjs','workspaces/planning-visual.mjs','workspaces/intelligence-planning-model.mjs','workspaces/intelligence-planning-ui.mjs','workspaces/intelligence-map-model.mjs','workspaces/intelligence-map-ui.mjs','workspaces/tasks.mjs','workspaces/schedule-inspection-model.mjs','workspaces/tasks-visual-model.mjs','workspaces/task-lifecycle.mjs','workspaces/workflow-execution.mjs',
