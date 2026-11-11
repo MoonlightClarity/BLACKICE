@@ -102,6 +102,10 @@ test('storage HTTP routes require a local authenticated same-origin session and 
   beforeRemove(() => app.close());
   const url = await app.listen();
   const home = await fetch(url), cookie = home.headers.get('set-cookie').split(';')[0];
+  const storageModule = await fetch(new URL('/next/workspaces/settings-storage.mjs', url));
+  assert.equal(storageModule.status, 200, 'Storage Settings must load through the real static-file allowlist');
+  assert.match(storageModule.headers.get('content-type'), /javascript/);
+  assert.match(await storageModule.text(), /export function createStorageSettings/);
   const request = async (route, method = 'GET', payload, headers = {}) => {
     const response = await fetch(new URL(route, url), { method, headers: { Cookie: cookie, ...(payload === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers }, ...(payload === undefined ? {} : { body: JSON.stringify(payload) }) });
     return { status: response.status, value: await response.json() };
