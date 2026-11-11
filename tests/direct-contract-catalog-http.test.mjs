@@ -145,3 +145,68 @@ test('authenticated served MCP catalog preserves complete contract/context schem
  assert.equal((await f.app.tasks.get('fixture-canonical')).revision,canonical.revision);
  assert.deepEqual(mocked.counts(),{commits:0,reads:1});assert.equal(f.runtime.agentCalls,0);
 });
+
+import {TaskStateStore} from '../lib/task-state.mjs';
+test('authenticated canonical create_contract is atomic, visible to UI, and bindable without a provider or submission',async t=>{
+ const mocked=mockBrowser(),f=await fixture(t,{serverOptions:{browser:mocked.browser}}),[grant]=await approvedDirectGrants(f);
+ const listed=(await mcp(f,grant,'tools/list')).body.result.tools;
+ const editSchema=listed.find(tool=>tool.name==='blackice_edit_plan').inputSchema;
+ const createSchema=editSchema.properties.operations.items.oneOf.find(item=>item.properties.type.const==='create_contract');
+ assert.equal(createSchema.properties.contract.properties.workItems.items.type,'object');
+ const request={taskId:'created-canonical',expectedRevision:0,operations:[{type:'create_contract',contract:taskContract()}]};
+ const result=await connectorTool(f,grant,'blackice_edit_plan',request);
+ assert.equal(result.isError,false,JSON.stringify(result));
+ const state=result.structuredContent;assert.equal(state.revision,1);assert.equal(state.taskSchemaVersion,14);
+ assert.equal(state.contract.planEpoch,1);assert.equal(state.standalonePlan.kind,'standalone');assert.equal(state.provenance.actor.id,grant.client.id);
+ assert.equal((await f.app.tasks.load(state.taskId)).history.length,1);
+ const detail=await connectorTool(f,grant,'blackice_get_plan',{taskId:state.taskId});
+ assert.equal(detail.isError,false);assert.deepEqual(detail.structuredContent.contract,state.contract);
+ const listing=await connectorTool(f,grant,'blackice_list_plans',{taskId:state.taskId});
+ assert.equal(listing.isError,false);assert.equal(listing.structuredContent.plans[0].documentKind,'standalone');
+ const ui=await f.request('/api/planning?taskId='+state.taskId);
+ assert.equal(ui.status,200);assert.equal((await ui.json()).plans[0].taskId,state.taskId);
+ const linked=await action(f,grant,'blackice_task_contract',{requestId:'created-link',action:'bind_plan',sourceTaskId:state.taskId,expectedSourceRevision:1});
+ await action(f,grant,'blackice_task_contract',{requestId:'created-bind',action:'bind',taskId:linked.result.taskId,tabId,workItemId:'apply',criterionId:'receipt',identityFields:['subject','role'],ref:'submit',expectedUrl:target,expectedDocumentId:documentId});
+ const projected=await connectorTool(f,grant,'blackice_get_plan',{taskId:state.taskId});
+ assert.equal(projected.structuredContent.directExecution.sourceStatus,'current');
+ assert.equal(projected.structuredContent.directExecution.bindings.length,1);
+ const repeated=await connectorTool(f,grant,'blackice_edit_plan',request);assert.equal(repeated.isError,true);
+ assert.equal((await f.app.tasks.get(state.taskId)).revision,1);
+ for(const operations of [
+  [{type:'create_contract',contract:taskContract(),steps:[]}],
+  [{type:'create_contract',contract:{...taskContract(),planEpoch:99}}],
+  [{type:'create_contract',contract:taskContract()},{type:'create',goal:'mixed',steps:[{id:'x',title:'x'}]}],
+  [{type:'create_contract',contract:{...taskContract(),workItems:[]}}],
+ ]){
+  const invalid=await connectorTool(f,grant,'blackice_edit_plan',{taskId:'invalid-canonical',expectedRevision:0,operations});
+  assert.equal(invalid.isError,true,JSON.stringify(invalid));
+ }
+ assert.equal(await f.app.tasks.load('invalid-canonical',true),null);
+ assert.equal(f.runtime.agentCalls,0);assert.deepEqual(mocked.counts(),{commits:0,reads:0});
+ assert.equal((await f.app.tasks.load(state.taskId)).history.length,1);
+});
+test('two stores enforce canonical creation CAS, reopen provenance, and reject existing legacy state without migration',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'canonical-create-cas-'));
+ const a=await new TaskStateStore({dataDir:root}).init(),b=await new TaskStateStore({dataDir:root}).init();
+ t.after(async()=>{await a.close();await b.close();await fs.rm(root,{recursive:true,force:true});});
+ const actor={type:'external-agent',id:'test-owner',name:'Test owner'},options={expectedRevision:0,cwd:root,source:'external-agent',actor};
+ const userAgency={version:1,audience:'internal',userBenefit:'Prepare the requested measurable plan.',representation:{actualQuestion:'Create fixture plan',requiredFacts:[],relevantClaims:[],privateFindings:[],userReport:[]},action:'proceed',decisionRequired:false,decisionReason:'Routine authorized plan creation without execution.',decisions:[],chosenDecisionId:null};
+ const outcomes=await Promise.allSettled([a.createCanonicalPlanningDocument('atomic',{contract:taskContract(),userAgency},options),b.createCanonicalPlanningDocument('atomic',{contract:taskContract(),userAgency},options)]);
+ assert.equal(outcomes.filter(r=>r.status==='fulfilled').length,1);
+ assert.equal(outcomes.find(r=>r.status==='rejected').reason.code,'TASK_STATE_CONFLICT');
+ const saved=await b.get('atomic');assert.equal(saved.revision,1);assert.deepEqual(saved.provenance.actor,actor);assert.deepEqual(saved.userAgency,userAgency);
+ assert.equal((await b.load('atomic')).history.length,1);assert.equal(saved.contractRuntime.operations.length,0);
+ await a.createPlanningDocument('legacy',{goal:'Retain legacy',steps:[{id:'old',title:'Old work',doneWhen:'Observe its result'}]},options);
+ const old=await a.get('legacy');
+ await assert.rejects(b.createCanonicalPlanningDocument('legacy',{contract:taskContract()},options),{code:'TASK_STATE_CONFLICT'});
+ assert.deepEqual(await a.get('legacy'),old);
+ for(const value of [{contract:taskContract(),steps:[]},{contract:{...taskContract(),planEpoch:2}},{contract:{...taskContract(),workItems:[]}}])
+  await assert.rejects(async()=>a.createCanonicalPlanningDocument('invalid',value,options));
+ assert.equal(await a.load('invalid',true),null);
+ await assert.rejects(async()=>a.createCanonicalPlanningDocument('wrong-revision',{contract:taskContract()},{...options,expectedRevision:1}));
+ await assert.rejects(async()=>a.createCanonicalPlanningDocument('wrong-actor',{contract:taskContract()},{...options,actor:{type:'human-client',id:'person'}}));
+ await a.close();await b.close();
+ const reopened=await new TaskStateStore({dataDir:root}).init();
+ try{const persisted=await reopened.get('atomic');assert.deepEqual(persisted.userAgency,userAgency);assert.deepEqual(persisted.provenance.actor,actor);assert.equal(persisted.revision,1);assert.equal(persisted.contract.planEpoch,1);}
+ finally{await reopened.close();}
+});
