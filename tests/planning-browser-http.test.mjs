@@ -11,8 +11,6 @@ import { tmpdir } from 'node:os';
 import { createHarnessServer } from '../server.mjs';
 import { handlePlanningBrowserHttp, planningBrowserCatalog } from '../lib/planning-browser-http.mjs';
 import { RemoteAccessManager } from '../lib/remote-access.mjs';
-import { WindowsWorkbench } from '../lib/windows-workbench.mjs';
-import { WorkbenchGuestBridge } from '../lib/workbench-guest-bridge.mjs';
 import { createRemoteTransportFixture } from './fixtures/remote-transport.mjs';
 
 class Runtime extends EventEmitter {
@@ -44,24 +42,9 @@ async function fixture(t, extra = {}) {
   const transport = createRemoteTransportFixture();
   const remoteAccess = new RemoteAccessManager({ dataDir: directory, transport: transport.transport, defaultHttpsPort: 8443 });
   const runtime = new Runtime();
-  const workbenchCalls={probes:0,commands:0};
-  // Keep the real HTTP, Workbench and guest-file contracts. Only the OS
-  // boundary is deterministic: this unit fixture must not query a user's VM.
-  const workbench=new WindowsWorkbench({dataDir:directory,sharedRoot:directory,
-    probe:async()=>{workbenchCalls.probes++;return {
-      windows:true,edition:'Windows 11 Pro fixture',hostName:'FIXTUREHOST',
-      logicalProcessors:8,totalMemoryMiB:16384,freeMemoryMiB:12000,freeDiskGiB:100,
-      hypervisorPresent:true,hyperVModuleInstalled:true,hyperVFeatureEnabled:true,
-      vmServiceRunning:true,vmQueryAuthorized:true,processElevated:false,
-      vmExists:false,vmState:'NotInstalled',shareExists:false,sharePath:''
-    }},
-    command:async()=>{workbenchCalls.commands++;throw Error('HTTP fixtures must not execute host commands.');},
-    mediaInspector:async()=>{throw Error('This owned fixture has no installation media.');},
-    guestBridgeFactory:({sharedRoot})=>{assert.equal(path.resolve(sharedRoot),path.resolve(directory));return new WorkbenchGuestBridge({sharedRoot});}
-  });
   let app;
-  t.after(async () => { try { await app?.close(); assert.equal(runtime.calls, 0); assert.equal(workbenchCalls.commands,0); } finally { await rm(directory, { recursive: true, force: true }); } });
-  app = await createHarnessServer({ port: 0, dataDir: directory, defaultCwd: directory, runtime, desktop: new Desktop(), remoteAccess, workbench, autoAttachDesktop: false, ...extra });
+  t.after(async () => { try { await app?.close(); assert.equal(runtime.calls, 0); } finally { await rm(directory, { recursive: true, force: true }); } });
+  app = await createHarnessServer({ port: 0, dataDir: directory, defaultCwd: directory, runtime, desktop: new Desktop(), remoteAccess, autoAttachDesktop: false, ...extra });
   await app.learning.updateSettings({ mode: 'manual' });
   await app.tasks.ensure({ taskId: 'legacy-plan', runId: 'legacy-plan', cwd: directory, goal: 'Preserve this original task.', defaultPlan: true });
   await app.conversations.capture({
@@ -94,79 +77,14 @@ const values = {
 };
 
 
-test('Workbench repeatable app-sync endpoints expose history and reject any installation before guest pairing',async t=>{
-  const {local}=await fixture(t);
-  const empty=await local('/api/workbench/app-sync');
-  assert.equal(empty.status,200);
-  assert.equal(empty.value.currentSnapshot,null);
-  assert.deepEqual(empty.value.runs,[]);
-  const start=await local('/api/workbench/app-sync/start',{method:'POST',body:{}});
-  assert.equal(start.status,409,start.text);
-  const repeat=await local('/api/workbench/app-sync/rebatch',{method:'POST',body:{}});
-  assert.equal(repeat.status,409,repeat.text);
-  const fake=await local('/api/workbench/app-sync/runs/00000000000000000000000000000000');
-  assert.equal(fake.status,404);
-  const ui=await local('/next/workspaces/workbench.mjs');
-  assert.equal(ui.status,200);
-  for(const element of ['wb-apps-scan','wb-apps-rebatch','wb-apps-retry'])
-    assert.ok(ui.text.includes(element),element);
-});
-test('Workbench guest endpoints never execute a host app when no interactive Windows guest is paired',async t=>{
+test('retired VM API and workspace assets return not found without executing a model', async t=>{
   const {local,runtime}=await fixture(t);
-  const initial=await local('/api/workbench');
-  assert.equal(initial.status,200);
-  const unpaired=await local('/api/workbench/pair',{method:'POST',body:{}});
-  assert.equal(unpaired.status,409);
-  const refused=await local('/api/workbench/guest-command',{method:'POST',
-    body:{kind:'launch',args:{appPath:'C:\\Windows\\System32\\notepad.exe'}}});
-  assert.equal(refused.status,409);
-  const noMedia=await local('/api/workbench/provision',{method:'POST',body:{}});
-  assert.equal(noMedia.status,409);
-  const missingFrame=await local('/api/workbench/frame/00000000000000000000000000000000');
-  assert.equal(missingFrame.status,404);
-  const agent=await local('/api/workbench/prepare-agent',{method:'POST',body:{}});
-  assert.equal(agent.status,200,agent.text);
-  assert.equal(agent.value.prepared,true);
-  const after=await local('/api/workbench');
-  assert.equal(after.status,200);
-  assert.equal(after.value.canRunNativeApps,false);
-  assert.equal(after.value.config.folders[0].guestMountVerified,false);
-  assert.equal(runtime.calls,0,'Workbench setup must not invoke a model or job-search operation.');
-});
-
-test('Workbench tab and host capability API are available before Hyper-V provisioning, with revisioned shared-folder settings',async t=>{
-  const {local,runtime}=await fixture(t);
-  const anonymous=await local('/api/workbench',{authenticated:false});
-  assert.equal(anonymous.status,401);
-  const first=await local('/api/workbench');
-  assert.equal(first.status,200,first.text);
-  assert.equal(first.value.backend,'hyper-v');
-  assert.equal(first.value.guest.displayReady,false);
-  assert.equal(first.value.canRunNativeApps,false,'A VM that is running is not proof of a connected desktop.');
-  assert.equal(first.value.config.folders[0].readWrite,true);
-  for(const [uri,marker] of [
-    ['/next/workspaces/workbench.mjs','createWorkbenchWorkspace'],
-    ['/next/workbench.css','.next-workbench'],
-  ]){
-    const response=await local(uri);
-    assert.equal(response.status,200,uri+': '+response.text.slice(0,200));
-    assert.match(response.text,new RegExp(marker.replaceAll('.','\\.')));
+  for(const uri of ['/api/workbench','/api/workbench/app-sync','/next/workspaces/workbench.mjs','/next/workbench.css']){
+    const result=await local(uri);
+    assert.equal(result.status,404,uri);
   }
-  assert.equal(first.value.resources.mode,'adaptive');
-  assert.equal(Object.hasOwn(first.value.config,'profile'),false);
-  const changed=await local('/api/workbench/config',{method:'POST',
-    body:{expectedRevision:first.value.config.revision,mediaPath:'C:\\Installers\\Win11.iso'}});
-  assert.equal(changed.status,200,changed.text);
-  assert.equal(changed.value.config.mediaPath,'C:\\Installers\\Win11.iso');
-  assert.equal(changed.value.config.revision,first.value.config.revision+1);
-  const stale=await local('/api/workbench/config',{method:'POST',
-    body:{expectedRevision:first.value.config.revision,mediaPath:'C:\\Different.iso'}});
-  assert.equal(stale.status,409,stale.text);
-  const unwanted=await local('/api/workbench/config',{method:'POST',
-    body:{expectedRevision:changed.value.config.revision,profile:'intensive'}});
-  assert.equal(unwanted.status,400,'Manual tuning profiles must no longer be accepted.');
-  assert.equal((await local('/api/workbench')).value.config.mediaPath,'C:\\Installers\\Win11.iso');
-  assert.equal(runtime.calls,0,'Workbench readiness never launches an agent.');
+  assert.equal((await local('/api/workbench/start',{method:'POST',body:{}})).status,404);
+  assert.equal(runtime.calls,0);
 });
 
 test('Planning browser groups concurrent requests by real conversation without launching a model or rewriting legacy work', async t => {

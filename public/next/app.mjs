@@ -13,7 +13,6 @@ const modules={
   planning:()=>import('./workspaces/planning-browser.mjs').then(m=>m.createPlanningBrowser),
   tasks:()=>import('./workspaces/tasks.mjs').then(m=>m.createTasksWorkspace),
   browser:()=>import('./workspaces/browser.mjs').then(m=>m.createBrowserWorkspace),
-  workbench:()=>import('./workspaces/workbench.mjs').then(m=>m.createWorkbenchWorkspace),
   knowledge:()=>import('./workspaces/knowledge.mjs').then(m=>m.createKnowledgeWorkspace),
   settings:()=>import('./workspaces/settings.mjs').then(m=>m.createSettingsWorkspace),
 };

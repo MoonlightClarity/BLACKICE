@@ -11,7 +11,7 @@ import {ResponseCycleService,executionProjection,recordedExecutionOutputs,HOST_C
 import {createGoalCompletionController} from '../lib/planning-completion.mjs';
 import {RESPONSE_CYCLE_STAGES,responseCycleStage,LEGACY_RESPONSE_CYCLE_STAGES,parseResponseCycleResponse,responseCycleResponseSchema} from '../public/response-cycle-model.mjs';
 import {planningResponseBody} from '../public/planning-browser-model.mjs';
-import {verificationScriptHash} from '../lib/workbench-effect-verification.mjs';
+import {verificationScriptHash} from '../lib/historical-guest-verification.mjs';
 import {observationRun} from './fixtures/planning-guest-observation.mjs';
 
 const criterion={id:'answer',label:'Requested answer',description:'Provide a supported answer to the bounded question.',verification:'response'};
@@ -411,7 +411,7 @@ test('new retained pixels rerun only final review with exact image delivery thro
     }
     return body;
   }}),{run,result}=await f.prepare(),context=await f.service.getVerificationContext(run),record=verificationRecord(context);bindVerification(run,record);const verified=await f.service.recordVerifiedEffects(run,record);
-  const {retainWorkbenchCapture,inspectWorkbenchPng}=await import('../lib/workbench-capture.mjs'),{workbenchFramePng}=await import('../lib/workbench-agent-tools.mjs');
+  const {retainWorkbenchCapture,inspectWorkbenchPng}=await import('../lib/historical-guest-capture.mjs'),{workbenchFramePng}=await import('./fixtures/legacy-bmp-to-png.mjs');
   const bmp=Buffer.alloc(70);bmp.write('BM');bmp.writeUInt32LE(70,2);bmp.writeUInt32LE(54,10);bmp.writeUInt32LE(40,14);bmp.writeInt32LE(2,18);bmp.writeInt32LE(-2,22);bmp.writeUInt16LE(1,26);bmp.writeUInt16LE(32,28);bmp.fill(180,54);
   const bytes=workbenchFramePng({bytes:bmp,width:2,height:2,sequence:7}),artifact=await retainWorkbenchCapture({workspace:f.dir,scope:run.taskId,bytes,info:inspectWorkbenchPng(bytes)}),metadata={basis:'native-decoded-surface',sequence:7,pngSha256:artifact.sha256,pngBytes:bytes.length,width:2,height:2,artifact};
   run.events=[{runId:run.id,nodeId:'agent',at:'2026-11-02T07:30:10.719Z',data:{type:'tool.result',tool:'relay_workbench',action:'capture',status:'completed',success:true,callId:'current-capture'}},{runId:run.id,nodeId:'agent',at:'2026-11-02T07:30:10.728Z',data:{type:'item',stage:'completed',item:{type:'dynamicToolCall',tool:'relay_workbench',id:'current-capture',arguments:{action:'capture',retain:true},status:'completed',success:true,contentItems:[{type:'inputText',text:JSON.stringify(metadata)}]}}}];
@@ -475,7 +475,7 @@ for(const explicitAtomic of [false,true])test('new complete guest evidence refre
 });
 
 test('configured workspace changing during image read prevents the analytical provider turn',{timeout:10000},async t=>{
-  const f=await fixture(t),{run}=await f.prepare(),{promises:files}=await import('node:fs'),{retainWorkbenchCapture,inspectWorkbenchPng}=await import('../lib/workbench-capture.mjs'),{workbenchFramePng}=await import('../lib/workbench-agent-tools.mjs');
+  const f=await fixture(t),{run}=await f.prepare(),{promises:files}=await import('node:fs'),{retainWorkbenchCapture,inspectWorkbenchPng}=await import('../lib/historical-guest-capture.mjs'),{workbenchFramePng}=await import('./fixtures/legacy-bmp-to-png.mjs');
   const bmp=Buffer.alloc(70);bmp.write('BM');bmp.writeUInt32LE(70,2);bmp.writeUInt32LE(54,10);bmp.writeUInt32LE(40,14);bmp.writeInt32LE(2,18);bmp.writeInt32LE(-2,22);bmp.writeUInt16LE(1,26);bmp.writeUInt16LE(32,28);bmp.fill(180,54);
   const bytes=workbenchFramePng({bytes:bmp,width:2,height:2,sequence:7}),artifact=await retainWorkbenchCapture({workspace:f.dir,scope:run.taskId,bytes,info:inspectWorkbenchPng(bytes)}),metadata={basis:'native-decoded-surface',sequence:7,pngSha256:artifact.sha256,pngBytes:bytes.length,width:2,height:2,artifact};
   run.nodes={agent:{status:'completed',output:'A bounded fixture result.'}};run.events=[{runId:run.id,nodeId:'agent',at:'2026-11-02T07:30:10.719Z',data:{type:'tool.result',tool:'relay_workbench',action:'capture',status:'completed',success:true,callId:'current-capture'}},{runId:run.id,nodeId:'agent',at:'2026-11-02T07:30:10.728Z',data:{type:'item',stage:'completed',item:{type:'dynamicToolCall',tool:'relay_workbench',id:'current-capture',arguments:{action:'capture',retain:true},status:'completed',success:true,contentItems:[{type:'inputText',text:JSON.stringify(metadata)}]}}}];
@@ -847,72 +847,6 @@ test('invalid cycle profiles reject before durable binding or provider admission
   for(const extra of [{model:''},{effort:'invented-effort'},{serviceTier:'priority'},{model:'fixture-api::small-fast',serviceTier:'fast'}])await assert.rejects(f.service.runCycle(request.id,cycle.id,{...runControls(request,cycle.id,'invalid-'+JSON.stringify(extra)),...extra}));
   const saved=await f.store.get(request.id);assert.equal(saved.revision,request.revision);assert.equal(saved.cycles[0].executionProfile,undefined);assert.equal(f.calls.length,0);
 });
-
-test('first-class VM fake job flows through actual engine callbacks and durable guest/host effect receipts',async t=>{
-  const {promises:files}=await import('node:fs');
-  const {WorkbenchConsoleControl}=await import('../lib/workbench-console-control.mjs');
-  const {WorkbenchAgentJobs,createWorkbenchAgentToolHandler}=await import('../lib/workbench-agent-tools.mjs');
-  const {HarnessEngine}=await import('../lib/engine.mjs');
-  const f=await fixture(t,{amend:(body,input)=>{if(input.module.kind==='plan'){effectPlan(body);body.acceptanceCriteria.push(structuredClone(actualHostControlCriterion));body.steps[0].criterionIds.push(HOST_CONTROL_CRITERION.id);}return body;}}),{run,result}=await f.prepare('automatic',{workbenchAuthorization:{scope:'configured-vm',control:'agent',source:'explicit-user-task'}});
-  const workspace=path.join(f.dir,'vm-workspace');await files.mkdir(workspace);await files.mkdir(path.join(workspace,'.blackice-workbench'));
-  const agentId='b'.repeat(32),agent={online:true,paired:true,sharedReadWriteVerified:true,guestName:'paired-guest',guestSessionId:2,agentId,heartbeatAt:new Date(Date.now()-3200).toISOString(),expectedGuestRoot:'W:\\',capabilities:['launch','capture']};let persisted=0,launches=0;
-  const bridge={workspace,agentStatus:async()=>agent,request:async(kind,args)=>{
-    if(kind==='windows')return {status:'completed',agentId,guestSessionId:2,result:[{title:'Existing Firefox review window'}]};
-    launches++;assert.equal(kind,'launch');const jobId=path.win32.basename(path.win32.dirname(args.arguments.at(-1)));
-    assert.equal(run.workbenchVerifications[jobId].status,'declared','Host binding must be persisted before dispatch.');assert.ok(persisted>0);
-    return {status:'completed',agentId,guestSessionId:2,result:{processId:1234}};
-  }};
-  const workbench={consoleControl:new WorkbenchConsoleControl(),bridge:()=>bridge,status:async()=>({backend:'hyper-v',vmName:'BLACKICE-Workbench',guest:{running:true},canRunNativeApps:true,capability:{hostName:'fixture-host'},config:{folders:[{id:'workspace',hostPath:workspace,readWrite:true,guestMountVerified:true,hostSharePrepared:true}]}}),onAgentControlRestored:async()=>{}};
-  agent.capabilities.push('windows');
-  const pixels=Buffer.alloc(70);pixels.write('BM');pixels.writeUInt32LE(70,2);pixels.writeUInt32LE(54,10);pixels.writeUInt32LE(40,14);pixels.writeInt32LE(2,18);pixels.writeInt32LE(-2,22);pixels.writeUInt16LE(1,26);pixels.writeUInt16LE(32,28);pixels.fill(180,54);
-  workbench.guestNativeConsoleFrame=async()=>({bytes:pixels,width:2,height:2,sequence:7});
-  workbench.nativeConsoleAdapter={open:async()=>{},surface:async()=>({width:2,height:2}),input:async(_input,check)=>{check();return {accepted:true};}};
-  workbench.guestNativeConsoleOpen=async check=>{check();return {windowVisible:true};};
-  workbench.guestNativeConsoleWake=()=>workbench.consoleControl.run(async check=>{check();return {requested:true};});
-  f.engine.workbench=workbench;
-  const callbacks=HarnessEngine.prototype.workbenchVerificationCallbacks.call({responseCycle:f.service,persist:async()=>{persisted++;}},run);
-  run.workbenchAuthorization={scope:'configured-vm',control:'agent',source:'explicit-user-task'};
-  const jobs=new WorkbenchAgentJobs({workbench,hostName:()=> 'fixture-host',leaseKeeperFactory:()=>({ready:Promise.resolve(),error:null,stop:async()=>{}})}),handler=createWorkbenchAgentToolHandler({workbench,scope:run.id,jobs,getAuthorization:()=>run.workbenchAuthorization,persistAuthorization:async()=>{persisted++;},...callbacks});
-  const call=(action,args={})=>handler({name:'relay_workbench',arguments:{action,...args}}),data=r=>JSON.parse(r.contentItems[0].text);
-  const status=data(await call('status'));assert.deepEqual(status.verification.criterionIds,['installed',HOST_CONTROL_CRITERION.id]);
-  const sequence=['status'];const recordFile=path.join(workspace,'verification-record.json');await files.writeFile(recordFile,JSON.stringify({oldSettings:'done'}));await files.readFile(recordFile);sequence.push('record.read');
-  const claimed=await call('claim_agent_control',{expectedRevision:0});assert.equal(claimed.success,true);assert.equal(data(claimed).authorizedHandoff,false);
-  sequence.push('claim_agent_control');
-  for(const action of ['open_viewer','capture','windows','wake_display','capture']){const observed=await call(action);assert.equal(observed.success,true,observed.contentItems[0].text);sequence.push(action);}
-  const premature=await call('return_user_control',{expectedRevision:0});sequence.push('return_user_control');assert.equal(premature.success,false,'The actual Firefox11 ninth operation must no longer return USER before any guest verification.');assert.deepEqual(workbench.consoleControl.status(),{owner:'agent',revision:0});
-  const stillAgent=await call('status');sequence.push('status');assert.equal(stillAgent.success,true);
-  const tooEarly=await call('verify_control_state',{requestId:'premature-control',planRef:status.verification.planRef,assertions:[{criterionId:HOST_CONTROL_CRITERION.id,path:'control.owner',operator:'equals',expected:'user'}]});sequence.push('verify_control_state');assert.equal(tooEarly.success,false);
-  await files.writeFile(recordFile,JSON.stringify({oldSettings:'done',capture:'current'}));sequence.push('record.patch');await files.readFile(recordFile);sequence.push('record.read');
-  assert.equal(sequence.length,13);assert.equal(launches,0,'All previous successful surface/record operations produced no guest criterion proof.');
-  run.taskState={steps:[{id:'old-settings',status:'done',evidence:'A previous run completed different settings.'}]};
-  const workerHandler=createWorkbenchAgentToolHandler({workbench,scope:run.id,jobs,controlCoordinator:false,getAuthorization:()=>run.workbenchAuthorization,...callbacks});await workerHandler.close();await workerHandler.safeReturn('stalled');assert.equal(workbench.consoleControl.status().owner,'agent','A delegated handler close or local exhaustion cannot return shared coordinator control.');
-  const goal=createGoalCompletionController({getReadiness:args=>f.service.getHandoffReadiness(run,args),safeReturn:reason=>handler.safeReturn(reason)});
-  const continuation=await goal.beforeFinal();assert.equal(continuation.continue,true,'Guardrails Off and old done steps cannot suppress same-session outcome continuation.');
-  const wrongDeferred={criterionIds:['installed'],assertions:['owner','authorizedReturn','featuresRestored'].map(key=>({criterionId:'installed',path:'control.'+key,operator:'equals',expected:key==='owner'?'user':true}))};
-  const dishonest=await call('return_user_control',{expectedRevision:0,handoff:{reason:'completed',planRef:status.verification.planRef,deferredControlVerification:wrongDeferred}});assert.equal(dishonest.success,false);assert.equal(workbench.consoleControl.status().owner,'agent','Guest outcome IDs cannot be deferred using control assertions.');
-  const declaration={requestId:'verify-synthetic-job',planRef:status.verification.planRef,criterionIds:['installed'],assertions:[{criterionId:'installed',path:'observations.version',operator:'equals',expected:'128.0'}],script:'$version = (Get-Item "C:\\Program Files\\Mozilla Firefox\\firefox.exe" -ErrorAction Stop).VersionInfo.ProductVersion; @{ observations = @{ version = $version } } | ConvertTo-Json -Compress',timeoutMs:4000};
-  assert.ok(f.calls.find(item=>item.input.module.kind==='plan').input.sources.some(item=>item.id.startsWith('cycle:handoff-contract:')&&JSON.parse(item.text).criterion.id===HOST_CONTROL_CRITERION.id),'The host-owned criterion exists before actual Plan generation.');
-  const started=await call('verify_guest_script',declaration);assert.equal(started.success,true);const job=data(started);assert.equal(job.verification.status,'pending');assert.equal(launches,1);
-  const folder=path.join(workspace,'.blackice-workbench','agent-jobs',job.jobId),meta=JSON.parse(await files.readFile(path.join(folder,'job.json'),'utf8'));
-  assert.ok(Number.isInteger(meta.hostToGuestOffsetMs)&&meta.hostToGuestOffsetMs>=3200&&meta.hostToGuestOffsetMs<5000,'The actual supervisor job metadata carries the measured host-to-guest clock offset.');
-  await files.writeFile(path.join(folder,'result.json'),JSON.stringify({version:1,jobId:job.jobId,scopeHash:meta.scopeHash,scriptSha256:meta.scriptSha256,agentId,guestSessionId:2,status:'completed',exitCode:0,stdout:'{"observations":{"version":"128.0"}}',stderr:'',childrenStopped:true,finishedAt:new Date().toISOString()}));
-  await jobs.active.work;
-  const verified=await call('guest_job',{jobId:job.jobId});assert.equal(verified.success,true,verified.contentItems[0].text);assert.equal(data(verified).verification.receipts[0].criterionIds[0],'installed');
-  const reservedGuest=verificationRecord(status.verification);reservedGuest.criterionIds=[HOST_CONTROL_CRITERION.id];reservedGuest.assertions[0].criterionId=HOST_CONTROL_CRITERION.id;bindVerification(run,reservedGuest);await assert.rejects(f.service.recordVerifiedEffects(run,reservedGuest),{code:'WORKBENCH_EFFECT_VERIFICATION_INVALID'});
-  let saved=await f.store.get(result.requestId);assert.equal(saved.cycles[0].effectReceipts.length,1);const source=saved.sources.find(x=>x.id===data(verified).verification.sourceId),proof=JSON.parse(source.text);assert.equal(proof.script,declaration.script);assert.equal(proof.stdout,'{"observations":{"version":"128.0"}}');assert.equal(proof.declaration.bindingSha256.length,64);
-  const deferred={criterionIds:[HOST_CONTROL_CRITERION.id],assertions:['owner','authorizedReturn','featuresRestored'].map(key=>({criterionId:HOST_CONTROL_CRITERION.id,path:'control.'+key,operator:'equals',expected:key==='owner'?'user':true}))};
-  const restored=await call('return_user_control',{expectedRevision:0,handoff:{reason:'completed',planRef:declaration.planRef,deferredControlVerification:deferred}});assert.equal(restored.success,true,restored.contentItems[0].text);assert.equal(run.workbenchAuthorization.featuresRestored,true);assert.equal(JSON.stringify(restored).includes('controlToken'),false);
-  const controlProof=await call('verify_control_state',{requestId:'verify-human-handback',planRef:declaration.planRef,assertions:deferred.assertions});
-  assert.equal(controlProof.success,true,controlProof.contentItems[0].text);saved=await f.store.get(result.requestId);assert.equal(saved.cycles[0].effectReceipts.length,2);assert.equal(JSON.parse(saved.sources.find(x=>x.id===data(controlProof).verification.sourceId).text).kind,'host-control-state');
-  assert.equal(await goal.beforeFinal(),null);assert.equal((await goal.assertReady()).ready,true,'Real current guest verification followed by actual host restoration satisfies the mechanical gate.');
-  const fakeBrowser=await call('verify_control_state',{requestId:'control-cannot-prove-browser',planRef:declaration.planRef,assertions:[{criterionId:'installed',path:'control.owner',operator:'equals',expected:'user'}]});assert.equal(fakeBrowser.success,false,'Control assertions cannot manufacture guest outcome receipts.');
-  const controlRevision=saved.revision;await new Promise(resolve=>setTimeout(resolve,15));
-  const controlReplay=await call('verify_control_state',{requestId:'verify-human-handback',planRef:declaration.planRef,criterionIds:deferred.criterionIds,assertions:deferred.assertions});
-  assert.equal(controlReplay.success,true,controlReplay.contentItems[0].text);assert.deepEqual(data(controlReplay).verification,data(controlProof).verification);assert.equal((await f.store.get(result.requestId)).revision,controlRevision,'An unchanged host-state replay preserves the immutable original observation and store revision.');
-  const historical=await call('guest_job',{jobId:job.jobId});assert.equal(historical.success,true);assert.equal(data(historical).verification.status,'not_revalidated');assert.equal((await f.store.get(result.requestId)).cycles[0].effectReceipts.length,2,'Read-only inspection under USER issues no new effect proof.');
-  await handler.close();assert.equal(launches,1,'No VM process is actually launched by this fake bridge test.');
-});
-
 
 test('protected preparation and final review preserve host-only dispatch through every response stage',async t=>{
  const f=await fixture(t);f.runtime.supportsHostOnlyToolDispatch=({model})=>model==='fixture::safe';f.settings.defaultModel='fixture::safe';

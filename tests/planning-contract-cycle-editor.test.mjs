@@ -7,7 +7,6 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
 import { RemoteAccessManager } from '../lib/remote-access.mjs';
-import { WindowsWorkbench } from '../lib/windows-workbench.mjs';
 import { createRemoteTransportFixture } from './fixtures/remote-transport.mjs';
 import { fixtureUserAgency } from './fixture-user-agency.mjs';
 import { planningDOM } from './fixture-planning-dom.mjs';
@@ -54,16 +53,13 @@ async function until(check, message) {
 async function fixture(t, { canonical = true, cycleState = 'paused_after_plan', accuracy } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'canonical-cycle-editor-')), runtime = new Runtime();
   const transport = createRemoteTransportFixture(), remoteAccess = new RemoteAccessManager({ dataDir: directory, transport: transport.transport, defaultHttpsPort: 8443 });
-  const workbench = new WindowsWorkbench({ dataDir: directory, sharedRoot: directory,
-    probe: async () => ({ windows: false, vmExists: false, vmState: 'NotInstalled' }),
-    command: async () => { throw Error('Plan editor fixtures must not execute host commands.'); } });
   let app, browser;
   t.after(async () => { browser?.destroy(); try { await app?.close(); assert.equal(runtime.calls, 0); } finally { await rm(directory, { recursive: true, force: true }); } });
   const dom = planningDOM(t);
   const prototype = Object.getPrototypeOf(dom.mount), type = Object.getOwnPropertyDescriptor(prototype, 'type');
   Object.defineProperty(prototype, 'type', { get: type.get, set(value) { this.setAttribute('type', value); } });
   prototype.replaceChildren = function (...children) { for (const child of this.children) child.parentElement = null; this.children = []; this.rawText = ''; this.markup = ''; this.append(...children); };
-  app = await createHarnessServer({ port: 0, dataDir: directory, defaultCwd: directory, runtime, desktop: new Desktop(), remoteAccess, workbench, autoAttachDesktop: false, enableWorkbenchVideo: false });
+  app = await createHarnessServer({ port: 0, dataDir: directory, defaultCwd: directory, runtime, desktop: new Desktop(), remoteAccess, autoAttachDesktop: false });
   await app.learning.updateSettings({ mode: 'manual' });
   let document = await app.planningBrowser.create({ conversationId, title: 'Review a saved Plan', objective: 'Review the supplied source and obtain one observed confirmation.', cwd: directory });
   const stages = Object.fromEntries(RESPONSE_CYCLE_STAGES.map(stage => [stage.id, cycleId + '-' + stage.id]));

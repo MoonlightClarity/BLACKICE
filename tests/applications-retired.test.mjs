@@ -17,7 +17,7 @@ test('no renderer or Electron IPC entry point can launch a native application', 
 
 test('unrelated workspace tabs stay registered', () => {
   const html = text('public/next/index.html');
-  // Activity is part of Tasks; Workbench is the retained native VM launcher.
-  for (const space of ['chat','planning','tasks','browser','workbench','knowledge','settings'])
+  for (const space of ['chat','planning','tasks','browser','knowledge','settings'])
     assert.match(html, new RegExp('data-space="' + space + '"'));
+  assert.doesNotMatch(html, /data-space="workbench"/);
 });

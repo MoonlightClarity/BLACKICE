@@ -1,2 +1,0 @@
-// The native Workbench carries its own icon; no external icon is loaded at runtime.
-101 ICON "../../desktop/workbench-icon.ico"

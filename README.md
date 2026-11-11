@@ -21,7 +21,6 @@
 | **Tasks and scheduling** | Multi-agent workflows, assignment, cron/interval jobs, results. | Not ongoing execution while the app is closed. |
 | **Connectors** | ChatGPT, Gemini, remote agents, and connected MCP servers. | Not automatic access to any assistant or service. |
 | **Knowledge** | Memories, skills, source relationships, revision history. | Not a self-validating knowledge base. |
-| **Workbench** | Optional persistent Windows VM and guest application automation. | Not universal Windows app compatibility. |
 | **Remote access** | Tailscale HTTPS, browser pairing, authenticated remote tools. | Not a cloud-hosted BLACKICE runtime. |
 | **Reliability** | Durable jobs, receipts, recovery checks, evidence. | Not proof of external success from a click. |
 
@@ -150,18 +149,7 @@ Knowledge is locally stored, human-editable reference material accessible to eli
 | **Finding and scoping** | Searches entries and optionally scopes them to a working folder; unscoped entries can be available broadly. | Search the entire internet or automatically synchronize all provider memories. |
 | **History and recovery** | Tracks revisions, supports edits, Trash, and restoration of retained versions. | Promise unlimited historical versions or infer a deleted entry's missing content. |
 
-## 10. Workbench: optional Windows VM
-
-Workbench uses a persistent Hyper-V Windows guest for applications that need a real Windows desktop. The main BLACKICE browser does **not** require Workbench.
-
-| Subfeature | Does | Does not |
-| --- | --- | --- |
-| **Provisioning** | Checks host prerequisites, reuses valid Windows installation media, and can provision a persistent Hyper-V guest. | Run the supported guest backend on Windows editions without the required Hyper-V support. |
-| **Guest desktop** | Can inspect guest pixels/windows and send guest-native input while the agent owns control. | Interact with arbitrary host windows as if they were guest windows or establish physical display correctness from a screenshot alone. |
-| **Native viewer** | Offers a separate Workbench viewing/control surface with ownership and guest-display status. | Claim full live acceptance of all native viewer paths or every Windows application. |
-| **Pair and auto-repair** | Can create its dedicated host share credentials, bootstrap a guest through Hyper-V, mount W:, verify shared files, and install a reconnect watcher. | Prove any new guest is ready merely because it is powered on or a drive briefly mounted. |
-| **App installation and resync** | Discovers supported host-app packages, attempts guest installation, and rescan/rebatch of missing packages. | Copy Program Files as a functional installation, silently install unsupported drivers, or guarantee license compatibility. |
-| **State retention** | Keeps the guest VM, disk, and installed applications between tasks. | Repair an interrupted installer by resetting or recreating the VM as the default action. |
+## 10. Remote access and pairing
 
 ## 11. Remote access and pairing
 
@@ -176,7 +164,7 @@ BLACKICE can expose its running workspace to a human browser or another agent us
 | **Background/headless** | Can run without a visible main window while the actual BLACKICE process is operating. | Start itself merely because an external agent makes a call. |
 | **Availability responder** | Can report closed/unreachable application state while the main runtime is absent. | Execute commands, drive a browser, start models, or queue new actions while BLACKICE is closed. |
 
-## 12. Reliability, state, and limitations
+## 11. Reliability, state, and limitations
 
 BLACKICE records operations so users and agents can distinguish an attempted action from an observed outcome.
 
@@ -190,7 +178,7 @@ BLACKICE records operations so users and agents can distinguish an attempted act
 
 ## Get started
 
-1. **Install:** Download `Blackice-<version>-Setup.exe` from the release URL above. Current public Windows installers are unsigned. Optionally compare the installer with that release's `SHA256SUMS.txt`. The Workbench VM is not required for normal Chat, files, or browsing.
+1. **Install:** Download `Blackice-<version>-Setup.exe` from the release URL above. Current public Windows installers are unsigned. Optionally compare the installer with that release's `SHA256SUMS.txt`.
 2. **Choose how to reason:** In **Settings → Models**, connect a supported native account or configure an API provider, then select the model in **Chat**. Model availability and costs come from that provider.
 3. **Or connect an outside assistant:** In **Settings → ChatGPT connector** or **Settings → Gemini connector**, prepare the host connection, approve the matching request, and test an actual `blackice_direct_status` tool round trip in the assistant. The two assistants have separate authorizations.
 4. **Give the agent tools and context:** Select the appropriate working folder and use the contained **Browser** or attach a compatible tool server. For visual browser work, prefer a **vision-capable model**. Without one, visual tasks are unreliable.
@@ -203,7 +191,6 @@ BLACKICE records operations so users and agents can distinguish an attempted act
 | Host | 64-bit Windows, running BLACKICE desktop or background/headless instance for actual tool execution. |
 | Models | Connected native account or compatible API endpoint as chosen; provider limits and charges are independent of BLACKICE. |
 | Browser | BLACKICE contained browser; visual workflows are unreliable with a text-only model. |
-| Workbench | Optional Windows host with supported Hyper-V, virtualization, appropriate Windows guest media and guest licensing. |
 | Remote assistants | Host reachability over configured Tailscale/HTTPS plus the actual connector or outside-agent authorization. |
 | Local authority | File and command tools act with the Windows account's rights; choosing a folder is not OS sandboxing. |
 | Scheduled work | The host must be running and sufficiently awake; schedules do not make a closed app execute. |
