@@ -1,4 +1,4 @@
-import { planContractResponseSchema, normalizePlanContractResponse, contractPlanProjection, assertCommitPrerequisites } from './planning-contract-model.mjs';
+import { PLAN_CONTRACT_SCHEMA, planContractResponseSchema, normalizePlanContractResponse, contractPlanProjection, assertCommitPrerequisites } from './planning-contract-model.mjs';
 /**
  * Public, bounded findings for response cycles. This module performs no work,
  * grants no authority, and never treats a model's claim as an execution receipt.
@@ -364,13 +364,20 @@ export function responseCycleResponseSchema(stageOrKind,{pipelineVersion=RESPONS
 }
 
 /** Editing can target either saved version; omit user agency only for a frozen pre-agency control catalog. */
-export function responseCyclePlanEditSchema({includeUserAgency=true}={}){
+export function responseCyclePlanEditSchema({includeUserAgency=true,includeCanonical=false}={}){
   const current=responseCycleResponseSchema('plan',{pipelineVersion:2}),legacy=responseCycleResponseSchema('plan',{pipelineVersion:1});
   current.properties.values={anyOf:[legacy.properties.values,current.properties.values]};
   current.properties.grounding.items.properties.field.enum=[...new Set([...legacy.properties.grounding.items.properties.field.enum,...current.properties.grounding.items.properties.field.enum])];
   if(includeUserAgency){
     current.properties={userAgency:schemaTree(USER_AGENCY_CHECKPOINT_SCHEMA),...current.properties};
     current.required=['userAgency',...current.required];
+  }
+  if(includeCanonical){
+    const canonical=schemaTree(current);
+    delete canonical.properties.acceptanceCriteria;delete canonical.properties.steps;
+    canonical.properties.contract=schemaTree(PLAN_CONTRACT_SCHEMA);
+    canonical.required=canonical.required.filter(key=>!['acceptanceCriteria','steps'].includes(key));canonical.required.push('contract');
+    return {anyOf:[current,canonical]};
   }
   return current;
 }

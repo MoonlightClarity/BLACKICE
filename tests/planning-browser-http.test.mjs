@@ -247,6 +247,7 @@ test('profile maintenance accounts for active module workers', async t => {
   let activeCount = 1;
   const runner = {
     status: () => ({ activeCount, attempts: [] }), activePromises: () => [],
+    async start() { assert.fail('Maintenance must not start a worker.'); }, async cancel() { assert.fail('Maintenance must not cancel an individual worker.'); },
     async cancelAll() { activeCount = 0; }, async close() { activeCount = 0; }
   };
   const { app } = await fixture(t, { planningBrowserRuntime: runner, taskViability: false });

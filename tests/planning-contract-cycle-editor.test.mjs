@@ -259,3 +259,38 @@ for (const canonical of [true, false]) test('stopped ' + (canonical ? 'canonical
   assert.equal(after.revision, before.revision); assert.equal(planNode(after).response.id, planNode(before).response.id);
   assert.deepEqual(planNode(after).response, planNode(before).response); assert.equal(f.runtime.calls, 0);
 });
+
+test('direct cycle and graph tools expose canonical Plan payloads and preserve UI/runtime state', async t => {
+  const f = await fixture(t), directory = await mkdtemp(path.join(tmpdir(), 'canonical-direct-editor-'));
+  const { DirectExecutionAPI } = await import('../lib/direct-execution-api.mjs');
+  const { createDirectResponseCycleTools } = await import('../lib/direct-response-cycle-tools.mjs');
+  const { createDirectPlanningBrowserTools } = await import('../lib/direct-planning-browser-tools.mjs');
+  const api = await new DirectExecutionAPI({ dataDir: directory, allowedRoot: directory, additionalTools: [
+    ...createDirectResponseCycleTools({ service: f.app.responseCycle }),
+    ...createDirectPlanningBrowserTools({ store: f.app.planningBrowser }),
+  ] }).init();
+  t.after(async () => { await api.close(); await rm(directory, { recursive: true, force: true }); });
+  const client = { id: 'canonical-editor-grant', kind: 'chatgpt', scopes: ['read', 'commands:run', 'planning:write'] };
+  const plan = planPayload(planNode(f.initial).response);
+  plan.contract.workItems[0].objective = 'Read the source and preserve the observed qualification.';
+  const args = { action: 'edit_plan', graphRequestId: f.initial.id, cycleId, ...controls(f.initial), plan, requestId: 'canonical-direct-edit' };
+  const {validDirectArguments}=await import('../lib/direct-execution-api.mjs');
+  const {planningSchemaIssues}=await import('../lib/planning-schema-diagnostics.mjs');
+  const schema=api.tools(client).find(tool=>tool.name==='blackice_planning_cycle').inputSchema;
+  assert.equal(validDirectArguments(args,schema),true,JSON.stringify(planningSchemaIssues(args.plan,schema.oneOf.find(branch=>branch.properties.action.const==='edit_plan').properties.plan.anyOf[1])));
+  const admitted = await api.call('blackice_planning_cycle', args, client);
+  const job = await until(async () => { const value = await api.getJob(admitted.jobId, client); return value.settled ? value : null; }, 'Canonical direct edit did not settle');
+  assert.equal(job.status, 'succeeded', JSON.stringify(job));
+  const saved = await f.read(); assert.equal(planNode(saved).response.contract.workItems[0].objective, plan.contract.workItems[0].objective);
+  assert.equal(planNode(saved).response.provenance.kind, 'external_agent'); assert.equal(planNode(saved).response.provenance.receipt.connectionId, client.id);
+  assert.equal(saved.cycles[0].state, 'paused_after_plan'); assert.equal(f.runtime.calls, 0);
+  const replay = await api.call('blackice_planning_cycle', args, client); assert.equal(replay.jobId, admitted.jobId); assert.equal((await f.read()).revision, saved.revision);
+  const malformed = structuredClone(args); malformed.requestId = 'mixed-canonical-edit'; malformed.plan.steps = [];
+  await assert.rejects(api.call('blackice_planning_cycle', malformed, client), { code: 'DIRECT_REQUEST_INVALID' });
+  const publicPlan = planPayload(planNode(saved).response);
+  publicPlan.contract.workItems[0].objective = 'A later public contribution retains the same bounded source review.';
+  const contribution = await api.call('blackice_planning_graph_write', { requestId: 'canonical-public-response', action: 'record_response', graphRequestId: saved.id, nodeId: planNode(saved).id, expectedNodeRevision: planNode(saved).revision, ...publicPlan }, client);
+  const recorded = await until(async () => { const value = await api.getJob(contribution.jobId, client); return value.settled ? value : null; }, 'Canonical graph response did not settle');
+  assert.equal(recorded.status, 'succeeded', JSON.stringify(recorded)); assert.equal(planNode(await f.read()).response.contract.workItems[0].objective, publicPlan.contract.workItems[0].objective);
+  assert.equal(f.runtime.calls, 0, 'Publishing a public Plan is not execution.');
+});
