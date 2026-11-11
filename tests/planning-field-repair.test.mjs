@@ -172,7 +172,7 @@ test('the narrow prompt includes captured evidence and exact inherited criteria 
     assert.equal(JSON.parse(merged).contract.criteria[0].accuracy[field], value);
 });
 
-test('invalid existing accuracy values and unrelated schema failures retain the full-response repair', async t => {
+test('invalid primitive accuracy uses v2 while unrelated schema failures retain full-response repair', async t => {
   const variants = {
     'invalid present enum': body => { body.contract.criteria[0].accuracy.mode = 'approximate'; },
     'null present scalar': body => { body.contract.criteria[0].accuracy.consequence = null; },
@@ -188,6 +188,19 @@ test('invalid existing accuracy values and unrelated schema failures retain the 
   for (const [label, change] of Object.entries(variants)) await t.test(label, () => {
     const body = partialBody(); change(body);
     const { repair, plan } = planFor(body);
+    if (['invalid present enum', 'null present scalar', 'blank required text', 'blank present bounded tolerance'].includes(label)) {
+      assert.ok(plan); assert.equal(plan.protocol, 'accuracy-and-inference-scalars-v2');
+      const before = clone(body), expected = clone(body);
+      for (const target of plan.targets) {
+        let value = expected; for (const part of target.parts) value = value[part];
+        for (const field of target.missing) value[field] = accuracy[field];
+      }
+      const merged = applyPlanningAccuracyFieldRepair(plan, patchFor(plan));
+      assert.deepEqual(JSON.parse(merged), expected, 'Only original invalid or missing leaves may change.');
+      assert.deepEqual(plan.base, before);
+      assert.doesNotThrow(() => validatePlanningModuleResponse(canonicalAttempt, merged));
+      return;
+    }
     assert.equal(plan, null);
     assert.match(planningModulePrompt(repair), /^REPAIR THE REJECTED RESPONSE/);
     assert.ok(planningModulePrompt(repair).includes(JSON.stringify(planningModuleOutputSchema(repair))));
@@ -467,10 +480,18 @@ test('an invalid patch consumes the existing single repair and cannot trigger a 
   });
 });
 
-test('malformed JSON and invalid present fields still use the existing full-response repair', async t => {
+test('blank existing accuracy uses v2 while malformed JSON and invalid references retain full repair', async t => {
   for (const kind of ['malformed-json', 'blank-existing', 'invalid-reference']) await t.test(kind, async t => {
     const f = await runtimeFixture(t, ({ input, index, options }) => {
       if (index === 2) {
+        if (kind === 'blank-existing') {
+          assert.equal(input.protocol, 'accuracy-and-inference-scalars-v2');
+          assert.ok(options.outputSchema.properties.repairs);
+          assert.deepEqual(new Set(input.targets[0].editableFields), new Set(['evidenceNeeded', 'unknownPolicy']));
+          return JSON.stringify({ repairs: Object.fromEntries(input.targets.map(target => [
+            target.id, Object.fromEntries(target.editableFields.map(field => [field, accuracy[field]]))
+          ])) });
+        }
         assert.equal(input.protocol, undefined); assert.ok(input.formatRepair.previousOutput);
         assert.equal(options.outputSchema.properties.repairs, undefined);
         assert.match(options.prompt, /^REPAIR THE REJECTED RESPONSE/);
@@ -484,7 +505,14 @@ test('malformed JSON and invalid present fields still use the existing full-resp
     });
     const { options } = await addViability(f), { finished, saved } = await runFixture(f, options);
     assert.equal(finished.attempt.status, 'completed', finished.attempt.message);
-    assert.equal(f.calls.length, 2); assert.equal(saved.attempts[1].metadata.fieldRepair, undefined);
+    assert.equal(f.calls.length, 2);
+    if (kind === 'blank-existing') {
+      assert.equal(saved.attempts[1].metadata.fieldRepair.protocol, 'accuracy-and-inference-scalars-v2');
+      const expected = JSON.parse(saved.attempts[0].partialOutput);
+      expected.requirements[0].accuracy.evidenceNeeded = accuracy.evidenceNeeded;
+      expected.requirements[0].accuracy.unknownPolicy = accuracy.unknownPolicy;
+      assert.deepEqual(JSON.parse(saved.attempts[1].output), expected);
+    } else assert.equal(saved.attempts[1].metadata.fieldRepair, undefined);
   });
 });
 
