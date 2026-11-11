@@ -7,6 +7,7 @@ Compatible analytical turns now choose their transport from the exact selected m
 | Evidence | Request behavior |
 | --- | --- |
 | Fresh exact model advertises `structured_outputs`, with a compatible strict schema and safe wire projection | Send a detached wire schema as `response_format:{type:"json_schema",json_schema:{name:"planning_response",strict:true,schema}}`; preserve the original host schema |
+| Fresh exact model advertises both `tools` and `tool_choice` but not `structured_outputs` | Use the single forced data-return function described in [Response-only function serialization](provider-response-function-20261111.md); never dispatch it as an action |
 | A `uniqueItems:true` constraint occurs beneath `oneOf` | Keep prompt and host validation, with `schema_uniqueness_projection_unsafe`; do not send a projection that changes exclusive branch matching |
 | Catalog lists only `response_format` | Keep prompt and host validation; JSON mode alone does not establish JSON Schema support |
 | Model absent, parameters missing, catalog unavailable, or schema has optional/open object fields | Keep prompt and host validation, with a specific capability reason |
