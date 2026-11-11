@@ -622,7 +622,6 @@ test('a missing-key API connection offers setup without being enabled or duplica
 
 test('optional API settings are visible and entered when Models settings opens',async t=>{
   const f=planningDOM(t);let entered=0,left=0;
-  f.mount.replaceChildren=function(...nodes){for(const child of [...this.children])child.remove();this.textContent='';this.append(...nodes);};
   const panel=createSubscriptionModelSettings({mount:f.mount,api:async()=>({codex:{connected:false,authenticated:false}})},()=>({enter(){entered++;},leave(){left++;},destroy(){}}));
   t.after(()=>panel.destroy());panel.enter();await settle();
   const section=f.$('#next-connect-another-endpoint');assert.equal(section.open,true);

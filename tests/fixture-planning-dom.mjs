@@ -19,6 +19,11 @@ export function planningDOM(t, { width = 1440, normalizeMarkup = false } = {}) {
     removeAttribute(key) { this.attributes.delete(key); if (key.startsWith('data-')) delete this.dataset[camel(key.slice(5))]; }
     appendChild(item) { this.append(item); return item; }
     append(...items) { for (const item of items) { item.remove(); this.children.push(item); item.parentElement = this; } }
+    replaceChildren(...items) {
+      const selected = this.tagName === 'SELECT' ? this.children.find(option => option.value === this.value) : null;
+      for (const child of [...this.children]) child.remove(); this.textContent = ''; this.append(...items);
+      if (this.tagName === 'SELECT') { delete this.fieldValue; if (selected && this.children.includes(selected)) this.value = selected.value; }
+    }
     insertBefore(item, reference) { item.remove(); const index = reference ? this.children.indexOf(reference) : -1; this.children.splice(index < 0 ? this.children.length : index, 0, item); item.parentElement = this; }
     remove() { if (!this.parentElement) return; const index = this.parentElement.children.indexOf(this); if (index >= 0) this.parentElement.children.splice(index, 1); this.parentElement = null; }
     replaceWith(item) { const parent = this.parentElement; parent?.insertBefore(item, this); this.remove(); }

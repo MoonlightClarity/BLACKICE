@@ -113,7 +113,6 @@ test('picker account setup opens the native Models card and refresh preserves un
   });
   const provider={id:'mistral-vibe',name:'Mistral Vibe Code',type:'subscription-cli',installed:true,authenticated:false,connected:false,available:false,models:[],loginState:'idle'};
   f.info.subscriptionProviders=[provider];f.workspace.updateStatus(f.info);
-  Object.getPrototypeOf(f.mount).replaceChildren=function(...nodes){for(const child of [...this.children])child.remove();this.textContent='';this.append(...nodes);};
   await f.workspace.openModelProvider('not-a-native-provider');
   assert.equal(f.$('#next-settings-section-general').getAttribute('aria-selected'),'true');
   const selector=f.$('#next-settings-model');selector.value='native-model';await selector.dispatch('change');

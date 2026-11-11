@@ -11,7 +11,6 @@ const status=value=>({codex:{connected:true,authenticated:true},defaultModel:'gp
 const exactModel={id:'fixture-vibe-model/2026:exact',name:'Fixture Vibe model'};
 function fixture(t,{initial=status(native()),hook}={}){
   const dom=planningDOM(t),calls=[],updates=[],lifecycle={entered:0,left:0},state={status:initial};
-  dom.mount.replaceChildren=function(...nodes){for(const child of [...this.children])child.remove();this.textContent='';this.append(...nodes);};
   const api=async(route,method='GET',body)=>{
     const call={route,method,body};calls.push(call);
     const custom=hook?.(call,state);if(custom!==undefined)return custom;
