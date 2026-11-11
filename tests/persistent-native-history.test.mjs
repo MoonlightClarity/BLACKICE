@@ -8,7 +8,9 @@ import {CodexRuntime} from '../lib/codex.mjs';
 import {HarnessEngine} from '../lib/engine.mjs';
 import {ConversationArchive} from '../lib/conversations.mjs';
 import {ProviderRuntime} from '../lib/providers.mjs';
-import {CONTROL_TOOL,CONTROL_SCHEMA_VERSION} from '../lib/control-tools.mjs';
+import {PlanningBrowserStore} from '../lib/planning-browser.mjs';
+import {ResponseCycleService} from '../lib/response-cycle.mjs';
+import {CONTROL_TOOL,CONTROL_SCHEMA_VERSION,PRE_CANONICAL_CONTROL_TOOL} from '../lib/control-tools.mjs';
 
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return{promise,resolve};};
 const until=async predicate=>{for(let n=0;n<1000;n++){const value=predicate();if(value)return value;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail('Local protocol fixture did not settle.');};
@@ -20,7 +22,8 @@ async function environment(t){
  const native=async(args=[])=>{const runtime=new CodexRuntime({command:process.execPath,args:[fixture,'--store='+store,...args],cwd,nativeModelMetadata:metadata,requestTimeoutMs:1500,runTimeoutMs:5000}),requests=[],calls=[];
   const request=runtime._request.bind(runtime);runtime._request=async(method,params={},...rest)=>{requests.push({method,params:structuredClone(params)});return request(method,params,...rest);};
   const agent=runtime.runAgent.bind(runtime);runtime.runAgent=options=>{calls.push(options);return agent(options);};owned.push(runtime);await runtime.start();return{runtime,requests,calls};};
- const harness=async(runtime,{archive=true}={})=>{const engine=new HarnessEngine({runtime,dataDir,defaultCwd:cwd});engine.runtimeSettings={get:()=>({codexHistory:'codex',runTimeoutMs:null,executionGuardrails:false})};await engine.init();owned.push(engine);let conversations;
+ const harness=async(runtime,{archive=true,currentCycleCatalog=false}={})=>{const engine=new HarnessEngine({runtime,dataDir,defaultCwd:cwd});engine.runtimeSettings={get:()=>({codexHistory:'codex',runTimeoutMs:null,executionGuardrails:false})};await engine.init();owned.push(engine);let conversations;
+  if(currentCycleCatalog){const planning=await new PlanningBrowserStore({dataDir}).init();owned.push(planning);engine.responseCycle=new ResponseCycleService({store:planning,engine,runner:{start:()=>assert.fail('Planning Off must not start a response worker.')}});owned.push(engine.responseCycle);}
   if(archive){conversations=await new ConversationArchive({dataDir,engine}).init();engine.persistConversation=value=>conversations.capture(value);owned.push(conversations);}return{engine,conversations};};
  return{directory,cwd,dataDir,store,native,harness};
 }
@@ -75,17 +78,17 @@ test('an unload error cannot discard a successfully completed persistent checkpo
  assert.equal(receipt.compacted,true);await first.runtime.close();const second=await env.native(),resumed=await second.runtime.runAgent({cwd:env.cwd,threadId:receipt.threadId,prompt:'Read fixture checkpoint.'});assert.match(JSON.parse(resumed.output).savedText,/COMPLETED_CHECKPOINT/);
 });
 
-test('manual legacy migration imports archived lineage without an old thread ID, persists its identity, and reuses exact tools after reopen',async t=>{
- const env=await environment(t),native=await env.native(),{engine,conversations}=await env.harness(native.runtime),first=legacyRun('legacy-first'),latest=legacyRun('legacy-latest',{parentRunId:first.id,threadId:undefined,createdAt:'2026-10-01T01:00:00.000Z'});delete latest.nodes.agent.threadId;
+for(const currentCycleCatalog of [false,true])test('manual legacy migration imports archived lineage without an old thread ID, persists its identity, and reuses exact tools after reopen; cycle service '+currentCycleCatalog,async t=>{
+ const env=await environment(t),native=await env.native(),{engine,conversations}=await env.harness(native.runtime,{currentCycleCatalog}),first=legacyRun('legacy-first'),latest=legacyRun('legacy-latest',{parentRunId:first.id,threadId:undefined,createdAt:'2026-10-01T01:00:00.000Z'});delete latest.nodes.agent.threadId;
  await seed(engine,env.cwd,[first,latest]);await conversations.capture(first);await conversations.capture(latest);engine.runs.delete(first.id);
  const family=await conversations.family(latest.id),before=structuredClone(publicHistory(latest)),receipt=await engine.compactRun(latest.id,{nodeId:'agent'},{historyRuns:family.runs});
  assert.equal(receipt.compacted,true);assert.equal(receipt.migrated,true);assert.equal(latest.nodes.agent.codexHistory,'codex');assert.equal(latest.runtimeSettings.codexHistory,'relay','historical run snapshot remains unchanged');assert.deepEqual(publicHistory(latest),before);
  const manual=native.calls.find(value=>value.compactOnly);assert.equal(manual.timeoutMs,null);assert.equal(manual.context.autoCompact,false);assert.match(manual.continuity.text,/USER_legacy-first/);assert.match(manual.continuity.text,/ASSISTANT_legacy-first/);assert.match(manual.continuity.text,/ACCEPTED_legacy-first/);assert.doesNotMatch(manual.continuity.text,/REJECTED_/);
- const control=manual.dynamicTools.find(tool=>tool.name==='relay_control');assert.deepEqual(control,CONTROL_TOOL);assert.equal(latest.nodes.agent.controlSchemaVersion,CONTROL_SCHEMA_VERSION);
+ const control=manual.dynamicTools.find(tool=>tool.name==='relay_control');assert.deepEqual(control,currentCycleCatalog?CONTROL_TOOL:PRE_CANONICAL_CONTROL_TOOL);assert.equal(latest.nodes.agent.controlSchemaVersion,currentCycleCatalog?CONTROL_SCHEMA_VERSION:11);
  assert.deepEqual(engine.threadUsageBaseline(receipt.threadId,latest.nodes.agent.usage.total),receipt.usage.total,'old ephemeral totals must not become the replacement baseline');
  const archived=await conversations.readFile(latest.id);assert.equal(archived.nodes.agent.threadId,receipt.threadId);assert.equal(archived.nodes.agent.codexHistory,'codex');assert.deepEqual(publicHistory(archived),before);
  engine.runs.delete(latest.id);await engine.persist();await conversations.close();await engine.close();await native.runtime.close();
- const restartedNative=await env.native(),reopened=await env.harness(restartedNative.runtime);const restored=await reopened.conversations.get(latest.id);assert.equal(restored.nodes.agent.threadId,receipt.threadId);reopened.engine.restoreArchivedRun(restored);
+ const restartedNative=await env.native(),reopened=await env.harness(restartedNative.runtime,{currentCycleCatalog});const restored=await reopened.conversations.get(latest.id);assert.equal(restored.nodes.agent.threadId,receipt.threadId);reopened.engine.restoreArchivedRun(restored);
  const continued=reopened.engine.continueRun(restored.id,{nodeId:'agent',message:'Continue using the migrated checkpoint.'},{historyRuns:(await reopened.conversations.family(restored.id)).runs}),done=await until(()=>{const value=reopened.engine.getRun(continued.id);return value.settled&&value;});
  assert.equal(done.status,'completed',done.error);assert.equal(done.nodes.agent.threadId,receipt.threadId);assert.equal(done.modelHandoff,undefined);
  const detail=JSON.parse(done.nodes.agent.output);assert.deepEqual(detail.dynamicTools,manual.dynamicTools);assert.match(detail.savedText,/USER_legacy-first/);assert.equal(restartedNative.requests.filter(row=>row.method==='thread/start'||row.method==='thread/inject_items'||row.method==='thread/compact/start').length,0);

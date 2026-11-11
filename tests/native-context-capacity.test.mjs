@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { normalizeContextOptions, contextSnapshot, nativeContextSnapshot } from '../lib/context.mjs';
 import { CodexRuntime } from '../lib/codex.mjs';
 import { HarnessEngine } from '../lib/engine.mjs';
+import { PlanningBrowserStore } from '../lib/planning-browser.mjs';
+import { ResponseCycleService } from '../lib/response-cycle.mjs';
 import { ProviderRuntime } from '../lib/providers.mjs';
 import { CONTROL_TOOL, CONTROL_SCHEMA_VERSION,PRE_CANONICAL_CONTROL_TOOL,PRE_CANONICAL_CONTROL_INSTRUCTIONS,PRE_USER_AGENCY_CONTROL_TOOL,PRE_USER_AGENCY_CONTROL_INSTRUCTIONS,PRE_INTENT_CONTROL_TOOL,PRE_INTENT_CONTROL_INSTRUCTIONS, PRE_PERSISTENT_HISTORY_CONTROL_TOOL, PRE_PERSISTENT_HISTORY_CONTROL_INSTRUCTIONS, PRE_CONTEXT_CONTROL_TOOL, PRE_CONTEXT_CONTROL_INSTRUCTIONS, PRE_PROFILE_CONTROL_TOOL, PRE_ACCURACY_CONTROL_TOOL, createControlToolHandler } from '../lib/control-tools.mjs';
 import { RuntimeSettingsStore } from '../lib/runtime-settings.mjs';
@@ -60,7 +62,11 @@ for(const savedVersion of [7,8,9,10,11])test('a new engine turn gets schema12 wh
   runtime.runAgent = async options => { calls.push(options); const threadId = options.threadId || 'schema-fixture-thread'; options.onEvent({ type: 'thread', threadId, model: 'fixture', effort: 'high', codexHistory: 'codex' }); return { output: 'Local schema fixture.', threadId, codexHistory: 'codex' }; };
   const engine = await new HarnessEngine({ runtime, dataDir: directory, defaultCwd: cwd }).init();
   engine.runtimeSettings = { get: () => ({ codexHistory: 'codex' }) };
-  t.after(async () => { await engine.close(); await rm(directory, { recursive: true, force: true }); });
+  // This case asserts the current cycle-capable catalog, not a host without Planning.
+  const store = await new PlanningBrowserStore({dataDir:directory}).init();
+  const cycle = new ResponseCycleService({store,engine,runner:{start:()=>assert.fail('Planning Off must not start a response worker.')}});
+  engine.responseCycle = cycle;
+  t.after(async () => { await cycle.close(); await engine.close(); await store.close(); await rm(directory, { recursive: true, force: true }); });
   const workflow = { id: 'schema-context', name: 'Schema fixture', nodes: [{ id: 'input', type: 'input' }, { id: 'agent', type: 'agent', name: 'Fixture', model: 'fixture', prompt: 'Local protocol fixture.', effort: 'high' }, { id: 'output', type: 'output' }], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1, planningMode: 'off' } };
   const first = engine.startRun({ workflow, input: 'Inspect fixture schema.' }); await engine.executions.get(first.id);
   assert.equal(engine.getRun(first.id).status, 'completed');

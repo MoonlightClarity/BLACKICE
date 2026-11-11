@@ -7,6 +7,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {createHarnessServer} from '../server.mjs';
 import {CONTROL_TOOL,CONTROL_SCHEMA_VERSION,PRE_ACCURACY_CONTROL_TOOL,PRE_ACCURACY_CONTROL_INSTRUCTIONS,PRE_PROFILE_CONTROL_TOOL,PRE_PROFILE_CONTROL_INSTRUCTIONS,PRE_FAST_CONTROL_TOOL,PRE_FAST_CONTROL_INSTRUCTIONS,LEGACY_CONTROL_TOOL,createControlToolHandler} from '../lib/control-tools.mjs';
+import {ResponseCycleService} from '../lib/response-cycle.mjs';
 import {validateWorkflow} from '../lib/engine.mjs';
 import {validateObservePresentation} from '../lib/live-edits.mjs';
 
@@ -67,7 +68,7 @@ test('new chat configuration saves speed separately; v3 continuations and Retry 
   options.onEvent({type:'thread',threadId:'native-speed-control'});
   if(index===2)throw Error('Observed old-schema interruption.');
   return{output:'Configuration receipt verified.',threadId:'native-speed-control'};
- });
+ },{currentCycleCatalog:true});
  await f.app.engine.runtimeSettings.update({codexHistory:'codex'});await f.app.engine.saveWorkflow(validateWorkflow(graph('speed-control')));
  const first=await f.settled(f.app.engine.startRun({workflow:graph('speed-control'),input:'Save future speed settings.'}).id);
  assert.equal(first.status,'completed',first.error);assert.equal(first.nodes.agent.controlSchemaVersion,CONTROL_SCHEMA_VERSION);assert.equal(first.workflow.nodes[1].serviceTier,undefined);
@@ -90,7 +91,7 @@ test('old native control catalogs keep truthful schemas through continuation and
   else{assert.deepEqual(definition,LEGACY_CONTROL_TOOL);assert.equal(description.deployment.limits,undefined);assert.doesNotMatch(options.prompt,/Use deployment\.limits/);}
   options.onEvent({type:'thread',threadId:'native-control-catalog'});
   if(index===2)throw Error('Fixture interruption.');return{output:'Catalog verified.',threadId:'native-control-catalog'};
- });
+ },{currentCycleCatalog:true});
  await f.app.engine.runtimeSettings.update({codexHistory:'codex'});
  const first=await f.settled(f.app.engine.startRun({workflow:graph(),input:'Read configuration.'}).id);assert.equal(first.nodes.agent.controlSchemaVersion,CONTROL_SCHEMA_VERSION);assert.equal(first.status,'completed',first.error);
  // This simulated retained catalog predates Planning14 and its host catalog hash.
@@ -104,11 +105,15 @@ test('old native control catalogs keep truthful schemas through continuation and
  const retry=await f.settled(f.app.engine.retryRun(second.id).id);assert.equal(retry.nodes.agent.controlSchemaVersion,1);assert.equal(retry.status,'completed');assert.equal(retry.nodes.agent.threadId,'native-control-catalog');assert.equal(f.calls[2].threadId,'native-control-catalog');
 });
 class Desktop extends EventEmitter{status(){return{available:false,enabled:false};}async setEnabled(){return this.status();}}
-async function fixture(t,execute){
+async function fixture(t,execute,{currentCycleCatalog=false}={}){
   const directory=await mkdtemp(path.join(tmpdir(),'relay-control-tools-')),dataDir=path.join(directory,'data'),cwd=path.join(directory,'workspace'),calls=[];
   class Runtime extends EventEmitter{status(){return{connected:true,authenticated:true,models:[{model:'control-fixture-model'}],defaultModel:'control-fixture-model'};}async start(){return this.status();}async close(){}async runAgent(options){calls.push(options);return execute?execute(options,calls.length):{output:'Control fixture completed.',threadId:'control-thread'};}}
   const app=await createHarnessServer({port:0,dataDir,defaultCwd:cwd,runtime:new Runtime(),desktop:new Desktop(),taskViability:false});await app.learning.updateSettings({mode:'manual'});
-  t.after(async()=>{await app.close();assert.match(path.basename(directory),/^relay-control-tools-/);await rm(directory,{recursive:true,force:true});});
+  // Current-catalog compatibility cases need the actual cycle editing service.
+  // Planning Off skips its automatic pipeline but preserves explicit management.
+  const cycle=currentCycleCatalog?new ResponseCycleService({store:app.planningBrowser,runner:app.planningBrowserRuntime,engine:app.engine,getSettings:()=>app.runtimeSettings.get()}):null;
+  if(cycle)app.engine.responseCycle=cycle;
+  t.after(async()=>{await cycle?.close();await app.close();assert.match(path.basename(directory),/^relay-control-tools-/);await rm(directory,{recursive:true,force:true});});
   const settled=id=>until(()=>{const run=app.engine.getRun(id);return run.settled&&run;},'controlled foreground task');
   return{app,cwd,calls,dataDir,settled};
 }
@@ -308,7 +313,7 @@ test('current cycle model selection leaves saved v5 native catalogs unchanged on
   options.onEvent({type:'thread',threadId:'native-cycle-profile-control'});
   if(index===2)throw Error('Observed saved-v5 fixture interruption.');
   return{output:'The saved control catalog was preserved.',threadId:'native-cycle-profile-control'};
- });
+ },{currentCycleCatalog:true});
  await f.app.engine.runtimeSettings.update({codexHistory:'codex'});await f.app.engine.saveWorkflow(validateWorkflow(graph('cycle-profile-control')));
  const first=await f.settled(f.app.engine.startRun({workflow:graph('cycle-profile-control'),input:'Inspect the current cycle controls.'}).id);
  assert.equal(first.status,'completed',first.error);assert.equal(first.nodes.agent.controlSchemaVersion,CONTROL_SCHEMA_VERSION);
@@ -333,7 +338,7 @@ test('v7 task accuracy leaves saved v6 native continuations and retries on their
   options.onEvent({type:'thread',threadId:'native-accuracy-control'});
   if(index===2)throw Error('Observed saved-v6 fixture interruption.');
   return{output:'The original v6 control catalog remains in force.',threadId:'native-accuracy-control'};
- });
+ },{currentCycleCatalog:true});
  await f.app.engine.runtimeSettings.update({codexHistory:'codex'});
  const first=await f.settled(f.app.engine.startRun({workflow:graph('accuracy-control'),input:'Inspect current Planning controls.'}).id);assert.equal(first.status,'completed',first.error);assert.equal(first.nodes.agent.controlSchemaVersion,CONTROL_SCHEMA_VERSION);
  // This simulated retained catalog predates Planning14 and its host catalog hash.
