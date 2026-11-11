@@ -6,7 +6,7 @@ import { submitChat, replyState } from './send.mjs';
 import { createConversationReader } from './reader-client.mjs';
 import { initAttachmentsUI } from '../../attachments-ui.mjs';
 import { escapeHTML } from '../core/dom.mjs';
-import { normalizeChatOptions, validateChatOptions } from './options-model.mjs';
+import { normalizeChatOptions, validateChatOptions, restoreChatPlanningOptions } from './options-model.mjs';
 import { PLANNING_ONTOLOGY_MODULES, normalizePlanningOntology, PLANNING_MODULE_STATES } from '../../planning-module-policy.mjs';
 import { createConversationModelSelection, concreteChatModel } from './model.mjs';
 import { createArtifactViewer } from './artifacts.mjs';
@@ -47,7 +47,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     dataController:null, unsubscribe:null, lastLoadedAt:0,
     indexLimit:CHAT_INDEX_BATCH, indexQuery:'',messageLimits:new Map(),
     attachmentIds:new Map(), attachmentsPending:false,managing:false,selecting:false,selection:new Map(),visible:[],listRead:0,destroyed:false,inputRevision:0,
-    options:{...normalizeChatOptions((()=>{try{const saved=JSON.parse(localStorage.getItem('blackice.next.chatOptions')||'{}');return {...saved,planningOntology:saved.planningOntology??getStatus?.()?.runtimeSettings?.planningOntology};}catch{return {planningOntology:getStatus?.()?.runtimeSettings?.planningOntology};}})()),model:'default'} };
+    options:{...restoreChatPlanningOptions((()=>{try{return JSON.parse(localStorage.getItem('blackice.next.chatOptions')||'{}');}catch{return{};}})(),getStatus?.()?.runtimeSettings?.planningOntology),model:'default'} };
   const ontologyRows=new Map();
   const commitOntology=patch=>{state.options.planningOntology=normalizePlanningOntology({...state.options.planningOntology,...patch});persistOptions();reflectOntology();};
   function reflectOntology(){

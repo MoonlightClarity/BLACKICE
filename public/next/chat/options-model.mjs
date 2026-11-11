@@ -15,6 +15,21 @@ export function normalizeChatOptions(value={}){
   const planningExecutionMode=value?.planningExecutionMode==='plan_only'?'plan_only':'automatic';
   return {model,effort,serviceTier,planningMode,planningExecutionMode,...(planningMode==='ontology'||value?.planningOntology!==undefined?{planningOntology:normalizePlanningOntology(value?.planningOntology)}:{})};
 }
+/**
+ * A legacy persisted Forced draft had no module policy because Forced was the
+ * default before this release. Upgrade only that old new-chat preference; an
+ * explicit modern Legacy Forced choice includes the ontology field and survives.
+ * Saved historical run contracts are never rewritten by this draft migration.
+ */
+export function restoreChatPlanningOptions(raw={},runtimeDefault){
+  const saved=raw&&typeof raw==='object'&&!Array.isArray(raw)?raw:{};
+  const oldForcedDefault=saved.planningMode==='forced'&&saved.planningOntology===undefined;
+  return normalizeChatOptions({
+    ...saved,
+    ...(oldForcedDefault?{planningMode:'ontology'}:{}),
+    planningOntology:saved.planningOntology??runtimeDefault,
+  });
+}
 export function resolvedDefaultModel(status={}) {
   const saved=typeof status.defaultModel==='string'&&status.defaultModel.trim()&&status.defaultModel!=='default'?status.defaultModel.trim():null;
   const model=saved&&(status.models||[]).find(item=>(item?.id||item?.model)===saved);
