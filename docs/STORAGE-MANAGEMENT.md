@@ -1,71 +1,78 @@
 # BLACKICE storage management
 
 Storage & Data is available in Settings. It reports on-disk byte and file counts
-using fixed, disjoint storage categories. The measured total is **not** the total
-installation size; it excludes unmanaged directories and includes read-only VM
-and desktop cache categories for visibility.
+using fixed, disjoint storage categories. The measured total is not the total
+installation size: unmanaged directories are excluded. Opening Settings or
+installing the feature does not delete any data.
 
 ## Clearing data
 
-Select one or more categories and enter `DELETE SELECTED DATA`. A confirmed
-request is saved as `data/storage-cleanup-pending.json`, but nothing is deleted
-immediately. The next BLACKICE startup attempts the queued cleanup **before**
-conversation, planning, execution, and workspace stores are loaded.
+Select categories and type `DELETE SELECTED DATA`. This queues
+`data/storage-cleanup-pending.json`; it does not delete immediately. The next
+BLACKICE server startup applies the request before its conversation, context,
+execution, credential-vault, and workspace stores load.
 
-The following are independently selectable:
-
-| Category | Contents |
+| Selectable category | Contents |
 | --- | --- |
-| Conversations | Saved chat turns, provider threads, recent run history, archived run events and task state |
-| Context | Knowledge, learning and planning-browser state |
-| Workspace metadata | Project, schedule, workflow, and inbox state, without working-directory files |
-| Managed workspace files | Actual working-directory documents and source files (external custom directories are excluded) |
-| Action history | Durable tool receipts, prior outcomes, file-patch undo records |
-| Media | Saved attachments, application documents, recordings, downloads |
-| Browser | Browser profiles and credentials, saved sessions and browser site data |
-| Temporary | Diagnostics, development caches and runtime probes |
+| Conversations | Saved chats, provider threads, run history, archived events and task state |
+| Context | Knowledge, learning, and saved planning state, including archived legacy files |
+| Workspace metadata | Projects, schedules, workflows and inbox state, without working-directory files |
+| Managed workspace files | Documents and source files in BLACKICE-managed working directories |
+| Action history | Durable tool receipts, prior outcomes and file-patch undo records |
+| Media | Attachments, application documents, downloads and saved media, including legacy Workbench media |
+| Saved browser passwords | BLACKICE password-vault and mirror records |
+| Temporary | Frontend development artifacts, runtime probes and diagnostics |
 
-Read-only (measured but **not** deletable through this feature): the Workbench
-virtual machine and the live Electron browser rendering caches. VM reset
-requires its own guest-aware feature. Custom external working directories are
-not traversed or deleted. Browser sign-ins may be lost when browser data is
-cleared. Workspaces may contain user-authored files, so their removal is
-permanent. Deleting action receipts removes some idempotency and prior-action
-evidence. No production data is deleted by installation or opening Settings.
+Custom external working directories are neither traversed nor deleted.
+Workspace files may be user-authored and their removal is permanent.
+Deleting action receipts removes idempotency and prior-action evidence.
+Deleting saved passwords does not sign out websites or clear site data.
 
-## Startup recovery
+The following categories are measured but protected from deletion:
+- Retired Workbench virtual-machine files. Removing the feature preserves any
+  operating system and user files inside the old guest disks.
+- Browser profiles, imported snapshot payloads, tab/session state and site data.
+  Electron and imported browser processes can own these files before the server
+  starts. Bulk browser reset needs a browser-aware lifecycle, not raw file removal.
+- Electron rendering caches, which may already be open.
+- Runtime preferences and modular planning definitions in runtime-settings.json.
 
-The pending marker moves through `queued → applying → completed`, or
-`queued → applying → failed`. The marker is persisted *before* destructive
-operations begin. A crash during deletion leaves an `applying` marker and
-**will not cause automatic re-deletion on the next startup**. On failure,
-BLACKICE starts normally and reports a warning. The user can cancel an
-interrupted marker; this prevents a retry but cannot restore files already
-removed. Active direct-execution ownership prevents cleanup until that owner
-is gone. Symlinks and unsupported filesystem entries are not traversed.
+There are no imports of Workbench or legacy Planning runtime modules in the
+storage manager. Their old file paths are inventory entries, not active feature
+dependencies. Context cleanup preserves modular planning configuration.
 
-The optional `autoClearTemporaryOnStartup` policy affects only rebuildable
-temporary/diagnostic data. All other retention defaults are no-op. The policy
-and last completed cleanup report live in `data/storage-retention.json` and
-`data/storage-cleanup-report.json` respectively.
+## Confirmation and recovery
 
-## API (local desktop session)
+The typed phrase is required for each queued deletion. Local session and origin
+checks protect the API; the remote gateway and server independently refuse
+remote storage management. Queue, cancellation and policy mutations are
+serialized and drained during server shutdown.
 
-* `GET /api/storage/overview`: exact category size/counts, pending request,
-  policy, prior report and any startup warning.
-* `POST /api/storage/cleanup`: `{ "categories": ["conversations"],
-  "confirmation": "DELETE SELECTED DATA" }` queues a request.
-* `POST /api/storage/cleanup/cancel`: `{}` cancels a pending request.
-* `POST /api/storage/policy`: `{ "autoClearTemporaryOnStartup": true }`
-  enables automatic temporary-data clearing.
+The pending marker progresses from queued to applying before any removal, then
+is removed on success or retained as failed on error. Its schema version is
+preserved in every phase. A failed or interrupted request is never automatically
+replayed. Cancellation cannot restore files already removed. If saved state is
+unreadable, cancellation explicitly treats earlier deletion as uncertain.
 
-## Further work
+Active direct-execution ownership defers cleanup. Symlinks and unsupported
+filesystem entries are not traversed. The optional
+`autoClearTemporaryOnStartup` policy affects only rebuildable temporary data;
+all other retention defaults are no-op. The last completed report is retained in
+`data/storage-cleanup-report.json`.
 
-This first implementation provides explicit manual deletion, accounting, and
-opt-in temporary-data cleanup. Automatic retention of completed durable-action
-receipts is **not** enabled: those records carry idempotency and external
-action reconciliation information and need a verified compact or archival
-representation before automatic eviction. A future VM management feature
-should distinguish guest-disk snapshots, active disks, and reclaimable space
-inside virtual disks. Cached Electron rendering data should be cleared before
-the Electron browser starts, not during live operations.
+## Local API
+
+- GET /api/storage/overview: category counts, pending request, policy, last report
+  and startup warning.
+- POST /api/storage/cleanup:
+  `{"categories":["conversations"],"confirmation":"DELETE SELECTED DATA"}`.
+- POST /api/storage/cleanup/cancel: `{}`.
+- POST /api/storage/policy: `{"autoClearTemporaryOnStartup":true}`.
+
+## Deferred work
+
+Automatic eviction of durable receipts is not enabled. These records need
+verified compact or archival representations before automatic removal.
+VM disks and browser-owned files remain read-only until dedicated, safe cleanup
+workflows exist. A final release must test these narrow changes against the
+completed Workbench/legacy Planning retirement checkpoint.

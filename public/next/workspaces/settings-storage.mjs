@@ -26,7 +26,7 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
     '<section class="next-card"><h2>Automatic temporary-data cleanup</h2>',
     '<label class="next-row"><input type="checkbox" id="storage-auto">',
     'Clear rebuildable temporary and diagnostic data when BLACKICE starts</label>',
-    '<p class="next-help">Does not automatically delete chats, workspaces, action receipts, media, credentials, or the virtual machine.</p>',
+    '<p class="next-help">Does not automatically delete chats, workspaces, action receipts, media, passwords, browser profiles, or preserved retired-feature files.</p>',
     '<div class="next-row"><button type="button" id="storage-save-policy">Save cleanup preference</button>',
     '<span class="next-help" id="storage-policy-feedback" role="status"></span></div></section>',
     '<section class="next-card"><h2>Most recent cleanup</h2><p class="next-help" id="storage-report">No cleanup has been recorded.</p></section>'
@@ -38,19 +38,25 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
   let active = false, destroyed = false, busy = false, snapshot = null, readSequence = 0;
   const selected = new Set();
   const updateControls = () => {
+    if (destroyed) return;
     const pending = Boolean(snapshot?.pending || snapshot?.pendingError);
-    schedule.disabled = busy || pending || selected.size === 0 || confirm.value !== 'DELETE SELECTED DATA';
+    schedule.disabled = busy || !snapshot || pending || selected.size === 0 || confirm.value !== 'DELETE SELECTED DATA';
     cancel.hidden = !pending;
     cancel.disabled = busy;
-    savePolicy.disabled = busy;
+    savePolicy.disabled = busy || !snapshot;
+    confirm.disabled = busy;
+    refreshButton.disabled = busy;
   };
   const note = (message, error = false) => {
+    if (destroyed || !active) return;
     $('storage-feedback').textContent = message;
     if (error) notify(message,true);
   };
   async function refresh() {
     if (destroyed || !active) return;
     const read = ++readSequence;
+    snapshot = null;
+    updateControls();
     refreshButton.disabled = true;
     $('storage-total').textContent = 'Measuring saved files...';
     try {
@@ -109,47 +115,50 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
         note(error.message,true);
       }
     } finally {
-      if (!destroyed && read === readSequence) refreshButton.disabled = false;
+      if (!destroyed && read === readSequence) updateControls();
     }
   }
   confirm.addEventListener('input',updateControls);
   refreshButton.addEventListener('click',()=>void refresh());
   schedule.addEventListener('click',async () => {
-    if(busy || !selected.size || confirm.value !== 'DELETE SELECTED DATA') return;
+    if(destroyed || !active || busy || !snapshot || snapshot.pending || snapshot.pendingError || !selected.size || confirm.value !== 'DELETE SELECTED DATA') return;
     busy = true; updateControls();
     const ids = [...selected];
     try {
       const saved = await api('/api/storage/cleanup','POST',{categories:ids,confirmation:confirm.value});
+      if (destroyed || !active) return;
       selected.clear();confirm.value='';
       await refresh();
       note('Queued '+ saved.pending.categories.length +' categories for deletion at next startup. Restart BLACKICE to apply.');
-      notify('Storage cleanup queued for the next restart.');
-    } catch(error) { note(error.message,true); }
+      if (!destroyed && active) notify('Storage cleanup queued for the next restart.');
+    } catch(error) { snapshot=null;note(error.message,true); }
     finally { busy=false;updateControls(); }
   });
   cancel.addEventListener('click', async () => {
-    if(busy)return;busy=true;updateControls();
+    if(destroyed || !active || busy)return;busy=true;updateControls();
     try {
       const outcome = await api('/api/storage/cleanup/cancel','POST',{});
+      if (destroyed || !active) return;
       await refresh();
       note(outcome.partial
-        ? 'Interrupted cleanup cancelled. Some files were already removed before the interruption; remaining data was not deleted.'
-        : 'Queued deletion cancelled; no cleanup has run.');
+        ? 'Cleanup cancelled. Some files may already have been removed; cancellation cannot restore them.'
+        : outcome.cancelled ? 'Queued deletion cancelled before startup cleanup.' : 'No queued cleanup remains. No additional deletion was performed.');
     } catch(error){note(error.message,true);}
     finally {busy=false;updateControls();}
   });
   savePolicy.addEventListener('click',async()=>{
-    if(busy)return;busy=true;updateControls();
+    if(destroyed || !active || busy || !snapshot)return;busy=true;updateControls();
     try {
       await api('/api/storage/policy','POST',{autoClearTemporaryOnStartup:auto.checked});
+      if (destroyed || !active) return;
       $('storage-policy-feedback').textContent = 'Preference saved.';
       notify('Automatic cleanup preference saved.');
-    }catch(error){$('storage-policy-feedback').textContent=error.message;notify(error.message,true);}
+    }catch(error){if (!destroyed && active) {$('storage-policy-feedback').textContent=error.message;notify(error.message,true);}}
     finally{busy=false;updateControls();}
   });
   return {
     enter(){ if(destroyed || active)return;active=true;void refresh(); },
-    leave(){active=false;readSequence++;},
+    leave(){active=false;readSequence++;selected.clear();confirm.value='';snapshot=null;updateControls();},
     updateStatus(){},
     destroy(){this.leave();destroyed=true;mount.replaceChildren();}
   };

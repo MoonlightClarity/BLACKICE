@@ -20,11 +20,12 @@ const initial = () => ({
   pending:null,policy:{autoClearTemporaryOnStartup:false},lastCleanup:null,
   externalWorkspace:null
 });
-async function setup(t) {
+async function setup(t, beforeApi = async () => {}) {
   const dom=planningDOM(t),calls=[],info={connected:true,execution:{activeCount:0},models:[]};
   let state=initial();
   const api=async(route,method='GET',body)=>{
     calls.push({route,method,body});
+    await beforeApi(route, method, body);
     if(route==='/api/status')return info;
     if(route==='/api/runtime/settings')return {};
     if(route==='/api/execution/settings')return {};
@@ -103,4 +104,46 @@ test('Storage settings surfaces queued-cleanup failure and permits cancelling it
   assert.equal(d.$('#storage-cancel').hidden,false);
   await d.click('#storage-cancel');
   assert.match(d.$('#storage-feedback').textContent,/cancelled/i);
+});
+
+const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
+
+test('leaving storage clears prior confirmation and selections before reentry', async t => {
+  const d=await setup(t), field=d.$('#storage-categories').querySelectorAll('input')[0];
+  field.checked=true; await field.dispatch('change');
+  await d.input('#storage-confirm','DELETE SELECTED DATA');
+  assert.equal(d.$('#storage-schedule').disabled,false);
+  await d.click('#next-settings-section-general');
+  await d.click('#next-settings-section-storage');
+  await until(()=>d.$('#storage-total').textContent.includes('measured'));
+  assert.equal(d.$('#storage-confirm').value,'');
+  assert.equal(d.$('#storage-schedule').disabled,true);
+  assert.equal(d.$('#storage-categories').querySelectorAll('input')[0].checked,false);
+});
+
+test('failed storage scans disable deletion until a successful preview', async t => {
+  let failScan=false;
+  const d=await setup(t,async route=>{ if(route==='/api/storage/overview'&&failScan)throw Error('Offline'); });
+  const field=d.$('#storage-categories').querySelectorAll('input')[0];
+  field.checked=true; await field.dispatch('change');
+  await d.input('#storage-confirm','DELETE SELECTED DATA');
+  failScan=true; await d.click('#storage-refresh');
+  await until(()=>/failed/.test(d.$('#storage-total').textContent));
+  assert.equal(d.$('#storage-schedule').disabled,true);
+  assert.equal(d.$('#storage-save-policy').disabled,true);
+});
+
+test('a repeated queue click is ignored and a late response after destroy is harmless', async t => {
+  const hold=deferred();
+  const d=await setup(t,async route=>{ if(route==='/api/storage/cleanup')await hold.promise; });
+  const field=d.$('#storage-categories').querySelectorAll('input')[0];
+  field.checked=true; await field.dispatch('change');
+  await d.input('#storage-confirm','DELETE SELECTED DATA');
+  const sending=d.click('#storage-schedule');
+  await until(()=>d.calls.some(call=>call.route==='/api/storage/cleanup'));
+  await d.click('#storage-schedule');
+  assert.equal(d.calls.filter(call=>call.route==='/api/storage/cleanup').length,1);
+  d.workspace.destroy(); hold.resolve();
+  await sending; await tick();
+  assert.equal(d.mount.children.length,0);
 });

@@ -208,6 +208,10 @@ export async function createHarnessServer(options = {}) {
   const connectorStartupResponses = new Set();
   const connectorSetupResponses = new Set();
   let connectorStartupEnabling = null;
+  const mutateStorage = async operation => {
+    const pending = Promise.resolve().then(operation); fileMutations.add(pending);
+    try { return await pending; } finally { fileMutations.delete(pending); }
+  };
   const mutateKnowledge = operation => { const pending = Promise.resolve().then(operation); knowledgeMutations.add(pending); pending.then(() => knowledgeMutations.delete(pending), () => knowledgeMutations.delete(pending)); return pending; };
   let boundPort = port, closePromise, remoteStartup, maintenanceRequested=false, remoteAgentApi, chatGPTConnector, directExecution;
   const connectorPresence = () => ({ available: Boolean(remoteAccess && chatGPTConnector?.healthy), enabled: Boolean(chatGPTConnector?.enabled), localManagement: true });
@@ -925,10 +929,11 @@ export async function createHarnessServer(options = {}) {
         return json(res,200,await showBrowserOS());
       }
       if (pathname === '/api/diagnostics/export' && req.method === 'GET') {await diagnostics.record({component:'server',event:'support_exported'});return json(res,200,await supportSnapshot());}
+      if (pathname.startsWith('/api/storage/') && req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Manage saved data in BLACKICE on this computer.', code: 'STORAGE_LOCAL_REQUIRED' });
       if (pathname === '/api/storage/overview' && req.method === 'GET') return json(res, 200, { ...await storageManager.overview(), startupWarning: storageStartupWarning });
-      if (pathname === '/api/storage/cleanup' && req.method === 'POST') return json(res, 202, await storageManager.schedule(await body(req)));
-      if (pathname === '/api/storage/cleanup/cancel' && req.method === 'POST') { await body(req); const outcome = await storageManager.cancel(); storageStartupWarning = null; return json(res, 200, outcome); }
-      if (pathname === '/api/storage/policy' && req.method === 'POST') return json(res, 200, await storageManager.configurePolicy(await body(req)));
+      if (pathname === '/api/storage/cleanup' && req.method === 'POST') return json(res, 202, await mutateStorage(async () => storageManager.schedule(await body(req, 8192))));
+      if (pathname === '/api/storage/cleanup/cancel' && req.method === 'POST') { const outcome = await mutateStorage(async () => { await body(req, 8192); return storageManager.cancel(); }); storageStartupWarning = null; return json(res, 200, outcome); }
+      if (pathname === '/api/storage/policy' && req.method === 'POST') return json(res, 200, await mutateStorage(async () => storageManager.configurePolicy(await body(req, 8192))));
       if (pathname === '/api/execution/settings' && req.method === 'GET') return json(res, 200, engine.executionSettings());
       if (pathname === '/api/execution/settings' && req.method === 'POST') return json(res, 200, await engine.updateExecutionSettings(await body(req)));
       if (pathname === '/api/attachments' && req.method === 'GET') return json(res, 200, await attachments.list());
