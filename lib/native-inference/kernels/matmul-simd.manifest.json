@@ -1,0 +1,13 @@
+{
+  "format": "blackice-native-batched-simd-v1",
+  "implementation": "BLACKICE-authored SIMD128 matmul",
+  "target": "wasm32-freestanding+simd128",
+  "compiler": "clang 17.0.0 (Linux cross-target)",
+  "source": "scripts/native-kernels/matmul-simd.c",
+  "sourceSha256": "47283f05955b221c8945edd993c5d91e7b986123b5f68eaa6947b5227142cda3",
+  "wasmSha256": "1824b86f937a1f74e8a2ee82e0c838b01cc9a370fa931c8475436fa511618103",
+  "compressedTextSha256": "d8159abd2c8509565db931b805050a212292f7be4f9ba36543b817e8a4c2e8c8",
+  "wasmBytes": 1858,
+  "precision": "float32 compute, source weights unquantized",
+  "quantizationRequested": false
+}
