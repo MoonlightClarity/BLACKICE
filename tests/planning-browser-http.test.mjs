@@ -1,3 +1,6 @@
+import {planningModuleTemplate} from '../public/planning-browser-model.mjs';
+import {responseCycleStage,RESPONSE_CYCLE_STAGES} from '../public/response-cycle-model.mjs';
+import {fixtureUserAgency} from './fixture-user-agency.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -455,4 +458,38 @@ test('host wiring exposes native graph tools and keeps attached direct evidence 
   }
   f.app.directExecution.planSource.projectAttachedState = async () => { throw Object.assign(new Error('Revoked evidence grant'), { code: 'DIRECT_AUTH_REQUIRED' }); };
   const revoked = await f.local('/api/tasks/legacy-plan'); assert.equal(revoked.status, 200); assert.equal(revoked.value.directExecution, undefined);
+});
+
+test('host-context canonical Plan human response round trips through HTTP without execution',async t=>{
+ const {app,local,runtime}=await fixture(t,{enableWorkbenchVideo:false});
+ const graph=await create(local,'Canonical Plan'),cycleId='http-canonical',stages=Object.fromEntries(RESPONSE_CYCLE_STAGES.map(stage=>[stage.id,cycleId+'-'+stage.id])),nodeId=stages.plan;
+ // Only a host-captured canonical cycle source selects this contract shape.
+ // No worker or provider invocation is needed to author its human response.
+ const configured=await app.planningBrowser.runtimeWriter().configureResponseCycle(graph.id,{
+  createCycle:{id:cycleId,title:'Canonical Plan',objective:graph.objective,stageNodeIds:stages,parentCycleId:null,parentStageId:null,depth:0,pipelineVersion:2,planningExecutionMode:'plan_only',state:'pending',acceptanceCriteria:[],sourceIds:null,execution:{required:false,state:'not_required'}},
+  sources:[{id:'cycle:execution-contract:'+cycleId,kind:'source',label:'Canonical authoring contract',text:JSON.stringify({taskSchemaVersion:14,contractVersion:2})}]});
+ const added={node:configured.nodes.find(node=>node.id===nodeId)};
+ const sourceId='request:'+graph.id,fields=planningModuleTemplate('plan',{pipelineVersion:2}).fields,stage=responseCycleStage('plan',{pipelineVersion:2});
+ const contract={contractVersion:2,goal:'Read the supplied source and explain the bounded migration choice.',
+  criteria:[{id:'inspect',kind:'observation',label:'Inspect source',description:'Read the supplied migration source.',resourceKey:'workspace:fixture'}],
+  workItems:[{id:'review',title:'Review source',objective:'Read the supplied source.',owner:'coordinator',resourceKeys:['workspace:fixture'],effects:['observe'],dependsOn:[],criterionIds:['inspect']}],instructions:[]};
+ const body={userAgency:fixtureUserAgency(),values:Object.fromEntries(fields.map(field=>[field.id,field.label+': inspect the supplied migration source and preserve the original recovery copy.'])),
+  grounding:fields.filter(field=>field.grounding==='required').map(field=>({field:field.id,sourceId})),openQuestions:[],challengeResponses:[],subproblems:[],childResults:[],
+  checks:stage.checks.map(check=>({id:check.id,assessment:check.when==='effects'?'not_applicable':'supported',sourceIds:check.grounding==='required'&&check.when!=='effects'?[sourceId]:[],note:'The bounded review preserves the requested outcome and its evidence requirements.'})),contract,expectedNodeRevision:added.node.revision};
+ const route=BASE+'/requests/'+graph.id+'/nodes/'+nodeId+'/responses';
+ const saved=await local(route,{method:'POST',body});assert.equal(saved.status,200,saved.text);
+ const response=saved.value.nodes.find(node=>node.id===nodeId).response;
+ assert.equal(response.contract.goal,contract.goal);assert.equal(response.contract.workItems[0].id,'review');assert.equal(response.provenance.kind,'human');assert.equal(response.verifiedAction,false);
+ const reread=await local(BASE+'/requests/'+graph.id);assert.equal(reread.status,200,reread.text);
+ assert.deepEqual(reread.value.nodes.find(node=>node.id===nodeId).response.contract,response.contract);
+ const persisted=await app.planningBrowser.get(graph.id);assert.equal(persisted.attempts.length,0);assert.equal(runtime.calls,0);
+ const revision=persisted.nodes.find(node=>node.id===nodeId).revision;
+ const invalid=await local(route,{method:'POST',body:{...body,expectedNodeRevision:revision,contract:{...contract,workItems:[{...contract.workItems[0],criterionIds:['missing']}]}}});
+ assert.equal(invalid.status,400,invalid.text);assert.equal((await app.planningBrowser.get(graph.id)).revision,persisted.revision);
+ const stale=await local(route,{method:'POST',body});assert.equal(stale.status,409,stale.text);
+ const independent=await add(local,graph,'Independent Plan','plan');
+ const unsupported=await local(BASE+'/requests/'+graph.id+'/nodes/'+independent.node.id+'/responses',{method:'POST',body:{...body,expectedNodeRevision:independent.node.revision}});
+ assert.equal(unsupported.status,400,unsupported.text);assert.equal(unsupported.value.code,'RESPONSE_CYCLE_INVALID');
+ assert.equal((await app.planningBrowser.get(graph.id)).nodes.find(node=>node.id===independent.node.id).response,null);
+
 });
