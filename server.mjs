@@ -1,3 +1,4 @@
+import {createNativePlanningTools} from './lib/native-planning-tools.mjs';
 import {NativeTaskContextBridge,createNativeTaskContextTool} from './lib/native-task-context-bridge.mjs';
 import http from 'node:http';
 import { promises as fs } from 'node:fs';
@@ -30,6 +31,7 @@ import { LocalModelManager } from './lib/local-model-manager.mjs';
 import { localModelHTTP } from './lib/local-model-http.mjs';
 import { searchAPIProviderDirectory } from './lib/provider-directory.mjs';
 import { connectorBrowserOwner } from './lib/connector-browser-owner.mjs';
+import { createDirectPlanningExecutionTools } from './lib/direct-planning-execution-tools.mjs';
 import { createDirectPlanningBrowserTools } from './lib/direct-planning-browser-tools.mjs';
 import { PromptTemplateStore } from './lib/prompt-templates.mjs';
 import { BrowserWorkspace } from './lib/browser.mjs';
@@ -415,7 +417,7 @@ export async function createHarnessServer(options = {}) {
     ...(options.desktopRestart ? { desktopRestart: options.desktopRestart, restartStatus: context => options.desktopRestart.status({ ownerId: context.canRestart ? context.ownerId : undefined }) } : {}),
     // Vault health can change between startups or recover during this process.
     // Keep its tool definitions stable; every credential action checks the store.
-    additionalTools: [createNativeTaskContextTool({getBridge:()=>engine.nativeTaskContextBridge}), ...createDirectPlanningBrowserTools({ store: planningBrowser, getCatalog: () => planningBrowserCatalog({ store: planningBrowser, conversations, runtime, runtimeSettings, runner: planningBrowserRuntime }), onChange: sendEvent }), ...createDirectResponseCycleTools({service:responseCycle,onChange:sendEvent}), ...createDirectProviderSetupTools({ runtime, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes), isEncryptionAvailable: () => options.credentialStorage?.isEncryptionAvailable?.() === true, browserOwnerForClient: client => client.id === LOCAL_BROWSER_CLIENT.id && client.kind === LOCAL_BROWSER_CLIENT.kind ? null : connectorBrowserOwner(client.id) }), chatGPTFileImportTool({ directory: path.join(defaultCwd, 'blackice-imports') }), chatGPTStartChatTool({ engine, attachments, defaultCwd, isClosing: connectorClosing }), ...createDirectConnectedBrowserTools({ manager: connections, connectChrome: options.connectChromeBrowser }), ...createDirectBrowserProfileTools({ profiles: browserProfiles, manager: connections, onChange: refreshBrowserProfiles }), ...(options.desktopRestart ? [desktopRestartTool({ restart: options.desktopRestart, getJob: id => directExecution.jobs.get(id) })] : []), ...(options.frontendDevtools ? [frontendDevtoolsTool({ frontend: options.frontendDevtools, artifactDirectory: path.join(dataDir, 'frontend-development') })] : []), ...createDirectBrowserCredentialTools({ vault: browserCredentials, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes) })],
+    additionalTools: [createNativeTaskContextTool({getBridge:()=>engine.nativeTaskContextBridge}), ...createDirectPlanningBrowserTools({ store: planningBrowser, getExecutionSnapshot: () => planningBrowserRuntime.status(), getCatalog: () => planningBrowserCatalog({ store: planningBrowser, conversations, runtime, runtimeSettings, runner: planningBrowserRuntime }), onChange: sendEvent }), ...createDirectPlanningExecutionTools({store:planningBrowser,runner:planningBrowserRuntime,onChange:sendEvent}), ...createDirectResponseCycleTools({service:responseCycle,onChange:sendEvent}), ...createDirectProviderSetupTools({ runtime, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes), isEncryptionAvailable: () => options.credentialStorage?.isEncryptionAvailable?.() === true, browserOwnerForClient: client => client.id === LOCAL_BROWSER_CLIENT.id && client.kind === LOCAL_BROWSER_CLIENT.kind ? null : connectorBrowserOwner(client.id) }), chatGPTFileImportTool({ directory: path.join(defaultCwd, 'blackice-imports') }), chatGPTStartChatTool({ engine, attachments, defaultCwd, isClosing: connectorClosing }), ...createDirectConnectedBrowserTools({ manager: connections, connectChrome: options.connectChromeBrowser }), ...createDirectBrowserProfileTools({ profiles: browserProfiles, manager: connections, onChange: refreshBrowserProfiles }), ...(options.desktopRestart ? [desktopRestartTool({ restart: options.desktopRestart, getJob: id => directExecution.jobs.get(id) })] : []), ...(options.frontendDevtools ? [frontendDevtoolsTool({ frontend: options.frontendDevtools, artifactDirectory: path.join(dataDir, 'frontend-development') })] : []), ...createDirectBrowserCredentialTools({ vault: browserCredentials, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes) })],
     authorizeClient: async (client, { requiredScopes }) => {
       if (client.id === 'local-browser-tools' && client.kind === 'local-browser') return !connectorClosing() && requiredScopes.every(scope => LOCAL_BROWSER_CLIENT.scopes.includes(scope));
       if (client.id === LOCAL_FRONTEND_CLIENT.id && client.kind === LOCAL_FRONTEND_CLIENT.kind) return Boolean(options.frontendDevtools) && !connectorClosing() && requiredScopes.every(scope => LOCAL_FRONTEND_CLIENT.scopes.includes(scope));
@@ -424,8 +426,23 @@ export async function createHarnessServer(options = {}) {
     },
   }).init());
   if(directExecution.taskRuntime)engine.nativeTaskContextBridge=new NativeTaskContextBridge({runtime:directExecution.taskRuntime,tasks,planSource:directExecution.planSource,canEnforceProtectedDispatch:({nativeTaskId,runId})=>{const selected=runId?engine.runs.get(runId):[...engine.runs.values()].filter(run=>(run.taskId||run.id)===nativeTaskId).at(-1);return Boolean(selected&&selected.workflow.nodes.filter(node=>node.type==='agent').every(node=>runtime.supportsHostOnlyToolDispatch?.({model:node.model})===true));},isActive:id=>[...engine.runs.values()].some(run=>(run.taskId||run.id)===id&&run.settled!==true),reauthorize:(client,scopes)=>directExecution.require(client,scopes)});
+  const projectAttachedPlanningState = async state => {
+    // A revoked/unavailable direct grant must not prevent reading the local saved plan.
+    try { return await directExecution.planSource?.projectAttachedState(state) || state; } catch { return state; }
+  };
+  engine.nativePlanningTools = createNativePlanningTools({
+    store: planningBrowser, getExecutionSnapshot: () => planningBrowserRuntime.status(), onChange: sendEvent,
+    extraTools: createDirectPlanningExecutionTools({ store: planningBrowser, runner: planningBrowserRuntime, onChange: sendEvent,
+      executionContext: (_args, context) => {
+        if (!context.nativeContext?.clientRequestId) throw Object.assign(new Error('Native Planning needs its host execution context.'), { code: 'NATIVE_PLANNING_CONTEXT' });
+        return { clientRequestId: context.nativeContext.clientRequestId };
+      } }),
+  });
+  engine.projectPlanningState = state => directExecution.planSource?.projectAttachedState(state) || state;
+  // Remote credential IDs are not OAuth grant IDs. The API still requires an explicit identity mapping.
+  remoteAgentApi.planSource = directExecution.planSource;
   const activityService = createActivityService({ conversations, engine, directExecution });
-  const chatGPTPlanning = new ChatGPTPlanningAPI({ tasks, conversations, engine, planningOrganization, projects, onUpdated: sendEvent, isClosing: connectorClosing });
+  const chatGPTPlanning = new ChatGPTPlanningAPI({ tasks, conversations, engine, planningOrganization, projects, planSource: directExecution.planSource, onUpdated: sendEvent, isClosing: connectorClosing });
   const chatGPTSchedules = new ChatGPTSchedulesAPI({ operations, isClosing: connectorClosing });
   chatGPTConnector = await new ChatGPTConnector({ dataDir: path.resolve(dataDir), execution: directExecution, planning: chatGPTPlanning, schedules: chatGPTSchedules, oauth: chatGPTOAuth, version: APP_VERSION, isClosing: connectorClosing, isRestartPending: () => options.desktopRestart?.isPending?.() === true, onChange: connectorChanged }).init();
   await inbox.init();
@@ -535,7 +552,7 @@ export async function createHarnessServer(options = {}) {
         })) return;
       }
       if (pathname === '/api/planning' && req.method === 'GET') {
-        return json(res, 200, await listPlanningWorkspace({ tasks, conversations, engine, planningOrganization }, planningQuery(new URL(req.url, 'http://' + host).searchParams)));
+        return json(res, 200, await listPlanningWorkspace({ tasks, conversations, engine, planningOrganization, ...(!Object.hasOwn(req.headers, 'x-blackice-remote') ? { projectAttachedPlanningState } : {}) }, planningQuery(new URL(req.url, 'http://' + host).searchParams)));
       }
       if (pathname === '/api/planning/organization' && req.method === 'GET') {
         const value = await readPlanningOrganization({ planningOrganization });
@@ -941,7 +958,12 @@ export async function createHarnessServer(options = {}) {
         return json(res,saved.created?201:200,{taskId,taskRevision:taskState.revision,method:saved.method,reused:saved.created===false});
       }
       const taskMatch = pathname.match(/^\/api\/tasks\/([a-zA-Z0-9_-]+)(?:\/(history))?$/);
-      if (taskMatch && req.method === 'GET') return json(res, 200, taskMatch[2] ? await tasks.history(taskMatch[1]) : await tasks.get(taskMatch[1]));
+      if (taskMatch && req.method === 'GET') {
+        if (taskMatch[2]) return json(res, 200, await tasks.history(taskMatch[1]));
+        const state = await tasks.get(taskMatch[1]);
+        // A failed/expired one-shot forwarding credential is never a local reader.
+        return json(res, 200, Object.hasOwn(req.headers, 'x-blackice-remote') ? state : await projectAttachedPlanningState(state));
+      }
       const artifactMatch = pathname.match(/^\/api\/tasks\/([a-zA-Z0-9_-]+)\/artifacts\/(artifact_[a-f0-9-]{36})\/(preview|content)$/);
       if (artifactMatch && req.method === 'GET') {
         if (artifactMatch[3] === 'preview') { const value = await tasks.previewArtifact(artifactMatch[1], artifactMatch[2]); if (value.previewKind === 'image') return json(res, 200, { artifact: value.artifact, previewKind: 'image', imageUrl: `data:${value.contentType};base64,${value.buffer.toString('base64')}` }); return json(res, 200, value); }

@@ -425,3 +425,34 @@ test('Planning catalog keeps lifecycle and actual execution status distinct', as
     { state: 'archived', status: 'failed', settled: true }
   ]);
 });
+
+test('host wiring exposes native graph tools and keeps attached direct evidence local to verified readers', async t => {
+  const f = await fixture(t), names = f.app.directExecution.tools().map(tool => tool.name);
+  assert.ok(names.includes('blackice_planning_module'));
+  assert.deepEqual(f.app.engine.nativePlanningTools.catalog.map(tool => tool.name), ['relay_planning_read', 'relay_planning_write', 'relay_planning_module']);
+  const provider = await f.app.engine.nativePlanningTools({ taskId: 'legacy-plan', runId: 'native-run', nodeId: 'agent', canWrite: true });
+  const snapshot = await provider.handle({ name: 'relay_planning_read', arguments: { requestId: 'native-read', action: 'list' } });
+  assert.equal(JSON.parse(snapshot.contentItems[0].text).requests.total, 0);
+  let projected = 0;
+  f.app.directExecution.planSource.projectAttachedState = async state => {
+    projected++;
+    return { ...state, directExecution: { version: 1, provenance: 'host-direct-outcome-store', authority: 'evidence-projection-only', canonicalCompletionUnchanged: true, sourceStatus: 'current', measurement: { satisfied: false, confirmed: 0, criteria: [] }, bindings: [], operations: [] } };
+  };
+  const local = await f.local('/api/tasks/legacy-plan');
+  assert.equal(local.status, 200); assert.equal(local.value.directExecution.authority, 'evidence-projection-only'); assert.equal(projected, 1);
+  const authorize = f.remoteAccess.authorizeForward.bind(f.remoteAccess);
+  f.remoteAccess.authorizeForward = req => req.headers['x-test-remote-reader'] ? { id: 'paired-fixture-reader', kind: 'browser' } : authorize(req);
+  const remote = await f.local('/api/tasks/legacy-plan', { headers: { 'x-test-remote-reader': '1', 'x-blackice-remote': '1' } });
+  assert.equal(remote.status, 200); assert.equal(remote.value.directExecution, undefined); assert.equal(projected, 1);
+  const localList = await f.local('/api/planning'); assert.equal(localList.status, 200, localList.text); assert.ok(projected > 1);
+  const afterLocal = projected;
+  const remoteList = await f.local('/api/planning', { headers: { 'x-test-remote-reader': '1', 'x-blackice-remote': '1' } }); assert.equal(remoteList.status, 200); assert.equal(projected, afterLocal);
+  f.remoteAccess.authorizeForward = () => null;
+  for (const route of ['/api/tasks/legacy-plan', '/api/planning']) {
+    const expired = await f.local(route, { headers: { 'x-blackice-remote': '1' } });
+    assert.equal(expired.value?.directExecution, undefined); assert.equal(projected, afterLocal, 'Expired remote identity must never project local grant evidence.');
+    assert.ok([200, 401, 403].includes(expired.status), expired.text);
+  }
+  f.app.directExecution.planSource.projectAttachedState = async () => { throw Object.assign(new Error('Revoked evidence grant'), { code: 'DIRECT_AUTH_REQUIRED' }); };
+  const revoked = await f.local('/api/tasks/legacy-plan'); assert.equal(revoked.status, 200); assert.equal(revoked.value.directExecution, undefined);
+});
