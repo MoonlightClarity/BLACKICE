@@ -106,10 +106,10 @@ test('execution scope and stale revision are enforced before provider admission'
 });
 
 test('orphaned running attempt stays unknown and metadata pages do not expose worker payloads', async () => {
-  const request = { id: 'saved', conversationId: 'conversation', title: 'Saved', objective: 'Check status', revision: 1, nodes: [{ id: 'module', kind: 'frame', revision: 1 }], edges: [], sources: [], responses: [], attempts: Array.from({ length: 3 }, (_, index) => ({ id: 'attempt-' + index, nodeId: 'module', status: 'running', prompt: 'private worker payload', output: 'raw rejected output' })) };
+  const request = { id: 'saved', conversationId: 'conversation', title: 'Saved', objective: 'Check status', revision: 1, nodes: [{ id: 'module', kind: 'frame', revision: 1 }], edges: [], sources: [], responses: [], attempts: Array.from({ length: 3 }, (_, index) => ({ id: 'attempt-' + index, nodeId: 'module', status: 'running', repairOf: 'original-attempt', repairIndex: 1, prompt: 'private worker payload', output: 'raw rejected output' })) };
   const store = Object.fromEntries(['list', 'create', 'addNode', 'updateNode', 'link', 'addSource'].map(name => [name, () => { throw Error('Unexpected mutation.'); }])); store.get = async () => request;
   const tool = createDirectPlanningBrowserTools({ store, getExecutionSnapshot: () => ({ attempts: [] }) })[0];
   const value = JSON.parse((await tool.execute({ action: 'get', graphRequestId: 'saved', nodeId: 'module', attemptOffset: 1, limit: 1 })).contentItems[0].text);
   assert.equal(value.request.execution.state, 'unknown'); assert.equal(value.attempts.items[0].id, 'attempt-1'); assert.equal(value.attempts.nextOffset, 2);
-  assert.equal(value.attempts.items[0].workerStatus, 'unknown'); assert.equal(value.attempts.items[0].prompt, undefined); assert.equal(value.attempts.items[0].output, undefined);
+  assert.equal(value.attempts.items[0].workerStatus, 'unknown'); assert.equal(value.attempts.items[0].repairOf, 'original-attempt'); assert.equal(value.attempts.items[0].repairIndex, 1); assert.equal(value.attempts.items[0].prompt, undefined); assert.equal(value.attempts.items[0].output, undefined);
 });
