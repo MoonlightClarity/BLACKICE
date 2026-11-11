@@ -8,7 +8,11 @@ import { scheduleTriggerFromDraft, scheduleDraftFromTrigger } from '../../schedu
 import { initAttachmentsUI } from '../../attachments-ui.mjs';
 import { escapeHTML } from '../core/dom.mjs';
 
-export function createTasksWorkspace({mount,api,events,getStatus,notify,onNavigate}) {
+export function createCronjobsWorkspace(context) {
+  return createTasksWorkspace(context,{cronjobsOnly:true});
+}
+
+export function createTasksWorkspace({mount,api,events,getStatus,notify,onNavigate},{cronjobsOnly=false}={}) {
   mount.innerHTML=[
     '<div class="next-panel next-task-workspace next-visual-workspace"><div class="next-panel-inner next-task-workspace-inner">',
     '<header class="next-panel-head"><div><h1>Tasks</h1><p>Your saved work, organized by its recorded status.</p></div>',
@@ -80,6 +84,30 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     '<button type="button" id="next-tasks-jobs-more" hidden>Show more jobs</button></section>',
     '</div></div>',
   ].join('');
+  if(cronjobsOnly){
+    // Keep scheduler controls, but do not mount the general task board, timeline or workflow dashboard.
+    mount.querySelector('.next-task-workspace')?.classList.add('next-cronjobs-workspace');
+    for(const name of ['board','timeline','workflows']){
+      mount.querySelector('#next-tasks-tab-'+name)?.remove();
+      mount.querySelector('#next-tasks-panel-'+name)?.remove();
+    }
+    mount.querySelector('h1').textContent='Cronjobs';
+    mount.querySelector('.next-panel-head p').textContent='Create and monitor recurring and event-driven agents.';
+    mount.querySelector('nav[role="tablist"]').setAttribute('aria-label','Cronjobs views');
+    const schedulesTab=mount.querySelector('#next-tasks-tab-schedules');
+    schedulesTab.setAttribute('aria-selected','true');
+    schedulesTab.removeAttribute('tabindex');
+    mount.querySelector('#next-tasks-panel-schedules').hidden=false;
+    mount.querySelector('#next-tasks-new-schedule').textContent='New cronjob';
+    mount.querySelector('#next-tasks-create-heading').textContent='New cronjob';
+    // Saved multi-agent templates remain editable without restoring the general Tasks tab.
+    const manager=mount.ownerDocument.createElement('button');
+    manager.type='button';
+    manager.id='next-cronjobs-manage-workflows';
+    manager.textContent='Manage saved workflows';
+    mount.querySelector('#next-tasks-workflow-fields').append(manager);
+    manager.addEventListener('click',()=>onNavigate?.('workflows'));
+  }
   const $=id=>mount.querySelector('#'+id);
   const view={info:$('next-tasks-info'),deployments:$('next-tasks-deployments'),jobs:$('next-tasks-jobs'),results:$('next-tasks-results'),
     pause:$('next-tasks-pause'),resume:$('next-tasks-resume'),form:$('next-tasks-form'),
@@ -90,7 +118,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
   const add=(parent,tag,label,cls)=>text(parent,label,tag,cls);
   let active=false,busy=false,revision=0,subscriptions=null,refreshTimer=null,snapshot=null,mutationError='',scheduleProgress='';
   let workflowList=[],workflowLimit=80,workflowQuery='',workflowEpoch=0,workflowTimer=null,workflowLoaded=false,workflowLoading=false;
-  let section='board',jobsLimit=35,selectedScheduleId=null,scheduleMode='inspect',editSource=null,editForm=null,editNotice=null;
+  let section=cronjobsOnly?'schedules':'board',jobsLimit=35,selectedScheduleId=null,scheduleMode='inspect',editSource=null,editForm=null,editNotice=null;
   const readinessBySchedule=new Map();
   const createChatProfile=initScheduleChatOptions(view.chatFields,{getStatus});
   let createAttachmentIds=[],createAttachmentPending=false,createAttachmentsUI=null,editAttachmentsUI=null;
@@ -123,10 +151,10 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       pickFiles:globalThis.window?.relayDesktop?.pickFiles?()=>window.relayDesktop.pickFiles():undefined,
       escape:escapeHTML,icon:()=>'',toast:notify});
   };
-  const sections=['board','timeline','workflows','schedules','results','jobs'];
+  const sections=cronjobsOnly?['schedules','results','jobs']:['board','timeline','workflows','schedules','results','jobs'];
   const operationsSection=()=>['schedules','results','jobs'].includes(section);
   let timeline=null,workflows=null;
-  const history=createTaskHistory({mount:$('next-tasks-history'),api,events,notify,onNavigate,prefix:'next-tasks-history',presentation:'board'});
+  const history=cronjobsOnly?{enter(){},leave(){},destroy(){}}:createTaskHistory({mount:$('next-tasks-history'),api,events,notify,onNavigate,prefix:'next-tasks-history',presentation:'board'});
   const humanTime=value=>{
     if(!value)return'Not scheduled';
     const date=new Date(typeof value==='number'?value:Date.parse(value));
@@ -581,7 +609,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       :'Schedules ready · '+(status.enabled||0)+' active · '+(status.running||0)+' running'+(status.ticker?.lastSuccessAt?' · Last tick: '+humanTime(status.ticker.lastSuccessAt):''));
     view.deployments.replaceChildren();
     const deployments=Array.isArray(snapshot.deployments)?snapshot.deployments:[];
-    if(!deployments.length)add(view.deployments,'p','No saved schedules yet. Select New schedule to get started.','next-empty');
+    if(!deployments.length)add(view.deployments,'p',cronjobsOnly?'No cronjobs yet. Select New cronjob to get started.':'No saved schedules yet. Select New schedule to get started.','next-empty');
     for(const task of deployments){
       const card=add(view.deployments,'article','','next-card');
       add(card,'h3',task.name||'Scheduled task');
@@ -794,7 +822,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     else{void refresh();if(section==='schedules')void fillWorkflows();}
   });
   $('next-tasks-jobs-more').addEventListener('click',()=>{jobsLimit+=35;paint();});
-  view.pause.addEventListener('click',()=>void execute('/api/operations/pause','POST',{reason:'Paused from Tasks workspace.'}));
+  view.pause.addEventListener('click',()=>void execute('/api/operations/pause','POST',{reason:cronjobsOnly?'Paused from Cronjobs workspace.':'Paused from Tasks workspace.'}));
   view.resume.addEventListener('click',()=>void execute('/api/operations/resume','POST',{resumeInbox:Boolean(snapshot?.status?.blockedReason)}));
   $('next-tasks-preview').addEventListener('click',async()=>{
     try{

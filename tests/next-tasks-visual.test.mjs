@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TASK_BOARD_LANES,savedTaskLane,savedTaskStatus,taskBoard,jobLinkedRun } from '../public/next/workspaces/tasks-visual-model.mjs';
-import { createTasksWorkspace } from '../public/next/workspaces/tasks.mjs';
+import { createTasksWorkspace,createCronjobsWorkspace } from '../public/next/workspaces/tasks.mjs';
 import { createApi } from '../public/next/core/api.mjs';
 import { createTaskHistory } from '../public/next/workspaces/task-lifecycle.mjs';
 import { planningDOM } from './fixture-planning-dom.mjs';
 
 const settle=async()=>{for(let i=0;i<5;i++)await new Promise(resolve=>setImmediate(resolve));};
-function fixture(t,{history=false,presentation='board',hook,status={},operationsStatus={},useNextApi=false}={}){
+function fixture(t,{history=false,cronjobs=false,presentation='board',hook,status={},operationsStatus={},useNextApi=false}={}){
   const dom=planningDOM(t),prototype=Object.getPrototypeOf(dom.mount);
   Object.defineProperty(prototype,'type',{get(){return this.getAttribute('type')||this.tagName.toLowerCase();},set(value){this.setAttribute('type',value);},configurable:true});
   prototype.replaceChildren=function(...nodes){for(const child of [...this.children])child.remove();this.rawText='';this.append(...nodes);};
@@ -80,7 +80,7 @@ function fixture(t,{history=false,presentation='board',hook,status={},operations
     signal.throwIfAborted();
     return response;
   } }) : api;
-  const component=(history?createTaskHistory:createTasksWorkspace)({mount:dom.mount,api:workspaceApi,presentation,
+  const component=(history?createTaskHistory:cronjobs?createCronjobsWorkspace:createTasksWorkspace)({mount:dom.mount,api:workspaceApi,presentation,
     events:{subscribe(listener){listeners.add(listener);return()=>listeners.delete(listener);}},getStatus:()=>({cwd:'C:\\fixture',...status}),
     notify:(...args)=>notifications.push(args),onNavigate:(...args)=>navigation.push(args)});
   t.after(()=>component.destroy());
@@ -100,6 +100,32 @@ test('job links use actual attempt receipts and distinguish a queued retry from 
   assert.deepEqual(jobLinkedRun({attempts:[{number:1,runId:'first'},{number:2,runId:null}]}),{runId:'first',attemptNumber:1,current:false});
   assert.equal(jobLinkedRun({id:'job-only',attempts:[{inboxId:'not-a-run'}]}),null);
   assert.deepEqual(jobLinkedRun({runId:'legacy'}),{runId:'legacy',attemptNumber:null,current:true});
+});
+
+test('Cronjobs opens directly on schedules without mounting the general task dashboard',async t=>{
+  const f=fixture(t,{cronjobs:true});
+  assert.equal(f.$('#next-tasks-tab-board'),null);
+  assert.equal(f.$('#next-tasks-tab-timeline'),null);
+  assert.equal(f.$('#next-tasks-tab-workflows'),null);
+  assert.equal(f.$('#next-tasks-panel-board'),null);
+  assert.equal(f.$('#next-tasks-panel-timeline'),null);
+  assert.equal(f.$('#next-tasks-panel-workflows'),null);
+  assert.match(f.mount.textContent,/Cronjobs/);
+  assert.equal(f.$('#next-tasks-tab-schedules').getAttribute('aria-selected'),'true');
+  assert.equal(f.$('#next-tasks-panel-schedules').hidden,false);
+  f.component.enter();await settle();
+  assert.equal(f.calls.some(call=>call.path.startsWith('/api/conversations/search')),false);
+  assert.ok(f.calls.some(call=>call.path==='/api/operations'),'schedule snapshot loads on entry');
+  assert.ok(f.$('[data-schedule-toggle="schedule-a"]'),'enable/disable is available');
+  assert.ok(f.$('[data-schedule-trigger="schedule-a"]'),'manual run is available');
+  assert.ok(f.$('[data-schedule-inspect="schedule-a"]'),'inspection and editing are available');
+  await f.clickReady('#next-cronjobs-manage-workflows');
+  assert.deepEqual(f.navigation.at(-1),['workflows'],'advanced workflow editing stays reachable');
+  await f.key(f.$('#next-tasks-tab-schedules'),'ArrowRight');await settle();
+  assert.equal(f.$('#next-tasks-tab-results').getAttribute('aria-selected'),'true');
+  await f.key(f.$('#next-tasks-tab-results'),'End');await settle();
+  assert.equal(f.$('#next-tasks-tab-jobs').getAttribute('aria-selected'),'true');
+  f.component.leave();assert.equal(f.listeners.size,0);
 });
 
 test('Tasks opens on an honest status board and loads no hidden schedule, workflow or full-run data',async t=>{
