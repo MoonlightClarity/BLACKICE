@@ -156,7 +156,7 @@ test('ambiguous stream identities, fragments, choices and termination fail close
     ['text then call', [{ choices: [{ delta: { content: 'explanation' } }] }, initial, terminal]],
     ['object fragment', [{ choices: [{ delta: { tool_calls: [{ ...call(), function: { name: RESPONSE_FUNCTION_NAME, arguments: {} } }] } }] }, terminal]],
     ['missing explicit type', [{ choices: [{ delta: { tool_calls: [{ id: 'reply_1', function: call().function }] } }] }, terminal]],
-    ['duplicate stop', [{ choices: [{ delta: { tool_calls: [call()] } }] }, terminal, terminal]],
+    ['conflicting stop', [{ choices: [{ delta: { tool_calls: [call()] } }] }, terminal, { choices: [{ delta: {}, finish_reason: 'stop' }] }]],
   ]) await t.test(label, async t => {
     const f = await responseFunctionFixture(t, { reply: () => sse(events) });
     await assert.rejects(f.runtime.runAgent(f.options), { code: 'PROVIDER_RESPONSE_FUNCTION_INVALID' });
@@ -277,7 +277,7 @@ test('real Planning runner and ProviderRuntime repair only explicit model fields
         raw = JSON.stringify({ repairs: { r0: { tolerance: accuracy.tolerance, decisionThreshold: accuracy.decisionThreshold } } });
         if (malformed) raw = raw.slice(0, -1);
       }
-      rawReplies.push(raw); return json(wire(message(raw)));
+      rawReplies.push(raw); return sse(repeatedTerminalFrames(raw));
     } });
     const actualRun = f.runtime.runAgent.bind(f.runtime), integrationEvents = [];
     f.runtime.runAgent = options => { runOptions.push(options); return actualRun({ ...options,
@@ -414,7 +414,7 @@ test('initial malformed exact function data gets only the existing full-response
     assert.ok(index <= 2);
     if (index === 2) { assert.equal(input.protocol, undefined); assert.equal(input.formatRepair.previousOutput, rawReplies[0]); }
     let raw = JSON.stringify(viabilityBody(input)); if (index === 1) raw = raw.slice(0, -1);
-    rawReplies.push(raw); return json(wire(message(raw)));
+    rawReplies.push(raw); return sse(repeatedTerminalFrames(raw));
   } });
   const store = await new PlanningBrowserStore({ dataDir: f.dir }).init();
   const runner = new PlanningBrowserRuntime({ store, runtime: f.runtime, defaultCwd: f.dir, getSettings: () => ({ maxSubagents: 2 }) });
@@ -438,4 +438,149 @@ test('initial malformed exact function data gets only the existing full-response
   assert.equal(failedThread.responseOutput.message.tool_calls[0].function.arguments, rawReplies[0]);
   assert.equal(failedThread.messages.some(item => item.role === 'assistant'), false);
   noEffects(f);
+});
+
+/** Sanitized replay of the four captured choice shapes; payload and IDs are synthetic. */
+function repeatedTerminalFrames(args = answer) {
+  const choice = (delta, finish_reason = null) => ({ index: 0, delta, finish_reason, native_finish_reason: finish_reason });
+  const terminal = choice({ content: '', role: 'assistant' }, 'tool_calls');
+  return [
+    { choices: [choice({ content: null, role: 'assistant', tool_calls: [{ index: 0, id: 'synthetic_return',
+      type: 'function', function: { name: RESPONSE_FUNCTION_NAME, arguments: '' } }] })] },
+    { choices: [choice({ content: null, role: 'assistant', tool_calls: [{ index: 0, function: { arguments: args } }] })] },
+    { choices: [structuredClone(terminal)] },
+    // Top-level usage is synthetic; the captured repeated choices are identical.
+    { choices: [structuredClone(terminal)], usage: { prompt_tokens: 10, completion_tokens: 12 } },
+  ];
+}
+
+test('identical terminal choice in a usage trailer is idempotent and preserves one exact response', async t => {
+  const frames = repeatedTerminalFrames();
+  assert.deepEqual(frames[2].choices, frames[3].choices);
+  const f = await responseFunctionFixture(t, { reply: () => sse(frames) });
+  const result = await f.runtime.runAgent(f.options), saved = await f.runtime.readThread(result.threadId);
+  assert.equal(result.output, answer);
+  assert.equal(result.usage.last.outputTokens, 12);
+  assert.deepEqual(f.events.filter(event => event.type === 'delta').map(event => event.delta), [answer]);
+  assert.equal(saved.responseOutput.message.tool_calls.length, 1);
+  assert.equal(saved.responseOutput.message.tool_calls[0].function.arguments, answer);
+  assert.equal(saved.messages.filter(item => item.role === 'assistant').length, 1);
+  assert.equal(posts(f).length, 1); noEffects(f);
+});
+
+test('empty terminal framing and late opaque metadata cannot become additional response content', async t => {
+  for (const delta of [undefined, null, {}, { content: null }, { content: '', role: 'assistant' },
+    { extra_content: { vendor: { signature: 'synthetic-final-metadata' } } }]) {
+    const frames = repeatedTerminalFrames().slice(0, 3);
+    frames.push({ choices: [{ index: 0, ...(delta === undefined ? {} : { delta }), finish_reason: 'tool_calls' }] });
+    frames.push({ choices: [], usage: { prompt_tokens: 10, completion_tokens: 12 } });
+    const f = await responseFunctionFixture(t, { reply: () => sse(frames) });
+    assert.equal((await f.runtime.runAgent(f.options)).output, answer); noEffects(f);
+  }
+});
+
+test('post-terminal content, call fragments and conflicting reasons stay rejected even with valid prior data', async t => {
+  const bad = [
+    ['content', { content: 'late text' }],
+    ['whitespace content', { content: ' ' }],
+    ['content blocks', { content: [{ type: 'text', text: '' }] }],
+    ['new function', { tool_calls: [call()] }],
+    ['empty calls', { tool_calls: [] }],
+    ['empty argument fragment', { tool_calls: [{ index: 0, function: { arguments: '' } }] }],
+    ['changed function', { tool_calls: [{ index: 0, function: { name: 'run_command' } }] }],
+    ['changed identity', { tool_calls: [{ index: 0, id: 'other' }] }],
+    ['reasoning', { reasoning: 'late reasoning' }],
+    ['reasoning content', { reasoning_content: 'late reasoning' }],
+    ['refusal', { refusal: 'Synthetic refusal' }],
+    ['legacy function', { function_call: { name: RESPONSE_FUNCTION_NAME, arguments: answer } }],
+    ['other role', { role: 'user' }],
+    ['unrecognized output', { audio: {} }],
+  ];
+  for (const [label, delta] of bad) for (const repeatFinish of [true, false]) await t.test(label + (repeatFinish ? ' with marker' : ' without marker'), async t => {
+    const frames = repeatedTerminalFrames().slice(0, 3);
+    frames.push({ choices: [{ index: 0, delta, ...(repeatFinish ? { finish_reason: 'tool_calls' } : {}) }] });
+    const f = await responseFunctionFixture(t, { reply: () => sse(frames) });
+    await assert.rejects(f.runtime.runAgent(f.options), { code: 'PROVIDER_RESPONSE_FUNCTION_INVALID' });
+    assert.equal(posts(f).length, 1); noEffects(f);
+    assert.equal(f.events.some(event => event.type === 'message' || event.type === 'delta'), false);
+  });
+  for (const reason of ['stop', 'length', 'content_filter', 'function_call']) {
+    const frames = repeatedTerminalFrames().slice(0, 3);
+    frames.push({ choices: [{ index: 0, delta: { content: '', role: 'assistant' }, finish_reason: reason }] });
+    const f = await responseFunctionFixture(t, { reply: () => sse(frames) });
+    await assert.rejects(f.runtime.runAgent(f.options), { code: 'PROVIDER_RESPONSE_FUNCTION_INVALID' }); noEffects(f);
+  }
+});
+
+test('repeated terminal markers never rescue incomplete, malformed or forged response data', async t => {
+  for (const [label, alter, code] of [
+    ['unfinished JSON', frames => { frames[1].choices[0].delta.tool_calls[0].function.arguments = '{"answer":'; }, 'PROVIDER_RESPONSE_FORMAT'],
+    ['forged function', frames => { frames[0].choices[0].delta.tool_calls[0].function.name = 'run_command'; }, 'PROVIDER_RESPONSE_FUNCTION_INVALID'],
+    ['length stop', frames => { for (const frame of frames.slice(2)) frame.choices[0].finish_reason = 'length'; }, 'PROVIDER_TRUNCATED'],
+  ]) await t.test(label, async t => {
+    const frames = repeatedTerminalFrames(); alter(frames);
+    const f = await responseFunctionFixture(t, { reply: () => sse(frames) });
+    await assert.rejects(f.runtime.runAgent(f.options), { code }); noEffects(f);
+    assert.equal(f.events.some(event => event.type === 'message' || event.type === 'delta'), false);
+  });
+});
+
+test('real Planning runner accepts a valid repeated-terminal response in one provider turn without a repair', async t => {
+  let raw;
+  const f = await responseFunctionFixture(t, { reply: request => {
+    const prompt = request.body.messages.findLast(item => item.role === 'user').content;
+    const input = JSON.parse(prompt.slice(prompt.lastIndexOf('\n\n') + 2));
+    raw = JSON.stringify(viabilityBody(input)); return sse(repeatedTerminalFrames(raw));
+  } });
+  const store = await new PlanningBrowserStore({ dataDir: f.dir }).init();
+  const runner = new PlanningBrowserRuntime({ store, runtime: f.runtime, defaultCwd: f.dir, getSettings: () => ({ maxSubagents: 2 }) });
+  t.after(async () => { await runner.close(); await store.close(); });
+  const request = await store.create({ conversationId: 'synthetic-terminal-replay', title: 'Fictional comparison',
+    objective: 'North seats four and South seats six. Choose the room for five people.', cwd: f.dir });
+  const withNode = await store.addNode(request.id, { kind: 'viability', title: 'Compare fictional rooms', prompt: request.objective });
+  const node = withNode.nodes.at(-1), budget = { used: 0, max: 4 };
+  const start = await runner.start({ requestId: request.id, nodeId: node.id, expectedNodeRevision: node.revision,
+    clientRequestId: 'synthetic-terminal-replay', model: f.options.model, providerBudget: budget });
+  const result = await runner.wait(request.id, start.attempt.id), saved = await store.get(request.id);
+  assert.equal(result.attempt.status, 'completed', result.attempt.message);
+  assert.equal(posts(f).length, 1); assert.equal(budget.used, 1);
+  assert.equal(saved.attempts.length, 1); assert.equal(saved.responses.length, 1);
+  assert.equal(saved.attempts[0].output, raw);
+  assert.equal(saved.attempts[0].repairAttemptId, undefined);
+  assert.equal(saved.attempts[0].metadata.fieldRepair, undefined);
+  assert.doesNotThrow(() => validatePlanningModuleResponse(saved.attempts[0], raw));
+  const thread = await f.runtime.readThread(saved.attempts[0].metadata.threadId);
+  assert.equal(thread.responseOutput.message.tool_calls[0].function.arguments, raw);
+  noEffects(f);
+});
+
+
+test('terminal native metadata is consistent but never overrides canonical completion', async t => {
+  for (const [label, first, second] of [
+    ['same native reason', 'provider_stop', 'provider_stop'],
+    ['native absent', undefined, undefined],
+    ['native omitted later', 'provider_stop', undefined],
+    ['first native reported late', undefined, 'provider_stop'],
+    ['native null', null, null],
+  ]) await t.test(label, async t => {
+    const frames = repeatedTerminalFrames();
+    for (const [frame, reason] of [[frames[2], first], [frames[3], second]]) {
+      if (reason === undefined) delete frame.choices[0].native_finish_reason;
+      else frame.choices[0].native_finish_reason = reason;
+    }
+    const f = await responseFunctionFixture(t, { reply: () => sse(frames) });
+    assert.equal((await f.runtime.runAgent(f.options)).output, answer); noEffects(f);
+  });
+  for (const [label, first, second] of [
+    ['conflicting native reasons', 'tool_calls', 'length'],
+    ['non-string native reason', 'tool_calls', {}],
+    ['empty native reason', 'tool_calls', ''],
+  ]) await t.test(label, async t => {
+    const frames = repeatedTerminalFrames();
+    frames[2].choices[0].native_finish_reason = first;
+    frames[3].choices[0].native_finish_reason = second;
+    const f = await responseFunctionFixture(t, { reply: () => sse(frames) });
+    await assert.rejects(f.runtime.runAgent(f.options), { code: 'PROVIDER_RESPONSE_FUNCTION_INVALID' }); noEffects(f);
+    assert.equal(f.events.some(event => event.type === 'message' || event.type === 'delta'), false);
+  });
 });
