@@ -19,6 +19,7 @@ async function fixture(t, execute, { subagents = false } = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'blackice-canonical-engine-'));
   const cwd = path.join(directory, 'workspace'); await fs.mkdir(cwd);
   await fs.writeFile(path.join(cwd, 'input.txt'), 'The actual fixture input.\n');
+  await fs.writeFile(path.join(cwd, 'independent.txt'), 'The independent fixture input.\n');
   const tasks = await new TaskStateStore({ dataDir: directory }).init();
   let context;
   class Runtime extends EventEmitter {
@@ -98,21 +99,22 @@ for (const mode of ['advisory', 'off']) test('schema 14 ' + mode + ' permits unp
   let childCalls = 0;
   const f = await fixture(t, async (options, { invoke }) => {
     if (options.dynamicTools.some(tool => tool.name === 'relay_delegate')) {
-      const result = await invoke('relay_delegate', { tasks: [{ id: 'reader', readOnly: true, prompt: 'Read input.txt and report its actual contents.' }] });
+      const result = await invoke('relay_delegate', { tasks: [{ id: 'reader', readOnly: true, prompt: 'Read input.txt and report its actual contents.' }, { id: 'independent-reader', readOnly: true, prompt: 'Read independent.txt and report its actual contents.' }] });
       assert.equal(result.success, true, JSON.stringify(result));
       return { output: 'The delegated input read completed.', threadId: 'provider_fixture_parent' };
     }
     childCalls++;
     const denied = await invoke('relay_workspace', { action: 'write', path: 'forbidden.txt', text: 'This must not be written.' });
     assert.equal(denied.success, false); assert.match(JSON.stringify(denied), /read.only/i);
-    const read = await invoke('relay_workspace', { action: 'read', path: 'input.txt' });
+    const independent = options.prompt.includes('Read independent.txt');
+    const read = await invoke('relay_workspace', { action: 'read', path: independent ? 'independent.txt' : 'input.txt' });
     assert.equal(read.success, true, JSON.stringify(read));
-    assert.match(JSON.stringify(read), /The actual fixture input/);
+    assert.match(JSON.stringify(read), independent ? /The independent fixture input/ : /The actual fixture input/);
     return { output: 'The actual fixture input.', threadId: 'provider_fixture_child' };
   }, { subagents: true });
   const run = await f.run(mode);
   assert.equal(run.status, 'completed', run.error || run.nodes.agent.error);
-  assert.equal(run.planningContractVersion, 14); assert.equal(childCalls, 1);
+  assert.equal(run.planningContractVersion, 14); assert.equal(childCalls, 2);
   await assert.rejects(fs.stat(path.join(f.cwd, 'forbidden.txt')), { code: 'ENOENT' });
   const journal = await readContractJournal(f.tasks, run.taskId);
   if (mode === 'off') assert.equal(journal.records.length, 0);
@@ -125,35 +127,39 @@ test('schema 14 Forced delegation transfers a canonical work item and retains ho
     const send = async (name, args) => { const result = await invoke(name, args); assert.equal(result.success, true, JSON.stringify(result)); return result; };
     if (!options.dynamicTools.some(tool => tool.name === 'relay_delegate')) {
       childCalls++;
-      await send('relay_workspace', { action: 'read', path: 'input.txt' });
+      await send('relay_workspace', { action: 'read', path: options.prompt.includes('Read independent.txt') ? 'independent.txt' : 'input.txt' });
       return { output: 'The actual fixture input.', threadId: 'provider_fixture_child' };
     }
     const state = payload(await send('relay_task', { action: 'read' }));
     const descriptor = await describeHostOperation({ name: 'relay_workspace', arguments: { action: 'read', path: 'input.txt' } }, { cwd });
     const resourceKey = descriptor.resources.find(resource => resource.key.startsWith('path:') && resource.scopeOnly !== true).key;
-    const contract = { contractVersion: 2, goal: 'Delegate the current input read and report it.',
+    const independentDescriptor = await describeHostOperation({ name: 'relay_workspace', arguments: { action: 'read', path: 'independent.txt' } }, { cwd });
+    const independentResourceKey = independentDescriptor.resources.find(resource => resource.key.startsWith('path:') && resource.scopeOnly !== true).key;
+    const contract = { contractVersion: 2, goal: 'Delegate the two independent input reads and report them.',
       criteria: [
         { id: 'coordinate-read', kind: 'observation', resourceKey: 'tool:relay_delegate', description: 'Receive the actual delegated result.' },
-        { id: 'read-input', kind: 'source-coverage', resourceKey, description: 'Read the complete current input file.' }
+        { id: 'read-input', kind: 'source-coverage', resourceKey, description: 'Read the complete current input file.' },
+        { id: 'read-independent', kind: 'source-coverage', resourceKey: independentResourceKey, description: 'Read the complete independent input file.' }
       ],
       workItems: [
         { id: 'coordinate', title: 'Coordinate read', objective: 'Delegate and receive the input read.', owner: 'agent', resourceKeys: ['tool:relay_delegate'], effects: ['opaque'], dependsOn: [], criterionIds: ['coordinate-read'] },
-        { id: 'inspect-input', title: 'Inspect input', objective: 'Read the current input file.', owner: 'agent', resourceKeys: [resourceKey], effects: ['observe'], dependsOn: [], criterionIds: ['read-input'] }
+        { id: 'inspect-input', title: 'Inspect input', objective: 'Read the current input file.', owner: 'agent', resourceKeys: [resourceKey], effects: ['observe'], dependsOn: [], criterionIds: ['read-input'] },
+        { id: 'inspect-independent', title: 'Inspect independent input', objective: 'Read the independent input file.', owner: 'agent', resourceKeys: [independentResourceKey], effects: ['observe'], dependsOn: [], criterionIds: ['read-independent'] }
       ], instructions: [] };
     const accepted = payload(await send('relay_task', { action: 'plan', expectedRevision: state.revision, contract }));
     await send('relay_task', { action: 'focus', expectedPlanEpoch: accepted.contract.planEpoch, workItemId: 'coordinate' });
-    await send('relay_delegate', { tasks: [{ id: 'reader', stepId: 'inspect-input', readOnly: true, prompt: 'Read input.txt and report its actual contents.' }] });
+    await send('relay_delegate', { tasks: [{ id: 'reader', stepId: 'inspect-input', readOnly: true, prompt: 'Read input.txt and report its actual contents.' }, { id: 'independent-reader', stepId: 'inspect-independent', readOnly: true, prompt: 'Read independent.txt and report its actual contents.' }] });
     assert.equal(await options.onBeforeFinal?.({ output: 'The actual fixture input.' }), null);
     return { output: 'The actual fixture input.', threadId: 'provider_fixture_parent' };
   }, { subagents: true });
   const run = await f.run('forced');
   assert.equal(run.status, 'completed', run.error || run.nodes.agent.error);
-  assert.equal(childCalls, 1);
-  assert.equal(run.taskState.contract.planEpoch, 2);
+  assert.equal(childCalls, 2);
+  assert.equal(run.taskState.contract.planEpoch, 3);
   assert.notEqual(run.taskState.contract.workItems.find(item => item.id === 'inspect-input').owner, 'agent');
   assert.ok(run.taskState.contractRuntime.criteria.every(item => item.satisfied));
   const journal = await readContractJournal(f.tasks, run.taskId);
-  assert.equal(journal.records.length, 2);
+  assert.equal(journal.records.length, 3);
   assert.ok(journal.records.every(item => item.deliveryState === 'returned'));
 });
 

@@ -73,35 +73,20 @@ test('the main engine refuses an actual workspace write after a human correction
   assert.equal(f.tasks.awareness.snapshot(await f.tasks.get(result.taskId)).workers[0].state, 'finished');
 });
 
-test('an assigned delegate receives the same saved-edit gate and cannot operate with an unread correction', async t => {
-  let deniedCount = 0, childReadRevision;
-  const f = await fixture(t, async (options, context) => {
+test('a historical single-scope delegation is rejected before worker execution or saved-edit activity', async t => {
+  let childCalls = 0;
+  const f = await fixture(t, async options => {
     if (options.prompt.startsWith('You are a short-lived BLACKICE subagent.')) {
-      let current = await task(options, { action: 'read' });
-      const step = current.steps.find(item => item.id === 'inspect');
-      current = await task(options, { action: 'edit', expectedRevision: current.revision, operations: [{ type: 'update', stepId: step.id, patch: { operation: { kind: 'tool', tool: 'relay_workspace', action: 'write', target: 'delegated.txt' }, note: 'Write delegated.txt once with the reviewed delegated result.' } }] });
-      current = await context.tasks.editPlan(current.taskId, { operations: [{ type: 'update', stepId: step.id, patch: { note: 'Read this delegated correction before changing the file.' } }] }, { expectedRevision: current.revision, source: 'human' });
-      const denied = await call(options, 'relay_workspace', { action: 'write', path: 'delegated.txt', text: 'Unreviewed' }); assert.equal(denied.code, 'TASK_PLAN_REVIEW_REQUIRED'); deniedCount++;
-      await assert.rejects(readFile(path.join(context.cwd, 'delegated.txt')), { code: 'ENOENT' });
-      current = await task(options, { action: 'read' }); childReadRevision = current.revision;
-      assert.equal(current.planningAwareness.worker.lastReadRevision, current.revision);
-      const written = await call(options, 'relay_workspace', { action: 'write', path: 'delegated.txt', text: 'Reviewed delegated result.' }); assert.equal(written.success, true);
-      const completed = await task(options, { action: 'step', expectedRevision: current.revision, stepId: 'inspect', status: 'done', evidence: 'The delegated result was actually written after the saved correction was read.' });
-      await finishFixturePlan(options, { state: completed, summary: 'The delegated assignment is complete with the human correction incorporated; the coordinator can now inspect the saved write receipt.' });
-      return { output: 'Reviewed and wrote the delegated result.' };
+      childCalls++; assert.fail('A serial assignment must not start a child provider turn.');
     }
-    let current = await task(options, { action: 'read' });
-    current = await task(options, { action: 'plan', expectedRevision: current.revision, plan: { layout: 'sequence' }, steps: [{ ...action('inspect'), status: 'active', operation: { kind: 'tool', tool: 'relay_delegate', target: 'The inspector worker assigned to inspect' }, note: 'Delegate the inspect scope to one inspector worker.' }, action('integrate')] });
-    const delegated = await call(options, 'relay_delegate', { tasks: [{ id: 'inspector', stepId: 'inspect', prompt: 'Implement only the assigned inspection result.' }] });
-    assert.equal(delegated.success, true, delegated.contentItems[0].text);
-    current = await task(options, { action: 'read' });
-    current = await task(options, { action: 'step', expectedRevision: current.revision, stepId: 'integrate', status: 'active' });
-    const completed = await task(options, { action: 'step', expectedRevision: current.revision, stepId: 'integrate', status: 'done', evidence: 'The actual returned worker result and file were checked.' });
-    await finishFixturePlan(options, { state: completed, summary: 'The actual worker result matches the corrected assignment and the integration check is complete; no requested work remains.' });
-    return { output: 'Integrated the reviewed delegated result.' };
+    const receipt = await call(options, 'relay_delegate', { tasks: [{ id: 'inspector', stepId: 'inspect', prompt: 'Implement only the assigned inspection result.' }] });
+    assert.equal(receipt.success, false);
+    assert.deepEqual({ code: payload(receipt).code, gate: payload(receipt).gate, providerCalls: payload(receipt).providerCalls },
+      { code: 'SUBAGENT_SINGLE_WORK_ITEM', gate: 'static_dag', providerCalls: 0 });
+    return { output: 'The coordinator retains the serial inspection; no delegated effect was attempted.' };
   }, { delegates: true });
-  const result = await f.run(); assert.equal(result.status, 'completed', result.error); assert.equal(deniedCount, 1);
-  assert.equal(await readFile(path.join(f.cwd, 'delegated.txt'), 'utf8'), 'Reviewed delegated result.');
-  const worker = f.tasks.awareness.snapshot(await f.tasks.get(result.taskId)).workers.find(item => item.nodeId.startsWith('delegate-'));
-  assert.equal(worker.lastReadRevision, childReadRevision); assert.equal(worker.status, 'completed');
+  const result = await f.run();
+  assert.equal(result.status, 'completed', result.error); assert.equal(childCalls, 0);
+  await assert.rejects(readFile(path.join(f.cwd, 'delegated.txt')), { code: 'ENOENT' });
+  assert.ok(!result.events.some(event => event.data?.type === 'subagent' && event.data.status === 'running'));
 });

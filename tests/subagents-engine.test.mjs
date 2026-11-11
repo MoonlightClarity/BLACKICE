@@ -48,7 +48,7 @@ test('guarded Relay chats really delegate with bounded child tools and observabl
         return{output:'Worker finished its independent analysis.'};
       }
       if(options.dynamicTools.some(tool=>tool.name==='relay_delegate')){
-        const returned=await options.onToolCall({name:'relay_delegate',arguments:{tasks:[{id:'research',prompt:'Analyze one independent aspect; do not modify any files.'}]}});
+        const returned=await options.onToolCall({name:'relay_delegate',arguments:{tasks:[{id:'research',prompt:'Analyze the supplied worker-tool boundary; do not modify any files.'},{id:'instructions',prompt:'Independently analyze the supplied worker instructions; do not modify any files.'}]}});
         assert.equal(returned.success,true);
         const receipt=JSON.parse(returned.contentItems[0].text);receipts.push(receipt);
         return{output:'Coordinator verified: '+receipt.results[0].output};
@@ -71,8 +71,8 @@ test('guarded Relay chats really delegate with bounded child tools and observabl
   assert.equal(enabled.status,'completed',enabled.error);
   assert.match(enabled.nodes.agent.output,/Worker finished/);
   assert.equal(receipts.length,1);
-  assert.equal(receipts[0].allCompleted,true);
-  assert.equal(calls.length,3);
+  assert.equal(receipts[0].allCompleted,true);assert.equal(receipts[0].completed,2);
+  assert.equal(calls.length,4);
   assert.ok(calls[1].dynamicTools.some(tool=>tool.name==='relay_delegate'));
   assert.ok(enabled.events.some(event=>event.data?.type==='subagent'&&event.data?.status==='completed'));
 });
@@ -84,14 +84,15 @@ test('a failed child execution remains inspectable in the durable parent run aft
     status(){return{connected:true,authenticated:true,defaultModel:'fixture-model',models:[{id:'fixture-model',supportsTools:true}]};}
     async runAgent(options){
       if(options.prompt.startsWith('You are a short-lived BLACKICE subagent.')){
-        options.onEvent({type:'thread',threadId:'failed-child-thread',turnId:'failed-child-turn',model:'fixture-model'});
+        const secondary=options.prompt.includes('Inspect a separate synthetic fixture; report actual work.');
+        options.onEvent({type:'thread',threadId:secondary?'other-failed-thread':'failed-child-thread',turnId:secondary?'other-failed-turn':'failed-child-turn',model:'fixture-model'});
         options.onEvent({type:'usage',usage:{inputTokens:60,outputTokens:12,totalTokens:72}});
         options.onEvent({type:'tool.result',tool:'relay_workspace',success:true});
         throw Error('Observed child connection failure after one tool result.');
       }
       options.onEvent({type:'thread',threadId:'coordinator-thread',model:'fixture-model'});
       await recordFixturePlan(options,{title:'Inspect the child failure receipt',doneWhen:'The coordinator reports the actual failure and preserves its execution evidence.'});
-      const returned=await options.onToolCall({name:'relay_delegate',arguments:{tasks:[{id:'independent',prompt:'Inspect one local fixture; report actual work.'}]}});
+      const returned=await options.onToolCall({name:'relay_delegate',arguments:{tasks:[{id:'independent',prompt:'Inspect one local fixture; report actual work.'},{id:'separate',prompt:'Inspect a separate synthetic fixture; report actual work.'}]}});
       assert.equal(returned.success,false);childReceipt=JSON.parse(returned.contentItems[0].text).results[0];
       const read=await options.onToolCall({name:'relay_task',arguments:{action:'read'}});
       assert.equal(read.success,true,read.contentItems[0].text);
@@ -105,12 +106,12 @@ test('a failed child execution remains inspectable in the durable parent run aft
       return{output:'The independent worker failed after one tool result; its execution receipt is available for inspection.',threadId:'coordinator-thread'};
     }
   }
-  const tasks=await new TaskStateStore({dataDir}).init(),prefs=await new RuntimeSettingsStore({dataDir}).init();await prefs.update({subagentsEnabled:true,maxSubagents:1});
+  const tasks=await new TaskStateStore({dataDir}).init(),prefs=await new RuntimeSettingsStore({dataDir}).init();await prefs.update({subagentsEnabled:true,maxSubagents:2});
   const engine=new HarnessEngine({runtime:new Runtime(),tasks,dataDir,defaultCwd:cwd});engine.runtimeSettings=prefs;await engine.init();
   t.after(async()=>{await engine.close();await prefs.close();await tasks.close();await rm(root,{recursive:true,force:true});});
   const run=await finish(engine,engine.startRun({workflow:taskGraph(),input:'Review an independent fixture and report any execution failure.'}).id);
-  assert.equal(run.status,'completed',run.error);assert.equal(run.nodes.agent.planning.status,'recorded');assert.equal(childReceipt.status,'failed');assert.equal(childReceipt.output,undefined);
-  await engine.persist();const stored=JSON.parse(await readFile(path.join(dataDir,'runs.json'),'utf8')).find(value=>value.id===run.id),terminal=stored.events.find(event=>event.data?.type==='subagent'&&event.data.status==='failed').data;
+  assert.equal(run.status,'completed',run.error);assert.equal(run.nodes.agent.planning.status,'off');assert.equal(childReceipt.status,'failed');assert.equal(childReceipt.output,undefined);
+  await engine.persist();const stored=JSON.parse(await readFile(path.join(dataDir,'runs.json'),'utf8')).find(value=>value.id===run.id),terminal=stored.events.find(event=>event.data?.type==='subagent'&&event.data.id==='independent'&&event.data.status==='failed').data;
   assert.equal(terminal.id,'independent');assert.equal(terminal.threadId,'failed-child-thread');assert.equal(terminal.turnId,'failed-child-turn');assert.equal(terminal.model,'fixture-model');assert.deepEqual(terminal.usage,{inputTokens:60,outputTokens:12,totalTokens:72});assert.deepEqual(terminal.toolSummary,{completed:1,failed:0});assert.equal(terminal.message,childReceipt.error);assert.equal(terminal.durationMs,childReceipt.durationMs);
   assert.ok(!stored.events.some(event=>event.data?.type==='subagent'&&event.data.status==='completed'));
 });

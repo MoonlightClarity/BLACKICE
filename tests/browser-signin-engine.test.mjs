@@ -130,6 +130,10 @@ test('guarded delegated workers preserve the contained challenge while independe
     assert.ok(!options.dynamicTools.some(t=>t.name==='relay_task'));
     assert.match(options.developerInstructions,/The coordinator owns the final remote send/);
     assert.match(options.developerInstructions,/Return the actual evidence and any uncertain existing effects/);
+    if(options.prompt.includes('Read the independent synthetic local note.')){
+     const independent=await options.onToolCall({name:'relay_connections',arguments:{action:'call',connectionId:'fixture-notes',name:'read_note',arguments:{}}});
+     assert.equal(independent.success,true);return {output:'Independent synthetic local note checked.'};
+    }
     const reported=await options.onToolCall({name:'relay_browser_signin',arguments:{site:'https://linkedin.com/feed',reason:'sign-in',evidence:'login-form'}});
     assert.equal(reported.success,true);
     const second=await options.onToolCall({name:'relay_browser',arguments:{action:'tabs'}});
@@ -140,7 +144,7 @@ test('guarded delegated workers preserve the contained challenge while independe
      assert.equal(independent.success,true);
     return {output:'LinkedIn sign-in required'};
    }
-   const result=await options.onToolCall({name:'relay_delegate',arguments:{tasks:[{id:'webcheck',prompt:'Inspect LinkedIn sign in and report any blocker.'}]}});
+   const result=await options.onToolCall({name:'relay_delegate',arguments:{tasks:[{id:'webcheck',prompt:'Inspect LinkedIn sign in and report any blocker.'},{id:'local-note',prompt:'Read the independent synthetic local note.'}]}});
    assert.equal(result.success,true);
    return {output:'A subagent reported sign-in required.'};
   }
@@ -160,5 +164,5 @@ test('guarded delegated workers preserve the contained challenge while independe
  assert.equal(run.status,'completed',run.error);
  assert.equal(run.browserSignIn?.hostname,'linkedin.com');assert.equal(run.browserSignIn.browser,'relay');
  assert.equal(run.events.filter(e=>e.data?.type==='browser.signin').length,1);
- assert.equal(calls,0);assert.equal(nativeCalls,0);assert.equal(independentCalls,1);
+ assert.equal(calls,0);assert.equal(nativeCalls,0);assert.equal(independentCalls,2);
 });

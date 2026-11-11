@@ -163,80 +163,40 @@ test('retry upgrades an interrupted native catalog while retaining its task and 
   assert.equal(retried.status, 'completed', retried.error); assert.equal(retried.nodes.agent.taskSchemaVersion, TASK_SCHEMA_VERSION);
 });
 
-test('one assigned worker follows the same leaf protocol without an enclosing dispatch deadlock', async t => {
-  let childRan = false;
+test('a historical one-slot delegation is rejected without worker execution or a partial write', async t => {
+  let childCalls = 0;
   const f = await fixture(t, async options => {
     if (options.prompt.startsWith('You are a short-lived BLACKICE subagent.')) {
-      childRan = true;
-      let state = await task(options, { action: 'read' });
-      state = await task(options, { action: 'edit', expectedRevision: state.revision, operations: [{ type: 'update', stepId: 'assigned', patch: {
-        operation: { kind: 'tool', tool: 'relay_workspace', action: 'write', target: 'fixture.txt' },
-        note: 'Write the requested fixture value to fixture.txt.', result: 'The saved fixture value.', doneWhen: 'The workspace write returns its actual path and byte count.'
-      } }] });
-      assert.equal((await tool(options, 'relay_workspace', { action: 'write', path: 'fixture.txt', text: 'The worker value.' }, 'worker-write')).success, true);
-      await task(options, { action: 'step', expectedRevision: state.revision, stepId: 'assigned', status: 'done', evidence: 'The worker received the actual fixture.txt path and written byte count.' });
-      await reviewCurrent(options);
-      return { output: 'The assigned operation returned its actual write result.' };
+      childCalls++; assert.fail('One worker slot cannot supply a parallel speedup.');
     }
-    let state = await task(options, { action: 'read' });
-    state = await task(options, { action: 'plan', expectedRevision: state.revision, plan: { layout: 'sequence' }, steps: [{ ...leaf('assigned', 'active'), operation: { kind: 'tool', tool: 'relay_delegate', target: 'assigned' } }] });
     const delegated = await tool(options, 'relay_delegate', { tasks: [{ id: 'one-worker', stepId: 'assigned', prompt: 'Write the one requested fixture value and record its actual result.' }] }, 'delegate-one');
-    assert.equal(delegated.success, true, delegated.contentItems[0].text);
-    await task(options, { action: 'read' });
-    await reviewCurrent(options);
-    return { output: 'The same task completed through its one assigned worker.' };
+    assert.equal(delegated.success, false);
+    assert.equal(payload(delegated).code, 'SUBAGENT_NO_PARALLEL_CAPACITY');
+    assert.equal(payload(delegated).providerCalls, 0); assert.equal(payload(delegated).gate, 'static_dag');
+    return { output: 'The coordinator retains the serial write; no child wrote the fixture.' };
   }, { delegates: true });
   const run = await f.settle(f.start('on').id);
-  assert.equal(run.status, 'completed', run.error); assert.equal(childRan, true);
-  assert.equal(await readFile(path.join(f.cwd, 'fixture.txt'), 'utf8'), 'The worker value.');
+  assert.equal(run.status, 'completed', run.error); assert.equal(childCalls, 0);
+  await assert.rejects(readFile(path.join(f.cwd, 'fixture.txt')), { code: 'ENOENT' });
 });
 
-test('a delegated review cannot acknowledge a new direction until its actual text reaches the worker', async t => {
-  let parentOptions, continuationPrompt;
-  const f = await fixture(t, async (options, count, context) => {
+test('a fully serial historical delegation is rejected even when two worker slots are available', async t => {
+  let childCalls = 0, steerCalls = 0;
+  const f = await fixture(t, async options => {
     if (options.prompt.startsWith('You are a short-lived BLACKICE subagent.')) {
-      let state = await task(options, { action: 'read' });
-      state = await task(options, { action: 'edit', expectedRevision: state.revision, operations: [{ type: 'update', stepId: 'assigned', patch: {
-        operation: { kind: 'reasoning', target: 'The supplied $145 workshop subtotal and enrollment fee.' },
-        note: 'Add the supplied enrollment fee to the $145 workshop subtotal.', result: 'The total bundle price.',
-        doneWhen: 'The arithmetic uses the latest fee actually delivered to this worker.'
-      } }] });
-      state = await task(options, { action: 'step', expectedRevision: state.revision, stepId: 'assigned', status: 'done', evidence: 'The delivered $10 fee gives a $155 bundle total.' });
-      // The parent receives this real direction while its child is still
-      // working. Reading the plan alone does not deliver that direction text.
-      const active = context.engine.listRuns().find(run => run.status === 'running');
-      const receipt = await context.engine.steerRun(active.id, { nodeId: 'agent', message: 'Use a $20 enrollment fee instead of $10.' });
-      assert.equal(receipt.accepted, true);
-      await reviewCurrent(options);
-      const returned = await options.onBeforeFinal({ output: 'The old total is $155.' });
-      assert.equal(returned.continue, true);
-      continuationPrompt = returned.prompt;
-      assert.match(continuationPrompt, /Use a \$20 enrollment fee instead of \$10/);
-
-      state = await task(options, { action: 'read' });
-      state = await task(options, { action: 'edit', expectedRevision: state.revision, operations: [{ type: 'revisit', stepId: 'assigned', reason: 'The just-delivered user direction changes the enrollment fee to $20.' }] });
-      state = await task(options, { action: 'step', expectedRevision: state.revision, stepId: 'assigned', status: 'active' });
-      await task(options, { action: 'step', expectedRevision: state.revision, stepId: 'assigned', status: 'done', evidence: 'The delivered $20 fee plus $145 subtotal gives a corrected $165 bundle total.' });
-      await reviewCurrent(options);
-      assert.equal(await options.onBeforeFinal({ output: 'The current total is $165.' }), null);
-      return { output: 'The current total is $165.' };
+      childCalls++; assert.fail('A fully serial batch must remain with the coordinator.');
     }
-    parentOptions = options;
-    parentOptions.onEvent({ type: 'thread', threadId: 'parent-thread', turnId: 'parent-turn', model: 'fixture-model' });
-    let state = await task(options, { action: 'read' });
-    await task(options, { action: 'plan', expectedRevision: state.revision, plan: { layout: 'sequence' }, steps: [{ ...leaf('assigned', 'active'), operation: { kind: 'tool', tool: 'relay_delegate', target: 'assigned' } }] });
-    const delegated = payload(await tool(options, 'relay_delegate', { tasks: [{ id: 'fee-worker', stepId: 'assigned', prompt: 'Add the $10 enrollment fee to the $145 workshop subtotal.' }] }, 'delegate-fee'));
-    assert.equal(delegated.results[0].status, 'completed', delegated.results[0].error);
-    assert.equal(delegated.results[0].output, 'The current total is $165.');
-    await reviewCurrent(options);
-    return { output: 'The current total is $165.' };
+    const delegated = await tool(options, 'relay_delegate', { tasks: [
+      { id: 'fee-worker', prompt: 'Add the $10 enrollment fee to the $145 workshop subtotal.' },
+      { id: 'reviewer', dependsOn: ['fee-worker'], prompt: 'Check the returned fee-worker total.' }
+    ] }, 'delegate-fee');
+    assert.equal(delegated.success, false); assert.equal(payload(delegated).code, 'SUBAGENT_SERIAL_DAG');
+    assert.equal(payload(delegated).providerCalls, 0); assert.equal(payload(delegated).gate, 'static_dag');
+    return { output: 'The coordinator retains the dependent calculation and review.' };
   }, { delegates: true });
-  f.runtime.steerAgent = async threadId => ({ accepted: true, threadId, turnId: 'parent-turn' });
+  f.engine.runtimeSettings = { get: () => ({ codexHistory: 'codex', executionGuardrails: true, subagentsEnabled: true, maxSubagents: 2 }) };
+  f.runtime.steerAgent = async () => { steerCalls++; assert.fail('No rejected child can request a steering continuation.'); };
   const run = await f.settle(f.start('on').id);
-  assert.equal(run.status, 'completed', run.error);
-  assert.match(continuationPrompt, /CURRENT ACCEPTED USER CONTEXT/);
-  const assigned = run.taskState.steps.find(step => step.id === 'assigned');
-  assert.equal(assigned.attempt, 2);
-  assert.match(assigned.pastAttempts[0].evidence, /\$155/);
-  assert.match(assigned.evidence, /\$165/);
+  assert.equal(run.status, 'completed', run.error); assert.equal(childCalls, 0); assert.equal(steerCalls, 0);
+  assert.ok(!run.events.some(event => event.data?.type === 'subagent' && event.data.status === 'running'));
 });

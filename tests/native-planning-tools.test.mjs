@@ -69,7 +69,7 @@ test('delegated native workers never receive graph coordinator tools',async t=>{
  let child=false;
  const f=await fixture(t,async o=>{
   if(o.prompt.startsWith('You are a short-lived BLACKICE subagent.')){child=true;assert.ok(!o.dynamicTools.some(v=>v.name.startsWith('relay_planning_')));return {output:'Independent analysis.'};}
-  const result=await o.onToolCall({name:'relay_delegate',arguments:{tasks:[{id:'research',prompt:'Analyze one bounded independent question without actions.'}]}});
+  const result=await o.onToolCall({name:'relay_delegate',arguments:{tasks:[{id:'research',prompt:'Analyze the attached coordinator-tool boundary without actions.'},{id:'instructions',prompt:'Independently analyze the supplied worker instructions without actions.'}]}});
   assert.equal(result.success,true,JSON.stringify(result));return {output:'Delegated result checked.'};
  });
  await f.run();assert.equal(child,true);

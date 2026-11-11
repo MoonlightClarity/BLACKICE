@@ -87,7 +87,7 @@ test('engine and delegated agents never offer the retired Bridge, including old 
         return { output: 'No Bridge tool is attached.' };
       }
       parentTurns++;
-      const delegated = await options.onToolCall({ name: 'relay_delegate', arguments: { tasks: [{ id: 'review', prompt: 'Inspect the assigned fixture.' }] } });
+      const delegated = await options.onToolCall({ name: 'relay_delegate', arguments: { tasks: [{ id: 'review', prompt: 'Inspect the assigned fixture tool catalog.' }, { id: 'instructions', prompt: 'Independently inspect the assigned fixture instructions for retired Bridge guidance.' }] } });
       assert.equal(delegated.success, true);
       assert.equal(payload(delegated).allCompleted, true);
       return { output: payload(delegated).results[0].output, threadId: 'native-retired-bridge', codexHistory: 'codex' };
@@ -105,5 +105,5 @@ test('engine and delegated agents never offer the retired Bridge, including old 
   engine.runs.get(first.id).nodes.agent.toolNames.push(CHATGPT_BRIDGE_TOOL.name);
   const next = engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue the old catalog.' }); await engine.executions.get(next.id);
   assert.equal(engine.getRun(next.id).status, 'completed', engine.getRun(next.id).error);
-  assert.equal(parentTurns, 2); assert.equal(childTurns, 2); assert.equal(store.status().count, 0);
+  assert.equal(parentTurns, 2); assert.equal(childTurns, 4); assert.equal(store.status().count, 0);
 });

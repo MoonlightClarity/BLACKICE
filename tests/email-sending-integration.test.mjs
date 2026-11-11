@@ -146,11 +146,11 @@ test('provider continuations use the current v2 catalog instead of native cache 
 
 test('fresh delegated worker catalogs receive v2 and can inspect background delivery records', async t => {
   const f = await engineFixture(t, async (options, _index, context) => {
-    if (options.prompt.startsWith('You are a short-lived')) { assert.deepEqual(options.dynamicTools.find(tool => tool.name === 'relay_email'), EMAIL_TOOL); assert.ok(options.prompt.includes(EMAIL_INSTRUCTIONS)); assert.equal((await call(options, { action: 'deliveries' })).success, true); return { output: 'Observed the prepared fixture only.', threadId: 'email-worker-thread' }; }
-    const delegated = await options.onToolCall({ name: 'relay_delegate', arguments: { tasks: [{ id: 'inspect-email', prompt: 'Inspect the existing delivery record.', canWrite: false }] } }); assert.equal(delegated.success, true, JSON.stringify(delegated));
+    if (options.prompt.startsWith('You are a short-lived')) { assert.deepEqual(options.dynamicTools.find(tool => tool.name === 'relay_email'), EMAIL_TOOL); assert.ok(options.prompt.includes(EMAIL_INSTRUCTIONS)); assert.equal((await call(options, { action: options.prompt.includes('Inspect the independent email status.') ? 'status' : 'deliveries' })).success, true); return { output: 'Observed the prepared fixture only.', threadId: 'email-worker-thread' }; }
+    const delegated = await options.onToolCall({ name: 'relay_delegate', arguments: { tasks: [{ id: 'inspect-email', prompt: 'Inspect the existing delivery record.', canWrite: false }, { id: 'inspect-status', prompt: 'Inspect the independent email status.', canWrite: false }] } }); assert.equal(delegated.success, true, JSON.stringify(delegated));
     return { output: 'Independent delivery inspection completed.', threadId: context.threadId };
   }, { workers: true });
-  const run = await f.settled(f.engine.startRun({ workflow: f.workflow, input: 'Have a reviewer inspect the fixture delivery.' })); assert.equal(run.status, 'completed', run.error); assert.equal(f.runtime.calls.length, 2); assert.equal(f.email.calls.filter(value => value.action === 'deliveries').length, 1);
+  const run = await f.settled(f.engine.startRun({ workflow: f.workflow, input: 'Have a reviewer inspect the fixture delivery.' })); assert.equal(run.status, 'completed', run.error); assert.equal(f.runtime.calls.length, 3); assert.equal(f.email.calls.filter(value => value.action === 'deliveries').length, 1);
 });
 
 test('local email API composes/sends without flags and returns inspectable explicit transport outcomes', async t => {

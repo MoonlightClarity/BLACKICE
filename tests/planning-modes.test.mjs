@@ -165,14 +165,14 @@ test('coordinator and delegated read-only worker receive the same complete skill
       assert.equal(options.dynamicTools.some(tool => tool.name === 'relay_task'), false);
       return { output: 'The supplied fixture contains no external action or guest operation.' };
     }
-    const delegated = await options.onToolCall({ name: 'relay_delegate', arguments: { tasks: [{ id: 'inspect-input', prompt: 'Read the supplied fixture only and report its scope; do not execute commands or edit files.', readOnly: true }] } });
+    const delegated = await options.onToolCall({ name: 'relay_delegate', arguments: { tasks: [{ id: 'inspect-input', prompt: 'Read the supplied fixture only and report its scope; do not execute commands or edit files.', readOnly: true }, { id: 'inspect-tools', prompt: 'Independently inspect the supplied worker tool catalog; do not execute commands or edit files.', readOnly: true }] } });
     assert.equal(delegated.success, true, delegated.contentItems?.[0]?.text);
-    assert.equal(unpack(delegated).completed, 1);
+    assert.equal(unpack(delegated).completed, 2);
     return { output: 'The independent read was integrated; no external effect is claimed.' };
   });
   Object.assign(f.settings, { executionGuardrails: false, subagentsEnabled: true, maxSubagents: 2 });
   finished(await f.settle(f.start({ planningMode: 'on' }).id));
-  assert.equal(f.runtime.calls.length, 2);
+  assert.equal(f.runtime.calls.length, 3);
 });
 
 test('Planning On fails before inference when the selected model cannot call the required tool',async t=>{
@@ -452,12 +452,12 @@ test('Off identity and disabled automatic planning apply to delegated workers wi
       assert.match(options.developerInstructions, /The coordinator owns the final remote send/);
       return { output: 'Observed independent fixture result.' };
     }
-    const result = await call(options, 'relay_delegate', { tasks: [{ id: 'inspect', prompt: 'Inspect the supplied fixture request without external actions.' }] });
+    const result = await call(options, 'relay_delegate', { tasks: [{ id: 'inspect', prompt: 'Inspect the supplied fixture request without external actions.' }, { id: 'inspect-tools', prompt: 'Independently inspect the supplied worker tool catalog without external actions.' }] });
     assert.equal(result.success, true); assert.equal(unpack(result).allCompleted, true);
     return { output: 'Worker result received.', threadId: 'planning-mode-thread' };
   });
   f.settings.subagentsEnabled = true;
-  const run = await f.settle(f.start({ planningMode: 'off' }).id); finished(run); assert.equal(f.runtime.calls.length, 2); assert.equal(run.nodes.agent.planning.status, 'off');
+  const run = await f.settle(f.start({ planningMode: 'off' }).id); finished(run); assert.equal(f.runtime.calls.length, 3); assert.equal(run.nodes.agent.planning.status, 'off');
 });
 
 test('invalid saved planning modes recover through the existing backup path and preserve corrupt evidence', async t => {

@@ -38,7 +38,7 @@ test('overlapping calls share capacity but an independent second call does not w
     try { if (assigned(options) === 'held') await hold.promise; else await new Promise(resolve => setTimeout(resolve, 10)); return { output: 'An actual checked result.' }; }
     finally { running--; }
   } } });
-  pending = delegate(handler, [task('held')]).then(value => { firstFinished = true; return value; });
+  pending = delegate(handler, [task('held'), task('independent')]).then(value => { firstFinished = true; return value; });
   await waitFor(() => running === 1);
   const second = result(await delegate(handler, [task('left'), task('right')]));
   assert.equal(second.allCompleted, true); assert.equal(firstFinished, false); assert.equal(peak, 2);
@@ -67,10 +67,10 @@ test('invalid dependency graphs consume no admission budget and accepted prior r
     const returned = await delegate(handler, tasks); assert.equal(returned.success, false); assert.equal(result(returned).remainingThisTurn, 12);
   }
   assert.deepEqual(started, []);
-  assert.equal(result(await delegate(handler, [task('a')])).allCompleted, true);
-  assert.equal(result(await delegate(handler, [task('b', ['a'])])).allCompleted, true);
-  assert.deepEqual(started, ['a', 'b']);
-  const duplicate = await delegate(handler, [task('a')]); assert.equal(duplicate.success, false); assert.equal(result(duplicate).remainingThisTurn, 10);
+  assert.equal(result(await delegate(handler, [task('a'), task('c')])).allCompleted, true);
+  assert.equal(result(await delegate(handler, [task('b', ['a']), task('d', ['c'])])).allCompleted, true);
+  assert.deepEqual(started, ['a', 'c', 'b', 'd']);
+  const duplicate = await delegate(handler, [task('a')]); assert.equal(duplicate.success, false); assert.equal(result(duplicate).remainingThisTurn, 8);
 });
 
 test('dependent dispatch waits for the durable completion hook while independent work still proceeds', async t => {
@@ -90,11 +90,11 @@ test('dependent dispatch waits for the durable completion hook while independent
 test('queued cancellation does not invoke tools or start work after its prerequisite settles', async t => {
   const hold = deferred(), controller = new AbortController(), started = []; let pending;
   t.after(async () => { controller.abort(); hold.resolve(); await pending; });
-  const handler = createSubagentToolHandler({ signal: controller.signal, maxParallel: 1, runtime: { async runAgent(options) {
+  const handler = createSubagentToolHandler({ signal: controller.signal, maxParallel: 2, runtime: { async runAgent(options) {
     started.push(assigned(options)); await hold.promise; return { output: 'A late result after cancellation.' };
   } } });
-  pending = delegate(handler, [task('source'), task('dependent', ['source'])]); await waitFor(() => started.length === 1);
+  pending = delegate(handler, [task('source'), task('independent'), task('dependent', ['source'])]); await waitFor(() => started.length === 2);
   controller.abort(); hold.resolve(); const receipt = result(await pending);
-  assert.deepEqual(started, ['source']); assert.equal(receipt.completed, 0);
-  assert.equal(receipt.results[0].status, 'cancelled'); assert.equal(receipt.results[1].status, 'not-started');
+  assert.deepEqual(started, ['source', 'independent']); assert.equal(receipt.completed, 0);
+  assert.equal(receipt.results[0].status, 'cancelled'); assert.equal(receipt.results[1].status, 'cancelled'); assert.equal(receipt.results[2].status, 'not-started');
 });

@@ -146,3 +146,19 @@ test('subagents default on, preserve explicit opt-outs and persist independent p
     const prior=store.get();await assert.rejects(store.update(patch),{code:'RUNTIME_SETTINGS_INVALID'});assert.deepEqual(store.get(),prior);
   }
 });
+
+test('retired opportunity preferences load without rewriting disk or reviving model-based scoring', async t => {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'blackice-retired-opportunity-'));
+  const file = path.join(dataDir, 'runtime-settings.json');
+  const original = JSON.stringify({ maxSubagents: 2, subagentOpportunity: { enabled: true, threshold: 0.9 } }, null, 2);
+  await fs.writeFile(file, original);
+  const store = await new RuntimeSettingsStore({ dataDir }).init();
+  t.after(async () => { await store.close(); await fs.rm(dataDir, { recursive: true, force: true }); });
+  assert.equal(store.get().maxSubagents, 2);
+  assert.equal(store.get().subagentOpportunity, undefined);
+  assert.equal(await fs.readFile(file, 'utf8'), original);
+  assert.deepEqual(validateRuntimeSettings({ subagentOpportunity: { enabled: true } }), {});
+  await store.update({ verbosity: 'detailed' });
+  assert.equal(JSON.parse(await fs.readFile(file, 'utf8')).subagentOpportunity, undefined);
+  assert.equal(store.get().maxSubagents, 2);
+});

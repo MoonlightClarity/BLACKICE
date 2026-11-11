@@ -7,6 +7,7 @@ import path from 'node:path';
 import { HarnessEngine } from '../lib/engine.mjs';
 import { createMissionWorkflow } from '../public/mission-model.mjs';
 import { readOnlyToolDenial } from '../lib/worker-permissions.mjs';
+import { SUBAGENT_SCHEMA_VERSION } from '../lib/subagents.mjs';
 import { connectorBrowserOwner } from '../lib/connector-browser-owner.mjs';
 
 const data = result => JSON.parse(result.contentItems.find(item => item.type === 'inputText').text);
@@ -51,6 +52,11 @@ test('a legacy delegate assignment flag does not reduce the normal workspace cap
   const f = await harness(t, async (options, context) => {
     if (options.prompt.startsWith('You are a short-lived')) {
       assert.equal(options.sandbox, 'danger-full-access');
+      if (options.prompt.includes('Read the independent evidence file only.')) {
+        const read = await call(options, 'relay_workspace', { action: 'read', path: 'evidence.txt' });
+        assert.equal(read.success, true); assert.match(read.contentItems[0].text, /verified evidence/);
+        return { output: 'The independent evidence file was read.' };
+      }
       const read = await call(options, 'relay_workspace', { action: 'read', path: 'evidence.txt' });
       assert.equal(read.success, true); assert.match(read.contentItems[0].text, /verified evidence/);
       const written=await call(options,'relay_workspace',{action:'write',path:'worker-result.txt',text:'Checked fixture result.'});
@@ -63,12 +69,12 @@ test('a legacy delegate assignment flag does not reduce the normal workspace cap
     }
     const definition = options.dynamicTools.find(tool => tool.name === 'relay_delegate');
     assert.equal(Object.hasOwn(definition.inputSchema.properties.tasks.items.properties,'canWrite'),false);
-    const delegated = await call(options, 'relay_delegate', { tasks: [{ id: 'review', prompt: 'Inspect evidence only', canWrite: false }] });
+    const delegated = await call(options, 'relay_delegate', { tasks: [{ id: 'review', prompt: 'Inspect evidence only', canWrite: false }, { id: 'source-read', prompt: 'Read the independent evidence file only.', canWrite: false }] });
     assert.equal(delegated.success, true, delegated.contentItems[0].text); assert.equal(data(delegated).allCompleted, true);
     return { output: 'Review completed.' };
   });
   const saved = await f.run('Review research without changing files.');
-  assert.equal(saved.nodes.agent.subagentSchemaVersion, 4);
+  assert.equal(saved.nodes.agent.subagentSchemaVersion, SUBAGENT_SCHEMA_VERSION);
   assert.deepEqual(f.effects, { emailDrafts: 0, connections: 0, browserInputs: 0 });
   await access(path.join(f.cwd, 'worker-result.txt'));
   assert.equal(f.owners.length, 1);

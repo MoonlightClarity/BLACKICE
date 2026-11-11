@@ -94,12 +94,16 @@ test('delegated workers receive the protected flow with a distinct trusted owner
       assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_credentials'));
       assert.ok(!options.dynamicTools.some(tool => ['relay_delegate', 'relay_control'].includes(tool.name)));
       assert.match(options.prompt, /PROTECTED WEBSITE CREDENTIALS/);
+      if (options.prompt.includes('Inspect the protected credential tool schema only.')) {
+        assert.ok(options.dynamicTools.find(tool => tool.name === 'relay_credentials').inputSchema);
+        return { output: 'The protected credential schema is attached independently of signup.' };
+      }
       assert.equal((await call(options, generation)).success, true);
       return { output: 'Scoped credential saved without submission.' };
     }
     assert.equal((await call(options, generation)).success, true);
-    const result = await options.onToolCall({ name: 'relay_delegate', arguments: { tasks: [{ id: 'signup', prompt: 'Prepare the explicitly authorized signup credential; do not submit.' }] } });
-    assert.equal(result.success, true); return { output: 'Both opaque results were checked.' };
+    const result = await options.onToolCall({ name: 'relay_delegate', arguments: { tasks: [{ id: 'signup', prompt: 'Prepare the explicitly authorized signup credential; do not submit.' }, { id: 'credential-schema', prompt: 'Inspect the protected credential tool schema only.' }] } });
+    assert.equal(result.success, true); assert.equal(payload(result).completed, 2); return { output: 'Both opaque results were checked.' };
   }, { subagents: true });
   done(await f.settled(f.start().id)); assert.equal(f.generated.length, 2); assert.equal(f.owners.size, 2);
 });
