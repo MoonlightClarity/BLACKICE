@@ -44,6 +44,10 @@ The bundled PDF integration uses `@hyzyla/pdfium` 3.0.0 and its PDFium WebAssemb
 
 Retain these files with `index.esm.js` and `pdfium.wasm`. The BLACKICE project license does not relicense the wrapper or the WebAssembly binary.
 
+## Optional native inference backend
+
+[llama.cpp](https://github.com/ggml-org/llama.cpp) is retained as a separate, optional inference backend via the `third_party/llama.cpp` Git submodule, pinned to `aa75ff3239f9cc675b081697deda9e1b112345c6`. Its source and compiled binary are licensed under MIT by the ggml authors. The original [LICENSE](third_party/llama.cpp/LICENSE) is preserved in the source checkout and copied beside a bundled executable by `scripts/build-native-llama.ps1`. BLACKICE's independently authored Qwen3 reference engine does not use llama.cpp code or kernels.
+
 ## Fonts
 
 The bundled font files retain their accompanying Open Font License notices:

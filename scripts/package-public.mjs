@@ -17,6 +17,14 @@ const id=randomUUID(),buildRoot=path.join(source,'.build',`public-${id}`),config
 const config=publicBuilderConfiguration(signing,{source,output:buildRoot,requireCodeSigning});
 const nativeStage=path.join(source,'.build',`native-public-${id}`),systemDirectory=path.join(process.env.SystemRoot||process.env.WINDIR,'System32');
 config.extraResources=[{from:nativeStage,to:'workbench-native',filter:['**/*']}];
+// Include the first-party selectable llama.cpp backend only when its native binary
+// has actually been built. A source-only submodule is not a working engine.
+const llamaBundle=path.join(source,'resources/native-inference/llama.cpp');
+const llamaExecutable=path.join(llamaBundle,'llama-cli.exe');
+const llamaReady=await fs.stat(llamaExecutable).then(info=>info.isFile()).catch(()=>false);
+if(process.argv.includes('--require-native-inference')&&!llamaReady)
+  throw Error('Native llama.cpp was requested but no bundled binary exists. Run scripts/build-native-llama.ps1 first.');
+if(llamaReady)config.extraResources.push({from:llamaBundle,to:'native-inference/llama.cpp',filter:['**/*']});
 let previousMoved=false,promoted=false;
 await fs.mkdir(path.dirname(configFile),{recursive:true});await fs.mkdir(outputs,{recursive:true});
 try{
