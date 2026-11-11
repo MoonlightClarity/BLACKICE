@@ -107,3 +107,30 @@ test('native task reads append bounded direct evidence without mutating canonica
  f.engine.projectPlanningState=async state=>{called=true;state.revision=999999;state.directExecution={confirmedCount:1,unknownCount:1};return state;};
  await f.run();assert.equal(called,true);
 });
+
+for(const mismatch of ['reread_revision','projected_revision','projected_task'])test('native evidence projection fails closed on '+mismatch,async t=>{
+ let f,projected=0,deliveredBefore,changed=false;
+ f=await fixture(t,async o=>{
+  const tasks=f.engine.tasks,get=tasks.get.bind(tasks);let reads=0;
+  tasks.get=async(id,options)=>{
+   reads++;
+   if(mismatch==='reread_revision'&&reads===2){
+    const current=await get(id,options);
+    await tasks.update(id,state=>({...state,goal:state.goal+' Concurrent revision.'}),{expectedRevision:current.revision,source:'user'});
+    changed=true;
+   }
+   const value=await get(id,options);if(reads===1)deliveredBefore=value;return value;
+  };
+  let result;try{result=await o.onToolCall({name:'relay_task',arguments:{action:'read'}});}finally{tasks.get=get;}
+  assert.equal(result.success,true);const delivered=payload(result);
+  assert.equal(delivered.taskId,deliveredBefore.taskId);assert.equal(delivered.revision,deliveredBefore.revision);assert.equal(delivered.directExecution,undefined);
+  const extra=result.contentItems.map(v=>{try{return JSON.parse(v.text);}catch{return null;}}).find(v=>v?.directExecution);
+  assert.deepEqual(extra.directExecution,{available:false,error:'PROJECTION_SNAPSHOT_CHANGED'});
+  if(mismatch==='reread_revision'){assert.equal(changed,true);assert.equal(projected,0);assert.ok((await get(delivered.taskId)).revision>delivered.revision);}
+  else assert.equal(projected,1);
+  return {output:'Snapshot race preserved as unavailable evidence.'};
+ });
+ const tasks=await new TaskStateStore({dataDir:f.engine.dataDir}).init();f.engine.tasks=tasks;t.after(()=>tasks.close());
+ f.engine.projectPlanningState=async state=>{projected++;return {...state,directExecution:{available:true,confirmedCount:1,sourceStatus:'current',currentSource:{taskId:mismatch==='projected_task'?'another-task':state.taskId,revision:state.revision+(mismatch==='projected_revision'?1:0)}}};};
+ await f.run();
+});
