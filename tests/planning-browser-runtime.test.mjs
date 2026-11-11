@@ -28,7 +28,7 @@ async function fixture(t,{settings={},automatic=false,provider}={}){
     record=await store.addNode(id,{id:'frame',kind:'frame',title:'Reframe',prompt:'Expose an alternative frame.'});
     return record;
   }
-  return {store,runner,calls,events,request};
+  return {directory,store,runner,calls,events,request};
 }
 
 test('concurrent requests in one conversation keep separate captured objectives and actual responses',async t=>{
@@ -195,4 +195,24 @@ test('protected helper verifies actual selected model before claiming or dispatc
  assert.equal(f.calls[1].options.hostOnlyTools,undefined);
  f.calls[0].resolve({output:publicOutput('protected')});f.calls[1].resolve({output:publicOutput('normal')});
  await Promise.all([f.runner.wait('protected',a.attempt.id),f.runner.wait('normal',b.attempt.id)]);
+});
+
+test('settled native request identity preserves service tier and exact explicit options across disk reopen',async t=>{
+  const f=await fixture(t);await f.request();
+  const options={requestId:'request-a',nodeId:'frame',expectedNodeRevision:1,clientRequestId:'durable-tier',model:'configured::large',effort:'high',serviceTier:'default',context:'Exact requested context'};
+  const first=await f.runner.start(options);
+  assert.equal(first.attempt.serviceTier,'default');assert.match(first.attempt.requestFingerprint,/^[a-f0-9]{64}$/);
+  f.calls[0].resolve({output:publicOutput('request-a')});await Promise.all(f.runner.activePromises());
+  assert.equal((await f.runner.start({...options})).attempt.id,first.attempt.id);
+  for(const change of [{serviceTier:'fast'},{context:'Different explicit context'},{automatic:true}])
+    await assert.rejects(f.runner.start({...options,...change}),error=>['PLANNING_IDEMPOTENCY_CONFLICT','PLANNING_AUTOMATIC_DISABLED'].includes(error.code));
+  await f.runner.close();await f.store.close();
+  const reopened=await new PlanningBrowserStore({dataDir:f.directory}).init();let calls=0;
+  const runner=new PlanningBrowserRuntime({store:reopened,defaultCwd:f.directory,getSettings:()=>({maxSubagents:2,subagentsEnabled:true}),runtime:{runAgent:async()=>{calls++;return {output:publicOutput('request-a')};}}});
+  try{
+    assert.equal((await runner.start({...options})).attempt.id,first.attempt.id);
+    for(const change of [{serviceTier:'fast'},{context:'Different explicit context'},{automatic:true}])
+      await assert.rejects(runner.start({...options,...change}),{code:'PLANNING_IDEMPOTENCY_CONFLICT'});
+    assert.equal(calls,0);assert.equal(f.calls.length,1);assert.equal((await reopened.get('request-a')).attempts.length,1);
+  }finally{await runner.close();await reopened.close();}
 });
