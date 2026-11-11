@@ -33,6 +33,7 @@ async function fixture(t){
     if(call.result) return call.result;
     return receipt({actionDispatched:true,confirmed:false});
   };
+  raw.describeOperation=async call=>call.descriptor;
   raw.normalizeOperationResult=async(receipt,context)=>{
     return callValue(receipt,context);
   };
@@ -111,12 +112,12 @@ test('host-confirmed non-dispatch releases a local reservation but an unverified
   assert.equal((await f.guard('two').records()).at(-1).state,'unknown','tool success is not external confirmation');
 });
 
-test('only independently observed matching host confirmation can mark a commit confirmed',async t=>{
+test('a fabricated normalizer confirmation cannot substitute for a native receipt',async t=>{
   const f=await fixture(t),d=descriptor('evidence-one');
   f.setEvidence(()=>({effectState:'confirmed',evidence:[{id:'host-evidence',confirmation:{effectKey:'evidence-one',status:'confirmed'}}]}));
   const first=await f.submit(d,f.guard('one'));
   assert.equal(first.success,true);
-  assert.equal((await f.guard('one').records())[0].state,'confirmed');
+  assert.equal((await f.guard('one').records())[0].state,'unknown');
   const replay=await f.submit(d,f.guard('two'));
   assert.equal(replay.code,'OPERATIONAL_EFFECT_UNCERTAIN');
   assert.equal(f.counts().dispatched,1);
