@@ -27,3 +27,11 @@ The installed 2.39.57 app inspected during this work advertised 39 backend tools
 ## Regression coverage
 
 Tests exercise UI/store to direct and native reads, tool writes back to UI/store, canonical contract edits, optimistic concurrency, provenance, module admission and final response readback, exact cancellation, orphan UNKNOWN status, source staleness, owner isolation/revocation, remote identity separation, frozen native schemas, historical catalogs, coordinator restrictions, and response-only worker isolation. Independent review additionally checks snapshot consistency and persistent native retry identity.
+
+## Canonical creation and binding
+
+For a new shared canonical document, call `blackice_edit_plan` with a new taskId, expectedRevision 0, and the sole operation `{type: 'create_contract', contract: ...}`. The host validates and atomically writes schema 14 intent at epoch 1/revision 1 with standalone metadata and authenticated provenance. Existing IDs and concurrent creation conflict; reread rather than replaying blindly. Legacy `create` remains legacy and is never silently migrated.
+
+Then `blackice_task_contract` bind_plan binds that exact canonical task/revision into direct outcome accounting; bind associates the observed destination/control with its work item and criterion. Binding is not a submission. Direct reads project host outcome evidence back alongside the same canonical intent. The transport regression exercises creation, list/detail/UI visibility, bind_plan, observed-control binding, and readback with a mock browser and no provider turns or external effects.
+
+Validation completed for this change set: 1,606 broader Planning/direct/Engine regression cases passed across 135 files, including rerunning environment-dependent fixtures against existing Python/Electron installations. The final integrated create/bind/parity suite passed 87/87. Live caller catalog verification and deploying source changes remain separate from these source tests.
