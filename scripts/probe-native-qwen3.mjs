@@ -5,10 +5,10 @@ import { Qwen3WorkerHost } from '../lib/native-inference/worker-host.mjs';
 
 /** Inspect a real local FP16 Qwen3 model without changing BLACKICE's chat defaults. */
 export async function probeNativeQwen3({ modelDirectory, prompt = 'Hello', maxNewTokens = 1,
-  maxContext = 128, timeoutMs = 90000, chat = false } = {}) {
+  maxContext = 128, timeoutMs = 90000, chat = false, cpuKernel = 'simd' } = {}) {
   if (typeof modelDirectory !== 'string' || !path.isAbsolute(modelDirectory))
     throw new Error('Choose an absolute model directory.');
-  const host = new Qwen3WorkerHost({ modelDirectory, maxContext });
+  const host = new Qwen3WorkerHost({ modelDirectory, maxContext, cpuKernel });
   const started = performance.now();
   let timeout;
   try {
@@ -24,7 +24,8 @@ export async function probeNativeQwen3({ modelDirectory, prompt = 'Hello', maxNe
     return {
       backend: 'blackice', worker: true,
       loadedMs: Math.round(loadedMs), totalMs: Math.round(performance.now() - started),
-      model: { type: model.modelType, sourcePrecision: model.sourcePrecision, maxContext: model.maxContext },
+      model: { type: model.modelType, sourcePrecision: model.sourcePrecision,
+        maxContext: model.maxContext, cpuKernel: model.cpuKernel },
       promptTokens: result.promptTokens, generatedTokens: result.tokenIds.length,
       tokenIds: result.tokenIds, text: result.text, streamMatches: textParts.join('') === result.text,
       completed: result.completed,
@@ -41,10 +42,10 @@ if (invoked) {
   let options = {};
   try {
     for (let i = 0; i < args.length; i += 2) {
-      if (!['--model', '--prompt', '--tokens', '--context', '--timeout', '--chat'].includes(args[i]) || i + 1 >= args.length)
+      if (!['--model', '--prompt', '--tokens', '--context', '--timeout', '--chat', '--kernel'].includes(args[i]) || i + 1 >= args.length)
         throw new Error('Usage: --model ABSOLUTE_DIR --prompt "Hello" --tokens 1 --context 128 --timeout 90000 --chat false');
       const key = { '--model': 'modelDirectory', '--prompt': 'prompt', '--tokens': 'maxNewTokens',
-        '--context': 'maxContext', '--timeout': 'timeoutMs', '--chat': 'chat' }[args[i]];
+        '--context': 'maxContext', '--timeout': 'timeoutMs', '--chat': 'chat', '--kernel': 'cpuKernel' }[args[i]];
       options[key] = ['maxNewTokens', 'maxContext', 'timeoutMs'].includes(key)
         ? Number(args[i + 1]) : key === 'chat' ? args[i + 1] === 'true' : args[i + 1];
     }

@@ -33,9 +33,10 @@ test('native inference lifecycle routes call the explicitly selected backend onl
   const status = await call(manager, '/api/native-inference/status');
   assert.equal(status.status, 200);
   const loaded = await call(manager, '/api/native-inference/load', {
-    backend: 'blackice', modelPath: path.resolve('qwen-fp16'), maxContext: 64,
+    backend: 'blackice', modelPath: path.resolve('qwen-fp16'), maxContext: 64, cpuKernel: 'simd',
   });
   assert.equal(loaded.body.backend, 'blackice');
+  assert.equal(calls[1][1].cpuKernel, 'simd');
   assert.equal(loaded.body.id, id);
   const result = await call(manager, '/api/native-inference/generate',
     { id, prompt: 'Hello', maxTokens: 1, enableThinking: false });
@@ -80,6 +81,10 @@ test('native inference validates shapes, IDs and generation budget before execut
     { backend: 'ollama', modelPath: 'C:\\Models\\qwen' })).status, 400);
   assert.equal((await call(manager, '/api/native-inference/load',
     { backend: 'blackice', modelPath: '' })).status, 400);
+  assert.equal((await call(manager, '/api/native-inference/load',
+    { backend: 'blackice', modelPath: path.resolve('qwen'), cpuKernel: 'q4' })).status, 400);
+  assert.equal((await call(manager, '/api/native-inference/load',
+    { backend: 'llama.cpp', modelPath: path.resolve('model.gguf'), cpuKernel: 'simd' })).status, 400);
   assert.equal(calls.length, 0);
 });
 

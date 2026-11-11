@@ -66,6 +66,7 @@ test('BLACKICE native panel exposes own engine and keeps llama.cpp clearly unava
   const f = fixture(t);
   await until(() => f.$('#next-native-refresh').disabled === false && f.$('#next-native-engine').children.length === 2);
   assert.equal(f.$('#next-native-engine').value, 'blackice');
+  assert.equal(f.$('#next-native-cpu-kernel').value, 'simd');
   assert.equal(f.$('#next-native-engine').children[1].disabled, true);
   assert.equal(f.$('#next-native-load').disabled, false);
   assert.equal(f.$('#next-native-generate').disabled, true);
@@ -81,7 +82,7 @@ test('native panel explicitly loads model, generates a response, then unloads wi
   await f.click('#next-native-load');
   await until(() => f.state.sessions.length === 1 && f.$('#next-native-load').disabled === false);
   assert.equal(f.writes()[0].route, '/api/native-inference/load');
-  assert.deepEqual(f.writes()[0].body, { backend: 'blackice', modelPath: 'C:\\Models\\Qwen3-FP16', maxContext: 64 });
+  assert.deepEqual(f.writes()[0].body, { backend: 'blackice', modelPath: 'C:\\Models\\Qwen3-FP16', maxContext: 64, cpuKernel: 'simd' });
   assert.equal(f.$('#next-native-generate').disabled, false);
   await f.input('#next-native-input', 'Hello');
   await f.click('#next-native-generate');

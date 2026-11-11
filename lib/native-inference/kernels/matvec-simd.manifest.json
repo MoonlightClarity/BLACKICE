@@ -1,0 +1,11 @@
+﻿{
+    "format":  "blackice-owned-simd-v1",
+    "kernel":  "matvec_f32",
+    "author":  "BLACKICE",
+    "compiler":  "zig 0.15.2",
+    "target":  "wasm32-freestanding+simd128",
+    "source":  "scripts/native-kernels/matvec-simd.c",
+    "sourceSha256":  "d29a85444f9be7ba730d037933d9877484bb3aaad0136c51cb4249ddce23ebc8",
+    "wasmSha256":  "fa8859739239026b358edb22cd08bbb556999045045b41486f1951cd89815948",
+    "quantization":  "none"
+}

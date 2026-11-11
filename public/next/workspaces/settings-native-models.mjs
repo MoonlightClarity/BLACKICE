@@ -35,6 +35,12 @@ export function createNativeModelSettings({ mount, api } = {}) {
 
   const runtime = element('select', '', 'next-field');
   runtime.id = 'next-native-engine';
+  const cpuKernel = element('select', '', 'next-field');
+  cpuKernel.id = 'next-native-cpu-kernel';
+  for (const [id, name] of [['simd', 'BLACKICE SIMD CPU (optimized)'], ['reference', 'BLACKICE JavaScript reference']]) {
+    const option = element('option', name); option.value = id; cpuKernel.append(option);
+  }
+  cpuKernel.value = 'simd';
   const modelPath = element('input', '', 'next-field');
   modelPath.id = 'next-native-model-path';
   modelPath.setAttribute('type', 'text');
@@ -89,6 +95,7 @@ export function createNativeModelSettings({ mount, api } = {}) {
 
   card.append(
     label('Inference engine', runtime),
+    label('BLACKICE CPU kernel', cpuKernel),
     label('Absolute model directory or GGUF file', modelPath),
     label('Context window', context),
     loadRow,
@@ -129,6 +136,7 @@ export function createNativeModelSettings({ mount, api } = {}) {
     const selected = knownSession();
     const running = selected?.status === 'running' || busy === 'generate';
     runtime.disabled = Boolean(busy);
+    cpuKernel.disabled = Boolean(busy) || runtime.value !== 'blackice';
     modelPath.disabled = Boolean(busy);
     context.disabled = Boolean(busy);
     load.disabled = Boolean(busy) || chosenEngine()?.available !== true;
@@ -165,7 +173,9 @@ export function createNativeModelSettings({ mount, api } = {}) {
     busy = 'load'; render(); info('Loading model into a native BLACKICE worker…');
     try {
       const result = await api('/api/native-inference/load', 'POST',
-        { backend, modelPath: chosenPath, maxContext }, { deadlineMs: 180000 });
+        { backend, modelPath: chosenPath, maxContext,
+          ...(backend === 'blackice' ? { cpuKernel: cpuKernel.value } : {}) },
+        { deadlineMs: 180000 });
       info('Loaded ' + result.backend + ' · ' + result.modelPath);
       await refresh({ selectedId: result.id });
     } catch (error) { info(error.message || 'Native model load failed.', true); }

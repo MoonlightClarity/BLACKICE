@@ -79,6 +79,8 @@ test('BLACKICE native model loads a real worker and emits text without llama.cpp
   t.after(() => host.unload());
   const info = await host.load();
   assert.equal(info.backend, 'blackice');
+  assert.equal(info.cpuKernel, 'simd');
+  assert.equal(host.status().cpuKernel, 'simd');
   assert.deepEqual(info.sourcePrecision, ['F32']);
   assert.equal(host.status().runningInWorker, true);
   const pieces = [], ids = [];
@@ -94,6 +96,17 @@ test('BLACKICE native model loads a real worker and emits text without llama.cpp
   assert.deepEqual(pieces, ['a', 'a', 'a']);
   assert.equal(result.promptTokens > 4, true);
   assert.equal(host.status().busy, false);
+});
+
+test('explicit JavaScript reference kernel remains selectable and produces the same output', async t => {
+  const modelDirectory = await fixture(t), host = new Qwen3WorkerHost({ modelDirectory, maxContext: 64, cpuKernel: 'reference' });
+  t.after(() => host.unload());
+  const info = await host.load();
+  assert.equal(info.cpuKernel, 'reference');
+  const result = await host.generate({ prompt: 'ab', maxNewTokens: 2 });
+  assert.deepEqual(result.tokenIds, [0, 0]);
+  assert.equal(result.text, 'aa');
+  assert.throws(() => new Qwen3WorkerHost({ modelDirectory, cpuKernel: 'quantized' }), /SIMD or reference/);
 });
 
 test('worker isolates CPU work from the parent event loop', async t => {
