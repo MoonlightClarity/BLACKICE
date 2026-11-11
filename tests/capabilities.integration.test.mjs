@@ -75,7 +75,12 @@ async function application(t,{runtimeFactory,driver=new FakeBrowserDriver(),brow
 }
 
 test('HTTP preflight checks each selected provider instead of aggregate runtime readiness and default falls back to a configured remote model',async t=>{
-  const codex=new FakeCodex(false),requests=[];
+  const codex=new FakeCodex(false),requests=[],startup=deferred();
+  const startCodex=codex.start.bind(codex);
+  // Listening is intentionally independent of provider startup. Keep that
+  // boundary deterministic instead of racing the initial default write.
+  codex.start=async()=>{await startup.promise;return startCodex();};
+  t.after(()=>startup.resolve());
   const {api,app,settled,runtime}=await application(t,{runtimeFactory:async({dataDir})=>{
     const runtime=await new ProviderRuntime({codex,dataDir,fetchImpl:async(url,options)=>{
       if(options.method==='GET'){assert.match(url,/\/models$/);return jsonResponse({data:['remote-fixture','offline-fixture'].map(catalogModel)});}
@@ -96,8 +101,17 @@ test('HTTP preflight checks each selected provider instead of aggregate runtime 
   const mixed=graph('cloud::remote-fixture');mixed.nodes.splice(2,0,{id:'offline-agent',type:'agent',name:'Offline',prompt:'Must not start',model:'codex-fixture'});mixed.edges.push({source:'input',target:'offline-agent'},{source:'offline-agent',target:'output'});
   assert.equal((await api('/api/runs',{method:'POST',body:{workflow:mixed,input:'Preflight all branches'}})).status,400);
   assert.equal(requests.length,0,'a bad parallel branch prevents every model request');assert.equal(codex.calls.length,0);assert.equal(app.engine.listRuns().length,0);
+  await waitFor(()=>runtime.defaultModelStatus().defaultModelInitializing,'initial default selection');
+  const initializing=await api('/api/runs',{method:'POST',body:{workflow:graph(),input:'Default is still initializing'}});
+  t.diagnostic(`Default initialization admission: ${JSON.stringify(initializing.data)}`);
+  assert.equal(initializing.status,400,initializing.text);
+  assert.match(initializing.data.error,/choosing its initial default model/i);
+  assert.equal(requests.length,0);assert.equal(app.engine.listRuns().length,0);
+  startup.resolve();
+  await waitFor(()=>runtime.defaultModelStatus().defaultModelAvailable,'automatic remote default readiness');
+  assert.equal(runtime.defaultModelStatus().automaticDefaultModel,'cloud::remote-fixture');
   const started=await api('/api/runs',{method:'POST',body:{workflow:graph(),input:'Use the available default'}});
-  assert.equal(started.status,201);const run=await settled(started.data.id);
+  assert.equal(started.status,201,JSON.stringify({response:started.data,runtime:runtime.defaultModelStatus()}));const run=await settled(started.data.id);
   assert.equal(run.status,'completed',run.error);assert.match(run.output,/Remote provider selected correctly/);
   assert.equal(requests.length,1);assert.ok(requests.every(request=>request.body.model==='remote-fixture'));assert.equal(codex.calls.length,0);
   assert.equal(run.nodes.agent.planning.status,'off','Provider admission is independent of automatic planning.');
