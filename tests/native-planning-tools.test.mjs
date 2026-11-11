@@ -24,7 +24,7 @@ async function fixture(t,execute){
 test('native coordinator dispatch uses shared graph with honest provenance and UI reverse edits',async t=>{
  let f,seq=0;
  f=await fixture(t,async o=>{
-  assert.ok(o.dynamicTools.some(v=>v.name==='relay_planning_read'));assert.ok(o.dynamicTools.some(v=>v.name==='relay_planning_write'));
+  assert.ok(o.dynamicTools.some(v=>v.name==='relay_planning_read'));for(const tool of o.dynamicTools.filter(v=>v.name.startsWith('relay_planning_')))assert.equal(tool.type,'function');assert.ok(o.dynamicTools.some(v=>v.name==='relay_planning_write'));
   const send=async(action,args={},name='relay_planning_write')=>{const r=await o.onToolCall({name,arguments:{requestId:'native-'+(++seq),action,...args}});assert.equal(r.success,true,JSON.stringify(r));return payload(r);};
   await send('create_request',{graphRequestId:'own',title:'Shared reasoning',objective:'Compare alternatives with recorded evidence.'});
   await send('add_module',{graphRequestId:'own',nodeId:'frame',kind:'frame',title:'Frame choices',prompt:'What choices are supported?'});
@@ -173,4 +173,23 @@ test('read-only native coordinator can inspect every graph view while all mutati
  const run=f.engine.startRun({workflow,input:'Inspect the shared graph read-only.',planningMode:'off'});
  await f.engine.executions.get(run.id);assert.equal(f.engine.getRun(run.id).status,'completed',JSON.stringify(f.engine.getRun(run.id)));
  assert.equal(observed,true);
+});
+
+for(const mode of ['off','advisory'])for(const available of [false,true])test(`native control schemas follow service availability, not Planning ${mode}: service ${available}`,async t=>{
+ let observed;
+ const f=await fixture(t,async o=>{observed=o.dynamicTools.find(tool=>tool.name==='relay_control');return {output:'Catalog inspected.',threadId:'availability-thread'};});
+ if(available)f.engine.responseCycle={forRun:async()=>({skipped:true})};
+ const workflow=graph();workflow.settings.planningMode=mode;
+ const initial=f.engine.startRun({workflow,input:'Inspect available controls.',planningMode:mode});await f.engine.executions.get(initial.id);
+ const saved=f.engine.getRun(initial.id);assert.equal(saved.status,'completed',JSON.stringify(saved));
+ const canonical=tool=>(tool.inputSchema.properties.cycle.properties.plan.anyOf||[]).some(schema=>schema.properties.contract);
+ assert.equal(canonical(observed),available);assert.equal(saved.nodes.agent.controlSchemaVersion,available?12:11);
+ const restored=f.engine.nativeHistoryDescription(saved,saved.workflow.nodes.find(n=>n.id==='agent'),saved.nodes.agent,'fixture');
+ assert.equal(canonical(restored.dynamicTools.find(tool=>tool.name==='relay_control')),available);
+ // An existing native provider session keeps its admitted schema even if the
+ // host's service availability changes between turns.
+ f.engine.responseCycle=available?null:{forRun:async()=>({skipped:true})};
+ const next=f.engine.continueRun(saved.id,{nodeId:'agent',message:'Continue with the saved native catalog.'});await f.engine.executions.get(next.id);
+ assert.equal(f.engine.getRun(next.id).status,'completed',JSON.stringify(f.engine.getRun(next.id)));
+ assert.equal(canonical(observed),available);assert.equal(f.engine.getRun(next.id).nodes.agent.controlSchemaVersion,available?12:11);
 });
