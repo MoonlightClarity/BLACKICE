@@ -21,6 +21,8 @@ import { NativeWindowManager } from './lib/native-window-tools.mjs';
 import { KnowledgeStore } from './lib/knowledge.mjs';
 import { PlanningBrowserStore } from './lib/planning-browser.mjs';
 import { PlanningBrowserRuntime } from './lib/planning-browser-runtime.mjs';
+import { PlanningDiagnostics } from './lib/planning-diagnostics.mjs';
+import { handlePlanningDiagnosticsHttp } from './lib/planning-diagnostics-api.mjs';
 import { handlePlanningBrowserHttp, planningBrowserCatalog } from './lib/planning-browser-http.mjs';
 import { TaskViability } from './lib/task-viability.mjs';
 import { ResponseCycleService } from './lib/response-cycle.mjs';
@@ -169,6 +171,7 @@ export async function createHarnessServer(options = {}) {
   engine.taskViability=taskViability;
   const responseCycle=options.responseCycle===false||!taskViability?null:options.responseCycle||new ResponseCycleService({store:planningBrowser,runner:planningBrowserRuntime,taskViability,engine,conversations,getSettings:()=>runtimeSettings.get(),onUpdated:event=>sendEvent(event)});
   engine.responseCycle=responseCycle;
+  const planningDiagnostics=responseCycle?new PlanningDiagnostics({store:planningBrowser,cycles:responseCycle,runner:planningBrowserRuntime,getSettings:()=>runtimeSettings.get(),readRun:async id=>{try{return engine.getRun(id);}catch{return conversations.get(id);}}}):null;
   let providerStartupPending=true;
   const operations=options.operations||new OperationsStore({dataDir,inbox,engine,conversationArchive:conversations,taskViability,providerStartupPending:()=>providerStartupPending});
   // Restore an intentionally unpaused scheduler after a clean host restart.
@@ -543,6 +546,7 @@ export async function createHarnessServer(options = {}) {
         return json(res,200,conversations.search(options));
       }
       if(pathname==='/api/conversations'&&req.method==='GET')return json(res,200,{conversations:conversations.list(new URL(req.url,'http://'+host).searchParams.get('state')||'active')});
+      if (await handlePlanningDiagnosticsHttp({req,res,pathname,service:planningDiagnostics,body,json,fileMutations})) return;
       if (pathname === '/api/planning-browser' || pathname.startsWith('/api/planning-browser/')) {
         const client = remoteAccess?.authorizeForward?.(req);
         const actor = client?.kind === 'browser' ? { type: 'human', id: client.id, name: client.label } : { type: 'human', id: 'local' };
@@ -1534,6 +1538,7 @@ export async function createHarnessServer(options = {}) {
         await cleanup(() => desktop.setEnabled(false));
         await cleanup(() => browser.cancel());
         await cleanup(() => signedIntegration?.close());
+        await cleanup(() => planningDiagnostics?.close());
         await cleanup(() => planningBrowserRuntime.close());
         await cleanup(() => engine.close());
         await cleanup(() => nativeWindows?.close());

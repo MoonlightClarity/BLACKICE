@@ -306,7 +306,10 @@ export function parseResponseCycleResponse(output, stageOrKind, { sources,pipeli
   if (stage.kind === 'plan') {
     if (canonicalPlan) {
       const source = canonicalPlanSource(sources), authoring = JSON.parse(source.text);
-      const operational = Boolean(cycleContext?.workflowOwner), agents = authoring.workflow?.agents || [];
+      const diagnosticAuthoring=cycleContext?.diagnosticAuthoring;
+      const snapshot=diagnosticAuthoring?.version===1&&diagnosticAuthoring.sourceId===source.id&&diagnosticAuthoring.sourceHash===source.contentHash;
+      if(cycleContext?.diagnostic&&!snapshot)throw fail('The diagnostic canonical authoring binding is missing or changed.');
+      const operational = Boolean(cycleContext?.workflowOwner||snapshot), agents = authoring.workflow?.agents || [];
       result.contract = normalizePlanContractResponse(value.contract, cycleContext?.commitPrerequisites, {
         requireBrowserReceipts: operational,
         requireConfirmationOwners: operational && authoring.currentContract === null && !cycleContext.effectReceipts?.length,
@@ -442,9 +445,9 @@ export function evaluateResponseCycleStage(stageOrKind, response, context = {}) 
     result.unresolvedChecks.push(...(viability.sourceCoverage || []).map(item => ({ id: item.requirementId, label: 'Supplied source inspection', note: item.message, sourceIds: item.missingSourceIds })));
     const valid = !result.blockedDependencies.length && !result.staleSources.length && !result.staleInputs.length && !result.issues.length && !result.missingFields.length && !result.missingGrounding.length && !result.invalidReferences.length;
     result.analysisReady = valid && viability.analysisReady === true;
-    const defer = valid && pipelineVersion !== 1 && Boolean(context.workflowOwner) && deferredOwnerChecks(response, viability);
+    const defer = valid && pipelineVersion !== 1 && Boolean(context.workflowOwner||context.diagnosticAuthoring) && deferredOwnerChecks(response, viability);
     if (defer) result.ownerChecksDeferred = true;
-    result.dispatchReady = valid && prerequisitesDispatch && (viability.state === 'ready' || defer);
+    result.dispatchReady = !context.diagnostic && valid && prerequisitesDispatch && (viability.state === 'ready' || defer);
     result.state = !valid ? result.staleSources.length || result.staleInputs.length ? 'stale' : 'needs_evidence' : defer ? 'ready' : viability.state;
     result.outcome = result.dispatchReady && !defer ? 'satisfied' : 'unresolved'; return result;
   }
@@ -579,7 +582,7 @@ export function evaluateResponseCycleStage(stageOrKind, response, context = {}) 
   result.analysisReady = result.state === 'ready';
   const workflowPending = stage.order >= 4 && evaluatedCriteria.some(item => workflowCriterionIds.has(item.criterionId) && item.assessment !== 'satisfied');
   const workflowUnavailable = (context.workflowRequests || []).some(item => item.requiredForPlan !== false) && !context.workflowOwner;
-  result.dispatchReady = result.analysisReady && prerequisitesDispatch && childDispatch && !result.unresolvedChecks.length && !workflowPending && !workflowUnavailable;
+  result.dispatchReady = !context.diagnostic && result.analysisReady && prerequisitesDispatch && childDispatch && !result.unresolvedChecks.length && !workflowPending && !workflowUnavailable;
   if(stage.kind==='respond'&&result.analysisReady&&context.workflowOwner&&context.workflowOwner.cycleId!==context.cycleId){
     const pending=value.coverage.filter(item=>item.disposition!=='addressed').map(item=>item.criterionId);
     const inherited=(context.inheritedAnalysisWorkflowCriteria||[]).filter(item=>
