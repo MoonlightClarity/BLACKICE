@@ -12,9 +12,10 @@ import {exerciseConnectionImportSettings} from './next-settings-import-journey.m
 import {exerciseKnowledgeManagement} from './next-knowledge-management-journey.mjs';
 import {exerciseTaskManagement} from './next-task-management-journey.mjs';
 import {exerciseVisualPlanning} from './next-visual-planning-journey.mjs';
-import {exerciseActivityVisual} from './next-activity-visual-journey.mjs';
+import {exerciseCronjobs,exerciseWorkflowManager} from './next-cronjobs-journey.mjs';
 
-const chrome='C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const cronjobsOnly=process.argv.includes('--cronjobs');
+const chrome=process.env.BLACKICE_NEXT_BROWSER_PATH||'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const fixture=makeFixture({heavyHistory:process.env.BLACKICE_NEXT_HEAVY==='yes',
   largeCatalog:process.env.BLACKICE_NEXT_CATALOG_HEAVY==='yes',
   largeWorkflow:process.env.BLACKICE_NEXT_GRAPH_HEAVY==='yes',
@@ -72,6 +73,8 @@ try {
     '--window-size=1360,850','http://127.0.0.1:'+port+'/next/',
   ],{stdio:['ignore','pipe','pipe'],windowsHide:true});
   let childErrors='';
+  processHandle.on('error',error=>console.error('CHROME_START_ERROR',error.message));
+  processHandle.on('exit',(code,signal)=>{if(code)console.error('CHROME_EXIT',code,signal,childErrors);});
   processHandle.stderr.on('data',chunk=>{childErrors=(childErrors+String(chunk)).slice(-4000);});
   const remote=await until(async()=>{
     const raw=await readFile(join(profile,'DevToolsActivePort'),'utf8');
@@ -86,6 +89,7 @@ try {
   await until(()=>evaluate('Boolean(document.querySelector("#next-chat-new") && document.querySelector("#next-chat-list"))'),'Chat shell',11000);
   assert.equal(await evaluate('document.querySelector("#next-fatal").hidden'),true);
   await until(()=>evaluate('document.querySelectorAll(".next-conversation").length>0'),'Conversation metadata');
+  if(!cronjobsOnly){
   await until(()=>evaluate('document.querySelector("#next-chat-model")?.options.length>1'),'Chat model choices');
   await evaluate('window.__modelOptionBefore=document.querySelector("#next-chat-model").options[1];document.querySelector("#next-chat-model").focus();true');
   for(let i=0;i<20;i++)fixture.send({type:'runtime.status',data:fixture.state.status});
@@ -179,6 +183,7 @@ try {
   await until(()=>evaluate('Boolean(document.querySelector("#next-planning-detail textarea"))'),'Editable plan details');
   counts.planning=true;
   await exerciseVisualPlanning({evaluate,send,until,fixture,counts});
+  }else counts.scope='Cronjobs, workflow manager and Chat lifecycle integration only';
   await evaluate('document.querySelector(".next-tab[data-space=cronjobs]").click(); true');
   await until(()=>evaluate('Boolean(document.querySelector("#next-tasks-form"))'),'Cronjobs workspace');
   assert.equal(await evaluate('document.querySelector("#next-tasks-tab-schedules").getAttribute("aria-selected")'),'true');
@@ -215,7 +220,9 @@ try {
   assert.deepEqual(fixture.state.workflowDetailRequests,['sample-workflow']);
   assert.equal(fixture.state.workflowFullListRequests,0);
   counts.tasksScheduledWithSelectedGraph=true;
-  counts.tasks=true;
+  counts.cronjobs=true;
+  await exerciseCronjobs({evaluate,send,until,fixture,counts});
+  if(!cronjobsOnly){
   await evaluate('document.querySelector(".next-tab[data-space=browser]").click(); true');
   await until(()=>evaluate('Boolean(document.querySelector("#next-browser-inspect"))'),'Browser workspace');
   await until(()=>evaluate('Boolean(document.querySelector("#next-browser-image"))'),'Contained visual page');
@@ -351,9 +358,10 @@ try {
     const capture=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
     await writeFile(process.env.BLACKICE_NEXT_BROWSER_SCREENSHOT_PATH,Buffer.from(capture.data,'base64'));
   }
-  await evaluate('document.querySelector(".next-tab[data-space=activity]").click(); true');
-  await until(()=>evaluate('Boolean(document.querySelector("#next-activity-runtime"))'),'Activity workspace');
-  counts.activity=true;
+  }
+  await evaluate('document.querySelector(".next-tab[data-space=cronjobs]").click();document.querySelector("#next-cronjobs-manage-workflows").click(); true');
+  await until(()=>evaluate('Boolean(document.querySelector("#next-workflows-back"))'),'Activity workspace');
+  counts.workflowManager=true;
   await until(()=>evaluate('Boolean(document.querySelector("#next-workflow-outline .next-workflow-node"))'),'Saved workflow graph');
   assert.equal(await evaluate('document.querySelectorAll("#next-workflow-connections .next-workflow-link").length'),2,'Saved workflow connections must be visible in V2.');
   assert.match(await evaluate('document.querySelector("#next-workflow-connections")?.textContent||""'),/input.*Agent.*output/);
@@ -361,7 +369,7 @@ try {
   assert.equal(fixture.state.workflowFullListRequests,0,'Activity must not bulk-fetch full workflow graphs');
   assert.ok(fixture.state.workflowDetailRequests.includes('sample-workflow'),'Selected workflow should be fetched on demand');
   counts.workflowLazyLoaded=true;
-  await exerciseActivityVisual({evaluate,until,fixture,counts});
+  await exerciseWorkflowManager({evaluate,send,until,fixture,counts});
   await until(()=>evaluate('document.querySelectorAll("#next-workflow-canvas [data-node]").length===3 && document.querySelectorAll("#next-workflow-canvas [data-edge-source]").length===2'),'Visual workflow canvas mounted');
   const canvasBeforeZoom=await evaluate('document.querySelector("#next-workflow-canvas").getAttribute("viewBox")');
   await evaluate('document.querySelector("#next-canvas-zoom-in").click();true');
@@ -432,7 +440,7 @@ try {
   await evaluate('(()=>{document.querySelector("#next-workflow-edit-details").open=true;const n=document.querySelector("#next-workflow-edit-name");n.value="Revised workflow";n.dispatchEvent(new Event("input",{bubbles:true}));const s=document.querySelector("#next-workflow-edit-node-name");s.value="Lead agent";s.dispatchEvent(new Event("input",{bubbles:true}));const p=document.querySelector("#next-workflow-edit-prompt");p.value="Analyze the case and report sources.";p.dispatchEvent(new Event("input",{bubbles:true}));return true})()');
   // The advanced editor changes provider/model options and workflow-level
   // settings without changing identities, connectivity or unknown fields.
-  await evaluate('(()=>{document.querySelector("#next-workflow-edit-advanced").open=true;const edit=(id,value,event)=>{const field=document.querySelector(id);field.value=value;field.dispatchEvent(new Event(event||"change",{bubbles:true}));};edit("#next-workflow-edit-model","codex-test","input");edit("#next-workflow-edit-effort","high");edit("#next-workflow-edit-tier","default");edit("#next-workflow-edit-context","custom");edit("#next-workflow-edit-context-tokens","120000","input");const compact=document.querySelector("#next-workflow-edit-compact");compact.checked=false;compact.dispatchEvent(new Event("change",{bubbles:true}));edit("#next-workflow-edit-parallel","3","input");edit("#next-workflow-edit-planning","on");edit("#next-workflow-edit-detail","detailed");return true})()');
+  await evaluate('(()=>{document.querySelector("#next-workflow-edit-advanced").open=true;const edit=(id,value,event)=>{const field=document.querySelector(id);field.value=value;field.dispatchEvent(new Event(event||"change",{bubbles:true}));};edit("#next-workflow-edit-model","codex-test","input");edit("#next-workflow-edit-effort","high");edit("#next-workflow-edit-tier","default");edit("#next-workflow-edit-context","custom");edit("#next-workflow-edit-context-tokens","120000","input");const compact=document.querySelector("#next-workflow-edit-compact");compact.checked=false;compact.dispatchEvent(new Event("change",{bubbles:true}));edit("#next-workflow-edit-parallel","3","input");edit("#next-workflow-edit-planning","advisory");edit("#next-workflow-edit-detail","detailed");return true})()');
   assert.equal(await evaluate('document.querySelector("#next-workflow-edit-context-tokens").disabled'),false,'Custom context token input must enable only for custom preset.');
   const expectedAssignment={scope:'Investigate the supplied case and reconcile the primary sources.',
     inputs:['Original request','Saved fixture evidence'],result:'A checked assessment with source references.',
@@ -468,10 +476,10 @@ try {
   assert.equal(fixture.state.postedWorkflows.length,beforeWrites,'Pressing Enter while editing must not trigger an implicit workflow save');
   await evaluate('document.querySelector(".next-tab[data-space=settings]").click();true');
   await until(()=>evaluate('Boolean(document.querySelector("#next-settings-model"))'),'Settings before workflow draft restore');
-  await evaluate('document.querySelector(".next-tab[data-space=activity]").click();true');
+  await evaluate('document.querySelector(".next-tab[data-space=cronjobs]").click();document.querySelector("#next-cronjobs-manage-workflows").click();true');
   await until(()=>evaluate('document.querySelector("#next-workflow-edit-name")?.value==="Revised workflow" && document.querySelector("#next-workflow-edit-prompt")?.value==="Analyze the case and report sources."'),'Unsaved workflow changes preserved across navigation');
   await until(()=>evaluate('document.querySelector("#next-workflow-choice")?.value==="sample-workflow" && document.querySelector("#next-workflow-edit-node option[value=agent]") && document.querySelector("#next-workflow-edit-save")?.disabled===false'),'Selected workflow details fully hydrated before Save');
-  await until(()=>evaluate('document.querySelector("#next-workflow-edit-model")?.value==="codex-test" && document.querySelector("#next-workflow-edit-effort")?.value==="high" && document.querySelector("#next-workflow-edit-context-tokens")?.value==="120000" && document.querySelector("#next-workflow-edit-planning")?.value==="on"'),'Advanced settings draft retained across navigation');
+  await until(()=>evaluate('document.querySelector("#next-workflow-edit-model")?.value==="codex-test" && document.querySelector("#next-workflow-edit-effort")?.value==="high" && document.querySelector("#next-workflow-edit-context-tokens")?.value==="120000" && document.querySelector("#next-workflow-edit-planning")?.value==="advisory"'),'Advanced settings draft retained across navigation');
   const assignmentValues=()=>evaluate('(()=>{const value=name=>document.querySelector("#next-workflow-edit-assignment-"+name).value;return {scope:value("scope"),inputs:value("inputs").split("\\n"),result:value("result"),doneWhen:value("done")}})()');
   assert.deepEqual(await assignmentValues(),expectedAssignment,'Every assignment field must survive the Settings roundtrip.');
   await evaluate('(()=>{const stage=document.querySelector("#next-workflow-edit-node");stage.value="input";stage.dispatchEvent(new Event("change",{bubbles:true}));return true})()');
@@ -505,7 +513,7 @@ try {
   assert.equal(saved.nodes.find(item=>item.id==='agent').prompt,'Analyze the case and report sources.');
   assert.deepEqual(saved.edges,beforeWorkflow.edges,'Workflow connection graph must be preserved');
   assert.deepEqual(saved.settings,{...beforeWorkflow.settings,
-    maxParallel:3,planningMode:'on',planDetail:'detailed'},'Explicit workflow settings must persist without losing prior fields.');
+    maxParallel:3,planningMode:'on',planningEnforcement:'advisory',planDetail:'detailed'},'Explicit workflow settings must persist without losing prior fields.');
   assert.equal(saved.nodes.find(item=>item.id==='agent').model,'codex-test');
   assert.equal(saved.nodes.find(item=>item.id==='agent').effort,'high');
   assert.equal(saved.nodes.find(item=>item.id==='agent').serviceTier,'default');
@@ -597,7 +605,7 @@ try {
   await until(()=>evaluate('document.querySelector("#next-graph-readiness")?.dataset.ready==="true" && document.querySelectorAll("#next-workflow-connections .next-workflow-link").length===2'),'Completed unsaved workflow graph');
   await evaluate('document.querySelector(".next-tab[data-space=settings]").click();true');
   await until(()=>evaluate('Boolean(document.querySelector("#next-settings-model"))'),'Settings during new graph draft');
-  await evaluate('document.querySelector(".next-tab[data-space=activity]").click();true');
+  await evaluate('document.querySelector(".next-tab[data-space=cronjobs]").click();document.querySelector("#next-cronjobs-manage-workflows").click();true');
   await until(()=>evaluate('document.querySelector("#next-workflow-choice")?.value==='+JSON.stringify(newGraphId)+' && document.querySelector("#next-graph-readiness")?.dataset.ready==="true"'),'New graph draft survives navigation');
   assert.equal(fixture.state.postedWorkflows.length,graphWrites,'Navigation must not persist a workflow draft.');
   await evaluate('document.querySelector("#next-graph-save").click();document.querySelector("#next-graph-save").click();true');
@@ -641,6 +649,7 @@ try {
   await until(()=>evaluate('document.querySelector("#next-workflow-choice")?.value==="sample-workflow"'),'Original saved workflow selected after graph authoring');
   counts.workflowGraphConflictBlocked=true;
   await exerciseTaskManagement({evaluate,send,until,fixture,counts});
+  if(!cronjobsOnly){
 
   await evaluate('document.querySelector(".next-tab[data-space=settings]").click(); true');
   await until(()=>evaluate('Boolean(document.querySelector("#next-settings-model"))'),'Settings workspace');
@@ -762,16 +771,18 @@ try {
   assert.equal(agent?.effort,'high');
   assert.equal(agent?.serviceTier,'fast');
   counts.reasoningAndSpeedSent=true;
-  await evaluate('document.querySelector(".next-tab[data-space=activity]").click();true');
-  await until(()=>evaluate('Boolean(document.querySelector("#next-activity-tab-workflows"))'),'Activity views mounted after reload');
-  await evaluate('document.querySelector("#next-activity-tab-workflows").click();document.querySelector("#next-workflow-launch").open=true;true');
+  }
+  await evaluate('document.querySelector(".next-tab[data-space=cronjobs]").click();document.querySelector("#next-cronjobs-manage-workflows").click();true');
+  await until(()=>evaluate('Boolean(document.querySelector("#next-workflows-back"))'),'Activity views mounted after reload');
+  await evaluate('document.querySelector("#next-workflow-launch").open=true;true');
   await until(()=>evaluate('Boolean(document.querySelector("#next-workflow-outline .next-workflow-node"))'),'Workflow execution ready');
   // Chat may have just saved its own mission workflow. Explicitly choose the
   // saved fixture workflow instead of relying on an incidental list order.
   await evaluate('(()=>{const choice=document.querySelector("#next-workflow-choice");choice.value="sample-workflow";choice.dispatchEvent(new Event("change",{bubbles:true}));const prompt=document.querySelector("#next-workflow-prompt");prompt.value="Workflow acceptance run";prompt.dispatchEvent(new Event("input",{bubbles:true}));return true})()');
   await until(()=>evaluate('document.querySelector("#next-workflow-choice")?.value==="sample-workflow" && document.querySelector("#next-workflow-start")?.disabled===false'),'Selected saved workflow graph loaded on demand');
+  const runCountBefore=fixture.state.submittedRuns.length;
   await evaluate('document.querySelector("#next-workflow-form").requestSubmit();true');
-  await until(()=>fixture.state.submittedRuns.length>=2,'Saved workflow submitted to unchanged API');
+  await until(()=>fixture.state.submittedRuns.length===runCountBefore+1,'Saved workflow submitted to unchanged API');
   assert.equal(fixture.state.submittedRuns.at(-1).workflow.id,'sample-workflow');
   assert.equal(fixture.state.submittedRuns.at(-1).input.task,'Workflow acceptance run');
   await until(()=>evaluate('document.querySelector("#next-workflow-run-details")?.textContent.includes("new-sample-run")'),'Workflow run controls');
@@ -782,7 +793,7 @@ try {
   const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
   const location=join(dir,'next-screen.png');
   await writeFile(location,Buffer.from(shot.data,'base64'));
-  console.log('PASS:',JSON.stringify(counts),'static_requests='+fixture.calls.length,
+  console.log(cronjobsOnly?'PASS Cronjobs integration:':'PASS:',JSON.stringify(counts),'static_requests='+fixture.calls.length,
     'no_bulk_history=true','screen_bytes='+Buffer.from(shot.data,'base64').length);
   if(failures.length)console.warn('Renderer console issues:',failures.slice(0,5).join(' | '));
   assert.equal(failures.length,0,failures.join(' | '));

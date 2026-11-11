@@ -4,6 +4,10 @@
 
 V2 is the default interface in BLACKICE 2.35.2. It replaces the accumulated renderer with a small shell and independently mounted workspaces while retaining the existing local profile and execution/storage APIs. It does not migrate saved data.
 
+## Cronjobs navigation update
+
+The current shell replaces the general Tasks tab with **Cronjobs**. Its Schedules, Results, and Job history views use the existing operations backend and saved data without a migration. Legacy `#tasks` and `#activity` hashes resolve to `#cronjobs`. **Manage saved workflows** opens `#workflows` inside the Cronjobs navigation context, with a scrollable editor and a return control. Internal task models, operation routes, connector tool names, and existing schedule records are preserved. The older workspace descriptions below document the original V2 rollout.
+
 ## Routes and lifecycle
 
 - `/` and `/index.html` open V2; `/next/` is a direct alias.

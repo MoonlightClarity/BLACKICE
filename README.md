@@ -112,14 +112,14 @@ Attached tools act on the host's configured working folders and Windows account.
 
 ## 7. Tasks, workflows, and scheduling
 
-Tasks are saved work; workflows assign stages to agents; schedules trigger work on the running host.
+Tasks are saved work; workflows assign stages to agents; schedules trigger work on the running host. The **Cronjobs** tab opens schedules, results, and job history directly. **Manage saved workflows** opens the reusable workflow editor; **Back to Cronjobs** returns without discarding unsaved drafts. Task and run records remain available through Chat and Planning. Older `#tasks` and `#activity` links open Cronjobs; saved schedules and connector/API names do not change.
 
 | Subfeature | Does | Does not |
 | --- | --- | --- |
 | **Workflow graph** | Creates and edits multi-stage workflows with prerequisites, stage settings, and assigned workers. | Guarantee unrelated agents can safely modify the same file simultaneously. |
 | **Worker assignment** | Records a worker's scope, inputs, expected result, and observable done condition. | Grant a worker capabilities beyond its tools and assigned scope. |
 | **Subagent delegation** | Can dispatch bounded workers for independent or dependent tasks and return their actual runtime outcomes. | Allow unlimited parallel or recursively self-spawning workers. |
-| **Work board and timeline** | Shows current tasks, stage progress, saved runs, and recorded task history. | Equate a visually complete stage with a confirmed external result. |
+| **Task and run history** | Chat and Planning retain saved work, stage progress, and execution records; Cronjobs shows scheduled results and job history. | Equate a visually complete stage with a confirmed external result. |
 | **Schedules** | Supports manual, cron, interval, and webhook-triggered work with timezones and run previews where configured. | Execute a schedule while the host is asleep, offline, or the BLACKICE runtime is not running. |
 | **Run policy** | Supports pause/resume, overlap handling, bounded retries, missed-run behavior, and limits configured per schedule. | Guarantee every missed occurrence will be replayed or every third-party action can be safely retried. |
 | **Results** | Stores scheduled outcomes and history locally; can opt into a configured webhook result destination. | Send results back into an idle ChatGPT/Gemini chat automatically or report a queued job as complete. |

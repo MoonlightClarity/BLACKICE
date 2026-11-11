@@ -12,7 +12,7 @@ const modules={
   chat:()=>import('./chat/chat.mjs').then(m=>m.createChatWorkspace),
   planning:()=>import('./workspaces/planning-browser.mjs').then(m=>m.createPlanningBrowser),
   cronjobs:()=>import('./workspaces/tasks.mjs').then(m=>m.createCronjobsWorkspace),
-  workflows:()=>import('./workspaces/workflow-execution.mjs').then(m=>m.createWorkflowActivityUI),
+  workflows:()=>import('./workspaces/workflow-execution.mjs').then(m=>m.createWorkflowWorkspace),
   browser:()=>import('./workspaces/browser.mjs').then(m=>m.createBrowserWorkspace),
   knowledge:()=>import('./workspaces/knowledge.mjs').then(m=>m.createKnowledgeWorkspace),
   settings:()=>import('./workspaces/settings.mjs').then(m=>m.createSettingsWorkspace),

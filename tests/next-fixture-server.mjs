@@ -77,6 +77,7 @@ export function makeFixture({heavyHistory=false,largeCatalog=false,largeWorkflow
     executionSettings:{maxConcurrentRuns:null},
     providers:[{id:'codex',displayName:'Codex',connected:true}],
     settingsMutations:[],postedWorkflows:[],submittedRuns:[],knowledgeMutations:[],
+    operationsPaused:false,scheduleMutations:[],resultAcknowledgements:[],
     workflowIndexRequests:0,workflowFullListRequests:0,workflowDetailRequests:[],scheduledWrites:[],
     workflows:[{id:'sample-workflow',name:'Example workflow',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Agent',model:'default',prompt:'Review saved fixture evidence.'},{id:'output',type:'output'}],
       edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{cwd:'C:\\fixture'}}],
@@ -186,7 +187,12 @@ export function makeFixture({heavyHistory=false,largeCatalog=false,largeWorkflow
       return json(res,{query:q,state:bucket,total:matches.length,offset,limit,hasMore:offset+limit<matches.length,
         conversations:matches.slice(offset,offset+limit).map(item=>({...item,match:{kind:'title',runId:item.runId||item.id,text:item.title||''}}))});
     }
-    if(pathname==='/api/conversations')return json(res,{conversations:url.searchParams.get('state')==='active'?state.conversations:[]});
+    if(pathname==='/api/conversations'){
+      const bucket=url.searchParams.get('state')||'active';
+      const conversations=state.conversations.map(item=>({...item,state:state.taskHistoryStates[item.taskId||item.rootId||item.id]||item.state||'active'}))
+        .filter(item=>bucket==='all'?item.state!=='deleted':item.state===bucket);
+      return json(res,{conversations});
+    }
     if(pathname==='/api/conversations/sample-run-49'||pathname==='/api/conversations/sample-run-0')return json(res,{runs:state.runs});
     if(pathname==='/api/conversations/large-inspection-run'&&state.largeRun)return json(res,{runs:[state.largeRun]});
     if(/^\/api\/conversations\/catalog-\d+$/.test(pathname))return json(res,{runs:[]});
@@ -215,7 +221,11 @@ export function makeFixture({heavyHistory=false,largeCatalog=false,largeWorkflow
     if(pathname==='/api/planning')return json(res,{plans:[{taskId:'sample-run-0',runId:'sample-run-49',title:'Example plan',goal:state.visualPlan.goal,revision:state.visualPlan.revision,bucket:'active',runStatus:'running',editable:true,stepCount:state.visualPlan.steps.length,progress:state.visualPlan.progress}],total:1,hasMore:false,nextOffset:null});
     if(pathname==='/api/tasks/sample-run-0'&&req.method==='GET')return json(res,state.visualPlan);
     if(pathname==='/api/projects')return json(res,{projects:[{id:'project-a',name:'Example project',status:'ready',tasks:[]}],total:1});
-    if(pathname==='/api/operations')return json(res,{status:{healthy:true,paused:false,enabled:1,running:0},deployments:state.deployments,jobs:state.jobs});
+    if(pathname==='/api/operations'){
+      const items=state.jobs.filter(job=>job.delivery);
+      return json(res,{status:{healthy:true,enabled:state.deployments.filter(d=>d.enabled).length,running:0,paused:state.operationsPaused},
+        deployments:state.deployments,jobs:state.jobs,results:{items,total:items.length,available:items.filter(j=>j.delivery.state==='available').length,acknowledged:items.filter(j=>j.delivery.state==='acknowledged').length}});
+    }
     if(pathname==='/api/browser/status'){
       const snapshot=structuredClone({available:true,browsers:{relay:{available:true}},tabs:state.tabs,downloads:state.downloads,activeTab:state.activeBrowserTab});
       // Optional fixture hooks hold a captured response without blocking newer requests.
@@ -301,8 +311,25 @@ export function makeFixture({heavyHistory=false,largeCatalog=false,largeWorkflow
         if(['interaction','upload'].includes(body.action)&&tab)tab.pendingInteraction=null;
         return json(res,{...identity,ok:true});
       }
-      if(pathname==='/api/operations/pause'||pathname==='/api/operations/resume')return json(res,{ok:true});
-      if(pathname==='/api/operations/deployments'){state.scheduledWrites.push(body);return json(res,{ok:true},201);}
+      if(pathname==='/api/operations/pause'||pathname==='/api/operations/resume'){
+        state.operationsPaused=pathname.endsWith('/pause');state.scheduleMutations.push({path:pathname,body});return json(res,{ok:true});
+      }
+      const scheduleUpdate=pathname.match(/^\/api\/operations\/deployments\/([^/]+)$/);
+      if(scheduleUpdate&&req.method==='PUT'){
+        const saved=state.deployments.find(d=>d.id===scheduleUpdate[1]);
+        if(!saved)return json(res,{error:'Schedule not found'},404);
+        if(saved.revision!==body.expectedRevision)return json(res,{error:'Schedule revision changed'},409);
+        state.scheduleMutations.push({path:pathname,body});const {expectedRevision,...patch}=body;
+        Object.assign(saved,patch,{revision:saved.revision+1});return json(res,saved);
+      }
+      if(pathname==='/api/operations/schedule-preview')return json(res,{occurrences:[{at:'2026-11-12T09:00:00.000Z',local:'2026-11-12 09:00 UTC'}],timezone:'UTC'});
+      const acknowledge=pathname.match(/^\/api\/operations\/jobs\/([^/]+)\/acknowledge$/);
+      if(acknowledge){
+        const job=state.jobs.find(j=>j.id===acknowledge[1]);if(!job?.delivery)return json(res,{error:'Result not found'},404);
+        if(job.delivery.revision!==body.expectedRevision)return json(res,{error:'Receipt revision changed'},409);
+        state.resultAcknowledgements.push({id:job.id,body});Object.assign(job.delivery,{state:'acknowledged',revision:job.delivery.revision+1,acknowledgedAt:'2026-11-11T15:00:00Z'});return json(res,job);
+      }
+      if(pathname==='/api/operations/deployments'){state.scheduledWrites.push(body);const saved={...body,id:'schedule-fixture-'+state.scheduledWrites.length,revision:1,createdAt:'2026-11-11T12:00:00Z'};state.deployments.push(saved);return json(res,saved,201);}
       if(pathname==='/api/models/default')return json(res,state.status);
       return json(res,{ok:true});
     }

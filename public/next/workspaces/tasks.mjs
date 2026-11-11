@@ -105,7 +105,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     manager.type='button';
     manager.id='next-cronjobs-manage-workflows';
     manager.textContent='Manage saved workflows';
-    mount.querySelector('#next-tasks-workflow-fields').append(manager);
+    mount.querySelector('.next-panel-head').append(manager);
     manager.addEventListener('click',()=>onNavigate?.('workflows'));
   }
   const $=id=>mount.querySelector('#'+id);
@@ -489,7 +489,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
         }catch(error){
           output.textContent=error.message+(String(error.message).match(/revision|changed|conflict|409/i)?' Reload the current version and review your edits before retrying.':'');
           notify(error.message,true);
-        }finally{busy=false;save.disabled=false;preview.disabled=false;reload.disabled=false;}
+        }finally{busy=false;save.disabled=false;preview.disabled=false;reload.disabled=false;if(active)paint();}
       });
       return;
     }
@@ -606,7 +606,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       :status.blockedReason?'Dispatch blocked: '+status.blockedReason
       :status.ticker?.state==='stale'?'Scheduler heartbeat stale. Last successful tick: '+humanTime(status.ticker.lastSuccessAt)
       :status.ticker?.state==='error'?'Scheduler tick failed: '+(status.ticker.lastError||'Unknown failure')
-      :'Schedules ready · '+(status.enabled||0)+' active · '+(status.running||0)+' running'+(status.ticker?.lastSuccessAt?' · Last tick: '+humanTime(status.ticker.lastSuccessAt):''));
+      :'Schedules ready · '+(status.enabled||0)+' enabled · '+(status.running||0)+' running'+(status.ticker?.lastSuccessAt?' · Last tick: '+humanTime(status.ticker.lastSuccessAt):''));
     view.deployments.replaceChildren();
     const deployments=Array.isArray(snapshot.deployments)?snapshot.deployments:[];
     if(!deployments.length)add(view.deployments,'p',cronjobsOnly?'No cronjobs yet. Select New cronjob to get started.':'No saved schedules yet. Select New schedule to get started.','next-empty');

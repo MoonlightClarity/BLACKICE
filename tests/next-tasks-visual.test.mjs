@@ -7,7 +7,7 @@ import { createTaskHistory } from '../public/next/workspaces/task-lifecycle.mjs'
 import { planningDOM } from './fixture-planning-dom.mjs';
 
 const settle=async()=>{for(let i=0;i<5;i++)await new Promise(resolve=>setImmediate(resolve));};
-function fixture(t,{history=false,cronjobs=false,presentation='board',hook,status={},operationsStatus={},useNextApi=false}={}){
+function fixture(t,{history=false,cronjobs=true,presentation='board',hook,status={},operationsStatus={},useNextApi=false}={}){
   const dom=planningDOM(t),prototype=Object.getPrototypeOf(dom.mount);
   Object.defineProperty(prototype,'type',{get(){return this.getAttribute('type')||this.tagName.toLowerCase();},set(value){this.setAttribute('type',value);},configurable:true});
   prototype.replaceChildren=function(...nodes){for(const child of [...this.children])child.remove();this.rawText='';this.append(...nodes);};
@@ -116,9 +116,11 @@ test('Cronjobs opens directly on schedules without mounting the general task das
   f.component.enter();await settle();
   assert.equal(f.calls.some(call=>call.path.startsWith('/api/conversations/search')),false);
   assert.ok(f.calls.some(call=>call.path==='/api/operations'),'schedule snapshot loads on entry');
+  assert.match(f.$('#next-tasks-info').textContent,/0 enabled.*0 running/,'Enabled schedules are not described as actively running');
   assert.ok(f.$('[data-schedule-toggle="schedule-a"]'),'enable/disable is available');
   assert.ok(f.$('[data-schedule-trigger="schedule-a"]'),'manual run is available');
   assert.ok(f.$('[data-schedule-inspect="schedule-a"]'),'inspection and editing are available');
+  assert.equal(f.$('#next-cronjobs-manage-workflows').closest('#next-tasks-create'),null,'Workflow management is reachable without opening a new cronjob draft');
   await f.clickReady('#next-cronjobs-manage-workflows');
   assert.deepEqual(f.navigation.at(-1),['workflows'],'advanced workflow editing stays reachable');
   await f.key(f.$('#next-tasks-tab-schedules'),'ArrowRight');await settle();
@@ -129,7 +131,7 @@ test('Cronjobs opens directly on schedules without mounting the general task das
 });
 
 test('Tasks opens on an honest status board and loads no hidden schedule, workflow or full-run data',async t=>{
-  const f=fixture(t);assert.equal(f.calls.length,0);f.component.enter();await settle();
+  const f=fixture(t,{cronjobs:false});assert.equal(f.calls.length,0);f.component.enter();await settle();
   assert.equal(f.$('#next-tasks-tab-board').getAttribute('aria-selected'),'true');assert.equal(f.$('#next-tasks-panel-schedules').hidden,true);assert.equal(f.$('#next-tasks-panel-jobs').hidden,true);
   assert.deepEqual(f.calls.map(call=>new URL(call.path,'http://fixture.local').pathname),['/api/conversations/search']);
   assert.deepEqual(f.mount.querySelectorAll('[data-task-lane]').map(node=>node.dataset.taskLane),['working','attention','completed','saved']);
@@ -141,7 +143,7 @@ test('Tasks opens on an honest status board and loads no hidden schedule, workfl
 });
 
 test('Tasks tabs support keyboard navigation, preserve schedule drafts, and release hidden board subscriptions',async t=>{
-  const f=fixture(t);f.component.enter();await settle();assert.equal(f.listeners.size,2);
+  const f=fixture(t,{cronjobs:false});f.component.enter();await settle();assert.equal(f.listeners.size,2);
   await f.key(f.$('#next-tasks-tab-board'),'ArrowRight');await settle();
   assert.equal(f.$('#next-tasks-tab-timeline').getAttribute('aria-selected'),'true');
   assert.equal(f.$('#next-tasks-panel-timeline').hidden,false);assert.equal(f.listeners.size,2);
@@ -185,7 +187,7 @@ test('Results are locally available without claiming delivery or auto-acknowledg
 
 test('Job history is bounded and opens the latest linked attempt instead of the job identity',async t=>{
   const f=fixture(t);f.component.enter();await settle();await f.clickReady('#next-tasks-tab-jobs');
-  assert.equal(f.calls.some(call=>call.path.startsWith('/api/workflows')),false);assert.equal(f.mount.querySelectorAll('[data-job-id]').length,35);
+  assert.equal(f.calls.some(call=>call.path.startsWith('/api/workflows/')),false,'Job history must not load full workflow graphs');assert.equal(f.mount.querySelectorAll('[data-job-id]').length,35);
   await f.clickReady('[data-job-run-id="actual-0"]');assert.deepEqual(f.navigation.at(-1),['chat',{conversationId:'actual-0'}]);
   await f.clickReady('#next-tasks-jobs-more');assert.equal(f.mount.querySelectorAll('[data-job-id]').length,70);
   await f.clickReady('#next-tasks-jobs-more');assert.equal(f.mount.querySelectorAll('[data-job-id]').length,80);assert.equal(f.$('#next-tasks-jobs-more').hidden,true);
@@ -330,6 +332,8 @@ test('Schedule editor previews changes, preserves pinned attachments and only wr
   assert.deepEqual(f.schedule.attachmentIds,['source-file']);
   assert.equal(f.schedule.revision,2);assert.equal(f.schedule.enabled,true);
   assert.ok(f.$('[data-schedule-edit-open="schedule-a"]'));
+  assert.equal(f.$('[data-schedule-toggle="schedule-a"]').disabled,false,'Successful edit must restore schedule enable/disable controls');
+  assert.equal(f.$('[data-schedule-trigger="schedule-a"]').disabled,false,'Successful edit must restore Run now without a manual refresh');
 });
 
 test('Schedule revision conflicts preserve unsaved edits until explicit reload',async t=>{
@@ -338,7 +342,7 @@ test('Schedule revision conflicts preserve unsaved edits until explicit reload',
   await f.clickReady('[data-schedule-edit-open="schedule-a"]');
   const form=f.$('[data-schedule-edit="schedule-a"]'),name=form.querySelector('[name="name"]');
   name.value='Keep local draft';
-  await f.clickReady('#next-tasks-tab-board');await f.clickReady('#next-tasks-tab-schedules');
+  await f.clickReady('#next-tasks-tab-results');await f.clickReady('#next-tasks-tab-schedules');
   assert.strictEqual(f.$('[data-schedule-edit="schedule-a"]'),form,'refresh preserves form');
   f.schedule.revision=3;
   await f.clickReady('#next-tasks-refresh');
