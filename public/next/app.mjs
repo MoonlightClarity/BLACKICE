@@ -11,7 +11,8 @@ const spaces=new Map(), notifications=new Set();
 const modules={
   chat:()=>import('./chat/chat.mjs').then(m=>m.createChatWorkspace),
   planning:()=>import('./workspaces/planning-browser.mjs').then(m=>m.createPlanningBrowser),
-  tasks:()=>import('./workspaces/tasks.mjs').then(m=>m.createTasksWorkspace),
+  cronjobs:()=>import('./workspaces/tasks.mjs').then(m=>m.createCronjobsWorkspace),
+  workflows:()=>import('./workspaces/workflow-execution.mjs').then(m=>m.createWorkflowActivityUI),
   browser:()=>import('./workspaces/browser.mjs').then(m=>m.createBrowserWorkspace),
   workbench:()=>import('./workspaces/workbench.mjs').then(m=>m.createWorkbenchWorkspace),
   knowledge:()=>import('./workspaces/knowledge.mjs').then(m=>m.createKnowledgeWorkspace),
@@ -40,7 +41,7 @@ events.subscribe(receipt=>{
 });
 function updateTabs(name){
   for(const tab of tabs){
-    const selected=tab.dataset.space===name;
+    const selected=tab.dataset.space===(name==='workflows'?'cronjobs':name);
     tab.setAttribute('aria-selected',String(selected));
     tab.tabIndex=selected?0:-1;
   }
@@ -52,8 +53,8 @@ function openWorkspaceTarget(space){
   else if(conversationId)space?.instance?.openConversationId?.(conversationId);
 }
 async function show(name,{conversationId,requestId,nodeId,modelProviderId}={}){
-  // Retired Activity links lead to the shared Tasks workspace.
-  if(name==='activity'){name='tasks';try{history.replaceState(null,'','#tasks');}catch{}}
+  // Legacy Tasks/Activity hashes now open scheduled automation rather than a task dashboard.
+  if(name==='activity'||name==='tasks'){name='cronjobs';try{history.replaceState(null,'','#cronjobs');}catch{}}
   if(!modules[name])return;
   const previous=current;const target=++revision;
   const navigation={conversationId,requestId,nodeId,modelProviderId};
@@ -109,7 +110,7 @@ for(const tab of tabs){
 }
 window.addEventListener('hashchange',()=>{
   const name=location.hash.slice(1);
-  if(name==='activity'||(modules[name]&&current!==name))void show(name);
+  if(name==='activity'||name==='tasks'||(modules[name]&&current!==name))void show(name);
 });
 window.addEventListener('beforeunload',()=>{
   for(const {instance} of spaces.values())instance?.leave?.();
@@ -120,7 +121,7 @@ window.addEventListener('beforeunload',()=>{
 globalThis.blackiceNextGuard?.ready();
 events.start();
 const requested=location.hash.slice(1);
-const first=requested==='activity'?'tasks':modules[requested]?requested:'chat';
+const first=requested==='activity'||requested==='tasks'?'cronjobs':modules[requested]?requested:'chat';
 void show(first);
 void api('/api/status','GET',undefined,{deadlineMs:60000}).then(info=>{
   status=info;spaces.get(current)?.instance?.updateStatus?.(status);

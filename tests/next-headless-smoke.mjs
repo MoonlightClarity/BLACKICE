@@ -179,11 +179,12 @@ try {
   await until(()=>evaluate('Boolean(document.querySelector("#next-planning-detail textarea"))'),'Editable plan details');
   counts.planning=true;
   await exerciseVisualPlanning({evaluate,send,until,fixture,counts});
-  await evaluate('document.querySelector(".next-tab[data-space=tasks]").click(); true');
-  await until(()=>evaluate('Boolean(document.querySelector("#next-tasks-form"))'),'Tasks workspace');
-  assert.equal(await evaluate('document.querySelector("#next-tasks-tab-board").getAttribute("aria-selected")'),'true');
-  assert.equal(fixture.state.workflowIndexRequests,0,'The default work board must not load schedule workflow catalogs.');
-  await evaluate('document.querySelector("#next-tasks-tab-schedules").click();true');
+  await evaluate('document.querySelector(".next-tab[data-space=cronjobs]").click(); true');
+  await until(()=>evaluate('Boolean(document.querySelector("#next-tasks-form"))'),'Cronjobs workspace');
+  assert.equal(await evaluate('document.querySelector("#next-tasks-tab-schedules").getAttribute("aria-selected")'),'true');
+  assert.equal(await evaluate('document.querySelector("#next-tasks-tab-board")'),null);
+  assert.equal(await evaluate('document.querySelector("#next-tasks-tab-timeline")'),null);
+  assert.equal(await evaluate('document.querySelector("#next-tasks-tab-workflows")'),null);
   assert.equal(await evaluate('document.querySelector("#next-tasks-create").hidden'),true);
   await evaluate('document.querySelector("#next-tasks-new-schedule").click();true');
   assert.equal(await evaluate('document.activeElement === document.querySelector("#next-tasks-form [name=input]")'),true);
