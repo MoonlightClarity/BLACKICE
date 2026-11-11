@@ -1,3 +1,5 @@
+import { createLocalModelSettings } from './settings-local-models.mjs';
+
 /** Native account settings stay separate from optional API connections. */
 export function createSubscriptionModelSettings(props, createLegacy) {
   const {mount,api}=props,doc=mount.ownerDocument;
@@ -46,7 +48,9 @@ export function createSubscriptionModelSettings(props, createLegacy) {
   );
   const legacyMount=element('div');
   advanced.append(legacyMount);
-  mount.append(header,native,advanced);
+  const localMount=element('div');
+  mount.append(header,native,localMount,advanced);
+  const local=createLocalModelSettings({mount:localMount,api,onChanged:()=>props.onChanged?.()});
   const legacy=createLegacy({...props,mount:legacyMount});
   let active=false,destroyed=false,revision=0,expanded=false,currentStatus=null,busy=null,operationError='';
   const provider=()=>currentStatus?.subscriptionProviders?.find(item=>item?.id==='mistral-vibe'&&item?.type==='subscription-cli');
@@ -122,11 +126,11 @@ export function createSubscriptionModelSettings(props, createLegacy) {
   advanced.addEventListener('toggle',toggle);
   render();
   return {
-    enter(){if(destroyed||active)return;active=true;render();void load();toggle();},
-    leave(){active=false;revision++;render();if(expanded){legacy.leave?.();expanded=false;}},
+    enter(){if(destroyed||active)return;active=true;local.enter();render();void load();toggle();},
+    leave(){active=false;revision++;local.leave();render();if(expanded){legacy.leave?.();expanded=false;}},
     updateStatus,
     focusProvider(id){if(id==='mistral-vibe'&&!destroyed&&active)native.focus({preventScroll:false});},
     updateRuntimeSettings(value){legacy.updateRuntimeSettings?.(value);},
-    destroy(){if(destroyed)return;this.leave();destroyed=true;legacy.destroy?.();advanced.removeEventListener('toggle',toggle);mount.replaceChildren();}
+    destroy(){if(destroyed)return;this.leave();destroyed=true;local.destroy();legacy.destroy?.();advanced.removeEventListener('toggle',toggle);mount.replaceChildren();}
   };
 }
