@@ -99,6 +99,59 @@ async function action(f,grant,name,args){
  assert.equal(saved.status,'succeeded',JSON.stringify(saved));
  return JSON.parse(saved.result.text.text);
 }
+
+test('fresh task reads expose response-only guidance without catalog refresh or changing legacy receipts, contract bytes or explicit gates', async t => {
+  const mocked = mockBrowser(), f = await fixture(t, { serverOptions: { browser: mocked.browser } }), [grant] = await approvedDirectGrants(f);
+  const catalogBefore = JSON.stringify((await mcp(f, grant, 'tools/list')).body.result.tools);
+  const intent = taskContract();
+  intent.instructions = [
+    { id: 'explicit-limit', text: 'The user requires a total cost no greater than $25.', handling: 'preserve' },
+    { id: 'caller-assumption', text: 'Reject every opportunity whose qualification list includes an undocumented preference.', handling: 'audit' },
+  ];
+  const created = await action(f, grant, 'blackice_task_contract', { requestId: 'guidance-create', action: 'create', taskId: 'guidance-existing', contract: intent });
+  assert.equal(created.contractInterpretation.provenance.contractSource, 'authenticated-caller-supplied');
+  const outcomes = f.app.directExecution.taskRuntime.outcomes;
+  const storedBefore = await fs.readFile(outcomes.file);
+  const extension = f.app.directExecution.extensions.get('blackice_task_contract'), execute = extension.execute;
+  // Emulate a saved pre-upgrade result. Its durable bytes must not be retrofitted.
+  extension.execute = async (...args) => {
+    const result = await execute(...args);
+    const value = JSON.parse(result.contentItems[0].text);
+    delete value.contractInterpretation;
+    return { ...result, contentItems: [{ type: 'inputText', text: JSON.stringify(value) }] };
+  };
+  const legacyArgs = { requestId: 'guidance-legacy-read', action: 'read', taskId: 'guidance-existing' };
+  let legacyJobId, legacy;
+  try {
+    const reply = await connectorTool(f, grant, 'blackice_task_contract', legacyArgs);
+    legacyJobId = reply.structuredContent.jobId;
+    legacy = await settledConnectorJob(f, grant, legacyJobId);
+    assert.equal(JSON.parse(legacy.result.text.text).contractInterpretation, undefined);
+  } finally { extension.execute = execute; }
+  // Existing tool knowledge suffices: no tools/list call occurs before this fresh read.
+  const fresh = await action(f, grant, 'blackice_task_contract', { ...legacyArgs, requestId: 'guidance-fresh-read' });
+  assert.equal(fresh.contractInterpretation.provenance.userAuthorshipVerified, false);
+  assert.equal(fresh.contractInterpretation.provenance.semanticConflictsChecked, false);
+  assert.deepEqual(fresh.result.contract.instructions, intent.instructions);
+  assert.deepEqual(await fs.readFile(outcomes.file), storedBefore);
+  const replay = await connectorTool(f, grant, 'blackice_task_contract', legacyArgs);
+  assert.equal(replay.structuredContent.jobId, legacyJobId);
+  assert.equal((await settledConnectorJob(f, grant, legacyJobId)).result.text.text, legacy.result.text.text);
+  assert.deepEqual(await fs.readFile(outcomes.file), storedBefore);
+  const revised = structuredClone(intent);
+  revised.workItems[0].objective = 'Use useful bounded judgment within unchanged user limits';
+  const updated = await action(f, grant, 'blackice_task_contract', { requestId: 'guidance-update', action: 'update', taskId: 'guidance-existing', expectedRevision: fresh.result.revision, contract: revised });
+  assert.ok(updated.contractInterpretation);
+  assert.deepEqual(updated.result.contract.instructions, intent.instructions);
+  const storedUpdated = await fs.readFile(outcomes.file);
+  const readUpdated = await action(f, grant, 'blackice_task_contract', { ...legacyArgs, requestId: 'guidance-updated-read' });
+  assert.deepEqual(readUpdated.result, updated.result);
+  assert.deepEqual(await fs.readFile(outcomes.file), storedUpdated);
+  assert.equal(JSON.stringify((await mcp(f, grant, 'tools/list')).body.result.tools), catalogBefore);
+  assert.deepEqual(mocked.counts(), { commits: 0, reads: 0 });
+  assert.equal(f.runtime.agentCalls, 0);
+});
+
 test('authenticated served MCP catalog preserves complete contract/context schemas and non-submitting binding roundtrip',async t=>{
  const mocked=mockBrowser(),f=await fixture(t,{serverOptions:{browser:mocked.browser}}),[grant,limited]=await approvedDirectGrants(f);
  assert.equal((await mcp(f,null,'tools/list')).status,401);
