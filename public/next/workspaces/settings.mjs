@@ -14,7 +14,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '<header class="next-panel-head"><div><h1>Settings</h1><p>Workspace preferences, identity, models and tool connections.</p></div>',
     '<button type="button" id="next-settings-refresh">Refresh</button></header>',
     '<nav class="next-settings-sections" role="tablist" aria-label="Settings sections">',
-    ...[['general','General'],['identity','Identity'],['models','Models'],['connections','Tools'],['connector','ChatGPT connector'],['gemini','Gemini connector'],['claude','Claude connector']].map(([id,label])=>
+    ...[['general','General'],['identity','Identity'],['models','Models'],['connections','Tools'],['storage','Storage & Data'],['connector','ChatGPT connector'],['gemini','Gemini connector'],['claude','Claude connector']].map(([id,label])=>
       '<button type="button" id="next-settings-section-'+id+'" data-settings-section="'+id+'" role="tab" aria-controls="next-settings-'+id+'" aria-selected="'+(id==='general')+'" tabindex="'+(id==='general'?'0':'-1')+'">'+label+'</button>'),
     '</nav><div id="next-settings-general" role="tabpanel" aria-labelledby="next-settings-section-general">',
     '<section class="next-card"><h2>Local working folder</h2>',
@@ -68,7 +68,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '<p id="next-settings-restart-feedback" class="next-help" role="status" aria-live="polite"></p></section>',
     '<section class="next-card"><h2>Runtime health</h2><p class="next-help" id="next-settings-status" role="status">Checking BLACKICE…</p></section>',
     '</div>',
-    ...['identity','models','connections','connector','gemini','claude'].map(id=>'<div id="next-settings-'+id+'" role="tabpanel" aria-labelledby="next-settings-section-'+id+'" hidden></div>'),
+    ...['identity','models','connections','storage','connector','gemini','claude'].map(id=>'<div id="next-settings-'+id+'" role="tabpanel" aria-labelledby="next-settings-section-'+id+'" hidden></div>'),
     '</div></div>',
   ].join('');
   const $=id=>mount.querySelector('#'+id);
@@ -113,6 +113,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     models:()=>Promise.all([import('./settings-providers.mjs'),import('./settings-subscriptions.mjs')]).then(([legacy,focus])=>
       props=>focus.createSubscriptionModelSettings(props,legacy.createProviderSettings)),
     connections:()=>import('./settings-connections.mjs').then(module=>module.createConnectionSettings),
+    storage:()=>import('./settings-storage.mjs').then(module=>module.createStorageSettings),
     gemini:()=>import('./settings-gemini-connector.mjs').then(module=>module.createGeminiConnectorSettings),
     claude:()=>import('./settings-claude-connector.mjs').then(module=>module.createClaudeConnectorSettings),
     connector:()=>import('../../chatgpt-connector-ui.mjs').then(module=>({mount:panelMount,api:panelApi})=>{

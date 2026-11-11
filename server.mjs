@@ -78,6 +78,7 @@ import { DirectExecutionAPI } from './lib/direct-execution-api.mjs';
 import { desktopRestartTool } from './lib/desktop-restart-tool.mjs';
 import { frontendDevtoolsTool } from './lib/frontend-devtools-tool.mjs';
 import { createDesktopRestartBarrier } from './lib/desktop-restart-barrier.mjs';
+import { StorageManager } from './lib/storage-management.mjs';
 import { chatGPTFileImportTool } from './lib/chatgpt-file-import.mjs';
 import { chatGPTStartChatTool } from './lib/chatgpt-start-chat.mjs';
 import { planningOntologyDirectTool } from './lib/planning-ontology-direct-tool.mjs';
@@ -98,6 +99,11 @@ export async function createHarnessServer(options = {}) {
   const port = Number(options.port ?? process.env.RELAY_PORT ?? 4317);
   const defaultCwd = path.resolve(options.defaultCwd || process.env.RELAY_WORKSPACE || path.join(APP_DIR, 'workspace'));
   const dataDir = options.dataDir || path.join(APP_DIR, 'data');
+  const storageManager = options.storageManager || new StorageManager({ dataDir: path.resolve(dataDir), workspaceDir: defaultCwd });
+  // A queued deletion is applied before any durable store can hydrate or rewrite it.
+  let storageStartupWarning = null;
+  try { await storageManager.applyAtStartup(); }
+  catch (error) { storageStartupWarning = error.message; }
   await fs.mkdir(defaultCwd, { recursive: true });
   const remoteAccess = options.remoteAccess === false ? null : options.remoteAccess || new RemoteAccessManager({ dataDir, availabilityFactory: options => new RemoteAvailabilityHost(options) });
   await remoteAccess?.init();
@@ -919,6 +925,10 @@ export async function createHarnessServer(options = {}) {
         return json(res,200,await showBrowserOS());
       }
       if (pathname === '/api/diagnostics/export' && req.method === 'GET') {await diagnostics.record({component:'server',event:'support_exported'});return json(res,200,await supportSnapshot());}
+      if (pathname === '/api/storage/overview' && req.method === 'GET') return json(res, 200, { ...await storageManager.overview(), startupWarning: storageStartupWarning });
+      if (pathname === '/api/storage/cleanup' && req.method === 'POST') return json(res, 202, await storageManager.schedule(await body(req)));
+      if (pathname === '/api/storage/cleanup/cancel' && req.method === 'POST') { await body(req); const outcome = await storageManager.cancel(); storageStartupWarning = null; return json(res, 200, outcome); }
+      if (pathname === '/api/storage/policy' && req.method === 'POST') return json(res, 200, await storageManager.configurePolicy(await body(req)));
       if (pathname === '/api/execution/settings' && req.method === 'GET') return json(res, 200, engine.executionSettings());
       if (pathname === '/api/execution/settings' && req.method === 'POST') return json(res, 200, await engine.updateExecutionSettings(await body(req)));
       if (pathname === '/api/attachments' && req.method === 'GET') return json(res, 200, await attachments.list());
