@@ -712,7 +712,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
       inspector.insertBefore(reading, responseSection);
     }
     if (savedPlan) responseSection.dataset.disclosureKey = 'saved-plan-fields';
-    add(responseSection, 'p', typedReadiness ? node.kind === 'plan' ? (node.response?.contract ? 'These are the saved Plan fields. Use Edit the saved Plan to change its objective, outcome criteria, work items, resources, and instructions.' : 'These are the saved Plan fields. Use Edit the saved Plan to change its steps, dependencies, acceptance criteria, and sources.') : ['inference', 'think', 'respond'].includes(node.kind) ? 'These saved fields belong to the complete structured stage response. Run the stage or use the shared structured response API to record a new version.' : 'These saved fields describe the complete readiness check. Use the factual Answer controls above to supply missing facts, or run this module to produce a new complete check.' : 'These fields make the module’s contribution inspectable. Record an answer or the exact missing input; unsupported claims stay visible.', 'pb-help');
+    add(responseSection, 'p', isLegacyPlanningRequest(document) ? 'These archived response fields are read-only. Inspect the saved Plan details and recorded evidence; create a current modular graph for new work.' : typedReadiness ? node.kind === 'plan' ? (node.response?.contract ? 'These are the saved Plan fields. Use Edit the saved Plan to change its objective, outcome criteria, work items, resources, and instructions.' : 'These are the saved Plan fields. Use Edit the saved Plan to change its steps, dependencies, acceptance criteria, and sources.') : ['inference', 'think', 'respond'].includes(node.kind) ? 'These saved fields belong to the complete structured stage response. Run the stage or use the shared structured response API to record a new version.' : 'These saved fields describe the complete readiness check. Use the factual Answer controls above to supply missing facts, or run this module to produce a new complete check.' : 'These fields make the module’s contribution inspectable. Record an answer or the exact missing input; unsupported claims stay visible.', 'pb-help');
     renderProvenance(responseSection, node.response);
     const responseForm = add(responseSection, 'form', '', 'pb-form'), controls = new Map();
     for (const field of fields) {
@@ -858,21 +858,23 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
     }
   }
   function renderProgramXml(parent, document, state) {
+    const archived = isLegacyPlanningRequest(document);
     const section = add(parent, 'section', '', 'pb-program-source');
-    add(section, 'h3', 'Edit the full recursive XML plan');
-    add(section, 'p', 'Edit module titles, prompts, completion checks, skip reasons, and nesting in one atomic revision. Existing IDs and mandatory cycle stages cannot be deleted. Number and state are read-only projections recalculated on save. The evidence ledger is never editable XML.', 'pb-help');
+    add(section, 'h3', archived ? 'Archived planning XML' : 'Edit the full recursive XML plan');
+    add(section, 'p', archived ? 'This is the saved historical planning definition. It is read-only; create a current modular graph for new work.' : 'Edit module titles, prompts, completion checks, skip reasons, and nesting in one atomic revision. Existing IDs and mandatory cycle stages cannot be deleted. Number and state are read-only projections recalculated on save. The evidence ledger is never editable XML.', 'pb-help');
     const saved = document.programXml || planningProgramXml(document);
     if (!state.programDraft || !state.programDraft.changed && state.programDraft.baseRevision !== document.revision)
       state.programDraft = { source: saved, baseRevision: document.revision, changed: false };
-    const draft = state.programDraft, stale = draft.baseRevision !== document.revision;
+    const draft = state.programDraft, stale = !archived && draft.baseRevision !== document.revision;
     const code = add(section, 'textarea', '', 'pb-program-xml');
-    code.setAttribute('aria-label', 'Editable full planning program XML');
+    code.setAttribute('aria-label', archived ? 'Read-only archived planning program XML' : 'Editable full planning program XML');
     code.dataset.fieldKey = document.id + ':program-xml';
-    code.readOnly = false; code.spellcheck = false; code.value = draft.source;
-    code.addEventListener('input', () => { draft.source = code.value; draft.changed = true; });
+    code.readOnly = archived; code.spellcheck = false; code.value = archived ? saved : draft.source;
+    code.addEventListener('input', () => { if (archived) return; draft.source = code.value; draft.changed = true; });
     if (stale) note(section, 'Another save changed this planning request. Your XML draft is preserved. Copy any edits you need, then reload the current XML before saving.', 'warning');
     const actions = add(section, 'div', '', 'pb-actions');
     button(actions, 'Reload saved XML', () => { state.programDraft = null; renderDetail(); }, 'pb-quiet');
+    if (archived) return;
     const submit = button(actions, 'Save complete XML plan', () => {
       if (stale || state.pending.has('program') || [...state.drafts.values()].some(dirty)) {
         state.error = 'Save or discard individual module drafts and reload any stale XML before committing the whole plan.';

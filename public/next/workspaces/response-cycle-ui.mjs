@@ -252,6 +252,47 @@ export function renderStageFindings(ctx, parent, document, node, cycle) {
   }
 }
 
+/** Historical Plan contents stay inspectable without restoring an authoring surface. */
+function renderArchivedPlan(ctx, parent, document, response) {
+  if (!response) return;
+  const { add } = ctx, contract = response.contract;
+  const criteria = contract?.criteria || response.acceptanceCriteria || [];
+  const work = contract?.workItems || response.steps || [];
+  if (!contract && !criteria.length && !work.length) return;
+  const section = add(parent, 'details', '', 'pb-cycle-plan-details');
+  add(section, 'summary', 'Saved Plan details');
+  if (contract?.goal) { add(section, 'h5', 'Recorded objective'); add(section, 'p', contract.goal, 'pb-response-value'); }
+  const sourceLabel = id => document.sources?.find(source => source.id === id)?.title || id;
+  const criteriaSection = add(section, 'section', '', 'pb-inspector-section'); add(criteriaSection, 'h5', 'Recorded outcome criteria');
+  for (const criterion of criteria) {
+    const row = add(criteriaSection, 'article', '', 'pb-cycle-finding');
+    add(row, 'h5', criterion.label || criterion.description || criterion.id);
+    if (criterion.description) add(row, 'p', criterion.description, 'pb-response-value');
+    add(row, 'p', 'Evidence kind: ' + (criterion.kind || criterion.verification || 'unrecorded'), 'pb-help');
+    if (criterion.resourceKey) add(row, 'p', 'Resource: ' + criterion.resourceKey, 'pb-help');
+    if (criterion.targetCount !== undefined) add(row, 'p', 'Recorded target count: ' + criterion.targetCount, 'pb-help');
+  }
+  renderAccuracyTargets(ctx, section, criteria);
+  const workSection = add(section, 'section', '', 'pb-inspector-section'); add(workSection, 'h5', 'Recorded work and ownership');
+  for (const item of work) {
+    const row = add(workSection, 'article', '', 'pb-cycle-finding');
+    add(row, 'h5', item.title || item.label || item.id);
+    add(row, 'p', item.objective || item.description || '', 'pb-response-value');
+    if (item.owner) add(row, 'p', 'Recorded owner: ' + item.owner, 'pb-help');
+    if (item.resourceKeys?.length) add(row, 'p', 'Resources: ' + item.resourceKeys.join(', '), 'pb-help');
+    if (item.effects?.length) add(row, 'p', 'Recorded work scope: ' + item.effects.join(', '), 'pb-help');
+    if (item.dependsOn?.length) add(row, 'p', 'Depends on: ' + item.dependsOn.map(id => work.find(row => row.id === id)?.title || work.find(row => row.id === id)?.label || id).join(', '), 'pb-help');
+    if (item.criterionIds?.length) add(row, 'p', 'Outcome criteria: ' + item.criterionIds.map(id => criteria.find(row => row.id === id)?.label || id).join(', '), 'pb-help');
+    if (item.sourceIds?.length) add(row, 'p', 'Recorded sources: ' + item.sourceIds.map(sourceLabel).join(', '), 'pb-help');
+  }
+  if (contract?.instructions?.length) {
+    const instructions = add(section, 'section', '', 'pb-inspector-section'); add(instructions, 'h5', 'Recorded instructions');
+    for (const instruction of contract.instructions) add(instructions, 'p', instruction.text + ' (' + instruction.handling + ')', 'pb-response-value');
+  }
+  const exact = add(section, 'details', '', 'pb-history'); add(exact, 'summary', 'Full saved Plan data');
+  add(exact, 'pre', JSON.stringify(contract || { acceptanceCriteria: criteria, steps: work }, null, 2), 'pb-response-value');
+}
+
 /** UI actions share the host's revision-bound cycle API; reading renders no work. */
 export function renderCycleControls(ctx, parent, document, cycle, state, { stages = false, planEditor = !stages } = {}) {
   const { add, button, select, chooseNode, mutate, render } = ctx;
@@ -278,6 +319,7 @@ export function renderCycleControls(ctx, parent, document, cycle, state, { stage
       else if (row.node?.prompt) add(control, 'small', brief(row.node.prompt));
     }
   }
+  renderArchivedPlan(ctx, section, document, plan?.response);
   add(section, 'p', 'Archived automatic pipeline. Saved results are read-only; create a current modular graph for new work.', 'pb-help');
   return section;
 }

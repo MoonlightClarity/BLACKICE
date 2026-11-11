@@ -314,71 +314,11 @@ function viabilityGraph(document, { state = 'awaiting_input', responseId = 'viab
   return graph;
 }
 
-test('viability answers preserve their request draft and resume only through the authoritative answer result', async t => {
-  let state = 'awaiting_input';
-  const f = await fixture(t, { hook: (call, documents) => {
-    if (call.route === '/api/planning-browser/requests/request-a' && call.method === 'GET') return viabilityGraph(documents.get('request-a'), { state });
-    if (call.route === '/api/planning-browser/requests/request-a/viability/answer') {
-      state = 'ready'; const document = documents.get('request-a'); document.revision++; document.nodes[0].revision++;
-      return { ...viabilityGraph(document, { state, responseId: 'viability-response-2' }), viabilityAction: { resumedRunId: 'original-conversation-run' } };
-    }
-  } });
-  assert.equal(f.$('[data-action="answer-viability"]').textContent, 'Answer and continue');
-  assert.match(f.$('.pb-viability').textContent, /These preferences do not block the work/);
-  await f.input('[data-viability-requirement="address"]', '123 Example Street');
-  await f.selectRequest('request-b'); assert.equal(f.$('.pb-viability'), null);
-  await f.selectRequest('request-a'); assert.equal(f.$('[data-viability-requirement="address"]').value, '123 Example Street');
-  await f.$('[data-action="answer-viability"]').closest('form').dispatch('submit');
-  await waitFor(() => f.$('.pb-viability')?.dataset.viabilityState === 'ready');
-  const call = f.mutations().at(-1);
-  assert.equal(call.route, '/api/planning-browser/requests/request-a/viability/answer');
-  assert.equal(call.body.requirementId, 'address'); assert.equal(call.body.answer, '123 Example Street');
-  assert.equal(call.body.expectedNodeRevision, 1); assert.equal(call.body.expectedResponseId, 'viability-response-1');
-  assert.ok(call.body.clientRequestId);
-  assert.match(f.$('.pb-notice').textContent, /original conversation resumed/);
-  assert.equal(f.calls.filter(call => call.route.endsWith('/run')).length, 0);
-  assert.equal(f.documents.get('request-b').revision, 1);
-});
 
-test('an uncertain viability answer retry keeps its exact client receipt and does not create an enable or run call', async t => {
-  let submissions = 0;
-  const f = await fixture(t, { hook: (call, documents) => {
-    if (call.route === '/api/planning-browser/requests/request-a' && call.method === 'GET') return viabilityGraph(documents.get('request-a'), { pendingIntent: null, scope: 'deployment' });
-    if (call.route.endsWith('/viability/answer')) {
-      if (++submissions === 1) throw Error('Connection ended before the saved answer receipt arrived.');
-      return viabilityGraph(documents.get('request-a'), { state: 'ready', responseId: 'viability-response-2', pendingIntent: null, scope: 'deployment' });
-    }
-  } });
-  assert.equal(f.$('[data-action="answer-viability"]').textContent, 'Save answer');
-  await f.input('[data-viability-requirement="address"]', '123 Example Street');
-  await f.$('[data-action="answer-viability"]').closest('form').dispatch('submit');
-  await waitFor(() => f.$('.pb-notice').textContent.includes('saved answer receipt'));
-  assert.equal(f.$('[data-viability-requirement="address"]').value, '123 Example Street');
-  await f.$('[data-action="answer-viability"]').closest('form').dispatch('submit');
-  await waitFor(() => f.$('.pb-viability')?.dataset.viabilityState === 'ready');
-  const writes = f.mutations(); assert.equal(writes.length, 2); assert.deepEqual(writes[1], writes[0]);
-  assert.equal(f.calls.filter(call => /enabled|\/run$/.test(call.route)).length, 0);
-});
 
-test('a changed viability response preserves the typed answer and blocks stale submission until its current question is reviewed', async t => {
-  let responseId = 'viability-response-1';
-  const f = await fixture(t, { hook: (call, documents) => {
-    if (call.route === '/api/planning-browser/requests/request-a' && call.method === 'GET') return viabilityGraph(documents.get('request-a'), { responseId, pendingIntent: null });
-    if (call.route.endsWith('/viability/answer')) return viabilityGraph(documents.get('request-a'), { state: 'ready', responseId: 'viability-response-3', pendingIntent: null });
-  } });
-  await f.input('[data-viability-requirement="address"]', '123 Example Street');
-  const document = f.documents.get('request-a'); document.revision++; document.nodes[0].revision++; responseId = 'viability-response-2';
-  await f.refresh();
-  assert.equal(f.$('[data-viability-requirement="address"]').value, '123 Example Street');
-  assert.equal(f.$('[data-action="answer-viability"]').disabled, true);
-  await f.$('[data-action="answer-viability"]').closest('form').dispatch('submit');
-  assert.equal(f.mutations().length, 0);
-  await f.click('[data-action="adopt-viability-revision"]');
-  await f.$('[data-action="answer-viability"]').closest('form').dispatch('submit');
-  await waitFor(() => f.mutations().length === 1);
-  assert.equal(f.mutations()[0].body.expectedNodeRevision, 2);
-  assert.equal(f.mutations()[0].body.expectedResponseId, 'viability-response-2');
-});
+
+
+
 
 test('Open conversation requires an actual catalog conversation and navigates its persisted run identity', async t => {
   const groupId = 'opaque-shared-group', savedRunId = 'persisted-chat-run';
@@ -460,19 +400,7 @@ function cycleGraph(document,{state='paused_after_plan',planRevision=7,responseI
 }
 const visibleText=node=>node.hidden?'':node.tagName==='DETAILS'&&!node.open?visibleText(node.children.find(child=>child.tagName==='SUMMARY')||{children:[],rawText:''}):(node.rawText||'')+(node.children||[]).map(visibleText).join(' ');
 
-test('recursive cycles expose ordered stage work, named findings and refinement at every stage without running on read',async t=>{
-  const f=await fixture(t,{initialNodeId:cycleIds.cycle,hook:(call,documents)=>call.route==='/api/planning-browser/requests/request-a'&&call.method==='GET'?cycleGraph(documents.get('request-a'),{child:true}):undefined});
-  assert.deepEqual(f.$('.pb-cycle-stages').children.map(item=>item.dataset.cycleStage),['feasibility','inference','plan','think','respond']);
-  assert.match(f.$('.pb-cycle-controls').textContent,/3 of 5 stages have a recorded response/);
-  assert.match(f.$('.pb-cycle-controls').textContent,/Plan ready · paused/);
-  assert.doesNotMatch(visibleText(f.mount),/cycle_opaque|stage_opaque|opaque_plan_response|source_opaque|criterion_opaque|step_opaque/);
-  assert.match(visibleText(f.mount),/Supplied research notes|Inspect source records/);
-  for(const stage of ['feasibility','inference','plan','think','respond']){
-    await f.click('[data-node-id="'+cycleIds[stage]+'"]');
-    assert.ok(f.mount.querySelectorAll('button').find(button=>button.textContent==='+ Refine with a child cycle'));
-  }
-  assert.equal(f.mutations().length,0);
-});
+
 
 test('intent-first cycles show the actual phase order and confirmed resource diagnostics without asking the human to do routine work',async t=>{
   const f=await fixture(t,{initialNodeId:cycleIds.cycle,hook:(call,documents)=>{
@@ -489,45 +417,9 @@ test('intent-first cycles show the actual phase order and confirmed resource dia
   assert.match(f.$('.pb-viability').textContent,/Model-repairable prerequisites/);assert.match(f.$('.pb-viability').textContent,/compact corrected observation/);assert.equal(f.$('[data-action="answer-viability"]'),null);
 });
 
-test('Plan edits preserve typed findings and save separately from exact-revision Continue',async t=>{
-  let planRevision=7,responseId='opaque_plan_response_1',cycleState='paused_after_plan';
-  const f=await fixture(t,{initialNodeId:cycleIds.cycle,hook:(call,documents)=>{
-    const doc=documents.get('request-a');
-    if(call.route==='/api/planning-browser/requests/request-a'&&call.method==='GET')return cycleGraph(doc,{planRevision,responseId,state:cycleState});
-    if(call.route.endsWith('/'+cycleIds.cycle+'/plan')){planRevision++;responseId='opaque_plan_response_2';return cycleGraph(doc,{planRevision,responseId,state:cycleState});}
-    if(call.route.endsWith('/'+cycleIds.cycle+'/continue')){cycleState='running';return cycleGraph(doc,{planRevision,responseId,state:cycleState});}
-  }});
-  const form=f.$('[data-cycle-plan-form="'+cycleIds.cycle+'"]');
-  await f.input('[data-field-key="cycle-plan:'+cycleIds.cycle+':values:approach"]','Inspect both sources before drafting.');
-  assert.equal(f.$('[data-cycle-continue="'+cycleIds.cycle+'"]').disabled,true);
-  const second=form.querySelector('[data-plan-step="step_opaque_2"]');
-  const dependencies=second.querySelectorAll('details').find(detail=>detail.querySelector('summary').textContent==='Depends on');
-  const dependency=dependencies.querySelector('input');dependency.checked=true;await dependency.dispatch('change');
-  const sourceChoice=second.querySelectorAll('details').find(detail=>detail.querySelector('summary').textContent==='Recorded sources');
-  for(const check of sourceChoice.querySelectorAll('input')){check.checked=true;await check.dispatch('change');}
-  assert.equal(f.mutations().length,0);
-  await form.dispatch('submit');await waitFor(()=>f.mutations().length===1&&f.$('[data-cycle-continue="'+cycleIds.cycle+'"]').disabled===false);
-  const save=f.mutations()[0];assert.equal(save.body.expectedRequestRevision,11);assert.equal(save.body.expectedCycleRevision,2);assert.equal(save.body.expectedPlanRevision,7);assert.equal(save.body.expectedPlanResponseId,'opaque_plan_response_1');
-  assert.equal(save.body.plan.values.approach,'Inspect both sources before drafting.');
-  assert.deepEqual(save.body.plan.steps[1].dependsOn,['step_opaque_1']);assert.deepEqual(save.body.plan.steps[1].sourceIds,['source_opaque_1','source_opaque_2']);
-  assert.equal(save.body.plan.checks[0].id,'outcome_covered');assert.equal(save.body.plan.acceptanceCriteria[0].label,'Supported report');
-  assert.equal(Object.hasOwn(save.body.plan,'provenance'),false);assert.equal(Object.hasOwn(save.body.plan,'status'),false);
-  assert.equal(f.calls.some(call=>call.route.endsWith('/continue')),false);
-  await f.click('[data-cycle-continue="'+cycleIds.cycle+'"]');await waitFor(()=>f.mutations().length===2);
-  assert.equal(f.mutations()[1].body.expectedRequestRevision,12);assert.equal(f.mutations()[1].body.expectedPlanRevision,8);assert.equal(f.mutations()[1].body.expectedPlanResponseId,'opaque_plan_response_2');
-});
 
-test('a stale Plan edit remains visible and cannot silently continue or overwrite newer findings',async t=>{
-  let revision=7;
-  const f=await fixture(t,{initialNodeId:cycleIds.cycle,hook:(call,documents)=>call.route==='/api/planning-browser/requests/request-a'&&call.method==='GET'?cycleGraph(documents.get('request-a'),{planRevision:revision,responseId:'plan-response-'+revision}):undefined});
-  const key='[data-field-key="cycle-plan:'+cycleIds.cycle+':values:approach"]';
-  await f.input(key,'Keep these local edits.');revision=8;await f.refresh();
-  assert.equal(f.$(key).value,'Keep these local edits.');
-  assert.equal(f.$('[data-cycle-plan-save="'+cycleIds.cycle+'"]').disabled,true);
-  assert.equal(f.$('[data-cycle-continue="'+cycleIds.cycle+'"]').disabled,true);
-  await f.$('[data-cycle-plan-form="'+cycleIds.cycle+'"]').dispatch('submit');
-  assert.equal(f.mutations().length,0);
-});
+
+
 
 test('exact request navigation focuses the requested stage without opening another conversation or starting work',async t=>{
   const f=await fixture(t);
@@ -550,17 +442,7 @@ test('supervising model revisions identify their author type and keep raw author
   assert.equal(f.mutations().length,0);
 });
 
-test('an uncertain Continue retry keeps the same exact plan revision and request receipt',async t=>{
-  let submits=0;
-  const f=await fixture(t,{initialNodeId:cycleIds.cycle,hook:(call,documents)=>{
-    if(call.route==='/api/planning-browser/requests/request-a'&&call.method==='GET')return cycleGraph(documents.get('request-a'));
-    if(call.route.endsWith('/'+cycleIds.cycle+'/continue')){if(++submits===1)throw Error('Continue receipt unavailable.');return cycleGraph(documents.get('request-a'),{state:'running'});}
-  }});
-  await f.click('[data-cycle-continue="'+cycleIds.cycle+'"]');await waitFor(()=>f.$('.pb-notice').textContent.includes('receipt unavailable'));
-  assert.equal(f.mutations().length,1);
-  await f.click('[data-cycle-continue="'+cycleIds.cycle+'"]');await waitFor(()=>f.mutations().length===2);
-  assert.deepEqual(f.mutations()[1],f.mutations()[0]);
-});
+
 
 const freeCycleProfile = { model: 'saved_free::small-model:free', effort: 'default', serviceTier: 'default' };
 const cycleModelStatus = () => ({
@@ -572,139 +454,17 @@ const cycleModelStatus = () => ({
   ]
 });
 
-test('standalone cycle Run sends the chosen saved model and preserves its exact uncertain-delivery receipt', async t => {
-  let submissions = 0;
-  const status = cycleModelStatus();
-  const f = await fixture(t, { status, initialNodeId: cycleIds.cycle, hook: (call, documents) => {
-    if (call.route === '/api/planning-browser/requests/request-a' && call.method === 'GET') {
-      const graph = cycleGraph(documents.get('request-a'), { state: 'pending' });
-      graph.responseCycle = { executionProfile: { model: 'gpt-default', effort: 'default', serviceTier: 'default' } };
-      return graph;
-    }
-    if (call.route.endsWith('/' + cycleIds.cycle + '/run')) {
-      if (++submissions === 1) throw Error('Run receipt unavailable.');
-      const graph = cycleGraph(documents.get('request-a'));
-      graph.cycles[0].executionProfile = copy(freeCycleProfile);
-      return graph;
-    }
-  } });
-  assert.equal(f.mutations().length, 0);
-  let model = f.$('[data-cycle-model="' + cycleIds.cycle + '"]');
-  assert.equal(model.disabled, false);
-  assert.equal(model.value, 'gpt-default', 'An independent cycle may change the legacy default seed before its own first run.');
-  model.value = freeCycleProfile.model; await model.dispatch('change');
-  await f.click('[data-cycle-run="' + cycleIds.cycle + '"]');
-  await waitFor(() => f.$('.pb-notice').textContent.includes('Run receipt unavailable'));
-  const first = f.mutations()[0];
-  assert.deepEqual({ model: first.body.model, effort: first.body.effort, serviceTier: first.body.serviceTier }, freeCycleProfile);
-  assert.equal(first.body.planningExecutionMode, 'plan_only');
-  assert.equal(first.body.expectedRequestRevision, 11); assert.equal(first.body.expectedCycleRevision, 2);
-  assert.equal(f.$('[data-cycle-model="' + cycleIds.cycle + '"]').value, freeCycleProfile.model);
-  await f.click('[data-cycle-run="' + cycleIds.cycle + '"]');
-  await waitFor(() => f.$('[data-cycle-continue="' + cycleIds.cycle + '"]'));
-  assert.deepEqual(f.mutations()[1], first);
-  model = f.$('[data-cycle-model="' + cycleIds.cycle + '"]');
-  assert.equal(model.value, freeCycleProfile.model); assert.equal(model.disabled, true);
-  assert.equal(status.defaultModel, 'gpt-default');
-  assert.equal(f.mutations().some(call => !call.route.startsWith('/api/planning-browser/requests/')), false);
-});
 
-test('a saved cycle model stays visible across default changes and individual stage Run uses the same profile', async t => {
-  const status = cycleModelStatus();
-  const graphFor = documents => {
-    const graph = cycleGraph(documents.get('request-a'));
-    graph.cycles[0].executionProfile = copy(freeCycleProfile);
-    return graph;
-  };
-  const f = await fixture(t, { status, initialNodeId: cycleIds.cycle, hook: (call, documents) => {
-    if (call.route === '/api/planning-browser/requests/request-a' && call.method === 'GET') return graphFor(documents);
-    if (call.route.endsWith('/nodes/' + cycleIds.inference + '/run') || call.route.endsWith('/' + cycleIds.cycle + '/continue')) return graphFor(documents);
-  } });
-  assert.equal(f.$('[data-cycle-model="' + cycleIds.cycle + '"]').disabled, true);
-  status.defaultModel = 'changed-global-default'; await f.refresh();
-  assert.equal(f.$('[data-cycle-model="' + cycleIds.cycle + '"]').value, freeCycleProfile.model);
-  await f.click('[data-node-id="' + cycleIds.inference + '"]');
-  assert.equal(f.$('[data-action="run-module"]').textContent, 'Run module with Saved free provider · Small model');
-  await f.click('[data-action="run-module"]'); await waitFor(() => f.mutations().length === 1);
-  const run = f.mutations()[0];
-  assert.equal(run.body.expectedNodeRevision, 1);
-  assert.deepEqual({ model: run.body.model, effort: run.body.effort, serviceTier: run.body.serviceTier }, freeCycleProfile);
-  await f.click('[data-cycle-continue="' + cycleIds.cycle + '"]'); await waitFor(() => f.mutations().length === 2);
-  const continued = f.mutations()[1].body;
-  assert.equal(continued.expectedPlanRevision, 7); assert.equal(continued.expectedPlanResponseId, 'opaque_plan_response_1');
-  for (const key of ['model', 'effort', 'serviceTier']) assert.equal(Object.hasOwn(continued, key), false);
-});
 
-test('child cycles display the inherited model and active cycle controls cannot change or rerun it', async t => {
-  const f = await fixture(t, { status: cycleModelStatus(), initialNodeId: cycleIds.cycle, hook: (call, documents) => {
-    if (call.route !== '/api/planning-browser/requests/request-a' || call.method !== 'GET') return;
-    const graph = cycleGraph(documents.get('request-a'), { state: 'running', child: true });
-    graph.cycles[0].executionProfile = copy(freeCycleProfile);
-    return graph;
-  } });
-  assert.equal(f.$('[data-cycle-model="' + cycleIds.cycle + '"]').disabled, true);
-  assert.equal(f.$('[data-cycle-run="' + cycleIds.cycle + '"]').disabled, true);
-  await f.click('[data-node-id="' + cycleIds.inference + '"]');
-  assert.equal(f.$('[data-action="run-module"]').disabled, true);
-  await f.click('[data-node-id="child_cycle_opaque"]');
-  const model = f.$('[data-cycle-model="child_cycle_opaque"]');
-  assert.equal(model.value, freeCycleProfile.model); assert.equal(model.disabled, true);
-  assert.match(f.$('.pb-cycle-controls').textContent, /These model settings are saved/);
-  assert.equal(f.mutations().length, 0);
-});
 
-test('an unavailable saved cycle model remains visible and is never silently replaced by the configured default', async t => {
-  const status = cycleModelStatus(); status.models = status.models.filter(model => model.id !== freeCycleProfile.model);
-  const f = await fixture(t, { status, initialNodeId: cycleIds.cycle, hook: (call, documents) => {
-    if (call.route !== '/api/planning-browser/requests/request-a' || call.method !== 'GET') return;
-    const graph = cycleGraph(documents.get('request-a'), { state: 'needs_review' });
-    graph.cycles[0].executionProfile = copy(freeCycleProfile);
-    return graph;
-  } });
-  const model = f.$('[data-cycle-model="' + cycleIds.cycle + '"]');
-  assert.equal(model.value, freeCycleProfile.model); assert.equal(model.disabled, true);
-  await f.click('[data-cycle-run="' + cycleIds.cycle + '"]');
-  assert.match(f.$('.pb-notice').textContent, /Choose an available model/);
-  assert.equal(f.mutations().length, 0);
-});
 
-test('refining a stage creates one revision-bound child cycle without starting a worker',async t=>{
-  const f=await fixture(t,{initialNodeId:cycleIds.cycle,hook:(call,documents)=>{
-    if(call.route==='/api/planning-browser/requests/request-a'&&call.method==='GET')return cycleGraph(documents.get('request-a'));
-    if(call.route==='/api/planning-browser/requests/request-a/cycles')return {...cycleGraph(documents.get('request-a'),{child:true}),cycleAction:{cycleId:'child_cycle_opaque'}};
-  }});
-  await f.click('[data-node-id="'+cycleIds.inference+'"]');
-  await f.click(f.mount.querySelectorAll('button').find(button=>button.textContent==='+ Refine with a child cycle'));
-  const form=f.$('.pb-create form');form.querySelector('input').value='Resolve a conflicting source';form.querySelector('textarea').value='Compare the two records and return the supported distinction.';
-  await form.dispatch('submit');await waitFor(()=>f.mutations().length===1&&f.$('[data-selected-node-id="child_cycle_opaque"]'));
-  const body=f.mutations()[0].body;
-  assert.equal(body.parentNodeId,cycleIds.inference);assert.equal(body.expectedParentRevision,1);assert.equal(body.expectedRequestRevision,11);
-  assert.equal(body.planningExecutionMode,'plan_only');assert.equal(body.title,'Resolve a conflicting source');assert.ok(body.clientRequestId);
-  assert.equal(f.calls.some(call=>call.route.endsWith('/run')||call.route.endsWith('/continue')),false);
-});
 
-test('a nested feasibility answer names its exact node and response without resuming a Plan only parent',async t=>{
-  const childNode='nested_feasibility_opaque';let answered=false;
-  const make=document=>{
-    const graph=cycleGraph(document,{child:true}),nested=graph.cycles[1];nested.stageNodeIds={feasibility:childNode};nested.state=answered?'pending':'awaiting_input';
-    graph.nodes.push({id:childNode,kind:'viability',title:'Locate the correct source record',prompt:'Determine the source needed by this child question.',parentId:nested.id,revision:3,
-      response:{id:answered?'nested-response-2':'nested-response-1',revision:1,values:{},grounding:[],openQuestions:[],challengeResponses:[],requirements:[]},
-      readiness:{state:answered?'ready':'awaiting_input',viability:{state:answered?'ready':'awaiting_input',preferences:[],blockingFacts:answered?[]:[{id:'record-location',label:'Source record',question:'Which saved source contains the corrected address?',consequence:'This resolves the source conflict before drafting.'}]}}});
-    return graph;
-  };
-  const f=await fixture(t,{initialNodeId:cycleIds.cycle,hook:(call,documents)=>{
-    if(call.route==='/api/planning-browser/requests/request-a'&&call.method==='GET')return make(documents.get('request-a'));
-    if(call.route.endsWith('/viability/answer')){answered=true;return make(documents.get('request-a'));}
-  }});
-  f.workspace.openRequestId('request-a',{nodeId:childNode});await waitFor(()=>f.$('[data-selected-node-id="'+childNode+'"]'));
-  await f.input('[data-viability-requirement="record-location"]','Use the corrected research notes.');
-  await f.$('[data-action="answer-viability"]').closest('form').dispatch('submit');await waitFor(()=>f.mutations().length===1);
-  const body=f.mutations()[0].body;
-  assert.equal(body.nodeId,childNode);assert.equal(body.requirementId,'record-location');assert.equal(body.expectedNodeRevision,3);assert.equal(body.expectedResponseId,'nested-response-1');
-  assert.equal(f.calls.some(call=>call.route.endsWith('/continue')||call.route.endsWith('/run')),false);
-  await f.click('[data-node-id="'+cycleIds.cycle+'"]');
-  assert.match(f.$('.pb-cycle-state').textContent,/Plan ready · paused/);
-});
+
+
+
+
+
+
 
 test('explicit request, stage, and manual conversation selection survive unrelated catalog and runtime updates',async t=>{
   const status={runtimeSettings:{defaultModel:'fixture-fast'}},f=await fixture(t,{status});
@@ -775,58 +535,11 @@ test('cycle summaries count unresolved child cycles rather than the two unrecord
 const savedAccuracy = () => ({mode:'exact',tolerance:'',decisionThreshold:'Capacity is at least 5 seats.',evidenceNeeded:'The supplied fictional room capacities.',consequence:'A wrong choice would fail the stated capacity requirement.',unknownPolicy:'block',stopWhen:'The supplied capacities have been compared with 5; no real-room check is needed.'});
 const accuracyField = (criterion,key) => '[data-field-key="cycle-plan:'+cycleIds.cycle+':'+criterion+':accuracy:'+key+'"]';
 
-test('saved accuracy and stopping conditions stay visible across all five stages and Plan edits use the exact saved revision',async t=>{
-  let revision=7,body=null;
-  const graphFor=doc=>{const graph=cycleGraph(doc,{planRevision:revision,responseId:'accuracy-plan-'+revision});const plan=graph.nodes.find(node=>node.id===cycleIds.plan);if(body)Object.assign(plan.response,copy(body));else plan.response.acceptanceCriteria[0].accuracy=savedAccuracy();return graph;};
-  const f=await fixture(t,{initialNodeId:cycleIds.cycle,hook:(call,documents)=>{
-    if(call.route==='/api/planning-browser/requests/request-a'&&call.method==='GET')return graphFor(documents.get('request-a'));
-    if(call.route.endsWith('/'+cycleIds.cycle+'/plan')){body=copy(call.body.plan);revision++;return graphFor(documents.get('request-a'));}
-  }});
-  for(const id of [cycleIds.cycle,...['feasibility','inference','plan','think','respond'].map(stage=>cycleIds[stage])]){
-    if(id!==cycleIds.cycle)await f.click('[data-node-id="'+id+'"]');
-    assert.match(visibleText(f.$('.pb-accuracy-targets')),/Accuracy: Exact/);
-    assert.match(visibleText(f.$('.pb-accuracy-targets')),/Stop checking when: The supplied capacities/);
-  }
-  assert.equal(f.mutations().length,0);await f.click('[data-node-id="'+cycleIds.plan+'"]');
-  await f.input(accuracyField('criterion_opaque_1','stopWhen'),'The exact cutoff and two-seat difference are established from the supplied premises.');
-  assert.equal(f.$('[data-cycle-continue="'+cycleIds.cycle+'"]').disabled,true);
-  await f.$('[data-cycle-plan-form="'+cycleIds.cycle+'"]').dispatch('submit');await waitFor(()=>f.mutations().length===1&&f.$('[data-cycle-continue="'+cycleIds.cycle+'"]').disabled===false);
-  const save=f.mutations()[0];assert.equal(save.body.expectedRequestRevision,11);assert.equal(save.body.expectedCycleRevision,2);assert.equal(save.body.expectedPlanRevision,7);assert.equal(save.body.expectedPlanResponseId,'accuracy-plan-7');
-  assert.equal(save.body.plan.acceptanceCriteria[0].accuracy.stopWhen,'The exact cutoff and two-seat difference are established from the supplied premises.');
-  assert.deepEqual(save.body.plan.checks,body.checks);assert.equal(save.body.plan.steps.length,2);
-  assert.match(visibleText(f.$('.pb-accuracy-targets')),/Stop checking when: The exact cutoff/);
-  assert.equal(f.calls.some(call=>call.route.endsWith('/continue')||call.route.endsWith('/run')),false);
-});
 
-test('legacy criteria acquire no invented accuracy target and an explicit target draft saves bounded fields without starting work',async t=>{
-  let saved;
-  const graphFor=doc=>{const graph=cycleGraph(doc,{planRevision:saved?8:7,responseId:saved?'new-accuracy-plan':'legacy-plan'});if(saved)Object.assign(graph.nodes.find(node=>node.id===cycleIds.plan).response,copy(saved));return graph;};
-  const f=await fixture(t,{initialNodeId:cycleIds.cycle,hook:(call,documents)=>{
-    if(call.route==='/api/planning-browser/requests/request-a'&&call.method==='GET')return graphFor(documents.get('request-a'));
-    if(call.route.endsWith('/'+cycleIds.cycle+'/plan')){saved=copy(call.body.plan);return graphFor(documents.get('request-a'));}
-  }});
-  assert.equal(f.$('.pb-accuracy-targets'),null);assert.equal(f.$('[data-accuracy-editor]'),null);assert.equal(f.mutations().length,0);
-  await f.click('[data-accuracy-add="criterion_opaque_1"]');
-  const mode=f.$('[data-accuracy-mode="criterion_opaque_1"]');mode.value='bounded_estimate';await mode.dispatch('change');
-  const policy=f.$('[data-accuracy-unknown-policy="criterion_opaque_1"]');policy.value='range';await policy.dispatch('change');
-  const target={mode:'bounded_estimate',tolerance:'Compare the supplied cost intervals; exact point quotes are not needed.',decisionThreshold:'Option A upper bound is below option B lower bound.',evidenceNeeded:'The supplied 40–60 and 180–220 cost intervals.',consequence:'An incorrect ordering would change the rough comparison.',unknownPolicy:'range',stopWhen:'The intervals do not overlap, so more precision cannot change the ordering.'};
-  for(const key of ['tolerance','decisionThreshold','evidenceNeeded','consequence','stopWhen'])await f.input(accuracyField('criterion_opaque_1',key),target[key]);
-  assert.equal(f.$(accuracyField('criterion_opaque_1','tolerance')).required,true);
-  assert.equal(f.mutations().length,0);await f.$('[data-cycle-plan-form="'+cycleIds.cycle+'"]').dispatch('submit');await waitFor(()=>saved);
-  assert.deepEqual(saved.acceptanceCriteria[0].accuracy,target);assert.equal(f.mutations().length,1);assert.ok(f.mutations()[0].route.endsWith('/plan'));
-});
 
-test('an accuracy edit remains a dirty revision-bound draft when the saved Plan changes',async t=>{
-  let revision=7;
-  const f=await fixture(t,{initialNodeId:cycleIds.cycle,hook:(call,documents)=>{
-    if(call.route!=='/api/planning-browser/requests/request-a'||call.method!=='GET')return;
-    const graph=cycleGraph(documents.get('request-a'),{planRevision:revision,responseId:'accuracy-plan-'+revision});graph.nodes.find(node=>node.id===cycleIds.plan).response.acceptanceCriteria[0].accuracy=savedAccuracy();return graph;
-  }});
-  await f.input(accuracyField('criterion_opaque_1','decisionThreshold'),'My revised cutoff.');revision++;await f.refresh();
-  assert.equal(f.$(accuracyField('criterion_opaque_1','decisionThreshold')).value,'My revised cutoff.');
-  assert.equal(f.$('[data-cycle-plan-save="'+cycleIds.cycle+'"]').disabled,true);assert.equal(f.$('[data-cycle-continue="'+cycleIds.cycle+'"]').disabled,true);
-  await f.$('[data-cycle-plan-form="'+cycleIds.cycle+'"]').dispatch('submit');assert.equal(f.mutations().length,0);
-});
+
+
+
 
 test('feasibility shows the requirement accuracy target without turning it into an extra factual question',async t=>{
   const f=await fixture(t,{hook:(call,documents)=>{
@@ -1003,4 +716,88 @@ test('Overview reading positions belong to their own request', async t => {
   await choose('request-b');
   assert.equal(f.$('.pb-overview').scrollTop, 170);
   assert.equal(f.mutations().length, 0);
+});
+test('historical viability answers are inspectable but disabled for both old request and deployment pages',async t=>{
+ for(const scope of ['request','deployment']){
+  await t.test(scope,async t=>{
+   const f=await fixture(t,{hook:(call,documents)=>{
+    if(call.route!=='/api/planning-browser/requests/request-a'||call.method!=='GET')return;
+    const graph=viabilityGraph(documents.get('request-a'),{scope});graph.viability.definition={input:'Saved original request'};return graph;
+   }});
+   assert.match(f.mount.textContent,/pipeline is retired/);
+   assert.match(f.$('.pb-viability').textContent,/Which address should this use/);
+   const answer=f.$('[data-action="answer-viability"]');assert.equal(answer.disabled,true);
+   // A stale mounted handler is not authority to dispatch even if an event is forged.
+   await f.input('[data-viability-requirement="address"]','Synthetic archived answer');
+   await answer.closest('form').dispatch('submit');await f.refresh();
+   assert.equal(f.mutations().length,0);assert.equal(f.navigation.length,0);
+  });
+ }
+});
+test('archived cycles retain phase order and findings but expose no cycle execution, refinement or Plan editor',async t=>{
+ const f=await fixture(t,{initialNodeId:cycleIds.cycle,hook:(call,documents)=>call.route==='/api/planning-browser/requests/request-a'&&call.method==='GET'?cycleGraph(documents.get('request-a'),{child:true}):undefined});
+ assert.deepEqual(f.$('.pb-cycle-stages').children.map(item=>item.dataset.cycleStage),['feasibility','inference','plan','think','respond']);
+ assert.match(f.$('.pb-cycle-controls').textContent,/3 of 5 stages have a recorded response/);
+ assert.match(f.$('.pb-cycle-controls').textContent,/Archived automatic pipeline/);
+ for(const stage of ['feasibility','inference','plan','think','respond']){
+  await f.click('[data-node-id="'+cycleIds[stage]+'"]');
+  assert.equal(f.$('[data-cycle-plan-form]'),null);assert.equal(f.$('[data-cycle-continue]'),null);assert.equal(f.$('[data-cycle-run]'),null);
+  assert.equal(f.mount.querySelectorAll('button').some(button=>button.textContent==='+ Refine with a child cycle'),false);
+  const run=f.$('[data-action="run-module"]');if(run){assert.equal(run.disabled,true);await f.click(run);}
+ }
+ assert.equal(f.mutations().length,0);
+});
+test('refreshing an archived Plan shows its saved revision without enabling stale save or Continue handlers',async t=>{
+ let revision=7;
+ const f=await fixture(t,{initialNodeId:cycleIds.cycle,hook:(call,documents)=>{
+  if(call.route!=='/api/planning-browser/requests/request-a'||call.method!=='GET')return;
+  const graph=cycleGraph(documents.get('request-a'),{planRevision:revision,responseId:'saved-plan-'+revision});
+  graph.nodes.find(node=>node.id===cycleIds.plan).response.values.approach='Saved historical approach '+revision;return graph;
+ }});
+ await f.click('[data-node-id="'+cycleIds.plan+'"]');
+ assert.equal(f.$('[data-response-field="approach"]').value,'Saved historical approach 7');
+ assert.equal(f.$('[data-response-field="approach"]').disabled,true);
+ revision=8;await f.refresh();
+ assert.equal(f.$('[data-response-field="approach"]').value,'Saved historical approach 8');
+ assert.equal(f.$('[data-cycle-plan-save]'),null);assert.equal(f.$('[data-cycle-continue]'),null);assert.equal(f.mutations().length,0);
+});
+test('saved cycle profiles cannot start a stage or be silently changed by current model defaults',async t=>{
+ const profile={model:'saved_fixture::historical',effort:'low',serviceTier:'default'};
+ const f=await fixture(t,{initialNodeId:cycleIds.cycle,status:{defaultModel:'current-fixture',models:[{model:'current-fixture'}]},hook:(call,documents)=>{
+  if(call.route!=='/api/planning-browser/requests/request-a'||call.method!=='GET')return;
+  const graph=cycleGraph(documents.get('request-a'),{child:true});graph.cycles[0].executionProfile=copy(profile);graph.cycles[1].executionProfile=copy(profile);return graph;
+ }});
+ await f.click('[data-node-id="'+cycleIds.plan+'"]');
+ const run=f.$('[data-action="run-module"]');assert.equal(run.disabled,true);await f.click(run);
+ await f.refresh();assert.equal(f.$('[data-action="run-module"]').disabled,true);
+ assert.equal(f.$('[data-cycle-model]'),null);assert.equal(f.mutations().length,0);
+});
+test('archived accuracy and stopping conditions remain visible at every stage without editable targets',async t=>{
+ const f=await fixture(t,{initialNodeId:cycleIds.cycle,hook:(call,documents)=>{
+  if(call.route!=='/api/planning-browser/requests/request-a'||call.method!=='GET')return;
+  const graph=cycleGraph(documents.get('request-a'));graph.nodes.find(node=>node.id===cycleIds.plan).response.acceptanceCriteria[0].accuracy=savedAccuracy();return graph;
+ }});
+ for(const id of [cycleIds.cycle,...['feasibility','inference','plan','think','respond'].map(stage=>cycleIds[stage])]){
+  if(id!==cycleIds.cycle)await f.click('[data-node-id="'+id+'"]');
+  assert.match(visibleText(f.$('.pb-accuracy-targets')),/Accuracy: Exact/);
+  assert.match(visibleText(f.$('.pb-accuracy-targets')),/Stop checking when: The supplied capacities/);
+  assert.equal(f.$('[data-accuracy-editor]'),null);assert.equal(f.$('[data-accuracy-add]'),null);
+ }
+ assert.equal(f.mutations().length,0);
+});
+test('legacy criteria without saved accuracy acquire no invented target during reading or refresh',async t=>{
+ const f=await fixture(t,{initialNodeId:cycleIds.cycle,hook:(call,documents)=>call.route==='/api/planning-browser/requests/request-a'&&call.method==='GET'?cycleGraph(documents.get('request-a')):undefined});
+ await f.click('[data-node-id="'+cycleIds.plan+'"]');
+ assert.equal(f.$('.pb-accuracy-targets'),null);assert.equal(f.$('[data-accuracy-add]'),null);
+ await f.refresh();assert.equal(f.$('.pb-accuracy-targets'),null);assert.equal(f.mutations().length,0);
+});
+
+test('archived XML is read-only, has no Save action and cannot dispatch from a stale input event',async t=>{
+ const f=await fixture(t,{initialNodeId:cycleIds.cycle,hook:(call,documents)=>call.route==='/api/planning-browser/requests/request-a'&&call.method==='GET'?cycleGraph(documents.get('request-a')):undefined});
+ await f.click('[data-view="xml"]');
+ const code=f.$('.pb-program-xml'),saved=code.value;
+ assert.equal(code.readOnly,true);assert.match(code.getAttribute('aria-label'),/Read-only archived/);
+ assert.equal(f.$('[data-action="save-program-xml"]'),null);
+ code.value='Forged stale input';await code.dispatch('input');await f.refresh();
+ assert.equal(f.$('.pb-program-xml').value,saved);assert.equal(f.mutations().length,0);
 });

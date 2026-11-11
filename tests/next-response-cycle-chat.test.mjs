@@ -6,12 +6,12 @@ import { projectFamily } from '../public/next/chat/reader-model.mjs';
 import { createChatFrame } from '../public/next/chat/render.mjs';
 import { planningDOM } from './fixture-planning-dom.mjs';
 
-test('old plan_only settings always become Automatic and never block Off', () => {
+test('saved plan_only intent is preserved and cannot be upgraded by choosing Off', () => {
   assert.equal(normalizeChatOptions().planningExecutionMode,'automatic');
   const selected=normalizeChatOptions({planningMode:'off',planningExecutionMode:'plan_only'});
   assert.equal(selected.planningMode,'off');
-  assert.equal(selected.planningExecutionMode,'automatic');
-  assert.equal(validateChatOptions({},selected).planningExecutionMode,'automatic');
+  assert.equal(selected.planningExecutionMode,'plan_only');
+  assert.throws(()=>validateChatOptions({},selected),{code:'PLANNING_EXECUTION_MODE_RETIRED'});
 });
 test('an explicit retired Plan-only request is rejected before any Chat API call, including continuations',async()=>{
   const calls=[],api=async(path,method,body)=>{calls.push({path,method,body});return{id:'should-not-be-admitted'};};
