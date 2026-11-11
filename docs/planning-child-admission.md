@@ -1,0 +1,29 @@
+# Automatic analytical child admission
+
+A schema-valid response is not proof that a proposed child can perform its task. An operational objective can be mislabeled `executionTarget: analysis` and `verification: response`; enum checks cannot determine the meaning of its objective, criterion, evidence target or stopping condition. The response worker also receives the user's end-to-end delegated outcome. That outcome belongs to the operational owner, while the stage itself produces a finding. The host now supplies an explicit stage contract to keep those roles separate.
+
+## Scope and invariants
+
+The new gate applies only to automatic recursive child creation and resumption. Manual graph edits, source writes, authored responses, and an explicitly requested single response-only module run remain inert or retain their existing one-module behavior. They do not secretly start a reviewer. Explicit whole-cycle orchestration reviews proposed recursive work before creating or driving a child. Manually created children without a bound parent request remain manual.
+
+A review is a separate provider attempt with `purpose: child_admission`. It uses the cycle's unchanged model, effort and service tier, the same response-only transport, no operational tools, the same worker capacity, cancellation and provider budget. It has a separate output schema and never records a module response, alters the accepted parent response, or enters format repair. Duplicate JSON members, wrong child keys, invented response paths and foreign source IDs are rejected. A review gets exactly one provider call; failure, cancellation or malformed output does not cause a hidden retry.
+
+The host binds each review to the exact parent response and proposed child contracts, the parent/root scope, inherited criteria, the selected current source contents, and the admission contract version. Structural child state changes do not alone invalidate a review; changed semantic inputs do. Automatic creation, resumption, and subsequent automatic child module admission recheck the binding. Historical accepted responses and directly authored responses have no exemption. A missing, changed, rejected, unfinished or failed judgment cannot admit recursive work.
+
+Reviews are durable attempts, visible as provider work for their exact request. Their usage counts alongside ordinary attempts. Their completion is not the latest ordinary stage response, stage readiness, effect evidence or plan adoption. Saved judgments are validated against their raw output and snapshot when reopened. An uncertain previous review is not automatically replayed.
+
+## Semantic judgment and bounded refinement
+
+A separate response-only pass judges whether each complete child request asks a narrower question answerable from its captured records. It distinguishes useful analysis about actions or receipts from a request to execute those actions, and distinguishes stipulated premises from a missing new observation. It also checks paraphrased parent tasks and disagreement between the response's child list and its explanation.
+
+An operational, non-narrower, inconsistent or materially ambiguous request is not automatically relabeled, removed, weakened or treated as complete. Its immutable review feedback can trigger at most one ordinary stage refinement within the existing pass and total provider limits. That allowance is durable for the original rejected review, includes failed or cancelled refinement attempts, and is not renewed by resume or restart. A subsequent format repair preserves the same immutable refinement lineage. This is a new public response, not a field-format repair. The latter's preservation contract is unchanged.
+
+A replacement receives a preservation review even if it contains no analytical children. The original rejected obligations and their captured sources remain comparison input. Moving an actual operation to its operational owner, preserving it as an explicit unresolved outcome, or recording a supported resolution can address the defect. Deleting the child, renaming it or substituting a smaller answer does not itself resolve the original operation. Typed inherited criteria, canonical ownership and effect-receipt checks remain authoritative.
+
+The review is explicitly a model judgment. Hashes prove binding, not semantic truth. A separate same-model pass can reduce correlated errors but is not an independent oracle. It cannot grant authority, certify a real-world effect, or change the user's decisions. Rejection produces internal bounded refinement feedback, not a request for the user to repair planning fields.
+
+## Cost and validation
+
+A response without analytical children and without a rejected-obligation lineage adds zero calls. An unchanged child-bearing response and scope add one batched review, not one call per child. A materially changed source or scope needs a new review before automatic resumption, including when a child discovers a new inherited operational criterion. A rejected proposal may add one ordinary refinement and one replacement review. Existing format repairs still count separately and all work shares the existing provider-turn cap; no recursion or model-work limit is raised.
+
+Synthetic tests cover operational service requests, folder changes, reservations, missing observations, legitimate analysis of existing receipts, stipulated arithmetic, unsent drafts, hypothetical actions, evidence limitations, manual behavior, immutable history, empty/renamed/moved obligations, exact bindings, provider failure, cancellation, budget exhaustion, tool violations, durable reopen and purpose confusion. Tests with mocked semantic judgments establish enforcement and overhead, not actual model classification accuracy. Private captured cases and genuine response-only evaluations remain necessary before claiming real-model improvement. Private task content is never a public fixture.

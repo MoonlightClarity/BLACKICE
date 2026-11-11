@@ -391,7 +391,7 @@ const usableSource = source => Boolean(source && (typeof source.text === 'string
 const terminalChild = child => ['completed', 'failed', 'cancelled'].includes(child.state);
 export function workflowChildHandoffReady(child, context = {}) {
   const handoff=child.workflowHandoff;
-  return Boolean(child.state==='completed'&&child.analysisReady===true&&handoff?.ownerCycleId===context.workflowOwner?.cycleId&&handoff.criteria?.length&&handoff.criteria.every(required=>(context.requiredAcceptanceCriteria||[]).some(criterion=>canonical(criterion)===canonical(required))));
+  return Boolean(handoff&&context.workflowOwner&&child.state==='completed'&&child.analysisReady===true&&handoff.ownerCycleId===context.workflowOwner.cycleId&&handoff.criteria?.length&&handoff.criteria.every(required=>(context.requiredAcceptanceCriteria||[]).some(criterion=>canonical(criterion)===canonical(required))));
 }
 const resultOutcome = results => !results.length ? 'unresolved' : results.every(item => item.assessment === 'satisfied') ? 'satisfied' : results.some(item => item.assessment === 'satisfied') ? 'partial' : 'unresolved';
 const inputRecords = response => (response.inputs || []).flatMap(item => [item, ...(item.subtree || [])]);

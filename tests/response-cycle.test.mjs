@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {judgment as fixtureChildAdmission} from './fixture-child-admission.mjs';
 import {fixtureUserAgency,fixtureDeferredUserAgency,fixtureAskingUserAgency} from './fixture-user-agency.mjs';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm,readFile} from 'node:fs/promises';
@@ -39,13 +40,13 @@ async function fixture(t,{amend}={}){
   const dir=await mkdtemp(path.join(os.tmpdir(),'response-cycle-')),store=await new PlanningBrowserStore({dataDir:dir}).init(),calls=[],runs=new Map(),admitted=new Map();let uncertain=false,profile='Recorded fixture facts.',identityReads=0;
   const engine={getRun:id=>{if(!runs.has(id))throw Error('missing');return runs.get(id);},clientRequestRunId:id=>admitted.get(id)?.id||null,resumePlannedRun:(id,value)=>{if(!admitted.has(value.requestId))admitted.set(value.requestId,{id:'resumed-'+admitted.size,from:id,planRef:value.planRef});if(uncertain){uncertain=false;throw Error('uncertain fixture delivery');}return admitted.get(value.requestId);},resumeViabilityRun:()=>{throw Error('Plan-only answer must not auto-resume');}};
   const settings={defaultModel:'fixture-fast',defaultEffort:'low',maxSubagents:2};
-  const runtime={runAgent:async options=>{const input=captured(options);calls.push({input,options});let body=response(input);if(amend)body=await amend(body,input,calls)||body;return{output:JSON.stringify(body),threadId:'fixture-thread',turnId:'fixture-turn-'+calls.length};}};
+  const reviews=[];const runtime={runAgent:async options=>{const input=captured(options);if(input.reviewType){reviews.push(input);return {output:JSON.stringify(fixtureChildAdmission(input.snapshot)),threadId:'fixture-review',turnId:'review-'+reviews.length};}calls.push({input,options});let body=response(input);if(amend)body=await amend(body,input,calls)||body;return{output:JSON.stringify(body),threadId:'fixture-thread',turnId:'fixture-turn-'+calls.length};}};
   const runner=new PlanningBrowserRuntime({store,runtime,defaultCwd:dir,getSettings:()=>settings}),taskViability=new TaskViability({store,runner,engine,identity:{read:async()=>{identityReads++;return {content:profile};}},getSettings:()=>settings});
   const service=new ResponseCycleService({store,runner,taskViability,engine,getSettings:()=>settings});
   t.after(async()=>{await runner.close();await service.close();await taskViability.close();await store.close();await rm(dir,{recursive:true,force:true});});
   const run=(mode='automatic',id='fixture-run')=>{const value={id,taskId:'fixture-conversation',input:'Explain the supplied bounded problem.',cwd:dir,workflow:workflow(),attachmentIds:[],planningMode:'on',planningExecutionMode:mode};runs.set(id,value);return value;};
   const prepare=async(mode='automatic',extra={})=>{const value=Object.assign(run(mode),extra),result=await service.forRun(value);value.viability=result;value.responseCycle={...result.responseCycle,requestId:result.requestId,cycleId:result.cycleId,planRef:result.planRef,state:result.pausedAfterPlan?'paused_after_plan':result.state};return {run:value,result,request:await store.get(result.requestId)};};
-  return{dir,store,runner,runtime,settings,service,taskViability,calls,run,prepare,engine,admitted,get identityReads(){return identityReads;},setUncertain:()=>{uncertain=true;},setProfile:value=>{profile=value;}};
+  return{dir,store,runner,runtime,settings,service,taskViability,calls,reviews,run,prepare,engine,admitted,get identityReads(){return identityReads;},setUncertain:()=>{uncertain=true;},setProfile:value=>{profile=value;}};
 }
 const controls=(request,cycleId,clientRequestId)=>{const cycle=request.cycles.find(item=>item.id===cycleId),plan=request.nodes.find(node=>node.id===cycle.stageNodeIds.plan);return{expectedRequestRevision:request.revision,expectedCycleRevision:request.nodes.find(node=>node.id===cycleId).revision,expectedPlanRevision:plan.revision,expectedPlanResponseId:plan.response?.id,clientRequestId};};
 const runControls=(request,cycleId,clientRequestId)=>({expectedRequestRevision:request.revision,expectedCycleRevision:request.nodes.find(node=>node.id===cycleId).revision,clientRequestId});
@@ -688,8 +689,8 @@ for(const required of [false,true])test((required?'required':'optional')+' pendi
     if(input.module.kind==='inference')body.subproblems=[subproblem];
     return body;
   }}),{request,cycle}=await standalone(f);
-  const created=await f.service.createCurrent(request.id,{parentNodeId:cycle.stageNodeIds.inference,title:subproblem.title,purpose:subproblem.objective,planningExecutionMode:'automatic',clientRequestId:'pending-child-fixture'},
-    {internal:true,key:subproblem.key,required,acceptanceCriteria:subproblem.acceptanceCriteria,sourceIds:subproblem.sourceIds,subproblemRequest:subproblem});
+  const created=await f.service.createCurrent(request.id,{parentNodeId:cycle.stageNodeIds.inference,title:subproblem.title,purpose:subproblem.objective,planningExecutionMode:'automatic',clientRequestId:'pending-child-fixture',expectedRequestRevision:request.revision,expectedParentRevision:request.nodes.find(item=>item.id===cycle.stageNodeIds.inference).revision},
+    {internal:false,key:subproblem.key,required,acceptanceCriteria:subproblem.acceptanceCriteria,sourceIds:subproblem.sourceIds,subproblemRequest:subproblem});
   const child=created.cycles.find(item=>item.parentCycleId===cycle.id);let childDrives=0;
   f.service.drive=async(requestId,cycleId)=>{
     assert.equal(cycleId,child.id);childDrives++;

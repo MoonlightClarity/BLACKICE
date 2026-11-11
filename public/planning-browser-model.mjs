@@ -328,7 +328,8 @@ export function projectPlanningRequest(value) {
     const cycleContext=planningCycleStageContext(value,nodeId,responses);
     const viability=node.kind==='viability'?evaluateViabilityResponse(response,planningNodeSources(value,nodeId),{workflowNodeIds:value.viability?.workflowNodeIds||null,upstreamResponses:cycleContext?.prerequisites||[]}):null;
     if(viability&&value.viability?.recoveryIssue){viability.state='needs_evidence';viability.analysisReady=false;viability.issues=[value.viability.recoveryIssue.message];viability.analysisIssues=[...viability.issues];}
-    const ownAttempts=attempts.filter(item=>item.nodeId===nodeId);
+    const ownAttempts=attempts.filter(item=>item.nodeId===nodeId&&item.purpose!=='child_admission');
+    const admissionReview=attempts.filter(item=>item.nodeId===nodeId&&item.purpose==='child_admission').at(-1);
     const running=ownAttempts.find(item=>item.status==='running');
     const last=ownAttempts.at(-1);
     let state=running?'running':staleInputs.length?'stale':blockedDependencies.length?'blocked':!response?'empty':missingFields.length?'missing_fields':missingGrounding.length||invalidGrounding.length?'needs_grounding':openChallenges.length?'challenged':'ready';
@@ -346,7 +347,7 @@ export function projectPlanningRequest(value) {
       if(cycle.ownerChecksDeferred&&cycle.dispatchReady)state='ready';
       if(!running&&['ready','awaiting_input','needs_evidence'].includes(state)&&!cycle.analysisReady)state=cycle.state;
     }
-    const result={state,...(viability?{viability}:{}),...(cycle?{cycle}:{}),issues:readableIssues,missingFields,missingGrounding,invalidGrounding,staleInputs,blockedDependencies:[...new Set(blockedDependencies)],openChallenges,openQuestions:clone(response?.openQuestions||[]),unresolvedChildren:[],responseRecorded:Boolean(response),verifiedAction:false,
+    const result={state,...(admissionReview?{childAdmissionReview:{attemptId:admissionReview.id,status:admissionReview.status,kind:'model_judgment',admitted:admissionReview.status==='completed'?admissionReview.childAdmission?.judgment?.admitted===true:null}}:{}),...(viability?{viability}:{}),...(cycle?{cycle}:{}),issues:readableIssues,missingFields,missingGrounding,invalidGrounding,staleInputs,blockedDependencies:[...new Set(blockedDependencies)],openChallenges,openQuestions:clone(response?.openQuestions||[]),unresolvedChildren:[],responseRecorded:Boolean(response),verifiedAction:false,
       ...(running?{attemptId:running.id}:{}),assurance:'A recorded response and valid source links do not independently verify its claims.'};
     memo.set(nodeId,result);return result;
   };

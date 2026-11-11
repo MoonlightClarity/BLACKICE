@@ -1,6 +1,7 @@
 // Historical schema-13 protocol regression; schema-14 behavior has separate canonical-contract and production-engine acceptance coverage.
 import { fixtureUserAgency, fixtureDeferredUserAgency } from './fixture-user-agency.mjs';
 import test from 'node:test';
+import {judgment as fixtureChildAdmission} from './fixture-child-admission.mjs';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
 import {mkdtemp,rm,readFile,writeFile} from 'node:fs/promises';
@@ -56,7 +57,7 @@ test('final coverage accepts truthful paraphrase of a limitation but still requi
 
 async function fixture(t,{unresolvedInference=false,failRespond=false,recoveringSource=false,executionGuardrails=false,resultValue=17,transformResponse,operation}={}){
  const dir=await mkdtemp(path.join(os.tmpdir(),'blackice-stabilization-'));
- const calls=[],handoffs=[],operationalEntries=[];let operationalCalls=0,respondFailed=false,sourceUnavailable=recoveringSource;
+ const calls=[],reviews=[],handoffs=[],operationalEntries=[];let operationalCalls=0,respondFailed=false,sourceUnavailable=recoveringSource;
  const settings={defaultModel:'fixture::free',defaultEffort:'low',runTimeoutMs:null,executionGuardrails};
  const runtime={
   status:()=>({connected:true,authenticated:true,defaultModel:settings.defaultModel,models:[{id:'fixture::free',model:'fixture::free',defaultReasoningEffort:'low'}]}),
@@ -83,7 +84,7 @@ async function fixture(t,{unresolvedInference=false,failRespond=false,recovering
     operationalEntries.push({revision:state.revision,steps:state.steps});
    }
    if(!options.responseOnly){operationalCalls++;options.onEvent?.({type:'thread',threadId:'provider_fixture_'+operationalCalls,model:options.model,providerId:'fixture'});const output=operation?await operation(options,{dir,operationalCalls}):'Observed result: '+resultValue+'.';options.onEvent?.({type:'usage',usage:operationalUsage});return {output,usage:operationalUsage,threadId:'provider_fixture_'+operationalCalls};}
-   const input=JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2));calls.push(input.module.kind);
+   const input=JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n')+2));if(input.reviewType){reviews.push(input);return {output:JSON.stringify(fixtureChildAdmission(input.snapshot)),usage:planUsage,threadId:'fixture-review',turnId:'review-'+reviews.length};}calls.push(input.module.kind);
    if(input.module.kind==='respond'&&failRespond&&!respondFailed){respondFailed=true;options.onEvent?.({type:'usage',usage:failedUsage});throw Object.assign(Error('Fixture final response was rate limited.'),{code:'PROVIDER_RATE_LIMIT'});}
        const body=response(input,resultValue);
     if(transformResponse)await transformResponse(body,{input,options,calls:[...calls]});
@@ -100,7 +101,7 @@ async function fixture(t,{unresolvedInference=false,failRespond=false,recovering
  const service=new ResponseCycleService({store,runner,taskViability,engine,conversations:archive,getSettings:()=>settings});engine.responseCycle=service;
  t.after(async()=>{await engine.close();await archive.close();await runner.close();await service.close();await taskViability.close();await store.close();await tasks?.close();await rm(dir,{recursive:true,force:true});});
  const execute=async(overrides={})=>{const accepted=engine.startRun({workflow:workflow(resultValue),input:'Report the supplied result of '+resultValue+'.',requestId:'stabilization-test',...overrides});await engine.executions.get(accepted.id);await archive.chain;return engine.getRun(accepted.id);};
- return{dir,engine,archive,store,service,settings,calls,handoffs,operationalEntries,tasks,execute,get operationalCalls(){return operationalCalls;},recoverSource:()=>{sourceUnavailable=false;}};
+ return{dir,engine,archive,store,service,settings,calls,reviews,handoffs,operationalEntries,tasks,execute,get operationalCalls(){return operationalCalls;},recoverSource:()=>{sourceUnavailable=false;}};
 }
 test('unresolved preparatory findings progress to a plan and available work while retaining their uncertainty',async t=>{
  const f=await fixture(t,{unresolvedInference:true}),run=await f.execute();

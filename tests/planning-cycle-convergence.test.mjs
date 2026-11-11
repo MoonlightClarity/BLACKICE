@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {judgment as fixtureChildAdmission} from './fixture-child-admission.mjs';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import os from 'node:os';
@@ -29,13 +30,15 @@ function unit(){
 }
 async function fixture(t,handler){
   const dir=await mkdtemp(path.join(os.tmpdir(),'planning-cycle-convergence-')),store=await new PlanningBrowserStore({dataDir:dir}).init(),calls=[];
-  const runtime={runAgent:async options=>{const input=captured(options);calls.push({input,options});return {output:JSON.stringify(await handler(input,calls.length)),threadId:'fixture-thread',turnId:'fixture-turn-'+calls.length};}};
+  const reviews=[];const runtime={runAgent:async options=>{const input=captured(options);if(input.reviewType){reviews.push(input);return {output:JSON.stringify(fixtureChildAdmission(input.snapshot)),threadId:'fixture-review',turnId:'review-'+reviews.length};}calls.push({input,options});return {output:JSON.stringify(await handler(input,calls.length)),threadId:'fixture-thread',turnId:'fixture-turn-'+calls.length};}};
   const runner=new PlanningBrowserRuntime({store,runtime,defaultCwd:dir,getSettings:()=>({maxSubagents:2,defaultModel:profile.model,defaultEffort:profile.effort})}),service=new ResponseCycleService({store,runner,getSettings:()=>({defaultModel:profile.model,defaultEffort:profile.effort})});
   t.after(async()=>{await runner.close();await service.close();await store.close();await rm(dir,{recursive:true,force:true});});
   let request=await store.create({conversationId:'convergence-fixture',title:'Fictional capacities',objective:purpose,cwd:dir});
   request=await service.createCycle(request.id,{title:'Compare fictional rooms',purpose,planningExecutionMode:'plan_only',expectedRequestRevision:request.revision,clientRequestId:'root-fixture'});
-  return {store,runner,service,calls,request,cycle:request.cycles[0]};
+  return {store,runner,service,calls,reviews,request,cycle:request.cycles[0]};
 }
+// Seed historical/manual child records without pretending they passed new automatic admission.
+async function historicalChild(service,requestId,value,options){const current=await service.store.get(requestId),parent=current.nodes.find(item=>item.id===value.parentNodeId);return service.createCurrent(requestId,{...value,expectedRequestRevision:current.revision,expectedParentRevision:parent.revision},{...options,internal:false});}
 const aggregate=child=>({key:child.key,sourceId:child.sourceId,summary:'The child failed without a checked answer. Its requested conclusion remains unresolved.',usedFor:'Preserve the missing comparison as a limitation, not successful evidence.'});
 
 test('terminal required child aggregation is structural, exact, and cannot promote its outcome',()=>{
@@ -110,21 +113,21 @@ test('recorded failure pattern repairs once using exact host review and preserve
     let node=f.request.nodes.find(item=>item.id===f.cycle.stageNodeIds.inference);
     const initial=await f.runner.start({requestId:f.request.id,nodeId:node.id,expectedNodeRevision:node.revision,clientRequestId:'initial-response',...profile});
     await f.runner.wait(f.request.id,initial.attempt.id);
-    let request=await f.service.createCurrent(f.request.id,{parentNodeId:node.id,title:original.title,purpose:original.objective,planningExecutionMode:'automatic',clientRequestId:'captured-child'},{internal:true,acceptanceCriteria:original.acceptanceCriteria,sourceIds:original.sourceIds,key:original.key,required:true,subproblemRequest:original});
+    let request=await historicalChild(f.service,f.request.id,{parentNodeId:node.id,title:original.title,purpose:original.objective,planningExecutionMode:'automatic',clientRequestId:'captured-child'},{internal:true,acceptanceCriteria:original.acceptanceCriteria,sourceIds:original.sourceIds,key:original.key,required:true,subproblemRequest:original});
     const childId=request.cycleAction.cycleId;
     request=await f.store.runtimeWriter().configureResponseCycle(request.id,{cyclePatch:{id:childId,state:'failed',failure:{code:'FIXTURE_UNAVAILABLE',message:'No checked child answer was produced.'},summary:'The supplied child analysis failed.'}});
     const budget={used:1,max:8,maxPasses:3};
     request=await f.service.runStage(request.id,f.cycle.id,'inference',{budget,runKey:'refine-existing-failure'});
     node=request.nodes.find(item=>item.id===node.id);
     assert.equal(f.calls.length,3);
-    assert.equal(budget.used,3);
+    assert.equal(budget.used,3+f.reviews.length,'Semantic reviews consume provider budget separately from module-format repair.');
     assert.equal(request.cycles.find(item=>item.id===childId).state,'failed');
     assert.equal(request.cycles.length,2,'Repair must not create replacement children to conceal failure.');
     assert.equal(node.readiness.cycle.analysisReady,true);
     assert.equal(node.readiness.cycle.dispatchReady,false);
     assert.deepEqual(node.readiness.cycle.childFailures,[{key:original.key,state:'failed'}]);
     assert.match(node.response.childResults[0].summary,/failed/);
-    const [initialAttempt,invalid,repaired]=request.attempts;
+    const [initialAttempt,invalid,repaired]=request.attempts.filter(item=>item.purpose!=='child_admission');
     assert.equal(initialAttempt.status,'completed');assert.equal(invalid.status,'failed');assert.equal(repaired.status,'completed');
     assert.equal(repaired.repairOf,invalid.id);assert.deepEqual(repaired.stageReview,invalid.stageReview);
     assert.equal(invalid.stageReview.responseId,initialAttempt.responseId);
@@ -164,7 +167,7 @@ test('explicit retry can replace a historical changed child binding before resum
     });
     const sourceId=f.request.sources[0].id;
     original=childRequest(sourceId);
-    let request=await f.service.createCurrent(f.request.id,{parentNodeId:f.cycle.stageNodeIds.inference,title:original.title,purpose:original.objective,planningExecutionMode:'automatic',clientRequestId:'legacy-bound-child'},
+    let request=await historicalChild(f.service,f.request.id,{parentNodeId:f.cycle.stageNodeIds.inference,title:original.title,purpose:original.objective,planningExecutionMode:'automatic',clientRequestId:'legacy-bound-child'},
       {internal:true,key:original.key,required:true,acceptanceCriteria:original.acceptanceCriteria,sourceIds:original.sourceIds,subproblemRequest:original});
     childId=request.cycleAction.cycleId;
     const writer=f.store.runtimeWriter();

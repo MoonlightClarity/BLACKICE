@@ -8,8 +8,9 @@ import {PlanningBrowserRuntime} from '../lib/planning-browser-runtime.mjs';
 import {ResponseCycleService} from '../lib/response-cycle.mjs';
 import {PlanningDiagnostics,diagnosticLimits,diagnosticHash} from '../lib/planning-diagnostics.mjs';
 import {handlePlanningDiagnosticsHttp} from '../lib/planning-diagnostics-api.mjs';
-import {responseCycleStage,parseResponseCycleResponse} from '../public/response-cycle-model.mjs';
+import {responseCycleStage,parseResponseCycleResponse,workflowChildHandoffReady} from '../public/response-cycle-model.mjs';
 import {fixtureUserAgency} from './fixture-user-agency.mjs';
+import {judgment} from './fixture-child-admission.mjs';
 
 const profile={model:'fixture-explicit',effort:'none',serviceTier:'default'};
 const limits={maxProviderTurns:12,maxCycles:1,maxDepth:0,maxPassesPerStage:2};
@@ -26,7 +27,7 @@ function response(input){
 }
 async function fixture(t,{amend,provider,attachments=false}={}){
   const dir=await mkdtemp(path.join(os.tmpdir(),'planning-diagnostic-')),store=await new PlanningBrowserStore({dataDir:dir}).init(),calls=[],settings={defaultModel:'do-not-inherit',defaultEffort:'high',defaultContext:16384,runTimeoutMs:5000,maxSubagents:2};
-  const runtime={runAgent:async options=>{const input=captured(options);calls.push({input,options});if(provider)return provider(options,input,calls);const body=response(input);return {output:JSON.stringify(amend?await amend(body,input,calls)||body:body),threadId:'fixture-thread',turnId:'fixture-turn-'+calls.length};}};
+  const runtime={runAgent:async options=>{const input=captured(options);calls.push({input,options});if(provider)return provider(options,input,calls);if(input.reviewType==='planning_child_admission')return {output:JSON.stringify(judgment(input.snapshot)),threadId:'fixture-review'};const body=response(input);return {output:JSON.stringify(amend?await amend(body,input,calls)||body:body),threadId:'fixture-thread',turnId:'fixture-turn-'+calls.length};}};
   const runner=new PlanningBrowserRuntime({store,runtime,getSettings:()=>settings,defaultCwd:dir});
   const engine=new Proxy({}, {get:(_target,key)=>{throw Error('Unexpected Engine access: '+String(key));}});
   const cycles=new ResponseCycleService({store,runner,engine,getSettings:()=>settings});
@@ -138,7 +139,7 @@ test('developer HTTP capture/run/read/cancel route rejects undeclared execution 
 
 test('required analytical children stop at the declared diagnostic scope without being dropped',async t=>{
   const f=await fixture(t,{amend:(body,input)=>{if(input.module.kind==='inference')body.subproblems=[{key:'bounded-check',title:'Check the captured premise',objective:'Evaluate one premise from the synthetic source.',reason:'The answer depends on this premise.',required:true,executionTarget:'analysis',sourceIds:['viability:profile'],acceptanceCriteria:[{id:'premise',label:'Premise assessment',description:'State whether the supplied premise supports the explanation.',verification:'response'}]}];return body;}}),d=await f.capture(),result=await f.service.run(d.id,controls(d));
-  assert.equal(result.diagnostic.state,'limited');assert.match(result.diagnostic.reason,/recursive work limit/);assert.equal(result.cycles.length,1);assert.equal(f.calls.length,1);
+  assert.equal(result.diagnostic.state,'limited');assert.match(result.diagnostic.reason,/recursive work limit/);assert.equal(result.cycles.length,1);assert.equal(f.calls.length,2);assert.deepEqual(result.diagnostic.reservations.map(row=>row.kind),['module','child_admission']);
   const inference=result.nodes.find(node=>node.kind==='inference');assert.equal(inference.response.subproblems[0].required,true);assert.equal(inference.readiness.cycle.state,'budget_exceeded');assert.equal(result.nodes.find(node=>node.kind==='plan').response,null);
 });
 
@@ -190,11 +191,67 @@ test('one capture deduplicates concurrent runs and queued cancellation consumes 
  const d=await f.capture(),originalNode=f.request.nodes.find(node=>node.kind==='inference');
  const busy=await f.runner.start({requestId:f.request.id,nodeId:originalNode.id,expectedNodeRevision:originalNode.revision,clientRequestId:'occupy-slot',...profile});
  assert.equal(f.calls.length,1);assert.equal(f.runner.status().activeCount,1);
+ let admitted;const admission=new Promise(resolve=>admitted=resolve),start=f.runner.start.bind(f.runner);f.runner.start=async options=>{const claim=await start(options);if(options.requestId===d.id)admitted(claim);return claim;};
  const run=f.service.run(d.id,controls(d)),same=f.service.run(d.id,controls(d));
  await assert.rejects(f.service.run(d.id,controls(d,'different-active-id')),/already active/);
- const deadline=Date.now()+4000;while((await f.store.get(d.id)).attempts.length===0&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,5));
- assert.equal((await f.store.get(d.id)).attempts.length,1);assert.equal(f.runner.status().attempts.find(attempt=>attempt.requestId===d.id).status,'queued');
+ let timer,queued;try{queued=await Promise.race([admission,run.then(result=>{throw Error('Diagnostic settled before queued admission: '+result.diagnostic.reason);}),new Promise((resolve,reject)=>{timer=setTimeout(()=>reject(Error('Diagnostic queued admission exceeded its 4s fixture ceiling.')),4000);})]);}finally{clearTimeout(timer);}
+ assert.equal(queued.attempt.workerStatus,'queued');assert.equal((await f.store.get(d.id)).attempts.length,1);assert.equal(f.runner.status().attempts.find(attempt=>attempt.requestId===d.id).status,'queued');
  const cancelled=await f.service.cancel(d.id);assert.equal(cancelled.diagnostic.state,'cancelled');assert.equal(cancelled.diagnostic.reservations.length,0);
  assert.equal((await run).diagnostic.state,'cancelled');assert.equal((await same).diagnostic.state,'cancelled');assert.equal(f.calls.length,1);
  release();await f.runner.wait(f.request.id,busy.attempt.id);
 });
+
+const proposedChild=()=>({key:'requested-work',title:'Check the requested record',objective:'Inspect the supplied record and retain the requested task outcome.',reason:'The requested outcome depends on this finding.',required:true,executionTarget:'analysis',sourceIds:['viability:profile'],acceptanceCriteria:[{id:'answer',label:'Requested finding',description:'A supported explanation of the synthetic record.',verification:'response'}]});
+
+test('semantic review, refinement and format repair consume one shared durable diagnostic ceiling',async t=>{
+ const f=await fixture(t,{provider:async(options,input,calls)=>{
+   if(input.reviewType==='planning_child_admission')return {output:JSON.stringify(judgment(input.snapshot,{classification:'requires_effect',retained:'preserved'}))};
+   if(calls.length===3)return {output:'{'};
+   const body=response(input);if(input.module.kind==='inference')body.subproblems=[{...proposedChild(),...(calls.length>=4?{executionTarget:'workflow'}:{})}];return {output:JSON.stringify(body)};
+ }}),d=await f.capture({limits:{...limits,maxProviderTurns:4}}),result=await f.service.run(d.id,controls(d));
+ assert.equal(result.diagnostic.state,'limited',result.diagnostic.reason);assert.equal(f.calls.length,4);assert.equal(result.diagnostic.reservations.length,4);
+ assert.deepEqual(result.diagnostic.reservations.map(row=>row.kind),['module','child_admission','module','module']);
+ const refinement=result.attempts.find(attempt=>attempt.semanticRefinement&&!attempt.repairOf),repair=result.attempts.find(attempt=>attempt.repairOf);
+ assert.ok(refinement);assert.ok(repair);assert.equal(repair.repairOf,refinement.id);assert.deepEqual(repair.semanticRefinement,refinement.semanticRefinement);
+ assert.equal(result.cycles.length,1);assert.equal(result.nodes.find(node=>node.kind==='viability').response,null);
+ await assert.rejects(f.service.run(d.id,controls(result,'renew-cap')),{code:'PLANNING_DIAGNOSTIC_SETTLED'});assert.equal(f.calls.length,4);
+});
+
+test('cancelling a diagnostic reviewer preserves both charged calls and accepted module history',async t=>{
+ let started;const ready=new Promise(resolve=>started=resolve);
+ const f=await fixture(t,{provider:async(options,input)=>{
+   if(input.reviewType==='planning_child_admission'){started();await new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true}));}
+   const body=response(input);body.subproblems=[proposedChild()];return {output:JSON.stringify(body)};
+ }}),d=await f.capture(),running=f.service.run(d.id,controls(d));await ready;
+ const before=await f.store.get(d.id),accepted=before.responses[0].id,cancelled=await f.service.cancel(d.id);await running;
+ assert.equal(cancelled.diagnostic.state,'cancelled');assert.equal(cancelled.responses[0].id,accepted);assert.equal(cancelled.diagnostic.reservations.length,2);
+ assert.equal(cancelled.attempts.find(attempt=>attempt.purpose==='child_admission').status,'cancelled');assert.equal(cancelled.cycles.length,1);assert.equal(f.calls.length,2);
+});
+
+test('guessed diagnostic identities cannot admit a reviewer or automatic child',async t=>{
+ const f=await fixture(t),d=await f.capture(),writer=f.store.runtimeWriter(),node=d.nodes.find(item=>item.kind==='inference');
+ await assert.rejects(writer.beginChildAdmission(d.id,node.id,{ownerId:'guessed',binding:'0'.repeat(64),...profile,diagnosticCapability:{}}),{code:'PLANNING_DIAGNOSTIC_ADMISSION'});
+ await assert.rejects(f.cycles.createCurrent(d.id,{title:'Guessed child',purpose:'A smaller question',clientRequestId:'guessed',parentNodeId:node.id},{internal:true,diagnosticCapability:{}}),{code:'PLANNING_DIAGNOSTIC_ADMISSION'});
+ assert.equal((await f.store.get(d.id)).attempts.length,0);assert.equal(f.calls.length,0);
+});
+
+for(const failChild of [false,true])test(failChild?'a valid root Plan cannot hide a required diagnostic child failure':'allowed analytical recursion uses only captured sources and exact derived child findings',async t=>{
+ const f=await fixture(t,{provider:async(options,input)=>{
+   if(input.reviewType==='planning_child_admission')return {output:JSON.stringify(judgment(input.snapshot))};
+   if(failChild&&input.cycle.recursion.depth>0)throw Error('Synthetic required child failure.');
+   const body=response(input),sourceId=input.sources[0].id,criteria=input.cycle.requiredAcceptanceCriteria?.length?input.cycle.requiredAcceptanceCriteria:input.cycle.acceptanceCriteria?.length?input.cycle.acceptanceCriteria:proposedChild().acceptanceCriteria;
+   if(input.module.kind==='inference'&&input.cycle.recursion.depth===0)body.subproblems=[proposedChild()];
+   if(body.childResults)body.childResults=(input.cycle.children||[]).filter(child=>['completed','failed','cancelled'].includes(child.state)).map(child=>({key:child.key,sourceId:child.sourceId,summary:'A bounded finding from the captured record.',usedFor:'Resolve the requested premise.'}));
+   if(input.module.kind==='plan'&&!input.sources.some(source=>source.id.startsWith('cycle:execution-contract:'))){delete body.contract;body.acceptanceCriteria=criteria;body.steps=[{id:'explain',label:'Explain the premise',description:'Assess only the captured premise.',dependsOn:[],criterionIds:criteria.map(item=>item.id),sourceIds:[sourceId]}];}
+   if(input.module.kind==='think')body.criterionResults=criteria.map(item=>({criterionId:item.id,assessment:'satisfied',sourceIds:[sourceId],receiptIds:[],rationale:'The captured synthetic record supports this finding.'}));
+   if(input.module.kind==='respond')body.coverage=criteria.map(item=>({criterionId:item.id,disposition:'addressed',sourceIds:[sourceId],responseExcerpt:body.values.answer,limitation:''}));
+   return {output:JSON.stringify(body)};
+ }}),d=await f.capture({limits:{...limits,maxCycles:2,maxDepth:1}});const result=await f.service.run(d.id,controls(d));
+ if(failChild){assert.equal(result.diagnostic.state,'failed');assert.match(result.diagnostic.reason,/Synthetic required child failure/);assert.ok(result.nodes.find(node=>node.id===result.cycles[0].stageNodeIds.plan).response?.contract);return;}
+ assert.equal(result.diagnostic.state,'completed',JSON.stringify({reason:result.diagnostic.reason,cycles:result.cycles.map(c=>({state:c.state,summary:c.summary})),attempts:result.attempts.map(a=>({status:a.status,message:a.message}))}));
+ assert.equal(result.cycles.length,2);assert.equal(result.cycles.find(c=>c.parentCycleId).state,'completed',JSON.stringify({child:result.cycles.find(c=>c.parentCycleId),attempts:result.attempts.map(a=>({nodeId:a.nodeId,status:a.status,message:a.message}))}));
+ assert.ok(result.cycles.every(c=>c.planningExecutionMode==='plan_only'&&c.execution.required===false&&!c.linkedRunId));
+ assert.ok(result.sources.some(source=>source.id.startsWith('cycle:child:')));assert.equal(result.diagnostic.reservations.length,f.calls.length);assert.ok(f.calls.length<=12);
+});
+
+test('an unlinked analytical child cannot accidentally satisfy workflow handoff ownership',()=>{const criterion={id:'answer'},child={state:'completed',analysisReady:true,workflowHandoff:null};assert.equal(workflowChildHandoffReady(child,{}),false);assert.equal(workflowChildHandoffReady({...child,workflowHandoff:{criteria:[criterion]}},{}),false);assert.equal(workflowChildHandoffReady({...child,workflowHandoff:{ownerCycleId:'owner',criteria:[criterion]}},{workflowOwner:{cycleId:'owner'},requiredAcceptanceCriteria:[criterion]}),true);});
