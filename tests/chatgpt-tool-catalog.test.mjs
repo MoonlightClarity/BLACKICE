@@ -19,10 +19,11 @@ const definition = (name, extra = {}) => ({
 const unavailable = () => assert.fail('Discovery must not execute a tool.');
 const provider = tools => ({ tools: () => tools, call: unavailable });
 
-test('the configured catalog retains 30 tools with only the reviewed canonical creation delta', () => {
+test('the configured catalog retains 30 tools with only the reviewed canonical creation and fill contract deltas', () => {
   // Bind the reviewed public definitions, including recursive planning,
   // bounded contained diagnostics, exact-identity ownership/debug controls,
-  // the cleanup protocol and the explicit relay default for credential fill.
+  // the cleanup protocol, the explicit relay default for credential fill,
+  // and the distinction between fill text and selection-only value.
   // The complete fingerprint catches unreviewed contract changes.
   // Only definitions are constructed: no storage or native adapter is opened.
   const execution = new DirectExecutionAPI({ dataDir: '/unused-catalog-fixture', additionalTools: [
@@ -44,16 +45,29 @@ test('the configured catalog retains 30 tools with only the reviewed canonical c
   ]);
   assert.deepEqual(catalog.status(), {
     // Reviewed explicit task/context tools, source binding, receipt alternatives and optional operation scopes.
-    sha256: 'd4acb0fd8a4e2bf55a60230222896534311914bf2eb723db13bd5fab5c28c0dc',
+    sha256: 'd533e432aa394fc9e8c75e800fe4fc5f2c8087ae65f41ef773a46d9005cae3d4',
     toolCount: 30,
     serverVersion: '2.33.5',
   });
   assert.equal(createHash('sha256').update(JSON.stringify(catalog.tools())).digest('hex'), catalog.status().sha256);
 
-  // Review the exact intentional delta, rather than accepting unrelated changes
-  // behind a new aggregate hash. All previous tool definitions must still hash
-  // to the preceding reviewed contract after undoing only canonical creation.
+  // Undo only the two reviewed fill descriptions and prove every other public
+  // definition still hashes to the preceding complete catalog contract.
   const previousTools = structuredClone(catalog.tools());
+  const previousBrowserInput = previousTools.find(tool => tool.name === 'blackice_browser_action').inputSchema.properties;
+  assert.deepEqual(previousBrowserInput.text, {
+    type: 'string', maxLength: 16384,
+    description: 'Required replacement text for fill; text:"" intentionally clears the field. Omit value when filling. Also used for type or expected text for wait.',
+  });
+  assert.deepEqual(previousBrowserInput.value, {
+    type: 'string', maxLength: 16384,
+    description: 'Selection-only value for action:"select". Fill requires text and does not accept value.',
+  });
+  delete previousBrowserInput.text.description;
+  delete previousBrowserInput.value.description;
+  assert.equal(createHash('sha256').update(JSON.stringify(previousTools)).digest('hex'), 'd4acb0fd8a4e2bf55a60230222896534311914bf2eb723db13bd5fab5c28c0dc');
+
+  // Preserve the earlier canonical-creation review as a second exact delta.
   const previousEdit = previousTools.find(tool => tool.name === 'blackice_edit_plan');
   const currentCreateDescription = 'At expectedRevision 0 use the sole create_contract operation with a complete canonical contract, or legacy create with goal and steps.';
   const previousCreateDescription = 'At expectedRevision 0 use the sole explicit create operation with goal and steps.';
