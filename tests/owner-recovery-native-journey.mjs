@@ -83,6 +83,11 @@ async function native(){
     assert.equal(await evaluate('document.querySelector("#next-settings-recovery").hidden'),false);
     assert.match(await evaluate('document.querySelector("#next-settings-recovery").textContent'),/synthetic-immutable-digest/);
     await evaluate('document.querySelector(".owner-recovery details").open=true;true');
+    // DOM readiness can precede Chromium's next compositor frame. Await paint,
+    // then recheck the exact Settings surface before capturing the app window.
+    await evaluate('document.fonts.ready.then(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))');
+    await new Promise(r=>setTimeout(r,250));
+    assert.equal(await evaluate('(()=>{const el=document.querySelector("#next-settings-recovery");const r=el?.getBoundingClientRect();return Boolean(el&&!el.hidden&&r.width>0&&r.height>0&&getComputedStyle(el).visibility!=="hidden")})()'),true);
     await writeFile(path.join(output,'settings-wide.png'),(await window.webContents.capturePage()).toPNG());
     await clickControl('review',first.request.requestId);
     const approval=await bounded(first.promise);assert.equal(dialogs.length,1);
