@@ -506,3 +506,21 @@ test('native recovery is local read-only and observer closure cannot revoke a pe
   await assert.rejects(pending,{code:'OWNER_RECOVERY_CANCELLED'});
   release.resolve({output:'done'});await app.engine.executions.get(run.id);
 });
+
+test('retry HTTP forwards automatic context into new admission without rewriting saved choice',async t=>{
+ const runtime=new FakeRuntime();runtime.runAgent=async()=>{throw Error('fixture retry failure');};
+ const {app,request,auth}=await application(t,{runtime});
+ const workflow=structuredClone(graph);workflow.nodes[1].context={preset:'custom',windowTokens:64000,autoCompact:false};
+ const started=await request('/api/runs',{method:'POST',headers:auth,body:{workflow,input:'Retry automatic context.'}});
+ assert.equal(started.status,201,started.text);
+ const first=started.data;await until(()=>app.engine.getRun(first.id).settled);
+ const before=structuredClone(app.engine.getRun(first.id));
+ const invalid=await request('/api/runs/'+first.id+'/retry',{method:'POST',headers:auth,body:{context:{autoCompact:'yes'}}});
+ assert.notEqual(invalid.status,201);assert.equal(app.engine.runs.size,1);
+ runtime.runAgent=FakeRuntime.prototype.runAgent;
+ const result=await request('/api/runs/'+first.id+'/retry',{method:'POST',headers:auth,body:{context:{preset:'custom',windowTokens:64000,autoCompact:true}}});
+ assert.equal(result.status,201,result.text);
+ await until(()=>app.engine.getRun(result.data.id).settled);
+ assert.equal(app.engine.getRun(result.data.id).workflow.nodes.find(n=>n.type==='agent').context.autoCompact,true);
+ assert.deepEqual(app.engine.getRun(first.id),before);
+});

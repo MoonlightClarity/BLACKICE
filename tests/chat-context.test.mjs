@@ -171,3 +171,30 @@ test('pre-defaults version-two start receipts retain their original normalized m
   assert.equal(engine.startRun(request).id,first.id);assert.equal(runtime.calls.length,1);assert.throws(()=>engine.startRun({...request,input:'Changed task.'}),{code:'RUN_REQUEST_CONFLICT'});
   for(const planningMode of ['forced','advisory']) assert.throws(()=>engine.startRun({...request,planningMode}),{code:'RUN_REQUEST_CONFLICT'});
 });
+
+test('retry accepts automatic context for a new admission and validates before dispatch without changing history', async t => {
+ const {engine,runtime}=await harness(t);
+ const context={preset:'custom',windowTokens:64000,autoCompact:false,compactAtTokens:12000,keepRecentTokens:2000};
+ runtime.execute=async()=>{throw Error('fixture failed');};
+ const first=await settle(engine,engine.startRun({workflow:graph({context}),input:'Retry this chat.'}));
+ const saved=structuredClone(first);
+ for(const invalid of [null,[],{autoCompact:'yes'},{preset:'custom',windowTokens:4096,outputReserveTokens:4096}])
+   assert.throws(()=>engine.retryRun(first.id,{context:invalid}),{code:'INVALID_CONTEXT'});
+ assert.equal(engine.runs.size,1); assert.equal(runtime.calls.length,1);
+ runtime.execute=undefined;
+ const retried=await settle(engine,engine.retryRun(first.id,{context:{...context,autoCompact:true}}));
+ assert.equal(retried.status,'completed',retried.error);
+ assert.deepEqual(runtime.calls.at(-1).context,normalizeContextOptions({...context,autoCompact:true}));
+ assert.deepEqual(engine.getRun(first.id),saved);
+ const next=await settle(engine,engine.continueRun(retried.id,{nodeId:'agent',message:'Keep automatic management.'}));
+ assert.equal(runtime.calls.at(-1).context.autoCompact,true);
+ assert.equal(agentOf(next).context.compactAtTokens,12000);
+});
+test('retry context honors model-reported budget before admitting a new run',async t=>{
+ const {engine,runtime}=await harness(t);
+ runtime.status=()=>({connected:true,authenticated:true,defaultModel:'fixture-model',models:[{id:'fixture-model',model:'fixture-model',contextWindowTokens:32768,contextWindowSource:'provider-reported'}]});
+ runtime.execute=async()=>{throw Error('fixture failed');};
+ const first=await settle(engine,engine.startRun({workflow:graph(),input:'Fail before retry.'}));
+ assert.throws(()=>engine.retryRun(first.id,{context:{preset:'900k',outputReserveTokens:32768}}),{code:'INVALID_CONTEXT'});
+ assert.equal(engine.runs.size,1);assert.equal(runtime.calls.length,1);
+});

@@ -1282,7 +1282,7 @@ export async function createHarnessServer(options = {}) {
         if (runMatch[2] === '/continue') {const family=await conversations.family(runMatch[1]);if(family.state!=='active')throw Error('Restore this conversation before replying.');const prior=engine.getRun(runMatch[1]).nodes[value.nodeId],threadModel=await runtime.savedThreadModel?.(prior?.threadId);return json(res, 201, engine.continueRun(runMatch[1], value,{historyRuns:family.runs,threadModel}));}
         if (runMatch[2] === '/steer') return json(res, 200, await engine.steerRun(runMatch[1], value));
         if (runMatch[2] === '/cancel') return json(res, 200, engine.cancelRun(runMatch[1]));
-        return json(res, 201, engine.retryRun(runMatch[1], {historyRuns:(await conversations.family(runMatch[1])).runs,...(value.planningMode !== undefined ? {planningMode:value.planningMode} : {}),...(value.planningExecutionMode !== undefined ? {planningExecutionMode:assertExecutablePlanningMode(value.planningExecutionMode)} : {})}));
+        return json(res, 201, engine.retryRun(runMatch[1], {historyRuns:(await conversations.family(runMatch[1])).runs,...(value.context !== undefined ? {context:value.context} : {}),...(value.planningMode !== undefined ? {planningMode:value.planningMode} : {}),...(value.planningExecutionMode !== undefined ? {planningExecutionMode:assertExecutablePlanningMode(value.planningExecutionMode)} : {})}));
       }
       if (pathname.startsWith('/api/')) return json(res, 404, { error: 'Endpoint not found.' });
       if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'Method not allowed.' });
