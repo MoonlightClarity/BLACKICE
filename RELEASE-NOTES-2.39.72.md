@@ -1,5 +1,15 @@
 # BLACKICE 2.39.72
 
+This combined release includes the Directory context-management fixes and the validated Storage & Data changes in one source candidate and installer.
+
+## Storage & Data
+
+- Opens with measured storage and temporary-file usage, plain category descriptions, and temporary cleanup beside the summary.
+- Keeps deletion of saved data in an expandable section with explicit confirmation; saved data is not selected automatically.
+- Makes queued cleanup and its history easier to read, with storage locations and technical details available on demand.
+- Preserves the last available measurements and acknowledged cleanup status when a refresh fails.
+- Reuses an in-progress overview request when returning to the section and allows large scans up to three minutes.
+
 ## Directory context management
 
 - Keeps oversized saved results and dependencies on disk, with a compact working set and exact references that the model can read as needed.
