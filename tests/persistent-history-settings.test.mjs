@@ -11,7 +11,7 @@ const digest=value=>createHash('sha256').update(typeof value==='string'?value:JS
 const unpack=result=>JSON.parse(result.contentItems.find(item=>item.type==='inputText').text);
 async function fixture(t){
   const directory=await mkdtemp(path.join(tmpdir(),'blackice-persistent-preferences-'));
-  const legacy={codexHistory:'relay',defaultEffort:'ultra',defaultServiceTier:'fast',defaultContext:{preset:'extended',autoCompact:false,headroomTokens:2048},hiddenModelProviders:['example-provider'],connectedGmail:true,executionGuardrails:false,subagentsEnabled:true,maxSubagents:4,providerIdleTimeoutMs:600000};
+  const legacy={codexHistory:'relay',defaultEffort:'ultra',defaultServiceTier:'fast',defaultContext:{preset:'extended',autoCompact:false,headroomTokens:2048},hiddenModelProviders:['example-provider'],connectedGmail:true,executionGuardrails:false,subagentsEnabled:false,maxSubagents:4,providerIdleTimeoutMs:600000};
   const original=Buffer.from('  '+JSON.stringify(legacy,null,4)+'\n');
   const preferences=path.join(directory,'runtime-settings.json'),providers=path.join(directory,'providers.json');
   const providerBytes=Buffer.from('{ "fixture": "opaque-provider-settings-must-not-change" }\n');
