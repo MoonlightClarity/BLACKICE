@@ -129,7 +129,9 @@ test('actual dispatch rechecks history after a safe admission check',async t=>{
 for(const [name,value] of [
   ['unsupported version',{version:99}],
   ['malformed consequential resource',journal('ancient-task',[row([{key:null,access:'write'}])])],
-  ['uninterpretable effect',journal('ancient-task',[row([{key:'path:any',access:'write'}],{effect:'future-effect'})])]
+  ['uninterpretable effect',journal('ancient-task',[row([{key:'path:any',access:'write'}],{effect:'future-effect'})])],
+  ['opaque claim missing tool',journal('ancient-task',[row([{key:'path:any',access:'write'}],{effect:'opaque',action:'run'})])],
+  ['opaque claim missing action',journal('ancient-task',[row([{key:'path:any',access:'write'}],{effect:'opaque',tool:'relay_workspace'})])]
 ])test(name+' fails closed without disabling ordinary reads',async t=>{
   const f=await fixture(t);await f.save([],{value});await fs.writeFile(path.join(f.cwd,'kept.txt'),'inspectable');
   assert.equal(code(await f.guard.wrap(f.raw)(call('write'))),'TASK_CONTRACT_JOURNAL_UNAVAILABLE');
@@ -279,6 +281,7 @@ test('scoped historical receipt rejects wrong destination, document, adapter, ac
     value=>changeProof(value,proof=>{proof.validation.action='click';}),
     value=>{value.records[1].tool='relay_workspace';},
     value=>{value.records[1].resources.find(resource=>resource.key==='document:after').scopeKeys=[];},
+    value=>{value.records[1].resources.find(resource=>resource.key==='document:after').scopeKeys='origin:https://portal.test';},
     value=>{value.records[1].resources.find(resource=>resource.key==='origin:https://portal.test').scopeOnly=false;value.records[1].resources.push({key:'origin:https://portal.test',access:'read'});}
   ]){
     const invalid=structuredClone(f.value);mutate(invalid);await f.save([],{value:invalid});
