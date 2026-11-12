@@ -26,3 +26,18 @@
 The reported run had an 812,016-token configured input budget. Its retained telemetry showed a largest measured call of 424,813 input tokens, followed by a fresh synthesis call of 24,525 tokens. Earlier events were no longer retained, so these measurements do not establish the maximum over the entire run.
 
 The failing saved work record contained 548 tool receipts and was 11,771,055 bytes. Replaying that exact record against 2.39.70 reproduced the capacity error before any provider call. The failure was caused by assembling an indivisible saved-result packet, not an observed exhaustion of the model's available window.
+
+## Storage & Data
+
+- Opens with a clear summary of measured BLACKICE storage and temporary files, followed by compact rows with plain category names and descriptions.
+- Places temporary-file cleanup beside the storage summary so everyday maintenance is easy to find. Cleanup still requires review before it is scheduled, and automatic cleanup remains limited to temporary files.
+- Moves deletion of saved data into an expandable section with category descriptions, selected storage totals and explicit confirmation. Saved data is not selected automatically.
+- Makes pending cleanup and cleanup history easier to read, including when a cleanup is scheduled to run and what it contains.
+- Keeps storage locations and other technical details available on demand, while hiding empty retired categories from the main overview.
+- Adds clear loading, empty and error states. A failed refresh keeps the last available measurements and acknowledged cleanup status visible.
+- Allows large storage scans up to three minutes and reuses an overview request already in progress when you return to the section, avoiding duplicate scans during navigation.
+
+## Delegation
+
+- Uses the application's default delegation behavior and removes the Subagents and parallel-worker controls from chat and Settings.
+- Normalizes retired saved delegation switches for future work while preserving historical run settings.
