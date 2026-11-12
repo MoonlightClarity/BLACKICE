@@ -11,7 +11,7 @@ const digest=value=>createHash('sha256').update(typeof value==='string'?value:JS
 const unpack=result=>JSON.parse(result.contentItems.find(item=>item.type==='inputText').text);
 async function fixture(t){
   const directory=await mkdtemp(path.join(tmpdir(),'blackice-persistent-preferences-'));
-  const legacy={codexHistory:'relay',defaultEffort:'ultra',defaultServiceTier:'fast',defaultContext:{preset:'extended',autoCompact:false,headroomTokens:2048},hiddenModelProviders:['example-provider'],connectedGmail:true,executionGuardrails:false,subagentsEnabled:true,maxSubagents:4,providerIdleTimeoutMs:600000};
+  const legacy={codexHistory:'relay',defaultEffort:'ultra',defaultServiceTier:'fast',defaultContext:{preset:'extended',autoCompact:false,headroomTokens:2048},hiddenModelProviders:['example-provider'],connectedGmail:true,executionGuardrails:false,subagentsEnabled:false,maxSubagents:4,providerIdleTimeoutMs:600000};
   const original=Buffer.from('  '+JSON.stringify(legacy,null,4)+'\n');
   const preferences=path.join(directory,'runtime-settings.json'),providers=path.join(directory,'providers.json');
   const providerBytes=Buffer.from('{ "fixture": "opaque-provider-settings-must-not-change" }\n');
@@ -26,7 +26,8 @@ async function fixture(t){
 test('loading legacy relay preferences normalizes only in memory and read APIs leave both profile files byte-identical',async t=>{
   const f=await fixture(t),current=f.handler();
   const loaded=f.store.get();assert.equal(loaded.codexHistory,'codex');
-  for(const [key,value]of Object.entries(f.legacy))if(key!=='codexHistory'&&key!=='defaultContext')assert.deepEqual(loaded[key],value);
+  for(const [key,value]of Object.entries(f.legacy))if(!['codexHistory','defaultContext','subagentsEnabled','maxSubagents'].includes(key))assert.deepEqual(loaded[key],value);
+  assert.equal(loaded.subagentsEnabled,true);assert.equal(loaded.maxSubagents,3);
   assert.deepEqual(loaded.defaultContext,{preset:'extended',windowTokens:null,autoCompact:false,headroomTokens:2048});
   const read=await current({name:'relay_control',arguments:{action:'runtime_get'}});assert.equal(read.success,true);assert.equal(unpack(read).codexHistory,'codex');
   const catalog=await current({name:'relay_control',arguments:{action:'catalog'}});assert.equal(catalog.success,true);assert.equal(unpack(catalog).runtimeSettings.codexHistory,'codex');assert.equal(unpack(catalog).defaultModel,'example-provider::selected');
