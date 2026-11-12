@@ -1,6 +1,7 @@
 import { text, stableId } from '../core/dom.mjs';
 import { isLegacyPlanningRequest, LEGACY_PLANNING_RETIRED_MESSAGE, PLANNING_MODULE_TEMPLATES, planningModuleTemplate, projectPlanningRequest, planningOutlineRows } from '../../planning-browser-model.mjs';
 import { responseCycleStages } from '../../response-cycle-model.mjs';
+import { createDirectoryInspector } from '../chat/artifacts.mjs';
 import { planningModuleXml, planningProgramXml, parsePlanningModuleXml, parsePlanningProgramXml } from '../../planning-program-xml.mjs';
 import { cycleForNode, cycleStageRows, cycleStateLabel, stageOutputSummary, cycleModelSelection, cycleModelRunFields, renderCycleControls, renderStageFindings, renderAccuracyTargets } from './response-cycle-ui.mjs';
 
@@ -119,6 +120,8 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
   let catalogLoaded = false, catalogUnavailable = false;
   let creatingRequest = false, pendingConversation = null, pendingRequest = null;
   const sessions = new Map(), selectedRequests = new Map(), requestDrafts = new Map();
+  const directoryInspector = createDirectoryInspector({frame:shell,
+    getRunId:()=>catalog.conversations.find(row=>conversationKey(row)===conversationId)?.runId||conversationId});
   const session = id => {
     if (!sessions.has(id)) sessions.set(id, { document: null, selectedId: '', presentation: 'outline', page: 'overview', collapsed: new Set(), drafts: new Map(), xmlDrafts: new Map(), programDraft: null, creations: new Map(), sourceDraft: { title: '', text: '', url: '' }, pending: new Set(), error: '', notice: '', readGeneration: 0, controller: null, intentOpen: false, originalRequestOpen: false });
     return sessions.get(id);
@@ -187,7 +190,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
       control.setAttribute('aria-current', String(id === conversationId)); control.title = title;
       add(control, 'strong', title);
       const meta = add(control, 'span', '', 'pb-conversation-meta');
-      add(meta, 'small', requests.length + (requests.length === 1 ? ' request' : ' requests') + (archived ? ' · Archived' : ''));
+      add(meta, 'small', requests.length + (requests.length === 1 ? ' graph request' : ' graph requests') + (archived ? ' · Archived' : ''));
       pill(meta, activityLabel(activity), activity);
     }
     if (!list.children.length) {
@@ -974,9 +977,12 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
       previousState.inspectorSessions ||= new Map(); previousState.inspectorSessions.set(previousInspector.dataset.selectedNodeId, { top: previousInspector.scrollTop, open: new Set([...previousInspector.querySelectorAll('[data-disclosure-key]')].filter(element => element.open).map(element => element.dataset.disclosureKey)) });
     }
     detail.replaceChildren(); detail.dataset.requestId = requestId; const state = current(); notice.textContent = [catalogError, state?.error || state?.notice].filter(Boolean).join('\n');
+    directoryInspector.refresh(conversationId);
     if (!requestId) {
       const empty = add(detail, 'div', '', 'pb-empty'); add(empty, 'h2', 'Give each request a place to develop.');
       add(empty, 'p', 'Start with a question or desired outcome. Add modules that test alternatives, inspect evidence, make a decision, or record an action and its result. Expand a module when it contains a further consequential question.');
+      if(conversationId){add(empty,'p','Directory model phases are recorded separately from Planning graph requests. Open the saved Directory audit to inspect their actual calls, inputs and outputs.','pb-help');
+        button(empty,'Inspect Directory Context',()=>void directoryInspector.open(),'pb-quiet');}
       button(empty, 'Create planning request', () => showRequestForm(), 'pb-primary'); return;
     }
     if (!state.document) { add(detail, 'p', state.error || 'Opening saved request…', 'pb-empty'); return; }
@@ -1039,7 +1045,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
   return {
     enter() { if (active || destroyed) return; active = true; unsubscribe = events.subscribe(event => { if (!active || !/^(planning_browser\.|planning-browser\.|planning\.browser\.|conversations\.)/.test(event.type || '')) return; const changedId = event.data?.requestId || event.requestId; if (changedId && changedId !== requestId && sessions.has(changedId)) void readRequest(changedId); clearTimeout(timer); timer = setTimeout(() => void loadCatalog(), 160); }); void loadCatalog(); },
     leave() { active = false; stopReads(); unsubscribe?.(); unsubscribe = null; clearTimeout(timer); },
-    destroy() { this.leave(); destroyed = true; sessions.clear(); requestDrafts.clear(); mount.replaceChildren(); },
+    destroy() { this.leave(); destroyed = true; directoryInspector.destroy(); sessions.clear(); requestDrafts.clear(); mount.replaceChildren(); },
     openConversationId(id) { if (!id) return; pendingRequest = null; pendingConversation = id; if (active) void loadCatalog(); },
     openRequestId(id, { nodeId } = {}) { if (!id) return; pendingConversation = null; pendingRequest = { id, nodeId }; if (active) void loadCatalog(); },
     updateStatus() { const run = detail.querySelector('[data-action="run-module"]'); if (run) run.textContent = runModuleLabel(); }
