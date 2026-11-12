@@ -22,7 +22,7 @@ async function fixture(t) {
   return { store, taskId, call, initial };
 }
 
-test('a rejected finding in result preserves the saved contract and permits a corrected completion at the same revision', async t => {
+test('stale revision and out-of-scope completion preserve the saved contract before an authorized completion', async t => {
   const f = await fixture(t);
   const prospective = {
     id: 'correct_notice', kind: 'action', status: 'active', title: 'Correct the requested phrase in notice.txt',
@@ -31,16 +31,18 @@ test('a rejected finding in result preserves the saved contract and permits a co
     note: 'Write the previously inspected notice.txt bytes with the single specified ASCII phrase substitution.',
     doneWhen: 'Read-back bytes equal the original bytes with only the requested substitution and the directory entries are unchanged.'
   };
-  const planned = await f.call({ action: 'plan', expectedRevision: f.initial.revision, plan: { layout: 'sequence' }, steps: [prospective] });
+  const planned = await f.call({ action: 'plan', expectedRevision: f.initial.revision, plan: { layout: 'sequence' }, steps: [prospective, { ...prospective, id: 'other', status: 'pending' }] });
   assert.equal(planned.success, true, planned.contentItems[0].text);
   const saved = payload(planned), before = await readFile(f.store.file(f.taskId));
   // These observations reproduce the successful native case-03 work record.
   const evidence = 'Replaced the single phrase at byte offset 19. Read-back comparison matched exactly; length stayed 73 bytes and the same three directory entries remain.';
-  const rejected = await f.call({ action: 'step', expectedRevision: saved.revision, stepId: prospective.id, status: 'done', result: 'notice.txt was corrected in place; the directory contents remained unchanged.', evidence });
+  const rejected = await f.call({ action: 'step', expectedRevision: saved.revision - 1, stepId: prospective.id, status: 'done', evidence });
   assert.equal(rejected.success, false);
-  assert.equal(rejected.code, 'TASK_PLAN_PROSPECTIVE_REQUIRED');
-  assert.match(payload(rejected).error, /result/);
-  assert.match(payload(rejected).error, /evidence/);
+  assert.equal(rejected.code, 'TASK_STATE_CONFLICT');
+  const worker = createTaskToolHandler({ store: f.store, taskId: f.taskId, runId: 'run-one', nodeId: 'worker', scopeStepId: 'other', worker: true, planningMode: 'on', executionGuardrails: true });
+  const denied = await worker({ name: 'relay_task', arguments: { action: 'step', expectedRevision: saved.revision, stepId: prospective.id, status: 'done', evidence } });
+  assert.equal(denied.success, false);
+  assert.equal(denied.code, 'TASK_PLAN_OWNERSHIP');
   assert.deepEqual(await readFile(f.store.file(f.taskId)), before, 'A rejected completion changes neither saved bytes nor revision.');
 
   const completed = await f.call({ action: 'step', expectedRevision: saved.revision, stepId: prospective.id, status: 'done', evidence });

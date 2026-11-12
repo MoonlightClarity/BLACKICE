@@ -1,9 +1,11 @@
+import {ResponseCycleService} from '../lib/response-cycle.mjs';
+import {responseCycleTemplate} from '../public/response-cycle-model.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {childAdmissionPrompt,planningStageContract,assertChildAdmission} from '../lib/planning-child-admission.mjs';
-import {child,answer,judgment,fixture,single,budget} from './fixture-child-admission.mjs';
+import {childAdmissionPrompt,planningStageContract,assertChildAdmission,childAdmissionSnapshot,parseChildAdmission} from '../lib/planning-child-admission.mjs';
+import {child,answer,judgment} from './fixture-child-admission.mjs';
 
-// These fixtures specify intended decisions and exercise host enforcement with
+// These fixtures specify intended decisions and parse historical judgments with
 // mocked judgments. They are not measurements of model classification accuracy.
 const analyses=[
   {key:'estimate',objective:'Estimate a practical completion window from the sparse supplied samples.',description:'Return an approximate window with a declared variability assumption, not a guaranteed date.',evidence:'Three retained durations and an explicitly declared variability assumption.',source:'Three comparable fictional runs took two, three and five days. No guarantee or current measurement is supplied.',threshold:'A rough window is sufficient to choose a reversible next step.'},
@@ -25,52 +27,49 @@ test('stage and reviewer contracts permit bounded inference and satisficing with
   assert.match(prompt,/guess must not be presented as a verified consequential fact/);
 });
 
-test('legitimate uncertain analysis remains admissible under inherited assumption policy',async t=>{
-  for(const row of analyses)await t.test(row.key,async t=>{
-    const f=await fixture(t,input=>{
-      if(input.reviewType)return judgment(input.snapshot);
-      const body=answer(input),proposal=child(input,[row.key,row.objective,row.description,row.evidence]);
-      proposal.sourceIds=['cycle:context:'+f.cycle.id];
-      Object.assign(proposal.acceptanceCriteria[0].accuracy,{decisionThreshold:row.threshold,unknownPolicy:'assumption',stopWhen:row.threshold});
-      body.subproblems=[proposal];return body;
-    });
-    f.request=await f.store.runtimeWriter().configureResponseCycle(f.request.id,{sources:[{id:'cycle:context:'+f.cycle.id,kind:'source',title:'Partial fictional decision inputs',text:row.source}]});
-    const initial=await single(f),before=structuredClone(initial.request.responses[0]),b={used:1,max:20};
-    const review=await f.service.ensureChildAdmission(initial.request,initial.attempt.nodeId,{budget:b});
-    assert.equal(review.admitted,true);assert.equal(f.calls.length,2);assert.equal(b.used,2);
-    assert.deepEqual(review.request.responses[0],before);
-    assert.equal(review.review.childAdmission.snapshot.requests[0].acceptanceCriteria[0].accuracy.unknownPolicy,'assumption');
-    assert.doesNotThrow(()=>assertChildAdmission(review.request,initial.attempt.nodeId,before.subproblems[0]));
-    assert.equal(f.calls[0].input.stageContract.reasoning.allowed.includes('satisficing'),true);
-  });
+function snapshotFor(row){
+  const source={id:'fixture-source',kind:'source',title:'Retained decision inputs',text:row.source||row.evidence};
+  const input={module:{kind:'inference'},template:responseCycleTemplate('inference'),sources:[source]};
+  const body=answer(input),proposal=child(input,[row.key,row.objective,row.description,row.evidence]);
+  Object.assign(proposal.acceptanceCriteria[0].accuracy,{decisionThreshold:row.threshold||'',unknownPolicy:row.unknownPolicy||'assumption',stopWhen:row.threshold||row.evidence});
+  body.subproblems=[proposal];
+  const request={id:'fixture',objective:row.objective,nodes:[{id:'inference',kind:'inference',prompt:row.objective,revision:1}],sources:[source],
+    responses:[{id:'response-one',nodeId:'inference',kind:'inference',revision:1,nodeRevision:1,...body}],attempts:[],edges:[]};
+  return {request,snapshot:childAdmissionSnapshot(request,'inference')};
+}
+
+test('saved uncertain-analysis judgments preserve inherited assumption policy without launching work',()=>{
+  for(const row of analyses){
+    const {request,snapshot}=snapshotFor(row),before=structuredClone(request),value=parseChildAdmission(JSON.stringify(judgment(snapshot)),snapshot);
+    assert.equal(value.admitted,true,row.key);
+    assert.equal(snapshot.requests[0].acceptanceCriteria[0].accuracy.unknownPolicy,'assumption');
+    assert.equal(snapshot.requests[0].acceptanceCriteria[0].accuracy.decisionThreshold,row.threshold);
+    assert.deepEqual(request,before);
+    const contract=planningStageContract({node:request.nodes[0],sources:request.sources});
+    assert.equal(contract.reasoning.allowed.includes('satisficing'),true);
+    assert.deepEqual(contract.capabilities,{actionTools:false,newObservations:false});
+  }
 });
 
-test('an unsupported consequential confirmation is not converted into an allowed assumption',async t=>{
-  const f=await fixture(t,input=>{
-    if(input.reviewType)return judgment(input.snapshot,{classification:'requires_observation'});
-    const body=answer(input),proposal=child(input,['inspection','Confirm the unobserved equipment inspection passed.','State that the current safety inspection passed, using an actual inspection result.','A fresh authoritative inspection result, not an estimate.']);
-    Object.assign(proposal.acceptanceCriteria[0].accuracy,{mode:'exact',unknownPolicy:'block',tolerance:'No unsupported confirmation.',stopWhen:'The actual required inspection result is available.'});
-    body.subproblems=[proposal];return body;
-  }),initial=await single(f),before=structuredClone(initial.request.responses[0]);
-  const review=await f.service.ensureChildAdmission(initial.request,initial.attempt.nodeId,{budget:{used:1,max:20}});
-  assert.equal(review.admitted,false);assert.equal(f.calls.length,2);assert.deepEqual(review.request.responses[0],before);
-  assert.equal(review.review.childAdmission.snapshot.requests[0].acceptanceCriteria[0].accuracy.unknownPolicy,'block');
-  assert.throws(()=>assertChildAdmission(review.request,initial.attempt.nodeId),{code:'PLANNING_CHILD_ADMISSION_REQUIRED'});
+test('an unsupported consequential confirmation is not converted into an allowed assumption',()=>{
+  const row={key:'inspection',objective:'Confirm the unobserved equipment inspection passed.',description:'State that the current safety inspection passed, using an actual inspection result.',evidence:'A fresh authoritative inspection result, not an estimate.',unknownPolicy:'block'};
+  const {snapshot}=snapshotFor(row),before=structuredClone(snapshot),value=parseChildAdmission(JSON.stringify(judgment(snapshot,{classification:'requires_observation'})),snapshot);
+  assert.equal(value.admitted,false);
+  assert.equal(snapshot.requests[0].acceptanceCriteria[0].accuracy.unknownPolicy,'block');
+  assert.deepEqual(snapshot,before);
 });
 
-test('a semantic refinement cannot become an accepted changed-binding response and reset its allowance',async t=>{
-  const f=await fixture(t,input=>{
-    if(input.reviewType)return judgment(input.snapshot,{classification:'requires_effect'});
-    const body=answer(input),proposal=child(input);
-    if(input.semanticRefinement||input.formatRepair)proposal.objective='A changed objective under the same bound key.';
-    body.subproblems=[proposal];return body;
-  }),initial=await single(f),node=initial.request.nodes.find(item=>item.id===initial.attempt.nodeId),proposal=node.response.subproblems[0];
-  await f.service.createCurrent(initial.request.id,{parentNodeId:node.id,expectedParentRevision:node.revision,expectedRequestRevision:initial.request.revision,title:proposal.title,purpose:proposal.objective,planningExecutionMode:'plan_only',clientRequestId:'historical-bound-child'},
-    {internal:false,key:proposal.key,required:true,acceptanceCriteria:proposal.acceptanceCriteria,sourceIds:proposal.sourceIds,subproblemRequest:proposal});
-  await assert.rejects(f.service.runStage(initial.request.id,f.cycle.id,'inference',{budget:budget(),runKey:'rejected-binding-change'}),{code:'PLANNING_CHILD_ADMISSION_REJECTED'});
-  let saved=await f.store.get(initial.request.id),attempts=saved.attempts.filter(item=>item.semanticRefinement),calls=f.calls.length;
-  assert.equal(saved.responses.length,1);assert.equal(attempts.length,2);assert.equal(attempts.every(item=>item.status==='failed'),true);
-  assert.deepEqual(attempts[1].semanticRefinement,attempts[0].semanticRefinement);assert.equal(attempts[1].repairOf,attempts[0].id);
-  await assert.rejects(f.service.runStage(saved.id,f.cycle.id,'inference',{budget:budget(),runKey:'binding-change-resume'}),{code:'PLANNING_CHILD_ADMISSION_REJECTED'});
-  saved=await f.store.get(saved.id);assert.equal(saved.responses.length,1);assert.equal(f.calls.length,calls);
+test('changing a saved analytical objective cannot reuse its old admission or renew automatic refinement',async()=>{
+  let calls=0;
+  const service=Object.create(ResponseCycleService.prototype);
+  Object.defineProperty(service,'runner',{get(){calls++;throw Error('Retired refinement must not reach the provider.');}});
+  const {request,snapshot}=snapshotFor(analyses[0]);
+  request.attempts=[{id:'saved-review',purpose:'child_admission',status:'completed',childAdmission:{snapshot,judgment:parseChildAdmission(JSON.stringify(judgment(snapshot)),snapshot)}}];
+  assert.doesNotThrow(()=>assertChildAdmission(request,'inference'));
+  request.responses[0].subproblems[0].objective='A changed objective under the same key.';
+  assert.throws(()=>assertChildAdmission(request,'inference'),{code:'PLANNING_CHILD_ADMISSION_REQUIRED'});
+  const before=structuredClone(request),budget={used:2,max:20};
+  await assert.rejects(service.runStage(request.id,'saved-cycle','inference',{budget,runKey:'resume'}),{code:'PLANNING_CYCLE_RETIRED',status:410});
+  await assert.rejects(service.ensureChildAdmission(request,'inference',{budget}),{code:'PLANNING_CYCLE_RETIRED',status:410});
+  assert.equal(calls,0);assert.equal(budget.used,2);assert.deepEqual(request,before);
 });

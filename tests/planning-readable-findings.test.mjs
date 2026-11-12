@@ -8,7 +8,7 @@ import path from 'node:path';
 import {PlanningBrowserStore} from '../lib/planning-browser.mjs';
 import {PlanningBrowserRuntime,planningModuleOutputSchema,planningModulePrompt,planningFormatDiagnostic,validatePlanningModuleResponse} from '../lib/planning-browser-runtime.mjs';
 import {ResponseCycleService} from '../lib/response-cycle.mjs';
-import {parseModuleResponse,planningModuleTemplate,planningResponseBody,projectPlanningRequest} from '../public/planning-browser-model.mjs';
+import {parseModuleResponse,planningModuleTemplate,planningResponseBody} from '../public/planning-browser-model.mjs';
 import {parseResponseCycleResponse,evaluateResponseCycleStage,RESPONSE_CYCLE_STAGES} from '../public/response-cycle-model.mjs';
 import {planningReadableFindingIssues,validatePlanningReadableFindings} from '../public/task-viability-model.mjs';
 
@@ -31,6 +31,20 @@ async function fixture(t,handler){
   const runner=new PlanningBrowserRuntime({store,runtime,defaultCwd:dir,getSettings:()=>({maxSubagents:2})});
   t.after(async()=>{await runner.close();await store.close();await rm(dir,{recursive:true,force:true});});
   return {dir,store,runner,calls};
+}
+
+
+// Reconstruct saved pre-retirement records directly; never use a retired creation API.
+async function seedArchive(store, request, cycle, sources = []) {
+  const raw = JSON.parse(await readFile(store.file(request.id), 'utf8'));
+  delete raw.programXml;
+  raw.responseCycle = { version: 1, rootCycleId: cycle.id, cycles: [clone(cycle)] };
+  raw.nodes = [{ id: cycle.id, kind: 'cycle', parentId: null, title: cycle.title, prompt: cycle.objective, cycleId: cycle.id, revision: 1 },
+    ...RESPONSE_CYCLE_STAGES.map(stage => ({ id: cycle.stageNodeIds[stage.id], kind: stage.kind, parentId: cycle.id,
+      title: stage.label, prompt: cycle.objective, cycleId: cycle.id, cycleStage: stage.id, revision: 1 }))];
+  raw.sources = clone(sources);
+  await writeFile(store.file(request.id), JSON.stringify(raw));
+  return raw;
 }
 
 test('the actual accepted source-only Inference is rejected with captured context and remains structurally inspectable',()=>{
@@ -120,11 +134,11 @@ test('a source-only finding can receive exactly the existing format repair with 
   assert.equal(f.calls.length,2);assert.equal(result.attempt.status,'completed');assert.equal(saved.attempts[0].validation.code,'PLANNING_RESPONSE_READABILITY');assert.equal(saved.attempts[1].repairOf,saved.attempts[0].id);assert.deepEqual(saved.attempts[1].sources,saved.attempts[0].sources);assert.match(saved.attempts[0].partialOutput,new RegExp(request.id));assert.equal(saved.responses.length,1);
 });
 
-test('the saved historical failure stays readable and explicit intent-first upgrade preserves its prior findings while rerunning the changed contract',async t=>{
+test('the saved historical failure stays readable but cannot be publicly edited or rerun',async t=>{
   const f=await fixture(t,input=>readable(input)),source=actual.attempt.sources.find(source=>source.kind==='user_request'),contextSource=actual.attempt.sources.find(source=>source.id.startsWith('cycle:context:')),priorSource=actual.attempt.sources.find(source=>source.kind==='response'),cycleId=actual.attempt.cycleContext.cycleId;
   let request=await f.store.create({id:actual.attempt.requestId,conversationId:'historical-fixture',title:actual.attempt.cycleContext.title,objective:source.text,cwd:f.dir});
   const stages=Object.fromEntries(RESPONSE_CYCLE_STAGES.map(stage=>[stage.id,cycleId+'-'+stage.id])),cycle={id:cycleId,title:actual.attempt.cycleContext.title,objective:actual.attempt.cycleContext.objective,stageNodeIds:stages,parentCycleId:null,parentStageId:null,depth:0,planningExecutionMode:'plan_only',state:'failed',acceptanceCriteria:[],sourceIds:null,executionProfile:actual.attempt.cycleExecutionProfile,execution:{required:false,state:'not_required'}};
-  await f.store.runtimeWriter().configureResponseCycle(request.id,{createCycle:cycle,rootPatch:{rootCycleId:cycleId}});
+  await seedArchive(f.store, request, cycle);
   const raw=JSON.parse(await readFile(f.store.file(request.id),'utf8')),body=JSON.parse(priorSource.text),beforeId=priorSource.responseId;
   raw.provenance=clone(source.provenance);raw.sources=[clone(contextSource)];
   raw.responses=[{id:beforeId,nodeId:stages.feasibility,kind:'viability',revision:1,nodeRevision:1,...body,inputs:[],sources:[clone(source),clone(contextSource)],provenance:{kind:'human',author:'synthetic historical fixture',at:'2026-10-30T00:00:00Z',contentHash:hash(JSON.stringify(body))},verifiedAction:false},clone(actual.response)];
@@ -135,26 +149,31 @@ test('the saved historical failure stays readable and explicit intent-first upgr
   assert.equal(await readFile(f.store.file(request.id),'utf8'),historicalBytes,'Reading historical findings preserves the saved bytes exactly.');
   assert.equal(before.readiness.cycle.analysisReady,true);assert.equal(bad.readiness.state,'needs_evidence');assert.equal(bad.readiness.cycle.analysisReady,false);assert.deepEqual(bad.response.values,actual.response.values);
   const service=new ResponseCycleService({store:f.store,runner:f.runner});t.after(()=>service.close());
-  const done=await service.runCycle(request.id,cycleId,{expectedRequestRevision:request.revision,expectedCycleRevision:request.nodes.find(node=>node.id===cycleId).revision,clientRequestId:'explicit-fix-historical'});
-  assert.deepEqual(f.calls.map(call=>call.input.module.kind),['inference','viability','plan']);assert.equal(done.cycles[0].state,'paused_after_plan');assert.notEqual(done.nodes.find(node=>node.id===stages.feasibility).response.id,beforeId);assert.ok(done.responses.some(response=>response.id===beforeId));assert.equal(done.cycles[0].pipelineVersion,2);
-  assert.ok(done.responses.some(response=>response.id===actual.response.id));assert.notEqual(done.nodes.find(node=>node.id===stages.inference).response.id,actual.response.id);assert.equal(done.nodes.find(node=>node.id===stages.plan).response.acceptanceCriteria[0].accuracy.mode,'bounded_estimate');
+  assert.throws(()=>service.runCycle(request.id,cycleId,{expectedRequestRevision:request.revision,expectedCycleRevision:request.nodes.find(node=>node.id===cycleId).revision,clientRequestId:'explicit-fix-historical'}),{code:'PLANNING_CYCLE_RETIRED'});
+  await assert.rejects(f.store.updateNode(request.id,stages.inference,{prompt:'Run a fresh comparison.'},{expectedNodeRevision:bad.revision}),{code:'PLANNING_CYCLE_RETIRED'});
+  await assert.rejects(f.runner.start({requestId:request.id,nodeId:stages.inference,expectedNodeRevision:bad.revision,clientRequestId:'archived-inference',model:'fixture::fast'}),{code:'PLANNING_CYCLE_RETIRED'});
+  assert.equal(f.calls.length,0);
+  assert.equal(await readFile(f.store.file(request.id),'utf8'),historicalBytes);
+  assert.ok((await f.store.get(request.id)).responses.some(response=>response.id===beforeId));
 });
 
 test('stored canonical Plans retain their captured contract shape while historical findings remain readable',async t=>{
   const f=await fixture(t,()=>{throw Error('Reading a saved contract must not start provider work.');});
   const cycleId='canonical-load',stages=Object.fromEntries(RESPONSE_CYCLE_STAGES.map(stage=>[stage.id,cycleId+'-'+stage.id]));
   let request=await f.store.create({conversationId:'canonical-load-fixture',title:'Compare the supplied ranges',objective:fact});
-  request=await f.store.runtimeWriter().configureResponseCycle(request.id,{
-    createCycle:{id:cycleId,title:'Compare the ranges',objective:fact,stageNodeIds:stages,parentCycleId:null,parentStageId:null,depth:0,pipelineVersion:2,planningExecutionMode:'plan_only',state:'pending',acceptanceCriteria:[],sourceIds:null,execution:{required:false,state:'not_required'}},
-    rootPatch:{rootCycleId:cycleId},
-    sources:[{id:'cycle:execution-contract:'+cycleId,kind:'source',label:'Current host contract shape',text:JSON.stringify({taskSchemaVersion:14,contractVersion:2})}]
-  });
+  const cycle={id:cycleId,title:'Compare the ranges',objective:fact,stageNodeIds:stages,parentCycleId:null,parentStageId:null,depth:0,pipelineVersion:2,planningExecutionMode:'plan_only',state:'pending',acceptanceCriteria:[],sourceIds:null,execution:{required:false,state:'not_required'}};
+  const sources=[{id:'request:'+request.id,kind:'user_request',text:fact},{id:'cycle:execution-contract:'+cycleId,kind:'source',label:'Captured host contract shape',text:JSON.stringify({taskSchemaVersion:14,contractVersion:2})}];
+  const raw=await seedArchive(f.store,request,cycle,sources.slice(1));
   const body=readable({module:{kind:'plan'},template:planningModuleTemplate('plan'),sources:[{id:'request:'+request.id,kind:'user_request'}]});
   delete body.acceptanceCriteria;delete body.steps;
   body.contract={contractVersion:2,goal:fact,criteria:[{id:'compare',kind:'judgment',description:'The recommendation compares the supplied ranges.'}],
     workItems:[{id:'explain',title:'Explain the range comparison',objective:'Recommend Alpha and state the plausible saving.',owner:'coordinator',resourceKeys:['workspace:fixture'],effects:['observe'],dependsOn:[],criterionIds:['compare']}],instructions:[]};
-  const saved=await f.store.recordHumanResponse(request.id,stages.plan,body,{expectedNodeRevision:1});
-  assert.deepEqual(saved.responses.at(-1).contract,body.contract);
+  const parsed=parseModuleResponse(body,'plan',{sources,pipelineVersion:2});
+  raw.responses=[{id:'saved-canonical-plan',nodeId:stages.plan,kind:'plan',pipelineVersion:2,revision:1,nodeRevision:1,...planningResponseBody(parsed),inputs:[],sources,
+    provenance:{kind:'human',author:'synthetic historical fixture',at:'2026-10-30T00:00:00Z',contentHash:hash(JSON.stringify(parsed))},verifiedAction:false}];
+  f.store._validate(raw);
+  await writeFile(f.store.file(request.id),JSON.stringify(raw));
+  await assert.rejects(f.store.recordHumanResponse(request.id,stages.plan,body,{expectedNodeRevision:1}),{code:'PLANNING_CYCLE_RETIRED'});
   const bytes=await readFile(f.store.file(request.id),'utf8'),reopened=await f.store.get(request.id);
   assert.deepEqual(reopened.responses.at(-1).contract,body.contract);assert.equal(await readFile(f.store.file(request.id),'utf8'),bytes);
   const missing=JSON.parse(bytes);delete missing.responses.at(-1).contract;

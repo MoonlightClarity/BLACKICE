@@ -264,14 +264,26 @@ async function planningFixture(t) {
     objective: 'Review the supplied catalog and enrollment history using actual evidence.', cwd: dataDir });
   const cycleId = 'feasibility-cycle', stages = Object.fromEntries(RESPONSE_CYCLE_STAGES.map(stage => [stage.id, cycleId + '-' + stage.id]));
   const writer = store.runtimeWriter();
-  request = await writer.configureResponseCycle(request.id, { createCycle: { id: cycleId, title: request.title, objective: request.objective,
-    stageNodeIds: stages, parentCycleId: null, parentStageId: null, depth: 0, pipelineVersion: 2,
-    planningExecutionMode: 'plan_only', state: 'pending', acceptanceCriteria: [], sourceIds: null, execution: { required: false, state: 'not_required' } },
-    rootPatch: { rootCycleId: cycleId },
-    sources: [{ id: 'cycle:execution-contract:' + cycleId, kind: 'source', label: 'Canonical execution contract',
-      text: JSON.stringify({ taskSchemaVersion: 14, contractVersion: 2 }) }] });
-  for (const kind of ['inference', 'viability']) request = await store.recordHumanResponse(request.id, stages[responseCycleStage(kind).id],
-    stageBody(kind, request.id), { expectedNodeRevision: 1 });
+  // Seed a saved archive, not a new executable cycle. Production creation stays retired.
+  const raw = JSON.parse(await fs.readFile(store.file(request.id), 'utf8'));
+  delete raw.programXml;
+  const cycle = { id: cycleId, title: request.title, objective: request.objective, stageNodeIds: stages,
+    parentCycleId: null, parentStageId: null, depth: 0, pipelineVersion: 2, planningExecutionMode: 'plan_only',
+    state: 'pending', acceptanceCriteria: [], sourceIds: null, execution: { required: false, state: 'not_required' } };
+  raw.responseCycle = { version: 1, rootCycleId: cycleId, cycles: [cycle] };
+  raw.nodes = [{ id: cycleId, kind: 'cycle', parentId: null, title: cycle.title, prompt: cycle.objective, cycleId, revision: 1 },
+    ...RESPONSE_CYCLE_STAGES.map(stage => ({ id: stages[stage.id], kind: stage.kind, parentId: cycleId,
+      title: stage.label, prompt: cycle.objective, cycleId, cycleStage: stage.id, revision: 1 }))];
+  const sources = [{ id: 'request:' + request.id, kind: 'user_request', text: request.objective },
+    { id: 'cycle:execution-contract:' + cycleId, kind: 'source', label: 'Captured canonical execution contract',
+      text: JSON.stringify({ taskSchemaVersion: 14, contractVersion: 2 }) }];
+  raw.sources = sources.slice(1);
+  const body = validatePlanningModuleResponse({ node: { kind: 'plan' }, pipelineVersion: 2, sources }, stageBody('plan', request.id, sourceDraft()));
+  raw.responses = [{ id: 'historical-plan', nodeId: stages.plan, kind: 'plan', pipelineVersion: 2, revision: 1, nodeRevision: 1,
+    ...planningResponseBody(body), inputs: [], sources, provenance: { kind: 'human', author: 'synthetic historical fixture',
+      at: '2026-10-30T00:00:00Z', contentHash: sha(JSON.stringify(body)) }, verifiedAction: false }];
+  store._validate(raw);
+  await fs.writeFile(store.file(request.id), JSON.stringify(raw), 'utf8');
   const planId = stages.plan;
   const write = async contract => {
     const current = await store.get(request.id), node = current.nodes.find(item => item.id === planId);
@@ -321,15 +333,16 @@ test('new source coverage rejects unreachable counts and scope-only selectors wi
   }
 });
 
-test('new human Plan writes reject impossible targets while captured old response history stays readable', async t => {
+test('archived human Plan writes are retired while captured impossible targets remain readable', async t => {
   const f = await planningFixture(t), initial = await f.store.get(f.requestId), file = f.store.file(f.requestId);
   const unchanged = await fs.readFile(file, 'utf8');
   for (const { contract, reject } of invalidPlans()) {
-    await assert.rejects(f.write(contract), reject);
+    assert.throws(() => validatePlanningModuleResponse(executablePlanAttempt(), JSON.stringify(stageBody('plan', 'fixture', contract))), reject);
+    await assert.rejects(f.write(contract), { code: 'PLANNING_CYCLE_RETIRED' });
     assert.equal(await fs.readFile(file, 'utf8'), unchanged, 'A rejected new human Plan does not mutate the saved request.');
     assert.equal((await f.store.get(f.requestId)).revision, initial.revision);
   }
-  let saved = await f.write(sourceDraft());
+  await assert.rejects(f.write(sourceDraft()), { code: 'PLANNING_CYCLE_RETIRED' });
   // Simulate v2 responses captured before the authoring bounds; each old contract remains readable.
   const document = JSON.parse(await fs.readFile(file, 'utf8'));
   const old = document.responses.find(response => response.nodeId === f.planId);
@@ -344,31 +357,25 @@ test('new human Plan writes reject impossible targets while captured old respons
     assert.deepEqual(reopened.responses.find(response => response.id === old.id).contract, contract);
     assert.equal(await fs.readFile(file, 'utf8'), historicalBytes);
   }
-  saved = await f.write(draft(2, 2));
-  assert.deepEqual(saved.responses.find(response => response.id === old.id).contract, old.contract);
-  const latest = saved.nodes.find(node => node.id === f.planId).response;
-  assert.equal(latest.contract.criteria[0].targetCount, 2);
-  assert.equal(latest.contract.workItems.length, 2);
-  assert.ok(saved.revision > initial.revision);
+  const beforeRetry = await fs.readFile(file, 'utf8');
+  await assert.rejects(f.write(draft(2, 2)), { code: 'PLANNING_CYCLE_RETIRED' });
+  assert.equal(await fs.readFile(file, 'utf8'), beforeRetry);
+  assert.equal((await f.store.get(f.requestId)).revision, initial.revision);
 });
 
-test('new provider validation and durable response writing both reject an impossible Plan', async t => {
+test('pure provider validation retains feasibility checks while archive attempt admission stays retired', async t => {
   const f = await planningFixture(t), current = await f.store.get(f.requestId);
-  const started = await f.writer.beginAttempt(f.requestId, f.planId, { ownerId: 'fixture-provider',
-    expectedNodeRevision: current.nodes.find(node => node.id === f.planId).revision, model: 'fixture::deterministic' });
-  const metadata = { runId: 'fixture-run', executionNodeId: 'fixture-worker', model: 'fixture::deterministic', provider: 'fixture' };
   const before = await fs.readFile(f.store.file(f.requestId), 'utf8');
+  const attempt = executablePlanAttempt();
   for (const { contract, reject } of invalidPlans()) {
-    const badOutput = JSON.stringify(stageBody('plan', f.requestId, contract));
-    assert.throws(() => validatePlanningModuleResponse(started.attempt, badOutput), reject);
-    await assert.rejects(f.writer.recordResponse(f.requestId, started.attempt.id, { output: badOutput, metadata }), reject);
-    assert.equal(await fs.readFile(f.store.file(f.requestId), 'utf8'), before, 'Rejected provider authoring does not complete or mutate the attempt.');
+    const badOutput = JSON.stringify(stageBody('plan', 'fixture', contract));
+    assert.throws(() => validatePlanningModuleResponse(attempt, badOutput), reject);
   }
-  const goodOutput = JSON.stringify(stageBody('plan', f.requestId, draft(2, 2)));
-  assert.doesNotThrow(() => validatePlanningModuleResponse(started.attempt, goodOutput));
-  const saved = await f.writer.recordResponse(f.requestId, started.attempt.id, { output: goodOutput, metadata });
-  assert.equal(saved.attempts.find(item => item.id === started.attempt.id).status, 'completed');
-  assert.equal(saved.nodes.find(node => node.id === f.planId).response.contract.workItems.length, 2);
+  assert.doesNotThrow(() => validatePlanningModuleResponse(attempt, JSON.stringify(stageBody('plan', 'fixture', draft(2, 2)))));
+  await assert.rejects(f.writer.beginAttempt(f.requestId, f.planId, { ownerId: 'fixture-provider',
+    expectedNodeRevision: current.nodes.find(node => node.id === f.planId).revision, model: 'fixture::deterministic' }), { code: 'PLANNING_CYCLE_RETIRED' });
+  assert.equal(await fs.readFile(f.store.file(f.requestId), 'utf8'), before);
+  assert.equal((await f.store.get(f.requestId)).attempts.length, 0, 'No provider attempt was admitted.');
 });
 
 test('task writes reject unreachable counts without making older canonical history unreadable', async t => {
