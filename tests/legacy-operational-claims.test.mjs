@@ -185,21 +185,24 @@ test('independently bound legacy absence stays clear; dangling evidence never in
   await assert.rejects(assertNoRetainedEffectConflict(f.store,'new-task',descriptor),{code:'TASK_CONTRACT_JOURNAL_UNAVAILABLE'});
 });
 
-test('UNKNOWN file prevents unbounded command replay and UNKNOWN command prevents even distant edits',async t=>{
+test('settled UNKNOWN shell history does not invent unrelated file or browser overlap',async t=>{
   const f=await fixture(t),command={name:'relay_workspace',arguments:{action:'run',command:'opaque'}};
   const descriptor=await f.raw.describeOperation(command);
-  await f.save([row(f.resource)]);
-  let dispatched=0;
-  const raw=async(call,context)=>{await context.onOperationDispatch(descriptor);dispatched++;return{success:true,contentItems:[]};};
-  raw.describeOperation=async()=>descriptor;
-  assert.equal(code(await f.guard.wrap(raw)(command)),'TASK_CONTRACT_EFFECT_UNCERTAIN');
-  assert.equal(dispatched,0);
-  await f.save([row(descriptor.resources,{...descriptor,tool:'relay_workspace',action:'run',deliveryState:'interrupted',effectState:'unknown'})]);
-  assert.equal(code(await f.guard.wrap(f.raw)(call('write','elsewhere.txt'))),'TASK_CONTRACT_EFFECT_UNCERTAIN');
-  await fs.writeFile(path.join(f.cwd,'kept.txt'),'inspection');
-  assert.equal((await f.guard.wrap(f.raw)(call('read'))).success,true);
+  const file=await f.save([row(descriptor.resources,{...descriptor,tool:'relay_workspace',action:'run',deliveryState:'interrupted',effectState:'unknown'})]);
+  const before=await fs.readFile(file,'utf8');
+  assert.equal((await f.guard.wrap(f.raw)(call('write','elsewhere.txt'))).success,true);
+  await assertNoRetainedEffectConflict(f.store,'new-task',external('https://different.test/apply'),{tool:'relay_browser',action:'click'});
+  await assert.rejects(assertNoRetainedEffectConflict(f.store,'new-task',descriptor,{tool:'relay_workspace',action:'run'}),{code:'TASK_CONTRACT_EFFECT_UNCERTAIN'});
+  const distinct=await f.raw.describeOperation({...command,arguments:{action:'run',command:'a different command'}});
+  await assertNoRetainedEffectConflict(f.store,'new-task',distinct,{tool:'relay_workspace',action:'run'});
+  assert.equal(await fs.readFile(file,'utf8'),before);
 });
-
+test('opaque command keeps explicit observed destination overlap but cwd alone is not a file effect',async t=>{
+  const f=await fixture(t),descriptor=external('https://specific.test/apply');
+  await f.save([row([{key:descriptor.commit.destinationKey,access:'write'}],{effect:'opaque',tool:'relay_workspace',action:'run',effectState:'unknown',deliveryState:'interrupted'})]);
+  await assert.rejects(assertNoRetainedEffectConflict(f.store,'new-task',descriptor,{tool:'relay_browser',action:'click'}),{code:'TASK_CONTRACT_EFFECT_UNCERTAIN'});
+  await assertNoRetainedEffectConflict(f.store,'new-task',external('https://other.test/apply'),{tool:'relay_browser',action:'click'});
+});
 test('new browser document cannot escape an UNKNOWN destination and reload is not an observation',async t=>{
   const f=await fixture(t),old=external();
   old.resources=[{key:'tab:old',access:'write'},{key:'form:old-document',access:'write'}];

@@ -6,7 +6,7 @@ import os from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { TaskStateStore, createTaskToolHandler } from '../lib/task-state.mjs';
 import { createPlanningWorkerGuard, wrapPlanningToolHandler } from '../lib/planning-awareness.mjs';
-import { readContractJournal, contractCompletionStatus, contractRuntimeView, createContractCompletionController } from '../lib/planning-contract-runtime.mjs';
+import { readContractJournal, retainedContractEffectConflict, contractCompletionStatus, contractRuntimeView, createContractCompletionController } from '../lib/planning-contract-runtime.mjs';
 import { normalizeContractEvidence } from '../lib/planning-contract-evidence.mjs';
 import { createPlanningCompletionController } from '../lib/planning-completion.mjs';
 import { createWorkspaceToolHandler } from '../lib/workspace-tools.mjs';
@@ -1086,4 +1086,14 @@ test('native field Enter cannot bypass the application gate while typing and rea
     assert.equal(await f.guard.before(item), null);
     await f.guard.annotate(item, { success: false, contentItems: [] });
   }
+});
+
+test('live opaque dispatch retains global busy fence without treating settled uncertainty as global',async t=>{
+  const f=await fixture(t),item=call('relay_workspace',{action:'run',command:'fixture not dispatched'});
+  assert.equal(await f.guard.before(item),null);
+  const journal=await readContractJournal(f.tasks,f.taskId);
+  const unrelated={effect:'interact',operationKey:'unrelated-file',resources:[{key:'path:/unrelated/out.txt',access:'write'}]};
+  assert.equal(retainedContractEffectConflict(journal,unrelated,{tool:'relay_workspace',action:'write'}),'TASK_CONTRACT_RESOURCE_BUSY');
+  f.guard.finish('finished');
+  assert.equal(retainedContractEffectConflict(journal,unrelated,{tool:'relay_workspace',action:'write'}),null);
 });
