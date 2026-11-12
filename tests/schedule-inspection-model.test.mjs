@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { HarnessEngine } from '../lib/engine.mjs';
+import { normalizePlanningOntology } from '../public/planning-module-policy.mjs';
 import { chatProfileFromDeployment, scheduleTriggerLabel, scheduleEditDraft, scheduleUpdateFromDraft, scheduleJobs } from '../public/next/workspaces/schedule-inspection-model.mjs';
 
 const deployment = () => ({
@@ -174,4 +176,50 @@ test('editing one Chat setting preserves other legacy workflow defaults',()=>{
   assert.equal(Object.hasOwn(agent,'effort'),false);
   assert.equal(Object.hasOwn(agent,'serviceTier'),false);
   assert.deepEqual(changed.settings,original.workflow.settings);
+});
+
+
+test('model-only schedule edits retain custom runtime ontology inheritance at actual admission',()=>{
+  const original=deployment(),before=structuredClone(original),draft=scheduleEditDraft(original);
+  draft.chatProfile=chatProfileFromDeployment(original);draft.chatProfile.options.model='gpt-5.6';
+  const changed=scheduleUpdateFromDraft(original,draft).workflow;
+  const engine=new HarnessEngine({runtime:{status:()=>({connected:true,authenticated:true})},dataDir:process.cwd(),defaultCwd:process.cwd()});
+  // Exercise real admission/normalization, but stop before persistence or provider execution.
+  engine.dispatchRun=run=>run;
+  for(const modules of [{decomposition:'forbidden',subagents:'forbidden'},{verification:'mandatory',branching:'forbidden'}]){
+    const policy=normalizePlanningOntology({modules});engine.runtimeSettings={get:()=>({planningOntology:policy})};
+    const beforeRun=engine.startRun({workflow:original.workflow,input:{task:original.input,cwd:process.cwd()}});
+    const afterRun=engine.startRun({workflow:changed,input:{task:original.input,cwd:process.cwd()}});
+    assert.deepEqual(beforeRun.planningOntology,policy);
+    assert.deepEqual(afterRun.planningOntology,policy,'Changing only a model must not replace inherited runtime module choices');
+  }
+  assert.equal(Object.hasOwn(changed.settings,'planningOntology'),false,'A missing policy remains inherited, not pinned');
+  assert.deepEqual(original,before);
+});
+
+test('unrelated Chat edits preserve exact explicit ontology and original admitted schedule',()=>{
+  for(const edit of ['model','context']){
+    const original=deployment();original.workflow.settings.planningOntology={version:1,modules:{decomposition:'forbidden',verification:'mandatory'}};
+    const before=structuredClone(original),draft=scheduleEditDraft(original);draft.chatProfile=chatProfileFromDeployment(original);
+    if(edit==='model')draft.chatProfile.options.model='gpt-5.6';else draft.chatProfile.context.autoCompact=false;
+    const changed=scheduleUpdateFromDraft(original,draft).workflow;
+    assert.deepEqual(changed.settings.planningOntology,before.workflow.settings.planningOntology);
+    assert.equal(changed.settings.maxParallel,1);assert.deepEqual(original,before);
+  }
+});
+
+test('explicit policy changes normalize modules, Off removes the policy, and Modules can be enabled again',()=>{
+  const original=deployment(),before=structuredClone(original),draft=scheduleEditDraft(original);
+  draft.chatProfile=chatProfileFromDeployment(original);
+  draft.chatProfile.options.planningOntology={modules:{decomposition:'forbidden',verification:'mandatory'}};
+  const changed=scheduleUpdateFromDraft(original,draft).workflow;
+  assert.deepEqual(changed.settings.planningOntology,normalizePlanningOntology(draft.chatProfile.options.planningOntology));
+  const saved={...original,workflow:changed},off=scheduleEditDraft(saved);off.chatProfile=chatProfileFromDeployment(saved);off.chatProfile.options.planningMode='off';
+  const disabled=scheduleUpdateFromDraft(saved,off).workflow;
+  assert.equal(disabled.settings.planningMode,'off');assert.equal(Object.hasOwn(disabled.settings,'planningOntology'),false);
+  const offSaved={...original,workflow:disabled},on=scheduleEditDraft(offSaved);on.chatProfile=chatProfileFromDeployment(offSaved);on.chatProfile.options.planningMode='ontology';
+  const enabled=scheduleUpdateFromDraft(offSaved,on).workflow;
+  assert.deepEqual(enabled.settings.planningOntology,normalizePlanningOntology());
+  assert.equal(enabled.settings.planningMode,'off','Module choices never revive the retired outline gate');
+  assert.deepEqual(original,before);
 });

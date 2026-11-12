@@ -713,8 +713,7 @@ test('editing a schedule updates Chat profile without altering pinned attachment
   assert.equal(agent.serviceTier,'fast');
   assert.equal(Object.hasOwn(call.payload.workflow.settings,'planningEnforcement'),false);
   assert.equal(Object.hasOwn(call.payload.workflow.settings,'planningExecutionMode'),false);
-  assert.equal(call.payload.workflow.settings.planningOntology.modules.anti_overalignment,'mandatory');
-  assert.equal(call.payload.workflow.settings.planningOntology.modules.decomposition,'auto');
+  assert.equal(Object.hasOwn(call.payload.workflow.settings,'planningOntology'),false,'Model/context edits retain runtime policy inheritance');
   assert.equal(agent.context.windowTokens,200000);
   assert.equal(Object.hasOwn(call.payload,'attachmentIds'),false);
   assert.deepEqual(f.schedule.attachmentIds,['source-file']);

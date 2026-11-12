@@ -191,13 +191,19 @@ export function applyChatProfileToWorkflow(workflow,options,context,previousOpti
   const node=agentNodes[0];
   for(const key of ['model','effort','serviceTier'])
     if(profile[key]!==previousOptions[key])node[key]=profile[key];
-  if(profile.planningMode!==previousOptions.planningMode){
+  const planningChanged=profile.planningMode!==previousOptions.planningMode;
+  const ontologyChanged=JSON.stringify(profile.planningOntology)!==JSON.stringify(previousOptions.planningOntology);
+  if(planningChanged){
     copy.settings??={};
     copy.settings.planningMode='off';
     delete copy.settings.planningEnforcement;
   }
-  if(profile.planningMode==='ontology')copy.settings.planningOntology=profile.planningOntology;
-  else delete copy.settings.planningOntology;
+  // Missing policy means inherit runtime settings. Unrelated edits must not pin a UI default.
+  if(planningChanged||ontologyChanged){
+    copy.settings??={};
+    if(profile.planningMode==='ontology')copy.settings.planningOntology=profile.planningOntology;
+    else delete copy.settings.planningOntology;
+  }
   if(profile.planningExecutionMode!==previousOptions.planningExecutionMode){
     copy.settings??={};
     copy.settings.planningExecutionMode=profile.planningExecutionMode;
