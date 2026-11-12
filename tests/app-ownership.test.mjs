@@ -86,21 +86,21 @@ test('ordinary task admission still selects its actual result when the initiatin
   assert.equal(f.state.currentRun.id, accepted.id); assert.equal(f.state.workflow.id, accepted.workflowId); assert.equal(f.state.dirty, false);
 });
 
-test('actual start and continue requests preserve the chosen mode and keep Auto depth unspecified', async () => {
+for (const planningMode of ['ontology', 'off', 'forced', 'advisory', 'on', 'auto', 'maximal']) test(`actual requests preserve ${planningMode} input with automatic planning inert`, async () => {
   const accepted = run('planning-result'), f = await fixture((url, method, body) => url === '/api/workflows' ? body : accepted);
-  await f.startMissionTask({ task: 'A scaled plan.', cwd: 'C:\\fixture', planningMode: 'auto', requestId: 'planning-start' });
-  const start = f.calls.find(call => call.url === '/api/runs'); assert.equal(start.body.input.planningMode, 'auto'); assert.equal(start.body.workflow.settings.planningMode, 'on');
+  await f.startMissionTask({ task: 'Use the selected planning modules.', cwd: 'C:\\fixture', planningMode, requestId: 'planning-start' });
+  const start = f.calls.find(call => call.url === '/api/runs'); assert.equal(start.body.input.planningMode, planningMode); assert.equal(start.body.workflow.settings.planningMode, 'off'); assert.equal(Object.hasOwn(start.body.workflow.settings, 'planningEnforcement'), false);
   assert.equal(Object.hasOwn(start.body.input, 'planDetail'), false); assert.equal(Object.hasOwn(start.body.workflow.settings, 'planDetail'), false);
   await f.continueMissionTask({ runId: 'planning-result', nodeId: 'agent', message: 'Now reply without an automatic outline.', planningMode: 'off', requestId: 'planning-continue' });
   const next = f.calls.find(call => call.url === '/api/runs/planning-result/continue'); assert.equal(next.body.planningMode, 'off'); assert.equal(next.body.requestId, 'planning-continue'); assert.equal(Object.hasOwn(next.body, 'planDetail'), false);
 });
 
-test('captured and queued tasks keep their planning mode in the persisted recipe', async () => {
+test('captured and queued tasks keep automatic planning inert in the persisted recipe', async () => {
   const f = await fixture((url, method) => method === 'POST' ? { id: 'saved-plan-task', status: 'queued' } : {});
   await f.captureMissionTask({ task: 'Save with planning off.', planningMode: 'off', cwd: 'C:\\fixture' });
   await f.queueMissionTask({ task: 'Queue with an expanded plan.', planningMode: 'maximal', enqueueKey: 'mode-receipt', cwd: 'C:\\fixture' });
   const captured = f.calls.find(call => call.url === '/api/inbox'), queued = f.calls.find(call => call.url === '/api/inbox/queue');
-  assert.equal(captured.body.workflow.settings.planningMode, 'off'); assert.equal(queued.body.workflow.settings.planningMode, 'on'); assert.equal(queued.body.enqueueKey, 'mode-receipt');
+  assert.equal(captured.body.workflow.settings.planningMode, 'off'); assert.equal(queued.body.workflow.settings.planningMode, 'off'); assert.equal(Object.hasOwn(queued.body.workflow.settings, 'planningEnforcement'), false); assert.equal(queued.body.enqueueKey, 'mode-receipt');
   assert.equal(f.calls.filter(call => call.url === '/api/runs').length, 0);
 });
 
