@@ -35,6 +35,8 @@ const optionalWindowsSourceTests = new Set([
   'actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases',
   'live background accessibility actions change only a dedicated non-activating fixture and leave foreground and cursor untouched',
   'hidden isolated Chromium composer validates real layout and one-click send wiring',
+  // This disposable rendered Chat fixture explicitly opts in through BLACKICE_DIRECTORY_BROWSER_QA.
+  'rendered Chat Directory controls reach the real engine and persist independently',
   'installed Himalaya sends exact MIME to disposable loopback SMTP and strips Bcc headers',
   'real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart',
   // This integration fixture explicitly requires an owner-supplied existing SMB share.

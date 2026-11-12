@@ -343,6 +343,20 @@ test('exact source verification rejects matching-index partial receipts and prov
     await save({ ...receipt, optionalSkips, tests: { ...receipt.tests, total: 2 + optionalSkips.length, optionalSkipped: optionalSkips.length } });
     await assert.rejects(verifyReleaseSource(value, directory), /skipped test/);
   }
+  await t.test('Directory rendered skip permits only the exact opted-out fixture name', async () => {
+    const name = 'rendered Chat Directory controls reach the real engine and persist independently';
+    await save({ ...receipt, optionalSkips: [name], tests: { ...receipt.tests, total: 3, optionalSkipped: 1 } });
+    assert.equal((await verifyReleaseSource(value, directory)).tests.optionalSkipped, 1);
+    for (const optionalSkips of [
+      [name + ' extra'], [name.slice(0, -1)], [name.replace('Directory', 'directory')],
+      [name, 'An unknown rendered Directory fixture'], [name, name],
+    ]) {
+      await save({ ...receipt, optionalSkips, tests: { ...receipt.tests, total: 2 + optionalSkips.length, optionalSkipped: optionalSkips.length } });
+      await assert.rejects(verifyReleaseSource(value, directory), /skipped test/);
+    }
+    await save({ ...receipt, optionalSkips: [name], tests: { ...receipt.tests, total: 4, optionalSkipped: 2 } });
+    await assert.rejects(verifyReleaseSource(value, directory), /skipped test/);
+  });
   await save({ ...receipt, optionalSkips: nativeOptional, tests: { ...receipt.tests, total: 6, optionalSkipped: 3, requiredSkipped: 1 } });
   await assert.rejects(verifyReleaseSource(value, directory), /required|failed|pass/i);
   await save(receipt);
