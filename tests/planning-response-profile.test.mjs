@@ -14,7 +14,7 @@ import { responseCycleTemplate } from '../public/response-cycle-model.mjs';
 const schema={type:'object',additionalProperties:false,properties:{answer:{type:'string'}},required:['answer']};
 const answer='{"answer":"Actual public synthetic result"}';
 const features=()=>PLANNING_RESPONSE_DISABLED_FEATURES.map(name=>({name,stage:'stable',enabled:true,defaultEnabled:true}));
-function nativeFixture(t,{ignoredFeature,missingFeature,sandbox,approvalPolicy,featureReadFails=false,connectedGmail=true}={}){
+function nativeFixture(t,{ignoredFeature,missingFeature,sandbox,approvalPolicy,featureReadFails=false,connectedGmail=true,ambientItemType}={}){
   const cwd=process.cwd(),requests=[],events=[];
   const client=new CodexRuntime({command:process.execPath,cwd,runTimeoutMs:2000,getConnectedGmail:()=>connectedGmail,
     spawnImpl(){throw Error('Synthetic boundary tests cannot start a native process.');}});
@@ -35,7 +35,8 @@ function nativeFixture(t,{ignoredFeature,missingFeature,sandbox,approvalPolicy,f
     }
     if(method==='turn/start'){
       const id='synthetic-turn-'+nextThread;
-      setImmediate(()=>client._notification('turn/completed',{threadId:params.threadId,turn:{id,status:'completed',items:[{type:'agentMessage',id:'public-item',phase:'final_answer',text:answer}]}}));
+      setImmediate(()=>{if(ambientItemType)client._notification('item/started',{threadId:params.threadId,turnId:id,item:{id:'ambient-bypass',type:ambientItemType}});
+      client._notification('turn/completed',{threadId:params.threadId,turn:{id,status:'completed',items:[{type:'agentMessage',id:'public-item',phase:'final_answer',text:answer}]}});});
       return {turn:{id,status:'inProgress'}};
     }
     if(['thread/unsubscribe','turn/interrupt'].includes(method))return {};
@@ -125,6 +126,13 @@ test('protected Luna rejects unavailable native tool controls before starting an
   const f=nativeFixture(t,{missingFeature:'browser_use',connectedGmail:false});
   await assert.rejects(f.run({responseOnly:false,hostOnlyTools:true,model:'gpt-6-luna',dynamicTools:[]}),{code:'HOST_ONLY_TRANSPORT_UNSUPPORTED'});
   assert.equal(f.requests.some(x=>x.method==='thread/start'||x.method==='turn/start'),false);
+});
+
+test('protected Luna interrupts an unexpected native command item rather than accepting an ambient effect',async t=>{
+  const f=nativeFixture(t,{ambientItemType:'commandExecution',connectedGmail:false});
+  await assert.rejects(f.run({responseOnly:false,hostOnlyTools:true,model:'gpt-6-luna',dynamicTools:[]}),{code:'HOST_ONLY_NATIVE_EFFECT_ATTEMPT'});
+  assert.equal(f.requests.some(x=>x.method==='turn/start'),true);
+  assert.equal(f.requests.some(x=>x.method==='turn/interrupt'),true);
 });
 
 test('protected Luna rejects a writable native sandbox returned by the server',async t=>{

@@ -35,6 +35,20 @@ async function fixture(t,{runtime=new Runtime(),tasks}={}){
  return{root,cwd,dataDir,engine,runtime,settings,engines};
 }
 async function settle(engine,run){await engine.executions.get(run.id);const out=engine.getRun(run.id);assert.equal(out.status,'completed',out.error||out.nodes.agent.error);return out;}
+test('GPT-6 Luna runs all Directory phases through protected native transport rather than ordinary Chat',async t=>{
+ const f=await fixture(t),native=graph();
+ native.nodes.find(n=>n.id==='agent').model='gpt-6-luna';
+ const run=await settle(f.engine,f.engine.startRun({workflow:native,input:{
+  task:'Evaluate a synthetic claim and verify the response.',directoryMode:'on',subagentsMode:'off'}}));
+ assert.equal(run.executionModes.directoryMode,'on');
+ assert.ok(run.nodes.agent.shadowdancer,'Directory execution must not be disabled for Luna');
+ assert.equal(run.nodes.agent.shadowdancer.model,'gpt-6-luna');
+ assert.equal(f.runtime.calls.length,3);
+ assert.ok(f.runtime.calls.every(options=>phaseOf(options)&&options.hostOnlyTools===true
+   &&options.model==='gpt-6-luna'&&!options.threadId&&!options.continuity));
+ assert.equal(run.nodes.agent.directoryCompatibility,undefined,'No silent ordinary-Chat downgrade');
+});
+
 test('Chat modes change real execution on-off-on and survive restart without rewriting prior runs',async t=>{
  const f=await fixture(t),{engine,runtime}=f;
  const one=await settle(engine,engine.startRun({workflow:graph(),input:{task:'FIRST_USER_RESTRICTION: never send anything externally.',directoryMode:'on',subagentsMode:'off'}}));
