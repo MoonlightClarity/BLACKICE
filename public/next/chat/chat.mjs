@@ -456,7 +456,10 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     state.pending=true;updateHead();hint(kind==='retry'?'Starting retry…':'Requesting Stop…');
     try {
       const suffix=kind==='retry'?'retry':'cancel';
-      await api('/api/runs/'+encodeURIComponent(id)+'/'+suffix,'POST',{});
+      const saved=state.runs.find(run=>run.id===id);
+      if(kind==='retry'&&!saved)throw Error('The saved response is unavailable. Reopen it before retrying.');
+      const payload=kind==='retry'?{context:{...conversationContext([saved]).context,autoCompact:true}}:{};
+      await api('/api/runs/'+encodeURIComponent(id)+'/'+suffix,'POST',payload);
       notify(kind==='retry'?'Retry started.':'Stop requested.');
       await open(state.selected,{refresh:true});
     }catch(error){showError(error);}finally{state.pending=false;updateHead();}

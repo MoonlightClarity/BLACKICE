@@ -281,6 +281,7 @@ async function chatFixture(t,{compress,continueResponse,cancel,attachments=[]}={
   const api=async(route,method='GET',body)=>{calls.push({route,method,body});
     if(route.startsWith('/api/conversations?'))return{conversations:[]};if(route==='/api/attachments')return[];
     if(route==='/api/status')return status;if(route.endsWith('/compact'))return compress(route,body);
+    if(route.endsWith('/retry'))return families.get('b').runs[0];
     if(route.endsWith('/cancel')&&cancel)return cancel(route,body);
     if(route.endsWith('/continue')&&continueResponse)return continueResponse({route,body,families});
     if(route.endsWith('/steer'))return{accepted:true,delivery:'delivered'};
@@ -403,4 +404,14 @@ test('a chat workflow with Extended context can reopen, edit and save through th
   assert.equal(calls.length,0);await dom.$('#next-workflow-edit-form').dispatch('submit');await until(()=>dom.$('#next-workflow-edit-feedback').textContent==='Workflow saved.');
   assert.deepEqual(stored.nodes[0].context,{preset:'extended',windowTokens:null,autoCompact:false,headroomTokens:2048});
   assert.deepEqual(stored.nodes[0].tools,['keep-tool']);assert.equal(stored.settings.untouched,'keep');assert.equal(preset.value,'extended');
+});
+
+test('Chat Retry restores the selected failed response budget with automatic compaction, not an unsent draft',async t=>{
+  const f=await chatFixture(t),run=f.families.get('b').runs[0];run.status='failed';run.nodes.agent.status='failed';run.error='Fixture failure';
+  const before=structuredClone(run);await f.open('b');
+  f.$('#next-chat-context-preset').value='900k';await f.$('#next-chat-context-preset').dispatch('change');
+  const retry=[...f.mount.querySelectorAll('button')].find(el=>el.textContent==='Retry');assert.ok(retry);
+  await retry.dispatch('click');await until(()=>f.calls.some(call=>call.route.endsWith('/retry')));
+  assert.deepEqual(f.calls.find(call=>call.route.endsWith('/retry')).body,{context:{preset:'custom',windowTokens:96000,autoCompact:true}});
+  assert.deepEqual(run,before);
 });

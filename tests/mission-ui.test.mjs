@@ -51,6 +51,7 @@ function mountMission(f, snapshot, callbacks = {}) {
     onStart: async config => { starts.push(config); return callbacks.start?.(config); },
     onQueue: async config => { queued.push(config); return callbacks.queue ? callbacks.queue(config) : { id: 'queued-item', status: 'queued' }; },
     onCapture: async config => { captures.push(config); return callbacks.capture?.(config); },
+    onRetry: async (id,options) => { mutations.push({retry:{id,options}}); return callbacks.retry?.(id,options); },
     onContinue: async config => { mutations.push({ continue: config }); return callbacks.continue?.(config); },
     onOpenRun: async id => { opened.push(id); await callbacks.open?.(id); const run = snapshot.runs.find(run => run.id === id); if (run) snapshot.currentRun = run; },
     onStop: async (id, options) => { stopped.push(id); return callbacks.stop?.(id, options); },
@@ -1799,4 +1800,11 @@ test('classic Chat makes saved disabled compaction automatic without discarding 
   const saved=savedDrafts('Continue with automatic context');saved.conversationDrafts.new.context={preset:'custom',windowTokens:96000,autoCompact:false};
   const f=missionFixture(t,saved),h=mountMission(f,statusSnapshot([]));await turn();await h.submit();
   assert.deepEqual(h.starts[0].context,{preset:'custom',windowTokens:96000,autoCompact:true});
+});
+test('classic Chat Retry uses saved context with automatic compaction rather than pending next-turn edits',async t=>{
+  const f=missionFixture(t,savedDrafts('')),run=fixtureRun('retry-context','completed');run.status='failed';run.workflow.nodes[0].context={preset:'custom',windowTokens:96000,autoCompact:false};
+  const snapshot=statusSnapshot([run]),h=mountMission(f,snapshot);await turn();await h.ui.openConversation(run.id);
+  h.ui.setContext({preset:'900k'});await h.action('retry');
+  assert.deepEqual(h.mutations.find(item=>item.retry)?.retry,{id:run.id,options:{context:{preset:'custom',windowTokens:96000,autoCompact:true}}});
+  assert.equal(run.workflow.nodes[0].context.autoCompact,false);
 });
