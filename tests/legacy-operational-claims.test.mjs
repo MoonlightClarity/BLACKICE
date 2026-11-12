@@ -6,6 +6,8 @@ import os from 'node:os';
 import { TaskStateStore } from '../lib/task-state.mjs';
 import { createWorkspaceToolHandler } from '../lib/workspace-tools.mjs';
 import { createOperationalEffectGuard } from '../lib/operational-effect-guard.mjs';
+import { createHash } from 'node:crypto';
+import { describeHostOperation, normalizeHostOperationResult, browserReceiptBindingKey } from '../lib/operation-descriptors.mjs';
 import { normalizeContractEvidence } from '../lib/planning-contract-evidence.mjs';
 import { assertNoRetainedEffectConflict } from '../lib/legacy-operational-claims.mjs';
 
@@ -224,4 +226,62 @@ test('a changed early journal during a multi-batch scan is rechecked before admi
   try{await assert.rejects(assertNoRetainedEffectConflict(f.store,'new-task',descriptor),{code:'TASK_CONTRACT_EFFECT_UNCERTAIN'});}
   finally{fs.lstat=original;}
   assert.equal(changed,true);
+});
+
+async function historicalScopedReceipt(t,action){
+  const f=await fixture(t),hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  const submitted={name:'relay_browser',arguments:{action:'click',tabId:'one',ref:'submit'}};
+  const form={current:true,tabId:'one',documentId:'before',url:'https://portal.test/form',control:{ref:'submit',kind:'form-submit',
+    form:{id:'form',documentId:'before',action:'https://portal.test/enroll',method:'POST',enctype:'application/x-www-form-urlencoded',target:'_self',
+      payloadDigest:hash('payload'),attachmentDigests:[],identityDigests:[{name:'participant',digest:hash('p1')}]}}};
+  const target=await describeHostOperation(submitted,{browserObservation:form});
+  const binding={version:1,format:'dom',resourceKey:'origin:https://portal.test',record:'#receipt',status:'data-status',
+    confirmedValues:['confirmed'],absentValues:['rejected'],outcomeId:'data-outcome',destination:'data-destination',history:false,
+    identity:[{field:'data-participant',formField:'participant'}]};
+  const observation={current:true,tabId:'one',documentId:'after',url:'https://portal.test/receipt',receipts:[{
+    bindingKey:browserReceiptBindingKey(binding),records:[{status:'rejected',outcomeId:'p1',destination:'/enroll',
+      identityValues:[{name:'participant',field:'data-participant',value:'p1'}]}]}]};
+  const sourceCall={name:'relay_browser',arguments:{action,tabId:'one',...(action==='click'?{ref:'next'}:{})}};
+  const descriptor=await describeHostOperation(sourceCall,{browserObservation:observation});
+  const original=row(target.resources,{...target,deliveryState:'interrupted',effectState:'unknown',tool:'relay_browser',action:'click'});
+  const normalized=await normalizeHostOperationResult({success:true,contentItems:[{type:'inputText',text:JSON.stringify({
+    documentId:observation.documentId,url:observation.url,text:'Observed destination receipt'})}]},{
+    call:sourceCall,descriptor,browserObservation:observation,criteria:[{id:'receipt',kind:'external-confirmation',receiptBinding:binding}],commitments:[original]});
+  const input=normalized.evidence.find(proof=>proof.kind==='external-confirmation');
+  assert.ok(input,'real host normalizer must emit the historical scoped destination receipt');
+  assert.equal(input.confirmation.status,'absent');
+  const proof=normalizeContractEvidence(input,{operationId:'source-observation',workItemId:'receipt-item',at:'2026-11-12T00:00:00.000Z'});
+  const source=row(descriptor.resources,{...descriptor,operationId:'source-observation',workItemId:'receipt-item',journalSeq:2,deliveryState:'returned',
+    effectState:descriptor.effect==='observe'?'not-applicable':'confirmed',success:true,tool:'relay_browser',action,evidenceIds:[proof.id]});
+  original.effectState='absent';original.reconciliationEvidenceIds=[proof.id];
+  return{...f,target,value:{...journal('ancient-task',[original,source]),evidence:[proof]}};
+}
+for(const action of ['read','click'])test('historical scopeOnly destination receipt from successful '+action+' preserves supported absence',async t=>{
+  const f=await historicalScopedReceipt(t,action);
+  assert.equal(f.value.evidence[0].resourceKey,'origin:https://portal.test');
+  assert.equal(f.value.records[1].effect,action==='read'?'observe':'opaque');
+  const file=await f.save([],{value:f.value}),before=await fs.readFile(file,'utf8');
+  await assertNoRetainedEffectConflict(f.store,'new-task',f.target);
+  assert.equal(await fs.readFile(file,'utf8'),before);
+});
+
+test('scoped historical receipt rejects wrong destination, document, adapter, action and source scope',async t=>{
+  const f=await historicalScopedReceipt(t,'read');
+  const changeProof=(value,change)=>{
+    const {id,operationId,workItemId,at,...input}=value.evidence[0];change(input);
+    const proof=normalizeContractEvidence(input,{operationId,workItemId,at});value.evidence=[proof];
+    value.records[0].reconciliationEvidenceIds=[proof.id];value.records[1].evidenceIds=[proof.id];
+  };
+  for(const mutate of [
+    value=>changeProof(value,proof=>{proof.validation.destinationKey='destination:https://other.test/enroll';}),
+    value=>changeProof(value,proof=>{proof.validation.documentId='different-document';}),
+    value=>changeProof(value,proof=>{proof.validation.source='caller-claim';}),
+    value=>changeProof(value,proof=>{proof.validation.action='click';}),
+    value=>{value.records[1].tool='relay_workspace';},
+    value=>{value.records[1].resources.find(resource=>resource.key==='document:after').scopeKeys=[];},
+    value=>{value.records[1].resources.find(resource=>resource.key==='origin:https://portal.test').scopeOnly=false;value.records[1].resources.push({key:'origin:https://portal.test',access:'read'});}
+  ]){
+    const invalid=structuredClone(f.value);mutate(invalid);await f.save([],{value:invalid});
+    await assert.rejects(assertNoRetainedEffectConflict(f.store,'new-task',f.target),{code:'TASK_CONTRACT_JOURNAL_UNAVAILABLE'});
+  }
 });
