@@ -60,6 +60,12 @@ async function native(){
     window.webContents.on('console-message',(_e,level,message)=>{if(level>=3)failures.push(message);});
     await window.loadURL(new URL('/',origin).href);
     const evaluate=expression=>window.webContents.executeJavaScript(expression);
+    const clickControl=async(action,id)=>{
+      const selector='[data-request-id="'+id+'"][data-owner-recovery="'+action+'"]:not(:disabled)';
+      await until(()=>evaluate('Boolean(document.querySelector('+JSON.stringify(selector)+'))'),'Exact '+action+' control');
+      await evaluate('(()=>{const n=document.querySelector('+JSON.stringify(selector)+');n.scrollIntoView({block:"center"});n.click();return true})()');
+    };
+    const bounded=promise=>Promise.race([promise,new Promise((_,reject)=>{const timer=setTimeout(()=>reject(Error('Synthetic native decision did not settle')),15000);timer.unref();})]);
     await until(()=>evaluate('Boolean(document.querySelector(".next-tab[data-space=settings]"))'),'App shell');
     await evaluate('document.querySelector(".next-tab[data-space=settings]").click();true');
     await until(()=>evaluate('Boolean(document.querySelector("#next-settings-section-recovery"))'),'Settings tabs');
@@ -78,8 +84,8 @@ async function native(){
     assert.match(await evaluate('document.querySelector("#next-settings-recovery").textContent'),/synthetic-immutable-digest/);
     await evaluate('document.querySelector(".owner-recovery details").open=true;true');
     await writeFile(path.join(output,'settings-wide.png'),(await window.webContents.capturePage()).toPNG());
-    await evaluate('document.querySelector("[data-owner-recovery=review]").click();true');
-    const approval=await first.promise;assert.equal(dialogs.length,1);
+    await clickControl('review',first.request.requestId);
+    const approval=await bounded(first.promise);assert.equal(dialogs.length,1);
     assert.match(dialogs[0].detail,/synthetic-only/);assert.match(dialogs[0].detail,/fixture-old-operation/);
     assert.equal(dialogs[0].defaultId,0);harness.ownerRecovery.consumed(approval.requestId);
     assert.deepEqual(harness.ownerRecovery.read(approval.requestId).claims,claims);
@@ -89,16 +95,14 @@ async function native(){
     dialogResponse=0;const second=seed('Synthetic cancelled action');
     const cancelled=second.promise.then(()=>({unexpected:true}),error=>({code:error.code}));
     await evaluate('document.querySelector("[data-owner-recovery=refresh]").click();true');
-    await until(()=>evaluate('Boolean(document.querySelector("[data-owner-recovery=review]:not(:disabled)"))'),'Second pending review');
-    await evaluate('document.querySelector("[data-owner-recovery=review]").click();true');
-    assert.equal((await cancelled).code,'OWNER_RECOVERY_CANCELLED');assert.equal(dialogs.length,2);
+    await clickControl('review',second.request.requestId);
+    assert.equal((await bounded(cancelled)).code,'OWNER_RECOVERY_CANCELLED');assert.equal(dialogs.length,2);
     assert.deepEqual(harness.ownerRecovery.read(second.request.requestId).claims,claims);
 
     const third=seed('Synthetic direct cancel');const directCancelled=third.promise.catch(error=>error.code);
     await evaluate('document.querySelector("[data-owner-recovery=refresh]").click();true');
-    await until(()=>evaluate('Boolean(document.querySelector("[data-owner-recovery=cancel]:not(:disabled)"))'),'Cancel control');
-    await evaluate('document.querySelector("[data-owner-recovery=cancel]").click();true');
-    assert.equal(await directCancelled,'OWNER_RECOVERY_CANCELLED');assert.equal(dialogs.length,2);
+    await clickControl('cancel',third.request.requestId);
+    assert.equal(await bounded(directCancelled),'OWNER_RECOVERY_CANCELLED');assert.equal(dialogs.length,2);
     await evaluate('document.querySelector("#next-settings-section-general").click();document.querySelector("#next-settings-section-recovery").click();true');
     window.setContentSize(780,560);
     await new Promise(r=>setTimeout(r,250));
