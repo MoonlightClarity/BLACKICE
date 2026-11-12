@@ -25,4 +25,6 @@ contextBridge.exposeInMainWorld('relayDesktop', Object.freeze({
   },
   backupProfile: () => ipcRenderer.invoke('relay:backup-profile'),
   restoreProfile: () => ipcRenderer.invoke('relay:restore-profile'),
+  reviewRetainedEffect: reference => ipcRenderer.invoke('relay:review-retained-effect', reference),
+  cancelRetainedEffect: reference => ipcRenderer.invoke('relay:cancel-retained-effect', reference),
 }));

@@ -5,6 +5,7 @@ import { promises as fs, constants } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHarnessServer } from '../server.mjs';
+import { createOwnerRecoveryHandlers } from './owner-recovery.mjs';
 import { BrowserWorkspace } from '../lib/browser.mjs';
 import { ElectronBrowserDriver } from './browser-driver.mjs';
 import { BrowserRouter } from './browser-router.mjs';
@@ -328,7 +329,7 @@ async function startLocalHarness(dataDir, defaultCwd) {
       decryptSecret: value => safeStorage.decryptString(Buffer.from(value, 'base64')),
     } : {};
     const credentialStorage = { ...secretStorage, storageBackend: () => process.platform === 'win32' ? 'dpapi' : process.platform === 'darwin' ? 'keychain' : safeStorage.getSelectedStorageBackend(), isEncryptionAvailable: () => safeStorage.isEncryptionAvailable() };
-    try { return await createHarnessServer({ installPath: path.dirname(process.execPath), port: selectedPort, dataDir, defaultCwd, browser, secretStorage, credentialStorage, frontendDevtools,
+    try { return await createHarnessServer({ installPath: path.dirname(process.execPath), port: selectedPort, dataDir, defaultCwd, browser, secretStorage, credentialStorage, frontendDevtools, nativeOwnerRecovery: true,
       protectCredentialTemporaryDirectory: credentialTemporaryProtection({ dataDir }), revealCredentialImportFile: filename => shell.showItemInFolder(filename),
       openExternal: url => shell.openExternal(url), nativeWindows:null, tokenRuntimeExecutable: process.execPath, diagnostics, desktopLifecycle, desktopRestart, connectionStartup, idleInterruptions, maintenanceStatus:()=>maintenanceReceipt?{mode:maintenanceReceipt.mode,status:maintenanceReceipt.status,requiresReauthentication:maintenanceReceipt.result?.requiresReauthentication===true}:null, signedBrowser: true, startSignedBrowser: browserOptions => startBackgroundBrowser(browserOptions) }); }
     catch (error) { await browser.close(); throw error; }
@@ -538,6 +539,9 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
     await startup.step(() => harness.desktop.setEnabled(true));
     harness.server.on('relay.shutdown', () => app.quit());
     origin = local.url;
+    const ownerRecoveryHandlers = createOwnerRecoveryHandlers({ trustedSender, control: harness.ownerRecovery, showMessageBox: options => dialog.showMessageBox(mainWindow, options) });
+    ipcMain.handle('relay:review-retained-effect', ownerRecoveryHandlers.review);
+    ipcMain.handle('relay:cancel-retained-effect', ownerRecoveryHandlers.cancel);
     ipcMain.handle('relay:write-clipboard', createClipboardHandler({ trustedSender, writeText: text => clipboard.writeText(text) }));
     ipcMain.handle('relay:browser-surface', (event, request) => {
       if (!trustedSender(event)) throw new Error('Browser surface requests must come from BLACKICE.');
