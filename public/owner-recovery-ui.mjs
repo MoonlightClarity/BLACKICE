@@ -46,7 +46,7 @@ export function renderOwnerRecovery(value = {}, {busy = '',error = '',receipt = 
         '<details><summary>Exact action and preconditions</summary><pre>'+escape(description(row.candidate))+'</pre></details>'+
         '<details><summary>Retained uncertainties ('+row.claims.length+')</summary>'+row.claims.map(claim=>'<div class="owner-recovery-claim"><p>'+escape(claim.summary||'Historical command with unknown effects')+'</p><dl><dt>Recorded state</dt><dd>'+escape(claim.effectState)+'</dd><dt>Task / operation</dt><dd>'+escape(claim.taskId+' / '+claim.operationId)+'</dd><dt>Record fingerprint</dt><dd>'+escape(claim.rowDigest)+'</dd><dt>Journal fingerprint</dt><dd>'+escape(claim.journalDigest)+'</dd></dl></div>').join('')+'</details>'+
         (row.risk?'<p class="owner-recovery-risk">'+escape(row.risk)+'</p>':'')+
-        (row.state==='consumed'?'<p>The new action was reserved with an UNKNOWN receipt before dispatch. Check its task result; this is not proof that it succeeded.</p>':'')+
+        (row.state==='consumed'?'<p>One-use approval was consumed at admission. Check the task result; this is not proof that it succeeded.</p>':'')+
         (row.state==='approved'?'<p>Approval is not completion. Current preconditions and all remaining checks must still pass.</p>':'')+
         (row.state==='pending'?'<div class="owner-recovery-actions">'+button('review','Review once in native dialog',row,!ready)+button('cancel','Cancel pending action',row,!ready)+'</div>':'')+
         (uncertain===row.requestId?'<p role="status">The previous request outcome is uncertain. Check status; it will not be resent automatically.</p>':'')+
