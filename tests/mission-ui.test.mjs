@@ -977,7 +977,7 @@ test('Draft next action keeps unfinished milestones on a finished response and u
   assert.match(work.innerHTML, /Draft next action/); assert.doesNotMatch(work.innerHTML, /Make repeatable/); assert.match(work.innerHTML, /Next<\/span><strong>Verify keyboard controls/); assert.match(work.innerHTML, /1<span> \/ 2 done/);
   await h.action('continue-milestone', { id: run.id }); assert.match(h.ui.getDraft().task, /Next action: Verify keyboard controls/); assert.doesNotMatch(h.ui.getDraft().task, /Old broader instruction/); assert.match(h.ui.getDraft().task, /Done when: Every control works/);
   assert.deepEqual({ ...h.ui.getDraft(), task: before.task }, before); assert.equal(h.mutations.length, 0); assert.equal(h.starts.length, 0); assert.equal(h.queued.length, 0);
-  await h.submit(); const sent = h.mutations.find(item => item.continue).continue; assert.equal(sent.runId, run.id); assert.match(sent.message, /Next action: Verify keyboard controls/); assert.equal(sent.model, 'cloud::chosen'); assert.equal(sent.effort, 'ultra'); assert.deepEqual(sent.context, { preset: '900k' }); assert.deepEqual(sent.attachmentIds, ['kept-file']); assert.equal(run.taskState.steps[1].status, 'pending');
+  await h.submit(); const sent = h.mutations.find(item => item.continue).continue; assert.equal(sent.runId, run.id); assert.match(sent.message, /Next action: Verify keyboard controls/); assert.equal(sent.model, 'cloud::chosen'); assert.equal(sent.effort, 'ultra'); assert.deepEqual(sent.context, { preset: '900k', autoCompact:true }); assert.deepEqual(sent.attachmentIds, ['kept-file']); assert.equal(run.taskState.steps[1].status, 'pending');
 });
 
 test('Draft next action preserves existing local and newer cross-window drafts and ignores superseded or active runs', async t => {
@@ -1056,7 +1056,7 @@ test('context and reasoning are optional per-chat choices that continue the sele
   await h.ui.openConversation(a.id);assert.deepEqual(h.ui.getDraft().context,{preset:'900k'});assert.equal(h.ui.getDraft().effort,'medium');h.ui.setContext({preset:'custom',windowTokens:128000});await h.effort('ultra');await h.text('Continue A with my exact settings');
   await h.ui.openConversation(b.id);assert.deepEqual(h.ui.getDraft().context,{preset:'custom',windowTokens:64000});assert.equal(h.ui.getDraft().effort,'high');h.ui.setContext({preset:'model'});await h.effort('max');
   await h.ui.openConversation(a.id);assert.deepEqual(h.ui.getDraft().context,{preset:'custom',windowTokens:128000});assert.equal(h.ui.getDraft().effort,'ultra');await h.submit();
-  const sent=h.mutations.find(item=>item.continue).continue;assert.equal(sent.runId,a.id);assert.equal(sent.effort,'ultra');assert.deepEqual(sent.context,{preset:'custom',windowTokens:128000});assert.equal(b.workflow.nodes[0].effort,'high');
+  const sent=h.mutations.find(item=>item.continue).continue;assert.equal(sent.runId,a.id);assert.equal(sent.effort,'ultra');assert.deepEqual(sent.context,{preset:'custom',windowTokens:128000,autoCompact:true});assert.equal(b.workflow.nodes[0].effort,'high');
   await h.action('new-task');assert.equal(h.ui.getDraft().effort,'default');assert.equal(h.ui.getDraft().context,undefined);assert.deepEqual(h.persisted().conversationDrafts[a.id].context,{preset:'custom',windowTokens:128000});
 });
 
@@ -1079,8 +1079,8 @@ test('model changes keep an unavailable reasoning override visible and block sen
 
 test('unverified reasoning and context survive ambiguous submissions and changes create a fresh request',async t=>{
   const f=missionFixture(t,savedDrafts('Try exact provider settings')),snapshot=statusSnapshot([]);let attempts=0;
-  const h=mountMission(f,snapshot,{start:async()=>{if(++attempts<3)throw new Error('Response lost.');}});await turn();h.ui.setContext({preset:'900k'});await h.effort('max');await h.submit();const request=h.starts[0];assert.equal(request.effort,'max');assert.deepEqual(request.context,{preset:'900k'});assert.match(f.element('#mission-effort-note').textContent,/unverified/);
-  await h.submit();assert.equal(h.starts[1].requestId,request.requestId);assert.equal(h.starts[1].effort,'max');assert.deepEqual(h.persisted().conversationDrafts.new.pendingSend.config.context,{preset:'900k'});
+  const h=mountMission(f,snapshot,{start:async()=>{if(++attempts<3)throw new Error('Response lost.');}});await turn();h.ui.setContext({preset:'900k'});await h.effort('max');await h.submit();const request=h.starts[0];assert.equal(request.effort,'max');assert.deepEqual(request.context,{preset:'900k',autoCompact:true});assert.match(f.element('#mission-effort-note').textContent,/unverified/);
+  await h.submit();assert.equal(h.starts[1].requestId,request.requestId);assert.equal(h.starts[1].effort,'max');assert.deepEqual(h.persisted().conversationDrafts.new.pendingSend.config.context,{preset:'900k',autoCompact:true});
   await h.effort('ultra');assert.equal(h.persisted().conversationDrafts.new.pendingSend,undefined);await h.submit();assert.notEqual(h.starts[2].requestId,request.requestId);assert.equal(h.starts[2].effort,'ultra');assert.equal(h.ui.getDraft().effort,'default');assert.equal(h.ui.getDraft().context,undefined,'one-off new-chat settings do not become application defaults');
 });
 
@@ -1089,7 +1089,7 @@ test('context editor validates before sending and keeps focused fields intact du
   const container=f.element('#mission-context-fields'),field=f.element('context-input'),fields=f.element('context-fields');field.dataset={contextOption:'windowTokens'};field.type='number';field.value='100';field.checkValidity=()=>true;field.closest=query=>query==='[data-context-fields]'?fields:null;fields.dataset.contextFields='mission-chat-context';fields.querySelectorAll=query=>query==='[data-context-option]'?[{dataset:{contextOption:'preset'},type:'select-one',value:'custom'},field]:[field];container.querySelectorAll=query=>query==='[data-context-fields]'?[fields]:[];container.contains=value=>value===field;field.focus();
   const markup=container.innerHTML;await f.mount.dispatch('input',{target:field});assert.equal(f.element('#mission-start-button').disabled,true);assert.match(f.element('#mission-context-error').textContent,/4,096/);await h.submit();assert.equal(h.starts.length,0);
   await h.ui.refreshHistory();assert.equal(container.innerHTML,markup);assert.equal(globalThis.document.activeElement,field);
-  field.value='96000';await f.mount.dispatch('input',{target:field});assert.equal(f.element('#mission-start-button').disabled,false);await h.submit();assert.deepEqual(h.starts[0].context,{preset:'custom',windowTokens:96000});
+  field.value='96000';await f.mount.dispatch('input',{target:field});assert.equal(f.element('#mission-start-button').disabled,false);await h.submit();assert.deepEqual(h.starts[0].context,{preset:'custom',windowTokens:96000,autoCompact:true});
 });
 
 test('Save for later cannot also start work through Enter, Ctrl+Enter or a direct form submission', async t => {
@@ -1793,4 +1793,10 @@ for (const savedChoice of [null, 'true', 'false']) test('Chat quiet defaults res
   assert.equal(resumed.ui.getDraft().task, 'Keep this through a reload');
   assert.deepEqual(run, before);
   assert.equal(h.starts.length + h.queued.length + h.mutations.length + resumed.starts.length + resumed.queued.length + resumed.mutations.length, 0);
+});
+
+test('classic Chat makes saved disabled compaction automatic without discarding the budget',async t=>{
+  const saved=savedDrafts('Continue with automatic context');saved.conversationDrafts.new.context={preset:'custom',windowTokens:96000,autoCompact:false};
+  const f=missionFixture(t,saved),h=mountMission(f,statusSnapshot([]));await turn();await h.submit();
+  assert.deepEqual(h.starts[0].context,{preset:'custom',windowTokens:96000,autoCompact:true});
 });

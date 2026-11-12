@@ -155,7 +155,7 @@ export function createContextCompaction({api,onChange=()=>{},onComplete=()=>{}})
   };
 }
 
-export function createContextControls({mount,id='next-context',scope='chat',api,onChange=()=>{},onOperationChange=()=>{},onComplete=()=>{},onClose=()=>{}}){
+export function createContextControls({mount,id='next-context',scope='chat',automaticCompaction=false,api,onChange=()=>{},onOperationChange=()=>{},onComplete=()=>{},onClose=()=>{}}){
   const defaults=scope==='defaults';
   mount.classList.add('next-context-controls');
   mount.dataset.scope=scope;
@@ -187,7 +187,7 @@ export function createContextControls({mount,id='next-context',scope='chat',api,
   const drafts=new Map();
   const compaction=api&&!defaults?createContextCompaction({api,onChange:target=>{draw();onOperationChange(target);},onComplete}):null;
   const draft=()=>{
-    const value={...base,preset:f.preset.value,windowTokens:f.preset.value==='custom'?(f.window.value.trim()?Number(f.window.value):null):null,autoCompact:f.auto.checked};
+    const value={...base,preset:f.preset.value,windowTokens:f.preset.value==='custom'?(f.window.value.trim()?Number(f.window.value):null):null,autoCompact:automaticCompaction||f.auto.checked};
     for(const [element,key]of [[f.trigger,'compactAtTokens'],[f.recent,'keepRecentTokens'],[f.reserve,'outputReserveTokens'],[f.headroom,'headroomTokens']]){if(element.value.trim())value[key]=Number(element.value);else delete value[key];}
     return contextOptions(value);
   };
@@ -220,7 +220,7 @@ export function createContextControls({mount,id='next-context',scope='chat',api,
       notes.splice(0,notes.length,nativeContextReason,...(unsupported?['Unsupported draft retained: '+retained.join(' · ')+'. Use native automatic context to clear these settings explicitly.']:[]));
     }
     f.budgetNote.textContent=notes.join(' ');
-    f.budgetControls.hidden=automatic&&!unsupported;f.apiOptions.hidden=automatic;f.autoRow.hidden=automatic;f.advanced.hidden=automatic;
+    f.budgetControls.hidden=automatic&&!unsupported;f.apiOptions.hidden=automatic;f.autoRow.hidden=automatic||automaticCompaction;f.advanced.hidden=automatic;
     f.nativeReset.hidden=!unsupported;f.nativeReset.disabled=busy||snapshot.readonly===true;
     f.autoLabel.textContent=automatic?'Native automatic context management':defaults?'Automatically compress saved history when needed':info.native?'Compress imported saved history automatically':'Automatically compress conversation context';
     f.autoHelp.textContent=automatic?nativeContextReason:defaults?'For API models, this also enables automatic summaries. Codex continues to manage its own automatic compaction.':info.native?'Codex manages automatic compaction during native turns. This option controls BLACKICE’s compression when saved history is restored.':'BLACKICE summarizes older exchanges near the input budget and keeps recent context. Compression uses the selected model; saved messages remain available.';
@@ -252,7 +252,7 @@ export function createContextControls({mount,id='next-context',scope='chat',api,
     f.toggle.setAttribute('aria-expanded',String(expanded));
     mount.dataset.expanded=String(expanded);mount.hidden=!defaults&&!expanded&&!operation?.message;
   }
-  function load(value){base=contextOptions(value);f.preset.value=base.preset;f.window.value=base.preset==='custom'?String(base.windowTokens??''):'';f.auto.checked=base.autoCompact;f.trigger.value=String(base.compactAtTokens??'');f.recent.value=String(base.keepRecentTokens??'');f.reserve.value=String(base.outputReserveTokens??'');f.headroom.value=String(base.headroomTokens??'');f.advanced.open=base.outputReserveTokens!==undefined||base.headroomTokens!==undefined;dirty=false;revision++;draw();}
+  function load(value){base=contextOptions(automaticCompaction?{...value,autoCompact:true}:value);f.preset.value=base.preset;f.window.value=base.preset==='custom'?String(base.windowTokens??''):'';f.auto.checked=base.autoCompact;f.trigger.value=String(base.compactAtTokens??'');f.recent.value=String(base.keepRecentTokens??'');f.reserve.value=String(base.outputReserveTokens??'');f.headroom.value=String(base.headroomTokens??'');f.advanced.open=base.outputReserveTokens!==undefined||base.headroomTokens!==undefined;dirty=false;revision++;draw();}
   function changed(){dirty=true;revision++;draw();onChange(draft(),revision);}
   function setExpanded(value,{focus=false}={}){expanded=Boolean(value);draw();if(focus&&expanded)(info.automaticOnly?(f.nativeReset.hidden?f.toggle:f.nativeReset):f.preset).focus();if(!expanded&&!defaults)onClose();}
   f.toggle.addEventListener('click',()=>setExpanded(!expanded));

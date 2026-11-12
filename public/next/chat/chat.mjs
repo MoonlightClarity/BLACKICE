@@ -15,25 +15,8 @@ import { createArtifactViewer } from './artifacts.mjs';
 import { planningActivityForEvent, mergePlanningActivity, chatProgressPreview } from './planning-timeline.mjs';
 import { createContextControls, conversationContext, contextStatistics, compactionStatistics } from '../core/context-controls.mjs';
 
-// One registry owns spelling, aliases, completion and local dispatch.
-const CHAT_COMMANDS=[
-  {id:'compress',aliases:['compact'],description:'Compress saved conversation context'},
-  {id:'context',aliases:['ctx'],description:'Inspect context and adjust the next response'},
-];
-const commandSuggestions=value=>{
-  const match=String(value||'').trim().match(/^\/([a-z]*)$/i);
-  return match?CHAT_COMMANDS.filter(item=>[item.id,...item.aliases].some(name=>name.startsWith(match[1].toLowerCase()))):[];
-};
-const commandFor=value=>{
-  const match=String(value||'').trim().match(/^\/([^\s]+)(?:\s+([\s\S]*))?$/);
-  if(!match)return null;
-  const name=match[1].toLowerCase(),command=CHAT_COMMANDS.find(item=>item.id===name||item.aliases.includes(name));
-  return command?{command,args:match[2]?.trim()||''}:null;
-};
-
 export function createChatWorkspace({ mount, api, events, getStatus, notify = () => {}, onNavigate }) {
   const view = createChatFrame(mount);
-  const hostWindow=mount.ownerDocument.defaultView||globalThis.window;
   const modelPicker=createGroupedModelPicker({select:view.model,label:'Model',onSetupProvider:typeof onNavigate==='function'?id=>onNavigate('settings',{modelProviderId:id}):undefined,onEnableProvider:async id=>{
     const owner=root(),fresh=await enableProviderForModel(api,runtimeStatus,id);
     if(state.destroyed||!state.active||root()!==owner)return null;
@@ -45,7 +28,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   const modelSelections=createConversationModelSelection({storage:{getItem:key=>localStorage.getItem(key),setItem:(key,value)=>localStorage.setItem(key,value)}});
   const state = { active:false, selected:null, list:[], runs:[], bucket:'active', count:12,
     loading:false, pending:false, broken:false, connected:false, markdown:null, generation:0,
-    refreshing:false, inputOwner:'new', drafts:new Map(),commandDrafts:new Map(), stream:[], liveTimer:null, listTimer:null,
+    refreshing:false, inputOwner:'new', drafts:new Map(), stream:[], liveTimer:null, listTimer:null,
     dataController:null, unsubscribe:null, lastLoadedAt:0,
     indexLimit:CHAT_INDEX_BATCH, indexQuery:'',messageLimits:new Map(),
     attachmentIds:new Map(), attachmentsPending:false,managing:false,selecting:false,selection:new Map(),visible:[],listRead:0,destroyed:false,inputRevision:0,
@@ -130,7 +113,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   const selectedBucket=()=>state.selected?.state||state.bucket;
   const contextMount=mount.ownerDocument.createElement('section');
   view.form.parentElement.insertBefore(contextMount,view.form);
-  const contextControls=createContextControls({mount:contextMount,id:'next-chat-context',api,
+  const contextControls=createContextControls({mount:contextMount,id:'next-chat-context',automaticCompaction:true,api,
     onClose:()=>view.input.focus({preventScroll:true}),
     onOperationChange:()=>{if(!state.destroyed)updateHead();},
     onComplete:(target,result)=>{
@@ -167,70 +150,23 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   }catch{}
   view.input.value=state.drafts.get('new')||'';
   let draftTimer=null;
-  const saveDraft=()=>{const commandDraft=state.commandDrafts.get(state.inputOwner);if(commandDraft)commandDraft.input=view.input.value;state.drafts.set(state.inputOwner,commandDraft?.draft??view.input.value);
+  const saveDraft=()=>{state.drafts.set(state.inputOwner,view.input.value);
     try{localStorage.setItem('blackice.next.drafts',JSON.stringify(Object.fromEntries([...state.drafts].slice(-50))));}catch{}};
   const scheduleDraft=()=>{clearTimeout(draftTimer);draftTimer=setTimeout(saveDraft,250);};
   const choose = key => {
     if (state.inputOwner === key) return;
-    saveDraft();closeCommandMenu();
+    saveDraft();
     state.inputOwner=key;
-    view.input.value=state.commandDrafts.get(key)?.input??state.drafts.get(key)??'';
+    view.input.value=state.drafts.get(key)??'';
     resize();
     attachmentsUI?.reset({cancelPending:false});
   };
   const resize = () => { view.input.style.height='auto';view.input.style.height=Math.min(180,Math.max(58,view.input.scrollHeight))+'px'; };
   const showError = error => { state.broken=true;view.hint.classList.add('next-chat-error');view.hint.textContent=String(error?.message||error||'An operation failed.'); };
   const hint = text => { state.broken=false;view.hint.classList.remove('next-chat-error');view.hint.textContent=text; };
-  let shownCommands=[],commandIndex=0;
-  function closeCommandMenu(){
-    view.commandMenu.hidden=true;view.commands.setAttribute('aria-expanded','false');view.input.setAttribute('aria-expanded','false');view.input.removeAttribute('aria-activedescendant');
-  }
-  function selectCommandIndex(index){
-    commandIndex=(index+shownCommands.length)%shownCommands.length;
-    for(const [at,row]of [...view.commandMenu.children].entries())row.setAttribute('aria-selected',String(at===commandIndex));
-    if(shownCommands.length)view.input.setAttribute('aria-activedescendant','next-chat-command-'+shownCommands[commandIndex].id);
-  }
-  function positionCommandMenu(){
-    if(view.commandMenu.hidden)return;
-    const form=view.form.getBoundingClientRect(),area=view.form.parentElement.getBoundingClientRect();
-    const available=area.right-area.left,viewport=hostWindow?.innerWidth||area.right;
-    const width=Math.max(1,Math.min(390,available-16,viewport-16));
-    const left=Math.max(Math.max(8,8-area.left),Math.min(form.left-area.left,available-width-8,viewport-area.left-width-8));
-    view.commandMenu.style.left=left+'px';view.commandMenu.style.width=width+'px';view.commandMenu.style.bottom=Math.max(0,area.bottom-form.top+4)+'px';
-  }
-  function showCommands({all=false}={}){
-    shownCommands=all?CHAT_COMMANDS:commandSuggestions(view.input.value);
-    if(!shownCommands.length){closeCommandMenu();return;}
-    view.commandMenu.innerHTML='';
-    for(const command of shownCommands){
-      const row=mount.ownerDocument.createElement('button');row.type='button';row.id='next-chat-command-'+command.id;row.setAttribute('role','option');row.setAttribute('tabindex','-1');
-      const name=mount.ownerDocument.createElement('strong');name.textContent='/'+command.id;
-      const description=mount.ownerDocument.createElement('span');description.textContent=command.description;
-      row.append(name,description);row.addEventListener('mousedown',event=>event.preventDefault());row.addEventListener('click',()=>insertCommand(command));view.commandMenu.append(row);
-    }
-    view.commandMenu.hidden=false;view.commands.setAttribute('aria-expanded','true');view.input.setAttribute('aria-expanded','true');selectCommandIndex(0);positionCommandMenu();
-  }
-  function insertCommand(command){
-    // A menu command temporarily replaces an ordinary draft. Keep that draft
-    // and its files, then restore it after execution or Escape.
-    if(view.input.value.trim()&&!commandSuggestions(view.input.value).length&&!state.commandDrafts.has(state.inputOwner))state.commandDrafts.set(state.inputOwner,{draft:view.input.value,input:''});
-    view.input.value='/'+command.id;state.inputRevision++;resize();saveDraft();closeCommandMenu();view.input.focus({preventScroll:true});view.input.setSelectionRange(view.input.value.length,view.input.value.length);updateHead();
-  }
-  function consumeCommandInput(owner,revision){
+  function consumeInput(owner,revision){
     if(state.inputOwner!==owner||state.inputRevision!==revision)return;
-    view.input.value=state.commandDrafts.get(owner)?.draft||'';state.commandDrafts.delete(owner);state.inputRevision++;resize();saveDraft();
-  }
-  function dispatchCommand(match){
-    closeCommandMenu();
-    if(match.args){showError('Usage: /'+match.command.id+' (no arguments). Your message and files are unchanged.');return;}
-    const owner=state.inputOwner,revision=state.inputRevision;
-    if(match.command.id==='context'){
-      consumeCommandInput(owner,revision);hint('');contextControls.open();updateHead();return;
-    }
-    syncContext();
-    const result=contextControls.compress();
-    if(!result.accepted){showError(result.reason);return;}
-    consumeCommandInput(owner,revision);hint('');updateHead();
+    view.input.value='';state.inputRevision++;resize();saveDraft();
   }
   const updateHead = () => {
     if(view.model.disabled!==state.pending){view.model.disabled=state.pending;refreshChoices(runtimeStatus);}
@@ -261,9 +197,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     view.stop.disabled=busy;
     const next=replyState(state.runs);
     view.send.textContent=state.loading?'Loading…':next.active?'Direct':'Send';
-    const localContext=commandFor(view.input.value)?.command.id==='context';
-    view.send.disabled=localContext?state.managing||bucket!=='active':busy||state.loading||Boolean(item&&!state.runs.length)||state.attachmentsPending||bucket!=='active'||!next.canSend;
-    view.commands.disabled=state.managing||bucket!=='active';
+    view.send.disabled=busy||state.loading||Boolean(item&&!state.runs.length)||state.attachmentsPending||bucket!=='active'||!next.canSend;
     view.input.disabled=bucket!=='active'||state.managing;
     view.input.placeholder=bucket==='active'?'Message BLACKICE…':'Restore this conversation to reply';
     drawManagement();
@@ -528,8 +462,6 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     }catch(error){showError(error);}finally{state.pending=false;updateHead();}
   }
   async function send() {
-    const command=commandFor(view.input.value);
-    if(command){dispatchCommand(command);return;}
     if(state.pending||state.managing||contextControls.isCompacting()||state.attachmentsPending||selectedBucket()!=='active')return;
     if(state.selected&&(state.loading||!state.runs.length)){
       if(state.loading)hint('This conversation is still loading. Your draft is unchanged.');
@@ -552,7 +484,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
         planningMode:options.planningMode,planningOntology:options.planningOntology,directoryMode:options.directoryMode,subagentsMode:options.subagentsMode,planningExecutionMode:options.planningExecutionMode,attachmentIds:[...(state.attachmentIds.get(root())||[])],
         cwd:(()=>{try{return localStorage.getItem('blackice.next.cwd')||status?.cwd||'';}catch{return status?.cwd||'';}})()});
       const unchanged=state.inputOwner===submittedOwner&&state.inputRevision===submittedRevision;
-      if(unchanged)consumeCommandInput(submittedOwner,submittedRevision);
+      if(unchanged)consumeInput(submittedOwner,submittedRevision);
       else saveDraft();
       state.attachmentIds.set(root(),[]);persistAttachments();attachmentsUI.reset({cancelPending:false});
       if(result.mode==='direction') {
@@ -736,22 +668,13 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       state.generation++;showNew({focus:false});void loadList();
   });
   view.form.addEventListener('submit',event=>{event.preventDefault();void send();});
-  view.commands.addEventListener('click',()=>{if(view.commands.disabled)return;if(!view.commandMenu.hidden){closeCommandMenu();return;}showCommands({all:true});view.input.focus({preventScroll:true});});
-  hostWindow.addEventListener('resize',positionCommandMenu);
-  mount.addEventListener('click',event=>{if(event.target!==view.commands&&event.target!==view.input&&!view.commandMenu.contains(event.target))closeCommandMenu();});
   view.input.addEventListener('keydown',event=>{
     if(event.isComposing)return;
-    if(!view.commandMenu.hidden){
-      if(event.key==='Escape'){event.preventDefault();closeCommandMenu();return;}
-      if(['ArrowDown','ArrowUp'].includes(event.key)){event.preventDefault();selectCommandIndex(commandIndex+(event.key==='ArrowDown'?1:-1));return;}
-      if((event.key==='Tab'||event.key==='Enter')&&!event.shiftKey&&!event.ctrlKey&&!event.altKey&&!event.metaKey){event.preventDefault();insertCommand(shownCommands[commandIndex]);return;}
-    }
-    if(event.key==='Escape'&&state.commandDrafts.has(state.inputOwner)){event.preventDefault();consumeCommandInput(state.inputOwner,state.inputRevision);updateHead();return;}
     if(event.key==='Enter'&&!event.shiftKey&&!event.ctrlKey&&!event.altKey&&!event.isComposing) {
       event.preventDefault();void send();
     }
   });
-  view.input.addEventListener('input',()=>{state.inputRevision++;resize();scheduleDraft();showCommands();updateHead();});
+  view.input.addEventListener('input',()=>{state.inputRevision++;resize();scheduleDraft();updateHead();});
   view.list.addEventListener('click',event=>{for(const menu of view.list.querySelectorAll('.next-conversation-actions[open]'))if(!menu.contains(event.target))menu.open=false;});
   view.list.addEventListener('toggle',event=>{if(event.target.matches?.('.next-conversation-actions[open]'))event.target.querySelector('.next-conversation-menu')?.scrollIntoView({block:'nearest'});},true);
   view.list.addEventListener('keydown',event=>{
@@ -786,7 +709,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       updateHead();
     },
     leave() {
-      closeCommandMenu();
+
       modelPicker.close({restoreFocus:false});
       state.active=false;state.generation++;state.listRead++;state.unsubscribe?.();state.unsubscribe=null;
       listRequested=false;listInitialize=null;listController?.abort();
@@ -800,6 +723,6 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     updateStatus(status) {if(status&&typeof status==='object'&&!Array.isArray(status)){runtimeStatus=status;if(root()==='new')restoreOntology('new');refreshChoices(status);updateHead();}},
     openConversationId(id){if(!id)return;const item=state.list.find(row=>rootId(row)===id||lastRunId(row)===id)||{id,runId:id,title:'Conversation'};void open(item);},
     getState() {return {active:state.active,selected:root(),runCount:state.runs.length,listing:state.list.length,selectionCount:state.selection.size,managing:state.managing};},
-    destroy(){this.leave();state.destroyed=true;hostWindow.removeEventListener('resize',positionCommandMenu);contextControls.destroy();modelPicker.destroy();reader.close();artifacts.destroy();attachmentsUI.destroy();mount.innerHTML='';}
+    destroy(){this.leave();state.destroyed=true;contextControls.destroy();modelPicker.destroy();reader.close();artifacts.destroy();attachmentsUI.destroy();mount.innerHTML='';}
   };
 }

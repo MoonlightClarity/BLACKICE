@@ -290,202 +290,34 @@ async function chatFixture(t,{compress,continueResponse,cancel,attachments=[]}={
   t.after(()=>{workspace.destroy();if(oldWorker===undefined)delete globalThis.Worker;else globalThis.Worker=oldWorker;if(oldStorage===undefined)delete globalThis.localStorage;else globalThis.localStorage=oldStorage;});
   workspace.enter();await tick();
   const open=async id=>{workspace.openConversationId(id);await until(()=>workspace.getState().selected===id&&workspace.getState().runCount===1);};
-  const command=async name=>{await dom.click('#next-chat-commands');await dom.click('#next-chat-command-'+name);await dom.$('#next-chat-form').dispatch('submit');await tick();};
-  return {...dom,status,families,calls,workspace,open,command,storage,emit:event=>{for(const listener of listeners)listener(event);}};
+  return {...dom,status,families,calls,workspace,open,storage,emit:event=>{for(const listener of listeners)listener(event);}};
 }
 
-test('Chat has no idle compression block and menu selection inserts Context without executing it',async t=>{
-  const f=await chatFixture(t);await f.open('a');
-  const panel=f.$('#next-chat-context-heading').parentElement;
-  assert.equal(panel.hidden,true);assert.equal(f.$('#next-chat-context-compress'),null);
-  assert.equal(f.$('#next-chat-context-feedback').textContent,'');
-  await f.click('#next-chat-commands');
-  assert.equal(f.$('#next-chat-command-menu').hidden,false);
-  assert.deepEqual(f.$('#next-chat-command-menu').children.map(row=>row.children[0].textContent),['/compress','/context']);
-  await f.click('#next-chat-command-context');
-  assert.equal(f.$('#next-chat-input').value,'/context');assert.equal(panel.hidden,true);
-  assert.equal(f.calls.some(call=>call.method!=='GET'),false,'Selecting a command performs no API mutation.');
-  await f.$('#next-chat-form').dispatch('submit');
-  assert.equal(panel.hidden,false);assert.equal(f.$('#next-chat-context-body').hidden,false);
-  assert.equal(f.document.activeElement,f.$('#next-chat-context-preset'));
-  await f.$('#next-chat-context-preset').dispatch('keydown',{key:'Escape'},true);
-  assert.equal(panel.hidden,true);assert.equal(f.document.activeElement,f.$('#next-chat-input'));
-  assert.equal(f.calls.some(call=>call.method!=='GET'),false);
-});
-
-test('command menu follows the actual composer geometry and stays inside a narrow viewport',async t=>{
-  const f=await chatFixture(t),form=f.$('#next-chat-form'),area=form.parentElement;
-  form.getBoundingClientRect=()=>({left:270,right:1484,top:1000,bottom:1140});
-  area.getBoundingClientRect=()=>({left:250,right:1504,top:980,bottom:1160});
-  window.innerWidth=1504;
-  await f.click('#next-chat-commands');
-  const menu=f.$('#next-chat-command-menu');assert.equal(menu.style.left,'20px');assert.equal(menu.style.bottom,'164px');
-  assert.equal(250+parseFloat(menu.style.left),270,'Anchor to the real form, including theme width overrides.');
-  await f.click('#next-chat-commands');
-  form.getBoundingClientRect=()=>({left:270,right:480,top:1000,bottom:1140});
-  area.getBoundingClientRect=()=>({left:250,right:500,top:980,bottom:1160});window.innerWidth=500;
-  await f.click('#next-chat-commands');
-  assert.ok(250+parseFloat(menu.style.left)+parseFloat(menu.style.width)<=492);
-  assert.equal(f.calls.some(call=>call.method!=='GET'),false);
-});
-
-test('slash completion uses arrows, Tab and a separate Enter to execute, with IME and newline preserved',async t=>{
-  const pending=deferred(),f=await chatFixture(t,{compress:()=>pending.promise});await f.open('a');
-  const input=await f.input('#next-chat-input','/');
-  await input.dispatch('keydown',{key:'ArrowDown'});
-  assert.equal(input.getAttribute('aria-activedescendant'),'next-chat-command-context');
-  const tab=await input.dispatch('keydown',{key:'Tab'});
-  assert.equal(tab.defaultPrevented,true);assert.equal(input.value,'/context');assert.equal(f.$('#next-chat-context-body').hidden,true);
-  await input.dispatch('keydown',{key:'Enter'});assert.equal(f.$('#next-chat-context-body').hidden,false);
-  await f.click('#next-chat-context-toggle');
-  await f.input('#next-chat-input','/CoM');
-  for(const flags of [{isComposing:true},{shiftKey:true},{ctrlKey:true},{altKey:true}]){
-    const event=await input.dispatch('keydown',{key:'Enter',...flags});assert.equal(event.defaultPrevented,false);
-  }
-  assert.equal(f.calls.some(call=>call.method!=='GET'),false);
-  await input.dispatch('keydown',{key:'Enter'});
-  assert.equal(input.value,'/compress');assert.equal(f.$('#next-chat-command-menu').hidden,true);
-  assert.equal(f.calls.some(call=>call.method!=='GET'),false,'The first Enter selects completion only.');
-  await input.dispatch('keydown',{key:'Enter'});await tick();
-  assert.deepEqual(f.calls.filter(call=>call.method!=='GET').map(call=>call.route),['/api/runs/a/compact']);
-  pending.resolve({compacted:false,reason:'No older exchanges.'});await tick();
-});
-
-for(const spelling of ['/compress','/COMPACT'])test('exact '+spelling+' is local, deduplicated and preserves files and the context draft',async t=>{
-  const pending=deferred(),f=await chatFixture(t,{compress:()=>pending.promise,attachments:['file_kept']});await f.open('a');
-  f.$('#next-chat-context-preset').value='custom';await f.$('#next-chat-context-preset').dispatch('change');await f.input('#next-chat-context-window','400000');
-  const attachmentState=f.storage.get('blackice.next.attachments');
-  await f.input('#next-chat-input',spelling);await f.$('#next-chat-form').dispatch('submit');await tick();
-  await f.input('#next-chat-input',spelling);await f.$('#next-chat-form').dispatch('submit');await tick();
-  const writes=f.calls.filter(call=>call.method!=='GET');
-  assert.equal(writes.length,1);assert.equal(writes[0].route,'/api/runs/a/compact');assert.deepEqual(writes[0].body,{nodeId:'agent'});
-  assert.equal(f.storage.get('blackice.next.attachments'),attachmentState);assert.equal(f.$('#next-chat-context-window').value,'400000');
-  assert.equal(f.$('#next-chat-input').value,'');assert.equal(f.$('#next-chat-context-body').hidden,true);
-  assert.equal(f.$('#next-chat-context-heading').hidden,true);assert.match(f.$('#next-chat-context-feedback').textContent,/Compressing/);
-  pending.resolve({compacted:true,method:'codex-native'});await tick();await tick();
-});
-
-test('recognized commands with arguments return a local usage error without altering text or files',async t=>{
-  const f=await chatFixture(t,{attachments:['file_kept']});await f.open('a');
-  const attachmentState=f.storage.get('blackice.next.attachments');
-  for(const text of ['/compress please','/COMPACT 900k','/context change model','/CtX\nshow it']){
-    await f.input('#next-chat-input',text);await f.$('#next-chat-form').dispatch('submit');await tick();
-    assert.match(f.$('#next-chat-hint').textContent,/Usage:.*no arguments/);
-    assert.equal(f.$('#next-chat-input').value,text);assert.equal(f.storage.get('blackice.next.attachments'),attachmentState);
-  }
-  assert.equal(f.calls.some(call=>call.method!=='GET'),false);
-});
-
-test('Context is inspectable during active work while Compress never becomes a live model direction',async t=>{
-  const f=await chatFixture(t),run=f.families.get('a').runs[0];
-  run.status='running';run.settled=false;Object.assign(run.nodes.agent,{status:'running',turnId:'active-turn'});
-  await f.open('a');await f.input('#next-chat-input','/CtX');await f.$('#next-chat-form').dispatch('submit');
-  assert.equal(f.$('#next-chat-context-body').hidden,false);assert.equal(f.$('#next-chat-context-preset').value,'extended');
-  await f.input('#next-chat-input','/compress');await f.$('#next-chat-form').dispatch('submit');await tick();
-  assert.match(f.$('#next-chat-hint').textContent,/finish/);assert.equal(f.$('#next-chat-input').value,'/compress');
-  assert.equal(f.calls.some(call=>call.method!=='GET'),false);
-  await f.input('#next-chat-input','/workspace/a.txt is the file to inspect');await f.$('#next-chat-form').dispatch('submit');await tick();
-  assert.equal(f.calls.find(call=>call.method==='POST').route,'/api/runs/a/steer');
-  assert.equal(f.calls.find(call=>call.method==='POST').body.message,'/workspace/a.txt is the file to inspect');
-});
-
-test('unknown slash commands and path prose keep the ordinary continuation path',async t=>{
+test('Chat removes the manual command palette and sends former commands as ordinary text',async t=>{
   const f=await chatFixture(t,{continueResponse:({families})=>families.get('a').runs[0]});await f.open('a');
-  for(const text of ['/unknown','/home/user/report.md','/compress.txt','Please explain /compress']){
-    await f.input('#next-chat-input',text);assert.equal(f.$('#next-chat-command-menu').hidden,true);
+  assert.equal(f.$('#next-chat-commands'),null);assert.equal(f.$('#next-chat-command-menu'),null);
+  for(const text of ['/context','/ctx','/compress','/compact','/COMPACT','/context change model','/unknown','/home/user/report.md','Please explain /compress']){
+    await f.input('#next-chat-input',text);
     const before=f.calls.filter(call=>call.method==='POST').length;
     await f.$('#next-chat-form').dispatch('submit');await until(()=>f.calls.filter(call=>call.method==='POST').length===before+1);await tick();
     const request=f.calls.filter(call=>call.method==='POST').at(-1);assert.equal(request.route,'/api/runs/a/continue');assert.equal(request.body.message,text);
+    assert.equal(request.body.context.autoCompact,true);
   }
   assert.equal(f.calls.some(call=>call.route.endsWith('/compact')),false);
 });
 
-test('palette commands preserve an ordinary draft and attachments across execution, Escape and navigation',async t=>{
-  const f=await chatFixture(t,{attachments:['file_kept']});await f.open('a');
-  const original='Unsent question with exact details',attachmentState=f.storage.get('blackice.next.attachments');
-  await f.input('#next-chat-input',original);await f.click('#next-chat-commands');await f.click('#next-chat-command-context');
-  assert.equal(f.$('#next-chat-input').value,'/context');assert.equal(JSON.parse(f.storage.get('blackice.next.drafts')).a,original);
-  await f.open('b');await f.input('#next-chat-input','B draft');await f.open('a');
-  assert.equal(f.$('#next-chat-input').value,'/context');await f.$('#next-chat-form').dispatch('submit');
-  assert.equal(f.$('#next-chat-input').value,original);assert.equal(f.storage.get('blackice.next.attachments'),attachmentState);
-  await f.click('#next-chat-commands');await f.click('#next-chat-command-compress');
-  await f.$('#next-chat-input').dispatch('keydown',{key:'Escape'});
-  assert.equal(f.$('#next-chat-input').value,original);assert.equal(f.calls.some(call=>call.method!=='GET'),false);
-  await f.open('b');assert.equal(f.$('#next-chat-input').value,'B draft');
+test('Chat upgrades saved disabled compaction for the next response while preserving budget and old run',async t=>{
+  const f=await chatFixture(t,{continueResponse:({families})=>families.get('b').runs[0]});await f.open('b');
+  const old=structuredClone(f.families.get('b'));
+  assert.equal(f.$('#next-chat-context-auto').checked,true);
+  assert.equal(f.$('#next-chat-context-auto-row').hidden,true);
+  await f.input('#next-chat-input','Continue normally');await f.$('#next-chat-form').dispatch('submit');
+  await until(()=>f.calls.some(call=>call.route.endsWith('/continue')));
+  const sent=f.calls.find(call=>call.route.endsWith('/continue')).body.context;
+  assert.equal(sent.autoCompact,true);assert.equal(sent.preset,'custom');assert.equal(sent.windowTokens,96000);
+  assert.deepEqual(f.families.get('b'),old,'Historical run is not rewritten');
+  assert.equal(f.calls.some(call=>call.route.endsWith('/compact')),false,'No manual request needed');
 });
-
-test('menu insertion preserves unknown slash-word drafts on Escape and successful local command',async t=>{
-  const f=await chatFixture(t);await f.open('a');
-  for(const original of ['/notes','/help']){
-    await f.input('#next-chat-input',original);assert.equal(f.$('#next-chat-command-menu').hidden,true);
-    await f.click('#next-chat-commands');await f.click('#next-chat-command-compress');
-    assert.equal(JSON.parse(f.storage.get('blackice.next.drafts')).a,original);
-    await f.$('#next-chat-input').dispatch('keydown',{key:'Escape'});assert.equal(f.$('#next-chat-input').value,original);
-    await f.command('context');assert.equal(f.$('#next-chat-input').value,original);
-  }
-  assert.equal(f.calls.some(call=>call.method!=='GET'),false);
-});
-
-for(const missingThread of [false,true])test('legacy native Chat '+(missingThread?'without a native ID':'with an expired native ID')+' can compress saved history without losing messages or drafts',async t=>{
-  const compact=deferred(),f=await chatFixture(t,{compress:()=>compact.promise}),run=f.families.get('a').runs[0];
-  run.workflow.settings={codexHistory:'relay'};run.nodes.agent.codexHistory='relay';
-  if(missingThread)delete run.nodes.agent.threadId;else run.nodes.agent.threadId='expired-native-thread';
-  const original={input:run.input,output:run.nodes.agent.output};
-  await f.open('a');assert.equal(f.$('#next-chat-context-compress'),null);
-  assert.doesNotMatch(f.$('#next-chat-context-feedback').textContent,/private|BLACKICE only|also show in Codex/i);
-  await f.input('#next-chat-input','Unsent follow-up stays here');
-  f.$('#next-chat-context-preset').value='custom';await f.$('#next-chat-context-preset').dispatch('change');await f.input('#next-chat-context-window','400000');
-  await f.command('compress');await f.command('compress');
-  const request=f.calls.find(call=>call.route.endsWith('/compact'));assert.deepEqual(request.body,{nodeId:'agent'});
-  assert.equal(f.calls.filter(call=>call.route.endsWith('/compact')).length,1);assert.equal(f.$('#next-chat-send').disabled,true);
-  f.emit({type:'agent.event',runId:'a',nodeId:'agent',data:{type:'context',context:{effectiveWindowTokens:828400,nativeWindowBasis:'metadata-percent'}}});
-  assert.match(f.$('#next-chat-context-feedback').textContent,/Compressing/,'Preparing restored context is not completion.');
-  Object.assign(run.nodes.agent,{threadId:'persistent-a',codexHistory:'codex',lastCompaction:{compacted:true,method:'codex-native',migrated:true,at:'2026-10-30T23:00:00Z'}});
-  compact.resolve({compacted:true,method:'codex-native',migrated:true,threadId:'persistent-a',context:run.nodes.agent.contextStatus});
-  await until(()=>/Context compressed by Codex/.test(f.$('#next-chat-context-feedback').textContent));await tick();await tick();
-  assert.deepEqual({input:run.input,output:run.nodes.agent.output},original);
-  assert.equal(f.$('#next-chat-input').value,'Unsent follow-up stays here');assert.equal(f.$('#next-chat-context-window').value,'400000');
-  await f.open('b');await f.open('a');
-  assert.equal(f.$('#next-chat-input').value,'Unsent follow-up stays here');assert.equal(f.$('#next-chat-context-window').value,'400000');
-  assert.equal(f.$('#next-chat-context-compress'),null);
-  assert.equal(f.calls.filter(call=>call.method!=='GET').length,1,'Migration uses only the explicit compression request.');
-});
-
-test('cancelling legacy native restoration keeps its operation pending and preserves both conversation drafts',async t=>{
-  const compact=deferred(),cancel=deferred(),f=await chatFixture(t,{compress:()=>compact.promise,cancel:()=>cancel.promise}),run=f.families.get('a').runs[0];
-  run.nodes.agent.codexHistory='relay';delete run.nodes.agent.threadId;const original={input:run.input,output:run.nodes.agent.output};
-  await f.open('a');await f.input('#next-chat-input','A draft');
-  await f.command('compress');await f.click('#next-chat-context-stop');await f.click('#next-chat-context-stop');
-  assert.equal(f.calls.filter(call=>call.route.endsWith('/cancel')).length,1);assert.equal(f.calls.find(call=>call.route.endsWith('/cancel')).route,'/api/runs/a/cancel');
-  await f.open('b');await f.input('#next-chat-context-window','123000');cancel.resolve({id:'a',status:'completed'});await tick();
-  assert.equal(f.$('#next-chat-context-window').value,'123000');assert.doesNotMatch(f.$('#next-chat-context-feedback').textContent,/Stop|cancel/);
-  await f.open('a');assert.equal(f.$('#next-chat-send').disabled,true);assert.match(f.$('#next-chat-context-feedback').textContent,/Waiting for compression to settle/);
-  compact.reject(Object.assign(Error('Compression cancelled.'),{code:'ABORT_ERR'}));await until(()=>/Compression cancelled/.test(f.$('#next-chat-context-feedback').textContent));
-  assert.equal(f.$('#next-chat-send').disabled,false);assert.equal(f.$('#next-chat-input').value,'A draft');assert.equal(f.$('#next-chat-context-compress'),null);
-  assert.deepEqual({input:run.input,output:run.nodes.agent.output},original);
-  await f.open('b');assert.equal(f.$('#next-chat-context-window').value,'123000');assert.equal(f.calls.filter(call=>call.method!=='GET').length,2);
-});
-
-for(const fails of [false,true])test('pending compression '+(fails?'error':'completion')+' stays with conversation A after switching to B',async t=>{
-  const gate=deferred(),f=await chatFixture(t,{compress:()=>gate.promise});await f.open('a');
-  assert.equal(f.$('#next-chat-context-preset').value,'extended');
-  f.$('#next-chat-context-preset').value='custom';await f.$('#next-chat-context-preset').dispatch('change');await f.input('#next-chat-context-window','400000');
-  await f.command('compress');await f.command('compress');
-  assert.equal(f.calls.filter(call=>call.route.endsWith('/compact')).length,1);assert.equal(f.$('#next-chat-send').disabled,true);
-  assert.deepEqual(f.calls.find(call=>call.route.endsWith('/compact')).body,{nodeId:'agent'},'Compression uses saved settings, not the next-turn draft.');
-  f.emit({type:'agent.event',runId:'a',nodeId:'agent',data:{type:'context',context:{effectiveWindowTokens:828400,nativeWindowBasis:'runtime-usage'}}});
-  assert.match(f.$('#next-chat-context-feedback').textContent,/Compressing/,'Context events do not mean completion.');
-  await f.open('b');assert.equal(f.$('#next-chat-context-preset').value,'custom');assert.equal(f.$('#next-chat-context-window').value,'96000');
-  await f.input('#next-chat-context-window','123000');f.workspace.updateStatus({...f.status,execution:{activeCount:4}});
-  if(fails)gate.reject(Error('A compression failed.'));else gate.resolve({compacted:true,method:'codex-native',context:{effectiveWindowTokens:828400,nativeObservedWindowTokens:828400,nativeWindowBasis:'runtime-usage'}});
-  await tick();await tick();
-  assert.equal(f.workspace.getState().selected,'b');assert.equal(f.$('#next-chat-context-window').value,'123000');
-  assert.doesNotMatch(f.$('#next-chat-context-feedback').textContent,/failed|compressed/);assert.equal(f.$('#next-chat-send').disabled,false);
-  await f.open('a');assert.match(f.$('#next-chat-context-feedback').textContent,fails?/A compression failed/:/Context compressed by Codex/);
-  assert.equal(f.$('#next-chat-context-preset').value,'custom');assert.equal(f.$('#next-chat-context-window').value,'400000');
-  assert.equal(f.calls.filter(call=>call.method!=='GET').length,1,'Navigation, events and metadata do not persist settings.');
-});
-
 test('real Chat first-open restores saved context and unsent per-chat edits survive selection and runtime status',async t=>{
   const f=await chatFixture(t,{compress:async()=>({compacted:false})});await f.open('a');
   const preset=f.$('#next-chat-context-preset');preset.value='custom';await preset.dispatch('change');await f.input('#next-chat-context-window','400000');

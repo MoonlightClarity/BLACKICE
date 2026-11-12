@@ -46,10 +46,10 @@ export function createChatFrame(mount) {
     '<button type="button" id="next-chat-stop" hidden>Stop</button></div></header>',
     '<div class="next-chat-scroll" id="next-chat-scroll"><div class="next-chat-timeline" id="next-chat-timeline">',
     '<div class="next-chat-intro"><h1>What would you like to work on?</h1><p>BLACKICE can use your local workspace, tools, and connected services. Start a conversation or return to saved work.</p></div>',
-    '</div></div><footer class="next-chat-composer-area"><section id="next-chat-cycle-notice" class="next-chat-cycle-notice" hidden><span id="next-chat-cycle-status" role="status"></span><button type="button" id="next-chat-open-plan">Open plan in Planning</button></section><div id="next-chat-command-menu" class="next-chat-command-menu" role="listbox" aria-label="Chat commands" hidden></div><form class="next-chat-compose" id="next-chat-form">',
-    '<textarea id="next-chat-input" class="next-chat-input" aria-label="Message BLACKICE" aria-autocomplete="list" aria-controls="next-chat-command-menu" aria-expanded="false" placeholder="Message BLACKICE…" rows="2"></textarea>',
+    '</div></div><footer class="next-chat-composer-area"><section id="next-chat-cycle-notice" class="next-chat-cycle-notice" hidden><span id="next-chat-cycle-status" role="status"></span><button type="button" id="next-chat-open-plan">Open plan in Planning</button></section><form class="next-chat-compose" id="next-chat-form">',
+    '<textarea id="next-chat-input" class="next-chat-input" aria-label="Message BLACKICE" placeholder="Message BLACKICE…" rows="2"></textarea>',
     '<div id="next-chat-attachments"></div>',
-    '<div class="next-chat-options"><button type="button" id="next-chat-commands" class="next-chat-commands" aria-label="Chat commands" title="Chat commands" aria-haspopup="listbox" aria-controls="next-chat-command-menu" aria-expanded="false">/</button><div class="next-chat-model"><span>Model</span><select id="next-chat-model" aria-label="Model"><option value="default">Default</option></select></div>',
+    '<div class="next-chat-options"><div class="next-chat-model"><span>Model</span><select id="next-chat-model" aria-label="Model"><option value="default">Default</option></select></div>',
     '<label>Reasoning <select id="next-chat-effort"><option value="default">Model default</option></select></label>',
     '<label>Speed <select id="next-chat-tier"><option value="default">Standard</option></select></label>',
     '<label>Planning <select id="next-chat-plan" title="Choose modular reasoning methods or Off."><option value="ontology">Modules</option><option value="off">Off</option></select></label>',
@@ -86,7 +86,7 @@ export function createChatFrame(mount) {
     stop:find('next-chat-stop'),scroll:find('next-chat-scroll'),timeline:find('next-chat-timeline'),
     cycleNotice:find('next-chat-cycle-notice'),cycleStatus:find('next-chat-cycle-status'),openPlan:find('next-chat-open-plan'),executionMode:find('next-chat-execution-mode'),
     ontologyInline:find('next-chat-ontology-inline'),ontologyModules:find('next-chat-ontology-modules'),ontologySave:find('next-chat-ontology-default'),ontologyStatus:find('next-chat-ontology-feedback'),
-    form:find('next-chat-form'),input:find('next-chat-input'),commands:find('next-chat-commands'),commandMenu:find('next-chat-command-menu'),attachments:find('next-chat-attachments'),model:find('next-chat-model'),plan:find('next-chat-plan'),
+    form:find('next-chat-form'),input:find('next-chat-input'),attachments:find('next-chat-attachments'),model:find('next-chat-model'),plan:find('next-chat-plan'),
     directoryMode:find('next-chat-directory-mode'),subagentsMode:find('next-chat-subagents-mode'),
     effort:find('next-chat-effort'),tier:find('next-chat-tier'),send:find('next-chat-send'),hint:find('next-chat-hint') };
 }
