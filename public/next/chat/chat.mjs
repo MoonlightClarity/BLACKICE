@@ -11,7 +11,7 @@ import { normalizeChatOptions, validateChatOptions, restoreChatPlanningOptions, 
 import { PLANNING_ONTOLOGY_MODULES, normalizePlanningOntology, PLANNING_MODULE_STATES } from '../../planning-module-policy.mjs';
 import { readConversationOntology, saveConversationOntology, transferNewOntology, gridOntologyState, updatedGridOntology } from './ontology-preferences.mjs';
 import { createConversationModelSelection, concreteChatModel } from './model.mjs';
-import { createArtifactViewer } from './artifacts.mjs';
+import { createArtifactViewer, createDirectoryInspector } from './artifacts.mjs';
 import { planningActivityForEvent, mergePlanningActivity, chatProgressPreview } from './planning-timeline.mjs';
 import { createContextControls, conversationContext, contextStatistics, compactionStatistics } from '../core/context-controls.mjs';
 
@@ -33,6 +33,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     indexLimit:CHAT_INDEX_BATCH, indexQuery:'',messageLimits:new Map(),
     attachmentIds:new Map(), attachmentsPending:false,managing:false,selecting:false,selection:new Map(),visible:[],listRead:0,destroyed:false,inputRevision:0,
     options:{...restoreChatPlanningOptions((()=>{try{return JSON.parse(localStorage.getItem('blackice.next.chatOptions')||'{}');}catch{return{};}})(),getStatus?.()?.runtimeSettings?.planningOntology),model:'default'} };
+  const directoryInspector=createDirectoryInspector({frame:view.shell,getRunId:()=>state.runs.at(-1)?.id||null});
   let newPlanningExecutionMode=state.options.planningExecutionMode;
   const executionNotice=mount.ownerDocument.createElement('section');
   executionNotice.setAttribute('id','next-chat-execution-notice');
@@ -171,6 +172,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   const updateHead = () => {
     if(view.model.disabled!==state.pending){view.model.disabled=state.pending;refreshChoices(runtimeStatus);}
     syncContext();
+    directoryInspector.refresh(state.selected?state.runs.at(-1)?.id:null);
     const item=state.selected,bucket=selectedBucket(),latest=state.runs.at(-1),busy=state.pending||state.managing||contextControls.isCompacting();
     view.directoryMode.disabled=busy||state.loading||bucket!=='active';view.subagentsMode.disabled=view.directoryMode.disabled;
     executionNotice.hidden=Boolean(item)||root()!=='new'||bucket!=='active'||state.options.planningExecutionMode!=='plan_only';
@@ -726,6 +728,6 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     updateStatus(status) {if(status&&typeof status==='object'&&!Array.isArray(status)){runtimeStatus=status;if(root()==='new')restoreOntology('new');refreshChoices(status);updateHead();}},
     openConversationId(id){if(!id)return;const item=state.list.find(row=>rootId(row)===id||lastRunId(row)===id)||{id,runId:id,title:'Conversation'};void open(item);},
     getState() {return {active:state.active,selected:root(),runCount:state.runs.length,listing:state.list.length,selectionCount:state.selection.size,managing:state.managing};},
-    destroy(){this.leave();state.destroyed=true;contextControls.destroy();modelPicker.destroy();reader.close();artifacts.destroy();attachmentsUI.destroy();mount.innerHTML='';}
+    destroy(){this.leave();state.destroyed=true;contextControls.destroy();directoryInspector.destroy();modelPicker.destroy();reader.close();artifacts.destroy();attachmentsUI.destroy();mount.innerHTML='';}
   };
 }
