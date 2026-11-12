@@ -63,8 +63,20 @@ export function planningDOM(t, { width = 1440, normalizeMarkup = false } = {}) {
     removeEventListener(type, handler) { this.listeners.get(type)?.delete(handler); }
     async dispatch(type, values = {}, bubble = false) { const event = { target: this, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; }, ...values }; for (let node = this; node; node = bubble && !event.stopped ? node.parentElement : null) { for (const handler of node.listeners.get(type) || []) await handler(event); await node[`on${type}`]?.(event); } return event; }
   }
+  // Native dialogs are used by the Directory evidence inspector. Keep their
+  // lifecycle in the fixture rather than weakening production cleanup calls.
+  class DialogElement extends Element {
+    constructor() { super('dialog'); this.returnValue = ''; }
+    showModal() { this.setAttribute('open', ''); this.open = true; }
+    close(value) {
+      if (!this.open) return;
+      if (value !== undefined) this.returnValue = String(value);
+      this.removeAttribute('open'); this.open = false;
+      void this.dispatch('close');
+    }
+  }
   const body = new Element('body'), head = new Element('head'), events = new Element('document'), windowEvents = new Element('window'), mount = new Element('section'); body.root = true; head.root = true; body.append(mount);
-  const document = { body, head, activeElement: null, visibilityState: 'visible', createElement: tag => new Element(tag), createElementNS: (_namespace,tag) => new Element(tag), getElementById: id => head.querySelector(`#${id}`) || body.querySelector(`#${id}`), querySelector: selector => head.querySelector(selector) || body.querySelector(selector), addEventListener: (...args) => events.addEventListener(...args), removeEventListener: (...args) => events.removeEventListener(...args) };
+  const document = { body, head, activeElement: null, visibilityState: 'visible', createElement: tag => String(tag).toLowerCase() === 'dialog' ? new DialogElement() : new Element(tag), createElementNS: (_namespace,tag) => new Element(tag), getElementById: id => head.querySelector(`#${id}`) || body.querySelector(`#${id}`), querySelector: selector => head.querySelector(selector) || body.querySelector(selector), addEventListener: (...args) => events.addEventListener(...args), removeEventListener: (...args) => events.removeEventListener(...args) };
   const medias = new Map();
   globalThis.document = document; globalThis.window = { addEventListener: (...args) => windowEvents.addEventListener(...args), removeEventListener: (...args) => windowEvents.removeEventListener(...args), matchMedia(query) { if (!medias.has(query)) { const media = new Element('media'); media.matches = width <= Number(/max-width:\s*(\d+)/.exec(query)?.[1] || 0); medias.set(query, media); } return medias.get(query); }, getSelection: () => null };
   t.after(() => { for (const [key, before] of old) if (before.present) globalThis[key] = before.value; else delete globalThis[key]; });

@@ -17,9 +17,9 @@ test('V2 offers native model-specific reasoning and speed choices without false 
   const rows=chatOptionChoices(status,selected);
   assert.ok(rows.efforts.some(item=>item.id==='high'&&!item.disabled));
   assert.equal(rows.tiers.find(item=>item.id==='fast').disabled,false);
-  assert.deepEqual(validateChatOptions(status,selected),{...selected,directoryMode:'auto',subagentsMode:'default',planningMode:'ontology',planningExecutionMode:'automatic',
-    planningOntology:{version:1,autoSelect:false,modules:{inference:'auto',feasibility:'auto',decomposition:'auto',
-      branching:'auto',replanning:'auto',metacognition:'auto',anti_overalignment:'mandatory',verification:'auto',subagents:'auto'}}});
+  assert.deepEqual(validateChatOptions(status,selected),{...selected,directoryMode:'on',subagentsMode:'default',planningMode:'ontology',planningExecutionMode:'automatic',
+    planningOntology:{version:2,modules:{inference:true,feasibility:true,decomposition:true,
+      branching:true,replanning:true,metacognition:true,anti_overalignment:true,verification:true,subagents:true}}});
   assert.throws(()=>validateChatOptions(status,{...selected,effort:'ultra'}),/does not offer|reasoning/i);
   assert.throws(()=>validateChatOptions(status,{model:'vendor::restricted',serviceTier:'fast'}),/Fast mode|Codex/i);
   assert.throws(()=>validateChatOptions(status,{model:'nonexistent'}),/available model/);
@@ -31,9 +31,20 @@ test('V2 preserves independent Directory and Subagents choices without changing 
     for(const directoryMode of ['auto','on','off']){
       for(const subagentsMode of ['default','on','off']){
         assert.deepEqual(validateChatOptions(status,{...selected,directoryMode,subagentsMode}),
-          {...expected,directoryMode,subagentsMode});
+          {...expected,directoryMode:directoryMode==='off'?'off':'on',subagentsMode});
       }
     }
+  }
+});
+test('V2 preserves each explicit module Off independently with either Directory state',()=>{
+  const modules={inference:true,feasibility:true,decomposition:true,branching:true,
+    replanning:true,metacognition:true,anti_overalignment:true,verification:true,subagents:true};
+  for(const moduleId of Object.keys(modules))for(const directoryMode of ['on','off']){
+    const policy={version:2,modules:{...modules,[moduleId]:false}};
+    const selected=validateChatOptions(status,{model:'codex-reasoning',directoryMode,planningOntology:policy});
+    assert.deepEqual(selected.planningOntology,policy);
+    assert.equal(selected.directoryMode,directoryMode);
+    assert.equal(selected.planningMode,'ontology');
   }
 });
 test('new workflow and continued thread retain the selected reasoning and fast tier',async()=>{
