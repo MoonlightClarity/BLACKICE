@@ -5,23 +5,23 @@
   "version": "2.39.67",
   "platform": "win32",
   "node": "v24.22.2",
-  "startedAt": "2026-11-12T03:23:16.559Z",
-  "checkedAt": "2026-11-12T03:28:35.685Z",
+  "python": "3.12.16; sqlite=3.53.1",
+  "startedAt": "2026-11-12T08:09:29.768Z",
+  "checkedAt": "2026-11-12T08:14:15.869Z",
   "state": "passed",
   "passed": true,
   "fullSuite": true,
   "countsComplete": true,
-  "appFingerprint": "bd6fcddde0f70b6d505ab7d5b8a29286663d13aeb01f7caae6adc9f5e10d208b",
-  "sourceIndexSha256": "9dfd6549926ed8c1291112cacc3346a5532f62cd6e57e160c88648810a4f5ee2",
-  "sourceFilesVerified": 1460,
-  "testFiles": 675,
-  "testInventorySha256": "4746f4f0452693c301e558d487c00029cbb807598c08633c843aaeda8941220d",
-  "runnerSha256": "369d1379edaa5898d8f20dd670decb91cbd8be193b985a5f486c952f4d982c6f",
+  "appFingerprint": "be4106741ab565d4c7186de82a0f61426e659c660ca52c26606b3aeb0d0cec8c",
+  "sourceIndexSha256": "361a8f3caee5f661d6c3333bb3302bdba8d7d6a4bbb10da7576455b6fa22ae4e",
+  "sourceFilesVerified": 1471,
+  "testFiles": 678,
+  "testInventorySha256": "3bb799ce7e9addf9147fba954b01cce198ba39840870be2e3d7bc492c4162341",
   "fingerprintUnchanged": true,
   "sourceUnchanged": true,
   "tests": {
-    "total": 8061,
-    "passed": 8050,
+    "total": 8091,
+    "passed": 8080,
     "failed": 0,
     "requiredSkipped": 0,
     "optionalSkipped": 11,
@@ -29,16 +29,14 @@
     "todo": 0,
     "exitCode": 0
   },
-  "testLogSha256": "976173926a74d087b0db332ac7a03eaf7a5654cab52aef17c7a40fd56a60b592",
-  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "testLogSha256": "b40358c2e1109138f70d62321a4d78d957c95fdaaf160761dc1491f7610e8901",
   "execution": {
     "kind": "parallel-bounded-groups",
     "concurrency": 4,
     "maxActiveGroups": 2,
     "groupTimeoutMs": 300000,
-    "groupCount": 19,
+    "groupCount": 17,
     "groupSize": 40,
-    "optionalNativeFixtures": false,
     "uniqueCoverageVerified": true
   },
   "optionalSkips": [
@@ -54,5 +52,5 @@
     "installed Himalaya sends exact MIME to disposable loopback SMTP and strips Bcc headers",
     "real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart"
   ],
-  "validationScope": "Complete synthetic Windows source suite. Live free-provider acceptance and installed candidate evidence are separate."
+  "validationScope": "Complete synthetic Windows source suite; native acceptance and exact installed artifact verified separately."
 }

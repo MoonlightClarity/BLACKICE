@@ -1,1 +1,7 @@
-{"sourceTestReceipt":"verification/windows-2.39.61.json","format":1,"publish":true,"version":"2.39.61","appFingerprint":"df242d9657b54cddf5dac0bab8022f659a7c8d0f634eef8da0faeacd673b933a"}
+{
+  "appFingerprint": "be4106741ab565d4c7186de82a0f61426e659c660ca52c26606b3aeb0d0cec8c",
+  "format": 1,
+  "publish": true,
+  "sourceTestReceipt": "verification/windows-2.39.67.json",
+  "version": "2.39.67"
+}
