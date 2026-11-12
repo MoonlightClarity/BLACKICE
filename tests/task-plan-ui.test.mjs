@@ -91,7 +91,7 @@ test('canonical work-item UI preserves DOM focus, history disclosure and guidanc
       unresolved: [], findings: [] } };
   const before = structuredClone(state); update(ui, state, { planningMode: 'forced' });
   assert.equal(f.mount.querySelector('.task-plan-tree').getAttribute('aria-label'), 'Work items');
-  assert.equal(f.control('view-map'), undefined); assert.match(f.region('header').innerHTML, /Planning Forced/);
+  assert.equal(f.control('view-map'), undefined); assert.match(f.region('header').innerHTML, /Planning Modules/);
   await f.click(f.node('inspect')); const row = f.node('inspect'); row.focus(); f.viewport().scrollTop = 48;
   const history = f.mount.querySelector('[data-plan-disclosure="operation-history"]'); history.open = true;
   const next = structuredClone(state); next.contractRuntime.journalSeq++; next.contractRuntime.criteria[0].observedCount = 1;
@@ -163,8 +163,8 @@ test('map branch and leaf focus remain inspectable with a path back to the whole
 test('map selection, focus, zoom and scroll survive evidence streaming without changing the saved tree', async t => {
   const f = planDOM(t), ui = initTaskPlanUI({ mount: f.mount }), state = plan(); update(ui, state); await f.click(f.control('view-map')); await f.click(mappedNode(f, 'inspect')); await f.click(f.control('map-zoom-in'));
   mappedNode(f, 'inspect').focus(); mapCanvas(f).scrollTop = 88; mapCanvas(f).scrollLeft = 156; await f.mount.dispatch('scroll', { target: mapCanvas(f) });
-  const old = mappedNode(f, 'inspect'); state.revision++; state.steps[2].evidence = 'The real constraints were checked.'; state.plan.focusStepId = 'write'; update(ui, state);
-  assert.equal(ui.getSelection().selectedId, 'inspect'); assert.equal(ui.getSelection().mapZoom, 1.2); assert.equal(mapCanvas(f).scrollTop, 88); assert.equal(mapCanvas(f).scrollLeft, 156); assert.notEqual(mappedNode(f, 'inspect'), old); assert.equal(document.activeElement, mappedNode(f, 'inspect'));
+  const old = mappedNode(f, 'inspect'), canvas = mapCanvas(f); state.revision++; state.steps[2].evidence = 'The real constraints were checked.'; state.plan.focusStepId = 'write'; update(ui, state);
+  assert.equal(ui.getSelection().selectedId, 'inspect'); assert.equal(ui.getSelection().mapZoom, 1.2); assert.equal(mapCanvas(f).scrollTop, 88); assert.equal(mapCanvas(f).scrollLeft, 156); assert.equal(mappedNode(f, 'inspect'), old, 'Evidence-only changes retain unchanged map nodes'); assert.equal(mapCanvas(f), canvas); assert.equal(old.isConnected, true); assert.equal(canvas.isConnected, true); assert.equal(document.activeElement, mappedNode(f, 'inspect'));
   assert.match(f.inspector().innerHTML, /real constraints were checked/); ui.destroy();
 });
 
@@ -254,10 +254,10 @@ test('SVG and Freeplane exports include all saved branches, while Guide uses onl
   await f.click(f.control('guide')); assert.equal(guided.length, 1); assert.equal(guided[0].step, state.steps[1]); assert.equal(guided[0].taskState, state); assert.deepEqual(state, before); ui.destroy();
 });
 
-test('runtime scaffold turns into the default branching outline with semantic hierarchy and no fabricated steps', t => {
+test('retired runtime scaffold stays empty until real saved steps supply an accessible branching outline', t => {
   const f = planDOM(t), ui = initTaskPlanUI({ mount: f.mount });
   update(ui, { taskId: 'task-a', goal: 'Build and inspect the result.', steps: [], plan: { origin: 'runtime' } });
-  assert.deepEqual(ui.getSelection().visibleIds, []); assert.match(f.region('empty').innerHTML, /First, a clear approach/);
+  assert.deepEqual(ui.getSelection().visibleIds, []); assert.match(f.region('empty').innerHTML, /Automatic planning is off/);
   update(ui, plan());
   assert.deepEqual(ui.getSelection().visibleIds, ['prepare', 'read', 'inspect', 'write']); assert.equal(ui.getSelection().selectedId, 'read');
   assert.equal(f.node('prepare').getAttribute('role'), 'treeitem'); assert.equal(f.node('prepare').getAttribute('aria-expanded'), 'true'); assert.equal(f.node('read').getAttribute('aria-level'), '2'); assert.equal(f.node('read').tabIndex, 0);
@@ -346,8 +346,8 @@ test('an in-flight draft action cannot be duplicated and event handlers are remo
 test('missing and unavailable plans display the explicit runtime reason, escaped as text', t => {
   const f = planDOM(t), ui = initTaskPlanUI({ mount: f.mount });
   update(ui, { taskId: 'no-plan', steps: [], goal: 'Answer the question.' }, { runStatus: 'completed', planningStatus: 'missing', planningMessage: 'The provider returned <script>bad()</script> without a saved plan.' });
-  assert.match(f.region('empty').innerHTML, /The plan was not recorded/); assert.match(f.region('empty').innerHTML, /&lt;script&gt;/); assert.doesNotMatch(f.region('empty').innerHTML, /<script>/);
-  update(ui, { taskId: 'unavailable', steps: [] }, { planningAvailable: false }); assert.match(f.region('empty').innerHTML, /does not expose saved planning tools/); assert.equal(ui.getSelection().visibleIds.length, 0); ui.destroy();
+  assert.match(f.region('empty').innerHTML, /Automatic planning is off/); assert.match(f.region('empty').innerHTML, /&lt;script&gt;/); assert.doesNotMatch(f.region('empty').innerHTML, /<script>/);
+  update(ui, { taskId: 'unavailable', steps: [] }, { planningAvailable: false, planningMessage: 'This model does not expose saved planning tools.' }); assert.match(f.region('empty').innerHTML, /does not expose saved planning tools/); assert.equal(ui.getSelection().visibleIds.length, 0); ui.destroy();
 });
 
 

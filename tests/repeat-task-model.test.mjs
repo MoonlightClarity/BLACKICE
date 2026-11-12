@@ -32,11 +32,14 @@ test('a repeat recipe preserves the original accepted planning mode and explicit
  assert.deepEqual(original, before, 'Project settings without rewriting the admitted task or its stored preset');
 });
 
-test('input-only planning choices survive repetition without capturing agent-derived outline depth', () => {
- const original = { id: 'root', cwd: 'C:\\workspace', input: { task: 'An adaptive recurring check.', planningMode: 'auto' }, workflow: { nodes: [], settings: { planningMode: 'on' } }, taskState: { plan: { detail: 'detailed' } } };
- const seed = repeatTaskSeed({ id: 'root', status: 'completed', settled: true }, original);
- assert.equal(seed.workflow.settings.planningMode, 'on');
- assert.equal(Object.hasOwn(seed.workflow.settings, 'planDetail'), false, 'The next run must be free to adapt its outline to the new work');
+test('retired input-only planning modes remain inert without capturing agent-derived outline depth', () => {
+ for (const planningMode of ['auto', 'on', 'forced', 'advisory', 'maximal']) {
+  const original = { id: 'root', cwd: 'C:\\workspace', input: { task: 'An adaptive recurring check.', planningMode }, workflow: { nodes: [], settings: { planningMode: 'on' } }, taskState: { plan: { detail: 'detailed' } } };
+  const before = structuredClone(original), seed = repeatTaskSeed({ id: 'root', status: 'completed', settled: true }, original);
+  assert.equal(seed.workflow.settings.planningMode, 'off', planningMode + ' must not revive the retired outline gate');
+  assert.equal(Object.hasOwn(seed.workflow.settings, 'planDetail'), false, 'The next run must be free to adapt its outline to the new work');
+  assert.deepEqual(original, before, 'Reading a legacy recipe must not rewrite admitted history');
+ }
 });
 
 test('repeat recipes restore per-agent effort intent and preserve legacy or deliberately edited choices', () => {
