@@ -52,6 +52,12 @@ test('late native rejection never claims preparation had no effects', async () =
   const failed=await handler(op,{recoveryBinding:binding});const body=JSON.parse(failed.contentItems[0].text);
   assert.equal(body.code,'BROWSER_RECOVERY_CHANGED');assert.equal(Object.hasOwn(body,'actionDispatched'),false);assert.equal(Object.hasOwn(body,'inputDispatched'),false);
 });
+test('credential or unsupported submit payload cannot degrade to button-only recovery', async () => {
+  const el={isConnected:true,tagName:'BUTTON',type:'submit',form:{isConnected:true,elements:[{type:'password'}]}};
+  assert.equal((await inspectObservedFormControl(el,{}, {action:'click',ref:'submit',hostRecoveryInspection:true})).recovery,undefined);
+  el.type='image';
+  assert.equal((await inspectObservedFormControl(el,{}, {action:'click',ref:'submit',hostRecoveryInspection:true})).recovery,undefined);
+});
 test('workspace preserves recovery inspection and native final check callbacks', async () => {
   let inspected=false,checked=false;
   const driver={status:()=>({available:true,contained:true,activeTab:'one',tabs:[{tabId:'one',url:'https://example.test',browser:'relay'}]}),

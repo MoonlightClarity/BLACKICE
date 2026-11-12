@@ -9,6 +9,8 @@ export async function inspectObservedFormControl(el, state, args) {
     // Password/credential controls deliberately have no reviewable snapshot.
     if (el.type === 'password' || state?.credentialFields?.has(el) || !globalThis.crypto?.subtle) return { ref: args.ref, kind: 'opaque' };
     const details = await inspectObservedFormControl(el, state, { ...args, hostRecoveryInspection: false });
+    if (['BUTTON', 'INPUT'].includes(el.tagName) && ['submit', 'image'].includes(el.type)
+      && !['form-submit', 'form-navigation'].includes(details.kind)) return { ref: args.ref, kind: 'opaque' };
     try {
       state.recoveryNodes ||= new WeakMap(); state.nextRecoveryNode ||= 0;
       const identity = node => { if (!node) return null; if (!state.recoveryNodes.has(node)) state.recoveryNodes.set(node, 'node-' + (++state.nextRecoveryNode)); return state.recoveryNodes.get(node); };
