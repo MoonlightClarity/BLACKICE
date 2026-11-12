@@ -17,12 +17,24 @@ test('V2 offers native model-specific reasoning and speed choices without false 
   const rows=chatOptionChoices(status,selected);
   assert.ok(rows.efforts.some(item=>item.id==='high'&&!item.disabled));
   assert.equal(rows.tiers.find(item=>item.id==='fast').disabled,false);
-  assert.deepEqual(validateChatOptions(status,selected),{...selected,planningMode:'ontology',planningExecutionMode:'automatic',
+  assert.deepEqual(validateChatOptions(status,selected),{...selected,directoryMode:'auto',subagentsMode:'default',planningMode:'ontology',planningExecutionMode:'automatic',
     planningOntology:{version:1,autoSelect:false,modules:{inference:'auto',feasibility:'auto',decomposition:'auto',
       branching:'auto',replanning:'auto',metacognition:'auto',anti_overalignment:'mandatory',verification:'auto',subagents:'auto'}}});
   assert.throws(()=>validateChatOptions(status,{...selected,effort:'ultra'}),/does not offer|reasoning/i);
   assert.throws(()=>validateChatOptions(status,{model:'vendor::restricted',serviceTier:'fast'}),/Fast mode|Codex/i);
   assert.throws(()=>validateChatOptions(status,{model:'nonexistent'}),/available model/);
+});
+test('V2 preserves independent Directory and Subagents choices without changing model or Planning options',()=>{
+  for(const planningMode of ['off','maximal']){
+    const selected={model:'codex-reasoning',effort:'high',serviceTier:'fast',planningMode};
+    const expected=validateChatOptions(status,selected);
+    for(const directoryMode of ['auto','on','off']){
+      for(const subagentsMode of ['default','on','off']){
+        assert.deepEqual(validateChatOptions(status,{...selected,directoryMode,subagentsMode}),
+          {...expected,directoryMode,subagentsMode});
+      }
+    }
+  }
 });
 test('new workflow and continued thread retain the selected reasoning and fast tier',async()=>{
   const calls=[];
