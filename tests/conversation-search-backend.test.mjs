@@ -254,22 +254,45 @@ test('search endpoint enforces the existing local session and exposes the bounde
   finally { app.conversations.stateRecoveryRequired = false; }
 });
 
-test('answers held behind the real planning gate never become searchable while waiting or after a malformed planning response', async t => {
-  let release, called = false;
+test('explicit module provisional and rejected responses never become searchable chat answers', async t => {
+  let release, moduleCalls = 0, ordinaryCalls = 0;
   const hold = new Promise(resolve => { release = resolve; }), runtime = new Runtime();
-  runtime.runAgent = async options => { called = true; options.onEvent({ type: 'message', itemId: 'held', phase: 'final_answer', text: 'HELD_PLANNING_NEEDLE' }); await hold; return { output: 'HELD_PLANNING_NEEDLE', threadId: 'fixture-thread' }; };
+  runtime.runAgent = async options => {
+    if (!options.responseOnly) {
+      ordinaryCalls++;
+      return { output: 'Visible ordinary answer.', threadId: 'fixture-thread' };
+    }
+    moduleCalls++;
+    assert.deepEqual(options.dynamicTools, []);
+    options.onEvent?.({ type: 'message', itemId: 'provisional', phase: 'final_answer', text: 'PRIVATE_MODULE_NEEDLE' });
+    await hold;
+    return { output: 'PRIVATE_MODULE_NEEDLE', threadId: 'fixture-module-thread' };
+  };
   const { app } = await application(t, runtime, { listen: false }); t.after(release);
-  const workflow = { id: 'held-search-flow', name: 'Held answer fixture', nodes: [{ id: 'input', type: 'input', name: 'Task' }, { id: 'agent', type: 'agent', name: 'Agent', prompt: 'Answer the request.', sandbox: 'read-only' }, { id: 'output', type: 'output', name: 'Result' }], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1 } };
-  const run = await app.engine.startRun({ workflow, input: 'A visible planning search request.', planningMode: 'on' });
-  const until = async check => { const end = Date.now() + 5000; while (Date.now() < end) { const result = check(); if (result) return result; await new Promise(resolve => setTimeout(resolve, 5)); } assert.fail('Planning search fixture did not settle.'); };
+  const workflow = { id: 'module-search-flow', name: 'Module privacy fixture', nodes: [{ id: 'input', type: 'input', name: 'Task' }, { id: 'agent', type: 'agent', name: 'Agent', prompt: 'Answer the request.', sandbox: 'read-only' }, { id: 'output', type: 'output', name: 'Result' }], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1 } };
+  const run = app.engine.startRun({ workflow, input: 'A visible module search request.', planningMode: 'on' });
+  const until = async check => { const end = Date.now() + 5000; while (Date.now() < end) { const result = check(); if (result) return result; await new Promise(resolve => setTimeout(resolve, 5)); } assert.fail('Module search fixture did not settle.'); };
+  await until(() => app.engine.getRun(run.id).settled);
+  assert.equal(app.engine.getRun(run.id).status, 'completed');
+  assert.equal(ordinaryCalls, 1); assert.equal(moduleCalls, 0, 'A legacy Planning setting must not dispatch modules automatically.');
+  await app.planningBrowser.create({ id: 'search-private-module', conversationId: run.taskId, title: 'Explicit analysis', objective: 'Inspect the visible request using an optional frame.' });
+  const request = await app.planningBrowser.addNode('search-private-module', { id: 'frame', kind: 'frame', title: 'Reframe', prompt: 'Expose an alternative frame.' });
+  const started = await app.planningBrowserRuntime.start({ requestId: request.id, nodeId: 'frame', expectedNodeRevision: request.nodes.find(node => node.id === 'frame').revision });
   try {
-    await until(() => called); await app.conversations.chain;
-    assert.equal(search(app.conversations, 'HELD_PLANNING_NEEDLE').total, 0);
-    assert.equal(search(app.conversations, 'visible planning search').total, 1);
-    release(); const settled = await until(() => { const value = app.engine.getRun(run.id); return value.settled && value; }); await app.conversations.chain;
-    assert.equal(settled.status, 'failed');
-    assert.match(settled.error, /Return one JSON object matching the declared stage schema/);
-    assert.equal(settled.nodes.agent.status, 'skipped', 'the malformed planning result prevents dispatch');
-    assert.equal(search(app.conversations, 'HELD_PLANNING_NEEDLE').total, 0);
+    await until(() => moduleCalls > 0); await app.conversations.chain;
+    assert.equal(search(app.conversations, 'PRIVATE_MODULE_NEEDLE').total, 0);
+    assert.equal(search(app.conversations, 'visible module search').total, 1);
+    assert.equal(search(app.conversations, 'Visible ordinary answer').total, 1);
+    release(); await app.planningBrowserRuntime.wait(request.id, started.attempt.id); await app.conversations.chain;
+    const saved = await app.planningBrowser.get(request.id);
+    assert.equal(saved.responses.length, 0, 'Malformed output must never become an accepted module response.');
+    assert.equal(saved.attempts.length, 2);
+    assert.equal(saved.attempts.at(-1).status, 'failed');
+    assert.equal(saved.attempts.at(-1).partialOutput, 'PRIVATE_MODULE_NEEDLE');
+    assert.match(saved.attempts.at(-1).message, /JSON/);
+    assert.equal(moduleCalls, 2, 'Malformed module output permits one bounded repair, not an ordinary worker retry.');
+    assert.equal(ordinaryCalls, 1);
+    assert.equal(search(app.conversations, 'PRIVATE_MODULE_NEEDLE').total, 0);
+    assert.equal(app.engine.getRun(run.id).status, 'completed');
   } finally { release(); }
 });

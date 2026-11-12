@@ -1,4 +1,4 @@
-// Historical schema-13 protocol regression; current canonical evidence and handoff have separate acceptance.
+// Explicit schema-13 handoff/schema regression; ordinary Engine turns no longer invoke forced Planning.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -15,91 +15,13 @@ import { PlanningBrowserStore } from '../lib/planning-browser.mjs';
 import { PlanningBrowserRuntime } from '../lib/planning-browser-runtime.mjs';
 import { TaskViability } from '../lib/task-viability.mjs';
 import { ResponseCycleService } from '../lib/response-cycle.mjs';
-import { responseCycleStage } from '../public/response-cycle-model.mjs';
 import { createMissionWorkflow } from '../public/mission-model.mjs';
-import { fixtureUserAgency } from './fixture-user-agency.mjs';
-import { planningResponseBody } from '../public/planning-browser-model.mjs';
 import { normalizeOutputSchema, validateResponseOnlyOptions } from '../lib/response-profile.mjs';
 
 const request = 'List the files in the current workspace.';
 const payload = receipt => JSON.parse(receipt.contentItems.find(item => item.type === 'inputText').text);
 const tool = (options, name, args, callId) => options.onToolCall({ name, arguments: args, callId });
 const captured = options => JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n') + 2));
-const criterion = { id: 'workspace-list', label: 'Current workspace inventory', description: 'Report the directory entries returned by the requested current workspace listing.', verification: 'response' };
-
-function checkedResponse(input) {
-  const stage = responseCycleStage(input.module.kind, { pipelineVersion: input.cycle?.pipelineVersion });
-  const sourceId = input.sources.find(source => source.id === 'viability:task')?.id || input.sources[0].id;
-  const body = {
-    userAgency: fixtureUserAgency(),
-    values: Object.fromEntries(input.template.fields.map(field => [field.id, field.label + ': inspect the requested workspace and report only the observed entries.'])),
-    grounding: input.template.fields.filter(field => field.grounding === 'required').map(field => ({ field: field.id, sourceId })),
-    openQuestions: [], challengeResponses: []
-  };
-  if (stage.id === 'feasibility') return { ...body, requirements: [] };
-  Object.assign(body, {
-    checks: stage.checks.map(check => ({
-      id: check.id, assessment: check.when === 'effects' ? 'not_applicable' : 'supported',
-      sourceIds: check.grounding === 'required' && check.when !== 'effects' ? [sourceId] : [],
-      note: 'The captured request supports this bounded inspection; its results must come from actual execution.'
-    })),
-    subproblems: [], childResults: []
-  });
-  if (stage.id === 'inference') body.inferences = [{
-    id: 'requested-inspection', claim: 'The user wants an actual current workspace listing.',
-    basis: 'inferred', sourceIds: [sourceId], limitation: 'The listing has not run during this preparation.'
-  }];
-  const criteria = input.cycle?.requiredAcceptanceCriteria?.length ? input.cycle.requiredAcceptanceCriteria
-    : input.cycle?.acceptanceCriteria?.length ? input.cycle.acceptanceCriteria : [criterion];
-  if (stage.id === 'plan') Object.assign(body, {
-    acceptanceCriteria: criteria,
-    // A real accepted analytical Plan has semantic steps, not executable tool leaves.
-    steps: [{
-      id: 'inspect-workspace', label: 'Inspect the current workspace',
-      description: 'List the current workspace through the available workspace tool and use the returned directory entries in the answer.',
-      dependsOn: [], criterionIds: criteria.map(item => item.id), sourceIds: [sourceId]
-    }]
-  });
-  if (stage.id === 'think') body.criterionResults = criteria.map(item => ({
-    criterionId: item.id, assessment: 'satisfied', sourceIds: [sourceId], receiptIds: [],
-    rationale: 'The operational fixture separately checks the actual workspace receipt.'
-  }));
-  if (stage.id === 'respond') {
-    body.values.answer = 'The current workspace contains input.txt.';
-    body.coverage = criteria.map(item => ({
-      criterionId: item.id, disposition: 'addressed', sourceIds: [sourceId],
-      responseExcerpt: body.values.answer, limitation: ''
-    }));
-  }
-  return body;
-}
-
-function findSnapshot(value) {
-  if (!value || typeof value !== 'object') return null;
-  if (Number.isSafeInteger(value.revision) && typeof value.taskId === 'string' && Array.isArray(value.steps)) return value;
-  for (const item of Object.values(value)) {
-    const found = findSnapshot(item);
-    if (found) return found;
-  }
-  return null;
-}
-function deliveredSnapshot(text) {
-  const marker = 'ACCEPTED EXECUTION OUTLINE SNAPSHOT';
-  const start = text.indexOf('{', text.indexOf(marker) + marker.length);
-  assert.ok(text.includes(marker) && start >= 0, 'The worker must receive the saved outline as actual JSON.');
-  let depth = 0, quoted = false, escaped = false;
-  for (let index = start; index < text.length; index++) {
-    const char = text[index];
-    if (quoted) {
-      if (escaped) escaped = false;
-      else if (char === '\\') escaped = true;
-      else if (char === '"') quoted = false;
-    } else if (char === '"') quoted = true;
-    else if (char === '{') depth++;
-    else if (char === '}' && --depth === 0) return findSnapshot(JSON.parse(text.slice(start, index + 1)));
-  }
-  assert.fail('The delivered execution outline JSON is incomplete.');
-}
 function executionLeaf() {
   return {
     id: 'inspect-workspace', title: 'List the current workspace entries', kind: 'action', parentId: null, status: 'active',
@@ -147,26 +69,12 @@ function assertOperationalChoices(handoff) {
 
 async function completeListing(options, context) {
   const receipt = await context.operation(options, { action: 'list', path: '.' });
-  if (!receipt.success) return { output: 'The fixture workspace operation was rejected.' };
-  const stateReceipt = await tool(options, 'relay_task', { action: 'read' }, 'post-operation-read');
-  assert.equal(stateReceipt.success, true, stateReceipt.contentItems?.[0]?.text);
-  const state = payload(stateReceipt), active = state.steps.find(step => step.status === 'active' && step.operation?.kind === 'tool');
-  assert.ok(active);
-  const completed = await tool(options, 'relay_task', {
-    action: 'step', expectedRevision: state.revision, stepId: active.id, status: 'done',
-    evidence: 'The actual relay_workspace list response contains the pre-existing input.txt file.'
-  }, 'record-observed-list');
-  assert.equal(completed.success, true, completed.contentItems?.[0]?.text);
-  const current = payload(completed);
-  const reviewed = await tool(options, 'relay_task', {
-    action: 'review', expectedRevision: current.revision,
-    review: { decision: 'respond', summary: 'The actual directory receipt was checked and contains input.txt. The requested listing is complete.' }
-  }, 'review-observed-list');
-  assert.equal(reviewed.success, true, reviewed.contentItems?.[0]?.text);
+  assert.equal(receipt.success, true, receipt.contentItems?.[0]?.text);
+  assert.ok(payload(receipt).entries.some(entry => entry.name === 'input.txt'));
   return { output: 'The current workspace contains input.txt.' };
 }
 
-async function fixture(t, { execute, withPlanning = true, invalidHandoff = null, handoffFailure = null, postResponseSourceFailure = null, historicalTool = false } = {}) {
+async function fixture(t, { execute, withPlanning = true } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-forced-handoff-'));
   const cwd = path.join(directory, 'workspace');
   await mkdir(cwd);
@@ -179,71 +87,7 @@ async function fixture(t, { execute, withPlanning = true, invalidHandoff = null,
   class Runtime extends EventEmitter {
     status() { return { connected: true, authenticated: true, defaultModel: 'fixture-handoff', models: [{ id: 'fixture-handoff', supportsTools: true }] }; }
     async runAgent(options) {
-      if (options.responseOnly && options.prompt.includes('NATIVE PLAN EXECUTION HANDOFF')) {
-        const input = captured(options), snapshot = findSnapshot(input);
-        assert.ok(snapshot, 'The handoff provider must receive the actual saved task revision.');
-        observations.handoffs.push({ options, input, snapshot });
-        // Exercise the same pre-provider boundary as the installed runtimes.
-        // A mock returning JSON alone misses unresolved $ref and size/depth errors.
-        validateResponseOnlyOptions(options);
-        assert.equal(options.outputSchema?.type, 'object', 'Native refinement must supply an actual structured-output schema.');
-        assert.ok(options.outputSchema.properties?.steps, 'The output schema must preserve the executable steps field.');
-        observations.handoffs.at(-1).validatedOutputSchema = normalizeOutputSchema(options.outputSchema);
-        if (handoffFailure) throw handoffFailure;
-        const body = {
-          action: 'plan', expectedRevision: snapshot.revision,
-          plan: { layout: 'sequence', detail: 'detailed', taskType: 'general' },
-          steps: [...structuredClone(snapshot.steps), executionLeaf()]
-        };
-        if (invalidHandoff === 'malformed-expression') body.steps = [
-          { id: 'route', title: 'Choose the workspace inspection', kind: 'choice', parentId: null,
-            branch: { if: { and: [] }, then: 'inspect-workspace', else: 'alternative-list' } },
-          { ...executionLeaf(), parentId: 'route' },
-          { ...executionLeaf(), id: 'alternative-list', parentId: 'route', status: 'pending' }
-        ];
-        if (invalidHandoff === 'bookkeeping') body.steps.at(-1).operation = { kind: 'tool', tool: 'relay_task', action: 'read', target: snapshot.taskId };
-        if (invalidHandoff === 'detached') body.steps.at(-1).operation = { kind: 'tool', tool: 'relay_retired_reader', action: 'read', target: 'input.txt' };
-        if (invalidHandoff === 'invalid-action') body.steps.at(-1).operation.action = 'invented-action';
-        if (invalidHandoff === 'historical-rewrite') body.steps[0].operation.target = 'rewritten-history.txt';
-        if (invalidHandoff === 'empty') body.steps = [];
-        if (invalidHandoff === 'stale') body.expectedRevision = snapshot.revision - 1;
-        if (postResponseSourceFailure && observations.handoffs.length === 1) {
-          const getSource = context.service.getExecutionPlan.bind(context.service);
-          let pending = true;
-          context.service.getExecutionPlan = async run => {
-            if (pending) { pending = false; observations.injectedSourceFailures = 1; throw postResponseSourceFailure; }
-            return getSource(run);
-          };
-        }
-        return { output: JSON.stringify(body), threadId: 'fixture-handoff-planner', usage: { inputTokens: 29, outputTokens: 8, totalTokens: 37 } };
-      }
-      if (options.responseOnly) {
-        const input = captured(options);
-        observations.analyticalStages.push(input.module.kind);
-        if (historicalTool && input.module.kind === 'plan' && !observations.historicalStep) {
-          const run = context.engine.listRuns()[0];
-          let previous = await tasks.ensure({ taskId: run.taskId, runId: run.id, nodeId: 'agent', cwd, goal: request });
-          const actor = revision => ({ expectedRevision: revision, runId: run.id, nodeId: 'agent', schemaVersion: 13, planningMode: 'on', executionGuardrails: true });
-          previous = await tasks.setPlan(previous.taskId, {
-            plan: { layout: 'sequence', detail: 'detailed', taskType: 'general' },
-            steps: [{
-              id: 'observed-prior-input', title: 'Read the prior input file', kind: 'action', parentId: null, status: 'active',
-              operation: { kind: 'tool', tool: 'relay_retired_reader', action: 'read', target: 'input.txt' },
-              result: 'The actual input.txt contents returned by the earlier reader.',
-              note: 'Read input.txt through the earlier fixture reader and inspect the returned contents.',
-              doneWhen: 'The actual read returns the existing input.txt contents.'
-            }]
-          }, actor(previous.revision));
-          // This older fixture adapter performs its real read before it is absent
-          // from the new catalog. The saved outcome is history, not future work.
-          const observed = await readFile(path.join(cwd, 'input.txt'), 'utf8');
-          previous = await tasks.setStep(previous.taskId, 'observed-prior-input', {
-            status: 'done', evidence: 'The prior fixture reader returned input.txt contents: ' + JSON.stringify(observed)
-          }, actor(previous.revision));
-          observations.historicalStep = structuredClone(previous.steps.find(step => step.id === 'observed-prior-input'));
-        }
-        return { output: JSON.stringify(checkedResponse(input)), threadId: 'fixture-analytical', usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 } };
-      }
+      assert.notEqual(options.responseOnly, true, 'Ordinary Engine work must not dispatch retired analytical or handoff turns.');
       observations.operationalCalls++;
       const run = context.engine.listRuns()[0], state = await tasks.get(run.taskId);
       observations.atWorkerEntry = { state, options, awareness: tasks.awareness.snapshot(state) };
@@ -281,276 +125,216 @@ async function fixture(t, { execute, withPlanning = true, invalidHandoff = null,
   return context;
 }
 
-test('an ordinary Forced request hands its accepted Plan to the first workspace operation without user coaching', async t => {
+test('a legacy Forced request starts directly without analytical stages or native refinement', async t => {
   const f = await fixture(t, { execute: completeListing });
   const run = await f.run();
-  assert.deepEqual(f.observations.analyticalStages.slice(0, 3), ['inference', 'viability', 'plan']);
-  assert.equal(run.input, request, 'The ordinary request must not gain per-task planner coaching.');
-  assert.equal(f.observations.operationalCalls, 1, run.error);
-  const before = f.observations.atWorkerEntry;
-  assert.ok(before.state.steps.some(step => step.kind === 'action' && step.operation?.kind === 'tool'),
-    'A valid preparatory Plan must be materialized into a saved executable outline before the worker starts.');
-  assert.equal(f.observations.handoffs.length, 1, 'Semantic planning needs one genuine provider-authored refinement, not fabricated host operations.');
-  assert.deepEqual(f.observations.handoffs[0].validatedOutputSchema, f.observations.handoffs[0].options.outputSchema,
-    'The actual handoff schema must survive the real runtime normalizer before a provider response can be accepted.');
-  assertOperationalChoices(f.observations.handoffs[0]);
-  const refinementInput = f.observations.handoffs[0].input;
-  assert.ok(refinementInput.taskDescription?.plan?.inputSchema,
-    'Native refinement must receive the actual normal task description, not just a detached schema.');
-  assert.ok(refinementInput.taskCatalog?.ontology,
-    'Native refinement must receive the actual supported describe catalog before choosing saved reference IDs.');
-  const operationalCatalog = refinementInput.tools;
-  assert.ok(operationalCatalog.length > 0, 'The refinement needs actual attached operational choices.');
-  assert.ok(operationalCatalog.every(tool => tool.name !== 'relay_task'),
-    'Task bookkeeping must not be advertised as a valid primary operational leaf and then rejected by the host.');
-  assert.ok(before.options.dynamicTools.some(tool => tool.name === 'relay_task'),
-    'Excluding bookkeeping from operation choices must not remove the worker task-state tool.');
-  const fullTaskSchema = f.observations.handoffs[0].input.taskPlanSchema;
-  assert.equal(fullTaskSchema?.type, 'object', 'The model must receive the complete host task-plan grammar separately from its detached transport schema.');
-  assert.ok(fullTaskSchema.$defs?.planExpression);
-  assert.ok(JSON.stringify(fullTaskSchema.$defs.planExpression).includes('"$ref":"#/$defs/planExpression"'),
-    'The prompt must preserve the full recursive branch-expression grammar that remains authoritative at host validation.');
-  const delivered = [before.options.prompt, before.options.developerInstructions].filter(Boolean).join('\n');
-  assert.match(delivered, /ACCEPTED EXECUTION OUTLINE SNAPSHOT/);
-  const snapshot = deliveredSnapshot(delivered);
-  assert.ok(snapshot, 'The delivered JSON must contain the actual task snapshot.');
-  assert.equal(snapshot.taskId, before.state.taskId);
-  assert.equal(snapshot.revision, before.state.revision, 'The delivered revision must be the revision actually materialized before execution.');
-  assert.deepEqual(snapshot.steps, before.state.steps, 'The saved operation descriptors must reach the worker without truncation or substitution.');
-  assert.equal(f.observations.operations.length, 1);
-  assert.equal(f.observations.operations[0].receipt.success, true, f.observations.operations[0].receipt.contentItems?.[0]?.text);
-  const read = f.observations.operations[0].awareness.workers.find(worker => worker.runId === run.id && worker.nodeId === 'agent');
-  assert.equal(read?.lastReadRevision, snapshot.revision, 'The first permitted operation may acknowledge only its delivered revision.');
-  assert.ok(payload(f.observations.operations[0].receipt).entries.some(entry => entry.name === 'input.txt'));
   assert.equal(run.status, 'completed', run.error);
-  const handoff = run.nodes.agent.planningHandoff;
-  assert.equal(handoff?.state, 'delivered');
-  assert.equal(handoff.taskRevision, snapshot.revision);
-  assert.match(handoff.sourceSha256, /^[a-f0-9]{64}$/);
-  assert.match(handoff.snapshotSha256, /^[a-f0-9]{64}$/);
-  const accepted = await f.store.get(run.responseCycle.requestId);
-  const acceptedPlan = accepted.nodes.find(node => node.id === handoff.planRef.nodeId);
-  assert.equal(handoff.planRef.requestId, accepted.id);
-  assert.equal(handoff.planRef.responseId, acceptedPlan.response.id, 'Operational execution must remain traceable to the exact accepted Plan response.');
-  assert.equal(handoff.planRef.nodeRevision, acceptedPlan.revision);
-  assert.deepEqual(handoff.attempts[0].usage, { inputTokens: 29, outputTokens: 8, totalTokens: 37 });
-  const analyticalCount = f.observations.analyticalStages.length;
-  assert.equal(run.planningUsage.inputTokens, 29 + 5 * analyticalCount);
-  assert.equal(run.planningUsage.outputTokens, 8 + 2 * analyticalCount);
-  assert.equal(run.planningUsage.totalTokens, 37 + 7 * analyticalCount, 'The real native refinement usage must be counted exactly once alongside analytical planning.');
-});
-
-test('saving a handoff does not claim a worker read before the delivered snapshot is used', async t => {
-  const f = await fixture(t, { execute: async () => { throw Object.assign(new Error('The fixture stops before requesting any tool.'), { code: 'FIXTURE_BEFORE_TOOL' }); } });
-  const run = await f.run();
-  assert.ok(f.observations.atWorkerEntry.state.steps.length, 'This case must first materialize a real accepted outline.');
-  const worker = f.observations.atWorkerEntry.awareness.workers.find(item => item.runId === run.id && item.nodeId === 'agent');
-  assert.ok(worker);
-  assert.equal(worker.lastReadRevision ?? null, null, 'A stored outline or queued native invocation alone is not a delivered-use acknowledgment.');
-  assert.equal(f.observations.operations.length, 0);
-});
-
-test('a correction after handoff delivery remains unread and blocks the first operation', async t => {
-  const f = await fixture(t, { execute: async (options, context, delivered) => {
-    const active = delivered.steps.find(step => step.kind === 'action' && step.status === 'active');
-    if (!active) return { output: 'No operational outline was handed off.' };
-    const changed = await context.tasks.editPlan(delivered.taskId, {
-      operations: [{ type: 'update', stepId: active.id, patch: { note: 'Read this later human correction before running the directory inspection.' } }]
-    }, { expectedRevision: delivered.revision, source: 'human' });
-    context.observations.changed = changed;
-    await context.operation(options, { action: 'list', path: '.' });
-    return { output: 'The changed outline must be read before operating.' };
-  } });
-  await f.run();
-  assert.ok(f.observations.changed, 'The regression requires a real saved correction after delivery.');
-  assert.equal(f.observations.operations[0].receipt.code, 'TASK_PLAN_REVIEW_REQUIRED');
-  const workers = f.tasks.awareness.snapshot(await f.tasks.get(f.observations.changed.taskId)).workers;
-  const worker = workers.find(item => item.nodeId === 'agent');
-  assert.ok(!worker || worker.lastReadRevision < f.observations.changed.revision,
-    'The runtime must never auto-acknowledge a revision absent from its delivered snapshot.');
-});
-
-test('an accepted listing handoff does not permit a mismatched primary write', async t => {
-  const f = await fixture(t, { execute: async (options, context) => {
-    await context.operation(options, { action: 'write', path: 'must-not-exist.txt', text: 'Unplanned write.' });
-    return { output: 'The unplanned primary write must not run.' };
-  } });
-  await f.run();
-  assert.ok(f.observations.atWorkerEntry.state.steps.length, 'The valid handoff must exist before mismatch admission is tested.');
-  const receipt = f.observations.operations[0].receipt;
-  assert.equal(receipt.success, false);
-  assert.match(receipt.code || payload(receipt).code || '', /^TASK_PLAN_/,
-    'The planner gate must reject the primary mismatch before the filesystem handler: ' + JSON.stringify(receipt));
-  await assert.rejects(readFile(path.join(f.cwd, 'must-not-exist.txt')), { code: 'ENOENT' });
-});
-
-test('using a handoff once does not bypass primary-result reconciliation', async t => {
-  const f = await fixture(t, { execute: async (options, context, delivered) => {
-    await context.operation(options, { action: 'list', path: '.' });
-    // Replacing the dispatched action would erase its unresolved receipt.
-    // Ordinary read-only auxiliary observations retain their existing contract.
-    const next = {
-      ...executionLeaf(), id: 'write-after-list',
-      operation: { kind: 'tool', tool: 'relay_workspace', action: 'write', target: 'must-not-exist.txt' },
-      result: 'The actual receipt of writing the planned file.',
-      note: 'Write the requested text to must-not-exist.txt once.',
-      doneWhen: 'The actual workspace write receipt identifies the saved file.'
-    };
-    context.observations.prematureReplan = await tool(options, 'relay_task', {
-      action: 'plan', expectedRevision: delivered.revision,
-      plan: { layout: 'sequence', detail: 'detailed', taskType: 'general' }, steps: [next]
-    }, 'premature-replacement');
-    return { output: 'The dispatched listing must retain its actual unresolved result.' };
-  } });
-  await f.run();
-  assert.equal(f.observations.operations[0].receipt.success, true);
-  const denied = f.observations.prematureReplan;
-  assert.equal(denied.success, false);
-  assert.equal(denied.code || payload(denied).code, 'TASK_PLAN_RESULT_REQUIRED');
-  await assert.rejects(readFile(path.join(f.cwd, 'must-not-exist.txt')), { code: 'ENOENT' });
-});
-
-test('changing the accepted source Plan after delivery blocks the first ordinary operation', async t => {
-  const f = await fixture(t, { execute: async (options, context, delivered) => {
-    const activeRun = context.engine.listRuns()[0], ref = activeRun.nodes.agent.planningHandoff.planRef;
-    const accepted = await context.store.get(ref.requestId), plan = accepted.nodes.find(node => node.id === ref.nodeId);
-    const body = planningResponseBody(plan.response);
-    body.steps[0].description += ' A later human correction requires another source review before executing.';
-    const changed = await context.store.recordHumanResponse(ref.requestId, ref.nodeId, body, {
-      expectedNodeRevision: plan.revision, actor: { type: 'human', id: 'fixture-human' }
-    });
-    const revised = changed.nodes.find(node => node.id === ref.nodeId);
-    context.observations.sourceChange = { before: ref, after: revised.response.id, revision: revised.revision };
-    assert.equal((await context.tasks.get(delivered.taskId)).revision, delivered.revision,
-      'This regression changes the accepted source Plan, independently of task snapshot freshness.');
-    try {
-      await context.operation(options, { action: 'list', path: '.' });
-      assert.fail('An operation based on the superseded accepted source must not dispatch.');
-    } catch (error) {
-      context.observations.sourceError = { code: error.code, message: error.message };
-      throw error;
-    }
-  } });
-  const run = await f.run();
-  assert.equal(f.observations.operationalCalls, 1, 'The provider must first receive the real saved handoff.');
-  assert.ok(f.observations.sourceChange);
-  assert.notEqual(f.observations.sourceChange.after, f.observations.sourceChange.before.responseId);
-  assert.equal(f.observations.sourceError?.code, 'RESPONSE_CYCLE_PLAN_CONFLICT');
-  assert.equal(f.observations.operations.length, 0, 'No workspace receipt may be produced after source conflict.');
-  assert.equal(run.nodes.agent.planningHandoff.state, 'prepared', 'A superseded source must not gain a delivered acknowledgment.');
-  assert.equal(run.status, 'failed');
-});
-
-test('a refinement provider transport failure is terminal and is not automatically replayed', async t => {
-  const f = await fixture(t, { handoffFailure: Object.assign(new Error('Fixture refinement transport unavailable.'), { code: 'FIXTURE_PROVIDER_UNAVAILABLE' }) });
-  const run = await f.run();
-  assert.deepEqual(f.observations.analyticalStages, ['inference', 'viability', 'plan']);
-  assert.equal(f.observations.handoffs.length, 1, 'A transport failure is not a rejected completed response eligible for repair.');
-  assert.equal(f.observations.operationalCalls, 0);
-  assert.equal(f.observations.operations.length, 0);
-  const handoff = run.nodes.agent.planningHandoff;
-  assert.equal(handoff.state, 'failed');
-  assert.equal(handoff.attempts.length, 1);
-  assert.equal(handoff.attempts[0].error.code, 'FIXTURE_PROVIDER_UNAVAILABLE');
-  assert.equal(run.status, 'failed');
-});
-
-test('a source read failure after completed refinement is terminal instead of replaying the provider', async t => {
-  const f = await fixture(t, { postResponseSourceFailure: Object.assign(new Error('Fixture accepted-Plan storage temporarily unavailable.'), { code: 'EIO' }) });
-  const run = await f.run();
-  assert.equal(f.observations.injectedSourceFailures, 1, 'The transient source failure must happen after the completed refinement response.');
-  assert.equal(f.observations.handoffs.length, 1, 'A completed provider response does not make a source/storage error eligible for model repair.');
-  assert.equal(f.observations.operationalCalls, 0);
-  assert.equal(f.observations.operations.length, 0);
-  const handoff = run.nodes.agent.planningHandoff;
-  assert.equal(handoff.state, 'failed');
-  assert.equal(handoff.attempts.length, 1);
-  assert.equal(handoff.attempts[0].error.code, 'EIO');
-  assert.equal(run.status, 'failed');
-});
-
-test('without an accepted preparatory Plan an empty outline still rejects ordinary operations', async t => {
-  const f = await fixture(t, { withPlanning: false, execute: async (options, context) => {
-    await context.operation(options, { action: 'list', path: '.' });
-    return { output: 'No unplanned inspection is claimed.' };
-  } });
-  await f.run();
+  assert.equal(run.input, request);
+  assert.equal(run.planningMode, 'off');
+  assert.equal(f.observations.operationalCalls, 1);
+  assert.deepEqual(f.observations.analyticalStages, []);
+  assert.deepEqual(f.observations.handoffs, []);
   assert.deepEqual(f.observations.atWorkerEntry.state.steps, []);
-  assert.equal(f.observations.operations[0].receipt.code, 'TASK_PLAN_REQUIRED');
-});
-
-for (const invalidHandoff of ['empty', 'stale']) test('a refinement with ' + invalidHandoff + ' content cannot start an operational worker', async t => {
-  const f = await fixture(t, { invalidHandoff });
-  const run = await f.run();
-  assert.ok(f.observations.handoffs.length, 'The runtime must actually request a native handoff refinement.');
-  assert.equal(f.observations.operationalCalls, 0);
-  assert.notEqual(run.status, 'completed');
-  assert.equal(f.observations.operations.length, 0);
-});
-
-test('detached handoff schema does not bypass full recursive branch-expression validation', async t => {
-  const f = await fixture(t, { invalidHandoff: 'malformed-expression' });
-  const run = await f.run();
-  assert.equal(f.observations.handoffs.length, 2, 'A completed invalid plan permits only the one bounded repair.');
-  assert.ok(f.observations.handoffs.every(handoff => handoff.validatedOutputSchema),
-    'The transport schema must pass the real provider boundary before host expression validation is exercised.');
-  assert.equal(f.observations.operationalCalls, 0);
-  assert.equal(f.observations.operations.length, 0);
-  const attempts = run.nodes.agent.planningHandoff.attempts;
-  assert.equal(attempts.length, 2);
-  for (const attempt of attempts) {
-    assert.equal(attempt.error.code, 'INVALID_TASK_PLAN');
-    assert.match(attempt.error.message, /nonempty bounded array of Boolean expressions/);
-  }
-  assert.equal(run.status, 'failed');
-});
-
-test('a handoff preserves terminal history from a tool no longer attached before new work', async t => {
-  const f = await fixture(t, { historicalTool: true, execute: completeListing });
-  const run = await f.run();
-  assert.equal(f.observations.handoffs.length, 1, run.error);
-  const handoff = f.observations.handoffs[0], historical = f.observations.historicalStep;
-  assertOperationalChoices(handoff);
-  assert.equal(historical?.status, 'done');
-  assert.ok(historical.evidence.includes('A real fixture file.'));
-  assert.ok(handoff.input.tools.every(tool => tool.name !== 'relay_retired_reader'),
-    'The test must actually remove the historical adapter from the current operational catalog.');
-  assert.deepEqual(handoff.input.currentTask.steps.find(step => step.id === historical.id), historical);
-  assert.deepEqual(f.observations.atWorkerEntry.state.steps.find(step => step.id === historical.id), historical,
-    'Refinement must retain the exact saved historical operation and observations, including detached tools.');
+  assert.equal(f.observations.atWorkerEntry.state.plan, undefined);
+  assert.equal(run.responseCycle, undefined);
+  assert.equal(run.nodes.agent.planningHandoff, undefined);
   assert.equal(f.observations.operations.length, 1);
-  assert.equal(f.observations.operations[0].receipt.success, true, f.observations.operations[0].receipt.contentItems?.[0]?.text);
-  assert.equal(run.status, 'completed', run.error);
-  const finalState = await f.tasks.get(run.taskId);
-  assert.deepEqual(finalState.steps.find(step => step.id === historical.id), historical);
+  const receipt = f.observations.operations[0].receipt;
+  assert.equal(receipt.success, true);
+  assert.ok(payload(receipt).entries.some(entry => entry.name === 'input.txt'));
+  assert.doesNotMatch(f.observations.atWorkerEntry.options.prompt, /ACCEPTED EXECUTION OUTLINE SNAPSHOT|NATIVE PLAN EXECUTION HANDOFF/);
 });
 
-for (const [invalidHandoff, message] of [
+test('an ordinary worker failure remains its actual cause without a synthetic planning retry', async t => {
+  const f = await fixture(t, { execute: async () => { throw Object.assign(new Error('Fixture stops before a tool.'), { code: 'FIXTURE_BEFORE_TOOL' }); } });
+  const run = await f.run();
+  assert.equal(run.status, 'failed'); assert.equal(run.errorCode, 'FIXTURE_BEFORE_TOOL');
+  assert.equal(f.observations.operationalCalls, 1); assert.equal(f.observations.operations.length, 0);
+  assert.deepEqual(f.observations.handoffs, []);
+  assert.deepEqual(f.observations.atWorkerEntry.state.steps, []);
+});
+
+test('an explicitly prepared handoff preserves exact schema and snapshot without dispatch or read acknowledgment', async t => {
+  const f = await referenceFixture(t), handoff = await f.prepare();
+  assert.equal(handoff.metadata.state, 'prepared');
+  assert.equal(f.observed.handoffs.length, 1);
+  assertOperationalChoices(f.observed.handoffs[0]);
+  const input = f.observed.handoffs[0].input;
+  assert.ok(input.taskPlanSchema.$defs?.planExpression);
+  assert.ok(JSON.stringify(input.taskPlanSchema.$defs.planExpression).includes('"$ref":"#/$defs/planExpression"'));
+  assert.ok(input.tools.every(item => item.name !== 'relay_task'));
+  assert.deepEqual(handoff.metadata.planRef, { requestId: 'reference-source', nodeId: 'reference-plan', nodeRevision: 1, responseId: 'reference-response' });
+  assert.deepEqual(handoff.metadata.attempts[0].usage, { inputTokens: 29, outputTokens: 8, totalTokens: 37 });
+  const state = await f.tasks.get(f.taskId);
+  assert.deepEqual(handoff.snapshot.steps, state.steps); assert.equal(handoff.snapshot.revision, state.revision);
+  assert.equal(handoff.snapshot.taskId, f.taskId);
+  assert.match(handoff.metadata.snapshotSha256, /^[a-f0-9]{64}$/);
+  assert.match(handoff.metadata.sourceSha256, /^[a-f0-9]{64}$/);
+  const awareness = f.tasks.awareness.snapshot(state);
+  const worker = awareness.workers.find(item => item.runId === f.runId && item.nodeId === f.nodeId);
+  assert.ok(!worker || worker.lastReadRevision == null || worker.lastReadRevision < state.revision,
+    'Saving an outline alone must not claim the new revision was read or executed.');
+});
+
+test('a human correction remains unread while ordinary execution no longer has a compulsory plan-review gate', async t => {
+  const f = await fixture(t, { execute: async (options, context) => {
+    let receipt = await tool(options, 'relay_task', { action: 'read' });
+    let state = payload(receipt);
+    receipt = await tool(options, 'relay_task', { action: 'plan', expectedRevision: state.revision,
+      plan: { layout: 'sequence', detail: 'detailed', taskType: 'general' }, steps: [executionLeaf()] });
+    assert.equal(receipt.success, true); state = payload(receipt);
+    const changed = await context.tasks.editPlan(state.taskId, {
+      operations: [{ type: 'update', stepId: 'inspect-workspace', patch: { note: 'A human correction to the optional inspection note.' } }]
+    }, { expectedRevision: state.revision, source: 'human' });
+    context.observations.changed = changed;
+    const result = await context.operation(options, { action: 'list', path: '.' });
+    assert.equal(result.success, true);
+    const workers = context.tasks.awareness.snapshot(await context.tasks.get(state.taskId)).workers;
+    const worker = workers.find(item => item.nodeId === 'agent');
+    assert.ok(!worker || worker.lastReadRevision < changed.revision, 'Tool execution cannot pretend the later human correction was read.');
+    return { output: 'The current workspace contains input.txt.' };
+  } });
+  const run = await f.run(); assert.equal(run.status, 'completed', run.error);
+  assert.equal(run.taskState.steps[0].note, f.observations.changed.steps[0].note);
+  assert.equal(run.taskState.steps[0].status, 'active', 'An answer cannot fabricate completion of optional authored steps.');
+});
+
+test('an optional listing outline does not veto an independent write or fabricate its completion', async t => {
+  const f = await fixture(t, { execute: async (options, context) => {
+    const initial = payload(await tool(options, 'relay_task', { action: 'read' }));
+    const saved = await tool(options, 'relay_task', { action: 'plan', expectedRevision: initial.revision,
+      plan: { layout: 'sequence', taskType: 'general' }, steps: [executionLeaf()] });
+    assert.equal(saved.success, true);
+    const receipt = await context.operation(options, { action: 'write', path: 'direct.txt', text: 'Actual direct write.' });
+    assert.equal(receipt.success, true);
+    return { output: 'Wrote direct.txt; the optional listing is not claimed complete.' };
+  } });
+  const run = await f.run(); assert.equal(run.status, 'completed', run.error);
+  assert.equal(await readFile(path.join(f.cwd, 'direct.txt'), 'utf8'), 'Actual direct write.');
+  assert.equal(run.taskState.steps[0].status, 'active');
+});
+
+test('direct tool-call idempotency retains its exact receipt without compulsory reconciliation leaves', async t => {
+  const f = await fixture(t, { execute: async (options, context) => {
+    const args = { action: 'write', path: 'once.txt', text: 'One original write.' };
+    const first = await tool(options, 'relay_workspace', args, 'stable-write-once');
+    assert.equal(first.success, true);
+    await writeFile(path.join(context.cwd, 'once.txt'), 'Independent later edit.');
+    const second = await tool(options, 'relay_workspace', args, 'stable-write-once');
+    assert.deepEqual(second, first);
+    assert.equal(await readFile(path.join(context.cwd, 'once.txt'), 'utf8'), 'Independent later edit.',
+      'A replayed call must not repeat the original effect.');
+    return { output: 'The original receipt was reused without repeating its write.' };
+  } });
+  const run = await f.run(); assert.equal(run.status, 'completed', run.error);
+  assert.deepEqual(run.taskState.steps, []);
+});
+
+test('explicit handoff detects a changed accepted source before saving the proposed outline', async t => {
+  const f = await referenceFixture(t);
+  const before = await readFile(f.tasks.file(f.taskId), 'utf8');
+  await assert.rejects(f.prepare({ getSource: (source, count) => count < 3 ? source : {
+    ...source, planRef: { ...source.planRef, nodeRevision: 2, responseId: 'revised-response' }
+  } }), { code: 'RESPONSE_CYCLE_PLAN_CONFLICT' });
+  assert.equal(f.observed.handoffs.length, 1);
+  assert.equal(await readFile(f.tasks.file(f.taskId), 'utf8'), before);
+});
+
+test('an explicit refinement transport failure is terminal and is not automatically replayed', async t => {
+  const f = await referenceFixture(t);
+  await assert.rejects(f.prepare({ respond: () => { throw Object.assign(new Error('Fixture refinement transport unavailable.'), { code: 'FIXTURE_PROVIDER_UNAVAILABLE' }); } }),
+    { code: 'FIXTURE_PROVIDER_UNAVAILABLE' });
+  assert.equal(f.observed.handoffs.length, 1); assert.equal(f.observed.planCalls.length, 0);
+  assert.equal(f.observed.updates.at(-1).state, 'failed');
+  assert.deepEqual((await f.tasks.get(f.taskId)).steps, []);
+});
+
+test('a source storage failure after explicit refinement is terminal without replaying the provider', async t => {
+  const f = await referenceFixture(t);
+  await assert.rejects(f.prepare({ getSource: (source, count) => {
+    if (count > 2) throw Object.assign(new Error('Fixture source storage unavailable.'), { code: 'EIO' });
+    return source;
+  } }), { code: 'EIO' });
+  assert.equal(f.observed.handoffs.length, 1); assert.equal(f.observed.planCalls.length, 0);
+  assert.equal(f.observed.updates.at(-1).attempts[0].error.code, 'EIO');
+  assert.deepEqual((await f.tasks.get(f.taskId)).steps, []);
+});
+
+test('an ordinary request needs no preparatory Plan or response-cycle service', async t => {
+  const f = await fixture(t, { withPlanning: false, execute: completeListing });
+  const run = await f.run(); assert.equal(run.status, 'completed', run.error);
+  assert.deepEqual(f.observations.atWorkerEntry.state.steps, []);
+  assert.equal(f.observations.operations[0].receipt.success, true);
+  assert.equal(run.responseCycle, undefined);
+});
+
+for (const invalid of ['empty', 'stale']) test('explicit refinement rejects ' + invalid + ' content atomically', async t => {
+  const f = await referenceFixture(t);
+  const before = await readFile(f.tasks.file(f.taskId), 'utf8');
+  await assert.rejects(f.prepare({ respond: input => {
+    const response = referencePlan(input);
+    if (invalid === 'empty') response.steps = []; else response.expectedRevision--;
+    return response;
+  } }), { code: 'TASK_PLAN_HANDOFF_FAILED' });
+  assert.equal(f.observed.handoffs.length, 2, 'Only one repair follows a completed invalid response.');
+  assert.equal(await readFile(f.tasks.file(f.taskId), 'utf8'), before);
+});
+
+test('explicit detached handoff schema preserves full recursive branch-expression validation', async t => {
+  const f = await referenceFixture(t);
+  await assert.rejects(f.prepare({ respond: input => ({ ...referencePlan(input), steps: [
+    { id: 'route', title: 'Choose an inspection', kind: 'choice', parentId: null,
+      branch: { if: { and: [] }, then: 'inspect-workspace', else: 'alternative-list' } },
+    { ...executionLeaf(), parentId: 'route' },
+    { ...executionLeaf(), id: 'alternative-list', parentId: 'route', status: 'pending' }
+  ] }) }), error => error.code === 'TASK_PLAN_HANDOFF_FAILED' && error.cause?.code === 'INVALID_TASK_PLAN'
+    && /nonempty bounded array of Boolean expressions/.test(error.cause.message));
+  assert.equal(f.observed.handoffs.length, 2);
+  assert.deepEqual((await f.tasks.get(f.taskId)).steps, []);
+});
+
+async function seedHistoricalOperation(f) {
+  const initial = payload(await f.call({ action: 'read' }));
+  const saved = await f.call({ ...referencePlan({ currentTask: initial }), steps: [{
+    ...executionLeaf(), id: 'observed-prior-input', title: 'Read prior input',
+    operation: { kind: 'tool', tool: 'relay_retired_reader', action: 'read', target: 'input.txt' }
+  }] });
+  assert.equal(saved.success, true, saved.contentItems?.[0]?.text);
+  const observed = await readFile(path.join(f.cwd, 'input.txt'), 'utf8');
+  const done = await f.call({ action: 'step', expectedRevision: payload(saved).revision,
+    stepId: 'observed-prior-input', status: 'done', evidence: 'Prior reader returned input.txt: ' + JSON.stringify(observed) });
+  assert.equal(done.success, true); return payload(done).steps[0];
+}
+
+test('explicit handoff preserves exact terminal history from a detached tool before optional new work', async t => {
+  const f = await referenceFixture(t), historical = await seedHistoricalOperation(f);
+  const handoff = await f.prepare({ respond: input => ({ ...referencePlan(input), steps: [...input.currentTask.steps, executionLeaf()] }) });
+  assert.equal(f.observed.handoffs.length, 1); assertOperationalChoices(f.observed.handoffs[0]);
+  assert.deepEqual(handoff.snapshot.steps.find(step => step.id === historical.id), historical);
+  assert.deepEqual((await f.tasks.get(f.taskId)).steps.find(step => step.id === historical.id), historical);
+  assert.equal(historical.status, 'done'); assert.match(historical.evidence, /Actual reference fixture input/);
+});
+
+for (const [invalid, message] of [
   ['bookkeeping', /attached operational tool|bookkeeping/],
   ['detached', /attached operational tool/],
   ['invalid-action', /actual relay_workspace action/],
   ['historical-rewrite', /historical|preserve|saved|operation/i]
-]) test('refinement rejects a new or changed ' + invalidHandoff + ' operation without dropping it', async t => {
-  const historicalTool = invalidHandoff === 'detached' || invalidHandoff === 'historical-rewrite';
-  const f = await fixture(t, { invalidHandoff, historicalTool });
-  const run = await f.run();
-  assert.equal(f.observations.handoffs.length, 2, 'Only the one bounded repair may follow a completed rejected response.');
-  assert.ok(f.observations.handoffs.every(handoff => handoff.validatedOutputSchema),
-    'The real runtime output-schema boundary must accept the schema before the host rejects the returned operation.');
-  assert.equal(f.observations.operationalCalls, 0, 'An invalid leaf must not be silently dropped, substituted or admitted.');
-  assert.equal(f.observations.operations.length, 0);
-  const attempts = run.nodes.agent.planningHandoff.attempts;
-  assert.equal(attempts.length, 2);
-  for (const attempt of attempts) {
-    assert.equal(attempt.error.code, 'TASK_PLAN_HANDOFF_INVALID');
-    assert.match(attempt.error.message, message);
-  }
-  if (historicalTool) {
-    const current = await f.tasks.get(run.taskId);
-    assert.deepEqual(current.steps.find(step => step.id === f.observations.historicalStep.id), f.observations.historicalStep,
-      'Rejected refinement must not rewrite recorded historical work.');
-  }
-  assert.equal(run.status, 'failed');
+]) test('explicit refinement rejects a ' + invalid + ' operation without dropping or rewriting evidence', async t => {
+  const f = await referenceFixture(t);
+  const historical = invalid === 'historical-rewrite' ? await seedHistoricalOperation(f) : null;
+  const before = await readFile(f.tasks.file(f.taskId), 'utf8');
+  await assert.rejects(f.prepare({ respond: input => {
+    const response = { ...referencePlan(input), steps: [...structuredClone(input.currentTask.steps), executionLeaf()] };
+    if (invalid === 'bookkeeping') response.steps.at(-1).operation = { kind: 'tool', tool: 'relay_task', action: 'read', target: f.taskId };
+    if (invalid === 'detached') response.steps.at(-1).operation.tool = 'relay_retired_reader';
+    if (invalid === 'invalid-action') response.steps.at(-1).operation.action = 'invented-action';
+    if (invalid === 'historical-rewrite') response.steps[0].operation.target = 'rewritten-history.txt';
+    return response;
+  } }), error => error.code === 'TASK_PLAN_HANDOFF_FAILED' && error.cause?.code === 'TASK_PLAN_HANDOFF_INVALID' && message.test(error.cause.message));
+  assert.equal(f.observed.handoffs.length, 2);
+  assert.equal(await readFile(f.tasks.file(f.taskId), 'utf8'), before);
+  if (historical) assert.deepEqual((await f.tasks.get(f.taskId)).steps[0], historical);
 });
 
 for (const inventedAction of [false, true]) test('an attached actionless tool ' + (inventedAction ? 'rejects an invented action' : 'remains expressible in the handoff schema'), async t => {
@@ -692,7 +476,7 @@ async function referenceFixture(t) {
       assert.equal(saved.success, true, saved.contentItems?.[0]?.text);
       return payload(saved);
     },
-    async prepare({ respond = input => referencePlan(input), beforePlan, encode = JSON.stringify } = {}) {
+    async prepare({ respond = input => referencePlan(input), beforePlan, encode = JSON.stringify, getSource = source => source } = {}) {
       const plan = { steps: [{ id: 'inspect-workspace', description: 'Inspect the actual current workspace.' }] };
       const source = { planRef: { requestId: 'reference-source', nodeId: 'reference-plan', nodeRevision: 1, responseId: 'reference-response' }, sha256: executionOutlineHash(plan), plan };
       const tools = [TASK_TOOL, { name: 'relay_workspace', description: 'Inspect the fixture workspace.',
@@ -720,10 +504,11 @@ async function referenceFixture(t) {
         const response = await respond(input, observed.handoffs.length, h);
         observation.proposed = structuredClone(response);
         observation.output = encode(response);
-        return { output: observation.output };
+        return { output: observation.output, threadId: 'explicit-refinement-thread', usage: { inputTokens: 29, outputTokens: 8, totalTokens: 37 } };
       } };
+      let sourceReads = 0;
       return prepareExecutionPlanHandoff({ runtime, taskHandler, taskId, runId, nodeId, cwd, context: request, tools,
-        getSource: async () => source, model: 'fixture-handoff', effort: 'low', onUpdate: value => observed.updates.push(value) });
+        getSource: async () => getSource(source, ++sourceReads), model: 'fixture-handoff', effort: 'low', onUpdate: value => observed.updates.push(value) });
     }
   };
   t.after(async () => {
