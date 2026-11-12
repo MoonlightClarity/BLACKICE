@@ -4,7 +4,7 @@
 
 **BLACKICE is an open-source, local-first agent workspace for Windows. Its job is to turn a user's objective into verified work—not simply produce plans, chats, or successful-looking tool calls.**
 
-BLACKICE combines **Shadowdancer, its first-party native inference engine**, with external reasoning models and agents such as Codex, the user's computer, contained browser, files, tools, scheduled work, and persistent task history. The user can start a task in BLACKICE or Codex, let agents do the routine work, inspect what actually happened, intervene when useful, and continue without throwing away earlier progress.
+BLACKICE combines external reasoning models and agents such as Codex with the user's computer, contained browser, files, tools, scheduled work, and persistent task history. The user can start a task in BLACKICE or Codex, let agents do the routine work, inspect what actually happened, intervene when useful, and continue without throwing away earlier progress.
 
 **The measure of success is the user's achieved outcome.** A model response, completed planning graph, number of browser clicks, number of jobs launched, or passing source test suite is not a substitute for that outcome.
 
@@ -22,7 +22,6 @@ A person gives BLACKICE a meaningful goal. BLACKICE coordinates the selected mod
 | **Operate websites** | Uses the contained browser to navigate, inspect, fill forms, upload files, and follow through after submission. | **An observed result at the destination**, not a successful input event alone. |
 | **Run ongoing work** | Reuses task state, executes eligible scheduled or event-triggered steps, handles dependencies and interruptions, and retains outcomes for review. | **Verified incremental progress across runs** without repeating uncertain external effects or creating unrelated replacement tasks. |
 | **Coordinate agents** | Assigns truly separable work to supported models or subagents, monitors receipts, and integrates results. | **Better verified output, elapsed time, or resource efficiency** than doing the same work without delegation. |
-| **Run AI locally** | Uses **Shadowdancer** to load and execute supported language models directly in BLACKICE, with ownership of tokenization, inference, context, and memory behavior. | **Responsive, accurate, resource-efficient local model execution** that preserves model quality and conversation continuity, evaluated on real workloads. |
 
 The system is built to **act, measure, learn from what actually happened, and continue**, while preserving the user's control over their goals and material decisions.
 
@@ -42,7 +41,6 @@ BLACKICE measures the work that matters at the task level. Metrics are computed 
 | **Recovery fidelity** | Tasks resumed with the correct conversation, model, plan/context, receipts, and outstanding work after interruption. | No fabricated completion, lost task identity, or automatic replay of an uncertain external effect. |
 | **Evidence quality** | Unsupported completion claims, mismatched citations, stale observations, and assertions contradicted by receipts. | **Zero knowingly unsupported confirmed-outcome claims**; unknown remains unknown until resolved. |
 | **Delegation value** | Actual critical-path time saved and independent quality gained versus worker setup, coordination, and integration cost. | Delegate only when the forecasted opportunity justifies overhead; check the forecast against measured results. |
-| **Shadowdancer inference performance** | Prefill and decode throughput, time to first token, end-to-end latency, RAM/VRAM consumption, numerical fidelity, output quality, and sustained context behavior for a stated model and precision. | Optimize for responsive, resource-efficient local inference **without trading away accuracy, reasoning quality, or long-context reliability**; publish measurements only when benchmarked. |
 
 **These are product acceptance measures, not fabricated benchmark results.** BLACKICE records real values and distinguishes a user-defined numerical target from a measured result. No fixed tokens-per-minute, completion-per-hour, or speedup guarantee is implied by this README.
 
@@ -60,7 +58,6 @@ BLACKICE measures the work that matters at the task level. Metrics are computed 
 | Layer | What it supplies |
 | --- | --- |
 | **Chat and model runtimes** | Persistent conversations, native Codex integration, external API models, model-specific settings, and actual tool results. |
-| **Shadowdancer (native inference)** | BLACKICE-owned local model execution: weight loading, tokenization, transformer math, prefill, decoding, KV-cache and session lifecycle; separate from optional external backends. |
 | **Modular Planning** | Nine independent reasoning methods, each controlled per conversation rather than one compulsory orchestration loop. |
 | **Execution** | Contained browser, files and exact patches, shell, application diagnostics, and connected MCP tools. |
 | **Tasks and subagents** | Durable work identity, dependency-aware assignment, bounded parallelism, continuation, and scheduled work. |
@@ -155,32 +152,6 @@ Independent workers can share the task goal while owning disjoint files, analyse
 - Direct file, command, browser, and Planning tools execute without requiring a second model call from BLACKICE.
 
 BLACKICE does not bundle an unlimited cloud model, manufacture provider quotas, or guarantee that every external assistant exposes the same tool capabilities.
-
-## Shadowdancer — BLACKICE's native inference engine
-
-**Shadowdancer is BLACKICE's own native inference engine.** It is the first-party runtime that executes supported language models locally as part of the BLACKICE agent workspace. It is **not a separate agent, an external model provider, or a model checkpoint**. The selected model supplies learned capabilities; Shadowdancer supplies the machinery that runs it.
-
-BLACKICE owns Shadowdancer's model lifecycle, weight reading, tokenization, transformer execution, prompt prefill, decoding, KV-cache management, and inference worker coordination. This gives BLACKICE a direct path from a local model's weights to generated tokens without requiring Ollama, LM Studio, or llama.cpp to implement its core inference pipeline.
-
-### What Shadowdancer is designed to accomplish
-
-- **Fast, responsive local inference.** Reduce startup overhead, prompt-processing latency, and ongoing generation latency so an agent can reason and use tools without unnecessarily waiting on the model runtime.
-- **Efficient use of modest hardware.** Make useful execution practical on consumer machines by managing weight residency, working memory, KV caches, compute paths, and available CPU or accelerator resources carefully.
-- **Model fidelity over superficial speed.** Preserve the model's expressive language capability, reasoning performance, generalization, and answer quality. A faster result produced by silently changing precision, degrading outputs, or skipping work is not a successful optimization.
-- **Usable long-context behavior.** Retain the intended conversation and task context across continuation, support cache-aware processing, and avoid unnecessary reprocessing where the model and backend permit it.
-- **Explicit and reproducible precision.** Treat FP16 as a real precision choice, and evaluate any supported lower-precision or quantized alternative for quality and resource trade-offs rather than silently converting a model for convenience.
-- **Own the critical path.** Keep model loading, batching, tokenization, inference execution, and tool-facing integration observable and optimizable inside BLACKICE rather than depending on an opaque third-party serving stack.
-- **Reliable integration with agents.** Associate outputs with the right conversation, model, context and cancellation state, so local inference serves the same task execution and verification workflows as connected models.
-
-Shadowdancer uses BLACKICE-authored inference components, including a reference transformer implementation and optimized execution paths, rather than wrapping llama.cpp and calling it native. **llama.cpp remains a separately selectable alternative backend**, and Ollama or LM Studio remain optional compatibility providers. They are not prerequisites or aliases for Shadowdancer. Backend and precision selection remain explicit; a backend failure is not a reason to silently substitute another engine.
-
-### How Shadowdancer is judged
-
-Shadowdancer's performance is assessed **qualitatively until reproducible benchmarks exist**. The relevant questions are whether it feels responsive on real prompts, processes substantial context efficiently, sustains generation without excessive resource consumption, maintains numerical and behavioral fidelity, and works reliably through repeated agent turns.
-
-Its benchmark dimensions are prompt prefill, decode rate, time to first token, full request latency, RAM and VRAM footprint, cache efficiency, continuation correctness, numerical parity with a trusted reference, and quality on representative reasoning tasks. Tests compare identical checkpoints, input workloads, context lengths, precision settings, and hardware. Short prompts, tiny output caps, synthetic kernels, and different quantizations are not interchangeable evidence.
-
-**No numerical performance, memory, speedup, or quality claim is made for Shadowdancer here.** The standard is better real-world local inference **without compromising the model's useful capabilities**. Model-inference throughput is distinct from model-training throughput; training ambitions are not evidence of inference-engine performance.
 
 ## The contained browser
 
