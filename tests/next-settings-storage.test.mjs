@@ -48,7 +48,7 @@ async function setup(t, beforeApi = async () => {}) {
   t.after(()=>workspace.destroy());
   workspace.enter();
   await dom.click('#next-settings-section-storage');
-  try { await until(()=>Boolean(dom.$('#storage-schedule') && dom.$('#storage-categories')?.children.length===3)); }
+  try { await until(()=>Boolean(dom.$('#storage-schedule') && dom.$('#storage-usage')?.children.length===2 && dom.$('#storage-system')?.children.length===1 && !dom.$('#storage-refresh').disabled)); }
   catch(error) {throw Error(error.message+'; panel='+dom.$('#next-settings-storage')?.textContent+'; status='+dom.$('#storage-total')?.textContent+'; calls='+JSON.stringify(calls.map(c=>c.route))+'; selected='+dom.$('#next-settings-section-storage')?.getAttribute('aria-selected'));}
   return {...dom,workspace,calls,state:()=>state};
 }
@@ -58,7 +58,8 @@ test('Storage & Data panel shows accurate sizes and protected system categories'
   assert.match(d.$('#storage-total').textContent,/14 KiB/);
   assert.equal(d.$('#storage-categories').querySelectorAll('input').length,2);
   assert.equal(d.$('#storage-schedule').disabled,true);
-  assert.match(d.$('#storage-categories').textContent,/Virtual machine/);
+  assert.match(d.$('#storage-system').textContent,/Files from earlier versions/);
+  assert.equal(d.$('#storage-system').querySelectorAll('input').length,0);
   assert.equal(d.calls.filter(c=>c.method==='POST').length,0);
 });
 
@@ -115,7 +116,7 @@ test('leaving storage clears prior confirmation and selections before reentry', 
   assert.equal(d.$('#storage-schedule').disabled,false);
   await d.click('#next-settings-section-general');
   await d.click('#next-settings-section-storage');
-  await until(()=>d.$('#storage-total').textContent.includes('measured'));
+  await until(()=>d.$('#storage-total').textContent==='14 KiB' && !d.$('#storage-refresh').disabled);
   assert.equal(d.$('#storage-confirm').value,'');
   assert.equal(d.$('#storage-schedule').disabled,true);
   assert.equal(d.$('#storage-categories').querySelectorAll('input')[0].checked,false);
@@ -128,7 +129,7 @@ test('failed storage scans disable deletion until a successful preview', async t
   field.checked=true; await field.dispatch('change');
   await d.input('#storage-confirm','DELETE SELECTED DATA');
   failScan=true; await d.click('#storage-refresh');
-  await until(()=>/failed/.test(d.$('#storage-total').textContent));
+  await until(()=>/failed/.test(d.$('#storage-scan-status').textContent));
   assert.equal(d.$('#storage-schedule').disabled,true);
   assert.equal(d.$('#storage-save-policy').disabled,true);
 });
