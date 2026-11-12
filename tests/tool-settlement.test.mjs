@@ -12,6 +12,7 @@ import { CodexRuntime } from '../lib/codex.mjs';
 import { TaskStateStore } from '../lib/task-state.mjs';
 import { RuntimeSettingsStore } from '../lib/runtime-settings.mjs';
 import { DESKTOP_TOOL } from '../lib/desktop-tools.mjs';
+import { createOperationalEffectGuard } from '../lib/operational-effect-guard.mjs';
 
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const pending = async promise => assert.equal(await Promise.race([promise.then(() => 'settled', () => 'settled'), delay(60, 'pending')]), 'pending');
@@ -67,7 +68,7 @@ test('API Stop keeps a real pending patch leased, preserves its late receipt, an
       const receipt = request.messages.find(message => message.role === 'tool' && message.tool_call_id === 'plan-write');
       assert.ok(receipt, 'The provider receives the actual plan-write result before requesting the patch.');
       const planned = JSON.parse(receipt.content); assert.equal(planned.error, undefined, receipt.content);
-      assert.equal(planned.plan.origin, 'agent'); assert.equal(planned.plan.detail, 'detailed'); assert.equal(planned.steps[0].id, 'patch');
+      assert.equal(planned.plan.origin, 'agent'); assert.equal(planned.plan.detail, 'balanced'); assert.equal(planned.steps[0].id, 'patch');
       return callReply([
         ['held-patch', 'relay_workspace', { action: 'patch', path: 'result.txt', oldText: 'before', newText: 'confirmed patch' }],
         ['must-not-start', 'relay_workspace', { action: 'write', path: 'after-stop.txt', text: 'This later operation must not run.' }],
@@ -76,7 +77,7 @@ test('API Stop keeps a real pending patch leased, preserves its late receipt, an
     return finalReply('Continuation after actual tool settlement.');
   });
   const tasks = await new TaskStateStore({ dataDir: f.dataDir }).init(), engine = await new HarnessEngine({ runtime: f.runtime, tasks, dataDir: f.dataDir, defaultCwd: f.cwd, maxConcurrentRuns: 2 }).init();
-  // This case deliberately verifies the guarded sequence receipt during settlement.
+  // Explicitly authored historical outlines remain optional; settlement uses the independent host effect receipt.
   const settings = await new RuntimeSettingsStore({ dataDir: f.dataDir }).init(); await settings.update({ executionGuardrails: true }); engine.runtimeSettings = settings;
   f.cleanups.push(() => engine.close(), () => tasks.close(), () => settings.close());
   const file = path.join(f.cwd, 'result.txt'), entered = deferred(), release = f.hold(); await fs.writeFile(file, 'before');
@@ -84,7 +85,9 @@ test('API Stop keeps a real pending patch leased, preserves its late receipt, an
   const first = engine.startRun({ workflow: graph('fixture::primary'), input: 'Apply the controlled patch once.' }), execution = engine.executions.get(first.id);
   await admitted(entered, execution);
   const initial = engine.getRun(first.id), threadId = initial.nodes.agent.threadId;
-  assert.equal(initial.nodes.agent.planning.status, 'recorded', 'The real gateway recorded the current-turn plan before the patch.');
+  const authored = await tasks.get(initial.taskId);
+  assert.equal(authored.plan.origin, 'agent'); assert.equal(authored.plan.detail, 'balanced'); assert.equal(authored.steps[0].id, 'patch');
+  assert.equal(initial.nodes.agent.planning.status, 'off', 'An explicit saved outline does not restore compulsory planning admission.');
   engine.cancelRun(first.id); await pending(execution);
   assert.equal(engine.getRun(first.id).settled, false); assert.equal(engine.executionStatus().activeCount, 1); assert.equal(engine.executionStatus().availableSlots, 1); assert.equal(engine.executionStatus().stopping, true);
   assert.equal(engine.filePatches.pending.size, 1); assert.equal(await fs.readFile(file, 'utf8'), 'before');
@@ -113,7 +116,12 @@ test('API Stop keeps a real pending patch leased, preserves its late receipt, an
   assert.ok(item.data.item.fullResultSha256, 'The compact timeline binds the retained full result.');
   assert.equal(receipt.status, 'applied'); assert.equal(receipt.path, file); assert.equal((await engine.filePatches.get(receipt.id)).afterHash, receipt.afterHash);
   assert.equal(retainedToolItems[0].afterHash, receipt.afterHash);
-  assert.ok(retainedToolItems.some(item => item.type === 'planning.sequence' && item.stepId === 'patch'));
+  const observedEffect = retainedToolItems.find(item => item.type === 'operational.effect');
+  assert.ok(observedEffect?.operationId); assert.equal(observedEffect.state, 'confirmed');
+  const effects = await createOperationalEffectGuard({ store: tasks, cwd: f.cwd, taskId: stopped.taskId, runId: stopped.id, nodeId: 'agent' }).records();
+  const durable = effects.find(item => item.operationId === observedEffect.operationId);
+  assert.equal(durable.state, 'confirmed'); assert.equal(durable.deliveryState, 'returned'); assert.equal(durable.taskId, stopped.taskId); assert.equal(durable.nodeId, 'agent');
+  assert.ok(durable.evidence.some(item => item.validation?.source === 'native-write-readback'), 'The late patch result has independently checked durable evidence.');
   assert.match(transcript.messages.find(message => message.tool_call_id === 'must-not-start').content, /interrupted/);
   assert.equal(transcript.pendingToolCalls, undefined); assert.equal(primaryRequests, 3, 'Stop starts no further provider request.');
   const continued = engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue after the original callback settled.', planningMode: 'off' }); await engine.executions.get(continued.id);
