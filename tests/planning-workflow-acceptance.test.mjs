@@ -7,18 +7,22 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 
-// The test worker never receives the destination's in-process oracle. It sees
+// Explicit contract-adapter acceptance. The real Engine runs the owner directly;
+// the controller opts this fixture into retained low-level contract adapters. It
+// does not synthesize an automatic cycle, install an Engine guard, or certify the
+// provider's answer. The test worker never receives the destination's in-process
+// oracle. It sees
 // the same public native planning inputs and browser/workspace receipts as a
 // provider. The controller compares host outcomes with the independent oracle.
 const childMode = process.versions.electron && process.argv.includes('--workshop-acceptance-child');
 const cases = [
-  { id: 'cohesive', label: 'an ordinary Forced task completes a real enrollment with one contract and automatic receipts', count: 1 },
+  { id: 'cohesive', label: 'an explicitly authored contract verifies a real enrollment through retained host adapters', count: 1 },
   { id: 'recovery', label: 'real custom selection, validation correction and lost-response reconciliation preserve one effect per outcome', count: 4 },
   { id: 'audit', label: 'an explicitly audit-only preference finding preserves the authorized enrollment and actual submitted text', count: 1 },
   { id: 'twenty', label: 'twenty confirmed new outcomes exclude prior records and alias forms', count: 20 },
   { id: 'text-only', label: 'a visible received message without a supported receipt binding remains honestly unconfirmed', count: 1 },
   { id: 'native-text', label: 'an ordinary native POST text confirmation is tied to the actual submitted form and navigation', count: 1 },
-  { id: 'final-failure', label: 'a failed final review preserves verified outcomes without publishing the worker completion claim', count: 1 },
+  { id: 'final-failure', label: 'a failed operational provider preserves verified receipts without publishing an unreturned claim', count: 1 },
   { id: 'dependencies', label: 'parallel browser and source observations preserve complete-current-source commit prerequisites', count: 1 },
   { id: 'resume', label: 'cancellation after an accepted external effect resumes through actual history without replay', count: 1 },
 ];
@@ -70,10 +74,6 @@ function initialContract({ request, origin, cwd, count, audit = false }) {
   };
 }
 
-function captured(options) {
-  return JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n') + 2));
-}
-
 function publicBinding(historyRecord, form, profile, rejection) {
   assert.ok(historyRecord?.attributes, 'A real browser observation must supply the receipt attributes before binding.');
   const entries = Object.entries(historyRecord.attributes);
@@ -107,19 +107,18 @@ function publicBinding(historyRecord, form, profile, rejection) {
 }
 
 async function runElectronCase({ directory, mode }) {
-  const { app, BrowserWindow } = await import('electron');
+  const { BrowserWindow } = await import('electron');
   const { HarnessEngine } = await import('../lib/engine.mjs');
-  const { TaskStateStore } = await import('../lib/task-state.mjs');
+  const { createPlanningWorkerGuard, wrapPlanningToolHandler } = await import('../lib/planning-awareness.mjs');
+  const { createWorkspaceToolHandler } = await import('../lib/workspace-tools.mjs');
+  const { TaskStateStore, createTaskToolHandler } = await import('../lib/task-state.mjs');
   const { PlanningBrowserStore } = await import('../lib/planning-browser.mjs');
   const { PlanningBrowserRuntime } = await import('../lib/planning-browser-runtime.mjs');
   const { TaskViability } = await import('../lib/task-viability.mjs');
   const { ResponseCycleService } = await import('../lib/response-cycle.mjs');
-  const { responseCycleStage } = await import('../public/response-cycle-model.mjs');
   const { createMissionWorkflow } = await import('../public/mission-model.mjs');
-  const { fixtureUserAgency } = await import('./fixture-user-agency.mjs');
-  const { normalizeOutputSchema, validateResponseOnlyOptions } = await import('../lib/response-profile.mjs');
   const { ElectronBrowserDriver } = await import('../desktop/browser-driver.mjs');
-  const { BrowserWorkspace } = await import('../lib/browser.mjs');
+  const { BrowserWorkspace, createBrowserToolHandler } = await import('../lib/browser.mjs');
   const { createWorkshopPortal } = await import('./fixtures/planning-workshop-portal.mjs');
   const { readContractJournal, contractRuntimeView } = await import('../lib/planning-contract-runtime.mjs');
   const configuration = cases.find(item => item.id === mode);
@@ -389,7 +388,7 @@ async function runElectronCase({ directory, mode }) {
     }
     async function execute(options) {
       activeOptions = options;
-      assert.equal(typeof options.onToolResultDelivered, 'function', 'The actual engine must expose provider delivery acknowledgment for material contract results.');
+      assert.equal(typeof options.onToolResultDelivered, 'function', 'The explicit host adapter must expose delivery acknowledgment for material contract results.');
       observation.operationalTurns++;
       if (mode === 'resume' && observation.operationalTurns === 2) {
         const current = await task({ action: 'read' });
@@ -409,8 +408,10 @@ async function runElectronCase({ directory, mode }) {
         return { output: `The destination history confirms ${seenConfirmed.size} distinct new enrollments; the interrupted submission was not repeated.` };
       }
       assert.equal(observation.operationalTurns, 1, 'The deterministic provider must not hide a failed operational turn behind replay.');
-      const current = await task({ action: 'read' });
-      assert.equal(current.contract?.contractVersion, 2, 'The actual engine must hand off the accepted native contract.');
+      const unplanned = await task({ action: 'read' });
+      assert.equal(unplanned.contract, undefined, 'The direct owner starts without automatic contract adoption.');
+      const current = await task({ action: 'plan', expectedRevision: unplanned.revision, contract: copy(acceptedContract) });
+      assert.equal(current.contract?.contractVersion, 2, 'The provider explicitly saves its optional contract.');
       initialEpoch = current.contract.planEpoch;
       observation.initialPlan = copy(current.contract);
       assert.equal(current.contract.criteria[0].receiptBinding, undefined, 'No receipt selector may be secretly preseeded.');
@@ -523,63 +524,40 @@ async function runElectronCase({ directory, mode }) {
       assert.equal(seenConfirmed.size, configuration.count, 'The provider itself must see real distinct destination confirmations.');
       if (mode === 'final-failure') {
         observation.rawWorkerClaim = 'The entire task is fully complete and all verification passed.';
-        return { output: observation.rawWorkerClaim };
+        throw Object.assign(new Error('Synthetic owner transport failure after verified operations.'), { code: 'FIXTURE_OWNER_FAILURE' });
       }
       return { output: `The destination confirmed ${seenConfirmed.size} distinct new enrollments.` };
     }
-    function analyticalResponse(input) {
-      const stage = responseCycleStage(input.module.kind, { pipelineVersion: input.cycle?.pipelineVersion });
-      const effectReceipts = input.cycle?.effectReceipts || [];
-      const sourceId = effectReceipts.find(receipt => input.sources.some(source => source.id === receipt.sourceId))?.sourceId
-        || input.sources.find(source => source.id === 'viability:task')?.id || input.sources[0].id;
-      const body = { userAgency: fixtureUserAgency(),
-        values: Object.fromEntries(input.template.fields.map(field => [field.id, field.label + ': perform the authorized synthetic enrollment and distinguish actual confirmations from claims.'])),
-        grounding: input.template.fields.filter(field => field.grounding === 'required').map(field => ({ field: field.id, sourceId })),
-        openQuestions: [], challengeResponses: [] };
-      if (stage.id === 'feasibility') return { ...body, requirements: [] };
-      Object.assign(body, { checks: stage.checks.map(check => ({ id: check.id, assessment: 'supported',
-        sourceIds: check.grounding === 'required' ? [sourceId] : [],
-        note: 'The explicit request authorizes this disposable workflow; operational outcomes require real destination evidence.' })), subproblems: [], childResults: [] });
-      if (stage.id === 'inference') body.inferences = [{ id: 'requested-enrollments', claim: 'The request authorizes distinct new enrollments for the supplied demo participant.', basis: 'inferred', sourceIds: [sourceId], limitation: 'No enrollment has run during preparation.' }];
-      if (stage.id === 'plan') body.contract = copy(acceptedContract);
-      const criteria = input.cycle?.requiredAcceptanceCriteria?.length ? input.cycle.requiredAcceptanceCriteria : input.cycle?.acceptanceCriteria || [];
-      if (stage.id === 'think') {
-        assert.equal(seenConfirmed.size, configuration.count, 'A post-work assessment cannot invent missing native confirmation receipts.');
-        body.criterionResults = criteria.map(item => {
-          const matching = effectReceipts.filter(receipt => receipt.criterionIds?.includes(item.id));
-          if (acceptedContract.criteria.find(criterion => criterion.id === item.id)?.kind === 'source-coverage') {
-            assert.equal(observation.sourceCoverage?.completeCurrentSource, true);
-            return { criterionId: item.id, assessment: 'satisfied', sourceIds: [sourceId], receiptIds: [],
-              rationale: 'The current host source-coverage criterion is supported by the complete observed version, not the earlier partial or mixed ranges.' };
-          }
-          assert.ok(matching.length, 'A satisfied external criterion must cite actual host receipt IDs supplied in this current Think context.');
-          assert.ok(matching.every(receipt => input.sources.some(source => source.id === receipt.sourceId)));
-          return { criterionId: item.id, assessment: 'satisfied', sourceIds: [...new Set(matching.map(receipt => receipt.sourceId))],
-            receiptIds: matching.map(receipt => receipt.id), rationale: 'The current host execution source and its bound receipts record the requested distinct destination confirmations.' };
-        });
-      }
-      if (stage.id === 'respond') {
-        body.values.answer = `The destination confirmed ${seenConfirmed.size} distinct new enrollments.`;
-        body.coverage = criteria.map(item => ({ criterionId: item.id, disposition: 'addressed', sourceIds: [sourceId], responseExcerpt: body.values.answer, limitation: '' }));
-      }
-      return body;
+
+    async function explicitHostOptions(options) {
+      const run = engine.listRuns().find(item => item.status === 'running');
+      assert.ok(run?.taskId, 'The real owner run must exist before fixture adapters are attached.');
+      const identity = { taskId: run.taskId, runId: run.id, nodeId: 'agent' };
+      const workspace = createWorkspaceToolHandler({ cwd, signal: options.signal, ...identity });
+      const browserHandler = createBrowserToolHandler({ browser, signal: options.signal, owner: identity });
+      const handler = createTaskToolHandler({ store: tasks, ...identity, task: request(), cwd,
+        schemaVersion: 14, planningMode: 'on', executionGuardrails: true, signal: options.signal });
+      const guard = await createPlanningWorkerGuard({ store: tasks, ...identity, cwd, schemaVersion: 14,
+        executionGuardrails: true, coordinator: true, signal: options.signal,
+        getOperationAdapter: call => call.name === 'relay_workspace' ? workspace : browserHandler });
+      const invoke = wrapPlanningToolHandler(guard, async (call, context = {}) => {
+        const denied = await guard.before(call, context); if (denied) return denied;
+        context = guard.dispatchContext(call, context); await guard.dispatchFallback(call, context);
+        if (call.name === 'relay_task') return guard.after(call, await handler(call, context));
+        return call.name === 'relay_workspace' ? workspace(call, context) : browserHandler(call, context);
+      });
+      return { ...options, onToolCall: call => invoke(call, { signal: options.signal }),
+        onToolResultDelivered: value => guard.observeToolDelivery(value), guard };
     }
     class Runtime extends EventEmitter {
       status() { return { connected: true, authenticated: true, defaultModel: 'fixture-contract-provider', models: [{ id: 'fixture-contract-provider', supportsTools: true }] }; }
       async runAgent(options) {
-        if (options.responseOnly) {
-          assert.ok(!options.prompt.includes('NATIVE PLAN EXECUTION HANDOFF'), 'Schema14 must not author a second per-operation outline.');
-          validateResponseOnlyOptions(options); normalizeOutputSchema(options.outputSchema); report.normalizerChecks++;
-          const input = captured(options); report.stages.push(input.module.kind);
-          if (mode === 'final-failure' && responseCycleStage(input.module.kind, { pipelineVersion: input.cycle?.pipelineVersion }).id === 'think') {
-            throw Object.assign(new Error('Synthetic final-review transport failure.'), { code: 'FIXTURE_FINAL_REVIEW_TRANSPORT' });
-          }
-          const response = analyticalResponse(input);
-          report.planningResponses.push({ kind: input.module.kind, sourceIds: input.sources.map(source => source.id), schemaFields: Object.keys(options.outputSchema?.properties || {}), response });
-          if (input.module.kind === 'plan') assert.ok(options.outputSchema?.properties?.contract, 'A schema14 native Plan must advertise its canonical contract in the actual provider schema.');
-          return { output: JSON.stringify(response), threadId: 'synthetic-planning-' + mode, usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12 } };
-        }
-        return { ...(await execute(options)), threadId: 'synthetic-worker-' + mode, usage: { inputTokens: 12, outputTokens: 6, totalTokens: 18 } };
+        assert.notEqual(options.responseOnly, true, 'Automatic analytical providers are retired.');
+        const explicit = await explicitHostOptions(options);
+        try {
+          return { ...(await execute(explicit)), threadId: 'synthetic-worker-' + mode,
+            usage: { inputTokens: 12, outputTokens: 6, totalTokens: 18 } };
+        } finally { await explicit.guard.finish(options.signal.aborted ? 'cancelled' : 'finished'); }
       }
       async close() {}
     }
@@ -619,7 +597,7 @@ async function runElectronCase({ directory, mode }) {
     }
     await engine.executions.get(runId);
     const run = engine.getRun(runId);
-    assert.ok(observation.operationalTurns, 'Preparatory pipeline did not dispatch: ' + run.errorCode + ': ' + run.error);
+    assert.ok(observation.operationalTurns, 'Direct operational owner did not dispatch: ' + run.errorCode + ': ' + run.error);
     const state = await tasks.get(run.taskId);
     const journal = await readContractJournal(tasks, run.taskId);
     const view = contractRuntimeView(state, journal);
@@ -642,21 +620,27 @@ async function runElectronCase({ directory, mode }) {
       assert.deepEqual(observation.initialPlan.instructions, []);
       assert.deepEqual(deliveredProfile.preferences, []);
     });
-    check('actual Forced enforcement is retained', () => assert.equal(run.planningEnforcement, 'forced'));
-    check('real native preparatory Plan is accepted', () => assert.ok(report.stages.includes('plan')));
-    check('native output schema is normalized', () => assert.ok(report.normalizerChecks >= 3));
+    check('legacy Forced input does not start an automatic cycle', () => {
+      assert.equal(run.responseCycle, undefined);
+      assert.deepEqual(report.stages, []);
+      assert.equal(report.normalizerChecks, 0);
+    });
     check('one canonical contract reaches the operational worker', () => assert.equal(observation.initialPlan?.contractVersion, 2));
     check('no live profile or visible window is used', () => assert.equal(report.hiddenWindowCount, 0));
     check('same-action foreign target never reaches the destination', () => assert.equal(report.foreignOracle.requests.length, 0));
     check('a real GET form submission stays a navigation interaction', () => assert.equal(observation.searchOperation?.effect, 'interact'));
     const structural = report.calls.filter(call => call.name === 'relay_task' && ['plan', 'edit', 'step'].includes(call.action));
-    check('field interactions do not rewrite the plan', () => assert.equal(structural.length, mode === 'text-only' ? 0 : 1));
+    check('field interactions do not rewrite the plan', () => assert.equal(structural.length, mode === 'text-only' ? 1 : 2));
     if (mode === 'text-only') {
       check('plain text cannot manufacture a confirmed count', () => assert.equal(view.outcomes.filter(item => item.isNew).length, 0));
       check('the independent oracle still records the actual accepted effect', () => assert.equal(oracle.newEffects.length, 1));
-      check('unconfirmed work cannot complete the full pipeline', () => assert.notEqual(run.status, 'completed'));
+      check('truthful unknown work returns without a compulsory finalizer', () => {
+        assert.equal(run.status, 'completed');
+        assert.equal(observation.review.contractRuntime.review.complete, false);
+        assert.match(run.output, /no supported independent confirmation/);
+      });
     } else {
-      if (mode !== 'final-failure') check('the full pipeline completes after actual verification', () => assert.equal(run.status, 'completed', run.error));
+      if (mode !== 'final-failure') check('the direct owner completes after its explicit verification', () => assert.equal(run.status, 'completed', run.error));
       check('exact distinct host outcomes agree with the private destination oracle', () => {
         assert.equal(view.outcomes.filter(item => item.isNew).length, configuration.count);
         assert.equal(oracle.newUniqueCanonicalIds.length, configuration.count);
@@ -705,13 +689,12 @@ async function runElectronCase({ directory, mode }) {
         assert.equal(oracle.requests.filter(item => item.kind === 'commit-request').length, 1);
         assert.match(oracle.requests.find(item => item.kind === 'commit-request').contentType, /^application\/x-www-form-urlencoded/);
       });
-      if (mode === 'final-failure') check('failed final review publishes verified count and limitation without promoting the worker claim', () => {
-        assert.notEqual(run.status, 'completed');
-        assert.equal(run.nodes.agent.output, observation.rawWorkerClaim, 'Raw worker history remains available as a claim.');
-        assert.equal(typeof run.output, 'string');
-        assert.ok(!run.output.includes(observation.rawWorkerClaim), 'The authoritative published output cannot fall back to the unsupported overall-completion claim.');
-        assert.match(run.output, /confirmed[^\n]*1|1[^\n]*confirmed/i, 'Actual verified effects remain visible despite the failed final stage.');
-        assert.match(run.output, /final|review|limitation|failed|unavailable/i, 'The final-stage limitation must remain explicit.');
+      if (mode === 'final-failure') check('failed owner retains real receipt proof without publishing an unreturned claim', () => {
+        assert.equal(run.status, 'failed');
+        assert.equal(run.errorCode, 'FIXTURE_OWNER_FAILURE');
+        assert.ok(!String(run.output || '').includes(observation.rawWorkerClaim));
+        assert.equal(view.outcomes.filter(item => item.isNew).length, 1);
+        assert.equal(observation.review.contractRuntime.review.complete, true);
       });
       if (mode === 'dependencies') check('parallel observations and source prerequisites retain their actual evidence', () => {
         assert.equal(observation.parallelObservation.browserPendingAtSourceReturn, true);
