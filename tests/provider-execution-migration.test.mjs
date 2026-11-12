@@ -76,7 +76,7 @@ async function fixture(t, { provider = 'mistral-vibe', afterRefresh } = {}) {
       return result;
     },
     async assertPreserved(result) {
-      assert.equal(result.taskId, first.taskId); assert.equal(result.planningContractVersion, 14); assert.equal(result.planningEnforcement, 'forced');
+      assert.equal(result.taskId, first.taskId); assert.equal(result.planningContractVersion, 14); assert.equal(result.planningEnforcement, undefined);
       assert.equal(result.cwd, cwd); assert.equal(result.workflow.nodes.find(node => node.id === 'agent').model, model);
       assert.deepEqual((await tasks.get(first.taskId)).contract, savedPlan);
       assert.deepEqual(engine.getRun(first.id).nodes.agent.providerExecutionContract, savedContract);
