@@ -16,7 +16,7 @@ import { normalizeChatOptions, restoreChatPlanningOptions } from '../public/next
 const waitFor=async(fn)=>{for(let i=0;i<150;i++){const result=fn();if(result?.settled)return result;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Run did not settle');};
 const content=response=>JSON.parse(response.contentItems[0].text);
 
-test('each module has explicit Boolean On/Off and legacy permissions migrate without erasing prohibitions',()=>{
+test('selectable modules retain On/Off choices while retired delegation choices use the default',()=>{
   const base=normalizePlanningOntology();
   assert.equal(base.version,2);assert.equal(Object.hasOwn(base,'autoSelect'),false);
   assert.equal(PLANNING_ONTOLOGY_MODULES.length,9);
@@ -25,14 +25,17 @@ test('each module has explicit Boolean On/Off and legacy permissions migrate wit
   const before=structuredClone(legacy),custom=normalizePlanningOntology(legacy);
   assert.deepEqual(legacy,before,'Historical input is not rewritten.');
   assert.equal(custom.modules.inference,true);assert.equal(custom.modules.feasibility,true);
-  assert.equal(custom.modules.decomposition,false);assert.equal(custom.modules.subagents,false);
+  assert.equal(custom.modules.decomposition,false);assert.equal(custom.modules.subagents,true);
   const instructions=planningOntologyInstructions(custom);
   assert.match(instructions,/ON:.*Intent inference/);assert.match(instructions,/OFF:.*Task decomposition/);
   assert.match(instructions,/do not invent extra steps, new hard gates/i);
   assert.doesNotMatch(instructions,/AUTOMATIC SELECTION|MANDATORY:|FORBIDDEN:/);
+  assert.match(instructions,/DEFAULT DELEGATION:.*when supported and worthwhile/);
+  assert.doesNotMatch(instructions,/^(?:ON|OFF):.*Subagent orchestration/m);
   for(const module of PLANNING_ONTOLOGY_MODULES){
     const policy=normalizePlanningOntology({version:2,modules:{[module.id]:false}});
-    assert.equal(policy.modules[module.id],false);assert.equal(Object.values(policy.modules).filter(v=>v===false).length,1);
+    const automatic=module.id==='subagents';
+    assert.equal(policy.modules[module.id],automatic);assert.equal(Object.values(policy.modules).filter(v=>v===false).length,automatic?0:1);
   }
   for(const value of [{modules:{unknown:true}},{modules:{inference:'forced'}},{autoSelect:'yes'},
     {version:3},{version:2,autoSelect:false},{version:2,modules:{inference:'mandatory'}}])
@@ -100,7 +103,7 @@ test('direct ChatGPT ontology tool reads and saves the same runtime default atom
   assert.deepEqual(settings.get().planningOntology,result.policy);
 });
 
-test('new ontology chats bypass forced plan admission, forbid plan/subagent tools and retain policy on continuation',async t=>{
+test('new ontology chats retain Planning choices and default delegation on continuation',async t=>{
   const directory=await mkdtemp(path.join(tmpdir(),'blackice-ontology-runtime-'));
   const cwd=path.join(directory,'workspace');await mkdir(cwd);
   const tasks=await new TaskStateStore({dataDir:directory}).init();
@@ -115,7 +118,7 @@ test('new ontology chats bypass forced plan admission, forbid plan/subagent tool
       assert.match(options.developerInstructions,/sponsorship Yes\/No/);
       assert.match(options.developerInstructions,/continue other applications/i);
       assert.ok(!options.dynamicTools.some(tool=>tool.name==='relay_task'), 'forbidden decomposition removes task plan tool');
-      assert.ok(!options.dynamicTools.some(tool=>tool.name==='relay_delegate'), 'forbidden subagents remove delegation tool');
+      assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_delegate'), 'retired subagent choice cannot silently remove default delegation');
       const forbidden=await options.onToolCall({name:'relay_control',arguments:{action:'planning_cycle_create'}});
       assert.equal(forbidden.code,'ONTOLOGY_MODULE_FORBIDDEN','a hidden planning-cycle action may not bypass Forbidden');
       const receipt=await options.onToolCall({name:'relay_workspace',arguments:{action:'write',path:'ontology-proof.txt',text:'tool works without plan'}});

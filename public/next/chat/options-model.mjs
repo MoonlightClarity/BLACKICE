@@ -15,7 +15,7 @@ export function normalizeChatOptions(value={}){
   const planningMode=value?.planningMode==='off'?'off':'ontology';
   const planningExecutionMode=value?.planningExecutionMode??'automatic';
   const directoryMode=value?.directoryMode==='off'?'off':'on';
-  const subagentsMode=['default','on','off'].includes(value?.subagentsMode)?value.subagentsMode:'default';
+  const subagentsMode='default';
   return {model,effort,serviceTier,planningMode,planningExecutionMode,directoryMode,subagentsMode,...(planningMode==='ontology'||value?.planningOntology!==undefined?{planningOntology:normalizePlanningOntology(value?.planningOntology)}:{})};
 }
 /**

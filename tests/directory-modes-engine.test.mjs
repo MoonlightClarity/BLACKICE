@@ -9,6 +9,8 @@ import {mkdtemp,mkdir,readFile,writeFile,rm,access} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
 import {HarnessEngine} from '../lib/engine.mjs';
+import {normalizePlanningOntology} from '../public/planning-module-policy.mjs';
+import {fixtureOutcomeReview,finishFixtureCandidate} from './fixture-modular-provider.mjs';
 const graph=(sandbox='danger-full-access')=>({name:'Directory Chat fixture',nodes:[
  {id:'input',type:'input'},{id:'agent',type:'agent',model:'fixture::remote',name:'Chat',prompt:'CURRENT_AGENT_BOUNDARY: preserve source files and task restrictions.',sandbox},
  {id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode:'off'}});
@@ -63,29 +65,39 @@ test('Chat modes change real execution on-off-on and survive restart without rew
  assert.equal(JSON.stringify(engine.getRun(one.id)),frozen);
  await engine.close();
  const reopened=await new HarnessEngine({runtime,dataDir:f.dataDir,defaultCwd:f.cwd}).init();reopened.runtimeSettings=engine.runtimeSettings;f.engines.push(reopened);
- assert.deepEqual(reopened.getRun(two.id).executionModes,{directoryMode:'off',subagentsMode:'on'});
+ assert.deepEqual(reopened.getRun(two.id).executionModes,{directoryMode:'off',subagentsMode:'default'});
  const three=await settle(reopened,reopened.continueRun(two.id,{nodeId:'agent',message:'Return to recursive context work.',directoryMode:'on'}));
- assert.equal(three.executionModes.subagentsMode,'on');assert.ok(runtime.calls.slice(-3).every(c=>phaseOf(c)&&c.prompt.includes('Continue using ordinary Chat.')));
+ assert.equal(three.executionModes.subagentsMode,'default');assert.ok(runtime.calls.slice(-3).every(c=>phaseOf(c)&&c.prompt.includes('Continue using ordinary Chat.')));
  assert.equal(three.modelHandoff.reason,'execution-mode-change');
  const other=await settle(reopened,reopened.startRun({workflow:graph(),input:'Independent ordinary conversation.'}));
  assert.deepEqual(other.executionModes,{directoryMode:'off',subagentsMode:'default'});assert.equal(phaseOf(runtime.calls.at(-1)),null);
 });
-for(const directoryMode of ['on','off'])for(const subagentsMode of ['on','off'])test('runtime independence Directory '+directoryMode+' / Subagents '+subagentsMode,async t=>{
+for(const directoryMode of ['on','off'])for(const subagentsMode of ['default','on','off'])test('default delegation with Directory '+directoryMode+' and retired mode '+subagentsMode,async t=>{
  const f=await fixture(t),receipts=[];let attempted=false;
  f.runtime.inspect=async(options,phase)=>{
   const active=!phase||phase.label==='work';if(!active)return;
   const tool=options.dynamicTools.find(x=>x.name==='relay_delegate');
-  assert.equal(Boolean(tool),subagentsMode==='on');
-  if(subagentsMode==='on'&&!attempted){
+  assert.equal(Boolean(tool),true);
+  if(!attempted){
    attempted=true;const result=await options.onToolCall({name:'relay_delegate',callId:'same-batch',arguments:{tasks:[{id:'left',prompt:'Inspect independent left synthetic data without modifying files.'},{id:'right',prompt:'Inspect independent right synthetic data without modifying files.'}]}});
    receipts.push(result);assert.equal(result.success,true,JSON.stringify(result));
   }
  };
  const run=await settle(f.engine,f.engine.startRun({workflow:graph(),input:{task:'Review independent synthetic findings.',directoryMode,subagentsMode}}));
- assert.equal(f.runtime.children.length,subagentsMode==='on'?2:0);
- if(subagentsMode==='on'){assert.equal(receipts.length,1);assert.ok(run.events.some(x=>x.data?.type==='subagent.admission'&&x.data?.mode==='static_dag'&&x.data.allowed));}
- assert.equal(f.settings.subagentsEnabled,true,'per-chat preference must not change global settings');
+ assert.equal(run.executionModes.subagentsMode,'default');
+ assert.equal(f.runtime.children.length,2);
+ assert.equal(receipts.length,1);assert.ok(run.events.some(x=>x.data?.type==='subagent.admission'&&x.data?.mode==='static_dag'&&x.data.allowed));
+ assert.equal(f.settings.subagentsEnabled,true,'retired per-chat preferences never change global capability');
 });
+for(const directoryMode of ['on','off'])test('default delegation preserves disabled runtime capability with Directory '+directoryMode,async t=>{
+ const f=await fixture(t);f.settings.subagentsEnabled=false;
+ f.runtime.inspect=async(options,phase)=>{
+  if(!phase||phase.label==='work')assert.ok(!options.dynamicTools.some(x=>x.name==='relay_delegate'));
+ };
+ const run=await settle(f.engine,f.engine.startRun({workflow:graph(),input:{task:'Inspect without child workers.',directoryMode,subagentsMode:'on'}}));
+ assert.equal(run.executionModes.subagentsMode,'default');assert.equal(f.runtime.children.length,0);
+});
+
 test('Explicit command admission, conflicts and unsupported workflow reject before any provider work',async t=>{
  const f=await fixture(t);
  assert.throws(()=>f.engine.startRun({workflow:graph(),input:{task:'/directory Inspect.',directoryMode:'off'}}),{code:'DIRECTORY_DISABLED'});
@@ -101,7 +113,7 @@ test('Directory read-only phases advertise no write or command and active direct
  const execute=engine.execute.bind(engine);engine.execute=(run,controller)=>{run.workflow.nodes.find(node=>node.id==='agent').sandbox='read-only';return execute(run,controller);};
  const original=engine.startRun({workflow:graph('read-only'),input:{task:'Inspect the bounded readonly task.',directoryMode:'on',subagentsMode:'off'}});
  await begin;const receipt=await engine.steerRun(original.id,{nodeId:'agent',message:'NEW_USER_RESTRICTION: keep all files unchanged.'});assert.equal(receipt.queued,true);
- assert.deepEqual(engine.getRun(original.id).executionModes,{directoryMode:'on',subagentsMode:'off'});unblock();
+ assert.deepEqual(engine.getRun(original.id).executionModes,{directoryMode:'on',subagentsMode:'default'});unblock();
  const run=await settle(engine,original);assert.ok(runtime.calls.slice(1).every(c=>c.prompt.includes('NEW_USER_RESTRICTION')));
  for(const call of runtime.calls){assert.equal(call.sandbox,'read-only');const workspace=call.dynamicTools?.find(t=>t.name==='relay_workspace');if(workspace)assert.deepEqual(workspace.inputSchema.properties.action.enum,['list','read','patch_history','search']);}
  assert.equal(run.executionModes.directoryMode,'on');
@@ -170,20 +182,71 @@ test('Directory attached native execution retains unsupported mutation denial',a
  assert.equal(mutations,2);assert.equal(await readFile(path.join(f.cwd,'kept.txt'),'utf8'),'readable');
 });
 
-test('explicit Default to On forces a new execution context even when delegation was already enabled',async t=>{
+test('retired On normalizes to Default without forcing a needless execution context change',async t=>{
  const f=await fixture(t);
  const first=await settle(f.engine,f.engine.startRun({workflow:graph(),input:{task:'Inspect synthetic context.',directoryMode:'off',subagentsMode:'default'}}));
  const previous=JSON.stringify(first.nodes.agent.providerExecutionContract);
  const next=await settle(f.engine,f.engine.continueRun(first.id,{nodeId:'agent',message:'Keep working.',subagentsMode:'on'}));
- assert.equal(next.modelHandoff.reason,'execution-mode-change');assert.equal(f.runtime.calls.at(-1).threadId,undefined);
+ assert.equal(next.executionModes.subagentsMode,'default');assert.notEqual(next.modelHandoff?.reason,'execution-mode-change');
  assert.equal(JSON.stringify(f.engine.getRun(first.id).nodes.agent.providerExecutionContract),previous);
 });
+test('continuing a historical disabled run refreshes tools using defaults without rewriting history',async t=>{
+ const f=await fixture(t);f.settings.subagentsEnabled=false;
+ const first=await settle(f.engine,f.engine.startRun({workflow:graph(),input:{task:'Inspect historical capability.',directoryMode:'off',subagentsMode:'off'}}));
+ const historical=f.engine.runs.get(first.id);historical.executionModes.subagentsMode='off';
+ const frozen=JSON.stringify(historical);f.settings.subagentsEnabled=true;
+ const next=await settle(f.engine,f.engine.continueRun(first.id,{nodeId:'agent',message:'Continue with the default capabilities.'}));
+ assert.equal(next.executionModes.subagentsMode,'default');
+ assert.equal(next.modelHandoff.reason,'execution-mode-change');
+ assert.ok(f.runtime.calls.at(-1).dynamicTools.some(tool=>tool.name==='relay_delegate'));
+ assert.equal(JSON.stringify(f.engine.runs.get(first.id)),frozen);
+});
+
+for(const [operation,cause] of [['continue','policy'],['continue','legacy-policy'],['retry','policy'],['retry','mode'],['retry','runtime'],['retry','runtime-missing-catalog']])test('native '+operation+' refreshes retired '+cause+' delegation choices without losing history',async t=>{
+ const runtime=new Runtime();
+ runtime.status=()=>({connected:true,authenticated:true,defaultModel:'fixture',models:[{id:'fixture',supportsTools:true}]});
+ runtime.runAgent=async options=>{
+  const review=fixtureOutcomeReview(options);if(review)return review;
+  runtime.calls.push(options);const threadId='native-default-'+runtime.calls.length;
+  options.onEvent?.({type:'thread',threadId,turnId:'turn-'+runtime.calls.length,model:'fixture'});
+  if(operation==='retry'&&runtime.calls.length===1)throw Error('Synthetic interruption with a saved native catalog.');
+  return finishFixtureCandidate(options,{output:'Inspected the native fixture.',threadId});
+ };
+ const f=await fixture(t,{runtime}),workflow=graph();workflow.nodes.find(node=>node.type==='agent').model='fixture';
+ f.settings.subagentsEnabled=false;
+ const first=f.engine.startRun({workflow,input:{task:'EXACT_NATIVE_BOUNDARY: inspect without external sends.',directoryMode:'off',subagentsMode:'default'}});
+ await f.engine.executions.get(first.id);
+ const historical=f.engine.runs.get(first.id),state=historical.nodes.agent;
+ assert.equal(historical.status,operation==='retry'?'failed':'completed');
+ assert.ok(Array.isArray(state.toolNames)&&!state.toolNames.includes('relay_delegate'));
+ if(cause.includes('policy')){
+  historical.runtimeSettings.subagentsEnabled=true;
+  historical.planningOntology=normalizePlanningOntology({version:2,modules:{verification:false}});
+  historical.planningOntology.modules.subagents=cause==='legacy-policy'?'forbidden':false;
+  if(cause==='legacy-policy')historical.planningOntology.version=1;
+ }else if(cause==='mode'){
+  historical.executionModes.subagentsMode='off';delete historical.runtimeSettings.subagentsEnabled;
+ }else if(cause==='runtime-missing-catalog'){
+  delete state.toolNames;delete state.resumeToolNames;
+ }
+ const frozen=JSON.stringify(historical),sourceThreadId=state.threadId;f.settings.subagentsEnabled=true;
+ const admitted=operation==='continue'?f.engine.continueRun(first.id,{nodeId:'agent',message:'Continue inspecting this same task.'}):f.engine.retryRun(first.id);
+ const next=await settle(f.engine,admitted),handoff=operation==='continue'?next.modelHandoff:next.nodeHandoffs.agent;
+ assert.equal(next.taskId,historical.taskId);assert.equal(next.parentRunId,first.id);
+ assert.equal(next.executionModes.subagentsMode,'default');
+ assert.equal(handoff.reason,'execution-mode-change');assert.equal(handoff.sourceThreadId,sourceThreadId);
+ assert.equal(runtime.calls.at(-1).threadId,undefined);
+ assert.ok(runtime.calls.at(-1).dynamicTools.some(tool=>tool.name==='relay_delegate'));
+ assert.match(runtime.calls.at(-1).prompt,/EXACT_NATIVE_BOUNDARY/);
+ assert.equal(JSON.stringify(f.engine.runs.get(first.id)),frozen,'saved run, user restrictions, and prior tool evidence remain exact');
+});
+
 test('Retry retains Directory preference and starts fresh bounded phases',async t=>{
  const f=await fixture(t);let failOnce=true;
  f.runtime.inspect=async(options,phase)=>{if(phase?.label==='work'&&failOnce){failOnce=false;throw Error('Synthetic interrupted work');}};
  const first=f.engine.startRun({workflow:graph(),input:{task:'Inspect synthetic retry.',directoryMode:'on',subagentsMode:'off'}});
  await f.engine.executions.get(first.id);assert.equal(f.engine.getRun(first.id).status,'failed');
- const retry=await settle(f.engine,f.engine.retryRun(first.id));assert.deepEqual(retry.executionModes,{directoryMode:'on',subagentsMode:'off'});
+ const retry=await settle(f.engine,f.engine.retryRun(first.id));assert.deepEqual(retry.executionModes,{directoryMode:'on',subagentsMode:'default'});
  assert.ok(retry.nodes.agent.shadowdancer);assert.ok(f.runtime.calls.every(call=>!call.threadId));
 });
 

@@ -9,13 +9,14 @@ import {projectFamily} from '../public/next/chat/reader-model.mjs';
 
 const storage=()=>{const m=new Map();return{getItem:key=>m.get(key)??null,setItem:(key,value)=>m.set(key,value),removeItem:key=>m.delete(key),entries:()=>[...m.entries()]};};
 
-test('small grid exposes every module as an independent On/Off choice',t=>{
+test('small grid contains configurable module choices in a compact disclosure',t=>{
  const dom=planningDOM(t),frame=createChatFrame(dom.mount);
  assert.equal(frame.ontologyInline.id,'next-chat-ontology-inline');assert.equal(frame.ontologyModules.id,'next-chat-ontology-modules');
  assert.equal(frame.ontologyInline.hidden,false);assert.equal(frame.ontologyInline.tagName,'DETAILS');assert.equal(frame.ontologyInline.open,false);
  assert.equal(frame.ontologyInline.hasAttribute('open'),false);assert.ok(frame.ontologyInline.querySelector('summary'));
  assert.match(frame.ontologyInline.querySelector('summary').textContent,/On \/ Off/);assert.equal(frame.ontologyModules.closest('details'),frame.ontologyInline);
  assert.equal(frame.ontologyAuto,undefined);assert.equal(frame.ontologyToggle,undefined);
+ assert.equal(frame.subagentsMode,undefined);assert.equal(dom.$('#next-chat-subagents-mode'),null);
  assert.doesNotMatch(frame.shell.innerHTML,/M\/O\/F|value="auto"|Configure modules|next-chat-ontology-panel/);
  assert.equal(PLANNING_ONTOLOGY_MODULES.length,9);assert.deepEqual(PLANNING_MODULE_STATES,['on','off']);
  const css=readFileSync(new URL('../public/next/chat.css',import.meta.url),'utf8');assert.match(css,/\.next-chat-ontology-grid\s*\{display:grid;grid-template-columns:repeat\(3/);assert.match(css,/\.next-chat-ontology-choice>input\{appearance:auto/);
@@ -33,11 +34,11 @@ test('one Boolean module edit preserves every unrelated choice',()=>{
  for(const choice of ['auto','optional','mandatory','forbidden','enabled'])assert.throws(()=>updatedGridOntology(defaults,'verification',choice));
  assert.throws(()=>updatedGridOntology(defaults,'unknown','on'));
 });
-test('legacy permissive choices migrate to On and explicit prohibitions stay Off',()=>{
- const historical={version:1,autoSelect:true,modules:{verification:'optional',inference:'auto',anti_overalignment:'mandatory',subagents:'forbidden'}},before=JSON.stringify(historical);
+test('legacy choices preserve configurable prohibitions and reset retired subagent overrides',()=>{
+ const historical={version:1,autoSelect:true,modules:{verification:'optional',inference:'auto',anti_overalignment:'mandatory',feasibility:'forbidden',subagents:'forbidden'}},before=JSON.stringify(historical);
  const normalized=normalizePlanningOntology(historical);assert.equal(normalized.version,2);assert.equal('autoSelect'in normalized,false);
- assert.equal(normalized.modules.verification,true);assert.equal(normalized.modules.inference,true);assert.equal(normalized.modules.anti_overalignment,true);assert.equal(normalized.modules.subagents,false);
- const changed=updatedGridOntology(normalized,'verification','off');assert.equal(changed.modules.verification,false);assert.equal(changed.modules.inference,true);assert.equal(changed.modules.subagents,false);assert.equal(JSON.stringify(historical),before);
+ assert.equal(normalized.modules.verification,true);assert.equal(normalized.modules.inference,true);assert.equal(normalized.modules.anti_overalignment,true);assert.equal(normalized.modules.subagents,true);assert.equal(normalized.modules.feasibility,false);
+ const changed=updatedGridOntology(normalized,'verification','off');assert.equal(changed.modules.verification,false);assert.equal(changed.modules.inference,true);assert.equal(changed.modules.subagents,true);assert.equal(JSON.stringify(historical),before);
 });
 test('conversation draft > saved run > defaults with no cross-chat leakage',()=>{
  const mem=storage(),defaults=normalizePlanningOntology({version:2,modules:{decomposition:false}}),saved=normalizePlanningOntology({version:2,modules:{decomposition:true}}),draft=normalizePlanningOntology({version:2,modules:{decomposition:false}});

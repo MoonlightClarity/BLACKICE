@@ -6,8 +6,8 @@ import {assertExecutablePlanningMode} from '../../response-cycle-model.mjs';
 /** Send once; the existing server executes and persists the real run.
  * Failures preserve unsent drafts, and no mutation is silently replayed.
  */
-export async function submitChat({ api, runs, task, model, effort = 'default', serviceTier = 'default', planningMode, planningExecutionMode = 'automatic', planningOntology, directoryMode, subagentsMode, cwd = '', attachmentIds=[], context }) {
-  const executionModes={...(directoryMode===undefined?{}:{directoryMode}),...(subagentsMode===undefined?{}:{subagentsMode})};
+export async function submitChat({ api, runs, task, model, effort = 'default', serviceTier = 'default', planningMode, planningExecutionMode = 'automatic', planningOntology, directoryMode, cwd = '', attachmentIds=[], context }) {
+  const executionModes={...(directoryMode===undefined?{}:{directoryMode}),subagentsMode:'default'};
   const chosenPlanningMode = planningMode==='off'?'off':'ontology';
   const latest=replyTarget(runs);
   planningExecutionMode=assertExecutablePlanningMode(planningExecutionMode,latest.run?.planningExecutionMode,latest.run?.workflow?.settings?.planningExecutionMode);

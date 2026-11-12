@@ -18,8 +18,8 @@ export const DEFAULT_PLANNING_ONTOLOGY = Object.freeze({
 const ids = new Set(PLANNING_ONTOLOGY_MODULES.map(({id}) => id));
 const validRecord = value => value && typeof value === 'object' && !Array.isArray(value);
 
-/** Boolean module choices. Legacy permitted states migrate to On; explicit prohibitions remain Off.
- * Normalization returns a new value and never rewrites historical run snapshots.
+/** Boolean module choices. Legacy prohibitions remain Off except retired delegation choices.
+ * Delegation uses its default behavior. Normalization never rewrites historical run snapshots.
  */
 export function normalizePlanningOntology(value, { strict = false } = {}) {
   const invalid = message => { throw Object.assign(new Error(message), {code:'PLANNING_ONTOLOGY_INVALID',status:400}); };
@@ -38,6 +38,9 @@ export function normalizePlanningOntology(value, { strict = false } = {}) {
     else if(legacy&&Object.hasOwn(oldStates,state))modules[id]=oldStates[state];
     else return invalid('Choose On or Off (a Boolean) for '+id+'.');
   }
+  // Delegation is automatic, not a selectable Planning module. Accept the saved
+  // field for old policies, but never carry a hidden On/Off override into new work.
+  modules.subagents=true;
   if(strict&&Object.keys(value.modules||{}).length!==ids.size)return invalid('Supply every module when saving a complete policy.');
   return {version:2,modules};
 }
@@ -72,11 +75,13 @@ const descriptions = {
 export function planningOntologyInstructions(config) {
   const policy=normalizePlanningOntology(config),on=[],off=[];
   for(const {id,label} of PLANNING_ONTOLOGY_MODULES){
+    if(id==='subagents')continue;
     if(policy.modules[id])on.push(label+': '+descriptions[id]);else off.push(label);
   }
   return [
     'BLACKICE PLANNING MODULES — ON / OFF',
-    'Each Boolean is an explicit user choice. On means apply the module at the relevant stage of this task. Off means do not invoke that module. Only these explicit choices govern module use; do not change them during a task.',
+    'The listed On/Off modules are explicit user choices. On means apply the module at the relevant stage of this task. Off means do not invoke that module. Do not change these module choices during a task.',
+    'DEFAULT DELEGATION: Delegate distinct parallelizable work when supported and worthwhile, then reconcile actual worker results. Delegation is automatic and follows runtime capability and capacity; it has no separate Planning On/Off choice.',
     'Enabled modules cooperate with Directory execution and its persisted evidence. Carry observations and dependencies forward across fresh contexts. A context reset does not invalidate recorded observations or end the delegated task.',
     on.length?'ON: '+on.join('; '):'All Planning modules are Off.',
     off.length?'OFF: '+off.join('; '):'No Planning modules are Off.',
