@@ -13,10 +13,15 @@ test('schema12 exposes canonical Plan edits while schema11 bytes remain frozen',
  assert.ok(plan.anyOf.every(schema=>schema.additionalProperties===false&&schema.required.includes('userAgency')));
  assert.equal(PRE_CANONICAL_CONTROL_TOOL.inputSchema.properties.cycle.properties.plan.properties.contract,undefined);
 });
-test('canonical native Plan reaches the same service unchanged and old control refuses it',async()=>{
- const calls=[],service={editPlan:async(...args)=>{calls.push(args);return{id:'graph',revision:8};}};
+test('canonical and historical cycle Plan payloads are rejected without changing the saved contract',async()=>{
+ const calls=[],service={editPlan:async(...args)=>{calls.push(args);throw Error('Retired edit must not reach the service.');}};
  const handler=toolDefinition=>createControlToolHandler({engine:{responseCycle:service},run:{id:'run'},nodeId:'agent',toolDefinition});
  const args={action:'planning_cycle_edit_plan',graphRequestId:'graph',cycleId:'cycle',cycle:{expectedRequestRevision:7,expectedCycleRevision:2,expectedPlanRevision:3,expectedPlanResponseId:'response',clientRequestId:'native-plan',plan:{contract:{contractVersion:2,goal:'Retain canonical work',criteria:[],workItems:[],instructions:[]}}}};
- const rejected=await handler(PRE_CANONICAL_CONTROL_TOOL)({name:'relay_control',arguments:args});assert.equal(rejected.success,false);assert.equal(calls.length,0);
- const accepted=await handler(CONTROL_TOOL)({name:'relay_control',arguments:args});assert.equal(accepted.success,true,JSON.stringify(accepted));assert.deepEqual(calls[0].slice(0,3),['graph','cycle',args.cycle]);assert.equal(calls[0][3].actor.type,'agent');
+ const before=structuredClone(args);
+ for(const schema of [PRE_CANONICAL_CONTROL_TOOL,CONTROL_TOOL]){
+   const rejected=await handler(schema)({name:'relay_control',arguments:args});
+   assert.equal(rejected.success,false);assert.match(rejected.contentItems[0].text,/retired/i);
+   assert.deepEqual(args,before);assert.equal(calls.length,0);
+ }
+ assert.ok(!CONTROL_TOOL.inputSchema.properties.action.enum.includes('planning_cycle_edit_plan'));
 });

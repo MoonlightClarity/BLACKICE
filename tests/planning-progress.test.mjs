@@ -9,30 +9,20 @@ import {ResponseCycleService} from '../lib/response-cycle.mjs';
 import {planningProgressForRun,mergeChatRunUpdate} from '../public/next/chat/model.mjs';
 import {projectFamily} from '../public/next/chat/reader-model.mjs';
 
-test('saved Planning identity is published before the first inference returns, without starting operational nodes',async t=>{
+test('retired Planning admission cannot publish progress or start operational nodes',async t=>{
   const dir=await mkdtemp(path.join(os.tmpdir(),'planning-progress-'));
-  const store=new PlanningBrowserStore({dataDir:dir});
-  const request=await store.create({conversationId:'progress-conversation',title:'Progress fixture',objective:'Explain the bounded fixture.'});
+  const store=await new PlanningBrowserStore({dataDir:dir}).init();
   const run={id:'progress-run',status:'queued',settled:false,input:'Explain the bounded fixture.',planningMode:'on',planningExecutionMode:'automatic',
     workflow:{nodes:[{id:'agent',type:'agent'}],settings:{planningMode:'on'}},nodes:{agent:{status:'queued',output:''}}};
-  const notifications=[],engine={runs:new Map([[run.id,run]]),snapshot:value=>structuredClone(value),notify:(type,value,_node,data)=>notifications.push({type,value,data})};
+  const before=structuredClone(run),notifications=[];let providerCalls=0,viabilityCalls=0;
+  const engine={runs:new Map([[run.id,run]]),snapshot:value=>structuredClone(value),notify:(...args)=>notifications.push(args)};
   engine.updateResponseCycleProgress=(value,progress)=>HarnessEngine.prototype.updateResponseCycleProgress.call(engine,value,progress);
-  let admitted,finish;const entered=new Promise(resolve=>{admitted=resolve;}),held=new Promise(resolve=>{finish=resolve;});
-  const runner={runtime:{status:()=>({defaultModel:'fixture-model'})},
-    start:async options=>{const current=await store.get(request.id),node=current.nodes.find(item=>item.id===options.nodeId);assert.equal(node.kind,'inference');assert.equal(options.model,'fixture-model');admitted();return {attempt:{id:'held-inference-attempt'}};},
-    wait:async()=>{await held;throw Error('fixture stopped after progress inspection');}};
-  const service=new ResponseCycleService({store,runner,engine,
-    taskViability:{forRun:async(_run,{beforeAssess})=>{await beforeAssess(request);throw Error('The held inference must not complete.');}}});
-  t.after(async()=>{finish();await service.close();await store.close();await rm(dir,{recursive:true,force:true});});
-  const pending=service.forRun(run);await entered;
-  assert.equal(run.responseCycle.requestId,request.id);
-  assert.equal(run.responseCycle.state,'running');assert.equal(run.responseCycle.stage,'inference');
-  assert.ok(run.responseCycle.cycleId);assert.equal(run.responseCycle.planRef.requestId,request.id);
-  assert.equal(run.status,'queued');assert.equal(run.nodes.agent.status,'queued');assert.equal(run.nodes.agent.output,'');
-  assert.equal(notifications.at(-1).type,'run.updated');
-  assert.equal(notifications.at(-1).data.responseCycle.requestId,request.id);
-  assert.equal(planningProgressForRun(run).label,'Planning · Assessing options');
-  finish();await assert.rejects(pending,/fixture stopped/);
+  const service=new ResponseCycleService({store,runner:{start:async()=>{providerCalls++;}},engine,taskViability:{forRun:async()=>{viabilityCalls++;}}});
+  t.after(async()=>{await service.close();await store.close();await rm(dir,{recursive:true,force:true});});
+  await assert.rejects(service.forRun(run),{code:'PLANNING_CYCLE_RETIRED',status:410});
+  assert.deepEqual(run,before);assert.deepEqual(notifications,[]);
+  assert.equal(providerCalls,0);assert.equal(viabilityCalls,0);
+  assert.equal(planningProgressForRun(run),null);
 });
 
 test('Planning progress rejects stale or settled run objects and preserves preferences and completion state',()=>{

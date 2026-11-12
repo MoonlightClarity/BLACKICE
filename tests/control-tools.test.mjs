@@ -10,6 +10,7 @@ import {CONTROL_TOOL,CONTROL_SCHEMA_VERSION,PRE_ACCURACY_CONTROL_TOOL,PRE_ACCURA
 import {ResponseCycleService} from '../lib/response-cycle.mjs';
 import {validateWorkflow} from '../lib/engine.mjs';
 import {validateObservePresentation} from '../lib/live-edits.mjs';
+import {DEFAULT_PLANNING_ONTOLOGY} from '../public/planning-module-policy.mjs';
 
 const until=async(check,label='control operation')=>{const end=Date.now()+7000;while(Date.now()<end){const value=await check();if(value)return value;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail(`${label} did not settle`);};
 // These mocks exercise configuration contracts; Planning has its own protocol tests.
@@ -229,7 +230,7 @@ test('agents read persistent history and legacy preference input cannot change a
   const context=await fixture(t,async options=>{
     assert.equal(options.codexHistory,'codex');
     assert.equal((await call(options,{action:'catalog'})).runtimeSettings.codexHistory,'codex');
-    assert.deepEqual(await call(options,{action:'runtime_get'}),{codexHistory:'codex',runTimeoutMs:null,providerIdleTimeoutMs:300000,defaultEffort:'default',defaultServiceTier:'default',defaultContext:{preset:'model',windowTokens:null,autoCompact:true},verbosity:'balanced',subagentsEnabled:true,maxSubagents:3,connectedGmail:false,executionGuardrails:false,hiddenModelProviders:[]});
+    assert.deepEqual(await call(options,{action:'runtime_get'}),{codexHistory:'codex',runTimeoutMs:null,providerIdleTimeoutMs:300000,defaultEffort:'default',defaultServiceTier:'default',defaultContext:{preset:'model',windowTokens:null,autoCompact:true},verbosity:'balanced',subagentsEnabled:true,maxSubagents:3,connectedGmail:false,executionGuardrails:false,planningOntology:DEFAULT_PLANNING_ONTOLOGY,hiddenModelProviders:[]});
     await call(options,{action:'runtime_set',runtime:{codexHistory:'invalid'}},false);
     chosen=await call(options,{action:'runtime_set',runtime:{codexHistory:'relay'}});
     assert.equal(chosen.codexHistory,'codex');
@@ -238,7 +239,7 @@ test('agents read persistent history and legacy preference input cannot change a
   });
   const saved=await context.app.engine.saveWorkflow(graph('runtime-preference'));
   const run=context.app.engine.startRun({workflow:context.app.engine.listWorkflows().find(item=>item.id==='runtime-preference'),input:{task:'Read persistent native history and accept legacy preference input.',cwd:context.cwd}});
-  await context.settled(run.id);
+  const done=await context.settled(run.id);assert.equal(done.status,'completed',done.error);
   assert.equal(context.app.engine.getRun(run.id).runtimeSettings.codexHistory,'codex');
   assert.equal(JSON.parse(await readFile(path.join(context.dataDir,'runtime-settings.json'),'utf8')).codexHistory,'codex');
   assert.match(chosen.applies,/future agent responses/);
@@ -264,7 +265,7 @@ test('agents patch user-selected durations through the real tool without changin
 
 test('parallel agent runtime patches merge independently and cancellation cannot change the saved preferences',async t=>{
   const {app,cwd}=await fixture(t),make=signal=>createControlToolHandler({engine:app.engine,validateWorkflow,run:{id:'duration-control',cwd},nodeId:'agent',signal}),a=make(new AbortController().signal),b=make(new AbortController().signal);
-  const results=await Promise.all([a({name:'relay_control',arguments:{action:'runtime_set',runtime:{runTimeoutMs:60000}}}),b({name:'relay_control',arguments:{action:'runtime_set',runtime:{codexHistory:'codex'}}})]);assert.ok(results.every(item=>item.success));assert.deepEqual(app.runtimeSettings.get(),{codexHistory:'codex',runTimeoutMs:60000,providerIdleTimeoutMs:300000,defaultEffort:'default',defaultServiceTier:'default',defaultContext:{preset:'model',windowTokens:null,autoCompact:true},verbosity:'balanced',subagentsEnabled:true,maxSubagents:3,connectedGmail:false,executionGuardrails:false,hiddenModelProviders:[]});
+  const results=await Promise.all([a({name:'relay_control',arguments:{action:'runtime_set',runtime:{runTimeoutMs:60000}}}),b({name:'relay_control',arguments:{action:'runtime_set',runtime:{codexHistory:'codex'}}})]);assert.ok(results.every(item=>item.success));assert.deepEqual(app.runtimeSettings.get(),{codexHistory:'codex',runTimeoutMs:60000,providerIdleTimeoutMs:300000,defaultEffort:'default',defaultServiceTier:'default',defaultContext:{preset:'model',windowTokens:null,autoCompact:true},verbosity:'balanced',subagentsEnabled:true,maxSubagents:3,connectedGmail:false,executionGuardrails:false,planningOntology:DEFAULT_PLANNING_ONTOLOGY,hiddenModelProviders:[]});
   const cancelled=new AbortController();cancelled.abort();assert.equal((await make(cancelled.signal)({name:'relay_control',arguments:{action:'runtime_set',runtime:{runTimeoutMs:null}}})).success,false);assert.equal(app.runtimeSettings.get().runTimeoutMs,60000);
 });
 
@@ -298,17 +299,19 @@ test('agents can configure and inspect optional delegation and verbosity without
 });
 
 
-test('current cycle model selection leaves saved v5 native catalogs unchanged on continuation and retry',async t=>{
+test('retired cycle calls preserve saved v5 native catalogs across continuation and retry',async t=>{
  const f=await fixture(t,async(options,index)=>{
   const definition=options.dynamicTools.find(tool=>tool.name==='relay_control');
   assert.deepEqual((await call(options,{action:'describe'})).tool,definition);
   if(index===1){
    assert.ok(definition.inputSchema.properties.cycle.properties.model);
+   assert.ok(!definition.inputSchema.properties.action.enum.some(action=>action.startsWith('planning_cycle_')));
+   assert.deepEqual(definition.inputSchema.properties.cycle.properties.planningExecutionMode.enum,['automatic']);
    assert.deepEqual(definition.inputSchema.properties.cycle.properties.serviceTier.enum,['default','fast']);
   }else{
    assert.deepEqual(definition,PRE_PROFILE_CONTROL_TOOL);assert.ok(options.prompt.includes(PRE_PROFILE_CONTROL_INSTRUCTIONS));
    const denied=await call(options,{action:'planning_cycle_run',graphRequestId:'fixture-request',cycleId:'fixture-cycle',cycle:{expectedRequestRevision:1,expectedCycleRevision:1,clientRequestId:'v5-cannot-select-profile',model:'fixture-api::fast'}},false);
-   assert.match(denied.error,/saved control schema/);
+   assert.match(denied.error,/retired/);
   }
   options.onEvent({type:'thread',threadId:'native-cycle-profile-control'});
   if(index===2)throw Error('Observed saved-v5 fixture interruption.');

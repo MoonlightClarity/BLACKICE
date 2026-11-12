@@ -1,12 +1,11 @@
 import { fixtureUserAgency } from './fixture-user-agency.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {PlanningBrowserStore} from '../lib/planning-browser.mjs';
 import {PlanningBrowserRuntime,planningModuleOutputSchema,planningModulePrompt,planningFormatDiagnostic,validatePlanningModuleResponse,PLANNING_MAX_FORMAT_REPAIRS} from '../lib/planning-browser-runtime.mjs';
-import {ResponseCycleService} from '../lib/response-cycle.mjs';
 import {parseModuleResponse} from '../public/planning-browser-model.mjs';
 import {RESPONSE_CYCLE_STAGES,responseCycleStage,responseCycleTemplate} from '../public/response-cycle-model.mjs';
 
@@ -85,13 +84,9 @@ test('Inference repair distinguishes a routine authorized observation from inves
     }
     return JSON.stringify(body);
   });
-  const cycleService = new ResponseCycleService({ store: f.store, runner: f.runner });
-  t.after(() => cycleService.close());
-  const request = await cycleService.createCycle(f.request.id, {
-    title: 'Read the named file', purpose: 'Read only verification-input.txt and report its exact contents.',
-    planningExecutionMode: 'plan_only', expectedRequestRevision: f.request.revision, clientRequestId: 'file-read-inference'
-  });
-  const node = request.nodes.find(item => item.id === request.cycles[0].stageNodeIds.inference);
+  // Inference remains a supported explicit module without automatic cycle admission.
+  const request=await f.store.addNode(f.request.id,{kind:'inference',title:'Read the named file',prompt:'Read only verification-input.txt and report its exact contents.'});
+  const node=request.nodes.at(-1);
   const claim = await f.runner.start({ requestId: request.id, nodeId: node.id,
     expectedNodeRevision: node.revision, clientRequestId: 'file-read-interpretation', ...profile });
   const finished = await f.runner.wait(request.id, claim.attempt.id);
@@ -212,33 +207,26 @@ test('origin cancellation before repair and cancellation by the repair attempt I
   });
 });
 
-test('repair reserves the remaining provider budget and completed stages cannot hide its cost',async t=>{
-  await t.test('no remaining turn',async t=>{
-    const f=await fixture(t,({input})=>malformed(input)),{options}=await addModule(f),budget={used:0,max:1};const admitted=await f.runner.start({...options,providerBudget:budget});await f.runner.wait(options.requestId,admitted.attempt.id);
-    assert.equal(f.calls.length,1);assert.equal(budget.used,1);assert.equal((await f.store.get(options.requestId)).attempts.length,1);
-  });
-  await t.test('cycle admission counts original and repair',async t=>{
-    const f=await fixture(t,({input,index})=>index===1?malformed(input):JSON.stringify(correct(input))),service=new ResponseCycleService({store:f.store,runner:f.runner});t.after(()=>service.close());
-    let request=await service.createCycle(f.request.id,{title:'Plan the fictional room answer',purpose:f.request.objective,planningExecutionMode:'plan_only',expectedRequestRevision:f.request.revision,clientRequestId:'bounded-cycle'}),cycle=request.cycles[0];
-    request=await f.store.runtimeWriter().configureResponseCycle(request.id,{rootPatch:{limits:{...request.responseCycle.limits,maxProviderTurns:3}}});
-    const value={expectedRequestRevision:request.revision,expectedCycleRevision:request.nodes.find(node=>node.id===cycle.id).revision,clientRequestId:'run-bounded-cycle',...profile};
-    await assert.rejects(service.runCycle(request.id,cycle.id,value),{code:'RESPONSE_CYCLE_BUDGET'});const saved=await f.store.get(request.id);
-    assert.equal(f.calls.length,3);assert.equal(saved.attempts.length,3);assert.equal(service.budget(saved).used,3);assert.equal(saved.cycles[0].state,'failed');assert.equal(saved.nodes.find(node=>node.id===cycle.stageNodeIds.plan).response,null);
-  });
+test('repair reserves the remaining provider budget',async t=>{
+  const f=await fixture(t,({input})=>malformed(input)),{options}=await addModule(f),budget={used:0,max:1};
+  const admitted=await f.runner.start({...options,providerBudget:budget});await f.runner.wait(options.requestId,admitted.attempt.id);
+  assert.equal(f.calls.length,1);assert.equal(budget.used,1);assert.equal((await f.store.get(options.requestId)).attempts.length,1);
 });
 
 
-test('repair compares material cycle context and its pinned profile even when the stage revision is unchanged',async t=>{
-  for(const kind of ['criteria','profile'])await t.test(kind,async t=>{
-    const f=await fixture(t,()=>{throw Error('Store-only capture test must not call a provider.');}),writer=f.store.runtimeWriter();
-    const service=new ResponseCycleService({store:f.store,runner:f.runner});t.after(()=>service.close());
-    let request=await service.createCycle(f.request.id,{title:'Captured room criteria',purpose:f.request.objective,planningExecutionMode:'plan_only',expectedRequestRevision:f.request.revision,clientRequestId:'capture-cycle'}),cycle=request.cycles[0];
-    const nodeId=cycle.stageNodeIds.feasibility,started=await writer.beginAttempt(request.id,nodeId,{ownerId:'fixture-worker',expectedNodeRevision:1,...profile});
-    await writer.fail(request.id,started.attempt.id,{message:'Synthetic shape failure.',partialOutput:'{}',validation:{code:'TASK_VIABILITY_INVALID',message:'Missing structured fields.',issues:[]}});
-    request=await writer.configureResponseCycle(request.id,{cyclePatch:{id:cycle.id,...(kind==='criteria'?{acceptanceCriteria:[criterion]}:{executionProfile:profile})}});
-    assert.equal(request.nodes.find(node=>node.id===nodeId).revision,started.attempt.nodeRevision);
-    await assert.rejects(writer.beginRepairAttempt(request.id,started.attempt.id),{code:'PLANNING_REPAIR_STALE'});
-    assert.equal((await f.store.get(request.id)).attempts.length,1);assert.equal(f.calls.length,0);
+test('archived failed attempts remain readable but never admit a format repair',async t=>{
+  for(const metadata of [{responseCycle:{rootCycleId:'saved-cycle',cycles:[]}},{planningExecutionMode:'plan_only'}])await t.test(Object.keys(metadata)[0],async t=>{
+    const f=await fixture(t,()=>{throw Error('Archive repair must not call a provider.');}),writer=f.store.runtimeWriter();
+    const {node,options}=await addModule(f);
+    const started=await writer.beginAttempt(f.request.id,node.id,{ownerId:'fixture-worker',expectedNodeRevision:node.revision,...profile});
+    await writer.fail(f.request.id,started.attempt.id,{message:'Saved invalid output.',partialOutput:'{}',validation:{code:'TASK_VIABILITY_INVALID',message:'Missing structured fields.',issues:[]}});
+    const raw=JSON.parse(await readFile(f.store.file(f.request.id),'utf8'));Object.assign(raw,metadata);
+    f.store._validate(raw);await writeFile(f.store.file(f.request.id),JSON.stringify(raw));
+    const before=await readFile(f.store.file(f.request.id),'utf8');
+    await assert.rejects(writer.beginRepairAttempt(f.request.id,started.attempt.id),{code:'PLANNING_CYCLE_RETIRED',status:410});
+    await assert.rejects(f.runner.start({...options,clientRequestId:'new-archive-attempt'}),{code:'PLANNING_CYCLE_RETIRED',status:410});
+    assert.equal(await readFile(f.store.file(f.request.id),'utf8'),before);
+    const saved=await f.store.get(f.request.id);assert.equal(saved.attempts.length,1);assert.equal(saved.attempts[0].partialOutput,'{}');assert.equal(saved.attempts[0].status,'failed');assert.equal(f.calls.length,0);
   });
 });
 
@@ -255,15 +243,17 @@ test('unchanged knowledge captured by an unrelated module does not stale the tar
   await writer.cancel(f.request.id,repaired.attempt.id,{message:'Store-only fixture complete.'});
 });
 
-test('concurrent manual stages share the atomic durable cycle attempt cap',async t=>{
-  const f=await fixture(t,({input})=>JSON.stringify(correct(input))),service=new ResponseCycleService({store:f.store,runner:f.runner});t.after(()=>service.close());
-  let request=await service.createCycle(f.request.id,{title:'Concurrent manual stages',purpose:f.request.objective,planningExecutionMode:'plan_only',expectedRequestRevision:f.request.revision,clientRequestId:'manual-cycle'}),cycle=request.cycles[0];
-  request=await f.store.runtimeWriter().configureResponseCycle(request.id,{rootPatch:{limits:{...request.responseCycle.limits,maxProviderTurns:1}}});
-  const results=await Promise.allSettled(['feasibility','inference'].map(stage=>f.runner.start({requestId:request.id,nodeId:cycle.stageNodeIds[stage],expectedNodeRevision:1,clientRequestId:'manual-'+stage,...profile})));
-  const accepted=results.filter(result=>result.status==='fulfilled'),rejected=results.filter(result=>result.status==='rejected');
-  assert.equal(accepted.length,1);assert.equal(rejected.length,1);assert.equal(rejected[0].reason.code,'RESPONSE_CYCLE_BUDGET');
-  await f.runner.wait(request.id,accepted[0].value.attempt.id);
-  assert.equal(f.calls.length,1);assert.equal((await f.store.get(request.id)).attempts.length,1);
+test('concurrent stale cycle starts reject before consuming provider budget or creating attempts',async t=>{
+  const f=await fixture(t,()=>{throw Error('Archived work cannot reach a provider.');});
+  const request=await f.store.addNode(f.request.id,{kind:'inference',title:'Saved inference'}),node=request.nodes.at(-1);
+  await f.store.addNode(request.id,{id:'other-stage',kind:'viability',title:'Other saved stage'});
+  const raw=JSON.parse(await readFile(f.store.file(request.id),'utf8'));raw.responseCycle={rootCycleId:'saved-cycle',cycles:[]};
+  f.store._validate(raw);await writeFile(f.store.file(request.id),JSON.stringify(raw));
+  const before=await readFile(f.store.file(request.id),'utf8'),budget={used:0,max:1};
+  const results=await Promise.allSettled([node.id,'other-stage'].map(id=>f.runner.start({requestId:request.id,nodeId:id,expectedNodeRevision:1,clientRequestId:id,providerBudget:budget,...profile})));
+  for(const result of results){assert.equal(result.status,'rejected');assert.equal(result.reason.code,'PLANNING_CYCLE_RETIRED');assert.equal(result.reason.status,410);}
+  assert.equal(budget.used,0);assert.equal(f.calls.length,0);assert.equal((await f.store.get(request.id)).attempts.length,0);
+  assert.equal(await readFile(f.store.file(request.id),'utf8'),before);
 });
 
 test('blank accuracy evidence gets one precise repair and is never silently defaulted', async t => {

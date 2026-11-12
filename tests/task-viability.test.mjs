@@ -1,7 +1,7 @@
 import test from 'node:test';
 import {fixtureUserAgency,fixtureAskingUserAgency} from './fixture-user-agency.mjs';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { PlanningBrowserStore } from '../lib/planning-browser.mjs';
@@ -112,105 +112,34 @@ test('an unexamined essential fact is source recovery, not a factual question',(
   assert.equal(unread.state,'needs_evidence');assert.match(unread.issues[0],/all supplied records/);
 });
 
-test('real graph capture stays stale after current source change or removal and preserves historical snapshots',async t=>{
-  const f=await fixture(t);let request=await f.request();request=await f.service.assess(request.id);
-  assert.equal(node(request).readiness.state,'ready');const oldProfile=node(request).response.sources.find(item=>item.id==='viability:profile').text;
-  f.setProfile('Changed recorded user facts.');request=await f.service.refreshSources(request,f.definition);
-  assert.equal(node(request).readiness.state,'stale');assert.equal(request.sources.find(item=>item.id==='viability:profile').text,'Changed recorded user facts.');
-  assert.equal(node(request).response.sources.find(item=>item.id==='viability:profile').text,oldProfile);
-  request=await f.service.assess(request.id);assert.equal(node(request).readiness.state,'ready');assert.equal(f.calls.length,2);
-  f.setProfile('');request=await f.service.refreshSources(request,f.definition);
-  assert.equal(node(request).readiness.state,'stale');assert.ok(!planningRequestSources(request).some(item=>item.id==='viability:profile'));
+
+test('readiness ensure, assessment, answer and deployment continuation reject before reading personal sources or dispatching',async t=>{
+  let identityReads=0,attachmentReads=0,resumeCalls=0;
+  const f=await fixture(t,{identity:{read:async()=>{identityReads++;throw Error('No personal source read is allowed after retirement.');}},attachments:{get:async()=>{attachmentReads++;throw Error('No attachment read is allowed.');}},engine:{resumeViabilityRun:()=>{resumeCalls++;}}});
+  const request=await f.store.create({id:'saved-readiness',conversationId:'saved-conversation',title:'Saved readiness',objective:'Keep prior facts unchanged.',cwd:f.directory});
+  await f.store.addNode(request.id,{id:'viability',kind:'viability',title:'Saved fact check'});
+  await f.store.addSource(request.id,{title:'Captured facts',text:'An essential fact remained unknown.'});
+  const raw=JSON.parse(await readFile(f.store.file(request.id),'utf8'));
+  raw.viability={scope:'request',nodeId:'viability',fingerprint:viabilityFingerprint(f.definition),definition:f.definition,pendingIntent:{id:'saved-intent',runId:'original-run'}};
+  f.store._validate(raw);await writeFile(f.store.file(request.id),JSON.stringify(raw));
+  const before=await readFile(f.store.file(request.id),'utf8'),saved=await f.store.get(request.id);
+  const operations=[
+    ['ensure',[{scope:'request',scopeId:'saved',conversationId:'saved-conversation',definition:f.definition}]],
+    ['assess',[request.id]],['assessCurrent',[request.id]],
+    ['forRun',[{id:'run',planningMode:'on',planningExecutionMode:'automatic',...f.definition}]],
+    ['answer',[request.id,{nodeId:'viability',requirementId:'address',answer:'Synthetic new fact',expectedNodeRevision:1,expectedResponseId:'saved-response',clientRequestId:'answer'}]],
+    ['answerCurrent',[request.id,{}]],['refreshSources',[saved,f.definition]],
+    ['checkDeployment',[f.definition,'schedule']],['saveDeployment',[{},{}]],
+    ['prepareDeploymentInference',[saved,{},{}]],['assertDeployment',[{}]],['withDeployment',[{},()=>{resumeCalls++;}]]
+  ];
+  for(const [method,args]of operations)await t.test(method,async()=>{await assert.rejects(async()=>f.service[method](...args),{code:'PLANNING_CYCLE_RETIRED',status:410});assert.equal(await readFile(f.store.file(request.id),'utf8'),before);});
+  assert.deepEqual(await f.store.get(request.id),saved);assert.equal(identityReads,0);assert.equal(attachmentReads,0);assert.equal(resumeCalls,0);assert.equal(f.calls.length,0);
+  const reopened=await new PlanningBrowserStore({dataDir:f.directory}).init();
+  try{assert.deepEqual(await reopened.get(request.id),saved);}finally{await reopened.close();}
 });
 
-test('same-input concurrent checks and retries admit one configured response worker',async t=>{
-  const gate=deferred();const f=await fixture(t,{findings:async()=>{await gate.promise;return[];}});const request=await f.request();
-  const first=f.service.assess(request.id),second=f.service.assess(request.id);gate.resolve();await Promise.all([first,second]);await f.service.assess(request.id);
-  assert.equal(f.calls.length,1);assert.equal(f.calls[0].options.model,'selected-fixture-model');assert.equal(f.calls[0].options.effort,'high');assert.equal(f.calls[0].options.serviceTier,'priority');assert.equal(f.calls[0].options.responseOnly,true);
-});
-
-test('factual answer preserves execution choice and resumes one original intent across uncertain delivery',async t=>{
-  const f=await fixture(t,{findings:resolveAnswer});const {run,request}=await f.run();const original=f.engine.resumeViabilityRun;let uncertain=true;
-  f.engine.resumeViabilityRun=(...args)=>{const result=original(...args);if(uncertain){uncertain=false;throw Error('Fixture transport failed after continuation was admitted');}return result;};
-  f.settings.defaultModel='changed-global-model';f.settings.defaultEffort='low';const payload=answer(request);
-  await assert.rejects(f.service.answer(request.id,payload),/transport failed/);const result=await f.service.answer(request.id,payload);
-  assert.equal(f.resumed.size,1);assert.equal(result.viabilityAction.resumedRunId,'resumed-0');assert.equal(f.resumed.values().next().value.taskId,run.taskId);
-  assert.equal(f.calls.length,2);assert.equal(f.calls[1].options.model,'selected-fixture-model');assert.equal(f.calls[1].options.effort,'high');assert.equal(f.calls[1].options.serviceTier,'priority');
-  const replay=await f.service.answer(request.id,payload);assert.equal(replay.viabilityAction.resumedRunId,result.viabilityAction.resumedRunId);assert.equal(f.resumed.size,1);assert.equal(f.calls.length,2);
-});
-
-test('concurrent answers cannot launch duplicate continuations or overwrite receipts',async t=>{
-  const f=await fixture(t,{findings:resolveAnswer});const {request}=await f.run();
-  const results=await Promise.allSettled([f.service.answer(request.id,answer(request,'answer-a')),f.service.answer(request.id,answer(request,'answer-b'))]);
-  assert.equal(results.filter(item=>item.status==='fulfilled').length,1);assert.equal(f.resumed.size,1);assert.equal(f.calls.length,2);
-  const saved=await f.store.get(request.id);assert.equal(saved.viability.answers.length,1);assert.equal(saved.viability.pendingIntent,null);
-});
-
-test('answer rereads actual sources before spending another model turn',async t=>{
-  const f=await fixture(t,{findings:resolveAnswer});const {request}=await f.run();f.setProfile('The recorded address is already 88 Saved Lane.');
-  await assert.rejects(f.service.answer(request.id,answer(request)),{code:'TASK_VIABILITY_ANSWER_CONFLICT'});assert.equal(f.calls.length,1);assert.equal(f.resumed.size,0);
-  assert.equal(node(await f.store.get(request.id)).readiness.state,'stale');
-});
-
-test('source refresh and intent completion cannot erase newer binding fields',async t=>{
-  const f=await fixture(t);const old=await f.request();const writer=f.store.runtimeWriter();
-  await writer.configureViability(old.id,{viability:{answers:[{id:'new-receipt'}],pendingIntent:{id:'new-intent'}}});
-  await f.service.refreshSources(old,f.definition);
-  const current=await writer.configureViability(old.id,{completeIntentId:'old-intent',viability:{pendingIntent:null,lastAction:{resumedRunId:'older-run'}}});
-  assert.equal(current.viability.answers[0].id,'new-receipt');assert.equal(current.viability.pendingIntent.id,'new-intent');assert.equal(current.viability.lastAction,undefined);
-});
-
-test('a new answer without a pending intent does not report an older continuation',async t=>{
-  const f=await fixture(t,{findings:resolveAnswer});let request=await f.request();request=await f.service.assess(request.id);
-  await f.store.runtimeWriter().configureViability(request.id,{viability:{lastAction:{resumedRunId:'old-run'},lastActionReceiptId:'older-receipt'}});
-  const result=await f.service.answer(request.id,answer(request));assert.equal(result.viabilityAction,undefined);assert.equal(f.resumed.size,0);
-});
-
-test('unreadable, unsupported and empty supplied evidence requests recovery without a provider question',async t=>{
-  for(const attachments of [
-    {get:async()=>({kind:'image',name:'fixture.png'})},
-    {get:async()=>({kind:'text',name:'fixture.txt'}),text:async()=>({text:'  '})},
-    {get:async()=>{throw Object.assign(Error('missing stored copy'),{code:'ENOENT'});}},
-    {get:async()=>({kind:'pdf',name:'fixture.pdf'}),read:async()=>({pages:[{page:1,text:''}]})}
-  ]){
-    const f=await fixture(t,{attachments});const request=await f.request('request',{definition:{...f.definition,attachmentIds:['file-a']}});const result=await f.service.assess(request.id);
-    assert.equal(f.calls.length,0);assert.equal(node(result).readiness.viability.state,'needs_evidence');assert.match(result.viability.recoveryIssue.code,/^TASK_VIABILITY_SOURCE/);
-  }
-});
-
-test('full user fact record is used and a damaged canonical record needs recovery',async t=>{
-  let reads=0,snapshots=0;const f=await fixture(t,{identity:{read:async()=>{reads++;return{content:'Full facts with a middle address.'};},snapshot:async()=>{snapshots++;return{documents:{user:{content:'truncated',truncated:true}}};}}});
-  const request=await f.request();assert.equal(reads,1);assert.equal(snapshots,0);assert.match(request.sources.find(item=>item.id==='viability:profile').text,/middle address/);
-  const damaged=await fixture(t,{identity:{read:async()=>({content:'older record',warning:'Current USER.md is invalid.'})}});const recovered=await damaged.request();assert.ok(recovered.viability.recoveryIssue);await damaged.service.assess(recovered.id);assert.equal(damaged.calls.length,0);
-});
-
-test('Planning Off admits no check or evidence read',async t=>{
-  const f=await fixture(t,{identity:{read:async()=>{throw Error('must not read');}}});
-  assert.equal((await f.service.forRun({planningMode:'off'})).skipped,true);assert.equal(f.calls.length,0);assert.equal((await f.store.list()).requests.length,0);
-});
-
-test('cancellation during durable attempt admission settles without pumping a provider',async t=>{
-  const f=await fixture(t);const request=await f.request(),controller=new AbortController(),begin=f.store.beginAttempt.bind(f.store);
-  f.store.beginAttempt=async(...args)=>{const result=await begin(...args);controller.abort();return result;};
-  await assert.rejects(f.service.assess(request.id,{signal:controller.signal}),error=>error.name==='AbortError');assert.equal(f.calls.length,0);
-  assert.equal((await f.store.get(request.id)).attempts.at(-1).status,'cancelled');
-});
-
-test('deployment readiness binds exact identity and holds graph edits through admission',async t=>{
-  const f=await fixture(t);let request=await f.request('deployment');request=await f.service.assess(request.id);
-  const definition={...f.definition,id:'fixture-deployment',viabilityRef:ref(request)};assert.equal(viabilityFingerprint(definition),request.viability.fingerprint);
-  await assert.rejects(f.service.assertDeployment({...definition,id:'another-deployment'}),{code:'TASK_VIABILITY_STALE'});
-  const entered=deferred(),release=deferred();let changed=false;
-  const admission=f.service.withDeployment(definition,async()=>{entered.resolve();await release.promise;return 'admitted';});await entered.promise;
-  const edit=f.store.runtimeWriter().configureViability(request.id,{sources:[{id:'viability:profile',kind:'source',text:'Changed while admitting.'}]}).then(()=>{changed=true;});
-  await new Promise(resolve=>setImmediate(resolve));assert.equal(changed,false);release.resolve();assert.equal(await admission,'admitted');await edit;assert.equal(node(await f.store.get(request.id)).readiness.state,'stale');
-});
-
-test('supervising factual answers retain caller provenance and can defer original continuation to cycle checks',async t=>{
-  const f=await fixture(t,{findings:resolveAnswer}),{request}=await f.run(),payload=answer(request),actor={type:'agent',id:'supervisor-run:worker'};
-  const checked=await f.service.answer(request.id,payload,{actor,deferContinuation:true});
-  assert.equal(node(checked).readiness.state,'ready');assert.equal(f.resumed.size,0);assert.ok(checked.viability.pendingIntent);
-  const source=checked.sources.find(item=>item.id.startsWith('viability:answer:'));assert.equal(source.kind,'source');assert.match(source.title,/^Supervising model answer:/);assert.deepEqual(checked.viability.answers[0].authoredBy,actor);
-  await f.service.answer(request.id,payload,{actor,deferContinuation:true});assert.equal(f.calls.length,2);assert.equal(f.resumed.size,0);
-  await assert.rejects(f.service.answer(request.id,payload,{actor:{type:'external-agent',id:'different-caller'},deferContinuation:true}),{code:'TASK_VIABILITY_IDEMPOTENCY_CONFLICT'});
+test('off and previously cancelled readiness requests are also inert retired calls',async t=>{
+  const f=await fixture(t),before=await f.store.list(),controller=new AbortController();controller.abort();
+  for(const planningMode of ['off','on'])await assert.rejects(f.service.forRun({id:'cancelled',planningMode,...f.definition},{signal:controller.signal}),{code:'PLANNING_CYCLE_RETIRED',status:410});
+  assert.deepEqual(await f.store.list(),before);assert.equal(f.calls.length,0);assert.equal(f.resumeCalls.length,0);
 });

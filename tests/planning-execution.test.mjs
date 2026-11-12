@@ -10,10 +10,11 @@ import { createPlanningWorkerGuard, wrapPlanningToolHandler } from '../lib/plann
 import { EXECUTION_LIMITS, executionReceipt, appendExecutionReceipt, executionView, executionErrorAnnotations } from '../lib/planning-execution.mjs';
 import { toolResultEvent } from '../lib/tool-outcomes.mjs';
 import { CodexRuntime } from '../lib/codex.mjs';
-import { HarnessEngine } from './fixture-legacy-planning-engine.mjs';
+import { HarnessEngine } from '../lib/engine.mjs';
+import { createOperationalEffectGuard } from '../lib/operational-effect-guard.mjs';
+import { createHash } from 'node:crypto';
 import { ProviderRuntime } from '../lib/providers.mjs';
 import { reduceRunEvent, adoptFetchedRun, newerTaskState } from '../public/run-state-model.mjs';
-import { finishFixturePlan } from './fixture-task-plan.mjs';
 
 const payload = receipt => JSON.parse(receipt.contentItems[0].text);
 const action = (id = 'draft') => ({ id, title: 'Prepare and verify the requested draft', kind: 'action', status: 'active', doneWhen: 'The destination displays the correct data and accepted attachment; unresolved facts remain visible.' });
@@ -266,43 +267,49 @@ test('the last valid large recovery receipt can be omitted from an8k read while 
   assert.equal(state.recent.at(-1).recoveredCallIds.length, 24); assert.equal(state.recoveredFailures, 24);
 });
 
-test('actual engine tool dispatch publishes journal updates at unchanged plan revision, while Off creates none', async t => {
-  const f = await fixture(t); let engine, admittedId;
-  class Runtime extends EventEmitter {
-    status() { return { connected: true, authenticated: true, defaultModel: 'fixture-model', models: [{ id: 'fixture-model', supportsTools: true }] }; }
-    async runAgent(options) {
-      let saved;
-      if (!/TASK PLANNING MODE: OFF/.test(options.developerInstructions)) {
-        const read = payload(await options.onToolCall({ name: 'relay_task', callId: 'actual-read', arguments: { action: 'read' } }));
-        saved = payload(await options.onToolCall({ name: 'relay_task', callId: 'actual-plan', arguments: { action: 'plan', expectedRevision: read.revision, plan: { layout: 'sequence' }, steps: [{ ...action(), title: 'Write the fixture file', operation: { kind: 'tool', tool: 'relay_workspace', action: 'write', target: 'checked-fixture.txt' }, result: 'The fixture file and its recorded write receipt.', note: 'Write the specified content to checked-fixture.txt in one workspace operation.', doneWhen: 'The actual write returns the saved file path and written byte count.' }] } }));
-      }
-      const result = await options.onToolCall({ name: 'relay_workspace', callId: 'actual-write', arguments: { action: 'write', path: 'checked-fixture.txt', text: 'Known fixture result.' } });
-      assert.equal(result.success, true);
-      const live = engine.getRun(admittedId);
-      if (saved) { assert.equal(live.taskState.revision, saved.revision); assert.equal(live.taskState.executionObservations.total, 1); assert.equal(live.taskState.steps[0].status, 'active'); }
-      else assert.equal(live.taskState?.executionObservations, undefined);
-      const receipt = payload(result);
-      assert.equal(receipt.path, path.join(f.cwd, 'checked-fixture.txt'));
-      assert.equal(receipt.bytesWritten, Buffer.byteLength('Known fixture result.'));
-      if (saved) {
-        const outcome = await options.onToolCall({ name: 'relay_task', arguments: { action: 'step', expectedRevision: saved.revision, stepId: 'draft', status: 'done', evidence: 'The actual write receipt names checked-fixture.txt and reports the expected UTF-8 byte count.' } });
-        assert.equal(outcome.success, true, outcome.contentItems?.[0]?.text);
-        await finishFixturePlan(options, { state: payload(outcome), summary: 'The requested write returned the expected path and byte count. Its outcome is now explicitly recorded; this fixture has no remaining write or receipt check.' });
-      }
-      return { output: 'The fixture write receipt identifies the expected path and byte count.' };
+test('actual current Engine writes retain independent durable effect receipts without a legacy planning journal',async t=>{
+  const f=await fixture(t),planBytes=await readFile(f.store.file('task-one'));let engine,providerCalls=0;
+  const observed=[];
+  class Runtime extends EventEmitter{
+    status(){return{connected:true,authenticated:true,defaultModel:'fixture-model',models:[{id:'fixture-model',supportsTools:true}]};}
+    async runAgent(options){
+      providerCalls++;
+      const file='checked-fixture-'+providerCalls+'.txt',text='Known fixture result '+providerCalls+'.';
+      const call={name:'relay_workspace',callId:'actual-write-'+providerCalls,arguments:{action:'write',path:file,text}};
+      const result=await options.onToolCall(call);
+      options.onEvent(toolResultEvent(call,result));
+      assert.equal(result.success,true);
+      const receipt=payload(result),effect=result.contentItems.map(item=>{try{return JSON.parse(item.text);}catch{return null;}}).find(item=>item?.type==='operational.effect');
+      assert.equal(receipt.path,path.join(f.cwd,file));assert.equal(receipt.bytesWritten,Buffer.byteLength(text));assert.equal(receipt.atomic,true);
+      assert.equal(await readFile(receipt.path,'utf8'),text);assert.equal(effect.state,'confirmed');assert.equal(effect.source,'generic');
+      observed.push({file:receipt.path,text,result,effect});
+      return{output:'The exact saved file bytes match the workspace write receipt.'};
     }
   }
-  engine = await new HarnessEngine({ runtime: new Runtime(), tasks: f.store, dataDir: f.directory, defaultCwd: f.cwd }).init();
-  engine.runtimeSettings = { get: () => ({ executionGuardrails: true }) }; // This case explicitly compares guarded On/Off execution journals.
-  const workflow = { name: 'Execution integration fixture', settings: { maxParallel: 1 }, nodes: [{ id: 'input', type: 'input' }, { id: 'agent', type: 'agent', model: 'fixture-model', prompt: 'Write a checked fixture.' }, { id: 'output', type: 'output' }], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }] };
-  try {
-    for (const planningMode of ['on', 'off']) {
-      const admitted = engine.startRun({ workflow, input: 'Write the fixture output.', planningMode }); admittedId = admitted.id;
-      const deadline = Date.now() + 7000; let settled;
-      while (Date.now() < deadline) { settled = engine.getRun(admitted.id); if (settled.settled) break; await new Promise(resolve => setTimeout(resolve, 5)); }
-      assert.equal(settled.status, 'completed', settled.error); assert.equal(settled.settled, true);
-      if (planningMode === 'on') { assert.equal(settled.taskState.executionObservations.total, 1); assert.ok(settled.events.some(event => event.data?.type === 'task.execution')); }
-      else await assert.rejects(readFile(f.store.executionFile(admitted.id)), { code: 'ENOENT' });
-    }
-  } finally { await engine.close(); }
+  engine=await new HarnessEngine({runtime:new Runtime(),tasks:f.store,dataDir:f.directory,defaultCwd:f.cwd}).init();
+  engine.runtimeSettings={get:()=>({executionGuardrails:true})};
+  t.after(()=>engine.close());
+  const workflow={name:'Current independent receipts',settings:{maxParallel:1},nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',model:'fixture-model',prompt:'Write one checked fixture.'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}]};
+  const runs=[];
+  for(const planningMode of ['on','off']){
+    const admitted=engine.startRun({workflow,input:'Write one fixture file.',planningMode});await engine.executions.get(admitted.id);
+    const settled=engine.getRun(admitted.id);runs.push(settled);
+    assert.equal(settled.status,'completed',settled.error);assert.equal(settled.settled,true);
+    assert.equal(settled.taskState?.executionObservations,undefined);
+    assert.equal(settled.events.filter(event=>event.data?.type==='operational.effect').length,1);
+    assert.equal(settled.events.filter(event=>event.data?.type==='tool.result'&&event.data?.tool==='relay_workspace').length,1);
+  }
+  const guard=store=>createOperationalEffectGuard({store,cwd:f.cwd,taskId:runs[0].taskId||runs[0].id,runId:runs[0].id,nodeId:'agent'});
+  const records=await guard(f.store).records();assert.equal(records.length,2);assert.equal(providerCalls,2);
+  for(const [index,row]of records.entries()){
+    assert.equal(row.state,'confirmed');assert.equal(row.runId,runs[index].id);assert.equal(row.nodeId,'agent');assert.equal(row.operationId,observed[index].effect.operationId);
+    assert.match(row.resultDigest,/^[a-f0-9]{64}$/);
+    assert.ok(row.resources.some(resource=>resource.toLowerCase()==='path:'+observed[index].file.replaceAll('\\','/').toLowerCase()));
+    const contents=await readFile(observed[index].file);
+    assert.equal(createHash('sha256').update(contents).digest('hex'),createHash('sha256').update(observed[index].text).digest('hex'));
+  }
+  assert.deepEqual(await readFile(f.store.file('task-one')),planBytes,'Independent effects cannot rewrite the saved human plan.');
+  await engine.close();
+  const reopened=await f.reopen();assert.deepEqual(await guard(reopened).records(),records);
+  assert.equal(providerCalls,2,'Reading recovered receipts must not redispatch completed writes.');
 });

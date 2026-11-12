@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm} from 'node:fs/promises';
+import {mkdtemp,rm,readFile,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {PlanningBrowserStore} from '../lib/planning-browser.mjs';
@@ -15,7 +15,18 @@ async function fixture(t,{status='failed',cycleState='executing'}={}){
   const service=new ResponseCycleService({store,runner,onUpdated:()=>{if(run)updates.push(structuredClone(run.responseCycle));}});
   t.after(async()=>{await service.close();await store.close();await rm(dir,{recursive:true,force:true});});
   const initial=await store.create({conversationId:'settlement-fixture',title:'Preserve recorded operational work',objective:'Report the recorded fixture result without repeating its action.',cwd:dir});
-  const created=await service.createCycle(initial.id,{title:'Recorded workflow result',purpose:'Evaluate the existing fixture output and preserve its limitations.',planningExecutionMode:'automatic',expectedRequestRevision:initial.revision,clientRequestId:'settlement-fixture-cycle'});
+  // Load historical host-owned data rather than admitting a new automatic cycle.
+  await store.addNode(initial.id,{id:'saved-cycle',kind:'cycle',title:'Recorded workflow result'});
+  const stages={};
+  for(const [stage,kind]of [['inference','inference'],['feasibility','viability'],['plan','plan'],['think','think'],['respond','respond']]){
+    stages[stage]='saved-'+stage;
+    await store.addNode(initial.id,{id:stages[stage],kind,title:'Saved '+stage,parentId:'saved-cycle'},{expectedParentRevision:(await store.get(initial.id)).nodes.find(node=>node.id==='saved-cycle').revision});
+  }
+  const raw=JSON.parse(await readFile(store.file(initial.id),'utf8'));
+  for(const node of raw.nodes){node.cycleId='saved-cycle';if(node.id!=='saved-cycle')node.cycleStage=Object.keys(stages).find(stage=>stages[stage]===node.id);}
+  raw.responseCycle={version:1,rootCycleId:'saved-cycle',cycles:[{id:'saved-cycle',title:'Recorded workflow result',objective:initial.objective,pipelineVersion:2,depth:0,state:cycleState,stageNodeIds:stages,planningExecutionMode:'automatic',acceptanceCriteria:[],effectReceipts:[]}],limits:{maxDepth:4,maxCycles:24,maxPassesPerStage:3,maxProviderTurns:160}};
+  store._validate(raw);await writeFile(store.file(initial.id),JSON.stringify(raw));
+  const created=await store.get(initial.id);
   const cycle=created.cycles[0],plan=created.nodes.find(node=>node.id===cycle.stageNodeIds.plan);
   const planRef={requestId:created.id,cycleId:cycle.id,nodeId:plan.id,nodeRevision:plan.revision,responseId:plan.response?.id||null};
   const output='The fixture worker completed its recorded action; the final analytical review remains incomplete.';
