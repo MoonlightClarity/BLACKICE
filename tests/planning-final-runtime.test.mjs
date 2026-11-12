@@ -9,6 +9,8 @@ import { CodexRuntime } from '../lib/codex.mjs';
 
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const tick = () => new Promise(resolve => setImmediate(resolve));
+const longContinuation='Reassess the complete retained execution evidence. '.repeat(1400)+'CONTINUATION_TAIL';
+const longDirection='Include the newly supplied constraint. '.repeat(1600)+'DIRECTION_TAIL';
 const tool = { type: 'function', name: 'relay_once', description: 'One fixture operation.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } };
 const receipt = { success: true, contentItems: [{ type: 'inputText', text: 'The fixture operation was confirmed once.' }] };
 const response = (type, text, toolCall = false) => type === 'openai'
@@ -38,7 +40,7 @@ for (const type of ['openai', 'anthropic', 'compatible']) test(`${type}: a final
   const result = await f.runtime.runAgent({ ...f.options, dynamicTools: [tool], onToolCall: async () => { operations++; return receipt; }, onEvent: event => events.push(event), onBeforeFinal: async candidate => {
     candidates.push(candidate);
     assert.equal(operations, 1, 'The actual tool receipt precedes review and is never replayed.');
-    return candidates.length === 1 ? { continue: true, prompt: 'Reassess the saved result and remaining work before answering.' } : undefined;
+    return candidates.length === 1 ? { continue: true, prompt: longContinuation } : undefined;
   } });
   assert.equal(result.output, 'Reassessed final answer.'); assert.equal(operations, 1); assert.equal(f.requests.length, 3);
   assert.deepEqual(candidates.map(item => item.output), ['Premature candidate.', 'Reassessed final answer.']);
@@ -50,6 +52,7 @@ for (const type of ['openai', 'anthropic', 'compatible']) test(`${type}: a final
   assert.match(JSON.stringify(record.messages), /BLACKICE INTERNAL CONTINUATION/);
   assert.match(JSON.stringify(f.requests[2]), /Premature candidate/);
   assert.match(JSON.stringify(f.requests[2]), /confirmed once/);
+  assert.ok(JSON.stringify(f.requests[2]).includes(longContinuation),'a large continuation reaches the provider intact');
 });
 
 test('an accepted API final needs no extra pass and local review failures do not degrade provider health', async t => {
@@ -69,11 +72,12 @@ test('API steering accepted during final review continues before completing', as
   const started = deferred(), release = deferred(); let count = 0;
   const work = f.runtime.runAgent({ ...f.options, onBeforeFinal: async candidate => { if (++count === 1) { started.resolve(candidate); await release.promise; } } });
   const first = await started.promise;
-  assert.equal((await f.runtime.steerAgent(first.threadId, 'Include the newly supplied constraint.')).accepted, true);
+  assert.equal((await f.runtime.steerAgent(first.threadId, longDirection)).accepted, true);
   release.resolve();
   const result = await work;
   assert.equal(result.output, 'The new direction is included.'); assert.equal(count, 2);
   assert.match(JSON.stringify(f.requests[1]), /newly supplied constraint/);
+  assert.ok(JSON.stringify(f.requests[1]).includes(longDirection));
 });
 
 test('API cancellation interrupts a pending final review without another provider request', async t => {
@@ -125,12 +129,13 @@ function nativeFixture(t) {
 
 test('native final review normalizes legacy history input and keeps one persistent thread with cumulative usage', async t => {
   const f = nativeFixture(t), events = [], candidates = [];
-  const { work, state } = await f.begin({ codexHistory: 'relay', onEvent: event => events.push(event), onBeforeFinal: async candidate => { candidates.push(candidate); return candidates.length === 1 ? { continue: true, prompt: 'Reassess the remaining plan.' } : undefined; } });
+  const { work, state } = await f.begin({ codexHistory: 'relay', onEvent: event => events.push(event), onBeforeFinal: async candidate => { candidates.push(candidate); return candidates.length === 1 ? { continue: true, prompt: longContinuation } : undefined; } });
   f.complete(state, 'Premature native candidate.', 5); await tick();
   assert.equal(f.requests.filter(row => row.method === 'thread/start').length, 1);
   assert.equal(f.requests.filter(row => row.method === 'thread/unsubscribe').length, 0);
   const starts = f.requests.filter(row => row.method === 'turn/start'); assert.equal(starts.length, 2);
   assert.equal(starts[1].params.threadId, state.threadId); assert.match(starts[1].params.input[0].text, /INTERNAL CONTINUATION/);
+  assert.ok(starts[1].params.input[0].text.includes(longContinuation));
   for (const key of ['model', 'effort', 'serviceTier', 'serviceTierForTurn']) assert.equal(starts[1].params[key], starts[0].params[key]);
   assert.equal(f.client.status().activeTurns, 1);
   f.complete(state, 'Reassessed native final.', 10);
@@ -178,10 +183,10 @@ test('native steering accepted while review is pending is included in the next t
   const f = nativeFixture(t), started = deferred(), release = deferred(); let reviews = 0;
   const { work, state } = await f.begin({ onBeforeFinal: async () => { if (++reviews === 1) { started.resolve(); await release.promise; } } });
   f.complete(state, 'Earlier candidate.'); await started.promise;
-  const direction = await f.client.steerAgent(state.threadId, 'Use the newly supplied requirement.');
+  const direction = await f.client.steerAgent(state.threadId, longDirection);
   assert.equal(direction.accepted, true); assert.equal(direction.queued, true);
   release.resolve(); await tick();
-  assert.match(JSON.stringify(f.requests.filter(row => row.method === 'turn/start')[1].params.input), /newly supplied requirement/);
+  assert.ok(JSON.stringify(f.requests.filter(row => row.method === 'turn/start')[1].params.input).includes(longDirection));
   f.complete(state, 'The direction was incorporated.', 10);
   assert.equal((await work).output, 'The direction was incorporated.'); assert.equal(reviews, 2);
 });
