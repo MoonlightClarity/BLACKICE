@@ -32,6 +32,7 @@ export function projectFamily(family) {
       planningMode:run.planningMode,planningEnforcement:run.planningEnforcement,
       ...(run.planningOntology?{planningOntology:run.planningOntology}:{}),
       planningExecutionMode:run.planningExecutionMode,
+      ...(run.executionModes?{executionModes:run.executionModes}:{}),
       viability:run.viability?.awaitingInput===true?{awaitingInput:true}:undefined,
       responseCycle:run.responseCycle&&{
         state:run.responseCycle.state,stage:run.responseCycle.stage,requestId:run.responseCycle.requestId,cycleId:run.responseCycle.cycleId,

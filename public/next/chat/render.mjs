@@ -53,6 +53,8 @@ export function createChatFrame(mount) {
     '<label>Reasoning <select id="next-chat-effort"><option value="default">Model default</option></select></label>',
     '<label>Speed <select id="next-chat-tier"><option value="default">Standard</option></select></label>',
     '<label>Planning <select id="next-chat-plan" title="Choose modular reasoning methods or Off."><option value="ontology">Modules</option><option value="off">Off</option></select></label>',
+    '<label>Directory <select id="next-chat-directory-mode" title="Recursive context-directory reasoning. Applies to the next response, not running work."><option value="auto">Auto</option><option value="on">On</option><option value="off">Off</option></select></label>',
+    '<label>Subagents <select id="next-chat-subagents-mode" title="Independent delegation preference for this conversation. Capacity and safety checks still apply."><option value="default">Default</option><option value="on">On</option><option value="off">Off</option></select></label>',
     '<input id="next-chat-execution-mode" type="hidden" value="automatic">',
     '<span class="next-chat-spacer"></span><button class="next-primary" type="submit" id="next-chat-send">Send</button></div>',
     '<details id="next-chat-ontology-inline" class="next-chat-ontology-inline">',
@@ -85,6 +87,7 @@ export function createChatFrame(mount) {
     cycleNotice:find('next-chat-cycle-notice'),cycleStatus:find('next-chat-cycle-status'),openPlan:find('next-chat-open-plan'),executionMode:find('next-chat-execution-mode'),
     ontologyInline:find('next-chat-ontology-inline'),ontologyModules:find('next-chat-ontology-modules'),ontologySave:find('next-chat-ontology-default'),ontologyStatus:find('next-chat-ontology-feedback'),
     form:find('next-chat-form'),input:find('next-chat-input'),commands:find('next-chat-commands'),commandMenu:find('next-chat-command-menu'),attachments:find('next-chat-attachments'),model:find('next-chat-model'),plan:find('next-chat-plan'),
+    directoryMode:find('next-chat-directory-mode'),subagentsMode:find('next-chat-subagents-mode'),
     effort:find('next-chat-effort'),tier:find('next-chat-tier'),send:find('next-chat-send'),hint:find('next-chat-hint') };
 }
 

@@ -2,6 +2,7 @@ import { createChatFrame, paintIndex, paintIntroduction, paintHistory, paintMode
 import { createGroupedModelPicker } from '../core/model-picker.mjs';
 import { enableProviderForModel } from '../../provider-availability.mjs';
 import { summaries, filterSummaries, conversationRuns, rootId, lastRunId, running, planningProgressForRun, CHAT_INDEX_BATCH, CHAT_MESSAGE_BATCH, messageLimitsAfterRefresh, conversationBucket, conversationActionState, conversationManagementTarget, resolveConversationSelection, mergeChatRunUpdate, chatHeaderStatus } from './model.mjs';
+import {readConversationExecutionModes,saveConversationExecutionModes,transferNewExecutionModes} from './execution-preferences.mjs';
 import { submitChat, replyState } from './send.mjs';
 import { createConversationReader } from './reader-client.mjs';
 import { initAttachmentsUI } from '../../attachments-ui.mjs';
@@ -62,6 +63,9 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   view.form.parentElement.insertBefore(executionNotice,view.form);
   const ontologyRows=new Map();
   const restoreOntology=(conversationId,runs=[])=>{
+    const execution=readConversationExecutionModes({conversationId,runs,storage:localStorage});
+    state.options.directoryMode=execution.directoryMode;state.options.subagentsMode=execution.subagentsMode;
+    view.directoryMode.value=execution.directoryMode;view.subagentsMode.value=execution.subagentsMode;
     const selected=readConversationOntology({conversationId,runs,storage:localStorage,
       defaults:runtimeStatus.runtimeSettings?.planningOntology});
     state.options.planningExecutionMode=savedChatExecutionMode(runs.at(-1),conversationId==='new'?newPlanningExecutionMode:'automatic');
@@ -152,12 +156,12 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     const choices=paintModels(view,status,state.options);
     modelPicker.update({models:choices.models,status,selected:choices.selected.model});
     state.options=normalizeChatOptions({model:view.model.value,effort:view.effort.value,
-      serviceTier:view.tier.value,planningMode:view.plan.value,planningExecutionMode:view.executionMode.value,planningOntology:state.options.planningOntology});
+      serviceTier:view.tier.value,planningMode:view.plan.value,planningExecutionMode:view.executionMode.value,planningOntology:state.options.planningOntology,directoryMode:view.directoryMode.value,subagentsMode:view.subagentsMode.value});
     reflectOntology();
     if(!state.selected&&!contextControls.dirty)contextControls.reconcile(runtimeStatus.runtimeSettings?.defaultContext);
     syncContext();
   };
-  const persistOptions=()=>{try{const {planningOntology,planningMode,...general}=state.options;localStorage.setItem('blackice.next.chatOptions',JSON.stringify({...general,model:'default',planningExecutionMode:newPlanningExecutionMode}));}catch{}};
+  const persistOptions=()=>{try{const {planningOntology,planningMode,directoryMode,subagentsMode,...general}=state.options;localStorage.setItem('blackice.next.chatOptions',JSON.stringify({...general,model:'default',planningExecutionMode:newPlanningExecutionMode}));}catch{}};
   try{const saved=JSON.parse(localStorage.getItem('blackice.next.drafts')||'{}');
     for(const [key,value] of Object.entries(saved))if(typeof value==='string'&&value.length<=10000)state.drafts.set(key,value);
   }catch{}
@@ -232,6 +236,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     if(view.model.disabled!==state.pending){view.model.disabled=state.pending;refreshChoices(runtimeStatus);}
     syncContext();
     const item=state.selected,bucket=selectedBucket(),latest=state.runs.at(-1),busy=state.pending||state.managing||contextControls.isCompacting();
+    view.directoryMode.disabled=busy||state.loading||bucket!=='active';view.subagentsMode.disabled=view.directoryMode.disabled;
     executionNotice.hidden=Boolean(item)||root()!=='new'||bucket!=='active'||state.options.planningExecutionMode!=='plan_only';
     enableAutomatic.disabled=busy||state.loading||state.attachmentsPending;
     view.title.textContent=item?.rootTitle||item?.title||'New conversation';
@@ -544,7 +549,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       const submittedContextRevision=contextControls.revision;
       const result=await submitChat({api,runs:current,task,model:previous&&!submittedModel.explicit?undefined:options.model,
         effort:options.effort,serviceTier:options.serviceTier,context,
-        planningMode:options.planningMode,planningOntology:options.planningOntology,planningExecutionMode:options.planningExecutionMode,attachmentIds:[...(state.attachmentIds.get(root())||[])],
+        planningMode:options.planningMode,planningOntology:options.planningOntology,directoryMode:options.directoryMode,subagentsMode:options.subagentsMode,planningExecutionMode:options.planningExecutionMode,attachmentIds:[...(state.attachmentIds.get(root())||[])],
         cwd:(()=>{try{return localStorage.getItem('blackice.next.cwd')||status?.cwd||'';}catch{return status?.cwd||'';}})()});
       const unchanged=state.inputOwner===submittedOwner&&state.inputRevision===submittedRevision;
       if(unchanged)consumeCommandInput(submittedOwner,submittedRevision);
@@ -558,6 +563,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
         if(context!==undefined)contextControls.commit(submittedContextOwner,context,submittedContextRevision);
         const item=previous ? {...previous,runId:run.id,latestRunId:run.id}
           : {id:run.taskId||run.id,taskId:run.taskId||run.id,runId:run.id,title:task,updatedAt:new Date().toISOString(),status:run.status};
+        if(!previous)transferNewExecutionModes({conversationId:rootId(item),storage:localStorage});
         if(!previous)transferNewOntology({conversationId:rootId(item),storage:localStorage});
         if(!previous&&!unchanged&&state.inputOwner===submittedOwner){state.drafts.set(rootId(item),view.input.value);state.drafts.set(submittedOwner,'');state.inputOwner=rootId(item);saveDraft();}
         if(state.bucket!=='active'){state.bucket='active';view.bucket.value='active';state.list=[];state.selection.clear();state.selecting=false;}
@@ -695,7 +701,12 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     }
   }
   for(const [element,key] of [[view.model,'model'],[view.effort,'effort'],
-    [view.tier,'serviceTier'],[view.plan,'planningMode'],[view.executionMode,'planningExecutionMode']])element?.addEventListener('change',()=>{
+    [view.tier,'serviceTier'],[view.plan,'planningMode'],[view.executionMode,'planningExecutionMode'],[view.directoryMode,'directoryMode'],[view.subagentsMode,'subagentsMode']])element?.addEventListener('change',()=>{
+      if(['directoryMode','subagentsMode'].includes(key)){
+        if(element.disabled){restoreOntology(root(),state.runs);return;}
+        try{saveConversationExecutionModes({conversationId:root(),...state.options,[key]:element.value,storage:localStorage});}
+        catch(error){restoreOntology(root(),state.runs);showError(error);return;}
+      }
       if(key==='model'){
         if(state.pending){refreshChoices(runtimeStatus);return;}
         try{state.options.model=modelSelections.choose(root(),element.value,runtimeStatus);}catch(error){refreshChoices();showError(error);return;}

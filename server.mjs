@@ -1,3 +1,4 @@
+import {handleShadowdancerContextHttp} from './lib/shadowdancer-context-http.mjs';
 import {createNativePlanningTools} from './lib/native-planning-tools.mjs';
 import {NativeTaskContextBridge,createNativeTaskContextTool} from './lib/native-task-context-bridge.mjs';
 import http from 'node:http';
@@ -551,6 +552,7 @@ export async function createHarnessServer(options = {}) {
         return json(res,200,conversations.search(options));
       }
       if(pathname==='/api/conversations'&&req.method==='GET')return json(res,200,{conversations:conversations.list(new URL(req.url,'http://'+host).searchParams.get('state')||'active')});
+      if(await handleShadowdancerContextHttp({req,res,pathname,host,conversations,engine,body,json,fileMutations,onUpdated:sendEvent}))return;
       if (await handlePlanningDiagnosticsHttp({req,res,pathname,service:planningDiagnostics,body,json,fileMutations})) return;
       if (pathname === '/api/planning-browser' || pathname.startsWith('/api/planning-browser/')) {
         const client = remoteAccess?.authorizeForward?.(req);
@@ -1293,7 +1295,7 @@ export async function createHarnessServer(options = {}) {
       const nextFiles = ['index.html','base.css','chat.css','chat-management.css','brand.css','work-visual.css','intelligence-planning.css','intelligence-map.css','controls.css','layout-fixes.css','planning-ontology.css','planning-browser.css','guard.js','app.mjs',
         'core/api.mjs','core/dom.mjs','core/events.mjs','core/model-picker.mjs','core/context-controls.mjs','model-picker.css',
         'chat/chat.mjs','chat/model.mjs','chat/render.mjs','chat/send.mjs','chat/planning-timeline.mjs',
-        'chat/options-model.mjs','chat/ontology-preferences.mjs','chat/artifacts.mjs','parity.css',
+        'chat/options-model.mjs','chat/ontology-preferences.mjs','chat/execution-preferences.mjs','chat/artifacts.mjs','parity.css',
         'chat/reader-model.mjs','chat/reader-worker.mjs','chat/reader-client.mjs',
         // Native hosting UI assets are registered at the public root below.
         'workspaces/planning.mjs','workspaces/planning-browser.mjs','workspaces/response-cycle-ui.mjs','workspaces/tradecraft-timeline.mjs','workspaces/planning-visual.mjs','workspaces/intelligence-planning-model.mjs','workspaces/intelligence-planning-ui.mjs','workspaces/intelligence-map-model.mjs','workspaces/intelligence-map-ui.mjs','workspaces/tasks.mjs','workspaces/schedule-inspection-model.mjs','workspaces/tasks-visual-model.mjs','workspaces/task-lifecycle.mjs','workspaces/workflow-execution.mjs',
