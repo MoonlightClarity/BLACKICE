@@ -1,3 +1,4 @@
+import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-provider.mjs';
 // Explicit schema-13 handoff/schema regression; ordinary Engine turns no longer invoke forced Planning.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -87,11 +88,12 @@ async function fixture(t, { execute, withPlanning = true } = {}) {
   class Runtime extends EventEmitter {
     status() { return { connected: true, authenticated: true, defaultModel: 'fixture-handoff', models: [{ id: 'fixture-handoff', supportsTools: true }] }; }
     async runAgent(options) {
+      const review = fixtureOutcomeReview(options); if (review) return review;
       assert.notEqual(options.responseOnly, true, 'Ordinary Engine work must not dispatch retired analytical or handoff turns.');
       observations.operationalCalls++;
       const run = context.engine.listRuns()[0], state = await tasks.get(run.taskId);
       observations.atWorkerEntry = { state, options, awareness: tasks.awareness.snapshot(state) };
-      return execute ? execute(options, context, state) : { output: 'No fixture operation requested.' };
+      return finishFixtureCandidate(options, execute ? await execute(options, context, state) : { output: 'No fixture operation requested.' });
     }
     async close() {}
   }

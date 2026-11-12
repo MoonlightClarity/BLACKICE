@@ -1,3 +1,4 @@
+import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-provider.mjs';
 // Historical schema-13 guarded-worker regression; current canonical behavior has separate engine acceptance.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -61,7 +62,7 @@ async function fixture(t, { blocked = true, choice = false, grace, execute = com
   };
   class Runtime extends EventEmitter {
     status() { return { connected: true, authenticated: true, defaultModel: 'fixture', models: [{ id: 'fixture', supportsTools: true }] }; }
-    runAgent(options) { entered.push(options); return execute(options); }
+    async runAgent(options) { const review = fixtureOutcomeReview(options); if (review) return review; entered.push(options); return finishFixtureCandidate(options, await execute(options)); }
   }
   // These fixtures exercise the explicit shared execution guardrail and its coordination deadline.
   const engine = await new HarnessEngine({ runtime: new Runtime(), dataDir: directory, defaultCwd: directory, tasks, coordinationWaitMs: grace, coordinationTiming: clock, maxConcurrentRuns }).init();

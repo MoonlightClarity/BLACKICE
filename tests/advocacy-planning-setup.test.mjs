@@ -1,10 +1,11 @@
+import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-provider.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { DEFAULT_PLANNING_ONTOLOGY } from '../public/planning-module-policy.mjs';
+import { DEFAULT_PLANNING_ONTOLOGY, planningOntologyInstructions } from '../public/planning-module-policy.mjs';
 import { ADVOCACY_CASES, runAdvocacyCase } from '../scripts/verify-luna-advocacy.mjs';
 
 test('default fictional form setup uses direct modular execution and preserves a provider failure without external dispatch', async t => {
@@ -21,8 +22,8 @@ test('default fictional form setup uses direct modular execution and preserves a
     async start() { this.starts++; throw Error('The evaluator must never start a provider during app setup.'); }
     async runAgent(options) {
       this.calls.push(options);
-      assert.notEqual(options.responseOnly, true); assert.equal(options.onBeforeFinal, undefined);
-      assert.match(options.developerInstructions, /MODULAR PLANNING ONTOLOGY/); assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_browser'));
+      assert.notEqual(options.responseOnly, true); assert.equal(typeof options.onBeforeFinal, 'function');
+      assert.ok(options.developerInstructions.includes(planningOntologyInstructions(DEFAULT_PLANNING_ONTOLOGY))); assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_browser'));
       throw Object.assign(Error('Synthetic operational provider failure; no external form accessed.'), { code: 'FIXTURE_PROVIDER_FAILURE' });
     }
     async close() { this.closes++; }
@@ -64,7 +65,7 @@ test('the fictional form whole-case deadline aborts and settles an active direct
       models: [{ id: 'fixture-model', available: true, supportsTools: true, supportedReasoningEfforts: ['default'] }] }; }
     async runAgent(options) {
       this.calls.push(options);
-      assert.notEqual(options.responseOnly, true); assert.equal(options.onBeforeFinal, undefined);
+      assert.notEqual(options.responseOnly, true); assert.equal(typeof options.onBeforeFinal, 'function');
       assert.equal(options.timeoutMs, 10000);
       return new Promise((_resolve, reject) => {
         const abort = () => { this.aborts++; reject(Object.assign(Error('Synthetic cancelled direct call.'), { name: 'AbortError', code: 'ABORT_ERR' })); };
@@ -109,8 +110,12 @@ for (const scenario of [
     async start() { assert.fail('The fixture must not start a live provider.'); }
     async close() { closes++; }
     async runAgent(options) {
-      calls++; assert.equal(calls, 1); assert.notEqual(options.responseOnly, true); assert.equal(options.onBeforeFinal, undefined);
-      assert.match(options.developerInstructions, /MODULAR PLANNING ONTOLOGY/);
+      const review = fixtureOutcomeReview(options, ({ snapshot }) => {
+        assert.ok(snapshot.evidence.records.some(row => row.id === 'one-submission'), 'Review sees the actual synthetic submission receipt.');
+        return { decision: 'respond', summary: 'The fixture report accurately describes the recorded submission or validation result.', remaining: [], nextAction: '', blockers: [] };
+      }); if (review) return review;
+      calls++; assert.equal(calls, 1); assert.notEqual(options.responseOnly, true); assert.equal(typeof options.onBeforeFinal, 'function');
+      assert.ok(options.developerInstructions.includes(planningOntologyInstructions(DEFAULT_PLANNING_ONTOLOGY)));
       options.onEvent({ type: 'thread', threadId: 'synthetic-form-thread', model: 'fixture-model' });
       const send = async (args, callId) => {
         const result = await options.onToolCall({ name: 'relay_browser', arguments: args, callId });
@@ -126,7 +131,7 @@ for (const scenario of [
       const [result, duplicate] = await Promise.all([options.onToolCall(submit), options.onToolCall(structuredClone(submit))]);
       assert.equal(result.success, true, JSON.stringify(result)); assert.deepEqual(duplicate, result);
       if (scenario.lostResult) throw Object.assign(Error('Synthetic provider lost its final response after the confirmed form effect.'), { code: 'FIXTURE_RESULT_LOST' });
-      return { output: scenario.omitPhone ? 'The form reported phone is required; nothing was submitted.' : 'The application was received with confirmation FIXTURE-' + item.id + '.', threadId: 'synthetic-form-thread' };
+      return finishFixtureCandidate(options, { output: scenario.omitPhone ? 'The form reported phone is required; nothing was submitted.' : 'The application was received with confirmation FIXTURE-' + item.id + '.', threadId: 'synthetic-form-thread' });
     }
   }
   const runtime = new SyntheticProvider(), original = runtime.runAgent;

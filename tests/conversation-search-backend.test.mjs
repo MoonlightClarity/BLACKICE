@@ -1,3 +1,4 @@
+import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-provider.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -258,9 +259,10 @@ test('explicit module provisional and rejected responses never become searchable
   let release, moduleCalls = 0, ordinaryCalls = 0;
   const hold = new Promise(resolve => { release = resolve; }), runtime = new Runtime();
   runtime.runAgent = async options => {
+    const review = fixtureOutcomeReview(options); if (review) return review;
     if (!options.responseOnly) {
       ordinaryCalls++;
-      return { output: 'Visible ordinary answer.', threadId: 'fixture-thread' };
+      return finishFixtureCandidate(options, { output: 'Visible ordinary answer.', threadId: 'fixture-thread' });
     }
     moduleCalls++;
     assert.deepEqual(options.dynamicTools, []);

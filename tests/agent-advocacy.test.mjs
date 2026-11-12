@@ -1,3 +1,4 @@
+import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-provider.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -19,9 +20,10 @@ class FixtureRuntime extends EventEmitter {
   constructor(execute) { super(); this.execute = execute; this.calls = []; }
   status() { return { connected: true, authenticated: true, defaultModel: 'fixture-model', models: [{ id: 'fixture-model', available: true, supportsTools: true, supportedReasoningEfforts: ['max'] }] }; }
   async runAgent(options) {
+    const review = fixtureOutcomeReview(options); if (review) return review;
     this.calls.push(options);
     options.onEvent?.({ type: 'thread', threadId: options.threadId || 'advocacy-fixture-thread', model: 'fixture-model' });
-    return this.execute(options, this.calls.length);
+    return finishFixtureCandidate(options, await this.execute(options, this.calls.length));
   }
   async close() {}
 }
