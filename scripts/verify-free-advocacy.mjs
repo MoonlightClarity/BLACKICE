@@ -107,7 +107,7 @@ async function main(args) {
   if (!item) throw Error('Unknown case: ' + caseId);
   await fs.mkdir(root);
   const report = { format: 1, transport: 'compatible-api', native: false, model: FREE_MODEL, modelId: FREE_MODEL_ID,
-    effort: 'default', planningMode: 'forced', budgets: FREE_EVALUATION_BUDGETS, case: caseId, startedAt: new Date().toISOString(), status: 'preparing' };
+    effort: 'default', planningMode: 'ontology', budgets: FREE_EVALUATION_BUDGETS, case: caseId, startedAt: new Date().toISOString(), status: 'preparing' };
   let setup;
   try {
     setup = await createFreeEvaluationRuntime({ root });
@@ -119,7 +119,7 @@ async function main(args) {
     report.status = 'running';
     await fs.writeFile(path.join(root, 'report.json'), json(report));
     console.log(json({ event: 'started', case: caseId, model: FREE_MODEL, transport: report.transport, budgets: FREE_EVALUATION_BUDGETS }).trim());
-    const evidence = await runAdvocacyCase({ runtime: setup.runtime, root, item, planningMode: 'forced', model: FREE_MODEL, effort: 'default', timeoutMs: FREE_EVALUATION_BUDGETS.caseTimeoutMs, runTimeoutMs: FREE_EVALUATION_BUDGETS.runTimeoutMs });
+    const evidence = await runAdvocacyCase({ runtime: setup.runtime, root, item, planningMode: 'ontology', model: FREE_MODEL, effort: 'default', timeoutMs: FREE_EVALUATION_BUDGETS.caseTimeoutMs, runTimeoutMs: FREE_EVALUATION_BUDGETS.runTimeoutMs });
     await setup.flush();
     evidence.budgets = observedFreeEvaluationBudgets(setup.requests);
     const inference = setup.requests.filter(request => request.method === 'POST');

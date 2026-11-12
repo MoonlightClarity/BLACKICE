@@ -122,7 +122,7 @@ export function fixtureConnections() {
   };
 }
 
-export async function runAdvocacyCase({ runtime, root, item, planningMode = 'forced', fullPlanning = true, model = 'gpt-6-luna', effort = 'max', timeoutMs = 600000, runTimeoutMs = timeoutMs }) {
+export async function runAdvocacyCase({ runtime, root, item, planningMode = 'ontology', fullPlanning = true, model = 'gpt-6-luna', effort = 'max', timeoutMs = 600000, runTimeoutMs = timeoutMs }) {
   const cwd = path.join(root, item.id, 'workspace'), dataDir = path.join(root, item.id, 'profile');
   await mkdir(cwd, { recursive: true });
   const profileText = json(item.profile); await writeFile(path.join(cwd, 'profile.json'), profileText, { flag: 'wx' });
@@ -199,19 +199,11 @@ export async function runAdvocacyCase({ runtime, root, item, planningMode = 'for
       output: run.output, error: run.error, errorCode: run.errorCode, calls, plan: run.taskState, events: run.events,
       planningConfiguration: { setup: fullPlanning ? 'application-services' : 'bare-instruction-fixture',
         requestedMode: planningMode, effectiveMode: run.planningMode, enforcement: run.planningEnforcement || null,
-        guardrails: run.runtimeSettings?.planningGuardrails === true, servicesAttached: Boolean(engine.taskViability && engine.responseCycle) },
+        guardrails: run.runtimeSettings?.planningGuardrails === true, servicesAttached: Boolean(engine.taskViability && engine.responseCycle), ontology: run.planningOntology || null },
       responseCycle: run.responseCycle || null, viability: run.viability || null, planningGraph,
       form: copy(browser.state), externalDispatches: [...connections.externalDispatches],
       inputIntegrity: hash(await readFile(path.join(cwd, 'profile.json'))) === hash(profileText) };
     evidence.assessment = assessAdvocacyCase(item, { state: browser.state, output: run.output, status: run.status, settled: run.settled, messages, externalDispatches: connections.externalDispatches });
-    if (fullPlanning && planningMode === 'forced') {
-      Object.assign(evidence.assessment.checks, {
-        forcedPlanning: evidence.planningConfiguration.guardrails && evidence.planningConfiguration.enforcement === 'forced',
-        planningCycle: evidence.planningConfiguration.servicesAttached && run.responseCycle?.state === 'completed' && Boolean(run.responseCycle?.planRef && planningGraph),
-        maintainedPlan: Boolean(run.taskState?.steps?.length),
-      });
-      if (Object.values(evidence.assessment.checks).some(value => !value)) evidence.assessment.objective = 'fail';
-    }
     evidence.assessment.checks.caseDeadline = !timedOut;
     if (timedOut) evidence.assessment.objective = 'fail';
     if (!evidence.inputIntegrity) { evidence.assessment.objective = 'fail'; evidence.assessment.checks.inputIntegrity = false; }
@@ -234,7 +226,7 @@ async function sourceFingerprint() {
 async function main(args) {
   if (args.length === 1 && args[0] === '--describe') {
     console.log(json({ modelStarted: false, model: 'gpt-6-luna', cases: ADVOCACY_CASES.map(({ id, required, nonDisclosure, expectedNationality, expectedSubmitted }) => ({ id, required, nonDisclosure, expectedNationality, expectedSubmitted })),
-      usage: 'node scripts/verify-luna-advocacy.mjs --live --output-dir UNUSED_ABSOLUTE_DIRECTORY [--planning-mode forced|advisory|off] [--case CASE_ID]',
+      usage: 'node scripts/verify-luna-advocacy.mjs --live --output-dir UNUSED_ABSOLUTE_DIRECTORY [--planning-mode ontology|off] [--case CASE_ID]',
       effect: 'Actual signed-in native model turns with the assembled HarnessEngine instructions; fictional local form adapter and profile only. No browser process or website is opened.' })); return;
   }
   if (!args.includes('--live')) throw Error('Use --describe without a model, or explicitly opt in with --live --output-dir UNUSED_ABSOLUTE_DIRECTORY.');
@@ -244,8 +236,8 @@ async function main(args) {
     if (!['--output-dir', '--planning-mode', '--case'].includes(args[i]) || !args[i + 1]) throw Error('Unknown or incomplete option: ' + args[i]);
     options[args[i].slice(2)] = args[++i];
   }
-  const planningMode = options['planning-mode'] || 'forced';
-  if (!['forced', 'advisory', 'on', 'off'].includes(planningMode)) throw Error('Planning mode must be forced, advisory, or off; historical on remains advisory.');
+  const planningMode = options['planning-mode'] || 'ontology';
+  if (!['ontology', 'off', 'forced', 'advisory', 'on', 'auto', 'maximal'].includes(planningMode)) throw Error('Planning mode must be ontology or off; historical aliases remain nonblocking.');
   if (!options['output-dir'] || !path.isAbsolute(options['output-dir'])) throw Error('Supply an unused absolute --output-dir to preserve receipts.');
   const selected = options.case ? ADVOCACY_CASES.filter(item => item.id === options.case) : ADVOCACY_CASES;
   if (!selected.length) throw Error('Unknown case: ' + options.case);
