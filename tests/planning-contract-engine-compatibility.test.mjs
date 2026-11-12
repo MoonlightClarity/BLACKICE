@@ -47,7 +47,7 @@ async function fixture(t, execute, { subagents = false } = {}) {
   } };
 }
 
-test('new production runs use schema 14 and complete real observations without legacy leaf bookkeeping', async t => {
+test('new production runs preserve optional schema 14 authoring and actual reads without claiming contract completion', async t => {
   assert.equal(TASK_SCHEMA_VERSION, 14);
   const calls = [];
   const f = await fixture(t, async (options, { cwd, invoke }) => {
@@ -61,38 +61,32 @@ test('new production runs use schema 14 and complete real observations without l
       workItems: [{ id: 'inspect-input', title: 'Inspect input', objective: 'Read the current input file and report its contents.', owner: 'agent', resourceKeys: [resourceKey], effects: ['observe'], dependsOn: [], criterionIds: ['read-input'] }], instructions: [] };
     await send('relay_task', { action: 'plan', expectedRevision: state.revision, contract });
     await send('relay_workspace', { action: 'read', path: 'input.txt' });
-    assert.equal(await options.onBeforeFinal?.({ output: 'The actual fixture input.' }), null);
+    assert.equal(options.onBeforeFinal, undefined);
     return { output: 'The actual fixture input.', threadId: 'provider_fixture_compatibility' };
   });
   const run = await f.run('forced');
   assert.equal(run.status, 'completed', run.error || run.nodes.agent.error);
-  assert.equal(run.planningContractVersion, 14); assert.equal(run.planningEnforcement, 'forced');
+  assert.equal(run.planningContractVersion, 14); assert.equal(run.planningEnforcement, undefined); assert.equal(run.planningMode, 'off');
   assert.equal(run.taskState.contract.planEpoch, 1);
   assert.deepEqual(calls, [['relay_task', 'read'], ['relay_task', 'plan'], ['relay_workspace', 'read']]);
   const journal = await readContractJournal(f.tasks, run.taskId);
-  assert.equal(journal.records.length, 1); assert.equal(journal.records[0].deliveryState, 'returned');
-  assert.equal(run.taskState.contractRuntime.criteria[0].satisfied, true);
+  assert.equal(journal.records.length, 0);
+  assert.equal(run.taskState.contractRuntime.criteria[0].satisfied, false, 'Manual authoring alone cannot certify the observed outcome.');
 });
 
-for (const mode of ['forced', 'advisory', 'off']) test('schema 14 honors explicit ' + mode + ' mode on actual workspace dispatch', async t => {
+for (const mode of ['forced', 'advisory', 'off']) test('schema 14 treats ' + mode + ' as nonblocking during actual workspace dispatch', async t => {
   let receipt;
   const f = await fixture(t, async (_options, { invoke }) => {
     receipt = await invoke('relay_workspace', { action: 'write', path: 'mode-result.txt', text: 'The requested local write.' });
     return { output: receipt.success ? 'The file was written.' : 'The write was not dispatched.', threadId: 'provider_fixture_compatibility' };
   });
   const run = await f.run(mode);
-  assert.equal(run.planningContractVersion, 14); assert.equal(run.planningEnforcement, mode);
-  if (mode === 'forced') {
-    assert.equal(receipt.success, false); assert.equal(receipt.code, 'TASK_CONTRACT_REQUIRED');
-    await assert.rejects(fs.stat(path.join(f.cwd, 'mode-result.txt')), { code: 'ENOENT' });
-    assert.equal(run.status, 'failed');
-  } else {
-    assert.equal(receipt.success, true, JSON.stringify(receipt));
-    assert.equal(run.status, 'completed', run.error || run.nodes.agent.error);
-    assert.equal(await fs.readFile(path.join(f.cwd, 'mode-result.txt'), 'utf8'), 'The requested local write.');
-    const journal = await readContractJournal(f.tasks, run.taskId);
-    assert.equal(journal.records.length, mode === 'off' ? 0 : 1);
-  }
+  assert.equal(run.planningContractVersion, 14); assert.equal(run.planningEnforcement, undefined); assert.equal(run.planningMode, 'off');
+  assert.equal(receipt.success, true, JSON.stringify(receipt));
+  assert.equal(run.status, 'completed', run.error || run.nodes.agent.error);
+  assert.equal(await fs.readFile(path.join(f.cwd, 'mode-result.txt'), 'utf8'), 'The requested local write.');
+  const journal = await readContractJournal(f.tasks, run.taskId);
+  assert.equal(journal.records.length, 0, 'Retired planning modes do not manufacture contract evidence.');
 });
 
 for (const mode of ['advisory', 'off']) test('schema 14 ' + mode + ' permits unplanned delegation while preserving read-only assignments', async t => {
@@ -117,11 +111,10 @@ for (const mode of ['advisory', 'off']) test('schema 14 ' + mode + ' permits unp
   assert.equal(run.planningContractVersion, 14); assert.equal(childCalls, 2);
   await assert.rejects(fs.stat(path.join(f.cwd, 'forbidden.txt')), { code: 'ENOENT' });
   const journal = await readContractJournal(f.tasks, run.taskId);
-  if (mode === 'off') assert.equal(journal.records.length, 0);
-  else assert.ok(journal.records.length >= 2, 'The parent delegation and actual child read are journaled.');
+  assert.equal(journal.records.length, 0, 'An optional plan is not an automatic evidence claim.');
 });
 
-test('schema 14 Forced delegation transfers a canonical work item and retains host evidence across its plan epoch', async t => {
+test('schema 14 legacy Forced delegation preserves optional canonical owners without claiming completion', async t => {
   let childCalls = 0;
   const f = await fixture(t, async (options, { cwd, invoke }) => {
     const send = async (name, args) => { const result = await invoke(name, args); assert.equal(result.success, true, JSON.stringify(result)); return result; };
@@ -149,21 +142,20 @@ test('schema 14 Forced delegation transfers a canonical work item and retains ho
     const accepted = payload(await send('relay_task', { action: 'plan', expectedRevision: state.revision, contract }));
     await send('relay_task', { action: 'focus', expectedPlanEpoch: accepted.contract.planEpoch, workItemId: 'coordinate' });
     await send('relay_delegate', { tasks: [{ id: 'reader', stepId: 'inspect-input', readOnly: true, prompt: 'Read input.txt and report its actual contents.' }, { id: 'independent-reader', stepId: 'inspect-independent', readOnly: true, prompt: 'Read independent.txt and report its actual contents.' }] });
-    assert.equal(await options.onBeforeFinal?.({ output: 'The actual fixture input.' }), null);
+    assert.equal(options.onBeforeFinal, undefined);
     return { output: 'The actual fixture input.', threadId: 'provider_fixture_parent' };
   }, { subagents: true });
   const run = await f.run('forced');
   assert.equal(run.status, 'completed', run.error || run.nodes.agent.error);
   assert.equal(childCalls, 2);
-  assert.equal(run.taskState.contract.planEpoch, 3);
-  assert.notEqual(run.taskState.contract.workItems.find(item => item.id === 'inspect-input').owner, 'agent');
-  assert.ok(run.taskState.contractRuntime.criteria.every(item => item.satisfied));
+  assert.equal(run.taskState.contract.planEpoch, 1);
+  assert.equal(run.taskState.contract.workItems.find(item => item.id === 'inspect-input').owner, 'agent');
+  assert.ok(run.taskState.contractRuntime.criteria.every(item => !item.satisfied));
   const journal = await readContractJournal(f.tasks, run.taskId);
-  assert.equal(journal.records.length, 3);
-  assert.ok(journal.records.every(item => item.deliveryState === 'returned'));
+  assert.equal(journal.records.length, 0);
 });
 
-test('schema 14 publishes current journal progress and material edits while the provider is still running', async t => {
+test('schema 14 publishes optional material edits without falsely completing criteria after ordinary reads', async t => {
   let observed, revised;
   const f = await fixture(t, async (options, { cwd, engine, tasks, invoke }) => {
     const send = async (name, args) => { const result = await invoke(name, args); assert.equal(result.success, true, JSON.stringify(result)); return result; };
@@ -179,14 +171,14 @@ test('schema 14 publishes current journal progress and material edits while the 
     const current = payload(await send('relay_task', { action: 'read' }));
     await send('relay_task', { action: 'plan', expectedRevision: current.revision, contract: { ...contract, goal: 'Read the supplied input file and report its actual contents.' } });
     revised = { visible: engine.getRun(state.taskId).taskState, saved: await tasks.get(state.taskId) };
-    assert.equal(await options.onBeforeFinal?.({ output: 'The actual fixture input.' }), null);
+    assert.equal(options.onBeforeFinal, undefined);
     return { output: 'The actual fixture input.', threadId: 'provider_fixture_live_projection' };
   });
   const run = await f.run('forced');
   assert.equal(run.status, 'completed', run.error || run.nodes.agent.error);
-  assert.equal(observed.saved.progress.done, 1);
-  assert.deepEqual(observed.visible.contractRuntime, observed.saved.contractRuntime, 'Live operation receipts must follow the durable journal.');
-  assert.deepEqual(observed.visible.progress, observed.saved.progress, 'Live progress must advance with the journal without a plan revision.');
+  assert.equal(observed.saved.progress.done, 0);
+  assert.deepEqual(observed.visible.contractRuntime, observed.saved.contractRuntime, 'Live canonical evidence must match the durable projection, including absence of proof.');
+  assert.deepEqual(observed.visible.progress, observed.saved.progress, 'Optional authoring must not fabricate live completion after an ordinary read.');
   assert.deepEqual(observed.visible.availableWork, observed.saved.availableWork, 'Live work readiness must match the current evidence.');
   assert.equal(revised.saved.contract.planEpoch, 2);
   assert.deepEqual(revised.visible.contractRuntime, revised.saved.contractRuntime, 'Material edits must publish the re-evaluated journal projection immediately.');

@@ -62,7 +62,7 @@ async function fixture(t, workflow, execute, { holds = [], subagents = false, at
 }
 const who = options => options.prompt.match(/^You are ([a-z]+)\./)?.[1];
 
-test('Planning On schedules ready workflow agents one at a time even with an authored parallel limit', async t => {
+test('legacy Planning On preserves authored workflow parallelism without serial planner admission', async t => {
   const hold = deferred(), entered = [], workflow = graph([agent('coordinator'), agent('worker')], [['input', 'coordinator'], ['input', 'worker'], ['coordinator', 'output'], ['worker', 'output']]);
   const f = await fixture(t, workflow, async options => {
     const id = who(options); entered.push(id); await acknowledge(options, id);
@@ -72,13 +72,14 @@ test('Planning On schedules ready workflow agents one at a time even with an aut
     return { output: `Actual ${id} result.` };
   }, { holds: [hold] });
   const accepted = f.start();
-  await waitFor(() => f.engine.getRun(accepted.id).nodes.coordinator.planning?.status === 'recorded');
-  assert.deepEqual(entered, ['coordinator']);
-  assert.equal(f.engine.getRun(accepted.id).nodes.worker.status, 'queued');
+  await waitFor(() => f.engine.getRun(accepted.id).nodes.worker.status === 'completed');
+  assert.deepEqual(new Set(entered), new Set(['coordinator', 'worker']));
+  assert.equal(f.engine.getRun(accepted.id).nodes.coordinator.status, 'running');
+  assert.equal(f.engine.getRun(accepted.id).settled, false);
   hold.resolve();
   const finished = await f.settled(accepted.id);
   assert.equal(finished.status, 'completed', finished.error); assert.deepEqual(entered, ['coordinator', 'worker']);
-  assert.equal(finished.workflow.settings.maxParallel, 2, 'Authored settings remain intact; On applies the sequential execution policy.');
+  assert.equal(finished.workflow.settings.maxParallel, 2, 'Authored settings remain intact; a historical On value does not serialize independent work.');
   assert.equal(finished.taskState.progress.done, 2);
   const coordinatorReview = finished.taskState.planningReviews.find(review => review.nodeId === 'coordinator');
   assert.equal(coordinatorReview.scopeStepId, 'agent-coordinator', 'Completing the coordinator assignment does not claim that the later worker has finished.');
@@ -143,7 +144,7 @@ test('a human completion report cannot finish a held runtime or release its depe
     await finishFixturePlan(options, { state: completed, summary: `The ${id} runtime has completed its own check and can hand off; a human status report did not itself finish the held runtime.` });
     return { output: `Actual ${id} result.` };
   }, { holds: [hold] });
-  const accepted = f.start(); await waitFor(() => f.engine.getRun(accepted.id).nodes.coordinator.planning?.status === 'recorded');
+  const accepted = f.start(); await waitFor(() => f.engine.getRun(accepted.id).taskState?.steps.find(step => step.id === 'agent-coordinator-work')?.status === 'active');
   const previous = await f.tasks.get(accepted.taskId), human = await f.tasks.editPlan(accepted.taskId, { operations: [{ type: 'update', stepId: 'agent-coordinator-work', patch: { status: 'done', evidence: 'A human supplied a separate observation while the worker was still running.' } }] }, { expectedRevision: previous.revision, source: 'human' });
   await waitFor(() => f.engine.getRun(accepted.id).taskState.revision >= human.revision); await new Promise(resolve => setTimeout(resolve, 25));
   assert.deepEqual(entered, ['coordinator']); assert.equal(f.engine.getRun(accepted.id).nodes.worker.status, 'queued');

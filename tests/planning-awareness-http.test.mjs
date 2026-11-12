@@ -130,8 +130,7 @@ test('local presence endpoints require the session, accept only a node lease, an
   const f = await fixture(t), before = await readFile(f.app.tasks.file(f.taskId));
   const initial = await f.local(f.route + '/awareness'); assert.equal(initial.status, 200);
   assert.equal(initial.value.revision, f.state.revision); assert.equal(initial.value.leaseMs, 20000);
-  assert.equal(initial.value.workers.length, 1); assert.equal(initial.value.workers[0].runId, f.run.id);
-  assert.equal(initial.value.workers[0].status, 'completed'); assert.ok(initial.value.workers[0].lastReadRevision >= 1);
+  assert.deepEqual(initial.value.workers, [], 'An ordinary run does not invent retired planning-worker acknowledgments.');
   assert.equal((await f.local(f.route + '/awareness', { authenticated: false })).status, 401);
   assert.equal((await f.local(f.route + '/presence', { authenticated: false, method: 'POST', body: { editorId: 'editor', stepId: f.stepId } })).status, 401);
   assert.equal((await f.local(f.route + '/presence', { method: 'POST', headers: { Origin: 'https://unrelated.example' }, body: { editorId: 'editor', stepId: f.stepId } })).status, 403);
@@ -140,7 +139,7 @@ test('local presence endpoints require the session, accept only a node lease, an
   assert.equal(posted.value.presence[0].stepId, f.stepId);
   assert.deepEqual(posted.value.presence[0].actor, { type: 'local-human', id: 'local-user', name: 'Local user' });
   assert.ok(Date.parse(posted.value.presence[0].expiresAt) > Date.now());
-  for (const injected of [{ text: 'An unsaved draft must not be accepted.' }, { actor: { type: 'human-client', id: 'other-human' } }, { label: 'Forged label' }, { lastReadRevision: f.state.revision }, { workerId: initial.value.workers[0].id }]) {
+  for (const injected of [{ text: 'An unsaved draft must not be accepted.' }, { actor: { type: 'human-client', id: 'other-human' } }, { label: 'Forged label' }, { lastReadRevision: f.state.revision }, { workerId: 'forged-worker' }]) {
     assert.equal((await f.local(f.route + '/presence', { method: 'POST', body: { editorId: 'editor', stepId: f.stepId, ...injected } })).status, 400);
   }
   assert.equal((await f.local(f.route + '/presence', { method: 'POST', body: { editorId: 'editor', stepId: 'missing-step' } })).status, 404);

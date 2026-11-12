@@ -2,28 +2,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { HarnessEngine } from '../lib/engine.mjs';
 import { createTaskToolHandler, TaskStateStore } from '../lib/task-state.mjs';
 import { PlanningBrowserStore } from '../lib/planning-browser.mjs';
 import { PlanningBrowserRuntime } from '../lib/planning-browser-runtime.mjs';
-import { TaskViability } from '../lib/task-viability.mjs';
 import { ResponseCycleService } from '../lib/response-cycle.mjs';
-import { AttachmentStore } from '../lib/attachments.mjs';
+import { AttachmentStore, createAttachmentToolHandler } from '../lib/attachments.mjs';
 import { attachmentResourceKey, attachmentSetResourceKey } from '../lib/operation-descriptors.mjs';
-import { adoptExecutionPlanContract, executionOutlineHash } from '../lib/planning-execution-handoff.mjs';
 import { readContractJournal } from '../lib/planning-contract-runtime.mjs';
+import { createPlanningWorkerGuard, wrapPlanningToolHandler } from '../lib/planning-awareness.mjs';
+import { normalizePlanContractResponse } from '../public/planning-contract-model.mjs';
 import { createMissionWorkflow } from '../public/mission-model.mjs';
-import { responseCycleStage } from '../public/response-cycle-model.mjs';
-import { TASK_ACCURACY_SCOPE_GUIDANCE } from '../public/task-viability-model.mjs';
-import { fixtureUserAgency } from './fixture-user-agency.mjs';
 
-// This is a deterministic provider boundary test. It checks production stage
-// delivery, required-criterion inheritance and adoption, not model reasoning.
-// The fictional alternatives are explicitly authorized by this request; no
-// geographic equivalence, personal profile or application outcome is supplied.
+// Old automatic inference/feasibility/adoption is retired. These fixtures retain
+// the independent attachment, saved intent, ownership and proof boundaries and
+// assert that retired admission cannot invoke a provider or mutate its archive.
 const request = 'Using demo-profile.json, submit exactly 20 new applications at https://applications.example.invalid. '
   + 'For the city field, Oak Hollow or Harbor City is acceptable. Avoid duplicate applications and report each destination confirmation.';
 const locationPermission = 'For the city field, Oak Hollow or Harbor City is acceptable.';
@@ -43,270 +39,174 @@ const requiredCriteria = [
       stopWhen: 'An observed supported city option is selected within the user-authorized alternatives.' } },
 ];
 const copy = value => structuredClone(value);
-const captured = options => JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n\n') + 2));
 
-function analyticalResponse(input, { strictCity = false, workspaceKey, conditional = null, attachmentScope, misspellAttachment } = {}) {
-  const stage = responseCycleStage(input.module.kind, { pipelineVersion: input.cycle?.pipelineVersion });
-  const sourceId = input.sources.find(source => source.id === 'viability:task')?.id || input.sources[0].id;
-  const collision = conditional === 'collision';
-  const inheritedCriteria = collision ? [requiredCriteria[0], { ...requiredCriteria[1], verification: 'evidence' }] : requiredCriteria;
-  const body = { userAgency: fixtureUserAgency(),
-    values: Object.fromEntries(input.template.fields.map(field => [field.id,
-      field.label + ': preserve the user-authorized city alternatives while obtaining exactly 20 distinct new destination confirmations. No application has been performed.'])),
-    grounding: input.template.fields.filter(field => field.grounding === 'required').map(field => ({ field: field.id, sourceId })),
-    openQuestions: [], challengeResponses: [] };
-  if (stage.id === 'feasibility') {
-    const inference = input.cycle.prerequisites.find(item => item.stageId === 'inference');
-    assert.ok(input.sources.some(source => source.id === inference?.sourceId));
-    return { ...body, requirements: [{ id: collision ? 'city-permission' : 'authorized-city', label: 'Authorized city alternatives', importance: 'essential', basis: 'user',
-      consequence: 'Preserve the location flexibility already authorized while checking actual form options.', resolution: 'observed',
-      value: locationPermission + ' The operational owner still needs to observe the form options.', sourceIds: [sourceId, inference.sourceId],
-      checkedSourceIds: input.sources.filter(source => source.kind !== 'response').map(source => source.id),
-      rationale: 'The supplied request resolves permission. An unobserved literal option is not evidence that the authorized task is infeasible.',
-      inferable: false, omissionAllowed: false, question: '', dependentNodeIds: ['agent'], stopKind: null, accuracy: copy(requiredCriteria[1].accuracy),
-      ...(conditional ? { commitPrerequisite: true } : {}) }] };
-  }
-  Object.assign(body, { checks: stage.checks.map(check => ({ id: check.id,
-    assessment: check.when === 'effects' ? 'not_applicable' : 'supported',
-    sourceIds: check.grounding === 'required' && check.when !== 'effects' ? [sourceId] : [],
-    note: 'The explicit request supports the intent and authorization; operational completion still requires actual destination evidence.' })),
-    subproblems: [], childResults: [] });
-  if (stage.id === 'inference') {
-    body.inferences = [{ id: 'city-tolerance', claim: locationPermission, basis: 'inferred', sourceIds: [sourceId],
-      limitation: 'This authorizes the two choices for this field only. It does not establish any form availability, application or confirmation.' }];
-    body.subproblems = [{ key: 'application-workflow', title: 'Complete the authorized applications', objective: request,
-      reason: 'Application operations belong to the operational owner after preparation.', required: true, executionTarget: 'workflow',
-      sourceIds: [sourceId], acceptanceCriteria: copy(inheritedCriteria) }];
-  }
-  if (stage.id === 'plan') {
-    assert.deepEqual(input.cycle.requiredAcceptanceCriteria, inheritedCriteria,
-      'The actual Infer workflow request must reach Plan as required criteria, including both accuracy scopes.');
-    body.contract = { contractVersion: 2, goal: request,
-      criteria: input.cycle.requiredAcceptanceCriteria.map(item => ({ id: item.id, label: item.label,
-        description: item.description, kind: { effect: 'external-confirmation', evidence: 'observation', response: 'judgment' }[item.verification],
-        targetCount: item.verification === 'effect' ? 20 : 1, accuracy: copy(item.accuracy) })),
-      workItems: [{ id: 'complete-applications', title: 'Complete the requested applications',
-        objective: 'Inspect the profile and actual form, use an authorized city alternative, submit new applications and verify distinct confirmations.',
-        owner: 'agent', resourceKeys: ['origin:https://applications.example.invalid', workspaceKey], effects: ['observe', 'interact', 'commit'],
-        dependsOn: [], criterionIds: requiredCriteria.map(item => item.id) }],
-      instructions: [{ id: 'city-alternatives', text: locationPermission + ' Preserve all other supplied facts and the exact new-confirmation count.', handling: 'preserve' }] };
-    if (strictCity) body.contract.criteria.find(item => item.id === 'city-permission').accuracy.tolerance = 'Only the exact string Oak Hollow is acceptable.';
-    if (attachmentScope) {
-      body.contract.criteria.push({ id: 'attached-profile', kind: misspellAttachment ? 'observation' : 'source-coverage', description: 'Read the current immutable attached profile.', resourceKey: attachmentScope.files[0].resourceKey });
-      const resourceKeys = misspellAttachment ? [workspaceKey, attachmentScope.files[0].resourceKey.slice(0, -7), attachmentScope.files[1].resourceKey] : [workspaceKey];
-      body.contract.workItems.push({ id: 'inspect-attachment', title: 'Read the attached profile', objective: 'Read the supplied attachment.',
-        owner: 'agent', resourceKeys, effects: ['observe'], dependsOn: [], criterionIds: ['attached-profile'] });
-    }
-    if (conditional) {
-      const [gate] = input.cycle.commitPrerequisites;
-      assert.equal(gate.id, collision ? 'prerequisite-city-permission' : 'authorized-city', 'Feasibility must deliver the typed condition to Plan.');
-      const commit = body.contract.workItems[0];
-      if (conditional === 'valid') {
-        body.contract.workItems.push({ ...commit, id: 'inspect-prerequisite', effects: ['observe'], criterionIds: [gate.id] });
-        commit.dependsOn = ['inspect-prerequisite'];
-      } else commit.criterionIds.push(gate.id);
-    }
-  }
-  return body;
+const payload = value => JSON.parse(value.contentItems.find(item => item.type === 'inputText').text);
+function contractFor(cwd) {
+  return { contractVersion: 2, goal: request,
+    criteria: requiredCriteria.map(item => ({ id: item.id, label: item.label, description: item.description,
+      kind: item.verification === 'effect' ? 'external-confirmation' : 'judgment',
+      targetCount: item.verification === 'effect' ? 20 : 1, accuracy: copy(item.accuracy) })),
+    workItems: [{ id: 'complete-applications', title: 'Complete the authorized applications', objective: request,
+      owner: 'agent', resourceKeys: ['origin:https://applications.example.invalid', 'workspace:' + (process.platform === 'win32' ? cwd.replaceAll('\\\\', '/').toLowerCase() : cwd)],
+      effects: ['observe', 'interact', 'commit'], dependsOn: [], criterionIds: requiredCriteria.map(item => item.id) }],
+    instructions: [{ id: 'city-alternatives', text: locationPermission, handling: 'preserve' }] };
 }
-
-async function fixture(t, { mode = 'plan_only', strictCity = false, conditional = null, attach = false } = {}) {
-  const directory = await mkdtemp(path.join(tmpdir(), 'blackice-intent-pipeline-')), cwd = path.join(directory, 'workspace');
-  await mkdir(cwd);
-  const tasks = await new TaskStateStore({ dataDir: directory }).init();
-  const store = await new PlanningBrowserStore({ dataDir: directory }).init();
-  const attachments = attach ? await new AttachmentStore({ dataDir: directory }).init() : undefined;
-  const attached = attachments ? await attachments.importBytes({ name: 'demo-profile.txt', bytes: Buffer.from('Bounded attached profile fixture.') }) : null;
-  const misspellAttachment = attach === 'misspelled-key';
-  const guidance = misspellAttachment ? await attachments.importBytes({ name: 'demo-guidance.txt', bytes: Buffer.from('Bounded attached guidance fixture.') }) : null;
-  const unattached = misspellAttachment ? await attachments.importBytes({ name: 'unattached.txt', bytes: Buffer.from('Out-of-scope fixture.') }) : null;
-  const runFiles = [attached, guidance].filter(Boolean);
-  const settings = { defaultModel: 'fixture-intent', defaultEffort: 'low', runTimeoutMs: null, executionGuardrails: false, subagentsEnabled: false };
-  const calls = [], toolCalls = []; let operationalCalls = 0, adoptedTask = null, finalCheck = null, engine;
+async function fixture(t, execute = async () => ({ output: 'No application was submitted.' })) {
+  const directory = await mkdtemp(path.join(tmpdir(), 'blackice-intent-pipeline-')), cwd = path.join(directory, 'workspace'); await mkdir(cwd);
+  const tasks = await new TaskStateStore({ dataDir: directory }).init(), store = await new PlanningBrowserStore({ dataDir: directory }).init();
+  const attachments = await new AttachmentStore({ dataDir: directory }).init(), calls = [];
   class Runtime extends EventEmitter {
     status() { return { connected: true, authenticated: true, defaultModel: 'fixture-intent', models: [{ id: 'fixture-intent', supportsTools: true }] }; }
-    async runAgent(options) {
-      if (options.responseOnly) {
-        const input = captured(options); calls.push({ input, prompt: options.prompt });
-        assert.ok(['inference', 'viability', 'plan'].includes(input.module.kind), 'The fixture stops before post-execution analysis.');
-        assert.equal(input.cycle.pipelineVersion, 2);
-        assert.ok(options.prompt.includes(TASK_ACCURACY_SCOPE_GUIDANCE), 'Each actual current stage receives the shared accuracy-scope guidance.');
-        assert.ok(input.sources.some(source => source.text.includes(locationPermission)), 'The stage retains the original explicit user permission.');
-        const workspaceKey = 'workspace:' + (process.platform === 'win32' ? cwd.replaceAll('\\', '/').toLowerCase() : cwd);
-        const executionSource = input.sources.find(source => source.id.startsWith('cycle:execution-contract:'));
-        const attachmentScope = executionSource && JSON.parse(executionSource.text).attachmentScope;
-        if (input.module.kind === 'plan') {
-          if (attached) assert.deepEqual(attachmentScope, { tool: 'relay_files', effect: 'observe', resourceKey: attachmentSetResourceKey(runFiles.map(file => file.id)),
-            files: runFiles.map(file => ({ id: file.id, name: file.name, resourceKey: attachmentResourceKey(file.sha256) })) });
-          else assert.equal(attachmentScope, undefined, 'An empty run does not advertise an attached scope.');
-        }
-        return { output: JSON.stringify(analyticalResponse(input, { strictCity, workspaceKey, conditional, attachmentScope, misspellAttachment })), threadId: 'fixture-intent-planning', turnId: randomUUID() };
-      }
-      operationalCalls++;
-      assert.equal(mode, 'automatic', 'Plan only must never enter an operational worker.');
-      assert.ok(JSON.stringify(options).includes(JSON.stringify(TASK_ACCURACY_SCOPE_GUIDANCE).slice(1, -1)), 'The actual worker receives canonical execution guidance.');
-      const call = { name: 'relay_task', arguments: { action: 'read' }, callId: randomUUID() }; toolCalls.push([call.name, call.arguments.action]);
-      const result = await options.onToolCall(call, { signal: options.signal });
-      await options.onToolResultDelivered?.({ call, result });
-      assert.equal(result.success, true, JSON.stringify(result));
-      adoptedTask = JSON.parse(result.contentItems.find(item => item.type === 'inputText').text);
-      if (attached) {
-        const invoke = (action, file = attached) => options.onToolCall({ name: 'relay_files', arguments: { action, attachmentId: file.id }, callId: randomUUID() }, { signal: options.signal });
-        const read = await invoke('read');
-        assert.equal(read.success, true, JSON.stringify(read));
-        assert.match(read.contentItems[0].text, /Bounded attached profile fixture/);
-        if (guidance) assert.equal((await invoke('read', guidance)).success, true);
-        if (unattached) await assert.rejects(invoke('read', unattached), /This file is not attached to the current task/);
-        const denied = await invoke('export');
-        assert.equal(denied.code, 'TASK_CONTRACT_SCOPE', 'An attachment observation scope cannot export files.');
-      }
-      finalCheck = await options.onBeforeFinal({ output: 'No applications have been performed by this fixture.' });
-      assert.equal(finalCheck?.continue, true, 'Permitted city tolerance cannot satisfy the unperformed application count or receipt requirements.');
-      throw Object.assign(new Error('Fixture stopped after inspecting the canonical handoff; no application operation was dispatched.'), { code: 'FIXTURE_STOP_AFTER_HANDOFF' });
-    }
+    async runAgent(options) { calls.push(options); assert.notEqual(options.responseOnly, true, 'No automatic analytical stage is permitted.'); return execute(options); }
     async close() {}
   }
-  const runtime = new Runtime();
-  engine = await new HarnessEngine({ runtime, tasks, attachments, dataDir: directory, defaultCwd: cwd }).init();
-  engine.runtimeSettings = { get: () => settings };
-  const runner = new PlanningBrowserRuntime({ store, runtime, defaultCwd: cwd, getSettings: () => settings });
-  const viability = new TaskViability({ store, runner, engine, attachments, identity: { read: async () => ({ content: 'No personal profile or external result is supplied by this deterministic fixture.' }) }, getSettings: () => settings });
-  const service = new ResponseCycleService({ store, runner, taskViability: viability, engine, getSettings: () => settings });
-  engine.responseCycle = service;
-  t.after(async () => { await engine.close(); await runner.close(); await service.close(); await viability.close(); await store.close(); await tasks.close(); await attachments?.close(); await rm(directory, { recursive: true, force: true }); });
+  const runtime = new Runtime(), engine = await new HarnessEngine({ runtime, tasks, attachments, dataDir: directory, defaultCwd: cwd }).init();
+  engine.runtimeSettings = { get: () => ({ executionGuardrails: true, subagentsEnabled: false }) };
+  const runner = new PlanningBrowserRuntime({ store, runtime, defaultCwd: cwd, getSettings: () => ({ subagentsEnabled: false }) });
+  const service = new ResponseCycleService({ store, runner, engine }); engine.responseCycle = service;
+  t.after(async () => { await engine.close(); await runner.close(); await service.close(); await store.close(); await tasks.close(); await attachments.close(); await rm(directory, { recursive: true, force: true }); });
   const workflow = createMissionWorkflow({ id: 'intent-pipeline', task: request, model: 'fixture-intent', cwd, planningMode: 'forced' });
-  const accepted = engine.startRun({ workflow, input: attached ? { task: request, attachmentIds: runFiles.map(file => file.id) } : request,
-    planningMode: 'forced', planningExecutionMode: mode, requestId: 'intent-pipeline-' + mode + '-' + strictCity });
-  await engine.executions.get(accepted.id);
-  const run = engine.getRun(accepted.id), saved = await store.get(run.responseCycle.requestId), cycle = saved.cycles.find(item => item.id === run.responseCycle.cycleId);
-  return { run, saved, cycle, calls, operationalCalls, toolCalls, adoptedTask, finalCheck, tasks, attached, guidance,
-    journal: await readContractJournal(tasks, run.taskId), task: operationalCalls ? await tasks.get(run.taskId) : null };
+  return { directory, cwd, tasks, store, attachments, engine, runner, service, calls, workflow };
+}
+async function historicalContract(t, { prerequisite = false } = {}) {
+  const f = await fixture(t), taskId = 'saved-intent', runId = 'saved-run';
+  await f.tasks.ensure({ taskId, runId, nodeId: 'agent', cwd: f.cwd, goal: request, schemaVersion: 14 });
+  const initial = await f.tasks.get(taskId), contract = contractFor(f.cwd);
+  if (prerequisite) {
+    contract.criteria.push({ id: 'authorized-city', kind: 'judgment', label: 'Authorized city alternatives', description: 'Authorized city alternatives', targetCount: 1, accuracy: copy(requiredCriteria[1].accuracy) });
+    contract.workItems.push({ ...copy(contract.workItems[0]), id: 'inspect-prerequisite', effects: ['observe'], criterionIds: ['authorized-city'] });
+    contract.workItems[0].dependsOn = ['inspect-prerequisite'];
+  }
+  const planRef = { requestId: 'historical-request', cycleId: 'historical-cycle', nodeId: 'plan', responseId: 'saved-plan', responseRevision: 1 };
+  // Seed only already-saved host provenance. This is not cycle admission.
+  await f.tasks.setContract(taskId, contract, { expectedRevision: initial.revision, runId, nodeId: 'agent', schemaVersion: 14,
+    adoption: { version: 1, contractVersion: 2, taskId, runId, nodeId: 'agent', planRef,
+      requiredCriterionIds: contract.criteria.map(item => item.id), commitPrerequisiteIds: prerequisite ? ['authorized-city'] : [] } });
+  const task = await f.tasks.get(taskId);
+  return { ...f, task, run: { id: runId, taskId }, adoptedTask: task };
 }
 
-test('automatic canonical execution reads a supplied attachment within its actual observation scope', { timeout: 20000 }, async t => {
-  const f = await fixture(t, { mode: 'automatic', attach: true });
-  assert.equal(f.run.errorCode, 'FIXTURE_STOP_AFTER_HANDOFF', f.run.error);
-  const [operation] = f.journal.records;
-  assert.equal(f.journal.records.length, 1);
-  assert.equal(operation.tool, 'relay_files');
-  assert.equal(operation.effect, 'observe');
-  assert.equal(operation.workItemId, 'inspect-attachment');
-  assert.ok(f.journal.evidence.some(item => item.kind === 'source-coverage' && item.resourceKey === attachmentResourceKey(f.attached.sha256) &&
-    item.sourceVersion === f.attached.sha256 && item.coverage.end === item.coverage.total));
+for (const location of ['request', 'workflow', 'input']) test('saved Plan-only in ' + location + ' rejects before any provider, task or cycle admission', async t => {
+  const f = await fixture(t, async () => { assert.fail('Plan-only cannot enter an operational worker.'); });
+  const value = { workflow: copy(f.workflow), input: request, planningMode: 'forced', planningExecutionMode: 'automatic' };
+  if (location === 'request') value.planningExecutionMode = 'plan_only';
+  if (location === 'workflow') value.workflow.settings.planningExecutionMode = 'plan_only';
+  if (location === 'input') { delete value.planningExecutionMode; value.input = { task: request, planningExecutionMode: 'plan_only' }; }
+  assert.throws(() => f.engine.startRun(value), { code: 'PLANNING_EXECUTION_MODE_RETIRED', status: 400 });
+  assert.equal(f.calls.length, 0); assert.deepEqual(f.engine.listRuns(), []); assert.equal((await f.store.list()).requests.length, 0);
 });
 
-test('a correct attachment key does not suppress repair of a misspelled key on the same reader', { timeout: 20000 }, async t => {
-  const f = await fixture(t, { mode: 'automatic', attach: 'misspelled-key' });
-  assert.equal(f.run.errorCode, 'FIXTURE_STOP_AFTER_HANDOFF', f.run.error);
-  const scope = attachmentSetResourceKey([f.attached.id, f.guidance.id]);
-  const reader = f.task.contract.workItems.find(item => item.id === 'inspect-attachment');
-  assert.ok(reader.resourceKeys.includes(scope));
-  assert.ok(reader.resourceKeys.includes(attachmentResourceKey(f.guidance.sha256)));
-  assert.ok(!reader.resourceKeys.includes(attachmentResourceKey(f.attached.sha256).slice(0, -7)));
-  assert.ok(f.task.contract.workItems.filter(item => item.id !== reader.id).every(item => !item.resourceKeys.includes(scope)));
-  assert.deepEqual(f.journal.records.map(operation => [operation.tool, operation.effect, operation.workItemId]), [
-    ['relay_files', 'observe', 'inspect-attachment'], ['relay_files', 'observe', 'inspect-attachment'],
-  ]);
-  assert.deepEqual(f.journal.evidence.filter(item => item.kind === 'source-coverage').map(item => [item.resourceKey, item.sourceVersion]),
-    [f.attached, f.guidance].map(file => [attachmentResourceKey(file.sha256), file.sha256]));
-});
-
-function assertIntentAndProofBoundary(contract) {
-  assert.equal(contract.contractVersion, 2);
-  const count = contract.criteria.find(item => item.id === 'applications-confirmed'), city = contract.criteria.find(item => item.id === 'city-permission');
-  assert.equal(count.kind, 'external-confirmation'); assert.equal(count.targetCount, 20);
-  assert.deepEqual(count.accuracy, requiredCriteria[0].accuracy);
-  assert.equal(count.receiptBinding, undefined, 'Preparation cannot invent unobserved receipt fields.');
-  assert.equal(city.kind, 'judgment'); assert.deepEqual(city.accuracy, requiredCriteria[1].accuracy);
-  assert.equal(city.description, locationPermission);
-  assert.ok(contract.instructions.some(item => item.text.includes(locationPermission)));
-}
-
-test('Forced Plan only preserves authorized city tolerance through Infer, Feasibility and canonical Plan while exact20 proof remains pending', { timeout: 20000 }, async t => {
-  const f = await fixture(t);
-  assert.equal(f.run.status, 'completed', f.run.error); assert.equal(f.run.settled, true);
-  assert.equal(f.run.viability.pausedAfterPlan, true); assert.equal(f.run.viability.awaitingInput, false);
-  assert.equal(f.run.startedAt, null); assert.equal(f.operationalCalls, 0);
-  assert.deepEqual(f.calls.map(call => call.input.module.kind), ['inference', 'viability', 'plan']);
-  const plan = f.saved.nodes.find(node => node.id === f.cycle.stageNodeIds.plan);
-  assert.equal(plan.readiness.cycle.analysisReady, true); assertIntentAndProofBoundary(plan.response.contract);
-  assert.deepEqual(plan.response.acceptanceCriteria, requiredCriteria);
-  assert.ok(Object.values(f.run.nodes).every(node => node.status === 'skipped' && node.planningHeld === true));
-  assert.deepEqual(f.cycle.effectReceipts || [], []);
-  assert.equal(f.journal.records.length, 0); assert.equal(f.journal.evidence.length, 0);
-});
-
-test('a later Plan cannot upgrade the inherited approved city tolerance to an exact-string prerequisite', { timeout: 20000 }, async t => {
-  const f = await fixture(t, { strictCity: true });
-  assert.equal(f.run.status, 'failed'); assert.equal(f.run.errorCode, 'PLANNING_RESPONSE_FORMAT');
-  assert.match(f.run.error, /changed a required workflow criterion/);
-  assert.deepEqual(f.calls.map(call => call.input.module.kind), ['inference', 'viability', 'plan', 'plan']);
-  assert.equal(f.operationalCalls, 0); assert.equal(f.run.startedAt, null);
-  const plan = f.saved.nodes.find(node => node.id === f.cycle.stageNodeIds.plan);
-  assert.equal(Boolean(plan.response), false, 'Neither the first invalid Plan nor its bounded failed repair is adopted.');
-  assert.equal(f.journal.records.length, 0); assert.equal(f.journal.evidence.length, 0);
-});
-
-test('automatic canonical handoff delivers the same city tolerance and guidance without granting application proof', { timeout: 20000 }, async t => {
-  const f = await fixture(t, { mode: 'automatic' });
-  assert.equal(f.run.status, 'failed'); assert.equal(f.run.errorCode, 'FIXTURE_STOP_AFTER_HANDOFF', f.run.error);
-  assert.equal(f.operationalCalls, 1); assert.deepEqual(f.toolCalls, [['relay_task', 'read']]);
-  assert.equal(f.run.nodes.agent.planning.goalStatus, 'active', 'Reading the adopted plan cannot erase the active goal.');
-  assertIntentAndProofBoundary(f.adoptedTask.contract);
-  assert.equal(f.task.contractAdoption.planRef.responseId, f.run.responseCycle.planRef.responseId);
-  assert.equal(f.adoptedTask.contractRuntime.criteria.find(item => item.id === 'applications-confirmed').observedCount, 0);
-  assert.equal(f.adoptedTask.contractRuntime.criteria.every(item => item.satisfied === false), true);
-  assert.equal(f.journal.records.length, 0); assert.equal(f.journal.evidence.length, 0);
-  assert.deepEqual(f.adoptedTask.contractRuntime.outcomes, []);
-});
-
-test('the host separates an eligibility condition from a commitment even if the model groups them', { timeout: 20000 }, async t => {
-  const f = await fixture(t, { mode: 'automatic', conditional: 'combined' });
-  assert.equal(f.run.errorCode, 'FIXTURE_STOP_AFTER_HANDOFF', f.run.error);
-  assert.deepEqual(f.calls.map(call => call.input.module.kind), ['inference', 'viability', 'plan']);
-  assert.equal(f.operationalCalls, 1);
-  const items = f.adoptedTask.contract.workItems, check = items.find(item => item.criterionIds.includes('authorized-city'));
-  assert.deepEqual(check.effects, ['observe']);
-  assert.deepEqual(items.find(item => item.effects.includes('commit')).dependsOn, [check.id]);
-  assert.equal(f.journal.records.length, 0);
-});
-
-test('an inherited observation and a Feasibility gate with the same ID survive Plan and adoption separately', { timeout: 20000 }, async t => {
-  const f = await fixture(t, { mode: 'automatic', conditional: 'collision' });
-  assert.equal(f.run.errorCode, 'FIXTURE_STOP_AFTER_HANDOFF', f.run.error);
-  assert.deepEqual(f.calls.map(call => call.input.module.kind), ['inference', 'viability', 'plan']);
-  const inherited = { ...requiredCriteria[1], verification: 'evidence' };
-  const plan = f.saved.nodes.find(node => node.id === f.cycle.stageNodeIds.plan);
-  assert.deepEqual(plan.response.acceptanceCriteria.find(item => item.id === inherited.id), inherited);
-  const gateId = 'prerequisite-city-permission';
-  const { contractAdoption, contract } = f.adoptedTask;
-  assert.deepEqual(contractAdoption.commitPrerequisiteIds, [gateId]);
-  assert.ok([inherited.id, gateId].every(id => contractAdoption.requiredCriterionIds.includes(id)));
-  assert.equal(contract.criteria.find(item => item.id === inherited.id).kind, 'observation');
-  assert.equal(contract.criteria.find(item => item.id === gateId).kind, 'judgment');
-  const owner = contract.workItems.find(item => item.criterionIds.includes(gateId));
-  assert.deepEqual(owner.effects, ['observe']);
-  assert.ok(contract.workItems.find(item => item.effects.includes('commit')).dependsOn.includes(owner.id));
-});
-
-test('an adopted prerequisite remains required through an operational edit', { timeout: 20000 }, async t => {
-  const f = await fixture(t, { mode: 'automatic', conditional: 'valid' });
-  assert.equal(f.run.errorCode, 'FIXTURE_STOP_AFTER_HANDOFF', f.run.error);
-  assert.deepEqual(f.adoptedTask.contractAdoption.commitPrerequisiteIds, ['authorized-city']);
-  assert.ok(f.adoptedTask.contractAdoption.requiredCriterionIds.includes('authorized-city'));
-  assert.deepEqual(f.adoptedTask.contract.criteria.find(criterion => criterion.id === 'authorized-city'), {
-    id: 'authorized-city', kind: 'judgment', label: 'Authorized city alternatives', description: 'Authorized city alternatives', targetCount: 1,
-    accuracy: requiredCriteria[1].accuracy
+test('ordinary automatic admission preserves the request without a cycle, mandatory final hook or fabricated outcomes', async t => {
+  const f = await fixture(t, async options => {
+    assert.match(options.prompt, /Oak Hollow or Harbor City/);
+    assert.equal(options.onBeforeFinal, undefined);
+    const state = payload(await options.onToolCall({ name: 'relay_task', arguments: { action: 'read' }, callId: 'read-current' }));
+    assert.equal(state.contract, undefined);
+    return { output: 'No applications have been performed by this fixture.' };
   });
-  assert.equal(f.task.contract.workItems.find(item => item.effects.includes('commit')).dependsOn[0], 'inspect-prerequisite');
-  const { planEpoch, ...contract } = copy(f.task.contract);
-  contract.workItems.find(item => item.effects.includes('commit')).dependsOn = [];
+  const accepted = f.engine.startRun({ workflow: f.workflow, input: request, planningMode: 'forced', planningExecutionMode: 'automatic' });
+  await f.engine.executions.get(accepted.id); const run = f.engine.getRun(accepted.id);
+  assert.equal(run.status, 'completed', run.error); assert.equal(f.calls.length, 1);
+  assert.equal(run.responseCycle, undefined); assert.equal(run.viability, undefined); assert.equal(run.nodes.agent.planning.status, 'off');
+  const journal = await readContractJournal(f.tasks, run.taskId); assert.deepEqual(journal.records, []); assert.deepEqual(journal.evidence, []);
+  assert.equal((await f.store.list()).requests.length, 0);
+});
+
+async function attachmentFixture(t, { second = false } = {}) {
+  const f = await fixture(t), attached = await f.attachments.importBytes({ name: 'demo-profile.txt', bytes: Buffer.from('Bounded attached profile fixture.') });
+  const guidance = second ? await f.attachments.importBytes({ name: 'demo-guidance.txt', bytes: Buffer.from('Bounded attached guidance fixture.') }) : null;
+  const unattached = await f.attachments.importBytes({ name: 'unattached.txt', bytes: Buffer.from('Not attached to this task.') });
+  const files = [attached, guidance].filter(Boolean), scope = { tool: 'relay_files', effect: 'observe', resourceKey: attachmentSetResourceKey(files.map(file => file.id)),
+    files: files.map(file => ({ id: file.id, name: file.name, resourceKey: attachmentResourceKey(file.sha256) })) };
+  const authored = contractFor(f.cwd);
+  authored.criteria.push({ id: 'attached-profile', kind: second ? 'observation' : 'source-coverage', description: 'Read the immutable attached profile.', resourceKey: attachmentResourceKey(attached.sha256) });
+  authored.workItems.push({ id: 'inspect-attachment', title: 'Read the attached profile', objective: 'Read the supplied attachments.', owner: 'agent',
+    resourceKeys: second ? [attachmentResourceKey(attached.sha256).slice(0, -7), attachmentResourceKey(guidance.sha256)] : [authored.workItems[0].resourceKeys[1]],
+    effects: ['observe'], dependsOn: [], criterionIds: ['attached-profile'] });
+  const contract = normalizePlanContractResponse(authored, undefined, { attachedReadScope: scope, coordinator: 'agent' });
+  const taskId = 'attachment-intent', runId = 'attachment-run', nodeId = 'agent';
+  await f.tasks.ensure({ taskId, runId, nodeId, cwd: f.cwd, goal: request, schemaVersion: 14 });
+  const initial = await f.tasks.get(taskId);
+  await f.tasks.setContract(taskId, contract, { expectedRevision: initial.revision, runId, nodeId, schemaVersion: 14 });
+  const adapter = createAttachmentToolHandler({ store: f.attachments, attachmentIds: files.map(file => file.id), cwd: f.cwd });
+  const guard = await createPlanningWorkerGuard({ store: f.tasks, taskId, runId, nodeId, cwd: f.cwd, schemaVersion: 14, executionGuardrails: true,
+    coordinator: true, getOperationAdapter: () => adapter });
+  const taskHandler = createTaskToolHandler({ store: f.tasks, taskId, runId, nodeId, schemaVersion: 14, executionGuardrails: true });
+  const invoke = wrapPlanningToolHandler(guard, async (call, context = {}) => {
+    const denied = await guard.before(call, context); if (denied) return denied;
+    context = guard.dispatchContext(call, context); await guard.dispatchFallback(call, context);
+    return call.name === 'relay_task' ? guard.after(call, await taskHandler(call, context)) : adapter(call, context);
+  });
+  const readCall = { name: 'relay_task', arguments: { action: 'read' }, callId: 'read-current-contract' };
+  const readReceipt = await invoke(readCall);
+  assert.equal(readReceipt.success, true, JSON.stringify(readReceipt)); guard.observeToolDelivery({ call: readCall, result: readReceipt });
+  t.after(() => guard.finish('finished'));
+  const send = async (action, file = attached) => {
+    const call = { name: 'relay_files', arguments: { action, attachmentId: file.id }, callId: randomUUID() };
+    const result = await invoke(call); guard.observeToolDelivery({ call, result }); return result;
+  };
+  return { ...f, taskId, attached, guidance, unattached, scope, contract, send, adapter };
+}
+
+test('retained explicit attachment protection records actual source coverage without an automatic pipeline', async t => {
+  const f = await attachmentFixture(t);
+  const read = await f.send('read'); assert.equal(read.success, true, JSON.stringify(read)); assert.match(JSON.stringify(read), /Bounded attached profile/);
+  const denied = await f.send('export'); assert.equal(denied.code, 'TASK_CONTRACT_SCOPE');
+  await assert.rejects(f.adapter({ name: 'relay_files', arguments: { action: 'read', attachmentId: f.unattached.id } }), /not attached to the current task/);
+  const journal = await readContractJournal(f.tasks, f.taskId);
+  assert.equal(journal.records.length, 1); assert.equal(journal.records[0].tool, 'relay_files'); assert.equal(journal.records[0].workItemId, 'inspect-attachment');
+  assert.ok(journal.evidence.some(item => item.kind === 'source-coverage' && item.resourceKey === attachmentResourceKey(f.attached.sha256) && item.sourceVersion === f.attached.sha256 && item.coverage.end === item.coverage.total));
+  assert.equal(f.calls.length, 0);
+});
+
+test('attachment scope repair preserves the correct independent key and does not broaden another owner', async t => {
+  const f = await attachmentFixture(t, { second: true }), reader = f.contract.workItems.find(item => item.id === 'inspect-attachment');
+  assert.ok(reader.resourceKeys.includes(f.scope.resourceKey)); assert.ok(reader.resourceKeys.includes(attachmentResourceKey(f.guidance.sha256)));
+  assert.ok(!reader.resourceKeys.includes(attachmentResourceKey(f.attached.sha256).slice(0, -7)));
+  assert.ok(f.contract.workItems.filter(item => item.id !== reader.id).every(item => !item.resourceKeys.includes(f.scope.resourceKey)));
+  assert.equal((await f.send('read')).success, true); assert.equal((await f.send('read', f.guidance)).success, true);
+  const journal = await readContractJournal(f.tasks, f.taskId);
+  assert.deepEqual(journal.records.map(item => [item.tool, item.effect, item.workItemId]), [['relay_files', 'observe', 'inspect-attachment'], ['relay_files', 'observe', 'inspect-attachment']]);
+  assert.deepEqual(journal.evidence.filter(item => item.kind === 'source-coverage').map(item => [item.resourceKey, item.sourceVersion]), [f.attached, f.guidance].map(file => [attachmentResourceKey(file.sha256), file.sha256]));
+  assert.equal(f.calls.length, 0);
+});
+
+test('retired cycle methods preserve archived user tolerance and pending effect proof byte for byte', async t => {
+  const f = await fixture(t);
+  await f.store.create({ id: 'archived-intent', conversationId: 'saved-conversation', title: 'Saved application intent', objective: request, cwd: f.cwd });
+  await f.store.addNode('archived-intent', { id: 'plan', kind: 'plan', title: 'Saved Plan' });
+  const file = f.store.file('archived-intent'), raw = JSON.parse(await readFile(file, 'utf8'));
+  raw.responseCycle = { version: 1, rootCycleId: 'saved-cycle', cycles: [] };
+  f.store._validate(raw); await writeFile(file, JSON.stringify(raw)); const before = await readFile(file);
+  for (const operation of [
+    () => f.service.createCycle('archived-intent', {}), () => f.service.runCycle('archived-intent', 'saved-cycle', {}),
+    () => f.service.editPlan('archived-intent', 'saved-cycle', {}), () => f.service.continueCycle('archived-intent', 'saved-cycle', {}),
+    () => f.runner.start({ requestId: 'archived-intent', nodeId: 'plan', expectedNodeRevision: 1, automatic: false, clientRequestId: 'do-not-run' })
+  ]) await assert.rejects(async () => operation(), { code: 'PLANNING_CYCLE_RETIRED', status: 410 });
+  const saved = await f.store.get('archived-intent'); assert.equal(saved.objective, request);
+  assert.deepEqual(await readFile(file), before); assert.equal(f.calls.length, 0); assert.equal(f.runner.status().activeCount, 0);
+});
+
+test('historical canonical intent preserves authorized city alternatives without inventing application proof', async t => {
+  const f = await historicalContract(t), contract = f.task.contract;
+  assert.equal(contract.goal, request); assert.equal(contract.criteria[0].kind, 'external-confirmation'); assert.equal(contract.criteria[0].targetCount, 20);
+  assert.deepEqual(contract.criteria[0].accuracy, requiredCriteria[0].accuracy); assert.equal(contract.criteria[0].receiptBinding, undefined);
+  assert.equal(contract.criteria[1].description, locationPermission); assert.deepEqual(contract.criteria[1].accuracy, requiredCriteria[1].accuracy);
+  assert.equal(f.task.contractRuntime.criteria[0].observedCount, 0); assert.ok(f.task.contractRuntime.criteria.every(item => item.satisfied === false));
+  assert.deepEqual(f.task.contractRuntime.outcomes, []); assert.equal(f.calls.length, 0);
+});
+
+test('saved prerequisite remains required through an operational edit with no provider or cycle execution', async t => {
+  const f = await historicalContract(t, { prerequisite: true });
+  assert.deepEqual(f.task.contractAdoption.commitPrerequisiteIds, ['authorized-city']);
+  const { planEpoch, ...contract } = copy(f.task.contract); contract.workItems[0].dependsOn = [];
   await assert.rejects(f.tasks.setContract(f.run.taskId, contract, { expectedRevision: f.task.revision, schemaVersion: 14 }),
     { code: 'TASK_CONTRACT_INVALID', message: /make every committing item wait/ });
+  assert.equal((await f.tasks.get(f.run.taskId)).revision, f.task.revision); assert.equal(f.calls.length, 0);
 });
 
-test('an operational refinement cannot narrow the adopted goal or weaken inherited outcomes', { timeout: 20000 }, async t => {
-  const f = await fixture(t, { mode: 'automatic' });
+test('historically adopted intent cannot be narrowed by an agent while explicit human revisions remain authoritative', { timeout: 20000 }, async t => {
+  const f = await historicalContract(t);
   const { taskId, id: runId } = f.run;
   const relayTask = createTaskToolHandler({ store: f.tasks, taskId, runId, nodeId: 'agent', schemaVersion: 14 });
   const authorable = (state, change) => {
@@ -363,17 +263,33 @@ test('an operational refinement cannot narrow the adopted goal or weaken inherit
   assert.equal((await refine(revised, contract => { contract.goal = request; })).code, 'TASK_CONTRACT_GOAL_CHANGE');
   assert.equal((await refine(revised, contract => { contract.criteria[0].targetCount = 2; })).code, 'TASK_CONTRACT_CRITERION_CHANGE');
 
-  const plan = { contract: authorable(revised, contract => {
-    contract.goal = 'Inspect the saved application source and report the result.';
-    contract.criteria = contract.criteria.filter(criterion => criterion.id === 'source-review');
-    contract.workItems[0].criterionIds = ['source-review'];
-    contract.workItems[0].effects = ['observe'];
-  }) };
-  const planRef = { ...f.run.responseCycle.planRef, cycleId: 'revised-cycle', responseId: 'revised-plan' };
-  const { snapshot } = await adoptExecutionPlanContract({ store: f.tasks, taskId, runId: 'revised-run', nodeId: 'agent',
-    getSource: async () => ({ planRef, plan, sha256: executionOutlineHash(plan), requiredCriterionIds: ['source-review'] }) });
-  assert.equal(snapshot.contract.goal, plan.contract.goal);
-  assert.deepEqual(snapshot.contractAdoption.planRef, planRef);
-  assert.deepEqual(snapshot.contractAdoption.requiredCriterionIds, ['source-review']);
-  assert.equal((await refine(snapshot, contract => { contract.criteria[0].description = 'Read a different source.'; })).code, 'TASK_CONTRACT_CRITERION_CHANGE');
+  assert.equal((await readContractJournal(f.tasks, taskId)).records.length, 0);
+  assert.deepEqual((await f.tasks.get(taskId)).contractRuntime.outcomes, []);
+  assert.equal(f.calls.length, 0, 'Historical contract edits must not start any provider or revive a cycle.');
+});
+
+// Pure normalization of retained authoring data is independent of any cycle.
+test('retained authoring separates a commit prerequisite from a committing work item', () => {
+  const contract = contractFor('/fixture'), prerequisite = { id: 'authorized-city', label: 'Authorized city alternatives',
+    description: locationPermission, accuracy: copy(requiredCriteria[1].accuracy) };
+  contract.workItems[0].criterionIds.push(prerequisite.id);
+  const normalized = normalizePlanContractResponse(contract, [prerequisite]);
+  const check = normalized.workItems.find(item => item.criterionIds.includes(prerequisite.id));
+  assert.deepEqual(check.effects, ['observe']);
+  const commit = normalized.workItems.find(item => item.effects.includes('commit'));
+  assert.deepEqual(commit.dependsOn, [check.id]); assert.ok(!commit.criterionIds.includes(prerequisite.id));
+  assert.equal(normalized.criteria.find(item => item.id === 'applications-confirmed').targetCount, 20);
+});
+
+test('a namespaced historical prerequisite cannot overwrite an inherited observation with the original ID', () => {
+  const contract = contractFor('/fixture'); contract.criteria[1].kind = 'observation';
+  const prerequisite = { id: 'prerequisite-city-permission', label: 'Authorized city alternatives',
+    description: locationPermission, accuracy: copy(requiredCriteria[1].accuracy) };
+  const normalized = normalizePlanContractResponse(contract, [prerequisite]);
+  assert.equal(normalized.criteria.find(item => item.id === 'city-permission').kind, 'observation');
+  assert.equal(normalized.criteria.find(item => item.id === prerequisite.id).kind, 'judgment');
+  assert.deepEqual(normalized.criteria.find(item => item.id === 'city-permission').accuracy, requiredCriteria[1].accuracy);
+  const check = normalized.workItems.find(item => item.criterionIds.includes(prerequisite.id));
+  assert.deepEqual(check.effects, ['observe']);
+  assert.ok(normalized.workItems.find(item => item.effects.includes('commit')).dependsOn.includes(check.id));
 });

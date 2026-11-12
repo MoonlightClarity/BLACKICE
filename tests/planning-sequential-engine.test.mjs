@@ -6,7 +6,7 @@ import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { HarnessEngine } from './fixture-legacy-planning-engine.mjs';
-import { TaskStateStore, TASK_SCHEMA_VERSION } from './fixture-legacy-task-state.mjs';
+import { TaskStateStore } from './fixture-legacy-task-state.mjs';
 import { recordFixturePlan } from './fixture-task-plan.mjs';
 import { fixtureDeferredUserAgency } from './fixture-user-agency.mjs';
 
@@ -57,29 +57,28 @@ async function fixture(t, execute, { delegates = false } = {}) {
   return context;
 }
 
-test('actual engine requires planning before inspection and reconciles each operation before the next', async t => {
+test('ordinary engine tools are independent of optional bookkeeping while callback identity still prevents repeats', async t => {
   const f = await fixture(t, async (options, count, context) => {
-    const before = await tool(options, 'relay_workspace', { action: 'list' }, 'before-plan');
-    assert.equal(before.code, 'TASK_PLAN_REQUIRED');
+    assert.equal((await tool(options, 'relay_workspace', { action: 'list' }, 'before-plan')).success, true);
     let state = await task(options, { action: 'read' });
     state = await task(options, { action: 'plan', expectedRevision: state.revision, plan: { layout: 'sequence' }, steps: [leaf('write', 'active'), leaf('inspect', 'pending', 'read')] });
-    assert.equal((await tool(options, 'relay_workspace', { action: 'write', path: 'fixture.txt', text: 'The actual fixture value.' }, 'first-write')).success, true);
-    const premature = await tool(options, 'relay_workspace', { action: 'write', path: 'must-not-exist.txt', text: 'Repeated work.' }, 'premature-write');
-    assert.equal(premature.code, 'TASK_PLAN_RESULT_REQUIRED');
-    await assert.rejects(readFile(path.join(context.cwd, 'must-not-exist.txt')), { code: 'ENOENT' });
-    state = await task(options, { action: 'step', expectedRevision: state.revision, stepId: 'write', status: 'done', evidence: 'The write returned the exact saved file path and byte count.' });
-    state = await task(options, { action: 'step', expectedRevision: state.revision, stepId: 'inspect', status: 'active' });
+    const write = { action: 'write', path: 'fixture.txt', text: 'The actual fixture value.' };
+    const first = await tool(options, 'relay_workspace', write, 'first-write');
+    assert.equal(first.success, true);
+    assert.deepEqual(await tool(options, 'relay_workspace', write, 'first-write'), first);
+    const changed = await tool(options, 'relay_workspace', { ...write, text: 'A changed payload.' }, 'first-write');
+    assert.equal(changed.code, 'TOOL_CALL_ID_CONFLICT');
     const observed = await tool(options, 'relay_workspace', { action: 'read', path: 'fixture.txt' }, 'second-read');
-    assert.equal(observed.success, true, observed.contentItems[0].text);
-    assert.match(observed.contentItems[0].text, /actual fixture value/);
+    assert.equal(observed.success, true); assert.match(observed.contentItems[0].text, /actual fixture value/);
+    assert.equal(await readFile(path.join(context.cwd, 'fixture.txt'), 'utf8'), write.text);
+    state = await task(options, { action: 'step', expectedRevision: state.revision, stepId: 'write', status: 'done', evidence: 'The write receipt and separate read identify the exact saved bytes.' });
     await task(options, { action: 'step', expectedRevision: state.revision, stepId: 'inspect', status: 'done', evidence: 'The file read returned The actual fixture value.' });
     await reviewCurrent(options);
-    return { output: 'Wrote and separately checked the fixture value.' };
+    return { output: 'Wrote once and separately checked the fixture value.' };
   });
-  const run = await f.settle(f.start('on').id);
-  assert.equal(run.status, 'completed', run.error);
+  const run = await f.settle(f.start('on').id); assert.equal(run.status, 'completed', run.error);
   assert.equal(run.taskState.steps.filter(step => step.kind === 'action' && step.status === 'done').length, 2);
-  assert.equal(run.taskState.executionObservations.total, 2, 'Rejected operations are not executed receipts.');
+  assert.equal(run.nodes.agent.planning.status, 'off');
 });
 
 test('shared tool fixtures save and settle separate actual calls, preserving failed outcomes', async t => {
@@ -97,33 +96,25 @@ test('shared tool fixtures save and settle separate actual calls, preserving fai
   assert.equal(run.status, 'completed', run.error);
   const actions = run.taskState.steps.filter(step => step.operation?.kind === 'tool');
   assert.equal(actions.length, 3); assert.deepEqual(actions.map(step => step.status), ['done', 'blocked', 'done']);
-  assert.match(actions[1].blockedReason, /returned success:false/); assert.equal(run.taskState.executionObservations.total, 3);
+  assert.match(actions[1].blockedReason, /returned success:false/); assert.equal(run.nodes.agent.planning.status, 'off');
 });
 
-test('native schema 9 continuation refreshes its provider session inside the same saved task', async t => {
+test('native schema 9 continuation preserves its cached session and tool catalog without automatic upgrade', async t => {
   const f = await fixture(t, async (options, count) => {
     if (count === 1) return { output: 'The saved conversation already contains this prior context.' };
-    assert.equal(options.threadId, undefined, 'A cached native catalog must receive a fresh provider session.');
-    assert.match(options.prompt, /same Relay conversation/);
-    assert.match(options.prompt, /saved conversation already contains this prior context/);
+    assert.equal(options.threadId, 'native-fixture-1');
+    assert.equal(options.onBeforeFinal, undefined);
     const currentTool = options.dynamicTools.find(spec => spec.name === 'relay_task');
-    assert.ok(currentTool.inputSchema.properties.operations.items.properties.type.enum.includes('revisit'));
-    assert.ok(currentTool.inputSchema.properties.action.enum.includes('review'));
-    let state = await task(options, { action: 'read' });
-    state = await task(options, { action: 'plan', expectedRevision: state.revision, plan: { layout: 'sequence' }, steps: [{ ...leaf('answer', 'active'), operation: { kind: 'reasoning', target: 'Answer the saved follow-up question.' } }] });
-    await task(options, { action: 'step', expectedRevision: state.revision, stepId: 'answer', status: 'done', evidence: 'The saved earlier context and current follow-up were compared to produce the answer.' });
-    await reviewCurrent(options);
-    return { output: 'The same conversation continued with current Planning tools.' };
+    assert.ok(!currentTool.inputSchema.properties.action.enum.includes('review'), 'Schema 9 remains the captured schema.');
+    assert.equal((await tool(options, 'relay_workspace', { action: 'list' }, 'historical-list')).success, true);
+    return { output: 'The same conversation continued without a forced upgrade.' };
   });
   const original = await f.settle(f.start('off').id); assert.equal(original.status, 'completed', original.error);
-  const saved = f.engine.runs.get(original.id); saved.nodes.agent.taskSchemaVersion = 9;
-  const accepted = f.engine.continueRun(original.id, { nodeId: 'agent', message: 'Continue the same task with Planning On.', planningMode: 'on' });
-  assert.equal(accepted.taskId, original.taskId); assert.equal(accepted.parentRunId, original.id);
-  assert.equal(accepted.modelHandoff.reason, 'planning-tool-upgrade');
-  const continued = await f.settle(accepted.id);
-  assert.equal(continued.status, 'completed', continued.error);
-  assert.equal(continued.taskId, original.taskId); assert.equal(continued.nodes.agent.taskSchemaVersion, TASK_SCHEMA_VERSION);
-  assert.equal(f.runtime.calls.length, 2);
+  f.engine.runs.get(original.id).nodes.agent.taskSchemaVersion = 9;
+  const accepted = f.engine.continueRun(original.id, { nodeId: 'agent', message: 'Continue the same task.', planningMode: 'on' });
+  assert.equal(accepted.taskId, original.taskId); assert.equal(accepted.parentRunId, original.id); assert.equal(accepted.modelHandoff, undefined);
+  const continued = await f.settle(accepted.id); assert.equal(continued.status, 'completed', continued.error);
+  assert.equal(continued.nodes.agent.taskSchemaVersion, 9); assert.equal(f.runtime.calls.length, 2);
 });
 
 test('Planning Off continuation keeps its existing native session and unrestricted operation flow', async t => {
@@ -140,27 +131,25 @@ test('Planning Off continuation keeps its existing native session and unrestrict
   assert.equal(continued.taskId, original.taskId);
 });
 
-test('retry upgrades an interrupted native catalog while retaining its task and saved transcript', async t => {
+test('retry preserves an interrupted native catalog, task identity and saved partial output', async t => {
   const f = await fixture(t, async (options, count) => {
     if (count === 1) {
       options.onEvent({ type: 'delta', delta: 'An actual partial finding before interruption.' });
       throw new Error('The controlled native turn was interrupted.');
     }
-    assert.equal(options.threadId, undefined);
-    assert.match(options.prompt, /actual partial finding before interruption/);
-    let state = await task(options, { action: 'read' });
-    state = await task(options, { action: 'plan', expectedRevision: state.revision, plan: { layout: 'sequence' }, steps: [{ ...leaf('answer', 'active'), operation: { kind: 'reasoning', target: 'Reconcile the interrupted finding.' } }] });
-    await task(options, { action: 'step', expectedRevision: state.revision, stepId: 'answer', status: 'done', evidence: 'The persisted partial finding and retry request were checked together.' });
-    await reviewCurrent(options);
+    assert.equal(options.threadId, 'native-fixture-1');
+    assert.equal(options.onBeforeFinal, undefined);
+    assert.equal((await tool(options, 'relay_workspace', { action: 'list' }, 'retry-list')).success, true);
     return { output: 'Continued the interrupted task.' };
   });
   const original = await f.settle(f.start('off').id); assert.equal(original.status, 'failed');
+  assert.equal(original.nodes.agent.output, 'An actual partial finding before interruption.');
   f.engine.runs.get(original.id).nodes.agent.taskSchemaVersion = 8;
   const accepted = f.engine.retryRun(original.id, { planningMode: 'on' });
-  assert.equal(accepted.taskId, original.taskId); assert.equal(accepted.retryOf, original.id);
-  assert.equal(accepted.nodeHandoffs.agent.reason, 'planning-tool-upgrade');
-  const retried = await f.settle(accepted.id);
-  assert.equal(retried.status, 'completed', retried.error); assert.equal(retried.nodes.agent.taskSchemaVersion, TASK_SCHEMA_VERSION);
+  assert.equal(accepted.taskId, original.taskId); assert.equal(accepted.retryOf, original.id); assert.equal(accepted.nodeHandoffs, undefined);
+  const retried = await f.settle(accepted.id); assert.equal(retried.status, 'completed', retried.error);
+  assert.equal(retried.nodes.agent.taskSchemaVersion, 8);
+  assert.equal(f.engine.getRun(original.id).nodes.agent.output, 'An actual partial finding before interruption.');
 });
 
 test('a historical one-slot delegation is rejected without worker execution or a partial write', async t => {

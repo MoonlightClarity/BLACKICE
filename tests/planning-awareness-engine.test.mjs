@@ -40,37 +40,34 @@ async function fixture(t, execute, { delegates = false } = {}) {
   } };
 }
 
-test('the main engine refuses an actual workspace write after a human correction and resumes after read delivery', async t => {
-  let beforeRead, afterRead;
+test('manual saved corrections and presence remain visible without installing an automatic execution gate', async t => {
+  let correctedRevision;
   const f = await fixture(t, async (options, context) => {
     const initial = await task(options, { action: 'read' });
     let plan = await task(options, { action: 'plan', expectedRevision: initial.revision, plan: { layout: 'sequence' }, steps: [writeAction('presence', 'presence.txt'), writeAction('build', 'actual.txt', 'pending')] });
-    await task(options, { action: 'read' });
     context.tasks.awareness.setPresence(plan, { editorId: 'human-editor', stepId: 'build' }, { type: 'local-human', id: 'local-user' });
+    assert.equal(context.tasks.awareness.snapshot(plan).presence[0].stepId, 'build');
     const advisory = await call(options, 'relay_workspace', { action: 'write', path: 'presence.txt', text: 'Presence is advisory.' });
     assert.equal(advisory.success, true); assert.equal(payload(advisory).path, path.join(context.cwd, 'presence.txt'));
-    const awareness = advisory.contentItems.filter(item => item.type === 'inputText').map(item => { try { return JSON.parse(item.text); } catch { return {}; } }).find(item => item.presence);
-    assert.equal(awareness.presence[0].stepId, 'build');
-    assert.equal(await readFile(path.join(context.cwd, 'presence.txt'), 'utf8'), 'Presence is advisory.');
     plan = await task(options, { action: 'step', expectedRevision: plan.revision, stepId: 'presence', status: 'done', evidence: 'The actual write receipt identifies presence.txt and its saved bytes.' });
-    plan = await task(options, { action: 'step', expectedRevision: plan.revision, stepId: 'build', status: 'active' });
-    const corrected = await context.tasks.editPlan(initial.taskId, { operations: [{ type: 'update', stepId: 'build', patch: { note: 'Write the revised text after reading this correction.' } }] }, { expectedRevision: plan.revision, source: 'human' });
-    const write = { action: 'write', path: 'actual.txt', text: 'Revised fixture result.' };
-    const denied = await call(options, 'relay_workspace', write); assert.equal(denied.code, 'TASK_PLAN_REVIEW_REQUIRED');
-    await assert.rejects(readFile(path.join(context.cwd, 'actual.txt')), { code: 'ENOENT' });
-    beforeRead = context.tasks.awareness.snapshot(corrected).workers[0];
-    const reviewed = await task(options, { action: 'read' }); assert.match(reviewed.steps.find(step => step.id === 'build').note, /revised text/);
-    afterRead = context.tasks.awareness.snapshot(corrected).workers[0];
-    const actual = await call(options, 'relay_workspace', write); assert.equal(actual.success, true, actual.contentItems[0].text);
+    const corrected = await context.tasks.editPlan(initial.taskId, { operations: [{ type: 'update', stepId: 'build', patch: { note: 'Write the revised text.' } }] }, { expectedRevision: plan.revision, source: 'human' });
+    correctedRevision = corrected.revision;
+    await assert.rejects(context.tasks.editPlan(initial.taskId, { operations: [{ type: 'update', stepId: 'build', patch: { note: 'Stale overwrite' } }] }, { expectedRevision: plan.revision, source: 'human' }), { code: 'TASK_STATE_CONFLICT' });
+    const actual = await call(options, 'relay_workspace', { action: 'write', path: 'actual.txt', text: 'Revised fixture result.' });
+    assert.equal(actual.success, true, actual.contentItems[0].text);
+    const reviewed = await task(options, { action: 'read' });
+    assert.equal(reviewed.revision, correctedRevision); assert.equal(reviewed.steps.find(step => step.id === 'build').note, 'Write the revised text.');
+    assert.equal(reviewed.steps.find(step => step.id === 'build').status, 'pending', 'A tool result cannot fabricate explicit task completion.');
     const completed = await task(options, { action: 'step', expectedRevision: reviewed.revision, stepId: 'build', status: 'done', evidence: 'The actual written file contains the revised fixture result.' });
-    await finishFixturePlan(options, { state: completed, summary: 'The human correction was read before the one permitted write, and the saved result matches that correction; no requested action remains.' });
+    await finishFixturePlan(options, { state: completed, summary: 'The human correction and written result agree; no requested action remains.' });
     return { output: 'Written and checked the revised fixture result.' };
   });
   const result = await f.run(); assert.equal(result.status, 'completed', result.error);
+  assert.equal(await readFile(path.join(f.cwd, 'presence.txt'), 'utf8'), 'Presence is advisory.');
   assert.equal(await readFile(path.join(f.cwd, 'actual.txt'), 'utf8'), 'Revised fixture result.');
-  assert.equal(beforeRead.state, 'needs-review'); assert.equal(afterRead.state, 'current'); assert.ok(afterRead.lastReadRevision > beforeRead.lastReadRevision);
-  assert.equal(result.nodes.agent.planningAwareness.lastReadRevision, afterRead.lastReadRevision);
-  assert.equal(f.tasks.awareness.snapshot(await f.tasks.get(result.taskId)).workers[0].state, 'finished');
+  assert.ok(result.taskState.revision > correctedRevision);
+  assert.equal(result.nodes.agent.planning.status, 'off');
+  assert.deepEqual(f.tasks.awareness.snapshot(await f.tasks.get(result.taskId)).workers, [], 'Retirement does not create fictitious worker read receipts.');
 });
 
 test('a historical single-scope delegation is rejected before worker execution or saved-edit activity', async t => {
