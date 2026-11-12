@@ -313,6 +313,13 @@
     "combinedTestedSourceCommit": "70416018f8621e3217b360374222b44858b0f4d6",
     "storageDataIncludedThroughCommit": "616d985d5ca5fedd17811d69e214606e34587400",
     "combinedInstallerVerification": "not-run-release-held",
-    "otherChatAcknowledgement": "not-yet-confirmed"
+    "otherChatAcknowledgement": "received-through-user-coordination-handoff",
+    "canonicalStorageSourceCommit": "616d985d5ca5fedd17811d69e214606e34587400",
+    "storageFeatureCommit": "4538e5fe27b7f78b9e9a922ed5ba6dfd64de2d26",
+    "storageFeaturePathsIdentical": true,
+    "additionalCherryPickNeeded": false,
+    "storageInstallerInstalled": false,
+    "releaseHoldRemainsActiveAfterHandoff": true,
+    "coordinationScope": "Both chats confirmed the same combined tested source. This acknowledges the handoff and does not authorize publication, tagging, packaging, or installation."
   }
 }
