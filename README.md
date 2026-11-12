@@ -1,243 +1,189 @@
-> **Next-version README:** This document describes the next version of BLACKICE.
-
 # BLACKICE
 
-**BLACKICE is an open-source, local-first agent workspace for Windows. Its job is to turn a user's objective into verified work—not simply produce plans, chats, or successful-looking tool calls.**
+**An open-source Windows workspace that gives AI assistants the tools, context, and continuity to carry out useful work.**
 
-BLACKICE combines external reasoning models and agents such as Codex with the user's computer, contained browser, files, tools, scheduled work, and persistent task history. The user can start a task in BLACKICE or Codex, let agents do the routine work, inspect what actually happened, intervene when useful, and continue without throwing away earlier progress.
+BLACKICE connects an assistant to a browser it can operate, files it can read and change, commands it can run, saved task history, and scheduled workflows. You can use an assistant inside BLACKICE or connect an external assistant to its tools.
 
-**The measure of success is the user's achieved outcome.** A model response, completed planning graph, number of browser clicks, number of jobs launched, or passing source test suite is not a substitute for that outcome.
+The goal is to reduce the work of managing the agent: copying instructions between apps, repeating background information, keeping track of unfinished steps, and checking whether a claimed result actually happened. You define the outcome and relevant constraints; BLACKICE gives the assistant a place to execute, keeps the work inspectable, and lets you intervene when needed.
 
-**[Windows releases](https://github.com/MoonlightClarity/BLACKICE/releases)** · **[Source code](https://github.com/MoonlightClarity/BLACKICE)** · **License: Apache-2.0**
+**[Download for Windows](https://github.com/MoonlightClarity/BLACKICE/releases)** · **[Source](https://github.com/MoonlightClarity/BLACKICE)** · **[Issues](https://github.com/MoonlightClarity/BLACKICE/issues)** · **[Apache-2.0 license](LICENSE)**
 
-## What BLACKICE actually does
+> **Development version:** This README describes the development branch. Check the release notes for the capabilities included in your installed version.
 
-A person gives BLACKICE a meaningful goal. BLACKICE coordinates the selected model, available tools, and reusable task state to pursue that goal with as little unnecessary user effort as possible.
+## Why BLACKICE exists
 
-| Real task | What BLACKICE does | What counts as success |
+Useful work often crosses several tools and sessions. Research requires opening sources, comparing evidence, and producing something usable. A software change requires inspecting files, making an edit, running checks, and reviewing the result. An application requires finding the right form, supplying information, submitting it, and recording the outcome.
+
+Coordinating all of that can become a second job for the person delegating it. BLACKICE brings the working environment, reasoning controls, execution tools, and records of what happened into one place.
+
+| What the user needs | What BLACKICE supplies | Practical benefit |
 | --- | --- | --- |
-| **Apply for jobs** | Finds positions, evaluates genuine constraints without inventing disqualifiers, prepares forms, uploads materials, submits distinct applications, and continues viable opportunities when one application is blocked. | **Distinct, destination-confirmed applications**, plus accurate records of pending or uncertain submissions—not pages visited or buttons clicked. |
-| **Build and repair software** | Inspects source, diagnoses failures, edits files, runs tests, delegates independent work when valuable, and prepares releases through available tools. | **Changed and validated behavior** with real test/build results and, where requested, evidence of the produced or published artifact—not a proposed patch. |
-| **Perform research** | Collects relevant sources, compares claims and competing explanations, records uncertainty, and produces a decision-ready answer or artifact. | **Supported findings and a usable deliverable**, with the missing evidence distinguished from established facts. |
-| **Operate websites** | Uses the contained browser to navigate, inspect, fill forms, upload files, and follow through after submission. | **An observed result at the destination**, not a successful input event alone. |
-| **Run ongoing work** | Reuses task state, executes eligible scheduled or event-triggered steps, handles dependencies and interruptions, and retains outcomes for review. | **Verified incremental progress across runs** without repeating uncertain external effects or creating unrelated replacement tasks. |
-| **Coordinate agents** | Assigns truly separable work to supported models or subagents, monitors receipts, and integrates results. | **Better verified output, elapsed time, or resource efficiency** than doing the same work without delegation. |
+| **Get work carried out** | Browser actions, file operations, commands, and connected tools available to the assistant. | Delegate the steps involved in producing a result, including applying edits and checking the destination. |
+| **Explain the task less often** | Saved conversations, task records, reusable workflows, memories, and skills. | Carry relevant information and prior progress into continuing work. |
+| **Stay in control of the approach** | Model selection, per-conversation reasoning controls, visible browser pages, and inspectable plans and action history. | Adjust how the agent works and inspect the material behind its decisions. |
+| **Understand what actually finished** | Command outputs, file patch receipts, browser observations, and recorded action states. | Review a result, investigate a failure, or resume an interrupted action using concrete records. |
+| **Repeat useful work** | Cronjobs with saved workflow settings, schedules, overlap handling, and run history. | Configure recurring work once and review its subsequent runs. |
+| **Use an existing assistant** | Native model runtimes, compatible API providers, and direct MCP connections. | Keep a preferred supported assistant while giving it access to the same Windows workspace. |
 
-The system is built to **act, measure, learn from what actually happened, and continue**, while preserving the user's control over their goals and material decisions.
+These are the benefits the product is designed to deliver. Actual completion and time saved depend on the task, chosen model, available tools, and external systems.
 
-## Product metrics and acceptance criteria
+## What you can delegate
 
-BLACKICE measures the work that matters at the task level. Metrics are computed from actual timestamps, model and tool usage, canonical task IDs, operation receipts, and destination evidence. A metric without an observed denominator or baseline is reported as unknown—not filled with an invented number.
+BLACKICE is a general workspace. These examples show how its capabilities combine into recognizable tasks.
 
-| Metric | Measurement | Success criterion |
+| Example request | How the assistant can carry it out | What you should get back |
 | --- | --- | --- |
-| **Verified completion rate** | Distinct requested outcomes with adequate confirmation ÷ distinct eligible outcomes pursued. | Every *confirmed* outcome has supporting evidence; attempted, partial, blocked, and unknown work is not counted as confirmed. |
-| **Outcome throughput** | Destination-confirmed outcomes per elapsed hour or per scheduled run, with task type and difficulty retained. | Measure productive work, not the volume of tool calls, chat turns, scheduled triggers, or self-reported completions. |
-| **Time to useful action** | Elapsed time from task admission to the first relevant real action or substantive answer. | Avoid mandatory planning-only passes and needless preflight rituals; minimize latency without sacrificing correctness. |
-| **Time to verified result** | End-to-end elapsed time from request to first and final confirmed outcomes; report p50/p95 across comparable tasks. | Reduce real task latency, including rework and waiting, rather than optimizing isolated tool latency. |
-| **User intervention cost** | User questions, approvals, corrections, and manual steps per verified outcome. | Resolve ordinary decisions autonomously; ask only when a genuinely material missing fact or choice requires the person. |
-| **Reasoning and tool efficiency** | Provider turns, input/output tokens, tool calls, retries, and monetary or quota cost per verified outcome. | Spend resources where they improve the result; a more elaborate plan is not automatically better. |
-| **Duplicate-effect prevention** | Duplicate consequential dispatches or confirmed repeated effects for the same action identity. | **Zero unjustified replays** of a confirmed or unresolved consequential action; isolate the affected action while unrelated work proceeds. |
-| **Recovery fidelity** | Tasks resumed with the correct conversation, model, plan/context, receipts, and outstanding work after interruption. | No fabricated completion, lost task identity, or automatic replay of an uncertain external effect. |
-| **Evidence quality** | Unsupported completion claims, mismatched citations, stale observations, and assertions contradicted by receipts. | **Zero knowingly unsupported confirmed-outcome claims**; unknown remains unknown until resolved. |
-| **Delegation value** | Actual critical-path time saved and independent quality gained versus worker setup, coordination, and integration cost. | Delegate only when the forecasted opportunity justifies overhead; check the forecast against measured results. |
+| **“Research these options and recommend one.”** | Read local material, browse sources, split independent questions among workers when useful, and compare findings. | A recommendation or document with supporting sources, tradeoffs, and unresolved questions. |
+| **“Fix this bug and check the result.”** | Inspect the repository, edit the relevant files, run commands or tests, and inspect their output. | The actual changes, the checks performed, and the observed result. |
+| **“Complete this website workflow using these files.”** | Navigate pages, inspect controls, fill forms, upload documents, and observe the resulting page. | The destination's confirmation or a precise account of the remaining step. |
+| **“Find suitable roles and apply using my resumes.”** | Evaluate roles against your constraints, prepare forms, upload materials, and consult application history before submission. | Distinct application records with confirmed, pending, or unresolved outcomes. |
+| **“Run this check every morning.”** | Save the prompt, model, working folder, and relevant context in a scheduled workflow. | A history of runs and their results that you can inspect, edit, pause, or resume. |
 
-**These are product acceptance measures, not fabricated benchmark results.** BLACKICE records real values and distinguishes a user-defined numerical target from a measured result. No fixed tokens-per-minute, completion-per-hour, or speedup guarantee is implied by this README.
+The selected model performs the reasoning. BLACKICE supplies the workspace, tools, orchestration, and records around that reasoning. Native Codex and configured API models can supply inference while your Windows computer hosts the working environment.
 
-### Measurement rules
+## Work in BLACKICE or from an external assistant
 
-- Report **attempts, executions, confirmed outcomes, pending work, and unknown effects separately**. A completed agent run is not necessarily a completed user task.
-- Use **distinct target identities** (for example, an employer requisition ID) so reopens, page changes, retries, and repeated receipts do not inflate outcome counts.
-- Preserve the **real denominator and time window**. Report task difficulty, provider/model, applicable accuracy criteria, and observation coverage alongside comparisons.
-- For speed claims, measure **end-to-end wall time and resource use**, not just synthetic prompts or isolated kernel calls.
-- For quality claims, check **the destination state, accepted artifact, benchmark reference, or human-defined acceptance condition**. A model agreeing with another model is not independent verification.
-- When a workflow remains feasible, a blocked leaf reduces the current completion count; it does **not** imply the user's whole goal has failed.
+### Inside BLACKICE
 
-## Architecture at a glance
+Choose a supported native runtime, such as **Codex** or **Mistral Vibe Code**, or configure an API model. API connections support **OpenAI Responses**, **Anthropic Messages**, and **OpenAI Chat Completions-compatible** endpoints, including compatible local endpoints.
 
-| Layer | What it supplies |
-| --- | --- |
-| **Chat and model runtimes** | Persistent conversations, native Codex integration, external API models, model-specific settings, and actual tool results. |
-| **Modular Planning** | Nine independent reasoning methods, each controlled per conversation rather than one compulsory orchestration loop. |
-| **Execution** | Contained browser, files and exact patches, shell, application diagnostics, and connected MCP tools. |
-| **Tasks and subagents** | Durable work identity, dependency-aware assignment, bounded parallelism, continuation, and scheduled work. |
-| **Operational protections** | Independent effect reservations, application-history deduplication, hashes, receipts, and unresolved-effect handling. |
-| **Knowledge** | Typed memories, skills, sources, relationships, and relevant task context. |
-| **Settings → Storage & Data** | Storage usage, selective cleanup, and retention controls without a separate legacy Storage workspace. |
+Conversations retain their recorded model and provider. Changing the default affects the appropriate future selections while preserving the identity of earlier work. BLACKICE keeps its own conversation history so a continuing task can retain useful context.
 
-The layers cooperate, but **Planning does not own execution authority or operational effect protection**. Turning a reasoning method off does not disable ordinary tools, action receipts, or duplicate-effect checks.
+**Why this helps:** you can choose a model appropriate to the task and keep its execution environment, files, and work history together.
 
-## Modular Planning: choose the reasoning, not a rigid process
+See [API provider setup](docs/API-PROVIDERS.md).
 
-BLACKICE Chat provides **Planning → Modules** and **Planning → Off**. With Modules selected, the compact **Modules** disclosure opens a three-column configuration grid. Each method has four independent states:
+### From ChatGPT, Gemini, or Claude
 
-| State | Meaning |
-| --- | --- |
-| **Mandatory (M)** | Apply the method when its subject actually occurs; do not invent work solely to demonstrate it. |
-| **Optional (O)** | The method is available but not required. |
-| **Forbidden (F)** | Do not invoke that method, including indirectly through another method. |
-| **Auto (A)** | The selected model chooses the task-local value of the method based on its usefulness, cost, and context. |
+A configured direct MCP connection lets an external assistant call BLACKICE's file, command, browser, and planning tools. The assistant reasons in your existing conversation; BLACKICE executes the requested tool action and returns its result. A direct action does not require another model call inside BLACKICE.
 
-There is **no legacy compulsory planning contract, fixed five-stage model cycle, mandatory extra provider round trip, or graph-admission ritual**. Reasoning methods operate inline with useful work. The model can still explicitly construct, inspect, and revise saved plans or recursive analytical requests where they help, but an ordinary tool call is not blocked merely because the model did not author a formal plan first.
+**Why this helps:** you can continue working in a supported assistant you already use and give it practical access to your Windows workspace. Files, browser tasks, and command results can become part of that conversation without manually carrying every instruction between applications.
 
-### The nine modules
+Setup: [ChatGPT](CHATGPT-CONNECTOR.md) · [Gemini](docs/GEMINI-CONNECTOR.md) · [Claude](docs/CLAUDE-CONNECTOR.md).
 
-| Module | What it does | Default |
+## A browser the user and agent can work in
+
+The contained browser supports navigation, readable page and control snapshots, screenshots, clicks, typing, selection, keyboard actions, scrolling, uploads, downloads, and supported dialogs. The user can view and interact with the same pages inside BLACKICE.
+
+Agents can inspect the current page before acting and inspect the result afterward. Task ownership and page identity help associate actions with the intended tab and document. Browser diagnostics provide additional information when an interaction fails.
+
+**Why this helps:** multi-page tasks can stay with the agent while you retain visibility into the actual website. You can supply a missing login or intervene on a page, then continue the task with the surrounding work still available.
+
+Website authentication, challenges, and unsupported controls can still require intervention. Completion of a web task is established by the destination's observed result.
+
+## Files and commands that produce inspectable changes
+
+BLACKICE can read and search local files, create text files, apply focused patches, and run commands in a chosen working folder. It captures command output and exit codes. Patch receipts record the before and after content and support guarded undo.
+
+Direct actions have durable identifiers and saved results. If the connection drops, an assistant can retrieve the existing action's status before deciding what to do next. For supported consequential actions, recorded identities and uncertainty handling help prevent accidental repeats.
+
+**Why this helps:** the assistant can move from an explanation to a real change, then check that change. When something goes wrong, you have a concrete file diff, command result, or action record to inspect and continue from.
+
+The installed Windows account and available applications determine which files and commands the host can use.
+
+## Planning you can configure for the task
+
+Planning methods have explicit **On/Off** controls, and their choices belong to the current conversation. All nine methods default to **On**. You can change individual methods, save defaults for new conversations, or turn Planning off.
+
+The methods address different sources of wasted work:
+
+| Method | Question it helps the agent answer | Benefit to the user |
 | --- | --- | --- |
-| **Intent inference** | Interprets the real desired outcome, known facts, hard constraints, preferences, and relevant missing context. | Auto |
-| **Feasibility** | Checks concrete capabilities and dependencies in proportion to the decision, instead of turning hypothetical obstacles into blockers. | Auto |
-| **Task decomposition** | Breaks genuinely complex work into useful, actionable components and identifies dependencies. | Auto |
-| **Conditional logic** | Applies nested IF / ELIF / ELSE and AND / OR / NOT when different observations require different actions. | Auto |
-| **Recursive reassessment** | Revisits earlier assumptions or actions after meaningful new evidence; preserves existing task identity and progress. | Auto |
-| **Metacognition** | Tests consequential assumptions against alternatives and recognizes where the model's judgment may be wrong. | Auto |
-| **Anti-overalignment calibration** | Rejects invented hard gates, unsupported certainty thresholds, overstrict interpretations, and unnecessary deference to third-party preferences. | **Mandatory** |
-| **Outcome verification** | Checks results and effect claims against actual evidence instead of model assertion. | Auto |
-| **Subagent orchestration** | Evaluates and delegates separable work when supported and worthwhile. | Auto |
+| **Intent inference** | What outcome does the user actually want, and which constraints matter? | Reduces work aimed at the wrong interpretation of the request. |
+| **Feasibility** | What information, tools, access, or prerequisites does this task really need? | Identifies concrete dependencies early and separates them from assumptions. |
+| **Task decomposition** | Which parts can be acted on, and what depends on what? | Makes complex work easier to continue, delegate, and review. |
+| **Conditional logic** | What should happen if an observation changes the next step? | Gives branching workflows a clear response to different results. |
+| **Recursive reassessment** | What should change after new evidence arrives? | Lets the approach adapt while retaining useful progress. |
+| **Metacognition** | Which assumptions or judgments deserve another check? | Helps catch consequential reasoning errors before they spread. |
+| **Anti-overalignment calibration** | Is an apparent restriction actually binding, and how does it affect the user's objective? | Helps prevent invented requirements, unnecessary questions, and excessive deference from blocking useful work. |
+| **Outcome verification** | What evidence establishes that the requested result happened? | Makes completion claims easier to trust and inspect. |
+| **Subagent orchestration** | Would separate workers improve this task enough to justify their overhead? | Supports parallel work where it offers a practical payoff. |
 
-Anti-overalignment is mandatory **by default**, not unchangeable: the user can explicitly choose any of the four states for it, as for every other module.
+**Why this helps:** you can shape the reasoning around the task. A straightforward file edit and an uncertain research problem can use different methods. These controls do not silently change the selected model or start a second reasoning model.
 
-### How module choices persist
+User advocacy is part of this design. BLACKICE's reasoning guidance asks the agent to distinguish hard constraints from preferences, use available context, and make supported routine decisions. A blocked step should be handled at the smallest practical scope so other actionable work can continue.
 
-Choices belong to the current conversation. A pending conversation-specific selection wins over that conversation's saved run; the saved run wins over application defaults. **Save default** updates the fallback for newly created conversations without silently rewriting another chat's settings. Expanding or collapsing the grid does not change its values.
+## Long tasks with fresh context and saved work
 
-The module grid is a reasoning preference system, not a global switch that secretly raises model effort, starts a second model, or forces a rigid response template.
+Longer tasks accumulate sources, intermediate findings, decisions, and unfinished steps. **Directory mode** gives that work a persistent structure. It has its own **On/Off** control, separate from the choice of Planning methods.
 
-### Satisficing and user advocacy
+Directory runs focused stages with a **fresh model context for each stage**. It loads the stage's saved inputs and relevant material, supplies the user's authoritative instructions, and records the outputs and source references under the conversation. Later stages can reopen that work as they need it. Saved conversation history remains available.
 
-BLACKICE aims for **good-enough verified progress under real constraints**, rather than refusing useful work because one detail falls short of a hypothetical ideal.
+**Why this helps:** each step can focus on the material it needs while earlier work stays available for reuse. A long task can span multiple model calls, and you can inspect what each stage received and produced. This supports continuity and reduces the need to reconstruct the task from memory. Each call still uses the selected model's actual context capacity.
 
-For example, a job description's wish list is not automatically a user-imposed hard gate; an omitted résumé statement is not proof the skill is absent; and one unresolved sponsorship declaration does not stop unrelated applications. BLACKICE checks available context, distinguishes known/inferable/unknown facts, makes supported decisions, and defers only the smallest dependent action if a consequential personal declaration cannot be answered truthfully.
+Context audits expose the conversation's model turns, saved inputs, and recorded results. The current audit viewer is for inspection. Supported context tools can correct designated retained information, record the revision, and identify derived results that need rebuilding.
 
-**A binding obstacle has the smallest justified scope.** A blocked field parks that field or form; a potentially duplicated submission parks that exact submission; an unavailable provider or page triggers evaluation of alternatives. Other independently actionable work continues.
+### Reusable knowledge and skills
 
-User advocacy means evaluating authority, costs, alternatives, uncertainty, and the user's objective—not reflexive obedience to an outside party's text and not reflexive disobedience either. The agent does not create new approval checkpoints for routine steps.
+The **Knowledge** workspace stores reusable memories and skills. Users can create and edit entries, scope them to folders, review revisions, and use Trash and restore controls. Saved analytical plans can also represent nested questions, dependencies, observations, and uncertainty.
 
-## Task planning and analytical graphs
+**Why this helps:** preferences, project decisions, and repeatable procedures have a place to live beyond a single request. You can correct what agents retain and reuse stable instructions across appropriate work.
 
-The modular ontology is the normal Chat reasoning policy. When structured work is useful, BLACKICE also exposes saved task and analytical graph resources that users and authorized agents can inspect and edit.
+## Parallel work with a coordinator
 
-- Nested tasks and dependencies preserve the structure of actual work rather than flattening everything into numbered top-level checklist items.
-- Analytical modules can record hypotheses, observations, source coverage, contradictory evidence, accuracy criteria, confidence, and narrower child questions.
-- A recursive analysis child has a bounded, source-grounded question; it does not silently become the operational owner of the user's entire task.
-- Observed results can trigger reassessment and a revision; earlier evidence is not erased merely because the approach changes.
-- Historical planner records remain readable for provenance without reactivating their retired admission behavior.
+Supported workflows can assign independent research questions, files, or work items to separate agents. Dependencies determine which work can proceed in parallel and which must wait. A coordinator collects the results and integrates them into the task.
 
-A saved graph and a completed analytical response are **not** proof that an employer received an application, a website accepted a form, or software passed a test.
+BLACKICE's orchestration guidance considers the expected time saved, the value of independent analysis, model cost, and the effort required to combine the outputs.
 
-## Agent orchestration and expected payoff
+**Why this helps:** separable work can progress together while you keep a single overall objective. The useful result is the combined deliverable and its quality; the benefit varies with how well the task can be divided.
 
-BLACKICE delegates when **the work is separable and delegation is worth its cost**, not merely because subagents exist.
+## Recurring work with Cronjobs
 
-The coordinator considers a bounded **WEP opportunity forecast** for:
+The **Cronjobs** workspace lets you create, inspect, edit, pause, and resume schedules. Saved workflows can retain prompts, models, working folders, attachments, and worker settings. Schedules expose overlap handling, retries, run limits, previews, and result history.
 
-1. **Saved critical-path time** from parallel execution.
-2. **Independent quality gain** from genuinely distinct work.
-3. **Worker setup and model cost**.
-4. **Integration and rework cost** after workers finish.
+Recurring single-agent cron or interval jobs configured to **queue or skip overlapping runs** can continue the same task and conversation when their prior run and saved configuration are compatible. This gives eligible ongoing work a way to retain progress between runs.
 
-Forecasts include qualitative likelihood and confidence, with explicit reasoning and resource limits; they are **estimates, not achieved speedups**. BLACKICE compares the forecast with actual wall time, worker usage, output quality, integration effort, and verified deliverables.
+**Why this helps:** recurring research, checks, and other supported work can use a repeatable setup. You can review the history, adjust the instructions, and pause the schedule from one place.
 
-Independent workers can share the task goal while owning disjoint files, analyses, pages, or work items. Dependent tasks run in prerequisite order; parallel work respects host capacity. A worker's assertion of completion is checked against actual artifacts and receipts.
+The Windows host must be awake and BLACKICE must be running. Scheduled results are saved in BLACKICE; delivery to another service depends on a configured delivery path.
 
-**Successful delegation improves the end-to-end outcome or efficiency**. Spawning many workers, consuming more tokens, or generating more messages is not itself success.
+## How to judge whether a task worked
 
-## Codex, external assistants, and model continuity
+Look for evidence appropriate to the requested outcome:
 
-**Codex ↔ BLACKICE is bidirectional.** Conversations can run in BLACKICE or Codex, and Codex can use BLACKICE's tools, planning resources, task context, and execution environment when useful. BLACKICE can use Codex as a native model/development runtime; Codex can also be used without BLACKICE.
+- **A website submission:** the destination's confirmation or an accurately recorded unresolved state.
+- **A software change:** the changed files, relevant checks, and observed behavior.
+- **A research request:** supported findings and the requested usable answer or artifact.
+- **A scheduled task:** the run's actual result and progress carried into subsequent work.
 
-- Native chats preserve the **actual selected model and provider for that conversation**. A default-model change does not relabel or silently migrate earlier chats.
-- Supported account-backed runtimes and compatible Responses, Anthropic Messages, and Chat Completions endpoints supply inference according to their own quotas and capabilities.
-- ChatGPT and Gemini can call BLACKICE directly through separately authorized MCP connections. They do not automatically inherit each other's accounts or grants.
-- BLACKICE agents can use configured local or remote MCP tool servers and can interact with another accessible assistant in a normal contained-browser session.
-- Direct file, command, browser, and Planning tools execute without requiring a second model call from BLACKICE.
+BLACKICE keeps action and task records to make these checks possible. Supported application workflows use submission history and action claims to help avoid duplicates. Failed, pending, and uncertain work should remain distinguishable from confirmed outcomes.
 
-BLACKICE does not bundle an unlimited cloud model, manufacture provider quotas, or guarantee that every external assistant exposes the same tool capabilities.
-
-## The contained browser
-
-BLACKICE's browser belongs to the actual workspace. Users and authorized agents can inspect the same relevant pages, with task ownership and current-page identities.
-
-It supports navigation, readable page/control snapshots, screenshots, clicking, filling, keyboard actions, scrolling, downloads, uploads, and session management. Browser diagnostics help investigate failed actions. Task-associated tabs are reused appropriately, and completed task tabs are closed instead of accumulating indefinitely.
-
-Actions use the current observed page; stale coordinates, document identities, and form states are not treated as authoritative. Visual browser tasks work best with vision-capable models. Website restrictions, logins, CAPTCHA challenges, and unsupported controls remain genuine external limitations.
-
-**Browser success is destination success.** The system inspects the result after an external action; one click or open tab is not an application receipt.
-
-## Independent operational protections
-
-The execution layer protects consequential operations **whether Planning is set to Modules or Off**. These checks do not create another mandatory model cycle.
-
-- Recognized job applications are checked against submission history and task-independent claim records before final dispatch. A reservation for the same requisition prevents an unverified repeat; a distinct requisition remains actionable.
-- Consequential browser inputs receive durable operation identities and uncertainty-aware receipts where supported.
-- File writes and patches are checked against expected bytes and hashes; an uncertain file effect blocks only that file until reconciled.
-- Confirmed, absent, and unknown effects are recorded separately. A callback that returned normally is not sufficient evidence of third-party acceptance.
-- Unknown effects are investigated before a potentially duplicated dispatch. Other independent tasks continue.
-
-These checks apply to the supported operational adapters; they are not a claim that an arbitrary opaque shell command can be semantically classified as every possible external effect.
-
-## Cronjobs, saved work, and continuation
-
-**Cronjobs** is a dedicated workspace for scheduled automation rather than a general-purpose old Tasks dashboard. It provides schedule creation, editing, pausing, resuming, run previews, local results, and job history.
-
-**Manage saved workflows** opens the reusable workflow editor; **Back to Cronjobs** returns without discarding unsaved drafts. Chat and Planning retain task and run records. Older `#tasks` and `#activity` links open Cronjobs, while saved schedules and connector/API names stay unchanged.
-
-Supported triggers include daily, weekday, weekly, interval, cron, manual, and configured webhook schedules. Saved work can pin models, Planning module selections, working folders, relevant attachments, and worker configurations. Overlap, retry, catch-up, run-limit, and delivery preferences remain explicit.
-
-The scheduler measures **verified progress across run boundaries** rather than counting fresh conversations. A repeat trigger can continue the existing relevant work context; it checks actual previous outcomes and reservations before attempting consequential work again.
-
-A schedule requires the host runtime to be awake and operating. A queued or interrupted run is not reported as successful, and results are not silently delivered to a different assistant conversation.
-
-## Files, workspace, and source changes
-
-BLACKICE reads local files, searches folders, creates and patches text, runs bounded shell commands, and records outputs with durable IDs. Development tools can inspect the app's own frontend and runtime for diagnosis. Actual file changes are verified and can be audited through their receipts.
-
-Local tools act with the authority of their Windows host account; a chosen working folder is not a virtual-machine or OS security boundary. A patch return confirms an operation, not that the entire bug or requested release is fixed.
-
-## Knowledge and Storage & Data
-
-Knowledge keeps typed memories, reusable skills, sources, references, relationships, and revision histories available to eligible agents. These resources can inform a task but do not turn an unverified saved assertion into a fact.
-
-**Settings → Storage & Data** replaces the separate legacy Storage surface. It shows measured on-disk usage by category, including conversations, context, workspace metadata, managed workspace files, action history, media, browser state, and temporary files.
-
-Selective deletion is explicit and staged for the **next application startup**, before saved state is loaded. It requires a deliberate category selection and confirmation; nothing is deleted just by inspecting the page. A queued deletion can be cancelled before it runs. Interrupted cleanup is not blindly replayed. Optional automatic cleanup applies to **rebuildable temporary/diagnostic data**, not conversations, source folders, action receipts, credentials, or media by default.
-
-Removing the old Storage UI does not mean discarding user data. Historic records and files are managed through their actual owner features and Settings. Custom external working folders are outside app-managed destructive cleanup.
-
-## Remote access
-
-The running Windows host can expose authenticated tools and a paired human workspace over configured HTTPS connectivity, including supported Tailscale Serve or Funnel modes. Each external assistant or client uses its own applicable grant. A remote connection does not become a second independent BLACKICE host, and an offline machine does not execute local tasks merely because a caller requests one.
+The aim is to reduce supervision while making results easier to verify. Reliability still depends on the selected model, the workflow, and the external system; this README does not promise a fixed completion rate or productivity improvement.
 
 ## Getting started
 
-1. Install BLACKICE from the [Windows releases](https://github.com/MoonlightClarity/BLACKICE/releases). Public installers are unsigned; compare a release's published checksum where available.
-2. Open a BLACKICE chat or use Codex with the BLACKICE integration. Choose an available model and working context.
-3. Under **Planning → Modules**, configure any methods you want to make Mandatory, Optional, Forbidden, or Auto; or choose **Off**.
-4. Give the agent a meaningful outcome—not a script for every click. The agent evaluates real constraints, uses available tools, and records actual results.
-5. Review confirmed outcomes and unresolved work. For continuing tasks, attach or resume the saved work and use Cronjobs where scheduling helps.
+1. **Install BLACKICE** from the [Windows releases](https://github.com/MoonlightClarity/BLACKICE/releases).
+2. **Choose where to work.** Start a chat inside BLACKICE and select a supported runtime or API model, or configure a direct connection from your external assistant.
+3. **Give the task its context.** Choose the working folder and provide the relevant files, instructions, and constraints.
+4. **Set the reasoning controls.** Choose the Planning methods you want On for this conversation, or turn Planning off.
+5. **Describe the result you need.** For example: “Update these files, run the relevant checks, and show me the result.”
+6. **Review the work.** Inspect the files, browser outcome, and action history. Save a workflow and add a schedule when the task should recur.
 
-## Build from source
+Model accounts, API keys, quotas, and service capabilities come from the selected provider. BLACKICE runs the workspace and tools on your host.
 
-Requirements: supported 64-bit Windows and **Node.js 22 or newer**.
+### Build from source
 
-~~~powershell
+Requirements: supported **64-bit Windows** and **Node.js 22 or newer**.
+
+```powershell
 git clone https://github.com/MoonlightClarity/BLACKICE.git
 cd BLACKICE
 npm ci
 npm run desktop
-~~~
+```
 
 | Command | Purpose |
 | --- | --- |
-| `npm test` | Run source tests (not proof of live external outcomes). |
 | `npm run desktop` | Start the Electron app. |
 | `npm run headless` | Start the runtime without the normal main window. |
+| `npm test` | Run the source test suite. |
 | `npm run release:check` | Run release validation. |
 | `npm run package:public` | Build an unsigned Windows installer candidate. |
 
-## Scope and principles
+### Data and remote access
 
-BLACKICE is **an agent workspace, not a checklist generator**. Its priorities are useful outcomes, sound judgment, genuine user autonomy, measurable performance, appropriate tool use, persistence, and recovery. The Hyper-V Workbench product and the old compulsory planning system are not part of the integrated application. The browser, local execution, modules, workflows, and Settings cover their respective roles.
+**Settings → Storage & Data** shows disk usage and selective cleanup controls. User-selected cleanup is scheduled for the next application startup and can be cancelled before it runs. Custom external working folders remain outside app-managed cleanup.
 
-**Do not confuse feature availability, a passing test, or a model's confidence with verified real-world accomplishment.** BLACKICE's answer to “Did it work?” is grounded in the actual outcome and evidence.
+A running Windows host can expose its authenticated tools over configured HTTPS connectivity, including supported Tailscale configurations. Remote access lets an external assistant use that host's workspace while it is running and reachable.
 
-**License:** BLACKICE-authored code is licensed under the [Apache License 2.0](LICENSE). Third-party dependencies retain their own licenses.
+BLACKICE-authored code is licensed under [Apache-2.0](LICENSE). Third-party dependencies retain their own licenses.
