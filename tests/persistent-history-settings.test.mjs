@@ -26,7 +26,9 @@ async function fixture(t){
 test('loading legacy relay preferences normalizes only in memory and read APIs leave both profile files byte-identical',async t=>{
   const f=await fixture(t),current=f.handler();
   const loaded=f.store.get();assert.equal(loaded.codexHistory,'codex');
-  for(const [key,value]of Object.entries(f.legacy))if(key!=='codexHistory'&&key!=='defaultContext')assert.deepEqual(loaded[key],value);
+  for(const [key,value]of Object.entries(f.legacy))if(!['codexHistory','defaultContext','subagentsEnabled','maxSubagents'].includes(key))assert.deepEqual(loaded[key],value);
+  // Retired delegation preferences normalize in memory alongside native history.
+  assert.equal(loaded.subagentsEnabled,true);assert.equal(loaded.maxSubagents,3);
   assert.deepEqual(loaded.defaultContext,{preset:'extended',windowTokens:null,autoCompact:false,headroomTokens:2048});
   const read=await current({name:'relay_control',arguments:{action:'runtime_get'}});assert.equal(read.success,true);assert.equal(unpack(read).codexHistory,'codex');
   const catalog=await current({name:'relay_control',arguments:{action:'catalog'}});assert.equal(catalog.success,true);assert.equal(unpack(catalog).runtimeSettings.codexHistory,'codex');assert.equal(unpack(catalog).defaultModel,'example-provider::selected');
