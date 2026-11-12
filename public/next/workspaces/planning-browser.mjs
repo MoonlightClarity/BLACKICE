@@ -120,7 +120,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
   let catalogLoaded = false, catalogUnavailable = false;
   let creatingRequest = false, pendingConversation = null, pendingRequest = null;
   const sessions = new Map(), selectedRequests = new Map(), requestDrafts = new Map();
-  const directoryInspector = createDirectoryInspector({frame:shell,
+  const directoryInspector = createDirectoryInspector({frame:shell,api,getConversationId:()=>conversationId,
     getRunId:()=>catalog.conversations.find(row=>conversationKey(row)===conversationId)?.runId||conversationId});
   const session = id => {
     if (!sessions.has(id)) sessions.set(id, { document: null, selectedId: '', presentation: 'outline', page: 'overview', collapsed: new Set(), drafts: new Map(), xmlDrafts: new Map(), programDraft: null, creations: new Map(), sourceDraft: { title: '', text: '', url: '' }, pending: new Set(), error: '', notice: '', readGeneration: 0, controller: null, intentOpen: false, originalRequestOpen: false });

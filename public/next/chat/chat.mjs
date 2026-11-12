@@ -33,7 +33,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     indexLimit:CHAT_INDEX_BATCH, indexQuery:'',messageLimits:new Map(),
     attachmentIds:new Map(), attachmentsPending:false,managing:false,selecting:false,selection:new Map(),visible:[],listRead:0,destroyed:false,inputRevision:0,
     options:{...restoreChatPlanningOptions((()=>{try{return JSON.parse(localStorage.getItem('blackice.next.chatOptions')||'{}');}catch{return{};}})(),getStatus?.()?.runtimeSettings?.planningOntology),model:'default'} };
-  const directoryInspector=createDirectoryInspector({frame:view.shell,getRunId:()=>state.runs.at(-1)?.id||null});
+  const directoryInspector=createDirectoryInspector({frame:view.shell,api,getConversationId:()=>state.selected,getRunId:()=>state.runs.at(-1)?.id||null});
   let newPlanningExecutionMode=state.options.planningExecutionMode;
   const executionNotice=mount.ownerDocument.createElement('section');
   executionNotice.setAttribute('id','next-chat-execution-notice');

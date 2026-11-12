@@ -18,7 +18,7 @@ class SyntheticRuntime extends EventEmitter {
   async runAgent(o){
     const phase=phaseOf(o);this.calls.push({phase:phase?.label||'ordinary',delegate:o.dynamicTools?.some(t=>t.name==='relay_delegate')||false,hostOnly:o.hostOnlyTools===true,thread:o.threadId||null});
     assert.ok(this.calls.length<35,'Bounded synthetic turns only');
-    const output=phase?JSON.stringify(phase.label==='context-page'?{summary:'Synthetic prior evidence only.',refs:[]}:phase.label==='decompose'?{atomic:true}:phase.label==='integration'?{answer:'DIRECTORY_RENDERED_RESULT',used_refs:phase.payload.required_refs}:{finding:'Synthetic evidence only.',candidate_answer:'A bounded answer.',uncertainty:''}):'ORDINARY_RENDERED_RESULT';
+    const output=phase?JSON.stringify(phase.label==='context-page'?{summary:'Synthetic prior evidence only.',refs:[]}:phase.label==='decompose'?{atomic:true}:phase.label==='integration'?{answer:'DIRECTORY_RENDERED_RESULT',used_refs:phase.payload.required_refs}:{status:'complete',nextAction:'',finding:'Synthetic evidence only.',candidate_answer:'A bounded answer.',uncertainty:''}):'ORDINARY_RENDERED_RESULT';
     o.onEvent?.({type:'thread',threadId:'fixture-'+this.calls.length,turnId:'turn-'+this.calls.length,model:'fixture::remote'});
     o.onEvent?.({type:'message',itemId:'result-'+this.calls.length,text:output,phase:'final_answer'});
     return{output,threadId:'fixture-'+this.calls.length};

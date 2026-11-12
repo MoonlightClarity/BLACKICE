@@ -49,7 +49,7 @@ test('passing smoke tests trigger source correction, fresh host re-verification 
  const runtime={async runAgent(opts){
   const view=prompt(opts);phases.push(view.label);
   if(view.label==='decompose')return {output:JSON.stringify({atomic:true})};
-  if(view.label==='work')return {output:JSON.stringify({finding:'No validation implemented yet'})};
+  if(view.label==='work')return {output:JSON.stringify({status:'complete',nextAction:'',finding:'No validation implemented yet'})};
   if(view.label==='repository-review'){
    assert.equal(view.payload.trigger,'complex_contract_undercovered');
    assert.equal(view.payload.hostVerification.status,'passed');
@@ -61,7 +61,7 @@ test('passing smoke tests trigger source correction, fresh host re-verification 
     newText:'export function count(n){if(!Number.isSafeInteger(n)||n<0)throw new TypeError("count requires a nonnegative safe integer");return n;}'
    }});
    assert.equal(changed.success,true,JSON.stringify(changed));
-   return {output:JSON.stringify({finding:'Added boundary and input validation',uncertainty:'Host must recheck'})};
+   return {output:JSON.stringify({status:'complete',nextAction:'',finding:'Added boundary and input validation',uncertainty:'Host must recheck'})};
   }
   throw Error('No integration model call expected; got '+view.label);
  }};
@@ -102,9 +102,9 @@ test('review that does not change source preserves the original test receipt and
  const runtime={async runAgent(opts){
   const view=prompt(opts);phases.push(view.label);
   if(view.label==='decompose')return {output:'{"atomic":true}'};
-  if(view.label==='work')return {output:'{"finding":"No implementation change"}'};
+  if(view.label==='work')return {output:'{"status":"complete","nextAction":"","finding":"No implementation change"}'};
   if(view.label==='repository-review')return {output:JSON.stringify({
-   finding:'Observed missing validation but did not correct it',
+   status:'complete',nextAction:'',finding:'Observed missing validation but did not correct it',
    uncertainty:'Input rejection remains unverified'
   })};
   throw Error('Unexpected phase '+view.label);

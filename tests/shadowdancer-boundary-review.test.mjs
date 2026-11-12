@@ -67,7 +67,7 @@ test('Fresh Directory provider sessions namespace repeated call IDs, while same-
     results.push(await options.onToolCall(input));
     await assert.rejects(options.onToolCall({...input,arguments:{...input.arguments,text:'changed'}}),{code:'OPERATIONAL_CALL_ID_REUSED'});
     assert.deepEqual(input,original,'host namespace must not mutate provider-owned correlation');
-    return {output:'{"finding":"written"}'};
+    return {output:'{"status":"complete","nextAction":"","finding":"written"}'};
   }};
   const runner=await repoRunner(f,runtime);
   runner.repoToolHandler=(input,context)=>{seen.push(input.callId);return guarded(input,context);};
@@ -115,7 +115,7 @@ async function preparedUsageRun(t,usageForPhase){
     const tail=options.prompt.split('CURRENT_DIRECTORY:\n').at(-1);
     const phase=JSON.parse(tail.split('\nREPOSITORY ')[0]);phases.push(phase.label);
     const usage=usageForPhase(phase,options);
-    const value=phase.label==='decompose'?{atomic:true}:phase.label==='integration'?{answer:'Usage fixture final.',used_refs:phase.payload.required_refs}:{finding:'A bounded finding.',candidate_answer:'A bounded answer.',uncertainty:''};
+    const value=phase.label==='decompose'?{atomic:true}:phase.label==='integration'?{answer:'Usage fixture final.',used_refs:phase.payload.required_refs}:{status:'complete',nextAction:'',finding:'A bounded finding.',candidate_answer:'A bounded answer.',uncertainty:''};
     return {output:JSON.stringify(value),...(usage?{usage}:{})};
   }};
   const result=await runPreparedDirectoryAgent({runtime,

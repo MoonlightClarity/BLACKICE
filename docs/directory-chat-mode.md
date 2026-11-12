@@ -1,25 +1,39 @@
-# Directory reasoning in Chat
+# Directory execution and context
 
-The Chat composer stores Directory (Auto / On / Off) and Subagents (Default / On / Off) independently for each conversation.
+Directory has two conversation settings: **On** and **Off**. On uses Directory for the next response without requiring a command prefix. Off uses ordinary Chat. The choice applies to subsequent work, and remains independent from the Subagents setting.
 
-- Auto uses recursive directory reasoning only for /directory, @directory or @shadowdancer requests.
-- On uses it for the next response without a prefix.
-- Off uses ordinary Chat and rejects a conflicting Directory command rather than silently choosing a different mode.
-- Subagents Default follows application preferences. On and Off override that preference for this conversation, subject to existing capacity, local-model serialization and safety admission.
-- Changes apply to subsequent responses, never to admitted work. Draft preferences survive switching/reload; run preferences survive backend restart and Retry.
-- Explicit choice changes establish a fresh provider context and preserve earlier saved run/catalog bytes.
+## Execute the requested work
 
-Directory runs fresh model contexts for bounded decomposition, work and synthesis. Canonical source, module inputs, results, tool receipts and reference coverage remain on disk under the conversation's .shadowdancer directory. Exact host policies, identity preferences, agent instructions and user requests/directions remain separate from untrusted source data. Prior user authority is restored from the saved conversation lineage without ordinary display/excerpt truncation; missing, foreign or oversized history fails closed. Prior handoffs and attachment excerpts are imported as attributed, bounded evidence pages. Synthesis has no effectful tools and only the final aggregate answer is published.
+Directory separates planning, execution, extraction and synthesis. A saved directory is the starting context for a phase; it does not limit the files, websites or authorized actions the worker may inspect or perform through its attached tools. Host execution instructions are separate from attributed source material.
 
-All effects use the ordinary prepared Chat dispatcher. Independent retained-UNKNOWN fencing, native protected-context restrictions, read-only host policy, stop, static subagent admission, local capacity and final checks are unchanged. A fresh inference has its own stable host call identity, preventing cross-session provider-ID reuse. Per-phase usage is aggregated using reported token availability.
+A work result contains `status`, `nextAction`, `finding`, `candidate_answer` and `uncertainty`. The statuses are `complete`, `incomplete` and `blocked`. Incomplete work with an available next action continues within the same provider session before synthesis, preserving its tool history. Complete and blocked reports remain subject to the final outcome review. Repeated checkpoints without new observed work stop truthfully rather than claiming success.
 
-Supported release scope is one independently owned Chat agent. Shared/multi-agent workflows reject Directory before dispatch. Directory leaves remain serial; allowed independent worker batches may be delegated from writable work phases through the standard gate. This mode does not provide unrestricted parallel recursion.
+Dependent work receives actual saved tool receipts, including their complete contents, in addition to model findings. Synthesis can inspect evidence but cannot repeat operational effects. A response-only correction repairs the report without replaying completed work. A model answer, a successful tool call, and completion of the user's outcome are distinct observations.
 
-Repository requests must identify the current Chat workspace. Verification uses guarded host dispatch and a bounded, explicitly scoped regular-file inventory. Generated/dependency/metadata/context paths are excluded and recorded in receipts and the report. Enumeration overflow, unreadable included paths and links fail closed. Existing test changes cannot certify completion. User-provided claims or reference coverage alone are not factual verification.
+## Current conversation by default
 
-Authenticated conversation-scoped Context endpoints permit reviewing evidence and auditable restricted edits; historical finals remain preserved and stale. No top-level Context workspace or cross-conversation model Context tools are exposed.
+Saved Directory files belong to one conversation under `.shadowdancer/<conversationId>`. Its later runs share that conversation's current context. Automatic learning and memory-catalog admission also follow the conversation's run lineage; sharing a working folder does not import another conversation's notes. User profile settings and the currently authorized request remain available.
 
-Validation:
-- Production Engine tests cover mode transitions, restart, Retry, independent delegation, active directions, historical catalog preservation, source/attachment isolation, UNKNOWN/corrupt journals and protected native denials.
-- Mounted UI tests cover draft persistence and routing.
-- Optional rendered acceptance: set BLACKICE_DIRECTORY_BROWSER_QA=yes and BLACKICE_NEXT_BROWSER_PATH to an Edge binary, then run the pinned Node with --test tests/directory-chat-browser.test.mjs. The test uses disposable browser/data profiles, a deterministic provider and real app/backend routes. It makes no external application/provider requests.
+Other conversations are listed by metadata in the Context inspector. Selecting a conversation opens only that conversation's records. Nothing is imported merely by listing or inspecting another conversation.
+
+## Inspect, edit, delete and import
+
+The Context inspector is available from Chat and Planning. It groups conversation choices into the current conversation and other conversations, with Overview, Model turns, Context files and Changes views. Audit records and actual model phases have separate counters.
+
+Select a record to edit its authored fields or its JSON content. Saved changes use the opened revision hash, so a stale editor cannot overwrite a newer value. Generated records can be corrected by the user; edited derived results are no longer represented as independently verified. Removing a record deletes it from active context and records the removal. Context changes do not undo external effects or authorize repeating them.
+
+To use another conversation's context, select its record and choose **Import into current conversation**. The destination remains the conversation in which the inspector was opened. Import copies exactly the selected source revision and records its conversation, file and hash. Later edits or deletion affect the copied record, leaving the source conversation unchanged. Repeating the same import does not create a duplicate.
+
+User-managed revisions and explicit imports enter later Directory execution. Deletion markers prevent removed records from returning through a prior synthesized handoff. Runtime summary refreshes do not overwrite the user's saved corrections. The Changes view retains the history of these operations.
+
+## Use the model's available context
+
+Directory does not impose a fixed document, objective, result or context-record length. Each new phase starts with a fresh model context and reloads the complete records it needs. Full source documents, instructions, tool receipts, findings and final answers remain available; the application does not silently clip them to short excerpts.
+
+When the runtime reports both a default window and a larger supported maximum, Directory selects the maximum unless the conversation has an explicit window setting. It accounts for the runtime's effective-window percentage, output space, instructions and tool definitions. It partitions source material or groups synthesis only when the complete phase would exceed that actual capacity. An unknown model window does not acquire a substitute 128,000-token ceiling. The provider enforces its actual capacity until metadata becomes available.
+
+Long Directory messages are accepted through Chat, continuations and the direct connector. The inspector can edit full context documents. Tool and audit pagination affects how much is returned in one response; it does not discard the stored content or make later offsets inaccessible. Explicit user settings and real provider limits still apply.
+
+## Verification
+
+Tests cover actual work continuation, tool evidence preservation, unchanged-evidence stalls, current-conversation memory selection, explicit imports, edit/delete persistence, stale revision conflicts and UI conversation switching. Native rendered fixtures and live model acceptance are reported separately from deterministic source tests. No synthetic test establishes real employer submission counts or general job-search throughput.

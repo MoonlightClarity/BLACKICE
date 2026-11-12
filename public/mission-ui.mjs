@@ -175,7 +175,7 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
           <div id="conversation-compose-status" class="conversation-compose-status" hidden><span id="conversation-connection-progress" class="connection-progress-spinner" aria-hidden="true" hidden></span><span id="conversation-composer-status" class="conversation-composer-status" role="status" aria-live="polite" aria-atomic="true"></span><button id="conversation-status-action" type="button" hidden></button></div>
           <form id="mission-form" class="conversation-composer">
             <label for="mission-task" class="sr-only">Task or message</label>
-            <textarea id="mission-task" name="message" rows="2" maxlength="50000" required placeholder="Ask a question or assign a task…" aria-describedby="conversation-submit-hint" title="Ask a question or assign a task · drop files or paste a screenshot"></textarea>
+            <textarea id="mission-task" name="message" rows="2" required placeholder="Ask a question or assign a task…" aria-describedby="conversation-submit-hint" title="Ask a question or assign a task · drop files or paste a screenshot"></textarea>
             <div id="mission-attachments"></div>
             <div class="conversation-compose-settings" role="group" aria-label="Response settings">
               <label class="conversation-model-choice"><span>Model</span><select id="mission-model" aria-label="Model for next message"></select></label>
@@ -1197,7 +1197,8 @@ export function initMissionUI({ mount, getSnapshot, onStart, onQueue, onStopAll,
   }
   function applyPromptDraft(capture, text) {
     const error = promptOwnership(capture); if (error) return { applied: false, error };
-    if (typeof text !== 'string' || !text.trim() || text.length > 50000) return { applied: false, error: 'Use a message between 1 and 50,000 characters.' };
+    if (typeof text !== 'string' || !text.trim()) return { applied: false, error: 'Enter a message first.' };
+    if (text.length > 50000 && !/^\s*(?:@directory|\/directory|@shadowdancer)\s+/i.test(text)) return { applied: false, error: 'Use a message of at most 50,000 characters, or use /directory for a longer task.' };
     const before = draft().task; promptDraftVersion++; delete draft().pendingSend; draft().task = text; $('#mission-task').value = text;
     if (state.key === NEW) { state.forceNew = true; remember(); }
     persist(); promptUndo = { key: state.key, before, after: text, capture: capturePromptDraft() }; update(); autoSize(); setWorkbenchView('conversation', { focusComposer: true });

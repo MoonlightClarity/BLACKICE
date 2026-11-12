@@ -30,11 +30,11 @@ test('failed verification reopens scoped repair, reruns tests, preserves audit a
    const view=readPrompt(opts);
    seen.push(view.label);
    if(view.label==='decompose')return {output:JSON.stringify({atomic:true,reason:'One source edit'})};
-   if(view.label==='work')return {output:JSON.stringify({finding:'Work attempted; score is not yet correct',candidate_answer:'Need host tests',uncertainty:'unverified'})};
+   if(view.label==='work')return {output:JSON.stringify({status:'complete',nextAction:'',finding:'Work attempted; score is not yet correct',candidate_answer:'Need host tests',uncertainty:'unverified'})};
    if(view.label==='repair'){
      const patch=await opts.onToolCall({name:'relay_workspace',arguments:{action:'patch',path:'src/logic.mjs',oldText:'return 0;',newText:'return 42;'}});
      assert.equal(patch.success,true,JSON.stringify(patch));
-     return {output:JSON.stringify({finding:'Changed src/logic.mjs to return 42',candidate_answer:'Host must rerun tests'})};
+     return {output:JSON.stringify({status:'complete',nextAction:'',finding:'Changed src/logic.mjs to return 42',candidate_answer:'Host must rerun tests'})};
    }
    if(view.label==='integration'){
      return {output:JSON.stringify({answer:'score now returns 42; host verification evidence is available',
@@ -77,8 +77,8 @@ test('repair that makes no progress stops and remains explicitly incomplete',asy
  const runtime={async runAgent(opts){
   const p=readPrompt(opts);calls.push(p.label);
   if(p.label==='decompose')return {output:JSON.stringify({atomic:true})};
-  if(p.label==='work')return {output:JSON.stringify({finding:'Not repaired'})};
-  if(p.label==='repair')return {output:JSON.stringify({finding:'No file changed'})};
+  if(p.label==='work')return {output:JSON.stringify({status:'complete',nextAction:'',finding:'Not repaired'})};
+  if(p.label==='repair')return {output:JSON.stringify({status:'complete',nextAction:'',finding:'No file changed'})};
   if(p.label==='integration')return {output:JSON.stringify({answer:'Everything is correct',used_refs:['module:1','repair:1','verification:final']})};
   throw Error('Unexpected '+p.label);
  }};
@@ -95,33 +95,21 @@ test('repair that makes no progress stops and remains explicitly incomplete',asy
  assert.equal(result.testsFailed,1);
  assert.match(await readFile(path.join(repo,'src','logic.mjs'),'utf8'),/return 0/);
 });
-test('every large context page is saved and visited in fresh model calls, not silently sliced',async t=>{
+test('a fresh phase retains its full payload without artificial page summaries',async t=>{
  const cwd=await mkdtemp(path.join(os.tmpdir(),'sd-context-pages-'));t.after(()=>rm(cwd,{recursive:true,force:true}));
- const visits=[];
+ const blob='A'.repeat(16000)+'COMPLETE_PAYLOAD_TAIL',visits=[];
  const runtime={async runAgent(opts){
   const view=readPrompt(opts);visits.push(view.label);
-  if(view.label==='context-page'){
-   return {output:JSON.stringify({summary:'Page '+view.payload.page+' read',
-     refs:['P'+view.payload.page]})};
-  }
-  if(view.label==='integration'){
-   assert.equal(view.allPagesVisited,true);
-   assert.equal(view.pages.length,4);
-   assert.ok(view.pages.some(p=>p.summary==='Page 4 read'));
-   return {output:JSON.stringify({answer:'All pages visited',used_refs:[]})};
-  }
-  throw Error('Unexpected phase');
+  assert.equal(view.payload.blob,blob);
+  return {output:JSON.stringify({answer:'Full payload retained',used_refs:[]})};
  }};
- const engine=new ShadowdancerDirectory({cwd,conversationId:'pages',runId:'pages-run',model:'gpt-6-luna',runtime,limits:{maxContextPages:8}});
+ const engine=new ShadowdancerDirectory({cwd,conversationId:'pages',runId:'pages-run',model:'gpt-6-luna',runtime});
  await engine.open();
- const response=await engine.infer('integration','integration/index',{blob:'A'.repeat(16000),instructions:'Check every page'},{maxChars:9000});
- assert.ok(response.output.includes('All pages visited'));
- assert.equal(engine.stats.contextPages,4);
- assert.deepEqual(visits,['context-page','context-page','context-page','context-page','integration']);
+ const response=await engine.infer('integration','integration/index',{blob,instructions:'Read the full payload'});
+ assert.ok(response.output.includes('Full payload retained'));
+ assert.deepEqual(visits,['integration']);
  const original=JSON.parse(await readFile(path.join(cwd,'.shadowdancer','pages','runs','pages-run','integration','index','input.json'),'utf8'));
- assert.equal(original.payload.blob.length,16000);
- const pages=await readdir(path.join(cwd,'.shadowdancer','pages','runs','pages-run','integration','index','context-pages'));
- assert.equal(pages.length,4);
+ assert.equal(original.payload.blob,blob);
 });
 test('host source/test receipts suppress contradictory model narration but preserve it for audit',async t=>{
  const {cwd,repo}=await fixture(t);
@@ -133,7 +121,7 @@ test('host source/test receipts suppress contradictory model narration but prese
      action:'patch',path:'src/logic.mjs',oldText:'return 0;',newText:'return 42;'
    }});
    assert.equal(patch.success,true);
-   return {output:JSON.stringify({finding:'Fixed the source'})};
+   return {output:JSON.stringify({status:'complete',nextAction:'',finding:'Fixed the source'})};
   }
   if(view.label==='integration')return {output:JSON.stringify({
     answer:'No repository changes were made. I could not run the tests.',
@@ -169,7 +157,7 @@ test('repository synthesis has no tools and unrecognized model test claims stay 
     action:'patch',path:'src/logic.mjs',oldText:'return 0;',newText:'return 42;'
    }});
    assert.equal(patch.success,true,JSON.stringify(patch));
-   return {output:JSON.stringify({finding:'Source updated'})};
+   return {output:JSON.stringify({status:'complete',nextAction:'',finding:'Source updated'})};
   }
   if(view.label==='integration'){
    assert.equal(opts.sandbox,'read-only','synthesis must not inherit write sandbox');
@@ -205,7 +193,7 @@ test('two repair rounds supersede older failed findings before mandatory final s
  const runtime={async runAgent(opts){
   const v=readPrompt(opts);
   if(v.label==='decompose')return {output:JSON.stringify({atomic:true})};
-  if(v.label==='work')return {output:JSON.stringify({finding:'Code not yet corrected'})};
+  if(v.label==='work')return {output:JSON.stringify({status:'complete',nextAction:'',finding:'Code not yet corrected'})};
   if(v.label==='repair'){
    attempted++;
    const was=attempted===1?'return 0;':'return 41;';
@@ -214,7 +202,7 @@ test('two repair rounds supersede older failed findings before mandatory final s
      action:'patch',path:'src/logic.mjs',oldText:was,newText:next
    }});
    assert.equal(patch.success,true,JSON.stringify(patch));
-   return {output:JSON.stringify({finding:'Patched score to '+(attempted===1?41:42)})};
+   return {output:JSON.stringify({status:'complete',nextAction:'',finding:'Patched score to '+(attempted===1?41:42)})};
   }
   if(v.label==='integration'){
    assert.deepEqual(v.payload.required_refs,['repair:2','verification:final']);
@@ -253,7 +241,7 @@ test('changing existing tests to force a pass is detected and cannot certify com
      oldText:'assert.equal(score(),42)',newText:'assert.equal(score(),0)'
    }});
    assert.equal(patch.success,true,JSON.stringify(patch));
-   return {output:JSON.stringify({finding:'Changed test expectation only'})};
+   return {output:JSON.stringify({status:'complete',nextAction:'',finding:'Changed test expectation only'})};
   }
   if(v.label==='integration'){
    return {output:JSON.stringify({answer:'Everything passes',used_refs:['module:1','verification:final']})};
@@ -292,7 +280,7 @@ test('an explicit repository coverage map is checked against the real test recei
        action:'patch',path:'src/logic.mjs',oldText:'return 0;',newText:'return 42;'
      }});
      assert.equal(changed.success,true);
-     return {output:JSON.stringify({finding:'Updated score implementation'})};
+     return {output:JSON.stringify({status:'complete',nextAction:'',finding:'Updated score implementation'})};
    }
    if(v.label==='integration')return {output:JSON.stringify({
      answer:'Score returns 42',used_refs:['module:1','verification:final']
@@ -318,13 +306,14 @@ test('an explicit repository coverage map is checked against the real test recei
  assert.equal(final.testIntegrityStatus,'baseline_preserved');
  assert.ok(final.unknownRequirements>0);
 });
-test('a context exceeding the page limit fails closed and preserves full input',async t=>{
+test('unknown model capacity is delegated to the provider with complete input preserved',async t=>{
  const cwd=await mkdtemp(path.join(os.tmpdir(),'sd-overflow-'));t.after(()=>rm(cwd,{recursive:true,force:true}));
- let calls=0;const runtime={async runAgent(){calls++;return {output:'{}'}}};
- const engine=new ShadowdancerDirectory({cwd,conversationId:'limits',runId:'limits-run',model:'gpt-6-luna',runtime,limits:{maxContextPages:2}});
+ const blob='z'.repeat(200000)+'INPUT_TAIL';
+ let calls=0;const runtime={async runAgent(options){calls++;assert.equal(readPrompt(options).payload.blob,blob);return {output:'{}'}}};
+ const engine=new ShadowdancerDirectory({cwd,conversationId:'limits',runId:'limits-run',model:'gpt-6-luna',runtime});
  await engine.open();
- await assert.rejects(()=>engine.infer('integration','part',{blob:'z'.repeat(20000)},{maxChars:4000}),{code:'DIRECTORY_CONTEXT_PAGE_LIMIT'});
- assert.equal(calls,0);
+ await engine.infer('integration','part',{blob});
+ assert.equal(calls,1);
  const input=JSON.parse(await readFile(path.join(cwd,'.shadowdancer','limits','runs','limits-run','part','input.json'),'utf8'));
- assert.equal(input.payload.blob.length,20000);
+ assert.equal(input.payload.blob,blob);
 });

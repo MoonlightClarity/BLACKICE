@@ -31,7 +31,7 @@ const tree=()=>({atomic:false,steps:[
 ]});
 async function initialModules(f){
  const runtime=scripted([tree(),{atomic:true},{atomic:true},
-  {finding:'A original'},{finding:'B original'},
+  {status:'complete',nextAction:'',finding:'A original'},{status:'complete',nextAction:'',finding:'B original'},
   integration('A and B computed',['module:1.1','module:1.2'])]);
  const runner=new ShadowdancerDirectory({...f,runId:f.sourceRunId,model:'remote::test',runtime});
  const completed=await runner.run('/directory Prepare A then compute B using A.');
@@ -65,7 +65,7 @@ test('editing one module result reuses it and reruns only declared dependent wor
    assert.equal(view.label,'work');
    assert.equal(view.payload.objective,'Use the A result to prepare B');
    assert.ok(view.payload.imports.some(x=>x.ref==='module:1.1'&&x.finding==='A corrected by user'));
-   return {finding:'B recomputed from corrected A'};
+   return {status:'complete',nextAction:'',finding:'B recomputed from corrected A'};
   },
   view=>{
    assert.equal(view.label,'integration');
@@ -104,6 +104,7 @@ test('changed source page is re-extracted and unchanged source page result is re
   integration('ALPHA17 and BETA29',['page:1','page:2'])
  ]);
  const older=new ShadowdancerDirectory({...f,runId:f.sourceRunId,model:'remote::test',runtime:original});
+ older.sourceChunks=async text=>[text.slice(0,1150),text.slice(1150)];
  await older.run('/directory List all markers.\nSOURCE:\n'+source);
  const sourceFile='runs/original-run/sources/page-0002/source.json';
  const prior=await readShadowdancerFile({...f,file:sourceFile});
@@ -146,12 +147,12 @@ test('a conversation-summary edit invalidates every work package',async t=>{
   view=>{
    assert.equal(view.label,'work');
    assert.match(JSON.stringify(view.payload.contextImport),/User corrected/);
-   return {finding:'A revised'};
+   return {status:'complete',nextAction:'',finding:'A revised'};
   },
   view=>{
    assert.equal(view.label,'work');
    assert.equal(view.payload.imports?.[0]?.finding,'A revised');
-   return {finding:'B revised'};
+   return {status:'complete',nextAction:'',finding:'B revised'};
   },
   integration('A revised and B revised',['module:1.1','module:1.2'])
  ]);
@@ -174,7 +175,7 @@ test('multiple audited edits preserve an upstream override but recompute its dep
   view=>{
    assert.equal(view.label,'work');
    assert.ok(view.payload.imports.some(x=>x.finding==='A first edit'));
-   return {finding:'B recomputed after both edits'};
+   return {status:'complete',nextAction:'',finding:'B recomputed after both edits'};
   },
   integration('Current A and recomputed B',['module:1.1','module:1.2'])
  ]);

@@ -74,6 +74,16 @@ function mountMission(f, snapshot, callbacks = {}) {
 
 const menuEvent = (target, extra = {}) => ({ target, preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; }, ...extra });
 
+test('a large Directory draft keeps its full context and mode prefix through the legacy queue composer', async t => {
+  const f=missionFixture(t,savedDrafts('')),snapshot=statusSnapshot([fixtureRun('busy-long-context')]),h=mountMission(f,snapshot);
+  f.cleanup(()=>h.ui.destroy());await turn();await h.action('new-task');
+  const task='/directory '+ 'Context for the queued task. '.repeat(22000)+'END_OF_QUEUED_CONTEXT';
+  assert.ok(task.length>500000);
+  const applied=h.ui.applyPromptDraft(h.ui.capturePromptDraft(),task);
+  assert.equal(applied.applied,true);assert.equal(f.element('#mission-task').value,task);assert.equal(h.ui.getRequestDraft().task,task);
+  await h.submit();assert.equal(h.queued.length,1);assert.equal(h.queued[0].task,task);assert.equal(h.starts.length,0);
+});
+
 test('live answers use fast escaped text, then full Markdown once the response settles', async t => {
   const run = fixtureRun('stream-paint'), f = missionFixture(t, savedDrafts(''));
   run.events.push({ nodeId: 'agent', at: '2026-10-16T10:01:00Z',

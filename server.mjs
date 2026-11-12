@@ -954,14 +954,14 @@ export async function createHarnessServer(options = {}) {
       const attachmentMatch = pathname.match(/^\/api\/attachments\/(file_[a-zA-Z0-9_-]+)$/);
       if (attachmentMatch && req.method === 'GET') return json(res, 200, await attachments.get(attachmentMatch[1]));
       if (pathname === '/api/inbox' && req.method === 'GET') return json(res, 200, inbox.snapshot({ cwd: new URL(req.url, `http://${host}`).searchParams.get('cwd') || undefined }));
-      if (pathname === '/api/inbox' && req.method === 'POST') { const value = await body(req); attachments.validateIds(value.attachmentIds || []); return json(res, 201, await inbox.add(value)); }
-      if (pathname === '/api/inbox/queue' && req.method === 'POST') { const value = await body(req); attachments.validateIds(value.attachmentIds || []); return json(res, 201, await inbox.queue(value)); }
+      if (pathname === '/api/inbox' && req.method === 'POST') { const value = await body(req,Infinity); attachments.validateIds(value.attachmentIds || []); return json(res, 201, await inbox.add(value)); }
+      if (pathname === '/api/inbox/queue' && req.method === 'POST') { const value = await body(req,Infinity); attachments.validateIds(value.attachmentIds || []); return json(res, 201, await inbox.queue(value)); }
       if (pathname === '/api/inbox/settings' && req.method === 'POST') return json(res, 200, await inbox.configure(await body(req)));
       if (pathname === '/api/inbox/pause' && req.method === 'POST') { const value = await body(req); return json(res, 200, await inbox.pause(value.reason || 'Paused by you.')); }
       if (pathname === '/api/inbox/resume' && req.method === 'POST') { await body(req); return json(res, 200, await inbox.resume()); }
       if (pathname === '/api/inbox/reorder' && req.method === 'POST') { const value = await body(req); return json(res, 200, await inbox.reorder(value.ids)); }
       const inboxMatch = pathname.match(/^\/api\/inbox\/([a-zA-Z0-9_-]+)(?:\/(run|retry|restore))?$/);
-      if (inboxMatch && ['PUT','PATCH'].includes(req.method) && !inboxMatch[2]) { const value = await body(req); if (value.attachmentIds) attachments.validateIds(value.attachmentIds); return json(res, 200, await inbox.update(inboxMatch[1], value)); }
+      if (inboxMatch && ['PUT','PATCH'].includes(req.method) && !inboxMatch[2]) { const value = await body(req,Infinity); if (value.attachmentIds) attachments.validateIds(value.attachmentIds); return json(res, 200, await inbox.update(inboxMatch[1], value)); }
       if (inboxMatch && req.method === 'DELETE' && !inboxMatch[2]) { await body(req); return json(res, 200, await inbox.remove(inboxMatch[1])); }
       if (inboxMatch?.[2] && req.method === 'POST') { await body(req); return json(res, 200, inboxMatch[2] === 'run' ? await inbox.runNow(inboxMatch[1]) : inboxMatch[2] === 'retry' ? await inbox.retry(inboxMatch[1]) : await inbox.restore(inboxMatch[1])); }
       const taskMethodMatch = pathname.match(/^\/api\/tasks\/([a-zA-Z0-9_-]+)\/(method-draft|method)$/);
@@ -1253,7 +1253,7 @@ export async function createHarnessServer(options = {}) {
       if (workflowMatch && req.method === 'GET') { const w = engine.getWorkflow(workflowMatch[1]); return json(res, w ? 200 : 404, w || { error: 'Workflow not found.' }); }
       if (workflowMatch && req.method === 'DELETE') { await body(req); await engine.deleteWorkflow(workflowMatch[1]); return json(res, 200, { ok: true }); }
       if (pathname === '/api/runs' && req.method === 'GET') return json(res, 200, engine.listRuns());
-      if (pathname === '/api/runs' && req.method === 'POST') { const value=await body(req);assertExecutablePlanningMode(value?.planningExecutionMode);assertExecutablePlanningMode(value?.input?.planningExecutionMode);assertExecutablePlanningMode(value?.workflow?.settings?.planningExecutionMode);await recoverClientRequest(value);return json(res,201,engine.startRun(value)); }
+      if (pathname === '/api/runs' && req.method === 'POST') { const value=await body(req,Infinity);assertExecutablePlanningMode(value?.planningExecutionMode);assertExecutablePlanningMode(value?.input?.planningExecutionMode);assertExecutablePlanningMode(value?.workflow?.settings?.planningExecutionMode);await recoverClientRequest(value);return json(res,201,engine.startRun(value)); }
       if(pathname==='/api/runs/stop-all'&&req.method==='POST'){
         await body(req);
         // Invoke every stop independently, even if one adapter throws synchronously.
@@ -1274,7 +1274,7 @@ export async function createHarnessServer(options = {}) {
       const runMatch = pathname.match(/^\/api\/runs\/([a-zA-Z0-9_-]+)(\/(?:cancel|retry|continue|steer|compact))?$/);
       if (runMatch && req.method === 'GET' && !runMatch[2]) return json(res, 200, await conversations.get(runMatch[1]));
       if (runMatch?.[2] && req.method === 'POST') {
-        const value = await body(req);
+        const value = await body(req,['/continue','/steer'].includes(runMatch[2])?Infinity:undefined);
         if(runMatch[2]==='/continue'){assertExecutablePlanningMode(value.planningExecutionMode);await recoverClientRequest(value);}
         if (runMatch[2] === '/compact') {const family=await conversations.family(runMatch[1]);return json(res,200,await engine.compactRun(runMatch[1],value,{historyRuns:family.runs}));}
         if(['/continue','/retry'].includes(runMatch[2])&&!engine.runs.has(runMatch[1]))engine.restoreArchivedRun(await conversations.get(runMatch[1]));

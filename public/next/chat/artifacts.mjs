@@ -1,3 +1,5 @@
+import { createApi } from '../core/api.mjs';
+
 /** On-demand artifact preview. Saved bytes are verified by the existing task
  * endpoint; only a selected artifact is fetched. The dialog owns each read.
  */
@@ -65,148 +67,324 @@ export function createArtifactViewer({mount,api,notify=()=>{}}={}){
   return {open,cancel,destroy(){cancel();dialog.remove();}};
 }
 
-/** Read-only inspector for the exact saved Directory evidence of a Chat run. */
-export function createDirectoryInspector({frame,getRunId}) {
+/** Conversation-scoped Directory context. Other conversations are discovered as
+ * metadata; their files are read only after the user selects that conversation.
+ */
+let directoryInspectorSequence=0;
+export function createDirectoryInspector({frame,getRunId,getConversationId=()=>null,api=createApi()}) {
   const doc=frame.ownerDocument;
   const make=(tag,cls,text='')=>{const el=doc.createElement(tag);if(cls)el.className=cls;if(text)el.textContent=text;return el;};
+  const button=(cls,text,action)=>{const el=make('button',cls,text);el.setAttribute('type','button');if(action)el.addEventListener('click',action);return el;};
   const actions=frame.querySelector('.next-chat-head-actions')||frame.querySelector('.pb-header-actions');
-  const launch=make('button','next-directory-open','Directory Context');
-  launch.type='button';launch.hidden=true;launch.title='Inspect Directory model calls, saved turns and exact context files';
+  const launch=button('next-directory-open','Directory Context',()=>open());
+  launch.hidden=true;launch.title='View, edit, delete and import conversation context';
   actions?.insertBefore(launch,actions.querySelector('#next-chat-stop'));
   const dialog=make('dialog','next-directory-inspector');
-  dialog.setAttribute('aria-labelledby','next-directory-title');
   const head=make('header','next-directory-head');
-  const title=make('h2','', 'Directory Context · audit');
-  title.id='next-directory-title';
-  const close=make('button','next-directory-close','Close');close.type='button';
-  close.addEventListener('click',()=>dialog.close());head.append(title,close);
-  const status=make('p','next-directory-status','Select a saved Directory run.');
-  status.setAttribute('role','status');
-  const tabs=make('nav','next-directory-tabs');tabs.setAttribute('role','tablist');
+  const title=make('h2','', 'Directory context');title.id='next-directory-title-'+(++directoryInspectorSequence);
+  dialog.setAttribute('aria-labelledby',title.id);
+  const close=button('next-directory-close','Close',()=>dialog.close());head.append(title,close);
+  const scope=make('section','next-directory-scope');
+  const conversationLabel=make('label','next-directory-conversation-label','Conversation');
+  const conversationSelect=make('select','next-directory-conversation');conversationSelect.setAttribute('aria-label','Context conversation');
+  conversationLabel.append(conversationSelect);
+  const scopeInfo=make('div','next-directory-scope-info');
+  const scopeBadge=make('strong','next-directory-scope-badge','Current conversation');
+  const scopeHelp=make('p','next-directory-scope-help','Directory uses the context of this conversation.');
+  const returnButton=button('next-directory-return','Back to current conversation',()=>loadConversation(originId));returnButton.hidden=true;
+  scopeInfo.append(scopeBadge,scopeHelp,returnButton);scope.append(conversationLabel,scopeInfo);
+  const status=make('p','next-directory-status','Select a saved conversation.');status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+  const tabs=make('nav','next-directory-tabs');tabs.setAttribute('aria-label','Context views');
   const tabButtons=new Map();
-  for(const [id,label] of [['overview','Overview'],['turns','Model turns'],['files','Context files']]){
-    const b=make('button','',label);b.type='button';b.setAttribute('role','tab');
-    b.addEventListener('click',()=>selectTab(id));tabs.append(b);tabButtons.set(id,b);
+  for(const [id,label] of [['overview','Overview'],['files','Context files'],['turns','Model turns'],['history','Changes']]){
+    const b=button('',label,()=>selectTab(id));b.dataset.contextTab=id;b.setAttribute('aria-pressed',String(id==='overview'));tabs.append(b);tabButtons.set(id,b);
   }
   const split=make('div','next-directory-split');
   const rail=make('aside','next-directory-rail');
-  const filter=make('input','next-directory-filter');filter.type='search';filter.placeholder='Filter saved records';filter.setAttribute('aria-label','Filter saved Directory records');
-  const records=make('div','next-directory-records');rail.append(filter,records);
-  const viewer=make('section','next-directory-viewer');
+  const groupTitle=make('strong','next-directory-group-title','Current conversation');
+  const filter=make('input','next-directory-filter');filter.setAttribute('type','search');filter.placeholder='Filter this conversation';filter.setAttribute('aria-label','Filter saved context records');
+  const records=make('div','next-directory-records');
+  const historyMore=button('next-directory-history-more','Load older changes',()=>loadHistory(true));historyMore.hidden=true;rail.append(groupTitle,filter,records,historyMore);
+  const viewer=make('section','next-directory-viewer');viewer.setAttribute('aria-label','Selected context record');
   const fileLabel=make('strong','next-directory-file-label','Overview');
-  const contents=make('textarea','next-directory-contents');
-  contents.readOnly=true;contents.spellcheck=false;contents.setAttribute('aria-label','Read-only saved Directory evidence');
-  viewer.append(fileLabel,contents);split.append(rail,viewer);
-  dialog.append(head,status,tabs,split);frame.append(dialog);
+  const fileNote=make('p','next-directory-file-note');
+  const contents=make('textarea','next-directory-contents');contents.readOnly=true;contents.spellcheck=false;contents.setAttribute('aria-label','Saved context JSON');
+  const generated=make('details','next-directory-generated');generated.hidden=true;
+  generated.append(make('summary','','Latest generated record'));
+  const generatedContents=make('textarea','next-directory-contents next-directory-generated-contents');generatedContents.readOnly=true;generatedContents.spellcheck=false;generatedContents.setAttribute('aria-label','Generated context JSON');generated.append(generatedContents);
+  const recordActions=make('div','next-directory-record-actions');
+  const editButton=button('next-directory-edit','Edit context',()=>beginEdit('fields'));
+  const editJSONButton=button('next-directory-edit-json','Edit full JSON',()=>beginEdit('json'));
+  const deleteButton=button('next-directory-delete','Delete context',()=>removeSelected());
+  const importButton=button('next-directory-import','Import into current conversation',()=>importSelected());
+  recordActions.append(editButton,editJSONButton,deleteButton,importButton);recordActions.hidden=true;
+  const editPanel=make('section','next-directory-edit-panel');editPanel.hidden=true;
+  const editHint=make('p','next-directory-edit-hint');
+  const editFields=make('div','next-directory-edit-fields');
+  const reasonLabel=make('label','next-directory-reason-label','Note (optional)');
+  const reason=make('input','next-directory-reason');reason.setAttribute('type','text');reason.setAttribute('aria-label','Context change note');reason.maxLength=500;reasonLabel.append(reason);
+  const editActions=make('div','next-directory-edit-actions');
+  const saveButton=button('next-directory-save','Save changes',()=>saveEdit());
+  const cancelButton=button('next-directory-cancel','Cancel edit',()=>cancelEdit());editActions.append(saveButton,cancelButton);
+  editPanel.append(editHint,editFields,reasonLabel,editActions);
+  viewer.append(fileLabel,fileNote,contents,recordActions,editPanel,generated);split.append(rail,viewer);
+  dialog.append(head,scope,status,tabs,split);frame.append(dialog);
   const style=make('style','');
   style.textContent=`
-    .next-directory-inspector{color:#e8edf5;background:#161c27;border:1px solid #465166;border-radius:14px;padding:0;width:min(1080px,94vw);max-width:94vw;max-height:90vh;box-shadow:0 25px 90px #0008}
+    .next-directory-inspector{color:#e8edf5;background:#161c27;border:1px solid #465166;border-radius:14px;padding:0;width:min(1120px,94vw);max-width:94vw;max-height:92vh;overflow:auto;box-shadow:0 25px 90px #0008}
     .next-directory-inspector::backdrop{background:#000b}
+    .next-directory-inspector [hidden]{display:none!important}
     .next-directory-head{display:flex;align-items:center;justify-content:space-between;padding:15px 20px;border-bottom:1px solid #344054}
     .next-directory-head h2{font-size:17px;margin:0}
     .next-directory-inspector button{color:inherit;background:#243247;border:1px solid #40526c;border-radius:7px;padding:7px 11px;cursor:pointer}
-    .next-directory-inspector button:hover{background:#30435e}
-    .next-directory-status{margin:10px 20px;font-size:13px;color:#bec9d8;white-space:pre-wrap}
-    .next-directory-tabs{display:flex;gap:8px;padding:0 20px 10px}
-    .next-directory-tabs button[aria-selected=true]{background:#3c526f;border-color:#8098b6}
-    .next-directory-split{display:grid;grid-template-columns:minmax(200px,35%) minmax(0,1fr);gap:12px;padding:0 20px 20px;min-height:300px}
+    .next-directory-inspector button:hover:enabled{background:#30435e}
+    .next-directory-inspector button:disabled{opacity:.55;cursor:default}
+    .next-directory-inspector button:focus-visible,.next-directory-inspector select:focus-visible,.next-directory-inspector input:focus-visible,.next-directory-inspector textarea:focus-visible{outline:2px solid #b2ceff;outline-offset:2px}
+    .next-directory-scope{display:grid;grid-template-columns:minmax(180px,40%) minmax(0,1fr);gap:18px;padding:16px 20px 8px}
+    .next-directory-conversation-label,.next-directory-reason-label,.next-directory-field-label{display:flex;flex-direction:column;gap:6px;min-width:0;font-size:12px;color:#cdd7e5}
+    .next-directory-conversation,.next-directory-filter,.next-directory-reason{box-sizing:border-box;width:100%;padding:9px;background:#101723;color:#e8edf5;border:1px solid #445166;border-radius:7px;min-width:0}
+    .next-directory-scope-badge{font-size:13px;color:#d6e6ff}
+    .next-directory-scope-help,.next-directory-file-note,.next-directory-edit-hint{margin:5px 0;font-size:12px;line-height:1.5;color:#bec9d8;overflow-wrap:anywhere}
+    .next-directory-return{font-size:12px;margin-top:3px}
+    .next-directory-status{margin:8px 20px 12px;font-size:13px;color:#bec9d8;white-space:pre-wrap;overflow-wrap:anywhere}
+    .next-directory-tabs{display:flex;gap:8px;flex-wrap:wrap;padding:0 20px 12px}
+    .next-directory-tabs button[aria-pressed=true]{background:#3c526f;border-color:#8098b6}
+    .next-directory-split{display:grid;grid-template-columns:minmax(200px,34%) minmax(0,1fr);gap:16px;padding:0 20px 20px;min-height:300px}
     .next-directory-rail{display:flex;flex-direction:column;gap:8px;min-width:0}
-    .next-directory-filter{padding:9px;background:#101723;color:inherit;border:1px solid #445166;border-radius:7px}
-    .next-directory-records{display:flex;flex-direction:column;gap:5px;overflow:auto;max-height:55vh}
+    .next-directory-group-title{font-size:13px;overflow-wrap:anywhere}
+    .next-directory-records{display:flex;flex-direction:column;gap:5px;overflow:auto;max-height:53vh}
     .next-directory-records button{text-align:left;overflow-wrap:anywhere;font-size:12px}
+    .next-directory-records button[aria-current=true]{background:#3c526f;border-color:#8098b6}
+    .next-directory-record-group{margin:10px 0 3px;font-size:11px;color:#9eafc6;overflow-wrap:anywhere}
     .next-directory-viewer{display:flex;flex-direction:column;gap:8px;min-width:0}
     .next-directory-file-label{font-size:12px;overflow-wrap:anywhere}
-    .next-directory-contents{box-sizing:border-box;width:100%;min-height:300px;height:55vh;resize:vertical;background:#0b1220;color:#dce5f3;border:1px solid #42516a;border-radius:7px;padding:12px;font:12px/1.5 ui-monospace,Consolas,monospace}
-    @media(max-width:700px){.next-directory-split{grid-template-columns:1fr}.next-directory-records{max-height:180px}.next-directory-contents{height:35vh}}
+    .next-directory-contents,.next-directory-field{box-sizing:border-box;width:100%;resize:vertical;background:#0b1220;color:#dce5f3;border:1px solid #42516a;border-radius:7px;padding:12px;font:12px/1.5 ui-monospace,Consolas,monospace}
+    .next-directory-contents{min-height:220px;height:42vh}
+    .next-directory-field{min-height:100px;max-height:40vh}
+    .next-directory-contents:not([readonly]),.next-directory-field{border-color:#8098b6}
+    .next-directory-record-actions,.next-directory-edit-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .next-directory-inspector .next-directory-delete{color:#ffd2d2;border-color:#805b64}
+    .next-directory-inspector .next-directory-save,.next-directory-inspector .next-directory-import{background:#304e75;border-color:#6d91c0}
+    .next-directory-edit-panel,.next-directory-edit-fields{display:flex;flex-direction:column;gap:12px}
+    .next-directory-generated{font-size:12px;color:#bec9d8;margin-top:4px}
+    .next-directory-generated summary{cursor:pointer;padding:6px 0}
+    .next-directory-generated-contents{height:26vh;margin-top:6px}
+    @media(max-width:700px){.next-directory-scope,.next-directory-split{grid-template-columns:1fr}.next-directory-scope{gap:10px}.next-directory-records{max-height:180px}.next-directory-contents{height:33vh}.next-directory-tabs,.next-directory-split,.next-directory-scope{padding-left:12px;padding-right:12px}}
   `;
   frame.append(style);
-  let currentId='', currentTab='overview', files=[],turns=[],summary={};
+  let originId='',originScope='',originConversationId='',currentId='',currentConversationId='',currentTab='overview';
+  let files=[],turns=[],summary={},contextSummary={},catalog=[],history=null,selected=null,editing=null,fieldEditors=[];
+  let generation=0,fileGeneration=0,catalogGeneration=0,busy=false,destroyed=false,historyLoading=false,historyTotal=0,historyNextOffset=null;
   const modelLabels=new Set(['decompose','context-page','work','repair','integration','extract-page','page-extract','repository-review']);
   const requestURL=(suffix,runId,file)=>'/api/shadowdancer/context'+suffix+'?runId='+encodeURIComponent(runId)+(file?'&file='+encodeURIComponent(file):'');
-  const getJSON=async url=>{const response=await fetch(url,{credentials:'same-origin'});const value=await response.json();if(!response.ok)throw Error(value.error||'Directory context could not be inspected.');return value;};
-  const display=(name,value)=>{fileLabel.textContent=name;contents.value=typeof value==='string'?value:JSON.stringify(value,null,2);contents.scrollTop=0;};
-  async function readFile(file){
-    const id=currentId;display(file,'Loading recorded file…');
-    try{const value=await getJSON(requestURL('/file',id,file));if(id===currentId)display(file,value.value);}
-    catch(error){if(id===currentId)display(file,'Read failed: '+error.message);}
+  const belongsToCurrent=()=>currentId===originId||Boolean(currentConversationId&&currentConversationId===originConversationId);
+  const conversationTitle=id=>catalog.find(row=>row.runId===id||row.conversationId===id||(id===originId&&row.current))?.title||'Conversation '+id;
+  const stillHere=(token,id)=>!destroyed&&dialog.open&&token===generation&&id===currentId;
+  const object=value=>Boolean(value&&typeof value==='object'&&!Array.isArray(value));
+  const effectiveValue=(canonical,managed,mode)=>mode==='fields'&&object(canonical)&&object(managed)?{...canonical,...managed}:managed;
+  function setBusy(value){busy=value;conversationSelect.disabled=value;returnButton.disabled=value;for(const control of [editButton,editJSONButton,deleteButton,importButton,saveButton,cancelButton])control.disabled=value;historyMore.disabled=value||historyLoading;}
+  function updateScope(){
+    const current=belongsToCurrent();
+    conversationSelect.value=currentId;
+    scopeBadge.textContent=current?'Current conversation':'Viewing another conversation';
+    scopeHelp.textContent=current?'Directory uses the context of this conversation. You can edit or delete individual records.':'Choose a record to inspect or import into your current conversation.';
+    returnButton.hidden=current;
+    groupTitle.textContent=conversationTitle(currentId);
   }
-  function selectTab(id){
-    currentTab=id;
-    for(const [name,button] of tabButtons)button.setAttribute('aria-selected',String(name===id));
+  function drawConversations(){
+    const currentGroup=make('optgroup','');currentGroup.setAttribute('label','Current conversation');
+    const original=catalog.find(row=>row.current||row.conversationId===originConversationId||row.runId===originId);
+    const first=make('option','',original?.title||'Current conversation');first.value=originId;currentGroup.append(first);
+    const others=make('optgroup','');others.setAttribute('label','Other conversations');
+    for(const row of catalog){
+      if(row===original||row.conversationId===originConversationId||row.runId===originId)continue;
+      const option=make('option','',(row.title||'Conversation')+(row.state==='archived'?' · archived':''));option.value=row.runId;others.append(option);
+    }
+    conversationSelect.replaceChildren(currentGroup,...(others.children.length?[others]:[]));conversationSelect.value=currentId;
+    updateScope();
+  }
+  function cancelEdit(){
+    editing=null;fieldEditors=[];editPanel.hidden=true;editFields.replaceChildren();reason.value='';contents.hidden=false;contents.readOnly=true;
+    if(selected)contents.value=JSON.stringify(selected.value,null,2);
+    updateRecordActions();
+  }
+  function updateRecordActions(){
+    const fields=selected?.editableFields||[];
+    editButton.hidden=!selected?.editable;
+    editJSONButton.hidden=!selected?.replaceable||!fields.length||!object(selected.value);
+    deleteButton.hidden=!selected?.deletable;
+    importButton.hidden=!selected?.importable||belongsToCurrent();
+    recordActions.hidden=!selected||Boolean(editing)||[editButton,editJSONButton,deleteButton,importButton].every(control=>control.hidden);
+  }
+  function display(name,value,note=''){
+    selected=null;cancelEdit();generated.hidden=true;generated.open=false;generatedContents.value='';fileLabel.textContent=name;fileNote.textContent=note;contents.value=typeof value==='string'?value:JSON.stringify(value,null,2);contents.scrollTop=0;
+  }
+  function selectRecord(file){for(const row of records.querySelectorAll('button[data-context-file]'))row.setAttribute('aria-current',String(row.dataset.contextFile===file));}
+  async function readFile(file){
+    if(busy)return;
+    const id=currentId,token=generation,read=++fileGeneration;display(file,'Loading context…');selectRecord(file);
+    try{
+      const data=await api(requestURL('/file',id,file));if(!stillHere(token,id)||read!==fileGeneration)return;
+      const managed=Object.hasOwn(data,'managedValue');
+      selected={...data,file:data.file||file,value:managed?effectiveValue(data.value,data.managedValue,data.editMode):data.value};contents.value=JSON.stringify(selected.value,null,2);fileLabel.textContent=selected.file;
+      generated.hidden=!managed;generated.open=false;generatedContents.value=managed?JSON.stringify(data.value,null,2):'';
+      const provenance=data.importedFrom||data.value?.importedFrom||data.value?.provenance;
+      fileNote.textContent=[managed?'Your saved context changes are applied to this record.':'',provenance?'Imported context · '+(provenance.title||provenance.conversationId||provenance.sourceConversationId||'another conversation'):
+        data.editable?'Edits and deletions change the context used by future Directory work. Saved results may need to be refreshed.':'Saved context record'].filter(Boolean).join(' ');
+      updateRecordActions();
+    }catch(error){if(stillHere(token,id)&&read===fileGeneration)display(file,'Read failed: '+error.message);}
+  }
+  function beginEdit(mode){
+    if(!selected?.editable||busy)return;
+    const fields=selected.editableFields||[];
+    editing=mode==='json'||!fields.length||!object(selected.value)?'json':'fields';fieldEditors=[];editFields.replaceChildren();reason.value='';
+    contents.hidden=editing==='fields';contents.readOnly=editing!=='json';editPanel.hidden=false;
+    editHint.textContent=editing==='json'?Object.hasOwn(selected,'managedValue')?'Edit your saved JSON. The latest generated record is available below.':'Edit the saved JSON, then save your changes.':'Edit the context fields below, then save your changes.';
+    if(editing==='fields'){
+      const labels={userSummary:'Conversation notes',pinnedConstraints:'Pinned constraints',content:'Content',summary:'Summary',items:'Items',objective:'Objective',doneWhen:'Done when',finding:'Finding',candidate_answer:'Candidate answer',uncertainty:'Uncertainty'};
+      for(const field of fields){
+        const value=selected.value?.[field],json=['pinnedConstraints','items'].includes(field)||typeof value!=='string'&&value!==undefined;
+        const label=make('label','next-directory-field-label',(labels[field]||field)+(json?' (JSON)':''));
+        const input=make('textarea','next-directory-field');input.dataset.contextField=field;input.spellcheck=false;input.setAttribute('aria-label',labels[field]||field);
+        input.value=json?JSON.stringify(value??[],null,2):value??'';label.append(input);editFields.append(label);fieldEditors.push({field,input,json,original:input.value});
+      }
+      fieldEditors[0]?.input.focus({preventScroll:true});
+    }else{contents.hidden=false;contents.value=JSON.stringify(Object.hasOwn(selected,'managedValue')?selected.managedValue:selected.value,null,2);contents.focus({preventScroll:true});}
+    updateRecordActions();
+  }
+  async function saveEdit(){
+    if(!selected||!editing||busy)return;
+    const id=currentId,token=generation,file=selected.file,payload={runId:id,file,expectedHash:selected.hash,expectedManagedEditId:selected.managedEditId??null,reason:reason.value.trim()||'Edited in Context'};
+    try{
+      if(editing==='json')payload.value=JSON.parse(contents.value);
+      else{
+        payload.changes=Object.fromEntries(fieldEditors.flatMap(({field,input,json,original})=>{
+          const value=json?JSON.parse(input.value):input.value;
+          return (json?JSON.stringify(value)===JSON.stringify(JSON.parse(original)):value===original)?[]:[[field,value]];
+        }));
+        if(!Object.keys(payload.changes).length){cancelEdit();status.textContent='No changes to save.';return;}
+      }
+    }catch(error){status.textContent='Changes were not saved: enter valid JSON. '+error.message;return;}
+    setBusy(true);status.textContent='Saving context…';
+    try{
+      const result=await api('/api/shadowdancer/context/edit','POST',payload);
+      if(!stillHere(token,id))return;
+      cancelEdit();setBusy(false);await loadConversation(id,{tab:currentTab,notice:result.unchanged?'No changes to save.':'Context saved. Derived results are marked for refresh.'});await readFile(file);
+    }catch(error){if(stillHere(token,id))status.textContent=error.status?'Changes were not saved: '+error.message:'Save could not be confirmed: '+error.message+' Reopen the record to inspect its current value.';}
+    finally{setBusy(false);}
+  }
+  async function removeSelected(){
+    if(!selected?.deletable||busy)return;
+    const id=currentId,token=generation,file=selected.file,hash=selected.hash,expectedManagedEditId=selected.managedEditId??null;
+    setBusy(true);status.textContent='Deleting context…';
+    try{
+      await api('/api/shadowdancer/context/delete','POST',{runId:id,file,expectedHash:hash,expectedManagedEditId,reason:'Deleted in Context'});
+      if(!stillHere(token,id))return;
+      setBusy(false);await loadConversation(id,{tab:currentTab,notice:'Context deleted. It will not be used by future Directory work.'});
+    }catch(error){if(stillHere(token,id))status.textContent=error.status?'Context was not deleted: '+error.message:'Delete could not be confirmed: '+error.message+' Refresh this conversation to inspect its context.';}
+    finally{setBusy(false);}
+  }
+  async function importSelected(){
+    if(!selected?.importable||belongsToCurrent()||busy)return;
+    const id=currentId,token=generation,sourceFile=selected.file,expectedSourceHash=selected.hash,expectedSourceManagedEditId=selected.managedEditId??null,destination=originId;
+    setBusy(true);status.textContent='Importing selected context…';
+    try{
+      const result=await api('/api/shadowdancer/context/import','POST',{runId:destination,sourceRunId:id,sourceFile,expectedSourceHash,expectedSourceManagedEditId,reason:'Imported into current conversation in Context'});
+      if(!stillHere(token,id)||originId!==destination)return;
+      setBusy(false);await loadConversation(destination,{tab:'files',notice:result.alreadyImported?'This context snapshot is already imported into the current conversation.':'Selected context imported into the current conversation.'});
+      if(result.file)await readFile(result.file);
+    }catch(error){if(stillHere(token,id))status.textContent=error.status?'Context was not imported: '+error.message:'Import could not be confirmed: '+error.message+' Inspect the current conversation before retrying.';}
+    finally{setBusy(false);}
+  }
+  async function selectTab(id){
+    if(busy)return;
+    fileGeneration++;currentTab=id;
+    for(const [name,control] of tabButtons)control.setAttribute('aria-pressed',String(name===id));
     filter.value='';filter.hidden=id==='overview';drawRows();
+    if(id==='history'&&history===null)await loadHistory();
+  }
+  async function loadHistory(more=false){
+    if(busy||historyLoading||!currentId||more&&historyNextOffset===null)return;
+    const runId=currentId,token=generation,offset=more?historyNextOffset:0;
+    historyLoading=true;historyMore.disabled=true;
+    try{
+      const result=await api(requestURL('/audit',runId)+(more?'&offset='+offset:''));if(!stillHere(token,runId))return;
+      const items=Array.isArray(result.items)?result.items:[];
+      history=more?[...(history||[]),...items]:items;
+      historyTotal=Number.isSafeInteger(result.total)?result.total:history.length;
+      historyNextOffset=Number.isSafeInteger(result.nextOffset)?result.nextOffset:null;
+      if(currentTab==='history')drawRows();
+    }catch(error){if(stillHere(token,runId)&&currentTab==='history')display('Changes','Changes could not be loaded: '+error.message);}
+    finally{if(stillHere(token,runId)){historyLoading=false;historyMore.disabled=busy;}}
   }
   function drawRows(){
-    records.replaceChildren();
+    records.replaceChildren();historyMore.hidden=currentTab!=='history'||historyNextOffset===null;
     if(currentTab==='overview'){
       const modelCalls=turns.filter(row=>modelLabels.has(row.label)).length;
-      const stale=Number(summary.totalTurns)!==turns.length;
-      display('Recorded context summary',{
-        selectedRunId:currentId,
-        latestSummaryRunId:summary.currentRun??null,
-        directoryStatusOfLatestRun:summary.directoryStatus??'Not recorded in saved summary',
-        failure:summary.failure??null,
-        auditedTurnsConversation:turns.length,
-        auditedTurnsSelectedRun:turns.filter(row=>row.runId===currentId).length,
-        modelPhasesConversation:modelCalls,
-        modelPhasesSelectedRun:turns.filter(row=>row.runId===currentId&&modelLabels.has(row.label)).length,
-        decompositionPhasesSelectedRun:turns.filter(row=>row.runId===currentId&&row.label==='decompose').length,
-        savedFiles:files.length,
-        plannedWorkItemsLatestRun:summary.plannedWorkItems??'Not recorded',
-        summaryReportedTurns:summary.totalTurns??null,
-        summaryStale:stale,
-        requestOfLatestRun:summary.request??null,
-        note:'Model phases are counted from persisted Directory turn labels. Planning graph requests are a separate counter; a click or model response is not proof of an operational outcome.'
-      });return;
+      display('Conversation context',{
+        conversation:conversationTitle(currentId),conversationId:currentConversationId,selectedRunId:currentId,
+        latestRunId:summary.currentRun??null,status:summary.directoryStatus??'Not recorded',failure:summary.failure??null,
+        auditRecords:turns.length,modelPhases:modelCalls,contextFiles:files.length,
+        selectedRunModelPhases:turns.filter(row=>row.runId===currentId&&modelLabels.has(row.label)).length,
+        plannedWorkItems:summary.plannedWorkItems??'Not recorded',request:summary.request??null,
+        notes:contextSummary?.userSummary??'',pinnedConstraints:contextSummary?.pinnedConstraints??[]
+      },'Context is grouped by conversation. Select a file to edit, delete or import it.');return;
     }
     const q=filter.value.trim().toLowerCase();
-    const rows=currentTab==='turns'?turns.map((row,index)=>({
-      label:(index+1)+'. '+row.label+' · '+row.module,
-      search:row.label+' '+row.module+' '+row.excerpt,
-      act:()=>display(row.label+' · '+row.module,row)
-    })):files.map(row=>({
-      label:row.file+' · '+row.bytes+' B',search:row.file,
-      act:()=>void readFile(row.file)
-    }));
-    let shown=0;
+    const fileSet=new Set(files.map(row=>row.file));
+    const rows=currentTab==='turns'?turns.map((row,index)=>{
+      const file='runs/'+row.runId+'/turns/'+row.id+'.json';
+      return{label:(index+1)+'. '+row.label+' · '+row.module,group:row.runId||'',file:fileSet.has(file)?file:null,search:row.label+' '+row.module+' '+row.excerpt,
+        act:()=>fileSet.has(file)?readFile(file):display(row.label+' · '+row.module,row)};
+    }):currentTab==='history'?(history||[]).map(row=>({label:(row.action||row.kind||'Edit')+' · '+row.file,group:String(row.at||'').slice(0,10),search:JSON.stringify(row),act:()=>display('Context change',row)})):
+      files.map(row=>({label:row.file+' · '+Number(row.bytes||0).toLocaleString()+' B',group:row.file.startsWith('runs/')?row.file.split('/')[1]:'Conversation context',file:row.file,search:row.file,act:()=>readFile(row.file)}));
+    let shown=0,lastGroup=null;
     for(const row of rows){
       if(q&&!row.search.toLowerCase().includes(q))continue;
-      const control=make('button','',row.label);control.type='button';
-      control.addEventListener('click',row.act);records.append(control);shown++;
+      if(row.group!==lastGroup){records.append(make('h3','next-directory-record-group',row.group==='Conversation context'?row.group:currentTab==='history'?row.group:'Run '+row.group));lastGroup=row.group;}
+      const control=button('',row.label,row.act);if(row.file)control.dataset.contextFile=row.file;records.append(control);shown++;
     }
-    if(!shown)records.append(make('p','',q?'No matching records.':'No saved records.'));
-    display(currentTab==='turns'?'Model turns':'Context files',shown+' recorded entries. Select one to inspect its saved contents.');
+    if(!shown)records.append(make('p','',q?'No matching records.':currentTab==='history'&&history===null?'Loading changes…':'No saved records.'));
+    display(currentTab==='turns'?'Model turns':currentTab==='history'?'Changes':'Context files',shown+(currentTab==='history'&&historyTotal>shown?' of '+historyTotal:'')+' records in this conversation. Select one to view its contents.');
   }
-  filter.addEventListener('input',drawRows);
-  async function open(){
-    const runId=getRunId();if(!runId)return;
-    currentId=runId;files=[];turns=[];summary={};
-    if(!dialog.open)dialog.showModal();
-    status.textContent='Loading saved Directory evidence for '+runId+'…';
-    selectTab('overview');
+  filter.addEventListener('input',()=>{if(!busy){fileGeneration++;drawRows();}});
+  conversationSelect.addEventListener('change',()=>loadConversation(conversationSelect.value));
+  async function loadConversation(runId,{tab='overview',notice=''}={}){
+    if(!runId||busy)return;
+    const token=++generation;fileGeneration++;currentId=runId;currentConversationId=catalog.find(row=>row.runId===runId)?.conversationId||'';files=[];turns=[];summary={};contextSummary={};history=null;historyTotal=0;historyNextOffset=null;historyLoading=false;
+    updateScope();status.textContent='Loading conversation context…';await selectTab(tab);
     try{
-      const listing=await getJSON(requestURL('',runId));
-      if(currentId!==runId)return;
-      files=Array.isArray(listing.files)?listing.files:[];
-      summary=listing.summary||{};
-      if(files.some(file=>file.file==='conversation/context/turns.json')){
-        const turnFile=await getJSON(requestURL('/file',runId,'conversation/context/turns.json'));
-        if(currentId!==runId)return;
-        turns=Array.isArray(turnFile.value)?turnFile.value:[];
+      const listing=await api(requestURL('',runId));if(!stillHere(token,runId))return;
+      files=Array.isArray(listing.files)?listing.files:[];summary=listing.summary||{};contextSummary=Object.hasOwn(listing,'managedSummary')?effectiveValue(summary,listing.managedSummary,listing.managedSummaryEditMode):summary;currentConversationId=listing.conversationId||currentConversationId;
+      if(runId===originId)originConversationId=currentConversationId;
+      if(files.some(row=>row.file==='conversation/context/turns.json')){
+        const result=await api(requestURL('/file',runId,'conversation/context/turns.json'));if(!stillHere(token,runId))return;
+        turns=Array.isArray(result.value)?result.value:[];
       }
       const calls=turns.filter(row=>modelLabels.has(row.label)).length;
-      status.textContent=files.length?
-        'Conversation: '+turns.length+' audit turns · '+calls+' model phases · '+files.length+' context files'+
-        ' | Selected run: '+turns.filter(row=>row.runId===runId&&modelLabels.has(row.label)).length+' model phases'+
-        (summary.directoryStatus?' · latest run '+summary.directoryStatus:'')+
-        (Number(summary.totalTurns)!==turns.length?' · saved summary is stale':''):
-        'No Directory evidence is saved for this conversation.';
-      selectTab('overview');
-    }catch(error){if(currentId===runId){status.textContent='Context inspection failed: '+error.message;display('Unavailable',error.message);}}
+      status.textContent=notice||turns.length+' audit records · '+calls+' model phases · '+files.length+' context files'+(summary.directoryStatus?' · latest run '+summary.directoryStatus:'');
+      updateScope();drawRows();
+    }catch(error){if(stillHere(token,runId)){
+      const empty=error.code==='SHADOWDANCER_CONTEXT_NOT_FOUND';
+      status.textContent=notice|| (empty?'This conversation has no saved Directory context.':'Context could not be loaded: '+error.message);
+      display(empty?'No saved context':'Context unavailable',empty?'Choose another conversation above to import a context record.':error.message);
+    }}
   }
-  launch.addEventListener('click',()=>void open());
+  async function open(){
+    const runId=getRunId();if(!runId||destroyed)return;
+    originId=runId;originScope=getConversationId()||runId;originConversationId='';catalog=[];currentId=runId;currentConversationId='';setBusy(false);drawConversations();
+    if(!dialog.open)dialog.showModal();close.focus({preventScroll:true});
+    const reading=loadConversation(runId),catalogToken=++catalogGeneration;
+    const catalogReading=api(requestURL('/conversations',runId)).then(value=>{
+      if(destroyed||!dialog.open||originId!==runId||catalogToken!==catalogGeneration)return;
+      catalog=Array.isArray(value.conversations)?value.conversations:[];originConversationId=value.currentConversationId||originConversationId;drawConversations();
+    }).catch(error=>{if(!destroyed&&dialog.open&&originId===runId&&catalogToken===catalogGeneration)scopeHelp.textContent='Current conversation context is available. Conversation list could not be loaded: '+error.message;});
+    await Promise.all([reading,catalogReading]);
+  }
+  dialog.addEventListener('close',()=>{generation++;fileGeneration++;catalogGeneration++;});
   return {
     open,
-    refresh(runId){launch.hidden=!runId;if(dialog.open&&currentId&&runId!==currentId)dialog.close();},
-    destroy(){dialog.close();launch.remove();dialog.remove();style.remove();}
+    refresh(runId){launch.hidden=!runId;if(dialog.open&&originScope&&(getConversationId()||runId)!==originScope)dialog.close();},
+    destroy(){destroyed=true;generation++;fileGeneration++;dialog.close();launch.remove();dialog.remove();style.remove();}
   };
 }

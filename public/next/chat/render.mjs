@@ -467,11 +467,14 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
         });
       }
     }
-    if(delivery.needsFollowup||delivery.errors.length){
+    // The primary failure already appears in its alert above. Keep distinct
+    // node diagnostics, without repeating that same saved message below it.
+    const additionalErrors=delivery.errors.filter(error=>error!==failure?.message);
+    if(delivery.needsFollowup||additionalErrors.length){
       const note=text(section,'','div','next-chat-result-note');
       if(delivery.missing)text(note,'This turn ended without a response. Send a follow-up to continue this conversation.','p','next-help');
       else if(delivery.needsFollowup&&!delivery.errors.length)text(note,'The turn failed before a response was received. Send a follow-up to continue this conversation.','p','next-help');
-      for(const error of delivery.errors)text(note,error,'p','next-chat-error');
+      for(const error of additionalErrors)text(note,error,'p','next-chat-error');
       if(delivery.needsFollowup&&run===shown.at(-1)&&view.input){
         const followup=text(note,'Write a follow-up','button');followup.type='button';
         // Preserve the draft and saved context. Never replay an empty turn's tools.

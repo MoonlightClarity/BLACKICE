@@ -24,6 +24,14 @@ class Engine extends EventEmitter{
 }
 async function harness(t,{capacity=1}={}){const directory=await mkdtemp(path.join(tmpdir(),'relay-inbox-test-')),cwd=path.join(directory,'workspace');await mkdir(cwd);const engine=new Engine(capacity),options={dataDir:directory,engine,createWorkflow:()=>workflow()},inbox=await new TaskInbox(options).init();t.after(async()=>{await inbox.close().catch(()=>{});assert.match(path.basename(directory),/^relay-inbox-test-/);await rm(directory,{recursive:true,force:true});});const add=(input='Verify the fixture',extra={})=>inbox.add({input,cwd,workflow:workflow(),...extra});return{directory,cwd,engine,inbox,options,add};}
 
+test('queued Directory sources survive editing, restart and dispatch without the ordinary message cap',async t=>{
+  const {inbox,engine,add,options}=await harness(t),input='/directory QUESTION:\nRead the complete source.\nSOURCE:\n'+'x'.repeat(1100000)+'SOURCE_TAIL';
+  const saved=await add(input,{title:'Long source'}),updated=await inbox.update(saved.id,{input:input+'_EDITED',expectedRevision:saved.revision});
+  await inbox.close();const reopened=await new TaskInbox(options).init();
+  try{assert.equal(reopened.get(saved.id).input,updated.input);await reopened.runNow(saved.id);assert.equal(engine.calls[0].input.task,updated.input);}
+  finally{await reopened.close();}
+});
+
 test('capture, ordered edits, scoped views, attachment snapshots, remove and restore are durable without starting work',async t=>{
   const {inbox,engine,add,options,cwd}=await harness(t);const first=await add('First task',{attachmentIds:['attachment_1']}),second=await add('Second task');assert.equal(inbox.status().autoRun,false);assert.equal(engine.calls.length,0);
   const edited=await inbox.update(first.id,{input:'Edited first task',expectedRevision:first.revision});assert.equal(edited.workflow.nodes[1].model,'saved-model');assert.deepEqual(edited.attachmentIds,['attachment_1']);await assert.rejects(inbox.update(first.id,{input:'Stale text',expectedRevision:1}),{status:409});

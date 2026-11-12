@@ -13,7 +13,7 @@ const graph=(sandbox='danger-full-access')=>({name:'Directory Chat fixture',node
  {id:'input',type:'input'},{id:'agent',type:'agent',model:'fixture::remote',name:'Chat',prompt:'CURRENT_AGENT_BOUNDARY: preserve source files and task restrictions.',sandbox},
  {id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode:'off'}});
 const phaseOf=options=>{if(!options.prompt.includes('SHADOWDANCER DIRECTORY MODE.'))return null;const tail=options.prompt.split('CURRENT_DIRECTORY:\n').at(-1);return JSON.parse(tail.split('\nREPOSITORY ')[0]);};
-const response=phase=>phase.label==='decompose'?{atomic:true}:phase.label==='integration'?{answer:'Directory evidence result.',used_refs:phase.payload.required_refs}:{finding:'A bounded finding.',candidate_answer:'A bounded answer.',uncertainty:''};
+const response=phase=>phase.label==='decompose'?{atomic:true}:phase.label==='integration'?{answer:'Directory evidence result.',used_refs:phase.payload.required_refs}:{status:'complete',nextAction:'',finding:'A bounded finding.',candidate_answer:'A bounded answer.',uncertainty:''};
 class Runtime extends EventEmitter{
  calls=[];children=[];store={get:()=>({baseUrl:'https://api.example/v1'})};
  status(){return{connected:true,authenticated:true,defaultModel:'fixture::remote',models:[{id:'fixture::remote',supportsTools:true}]};}
@@ -107,7 +107,7 @@ test('Directory read-only phases advertise no write or command and active direct
  assert.equal(run.executionModes.directoryMode,'on');
 });
 
-test('Directory source-page isolation is retained through the production Engine and usage sums fresh sessions once',async t=>{
+test('Directory full-source extraction retains fresh-phase isolation and counts each session once',async t=>{
  const f=await fixture(t),seen=[];
  f.runtime.runAgent=async options=>{
   f.runtime.calls.push(options);const phase=phaseOf(options);seen.push(phase);
@@ -115,16 +115,15 @@ test('Directory source-page isolation is retained through the production Engine 
   options.onEvent?.({type:'usage',usage:{inputTokens:10,outputTokens:4,totalTokens:14}});
   let output;
   if(phase.label==='page-extract'){
-   const word=phase.payload.source.content.includes('ALPHA_ONLY')?'ALPHA_ONLY':'BETA_ONLY';
-   assert.ok(!options.prompt.includes(word==='ALPHA_ONLY'?'BETA_ONLY':'ALPHA_ONLY'));
-   output={summary:word,items:[{value:word,quote:word}]};
+   assert.ok(options.prompt.includes('ALPHA_ONLY')&&options.prompt.includes('BETA_ONLY'));
+   output={summary:'Both codes',items:['ALPHA_ONLY','BETA_ONLY'].map(value=>({value,quote:value}))};
   }else output={answer:'ALPHA_ONLY BETA_ONLY',used_refs:phase.payload.required_refs};
   return{output:JSON.stringify(output),usage:{inputTokens:10,outputTokens:4,totalTokens:14},threadId:'leaf'};
  };
  const material='ALPHA_ONLY '+'.'.repeat(1139)+'BETA_ONLY';
  const run=await settle(f.engine,f.engine.startRun({workflow:graph(),input:{task:'List every code.\nSOURCE:\n'+material,directoryMode:'on',subagentsMode:'off'}}));
- assert.equal(seen.filter(x=>x.label==='page-extract').length,2);
- assert.equal(run.nodes.agent.usage.inputTokens,30);assert.equal(run.nodes.agent.usage.outputTokens,12);assert.equal(run.nodes.agent.usage.totalTokens,42);assert.equal(run.nodes.agent.usage.samples,3);assert.equal(run.nodes.agent.usage.modelContextWindow,null);
+ assert.equal(seen.filter(x=>x.label==='page-extract').length,1);
+ assert.equal(run.nodes.agent.usage.inputTokens,20);assert.equal(run.nodes.agent.usage.outputTokens,8);assert.equal(run.nodes.agent.usage.totalTokens,28);assert.equal(run.nodes.agent.usage.samples,2);assert.equal(run.nodes.agent.usage.modelContextWindow,null);
  assert.equal(run.nodes.agent.threadId,undefined);
 });
 for(const corrupt of [false,true])test('Directory prepared dispatcher preserves '+(corrupt?'corrupt':'two UNKNOWN')+' historical journals and permits safe reads',async t=>{
@@ -203,7 +202,7 @@ test('attributed attachment and handoff data stay outside source-page authority 
   }
  };
  const next=await settle(f.engine,f.engine.continueRun(first.id,{nodeId:'agent',message:'CURRENT_GOAL: inspect only this source.\nSOURCE:\n'+'a'.repeat(1800),directoryMode:'on',attachmentIds:[id]}));
- assert.equal(sourcePages,2);assert.equal(imports.length,0,'exact attribution must not require a lossy model summary');
+ assert.equal(sourcePages,1);assert.equal(imports.length,0,'exact attribution must not require a lossy model summary');
  const savedImport=JSON.parse(await readFile(path.join(f.cwd,'.shadowdancer',next.taskId,'runs',next.id,'context/imports/0001/source.json'),'utf8'));
  assert.match(savedImport.content,/ATTACHMENT_RAW_MUST_NOT_REPEAT/);assert.match(savedImport.content,/Ordinary Chat result\./);
  assert.ok(next.nodes.agent.shadowdancer);

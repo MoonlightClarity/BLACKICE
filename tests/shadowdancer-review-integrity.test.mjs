@@ -21,7 +21,7 @@ test('a reviewer cannot certify completeness by modifying an existing passing sm
    const v=JSON.parse(opts.prompt.split('CURRENT_DIRECTORY:\n')[1].split(/\nREPOSITORY (?:MODE|SYNTHESIS):/)[0]);
    phases.push(v.label);
    if(v.label==='decompose')return {output:'{"atomic":true}'};
-   if(v.label==='work')return {output:'{"finding":"No source change"}'};
+   if(v.label==='work')return {output:'{"status":"complete","nextAction":"","finding":"No source change"}'};
    if(v.label==='repository-review'){
      const changed=await opts.onToolCall({name:'relay_workspace',arguments:{
        action:'patch',path:'tests/smoke.test.mjs',
@@ -29,7 +29,7 @@ test('a reviewer cannot certify completeness by modifying an existing passing sm
        newText:"test('positive smoke',()=>{assert.equal(score(42),42);assert.equal(score(-1),-1)});"
      }});
      assert.equal(changed.success,true,JSON.stringify(changed));
-     return {output:'{"finding":"Changed the test instead of fixing the source"}'};
+     return {output:'{"status":"complete","nextAction":"","finding":"Changed the test instead of fixing the source"}'};
    }
    throw Error('Unexpected model phase '+v.label);
  }};

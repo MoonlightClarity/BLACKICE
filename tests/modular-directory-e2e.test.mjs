@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,readFile,writeFile,rm,mkdir} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {modularCompletionEnabled,modularOutcomeEvidence,createModularCompletionController} from '../lib/modular-completion.mjs';
+import {modularCompletionEnabled,modularOutcomeEvidence,createModularCompletionController,createModularEvidenceJournal} from '../lib/modular-completion.mjs';
 import {ShadowdancerDirectory,runShadowdancerDirectory} from '../lib/shadowdancer-directory.mjs';
 
 const policy={version:2,modules:{inference:true,feasibility:true,decomposition:true,branching:true,replanning:true,metacognition:true,anti_overalignment:true,verification:true,subagents:true}};
@@ -71,7 +71,7 @@ test('Directory carries expanded prerequisite leaves into dependent work',async(
      if(payload.objective==='Prepare source')return {parsed:{atomic:false,steps:[{objective:'read original',done_when:'read'},{objective:'derive source',done_when:'derived'}]}};
      return {parsed:{atomic:true}};
    }
-   inputs.push(payload);return {parsed:{finding:'recorded '+payload.objective,candidate_answer:'fixture result',uncertainty:''},output:'fixture result'};
+   inputs.push(payload);return {parsed:{status:'complete',nextAction:'',finding:'recorded '+payload.objective,candidate_answer:'fixture result',uncertainty:''},output:'fixture result'};
  };
  await runner.open();await runner.plan('1','Prepare source and consume it');await runner.workLeaves();
  const consumer=inputs.find(input=>input.objective==='Consume prepared source');assert.ok(consumer);
@@ -93,4 +93,61 @@ test('Directory continuation executes only unfinished work and retains old evide
  assert.deepEqual(seen[0].dependsOn,['1']);assert.equal(runner.work[0].id,'1');
  assert.equal(JSON.parse(await readFile(oldPath,'utf8')).candidate_answer,'first.txt');
  assert.equal(runner.stats.outcomeContinuations,1);
+}));
+
+test('fresh Directory work continues from full host observations and performs the unfinished effects',async()=>temp(async cwd=>{
+ const source='saved source '.repeat(200)+'\nVALUE=carried-without-rereading';
+ await writeFile(path.join(cwd,'source.txt'),source);
+ const calls=[],phases=[];
+ const journal=createModularEvidenceJournal({directory:path.join(cwd,'receipts')});
+ const dispatch=journal.wrap(async call=>{
+   const args=call.arguments;calls.push(args);
+   if(args.action==='write')await writeFile(path.join(cwd,args.path),args.text);
+   const value=args.action==='write'?{path:args.path,written:true}:{path:args.path,content:await readFile(path.join(cwd,args.path),'utf8')};
+   return {success:true,contentItems:[{type:'inputText',text:JSON.stringify(value)}]};
+ });
+ const controller=createModularCompletionController({policy,
+   getSnapshot:async()=>({request:{id:'user-request',text:'Read source.txt, write its VALUE to result.txt, and verify it.'},policy,evidence:await journal.snapshot()}),
+   review:async({snapshot})=>snapshot.evidence.records.some(row=>row.action==='read'&&row.arguments.path==='result.txt')
+     ?decision('respond'):decision('continue',{nextAction:'Use the previously read source to create result.txt and read it back.'}),
+ });
+ let workCalls=0;
+ const runtime={runAgent:async options=>{
+   const view=JSON.parse(options.prompt.split('CURRENT_DIRECTORY:\n')[1]);phases.push(view.label);
+   if(view.label==='decompose')return {output:JSON.stringify({atomic:true})};
+   if(view.label==='integration')return {output:JSON.stringify({answer:workCalls>1?'Created and verified result.txt.':'Preparation is unfinished.',used_refs:view.payload.required_refs})};
+   assert.equal(view.label,'work');
+   const hostInstruction=options.prompt.slice(0,options.prompt.indexOf('CURRENT_DIRECTORY:\n'));
+   assert.match(hostInstruction,/EXECUTION PHASE/);
+   assert.match(hostInstruction,/HOST PHASE INSTRUCTIONS/);
+   assert.match(hostInstruction,/not the limit of available files, websites or actions/);
+   assert.doesNotMatch(hostInstruction,/Work only with CURRENT_DIRECTORY contents/);
+   assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_workspace'));
+   if(++workCalls===1){
+     await options.onToolCall({name:'relay_workspace',callId:'read',arguments:{action:'read',path:'source.txt'}});
+     // A premature model summary is not proof that the source is missing.
+     return {output:JSON.stringify({status:'complete',nextAction:'',finding:'Source not available in this package.',candidate_answer:'Unfinished.',uncertainty:'Need source.'})};
+   }
+   const evidence=view.payload.hostEvidence;
+   assert.equal(evidence.length,1);
+   assert.equal(evidence[0].source,'host-dispatch-receipt');
+   assert.ok(evidence[0].omittedCharacters>0,'fixture crosses the former excerpt boundary');
+   const actual=JSON.parse(evidence[0].result.contentItems[0].text);
+   assert.equal(actual.content,source,'full observed content survives a fresh provider session');
+   const value=actual.content.match(/VALUE=(.*)/)[1];
+   await options.onToolCall({name:'relay_workspace',callId:'write',arguments:{action:'write',path:'result.txt',text:value}});
+   const checked=await options.onToolCall({name:'relay_workspace',callId:'read',arguments:{action:'read',path:'result.txt'}});
+   assert.equal(JSON.parse(checked.contentItems[0].text).content,value);
+   return {output:JSON.stringify({status:'complete',nextAction:'',finding:'Wrote and read back result.txt.',candidate_answer:'Created and verified result.txt.',uncertainty:''})};
+ }};
+ const result=await runShadowdancerDirectory({cwd,conversationId:'operational',runId:'operational-run',model:'fixture',runtime,
+   planningOntology:policy,input:'/directory Read source.txt, write its VALUE to result.txt, and verify it.',
+   baseTools:[{name:'relay_workspace',inputSchema:{type:'object',properties:{action:{enum:['read','write']}}}}],dispatchTool:dispatch,
+   onBeforeFinal:controller.beforeFinal,
+ });
+ assert.equal(await readFile(path.join(cwd,'result.txt'),'utf8'),'carried-without-rereading');
+ assert.deepEqual(calls.map(call=>call.action+':'+call.path),['read:source.txt','write:result.txt','read:result.txt']);
+ assert.equal(result.stats.outcomeContinuations,1);
+ assert.equal((await controller.assertReady()).ready,true);
+ assert.equal(phases.filter(label=>label==='work').length,2);
 }));

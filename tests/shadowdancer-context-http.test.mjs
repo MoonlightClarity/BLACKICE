@@ -27,7 +27,7 @@ async function fixture(t){
  }
  return {cwd,root,file,ctx,run,state,engine,conversations,request,mutations};
 }
-test('HTTP is scoped, validates fields, and offers no global catalog or rebuild',async t=>{
+test('HTTP content reads stay scoped, validate fields, and do not start rebuilds',async t=>{
  const f=await fixture(t);
  assert.equal((await f.request()).status,400);
  assert.equal((await f.request('?runId=run')).status,200);
@@ -46,12 +46,12 @@ test('HTTP edits preserve history and audit; stale hashes conflict',async t=>{
  assert.equal((await f.request('/audit?runId=run')).data.total,1);
  assert.equal(JSON.parse(await readFile(path.join(f.root,'runs/run/integration/final.json'))).answer,'Historical');
 });
-test('HTTP blocks deleted reads, archived edits, unknown state and unsettled sibling edits',async t=>{
+test('HTTP allows archived context edits while blocking deleted reads, unknown state and unsettled sibling edits',async t=>{
  const f=await fixture(t),prior=await readShadowdancerFile(f.ctx);
  const value={runId:'run',file:f.file,expectedHash:prior.hash,changes:{userSummary:'No'},reason:'Test'};
  f.state.value='deleted';assert.equal((await f.request('?runId=run')).status,404);
  f.state.value='unknown';assert.equal((await f.request('?runId=run')).status,404);
- f.state.value='archived';assert.equal((await f.request('?runId=run')).status,200);assert.equal((await f.request('/edit','POST',value)).status,409);
+ f.state.value='archived';assert.equal((await f.request('?runId=run')).status,200);assert.equal((await f.request('/edit','POST',value)).status,200);assert.equal(f.state.value,'archived');
  f.state.value='active';f.engine.runs.set('next',{id:'next',taskId:'chat',status:'cancelled',settled:false});
  assert.equal((await f.request('/edit','POST',value)).status,409);
 });
@@ -61,11 +61,11 @@ test('corrupt audit/invalidation fails closed without overwriting evidence',asyn
  await writeFile(audit,'broken');
  await assert.rejects(contextAuditHistory(f.ctx),{code:'SHADOWDANCER_INVALID_FILE'});
  await assert.rejects(editShadowdancerContext({...f.ctx,expectedHash:prior.hash,changes:{userSummary:'No'},reason:'Test'}),{code:'SHADOWDANCER_INVALID_FILE'});
- assert.equal((await readShadowdancerFile(f.ctx)).hash,prior.hash);
+ assert.deepEqual(JSON.parse(await readFile(path.join(f.root,f.file),'utf8')),prior.value);
  await writeFile(audit,'[]');
  await writeFile(path.join(f.root,'conversation/context/invalidation.json'),'broken');
  await assert.rejects(editShadowdancerContext({...f.ctx,expectedHash:prior.hash,changes:{userSummary:'No'},reason:'Test'}),{code:'SHADOWDANCER_INVALID_FILE'});
- assert.equal((await readShadowdancerFile(f.ctx)).hash,prior.hash);
+ assert.deepEqual(JSON.parse(await readFile(path.join(f.root,f.file),'utf8')),prior.value);
 });
 test('paths reject traversal, drive syntax and alternate data streams',async t=>{
  const f=await fixture(t);
@@ -86,7 +86,7 @@ test('existing revision paths cannot be overwritten',async t=>{
  await assert.rejects(editShadowdancerContext({...f.ctx,expectedHash:prior.hash,changes:{userSummary:'No'},reason:'Test'}),{code:'SHADOWDANCER_AUDIT'});
  assert.equal((await readShadowdancerFile(f.ctx)).hash,prior.hash);
 });
-test('tool excludes deleted titles and blocks archived and active own-run mutation',async t=>{
+test('tool excludes deleted titles, permits archived context edits, and blocks active own-run mutation',async t=>{
  const f=await fixture(t);
  const handler=createShadowdancerContextToolHandler({conversations:f.conversations,cwd:f.cwd,runId:'run',taskId:'chat',getActiveRuns:()=>[...f.engine.runs.values()]});
  const call=async args=>handler({name:'relay_context',arguments:args});
@@ -95,7 +95,7 @@ test('tool excludes deleted titles and blocks archived and active own-run mutati
  assert.equal((await call({action:'current'})).success,false);
  f.state.value='archived';const prior=await readShadowdancerFile(f.ctx);
  const edit={action:'edit',file:f.file,expectedHash:prior.hash,changes:{userSummary:'No'},reason:'Test'};
- assert.equal((await call(edit)).code,'SHADOWDANCER_ARCHIVED');
+ assert.equal((await call(edit)).success,true);assert.equal(f.state.value,'archived');
  f.state.value='active';f.run.status='running';f.run.settled=false;
  assert.equal((await call(edit)).code,'SHADOWDANCER_RUN_ACTIVE');
 });

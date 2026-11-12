@@ -83,7 +83,22 @@ test('no test suite is an explicit unknown rather than success',async t=>{
  assert.equal(ledger.unknownCount,1);
 });
 
-test('requirement audit bounds fail closed instead of silently dropping or truncating obligations',()=>{
- assert.throws(()=>extractRequirements(Array.from({length:31},(_,i)=>'Requirement '+i+' must remain independently checked.').join('\n\n')),{code:'DIRECTORY_REQUIREMENT_LIMIT'});
- assert.throws(()=>extractRequirements('The exact behavioral requirement '+ 'x'.repeat(4100)),{code:'DIRECTORY_REQUIREMENT_LIMIT'});
+test('verification keeps a long test log and its final TAP outcome intact',async t=>{
+ const cwd=await fixture(t);
+ await writeFile(path.join(cwd,'tests','long-log.test.mjs'),
+   "import test from 'node:test';console.log('x'.repeat(70000)+'LOG_TAIL');test('final observed result',()=>{});");
+ const receipt=await verifyRepository({repoRoot:cwd,task:'Verify complete output',receiptFile:path.join(cwd,'evidence','long-log.json')});
+ assert.equal(receipt.status,'passed');assert.equal(receipt.outputTruncated,false);
+ assert.ok(receipt.stdout.length>70000);assert.match(receipt.stdout,/LOG_TAIL/);
+ assert.equal(receipt.tests,1);assert.equal(receipt.passed,1);
+ const saved=JSON.parse(await readFile(receipt.file,'utf8'));
+ assert.equal(saved.stdout,receipt.stdout);
+});
+
+test('requirement ledger retains every complete obligation without an arbitrary context cap',()=>{
+ const statements=Array.from({length:61},(_,i)=>'Requirement '+i+' must remain independently checked.');
+ const ledger=extractRequirements(statements.join('\n\n'));
+ assert.deepEqual(ledger.requirements.map(row=>row.statement),statements);
+ const long='The exact behavioral requirement '+ 'x'.repeat(41000)+' REQUIREMENT_TAIL';
+ assert.equal(extractRequirements(long).requirements[0].statement,long);
 });

@@ -49,18 +49,18 @@ async function sandbox(t,answers) {
 }
 const pad=(code,n)=>('The marker code is '+code+'.').padEnd(n,' background ');
 const source=pad('ALPHA17',1150)+pad('BETA29',1100);
-const note=(value)=>({summary:'Marker code: '+value,items:[{value,quote:value}]});
+const note=(...values)=>({summary:'Marker codes: '+values.join(' '),items:values.map(value=>({value,quote:value}))});
 const good=(text,refs)=>({answer:text,used_refs:refs,integrated_findings:refs.map(ref=>({ref,claim:'included'}))});
 
 test('BLACKICE chat /directory uses fresh remote turns and publishes only coverage-gated final',async t=>{
-  const {app,runtime,cwd}=await sandbox(t,[note('ALPHA17'),note('BETA29'),good('ALPHA17 and BETA29',['page:1','page:2'])]);
+  const {app,runtime,cwd}=await sandbox(t,[note('ALPHA17','BETA29'),good('ALPHA17 and BETA29',['page:1'])]);
   const start=app.engine.startRun({workflow:graph(),input:'/directory List all marker codes\nSOURCE:\n'+source});
   const run=await waitFor(()=>{const value=app.engine.getRun(start.id);return value.settled&&value;});
   assert.equal(run.status,'completed',run.error);
   assert.match(run.output,/ALPHA17/);assert.match(run.output,/BETA29/);
-  assert.equal(runtime.calls.filter(call=>!call.prompt.includes('"label":"context-page"')).length,3);
+  assert.equal(runtime.calls.filter(call=>!call.prompt.includes('"label":"context-page"')).length,2);
   assert.equal(run.nodes.agent.shadowdancer.mode,'directory');
-  assert.equal(run.nodes.agent.shadowdancer.stats.sourceRefs,2);
+  assert.equal(run.nodes.agent.shadowdancer.stats.sourceRefs,1);
   assert.ok(run.events.some(e=>e.data?.type==='shadowdancer.step'));
   assert.ok(run.events.some(e=>e.data?.type==='message'&&e.data.shadowdancer===true));
   assert.ok(runtime.calls.every(c=>!('threadId' in c)&&!('continuity' in c)&&c.hostOnlyTools===true));
@@ -81,14 +81,14 @@ test('ordinary BLACKICE chats preserve standard runtime rather than directory mo
   assert.equal(run.nodes.agent.shadowdancer,undefined);
 });
 
-test('BLACKICE refuses a directory final answer missing a referenced page',async t=>{
-  const {app,runtime}=await sandbox(t,[note('ALPHA17'),note('BETA29'),
-    good('ALPHA17',['page:1','page:2']),
-    good('ALPHA17',['page:1','page:2'])]);
+test('BLACKICE refuses a directory final answer missing an extracted source fact',async t=>{
+  const {app,runtime}=await sandbox(t,[note('ALPHA17','BETA29'),
+    good('ALPHA17',['page:1']),
+    good('ALPHA17',['page:1'])]);
   const started=app.engine.startRun({workflow:graph(),input:'/directory List all marker codes\nSOURCE:\n'+source});
   const run=await waitFor(()=>{const value=app.engine.getRun(started.id);return value.settled&&value;});
   assert.equal(run.status,'failed');
   assert.equal(run.errorCode,'DIRECTORY_INTEGRATION_COVERAGE');
-  assert.equal(runtime.calls.filter(call=>!call.prompt.includes('"label":"context-page"')).length,4);
+  assert.equal(runtime.calls.filter(call=>!call.prompt.includes('"label":"context-page"')).length,3);
   assert.ok(!run.nodes.agent.shadowdancer);
 });

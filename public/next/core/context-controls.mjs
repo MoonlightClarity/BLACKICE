@@ -5,7 +5,7 @@ const positive=value=>Number.isSafeInteger(value)&&value>0?value:null;
 const tokens=value=>positive(value)?.toLocaleString('en-US')||'Unknown';
 const compactTokens=value=>positive(value)?value%1000===0?(value/1000).toLocaleString('en-US')+'k':tokens(value):'unknown';
 const presets=new Set(['model','extended','custom','900k']);
-const bounds={outputReserveTokens:[256,128000],headroomTokens:[128,256000],compactAtTokens:[256,4000000],keepRecentTokens:[256,256000]};
+const bounds={outputReserveTokens:[256,Number.MAX_SAFE_INTEGER],headroomTokens:[128,Number.MAX_SAFE_INTEGER],compactAtTokens:[256,Number.MAX_SAFE_INTEGER],keepRecentTokens:[256,Number.MAX_SAFE_INTEGER]};
 const fieldLabels={outputReserveTokens:'Output reserve',headroomTokens:'Safety headroom',compactAtTokens:'Compression trigger',keepRecentTokens:'Recent context to keep'};
 const nativeContextReason='Mistral Vibe Code manages context automatically. Manual compression and custom context settings are unavailable; saved history is preserved.';
 const unsupportedNativeContext=value=>value.preset!=='model'||value.autoCompact!==true||Object.keys(bounds).some(key=>value[key]!==undefined);
@@ -42,7 +42,7 @@ export function validateContextOptions(value={},info={}){
   const check=(name,input,min,max)=>{
     if(!Number.isSafeInteger(input)||input<min||input>max)throw Error(name+' must be a whole token count from '+tokens(min)+' to '+tokens(max)+'.');
   };
-  if(result.preset==='custom')check('Custom context',result.windowTokens,4096,4000000);
+  if(result.preset==='custom')check('Custom context',result.windowTokens,4096,Number.MAX_SAFE_INTEGER);
   for(const [key,[min,max]]of Object.entries(bounds))if(result[key]!==undefined)check(fieldLabels[key],result[key],min,max);
   if(result.preset==='extended'&&!info.maxWindow&&!info.defaultWindow)throw Error('Extended context needs a known model capacity. Choose Model default or resolve this model’s limits in Settings.');
   if(result.windowTokens&&(result.outputReserveTokens||0)+(result.headroomTokens||0)>=result.windowTokens)throw Error('Output reserve and safety headroom must leave room for input. Adjust them in Advanced budgets.');
@@ -165,17 +165,17 @@ export function createContextControls({mount,id='next-context',scope='chat',auto
     '</div><div id="'+id+'-body" class="next-context-body" hidden>',
     '<p class="next-help">'+(defaults?'Default context for new conversations. Existing conversations keep their saved context settings.':'These settings apply to your next response. /compress uses this conversation’s saved settings.')+'</p>',
     '<div id="'+id+'-budget-controls" class="next-settings-grid"><label class="next-label">Context budget<select class="next-field" id="'+id+'-preset"><option value="model">Model default</option><option value="extended">Extended</option><option value="custom">Custom</option><option value="900k" hidden>Legacy 900k request</option></select></label>',
-    '<label class="next-label" id="'+id+'-window-label" hidden>Custom budget (tokens)<input class="next-field" type="number" min="4096" max="4000000" step="1" id="'+id+'-window"></label></div>',
+    '<label class="next-label" id="'+id+'-window-label" hidden>Custom budget (tokens)<input class="next-field" type="number" min="4096" max="9007199254740991" step="1" id="'+id+'-window"></label></div>',
     '<p id="'+id+'-capacity" class="next-help"></p><p id="'+id+'-budget-note" class="next-help"></p>',
     '<button type="button" id="'+id+'-native-reset" hidden>Use native automatic context</button>',
     '<label id="'+id+'-auto-row" class="next-row"><input type="checkbox" id="'+id+'-auto"><span id="'+id+'-auto-label"></span></label>',
     '<p id="'+id+'-auto-help" class="next-help"></p>',
-    '<div id="'+id+'-api-options" class="next-settings-grid"><label class="next-label"><span id="'+id+'-trigger-label">Compression trigger (tokens)</span><input class="next-field" type="number" min="256" max="4000000" step="1" placeholder="Automatic" id="'+id+'-trigger"></label>',
-    '<label class="next-label" id="'+id+'-recent-label">Recent context to keep (tokens)<input class="next-field" type="number" min="256" max="256000" step="1" placeholder="Automatic" id="'+id+'-recent"></label></div>',
+    '<div id="'+id+'-api-options" class="next-settings-grid"><label class="next-label"><span id="'+id+'-trigger-label">Compression trigger (tokens)</span><input class="next-field" type="number" min="256" max="9007199254740991" step="1" placeholder="Automatic" id="'+id+'-trigger"></label>',
+    '<label class="next-label" id="'+id+'-recent-label">Recent context to keep (tokens)<input class="next-field" type="number" min="256" max="9007199254740991" step="1" placeholder="Automatic" id="'+id+'-recent"></label></div>',
     '<p id="'+id+'-trigger-help" class="next-help"></p>',
     '<details id="'+id+'-advanced"><summary>Advanced budgets</summary><p class="next-help">Reserve room for the answer and safety margin. Blank uses the runtime’s calculated default.</p>',
-    '<div class="next-settings-grid"><label class="next-label">Output reserve (tokens)<input class="next-field" type="number" min="256" max="128000" step="1" placeholder="Automatic" id="'+id+'-reserve"></label>',
-    '<label class="next-label">Safety headroom (tokens)<input class="next-field" type="number" min="128" max="256000" step="1" placeholder="Automatic" id="'+id+'-headroom"></label></div></details>',
+    '<div class="next-settings-grid"><label class="next-label">Output reserve (tokens)<input class="next-field" type="number" min="256" max="9007199254740991" step="1" placeholder="Automatic" id="'+id+'-reserve"></label>',
+    '<label class="next-label">Safety headroom (tokens)<input class="next-field" type="number" min="128" max="9007199254740991" step="1" placeholder="Automatic" id="'+id+'-headroom"></label></div></details>',
     '<p id="'+id+'-saved" class="next-help"></p><p id="'+id+'-warnings" class="next-help"></p>',
     '</div><div id="'+id+'-result" class="next-context-result" hidden><p id="'+id+'-feedback" class="next-context-feedback next-help" role="status" aria-live="polite"></p>',
     defaults?'':'<button type="button" id="'+id+'-stop" hidden>Stop compression</button>',

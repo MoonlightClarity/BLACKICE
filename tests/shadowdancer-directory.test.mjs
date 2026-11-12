@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { isShadowdancerRequest, parseShadowdancerRequest, runShadowdancerDirectory } from '../lib/shadowdancer-directory.mjs';
+import { isShadowdancerRequest, parseShadowdancerRequest, runShadowdancerDirectory, ShadowdancerDirectory } from '../lib/shadowdancer-directory.mjs';
 
 class ScriptedRuntime {
   constructor(answers) { this.answers=[...answers]; this.calls=[]; }
@@ -18,6 +18,11 @@ const part = (token, n) => String(token).padEnd(n, ' background context ');
 const source = part('The marker code is ALPHA17.', 1150) + part('The marker code is BETA29.', 1100);
 const summary = (item,code) => ({summary:'Found '+code,items:[{value:code,quote:'marker code is '+code}],uncertainty:'unverified model extraction'});
 const integration = (answer, refs) => ({answer,used_refs:refs,integrated_findings:refs.map(ref=>({ref,claim:'linked'}))});
+async function runPagedFixture(args) {
+  const runner=new ShadowdancerDirectory(args);
+  runner.sourceChunks=async text=>Array.from({length:Math.ceil(text.length/1150)},(_,i)=>text.slice(i*1150,(i+1)*1150));
+  return runner.run(args.input);
+}
 
 test('opt-in command is explicit, and SOURCE is separated from user request', () => {
   assert.equal(isShadowdancerRequest('/directory List codes'),true);
@@ -37,7 +42,7 @@ test('two pages cannot silently drop the second source; turns and context summar
     integration('ALPHA17 and BETA29',['page:1','page:2'])
   ]);
   const received=[];
-  const done=await runShadowdancerDirectory({
+  const done=await runPagedFixture({
     cwd:x.cwd,conversationId:'chat001',runId:'run001',
     model:'remote::test',runtime,input:'/directory List all marker codes\nSOURCE:\n'+source,
     onProgress:x=>received.push(x)
@@ -86,7 +91,7 @@ test('explicit reference claim without required source fact cannot pass synthesi
     integration('ALPHA17',['page:1','page:2'])
   ]);
   await assert.rejects(
-    runShadowdancerDirectory({
+    runPagedFixture({
       cwd:x.cwd,conversationId:'chat002',runId:'run002',model:'remote::test',runtime,
       input:'/directory List all marker codes\nSOURCE:\n'+source,
     }),
@@ -100,8 +105,8 @@ test('recursive planning creates separate module files, labels work turns and in
   const runtime=new ScriptedRuntime([
     {atomic:false,steps:[{objective:'Compute 19 times 23'},{objective:'Verify 19 times 23 independently'}]},
     {atomic:true}, {atomic:true},
-    {finding:'19*23=437',candidate_answer:'437'},
-    {finding:'20*23-23=437',candidate_answer:'437'},
+    {status:'complete',nextAction:'',finding:'19*23=437',candidate_answer:'437'},
+    {status:'complete',nextAction:'',finding:'20*23-23=437',candidate_answer:'437'},
     integration('The value is 437 and it checks by an independent method.',['module:1.1','module:1.2'])
   ]);
   const done=await runShadowdancerDirectory({
@@ -124,7 +129,7 @@ test('single named JavaScript function remains an atomic folder and survives sou
   const x=await fixture();t.after(x.cleanup);
   const js='function normalizeTags(input){return [...new Set(input.map(s=>s.trim().toLowerCase()).filter(Boolean))];}';
   const runtime=new ScriptedRuntime([
-    {finding:'Implemented one callable',candidate_answer:js,uncertainty:''},
+    {status:'complete',nextAction:'',finding:'Implemented one callable',candidate_answer:js,uncertainty:''},
     integration(js,['module:1'])
   ]);
   const done=await runShadowdancerDirectory({
@@ -145,7 +150,7 @@ test('directory integration rejects prose in place of executable code',async t=>
   const x=await fixture();t.after(x.cleanup);
   const js='function normalizeTags(input){return input;}';
   const runtime=new ScriptedRuntime([
-    {finding:'One function',candidate_answer:js},
+    {status:'complete',nextAction:'',finding:'One function',candidate_answer:js},
     integration('This function normalizes the tags.',['module:1']),
     integration('Just trim and lowercase each string.',['module:1'])
   ]);
@@ -170,8 +175,8 @@ test('multi-round synthesis uses disk files at every level and checks source cov
   if(chunks.length>3)answers.push(integration('NU4',[...allRefs.slice(3)]));
   answers.push(integration('KAPPA1 LAMBDA2 MU3 NU4',['integrated:1:1','integrated:1:2']));
   const runtime=new ScriptedRuntime(answers);
-  const done=await runShadowdancerDirectory({
-    cwd:x.cwd,conversationId:'chat004',runId:'run004',model:'remote::test',runtime,
+  const done=await runPagedFixture({
+    limits:{groupSize:3},cwd:x.cwd,conversationId:'chat004',runId:'run004',model:'remote::test',runtime,
     input:'/directory List all codes\nSOURCE:\n'+body
   });
   assert.equal(done.stats.sourceRefs,chunks.length);

@@ -18,10 +18,10 @@ test('actual tool evidence survives Directory synthesis and report repair does n
     const input=JSON.parse(options.prompt.slice(i+marker.length));
     if(input.label==='decompose')return {output:'{"atomic":true}'};
     if(input.label==='work'){
-      workCalls++;assert.deepEqual(options.outputSchema.required,['finding','candidate_answer','uncertainty']);
+      workCalls++;assert.deepEqual(options.outputSchema.required,['status','nextAction','finding','candidate_answer','uncertainty']);
       await options.onToolCall({name:'relay_workspace',callId:'write-real',arguments:{action:'write',path:'actual.txt',text:'verified bytes\n'}});
       await options.onToolCall({name:'relay_workspace',callId:'read-real',arguments:{action:'read',path:'actual.txt'}});
-      return {output:JSON.stringify({finding:'actual.txt was written and read back',candidate_answer:'Verified bytes persisted.',uncertainty:''})};
+      return {output:JSON.stringify({status:'complete',nextAction:'',finding:'actual.txt was written and read back',candidate_answer:'Verified bytes persisted.',uncertainty:''})};
     }
     assert.equal(input.label,'integration');integrationCalls++;
     assert.deepEqual(options.outputSchema.required,['answer','used_refs']);

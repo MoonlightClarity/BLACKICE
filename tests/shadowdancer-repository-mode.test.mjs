@@ -33,12 +33,12 @@ test('repository mode exposes workspace tools in each fresh directory context an
         assert.equal(read.success,true);
         const patch=await opts.onToolCall({name:'relay_workspace',arguments:{action:'patch',path:'src/logic.mjs',oldText:'return 0;',newText:'return 42;'}});
         assert.equal(patch.success,true,JSON.stringify(patch));
-        return {output:JSON.stringify({finding:'logic.mjs now returns 42',candidate_answer:'Reviewed local patch',uncertainty:''})};
+        return {output:JSON.stringify({status:'complete',nextAction:'',finding:'logic.mjs now returns 42',candidate_answer:'Reviewed local patch',uncertainty:''})};
       }
       if(label==='repository-review'){
         const res=await opts.onToolCall({name:'relay_workspace',arguments:{action:'read',path:'src/logic.mjs'}});
         assert.equal(res.success,true);
-        return {output:JSON.stringify({finding:'Review inspected modified logic.mjs',candidate_answer:'Source edit verified by read',uncertainty:''})};
+        return {output:JSON.stringify({status:'complete',nextAction:'',finding:'Review inspected modified logic.mjs',candidate_answer:'Source edit verified by read',uncertainty:''})};
       }
       if(label==='integration'){
         assert.equal(opts.onToolCall,undefined,'repository synthesis is read-only and tool-free');
@@ -109,7 +109,7 @@ test('a repository single-function task edits real files and publishes an audite
      action:'patch',path:'src/score.mjs',oldText:'return 0;',newText:'return 42;'
    }});
    assert.equal(patch.success,true);
-   return {output:JSON.stringify({finding:'Changed score from 0 to 42'})};
+   return {output:JSON.stringify({status:'complete',nextAction:'',finding:'Changed score from 0 to 42'})};
   }
   if(view.label==='integration'){
    assert.deepEqual(view.payload.required_refs,['module:1','verification:final']);

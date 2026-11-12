@@ -121,3 +121,30 @@ test('live run updates carry errors and repaint the current turn without a page 
   paintHistory({ timeline }, [updated]);
   assert.match(errors(timeline)[0].textContent, /Revised final diagnostic/, 'changed errors invalidate the cached turn');
 });
+
+
+test('a saved stalled-outcome diagnostic shared by run and nodes is displayed exactly once',()=>{
+  const message='The task remains incomplete: repeated final candidates produced no new observed work. The request to apply to as many jobs as possible remains unfinished.';
+  const source=savedRun('stalled',{error:message,errorCode:'MODULAR_OUTCOME_STALLED',nodes:{
+    agent:{status:'failed',error:message,errorCode:'MODULAR_OUTCOME_STALLED'},
+    review:{status:'failed',error:message},
+  }}),before=structuredClone(source),timeline=fakeTimeline();
+  paintHistory({timeline},projectFamily({runs:[source]}).runs);
+  const paragraphs=descendants(timeline,node=>['next-chat-run-error-message','next-chat-error'].includes(node.className));
+  assert.deepEqual(paragraphs.map(node=>node.textContent),[message]);
+  assert.match(errors(timeline)[0].textContent,/MODULAR_OUTCOME_STALLED/);
+  assert.deepEqual(source,before,'Display deduplication never alters saved diagnostics.');
+});
+
+test('exact duplicate suppression preserves different node errors even when one contains the other',()=>{
+  const primary='Search failed',detail='Search failed: the provider returned HTTP 502',other='Browser session expired';
+  const source=savedRun('distinct',{error:primary,nodes:{
+    agent:{status:'failed',error:primary},search:{status:'failed',error:detail},browser:{status:'failed',error:other},
+  }}),run=projectFamily({runs:[source]}).runs[0],timeline=fakeTimeline();
+  paintHistory({timeline},[run]);
+  const diagnostics=()=>descendants(timeline,node=>['next-chat-run-error-message','next-chat-error'].includes(node.className)).map(node=>node.textContent);
+  assert.deepEqual(diagnostics(),[primary,detail,other]);
+  const updated=mergeChatRunUpdate(run,{id:run.id,status:'failed',settled:true,error:detail});
+  paintHistory({timeline},[updated]);
+  assert.deepEqual(diagnostics(),[detail,primary,other],'Live primary changes do not hide a distinct earlier node error.');
+});
