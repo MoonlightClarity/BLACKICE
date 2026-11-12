@@ -58,7 +58,7 @@ async function native(){
       showMessageBox:async options=>{dialogs.push(options);return {response:dialogResponse};}});
     ipcMain.handle('relay:review-retained-effect',handlers.review);ipcMain.handle('relay:cancel-retained-effect',handlers.cancel);
     window.webContents.on('console-message',(_e,level,message)=>{if(level>=3)failures.push(message);});
-    await window.loadURL(new URL('/next/',origin).href);
+    await window.loadURL(new URL('/',origin).href);
     const evaluate=expression=>window.webContents.executeJavaScript(expression);
     await until(()=>evaluate('Boolean(document.querySelector(".next-tab[data-space=settings]"))'),'App shell');
     await evaluate('document.querySelector(".next-tab[data-space=settings]").click();true');
