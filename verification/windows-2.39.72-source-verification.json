@@ -1,0 +1,225 @@
+{
+  "verified": true,
+  "checkedAt": "2026-11-12T21:24:18.556Z",
+  "head": "70416018f8621e3217b360374222b44858b0f4d6",
+  "fingerprint": "24c62952dcc19dd0cba6f51eba0fb0368e11308fa466b5c0600b2552a3f42d3b",
+  "sourceIndexSha256": "a854a8b14167b6a6a638922122f3b2f81ab1c3a031bc0cfa748c36339292b26d",
+  "sourceRecords": 1500,
+  "sourceBeforeAfterRecordsEqual": true,
+  "trackedSourceClean": true,
+  "testFiles": 701,
+  "testInventorySha256": "b3cd32e14888c74958fbd370401965a3d5c3e28706c75523c22e3e218c4cada6",
+  "groups": [
+    {
+      "index": 0,
+      "files": 40,
+      "tests": 527,
+      "passed": 526,
+      "failed": 0,
+      "skipped": 1,
+      "exitCode": 0,
+      "logsVerified": true
+    },
+    {
+      "index": 1,
+      "files": 40,
+      "tests": 446,
+      "passed": 442,
+      "failed": 0,
+      "skipped": 4,
+      "exitCode": 0,
+      "logsVerified": true
+    },
+    {
+      "index": 2,
+      "files": 40,
+      "tests": 536,
+      "passed": 535,
+      "failed": 0,
+      "skipped": 1,
+      "exitCode": 0,
+      "logsVerified": true
+    },
+    {
+      "index": 3,
+      "files": 40,
+      "tests": 426,
+      "passed": 426,
+      "failed": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "logsVerified": true
+    },
+    {
+      "index": 4,
+      "files": 40,
+      "tests": 474,
+      "passed": 473,
+      "failed": 0,
+      "skipped": 1,
+      "exitCode": 0,
+      "logsVerified": true
+    },
+    {
+      "index": 5,
+      "files": 40,
+      "tests": 356,
+      "passed": 353,
+      "failed": 0,
+      "skipped": 3,
+      "exitCode": 0,
+      "logsVerified": true
+    },
+    {
+      "index": 6,
+      "files": 40,
+      "tests": 504,
+      "passed": 503,
+      "failed": 0,
+      "skipped": 1,
+      "exitCode": 0,
+      "logsVerified": true
+    },
+    {
+      "index": 7,
+      "files": 40,
+      "tests": 657,
+      "passed": 657,
+      "failed": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "logsVerified": true
+    },
+    {
+      "index": 8,
+      "files": 40,
+      "tests": 317,
+      "passed": 317,
+      "failed": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "logsVerified": true
+    },
+    {
+      "index": 9,
+      "files": 40,
+      "tests": 432,
+      "passed": 432,
+      "failed": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "logsVerified": true
+    },
+    {
+      "index": 10,
+      "files": 40,
+      "tests": 506,
+      "passed": 506,
+      "failed": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "logsVerified": true
+    },
+    {
+      "index": 11,
+      "files": 40,
+      "tests": 540,
+      "passed": 540,
+      "failed": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "logsVerified": true
+    },
+    {
+      "index": 12,
+      "files": 40,
+      "tests": 367,
+      "passed": 367,
+      "failed": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "logsVerified": true
+    },
+    {
+      "index": 13,
+      "files": 40,
+      "tests": 539,
+      "passed": 539,
+      "failed": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "logsVerified": true
+    },
+    {
+      "index": 14,
+      "files": 40,
+      "tests": 662,
+      "passed": 662,
+      "failed": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "logsVerified": true
+    },
+    {
+      "index": 15,
+      "files": 40,
+      "tests": 407,
+      "passed": 407,
+      "failed": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "logsVerified": true
+    },
+    {
+      "index": 16,
+      "files": 40,
+      "tests": 383,
+      "passed": 383,
+      "failed": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "logsVerified": true
+    },
+    {
+      "index": 17,
+      "files": 21,
+      "tests": 192,
+      "passed": 192,
+      "failed": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "logsVerified": true
+    }
+  ],
+  "counts": {
+    "total": 8271,
+    "passed": 8260,
+    "failed": 0,
+    "requiredSkipped": 0,
+    "optionalSkipped": 11,
+    "cancelled": 0,
+    "todo": 0,
+    "exitCode": 0
+  },
+  "optionalSkips": [
+    "Relay-owned sign-in and local storage survive a full process restart without foregrounding",
+    "live contained input updates application state and delivers editing keys without OS focus",
+    "offscreen contained input updates application state and delivers editing keys without OS focus",
+    "restored hidden browser tabs defer requests until used and never load closed or replaced pages",
+    "native popups preserve OAuth routing and remain independent when their opener closes",
+    "actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases",
+    "live background accessibility actions change only a dedicated non-activating fixture and leave foreground and cursor untouched",
+    "rendered Chat Directory controls reach the real engine and persist independently",
+    "hidden isolated Chromium composer validates real layout and one-click send wiring",
+    "installed Himalaya sends exact MIME to disposable loopback SMTP and strips Bcc headers",
+    "real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart"
+  ],
+  "receiptBytes": 2491,
+  "receiptSha256": "368c156eeaec2851368b1d514ae0482e02b716053bc5d51e20f5e76cef12af79",
+  "jointReleaseHold": true,
+  "storageMainAncestry": {
+    "commit": "616d985d5ca5fedd17811d69e214606e34587400",
+    "subject": "Request verified BLACKICE 2.39.71 release",
+    "ancestorOfTestedSource": true
+  }
+}

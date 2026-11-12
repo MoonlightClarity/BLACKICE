@@ -1,0 +1,318 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "version": "2.39.72",
+  "kind": "sanitized-native-context-verification",
+  "generatedAt": "2026-11-12T21:27:21.894729+00:00",
+  "status": "native-and-combined-windows-source-verification-recorded-release-held",
+  "releaseVerified": false,
+  "scope": "Read-only native context, evidence retrieval and active-session checks. No original user-task completion claim.",
+  "sourceBindings": {
+    "productionNative": {
+      "sourceCommit": "417775702a1d25e760518629cd91cd72dbb42f25",
+      "appFingerprint": "791a0dbc59bd37b3c51a4f09045cbd77d651f13fe506263c7017a9763d22f8ad",
+      "sourceIndexSha256": "ce8f89c818686b8e89a634423db643083e0f9680e08caeb240ff98ac5135ce39"
+    },
+    "earlierAtomicAndControls": {
+      "sourceCommit": "22f81194ae685c64b41c8e72e54a701a7761625a",
+      "appFingerprint": "e1b472957c0adecce2282fbfb28e0a38587bc841dbc60ce5c7c244ebaef934c9",
+      "controlBindingQualification": "Atomic receipt binds this source directly. Synthetic control binding is coordinator-confirmed; the selected control receipts do not independently contain commit/fingerprint."
+    },
+    "releaseSuccessor": {
+      "sourceCommit": "70416018f8621e3217b360374222b44858b0f4d6",
+      "appFingerprint": "24c62952dcc19dd0cba6f51eba0fb0368e11308fa466b5c0600b2552a3f42d3b",
+      "sourceIndexSha256": "a854a8b14167b6a6a638922122f3b2f81ab1c3a031bc0cfa748c36339292b26d",
+      "sourceFiles": 1500,
+      "nativeExecutedOnThisCommit": false,
+      "metadataOnlySuccessor": true,
+      "runtimeAndTestCodeIdentical": true,
+      "comparedAgainst": "417775702a1d25e760518629cd91cd72dbb42f25",
+      "changedPaths": [
+        ".github/release-request.json",
+        "RELEASE-NOTES-2.39.71.md",
+        "RELEASE-NOTES-2.39.72.md",
+        "desktop/electron-builder.yml",
+        "package-lock.json",
+        "package.json",
+        "verification/windows-2.39.71-clean.json"
+      ],
+      "packageAndLockChangesVersionOnly": true,
+      "builderChangeReleaseNoteSelectionOnly": true,
+      "gitDiffSha256": "7ae076e86e5d66582d7b453ec08a44e04ffd87443947577e24f07ea20a85a5ce",
+      "meaning": "Native observations remain bound to the source actually executed, not relabeled as execution of the release successor."
+    }
+  },
+  "configuredCapacity": {
+    "model": "gpt-6-luna",
+    "reasoningEffort": "low",
+    "preset": "extended",
+    "configuredNativeWindowTokens": 872000,
+    "providerEffectiveWindowTokens": 828400,
+    "selectedInputBudgetTokens": 812016,
+    "measurementRule": "Provider-reported per-response input measures use; configured windows and cumulative billing totals do not measure peak input."
+  },
+  "originalFailure": {
+    "selectedInputBudgetTokens": 812016,
+    "largestRetainedWorkInputTokens": 424813,
+    "firstFreshIntegrationInputTokens": 24525,
+    "disposition": "Host rejected the oversized saved result before its integration inference.",
+    "provenance": "Coordinator inspection of the original failing run and retained usage events. Earlier telemetry had been pruned. 424,813 is the largest input measurement among retained events, not a verified maximum for the entire run; the retained fresh-integration measurement was 24,525."
+  },
+  "pairedToolDelivery": {
+    "sourceBinding": "earlierAtomicAndControls",
+    "status": "3-of-3-with-both-limits",
+    "bodyCharacters": 180055,
+    "hostResponseBytes": 180128,
+    "expectedMarkers": 3,
+    "sameFixtureWithinPair": true,
+    "failedControls": [
+      {
+        "id": "default-code-mode-and-default-history",
+        "execBudget": null,
+        "threadHistoryBudget": null,
+        "startupHistoryBudget": null,
+        "exactMarkers": 0,
+        "inputBefore": 8257,
+        "inputAfter": 31242,
+        "inputDelta": 22985
+      },
+      {
+        "id": "default-code-mode-and-explicit-thread-history",
+        "execBudget": null,
+        "threadHistoryBudget": 812016,
+        "startupHistoryBudget": null,
+        "exactMarkers": 0,
+        "inputBefore": 8257,
+        "inputAfter": 31243,
+        "inputDelta": 22986
+      },
+      {
+        "id": "default-code-mode-and-explicit-startup-history",
+        "execBudget": null,
+        "threadHistoryBudget": null,
+        "startupHistoryBudget": 812016,
+        "exactMarkers": 0,
+        "inputBefore": 8257,
+        "inputAfter": 31253,
+        "inputDelta": 22996
+      },
+      {
+        "id": "explicit-code-mode-and-default-history",
+        "execBudget": 812016,
+        "threadHistoryBudget": null,
+        "startupHistoryBudget": null,
+        "exactMarkers": 0,
+        "inputBefore": 8350,
+        "inputAfter": 35803,
+        "inputDelta": 27453
+      }
+    ],
+    "pairedControl": {
+      "id": "paired-control-explicit-code-mode-only",
+      "execBudget": 812016,
+      "threadHistoryBudget": null,
+      "startupHistoryBudget": null,
+      "exactMarkers": 0,
+      "inputBefore": 8350,
+      "inputAfter": 35798,
+      "inputDelta": 27448
+    },
+    "pairedRecovered": {
+      "id": "paired-explicit-code-mode-and-thread-history",
+      "execBudget": 812016,
+      "threadHistoryBudget": 812016,
+      "startupHistoryBudget": null,
+      "exactMarkers": 3,
+      "inputBefore": 8350,
+      "inputAfter": 110946,
+      "inputDelta": 102596
+    },
+    "pairedHostAndNativeWriteSha256": "5620f5ed0d26c51ed547dfd9797e5dfbcddc96458e802073bd273b817a0feec1",
+    "pairedWriteHashesMatch": true,
+    "interpretation": "The same 180055-character fixture recovered 0/3 middle markers with only the code-mode budget and 3/3 after adding the per-thread history budget. Earlier default and single-limit controls also failed. Both limits were required in this tested path.",
+    "allBytesVisibilityClaim": false
+  },
+  "nearCapacityProductionProbe": {
+    "sourceBinding": "productionNative",
+    "receipt": "native-context-capacity-4177757.json",
+    "status": "capacity-observed-marker-exactness-incomplete",
+    "nativeVersion": "0.167.0-alpha.4.1",
+    "usesProductionInstructionsWithoutManualPragma": true,
+    "instructionProvenance": "Coordinator ran the original helper without the earlier manual developer pragma against the exact frozen production source.",
+    "fixtureBodyCharacters": 1350055,
+    "hostResponseBytes": 1350128,
+    "hostResponseSha256": "d8c6fce83e9074081b6342bb10c16a479191062441b57694a85d647659e3e0c5",
+    "nativeWriteBytes": 1350128,
+    "nativeWriteSha256": "d8c6fce83e9074081b6342bb10c16a479191062441b57694a85d647659e3e0c5",
+    "writeHashesMatch": true,
+    "nativeWriteAcknowledged": true,
+    "toolCalls": 1,
+    "taskOperations": 0,
+    "inputBefore": 8487,
+    "inputAfter": 777358,
+    "inputDelta": 768871,
+    "peakInputTokens": 777358,
+    "selectedInputBudgetTokens": 812016,
+    "observedPeakPercentOfBudget": 95.731858,
+    "providerEffectiveWindowTokens": 828400,
+    "compactionCount": 0,
+    "markerExactness": {
+      "exactMatches": 2,
+      "expected": 3,
+      "allMarkersMatch": false,
+      "expectedLength": 48,
+      "returnedLengths": {
+        "A": 48,
+        "B": 32,
+        "C": 48
+      },
+      "shortenedMarker": "B",
+      "modelReportedVisibility": "all_observed",
+      "qualification": "B was copied as 32 rather than 48 characters. The reported visibility and 95.73% measured capacity access do not turn this 2/3 exact-match result into an all-marker pass."
+    },
+    "fixtureUnchanged": true,
+    "runtimeUnchanged": true,
+    "allBytesUnderstoodOrCopiedClaim": false
+  },
+  "atomicSessionContinuity": {
+    "sourceBinding": "earlierAtomicAndControls",
+    "receipt": "directory-native-atomic-22f8119-report.json",
+    "status": "passed",
+    "boundedReadOnlyFixture": true,
+    "fixtureReadCount": 1,
+    "workerThreads": 1,
+    "workerTurns": 2,
+    "sameWorkerAcrossRevision": true,
+    "independentReviewThreads": 1,
+    "reviewThreadDistinct": true,
+    "peakConcurrentNativeTurns": 2,
+    "workerActiveDuringReview": true,
+    "responseOnlyRevisionForced": true,
+    "writeGuardProbe": {
+      "code": "DIRECTORY_RESPONSE_REVISION_READ_ONLY",
+      "success": false,
+      "forbiddenDispatches": 0
+    },
+    "atomicOutcomeAccepted": true,
+    "assessmentDecision": "respond",
+    "freshIntegrationObserved": false,
+    "exactAcceptedOutputSha256": "abd379e01b70bbd7214e6cd96e6ff0d4734e00cf56431dda4533195515ec53fb",
+    "fixtureUnchanged": true,
+    "runtimeUnchanged": true,
+    "originalTaskCompletionClaim": false
+  },
+  "finalSavedEvidenceReplay": {
+    "sourceBinding": "productionNative",
+    "receipt": "directory-native-replay-final-4177757-proof.json",
+    "status": "integration-completed-review-incomplete",
+    "finishedAt": "2026-11-12T21:11:46.515Z",
+    "module": {
+      "bytes": 11771055,
+      "sha256": "f7b4f1b84a1fc82587a0f88887d31ebe383b71965a0edbd6f96a0741469450d9",
+      "unchanged": true,
+      "receiptCount": 548,
+      "allReceiptIdentitiesRetained": true,
+      "completeOriginalRetained": true
+    },
+    "globalJournal": {
+      "receiptCount": 552,
+      "unchanged": true,
+      "countProvenance": "Coordinator inspected 552 global journal records separately from 548 module receipts. Final replay verifies the original journal remained unchanged."
+    },
+    "exactSelectedRead": {
+      "readCount": 1,
+      "successfulReads": 1,
+      "representation": "projected-json",
+      "contentReturned": true,
+      "sourceSha256": "3a819055991e9a5fa4011de5b205ae3b67b95d80909507120050d03de5097cf5",
+      "offset": 0,
+      "end": 175,
+      "totalCharacters": 175,
+      "completeSelectedSource": true,
+      "responseBytes": 710,
+      "responseSha256": "73ca50665643f6ac829ace69e8654021a67c24baedd0d9970444272bac5d9725",
+      "imageProvided": false
+    },
+    "providerPeakInputTokens": 233906,
+    "providerEffectiveWindows": [
+      828400
+    ],
+    "reviewStatus": "incomplete",
+    "reviewContinuationExecuted": false,
+    "originalTaskContinuationExecuted": false,
+    "originalTaskCompletionClaim": false,
+    "allModuleBytesInspectedClaim": false,
+    "interpretation": "One exact 175-character projected source was read. All 11771055 module bytes and 548 receipt identities remained saved; this is not an all-archive inspection claim. The separate 552-record journal was unchanged. Independent review stayed incomplete; no original task action continued.",
+    "runtimeUnchanged": true,
+    "originalReportSha256": "8ad73122fc8aee8a6dce429ace8355adb13d46372e7dba1d50b052ed70c24b20"
+  },
+  "fullWindowsSuite": {
+    "status": "passed",
+    "passed": true,
+    "sourceBinding": "releaseSuccessor",
+    "testedSourceCommit": "70416018f8621e3217b360374222b44858b0f4d6",
+    "testFiles": 701,
+    "receipt": "windows-2.39.72-clean.json",
+    "receiptSha256": "368c156eeaec2851368b1d514ae0482e02b716053bc5d51e20f5e76cef12af79",
+    "tests": {
+      "total": 8271,
+      "passed": 8260,
+      "failed": 0,
+      "requiredSkipped": 0,
+      "optionalSkipped": 11,
+      "cancelled": 0,
+      "todo": 0,
+      "exitCode": 0
+    },
+    "uniqueCoverageVerified": true,
+    "sourceFilesVerified": 1500,
+    "sourceUnchanged": true,
+    "checkedAt": "2026-11-12T21:22:33.999Z",
+    "qualification": "The complete combined Windows source suite passed. Native observations retain their actual source bindings; the combined installer has not been built or installed under the joint-release hold."
+  },
+  "sanitization": {
+    "omitted": [
+      "Usernames and absolute user paths",
+      "Private task and receipt bodies",
+      "Secret marker strings",
+      "Native session, turn and call IDs",
+      "Credentials"
+    ],
+    "retained": [
+      "Source identities and hashes",
+      "Aggregate counts and exact selected ranges",
+      "Provider context measurements",
+      "Explicit claim boundaries"
+    ]
+  },
+  "inputReceipts": [
+    {
+      "file": "ctx71-native-proof-draft.json",
+      "bytes": 32649,
+      "sha256": "ae40efc62f8fa335c1166b8e5b323c06fb8c2f365810cd2a877526c1185591fa"
+    },
+    {
+      "file": "native-context-capacity-4177757.json",
+      "bytes": 3523,
+      "sha256": "dd94ef2e9d80a0aa47853e3900e793d041ce926181f6ebe94280d0db796ee983"
+    },
+    {
+      "file": "directory-native-replay-final-4177757-proof.json",
+      "bytes": 2709,
+      "sha256": "610b022824a37624a4527deeb5672dba5a1786dceb15ba22c2bb38fb8e9af24f"
+    }
+  ],
+  "sourceVerificationComplete": true,
+  "jointReleaseHold": {
+    "active": true,
+    "requiredWorkstreams": [
+      "Context management improvements",
+      "External Storage Data"
+    ],
+    "directive": "Do not publish, tag, package, or install either fix independently. The next release must include both changes, verified together in one candidate and installer. Preserve the other chat's work.",
+    "combinedTestedSourceCommit": "70416018f8621e3217b360374222b44858b0f4d6",
+    "storageDataIncludedThroughCommit": "616d985d5ca5fedd17811d69e214606e34587400",
+    "combinedInstallerVerification": "not-run-release-held",
+    "otherChatAcknowledgement": "not-yet-confirmed"
+  }
+}
