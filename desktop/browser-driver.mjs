@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview, validateBrowserUploadRequest } from '../lib/browser.mjs';
+import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview, validateBrowserUploadRequest, validateBrowserFillRequest } from '../lib/browser.mjs';
 import { captureHiddenPage } from './browser-capture.mjs';
 import { loadBrowserCompatibility } from './browser-compatibility.mjs';
 import { BrowserDiagnostics } from '../lib/browser-diagnostics.mjs';
@@ -248,6 +248,9 @@ async function smoothPageScroll(target, top, left) {
 }
 
 function elementAction(key, ref, action, args, scrollPage, inspectOperation) {
+  // This function runs in the renderer, so reject malformed fill preparation
+  // here as well as at the host boundary, before focus or selection can change.
+  if (['fill', 'fill-ready'].includes(action) && (typeof args?.text !== 'string' || args.value !== undefined)) return { __blackiceElementError: { message: 'Fill requires an explicit text string and does not accept value. Use text:"" to intentionally clear a field; value is only for select.', code: 'BROWSER_VALIDATION', inputDispatched: false } };
   const state = globalThis[key], el = state?.elements.get(ref);
   if (!el?.isConnected) return { __blackiceElementError: { message: 'This element ref is stale. Take a new snapshot and choose its current ref.', code: 'BROWSER_REF_STALE' } };
   // Retaining a ref does not authorize a node that was hidden or repurposed
@@ -1734,6 +1737,7 @@ export class ElectronBrowserDriver extends EventEmitter {
   }
   async perform(args, { signal, source = 'agent', owner: context, validateUploadPath, suppressResultSnapshot = false, operationDescriptor, operationId, recoveryInput } = {}) {
     cancel(signal);
+    const fillText = args.action === 'fill' ? validateBrowserFillRequest(args) : undefined;
     if (args.action === 'upload') validateBrowserUploadRequest(args);
     if (recoveryInput) await recoveryInput({ signal });
     const preview = validateBrowserPreview({ ...args, browser: args.browser ?? 'relay' }, source);
@@ -1854,7 +1858,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       return { ...this.interactionReceipt(tab), receipt: { typed: true, characters: args.text.length, input: 'browser protocol' } };
     }
     if (args.action === 'fill') {
-      const text = String(args.text ?? '');
+      const text = fillText;
       const guard = args.expectedDocumentId === undefined && args.expectedUrl === undefined ? { expectedDocumentId: inputDocumentId(tab), expectedUrl: tab.window.webContents.getURL() } : args;
       if (recoveryInput) await recoveryInput({ signal, prepared: true });
       receipt = (await this.element(tab, { ...args, text }, 'fill', signal)).result;

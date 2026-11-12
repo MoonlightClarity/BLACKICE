@@ -54,6 +54,19 @@ test('Firefox BiDi uses the actual protocol handshake, background task tabs and 
   assert.equal(mock.commands.some(command=>command.method==='browsingContext.activate'),false);
 });
 
+test('Firefox rejects malformed fill text before any protocol input and accepts intentional empty replacement', async t => {
+  const { mock, instance } = await driver(t), page = await open(instance);
+  const target = { action: 'fill', tabId: page.tabId, ref: 'task-1:document:2' }, before = mock.commands.length;
+  for (const payload of [{}, { value: 'Sample Operator' }, { text: '', value: 'Sample Operator' }, { text: 'Intended Operator', value: 'Different Operator' }, { text: null }, { text: 0 }, { text: false }, { text: [] }, { text: {} }]) {
+    await assert.rejects(instance.perform({ ...target, ...payload }), { code: 'BROWSER_VALIDATION', actionDispatched: false, inputDispatched: false });
+    await assert.rejects(instance.performAction({ ...target, ...payload }), { code: 'BROWSER_VALIDATION', actionDispatched: false, inputDispatched: false });
+    assert.equal(mock.commands.length, before);
+  }
+  const result = await instance.perform({ ...target, text: '' });
+  assert.equal(result.receipt.filled, true); assert.equal(result.receipt.verified, true); assert.equal(result.receipt.characters, 0);
+  assert.ok(mock.commands.slice(before).some(command => command.method === 'input.performActions'));
+});
+
 test('Firefox fills contenteditable through trusted page keyboard actions and always releases input',async t=>{
   const{mock,instance}=await driver(t);const page=await open(instance);
   const result=await instance.perform({action:'fill',tabId:page.tabId,ref:'task-1:document:2',text:'Hello\nWorld'});

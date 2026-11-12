@@ -14,6 +14,33 @@ function fixtureWorkspace({ driver, ...options }) {
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 
+test('fill requires explicit string text before tool or workspace dispatch and preserves intentional empty clears', async t => {
+  const calls = []; let field = 'Existing Operator';
+  const browser = fixtureWorkspace({ driver: { status: () => ({ available: true, contained: true }), perform: async args => { calls.push(args); field = String(args.text ?? ''); return { tabId: args.tabId, receipt: { filled: true, characters: field.length } }; } } });
+  t.after(() => browser.close());
+  const handler = createBrowserToolHandler({ browser });
+  const target = { action: 'fill', browser: 'relay', tabId: 'owned-tab', ref: 'name-field' };
+  for (const payload of [{}, { value: 'Sample Operator' }, { text: '', value: 'Sample Operator' }, { text: 'Intended Operator', value: 'Different Operator' }, { text: null }, { text: 0 }, { text: false }, { text: [] }, { text: {} }]) {
+    const call = { name: 'relay_browser', arguments: { ...target, ...payload } };
+    const result = await handler(call, { onOperationDispatch: () => assert.fail('Malformed fill must not dispatch an operation') });
+    assert.equal(result.success, false); assert.equal(result.code, 'BROWSER_VALIDATION');
+    const detail = JSON.parse(result.contentItems[0].text);
+    assert.equal(detail.actionDispatched, false); assert.equal(detail.inputDispatched, false);
+    assert.match(detail.error, /explicit text string/); assert.match(detail.error, /value is only for select/);
+    assert.equal((await handler.normalizeOperationResult(result, { call })).effectState, 'absent');
+    await assert.rejects(browser.perform(call.arguments, { source: 'user', beforeDispatch: () => assert.fail('Malformed local fill must not dispatch') }), { code: 'BROWSER_VALIDATION', actionDispatched: false, inputDispatched: false });
+    assert.equal(field, 'Existing Operator'); assert.deepEqual(calls, []);
+  }
+  for (const text of ['Sample Operator', '']) {
+    const result = await handler({ name: 'relay_browser', arguments: { ...target, text } });
+    assert.equal(result.success, true); assert.equal(field, text);
+    assert.equal(JSON.parse(result.contentItems[0].text).receipt.characters, text.length);
+  }
+  assert.equal(calls.length, 2);
+  assert.match(BROWSER_TOOL.inputSchema.properties.text.description, /Required for fill/);
+  assert.match(BROWSER_TOOL.inputSchema.properties.value.description, /Selection-only/);
+});
+
 test('focused typing requires explicit contained ownership and a complete document guard before admission', async t => {
   const calls = [], driver = { perform: async args => { calls.push(args); return { tabId: args.tabId }; } }, browser = fixtureWorkspace({ driver });
   t.after(() => browser.close());

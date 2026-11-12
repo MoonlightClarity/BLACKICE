@@ -11,6 +11,17 @@ import vm from 'node:vm';
 const source = await fs.readFile(new URL('../desktop/browser-driver.mjs', import.meta.url), 'utf8');
 const elementSource = source.slice(source.indexOf('function elementAction('), source.indexOf('\nasync function elementActionResult('));
 
+test('renderer fill and replacement preparation reject missing or non-string text without touching existing input', () => {
+  for (const action of ['fill', 'fill-ready']) for (const payload of [{}, { value: 'Sample Operator' }, { text: '', value: 'Sample Operator' }, { text: 'Intended Operator', value: 'Different Operator' }, { text: null }, { text: 0 }, { text: false }, { text: [] }, { text: {} }]) {
+    const calls = [], field = { isConnected: true, value: 'Existing Operator', focus() { calls.push('focus'); }, select() { calls.push('select'); }, dispatchEvent() { calls.push('event'); } };
+    const context = vm.createContext({ fixture: { elements: new Map([['field', field]]) } });
+    const result = vm.runInContext('(' + elementSource + ')("fixture","field",' + JSON.stringify(action) + ',' + JSON.stringify(payload) + ')', context);
+    assert.equal(result.__blackiceElementError.code, 'BROWSER_VALIDATION');
+    assert.equal(result.__blackiceElementError.inputDispatched, false);
+    assert.equal(result.needsTrustedTextInput, undefined); assert.equal(field.value, 'Existing Operator'); assert.deepEqual(calls, []);
+  }
+});
+
 test('native select type and value rejection prove no input while a real selection still dispatches', () => {
   for (const kind of ['custom', 'missing', 'valid']) {
     const events = [], field = { isConnected: true, tagName: kind === 'custom' ? 'BUTTON' : 'SELECT',

@@ -107,6 +107,18 @@ test('authorized direct organization and filtering dispatch once without new gra
   await assert.rejects(api.call('blackice_browser_action', { requestId: 'missing-write', action: 'protection', operation: 'global', enabled: false }, reader), { code: 'DIRECT_SCOPE_REQUIRED' });
 });
 
+test('direct bridge rejects missing or non-string fill text before job admission and allows intentional empty replacement', async t => {
+  const { api, calls } = await fixture(t);
+  const target = { action: 'fill', browser: 'relay', tabId: 'one', ref: 'name-field' };
+  for (const [index, payload] of [{}, { value: 'Sample Operator' }, { text: '', value: 'Sample Operator' }, { text: 'Intended Operator', value: 'Different Operator' }, { text: null }, { text: 0 }, { text: false }, { text: [] }, { text: {} }].entries()) {
+    await assert.rejects(api.call('blackice_browser_action', { requestId: 'invalid-fill-' + index, ...target, ...payload }, client), { code: 'DIRECT_REQUEST_INVALID' });
+  }
+  assert.deepEqual(calls, []); assert.equal((await api.listJobs(client)).total, 0);
+  const job = await api.call('blackice_browser_action', { requestId: 'intentional-empty-fill', ...target, text: '' }, client);
+  const result = await waitJob(api, job.jobId);
+  assert.equal(result.status, 'succeeded'); assert.deepEqual(calls, [{ ...target, text: '' }]);
+});
+
 test('direct form fills, selections and hover retain complete optional guards and deduplicate execution', async t => {
   const { api, calls } = await fixture(t);
   const guard = { tabId: 'one', expectedUrl: 'https://example.test/', expectedDocumentId: 'one:1' };

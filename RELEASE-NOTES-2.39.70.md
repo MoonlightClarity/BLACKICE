@@ -6,7 +6,12 @@
 - Adds a required execution status and next action. Incomplete work continues in the same model session before synthesis instead of repeatedly turning into a final summary.
 - Carries complete host tool receipts into dependent work and continuation. Prior summaries cannot replace actual observed results.
 - Retains truthful completion review, effect preservation and no-progress detection.
+- Gives outcome review exact, short references for the full admitted evidence. Invalid references trigger a review-only correction against the same receipts and candidate; completed actions are preserved and never replayed to fix citations.
 - Shows an identical failure diagnostic once while retaining distinct actionable messages.
+
+## Browser input
+
+- Requires explicit `text` for a fill action. Missing text or a select-only `value` now fails before focus or keyboard input; `text: ""` remains an intentional clear.
 
 ## Conversation context
 

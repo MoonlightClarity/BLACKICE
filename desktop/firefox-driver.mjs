@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import { browserURL } from '../lib/browser.mjs';
+import { browserURL, validateBrowserFillRequest } from '../lib/browser.mjs';
 
 // Uses Firefox's supported WebDriver BiDi protocol, not patched Playwright or OS input.
 // https://developer.mozilla.org/en-US/docs/Web/WebDriver/How_to/Create_BiDi_connection
@@ -291,6 +291,7 @@ export class FirefoxBiDiDriver extends EventEmitter {
   async performAction(args, { signal } = {}) {
     check(signal); if (this.closed || !this.connected) throw fail('Firefox is not connected.', 'BROWSER_UNAVAILABLE');
     if (!FIREFOX_ACTIONS.includes(args?.action)) throw fail(`Firefox does not currently support ${args?.action || 'this action'}. Supported actions: ${FIREFOX_ACTIONS.join(', ')}.`, 'BROWSER_UNSUPPORTED');
+    const fillText = args.action === 'fill' ? validateBrowserFillRequest(args) : undefined;
     if (args.action === 'tabs') { await this.refreshTabs(signal); return this.status(); }
     let tab;
     if (args.action === 'open') {
@@ -316,7 +317,7 @@ export class FirefoxBiDiDriver extends EventEmitter {
       await this.input(context, [{ type: 'pointer', id: 'relay-pointer', parameters: { pointerType: 'mouse' }, actions }], signal); receipt = { [args.action === 'click' ? 'clicked' : 'hovered']: true };
     }
     if (args.action === 'fill') {
-      const text = String(args.text ?? ''); if (text.length > 50000) throw fail('Text is too long.', 'BROWSER_VALIDATION');
+      const text = fillText; if (text.length > 50000) throw fail('Text is too long.', 'BROWSER_VALIDATION');
       const context = this.ref(tab,args.ref); await this.call(context, inspectElement, [this.key,args.ref,'focusText',''], { signal });
       // Gecko can retain keyboard focus in a previously used child frame even
       // after DOM focus() succeeds in the parent. A trusted browser click moves
