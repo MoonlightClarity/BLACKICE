@@ -1,4 +1,9 @@
+import { OwnedConfigureMount } from './fixture-configure-owned-mount.mjs';
 import test from 'node:test';
+// These controller fixtures run in a renderer-like document, including nested mounts.
+const originalDocument=globalThis.document;
+globalThis.document={activeElement:null};
+test.after(()=>{if(originalDocument===undefined)delete globalThis.document;else globalThis.document=originalDocument;});
 import assert from 'node:assert/strict';
 import { initConfigureUI,renderConfigureView,runTimeSettingsFromDraft } from '../public/configure-ui.mjs';
 
@@ -6,9 +11,9 @@ const settings=()=>({codexHistory:'relay',runTimeoutMs:null,providerIdleTimeoutM
 const snapshot=()=>({status:{runtimeSettings:settings()},workflow:null,workflows:[]});
 class Mount{
   constructor(){this.markup='';this.writes=0;this.focuses=[];this.handlers=new Map();this.classList={add(){},remove(){}};}
-  get innerHTML(){return this.markup;}set innerHTML(value){this.markup=value;this.writes++;}
+  get innerHTML(){return this.markup;}set innerHTML(value){this.markup=value;this.writes++;this.recoveryMount?.detach();this.recoveryMount=value.includes('id="configure-owner-recovery-mount"')?new OwnedConfigureMount(this):null;}
   addEventListener(type,handler){this.handlers.set(type,handler);}removeEventListener(type){this.handlers.delete(type);}
-  contains(target){return target?.attached!==false;}querySelector(selector){return{focus:options=>this.focuses.push({selector,options}),setSelectionRange(){}};}
+  contains(target){return target?.attached!==false;}querySelector(selector){if(selector==='#configure-owner-recovery-mount')return this.recoveryMount||null;return{focus:options=>this.focuses.push({selector,options}),setSelectionRange(){}};}
   event(type,target){return this.handlers.get(type)?.({target,preventDefault(){}});}
   click(action){return this.event('click',{dataset:{configure:action},closest(){return this;}});}
 }

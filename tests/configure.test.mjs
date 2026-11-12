@@ -1,4 +1,9 @@
+import { OwnedConfigureMount } from './fixture-configure-owned-mount.mjs';
 import test from 'node:test';
+// These controller fixtures run in a renderer-like document, including nested mounts.
+const originalDocument=globalThis.document;
+globalThis.document={activeElement:null};
+test.after(()=>{if(originalDocument===undefined)delete globalThis.document;else globalThis.document=originalDocument;});
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { configureSummary,configureSteps,updateConfigureStep,renderConfigureView,initConfigureUI,executionSettingsFromDraft,historySettingsFromDraft } from '../public/configure-ui.mjs';
@@ -9,7 +14,7 @@ const count=(html,part)=>html.split(part).length-1;
 
 test('basics derive actual selected-model readiness and show only the small default working set',()=>{
   const current=snapshot(),summary=configureSummary(current);assert.equal(summary.ready,true);assert.match(summary.model.label,/Fast cloud model/);assert.equal(summary.workspace,'C:\\work');assert.equal(summary.desktop,'Connected');
-  const html=renderConfigureView(current);assert.doesNotMatch(html,/Tell BLACKICE what you want to change/);assert.match(html,/Describe changes in chat/);assert.match(html,/Ready to chat/);for(const label of ['Default model','Working folder','Your agent'])assert.match(html,new RegExp(label));assert.equal(count(html,'class="configure-basic-row"'),3);assert.equal(count(html,'<textarea'),0);assert.equal(count(html,'<svg'),0);assert.equal(count(html,'<details'),11);assert.match(html,/data-configure-section="workspace"><summary>Background workspace/);assert.match(html,/class="response-context-advanced"/);assert.ok(!/<details[^>]*\sopen[\s>]/.test(html));assert.ok(!html.includes('BUILD_ONLY_INSTRUCTIONS'));assert.ok(!html.includes('REVIEW_ONLY_INSTRUCTIONS'));assert.ok(!html.includes('Deploy this workflow'));
+  const html=renderConfigureView(current);assert.doesNotMatch(html,/Tell BLACKICE what you want to change/);assert.match(html,/Describe changes in chat/);assert.match(html,/Ready to chat/);for(const label of ['Default model','Working folder','Your agent'])assert.match(html,new RegExp(label));assert.equal(count(html,'class="configure-basic-row"'),3);assert.equal(count(html,'<textarea'),0);assert.equal(count(html,'<svg'),0);assert.equal(count(html,'<details'),12);assert.match(html,/data-configure-section="blockedActions"><summary>Blocked actions/);assert.match(html,/data-configure-section="workspace"><summary>Background workspace/);assert.match(html,/class="response-context-advanced"/);assert.ok(!/<details[^>]*\sopen[\s>]/.test(html));assert.ok(!html.includes('BUILD_ONLY_INSTRUCTIONS'));assert.ok(!html.includes('REVIEW_ONLY_INSTRUCTIONS'));assert.ok(!html.includes('Deploy this workflow'));
   current.status.models[0].available=false;assert.equal(configureSummary(current).ready,false);assert.match(renderConfigureView(current),/Connect a model to begin/);assert.match(renderConfigureView(current),/>Connect a model<\/button>/);
   current.status.models[0].available=true;current.model='missing-chat-model';assert.equal(configureSummary(current).ready,true,'Basics shows the app default, independently of the current chat choice');
   current.status.defaultModelAvailable=false;assert.equal(configureSummary(current).ready,false,'explicit unavailable default remains unavailable');
@@ -43,8 +48,8 @@ test('saved names, instructions, errors and paths remain inert HTML in every con
 });
 
 class Mount{
-  constructor(){this.markup='';this.htmlWrites=0;Object.defineProperty(this,'innerHTML',{get:()=>this.markup,set:value=>{this.markup=value;this.htmlWrites++;}});this.handlers=new Map();this.focused=0;this.classes=new Set();this.classList={add:key=>this.classes.add(key),remove:key=>this.classes.delete(key)};}
-  addEventListener(type,handler){this.handlers.set(type,handler);}removeEventListener(type){this.handlers.delete(type);}contains(target){return target?.attached!==false;}querySelector(){return{focus:()=>{this.focused++;}};}
+  constructor(){this.markup='';this.htmlWrites=0;Object.defineProperty(this,'innerHTML',{get:()=>this.markup,set:value=>{this.markup=value;this.htmlWrites++;this.recoveryMount?.detach();this.recoveryMount=value.includes('id="configure-owner-recovery-mount"')?new OwnedConfigureMount(this):null;}});this.handlers=new Map();this.focused=0;this.classes=new Set();this.classList={add:key=>this.classes.add(key),remove:key=>this.classes.delete(key)};}
+  addEventListener(type,handler){this.handlers.set(type,handler);}removeEventListener(type){this.handlers.delete(type);}contains(target){return target?.attached!==false;}querySelector(selector){if(selector==='#configure-owner-recovery-mount')return this.recoveryMount||null;return{focus:()=>{this.focused++;}};}
   async event(type,target){return this.handlers.get(type)?.({target,preventDefault(){}});}async click(action){const target={dataset:{configure:action},closest(){return this;}};return this.event('click',target);}async field(field,value,type='input'){return this.event(type,{dataset:{configureDraft:field},value,type:'text'});}async submit(){return this.event('submit',{id:'configure-step-editor'});}
 }
 
@@ -309,7 +314,7 @@ test('changing the concurrent-work mode restores the same labeled control after 
   const mount = new Mount(), ui = initConfigureUI({ mount, getSnapshot: snapshot, api: async () => ({ maxConcurrentRuns: null }) });
   await executionToggle(mount);
   const replacement = { id: 'configure-execution-mode' }, queried = [];
-  mount.querySelector = selector => { queried.push(selector); return { focus() { globalThis.document.activeElement = replacement; } }; };
+  const querySelector=mount.querySelector.bind(mount);mount.querySelector = selector => { if(selector==='#configure-owner-recovery-mount')return querySelector(selector);queried.push(selector); return { focus() { globalThis.document.activeElement = replacement; } }; };
   const old = { id: 'configure-execution-mode', dataset: { configureExecution: 'mode' }, value: 'limit', attached: true };
   globalThis.document = { activeElement: old }; await mount.event('change', old);
   assert.ok(queried.includes('#configure-execution-mode')); assert.equal(globalThis.document.activeElement, replacement);

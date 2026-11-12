@@ -6,7 +6,22 @@ import { initConfigureUI } from '../public/configure-ui.mjs';
 // controls, so these tests exercise controller behavior rather than HTML strings.
 const decode=value=>String(value).replace(/&(amp|lt|gt|quot|#39);/g,(_,entity)=>({amp:'&',lt:'<',gt:'>',quot:'"','#39':"'"}[entity]));
 class Element {
-  constructor(document,tag,attributes={}){this.ownerDocument=document;this.tagName=tag.toUpperCase();this.attributes=attributes;this.children=[];this.parentElement=null;this.text='';this.id=attributes.id||'';this.type=attributes.type||(tag==='input'?'text':'');this.disabled='disabled'in attributes;this.open='open'in attributes;this.checked='checked'in attributes;this.classList={add(){},remove(){}};this.selectionStart=this.selectionEnd=['TEXTAREA','INPUT'].includes(this.tagName)&&['','text'].includes(this.type)?0:null;this.selectionDirection='none';}
+  constructor(document,tag,attributes={}){this.handlers=new Map();this.writes=0;this.ownerDocument=document;this.tagName=tag.toUpperCase();this.attributes=attributes;this.children=[];this.parentElement=null;this.text='';this.id=attributes.id||'';this.type=attributes.type||(tag==='input'?'text':'');this.disabled='disabled'in attributes;this.open='open'in attributes;this.checked='checked'in attributes;this.classList={add(){},remove(){}};this.selectionStart=this.selectionEnd=['TEXTAREA','INPUT'].includes(this.tagName)&&['','text'].includes(this.type)?0:null;this.selectionDirection='none';}
+  get innerHTML(){return this.markup;}
+  set innerHTML(markup){
+    if(this.contains(this.ownerDocument.activeElement))this.ownerDocument.activeElement=this.ownerDocument.body;
+    for(const child of this.children)child.parentElement=null;this.children=[];this.markup=markup;this.writes++;const stack=[this],voids=new Set(['input','br','hr','img','meta','link','area','base','embed','source','track','wbr']);
+    for(const token of markup.match(/<[^>]+>|[^<]+/g)||[]){
+      if(token.startsWith('</')){const tag=token.slice(2,-1).toUpperCase();while(stack.length>1&&stack.pop().tagName!==tag){};continue;}
+      if(token.startsWith('<')){const [,tag,rest]=/^<([\w-]+)([\s\S]*?)>$/.exec(token)||[];if(!tag)continue;const attributes=Object.fromEntries([...rest.matchAll(/([\w:-]+)(?:="([^"]*)")?/g)].map(([,key,value])=>[key,decode(value||'')])),node=new Element(this.ownerDocument,tag,attributes),parent=stack.at(-1);parent.children.push(node);node.parentElement=parent;if(!voids.has(tag))stack.push(node);}
+      else stack.at(-1).text+=token;
+    }
+  }
+  addEventListener(type,handler){this.handlers.set(type,handler);}
+  removeEventListener(type){this.handlers.delete(type);}
+  get isConnected(){return this.ownerDocument.body.contains(this);}
+  remove(){const parent=this.parentElement;if(parent){parent.children=parent.children.filter(child=>child!==this);this.parentElement=null;}}
+  replaceWith(replacement){const parent=this.parentElement;if(!parent)return;replacement.remove();const index=parent.children.indexOf(this);parent.children[index]=replacement;replacement.parentElement=parent;this.parentElement=null;}
   get dataset(){return Object.fromEntries(Object.entries(this.attributes).filter(([key])=>key.startsWith('data-')).map(([key,value])=>[key.slice(5).replace(/-([a-z])/g,(_,letter)=>letter.toUpperCase()),value]));}
   get value(){if(this.editedValue!==undefined)return this.editedValue;if(this.tagName==='SELECT'){const options=this.querySelectorAll('option');return(options.find(option=>'selected'in option.attributes)||options[0])?.attributes.value||'';}return this.tagName==='TEXTAREA'?decode(this.text):this.attributes.value||'';}
   set value(value){this.editedValue=String(value);}
@@ -20,18 +35,6 @@ class Element {
 }
 class Mount extends Element {
   constructor(document){super(document,'div');this.handlers=new Map();this.writes=0;}
-  get innerHTML(){return this.markup;}
-  set innerHTML(markup){
-    if(this.contains(this.ownerDocument.activeElement))this.ownerDocument.activeElement=this.ownerDocument.body;
-    for(const child of this.children)child.parentElement=null;this.children=[];this.markup=markup;this.writes++;const stack=[this],voids=new Set(['input','br','hr','img','meta','link','area','base','embed','source','track','wbr']);
-    for(const token of markup.match(/<[^>]+>|[^<]+/g)||[]){
-      if(token.startsWith('</')){const tag=token.slice(2,-1).toUpperCase();while(stack.length>1&&stack.pop().tagName!==tag){};continue;}
-      if(token.startsWith('<')){const [,tag,rest]=/^<([\w-]+)([\s\S]*?)>$/.exec(token)||[];if(!tag)continue;const attributes=Object.fromEntries([...rest.matchAll(/([\w:-]+)(?:="([^"]*)")?/g)].map(([,key,value])=>[key,decode(value||'')])),node=new Element(this.ownerDocument,tag,attributes),parent=stack.at(-1);parent.children.push(node);node.parentElement=parent;if(!voids.has(tag))stack.push(node);}
-      else stack.at(-1).text+=token;
-    }
-  }
-  addEventListener(type,handler){this.handlers.set(type,handler);}
-  removeEventListener(type){this.handlers.delete(type);}
   event(type,target){return this.handlers.get(type)?.({target,preventDefault(){}});}
   click(action,index=0){const target=this.querySelectorAll(`[data-configure="${action}"]`)[index];assert.ok(target,`Action ${action} exists`);target.focus();return this.event('click',target);}
   input(selector,value){const target=this.querySelector(selector);assert.ok(target,`Field ${selector} exists`);target.value=value;return this.event(target.tagName==='SELECT'?'change':'input',target);}
@@ -91,4 +94,21 @@ test('busy recovery controls move focus to their disclosure and do not steal it 
 
 test('focused actions retain ownership during a changed status render',t=>{
   const{document,mount,current,ui,focus}=setup(t,{onConnections(){}}),original=focus('[data-configure="connections"]');current.status.version='New status';ui.update();assert.notStrictEqual(document.activeElement,original);assert.strictEqual(document.activeElement,mount.querySelector('[data-configure="connections"]'));
+});
+
+test('blocked-action child mount owns its listener and survives Settings renders until destroy',async t=>{
+  const calls=[],{mount,ui,current}=setup(t,{api:async url=>{calls.push(url);return {localManagement:true,nativeConfirmationAvailable:false,requests:[]};}});
+  const child=mount.querySelector('#configure-owner-recovery-mount');
+  assert.ok(child?.isConnected);assert.equal(typeof child.handlers.get('click'),'function');
+  assert.equal(calls.length,0,'collapsed panel does not fetch');
+  await mount.toggle('blockedActions');await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(calls.length,1);
+  current.status.defaultModel='changed-provider';ui.update();
+  assert.equal(mount.querySelector('#configure-owner-recovery-mount'),child,'the real child is reattached, not remounted');
+  const refresh=child.querySelector('[data-owner-recovery="refresh"]');
+  assert.ok(refresh);await child.handlers.get('click')({target:refresh});
+  assert.equal(calls.length,2,'the preserved listener dispatches the child refresh');
+  ui.showWorkflows();assert.equal(child.isConnected,false);
+  ui.showBasics();assert.equal(mount.querySelector('#configure-owner-recovery-mount'),child);
+  ui.destroy();assert.equal(child.handlers.size,0);assert.equal(child.isConnected,false);
 });
