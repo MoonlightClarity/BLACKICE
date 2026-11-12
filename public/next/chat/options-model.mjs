@@ -5,7 +5,7 @@ import {normalizePlanningOntology} from '../../planning-module-policy.mjs';
 import {assertExecutablePlanningMode} from '../../response-cycle-model.mjs';
 
 export const DEFAULT_CHAT_OPTIONS=Object.freeze({
-  model:'default',effort:'default',serviceTier:'default',planningMode:'ontology',planningExecutionMode:'automatic',planningOntology:normalizePlanningOntology(),directoryMode:'auto',subagentsMode:'default',
+  model:'default',effort:'default',serviceTier:'default',planningMode:'ontology',planningExecutionMode:'automatic',planningOntology:normalizePlanningOntology(),directoryMode:'on',subagentsMode:'default',
 });
 export const PLANNING_MODES=Object.freeze(['ontology','off']);
 export function normalizeChatOptions(value={}){
@@ -14,7 +14,7 @@ export function normalizeChatOptions(value={}){
   const serviceTier=['default','fast'].includes(value?.serviceTier)?value.serviceTier:'default';
   const planningMode=value?.planningMode==='off'?'off':'ontology';
   const planningExecutionMode=value?.planningExecutionMode??'automatic';
-  const directoryMode=['auto','on','off'].includes(value?.directoryMode)?value.directoryMode:'auto';
+  const directoryMode=value?.directoryMode==='off'?'off':'on';
   const subagentsMode=['default','on','off'].includes(value?.subagentsMode)?value.subagentsMode:'default';
   return {model,effort,serviceTier,planningMode,planningExecutionMode,directoryMode,subagentsMode,...(planningMode==='ontology'||value?.planningOntology!==undefined?{planningOntology:normalizePlanningOntology(value?.planningOntology)}:{})};
 }

@@ -88,7 +88,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       label.className='next-chat-ontology-choice';label.title=module.label+' · '+choice;
       const input=mount.ownerDocument.createElement('input');input.setAttribute('type','checkbox');
       input.setAttribute('aria-label',module.label+' '+choice);
-      const initial=choice==='auto'?'A':choice==='mandatory'?'M':choice==='optional'?'O':'F';
+      const initial=choice==='on'?'On':'Off';
       const letter=mount.ownerDocument.createElement('span');letter.textContent=initial;
       label.append(input,letter);choices.append(label);boxes.set(choice,input);
       input.addEventListener('change',()=>{

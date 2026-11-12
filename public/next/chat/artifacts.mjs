@@ -121,7 +121,7 @@ export function createDirectoryInspector({frame,getRunId}) {
   `;
   frame.append(style);
   let currentId='', currentTab='overview', files=[],turns=[],summary={};
-  const modelLabels=new Set(['decompose','context-page','work','repair','integration','extract-page','repository-review']);
+  const modelLabels=new Set(['decompose','context-page','work','repair','integration','extract-page','page-extract','repository-review']);
   const requestURL=(suffix,runId,file)=>'/api/shadowdancer/context'+suffix+'?runId='+encodeURIComponent(runId)+(file?'&file='+encodeURIComponent(file):'');
   const getJSON=async url=>{const response=await fetch(url,{credentials:'same-origin'});const value=await response.json();if(!response.ok)throw Error(value.error||'Directory context could not be inspected.');return value;};
   const display=(name,value)=>{fileLabel.textContent=name;contents.value=typeof value==='string'?value:JSON.stringify(value,null,2);contents.scrollTop=0;};
@@ -141,16 +141,20 @@ export function createDirectoryInspector({frame,getRunId}) {
       const modelCalls=turns.filter(row=>modelLabels.has(row.label)).length;
       const stale=Number(summary.totalTurns)!==turns.length;
       display('Recorded context summary',{
-        directoryStatus:summary.directoryStatus??'Not recorded in saved summary',
+        selectedRunId:currentId,
+        latestSummaryRunId:summary.currentRun??null,
+        directoryStatusOfLatestRun:summary.directoryStatus??'Not recorded in saved summary',
         failure:summary.failure??null,
-        auditedTurns:turns.length,
-        modelPhases:summary.modelCalls??modelCalls,
-        decompositionPhases:turns.filter(row=>row.label==='decompose').length,
+        auditedTurnsConversation:turns.length,
+        auditedTurnsSelectedRun:turns.filter(row=>row.runId===currentId).length,
+        modelPhasesConversation:modelCalls,
+        modelPhasesSelectedRun:turns.filter(row=>row.runId===currentId&&modelLabels.has(row.label)).length,
+        decompositionPhasesSelectedRun:turns.filter(row=>row.runId===currentId&&row.label==='decompose').length,
         savedFiles:files.length,
-        plannedWorkItems:summary.plannedWorkItems??'Not recorded',
+        plannedWorkItemsLatestRun:summary.plannedWorkItems??'Not recorded',
         summaryReportedTurns:summary.totalTurns??null,
         summaryStale:stale,
-        request:summary.request??null,
+        requestOfLatestRun:summary.request??null,
         note:'Model phases are counted from persisted Directory turn labels. Planning graph requests are a separate counter; a click or model response is not proof of an operational outcome.'
       });return;
     }
@@ -191,8 +195,9 @@ export function createDirectoryInspector({frame,getRunId}) {
       }
       const calls=turns.filter(row=>modelLabels.has(row.label)).length;
       status.textContent=files.length?
-        'Recorded: '+turns.length+' audit turns · '+calls+' model phases · '+files.length+' context files'+
-        (summary.directoryStatus?' · '+summary.directoryStatus:'')+
+        'Conversation: '+turns.length+' audit turns · '+calls+' model phases · '+files.length+' context files'+
+        ' | Selected run: '+turns.filter(row=>row.runId===runId&&modelLabels.has(row.label)).length+' model phases'+
+        (summary.directoryStatus?' · latest run '+summary.directoryStatus:'')+
         (Number(summary.totalTurns)!==turns.length?' · saved summary is stale':''):
         'No Directory evidence is saved for this conversation.';
       selectTab('overview');

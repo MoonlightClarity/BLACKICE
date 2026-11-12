@@ -44,21 +44,10 @@ export function transferNewOntology({conversationId,storage}={}){
   return true;
 }
 
-/** The grid exposes explicit choices, while preserving legacy global Auto choices. */
-export function gridOntologyState(policy,id){
-  const normalized=normalizePlanningOntology(policy),state=normalized.modules[id];
-  return state==='optional'&&normalized.autoSelect?'auto':state;
-}
-
+/** Display the Boolean policy without introducing a third state. */
+export function gridOntologyState(policy,id){return normalizePlanningOntology(policy).modules[id]?'on':'off';}
 export function updatedGridOntology(policy,id,choice){
   const normalized=normalizePlanningOntology(policy);
-  if(!['mandatory','optional','forbidden','auto'].includes(choice)||!Object.hasOwn(normalized.modules,id))
-    throw Error('Choose a known module and one Planning state.');
-  // Freeze legacy global automatic choices into individual Auto cells when a
-  // person first edits the grid; otherwise editing one cell changes all others.
-  const modules=Object.fromEntries(Object.entries(normalized.modules).map(([name,state])=>[
-    name,state==='optional'&&normalized.autoSelect?'auto':state,
-  ]));
-  modules[id]=choice;
-  return normalizePlanningOntology({version:1,autoSelect:false,modules});
+  if(!['on','off'].includes(choice)||!Object.hasOwn(normalized.modules,id))throw Error('Choose a known module and On or Off.');
+  return normalizePlanningOntology({version:2,modules:{...normalized.modules,[id]:choice==='on'}});
 }

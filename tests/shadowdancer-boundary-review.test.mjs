@@ -27,8 +27,9 @@ async function repoRunner(f,runtime){
 }
 
 test('Directory read-only phases deny commands and mutations before repository dispatcher',async t=>{
-  const f=await fixture(t),denials=[],reads=[],originals=[];
+  const f=await fixture(t),denials=[],reads=[],originals=[];let passive=0;
   const runtime={async runAgent(options){
+    if(options.responseOnly){passive++;assert.equal(options.onToolCall,undefined);assert.equal(options.dynamicTools,undefined);assert.equal(options.sandbox,'read-only');return {output:'{"summary":"observed","refs":[]}'};}
     assert.equal(typeof options.onToolCall,'function');
     for(const action of ['run','write','patch','undo_patch']){
       const input=call(action,'phase-'+action,{command:'must-not-run',path:'source.txt',text:'must-not-write'});
@@ -43,8 +44,8 @@ test('Directory read-only phases deny commands and mutations before repository d
   runner.repoToolHandler=async input=>{dispatched++;assert.equal(input.arguments.action,'read');return receipt({observed:true});};
   for(const phase of ['decompose','context-page','page-extract'])
     await runner.infer(phase,'review/'+phase,{instructions:'Read only.'});
-  assert.equal(dispatched,3);
-  assert.equal(denials.length,12);
+  assert.equal(dispatched,1);assert.equal(passive,2);
+  assert.equal(denials.length,4);
   assert.ok(denials.every(x=>x.success===false&&x.code==='DIRECTORY_PHASE_READ_ONLY'));
   assert.ok(reads.every(x=>x.success===true));
 });

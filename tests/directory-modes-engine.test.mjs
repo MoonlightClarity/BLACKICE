@@ -68,7 +68,7 @@ test('Chat modes change real execution on-off-on and survive restart without rew
  assert.equal(three.executionModes.subagentsMode,'on');assert.ok(runtime.calls.slice(-3).every(c=>phaseOf(c)&&c.prompt.includes('Continue using ordinary Chat.')));
  assert.equal(three.modelHandoff.reason,'execution-mode-change');
  const other=await settle(reopened,reopened.startRun({workflow:graph(),input:'Independent ordinary conversation.'}));
- assert.deepEqual(other.executionModes,{directoryMode:'auto',subagentsMode:'default'});assert.equal(phaseOf(runtime.calls.at(-1)),null);
+ assert.deepEqual(other.executionModes,{directoryMode:'off',subagentsMode:'default'});assert.equal(phaseOf(runtime.calls.at(-1)),null);
 });
 for(const directoryMode of ['on','off'])for(const subagentsMode of ['on','off'])test('runtime independence Directory '+directoryMode+' / Subagents '+subagentsMode,async t=>{
  const f=await fixture(t),receipts=[];let attempted=false;
@@ -86,14 +86,14 @@ for(const directoryMode of ['on','off'])for(const subagentsMode of ['on','off'])
  if(subagentsMode==='on'){assert.equal(receipts.length,1);assert.ok(run.events.some(x=>x.data?.type==='subagent.admission'&&x.data?.mode==='static_dag'&&x.data.allowed));}
  assert.equal(f.settings.subagentsEnabled,true,'per-chat preference must not change global settings');
 });
-test('Auto opt-in, explicit conflicts and unsupported workflow reject before any provider work',async t=>{
+test('Explicit command admission, conflicts and unsupported workflow reject before any provider work',async t=>{
  const f=await fixture(t);
  assert.throws(()=>f.engine.startRun({workflow:graph(),input:{task:'/directory Inspect.',directoryMode:'off'}}),{code:'DIRECTORY_DISABLED'});
  const multi=graph();multi.nodes.splice(2,0,{id:'other',type:'agent',prompt:'Other task'});multi.edges=[{source:'input',target:'agent'},{source:'input',target:'other'},{source:'agent',target:'output'},{source:'other',target:'output'}];
  assert.throws(()=>f.engine.startRun({workflow:multi,input:{task:'Inspect.',directoryMode:'on'}}),{code:'DIRECTORY_WORKFLOW_UNSUPPORTED'});
  assert.equal(f.runtime.calls.length,0);
  const run=await settle(f.engine,f.engine.startRun({workflow:graph(),input:'/directory Inspect the synthetic result.'}));
- assert.equal(run.executionModes.directoryMode,'auto');assert.ok(run.nodes.agent.shadowdancer);
+ assert.equal(run.executionModes.directoryMode,'on');assert.ok(run.nodes.agent.shadowdancer);
 });
 test('Directory read-only phases advertise no write or command and active directions persist into later fresh phases',async t=>{
  const f=await fixture(t),{engine,runtime}=f;let unblock,started;const wait=new Promise(r=>unblock=r),begin=new Promise(r=>started=r);
@@ -203,8 +203,9 @@ test('attributed attachment and handoff data stay outside source-page authority 
   }
  };
  const next=await settle(f.engine,f.engine.continueRun(first.id,{nodeId:'agent',message:'CURRENT_GOAL: inspect only this source.\nSOURCE:\n'+'a'.repeat(1800),directoryMode:'on',attachmentIds:[id]}));
- assert.equal(sourcePages,2);assert.ok(imports.some(text=>text.includes('ATTACHMENT_RAW_MUST_NOT_REPEAT')));
- assert.ok(imports.some(text=>text.includes('Ordinary Chat result.')));
+ assert.equal(sourcePages,2);assert.equal(imports.length,0,'exact attribution must not require a lossy model summary');
+ const savedImport=JSON.parse(await readFile(path.join(f.cwd,'.shadowdancer',next.taskId,'runs',next.id,'context/imports/0001/source.json'),'utf8'));
+ assert.match(savedImport.content,/ATTACHMENT_RAW_MUST_NOT_REPEAT/);assert.match(savedImport.content,/Ordinary Chat result\./);
  assert.ok(next.nodes.agent.shadowdancer);
 });
 for(const [version,controlVersion] of [[5,7],[6,8],[6,9]])test('Directory mode change preserves historical V'+version+' / control '+controlVersion+' catalog records without resuming a leaf',async t=>{

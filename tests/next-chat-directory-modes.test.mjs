@@ -24,13 +24,13 @@ const run=(id,modes={directoryMode:'auto',subagentsMode:'default'})=>({
 });
 test('Directory and Subagents normalize independently of Planning, preserve drafts and transfer only the new conversation',()=>{
  const storage=store(),value={directoryMode:'on',subagentsMode:'off'};
- assert.deepEqual(readConversationExecutionModes({storage}),{directoryMode:'auto',subagentsMode:'default'});
+ assert.deepEqual(readConversationExecutionModes({storage}),{directoryMode:'on',subagentsMode:'default'});
  assert.equal(normalizeChatOptions({...value,planningMode:'off'}).directoryMode,'on');
  saveConversationExecutionModes({storage,...value});
  assert.equal(transferNewExecutionModes({storage,conversationId:'one'}),true);
  assert.deepEqual(readConversationExecutionModes({storage,conversationId:'one'}),value);
- assert.deepEqual(readConversationExecutionModes({storage,conversationId:'two'}),{directoryMode:'auto',subagentsMode:'default'});
- assert.deepEqual(readConversationExecutionModes({storage,conversationId:'new'}),{directoryMode:'auto',subagentsMode:'default'});
+ assert.deepEqual(readConversationExecutionModes({storage,conversationId:'two'}),{directoryMode:'on',subagentsMode:'default'});
+ assert.deepEqual(readConversationExecutionModes({storage,conversationId:'new'}),{directoryMode:'on',subagentsMode:'default'});
  assert.throws(()=>saveConversationExecutionModes({storage,conversationId:'one',directoryMode:'unknown'}));
  const projected=projectFamily({rootId:'one',state:'active',runs:[run('one',value)]});
  assert.deepEqual(projected.runs[0].executionModes,value,'worker projection must retain admitted runtime choices');
@@ -57,12 +57,12 @@ test('mounted Chat switches isolated Directory preferences and restores them aft
  const wait=async id=>{for(let i=0;i<70;i++){if(workspace.getState().selected===id&&workspace.getState().runCount===1)return;await new Promise(r=>setTimeout(r,5));}throw Error('Conversation did not open '+id);};
  workspace.enter();workspace.openConversationId('one');await wait('one');
  assert.equal(dom.$('#next-chat-directory-mode').value,'on');assert.equal(dom.$('#next-chat-subagents-mode').value,'off');
- dom.$('#next-chat-directory-mode').value='auto';await dom.$('#next-chat-directory-mode').dispatch('change');
+ dom.$('#next-chat-directory-mode').value='off';await dom.$('#next-chat-directory-mode').dispatch('change');
  workspace.openConversationId('two');await wait('two');
  assert.equal(dom.$('#next-chat-directory-mode').value,'off');assert.equal(dom.$('#next-chat-subagents-mode').value,'on');
- workspace.openConversationId('one');await wait('one');assert.equal(dom.$('#next-chat-directory-mode').value,'auto');
+ workspace.openConversationId('one');await wait('one');assert.equal(dom.$('#next-chat-directory-mode').value,'off');
  workspace.destroy();workspace=make();workspace.enter();workspace.openConversationId('one');await wait('one');
- assert.equal(dom.$('#next-chat-directory-mode').value,'auto');assert.equal(dom.$('#next-chat-subagents-mode').value,'off');
+ assert.equal(dom.$('#next-chat-directory-mode').value,'off');assert.equal(dom.$('#next-chat-subagents-mode').value,'off');
  workspace.openConversationId('two');await wait('two');assert.equal(dom.$('#next-chat-directory-mode').value,'off');
 });
 test('Chat start/continue bind mode payloads while live direction never changes active execution',async()=>{

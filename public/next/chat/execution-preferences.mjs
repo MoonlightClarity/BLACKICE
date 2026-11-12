@@ -1,5 +1,5 @@
 const modes=value=>({
-  directoryMode:['auto','on','off'].includes(value?.directoryMode)?value.directoryMode:'auto',
+  directoryMode:value?.directoryMode==='off'?'off':'on',
   subagentsMode:['default','on','off'].includes(value?.subagentsMode)?value.subagentsMode:'default',
 });
 const valid=id=>typeof id==='string'&&/^[a-zA-Z0-9_-]{1,120}$/.test(id);
@@ -12,8 +12,8 @@ export function readConversationExecutionModes({conversationId='new',runs=[],sto
   }catch{}
   return modes(runs.at(-1)?.executionModes);
 }
-export function saveConversationExecutionModes({conversationId='new',directoryMode='auto',subagentsMode='default',storage}={}){
-  if(!valid(conversationId)||!['auto','on','off'].includes(directoryMode)||!['default','on','off'].includes(subagentsMode))throw Error('Choose valid conversation execution modes.');
+export function saveConversationExecutionModes({conversationId='new',directoryMode='on',subagentsMode='default',storage}={}){
+  if(!valid(conversationId)||!['on','off'].includes(directoryMode)||!['default','on','off'].includes(subagentsMode))throw Error('Choose valid conversation execution modes.');
   const value={directoryMode,subagentsMode};storage?.setItem(key(conversationId),JSON.stringify(value));return value;
 }
 export function transferNewExecutionModes({conversationId,storage}={}){
