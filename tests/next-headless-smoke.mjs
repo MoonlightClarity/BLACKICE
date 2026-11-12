@@ -91,11 +91,12 @@ try {
   await until(()=>evaluate('document.querySelectorAll(".next-conversation").length>0'),'Conversation metadata');
   if(!cronjobsOnly){
   await until(()=>evaluate('document.querySelector("#next-chat-model")?.options.length>1'),'Chat model choices');
-  await evaluate('window.__modelOptionBefore=document.querySelector("#next-chat-model").options[1];document.querySelector("#next-chat-model").focus();true');
+  await evaluate('window.__modelOptionBefore=document.querySelector("#next-chat-model").options[1];document.querySelector(".next-chat-model .next-model-picker-trigger").focus();true');
+  assert.equal(await evaluate('document.activeElement===document.querySelector(".next-chat-model .next-model-picker-trigger")'),true,'The visible model picker must receive keyboard focus before status updates');
   for(let i=0;i<20;i++)fixture.send({type:'runtime.status',data:fixture.state.status});
   await sleep(120);
   assert.equal(await evaluate('document.querySelector("#next-chat-model").options[1]===window.__modelOptionBefore'),true,'Repeated status must not replace identical model option nodes');
-  assert.equal(await evaluate('document.activeElement===document.querySelector("#next-chat-model")'),true,'Repeated status must not steal model keyboard focus');
+  assert.equal(await evaluate('document.activeElement===document.querySelector(".next-chat-model .next-model-picker-trigger")'),true,'Repeated status must not steal model keyboard focus');
   counts.stableModelMenu=true;
   if(process.env.BLACKICE_NEXT_CATALOG_HEAVY==='yes'){
     assert.equal(fixture.state.conversations.length,12001);
@@ -119,9 +120,9 @@ try {
   assert.ok(!fixture.calls.some(call=>call==='GET /api/runs'),'Startup must not load full execution history');
   assert.equal(await evaluate('document.querySelector("#next-stage > .next-loading") === null'),true,'Bootstrap overlay must be removed.');
   assert.ok(await evaluate('document.querySelector(".next-chat")?.getBoundingClientRect().height > 450'),'Chat must occupy the visible workspace.');
-  const messageViewport=await evaluate('(async()=>{const {paintHistory}=await import("/next/chat/render.mjs");const view={timeline:document.createElement("div")};const run={id:"synthetic-long-turn",input:"Inspect large saved turn",status:"completed",settled:true,nodes:{},workflow:{nodes:Array.from({length:1500},(_,i)=>({id:"agent-"+i,type:"agent",name:"Agent "+i}))},precomputedMessages:Array.from({length:3000},(_,i)=>({id:"msg-"+i,nodeId:"agent-"+i%1500,role:"assistant",text:"Response "+i}))};let limit=80;const paint=()=>paintHistory(view,[run],{messageLimits:new Map([[run.id,limit]]),onMoreMessages:()=>{limit+=80;paint()}});const start=performance.now();paint();const initial={visible:view.timeline.querySelectorAll(".next-message[data-role=assistant]").length,more:view.timeline.querySelector(".next-message-more")?.textContent,firstTitle:view.timeline.querySelector(".next-message[data-role=assistant] .next-message-title")?.textContent,lastTitle:[...view.timeline.querySelectorAll(".next-message[data-role=assistant] .next-message-title")].at(-1)?.textContent};view.timeline.querySelector(".next-message-more").click();return {initial,after:{visible:view.timeline.querySelectorAll(".next-message[data-role=assistant]").length,firstTitle:view.timeline.querySelector(".next-message[data-role=assistant] .next-message-title")?.textContent,more:view.timeline.querySelector(".next-message-more")?.textContent},renderMs:Math.round(performance.now()-start),sourceCount:run.precomputedMessages.length}})()');
-  assert.deepEqual(messageViewport.initial,{visible:80,more:"Show earlier messages (2920)",firstTitle:"Agent 1420",lastTitle:"Agent 1499"});
-  assert.deepEqual(messageViewport.after,{visible:160,firstTitle:"Agent 1340",more:"Show earlier messages (2840)"});
+  const messageViewport=await evaluate('(async()=>{const {paintHistory}=await import("/next/chat/render.mjs");const view={timeline:document.createElement("div")};const run={id:"synthetic-long-turn",input:"Inspect large saved turn",status:"completed",settled:true,nodes:{},workflow:{nodes:Array.from({length:1500},(_,i)=>({id:"agent-"+i,type:"agent",name:"Agent "+i}))},precomputedMessages:Array.from({length:3000},(_,i)=>({id:"msg-"+i,nodeId:"agent-"+i%1500,role:"assistant",text:"Response "+i}))};let limit=80;const paint=()=>paintHistory(view,[run],{messageLimits:new Map([[run.id,limit]]),onMoreMessages:()=>{limit+=80;paint()}});const start=performance.now();paint();const initial={visible:view.timeline.querySelectorAll(".next-chat-response .next-message-body").length,more:view.timeline.querySelector(".next-message-more")?.textContent,firstText:view.timeline.querySelector(".next-chat-response .next-message-body")?.textContent,lastText:[...view.timeline.querySelectorAll(".next-chat-response .next-message-body")].at(-1)?.textContent};view.timeline.querySelector(".next-message-more").click();return {initial,after:{visible:view.timeline.querySelectorAll(".next-chat-response .next-message-body").length,firstText:view.timeline.querySelector(".next-chat-response .next-message-body")?.textContent,more:view.timeline.querySelector(".next-message-more")?.textContent},renderMs:Math.round(performance.now()-start),sourceCount:run.precomputedMessages.length}})()');
+  assert.deepEqual(messageViewport.initial,{visible:80,more:"Show earlier messages (2920)",firstText:"Response 2920",lastText:"Response 2999"});
+  assert.deepEqual(messageViewport.after,{visible:160,firstText:"Response 2840",more:"Show earlier messages (2840)"});
   assert.equal(messageViewport.sourceCount,3000,"Windowing must not discard saved messages.");
   assert.ok(messageViewport.renderMs<1600,"A multi-agent single turn must not freeze its transcript.");
   counts.visibleMessagesPerRun=80;
@@ -137,26 +138,30 @@ try {
   assert.equal(await evaluate('document.querySelectorAll(".next-chat-turn").length'),12);
   assert.equal(await evaluate('Boolean(document.querySelector(".next-older"))'),true);
   if(process.env.BLACKICE_NEXT_LONG_TURN==='yes'){
-    const before=await evaluate('(()=>{const turn=[...document.querySelectorAll(".next-chat-turn")].at(-1);return {count:turn.querySelectorAll(".next-message[data-role=assistant]").length,older:turn.querySelector(".next-message-more")?.textContent,last:[...turn.querySelectorAll(".next-message[data-role=assistant]")].at(-1)?.textContent}})()');
+    const before=await evaluate('(()=>{const turn=[...document.querySelectorAll(".next-chat-turn")].at(-1);return {count:turn.querySelectorAll(".next-chat-response .next-message-body").length,older:turn.querySelector(".next-message-more")?.textContent,last:[...turn.querySelectorAll(".next-chat-response .next-message-body")].at(-1)?.textContent}})()');
     assert.equal(before.count,80,'A long single turn must mount only the latest 80 responses.');
     assert.equal(before.older,'Show earlier messages (271)');
     assert.match(before.last,/Extended saved message 349/);
     await evaluate('document.querySelector(".next-chat-turn:last-child .next-message-more").click();true');
-    await until(()=>evaluate('document.querySelector(".next-chat-turn:last-child").querySelectorAll(".next-message[data-role=assistant]").length===160'),'Older messages loaded in one bounded batch');
-    const after=await evaluate('(()=>{const turn=[...document.querySelectorAll(".next-chat-turn")].at(-1);return {count:turn.querySelectorAll(".next-message[data-role=assistant]").length,older:turn.querySelector(".next-message-more")?.textContent,last:[...turn.querySelectorAll(".next-message[data-role=assistant]")].at(-1)?.textContent}})()');
+    await until(()=>evaluate('document.querySelector(".next-chat-turn:last-child").querySelectorAll(".next-chat-response .next-message-body").length===160'),'Older messages loaded in one bounded batch');
+    const after=await evaluate('(()=>{const turn=[...document.querySelectorAll(".next-chat-turn")].at(-1);return {count:turn.querySelectorAll(".next-chat-response .next-message-body").length,older:turn.querySelector(".next-message-more")?.textContent,last:[...turn.querySelectorAll(".next-chat-response .next-message-body")].at(-1)?.textContent}})()');
     assert.equal(after.count,160);
     assert.equal(after.older,'Show earlier messages (191)');
     assert.match(after.last,/Extended saved message 349/);
     counts.longTurnWindowed=true;
   }
   counts.visibleTurns=12;
+  await until(()=>evaluate('Boolean(document.querySelector(".next-chat-task-summary summary"))'),'Saved file disclosure');
+  await evaluate('document.querySelector(".next-chat-task-summary summary").click();true');
   await until(()=>evaluate('Boolean(document.querySelector(".next-chat-saved-file button"))'),'Saved task artifact');
   await evaluate('document.querySelector(".next-chat-saved-file button").click();true');
   await until(()=>evaluate('Boolean(document.querySelector(".next-artifact-dialog[open]") && document.querySelector(".next-artifact-content")?.textContent.includes("Fixture saved artifact body"))'),'Artifact preview');
   assert.equal(await evaluate('document.querySelector(".next-artifact-download")?.getAttribute("download")'),'fixture-report.txt');
   await evaluate('document.querySelector(".next-artifact-dialog .next-row button").click();true');
   counts.artifactPreview=true;
-  assert.ok(await evaluate('document.querySelector(".next-chat-task-summary summary")?.textContent.includes("Task progress")'));
+  assert.ok(await evaluate('document.querySelector(".next-chat-details summary")?.textContent.includes("Plan")'));
+  await evaluate('document.querySelector(".next-chat-details summary").click();true');
+  await until(()=>evaluate('Boolean(document.querySelector(".next-chat-plan-outline .next-chat-outline-item"))'),'Saved task outline');
   counts.taskMilestones=true;
   if(process.env.BLACKICE_NEXT_HEAVY==='yes'){
     assert.equal(await evaluate('document.querySelector("#next-chat-input").value'),'Can type while loading');
@@ -175,14 +180,25 @@ try {
   await evaluate('document.querySelector("#next-chat-input").value="Still typing during stream";document.querySelector("#next-chat-input").dispatchEvent(new Event("input",{bubbles:true}));true');
   counts.streamInputMs=Date.now()-inputBurstStart;
   assert.ok(counts.streamInputMs<1600,'Streaming should not block input interaction.');
-  await until(()=>evaluate('document.querySelector("[data-live-output]")?.textContent.length >= 2000'),'Batched stream receipts');
+  await until(()=>evaluate('document.querySelector("[data-live-output]")?.dataset.streamPreview?.length===512'),'Batched stream preview receipts');
+  assert.ok(await evaluate('document.querySelector("[data-live-output]").textContent.length<=140'),'Live progress preview must stay bounded during a stream burst.');
+  const acceptedStream='Streamed text without rebuilding the transcript.'+'x'.repeat(2000)+' Complete stream tail.';
+  fixture.send({type:'agent.event',runId:'sample-run-49',nodeId:'agent',
+    data:{type:'message',itemId:'burst-receipt',phase:'commentary',provisional:true,text:acceptedStream}});
+  await evaluate('(()=>{const details=document.querySelector("[data-run-id=sample-run-49] .next-chat-details");if(!details.open)details.querySelector("summary").click();return true})()');
+  await until(()=>evaluate('Boolean(document.querySelector("[data-run-id=sample-run-49] .next-chat-outline-history summary"))'),'Saved stream history disclosure');
+  await evaluate('document.querySelector("[data-run-id=sample-run-49] .next-chat-outline-history summary").click();true');
+  await until(()=>evaluate('[...document.querySelectorAll("[data-run-id=sample-run-49] .next-chat-audit-node summary")].some(node=>node.textContent.includes("Streamed text"))'),'Accepted stream history entry');
+  await evaluate('[...document.querySelectorAll("[data-run-id=sample-run-49] .next-chat-audit-node summary")].find(node=>node.textContent.includes("Streamed text")).click();true');
+  await until(()=>evaluate('[...document.querySelectorAll("[data-run-id=sample-run-49] .next-chat-outline-evidence .next-message-body")].some(node=>node.textContent==='+JSON.stringify(acceptedStream)+')'),'Complete accepted stream retained in History');
+  assert.equal(await evaluate('document.querySelector("#next-chat-input").value'),'Still typing during stream');
+  assert.equal(await evaluate('[...document.querySelectorAll("[data-run-id=sample-run-49] .next-chat-response .next-message-body")].some(node=>node.textContent.includes("Complete stream tail."))'),false,'Interim output must not be promoted to a final answer.');
+  counts.streamPreviewBounded=true;
+  counts.streamFullTextRetained=true;
   counts.streamBurst=true;
   await evaluate('document.querySelector(".next-tab[data-space=planning]").click(); true');
-  await until(()=>evaluate('Boolean(document.querySelector("#next-planning-list article"))'),'Planning workspace');
-  await evaluate('document.querySelector("#next-planning-list article button").click(); true');
-  await until(()=>evaluate('Boolean(document.querySelector("#next-planning-detail textarea"))'),'Editable plan details');
-  counts.planning=true;
   await exerciseVisualPlanning({evaluate,send,until,fixture,counts});
+  if(process.env.BLACKICE_NEXT_SCREENSHOT_PATH){const image=await send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});await writeFile(process.env.BLACKICE_NEXT_SCREENSHOT_PATH.replace(/\.png$/i,"-planning.png"),Buffer.from(image.data,"base64"));}
   }else counts.scope='Cronjobs, workflow manager and Chat lifecycle integration only';
   await evaluate('document.querySelector(".next-tab[data-space=cronjobs]").click(); true');
   await until(()=>evaluate('Boolean(document.querySelector("#next-tasks-form"))'),'Cronjobs workspace');
@@ -748,6 +764,11 @@ try {
   await exerciseKnowledgeManagement({evaluate,send,until,fixture,counts});
   await evaluate('document.querySelector(".next-tab[data-space=chat]").click(); true');
   await until(()=>evaluate('Boolean(document.querySelector("#next-chat-input"))'),'Chat return');
+  // Lifecycle bucket changes deliberately return to New conversation. Reopen the
+  // original owner before checking its isolated draft.
+  await until(()=>evaluate('Boolean(document.querySelector(".next-conversation[data-conversation=sample-run-0]"))'),'Original conversation remains in active history');
+  await evaluate('document.querySelector(".next-conversation[data-conversation=sample-run-0]").click();true');
+  await until(()=>evaluate('document.querySelector("#next-chat-input")?.value==="Still typing during stream"'),'Original conversation draft restored after lifecycle navigation');
   assert.equal(await evaluate('document.querySelector("#next-chat-input").value'),'Still typing during stream','Unsaved chat draft must survive switching through five workspaces.');
   counts.draftKept=true;
   await evaluate('document.querySelector("#next-chat-new").click();document.querySelector("#next-chat-model").value="codex-test";document.querySelector("#next-chat-model").dispatchEvent(new Event("change",{bubbles:true}));true');
@@ -772,7 +793,9 @@ try {
   assert.equal(agent?.serviceTier,'fast');
   counts.reasoningAndSpeedSent=true;
   }
-  await evaluate('document.querySelector(".next-tab[data-space=cronjobs]").click();document.querySelector("#next-cronjobs-manage-workflows").click();true');
+  await evaluate('document.querySelector(".next-tab[data-space=cronjobs]").click();true');
+  await until(()=>evaluate('Boolean(document.querySelector("#next-cronjobs-manage-workflows"))'),"Cronjobs workspace lazily mounted after shell reload");
+  await evaluate('document.querySelector("#next-cronjobs-manage-workflows").click();true');
   await until(()=>evaluate('Boolean(document.querySelector("#next-workflows-back"))'),'Activity views mounted after reload');
   await evaluate('document.querySelector("#next-workflow-launch").open=true;true');
   await until(()=>evaluate('Boolean(document.querySelector("#next-workflow-outline .next-workflow-node"))'),'Workflow execution ready');
@@ -793,6 +816,7 @@ try {
   const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
   const location=join(dir,'next-screen.png');
   await writeFile(location,Buffer.from(shot.data,'base64'));
+  if(process.env.BLACKICE_NEXT_SCREENSHOT_PATH)await writeFile(process.env.BLACKICE_NEXT_SCREENSHOT_PATH.replace(/\.png$/i,'-final.png'),Buffer.from(shot.data,'base64'));
   console.log(cronjobsOnly?'PASS Cronjobs integration:':'PASS:',JSON.stringify(counts),'static_requests='+fixture.calls.length,
     'no_bulk_history=true','screen_bytes='+Buffer.from(shot.data,'base64').length);
   if(failures.length)console.warn('Renderer console issues:',failures.slice(0,5).join(' | '));

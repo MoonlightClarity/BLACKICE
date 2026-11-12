@@ -9,6 +9,8 @@ import {parseConnectionImport} from '../lib/connection-import.mjs';
 /** Real storage and MCP protocol in disposable state, never an external service. */
 export function createSettingsFixture({state,json,send}){
   let ready;
+  // The real provider adapter supplies independently observed catalog metadata to the store.
+  const fixtureProviderCatalog=[{id:'model',displayName:'Fixture model',supportsTools:true},...Array.from({length:120},(_,i)=>({id:'catalog-model-'+i,displayName:'Catalog model '+i,supportsTools:true,contextWindowTokens:128000,contextWindowSource:'provider-reported'}))];
   state.settingsPanelMutations=[];state.settingsPanelRequests=[];state.settingsProtocolCalls=[];
   const stores=()=>ready||=(async()=>{
     const directory=await mkdtemp(path.join(tmpdir(),'blackice-next-settings-fixture-'));
@@ -72,14 +74,14 @@ export function createSettingsFixture({state,json,send}){
         }
         const providerMatch=route.match(/^\/api\/providers\/([^/]+)(?:\/(models|test))?$/);
         if(route==='/api/providers'){
-          let result;if(req.method==='GET')result=providers.list();else result=await providers.save(body);
+          let result;if(req.method==='GET')result=providers.list();else result=await providers.save(body,{trustedModels:fixtureProviderCatalog});
           syncModels(providers);json(res,result);return true;
         }
         if(providerMatch){
           const [,id,action]=providerMatch;
           if(req.method==='DELETE'){await providers.remove(id);syncModels(providers);json(res,{removed:true,id});return true;}
           if(action==='test'){json(res,{providerId:id,ok:true,credentialVerified:true,modelAccessVerified:false,modelCount:121,verification:'Synthetic catalog read'});return true;}
-          const catalog=[{id:'model',displayName:'Fixture model',supportsTools:true},...Array.from({length:120},(_,i)=>({id:'catalog-model-'+i,displayName:'Catalog model '+i,supportsTools:true,contextWindowTokens:128000,contextWindowSource:'provider-reported'}))];
+          const catalog=fixtureProviderCatalog;
           const matching=catalog.filter(model=>!body.query||(model.id+' '+model.displayName).toLowerCase().includes(body.query.toLowerCase()));
           const offset=body.offset||0,limit=body.limit||80,models=matching.slice(offset,offset+limit);
           json(res,{providerId:id,models,total:matching.length,totalModels:catalog.length,offset,returned:models.length,hasMore:offset+models.length<matching.length,truncated:offset+models.length<matching.length});return true;

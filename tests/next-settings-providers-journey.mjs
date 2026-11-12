@@ -13,7 +13,7 @@ export async function exerciseProviderSettings({evaluate,send,until,fixture,coun
   const writes=()=>fixture.state.settingsPanelMutations.filter(item=>item.path==='/api/providers'&&item.method==='POST');
   const catalogCalls=()=>fixture.state.settingsPanelMutations.filter(item=>/^\/api\/providers\/[^/]+\/models$/.test(item.path));
   const idle=()=>until(()=>evaluate('document.querySelector("#next-provider-root")?.getAttribute("aria-busy")==="false" && !document.querySelector("#next-provider-new").disabled'),'Provider action settled');
-  const openFixture=async()=>{await click('[data-provider-id="fixture"]');await until(()=>value('#next-provider-name').then(name=>Boolean(name)),'Fixture provider editor');};
+  const openFixture=async()=>{await click('[data-provider-id="fixture"]');await until(()=>value('#next-provider-name').then(name=>Boolean(name)),'Fixture provider editor');await evaluate('(()=>{const details=document.querySelector("#next-provider-connection-details");if(!details.open)details.querySelector("summary").click();return true})()');};
   await click('#next-settings-section-models');
   await until(()=>evaluate('Boolean(document.querySelector("#next-provider-list [data-provider-id=fixture]"))'),'Provider connection metadata');
   assert.match(await content('[data-provider-id="fixture"]'),/Fixture model connection/);
@@ -22,7 +22,8 @@ export async function exerciseProviderSettings({evaluate,send,until,fixture,coun
   assert.equal(await value('#next-provider-name'),'Fixture model connection');
   assert.equal(await value('#next-provider-key'),'','Saved secret values are never sent to the editor.');
   assert.equal(await value('#next-provider-headers'),'');
-  assert.match(await content('#next-provider-key-note'),/saved/);
+  assert.equal(providers.list().find(provider=>provider.id==='fixture').secretStorage,'session','The synthetic Node fixture has no encrypted credential backend.');
+  assert.match(await content('#next-provider-key-note'),/current session.*after restarting BLACKICE/);
   assert.match(await content('#next-provider-header-note'),/X-Fixture-Key/);
   assert.equal(await evaluate('document.querySelector("#next-provider-id").disabled'),true);
 
@@ -86,7 +87,8 @@ export async function exerciseProviderSettings({evaluate,send,until,fixture,coun
   assert.equal(catalogCalls().length,beforeCatalog,'Typing a search never sends a catalog request.');
   await click('#next-provider-catalog-load');
   await until(()=>evaluate('Boolean(document.querySelector("[data-provider-model-id=catalog-model-0]")) && !document.querySelector("#next-provider-catalog-load").disabled'),'First explicit provider catalog page');
-  assert.equal(await evaluate('document.querySelectorAll("#next-provider-models input, #next-provider-catalog input").length'),80,'Only one catalog page and the selected models are mounted.');
+  assert.equal(await evaluate('document.querySelectorAll("#next-provider-models [data-provider-model-id]").length'),1,'Saved model selections remain mounted separately.');
+  assert.equal(await evaluate('document.querySelectorAll("#next-provider-catalog [data-provider-model-id]").length'),80,'Only one catalog page is mounted.');
   assert.match(await content('#next-provider-catalog-page'),/1–80 of 121/);
   await click('#next-provider-catalog-next');
   await until(()=>evaluate('Boolean(document.querySelector("[data-provider-model-id=catalog-model-99]")) && !document.querySelector("#next-provider-catalog-load").disabled'),'Provider catalog second page');
@@ -102,10 +104,10 @@ export async function exerciseProviderSettings({evaluate,send,until,fixture,coun
   assert.deepEqual(models.map(model=>model.id),['model','catalog-model-99','catalog-model-119']);
   assert.equal(models[0].contextWindowTokens,100000);assert.equal(models[0].contextWindowSource,'user-configured');assert.equal(models[0].supportsTools,true);
   for(const model of models.slice(1)){assert.equal(model.contextWindowTokens,128000);assert.equal(model.contextWindowSource,'provider-reported');assert.equal(model.supportsTools,true);}
-  assert.deepEqual(catalogCalls().slice(beforeCatalog).map(call=>call.body),[{query:'',offset:0,limit:80},{query:'',offset:80,limit:80},{query:'',offset:0,limit:80},{query:'catalog-model-119',offset:0,limit:80}]);
+  assert.deepEqual(catalogCalls().slice(beforeCatalog).map(call=>call.body),[{query:'',offset:0,limit:80},{query:'',offset:80,limit:80},{query:'',offset:0,limit:80},{query:'catalog-model-119',offset:0,limit:80}].map(page=>({...page,sort:'name',freeOnly:false,toolsOnly:false,visionOnly:false,minContextTokens:0})));
   await click('#next-provider-test');await idle();
-  await until(()=>content('#next-provider-receipt').then(text=>text.includes('API key verified')),'Explicit provider test receipt');
-  assert.match(await content('#next-provider-receipt'),/Model access was not tested/);
+  await until(()=>content('#next-provider-receipt').then(text=>text.includes('Live catalog loaded')),'Explicit provider test receipt');
+  assert.match(await content('#next-provider-receipt'),/API key validity was not independently verified.*Model generation was not tested/);
   counts.providerCatalogPaging=true;counts.providerTestAccurate=true;
 
   await evaluate('document.querySelector("#next-provider-codex").open=true;true');
@@ -126,7 +128,7 @@ export async function exerciseProviderSettings({evaluate,send,until,fixture,coun
     await send('Emulation.setDeviceMetricsOverride',{width:780,height:560,deviceScaleFactor:1.5,mobile:false});
     await evaluate('document.querySelector("#next-provider-editor details").open=true;true');
     for(const selector of ['#next-provider-preset','#next-provider-protocol','#next-provider-name','#next-provider-base-url','#next-provider-key','#next-provider-clear-key','#next-provider-headers','#next-provider-clear-headers','#next-provider-max-tokens','#next-provider-max-steps','#next-provider-manual-model','#next-provider-catalog-search','#next-provider-catalog-load','#next-provider-save','#next-provider-test','#next-provider-delete','#next-provider-codex-id','#next-provider-codex-add','#next-provider-codex-check']){
-      const reachable=await evaluate(`(async()=>{const node=document.querySelector(${JSON.stringify(selector)});node.scrollIntoView({block:'center',inline:'nearest'});await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));const rect=node.getBoundingClientRect(),x=rect.left+rect.width/2,y=rect.top+rect.height/2,hit=document.elementFromPoint(x,y);return {visible:rect.width>0&&rect.height>0&&rect.left>=0&&rect.right<=innerWidth&&rect.top>=0&&rect.bottom<=innerHeight,uncovered:hit===node||node.contains(hit),width:document.querySelector('#next-provider-root').scrollWidth,viewport:innerWidth}})()`);
+      const reachable=await evaluate(`(async()=>{const node=document.querySelector(${JSON.stringify(selector)});for(let parent=node.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS'&&!parent.open)parent.querySelector('summary').click();node.scrollIntoView({block:'center',inline:'nearest'});await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));const rect=node.getBoundingClientRect(),x=rect.left+rect.width/2,y=rect.top+rect.height/2,hit=document.elementFromPoint(x,y);return {visible:rect.width>0&&rect.height>0&&rect.left>=0&&rect.right<=innerWidth&&rect.top>=0&&rect.bottom<=innerHeight,uncovered:hit===node||node.contains(hit),width:document.querySelector('#next-provider-root').scrollWidth,viewport:innerWidth}})()`);
       assert.equal(reachable.visible,true,selector+' stays reachable at 780×560 and 150% DPR.');assert.equal(reachable.uncovered,true,selector+' is not covered by another panel.');assert.ok(reachable.width<=reachable.viewport,'Provider panel must not require horizontal page scrolling.');
     }
   }finally{await send('Emulation.setDeviceMetricsOverride',{...previous,mobile:false});}

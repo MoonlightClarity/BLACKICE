@@ -4,6 +4,7 @@ import { readFile, mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { KnowledgeStore } from '../lib/knowledge.mjs';
 import { createSettingsFixture } from './next-settings-fixture.mjs';
+import { createPlanningBrowserFixture } from './next-planning-browser-fixture.mjs';
 import { createActivityService } from '../lib/activity.mjs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -133,10 +134,12 @@ export function makeFixture({heavyHistory=false,largeCatalog=false,largeWorkflow
     },
     directExecution:{jobs:{snapshot:()=>[],get:async()=>null}},
   });
+  const planningFixture=createPlanningBrowserFixture({state,json});
   const handler=async(req,res)=>{
     const url=new URL(req.url,'http://localhost');const pathname=url.pathname;
     calls.push(req.method+' '+pathname);
     if(await settingsFixture.handle(req,res,url))return;
+    if(await planningFixture(req,res,url))return;
     if(pathname==='/api/knowledge'||pathname.startsWith('/api/knowledge/')){
       try{
         const {store}=await knowledgeReady;
