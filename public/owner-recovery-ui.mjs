@@ -1,5 +1,5 @@
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const states = {pending:'Waiting for your review',approved:'Approved; waiting for admission',consumed:'Continuation reserved',cancelled:'Cancelled',expired:'Expired',stale:'Changed; approval invalid'};
+const states = {pending:'Waiting for your review',approved:'Approved; waiting for admission',consumed:'Continuation reserved',cancelled:'Cancelled',expired:'Expired',stale:'Changed; approval invalid',invalidated:'Changed; approval invalid'};
 const validRevision = value => Number.isSafeInteger(value) && value >= 0;
 const safeText = value => typeof value === 'string' ? value : '';
 const fields = (object, names) => Object.fromEntries(names.map(key => [key, safeText(object?.[key])]));
@@ -17,7 +17,7 @@ export function ownerRecoveryView(value = {}) {
       state: Object.hasOwn(states, row.state) ? row.state : 'unavailable',
       oneUse: row.oneUse === true,
       candidate: row.candidate && typeof row.candidate === 'object' && !Array.isArray(row.candidate) ? structuredClone(row.candidate) : {},
-      claims: (Array.isArray(row.claims) ? row.claims : []).map(claim => fields(claim, ['operationId','taskId','effectState','summary','rowDigest','journalDigest']))
+      claims: (Array.isArray(row.claims) ? row.claims : []).map(claim => ({...structuredClone(claim),rowDigest:claim.rowDigest||claim.digest||'',journalDigest:claim.journalDigest||''}))
     }))
   };
 }
@@ -100,7 +100,7 @@ export function mountOwnerRecovery({mount,api,desktop=globalThis.relayDesktop,pr
       const result=await desktop[action==='review'?'reviewRetainedEffect':'cancelRetainedEffect']({requestId:row.requestId,revision:row.revision});
       if(destroyed)return;
       if(result?.cancelled===true)receipt='Native review cancelled. No continuation was approved by this review.';
-      else if(['cancelled','expired','stale'].includes(result?.state))receipt=states[result.state]+'. No continuation is authorized by this receipt.';
+      else if(['cancelled','expired','stale','invalidated'].includes(result?.state))receipt=states[result.state]+'. No continuation is authorized by this receipt.';
       else if(['approved','consumed'].includes(result?.state))receipt='Native decision recorded. Check the task result; approval is not proof of success.';
       else {uncertain=row.requestId;error='The native request outcome was not confirmed. Check status before doing anything else.';}
     }catch{
