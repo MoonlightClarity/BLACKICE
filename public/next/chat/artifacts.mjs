@@ -64,3 +64,144 @@ export function createArtifactViewer({mount,api,notify=()=>{}}={}){
   }
   return {open,cancel,destroy(){cancel();dialog.remove();}};
 }
+
+/** Read-only inspector for the exact saved Directory evidence of a Chat run. */
+export function createDirectoryInspector({frame,getRunId}) {
+  const doc=frame.ownerDocument;
+  const make=(tag,cls,text='')=>{const el=doc.createElement(tag);if(cls)el.className=cls;if(text)el.textContent=text;return el;};
+  const actions=frame.querySelector('.next-chat-head-actions')||frame.querySelector('.pb-header-actions');
+  const launch=make('button','next-directory-open','Directory Context');
+  launch.type='button';launch.hidden=true;launch.title='Inspect Directory model calls, saved turns and exact context files';
+  actions?.insertBefore(launch,actions.querySelector('#next-chat-stop'));
+  const dialog=make('dialog','next-directory-inspector');
+  dialog.setAttribute('aria-labelledby','next-directory-title');
+  const head=make('header','next-directory-head');
+  const title=make('h2','', 'Directory Context · audit');
+  title.id='next-directory-title';
+  const close=make('button','next-directory-close','Close');close.type='button';
+  close.addEventListener('click',()=>dialog.close());head.append(title,close);
+  const status=make('p','next-directory-status','Select a saved Directory run.');
+  status.setAttribute('role','status');
+  const tabs=make('nav','next-directory-tabs');tabs.setAttribute('role','tablist');
+  const tabButtons=new Map();
+  for(const [id,label] of [['overview','Overview'],['turns','Model turns'],['files','Context files']]){
+    const b=make('button','',label);b.type='button';b.setAttribute('role','tab');
+    b.addEventListener('click',()=>selectTab(id));tabs.append(b);tabButtons.set(id,b);
+  }
+  const split=make('div','next-directory-split');
+  const rail=make('aside','next-directory-rail');
+  const filter=make('input','next-directory-filter');filter.type='search';filter.placeholder='Filter saved records';filter.setAttribute('aria-label','Filter saved Directory records');
+  const records=make('div','next-directory-records');rail.append(filter,records);
+  const viewer=make('section','next-directory-viewer');
+  const fileLabel=make('strong','next-directory-file-label','Overview');
+  const contents=make('textarea','next-directory-contents');
+  contents.readOnly=true;contents.spellcheck=false;contents.setAttribute('aria-label','Read-only saved Directory evidence');
+  viewer.append(fileLabel,contents);split.append(rail,viewer);
+  dialog.append(head,status,tabs,split);frame.append(dialog);
+  const style=make('style','');
+  style.textContent=`
+    .next-directory-inspector{color:#e8edf5;background:#161c27;border:1px solid #465166;border-radius:14px;padding:0;width:min(1080px,94vw);max-width:94vw;max-height:90vh;box-shadow:0 25px 90px #0008}
+    .next-directory-inspector::backdrop{background:#000b}
+    .next-directory-head{display:flex;align-items:center;justify-content:space-between;padding:15px 20px;border-bottom:1px solid #344054}
+    .next-directory-head h2{font-size:17px;margin:0}
+    .next-directory-inspector button{color:inherit;background:#243247;border:1px solid #40526c;border-radius:7px;padding:7px 11px;cursor:pointer}
+    .next-directory-inspector button:hover{background:#30435e}
+    .next-directory-status{margin:10px 20px;font-size:13px;color:#bec9d8;white-space:pre-wrap}
+    .next-directory-tabs{display:flex;gap:8px;padding:0 20px 10px}
+    .next-directory-tabs button[aria-selected=true]{background:#3c526f;border-color:#8098b6}
+    .next-directory-split{display:grid;grid-template-columns:minmax(200px,35%) minmax(0,1fr);gap:12px;padding:0 20px 20px;min-height:300px}
+    .next-directory-rail{display:flex;flex-direction:column;gap:8px;min-width:0}
+    .next-directory-filter{padding:9px;background:#101723;color:inherit;border:1px solid #445166;border-radius:7px}
+    .next-directory-records{display:flex;flex-direction:column;gap:5px;overflow:auto;max-height:55vh}
+    .next-directory-records button{text-align:left;overflow-wrap:anywhere;font-size:12px}
+    .next-directory-viewer{display:flex;flex-direction:column;gap:8px;min-width:0}
+    .next-directory-file-label{font-size:12px;overflow-wrap:anywhere}
+    .next-directory-contents{box-sizing:border-box;width:100%;min-height:300px;height:55vh;resize:vertical;background:#0b1220;color:#dce5f3;border:1px solid #42516a;border-radius:7px;padding:12px;font:12px/1.5 ui-monospace,Consolas,monospace}
+    @media(max-width:700px){.next-directory-split{grid-template-columns:1fr}.next-directory-records{max-height:180px}.next-directory-contents{height:35vh}}
+  `;
+  frame.append(style);
+  let currentId='', currentTab='overview', files=[],turns=[],summary={};
+  const modelLabels=new Set(['decompose','context-page','work','repair','integration','extract-page','repository-review']);
+  const requestURL=(suffix,runId,file)=>'/api/shadowdancer/context'+suffix+'?runId='+encodeURIComponent(runId)+(file?'&file='+encodeURIComponent(file):'');
+  const getJSON=async url=>{const response=await fetch(url,{credentials:'same-origin'});const value=await response.json();if(!response.ok)throw Error(value.error||'Directory context could not be inspected.');return value;};
+  const display=(name,value)=>{fileLabel.textContent=name;contents.value=typeof value==='string'?value:JSON.stringify(value,null,2);contents.scrollTop=0;};
+  async function readFile(file){
+    const id=currentId;display(file,'Loading recorded file…');
+    try{const value=await getJSON(requestURL('/file',id,file));if(id===currentId)display(file,value.value);}
+    catch(error){if(id===currentId)display(file,'Read failed: '+error.message);}
+  }
+  function selectTab(id){
+    currentTab=id;
+    for(const [name,button] of tabButtons)button.setAttribute('aria-selected',String(name===id));
+    filter.value='';filter.hidden=id==='overview';drawRows();
+  }
+  function drawRows(){
+    records.replaceChildren();
+    if(currentTab==='overview'){
+      const modelCalls=turns.filter(row=>modelLabels.has(row.label)).length;
+      const stale=Number(summary.totalTurns)!==turns.length;
+      display('Recorded context summary',{
+        directoryStatus:summary.directoryStatus??'Not recorded in saved summary',
+        failure:summary.failure??null,
+        auditedTurns:turns.length,
+        modelPhases:summary.modelCalls??modelCalls,
+        decompositionPhases:turns.filter(row=>row.label==='decompose').length,
+        savedFiles:files.length,
+        plannedWorkItems:summary.plannedWorkItems??'Not recorded',
+        summaryReportedTurns:summary.totalTurns??null,
+        summaryStale:stale,
+        request:summary.request??null,
+        note:'Model phases are counted from persisted Directory turn labels. Planning graph requests are a separate counter; a click or model response is not proof of an operational outcome.'
+      });return;
+    }
+    const q=filter.value.trim().toLowerCase();
+    const rows=currentTab==='turns'?turns.map((row,index)=>({
+      label:(index+1)+'. '+row.label+' · '+row.module,
+      search:row.label+' '+row.module+' '+row.excerpt,
+      act:()=>display(row.label+' · '+row.module,row)
+    })):files.map(row=>({
+      label:row.file+' · '+row.bytes+' B',search:row.file,
+      act:()=>void readFile(row.file)
+    }));
+    let shown=0;
+    for(const row of rows){
+      if(q&&!row.search.toLowerCase().includes(q))continue;
+      const control=make('button','',row.label);control.type='button';
+      control.addEventListener('click',row.act);records.append(control);shown++;
+    }
+    if(!shown)records.append(make('p','',q?'No matching records.':'No saved records.'));
+    display(currentTab==='turns'?'Model turns':'Context files',shown+' recorded entries. Select one to inspect its saved contents.');
+  }
+  filter.addEventListener('input',drawRows);
+  async function open(){
+    const runId=getRunId();if(!runId)return;
+    currentId=runId;files=[];turns=[];summary={};
+    if(!dialog.open)dialog.showModal();
+    status.textContent='Loading saved Directory evidence for '+runId+'…';
+    selectTab('overview');
+    try{
+      const listing=await getJSON(requestURL('',runId));
+      if(currentId!==runId)return;
+      files=Array.isArray(listing.files)?listing.files:[];
+      summary=listing.summary||{};
+      if(files.some(file=>file.file==='conversation/context/turns.json')){
+        const turnFile=await getJSON(requestURL('/file',runId,'conversation/context/turns.json'));
+        if(currentId!==runId)return;
+        turns=Array.isArray(turnFile.value)?turnFile.value:[];
+      }
+      const calls=turns.filter(row=>modelLabels.has(row.label)).length;
+      status.textContent=files.length?
+        'Recorded: '+turns.length+' audit turns · '+calls+' model phases · '+files.length+' context files'+
+        (summary.directoryStatus?' · '+summary.directoryStatus:'')+
+        (Number(summary.totalTurns)!==turns.length?' · saved summary is stale':''):
+        'No Directory evidence is saved for this conversation.';
+      selectTab('overview');
+    }catch(error){if(currentId===runId){status.textContent='Context inspection failed: '+error.message;display('Unavailable',error.message);}}
+  }
+  launch.addEventListener('click',()=>void open());
+  return {
+    open,
+    refresh(runId){launch.hidden=!runId;if(dialog.open&&currentId&&runId!==currentId)dialog.close();},
+    destroy(){dialog.close();launch.remove();dialog.remove();style.remove();}
+  };
+}
