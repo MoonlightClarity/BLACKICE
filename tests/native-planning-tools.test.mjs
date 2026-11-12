@@ -9,13 +9,14 @@ import {TaskStateStore} from '../lib/task-state.mjs';
 import {PlanningBrowserStore} from '../lib/planning-browser.mjs';
 import {createNativePlanningTools} from '../lib/native-planning-tools.mjs';
 import {planningModuleTemplate} from '../public/planning-browser-model.mjs';
+import {fixtureOutcomeReview,finishFixtureCandidate} from './fixture-modular-provider.mjs';
 const payload=r=>JSON.parse(r.contentItems.find(i=>i.type==='inputText').text);
 const graph=()=>({id:'native-graph-test',name:'Native graph',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',model:'test-model',prompt:'Develop the shared graph.'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{planningMode:'off'}});
 async function fixture(t,execute){
  const dir=await mkdtemp(path.join(tmpdir(),'native-graph-'));await mkdir(path.join(dir,'work'));
  const store=await new PlanningBrowserStore({dataDir:dir}).init(),events=[];
  const provider=createNativePlanningTools({store,onChange:event=>events.push(event)});
- class Runtime extends EventEmitter{status(){return {connected:true,authenticated:true,defaultModel:'test-model'};} async runAgent(o){return execute(o);}async close(){}}
+ class Runtime extends EventEmitter{status(){return {connected:true,authenticated:true,defaultModel:'test-model'};} async runAgent(o){const review=fixtureOutcomeReview(o);if(review)return review;return finishFixtureCandidate(o,await execute(o));}async close(){}}
  const engine=await new HarnessEngine({runtime:new Runtime(),dataDir:dir,defaultCwd:path.join(dir,'work'),nativePlanningTools:provider}).init();
  engine.runtimeSettings={get:()=>({executionGuardrails:false,subagentsEnabled:true,maxSubagents:2})};
  t.after(async()=>{await engine.close();await store.close();await rm(dir,{recursive:true,force:true});});
