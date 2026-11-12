@@ -6,6 +6,7 @@
 - Record operational effect reservations and native observations separately from caller interpretations. Uncertain browser outcomes remain uncertain; matching text alone does not establish external acceptance.
 - Preserve host-only parallel-delegation admission, serial use of local model resources, and saved tool catalog compatibility. Delegation admission does not invoke another forecasting model.
 - Preserve unresolved effects from retired execution journals as read-only fences across retries and new work, including browser reloads and opaque commands.
+- Add per-conversation Directory Auto/On/Off and independent Subagents controls in Chat. Directory uses bounded recursive contexts through the normal guarded dispatcher, preserves exact user directions and saved history, and restores admitted choices across restarts. The supported scope is one independently owned Chat agent; other workflow shapes reject Directory before work.
 - Preserve an inherited workflow planning policy when changing only its model or context.
 - Use transparent workspace command launches with durable failure diagnostics.
 
