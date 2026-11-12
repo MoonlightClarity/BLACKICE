@@ -43,7 +43,9 @@ test('GPT-6 Luna runs all Directory phases through protected native transport ra
  assert.equal(run.executionModes.directoryMode,'on');
  assert.ok(run.nodes.agent.shadowdancer,'Directory execution must not be disabled for Luna');
  assert.equal(run.nodes.agent.shadowdancer.model,'gpt-6-luna');
- assert.equal(f.runtime.calls.length,3);
+ assert.ok(f.runtime.calls.length>=3,'Recursive Directory may need additional protected passes');
+ const phases=new Set(f.runtime.calls.map(options=>phaseOf(options)?.label));
+ for(const required of ['decompose','work','integration'])assert.ok(phases.has(required),'Missing protected Directory phase '+required);
  assert.ok(f.runtime.calls.every(options=>phaseOf(options)&&options.hostOnlyTools===true
    &&options.model==='gpt-6-luna'&&!options.threadId&&!options.continuity));
  assert.equal(run.nodes.agent.directoryCompatibility,undefined,'No silent ordinary-Chat downgrade');

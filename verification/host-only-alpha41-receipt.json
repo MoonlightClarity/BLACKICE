@@ -1,0 +1,537 @@
+{
+  "version": 2,
+  "syntheticOnly": true,
+  "codexVersion": "0.167.0-alpha.4.1",
+  "capturedAt": "2026-11-12T11:48:57.530Z",
+  "verified": true,
+  "preflight": {
+    "before": false,
+    "after": true,
+    "verified": true
+  },
+  "results": [
+    {
+      "mode": "host",
+      "completed": true,
+      "output": "SYNTHETIC_DONE",
+      "error": null,
+      "markerHits": {
+        "shell": false,
+        "patch": false,
+        "mcp": false,
+        "browser": false
+      },
+      "durationMs": 101
+    },
+    {
+      "mode": "shell",
+      "completed": true,
+      "output": "SYNTHETIC_DONE",
+      "error": null,
+      "markerHits": {
+        "shell": false,
+        "patch": false,
+        "mcp": false,
+        "browser": false
+      },
+      "durationMs": 71
+    },
+    {
+      "mode": "patch",
+      "completed": true,
+      "output": "SYNTHETIC_DONE",
+      "error": null,
+      "markerHits": {
+        "shell": false,
+        "patch": false,
+        "mcp": false,
+        "browser": false
+      },
+      "durationMs": 64
+    },
+    {
+      "mode": "browser",
+      "completed": true,
+      "output": "SYNTHETIC_DONE",
+      "error": null,
+      "markerHits": {
+        "shell": false,
+        "patch": false,
+        "mcp": false,
+        "browser": false
+      },
+      "durationMs": 65
+    },
+    {
+      "mode": "mcp",
+      "completed": true,
+      "output": "SYNTHETIC_DONE",
+      "error": null,
+      "markerHits": {
+        "shell": false,
+        "patch": false,
+        "mcp": false,
+        "browser": false
+      },
+      "durationMs": 66
+    }
+  ],
+  "modelToolCatalogs": [
+    {
+      "mode": "host",
+      "path": "/v1/responses",
+      "model": "synthetic-test",
+      "names": [
+        "request_user_input",
+        "relay_probe"
+      ],
+      "types": [
+        "function",
+        "function"
+      ],
+      "requestNo": 1,
+      "hasHostReceipt": false,
+      "inputTypes": [
+        "message",
+        "message",
+        "message",
+        "message"
+      ]
+    },
+    {
+      "mode": "host",
+      "path": "/v1/responses",
+      "model": "synthetic-test",
+      "names": [
+        "request_user_input",
+        "relay_probe"
+      ],
+      "types": [
+        "function",
+        "function"
+      ],
+      "requestNo": 2,
+      "hasHostReceipt": true,
+      "inputTypes": [
+        "message",
+        "message",
+        "message",
+        "message",
+        "function_call",
+        "function_call_output"
+      ]
+    },
+    {
+      "mode": "shell",
+      "path": "/v1/responses",
+      "model": "synthetic-test",
+      "names": [
+        "request_user_input",
+        "relay_probe"
+      ],
+      "types": [
+        "function",
+        "function"
+      ],
+      "requestNo": 3,
+      "hasHostReceipt": false,
+      "inputTypes": [
+        "message",
+        "message",
+        "message",
+        "message"
+      ]
+    },
+    {
+      "mode": "shell",
+      "path": "/v1/responses",
+      "model": "synthetic-test",
+      "names": [
+        "request_user_input",
+        "relay_probe"
+      ],
+      "types": [
+        "function",
+        "function"
+      ],
+      "requestNo": 4,
+      "hasHostReceipt": false,
+      "inputTypes": [
+        "message",
+        "message",
+        "message",
+        "message",
+        "function_call",
+        "function_call_output"
+      ]
+    },
+    {
+      "mode": "patch",
+      "path": "/v1/responses",
+      "model": "synthetic-test",
+      "names": [
+        "request_user_input",
+        "relay_probe"
+      ],
+      "types": [
+        "function",
+        "function"
+      ],
+      "requestNo": 5,
+      "hasHostReceipt": false,
+      "inputTypes": [
+        "message",
+        "message",
+        "message",
+        "message"
+      ]
+    },
+    {
+      "mode": "patch",
+      "path": "/v1/responses",
+      "model": "synthetic-test",
+      "names": [
+        "request_user_input",
+        "relay_probe"
+      ],
+      "types": [
+        "function",
+        "function"
+      ],
+      "requestNo": 6,
+      "hasHostReceipt": false,
+      "inputTypes": [
+        "message",
+        "message",
+        "message",
+        "message",
+        "custom_tool_call",
+        "custom_tool_call_output"
+      ]
+    },
+    {
+      "mode": "browser",
+      "path": "/v1/responses",
+      "model": "synthetic-test",
+      "names": [
+        "request_user_input",
+        "relay_probe"
+      ],
+      "types": [
+        "function",
+        "function"
+      ],
+      "requestNo": 7,
+      "hasHostReceipt": false,
+      "inputTypes": [
+        "message",
+        "message",
+        "message",
+        "message"
+      ]
+    },
+    {
+      "mode": "browser",
+      "path": "/v1/responses",
+      "model": "synthetic-test",
+      "names": [
+        "request_user_input",
+        "relay_probe"
+      ],
+      "types": [
+        "function",
+        "function"
+      ],
+      "requestNo": 8,
+      "hasHostReceipt": false,
+      "inputTypes": [
+        "message",
+        "message",
+        "message",
+        "message",
+        "function_call",
+        "function_call_output"
+      ]
+    },
+    {
+      "mode": "mcp",
+      "path": "/v1/responses",
+      "model": "synthetic-test",
+      "names": [
+        "request_user_input",
+        "relay_probe"
+      ],
+      "types": [
+        "function",
+        "function"
+      ],
+      "requestNo": 9,
+      "hasHostReceipt": false,
+      "inputTypes": [
+        "message",
+        "message",
+        "message",
+        "message"
+      ]
+    },
+    {
+      "mode": "mcp",
+      "path": "/v1/responses",
+      "model": "synthetic-test",
+      "names": [
+        "request_user_input",
+        "relay_probe"
+      ],
+      "types": [
+        "function",
+        "function"
+      ],
+      "requestNo": 10,
+      "hasHostReceipt": false,
+      "inputTypes": [
+        "message",
+        "message",
+        "message",
+        "message",
+        "function_call",
+        "function_call_output"
+      ]
+    }
+  ],
+  "scenarioCaptureCounts": {
+    "host": 2,
+    "shell": 2,
+    "patch": 2,
+    "browser": 2,
+    "mcp": 2
+  },
+  "allFiveCaptured": true,
+  "hostReceiptContinued": true,
+  "patchUsesCustomToolEncoding": true,
+  "attackEncodings": [
+    {
+      "mode": "host",
+      "type": "function_call",
+      "name": "relay_probe"
+    },
+    {
+      "mode": "shell",
+      "type": "function_call",
+      "name": "exec_command"
+    },
+    {
+      "mode": "patch",
+      "type": "custom_tool_call",
+      "name": "apply_patch"
+    },
+    {
+      "mode": "browser",
+      "type": "function_call",
+      "name": "browser_use"
+    },
+    {
+      "mode": "mcp",
+      "type": "function_call",
+      "name": "mcp__blackice_ambient_canary__touch"
+    }
+  ],
+  "browserCanaryHits": [],
+  "hostCalls": [
+    {
+      "mode": "host",
+      "call": "relay_probe",
+      "at": "2026-11-12T11:48:57.239Z"
+    }
+  ],
+  "nativeEvents": [
+    {
+      "mode": "host",
+      "type": "capabilities",
+      "profile": "host-only-task-tools",
+      "sandbox": "read-only",
+      "networkAccess": false,
+      "attachedTools": 1,
+      "disabledFeatureCount": 30
+    },
+    {
+      "mode": "host",
+      "type": "item",
+      "itemType": "userMessage",
+      "stage": "started"
+    },
+    {
+      "mode": "host",
+      "type": "item",
+      "itemType": "userMessage",
+      "stage": "completed"
+    },
+    {
+      "mode": "host",
+      "type": "item",
+      "itemType": "dynamicToolCall",
+      "stage": "started"
+    },
+    {
+      "mode": "host",
+      "type": "tool.result",
+      "tool": "relay_probe"
+    },
+    {
+      "mode": "host",
+      "type": "item",
+      "itemType": "dynamicToolCall",
+      "stage": "completed"
+    },
+    {
+      "mode": "host",
+      "type": "item",
+      "itemType": "agentMessage",
+      "stage": "started"
+    },
+    {
+      "mode": "host",
+      "type": "item",
+      "itemType": "agentMessage",
+      "stage": "completed"
+    },
+    {
+      "mode": "shell",
+      "type": "capabilities",
+      "profile": "host-only-task-tools",
+      "sandbox": "read-only",
+      "networkAccess": false,
+      "attachedTools": 1,
+      "disabledFeatureCount": 30
+    },
+    {
+      "mode": "shell",
+      "type": "item",
+      "itemType": "userMessage",
+      "stage": "started"
+    },
+    {
+      "mode": "shell",
+      "type": "item",
+      "itemType": "userMessage",
+      "stage": "completed"
+    },
+    {
+      "mode": "shell",
+      "type": "item",
+      "itemType": "agentMessage",
+      "stage": "started"
+    },
+    {
+      "mode": "shell",
+      "type": "item",
+      "itemType": "agentMessage",
+      "stage": "completed"
+    },
+    {
+      "mode": "patch",
+      "type": "capabilities",
+      "profile": "host-only-task-tools",
+      "sandbox": "read-only",
+      "networkAccess": false,
+      "attachedTools": 1,
+      "disabledFeatureCount": 30
+    },
+    {
+      "mode": "patch",
+      "type": "item",
+      "itemType": "userMessage",
+      "stage": "started"
+    },
+    {
+      "mode": "patch",
+      "type": "item",
+      "itemType": "userMessage",
+      "stage": "completed"
+    },
+    {
+      "mode": "patch",
+      "type": "item",
+      "itemType": "agentMessage",
+      "stage": "started"
+    },
+    {
+      "mode": "patch",
+      "type": "item",
+      "itemType": "agentMessage",
+      "stage": "completed"
+    },
+    {
+      "mode": "browser",
+      "type": "capabilities",
+      "profile": "host-only-task-tools",
+      "sandbox": "read-only",
+      "networkAccess": false,
+      "attachedTools": 1,
+      "disabledFeatureCount": 30
+    },
+    {
+      "mode": "browser",
+      "type": "item",
+      "itemType": "userMessage",
+      "stage": "started"
+    },
+    {
+      "mode": "browser",
+      "type": "item",
+      "itemType": "userMessage",
+      "stage": "completed"
+    },
+    {
+      "mode": "browser",
+      "type": "item",
+      "itemType": "agentMessage",
+      "stage": "started"
+    },
+    {
+      "mode": "browser",
+      "type": "item",
+      "itemType": "agentMessage",
+      "stage": "completed"
+    },
+    {
+      "mode": "mcp",
+      "type": "capabilities",
+      "profile": "host-only-task-tools",
+      "sandbox": "read-only",
+      "networkAccess": false,
+      "attachedTools": 1,
+      "disabledFeatureCount": 30
+    },
+    {
+      "mode": "mcp",
+      "type": "item",
+      "itemType": "userMessage",
+      "stage": "started"
+    },
+    {
+      "mode": "mcp",
+      "type": "item",
+      "itemType": "userMessage",
+      "stage": "completed"
+    },
+    {
+      "mode": "mcp",
+      "type": "item",
+      "itemType": "agentMessage",
+      "stage": "started"
+    },
+    {
+      "mode": "mcp",
+      "type": "item",
+      "itemType": "agentMessage",
+      "stage": "completed"
+    }
+  ],
+  "dangerousAdvertised": 0,
+  "markerEffects": false,
+  "hostCallbackOnly": true,
+  "limitations": [
+    "The synthetic server substitutes for model inference.",
+    "Catalog absence plus disposable markers is stronger than feature-boolean attestations but is not a proof against undocumented native capabilities."
+  ]
+}

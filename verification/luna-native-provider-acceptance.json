@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "model": "gpt-6-luna",
+  "startedAt": "2026-11-12T11:36:42.471Z",
+  "success": true,
+  "isolatedHistory": false,
+  "supportBefore": false,
+  "elapsedMs": 12199,
+  "finalAnswer": "4",
+  "phaseCount": 3,
+  "events": [
+    {
+      "profile": "host-only-task-tools",
+      "native": true,
+      "sandbox": "read-only",
+      "networkAccess": false,
+      "attachedTools": 0
+    },
+    {
+      "profile": "host-only-task-tools",
+      "native": true,
+      "sandbox": "read-only",
+      "networkAccess": false,
+      "attachedTools": 0
+    },
+    {
+      "profile": "host-only-task-tools",
+      "native": true,
+      "sandbox": "read-only",
+      "networkAccess": false,
+      "attachedTools": 0
+    }
+  ],
+  "phases": [
+    {
+      "phase": "decompose",
+      "status": null
+    },
+    {
+      "phase": "decompose",
+      "status": null
+    },
+    {
+      "phase": "work",
+      "status": null
+    },
+    {
+      "phase": "work",
+      "status": null
+    },
+    {
+      "phase": "integration",
+      "status": null
+    },
+    {
+      "phase": "integration",
+      "status": null
+    }
+  ],
+  "verifiedAfter": true,
+  "verificationDiagnostics": {
+    "connected": true,
+    "authenticated": true,
+    "verifiedScopeCount": 2,
+    "selectedAvailable": true,
+    "verifiedScopePaths": [
+      "work\\.shadowdancer\\luna-provider-smoke\\runs\\luna-provider-smoke-1794483403146\\modules\\1",
+      "work\\.shadowdancer\\luna-provider-smoke\\runs\\luna-provider-smoke-1794483403146\\integration\\round-01\\group-001"
+    ]
+  }
+}
