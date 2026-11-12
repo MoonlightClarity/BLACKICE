@@ -86,6 +86,53 @@ test('analytical options reject resumed history, attached action tools and writa
   assert.equal(f.requests.length,0);
 });
 
+test('protected native Luna preserves BLACKICE dynamic tools while removing ambient native tools',async t=>{
+  const f=nativeFixture(t,{connectedGmail:true}), dispatched=[];
+  const tool={name:'relay_browser',description:'Host-owned browser adapter',inputSchema:{type:'object',properties:{action:{type:'string'}},required:['action'],additionalProperties:false}};
+  const result=await f.run({responseOnly:false,hostOnlyTools:true,model:'gpt-6-luna',dynamicTools:[tool],
+    onToolCall:async call=>{dispatched.push(call);return {success:true,contentItems:[{type:'inputText',text:'observed'}]};}});
+  assert.equal(result.output,answer);
+  const start=f.requests.find(x=>x.method==='thread/start').params;
+  const turn=f.requests.find(x=>x.method==='turn/start').params;
+  assert.equal(start.model,'gpt-6-luna');
+  assert.equal(start.ephemeral,true);
+  assert.equal(start.sandbox,'read-only','Native effects cannot inherit the caller\'s writable sandbox');
+  assert.deepEqual(start.environments,[]);
+  assert.deepEqual(start.selectedCapabilityRoots,[]);
+  assert.deepEqual(start.dynamicTools,[tool],'The host callback must remain attached');
+  assert.deepEqual(turn.sandboxPolicy,{type:'readOnly',networkAccess:false});
+  for(const name of PLANNING_RESPONSE_DISABLED_FEATURES)assert.equal(start.config['features.'+name],false);
+  assert.equal(start.config.web_search,'disabled');
+  assert.equal(start.config.plugins.ambient.enabled,false);
+  assert.equal(start.config.mcp_servers.ambient.enabled,false);
+  assert.equal(f.requests.some(x=>x.method==='app/installed'||x.method==='app/read'),false);
+  assert.ok(f.requests.findIndex(x=>x.method==='experimentalFeature/list'&&x.params.threadId)<f.requests.findIndex(x=>x.method==='turn/start'));
+  const capabilities=f.events.find(x=>x.type==='capabilities');
+  assert.equal(capabilities.profile,'host-only-task-tools');
+  assert.equal(capabilities.attachedTools,1);
+  assert.equal(capabilities.native,true);
+  assert.equal(dispatched.length,0,'No invented dynamic tool was executed');
+});
+
+test('protected Luna rejects ignored native tool restrictions before inference',async t=>{
+  const f=nativeFixture(t,{ignoredFeature:'shell_tool',connectedGmail:false});
+  await assert.rejects(f.run({responseOnly:false,hostOnlyTools:true,model:'gpt-6-luna',dynamicTools:[]}),{code:'HOST_ONLY_TRANSPORT_UNSUPPORTED'});
+  assert.equal(f.requests.some(x=>x.method==='turn/start'),false);
+  assert.equal(f.requests.filter(x=>x.method==='thread/unsubscribe').length,1);
+});
+
+test('protected Luna rejects unavailable native tool controls before starting any thread',async t=>{
+  const f=nativeFixture(t,{missingFeature:'browser_use',connectedGmail:false});
+  await assert.rejects(f.run({responseOnly:false,hostOnlyTools:true,model:'gpt-6-luna',dynamicTools:[]}),{code:'HOST_ONLY_TRANSPORT_UNSUPPORTED'});
+  assert.equal(f.requests.some(x=>x.method==='thread/start'||x.method==='turn/start'),false);
+});
+
+test('protected Luna rejects a writable native sandbox returned by the server',async t=>{
+  const f=nativeFixture(t,{sandbox:{type:'workspaceWrite',networkAccess:false},connectedGmail:false});
+  await assert.rejects(f.run({responseOnly:false,hostOnlyTools:true,model:'gpt-6-luna',dynamicTools:[]}),{code:'HOST_ONLY_TRANSPORT_UNSUPPORTED'});
+  assert.equal(f.requests.some(x=>x.method==='turn/start'),false);
+});
+
 test('ordinary native execution retains its existing writable default and makes no new feature-scope calls',async t=>{
   const f=nativeFixture(t,{connectedGmail:false});const result=await f.run({responseOnly:false,outputSchema:undefined});assert.equal(result.output,answer);
   assert.equal(f.requests.find(x=>x.method==='thread/start').params.sandbox,'danger-full-access');assert.equal(f.requests.some(x=>x.method==='experimentalFeature/list'),false);
