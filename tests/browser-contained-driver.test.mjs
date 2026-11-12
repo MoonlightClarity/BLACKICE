@@ -1955,3 +1955,52 @@ test('a user-kept task tab remains protected from completion cleanup after resta
     assert.equal(restored.tabs.get(opened.tabId).userPinned, true);
   } finally { await restored.close(); }
 });
+
+test('owner recovery reaches native fill-ready without rejecting its own focus preparation', async t => {
+  const { driver, windows }=await fixture(t),tab=driver.newTab('https://example.test/form');await tab.loading;
+  const browser=new BrowserWorkspace({driver});t.after(()=>browser.close());
+  rememberFixtureRef(driver,tab,'field');
+  const handler=createBrowserToolHandler({browser});let changed=false,ready=0,inspections=0;
+  const control=()=>({ref:'field',kind:'field',recovery:{version:1,nodeId:'one',stateDigest:(changed?'b':'a').repeat(64),tag:'INPUT',type:'text',label:'Name'}});
+  driver.element=async(_tab,args,action)=> {
+    if(action==='host-inspect'){inspections++;assert.equal(args.hostRecoveryInspection,true);return {result:control()};}
+    if(action==='fill')return {result:{needsTrustedTextInput:true}};
+    if(action==='fill-ready'){ready++;return {result:{ready:true}};}
+    throw Error('Unexpected element action '+action);
+  };
+  const call={name:'relay_browser',arguments:{browser:'relay',action:'fill',tabId:tab.id,ref:'field',text:'Example',expectedDocumentId:`${tab.id}:${tab.revision}`,expectedUrl:tab.url}};
+  const binding=await handler.captureRecoveryBinding(call);
+  const result=await handler(call,{recoveryBinding:binding});
+  assert.equal(result.success,true);assert.equal(ready,1);assert.ok(inspections>=4);
+  assert.equal(windows[0].protocol.filter(item=>item.method==='Input.insertText').length,1);
+  const before=windows[0].protocol.filter(item=>item.method==='Input.insertText').length;
+  const original=driver.element;
+  driver.element=async(...args)=>{const result=await original(...args);if(args[2]==='fill-ready')changed=true;return result;};
+  const failed=await handler(call,{recoveryBinding:binding});
+  assert.equal(failed.success,false);assert.equal(failed.code,'BROWSER_RECOVERY_CHANGED');
+  assert.equal(windows[0].protocol.filter(item=>item.method==='Input.insertText').length,before);
+  const body=JSON.parse(failed.contentItems[0].text);assert.equal(Object.hasOwn(body,'actionDispatched'),false);
+});
+
+test('owner recovery rejects a navigated child frame before reusing its reviewed control', async t => {
+  const { driver }=await fixture(t),tab=driver.newTab('https://example.test/form');await tab.loading;
+  const main=tab.window.webContents.mainFrame;
+  let executed=0;
+  const child={processId:2,routingId:2,parent:main,url:'https://fields.example.test/one',executeJavaScript:async()=>{executed++;return {ref:'child-field',kind:'field',recovery:{version:1,nodeId:'node-child',stateDigest:'a'.repeat(64),tag:'INPUT',type:'text',label:'Name'}};}};
+  main.framesInSubtree=[child];rememberFixtureRef(driver,tab,'child-field',child);
+  const browser=new BrowserWorkspace({driver});t.after(()=>browser.close());const handler=createBrowserToolHandler({browser});
+  const call={name:'relay_browser',arguments:{browser:'relay',action:'fill',tabId:tab.id,ref:'child-field',text:'Example'}};
+  const binding=await handler.captureRecoveryBinding(call);assert.equal(binding.control.ref,'child-field');assert.equal(executed,1);
+  child.url='https://fields.example.test/two';
+  await assert.rejects(handler.revalidateRecoveryBinding(binding,call),{code:'BROWSER_REF_STALE',actionDispatched:false});
+  assert.equal(executed,1,'stale child ref must be rejected before renderer evaluation');
+});
+
+test('owner recovery rechecks navigation after native preparation and before loadURL', async t => {
+  const {driver,windows}=await fixture(t),tab=driver.newTab('https://example.test/old');await tab.loading;
+  const before=windows[0].loads.length;let checked=0;
+  await assert.rejects(driver.perform({action:'navigate',tabId:tab.id,url:'https://example.test/new'},{
+    recoveryInput:async({prepared})=>{checked++;if(prepared)throw Object.assign(Error('Changed'),{code:'BROWSER_RECOVERY_CHANGED'});}
+  }),{code:'BROWSER_RECOVERY_CHANGED'});
+  assert.equal(checked,2);assert.equal(windows[0].loads.length,before);
+});

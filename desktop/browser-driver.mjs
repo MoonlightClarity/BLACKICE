@@ -1237,7 +1237,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (!this.referenceCurrent(tab, args.ref)) throw Object.assign(error('The target frame changed while the element action was running. Inspect its actual effects before another attempt.'), { code: 'BROWSER_REF_STALE' });
     return { frame, result };
   }
-  async observeOperation(args, { signal, owner: context, receiptBindings = [], expectedDocumentId, expectedUrl } = {}) {
+  async observeOperation(args, { signal, owner: context, receiptBindings = [], expectedDocumentId, expectedUrl, recoveryInspection = false } = {}) {
     cancel(signal);
     if (['open', 'tabs', 'downloads', 'folder_create', 'folder_rename', 'folder_close'].includes(args.action)) return this.status();
     const owner = browserOwner(context), tab = this.tab(args.tabId);
@@ -1251,7 +1251,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     const documentId = inputDocumentId(tab), url = tab.window.webContents.getURL();
     let control;
     if (args.ref && ['click', 'hover', 'fill', 'select', 'upload', 'press'].includes(args.action)) {
-      try { control = (await this.element(tab, args, 'host-inspect', signal)).result; }
+      try { control = (await this.element(tab, { ...args, hostRecoveryInspection: recoveryInspection === true }, 'host-inspect', signal)).result; }
       catch (reason) { throw Object.assign(reason, { actionDispatched: false }); }
       if (control?.form) control = { ...control, form: { ...control.form, documentId } };
     }
@@ -1722,9 +1722,10 @@ export class ElectronBrowserDriver extends EventEmitter {
       dispose: () => { clearTimeout(timer); wc.removeListener('did-start-navigation', listener); wake?.(); },
     };
   }
-  async perform(args, { signal, source = 'agent', owner: context, validateUploadPath, suppressResultSnapshot = false, operationDescriptor, operationId } = {}) {
+  async perform(args, { signal, source = 'agent', owner: context, validateUploadPath, suppressResultSnapshot = false, operationDescriptor, operationId, recoveryInput } = {}) {
     cancel(signal);
     if (args.action === 'upload') validateBrowserUploadRequest(args);
+    if (recoveryInput) await recoveryInput({ signal });
     const preview = validateBrowserPreview({ ...args, browser: args.browser ?? 'relay' }, source);
     const wheel = browserWheelScroll(args);
     // The router removes its transport selector before entering this adapter.
@@ -1780,7 +1781,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     else this.activeTab = tab.id;
     if (args.action === 'tab_select') { this.persist(); this.emit('changed'); return this.savedStatus(); }
     if (source === 'user' && tab.owner && ['navigate', 'click', 'fill', 'type', 'select', 'press', 'scroll', 'upload', 'interaction', 'back', 'forward', 'reload'].includes(args.action)) tab.userPinned = true;
-    if (args.action === 'close') { this.closeTab(tab); return this.savedStatus(); }
+    if (args.action === 'close') { if (recoveryInput) await recoveryInput({ signal, prepared: true }); this.closeTab(tab); return this.savedStatus(); }
     if (args.action === 'navigate') browserURL(args.url);
     const cancelledAuthentication = ['navigate', 'reload', 'back', 'forward'].includes(args.action) && this.cancelAuthentication(tab);
     if (cancelledAuthentication) tab.window?.webContents.stop?.();
@@ -1824,6 +1825,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
     if (args.action === 'open') await this.pageWork(tab, tab.loading, signal, 20000);
     if (['navigate', 'reload', 'back', 'forward'].includes(args.action)) {
+      if (recoveryInput) await recoveryInput({ signal, prepared: true });
       tab.loadError = null; tab.navigationDispatched = true;
       const wc = tab.window.webContents;
       if (args.action === 'navigate') { tab.pendingURL = null; tab.url = browserURL(args.url); await this.pageWork(tab, wc.loadURL(tab.url).catch(e => { tab.loadError = e.message; }), signal, 20000); }
@@ -1844,12 +1846,14 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (args.action === 'fill') {
       const text = String(args.text ?? '');
       const guard = args.expectedDocumentId === undefined && args.expectedUrl === undefined ? { expectedDocumentId: inputDocumentId(tab), expectedUrl: tab.window.webContents.getURL() } : args;
+      if (recoveryInput) await recoveryInput({ signal, prepared: true });
       receipt = (await this.element(tab, { ...args, text }, 'fill', signal)).result;
       if (receipt.needsTrustedTextInput) {
         // The DOM setter bypasses trusted input and dirty-value/blur state in
         // controlled forms. Only focus/selection preparation runs in the page;
         // Chromium performs the replacement, including a trusted empty clear.
         await this.element(tab, args, 'fill-ready', signal);
+        if (recoveryInput) await recoveryInput({ signal, prepared: true });
         if (text) await this.cdp(tab, 'Input.insertText', { text }, signal, guard);
         else {
           try { await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 }, signal, guard); }
@@ -1861,7 +1865,7 @@ export class ElectronBrowserDriver extends EventEmitter {
         receipt = { filled: true, characters: text.length, input: 'browser' };
       }
     }
-    if (args.action === 'select') receipt = (await this.element(tab, args, 'select', signal)).result;
+    if (args.action === 'select') { if (recoveryInput) await recoveryInput({ signal, prepared: true }); receipt = (await this.element(tab, args, 'select', signal)).result; }
     if (['click', 'hover'].includes(args.action)) {
       if (args.ref) {
         let { frame, result } = await this.element(tab, args, 'prepare', signal);
@@ -1873,6 +1877,7 @@ export class ElectronBrowserDriver extends EventEmitter {
         const point = await this.browserPoint(tab, frame, result, signal);
         await this.assertOperationCommit(args, operationDescriptor, { signal, owner });
         await this.armSubmissionObservation(tab, operationDescriptor, operationId, signal);
+        if (recoveryInput) await recoveryInput({ signal, prepared: true });
         await this.pointerInput(tab, point, args.action, signal, args);
         receipt = { [args.action === 'click' ? 'clicked' : 'hovered']: args.ref, input: 'browser protocol' };
       } else {
@@ -1906,6 +1911,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       const printable = modifiers & 7 ? null : printableKeyEvent(rawKey === 'Space' ? ' ' : rawKey, modifiers);
       if (!printable && (!Object.hasOwn(keys, key) || key === 'A' && (!(modifiers & 6) || modifiers & 1))) throw error('Use one printable character, a supported editing/navigation key, or Control/Meta+A to select all. Use type or fill for longer text.');
       if (args.ref) await this.element(tab, args, 'focus', signal);
+      if (recoveryInput) await recoveryInput({ signal, prepared: true });
       const eventKey = key === 'Space' ? ' ' : key === 'A' && !(modifiers & 8) ? 'a' : key;
       const down = printable || { key: eventKey, ...keys[key], modifiers };
       const { text: _text, unmodifiedText: _unmodifiedText, ...up } = down;

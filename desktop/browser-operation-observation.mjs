@@ -4,6 +4,33 @@
  */
 export async function inspectObservedFormControl(el, state, args) {
   if (!el?.isConnected) return { kind: 'opaque' };
+  if (args.hostRecoveryInspection === true) {
+    // Host-only observation: no focus, DOM events, form serialization or input.
+    // Password/credential controls deliberately have no reviewable snapshot.
+    if (el.type === 'password' || state?.credentialFields?.has(el) || !globalThis.crypto?.subtle) return { ref: args.ref, kind: 'opaque' };
+    const details = await inspectObservedFormControl(el, state, { ...args, hostRecoveryInspection: false });
+    try {
+      state.recoveryNodes ||= new WeakMap(); state.nextRecoveryNode ||= 0;
+      const identity = node => { if (!node) return null; if (!state.recoveryNodes.has(node)) state.recoveryNodes.set(node, 'node-' + (++state.nextRecoveryNode)); return state.recoveryNodes.get(node); };
+      const nodeId = identity(el);
+      const stateOf = () => {
+        if (!el.isConnected || el.type === 'password' || state?.credentialFields?.has(el)) throw Error('Changed protected control');
+        const attributes = [...el.attributes].filter(item => item.name !== 'style').map(item => [item.name, item.value]).sort(([a],[b]) => a.localeCompare(b));
+        const form = el.form ? { id: identity(el.form), action: el.form.action, method: el.form.method, target: el.form.target, enctype: el.form.enctype } : null;
+        const snapshot = { nodeId, tag: el.tagName, attributes, value: typeof el.value === 'string' ? el.value : null,
+          text: String(el.textContent || ''), checked: Boolean(el.checked), disabled: Boolean(el.disabled), readOnly: Boolean(el.readOnly), form,
+          options: el.tagName === 'SELECT' ? [...el.options].map(option => [option.value, option.selected, option.disabled, option.text]) : null };
+        const serialized = JSON.stringify(snapshot);
+        if (attributes.length > 128 || serialized.length > 65536) throw Error('Control snapshot bound');
+        return serialized;
+      };
+      const before = stateOf();
+      const stateDigest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(before)))].map(value => value.toString(16).padStart(2, '0')).join('');
+      if (before !== stateOf()) throw Error('Control changed during inspection');
+      return { ...details, recovery: { version: 1, nodeId, stateDigest, tag: el.tagName, type: String(el.type || ''),
+        label: String(el.getAttribute?.('aria-label') || el.getAttribute?.('name') || el.getAttribute?.('title') || el.textContent || '').trim().slice(0, 200) } };
+    } catch { return { ref: args.ref, kind: 'opaque' }; }
+  }
   const basic = { ref: args.ref };
   const submit = ['BUTTON', 'INPUT'].includes(el.tagName) && ['submit', 'image'].includes(el.type);
   if (!submit || !['click', 'press'].includes(args.action) || args.action === 'press' && args.key !== 'Enter') {
