@@ -54,3 +54,33 @@ Optional status and setup observers cannot delay or replace an accepted action's
 The plugin package builder reads an existing package and writes a separate candidate. It aligns the direct MCP fallback name with the existing hosted App declaration, preserves App ID and connection settings, and synchronizes portable and legacy manifests. The hosted route remains bound to the same App; a standalone MCP client that keys its token cache by the renamed fallback may need to select that route again.
 
 Validation covers independent MCP clients, token refresh under the same grant, receipt reads after reconstruction, same-ID retries without repeated effects, observer failures, the full catalog fingerprint, and package preservation. These checks establish BLACKICE behavior. A ChatGPT-hosted approval dialog still requires observation across actual user turns before reporting the repeated-prompt issue as fixed.
+
+## Planning write schema discovery
+
+The Planning write schema contains nested task contracts and stage responses. Some
+clients have rendered its large union as an unknown argument type even while the
+smaller graph-read union remained readable. The ChatGPT catalog now advertises a
+compact root-object projection for this tool only. Complex structured fields are
+progressively described; the canonical DirectExecutionAPI schema and native
+Planning validation are unchanged. Discovery is not permission to send arbitrary
+nested data: exact per-action admission still happens before a durable job exists.
+
+Use blackice_planning_graph_read with requestId, action "schema" and writeAction
+"record_response" (or another advertised write action) to read required keys and
+the canonical action schema. An optional field such as "contract" or "values"
+returns only that field's exact schema. This does not inspect or modify a graph.
+Read templates and the actual module revision before recording a response.
+
+Planning validation errors identify missing/invalid declared fields and point to
+schema discovery. They never echo rejected values or unrecognized key names.
+Use action, not operation; every direct write requires a stable requestId.
+record_response uses values, not response.
+
+The disposable HTTP integration test covers the real connector tools/list,
+schema discovery, create/add/record/read, idempotent receipt recovery and strict
+rejections without changes to an actual user graph. It does not establish how a
+ChatGPT host renders a refreshed catalog. After deployment, refresh the existing
+app, record its catalog hash, inspect actual tool arguments in a fresh chat, and
+perform a separately authorized disposable write/read before calling the client
+exposure issue resolved. Do not reconnect a healthy grant or alter live job-search
+responses merely to test discovery.

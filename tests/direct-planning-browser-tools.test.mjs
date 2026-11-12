@@ -147,3 +147,33 @@ test('large graph reads page real records by byte budget with independent source
   const firstInputs = await read({ nodeId: 'n0', limit: 100 }); assert.ok(firstInputs.node.response.inputs.items.length < 100); assert.ok(firstInputs.node.response.inputs.nextOffset > 0); assert.ok(Buffer.byteLength(JSON.stringify(firstInputs)) < 1024 * 1024);
   const inputOffset = firstInputs.node.response.inputs.nextOffset, nextInputs = await read({ nodeId: 'n0', inputOffset, limit: 100 }); assert.equal(nextInputs.node.response.inputs.items[0].edgeId, 'dependency-' + inputOffset);
 });
+
+test('canonical schema discovery is read-only, exact and can select a structured field',async t=>{
+ const f=await fixture(t);
+ const before=await f.store.list();
+ const schema=await f.read({action:'schema',writeAction:'record_response'});
+ assert.equal(schema.job.status,'succeeded');
+ const canonical=f.api.tools(client).find(x=>x.name===writeTool).inputSchema.oneOf.find(x=>x.properties.action.const==='record_response');
+ // The runtime separately adds optional taskContext; the authorable action schema is unchanged.
+ const core=structuredClone(canonical);delete core.properties.taskContext;
+ assert.deepEqual(schema.value.schema,core);
+ const field=await f.read({action:'schema',writeAction:'record_response',field:'contract'});
+ assert.deepEqual(field.value.schema,core.properties.contract);
+ assert.deepEqual(await f.store.list(),before);assert.equal(f.events.length,0);
+ const bad=await f.read({action:'schema',writeAction:'record_response',field:'not-a-field'});
+ assert.equal(bad.job.status,'failed');
+});
+
+test('malformed planning calls report field fixes without echoing values or allocating jobs',async t=>{
+ const f=await fixture(t),secret='sensitive-value-must-not-appear';
+ const before=await f.api.jobs.counts();
+ await assert.rejects(f.api.call(writeTool,{operation:'record_response',graphRequestId:'graph-a',nodeId:'root',expectedNodeRevision:1,response:{interpretation:secret}},client),error=>{
+  assert.equal(error.code,'DIRECT_REQUEST_INVALID');
+  assert.match(error.message,/Missing required fields: requestId, action/);
+  assert.match(error.message,/Use action, not operation/);
+  assert.match(error.message,/under values, not response/);
+  assert.ok(!error.message.includes(secret));return true;
+ });
+ await assert.rejects(f.api.call(writeTool,{requestId:'bad-values',action:'record_response',graphRequestId:'graph-a',nodeId:'root',expectedNodeRevision:1,values:{interpretation:42}},client),/Invalid fields: values/);
+ assert.deepEqual(await f.api.jobs.counts(),before);
+});

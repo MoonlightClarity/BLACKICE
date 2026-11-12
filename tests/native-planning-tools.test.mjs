@@ -148,7 +148,7 @@ test('read-only native coordinator can inspect every graph view while all mutati
   await f.store.addSource('read-only-own',{title:'Saved fact',text:'An inert source for the read-only fixture.'},{actor:{type:'human',id:'fixture'}});
   const before=await f.store.get('read-only-own');
   const cases={
-   list:{},templates:{},get:{graphRequestId:'read-only-own',nodeId:'frame'},
+   list:{},templates:{},schema:{writeAction:'record_response',field:'values'},get:{graphRequestId:'read-only-own',nodeId:'frame'},
    program:{graphRequestId:'read-only-own'},attempts:{graphRequestId:'read-only-own',nodeId:'frame'},
    source:{graphRequestId:'read-only-own',sourceId:before.sources[0].id},
    response_history:{graphRequestId:'read-only-own',nodeId:'frame'},
