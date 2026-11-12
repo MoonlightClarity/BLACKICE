@@ -53,20 +53,20 @@ test('switching saved conversations restores each policy ahead of changing globa
  const find=(label,choice)=>dom.$('#next-chat-ontology-modules').querySelectorAll('input').find(x=>x.getAttribute('aria-label')===label+' '+choice);
  workspace.openConversationId('one');await wait('one');
  assert.equal(find('Intent inference','on').checked,true);
- const blocked=find('Subagent orchestration','off');blocked.checked=true;await blocked.dispatch('change');
- assert.equal(JSON.parse(stored.get('blackice.next.chatOntology.one')).planningOntology.modules.subagents,false);
+ const blocked=find('Task decomposition','off');blocked.checked=true;await blocked.dispatch('change');
+ assert.equal(JSON.parse(stored.get('blackice.next.chatOntology.one')).planningOntology.modules.decomposition,false);
  workspace.openConversationId('two');await wait('two');
  assert.equal(find('Intent inference','off').checked,true);
- assert.equal(find('Subagent orchestration','on').checked,true,'other chat cannot inherit first chat edit');
- status.runtimeSettings.planningOntology=normalizePlanningOntology({modules:{subagents:'mandatory'}});
+ assert.equal(find('Task decomposition','on').checked,true,'other chat cannot inherit first chat edit');
+ status.runtimeSettings.planningOntology=normalizePlanningOntology({modules:{decomposition:'mandatory'}});
  workspace.updateStatus(status);
  assert.equal(find('Intent inference','off').checked,true,'saved conversation wins over changed application default');
  workspace.openConversationId('one');await wait('one');
  assert.equal(find('Intent inference','on').checked,true);
- assert.equal(find('Subagent orchestration','off').checked,true);
+ assert.equal(find('Task decomposition','off').checked,true);
 });
 
-test('mounted Chat composer uses 18 explicit On/Off checkboxes and persists only the current conversation',async t=>{
+test('mounted Chat composer uses 16 explicit On/Off checkboxes and persists only the current conversation',async t=>{
  const dom=testDOM(t),stored=new Map(),oldStorage=globalThis.localStorage,oldWorker=globalThis.Worker;
  globalThis.localStorage={getItem:key=>stored.get(key)||null,setItem:(key,value)=>stored.set(key,String(value)),removeItem:key=>stored.delete(key)};
  delete globalThis.Worker;
@@ -85,9 +85,11 @@ test('mounted Chat composer uses 18 explicit On/Off checkboxes and persists only
  const disclosure=dom.$('#next-chat-ontology-inline');
  assert.equal(disclosure.tagName,'DETAILS');
  assert.equal(disclosure.open,false,'initial composer stays compact');
- assert.equal(rows.length,9);
- assert.equal(grid.querySelectorAll('input[type="checkbox"]').length,18);
+ assert.equal(rows.length,8);
+ assert.equal(grid.querySelectorAll('input[type="checkbox"]').length,16);
  const option=(label,choice)=>grid.querySelectorAll('input').find(input=>input.getAttribute('aria-label')===label+' '+choice);
+ assert.equal(option('Subagent orchestration','on'),undefined);
+ assert.equal(option('Subagent orchestration','off'),undefined);
  assert.equal(option('Feasibility','off')?.checked,true);
  assert.equal(option('Intent inference','on')?.checked,true);
  assert.equal(option('Anti-overalignment calibration','on')?.checked,true);

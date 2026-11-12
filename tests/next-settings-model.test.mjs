@@ -60,6 +60,9 @@ test('queued independent saves capture intent, prevent duplicate writes and reta
   await until(()=>f.$('#next-execution-feedback').textContent==='Saved.');
   const writes=f.calls.filter(item=>item.method==='POST');assert.equal(writes.length,2);
   assert.equal(writes[0].body.providerIdleTimeoutMs,600000);assert.equal(writes[1].body.maxConcurrentRuns,4);
+  assert.equal(Object.hasOwn(writes[0].body,'subagentsEnabled'),false);
+  assert.equal(Object.hasOwn(writes[0].body,'maxSubagents'),false);
+  assert.equal(f.$('#next-runtime-subagents'),null);assert.equal(f.$('#next-runtime-max-subagents'),null);
   assert.equal(f.$('#next-runtime-idle').value,'11');assert.equal(f.$('#next-execution-limit').value,'9');
 });
 

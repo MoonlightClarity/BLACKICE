@@ -22,19 +22,23 @@ const run=(id,modes={directoryMode:'auto',subagentsMode:'default'})=>({
  workflow:{nodes:[{id:'agent',type:'agent',name:'Agent',model:'fixture'}]},
  nodes:{agent:{status:'completed',threadId:'thread-'+id,output:'Done'}}
 });
-test('Directory and Subagents normalize independently of Planning, preserve drafts and transfer only the new conversation',()=>{
- const storage=store(),value={directoryMode:'on',subagentsMode:'off'};
+test('Directory stays conversation-scoped while retired subagent preferences normalize to default',()=>{
+ const storage=store(),value={directoryMode:'on',subagentsMode:'off'},expected={...value,subagentsMode:'default'};
  assert.deepEqual(readConversationExecutionModes({storage}),{directoryMode:'on',subagentsMode:'default'});
  assert.equal(normalizeChatOptions({...value,planningMode:'off'}).directoryMode,'on');
- saveConversationExecutionModes({storage,...value});
+ for(const subagentsMode of ['on','off'])assert.equal(normalizeChatOptions({...value,subagentsMode}).subagentsMode,'default');
+ assert.deepEqual(saveConversationExecutionModes({storage,...value}),expected);
+ storage.setItem('blackice.next.chatExecution.new',JSON.stringify(value));
  assert.equal(transferNewExecutionModes({storage,conversationId:'one'}),true);
- assert.deepEqual(readConversationExecutionModes({storage,conversationId:'one'}),value);
+ assert.deepEqual(readConversationExecutionModes({storage,conversationId:'one'}),expected);
+ assert.deepEqual(JSON.parse(storage.getItem('blackice.next.chatExecution.one')),expected);
  assert.deepEqual(readConversationExecutionModes({storage,conversationId:'two'}),{directoryMode:'on',subagentsMode:'default'});
  assert.deepEqual(readConversationExecutionModes({storage,conversationId:'new'}),{directoryMode:'on',subagentsMode:'default'});
  assert.throws(()=>saveConversationExecutionModes({storage,conversationId:'one',directoryMode:'unknown'}));
  const projected=projectFamily({rootId:'one',state:'active',runs:[run('one',value)]});
  assert.deepEqual(projected.runs[0].executionModes,value,'worker projection must retain admitted runtime choices');
- assert.deepEqual(readConversationExecutionModes({storage:store(),conversationId:'one',runs:projected.runs}),value,'server run is fallback after browser storage reset');
+ assert.deepEqual(readConversationExecutionModes({storage:store(),conversationId:'one',runs:projected.runs}),expected,'old server overrides cannot affect the next response');
+ assert.deepEqual(projected.runs[0].executionModes,value,'restoring a draft must not rewrite historical evidence');
  const server=readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
  assert.ok(server.includes("'chat/execution-preferences.mjs'"),'new browser import must be served');
 });
@@ -56,21 +60,21 @@ test('mounted Chat switches isolated Directory preferences and restores them aft
  t.after(()=>{workspace.destroy();if(oldStorage===undefined)delete globalThis.localStorage;else globalThis.localStorage=oldStorage;if(oldWorker===undefined)delete globalThis.Worker;else globalThis.Worker=oldWorker;});
  const wait=async id=>{for(let i=0;i<70;i++){if(workspace.getState().selected===id&&workspace.getState().runCount===1)return;await new Promise(r=>setTimeout(r,5));}throw Error('Conversation did not open '+id);};
  workspace.enter();workspace.openConversationId('one');await wait('one');
- assert.equal(dom.$('#next-chat-directory-mode').value,'on');assert.equal(dom.$('#next-chat-subagents-mode').value,'off');
+ assert.equal(dom.$('#next-chat-directory-mode').value,'on');assert.equal(dom.$('#next-chat-subagents-mode'),null);
  dom.$('#next-chat-directory-mode').value='off';await dom.$('#next-chat-directory-mode').dispatch('change');
  workspace.openConversationId('two');await wait('two');
- assert.equal(dom.$('#next-chat-directory-mode').value,'off');assert.equal(dom.$('#next-chat-subagents-mode').value,'on');
+ assert.equal(dom.$('#next-chat-directory-mode').value,'off');assert.equal(dom.$('#next-chat-subagents-mode'),null);
  workspace.openConversationId('one');await wait('one');assert.equal(dom.$('#next-chat-directory-mode').value,'off');
  workspace.destroy();workspace=make();workspace.enter();workspace.openConversationId('one');await wait('one');
- assert.equal(dom.$('#next-chat-directory-mode').value,'off');assert.equal(dom.$('#next-chat-subagents-mode').value,'off');
+ assert.equal(dom.$('#next-chat-directory-mode').value,'off');assert.equal(dom.$('#next-chat-subagents-mode'),null);
  workspace.openConversationId('two');await wait('two');assert.equal(dom.$('#next-chat-directory-mode').value,'off');
 });
-test('Chat start/continue bind mode payloads while live direction never changes active execution',async()=>{
+test('Chat start/continue always submit default delegation while live direction preserves active execution',async()=>{
  const calls=[],api=async(route,method,value)=>{calls.push({route,value});return route.endsWith('/steer')?{accepted:true}:route==='/api/workflows'?value:{id:'accepted',taskId:'one'};};
  await submitChat({api,runs:[],task:'Inspect marker',model:'fixture',cwd:'C:\\fixture',planningMode:'off',directoryMode:'on',subagentsMode:'off'});
- assert.equal(calls.at(-1).value.input.directoryMode,'on');assert.equal(calls.at(-1).value.input.subagentsMode,'off');
+ assert.equal(calls.at(-1).value.input.directoryMode,'on');assert.equal(calls.at(-1).value.input.subagentsMode,'default');
  calls.length=0;await submitChat({api,runs:[run('one')],task:'Next',planningMode:'off',directoryMode:'off',subagentsMode:'on'});
- assert.equal(calls[0].value.directoryMode,'off');assert.equal(calls[0].value.subagentsMode,'on');
+ assert.equal(calls[0].value.directoryMode,'off');assert.equal(calls[0].value.subagentsMode,'default');
  const active=run('active');active.status='running';active.settled=false;active.nodes.agent={status:'running',threadId:'thread',turnId:'turn'};
  calls.length=0;await submitChat({api,runs:[active],task:'Direction',directoryMode:'on',subagentsMode:'off'});
  assert.match(calls[0].route,/steer$/);assert.equal(calls[0].value.directoryMode,undefined);assert.equal(calls[0].value.subagentsMode,undefined);

@@ -2,13 +2,13 @@ import {REASONING_LEVELS,reasoningChoices,reasoningLabel} from './reasoning-mode
 import {serviceTierSupport} from './service-tier-model.mjs';
 const escape=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const clone=value=>structuredClone(value);
-export function responseDefaults(settings={}){return{defaultEffort:['default',...REASONING_LEVELS].includes(settings.defaultEffort)?settings.defaultEffort:'default',defaultServiceTier:settings.defaultServiceTier==='fast'?'fast':'default',defaultContext:clone(settings.defaultContext||{preset:'model',windowTokens:null,autoCompact:true}),verbosity:['concise','balanced','detailed'].includes(settings.verbosity)?settings.verbosity:'balanced',subagentsEnabled:settings.subagentsEnabled!==false,maxSubagents:Number.isSafeInteger(settings.maxSubagents)&&settings.maxSubagents>=1&&settings.maxSubagents<=8?settings.maxSubagents:3};}
+export function responseDefaults(settings={}){return{defaultEffort:['default',...REASONING_LEVELS].includes(settings.defaultEffort)?settings.defaultEffort:'default',defaultServiceTier:settings.defaultServiceTier==='fast'?'fast':'default',defaultContext:clone(settings.defaultContext||{preset:'model',windowTokens:null,autoCompact:true}),verbosity:['concise','balanced','detailed'].includes(settings.verbosity)?settings.verbosity:'balanced'};}
 export function renderResponseDefaults(status={},state={}) {
  const values={...responseDefaults(status.runtimeSettings),...(state.draft||{})};
  const context=values.defaultContext||{},busy=state.loading||state.saving,disabled=busy?' disabled':'',fast=serviceTierSupport(status,'default','fast');
  const window=context.preset==='900k'?'900k':context.preset==='custom'?Number(context.windowTokens||0).toLocaleString()+' tokens':'Model default';
  return `<details class="configure-disclosure response-defaults" data-configure-section="response-defaults"${state.open?' open':''}>
-   <summary>Agent preferences<span>${escape(values.verbosity)} · ${values.subagentsEnabled?values.maxSubagents+' parallel agents':'one agent'}</span></summary>
+   <summary>Agent preferences<span>${escape(values.verbosity)}</span></summary>
    <form id="configure-response-defaults">
      <p class="response-pref-intro">Set how BLACKICE works by default. You can still give different instructions in any conversation.</p>
      <div class="response-default-grid">
@@ -22,11 +22,7 @@ export function renderResponseDefaults(status={},state={}) {
        <label for="configure-verbosity">Response length
          <select id="configure-verbosity" data-response-default="verbosity"${disabled}>${[['concise','Concise'],['balanced','Balanced'],['detailed','Detailed']].map(([value,label])=>`<option value="${value}"${values.verbosity===value?' selected':''}>${label}</option>`).join('')}</select>
        </label>
-       <label for="configure-max-subagents">Parallel workers
-         <select id="configure-max-subagents" data-response-default="maxSubagents"${disabled||!values.subagentsEnabled?' disabled':''}>${Array.from({length:8},(_,index)=>index+1).map(value=>`<option value="${value}"${values.maxSubagents===value?' selected':''}>${value}</option>`).join('')}</select>
-       </label>
      </div>
-     <label class="configure-checkbox response-workers-toggle"><input type="checkbox" data-response-default="subagentsEnabled"${values.subagentsEnabled?' checked':''}${disabled}><span><strong>Allow on-demand subagents</strong><small>BLACKICE can delegate independent work. Each worker uses additional model credits.</small></span></label>
      <details class="response-context-advanced"><summary>Advanced context capacity <span>${escape(window)}</span></summary>
        <div class="response-default-grid">
          <label for="configure-default-context">Window budget
@@ -50,8 +46,6 @@ export function createResponseDefaults({getSettings,api,onChange=()=>{},onSaved=
   if(key==='defaultEffort'){if(!['default',...REASONING_LEVELS].includes(target.value)){state.error='Choose a valid reasoning level.';changed();return true;}draft.defaultEffort=target.value;keys.add('defaultEffort');}
   else if(key==='defaultServiceTier'){if(!['default','fast'].includes(target.value)){state.error='Choose Standard or Fast mode.';changed();return true;}draft.defaultServiceTier=target.value;keys.add('defaultServiceTier');}
   else if(key==='verbosity'){if(!['concise','balanced','detailed'].includes(target.value)){state.error='Choose a verbosity level.';changed();return true;}draft.verbosity=target.value;keys.add('verbosity');}
-  else if(key==='subagentsEnabled'){draft.subagentsEnabled=Boolean(target.checked);keys.add('subagentsEnabled');}
-  else if(key==='maxSubagents'){const limit=Number(target.value);if(!Number.isSafeInteger(limit)||limit<1||limit>8){state.error='Choose 1 to 8 parallel subagents.';changed();return true;}draft.maxSubagents=limit;keys.add('maxSubagents');}
   else if(['preset','windowTokens','autoCompact'].includes(key)){const context=draft.defaultContext;if(key==='preset'){if(!['model','900k','custom'].includes(target.value))return true;context.preset=target.value;context.windowTokens=target.value==='model'?null:target.value==='900k'?900000:context.windowTokens||900000;contextKeys.add('preset');contextKeys.add('windowTokens');}else if(key==='windowTokens'){context.windowTokens=target.value;contextKeys.add('windowTokens');contextKeys.add('preset');}else{context.autoCompact=Boolean(target.checked);contextKeys.add('autoCompact');}keys.add('defaultContext');}else return false;
   revision++;state.dirty=true;changed();return true;
  }

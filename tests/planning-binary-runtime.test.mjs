@@ -6,7 +6,7 @@ import os from 'node:os';
 import {normalizePlanningOntology,planningOntologyInstructions,PLANNING_MODULE_STATES,PLANNING_ONTOLOGY_MODULES} from '../public/planning-module-policy.mjs';
 import {gridOntologyState,updatedGridOntology} from '../public/next/chat/ontology-preferences.mjs';
 import {readConversationExecutionModes,saveConversationExecutionModes} from '../public/next/chat/execution-preferences.mjs';
-import {DIRECTORY_MODES,executionModesFrom,usesDirectory} from '../lib/conversation-execution-modes.mjs';
+import {DIRECTORY_MODES,SUBAGENT_MODES,executionModesFrom,subagentsEnabledFor,usesDirectory} from '../lib/conversation-execution-modes.mjs';
 import {ShadowdancerDirectory} from '../lib/shadowdancer-directory.mjs';
 import {createModularEvidenceJournal,createModularCompletionController} from '../lib/modular-completion.mjs';
 import {planningOntologyDirectTool} from '../lib/planning-ontology-direct-tool.mjs';
@@ -25,7 +25,7 @@ test('canonical module schema is Boolean On/Off with no Auto or Optional choices
 test('legacy choices migrate without mutating history or disabling allowed modules',()=>{
  const previous={version:1,autoSelect:true,modules:{inference:'mandatory',feasibility:'optional',decomposition:'auto',subagents:'forbidden'}};
  const frozen=JSON.stringify(previous),next=normalizePlanningOntology(previous);
- assert.deepEqual([next.modules.inference,next.modules.feasibility,next.modules.decomposition,next.modules.subagents],[true,true,true,false]);
+ assert.deepEqual([next.modules.inference,next.modules.feasibility,next.modules.decomposition,next.modules.subagents],[true,true,true,true]);
  assert.equal(JSON.stringify(previous),frozen);
  const off=updatedGridOntology(next,'inference','off');assert.equal(off.modules.inference,false);assert.equal(off.modules.feasibility,true);
  assert.equal(gridOntologyState(off,'inference'),'off');assert.equal(gridOntologyState(off,'feasibility'),'on');
@@ -43,6 +43,14 @@ test('direct ontology API advertises Boolean modules and On/Off metadata',async(
 
 test('Chat Directory drafts are explicit On/Off and legacy Auto migrates for the next request',()=>{
  assert.deepEqual(DIRECTORY_MODES,['on','off']);
+ assert.deepEqual(SUBAGENT_MODES,['default']);
+ const historical={directoryMode:'on',subagentsMode:'off'},frozen=JSON.stringify(historical);
+ for(const subagentsMode of ['default','on','off']){
+   assert.equal(executionModesFrom({subagentsMode},historical).subagentsMode,'default');
+   assert.equal(subagentsEnabledFor(true,subagentsMode),true);
+   assert.equal(subagentsEnabledFor(false,subagentsMode),false,'retired modes never bypass runtime capability');
+ }
+ assert.equal(JSON.stringify(historical),frozen);
  const map=new Map(),storage={getItem:key=>map.get(key)||null,setItem:(key,value)=>map.set(key,value)};
  assert.equal(readConversationExecutionModes({storage}).directoryMode,'on');
  saveConversationExecutionModes({conversationId:'chat',directoryMode:'off',storage});

@@ -52,29 +52,19 @@ test('defaults retain unsupported selected effort and explain effective model ca
  assert.match(html,/value="ultra" selected/);assert.match(html,/doesn't increase a model's supported capacity/);assert.match(html,/routine context compaction automatically/);assert.match(html,/Save preferences/);
 });
 
-test('subagents default on in the preferences UI, while explicit opt-outs and partial saves stay intact',async()=>{
- let current=structuredClone(initial),patch;
+test('response defaults omit retired subagent preferences and save only visible choices',async()=>{
+ let current={...structuredClone(initial),subagentsEnabled:false,maxSubagents:1},patch;
  const editor=createResponseDefaults({getSettings:()=>current,api:async(url,method,value)=>{if(value){patch=value;current={...current,...value};}return structuredClone(current);}});
  await editor.setOpen(true);
- const before=renderResponseDefaults({runtimeSettings:current},editor.state);
- assert.equal(editor.state.draft.subagentsEnabled,true);
- assert.match(before,/Response length/);assert.match(before,/Allow on-demand subagents/);assert.match(before,/Parallel workers/);
- assert.match(before,/data-response-default="subagentsEnabled" checked/);
- editor.input({dataset:{responseDefault:'subagentsEnabled'},checked:false});await editor.save();
- assert.deepEqual(patch,{subagentsEnabled:false});
- await editor.reload();assert.equal(editor.state.draft.subagentsEnabled,false);
- const disabled=renderResponseDefaults({runtimeSettings:current},editor.state);
- assert.doesNotMatch(disabled,/data-response-default="subagentsEnabled" checked/);
- assert.match(disabled,/data-response-default="maxSubagents" disabled/);
- editor.input(target('verbosity','detailed'));
- editor.input({dataset:{responseDefault:'subagentsEnabled'},checked:true});
- editor.input(target('maxSubagents','4'));
- await editor.save();
- assert.deepEqual(patch,{verbosity:'detailed',subagentsEnabled:true,maxSubagents:4});
+ const html=renderResponseDefaults({runtimeSettings:current},editor.state);
+ assert.match(html,/Response length/);
+ assert.doesNotMatch(html,/subagents|Parallel workers|parallel agents|one agent/i);
+ assert.equal(Object.hasOwn(editor.state.draft,'subagentsEnabled'),false);
+ assert.equal(Object.hasOwn(editor.state.draft,'maxSubagents'),false);
+ assert.equal(editor.input({dataset:{responseDefault:'subagentsEnabled'},checked:false}),false);
+ assert.equal(editor.input(target('maxSubagents','4')),false);
+ assert.equal(editor.state.dirty,false);
+ editor.input(target('verbosity','detailed'));await editor.save();
+ assert.deepEqual(patch,{verbosity:'detailed'});
  assert.equal(editor.state.draft.verbosity,'detailed');
- assert.equal(editor.state.draft.maxSubagents,4);
- assert.equal(editor.state.draft.subagentsEnabled,true);
- const enabled=renderResponseDefaults({runtimeSettings:current},editor.state);
- assert.match(enabled,/value="4" selected/);
- assert.match(enabled,/4 parallel agents/);
 });

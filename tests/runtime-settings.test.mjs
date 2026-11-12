@@ -131,19 +131,25 @@ test('global reasoning and context defaults persist with max, ultra, 900k, and e
 });
 
 
-test('subagents default on, preserve explicit opt-outs and persist independent preferences', async t => {
+test('retired subagent preferences load as defaults while explicit internal controls retain capacity limits', async t => {
   const {store,dataDir}=await settingsStore(t);
   assert.equal(store.get().subagentsEnabled,true);
-  await store.update({subagentsEnabled:false});
-  const optedOut=await new RuntimeSettingsStore({dataDir}).init();t.after(()=>optedOut.close());
-  assert.equal(optedOut.get().subagentsEnabled,false,'an explicit disabled preference survives restart');
-  const updated=await Promise.all([store.update({subagentsEnabled:true}),store.update({verbosity:'detailed'}),store.update({maxSubagents:4})]);
+  await store.update({subagentsEnabled:false,maxSubagents:1});
+  const original=await fs.readFile(store.file,'utf8');
+  const restored=await new RuntimeSettingsStore({dataDir}).init();t.after(()=>restored.close());
+  assert.equal(restored.get().subagentsEnabled,true);
+  assert.equal(restored.get().maxSubagents,3);
+  assert.equal(await fs.readFile(store.file,'utf8'),original,'startup does not rewrite historical preferences');
+  await restored.update({verbosity:'detailed'});
+  assert.deepEqual(JSON.parse(await fs.readFile(store.file,'utf8')),{...defaults,verbosity:'detailed'});
+  const updated=await Promise.all([restored.update({subagentsEnabled:false}),restored.update({verbosity:'concise'}),restored.update({maxSubagents:4})]);
   assert.equal(updated.at(-1).maxSubagents,4);
-  assert.deepEqual({subagentsEnabled:store.get().subagentsEnabled,verbosity:store.get().verbosity,maxSubagents:store.get().maxSubagents},{subagentsEnabled:true,verbosity:'detailed',maxSubagents:4});
+  assert.deepEqual({subagentsEnabled:restored.get().subagentsEnabled,verbosity:restored.get().verbosity,maxSubagents:restored.get().maxSubagents},{subagentsEnabled:false,verbosity:'concise',maxSubagents:4});
+  assert.deepEqual(validateRuntimeSettings({subagentsEnabled:false,maxSubagents:1}),{subagentsEnabled:false,maxSubagents:1},'runtime capability controls still validate independently');
   const restarted=await new RuntimeSettingsStore({dataDir}).init();t.after(()=>restarted.close());
-  assert.deepEqual(restarted.get(),store.get());
+  assert.deepEqual(restarted.get(),{...defaults,verbosity:'concise'});
   for(const patch of [{subagentsEnabled:'true'},{subagentsEnabled:null},{verbosity:'verbose'},{verbosity:0},{maxSubagents:0},{maxSubagents:9},{maxSubagents:'4'},{maxSubagents:2.5}]){
-    const prior=store.get();await assert.rejects(store.update(patch),{code:'RUNTIME_SETTINGS_INVALID'});assert.deepEqual(store.get(),prior);
+    const prior=restored.get();await assert.rejects(restored.update(patch),{code:'RUNTIME_SETTINGS_INVALID'});assert.deepEqual(restored.get(),prior);
   }
 });
 
@@ -154,11 +160,11 @@ test('retired opportunity preferences load without rewriting disk or reviving mo
   await fs.writeFile(file, original);
   const store = await new RuntimeSettingsStore({ dataDir }).init();
   t.after(async () => { await store.close(); await fs.rm(dataDir, { recursive: true, force: true }); });
-  assert.equal(store.get().maxSubagents, 2);
+  assert.equal(store.get().maxSubagents, 3);
   assert.equal(store.get().subagentOpportunity, undefined);
   assert.equal(await fs.readFile(file, 'utf8'), original);
   assert.deepEqual(validateRuntimeSettings({ subagentOpportunity: { enabled: true } }), {});
   await store.update({ verbosity: 'detailed' });
   assert.equal(JSON.parse(await fs.readFile(file, 'utf8')).subagentOpportunity, undefined);
-  assert.equal(store.get().maxSubagents, 2);
+  assert.equal(store.get().maxSubagents, 3);
 });

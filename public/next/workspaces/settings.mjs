@@ -40,8 +40,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '<option value="concise">Concise</option><option value="balanced">Balanced</option><option value="detailed">Detailed</option></select></label>',
     '<label class="next-label">Provider idle timeout (minutes)<input class="next-field" type="number" id="next-runtime-idle" min="1" max="1440"></label>',
     '<label class="next-label">Maximum task runtime (minutes)<input class="next-field" type="number" id="next-runtime-timeout" min="1" max="1440" placeholder="No limit"></label>',
-    '<label class="next-label">Maximum parallel subagents<input class="next-field" type="number" id="next-runtime-max-subagents" min="1" max="8"></label>',
-    '</div><label class="next-row"><input type="checkbox" id="next-runtime-subagents"> Enable subagents</label>',
+    '</div>',
     '<label class="next-row"><input type="checkbox" id="next-runtime-gmail" aria-describedby="next-runtime-gmail-help"> Use connected Gmail</label>',
     '<p class="next-help" id="next-runtime-gmail-help">Allow native agents to read your connected Gmail for authorized tasks, including email verification. This uses your existing connection.</p>',
     '<details class="next-compatibility"><summary>Legacy execution compatibility</summary>',
@@ -80,7 +79,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     restartCard:$('next-settings-restart-card'),forceRestart:$('next-settings-force-restart'),checkRestart:$('next-settings-check-restart'),restartFeedback:$('next-settings-restart-feedback'),
     runtime:$('next-runtime-settings-form'),effort:$('next-runtime-effort'),tier:$('next-runtime-tier'),
     verbosity:$('next-runtime-verbosity'),idle:$('next-runtime-idle'),timeout:$('next-runtime-timeout'),
-    maxSubagents:$('next-runtime-max-subagents'),subagents:$('next-runtime-subagents'),gmail:$('next-runtime-gmail'),guardrails:$('next-runtime-guardrails'),
+    gmail:$('next-runtime-gmail'),guardrails:$('next-runtime-guardrails'),
     runtimeFeedback:$('next-runtime-feedback'),execution:$('next-execution-form'),
     limit:$('next-execution-limit'),executionFeedback:$('next-execution-feedback'),
   };
@@ -227,10 +226,8 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     f.verbosity.value=VERBOSITY.includes(config.verbosity)?config.verbosity:'balanced';
     f.idle.value=Number.isFinite(config.providerIdleTimeoutMs)?String(config.providerIdleTimeoutMs/60000):'5';
     f.timeout.value=Number.isFinite(config.runTimeoutMs)?String(config.runTimeoutMs/60000):'';
-    f.subagents.checked=config.subagentsEnabled===true;
     f.gmail.checked=config.connectedGmail===true;
     f.guardrails.checked=config.executionGuardrails===true;
-    f.maxSubagents.value=String(Number.isSafeInteger(config.maxSubagents)?config.maxSubagents:3);
     f.runtimeFeedback.textContent='';
   }
   function drawExecution(config={}){
@@ -303,11 +300,9 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
   f.runtime.addEventListener('submit',event=>{
     event.preventDefault();
     const idle=Number(f.idle.value),timeout=f.timeout.value?Number(f.timeout.value):null;
-    const max=Number(f.maxSubagents.value);
     if(!Number.isFinite(idle)||idle<1||idle>1440||
-      timeout!==null&&(!Number.isFinite(timeout)||timeout<1||timeout>1440)||
-      !Number.isSafeInteger(max)||max<1||max>8){
-      f.runtimeFeedback.textContent='Choose valid durations (1–1440 minutes) and 1–8 subagents.';
+      timeout!==null&&(!Number.isFinite(timeout)||timeout<1||timeout>1440)){
+      f.runtimeFeedback.textContent='Choose valid durations (1–1440 minutes).';
       return;
     }
     let defaultContext;
@@ -316,7 +311,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
       defaultEffort:f.effort.value,defaultServiceTier:f.tier.value,
       verbosity:f.verbosity.value,providerIdleTimeoutMs:Math.round(idle*60000),
       runTimeoutMs:timeout===null?null:Math.round(timeout*60000),
-      subagentsEnabled:f.subagents.checked,maxSubagents:max,connectedGmail:f.gmail.checked,executionGuardrails:f.guardrails.checked,
+      connectedGmail:f.gmail.checked,executionGuardrails:f.guardrails.checked,
       defaultContext,
     };
     const revision=runtimeRevision;

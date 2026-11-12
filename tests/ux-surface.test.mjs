@@ -31,7 +31,7 @@ test('everyday context controls are automatic and advanced capacity remains opti
  assert.match(settings,/Advanced context capacity/);
  assert.ok(!settings.includes('data-response-default="autoCompact"'));
  assert.match(settings,/routine context compaction automatically/);
- assert.match(settings,/Parallel workers/);
+ assert.doesNotMatch(settings,/Parallel workers|subagents|parallel agents/i);
  assert.match(settings,/Response length/);
 });
 
