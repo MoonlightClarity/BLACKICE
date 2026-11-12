@@ -56,11 +56,11 @@ test('Chat Directory drafts are explicit On/Off and legacy Auto migrates for the
 
 test('default Directory has no task-wide call quota or arbitrary per-call character cutoff',async()=>temporary(async cwd=>{
  const calls=[];const runner=new ShadowdancerDirectory({cwd,conversationId:'unlimited',runId:'unlimited',model:'fixture',planningOntology:policy(),
-  runtime:{runAgent:async options=>(calls.push(options),{output:'{"atomic":true}'})},getAuthoritativeContext:()=>('AUTH '.repeat(15000)+'AUTH_TAIL')});
+  runtime:{runAgent:async options=>{calls.push(options);const phase=JSON.parse(options.prompt.split('CURRENT_DIRECTORY:\n').at(-1));return{output:JSON.stringify(phase.label==='work'?{status:'complete',nextAction:'',finding:'Complete fixture evidence.',candidate_answer:'Complete fixture answer.',uncertainty:''}:{atomic:true})};}},getAuthoritativeContext:()=>('AUTH '.repeat(15000)+'AUTH_TAIL')});
  await runner.open();runner.stats.calls=1000000;runner.stats.planningCalls=1000000;
  await runner.infer('work','modules/large',{text:'DATA '.repeat(20000)+'DATA_TAIL'});
  assert.equal(calls.length,1);assert.match(calls[0].prompt,/AUTH_TAIL/);assert.match(calls[0].prompt,/DATA_TAIL/);
- assert.equal(runner.limits.maxCalls,Infinity);assert.equal(runner.limits.maxPlanningCalls,Infinity);assert.equal(runner.limits.maxContextPages,Infinity);
+ assert.equal(runner.limits.maxCalls,Infinity);assert.equal(runner.limits.maxPlanningCalls,Infinity);assert.equal(runner.limits.maxContextPages,undefined,'source partitions have no separate page-count quota');
  await runner.plan('1','Perform this bounded work package');assert.equal(calls.length,2,'prior token/call usage must not disable enabled decomposition');
  assert.equal(runner.work.length,1);
 }));
