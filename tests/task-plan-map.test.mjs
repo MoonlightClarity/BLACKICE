@@ -57,8 +57,13 @@ test('width fitting keeps a readable scale for short and wide trees without enla
 });
 
 test('rendered SVG uses saved IDs, accessible selection, all relation styles and unique gradient references', () => {
-  const view = taskPlanView(state(), { runStatus: 'running' }), svg = renderTaskPlanMapSVG(view, { selectedId: 'constraints', collapsed: new Set(), mapZoom: 1 }, { prefix: 'task-one' });
-  assert.match(svg, /data-plan-map-node="constraints"[^>]*aria-current="step"/); assert.match(svg, /aria-pressed="true"/); assert.match(svg, /<linearGradient id="task-one-surface"/);
+  const source = state(), before = structuredClone(source), view = taskPlanView(source, { runStatus: 'running' }), svg = renderTaskPlanMapSVG(view, { selectedId: 'constraints', collapsed: new Set(), mapZoom: 1 }, { prefix: 'task-one' });
+  assert.equal(view.live, true); assert.equal(view.planningEnabled, false, 'A running conversation does not reactivate the retired outline planner');
+  const selected = svg.match(/<g[^>]*data-plan-map-node="constraints"[^>]*>/)?.[0];
+  assert.ok(selected); assert.match(selected, /role="button" tabindex="0" aria-pressed="true"/);
+  assert.match(selected, /data-status="active"/); assert.match(selected, /aria-label="[^"]*Paused here/);
+  assert.doesNotMatch(svg, /aria-current="step"|class="[^"]*is-current/, 'A saved active step is not represented as currently executing');
+  assert.deepEqual(source, before); assert.match(svg, /<linearGradient id="task-one-surface"/);
   for (const relation of ['sequence', 'parallel', 'choice', 'dependency']) assert.ok(svg.includes(`data-relation="${relation}"`));
   assert.match(svg, /marker-end="url\(#task-one-arrow\)"/); assert.match(svg, /role="button" tabindex="0"/);
   assert.doesNotMatch(renderTaskPlanMapSVG(view, {}, { prefix: 'task-two' }), /url\(#task-one-/);
