@@ -16,7 +16,7 @@ test('recovery binds exact call, document, DOM identity, control state and form 
   const changed=call({text:'Different'});assert.throws(()=>assertBrowserRecoveryBinding(binding,changed,changed.arguments,value),{code:'BROWSER_RECOVERY_CHANGED'});
 });
 test('no opaque coordinate/focused typing, external scheme or unsupported history recovery', () => {
-  for(const args of [{action:'type',text:'x'},{action:'click',ref:undefined,x:1,y:1},{action:'upload',paths:['file']},{action:'open',url:'javascript:alert(1)'},{action:'back'}]) {
+  for(const args of [{action:'type',text:'x'},{action:'click',ref:undefined,x:1,y:1},{action:'upload',paths:['file']},{action:'open',url:'javascript:alert(1)'},{action:'back'},{action:'reload'},{action:'press',key:'Enter'}]) {
     const op=call(args);assert.throws(()=>createBrowserRecoveryBinding(op,op.arguments,observed()),{code:'BROWSER_RECOVERY_CHANGED'});
   }
   const op=call({action:'open',url:'https://example.test/new',ref:undefined,tabId:undefined,text:undefined});
