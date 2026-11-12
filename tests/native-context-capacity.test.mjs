@@ -160,9 +160,9 @@ test('handoff observations require actual native usage and the same model, prese
   assert.equal(engine.confirmedHandoffWindow([legacyReported], node, graph).reportedModelWindowTokens, 828400);
 });
 
-function nativeRuntime(t) {
+function nativeRuntime(t, entry = model) {
   const fixture = fileURLToPath(new URL('./fixtures/context-app-server.mjs', import.meta.url));
-  const metadata = { enabled: true, resolve: async rows => ({ models: rows.map(row => ({ ...row, ...model })), candidates: [] }) };
+  const metadata = { enabled: true, resolve: async rows => ({ models: rows.map(row => ({ ...row, ...entry })), candidates: [] }) };
   const runtime = new CodexRuntime({ command: process.execPath, args: [fixture], cwd, nativeModelMetadata: metadata, requestTimeoutMs: 3000, runTimeoutMs: 5000 });
   const requests = [], rawWindows = new Map(), request = runtime._request.bind(runtime), notification = runtime._notification.bind(runtime);
   runtime._request = async (method, params = {}, ...args) => {
@@ -196,6 +196,60 @@ test('native start/resume sends raw Extended/custom limits, and resetting defaul
   const resumed = requests.filter(entry => entry.method === 'thread/resume').at(-1).params.config;
   assert.equal(resumed.model_context_window, null); assert.equal(resumed.model_auto_compact_token_limit, null);
   assert.equal(reset.context.nativeConfiguredWindowTokens, 272000); assert.equal(reset.context.effectiveWindowTokens, 258400);
+});
+
+const savedEvidenceReader = { type: 'function', name: 'relay_directory_context', description: 'Read saved evidence.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } };
+
+test('managed native evidence aligns code-mode delivery and tool-output history with the selected input budget', async t => {
+  for (const [name, options, expected] of [
+    ['Directory Extended', { context: { preset: 'extended', enforceKnownCapacityOnly: true } }, 812016],
+    ['Directory custom', { context: { preset: 'custom', windowTokens: 800000, enforceKnownCapacityOnly: true } }, 743616],
+    ['saved evidence reader Extended', { context: { preset: 'extended' }, dynamicTools: [savedEvidenceReader] }, 812016],
+    ['saved evidence reader model default', { dynamicTools: [savedEvidenceReader] }, 242016],
+  ]) await t.test(name, async t => {
+    const { runtime, requests } = nativeRuntime(t);
+    const prompt = 'Read the protocol fixture configuration.', developerInstructions = 'Preserve the original task authority.';
+    const result = await runtime.runAgent({ cwd, prompt, developerInstructions, ...options });
+    const opened = requests.find(row => row.method === 'thread/start').params;
+    assert.equal(opened.config.tool_output_token_limit, expected);
+    assert.equal(JSON.parse(result.output).config.tool_output_token_limit, expected, 'The child receives the per-thread override');
+    assert.equal(opened.config.tool_output_token_limit, nativeContextSnapshot({ model, options: options.context }).inputBudgetTokens);
+    assert.ok(opened.developerInstructions.startsWith(developerInstructions + '\n\n'));
+    const pragma = opened.developerInstructions.split('\n').find(line => line.startsWith('// @exec: '));
+    assert.ok(pragma, 'The native thread receives the code-mode delivery instruction');
+    assert.deepEqual(JSON.parse(pragma.slice('// @exec: '.length)), { max_output_tokens: expected });
+    assert.match(opened.developerInstructions, /complete capacity-bounded.*page/);
+    assert.match(opened.developerInstructions, /images as image blocks/);
+    assert.match(opened.developerInstructions, new RegExp('functions\\.wait.*' + expected + '.*schema'));
+    assert.deepEqual(requests.find(row => row.method === 'turn/start').params.input, [{ type: 'text', text: prompt }], 'Delivery guidance stays in developer instructions, not user evidence');
+    assert.equal(opened.config['features.apps'], false);
+    assert.equal(opened.config['features.remote_plugin'], false);
+    assert.deepEqual(opened.config['skills.config'], []);
+    assert.equal(opened.approvalPolicy, 'never');
+    assert.deepEqual(opened.dynamicTools || [], options.dynamicTools || []);
+  });
+});
+
+test('native tool-output override leaves ordinary and unknown-capacity sessions unchanged', async t => {
+  const unknown = { id: 'fixture', model: 'fixture' };
+  for (const [name, entry, options] of [
+    ['ordinary model default', model, {}],
+    ['ordinary Extended', model, { context: { preset: 'extended' } }],
+    ['ordinary other tool', model, { context: { preset: 'extended' }, dynamicTools: [{ ...savedEvidenceReader, name: 'unrelated_reader' }] }],
+    ['namespaced reader is not the internal plain function', model, { dynamicTools: [{ type: 'namespace', name: 'external', tools: [savedEvidenceReader] }] }],
+    ['untyped reader is not attached as a function', model, { dynamicTools: [{ ...savedEvidenceReader, type: undefined }] }],
+    ['unknown Directory', unknown, { context: { enforceKnownCapacityOnly: true } }],
+    ['unknown saved evidence reader with working fallback', unknown, { dynamicTools: [savedEvidenceReader] }],
+  ]) await t.test(name, async t => {
+    const { runtime, requests } = nativeRuntime(t, entry);
+    const developerInstructions = 'Preserve the original task authority.';
+    const result = await runtime.runAgent({ cwd, prompt: 'Read the protocol fixture configuration.', developerInstructions, ...options });
+    const opened = requests.find(row => row.method === 'thread/start').params, config = opened.config;
+    assert.equal(Object.hasOwn(config, 'tool_output_token_limit'), false);
+    assert.equal(Object.hasOwn(JSON.parse(result.output).config, 'tool_output_token_limit'), false);
+    assert.equal(opened.developerInstructions, developerInstructions);
+    if (entry === unknown) assert.equal(nativeContextSnapshot({ model: entry, options: options.context }).nativeConfiguredWindowTokens, null);
+  });
 });
 
 test('manual native compression uses the saved exact model after cache loss and waits beyond the RPC acknowledgement', async t => {

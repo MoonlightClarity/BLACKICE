@@ -39,7 +39,9 @@ test('media projection preserves original bytes and separate repeated-operation 
   assert.equal(media.success,true);assert.equal(media.contentItems[1].type,'inputImage');assert.equal(media.contentItems[1].imageUrl,imageUrl);
   assert.equal(JSON.parse(media.contentItems[0].text).verified,false,'Saving media is not a claim that its pixels were verified');
   const repeated=await store.handle({action:'read',ref:projected.duplicateRefs[0].ref},{tokenBudget:Infinity});
-  assert.deepEqual(JSON.parse(JSON.parse(repeated.contentItems[0].text).text),result);
+  assert.equal(JSON.parse(JSON.parse(repeated.contentItems[0].text).text).contentItems[1].type,'savedImage');
+  const rawReceipt=await store.handle({action:'read',ref:projected.duplicateRefs[0].original.ref,representation:'raw'},{tokenBudget:Infinity});
+  assert.deepEqual(JSON.parse(JSON.parse(rawReceipt.contentItems[0].text).text),result);
 });
 
 test('scoped evidence reads return complete exact pages within capacity and reject unknown or changed artifacts',async t=>{
