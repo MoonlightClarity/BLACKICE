@@ -296,6 +296,10 @@ test('static file allowlist blocks source, state and encoded traversal', async t
     assert.equal((await request(route, { headers: auth })).status, 404, route);
   }
   assert.equal((await request('/styles.css')).status, 200);
+  const recoveryScript=await request('/owner-recovery-ui.mjs');
+  assert.equal(recoveryScript.status,200);assert.match(recoveryScript.headers['content-type'],/javascript/);assert.match(recoveryScript.text,/export function mountOwnerRecovery/);
+  const recoveryCSS=await request('/owner-recovery.css');
+  assert.equal(recoveryCSS.status,200);assert.match(recoveryCSS.headers['content-type'],/text\/css/);assert.match(recoveryCSS.text,/owner-recovery/);
   const runState = await request('/run-state-model.mjs');
   assert.equal(runState.status, 200);
   assert.match(runState.headers['content-type'], /javascript/);
