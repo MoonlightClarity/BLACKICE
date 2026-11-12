@@ -1243,6 +1243,16 @@ export class ElectronBrowserDriver extends EventEmitter {
     const owner = browserOwner(context), tab = this.tab(args.tabId);
     if (tab.purpose === 'chat-mode' || owner && !sameOwner(tab.owner, owner) && !(owner.allowUserTabs && !tab.owner))
       throw capacityError('The observed tab is unavailable to this task.', 'BROWSER_TAB_OWNERSHIP');
+    // A saved tab has an identity and URL, but no current DOM. Describe only
+    // lifecycle/read scope here; perform() owns serialized lazy activation.
+    // Never navigate during admission or let metadata become receipt/recovery
+    // evidence, a form binding, or authorization for stale page input.
+    if ((!tab.window || tab.pendingURL) && !tab.rendererFailure && !tab.providerKeyProtected && !tab.credentialCaptureBlocked
+      && ['read', 'snapshot', 'screenshot', 'reload', 'navigate', 'close', 'diagnostics', 'suspend', 'tab_select'].includes(args.action)
+      && !recoveryInspection && receiptBindings.length === 0 && expectedDocumentId === undefined && expectedUrl === undefined
+      && args.expectedDocumentId === undefined && args.expectedUrl === undefined && args.ref === undefined) {
+      return { current: false, suspended: true, tabId: tab.id, url: this.tabURL(tab), title: this.tabTitle(tab) };
+    }
     if (!tab.window || tab.window.isDestroyed() || tab.pendingURL || tab.rendererFailure || tab.providerKeyProtected || tab.credentialCaptureBlocked)
       throw capacityError('The current browser document cannot be inspected.', 'BROWSER_INPUT_DOCUMENT_CHANGED');
     if (expectedDocumentId !== undefined && (expectedDocumentId !== inputDocumentId(tab) || expectedUrl !== tab.window.webContents.getURL()))

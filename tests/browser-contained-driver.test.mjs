@@ -2004,3 +2004,56 @@ test('owner recovery rechecks navigation after native preparation and before loa
   }),{code:'BROWSER_RECOVERY_CHANGED'});
   assert.equal(checked,2);assert.equal(windows[0].loads.length,before);
 });
+
+test('bridge operation admission preserves lazy restored pages without requiring a live document', async t => {
+  const { driver, directory, windows } = await fixture(t); await driver.init();
+  const owner = taskOwner('restored-bridge');
+  const original = await driver.perform({ action: 'open', url: 'https://fixture.example/saved' }, { owner });
+  await driver.close();
+  const restored = new driver.constructor({ dataDir: directory, downloadDir: path.join(directory, 'downloads') });
+  const browser = new BrowserWorkspace({ driver: restored }), handler = createBrowserToolHandler({ browser, owner });
+  await restored.init();
+  try {
+    const count = windows.length, tab = restored.tabs.get(original.tabId);
+    assert.equal(tab.window, null); assert.equal(restored.status().tabs[0].documentId, `${tab.id}:0`);
+    for (const action of ['read', 'snapshot', 'screenshot', 'reload', 'navigate', 'close', 'diagnostics', 'suspend', 'tab_select']) {
+      const call = { name: 'relay_browser', arguments: { action, tabId: tab.id, ...(action === 'navigate' ? { url: 'https://fixture.example/next' } : {}) } };
+      const descriptor = await handler.describeOperation(call);
+      assert.ok(descriptor.resources.some(resource => resource.key === `tab:${tab.id}`));
+      assert.equal(descriptor.applicationPage, undefined); assert.equal(descriptor.commit, undefined);
+      assert.equal(windows.length, count, 'Description must not navigate or materialize a suspended page.');
+    }
+    const read = await handler({ name: 'relay_browser', arguments: { action: 'read', tabId: tab.id } });
+    assert.equal(read.success, true); assert.equal(JSON.parse(read.contentItems[0].text).url, 'https://fixture.example/saved');
+    assert.equal(windows.length, count + 1); assert.equal(windows.at(-1).loads.filter(url => url === 'https://fixture.example/saved').length, 1);
+    await restored.perform({ action: 'suspend', tabId: tab.id }, { owner });
+    const beforeReload = windows.length, reloadCall = { name: 'relay_browser', arguments: { action: 'reload', tabId: tab.id } };
+    await handler.describeOperation(reloadCall);
+    assert.equal(windows.length, beforeReload);
+    assert.equal((await handler(reloadCall)).success, true);
+    assert.equal(windows.length, beforeReload + 1);
+    assert.equal(windows.at(-1).loads.filter(url => url === 'https://fixture.example/saved').length, 1, 'Reload resumes exactly once.');
+  } finally { await browser.close(); }
+});
+
+test('suspended bridge metadata cannot authorize stale input, receipt recovery, foreign or protected tabs', async t => {
+  const { driver, windows } = await fixture(t); await driver.init();
+  const owner = taskOwner('suspended-boundary'), other = taskOwner('foreign');
+  const tab = driver.newTab('https://fixture.example/saved', { restore: true, owner });
+  const browser = new BrowserWorkspace({ driver }), handler = createBrowserToolHandler({ browser, owner }); t.after(() => browser.close());
+  const call = action => ({ name: 'relay_browser', arguments: { action, tabId: tab.id } });
+  for (const action of ['click', 'fill', 'type', 'press', 'hover', 'select', 'upload', 'interaction', 'scroll', 'stop', 'debug_reset']) {
+    await assert.rejects(handler.describeOperation(call(action)), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+  }
+  await assert.rejects(handler.describeOperation({ ...call('read'), arguments: { ...call('read').arguments, expectedDocumentId: `${tab.id}:0`, expectedUrl: tab.url } }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+  await assert.rejects(driver.observeOperation({ action: 'read', tabId: tab.id }, { owner, receiptBindings: [{ format: 'dom' }] }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+  await assert.rejects(handler.captureRecoveryBinding(call('close')), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+  await assert.rejects(driver.observeOperation({ action: 'read', tabId: tab.id }, { owner: other }), { code: 'BROWSER_TAB_OWNERSHIP' });
+  tab.providerKeyProtected = true;
+  await assert.rejects(handler.describeOperation(call('read')), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+  tab.providerKeyProtected = false; tab.rendererFailure = { reason: 'crashed' };
+  await assert.rejects(handler.describeOperation(call('read')), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+  tab.rendererFailure = null;
+  const closed = await handler({ name: 'relay_browser', arguments: { action: 'close', tabId: tab.id } });
+  assert.equal(closed.success, true); assert.equal(driver.tabs.has(tab.id), false); assert.equal(windows.length, 0);
+});
