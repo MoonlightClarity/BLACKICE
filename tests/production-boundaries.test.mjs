@@ -143,7 +143,7 @@ test('maintenance rejects valid webhook deliveries before they mutate durable jo
   const created = await request('/api/operations/deployments', { method: 'POST', body: { name: 'Fixture webhook', input: 'Do not dispatch during maintenance.', cwd: context.cwd, workflow: workflow(), enabled: true, trigger: { type: 'webhook' } } });
   assert.equal(created.status, 201, JSON.stringify(created.data));
   const deployment = created.data;
-  assert.equal(deployment.enabled, true); assert.deepEqual(context.readinessCalls.map(call => call.stage), ['inference', 'viability']); assert.equal(context.calls.length, 0);
+  assert.equal(deployment.enabled, true); assert.deepEqual(context.readinessCalls, [], 'Enabling a webhook must not revive the retired mandatory readiness cycle.'); assert.equal(context.calls.length, 0);
   const token = app.operations.getWebhook(deployment.id).token; await app.beginMaintenance();
   const before = await readFile(path.join(context.dataDir, 'operations.json'), 'utf8');
   const deliveries = await Promise.all(['one', 'two'].map(key => request(`/hooks/${deployment.id}`, { method: 'POST', auth: false, headers: { Authorization: `Bearer ${token}`, 'Idempotency-Key': key }, body: { private: SECRET } })));

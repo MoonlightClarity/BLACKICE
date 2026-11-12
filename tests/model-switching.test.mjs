@@ -56,7 +56,10 @@ test('switching models discards a capacity learned from the old model and uses t
 });
 
 test('engine model changes resume only within a provider and hand actual saved text to a new provider thread', async t => {
-  const { engine: makeEngine, runtime, codex, requests } = await fixture(t), engine = await makeEngine(), history = [];
+  // This tests repeated full-catalog handoffs, not a small-window provider.
+  // Capacity rejection is exercised separately below with the same engine.
+  const modelWindow = 131072;
+  const { engine: makeEngine, runtime, codex, requests } = await fixture(t, 'compatible', undefined, { modelAContext: modelWindow, modelBContext: modelWindow }), engine = await makeEngine(), history = [];
   let run = engine.startRun({ workflow: createMissionWorkflow({ id: 'switch-chat', task: 'ORIGINAL_TASK', model: 'codex-a', planningMode: 'off' }), input: 'ORIGINAL_TASK' }); await engine.executions.get(run.id); run = engine.getRun(run.id); history.push(run);
   const variants = ['codex-b', 'primary::model-a', 'primary::model-b', 'secondary::model-a', 'codex-a'];
   for (const [index, model] of variants.entries()) {
@@ -66,9 +69,34 @@ test('engine model changes resume only within a provider and hand actual saved t
     assert.equal(run.status, 'completed', run.error); assert.equal(run.taskId, history[0].id); assert.equal(run.workflow.nodes.find(node => node.id === 'agent').model, model); assert.deepEqual(engine.getRun(previous.id), before);
     if (sameProvider) { assert.equal(run.nodes.agent.threadId, previous.nodes.agent.threadId); assert.equal(run.modelHandoff, undefined); }
     else { assert.notEqual(run.nodes.agent.threadId, previous.nodes.agent.threadId); assert.ok(run.modelHandoff); const sent = model.includes('::') ? JSON.stringify(requests.at(-1).body.messages) : codex.calls.at(-1).prompt; assert.match(sent, /ORIGINAL_TASK/); assert.ok(sent.includes(previous.nodes.agent.output), 'the new provider receives actual prior assistant text'); if (oldTranscript) assert.equal(await readFile(runtime.threadFile(previous.nodes.agent.threadId), 'utf8'), oldTranscript, 'a cross-provider handoff does not rewrite the old transcript'); }
+    if (model.includes('::')) {
+      assert.equal(run.nodes.agent.context.effectiveWindowTokens, modelWindow);
+      assert.ok(run.nodes.agent.context.estimatedInputTokens <= run.nodes.agent.context.inputBudgetTokens, 'The real request must fit after output reserve and headroom.');
+    }
     history.push(run);
   }
   assert.equal(codex.calls[1].model, 'codex-b'); assert.equal(requests[1].body.model, 'model-b');
+});
+
+test('engine rejects a smaller model window before dispatch without losing the saved conversation', async t => {
+  const { engine: makeEngine, runtime, requests } = await fixture(t, 'compatible', undefined, { modelAContext: 131072, modelBContext: 4096 }), engine = await makeEngine();
+  const workflow = createMissionWorkflow({ id: 'bounded-switch-chat', task: 'BOUNDED_ORIGINAL_TASK', model: 'primary::model-a', planningMode: 'off', context: { preset: 'model', autoCompact: false } });
+  const initial = engine.startRun({ workflow, input: 'BOUNDED_ORIGINAL_TASK' }); await engine.executions.get(initial.id);
+  const original = engine.getRun(initial.id); assert.equal(original.status, 'completed', original.error);
+  const threadId = original.nodes.agent.threadId, before = await runtime.readThread(threadId), requestCount = requests.length;
+  const switched = engine.continueRun(original.id, { nodeId: 'agent', message: 'BOUNDED_FOLLOWUP_TASK', model: 'primary::model-b' }, { historyRuns: [original] }); await engine.executions.get(switched.id);
+  const failed = engine.getRun(switched.id);
+  assert.equal(failed.status, 'failed'); assert.match(failed.error, /context budget|context window/);
+  assert.equal(requests.length, requestCount, 'An over-budget model switch must not send an HTTP request or a hidden compaction request.');
+  assert.equal(failed.nodes.agent.threadId, threadId); assert.equal(failed.taskId, original.id); assert.equal(failed.modelHandoff, undefined);
+  const context = failed.nodes.agent.contextStatus;
+  assert.equal(context.effectiveWindowTokens, 4096); assert.equal(context.autoCompact, false);
+  assert.ok(context.estimatedInputTokens > context.inputBudgetTokens);
+  const retained = await runtime.readThread(threadId);
+  assert.deepEqual(retained.transcript.slice(0, before.transcript.length), before.transcript, 'Previously accepted user and assistant messages remain byte-for-byte equivalent.');
+  assert.match(JSON.stringify(retained.transcript), /BOUNDED_ORIGINAL_TASK/);
+  assert.match(JSON.stringify(retained.transcript), /Actual fixture reply 1 from model-a/);
+  assert.deepEqual(engine.getRun(original.id), original, 'The failed continuation must not mutate its earlier run snapshot.');
 });
 
 test('accepted provider directions and intermediate assistant replies survive a cross-provider handoff', async t => {

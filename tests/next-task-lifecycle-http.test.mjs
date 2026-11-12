@@ -111,14 +111,15 @@ test('real project Archive/Restore guards organization revisions and keeps its t
 });
 
 test('schedule removal and template deletion retain actual job history and saved run/workflow copies',async t=>{
-  const f=await fixture(t,{allowReadiness:true}),template=await f.api('/api/workflows','POST',workflow());
+  const f=await fixture(t),template=await f.api('/api/workflows','POST',workflow());
   await f.seed('template-run');
   const schedule=await f.api('/api/operations/deployments','POST',{name:'Disposable scheduled work',input:'Retain original task',cwd:f.cwd,workflow:template,trigger:{type:'manual'},enabled:false});
   const scheduleCopy=structuredClone(f.app.operations.state.deployments.find(item=>item.id===schedule.id).workflow);
-  const readiness=await f.api('/api/operations/deployments/'+schedule.id+'/readiness','POST',{});
-  assert.equal(readiness.nodes.find(node=>node.id==='viability').readiness.state,'ready');assert.deepEqual(f.runtime.readinessCalls.map(call=>call.stage),['inference','viability']);
+  await assert.rejects(f.api('/api/operations/deployments/'+schedule.id+'/readiness','POST',{}),{status:410,code:'TASK_VIABILITY_RETIRED'});
+  assert.deepEqual(f.runtime.readinessCalls,[],'Retired readiness never invokes a model or becomes a schedule prerequisite.');
   const job=await f.api('/api/operations/deployments/'+schedule.id+'/trigger','POST',{});
   assert.equal((await f.api('/api/operations')).jobs.find(item=>item.id===job.id).status,'queued');
+  assert.deepEqual(f.runtime.readinessCalls,[],'An explicit manual trigger is queued without resurrecting the readiness cycle.');
   await f.api('/api/workflows/'+template.id,'DELETE',{});
   assert.equal((await f.api('/api/workflows?view=index')).some(item=>item.id===template.id),false);
   assert.deepEqual(f.app.operations.state.deployments.find(item=>item.id===schedule.id).workflow,scheduleCopy);

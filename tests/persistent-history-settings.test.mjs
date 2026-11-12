@@ -75,5 +75,5 @@ test('schema9 removes the history choice while schema8 and schema7 tool definiti
   assert.equal(Object.hasOwn(current,'codexHistory'),false);assert.deepEqual(old.codexHistory.enum,['relay','codex']);
   assert.deepEqual(current.defaultContext.properties.preset.enum,['model','extended','900k','custom']);
   assert.notEqual(current.defaultContext,old.defaultContext,'New schema changes cannot mutate an old native continuation definition.');
-  assert.ok(PRE_INTENT_CONTROL_INSTRUCTIONS.startsWith(PRE_PERSISTENT_HISTORY_CONTROL_INSTRUCTIONS));assert.match(CONTROL_INSTRUCTIONS,/persistent resumable Codex history/);assert.match(CONTROL_INSTRUCTIONS,/Inference, Feasibility, Plan/);
+  assert.ok(PRE_INTENT_CONTROL_INSTRUCTIONS.startsWith(PRE_PERSISTENT_HISTORY_CONTROL_INSTRUCTIONS));assert.match(CONTROL_INSTRUCTIONS,/persistent resumable Codex history/);assert.match(CONTROL_INSTRUCTIONS,/Modular Planning runs inline in normal chat/);assert.match(CONTROL_INSTRUCTIONS,/no Plan-only mode, required readiness graph or mandatory planning cycle/);assert.doesNotMatch(CONTROL_INSTRUCTIONS,/planning follows Inference, Feasibility, Plan/);
 });

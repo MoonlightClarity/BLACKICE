@@ -60,7 +60,7 @@ const start = async (session, input, model) => {
 const follow = async (session, run, message, model) => {
   const result = await session.api(`/api/runs/${run.id}/continue`, { method: 'POST', body: { nodeId: 'agent', message, ...(model ? { model } : {}) } }); assert.equal(result.status, 201, result.text); return session.settled(result.data.id);
 };
-const persistentDefaults = { codexHistory: 'codex', runTimeoutMs: null, providerIdleTimeoutMs: 300000, defaultEffort: 'default', defaultServiceTier: 'default', defaultContext: { preset: 'model', windowTokens: null, autoCompact: true }, verbosity: 'balanced', subagentsEnabled: true, maxSubagents: 3, connectedGmail: false, executionGuardrails: false, hiddenModelProviders: [] };
+const persistentDefaults = { codexHistory: 'codex', runTimeoutMs: null, providerIdleTimeoutMs: 300000, defaultEffort: 'default', defaultServiceTier: 'default', defaultContext: { preset: 'model', windowTokens: null, autoCompact: true }, verbosity: 'balanced', subagentsEnabled: true, maxSubagents: 3, connectedGmail: false, executionGuardrails: false, planningOntology: { version: 1, autoSelect: false, modules: { inference: 'auto', feasibility: 'auto', decomposition: 'auto', branching: 'auto', replanning: 'auto', metacognition: 'auto', anti_overalignment: 'mandatory', verification: 'auto', subagents: 'auto' } }, hiddenModelProviders: [] };
 // These session tests exercise the full operational tool catalog, not a small-window model.
 const catalogResponse = () => new Response(JSON.stringify({data:[{id:'api-model',context_length:131072,max_output_tokens:8192}]}),{headers:{'Content-Type':'application/json'}});
 async function recordLegacyHistory(session, id) {

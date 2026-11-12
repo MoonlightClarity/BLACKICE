@@ -39,7 +39,7 @@ test('native milestone schema survives continuation and old saved catalogs use c
  const f=await fixture(t,async(options,number)=>{
    options.onEvent({type:'thread',threadId:'native-milestone-thread'});
    const planned=await recordFixturePlan(options,{title:'Inspect the attached milestone catalog',doneWhen:'Continuation retains the saved catalog and its supported milestone fields.'});
-   if(number<3){assert.ok(schema(options).steps.items.properties.doneWhen);assert.ok(schema(options).status.enum.includes('blocked'));assert.ok(schema(options).action.enum.includes('edit'));assert.ok(schema(options).operations);assert.match(options.prompt,/LIVE PLANNING WORKSPACE/);assert.doesNotMatch(options.prompt,/DEFAULT TASK OUTLINE/);}
+   if(number<3){assert.ok(schema(options).steps.items.properties.doneWhen);assert.ok(schema(options).status.enum.includes('blocked'));assert.ok(schema(options).action.enum.includes('edit'));assert.ok(schema(options).operations);assert.match(options.prompt,/SAVED TASK CONTINUITY/);assert.match(options.prompt,/Optional planning context; chosen edits use the exact current revision/);assert.doesNotMatch(options.prompt,/LIVE PLANNING WORKSPACE|DEFAULT TASK OUTLINE/);}
    else{assert.equal(schema(options).steps.items.properties.doneWhen,undefined);assert.equal(schema(options).nextAction,undefined);assert.ok(!schema(options).status.enum.includes('blocked'));assert.ok(!schema(options).action.enum.includes('edit'));assert.equal(schema(options).operations,undefined);assert.doesNotMatch(options.prompt,/OPERATIONAL MILESTONES|LIVE PLANNING WORKSPACE/);assert.doesNotMatch(options.developerInstructions,/Give milestones an observable doneWhen/);}
    await finishCatalogCheck(options,planned,'The attached milestone fields and matching prompt guidance passed their catalog assertions. This turn has no remaining catalog checks.');
    return{output:'Recorded.',threadId:'native-milestone-thread'};
@@ -87,7 +87,7 @@ test('Retry after a lost publication response reconciles its durable attempt ins
      await call(options,{action:'external',expectedRevision:saved.revision,external:{receiptId:'publish-once',operation:'attempt'}});
      sends++;throw Error('Connection dropped after the remote send; result unknown.');
    }
-   assert.equal(saved.externalActions[0].status,'uncertain');assert.match(options.prompt,/Uncertain external attempt: publish-once/);
+   assert.equal(saved.externalActions[0].status,'uncertain');assert.match(options.prompt,/Recorded uncertain attempts: publish-once/);assert.match(options.prompt,/inspect the destination before repeating the same possible effect/);
    const blocked=await options.onToolCall({name:'relay_task',arguments:{action:'external',expectedRevision:saved.revision,external:{receiptId:'publish-once',operation:'attempt'}}});assert.equal(blocked.success,false);assert.equal(blocked.code,'EXTERNAL_ACTION_RECONCILE');
    saved=await call(options,{action:'external',expectedRevision:saved.revision,external:{receiptId:'publish-once',operation:'confirm',url:'https://www.linkedin.com/feed/update/urn:li:activity:fixture/',evidence:'Fixture reconciliation observed the already-created exact text and attachment.'}});
    assert.equal(saved.externalActions[0].status,'confirmed');
@@ -96,23 +96,29 @@ test('Retry after a lost publication response reconciles its durable attempt ins
    return{output:'Existing result reconciled; no second send.',threadId:'native-publication-thread'};
  });
  const failed=await f.settled(f.engine.startRun({workflow:f.workflow,input:'Publish exactly one development update.'}).id);assert.equal(failed.status,'failed');assert.equal(failed.taskState.externalActions[0].status,'uncertain');
- const retried=await f.settled(f.engine.retryRun(failed.id).id);assert.equal(retried.status,'completed');assert.equal(sends,1);assert.equal(retried.taskState.externalActions[0].status,'confirmed');assert.equal(retried.taskState.externalActions[0].attempts,1);assert.equal(retried.taskId,failed.taskId||failed.id);
+ const retried=await f.settled(f.engine.retryRun(failed.id).id);assert.equal(retried.status,'completed',retried.error);assert.equal(sends,1);assert.equal(retried.taskState.externalActions[0].status,'confirmed');assert.equal(retried.taskState.externalActions[0].attempts,1);assert.equal(retried.taskId,failed.taskId||failed.id);
 });
 
 test('a delayed older milestone receipt cannot replace a newer committed swarm state',async t=>{
- const committed=deferred(),release=deferred();let taskId;
+ const committed=deferred(),release=deferred();let taskId,initialRevision,olderRevision,latestRevision;
  const f=await fixture(t,async options=>{
-   const initial=await call(options,{action:'read'});taskId=initial.taskId;
+   const initial=await call(options,{action:'read'});taskId=initial.taskId;initialRevision=initial.revision;
    const older=call(options,{action:'plan',expectedRevision:initial.revision,steps:[{id:'deliver',title:'Compare the supplied fixture result',status:'active',operation:{kind:'reasoning',target:'The supplied milestone fixture output'},result:'The checked fixture output.',note:'Compare the supplied fixture output with its expected value.',doneWhen:'The output is checked.'}]});
    await committed.promise;
    const current=await call(options,{action:'read'}),latest=await call(options,{action:'step',expectedRevision:current.revision,stepId:'deliver',status:'done',evidence:'Checked actual output.'});
-   release.resolve();await older;assert.equal(f.engine.getRun(options.runId||f.engine.listRuns()[0].id).taskState.revision,latest.revision);
+   latestRevision=latest.revision;release.resolve();olderRevision=(await older).revision;
+   const adopted=f.engine.getRun(options.runId||f.engine.listRuns()[0].id).taskState;
+   assert.equal(adopted.revision,latestRevision);assert.equal(adopted.steps[0].status,'done');assert.equal(adopted.steps[0].evidence,'Checked actual output.');
    await finishFixturePlan(options,{summary:'The supplied output was checked and the delayed older receipt did not replace its newer completed milestone. No selected work remains.'});
    return{output:'Done.',threadId:'provider_milestone-race'};
  });
  const original=f.tasks.setPlan.bind(f.tasks);f.tasks.setPlan=async(...args)=>{const result=await original(...args);committed.resolve();await release.promise;return result;};
  const run=await f.settled(f.engine.startRun({workflow:f.workflow,input:'Check concurrent progress.'}).id);assert.equal(run.status,'completed');assert.equal(run.taskState.progress.done,1);assert.equal(run.taskState.revision,(await f.tasks.get(taskId)).revision);
- const events=run.events.filter(event=>event.data?.type==='task.state').map(event=>event.data.state.revision);assert.deepEqual(events,[1,2,3,4]);
+ const events=run.events.filter(event=>event.data?.type==='task.state').map(event=>event.data.state.revision);assert.equal(olderRevision,initialRevision+1);assert.equal(latestRevision,olderRevision+1);
+ // Only the newest explicit mutation is published: initial/read snapshots are
+ // adopted silently, the delayed older receipt is rejected, and no mandatory
+ // final review invents another revision after the completed milestone.
+ assert.deepEqual(events,[latestRevision]);assert.equal(run.taskState.revision,latestRevision);
 });
 
 test('settled run snapshots reload authoritative milestones even when the writer event was lost',async t=>{

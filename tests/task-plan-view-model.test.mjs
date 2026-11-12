@@ -68,8 +68,8 @@ test('explicit choice paths distinguish proposed options, a chosen route, and de
 test('a complete chosen route with unused pending alternatives is not a complete plan', () => {
   const state = { taskId: 'choice', plan: { origin: 'agent', layout: 'choice', selectedChildId: 'chosen' }, steps: [action('chosen', 'done'), action('other')], progress: { total: 1, done: 1, skipped: 0, current: null, eligible: ['chosen'], unresolvedBranches: 1, complete: false } };
   let view = taskPlanView(state, { runStatus: 'completed', settled: true });
-  assert.equal(view.complete, false); assert.equal(view.phase, 'closing');
-  assert.match(renderPlanHeader(view), /Closing unused paths/); assert.doesNotMatch(renderPlanHeader(view), /Plan complete/);
+  assert.equal(view.complete, false); assert.equal(view.phase, 'paused'); assert.equal(view.unresolvedBranches, 1);
+  assert.match(renderPlanHeader(view), /Planning off · saved notes/); assert.doesNotMatch(renderPlanHeader(view), /Closing unused paths|Plan complete/);
   state.steps[1].status = 'skipped'; state.steps[1].skipReason = 'Another path was chosen.';
   state.progress = { ...state.progress, skipped: 1, unresolvedBranches: 0, complete: true };
   view = taskPlanView(state, { runStatus: 'completed', settled: true });
@@ -91,14 +91,21 @@ test('saved authoritative completion and readiness override tempting fraction or
 
 test('a runtime scaffold carries an honest goal and no invented child steps or progress', () => {
   const view = taskPlanView({ taskId: 'new', goal: 'Inspect the supplied PDF.', planVersion: 1, plan: { origin: 'runtime' }, steps: [], progress: { total: 0, done: 0, skipped: 0, complete: false } }, { runStatus: 'running' });
-  assert.equal(view.title, 'Inspect the supplied PDF.'); assert.equal(view.nodes.length, 0); assert.equal(view.phase, 'preparing'); assert.equal(view.complete, false);
-  assert.match(renderPlanHeader(view), /Preparing the plan/); assert.doesNotMatch(renderPlanHeader(view), /0\s*<span> \/ 0/);
+  assert.equal(view.title, 'Inspect the supplied PDF.'); assert.equal(view.nodes.length, 0); assert.equal(view.phase, 'off'); assert.equal(view.complete, false);
+  assert.match(renderPlanHeader(view), /Planning off/); assert.doesNotMatch(renderPlanHeader(view), /Preparing the plan|0\s*<span> \/ 0/);
 });
 
-test('missing plans and unavailable planning are distinct from a provider still preparing work', () => {
-  assert.equal(taskPlanView({ steps: [] }, { runStatus: 'running', planningStatus: 'missing' }).phase, 'missing');
-  assert.equal(taskPlanView({ steps: [] }, { runStatus: 'running', planningAvailable: false }).phase, 'unavailable');
-  assert.equal(taskPlanView({ steps: [] }, { runStatus: 'completed' }).phase, 'empty');
+test('historical planning admission flags cannot present retired preparation as current work', () => {
+  for (const options of [
+    { runStatus: 'running', planningStatus: 'missing' },
+    { runStatus: 'running', planningAvailable: false },
+    { runStatus: 'completed' },
+    ...['on', 'auto', 'maximal', 'forced', 'advisory', 'ontology'].map(planningMode => ({ runStatus: 'running', planningMode })),
+  ]) {
+    const state = { steps: [] }, before = structuredClone(state), view = taskPlanView(state, options);
+    assert.equal(view.phase, 'off'); assert.equal(view.planningEnabled, false); assert.equal(view.complete, false);
+    assert.deepEqual(state, before); assert.doesNotMatch(renderPlanHeader(view), /Preparing the plan|Plan not recorded|Plan complete/);
+  }
 });
 
 test('a settled response preserves unfinished legacy milestones and labels saved active work accurately', () => {
@@ -110,7 +117,7 @@ test('a settled response preserves unfinished legacy milestones and labels saved
 
 test('a partially finished parallel group is not counted as an actually active leaf', () => {
   const view = taskPlanView({ plan: { origin: 'agent' }, steps: [group('paths', 'parallel', null, { status: 'active' }), action('a', 'done', 'paths'), action('b', 'pending', 'paths')] }, { runStatus: 'running' });
-  assert.deepEqual(view.active, []); assert.equal(view.progress.total, 2); assert.match(renderPlanHeader(view), /In progress/); assert.doesNotMatch(renderPlanHeader(view), /2 steps in progress/);
+  assert.deepEqual(view.active, []); assert.equal(view.progress.total, 2); assert.equal(view.progress.done, 1); assert.match(renderPlanHeader(view), /Planning off · saved notes/); assert.doesNotMatch(renderPlanHeader(view), /In progress|2 steps in progress/);
 });
 
 test('balanced disclosure opens the actual current path without expanding every nested group', () => {
