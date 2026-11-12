@@ -62,7 +62,8 @@ test('source partitions only at reported usable capacity including full prompt o
   assert.ok(seen.every(part=>!/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/.test(part)));
   const document=JSON.parse(await readFile(path.join(runner.turnRoot,'sources/document.json'),'utf8'));
   assert.equal(document.content,material);assert.equal(done.stats.sourceRefs,seen.length);
-  assert.ok(calls.filter(label=>label==='integration').length>1,'Only actual capacity requires fresh synthesis groups');
+  assert.equal(calls.filter(label=>label==='integration').length,1,'Saved evidence is indexed on disk instead of forcing repeated synthesis to shrink it');
+  assert.equal(done.stats.evidenceWorkingSets,1);
 });
 
 test('complete work dependencies, tool receipts and user context survive fresh phases',async t=>{

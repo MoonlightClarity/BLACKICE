@@ -30,7 +30,7 @@ test('full prepared Directory resumes an unfinished candidate within the same ru
     return {output:JSON.stringify({answer:works===1?'No work completed yet.':'Created and verified result.txt.',used_refs:input.payload.required_refs})};
   }};
   const result=await runPreparedDirectoryAgent({runtime,
-    input:'/directory Create and read back result.txt.',conversationId:'same_task',runId:'same_run',model:'fixture',planningOntology:policy,
+    input:'/directory Create and read back result.txt.',conversationId:'same_task',runId:'same_run',model:'remote::fixture',planningOntology:policy,
     getAcceptedDirections:()=>({currentUserRequest:{text:'Create and read back result.txt.'}}),
     getCompletionAssessment:()=>assessment,
     options:{cwd,model:'fixture',sandbox:'danger-full-access',developerInstructions:'Preserve the authored modular policy.',dynamicTools:[],
