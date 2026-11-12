@@ -1,0 +1,157 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "version": "2.39.70",
+  "sourceCommit": "97c314769670761fd0c1a62923c256a077352464",
+  "appFingerprint": "8dbc79bd9100696aec1a81c7e9fc2b9255afcbc61c25d039c04f5f87a7bca236",
+  "sourceIndexSha256": "81415b485fc179a783bb56ec473940bdae6421556db129c0d8564ffeb6856215",
+  "sourceTestReceipt": "verification/windows-2.39.70-clean.json",
+  "scope": "Final-source native BLACKICE in a disposable profile, using a local synthetic intake fixture. This does not establish any real employer application.",
+  "native": {
+    "version": "2.39.70",
+    "model": "gpt-6-luna",
+    "effort": "low",
+    "codexVersion": "0.167.0-alpha.4.1",
+    "mode": "headless",
+    "originalConversationInterrupted": false
+  },
+  "execution": {
+    "id": "f908b969-8925-4be9-9e23-56a524dbb6d0",
+    "status": "completed",
+    "settled": true,
+    "startedAt": "2026-11-12T19:18:30.056Z",
+    "finishedAt": "2026-11-12T19:19:25.426Z",
+    "executionModes": {
+      "directoryMode": "on",
+      "subagentsMode": "on"
+    },
+    "planningOntology": {
+      "version": 2,
+      "modules": {
+        "inference": true,
+        "feasibility": true,
+        "decomposition": true,
+        "branching": true,
+        "replanning": true,
+        "metacognition": true,
+        "anti_overalignment": true,
+        "verification": true,
+        "subagents": true
+      }
+    },
+    "directoryContext": {
+      "source": "selected-model-capacity",
+      "knownCapacity": true,
+      "inputBudgetTokens": 812016
+    },
+    "stats": {
+      "calls": 3,
+      "labeledTurns": 31,
+      "resets": 3,
+      "sourceRefs": 0,
+      "integrationGroups": 1,
+      "coverageFailures": 0,
+      "repairCycles": 0,
+      "contextPages": 0,
+      "planningCalls": 1,
+      "workContinuations": 1,
+      "completionAssessments": 1
+    },
+    "reviewStatus": "sufficient",
+    "reviewDecision": "respond",
+    "reviewCount": 1,
+    "usage": {
+      "inputTokens": 716680,
+      "outputTokens": 2368,
+      "totalTokens": 719048,
+      "cachedInputTokens": 528768,
+      "reasoningOutputTokens": 0,
+      "samples": 4,
+      "availability": {
+        "inputTokens": "reported",
+        "outputTokens": "reported",
+        "totalTokens": "reported",
+        "cachedInputTokens": "reported",
+        "reasoningOutputTokens": "reported"
+      }
+    },
+    "firstPassForFinalSource": true,
+    "manualSteering": false,
+    "manualFormActions": false,
+    "output": "[BLACKICE agent]\nCompleted both eligible intake requests. The queue showed 2 of 2 eligible records accepted, and each confirmation page showed the matching receipt and stated the intake was saved.\n\n- Atlas community workshop — ACCEPT-57ceb8d0-b535-48db-98f0-65de93790635\n- Birch reading room orientation — ACCEPT-ee978d5b-822f-4d56-8c78-b6d87b08426f\n\nCedar studio induction was ineligible because enrollment was closed, so it remains unsubmitted."
+  },
+  "independentLedger": {
+    "scenarioId": "14a2d0b5-ac0f-4224-a6f0-3c1d825b88ff",
+    "passed": true,
+    "checks": {
+      "exactEligibleSet": true,
+      "uniqueRecords": true,
+      "uniqueReceipts": true,
+      "ineligibleUntouched": true,
+      "noDuplicateAttempts": true,
+      "noInvalidSubmissions": true,
+      "profileFieldsCorrect": true,
+      "acceptedFromBrowser": true
+    },
+    "eligibleIds": [
+      "atlas",
+      "birch"
+    ],
+    "acceptedIds": [
+      "atlas",
+      "birch"
+    ],
+    "acceptedCount": 2,
+    "ineligibleAttemptCount": 0,
+    "duplicateAttemptCount": 0,
+    "invalidSubmissionCount": 0,
+    "receipts": [
+      {
+        "recordId": "atlas",
+        "receiptId": "ACCEPT-57ceb8d0-b535-48db-98f0-65de93790635",
+        "at": "2026-11-12T19:19:01.112Z",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) BLACKICE/2.39.70 Chrome/152.0.7977.149 Electron/44.7.2 Safari/537.36",
+        "fields": {
+          "fullName": "Sample Operator",
+          "contactEmail": "intake-test@example.invalid",
+          "referenceCode": "LOCAL-14A2D0B5",
+          "message": "I am available for the listed session."
+        }
+      },
+      {
+        "recordId": "birch",
+        "receiptId": "ACCEPT-ee978d5b-822f-4d56-8c78-b6d87b08426f",
+        "at": "2026-11-12T19:19:10.507Z",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) BLACKICE/2.39.70 Chrome/152.0.7977.149 Electron/44.7.2 Safari/537.36",
+        "fields": {
+          "fullName": "Sample Operator",
+          "contactEmail": "intake-test@example.invalid",
+          "referenceCode": "LOCAL-14A2D0B5",
+          "message": "I am available for the listed session."
+        }
+      }
+    ]
+  },
+  "contextUI": {
+    "testedSourceCommit": "ae7cf55214ace8a07e9569e89255e4eb9a781b69",
+    "sameUIInFinalSource": true,
+    "actualNativeRenderer": true,
+    "importedCharacters": 644016,
+    "savedEditedCharacters": 644030,
+    "sourceUnchanged": true,
+    "currentConversationScope": true,
+    "explicitForeignImport": true,
+    "editAndDelete": true,
+    "staleDraftPreserved": true,
+    "auditPagination": {
+      "initial": 80,
+      "final": 85
+    },
+    "narrowViewport": {
+      "width": 390,
+      "height": 844,
+      "horizontalOverflow": false,
+      "editorMaxLength": -1
+    }
+  }
+}

@@ -28,4 +28,11 @@
 - Partitions source material and synthesis only when the complete phase exceeds the model's actual usable capacity; unknown capacity receives no invented fallback ceiling.
 - Accepts long Directory messages and full context edits. Large tool reads and audit history remain accessible through paging.
 
-Verification includes deterministic execution, context lifecycle and mounted UI regressions. Live model and installed application checks are recorded separately from source-suite results; this release does not assert real job-application submissions from synthetic acceptance tests.
+## Verification
+
+- The complete Windows source suite passed 8,197 tests with zero failures, zero required skips and 11 optional skips. The receipt is bound to the final source inventory and runtime fingerprint.
+- A fresh native gpt-6-luna run with Directory and all nine Planning modules On submitted both eligible synthetic intake records exactly once, left the ineligible record untouched, and completed with an accepted final outcome review. The independent server ledger verified all form values, both unique receipts and zero duplicate or invalid submissions. No manual steering or form actions were used.
+- That native run used three fresh Directory contexts and the selected model's actual capacity, with 812,016 usable input tokens for this model configuration.
+- The rendered Context inspector imported a 644,016-character record, saved an edited 644,030-character copy, preserved the source, rejected a stale edit while retaining its draft, deleted the imported copy, and paged through all 85 audit records. Desktop and narrow layouts were checked in the native app.
+
+Source-suite and live acceptance evidence are recorded separately under `verification/`. The intake task was local and synthetic; these checks do not assert real job-application submissions.
