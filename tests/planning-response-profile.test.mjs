@@ -14,7 +14,7 @@ import { responseCycleTemplate } from '../public/response-cycle-model.mjs';
 const schema={type:'object',additionalProperties:false,properties:{answer:{type:'string'}},required:['answer']};
 const answer='{"answer":"Actual public synthetic result"}';
 const features=()=>PLANNING_RESPONSE_DISABLED_FEATURES.map(name=>({name,stage:'stable',enabled:true,defaultEnabled:true}));
-function nativeFixture(t,{ignoredFeature,missingFeature,sandbox,approvalPolicy,featureReadFails=false,connectedGmail=true}={}){
+function nativeFixture(t,{ignoredFeature,missingFeature,sandbox,approvalPolicy,featureReadFails=false,connectedGmail=true,ambientItemType}={}){
   const cwd=process.cwd(),requests=[],events=[];
   const client=new CodexRuntime({command:process.execPath,cwd,runTimeoutMs:2000,getConnectedGmail:()=>connectedGmail,
     spawnImpl(){throw Error('Synthetic boundary tests cannot start a native process.');}});
@@ -35,7 +35,8 @@ function nativeFixture(t,{ignoredFeature,missingFeature,sandbox,approvalPolicy,f
     }
     if(method==='turn/start'){
       const id='synthetic-turn-'+nextThread;
-      setImmediate(()=>client._notification('turn/completed',{threadId:params.threadId,turn:{id,status:'completed',items:[{type:'agentMessage',id:'public-item',phase:'final_answer',text:answer}]}}));
+      setImmediate(()=>{if(ambientItemType)client._notification('item/started',{threadId:params.threadId,turnId:id,item:{id:'ambient-bypass',type:ambientItemType}});
+      client._notification('turn/completed',{threadId:params.threadId,turn:{id,status:'completed',items:[{type:'agentMessage',id:'public-item',phase:'final_answer',text:answer}]}});});
       return {turn:{id,status:'inProgress'}};
     }
     if(['thread/unsubscribe','turn/interrupt'].includes(method))return {};
@@ -84,6 +85,60 @@ test('analytical options reject resumed history, attached action tools and writa
   for(const overrides of [{threadId:'old-thread'},{continuity:{text:'old history'}},{dynamicTools:[{name:'relay_browser'}]},{sandbox:'danger-full-access'},{onBeforeFinal:()=>({continue:true,prompt:'retry'})}])
     await assert.rejects(f.run(overrides),{code:'INVALID_RESPONSE_PROFILE'});
   assert.equal(f.requests.length,0);
+});
+
+test('protected native Luna preserves BLACKICE dynamic tools while removing ambient native tools',async t=>{
+  const f=nativeFixture(t,{connectedGmail:true}), dispatched=[];
+  const tool={name:'relay_browser',description:'Host-owned browser adapter',inputSchema:{type:'object',properties:{action:{type:'string'}},required:['action'],additionalProperties:false}};
+  const result=await f.run({responseOnly:false,hostOnlyTools:true,model:'gpt-6-luna',dynamicTools:[tool],
+    onToolCall:async call=>{dispatched.push(call);return {success:true,contentItems:[{type:'inputText',text:'observed'}]};}});
+  assert.equal(result.output,answer);
+  const start=f.requests.find(x=>x.method==='thread/start').params;
+  const turn=f.requests.find(x=>x.method==='turn/start').params;
+  assert.equal(start.model,'gpt-6-luna');
+  assert.equal(start.ephemeral,true);
+  assert.equal(start.sandbox,'read-only','Native effects cannot inherit the caller\'s writable sandbox');
+  assert.deepEqual(start.environments,[]);
+  assert.deepEqual(start.selectedCapabilityRoots,[]);
+  assert.deepEqual(start.dynamicTools,[tool],'The host callback must remain attached');
+  assert.deepEqual(turn.sandboxPolicy,{type:'readOnly',networkAccess:false});
+  for(const name of PLANNING_RESPONSE_DISABLED_FEATURES)assert.equal(start.config['features.'+name],false);
+  assert.equal(start.config.web_search,'disabled');
+  assert.equal(start.config.plugins.ambient.enabled,false);
+  assert.equal(start.config.mcp_servers.ambient.enabled,false);
+  assert.equal(f.requests.some(x=>x.method==='app/installed'||x.method==='app/read'),false);
+  assert.ok(f.requests.findIndex(x=>x.method==='experimentalFeature/list'&&x.params.threadId)<f.requests.findIndex(x=>x.method==='turn/start'));
+  const capabilities=f.events.find(x=>x.type==='capabilities');
+  assert.equal(capabilities.profile,'host-only-task-tools');
+  assert.equal(capabilities.attachedTools,1);
+  assert.equal(capabilities.native,true);
+  assert.equal(dispatched.length,0,'No invented dynamic tool was executed');
+});
+
+test('protected Luna rejects ignored native tool restrictions before inference',async t=>{
+  const f=nativeFixture(t,{ignoredFeature:'shell_tool',connectedGmail:false});
+  await assert.rejects(f.run({responseOnly:false,hostOnlyTools:true,model:'gpt-6-luna',dynamicTools:[]}),{code:'HOST_ONLY_TRANSPORT_UNSUPPORTED'});
+  assert.equal(f.requests.some(x=>x.method==='turn/start'),false);
+  assert.equal(f.requests.filter(x=>x.method==='thread/unsubscribe').length,1);
+});
+
+test('protected Luna rejects unavailable native tool controls before starting any thread',async t=>{
+  const f=nativeFixture(t,{missingFeature:'browser_use',connectedGmail:false});
+  await assert.rejects(f.run({responseOnly:false,hostOnlyTools:true,model:'gpt-6-luna',dynamicTools:[]}),{code:'HOST_ONLY_TRANSPORT_UNSUPPORTED'});
+  assert.equal(f.requests.some(x=>x.method==='thread/start'||x.method==='turn/start'),false);
+});
+
+test('protected Luna interrupts an unexpected native command item rather than accepting an ambient effect',async t=>{
+  const f=nativeFixture(t,{ambientItemType:'commandExecution',connectedGmail:false});
+  await assert.rejects(f.run({responseOnly:false,hostOnlyTools:true,model:'gpt-6-luna',dynamicTools:[]}),{code:'HOST_ONLY_NATIVE_EFFECT_ATTEMPT'});
+  assert.equal(f.requests.some(x=>x.method==='turn/start'),true);
+  assert.equal(f.requests.some(x=>x.method==='turn/interrupt'),true);
+});
+
+test('protected Luna rejects a writable native sandbox returned by the server',async t=>{
+  const f=nativeFixture(t,{sandbox:{type:'workspaceWrite',networkAccess:false},connectedGmail:false});
+  await assert.rejects(f.run({responseOnly:false,hostOnlyTools:true,model:'gpt-6-luna',dynamicTools:[]}),{code:'HOST_ONLY_TRANSPORT_UNSUPPORTED'});
+  assert.equal(f.requests.some(x=>x.method==='turn/start'),false);
 });
 
 test('ordinary native execution retains its existing writable default and makes no new feature-scope calls',async t=>{

@@ -42,16 +42,31 @@ for(const type of ['openai','compatible','anthropic'])test(type+' protected tran
 test('unknown API tool cannot invoke an unregistered host capability',async t=>{
  const f=await fixture(t,{unknown:true});await f.runtime.runAgent(f.options);assert.equal(f.calls(),0);assert.equal(f.codex.calls,0);
 });
-test('protected mode rejects native routes and native resume before any provider request',async t=>{
+test('unverified native routes still fail before a protected provider turn',async t=>{
  const f=await fixture(t);
- f.runtime.ensureAutomaticDefault=()=>{throw Error('Protected default must not start native discovery');};
- await assert.rejects(f.runtime.runAgent({...f.options,model:'default'}),{code:'HOST_ONLY_TRANSPORT_UNSUPPORTED'});
- await assert.rejects(f.runtime.runAgent({...f.options,model:undefined}),{code:'HOST_ONLY_TRANSPORT_UNSUPPORTED'});
+ assert.equal(f.runtime.supportsHostOnlyToolDispatch({model:'native'}),false);
  await assert.rejects(f.runtime.runAgent({...f.options,model:'native'}),{code:'HOST_ONLY_TRANSPORT_UNSUPPORTED'});
- await assert.rejects(f.runtime.runAgent({...f.options,threadId:'native-old'}),{code:'HOST_ONLY_TRANSPORT_UNSUPPORTED'});
+ await assert.rejects(f.runtime.runAgent({...f.options,model:'native',threadId:'native-old'}),{code:'HOST_ONLY_FRESH_SESSION_REQUIRED'});
  assert.equal(f.requests.length,0);assert.equal(f.codex.calls,0);
  const native=new CodexRuntime({command:process.execPath,spawnImpl(){throw Error('No process may start');}});
- await assert.rejects(native.runAgent({cwd:f.directory,prompt:'Synthetic',hostOnlyTools:true}),{code:'HOST_ONLY_TRANSPORT_UNSUPPORTED'});
+ await assert.rejects(native.runAgent({cwd:f.directory,prompt:'Synthetic',hostOnlyTools:true,threadId:'old-native-thread'}),{code:'HOST_ONLY_FRESH_SESSION_REQUIRED'});
+});
+
+test('verified native Luna selects native protected transport without an API substitution',async t=>{
+ const f=await fixture(t);
+ f.codex.supportsHostOnlyToolDispatch=()=>true;
+ f.codex.runAgent=async options=>{
+  f.codex.calls++;
+  assert.equal(options.model,'gpt-6-luna');
+  assert.equal(options.hostOnlyTools,true);
+  assert.equal(options.dynamicTools?.[0]?.name,'relay_browser');
+  return {output:'Protected native result'};
+ };
+ assert.equal(f.runtime.supportsHostOnlyToolDispatch({model:'gpt-6-luna'}),true);
+ const result=await f.runtime.runAgent({...f.options,model:'gpt-6-luna'});
+ assert.equal(result.output,'Protected native result');
+ assert.equal(f.codex.calls,1);
+ assert.equal(f.requests.length,0);
 });
 test('old unprotected API history cannot silently upgrade to protected execution',async t=>{
  const f=await fixture(t,{callTool:false});const result=await f.runtime.runAgent({...f.options,hostOnlyTools:false});
