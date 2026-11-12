@@ -1,3 +1,4 @@
+import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-provider.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -25,6 +26,7 @@ async function fixture(t, execute, { subagents = false } = {}) {
   class Runtime extends EventEmitter {
     status() { return { connected: true, authenticated: true, defaultModel: 'fixture::free', models: [{ id: 'fixture::free', supportsTools: true }] }; }
     async runAgent(options) {
+      const review = fixtureOutcomeReview(options); if (review) return review;
       options.onEvent?.({ type: 'thread', threadId: 'provider_fixture_compatibility', model: 'fixture::free', providerId: 'fixture' });
       const invoke = async (name, args) => {
         const call = { name, arguments: args, callId: randomUUID() };
@@ -32,7 +34,7 @@ async function fixture(t, execute, { subagents = false } = {}) {
         await options.onToolResultDelivered?.({ call, result });
         return result;
       };
-      return execute(options, { ...context, invoke });
+      return finishFixtureCandidate(options, await execute(options, { ...context, invoke }));
     }
     async close() {}
   }
@@ -61,7 +63,7 @@ test('new production runs preserve optional schema 14 authoring and actual reads
       workItems: [{ id: 'inspect-input', title: 'Inspect input', objective: 'Read the current input file and report its contents.', owner: 'agent', resourceKeys: [resourceKey], effects: ['observe'], dependsOn: [], criterionIds: ['read-input'] }], instructions: [] };
     await send('relay_task', { action: 'plan', expectedRevision: state.revision, contract });
     await send('relay_workspace', { action: 'read', path: 'input.txt' });
-    assert.equal(options.onBeforeFinal, undefined);
+    assert.equal(typeof options.onBeforeFinal, 'function');
     return { output: 'The actual fixture input.', threadId: 'provider_fixture_compatibility' };
   });
   const run = await f.run('forced');
@@ -142,7 +144,7 @@ test('schema 14 legacy Forced delegation preserves optional canonical owners wit
     const accepted = payload(await send('relay_task', { action: 'plan', expectedRevision: state.revision, contract }));
     await send('relay_task', { action: 'focus', expectedPlanEpoch: accepted.contract.planEpoch, workItemId: 'coordinate' });
     await send('relay_delegate', { tasks: [{ id: 'reader', stepId: 'inspect-input', readOnly: true, prompt: 'Read input.txt and report its actual contents.' }, { id: 'independent-reader', stepId: 'inspect-independent', readOnly: true, prompt: 'Read independent.txt and report its actual contents.' }] });
-    assert.equal(options.onBeforeFinal, undefined);
+    assert.equal(typeof options.onBeforeFinal, 'function');
     return { output: 'The actual fixture input.', threadId: 'provider_fixture_parent' };
   }, { subagents: true });
   const run = await f.run('forced');
@@ -171,7 +173,7 @@ test('schema 14 publishes optional material edits without falsely completing cri
     const current = payload(await send('relay_task', { action: 'read' }));
     await send('relay_task', { action: 'plan', expectedRevision: current.revision, contract: { ...contract, goal: 'Read the supplied input file and report its actual contents.' } });
     revised = { visible: engine.getRun(state.taskId).taskState, saved: await tasks.get(state.taskId) };
-    assert.equal(options.onBeforeFinal, undefined);
+    assert.equal(typeof options.onBeforeFinal, 'function');
     return { output: 'The actual fixture input.', threadId: 'provider_fixture_live_projection' };
   });
   const run = await f.run('forced');

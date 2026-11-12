@@ -1,3 +1,4 @@
+import { fixtureOutcomeReview } from './fixture-modular-provider.mjs';
 // Historical schema-13 protocol regression; schema-14 behavior has separate canonical-contract and production-engine acceptance coverage.
 import test from 'node:test';
 import { fixtureDeferredUserAgency } from './fixture-user-agency.mjs';
@@ -48,7 +49,7 @@ const answer = (options, text, id) => {
 const answerEvents = run => run.events.filter(event => event.type === 'agent.event'
   && (['delta', 'message'].includes(event.data?.type) || event.data?.type === 'item' && event.data.item?.type === 'agentMessage'));
 
-async function fixture(t, execute) {
+async function fixture(t, execute, assess) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-planning-return-'));
   const cwd = path.join(directory, 'work'); await mkdir(cwd);
   const tasks = await new TaskStateStore({ dataDir: directory }).init();
@@ -58,6 +59,7 @@ async function fixture(t, execute) {
     status() { return { connected: true, authenticated: true, defaultModel: 'fixture-model', models: [{ id: 'fixture-model', supportsTools: true }] }; }
     async steerAgent(threadId, text) { this.directions.push({ threadId, text }); return { accepted: true, threadId, turnId: 'review-turn' }; }
     async runAgent(options) {
+      const reviewed = fixtureOutcomeReview(options, assess); if (reviewed) return reviewed;
       this.calls.push(options);
       const invocation = this.calls.length, threadId = options.threadId || `planning-return-thread-${invocation}`;
       let continuationPrompt = null;
@@ -96,12 +98,12 @@ async function fixture(t, execute) {
 }
 
 
-for (const completedFirst of [false, true]) test('an optional ' + (completedFirst ? 'completed' : 'active') + ' leaf does not install an automatic review pass', async t => {
+for (const completedFirst of [false, true]) test('an optional ' + (completedFirst ? 'completed' : 'active') + ' leaf does not install a retired plan pass; modular outcome review remains active', async t => {
   const f = await fixture(t, async (options, { pass, continuationPrompt }, context) => {
-    assert.equal(options.onBeforeFinal, undefined); assert.equal(pass, 1); assert.equal(continuationPrompt, null);
+    assert.equal(typeof options.onBeforeFinal, 'function'); assert.equal(pass, 1); assert.equal(continuationPrompt, null);
     let state = await prepare(options); if (completedFirst) state = await complete(options, state);
     answer(options, 'The supplied comparison supports B at $155.', 'direct-answer');
-    assert.equal(context.active().nodes.agent.output, 'The supplied comparison supports B at $155.');
+    assert.equal(context.active().nodes.agent.output, '', 'Final candidate remains held until outcome acceptance.');
     return { output: 'The supplied comparison supports B at $155.' };
   });
   const run = await f.settle(f.start().id); assert.equal(run.status, 'completed', run.error);
@@ -114,7 +116,7 @@ for (const completedFirst of [false, true]) test('an optional ' + (completedFirs
 
 test('an explicit post-work review is saved without creating a ceremonial provider pass', async t => {
   const f = await fixture(t, async options => {
-    assert.equal(options.onBeforeFinal, undefined);
+    assert.equal(typeof options.onBeforeFinal, 'function');
     await review(options, await complete(options, await prepare(options)));
     return { output: 'Choose B for $155; A costs $165.' };
   });
@@ -123,19 +125,20 @@ test('an explicit post-work review is saved without creating a ceremonial provid
   assert.equal(run.nodes.agent.planning.reviewStatus, undefined); assert.match(run.nodes.agent.output, /Choose B/);
 });
 
-test('ordinary commentary and final output stream without a retired review buffer', async t => {
+test('commentary streams when identified and final output waits for modular review', async t => {
   const progress = 'I am checking the supplied workshop totals and the enrollment fee.';
   const f = await fixture(t, async (options, _pass, context) => {
     let state = await prepare(options);
     options.onEvent({ type: 'delta', itemId: 'progress', delta: progress });
-    assert.match(JSON.stringify(answerEvents(context.active())), /checking the supplied workshop totals/);
+    assert.deepEqual(answerEvents(context.active()), [], 'Unclassified deltas are not final evidence.');
     options.onEvent({ type: 'item', stage: 'completed', item: { id: 'progress', type: 'agentMessage', phase: 'commentary', text: progress } });
+    assert.match(JSON.stringify(answerEvents(context.active())), /checking the supplied workshop totals/);
     state = await complete(options, state); await review(options, state);
     answer(options, 'The checked result is B at $155.', 'checked-final');
     return { output: 'The checked result is B at $155.' };
   });
   const run = await f.settle(f.start().id); assert.equal(run.status, 'completed', run.error);
-  assert.equal(f.runtime.passes.length, 1); assert.equal(f.runtime.calls[0].onBeforeFinal, undefined);
+  assert.equal(f.runtime.passes.length, 1); assert.equal(typeof f.runtime.calls[0].onBeforeFinal, 'function');
   assert.ok(answerEvents(run).some(event => event.data.item?.phase === 'commentary' && event.data.item.text === progress));
   assert.equal(run.nodes.agent.output, 'The checked result is B at $155.');
 });
@@ -143,7 +146,7 @@ test('ordinary commentary and final output stream without a retired review buffe
 test('new optional work stays unfinished until an explicit same-session follow-up completes it', async t => {
   let original;
   const f = await fixture(t, async (options, { invocation, pass }) => {
-    assert.equal(pass, 1); assert.equal(options.onBeforeFinal, undefined);
+    assert.equal(pass, 1); assert.equal(typeof options.onBeforeFinal, 'function');
     if (invocation === 1) {
       let state = await complete(options, await prepare(options)); original = structuredClone(state.steps[0]);
       state = await review(options, state);
@@ -167,7 +170,7 @@ test('new optional work stays unfinished until an explicit same-session follow-u
 
 test('an accepted user direction is delivered to the active native session without a forced review turn', async t => {
   const f = await fixture(t, async (options, { pass }, context) => {
-    assert.equal(pass, 1); assert.equal(options.onBeforeFinal, undefined);
+    assert.equal(pass, 1); assert.equal(typeof options.onBeforeFinal, 'function');
     await review(options, await complete(options, await prepare(options)));
     const steered = await context.engine.steerRun(context.active().id, { nodeId: 'agent', message: 'Also check the bundle total if the enrollment fee is $20.' });
     assert.equal(steered.accepted, true);
@@ -184,7 +187,7 @@ test('an accepted user direction is delivered to the active native session witho
   assert.equal(run.taskState.steps.find(step => step.id === 'updated_fee').status, 'done');
 });
 
-test('a confirmed file mutation needs no review pass and duplicate callbacks cannot change its effect', async t => {
+test('modular review does not repeat a confirmed file mutation or duplicate callbacks', async t => {
   const f = await fixture(t, async options => {
     const state = await prepare(options, [leaf('save', { operation: { kind: 'tool', tool: 'relay_workspace', action: 'write', target: 'result.txt' },
       result: 'The one fixture result is saved.', note: 'Write the supplied fixture text once to result.txt.', doneWhen: 'The workspace handler returns the written path and byte count.' })]);
@@ -208,23 +211,29 @@ test('an honest blocked reassessment returns a partial answer without inventing 
     state = await task(options, { action: 'step', expectedRevision: state.revision, stepId: 'compare', status: 'blocked', blockedReason: 'The supplied fixture omits H2 price, so the cheapest feasible pair cannot be established.' });
     await review(options, state, 'blocked', 'The comparison is blocked on the missing H2 price; no independent ready work can resolve that supplied-input gap.');
     return { output: 'H2 price is missing, so the cheapest feasible pair remains unresolved.' };
+  }, ({snapshot}) => {
+    const evidenceRefs = snapshot.evidence.records.map(row => row.id);
+    assert.ok(evidenceRefs.length, 'Blocked assessment must see the recorded fixture input/step receipts.');
+    return { decision: 'blocked', summary: 'The supplied fixture omits the required H2 price.', remaining: ['Establish the cheapest feasible pair.'], nextAction: '', evidenceRefs,
+      blockers: [{ scope: 'H2 price', evidenceRefs, whyNotRepairable: 'The finite supplied fixture contains no H2 price and no other source.' }] };
   });
   const run = await f.settle(f.start().id); assert.equal(run.status, 'completed', run.error); assert.equal(f.runtime.passes.length, 1);
   assert.equal(run.taskState.steps[0].status, 'blocked'); assert.equal(run.taskState.progress.complete, false);
   assert.equal(run.taskState.planningReviews.at(-1).decision, 'blocked'); assert.equal(run.nodes.agent.planning.review, undefined);
+  assert.equal(run.nodes.agent.modularReview.status, 'incomplete'); assert.equal(run.nodes.agent.modularReview.decision, 'blocked');
 });
 
-test('unfinished optional work returns honestly once without an automatic no-progress loop', async t => {
+test('unfinished requested work cannot become completion through repeated unreviewed candidates', async t => {
   const f = await fixture(t, async (options, { pass }) => {
-    assert.equal(pass, 1); await prepare(options);
+    if (pass === 1) await prepare(options);
     answer(options, 'The comparison remains unfinished; no completed result is claimed.', 'partial');
     return { output: 'The comparison remains unfinished; no completed result is claimed.' };
-  });
-  const run = await f.settle(f.start().id); assert.equal(run.status, 'completed', run.error);
-  assert.equal(f.runtime.passes.length, 1); assert.equal(run.nodes.agent.usage.totalTokens, 20);
+  }, () => ({ decision: 'continue', summary: 'The requested comparison remains unfinished.', remaining: ['Compare the supplied options.'], nextAction: 'Complete the requested comparison using supplied input.', blockers: [] }));
+  const run = await f.settle(f.start().id);
+  assert.equal(run.status, 'failed'); assert.equal(run.errorCode, 'MODULAR_OUTCOME_STALLED');
+  assert.equal(f.runtime.passes.length, 3); assert.equal(run.nodes.agent.usage.totalTokens, 60);
   assert.equal(run.taskState.steps[0].status, 'active'); assert.equal(run.taskState.progress.complete, false);
-  assert.equal(run.nodes.agent.output, 'The comparison remains unfinished; no completed result is claimed.');
-  assert.match(JSON.stringify(answerEvents(run)), /no completed result is claimed/);
+  assert.equal(run.nodes.agent.output, ''); assert.deepEqual(answerEvents(run), []);
 });
 
 test('Stop aborts the active provider, admits no further pass and preserves its confirmed file effect', async t => {
@@ -247,11 +256,11 @@ test('Stop aborts the active provider, admits no further pass and preserves its 
   const run = await f.settle(accepted.id);
   assert.equal(run.status, 'cancelled'); assert.equal(aborted, true); assert.equal(run.settled, true);
   assert.equal(f.runtime.calls.length, 1); assert.equal(f.runtime.passes.length, 1);
-  assert.equal(run.nodes.agent.usage.totalTokens, 20); assert.equal(run.nodes.agent.output, progress);
+  assert.equal(run.nodes.agent.usage.totalTokens, 20); assert.equal(run.nodes.agent.output, '', 'Unreviewed final text is not published on Stop.');
   assert.equal(await readFile(path.join(f.cwd, 'before-stop.txt'), 'utf8'), 'Confirmed before Stop.');
 });
 
-test('a direct provider failure retains partial output and session identity without automatic retry', async t => {
+test('a direct provider failure retains session identity without publishing unreviewed final text or retrying', async t => {
   const f = await fixture(t, async options => {
     options.onEvent({ type: 'delta', itemId: 'partial-failure', delta: 'The first supplied price is $145; the comparison is incomplete.' });
     throw Object.assign(Error('Synthetic direct transport failure.'), { code: 'FIXTURE_TRANSPORT_FAILURE' });
@@ -259,7 +268,7 @@ test('a direct provider failure retains partial output and session identity with
   const run = await f.settle(f.start().id);
   assert.equal(run.status, 'failed'); assert.equal(run.nodes.agent.errorCode, 'FIXTURE_TRANSPORT_FAILURE');
   assert.equal(run.nodes.agent.threadId, 'planning-return-thread-1');
-  assert.equal(run.nodes.agent.output, 'The first supplied price is $145; the comparison is incomplete.');
+  assert.equal(run.nodes.agent.output, '', 'Unreviewed final text is not published after transport failure.');
   assert.equal(f.runtime.calls.length, 1); assert.equal(f.runtime.passes.length, 1);
   assert.deepEqual(run.taskState.steps, []); assert.equal(run.nodes.agent.planning.status, 'off');
 });

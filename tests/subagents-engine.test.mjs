@@ -1,3 +1,4 @@
+import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-provider.mjs';
 // Historical schema-13 regression; canonical schema-14 behavior has separate production-engine acceptance.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -83,6 +84,7 @@ test('a failed child execution remains inspectable in the durable parent run aft
   class Runtime extends EventEmitter{
     status(){return{connected:true,authenticated:true,defaultModel:'fixture-model',models:[{id:'fixture-model',supportsTools:true}]};}
     async runAgent(options){
+      const review = fixtureOutcomeReview(options); if (review) return review;
       if(options.prompt.startsWith('You are a short-lived BLACKICE subagent.')){
         const secondary=options.prompt.includes('Inspect a separate synthetic fixture; report actual work.');
         options.onEvent({type:'thread',threadId:secondary?'other-failed-thread':'failed-child-thread',turnId:secondary?'other-failed-turn':'failed-child-turn',model:'fixture-model'});
@@ -103,7 +105,7 @@ test('a failed child execution remains inspectable in the durable parent run aft
         assert.equal(reconciled.success,true,reconciled.contentItems[0].text);state=JSON.parse(reconciled.contentItems[0].text);
       }
       await finishFixturePlan(options,{state,decision:'blocked',summary:'The worker failed after its recorded tool result. Its actual exception and partial usage are preserved; this fixture has no independent ready recovery action and reports the blocker honestly.'});
-      return{output:'The independent worker failed after one tool result; its execution receipt is available for inspection.',threadId:'coordinator-thread'};
+      return finishFixtureCandidate(options, {output:'The independent worker failed after one tool result; its execution receipt is available for inspection.',threadId:'coordinator-thread'});
     }
   }
   const tasks=await new TaskStateStore({dataDir}).init(),prefs=await new RuntimeSettingsStore({dataDir}).init();await prefs.update({subagentsEnabled:true,maxSubagents:2});

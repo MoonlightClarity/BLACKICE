@@ -1,3 +1,4 @@
+import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-provider.mjs';
 // Historical schema-13 protocol regression; schema-14 behavior has separate canonical-contract and production-engine acceptance coverage.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -40,10 +41,11 @@ async function fixture(t, execute, { delegates = false } = {}) {
     calls = [];
     status() { return { connected: true, authenticated: true, defaultModel: 'fixture-model', models: [{ id: 'fixture-model', supportsTools: true, contextWindowTokens: 128000 }] }; }
     async runAgent(options) {
+      const review = fixtureOutcomeReview(options); if (review) return review;
       this.calls.push(options);
       const threadId = options.threadId || `native-fixture-${this.calls.length}`;
       options.onEvent({ type: 'thread', threadId, model: 'fixture-model' });
-      return { ...(await execute(options, this.calls.length, context)), threadId };
+      return finishFixtureCandidate(options, { ...(await execute(options, this.calls.length, context)), threadId });
     }
   }
   const runtime = new Runtime(), engine = await new HarnessEngine({ runtime, tasks, dataDir: directory, defaultCwd: cwd }).init();

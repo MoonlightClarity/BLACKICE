@@ -1,3 +1,4 @@
+import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-provider.mjs';
 // Retained historical parsers and accounting stay readable; current owners and explicitly requested modules do not enter the retired compulsory cycle.
 import { fixtureUserAgency } from './fixture-user-agency.mjs';
 import test from 'node:test';
@@ -61,12 +62,13 @@ async function fixture(t, { operation, provider } = {}) {
     status: () => ({ connected: true, authenticated: true, defaultModel: settings.defaultModel, models: [{ id: 'fixture::free', supportsTools: true }] }),
     resolveModel: model => ({ available: true, providerId: 'fixture', model: model === 'default' ? settings.defaultModel.split('::')[1] : model.split('::')[1] || model }),
     runAgent: async options => {
+      const review = fixtureOutcomeReview(options); if (review) return review;
       if (options.responseOnly) { calls.push(options); assert.ok(provider, 'No automatic planning provider belongs to a direct owner run.'); return provider(options); }
       entries.push(options);
       options.onEvent?.({ type: 'thread', threadId: 'provider_fixture_' + entries.length, model: options.model, providerId: 'fixture' });
       const output = operation ? await operation(options, { dir, operationalCalls: entries.length }) : 'Observed result: 17.';
       options.onEvent?.({ type: 'usage', usage: operationalUsage });
-      return { output, usage: operationalUsage, threadId: 'provider_fixture_' + entries.length };
+      return finishFixtureCandidate(options, { output, usage: operationalUsage, threadId: 'provider_fixture_' + entries.length });
     }
   };
   const tasks = await new TaskStateStore({ dataDir: dir }).init();
@@ -89,7 +91,7 @@ async function fixture(t, { operation, provider } = {}) {
     get operationalCalls() { return entries.length; }, get sourceReads() { return sourceReads; } };
 }
 
-test('direct execution preserves the actual answer and usage without preflight, handoff, repair or finalization', async t => {
+test('direct execution preserves the actual answer and usage without retired preflight, handoff or operational replay', async t => {
   const f = await fixture(t, { operation: async () => 'Observed result: 17. The external receipt remains unknown.' });
   const run = await f.execute({ planningMode: 'forced' });
   assert.equal(run.status, 'completed'); assert.equal(run.settled, true);

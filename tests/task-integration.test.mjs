@@ -1,3 +1,4 @@
+import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-provider.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -17,7 +18,7 @@ class Runtime extends EventEmitter {
   constructor(execute = async () => ({ output: 'Done.', threadId: 'provider_test-thread' })) { super(); this.execute = execute; this.calls = []; }
   status() { return { connected: true, authenticated: true, defaultModel: 'test-model', activeTurns: 0 }; }
   async start() { return this.status(); }
-  async runAgent(options) { this.calls.push(options); return this.execute(options, this.calls.length); }
+  async runAgent(options) { const review = fixtureOutcomeReview(options); if (review) return review; this.calls.push(options); return finishFixtureCandidate(options, await this.execute(options, this.calls.length)); }
   async close() {}
 }
 async function engineHarness(t, runtime, { withTasks = true } = {}) {

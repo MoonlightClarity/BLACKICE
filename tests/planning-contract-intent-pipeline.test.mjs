@@ -96,17 +96,17 @@ for (const location of ['request', 'workflow', 'input']) test('saved Plan-only i
   assert.equal(f.calls.length, 0); assert.deepEqual(f.engine.listRuns(), []); assert.equal((await f.store.list()).requests.length, 0);
 });
 
-test('ordinary automatic admission preserves the request without a cycle, mandatory final hook or fabricated outcomes', async t => {
+test('ordinary admission rejects an unreviewed final without a retired cycle or fabricated outcomes', async t => {
   const f = await fixture(t, async options => {
     assert.match(options.prompt, /Oak Hollow or Harbor City/);
-    assert.equal(options.onBeforeFinal, undefined);
+    assert.equal(typeof options.onBeforeFinal, 'function');
     const state = payload(await options.onToolCall({ name: 'relay_task', arguments: { action: 'read' }, callId: 'read-current' }));
     assert.equal(state.contract, undefined);
     return { output: 'No applications have been performed by this fixture.' };
   });
   const accepted = f.engine.startRun({ workflow: f.workflow, input: request, planningMode: 'forced', planningExecutionMode: 'automatic' });
   await f.engine.executions.get(accepted.id); const run = f.engine.getRun(accepted.id);
-  assert.equal(run.status, 'completed', run.error); assert.equal(f.calls.length, 1);
+  assert.equal(run.status, 'failed'); assert.equal(run.errorCode, 'MODULAR_OUTCOME_INCOMPLETE'); assert.equal(f.calls.length, 1);
   assert.equal(run.responseCycle, undefined); assert.equal(run.viability, undefined); assert.equal(run.nodes.agent.planning.status, 'off');
   const journal = await readContractJournal(f.tasks, run.taskId); assert.deepEqual(journal.records, []); assert.deepEqual(journal.evidence, []);
   assert.equal((await f.store.list()).requests.length, 0);
