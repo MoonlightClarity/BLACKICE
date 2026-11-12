@@ -125,13 +125,13 @@ for(const corrupt of [false,true])test('Directory prepared dispatcher preserves 
  const outcomes=[];f.runtime.inspect=async(options,phase)=>{
   if(phase?.label!=='work')return;
   for(const action of ['write','run','read']){
-   const result=await options.onToolCall({name:'relay_workspace',callId:'call-'+action,arguments:{action,path:'kept.txt',...(action==='write'?{text:'must-not-write'}:action==='run'?{command:'must-not-run'}:{})}});
-   outcomes.push(result);if(action==='read')assert.equal(result.success,true,JSON.stringify(result));
+   const result=await options.onToolCall({name:'relay_workspace',callId:'call-'+action,arguments:{action,...(action==='run'?{command:'must-not-run'}:{path:'kept.txt',...(action==='write'?{text:'verified-independent-write'}:{})})}});
+   outcomes.push(result);if(action==='read'||action==='write'&&!corrupt)assert.equal(result.success,true,JSON.stringify(result));
    else{assert.equal(result.success,false);assert.match(JSON.stringify(result),new RegExp(corrupt?'TASK_CONTRACT_JOURNAL_UNAVAILABLE':'TASK_CONTRACT_EFFECT_UNCERTAIN'));}
   }
  };
  await settle(f.engine,f.engine.startRun({workflow:graph(),input:{task:'Inspect synthetic protected effects without replay.',directoryMode:'on',subagentsMode:'off'}}));
- assert.equal(outcomes.length,3);assert.equal(await readFile(path.join(f.cwd,'kept.txt'),'utf8'),'unchanged');
+ assert.equal(outcomes.length,3);assert.equal(await readFile(path.join(f.cwd,'kept.txt'),'utf8'),corrupt?'unchanged':'verified-independent-write');
  for(const journal of journals)assert.equal(await readFile(journal.file,'utf8'),journal.content);
 });
 test('Directory attached native execution retains unsupported mutation denial',async t=>{
