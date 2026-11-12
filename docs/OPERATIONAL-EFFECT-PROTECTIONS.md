@@ -1,28 +1,39 @@
 # Independent operational effect protections
 
-BLACKICE's modular Planning ontology does not own application deduplication, external-effect uncertainty, native tool reservations, or durable execution receipts. Those are operational runtime concerns and apply with Planning **Modules** or **Off**. They do not require a saved planning contract, model-backed readiness check, or an attached native task context.
+BLACKICE's modular Planning ontology does not own application deduplication, external-effect uncertainty, native tool reservations, or durable execution receipts. These are runtime concerns, applied with Planning Modules or Off without a saved planning contract.
 
-## Dispatch sequence
+## Dispatch and retained history
 
-For an ordinary unprotected `relay_browser` or `relay_workspace` mutation, the host first describes the actual target at dispatch time. Read-only actions and navigation remain available for gathering evidence and resolving an uncertain submission.
+The host describes the actual browser or file target before dispatch. Read-only actions and explicit HTTP navigation remain available for investigation.
 
-- Recognized final ATS submission: check dated local application records plus the cross-task application claim journal, then durably reserve UNKNOWN **before the native input**. An earlier confirmed or uncertain claim for the same requisition blocks only that requisition. Distinct employer requisition IDs stay distinct. An unclassified POST on a recognized ATS page cannot be treated as a known harmless action.
-- Other recognized commits/opaque browser input: store an independent root-scoped operation identity, concrete resources, and UNKNOWN reservation before dispatch. Locks serialize reservations across tasks and worker instances; an identical/potentially conflicting effect is not replayed.
-- File write/patch/undo: reserve only the affected file, dispatch with the existing workspace adapter, then verify the actual file bytes and expected SHA-256. A confirmed edit remains in the history but does not prevent a later distinct edit; an uncertain mutation blocks only that file until reconciled.
-- Results: record a receipt digest and the state **absent**, **confirmed**, or **unknown**. A successful tool callback is not proof an employer, website, or service accepted an action. Absence requires a trusted explicit non-dispatch observation. A recognized external commit can be confirmed only by matching host evidence, never arbitrary page prose.
+- Recognized final ATS submissions check local application history and the cross-task claim journal, reserving UNKNOWN before native input. A confirmed or uncertain claim blocks that requisition, not another requisition.
+- Other recognized commits and opaque browser input reserve an operation identity and concrete resources. Identical or potentially overlapping effects are not replayed.
+- File write, patch and undo reserve their affected file. Successful writes require actual byte/hash verification. A confirmed edit permits a later distinct edit; unresolved file effects block overlapping edits.
+- A callback alone does not establish external acceptance or absence. Native non-dispatch can establish absence of the intended effect; actual historical uncertainty is retained.
+- Retired planning journals are inspected across the profile. Valid concrete retained effects block overlapping destinations/resources. A retained UNKNOWN opaque shell command has no established boundary: its working directory is not a sandbox. It therefore blocks consequential native browser/workspace actions even at otherwise unrelated targets. Corrupt, unbound older or disappearing journals also prevent consequential dispatch. They are not silently cleared or converted into successful work.
 
-In all cases an unrelated independent task or requisition remains runnable. The model receives an explicit, local error/receipt; no extra provider round trip or full-task planning gate is created.
+## One-action native recovery
 
-## Explicit attached native contexts
+A desktop-only recovery path addresses the permanent deadlock from valid retained UNKNOWN opaque shell commands. It is disabled unless the native desktop explicitly attaches its owner-review control.
 
-When the user explicitly attached a native task context, BLACKICE preserves the existing context-scoped native outcome and authorization mechanism. The independent guard is used only for ordinary tool calls **without** that attachment. Detaching a context never deletes its UNKNOWN records. No unrelated ChatGPT grant is inferred.
+An eligible new native call is held without dispatch. Settings shows its exact frozen target, parameters, preconditions and retained claims. A native dialog can approve or cancel that one pending action. Approval accepts residual uncertainty; it never certifies the old command was harmless, alters the old journal, or replays the old command.
 
-## Boundaries
+Recovery is available only when every blocking claim is a valid uncertain opaque shell record and the requested action has an adapter-supported exact precondition check. Arbitrary shell execution is not recoverable. Other concrete, confirmed, active, damaged or newly changed claims retain their normal checks.
 
-This protection directly wraps BLACKICE's contained browser and workspace write/patch/undo adapters, including subagents. Native Windows application adapters, email integrations, and generic shell commands have their own action receipts and existing protections; they are **not** claimed to have the same semantic reservation coverage by this extraction. An unclassified shell command is not globally fenced as an invented external submission. The inability to verify an external outcome does not justify repeating a possibly consequential action, and it does not stop unrelated work.
+At actual dispatch the host rechecks the descriptor, target/preimage, exact historical claim fingerprints and ordinary application/effect reservations. Approval is one-use, bound to the original task/run/worker/call, and expires. Cancellation or process restart cannot carry permission into a new call. The native decision has no HTTP or model-tool approval endpoint. Local trusted code under the same operating-system account remains trusted; this is not a security boundary against that code.
 
-Supported tests: `operational-effect-guard.test.mjs`, `application-history.test.mjs`, `operational-workspace-effects.test.mjs`, `operational-browser-engine.test.mjs`, `native-task-context-bridge.test.mjs`. They cover cross-process locks, durable UNKNOWN after restart, correct duplicate prevention, actual workspace hash verification, minimum-scope blocking, exact tool-call idempotency, actual HarnessEngine tool dispatch, and explicit native-context behavior.
+Independent inspection can continue while a call waits. Ordinary clear work does not acquire a new approval requirement. A blocked call whose binding cannot be fully revalidated remains undispatched.
 
-## Retired planning compatibility
+## Attached native contexts and scope
 
-Historical Forced/Advisory and Plan-only records remain viewable for provenance only. New `plan_only` admissions are rejected with `PLANNING_EXECUTION_MODE_RETIRED` **before** side effects. Neither saved record viewing nor graph editing launches the old cycle. The old schedule-readiness endpoint returns `TASK_VIABILITY_RETIRED`; enabling, triggering, and retrying jobs no longer invokes its inference/feasibility model calls. An old Plan-only queued job is held independently while other jobs continue.
+An explicitly attached native task context preserves its context-scoped mechanism. Detaching a context does not delete UNKNOWN records. No unrelated ChatGPT grant is inferred.
+
+The independent guard wraps contained browser and workspace adapters, including subagents. Native Windows, email, and generic shell integrations have their existing receipts; this implementation does not claim equivalent semantic reservation coverage for those adapters. Ordinary new shell calls still respect the retained historical fence.
+
+## Retired planning
+
+Historical Forced/Advisory and Plan-only records remain readable but are not runnable. New plan_only admissions fail before effects. Viewing history or editing graphs does not restart the retired cycle. Schedule readiness no longer invokes the legacy inference/feasibility stages.
+
+## Verification
+
+Tests cover exact one-action recovery, file preimage drift, cancellation, expiration, stale approval, restart non-reuse, preserved historical bytes, normal duplicate prevention, native engine dispatch, and local-only review visibility. Browser binding tests cover supported native targets separately. No passing fixture establishes an external employer's acceptance or resolves a real historical UNKNOWN.

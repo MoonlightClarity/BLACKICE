@@ -83,6 +83,7 @@ import { StorageManager } from './lib/storage-management.mjs';
 import { chatGPTFileImportTool } from './lib/chatgpt-file-import.mjs';
 import { chatGPTStartChatTool } from './lib/chatgpt-start-chat.mjs';
 import { planningOntologyDirectTool } from './lib/planning-ontology-direct-tool.mjs';
+import { createOwnerRecovery } from './lib/owner-recovery.mjs';
 
 const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const APP_VERSION = JSON.parse(await fs.readFile(path.join(APP_DIR, 'package.json'), 'utf8')).version;
@@ -149,7 +150,9 @@ export async function createHarnessServer(options = {}) {
   const emailOAuth = options.emailOAuth || null;
   const email = options.email || null;
   const emailSnapshot = req => email ? ({ ...email.snapshot(), localManagement: req?.headers['x-blackice-remote'] !== '1', setupHints: {} }) : ({ available: false, retired: true });
-  const engine = options.engine || new HarnessEngine({ runtime, dataDir, defaultCwd, desktop, knowledge, browser, identity, connections, tasks, attachments, email, ...(options.maxConcurrentRuns !== undefined ? {maxConcurrentRuns:options.maxConcurrentRuns} : {}) });
+  const ownerRecovery=createOwnerRecovery({enabled:options.nativeOwnerRecovery===true});
+  const engine = options.engine || new HarnessEngine({ ownerRecovery, runtime, dataDir, defaultCwd, desktop, knowledge, browser, identity, connections, tasks, attachments, email, ...(options.maxConcurrentRuns !== undefined ? {maxConcurrentRuns:options.maxConcurrentRuns} : {}) });
+  engine.ownerRecovery=ownerRecovery;
   await startupPhase(diagnostics, 'history', () => engine.init());
   // The history loader has now marked interrupted runs terminal. Reconcile
   // their saved browser owners before accepting new tasks, without replaying
@@ -797,6 +800,10 @@ export async function createHarnessServer(options = {}) {
         fileMutations.add(pending);
         try { return json(res, 200, await pending); } finally { fileMutations.delete(pending); }
       }
+      if(pathname==='/api/owner-recovery'&&req.method==='GET'){
+        if(req.headers['x-blackice-remote']==='1')return json(res,403,{error:'Native local owner review only.'});
+        return json(res,200,{localManagement:true,nativeConfirmationAvailable:ownerRecovery.enabled,requests:ownerRecovery.list()});
+      }
       if (pathname === '/api/remote-access' && req.method === 'GET') return json(res, 200, { ...(remoteAccess?.status() || { available: false, enabled: false }), client: 'local', localManagement: req.headers['x-blackice-remote'] !== '1' });
       const remoteAction = pathname.match(/^\/api\/remote-access\/(refresh|enable|disable|pair|revoke|create-agent)$/);
       if (remoteAction && req.method === 'POST') {
@@ -1344,7 +1351,7 @@ export async function createHarnessServer(options = {}) {
   const heartbeat = setInterval(() => { for (const res of clients) if(!writeEventStream(res,': heartbeat\n\n'))clients.delete(res); }, 15000);
   heartbeat.unref();
   return {
-    server, engine, runtime, runtimeSettings, desktop, knowledge, prompts, browser,browserProfiles,browserCredentials,browserCredentialMirror,browserCredentialDestinations,applicationWorkspace,nativeWindows, identity, learning, connections, tasks, planningOrganization, planningBrowser, planningBrowserRuntime, taskViability, responseCycle, attachments, email, emailOAuth, emailClient, inbox, conversations, operations,projects,capabilities,liveEdits,diagnostics,supportSnapshot,beginMaintenance,endMaintenance,assertRestartReady,assertRestartPrepared,beginRestart,endRestart,remoteAccess,remoteAgentApi,chatGPTConnector,chatGPTOAuth,directExecution,chatGPTPlanning,connectorSetup,
+    server, engine, ownerRecovery, runtime, runtimeSettings, desktop, knowledge, prompts, browser,browserProfiles,browserCredentials,browserCredentialMirror,browserCredentialDestinations,applicationWorkspace,nativeWindows, identity, learning, connections, tasks, planningOrganization, planningBrowser, planningBrowserRuntime, taskViability, responseCycle, attachments, email, emailOAuth, emailClient, inbox, conversations, operations,projects,capabilities,liveEdits,diagnostics,supportSnapshot,beginMaintenance,endMaintenance,assertRestartReady,assertRestartPrepared,beginRestart,endRestart,remoteAccess,remoteAgentApi,chatGPTConnector,chatGPTOAuth,directExecution,chatGPTPlanning,connectorSetup,
     async listen({ waitForRemote = true } = {}) {
       if (typeof waitForRemote !== 'boolean') throw new TypeError('Choose whether to wait for remote startup.');
       await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
@@ -1367,6 +1374,7 @@ export async function createHarnessServer(options = {}) {
       if (closePromise) return closePromise;
       closePromise = (async () => {
         clearInterval(heartbeat);
+        ownerRecovery.close();
         offPlanningAwareness?.();
         let firstError;
         const cleanup = async operation => { try { await operation(); } catch (error) { firstError ||= error; } };

@@ -477,3 +477,28 @@ test('model default and catalog endpoints keep settings local, forward bounded q
   assert.equal(catalog.status,200);assert.deepEqual(discovered,{id:'fixture',query:'large',offset:200,limit:100,toolsOnly:true});assert.equal(catalog.data.total,350);
   for(const file of ['provider-catalog.mjs','connection-models.mjs','connections.css','draft-store.mjs'])assert.equal((await app.request('/'+file,{headers:app.auth})).status,200,file);
 });
+
+test('native recovery is local read-only and observer closure cannot revoke a pending action',async t=>{
+  const release=deferred(),runtime=new FakeRuntime();runtime.runAgent=()=>release.promise;
+  const {app,url,request,auth}=await application(t,{runtime,nativeOwnerRecovery:true,remoteAccess:false});
+  t.after(()=>release.resolve({output:'done'}));
+  const run=app.engine.startRun({workflow:graph,input:'pending test'});
+  await until(()=>app.engine.getRun(run.id).status==='running');
+  const pending=app.ownerRecovery.request({taskId:'task',runId:run.id,nodeId:'agent',operationId:'exact',
+    candidate:{tool:'relay_workspace',action:'write',target:'test'},claims:[{operationId:'old',digest:'unchanged'}]});
+  const row=app.ownerRecovery.list()[0];
+  const before=await request('/api/owner-recovery',{headers:auth});
+  assert.equal(before.status,200);assert.equal(before.data.requests[0].requestId,row.requestId);
+  assert.equal((await request('/api/owner-recovery',{headers:{...auth,'x-blackice-remote':'1'}})).status,403);
+  assert.notEqual((await request('/api/owner-recovery',{method:'POST',headers:auth,body:{approve:true}})).status,200);
+  await new Promise((resolve,reject)=>{
+    const req=http.get(url+'/api/runs/'+run.id+'/observe',{headers:auth},res=>{
+      res.once('data',()=>{res.destroy();req.destroy();resolve();});
+    });req.on('error',error=>{if(error.code!=='ECONNRESET')reject(error);});
+  });
+  await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(app.ownerRecovery.read(row.requestId).state,'pending');
+  app.ownerRecovery.cancel({requestId:row.requestId,revision:row.revision,actor:'native-owner-confirmation'});
+  await assert.rejects(pending,{code:'OWNER_RECOVERY_CANCELLED'});
+  release.resolve({output:'done'});await app.engine.executions.get(run.id);
+});
