@@ -4,8 +4,7 @@
   "version": "2.39.72",
   "kind": "sanitized-native-context-verification",
   "generatedAt": "2026-11-12T21:27:21.894729+00:00",
-  "status": "native-and-combined-windows-source-verification-recorded-release-held",
-  "releaseVerified": false,
+  "status": "combined-native-and-windows-source-verification-complete",
   "scope": "Read-only native context, evidence retrieval and active-session checks. No original user-task completion claim.",
   "sourceBindings": {
     "productionNative": {
@@ -268,7 +267,7 @@
     "sourceFilesVerified": 1500,
     "sourceUnchanged": true,
     "checkedAt": "2026-11-12T21:22:33.999Z",
-    "qualification": "The complete combined Windows source suite passed. Native observations retain their actual source bindings; the combined installer has not been built or installed under the joint-release hold."
+    "qualification": "The complete combined Windows source suite passed. Native observations retain their actual source bindings. One combined installer must pass its separate release and installation checks."
   },
   "sanitization": {
     "omitted": [
@@ -312,7 +311,7 @@
     "directive": "Do not publish, tag, package, or install either fix independently. The next release must include both changes, verified together in one candidate and installer. Preserve the other chat's work.",
     "combinedTestedSourceCommit": "70416018f8621e3217b360374222b44858b0f4d6",
     "storageDataIncludedThroughCommit": "616d985d5ca5fedd17811d69e214606e34587400",
-    "combinedInstallerVerification": "not-run-release-held",
+    "combinedInstallerVerification": "Pending when this source record was committed; verify one combined installer before local installation.",
     "otherChatAcknowledgement": "received-through-user-coordination-handoff",
     "canonicalStorageSourceCommit": "616d985d5ca5fedd17811d69e214606e34587400",
     "storageFeatureCommit": "4538e5fe27b7f78b9e9a922ed5ba6dfd64de2d26",
@@ -320,6 +319,12 @@
     "additionalCherryPickNeeded": false,
     "storageInstallerInstalled": false,
     "releaseHoldRemainsActiveAfterHandoff": true,
-    "coordinationScope": "Both chats confirmed the same combined tested source. This acknowledges the handoff and does not authorize publication, tagging, packaging, or installation."
-  }
+    "coordinationScope": "Both chats and the user confirmed the same combined tested source. The user authorized the context-management coordinator as sole owner of one combined 2.39.72 publication and local installation. Independent releases remain held; do not install 2.39.71 separately.",
+    "scope": "independent-releases-only",
+    "combinedReleaseAuthorized": true,
+    "soleCombinedReleaseOwner": "context-management coordinator",
+    "separate23971InstallationAuthorized": false
+  },
+  "verificationScope": "This tracked record covers native observations and the tested combined source. Publication and installer validation are recorded separately in release workflow assets and installation receipts.",
+  "authorizationRecordedAt": "2026-11-12T21:30:32.613920+00:00"
 }
