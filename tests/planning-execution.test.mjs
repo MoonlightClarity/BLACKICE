@@ -1,3 +1,4 @@
+import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-provider.mjs';
 // Historical schema-13 protocol regression; schema-14 behavior has separate canonical-contract and production-engine acceptance coverage.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -273,6 +274,7 @@ test('actual current Engine writes retain independent durable effect receipts wi
   class Runtime extends EventEmitter{
     status(){return{connected:true,authenticated:true,defaultModel:'fixture-model',models:[{id:'fixture-model',supportsTools:true}]};}
     async runAgent(options){
+      const review=fixtureOutcomeReview(options);if(review)return review;
       providerCalls++;
       const file='checked-fixture-'+providerCalls+'.txt',text='Known fixture result '+providerCalls+'.';
       const call={name:'relay_workspace',callId:'actual-write-'+providerCalls,arguments:{action:'write',path:file,text}};
@@ -283,7 +285,7 @@ test('actual current Engine writes retain independent durable effect receipts wi
       assert.equal(receipt.path,path.join(f.cwd,file));assert.equal(receipt.bytesWritten,Buffer.byteLength(text));assert.equal(receipt.atomic,true);
       assert.equal(await readFile(receipt.path,'utf8'),text);assert.equal(effect.state,'confirmed');assert.equal(effect.source,'generic');
       observed.push({file:receipt.path,text,result,effect});
-      return{output:'The exact saved file bytes match the workspace write receipt.'};
+      return finishFixtureCandidate(options,{output:'The exact saved file bytes match the workspace write receipt.'});
     }
   }
   engine=await new HarnessEngine({runtime:new Runtime(),tasks:f.store,dataDir:f.directory,defaultCwd:f.cwd}).init();

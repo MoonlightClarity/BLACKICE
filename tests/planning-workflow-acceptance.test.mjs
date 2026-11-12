@@ -1,3 +1,4 @@
+import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-provider.mjs';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
@@ -552,11 +553,18 @@ async function runElectronCase({ directory, mode }) {
     class Runtime extends EventEmitter {
       status() { return { connected: true, authenticated: true, defaultModel: 'fixture-contract-provider', models: [{ id: 'fixture-contract-provider', supportsTools: true }] }; }
       async runAgent(options) {
-        assert.notEqual(options.responseOnly, true, 'Automatic analytical providers are retired.');
+        const review=fixtureOutcomeReview(options,({candidate})=>{
+          assert.equal(observation.workflowFinished,true,'Review must follow the actual operational work.');
+          if(mode==='text-only')assert.match(candidate.output,/no supported independent confirmation/);
+          else assert.match(candidate.output,/confirmed|confirms/);
+          return {decision:'respond',summary:'The synthetic candidate faithfully reports the observed result; unconfirmed outcomes stay unconfirmed.',remaining:[],nextAction:'',blockers:[]};
+        });
+        if(review)return review;
+        assert.notEqual(options.responseOnly, true, 'Only the explicit modular final-candidate review may use a response-only provider.');
         const explicit = await explicitHostOptions(options);
         try {
-          return { ...(await execute(explicit)), threadId: 'synthetic-worker-' + mode,
-            usage: { inputTokens: 12, outputTokens: 6, totalTokens: 18 } };
+          return await finishFixtureCandidate(options,{ ...(await execute(explicit)), threadId: 'synthetic-worker-' + mode,
+            usage: { inputTokens: 12, outputTokens: 6, totalTokens: 18 } });
         } finally { await explicit.guard.finish(options.signal.aborted ? 'cancelled' : 'finished'); }
       }
       async close() {}

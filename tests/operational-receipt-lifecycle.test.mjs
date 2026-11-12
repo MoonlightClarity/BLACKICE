@@ -1,3 +1,4 @@
+import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-provider.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -137,11 +138,11 @@ for(const mode of ['off','ontology'])test('real HarnessEngine receipt discovery 
   const tasks=await new TaskStateStore({dataDir:directory}).init(),driver=new Driver(null),browser=new BrowserWorkspace({driver});let turns=0,operationId;
   class Runtime extends EventEmitter{
     status(){return{connected:true,authenticated:true,defaultModel:'fixture',models:[{id:'fixture',supportsTools:true}]};}
-    async runAgent(options){turns++;assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_effects'));
-      if(turns===1){const result=await options.onToolCall(call('click','engine-submit'));assert.equal(result.success,false);operationId=note(result).operationId;return{output:'Dispatched once; outcome uncertain',threadId:'native-receipt-thread'};}
+    async runAgent(options){const review=fixtureOutcomeReview(options);if(review)return review;turns++;assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_effects'));
+      if(turns===1){const result=await options.onToolCall(call('click','engine-submit'));assert.equal(result.success,false);operationId=note(result).operationId;return finishFixtureCandidate(options,{output:'Dispatched once; outcome uncertain',threadId:'native-receipt-thread'});}
       const listed=await options.onToolCall({name:'relay_effects',callId:'later-list',arguments:{action:'list'}});assert.equal(parse(listed).operations[0].operationId,operationId);
       const recovery=await options.onToolCall({name:'relay_effects',callId:'engine-receipt',arguments:{action:'reconcile',operationId,tabId:'tab',receiptBinding:binding}});
-      assert.equal(recovery.success,true);assert.equal(parse(recovery).operation.state,'unknown');return{output:'Native response retained; business outcome remains uncertain',threadId:'native-receipt-thread'};
+      assert.equal(recovery.success,true);assert.equal(parse(recovery).operation.state,'unknown');return finishFixtureCandidate(options,{output:'Native response retained; business outcome remains uncertain',threadId:'native-receipt-thread'});
     }async close(){}
   }
   const engine=await new HarnessEngine({runtime:new Runtime(),browser,tasks,dataDir:directory,defaultCwd:cwd}).init();engine.runtimeSettings={get:()=>({executionGuardrails:false,subagentsEnabled:false})};
@@ -175,21 +176,21 @@ for(const mode of ['off','ontology'])test('real delegated native worker has inde
   const tasks=await new TaskStateStore({dataDir:directory}).init(),driver=new Driver(null),browser=new BrowserWorkspace({driver});let parentId,turns=0;
   class Runtime extends EventEmitter{
     status(){return{connected:true,authenticated:true,defaultModel:'fixture',models:[{id:'fixture',supportsTools:true}]};}
-    async runAgent(options){turns++;
+    async runAgent(options){const review=fixtureOutcomeReview(options);if(review)return review;turns++;
       if(options.prompt.startsWith('You are a short-lived BLACKICE subagent.')){
         assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_effects'));
-        if(options.prompt.includes('Inspect the synthetic receipt catalog only.'))return{output:'Independent receipt catalog inspection complete',threadId:'catalog-receipt-thread'};
+        if(options.prompt.includes('Inspect the synthetic receipt catalog only.'))return finishFixtureCandidate(options,{output:'Independent receipt catalog inspection complete',threadId:'catalog-receipt-thread'});
         driver.owner={taskId:parentId,runId:parentId,nodeId:delegatedPlanNodeId('agent','receipt-worker')};
         const response=await options.onToolCall(call('click','worker-submit'));assert.equal(response.success,false);const operationId=note(response).operationId;
         const observed=await options.onToolCall({name:'relay_effects',callId:'worker-receipt',arguments:{action:'reconcile',operationId,tabId:'tab',receiptBinding:binding}});
         assert.equal(observed.success,true);assert.equal(parse(observed).operation.nodeId,driver.owner.nodeId);assert.equal(parse(observed).operation.state,'unknown');
-        return{output:'Observed the exact native response; business outcome remains uncertain',threadId:'worker-receipt-thread'};
+        return finishFixtureCandidate(options,{output:'Observed the exact native response; business outcome remains uncertain',threadId:'worker-receipt-thread'});
       }
       assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_delegate'));
       const delegated=await options.onToolCall({name:'relay_delegate',callId:'launch-receipt-worker',arguments:{tasks:[{id:'receipt-worker',prompt:'Dispatch one synthetic native form and inspect the exact retained response.'},{id:'catalog-worker',prompt:'Inspect the synthetic receipt catalog only. Do not dispatch a form.'}]}});
       assert.equal(delegated.success,true);assert.equal(parse(delegated).results[0].status,'completed',parse(delegated).results[0].error);assert.equal(parse(delegated).results[1].status,'completed',parse(delegated).results[1].error);
       const own=await options.onToolCall({name:'relay_effects',callId:'parent-receipts',arguments:{action:'list'}});assert.equal(parse(own).operations.length,0,'parent cannot read another worker’s receipt payload');
-      return{output:'Worker response is recorded; no extra planning turn',threadId:'parent-receipt-thread'};
+      return finishFixtureCandidate(options,{output:'Worker response is recorded; no extra planning turn',threadId:'parent-receipt-thread'});
     }async close(){}
   }
   const engine=await new HarnessEngine({runtime:new Runtime(),browser,tasks,dataDir:directory,defaultCwd:cwd}).init();engine.runtimeSettings={get:()=>({executionGuardrails:false,subagentsEnabled:true,maxSubagents:3})};
