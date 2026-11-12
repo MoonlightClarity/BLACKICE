@@ -68,13 +68,13 @@ test('scheduled Chat configuration persists modular reasoning without a readines
   assert.equal(saved.workflow.settings.planningMode,'off');
   assert.equal(saved.workflow.settings.planningEnforcement,undefined);
   assert.equal(saved.workflow.settings.planningExecutionMode,'automatic');
-  assert.equal(saved.workflow.settings.planningOntology.modules.anti_overalignment,'mandatory');
+  assert.equal(saved.workflow.settings.planningOntology.modules.anti_overalignment,true);
   assert.equal(saved.workflow.settings.context.windowTokens,65536);
   assert.equal(saved.workflow.nodes.find(node=>node.type==='agent').model,'http-fixture-model');
   assert.deepEqual(saved.trigger,{type:'interval',everySeconds:1800});
   await f.restart();
   const restored=f.app.operations.getDeployment(response.data.id);
-  assert.equal(restored.workflow.settings.planningOntology.modules.anti_overalignment,'mandatory');
+  assert.equal(restored.workflow.settings.planningOntology.modules.anti_overalignment,true);
   assert.equal(restored.workflow.nodes.find(node=>node.type==='agent').context.windowTokens,65536);
   assert.equal(f.calls.length,0);
   assert.equal(f.readinessCalls.length,0,'no mandatory inference or viability model pass');

@@ -1,3 +1,4 @@
+import {fixtureOutcomeReview,finishFixtureCandidate} from './fixture-modular-provider.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
@@ -46,7 +47,7 @@ test('only Modules and Off remain selectable; historical aliases are inert and c
   assert.doesNotMatch(frame.shell.innerHTML,/Legacy Forced|Legacy Advisory|>Plan only</);
   const existing=readConversationOntology({conversationId:'legacy',runs:[{id:'prior',planningMode:'on',planningEnforcement:'forced'}]});
   assert.equal(existing.planningMode,'ontology','legacy conversation reopens under module policy');
-  assert.equal(existing.planningOntology.modules.anti_overalignment,'mandatory');
+  assert.equal(existing.planningOntology.modules.anti_overalignment,true);
 });
 
 test('a scheduled chat rejects Plan-only and explicit Automatic never restores Forced',()=>{
@@ -57,7 +58,7 @@ test('a scheduled chat rejects Plan-only and explicit Automatic never restores F
   assert.equal(verified.settings.planningMode,'off');
   assert.equal(verified.settings.planningExecutionMode,'automatic');
   assert.equal(verified.settings.planningEnforcement,undefined);
-  assert.equal(verified.settings.planningOntology.modules.decomposition,'forbidden');
+  assert.equal(verified.settings.planningOntology.modules.decomposition,false);
   const markup=scheduleChatOptionsMarkup();
   assert.doesNotMatch(markup,/value="forced"|value="advisory"|value="plan_only"/);
   assert.match(markup,/value="ontology"/);
@@ -71,13 +72,14 @@ test('explicit Plan-only cannot start while old Forced with Automatic still comp
   class Runtime extends EventEmitter {
     status(){return{connected:true,authenticated:true,defaultModel:'fixture-model',models:[{id:'fixture-model',supportsTools:true}]};}
     async runAgent(options){
+      const review=fixtureOutcomeReview(options);if(review)return review;
       runCount++;
-      assert.match(options.developerInstructions,/MODULAR PLANNING ONTOLOGY/);
+      assert.match(options.developerInstructions,/BLACKICE PLANNING MODULES \u2014 ON \/ OFF/);
       assert.doesNotMatch(options.developerInstructions,/Save this turn.s task outline first|Planning is On. Read/);
       assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_workspace'));
       const receipt=await options.onToolCall({name:'relay_workspace',arguments:{action:'write',path:'leaf'+runCount+'.txt',text:'completed-'+runCount}});
       assert.equal(receipt.success,true,JSON.stringify(receipt));
-      return{output:'Completed '+runCount,threadId:'retired-planning-thread'};
+      return finishFixtureCandidate(options,{output:'Completed '+runCount,threadId:'retired-planning-thread'});
     }
     async close(){}
   }
@@ -116,14 +118,14 @@ test('explicit Plan-only cannot start while old Forced with Automatic still comp
   assert.equal(complete.planningMode,'off');
   assert.equal(complete.planningExecutionMode,'automatic');
   assert.equal(complete.runtimeSettings.planningGuardrails,false);
-  assert.equal(complete.planningOntology.modules.anti_overalignment,'mandatory');
+  assert.equal(complete.planningOntology.modules.anti_overalignment,true);
   assert.equal(await readFile(path.join(cwd,'leaf1.txt'),'utf8'),'completed-1');
-  assert.equal(called,0,'no extra model pass or response-cycle operation');
+  assert.equal(called,0,'no retired response-cycle operation');
   assert.equal(runCount,1);
   const next=engine.continueRun(complete.id,{nodeId:'agent',message:'Continue useful work'});
   const continued=await waitFor(next.id);
   assert.equal(continued.status,'completed',continued.error||continued.nodes.agent?.error);
-  assert.equal(continued.planningOntology.modules.anti_overalignment,'mandatory');
+  assert.equal(continued.planningOntology.modules.anti_overalignment,true);
   assert.equal(await readFile(path.join(cwd,'leaf2.txt'),'utf8'),'completed-2');
   assert.equal(runCount,2);
   assert.equal(called,0);

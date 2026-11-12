@@ -1,3 +1,4 @@
+import {fixtureOutcomeReview,finishFixtureCandidate} from './fixture-modular-provider.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -15,28 +16,27 @@ import { normalizeChatOptions, restoreChatPlanningOptions } from '../public/next
 const waitFor=async(fn)=>{for(let i=0;i<150;i++){const result=fn();if(result?.settled)return result;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Run did not settle');};
 const content=response=>JSON.parse(response.contentItems[0].text);
 
-test('each ontology module is individually Mandatory / Optional / Forbidden and auto selection is independent',()=>{
+test('each module has explicit Boolean On/Off and legacy permissions migrate without erasing prohibitions',()=>{
   const base=normalizePlanningOntology();
-  assert.equal(base.autoSelect,false);
+  assert.equal(base.version,2);assert.equal(Object.hasOwn(base,'autoSelect'),false);
   assert.equal(PLANNING_ONTOLOGY_MODULES.length,9);
-  assert.equal(base.modules.anti_overalignment,'mandatory');
-  assert.ok(PLANNING_ONTOLOGY_MODULES.filter(module=>module.id!=='anti_overalignment').every(module=>base.modules[module.id]==='auto'));
-  const custom=normalizePlanningOntology({autoSelect:false,modules:{inference:'mandatory',decomposition:'forbidden',subagents:'forbidden'}});
-  assert.equal(custom.modules.inference,'mandatory');
-  assert.equal(custom.modules.feasibility,'auto');
-  assert.equal(custom.modules.decomposition,'forbidden');
+  assert.ok(PLANNING_ONTOLOGY_MODULES.every(module=>base.modules[module.id]===true));
+  const legacy={version:1,autoSelect:false,modules:{inference:'mandatory',decomposition:'forbidden',subagents:'forbidden'}};
+  const before=structuredClone(legacy),custom=normalizePlanningOntology(legacy);
+  assert.deepEqual(legacy,before,'Historical input is not rewritten.');
+  assert.equal(custom.modules.inference,true);assert.equal(custom.modules.feasibility,true);
+  assert.equal(custom.modules.decomposition,false);assert.equal(custom.modules.subagents,false);
   const instructions=planningOntologyInstructions(custom);
-  assert.match(instructions,/AUTOMATIC SELECTION/);
-  assert.match(instructions,/MANDATORY.*Intent inference/);
-  assert.match(instructions,/FORBIDDEN.*Task decomposition/);
-  assert.match(instructions,/does not require a saved plan/i);
-  const automatic=planningOntologyInstructions({...custom,autoSelect:true});
-  assert.match(automatic,/AUTOMATIC SELECTION/);
-  assert.match(automatic,/without a separate selection pass/i);
-  assert.throws(()=>normalizePlanningOntology({modules:{unknown:'mandatory'}}),{code:'PLANNING_ONTOLOGY_INVALID'});
-  assert.throws(()=>normalizePlanningOntology({modules:{inference:'forced'}}),{code:'PLANNING_ONTOLOGY_INVALID'});
-  assert.throws(()=>normalizePlanningOntology({autoSelect:'yes'}),{code:'PLANNING_ONTOLOGY_INVALID'});
-  assert.throws(()=>normalizePlanningOntology({version:2}),{code:'PLANNING_ONTOLOGY_INVALID'});
+  assert.match(instructions,/ON:.*Intent inference/);assert.match(instructions,/OFF:.*Task decomposition/);
+  assert.match(instructions,/do not invent extra steps, new hard gates/i);
+  assert.doesNotMatch(instructions,/AUTOMATIC SELECTION|MANDATORY:|FORBIDDEN:/);
+  for(const module of PLANNING_ONTOLOGY_MODULES){
+    const policy=normalizePlanningOntology({version:2,modules:{[module.id]:false}});
+    assert.equal(policy.modules[module.id],false);assert.equal(Object.values(policy.modules).filter(v=>v===false).length,1);
+  }
+  for(const value of [{modules:{unknown:true}},{modules:{inference:'forced'}},{autoSelect:'yes'},
+    {version:3},{version:2,autoSelect:false},{version:2,modules:{inference:'mandatory'}}])
+    assert.throws(()=>normalizePlanningOntology(value),{code:'PLANNING_ONTOLOGY_INVALID'});
   assert.equal(normalizeChatOptions({}).planningMode,'ontology');
   assert.deepEqual(normalizeChatOptions({}).planningOntology,base);
   assert.equal(createMissionWorkflow({task:'Do useful work'}).settings.planningMode,'off');
@@ -69,14 +69,14 @@ test('anti-overalignment isolates sponsorship, verified blockers and duplicates 
     /park only that single form field or dependent application/,
     /quarantine only that affected submission/,
     /never fabricated completion/,
-    /no separate stop checklist/i
+    /No separate per-action checklist/i
   ])assert.match(instruction,expectation);
   const policy=normalizePlanningOntology();
-  assert.equal(policy.modules.anti_overalignment,'mandatory');
+  assert.equal(policy.modules.anti_overalignment,true);
   assert.match(planningOntologyInstructions(policy),/MINIMUM-SCOPE BLOCKING/);
   const explicitOverride=normalizePlanningOntology({modules:{anti_overalignment:'forbidden'}});
-  assert.equal(explicitOverride.modules.anti_overalignment,'forbidden','user can still explicitly override the default');
-  assert.match(planningOntologyInstructions(explicitOverride),/FORBIDDEN:[\s\S]*Anti-overalignment calibration/);
+  assert.equal(explicitOverride.modules.anti_overalignment,false,'user can still explicitly override the default');
+  assert.match(planningOntologyInstructions(explicitOverride),/OFF:[\s\S]*Anti-overalignment calibration/);
 });
 
 test('direct ChatGPT ontology tool reads and saves the same runtime default atomically',async t=>{
@@ -86,16 +86,16 @@ test('direct ChatGPT ontology tool reads and saves the same runtime default atom
   const tool=planningOntologyDirectTool({runtimeSettings:settings});
   assert.equal(tool.definition.name,'blackice_planning_ontology');
   const initial=content(await tool.execute({requestId:'ont-get-1',action:'get'}));
-  assert.equal(initial.policy.modules.verification,'auto');
+  assert.equal(initial.policy.modules.verification,true);
   assert.equal(initial.modules.length,9);
   const selected={autoSelect:false,modules:{verification:'mandatory',decomposition:'forbidden',subagents:'forbidden'}};
   const result=content(await tool.execute({requestId:'ont-set-1',action:'set',ontology:selected}));
   assert.equal(result.saved,true);
-  assert.equal(result.policy.modules.decomposition,'forbidden');
+  assert.equal(result.policy.modules.decomposition,false);
   assert.equal(result.activeRunsUnchanged,true);
   assert.deepEqual(result.policy,settings.get().planningOntology);
   assert.deepEqual(JSON.parse(await readFile(settings.file,'utf8')).planningOntology,result.policy);
-  assert.equal(content(await tool.execute({requestId:'ont-get-2',action:'get'})).policy.autoSelect,false);
+  assert.equal(content(await tool.execute({requestId:'ont-get-2',action:'get'})).policy.version,2);
   await assert.rejects(tool.execute({requestId:'ont-invalid',action:'set',ontology:{modules:{x:'mandatory'}}}),{code:'PLANNING_ONTOLOGY_INVALID'});
   assert.deepEqual(settings.get().planningOntology,result.policy);
 });
@@ -108,8 +108,9 @@ test('new ontology chats bypass forced plan admission, forbid plan/subagent tool
     constructor(){super();this.calls=[];}
     status(){return{connected:true,authenticated:true,defaultModel:'fixture-model',models:[{id:'fixture-model',supportsTools:true}]};}
     async runAgent(options){
+      const review=fixtureOutcomeReview(options);if(review)return review;
       this.calls.push(options);
-      assert.match(options.developerInstructions,/MODULAR PLANNING ONTOLOGY/);
+      assert.match(options.developerInstructions,/BLACKICE PLANNING MODULES \u2014 ON \/ OFF/);
       assert.match(options.developerInstructions,/MINIMUM-SCOPE BLOCKING/);
       assert.match(options.developerInstructions,/sponsorship Yes\/No/);
       assert.match(options.developerInstructions,/continue other applications/i);
@@ -119,7 +120,7 @@ test('new ontology chats bypass forced plan admission, forbid plan/subagent tool
       assert.equal(forbidden.code,'ONTOLOGY_MODULE_FORBIDDEN','a hidden planning-cycle action may not bypass Forbidden');
       const receipt=await options.onToolCall({name:'relay_workspace',arguments:{action:'write',path:'ontology-proof.txt',text:'tool works without plan'}});
       assert.equal(receipt.success,true,JSON.stringify(receipt));
-      return {output:'Acted without a planning contract.',threadId:'ontology-fixture-thread'};
+      return finishFixtureCandidate(options,{output:'Acted without a planning contract.',threadId:'ontology-fixture-thread'});
     }
     async close(){}
   }
@@ -136,10 +137,10 @@ test('new ontology chats bypass forced plan admission, forbid plan/subagent tool
   assert.deepEqual(complete.planningOntology,policy);
   assert.equal(complete.runtimeSettings.planningGuardrails,false);
   assert.equal(await readFile(path.join(cwd,'ontology-proof.txt'),'utf8'),'tool works without plan');
-  assert.equal(runtime.calls.length,1,'no extra model pass');
+  assert.equal(runtime.calls.length,1,'one execution turn; read-only outcome review is tracked separately');
   const next=engine.continueRun(complete.id,{nodeId:'agent',message:'Continue',planningMode:'ontology'});
   const continued=await waitFor(()=>engine.getRun(next.id));
   assert.equal(continued.status,'completed',continued.error||continued.nodes.agent?.error);
   assert.deepEqual(continued.planningOntology,policy);
-  assert.equal(runtime.calls.length,2,'only one provider turn per response');
+  assert.equal(runtime.calls.length,2,'one execution turn per response, excluding read-only outcome review');
 });

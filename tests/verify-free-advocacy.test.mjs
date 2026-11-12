@@ -89,7 +89,7 @@ test('direct modular execution preserves the isolated configured budget and actu
     assert.equal(body.max_tokens, 8192, 'The direct execution wire reserve remains distinct from the configured 32768-token ceiling.');
     assert.equal(body.response_format, undefined);
     assert.ok(body.tools.some(tool => tool.function.name === 'relay_browser'));
-    assert.ok(body.messages.some(message => /MODULAR PLANNING ONTOLOGY/.test(message.content || '')));
+    assert.ok(body.messages.some(message => /BLACKICE PLANNING MODULES \u2014 ON \/ OFF/.test(message.content || '')));
   }
   assert.equal(setup.budgets.providerMaxTokens, 32768);
   assert.deepEqual(observedFreeEvaluationBudgets(setup.requests).observedWireMaxTokens, { withTools: [8192], withoutTools: [] });
