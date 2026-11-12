@@ -180,14 +180,10 @@ test('shutdown waits for the admitted startup helper and never requests a second
 
 for (const failFirst of [false, true]) {
   test('shutdown drains coalesced startup response snapshots' + (failFirst ? ' after one snapshot fails' : ' before closing connector services'), async t => {
-    const entered = held(), finish = held(), shutdownEntered = held();
+    const entered = held(), finish = held();
     const snapshotsEntered = [held(), held()], finishSnapshots = [held(), held()];
     let changes = 0, snapshots = 0, setupClosing = false, connectorClosing = false, closed = false;
-    const f = await fixture(t, { async snapshot() { return startup(); }, async enable() { changes++; entered.resolve(); await finish.promise; } }, {
-      // This is the first shutdown dependency. Its synchronous completion makes
-      // the next teardown boundary observable without timing or real OS work.
-      workbenchVideo: { close() { shutdownEntered.resolve(); } },
-    });
+    const f = await fixture(t, { async snapshot() { return startup(); }, async enable() { changes++; entered.resolve(); await finish.promise; } });
     const snapshot = f.app.connectorSetup.snapshot.bind(f.app.connectorSetup);
     const closeSetup = f.app.connectorSetup.close.bind(f.app.connectorSetup);
     const closeConnector = f.app.chatGPTConnector.close.bind(f.app.chatGPTConnector);
@@ -207,7 +203,9 @@ for (const failFirst of [false, true]) {
       finish.resolve(); await Promise.all(snapshotsEntered.map(gate => gate.promise));
       assert.equal(changes, 1);
       closing = f.app.close().then(() => { closed = true; });
-      await shutdownEntered.promise; await tick();
+      // close() enters its response-drain barrier before returning its promise.
+      // Yield so a premature connector teardown would be observable.
+      await tick();
       assert.equal(setupClosing, false, 'Setup must stay available through admitted response snapshots.');
       assert.equal(connectorClosing, false, 'Connector storage must stay available through admitted response snapshots.');
       assert.equal(closed, false);
