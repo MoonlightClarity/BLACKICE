@@ -68,6 +68,7 @@ async function native(){
       const promise=harness.ownerRecovery.request({taskId:'fixture-task',runId:'fixture-run',nodeId:'fixture-node',operationId:label,
         candidate:{tool:'browser',action:'click',target:'https://example.test/application',summary:label,
           parameters:{button:'Submit',applicationId:'synthetic-only'},preconditions:{url:'https://example.test/application',buttonLabel:'Submit'},descriptor:{kind:'fixture-only-no-dispatch'}},claims});
+      promise.catch(()=>{}); // Cleanup may cancel a still-pending synthetic request after an earlier assertion.
       const request=harness.ownerRecovery.list().at(-1);return {promise,request};
     };
     const first=seed('Synthetic exact-action review');
