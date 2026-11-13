@@ -27,8 +27,12 @@ Instructions ask the existing worker/reviewer to assess applicability across
 owned public operations, including queries, preserve explicit versus inferred
 scope, and perform small useful checks. No extra model phase, mandatory mapping,
 pass/fail inference, or automatic completion gate is added. The full original
-task remains available. Scope is recomputed from the current ledger, not cached
-across task revisions.
+task remains available. Only compact counts and retrieval instructions are mandatory
+inline; full clauses use normal lossless evidence packing with exact saved refs
+when needed. Scope is recomputed from the supplied run-ledger snapshot. This does
+not refresh that ledger from later user corrections: those remain separately
+available through existing authoritative context/summary reload and take priority
+over this attention index. End-to-end effective-contract freshness is not claimed.
 
 ## Verification and remaining limitation
 
