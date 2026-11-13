@@ -10,9 +10,10 @@ import {compileVisual as geometry} from '../public/visual-document-renderer-geom
 import {compileVisual as current} from '../public/visual-document.mjs';
 import {compileVisual as clamped} from '../public/visual-document-renderer-clamped.mjs';
 import {compileVisual as labels} from '../public/visual-document-renderer-labels.mjs';
+import {compileVisual as labels3} from '../public/visual-document-renderer-labels-3.mjs';
 
 test('current writer matches the registered label renderer',()=>{
- for(const document of [VISUAL_EXAMPLE,VISUAL_COMPOSITION_EXAMPLE])assert.deepEqual(current(document),labels(document),'Register a new immutable renderer before changing persisted output.');
+ for(const document of [VISUAL_EXAMPLE,VISUAL_COMPOSITION_EXAMPLE])assert.deepEqual(current(document),labels3(document),'Register a new immutable renderer before changing persisted output.');
 });
 
 for(const [name,render,document] of [['original',original,VISUAL_EXAMPLE],['composition',composition,VISUAL_COMPOSITION_EXAMPLE],['geometry',geometry,VISUAL_COMPOSITION_EXAMPLE],['clamped',clamped,VISUAL_EXAMPLE]]){
@@ -28,7 +29,7 @@ for(const [name,render,document] of [['original',original,VISUAL_EXAMPLE],['comp
   const changed=await store.execute({action:'revise',conversationId:'history',artifactId:created.id,expectedRevision:1,requestId:'revise',document:{...document,summary:'A revised summary.'}});
   assert.equal(changed.revision,2);
   assert.equal((await store.read({conversationId:'history',artifactId:created.id,revision:1})).svg,historic.svg);
-  assert.equal((await store.read({conversationId:'history',artifactId:created.id})).renderer,'labels-2');
+  assert.equal((await store.read({conversationId:'history',artifactId:created.id})).renderer,'labels-3');
  });
 }
 test('unknown renderer and tampered SVG remain detectable',async t=>{
@@ -49,5 +50,13 @@ test('a tagged older renderer stays readable after the writer changes',async t=>
  assert.equal((await store.read({conversationId:'history',artifactId:created.id})).svg,old.svg);
  await store.execute({action:'revise',conversationId:'history',artifactId:created.id,expectedRevision:1,requestId:'revise',document:VISUAL_EXAMPLE});
  assert.equal((await store.read({conversationId:'history',artifactId:created.id,revision:1})).svg,old.svg);
- assert.equal((await store.read({conversationId:'history',artifactId:created.id})).renderer,'labels-2');
+ assert.equal((await store.read({conversationId:'history',artifactId:created.id})).renderer,'labels-3');
+});
+
+test('prior label-layout revisions retain their exact renderer output',async t=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'visual-prior-labels-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+ const store=new VisualArtifacts({dataDir:dir}),created=await store.execute({action:'create',conversationId:'history',requestId:'new',document:VISUAL_EXAMPLE});
+ const file=path.join(dir,'visual-artifacts','history.json'),state=JSON.parse(await readFile(file,'utf8'));
+ const previous=labels(VISUAL_EXAMPLE);Object.assign(state.artifacts[0].revisions[0],previous,{renderer:'labels-2'});await writeFile(file,JSON.stringify(state));
+ assert.equal((await store.read({conversationId:'history',artifactId:created.id})).svg,previous.svg);
 });

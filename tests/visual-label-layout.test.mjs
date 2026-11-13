@@ -53,3 +53,10 @@ test('word wrapping preserves spaces and keeps fitting words together',()=>{
  assert.equal(box.rows.map(r=>r.text).join(''),text);
  for(const word of text.split(' '))assert.ok(box.rows.some(r=>r.text.includes(word)),word);
 });
+
+test('a whitespace break rechecks the remaining long Unicode word before appending',()=>{
+ const text=' WW'+'中'.repeat(11),box=relationshipTextBox(text,184);
+ assert.equal(box.rows.map(row=>row.text).join(''),text);
+ assert.ok(box.rows.every(row=>row.width<=168));
+ assert.ok(box.width<=184);
+});

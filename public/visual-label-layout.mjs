@@ -14,7 +14,7 @@ export function relationshipTextBox(text,maxWidth){
  if(limit<14)fail('Not enough width for a relationship label.');
  for(const line of text.split('\n')){
   let parts=[],width=0;
-  for(const ch of clusters(line)){const size=advance(ch);if(parts.length&&width+size>limit){const at=parts.findLastIndex(p=>/\s/u.test(p));const count=at>=0?at+1:parts.length;const prior=parts.splice(0,count);rows.push({text:prior.join(''),width:prior.reduce((n,p)=>n+advance(p),0)});width=parts.reduce((n,p)=>n+advance(p),0);}parts.push(ch);width+=size;}
+  for(const ch of clusters(line)){const size=advance(ch);while(parts.length&&width+size>limit){const at=parts.findLastIndex(p=>/\s/u.test(p));const count=at>=0?at+1:parts.length;const prior=parts.splice(0,count);rows.push({text:prior.join(''),width:prior.reduce((n,p)=>n+advance(p),0)});width=parts.reduce((n,p)=>n+advance(p),0);}parts.push(ch);width+=size;}
   rows.push({text:parts.join(''),width});
  }
  return {rows,width:Math.max(1,...rows.map(r=>r.width))+padding*2,height:rows.length*lineHeight+padding*2};
