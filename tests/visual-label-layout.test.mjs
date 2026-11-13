@@ -33,3 +33,23 @@ test('pinned overlapping items remain unchanged and custom SVG stays opaque',()=
  const saved=structuredClone(input),r=compileVisual(input);assert.deepEqual(input,saved);assert.deepEqual(r.document.items,saved.items);assert.equal(r.document.regions[0].svg,saved.regions[0].svg);assert.match(r.svg,/>opaque original</);
  const custom={version:2,kind:'custom',title:'Custom',summary:'Original',svg:saved.regions[0].svg};assert.equal(compileVisual(custom).svg,custom.svg);
 });
+
+test('fallback legends disambiguate duplicate names and expose edge keys',()=>{
+ const doc={version:2,kind:'composed',title:'Same names',summary:'Distinct identities',width:200,height:150,items:[{id:'left',label:'Same',x:0,y:0,width:80,height:50},{id:'right',label:'Same',x:120,y:100,width:80,height:50}],links:[{from:'left',to:'right',label:'Long relationship that cannot fit inline',uncertain:true}]};
+ const r=compileVisual(doc),visible=[...r.svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map(m=>m[1]).join('');
+ assert.match(visible,/R1:/);assert.match(visible,/\[left(?:\]| @)/);assert.match(visible,/\[right(?:\]| @)/);
+});
+test('a short visible edge key is tried before an honest no-marker fallback',()=>{
+ const full={...label('Very long text '.repeat(5)),key:'R1',legend:'R1: full text',fallbackLegend:'R1: endpoints at positions; no inline marker fits'};
+ const r=layoutRelationshipLabels({width:200,height:150,labels:[full],obstacles:[{x:0,y:0,width:80,height:50},{x:0,y:100,width:80,height:50}]});
+ assert.ok(r.placements.some(p=>p.kind==='marker'&&p.rows[0].text==='R1'));
+ const blocked=layoutRelationshipLabels({width:200,height:150,labels:[full],obstacles:[{x:0,y:0,width:200,height:150}]});
+ assert.equal(blocked.placements[0].rows.map(r=>r.text).join(''),full.fallbackLegend);
+});
+
+test('word wrapping preserves spaces and keeps fitting words together',()=>{
+ const text='Small words should stay whole.';
+ const box=relationshipTextBox(text,100);
+ assert.equal(box.rows.map(r=>r.text).join(''),text);
+ for(const word of text.split(' '))assert.ok(box.rows.some(r=>r.text.includes(word)),word);
+});

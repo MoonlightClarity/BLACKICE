@@ -1,5 +1,9 @@
 // Versioned relationship label layout. Geometry is shared by placement and SVG rendering.
 // textLength + spacingAndGlyphs fixes each row's rendered advance independently of OS font fallback.
+// Tradeoff: these are controlled advances, not native-font measurements; mixed-script rows
+// may widen/narrow glyphs. Font size stays14px (no fit-to-box shrinking). Real Electron
+// containment tests and screenshot inspection complement these deterministic bounds.
+// Changes to this algorithm require a new persisted render version, never silent replay.
 const fail=message=>{throw Object.assign(Error(message),{code:'VISUAL_INVALID',status:400});};
 export const LABEL_METRICS=Object.freeze({fontSize:14,fontFamily:'sans-serif',lineHeight:24,padding:8,baseline:19});
 const marks=/\p{Mark}|[\u200d\ufe0e\ufe0f]/u;
@@ -9,9 +13,9 @@ export function relationshipTextBox(text,maxWidth){
  const {padding,lineHeight}=LABEL_METRICS,limit=maxWidth-padding*2,rows=[];
  if(limit<14)fail('Not enough width for a relationship label.');
  for(const line of text.split('\n')){
-  let row='',width=0;
-  for(const ch of clusters(line)){const size=advance(ch);if(row&&width+size>limit){rows.push({text:row,width});row='';width=0;}row+=ch;width+=size;}
-  rows.push({text:row,width});
+  let parts=[],width=0;
+  for(const ch of clusters(line)){const size=advance(ch);if(parts.length&&width+size>limit){const at=parts.findLastIndex(p=>/\s/u.test(p));const count=at>=0?at+1:parts.length;const prior=parts.splice(0,count);rows.push({text:prior.join(''),width:prior.reduce((n,p)=>n+advance(p),0)});width=parts.reduce((n,p)=>n+advance(p),0);}parts.push(ch);width+=size;}
+  rows.push({text:parts.join(''),width});
  }
  return {rows,width:Math.max(1,...rows.map(r=>r.width))+padding*2,height:rows.length*lineHeight+padding*2};
 }
@@ -25,7 +29,12 @@ export function layoutRelationshipLabels({width,height,labels,obstacles=[]}){
   const candidates=[[mx-box.width/2,my-box.height-8],[mx-box.width/2,my+8],[mx+8,my-box.height/2],[mx-box.width-8,my-box.height/2]];
   for(const dy of [-64,64,-128,128])candidates.push([mx-box.width/2,my+dy-box.height/2]);
   const chosen=candidates.map(([x,y])=>({...box,x,y})).find(b=>b.x>=8&&b.y>=8&&b.x+b.width<=width-8&&b.y+b.height<=height-8&&!occupied.some(o=>boxesOverlap(b,o)));
-  if(chosen){const p={...chosen,id:label.id,kind:'inline'};placements.push(p);occupied.push(p);}else deferred.push(label);
+  if(chosen){const p={...chosen,id:label.id,kind:'inline'};placements.push(p);occupied.push(p);}else{
+   let marker;
+   if(label.key){const small=relationshipTextBox(label.key,Math.min(256,width-16));const points=[[mx-small.width/2,my-small.height-8],[mx-small.width/2,my+8],[mx+8,my-small.height/2],[mx-small.width-8,my-small.height/2]];marker=points.map(([x,y])=>({...small,x,y})).find(b=>b.x>=8&&b.y>=8&&b.x+b.width<=width-8&&b.y+b.height<=height-8&&!occupied.some(o=>boxesOverlap(b,o)));}
+   if(marker){const p={...marker,id:label.id,kind:'marker'};placements.push(p);occupied.push(p);}
+   deferred.push({...label,legend:!marker&&label.fallbackLegend?label.fallbackLegend:label.legend});
+  }
  }
  let outputHeight=height;
  if(deferred.length){
