@@ -18,7 +18,8 @@
     "docs/MODULAR-PLANNING-ONTOLOGY.md",
     "docs/PLANNING-TRADEOFFS.md",
     "docs/README.md",
-    "docs/local-models.md"
+    "docs/local-models.md",
+    "docs/visual-reasoning.md"
   ],
   "reference": [
     "PLANNING-AWARENESS.md",

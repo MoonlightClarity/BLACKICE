@@ -1,3 +1,4 @@
+import {VisualArtifacts,visualTool,nativeVisualTools,handleVisualHttp} from './lib/visual-artifacts.mjs';
 import {handleShadowdancerContextHttp} from './lib/shadowdancer-context-http.mjs';
 import {createNativePlanningTools} from './lib/native-planning-tools.mjs';
 import {NativeTaskContextBridge,createNativeTaskContextTool} from './lib/native-task-context-bridge.mjs';
@@ -428,6 +429,8 @@ export async function createHarnessServer(options = {}) {
     onChange: () => sendEvent({ type: 'browser-credentials.updated', data: credentialPresence(), at: new Date().toISOString() }),
   }).init();
   engine.credentials = browserCredentials;
+  const visuals = new VisualArtifacts({dataDir:path.resolve(dataDir),assertConversation:id=>conversations.get(id),onChange:sendEvent,isClosing:connectorClosing});
+  engine.nativeVisualTools=nativeVisualTools(visuals,{isClosing:connectorClosing});
   const emailClient = options.emailClient || null;
   directExecution = options.directExecution || await startupPhase(diagnostics, 'direct-jobs', () => new DirectExecutionAPI({
     dataDir: path.resolve(dataDir), allowedRoot: defaultCwd, browser, patchStore: engine.filePatches, taskStore:tasks,
@@ -437,7 +440,7 @@ export async function createHarnessServer(options = {}) {
     ...(options.desktopRestart ? { desktopRestart: options.desktopRestart, restartStatus: context => options.desktopRestart.status({ ownerId: context.canRestart ? context.ownerId : undefined }) } : {}),
     // Vault health can change between startups or recover during this process.
     // Keep its tool definitions stable; every credential action checks the store.
-    additionalTools: [conversationGoalsDirectTool({ goals, isClosing: connectorClosing }), createNativeTaskContextTool({getBridge:()=>engine.nativeTaskContextBridge}), ...createDirectPlanningBrowserTools({ store: planningBrowser, getExecutionSnapshot: () => planningBrowserRuntime.status(), getCatalog: () => planningBrowserCatalog({ store: planningBrowser, conversations, runtime, runtimeSettings, runner: planningBrowserRuntime }), onChange: sendEvent }), ...createDirectPlanningExecutionTools({store:planningBrowser,runner:planningBrowserRuntime,onChange:sendEvent}), ...createDirectProviderSetupTools({ runtime, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes), isEncryptionAvailable: () => options.credentialStorage?.isEncryptionAvailable?.() === true, browserOwnerForClient: client => client.id === LOCAL_BROWSER_CLIENT.id && client.kind === LOCAL_BROWSER_CLIENT.kind ? null : connectorBrowserOwner(client.id) }), chatGPTFileImportTool({ directory: path.join(defaultCwd, 'blackice-imports') }), chatGPTStartChatTool({ engine, attachments, defaultCwd, isClosing: connectorClosing }), planningOntologyDirectTool({runtimeSettings}), ...createDirectConnectedBrowserTools({ manager: connections, connectChrome: options.connectChromeBrowser }), ...createDirectBrowserProfileTools({ profiles: browserProfiles, manager: connections, onChange: refreshBrowserProfiles }), ...(options.desktopRestart ? [desktopRestartTool({ restart: options.desktopRestart, getJob: id => directExecution.jobs.get(id) })] : []), ...(options.frontendDevtools ? [frontendDevtoolsTool({ frontend: options.frontendDevtools, artifactDirectory: path.join(dataDir, 'frontend-development') })] : []), ...createDirectBrowserCredentialTools({ vault: browserCredentials, browser, resolveBrowserConversationOwner: id => resolveBrowserConversationOwner(id, conversations), reauthorize: (client, { scopes }) => directExecution.require(client, scopes) })],
+    additionalTools: [visualTool(visuals,{isClosing:connectorClosing,authorizeWrite:client=>directExecution.require(client,['files:write'])}), conversationGoalsDirectTool({ goals, isClosing: connectorClosing }), createNativeTaskContextTool({getBridge:()=>engine.nativeTaskContextBridge}), ...createDirectPlanningBrowserTools({ store: planningBrowser, getExecutionSnapshot: () => planningBrowserRuntime.status(), getCatalog: () => planningBrowserCatalog({ store: planningBrowser, conversations, runtime, runtimeSettings, runner: planningBrowserRuntime }), onChange: sendEvent }), ...createDirectPlanningExecutionTools({store:planningBrowser,runner:planningBrowserRuntime,onChange:sendEvent}), ...createDirectProviderSetupTools({ runtime, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes), isEncryptionAvailable: () => options.credentialStorage?.isEncryptionAvailable?.() === true, browserOwnerForClient: client => client.id === LOCAL_BROWSER_CLIENT.id && client.kind === LOCAL_BROWSER_CLIENT.kind ? null : connectorBrowserOwner(client.id) }), chatGPTFileImportTool({ directory: path.join(defaultCwd, 'blackice-imports') }), chatGPTStartChatTool({ engine, attachments, defaultCwd, isClosing: connectorClosing }), planningOntologyDirectTool({runtimeSettings}), ...createDirectConnectedBrowserTools({ manager: connections, connectChrome: options.connectChromeBrowser }), ...createDirectBrowserProfileTools({ profiles: browserProfiles, manager: connections, onChange: refreshBrowserProfiles }), ...(options.desktopRestart ? [desktopRestartTool({ restart: options.desktopRestart, getJob: id => directExecution.jobs.get(id) })] : []), ...(options.frontendDevtools ? [frontendDevtoolsTool({ frontend: options.frontendDevtools, artifactDirectory: path.join(dataDir, 'frontend-development') })] : []), ...createDirectBrowserCredentialTools({ vault: browserCredentials, browser, resolveBrowserConversationOwner: id => resolveBrowserConversationOwner(id, conversations), reauthorize: (client, { scopes }) => directExecution.require(client, scopes) })],
     authorizeClient: async (client, { requiredScopes }) => {
       if (client.id === 'local-browser-tools' && client.kind === 'local-browser') return !connectorClosing() && requiredScopes.every(scope => LOCAL_BROWSER_CLIENT.scopes.includes(scope));
       if (client.id === LOCAL_FRONTEND_CLIENT.id && client.kind === LOCAL_FRONTEND_CLIENT.kind) return Boolean(options.frontendDevtools) && !connectorClosing() && requiredScopes.every(scope => LOCAL_FRONTEND_CLIENT.scopes.includes(scope));
@@ -563,6 +566,7 @@ export async function createHarnessServer(options = {}) {
         return json(res,200,conversations.search(options));
       }
       if(pathname==='/api/conversations'&&req.method==='GET')return json(res,200,{conversations:conversations.list(new URL(req.url,'http://'+host).searchParams.get('state')||'active')});
+      if(await handleVisualHttp({req,res,pathname,body,json,store:visuals,mutations:fileMutations}))return;
       if(await handleConversationGoalsHttp({req,res,pathname,goals,body,json,mutations:fileMutations}))return;
       if(await handleShadowdancerContextHttp({req,res,pathname,host,conversations,engine,body,json,fileMutations,onUpdated:sendEvent}))return;
       if (await handlePlanningDiagnosticsHttp({req,res,pathname,service:planningDiagnostics,body,json,fileMutations})) return;
@@ -1320,11 +1324,14 @@ export async function createHarnessServer(options = {}) {
       // Explicit file registration retains the static path boundary.
       files['/assets/blackice-dark-ice.png'] = 'assets/blackice-dark-ice.png';
       files['/assets/blackice-v2-mark.svg'] = 'assets/blackice-v2-mark.svg';
+      files['/visual-layout.mjs'] = 'visual-layout.mjs';
+      files['/visual-edits.mjs'] = 'visual-edits.mjs';
+      files['/visual-document.mjs'] = 'visual-document.mjs';
       files['/token-usage.mjs'] = 'token-usage.mjs';
       files['/provider-availability.mjs'] = 'provider-availability.mjs';
       const nextFiles = ['index.html','base.css','chat.css','chat-management.css','brand.css','work-visual.css','intelligence-planning.css','intelligence-map.css','controls.css','layout-fixes.css','planning-ontology.css','planning-browser.css','planning-current.css','guard.js','app.mjs',
         'core/api.mjs','core/dom.mjs','core/events.mjs','core/model-picker.mjs','core/context-controls.mjs','model-picker.css',
-        'chat/chat.mjs','chat/model.mjs','chat/render.mjs','chat/send.mjs','chat/goals.mjs','chat/planning-timeline.mjs',
+        'chat/chat.mjs','chat/visuals.mjs','chat/model.mjs','chat/render.mjs','chat/send.mjs','chat/goals.mjs','chat/planning-timeline.mjs',
         'chat/options-model.mjs','chat/ontology-preferences.mjs','chat/execution-preferences.mjs','chat/artifacts.mjs','parity.css',
         'chat/reader-model.mjs','chat/reader-worker.mjs','chat/reader-client.mjs',
         // Native hosting UI assets are registered at the public root below.

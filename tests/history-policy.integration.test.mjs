@@ -61,8 +61,9 @@ const follow = async (session, run, message, model) => {
   const result = await session.api(`/api/runs/${run.id}/continue`, { method: 'POST', body: { nodeId: 'agent', message, ...(model ? { model } : {}) } }); assert.equal(result.status, 201, result.text); return session.settled(result.data.id);
 };
 const persistentDefaults = { codexHistory: 'codex', runTimeoutMs: null, providerIdleTimeoutMs: 300000, defaultEffort: 'default', defaultServiceTier: 'default', defaultContext: { preset: 'model', windowTokens: null, autoCompact: true }, verbosity: 'balanced', subagentsEnabled: true, maxSubagents: 3, connectedGmail: false, executionGuardrails: false, planningOntology: { version: 2, modules: { inference: false, feasibility: false, decomposition: false, branching: false, replanning: false, metacognition: false, anti_overalignment: false, verification: false, subagents: true } }, hiddenModelProviders: [] };
-// These session tests exercise the full operational tool catalog, not a small-window model.
-const catalogResponse = () => new Response(JSON.stringify({data:[{id:'api-model',context_length:131072,max_output_tokens:8192}]}),{headers:{'Content-Type':'application/json'}});
+// These session tests exercise the full operational tool catalog. Leave room for
+// three turns so a growing catalog does not turn persistence checks into compaction tests.
+const catalogResponse = () => new Response(JSON.stringify({data:[{id:'api-model',context_length:262144,max_output_tokens:8192}]}),{headers:{'Content-Type':'application/json'}});
 async function recordLegacyHistory(session, id) {
   const run=session.app.engine.runs.get(id);
   // Emulate an actual saved record from before persistent history became the default.
