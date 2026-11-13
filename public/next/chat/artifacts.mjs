@@ -373,16 +373,17 @@ export function createDirectoryInspector({frame,getRunId,getConversationId=()=>n
       display(empty?'No saved context':'Context unavailable',empty?'Choose another conversation above to import a context record.':error.message);
     }}
   }
-  async function open(){
+  async function open({file,tab='overview'}={}){
     const runId=getRunId();if(!runId||destroyed)return;
     originId=runId;originScope=getConversationId()||runId;originConversationId='';catalog=[];currentId=runId;currentConversationId='';setBusy(false);drawConversations();
     if(!dialog.open)dialog.showModal();close.focus({preventScroll:true});
-    const reading=loadConversation(runId),catalogToken=++catalogGeneration;
+    const reading=loadConversation(runId,{tab}),catalogToken=++catalogGeneration;
     const catalogReading=api(requestURL('/conversations',runId)).then(value=>{
       if(destroyed||!dialog.open||originId!==runId||catalogToken!==catalogGeneration)return;
       catalog=Array.isArray(value.conversations)?value.conversations:[];originConversationId=value.currentConversationId||originConversationId;drawConversations();
     }).catch(error=>{if(!destroyed&&dialog.open&&originId===runId&&catalogToken===catalogGeneration)scopeHelp.textContent='Current conversation context is available. Conversation list could not be loaded: '+error.message;});
     await Promise.all([reading,catalogReading]);
+    if(file&&!destroyed&&dialog.open&&originId===runId&&currentId===runId&&files.some(row=>row.file===file))await readFile(file);
   }
   dialog.addEventListener('close',()=>{generation++;fileGeneration++;catalogGeneration++;});
   return {

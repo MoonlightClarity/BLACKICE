@@ -215,3 +215,49 @@ test('dispatch storage errors produce a visible blocked reason instead of an idl
   await waitFor(async()=>(await goals.get(first.id))?.status==='blocked');assert.match((await goals.get(first.id)).lastReason,/archive read failed/);
   conversations.family=original;
 });
+
+test('editing a goal during delayed automatic admission resumes the new objective in the same conversation', async t => {
+  const admission = deferred(); let backgroundCalls = 0, admissionHeld = false;
+  const {engine,goals,runtime,conversations} = await fixture(t, async(options,n) => {
+    await report(options,n === 1 ? 'progress' : 'complete'); return output(n);
+  }, {engine:{learning:{
+    cancelBackground:() => { if (++backgroundCalls === 2) { admissionHeld = true; return admission.promise; } },
+    scheduleAfterRun:async()=>{},getContext:()=>({lessons:[],skills:[],facts:[],truncated:false}),
+  }}});
+  const first = engine.startRun({workflow:graph(),input:{task:'Initial objective',goal:{objective:'Initial objective'}}});
+  let rejected;
+  try {
+    await waitFor(() => admissionHeld,'automatic admission waiting for background work');
+    rejected = [...engine.runs.values()].find(run => run.id !== first.id);
+    assert.ok(rejected); assert.equal(runtime.calls.length,1);
+    await goals.control(first.id,{action:'update',objective:'Expanded objective',requestId:'update-during-admission'});
+  } finally { admission.resolve(); }
+  await waitFor(() => engine.getRun(rejected.id).settled,'superseded admission settlement');
+  assert.equal(engine.getRun(rejected.id).errorCode,'GOAL_DISPATCH_SUPERSEDED');
+  await waitFor(async() => (await goals.get(first.id))?.status === 'completed','updated goal completion');
+  const family = await conversations.family(first.id), goal = await goals.get(first.id);
+  assert.equal(runtime.calls.length,2); assert.equal(family.runs.length,3);
+  assert.ok(family.runs.every(run => run.taskId === first.id));
+  assert.equal(family.runs.at(-1).goal.objective,'Expanded objective'); assert.equal(goal.totalTurns,2);
+});
+
+test('rejected goal waits preserve recorded progress and completion through the real engine', async t => {
+  let observed;
+  const {engine,goals,runtime} = await fixture(t, async(options,n) => {
+    await report(options,'progress');
+    const {goal} = await report(options,'complete');
+    const live = [...engine.runs.values()].at(-1);
+    const before = structuredClone({progress:live.goalProgress,completion:live.goalCompletion});
+    const invalid = await options.onToolCall({name:'relay_goal',arguments:{
+      action:'wait',goalId:goal.id,summary:'An invalid wait is not progress.',
+      evidence:'The requested wait has no valid observed retry time.',waitUntil:'not-a-date',
+    }});
+    observed = {before,after:structuredClone({progress:live.goalProgress,completion:live.goalCompletion}),accepted:invalid.success};
+    return output(n);
+  }, {goals:{continuationDelayMs:100}});
+  const first = engine.startRun({workflow:graph(),input:{task:'Finish the requested result',goal:{objective:'Finish the requested result'}}});
+  await waitFor(() => engine.getRun(first.id).settled);
+  assert.equal(observed.accepted,false); assert.deepEqual(observed.after,observed.before);
+  await waitFor(async() => (await goals.get(first.id))?.status === 'completed');
+  assert.equal(runtime.calls.length,1);
+});
