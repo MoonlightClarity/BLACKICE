@@ -47,6 +47,26 @@ test('repository revision publishes exact selected evidence without replaying wo
  assert.equal(repeated.answer,after.answer,'Repeated unchanged selection must not fabricate progress');
 });
 
+test('brief summary retains material warnings and keeps full audit separately available',async t=>{
+ const dir=await mkdtemp(path.join(os.tmpdir(),'repo-summary-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+ const finalPath=path.join(dir,'final.json'),r=Object.create(ShadowdancerDirectory.prototype);
+ Object.assign(r,{repoRoot:dir,integrations:dir,stats:{},repoOriginalFiles:new Map(),requirements:{unknownCount:3},
+ verification:{status:'failed',passed:1,failed:1,tests:2},testIntegrity:{compromised:true},
+ repositorySourceHashes:async()=>new Map([['large/source/path.mjs','new']]),summary:async()=>{},label:async()=>{}});
+ await writeFile(finalPath,JSON.stringify({integrationAuthority:'host_source_reference_index',
+ status:'incomplete_or_unverified',reportRevision:{sections:['summary'],authority:'host-facts-only'}}));
+ const out=await r.finishRun({answer:'old',finalPath});
+ assert.match(out.answer,/1 source file\(s\) changed/);
+ assert.match(out.answer,/Tests: failed/);assert.match(out.answer,/Requirements without explicit test mappings: 3/);
+ assert.match(out.answer,/pre-existing tests changed or were removed/);
+ assert.doesNotMatch(out.answer,/large\/source\/path/);
+ const saved=JSON.parse(await readFile(finalPath));
+ assert.match(saved.detailedHostReport,/large\/source\/path.mjs/);
+ assert.match(saved.detailedHostReport,/pre-existing tests changed or were removed/);
+ assert.equal(saved.status,'incomplete_or_unverified');
+ assert.equal(saved.hostEvidence.changedFiles[0],'large/source/path.mjs');
+});
+
 test('fabricated prose, hidden-grade claims, unknown IDs and evidence substitutions are rejected',()=>{
  for(const p of [
   {answer:'All tests passed',used_refs:['v']},
