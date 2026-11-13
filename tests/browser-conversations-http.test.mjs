@@ -375,3 +375,77 @@ test('cleanup bounds a continuously spawning adapter and reports remaining tabs'
   assert.equal(response.data.tabCleanup.remainingTabIds.length,2);
   assert.equal(count,8,'No infinite cleanup loop');
 });
+
+
+for(const action of ['archive','delete']) test(action+' refuses work that starts while retirement is being saved',async t=>{
+  const f=await fixture(t);await f.move('conversation','conversation-a');
+  const archive=f.app.conversations, change=archive.changeState.bind(archive), get=archive.engine.getRun.bind(archive.engine);
+  let started=false;
+  archive.changeState=(id,value)=>{started=true;return change(id,value);};
+  archive.engine.getRun=id=>id==='conversation-a'&&started?{...savedTurn(id),status:'running',settled:false}:get(id);
+  const response=await f.request('/api/conversations/conversation-a/'+action,{});
+  assert.equal(response.status,409,'retirement must not commit after work has begun');
+  assert.equal(f.driver.tabs.length,3);
+});
+
+test('restoring while retirement cleanup is queued preserves the restored conversation tabs',async t=>{
+  const f=await fixture(t);await f.move('conversation','conversation-a');
+  const original=f.browser.closeTabs.bind(f.browser);let release,entered;
+  const gate=new Promise(resolve=>{release=resolve;}),started=new Promise(resolve=>{entered=resolve;});
+  f.browser.closeTabs=async args=>{entered();await gate;return original(args);};
+  const retiring=f.request('/api/conversations/conversation-a/archive',{});
+  try{
+    await started;
+    assert.equal((await f.request('/api/conversations/conversation-a/restore',{})).status,200);
+    release();await retiring;
+    assert.ok(f.driver.tabs.some(tab=>tab.tabId==='page'),'restored work must keep its tab');
+  }finally{release();await retiring;}
+});
+
+test('partial close failure reports the failed tab and closes the other matching tab',async t=>{
+  const f=await fixture(t);await f.move('conversation','conversation-a');
+  const perform=f.driver.perform.bind(f.driver);
+  f.driver.perform=(args,context)=>args.action==='close'&&args.tabId==='page'?Promise.reject(Error('fixture close failure')):perform(args,context);
+  const result=await f.request('/api/conversations/conversation-a/delete',{});
+  assert.equal(result.status,200);assert.equal(result.data.state,'deleted');
+  assert.deepEqual(result.data.tabCleanup.closedTabIds,['popup']);
+  assert.deepEqual(result.data.tabCleanup.failedTabs.map(x=>x.tabId),['page']);
+  assert.deepEqual(result.data.tabCleanup.remainingTabIds,['page']);
+  assert.deepEqual(new Set(f.driver.tabs.map(x=>x.tabId)),new Set(['page','other']));
+});
+
+test('Trash rejects active work without closing tabs',async t=>{
+  const f=await fixture(t);await f.move('conversation','conversation-a');
+  const get=f.app.conversations.engine.getRun.bind(f.app.conversations.engine);
+  f.app.conversations.engine.getRun=id=>id==='conversation-a'?{...savedTurn(id),status:'running',settled:false}:get(id);
+  const result=await f.request('/api/conversations/conversation-a/delete',{});
+  assert.equal(result.status,409);assert.equal(f.driver.tabs.length,3);
+});
+test('retirement reserves engine admission throughout asynchronous metadata persistence',async t=>{
+  const f=await fixture(t);await f.move('conversation','conversation-a');
+  const archive=f.app.conversations,io=archive.io;let release,entered;
+  const gate=new Promise(resolve=>release=resolve),started=new Promise(resolve=>entered=resolve);
+  archive.io={...io,open:async(...args)=>{if(String(args[0]).includes('conversation-state.json.bak')){entered();await gate;}return io.open(...args);}};
+  const retiring=f.request('/api/conversations/conversation-a/archive',{});
+  try{
+    await started;
+    assert.throws(()=>archive.engine.dispatchRun(savedTurn('new-turn',{taskId:'conversation-a',parentRunId:'conversation-a'})),{code:'CONVERSATION_TRANSITION'});
+    assert.equal(archive.engine.runs.has('new-turn'),false);
+    release();assert.equal((await retiring).status,200);
+    assert.throws(()=>archive.engine.dispatchRun(savedTurn('new-turn',{taskId:'conversation-a'})),{code:'CONVERSATION_TRANSITION'});
+    await f.request('/api/conversations/conversation-a/restore',{});
+    assert.doesNotThrow(()=>archive.assertRunAdmission(savedTurn('new-turn',{taskId:'conversation-a'})));
+  }finally{release();archive.io=io;await retiring;}
+});
+test('restore during a close batch prevents further closes',async t=>{
+  const f=await fixture(t);await f.move('conversation','conversation-a');
+  const perform=f.driver.perform.bind(f.driver);let first=true;
+  f.driver.perform=async(args,context)=>{
+    const result=await perform(args,context);
+    if(args.action==='close'&&first){first=false;await f.app.conversations.setState('conversation-a','active');}
+    return result;
+  };
+  const response=await f.request('/api/conversations/conversation-a/archive',{});
+  assert.deepEqual(response.data.tabCleanup.closedTabIds,['page']);
+  assert.ok(f.driver.tabs.some(tab=>tab.tabId==='popup'));
+});

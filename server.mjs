@@ -172,6 +172,7 @@ export async function createHarnessServer(options = {}) {
   const conversations=await startupPhase(diagnostics, 'conversations', () => new ConversationArchive({dataDir,engine}).init());
   browserConversations = conversations;
   browser.setConversationArchive?.(conversations);
+  engine.conversationAdmission=run=>conversations.assertRunAdmission(run);
   engine.persistConversation = run => conversations.capture(run);
   const goals = await new ConversationGoals({ engine, conversations, autoStart: false }).init();
   // Recent-run retention must not turn a repeated send into a new task.
@@ -632,7 +633,7 @@ export async function createHarnessServer(options = {}) {
         const saved=await conversations.setState(conversationAction[1],state);
         let tabCleanup;
         if(state==='archived'||state==='deleted'){
-          try{tabCleanup=await browser.closeTabs({conversationId:saved.rootId,conversations});}
+          try{tabCleanup=await browser.closeTabs({conversationId:saved.rootId,conversations,lifecycleToken:saved.lifecycleToken});}
           catch(error){tabCleanup={closed:0,closedTabIds:[],failedTabs:[],error:error.message};}
         }
         return json(res,200,{...saved,...(tabCleanup?{tabCleanup}:{}),conversations:conversations.list(state)});
