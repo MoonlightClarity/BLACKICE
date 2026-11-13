@@ -1,38 +1,41 @@
 {
   "passed": true,
   "checks": {
+    "defaultAutonomyOff": true,
+    "explicitAutonomyOn": true,
     "sidebarPreservesGoalState": true,
     "readyIsNotRunning": true,
     "desktop": {
-      "file": "C:\\Users\\user\\Documents\\Codex\\BLACKICE-goal-mode-20261112\\verification\\goal-mode-desktop.jpg",
-      "bytes": 80166,
+      "file": "C:\\Users\\user\\Documents\\Codex\\BLACKICE-native-agent-runtime-20261113\\verification\\goal-mode-desktop.jpg",
+      "bytes": 81726,
       "size": {
         "width": 1100,
         "height": 641
       }
     },
+    "explicitAutonomyOff": true,
     "slashCommandUsesGoalEndpoint": true,
     "pauseAndResume": true,
     "sameConversationAutoFollow": true,
     "editor": {
-      "file": "C:\\Users\\user\\Documents\\Codex\\BLACKICE-goal-mode-20261112\\verification\\goal-mode-editor.jpg",
-      "bytes": 50802,
+      "file": "C:\\Users\\user\\Documents\\Codex\\BLACKICE-native-agent-runtime-20261113\\verification\\goal-mode-editor.jpg",
+      "bytes": 57070,
       "size": {
         "width": 1100,
         "height": 641
       }
     },
     "narrow": {
-      "file": "C:\\Users\\user\\Documents\\Codex\\BLACKICE-goal-mode-20261112\\verification\\goal-mode-narrow.jpg",
-      "bytes": 75570,
+      "file": "C:\\Users\\user\\Documents\\Codex\\BLACKICE-native-agent-runtime-20261113\\verification\\goal-mode-narrow.jpg",
+      "bytes": 75098,
       "size": {
         "width": 760,
         "height": 850
       }
     },
     "narrowEditor": {
-      "file": "C:\\Users\\user\\Documents\\Codex\\BLACKICE-goal-mode-20261112\\verification\\goal-mode-narrow-editor.jpg",
-      "bytes": 51907,
+      "file": "C:\\Users\\user\\Documents\\Codex\\BLACKICE-native-agent-runtime-20261113\\verification\\goal-mode-narrow-editor.jpg",
+      "bytes": 58357,
       "size": {
         "width": 760,
         "height": 850
@@ -46,7 +49,7 @@
       "route": "/api/conversations/sample-run-0/goal",
       "body": {
         "action": "pause",
-        "requestId": "goal_01db7099-c447-425c-aebf-6f51ff284c59",
+        "requestId": "goal_6028b329-1bad-4aea-8b41-2620989b9b7a",
         "expectedRevision": 1
       }
     },
@@ -57,19 +60,19 @@
         "serviceTier": "default",
         "planningMode": "ontology",
         "planningExecutionMode": "automatic",
-        "directoryMode": "on",
+        "directoryMode": "off",
         "subagentsMode": "default",
         "planningOntology": {
           "version": 2,
           "modules": {
-            "inference": true,
-            "feasibility": true,
-            "decomposition": true,
-            "branching": true,
-            "replanning": true,
-            "metacognition": true,
-            "anti_overalignment": true,
-            "verification": true,
+            "inference": false,
+            "feasibility": false,
+            "decomposition": false,
+            "branching": false,
+            "replanning": false,
+            "metacognition": false,
+            "anti_overalignment": false,
+            "verification": false,
             "subagents": true
           }
         },
@@ -79,7 +82,7 @@
           "autoCompact": true
         },
         "action": "resume",
-        "requestId": "goal_231dbcb2-9067-44b3-ae5b-67ca7b929964",
+        "requestId": "goal_50a6e861-e9d5-4c79-9790-884d6949e6ca",
         "expectedRevision": 2
       }
     }

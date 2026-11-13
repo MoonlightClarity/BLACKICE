@@ -2,6 +2,16 @@ import {stableId} from '../core/dom.mjs';
 
 const ACTIONS=new Set(['set','update','pause','resume','clear']);
 const RESUMABLE=new Set(['paused','blocked','interrupted','budget_exhausted']);
+const ACTIVE_AUTONOMY=new Set(['active','waiting']);
+
+/** The proposed objective is editable; only saved chat history, never inferred facts, supplies calibration. */
+export function autonomyCalibrationObjective({draft='',firstTask='',turns=0}={}) {
+  const task=String(firstTask||'').trim();
+  const initial=task || String(draft||'').trim();
+  if(!initial)return '';
+  const refinement=task&&Number(turns)>1?'\n\nHonor all corrections, constraints and decisions established later in this same conversation. Verify the agreed outcome before declaring completion.':'';
+  return initial.slice(0,12000-refinement.length)+refinement;
+}
 export function parseGoalCommand(value) {
   const match=String(value??'').trim().match(/^\/goal(?:\s+([\s\S]*))?$/i);
   if(!match)return null;
@@ -52,10 +62,13 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
     if(destroyed)return;
     const current=goalPresentation(goal,{running:working});
     view.goalCard.hidden=!current;
-    view.goalToggle.disabled=busy||locked||loading||readonly;
-    view.goalToggle.setAttribute('aria-pressed',String(Boolean(goal&&['active','waiting'].includes(goal.status))));
-    view.goalToggle.textContent='Goal';
-    view.goalToggle.title=readError||'Set a persistent objective and keep working in this conversation.';
+    const enabled=Boolean(goal&&ACTIVE_AUTONOMY.has(goal.status));
+    const pausePending=goal?.status==='paused'&&goal.pauseRequest&&goal.pauseRequest.settled!==true;
+    view.goalToggle.disabled=busy||locked||loading||readonly||Boolean(pausePending);
+    view.goalToggle.setAttribute('aria-checked',String(enabled));
+    view.goalToggle.dataset.state=enabled?'on':'off';
+    view.goalToggle.textContent=enabled?'Autonomy: On':'Autonomy: Off';
+    view.goalToggle.title=readError|| (pausePending?'Waiting for the current turn to stop before autonomy can resume.':enabled?'Turn autonomy off; stop automatic continuation and retain this chat and goal.':goal&&RESUMABLE.has(goal.status)?'Resume this saved autonomous goal in the same chat.':'Calibrate this conversation and turn autonomous execution on.');
     if(current){
       view.goalStatus.textContent=current.label;view.goalCard.dataset.status=current.status;
       view.goalObjective.textContent=current.objective;view.goalProgress.textContent=current.progress;
@@ -111,10 +124,12 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
   function showEditor() {
     if(destroyed||busy||locked||loading||readonly)return;
     editorOwner=owner;
-    view.goalInput.value=goal?.objective||getContext()?.draft||'';
+    const context=getContext()||{},turns=Math.max(0,Number(context.calibration?.turns)||0);
+    view.goalInput.value=goal?.objective||autonomyCalibrationObjective({draft:context.draft,firstTask:context.calibration?.firstTask,turns});
     view.goalLimit.value=goal?.maxTurns==null?'':String(goal.maxTurns);
-    view.goalTitle.textContent=goal?'Edit goal':'Goal mode';
-    view.goalSave.textContent=goal&&goal.status!=='completed'?'Save goal':'Start goal';
+    view.goalTitle.textContent=goal&&goal.status!=='completed'?'Calibrate autonomous goal':'Turn on autonomy';
+    view.goalSave.textContent=goal&&goal.status!=='completed'?'Save calibration':'Turn on autonomy';
+    if(view.goalContext){view.goalContext.hidden=owner==='new';view.goalContext.textContent=owner==='new'?'':`Using this chat’s ${turns} saved ${turns===1?'turn':'turns'} as context. Your corrections and selected settings stay with this conversation.`;}
     view.goalError.hidden=true;view.goalDialog.showModal();view.goalInput.focus({preventScroll:true});
   }
   async function command(command,{consumeDraft=true}={}) {
@@ -133,7 +148,12 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
     }
     return act(command.action,{...(command.objective!==undefined?{objective:command.objective}:{}),...(command.maxTurns!==undefined?{maxTurns:command.maxTurns}:{})});
   }
-  view.goalToggle.addEventListener('click',showEditor);
+  view.goalToggle.addEventListener('click',async()=>{
+    if(destroyed||busy||locked||loading||readonly)return;
+    if(goal&&ACTIVE_AUTONOMY.has(goal.status))await act('pause').catch(()=>{});
+    else if(goal&&RESUMABLE.has(goal.status))await act('resume').catch(()=>{});
+    else showEditor();
+  });
   view.goalEdit.addEventListener('click',showEditor);
   view.goalCancel.addEventListener('click',closeEditor);
   view.goalDialog.addEventListener('cancel',event=>{if(busy)event.preventDefault();else editorOwner=null;});

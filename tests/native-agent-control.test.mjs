@@ -72,7 +72,7 @@ test('native BLACKICE agent tool advertises shared execution controls',() => {
 
 test('internal autonomous start inherits pinned model, uses existing engine, and keeps external runs',async() => {
   const h=harness();
-  const started=await tool(h.handler,{action:'start',requestId:'mission-1',task:'Audit a workspace'});
+  const started=await tool(h.handler,{action:'start',requestId:'mission-1',task:'Audit a workspace',autonomous:true});
   assert.equal(started.accepted,true);
   assert.equal(started.completed,false);
   assert.equal(started.autonomous,true);
@@ -81,7 +81,7 @@ test('internal autonomous start inherits pinned model, uses existing engine, and
   assert.equal(h.engine.runs.get('external'),h.external);
   assert.deepEqual(h.engine.runs.get(started.run.runId).nativeController,
     {type:'native-agent',runId:'parent',nodeId:'agent',requestId:'mission-1'});
-  const again=await tool(h.handler,{action:'start',requestId:'mission-1',task:'Audit a workspace'});
+  const again=await tool(h.handler,{action:'start',requestId:'mission-1',task:'Audit a workspace',autonomous:true});
   assert.equal(again.run.runId,started.run.runId);
   assert.deepEqual(h.parent.nativeChildRunIds,[started.run.runId]);
   const mine=await tool(h.handler,{action:'list',scope:'mine'});
@@ -89,6 +89,15 @@ test('internal autonomous start inherits pinned model, uses existing engine, and
   const all=await tool(h.handler,{action:'list',scope:'all'});
   assert.equal(all.total,3);
   assert.equal(h.engine.writes,1);
+});
+
+test('a new internal agent starts in manual mode unless autonomy is explicitly enabled',async() => {
+  const h=harness();
+  const child=await tool(h.handler,{action:'start',requestId:'manual-one',task:'Discuss the next experiment'});
+  assert.equal(child.autonomous,false);
+  assert.equal(h.starts[0].input.goal,undefined);
+  assert.equal(child.accepted,true);
+  assert.equal(h.engine.runs.get('external'),h.external);
 });
 
 test('an internal agent can read, steer, and stop a concurrent external-controlled run',async() => {
