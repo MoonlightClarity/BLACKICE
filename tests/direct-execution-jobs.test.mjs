@@ -414,3 +414,25 @@ test('Windows receipt retry categories never turn a committed rename with a lost
   const duplicate = await reopened.admit(input); assert.equal(duplicate.created, false); assert.equal(duplicate.job.result.exact, 'committed receipt');
   assert.deepEqual(await readFile(reopened.file(job.id)), evidence);
 });
+
+test('startup bulk resource index preserves exact order and subsequent updates', async t => {
+  const { make } = await harness(t), first = make(), ids = [];
+  for (let index = 0; index < 24; index++) {
+    const input = { ...admission('bulk-' + index, { action: 'read', url: 'https://example.test/history' }), tool: 'blackice_browser_read' };
+    const { job } = await first.admit(input); ids.push(job.id);
+    await first.update(job.id, () => ({ status: 'succeeded', result: { success: true }, finishedAt: new Date().toISOString() }));
+  }
+  const expected = [...first.resourceIndex.entries()].map(([key, bucket]) => [key, [...bucket]]);
+  await first.close();
+  const second = make(); let deferred = 0;
+  const remember = second.remember.bind(second);
+  second.remember = (record, receiptHash, options) => { if (options?.deferResourceSort) deferred++; return remember(record, receiptHash, options); };
+  await second.init();
+  assert.equal(deferred, 24);
+  assert.deepEqual([...second.resourceIndex.entries()], expected);
+  await second.update(ids[0], () => ({ error: { code: 'TEST', message: 'historical annotation' } }));
+  assert.deepEqual([...second.resourceIndex.entries()], expected);
+  const next = await second.admit({ ...admission('bulk-new', { action: 'read', url: 'https://example.test/history' }), tool: 'blackice_browser_read' });
+  assert.equal([...second.resourceIndex.values()][0].at(-1), next.job.id);
+  assert.equal((await second.counts()).total, 25);
+});
