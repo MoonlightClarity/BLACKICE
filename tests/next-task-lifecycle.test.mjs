@@ -187,6 +187,14 @@ test('project plans have genuine Archive and Restore with organization revision 
   assert.deepEqual(f.calls.filter(call=>call.path==='/api/planning/organization').map(call=>call.payload.expectedRevision),[0,1]);
 });
 
+test('archiving retains the saved change while surfacing an incomplete browser-tab close',async()=>{
+  const result=await changeTaskState(async()=>({tabCleanup:{closed:0,failedTabs:[{tabId:'page',message:'Could not close'}],remainingTabIds:['page']}}),[task('a')],'archive');
+  assert.deepEqual(result.succeeded,['a']);
+  assert.deepEqual(result.failed,[]);
+  assert.equal(result.warnings.length,1);
+  assert.match(result.warnings[0].error,/browser tabs could not be closed/i);
+});
+
 test('unsupported lifecycle actions fail before dispatch',async()=>{
   let writes=0;await assert.rejects(changeTaskState(async()=>{writes++;},[task('a')],'purge'),/supported task action/);assert.equal(writes,0);
 });

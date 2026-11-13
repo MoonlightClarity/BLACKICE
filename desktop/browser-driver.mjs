@@ -827,11 +827,11 @@ export class ElectronBrowserDriver extends EventEmitter {
         retained.push({ tabId: tab.id, reason: 'This task may be continued; preserve its live page state and ownership.' }); continue;
       }
       if (status === 'completed') {
-        const reason = tab.userPinned || tab.humanCreated ? 'The person interacted with this page; keep it open until they close it.'
-          : tab.pendingInteraction || tab.suspendedWork.size ? 'A website interaction still requires inspection.'
-          : this.downloads.some(item => item.tabId === tab.id && item.status === 'downloading') ? 'A download is still running.' : null;
-        if (reason) { retained.push({ tabId: tab.id, reason }); continue; }
-        folders.add(tab.folderId); this.closeTab(tab); closed.push(tab.id);
+        // The conversation, not an individual worker run, owns its browser pages.
+        // Preserve them for review and continuation until the person archives,
+        // trashes, or explicitly closes tabs in the browser workspace.
+        retained.push({ tabId: tab.id, reason: 'The conversation is still available; tabs close when it is archived, moved to Trash, or explicitly closed.' });
+        continue;
       } else if (status === 'failed' || status === 'cancelled' || status === 'awaiting-user') {
         // A failed worker cannot transfer its own tab. Release the exact saved
         // page to the person for a future explicit take_ownership. Never replay

@@ -1723,17 +1723,18 @@ test('navigation while a local preview is captured retires the image before enco
   assert.equal(encodings, 0);
 });
 
-test('completed owner cleanup closes live and suspended task tabs, removes empty folders and is idempotent', async t => {
+test('completed owner cleanup retains conversation tabs for later Archive or Trash', async t => {
   const { driver, directory } = await fixture(t), owner = taskOwner('completed-cleanup');
   const first = await driver.perform({ action: 'open', url: 'https://done.example/' }, { owner });
   const child = await driver.perform({ action: 'open', url: 'https://done.example/child', parentTabId: first.tabId }, { owner });
   const folderId = driver.tabs.get(first.tabId).folderId;
   await driver.releaseOwner(owner);
   const result = await driver.releaseOwner(owner, { status: 'completed' });
-  assert.deepEqual(result.closed, [first.tabId, child.tabId]); assert.equal(driver.tabs.size, 0); assert.equal(driver.folders.has(folderId), false);
+  assert.deepEqual(result.closed, []); assert.deepEqual(result.retained.map(item => item.tabId), [first.tabId, child.tabId]);
+  assert.equal(driver.tabs.size, 2); assert.ok(driver.folders.has(folderId));
   assert.deepEqual((await driver.releaseOwner(owner, { status: 'completed' })).closed, []);
   const saved = JSON.parse(await readFile(path.join(directory, 'browser-tabs.json'), 'utf8'));
-  assert.equal(saved.tabs.length, 0); assert.ok(!saved.folders.some(f => f.id === folderId));
+  assert.equal(saved.tabs.length, 2); assert.ok(saved.folders.some(f => f.id === folderId));
 });
 test('completion retains personal, other worker/run, human-used, chat, pending and downloading tabs', async t => {
   const { driver } = await fixture(t, { limits: { maxLiveTabs: 20, maxTaskTabs: 20 } }), owner = taskOwner('safe-cleanup');
@@ -1744,8 +1745,8 @@ test('completion retains personal, other worker/run, human-used, chat, pending a
   driver.tabs.get(pinned).userPinned = true; driver.tabs.get(pending).pendingInteraction = { kind: 'http_auth', status: 'pending' };
   driver.tabs.get(chat).purpose = 'chat-mode'; driver.downloads.push({ tabId: download, status: 'downloading' });
   const folder = driver.tabs.get(done).folderId, result = await driver.releaseOwner(owner, { status: 'completed' });
-  assert.deepEqual(result.closed, [done]); assert.equal(result.retained.length, 3); assert.ok(driver.folders.has(folder));
-  for (const id of [pinned, pending, download, chat, sibling, newer, human.id]) assert.ok(driver.tabs.has(id), id);
+  assert.deepEqual(result.closed, []); assert.equal(result.retained.length, 4); assert.ok(driver.folders.has(folder));
+  for (const id of [done, pinned, pending, download, chat, sibling, newer, human.id]) assert.ok(driver.tabs.has(id), id);
   driver.tabs.get(pending).pendingInteraction = null; driver.downloads[0].status = 'completed';
 });
 test('failed and interrupted cleanup suspends instead of deleting resumable tabs', async t => {
@@ -1820,7 +1821,7 @@ test('explicit ownership changes guard identities, preserve unrelated tabs and f
   await browser.perform({ ...args(), action: 'transfer_ownership', destination: 'task', destinationTabId: target.id, destinationOwnerKey: JSON.stringify([foreign.taskId,foreign.nodeId,foreign.runId]) }, { owner });
   assert.deepEqual(human.owner, foreign);
   await driver.releaseOwner(owner, { status: 'completed' }); assert.ok(driver.tabs.has(human.id));
-  await driver.releaseOwner(foreign, { status: 'completed' }); assert.equal(driver.tabs.has(human.id), false); assert.ok(driver.tabs.has(unrelated.id));
+  await driver.releaseOwner(foreign, { status: 'completed' }); assert.ok(driver.tabs.has(human.id)); assert.ok(driver.tabs.has(unrelated.id));
   const saved = JSON.parse(await readFile(path.join(directory, 'browser-tabs.json'), 'utf8'));
   assert.ok(saved.tabs.some(x => x.tabId === unrelated.id));
 });
@@ -1851,7 +1852,7 @@ test('completed agent with unresolved CAPTCHA hands back the same live page inst
   const next = driver.newTab('https://example.org/completed', { owner });
   await next.loading;
   const cleaned = await driver.releaseOwner(owner, { status: 'completed' });
-  assert.ok(cleaned.closed.includes(next.id), 'unrelated completed work still follows normal tab cleanup');
+  assert.ok(cleaned.retained.some(item => item.tabId === next.id), 'completed work stays available until the conversation is retired');
   assert.ok(driver.tabs.has(tab.id), 'the unresolved human-owned challenge is not removed by later cleanup');
 });
 
@@ -1908,7 +1909,8 @@ test('continuation retention preserves explicit human handback and default termi
   }
   const owner = { taskId: 'completed-cleanup', nodeId: 'agent', runId: 'run' };
   const tab = driver.newTab('https://example.test/completed', { owner }); await tab.loading;
-  assert.deepEqual((await driver.releaseOwner(owner, { status: 'completed', retainForContinuation: true })).closed, [tab.id]);
+  assert.deepEqual((await driver.releaseOwner(owner, { status: 'completed', retainForContinuation: true })).closed, []);
+  assert.ok(driver.tabs.has(tab.id));
 });
 
 
@@ -1937,7 +1939,8 @@ for (const status of ['failed', 'cancelled']) test('startup recovery keeps ' + s
     assert.equal(restored.tabs.size, 1, 'Continue reuses the original page identity');
     assert.deepEqual(tab.owner, continued);
     assert.deepEqual((await restored.releaseOwner(owner, { status: 'completed' })).closed, [], 'old cleanup cannot remove the new lease');
-    assert.deepEqual((await restored.releaseOwner(continued, { status: 'completed' })).closed, [tab.id]);
+    assert.deepEqual((await restored.releaseOwner(continued, { status: 'completed' })).closed, []);
+    assert.ok(restored.tabs.has(tab.id));
   } finally { await restored.close(); }
 });
 

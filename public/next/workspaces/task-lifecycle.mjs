@@ -11,18 +11,20 @@ export const taskActionLabel = action => ({archive:'Archive',restore:'Restore',d
  */
 export async function changeTaskState(api, items, action) {
   if (!['archive','restore','delete'].includes(action)) throw Error('Choose a supported task action.');
-  const succeeded=[],failed=[];
+  const succeeded=[],failed=[],warnings=[];
   for (const item of items) {
     const id=taskId(item);
     if (!id || !taskActions(item.state || item.bucket || 'active').includes(action)) {
       failed.push({id,error:'This task is no longer in the selected view.'});continue;
     }
     try {
-      await api('/api/conversations/'+encodeURIComponent(id)+'/'+action,'POST',{});
+      const updated=await api('/api/conversations/'+encodeURIComponent(id)+'/'+action,'POST',{});
+      if(updated?.tabCleanup?.error||updated?.tabCleanup?.failedTabs?.length||updated?.tabCleanup?.remainingTabIds?.length)
+        warnings.push({id,error:'Some associated browser tabs could not be closed.'});
       succeeded.push(id);
     } catch(error) { failed.push({id,error:error.message || 'The task could not be updated.'}); }
   }
-  return {succeeded,failed};
+  return {succeeded,failed,warnings};
 }
 
 /** A bounded metadata catalog shared by Tasks and Activity. No full run reads. */
@@ -111,7 +113,7 @@ export function createTaskHistory({mount,api,events,notify=()=>{},onNavigate,pre
     try {
       const result=await changeTaskState(api,chosen,action);
       for(const id of result.succeeded)selected.delete(id);
-      error=result.failed.length?result.succeeded.length+' updated; '+result.failed.length+' could not be updated. '+result.failed.map(row=>row.error).join(' '):'';
+      error=(result.failed.length?result.succeeded.length+' updated; '+result.failed.length+' could not be updated. '+result.failed.map(row=>row.error).join(' '):'')+(result.warnings.length?' '+result.warnings.map(row=>row.error).join(' '):'');
       if(error)notify(error,true);else notify(result.succeeded.length+' task'+(result.succeeded.length===1?'':'s')+' '+({archive:'archived',delete:'moved to Trash',restore:'restored'})[action]+'.');
       if(active)await load();
     } finally {writing=false;if(active)paint();}
