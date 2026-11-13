@@ -1,6 +1,6 @@
 # BLACKICE documentation
 
-> **Status: Current source index.** This index is checked against the repository's main-branch package version, **2.39.84**. It describes source documentation, **not proof that a particular installer was published or installed**. Check the [release downloads](https://github.com/MoonlightClarity/BLACKICE/releases) and your installed application's version before assuming a feature is available. The [2.39.84 source release notes](../RELEASE-NOTES-2.39.84.md) and [release-note index](../RELEASE-NOTES.md) describe version-specific changes and verification limits.
+> **Status: Current source index.** This index is checked against the repository's main-branch package version, **2.39.85**. It describes source documentation, **not proof that a particular installer was published or installed**. Check the [release downloads](https://github.com/MoonlightClarity/BLACKICE/releases) and your installed application's version before assuming a feature is available. The [2.39.85 source release notes](../RELEASE-NOTES-2.39.85.md) and [release-note index](../RELEASE-NOTES.md) describe version-specific changes and verification limits.
 
 Start with the [project README](../README.md). A named document's date, original deployment note, test result, or branch name does not override this index or the code in the version you actually run.
 
