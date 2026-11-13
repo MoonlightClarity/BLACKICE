@@ -522,7 +522,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       else saveDraft();
       state.attachmentIds.set(root(),[]);persistAttachments();attachmentsUI.reset({cancelPending:false});
       if(result.mode==='direction') {
-        hint(result.receipt.delivery==='queued'?'Direction queued.':'Direction delivered.');
+        hint(result.receipt.delivery==='rejected'?'Direction saved; live delivery was rejected.':result.receipt.delivery==='uncertain'?'Direction saved; live delivery is uncertain.':(result.receipt.queued===true||result.receipt.delivery==='queued')?'Direction queued.':'Direction delivered.');
       } else if(result.run?.id) {
         modelSelections.consume(submittedModel);
         const run=result.run;

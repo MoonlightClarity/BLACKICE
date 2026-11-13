@@ -441,7 +441,7 @@
     if(event.type!=='agent.event')return null;
     if(d.type==='delta'||d.type==='message'){row.text=plainText(d.type==='delta'?d.delta:d.text);if(!row.text)return null;row.title=d.phase==='final_answer'?'Agent result':'Agent response';row.kind='response';row.itemId=d.itemId;row.append=d.type==='delta';return row;}
     if(d.type==='thread'){row.title='Connected to Codex';row.text=plainText(d.model);return row;}
-    if(d.type==='steer'){row.title=d.accepted===false?'Direction was not accepted':'Direction delivered';row.text=plainText(d.text||d.message);row.kind=d.accepted===false?'error':'direction';return row;}
+    if(d.type==='steer'){row.title=d.accepted===false?'Direction was not accepted':d.queued===true||d.delivery==='queued'?'Direction queued':d.delivery==='rejected'?'Direction delivery rejected':d.delivery==='uncertain'?'Direction delivery uncertain':'Direction delivered';row.text=plainText(d.text||d.message);row.kind=d.accepted===false?'error':'direction';return row;}
     if(d.type==='subagent'){
       if(!['running','completed','failed','cancelled','not-started'].includes(d.status))return null;
       row.title=({running:'Subagent started',completed:'Subagent completed',failed:'Subagent failed',cancelled:'Subagent stopped','not-started':'Subagent not started'})[d.status];
@@ -529,7 +529,7 @@
     const draftKey=`${run.id}:${nodeId}:${mode}`;state.continuing=true;state.continuationError='';state.continuationDrafts[draftKey]=message;const controls=$$('textarea,select,button',form);controls.forEach(el=>el.disabled=true);const button=$('button[type="submit"]',form);if(button)button.textContent='Sending…';
     try{
       const data=await api(`/api/runs/${encodeURIComponent(run.id)}/${live?'steer':'continue'}`,'POST',{nodeId,message});
-      if(live){if(data.accepted!==true)throw new Error('The agent did not accept this direction.');delete state.continuationDrafts[draftKey];closeModal();toast('Direction delivered. Your agent is continuing its work.');}
+      if(live){if(data.accepted!==true)throw new Error('The agent did not accept this direction.');delete state.continuationDrafts[draftKey];closeModal();toast(data.delivery==='rejected'?'Direction saved; live delivery was rejected.':data.delivery==='uncertain'?'Direction saved; live delivery is uncertain.':data.queued===true||data.delivery==='queued'?'Direction queued.':'Direction delivered. Your agent is continuing its work.');}
       else{state.currentRun=data.run||data;delete state.continuationDrafts[draftKey];state.continueNodeId=nodeId;state.selected=nodeId;state.selectedEdge=null;state.traceFilter=null;state.executionTab='trace';state.panelCollapsed=false;renderAll();refreshRuns();toast('Follow-up started in the same agent conversation.');}
     }catch(error){state.continuationError=error.message;if(live&&form.isConnected){let errorNode=$('.conversation-error',form);if(!errorNode){errorNode=document.createElement('p');errorNode.className='conversation-error error-text';errorNode.setAttribute('role','alert');form.append(errorNode);}errorNode.textContent=error.message;}toast(error.message,true);}
     finally{state.continuing=false;controls.forEach(el=>el.disabled=false);if(button?.isConnected)button.innerHTML=`${icon('up',14)}${live?'Send direction':'Continue agent'}`;renderExecution();}

@@ -267,7 +267,7 @@ function chatDOM(t){
   return dom;
 }
 
-async function chatFixture(t,{compress,continueResponse,cancel,attachments=[]}={}){
+async function chatFixture(t,{compress,continueResponse,cancel,steerResponse,attachments=[]}={}){
   const dom=chatDOM(t),status=info(),families=new Map(['a','b'].map(id=>[id,{rootId:id,state:'active',runs:[saved(id,id==='a'?{preset:'extended',autoCompact:true}:{preset:'custom',windowTokens:96000,autoCompact:false})]}])),calls=[],listeners=new Set(),storage=new Map();
   if(attachments.length)storage.set('blackice.next.attachments',JSON.stringify({a:attachments}));
   const oldWorker=globalThis.Worker,oldStorage=globalThis.localStorage;
@@ -284,7 +284,7 @@ async function chatFixture(t,{compress,continueResponse,cancel,attachments=[]}={
     if(route.endsWith('/retry'))return families.get('b').runs[0];
     if(route.endsWith('/cancel')&&cancel)return cancel(route,body);
     if(route.endsWith('/continue')&&continueResponse)return continueResponse({route,body,families});
-    if(route.endsWith('/steer'))return{accepted:true,delivery:'delivered'};
+    if(route.endsWith('/steer'))return steerResponse||{accepted:true,delivery:'delivered'};
     throw Error('Unexpected fixture request '+route);
   };
   const workspace=createChatWorkspace({mount:dom.mount,api,events:{subscribe:listener=>{listeners.add(listener);return()=>listeners.delete(listener);}},getStatus:()=>status});
@@ -414,4 +414,10 @@ test('Chat Retry restores the selected failed response budget with automatic com
   await retry.dispatch('click');await until(()=>f.calls.some(call=>call.route.endsWith('/retry')));
   assert.deepEqual(f.calls.find(call=>call.route.endsWith('/retry')).body,{context:{preset:'custom',windowTokens:96000,autoCompact:true}});
   assert.deepEqual(run,before);
+});
+for(const [steerResponse,message] of [[{accepted:true,queued:true,phase:'main-opening'},'Direction queued.'],[{accepted:true,delivery:'uncertain'},'Direction saved; live delivery is uncertain.']])
+test('Chat shows actual live steer receipt '+message,async t=>{
+ const f=await chatFixture(t,{steerResponse}),active=f.families.get('a').runs[0];active.status='running';active.settled=false;Object.assign(active.nodes.agent,{status:'running',turnId:'turn-a'});
+ await f.open('a');await f.input('#next-chat-input','Preserve work');await f.$('#next-chat-form').dispatch('submit');
+ await until(()=>f.$('#next-chat-hint').textContent===message);
 });

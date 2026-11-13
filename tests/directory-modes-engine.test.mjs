@@ -305,3 +305,30 @@ test('Directory authority cannot follow a foreign-family parent or accept a deta
  assert.throws(()=>directoryUserHistoryFor(current,[foreign]),{code:'DIRECTORY_HISTORY_UNAVAILABLE'});
  assert.throws(()=>directoryUserHistoryFor({...current,parentRunId:undefined},[]),{code:'DIRECTORY_HISTORY_UNAVAILABLE'});
 });
+
+test('live Directory direction reaches current child without assigning parent resume IDs',async t=>{
+ const f=await fixture(t),{runtime,engine}=f;let started,release;
+ const begin=new Promise(r=>started=r),gate=new Promise(r=>release=r),deliveries=[];
+ const originalRuntime=runtime.runAgent.bind(runtime);
+ runtime.runAgent=async options=>{
+  const phase=phaseOf(options);
+  if(phase?.label==='work'){
+   options.onEvent?.({type:'thread',threadId:'active-directory-work',turnId:'active-turn'});
+   started();await gate;
+  }
+  return originalRuntime(options);
+ };
+ runtime.steerAgent=async(thread,text)=>{deliveries.push({thread,text});return{accepted:true,threadId:thread,turnId:'active-turn'};};
+ const run=engine.startRun({workflow:graph(),input:{task:'Read synthetic evidence.',directoryMode:'on'}});
+ await begin;
+ try{
+  const result=await engine.steerRun(run.id,{nodeId:'agent',message:'Preserve all work and stop adding tasks.'});
+  assert.equal(result.delivery,'delivered');assert.equal(result.queued,false);
+  assert.deepEqual(deliveries,[{thread:'active-directory-work',text:'Preserve all work and stop adding tasks.'}]);
+  assert.equal(engine.getRun(run.id).nodes.agent.threadId,undefined);
+ }finally{release();}
+ const final=await settle(engine,run);
+ assert.equal(final.nodes.agent.threadId,undefined);
+ assert.equal(final.nodes.agent.pendingDirections[0].delivery.status,'delivered');
+ assert.equal(engine.directoryDirections.size,0);
+});
