@@ -332,3 +332,33 @@ test('live Directory direction reaches current child without assigning parent re
  assert.equal(final.nodes.agent.pendingDirections[0].delivery.status,'delivered');
  assert.equal(engine.directoryDirections.size,0);
 });
+
+test('goal Pause reaches active Directory child and retains uncertain evidence',async t=>{
+ const f=await fixture(t);
+ const {ConversationArchive}=await import('../lib/conversations.mjs');
+ const {ConversationGoals}=await import('../lib/conversation-goals.mjs');
+ const conversations=await new ConversationArchive({engine:f.engine,dataDir:f.dataDir}).init();
+ const goals=await new ConversationGoals({engine:f.engine,conversations,continuationDelayMs:10}).init();
+
+ let active=false,aborted=false;
+ const evidence=path.join(f.cwd,'uncertain-receipt.json');
+ await writeFile(evidence,JSON.stringify({effect:'uncertain',retry:false}));
+ f.runtime.inspect=async(options,phase)=>{
+  if(phase?.label!=='work')return;
+  active=true;await new Promise(resolve=>options.signal.addEventListener('abort',()=>{aborted=true;resolve();},{once:true}));
+  options.signal.throwIfAborted();
+ };
+ const run=f.engine.startRun({workflow:graph(),input:{task:'Preserve pending effects.',directoryMode:'on',goal:{objective:'Preserve pending effects.'}}});
+ for(let n=0;n<300&&!active;n++)await new Promise(r=>setTimeout(r,5));
+ assert.equal(active,true);
+ const calls=f.runtime.calls.length;
+ const result=await goals.control(run.id,{action:'pause',pauseRunId:run.id,requestId:'directory-pause'});
+ await f.engine.executions.get(run.id);
+ assert.equal(aborted,true);assert.equal(f.engine.getRun(run.id).settled,true);
+ assert.equal(f.engine.getRun(run.id).status,'cancelled');assert.equal(f.runtime.calls.length,calls);
+ assert.deepEqual(JSON.parse(await readFile(evidence,'utf8')),{effect:'uncertain',retry:false});
+ assert.equal((await goals.get(run.id)).status,'paused');
+ const again=await goals.control(run.id,{action:'pause',pauseRunId:run.id,requestId:'directory-pause'});
+ assert.equal(again.replayed,true);assert.equal(f.runtime.calls.length,calls);
+ assert.equal(result.goal.completionEvidence,null); await goals.close();await conversations.close();
+});

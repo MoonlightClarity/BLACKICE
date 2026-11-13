@@ -20,13 +20,13 @@ export function parseGoalCommand(value) {
 export function goalPresentation(goal,{running=false}={}) {
   if(!goal)return null;
   const status=String(goal.status||'active'),working=typeof goal.running==='boolean'?goal.running:running;
-  const labels={active:working?'Running':'Ready to continue',paused:working?'Pausing after this turn':'Paused',
+  const labels={active:working?'Running':'Ready to continue',paused:goal.pauseRequest?.status==='unverified'?'Pause needs verification':goal.pauseRequest?.status==='pausing'?'Pausing current execution':working?'Pausing after this turn':'Paused',
     completed:'Completed',waiting:'Waiting',blocked:'Needs attention',interrupted:'Interrupted',budget_exhausted:'Turn limit reached'};
   const turns=Number.isFinite(Number(goal.turns))?Math.max(0,Number(goal.turns)):0;
   const limit=goal.maxTurns==null?null:Number(goal.maxTurns);
   return {status,label:labels[status]||status,objective:String(goal.objective||''),
     progress:turns+' '+(turns===1?'turn':'turns')+(limit>0?' / '+limit:' · No turn limit'),
-    reason:String(goal.lastReason||''),canPause:['active','waiting'].includes(status),canResume:RESUMABLE.has(status),working};
+    reason:String(goal.lastReason||''),canPause:['active','waiting'].includes(status)||(working&&!goal.pauseRequest),canResume:RESUMABLE.has(status)&&!working&&(!goal.pauseRequest||goal.pauseRequest.settled===true),working};
 }
 export async function updateConversationGoal({api,conversationId,goal,action,objective,maxTurns,executionOptions={}}) {
   if(!conversationId||conversationId==='new')throw Error('Start a conversation before changing its saved goal.');
@@ -35,6 +35,7 @@ export async function updateConversationGoal({api,conversationId,goal,action,obj
   if(maxTurns!==undefined&&maxTurns!==null&&(!Number.isInteger(maxTurns)||maxTurns<1))throw Error('Use a positive whole number for the turn limit, or leave it empty.');
   return api('/api/conversations/'+encodeURIComponent(conversationId)+'/goal','POST',{
     ...(['set','resume'].includes(action)?executionOptions:{}),action,requestId:stableId('goal'),
+    ...(action==='pause'&&goal?.running&&goal?.currentRunId?{pauseRunId:goal.currentRunId}:{}),
     ...(Number.isInteger(goal?.revision)?{expectedRevision:goal.revision}:{}),
     ...(objective!==undefined?{objective:String(objective).trim()}:{}),...(maxTurns!==undefined?{maxTurns}:{})
   });

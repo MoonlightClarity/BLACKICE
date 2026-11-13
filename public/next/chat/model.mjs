@@ -194,6 +194,7 @@ export function projectConversationGoal(goal) {
   if(!goal||typeof goal!=='object'||!['active','waiting','paused','completed','blocked','interrupted','budget_exhausted'].includes(goal.status))return null;
   return {id:String(goal.id||'').slice(0,160),revision:Number.isSafeInteger(goal.revision)?goal.revision:0,status:goal.status,
     ...(typeof goal.running==='boolean'?{running:goal.running}:{}),
+    ...(goal.pauseRequest?{pauseRequest:{status:['paused','unverified'].includes(goal.pauseRequest.status)?goal.pauseRequest.status:'pausing',settled:goal.pauseRequest.settled===true}}:{}),
     ...(typeof goal.runStatus==='string'?{runStatus:goal.runStatus.slice(0,40)}:{}),
     turns:Number.isSafeInteger(goal.turns)?goal.turns:0,maxTurns:Number.isSafeInteger(goal.maxTurns)?goal.maxTurns:null,
     currentRunId:typeof goal.currentRunId==='string'?goal.currentRunId.slice(0,160):null};
@@ -201,6 +202,8 @@ export function projectConversationGoal(goal) {
 export function conversationGoalStatus(goal,run) {
   const value=projectConversationGoal(goal);if(!value)return null;
   const working=typeof value.running==='boolean'?value.running:run?.status==='running'&&run?.settled!==true;
+  if(value.pauseRequest?.status==='unverified')return 'Pause needs verification';
+  if(value.pauseRequest?.status==='pausing')return 'Pausing';
   if(working)return 'Running';
   if(value.status==='active'){
     const phase=value.runStatus||run?.status;

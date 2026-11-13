@@ -68,12 +68,12 @@ test('ordinary final text cannot complete the goal and three empty turns are vis
   const goal = await goals.get(run.id); assert.equal(runtime.calls.length,3); assert.equal(goal.completionEvidence,null); assert.match(goal.lastReason,/no tool work or recorded progress/);
 });
 
-test('pause keeps an in-flight turn and prevents automatic continuation', async t => {
+test('explicit pause_after_turn keeps an in-flight turn and prevents automatic continuation', async t => {
   const release = deferred();
   const {engine,goals,runtime} = await fixture(t, async (options,n) => { await report(options,'progress'); await release.promise; return output(n); });
   const run = engine.startRun({workflow:graph(),input:{task:'Do work',goal:{objective:'Do work'}}});
   await waitFor(() => runtime.calls.length === 1);
-  const paused = await goals.control(run.id,{action:'pause',requestId:'pause-once'}); assert.equal(paused.goal.status,'paused'); assert.equal(paused.goal.running,true);
+  const paused = await goals.control(run.id,{action:'pause_after_turn',requestId:'pause-once'}); assert.equal(paused.goal.status,'paused'); assert.equal(paused.goal.running,true);
   release.resolve(); await waitFor(() => engine.getRun(run.id).settled); await new Promise(done => setTimeout(done,60));
   assert.equal(runtime.calls.length,1); assert.equal((await goals.get(run.id)).status,'paused');
 });
@@ -260,4 +260,89 @@ test('rejected goal waits preserve recorded progress and completion through the 
   assert.equal(observed.accepted,false); assert.deepEqual(observed.after,observed.before);
   await waitFor(async() => (await goals.get(first.id))?.status === 'completed');
   assert.equal(runtime.calls.length,1);
+});
+
+test('pause aborts current provider and waits for dispatch settlement without replay', async t => {
+ const accepted=deferred(), finish=deferred();let aborted=false;
+ const {engine,goals,runtime}=await fixture(t, async options=>{
+   options.signal.addEventListener('abort',()=>{aborted=true;accepted.resolve();},{once:true});
+   await finish.promise; options.signal.throwIfAborted(); return output(1);
+ });
+ const run=engine.startRun({workflow:graph(),input:{task:'Preserve external receipt',goal:{objective:'Preserve external receipt'}}});
+ await waitFor(()=>runtime.calls.length===1);
+ const before=await goals.get(run.id);
+ const body={action:'pause',pauseRunId:run.id,expectedRevision:before.revision,requestId:'active-pause'};
+ const result=await goals.control(run.id,body);
+ await accepted.promise;
+ assert.equal(aborted,true);assert.equal(result.goal.status,'paused');assert.equal(result.goal.pauseRequest.status,'pausing');
+ assert.equal(engine.getRun(run.id).settled,false);
+ const secondPause=await goals.control(run.id,{action:'pause',requestId:'another-pause'});
+ assert.equal(secondPause.goal.pauseRequest.runId,run.id);assert.equal(secondPause.goal.pauseRequest.status,'pausing');
+ const afterTurn=await goals.control(run.id,{action:'pause_after_turn',requestId:'after-pending'});
+ assert.equal(afterTurn.goal.pauseRequest.status,'pausing');
+ await assert.rejects(goals.control(run.id,{action:'resume'}),{code:'GOAL_PAUSE_PENDING'});
+ const replay=await goals.control(run.id,body);assert.equal(replay.replayed,true);assert.equal(runtime.calls.length,1);
+ finish.resolve(); await waitFor(()=>engine.getRun(run.id).settled);
+ await waitFor(()=>goals.raw(run.id).pauseRequest?.settled);
+ assert.equal((await goals.get(run.id)).pauseRequest.status,'paused');
+ assert.equal((await goals.get(run.id)).completionEvidence,null);
+ await new Promise(r=>setTimeout(r,40));assert.equal(runtime.calls.length,1);
+ engine.runs.delete(run.id); assert.equal(goals.view(run.id).pauseRequest.status,'paused');
+});
+test('stale exact pause target rejects without cancelling active work', async t=>{
+ const release=deferred();
+ const {engine,goals,runtime}=await fixture(t,async()=>{await release.promise;return output(1)});
+ const run=engine.startRun({workflow:graph(),input:{task:'Keep work',goal:{objective:'Keep work'}}});
+ await waitFor(()=>runtime.calls.length===1);
+ await assert.rejects(goals.control(run.id,{action:'pause',pauseRunId:'old-run'}),{code:'GOAL_PAUSE_TARGET'});
+ assert.equal(engine.getRun(run.id).status,'running');
+ await goals.control(run.id,{action:'pause_after_turn'});release.resolve();
+});
+
+test('pause replay after explicit Resume cannot interrupt the new turn',async t=>{
+ const ready=deferred();let second;
+ const {engine,goals,runtime}=await fixture(t,async(options,n)=>{
+  if(n===2){second=options;ready.resolve();}
+  await new Promise(resolve=>options.signal.addEventListener('abort',resolve,{once:true}));
+  options.signal.throwIfAborted();
+ });
+ const run=engine.startRun({workflow:graph(),input:{task:'Preserve work',goal:{objective:'Preserve work'}}});
+ await waitFor(()=>runtime.calls.length===1);
+ const body={action:'pause',requestId:'old-pause',pauseRunId:run.id};
+ await goals.control(run.id,body);await waitFor(()=>engine.getRun(run.id).settled);
+ await waitFor(()=>goals.raw(run.id).pauseRequest?.settled);
+ const resumed=await goals.control(run.id,{action:'resume',requestId:'explicit-resume'});await ready.promise;
+ assert.notEqual(resumed.run.id,run.id);
+ assert.match(second.prompt,/uncertain operation|uncertain effects/);
+ const replay=await goals.control(run.id,body);assert.equal(replay.replayed,true);
+ assert.equal(second.signal.aborted,false);assert.equal(runtime.calls.length,2);
+ await goals.control(run.id,{action:'pause',pauseRunId:resumed.run.id});
+});
+test('pause persistence failure never interrupts execution',async t=>{
+ const release=deferred();
+ const {engine,goals,runtime,conversations}=await fixture(t,async()=>{await release.promise;return output(1)});
+ const run=engine.startRun({workflow:graph(),input:{task:'Preserve work',goal:{objective:'Preserve work'}}});
+ await waitFor(()=>runtime.calls.length===1);
+ const save=conversations.changeState.bind(conversations);
+ conversations.changeState=async(id,value)=>{if(value.goal?.pauseRequest)throw Error('disk unavailable');return save(id,value)};
+ await assert.rejects(goals.control(run.id,{action:'pause',pauseRunId:run.id}),/disk unavailable/);
+ assert.equal(runtime.calls[0].signal.aborted,false);
+ conversations.changeState=save;await goals.control(run.id,{action:'pause_after_turn'});release.resolve();
+});
+
+test('restart reconciles exact archived paused target without replay and exposes missing evidence',async t=>{
+ const {engine,goals,conversations,runtime}=await fixture(t,async()=>output(1));
+ const run=engine.startRun({workflow:graph(),input:'One completed turn'});await waitFor(()=>engine.getRun(run.id).settled);
+ await goals.close();
+ const saved={...goals.create({objective:'Saved interrupted work'}),status:'paused',currentRunId:run.id,pauseRequest:{runId:run.id,at:new Date().toISOString(),mode:'interrupt-and-preserve'}};
+ await conversations.changeState(run.id,{goal:saved});
+ await conversations.pending; engine.runs.delete(run.id);
+ const recovered=await new ConversationGoals({engine,conversations}).init();
+ assert.equal(recovered.view(run.id).pauseRequest.status,'paused');assert.equal(runtime.calls.length,1);
+ await recovered.close();
+ await conversations.changeState(run.id,{goal:{...saved,pauseRequest:{...saved.pauseRequest,runId:'missing-target'}}});
+ const missing=await new ConversationGoals({engine,conversations}).init();
+ assert.equal(missing.view(run.id).pauseRequest.status,'unverified');assert.equal(runtime.calls.length,1);
+ await assert.rejects(missing.control(run.id,{action:'resume'}),{code:'GOAL_PAUSE_PENDING'});
+ await missing.close();
 });

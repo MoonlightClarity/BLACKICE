@@ -12,7 +12,7 @@ Leave the optional turn limit empty for unlimited continuation. The goal card sh
 
 | Control | Effect |
 | --- | --- |
-| **Pause** | Prevents the next automatic turn. A turn already running can finish. The goal and saved progress remain. |
+| **Pause** | Pauses current execution and automatic continuation. BLACKICE interrupts the active provider/Directory worker and shows Pausing until dispatched work settles. Saved progress, pages, and uncertain-effect receipts remain. |
 | **Resume** | Reactivates a paused, interrupted, blocked, or budget-exhausted goal and starts a fresh turn allowance. |
 | **Stop** | Cancels the current run. Its goal becomes paused, so cancellation does not immediately launch another turn. **Stop all** also pauses enabled goals. |
 | **Clear** | Removes the saved goal and prevents further automatic continuation. It does not cancel an already-running turn or delete conversation history. Use **Stop** as well if that turn must stop. |
@@ -27,7 +27,7 @@ These commands are handled by BLACKICE Chat:
 | --- | --- |
 | `/goal <objective>` | Set a new goal, replacing any previous goal and starting a new allowance. |
 | `/goal`, `/goal status`, `/goal show` | Show the saved goal and current status. |
-| `/goal pause` | Pause automatic continuation. |
+| `/goal pause` | Pause current execution and automatic continuation. |
 | `/goal resume` | Resume with a fresh allowance. `continue` and `unpause` are aliases. |
 | `/goal clear` | Remove the goal. |
 | `/goal -- <objective>` | Set literal objective text, including text that would otherwise be a control word. |
@@ -70,7 +70,7 @@ Use `blackice_goal` for an existing conversation:
 }
 ```
 
-Replace `saved_conversation_id` with the actual saved conversation ID. Supported actions are `get`, `set`, `update`, `pause`, `resume`, and `clear`. All require `requestId` and `conversationId`. Read with `get` before editing and pass the returned goal's `revision` as `expectedRevision` to reject stale changes. `update` preserves the current allowance and status; `set` replaces the goal. On `update`, omitting `maxTurns` preserves the existing limit; use `null` to remove it.
+Replace `saved_conversation_id` with the actual saved conversation ID. Supported actions are `get`, `set`, `update`, `pause`, `pause_after_turn`, `resume`, and `clear`. All require `requestId` and `conversationId`. Read with `get` before editing and pass the returned goal's `revision` as `expectedRevision` to reject stale changes. `update` preserves the current allowance and status; `set` replaces the goal. On `update`, omitting `maxTurns` preserves the existing limit; use `null` to remove it.
 
 For a new conversation, pass `goal: {}` to `blackice_start_chat`:
 
@@ -89,3 +89,7 @@ Use one stable `requestId` per logical action. Retry an uncertain request with i
 ## Design references
 
 The design follows the persistent, conversation-scoped continuation pattern documented by [Codex Goals](https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex) and [Hermes persistent goals](https://github.com/nousresearch/hermes-agent/blob/main/website/docs/user-guide/features/goals.md). BLACKICE's controls and completion rules are described above; those upstream implementations have their own budgets and verification mechanisms.
+
+### Pause receipt and recovery
+
+`pause` records its exact target before interrupting it. Pass the observed `currentRunId` as `pauseRunId` to reject a changed target. `pauseRequest.status` is `pausing` until the run settles, then `paused`; Resume is unavailable during settlement. Pause is not proof of a completed checkpoint and cannot undo an external effect. Resume continues from saved state and must inspect uncertain receipts before any retry. Replaying the same control request never interrupts a later resumed turn. For an explicitly requested finish-current-turn policy, `pause_after_turn` prevents only the next automatic turn.

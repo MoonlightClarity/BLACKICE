@@ -167,3 +167,8 @@ test('chat reader retains only compact goal metadata across worker projection',(
   assert.equal(projected.goal.objective,undefined);assert.equal(projected.goal.evidence,undefined);assert.equal(projected.goal.privateWorkerData,undefined);
   assert.equal(projectFamily({rootId:'one',runs:[]}).goal,undefined);
 });
+test('actual pause shows pending settlement and disables Resume',()=>{
+ const p=goalPresentation(savedGoal({status:'paused',running:false,pauseRequest:{status:'pausing',settled:false}}));
+ assert.equal(p.label,'Pausing current execution');assert.equal(p.canResume,false);
+ assert.equal(goalPresentation(savedGoal({status:'paused',running:false,pauseRequest:{status:'paused',settled:true}})).canResume,true);
+});
