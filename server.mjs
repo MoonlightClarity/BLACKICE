@@ -1047,7 +1047,7 @@ export async function createHarnessServer(options = {}) {
       if (connectionMatch && !connectionMatch[2] && req.method === 'DELETE') { await body(req); return json(res, 200, await connections.remove(connectionMatch[1])); }
       if (connectionMatch?.[2] === 'tools' && req.method === 'GET') return json(res, 200, await connections.tools(connectionMatch[1], { query: new URL(req.url, `http://${host}`).searchParams.get('query') || '' }));
       if (['connect','disconnect'].includes(connectionMatch?.[2]) && req.method === 'POST') { const value = await body(req); if (connectionMatch[2] === 'disconnect') return json(res, 200, await connections.disconnect(connectionMatch[1])); await connections.connect(connectionMatch[1], { reconnect: value.reconnect === true }); return json(res, 200, connections.list().find(item => item.id === connectionMatch[1])); }
-      if (pathname === '/api/local-models' || /^\/api\/local-models\/(?:load|unload|import)$/.test(pathname)) {
+      if (pathname === '/api/local-models' || /^\/api\/local-models\/(?:load|unload|import|downloads)$/.test(pathname)) {
         const result = await localModelHTTP({
           manager: localModels, runtime, pathname, method: req.method,
           remote: req.headers['x-blackice-remote'] === '1',

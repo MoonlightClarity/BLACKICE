@@ -3,6 +3,27 @@ import assert from 'node:assert/strict';
 import {planningDOM} from './fixture-planning-dom.mjs';
 import {createLocalModelSettings} from '../public/next/workspaces/settings-local-models.mjs';
 
+test('runtime downloads are explicit browser links, separate from model loading', async t => {
+ const name='llama-b123-bin-win-cpu-x64.zip', url='https://github.com/ggml-org/llama.cpp/releases/download/b123/'+name;
+ const f=fixture(t, call=>call.route==='/api/local-models/downloads'?{tag:'b123',assets:[{name,url,sizeBytes:1048576}]}:undefined);
+ await f.enter(); assert.equal(f.calls.length,1);
+ const runtime=f.$('#next-local-engine'); runtime.value='llamacpp'; await runtime.dispatch('change');
+ assert.equal(f.$('#next-llama-setup').hidden,false); assert.equal(f.$('#next-llama-download').hidden,true);
+ await f.click('#next-llama-discover'); await until(()=>!f.$('#next-llama-discover').disabled);
+ assert.match(f.$('#next-llama-download-status').textContent,/b123/);
+ const select=f.$('#next-llama-asset'); select.value=name; await select.dispatch('change');
+ assert.equal(f.$('#next-llama-download').getAttribute('href'),url); assert.match(f.$('#next-llama-download-status').textContent,/1.0 MiB/);
+ assert.deepEqual(f.writes(),[]);
+});
+test('leaving settings invalidates pending discovery and failure remains retryable',async t=>{
+ const gate=deferred(); let count=0;
+ const f=fixture(t,call=>{if(call.route==='/api/local-models/downloads'){count++; return count===1?gate.promise:Promise.reject(Error('offline'));}});
+ await f.enter(); const pending=f.click('#next-llama-discover'); await f.click('#next-llama-discover'); assert.equal(count,1);
+ f.panel.leave(); gate.resolve({tag:'stale',assets:[]}); await pending; await settle();
+ assert.doesNotMatch(f.$('#next-llama-download-status').textContent,/stale/);
+ await f.enter(); await f.click('#next-llama-discover'); await until(()=>!f.$('#next-llama-discover').disabled);
+ assert.match(f.$('#next-llama-download-status').textContent,/offline/); assert.deepEqual(f.writes(),[]);
+});
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const until = async read => { for (let i = 0; i < 100; i++) { if (read()) return; await settle(); } throw Error('Local model settings did not settle.'); };
 const deferred = () => { let resolve; return {promise: new Promise(done => { resolve = done; }), resolve: value => resolve(value)}; };

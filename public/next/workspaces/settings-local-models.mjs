@@ -23,6 +23,19 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
   row.append(label('Runtime', engine), refresh);
   const runtimeStatus = node('p', 'Checking local runtimes…', 'next-help');
   runtimeStatus.id = 'next-local-runtime-status'; runtimeStatus.setAttribute('role', 'status');
+  const setup = node('section', '', 'next-stack'); setup.id = 'next-llama-setup';
+  setup.append(node('h3', 'Download llama.cpp'));
+  const discover = button('Find official downloads'); discover.id = 'next-llama-discover';
+  const releases = node('a', 'Official releases and setup documentation'); releases.setAttribute('href', 'https://github.com/ggml-org/llama.cpp/releases');
+  releases.setAttribute('target', '_blank'); releases.setAttribute('rel', 'noopener noreferrer');
+  const assets = node('select', '', 'next-field'); assets.id = 'next-llama-asset'; assets.hidden = true;
+  const download = node('a', 'Download selected archive'); download.id = 'next-llama-download'; download.hidden = true;
+  download.setAttribute('target', '_blank'); download.setAttribute('rel', 'noopener noreferrer');
+  const downloadStatus = node('p', '', 'next-help'); downloadStatus.id = 'next-llama-download-status'; downloadStatus.setAttribute('role', 'status');
+  setup.append(node('p', 'Choose the archive for your operating system, architecture and CPU/GPU backend. CUDA builds may also need the matching cudart archive. These are runtime binaries, not model weights. Downloads use your browser; BLACKICE does not install or run them automatically.', 'next-help'), discover, releases, label('Official binary archive (platform and architecture are in the filename)', assets), download, downloadStatus,
+    node('p', 'Extract the runtime archive and keep its libraries beside llama-server. With an existing GGUF model, start the server locally, then use Refresh local models above. Replace the example model path with yours.', 'next-help'),
+    node('pre', 'llama-server -m "path/to/model.gguf" --host 127.0.0.1 --port 8080'),
+    node('p', 'On Windows use llama-server.exe from the extracted folder; on macOS/Linux use ./llama-server. Select matching dependencies from the same release when required. Downloading does not make the runtime available until you start it.', 'next-help'));
   const choiceRow = node('div', '', 'next-row');
   const models = node('select', '', 'next-field'); models.id = 'next-local-model'; models.style.flex = '1'; models.style.minWidth = '180px';
   const load = button('Load & add to BLACKICE'); load.id = 'next-local-load'; load.className = 'next-primary';
@@ -40,14 +53,16 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
   const importRow = node('div', '', 'next-row'); importRow.append(importButton);
   importDetails.append(summary, importHelp, label('Model file or directory', sourcePath), label('Local Ollama model name', alias), importRow);
   const feedback = node('p', '', 'next-help'); feedback.id = 'next-local-feedback'; feedback.setAttribute('role', 'status'); feedback.setAttribute('aria-live', 'polite');
-  card.append(row, runtimeStatus, choiceRow, label('Context length (optional)', context), contextHelp, importDetails, feedback);
+  card.append(row, runtimeStatus, setup, choiceRow, label('Context length (optional)', context), contextHelp, importDetails, feedback);
   mount.append(card);
   let alive = true, active = false, busy = false, generation = 0, snapshot = { engines: [] };
+  let downloadGeneration = 0, discovering = false, downloadAssets = [];
   const selected = () => snapshot.engines?.find(item => item.id === engine.value) || { available: false, models: [] };
   const info = (message, isError = false) => { feedback.textContent = message; feedback.dataset.error = String(isError); };
   function updateChoices() {
     const value = selected();
     const isLlama = engine.value === 'llamacpp';
+    setup.hidden = !isLlama;
     contextHelp.textContent = isLlama
       ? 'llama.cpp sets context at startup using --ctx-size or --models-preset. Change it on the server, then reload. Unloading never deletes weights or conversations.'
       : 'Optional context window for the next load. Leave blank to use the runtime default. Unloading does not delete model files or BLACKICE conversations.';
@@ -114,6 +129,37 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
     } catch (e) { info(e.message || 'Local model operation failed.', true); }
     finally { busy = false; if (alive) updateChoices(); }
   }
+  function selectDownload() {
+    const asset = downloadAssets.find(item => item.name === assets.value);
+    download.hidden = !asset;
+    if (!asset) { download.removeAttribute('href'); return; }
+    download.setAttribute('href', asset.url);
+    downloadStatus.textContent = (asset.dependency ? 'CUDA dependency archive. ' : 'Runtime archive. ') +
+      (asset.sizeBytes / 1048576).toFixed(1) + ' MiB.' + (asset.sha256 ? ' SHA-256: ' + asset.sha256 : ' Checksum not provided by upstream metadata.');
+  }
+  assets.addEventListener('change', selectDownload);
+  discover.addEventListener('click', async () => {
+    if (discovering || !alive || !active) return;
+    const token = ++downloadGeneration; discovering = true; discover.disabled = true;
+    download.hidden = true; download.removeAttribute('href'); assets.hidden = true;
+    downloadStatus.textContent = 'Checking official release metadata…';
+    try {
+      const result = await api('/api/local-models/downloads');
+      if (!alive || !active || token !== downloadGeneration) return;
+      downloadAssets = result.assets || []; assets.replaceChildren();
+      const placeholder = node('option', 'Choose an archive for your computer'); placeholder.setAttribute('value', ''); assets.append(placeholder);
+      for (const asset of downloadAssets) {
+        const option = node('option', asset.name + ' · ' + (asset.sizeBytes / 1048576).toFixed(1) + ' MiB');
+        option.setAttribute('value', asset.name); assets.append(option);
+      }
+      assets.hidden = false; assets.value = '';
+      downloadStatus.textContent = 'Official release ' + result.tag + '. Select the matching platform, architecture and backend; no download has started.';
+    } catch (e) {
+      if (alive && active && token === downloadGeneration) downloadStatus.textContent = (e.message || 'Could not check downloads.') + ' Use the official releases link or try again.';
+    } finally {
+      if (token === downloadGeneration) { discovering = false; discover.disabled = false; }
+    }
+  });
   refresh.addEventListener('click', () => { if (!busy) void refreshCatalog(); });
   engine.addEventListener('change', updateChoices);
   models.addEventListener('change', updateChoices);
@@ -123,7 +169,7 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
   updateChoices();
   return {
     enter() { if (!alive || active) return; active = true; void refreshCatalog(); },
-    leave() { active = false; generation++; },
+    leave() { active = false; generation++; downloadGeneration++; discovering = false; discover.disabled = false; },
     destroy() { this.leave(); alive = false; mount.replaceChildren(); },
   };
 }
