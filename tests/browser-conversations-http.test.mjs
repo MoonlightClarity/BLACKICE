@@ -61,6 +61,12 @@ class BrowserDriver {
       this.effects++;
       return { ...this.status(), tabId: tab.tabId };
     }
+    if (args.action === 'close') {
+      const index = this.tabs.findIndex(tab => tab.tabId === args.tabId);
+      if (index < 0) throw Error('Tab already closed.');
+      this.tabs.splice(index, 1); this.pages.delete(args.tabId); this.effects++;
+      return { ...this.status(), tabId: args.tabId };
+    }
     assert.equal(args.action, 'transfer_ownership', 'Moving ownership must not navigate, reload, or create another page.');
     const change = ownershipChange(args, this.status(), context.owner, context.source, context.destinationOwner);
     const moved = new Set([args.tabId]);
@@ -212,6 +218,50 @@ test('a manual new browser tab stays Personal while another conversation owns ta
   const open = f.driver.calls.at(-1);
   assert.equal(open.source, 'user');
   assert.equal(open.owner, undefined);
+});
+
+test('Close All Tabs closes personal and conversation tabs but not the reserved calling-chat tab', async t => {
+  const f = await fixture(t);
+  assert.equal((await f.move('conversation', 'conversation-a')).status, 200);
+  f.driver.tabs.push({ tabId: 'reserved', url: 'https://fixture.invalid/chat', documentId: 'reserved:1',
+    title: 'Calling chat', folderId: 'personal', parentTabId: null, owner: null, purpose: 'chat-mode' });
+  const result = await f.request('/api/browser/close-all', {});
+  assert.equal(result.status, 200, JSON.stringify(result.data));
+  assert.deepEqual(new Set(result.data.closedTabIds), new Set(['page', 'popup', 'other']));
+  assert.deepEqual(f.driver.tabs.map(tab => tab.tabId), ['reserved']);
+  const repeated = await f.request('/api/browser/close-all', {});
+  assert.equal(repeated.data.closed, 0, 'Closing all tabs again should be an idempotent no-op');
+});
+
+for (const action of ['archive', 'delete']) {
+  test(action + ' closes only the archived/trashed conversation tabs, including legacy turn owners', async t => {
+    const f = await fixture(t);
+    assert.equal((await f.move('conversation', 'conversation-a')).status, 200);
+    f.driver.tabs[2].owner = { taskId: 'b-followup', runId: 'b-followup', nodeId: 'agent' };
+    const response = await f.request('/api/conversations/conversation-a/' + action, {});
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.state, action === 'archive' ? 'archived' : 'deleted');
+    assert.deepEqual(new Set(response.data.tabCleanup.closedTabIds), new Set(['page', 'popup']));
+    assert.deepEqual(f.driver.tabs.map(tab => tab.tabId), ['other']);
+    const status = await f.status();
+    assert.equal(status.tabs[0].conversationId, 'conversation-b', 'Another conversation must survive');
+    assert.equal(status.tabs[0].ownershipKind, 'ai');
+    const old = await f.request('/api/conversations?state=' + (action === 'archive' ? 'archived' : 'deleted'));
+    assert.equal(old.status, 200);
+  });
+}
+
+test('a failed tab close does not roll back a saved archive and returns the failure', async t => {
+  const f = await fixture(t);
+  await f.move('conversation', 'conversation-a');
+  const original = f.driver.perform.bind(f.driver);
+  f.driver.perform = (args, context) => args.action === 'close' ? Promise.reject(Error('Close failed')) : original(args, context);
+  const result = await f.request('/api/conversations/conversation-a/archive', {});
+  assert.equal(result.status, 200);
+  assert.equal(result.data.state, 'archived');
+  assert.equal(result.data.tabCleanup.failedTabs.length, 2);
+  assert.equal(result.data.tabCleanup.closed, 0);
+  assert.equal(f.driver.tabs.length, 3, 'Unclosed pages must not be reported as closed');
 });
 
 test('browser ownership HTTP endpoint uses the local user path rather than a remote connection header', async t => {

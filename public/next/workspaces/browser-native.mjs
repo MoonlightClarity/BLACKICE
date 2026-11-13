@@ -110,6 +110,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
     '<input class="next-field" type="text" id="next-browser-url" autocomplete="url" spellcheck="false" inputmode="url" aria-label="Website address" placeholder="Search or enter a website address">',
     '<button type="submit" id="next-browser-go" class="next-primary">Go</button>',
     '<button type="button" id="next-browser-new" aria-label="New tab" title="New tab (Ctrl+T)">+ Tab</button>',
+    '<button type="button" id="next-browser-close-all" title="Close all personal and conversation browser tabs">Close All Tabs</button>',
     '<button type="button" id="next-browser-downloads-toggle" aria-expanded="false" aria-controls="next-browser-downloads">Downloads</button>',
     '</form></div>',
     '<p id="next-browser-status" class="next-native-browser-status" role="status" aria-live="polite"></p>',
@@ -127,7 +128,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
   const $=id=>mount.querySelector('#'+id),ui={
     tabs:$('next-browser-tabs'),url:$('next-browser-url'),form:$('next-browser-form'),
     back:$('next-browser-back'),forward:$('next-browser-forward'),reload:$('next-browser-reload'),
-    go:$('next-browser-go'),newTab:$('next-browser-new'),page:$('next-browser-native-page'),
+    go:$('next-browser-go'),newTab:$('next-browser-new'),closeAll:$('next-browser-close-all'),page:$('next-browser-native-page'),
     status:$('next-browser-status'),downloads:$('next-browser-downloads'),downloadsToggle:$('next-browser-downloads-toggle'),
     auth:$('next-browser-auth'),authTitle:$('next-browser-auth-title'),authRealm:$('next-browser-auth-realm'),
     authUser:$('next-browser-auth-user'),authPassword:$('next-browser-auth-password'),authSubmit:$('next-browser-auth-submit'),
@@ -313,7 +314,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
     ui.back.disabled=busy||!tab||tab.canGoBack===false;
     ui.forward.disabled=busy||!tab||tab.canGoForward===false;
     ui.reload.disabled=busy||!tab;
-    ui.go.disabled=busy||Boolean(openingBlank);ui.newTab.disabled=false;
+    ui.go.disabled=busy||Boolean(openingBlank);ui.newTab.disabled=false;ui.closeAll.disabled=busy||tabs.length===0;
     if(paintKey!==emptyKey){
       emptyKey=paintKey;ui.page.replaceChildren();ui.page.dataset.attached='false';
       const panel=text(ui.page,'','div','next-native-browser-empty');
@@ -426,6 +427,20 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
       if(activeOperation===operation){activeOperation=null;busy=false;if(pendingNavigation===operation)pendingNavigation=null;if(active)render();void drainNewTabs();}
     }
   }
+  async function closeAllTabs(){
+    if(!active||destroyed||busy||!tabs.length)return;
+    busy=true;newTabRequests.length=0;ui.status.dataset.error='false';render();
+    try{
+      const result=await api('/api/browser/close-all','POST',{},{deadlineMs:30000});
+      if(destroyed)return;
+      selected=null;pendingSelection=null;openingBlank=null;surface.hide();addressDrafts.clear();
+      refreshSequence++;await refresh();
+      if(result.failedTabs?.length||result.remainingTabIds?.length)
+        notice('Closed '+result.closed+' tabs, but some tabs could not be closed. Refresh and try again.',true);
+      else notify('Closed '+result.closed+' browser tabs.');
+    }catch(error){if(active)notice(error.message,true);}
+    finally{busy=false;if(active)render();void drainNewTabs();}
+  }
   ui.form.addEventListener('submit',event=>{
     event.preventDefault();let url;
     try{url=normalizeBrowserAddress(ui.url.value);}catch(error){notice(error.message,true);return;}
@@ -435,6 +450,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
   ui.auth.addEventListener('submit',event=>{event.preventDefault();void answerAuth();});
   ui.authCancel.addEventListener('click',()=>void answerAuth(true));
   ui.newTab.addEventListener('click',newTab);
+  ui.closeAll.addEventListener('click',()=>void closeAllTabs());
   ui.back.addEventListener('click',()=>void operate('back'));
   ui.forward.addEventListener('click',()=>void operate('forward'));
   ui.reload.addEventListener('click',()=>void operate('reload'));
