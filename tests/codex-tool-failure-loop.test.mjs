@@ -4,6 +4,7 @@ import { CodexRuntime, CODEX_DYNAMIC_TOOL_LIMITS, codexRepeatedToolFailure } fro
 
 const errorReceipt = Object.freeze({ success: false, code: 'INVALID_TASK_VIEW', contentItems: [{ type: 'inputText', text: 'Use the returned expectedRevision and viewHash; restart the first page when absent.' }] });
 const staleRefReceipt = Object.freeze({ success: false, code: 'BROWSER_REF_STALE', contentItems: [{ type: 'inputText', text: JSON.stringify({ error: 'Take a fresh snapshot.', code: 'BROWSER_REF_STALE', actionDispatched: false }) }] });
+const documentChangedReceipt = Object.freeze({ success: false, code: 'BROWSER_INPUT_DOCUMENT_CHANGED', contentItems: [{ type: 'inputText', text: JSON.stringify({ code: 'BROWSER_INPUT_DOCUMENT_CHANGED', actionDispatched: false }) }] });
 const goodReceipt = Object.freeze({ success: true, contentItems: [{ type: 'inputText', text: '{"ok":true}' }] });
 const call = (offset, action = 'read') => ({ name: 'relay_task', arguments: { action, view: 'full', offset, expectedRevision: 316 } });
 
@@ -105,6 +106,34 @@ test('stale browser failures with uncertain effects retain the strict eight-call
   assert.equal(f.cancellations.length, 1);
 });
 
+test('pre-dispatch document-change fill batch allows feedback and never replays calls', async () => {
+  let calls = 0, repaired = false;
+  const f = fixture(async () => { calls++; return repaired ? goodReceipt : documentChangedReceipt; }, 'relay_browser');
+  for (let i = 0; i < 8; i++) { f.notifyItem('dynamicToolCall', i); await f.invoke(i, 'fill'); }
+  assert.equal(f.cancellations.length, 0);
+  assert.equal(f.state.dynamicToolFailure.count, 1);
+  assert.equal(calls, 8);
+  repaired = true; f.notifyItem('reasoning', 'fresh-snapshot');
+  await f.invoke(99, 'fill');
+  assert.equal(calls, 9); assert.equal(f.state.dynamicToolFailure, null);
+});
+test('document-change recovery still stops repeated opportunities and silent floods', async () => {
+  for (const mode of ['opportunities', 'silent']) {
+    const f = fixture(async () => documentChangedReceipt, 'relay_browser');
+    const limit = mode === 'silent' ? 64 : 8;
+    for (let i = 0; i < limit; i++) { if (mode !== 'silent') f.notifyItem('reasoning', i); await f.invoke(i, 'fill'); }
+    assert.equal(f.cancellations.length, 1);
+    assert.equal(f.state.cancelError.code, 'CODEX_TOOL_FAILURE_LOOP');
+  }
+});
+test('document-change uncertain or dispatched effects retain strict cap', async () => {
+  for (const flag of [undefined, true]) {
+    const receipt = { ...documentChangedReceipt, contentItems: [{type:'inputText', text:JSON.stringify({code:'BROWSER_INPUT_DOCUMENT_CHANGED', actionDispatched:flag})}] };
+    const f = fixture(async () => receipt, 'relay_browser');
+    for (let i = 0; i < 8; i++) await f.invoke(i, 'fill');
+    assert.equal(f.cancellations.length, 1);
+  }
+});
 test('per-turn call quota also protects against a pipelined flood of successful calls', async () => {
   let dispatched = 0;
   const f = fixture(async () => { dispatched++; return goodReceipt; });

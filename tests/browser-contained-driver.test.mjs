@@ -588,6 +588,14 @@ test('form edits and hover enforce supplied document identity before touching an
   assert.equal((await driver.perform(refOnly)).receipt.filled, true, 'Existing ref-only fills remain supported.');
 });
 
+test('an obsolete fill document is rejected before element or input dispatch', async t => {
+  const { driver, windows } = await fixture(t), tab = driver.newTab('https://careers.example.test/application'); await tab.loading;
+  let elements = 0; driver.element = async () => { elements++; throw new Error('must not reach element'); };
+  await assert.rejects(driver.perform({browser:'relay', action:'fill', tabId:tab.id, ref:'old-field', text:'Draft', expectedUrl:tab.url, expectedDocumentId:'obsolete'}), {code:'BROWSER_INPUT_DOCUMENT_CHANGED', actionDispatched:false});
+  assert.equal(elements, 0);
+  assert.equal(windows[0].protocol.filter(call => call.method.startsWith('Input.')).length, 0);
+});
+
 test('a guarded contenteditable fill cannot insert text after its observed document changes', async t => {
   const { driver, windows } = await fixture(t), tab = driver.newTab('https://careers.example.test/application'); await tab.loading;
   const guard = { browser: 'relay', tabId: tab.id, expectedUrl: tab.url, expectedDocumentId: `${tab.id}:${tab.revision}` };

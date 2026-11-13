@@ -1887,7 +1887,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (tab.loadError && (resumed && args.action === 'reload' || !['navigate', 'reload', 'back', 'forward'].includes(args.action))) throw navigationFailure(tab);
     if (['type', 'press', 'click', 'hover', 'fill', 'select', 'upload'].includes(args.action)) {
       try { this.assertInputDocument(tab, args); }
-      catch (cause) { throw args.action === 'upload' ? Object.assign(cause, { actionDispatched: false }) : cause; }
+      catch (cause) { throw Object.assign(cause, { actionDispatched: false }); }
     }
     if (args.action === 'type' && (typeof args.text !== 'string' || !args.text.length || args.text.length > 16384 || typeof args.expectedDocumentId !== 'string' || typeof args.expectedUrl !== 'string')) throw error('Type 1–16384 characters into a field on the current observed page.');
     const navigation = ['click','press','reload','back','forward'].includes(args.action) ? this.watchNavigation(tab, signal) : null;
