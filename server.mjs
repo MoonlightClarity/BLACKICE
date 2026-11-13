@@ -948,6 +948,7 @@ export async function createHarnessServer(options = {}) {
       }
       if (pathname === '/api/diagnostics/export' && req.method === 'GET') {await diagnostics.record({component:'server',event:'support_exported'});return json(res,200,await supportSnapshot());}
       if (pathname.startsWith('/api/storage/') && req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Manage saved data in BLACKICE on this computer.', code: 'STORAGE_LOCAL_REQUIRED' });
+      if (pathname === '/api/storage/workspace' && req.method === 'GET') return json(res, 200, await storageManager.workspaceItems({ parent: new URL(req.url, 'http://' + host).searchParams.get('parent') || null, offset: new URL(req.url, 'http://' + host).searchParams.get('offset') || 0 }));
       if (pathname === '/api/storage/overview' && req.method === 'GET') return json(res, 200, { ...await storageManager.overview(), startupWarning: storageStartupWarning });
       if (pathname === '/api/storage/cleanup' && req.method === 'POST') return json(res, 202, await mutateStorage(async () => storageManager.schedule(await body(req, 8192))));
       if (pathname === '/api/storage/cleanup/cancel' && req.method === 'POST') { const outcome = await mutateStorage(async () => { await body(req, 8192); return storageManager.cancel(); }); storageStartupWarning = null; return json(res, 200, outcome); }

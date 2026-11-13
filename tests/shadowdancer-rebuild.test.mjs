@@ -43,7 +43,7 @@ async function change(f,file,changes){
  return editShadowdancerContext({...f,file,expectedHash:prior.hash,changes,
   reason:'Audited user correction',actor:'test-user'});
 }
-const saved=(f,runId,relative)=>path.join(f.cwd,'.shadowdancer',f.conversationId,'runs',runId,...relative.split('/'));
+const saved=(f,runId,relative)=>path.join(f.cwd,'.blackice','directory',f.conversationId,'runs',runId,...relative.split('/'));
 const get=async f=>JSON.parse(await readFile(f,'utf8'));
 test('rebuild command grammar requires explicit saved source and optional revision',()=>{
  assert.deepEqual(parseRebuildRequest('REBUILD_FROM: original-run'),{sourceRunId:'original-run'});
@@ -89,10 +89,10 @@ test('editing one module result reuses it and reruns only declared dependent wor
  const final=await get(saved(f,'rebuilt-run','integration/final.json'));
  assert.equal(final.rebuild.sourceRunId,'original-run');
  assert.deepEqual(final.rebuild.editIds,['edit-00001']);
- const state=await get(path.join(f.cwd,'.shadowdancer',f.conversationId,'conversation','context','invalidation.json'));
+ const state=await get(path.join(f.cwd,'.blackice','directory',f.conversationId,'conversation','context','invalidation.json'));
  assert.equal(state.staleRuns['original-run'].state,'rebuilt');
  assert.equal(state.staleRuns['original-run'].rebuiltBy,'rebuilt-run');
- const history=await get(path.join(f.cwd,'.shadowdancer',f.conversationId,'conversation','context','rebuilds.json'));
+ const history=await get(path.join(f.cwd,'.blackice','directory',f.conversationId,'conversation','context','rebuilds.json'));
  assert.equal(history.length,1);
 });
 test('changed source page is re-extracted and unchanged source page result is reused',async t=>{

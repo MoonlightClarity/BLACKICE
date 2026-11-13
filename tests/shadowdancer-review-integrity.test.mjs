@@ -42,7 +42,7 @@ test('a reviewer cannot certify completeness by modifying an existing passing sm
  assert.equal(result.stats.reviewReverified,true);
  assert.equal(result.stats.verificationStatus,'passed');
  assert.equal(result.stats.testIntegrity,'preexisting_tests_modified');
- const root=path.join(cwd,'.shadowdancer','compromised','runs','compromised');
+ const root=path.join(cwd,'.blackice','directory','compromised','runs','compromised');
  const final=JSON.parse(await readFile(result.finalPath,'utf8'));
  assert.equal(final.status,'preexisting_tests_modified');
  assert.match(final.answer,/pre-existing tests changed or were removed/i);

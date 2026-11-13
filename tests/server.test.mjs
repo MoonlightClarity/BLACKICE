@@ -225,6 +225,8 @@ test('HTTP submission receipts survive restart and recent-run eviction; rename s
   let turns=0;
   const runtime=()=>{const value=new FakeRuntime();value.runAgent=async options=>{turns++;return {output:'Delivered once',threadId:'fixture-receipt-thread'};};return value;};
   const first=await application(t,{runtime:runtime()});
+  // Count submitted task executions, not the independent automatic learning review.
+  await first.app.learning.updateSettings({mode:'manual'});
   const payload={workflow:graph,input:'Receipt recovery check',requestId:'stable-http-request'};
   const send=(app,value=payload)=>app.request('/api/runs',{method:'POST',headers:app.auth,body:value});
   const started=await send(first);assert.equal(started.status,201);

@@ -10,7 +10,7 @@ import {createShadowdancerContextToolHandler} from '../lib/shadowdancer-context-
 async function fixture(t){
  const cwd=await mkdtemp(path.join(os.tmpdir(),'directory-context-boundary-'));
  t.after(()=>rm(cwd,{recursive:true,force:true}));
- const root=path.join(cwd,'.shadowdancer','chat'),file='conversation/context/summary.json';
+ const root=path.join(cwd,'.blackice','directory','chat'),file='conversation/context/summary.json';
  await mkdir(path.dirname(path.join(root,file)),{recursive:true});
  await writeFile(path.join(root,file),JSON.stringify({currentRun:'run',userSummary:'Original'}));
  await mkdir(path.join(root,'runs','run','integration'),{recursive:true});
@@ -77,7 +77,7 @@ test('junction parents cannot expose unrelated context files',async t=>{
  await mkdir(outside);await writeFile(path.join(outside,'secret.json'),'{"secret":true}');
  await symlink(outside,path.join(f.root,'escape'),'junction');
  await assert.rejects(readShadowdancerFile({...f.ctx,file:'escape/secret.json'}),{code:'SHADOWDANCER_PATH'});
- const alias=path.join(f.cwd,'alias');await symlink(path.join(f.cwd,'.shadowdancer'),alias,'junction');
+ const alias=path.join(f.cwd,'alias');await symlink(path.join(f.cwd,'.blackice','directory'),alias,'junction');
  await assert.rejects(listShadowdancerContext({cwd:alias,conversationId:'chat'}),{code:'SHADOWDANCER_PATH'});
 });
 test('existing revision paths cannot be overwritten',async t=>{

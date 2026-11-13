@@ -136,17 +136,6 @@ test('temporary cleanup reviews only temporary files and requires fresh exact co
   assert.match(d.$('#storage-pending').textContent, /Temporary files.*next startup.*still present/);
 });
 
-test('a linked workspace cannot be selected for deletion', async t => {
-  const d = await setup(t), workspace = d.inputFor('workspaceFiles');
-  assert.equal(workspace.disabled, true);
-  assert.match(d.$('#storage-usage').textContent, /Cleanup unavailable.*linked/);
-  workspace.checked = true; await workspace.dispatch('change');
-  await d.input('#storage-confirm', 'DELETE SELECTED DATA');
-  assert.match(d.$('#storage-selection').textContent, /No categories selected/);
-  assert.equal(d.$('#storage-schedule').disabled, true);
-  await d.click('#storage-schedule');
-  assert.deepEqual(d.posts(), []);
-});
 
 test('queued cleanup, cancellation, and history describe data using public category names', async t => {
   const state = initial();
@@ -216,4 +205,66 @@ test('acknowledged cleanup stays cancellable after a scan failure and recovery c
   assert.equal(d.$('#storage-scan-status').textContent, '');
   assert.equal(d.$('#storage-feedback').textContent, '');
   assert.equal(d.$('#storage-feedback').dataset.state, 'info');
+});
+
+test('workspace drilldown protects links but permits safe siblings and sends exact item IDs', async t => {
+  const root = { parent: null, breadcrumbs: [{id:null,name:'Workspace files'}], nextOffset: null, entries: [
+    {id:'folder',name:'experiments',relativePath:'workspace/experiments',kind:'directory',bytes:8192,files:4,selectable:false,reason:'Contains linked items',hasChildren:true},
+    {id:'safe',name:'notes.txt',relativePath:'workspace/notes.txt',kind:'file',bytes:128,files:1,selectable:true,hasChildren:false}
+  ] };
+  const nested = { parent:'folder',breadcrumbs:[{id:null,name:'Workspace files'},{id:'folder',name:'experiments'}], nextOffset:null, entries:[
+    {id:'link',name:'node_modules',relativePath:'workspace/experiments/node_modules',kind:'link',bytes:0,files:0,selectable:false,reason:'Linked target is protected',hasChildren:false},
+    {id:'report',name:'report.json',relativePath:'workspace/experiments/report.json',kind:'file',bytes:512,files:1,selectable:true,hasChildren:false}
+  ]};
+  const d = await setup(t, {beforeApi: route => route.startsWith('/api/storage/workspace?') ? structuredClone(route.includes('parent=folder') ? nested : root) : undefined});
+  assert.equal(d.inputFor('workspaceFiles'), undefined);
+  await d.click('#storage-workspace-open');
+  await until(() => d.$('#storage-workspace-entries').querySelectorAll('input').length === 2 && !d.$('#storage-workspace-open').disabled);
+  let checks = d.$('#storage-workspace-entries').querySelectorAll('input');
+  assert.equal(checks[0].disabled,true); assert.equal(checks[1].disabled,false);
+  checks[1].checked=true; await checks[1].dispatch('change');
+  await d.$('#storage-workspace-entries').querySelector('button').dispatch('click');
+  await until(() => /node_modules/.test(d.$('#storage-workspace-entries').textContent) && !d.$('#storage-workspace-open').disabled);
+  checks=d.$('#storage-workspace-entries').querySelectorAll('input');
+  assert.equal(checks[0].disabled,true);
+  checks[1].checked=true; await checks[1].dispatch('change');
+  assert.match(d.$('#storage-selection').textContent,/2 workspace item/);
+  assert.match(d.$('#storage-selection').textContent,/notes.txt/);
+  assert.match(d.$('#storage-selection').textContent,/report.json/);
+  await d.input('#storage-confirm','DELETE SELECTED DATA');
+  await d.click('#storage-schedule');
+  assert.deepEqual(d.posts()[0].body,{categories:[],confirmation:'DELETE SELECTED DATA',workspaceEntries:['safe','report']});
+});
+
+test('workspace refresh and leaving invalidate selections; late folder response is ignored', async t => {
+  const hold=deferred(); let reads=0;
+  const listing={parent:null,breadcrumbs:[{id:null,name:'Workspace files'}],nextOffset:null,entries:[{id:'safe',name:'notes',bytes:128,files:1,selectable:true}]};
+  const d=await setup(t,{beforeApi:route=>route.startsWith('/api/storage/workspace?') ? (++reads===2 ? hold.promise : listing) : undefined});
+  await d.click('#storage-workspace-open');
+  await until(()=>d.$('#storage-workspace-entries').querySelectorAll('input').length===1 && !d.$('#storage-workspace-open').disabled);
+  const check=d.$('#storage-workspace-entries').querySelector('input'); check.checked=true; await check.dispatch('change');
+  await d.input('#storage-confirm','DELETE SELECTED DATA');
+  await d.click('#storage-refresh'); await until(()=>!d.$('#storage-refresh').disabled);
+  assert.equal(d.$('#storage-confirm').value,'');
+  assert.equal(d.$('#storage-schedule').disabled,true);
+  await d.click('#storage-workspace-open');
+  d.workspace.leave(); d.workspace.enter();
+  hold.resolve(listing); await tick(); await until(()=>!d.$('#storage-refresh').disabled);
+  assert.equal(d.$('#storage-workspace-browser').hidden,true);
+  assert.equal(d.$('#storage-schedule').disabled,true);
+});
+
+test('workspace listing failure blocks stale deletion and recovers on retry', async t => {
+  let reads=0;
+  const d=await setup(t,{beforeApi:route=>{
+    if(!route.startsWith('/api/storage/workspace?'))return;
+    if(++reads===1)throw Error('Folder unavailable');
+    return {parent:null,breadcrumbs:[{id:null,name:'Workspace files'}],nextOffset:null,entries:[]};
+  }});
+  await d.click('#storage-workspace-open');
+  await until(()=>/scan failed/.test(d.$('#storage-workspace-status').textContent));
+  assert.equal(d.$('#storage-schedule').disabled,true);
+  assert.equal(d.$('#storage-workspace-open').disabled,false);
+  await d.click('#storage-workspace-open');
+  await until(()=>/no entries/.test(d.$('#storage-workspace-status').textContent));
 });

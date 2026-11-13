@@ -40,10 +40,10 @@ test('actual tool evidence survives Directory synthesis and report repair does n
   assert.equal(workCalls,1);assert.equal(writes,1);assert.equal(integrationCalls,2);assert.equal(reviews,2);
   assert.match(result.output,/saved write and read-back/);
   assert.equal(await readFile(path.join(cwd,'actual.txt'),'utf8'),'verified bytes\n');
-  const root=path.join(cwd,'.shadowdancer/receipts/runs/receipts-run');
+  const root=path.join(cwd,'.blackice/directory/receipts/runs/receipts-run');
   const first=JSON.parse(await readFile(path.join(root,'integration/round-01/group-001/result.json'),'utf8'));
   assert.equal(first.answer,'No observed work is available.','failed candidate evidence remains immutable');
-  const summary=JSON.parse(await readFile(path.join(cwd,'.shadowdancer/receipts/conversation/context/summary.json'),'utf8'));
+  const summary=JSON.parse(await readFile(path.join(cwd,'.blackice/directory/receipts/conversation/context/summary.json'),'utf8'));
   assert.equal(summary.outcomeAssessment.decision,'respond');
  }finally{await rm(cwd,{recursive:true,force:true});}
 });

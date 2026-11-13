@@ -69,7 +69,7 @@ test('test discovery includes more than the former 100-file cutoff and rejects a
  await assert.rejects(discoverTests(f.root,1000,{maxDepth:2}),{code:'DIRECTORY_VERIFICATION_TEST_LIMIT'});
 });
 test('explicit test lists reject duplicates, outside paths, and unsupported files',async t=>{
- const f=await fixture(t),inside=await f.put('tests/app.test.mjs','// test'),outside=await f.put('outside.test.mjs','// outside');
+ const f=await fixture(t),other=await fixture(t),inside=await f.put('tests/app.test.mjs','// test'),outside=await other.put('outside.test.mjs','// outside repository');
  const unsupported=await f.put('tests/readme.txt','not a test');
  await assert.rejects(testSuiteSnapshot(f.root,{testPaths:[inside,inside]}),{code:'DIRECTORY_VERIFICATION_TEST_LIMIT'});
  await assert.rejects(testSuiteSnapshot(f.root,{testPaths:[outside]}),{code:'DIRECTORY_VERIFICATION_TEST_PATH'});
@@ -87,7 +87,7 @@ test('linked source and test directories are rejected rather than skipped or fol
 });
 test('verification detects lib changes and keeps guarded receipt identity without running a real command',async t=>{
  const f=await fixture(t);await f.put('lib/app.mjs','before');await f.put('tests/app.test.mjs','// test');
- const file=path.join(f.root,'.shadowdancer','proof','receipt.json');let called=0;
+ const file=path.join(f.root,'.blackice','directory','proof','receipt.json');let called=0;
  const result=await verifyRepository({repoRoot:f.root,task:'inspect',receiptFile:file,executable:process.execPath,
   executeTestCommand:async args=>{called++;assert.equal(args.receiptFile,file);await f.put('lib/app.mjs','after');
    return {exitCode:0,stdout:'TAP version 13\nok 1 - mock\n1..1\n# tests 1\n# pass 1\n# fail 0\n',stderr:'',timedOut:false,truncated:false};}});
@@ -98,7 +98,7 @@ test('verification detects lib changes and keeps guarded receipt identity withou
 });
 test('verification detects a new test appearing during execution instead of claiming the old list is complete',async t=>{
  const f=await fixture(t);await f.put('lib/app.mjs','before');await f.put('tests/app.test.mjs','// test');
- const result=await verifyRepository({repoRoot:f.root,task:'inspect',receiptFile:path.join(f.root,'.shadowdancer','proof','receipt.json'),executable:process.execPath,
+ const result=await verifyRepository({repoRoot:f.root,task:'inspect',receiptFile:path.join(f.root,'.blackice','directory','proof','receipt.json'),executable:process.execPath,
   executeTestCommand:async()=>{await f.put('tests/new.test.mjs','// newly added');
    return {exitCode:0,stdout:'TAP version 13\nok 1 - mock\n1..1\n# tests 1\n# pass 1\n# fail 0\n',stderr:'',timedOut:false,truncated:false};}});
  assert.equal(result.status,'stale');assert.equal(result.sourceChanged,true);

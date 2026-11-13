@@ -15,7 +15,7 @@ async function fixture(t){
   const cwd=await mkdtemp(path.join(os.tmpdir(),'directory-context-management-'));
   t.after(()=>rm(cwd,{recursive:true,force:true}));
   const scope=conversationId=>({cwd,conversationId});
-  const root=conversationId=>path.join(cwd,'.shadowdancer',conversationId);
+  const root=conversationId=>path.join(cwd,'.blackice','directory',conversationId);
   const relative={summary:'conversation/context/summary.json',result:'runs/run-a/modules/1/result.json',final:'runs/run-a/integration/final.json',turn:'runs/run-a/turns/run-a-t0001.json'};
   const turn={id:'run-a-t0001',runId:'run-a',label:'work',excerpt:'Old observed work',module:'modules/1'};
   await put(path.join(root('a'),relative.summary),{conversationId:'a',currentRun:'run-a',userSummary:'Current conversation',totalTurns:1});

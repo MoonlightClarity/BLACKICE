@@ -10,7 +10,7 @@ const put=async(file,value)=>{await mkdir(path.dirname(file),{recursive:true});a
 async function fixture(t){
  const cwd=await mkdtemp(path.join(os.tmpdir(),'sd-rebuild-boundaries-'));
  t.after(()=>rm(cwd,{recursive:true,force:true}));
- const scope={cwd,conversationId:'chat',sourceRunId:'original'},root=path.join(cwd,'.shadowdancer/chat'),source=path.join(root,'runs/original');
+ const scope={cwd,conversationId:'chat',sourceRunId:'original'},root=path.join(cwd,'.blackice/directory/chat'),source=path.join(root,'runs/original');
  const file='conversation/context/summary.json',summary={currentRun:'original',request:'Find code',userSummary:'Corrected'};
  await put(path.join(root,file),summary);
  await put(path.join(source,'integration/final.json'),{answer:'Old'});

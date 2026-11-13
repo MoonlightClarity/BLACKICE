@@ -75,12 +75,12 @@ test('production Directory excludes other conversation catalogs and retains its 
   await engine.executions.get(continuation.id);
   const saved=engine.getRun(continuation.id);assert.equal(saved.status,'completed',saved.error);
   assert.deepEqual(saved.nodes.agent.knowledgeCatalog.memories.map(row=>row.id),[own.id]);
-  const context=JSON.parse(await readFile(path.join(cwd,'.shadowdancer',first.id,'runs',continuation.id,'context/imports/0001/source.json'),'utf8'));
+  const context=JSON.parse(await readFile(path.join(cwd,'.blackice','directory',first.id,'runs',continuation.id,'context/imports/0001/source.json'),'utf8'));
   assert.match(context.content,/CURRENT_CONVERSATION_NOTE/);
   assert.doesNotMatch(context.content,/FOREIGN_CONVERSATION_NOTE|UNSCOPED_WORKSPACE_NOTE/);
 
   const sourceFile='runs/foreign-context/sources/page-0001/source.json';
-  const sourcePath=path.join(cwd,'.shadowdancer','foreign-context',sourceFile);
+  const sourcePath=path.join(cwd,'.blackice','directory','foreign-context',sourceFile);
   await mkdir(path.dirname(sourcePath),{recursive:true});
   await writeFile(sourcePath,JSON.stringify({content:'EXPLICIT_IMPORT_SOURCE'}));
   await writeFile(path.join(path.dirname(sourcePath),'unselected.json'),JSON.stringify({content:'UNSELECTED_FOREIGN_SOURCE'}));
@@ -90,7 +90,7 @@ test('production Directory excludes other conversation catalogs and retains its 
   runtime.answer='The selected EXPLICIT_IMPORT_SOURCE was considered.';
   const importedRun=engine.continueRun(continuation.id,{nodeId:'agent',message:'Use the selected reference in this explanation.'});
   await engine.executions.get(importedRun.id);assert.equal(engine.getRun(importedRun.id).status,'completed',engine.getRun(importedRun.id).error);
-  const importedEvidence=JSON.parse(await readFile(path.join(cwd,'.shadowdancer',first.id,'runs',importedRun.id,'context/imports/0001/source.json'),'utf8'));
+  const importedEvidence=JSON.parse(await readFile(path.join(cwd,'.blackice','directory',first.id,'runs',importedRun.id,'context/imports/0001/source.json'),'utf8'));
   assert.match(importedEvidence.content,/EXPLICIT_IMPORT_SOURCE/);
   assert.doesNotMatch(importedEvidence.content,/UNSELECTED_FOREIGN_SOURCE/);
   const copy=await readShadowdancerFile({cwd,conversationId:first.id,file:imported.file});
@@ -98,7 +98,7 @@ test('production Directory excludes other conversation catalogs and retains its 
   runtime.answer='The explanation uses the remaining current context.';
   const deletedRun=engine.continueRun(importedRun.id,{nodeId:'agent',message:'Answer again using the revised current context.'});
   await engine.executions.get(deletedRun.id);assert.equal(engine.getRun(deletedRun.id).status,'completed',engine.getRun(deletedRun.id).error);
-  const deletedEvidence=JSON.parse(await readFile(path.join(cwd,'.shadowdancer',first.id,'runs',deletedRun.id,'context/imports/0001/source.json'),'utf8'));
+  const deletedEvidence=JSON.parse(await readFile(path.join(cwd,'.blackice','directory',first.id,'runs',deletedRun.id,'context/imports/0001/source.json'),'utf8'));
   assert.doesNotMatch(deletedEvidence.content,/EXPLICIT_IMPORT_SOURCE|UNSELECTED_FOREIGN_SOURCE/,'deleted contents must not return through the previous final-answer handoff');
   assert.ok(JSON.parse(deletedEvidence.content).managedContext.deletedFiles.some(row=>row.file===imported.file));
 });
