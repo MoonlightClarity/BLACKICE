@@ -172,3 +172,23 @@ test('actual pause shows pending settlement and disables Resume',()=>{
  assert.equal(p.label,'Pausing current execution');assert.equal(p.canResume,false);
  assert.equal(goalPresentation(savedGoal({status:'paused',running:false,pauseRequest:{status:'paused',settled:true}})).canResume,true);
 });
+
+test('Pause and Resume send exact intent snapshots without retrying uncertain failures',async()=>{
+ const goal=savedGoal({generation:4,running:true});
+ for(const action of ['pause','resume']){
+  const calls=[];await updateConversationGoal({api:async(...args)=>{calls.push(args);return {goal};},conversationId:'conversation',goal,action});
+  assert.equal(calls.length,1);assert.deepEqual(calls[0][2].expectedControl,{goalId:goal.id,generation:4,status:goal.status,runId:goal.currentRunId});
+ }
+ let attempts=0;await assert.rejects(updateConversationGoal({api:async()=>{attempts++;throw Error('transport uncertain');},conversationId:'conversation',goal,action:'pause'}),/transport uncertain/);assert.equal(attempts,1);
+});
+
+test('real control conflicts refresh visible state but never replay the mutation',async t=>{
+ const {view}=fixture(t);let reads=0,posts=0,errors=0;
+ const controls=createGoalControls({view,api:async(route,method)=>{
+  if(method==='GET')return {goal:savedGoal({generation:reads+1,revision:++reads,status:reads===1?'active':'paused',objective:reads===1?'Old intent':'New user intent'})};
+  posts++;throw Object.assign(Error('Goal changed'),{code:'GOAL_REVISION_CONFLICT'});
+ },getContext:()=>({runId:'run-one'}),onStart:()=>assert.fail('must not start'),onError:()=>errors++});
+ t.after(()=>controls.destroy());controls.update({conversationId:'one'});await tick();
+ await assert.rejects(controls.command({action:'pause'}),/Goal changed/);
+ assert.equal(posts,1);assert.equal(reads,2);assert.equal(errors,1);assert.equal(view.goalObjective.textContent,'New user intent');
+});

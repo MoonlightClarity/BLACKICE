@@ -37,6 +37,9 @@ export async function updateConversationGoal({api,conversationId,goal,action,obj
     ...(['set','resume'].includes(action)?executionOptions:{}),action,requestId:stableId('goal'),
     ...(action==='pause'&&goal?.running&&goal?.currentRunId?{pauseRunId:goal.currentRunId}:{}),
     ...(Number.isInteger(goal?.revision)?{expectedRevision:goal.revision}:{}),
+    ...(['pause','resume'].includes(action)&&goal?.id&&Number.isSafeInteger(goal.generation)?{
+      expectedControl:{goalId:goal.id,generation:goal.generation,status:goal.status,runId:goal.currentRunId||null}
+    }:{}),
     ...(objective!==undefined?{objective:String(objective).trim()}:{}),...(maxTurns!==undefined?{maxTurns}:{})
   });
 }
@@ -102,7 +105,7 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
         executionOptions:getContext()?.executionOptions||{}});
       if(accept(result?.goal??null,target))await onResult(result,target);
       return result;
-    } catch(error) {onError(error);throw error;}
+    } catch(error) {if(['GOAL_REVISION_CONFLICT','GOAL_PAUSE_TARGET','GOAL_PAUSE_PENDING'].includes(error?.code)&&target===owner&&!destroyed)await refresh();onError(error);throw error;}
     finally {busy=false;if(!destroyed){paint();onChange();}}
   }
   function showEditor() {

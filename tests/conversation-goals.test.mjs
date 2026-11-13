@@ -346,3 +346,37 @@ test('restart reconciles exact archived paused target without replay and exposes
  await assert.rejects(missing.control(run.id,{action:'resume'}),{code:'GOAL_PAUSE_PENDING'});
  await missing.close();
 });
+
+const controlSnapshot = goal => ({goalId:goal.id,generation:goal.generation,status:goal.status,runId:goal.currentRunId||null});
+test('Pause and Resume reconcile telemetry revisions without retrying or changing targets',async t=>{
+ const {engine,goals,runtime}=await fixture(t,async o=>{await new Promise(resolve=>o.signal.addEventListener('abort',resolve,{once:true}));return output(1);});
+ const first=engine.startRun({workflow:graph(),input:{task:'Synthetic hold',goal:{objective:'Synthetic hold'}},requestId:'revision-test'});
+ await waitFor(()=>runtime.calls.length===1);
+ const before=await goals.get(first.id);
+ await goals.save(first.id,{...goals.raw(first.id),lastReason:'Fresh provider progress.'});
+ const body={action:'pause',requestId:'revision-pause',expectedRevision:before.revision,expectedControl:controlSnapshot(before),pauseRunId:first.id};
+ const result=await goals.control(first.id,body);assert.equal(result.goal.status,'paused');
+ await waitFor(()=>engine.getRun(first.id).settled===true);
+ await waitFor(()=>goals.raw(first.id).pauseRequest?.settled===true);
+ const paused=await goals.get(first.id);
+ await goals.save(first.id,{...goals.raw(first.id),lastReason:'Settlement receipt refreshed.'});
+ const resumed=await goals.control(first.id,{action:'resume',requestId:'revision-resume',expectedRevision:paused.revision,expectedControl:controlSnapshot(paused)});
+ assert.notEqual(resumed.run.id,first.id);await waitFor(()=>runtime.calls.length===2);
+ const replay=await goals.control(first.id,body);assert.equal(replay.replayed,true);assert.equal(engine.getRun(resumed.run.id).status,'running');
+ await goals.control(first.id,{action:'pause',requestId:'revision-cleanup'});
+});
+test('control reconciliation refuses changed intent, lifecycle, run, goal and absent snapshot',async t=>{
+ const {engine,goals,runtime}=await fixture(t,async o=>{await new Promise(resolve=>o.signal.addEventListener('abort',resolve,{once:true}));return output(1);});
+ const first=engine.startRun({workflow:graph(),input:{task:'Synthetic hold',goal:{objective:'Synthetic hold'}}});await waitFor(()=>runtime.calls.length===1);
+ const before=await goals.get(first.id);await goals.save(first.id,{...goals.raw(first.id),lastReason:'Provider progress'});
+ for(const [label,change] of Object.entries({generation:{generation:before.generation-1},goal:{goalId:'different'},run:{runId:'other'},status:{status:'paused'}})){
+  await assert.rejects(goals.control(first.id,{action:'pause',requestId:'reject-'+label,expectedRevision:before.revision,expectedControl:{...controlSnapshot(before),...change}}),{code:'GOAL_REVISION_CONFLICT'});
+ }
+ await assert.rejects(goals.control(first.id,{action:'pause',expectedRevision:before.revision}),{code:'GOAL_REVISION_CONFLICT'});
+ await assert.rejects(goals.control(first.id,{action:'update',objective:'Overwrite',expectedRevision:before.revision,expectedControl:controlSnapshot(before)}),{code:'GOAL_REVISION_CONFLICT'});
+ await assert.rejects(goals.control(first.id,{action:'pause',expectedRevision:before.revision,expectedControl:controlSnapshot(before),pauseRunId:'other'}),{code:'GOAL_PAUSE_TARGET'});
+ const changed=await goals.control(first.id,{action:'update',objective:'New user intent'});
+ await assert.rejects(goals.control(first.id,{action:'pause',expectedRevision:before.revision,expectedControl:controlSnapshot(before)}),{code:'GOAL_REVISION_CONFLICT'});
+ assert.equal(runtime.calls[0].signal.aborted,false);assert.equal(changed.goal.objective,'New user intent');
+ await goals.control(first.id,{action:'pause',requestId:'reject-cleanup'});
+});
