@@ -13,7 +13,7 @@ The credential tool's authenticate action handles separately authorized routine 
 
 ## Receipt and retry rules
 
-Use one stable requestId for the exact operation. The encrypted vault journals an unknown dispatch receipt before native submission, then upgrades it to dispatched when confirmed by the adapter. A thrown/lost result remains unknown and does not replay after restart. Neither outcome proves login/account creation; inspect a safe resulting page separately. Do not substitute a new requestId to replay uncertainty.
+Use one stable requestId for the exact operation. The guarantee is at-most-once dispatch attempt per retained request, not exactly-once delivery. The encrypted vault journals an unknown dispatch receipt before native submission, then upgrades it to dispatched when confirmed by the adapter. A thrown/lost result remains unknown and does not replay after restart. Neither outcome proves login/account creation; inspect a safe resulting page separately. Do not substitute a new requestId to replay uncertainty.
 
 Password masking, protected screenshots and console/network capture suppression remain in force on the credential-bearing document. Host receipts contain only bounded credential handles and dispatch metadata, never password values or page text.
 
