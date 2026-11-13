@@ -98,7 +98,8 @@ test('Directory synthesis has no repository dispatcher even for a writable repos
 test('Directory persistence refuses a pre-existing linked context root before provider work or outside writes',async t=>{
   const f=await fixture(t),outside=path.join(f.root,'outside');
   await mkdir(outside);await writeFile(path.join(outside,'sentinel.txt'),'keep');
-  try{await symlink(outside,path.join(f.cwd,'.shadowdancer'),process.platform==='win32'?'junction':'dir');}
+  await mkdir(path.join(f.cwd,'.blackice'),{recursive:true});
+  try{await symlink(outside,path.join(f.cwd,'.blackice','directory'),process.platform==='win32'?'junction':'dir');}
   catch(error){if(['EPERM','EACCES','ENOSYS'].includes(error.code)){t.skip('This host cannot create the disposable link fixture.');return;}throw error;}
   let turns=0;
   await assert.rejects(runShadowdancerDirectory({cwd:f.cwd,conversationId:'family-one',runId:'run-one',model:'mock',
@@ -168,8 +169,8 @@ test('Directory rebuild refuses linked source families before reading another fa
   const f=await fixture(t),outside=path.join(f.root,'outside-family');
   await mkdir(path.join(outside,'runs','source-run','integration'),{recursive:true});
   await writeFile(path.join(outside,'runs','source-run','integration','final.json'),'{"answer":"private"}');
-  await mkdir(path.join(f.cwd,'.shadowdancer'),{recursive:true});
-  try{await symlink(outside,path.join(f.cwd,'.shadowdancer','family-one'),process.platform==='win32'?'junction':'dir');}
+  await mkdir(path.join(f.cwd,'.blackice','directory'),{recursive:true});
+  try{await symlink(outside,path.join(f.cwd,'.blackice','directory','family-one'),process.platform==='win32'?'junction':'dir');}
   catch(error){if(['EPERM','EACCES','ENOSYS'].includes(error.code)){t.skip('This host cannot create the disposable link fixture.');return;}throw error;}
   await assert.rejects(planShadowdancerRebuild({cwd:f.cwd,conversationId:'family-one',sourceRunId:'source-run'}),
     error=>/symbolic|junction|saved location|unsafe.*path|path.*unsafe/i.test(error.message));

@@ -53,7 +53,7 @@ test('failed verification reopens scoped repair, reruns tests, preserves audit a
  assert.deepEqual(seen,['decompose','work','repair']);
  assert.equal(result.stats.modelSynthesisCallsSkipped,1);
  assert.match(await readFile(path.join(repo,'src','logic.mjs'),'utf8'),/return 42/);
- const run=path.join(cwd,'.shadowdancer','repair-chat','runs','repair-run');
+ const run=path.join(cwd,'.blackice','directory','repair-chat','runs','repair-run');
  const before=JSON.parse(await readFile(path.join(run,'verification','round-001.json'),'utf8'));
  const after=JSON.parse(await readFile(path.join(run,'verification','round-002.json'),'utf8'));
  assert.equal(before.status,'failed');assert.equal(after.status,'passed');
@@ -87,7 +87,7 @@ test('repair that makes no progress stops and remains explicitly incomplete',asy
  assert.equal(out.stats.verificationStatus,'failed');
  assert.equal(out.stats.testsFailed,1);
  assert.equal(out.stats.repairCycles,1);
- const currentModule=JSON.parse(await readFile(path.join(cwd,'.shadowdancer','fail-chat','runs','fail-run','modules','1','result.json'),'utf8'));
+ const currentModule=JSON.parse(await readFile(path.join(cwd,'.blackice','directory','fail-chat','runs','fail-run','modules','1','result.json'),'utf8'));
  assert.notEqual(currentModule.status,'superseded_by_repair','a no-op cannot invalidate previous work');
  assert.match(out.answer,/Directory verification: failed/);
  const result=JSON.parse(await readFile(out.finalPath,'utf8'));
@@ -108,7 +108,7 @@ test('a fresh phase retains its full payload without artificial page summaries',
  const response=await engine.infer('integration','integration/index',{blob,instructions:'Read the full payload'});
  assert.ok(response.output.includes('Full payload retained'));
  assert.deepEqual(visits,['integration']);
- const original=JSON.parse(await readFile(path.join(cwd,'.shadowdancer','pages','runs','pages-run','integration','index','input.json'),'utf8'));
+ const original=JSON.parse(await readFile(path.join(cwd,'.blackice','directory','pages','runs','pages-run','integration','index','input.json'),'utf8'));
  assert.equal(original.payload.blob,blob);
 });
 test('host source/test receipts suppress contradictory model narration but preserve it for audit',async t=>{
@@ -140,11 +140,11 @@ test('host source/test receipts suppress contradictory model narration but prese
  assert.equal(final.integrationAuthority,'host_source_reference_index');
  assert.equal(final.modelSynthesisVisibility,'not_generated');
  assert.deepEqual(final.contradictionFlags,[]);
- const index=JSON.parse(await readFile(path.join(cwd,'.shadowdancer','conflict-chat','runs','conflict-run','integration','host-index.json'),'utf8'));
+ const index=JSON.parse(await readFile(path.join(cwd,'.blackice','directory','conflict-chat','runs','conflict-run','integration','host-index.json'),'utf8'));
  assert.deepEqual(index.used_refs,['module:1','verification:final']);
  assert.equal(index.references.length,2);
  assert.ok(index.references.every(x=>/^[a-f0-9]{64}$/.test(x.sha256)));
- const audit=JSON.parse(await readFile(path.join(cwd,'.shadowdancer','conflict-chat','runs','conflict-run','integration','repository-audit.json'),'utf8'));
+ const audit=JSON.parse(await readFile(path.join(cwd,'.blackice','directory','conflict-chat','runs','conflict-run','integration','repository-audit.json'),'utf8'));
  assert.deepEqual(audit.changedFiles,['src/logic.mjs']);
 });
 test('repository synthesis has no tools and unrecognized model test claims stay audit-only',async t=>{
@@ -218,7 +218,7 @@ test('two repair rounds supersede older failed findings before mandatory final s
  assert.equal(result.stats.testsPassed,1);
  assert.equal(result.stats.verificationStatus,'passed');
  assert.equal(attempted,2);
- const root=path.join(cwd,'.shadowdancer','two-repairs','runs','two-run');
+ const root=path.join(cwd,'.blackice','directory','two-repairs','runs','two-run');
  const first=JSON.parse(await readFile(path.join(root,'repair','round-001','result.json'),'utf8'));
  assert.equal(first.status,'superseded_by_repair');
  assert.ok(first.supersededBy.includes('round-002'));
@@ -256,7 +256,7 @@ test('changing existing tests to force a pass is detected and cannot certify com
  assert.equal(result.stats.testIntegrity,'preexisting_tests_modified');
  assert.match(result.answer,/pre-existing tests changed or were removed/);
  assert.deepEqual(result.repositoryAudit.changedFiles,['tests/logic.test.mjs']);
- const run=path.join(cwd,'.shadowdancer','tamper-chat','runs','tamper-run');
+ const run=path.join(cwd,'.blackice','directory','tamper-chat','runs','tamper-run');
  const integrity=JSON.parse(await readFile(path.join(run,'verification','test-integrity.json'),'utf8'));
  assert.equal(integrity.compromised,true);
  assert.deepEqual(integrity.mutatedExisting,['tests/logic.test.mjs']);
@@ -294,7 +294,7 @@ test('an explicit repository coverage map is checked against the real test recei
  assert.equal(done.stats.coverageStatus,'validated');
  assert.equal(done.stats.explicitlyTestCovered,1);
  assert.equal(done.stats.coverageRejections,0);
- const root=path.join(cwd,'.shadowdancer','coverage-chat','runs','coverage-run');
+ const root=path.join(cwd,'.blackice','directory','coverage-chat','runs','coverage-run');
  const ledger=JSON.parse(await readFile(path.join(root,'verification','requirements-ledger.json'),'utf8'));
  assert.equal(ledger.requirements.find(x=>x.id==='R002').state,'test-covered');
  const actual=JSON.parse(await readFile(path.join(root,'verification','coverage-evidence.json'),'utf8'));
@@ -314,6 +314,6 @@ test('unknown model capacity is delegated to the provider with complete input pr
  await engine.open();
  await engine.infer('integration','part',{blob});
  assert.equal(calls,1);
- const input=JSON.parse(await readFile(path.join(cwd,'.shadowdancer','limits','runs','limits-run','part','input.json'),'utf8'));
+ const input=JSON.parse(await readFile(path.join(cwd,'.blackice','directory','limits','runs','limits-run','part','input.json'),'utf8'));
  assert.equal(input.payload.blob,blob);
 });

@@ -22,7 +22,7 @@ test('recursive directory reserves leaf capacity and operational model-call budg
     assert.ok(runner.work.length<=24,'Never exceeds the leaf budget');
     assert.ok(runner.stats.planningCalls<=8,'Preserves execution calls');
     assert.equal(new Set(runner.work.map(x=>x.id)).size,runner.work.length,'Unique saved leaf IDs');
-    const turns=JSON.parse(await readFile(path.join(cwd,'.shadowdancer','bounded_case',
+    const turns=JSON.parse(await readFile(path.join(cwd,'.blackice','directory','bounded_case',
       'conversation','context','turns.json'),'utf8'));
     assert.ok(turns.some(row=>row.label==='decomposition-budget'),'Records bounded decisions');
     assert.ok(turns.filter(row=>row.label==='decompose').length<=8,'No unbounded recursive provider loop');
@@ -35,7 +35,7 @@ test('directory failure retains audit counts and the actual error',async()=>{
     await assert.rejects(runShadowdancerDirectory({cwd,conversationId:'failed_case',runId:'failed_case',
       model:'fixture',runtime,canWrite:false,input:'/directory Inspect the exact saved failure'}),
     /Injected provider failure/);
-    const directory=path.join(cwd,'.shadowdancer','failed_case','conversation','context');
+    const directory=path.join(cwd,'.blackice','directory','failed_case','conversation','context');
     const summary=JSON.parse(await readFile(path.join(directory,'summary.json'),'utf8'));
     const turns=JSON.parse(await readFile(path.join(directory,'turns.json'),'utf8'));
     assert.equal(summary.directoryStatus,'failed');

@@ -59,11 +59,11 @@ test('repository mode exposes workspace tools in each fresh directory context an
   assert.equal(output.repositoryAudit.verifiedBy,'host-file-hashes');
   assert.match(output.answer,/Repository audit \(host-observed\): Changed files within the recorded source inventory:/);
   assert.equal(output.stats.integrationGroups,1);
-  const root=path.join(cwd,'.shadowdancer','repo-context','runs','repo-run');
+  const root=path.join(cwd,'.blackice','directory','repo-context','runs','repo-run');
   const toolFile=path.join(root,'modules','1','tools','0002.json');
   const json=JSON.parse(await readFile(toolFile,'utf8'));
   assert.equal(json.tool,'relay_workspace');
-  const requirements=JSON.parse(await readFile(path.join(cwd,'.shadowdancer','repo-context','conversation','context','requirements.json'),'utf8'));
+  const requirements=JSON.parse(await readFile(path.join(cwd,'.blackice','directory','repo-context','conversation','context','requirements.json'),'utf8'));
   assert.equal(requirements.repositoryRoot,repo);
   const final=JSON.parse(await readFile(output.finalPath,'utf8'));
   assert.deepEqual(final.referencedResults.map(x=>x.ref),['module:1','verification:final','review:repository']);

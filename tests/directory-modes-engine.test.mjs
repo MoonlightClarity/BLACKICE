@@ -266,7 +266,7 @@ test('attributed attachment and handoff data stay outside source-page authority 
  };
  const next=await settle(f.engine,f.engine.continueRun(first.id,{nodeId:'agent',message:'CURRENT_GOAL: inspect only this source.\nSOURCE:\n'+'a'.repeat(1800),directoryMode:'on',attachmentIds:[id]}));
  assert.equal(sourcePages,1);assert.equal(imports.length,0,'exact attribution must not require a lossy model summary');
- const savedImport=JSON.parse(await readFile(path.join(f.cwd,'.shadowdancer',next.taskId,'runs',next.id,'context/imports/0001/source.json'),'utf8'));
+ const savedImport=JSON.parse(await readFile(path.join(f.cwd,'.blackice','directory',next.taskId,'runs',next.id,'context/imports/0001/source.json'),'utf8'));
  assert.match(savedImport.content,/ATTACHMENT_RAW_MUST_NOT_REPEAT/);assert.match(savedImport.content,/Ordinary Chat result\./);
  assert.ok(next.nodes.agent.shadowdancer);
 });

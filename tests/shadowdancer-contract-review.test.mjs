@@ -28,7 +28,7 @@ function prompt(opts){
  const content=opts.prompt.split('CURRENT_DIRECTORY:\n')[1].split(/\nREPOSITORY (?:MODE|SYNTHESIS):/)[0];
  return JSON.parse(content);
 }
-const runRoot=(cwd,id)=>path.join(cwd,'.shadowdancer',id,'runs',id);
+const runRoot=(cwd,id)=>path.join(cwd,'.blackice','directory',id,'runs',id);
 
 test('adversarial review triggers on complex under-tested contracts, not atomic or fully covered tasks',()=>{
  const long=contract('C:\\repo');

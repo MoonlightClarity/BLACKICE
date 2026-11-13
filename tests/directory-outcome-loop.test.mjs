@@ -43,7 +43,7 @@ test('full prepared Directory resumes an unfinished candidate within the same ru
   assert.equal(works,2);assert.equal(reviews,2);assert.match(result.output,/Created and verified/);
   assert.equal(phases.filter(x=>x==='decompose').length,1,'do not replay original planning');
   assert.equal(events.filter(x=>x.type==='message'&&x.phase==='final_answer').length,1,'only accepted result is published');
-  const root=path.join(cwd,'.shadowdancer','same_task');
+  const root=path.join(cwd,'.blackice','directory','same_task');
   const summary=JSON.parse(await readFile(path.join(root,'conversation/context/summary.json'),'utf8'));
   assert.equal(summary.currentRun,'same_run');assert.equal(summary.directoryStatus,'completed');assert.equal(summary.outcomeAssessment.decision,'respond');
   const first=JSON.parse(await readFile(path.join(root,'runs/same_run/integration/round-01/group-001/result.json'),'utf8'));
@@ -92,7 +92,7 @@ test('incomplete work checkpoints continue tools in the same phase before any sy
   assert.deepEqual(phases,['decompose','work','integration']);
   assert.deepEqual(actions,['write','read']);assert.equal(finalReviews,1);
   assert.equal(pilot.stats.workContinuations,1);assert.equal(pilot.stats.outcomeContinuations,undefined);
-  const checkpointRoot=path.join(cwd,'.shadowdancer/same-session/runs/same-session-run/modules/1/checkpoints');
+  const checkpointRoot=path.join(cwd,'.blackice/directory/same-session/runs/same-session-run/modules/1/checkpoints');
   assert.equal(JSON.parse(await readFile(path.join(checkpointRoot,'0001.json'),'utf8')).status,'incomplete');
   const completed=JSON.parse(await readFile(path.join(checkpointRoot,'0002.json'),'utf8'));
   assert.equal(completed.status,'complete');assert.equal(completed.hostEvidence.length,2);

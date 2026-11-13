@@ -66,7 +66,7 @@ test('BLACKICE chat /directory uses fresh remote turns and publishes only covera
   assert.ok(runtime.calls.every(c=>!('threadId' in c)&&!('continuity' in c)&&c.hostOnlyTools===true));
   assert.ok(runtime.calls.every(c=>!c.prompt.includes('CURRENT AGENT INSTRUCTIONS')));
   assert.ok(runtime.calls.every(c=>!c.prompt.includes('Saved conversation')));
-  const summary=JSON.parse(await readFile(path.join(cwd,'.shadowdancer',run.taskId||run.id,'conversation','context','summary.json'),'utf8'));
+  const summary=JSON.parse(await readFile(path.join(cwd,'.blackice','directory',run.taskId||run.id,'conversation','context','summary.json'),'utf8'));
   assert.equal(summary.integrationStatus,'coverage_checked_not_fact_verified');
 });
 

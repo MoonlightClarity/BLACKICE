@@ -77,7 +77,7 @@ test('parallel audit transactions retain every turn without shared-temp collisio
  const make=id=>new ShadowdancerDirectory({cwd,conversationId:'audit',runId:id,model:'fixture',runtime:{runAgent:async()=>{throw Error('No model should run');}}});
  const a=make('left'),b=make('right');await Promise.all([a.open(),b.open()]);
  await Promise.all(Array.from({length:64},(_,i)=>(i%2?a:b).label('parallel-receipt',{text:'receipt '+i,metadata:{i}})));
- const index=JSON.parse(await readFile(path.join(cwd,'.shadowdancer/audit/conversation/context/turns.json'),'utf8'));
+ const index=JSON.parse(await readFile(path.join(cwd,'.blackice/directory/audit/conversation/context/turns.json'),'utf8'));
  assert.equal(index.length,64);assert.equal(new Set(index.map(x=>x.id)).size,64);assert.equal(new Set(index.map(x=>x.metadata.i)).size,64);
  const summary=await a.summary();assert.equal(summary.totalTurns,64);
 }));

@@ -66,7 +66,7 @@ test('two pages cannot silently drop the second source; turns and context summar
   assert.ok(!runtime.calls[0].prompt.includes('BETA29'));
   assert.ok(runtime.calls[1].prompt.includes('BETA29'));
   assert.ok(!runtime.calls[1].prompt.includes('ALPHA17'));
-  const root=path.join(x.cwd,'.shadowdancer','chat001');
+  const root=path.join(x.cwd,'.blackice','directory','chat001');
   const index=JSON.parse(await readFile(path.join(root,'conversation','context','turns.json'),'utf8'));
   assert.ok(index.some(x=>x.label==='request'));
   assert.equal(index.filter(x=>x.label==='page-extract').length,2);
@@ -114,7 +114,7 @@ test('recursive planning creates separate module files, labels work turns and in
     input:'/directory Compute 19 times 23 and then verify the result',
   });
   assert.match(done.answer,/437/);
-  const base=path.join(x.cwd,'.shadowdancer','chat003','runs','run003');
+  const base=path.join(x.cwd,'.blackice','directory','chat003','runs','run003');
   assert.deepEqual((await readdir(path.join(base,'modules','1'))).sort().slice(0,2),['1.1','1.2']);
   const result1=JSON.parse(await readFile(path.join(base,'modules','1','1.1','result.json'),'utf8'));
   const result2=JSON.parse(await readFile(path.join(base,'modules','1','1.2','result.json'),'utf8'));
@@ -140,7 +140,7 @@ test('single named JavaScript function remains an atomic folder and survives sou
   assert.match(done.answer,/function normalizeTags/);
   assert.ok(done.answer.includes('javascript'));
   assert.ok(done.stats.calls===2);
-  const base=path.join(x.cwd,'.shadowdancer','coding-test','runs','code-run');
+  const base=path.join(x.cwd,'.blackice','directory','coding-test','runs','code-run');
   const module=JSON.parse(await readFile(path.join(base,'modules','1','module.json'),'utf8'));
   assert.equal(module.adaptiveReason,'single_callable_contract');
   const final=JSON.parse(await readFile(done.finalPath,'utf8'));

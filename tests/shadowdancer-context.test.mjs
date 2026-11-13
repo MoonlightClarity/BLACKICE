@@ -59,7 +59,7 @@ test('summary user notes edit persists revision snapshots and stales historic an
   assert.equal(history.total,1);
   assert.equal(history.items[0].beforeHash,old.hash);
   assert.equal(history.items[0].afterHash,saved.hash);
-  const revisionRoot=path.join(f.cwd,'.shadowdancer',f.conversationId,'conversation','context','revisions',saved.editId);
+  const revisionRoot=path.join(f.cwd,'.blackice','directory',f.conversationId,'conversation','context','revisions',saved.editId);
   const snapshot=JSON.parse(await readFile(path.join(revisionRoot,'before.json'),'utf8'));
   assert.deepEqual(snapshot,old.value);
   const original=JSON.parse(await readFile(f.done.finalPath,'utf8'));
@@ -141,7 +141,7 @@ test('user-edited conversation summary is explicitly reloaded into a future fres
   assert.ok(newer.calls[2].prompt.includes('Retain BETA29 explicitly'));
   assert.ok(!newer.calls[0].prompt.includes('"contextImport":'));
   const overview=await listShadowdancerContext(f.ctx());
-  const allTurns=JSON.parse(await readFile(path.join(f.cwd,'.shadowdancer',f.conversationId,'conversation','context','turns.json'),'utf8'));
+  const allTurns=JSON.parse(await readFile(path.join(f.cwd,'.blackice','directory',f.conversationId,'conversation','context','turns.json'),'utf8'));
   assert.equal(overview.summary.totalTurns,allTurns.length);
   assert.ok(allTurns.some(t=>t.label==='context-reload'&&t.runId==='run-02'));
 });
