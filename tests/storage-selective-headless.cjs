@@ -1,0 +1,41 @@
+const {app,BrowserWindow}=require('electron');
+const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),http=require('node:http'),assert=require('node:assert/strict');
+const root=path.resolve(__dirname,'..');let server,win;const checks=[];
+(async()=>{
+ const profile=await fs.mkdtemp(path.join(os.tmpdir(),'blackice-storage-render-'));app.setPath('userData',profile);await app.whenReady();
+ const production=await fs.readFile(path.join(root,'public/next/index.html'),'utf8'),styles=production.match(/<link[^>]+rel="stylesheet"[^>]*>/g).join('');
+ const fixture="import {createStorageSettings} from '/next/workspaces/settings-storage.mjs';\nwindow.calls=[];let pending=null;\nconst item=(id,name,extra={})=>({id,name,relativePath:'Workspace/'+name,kind:'file',bytes:512,files:1,selectable:true,...extra});\nconst top={parent:null,breadcrumbs:[{id:null,name:'Workspace files'}],nextOffset:null,entries:[item('mixed','experiments',{kind:'directory',hasChildren:true,selectable:false,reason:'Contains linked or unsupported files. Open this folder to choose supported items.'}),item('notes','notes.txt')]};\nconst nested={parent:'mixed',breadcrumbs:[{id:null,name:'Workspace files'},{id:'mixed',name:'experiments'}],nextOffset:null,entries:[item('link','node_modules',{kind:'link',selectable:false,reason:'Linked files stay untouched.'}),item('report','report.json')]};\nconst api=async(route,method='GET',body)=>{window.calls.push({route,method,body});\nif(route==='/api/storage/overview')return {categories:[{id:'workspaceFiles',title:'Workspace files',bytes:24000,files:5,deletable:true,unsafe:true}],pending,policy:{autoClearTemporaryOnStartup:false}};\nif(route.startsWith('/api/storage/workspace?'))return structuredClone(route.includes('parent=mixed')?nested:top);\nif(route==='/api/storage/cleanup'){pending={...body,status:'queued'};return {pending,applies:'next-startup'};}\nif(route==='/api/storage/cleanup/cancel'){pending=null;return {cancelled:true,partial:false};}\nthrow Error(route);};\nwindow.storage=createStorageSettings({mount:document.querySelector('#mount'),api,notify:()=>{}});window.storage.enter();window.ready=true;";
+ const html='<!doctype html><html><head>'+styles+'</head><body><main id="mount" style="max-width:100%;padding:16px"></main><script type="module">'+fixture+'</script></body></html>';
+ server=http.createServer(async(req,res)=>{try{let pathname=new URL(req.url,'http://localhost').pathname;if(pathname==='/'){res.setHeader('Content-Type','text/html');return res.end(html);}let f=path.resolve(root,'public','.'+pathname);if(!f.startsWith(path.join(root,'public')+path.sep))throw Error();res.setHeader('Content-Type',({'.mjs':'text/javascript','.css':'text/css','.svg':'image/svg+xml'})[path.extname(f)]||'application/octet-stream');res.end(await fs.readFile(f));}catch{res.writeHead(404);res.end();}});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));win=new BrowserWindow({show:false,width:1280,height:900,webPreferences:{contextIsolation:true,nodeIntegration:false}});
+ await win.loadURL('http://127.0.0.1:'+server.address().port+'/');const js=async s=>{try{return await win.webContents.executeJavaScript(s,true);}catch(e){throw Error(s+' :: '+e.message);}};
+ const wait=async s=>{for(let i=0;i<100;i++){if(await js(s))return;await new Promise(r=>setTimeout(r,30));}throw Error('Timed out '+s);};
+ await wait('window.ready && !document.querySelector("#storage-refresh").disabled');
+ for(const width of [1280,390]){
+ win.setSize(width,900);await js('document.querySelector("#storage-workspace-open").click()');
+ await wait('document.querySelectorAll("#storage-workspace-entries input").length===2 && !document.querySelector("#storage-workspace-open").disabled');
+ assert.equal(await js('document.querySelector("#storage-workspace-entries input").disabled'),true);
+ await js('document.querySelectorAll("#storage-workspace-entries input")[1].click()');
+ assert.match(await js('document.querySelector("#storage-selection").textContent'),/notes.txt/);
+ await js('document.querySelector("#storage-workspace-entries button").click()');
+ await wait('document.querySelector("#storage-workspace-entries").textContent.includes("node_modules")');
+ assert.match(await js('document.querySelector("#storage-workspace-entries").textContent'),/Linked files stay untouched/);
+ assert.equal(await js('document.querySelector("#storage-workspace-entries input").disabled'),true);
+ await js('document.querySelectorAll("#storage-workspace-entries input")[1].click()');
+ assert.match(await js('document.querySelector("#storage-selection").textContent'),/2 workspace item/);
+ await js('document.querySelector("#storage-workspace-selected button").click()');
+ assert.match(await js('document.querySelector("#storage-selection").textContent'),/1 workspace item/);
+ assert.equal(await js('document.querySelector("#storage-schedule").disabled'),true);
+ await js('var c=document.querySelector("#storage-confirm");c.value="DELETE SELECTED DATA";c.dispatchEvent(new Event("input",{bubbles:true}));');
+ assert.equal(await js('document.querySelector("#storage-schedule").disabled'),false);
+ assert.equal(await js('document.documentElement.scrollWidth>innerWidth'),false,'No horizontal overflow at '+width);
+ await js('document.querySelector("#storage-schedule").click()');
+ await wait('document.querySelector("#storage-pending").textContent.includes("next startup")');
+ assert.equal(await js('window.calls.filter(c=>c.route==="/api/storage/cleanup").at(-1).body.workspaceEntries[0]'),'report');
+ await js('document.querySelector("#storage-cancel").click()');
+ await wait('document.querySelector("#storage-pending").textContent===""');
+ checks.push(width+'px: drilldown, protected links, selection/unselection, preview, exact confirmation, fixture queue/cancel and no overflow');
+ await js('document.querySelector("#storage-refresh").click()');await wait('!document.querySelector("#storage-refresh").disabled');
+ }
+ await js('window.storage.destroy()');console.log(JSON.stringify({passed:true,checks,scope:'Rendered production module/shared styles with fixture API only. No real cleanup requested.'},null,2));
+})().catch(e=>{console.error(e.stack);process.exitCode=1;}).finally(async()=>{win?.destroy();if(server)await new Promise(r=>server.close(r));app.exit(process.exitCode||0);});

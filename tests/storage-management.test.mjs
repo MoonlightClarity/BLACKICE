@@ -212,3 +212,15 @@ test('external configured workspaces never appear in selective cleanup',async t=
  const {workspaceDir,manager}=await setup(t,true);await writeFile(path.join(workspaceDir,'keep'),'precious');
  assert.deepEqual((await manager.workspaceItems()).entries,[]);
 });
+
+test('preview binds exact contents before confirmation; new or changed files require fresh review',async t=>{
+ const {workspaceDir,manager}=await setup(t);await mkdir(path.join(workspaceDir,'folder'));await writeFile(path.join(workspaceDir,'folder','a'),'a');
+ const old=(await manager.workspaceItems()).entries[0];
+ await writeFile(path.join(workspaceDir,'folder','new'),'unreviewed');
+ await assert.rejects(manager.schedule({workspaceEntries:[old.id],confirmation:'DELETE SELECTED DATA'}),/changed since preview/);
+ assert.equal(await manager.pending(),null);
+ const fresh=(await manager.workspaceItems()).entries[0];assert.notEqual(fresh.id,old.id);
+ await manager.schedule({workspaceEntries:[fresh.id],confirmation:'DELETE SELECTED DATA'});await manager.cancel();
+ await writeFile(path.join(workspaceDir,'folder','a'),'changed');
+ await assert.rejects(manager.schedule({workspaceEntries:[fresh.id],confirmation:'DELETE SELECTED DATA'}),/changed since preview/);
+});
