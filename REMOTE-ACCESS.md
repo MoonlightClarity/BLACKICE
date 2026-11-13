@@ -17,6 +17,14 @@ Public mode has a separate **Publish the authenticated BLACKICE endpoint to the 
 
 For new profiles, the displayed address has the form `https://your-computer.your-network.ts.net`, without a port suffix. Existing saved profiles using **8443** retain their address, such as `https://your-computer.your-network.ts.net:8443`; they are not silently migrated. Use the exact address displayed by the running app. Enabling or switching access does not create a client credential automatically.
 
+## Temporary connection loss
+
+An already-enabled route retains its saved hostname, public/private mode, HTTPS port, and client authorizations if Tailscale is temporarily offline at startup. The local application remains usable, and remote admission stays closed until the same route is verified again.
+
+BLACKICE checks a ready route every 30 seconds. Known transient preflight failures retry after 1, 2, 5, 10, 30, then at most once every 60 seconds while the saved intent remains enabled. These offline attempts only inspect transport state; they do not reset grants or switch exposure. **Check connection** can request an earlier retry.
+
+A changed hostname, conflicting route, unreadable configuration, or failed verification after a route operation does not enter automatic recovery. Inspect the reported error locally. **Disable** and application shutdown cancel scheduled recovery, and a disabled profile never reconnects itself. Recovery does not promise availability while the computer, network, or Tailscale service is unavailable.
+
 ## Connect ChatGPT
 
 For ordinary ChatGPT Chat mode, use **Settings → ChatGPT connector** to prepare the public route and register the displayed address ending in `/mcp/chatgpt`. This connection uses separate OAuth authorization: begin connection in ChatGPT, match the pending code in BLACKICE, and have the local owner approve the needed permissions. Changing the server address requires fresh authorization.
