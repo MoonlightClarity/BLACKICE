@@ -24,6 +24,19 @@ test('leaving settings invalidates pending discovery and failure remains retryab
  await f.enter(); await f.click('#next-llama-discover'); await until(()=>!f.$('#next-llama-discover').disabled);
  assert.match(f.$('#next-llama-download-status').textContent,/offline/); assert.deepEqual(f.writes(),[]);
 });
+test('CUDA selection exposes matching DLL download and missing companion warning',async t=>{
+ const runtime={name:'llama-b1-bin-win-cuda-12.4-x64.zip',url:'https://github.com/runtime.zip',sizeBytes:1,companionRequired:true,companionName:'cudart-llama-bin-win-cuda-12.4-x64.zip'};
+ const dll={name:runtime.companionName,url:'https://github.com/dll.zip',sizeBytes:2,dependency:true};
+ const f=fixture(t,c=>c.route==='/api/local-models/downloads'?{tag:'b1',assets:[runtime,dll,{...runtime,name:'missing.zip',companionName:null}]}:undefined);
+ await f.enter();await f.click('#next-llama-discover');
+ const select=f.$('#next-llama-asset');select.value=runtime.name;await select.dispatch('change');
+ assert.equal(f.$('#next-llama-companion').getAttribute('href'),dll.url);
+ assert.match(f.$('#next-llama-download-status').textContent,/same folder/);
+ select.value='missing.zip';await select.dispatch('change');
+ assert.equal(f.$('#next-llama-companion').hidden,true);
+ assert.match(f.$('#next-llama-download-status').textContent,/missing from this release/);
+ assert.deepEqual(f.writes(),[]);
+});
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const until = async read => { for (let i = 0; i < 100; i++) { if (read()) return; await settle(); } throw Error('Local model settings did not settle.'); };
 const deferred = () => { let resolve; return {promise: new Promise(done => { resolve = done; }), resolve: value => resolve(value)}; };

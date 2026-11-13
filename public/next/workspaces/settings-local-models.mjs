@@ -31,8 +31,10 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
   const assets = node('select', '', 'next-field'); assets.id = 'next-llama-asset'; assets.hidden = true;
   const download = node('a', 'Download selected archive'); download.id = 'next-llama-download'; download.hidden = true;
   download.setAttribute('target', '_blank'); download.setAttribute('rel', 'noopener noreferrer');
+  const companionLink = node('a', 'Download required CUDA runtime DLLs'); companionLink.id = 'next-llama-companion'; companionLink.hidden = true;
+  companionLink.setAttribute('target', '_blank'); companionLink.setAttribute('rel', 'noopener noreferrer');
   const downloadStatus = node('p', '', 'next-help'); downloadStatus.id = 'next-llama-download-status'; downloadStatus.setAttribute('role', 'status');
-  setup.append(node('p', 'Choose the archive for your operating system, architecture and CPU/GPU backend. CUDA builds may also need the matching cudart archive. These are runtime binaries, not model weights. Downloads open your default browser; BLACKICE does not install or run them automatically.', 'next-help'), discover, releases, label('Official binary archive (platform and architecture are in the filename)', assets), download, downloadStatus,
+  setup.append(node('p', 'Choose the archive for your operating system, architecture and CPU/GPU backend. Windows CUDA builds require the matching cudart DLL archive extracted beside the runtime binaries. These are runtime binaries, not model weights. Downloads open your default browser; BLACKICE does not install or run them automatically.', 'next-help'), discover, releases, label('Official binary archive (platform and architecture are in the filename)', assets), download, companionLink, downloadStatus,
     node('p', 'Extract the runtime archive and keep its libraries beside llama-server. With an existing GGUF model, start the server locally, then use Refresh local models above. Replace the example model path with yours.', 'next-help'),
     node('pre', 'llama-server -m "path/to/model.gguf" --host 127.0.0.1 --port 8080'),
     node('p', 'On Windows use llama-server.exe from the extracted folder; on macOS/Linux use ./llama-server. Select matching dependencies from the same release when required. Downloading does not make the runtime available until you start it.', 'next-help'));
@@ -131,17 +133,25 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
   }
   function selectDownload() {
     const asset = downloadAssets.find(item => item.name === assets.value);
+    companionLink.hidden = true; companionLink.removeAttribute('href');
     download.hidden = !asset;
     if (!asset) { download.removeAttribute('href'); return; }
     download.setAttribute('href', asset.url);
+    const companion = asset.companionName && downloadAssets.find(item => item.name === asset.companionName);
+    if (companion) {
+      companionLink.hidden = false; companionLink.setAttribute('href', companion.url);
+      companionLink.textContent = 'Download required DLLs: ' + companion.name + ' (' + (companion.sizeBytes / 1048576).toFixed(1) + ' MiB)';
+    }
     downloadStatus.textContent = (asset.dependency ? 'CUDA dependency archive. ' : 'Runtime archive. ') +
-      (asset.sizeBytes / 1048576).toFixed(1) + ' MiB.' + (asset.sha256 ? ' SHA-256: ' + asset.sha256 : ' Checksum not provided by upstream metadata.');
+      (asset.sizeBytes / 1048576).toFixed(1) + ' MiB.' + (asset.sha256 ? ' SHA-256: ' + asset.sha256 : ' Checksum not provided by upstream metadata.') +
+      (asset.companionRequired ? companion ? ' Also download the matching DLL archive linked here and extract both into the same folder before starting llama-server.exe.' : ' Required matching CUDA DLL archive is missing from this release. Do not assume this archive will start; choose another backend or inspect official releases.' : '');
   }
   assets.addEventListener('change', selectDownload);
   discover.addEventListener('click', async () => {
     if (discovering || !alive || !active) return;
     const token = ++downloadGeneration; discovering = true; discover.disabled = true;
     download.hidden = true; download.removeAttribute('href'); assets.hidden = true;
+    companionLink.hidden = true; companionLink.removeAttribute('href');
     downloadStatus.textContent = 'Checking official release metadata…';
     try {
       const result = await api('/api/local-models/downloads');
