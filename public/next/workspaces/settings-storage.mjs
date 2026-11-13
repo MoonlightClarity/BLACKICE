@@ -30,7 +30,7 @@ const timestamp = value => {
   return value && Number.isFinite(date.getTime())
     ? date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : null;
 };
-const unavailable = item => item.unsafe ? 'Cleanup unavailable: contains linked or unsupported files.' : '';
+const unavailable = item => item.unsafe ? (item.id === 'workspaceFiles' ? 'Some entries are linked or unsupported. Review workspace files to choose safe items.' : 'Cleanup unavailable: contains linked or unsupported files.') : '';
 
 export function createStorageSettings({ mount, api, notify = () => {} }) {
   mount.innerHTML = [
@@ -53,6 +53,14 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
     '<details id="storage-details" class="storage-details"><summary>Other app data &amp; technical details</summary>',
     '<div id="storage-system" class="storage-usage-list"></div><p class="next-help" id="storage-count"></p>',
     '<p class="next-help" id="storage-external"></p></details></section>',
+    '<section class="next-card" id="storage-workspace-panel"><div class="storage-heading"><div><h3>Workspace files</h3>',
+    '<p class="next-help">Review folder sizes and choose individual files or folders. Nothing is selected automatically. Linked and unsupported items stay protected; open their folders to select safe contents.</p></div>',
+    '<button type="button" id="storage-workspace-open">Review workspace files</button></div>',
+    '<div id="storage-workspace-browser" hidden><nav id="storage-workspace-breadcrumbs" aria-label="Workspace folders"></nav>',
+    '<p id="storage-workspace-status" class="next-help" role="status" aria-live="polite"></p>',
+    '<div id="storage-workspace-entries" class="storage-removal-list"></div>',
+    '<button type="button" id="storage-workspace-more" hidden>Load more</button>',
+    '<div id="storage-workspace-selected" class="next-help"></div></div></section>',
     '<section class="next-card storage-cleanup"><h3>Automatic cleanup</h3>',
     '<div class="storage-policy"><label class="storage-checkbox-row"><input type="checkbox" id="storage-auto">',
     '<span>Automatically clear temporary files when BLACKICE starts</span></label>',
@@ -60,7 +68,7 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
     '<div class="next-row"><button type="button" id="storage-save-policy">Save preference</button>',
     '<span class="next-help" id="storage-policy-feedback" role="status"></span></div></div></section>',
     '<details class="next-card storage-delete" id="storage-delete"><summary>Delete saved data</summary>',
-    '<div class="storage-delete-body"><p class="next-help">Choose whole categories to remove. Their contents will be permanently deleted on the next startup of BLACKICE. You can cancel a scheduled cleanup before it starts.</p>',
+    '<div class="storage-delete-body"><p class="next-help">Choose categories or individual workspace items to remove. Their contents will be permanently deleted on the next startup of BLACKICE. You can cancel a scheduled cleanup before it starts.</p>',
     '<div id="storage-categories" class="storage-removal-list"></div>',
     '<p id="storage-selection" class="next-help storage-selection" role="status" aria-live="polite">No categories selected.</p>',
     '<label class="next-label" for="storage-confirm">Type DELETE SELECTED DATA to confirm</label>',
@@ -76,7 +84,10 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
   const auto = $('storage-auto'), savePolicy = $('storage-save-policy'), reviewTemporary = $('storage-review-temporary');
   let active = false, destroyed = false, busy = false, loading = false, scanFailed = false;
   let snapshot = null, readSequence = 0, lifecycle = 0, overviewRead = null;
-  const selected = new Set();
+  const selected = new Set(), selectedWorkspace = new Map();
+  let workspaceLoading = false, workspaceSequence = 0, workspaceResult = null, workspaceFailed = false;
+  const workspaceOpen = $('storage-workspace-open'), workspaceMore = $('storage-workspace-more');
+  const pendingNames = pending => [names(pending?.categories), ...(pending?.workspaceEntries || []).map(item => item.relativePath || item.name)].filter(Boolean).join(', ');
   const names = ids => (ids || []).map(id => categories[id]?.title || snapshot?.categories?.find(item => item.id === id)?.title || id).join(', ');
   const element = (tag, className, text) => {
     const node = mount.ownerDocument.createElement(tag);
@@ -89,21 +100,44 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
     const ready = active && Boolean(snapshot) && !loading && !scanFailed;
     const pending = Boolean(snapshot?.pending || snapshot?.pendingError);
     const temporary = snapshot?.categories?.find(item => item.id === 'temporary');
-    schedule.disabled = busy || !ready || pending || !selected.size || confirm.value !== 'DELETE SELECTED DATA';
+    schedule.disabled = busy || !ready || pending || (!selected.size && !selectedWorkspace.size) || workspaceLoading || workspaceFailed || confirm.value !== 'DELETE SELECTED DATA';
     cancel.hidden = !pending;
     cancel.disabled = busy || loading || !active;
     savePolicy.disabled = auto.disabled = busy || !ready;
     confirm.disabled = busy || !ready || pending;
-    refreshButton.disabled = busy || loading || !active;
+    refreshButton.disabled = busy || loading || workspaceLoading || !active;
+    workspaceOpen.disabled = busy || !ready || pending || workspaceLoading;
+    workspaceMore.disabled = busy || !ready || pending || workspaceLoading;
+    for (const input of $('storage-workspace-entries').querySelectorAll('input')) {
+      const item = workspaceResult?.entries?.find(value => value.id === input.value);
+      input.disabled = busy || !ready || pending || workspaceLoading || !item?.selectable;
+    }
+    for (const button of $('storage-workspace-breadcrumbs').querySelectorAll('button')) button.disabled = busy || !ready || workspaceLoading;
+    for (const button of $('storage-workspace-entries').querySelectorAll('button')) button.disabled = busy || !ready || workspaceLoading;
     reviewTemporary.disabled = busy || !ready || pending || !temporary?.deletable || temporary.unsafe || !hasData(temporary);
     for (const input of list.querySelectorAll('input')) {
       const item = snapshot?.categories?.find(value => value.id === input.value);
       input.disabled = busy || !ready || pending || !item?.deletable || item.unsafe;
     }
     const chosen = (snapshot?.categories || []).filter(item => selected.has(item.id));
+    $('storage-workspace-selected').replaceChildren();
+    for (const [id, item] of selectedWorkspace) {
+      const row = element('div', 'next-row'), remove = element('button', '', 'Keep this item');
+      remove.setAttribute('type', 'button'); remove.disabled = busy || !ready || pending;
+      remove.addEventListener('click', () => {
+        if (remove.disabled) return;
+        selectedWorkspace.delete(id); confirm.value = ''; renderWorkspace(); updateControls();
+      });
+      row.append(element('span', '', (item.relativePath || item.name) + ' (' + size(item.bytes) + ')'), remove);
+      $('storage-workspace-selected').append(row);
+    }
     $('storage-selection').textContent = chosen.length
       ? chosen.length + (chosen.length === 1 ? ' category' : ' categories') + ' selected · ' + size(chosen.reduce((sum, item) => sum + item.bytes, 0)) + ' measured. Removes: ' + names(chosen.map(item => item.id)) + '.'
       : 'No categories selected.';
+    if (selectedWorkspace.size) $('storage-selection').textContent += ' ' + selectedWorkspace.size + ' workspace item(s) selected (' +
+      size([...selectedWorkspace.values()].reduce((sum, item) => sum + item.bytes, 0)) + '): ' +
+      [...selectedWorkspace.values()].map(item => item.relativePath || item.name).join(', ') + '.';
+    if (selectedWorkspace.size) $('storage-delete').open = true;
   };
   const note = (message, error = false) => {
     if (destroyed || !active) return;
@@ -140,7 +174,7 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
       : hasData(temporary) ? 'Diagnostics and troubleshooting files. Cleanup runs on the next startup.'
       : 'No temporary files to clear.';
     list.replaceChildren();
-    const removable = visible.filter(item => item.deletable);
+    const removable = visible.filter(item => item.deletable && item.id !== 'workspaceFiles');
     for (const id of selected) if (!removable.some(item => item.id === id && !item.unsafe) || result.pending || result.pendingError) selected.delete(id);
     for (const item of removable) {
       const copy = describe(item), label = element('label', 'storage-removal-row');
@@ -160,26 +194,90 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
       list.append(label);
     }
     if (!removable.length) list.append(element('p', 'next-help storage-empty', 'There is no saved data available to delete.'));
+    if (result.pending || result.pendingError) selectedWorkspace.clear();
     const pending = result.pending, attention = result.pendingError || pending && pending.status !== 'queued';
     $('storage-pending-notice').hidden = !pending && !result.pendingError && !result.startupWarning;
     $('storage-pending-title').textContent = attention || result.startupWarning ? 'Cleanup needs attention' : 'Cleanup scheduled';
     $('storage-pending').textContent = pending
       ? pending.status === 'queued'
-        ? names(pending.categories) + '. Runs on the next startup of BLACKICE. Your data is still present.'
-        : names(pending.categories) + '. Cleanup was interrupted. Some files may already have been deleted. Cancel this request before scheduling another cleanup.'
+        ? pendingNames(pending) + '. Runs on the next startup of BLACKICE. Your data is still present.'
+        : pendingNames(pending) + '. Cleanup was interrupted. Some files may already have been deleted. Cancel this request before scheduling another cleanup.'
       : result.pendingError ? 'The saved cleanup request needs repair. Cancel it before scheduling another cleanup.' : '';
     if (result.startupWarning) $('storage-pending').textContent += ' The last startup could not complete cleanup: ' + result.startupWarning;
     auto.checked = result.policy?.autoClearTemporaryOnStartup === true;
     $('storage-policy-feedback').textContent = '';
     const report = result.lastCleanup;
     $('storage-report').textContent = report
-      ? 'Completed ' + (timestamp(report.completedAt) || 'at an unavailable time') + ' · ' + names(report.categories) + '. ' + size(report.bytesInspected) + ' measured before cleanup.'
+      ? 'Completed ' + (timestamp(report.completedAt) || 'at an unavailable time') + ' · ' + pendingNames(report) + '. ' + size(report.bytesInspected) + ' measured before cleanup.'
       : 'No cleanup has been recorded.';
     updateControls();
   }
+  function renderWorkspace() {
+    if (!workspaceResult || destroyed) return;
+    const entries = $('storage-workspace-entries'), crumbs = $('storage-workspace-breadcrumbs');
+    crumbs.replaceChildren();
+    for (const crumb of workspaceResult.breadcrumbs || []) {
+      const button = element('button', '', crumb.name); button.setAttribute('type', 'button');
+      button.addEventListener('click', () => { if (!button.disabled) void browseWorkspace(crumb.id); });
+      crumbs.append(button);
+    }
+    entries.replaceChildren();
+    for (const item of workspaceResult.entries || []) {
+      const row = element('div', 'storage-removal-row'), label = element('label', 'storage-checkbox-row');
+      const check = element('input'); check.value = item.id;
+      check.setAttribute('type', 'checkbox'); check.setAttribute('aria-label', 'Delete ' + (item.relativePath || item.name));
+      check.checked = selectedWorkspace.has(item.id);
+      check.addEventListener('change', () => {
+        if (check.disabled) return;
+        if (check.checked) selectedWorkspace.set(item.id, item); else selectedWorkspace.delete(item.id);
+        confirm.value = ''; updateControls();
+      });
+      label.append(check, element('span', '', item.name));
+      const copy = element('div', 'storage-removal-copy'); copy.append(label);
+      if (!item.selectable) copy.append(element('span', 'next-help', item.reason || 'Linked or unsupported item. This item will not be deleted.'));
+      row.append(copy, element('span', 'storage-size', size(item.bytes)));
+      if (item.hasChildren) {
+        const open = element('button', '', 'Open folder'); open.setAttribute('type', 'button');
+        open.addEventListener('click', () => { if (!open.disabled) void browseWorkspace(item.id); });
+        row.append(open);
+      }
+      entries.append(row);
+    }
+    workspaceMore.hidden = workspaceResult.nextOffset == null;
+    $('storage-workspace-status').textContent = workspaceResult.entries?.length ? 'Sizes exclude linked targets. Select only items you want permanently deleted on next startup.' : 'This folder has no entries.';
+    updateControls();
+  }
+  async function browseWorkspace(parent = null, more = false) {
+    if (destroyed || !active || busy || workspaceLoading || loading) return;
+    const sequence = ++workspaceSequence, view = lifecycle;
+    workspaceLoading = true; workspaceFailed = false; confirm.value = '';
+    $('storage-workspace-browser').hidden = false;
+    $('storage-workspace-status').textContent = 'Measuring folder contents...'; updateControls();
+    try {
+      const offset = more ? workspaceResult?.nextOffset || 0 : 0;
+      const result = await api('/api/storage/workspace?parent=' + encodeURIComponent(parent || '') + '&offset=' + offset, 'GET', undefined, { deadlineMs: 180000 });
+      if (!active || destroyed || sequence !== workspaceSequence || view !== lifecycle) return;
+      workspaceResult = more ? { ...result, entries: [...workspaceResult.entries, ...result.entries] } : result;
+      // Reconcile visible selections against the fresh measurement. Other folders
+      // are revalidated by the server when scheduling and again at startup.
+      for (const item of result.entries || []) if (selectedWorkspace.has(item.id)) {
+        if (item.selectable) selectedWorkspace.set(item.id, item); else selectedWorkspace.delete(item.id);
+      }
+      renderWorkspace();
+    } catch (error) {
+      if (active && !destroyed && sequence === workspaceSequence && view === lifecycle) {
+        workspaceFailed = true; $('storage-workspace-status').textContent = 'Folder scan failed. Review workspace files to retry. ' + error.message;
+      }
+    } finally { if (!destroyed && sequence === workspaceSequence) { workspaceLoading = false; updateControls(); } }
+  }
+  workspaceOpen.addEventListener('click', () => { if (!workspaceOpen.disabled) void browseWorkspace(); });
+  workspaceMore.addEventListener('click', () => { if (!workspaceMore.disabled) void browseWorkspace(workspaceResult?.parent, true); });
   async function refresh() {
     if (destroyed || !active) return;
     const read = ++readSequence;
+    selectedWorkspace.clear(); confirm.value = ''; workspaceFailed = false;
+    workspaceResult = null; workspaceSequence++; workspaceLoading = false;
+    $('storage-workspace-browser').hidden = true;
     loading = true;
     updateControls();
     $('storage-scan-status').textContent = snapshot ? 'Refreshing usage… Previous measurement shown.' : 'Measuring saved files… Large workspaces can take a minute.';
@@ -217,7 +315,7 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
   refreshButton.addEventListener('click', () => { if (!busy && !loading) void refresh(); });
   reviewTemporary.addEventListener('click', () => {
     if (reviewTemporary.disabled) return;
-    selected.clear(); selected.add('temporary'); confirm.value = '';
+    selected.clear(); selectedWorkspace.clear(); selected.add('temporary'); confirm.value = '';
     for (const input of list.querySelectorAll('input')) input.checked = input.value === 'temporary';
     $('storage-delete').open = true;
     updateControls();
@@ -229,14 +327,15 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
     busy = true; updateControls();
     const ids = [...selected], view = lifecycle;
     try {
-      const saved = await api('/api/storage/cleanup', 'POST', { categories: ids, confirmation: confirm.value });
+      const saved = await api('/api/storage/cleanup', 'POST', { categories: ids, confirmation: confirm.value,
+        ...(selectedWorkspace.size ? { workspaceEntries: [...selectedWorkspace.keys()] } : {}) });
       if (destroyed || !active || view !== lifecycle) return;
       selected.clear(); confirm.value = '';
       snapshot = { ...snapshot, pending: saved.pending, pendingError: null, startupWarning: null };
       render(snapshot);
       await refresh();
       if (destroyed || !active || view !== lifecycle) return;
-      note('Scheduled ' + names(saved.pending.categories) + ' for deletion on the next startup. No data has been deleted yet.');
+      note('Scheduled ' + pendingNames(saved.pending) + ' for deletion on the next startup. No data has been deleted yet.');
       notify('Storage cleanup scheduled for the next startup.');
     } catch (error) { if (!destroyed && active && view === lifecycle) { scanFailed = true; note(error.message, true); } }
     finally {
@@ -290,7 +389,7 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
     leave() {
       if (destroyed) return;
       active = false; lifecycle++; readSequence++; loading = false;
-      selected.clear(); confirm.value = ''; snapshot = null; scanFailed = false;
+      selected.clear(); selectedWorkspace.clear(); workspaceResult = null; workspaceSequence++; workspaceLoading = false; workspaceFailed = false; $('storage-workspace-browser').hidden = true; confirm.value = ''; snapshot = null; scanFailed = false;
       $('storage-delete').open = false;
       $('storage-feedback').textContent = ''; $('storage-policy-feedback').textContent = '';
       updateControls();

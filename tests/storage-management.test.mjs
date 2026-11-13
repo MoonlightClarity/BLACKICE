@@ -146,3 +146,69 @@ test('unsafe filesystem links cannot be queued or cleared',async t=>{
   await assert.rejects(manager.schedule({categories:['conversations'],confirmation:'DELETE SELECTED DATA'}),/link/);
   assert.equal(await readFile(outside,'utf8'),'keep');
 });
+
+test('selective workspace cleanup retains siblings and supports names containing x and zero',async t=>{
+ const {dataDir,workspaceDir,manager}=await setup(t);
+ await writeFile(path.join(workspaceDir,'experiment0.txt'),'remove');
+ await writeFile(path.join(workspaceDir,'keep.txt'),'keep');
+ const list=await manager.workspaceItems(),item=list.entries.find(x=>x.name==='experiment0.txt');
+ assert.equal(item.selectable,true);
+ await manager.schedule({workspaceEntries:[item.id],confirmation:'DELETE SELECTED DATA'});
+ assert.equal(await exists(path.join(workspaceDir,'experiment0.txt')),true);
+ await new StorageManager({dataDir,workspaceDir}).applyAtStartup();
+ assert.equal(await exists(path.join(workspaceDir,'experiment0.txt')),false);
+ assert.equal(await readFile(path.join(workspaceDir,'keep.txt'),'utf8'),'keep');
+});
+test('linked folders remain protected while safe nested children can be selected',async t=>{
+ const {root,workspaceDir,manager}=await setup(t);
+ await mkdir(path.join(workspaceDir,'mixed'));
+ await mkdir(path.join(root,'outside'));
+ await writeFile(path.join(root,'outside','keep'),'outside');
+ await symlink(path.join(root,'outside'),path.join(workspaceDir,'mixed','link'),'junction');
+ await writeFile(path.join(workspaceDir,'mixed','safe.txt'),'safe');
+ const folder=(await manager.workspaceItems()).entries.find(x=>x.name==='mixed');
+ assert.equal(folder.selectable,false); assert.equal(folder.hasChildren,true);
+ const nested=await manager.workspaceItems({parent:folder.id});
+ assert.equal(nested.entries.find(x=>x.name==='link').selectable,false);
+ const safe=nested.entries.find(x=>x.name==='safe.txt');
+ await assert.rejects(manager.schedule({workspaceEntries:[folder.id],confirmation:'DELETE SELECTED DATA'}),/link/);
+ await manager.schedule({workspaceEntries:[safe.id],confirmation:'DELETE SELECTED DATA'});
+ await manager.applyAtStartup();
+ assert.equal(await readFile(path.join(root,'outside','keep'),'utf8'),'outside');
+ assert.equal(await exists(path.join(workspaceDir,'mixed','safe.txt')),false);
+});
+test('changed contents revoke saved cleanup rather than deleting unreviewed files',async t=>{
+ const {workspaceDir,manager}=await setup(t);
+ await mkdir(path.join(workspaceDir,'selected'));
+ await writeFile(path.join(workspaceDir,'selected','a'),'a');
+ const item=(await manager.workspaceItems()).entries[0];
+ await manager.schedule({workspaceEntries:[item.id],confirmation:'DELETE SELECTED DATA'});
+ await writeFile(path.join(workspaceDir,'selected','new'),'new');
+ await assert.rejects(manager.applyAtStartup(),/changed/);
+ assert.equal(await exists(path.join(workspaceDir,'selected','a')),true);
+ assert.equal(await exists(path.join(workspaceDir,'selected','new')),true);
+});
+test('selection rejects forged tokens, overlapping folders, and path traversal',async t=>{
+ const {workspaceDir,manager}=await setup(t);
+ await mkdir(path.join(workspaceDir,'folder'));await writeFile(path.join(workspaceDir,'folder','child'),'a');
+ const folder=(await manager.workspaceItems()).entries[0],child=(await manager.workspaceItems({parent:folder.id})).entries[0];
+ await assert.rejects(manager.schedule({workspaceEntries:['../../outside'],confirmation:'DELETE SELECTED DATA'}),/expired/);
+ await assert.rejects(manager.schedule({workspaceEntries:[folder.id,child.id],confirmation:'DELETE SELECTED DATA'}),/not both/);
+ for(const relative of ['../outside','folder/../child','a\\b','a:b','bad\u0000name']){
+   assert.throws(()=>manager.descriptor({rootIndex:1,relative,identity:'a',rootIdentity:'b'}),/Invalid/);
+ }
+});
+test('replaced ancestor junction cannot redirect a queued selection',async t=>{
+ const {root,workspaceDir,manager}=await setup(t);
+ const folder=path.join(workspaceDir,'folder');await mkdir(folder);await writeFile(path.join(folder,'child'),'a');
+ const item=(await manager.workspaceItems()).entries[0],child=(await manager.workspaceItems({parent:item.id})).entries[0];
+ await manager.schedule({workspaceEntries:[child.id],confirmation:'DELETE SELECTED DATA'});
+ await rm(folder,{recursive:true});await mkdir(path.join(root,'outside'));await writeFile(path.join(root,'outside','child'),'precious');
+ await symlink(path.join(root,'outside'),folder,'junction');
+ await assert.rejects(manager.applyAtStartup(),/link|changed/);
+ assert.equal(await readFile(path.join(root,'outside','child'),'utf8'),'precious');
+});
+test('external configured workspaces never appear in selective cleanup',async t=>{
+ const {workspaceDir,manager}=await setup(t,true);await writeFile(path.join(workspaceDir,'keep'),'precious');
+ assert.deepEqual((await manager.workspaceItems()).entries,[]);
+});
