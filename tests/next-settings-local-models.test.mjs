@@ -5,12 +5,12 @@ import {createLocalModelSettings} from '../public/next/workspaces/settings-local
 
 test('runtime downloads are explicit browser links, separate from model loading', async t => {
  const name='llama-b123-bin-win-cpu-x64.zip', url='https://github.com/ggml-org/llama.cpp/releases/download/b123/'+name;
- const f=fixture(t, call=>call.route==='/api/local-models/downloads'?{tag:'b123',assets:[{name,url,sizeBytes:1048576}]}:undefined);
+ const f=fixture(t, call=>call.route==='/api/local-models/downloads'?{tag:'b123',prerelease:true,assets:[{name,url,sizeBytes:1048576}]}:undefined);
  await f.enter(); assert.equal(f.calls.length,1);
  const runtime=f.$('#next-local-engine'); runtime.value='llamacpp'; await runtime.dispatch('change');
  assert.equal(f.$('#next-llama-setup').hidden,false); assert.equal(f.$('#next-llama-download').hidden,true);
  await f.click('#next-llama-discover'); await until(()=>!f.$('#next-llama-discover').disabled);
- assert.match(f.$('#next-llama-download-status').textContent,/b123/);
+ assert.match(f.$('#next-llama-download-status').textContent,/prerelease\/nightly b123/);
  const select=f.$('#next-llama-asset'); select.value=name; await select.dispatch('change');
  assert.equal(f.$('#next-llama-download').getAttribute('href'),url); assert.match(f.$('#next-llama-download-status').textContent,/1.0 MiB/);
  assert.deepEqual(f.writes(),[]);

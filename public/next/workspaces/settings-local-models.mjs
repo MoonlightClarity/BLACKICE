@@ -32,7 +32,7 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
   const download = node('a', 'Download selected archive'); download.id = 'next-llama-download'; download.hidden = true;
   download.setAttribute('target', '_blank'); download.setAttribute('rel', 'noopener noreferrer');
   const downloadStatus = node('p', '', 'next-help'); downloadStatus.id = 'next-llama-download-status'; downloadStatus.setAttribute('role', 'status');
-  setup.append(node('p', 'Choose the archive for your operating system, architecture and CPU/GPU backend. CUDA builds may also need the matching cudart archive. These are runtime binaries, not model weights. Downloads use your browser; BLACKICE does not install or run them automatically.', 'next-help'), discover, releases, label('Official binary archive (platform and architecture are in the filename)', assets), download, downloadStatus,
+  setup.append(node('p', 'Choose the archive for your operating system, architecture and CPU/GPU backend. CUDA builds may also need the matching cudart archive. These are runtime binaries, not model weights. Downloads open your default browser; BLACKICE does not install or run them automatically.', 'next-help'), discover, releases, label('Official binary archive (platform and architecture are in the filename)', assets), download, downloadStatus,
     node('p', 'Extract the runtime archive and keep its libraries beside llama-server. With an existing GGUF model, start the server locally, then use Refresh local models above. Replace the example model path with yours.', 'next-help'),
     node('pre', 'llama-server -m "path/to/model.gguf" --host 127.0.0.1 --port 8080'),
     node('p', 'On Windows use llama-server.exe from the extracted folder; on macOS/Linux use ./llama-server. Select matching dependencies from the same release when required. Downloading does not make the runtime available until you start it.', 'next-help'));
@@ -153,7 +153,7 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
         option.setAttribute('value', asset.name); assets.append(option);
       }
       assets.hidden = false; assets.value = '';
-      downloadStatus.textContent = 'Official release ' + result.tag + '. Select the matching platform, architecture and backend; no download has started.';
+      downloadStatus.textContent = 'Official ' + (result.prerelease ? 'prerelease/nightly ' : 'release ') + result.tag + '. Select the matching platform, architecture and backend; no download has started.';
     } catch (e) {
       if (alive && active && token === downloadGeneration) downloadStatus.textContent = (e.message || 'Could not check downloads.') + ' Use the official releases link or try again.';
     } finally {

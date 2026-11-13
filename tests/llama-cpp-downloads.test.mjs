@@ -11,6 +11,18 @@ test('download HTTP route is local, GET-only and retains actionable failures',as
  manager.downloads=async()=>{throw Object.assign(Error('offline'),{status:502,code:'LLAMA_DOWNLOAD_CATALOG_UNAVAILABLE'})};
  assert.equal((await localModelHTTP(args)).body.code,'LLAMA_DOWNLOAD_CATALOG_UNAVAILABLE');
 });
+import {readFile} from 'node:fs/promises';
+test('captured official feed with stable pointer and nightly binaries remains usable', async()=>{
+ const captured=JSON.parse(await readFile(new URL('./fixtures/llama-releases-20261113.json',import.meta.url),'utf8'));
+ const result=await llamaCppDownloads(fetcher(captured));
+ const release=captured.find(item=>item.tag_name===result.tag);
+ assert.equal(result.prerelease,true); assert.equal(release.prerelease,true);
+ assert.ok(result.assets.length>0); assert.ok(result.assets.every(asset=>asset.url.startsWith('https://github.com/ggml-org/llama.cpp/releases/download/')));
+});
+test('draft release is never offered even when it has binary assets',async()=>{
+ const result=await llamaCppDownloads(fetcher([{tag_name:'b123',draft:true,assets:[asset()]},{tag_name:'b123',prerelease:true,assets:[asset()]}]));
+ assert.equal(result.prerelease,true);
+});
 const asset = (name = 'llama-b123-bin-win-cpu-x64.zip') => ({name, size: 1234, browser_download_url: 'https://github.com/ggml-org/llama.cpp/releases/download/b123/' + name, digest: 'sha256:' + 'a'.repeat(64)});
 const fetcher = data => async (url, options) => { assert.equal(new URL(url).hostname, 'api.github.com'); assert.equal(options.redirect, 'error'); return {ok:true,json:async()=>data}; };
 test('official download discovery skips pointer tags and exposes exact runtime/dependency assets', async () => {
