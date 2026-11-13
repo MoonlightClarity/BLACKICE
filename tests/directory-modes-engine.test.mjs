@@ -340,12 +340,19 @@ test('goal Pause reaches active Directory child and retains uncertain evidence',
  const conversations=await new ConversationArchive({engine:f.engine,dataDir:f.dataDir}).init();
  const goals=await new ConversationGoals({engine:f.engine,conversations,continuationDelayMs:10}).init();
 
- let active=false,aborted=false;
- const evidence=path.join(f.cwd,'uncertain-receipt.json');
- await writeFile(evidence,JSON.stringify({effect:'uncertain',retry:false}));
+ let active=false,aborted=false,workEntries=0;const rejected=[];
+ const store=await new TaskStateStore({dataDir:f.dataDir}).init();f.engine.tasks=store;
+ const raw=createWorkspaceToolHandler({cwd:f.cwd});
+ const descriptor=await raw.describeOperation({name:'relay_workspace',arguments:{action:'run',command:'must-not-run'}});
+ const evidence=store.file('pause-uncertain-history')+'.sequence';
+ const journal=JSON.stringify({version:3,policy:'work-items-v2',taskId:'pause-uncertain-history',journalSeq:2,
+  records:[{operationId:'pause-unknown',runId:'prior',nodeId:'owner',workItemId:'prior-item',journalSeq:1,...descriptor,tool:'relay_workspace',action:'run',deliveryState:'interrupted',effectState:'unknown',evidenceIds:[]}],evidence:[],focuses:[],judgments:[],findings:[],progress:[]});
+ await writeFile(evidence,journal);
  f.runtime.inspect=async(options,phase)=>{
   if(phase?.label!=='work')return;
-  active=true;await new Promise(resolve=>options.signal.addEventListener('abort',()=>{aborted=true;resolve();},{once:true}));
+  const attempted=await options.onToolCall({name:'relay_workspace',callId:'uncertain-retry-'+workEntries,arguments:{action:'run',command:'must-not-run'}});
+  rejected.push(attempted);assert.equal(attempted.success,false);assert.match(JSON.stringify(attempted),/TASK_CONTRACT_EFFECT_UNCERTAIN/);
+  workEntries++;active=true;await new Promise(resolve=>options.signal.addEventListener('abort',()=>{aborted=true;resolve();},{once:true}));
   options.signal.throwIfAborted();
  };
  const run=f.engine.startRun({workflow:graph(),input:{task:'Preserve pending effects.',directoryMode:'on',goal:{objective:'Preserve pending effects.'}}});
@@ -356,9 +363,17 @@ test('goal Pause reaches active Directory child and retains uncertain evidence',
  await f.engine.executions.get(run.id);
  assert.equal(aborted,true);assert.equal(f.engine.getRun(run.id).settled,true);
  assert.equal(f.engine.getRun(run.id).status,'cancelled');assert.equal(f.runtime.calls.length,calls);
- assert.deepEqual(JSON.parse(await readFile(evidence,'utf8')),{effect:'uncertain',retry:false});
+ assert.equal(await readFile(evidence,'utf8'),journal);
  assert.equal((await goals.get(run.id)).status,'paused');
  const again=await goals.control(run.id,{action:'pause',pauseRunId:run.id,requestId:'directory-pause'});
  assert.equal(again.replayed,true);assert.equal(f.runtime.calls.length,calls);
- assert.equal(result.goal.completionEvidence,null); await goals.close();await conversations.close();
+ assert.equal(result.goal.completionEvidence,null);
+ for(let n=0;n<300&&!goals.raw(run.id).pauseRequest?.settled;n++)await new Promise(r=>setTimeout(r,5));
+ const resumed=await goals.control(run.id,{action:'resume',requestId:'directory-resume'});
+ for(let n=0;n<300&&workEntries<2;n++)await new Promise(r=>setTimeout(r,5));
+ assert.equal(workEntries,2);assert.equal(rejected.length,2);assert.equal(await readFile(evidence,'utf8'),journal);
+ await goals.control(run.id,{action:'pause',pauseRunId:resumed.run.id,requestId:'directory-pause-again'});
+ await f.engine.executions.get(resumed.run.id);
+ assert.equal(await readFile(evidence,'utf8'),journal);
+ await goals.close();await conversations.close();await store.close();
 });
