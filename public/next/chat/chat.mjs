@@ -326,13 +326,15 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       view.trashDialog.showModal();return;
     }
     state.managing=true;++state.listRead;managementMessage('Updating conversations…');indexPaint();updateHead();attachmentsUI.refreshEditability();
-    let completed=0;const failures=[];
+    let completed=0;const failures=[],cleanupWarnings=[];
     try{
       for(const original of targets){
         if(state.destroyed)break;
         try{
           const [current]=resolveConversationSelection(new Map([[original.id,original]]),managementTarget,action);
-          await api('/api/conversations/'+encodeURIComponent(current.runId)+'/'+action,'POST',{});
+          const updated=await api('/api/conversations/'+encodeURIComponent(current.runId)+'/'+action,'POST',{});
+          if(updated?.tabCleanup?.error||updated?.tabCleanup?.failedTabs?.length||updated?.tabCleanup?.remainingTabIds?.length)
+            cleanupWarnings.push('Some browser tabs for “'+current.title+'” could not be closed.');
           if(state.destroyed)break;
           const destination=conversationActionState(action);
           state.list=state.list.filter(item=>rootId(item)!==current.id);
@@ -343,8 +345,9 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       }
       if(state.destroyed)return;
       const description=action==='archive'?'archived':action==='restore'?'restored':'moved to Trash';
-      const result=(completed?completed+' '+(completed===1?'chat':'chats')+' '+description+'. ':'')+(failures.length?failures.length+' could not be changed. '+failures[0]:'');
-      managementMessage(result,failures.length>0);if(completed)notify(completed+' '+(completed===1?'chat':'chats')+' '+description+'.');
+      const result=(completed?completed+' '+(completed===1?'chat':'chats')+' '+description+'. ':'')+(failures.length?failures.length+' could not be changed. '+failures[0]:'')+(cleanupWarnings.length?' '+cleanupWarnings[0]:'');
+      managementMessage(result,failures.length>0||cleanupWarnings.length>0);
+      if(completed)notify(completed+' '+(completed===1?'chat':'chats')+' '+description+'.'+(cleanupWarnings.length?' '+cleanupWarnings[0]:''),cleanupWarnings.length>0);
       if(!state.selection.size)state.selecting=false;
     }finally{
       state.managing=false;

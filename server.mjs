@@ -619,7 +619,19 @@ export async function createHarnessServer(options = {}) {
       const renameMatch=pathname.match(/^\/api\/conversations\/([a-zA-Z0-9_-]+)\/rename$/);
       if(renameMatch&&req.method==='POST'){const value=await body(req);return json(res,200,await conversations.rename(renameMatch[1],value.title));}
       const conversationAction=pathname.match(/^\/api\/conversations\/([a-zA-Z0-9_-]+)\/(archive|restore|delete)$/);
-      if(conversationAction&&req.method==='POST'){await body(req);const state=conversationAction[2]==='archive'?'archived':conversationAction[2]==='delete'?'deleted':'active';return json(res,200,{...await conversations.setState(conversationAction[1],state),conversations:conversations.list(state)});}
+      if(conversationAction&&req.method==='POST'){
+        await body(req);
+        const state=conversationAction[2]==='archive'?'archived':conversationAction[2]==='delete'?'deleted':'active';
+        // Commit conversation state first. A browser failure must not falsely report
+        // that the archive/trash operation was rolled back.
+        const saved=await conversations.setState(conversationAction[1],state);
+        let tabCleanup;
+        if(state==='archived'||state==='deleted'){
+          try{tabCleanup=await browser.closeTabs({conversationId:saved.rootId,conversations});}
+          catch(error){tabCleanup={closed:0,closedTabIds:[],failedTabs:[],error:error.message};}
+        }
+        return json(res,200,{...saved,...(tabCleanup?{tabCleanup}:{}),conversations:conversations.list(state)});
+      }
       const conversationMatch=pathname.match(/^\/api\/conversations\/([a-zA-Z0-9_-]+)$/);
       if(conversationMatch&&req.method==='GET')return json(res,200,await conversations.family(conversationMatch[1]));
       if(pathname==='/api/methods'&&req.method==='GET'){
@@ -1099,6 +1111,11 @@ export async function createHarnessServer(options = {}) {
           await refreshBrowserProfiles();
         }
         return json(res, 200, browserStatus(req));
+      }
+      if (pathname === '/api/browser/close-all' && req.method === 'POST') {
+        if (req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Close all tabs from the browser workspace on this computer.' });
+        await body(req);
+        return json(res, 200, await browser.closeTabs());
       }
       if (pathname === '/api/browser/ownership' && req.method === 'POST') {
         if (req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Move tabs from the browser workspace on this computer.' });
