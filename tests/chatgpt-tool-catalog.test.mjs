@@ -45,7 +45,7 @@ test('the configured catalog retains 31 tools with reviewed authentication, cano
   ]);
   assert.deepEqual(catalog.status(), {
     // Reviewed explicit task/context tools, source binding, receipt alternatives and optional operation scopes.
-    sha256: 'dc85d3d8b3a90ded6bb3ec06c0c60da555cef358a2108918c1f7789765cf0487',
+    sha256: '6ef69a4088e9cb7df34f62291f92435f82eacc769cf3bf44d669fbf06ec1e224',
     toolCount: 31,
     serverVersion: '2.33.5',
   });
@@ -70,6 +70,13 @@ test('the configured catalog retains 31 tools with reviewed authentication, cano
   assert.match(authentication.description, /Reuse the same requestId after uncertainty; dispatch is not authentication proof/);
   const previousTools = structuredClone(catalog.tools().filter(tool => tool.name !== authentication.name));
   assert.equal(previousTools.length, 30);
+  // Verify and undo only the intentional archive/Trash cleanup protocol change
+  // before comparing the prior reviewed complete catalog and subsequent deltas.
+  const browserDescription=previousTools.find(tool=>tool.name==='blackice_browser_action');
+  const currentCleanup='Before reporting task completion, save necessary results/URLs, and leave conversation tabs available for review. Tabs close when the user archives or trashes that conversation, or explicitly uses Close All Tabs in the browser; do not close tabs merely because an agent finished a task. A user-requested individual close still uses blackice_browser_action action close with the exact observed tabId.';
+  const previousCleanup='Before reporting task completion, save necessary results/URLs, read current tabs and downloads, and close only the recorded task-created tabs that are no longer needed, using blackice_browser_action action close and the exact observed tabId.';
+  assert.ok(browserDescription.description.includes(currentCleanup));
+  browserDescription.description=browserDescription.description.replace(currentCleanup,previousCleanup);
   assert.equal(createHash('sha256').update(JSON.stringify(previousTools)).digest('hex'), 'edc72dde20a39a88f159440f83ab255d7cd9205531dff5dbe3df9a1db1801e92');
 
   // Undo exactly the reviewed conversation scope additions and prove that all

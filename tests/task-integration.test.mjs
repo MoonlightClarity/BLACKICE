@@ -96,7 +96,7 @@ for (const ending of ['cancelled', 'failed']) test(`${ending} real saved agent s
 test('legacy native threads retain their real tool catalog while new tasks receive relay_task', async t => {
   const nativeThread = 'legacy-native-thread', runtime = new Runtime(async options => ({ output: 'Original native result.', threadId: options.threadId || nativeThread }));
   const { engine, tasks, cwd, dataDir, engines } = await engineHarness(t, runtime, { withTasks: false });
-  const original = engine.startRun({ workflow: graph, input: 'Keep the original user objective.', planningMode: 'off' }); await settled(engine, original.id); assert.deepEqual(runtime.calls[0].dynamicTools.map(tool => tool.name), ['relay_workspace', 'relay_control']);
+  const original = engine.startRun({ workflow: graph, input: 'Keep the original user objective.', planningMode: 'off' }); await settled(engine, original.id); assert.deepEqual(runtime.calls[0].dynamicTools.map(tool => tool.name), ['relay_workspace', 'relay_control', 'relay_agents']);
   // Simulate a saved thread from before the task and control gateways existed.
   engine.runs.get(original.id).nodes.agent.toolNames = ['relay_workspace']; await engine.close();
   const nextRuntime = new Runtime(async options => ({ output: 'Native resumed.', threadId: options.threadId || 'new-native-thread' })), restored = new HarnessEngine({ runtime: nextRuntime, tasks, dataDir, defaultCwd: cwd }); engines.push(restored); await restored.init();
