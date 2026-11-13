@@ -18,6 +18,77 @@ function fixture(t){
 }
 const savedGoal=(changes={})=>({id:'goal-one',revision:2,objective:'Finish the implementation and verify it.',status:'active',turns:2,maxTurns:null,currentRunId:'run-one',...changes});
 
+test('calibrate an existing chat, turn autonomy on, off, and on again without a new conversation',async t=>{
+  const {view}=fixture(t),posts=[];
+  let goal=null,createdRuns=0;
+  const api=async(route,method,body)=>{
+    if(method==='GET')return {goal};
+    posts.push({route,body});
+    if(body.action==='set')goal=savedGoal({objective:body.objective,status:'active',revision:1,turns:0});
+    else if(body.action==='pause')goal={...goal,status:'paused',revision:goal.revision+1,running:false};
+    else if(body.action==='resume')goal={...goal,status:'active',revision:goal.revision+1,running:false};
+    else assert.fail('Unexpected Goal action: '+body.action);
+    return {goal};
+  };
+  const controls=createGoalControls({view,api,
+    getContext:()=>({runId:'run-one',draft:'Unsent chat note',calibration:{firstTask:'Audit the release process',turns:4}}),
+    onStart:()=>{createdRuns++;assert.fail('Existing calibration must reuse the same conversation');}});
+  t.after(()=>controls.destroy());
+  controls.update({conversationId:'calibrated'});
+  await tick();
+  assert.equal(view.goalToggle.getAttribute('role'),'switch');
+  assert.equal(view.goalToggle.getAttribute('aria-checked'),'false');
+  assert.equal(view.goalToggle.textContent,'Autonomy: Off');
+  await view.goalToggle.dispatch('click');
+  assert.equal(view.goalDialog.open,true);
+  assert.equal(view.goalTitle.textContent,'Turn on autonomy');
+  assert.match(view.goalInput.value,/^Audit the release process/);
+  assert.match(view.goalInput.value,/corrections, constraints and decisions established later/);
+  assert.match(view.goalContext.textContent,/4 saved turns/);
+  view.goalInput.value+=' Check tests and release receipts.';
+  view.goalLimit.value='';
+  await view.goalForm.dispatch('submit');
+  assert.equal(posts.length,1);
+  assert.equal(posts[0].body.action,'set');
+  assert.equal(posts[0].body.objective,view.goalObjective.textContent);
+  assert.equal(posts[0].route,'/api/conversations/calibrated/goal');
+  assert.equal(view.goalToggle.getAttribute('aria-checked'),'true');
+  assert.equal(view.goalToggle.textContent,'Autonomy: On');
+  assert.equal(view.goalDialog.open,false);
+  await view.goalToggle.dispatch('click');
+  assert.equal(posts[1].body.action,'pause');
+  assert.equal(view.goalToggle.getAttribute('aria-checked'),'false');
+  assert.equal(view.goalObjective.textContent,goal.objective);
+  assert.equal(view.goalToggle.textContent,'Autonomy: Off');
+  await view.goalToggle.dispatch('click');
+  assert.equal(posts[2].body.action,'resume');
+  assert.equal(view.goalToggle.getAttribute('aria-checked'),'true');
+  assert.equal(goal.objective,posts[0].body.objective);
+  assert.equal(createdRuns,0);
+});
+
+test('new chats keep autonomy off until an explicit configuration is submitted',async t=>{
+  const {view}=fixture(t),starts=[];
+  const controls=createGoalControls({view,api:()=>assert.fail('No server request until enabled'),
+    getContext:()=>({draft:'Review the architecture',calibration:{turns:0}}),
+    onStart:async(goal,options)=>{starts.push({goal,options});return {run:{id:'first'}};}});
+  t.after(()=>controls.destroy());
+  assert.equal(view.goalToggle.getAttribute('aria-checked'),'false');
+  assert.equal(starts.length,0);
+  await view.goalToggle.dispatch('click');
+  assert.equal(view.goalDialog.open,true);
+  assert.equal(starts.length,0);
+  assert.equal(view.goalInput.value,'Review the architecture');
+  await view.goalCancel.dispatch('click');
+  assert.equal(starts.length,0);
+  await view.goalToggle.dispatch('click');
+  await view.goalForm.dispatch('submit');
+  assert.equal(starts.length,1);
+  assert.equal(starts[0].goal.objective,'Review the architecture');
+  assert.equal(starts[0].options.consumeDraft,false);
+});
+
+
 test('/goal commands are explicit and literal objectives preserve their full text',()=>{
   assert.deepEqual(parseGoalCommand('/goal'),{action:'status'});
   assert.deepEqual(parseGoalCommand(' /goal status '),{action:'status'});

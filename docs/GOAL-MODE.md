@@ -1,19 +1,21 @@
-# Goal mode
+# Chat autonomy (Goal mode)
 
-Goal mode gives one BLACKICE conversation a saved objective and keeps it moving through successive agent turns. Each continuation stays in the same task and conversation, with its saved history, model, working context, and accepted user directions. An ordinary assistant reply is a checkpoint; the goal remains open until completion is recorded or continuation is stopped.
+Autonomy is **Off by default**. You can calibrate a chat through ordinary conversation, then turn on autonomous execution without starting a new chat. The existing Goal engine gives that conversation a saved objective and keeps it moving through successive agent turns. Each continuation stays in the same task and conversation, with its saved history, model, working context, and accepted user directions. An ordinary assistant reply is a checkpoint; the goal remains open until completion is recorded or continuation is stopped.
 
 BLACKICE must be running and the Windows host must be awake for work or timed waits to advance. Closing a chat view does not pause its goal. Goal mode does not launch a closed app or replace Cronjobs for recurring schedules.
 
-## Start and control a goal
+## Calibrate in Chat, then let it run
 
-Choose **Goal** beside the chat composer, enter the whole outcome you want, and choose **Start goal**. Include the deliverable, relevant constraints, and what would establish completion. This works for a new chat or an existing conversation.
+Start in ordinary Chat with **Autonomy: Off**. Discuss the objective, constraints, tools, model and success criteria through as many turns as useful. No automatic continuation is started merely because a chat exists.
 
-Leave the optional turn limit empty for unlimited continuation. The goal card shows the objective, status, turn count, and latest checkpoint. Use **Edit** to revise the objective or limit; editing a paused goal keeps it paused until you choose **Resume**. Send an ordinary chat message to steer the current work. Accepted user input takes priority over a pending automatic continuation and invalidates earlier completion evidence.
+When ready, choose **Autonomy: Off** beside the composer. An editor pre-fills an objective from the conversation's original task and reminds you that later corrections and decisions remain available through saved conversation history. Review or revise the objective and completion criteria, optionally set a turn limit, then choose **Turn on autonomy**. BLACKICE continues the *same conversation* using its saved messages, model choice, selected tools and relevant context; no separate chat is spawned.
+
+Once enabled, the composer shows **Autonomy: On**. Choose it to turn autonomy off: the current task is asked to stop, future automatic turns are paused, and the saved goal, history, plans and uncertain-effect receipts remain. Choose **Autonomy: Off** again to resume the same goal after the current turn has settled. The goal card shows the objective, status, turn count and latest checkpoint. **Calibrate** edits the objective or limit without automatically resuming a paused goal. Normal chat directions still take priority and can refine the active task.
 
 | Control | Effect |
 | --- | --- |
-| **Pause** | Pauses current execution and automatic continuation. BLACKICE interrupts the active provider/Directory worker and shows Pausing until dispatched work settles. Saved progress, pages, and uncertain-effect receipts remain. |
-| **Resume** | Reactivates a paused, interrupted, blocked, or budget-exhausted goal and starts a fresh turn allowance. |
+| **Autonomy: Off / Turn off** | Switches off automatic continuation. If a turn is running, BLACKICE requests its cancellation and shows Pausing until it settles; saved progress, pages and uncertain-effect receipts remain. |
+| **Autonomy: On / Turn on** | Resumes a paused, interrupted, blocked or budget-exhausted goal in the same chat and starts a fresh turn allowance. When no goal is saved, opens the calibration editor instead. |
 | **Stop** | Cancels the current run. Its goal becomes paused, so cancellation does not immediately launch another turn. **Stop all** also pauses enabled goals. |
 | **Clear** | Removes the saved goal and prevents further automatic continuation. It does not cancel an already-running turn or delete conversation history. Use **Stop** as well if that turn must stop. |
 
@@ -32,7 +34,7 @@ These commands are handled by BLACKICE Chat:
 | `/goal clear` | Remove the goal. |
 | `/goal -- <objective>` | Set literal objective text, including text that would otherwise be a control word. |
 
-Use **Edit** to modify the existing goal without replacing it. The optional turn limit is available in the Goal editor.
+Use **Calibrate** to modify the existing goal without replacing it. The optional turn limit is available in the editor.
 
 ## Turn allowance
 
@@ -72,7 +74,7 @@ Use `blackice_goal` for an existing conversation:
 
 Replace `saved_conversation_id` with the actual saved conversation ID. Supported actions are `get`, `set`, `update`, `pause`, `pause_after_turn`, `resume`, and `clear`. All require `requestId` and `conversationId`. Read with `get` before editing and pass the returned goal's `revision` as `expectedRevision` to reject stale changes. `update` preserves the current allowance and status; `set` replaces the goal. On `update`, omitting `maxTurns` preserves the existing limit; use `null` to remove it.
 
-For a new conversation, pass `goal: {}` to `blackice_start_chat`:
+For a new conversation, explicit `goal: {}` enables autonomy in `blackice_start_chat` (omitting `goal` leaves it Off):
 
 ```json
 {
@@ -82,7 +84,7 @@ For a new conversation, pass `goal: {}` to `blackice_start_chat`:
 }
 ```
 
-The `message` becomes the objective. An empty goal object means unlimited; use `"goal": {"maxTurns": 5}` for an explicit allowance. Supply a configured `model` ID when needed, or omit it to use BLACKICE's current default. Do not call Start Chat to resume an existing goal.
+The `message` becomes the objective. An empty goal object means unlimited; use `"goal": {"maxTurns": 5}` for an explicit allowance. The internal `relay_agents` start action also defaults to manual execution; set `autonomous:true` for deliberate autonomous child runs. Supply a configured `model` ID when needed, or omit it to use BLACKICE's current default. Do not call Start Chat to resume an existing goal.
 
 Use one stable `requestId` per logical action. Retry an uncertain request with identical arguments and the same ID on the same connection, then inspect its durable result before submitting replacement work. A successful direct job or returned run ID confirms **admission**, not completion of the goal. Inspect `blackice_get_job` for the action receipt, `blackice_get_run_result` for an individual run, and `blackice_goal` with `action: "get"` for current goal status.
 

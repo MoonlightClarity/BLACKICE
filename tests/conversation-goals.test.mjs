@@ -61,6 +61,39 @@ test('one goal continues for three turns in the same conversation and finishes w
   assert.equal(family.runs[2].goal.automatic,true); assert.equal(family.runs[2].priorUserRequests.length,1);
 });
 
+test('calibrated manual chat can enable autonomy later in its original conversation', async t => {
+  const {engine,goals,runtime,conversations}=await fixture(t,async(options,n)=>{
+    if(n<3){
+      assert.equal(options.dynamicTools.some(tool=>tool.name==='relay_goal'),false);
+      return output(n);
+    }
+    assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_goal'));
+    assert.match(options.developerInstructions,/PERSISTENT CONVERSATION GOAL/);
+    const recorded=await report(options,'complete');
+    assert.equal(recorded.result.success,true);
+    return output(n);
+  });
+  const first=engine.startRun({workflow:graph(),input:'Build a clear proof.'});
+  await waitFor(()=>engine.getRun(first.id).settled);
+  assert.equal(await goals.get(first.id),null,'ordinary chat must remain manual');
+  const calibrated=engine.continueRun(first.id,{
+    nodeId:'agent',message:'Calibration: keep two proof methods and explain the assumptions.'
+  },{historyRuns:(await conversations.family(first.id)).runs});
+  await waitFor(()=>engine.getRun(calibrated.id).settled);
+  assert.equal(await goals.get(first.id),null);
+  const enabled=await goals.control(first.id,{action:'set',objective:'Deliver the agreed two-method proof, then verify each step.',
+    requestId:'calibrated-on'});
+  assert.equal(enabled.goal.objective,'Deliver the agreed two-method proof, then verify each step.');
+  await waitFor(async()=>(await goals.get(first.id))?.status==='completed','calibrated autonomous task completion');
+  const family=await conversations.family(first.id);
+  assert.equal(family.runs.length,3,'enable must continue the existing chat, not open another');
+  assert.ok(family.runs.every(run=>run.taskId===first.id));
+  assert.equal(family.runs[2].parentRunId,calibrated.id);
+  assert.equal(family.runs[2].goal.automatic,true);
+  assert.ok(JSON.stringify(family.runs[2].priorUserRequests).includes('Calibration: keep two proof methods'));
+  assert.equal(runtime.calls.length,3);
+});
+
 test('ordinary final text cannot complete the goal and three empty turns are visible as stalled', async t => {
   const {engine,goals,runtime} = await fixture(t, async (_,n) => ({...output(n),output:'All done!'}));
   const run = engine.startRun({workflow:graph(),input:{task:'Do work',goal:{objective:'Do work'}}});
