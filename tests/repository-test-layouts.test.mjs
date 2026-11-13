@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
 import os from 'node:os';import path from 'node:path';
@@ -24,4 +24,3 @@ test('conventional named test layouts are discovered, executed and hash-bound to
  assert.notEqual((await testSuiteSnapshot(root)).testSuiteSha256,snap.testSuiteSha256);
  const changed=await readCoverageEvidence(root,ledger,receipt);assert.equal(changed.accepted.length,0);assert.equal(changed.rejected[0].reason,'test_file_changed_after_execution');
 });
-

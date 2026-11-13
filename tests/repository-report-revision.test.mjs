@@ -76,3 +76,23 @@ test('fabricated prose, hidden-grade claims, unknown IDs and evidence substituti
   {answer:'["tests","tests"]',used_refs:['v']}
  ])assert.throws(()=>parseRepositoryReportSelection(p,['v']),{code:'DIRECTORY_REPORT_REVISION_INVALID'});
 });
+
+test('command observations are reportable without promoting stdout or replaying checks',async t=>{
+ const dir=await mkdtemp(path.join(os.tmpdir(),'repo-commands-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+ const finalPath=path.join(dir,'final.json'),r=Object.create(ShadowdancerDirectory.prototype);
+ Object.assign(r,{repoRoot:dir,integrations:dir,turnRoot:dir,stats:{},repoOriginalFiles:new Map(),requirements:{unknownCount:2},repoToolCalls:1,
+ verification:{status:'unavailable',passed:null,tests:null},testIntegrity:{compromised:false},allRefs:[],
+ repoCommandReceipts:[{callId:'host:check1',tool:'relay_workspace',action:'run',success:true,at:'2030-01-01T00:00:00Z',sourceFile:'tools/0001.json',sourceSha256:'record-digest',excerpt:'ok 1 - smoke test',omittedCharacters:0,modelClaim:'entire task verified'}],
+ repositorySourceHashes:async()=>new Map(),summary:async()=>{},label:async()=>{}});
+ r.integrateRepositoryEvidence=async()=>{await writeFile(finalPath,JSON.stringify({integrationAuthority:'host_source_reference_index',status:'incomplete_or_unverified',referencedResults:[]}));return {answer:'index',finalPath};};
+ r.allRefs=[{kind:'verification',ref:'verification:final',path:'receipt.json'}];
+ r.infer=async(label,module,payload)=>{assert.equal(payload.hostFacts.commandReceipts[0].callId,'host:check1');return {parsed:{answer:'["commands"]',used_refs:[]}};};
+ r.workLeaves=async()=>{throw Error('must not replay work');};r.verifyAndRepairRepository=async()=>{throw Error('must not reexecute checks');};
+ const before=await r.finishRun(await r.integrate());
+ const after=await r.reviseAnswer('Include the observed command receipt.');
+ assert.notEqual(before.answer,after.answer);
+ assert.match(after.answer,/host:check1/);assert.match(after.answer,/ok 1 - smoke test/);
+ assert.match(after.answer,/historical, not a current test-suite/);assert.match(after.answer,/Host test receipt: unavailable/);
+ assert.match(after.answer,/incomplete_or_unverified/);assert.doesNotMatch(after.answer,/entire task verified/);
+ await assert.rejects(r.reviseAnswer('Include the observed command receipt.'),{code:'DIRECTORY_REPORT_REVISION_UNCHANGED'});
+});
