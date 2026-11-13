@@ -56,3 +56,15 @@ test('optional provenance travels to next existing review without adding calls o
  const schema=modularOutcomeSchema(s);assert.ok(schema.properties.concerns);assert.ok(!schema.required.includes('concerns'));
  assert.match(modularReviewPrompt(seen[1],{output:'second'}),/prior-model-interpretation-not-authority/);
 });
+
+test('malformed optional concerns never survive saved assessments or block completion',async()=>{
+ for(const concerns of [{payload:'x'.repeat(100000)},'x'.repeat(100000),null,42]){
+  const updates=[];let calls=0;
+  const c=createModularCompletionController({policy:{version:2,modules:{verification:true}},getSnapshot:snapshot,onUpdate:r=>updates.push(r),
+   review:async()=>{calls++;return {decision:'respond',summary:'Done',remaining:[],nextAction:'',evidenceRefs:['evidence-0001'],blockers:[],concerns};}});
+  assert.equal(await c.beforeFinal({output:'done'}),null);assert.equal(calls,1);
+  assert.equal((await c.assertReady()).ready,true);
+  assert.ok(updates.length>0);
+  for(const record of updates){assert.equal(Object.hasOwn(record,'concerns'),false);assert.ok(JSON.stringify(record).length<5000);}
+ }
+});
