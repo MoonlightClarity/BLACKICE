@@ -1,7 +1,7 @@
 {
-    "sourceTestReceipt":  "verification/windows-2.39.79.json",
+    "sourceTestReceipt":  "verification/windows-2.39.80.json",
     "format":  1,
     "publish":  true,
-    "version":  "2.39.79",
-    "appFingerprint":  "7be2c03a404d35429519bc3e84ad25176173356ad7245eedb58a65adf348af42"
+    "version":  "2.39.80",
+    "appFingerprint":  "3218eb7f44462d346f82ffb80fcccc6c6ea8ca78a93fb4a4689e8608c1fd86ac"
 }
