@@ -188,3 +188,6 @@
 @media(max-width:600px){.next-chat-goal-card{padding:9px 10px}.next-chat-goal-heading{gap:6px}#next-chat-goal-progress{width:100%;margin-left:0}.next-chat-goal-dialog form{gap:12px}}
 
 .next-chat-efficiency-warning{margin:8px 0;padding:6px 10px;border:1px solid #b49335;border-radius:5px;color:#f4d778;background:#302a18;font-size:12px}
+
+/* Conversation-owned visual artifacts remain inside the scrolling history. */
+.next-visuals{max-width:960px;margin:24px auto;padding:16px;border:1px solid var(--line,#394455);border-radius:12px}.next-visuals article{margin-top:20px;padding-top:12px;border-top:1px solid var(--line,#394455)}.next-visuals button{margin:4px 8px 8px 0}.next-visuals label{display:block;margin:8px 0}.next-visuals pre{overflow-wrap:anywhere}.next-visuals img{border-radius:8px}

@@ -1,3 +1,4 @@
+import {createVisualWorkspace} from './visuals.mjs';
 import { createChatFrame, paintIndex, paintIntroduction, paintHistory, paintModels, captureChatScroll, restoreChatScroll } from './render.mjs';
 import { createGroupedModelPicker } from '../core/model-picker.mjs';
 import { enableProviderForModel } from '../../provider-availability.mjs';
@@ -113,6 +114,8 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   reflectOntology();
   let runtimeStatus=getStatus?.()||{};
   const root = () => rootId(state.selected) || 'new';
+  const visualMount=mount.ownerDocument.createElement('div');view.scroll.append(visualMount);
+  const visuals=createVisualWorkspace({mount:visualMount,api,getConversationId:root,notify:message=>notify(message)});
   const selectedBucket=()=>state.selected?.state||state.bucket;
   const contextMount=mount.ownerDocument.createElement('section');
   view.form.parentElement.insertBefore(contextMount,view.form);
@@ -411,6 +414,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       getAttachment:id=>attachmentsUI.getMetadata(id),
       onStop:(kind,id)=>{void runAction(kind,id);},
       onArtifact:ref=>{void artifacts.open(ref).catch(showError);} });
+    void visuals.refresh();
     restoreChatScroll(view,position,{follow:!preserve});
     updateHead();
   }
@@ -567,6 +571,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   }
   let settleTimer=null;
   function onEvent(event) {
+    visuals.onEvent(event);
     if(!state.active)return;
     if(goalControls.handleEvent(event))return;
     if(event.type==='goal.updated'){
@@ -757,7 +762,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       state.active=false;state.generation++;state.listRead++;state.unsubscribe?.();state.unsubscribe=null;
       listRequested=false;listInitialize=null;listController?.abort();
       closeTrash();if(view.renameDialog.open){view.renameDialog.close();if(!state.managing)renameTarget=null;}
-      state.dataController?.abort();state.loading=false;artifacts.cancel();
+      state.dataController?.abort();state.loading=false;artifacts.cancel();visuals.cancel();
       clearTimeout(state.listTimer);clearTimeout(state.liveTimer);clearTimeout(settleTimer);
       clearTimeout(searchTimer);searchTimer=null;
       clearTimeout(draftTimer);saveDraft();
@@ -766,6 +771,6 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     updateStatus(status) {if(status&&typeof status==='object'&&!Array.isArray(status)){runtimeStatus=status;if(root()==='new')restoreOntology('new');refreshChoices(status);updateHead();}},
     openConversationId(id){if(!id)return;const item=state.list.find(row=>rootId(row)===id||lastRunId(row)===id)||{id,runId:id,title:'Conversation'};void open(item);},
     getState() {return {active:state.active,selected:root(),runCount:state.runs.length,listing:state.list.length,selectionCount:state.selection.size,managing:state.managing};},
-    destroy(){this.leave();state.destroyed=true;goalControls.destroy();contextControls.destroy();directoryInspector.destroy();modelPicker.destroy();reader.close();artifacts.destroy();attachmentsUI.destroy();mount.innerHTML='';}
+    destroy(){this.leave();state.destroyed=true;goalControls.destroy();contextControls.destroy();directoryInspector.destroy();modelPicker.destroy();reader.close();artifacts.destroy();visuals.destroy();attachmentsUI.destroy();mount.innerHTML='';}
   };
 }
