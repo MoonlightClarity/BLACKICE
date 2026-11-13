@@ -12,10 +12,10 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
   const card = node('section', '', 'next-card next-stack');
   card.setAttribute('aria-label', 'Local model loading');
   card.append(node('h2', 'Local models'),
-    node('p', 'Load and unload models on this computer with Ollama or LM Studio. Import GGUF files or Safetensors model folders through Ollama without a quantization step. Once loaded, models appear in the normal BLACKICE model picker.', 'next-help'));
+    node('p', 'Load and unload models through Ollama, LM Studio, or a local llama.cpp 1.0 server. llama.cpp router mode can load GGUF models discovered in --models-dir; import GGUF files or Safetensors folders through Ollama without quantization. Once loaded, models appear in the normal BLACKICE model picker.', 'next-help'));
   const row = node('div', '', 'next-row');
   const engine = node('select', '', 'next-field');
-  for (const [id, name] of [['ollama', 'Ollama'], ['lmstudio', 'LM Studio']]) {
+  for (const [id, name] of [['ollama', 'Ollama'], ['lmstudio', 'LM Studio'], ['llamacpp', 'llama.cpp 1.0']]) {
     const option = node('option', name); option.setAttribute('value', id); engine.append(option);
   }
   engine.id = 'next-local-engine';
@@ -47,6 +47,11 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
   const info = (message, isError = false) => { feedback.textContent = message; feedback.dataset.error = String(isError); };
   function updateChoices() {
     const value = selected();
+    const isLlama = engine.value === 'llamacpp';
+    contextHelp.textContent = isLlama
+      ? 'llama.cpp sets context at startup using --ctx-size or --models-preset. Change it on the server, then reload. Unloading never deletes weights or conversations.'
+      : 'Optional context window for the next load. Leave blank to use the runtime default. Unloading does not delete model files or BLACKICE conversations.';
+    importDetails.hidden = engine.value !== 'ollama';
     const previous = models.value;
     models.replaceChildren();
     for (const model of value.models || []) {
@@ -57,16 +62,19 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
     runtimeStatus.textContent = value.available
       ? value.name + ' is running · ' + (value.models || []).length + ' local models found.'
       : value.name + ' is not available. Start its local server to list and load models.' + (value.error ? ' ' + value.error : '');
+    if (value.available && isLlama) runtimeStatus.textContent += value.mode === 'router'
+      ? ' Router mode supports model load and unload.'
+      : ' Single-model server: the running model can be added to Chat, but only the server owner can unload it.';
     const model = (value.models || []).find(item => item.id === models.value);
     models.disabled = busy || !value.available || !model;
     load.disabled = busy || !model;
-    unload.disabled = busy || !model?.loaded;
+    unload.disabled = busy || !model?.loaded || model.manageable === false;
     refresh.disabled = busy;
     engine.disabled = busy;
     importButton.disabled = busy;
     sourcePath.disabled = busy;
     alias.disabled = busy;
-    context.disabled = busy;
+    context.disabled = busy || isLlama;
   }
   async function refreshCatalog({ preferredModel, preferredEngine } = {}) {
     const token = ++generation;
@@ -89,7 +97,7 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
     const runtime = engine.value, model = models.value;
     if (action !== 'import' && !model) return;
     if (action === 'import' && (!sourcePath.value.trim() || !alias.value.trim())) return info('Provide an absolute model path and a local model name.', true);
-    const contextLength = context.value.trim() ? Number(context.value) : undefined;
+    const contextLength = runtime === 'llamacpp' ? undefined : context.value.trim() ? Number(context.value) : undefined;
     if (action === 'load' && contextLength !== undefined && (!Number.isSafeInteger(contextLength) || contextLength < 128 || contextLength > 262144)) return info('Context length must be from 128 through 262144.', true);
     busy = true; updateChoices(); info(action === 'import' ? 'Importing local weights and loading the model…' : action === 'load' ? 'Loading model into memory…' : 'Unloading model…');
     try {

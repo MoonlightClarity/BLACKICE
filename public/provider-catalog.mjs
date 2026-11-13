@@ -147,6 +147,15 @@ export const PROVIDER_PRESETS = Object.freeze([
     sourceUrls: ['https://lmstudio.ai/docs/developer/openai-compat', 'https://lmstudio.ai/docs/developer/core/authentication'],
   },
   {
+    id: 'llamacpp', name: 'llama.cpp', type: 'compatible',
+    baseUrl: 'http://127.0.0.1:8080/v1', requiresApiKey: false,
+    protocolLabel: COMPATIBLE_CHAT, catalogStrategy: 'local-openai-models', catalogAuthentication: 'optional',
+    authNote: 'Start a compatible llama-server. Configure a token if server authentication is enabled.',
+    billingNote: 'Local models run on the hardware serving your llama.cpp endpoint.',
+    docsUrl: 'https://github.com/ggml-org/llama.cpp/blob/v1.0.0/tools/server/README.md',
+    sourceUrls: ['https://github.com/ggml-org/llama.cpp/blob/v1.0.0/tools/server/README.md'],
+  },
+  {
     id: 'compatible', name: 'Custom API', type: 'compatible', baseUrl: '', requiresApiKey: false,
     protocolLabel: 'Choose an API protocol', catalogStrategy: 'manual-or-models', catalogAuthentication: 'optional',
     authNote: 'Use the credentials required by your endpoint. You can enter exact model IDs when discovery is unavailable.',
