@@ -174,3 +174,24 @@ test('router secret handoff stays in the same contained driver and is invalidate
   const commit = await router.prepareCredentialFill(args); tabId = 'replacement'; await assert.rejects(commit(secret)); assert.equal(commits, 0);
   tabId = 'owned-tab'; const second = await router.prepareCredentialFill(args); router.closed = true; await assert.rejects(second(secret)); assert.equal(commits, 0);
 });
+
+test('protected credential observation reports its actual limitation without leakage or stale-page recovery advice', async () => {
+  const f = fixture(); await (await f.driver.prepareCredentialFill(f.args))(secret);
+  f.driver.element = async () => { throw new Error('Protected DOM must not be inspected'); };
+  f.driver.currentSubmissionObservations = async () => { throw new Error('Protected receipts must not be inspected'); };
+  for (const action of ['click', 'fill', 'press']) {
+    await assert.rejects(f.driver.observeOperation({ action, tabId: f.tab.id, ref: 'username-ref' }), error =>
+      error.code === 'BROWSER_CREDENTIAL_OBSERVATION_BLOCKED' && !error.message.includes(secret.password)
+      && !error.message.includes(secret.username) && /refreshed snapshot will not clear/.test(error.message));
+  }
+  assert.equal(f.tab.credentialCaptureBlocked, true);
+  await assert.rejects(f.driver.perform({ action: 'screenshot', tabId: f.tab.id }), { code: 'BROWSER_CREDENTIAL_CAPTURE_BLOCKED' });
+});
+
+test('genuine replaced documents retain stale-input rejection independently of credential observation', async () => {
+  const f = fixture();
+  await assert.rejects(f.driver.observeOperation({ action: 'click', tabId: f.tab.id, expectedDocumentId: 'old', expectedUrl: url }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+  await (await f.driver.prepareCredentialFill(f.args))(secret);
+  f.tab.pendingURL = origin + '/new-page';
+  await assert.rejects(f.driver.observeOperation({ action: 'click', tabId: f.tab.id }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+});

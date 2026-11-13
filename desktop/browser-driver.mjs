@@ -1275,8 +1275,12 @@ export class ElectronBrowserDriver extends EventEmitter {
       && args.expectedDocumentId === undefined && args.expectedUrl === undefined && args.ref === undefined) {
       return { current: false, suspended: true, tabId: tab.id, url: this.tabURL(tab), title: this.tabTitle(tab) };
     }
-    if (!tab.window || tab.window.isDestroyed() || tab.pendingURL || tab.rendererFailure || tab.providerKeyProtected || tab.credentialCaptureBlocked)
+    if (!tab.window || tab.window.isDestroyed() || tab.pendingURL || tab.rendererFailure || tab.providerKeyProtected)
       throw capacityError('The current browser document cannot be inspected.', 'BROWSER_INPUT_DOCUMENT_CHANGED');
+    // Capture protection is not a stale document. A refreshed snapshot cannot
+    // remove this limitation, and retrying it must not be described as navigation.
+    if (tab.credentialCaptureBlocked)
+      throw capacityError('Protected credentials prevent host operation inspection on this document. A refreshed snapshot will not clear this protection; credential-safe submission is not supported by this observer.', 'BROWSER_CREDENTIAL_OBSERVATION_BLOCKED');
     if (expectedDocumentId !== undefined && (expectedDocumentId !== inputDocumentId(tab) || expectedUrl !== tab.window.webContents.getURL()))
       throw capacityError('The result document changed before receipt inspection.', 'BROWSER_INPUT_DOCUMENT_CHANGED');
     this.assertInputDocument(tab, args);
