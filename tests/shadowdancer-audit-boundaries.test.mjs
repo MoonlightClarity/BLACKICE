@@ -69,7 +69,7 @@ test('test discovery includes more than the former 100-file cutoff and rejects a
  await assert.rejects(discoverTests(f.root,1000,{maxDepth:2}),{code:'DIRECTORY_VERIFICATION_TEST_LIMIT'});
 });
 test('explicit test lists reject duplicates, outside paths, and unsupported files',async t=>{
- const f=await fixture(t),inside=await f.put('tests/app.test.mjs','// test'),outside=await f.put('outside.test.mjs','// outside');
+ const f=await fixture(t),other=await fixture(t),inside=await f.put('tests/app.test.mjs','// test'),outside=await other.put('outside.test.mjs','// outside repository');
  const unsupported=await f.put('tests/readme.txt','not a test');
  await assert.rejects(testSuiteSnapshot(f.root,{testPaths:[inside,inside]}),{code:'DIRECTORY_VERIFICATION_TEST_LIMIT'});
  await assert.rejects(testSuiteSnapshot(f.root,{testPaths:[outside]}),{code:'DIRECTORY_VERIFICATION_TEST_PATH'});
