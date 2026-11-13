@@ -378,7 +378,7 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
       const warning=text(section,'Efficiency warning: trying a different approach.','div','next-chat-efficiency-warning');
       warning.setAttribute('role','status');warning.setAttribute('aria-live','polite');
     }
-    if(running(run)){
+    if(running(run)&&recoveryStatus!=='recovering'){
       const live=text(section,'','div','next-chat-activity');
       live.dataset.liveOutput=run.id;live.setAttribute('role','status');
       live.setAttribute('aria-live','polite');live.setAttribute('aria-atomic','true');
