@@ -108,7 +108,7 @@ test('a failed child execution remains inspectable in the durable parent run aft
       return finishFixtureCandidate(options, {output:'The independent worker failed after one tool result; its execution receipt is available for inspection.',threadId:'coordinator-thread'});
     }
   }
-  const tasks=await new TaskStateStore({dataDir}).init(),prefs=await new RuntimeSettingsStore({dataDir}).init();await prefs.update({subagentsEnabled:true,maxSubagents:2});
+  const tasks=await new TaskStateStore({dataDir}).init(),prefs=await new RuntimeSettingsStore({dataDir}).init();await prefs.update({subagentsEnabled:true,maxSubagents:2,planningOntology:{version:2,modules:{decomposition:true}}});
   const engine=new HarnessEngine({runtime:new Runtime(),tasks,dataDir,defaultCwd:cwd});engine.runtimeSettings=prefs;await engine.init();
   t.after(async()=>{await engine.close();await prefs.close();await tasks.close();await rm(root,{recursive:true,force:true});});
   const run=await finish(engine,engine.startRun({workflow:taskGraph(),input:'Review an independent fixture and report any execution failure.'}).id);

@@ -73,7 +73,7 @@ for (const ending of ['cancelled', 'failed']) test(`${ending} real saved agent s
   });
   const { engine, tasks, engines, cwd, dataDir } = await engineHarness(t, runtime);
   await writeFile(path.join(cwd, 'source.txt'), 'Fixture source for project ALPHA.');
-  const original = engine.startRun({ workflow: graph, input: 'Finish project ALPHA.' });
+  const original = engine.startRun({ workflow: graph, input: 'Finish project ALPHA.', planningOntology:{version:2,modules:{decomposition:true}} });
   try {
     await wait(() => { if (started) return true; const run = engine.getRun(original.id); assert.ok(!run.settled, run.error || run.nodes.agent?.error || 'Fixture settled before recording partial work.'); return false; });
     if (ending === 'cancelled') { engine.cancelRun(original.id); assert.throws(() => engine.continueRun(original.id, { nodeId: 'agent', message: 'Too soon.' }), /active|stopping|finish/i); }

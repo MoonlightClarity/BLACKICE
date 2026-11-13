@@ -16,7 +16,7 @@ const policy=()=>normalizePlanningOntology();
 
 test('canonical module schema is Boolean On/Off with no Auto or Optional choices',()=>{
  const p=policy();assert.equal(p.version,2);assert.deepEqual(PLANNING_MODULE_STATES,['on','off']);
- assert.equal(Object.keys(p.modules).length,PLANNING_ONTOLOGY_MODULES.length);assert.ok(Object.values(p.modules).every(x=>x===true));
+ assert.equal(Object.keys(p.modules).length,PLANNING_ONTOLOGY_MODULES.length);assert.ok(Object.entries(p.modules).every(([id,value])=>value===(id==='subagents')));
  assert.equal('autoSelect' in p,false);
  for(const state of ['auto','optional','mandatory','forbidden','on','off'])assert.throws(()=>normalizePlanningOntology({version:2,modules:{inference:state}}),{code:'PLANNING_ONTOLOGY_INVALID'});
  assert.throws(()=>normalizePlanningOntology({version:2,autoSelect:false,modules:{}}),{code:'PLANNING_ONTOLOGY_INVALID'});
@@ -52,7 +52,7 @@ test('Chat Directory drafts are explicit On/Off and legacy Auto migrates for the
  }
  assert.equal(JSON.stringify(historical),frozen);
  const map=new Map(),storage={getItem:key=>map.get(key)||null,setItem:(key,value)=>map.set(key,value)};
- assert.equal(readConversationExecutionModes({storage}).directoryMode,'on');
+ assert.equal(readConversationExecutionModes({storage}).directoryMode,'off');
  saveConversationExecutionModes({conversationId:'chat',directoryMode:'off',storage});
  assert.equal(readConversationExecutionModes({conversationId:'chat',storage}).directoryMode,'off');
  assert.equal(readConversationExecutionModes({conversationId:'other',runs:[{executionModes:{directoryMode:'auto'}}],storage}).directoryMode,'on');
@@ -62,8 +62,8 @@ test('Chat Directory drafts are explicit On/Off and legacy Auto migrates for the
  assert.equal(usesDirectory('historical ordinary request','auto'),false,'historical Auto meaning stays interpretable');
 });
 
-test('default Directory has no task-wide call quota or arbitrary per-call character cutoff',async()=>temporary(async cwd=>{
- const calls=[];const runner=new ShadowdancerDirectory({cwd,conversationId:'unlimited',runId:'unlimited',model:'fixture',planningOntology:policy(),
+test('explicit decomposition in Directory has no task-wide call quota or arbitrary per-call character cutoff',async()=>temporary(async cwd=>{
+ const calls=[];const runner=new ShadowdancerDirectory({cwd,conversationId:'unlimited',runId:'unlimited',model:'fixture',planningOntology:normalizePlanningOntology({version:2,modules:{decomposition:true}}),
   runtime:{runAgent:async options=>{calls.push(options);const phase=JSON.parse(options.prompt.split('CURRENT_DIRECTORY:\n').at(-1));return{output:JSON.stringify(phase.label==='work'?{status:'complete',nextAction:'',finding:'Complete fixture evidence.',candidate_answer:'Complete fixture answer.',uncertainty:''}:{atomic:true})};}},getAuthoritativeContext:()=>('AUTH '.repeat(15000)+'AUTH_TAIL')});
  await runner.open();runner.stats.calls=1000000;runner.stats.planningCalls=1000000;
  await runner.infer('work','modules/large',{text:'DATA '.repeat(20000)+'DATA_TAIL'});
@@ -107,8 +107,8 @@ test('audit persistence failure never reports a completed operation as a failed 
 }));
 
 test('identical read-back receipts with new call IDs do not fake progress',async()=>{
- let i=0;const state={request:{id:'user-request',text:'Finish'},policy:policy(),evidence:{records:[]}};
- const c=createModularCompletionController({policy:policy(),getSnapshot:()=>state,review:async()=>({decision:'continue',summary:'No new outcome',remaining:['actual task'],nextAction:'Perform actual work',evidenceRefs:['user-request'],blockers:[]})});
+ const reviewPolicy=normalizePlanningOntology({version:2,modules:{verification:true}});let i=0;const state={request:{id:'user-request',text:'Finish'},policy:reviewPolicy,evidence:{records:[]}};
+ const c=createModularCompletionController({policy:reviewPolicy,getSnapshot:()=>state,review:async()=>({decision:'continue',summary:'No new outcome',remaining:['actual task'],nextAction:'Perform actual work',evidenceRefs:['user-request'],blockers:[]})});
  for(let attempt=0;attempt<2;attempt++){state.evidence.records.push({id:'read-'+(++i),tool:'relay_workspace',action:'read',target:'same-file',success:true,excerpt:'same bytes'});assert.equal((await c.beforeFinal({output:'Not done'})).continue,true);}
  state.evidence.records.push({id:'read-'+(++i),tool:'relay_workspace',action:'read',target:'same-file',success:true,excerpt:'same bytes'});
  await assert.rejects(c.beforeFinal({output:'Not done'}),{code:'MODULAR_OUTCOME_STALLED'});

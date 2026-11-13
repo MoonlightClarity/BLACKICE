@@ -47,7 +47,7 @@ test('only Modules and Off remain selectable; historical aliases are inert and c
   assert.doesNotMatch(frame.shell.innerHTML,/Legacy Forced|Legacy Advisory|>Plan only</);
   const existing=readConversationOntology({conversationId:'legacy',runs:[{id:'prior',planningMode:'on',planningEnforcement:'forced'}]});
   assert.equal(existing.planningMode,'ontology','legacy conversation reopens under module policy');
-  assert.equal(existing.planningOntology.modules.anti_overalignment,true);
+  assert.equal(existing.planningOntology.modules.anti_overalignment,false);
 });
 
 test('a scheduled chat rejects Plan-only and explicit Automatic never restores Forced',()=>{
@@ -118,14 +118,14 @@ test('explicit Plan-only cannot start while old Forced with Automatic still comp
   assert.equal(complete.planningMode,'off');
   assert.equal(complete.planningExecutionMode,'automatic');
   assert.equal(complete.runtimeSettings.planningGuardrails,false);
-  assert.equal(complete.planningOntology.modules.anti_overalignment,true);
+  assert.equal(complete.planningOntology.modules.anti_overalignment,false);
   assert.equal(await readFile(path.join(cwd,'leaf1.txt'),'utf8'),'completed-1');
   assert.equal(called,0,'no retired response-cycle operation');
   assert.equal(runCount,1);
   const next=engine.continueRun(complete.id,{nodeId:'agent',message:'Continue useful work'});
   const continued=await waitFor(next.id);
   assert.equal(continued.status,'completed',continued.error||continued.nodes.agent?.error);
-  assert.equal(continued.planningOntology.modules.anti_overalignment,true);
+  assert.equal(continued.planningOntology.modules.anti_overalignment,false);
   assert.equal(await readFile(path.join(cwd,'leaf2.txt'),'utf8'),'completed-2');
   assert.equal(runCount,2);
   assert.equal(called,0);

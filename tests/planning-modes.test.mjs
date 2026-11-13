@@ -68,8 +68,8 @@ async function fixture(t, execute) {
     }
     async close() {}
   }
-  // This suite varies Planning mode with execution guardrails explicitly enabled.
-  const runtime = new Runtime(), settings = { executionGuardrails: true }, engine = await new HarnessEngine({ runtime, tasks, dataDir: directory, defaultCwd: cwd }).init();
+  // This suite varies inert legacy aliases with explicit authoring and review modules; it is not a default-policy fixture.
+  const runtime = new Runtime(), settings = { executionGuardrails: true, planningOntology:{version:2,modules:{decomposition:true,verification:true}} }, engine = await new HarnessEngine({ runtime, tasks, dataDir: directory, defaultCwd: cwd }).init();
   engine.methods = methods; engine.runtimeSettings = { get: () => ({ ...settings }) };
   context = { engine, tasks, methods, runtime, settings, directory, cwd, workflow: graph(),
     start: (value = {}) => context.engine.startRun({ workflow: context.workflow, input: 'Answer this fixture request.', ...value }),

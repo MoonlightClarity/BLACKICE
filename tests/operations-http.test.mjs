@@ -56,7 +56,7 @@ async function fixture(t,{execute,readinessFailure,modelStatus,modelResolver,run
 test('scheduled Chat configuration persists modular reasoning without a readiness gate',async t=>{
   const f=await fixture(t),task='Check sources and write a fresh report';
   const scheduled=createScheduledChatWorkflow({task,cwd:f.cwd,
-    options:{model:'http-fixture-model',effort:'default',serviceTier:'default',planningMode:'ontology',planningExecutionMode:'automatic'},
+    options:{model:'http-fixture-model',effort:'default',serviceTier:'default',planningMode:'ontology',planningOntology:{version:2,modules:{anti_overalignment:true}},planningExecutionMode:'automatic'},
     context:{preset:'custom',windowTokens:65536,autoCompact:false,compactAtTokens:30000}});
   const response=await f.request('/api/operations/deployments',{method:'POST',body:{
     name:'Scheduled Chat fixture',input:task,cwd:f.cwd,workflow:scheduled,

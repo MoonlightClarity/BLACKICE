@@ -39,7 +39,7 @@ async function fixture(t, execute, { subagents = false } = {}) {
     async close() {}
   }
   const engine = await new HarnessEngine({ runtime: new Runtime(), tasks, dataDir: directory, defaultCwd: cwd }).init();
-  engine.runtimeSettings = { get: () => ({ executionGuardrails: false, subagentsEnabled: subagents, maxSubagents: 2 }) };
+  engine.runtimeSettings = { get: () => ({ executionGuardrails: false, subagentsEnabled: subagents, maxSubagents: 2, planningOntology:{version:2,modules:{decomposition:true,verification:true}} }) };
   context = { engine, tasks, cwd, directory };
   t.after(async () => { await engine.close(); await tasks.close(); await fs.rm(directory, { recursive: true, force: true }); });
   return { ...context, async run(mode) {

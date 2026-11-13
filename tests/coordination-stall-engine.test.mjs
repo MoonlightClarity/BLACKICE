@@ -66,7 +66,7 @@ async function fixture(t, { blocked = true, choice = false, grace, execute = com
   }
   // These fixtures exercise the explicit shared execution guardrail and its coordination deadline.
   const engine = await new HarnessEngine({ runtime: new Runtime(), dataDir: directory, defaultCwd: directory, tasks, coordinationWaitMs: grace, coordinationTiming: clock, maxConcurrentRuns }).init();
-  engine.runtimeSettings = { get: () => ({ executionGuardrails: true }) };
+  engine.runtimeSettings = { get: () => ({ executionGuardrails: true, planningOntology: {version:2,modules:{decomposition:true}} }) };
   t.after(async () => { await engine.close(); await tasks.close(); const resolved = path.resolve(directory); assert.ok(resolved.startsWith(`${path.resolve(os.tmpdir())}${path.sep}`) && path.basename(resolved).startsWith('blackice-coordination-')); await fs.rm(resolved, { recursive: true, force: true }); });
   const start = () => engine.startRun({ workflow: workflow(), input: 'Complete the local fixture task.' });
   const waiting = id => until(() => { const run = engine.getRun(id); return run.status === 'waiting' && run.coordination?.status === 'waiting' && clock.timers.size && run; }, 'coordination wait');

@@ -68,7 +68,7 @@ test('Directory charges conservative raw costs across reads rather than refundin
 });
 
 test('552-record global review gives redirects no inspection credit and accepts an exact projected receipt read',async t=>{
-  const cwd=await workspace(t),policy=DEFAULT_PLANNING_ONTOLOGY,updates=[];let attempts=0;
+  const cwd=await workspace(t),policy={...DEFAULT_PLANNING_ONTOLOGY,modules:{...DEFAULT_PLANNING_ONTOLOGY.modules,verification:true}},updates=[];let attempts=0;
   const records=Array.from({length:552},(_,i)=>({id:'global-receipt-'+i,source:'host-dispatch-receipt',callId:'global-call-'+i,tool:'relay_browser',action:'read',success:true,
     result:{success:true,contentItems:[{type:'inputText',text:i===0?'READABLE_RECEIPT_ONE '+('observed record '.repeat(80000)):'Observed record '+i},...(i%101===0&&i<=404?[{type:'inputImage',imageUrl:'data:image/png;base64,'+String(i).padStart(4,'A').repeat(1000)}]:[])]}}));
   const snapshot={request:{id:'user-request',text:'Report the exact first recorded receipt.'},policy,evidence:{auditRoot:path.join(cwd,'journal'),records,total:552,omitted:0}};

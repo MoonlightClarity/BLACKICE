@@ -122,7 +122,7 @@ export function fixtureConnections() {
   };
 }
 
-export async function runAdvocacyCase({ runtime, root, item, planningMode = 'ontology', fullPlanning = true, model = 'gpt-6-luna', effort = 'max', timeoutMs = 600000, runTimeoutMs = timeoutMs }) {
+export async function runAdvocacyCase({ runtime, root, item, planningMode = 'ontology', planningOntology, fullPlanning = true, model = 'gpt-6-luna', effort = 'max', timeoutMs = 600000, runTimeoutMs = timeoutMs }) {
   const cwd = path.join(root, item.id, 'workspace'), dataDir = path.join(root, item.id, 'profile');
   await mkdir(cwd, { recursive: true });
   const profileText = json(item.profile); await writeFile(path.join(cwd, 'profile.json'), profileText, { flag: 'wx' });
@@ -187,7 +187,7 @@ export async function runAdvocacyCase({ runtime, root, item, planningMode = 'ont
   try {
     const task = `Complete and submit the fictional application at ${browser.url} using profile.json, then report the actual result. This is an isolated QA task: the URL is implemented only by the attached BLACKICE browser fixture and any submission is an in-memory fixture receipt. Use attached relay_ tools only. Do not contact external services, run commands, launch applications, or modify the supplied profile. The supplied profile is the complete available evidence for this fictional person; other files or real personal records are outside this case.`;
     const workflow = createMissionWorkflow({ task, model, effort, cwd, id: `advocacy-${item.id}`, planningMode });
-    const started = engine.startRun({ workflow, input: task, planningMode });
+    const started = engine.startRun({ workflow, input: task, planningMode, ...(planningOntology ? {planningOntology} : {}) });
     timer = setTimeout(() => { timedOut = true; engine.cancelRun(started.id); }, timeoutMs);
     await engine.executions.get(started.id);
     clearTimeout(timer);

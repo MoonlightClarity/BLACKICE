@@ -82,7 +82,7 @@ async function fixture(t, { execute, withPlanning = true } = {}) {
   await writeFile(path.join(cwd, 'input.txt'), 'A real fixture file.\n');
   const tasks = await new TaskStateStore({ dataDir: directory }).init();
   const store = await new PlanningBrowserStore({ dataDir: directory }).init();
-  const settings = { defaultModel: 'fixture-handoff', defaultEffort: 'low', executionGuardrails: false, runTimeoutMs: null };
+  const settings = { defaultModel: 'fixture-handoff', defaultEffort: 'low', executionGuardrails: false, runTimeoutMs: null, planningOntology:{version:2,modules:{decomposition:true}} };
   const observations = { analyticalStages: [], handoffs: [], operationalCalls: 0, operations: [] };
   let context;
   class Runtime extends EventEmitter {

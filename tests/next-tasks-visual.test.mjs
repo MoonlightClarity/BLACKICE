@@ -645,8 +645,8 @@ test('new schedule configures Chat model, reasoning, speed, planning, execution 
   assert.equal(Object.hasOwn(payload.workflow.settings,'planningEnforcement'),false);
   assert.equal(payload.workflow.settings.planningExecutionMode,'automatic');
   assert.equal(payload.workflow.settings.planningOntology.version,2);
-  assert.equal(payload.workflow.settings.planningOntology.modules.anti_overalignment,true);
-  assert.equal(payload.workflow.settings.planningOntology.modules.decomposition,true);
+  assert.equal(payload.workflow.settings.planningOntology.modules.anti_overalignment,false);
+  assert.equal(payload.workflow.settings.planningOntology.modules.decomposition,false);
   assert.equal(payload.workflow.settings.context.windowTokens,200000);
   assert.equal(agent.context.autoCompact,false);
   assert.equal(agent.context.compactAtTokens,100000);

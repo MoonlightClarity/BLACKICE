@@ -83,7 +83,7 @@ async function fixture(t, execute, assess) {
   }
   const runtime = new Runtime();
   const engine = await new HarnessEngine({ runtime, tasks, dataDir: directory, defaultCwd: cwd }).init();
-  engine.runtimeSettings = { get: () => ({ codexHistory: 'codex', executionGuardrails: true }) }; // A saved switch must not reinstall automatic post-work provider turns.
+  engine.runtimeSettings = { get: () => ({ codexHistory: 'codex', executionGuardrails: true, planningOntology:{version:2,modules:{decomposition:true,verification:true}} }) }; // A saved switch must not reinstall automatic post-work provider turns.
   context = { engine, runtime, tasks, cwd,
     start: (planningMode = 'on') => engine.startRun({ workflow: graph, input: 'Choose the least expensive feasible workshop pair from the supplied inputs.', planningMode }),
     active: () => engine.listRuns().find(run => run.status === 'running'),

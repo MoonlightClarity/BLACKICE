@@ -18,7 +18,7 @@ test('scheduled Chat keeps model and context while retiring Forced under explici
   assert.equal(workflow.settings.planningMode,'off');
   assert.equal(workflow.settings.planningEnforcement,undefined);
   assert.equal(workflow.settings.planningExecutionMode,'automatic');
-  assert.equal(workflow.settings.planningOntology.modules.anti_overalignment,true);
+  assert.equal(workflow.settings.planningOntology.modules.anti_overalignment,false);
   assert.deepEqual(nodes[0].context,context);
   assert.deepEqual(workflow.settings.context,context);
   assert.equal(workflow.nodes.length,3);

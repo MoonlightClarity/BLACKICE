@@ -104,7 +104,7 @@ test('ordinary admission rejects an unreviewed final without a retired cycle or 
     assert.equal(state.contract, undefined);
     return { output: 'No applications have been performed by this fixture.' };
   });
-  const accepted = f.engine.startRun({ workflow: f.workflow, input: request, planningMode: 'forced', planningExecutionMode: 'automatic' });
+  const accepted = f.engine.startRun({ workflow: f.workflow, input: request, planningMode: 'forced', planningOntology:{version:2,modules:{decomposition:true,verification:true}}, planningExecutionMode: 'automatic' });
   await f.engine.executions.get(accepted.id); const run = f.engine.getRun(accepted.id);
   assert.equal(run.status, 'failed'); assert.equal(run.errorCode, 'MODULAR_OUTCOME_INCOMPLETE'); assert.equal(f.calls.length, 1);
   assert.equal(run.responseCycle, undefined); assert.equal(run.viability, undefined); assert.equal(run.nodes.agent.planning.status, 'off');

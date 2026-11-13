@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { DEFAULT_PLANNING_ONTOLOGY, planningOntologyInstructions } from '../public/planning-module-policy.mjs';
+import { DEFAULT_PLANNING_ONTOLOGY, normalizePlanningOntology, planningOntologyInstructions } from '../public/planning-module-policy.mjs';
 import { ADVOCACY_CASES, runAdvocacyCase } from '../scripts/verify-luna-advocacy.mjs';
 
 test('default fictional form setup uses direct modular execution and preserves a provider failure without external dispatch', async t => {
@@ -22,7 +22,7 @@ test('default fictional form setup uses direct modular execution and preserves a
     async start() { this.starts++; throw Error('The evaluator must never start a provider during app setup.'); }
     async runAgent(options) {
       this.calls.push(options);
-      assert.notEqual(options.responseOnly, true); assert.equal(typeof options.onBeforeFinal, 'function');
+      assert.notEqual(options.responseOnly, true); assert.equal(options.onBeforeFinal, undefined);
       assert.ok(options.developerInstructions.includes(planningOntologyInstructions(DEFAULT_PLANNING_ONTOLOGY))); assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_browser'));
       throw Object.assign(Error('Synthetic operational provider failure; no external form accessed.'), { code: 'FIXTURE_PROVIDER_FAILURE' });
     }
@@ -65,7 +65,7 @@ test('the fictional form whole-case deadline aborts and settles an active direct
       models: [{ id: 'fixture-model', available: true, supportsTools: true, supportedReasoningEfforts: ['default'] }] }; }
     async runAgent(options) {
       this.calls.push(options);
-      assert.notEqual(options.responseOnly, true); assert.equal(typeof options.onBeforeFinal, 'function');
+      assert.notEqual(options.responseOnly, true); assert.equal(options.onBeforeFinal, undefined);
       assert.equal(options.timeoutMs, 10000);
       return new Promise((_resolve, reject) => {
         const abort = () => { this.aborts++; reject(Object.assign(Error('Synthetic cancelled direct call.'), { name: 'AbortError', code: 'ABORT_ERR' })); };
@@ -95,7 +95,8 @@ test('the fictional form whole-case deadline aborts and settles an active direct
 
 const receiptBody = receipt => JSON.parse(receipt.contentItems.find(item => item.type === 'inputText').text);
 for (const scenario of [
-  { name: 'default modular success', success: true },
+  { name: 'default direct success', success: true },
+  { name: 'explicit verification success', planningOntology: normalizePlanningOntology({version:2,modules:{verification:true}}), success: true },
   { name: 'historical Forced alias success', planningMode: 'forced', success: true },
   { name: 'actual destination validation failure', omitPhone: true, success: false },
   { name: 'lost provider result after one confirmed effect', lostResult: true, success: false },
@@ -114,8 +115,8 @@ for (const scenario of [
         assert.ok(snapshot.evidence.records.some(row => row.id === 'one-submission'), 'Review sees the actual synthetic submission receipt.');
         return { decision: 'respond', summary: 'The fixture report accurately describes the recorded submission or validation result.', remaining: [], nextAction: '', blockers: [] };
       }); if (review) return review;
-      calls++; assert.equal(calls, 1); assert.notEqual(options.responseOnly, true); assert.equal(typeof options.onBeforeFinal, 'function');
-      assert.ok(options.developerInstructions.includes(planningOntologyInstructions(DEFAULT_PLANNING_ONTOLOGY)));
+      calls++; assert.equal(calls, 1); assert.notEqual(options.responseOnly, true); assert.equal(typeof options.onBeforeFinal, scenario.planningOntology ? 'function' : 'undefined');
+      assert.ok(options.developerInstructions.includes(planningOntologyInstructions(scenario.planningOntology || DEFAULT_PLANNING_ONTOLOGY)));
       options.onEvent({ type: 'thread', threadId: 'synthetic-form-thread', model: 'fixture-model' });
       const send = async (args, callId) => {
         const result = await options.onToolCall({ name: 'relay_browser', arguments: args, callId });
@@ -136,13 +137,13 @@ for (const scenario of [
   }
   const runtime = new SyntheticProvider(), original = runtime.runAgent;
   const result = await runAdvocacyCase({ runtime, root, item, model: 'fixture-model', effort: 'default',
-    timeoutMs: 10000, runTimeoutMs: 10000, ...(scenario.planningMode ? { planningMode: scenario.planningMode } : {}) });
+    timeoutMs: 10000, runTimeoutMs: 10000, ...(scenario.planningOntology ? {planningOntology:scenario.planningOntology} : {}), ...(scenario.planningMode ? { planningMode: scenario.planningMode } : {}) });
   assert.equal(result.assessment.objective, scenario.success ? 'pass' : 'fail', JSON.stringify({ error: result.error, checks: result.assessment.checks }));
   assert.equal(result.form.submitted, !scenario.omitPhone); assert.equal(result.form.submissionCount, scenario.omitPhone ? 0 : 1);
   assert.equal(result.form.calls.filter(call => call.args.action === 'click').length, 1, 'Duplicate callbacks do not submit again.');
   assert.equal(result.form.values.nationality, 'Prefer not to say');
   assert.equal(result.planningConfiguration.requestedMode, scenario.planningMode || 'ontology');
-  assert.equal(result.planningConfiguration.effectiveMode, 'off'); assert.deepEqual(result.planningConfiguration.ontology, DEFAULT_PLANNING_ONTOLOGY);
+  assert.equal(result.planningConfiguration.effectiveMode, 'off'); assert.deepEqual(result.planningConfiguration.ontology, scenario.planningOntology || DEFAULT_PLANNING_ONTOLOGY);
   assert.equal(result.responseCycle, null); assert.equal(result.planningGraph, null); assert.equal(result.viability, null);
   assert.equal(Object.hasOwn(result.assessment.checks, 'forcedPlanning'), false); assert.equal(Object.hasOwn(result.assessment.checks, 'planningCycle'), false);
   assert.deepEqual(result.externalDispatches, []); assert.equal(result.inputIntegrity, true); assert.equal(result.timedOut, false);

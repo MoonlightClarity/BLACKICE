@@ -17,9 +17,9 @@ test('V2 offers native model-specific reasoning and speed choices without false 
   const rows=chatOptionChoices(status,selected);
   assert.ok(rows.efforts.some(item=>item.id==='high'&&!item.disabled));
   assert.equal(rows.tiers.find(item=>item.id==='fast').disabled,false);
-  assert.deepEqual(validateChatOptions(status,selected),{...selected,directoryMode:'on',subagentsMode:'default',planningMode:'ontology',planningExecutionMode:'automatic',
-    planningOntology:{version:2,modules:{inference:true,feasibility:true,decomposition:true,
-      branching:true,replanning:true,metacognition:true,anti_overalignment:true,verification:true,subagents:true}}});
+  assert.deepEqual(validateChatOptions(status,selected),{...selected,directoryMode:'off',subagentsMode:'default',planningMode:'ontology',planningExecutionMode:'automatic',
+    planningOntology:{version:2,modules:{inference:false,feasibility:false,decomposition:false,
+      branching:false,replanning:false,metacognition:false,anti_overalignment:false,verification:false,subagents:true}}});
   assert.throws(()=>validateChatOptions(status,{...selected,effort:'ultra'}),/does not offer|reasoning/i);
   assert.throws(()=>validateChatOptions(status,{model:'vendor::restricted',serviceTier:'fast'}),/Fast mode|Codex/i);
   assert.throws(()=>validateChatOptions(status,{model:'nonexistent'}),/available model/);

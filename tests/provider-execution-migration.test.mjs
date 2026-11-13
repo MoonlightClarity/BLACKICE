@@ -59,7 +59,7 @@ async function fixture(t, { provider = 'mistral-vibe', afterRefresh } = {}) {
   }
   const runtime = new Runtime();
   const engine = await new HarnessEngine({ runtime, tasks, dataDir: directory, defaultCwd: cwd }).init();
-  engine.runtimeSettings = { get: () => ({ executionGuardrails: false }) };
+  engine.runtimeSettings = { get: () => ({ executionGuardrails: false, planningOntology:{version:2,modules:{decomposition:true}} }) };
   const settle = async accepted => { await engine.executions.get(accepted.id); return engine.getRun(accepted.id); };
   context = { engine, runtime, tasks, cwd, directory, model, settle };
   t.after(async () => { if (changed) WORKSPACE_TOOL.description = sourceDescription; await engine.close(); await tasks.close(); await fs.rm(directory, { recursive: true, force: true }); });
