@@ -8,6 +8,12 @@
 - An open Directory audit refreshes as context changes while preserving selection, filters, scroll and unsaved edits.
 - The browser has a manual **Close All Tabs** control. Automatic conversation-tab cleanup occurs on Archive or Trash, not ordinary task completion.
 
+## Recovery and lifecycle hardening
+
+- Archive refuses active or unsettled work; retired conversations reject late tab creation and cleanup reports bounded leftovers.
+- Visual geometry rejects off-canvas objects and invalid grid dimensions, with canvas-aware note wrapping.
+- Proven pre-dispatch document-change failures in one batch leave a recovery opportunity rather than being counted as separate model retry cycles. Uncertain effects remain strict; no browser actions are automatically replayed.
+
 ## Opportunity cost and boundaries
 
 Visuals can help inspect relationships, uncertainty and competing explanations, but may add distraction or imply more certainty than the evidence supports. Prefer plain text when it is clearer. Tool schemas and saved artifact references consume context even when no new diagram is produced; this release does not establish a net reasoning-quality improvement or a measured token/latency advantage.
