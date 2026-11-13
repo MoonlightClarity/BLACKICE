@@ -35,4 +35,3 @@ for(const version of [1,2])test('v'+version+' bounds full wrapped relationship l
   const height=Number(svg.match(/<svg[^>]*height="([^"]+)"/)[1]);for(const [,px,py,length] of texts){assert.ok(+px>=0);assert.ok(+px+(+length)<=200);assert.ok(+py>=14);assert.ok(+py+4<=height);}
  }
 });
-
