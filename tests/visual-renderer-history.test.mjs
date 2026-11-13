@@ -40,3 +40,14 @@ test('unknown renderer and tampered SVG remain detectable',async t=>{
  delete state.artifacts[0].revisions[0].renderer;state.artifacts[0].revisions[0].svg+='tampered';await writeFile(file,JSON.stringify(state));
  await assert.rejects(()=>store.read({conversationId:'history',artifactId:created.id}),{code:'VISUAL_DAMAGED'});
 });
+
+test('a tagged older renderer stays readable after the writer changes',async t=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'visual-tagged-history-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+ const store=new VisualArtifacts({dataDir:dir}),created=await store.execute({action:'create',conversationId:'history',requestId:'new',document:VISUAL_EXAMPLE});
+ const file=path.join(dir,'visual-artifacts','history.json'),state=JSON.parse(await readFile(file,'utf8'));
+ const old=geometry(VISUAL_EXAMPLE);Object.assign(state.artifacts[0].revisions[0],old,{renderer:'geometry-1'});await writeFile(file,JSON.stringify(state));
+ assert.equal((await store.read({conversationId:'history',artifactId:created.id})).svg,old.svg);
+ await store.execute({action:'revise',conversationId:'history',artifactId:created.id,expectedRevision:1,requestId:'revise',document:VISUAL_EXAMPLE});
+ assert.equal((await store.read({conversationId:'history',artifactId:created.id,revision:1})).svg,old.svg);
+ assert.equal((await store.read({conversationId:'history',artifactId:created.id})).renderer,'labels-2');
+});
