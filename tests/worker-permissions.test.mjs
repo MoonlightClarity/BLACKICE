@@ -132,3 +132,8 @@ test('read-only Planning graph allowlist accepts only declared observation actio
   assert.equal(denied.code,'TASK_PLAN_READ_ONLY');assert.equal(data(denied).actionDispatched,false);
  }
 });
+
+test('native agent observations are read-only while coordination mutations remain denied',()=>{
+ for(const action of ['list','get']) assert.equal(readOnlyToolDenial({name:'relay_agents',arguments:{action}},false),null);
+ for(const action of ['start','steer','stop','goal']) assert.equal(readOnlyToolDenial({name:'relay_agents',arguments:{action}},false)?.code,'TASK_PLAN_READ_ONLY');
+});

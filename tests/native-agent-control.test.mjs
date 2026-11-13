@@ -147,3 +147,17 @@ test('stopped controllers cannot start agents or modify other runs',async() => {
   await assert.rejects(tool(handler,{action:'start',requestId:'x',task:'No effect'}),{code:'NATIVE_AGENT_CANCELLED'});
   assert.equal(h.starts.length,0);
 });
+
+test('native steering preserves queued receipt without claiming delivery or replaying effects',async()=>{
+  const h=harness();
+  let calls=0;
+  h.engine.steerRun=async()=>{calls++;return {accepted:true,queued:true,delivery:{status:'queued',delivered:false}};};
+  const request={action:'steer',runId:'external',message:'Reach a safe checkpoint',requestId:'queued-direction'};
+  const first=await tool(h.handler,request);
+  assert.equal(first.delivery.queued,true);
+  assert.equal(h.parent.nativeAgentReceipts[0].status,'accepted');
+  const replay=await tool(h.handler,request);
+  assert.equal(replay.replayed,true);
+  assert.deepEqual(replay.delivery,first.delivery);
+  assert.equal(calls,1);
+});
