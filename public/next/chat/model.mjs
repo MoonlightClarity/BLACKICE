@@ -189,7 +189,29 @@ export function chatResponseState(run, messages=[]) {
   return {hasResponse,missing,pausedAfterPlan,errors,needsFollowup:missing||failed&&!hasResponse};
 }
 /** Keep the conversation header consistent with the delivered-response timeline. */
-export function chatHeaderStatus(run) {
+/** Compact standing-goal state is separate from the latest turn's status. */
+export function projectConversationGoal(goal) {
+  if(!goal||typeof goal!=='object'||!['active','waiting','paused','completed','blocked','interrupted','budget_exhausted'].includes(goal.status))return null;
+  return {id:String(goal.id||'').slice(0,160),revision:Number.isSafeInteger(goal.revision)?goal.revision:0,status:goal.status,
+    ...(typeof goal.running==='boolean'?{running:goal.running}:{}),
+    ...(typeof goal.runStatus==='string'?{runStatus:goal.runStatus.slice(0,40)}:{}),
+    turns:Number.isSafeInteger(goal.turns)?goal.turns:0,maxTurns:Number.isSafeInteger(goal.maxTurns)?goal.maxTurns:null,
+    currentRunId:typeof goal.currentRunId==='string'?goal.currentRunId.slice(0,160):null};
+}
+export function conversationGoalStatus(goal,run) {
+  const value=projectConversationGoal(goal);if(!value)return null;
+  const working=typeof value.running==='boolean'?value.running:run?.status==='running'&&run?.settled!==true;
+  if(working)return 'Running';
+  if(value.status==='active'){
+    const phase=value.runStatus||run?.status;
+    return phase==='queued'?'Goal queued':phase==='waiting'?'Goal waiting':'Goal ready';
+  }
+  return {paused:'Goal paused',waiting:'Goal waiting',completed:'Goal completed',blocked:'Goal needs attention',
+    interrupted:'Goal interrupted',budget_exhausted:'Goal turn limit reached'}[value.status];
+}
+
+export function chatHeaderStatus(run,goal=run?.goal) {
+  const goalStatus=conversationGoalStatus(goal,run);if(goalStatus)return goalStatus;
   if (!run) return 'Local workspace';
   if (planningProgressForRun(run)?.preparing) return 'Planning';
   if (run.status!=='completed') return run.status||'Saved';

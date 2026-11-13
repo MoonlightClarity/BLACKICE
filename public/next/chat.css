@@ -161,3 +161,28 @@
 .next-chat-ontology-choice>input:disabled{opacity:.45}
 @media(max-width:740px){.next-chat-ontology-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:490px){.next-chat-ontology-grid{grid-template-columns:1fr}}
+
+/* Goal mode shares the application's surfaces, contrast and control palette. */
+.next-chat-goal-toggle{align-self:center;white-space:nowrap}
+.next-chat-goal-toggle[aria-pressed=true]{border-color:var(--next-selection-border);background:var(--next-selection-background)}
+.next-chat-goal-card{display:grid;gap:7px;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:5px;background:var(--next-card-background);padding:11px 13px;margin:0 0 10px;color:var(--text-primary)}
+.next-chat-goal-card[hidden],.next-chat-goal-card [hidden]{display:none}
+.next-chat-goal-heading{display:flex;align-items:center;gap:9px;flex-wrap:wrap;min-width:0}
+.next-chat-goal-heading>strong{font-size:12px;letter-spacing:.04em}
+#next-chat-goal-status{padding:1px 7px;line-height:1.5}
+#next-chat-goal-progress{margin-left:auto;font-size:11px;color:var(--text-muted)}
+#next-chat-goal-objective{font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;max-height:132px;overflow:auto;margin:0}
+#next-chat-goal-objective:focus-visible{outline:1px solid var(--accent);outline-offset:3px}
+#next-chat-goal-reason{font-size:11px;line-height:1.5;color:var(--text-muted);margin:0;overflow-wrap:anywhere}
+.next-chat-goal-actions{display:flex;gap:6px;flex-wrap:wrap}
+.next-chat-goal-actions button{padding:4px 9px;font-size:11px}
+.next-chat-goal-actions #next-chat-goal-clear{margin-left:auto}
+.next-chat-goal-dialog{width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 40px);overflow:auto;background:var(--next-card-background);color:var(--text-primary);border-color:var(--line)}
+.next-chat-goal-dialog form{display:grid;gap:15px}
+.next-chat-goal-dialog h2,.next-chat-goal-dialog p{margin:0}
+.next-chat-goal-dialog p{font-size:12px;line-height:1.6;color:var(--text-muted)}
+.next-chat-goal-dialog label{display:grid;gap:7px}
+#next-chat-goal-input{width:100%;resize:vertical;min-height:118px;max-height:40vh;font:inherit;line-height:1.5}
+#next-chat-goal-limit{width:160px}
+#next-chat-goal-error{color:var(--text-primary);border-left:2px solid var(--accent);padding-left:10px}
+@media(max-width:600px){.next-chat-goal-card{padding:9px 10px}.next-chat-goal-heading{gap:6px}#next-chat-goal-progress{width:100%;margin-left:0}.next-chat-goal-dialog form{gap:12px}}

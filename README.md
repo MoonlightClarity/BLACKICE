@@ -49,6 +49,8 @@ Choose a supported native runtime, such as **Codex** or **Mistral Vibe Code**, o
 
 Conversations retain their recorded model and provider. Changing the default affects the appropriate future selections while preserving the identity of earlier work. BLACKICE keeps its own conversation history so a continuing task can retain useful context.
 
+**[Goal mode](docs/GOAL-MODE.md)** gives a conversation a persistent objective and automatically continues work in that same task. Use the Goal control or `/goal` commands to set, pause, resume, edit, or clear it. Continuation is unlimited by default, with an optional turn allowance. Completion records the model's evidence and recent tool receipts after its run succeeds.
+
 **Why this helps:** you can choose a model appropriate to the task and keep its execution environment, files, and work history together.
 
 See [API provider setup](docs/API-PROVIDERS.md).

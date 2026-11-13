@@ -6,6 +6,9 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ConversationArchive } from './lib/conversations.mjs';
+import { ConversationGoals } from './lib/conversation-goals.mjs';
+import { handleConversationGoalsHttp } from './lib/conversation-goals-http.mjs';
+import { conversationGoalsDirectTool } from './lib/conversation-goals-direct-tool.mjs';
 import { createActivityService } from './lib/activity.mjs';
 import { OperationsStore } from './lib/operations.mjs';
 import {ProjectStore} from './lib/projects.mjs';
@@ -166,6 +169,7 @@ export async function createHarnessServer(options = {}) {
   engine.nativeWindows=nativeWindows;
   const conversations=await startupPhase(diagnostics, 'conversations', () => new ConversationArchive({dataDir,engine}).init());
   engine.persistConversation = run => conversations.capture(run);
+  const goals = await new ConversationGoals({ engine, conversations, autoStart: false }).init();
   // Recent-run retention must not turn a repeated send into a new task.
   const recoverClientRequest = async value => {
     const id = engine.clientRequestRunId?.(value?.requestId);
@@ -429,7 +433,7 @@ export async function createHarnessServer(options = {}) {
     ...(options.desktopRestart ? { desktopRestart: options.desktopRestart, restartStatus: context => options.desktopRestart.status({ ownerId: context.canRestart ? context.ownerId : undefined }) } : {}),
     // Vault health can change between startups or recover during this process.
     // Keep its tool definitions stable; every credential action checks the store.
-    additionalTools: [createNativeTaskContextTool({getBridge:()=>engine.nativeTaskContextBridge}), ...createDirectPlanningBrowserTools({ store: planningBrowser, getExecutionSnapshot: () => planningBrowserRuntime.status(), getCatalog: () => planningBrowserCatalog({ store: planningBrowser, conversations, runtime, runtimeSettings, runner: planningBrowserRuntime }), onChange: sendEvent }), ...createDirectPlanningExecutionTools({store:planningBrowser,runner:planningBrowserRuntime,onChange:sendEvent}), ...createDirectProviderSetupTools({ runtime, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes), isEncryptionAvailable: () => options.credentialStorage?.isEncryptionAvailable?.() === true, browserOwnerForClient: client => client.id === LOCAL_BROWSER_CLIENT.id && client.kind === LOCAL_BROWSER_CLIENT.kind ? null : connectorBrowserOwner(client.id) }), chatGPTFileImportTool({ directory: path.join(defaultCwd, 'blackice-imports') }), chatGPTStartChatTool({ engine, attachments, defaultCwd, isClosing: connectorClosing }), planningOntologyDirectTool({runtimeSettings}), ...createDirectConnectedBrowserTools({ manager: connections, connectChrome: options.connectChromeBrowser }), ...createDirectBrowserProfileTools({ profiles: browserProfiles, manager: connections, onChange: refreshBrowserProfiles }), ...(options.desktopRestart ? [desktopRestartTool({ restart: options.desktopRestart, getJob: id => directExecution.jobs.get(id) })] : []), ...(options.frontendDevtools ? [frontendDevtoolsTool({ frontend: options.frontendDevtools, artifactDirectory: path.join(dataDir, 'frontend-development') })] : []), ...createDirectBrowserCredentialTools({ vault: browserCredentials, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes) })],
+    additionalTools: [conversationGoalsDirectTool({ goals, isClosing: connectorClosing }), createNativeTaskContextTool({getBridge:()=>engine.nativeTaskContextBridge}), ...createDirectPlanningBrowserTools({ store: planningBrowser, getExecutionSnapshot: () => planningBrowserRuntime.status(), getCatalog: () => planningBrowserCatalog({ store: planningBrowser, conversations, runtime, runtimeSettings, runner: planningBrowserRuntime }), onChange: sendEvent }), ...createDirectPlanningExecutionTools({store:planningBrowser,runner:planningBrowserRuntime,onChange:sendEvent}), ...createDirectProviderSetupTools({ runtime, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes), isEncryptionAvailable: () => options.credentialStorage?.isEncryptionAvailable?.() === true, browserOwnerForClient: client => client.id === LOCAL_BROWSER_CLIENT.id && client.kind === LOCAL_BROWSER_CLIENT.kind ? null : connectorBrowserOwner(client.id) }), chatGPTFileImportTool({ directory: path.join(defaultCwd, 'blackice-imports') }), chatGPTStartChatTool({ engine, attachments, defaultCwd, isClosing: connectorClosing }), planningOntologyDirectTool({runtimeSettings}), ...createDirectConnectedBrowserTools({ manager: connections, connectChrome: options.connectChromeBrowser }), ...createDirectBrowserProfileTools({ profiles: browserProfiles, manager: connections, onChange: refreshBrowserProfiles }), ...(options.desktopRestart ? [desktopRestartTool({ restart: options.desktopRestart, getJob: id => directExecution.jobs.get(id) })] : []), ...(options.frontendDevtools ? [frontendDevtoolsTool({ frontend: options.frontendDevtools, artifactDirectory: path.join(dataDir, 'frontend-development') })] : []), ...createDirectBrowserCredentialTools({ vault: browserCredentials, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes) })],
     authorizeClient: async (client, { requiredScopes }) => {
       if (client.id === 'local-browser-tools' && client.kind === 'local-browser') return !connectorClosing() && requiredScopes.every(scope => LOCAL_BROWSER_CLIENT.scopes.includes(scope));
       if (client.id === LOCAL_FRONTEND_CLIENT.id && client.kind === LOCAL_FRONTEND_CLIENT.kind) return Boolean(options.frontendDevtools) && !connectorClosing() && requiredScopes.every(scope => LOCAL_FRONTEND_CLIENT.scopes.includes(scope));
@@ -555,6 +559,7 @@ export async function createHarnessServer(options = {}) {
         return json(res,200,conversations.search(options));
       }
       if(pathname==='/api/conversations'&&req.method==='GET')return json(res,200,{conversations:conversations.list(new URL(req.url,'http://'+host).searchParams.get('state')||'active')});
+      if(await handleConversationGoalsHttp({req,res,pathname,goals,body,json,mutations:fileMutations}))return;
       if(await handleShadowdancerContextHttp({req,res,pathname,host,conversations,engine,body,json,fileMutations,onUpdated:sendEvent}))return;
       if (await handlePlanningDiagnosticsHttp({req,res,pathname,service:planningDiagnostics,body,json,fileMutations})) return;
       if (pathname === '/api/planning-browser' || pathname.startsWith('/api/planning-browser/')) {
@@ -1260,6 +1265,7 @@ export async function createHarnessServer(options = {}) {
         const pending=[],attempt=action=>{try{pending.push(Promise.resolve(action()));}catch(error){pending.push(Promise.reject(error));}};
         const restartCancellationRequested = options.desktopRestart?.cancelPending?.() === true;
         if (restartCancellationRequested) attempt(() => options.desktopRestart.waitForHandoff());
+        attempt(()=>goals.pauseAll('All chats stopped.'));
         attempt(()=>inbox.pause('All chats stopped. Resume queued starts when ready.'));
         attempt(()=>operations.pause('All chats stopped.'));
         attempt(()=>pauseProjects('All work stopped. Resume the project when ready.'));
@@ -1274,6 +1280,8 @@ export async function createHarnessServer(options = {}) {
       const runMatch = pathname.match(/^\/api\/runs\/([a-zA-Z0-9_-]+)(\/(?:cancel|retry|continue|steer|compact))?$/);
       if (runMatch && req.method === 'GET' && !runMatch[2]) return json(res, 200, await conversations.get(runMatch[1]));
       if (runMatch?.[2] && req.method === 'POST') {
+        const releaseGoalInput = goals.holdForUserInput(runMatch[1]);
+        try {
         const value = await body(req,['/continue','/steer'].includes(runMatch[2])?Infinity:undefined);
         if(runMatch[2]==='/continue'){assertExecutablePlanningMode(value.planningExecutionMode);await recoverClientRequest(value);}
         if (runMatch[2] === '/compact') {const family=await conversations.family(runMatch[1]);return json(res,200,await engine.compactRun(runMatch[1],value,{historyRuns:family.runs}));}
@@ -1283,6 +1291,7 @@ export async function createHarnessServer(options = {}) {
         if (runMatch[2] === '/steer') return json(res, 200, await engine.steerRun(runMatch[1], value));
         if (runMatch[2] === '/cancel') return json(res, 200, engine.cancelRun(runMatch[1]));
         return json(res, 201, engine.retryRun(runMatch[1], {historyRuns:(await conversations.family(runMatch[1])).runs,...(value.context !== undefined ? {context:value.context} : {}),...(value.planningMode !== undefined ? {planningMode:value.planningMode} : {}),...(value.planningExecutionMode !== undefined ? {planningExecutionMode:assertExecutablePlanningMode(value.planningExecutionMode)} : {})}));
+        } finally { releaseGoalInput(); }
       }
       if (pathname.startsWith('/api/')) return json(res, 404, { error: 'Endpoint not found.' });
       if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'Method not allowed.' });
@@ -1303,7 +1312,7 @@ export async function createHarnessServer(options = {}) {
       files['/provider-availability.mjs'] = 'provider-availability.mjs';
       const nextFiles = ['index.html','base.css','chat.css','chat-management.css','brand.css','work-visual.css','intelligence-planning.css','intelligence-map.css','controls.css','layout-fixes.css','planning-ontology.css','planning-browser.css','guard.js','app.mjs',
         'core/api.mjs','core/dom.mjs','core/events.mjs','core/model-picker.mjs','core/context-controls.mjs','model-picker.css',
-        'chat/chat.mjs','chat/model.mjs','chat/render.mjs','chat/send.mjs','chat/planning-timeline.mjs',
+        'chat/chat.mjs','chat/model.mjs','chat/render.mjs','chat/send.mjs','chat/goals.mjs','chat/planning-timeline.mjs',
         'chat/options-model.mjs','chat/ontology-preferences.mjs','chat/execution-preferences.mjs','chat/artifacts.mjs','parity.css',
         'chat/reader-model.mjs','chat/reader-worker.mjs','chat/reader-client.mjs',
         // Native hosting UI assets are registered at the public root below.
@@ -1353,7 +1362,7 @@ export async function createHarnessServer(options = {}) {
   const heartbeat = setInterval(() => { for (const res of clients) if(!writeEventStream(res,': heartbeat\n\n'))clients.delete(res); }, 15000);
   heartbeat.unref();
   return {
-    server, engine, ownerRecovery, runtime, runtimeSettings, desktop, knowledge, prompts, browser,browserProfiles,browserCredentials,browserCredentialMirror,browserCredentialDestinations,applicationWorkspace,nativeWindows, identity, learning, connections, tasks, planningOrganization, planningBrowser, planningBrowserRuntime, taskViability, responseCycle, attachments, email, emailOAuth, emailClient, inbox, conversations, operations,projects,capabilities,liveEdits,diagnostics,supportSnapshot,beginMaintenance,endMaintenance,assertRestartReady,assertRestartPrepared,beginRestart,endRestart,remoteAccess,remoteAgentApi,chatGPTConnector,chatGPTOAuth,directExecution,chatGPTPlanning,connectorSetup,
+    server, engine, goals, ownerRecovery, runtime, runtimeSettings, desktop, knowledge, prompts, browser,browserProfiles,browserCredentials,browserCredentialMirror,browserCredentialDestinations,applicationWorkspace,nativeWindows, identity, learning, connections, tasks, planningOrganization, planningBrowser, planningBrowserRuntime, taskViability, responseCycle, attachments, email, emailOAuth, emailClient, inbox, conversations, operations,projects,capabilities,liveEdits,diagnostics,supportSnapshot,beginMaintenance,endMaintenance,assertRestartReady,assertRestartPrepared,beginRestart,endRestart,remoteAccess,remoteAgentApi,chatGPTConnector,chatGPTOAuth,directExecution,chatGPTPlanning,connectorSetup,
     async listen({ waitForRemote = true } = {}) {
       if (typeof waitForRemote !== 'boolean') throw new TypeError('Choose whether to wait for remote startup.');
       await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
@@ -1367,6 +1376,7 @@ export async function createHarnessServer(options = {}) {
       // Listening is independent of provider startup so connection errors are visible in the UI.
       Promise.resolve().then(() => runtime.start()).then(() => inbox.kick()).finally(() => {
         providerStartupPending=false;
+        goals.start();
         operations.kick?.();
         runtimeUpdate();
       }).catch(error => { void diagnostics.recordError('runtime','runtime_failed',error);console.error('Agent connection failed; see support diagnostics.'); });
@@ -1393,6 +1403,7 @@ export async function createHarnessServer(options = {}) {
         await cleanup(() => chatGPTConnector.close());
         await cleanup(()=>Promise.all([...observers.keys()].map(id=>stopObserving(id,'Relay is closing.'))));
         await cleanup(()=>liveEdits.close());
+        await cleanup(() => goals.close());
         await cleanup(() => methods.close());
         await cleanup(() => projects.close());
         await cleanup(() => capabilities.close());

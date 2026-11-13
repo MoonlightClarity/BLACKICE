@@ -6,7 +6,7 @@ import {assertExecutablePlanningMode} from '../../response-cycle-model.mjs';
 /** Send once; the existing server executes and persists the real run.
  * Failures preserve unsent drafts, and no mutation is silently replayed.
  */
-export async function submitChat({ api, runs, task, model, effort = 'default', serviceTier = 'default', planningMode, planningExecutionMode = 'automatic', planningOntology, directoryMode, cwd = '', attachmentIds=[], context }) {
+export async function submitChat({ api, runs, task, model, effort = 'default', serviceTier = 'default', planningMode, planningExecutionMode = 'automatic', planningOntology, directoryMode, cwd = '', attachmentIds=[], context, goal }) {
   const executionModes={...(directoryMode===undefined?{}:{directoryMode}),subagentsMode:'default'};
   const chosenPlanningMode = planningMode==='off'?'off':'ontology';
   const latest=replyTarget(runs);
@@ -41,7 +41,7 @@ export async function submitChat({ api, runs, task, model, effort = 'default', s
   }
   const saved=await api('/api/workflows','POST',workflow);
   const result=await api('/api/runs','POST',{ workflow:saved?.workflow||saved,
-    input:{...executionModes,task:content,cwd,planningMode:chosenPlanningMode,planningExecutionMode,...(chosenPlanningMode==='ontology'?{planningOntology:normalizePlanningOntology(planningOntology)}:{}),attachmentIds},requestId });
+    input:{...executionModes,task:content,cwd,...(goal?{goal:structuredClone(goal)}:{}),planningMode:chosenPlanningMode,planningExecutionMode,...(chosenPlanningMode==='ontology'?{planningOntology:normalizePlanningOntology(planningOntology)}:{}),attachmentIds},requestId });
   return { mode:'started',run:result?.run||result,requestId };
 }
 export function replyState(runs) {

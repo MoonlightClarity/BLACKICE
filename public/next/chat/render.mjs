@@ -1,5 +1,5 @@
 import { text, formatDate } from '../core/dom.mjs';
-import { runText, messagesOfRun, chatResponseState, windowedRuns, windowedMessages, CHAT_MESSAGE_BATCH, rootId, lastRunId, running, CHAT_INDEX_BATCH, conversationIndexWindow } from './model.mjs';
+import { runText, messagesOfRun, chatResponseState, windowedRuns, windowedMessages, CHAT_MESSAGE_BATCH, rootId, lastRunId, running, CHAT_INDEX_BATCH, conversationIndexWindow, conversationGoalStatus } from './model.mjs';
 import { chatOptionChoices } from './options-model.mjs';
 import { createRegisteredArtifactResolver } from '../../conversation-model.mjs';
 import { taskPlanView } from '../../task-plan-model.mjs';
@@ -46,7 +46,7 @@ export function createChatFrame(mount) {
     '<button type="button" id="next-chat-stop" hidden>Stop</button></div></header>',
     '<div class="next-chat-scroll" id="next-chat-scroll"><div class="next-chat-timeline" id="next-chat-timeline">',
     '<div class="next-chat-intro"><h1>What would you like to work on?</h1><p>BLACKICE can use your local workspace, tools, and connected services. Start a conversation or return to saved work.</p></div>',
-    '</div></div><footer class="next-chat-composer-area"><section id="next-chat-cycle-notice" class="next-chat-cycle-notice" hidden><span id="next-chat-cycle-status" role="status"></span><button type="button" id="next-chat-open-plan">Open plan in Planning</button></section><form class="next-chat-compose" id="next-chat-form">',
+    '</div></div><footer class="next-chat-composer-area"><section id="next-chat-cycle-notice" class="next-chat-cycle-notice" hidden><span id="next-chat-cycle-status" role="status"></span><button type="button" id="next-chat-open-plan">Open plan in Planning</button></section><section id="next-chat-goal-card" class="next-chat-goal-card" aria-label="Conversation goal" hidden><div class="next-chat-goal-heading"><strong>Goal</strong><span id="next-chat-goal-status" class="next-status-pill" role="status"></span><span id="next-chat-goal-progress"></span></div><p id="next-chat-goal-objective" tabindex="0"></p><p id="next-chat-goal-reason" hidden></p><div class="next-chat-goal-actions"><button id="next-chat-goal-edit" type="button">Edit</button><button id="next-chat-goal-pause" type="button" title="Pause automatic continuation after the current turn">Pause</button><button id="next-chat-goal-resume" type="button" hidden>Resume</button><button id="next-chat-goal-clear" type="button" title="Remove this goal; keep the conversation">Clear</button></div></section><form class="next-chat-compose" id="next-chat-form">',
     '<textarea id="next-chat-input" class="next-chat-input" aria-label="Message BLACKICE" placeholder="Message BLACKICE…" rows="2"></textarea>',
     '<div id="next-chat-attachments"></div>',
     '<div class="next-chat-options"><div class="next-chat-model"><span>Model</span><select id="next-chat-model" aria-label="Model"><option value="default">Default</option></select></div>',
@@ -55,7 +55,7 @@ export function createChatFrame(mount) {
     '<label>Planning <select id="next-chat-plan" title="Choose modular reasoning methods or Off."><option value="ontology">On</option><option value="off">Off</option></select></label>',
     '<label>Directory <select id="next-chat-directory-mode" title="Recursive context-directory reasoning. Applies to the next response, not running work."><option value="on">On</option><option value="off">Off</option></select></label>',
     '<input id="next-chat-execution-mode" type="hidden" value="automatic">',
-    '<span class="next-chat-spacer"></span><button class="next-primary" type="submit" id="next-chat-send">Send</button></div>',
+    '<button id="next-chat-goal-toggle" class="next-chat-goal-toggle" type="button" aria-pressed="false" aria-haspopup="dialog">Goal</button><span class="next-chat-spacer"></span><button class="next-primary" type="submit" id="next-chat-send">Send</button></div>',
     '<details id="next-chat-ontology-inline" class="next-chat-ontology-inline">',
     '<summary class="next-chat-ontology-toggle" aria-label="Expand or collapse planning modules">Modules <span aria-hidden="true">On / Off</span></summary>',
     '<div class="next-chat-ontology-content">',
@@ -65,7 +65,7 @@ export function createChatFrame(mount) {
     '</div></details></form>',
     '<p id="next-chat-hint" class="next-chat-hint" role="status">Enter to send · Shift+Enter for a new line</p>',
     '</footer></div>',
-    '<dialog id="next-chat-trash-dialog" class="next-chat-management-dialog" aria-labelledby="next-chat-trash-title">',
+    '<dialog id="next-chat-goal-dialog" class="next-chat-management-dialog next-chat-goal-dialog" aria-labelledby="next-chat-goal-title"><form id="next-chat-goal-form"><h2 id="next-chat-goal-title">Goal mode</h2><p>Give BLACKICE an outcome to work toward. It will continue in this conversation until the goal is complete or you pause it.</p><label class="next-label">Objective<textarea id="next-chat-goal-input" class="next-field" rows="5" maxlength="12000" required placeholder="Describe the outcome and how to know it is done."></textarea></label><label class="next-label">Turn limit (optional)<input id="next-chat-goal-limit" class="next-field" type="number" min="1" step="1" inputmode="numeric" placeholder="No limit"></label><p class="next-help">The limit counts all turns while the goal is enabled. Leave it empty for no limit; Resume renews the allowance. Pause lets the current turn finish. Stop ends running work.</p><p id="next-chat-goal-error" role="alert" hidden></p><div class="next-chat-dialog-actions"><button id="next-chat-goal-cancel" type="button">Cancel</button><button id="next-chat-goal-save" type="submit" class="next-primary">Start goal</button></div></form></dialog><dialog id="next-chat-trash-dialog" class="next-chat-management-dialog" aria-labelledby="next-chat-trash-title">',
     '<h2 id="next-chat-trash-title">Move to Trash?</h2><p id="next-chat-trash-message"></p><p>You can restore chats from Trash. Saved messages and files are preserved.</p>',
     '<div class="next-chat-dialog-actions"><button id="next-chat-trash-cancel" type="button" autofocus>Cancel</button><button id="next-chat-trash-confirm" type="button">Move to Trash</button></div></dialog>',
     '<dialog id="next-chat-rename-dialog" class="next-chat-management-dialog" aria-labelledby="next-chat-rename-title">',
@@ -87,6 +87,7 @@ export function createChatFrame(mount) {
     ontologyInline:find('next-chat-ontology-inline'),ontologyModules:find('next-chat-ontology-modules'),ontologySave:find('next-chat-ontology-default'),ontologyStatus:find('next-chat-ontology-feedback'),
     form:find('next-chat-form'),input:find('next-chat-input'),attachments:find('next-chat-attachments'),model:find('next-chat-model'),plan:find('next-chat-plan'),
     directoryMode:find('next-chat-directory-mode'),
+    goalToggle:find('next-chat-goal-toggle'),goalCard:find('next-chat-goal-card'),goalStatus:find('next-chat-goal-status'),goalObjective:find('next-chat-goal-objective'),goalProgress:find('next-chat-goal-progress'),goalReason:find('next-chat-goal-reason'),goalEdit:find('next-chat-goal-edit'),goalPause:find('next-chat-goal-pause'),goalResume:find('next-chat-goal-resume'),goalClear:find('next-chat-goal-clear'),goalDialog:find('next-chat-goal-dialog'),goalForm:find('next-chat-goal-form'),goalTitle:find('next-chat-goal-title'),goalInput:find('next-chat-goal-input'),goalLimit:find('next-chat-goal-limit'),goalError:find('next-chat-goal-error'),goalCancel:find('next-chat-goal-cancel'),goalSave:find('next-chat-goal-save'),
     effort:find('next-chat-effort'),tier:find('next-chat-tier'),send:find('next-chat-send'),hint:find('next-chat-hint') };
 }
 
@@ -151,7 +152,7 @@ export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATC
       entry.check?.setAttribute('aria-label','Select '+title);
       entry.summary?.setAttribute('aria-label','Actions for '+title);
     }
-    const status=String(item.status==='completed'&&item.settled===true?'Finished':item.status==='completed'&&item.settled===false?'Finishing…':item.status||'Saved').replaceAll('_',' ');
+    const status=conversationGoalStatus(item.goal,item)||String(item.status==='completed'&&item.settled===true?'Finished':item.status==='completed'&&item.settled===false?'Finishing…':item.status||'Saved').replaceAll('_',' ');
     if(entry.status!==status){setText(entry.statusNode,status);entry.status=status;}
     const date=item.updatedAt||item.createdAt;
     if(entry.date!==date){setText(entry.dateNode,formatDate(date));entry.date=date;}

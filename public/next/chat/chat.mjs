@@ -1,9 +1,10 @@
 import { createChatFrame, paintIndex, paintIntroduction, paintHistory, paintModels, captureChatScroll, restoreChatScroll } from './render.mjs';
 import { createGroupedModelPicker } from '../core/model-picker.mjs';
 import { enableProviderForModel } from '../../provider-availability.mjs';
-import { summaries, filterSummaries, conversationRuns, rootId, lastRunId, running, planningProgressForRun, CHAT_INDEX_BATCH, CHAT_MESSAGE_BATCH, messageLimitsAfterRefresh, conversationBucket, conversationActionState, conversationManagementTarget, resolveConversationSelection, mergeChatRunUpdate, chatHeaderStatus } from './model.mjs';
+import { summaries, filterSummaries, conversationRuns, rootId, lastRunId, running, planningProgressForRun, CHAT_INDEX_BATCH, CHAT_MESSAGE_BATCH, messageLimitsAfterRefresh, conversationBucket, conversationActionState, conversationManagementTarget, resolveConversationSelection, mergeChatRunUpdate, chatHeaderStatus, projectConversationGoal } from './model.mjs';
 import {readConversationExecutionModes,saveConversationExecutionModes,transferNewExecutionModes} from './execution-preferences.mjs';
 import { submitChat, replyState } from './send.mjs';
+import {createGoalControls,parseGoalCommand} from './goals.mjs';
 import { createConversationReader } from './reader-client.mjs';
 import { initAttachmentsUI } from '../../attachments-ui.mjs';
 import { escapeHTML } from '../core/dom.mjs';
@@ -33,6 +34,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     indexLimit:CHAT_INDEX_BATCH, indexQuery:'',messageLimits:new Map(),
     attachmentIds:new Map(), attachmentsPending:false,managing:false,selecting:false,selection:new Map(),visible:[],listRead:0,destroyed:false,inputRevision:0,
     options:{...restoreChatPlanningOptions((()=>{try{return JSON.parse(localStorage.getItem('blackice.next.chatOptions')||'{}');}catch{return{};}})(),getStatus?.()?.runtimeSettings?.planningOntology),model:'default'} };
+  let goalControls=null;
   const directoryInspector=createDirectoryInspector({frame:view.shell,api,getConversationId:()=>state.selected,getRunId:()=>state.runs.at(-1)?.id||null});
   let newPlanningExecutionMode=state.options.planningExecutionMode;
   const executionNotice=mount.ownerDocument.createElement('section');
@@ -173,13 +175,14 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     if(view.model.disabled!==state.pending){view.model.disabled=state.pending;refreshChoices(runtimeStatus);}
     syncContext();
     directoryInspector.refresh(state.selected?state.runs.at(-1)?.id:null);
-    const item=state.selected,bucket=selectedBucket(),latest=state.runs.at(-1),busy=state.pending||state.managing||contextControls.isCompacting();
+    const item=state.selected,bucket=selectedBucket(),latest=state.runs.at(-1),busy=state.pending||state.managing||contextControls.isCompacting()||goalControls?.isBusy();
+    goalControls?.update({conversationId:root(),running:state.runs.some(run=>run.status==='running'&&run.settled!==true),readonly:bucket!=='active',busy:state.pending||state.managing||state.loading});
     view.directoryMode.disabled=busy||state.loading||bucket!=='active';
     executionNotice.hidden=Boolean(item)||root()!=='new'||bucket!=='active'||state.options.planningExecutionMode!=='plan_only';
     enableAutomatic.disabled=busy||state.loading||state.attachmentsPending;
     view.title.textContent=item?.rootTitle||item?.title||'New conversation';
     const planningProgress=planningProgressForRun(latest);
-    view.subtitle.textContent=(item&&bucket!=='active'?(bucket==='deleted'?'In Trash':bucket==='archived'?'Archived':'History state unavailable')+' · ':'')+chatHeaderStatus(latest);
+    view.subtitle.textContent=(item&&bucket!=='active'?(bucket==='deleted'?'In Trash':bucket==='archived'?'Archived':'History state unavailable')+' · ':'')+chatHeaderStatus(latest,goalControls?.getGoal()||item?.goal);
     const cycle=latest?.responseCycle;
     const cycleLabel=planningProgress?.label;
     view.cycleNotice.hidden=bucket!=='active'||!planningProgress?.showNotice;
@@ -204,6 +207,22 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     view.input.placeholder=bucket==='active'?'Message BLACKICE…':'Restore this conversation to reply';
     drawManagement();
   };
+  goalControls=createGoalControls({view,api,notify,onError:showError,onChange:updateHead,
+    onGoalChange:(goal,owner)=>{
+      const compact=projectConversationGoal(goal);
+      state.list=state.list.map(item=>rootId(item)===owner?{...item,goal:compact}:item);
+      if(state.selected&&root()===owner)state.selected={...state.selected,goal:compact};
+      indexPaint();updateHead();
+    },
+    getContext:()=>({conversationId:root(),runId:state.runs.at(-1)?.id,draft:view.input.value,
+      executionOptions:{...state.options,...(modelSelections.read(root(),state.runs).explicit?{}:{model:undefined}),
+        ...(!state.runs.some(running)?{context:contextControls.read()}:{})}}),
+    onStart:async(goal,options)=>{const result=await send({goal,taskOverride:goal.objective,consumeDraft:options.consumeDraft});if(!result)throw Error(view.hint.textContent||'Could not start the goal.');return result;},
+    onResult:async(result,owner)=>{
+      if(state.destroyed||!state.active||root()!==owner||state.pending||!state.selected)return;
+      const item=result?.run?.id?{...state.selected,runId:result.run.id,latestRunId:result.run.id}:state.selected;
+      await open(item,{refresh:true});
+    }});
   let attachmentsUI;
   try {
     const saved=JSON.parse(localStorage.getItem('blackice.next.attachments')||'{}');
@@ -424,10 +443,11 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       return;}
     if(!state.active||state.dataController!==controller||controller.signal.aborted) return;
     state.loading=false;
-    state.selected={...state.selected,...(family.state?{state:family.state}:{}),...(family.title?{title:family.title,rootTitle:family.title}:{})};
+    state.selected={...state.selected,goal:projectConversationGoal(family.goal),...(family.state?{state:family.state}:{}),...(family.title?{title:family.title,rootTitle:family.title}:{})};
     const runs=conversationRuns(family);
     state.messageLimits=messageLimitsAfterRefresh(state.runs,runs,state.messageLimits);
     state.runs=runs;state.lastLoadedAt=Date.now();
+    if(refresh)void goalControls.refresh();
     restoreOntology(id,runs);refreshChoices();syncContext({select:!refresh,reconcile:refresh});
     render({preserve:refresh});
     // Resolve names for stored attachment IDs without blocking the transcript.
@@ -466,14 +486,23 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       await open(state.selected,{refresh:true});
     }catch(error){showError(error);}finally{state.pending=false;updateHead();}
   }
-  async function send() {
+  async function send({goal,taskOverride,consumeDraft=true}={}) {
     if(state.pending||state.managing||contextControls.isCompacting()||state.attachmentsPending||selectedBucket()!=='active')return;
     if(state.selected&&(state.loading||!state.runs.length)){
       if(state.loading)hint('This conversation is still loading. Your draft is unchanged.');
       else showError('The saved conversation is unavailable. Retry opening it before sending; your draft is unchanged.');
       return;
     }
-    const task=view.input.value.trim();if(!task)return;
+    const task=String(taskOverride??view.input.value).trim();if(!task)return;
+    if(!goal){
+      let command;
+      try{command=parseGoalCommand(task);}catch(error){showError(error);return;}
+      if(command){
+        const owner=state.inputOwner,revision=state.inputRevision;
+        try{const result=await goalControls.command(command);if(result)consumeInput(owner,revision);return result;}
+        catch(error){showError(error);notify(error.message,true);return;}
+      }
+    }
     const submittedOwner=state.inputOwner,submittedRevision=state.inputRevision,submittedContextOwner=root();
     state.pending=true;updateHead();hint('Sending your message…');
     const previous=state.selected,current=state.runs;
@@ -485,10 +514,10 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       const context=active?undefined:contextControls.read();
       const submittedContextRevision=contextControls.revision;
       const result=await submitChat({api,runs:current,task,model:previous&&!submittedModel.explicit?undefined:options.model,
-        effort:options.effort,serviceTier:options.serviceTier,context,
+        effort:options.effort,serviceTier:options.serviceTier,context,goal,
         planningMode:options.planningMode,planningOntology:options.planningOntology,directoryMode:options.directoryMode,planningExecutionMode:options.planningExecutionMode,attachmentIds:[...(state.attachmentIds.get(root())||[])],
         cwd:(()=>{try{return localStorage.getItem('blackice.next.cwd')||status?.cwd||'';}catch{return status?.cwd||'';}})()});
-      const unchanged=state.inputOwner===submittedOwner&&state.inputRevision===submittedRevision;
+      const unchanged=consumeDraft&&state.inputOwner===submittedOwner&&state.inputRevision===submittedRevision;
       if(unchanged)consumeInput(submittedOwner,submittedRevision);
       else saveDraft();
       state.attachmentIds.set(root(),[]);persistAttachments();attachmentsUI.reset({cancelPending:false});
@@ -510,6 +539,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
         hint('Message sent. BLACKICE is working.');
       }else hint('Message accepted. Open the saved conversation to inspect the result.');
       void loadList();
+      return result;
     } catch(error) {showError(error);notify(error.message,true);}
     finally {state.pending=false;updateHead();}
   }
@@ -538,6 +568,12 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   let settleTimer=null;
   function onEvent(event) {
     if(!state.active)return;
+    if(goalControls.handleEvent(event))return;
+    if(event.type==='goal.updated'){
+      const {conversationId,goal}=event.data||{};
+      state.list=state.list.map(item=>rootId(item)===conversationId?{...item,goal:projectConversationGoal(goal)}:item);
+      indexPaint();return;
+    }
     if(['conversations.changed','conversations.updated'].includes(event.type)) {
       clearTimeout(state.listTimer);state.listTimer=setTimeout(()=>{void loadList();},800);return;
     }
@@ -715,6 +751,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     },
     leave() {
 
+      goalControls.close();
       modelPicker.close({restoreFocus:false});
       state.active=false;state.generation++;state.listRead++;state.unsubscribe?.();state.unsubscribe=null;
       listRequested=false;listInitialize=null;listController?.abort();
@@ -728,6 +765,6 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     updateStatus(status) {if(status&&typeof status==='object'&&!Array.isArray(status)){runtimeStatus=status;if(root()==='new')restoreOntology('new');refreshChoices(status);updateHead();}},
     openConversationId(id){if(!id)return;const item=state.list.find(row=>rootId(row)===id||lastRunId(row)===id)||{id,runId:id,title:'Conversation'};void open(item);},
     getState() {return {active:state.active,selected:root(),runCount:state.runs.length,listing:state.list.length,selectionCount:state.selection.size,managing:state.managing};},
-    destroy(){this.leave();state.destroyed=true;contextControls.destroy();directoryInspector.destroy();modelPicker.destroy();reader.close();artifacts.destroy();attachmentsUI.destroy();mount.innerHTML='';}
+    destroy(){this.leave();state.destroyed=true;goalControls.destroy();contextControls.destroy();directoryInspector.destroy();modelPicker.destroy();reader.close();artifacts.destroy();attachmentsUI.destroy();mount.innerHTML='';}
   };
 }
