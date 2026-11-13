@@ -123,7 +123,13 @@ test('review that does not change source preserves the original test receipt and
  await assert.rejects(()=>stat(path.join(base,'verification','round-002.json')),{code:'ENOENT'});
  const final=JSON.parse(await readFile(result.finalPath,'utf8'));
  assert.equal(final.modelSynthesis,null);
- assert.match(final.answer,/Unknown requirements/);
+ assert.match(final.answer,/Requirements without explicit test mappings/);
+ assert.equal(final.status,'tests_passed_requirements_still_unknown');
+ assert.equal(final.requirementCoverageScope.status,'absent');
+ assert.ok(final.requirementCoverageScope.unmapped>0);
+ assert.equal(final.requirementCoverageScope.mappedPassed,0);
+ assert.equal(final.requirementCoverageScope.outcome,'not_assessed_by_mapping');
+ assert.match(final.answer,/Missing mappings never establish completion/);
  assert.deepEqual(final.referencedResults.map(x=>x.ref),['module:1','verification:final','review:repository']);
  const existing=await import(pathToFileURL(path.join(repo,'src','count.mjs')).href+'?run='+Date.now());
  assert.equal(existing.count(-1),-1,'A review without an edit never proves the missing contract');
