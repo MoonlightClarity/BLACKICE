@@ -141,3 +141,26 @@
 .next-native-auth-fields button{min-height:35px}
 .next-native-browser:has(.next-native-auth:not([hidden])) .next-native-downloads{max-height:15%}
 @media(max-width:650px){.next-native-browser #next-browser-downloads-toggle{font-size:11px;padding:6px}.next-native-browser .next-browser-address{flex-wrap:wrap}.next-native-browser .next-browser-address #next-browser-url{order:-1;min-width:100%}.next-native-download{display:block}}
+
+/* Ownership is a persistent part of browser chrome, above the live page. */
+.next-browser-ownership{display:flex;align-items:center;gap:9px;min-width:0;padding:1px 0 8px}
+.next-browser-scopes{display:inline-flex;flex:none;gap:2px;padding:2px;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
+.next-browser-scopes button{padding:5px 10px;min-height:30px;font-size:11px;white-space:nowrap;border:1px solid transparent;background:transparent;color:var(--muted);box-shadow:none}
+.next-browser-scopes button[aria-pressed=true]{background:var(--raised);border-color:var(--line);color:var(--text-primary,inherit)}
+.next-browser-scopes button:hover:not(:disabled){background:var(--raised);color:var(--text-primary,inherit)}
+.next-browser-conversation-label{display:flex;align-items:center;gap:7px;flex:1 1 310px;min-width:100px;max-width:580px;color:var(--muted);font-size:11px}
+.next-browser-conversation-label>span{flex:none}
+.next-browser-conversation-label select{width:100%;min-width:0;padding:6px 27px 6px 8px;min-height:33px;font-size:11px}
+.next-browser-owner-hint{min-width:0;flex:1 1 120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11px}
+.next-browser-conversation-label:not([hidden])+.next-browser-owner-hint{display:none}
+.next-browser-move{flex:0 1 185px;min-width:130px;max-width:245px;margin-left:auto;padding:6px 24px 6px 9px;min-height:33px;font-size:11px}
+.next-browser-tab-owner{max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto;font-size:10px;padding:2px 5px;margin-right:3px;border:1px solid var(--line);border-radius:4px;color:var(--muted)}
+.next-browser-tabs-empty{padding:7px 3px;font-size:11px;color:var(--muted)}
+.next-native-browser .next-browser-navigation,.next-browser-workspace .next-browser-navigation{background:var(--next-header-background,var(--panel))}
+.next-space .next-native-browser,.next-native-browser .next-native-browser-page,.next-browser-workspace .next-browser-visual{background:var(--next-workspace-background,var(--panel))}
+.next-native-browser .next-browser-tab-group,.next-browser-workspace .next-browser-tab-group{background:var(--raised)}
+.next-native-browser .next-browser-tab-group:has(.next-browser-tab[aria-selected=true]),.next-browser-workspace .next-browser-tab-group:has(.next-browser-tab[aria-selected=true]){background:var(--next-selection-background,var(--raised));border-color:var(--next-selection-border,var(--accent))}
+.next-native-browser .next-browser-tab-group .next-browser-tab[aria-selected=true],.next-browser-workspace .next-browser-tab-group .next-browser-tab[aria-selected=true]{color:var(--text-primary,inherit)}
+.next-native-browser .next-native-browser-empty h1{color:var(--text-primary,inherit)}
+@media(max-width:800px){.next-browser-ownership{gap:6px;flex-wrap:wrap}.next-browser-conversation-label{max-width:none;flex-basis:calc(100% - 220px)}.next-browser-conversation-label>span{display:none}.next-browser-move{flex-basis:170px}.next-browser-owner-hint{font-size:10px}.next-browser-tab-owner{max-width:80px}}
+@media(max-width:570px){.next-browser-scopes{order:0}.next-browser-move{order:1}.next-browser-conversation-label{order:2;flex-basis:100%}.next-browser-owner-hint{display:none}}

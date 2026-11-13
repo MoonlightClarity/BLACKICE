@@ -19,7 +19,7 @@ const definition = (name, extra = {}) => ({
 const unavailable = () => assert.fail('Discovery must not execute a tool.');
 const provider = tools => ({ tools: () => tools, call: unavailable });
 
-test('the configured catalog retains 30 tools with only the reviewed canonical creation and fill contract deltas', () => {
+test('the configured catalog retains 30 tools with reviewed canonical creation, fill and conversation contracts', () => {
   // Bind the reviewed public definitions, including recursive planning,
   // bounded contained diagnostics, exact-identity ownership/debug controls,
   // the cleanup protocol, the explicit relay default for credential fill,
@@ -45,15 +45,43 @@ test('the configured catalog retains 30 tools with only the reviewed canonical c
   ]);
   assert.deepEqual(catalog.status(), {
     // Reviewed explicit task/context tools, source binding, receipt alternatives and optional operation scopes.
-    sha256: 'd533e432aa394fc9e8c75e800fe4fc5f2c8087ae65f41ef773a46d9005cae3d4',
+    sha256: 'edc72dde20a39a88f159440f83ab255d7cd9205531dff5dbe3df9a1db1801e92',
     toolCount: 30,
     serverVersion: '2.33.5',
   });
   assert.equal(createHash('sha256').update(JSON.stringify(catalog.tools())).digest('hex'), catalog.status().sha256);
 
-  // Undo only the two reviewed fill descriptions and prove every other public
-  // definition still hashes to the preceding complete catalog contract.
+  // Undo exactly the reviewed conversation scope additions and prove that all
+  // other fields, grants and tool contracts retain the preceding fingerprint.
   const previousTools = structuredClone(catalog.tools());
+  const scopedNames = ['blackice_browser_read', 'blackice_browser_action', 'blackice_browser_upload', 'blackice_credentials_fill'];
+  for (const name of scopedNames) {
+    const tool = previousTools.find(item => item.name === name);
+    assert.deepEqual(tool.inputSchema.properties.conversationId, {
+      type: 'string', minLength: 1, maxLength: 200,
+      description: name === 'blackice_credentials_fill'
+        ? 'Use the same saved conversationId as the browser calls for this tab.'
+        : 'Optional saved BLACKICE conversation ID from action tabs. Reuse it for every browser call in that conversation. Omit only for legacy connection-owned work; the host never guesses from the selected UI conversation.',
+    });
+    assert.equal(tool.inputSchema.required.includes('conversationId'), false);
+    delete tool.inputSchema.properties.conversationId;
+  }
+  const previousRead = previousTools.find(tool => tool.name === 'blackice_browser_read');
+  const scopeReadDescription = 'Supply conversationId from the tabs catalog to isolate one saved conversation. ';
+  assert.ok(previousRead.description.includes(scopeReadDescription));
+  previousRead.description = previousRead.description.replace(scopeReadDescription, '');
+  const previousAction = previousTools.find(tool => tool.name === 'blackice_browser_action');
+  const scopeActionDescription = 'Optional conversationId keeps all browser actions in one saved conversation. ';
+  assert.ok(previousAction.description.includes(scopeActionDescription));
+  previousAction.description = previousAction.description.replace(scopeActionDescription, '');
+  const currentOwnershipDescription = 'Supply the same saved conversationId on every browser call to scope work to that conversation. Calls without conversationId retain a connection-wide owner: never treat all connection tabs as yours. Personal tabs and other conversations remain separate; transfer ownership explicitly when moving work.';
+  const previousOwnershipDescription = 'Direct tools share a connection-wide owner, not a per-conversation owner: never treat all connection tabs as yours.';
+  assert.ok(previousAction.description.includes(currentOwnershipDescription));
+  previousAction.description = previousAction.description.replace(currentOwnershipDescription, previousOwnershipDescription);
+  assert.equal(createHash('sha256').update(JSON.stringify(previousTools)).digest('hex'), 'd533e432aa394fc9e8c75e800fe4fc5f2c8087ae65f41ef773a46d9005cae3d4');
+
+  // Preserve the two previously reviewed fill-description changes as another
+  // exact delta, rather than replacing their existing contract assertions.
   const previousBrowserInput = previousTools.find(tool => tool.name === 'blackice_browser_action').inputSchema.properties;
   assert.deepEqual(previousBrowserInput.text, {
     type: 'string', maxLength: 16384,

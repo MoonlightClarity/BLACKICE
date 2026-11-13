@@ -2,6 +2,7 @@ import { text } from '../core/dom.mjs';
 import { normalizeBrowserAddress } from '../../browser-address.mjs';
 import { browserFrame, pagePoint, browserInputGuard, wheelPixels, pendingDialog } from './browser-model.mjs';
 import { createNativeBrowserWorkspace } from './browser-native.mjs';
+import { browserOwnershipMarkup, createBrowserOwnershipControls, browserTabOwnerLabel } from './browser-ownership-ui.mjs';
 
 /** Interactive, contained Chromium surface. This is a native-browser capture,
  * not a copied webpage, iframe, or a separate foreground browser window.
@@ -15,6 +16,7 @@ export function createBrowserWorkspace(options) {
     '<header class="next-panel-head"><div><h1>Browser</h1><p>Contained native Chromium pages · no external browser window</p></div>',
     '<button type="button" id="next-browser-refresh">Refresh tabs</button></header>',
     '<div class="next-browser-navigation" id="next-browser-navigation" aria-label="Browser navigation">',
+    browserOwnershipMarkup(),
     '<div class="next-browser-tabs" id="next-browser-tabs" role="tablist" aria-label="Contained tabs"></div>',
     '<form id="next-browser-form" class="next-row next-browser-address" role="search">',
     '<button type="button" id="next-browser-back" aria-label="Back" title="Back">←</button>',
@@ -79,21 +81,39 @@ export function createBrowserWorkspace(options) {
     ui.status.dataset.error=String(error);
     if(error)notify?.(message,true);
   };
+  const ownership=createBrowserOwnershipControls({mount,api,getTab:current,isBusy:()=>busy,notice,
+    onViewChange(){
+      sequence++;preferredSelection=null;preferBackend=false;
+      const visible=ownership.visible(tabs),previous=selected,remembered=ownership.selection();
+      selected=[remembered,selected,visible[0]?.tabId].find(id=>visible.some(tab=>tab.tabId===id))||null;
+      ownership.rememberSelection(selected);
+      if(previous!==selected){frame=null;pending=null;wheelQueue=null;clearTimeout(wheelTimer);wheelTimer=null;}
+      ui.status.dataset.error='false';paintAddress();showFrame(frame);render();
+      if(selected&&!frame)void screenshot();
+    },
+    onMoveStart(){sequence++;busy=true;render();},
+    onMoveStatus(data,{preferred}){preferredSelection=preferred;applyStatus(data);},
+    onMoveEnd(){busy=false;showFrame(frame);render();},
+  });
   function renderTabs() {
     const fragment=ui.tabs.ownerDocument.createDocumentFragment();
-    if(!tabs.length)text(fragment,'No contained pages yet.','p','next-help');
-    for(const tab of tabs){
+    const visible=ownership.visible(tabs);
+    if(!visible.length)text(fragment,ownership.emptyLabel(),'span','next-browser-tabs-empty');
+    for(const tab of visible){
       const group=text(fragment,'','div','next-browser-tab-group');
       const button=text(group,tabTitle(tab),'button');
       button.type='button';button.dataset.tabId=tab.tabId;button.className='next-browser-tab';
       button.setAttribute('role','tab');button.setAttribute('aria-selected',String(tab.tabId===selected));
       if(tab.tabId===selected)button.classList.add('next-primary');
       button.disabled=busy;
-      button.title=tab.url||tab.title||'Contained page';
+      button.title=browserTabOwnerLabel(tab)+' · '+(tab.url||tab.title||'Contained page');
       button.addEventListener('click',()=>{
         if(busy)return;
         select(tab.tabId);
       });
+      if(ownership.view.kind==='ai'&&ownership.view.filter==='all'){
+        const owner=text(group,browserTabOwnerLabel(tab),'span','next-browser-tab-owner');owner.title=owner.textContent;
+      }
       const close=text(group,'×','button','next-browser-tab-close');
       close.type='button';close.disabled=busy;close.title='Close tab';close.dataset.closeTab=tab.tabId;
       close.setAttribute('aria-label','Close '+tabTitle(tab));
@@ -136,7 +156,7 @@ export function createBrowserWorkspace(options) {
     ui.preview.replaceChildren();
     const actual=value&&selectedSnapshot();
     if(!actual){
-      text(ui.preview,selected?'Refresh the view to interact with the selected page.':'Open a contained page to begin.','div','next-browser-no-frame');
+      text(ui.preview,selected?'Refresh the view to interact with the selected page.':ownership.emptyLabel()+'. Open a Personal tab or move a tab here.','div','next-browser-no-frame');
       return;
     }
     const button=text(ui.preview,'','button','next-browser-page');
@@ -153,7 +173,7 @@ export function createBrowserWorkspace(options) {
   }
   function render(){
     if(!active||destroyed)return;
-    renderTabs();
+    ownership.render();renderTabs();
     const tab=current(),ready=Boolean(tab),hasFrame=Boolean(selectedSnapshot());
     for(const button of [ui.inspect,ui.shot,ui.close])button.disabled=busy||!ready;
     for(const button of [ui.typeSend,ui.keySend])button.disabled=busy||!hasFrame||awaitingDialog();
@@ -173,6 +193,7 @@ export function createBrowserWorkspace(options) {
     if(openIntent?.failed&&!openIntent.existing.has(tabId))addressDrafts.set(tabId,openIntent.address);
     openIntent=null;preferredSelection=tabId;
     selected=tabId;frame=null;pending=null;wheelQueue=null;
+    ownership.rememberSelection(selected);
     clearTimeout(wheelTimer);wheelTimer=null;sequence++;
     ui.readout.textContent='Read the page to inspect its text and controls.';
     ui.preview.replaceChildren();
@@ -181,10 +202,14 @@ export function createBrowserWorkspace(options) {
   const containedTabs=data=>(Array.isArray(data.tabs)?data.tabs:[]).filter(item=>
     item?.browser==='relay'&&item.visible===false&&typeof item.tabId==='string'&&item.tabId.length<=200);
   function applyStatus(data){
-    const old=selected;tabs=containedTabs(data);
-    const backend=[data.activeTab,data.browsers?.relay?.activeTab].find(id=>tabs.some(tab=>tab.tabId===id));
-    const valid=id=>tabs.some(tab=>tab.tabId===id);
-    selected=[preferredSelection,preferBackend?backend:null,selected,backend,tabs[0]?.tabId].find(valid)||null;
+    const old=selected,previousView=JSON.stringify(ownership.view);tabs=containedTabs(data);
+    ownership.update({...data,tabs});
+    const visible=ownership.visible(tabs);
+    const scopeChanged=previousView!==JSON.stringify(ownership.view);
+    const backend=[data.activeTab,data.browsers?.relay?.activeTab].find(id=>visible.some(tab=>tab.tabId===id));
+    const valid=id=>visible.some(tab=>tab.tabId===id);
+    selected=[preferredSelection,scopeChanged?ownership.selection():null,preferBackend?backend:null,selected,ownership.selection(),backend,visible[0]?.tabId].find(valid)||null;
+    ownership.rememberSelection(selected);
     preferBackend=false;
     if(preferredSelection===backend)preferredSelection=null;
     if(openIntent?.failed&&selected&&!openIntent.existing.has(selected)){
@@ -233,6 +258,7 @@ export function createBrowserWorkspace(options) {
       return notice('Refresh the exact contained page before sending input.',true);
     const submission=intent.submission,session=lifecycle;
     if(action==='open'){
+      ownership.personal();
       openIntent={address:intent.blank?{value:'',dirty:false,revision:0}:submission?.draft||{value:ui.url.value,dirty:true,revision:0},existing:new Set(tabs.map(tab=>tab.tabId)),failed:false};
       paintAddress();ui.url.focus({preventScroll:true});
     }
@@ -248,6 +274,7 @@ export function createBrowserWorkspace(options) {
         if(typeof result?.tabId!=='string'||!result.tabId)throw Error('The browser did not confirm a new tab. Refresh tabs to inspect the saved pages.');
         selected=result.tabId;preferredSelection=selected;frame=null;pending=null;
         addressDrafts.set(selected,opening.address);openIntent=null;
+        ownership.personal();
       }
       if(action==='close'){
         addressDrafts.delete(tabId);tabs=tabs.filter(tab=>tab.tabId!==tabId);
@@ -362,12 +389,13 @@ export function createBrowserWorkspace(options) {
     clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>{void refresh();},800);
   };
   return {
-    enter(){if(active||destroyed)return;active=true;lifecycle++;preferBackend=true;unsubscribe=events.subscribe(onEvent);void refresh({capture:true});
+    enter(){if(active||destroyed)return;active=true;lifecycle++;ownership.enter();preferBackend=true;unsubscribe=events.subscribe(onEvent);void refresh({capture:true});
       if(watch&&!pollTimer)pollTimer=setInterval(()=>{if(active&&!busy&&selected)void screenshot({preview:true});},1800);},
+    openConversationId(id){ownership.openConversation(id);if(active)void refresh({capture:true});},
     leave(){active=false;lifecycle++;sequence++;needCapture=false;unsubscribe?.();unsubscribe=null;
       clearInterval(pollTimer);pollTimer=null;clearTimeout(refreshTimer);refreshTimer=null;
       clearTimeout(wheelTimer);wheelTimer=null;wheelQueue=null;frame=null;pending=null;
       ui.preview.replaceChildren();},
-    destroy(){this.leave();destroyed=true;addressDrafts.clear();openIntent=null;mount.ownerDocument.removeEventListener('keydown',keydown);mount.innerHTML='';},
+    destroy(){this.leave();destroyed=true;ownership.destroy();addressDrafts.clear();openIntent=null;mount.ownerDocument.removeEventListener('keydown',keydown);mount.innerHTML='';},
   };
 }

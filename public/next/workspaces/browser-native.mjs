@@ -1,5 +1,6 @@
 import { text } from '../core/dom.mjs';
 import { normalizeBrowserAddress } from '../../browser-address.mjs';
+import { browserOwnershipMarkup, createBrowserOwnershipControls, browserTabOwnerLabel } from './browser-ownership-ui.mjs';
 
 export function nativePageBounds(rect,viewport) {
   if(!rect||!viewport||![rect.left,rect.top,rect.width,rect.height,viewport.width,viewport.height].every(Number.isFinite))return null;
@@ -100,6 +101,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
   mount.innerHTML=[
     '<div class="next-native-browser" data-browser-mode="native">',
     '<div class="next-browser-navigation" aria-label="Browser navigation">',
+    browserOwnershipMarkup(),
     '<div class="next-browser-tabs" id="next-browser-tabs" role="tablist" aria-label="Browser tabs"></div>',
     '<form id="next-browser-form" class="next-row next-browser-address" role="search">',
     '<button type="button" id="next-browser-back" aria-label="Back" title="Back">←</button>',
@@ -221,6 +223,20 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
       pendingSelection=null;ui.page.dataset.attached='true';
     }},
   });
+  const ownership=createBrowserOwnershipControls({mount,api,getTab:current,isBusy:()=>busy||Boolean(openingBlank),notice,
+    onViewChange(){
+      selectionRevision++;refreshSequence++;preferBackendSelection=false;pendingNavigation=null;
+      const visible=ownership.visible(tabs),previous=selected,remembered=ownership.selection();
+      selected=[remembered,selected,visible[0]?.tabId].find(id=>visible.some(tab=>tab.tabId===id))||null;
+      ownership.rememberSelection(selected);
+      pendingSelection=selected;
+      if(previous!==selected){surface.hide();ui.page.dataset.attached='false';}
+      ui.status.dataset.error='false';paintAddress(true);render();
+    },
+    onMoveStart(){busy=true;refreshSequence++;render();},
+    onMoveStatus(data,options){applyStatus(data,options);},
+    onMoveEnd(){busy=false;render();void drainNewTabs();},
+  });
   function geometry(){
     geometryFrame=null;
     if(geometryTimer!==null){window.clearTimeout(geometryTimer);geometryTimer=null;}
@@ -240,8 +256,8 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
     },document.hidden?32:250);
   }
   function renderTabs(){
-    const visible=tabs.slice(0,tabLimit);
-    const chosen=tabs.find(tab=>tab.tabId===selected);
+    const filtered=ownership.visible(tabs),visible=filtered.slice(0,tabLimit);
+    const chosen=filtered.find(tab=>tab.tabId===selected);
     if(chosen&&!visible.includes(chosen))visible.push(chosen);
     const records=visible.map(tab=>({id:'tab:'+tab.tabId,tab}));
     if(openingBlank)records.push({id:'opening:'+openingBlank.revision,tab:null});
@@ -252,23 +268,29 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
       if(!nodes){
         const group=document.createElement('div');group.className='next-browser-tab-group';
         const button=text(group,'','button','next-browser-tab');button.type='button';button.setAttribute('role','tab');
+        const owner=text(group,'','span','next-browser-tab-owner');
         const close=text(group,'×','button','next-browser-tab-close');close.type='button';
         button.addEventListener('click',()=>{if(!busy&&tab)select(tab.tabId);});
         close.addEventListener('click',()=>{if(!busy&&tab)void operate('close',{tabId:tab.tabId});});
-        nodes={group,button,close};tabNodes.set(id,nodes);
+        nodes={group,button,owner,close};tabNodes.set(id,nodes);
       }
       const label=tab?.url==='about:blank'?'New tab':tab?.title||tab?.url||'New tab…',chosen=tab?!openingBlank&&tab.tabId===selected:Boolean(openingBlank);
       if(nodes.button.textContent!==label)nodes.button.textContent=label;
       nodes.button.dataset.tabId=tab?.tabId||'';
-      nodes.button.title=tab?(tab.owner?'Task tab · ':'')+(tab.url||label):'New tab';
+      nodes.button.title=tab?browserTabOwnerLabel(tab)+' · '+(tab.url||label):'New Personal tab';
+      nodes.owner.textContent=tab?browserTabOwnerLabel(tab):'';
+      nodes.owner.hidden=ownership.view.kind!=='ai'||ownership.view.filter!=='all';
+      nodes.owner.title=nodes.owner.textContent;
       nodes.button.setAttribute('aria-selected',String(chosen));nodes.button.tabIndex=chosen?0:-1;
       nodes.button.disabled=busy;
       nodes.close.dataset.closeTab=tab?.tabId||'';nodes.close.disabled=busy||!tab;nodes.close.setAttribute('aria-label','Close '+label);
       if(ui.tabs.children[index]!==nodes.group)ui.tabs.insertBefore(nodes.group,ui.tabs.children[index]||null);
     }
     ui.tabs.querySelector('.next-native-more-tabs')?.remove();
-    if(tabs.length>visible.length){
-      const more=text(ui.tabs,'More tabs ('+(tabs.length-visible.length)+')','button','next-native-more-tabs');more.type='button';
+    ui.tabs.querySelector('.next-browser-tabs-empty')?.remove();
+    if(!records.length)text(ui.tabs,ownership.emptyLabel(),'span','next-browser-tabs-empty');
+    if(filtered.length>visible.length){
+      const more=text(ui.tabs,'More tabs ('+(filtered.length-visible.length)+')','button','next-native-more-tabs');more.type='button';
       more.addEventListener('click',()=>{tabLimit+=80;renderTabs();scheduleGeometry();});
     }
   }
@@ -285,17 +307,18 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
     }
   }
   function render(){
-    renderTabs();renderDownloads();renderAuth();
+    ownership.render();renderTabs();renderDownloads();renderAuth();
     const tab=current(),key=tab?'page':openingBlank?'new':'empty';
+    const paintKey=key==='empty'?key+JSON.stringify(ownership.view):key;
     ui.back.disabled=busy||!tab||tab.canGoBack===false;
     ui.forward.disabled=busy||!tab||tab.canGoForward===false;
     ui.reload.disabled=busy||!tab;
     ui.go.disabled=busy||Boolean(openingBlank);ui.newTab.disabled=false;
-    if(key!==emptyKey){
-      emptyKey=key;ui.page.replaceChildren();ui.page.dataset.attached='false';
+    if(paintKey!==emptyKey){
+      emptyKey=paintKey;ui.page.replaceChildren();ui.page.dataset.attached='false';
       const panel=text(ui.page,'','div','next-native-browser-empty');
-      text(panel,key==='page'?'Opening page…':key==='new'?'New tab':'Browse the web','h1');
-      if(key!=='page')text(panel,'Enter an address above to open a page.','p');
+      text(panel,key==='page'?'Opening page…':key==='new'?'New Personal tab':ownership.emptyLabel(),'h1');
+      if(key!=='page')text(panel,ownership.view.kind==='ai'?'Move a tab here, or use + Tab to open a Personal tab.':'Enter an address above to open a Personal tab.','p');
     }
     if(!tab)surface.hide();
     if(ui.status.dataset.error!=='true')ui.status.textContent=busy?'Working…':tab?.loading?'Loading…':'';
@@ -309,6 +332,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
     refreshSequence++;
     surface.hide();
     selected=tabId;pendingSelection=tabId;
+    ownership.rememberSelection(selected);
     paintAddress(true);ui.status.dataset.error='false';
     ui.page.dataset.attached='false';render();
   }
@@ -328,14 +352,18 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
   }
   function applyStatus(data,{preferred}={}){
     if(!active||!data||!Array.isArray(data.tabs))return;
-    const previous=selected,previousTabs=tabs;tabs=nativeBrowserTabs(data);
+    const previous=selected,previousTabs=tabs,previousView=JSON.stringify(ownership.view);tabs=nativeBrowserTabs(data);
+    ownership.update({...data,tabs});
+    const visible=ownership.visible(tabs),scoped={...data,tabs:visible};
+    const scopeChanged=previousView!==JSON.stringify(ownership.view);
     const popup=nativeBrowserPopupHandoff(previousTabs,tabs,previous);
     const opener=nativeBrowserPopupReturn(previousTabs,tabs,previous);
     const liveChallenges=new Set(tabs.map(tabChallenge).filter(Boolean).map(challengeKey));
     for(const collection of [authDrafts,authAnswered,authFocused])for(const key of collection.keys())if(!liveChallenges.has(key))collection.delete(key);
     if(authKey&&!liveChallenges.has(authKey)){authKey=null;ui.authUser.value='';ui.authPassword.value='';}
     downloads=(Array.isArray(data.downloads)?data.downloads:[]).filter(item=>item&&(!item.browser||item.browser==='relay'));
-    selected=[preferred,popup,opener,pendingSelection,preferBackendSelection?nativeBrowserSelection(data):null,selected].find(id=>tabs.some(tab=>tab.tabId===id))||nativeBrowserSelection(data,selected);
+    selected=[preferred,popup,opener,pendingSelection,scopeChanged?ownership.selection():null,preferBackendSelection?nativeBrowserSelection(scoped):null,selected,ownership.selection()].find(id=>visible.some(tab=>tab.tabId===id))||nativeBrowserSelection(scoped,selected);
+    ownership.rememberSelection(selected);
     if((popup&&selected===popup)||(opener&&selected===opener)){selectionRevision++;pendingSelection=selected;}
     preferBackendSelection=false;surfaceReady=true;
     if(!tabs.some(tab=>tab.tabId===pendingSelection))pendingSelection=null;
@@ -356,6 +384,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
     const tabId=extra.tabId||selected,key=options.newTab||addressKey(),submittedAddressRevision=addressDrafts.get(key)?.revision;
     if(action!=='open'&&!tabId)return;
     const navigation=['open','navigate','back','forward','reload'].includes(action);
+    if(action==='open')ownership.personal();
     const operation={action,tabId:action==='open'?null:tabId,url:extra.url,existing:new Set(tabs.map(tab=>tab.tabId)),
       selectionRevision:options.newTab?.revision??selectionRevision,newTab:options.newTab||null};
     activeOperation=operation;pendingNavigation=navigation?operation:null;refreshSequence++;
@@ -371,6 +400,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
         addressDrafts.delete(key);
         if(options.newTab&&openingBlank===options.newTab)openingBlank=null;
         if(ownsSelection){selected=result.tabId;pendingSelection=selected;}
+        ownership.personal();
       }else if(action==='navigate'&&addressDrafts.get(key)?.revision===submittedAddressRevision)addressDrafts.delete(key);
       if(action==='close'){
         addressDrafts.delete(tabId);
@@ -421,7 +451,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
     if(kind==='back')ui.back.click();
     if(kind==='forward')ui.forward.click();
     if((kind==='next-tab'||kind==='previous-tab')&&!busy){
-      const choices=tabs.map(tab=>tab.tabId);
+      const choices=ownership.visible(tabs).map(tab=>tab.tabId);
       if(choices.length){const index=choices.indexOf(selected),step=kind==='next-tab'?1:-1;
         select(choices[(index+step+choices.length)%choices.length]);}
     }
@@ -449,7 +479,8 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
     clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>{refreshTimer=null;void refresh();},100);
   };
   return {
-    enter(){if(destroyed||active)return;active=true;generation++;surfaceReady=false;preferBackendSelection=!busy&&!openingBlank;unsubscribe=events.subscribe(onEvent);render();void refresh();void drainNewTabs();if(deferredError){notice(deferredError,true);deferredError=null;}},
+    enter(){if(destroyed||active)return;active=true;generation++;ownership.enter();surfaceReady=false;preferBackendSelection=!busy&&!openingBlank;unsubscribe=events.subscribe(onEvent);render();void refresh();void drainNewTabs();if(deferredError){notice(deferredError,true);deferredError=null;}},
+    openConversationId(id){ownership.openConversation(id);if(active)void refresh();},
     // Global status can be an older cached snapshot. Re-read the browser's own
     // state through its sequenced endpoint instead of repainting that snapshot.
     updateStatus(status){if(active&&status?.browser)onEvent({type:'browser.status'});},
@@ -458,7 +489,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
       if(geometryFrame!==null)window.cancelAnimationFrame(geometryFrame);geometryFrame=null;
       if(geometryTimer!==null)window.clearTimeout(geometryTimer);geometryTimer=null;
       ui.page.dataset.attached='false';surface.hide();},
-    destroy(){this.leave();destroyed=true;newTabRequests.length=0;addressDrafts.clear();authDrafts.clear();ui.authUser.value='';ui.authPassword.value='';surface.destroy();observer?.disconnect();unsubscribeShortcut?.();
+    destroy(){this.leave();destroyed=true;ownership.destroy();newTabRequests.length=0;addressDrafts.clear();authDrafts.clear();ui.authUser.value='';ui.authPassword.value='';surface.destroy();observer?.disconnect();unsubscribeShortcut?.();
       document.removeEventListener('keydown',keydown);window.removeEventListener('resize',scheduleGeometry);
       window.removeEventListener('scroll',scheduleGeometry,true);mount.innerHTML='';},
   };

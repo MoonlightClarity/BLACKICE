@@ -155,7 +155,9 @@ test('human branch moves durably transfer folder ownership while old agent targe
   const cleanup = await driver.releaseOwner(bob); assert.ok(cleanup.retained.some(item => item.tabId === root.tabId));
   const personal = await driver.perform({ action: 'open', url: 'about:blank' }, { source: 'user' });
   await driver.perform({ action: 'tab_move', tabId: personal.tabId, folderId: destinationTab.folderId, parentTabId: null }, { source: 'user' });
-  assert.deepEqual(driver.tabs.get(personal.tabId).owner, { taskId: bob.taskId, runId: 'user', nodeId: 'user' });
+  assert.deepEqual(driver.tabs.get(personal.tabId).owner, { taskId: bob.taskId, runId: 'user', nodeId: 'conversation', conversationId: bob.taskId });
+  const { agentBrowserRequest } = await import('../lib/browser.mjs');
+  assert.equal(agentBrowserRequest({ action: 'read', tabId: personal.tabId }, driver.status(), bob).tabId, personal.tabId, 'A manual move into the conversation must remain usable by its agent.');
   await assert.rejects(driver.perform({ action: 'tab_move', tabId: kept.tabId, parentTabId: root.tabId }, { owner: alice }), { code: 'BROWSER_FOLDER_OWNERSHIP' });
   const before = driver.status().tabs.map(({tabId,folderId,parentTabId,owner}) => ({tabId,folderId,parentTabId,owner}));
   const disk = JSON.parse(await readFile(path.join(directory, 'browser-tabs.json'), 'utf8'));
@@ -2080,4 +2082,80 @@ test('suspended bridge metadata cannot authorize stale input, receipt recovery, 
   tab.rendererFailure = null;
   const closed = await handler({ name: 'relay_browser', arguments: { action: 'close', tabId: tab.id } });
   assert.equal(closed.success, true); assert.equal(driver.tabs.has(tab.id), false); assert.equal(windows.length, 0);
+});
+
+test('conversation moves preserve the live page and its popup family across empty destinations and Personal', async t => {
+  const { browserConversationTransfer, resolveBrowserConversationOwner } = await import('../lib/browser-conversations.mjs');
+  const { driver, windows, directory } = await fixture(t); await driver.init();
+  const browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());
+  const conversations = [
+    { rootId: 'conversation-a', title: 'A', latestRunId: 'run-a', state: 'active' },
+    { rootId: 'conversation-b', title: 'B', latestRunId: 'run-b', state: 'archived' }
+  ];
+  const first = await browser.perform({ action: 'open', browser: 'relay', url: 'https://form.example.test/apply' }, { source: 'user' });
+  const popup = await browser.perform({ action: 'open', browser: 'relay', url: 'https://form.example.test/signin', parentTabId: first.tabId }, { source: 'user' });
+  const root = driver.tabs.get(first.tabId), child = driver.tabs.get(popup.tabId);
+  const originalWindows = [root.window, child.window], originalLoads = originalWindows.map(window => [...window.loads]);
+  root.window.webContents.unsavedForm = { essay: 'Keep my draft', accepted: true };
+  root.pendingInteraction = { id: 'browser_input_fixture', kind: 'javascript_dialog', status: 'pending' };
+  driver.downloads.push({ id: 'fixture-download', tabId: child.id, status: 'downloading' });
+  const move = async destination => {
+    const observed = driver.status().tabs.find(item => item.tabId === root.id);
+    const { args, destinationOwner } = browserConversationTransfer({
+      tabId: root.id, expectedUrl: observed.url, expectedDocumentId: observed.documentId,
+      ...(destination ? { destination: 'conversation', conversationId: destination } : { destination: 'user' })
+    }, conversations);
+    const result = await browser.perform(args, { source: 'user', destinationOwner });
+    assert.deepEqual(result.ownershipReceipt.movedTabIds, [root.id, child.id]);
+    assert.equal(root.parentTabId, null); assert.equal(child.parentTabId, root.id);
+    assert.equal(root.window, originalWindows[0]); assert.equal(child.window, originalWindows[1]);
+    assert.deepEqual(originalWindows.map(window => window.loads), originalLoads, 'Moving must not reload either live page.');
+    assert.deepEqual(root.window.webContents.unsavedForm, { essay: 'Keep my draft', accepted: true });
+    assert.equal(root.pendingInteraction.id, 'browser_input_fixture');
+    assert.equal(driver.downloads.find(item => item.id === 'fixture-download').status, 'downloading');
+    assert.equal(driver.status().tabs.find(item => item.tabId === root.id).documentId, first.documentId);
+  };
+  await move('conversation-a');
+  assert.equal(root.owner.conversationId, 'conversation-a');
+  const a = resolveBrowserConversationOwner('conversation-a', conversations);
+  assert.equal((await browser.perform({ action: 'tabs' }, { owner: a })).tabs.length, 2);
+  await move('conversation-b');
+  await assert.rejects(browser.perform({ action: 'read', tabId: root.id }, { owner: a }), { code: 'BROWSER_TAB_OWNERSHIP' });
+  const futureWorker = { taskId: 'conversation-b', runId: 'future-run', nodeId: 'agent' };
+  const inventory = await browser.perform({ action: 'tabs' }, { owner: futureWorker });
+  assert.deepEqual(inventory.tabs.map(item => item.tabId), [root.id, child.id]);
+  assert.equal(inventory.activeTab, root.id);
+  await driver.releaseOwner(futureWorker, { status: 'completed' });
+  assert.equal(driver.tabs.size, 2, 'Finishing one worker must not close shared conversation pages.');
+  await move(null);
+  assert.equal(root.owner, null); assert.equal(child.owner, null);
+  assert.equal(root.folderId, 'folder_user'); assert.equal(child.folderId, 'folder_user');
+  await move('conversation-b');
+  root.pendingInteraction = null; driver.downloads = driver.downloads.filter(item => item.id !== 'fixture-download');
+  const saved = JSON.parse(await readFile(path.join(directory, 'browser-tabs.json'), 'utf8'));
+  assert.ok(saved.tabs.every(tab => tab.owner.conversationId === 'conversation-b'));
+  const restored = new driver.constructor({ dataDir: directory, downloadDir: path.join(directory, 'downloads') });
+  try {
+    const count = windows.length; await restored.init();
+    assert.equal(windows.length, count, 'Restoring ownership must not eagerly reopen pages.');
+    const entries = restored.status().tabs;
+    assert.ok(entries.every(tab => tab.owner.conversationId === 'conversation-b'));
+    assert.equal(entries.find(tab => tab.tabId === child.id).parentTabId, root.id);
+    assert.equal(restored.tabs.get(root.id).userPinned, true);
+  } finally { await restored.close(); }
+});
+
+test('legacy manual task-folder moves restore as usable conversation pages', async t => {
+  const { driver, directory } = await fixture(t);
+  await writeFile(path.join(directory, 'browser-tabs.json'), JSON.stringify({
+    version: 2, folders: [{ id: 'task-legacy', name: 'Legacy conversation', kind: 'task', taskId: 'legacy-root' }],
+    tabs: [{ tabId: 'legacy-page', url: 'https://example.test/kept', folderId: 'task-legacy',
+      owner: { taskId: 'legacy-root', runId: 'user', nodeId: 'user' }, humanCreated: true, userPinned: true }]
+  }));
+  await driver.init();
+  const tab = driver.status().tabs[0];
+  assert.equal(tab.owner.nodeId, 'conversation'); assert.equal(tab.owner.conversationId, 'legacy-root');
+  const browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());
+  const inventory = await browser.perform({ action: 'tabs' }, { owner: { taskId: 'legacy-root', runId: 'new-turn', nodeId: 'agent' } });
+  assert.equal(inventory.tabs[0].tabId, 'legacy-page');
 });

@@ -34,6 +34,7 @@ import { LocalModelManager } from './lib/local-model-manager.mjs';
 import { localModelHTTP } from './lib/local-model-http.mjs';
 import { searchAPIProviderDirectory } from './lib/provider-directory.mjs';
 import { connectorBrowserOwner } from './lib/connector-browser-owner.mjs';
+import { browserConversationStatus, browserConversationTransfer, resolveBrowserConversationOwner } from './lib/browser-conversations.mjs';
 import { createDirectPlanningExecutionTools } from './lib/direct-planning-execution-tools.mjs';
 import { createDirectPlanningBrowserTools } from './lib/direct-planning-browser-tools.mjs';
 import { PromptTemplateStore } from './lib/prompt-templates.mjs';
@@ -135,10 +136,10 @@ export async function createHarnessServer(options = {}) {
   let notifySignedBrowser=()=>{};
   const refreshSignedBrowser=async options=>{if(!signedIntegration)return undefined;const value=await signedIntegration.refresh(options);notifySignedBrowser();return value;};
   if(signedIntegration){connections.signedBrowser=signedIntegration.status();connections.refreshSignedBrowser=refreshSignedBrowser;void refreshSignedBrowser().catch(()=>{});}
-  let browserImport, browserCredentials, browserCredentialMirror, browserCredentialDestinations;
+  let browserImport, browserCredentials, browserCredentialMirror, browserCredentialDestinations, browserConversations;
   const browserStatus = req => {
     const info = browserImport?.snapshot(), localManagement = Boolean(req && req.headers?.['x-blackice-remote'] !== '1');
-    return { ...browser.status(), browserProfiles: browserProfileState, ...(signedIntegration ? { signedBrowser:signedIntegration.status() } : {}), ...(options.signedBrowser === true ? { chromeBrowser: chromeBrowserStatus({ connections }), ...(info ? { neoImport: { ...info, localManagement, capabilities: { ...info.capabilities, open: localManagement && info.capabilities.open === true } } } : {}) } : {}) };
+    return { ...browserConversationStatus(browser.status(), browserConversations), browserProfiles: browserProfileState, ...(signedIntegration ? { signedBrowser:signedIntegration.status() } : {}), ...(options.signedBrowser === true ? { chromeBrowser: chromeBrowserStatus({ connections }), ...(info ? { neoImport: { ...info, localManagement, capabilities: { ...info.capabilities, open: localManagement && info.capabilities.open === true } } } : {}) } : {}) };
   };
   let chromeConnect;
   const attachments = options.attachments || new AttachmentStore({ dataDir }); await attachments.init();
@@ -165,6 +166,7 @@ export async function createHarnessServer(options = {}) {
   engine.applicationWorkspace=applicationWorkspace;
   engine.nativeWindows=nativeWindows;
   const conversations=await startupPhase(diagnostics, 'conversations', () => new ConversationArchive({dataDir,engine}).init());
+  browserConversations = conversations;
   engine.persistConversation = run => conversations.capture(run);
   // Recent-run retention must not turn a repeated send into a new task.
   const recoverClientRequest = async value => {
@@ -426,10 +428,12 @@ export async function createHarnessServer(options = {}) {
   directExecution = options.directExecution || await startupPhase(diagnostics, 'direct-jobs', () => new DirectExecutionAPI({
     dataDir: path.resolve(dataDir), allowedRoot: defaultCwd, browser, patchStore: engine.filePatches, taskStore:tasks,
     isClosing: connectorClosing, onChange: connectorChanged,
+    resolveBrowserConversationOwner: id => resolveBrowserConversationOwner(id, conversations),
+    getBrowserConversations: () => browserConversationStatus(browser.status(), conversations).conversations,
     ...(options.desktopRestart ? { desktopRestart: options.desktopRestart, restartStatus: context => options.desktopRestart.status({ ownerId: context.canRestart ? context.ownerId : undefined }) } : {}),
     // Vault health can change between startups or recover during this process.
     // Keep its tool definitions stable; every credential action checks the store.
-    additionalTools: [createNativeTaskContextTool({getBridge:()=>engine.nativeTaskContextBridge}), ...createDirectPlanningBrowserTools({ store: planningBrowser, getExecutionSnapshot: () => planningBrowserRuntime.status(), getCatalog: () => planningBrowserCatalog({ store: planningBrowser, conversations, runtime, runtimeSettings, runner: planningBrowserRuntime }), onChange: sendEvent }), ...createDirectPlanningExecutionTools({store:planningBrowser,runner:planningBrowserRuntime,onChange:sendEvent}), ...createDirectProviderSetupTools({ runtime, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes), isEncryptionAvailable: () => options.credentialStorage?.isEncryptionAvailable?.() === true, browserOwnerForClient: client => client.id === LOCAL_BROWSER_CLIENT.id && client.kind === LOCAL_BROWSER_CLIENT.kind ? null : connectorBrowserOwner(client.id) }), chatGPTFileImportTool({ directory: path.join(defaultCwd, 'blackice-imports') }), chatGPTStartChatTool({ engine, attachments, defaultCwd, isClosing: connectorClosing }), planningOntologyDirectTool({runtimeSettings}), ...createDirectConnectedBrowserTools({ manager: connections, connectChrome: options.connectChromeBrowser }), ...createDirectBrowserProfileTools({ profiles: browserProfiles, manager: connections, onChange: refreshBrowserProfiles }), ...(options.desktopRestart ? [desktopRestartTool({ restart: options.desktopRestart, getJob: id => directExecution.jobs.get(id) })] : []), ...(options.frontendDevtools ? [frontendDevtoolsTool({ frontend: options.frontendDevtools, artifactDirectory: path.join(dataDir, 'frontend-development') })] : []), ...createDirectBrowserCredentialTools({ vault: browserCredentials, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes) })],
+    additionalTools: [createNativeTaskContextTool({getBridge:()=>engine.nativeTaskContextBridge}), ...createDirectPlanningBrowserTools({ store: planningBrowser, getExecutionSnapshot: () => planningBrowserRuntime.status(), getCatalog: () => planningBrowserCatalog({ store: planningBrowser, conversations, runtime, runtimeSettings, runner: planningBrowserRuntime }), onChange: sendEvent }), ...createDirectPlanningExecutionTools({store:planningBrowser,runner:planningBrowserRuntime,onChange:sendEvent}), ...createDirectProviderSetupTools({ runtime, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes), isEncryptionAvailable: () => options.credentialStorage?.isEncryptionAvailable?.() === true, browserOwnerForClient: client => client.id === LOCAL_BROWSER_CLIENT.id && client.kind === LOCAL_BROWSER_CLIENT.kind ? null : connectorBrowserOwner(client.id) }), chatGPTFileImportTool({ directory: path.join(defaultCwd, 'blackice-imports') }), chatGPTStartChatTool({ engine, attachments, defaultCwd, isClosing: connectorClosing }), planningOntologyDirectTool({runtimeSettings}), ...createDirectConnectedBrowserTools({ manager: connections, connectChrome: options.connectChromeBrowser }), ...createDirectBrowserProfileTools({ profiles: browserProfiles, manager: connections, onChange: refreshBrowserProfiles }), ...(options.desktopRestart ? [desktopRestartTool({ restart: options.desktopRestart, getJob: id => directExecution.jobs.get(id) })] : []), ...(options.frontendDevtools ? [frontendDevtoolsTool({ frontend: options.frontendDevtools, artifactDirectory: path.join(dataDir, 'frontend-development') })] : []), ...createDirectBrowserCredentialTools({ vault: browserCredentials, browser, resolveBrowserConversationOwner: id => resolveBrowserConversationOwner(id, conversations), reauthorize: (client, { scopes }) => directExecution.require(client, scopes) })],
     authorizeClient: async (client, { requiredScopes }) => {
       if (client.id === 'local-browser-tools' && client.kind === 'local-browser') return !connectorClosing() && requiredScopes.every(scope => LOCAL_BROWSER_CLIENT.scopes.includes(scope));
       if (client.id === LOCAL_FRONTEND_CLIENT.id && client.kind === LOCAL_FRONTEND_CLIENT.kind) return Boolean(options.frontendDevtools) && !connectorClosing() && requiredScopes.every(scope => LOCAL_FRONTEND_CLIENT.scopes.includes(scope));
@@ -1090,6 +1094,13 @@ export async function createHarnessServer(options = {}) {
         }
         return json(res, 200, browserStatus(req));
       }
+      if (pathname === '/api/browser/ownership' && req.method === 'POST') {
+        if (req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Move tabs from the browser workspace on this computer.' });
+        const { args, destinationOwner } = browserConversationTransfer(await body(req), conversations);
+        const result = await browser.perform(args, { source: 'user', destinationOwner,
+          beforeDispatch: () => { if (args.destination === 'conversation') resolveBrowserConversationOwner(args.conversationId, conversations); } });
+        return json(res, 200, { ...browserStatus(req), ownershipReceipt: result.ownershipReceipt });
+      }
       if (pathname === '/api/browser/commands' && req.method === 'POST') {
         if (req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Use the authenticated ChatGPT browser tools for a remote connection.' });
         const value = await body(req, 150000);
@@ -1310,7 +1321,7 @@ export async function createHarnessServer(options = {}) {
         'workspaces/planning.mjs','workspaces/planning-browser.mjs','workspaces/response-cycle-ui.mjs','workspaces/tradecraft-timeline.mjs','workspaces/planning-visual.mjs','workspaces/intelligence-planning-model.mjs','workspaces/intelligence-planning-ui.mjs','workspaces/intelligence-map-model.mjs','workspaces/intelligence-map-ui.mjs','workspaces/tasks.mjs','workspaces/schedule-inspection-model.mjs','workspaces/tasks-visual-model.mjs','workspaces/task-lifecycle.mjs','workspaces/workflow-execution.mjs',
         'workspaces/workflow-editor.mjs','workspaces/workflow-edit-model.mjs',
         'workspaces/workflow-overview-model.mjs','workspaces/workflow-canvas-model.mjs','workspaces/workflow-canvas.mjs','workspaces/workflow-graph-author.mjs',
-        'workspaces/workflow-graph-edit.mjs','workspaces/browser-model.mjs','workspaces/browser-native.mjs',
+        'workspaces/workflow-graph-edit.mjs','workspaces/browser-model.mjs','workspaces/browser-ownership-ui.mjs','workspaces/browser-native.mjs',
         'browser.css','knowledge.css','workspaces/knowledge.mjs','workspaces/knowledge-model.mjs',
         'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/activity-overview.mjs','workspaces/activity-model.mjs','activity.css','workspaces/settings.mjs','workspaces/settings-storage.mjs','workspaces/settings-gemini-connector.mjs','workspaces/settings-claude-connector.mjs','workspaces/settings-restart.mjs',
         'settings.css','settings-identity.css','settings-providers.css','settings-connections.css',

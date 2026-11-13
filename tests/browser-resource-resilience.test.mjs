@@ -9,6 +9,7 @@ import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, bro
 import { BrowserDiagnostics } from '../lib/browser-diagnostics.mjs';
 import { BrowserTabDiagnostics, diagnosticText } from '../lib/browser-tab-diagnostics.mjs';
 import { ownershipAction, ownershipChange } from '../lib/browser-ownership.mjs';
+import { sameBrowserOwner, conversationBrowserNode } from '../lib/browser-conversations.mjs';
 import { loadBrowserCompatibility } from '../desktop/browser-compatibility.mjs';
 
 const source = await readFile(new URL('../desktop/browser-driver.mjs', import.meta.url), 'utf8');
@@ -46,7 +47,7 @@ function fixture({ writeFile = async () => {}, loadURL = async () => {} } = {}) 
   protection.status = protection.tabStatus = () => ({});
   protection.forgetTab = () => {};
   const context = vm.createContext({ BrowserWindow: Window, session: { fromPartition: () => session }, EventEmitter,
-    createHash, randomUUID, path, browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview, BrowserDiagnostics, BrowserTabDiagnostics, diagnosticText, ownershipAction, ownershipChange, loadBrowserCompatibility,
+    createHash, randomUUID, path, browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview, BrowserDiagnostics, BrowserTabDiagnostics, diagnosticText, ownershipAction, ownershipChange, sameBrowserOwner, conversationBrowserNode, loadBrowserCompatibility,
     fs: { writeFile: async (file, value) => { writes.push(JSON.parse(value)); await writeFile(file, value); }, rename: async (...args) => { renames.push(args); } },
     setTimeout, clearTimeout, AbortSignal, structuredClone, URL,
   });
