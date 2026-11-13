@@ -16,6 +16,7 @@ test('repository revision publishes exact selected evidence without replaying wo
  testIntegrity:{compromised:true},summary:async()=>{},label:async()=>{},
  repositorySourceHashes:async()=>new Map([['src/a.mjs','new']])});
  let revisions=0,work=0;
+ r.verifyAndRepairRepository=async()=>{throw Error('No test replay during response-only revision');};
  r.workLeaves=async()=>{work++;throw Error('No operational work during response revision');};
  r.integrateRepositoryEvidence=async refs=>{
    await writeFile(finalPath,JSON.stringify({integrationAuthority:'host_source_reference_index',status:'incomplete_or_unverified',referencedResults:refs}));
