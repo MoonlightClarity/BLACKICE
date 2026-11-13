@@ -10,7 +10,7 @@ let status=null,current=null,revision=0;
 const spaces=new Map(), notifications=new Set();
 const modules={
   chat:()=>import('./chat/chat.mjs').then(m=>m.createChatWorkspace),
-  planning:()=>import('./workspaces/planning-browser.mjs').then(m=>m.createPlanningBrowser),
+  planning:()=>import('./workspaces/planning-current.mjs').then(m=>m.createPlanningWorkspace),
   cronjobs:()=>import('./workspaces/tasks.mjs').then(m=>m.createCronjobsWorkspace),
   workflows:()=>import('./workspaces/workflow-execution.mjs').then(m=>m.createWorkflowWorkspace),
   browser:()=>import('./workspaces/browser.mjs').then(m=>m.createBrowserWorkspace),
