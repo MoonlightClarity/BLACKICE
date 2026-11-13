@@ -1,5 +1,7 @@
 # Receipt alternatives
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 Development-only canonical contractVersion 2 schema extension. Legacy receiptBinding remains accepted unchanged. A criterion may instead declare receiptBindings with one to eight observed bindings, never both fields. Alternatives share the SAME criterion ID and targetCount. Omit criterion resourceKey when alternatives span resources; each binding resource and owning work-item scope remain explicit. Duplicate normalized binding objects are rejected.
 
 All matching alternatives are extracted and considered together. Conflicting status, prior/new meaning or outcome identity for one effect yields no confirmation; unrelated effects can still progress. Missing, failed or overflowed extraction of a matching alternative is not first-match permission. Fresh consistent observations can resolve uncertainty; this does not erase or reinterpret prior host evidence. Native fact aliases survive selector/format refinements, and changed interpretation of the same retained fact cannot manufacture another effect. Original native repeat guards remain unchanged.

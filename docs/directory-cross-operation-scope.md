@@ -1,5 +1,7 @@
 # Cross-operation requirement attention
 
+> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+
 ## Observed failure boundary
 
 A public-task invariant remained in the original task and requirement ledger,

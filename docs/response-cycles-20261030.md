@@ -1,5 +1,7 @@
 # Recursive response cycles
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 Implementation note, 2026-10-30. This describes the five-stage response architecture and its operational boundaries. The contracts support bounded, inspectable work with configured models; this change makes no measured claim about model accuracy, latency or cost.
 
 ## Lifecycle and ownership

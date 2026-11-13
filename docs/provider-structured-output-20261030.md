@@ -1,5 +1,7 @@
 # Planning schemas on compatible provider requests
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 Planning response workers already passed their full `outputSchema` to `ProviderRuntime`. The Responses adapter sent it through `text.format`; the compatible Chat Completions adapter previously omitted it. That left an OpenRouter analytical turn with prompt instructions and host validation, even when the selected model advertised structured outputs.
 
 Compatible analytical turns now choose their transport from the exact selected model's provider-reported catalog entry. A fresh cached catalog is reused. A cold or expired cache triggers one existing read-only catalog discovery before inference. Discovery cancellation propagates without starting inference. Other discovery failures produce an explicit `catalog_unavailable` prompt fallback; they do not imply that inference access is unavailable.

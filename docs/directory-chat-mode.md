@@ -1,5 +1,7 @@
 # Directory execution and context
 
+> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+
 Directory has two conversation settings: **On** and **Off**. On uses Directory for the next response without requiring a command prefix. Off uses ordinary Chat. The choice applies to subsequent work, and remains independent from the Subagents setting.
 
 ## Execute the requested work

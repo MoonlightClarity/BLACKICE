@@ -1,5 +1,7 @@
 # Projects & methods
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](docs/README.md) and [source release notes](RELEASE-NOTES.md).
+
 > Historical compatibility reference. BLACKICE 2.29 retires the Methods interface in favor of the shared **Planning** application. New agents plan directly in the human-editable saved work graph. Existing method records, licensed reference material and older tool catalogs remain readable; UI instructions below describe earlier releases. See [README.md](README.md) for current navigation.
 
 BLACKICE includes **589 reusable methods** with **2,932 action definitions**. An ordinary task can use this catalog automatically: the agent finds relevant procedures, reads their complete instructions, and adapts or combines them into its visible task outline. You can describe the outcome and let the agent choose the approach.

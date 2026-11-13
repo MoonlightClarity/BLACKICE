@@ -1,3 +1,30 @@
+# BLACKICE release notes index
+
+> **Status: Current source index, not an installer receipt.** The repository's package version is **2.39.81**. Start with the [2.39.81 source release note](RELEASE-NOTES-2.39.81.md), then verify the separately published [Windows releases](https://github.com/MoonlightClarity/BLACKICE/releases) and your installed version. Source tests, candidate checks, public uploads, and local installation are different states.
+
+## Recent versioned source notes
+
+- [2.39.81](RELEASE-NOTES-2.39.81.md)
+- [2.39.80](RELEASE-NOTES-2.39.80.md)
+- [2.39.79](RELEASE-NOTES-2.39.79.md)
+- [2.39.78](RELEASE-NOTES-2.39.78.md)
+- [2.39.77](RELEASE-NOTES-2.39.77.md)
+- [2.39.76](RELEASE-NOTES-2.39.76.md)
+- [2.39.75](RELEASE-NOTES-2.39.75.md)
+- [2.39.74](RELEASE-NOTES-2.39.74.md)
+- [2.39.73](RELEASE-NOTES-2.39.73.md)
+- [2.39.72](RELEASE-NOTES-2.39.72.md)
+- [2.39.71](RELEASE-NOTES-2.39.71.md)
+- [2.39.70](RELEASE-NOTES-2.39.70.md)
+
+Versioned files are permanent, version-scoped historical evidence, not feature promises for a different installed release. Refer to the [documentation map](docs/README.md) for current instructions. Previous releases may describe retired Planning controls, the discontinued Windows VM Workbench, and old model transports.
+
+---
+
+## Preserved earlier combined release narrative (historical)
+
+> **Historical material below.** The original combined document was last topped by 2.39.20 and includes some older inline-only notes. It is retained here for source provenance; use the current-version link above rather than taking the first old heading as the latest release.
+
 # BLACKICE 2.39.20 — MCP discovery compatibility
 
 This source release adds bodyless OAuth challenges for incoming MCP HEAD probes and accepts the exact default HTTPS port spelling in the owned availability and OAuth/MCP routes. The managed availability helper advances from version 6 to version 7 while retaining the existing persistent Tailscale setup, endpoint and OAuth grants. Native Mistral Vibe Code behavior from 2.39.19 is preserved.

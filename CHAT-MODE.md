@@ -1,5 +1,7 @@
 # ChatGPT browser provider retirement
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](docs/README.md) and [source release notes](RELEASE-NOTES.md).
+
 The experimental `chatgpt::chat-mode` provider has been removed. BLACKICE no longer starts an adapter that drives ChatGPT, reads its responses as a model transport, or offers browser-provider setup in its model picker.
 
 ## Supported ChatGPT workflow

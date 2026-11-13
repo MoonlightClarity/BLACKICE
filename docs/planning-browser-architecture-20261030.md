@@ -1,5 +1,7 @@
 # BLACKICE Planning browser — architecture candidate
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 ## Purpose
 
 Planning is a dedicated application organized by conversation and concurrent requests. Its central technique is **defamiliarization**: required, task-specific questions make an agent examine aspects of a problem that its ordinary response would tend to omit.

@@ -1,5 +1,7 @@
 # ChatGPT Bridge — not offered
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](docs/README.md) and [source release notes](RELEASE-NOTES.md).
+
 BLACKICE 2.24.0 removes the ChatGPT Bridge from the product surface. Unattended end-to-end operation was not verified, so the application does not advertise it, attach `relay_chatgpt`, load its saved settings or start its listener.
 
 The old HTTP route family responds with `410 FEATURE_NOT_OFFERED` after local authentication and origin checks. The Bridge UI and stylesheet are not served. Historical request and settings files remain on disk without being read or changed on startup. Old implementation modules and tests remain as historical compatibility evidence; they do not provide a supported integration or setup flow.

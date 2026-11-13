@@ -1,5 +1,7 @@
 # BLACKICE 2.30.0: validation scope
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](docs/README.md) and [source release notes](RELEASE-NOTES.md).
+
 This release adds human editing presence, scoped worker plan-read receipts and affected-action review to the shared Planning application. Email gains managed Google and Microsoft browser sign-in, encrypted refresh credentials, a fixed Himalaya token helper, and a responsive connection screen. CLI access-code issuance and agent redemption enable setup without manual code relaying; Copy handles denied clipboard writes without losing drafts. Experimental Chat Mode appears in the main picker with an honest availability state. The release retains independent swarm scheduling, remote human and agent access, headless Electron operation, browser tabs and request blocking, model lists, dropdown contrast, chat renaming, search, and draft recovery.
 
 Acceptance reports under the isolated `blackice-2.30.0-shared-editing-email/work` directory record actual results, timestamps, source hashes and application fingerprints. Counts and completion status come from those reports. This document defines the required scope; an unexecuted or failed check is not a pass.

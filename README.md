@@ -10,6 +10,12 @@ The goal is to reduce the work of managing the agent: copying instructions betwe
 
 > **Development version:** This README describes the development branch. Check the release notes for the capabilities included in your installed version.
 
+## Documentation and version boundaries
+
+Use the [current documentation map](docs/README.md) for supported guides, engineering references and clearly labeled historical material. The [release-notes index](RELEASE-NOTES.md) links to the source version in this branch. A source commit, test pass, published installer and installed application are separate checkpoints; use the release page and the application's version to verify what is actually running.
+
+**Retired feature note:** historical releases describe a Windows VM Workbench and older Planning modes. The current source no longer includes that Workbench, and its optional Planning modules use On/Off choices. Do not use old release notes as current setup instructions.
+
 ## Why BLACKICE exists
 
 Useful work often crosses several tools and sessions. Research requires opening sources, comparing evidence, and producing something usable. A software change requires inspecting files, making an edit, running checks, and reviewing the result. An application requires finding the right form, supplying information, submitting it, and recording the outcome.

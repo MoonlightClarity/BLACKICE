@@ -1,5 +1,7 @@
 # Planning contract v2: plans, work items, and operation receipts
 
+> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+
 > **Publication update (November 7, 2026):** The canonical planning redesign described below shipped in BLACKICE **2.39.23** and remains in the **2.39.27** source. The original November 5 branch/acceptance observations in the following section are intentionally preserved as **dated experimental evidence**, not a present-tense claim that the 2.39.27 installer has not been published. For day-to-day instructions use [Current recursive planning](RECURSIVE-PLANNING.md); for release-specific verification use [2.39.23 release notes](../RELEASE-NOTES-2.39.23.md) and [latest releases](https://github.com/MoonlightClarity/BLACKICE/releases).
 ## Status and decision
 

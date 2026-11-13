@@ -1,5 +1,9 @@
 # Planning and Directory audit — 2026-11-12
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](docs/README.md) and [source release notes](RELEASE-NOTES.md).
+
+> **Superseded default (2.39.81 source):** New Chat module selections and Directory now default Off when unspecified; eight modules are user-selectable and delegation is a separate tool capability. The On-by-default and nine-module statements below describe the audited November 12 state only. See [current Planning controls](docs/MODULAR-PLANNING-ONTOLOGY.md).
+
 ## Explicit On/Off contract
 
 Planning module policy version 2 stores Boolean values. Each of the nine modules has only On/Off controls. Directory also has only On/Off controls. New Chat drafts default to enabled modules and Directory On. Generic non-Chat workflows retain explicit admission rather than silently enabling Directory for unsupported shared graphs.

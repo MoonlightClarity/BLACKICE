@@ -1,5 +1,7 @@
 # Harbor paired judgment fixture
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 This opt-in developer evaluator prepares two editorial tasks with the same source, proposed shortening and prompt, but different audience briefs. It uses Node built-ins only and does not invoke a model, BLACKICE, a subprocess, or the network.
 
 ## Frozen task and preference

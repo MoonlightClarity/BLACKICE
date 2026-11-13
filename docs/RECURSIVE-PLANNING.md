@@ -1,6 +1,8 @@
-# Recursive planning in current BLACKICE
+# Historical canonical recursive planning (2.39.23-era controls)
 
-**Current contract:** canonical work items, **contract version 2 / task schema 14**, shipped with BLACKICE 2.39.23 and present in 2.39.27. This replaces the older rule that every file read, page inspection or form input must first become a separate model-authored action leaf. Preserved old tasks and captured native provider catalogs may still use their legacy schema; see the [archived schema-10 guide](history/RECURSIVE-PLANNING-SCHEMA10.md).
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
+**Contract at the original publication date:** canonical work items, **contract version 2 / task schema 14**, shipped with BLACKICE 2.39.23 and present in 2.39.27. The Forced/Advisory user-facing modes described below were later retired. Use the [current On/Off Planning module guide](MODULAR-PLANNING-ONTOLOGY.md) for new Chat instructions; consult the source and the actual saved task contract for internal operation semantics. This replaces the older rule that every file read, page inspection or form input must first become a separate model-authored action leaf. Preserved old tasks and captured native provider catalogs may still use their legacy schema; see the [archived schema-10 guide](history/RECURSIVE-PLANNING-SCHEMA10.md).
 
 ## What the plan represents
 

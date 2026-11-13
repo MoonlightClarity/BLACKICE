@@ -62,10 +62,11 @@ The application uses Electron. Binary distributions must retain the license and 
 
 Build dependencies installed through npm also retain their own licenses. `package-lock.json` records package versions and declared license expressions, but those metadata entries do not replace the complete notices included with packages or binary distributions.
 
-## Native Windows guest video
+## Historical guest-video dependency (retired)
 
-BLACKICE's optional Go-based native Windows guest-video executable uses the `github.com/gen2brain/jpegn` JPEG encoder, pinned to **v0.6.2**, under the **MIT License** (copyright 2025 Milan Nikolic). The upstream license text is preserved in [LICENSE-jpegn.txt](resources/guest/LICENSE-jpegn.txt). Module version and integrity hashes are recorded in [go.mod](scripts/workbench-native-stream/go.mod) and [go.sum](scripts/workbench-native-stream/go.sum). Keep the license alongside the binary when redistributing the guest-video component. Other Go dependencies retain their own terms.
+Earlier optional Windows VM Workbench guest-video source used the Go JPEG encoder [github.com/gen2brain/jpegn](https://github.com/gen2brain/jpegn) at v0.6.2 (MIT, copyright 2025 Milan Nikolic). The Workbench and its guest-video distribution were subsequently retired. The former locally linked license, go.mod and go.sum paths do **not** exist in the current source tree and are not claims about current bundled binaries.
 
+This attribution is preserved for historical source provenance. If guest video is reintroduced, a release must include the exact redistributable MIT license text and module/version records for the actual restored component rather than reusing these retired paths.
 ## Redistribution
 
 Include the root [LICENSE](LICENSE), [NOTICE](NOTICE), and this index in source and binary packages. Preserve the third-party license, attribution, source, and provenance files alongside the components they describe. Follow each component's own terms for its redistribution or modification; do not replace upstream notices with the BLACKICE Apache license.

@@ -1,5 +1,7 @@
 # Bounded Planning cycle convergence
 
+> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+
 Planning's public response parser checks shape, while the host readiness evaluator checks freshness, dependencies and actual evidence. The response runtime must also reject child relationships that cannot be accepted by the host, before recording a provider response as successful.
 
 ## Relationships checked before acceptance

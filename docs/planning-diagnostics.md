@@ -1,5 +1,7 @@
 # Canonical Planning diagnostic
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 This developer-only HTTP surface validates authoring against an immutable saved native snapshot. It is not a task continuation, execution test, or proof of completed external effects. It adds no ordinary model-facing tools.
 
 ## Routes

@@ -1,5 +1,7 @@
 # Model capacity reports
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 BLACKICE reports the context window and maximum output separately for API and native Codex models. The report appears in model discovery, selected and saved model lists, and the result of adding a model. An unavailable capacity is shown as **Unknown**, without substituting the application's working budget.
 
 ## Four distinct quantities

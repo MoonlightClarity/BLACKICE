@@ -1,5 +1,7 @@
 # Planning activity and workspace review
 
+> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+
 ## Behavior
 - Saved is the unarchived conversation collection. Running now includes only recorded running executions, not saved lifecycle, assignments, readiness, queued work, or stopping work.
 - Planning activity comes from the current host runner snapshot, not the durable attempt status (which also records queued admissions as running). Catalogs, request reads and action responses add read-only execution metadata. Module, phase and cycle badges use the same observation. Missing or unowned live entries show Status unknown; the persisted ledger and readiness remain unchanged.

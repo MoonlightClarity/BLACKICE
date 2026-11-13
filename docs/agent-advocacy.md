@@ -1,5 +1,7 @@
 # Agent advocacy, form completion and browser routing
 
+> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+
 BLACKICE's interactive, scheduled and delegated agents act on the user's requested outcome. The current harness instructions apply to new and continued conversations with Planning On or Off.
 
 ## Carry authorized work through completion

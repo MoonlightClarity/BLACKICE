@@ -1,5 +1,7 @@
 # Independent operational effect protections
 
+> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+
 BLACKICE's modular Planning ontology does not own application deduplication, external-effect uncertainty, native tool reservations, or durable execution receipts. These are runtime concerns, applied with Planning Modules or Off without a saved planning contract.
 
 ## Dispatch and retained history

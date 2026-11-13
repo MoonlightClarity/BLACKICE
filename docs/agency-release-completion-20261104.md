@@ -1,5 +1,7 @@
 # BLACKICE 2.39.17 — release and runtime completion
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 **BLACKICE 2.39.17 was published, its installer passed verification on disposable CI, and the existing desktop completed its separately authorized five-file runtime activation and native restart.** The final runtime observations were captured at **2026-11-04 19:47:56.000 UTC**. The native restart completed earlier, at **2026-11-04 19:44:26.320 UTC**.
 
 This record follows the unchanged [candidate behavioral report](agency-behavior-report-20261104.md) and [methods](agency-behavior-methods-20261104.md). Their publication and activation fields were pending when those documents were written. This later record closes those release/runtime steps without changing their behavioral findings. The [machine-readable receipt](../verification/release-runtime-2.39.17-20261104.json) contains the public-safe hashes and status fields.

@@ -1,41 +1,44 @@
-# Modular Planning Ontology
+# Planning modules in current BLACKICE
 
-Forced Planning and its response-cycle admission contract are retired. New BLACKICE Chat conversations use the independent module ontology. Historical Forced, Advisory and Plan-only records remain readable as history but cannot activate the old planner. A new request explicitly selecting Plan-only is rejected before admission; it is never silently upgraded to Automatic.
+> **Status: Current source guide (2.39.81).** The source contract is [planning-module-policy.mjs](../public/planning-module-policy.mjs), with the visible choices in [Chat](../public/next/chat/chat.mjs). A source version is not proof that an older installed application has received it. See [release 2.39.81](../RELEASE-NOTES-2.39.81.md).
 
-## Control surface
+BLACKICE provides **eight optional Planning modules**, each with an explicit **On** or **Off** choice. **Directory** is a separate On/Off execution choice. In the 2.39.81 source, unspecified module choices and Directory start **Off**; explicit current selections and saved user choices are preserved. This favors straightforward tool use unless additional reasoning has a demonstrated purpose for the task.
 
-In Chat, select **Planning → Modules**. A small **Modules** disclosure sits below the normal Chat controls, **collapsed by default**. Expanding it reveals the three-column checkbox grid; collapsing it does not change module selections or conversation-level persistence. Every module has four mutually exclusive checkbox choices: **M** (Mandatory), **O** (Optional), **F** (Forbidden), and **A** (Auto). Auto allows the model to choose a task-local state for that module without another model pass. Choosing Optional makes the method available without requiring it; selecting Mandatory or Forbidden keeps that explicit user choice authoritative. This replaces the older large explanation pane and global Auto checkbox. **Save default** persists the displayed grid as the application fallback. Settings resolve in this order: **unsent conversation override > saved conversation run > application defaults**. Changes to one conversation never silently alter another; a new conversation starts from defaults unless it has its own unsent draft.
+In Chat, expand **Planning → Modules** to see the choices. Collapse or expand the module grid without changing its selections. A conversation's choices apply to its subsequent turns. **Save default** records the displayed choices for future chats; changing one conversation does not rewrite old conversation history or saved choices in another conversation.
 
-The default modules are Intent inference, Feasibility, Task decomposition, Conditional logic, Recursive reassessment, Metacognition, Anti-overalignment calibration, Outcome verification, and Subagent orchestration. They default to Auto except **Anti-overalignment calibration**, which defaults to Mandatory. Users can override it, including Forbidden.
+## What the eight switches mean
 
-## Runtime behavior
+| Module | Use when | Opportunity cost |
+| --- | --- | --- |
+| **Intent inference** | The requested result or constraints have consequential ambiguity. | Can introduce needless interpretation into a clear task. |
+| **Feasibility** | A real capability or dependency may change the next action. | Speculative prerequisites can delay useful work. |
+| **Task decomposition** | Distinct objectives or dependencies benefit from explicit substeps. | Can fragment simple work and generate overhead. |
+| **Conditional logic** | Observed facts require different IF/ELIF/ELSE paths. | Unneeded branches distract from execution. |
+| **Recursive reassessment** | New evidence materially changes the plan. | Can repeatedly reopen settled decisions. |
+| **Metacognition** | A meaningful assumption warrants a focused countercheck. | Additional reflection may consume time without adding evidence. |
+| **Anti-overalignment calibration** | Invented requirements or an excessively broad stop threaten the user's authorized goal. | Its guidance can be redundant on routine tasks. |
+| **Outcome verification** | The result needs confirmation from files, commands, records, or a remote destination. | Verification costs time and can itself produce mistakes. |
 
-The modular policy is a lightweight, inline instruction policy, not a new model pass, graph admission gate, task-state contract, checkpoint requirement, fixed planning loop, or automatic review ritual. Agents may still use tools and existing plans when not forbidden. A Forbidden decomposition module removes plan controls from the attached catalog and denies hidden planning-cycle actions through the general control tool, while leaving unrelated control actions available. A Forbidden subagent module removes delegation. Other methods currently rely on model instruction adherence rather than a new semantic host classifier.
+**Delegation is not a ninth selectable Planning module.** The internal policy retains a compatibility field for subagents, but the [source](../public/planning-module-policy.mjs) normalizes it to available delegation rather than a user-facing On/Off override. A worker should be delegated only when separable work makes its coordination and token cost worthwhile, not merely because the tool exists.
 
-An unsupported module or a task-specific operational failure must not be reported as the whole model being unavailable. A model that cannot call tools can still produce a supported non-operational response, while honestly reporting unperformed effects.
+## Semantics and limitations
 
-## Strict anti-overalignment and minimum-scope stopping
+- **On** instructs the selected model to apply that method where relevant. It is not evidence that the method succeeded, and it does not guarantee a new provider call or a plan record for every action.
+- **Off** disables the *additional* module instruction. It does not disable ordinary reasoning, authorized tools, retained planning data, durable effect protection, or user requirements.
+- **Directory On** changes the selected response execution path; it is independent of the eight switches. Directory Off uses ordinary Chat behavior. A module choice does not silently switch models.
+- Model calls, elapsed time, tokens, review steps, and verified outcomes matter when judging a configuration. All modules On is not automatically the highest-quality or fastest choice. See [Planning and Directory trade-offs](PLANNING-TRADEOFFS.md).
+- Operational receipts remain authoritative about effects. A browser click is not an accepted application; a completed model response is not proof of a completed external operation. Never replay an unresolved consequential effect without reconciling the previous attempt.
 
-A **genuinely binding obstacle blocks only the smallest affected operation**, never the whole user task by default. For an unresolved field, park that field or its dependent form; for one application's blocked submission, continue other applications; for one unavailable website or provider, continue viable alternatives. Maintain the user's overall goal, unfinished items, and actual receipts. Do not turn one blocked leaf into a terminal task failure.
+For tasks with several independent paths, a genuinely blocked field or submission should normally block only that exact path, while other authorized work continues. Unverified assumptions are not new hard gates. The model should still distinguish supplied facts, sound inference, and unknowns rather than making unsupported personal declarations.
 
-Only affirmative evidence can justify a local stop: an explicit user hard constraint, verified binding requirement, unsupportable consequential personal declaration, genuinely unavailable permission or tool with no viable alternative for that specific action, or an unresolved potentially duplicate consequential effect. A missing résumé statement, employer wishlist, inferred restriction, uncertain skill, sponsorship question, or planning-contract failure is not by itself an affirmative disqualifier. Avoid invented résumé-only rules and unsupported certainty thresholds.
+## Legacy state is not a current control
 
-For an ambiguous **sponsorship Yes/No** requirement, inspect reliable prior context, make a truthful supported choice when evidence permits, and do not invent either Yes or No. If the individual declaration is genuinely unknowable, defer only the form or application that requires it and continue other applications. Never infer eligibility merely from absence of evidence.
+Earlier documents describe **Forced / Advisory / Off**, **Plan-only**, and four-state **Mandatory / Optional / Forbidden / Auto** module controls. Those are historical implementations, not current Chat controls. Version-1 policies can be normalized for compatibility: Mandatory, Optional and Auto map to On; Forbidden maps to Off; the retired delegation selection is not carried into new work. This is a migration rule, **not** a way to select those old states in 2.39.81.
 
-Before a potentially duplicate application, inspect saved submission records and destination receipts. If the original effect remains uncertain, quarantine only that exact application while other applications continue. A still-open browser tab does not establish duplication or its cause. Report submitted, pending, and unverified outcomes separately.
+The old [canonical recursive-planning guide](RECURSIVE-PLANNING.md), [planning-depth report](PLANNING-DEPTH.md), and [November 12 audit](../PLANNING-DIRECTORY-AUDIT-20261112.md) are preserved as historical records. The canonical work-item/operation-journal implementation may still be relevant to existing saved tasks and direct tools; those internals do not re-enable the retired user-facing controls. Consult the exact task's returned contract before editing it.
 
-Even when nothing can proceed at that moment, report a bounded partial result and unresolved work rather than claiming the entire goal is completed. Do not invent extra user-approval gates. This policy cannot authorize making an unsupported material declaration.
+## Evidence and maintenance
 
-## Operational safeguards outside Planning
+The current behavior is implemented and exercised by [the module policy](../public/planning-module-policy.mjs), [the Chat controls](../public/next/chat/chat.mjs), [binary policy tests](../tests/planning-binary-runtime.test.mjs), and [Chat grid tests](../tests/next-chat-ontology-grid.test.mjs). Tests establish their reported source behavior, not success on every provider or installed runtime.
 
-Application-history checks, native effect reservations, deduplication, durable UNKNOWN states and effect receipts run in an independent operational layer without an attached planning contract. Recognized job applications reserve their requisition before dispatch; unrelated applications continue even if one receipt is uncertain. Workspace writes use verified file bytes and hashes, and a successful tool return is not external confirmation. See [Independent operational effect protections](OPERATIONAL-EFFECT-PROTECTIONS.md).
-
-## Direct ChatGPT tools
-
-- `blackice_planning_ontology` with `action:get` reads the saved default policy and available module catalog; `action:set` stores a replacement default policy for future chats.
-- `blackice_start_chat` defaults to modular Planning and accepts an explicit `planningOntology` object for that newly admitted conversation.
-- The installed connector tool catalog must be rebuilt/reloaded before ChatGPT can see these new definitions. Updating source files alone does not update an already connected tool catalog.
-
-## Regression requirements
-
-The test suite covers policy validation, per-conversation persistence, direct get/set, forbidden tool routing, execution without forced plan admission, strict minimum-scope blocking, operational reservations and receipts, historical record readability, and rejection of retired Plan-only actions. Long-running cron and native-context tests also verify continuity and protection from duplicate effects. Model-level behavioral and latency benchmarks remain separate future evaluation work.
+For the full guide map and document-status labels, return to the [documentation index](README.md).

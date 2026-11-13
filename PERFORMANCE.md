@@ -1,5 +1,7 @@
 # Performance and reliability verification
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](docs/README.md) and [source release notes](RELEASE-NOTES.md).
+
 These results were recorded on Windows on 21 October 2026 for the performance update to BLACKICE 2.33.5. They describe the tested runtime changes before source-publication documentation and license metadata changes. A changed application fingerprint needs its own verification record; this summary does not transfer the earlier exact-build evidence to subsequent packages.
 
 ## Changes

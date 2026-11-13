@@ -1,5 +1,7 @@
 # BLACKICE storage management
 
+> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+
 Storage & Data is available in Settings. It reports on-disk byte and file counts
 using fixed, disjoint storage categories. The measured total is not the total
 installation size: unmanaged directories are excluded. Opening Settings or

@@ -1,5 +1,7 @@
 # Outcome-review expectation provenance
 
+> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+
 The existing outcome assessment may optionally emit up to four compact concerns.
 Each records a task clause, explicit/inferred/uncertain basis, counterexample
 inputs, expected and observed behavior, probe classification, source identity

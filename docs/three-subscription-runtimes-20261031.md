@@ -1,5 +1,7 @@
 # BLACKICE: three subscription-backed agent runtimes
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 **Product direction — October 31, 2026:** Agentic compatibility and low friction matter more than model catalogs. BLACKICE is a personal autonomous agent workspace, not an enterprise API aggregator.
 
 ## Supported runtimes

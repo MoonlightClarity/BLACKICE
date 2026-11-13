@@ -1,5 +1,7 @@
 # Planning judgment results — 2026-10-28
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 ## Result and scope
 
 Private run identifiers, local paths and activation identifiers are retained in the development evidence. This public report preserves the observed results and public source hashes.

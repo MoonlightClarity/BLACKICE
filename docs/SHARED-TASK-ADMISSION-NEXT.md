@@ -1,5 +1,7 @@
 # Shared admission: implemented boundary and next stage
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 This checkpoint implements explicit task contexts, shared direct/native semantic admission, and supported HTTP host-only transport enforcement. It remains development-only and is not deployed.
 
 ## Implemented

@@ -1,5 +1,7 @@
 # Bounded direct-ledger startup recovery
 
+> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+
 This change is isolated to failure during the initial receipt-validation scan. It does not repair receipts, replay actions, change antivirus settings, or bypass a denial.
 
 ## Eligibility and bounds
