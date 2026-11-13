@@ -19,7 +19,7 @@ const definition = (name, extra = {}) => ({
 const unavailable = () => assert.fail('Discovery must not execute a tool.');
 const provider = tools => ({ tools: () => tools, call: unavailable });
 
-test('the configured catalog retains 30 tools with reviewed canonical creation, fill and conversation contracts', () => {
+test('the configured catalog retains 31 tools with reviewed authentication, canonical creation, fill and conversation contracts', () => {
   // Bind the reviewed public definitions, including recursive planning,
   // bounded contained diagnostics, exact-identity ownership/debug controls,
   // the cleanup protocol, the explicit relay default for credential fill,
@@ -39,21 +39,42 @@ test('the configured catalog retains 30 tools with reviewed canonical creation, 
     'blackice_workspace_read', 'blackice_workspace_write', 'blackice_run_command', 'blackice_browser_read',
     'blackice_browser_action', 'blackice_browser_upload', 'blackice_task_contract', 'blackice_task_context', 'blackice_import_file', 'blackice_connected_browser_read',
     'blackice_connected_browser_action', 'blackice_profile_list', 'blackice_profile_import', 'blackice_profile_connect',
-    'blackice_restart', 'blackice_credentials_list', 'blackice_credentials_generate', 'blackice_credentials_fill',
+    'blackice_restart', 'blackice_credentials_list', 'blackice_credentials_generate', 'blackice_credentials_fill', 'blackice_credentials_authenticate',
     'blackice_list_plans', 'blackice_get_plan', 'blackice_get_run_result', 'blackice_list_swarm_plans',
     'blackice_get_swarm_plan', 'blackice_get_plan_groups', 'blackice_edit_plan', 'blackice_edit_plan_groups',
   ]);
   assert.deepEqual(catalog.status(), {
     // Reviewed explicit task/context tools, source binding, receipt alternatives and optional operation scopes.
-    sha256: 'edc72dde20a39a88f159440f83ab255d7cd9205531dff5dbe3df9a1db1801e92',
-    toolCount: 30,
+    sha256: 'dc85d3d8b3a90ded6bb3ec06c0c60da555cef358a2108918c1f7789765cf0487',
+    toolCount: 31,
     serverVersion: '2.33.5',
   });
   assert.equal(createHash('sha256').update(JSON.stringify(catalog.tools())).digest('hex'), catalog.status().sha256);
 
+  // Authentication is one reviewed addition; it does not relax the existing
+  // fill schema or permit plaintext secrets or caller-supplied authority.
+  const authentication = catalog.tools().find(tool => tool.name === 'blackice_credentials_authenticate');
+  const credentialFill = catalog.tools().find(tool => tool.name === 'blackice_credentials_fill');
+  assert.deepEqual(authentication.annotations, { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true });
+  assert.deepEqual(catalog.get(authentication.name).requiredScopes, ['read', 'browser:write']);
+  assert.deepEqual(authentication.inputSchema, {
+    type: 'object',
+    properties: {
+      ...credentialFill.inputSchema.properties,
+      intent: { type: 'string', enum: ['login', 'signup'] },
+      submitRef: { type: 'string', minLength: 1, maxLength: 500 },
+    },
+    required: ['requestId', 'origin', 'credentialId', 'revision', 'browser', 'tabId', 'expectedUrl', 'expectedDocumentId', 'passwordRef', 'intent', 'submitRef'],
+    additionalProperties: false,
+  });
+  assert.match(authentication.description, /Reuse the same requestId after uncertainty; dispatch is not authentication proof/);
+  const previousTools = structuredClone(catalog.tools().filter(tool => tool.name !== authentication.name));
+  assert.equal(previousTools.length, 30);
+  assert.equal(createHash('sha256').update(JSON.stringify(previousTools)).digest('hex'), 'edc72dde20a39a88f159440f83ab255d7cd9205531dff5dbe3df9a1db1801e92');
+
   // Undo exactly the reviewed conversation scope additions and prove that all
   // other fields, grants and tool contracts retain the preceding fingerprint.
-  const previousTools = structuredClone(catalog.tools());
+
   const scopedNames = ['blackice_browser_read', 'blackice_browser_action', 'blackice_browser_upload', 'blackice_credentials_fill'];
   for (const name of scopedNames) {
     const tool = previousTools.find(item => item.name === name);
