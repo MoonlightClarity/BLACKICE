@@ -43,7 +43,7 @@ async function fixture(t, execute, { available = true, subagents = false, shared
   const browser = { status: () => ({ available: true, contained: true, tabs: [] }), perform: async () => assert.fail('No real browser action is authorized by this engine fixture.'), close: async () => {} };
   const engine = new HarnessEngine({ runtime: new Runtime(), credentials: vault, browser, tasks, dataDir: root, defaultCwd: cwd }); engine.runtimeSettings = prefs; await engine.init();
   const workflow = createMissionWorkflow({ id: 'credential-engine', task: 'Create the authorized account at ' + origin + '.', model: 'fixture', cwd, planningMode: 'off' });
-  const context = { engine, vault, owners, generated, calls, root, cwd, workflow, tasks, start: (graph = workflow) => engine.startRun({ workflow: graph, input: 'Create the authorized account at ' + origin + '.' }), settled: id => wait(() => engine.getRun(id)?.settled && engine.getRun(id)) };
+  const context = { engine, vault, owners, generated, calls, root, cwd, workflow, tasks, browser, start: (graph = workflow) => engine.startRun({ workflow: graph, input: 'Create the authorized account at ' + origin + '.' }), settled: id => wait(() => engine.getRun(id)?.settled && engine.getRun(id)) };
   t.after(async () => { await engine.close(); await prefs.close(); await tasks?.close(); assert.match(path.basename(root), /^blackice-credential-engine-/); await rm(root, { recursive: true, force: true }); });
   return context;
 }
@@ -138,4 +138,21 @@ test('a recorded human MFA challenge prevents credential mutations while metadat
     return { output: 'The observed MFA step requires the user.' };
   });
   done(await f.settled(f.start().id)); assert.equal(f.generated.length, 0);
+});
+
+test('ordinary native coordinator dispatches scoped authentication through a fresh task callback', async t => {
+  let dispatched=0;
+  const f=await fixture(t,async(options,context)=>{
+    const args={action:'authenticate',origin,credentialId:'credential_fixture',revision:1,browser:'relay',tabId:'tab',expectedUrl:origin+'/login',expectedDocumentId:'doc',passwordRef:'password',submitRef:'submit',intent:'login',requestId:'native_auth'};
+    const result=await call(options,args);assert.equal(result.success,true,JSON.stringify(result));
+    assert.equal(payload(result).authenticated,false);assert.equal(payload(result).submissionRequested,true);
+    return {output:'Authentication requested; result not yet confirmed.',threadId:'auth-native-fixture'};
+  });
+  f.browser.fillCredential=async()=>assert.fail('Authentication must not silently degrade to fill');
+  f.browser.authenticateCredential=async(args,options)=>{
+    assert.equal(args.intent,'login');assert.equal(typeof options.beforeDispatch,'function');
+    await options.beforeDispatch({action:'authenticate',intent:args.intent,origin:args.origin});dispatched++;
+    return{submissionRequested:true,authenticated:false,outcome:'dispatched'};
+  };
+  const run=await f.settled(f.start().id);done(run);assert.equal(dispatched,1);
 });

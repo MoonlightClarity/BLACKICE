@@ -172,6 +172,22 @@ export class BrowserRouter extends EventEmitter {
       return commit(secret);
     };
   }
+  async prepareCredentialAuthentication(args, options = {}) {
+    if (this.closed || options.signal?.aborted) throw cancelled();
+    const selected = this.owner(args, this.status());
+    if (selected.browser !== 'relay' || args.browser !== 'relay' || typeof this.drivers.relay?.prepareCredentialAuthentication !== 'function')
+      throw fail('Protected authentication requires the contained browser.', 'BROWSER_CREDENTIAL_UNAVAILABLE');
+    const commit = await this.drivers.relay.prepareCredentialAuthentication({ ...args, tabId: selected.nativeId }, options);
+    return async (secret, beforeDispatch) => {
+      const validate = async () => {
+        if (this.closed || options.signal?.aborted) throw cancelled();
+        const current = this.owner(args, this.status());
+        if (current.browser !== 'relay' || current.nativeId !== selected.nativeId) throw fail('Authentication target changed.', 'BROWSER_CREDENTIAL_TARGET_CHANGED');
+      };
+      await validate();
+      return commit(secret, async () => { await validate(); await beforeDispatch(); await validate(); });
+    };
+  }
   protectionStatus() { return this.drivers.relay?.protectionStatus?.() || { available: false, enabled: false, ready: false, tabs: [] }; }
   async configureProtection(options, context = {}) {
     if (this.closed) throw fail('The browser workspace has closed.', 'BROWSER_CLOSED');

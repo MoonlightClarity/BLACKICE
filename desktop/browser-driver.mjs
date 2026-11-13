@@ -1,3 +1,4 @@
+import { credentialAuthenticationForm } from './browser-credential-authentication.mjs';
 import { BrowserWindow, session } from 'electron';
 import { ownershipAction, ownershipChange } from '../lib/browser-ownership.mjs';
 import { sameBrowserOwner, conversationBrowserNode } from '../lib/browser-conversations.mjs';
@@ -1357,7 +1358,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     const frameUrl = frame.url, input = { ...args, frameUrl };
     const assertCurrent = () => {
       cancel(signal); this.assertInputDocument(tab, args);
-      if (this.closed || tab.window.isDestroyed() || tab.purpose === 'chat-mode' || tab.pendingInteraction || tab.suspendedWork.size || frame.url !== frameUrl || refs.some(ref => tab.refs.get(ref) !== frame)) throw unavailable();
+      if (this.closed || tab.window.isDestroyed() || tab.purpose === 'chat-mode' || owner && !sameOwner(tab.owner, owner) && !(owner.allowUserTabs && !tab.owner) || tab.pendingInteraction || tab.suspendedWork.size || frame.url !== frameUrl || refs.some(ref => tab.refs.get(ref) !== frame)) throw unavailable();
     };
     const evaluate = secret => frame.executeJavaScript(`(${credentialFields.toString()})(${JSON.stringify(this.key)},${JSON.stringify(input)}${secret === undefined ? '' : ',' + JSON.stringify(secret)})`);
     assertCurrent();
@@ -1377,6 +1378,35 @@ export class ElectronBrowserDriver extends EventEmitter {
         cancel(signal);
         return { filled: true, submissionRequested: false };
       } catch { throw Object.assign(error('Credential filling could not be confirmed. Inspect the page before trying again.'), { code: 'BROWSER_CREDENTIAL_FILL_UNCONFIRMED' }); }
+    };
+  }
+  async prepareCredentialAuthentication(value, options = {}) {
+    const { intent, submitRef, requestId, ...fill } = value;
+    if (!['login','signup'].includes(intent) || typeof submitRef !== 'string' || !submitRef || !/^[A-Za-z0-9_-]{1,100}$/.test(requestId))
+      throw capacityError('Use an exact credential authentication target.', 'BROWSER_CREDENTIAL_TARGET_CHANGED');
+    const commitFill = await this.prepareCredentialFill(fill, options);
+    const tab = this.tab(fill.tabId), frame = tab.refs.get(fill.passwordRef), args = { ...fill, intent, submitRef, requestId };
+    const check = () => {
+      cancel(options.signal); this.assertInputDocument(tab, fill);
+      if (this.closed || tab.window.isDestroyed() || tab.refs.get(submitRef) !== frame || tab.refs.get(fill.passwordRef) !== frame)
+        throw capacityError('The authentication target changed.', 'BROWSER_CREDENTIAL_TARGET_CHANGED');
+    };
+    const inspect = dispatch => frame.executeJavaScript(`(${credentialAuthenticationForm.toString()})(${JSON.stringify(this.key)},${JSON.stringify(args)},${dispatch})`);
+    check();
+    if ((await this.pageWork(tab, inspect(false), options.signal))?.valid !== true)
+      throw capacityError('This form is not a supported credential-only authentication form.', 'BROWSER_CREDENTIAL_AUTH_UNSUPPORTED');
+    check(); let used = false;
+    return async (secret, beforeDispatch) => {
+      if (used || typeof beforeDispatch !== 'function') throw capacityError('Authentication requires an unused authorized host operation.', 'BROWSER_CREDENTIAL_AUTH_AUTHORITY');
+      used = true;
+      await commitFill(secret);
+      check();
+      if ((await this.pageWork(tab, inspect(false), options.signal))?.valid !== true) throw capacityError('The authentication form changed.', 'BROWSER_CREDENTIAL_TARGET_CHANGED');
+      await beforeDispatch(); check();
+      // After this point a lost renderer reply is an uncertain dispatch. Never replay.
+      const result = await this.pageWork(tab, inspect(true), options.signal);
+      if (result?.submissionRequested !== true) throw capacityError('Authentication dispatch could not be confirmed.', 'BROWSER_CREDENTIAL_AUTH_UNCONFIRMED');
+      return { submissionRequested: true, authenticated: false };
     };
   }
   retireAllReferences(tab) {
