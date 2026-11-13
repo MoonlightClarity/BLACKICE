@@ -48,7 +48,7 @@ function fixture(onToolCall = async () => errorReceipt, tool = 'relay_task') {
   const invoke = (offset, action = 'read') =>
     CodexRuntime.prototype._dynamicToolCall.call(runtime, {
       id: offset + 1, params: { threadId: 'test-thread', turnId: 'test-turn', callId: 'failure-' + offset + '-' + action,
-        tool, arguments: { action, view: 'full', offset, expectedRevision: 316 } }
+        tool, arguments: { action, path: `source-${offset}.md`, view: 'full', offset, expectedRevision: 316 } }
     });
   const notifyItem = (type, index) => CodexRuntime.prototype._notification.call(runtime, 'item/started', {
     threadId: 'test-thread', turnId: 'test-turn', item: { id: `${type}-${index}`, type },
@@ -116,4 +116,50 @@ test('per-turn call quota also protects against a pipelined flood of successful 
   assert.equal(dispatched, CODEX_DYNAMIC_TOOL_LIMITS.callsPerTurn);
   assert.equal(f.cancellations.length, 1);
   assert.equal(f.state.dynamicToolCallCount, CODEX_DYNAMIC_TOOL_LIMITS.callsPerTurn);
+});
+
+test('parallel distinct workspace read failures allow receipt feedback and corrected reads', async () => {
+  let recovery = false;
+  const f = fixture(async () => recovery ? goodReceipt : { success: false, contentItems: [{type: 'inputText', text: 'ENOENT'}] }, 'relay_workspace');
+  await Promise.all(Array.from({length: 13}, (_, i) => f.invoke(i)));
+  assert.equal(f.cancellations.length, 0);
+  assert.equal(f.state.dynamicToolFailure.count, 1);
+  assert.equal(f.state.dynamicToolFailure.total, 13);
+  f.notifyItem('reasoning', 'repair-path');
+  recovery = true;
+  await f.invoke(99);
+  assert.equal(f.state.dynamicToolFailure, null);
+  assert.equal(f.cancellations.length, 0);
+});
+
+test('workspace repeated reads and repeated batches stop after real recovery opportunities', async () => {
+  for (const batchSize of [1, 3]) {
+    const f = fixture(async () => errorReceipt, 'relay_workspace');
+    for (let epoch = 0; epoch < CODEX_DYNAMIC_TOOL_LIMITS.repeatedFailure; epoch++) {
+      f.notifyItem('reasoning', epoch);
+      await Promise.all(Array.from({length: batchSize}, (_, i) => f.invoke(epoch * 100 + i)));
+    }
+    assert.equal(f.cancellations.length, 1);
+    assert.equal(f.state.cancelError.code, 'CODEX_TOOL_FAILURE_LOOP');
+    assert.equal(f.state.dynamicToolFailure.count, CODEX_DYNAMIC_TOOL_LIMITS.repeatedFailure);
+  }
+});
+
+test('workspace read stream without feedback remains bounded by silent cap', async () => {
+  const f = fixture(async () => errorReceipt, 'relay_workspace');
+  for (let i = 0; i < CODEX_DYNAMIC_TOOL_LIMITS.silentFailure; i++) await f.invoke(i);
+  assert.equal(f.cancellations.length, 1);
+  assert.equal(f.state.dynamicToolFailure.total, CODEX_DYNAMIC_TOOL_LIMITS.silentFailure);
+});
+
+test('workspace mutations retain strict failure cap even within one model batch', async () => {
+  const f = fixture(async () => errorReceipt, 'relay_workspace');
+  for (let i = 0; i < CODEX_DYNAMIC_TOOL_LIMITS.repeatedFailure; i++) await f.invoke(i, 'write');
+  assert.equal(f.cancellations.length, 1);
+  assert.equal(f.state.dynamicToolFailure.count, CODEX_DYNAMIC_TOOL_LIMITS.repeatedFailure);
+});
+test('workspace reads without a proven progress epoch retain the strict stop', () => {
+  const state = {};
+  for (let i = 0; i < CODEX_DYNAMIC_TOOL_LIMITS.repeatedFailure - 1; i++) assert.equal(codexRepeatedToolFailure(state, {name:'relay_workspace', arguments:{action:'read', path:`missing-${i}`}}, errorReceipt), null);
+  assert.equal(codexRepeatedToolFailure(state, {name:'relay_workspace', arguments:{action:'read',path:'missing-last'}}, errorReceipt)?.code, 'CODEX_TOOL_FAILURE_LOOP');
 });
