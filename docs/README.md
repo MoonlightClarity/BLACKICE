@@ -1,6 +1,6 @@
 # BLACKICE documentation
 
-> **Status: Current source index.** This index is checked against the repository's main-branch package version, **2.39.81**. It describes source documentation, **not proof that a particular installer was published or installed**. Check the [release downloads](https://github.com/MoonlightClarity/BLACKICE/releases) and your installed application's version before assuming a feature is available. The [2.39.81 source release notes](../RELEASE-NOTES-2.39.81.md) and [release-note index](../RELEASE-NOTES.md) describe version-specific changes and verification limits.
+> **Status: Current source index.** This index is checked against the repository's main-branch package version, **2.39.82**. It describes source documentation, **not proof that a particular installer was published or installed**. Check the [release downloads](https://github.com/MoonlightClarity/BLACKICE/releases) and your installed application's version before assuming a feature is available. The [2.39.82 source release notes](../RELEASE-NOTES-2.39.82.md) and [release-note index](../RELEASE-NOTES.md) describe version-specific changes and verification limits.
 
 Start with the [project README](../README.md). A named document's date, original deployment note, test result, or branch name does not override this index or the code in the version you actually run.
 
@@ -22,7 +22,7 @@ Start with the [project README](../README.md). A named document's date, original
 
 **Planning workspace navigation:** Planning opens **Current work**, showing each conversation's Goal and Directory records. The filter distinguishes **Saved conversations**, **Running now**, **Archived**, and **All conversations**; a saved conversation is not necessarily running. **Saved graph plans** is a separate view for explicit graph requests and earlier planning records, not the current Directory work. Opening these views reads saved records rather than creating a plan or starting a model. The earlier group-outline UI is documented only as an [organization reference](../PLANNING-ORGANIZATION.md), not current navigation.
 
-**Workbench retirement:** earlier BLACKICE releases documented an optional Windows VM Workbench and native-display paths. Those are **not current setup features** in 2.39.81 source: the VM UI, APIs and installer inputs were retired. The [retirement regression](../tests/workbench-retired.test.mjs) checks this boundary. Historical [2.39.26 pairing notes](../RELEASE-NOTES-2.39.26.md) are retained for provenance, not as instructions to install a missing Workbench component.
+**Workbench retirement:** earlier BLACKICE releases documented an optional Windows VM Workbench and native-display paths. Those are **not current setup features** in 2.39.82 source: the VM UI, APIs and installer inputs were retired. The [retirement regression](../tests/workbench-retired.test.mjs) checks this boundary. Historical [2.39.26 pairing notes](../RELEASE-NOTES-2.39.26.md) are retained for provenance, not as instructions to install a missing Workbench component.
 
 ## Engineering references: verify against the exact revision
 
@@ -35,7 +35,7 @@ These explain implementation boundaries or invariants. They are valuable to main
 
 ## Historical / retired / version-bound records
 
-Documents marked **Status: Historical documentation** preserve the original experiments, migration information, tests, and branch-specific design. They are **not operational guidance** for 2.39.81, even where their original heading says "current" or "not deployed."
+Documents marked **Status: Historical documentation** preserve the original experiments, migration information, tests, and branch-specific design. They are **not operational guidance** for 2.39.82, even where their original heading says "current" or "not deployed."
 
 - [Old canonical recursive-planning controls](RECURSIVE-PLANNING.md), [old planning depth/modes](PLANNING-DEPTH.md), and [schema-10 planning](history/RECURSIVE-PLANNING-SCHEMA10.md). Current user controls are documented in the [Planning module guide](MODULAR-PLANNING-ONTOLOGY.md).
 - [November 12 Planning/Directory audit](../PLANNING-DIRECTORY-AUDIT-20261112.md) and dated [planning browser](planning-browser-architecture-20261030.md) / [response-cycle](response-cycles-20261030.md) candidates: evidence about their original revisions, not present defaults.
