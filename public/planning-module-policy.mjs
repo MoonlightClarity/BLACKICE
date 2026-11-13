@@ -13,7 +13,7 @@ export const PLANNING_ONTOLOGY_MODULES = Object.freeze([
 ]);
 export const DEFAULT_PLANNING_ONTOLOGY = Object.freeze({
   version: 2,
-  modules: Object.freeze(Object.fromEntries(PLANNING_ONTOLOGY_MODULES.map(({id}) => [id, true]))),
+  modules: Object.freeze(Object.fromEntries(PLANNING_ONTOLOGY_MODULES.map(({id}) => [id, id === 'subagents']))),
 });
 const ids = new Set(PLANNING_ONTOLOGY_MODULES.map(({id}) => id));
 const validRecord = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -82,7 +82,7 @@ export function planningOntologyInstructions(config) {
   return [
     'BLACKICE PLANNING MODULES — ON / OFF',
     'The listed On/Off modules are explicit user choices. On means apply the module at the relevant stage of this task. Off means do not invoke that module. Do not change these module choices during a task.',
-    'DEFAULT DELEGATION: Delegate distinct parallelizable work when supported and worthwhile, then reconcile actual worker results. Delegation is automatic and follows runtime capability and capacity; it has no separate Planning On/Off choice.',
+    'OPTIONAL DELEGATION: The delegation tool remains available. Use it when the user requests delegation or expected task benefit outweighs coordination, latency and token cost; otherwise work directly. Reconcile actual worker results. Availability does not require a separate worker or imply a default-on reasoning module.',
     'Enabled modules cooperate with Directory execution and its persisted evidence. Carry observations and dependencies forward across fresh contexts. A context reset does not invalidate recorded observations or end the delegated task.',
     on.length?'ON: '+on.join('; '):'All Planning modules are Off.',
     off.length?'OFF: '+off.join('; '):'No Planning modules are Off.',

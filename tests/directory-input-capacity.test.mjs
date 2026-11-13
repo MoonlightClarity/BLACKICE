@@ -46,7 +46,7 @@ test('direct Chat start admits long Directory tasks while preserving explicit or
   const calls=[],engine={startRun:value=>(calls.push(value),{id:'fixture-run',status:'queued'}),runtime:{status:()=>({defaultModel:'fixture'})}};
   const tool=chatGPTStartChatTool({engine,defaultCwd:os.tmpdir()}),message='a'.repeat(50001)+'LAST_CHARACTER';
   assert.equal(tool.definition.inputSchema.properties.message.maxLength,undefined);
-  await tool.execute({requestId:'large-directory',message},{client:{id:'fixture-owner'}});
+  await tool.execute({requestId:'large-directory',directoryMode:'on',message},{client:{id:'fixture-owner'}});
   assert.equal(calls[0].input.task,message);assert.equal(calls[0].input.directoryMode,'on');
   await assert.rejects(tool.execute({requestId:'large-ordinary',message,directoryMode:'off'},{client:{id:'fixture-owner'}}),/50,000/);
 });

@@ -24,7 +24,7 @@ const run=(id,modes={directoryMode:'auto',subagentsMode:'default'})=>({
 });
 test('Directory stays conversation-scoped while retired subagent preferences normalize to default',()=>{
  const storage=store(),value={directoryMode:'on',subagentsMode:'off'},expected={...value,subagentsMode:'default'};
- assert.deepEqual(readConversationExecutionModes({storage}),{directoryMode:'on',subagentsMode:'default'});
+ assert.deepEqual(readConversationExecutionModes({storage}),{directoryMode:'off',subagentsMode:'default'});
  assert.equal(normalizeChatOptions({...value,planningMode:'off'}).directoryMode,'on');
  for(const subagentsMode of ['on','off'])assert.equal(normalizeChatOptions({...value,subagentsMode}).subagentsMode,'default');
  assert.deepEqual(saveConversationExecutionModes({storage,...value}),expected);
@@ -32,8 +32,8 @@ test('Directory stays conversation-scoped while retired subagent preferences nor
  assert.equal(transferNewExecutionModes({storage,conversationId:'one'}),true);
  assert.deepEqual(readConversationExecutionModes({storage,conversationId:'one'}),expected);
  assert.deepEqual(JSON.parse(storage.getItem('blackice.next.chatExecution.one')),expected);
- assert.deepEqual(readConversationExecutionModes({storage,conversationId:'two'}),{directoryMode:'on',subagentsMode:'default'});
- assert.deepEqual(readConversationExecutionModes({storage,conversationId:'new'}),{directoryMode:'on',subagentsMode:'default'});
+ assert.deepEqual(readConversationExecutionModes({storage,conversationId:'two'}),{directoryMode:'off',subagentsMode:'default'});
+ assert.deepEqual(readConversationExecutionModes({storage,conversationId:'new'}),{directoryMode:'off',subagentsMode:'default'});
  assert.throws(()=>saveConversationExecutionModes({storage,conversationId:'one',directoryMode:'unknown'}));
  const projected=projectFamily({rootId:'one',state:'active',runs:[run('one',value)]});
  assert.deepEqual(projected.runs[0].executionModes,value,'worker projection must retain admitted runtime choices');

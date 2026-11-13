@@ -22,7 +22,7 @@ function testDOM(t){
 test('switching saved conversations restores each policy ahead of changing global defaults',async t=>{
  const dom=testDOM(t),stored=new Map(),oldStorage=globalThis.localStorage,oldWorker=globalThis.Worker;
  globalThis.localStorage={getItem:key=>stored.get(key)||null,setItem:(key,value)=>stored.set(key,String(value)),removeItem:key=>stored.delete(key)};
- const a=normalizePlanningOntology({modules:{inference:'mandatory'}}),b=normalizePlanningOntology({modules:{inference:'forbidden'}});
+ const a=normalizePlanningOntology({modules:{inference:'mandatory'}}),b=normalizePlanningOntology({modules:{inference:'forbidden',decomposition:'mandatory'}});
  const defaults=normalizePlanningOntology({modules:{inference:'auto'}});
  const families=new Map(['one','two'].map((id,i)=>[id,{rootId:id,state:'active',runs:[{
    id,taskId:id,createdAt:'2026-11-11T12:00:00Z',input:'A task',status:'completed',settled:true,
@@ -70,7 +70,7 @@ test('mounted Chat composer uses 16 explicit On/Off checkboxes and persists only
  const dom=testDOM(t),stored=new Map(),oldStorage=globalThis.localStorage,oldWorker=globalThis.Worker;
  globalThis.localStorage={getItem:key=>stored.get(key)||null,setItem:(key,value)=>stored.set(key,String(value)),removeItem:key=>stored.delete(key)};
  delete globalThis.Worker;
- const defaults=normalizePlanningOntology({modules:{feasibility:'forbidden'}});
+ const defaults=normalizePlanningOntology({modules:{feasibility:'forbidden',inference:'mandatory',anti_overalignment:'mandatory'}});
  const status={cwd:'C:\\fixture',defaultModel:'fixture',models:[{id:'fixture',available:true}],runtimeSettings:{planningOntology:defaults}};
  const api=async(route,method,body)=>{
    if(route.startsWith('/api/conversations'))return{conversations:[]};

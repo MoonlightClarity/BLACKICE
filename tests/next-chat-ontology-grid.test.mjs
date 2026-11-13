@@ -26,7 +26,7 @@ test('every Chat module import is registered with the server',()=>{
  for(const route of ["'chat/chat.mjs'","'chat/ontology-preferences.mjs'","'chat/reader-model.mjs'","'planning-module-policy.mjs'"])assert.ok(server.includes(route),'Missing '+route);
 });
 test('one Boolean module edit preserves every unrelated choice',()=>{
- const defaults=normalizePlanningOntology();assert.ok(Object.values(defaults.modules).every(x=>x===true));
+ const defaults=normalizePlanningOntology({version:2,modules:{verification:true}});assert.equal(defaults.modules.verification,true);assert.equal(defaults.modules.inference,false);
  const off=updatedGridOntology(defaults,'verification','off');assert.equal(off.modules.verification,false);assert.equal(gridOntologyState(off,'verification'),'off');
  for(const {id} of PLANNING_ONTOLOGY_MODULES)if(id!=='verification')assert.equal(off.modules[id],defaults.modules[id]);
  const on=updatedGridOntology(off,'verification','on');assert.deepEqual(on,defaults);assert.equal('autoSelect' in on,false);
@@ -52,9 +52,9 @@ test('conversation draft > saved run > defaults with no cross-chat leakage',()=>
  const followup=readConversationOntology({conversationId:'one',storage:mem,runs:[...runs,{id:'a2',planningMode:'off'}],defaults:saved});assert.equal(followup.planningMode,'ontology');assert.equal(followup.planningOntology.modules.decomposition,false);
 });
 test('draft choices transfer to the new saved chat without becoming global defaults',()=>{
- const mem=storage(),policy=normalizePlanningOntology({version:2,modules:{branching:false}});saveConversationOntology({conversationId:'new',storage:mem,planningOntology:policy});
- assert.equal(transferNewOntology({conversationId:'conversation_1',storage:mem}),true);assert.equal(readConversationOntology({conversationId:'conversation_1',storage:mem}).planningOntology.modules.branching,false);
- assert.equal(readConversationOntology({conversationId:'new',storage:mem}).planningOntology.modules.branching,true);assert.equal(transferNewOntology({conversationId:'conversation_1',storage:mem}),false);
+ const mem=storage(),policy=normalizePlanningOntology({version:2,modules:{branching:true}});saveConversationOntology({conversationId:'new',storage:mem,planningOntology:policy});
+ assert.equal(transferNewOntology({conversationId:'conversation_1',storage:mem}),true);assert.equal(readConversationOntology({conversationId:'conversation_1',storage:mem}).planningOntology.modules.branching,true);
+ assert.equal(readConversationOntology({conversationId:'new',storage:mem}).planningOntology.modules.branching,false);assert.equal(transferNewOntology({conversationId:'conversation_1',storage:mem}),false);
 });
 test('worker projects saved per-run policy without exposing private traces',()=>{
  const policy=normalizePlanningOntology({version:2,modules:{inference:false,subagents:true}});

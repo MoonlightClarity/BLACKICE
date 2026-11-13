@@ -83,35 +83,42 @@ Direct actions have durable identifiers and saved results. If the connection dro
 
 The installed Windows account and available applications determine which files and commands the host can use.
 
-## Planning you can configure for the task
+## Reasoning is a trade-off, not an upgrade switch
 
-Planning methods have explicit **On/Off** controls, and their choices belong to the current conversation. All nine methods default to **On**. You can change individual methods, save defaults for new conversations, or turn Planning off.
+**The eight selectable Planning modules and Directory mode default to Off.** Existing saved conversation choices and user-saved defaults are preserved. Start with direct execution, enable the smallest relevant set, and keep a feature on only when its expected benefit warrants its cost. More reasoning machinery can take longer, consume more tokens, introduce unnecessary constraints, or reduce quality.
 
-The methods address different sources of wasted work:
+A useful module is not necessarily a good default. Default-on requires repeated, low-opportunity-cost value across representative tasks, not one successful example. Modules without an identified use case should not be part of a recommended preset; absence of evidence alone is not proof that the capability should be deleted.
 
-| Method | Question it helps the agent answer | Benefit to the user |
+| Optional module | A reason to try it | Opportunity cost / when to leave it Off |
 | --- | --- | --- |
-| **Intent inference** | What outcome does the user actually want, and which constraints matter? | Reduces work aimed at the wrong interpretation of the request. |
-| **Feasibility** | What information, tools, access, or prerequisites does this task really need? | Identifies concrete dependencies early and separates them from assumptions. |
-| **Task decomposition** | Which parts can be acted on, and what depends on what? | Makes complex work easier to continue, delegate, and review. |
-| **Conditional logic** | What should happen if an observation changes the next step? | Gives branching workflows a clear response to different results. |
-| **Recursive reassessment** | What should change after new evidence arrives? | Lets the approach adapt while retaining useful progress. |
-| **Metacognition** | Which assumptions or judgments deserve another check? | Helps catch consequential reasoning errors before they spread. |
-| **Anti-overalignment calibration** | Is an apparent restriction actually binding, and how does it affect the user's objective? | Helps prevent invented requirements, unnecessary questions, and excessive deference from blocking useful work. |
-| **Outcome verification** | What evidence establishes that the requested result happened? | Makes completion claims easier to trust and inspect. |
-| **Subagent orchestration** | Would separate workers improve this task enough to justify their overhead? | Supports parallel work where it offers a practical payoff. |
+| **Intent inference** | A request has consequential competing interpretations. | Extra interpretation can overcomplicate a clear instruction. |
+| **Feasibility** | Real capabilities or dependencies could change the approach. | Speculative prerequisites can delay work that could simply start. |
+| **Task decomposition** | Separable steps or dependencies make a complex task easier to execute. | Planning overhead and fragmented context can outweigh benefits on small work. |
+| **Conditional logic** | Observed facts create meaningful alternative actions. | Enumerating hypothetical branches adds distraction. |
+| **Recursive reassessment** | New evidence may invalidate earlier choices. | Repeated reconsideration can reopen resolved issues and loop. |
+| **Metacognition** | A material assumption deserves a focused challenge. | Repeated self-critique may add doubt without new evidence. |
+| **Anti-overalignment calibration** | Invented requirements or excessive deference obstruct an authorized goal. | Calibration text and extra review can cost more than they recover on straightforward work. |
+| **Outcome verification** | A consequential result needs checking against tool observations. | Review adds latency and tokens, and a reviewer can itself be wrong. |
 
-**Why this helps:** you can shape the reasoning around the task. A straightforward file edit and an uncertain research problem can use different methods. These controls do not silently change the selected model or start a second reasoning model.
+On/Off choices belong to the conversation and can be saved as defaults for new chats. Off disables the additional module, not the model's ordinary ability to reason, follow instructions or use tools. Turning modules on does not switch the selected model. Some methods add guidance within a call; verification, reassessment and calibration can also activate completion review and further calls. Count actual calls and results, not just enabled toggles.
 
-User advocacy is part of this design. BLACKICE's reasoning guidance asks the agent to distinguish hard constraints from preferences, use available context, and make supported routine decisions. A blocked step should be handled at the smallest practical scope so other actionable work can continue.
+Delegation is a separate tool capability, not a ninth selectable Planning module. It remains available for requested or worthwhile parallel work. Each worker has context, token and coordination costs; availability is not a requirement to spawn one.
 
-## Long tasks with fresh context and saved work
+### What the evidence currently supports
 
-Longer tasks accumulate sources, intermediate findings, decisions, and unfinished steps. **Directory mode** gives that work a persistent structure. It has its own **On/Off** control, separate from the choice of Planning methods.
+The current development benchmarks show trade-offs, not a universal winner. Directory has helped preserve or recover requirements in some runs, but takes additional time and model calls. All-modules configurations have not consistently outperformed direct execution and have sometimes produced lower-quality artifacts. A frozen grader score also missed a receipt defect in an earlier direct baseline; a later failure involved an ambiguous interpretation of an existing lookup contract.
 
-Directory runs focused stages with a **fresh model context for each stage**. It loads the stage's saved inputs and relevant material, supplies the user's authoritative instructions, and records the outputs and source references under the conversation. Later stages can reopen that work as they need it. Saved conversation history remains available.
+A later matched evidence task on 2.39.77 showed a substantial benefit from intent inference + outcome verification + Directory: 12/12 functional checks and 76/100 quality, versus 1/12 and 0/100 for direct execution. That benefit cost 295.907 seconds and about 2.625 million tokens, versus 30.847 seconds and 223,746 tokens. This is a reason to retain and selectively use the combination, not evidence that it should run on every task.
 
-**Why this helps:** each step can focus on the material it needs while earlier work stays available for reuse. A long task can span multiple model calls, and you can inspect what each stage received and produced. This supports continuity and reduces the need to reconstruct the task from memory. Each call still uses the selected model's actual context capacity.
+These remain small, task- and model-specific observations across source revisions and some reused historical controls. The newer 2.39.79 behavior has not been validated by those older trials. They do not establish causal improvement, statistical consistency, or a universal best configuration. Continue root-cause hardening and matched retesting before pruning capabilities. Benchmark selection must not tune the worker to hidden tests.
+
+Evaluate **verified quality alongside wall time, model calls, tokens, retries, and useful work forgone**. Compare the same task, model, source revision and grading contract; retain failures and distinguish maintenance/setup failures from model behavior. Stop demonstrated no-progress loops, not productive work merely because a timer elapsed. See [benchmark trade-off protocol](docs/PLANNING-TRADEOFFS.md).
+
+## Directory: continuity at a cost
+
+**Directory mode is independently opt-in.** It gives long work a persistent structure and runs focused stages with a fresh model context for each stage. Stages load saved inputs, relevant material and user instructions, then record outputs and source references for later use.
+
+Try it when a task genuinely benefits from staged work, context isolation, durable evidence or recovery across a long run. Leave it Off when a direct context can comfortably handle the task. Saved handoffs, repeated context loading and review can increase latency and token use; they can also lose nuance or amplify a mistaken interpretation. Directory is not a guaranteed quality improvement or free extra context capacity. Each call still uses the selected model's actual context limit.
 
 Context audits expose the conversation's model turns, saved inputs, and recorded results. The current audit viewer is for inspection. Supported context tools can correct designated retained information, record the revision, and identify derived results that need rebuilding.
 

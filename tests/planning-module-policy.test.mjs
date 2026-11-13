@@ -20,22 +20,22 @@ test('selectable modules retain On/Off choices while retired delegation choices 
   const base=normalizePlanningOntology();
   assert.equal(base.version,2);assert.equal(Object.hasOwn(base,'autoSelect'),false);
   assert.equal(PLANNING_ONTOLOGY_MODULES.length,9);
-  assert.ok(PLANNING_ONTOLOGY_MODULES.every(module=>base.modules[module.id]===true));
+  assert.ok(PLANNING_ONTOLOGY_MODULES.every(module=>base.modules[module.id]===(module.id==='subagents')));
   const legacy={version:1,autoSelect:false,modules:{inference:'mandatory',decomposition:'forbidden',subagents:'forbidden'}};
   const before=structuredClone(legacy),custom=normalizePlanningOntology(legacy);
   assert.deepEqual(legacy,before,'Historical input is not rewritten.');
-  assert.equal(custom.modules.inference,true);assert.equal(custom.modules.feasibility,true);
+  assert.equal(custom.modules.inference,true);assert.equal(custom.modules.feasibility,false);
   assert.equal(custom.modules.decomposition,false);assert.equal(custom.modules.subagents,true);
   const instructions=planningOntologyInstructions(custom);
   assert.match(instructions,/ON:.*Intent inference/);assert.match(instructions,/OFF:.*Task decomposition/);
   assert.match(instructions,/do not invent extra steps, new hard gates/i);
   assert.doesNotMatch(instructions,/AUTOMATIC SELECTION|MANDATORY:|FORBIDDEN:/);
-  assert.match(instructions,/DEFAULT DELEGATION:.*when supported and worthwhile/);
+  assert.match(instructions,/OPTIONAL DELEGATION:.*benefit outweighs/);
   assert.doesNotMatch(instructions,/^(?:ON|OFF):.*Subagent orchestration/m);
   for(const module of PLANNING_ONTOLOGY_MODULES){
     const policy=normalizePlanningOntology({version:2,modules:{[module.id]:false}});
     const automatic=module.id==='subagents';
-    assert.equal(policy.modules[module.id],automatic);assert.equal(Object.values(policy.modules).filter(v=>v===false).length,automatic?0:1);
+    assert.equal(policy.modules[module.id],automatic);assert.equal(Object.values(policy.modules).filter(v=>v===false).length,8);
   }
   for(const value of [{modules:{unknown:true}},{modules:{inference:'forced'}},{autoSelect:'yes'},
     {version:3},{version:2,autoSelect:false},{version:2,modules:{inference:'mandatory'}}])
@@ -74,7 +74,7 @@ test('anti-overalignment calibrates inference without records-only gates and pre
     /never fabricated completion/,
     /No separate per-action checklist/i
   ])assert.match(instruction,expectation);
-  const policy=normalizePlanningOntology();
+  const policy=normalizePlanningOntology({version:2,modules:{anti_overalignment:true}});
   assert.equal(policy.modules.anti_overalignment,true);
   assert.match(planningOntologyInstructions(policy),/MINIMUM-SCOPE BLOCKING/);
   const explicitOverride=normalizePlanningOntology({modules:{anti_overalignment:'forbidden'}});
@@ -89,7 +89,7 @@ test('direct ChatGPT ontology tool reads and saves the same runtime default atom
   const tool=planningOntologyDirectTool({runtimeSettings:settings});
   assert.equal(tool.definition.name,'blackice_planning_ontology');
   const initial=content(await tool.execute({requestId:'ont-get-1',action:'get'}));
-  assert.equal(initial.policy.modules.verification,true);
+  assert.equal(initial.policy.modules.verification,false);
   assert.equal(initial.modules.length,9);
   const selected={autoSelect:false,modules:{verification:'mandatory',decomposition:'forbidden',subagents:'forbidden'}};
   const result=content(await tool.execute({requestId:'ont-set-1',action:'set',ontology:selected}));
@@ -131,7 +131,7 @@ test('new ontology chats retain Planning choices and default delegation on conti
   const engine=await new HarnessEngine({runtime,tasks,dataDir:directory,defaultCwd:cwd}).init();
   engine.runtimeSettings={get:()=>({executionGuardrails:true,subagentsEnabled:true})};
   t.after(async()=>{await engine.close();await tasks.close();await rm(directory,{recursive:true,force:true});});
-  const policy=normalizePlanningOntology({autoSelect:true,modules:{decomposition:'forbidden',subagents:'forbidden',verification:'mandatory'}});
+  const policy=normalizePlanningOntology({autoSelect:true,modules:{decomposition:'forbidden',subagents:'forbidden',verification:'mandatory',anti_overalignment:'mandatory'}});
   const workflow=createMissionWorkflow({task:'Perform work now',model:'fixture-model',cwd,planningMode:'ontology'});
   const run=engine.startRun({workflow,input:{task:'Perform work now',cwd,planningMode:'ontology',planningOntology:policy}});
   const complete=await waitFor(()=>engine.getRun(run.id));

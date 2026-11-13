@@ -1,5 +1,5 @@
 const modes=value=>({
-  directoryMode:value?.directoryMode==='off'?'off':'on',
+  directoryMode:value?.directoryMode==='on'||value?.directoryMode==='auto'?'on':'off',
   subagentsMode:'default',
 });
 const valid=id=>typeof id==='string'&&/^[a-zA-Z0-9_-]{1,120}$/.test(id);
@@ -12,7 +12,7 @@ export function readConversationExecutionModes({conversationId='new',runs=[],sto
   }catch{}
   return modes(runs.at(-1)?.executionModes);
 }
-export function saveConversationExecutionModes({conversationId='new',directoryMode='on',storage}={}){
+export function saveConversationExecutionModes({conversationId='new',directoryMode='off',storage}={}){
   if(!valid(conversationId)||!['on','off'].includes(directoryMode))throw Error('Choose valid conversation execution modes.');
   const value=modes({directoryMode});storage?.setItem(key(conversationId),JSON.stringify(value));return value;
 }
