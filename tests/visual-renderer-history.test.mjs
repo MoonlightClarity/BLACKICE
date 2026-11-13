@@ -8,12 +8,13 @@ import {compileVisual as original,VISUAL_EXAMPLE} from '../public/visual-documen
 import {compileVisual as composition,VISUAL_COMPOSITION_EXAMPLE} from '../public/visual-document-renderer-composition.mjs';
 import {compileVisual as geometry} from '../public/visual-document-renderer-geometry.mjs';
 import {compileVisual as current} from '../public/visual-document.mjs';
+import {compileVisual as clamped} from '../public/visual-document-renderer-clamped.mjs';
 
 test('current writer matches the registered geometry renderer',()=>{
  for(const document of [VISUAL_EXAMPLE,VISUAL_COMPOSITION_EXAMPLE])assert.deepEqual(current(document),geometry(document),'Register a new immutable renderer before changing persisted output.');
 });
 
-for(const [name,render,document] of [['original',original,VISUAL_EXAMPLE],['composition',composition,VISUAL_COMPOSITION_EXAMPLE],['geometry',geometry,VISUAL_COMPOSITION_EXAMPLE]]){
+for(const [name,render,document] of [['original',original,VISUAL_EXAMPLE],['composition',composition,VISUAL_COMPOSITION_EXAMPLE],['geometry',geometry,VISUAL_COMPOSITION_EXAMPLE],['clamped',clamped,VISUAL_EXAMPLE]]){
  test('reads and revises unversioned '+name+' renderer output exactly',async t=>{
   const dir=await mkdtemp(path.join(tmpdir(),'visual-renderer-history-'));t.after(()=>rm(dir,{recursive:true,force:true}));
   const store=new VisualArtifacts({dataDir:dir});
