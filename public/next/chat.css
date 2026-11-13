@@ -186,3 +186,5 @@
 #next-chat-goal-limit{width:160px}
 #next-chat-goal-error{color:var(--text-primary);border-left:2px solid var(--accent);padding-left:10px}
 @media(max-width:600px){.next-chat-goal-card{padding:9px 10px}.next-chat-goal-heading{gap:6px}#next-chat-goal-progress{width:100%;margin-left:0}.next-chat-goal-dialog form{gap:12px}}
+
+.next-chat-efficiency-warning{margin:8px 0;padding:6px 10px;border:1px solid #b49335;border-radius:5px;color:#f4d778;background:#302a18;font-size:12px}

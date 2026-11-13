@@ -372,6 +372,12 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
       if(failure.code)text(heading,failure.code,'code','next-chat-run-error-code');
       text(panel,failure.message,'p','next-chat-run-error-message');
     }
+    const recoveryEvent=[...(run.events||[])].reverse().find(event=>event.data?.type==='planning.reassessment'&&event.data?.module==='modular-outcome');
+    const recoveryStatus=run.outcomeRecoveryByNode?Object.entries(run.outcomeRecoveryByNode).some(([id,status])=>status==='recovering'&&(!run.nodes?.[id]?.status||run.nodes[id].status==='running'))?'recovering':'inactive':recoveryEvent?.data?.status;
+    if(running(run)&&recoveryStatus==='recovering'){
+      const warning=text(section,'Efficiency warning: trying a different approach.','div','next-chat-efficiency-warning');
+      warning.setAttribute('role','status');warning.setAttribute('aria-live','polite');
+    }
     if(running(run)){
       const live=text(section,'','div','next-chat-activity');
       live.dataset.liveOutput=run.id;live.setAttribute('role','status');

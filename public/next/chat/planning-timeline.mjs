@@ -52,6 +52,10 @@ export function planningActivityForEvent(runId, event, previousState = null, ord
     return [];
   }
   if (data.type === 'planning.reassessment') {
+    if(data.module==='modular-outcome'&&['recovering','stalled'].includes(data.reviewStatus))return [{
+      id:'return:'+runId+':'+nodeId+':outcome:'+data.sequence+':'+data.reviewStatus,phase:'plan',source:'runtime-reassessment',at,order,nodeId,
+      title:data.reviewStatus==='recovering'?'Efficiency warning: trying a different approach':'Recovery stopped without progress',
+      text:clean(data.reviewReason),status:data.reviewStatus}];
     const goalStatus = data.goalStatus === 'blocked' && data.reviewStatus === 'stalled' ? 'stalled' : data.goalStatus;
     if (data.persistentGoal && ['active', 'blocked', 'stalled', 'complete'].includes(goalStatus)) {
       const titles = { active: 'Working toward the goal', blocked: 'Goal needs attention', stalled: 'Goal progress stalled', complete: 'Goal verified' };
@@ -118,7 +122,7 @@ function publicActivity(value) {
     ...(value.source === 'outcome' && clean(value.criterionId, 120) ? { criterionId: clean(value.criterionId, 120), observedCount: Number.isSafeInteger(value.observedCount) && value.observedCount >= 0 ? value.observedCount : 0, targetCount: Number.isSafeInteger(value.targetCount) && value.targetCount > 0 ? value.targetCount : 1 } : {}),
     ...(['continue', 'respond', 'blocked'].includes(value.decision) ? { decision: value.decision } : {}),
     ...(value.decision === 'continue' && clean(value.nextStepId, 120) ? { nextStepId: clean(value.nextStepId, 120) } : {}),
-    ...(['done', 'blocked', 'continuing', 'stalled', 'required', 'stale'].includes(value.status) ? { status: value.status } : {}) };
+    ...(['done', 'blocked', 'continuing', 'stalled', 'required', 'stale', 'recovering'].includes(value.status) ? { status: value.status } : {}) };
 }
 
 export function projectPlanningActivity(run, { previousState = null } = {}) {

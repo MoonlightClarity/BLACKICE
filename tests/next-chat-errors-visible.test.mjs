@@ -148,3 +148,22 @@ test('exact duplicate suppression preserves different node errors even when one 
   paintHistory({timeline},[updated]);
   assert.deepEqual(diagnostics(),[detail,primary,other],'Live primary changes do not hide a distinct earlier node error.');
 });
+
+
+test('recovery efficiency tag is visible while steering and removed on terminal failure',()=>{
+ const timeline=fakeTimeline();
+ const run=savedRun('recovery',{status:'running',settled:false,nodes:{agent:{status:'running'}},outcomeRecoveryByNode:{agent:'recovering',other:'reviewing'},events:[]});
+ paintHistory({timeline},[run]);
+ const tag=descendants(timeline,n=>n.className==='next-chat-efficiency-warning')[0];
+ assert.ok(tag);assert.equal(tag.attributes.role,'status');assert.match(tag.textContent,/Efficiency warning/);assert.equal(errors(timeline).length,0);
+ run.status='failed';run.settled=true;run.error='Recovery made no progress';run.errorCode='MODULAR_OUTCOME_STALLED';
+ paintHistory({timeline},[run]);
+ assert.equal(descendants(timeline,n=>n.className==='next-chat-efficiency-warning').length,0);
+ assert.match(errors(timeline)[0].textContent,/MODULAR_OUTCOME_STALLED/);
+});
+
+ test('reloaded active recovery preserves only compact warning status',()=>{
+ const run=savedRun('reload',{status:'running',settled:false,nodes:{agent:{status:'running',modularReview:{status:'recovering'}}}});
+ const projected=projectFamily({runs:[run]}).runs[0];assert.equal(projected.outcomeRecoveryByNode.agent,'recovering');
+ const timeline=fakeTimeline();paintHistory({timeline},[projected]);assert.equal(descendants(timeline,n=>n.className==='next-chat-efficiency-warning').length,1);
+ });

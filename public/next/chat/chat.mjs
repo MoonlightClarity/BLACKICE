@@ -623,6 +623,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       }
     }
     if(event.type==='agent.event' && data.type==='planning.reassessment'){
+      if(data.module==='modular-outcome'){currentRun.outcomeRecoveryByNode||={};currentRun.outcomeRecoveryByNode[event.nodeId||'agent']=data.status;}
       currentRun.planningActivity=mergePlanningActivity(currentRun.planningActivity,
         planningActivityForEvent(currentRun.id,event,null,nextOrder()));
       render({preserve:true});

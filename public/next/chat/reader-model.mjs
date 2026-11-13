@@ -65,6 +65,7 @@ export function projectFamily(family) {
           id:a.id,title:a.title,fileName:a.fileName,contentType:a.contentType,size:a.size,sha256:a.sha256,
         })),
       },
+      outcomeRecoveryByNode:Object.fromEntries(Object.entries(run.nodes||{}).map(([id,node])=>[id,node?.status==='running'?node?.modularReview?.status||'inactive':'inactive'])),
       nodes,precomputedMessages:messages,planningActivity:projectPlanningActivity(run),events:[],
     };
   });
