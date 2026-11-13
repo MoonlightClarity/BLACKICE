@@ -225,3 +225,153 @@ test('editing one field does not promote unchanged generated values into user co
   await f.dom.input('[data-context-field="finding"]','My updated correction');await f.dom.click('.next-directory-save');
   assert.deepEqual(f.calls.find(call=>call.method==='POST').body.changes,{finding:'My updated correction'});
 });
+
+
+const flushRefresh=()=>new Promise(resolve=>setImmediate(resolve));
+async function refreshTick(t){t.mock.timers.tick(2000);await flushRefresh();}
+
+test('open Directory audit refreshes new context and model turns without reopening',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f=fixture(t);await f.inspector.open();
+  const scope=f.scopes.get('run-a'),turn={id:'run-a-t0002',runId:'run-a',label:'work',module:'modules/2'};
+  scope.get('conversation/context/turns.json').value.push(turn);
+  scope.set('runs/run-a/turns/run-a-t0002.json',{value:turn,editableFields:[]});
+  await refreshTick(t);
+  const overview=JSON.parse(f.dom.$('.next-directory-contents').value);
+  assert.equal(overview.auditRecords,2);assert.equal(overview.contextFiles,6);
+  assert.equal(f.dom.$('.next-directory-inspector').open,true);
+  await f.dom.click('[data-context-tab="turns"]');
+  assert.ok(f.dom.$('[data-context-file="runs/run-a/turns/run-a-t0002.json"]'));
+  assert.equal(f.calls.filter(row=>row.method!=='GET').length,0);
+});
+
+test('live refresh preserves selected file, filter and scroll while updating its contents',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f=fixture(t);await f.inspector.open();await f.openFile(resultFile);
+  f.dom.$('.next-directory-filter').value='result';
+  f.dom.$('.next-directory-contents').scrollTop=117;f.dom.$('.next-directory-records').scrollTop=42;
+  f.scopes.get('run-a').get(resultFile).value.finding='Fresh finding';
+  await refreshTick(t);
+  assert.equal(JSON.parse(f.dom.$('.next-directory-contents').value).finding,'Fresh finding');
+  assert.equal(f.dom.$('.next-directory-file-label').textContent,resultFile);
+  assert.equal(f.dom.$('.next-directory-filter').value,'result');
+  assert.equal(f.dom.$('.next-directory-contents').scrollTop,117);
+  assert.equal(f.dom.$('.next-directory-records').scrollTop,42);
+});
+
+test('refresh pauses for drafts and cannot replace a draft started during its pending read',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f=fixture(t);await f.inspector.open();await f.openFile(resultFile);
+  const pending=deferred();f.hook(route=>route==='/api/shadowdancer/context?runId=run-a'?pending.promise:undefined);
+  t.mock.timers.tick(2000);await flushRefresh();
+  await f.dom.click('.next-directory-edit');await f.dom.input('[data-context-field="finding"]','Keep my draft');
+  pending.resolve(await f.request('/api/shadowdancer/context?runId=run-a'));await flushRefresh();
+  const count=f.calls.length;await refreshTick(t);
+  assert.equal(f.calls.length,count);assert.equal(f.dom.$('[data-context-field="finding"]').value,'Keep my draft');
+  f.hook(()=>undefined);await f.dom.click('.next-directory-cancel');await refreshTick(t);
+  assert.ok(f.calls.length>count);
+});
+
+test('live refresh has no overlapping request cycles and close prevents late updates',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f=fixture(t);await f.inspector.open();const pending=deferred();
+  f.hook(route=>route==='/api/shadowdancer/context?runId=run-a'?pending.promise:undefined);
+  t.mock.timers.tick(2000);await flushRefresh();const count=f.calls.length;
+  t.mock.timers.tick(10000);await flushRefresh();assert.equal(f.calls.length,count);
+  await f.dom.click('.next-directory-close');
+  pending.resolve(await f.request('/api/shadowdancer/context?runId=run-a'));await flushRefresh();
+  t.mock.timers.tick(10000);await flushRefresh();
+  assert.equal(f.calls.length,count);assert.equal(f.dom.$('.next-directory-inspector').open,false);
+});
+
+test('hidden pages skip audit polling and selected foreign conversation remains selected',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f=fixture(t);await f.inspector.open();await f.select('run-b');await f.openFile(sourceFile);
+  await f.dom.visibility('hidden');const count=f.calls.length;await refreshTick(t);assert.equal(f.calls.length,count);
+  f.scopes.get('run-b').get(sourceFile).value.finding='B updated';
+  await f.dom.visibility('visible');await refreshTick(t);
+  assert.equal(f.dom.$('.next-directory-conversation').value,'run-b');
+  assert.equal(JSON.parse(f.dom.$('.next-directory-contents').value).finding,'B updated');
+});
+
+test('late refresh cannot overwrite a newly selected conversation',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f=fixture(t);await f.inspector.open();const pending=deferred();
+  f.hook(route=>route==='/api/shadowdancer/context?runId=run-a'?pending.promise:undefined);
+  t.mock.timers.tick(2000);await flushRefresh();await f.select('run-b');
+  pending.resolve(await f.request('/api/shadowdancer/context?runId=run-a'));await flushRefresh();
+  assert.equal(f.dom.$('.next-directory-conversation').value,'run-b');
+  assert.match(f.dom.$('.next-directory-contents').value,/B notes/);
+  f.hook(()=>undefined);await refreshTick(t);assert.equal(f.dom.$('.next-directory-conversation').value,'run-b');
+});
+
+test('live history refresh retains older loaded changes and updates pagination',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f=fixture(t),rows=Array.from({length:83},(_,i)=>({id:'edit-'+i,file:resultFile,action:'edit',at:'2026-11-13'}));
+  f.hook((route,method)=>{const u=new URL(route,'http://fixture');if(method==='GET'&&u.pathname.endsWith('/audit')){
+    const offset=Number(u.searchParams.get('offset')||0),items=rows.slice(offset,offset+80);
+    return Promise.resolve({items,total:rows.length,nextOffset:offset+items.length<rows.length?offset+items.length:null});
+  }});
+  await f.inspector.open();await f.dom.click('[data-context-tab="history"]');await f.dom.click('.next-directory-history-more');
+  rows.unshift({id:'new-edit',file:'new-file',action:'edit',at:'2026-11-13'});await refreshTick(t);
+  assert.equal(f.dom.$('.next-directory-records').querySelectorAll('button').length,84);
+  assert.match(f.dom.$('.next-directory-records').textContent,/new-file/);
+  assert.equal(f.dom.$('.next-directory-history-more').hidden,true);
+});
+
+test('failed background refresh retains readable content and retries next cycle',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f=fixture(t);await f.inspector.open();await f.openFile(resultFile);
+  const before=f.dom.$('.next-directory-contents').value;
+  f.hook(route=>route==='/api/shadowdancer/context?runId=run-a'?Promise.reject(Error('Temporary failure')):undefined);
+  await refreshTick(t);assert.equal(f.dom.$('.next-directory-contents').value,before);
+  assert.match(f.dom.$('.next-directory-status').textContent,/refresh failed/);
+  f.hook(()=>undefined);f.scopes.get('run-a').get(resultFile).value.finding='Recovered';await refreshTick(t);
+  assert.equal(JSON.parse(f.dom.$('.next-directory-contents').value).finding,'Recovered');
+});
+
+test('unchanged listings avoid refetching large turns and selected context bytes',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f=fixture(t);await f.inspector.open();await f.openFile(resultFile);
+  const count=f.calls.length;await refreshTick(t);await refreshTick(t);
+  assert.deepEqual(f.calls.slice(count).map(row=>row.route),[
+    '/api/shadowdancer/context?runId=run-a','/api/shadowdancer/context?runId=run-a']);
+});
+
+test('more than one new audit page never skips unseen middle records',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f=fixture(t),rows=Array.from({length:100},(_,i)=>({id:'old-'+i,file:resultFile,action:'edit',at:'2026-11-13'}));
+  f.hook((route,method)=>{const u=new URL(route,'http://fixture');if(method==='GET'&&u.pathname.endsWith('/audit')){
+    const offset=Number(u.searchParams.get('offset')||0),items=rows.slice(offset,offset+80);
+    return Promise.resolve({items,total:rows.length,nextOffset:offset+items.length<rows.length?offset+items.length:null});
+  }});
+  await f.inspector.open();await f.dom.click('[data-context-tab="history"]');
+  rows.unshift(...Array.from({length:100},(_,i)=>({id:'new-'+i,file:'new-'+i,action:'edit',at:'2026-11-13'})));
+  await refreshTick(t);await f.dom.click('.next-directory-history-more');
+  assert.ok(f.calls.at(-1).route.endsWith('offset=80'));
+  assert.match(f.dom.$('.next-directory-records').textContent,/new-99/);
+  await f.dom.click('.next-directory-history-more');
+  assert.equal(f.dom.$('.next-directory-records').querySelectorAll('button').length,200);
+});
+test('failed selected-record refresh is retried despite unchanged listing metadata',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f=fixture(t);await f.inspector.open();await f.openFile(resultFile);
+  f.scopes.get('run-a').get(resultFile).value.finding='New value';
+  f.hook(route=>route.includes(encodeURIComponent(resultFile))?Promise.reject(Error('Read temporarily failed')):undefined);
+  await refreshTick(t);f.hook(()=>undefined);await refreshTick(t);
+  assert.equal(JSON.parse(f.dom.$('.next-directory-contents').value).finding,'New value');
+});
+
+test('overview refresh preserves reading scroll and selection',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f=fixture(t);await f.inspector.open();const el=f.dom.$('.next-directory-contents');
+  el.scrollTop=123;el.setSelectionRange(5,20);
+  f.scopes.get('run-a').get(summaryFile).value.userSummary='Updated';
+  await refreshTick(t);assert.equal(el.scrollTop,123);assert.equal(el.selectionStart,5);assert.equal(el.selectionEnd,20);
+});
+test('initial model-turn read failure recovers on the next visible refresh',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f=fixture(t);f.hook(route=>route.includes(encodeURIComponent('conversation/context/turns.json'))?Promise.reject(Error('Temporary turns failure')):undefined);
+  await f.inspector.open();assert.match(f.dom.$('.next-directory-status').textContent,/could not be loaded/);
+  f.hook(()=>undefined);await refreshTick(t);assert.equal(JSON.parse(f.dom.$('.next-directory-contents').value).auditRecords,1);
+});

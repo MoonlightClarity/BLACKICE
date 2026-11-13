@@ -178,6 +178,15 @@ export function createDirectoryInspector({frame,getRunId,getConversationId=()=>n
   let originId='',originScope='',originConversationId='',currentId='',currentConversationId='',currentTab='overview';
   let files=[],turns=[],summary={},contextSummary={},catalog=[],history=null,selected=null,editing=null,fieldEditors=[];
   let generation=0,fileGeneration=0,catalogGeneration=0,busy=false,destroyed=false,historyLoading=false,historyTotal=0,historyNextOffset=null;
+  let refreshTimer=null,refreshController=null,refreshing=false,loading=false,listingVersion='';
+  const versionOf=listing=>JSON.stringify([listing.files,listing.summary,listing.managedSummary,listing.managedSummaryEditMode]);
+  const stopRefresh=()=>{clearTimeout(refreshTimer);refreshTimer=null;refreshController?.abort();refreshController=null;};
+  function scheduleRefresh(){
+    clearTimeout(refreshTimer);
+    if(destroyed||!dialog.open)return;
+    refreshTimer=setTimeout(async()=>{refreshTimer=null;try{await refreshOpen();}finally{scheduleRefresh();}},2000);
+    refreshTimer?.unref?.();
+  }
   const modelLabels=new Set(['decompose','context-page','work','repair','integration','extract-page','page-extract','repository-review']);
   const requestURL=(suffix,runId,file)=>'/api/shadowdancer/context'+suffix+'?runId='+encodeURIComponent(runId)+(file?'&file='+encodeURIComponent(file):'');
   const belongsToCurrent=()=>currentId===originId||Boolean(currentConversationId&&currentConversationId===originConversationId);
@@ -223,11 +232,13 @@ export function createDirectoryInspector({frame,getRunId,getConversationId=()=>n
     selected=null;cancelEdit();generated.hidden=true;generated.open=false;generatedContents.value='';fileLabel.textContent=name;fileNote.textContent=note;contents.value=typeof value==='string'?value:JSON.stringify(value,null,2);contents.scrollTop=0;
   }
   function selectRecord(file){for(const row of records.querySelectorAll('button[data-context-file]'))row.setAttribute('aria-current',String(row.dataset.contextFile===file));}
-  async function readFile(file){
-    if(busy)return;
-    const id=currentId,token=generation,read=++fileGeneration;display(file,'Loading context…');selectRecord(file);
+  async function readFile(file,{preserve=false}={}){
+    if(busy||preserve&&editing)return;
+    const id=currentId,token=generation,read=++fileGeneration;
+    if(!preserve)display(file,'Loading context…');selectRecord(file);
     try{
-      const data=await api(requestURL('/file',id,file));if(!stillHere(token,id)||read!==fileGeneration)return;
+      const data=await api(requestURL('/file',id,file),'GET',undefined,preserve?{signal:refreshController?.signal}:{});if(!stillHere(token,id)||read!==fileGeneration||preserve&&(editing||busy))return;
+      const scroll=contents.scrollTop,start=contents.selectionStart,end=contents.selectionEnd,generatedScroll=generatedContents.scrollTop,expanded=generated.open;
       const managed=Object.hasOwn(data,'managedValue');
       selected={...data,file:data.file||file,value:managed?effectiveValue(data.value,data.managedValue,data.editMode):data.value};contents.value=JSON.stringify(selected.value,null,2);fileLabel.textContent=selected.file;
       generated.hidden=!managed;generated.open=false;generatedContents.value=managed?JSON.stringify(data.value,null,2):'';
@@ -235,10 +246,13 @@ export function createDirectoryInspector({frame,getRunId,getConversationId=()=>n
       fileNote.textContent=[managed?'Your saved context changes are applied to this record.':'',provenance?'Imported context · '+(provenance.title||provenance.conversationId||provenance.sourceConversationId||'another conversation'):
         data.editable?'Edits and deletions change the context used by future Directory work. Saved results may need to be refreshed.':'Saved context record'].filter(Boolean).join(' ');
       updateRecordActions();
-    }catch(error){if(stillHere(token,id)&&read===fileGeneration)display(file,'Read failed: '+error.message);}
+      if(preserve){contents.setSelectionRange(start,end);contents.scrollTop=scroll;generatedContents.scrollTop=generatedScroll;generated.open=expanded;}
+      return true;
+    }catch(error){if(stillHere(token,id)&&read===fileGeneration){if(preserve){listingVersion='';status.textContent='Context refresh failed: '+error.message;}else display(file,'Read failed: '+error.message);}}
   }
   function beginEdit(mode){
     if(!selected?.editable||busy)return;
+    fileGeneration++;
     const fields=selected.editableFields||[];
     editing=mode==='json'||!fields.length||!object(selected.value)?'json':'fields';fieldEditors=[];editFields.replaceChildren();reason.value='';
     contents.hidden=editing==='fields';contents.readOnly=editing!=='json';editPanel.hidden=false;
@@ -320,7 +334,8 @@ export function createDirectoryInspector({frame,getRunId,getConversationId=()=>n
     }catch(error){if(stillHere(token,runId)&&currentTab==='history')display('Changes','Changes could not be loaded: '+error.message);}
     finally{if(stillHere(token,runId)){historyLoading=false;historyMore.disabled=busy;}}
   }
-  function drawRows(){
+  function drawRows({preserve=false}={}){
+    const scroll=records.scrollTop,focused=records.contains(doc.activeElement)?doc.activeElement?.dataset?.contextFile:null;
     records.replaceChildren();historyMore.hidden=currentTab!=='history'||historyNextOffset===null;
     if(currentTab==='overview'){
       const modelCalls=turns.filter(row=>modelLabels.has(row.label)).length;
@@ -348,17 +363,71 @@ export function createDirectoryInspector({frame,getRunId,getConversationId=()=>n
       const control=button('',row.label,row.act);if(row.file)control.dataset.contextFile=row.file;records.append(control);shown++;
     }
     if(!shown)records.append(make('p','',q?'No matching records.':currentTab==='history'&&history===null?'Loading changes…':'No saved records.'));
+    if(preserve){records.scrollTop=scroll;selectRecord(selected?.file);if(focused)for(const row of records.querySelectorAll('button[data-context-file]'))if(row.dataset.contextFile===focused)row.focus({preventScroll:true});return;}
     display(currentTab==='turns'?'Model turns':currentTab==='history'?'Changes':'Context files',shown+(currentTab==='history'&&historyTotal>shown?' of '+historyTotal:'')+' records in this conversation. Select one to view its contents.');
+  }
+  // The inspector is a live view, not an open-time snapshot. Poll only while
+  // visible, never overlap reads, and never replace an edit draft.
+  async function refreshOpen(){
+    if(refreshing||loading||busy||editing||destroyed||!dialog.open||doc.visibilityState==='hidden'||!currentId)return;
+    const id=currentId,token=generation,controller=new AbortController();
+    refreshing=true;refreshController=controller;
+    const here=()=>stillHere(token,id)&&!controller.signal.aborted;
+    const read=url=>api(url,'GET',undefined,{signal:controller.signal});
+    try{
+      const listing=await read(requestURL('',id));if(!here())return;
+      const version=versionOf(listing);
+      if(version===listingVersion&&currentTab!=='history'){
+        if(status.textContent.startsWith('Context refresh failed:'))status.textContent='Context is up to date.';
+        return;
+      }
+      const nextFiles=Array.isArray(listing.files)?listing.files:[];
+      let nextTurns=[];
+      if(nextFiles.some(row=>row.file==='conversation/context/turns.json')){
+        const result=await read(requestURL('/file',id,'conversation/context/turns.json'));if(!here())return;
+        nextTurns=Array.isArray(result.value)?result.value:[];
+      }
+      let audit=null;
+      if(currentTab==='history'&&!historyLoading){
+        audit=await read(requestURL('/audit',id));if(!here())return;
+      }
+      // A user may start editing, saving or navigating while reads are pending.
+      if(busy||editing||loading)return;
+      listingVersion=version;files=nextFiles;turns=nextTurns;summary=listing.summary||{};
+      contextSummary=Object.hasOwn(listing,'managedSummary')?effectiveValue(summary,listing.managedSummary,listing.managedSummaryEditMode):summary;
+      currentConversationId=listing.conversationId||currentConversationId;
+      if(audit&&currentTab==='history'&&!historyLoading){
+        const incoming=Array.isArray(audit.items)?audit.items:[],seen=new Set(incoming.map(row=>row.id||JSON.stringify(row)));
+        const previous=history||[],total=Number.isSafeInteger(audit.total)?audit.total:incoming.length;
+        const overlaps=previous.some(row=>seen.has(row.id||JSON.stringify(row)));
+        const contiguous=overlaps||total-historyTotal===incoming.length;
+        // More than one page may arrive between polls. Do not skip the unseen
+        // middle when retaining cached older pages: reset to a contiguous prefix.
+        history=contiguous?[...incoming,...previous.filter(row=>!seen.has(row.id||JSON.stringify(row)))]:incoming;
+        // Retain older pages already inspected; new records shift their offsets.
+        historyTotal=total;historyNextOffset=Number.isSafeInteger(audit.nextOffset)&&history.length<total?history.length:null;
+      }
+      const file=selected?.file;
+      status.textContent=turns.length+' audit records · '+turns.filter(row=>modelLabels.has(row.label)).length+' model phases · '+files.length+' context files'+(summary.directoryStatus?' · latest run '+summary.directoryStatus:'');
+      const scroll=contents.scrollTop,start=contents.selectionStart,end=contents.selectionEnd;
+      updateScope();drawRows({preserve:true});
+      contents.setSelectionRange(start,end);contents.scrollTop=scroll;
+      if(file&&selected?.file===file){
+        if(files.some(row=>row.file===file)){const complete=await readFile(file,{preserve:true});if(here()&&!complete)listingVersion='';}
+        else display(file,'This context record is no longer present.');
+      }
+    }catch(error){if(here()&&!busy&&!editing)status.textContent='Context refresh failed: '+error.message+'; retrying automatically.';}
+    finally{if(refreshController===controller)refreshController=null;refreshing=false;}
   }
   filter.addEventListener('input',()=>{if(!busy){fileGeneration++;drawRows();}});
   conversationSelect.addEventListener('change',()=>loadConversation(conversationSelect.value));
   async function loadConversation(runId,{tab='overview',notice=''}={}){
     if(!runId||busy)return;
-    const token=++generation;fileGeneration++;currentId=runId;currentConversationId=catalog.find(row=>row.runId===runId)?.conversationId||'';files=[];turns=[];summary={};contextSummary={};history=null;historyTotal=0;historyNextOffset=null;historyLoading=false;
+    stopRefresh();loading=true;listingVersion='';const token=++generation;fileGeneration++;currentId=runId;currentConversationId=catalog.find(row=>row.runId===runId)?.conversationId||'';files=[];turns=[];summary={};contextSummary={};history=null;historyTotal=0;historyNextOffset=null;historyLoading=false;
     updateScope();status.textContent='Loading conversation context…';await selectTab(tab);
     try{
       const listing=await api(requestURL('',runId));if(!stillHere(token,runId))return;
-      files=Array.isArray(listing.files)?listing.files:[];summary=listing.summary||{};contextSummary=Object.hasOwn(listing,'managedSummary')?effectiveValue(summary,listing.managedSummary,listing.managedSummaryEditMode):summary;currentConversationId=listing.conversationId||currentConversationId;
+      listingVersion=versionOf(listing);files=Array.isArray(listing.files)?listing.files:[];summary=listing.summary||{};contextSummary=Object.hasOwn(listing,'managedSummary')?effectiveValue(summary,listing.managedSummary,listing.managedSummaryEditMode):summary;currentConversationId=listing.conversationId||currentConversationId;
       if(runId===originId)originConversationId=currentConversationId;
       if(files.some(row=>row.file==='conversation/context/turns.json')){
         const result=await api(requestURL('/file',runId,'conversation/context/turns.json'));if(!stillHere(token,runId))return;
@@ -368,10 +437,10 @@ export function createDirectoryInspector({frame,getRunId,getConversationId=()=>n
       status.textContent=notice||turns.length+' audit records · '+calls+' model phases · '+files.length+' context files'+(summary.directoryStatus?' · latest run '+summary.directoryStatus:'');
       updateScope();drawRows();
     }catch(error){if(stillHere(token,runId)){
-      const empty=error.code==='SHADOWDANCER_CONTEXT_NOT_FOUND';
+      listingVersion='';const empty=error.code==='SHADOWDANCER_CONTEXT_NOT_FOUND';
       status.textContent=notice|| (empty?'This conversation has no saved Directory context.':'Context could not be loaded: '+error.message);
       display(empty?'No saved context':'Context unavailable',empty?'Choose another conversation above to import a context record.':error.message);
-    }}
+    }}finally{if(stillHere(token,runId)){loading=false;scheduleRefresh();}}
   }
   async function open({file,tab='overview'}={}){
     const runId=getRunId();if(!runId||destroyed)return;
@@ -385,10 +454,10 @@ export function createDirectoryInspector({frame,getRunId,getConversationId=()=>n
     await Promise.all([reading,catalogReading]);
     if(file&&!destroyed&&dialog.open&&originId===runId&&currentId===runId&&files.some(row=>row.file===file))await readFile(file);
   }
-  dialog.addEventListener('close',()=>{generation++;fileGeneration++;catalogGeneration++;});
+  dialog.addEventListener('close',()=>{stopRefresh();generation++;fileGeneration++;catalogGeneration++;loading=false;});
   return {
     open,
     refresh(runId){launch.hidden=!runId;if(dialog.open&&originScope&&(getConversationId()||runId)!==originScope)dialog.close();},
-    destroy(){destroyed=true;generation++;fileGeneration++;dialog.close();launch.remove();dialog.remove();style.remove();}
+    destroy(){destroyed=true;stopRefresh();generation++;fileGeneration++;dialog.close();launch.remove();dialog.remove();style.remove();}
   };
 }
