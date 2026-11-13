@@ -12,7 +12,8 @@ test('direct cleanup protocol is exposed in both MCP instructions and browser ac
 test('host completion status reaches both worker and node browser finalizers', async () => {
   const engine = await readFile(new URL('../lib/engine.mjs', import.meta.url), 'utf8');
   assert.match(engine, /const handback = status === 'completed'/);
-  assert.match(engine, /releaseOwner\(\{ taskId, runId: run.id, nodeId \}, \{ status: handback \? 'awaiting-user' : status, retainForContinuation: status === 'failed' \|\| status === 'cancelled' \}\)/);
+  assert.match(engine, /const retainedGoal = this\.goals\?\.retainsResources\(run\) === true/);
+  assert.match(engine, /releaseOwner\(\{ taskId, runId: run.id, nodeId \}, \{ status: handback \? 'awaiting-user' : retainedGoal \? 'paused' : status, retainForContinuation: retainedGoal \|\| status === 'failed' \|\| status === 'cancelled' \}\)/);
   assert.match(engine, /releaseBrowserOwner\(delegatedPlanNodeId\(node.id, task.id\), result.status\)/);
   assert.match(engine, /releaseBrowserOwner\(node.id, cleanupStatus \|\| run.nodes\[node.id\]\?\.status\)/);
 });

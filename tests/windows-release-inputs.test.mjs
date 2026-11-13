@@ -89,7 +89,9 @@ test('every explicit installer file is approved for the current release', async 
   const files = rules.filter(rule => !rule.startsWith('!') && !/[*?\[\]{}]/.test(rule));
   assert.ok(files.includes('package.json'), 'explicit installer file rules were found');
   assert.ok(files.includes('RELEASE-NOTES-' + version + '.md'), 'the installer includes current release notes');
+  assert.ok(files.includes('docs/GOAL-MODE.md'), 'the installer includes the Goal mode guide');
   for (const file of files) assert.equal(approvedWindowsPackageFile(file, version), true, file);
+  for (const file of ['docs/private.md', 'docs/GOAL-MODE.md.bak']) assert.equal(approvedWindowsPackageFile(file, version), false, file);
 });
 
 async function fixture(t) {

@@ -1,5 +1,5 @@
 import { conversationRuns, messagesOfRun } from './model.mjs';
-import { recordedChatModels,projectCyclePlanning,chatErrorText } from './model.mjs';
+import { recordedChatModels,projectCyclePlanning,chatErrorText,projectConversationGoal } from './model.mjs';
 import { projectPlanningActivity } from './planning-timeline.mjs';
 import { contextOptions, contextStatistics, compactionStatistics } from '../core/context-controls.mjs';
 const records = value => Array.isArray(value) ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item)) : [];
@@ -69,5 +69,6 @@ export function projectFamily(family) {
     };
   });
   return {rootId:family?.rootId||null,state:family?.state||'active',
+    ...(projectConversationGoal(family?.goal)?{goal:projectConversationGoal(family.goal)}:{}),
     title:family?.title||'',runs:projected,truncated:family?.truncated===true};
 }

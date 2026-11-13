@@ -1,0 +1,88 @@
+{
+  "passed": true,
+  "checks": {
+    "sidebarPreservesGoalState": true,
+    "readyIsNotRunning": true,
+    "desktop": {
+      "file": "C:\\Users\\user\\Documents\\Codex\\BLACKICE-goal-mode-20261112\\verification\\goal-mode-desktop.jpg",
+      "bytes": 80166,
+      "size": {
+        "width": 1100,
+        "height": 641
+      }
+    },
+    "slashCommandUsesGoalEndpoint": true,
+    "pauseAndResume": true,
+    "sameConversationAutoFollow": true,
+    "editor": {
+      "file": "C:\\Users\\user\\Documents\\Codex\\BLACKICE-goal-mode-20261112\\verification\\goal-mode-editor.jpg",
+      "bytes": 50802,
+      "size": {
+        "width": 1100,
+        "height": 641
+      }
+    },
+    "narrow": {
+      "file": "C:\\Users\\user\\Documents\\Codex\\BLACKICE-goal-mode-20261112\\verification\\goal-mode-narrow.jpg",
+      "bytes": 75570,
+      "size": {
+        "width": 760,
+        "height": 850
+      }
+    },
+    "narrowEditor": {
+      "file": "C:\\Users\\user\\Documents\\Codex\\BLACKICE-goal-mode-20261112\\verification\\goal-mode-narrow-editor.jpg",
+      "bytes": 51907,
+      "size": {
+        "width": 760,
+        "height": 850
+      }
+    },
+    "interruptedResume": true,
+    "hiddenWindow": true
+  },
+  "posts": [
+    {
+      "route": "/api/conversations/sample-run-0/goal",
+      "body": {
+        "action": "pause",
+        "requestId": "goal_01db7099-c447-425c-aebf-6f51ff284c59",
+        "expectedRevision": 1
+      }
+    },
+    {
+      "route": "/api/conversations/sample-run-0/goal",
+      "body": {
+        "effort": "default",
+        "serviceTier": "default",
+        "planningMode": "ontology",
+        "planningExecutionMode": "automatic",
+        "directoryMode": "on",
+        "subagentsMode": "default",
+        "planningOntology": {
+          "version": 2,
+          "modules": {
+            "inference": true,
+            "feasibility": true,
+            "decomposition": true,
+            "branching": true,
+            "replanning": true,
+            "metacognition": true,
+            "anti_overalignment": true,
+            "verification": true,
+            "subagents": true
+          }
+        },
+        "context": {
+          "preset": "model",
+          "windowTokens": null,
+          "autoCompact": true
+        },
+        "action": "resume",
+        "requestId": "goal_231dbcb2-9067-44b3-ae5b-67ca7b929964",
+        "expectedRevision": 2
+      }
+    }
+  ],
+  "errors": []
+}
