@@ -1324,6 +1324,8 @@ export async function createHarnessServer(options = {}) {
       // Explicit file registration retains the static path boundary.
       files['/assets/blackice-dark-ice.png'] = 'assets/blackice-dark-ice.png';
       files['/assets/blackice-v2-mark.svg'] = 'assets/blackice-v2-mark.svg';
+      files['/visual-layout.mjs'] = 'visual-layout.mjs';
+      files['/visual-edits.mjs'] = 'visual-edits.mjs';
       files['/visual-document.mjs'] = 'visual-document.mjs';
       files['/token-usage.mjs'] = 'token-usage.mjs';
       files['/provider-availability.mjs'] = 'provider-availability.mjs';

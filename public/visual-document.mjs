@@ -1,4 +1,5 @@
 import {safeSvgPreview} from './svg-preview.mjs';
+import {layoutVisual} from './visual-layout.mjs';
 
 const fail=message=>{throw Object.assign(new Error(message),{status:400,code:'VISUAL_INVALID'});};
 const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
@@ -21,7 +22,7 @@ export function visualSvgUrl(svg){
  return safeSvgPreview(svg);
 }
 
-export function compileVisual(input){
+function compileLegacyVisual(input){
  keys(input,['version','title','summary','kind','width','height','items','links','groups','grid','notes','svg']);
  if(input.version!==1)fail('Use visual document version 1.');
  const document=structuredClone(input),title=label(input.title,120),summary=label(input.summary,4000);
@@ -54,3 +55,26 @@ export function compileVisual(input){
 }
 
 export const VISUAL_EXAMPLE={version:1,kind:'composed',title:'What would distinguish these explanations?',summary:'Two explanations share one observation. Seek evidence that separates them.',width:1000,height:500,items:[{id:'observed',label:'Failure after deployment',x:380,y:30},{id:'change',label:'Code regression',x:80,y:300,status:'Hypothesis'},{id:'load',label:'Load increase',x:680,y:300,status:'Hypothesis'}],links:[{from:'change',to:'observed',label:'could explain',uncertain:true},{from:'load',to:'observed',label:'could explain',uncertain:true}],notes:[{text:'Missing: failure rate on the old version under equal load.',x:220,y:470}]};
+
+export const VISUAL_COMPOSITION_EXAMPLE={version:2,kind:'composed',title:VISUAL_EXAMPLE.title,summary:VISUAL_EXAMPLE.summary,items:VISUAL_EXAMPLE.items.map(({id,label,status})=>({id,label,...(status?{status}:{})})),links:VISUAL_EXAMPLE.links,notes:[{text:VISUAL_EXAMPLE.notes[0].text}]};
+
+export function compileVisual(input){
+ if(input?.version!==2)return compileLegacyVisual(input);
+ if(input.kind==='custom')return {...compileLegacyVisual({...input,version:1}),document:structuredClone(input)};
+ if(input.kind!=='composed')fail('Choose composed or custom.');
+ const {document,rendered,regions}=layoutVisual(input),compiled=compileLegacyVisual(rendered);
+ let svg=compiled.svg,text=compiled.text;
+ for(const region of regions){
+  label(region.label,120);label(region.summary,1000);if(!visualSvgUrl(region.svg))fail('Custom region must be a bounded static SVG.');
+  // Already validated XML; match the root respecting quoted attribute values.
+  const root=region.svg.match(/<svg\b(?:[^>"']|"[^"]*"|'[^']*')*>/);if(!root)fail('Custom region needs an SVG root.');
+  const attr=name=>root[0].match(new RegExp('\\b'+name+'\\s*=\\s*(["\x27])(.*?)\\1'))?.[2];
+  const viewBox=attr('viewBox')||`0 0 ${Number.parseFloat(attr('width'))||region.width} ${Number.parseFloat(attr('height'))||region.height}`;
+  if(!/^\s*[-+\d.eE]+(?:[\s,]+[-+\d.eE]+){3}\s*$/.test(viewBox)||viewBox.trim().split(/[\s,]+/).some((n,i)=>!Number.isFinite(Number(n))||(i>1&&Number(n)<=0)))fail('Custom region needs a finite positive viewBox.');
+  const nested=region.svg.replace(root[0],`<svg xmlns="http://www.w3.org/2000/svg" x="${region.x}" y="${region.y}" width="${region.width}" height="${region.height}" viewBox="${esc(viewBox)}">`);
+  const end=svg.lastIndexOf('</svg>');svg=svg.slice(0,end)+nested+svg.slice(end);text+=`\nCustom region ${region.id}: ${region.label}\n${region.summary}`;
+ }
+ for(const group of document.groups||[])if(group.members)text+=`\nGroup ${group.id} contains: ${group.members.join(', ')}`;
+ if(!visualSvgUrl(svg))fail('Combined SVG is too complex. Split it into smaller artifacts.');
+ return {document,svg,text};
+}
