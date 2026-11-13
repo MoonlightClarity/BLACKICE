@@ -9,9 +9,10 @@ import {compileVisual as composition,VISUAL_COMPOSITION_EXAMPLE} from '../public
 import {compileVisual as geometry} from '../public/visual-document-renderer-geometry.mjs';
 import {compileVisual as current} from '../public/visual-document.mjs';
 import {compileVisual as clamped} from '../public/visual-document-renderer-clamped.mjs';
+import {compileVisual as labels} from '../public/visual-document-renderer-labels.mjs';
 
-test('current writer matches the registered geometry renderer',()=>{
- for(const document of [VISUAL_EXAMPLE,VISUAL_COMPOSITION_EXAMPLE])assert.deepEqual(current(document),geometry(document),'Register a new immutable renderer before changing persisted output.');
+test('current writer matches the registered label renderer',()=>{
+ for(const document of [VISUAL_EXAMPLE,VISUAL_COMPOSITION_EXAMPLE])assert.deepEqual(current(document),labels(document),'Register a new immutable renderer before changing persisted output.');
 });
 
 for(const [name,render,document] of [['original',original,VISUAL_EXAMPLE],['composition',composition,VISUAL_COMPOSITION_EXAMPLE],['geometry',geometry,VISUAL_COMPOSITION_EXAMPLE],['clamped',clamped,VISUAL_EXAMPLE]]){
@@ -27,7 +28,7 @@ for(const [name,render,document] of [['original',original,VISUAL_EXAMPLE],['comp
   const changed=await store.execute({action:'revise',conversationId:'history',artifactId:created.id,expectedRevision:1,requestId:'revise',document:{...document,summary:'A revised summary.'}});
   assert.equal(changed.revision,2);
   assert.equal((await store.read({conversationId:'history',artifactId:created.id,revision:1})).svg,historic.svg);
-  assert.equal((await store.read({conversationId:'history',artifactId:created.id})).renderer,'geometry-1');
+  assert.equal((await store.read({conversationId:'history',artifactId:created.id})).renderer,'labels-2');
  });
 }
 test('unknown renderer and tampered SVG remain detectable',async t=>{

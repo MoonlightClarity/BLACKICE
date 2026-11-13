@@ -1343,6 +1343,7 @@ export async function createHarnessServer(options = {}) {
       files['/assets/blackice-dark-ice.png'] = 'assets/blackice-dark-ice.png';
       files['/assets/blackice-v2-mark.svg'] = 'assets/blackice-v2-mark.svg';
       files['/visual-layout.mjs'] = 'visual-layout.mjs';
+      files['/visual-label-layout.mjs'] = 'visual-label-layout.mjs';
       files['/visual-edits.mjs'] = 'visual-edits.mjs';
       files['/visual-document.mjs'] = 'visual-document.mjs';
       files['/token-usage.mjs'] = 'token-usage.mjs';
