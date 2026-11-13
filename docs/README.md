@@ -15,10 +15,12 @@ Start with the [project README](../README.md). A named document's date, original
 | Use the browser and imported profiles | [Browser import](../BROWSER-IMPORT.md), [password handling](../BROWSER-PASSWORDS.md), [request filtering](../BROWSER-PROTECTION.md) |
 | Keep work moving within a conversation | [Goal mode](GOAL-MODE.md) |
 | Choose *optional* reasoning | [Current On/Off Planning modules](MODULAR-PLANNING-ONTOLOGY.md) and [benchmark trade-offs](PLANNING-TRADEOFFS.md) |
-| Organize plans and saved project work | [Planning organization](../PLANNING-ORGANIZATION.md) |
+| Inspect conversation Goals and Directory work | Planning: **Current work**; see [Goal mode](GOAL-MODE.md) and the [current Planning screen source](../public/next/workspaces/planning-current.mjs) |
 | Build or publish a Windows release | [Signing and release](../SIGNING-AND-RELEASE.md) and [third-party notices](../THIRD-PARTY-NOTICES.md) |
 
 **Planning controls today:** eight selectable Planning modules use **On/Off**; Directory uses **On/Off** separately. Unspecified selections default Off. Delegation is an available tool capability, not a ninth toggle. Older Forced/Advisory, Mandatory/Optional/Forbidden/Auto, and forced per-operation plan instructions are **not current controls**. Saved choices remain subject to their actual migration/compatibility semantics. See the current [Planning module guide](MODULAR-PLANNING-ONTOLOGY.md).
+
+**Planning workspace navigation:** Planning opens **Current work**, showing each conversation's Goal and Directory records. The filter distinguishes **Saved conversations**, **Running now**, **Archived**, and **All conversations**; a saved conversation is not necessarily running. **Saved graph plans** is a separate view for explicit graph requests and earlier planning records, not the current Directory work. Opening these views reads saved records rather than creating a plan or starting a model. The earlier group-outline UI is documented only as an [organization reference](../PLANNING-ORGANIZATION.md), not current navigation.
 
 **Workbench retirement:** earlier BLACKICE releases documented an optional Windows VM Workbench and native-display paths. Those are **not current setup features** in 2.39.81 source: the VM UI, APIs and installer inputs were retired. The [retirement regression](../tests/workbench-retired.test.mjs) checks this boundary. Historical [2.39.26 pairing notes](../RELEASE-NOTES-2.39.26.md) are retained for provenance, not as instructions to install a missing Workbench component.
 
@@ -29,7 +31,7 @@ These explain implementation boundaries or invariants. They are valuable to main
 - [Planning contract v2 implementation reference](planning-contract-v2-20261105.md), [operation protection](OPERATIONAL-EFFECT-PROTECTIONS.md), [application-history gate](application-history-gate.md), [planning tool exposure](planning-tool-exposure.md), and [Planning activity UI](PLANNING-ACTIVITY-UI.md).
 - [Agent advocacy](agent-advocacy.md), [metacognition](METACOGNITION.md), [direct caller guidance](direct-caller-guidance.md), and [Directory execution](directory-chat-mode.md).
 - [Credential authentication](credential-authentication.md), [frontend development](frontend-development.md), [frontend UI control semantics](FRONTEND-UI-CONTROLS.md), [storage management](STORAGE-MANAGEMENT.md), and [Codex history isolation](CODEX-HISTORY-ISOLATION.md).
-- [Shared editing awareness](../PLANNING-AWARENESS.md) and the other files classified as engineering references in the [document status register](document-status.json).
+- [Retained plan organization and earlier UI](../PLANNING-ORGANIZATION.md), [shared editing awareness](../PLANNING-AWARENESS.md) and the other files classified as engineering references in the [document status register](document-status.json).
 
 ## Historical / retired / version-bound records
 

@@ -1,8 +1,10 @@
 # Plan names, groups, and history
 
+> **Status: Engineering reference for retained organization data and earlier UI.** This document is not a guide to the current default Planning screen. Current Planning opens **Current work** for conversation Goals and Directory records; **Saved graph plans** is a separate view for explicit graph requests and earlier records. The group-outline controls described below belong to an earlier UI and must not be assumed available in the current screen. Verify API/data behavior against the exact source revision before use. See the [current documentation map](docs/README.md).
+
 Planning and Swarms share named groups. Planning shows a group → plan outline beside the existing work plan and step editor. Swarms shows groups containing saved projects; the selected project contains a dependency-ordered task outline, and each task contains its actual implementation and review attempts. Prerequisite links describe dependencies without pretending they are parent–child ownership.
 
-## Everyday use
+## Earlier UI behavior (not current navigation)
 
 Both workspaces initially show active plans. Choose Archive explicitly to inspect historical plans. Planning also has a read-only Trash view tied to the saved conversation's state. A completed plan remains active until it is deliberately archived.
 
