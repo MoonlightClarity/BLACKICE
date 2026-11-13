@@ -1,5 +1,7 @@
 # Planning tool exposure and bidirectional state
 
+> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+
 Planning has distinct durable objects: canonical task intent/runtime state, recursive module graphs, response-cycle programs, and direct execution outcome evidence. Exposing one does not imply the others are available. Tool admission, module completion, and confirmed external effects are different results.
 
 ## Shared surfaces

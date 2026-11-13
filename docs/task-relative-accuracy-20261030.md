@@ -1,5 +1,7 @@
 # Task-relative accuracy and Plan only
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 BLACKICE records the accuracy needed for a requested outcome. Inference, Feasibility, Plan, Think, and Respond carry these targets through their findings and acceptance criteria. Further detail is useful when it could change the result or satisfy an unmet constraint.
 
 Use **exact** accuracy for a cutoff, calculation, or other constraint needing an exact result; a **bounded estimate** when an explicit range suffices; and **qualitative** accuracy for a supported explanation without meaningful numerical precision. These choices describe the task's needs, without assigning a probability of correctness.

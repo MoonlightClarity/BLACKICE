@@ -1,5 +1,7 @@
 # Direct-caller contract interpretation
 
+> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+
 Fresh `blackice_task_contract` responses that contain a contract add a response-only `contractInterpretation` sibling. Existing callers receive it on an ordinary fresh read without a catalog refresh. Replaying an earlier durable request retains its original response bytes.
 
 The sidecar identifies authenticated caller supply or canonical source linkage. Neither is verified human authorship. Validation, persistence and `preserve`/`audit` labels do not turn caller assumptions into user authority or evidence.

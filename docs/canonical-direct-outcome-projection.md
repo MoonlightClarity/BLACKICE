@@ -1,5 +1,7 @@
 # Canonical direct outcome read projection
 
+> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+
 Direct execution receipts are projected beside canonical intent and runtime state as `directExecution`. They never modify TaskStore, canonical journals, criterion completion, admission, or operation dispatch. Reading never syncs a newer intent snapshot or replays an uncertain effect.
 
 - `CanonicalTaskPlanSource.projectState(state, {client})` requires an authenticated OAuth grant, reauthorizes read before and after the atomic outcome-store snapshot, and derives the owner/source binding from that grant. The saved source revision, epoch, and digest are compared to the supplied canonical state; mismatches remain labelled stale.

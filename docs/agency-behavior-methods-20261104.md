@@ -1,5 +1,7 @@
 # User agency and disclosure: evaluation method, 4 November 2026
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 This document describes two distinct experiments: a full forced form task and a later seven-case decision component. The [results report](agency-behavior-report-20261104.md) records both failures and the mixed case-level findings. The [public evidence manifest](../verification/agency-20261104/manifest.json) identifies copied and derived artifacts by hash.
 
 ## Behavioral question and acceptance contract

@@ -1,5 +1,7 @@
 # BLACKICE provider history isolation
 
+> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+
 The BLACKICE application constructs its Codex provider with `isolatedHistory: true`. Its saved chats, plans, workflow results, learning receipts and continuity archives belong to the BLACKICE profile. Provider execution must not create a second user-facing copy in the Codex sidebar.
 
 The boundary is an immutable `CodexRuntime.isolatedHistory` property, also reported by `status()`. `ProviderRuntime.status()` carries it at the top level and inside `codex`. A legacy per-run `codexHistory: "codex"` value cannot disable it. Generic library callers that do not enable this application boundary retain their existing persistent integration.

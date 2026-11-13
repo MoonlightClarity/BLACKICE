@@ -1,5 +1,7 @@
 # Scoped credential authentication
 
+> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+
 The credential tool's authenticate action handles separately authorized routine login/signup without exposing passwords. Account category is not an authorization shortcut: ATS login does not authorize application submission, mailbox access, recovery changes or payments.
 
 ## Supported scope

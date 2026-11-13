@@ -1,5 +1,7 @@
 # Provider API setup
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 BLACKICE is a personal, autonomy-first agent. Credentials are ordinary operational inputs, not a reason to stop and ask the user. Security controls are compatibility features, not product goals or requirements to make an API work. Provider setup must favor functional access and actual model inference over additional protection or approval rituals.
 
 ## Profile-local credentials (Hermes-style)

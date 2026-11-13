@@ -1,5 +1,7 @@
 # Protected host-only transport boundary
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 This is an opt-in execution mode. Ordinary Chat and existing provider sessions retain their configured behavior. This file describes the **source change on `fix/luna-directory-auto-20261112`**, not the installed 2.39.67 release until the change is integrated.
 
 ## Transport contract

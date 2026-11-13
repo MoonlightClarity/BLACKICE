@@ -11,6 +11,7 @@
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test --test-concurrency=4 tests/*.test.mjs",
+    "docs:check": "node scripts/check-documentation.mjs",
     "desktop": "electron .",
     "scene:build": "node scripts/generate-noir-background.mjs",
     "scene:check": "node scripts/generate-noir-background.mjs --check",

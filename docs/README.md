@@ -1,36 +1,47 @@
-# BLACKICE documentation map
+# BLACKICE documentation
 
-**Current published application: 2.39.27 (November 7, 2026).** Start with the [project README](../README.md) and the [latest release](https://github.com/MoonlightClarity/BLACKICE/releases/latest). This page distinguishes active user guidance from historical design and test reports. A date or old schema in a preserved report describes **that report's version**, not necessarily today's runtime.
+> **Status: Current source index.** This index is checked against the repository's main-branch package version, **2.39.81**. It describes source documentation, **not proof that a particular installer was published or installed**. Check the [release downloads](https://github.com/MoonlightClarity/BLACKICE/releases) and your installed application's version before assuming a feature is available. The [2.39.81 source release notes](../RELEASE-NOTES-2.39.81.md) and [release-note index](../RELEASE-NOTES.md) describe version-specific changes and verification limits.
+
+Start with the [project README](../README.md). A named document's date, original deployment note, test result, or branch name does not override this index or the code in the version you actually run.
 
 ## Current user guides
 
-| Topic | Read |
+| Need | Maintained guidance |
 | --- | --- |
-| Installation, models and everyday use | [README](../README.md) |
-| Direct ChatGPT MCP connection | [ChatGPT connector](../CHATGPT-CONNECTOR.md) |
-| Independent Google Gemini MCP connection | [Gemini connector](GEMINI-CONNECTOR.md) |
-| Public/private reachability and outside agents | [Remote access](../REMOTE-ACCESS.md) |
-| Planning v2 work items, admission and evidence | [Current planning](RECURSIVE-PLANNING.md) |
-| Collaborative editing | [Planning awareness](../PLANNING-AWARENESS.md) |
-| Native and optional API model setup | [API providers](API-PROVIDERS.md) |
-| Browser sessions and profile imports | [Browser import](../BROWSER-IMPORT.md) |
-| Persistent Windows application guest | [Workbench setup](../WORKBENCH-SETUP.md) |
-| Installer creation, source gates and release checks | [Release workflow](../SIGNING-AND-RELEASE.md) |
-| Workbench native viewer test boundaries | [Native display status](../WORKBENCH-NATIVE-DISPLAY.md) |
+| Product overview, setup, navigation, recurring work | [Project README](../README.md) |
+| Choose models and API connections | [API providers](API-PROVIDERS.md) and [local models](local-models.md) |
+| Connect an external assistant to BLACKICE's direct tools | [ChatGPT](../CHATGPT-CONNECTOR.md), [Gemini](GEMINI-CONNECTOR.md), [Claude](CLAUDE-CONNECTOR.md) |
+| Remote access and connection scope | [Remote access](../REMOTE-ACCESS.md) |
+| Use the browser and imported profiles | [Browser import](../BROWSER-IMPORT.md), [password handling](../BROWSER-PASSWORDS.md), [request filtering](../BROWSER-PROTECTION.md) |
+| Keep work moving within a conversation | [Goal mode](GOAL-MODE.md) |
+| Choose *optional* reasoning | [Current On/Off Planning modules](MODULAR-PLANNING-ONTOLOGY.md) and [benchmark trade-offs](PLANNING-TRADEOFFS.md) |
+| Organize plans and saved project work | [Planning organization](../PLANNING-ORGANIZATION.md) |
+| Build or publish a Windows release | [Signing and release](../SIGNING-AND-RELEASE.md) and [third-party notices](../THIRD-PARTY-NOTICES.md) |
 
-## Implementation and verification references
+**Planning controls today:** eight selectable Planning modules use **On/Off**; Directory uses **On/Off** separately. Unspecified selections default Off. Delegation is an available tool capability, not a ninth toggle. Older Forced/Advisory, Mandatory/Optional/Forbidden/Auto, and forced per-operation plan instructions are **not current controls**. Saved choices remain subject to their actual migration/compatibility semantics. See the current [Planning module guide](MODULAR-PLANNING-ONTOLOGY.md).
 
-- [Planning contract v2 (November 5 design and test scope)](planning-contract-v2-20261105.md): current contract mechanics, with its **original experimental acceptance statements preserved**.
-- [Agent advocacy](agent-advocacy.md): inference, evidence and decision principles.
-- [Practical judgment](METACOGNITION.md) and [planning depth](PLANNING-DEPTH.md): quality principles and limits of host enforcement.
-- [Provider setup details](provider-setup-20261030.md), [model context reporting](model-limits-20261030.md) and [frontend development](frontend-development.md): dated implementation notes.
-- [Release notes](https://github.com/MoonlightClarity/BLACKICE/releases) and the versioned `RELEASE-NOTES-*.md` files: specific historical claims and verification evidence.
+**Workbench retirement:** earlier BLACKICE releases documented an optional Windows VM Workbench and native-display paths. Those are **not current setup features** in 2.39.81 source: the VM UI, APIs and installer inputs were retired. The [retirement regression](../tests/workbench-retired.test.mjs) checks this boundary. Historical [2.39.26 pairing notes](../RELEASE-NOTES-2.39.26.md) are retained for provenance, not as instructions to install a missing Workbench component.
 
-## Historical and retired material
+## Engineering references: verify against the exact revision
 
-- [Schema-10 recursive planning guide](history/RECURSIVE-PLANNING-SCHEMA10.md) applies to preserved legacy plans, **not new canonical v2 work items**.
-- [2.22 Windows application compatibility](../APPLICATION-COMPATIBILITY.md) records private-desktop experiments and does not describe the full current Hyper-V Workbench.
-- [ChatGPT browser model retirement](../CHAT-MODE.md), [reverse Bridge retirement](../CHATGPT-BRIDGE.md), [retired email integration](../EMAIL.md) and [retired Methods interface](../METHODS.md) are retained for migration context.
-- Dated experiments (for example [Planning browser architecture candidate](planning-browser-architecture-20261030.md), [response cycles](response-cycles-20261030.md) and [Planning dogfood](PLANNING-DOGFOOD-2026-10-29.md)) are historical evidence. Follow current source and release notes where behavior has changed.
+These explain implementation boundaries or invariants. They are valuable to maintainers, but do **not** certify that an isolated branch, candidate, external workflow, or installed host has that behavior.
 
-To check a capability, distinguish **documented design**, **shipped code**, **source/regression verification** and **actual external end-to-end acceptance**. Do not promote an earlier candidate, an isolated fixture or a successful UI click into a current production guarantee.
+- [Planning contract v2 implementation reference](planning-contract-v2-20261105.md), [operation protection](OPERATIONAL-EFFECT-PROTECTIONS.md), [application-history gate](application-history-gate.md), [planning tool exposure](planning-tool-exposure.md), and [Planning activity UI](PLANNING-ACTIVITY-UI.md).
+- [Agent advocacy](agent-advocacy.md), [metacognition](METACOGNITION.md), [direct caller guidance](direct-caller-guidance.md), and [Directory execution](directory-chat-mode.md).
+- [Credential authentication](credential-authentication.md), [frontend development](frontend-development.md), [frontend UI control semantics](FRONTEND-UI-CONTROLS.md), [storage management](STORAGE-MANAGEMENT.md), and [Codex history isolation](CODEX-HISTORY-ISOLATION.md).
+- [Shared editing awareness](../PLANNING-AWARENESS.md) and the other files classified as engineering references in the [document status register](document-status.json).
+
+## Historical / retired / version-bound records
+
+Documents marked **Status: Historical documentation** preserve the original experiments, migration information, tests, and branch-specific design. They are **not operational guidance** for 2.39.81, even where their original heading says "current" or "not deployed."
+
+- [Old canonical recursive-planning controls](RECURSIVE-PLANNING.md), [old planning depth/modes](PLANNING-DEPTH.md), and [schema-10 planning](history/RECURSIVE-PLANNING-SCHEMA10.md). Current user controls are documented in the [Planning module guide](MODULAR-PLANNING-ONTOLOGY.md).
+- [November 12 Planning/Directory audit](../PLANNING-DIRECTORY-AUDIT-20261112.md) and dated [planning browser](planning-browser-architecture-20261030.md) / [response-cycle](response-cycles-20261030.md) candidates: evidence about their original revisions, not present defaults.
+- [Old VM application tests](../APPLICATION-COMPATIBILITY.md), [frontend V2 rollout](../FRONTEND-V2.md), [retired ChatGPT browser model](../CHAT-MODE.md), [retired reverse bridge](../CHATGPT-BRIDGE.md), [retired email integration](../EMAIL.md), and [retired Methods](../METHODS.md).
+- All [versioned release notes](../RELEASE-NOTES.md), dated evaluation reports, experimental design snapshots, and preserved [legacy planning schema](history/RECURSIVE-PLANNING-SCHEMA10.md) describe their own version and evidence boundaries.
+
+The [document status register](document-status.json) classifies **every first-party root/docs Markdown entrypoint** as current guide, engineering reference, or historical material. Versioned release notes remain explicitly historical by filename; vendor licenses, fixtures, and verification artifacts retain their own independent provenance.
+
+## Documentation maintenance
+
+Run **npm run docs:check** to validate classification coverage, visible historical labels, the source-version release-note links, and local Markdown targets. New docs must be classified; retired/dated docs must be labeled before publication. When a capability changes, update the primary user guide and documentation index **in the same change**, then record the new release's scope separately. Never claim public installer installation from a passing source test, and never silently rewrite historical measured outcomes.

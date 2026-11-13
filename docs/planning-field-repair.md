@@ -1,5 +1,7 @@
 # Bounded Planning field repair
 
+> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+
 A provider that does not advertise structured output can omit required fields or return prose where an enum is required. Planning uses its existing single repair turn for a small, schema-derived patch when every structural defect belongs to a supported scalar family.
 
 ## Scope and acceptance

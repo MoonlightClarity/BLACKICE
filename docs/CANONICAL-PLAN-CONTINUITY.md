@@ -1,5 +1,7 @@
 # Canonical plan continuity
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 Stage 3 development implementation in the isolated canonical-plan-continuity checkout. Not deployed. No model starts, production restart, real submissions, or live-provider tests are part of binding or this validation.
 
 ## One saved source

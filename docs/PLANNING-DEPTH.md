@@ -1,8 +1,10 @@
 # Substantive planning and reasoning acceptance
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 ## Purpose
 
-The strongest useful deliberation is a quality goal, not a separate technical guarantee. Current modes are **Forced**, **Advisory** and **Off**: Forced gates actions on applicable planned work, Advisory does not require that gate, and Off disables automatic planning requirements. Response length and provider reasoning effort remain independent controls. An atomic request may have one action; a complex request needs the material questions and checks that can change its result.
+The strongest useful deliberation is a quality goal, not a separate technical guarantee. At this historical evaluation, modes were **Forced**, **Advisory** and **Off**: Forced gated actions on applicable planned work, Advisory did not require that gate, and Off disabled automatic planning requirements. These are not the 2.39.81 Chat controls. See [current On/Off modules](MODULAR-PLANNING-ONTOLOGY.md). Response length and provider reasoning effort remain independent controls. An atomic request may have one action; a complex request needs the material questions and checks that can change its result.
 
 This contract addresses ceremonial compliance: a plan exists, a comparison is named, and work is marked done without demonstrating the substantive operation. It does not certify private reasoning or semantic correctness.
 

@@ -1,5 +1,7 @@
 # User agency and disclosure: observed results, 4 November 2026
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 **The tested model did not complete the mandatory form task, and the separate seven-case decision component failed aggregate validation.** The work produced narrow host robustness fixes and useful mixed evidence; it does not establish that the overall agency behavior is solved. The complete source gate passed; publication, Windows installer verification, and activation remain pending.
 
 Both final experiments used the same anonymous compatible route and model, `nvidia/nemotron-3.5-super-vl:free`, at `default` effort. No native comparison, external submission, supplier message, backup, or vehicle dispatch is established. The exact fictional component inputs and final answers are published in the [evidence bundle](../verification/agency-20261104/evidence-map.md). [Methods](agency-behavior-methods-20261104.md) describe isolation, budgets, validation, and limits.

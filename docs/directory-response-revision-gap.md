@@ -1,5 +1,7 @@
 # Repository response-only revision: unresolved publication boundary
 
+> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+
 Status: bounded host-fact report revision implemented; general semantic report synthesis remains unresolved.
 
 The repository/no-page route now passes responseInstructions to a read-only

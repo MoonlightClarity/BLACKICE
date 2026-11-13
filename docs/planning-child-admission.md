@@ -1,5 +1,7 @@
 # Automatic analytical child admission
 
+> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+
 A schema-valid response is not proof that a proposed child can perform its task. An operational objective can be mislabeled `executionTarget: analysis` and `verification: response`; enum checks cannot determine the meaning of its objective, criterion, evidence target or stopping condition. The response worker also receives the user's end-to-end delegated outcome. That outcome belongs to the operational owner, while the stage itself produces a finding. The host now supplies an explicit stage contract to keep those roles separate.
 
 ## Scope and invariants

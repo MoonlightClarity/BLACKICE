@@ -1,5 +1,7 @@
 # Representation behavior evaluation
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 This opt-in fixture tests observable choices and artifacts in fictional local tasks. It does not send applications, start a model, or assess private reasoning. Cases cover transferable experience, primary positioning versus past background, audience-appropriate artifact selection (including when depth is required), supported inference, an ordinary application agreement, an explicit firm limit, a directly requested negative answer, and a genuinely unavailable required fact. Version 2 adds the positioning and artifact-depth cases; prepare a fresh directory rather than reusing a version 1 fixture.
 
 Prepare an unused directory:

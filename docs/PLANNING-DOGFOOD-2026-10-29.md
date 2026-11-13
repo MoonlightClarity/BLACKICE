@@ -1,5 +1,7 @@
 # Planning dogfood observations — October 29, 2026
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 This public summary records what the planning trials established and where they fell short. It uses synthetic task descriptions and aggregate findings. Private installation receipts, machine paths, connection identifiers, raw API transcripts and provider reasoning are excluded.
 
 The trials evaluated three separate properties: whether the model authored a sufficiently detailed plan, whether the runtime preserved chronological and conditional execution, and whether the interface represented that saved work accurately. A correct final answer by itself did not count as a complete planning pass.

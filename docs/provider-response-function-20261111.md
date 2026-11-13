@@ -1,5 +1,7 @@
 # Response-only function serialization
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 Compatible Chat Completions providers without native JSON Schema support can still advertise both tools and tool_choice. BLACKICE now uses that exact fresh model-catalog evidence to request a single forced blackice_response function carrying the response schema. This is a data-return envelope, never an action tool.
 
 Selection remains conservative:

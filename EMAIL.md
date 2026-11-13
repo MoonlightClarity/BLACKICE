@@ -1,5 +1,7 @@
 # Email integration (retired)
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](docs/README.md) and [source release notes](RELEASE-NOTES.md).
+
 > **Archived documentation.** The Thunderbird/Himalaya integration and BLACKICE email workspace are retired in the current source build. Use **Activity → Browser** for email; the standard `/api/email` routes return `410 EMAIL_RETIRED`. Historical `agent-email/` files and previous drafts are preserved on disk rather than automatically deleted. The instructions below describe historical implementations and are **not valid setup steps** for the current application.
 
 ## Historical background

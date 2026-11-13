@@ -1,5 +1,7 @@
 # Planning behavior acceptance fixtures
 
+> **Status: Historical documentation.** This preserved release-era design, evaluation, or migration record is **not current usage guidance or deployment evidence**. Do not infer present defaults, tool contracts, or installation state from it. See [current documentation](README.md) and [source release notes](../RELEASE-NOTES.md).
+
 This opt-in developer tool prepares four local tasks and checks their actual outputs. It does not start BLACKICE, call a provider, create a model turn, or use the network. Node built-ins and Python 3.8+ with standard-library `sqlite3` are the only dependencies.
 
 ## Run

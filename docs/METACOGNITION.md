@@ -1,5 +1,7 @@
 # Practical judgment and metacognition in BLACKICE
 
+> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+
 **Design purpose:** Help an agent arrive at a useful, evidence-calibrated result without confusing accurate factual reporting with perfectionism or an invented veto. This framework belongs in ordinary Planning and applies to research, engineering, procurement, hiring, analysis, design and recurring work. It is not a separate persona, safety subsystem, permission system or recurring task scheduler.
 
 ## What is retained from the older SOUL.md
