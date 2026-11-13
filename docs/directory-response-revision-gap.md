@@ -1,6 +1,22 @@
 # Repository response-only revision: unresolved publication boundary
 
-Status: diagnostic/design follow-up, NOT an implemented fix.
+Status: bounded host-fact report revision implemented; general semantic report synthesis remains unresolved.
+
+The repository/no-page route now passes responseInstructions to a read-only
+section-selection inference. Its output can only select typed host fact sections
+(changes, exact test receipt, mapping scope, reference index). Publication renders
+those from host-owned values, keeping mandatory warnings and completion status.
+The revision regression exercises reviseAnswer, verifies prior-report retention,
+additional exact receipt details, no repeated work, and rejection of fabricated
+claims/citations. Repeated unchanged selection still returns the same candidate;
+no counter or random text manufactures progress.
+
+This fixes dropped instructions for requests within those host-fact sections.
+It does NOT establish arbitrary behavioral outcomes or publish free-form semantic
+corrections. Such cases still need the evidence-bound interpretation interface
+below. Do not claim that this bounded change resolves the live benchmark stall.
+
+The reproduction below describes the original boundary before this change.
 
 Commit 054e485 clarifies that absent explicit requirement-to-test mappings
 are neither failed behavior nor proof of completion. Its 17 focused passing
