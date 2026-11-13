@@ -2162,3 +2162,32 @@ test('legacy manual task-folder moves restore as usable conversation pages', asy
   const inventory = await browser.perform({ action: 'tabs' }, { owner: { taskId: 'legacy-root', runId: 'new-turn', nodeId: 'agent' } });
   assert.equal(inventory.tabs[0].tabId, 'legacy-page');
 });
+
+test('retired conversation blocks delayed popup adoption through routed owner admission',async t=>{
+  const f=await fixture(t); await f.driver.init();
+  const router=new BrowserRouter({independent:f.driver}),browser=new BrowserWorkspace({driver:router});
+  t.after(()=>browser.close());
+  let state='active';
+  browser.setConversationArchive({list:()=>[{rootId:'conversation-retired',state,title:'Fixture'}]});
+  const owner={taskId:'conversation-retired',conversationId:'conversation-retired',runId:'run',nodeId:'conversation'};
+  const parent=f.driver.newTab('https://fixture.invalid/parent',{owner});await parent.loading;
+  const wc=parent.window.webContents;
+  const options=wc.openHandler({url:'https://fixture.invalid/popup'}).overrideBrowserWindowOptions;
+  assert.ok(options);
+  state='archived';
+  assert.equal(wc.openHandler({url:'https://fixture.invalid/new-popup'}).action,'deny');
+  const child=new f.Window(options);
+  wc.emit('did-create-window',child,{url:'https://fixture.invalid/late-popup'});
+  assert.equal(child.isDestroyed(),true);
+  assert.equal(f.driver.tabs.size,1,'A delayed callback must not create a retired conversation tab');
+  assert.throws(()=>f.driver.newTab('https://fixture.invalid/new',{owner}),{code:'BROWSER_CONVERSATION_RETIRED'});
+  parent.owner=null;
+  assert.equal(wc.openHandler({url:'https://fixture.invalid/personal'}).action,'allow','An explicitly transferred Personal tab stays usable');
+  f.driver.closeTab(parent);
+  assert.equal(wc.openHandler({url:'https://fixture.invalid/stale'}).action,'deny');
+  const stale=new f.Window(options);wc.emit('did-create-window',stale,{url:'https://fixture.invalid/stale'});
+  assert.equal(stale.isDestroyed(),true);
+  state='active';
+  const restored=f.driver.newTab('https://fixture.invalid/restored',{owner});await restored.loading;
+  assert.ok(f.driver.tabs.has(restored.id),'Restore removes the admission fence without a restart');
+});

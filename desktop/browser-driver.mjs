@@ -612,6 +612,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     // admission remains bounded without limiting a person's browser to eight tabs.
     if (!tab.humanCreated && tab.owner && live.filter(item => item.owner?.taskId === tab.owner.taskId).length >= this.maxTaskTabs) throw capacityError(`This task has ${this.maxTaskTabs} live pages. Reuse or close one of its own pages before opening another.`, 'BROWSER_TASK_TAB_LIMIT');
   }
+  setOwnerAdmission(check) { this.ownerAdmission = check; }
   newTab(url, { restore = false, title = '', window: suppliedWindow, purpose = null, owner: context, humanCreated = false, providerKeyProtected = false, folderId, parentTabId = null, id } = {}) {
     if (this.closed) throw error('Browser workspace has closed.');
     let owner = browserOwner(context);
@@ -623,6 +624,10 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (!owner && parent?.owner) owner = { ...parent.owner };
     const folder = this.folderFor(owner, parent?.folderId || folderId);
     if (!owner && folder.kind === 'task') owner = { taskId: folder.taskId, runId: 'user', nodeId: conversationBrowserNode, conversationId: folder.taskId };
+    // Popup adoption is outside BrowserWorkspace's operation queue. Recheck its
+    // actual owner here so a delayed Chromium callback cannot resurrect a retired
+    // conversation. Restoring saved metadata is read-only, not new page admission.
+    if (!restore) this.ownerAdmission?.(owner);
     if (!suppliedWindow && !restore && this.tabs.size >= this.maxSavedTabs) throw capacityError('The saved browser page capacity is full. Close an unneeded page in the browser workspace.', 'BROWSER_SAVED_LIMIT');
     if (purpose === 'chat-mode' && !this.hasTabCapacity(purpose)) throw capacityError('The dedicated human ChatGPT tab is already open.', 'BROWSER_CHAT_MODE_TAB_EXISTS');
     if (!suppliedWindow && !restore && !humanCreated && purpose !== 'chat-mode' && !owner && [...this.tabs.values()].filter(tab => tab.purpose !== 'chat-mode' && !tab.owner).length >= this.maxTabs) throw capacityError(`Use at most ${this.maxTabs} personal browser tabs. Close one before opening another; task folders have separate capacity.`, 'BROWSER_TAB_LIMIT');
@@ -695,6 +700,8 @@ export class ElectronBrowserDriver extends EventEmitter {
     });
     wc.debugger.on('detach', () => { tab.containmentReady = null; for (const pending of tab.submissionObservations?.pending?.values() || []) pending.ambiguous = true; this.clearInteraction(tab, { preserveAuthentication: true }); });
     wc.setWindowOpenHandler(({ url }) => {
+      if (tab.closing || this.tabs.get(tab.id) !== tab || tab.window !== window) return { action: 'deny' };
+      try { this.ownerAdmission?.(tab.owner); } catch { return { action: 'deny' }; }
       const humanCreated = tab.humanCreated || tab.humanSurface === true;
       try { if (url && externalProtocol(url)) {
         this.dispatchExternal(tab, url);
@@ -715,7 +722,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     });
     wc.on('did-create-window', (child, details) => {
       const humanCreated = tab.humanCreated || tab.humanSurface === true;
-      if (this.closed || !this.compatibilityLoaded) child.destroy();
+      if (this.closed || !this.compatibilityLoaded || tab.closing || this.tabs.get(tab.id) !== tab || tab.window !== window) child.destroy();
       else try { this.newTab(details.url || 'about:blank', { window: child, owner: tab.owner, humanCreated, providerKeyProtected: tab.providerKeyProtected === true, folderId: tab.folderId, parentTabId: tab.id }); } catch { if (!child.isDestroyed()) child.destroy(); }
     });
     wc.on('will-attach-webview', event => event.preventDefault());

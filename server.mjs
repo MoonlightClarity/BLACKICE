@@ -171,6 +171,7 @@ export async function createHarnessServer(options = {}) {
   engine.nativeWindows=nativeWindows;
   const conversations=await startupPhase(diagnostics, 'conversations', () => new ConversationArchive({dataDir,engine}).init());
   browserConversations = conversations;
+  browser.setConversationArchive?.(conversations);
   engine.persistConversation = run => conversations.capture(run);
   const goals = await new ConversationGoals({ engine, conversations, autoStart: false }).init();
   // Recent-run retention must not turn a repeated send into a new task.

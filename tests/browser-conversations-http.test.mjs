@@ -309,3 +309,69 @@ test('a conversation moved to Trash while its ownership transfer is queued is no
     await Promise.allSettled([opening, moving]);
   }
 });
+
+for (const lifecycle of [{status:'running',settled:false},{status:'cancelled',settled:false}]) {
+  test('archive rejects '+lifecycle.status+' unsettled work without closing tabs', async t => {
+    const f=await fixture(t); await f.move('conversation','conversation-a');
+    const get=f.app.conversations.engine.getRun.bind(f.app.conversations.engine);
+    f.app.conversations.engine.getRun=id=>id==='conversation-a'?{...savedTurn(id),...lifecycle}:get(id);
+    const response=await f.request('/api/conversations/conversation-a/archive',{});
+    assert.equal(response.status,409);
+    assert.equal(f.app.conversations.states['conversation-a']?.state||'active','active');
+    assert.equal(f.driver.calls.filter(call=>call.args.action==='close').length,0);
+    assert.equal(f.driver.tabs.length,3);
+  });
+}
+
+test('queued owned open is rejected after archive and restore permits a later open',async t=>{
+  const f=await fixture(t); await f.move('conversation','conversation-a');
+  let release; const held=f.browser.enqueue(()=>new Promise(resolve=>{release=resolve;}),{action:'fixture'});
+  while(!release)await new Promise(resolve=>setImmediate(resolve));
+  const owner={taskId:'conversation-a',conversationId:'conversation-a',runId:'conversation-a',nodeId:'conversation'};
+  const pending=f.browser.perform({action:'open',browser:'relay',url:'https://fixture.invalid/late'},{owner});
+  const rejected=assert.rejects(pending,{code:'BROWSER_CONVERSATION_RETIRED'});
+  const changed=new Promise(resolve=>f.app.conversations.once('metadata.updated',resolve));
+  const retiring=f.request('/api/conversations/conversation-a/archive',{});
+  await changed; release(); await held; await rejected;
+  const result=await retiring; assert.equal(result.status,200);
+  assert.deepEqual(result.data.tabCleanup.remainingTabIds,[]);
+  assert.ok(!f.driver.calls.some(call=>call.args.action==='open'));
+  await f.request('/api/conversations/conversation-a/restore',{});
+  await f.browser.perform({action:'open',browser:'relay',url:'https://fixture.invalid/restored'},{owner});
+  assert.ok(f.driver.tabs.some(tab=>tab.url.endsWith('/restored')));
+});
+
+test('cleanup drains a late owned popup but preserves a transferred Personal page',async t=>{
+  const f=await fixture(t); await f.move('conversation','conversation-a');
+  const perform=f.driver.perform.bind(f.driver); let spawned=false;
+  f.driver.perform=async(args,context)=>{
+    const parent=f.driver.tabs.find(tab=>tab.tabId===args.tabId);
+    const result=await perform(args,context);
+    if(args.action==='close'&&!spawned){
+      spawned=true;
+      f.driver.tabs.push({...parent,tabId:'late-popup',parentTabId:null});
+      f.driver.tabs.find(tab=>tab.tabId==='popup').owner=null;
+    }
+    return result;
+  };
+  const response=await f.request('/api/conversations/conversation-a/archive',{});
+  assert.deepEqual(new Set(response.data.tabCleanup.closedTabIds),new Set(['page','late-popup']));
+  assert.deepEqual(response.data.tabCleanup.remainingTabIds,[]);
+  assert.deepEqual(new Set(f.driver.tabs.map(tab=>tab.tabId)),new Set(['popup','other']));
+});
+
+test('cleanup bounds a continuously spawning adapter and reports remaining tabs',async t=>{
+  const f=await fixture(t); await f.move('conversation','conversation-a');
+  const perform=f.driver.perform.bind(f.driver); let count=0;
+  f.driver.perform=async(args,context)=>{
+    const parent=f.driver.tabs.find(tab=>tab.tabId===args.tabId);
+    const result=await perform(args,context);
+    if(args.action==='close')f.driver.tabs.push({...parent,tabId:'late-'+(++count),parentTabId:null});
+    return result;
+  };
+  const response=await f.request('/api/conversations/conversation-a/archive',{});
+  assert.equal(response.status,200);
+  assert.equal(response.data.tabCleanup.closed,8);
+  assert.equal(response.data.tabCleanup.remainingTabIds.length,2);
+  assert.equal(count,8,'No infinite cleanup loop');
+});
