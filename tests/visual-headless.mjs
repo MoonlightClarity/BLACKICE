@@ -1,0 +1,40 @@
+/** Disposable real-browser acceptance against the active chat UI and real visual store. */
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {mkdtemp,readFile,writeFile,rm,mkdir} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {setTimeout as sleep} from 'node:timers/promises';
+import {makeFixture} from './next-fixture-server.mjs';
+import {VisualArtifacts,handleVisualHttp} from '../lib/visual-artifacts.mjs';
+import {VISUAL_EXAMPLE} from '../public/visual-document.mjs';
+const directory=await mkdtemp(join(tmpdir(),'blackice-visual-browser-')),fixture=makeFixture(),errors=[];
+const store=new VisualArtifacts({dataDir:directory,onChange:event=>fixture.send(event)}),original=fixture.server.listeners('request')[0];fixture.server.removeAllListeners('request');
+fixture.server.on('request',async(req,res)=>{try{if(await handleVisualHttp({req,res,pathname:new URL(req.url,'http://localhost').pathname,store,mutations:new Set(),body:async()=>{let s='';for await(const c of req)s+=c;return JSON.parse(s);},json:(r,status,value)=>{r.writeHead(status,{'Content-Type':'application/json'});r.end(JSON.stringify(value));}}))return;await original(req,res);}catch(e){res.writeHead(e.status||500,{'Content-Type':'application/json'});res.end(JSON.stringify({error:e.message}));}});
+const saved=await store.execute({action:'create',conversationId:'sample-run-0',requestId:'fixture',document:VISUAL_EXAMPLE});
+let browser,socket,next=1;const pending=new Map();
+const until=async(fn,label)=>{const end=Date.now()+20000;let error;while(Date.now()<end){try{const result=await fn();if(result)return result;}catch(e){error=e;}await sleep(80);}throw Error(label+' timed out '+(error?.message||''));};
+const send=(method,params={})=>new Promise((resolve,reject)=>{const id=next++;const timer=setTimeout(()=>{pending.delete(id);reject(Error('DevTools timeout '+method));},10000);pending.set(id,{resolve:r=>{clearTimeout(timer);resolve(r);},reject:e=>{clearTimeout(timer);reject(e);}});socket.send(JSON.stringify({id,method,params}));});
+const evaluate=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description||r.exceptionDetails.text);return r.result?.value;};
+const clickText=text=>evaluate(`(()=>{const b=[...document.querySelectorAll('dialog[open] button,.next-visuals button')].find(b=>b.textContent===${JSON.stringify(text)});if(!b)throw Error('Missing button');b.click();return true;})()`);
+try{
+ await new Promise(resolve=>fixture.server.listen(0,'127.0.0.1',resolve));const profile=join(directory,'profile');await mkdir(profile);
+ browser=spawn(process.env.BLACKICE_TEST_CHROME||'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',['--headless=new','--disable-gpu','--no-first-run','--no-default-browser-check','--disable-extensions','--disable-background-networking','--disable-sync','--remote-allow-origins=*','--remote-debugging-port=0','--user-data-dir='+profile,'--window-size=1360,950','about:blank'],{stdio:'ignore',windowsHide:true});
+ const port=await until(async()=>Number((await readFile(join(profile,'DevToolsActivePort'),'utf8')).split('\n')[0]),'Browser startup');const pages=await(await fetch(`http://127.0.0.1:${port}/json/list`)).json();socket=new WebSocket(pages.find(p=>p.type==='page').webSocketDebuggerUrl);await new Promise((resolve,reject)=>{socket.onopen=resolve;socket.onerror=reject;});socket.onmessage=event=>{const p=JSON.parse(event.data);if(p.id){const job=pending.get(p.id);pending.delete(p.id);p.error?job?.reject(Error(p.error.message)):job?.resolve(p.result);}if(p.method==='Runtime.exceptionThrown')errors.push(p.params.exceptionDetails?.text);};
+ await send('Runtime.enable');await send('Page.enable');await send('Page.navigate',{url:`http://127.0.0.1:${fixture.server.address().port}/#chat`});
+ await until(()=>evaluate('Boolean(document.querySelector("[data-conversation]"))'),'Chat list');await evaluate('document.querySelector("[data-conversation=\"sample-run-0\"]").click()');
+ await until(()=>evaluate('Boolean(document.querySelector(".next-visuals img")?.naturalWidth)'),'Inline SVG');
+ assert.equal(await evaluate('document.querySelector(".next-visuals").closest("#next-chat-scroll")!==null'),true);
+ await clickText('Inspect / edit / history / export');await until(()=>evaluate('Boolean(document.querySelector("dialog[open] textarea"))'),'Editor');
+ await evaluate(`(()=>{const area=[...document.querySelectorAll('dialog textarea')].find(a=>a.parentElement.textContent.startsWith('Item observed'));area.value='User corrected the observed failure';area.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+ await clickText('Preview draft');assert.match(await evaluate('document.querySelector("dialog [role=status]").textContent'),/valid/);await clickText('Save new revision');
+ await until(async()=>(await store.read({conversationId:'sample-run-0',artifactId:saved.id})).revision===2,'User edit persistence');await until(()=>evaluate('document.querySelector("dialog h2")?.textContent.includes("revision 2")'),'New revision editor');
+ const revised=await store.read({conversationId:'sample-run-0',artifactId:saved.id});assert.equal(revised.document.items[0].label,'User corrected the observed failure');
+ const agentDocument=structuredClone(revised.document);agentDocument.notes[0].text='Agent preserved the correction and added a discriminating test.';await store.execute({action:'revise',conversationId:'sample-run-0',artifactId:saved.id,expectedRevision:2,requestId:'agent-edit',document:agentDocument},{actor:'agent:fixture'});
+ await evaluate(`(()=>{const a=document.querySelector('dialog textarea');a.value='Unsaved user draft';a.dispatchEvent(new Event('input',{bubbles:true}));})()`);await clickText('Save new revision');await until(()=>evaluate('document.querySelector("dialog [role=status]")?.textContent.includes("changed")'),'Conflict warning');assert.equal(await evaluate('document.querySelector("dialog textarea").value'),'Unsaved user draft');
+ await clickText('Close');await clickText('Inspect / edit / history / export');await until(()=>evaluate('document.querySelector("dialog h2")?.textContent.includes("revision 3")'),'Latest artifact');
+ await evaluate(`(()=>{const s=document.querySelector('dialog select');s.value='1';s.dispatchEvent(new Event('change'));})()`);await until(()=>evaluate('document.querySelector("dialog h2")?.textContent.includes("revision 1")'),'Pinned history');assert.equal(await evaluate(`[...document.querySelectorAll('dialog button')].find(b=>b.textContent==='Save new revision').disabled`),true);
+ const downloads=join(directory,'downloads');await mkdir(downloads);await send('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:downloads});await clickText('Export SVG');await until(()=>readFile(join(downloads,saved.id+'-r1.svg'),'utf8'),'SVG export');assert.equal(await readFile(join(downloads,saved.id+'-r1.svg'),'utf8'),(await store.read({conversationId:'sample-run-0',artifactId:saved.id,revision:1})).svg);
+ await clickText('Close');await evaluate('document.querySelector(".next-visuals").scrollIntoView()');const shot=await send('Page.captureScreenshot',{format:'png'});if(process.env.BLACKICE_VISUAL_SCREENSHOT)await writeFile(process.env.BLACKICE_VISUAL_SCREENSHOT,Buffer.from(shot.data,'base64'));
+ assert.deepEqual(errors,[]);console.log('PASS: active chat SVG, form edit, preview, agent revision, conflict draft, history, exact SVG export, no renderer errors');
+}finally{try{await send('Browser.close');}catch{}socket?.close();browser?.kill();fixture.server.closeAllConnections();await new Promise(resolve=>fixture.server.close(resolve));await fixture.closeKnowledge();await sleep(200);await rm(directory,{recursive:true,force:true,maxRetries:3,retryDelay:100});}
