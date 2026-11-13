@@ -36,6 +36,8 @@ test('repository revision publishes exact selected evidence without replaying wo
  assert.match(after.answer,/incomplete_or_unverified/);
  assert.match(after.answer,/"unmapped":1/);
  assert.doesNotMatch(after.answer,/PRIVATE_GRADER_SAYS_COMPLETE/);
+ assert.match(after.answer,/Published assertions use host-owned evidence/);
+ assert.doesNotMatch(after.answer,/no model synthesis was needed/);
  assert.equal(after.answer.split('\n\n')[0],before.answer.split('\n\n')[0]);
  const saved=JSON.parse(await readFile(finalPath,'utf8'));
  assert.equal(saved.reportRevision.authority,'host-facts-only');
