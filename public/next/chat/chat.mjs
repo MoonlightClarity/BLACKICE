@@ -215,6 +215,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       indexPaint();updateHead();
     },
     getContext:()=>({conversationId:root(),runId:state.runs.at(-1)?.id,draft:view.input.value,
+      calibration:{firstTask:state.runs.find(item=>!item.parentRunId&&typeof item.input==='string')?.input||state.selected?.originalTask||state.selected?.title||'',turns:state.runs.length},
       executionOptions:{...state.options,...(modelSelections.read(root(),state.runs).explicit?{}:{model:undefined}),
         ...(!state.runs.some(running)?{context:contextControls.read()}:{})}}),
     onStart:async(goal,options)=>{const result=await send({goal,taskOverride:goal.objective,consumeDraft:options.consumeDraft});if(!result)throw Error(view.hint.textContent||'Could not start the goal.');return result;},

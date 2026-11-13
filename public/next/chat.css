@@ -163,8 +163,11 @@
 @media(max-width:490px){.next-chat-ontology-grid{grid-template-columns:1fr}}
 
 /* Goal mode shares the application's surfaces, contrast and control palette. */
-.next-chat-goal-toggle{align-self:center;white-space:nowrap}
-.next-chat-goal-toggle[aria-pressed=true]{border-color:var(--next-selection-border);background:var(--next-selection-background)}
+.next-chat-goal-toggle{align-self:center;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;min-height:34px;font-weight:600;font-size:11px;border:1px solid var(--line);border-radius:18px;padding:5px 11px;transition:background .15s ease,border-color .15s ease}
+.next-chat-goal-toggle::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--text-muted);box-shadow:0 0 0 2px rgba(127,127,127,.12)}
+.next-chat-goal-toggle[aria-checked=true]{border-color:var(--next-selection-border);background:var(--next-selection-background)}
+.next-chat-goal-toggle[aria-checked=true]::before{background:var(--accent)}
+.next-chat-goal-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .next-chat-goal-card{display:grid;gap:7px;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:5px;background:var(--next-card-background);padding:11px 13px;margin:0 0 10px;color:var(--text-primary)}
 .next-chat-goal-card[hidden],.next-chat-goal-card [hidden]{display:none}
 .next-chat-goal-heading{display:flex;align-items:center;gap:9px;flex-wrap:wrap;min-width:0}
@@ -181,6 +184,7 @@
 .next-chat-goal-dialog form{display:grid;gap:15px}
 .next-chat-goal-dialog h2,.next-chat-goal-dialog p{margin:0}
 .next-chat-goal-dialog p{font-size:12px;line-height:1.6;color:var(--text-muted)}
+.next-chat-goal-context{border:1px solid var(--line);border-radius:6px;padding:8px 10px;background:var(--next-selection-background)}
 .next-chat-goal-dialog label{display:grid;gap:7px}
 #next-chat-goal-input{width:100%;resize:vertical;min-height:118px;max-height:40vh;font:inherit;line-height:1.5}
 #next-chat-goal-limit{width:160px}
