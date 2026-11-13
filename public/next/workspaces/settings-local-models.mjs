@@ -55,7 +55,7 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
     const previous = models.value;
     models.replaceChildren();
     for (const model of value.models || []) {
-      const option = node('option', (model.displayName || model.id) + (model.loaded ? ' · Loaded' : ' · On disk'));
+      const option = node('option', (model.displayName || model.id) + (model.status === 'sleeping' ? ' · Sleeping' : model.loaded ? ' · Loaded' : ' · On disk'));
       option.setAttribute('value', model.id); models.append(option);
     }
     if ((value.models || []).some(item => item.id === previous)) models.value = previous;
@@ -95,6 +95,7 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
   async function operation(action) {
     if (busy) return;
     const runtime = engine.value, model = models.value;
+    if (action === 'unload' && unload.disabled) return;
     if (action !== 'import' && !model) return;
     if (action === 'import' && (!sourcePath.value.trim() || !alias.value.trim())) return info('Provide an absolute model path and a local model name.', true);
     const contextLength = runtime === 'llamacpp' ? undefined : context.value.trim() ? Number(context.value) : undefined;

@@ -45,3 +45,7 @@ BLACKICE reads `GET /models` (router) or `GET /v1/models` (single process), send
 - Local runtime APIs are bound to `127.0.0.1`; these endpoints do not upload model files to cloud providers.
 - The feature requires an external Ollama, LM Studio, or llama.cpp server to be installed and running. Offline runtimes are displayed as unavailable; the integration tests work without installing any of them.
 - Ollama, LM Studio and llama.cpp models vary in tool-calling support, context size and memory needs. Model availability does not by itself guarantee compatibility with every BLACKICE agent workflow.
+
+### Validation scope
+
+The adapter is covered by controlled HTTP and UI fixtures, including single-server mode, router lifecycle, and per-slot context metadata. A live llama.cpp model, GPU performance, and end-to-end agent tool use are not yet verified. Sleeping processes are shown as sleeping rather than resident in memory; inference can wake them.

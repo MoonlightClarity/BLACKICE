@@ -37,7 +37,7 @@ test('local model settings construct typed controls and exact runtime/model opti
   for (const id of ['refresh', 'load', 'unload', 'import']) assert.equal(f.$('#next-local-' + id).type, 'button');
   assert.equal(f.$('#next-local-context').type, 'number');
   assert.equal(f.$('#next-local-source-path').type, 'text');
-  assert.deepEqual(f.$('#next-local-engine').children.map(item => item.getAttribute('value')), ['ollama', 'lmstudio']);
+  assert.deepEqual(f.$('#next-local-engine').children.map(item => item.getAttribute('value')), ['ollama', 'lmstudio', 'llamacpp']);
   assert.equal(f.$('#next-local-engine').value, 'ollama');
   await f.enter(); f.panel.enter(); await settle();
   assert.equal(f.calls.length, 1); assert.deepEqual(f.writes(), []);
@@ -127,4 +127,25 @@ test('shared select replacement resets removed selections and preserves a reused
   const replacement = option('replacement'); select.replaceChildren(replacement);
   assert.equal(select.value, 'replacement'); assert.equal(first.parentElement, null); assert.equal(second.parentElement, null);
   select.replaceChildren(); assert.equal(select.value, ''); assert.equal(replacement.parentElement, null);
+});
+
+test('llama settings preserve startup context and distinguish router from single-model unload', async t => {
+  const f = fixture(t);
+  f.state.catalog.engines.push({id: 'llamacpp', name: 'llama.cpp', available: true, mode: 'router', models: [{id: 'fixture.gguf', loaded: false, manageable: true}]});
+  await f.enter(); await f.input('#next-local-context', '8192');
+  const runtime = f.$('#next-local-engine'); runtime.value = 'llamacpp'; await runtime.dispatch('change');
+  assert.equal(f.$('#next-local-context').disabled, true);
+  assert.match(f.$('#next-local-runtime-status').textContent, /Router mode/);
+  await f.click('#next-local-load'); await until(() => !f.$('#next-local-refresh').disabled);
+  assert.deepEqual(f.writes()[0].body, {engine: 'llamacpp', model: 'fixture.gguf'});
+  assert.equal(f.$('#next-local-unload').disabled, false);
+  f.state.catalog.engines[2].mode = 'single'; f.state.catalog.engines[2].models[0].manageable = false;
+  await f.click('#next-local-refresh'); await until(() => !f.$('#next-local-refresh').disabled);
+  assert.equal(f.$('#next-local-unload').disabled, true);
+  assert.equal(f.$('#next-local-load').disabled, false);
+  assert.match(f.$('#next-local-runtime-status').textContent, /Single-model server/);
+  const count = f.writes().length; await f.click('#next-local-unload'); assert.equal(f.writes().length, count);
+  runtime.value = 'ollama'; await runtime.dispatch('change');
+  assert.equal(f.$('#next-local-context').disabled, false);
+  assert.equal(f.$('#next-local-context').value, '8192');
 });

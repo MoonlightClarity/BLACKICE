@@ -16,6 +16,7 @@ function routerFixture({ loadConfirmed = true, validCatalog = true } = {}) {
     if (parsed.port !== '8080') throw Object.assign(new Error('offline'), { code: 'ECONNREFUSED' });
     const body = options.body === undefined ? undefined : JSON.parse(options.body);
     calls.push({ route, body, method: options.method || 'GET' });
+    if (route === '/props') return reply({role: 'router'});
     if (route === '/models' && options.method !== 'POST') return reply(validCatalog ? {
       data: [
         { id: 'my-model.gguf', status: { value: state.loaded ? 'loaded' : 'unloaded' }, size: 1234 },
@@ -59,7 +60,8 @@ test('llama.cpp single-model server: registers active model but cannot pretend t
   const fetchImpl = async (url, options = {}) => {
     const route = new URL(url).pathname;
     calls.push({ route, body: options.body });
-    if (route === '/models') return reply({ error: 'Not found' }, 404);
+    if (route === '/props') return reply({default_generation_settings: {n_ctx: 8192}, is_sleeping: false});
+    if (route === '/models') return reply({ data: [{ id: 'single-f16.gguf', meta: {n_ctx:8192} }] });
     if (route === '/v1/models') return reply({ data: [{ id: 'single-f16.gguf' }] });
     throw Error('Unexpected request: ' + route);
   };
@@ -117,10 +119,19 @@ test('local HTTP loads llama.cpp router models and blocks remote requests', asyn
 });
 
 test('llama.cpp OpenAI-style error bodies remain actionable instead of becoming blank errors', async () => {
-  const fetchImpl = async (url, options = {}) => new URL(url).pathname === '/models/load'
+  const fetchImpl = async (url, options = {}) => new URL(url).pathname === '/props' ? reply({role: 'router'}) : new URL(url).pathname === '/models/load'
     ? reply({ error: { message: 'Insufficient free memory for this model' } }, 400)
     : reply({ data: [{ id: 'oversized.gguf', status: { value: 'unloaded' } }] });
   const manager = new LocalModelManager({ fetchImpl });
   await assert.rejects(manager.load({ engine: 'llamacpp', model: 'oversized.gguf' }), error =>
     error.code === 'LOCAL_ENGINE_REQUEST_FAILED' && error.status === 400 && /Insufficient free memory/.test(error.message));
+});
+
+test('sleeping router process is reusable without a duplicate load and remains unloadable', async () => {
+  const fixture = routerFixture();
+  const manager = new LocalModelManager({fetchImpl: fixture.fetchImpl});
+  const row = (await manager.llamaCatalog()).models.find(item => item.status === 'sleeping');
+  assert.equal(row.manageable, true);
+  await manager.load({engine: 'llamacpp', model: row.id});
+  assert.equal(fixture.calls.some(call => call.route === '/models/load'), false);
 });
