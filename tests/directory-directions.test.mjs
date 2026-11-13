@@ -84,3 +84,17 @@ test('Vibe queued acknowledgement without accepted is queued, never rejected or 
  const row={text:'change'},result=await router.steer(row);
  assert.equal(result.delivery,'queued');assert.equal(row.delivery.targets[0].status,'queued');await router.close();
 });
+
+test('serialized in-flight claim is uncertain and recreated router never replays it',async()=>{
+ const row={text:'preserve work'};let saved,release,calls=0;
+ const gate=new Promise(r=>release=r);
+ const router=createDirectoryDirections({rows:()=>[row],onDelivery:async row=>{saved=JSON.parse(JSON.stringify(row));},
+  runtime:{steerAgent:async()=>{calls++;await gate;return{accepted:true};}}});
+ router.phase({directoryTurnId:'a',threadId:'private',turnId:'turn'});
+ await new Promise(r=>setImmediate(r));
+ assert.equal(saved.delivery.status,'uncertain');assert.equal(saved.delivery.targets[0].status,'attempting');assert.equal(calls,1);
+ let replay=0;const recovered=createDirectoryDirections({rows:()=>[saved],runtime:{steerAgent:async()=>{replay++;return{accepted:true};}}});
+ recovered.phase({directoryTurnId:'a',threadId:'private',turnId:'turn'});
+ const receipt=await recovered.steer(saved);assert.equal(receipt.delivery,'uncertain');assert.equal(receipt.queued,false);assert.equal(replay,0);
+ await recovered.close();release();await router.close();
+});

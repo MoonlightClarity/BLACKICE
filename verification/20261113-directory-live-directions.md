@@ -5,7 +5,7 @@ Observed defect: the parent remains main-opening while Directory disposable chil
 
 Fix: private run/node Directory router tracks phase identities without assigning parent resume IDs. Active targets receive live directions through the existing runtime steer method; opening targets wait for IDs. Claims persist before dispatch, duplicate/race events do not replay attempts, and abort/closed/replaced phases are checked after persistence. Provider queued, rejected, uncertain and acknowledged outcomes remain distinct. Later phases still receive accepted user context through the existing authoritative context path.
 
-Verification: native Node focused run 82 passed, zero failed:
+Verification: native Node focused run 83 passed, zero failed (including serialized in-flight attempt recovery: uncertain, no replay):
 - directory-directions.test.mjs
 - directory-modes-engine.test.mjs
 - next-context-controls.test.mjs
