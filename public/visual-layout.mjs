@@ -1,5 +1,14 @@
 const fail=message=>{throw Object.assign(Error(message),{status:400,code:'VISUAL_INVALID'});};
 const size=(value,fallback,min=0)=>{const n=value??fallback;if(!Number.isFinite(n)||n<min||n>2000)fail('Use bounded layout dimensions.');return n;};
+export const wrapVisualText=(value,maxChars)=>value.split('\n').flatMap(line=>{const chars=Array.from(line),rows=[];while(chars.length>maxChars){let at=chars.slice(0,maxChars+1).lastIndexOf(' ');if(at<1)at=maxChars;rows.push(chars.splice(0,at).join(''));while(chars[0]===' ')chars.shift();}rows.push(chars.join(''));return rows;});
+export function noteTextLayout(note,width){
+ const x=size(note.x,20),y=size(note.y,40);
+ if(typeof note.text!=='string'||!note.text.trim())fail('Notes need text.');
+ const chars=Math.min(60,Math.floor((width-x)/8));
+ if(chars<1||y<14)fail('Note exceeds canvas.');
+ const rows=wrapVisualText(note.text,chars);
+ return {x,y,chars,rows,bottom:y+(rows.length-1)*18+4};
+}
 const collections=['items','links','groups','notes','regions'];
 const allowed={items:['id','label','status','x','y','width','height'],links:['id','from','to','label','uncertain'],groups:['id','label','members','x','y','width','height'],notes:['id','text','x','y'],regions:['id','label','summary','svg','x','y','width','height']};
 const overlaps=(a,b)=>a.x<b.x+b.width+24&&a.x+a.width+24>b.x&&a.y<b.y+b.height+24&&a.y+a.height+24>b.y;
@@ -52,7 +61,7 @@ export function layoutVisual(input){
  }
  let bottom=Math.max(20,...occupied.map(i=>i.y+i.height),...(rendered.groups||[]).map(g=>(g.y??0)+(g.height??0)));
  if(rendered.grid){rendered.grid.y??=bottom+40;const grid=rendered.grid;if(!Array.isArray(grid.columns)||!grid.columns.length||!Array.isArray(grid.rows)||grid.rows.some(row=>!Array.isArray(row)||row.length!==grid.columns.length))fail('Grid needs matching columns and rows.');const cw=(width-(grid.x??20)-20)/grid.columns.length;if(cw<80)fail('Grid columns are too narrow.');bottom=grid.y+[grid.columns,...grid.rows].reduce((n,row)=>n+Math.max(48,...row.map(c=>lineCount(c,Math.max(8,Math.floor((cw-16)/8)))*18+20)),0);}
- for(const note of rendered.notes||[]){delete note.id;if((note.x===undefined)!==(note.y===undefined))fail('Set both note coordinates or omit both.');note.x??=20;note.y??=bottom+40;bottom=Math.max(bottom,note.y+lineCount(note.text,60)*18);}
+ for(const note of rendered.notes||[]){delete note.id;if((note.x===undefined)!==(note.y===undefined))fail('Set both note coordinates or omit both.');note.x??=20;note.y??=bottom+40;bottom=Math.max(bottom,noteTextLayout(note,width).bottom);}
  const regions=structuredClone(document.regions||[]);for(const region of regions){region.width=size(region.width,width-40,80);region.height=size(region.height,200,50);if((region.x===undefined)!==(region.y===undefined))fail('Set both region coordinates or omit both.');region.x=size(region.x,20);region.y=size(region.y,bottom+40);if(region.x+region.width>width)fail('Custom region exceeds canvas.');bottom=Math.max(bottom,region.y+region.height);}
  rendered.height=size(document.height,Math.max(150,bottom+30),150);if(bottom>rendered.height)fail('Content exceeds canvas. Increase height or split the visual.');
  return {document,rendered,regions};
