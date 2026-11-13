@@ -48,6 +48,7 @@ test('goals have no implicit budget and reject invalid authored limits', () => {
 test('one goal continues for three turns in the same conversation and finishes with evidence', async t => {
   const {engine,goals,runtime,conversations} = await fixture(t, async (options,n) => {
     assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_goal'));
+    assert.ok(options.dynamicTools.every(tool => tool.type === 'function'), 'Native dynamic tool catalog must be consistently canonical, including relay_goal');
     assert.match(options.developerInstructions,/PERSISTENT CONVERSATION GOAL/);
     const {result} = await report(options,n === 3 ? 'complete' : 'progress'); assert.equal(result.success,true);
     return output(n);
