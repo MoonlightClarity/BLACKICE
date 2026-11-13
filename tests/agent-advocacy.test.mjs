@@ -120,7 +120,7 @@ for (const planningMode of ['on', 'off']) test(`current advocacy instructions re
   const runtime = new FixtureRuntime(async (options, number) => {
     assert.ok(options.developerInstructions.startsWith(BLACKICE_HARNESS_INSTRUCTIONS));
     assert.match(options.developerInstructions, /Fill forms to the best of your ability/);
-    assert.match(options.developerInstructions, /Do not invent personal facts or infer nationality/);
+    assert.match(options.developerInstructions, /limit on weak single-trait inference/);
     assert.match(options.developerInstructions, /Use only BLACKICE.s contained browser through relay_browser/);
     assert.equal(options.onApproval, undefined);
     if (number === 2) assert.equal(options.threadId, 'advocacy-fixture-thread');

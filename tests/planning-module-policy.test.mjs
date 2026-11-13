@@ -59,7 +59,7 @@ test('old Forced new-chat preference migrates to Modules even when it had an exp
   assert.deepEqual(newChat.planningOntology,defaultPolicy);
 });
 
-test('anti-overalignment isolates sponsorship, verified blockers and duplicates to minimum actionable scope',()=>{
+test('anti-overalignment calibrates inference without records-only gates and preserves local real blockers',()=>{
   const instruction=ANTI_OVERALIGNMENT_STOP_CALIBRATION.join(' ');
   for(const expectation of [
     /MINIMUM-SCOPE BLOCKING/,
@@ -67,9 +67,9 @@ test('anti-overalignment isolates sponsorship, verified blockers and duplicates 
     /immediately continue independently actionable leaves/,
     /If one application is blocked, continue other applications/,
     /NO independent authorized work/,
-    /sponsorship Yes\/No/i,
-    /do not presume Yes, do not invent No/,
-    /park only that single form field or dependent application/,
+    /User-supplied answers and user uncertainty policy govern/,
+    /grounded probability-based inference/,
+    /reassess the shared assumption/,
     /quarantine only that affected submission/,
     /never fabricated completion/,
     /No separate per-action checklist/i
@@ -115,7 +115,7 @@ test('new ontology chats retain Planning choices and default delegation on conti
       this.calls.push(options);
       assert.match(options.developerInstructions,/BLACKICE PLANNING MODULES \u2014 ON \/ OFF/);
       assert.match(options.developerInstructions,/MINIMUM-SCOPE BLOCKING/);
-      assert.match(options.developerInstructions,/sponsorship Yes\/No/);
+      assert.match(options.developerInstructions,/SOURCE AND INFERENCE CALIBRATION/);
       assert.match(options.developerInstructions,/continue other applications/i);
       assert.ok(!options.dynamicTools.some(tool=>tool.name==='relay_task'), 'forbidden decomposition removes task plan tool');
       assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_delegate'), 'retired subagent choice cannot silently remove default delegation');
