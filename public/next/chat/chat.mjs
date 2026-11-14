@@ -6,6 +6,7 @@ import { summaries, filterSummaries, conversationRuns, rootId, lastRunId, runnin
 import {readConversationExecutionModes,saveConversationExecutionModes,transferNewExecutionModes} from './execution-preferences.mjs';
 import { submitChat, replyState } from './send.mjs';
 import {createGoalControls,parseGoalCommand} from './goals.mjs';
+import {createAutonomyControls} from './autonomy.mjs';
 import { createConversationReader } from './reader-client.mjs';
 import { initAttachmentsUI } from '../../attachments-ui.mjs';
 import { escapeHTML } from '../core/dom.mjs';
@@ -19,7 +20,14 @@ import { createContextControls, conversationContext, contextStatistics, compacti
 
 export function createChatWorkspace({ mount, api, events, getStatus, notify = () => {}, onNavigate }) {
   const view = createChatFrame(mount);
-  const modelPicker=createGroupedModelPicker({select:view.model,label:'Model',onSetupProvider:typeof onNavigate==='function'?id=>onNavigate('settings',{modelProviderId:id}):undefined,onEnableProvider:async id=>{
+  const modelPicker=createGroupedModelPicker({select:view.model,label:'Model',onBeforeSelect:async choice=>{
+    const status=getStatus?.()||{},selected=choice.id==='default'?status.defaultModel:choice.id;
+    if(typeof selected!=='string')return;
+    const delimiter=selected.indexOf('::');if(delimiter<1)return;
+    const providerId=selected.slice(0,delimiter),model=selected.slice(delimiter+2);
+    if((status.providers||[]).find(item=>item.id===providerId)?.preset!=='llamacpp')return;
+    await api('/api/local-models/activate','POST',{providerId,model});
+  },onSetupProvider:typeof onNavigate==='function'?id=>onNavigate('settings',{modelProviderId:id}):undefined,onEnableProvider:async id=>{
     const owner=root(),fresh=await enableProviderForModel(api,runtimeStatus,id);
     if(state.destroyed||!state.active||root()!==owner)return null;
     refreshChoices(fresh);return fresh;
@@ -35,7 +43,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     indexLimit:CHAT_INDEX_BATCH, indexQuery:'',messageLimits:new Map(),
     attachmentIds:new Map(), attachmentsPending:false,managing:false,selecting:false,selection:new Map(),visible:[],listRead:0,destroyed:false,inputRevision:0,
     options:{...restoreChatPlanningOptions((()=>{try{return JSON.parse(localStorage.getItem('blackice.next.chatOptions')||'{}');}catch{return{};}})(),getStatus?.()?.runtimeSettings?.planningOntology),model:'default'} };
-  let goalControls=null;
+  let goalControls=null,autonomyControls=null;
   const directoryInspector=createDirectoryInspector({frame:view.shell,api,getConversationId:()=>state.selected,getRunId:()=>state.runs.at(-1)?.id||null});
   let newPlanningExecutionMode=state.options.planningExecutionMode;
   const executionNotice=mount.ownerDocument.createElement('section');
@@ -178,8 +186,9 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     if(view.model.disabled!==state.pending){view.model.disabled=state.pending;refreshChoices(runtimeStatus);}
     syncContext();
     directoryInspector.refresh(state.selected?state.runs.at(-1)?.id:null);
-    const item=state.selected,bucket=selectedBucket(),latest=state.runs.at(-1),busy=state.pending||state.managing||contextControls.isCompacting()||goalControls?.isBusy();
+    const item=state.selected,bucket=selectedBucket(),latest=state.runs.at(-1),busy=state.pending||state.managing||contextControls.isCompacting()||goalControls?.isBusy()||autonomyControls?.isBusy();
     goalControls?.update({conversationId:root(),running:state.runs.some(run=>run.status==='running'&&run.settled!==true),readonly:bucket!=='active',busy:state.pending||state.managing||state.loading});
+    autonomyControls?.update({conversationId:root(),readonly:bucket!=='active',busy:state.pending||state.managing||state.loading});
     view.directoryMode.disabled=busy||state.loading||bucket!=='active';
     executionNotice.hidden=Boolean(item)||root()!=='new'||bucket!=='active'||state.options.planningExecutionMode!=='plan_only';
     enableAutomatic.disabled=busy||state.loading||state.attachmentsPending;
@@ -222,6 +231,14 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       executionOptions:{...state.options,...(modelSelections.read(root(),state.runs).explicit?{}:{model:undefined}),
         ...(!state.runs.some(running)?{context:contextControls.read()}:{})}}),
     onStart:async(goal,options)=>{const result=await send({goal,taskOverride:goal.objective,consumeDraft:options.consumeDraft});if(!result)throw Error(view.hint.textContent||'Could not start the goal.');return result;},
+    onResult:async(result,owner)=>{
+      if(state.destroyed||!state.active||root()!==owner||state.pending||!state.selected)return;
+      const item=result?.run?.id?{...state.selected,runId:result.run.id,latestRunId:result.run.id}:state.selected;
+      await open(item,{refresh:true});
+    }});
+  autonomyControls=createAutonomyControls({view,api,notify,onError:showError,onChange:updateHead,
+    getStatus:()=>runtimeStatus,
+    getContext:()=>({runId:state.runs.at(-1)?.id,model:state.options.model}),
     onResult:async(result,owner)=>{
       if(state.destroyed||!state.active||root()!==owner||state.pending||!state.selected)return;
       const item=result?.run?.id?{...state.selected,runId:result.run.id,latestRunId:result.run.id}:state.selected;
@@ -578,6 +595,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     visuals.onEvent(event);
     if(!state.active)return;
     if(goalControls.handleEvent(event))return;
+    if(autonomyControls.handleEvent(event))return;
     if(event.type==='goal.updated'){
       const {conversationId,goal}=event.data||{};
       state.list=state.list.map(item=>rootId(item)===conversationId?{...item,goal:projectConversationGoal(goal)}:item);
@@ -761,7 +779,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     },
     leave() {
 
-      goalControls.close();
+      goalControls.close();autonomyControls.close();
       modelPicker.close({restoreFocus:false});
       state.active=false;state.generation++;state.listRead++;state.unsubscribe?.();state.unsubscribe=null;
       listRequested=false;listInitialize=null;listController?.abort();
@@ -775,6 +793,6 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     updateStatus(status) {if(status&&typeof status==='object'&&!Array.isArray(status)){runtimeStatus=status;if(root()==='new')restoreOntology('new');refreshChoices(status);updateHead();}},
     openConversationId(id){if(!id)return;const item=state.list.find(row=>rootId(row)===id||lastRunId(row)===id)||{id,runId:id,title:'Conversation'};void open(item);},
     getState() {return {active:state.active,selected:root(),runCount:state.runs.length,listing:state.list.length,selectionCount:state.selection.size,managing:state.managing};},
-    destroy(){this.leave();state.destroyed=true;goalControls.destroy();contextControls.destroy();directoryInspector.destroy();modelPicker.destroy();reader.close();artifacts.destroy();visuals.destroy();attachmentsUI.destroy();mount.innerHTML='';}
+    destroy(){this.leave();state.destroyed=true;goalControls.destroy();autonomyControls.destroy();contextControls.destroy();directoryInspector.destroy();modelPicker.destroy();reader.close();artifacts.destroy();visuals.destroy();attachmentsUI.destroy();mount.innerHTML='';}
   };
 }

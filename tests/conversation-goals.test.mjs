@@ -54,7 +54,7 @@ test('one goal continues for three turns in the same conversation and finishes w
       const turn = [...engine.runs.values()].at(-1);
       assert.match(turn.input, /Recorded evidence: The fixture verified/);
       assert.match(turn.input, /Deferred branch: One destination requires manual verification/);
-      assert.match(turn.input, /Execute the recorded next operation if it still applies: Inspect the independent destination/);
+      assert.match(turn.input, /Execute the recorded next operation if it is still supported: Inspect the independent destination/);
     }
     const {result} = await report(options,n === 3 ? 'complete' : 'progress', {
       evidence: 'The fixture verified stage ' + n + ' using its actual recorded test output.',
@@ -109,7 +109,7 @@ test('ordinary final text cannot complete the goal and three empty turns are vis
   const {engine,goals,runtime} = await fixture(t, async (_,n) => ({...output(n),output:'All done!'}));
   const run = engine.startRun({workflow:graph(),input:{task:'Do work',goal:{objective:'Do work'}}});
   await waitFor(async () => (await goals.get(run.id))?.status === 'blocked');
-  const goal = await goals.get(run.id); assert.equal(runtime.calls.length,3); assert.equal(goal.completionEvidence,null); assert.match(goal.lastReason,/no new verified progress/);
+  const goal = await goals.get(run.id); assert.equal(runtime.calls.length,3); assert.equal(goal.completionEvidence,null); assert.match(goal.lastReason,/no-progress boundary/);
 });
 
 test('explicit pause_after_turn keeps an in-flight turn and prevents automatic continuation', async t => {
@@ -453,7 +453,7 @@ test('autonomous recovery preserves prepared work, then detects repeated destina
       await report(options,'progress',{evidence:'An observed human verification challenge is still present.',blockedBranch:'Prepared application verification',nextAction:'Check a supported verification route for the prepared application.'});
     } else {
       assert.match(turn.input,/Return to the most advanced unfinished branch/);
-      assert.match(turn.input,/Most recent verified milestone/);
+      assert.match(turn.input,/Most recent reported milestone \(not independently verified\): prepared:historical-office-verified/);
       for (let k = 0; k < 4; k++) {
         const switched = await call({action:'navigate',url:'https://example.test/other-'+n+'-'+k});
         assert.equal(switched.success,true);
@@ -468,6 +468,9 @@ test('autonomous recovery preserves prepared work, then detects repeated destina
   assert.equal(runtime.calls.length,4,JSON.stringify([...engine.runs.values()].map(r => r.error)));
   assert.deepEqual(actions,['read','click','snapshot',...Array(8).fill('navigate')]);
   assert.equal((await goals.get(run.id)).completionEvidence,null);
+  assert.equal(goals.raw(run.id).lastReportedMilestone.milestone,'prepared:historical-office-verified');
+  assert.equal(goals.raw(run.id).lastMilestone,undefined,'a reported milestone is not host-verified');
+  assert.equal((goals.raw(run.id).milestones || []).length,0,'reported milestones do not reset observed progress');
 });
 
 test('distinct observed field advances survive omitted milestones, while repeated evidence and unknown edits stall', async t => {
@@ -493,7 +496,7 @@ test('distinct observed field advances survive omitted milestones, while repeate
     } else if (n === 4) {
       assert.equal((await call({action:'fill',ref:'office',text:'unknown'})).success,false);
     } else if (n === 5) {
-      assert.match(current.input,/Inspect its current state/);
+      assert.match(current.input,/reconcile current destination\/receipt read-only before ANY retry/);
       await call({action:'fill',ref:'office',text:'Verified address 3'});
     }
     const evidence = n === 4 ? 'Office address unknown' : 'Office address Verified address '+Math.min(n,3);
@@ -506,4 +509,53 @@ test('distinct observed field advances survive omitted milestones, while repeate
   assert.equal(goals.raw(run.id).milestones.length,3);
   assert.equal(goals.raw(run.id).noProgressTurns,3);
   assert.equal(unknownDispatches,1);
+});
+
+test('uncertain effect remains blocked after an unrelated read turn while a distinct action remains available', async t => {
+  let current; const dispatched = [];
+  const browser = {
+    status: () => ({available:true, contained:true, tabs:current ? [{tabId:'draft',owner:{taskId:current.taskId,runId:current.id,nodeId:'agent'}}] : []}),
+    async perform(args) {
+      dispatched.push(args.action + ':' + (args.ref || ''));
+      if (args.action === 'click' && args.ref === 'first')
+        throw Object.assign(new Error('Connection lost after possible dispatch'), {code:'BROWSER_ACTION_FAILED'});
+      return {tabId:'draft',frames:[{elements:[],text:'No conclusive receipt'}]};
+    },
+  };
+  const {engine,goals,runtime,conversations,dataDir} = await fixture(t, async (opts,n) => {
+    current = [...engine.runs.values()].at(-1);
+    const call = args => opts.onToolCall({name:'relay_browser',arguments:{browser:'relay',tabId:'draft',...args}});
+    if (n === 1) assert.equal((await call({action:'click',ref:'first'})).success,false);
+    if (n === 2) assert.equal((await call({action:'read',query:'receipt'})).success,true);
+    if (n === 3) {
+      assert.equal((await call({action:'click',ref:'first'})).code,'GOAL_EFFECT_UNRESOLVED');
+      assert.equal((await call({action:'click',ref:'different'})).success,true);
+    }
+    await report(opts,n === 3 ? 'complete' : 'progress',{evidence:'Controlled test evidence for turn '+n});
+    return output(n);
+  },{engine:{browser}});
+  const run = engine.startRun({workflow:graph(),input:{task:'Controlled test',goal:{objective:'Controlled test'}}});
+  await waitFor(() => goals.view(run.id)?.status === 'completed');
+  assert.equal(runtime.calls.length,3);
+  assert.deepEqual(dispatched,['click:first','read:','click:different']);
+  assert.equal(conversations.states[run.id].goalUnresolvedEffects.length,1);
+  assert.equal(conversations.states[run.id].goalUnresolvedEffects[0].kind,'uncertain_external_effect');
+  const reopened = await new ConversationArchive({dataDir,engine}).init();
+  const reopenedGoals = await new ConversationGoals({engine,conversations:reopened,autoStart:false}).init();
+  try {
+    assert.deepEqual(reopened.states[run.id].goalUnresolvedEffects,conversations.states[run.id].goalUnresolvedEffects);
+    const guarded = reopenedGoals.wrapTools({id:'reopened-turn',taskId:run.id,goal:{id:'goal'},goalEvidence:[]},'agent',async()=>assert.fail('must not dispatch'));
+    assert.equal((await guarded({name:'relay_browser',arguments:{browser:'relay',tabId:'draft',action:'click',ref:'first'}})).code,'GOAL_EFFECT_UNRESOLVED');
+    const receipt = (await reopenedGoals.effectReceipts(run.id))[0];
+    const request = {receiptId:receipt.id,signature:receipt.signature,observedAt:receipt.at,expectedResolutionCount:0,outcome:'unknown',evidence:'Read-only check did not establish a result.'};
+    assert.equal((await reopenedGoals.resolveEffect(run.id,request)).receipt.resolution.outcome,'unknown');
+    assert.equal((await guarded({name:'relay_browser',arguments:{browser:'relay',tabId:'draft',action:'click',ref:'first'}})).code,'GOAL_EFFECT_UNRESOLVED');
+    await assert.rejects(reopenedGoals.resolveEffect(run.id,request),{code:'GOAL_EFFECT_STALE'});
+    const resolved = await reopenedGoals.resolveEffect(run.id,{...request,expectedResolutionCount:1,outcome:'not_occurred',evidence:'Operator checked the destination and confirmed no effect.'});
+    assert.equal(resolved.replayed,false); assert.equal(resolved.receipt.resolutions.length,2);
+    let dispatchedAfterResolution=0;
+    const retry = reopenedGoals.wrapTools({id:'new-turn',taskId:run.id,goal:{id:'goal'},goalEvidence:[]},'agent',async()=>{dispatchedAfterResolution++;return {success:true,contentItems:[]};});
+    assert.equal((await retry({name:'relay_browser',arguments:{browser:'relay',tabId:'draft',action:'click',ref:'first'}})).success,true);
+    assert.equal(dispatchedAfterResolution,1);
+  } finally { await reopenedGoals.close(); await reopened.close(); }
 });

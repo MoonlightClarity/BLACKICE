@@ -25,6 +25,8 @@ test('native restart diagnostics ignore unknown codes, non-error JSON, malformed
 });
 
 test('Windows installer inventory accepts the new runtime assets and the selected release notes', () => {
+  assert.equal(approvedWindowsPackageFile('skills/autonomy/SKILL.md','9.8.7'),true);
+  assert.equal(approvedWindowsPackageFile('skills/autonomy/unreviewed.md','9.8.7'),false);
   for (const file of ['BROWSER-IMPORT.md', 'CHATGPT-CONNECTOR.md', 'scripts/browser-cli.mjs', 'scripts/repair-shortcuts.ps1', 'skills/planning/SKILL.md', 'desktop/browser-compatibility/manifest.json', 'desktop/browser-compatibility/main.js', 'desktop/browser-compatibility.mjs', 'lib/browser-profile.mjs', 'public/browser-ui.mjs', 'RELEASE-NOTES-9.8.7.md', 'RELEASE-NOTES-2.33.8.md', 'RELEASE-NOTES-2.33.9.md', 'RELEASE-NOTES-2.33.10.md', 'RELEASE-NOTES-2.33.11.md', 'RELEASE-NOTES-2.33.12.md', 'RELEASE-NOTES-2.33.13.md', 'RELEASE-NOTES-2.34.0.md']) {
     assert.equal(approvedWindowsPackageFile(file, '9.8.7'), true, file);
   }

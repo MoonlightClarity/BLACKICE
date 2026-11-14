@@ -27,6 +27,7 @@ export function projectFamily(family) {
       id:run.id,taskId:run.taskId,parentRunId:run.parentRunId,retryOf:run.retryOf,
       createdAt:run.createdAt,updatedAt:run.updatedAt,
       input:run.input,status:run.status,settled:run.settled,output:run.output,
+       ...(run.autonomy?.automatic||run.autonomyDispatch?{autonomy:{automatic:true}}:{}),
       error:diagnosticText(run.error),errorCode:diagnosticCode(run.errorCode),
       ...(chatErrorText(run.error)?{error:chatErrorText(run.error)}:{}),
       planningMode:run.planningMode,planningEnforcement:run.planningEnforcement,

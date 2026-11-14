@@ -38,10 +38,10 @@ test('calibrate an existing chat, turn autonomy on, off, and on again without a 
   await tick();
   assert.equal(view.goalToggle.getAttribute('role'),'switch');
   assert.equal(view.goalToggle.getAttribute('aria-checked'),'false');
-  assert.equal(view.goalToggle.textContent,'Autonomy: Off');
+  assert.equal(view.goalToggle.textContent,'Goal: Off');
   await view.goalToggle.dispatch('click');
   assert.equal(view.goalDialog.open,true);
-  assert.equal(view.goalTitle.textContent,'Turn on autonomy');
+  assert.equal(view.goalTitle.textContent,'Create Goal');
   assert.match(view.goalInput.value,/^Audit the release process/);
   assert.match(view.goalInput.value,/corrections, constraints and decisions established later/);
   assert.match(view.goalContext.textContent,/4 saved turns/);
@@ -53,13 +53,13 @@ test('calibrate an existing chat, turn autonomy on, off, and on again without a 
   assert.equal(posts[0].body.objective,view.goalObjective.textContent);
   assert.equal(posts[0].route,'/api/conversations/calibrated/goal');
   assert.equal(view.goalToggle.getAttribute('aria-checked'),'true');
-  assert.equal(view.goalToggle.textContent,'Autonomy: On');
+  assert.equal(view.goalToggle.textContent,'Goal: On');
   assert.equal(view.goalDialog.open,false);
   await view.goalToggle.dispatch('click');
   assert.equal(posts[1].body.action,'pause');
   assert.equal(view.goalToggle.getAttribute('aria-checked'),'false');
   assert.equal(view.goalObjective.textContent,goal.objective);
-  assert.equal(view.goalToggle.textContent,'Autonomy: Off');
+  assert.equal(view.goalToggle.textContent,'Goal: Off');
   await view.goalToggle.dispatch('click');
   assert.equal(posts[2].body.action,'resume');
   assert.equal(view.goalToggle.getAttribute('aria-checked'),'true');

@@ -58,13 +58,13 @@ async function verify(){try{
   window.webContents.on('console-message',event=>{if(/Uncaught/.test(event.message||''))errors.push(event.message);});
   phase('loading fixture');await Promise.race([window.loadURL('http://127.0.0.1:'+fixture.server.address().port+'/next/'),sleep(15000).then(()=>{throw Error('Fixture load timed out');})]);
   await until(()=>evaluate('Boolean(document.querySelector(".next-conversation"))'),'Conversation catalog');
-  assert.equal(await evaluate('document.querySelector("#next-chat-goal-toggle").textContent'),'Autonomy: Off');
+  assert.equal(await evaluate('document.querySelector("#next-chat-goal-toggle").textContent'),'Goal: Off');
   assert.equal(await evaluate('document.querySelector("#next-chat-goal-toggle").getAttribute("aria-checked")'),'false');
   checks.defaultAutonomyOff=true;
   await click('.next-conversation');
   await until(()=>evaluate('!document.querySelector("#next-chat-goal-card").hidden&&!document.querySelector("#next-chat-send").disabled'),'Goal and history loaded');
   assert.equal(await evaluate('document.querySelector("#next-chat-goal-status").textContent'),'Ready to continue');
-  assert.equal(await evaluate('document.querySelector("#next-chat-goal-toggle").textContent'),'Autonomy: On');
+  assert.equal(await evaluate('document.querySelector("#next-chat-goal-toggle").textContent'),'Goal: On');
   assert.equal(await evaluate('document.querySelector("#next-chat-goal-toggle").getAttribute("aria-checked")'),'true');
   checks.explicitAutonomyOn=true;
   await geometry('#next-chat-goal-pause');await geometry('#next-chat-goal-toggle');
@@ -74,7 +74,7 @@ async function verify(){try{
   await fill('#next-chat-input','/goal pause');await evaluate('document.querySelector("#next-chat-form").requestSubmit();true');
   await until(()=>evaluate('document.querySelector("#next-chat-goal-status").textContent==="Paused"&&!document.querySelector("#next-chat-goal-resume").disabled'),'Slash pause');
   assert.equal(posts.length,1);assert.equal(posts[0].body.action,'pause');assert.equal(await evaluate('document.querySelector("#next-chat-input").value'),'');
-  assert.equal(await evaluate('document.querySelector("#next-chat-goal-toggle").textContent'),'Autonomy: Off');
+  assert.equal(await evaluate('document.querySelector("#next-chat-goal-toggle").textContent'),'Goal: Off');
   assert.equal(await evaluate('document.querySelector("#next-chat-goal-toggle").getAttribute("aria-checked")'),'false');
   checks.explicitAutonomyOff=true;
   checks.slashCommandUsesGoalEndpoint=true;

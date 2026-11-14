@@ -83,6 +83,15 @@ test('local model settings construct typed controls and exact runtime/model opti
   assert.equal(f.$('#next-local-unload').disabled, false); assert.deepEqual(f.writes(), []);
 });
 
+test('launcher configuration loads only when llama.cpp settings are selected', async t => {
+  const f=fixture(t,call=>call.route==='/api/local-models/config'?{revision:1,recommended:{},settings:{},process:{}}:undefined);
+  await f.enter();
+  assert.equal(f.calls.filter(call=>call.route==='/api/local-models/config').length,0);
+  const engine=f.$('#next-local-engine');engine.value='llamacpp';await engine.dispatch('change');await settle();
+  assert.equal(f.calls.filter(call=>call.route==='/api/local-models/config'&&call.method==='GET').length,1);
+  assert.deepEqual(f.writes(),[]);
+});
+
 test('a pending local load captures exact model/context and suppresses duplicate writes', async t => {
   const gate = deferred();
   const f = fixture(t, (call, state) => {

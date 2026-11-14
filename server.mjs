@@ -8,6 +8,9 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ConversationArchive } from './lib/conversations.mjs';
 import { ConversationGoals } from './lib/conversation-goals.mjs';
+import {handleNativeWriteRecoveryHttp} from './lib/native-write-recovery-http.mjs';
+import {ConversationAutonomy} from './lib/conversation-autonomy.mjs';
+import {handleConversationAutonomyHttp} from './lib/conversation-autonomy-http.mjs';
 import { handleConversationGoalsHttp } from './lib/conversation-goals-http.mjs';
 import { conversationGoalsDirectTool } from './lib/conversation-goals-direct-tool.mjs';
 import { createActivityService } from './lib/activity.mjs';
@@ -120,7 +123,9 @@ export async function createHarnessServer(options = {}) {
   const showBrowserOS = options.showBrowserOS || revealBrowserOS;
   const runtime = options.runtime || new ProviderRuntime({ codex: new CodexRuntime({ isolatedHistory: true, getConnectedGmail: () => runtimeSettings.get().connectedGmail }), mistralVibe: options.mistralVibe === false ? null : options.mistralVibe || new MistralVibeRuntime({ dataDir, workspaceDir: defaultCwd }), dataDir, ...options.secretStorage });
   await runtime.init?.();
-  const localModels = options.localModels || new LocalModelManager();
+  const localModels = options.localModels || new LocalModelManager({dataDir});
+  await localModels.init?.();
+  runtime.localModels = localModels;
   const desktop = options.desktop || new DesktopController();
   const nativeWindows = options.nativeWindowManager || (options.nativeWindows ? new NativeWindowManager({ ...options.nativeWindows, dataDir }) : null);
   const browser = options.browser || new BrowserWorkspace();
@@ -175,6 +180,7 @@ export async function createHarnessServer(options = {}) {
   engine.conversationAdmission=run=>conversations.assertRunAdmission(run);
   engine.persistConversation = run => conversations.capture(run);
   const goals = await new ConversationGoals({ engine, conversations, autoStart: false }).init();
+  const autonomy = await new ConversationAutonomy({engine,conversations,autoStart:false}).init();
   // Recent-run retention must not turn a repeated send into a new task.
   const recoverClientRequest = async value => {
     const id = engine.clientRequestRunId?.(value?.requestId);
@@ -570,6 +576,7 @@ export async function createHarnessServer(options = {}) {
       if(pathname==='/api/conversations'&&req.method==='GET')return json(res,200,{conversations:conversations.list(new URL(req.url,'http://'+host).searchParams.get('state')||'active')});
       if(await handleVisualHttp({req,res,pathname,body,json,store:visuals,mutations:fileMutations}))return;
       if(await handleConversationGoalsHttp({req,res,pathname,goals,body,json,mutations:fileMutations}))return;
+      if(await handleConversationAutonomyHttp({req,res,pathname,autonomy,body,json,mutations:fileMutations}))return;
       if(await handleShadowdancerContextHttp({req,res,pathname,host,conversations,engine,body,json,fileMutations,onUpdated:sendEvent}))return;
       if (await handlePlanningDiagnosticsHttp({req,res,pathname,service:planningDiagnostics,body,json,fileMutations})) return;
       if (pathname === '/api/planning-browser' || pathname.startsWith('/api/planning-browser/')) {
@@ -658,6 +665,7 @@ export async function createHarnessServer(options = {}) {
       const methodTypeMatch=pathname.match(/^\/api\/method-types\/([a-zA-Z0-9_-]+)$/);
       if(methodTypeMatch&&req.method==='PUT')return json(res,200,await methods.updateType(methodTypeMatch[1],await body(req)));
       if (await mistralVibeHttp(req, res, pathname)) return;
+      if (pathname === '/api/codex/native-write-recovery') { await handleNativeWriteRecoveryHttp({req,res,pathname,runtime,engine,body,json}); return; }
       if(pathname==='/api/codex/models/check'&&req.method==='POST'){
         const value=await body(req);
         if(!value||Array.isArray(value)||Object.keys(value).length!==1||typeof value.model!=='string')return json(res,400,{error:'Supply one exact model ID as {model}.'});
@@ -1047,7 +1055,7 @@ export async function createHarnessServer(options = {}) {
       if (connectionMatch && !connectionMatch[2] && req.method === 'DELETE') { await body(req); return json(res, 200, await connections.remove(connectionMatch[1])); }
       if (connectionMatch?.[2] === 'tools' && req.method === 'GET') return json(res, 200, await connections.tools(connectionMatch[1], { query: new URL(req.url, `http://${host}`).searchParams.get('query') || '' }));
       if (['connect','disconnect'].includes(connectionMatch?.[2]) && req.method === 'POST') { const value = await body(req); if (connectionMatch[2] === 'disconnect') return json(res, 200, await connections.disconnect(connectionMatch[1])); await connections.connect(connectionMatch[1], { reconnect: value.reconnect === true }); return json(res, 200, connections.list().find(item => item.id === connectionMatch[1])); }
-      if (pathname === '/api/local-models' || /^\/api\/local-models\/(?:load|unload|import|downloads)$/.test(pathname)) {
+      if (pathname === '/api/local-models' || /^\/api\/local-models\/(?:load|unload|import|downloads|config|activate)$/.test(pathname)) {
         const result = await localModelHTTP({
           manager: localModels, runtime, pathname, method: req.method,
           remote: req.headers['x-blackice-remote'] === '1',
@@ -1301,6 +1309,7 @@ export async function createHarnessServer(options = {}) {
         const restartCancellationRequested = options.desktopRestart?.cancelPending?.() === true;
         if (restartCancellationRequested) attempt(() => options.desktopRestart.waitForHandoff());
         attempt(()=>goals.pauseAll('All chats stopped.'));
+        attempt(()=>autonomy.pauseAll('All chats stopped.'));
         attempt(()=>inbox.pause('All chats stopped. Resume queued starts when ready.'));
         attempt(()=>operations.pause('All chats stopped.'));
         attempt(()=>pauseProjects('All work stopped. Resume the project when ready.'));
@@ -1347,11 +1356,12 @@ export async function createHarnessServer(options = {}) {
       files['/visual-label-layout.mjs'] = 'visual-label-layout.mjs';
       files['/visual-edits.mjs'] = 'visual-edits.mjs';
       files['/visual-document.mjs'] = 'visual-document.mjs';
+      files['/visual-paint.mjs'] = 'visual-paint.mjs';
       files['/token-usage.mjs'] = 'token-usage.mjs';
       files['/provider-availability.mjs'] = 'provider-availability.mjs';
       const nextFiles = ['visuals.css','index.html','base.css','chat.css','chat-management.css','brand.css','work-visual.css','intelligence-planning.css','intelligence-map.css','controls.css','layout-fixes.css','planning-ontology.css','planning-browser.css','planning-current.css','guard.js','app.mjs',
         'core/api.mjs','core/dom.mjs','core/events.mjs','core/model-picker.mjs','core/context-controls.mjs','model-picker.css',
-        'chat/chat.mjs','chat/visuals.mjs','chat/model.mjs','chat/render.mjs','chat/send.mjs','chat/goals.mjs','chat/planning-timeline.mjs',
+        'chat/chat.mjs','chat/visuals.mjs','chat/model.mjs','chat/render.mjs','chat/send.mjs','chat/goals.mjs','chat/goal-effects.mjs','chat/autonomy.mjs','chat/planning-timeline.mjs',
         'chat/options-model.mjs','chat/ontology-preferences.mjs','chat/execution-preferences.mjs','chat/artifacts.mjs','parity.css',
         'chat/reader-model.mjs','chat/reader-worker.mjs','chat/reader-client.mjs',
         // Native hosting UI assets are registered at the public root below.
@@ -1362,7 +1372,7 @@ export async function createHarnessServer(options = {}) {
         'browser.css','knowledge.css','workspaces/knowledge.mjs','workspaces/knowledge-model.mjs',
         'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/activity-overview.mjs','workspaces/activity-model.mjs','activity.css','workspaces/settings.mjs','workspaces/settings-storage.mjs','workspaces/settings-gemini-connector.mjs','workspaces/settings-claude-connector.mjs','workspaces/settings-restart.mjs',
         'settings.css','settings-identity.css','settings-providers.css','settings-connections.css',
-        'workspaces/settings-identity.mjs','workspaces/applications.mjs','workspaces/settings-subscriptions.mjs','workspaces/settings-local-models.mjs','workspaces/settings-providers.mjs','workspaces/settings-provider-directory.mjs','workspaces/settings-connections.mjs','workspaces/settings-import.mjs'];
+        'workspaces/settings-identity.mjs','workspaces/applications.mjs','workspaces/settings-subscriptions.mjs','workspaces/settings-local-models.mjs','workspaces/llama-launch-settings.mjs','workspaces/settings-providers.mjs','workspaces/native-write-recovery.mjs','workspaces/settings-provider-directory.mjs','workspaces/settings-connections.mjs','workspaces/settings-import.mjs'];
       for (const file of nextFiles) files['/next/' + file] = 'next/' + file;
       files['/next'] = 'next/index.html'; files['/next/'] = 'next/index.html';
       files['/native-apps-ui.mjs'] = 'native-apps-ui.mjs';
@@ -1416,6 +1426,7 @@ export async function createHarnessServer(options = {}) {
       Promise.resolve().then(() => runtime.start()).then(() => inbox.kick()).finally(() => {
         providerStartupPending=false;
         goals.start();
+        autonomy.start();
         operations.kick?.();
         runtimeUpdate();
       }).catch(error => { void diagnostics.recordError('runtime','runtime_failed',error);console.error('Agent connection failed; see support diagnostics.'); });
@@ -1443,6 +1454,7 @@ export async function createHarnessServer(options = {}) {
         await cleanup(()=>Promise.all([...observers.keys()].map(id=>stopObserving(id,'Relay is closing.'))));
         await cleanup(()=>liveEdits.close());
         await cleanup(() => goals.close());
+        await cleanup(() => autonomy.close());
         await cleanup(() => methods.close());
         await cleanup(() => projects.close());
         await cleanup(() => capabilities.close());
@@ -1486,6 +1498,7 @@ export async function createHarnessServer(options = {}) {
           if (!saved.healthy) throw new Error(saved.error || 'Local knowledge could not be saved.');
         });
         await cleanup(() => runtime.close?.());
+        await cleanup(() => localModels.close?.());
         for (const res of clients) await cleanup(() => res.end());
         clients.clear();
         await cleanup(() => server.closeAllConnections());

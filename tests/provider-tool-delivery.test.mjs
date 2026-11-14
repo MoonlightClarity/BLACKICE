@@ -107,7 +107,7 @@ function codexFixture(receipt, delivered) {
   const runtime = Object.create(CodexRuntime.prototype), child = { stdin: stream, killed: false };
   const state = { threadId: 'thread', turnId: 'turn', done: false, messages: new Map(), dynamicTools: [{ type: 'function', name: 'relay_task', inputSchema: { properties: { view: { enum: ['current', 'full'] }, viewHash: {} } } }],
     toolController: new AbortController(), onToolCall: async () => receipt, onToolResultDelivered: value => delivered.push(value) };
-  Object.assign(runtime, { child, threads: new Map([['thread', state]]), _emitRun() {} });
+  Object.assign(runtime, { child, threads: new Map([['thread', state]]), pendingNativeWrites: new Set(), _emitRun() {} });
   return { runtime, child, finish: cause => finishWrite(cause), serialized: () => serialized };
 }
 test('native Codex reports the final projected task payload only after successful pipe handoff', async () => {

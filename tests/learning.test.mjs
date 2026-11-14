@@ -388,13 +388,13 @@ test('feedback triggers another actual review and negative feedback keeps its st
 test('cancellation discards uncommitted model proposals and rejects late tool callbacks',async t=>{
   const entered=deferred();let savedOptions;
   const {learning,knowledge,add,done}=await harness(t,async options=>{savedOptions=options;await call(options,proposal(options));entered.resolve();return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(Object.assign(new Error('Cancelled fixture review'),{name:'AbortError'})),{once:true}));});
-  const review=await learning.scheduleAfterRun(add());await entered.promise;await learning.cancelBackground('User stopped this review.');assert.equal((await done(review.id)).status,'cancelled');assert.equal(knowledge.list().length,0);assert.equal(learning.listLessons().length,0);await assert.rejects(call(savedOptions,proposal(savedOptions)),{name:'AbortError'});
+  const review=await learning.scheduleAfterRun(add());await within(entered.promise,'review callback');await learning.cancelBackground('User stopped this review.');assert.equal((await done(review.id)).status,'cancelled');assert.equal(knowledge.list().length,0);assert.equal(learning.listLessons().length,0);await assert.rejects(call(savedOptions,proposal(savedOptions)),{name:'AbortError'});
 });
 
 test('foreground preemption waits for runtime acknowledgement and automatically resumes the queued review after foreground work',async t=>{
   let busy=false;const entered=deferred(),release=deferred();
   const {learning,add,done,calls}=await harness(t,async(options,index)=>{if(index===1){entered.resolve();await new Promise(resolve=>options.signal.addEventListener('abort',resolve,{once:true}));await release.promise;throw Object.assign(new Error('Preempted'),{name:'AbortError'});}await finish(options);return{};},{isForegroundBusy:()=>busy});
-  const review=await learning.scheduleAfterRun(add());await entered.promise;busy=true;let stopped=false;const stopping=learning.cancelBackground().then(()=>{stopped=true;});await new Promise(resolve=>setTimeout(resolve,10));assert.equal(stopped,false);release.resolve();await stopping;assert.equal(learning.getReview(review.id).status,'queued');assert.equal(calls.length,1);
+  const review=await learning.scheduleAfterRun(add());await within(entered.promise,'review callback');busy=true;let stopped=false;const stopping=learning.cancelBackground().then(()=>{stopped=true;});await new Promise(resolve=>setTimeout(resolve,10));assert.equal(stopped,false);release.resolve();await stopping;assert.equal(learning.getReview(review.id).status,'queued');assert.equal(calls.length,1);
   busy=false;learning.kick(0);assert.equal((await done(review.id)).status,'no_changes');assert.equal(calls.length,2);
 });
 
@@ -402,7 +402,7 @@ test('a foreground task and shutdown wait for an already-started durable commit 
   const entered=deferred(),release=deferred();
   const {learning,knowledge,add,done}=await harness(t,async options=>{await call(options,proposal(options));await finish(options);return{};});
   const upsert=knowledge.upsert.bind(knowledge);knowledge.upsert=async(...args)=>{entered.resolve();await release.promise;return upsert(...args);};
-  const review=await learning.scheduleAfterRun(add());await entered.promise;assert.equal(learning.getReview(review.id).status,'committing');let stopped=false;const stopping=learning.cancelBackground().then(()=>{stopped=true;});await new Promise(resolve=>setTimeout(resolve,10));assert.equal(stopped,false);release.resolve();await stopping;assert.equal((await done(review.id)).status,'completed');assert.equal(knowledge.list().length,1);await learning.close();assert.equal(learning.status().healthy,true);
+  const review=await learning.scheduleAfterRun(add());await within(entered.promise,'durable commit');assert.equal(learning.getReview(review.id).status,'committing');let stopped=false;const stopping=learning.cancelBackground().then(()=>{stopped=true;});await new Promise(resolve=>setTimeout(resolve,10));assert.equal(stopped,false);release.resolve();await stopping;assert.equal((await done(review.id)).status,'completed');assert.equal(knowledge.list().length,1);await learning.close();assert.equal(learning.status().healthy,true);
 });
 
 test('manual and off modes are durable, context is workspace scoped, and free text alone never changes learning',async t=>{

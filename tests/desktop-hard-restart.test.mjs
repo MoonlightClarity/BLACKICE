@@ -21,6 +21,22 @@ async function removeFixture(dir) {
   await rm(target, { recursive: true, force: true });
 }
 
+async function waitForReplacementRuntime(file, originalPid, {read=readFile, wait=delay, attempts=100}={}) {
+  for(let n=0;n<attempts;n++) {
+    try { const value=JSON.parse(await read(file,'utf8')); if(value.pid!==originalPid && Number.isSafeInteger(value.pid)) return value; }
+    catch(error) { if(!(error instanceof SyntaxError) && error.code!=='ENOENT') throw error; }
+    await wait(100);
+  }
+  throw new Error('Replacement did not publish a complete runtime identity within the deadline.');
+}
+
+test('replacement identity polling tolerates incomplete writes but not unrelated read errors',async()=>{
+  const rows=['', '{"pid":', '{"pid":1}', '{"pid":2,"lifecycle":{"mode":"headless"}}'];
+  const result=await waitForReplacementRuntime('fixture',1,{read:async()=>rows.shift(),wait:async()=>{},attempts:4});
+  assert.equal(result.pid,2);assert.equal(result.lifecycle.mode,'headless');
+  await assert.rejects(waitForReplacementRuntime('fixture',1,{read:async()=>{throw Object.assign(Error('denied'),{code:'EACCES'});},wait:async()=>{},attempts:1}),{code:'EACCES'});
+});
+
 test('force uses native when healthy and falls back on failed or unavailable native path', async () => {
   const options = parseDesktopRestartArgs(['--restart', '--force', '--request-id=test']);
   let calls = 0;
@@ -211,8 +227,7 @@ test('an owned PowerShell command and its helper survive termination of their fr
   assert.equal(result?.outcome, 'replacement_launched', JSON.stringify(result));
   for (let n = 0; n < 200; n++) { try { if ((await readFile(events, 'utf8')).trim().split('\n').length === 2) break; } catch {} await delay(100); }
   assert.equal((await readFile(events, 'utf8')).trim().split('\n').length, 2);
-  let resumed;
-  for (let n = 0; n < 100; n++) { resumed = JSON.parse(await readFile(path.join(profile, 'desktop-runtime.json'), 'utf8')); if (resumed.pid !== original.pid) break; await delay(100); }
+  const resumed = await waitForReplacementRuntime(path.join(profile, 'desktop-runtime.json'), original.pid);
   assert.equal(resumed.lifecycle.mode, 'headless'); assert.notEqual(resumed.pid, original.pid);
 });
 

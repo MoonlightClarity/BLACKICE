@@ -1,4 +1,5 @@
 import {stableId} from '../core/dom.mjs';
+import {createGoalEffects} from './goal-effects.mjs';
 
 const ACTIONS=new Set(['set','update','pause','resume','clear']);
 const RESUMABLE=new Set(['paused','blocked','interrupted','budget_exhausted']);
@@ -56,6 +57,7 @@ export async function updateConversationGoal({api,conversationId,goal,action,obj
 
 /** The server owns the goal and its loop. This view never schedules work itself. */
 export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},onChange=()=>{},onGoalChange=()=>{},notify=()=>{},onError=()=>{}}) {
+  const effectControls=view.goalEffectsMount?createGoalEffects({mount:view.goalEffectsMount,api}):null;
   let owner='new',goal=null,loading=false,busy=false,locked=false,readonly=false,working=false,destroyed=false,readToken=0,editorOwner=null;
   let readError='',queuedRead=null;
   const paint=()=>{
@@ -67,8 +69,8 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
     view.goalToggle.disabled=busy||locked||loading||readonly||Boolean(pausePending);
     view.goalToggle.setAttribute('aria-checked',String(enabled));
     view.goalToggle.dataset.state=enabled?'on':'off';
-    view.goalToggle.textContent=enabled?'Autonomy: On':'Autonomy: Off';
-    view.goalToggle.title=readError|| (pausePending?'Waiting for the current turn to stop before autonomy can resume.':enabled?'Turn autonomy off; stop automatic continuation and retain this chat and goal.':goal&&RESUMABLE.has(goal.status)?'Resume this saved autonomous goal in the same chat.':'Calibrate this conversation and turn autonomous execution on.');
+    view.goalToggle.textContent=enabled?'Goal: On':'Goal: Off';
+    view.goalToggle.title=readError|| (pausePending?'Waiting for the current Goal turn to stop.':enabled?'Pause Goal Mode, retaining its saved objective and progress.':goal&&RESUMABLE.has(goal.status)?'Resume this saved Goal Mode in the same chat.':'Create an explicit persistent goal for this conversation.');
     if(current){
       view.goalStatus.textContent=current.label;view.goalCard.dataset.status=current.status;
       view.goalObjective.textContent=current.objective;view.goalProgress.textContent=current.progress;
@@ -127,8 +129,8 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
     const context=getContext()||{},turns=Math.max(0,Number(context.calibration?.turns)||0);
     view.goalInput.value=goal?.objective||autonomyCalibrationObjective({draft:context.draft,firstTask:context.calibration?.firstTask,turns});
     view.goalLimit.value=goal?.maxTurns==null?'':String(goal.maxTurns);
-    view.goalTitle.textContent=goal&&goal.status!=='completed'?'Calibrate autonomous goal':'Turn on autonomy';
-    view.goalSave.textContent=goal&&goal.status!=='completed'?'Save calibration':'Turn on autonomy';
+    view.goalTitle.textContent=goal&&goal.status!=='completed'?'Edit Goal':'Create Goal';
+    view.goalSave.textContent=goal&&goal.status!=='completed'?'Save Goal':'Create Goal';
     if(view.goalContext){view.goalContext.hidden=owner==='new';view.goalContext.textContent=owner==='new'?'':`Using this chat’s ${turns} saved ${turns===1?'turn':'turns'} as context. Your corrections and selected settings stay with this conversation.`;}
     view.goalError.hidden=true;view.goalDialog.showModal();view.goalInput.focus({preventScroll:true});
   }
@@ -138,7 +140,7 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
       if(owner!=='new')await refresh();
       const current=goalPresentation(goal,{running:working});
       if(readError)throw Error(readError);
-      notify(current?current.label+' · '+current.progress+': '+current.objective:'No goal is set. Use /goal followed by an objective, or choose Goal.');
+      notify(current?current.label+' · '+current.progress+': '+current.objective:'No Goal Mode objective is set. Use /goal followed by an objective.');
       return {goal};
     }
     if(owner==='new'){
@@ -178,6 +180,7 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
     update(context={}) {
       const target=context.conversationId||'new',changed=target!==owner;
       readonly=Boolean(context.readonly);locked=Boolean(context.busy);working=Boolean(context.running);
+      effectControls?.update(target,{readonly:readonly||locked});
       if(changed){
         ++readToken;owner=target;goal=null;loading=false;readError='';closeEditor();
         if(owner!=='new')void refresh();
@@ -199,6 +202,6 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
     getGoal:()=>goal,
     isBusy:()=>busy,
     close:closeEditor,
-    destroy(){destroyed=true;++readToken;closeEditor();}
+    destroy(){destroyed=true;++readToken;closeEditor();effectControls?.destroy();}
   };
 }

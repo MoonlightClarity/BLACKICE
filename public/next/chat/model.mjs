@@ -2,6 +2,7 @@
 const text = value => typeof value === 'string' ? value : '';
 const hasVisibleChatText = value => typeof value === 'string' && /[^\s\p{Default_Ignorable_Code_Point}]/u.test(value);
 export const runText = run => typeof run?.input === 'string' ? run.input : text(run?.input?.task);
+export const displayChatRequest = run => run?.autonomy?.automatic || run?.autonomyDispatch ? '' : runText(run);
 export const running = run => ['queued','running','waiting'].includes(run?.status) || run?.settled === false;
 const phaseIds=new Set(['feasibility','inference','plan','think','respond']);
 const evidenceText=value=>typeof value==='string'&&value.length<=200?value:null;

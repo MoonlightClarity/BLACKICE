@@ -8,7 +8,7 @@ const unavailableReason=model=>[model?.availabilityReason,model?.error].find(val
 const noop=()=>({update(){},close(){},destroy(){}});
 
 /** The native select owns the chosen value and its existing change handler. */
-export function createGroupedModelPicker({select,label='Model',onEnableProvider,onSetupProvider}={}){
+export function createGroupedModelPicker({select,label='Model',onEnableProvider,onSetupProvider,onBeforeSelect}={}){
   const doc=select?.ownerDocument,owner=select?.parentElement;
   if(!select||!doc?.body||!owner)return noop();
   const create=(tag,className,value)=>{const node=doc.createElement(tag);if(className)node.className=className;if(value!==undefined)node.textContent=value;return node;};
@@ -58,14 +58,22 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
   async function choose(id){
     const model=models.find(row=>row.id===id);
     if(activating||!opened||destroyed||select.disabled)return;
-    if(available(model)){commit(id);return;}
+    if(available(model)){
+      if(typeof onBeforeSelect!=='function'){commit(id);return;}
+      const revision=openRevision,original=select.value;activating=id;activationError='';render();
+      try{await onBeforeSelect(model);if(!destroyed&&opened&&revision===openRevision&&!select.disabled&&select.value===original)commit(id);}
+      catch(error){if(!destroyed&&opened&&revision===openRevision)activationError=error?.message||'Model could not be activated.';}
+      finally{activating=null;if(!destroyed&&opened)render();}
+      return;
+    }
     if(!canEnable(model))return;
     const revision=openRevision,original=select.value;activating=id;activationError='';render();
     try{
       const fresh=await onEnableProvider(id);
       if(!fresh||destroyed||!opened||revision!==openRevision||select.disabled||select.value!==original)return;
       if(!available(models.find(row=>row.id===id)))throw Error('This model is still unavailable. Check its connection in Settings > Models.');
-      commit(id);
+      if(typeof onBeforeSelect==='function')await onBeforeSelect(models.find(row=>row.id===id));
+      if(!destroyed&&opened&&revision===openRevision&&!select.disabled&&select.value===original)commit(id);
     }catch(error){if(!destroyed&&opened&&revision===openRevision)activationError=error?.message||'Connection could not be enabled. Open Settings > Models.';}
     finally{activating=null;if(!destroyed&&opened)render();}
   }
@@ -74,7 +82,7 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
     const displayName=nameOf(model),body=create('span','next-model-picker-option-body');body.append(create('strong','',displayName));
     if(enable){body.append(create('small','',activating===model.id?'Enabling connection…':'Enable connection'));row.setAttribute('aria-description','Enable this saved API connection and select this model.');}
     else if(!available(model))row.setAttribute('aria-description',unavailableReason(model));
-    const checked=create('span','next-model-picker-selected',model.id===selected?'✓':'');checked.setAttribute('aria-hidden','true');row.append(body,checked);row.addEventListener('click',event=>{event.preventDefault();return choose(model.id);});entry.append(row);
+    const checked=create('span','next-model-picker-selected',model.id===selected?'✓':'');checked.setAttribute('aria-hidden','true');row.append(body,checked);row.addEventListener('click',event=>{event.preventDefault();if(typeof onBeforeSelect==='function'&&available(model)){void choose(model.id);return;}return choose(model.id);});entry.append(row);
     return entry;
   }
   function render(){
@@ -105,7 +113,7 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
       };
       details.open=expanded.has(group.id)?expanded.get(group.id):Boolean(search.value.trim());details.addEventListener('toggle',event=>{if(event.target!==details)return;expanded.set(group.id,details.open);populate();position();});results.append(details);populate();
     }
-    summary.textContent=activationError|| (entries.length?`${entries.length} model${entries.length===1?'':'s'} in ${groups.length} provider${groups.length===1?'':'s'}.`:connections.length?'Set up a native account connection to load its model catalog.':'No matching models. Try another search.');
+    summary.textContent=activationError||(activating?'Preparing the selected model.':entries.length?`${entries.length} model${entries.length===1?'':'s'} in ${groups.length} provider${groups.length===1?'':'s'}.`:connections.length?'Set up a native account connection to load its model catalog.':'No matching models. Try another search.');
     if(restore){const target=focusValue?Array.from(results.querySelectorAll('[data-model-value]')).find(node=>node.dataset.modelValue===focusValue):focusProvider?Array.from(results.querySelectorAll('summary')).find(node=>node.dataset.modelProvider===focusProvider):focusSetup?Array.from(results.querySelectorAll('[data-model-setup-provider]')).find(node=>node.dataset.modelSetupProvider===focusSetup):null;(target||search).focus({preventScroll:true});}
     position();
   }

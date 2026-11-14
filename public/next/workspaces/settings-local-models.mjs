@@ -1,4 +1,6 @@
 /** Local model management lives in the main Models section, not the advanced API editor. */
+import { createLlamaCppLaunchSettings } from './llama-launch-settings.mjs';
+
 export function createLocalModelSettings({ mount, api, onChanged = () => {} } = {}) {
   const doc = mount.ownerDocument;
   const node = (tag, value = '', css = '') => {
@@ -55,8 +57,10 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
   const importRow = node('div', '', 'next-row'); importRow.append(importButton);
   importDetails.append(summary, importHelp, label('Model file or directory', sourcePath), label('Local Ollama model name', alias), importRow);
   const feedback = node('p', '', 'next-help'); feedback.id = 'next-local-feedback'; feedback.setAttribute('role', 'status'); feedback.setAttribute('aria-live', 'polite');
-  card.append(row, runtimeStatus, setup, choiceRow, label('Context length (optional)', context), contextHelp, importDetails, feedback);
+  const launchMount = node('div');launchMount.hidden = true;
+  card.append(row, runtimeStatus, setup, choiceRow, label('Context length (optional)', context), contextHelp, launchMount, importDetails, feedback);
   mount.append(card);
+  const launchSettings = createLlamaCppLaunchSettings({mount:launchMount,api});
   let alive = true, active = false, busy = false, generation = 0, snapshot = { engines: [] };
   let downloadGeneration = 0, discovering = false, downloadAssets = [];
   const selected = () => snapshot.engines?.find(item => item.id === engine.value) || { available: false, models: [] };
@@ -65,6 +69,7 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
     const value = selected();
     const isLlama = engine.value === 'llamacpp';
     setup.hidden = !isLlama;
+    launchMount.hidden = !isLlama;
     contextHelp.textContent = isLlama
       ? 'llama.cpp sets context at startup using --ctx-size or --models-preset. Change it on the server, then reload. Unloading never deletes weights or conversations.'
       : 'Optional context window for the next load. Leave blank to use the runtime default. Unloading does not delete model files or BLACKICE conversations.';
@@ -171,15 +176,15 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
     }
   });
   refresh.addEventListener('click', () => { if (!busy) void refreshCatalog(); });
-  engine.addEventListener('change', updateChoices);
+  engine.addEventListener('change', () => { updateChoices(); if(active && engine.value==='llamacpp') launchSettings.enter(); else launchSettings.leave(); });
   models.addEventListener('change', updateChoices);
   load.addEventListener('click', () => void operation('load'));
   unload.addEventListener('click', () => void operation('unload'));
   importButton.addEventListener('click', () => void operation('import'));
   updateChoices();
   return {
-    enter() { if (!alive || active) return; active = true; void refreshCatalog(); },
-    leave() { active = false; generation++; downloadGeneration++; discovering = false; discover.disabled = false; },
-    destroy() { this.leave(); alive = false; mount.replaceChildren(); },
+    enter() { if (!alive || active) return; active = true; if(engine.value==='llamacpp') launchSettings.enter(); void refreshCatalog(); },
+    leave() { active = false; generation++; downloadGeneration++; discovering = false; discover.disabled = false; launchSettings.leave(); },
+    destroy() { this.leave(); alive = false; launchSettings.destroy(); mount.replaceChildren(); },
   };
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {evaluateParallelAdmission} from '../lib/subagent-simple-gate.mjs';
 import {modelUsesLocalResources} from '../lib/subagent-local-resources.mjs';
-import {SUBAGENT_TOOL,SUBAGENT_V4_TOOL,SUBAGENT_V5_TOOL,SUBAGENT_SCHEMA_VERSION,subagentToolForExecution,createSubagentToolHandler} from '../lib/subagents.mjs';
+import {SUBAGENT_TOOL,SUBAGENT_V4_TOOL,SUBAGENT_V5_TOOL,SUBAGENT_V6_TOOL,SUBAGENT_SCHEMA_VERSION,subagentToolForExecution,createSubagentToolHandler} from '../lib/subagents.mjs';
 const hash=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
 const tasks=(...ids)=>ids.map(id=>({id,prompt:'Synthetic independent part '+id}));
 const result=x=>JSON.parse(x.contentItems[0].text);
@@ -22,7 +22,14 @@ test('rejected handler admission starts no worker and does not prepare ownership
  const rejected=result(await h({name:SUBAGENT_TOOL.name,arguments:{tasks:tasks('a')}}));assert.equal(rejected.code,'SUBAGENT_SINGLE_WORK_ITEM');assert.equal(calls,0);assert.equal(prepared,0);assert.equal(records.length,1);
  const accepted=result(await h({name:SUBAGENT_TOOL.name,arguments:{tasks:tasks('a','b')}}));assert.equal(accepted.completed,2);assert.equal(calls,2);assert.equal(prepared,1);
 });
-test('new sessions expose schema6 speed gate without a forecast field',()=>{assert.equal(SUBAGENT_SCHEMA_VERSION,6);assert.equal(SUBAGENT_TOOL.inputSchema.properties.forecast,undefined);assert.match(SUBAGENT_TOOL.description,/two work items/);});
+test('new sessions expose schema7 worker selection while preserving schema6 speed gate',()=>{
+ assert.equal(SUBAGENT_SCHEMA_VERSION,7);
+ assert.equal(SUBAGENT_TOOL.inputSchema.properties.forecast,undefined);
+ assert.ok(SUBAGENT_TOOL.inputSchema.properties.tasks.items.properties.model);
+ assert.equal(SUBAGENT_V6_TOOL.inputSchema.properties.tasks.items.properties.model,undefined);
+ assert.match(SUBAGENT_V6_TOOL.description,/two work items/);
+ assert.equal(hash(SUBAGENT_V6_TOOL),'b9c7200c2cd999f135dd6950e2d2c6ac16715020deba6560679761fb7c6ddd3c');
+});
 test('saved native v4 raw catalog is byte-equivalent to the prior public source',()=>assert.equal(hash(SUBAGENT_V4_TOOL),'e51b384e15f74bec90f8c27b9d3c8ed9e7ef0686048ce0809268538d78311d11'));
 test('saved native v4 canonical catalog retains exact transformed descriptions',()=>{
  assert.equal(hash(subagentToolForExecution(SUBAGENT_V4_TOOL,{planningContractVersion:14})),'ffea2f81e8fb22f55c81194bdb960ef996fabb2c698386c71d0dcda2e2bf6ad0');

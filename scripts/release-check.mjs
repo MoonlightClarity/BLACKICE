@@ -42,7 +42,7 @@ export async function appFingerprint(directory = source) {
   // Older inspected releases do not contain it; whenever present it is bound.
   try { await fs.lstat(path.join(directory, 'scripts/email-oauth-token.mjs')); await visit('scripts/email-oauth-token.mjs'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   try { await fs.lstat(path.join(directory, 'scripts/repair-shortcuts.ps1')); await visit('scripts/repair-shortcuts.ps1'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  for (const relative of ['skills/planning/SKILL.md', 'skills/planning/CONTRACT-V2.md', 'skills/planning/references/evidence-preserving-execution.md']) {
+  for (const relative of ['skills/planning/SKILL.md', 'skills/planning/CONTRACT-V2.md', 'skills/planning/references/evidence-preserving-execution.md', 'skills/autonomy/SKILL.md']) {
     try { await fs.lstat(path.join(directory, relative)); await visit(relative); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   records.sort((a,b)=>a.path.localeCompare(b.path, 'en'));

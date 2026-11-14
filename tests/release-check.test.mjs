@@ -39,7 +39,7 @@ test('runtime fingerprints bind desktop helpers and browser compatibility assets
 
 test('bundled planning skill invalidates runtime evidence on edits or omission', async t => {
   const directory=await releaseFixture(t);
-  for(const relative of ['skills/planning/SKILL.md','skills/planning/CONTRACT-V2.md','skills/planning/references/evidence-preserving-execution.md']){
+  for(const relative of ['skills/planning/SKILL.md','skills/planning/CONTRACT-V2.md','skills/planning/references/evidence-preserving-execution.md','skills/autonomy/SKILL.md']){
     const before=await appFingerprint(directory),file=path.join(directory,relative);
     await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,'bound fixture');
     const included=await appFingerprint(directory);assert.notEqual(included,before);

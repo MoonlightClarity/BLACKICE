@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
 import {Readable,Writable} from 'node:stream';
-import {mkdtemp,rm} from 'node:fs/promises';
+import {mkdtemp,rm,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createHarnessServer} from '../server.mjs';
@@ -53,6 +53,14 @@ test('enable-only route rejects missing revisions and unrelated settings instead
     assert.equal((await request(url,{body})).status,400);
   }
   assert.deepEqual(runtime.calls,[]);
+});
+
+test('Goal effects module is delivered by the production handler with exact bytes',async t=>{
+  const {runtime,request}=await fixture(t),url='/next/chat/goal-effects.mjs';
+  const goals=await request('/next/chat/goals.mjs');assert.equal(goals.status,200);assert.match(goals.data,/from '.\/goal-effects\.mjs'/);
+  const response=await request(url);assert.equal(response.status,200);assert.match(response.headers['content-type'],/javascript/);
+  assert.equal(response.headers['cache-control'],'no-store');assert.equal(response.data,await readFile(new URL('../public/next/chat/goal-effects.mjs',import.meta.url),'utf8'));
+  assert.equal((await request(url+'.backup')).status,404);assert.equal(runtime.calls.length,0);
 });
 
 test('Settings and chat module dependency graphs are served over real HTTP, including optional API activation',async t=>{

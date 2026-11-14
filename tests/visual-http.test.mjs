@@ -17,7 +17,7 @@ test('authenticated server exposes visuals, static renderer and persisted edits 
  const route=`/api/conversations/${run.taskId||run.id}/visuals`,before=calls;assert.notEqual((await request(route,undefined,false)).status,200);
  const created=await request(route,{action:'create',requestId:'http-create',document:VISUAL_EXAMPLE});assert.equal(created.status,200,JSON.stringify(created.data));
  const read=await request(route+'?artifactId='+created.data.id);assert.equal(read.data.revision,1);assert.equal(calls,before);assert.equal((await request(route,{action:'revise',requestId:'stale',artifactId:created.data.id,expectedRevision:0,document:VISUAL_EXAMPLE})).status,409);
- for(const file of ['/visual-document.mjs','/visual-layout.mjs','/visual-label-layout.mjs','/visual-edits.mjs','/svg-preview.mjs','/next/chat/visuals.mjs']){const r=await fetch(url+file,{headers:{Cookie:cookie}});assert.equal(r.status,200,file);assert.match(await r.text(),/export/);}
+ for(const file of ['/visual-document.mjs','/visual-paint.mjs','/visual-layout.mjs','/visual-label-layout.mjs','/visual-edits.mjs','/svg-preview.mjs','/next/chat/visuals.mjs']){const r=await fetch(url+file,{headers:{Cookie:cookie}});assert.equal(r.status,200,file);assert.match(await r.text(),/export/);}
  const css=await fetch(url+'/next/visuals.css',{headers:{Cookie:cookie}});assert.equal(css.status,200);assert.match(await css.text(),/visual-editor/);
  assert.equal(calls,before);
 });

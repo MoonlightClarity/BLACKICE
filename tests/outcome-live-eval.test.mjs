@@ -67,7 +67,7 @@ test('fresh candidate snapshots load the real server and mandatory Planning reso
   assert.equal(snapshots.candidate.fingerprint, hash(JSON.stringify(snapshots.candidate.files, null, 2) + '\n'));
   // Reproduce the original omission in this disposable snapshot. A fresh Node
   // import avoids the successful import's module cache and must fail closed.
-  await fs.rm(path.join(target, 'skills'), { recursive: true });
+  await fs.rm(path.join(target, 'skills', 'planning'), { recursive: true });
   const importScript = 'await import(' + JSON.stringify(pathToFileURL(path.join(target, 'server.mjs')).href) + ');';
   await assert.rejects(execute(process.execPath, ['--input-type=module', '-e', importScript], { timeout: 30000 }), error => {
     assert.match(error.stderr, /PLANNING_SKILL_MISSING/);

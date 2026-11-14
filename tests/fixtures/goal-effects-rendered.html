@@ -1,0 +1,11 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Disposable Goal effects fixture</title></head>
+<body><h1>Disposable Goal effects fixture</h1><p>All actions below affect only in-memory fixture data.</p><div id="fixture"></div><output id="result" aria-live="polite"></output>
+<script type="module">
+import {createGoalEffects} from '../../public/next/chat/goal-effects.mjs';
+const row={id:'fixture-id',signature:'a'.repeat(64),at:'2026-11-14T00:00:00Z',tool:'relay_browser',action:'click',target:'fixture destination',runId:'fixture-run'};
+const ui=createGoalEffects({mount:document.querySelector('#fixture'),api:async(_route,method,body)=>{
+ if(method==='GET')return {receipts:[row]};
+ document.querySelector('#result').textContent='Fixture outcome: '+body.outcome+'; evidence: '+body.evidence+'; no action repeated.';
+ return {receipt:{...row,resolution:body},replayed:false};
+}});ui.update('fixture-conversation');
+</script></body></html>

@@ -4,6 +4,7 @@ import {createProviderModelSelection,providerHeadersForSave,codexModelAccessLabe
 import {MODEL_SORTS,groupModels,modelIsFree} from '../../model-browser.mjs';
 import {providerCredentialsReady,enableProviderConnection} from '../../provider-availability.mjs';
 import {createProviderDirectoryUI} from './settings-provider-directory.mjs';
+import {createNativeWriteRecovery} from './native-write-recovery.mjs';
 
 const PAGE=80,LIST_PAGE=40,SEARCH_DELAY=180,NEW_DRAFT='__new_provider_draft__';
 const compactTokens=value=>new Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:1}).format(value);
@@ -501,10 +502,11 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
     else if(!listBusy)void load();
   };
   const providerDirectory=createProviderDirectoryUI({mount:f['directory-root'],api,onChoose:chooseDirectoryProvider});
+  const nativeRecovery=createNativeWriteRecovery({mount:f.root,api});
   return {
     updateRuntimeSettings(value){if(destroyed||!value||typeof value!=='object')return;runtimeSettings=copy(value);if(active)paintList();},
     enter(){if(destroyed||active)return;runtimeSettings=copy(getRuntimeSettings()||runtimeSettings);active=true;unsubscribe=events?.subscribe?.(onEvent)||null;paintList();paintEditor();paintCodex();providerDirectory.enter();if(!loaded||stale)void load();},
     leave(){providerDirectory.leave();active=false;unsubscribe?.();unsubscribe=null;stale=true;listSequence++;listAbort?.abort();listAbort=null;listBusy=false;cancelCatalog();if(codexBusy)status(f['codex-status'],'Status read paused. Refresh model list and limits to load the current result.');codexSequence++;codexAbort?.abort();codexAbort=null;codexBusy=false;},
-    destroy(){this.leave();providerDirectory.destroy();destroyed=true;for(const draft of drafts.values()){draft.key='';draft.headers='';}drafts.clear();f.key.value='';f.headers.value='';mount.replaceChildren();},
+    destroy(){this.leave();providerDirectory.destroy();nativeRecovery.destroy();destroyed=true;for(const draft of drafts.values()){draft.key='';draft.headers='';}drafts.clear();f.key.value='';f.headers.value='';mount.replaceChildren();},
   };
 }
