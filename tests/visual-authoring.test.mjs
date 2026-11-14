@@ -28,7 +28,7 @@ test('describe offers varied authored arguments; preview returns image feedback 
 test('on-demand construction fragments compile under the actual static SVG profile',async()=>{
  const {VISUAL_DESIGN_GUIDE}=await import('../lib/visual-design-guide.mjs');
  const store=new VisualArtifacts({dataDir:path.join(tmpdir(),'unused-visual-description')});
- const description=await store.execute({action:'describe'});
+ const description=await store.execute({action:'describe',focus:'analysis'});
  assert.deepEqual(description.designGuide.construction,VISUAL_DESIGN_GUIDE.construction);
  for(const pattern of description.designGuide.construction){
   const svg='<svg xmlns="http://www.w3.org/2000/svg" width="360" height="160" viewBox="0 0 360 160" font-family="Segoe UI, Arial, sans-serif">'+pattern.svg+'</svg>';
