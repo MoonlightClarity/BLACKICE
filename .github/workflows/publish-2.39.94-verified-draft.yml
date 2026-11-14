@@ -1,0 +1,34 @@
+name: Publish verified BLACKICE 2.39.94 draft
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: windows-release-publication
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'MoonlightClarity/BLACKICE' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: controller
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          ref: 770f377bbf5248e7719af69ec5c727f96e4d012c
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.2'
+          package-manager-cache: false
+      - name: Check publication verifier
+        run: node --test controller/.github/publication/publish-2.39.94.test.mjs
+      - name: Verify exact existing draft and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node controller/.github/publication/publish-2.39.94.mjs source
