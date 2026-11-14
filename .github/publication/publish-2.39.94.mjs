@@ -16,6 +16,9 @@ export const assets = Object.freeze([
 ['blackice-windows-install-validation.json',749070265,3293,'7d959168b85eaa8096d2b6ab3353bef122ec43f251a82e19c7513889087efba2'],
 ['SHA256SUMS.txt',749068022,190,'3cfeb680832aa6bfee858a09f4005b6e66ea50190154fd7116d21630a25e08d6']]);
 const check=(b,m)=>{if(!b)throw Error(m)};
+export function verifyContext(env) {
+  check(env.GITHUB_REPOSITORY===P.repo&&env.GITHUB_REF==='refs/heads/main'&&['push','workflow_dispatch'].includes(env.GITHUB_EVENT_NAME)&&env.GH_TOKEN,'workflow context mismatch');
+}
 export function verifySnapshot(release, listed, run, jobs, ref) {
   check(release.id===P.release && release.draft===true && release.prerelease===false && release.tag_name===P.tag && release.target_commitish===P.commit,'draft identity changed');
   check(run.id===P.run && run.head_sha===P.commit && run.head_branch==='main' && run.path==='.github/workflows/publish-windows-release.yml' && run.status==='completed' && run.conclusion==='success' && run.run_attempt===P.attempt,'build run mismatch');
@@ -44,7 +47,7 @@ export function verifyEvidence(values,sourceReceipt) {
   const sums=values.get('SHA256SUMS.txt').toString('utf8').split(/\r?\n/);check(sums.includes(P.installer+'  '+assets[0][0])&&sums.includes(assets[3][3]+'  blackice-public-release.json'),'checksum mismatch');
 }
 async function main(){
-  check(process.env.GITHUB_REPOSITORY===P.repo&&process.env.GITHUB_REF==='refs/heads/main'&&process.env.GITHUB_EVENT_NAME==='workflow_dispatch'&&process.env.GH_TOKEN,'workflow context mismatch');
+  verifyContext(process.env);
   const source=path.resolve(process.argv[2]||'');const {verifyReleaseSource}=await import(pathToFileURL(path.join(source,'scripts/release-request.mjs')));const request=JSON.parse(await readFile(path.join(source,'.github/release-request.json'),'utf8'));check(request.publish===false,'source request changed');const verified=await verifyReleaseSource({...request,sourceCommit:P.commit},source);check(verified.appFingerprint===P.fingerprint&&verified.sourceIndexSha256===P.index&&verified.receiptSha256===P.receipt,'source verification mismatch');
   const base='https://api.github.com/repos/'+P.repo, headers={Authorization:'Bearer '+process.env.GH_TOKEN,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'BLACKICE-publication-verifier'};
   async function api(endpoint,options={}){const r=await fetch(base+endpoint,{...options,headers:{...headers,...options.headers},redirect:'error'});check(r.ok,'GitHub API failed '+endpoint+' '+r.status);return r.json();}

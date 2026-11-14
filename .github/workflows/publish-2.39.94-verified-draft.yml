@@ -1,6 +1,12 @@
 name: Publish verified BLACKICE 2.39.94 draft
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/publish-2.39.94-verified-draft.yml
+      - .github/publication/publish-2.39.94.mjs
+      - .github/publication/publish-2.39.94.test.mjs
 permissions:
   contents: write
   actions: read

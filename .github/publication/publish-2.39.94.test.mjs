@@ -1,9 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {P,assets,verifySnapshot,verifyBytes,verifyEvidence} from './publish-2.39.94.mjs';
+import {P,assets,verifySnapshot,verifyBytes,verifyEvidence,verifyContext} from './publish-2.39.94.mjs';
 import {readFile} from 'node:fs/promises';
 const stepNames=['Bind the explicit request to this exact source and its Windows tests','Build the locked Windows candidate','Verify candidate bytes and write exact checksums','Bind the actual source tag after candidate verification','Upload a new draft with its exact source target','Verify this installer on the fresh Windows runner','Attach the bounded installer evidence to the same draft'];
 const snapshot=()=>[{id:P.release,draft:true,prerelease:false,tag_name:P.tag,target_commitish:P.commit},assets.map(([name,id,size,digest])=>({name,id,size,digest:'sha256:'+digest,state:'uploaded'})),{id:P.run,head_sha:P.commit,head_branch:'main',path:'.github/workflows/publish-windows-release.yml',status:'completed',conclusion:'success',run_attempt:1},[{name:'release',status:'completed',conclusion:'success',steps:[...stepNames.map(name=>({name,status:'completed',conclusion:'success'})),{name:'Publish only the verified requested release',conclusion:'skipped'}]}],{ref:'refs/tags/'+P.tag,object:{type:'commit',sha:P.commit}}];
+test('publication trigger and event context are narrowly scoped',async()=>{
+ const workflow=await readFile(new URL('../workflows/publish-2.39.94-verified-draft.yml',import.meta.url),'utf8');
+ const on=workflow.split('\npermissions:')[0];
+ assert.match(on,/  workflow_dispatch:\s*\n  push:\s*\n    branches: \[main\]\s*\n    paths:/);
+ assert.deepEqual([...on.matchAll(/^      - (.+)$/gm)].map(m=>m[1]),['.github/workflows/publish-2.39.94-verified-draft.yml','.github/publication/publish-2.39.94.mjs','.github/publication/publish-2.39.94.test.mjs']);
+ const base={GITHUB_REPOSITORY:P.repo,GITHUB_REF:'refs/heads/main',GH_TOKEN:'test'};
+ for(const event of ['push','workflow_dispatch']) assert.doesNotThrow(()=>verifyContext({...base,GITHUB_EVENT_NAME:event}));
+ for(const change of [{GITHUB_EVENT_NAME:'pull_request'},{GITHUB_EVENT_NAME:'schedule'},{GITHUB_REF:'refs/heads/other'},{GITHUB_REPOSITORY:'other/repo'},{GH_TOKEN:''}]) assert.throws(()=>verifyContext({...base,GITHUB_EVENT_NAME:'push',...change}));
+});
 test('exact observed metadata accepted; changed draft, assets, run and tag rejected',()=>{
  verifySnapshot(...snapshot());
  for(const mutate of [x=>x[0].draft=false,x=>x[0].id++,x=>x[0].target_commitish='bad',x=>x[1][0].id++,x=>x[1][0].digest='sha256:bad',x=>x[1].pop(),x=>x[1].push(x[1][0]),x=>x[2].head_sha='bad',x=>x[2].conclusion='failure',x=>x[3][0].steps[3].conclusion='failure',x=>x[4].object.sha='bad']){const x=structuredClone(snapshot());mutate(x);assert.throws(()=>verifySnapshot(...x));}
