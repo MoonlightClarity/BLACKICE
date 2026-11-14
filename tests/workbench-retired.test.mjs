@@ -45,7 +45,7 @@ test('retired virtual machine resources are not approved as Windows installer in
 test('retiring Workbench preserves Chat, Planning, Cronjobs, Browser, Knowledge and Settings', () => {
   const index = read('public/next/index.html');
   const spaces = [...index.matchAll(/data-space="([^"]+)"/g)].map(match => match[1]);
-  assert.deepEqual(spaces, ['chat','visuals','planning','cronjobs','browser','knowledge','settings']);
+  assert.deepEqual(spaces, ['chat','planning','cronjobs','browser','knowledge','settings']);
 });
 
 test('retained Cronjobs routes preserve the workflow manager and legacy Tasks and Activity aliases', async () => {
@@ -61,7 +61,7 @@ test('retained Cronjobs routes preserve the workflow manager and legacy Tasks an
 
   const opened=[],hashes=[];
   const element=()=>({children:[],dataset:{},hidden:false,setAttribute(name,value){this[name]=value;},append(...items){this.children.push(...items);},querySelector(){return null;}});
-  const tabs=['chat','visuals','planning','cronjobs','browser','knowledge','settings'].map(name=>Object.assign(element(),{dataset:{space:name}}));
+  const tabs=['chat','planning','cronjobs','browser','knowledge','settings'].map(name=>Object.assign(element(),{dataset:{space:name}}));
   const modules=Object.fromEntries(['cronjobs','workflows'].map(name=>[name,async()=>()=>({enter(){opened.push(name);},leave(){},updateStatus(){}})]));
   const app=new Function('modules','document','stage','tabs','history',
     'let current=null,revision=0,status=null;const spaces=new Map(),api=()=>{},events={},notify=()=>{};'+routes+';return{show,spaces};'

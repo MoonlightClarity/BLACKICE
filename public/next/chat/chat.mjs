@@ -115,7 +115,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   let runtimeStatus=getStatus?.()||{};
   const root = () => rootId(state.selected) || 'new';
   const visualMount=mount.ownerDocument.createElement('div');view.scroll.append(visualMount);
-  const visuals=createVisualWorkspace({mount:visualMount,api,getConversationId:root,notify:message=>notify(message),onOpenWorkspace:()=>onNavigate?.('visuals',{conversationId:root()})});
+  const visuals=createVisualWorkspace({mount:visualMount,api,getConversationId:root,notify:message=>notify(message)});
   const selectedBucket=()=>state.selected?.state||state.bucket;
   const contextMount=mount.ownerDocument.createElement('section');
   view.form.parentElement.insertBefore(contextMount,view.form);

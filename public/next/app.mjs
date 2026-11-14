@@ -9,7 +9,6 @@ const api=createApi();
 let status=null,current=null,revision=0;
 const spaces=new Map(), notifications=new Set();
 const modules={
-  visuals:()=>import('./workspaces/visuals.mjs').then(m=>m.createVisualsWorkspace),
   chat:()=>import('./chat/chat.mjs').then(m=>m.createChatWorkspace),
   planning:()=>import('./workspaces/planning-current.mjs').then(m=>m.createPlanningWorkspace),
   cronjobs:()=>import('./workspaces/tasks.mjs').then(m=>m.createCronjobsWorkspace),

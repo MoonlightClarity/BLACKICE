@@ -1,8 +1,8 @@
 import {visualPatch} from '../../visual-edits.mjs';
 import {compileVisual,visualSvgUrl,VISUAL_COMPOSITION_EXAMPLE} from '../../visual-document.mjs';
 
-export function createVisualWorkspace({mount,api,getConversationId,notify=()=>{},onOpenWorkspace}){
- const doc=mount.ownerDocument,section=doc.createElement('section');section.className='next-visuals'+(onOpenWorkspace?' next-visuals-inline':'');section.setAttribute('aria-label','Conversation visuals');mount.append(section);
+export function createVisualWorkspace({mount,api,getConversationId,notify=()=>{}}){
+ const doc=mount.ownerDocument,section=doc.createElement('section');section.className='next-visuals next-visuals-inline';section.setAttribute('aria-label','Conversation visuals');mount.append(section);
  let owner=null,generation=0,cache=null,dialog=null,disposed=false;
  const el=(tag,text,parent=section)=>{const e=doc.createElement(tag);if(text!==undefined)e.textContent=text;parent.append(e);return e;};
  const button=(text,parent,action)=>{const b=el('button',text,parent);b.type='button';b.onclick=()=>Promise.resolve().then(action).catch(error=>notify(error.message));return b;};
@@ -59,11 +59,10 @@ export function createVisualWorkspace({mount,api,getConversationId,notify=()=>{}
  }
  async function refresh(force=false){
   if(disposed)return;const selected=getConversationId();if(selected!==owner){owner=selected;generation++;cache=null;dialog?.close();section.replaceChildren();}
-  if(!owner||owner==='new'){section.hidden=true;return;}section.hidden=false;if(cache&&!force)return;
+  if(!owner||owner==='new'){section.hidden=true;return;}if(cache&&!force){section.hidden=!cache.artifacts.length;return;}
   const token=++generation,url=endpoint();try{const value=await api(url);if(disposed||token!==generation)return;cache=value;section.replaceChildren();
-   el('h3','Visuals');const intro=el('p','Explore what the evidence supports, what remains uncertain, and what to check next.');intro.className='visual-intro';button('Create visual',section,()=>edit());if(onOpenWorkspace)button('Open Visuals workspace',section,onOpenWorkspace);if(!value.artifacts.length){const empty=el('p','No visuals yet. Ask the agent to map an uncertainty or compare explanations, or create one here.');empty.className='visual-empty';}
-   const label=el('label',' Allow the agent to use visuals when helpful '),checkbox=el('input',undefined,label);checkbox.type='checkbox';checkbox.checked=value.automatic;checkbox.onchange=async()=>{checkbox.disabled=true;try{await api(url,'POST',{action:'preferences',automatic:checkbox.checked,requestId:crypto.randomUUID()});}catch(e){checkbox.checked=!checkbox.checked;notify(e.message);}finally{checkbox.disabled=false;}};
-   for(const artifact of value.artifacts){const card=el('article');card.className='visual-artifact-card';el('h4',`${artifact.title} · revision ${artifact.revision}`,card);button('Inspect / edit / history / export',card,()=>edit(artifact.id));const record=await api(url+`?artifactId=${encodeURIComponent(artifact.id)}&revision=${artifact.revision}`);if(token!==generation)return;image(record,card);const details=el('details',undefined,card);el('summary','Text alternative',details);el('pre',record.text,details).style.whiteSpace='pre-wrap';}
+   section.hidden=!value.artifacts.length;
+   for(const artifact of value.artifacts){const card=el('article');card.className='visual-artifact-card';card.setAttribute('aria-label',artifact.title);const record=await api(url+`?artifactId=${encodeURIComponent(artifact.id)}&revision=${artifact.revision}`);if(token!==generation)return;image(record,card);button('Inspect figure',card,()=>edit(artifact.id));const details=el('details',undefined,card);el('summary','Text alternative',details);el('pre',record.text,details).style.whiteSpace='pre-wrap';}
   }catch(e){if(token===generation)notify(e.message);}
  }
  return {refresh,onEvent(event){if(event.type==='visual.updated'&&event.data?.conversationId===owner)void refresh(true);},cancel(){generation++;owner=null;cache=null;dialog?.close();section.replaceChildren();section.hidden=true;},destroy(){disposed=true;generation++;dialog?.remove();section.remove();}};

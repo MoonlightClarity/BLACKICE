@@ -4,6 +4,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { promises as fs, constants } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createVisualPreview } from './visual-preview.mjs';
 import { createHarnessServer } from '../server.mjs';
 import { createOwnerRecoveryHandlers } from './owner-recovery.mjs';
 import { BrowserWorkspace } from '../lib/browser.mjs';
@@ -329,7 +330,7 @@ async function startLocalHarness(dataDir, defaultCwd) {
       decryptSecret: value => safeStorage.decryptString(Buffer.from(value, 'base64')),
     } : {};
     const credentialStorage = { ...secretStorage, storageBackend: () => process.platform === 'win32' ? 'dpapi' : process.platform === 'darwin' ? 'keychain' : safeStorage.getSelectedStorageBackend(), isEncryptionAvailable: () => safeStorage.isEncryptionAvailable() };
-    try { return await createHarnessServer({ installPath: path.dirname(process.execPath), port: selectedPort, dataDir, defaultCwd, browser, secretStorage, credentialStorage, frontendDevtools, nativeOwnerRecovery: true,
+    try { return await createHarnessServer({ installPath: path.dirname(process.execPath), port: selectedPort, dataDir, defaultCwd, browser, secretStorage, credentialStorage, frontendDevtools, visualPreview:createVisualPreview({BrowserWindow,session}), nativeOwnerRecovery: true,
       protectCredentialTemporaryDirectory: credentialTemporaryProtection({ dataDir }), revealCredentialImportFile: filename => shell.showItemInFolder(filename),
       openExternal: url => shell.openExternal(url), nativeWindows:null, tokenRuntimeExecutable: process.execPath, diagnostics, desktopLifecycle, desktopRestart, connectionStartup, idleInterruptions, maintenanceStatus:()=>maintenanceReceipt?{mode:maintenanceReceipt.mode,status:maintenanceReceipt.status,requiresReauthentication:maintenanceReceipt.result?.requiresReauthentication===true}:null, signedBrowser: true, startSignedBrowser: browserOptions => startBackgroundBrowser(browserOptions) }); }
     catch (error) { await browser.close(); throw error; }
