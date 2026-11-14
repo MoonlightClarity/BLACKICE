@@ -1,9 +1,11 @@
 import {visualSvgUrl} from '../public/visual-document.mjs';
+import {SVG_ASSET_REVIEW} from '../lib/visual-design-checklist.mjs';
 
 export const ASSET_INSPECTION={
  width:816,height:496,
  backgrounds:[{name:'Light',color:'#f4f2ee'},{name:'BLACKICE charcoal',color:'#14181e'},{name:'Mid-value',color:'#52616c'}],
  fitBoxes:[256,64,32],grayscaleFit:96,
+ reviewChecklist:SVG_ASSET_REVIEW,
  scope:'Rendered review aid, not a quality score. Each image preserves aspect ratio inside its labeled square fit box. Backgrounds are preview-only; source SVG and transparency are unchanged. Inspect silhouette separation, color-area balance, material/light consistency and small-size readability. Opaque SVG backgrounds remain opaque.',
 };
 
