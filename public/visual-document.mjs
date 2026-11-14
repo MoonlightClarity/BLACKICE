@@ -57,7 +57,7 @@ function compileLegacyVisual(input,regionObstacles=[]){
  const labelLayout=layoutRelationshipLabels({width,height,labels:relationshipLabels,obstacles:[...obstacles,...items.map(i=>({x:i.x,y:i.y,width:i.width??210,height:i.height??100})),...groups]});
  for(const p of labelLayout.placements){shapes+=`<g><rect x="${p.x}" y="${p.y}" width="${p.width}" height="${p.height}" fill="white" stroke="#c1cdd1"/>`+p.rows.map((r,i)=>`<text x="${p.x+LABEL_METRICS.padding}" y="${p.y+LABEL_METRICS.baseline+i*LABEL_METRICS.lineHeight}" font-size="14" font-family="sans-serif" xml:space="preserve" textLength="${Math.max(1,r.width)}" lengthAdjust="spacingAndGlyphs" fill="#172033">${esc(r.text)}</text>`).join('')+'</g>';}
  const outputHeight=labelLayout.height;
- const titleRows=wrap(title,Math.max(12,Math.floor((width-32)/9))),headerHeight=titleRows.length*22+24;
+ const titleRows=wrap(title,Math.max(1,Math.floor((width-32)/16))),headerHeight=titleRows.length*22+24;
  const heading=titleRows.map((row,i)=>`<text x="16" y="${-headerHeight+24+i*22}" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#713d38">${esc(row)}</text>`).join('');
  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${outputHeight+headerHeight}" viewBox="0 ${-headerHeight} ${width} ${outputHeight+headerHeight}"><title>${esc(title)}</title><desc>${esc(summary)}</desc><rect y="${-headerHeight}" width="${width}" height="${outputHeight+headerHeight}" fill="white"/><rect y="${-headerHeight}" width="${width}" height="${headerHeight-8}" fill="#eef1f4"/>${heading}${shapes}</svg>`;
  if(!visualSvgUrl(svg))fail('Visual is too complex. Split it into smaller artifacts.');
