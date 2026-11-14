@@ -46,7 +46,7 @@ function attributes(text) {
   return result;
 }
 /** Complete, static SVG only. Unsupported SVG stays available as escaped source. */
-export function safeSvgPreview(source) {
+export function safeSvgPreview(source, {validateElement} = {}) {
   if (typeof source !== 'string' || source.length > SVG_PREVIEW_LIMIT || new TextEncoder().encode(source).length > SVG_PREVIEW_LIMIT || INVALID.test(source)) return null;
   let text = source.replace(/^\uFEFF/, '').trim();
   text = text.replace(/^<\?xml\s+version=(['"])1\.0\1(?:\s+encoding=(['"])UTF-8\2)?(?:\s+standalone=(['"])(?:yes|no)\3)?\s*\?>\s*/, '');
@@ -66,6 +66,7 @@ export function safeSvgPreview(source) {
     if (closing) { if (selfClosing || body.slice(name.length).trim() || stack.pop() !== name) return null; }
     else {
       const values = attributes(body.slice(name.length)); if (!values) return null;
+      if (validateElement && !validateElement(name, values, stack)) return null;
       if (!stack.length) { if (root || name !== 'svg' || values.get('xmlns') !== SVG_NS) return null; root = true; }
       if (!selfClosing) { stack.push(name); if (stack.length > 64) return null; }
     }

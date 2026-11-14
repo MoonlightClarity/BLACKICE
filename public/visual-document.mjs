@@ -1,5 +1,6 @@
 import {layoutRelationshipLabels,LABEL_METRICS} from './visual-label-layout.mjs';
 import {safeSvgPreview} from './svg-preview.mjs';
+import {visualPaintValidation} from './visual-paint.mjs';
 import {layoutVisual,noteTextLayout,wrapVisualText} from './visual-layout.mjs';
 
 const fail=message=>{throw Object.assign(new Error(message),{status:400,code:'VISUAL_INVALID'});};
@@ -10,9 +11,9 @@ const array=(value,max)=>Array.isArray(value)&&value.length<=max?value:fail(`Use
 const number=(v,max=2000)=>Number.isFinite(v)&&v>=0&&v<=max?v:fail('Coordinates must be finite and within the canvas.');
 const keys=(value,allowed)=>{if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!allowed.includes(k)))fail('Unsupported visual document fields.');};
 
-/** Static image profile: no references, resource expansion, filters, CSS or executable DOM. */
+/** Static image profile with bounded local gradient paints, no external resources or executable DOM. */
 export function visualSvgUrl(svg){
- if(typeof svg!=='string'||svg.length>32768||/<\/?(?:use|symbol|pattern|filter|fe\w+|mask|clipPath|image|style|foreignObject)\b/i.test(svg)||/\b(?:href|src|style)\s*=|url\s*\(/i.test(svg))return null;
+ if(typeof svg!=='string'||svg.length>32768||/<\/?(?:use|symbol|pattern|filter|fe\w+|mask|clipPath|image|style|foreignObject)\b/i.test(svg)||/\b(?:href|src|style)\s*=/i.test(svg))return null;
  if((svg.match(/</g)||[]).length>400)return null;
  // Bound numeric geometry too: a tiny XML document can request enormous raster work.
  for(const attribute of svg.matchAll(/\b(?:width|height|viewBox|d|points|transform|x|y|x1|y1|x2|y2|cx|cy|r|rx|ry|stroke-width|font-size)\s*=\s*(["'])(.*?)\1/gs)){
@@ -20,7 +21,8 @@ export function visualSvgUrl(svg){
   const numbers=attribute[2].match(/[-+]?(?:\d*\.\d+|\d+\.?\d*)(?:e[-+]?\d+)?/gi)||[];
   if(numbers.length>1200||numbers.some(n=>!Number.isFinite(Number(n))||Math.abs(Number(n))>10000))return null;
  }
- return safeSvgPreview(svg);
+ const paint=visualPaintValidation(),url=safeSvgPreview(svg,{validateElement:paint.element});
+ return url&&paint.complete()?url:null;
 }
 
 function compileLegacyVisual(input,regionObstacles=[]){
