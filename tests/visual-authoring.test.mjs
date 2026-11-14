@@ -24,3 +24,14 @@ test('describe offers varied authored arguments; preview returns image feedback 
  await assert.rejects(()=>tool.execute({action:'preview',document:{...VISUAL_DESIGN_EXAMPLES[0].document,svg:'<svg><script>alert(1)</script></svg>'}}));assert.equal(rendered,1,'Invalid source never reaches Chromium');
  const bare=new VisualArtifacts({dataDir:dir});await assert.rejects(()=>bare.execute({action:'preview',document:VISUAL_DESIGN_EXAMPLES[0].document}),{code:'VISUAL_PREVIEW_UNAVAILABLE'});
 });
+
+test('on-demand construction fragments compile under the actual static SVG profile',async()=>{
+ const {VISUAL_DESIGN_GUIDE}=await import('../lib/visual-design-guide.mjs');
+ const store=new VisualArtifacts({dataDir:path.join(tmpdir(),'unused-visual-description')});
+ const description=await store.execute({action:'describe'});
+ assert.deepEqual(description.designGuide.construction,VISUAL_DESIGN_GUIDE.construction);
+ for(const pattern of description.designGuide.construction){
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="360" height="160" viewBox="0 0 360 160" font-family="Segoe UI, Arial, sans-serif">'+pattern.svg+'</svg>';
+  assert.equal(compileVisual({version:2,kind:'custom',title:'Construction fragment',summary:pattern.purpose,svg}).svg,svg);
+ }
+});
