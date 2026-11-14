@@ -469,3 +469,41 @@ test('autonomous recovery preserves prepared work, then detects repeated destina
   assert.deepEqual(actions,['read','click','snapshot',...Array(8).fill('navigate')]);
   assert.equal((await goals.get(run.id)).completionEvidence,null);
 });
+
+test('distinct observed field advances survive omitted milestones, while repeated evidence and unknown edits stall', async t => {
+  let current, value = '', unknownDispatches = 0;
+  const browser = {
+    status: () => ({available:true, contained:true, tabs:current ? [{tabId:'draft',owner:{taskId:current.taskId,runId:current.id,nodeId:'agent'}}] : []}),
+    async perform(args) {
+      if (args.action === 'fill' && args.text === 'unknown') {
+        unknownDispatches++;
+        throw Object.assign(new Error('Connection lost after dispatch could have started'), {code:'BROWSER_ACTION_FAILED'});
+      }
+      if (args.action === 'fill') value = args.text;
+      return {url:'https://fixture.test/draft',tabId:'draft',documentId:'same',frames:[{url:'https://fixture.test/draft',elements:[{ref:'office',tag:'input',name:'Office address',value}]}]};
+    },
+  };
+  const {engine,goals,runtime} = await fixture(t, async (opts,n) => {
+    current = [...engine.runs.values()].at(-1);
+    const call = args => opts.onToolCall({name:'relay_browser',arguments:{browser:'relay',tabId:'draft',...args}});
+    await call({action:'snapshot'});
+    if (n <= 3) {
+      const edit = await call({action:'fill',ref:'office',text:'Verified address '+n});
+      assert.equal(edit.success,true);
+    } else if (n === 4) {
+      assert.equal((await call({action:'fill',ref:'office',text:'unknown'})).success,false);
+    } else if (n === 5) {
+      assert.match(current.input,/Inspect its current state/);
+      await call({action:'fill',ref:'office',text:'Verified address 3'});
+    }
+    const evidence = n === 4 ? 'Office address unknown' : 'Office address Verified address '+Math.min(n,3);
+    assert.equal((await report(opts,'progress',{evidence})).result.success,true);
+    return output(n);
+  },{engine:{browser}});
+  const run = engine.startRun({workflow:graph(),input:{task:'Verify draft fields',goal:{objective:'Verify draft fields'}}});
+  await waitFor(() => goals.view(run.id)?.status === 'blocked');
+  assert.equal(runtime.calls.length,6,JSON.stringify([...engine.runs.values()].map(r=>r.error)));
+  assert.equal(goals.raw(run.id).milestones.length,3);
+  assert.equal(goals.raw(run.id).noProgressTurns,3);
+  assert.equal(unknownDispatches,1);
+});
