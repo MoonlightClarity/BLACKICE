@@ -130,7 +130,7 @@ test('symlinked source is rejected where file symlink creation is available', as
   const f = await fixture(t), external = path.join(f.cwd, 'source.txt');
   await writeFile(external, 'Nothing here.');
   try { await symlink(external, path.join(f.cwd, 'applications.txt'), 'file'); }
-  catch (error) { if (['EPERM', 'EACCES', 'ENOSYS'].includes(error.code)) { t.skip('Host does not permit fixture file symlinks.'); return; } throw error; }
+  catch (error) { if (['EPERM', 'EACCES', 'ENOSYS'].includes(error.code)) { t.skip(`File symlink fixture creation failed: ${error.code}`); return; } throw error; }
   await rejectsCode(f.gate().check({ descriptor: descriptor() }), 'APPLICATION_HISTORY_INCOMPLETE');
 });
 

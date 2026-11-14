@@ -43,6 +43,27 @@ const optionalWindowsSourceTests = new Set([
   'same-directory native replacement is also exercised on an explicitly supplied existing SMB share',
 ]);
 
+// These skips report unexecuted containment assertions, not successful checks.
+const fileSymlinkCapabilityTests = new Map([
+  ['symlinked source is rejected where file symlink creation is available', 'tests/application-history.test.mjs'],
+  ['unsafe filesystem links cannot be queued or cleared', 'tests/storage-management.test.mjs'],
+]);
+
+function validSourceSkips(prior, count) {
+  const skips = prior.optionalSkips, capability = prior.fileSymlinkCapabilitySkips ?? [];
+  if (!Array.isArray(skips) || skips.length !== count || new Set(skips).size !== skips.length || !Array.isArray(capability)) return false;
+  const byName = new Map();
+  for (const item of capability) {
+    if (!item || typeof item !== 'object' || Array.isArray(item) || byName.has(item.name) ||
+        fileSymlinkCapabilityTests.get(item.name) !== item.file || item.platform !== 'win32' ||
+        item.operation !== 'create file symlink fixture' || !['EPERM', 'EACCES'].includes(item.errorCode) ||
+        item.assertionsRan !== false || item.reason !== `File symlink fixture creation failed: ${item.errorCode}`) return false;
+    byName.set(item.name, item);
+  }
+  return skips.every(name => optionalWindowsSourceTests.has(name) || (fileSymlinkCapabilityTests.has(name) && byName.has(name))) &&
+    [...byName.keys()].every(name => skips.includes(name));
+}
+
 export async function verifyReleaseSource(request, directory) {
   request = validateReleaseRequest(request);
   const metadata = JSON.parse(await fs.readFile(path.join(directory, 'package.json'), 'utf8'));
@@ -68,8 +89,7 @@ export async function verifyReleaseSource(request, directory) {
     prior.testInventorySha256 === createHash('sha256').update(JSON.stringify(testFiles)).digest('hex') &&
     receipt.tests.total >= testFiles.length && prior.tests.todo === 0,
     'Prior full-suite test inventory is incomplete or does not match the current source.');
-  check(Array.isArray(prior.optionalSkips) && prior.optionalSkips.length === receipt.tests.optionalSkipped &&
-    new Set(prior.optionalSkips).size === prior.optionalSkips.length && prior.optionalSkips.every(name => optionalWindowsSourceTests.has(name)),
+  check(validSourceSkips(prior, receipt.tests.optionalSkipped),
     'Prior source receipt contains an unexpected or unaccounted skipped test.');
   return { sourceCommit: request.sourceCommit, appFingerprint: fingerprint, sourceIndexSha256, receiptSha256: receipt.receiptSha256,
     tests: receipt.tests };

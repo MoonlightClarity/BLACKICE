@@ -142,7 +142,7 @@ test('unsafe filesystem links cannot be queued or cleared',async t=>{
   await mkdir(path.join(dataDir,'conversations'));
   const link=path.join(dataDir,'conversations','outside-link');
   try{await symlink(outside,link,'file');}
-  catch(error){if(['EPERM','EACCES','ENOTSUP'].includes(error.code))return t.skip('Windows symlinks not enabled');throw error;}
+  catch(error){if(['EPERM','EACCES','ENOTSUP'].includes(error.code))return t.skip(`File symlink fixture creation failed: ${error.code}`);throw error;}
   await assert.rejects(manager.schedule({categories:['conversations'],confirmation:'DELETE SELECTED DATA'}),/link/);
   assert.equal(await readFile(outside,'utf8'),'keep');
 });

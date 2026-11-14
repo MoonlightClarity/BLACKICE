@@ -357,6 +357,33 @@ test('exact source verification rejects matching-index partial receipts and prov
     await save({ ...receipt, optionalSkips: [name], tests: { ...receipt.tests, total: 4, optionalSkipped: 2 } });
     await assert.rejects(verifyReleaseSource(value, directory), /skipped test/);
   });
+  await t.test('only named Windows file-symlink permission skips have explicit provenance', async () => {
+    const cases = [
+      ['symlinked source is rejected where file symlink creation is available', 'tests/application-history.test.mjs'],
+      ['unsafe filesystem links cannot be queued or cleared', 'tests/storage-management.test.mjs'],
+    ];
+    const entries = cases.map(([name, file], i) => ({ name, file, platform: 'win32',
+      operation: 'create file symlink fixture', errorCode: i ? 'EACCES' : 'EPERM', assertionsRan: false,
+      reason: `File symlink fixture creation failed: ${i ? 'EACCES' : 'EPERM'}` }));
+    const candidate = { ...receipt, optionalSkips: cases.map(([name]) => name), fileSymlinkCapabilitySkips: entries,
+      tests: { ...receipt.tests, total: 4, optionalSkipped: 2 } };
+    await save(candidate);
+    assert.equal((await verifyReleaseSource(value, directory)).tests.optionalSkipped, 2);
+    for (const altered of [
+      { fileSymlinkCapabilitySkips: [] },
+      { fileSymlinkCapabilitySkips: [entries[0], entries[0]] },
+      { fileSymlinkCapabilitySkips: [{ ...entries[0], file: entries[1].file }, entries[1]] },
+      { fileSymlinkCapabilitySkips: [{ ...entries[0], platform: 'linux' }, entries[1]] },
+      { fileSymlinkCapabilitySkips: [{ ...entries[0], errorCode: 'ENOSYS' }, entries[1]] },
+      { fileSymlinkCapabilitySkips: [{ ...entries[0], assertionsRan: true }, entries[1]] },
+      { fileSymlinkCapabilitySkips: [{ ...entries[0], reason: 'permission denied' }, entries[1]] },
+      { optionalSkips: [cases[0][0], 'unrelated containment test'] },
+      { optionalSkips: [cases[0][0]], tests: { ...receipt.tests, total: 3, optionalSkipped: 1 } },
+    ]) {
+      await save({ ...candidate, ...altered });
+      await assert.rejects(verifyReleaseSource(value, directory), /skipped test/);
+    }
+  });
   await save({ ...receipt, optionalSkips: nativeOptional, tests: { ...receipt.tests, total: 6, optionalSkipped: 3, requiredSkipped: 1 } });
   await assert.rejects(verifyReleaseSource(value, directory), /required|failed|pass/i);
   await save(receipt);
