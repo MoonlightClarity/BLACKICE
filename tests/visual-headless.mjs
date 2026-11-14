@@ -31,6 +31,10 @@ try{
  await until(()=>evaluate('Boolean(document.querySelector("[data-conversation]"))'),'Chat list');await evaluate(`document.querySelector('[data-conversation="sample-run-0"]').click()`);
  await until(()=>evaluate('Boolean(document.querySelector(".next-visuals img")?.naturalWidth)'),'Inline SVG');
  assert.equal(await evaluate('document.querySelector(".next-visuals").closest("#next-chat-scroll")!==null'),true);
+ assert.equal(await evaluate('getComputedStyle(document.querySelector(".next-visuals img")).filter'),'grayscale(1) invert(0.88)','Generated inline SVG uses the subdued chat palette');
+ assert.equal(await evaluate('document.querySelector(".next-visuals img").getBoundingClientRect().height>0'),true,'Figure remains visible inline');
+ await evaluate('document.querySelector(".next-visuals img").scrollIntoView({block:"center"})');
+ if(process.env.BLACKICE_VISUAL_SCREENSHOT){const inline=await send('Page.captureScreenshot',{format:'png'});await writeFile(process.env.BLACKICE_VISUAL_SCREENSHOT.replace(/\.png$/, '-inline.png'),Buffer.from(inline.data,'base64'));}
  await clickText('Inspect / edit / history / export');await until(()=>evaluate('Boolean(document.querySelector("dialog[open] textarea"))'),'Editor');
  await evaluate(`(()=>{const area=[...document.querySelectorAll('dialog textarea')].find(a=>a.dataset.objectId==='observed');area.value='User corrected the observed failure';area.dispatchEvent(new Event('input',{bubbles:true}));})()`);
  await clickText('Preview draft');assert.match(await evaluate('document.querySelector("dialog [role=status]").textContent'),/valid/);await clickText('Save new revision');
@@ -52,5 +56,9 @@ try{
  await send('Emulation.setDeviceMetricsOverride',{width:600,height:850,deviceScaleFactor:1,mobile:false});
  assert.equal(await evaluate(`(()=>{const d=document.querySelector('dialog[open]'),c=d.querySelector('.visual-editor-canvas').getBoundingClientRect(),e=d.querySelector('.visual-editor-controls').getBoundingClientRect();return c.bottom<=e.top+1&&d.scrollWidth<=d.clientWidth+1;})()`),true,'Narrow editor stacks readable canvas and controls without horizontal overflow');
  if(process.env.BLACKICE_VISUAL_SCREENSHOT){const narrow=await send('Page.captureScreenshot',{format:'png'});await writeFile(process.env.BLACKICE_VISUAL_SCREENSHOT.replace(/\.png$/, '-narrow.png'),Buffer.from(narrow.data,'base64'));}
- assert.deepEqual(errors,[]);console.log('PASS: active chat SVG, form edit, preview, agent revision, conflict draft, history, exact SVG export, dedicated workspace, zoom, responsive layout, no renderer errors');
+ await clickText('Close');await evaluate(`document.querySelector('[data-space="chat"]').click()`);
+ await store.execute({action:'create',conversationId:'sample-run-0',requestId:'custom-color',document:{version:2,kind:'custom',title:'Custom colors',summary:'Author-selected colors remain unchanged.',svg:'<svg xmlns="http://www.w3.org/2000/svg" width="200" height="150" viewBox="0 0 200 150"><rect width="200" height="150" fill="#ffe080"/><text x="16" y="40" fill="#800000">Custom</text></svg>'}});
+ await until(()=>evaluate('Boolean(document.querySelector(".next-visuals-inline .visual-artifact-card img:not(.visual-sheet-generated)")?.naturalWidth)'),'Custom preview');
+ assert.equal(await evaluate('getComputedStyle(document.querySelector(".next-visuals-inline .visual-artifact-card img:not(.visual-sheet-generated)")).filter'),'none','Custom author colors are not recolored');
+ assert.deepEqual(errors,[]);console.log('PASS: active chat SVG, subdued generated preview, custom color preservation, form edit, preview, agent revision, conflict draft, history, exact SVG export, dedicated workspace, zoom, responsive layout, no renderer errors');
 }finally{try{await send('Browser.close');}catch{}socket?.close();browser?.kill();fixture.server.closeAllConnections();await new Promise(resolve=>fixture.server.close(resolve));await fixture.closeKnowledge();await sleep(200);await rm(directory,{recursive:true,force:true,maxRetries:3,retryDelay:100});}

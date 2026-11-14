@@ -2,13 +2,13 @@ import {visualPatch} from '../../visual-edits.mjs';
 import {compileVisual,visualSvgUrl,VISUAL_COMPOSITION_EXAMPLE} from '../../visual-document.mjs';
 
 export function createVisualWorkspace({mount,api,getConversationId,notify=()=>{},onOpenWorkspace}){
- const doc=mount.ownerDocument,section=doc.createElement('section');section.className='next-visuals';section.setAttribute('aria-label','Conversation visuals');mount.append(section);
+ const doc=mount.ownerDocument,section=doc.createElement('section');section.className='next-visuals'+(onOpenWorkspace?' next-visuals-inline':'');section.setAttribute('aria-label','Conversation visuals');mount.append(section);
  let owner=null,generation=0,cache=null,dialog=null,disposed=false;
  const el=(tag,text,parent=section)=>{const e=doc.createElement(tag);if(text!==undefined)e.textContent=text;parent.append(e);return e;};
  const button=(text,parent,action)=>{const b=el('button',text,parent);b.type='button';b.onclick=()=>Promise.resolve().then(action).catch(error=>notify(error.message));return b;};
  const endpoint=()=>`/api/conversations/${encodeURIComponent(owner)}/visuals`;
  const download=(value,type,name)=>{const url=URL.createObjectURL(new Blob([value],{type}));const a=el('a','',section);a.href=url;a.download=name;a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);};
- function image(record,parent){const url=visualSvgUrl(record.svg);if(url){const img=el('img',undefined,parent);img.src=url;img.alt=record.document.summary;img.className='visual-sheet';}else el('p','Preview unavailable. The saved text and source remain available.',parent);}
+ function image(record,parent){const url=visualSvgUrl(record.svg);if(url){const img=el('img',undefined,parent);img.src=url;img.alt=record.document.summary;img.className='visual-sheet';if(record.document.kind==='composed'&&!record.document.regions?.length)img.classList.add('visual-sheet-generated');}else el('p','Preview unavailable. The saved text and source remain available.',parent);}
  async function edit(artifactId,revision){
   const selectedOwner=owner,token=generation,url=endpoint();const record=artifactId?await api(url+`?artifactId=${encodeURIComponent(artifactId)}${revision?`&revision=${revision}`:''}`):{document:structuredClone(VISUAL_COMPOSITION_EXAMPLE)};
   if(disposed||token!==generation||selectedOwner!==owner)return;

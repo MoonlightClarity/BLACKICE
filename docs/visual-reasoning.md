@@ -66,3 +66,5 @@ Follow-up increments: better layout/label-overlap diagnostics; richer keyboard g
 Included: renderer-managed geometry, stable object edits, actor-tagged user changes, mixed custom regions and concise positive/negative examples in the attached tool description. These reduce authoring and correction effort without requiring the user to learn an analytical taxonomy.
 
 Deferred: a permanent global component marketplace, interactive executable SVG, drag-canvas editing, automatic promotion of generated diagrams into reusable templates, and mandatory Planning integration. None is needed to demonstrate the user-edit/agent-revision loop. Custom regions are static graphics, not mini-applications. Optional visual use remains off by default pending paired outcome and cost evaluation.
+
+Chat previews remain visible inline. Generated compositions without custom regions receive a subdued grayscale/charcoal display treatment; original SVG export bytes and custom-authored colors are preserved. Workspace controls use BLACKICE's shared theme variables. The model guide asks custom SVG authors to match the surrounding theme and avoid bright decorative fields.
