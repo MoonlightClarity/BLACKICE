@@ -1349,7 +1349,7 @@ export async function createHarnessServer(options = {}) {
       files['/visual-document.mjs'] = 'visual-document.mjs';
       files['/token-usage.mjs'] = 'token-usage.mjs';
       files['/provider-availability.mjs'] = 'provider-availability.mjs';
-      const nextFiles = ['index.html','base.css','chat.css','chat-management.css','brand.css','work-visual.css','intelligence-planning.css','intelligence-map.css','controls.css','layout-fixes.css','planning-ontology.css','planning-browser.css','planning-current.css','guard.js','app.mjs',
+      const nextFiles = ['visuals.css','workspaces/visuals.mjs','index.html','base.css','chat.css','chat-management.css','brand.css','work-visual.css','intelligence-planning.css','intelligence-map.css','controls.css','layout-fixes.css','planning-ontology.css','planning-browser.css','planning-current.css','guard.js','app.mjs',
         'core/api.mjs','core/dom.mjs','core/events.mjs','core/model-picker.mjs','core/context-controls.mjs','model-picker.css',
         'chat/chat.mjs','chat/visuals.mjs','chat/model.mjs','chat/render.mjs','chat/send.mjs','chat/goals.mjs','chat/planning-timeline.mjs',
         'chat/options-model.mjs','chat/ontology-preferences.mjs','chat/execution-preferences.mjs','chat/artifacts.mjs','parity.css',

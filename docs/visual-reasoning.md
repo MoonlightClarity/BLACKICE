@@ -1,5 +1,9 @@
 # Editable visual reasoning — first release
 
+The Visuals workspace provides a dedicated conversation selector and artifact gallery, including archived and trashed conversations. Chat retains inline previews and a direct workspace link. Its split editor keeps the canvas beside content controls, history and exports, with zoom, source editing and text alternatives. New compositions use the versioned `briefing-1` renderer; earlier renderer outputs remain readable and export exactly as saved. Whole custom SVG and the internal styling of custom regions are preserved.
+
+Presentation references inspected for this refinement were Heuer and Pherson's concept/argument maps and comparison figures, and the US Government's March 2009 *A Tradecraft Primer*, especially the assumptions comparison (printed page 8), evidence matrix (15), alternative futures figure (35), and timeline (38). The implementation borrows readable hierarchy, light fields and restrained color, not source illustrations or a mandatory technique taxonomy. The visual tool's `describe` action supplies a problem-specific design guide, including custom SVG, uncertainty, bounds, legibility and negative examples; its example is syntax guidance, not a required template.
+
 Visuals are optional conversation artifacts. They do not run Planning modules, launch workers, validate evidence or change Goals. The same service backs `relay_visual`, `blackice_visual` and Chat's Visuals panel. Native provider conversations retain their original tool catalog; start a new provider conversation to obtain a newly introduced tool. Existing conversations can still inspect and edit visuals through Chat.
 
 ## Choosing a representation
