@@ -1347,6 +1347,7 @@ export async function createHarnessServer(options = {}) {
       files['/visual-label-layout.mjs'] = 'visual-label-layout.mjs';
       files['/visual-edits.mjs'] = 'visual-edits.mjs';
       files['/visual-document.mjs'] = 'visual-document.mjs';
+      files['/visual-paint.mjs'] = 'visual-paint.mjs';
       files['/token-usage.mjs'] = 'token-usage.mjs';
       files['/provider-availability.mjs'] = 'provider-availability.mjs';
       const nextFiles = ['visuals.css','index.html','base.css','chat.css','chat-management.css','brand.css','work-visual.css','intelligence-planning.css','intelligence-map.css','controls.css','layout-fixes.css','planning-ontology.css','planning-browser.css','planning-current.css','guard.js','app.mjs',
