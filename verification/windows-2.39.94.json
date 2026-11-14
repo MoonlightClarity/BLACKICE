@@ -1,0 +1,143 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "scope": "source-publication",
+  "sourceCommit": "6a2c1149c8a963da7af6b102b91a80fd5292ea44",
+  "version": "2.39.94",
+  "startedAt": "2026-11-14T22:34:45.9240590Z",
+  "node": "v22.23.5",
+  "platform": "win32",
+  "appFingerprint": "b0567ccca77002613320355900f5440eba0bb521bfa91587321533021d226101",
+  "sourceIndexSha256": "0fa8c78bbc49a22a09922949fff34b05891ab7bc3785153cfbb0a1654c3aff29",
+  "sourceFilesVerified": 1656,
+  "testFiles": 768,
+  "testInventorySha256": "163995a1e1156a6ca2a116ac902d4dec1bddbc40852c88f317072b66e0b165bc",
+  "checkedAt": "2026-11-14T22:43:29.9051051Z",
+  "state": "passed",
+  "passed": true,
+  "fullSuite": true,
+  "countsComplete": true,
+  "fingerprintUnchanged": true,
+  "sourceUnchanged": true,
+  "tests": {
+    "total": 8713,
+    "passed": 8700,
+    "failed": 0,
+    "requiredSkipped": 0,
+    "optionalSkipped": 13,
+    "cancelled": 0,
+    "todo": 0,
+    "exitCode": 0,
+    "signal": null
+  },
+  "testLogSha256": "1ec9cc16a94f2942f6efaaca92f366ca6edb566900d00c50188d1ef4e953510d",
+  "execution": {
+    "kind": "node-test-explicit-inventory",
+    "concurrency": 4,
+    "uniqueCoverageVerified": true
+  },
+  "optionalSkips": [
+    "symlinked source is rejected where file symlink creation is available",
+    "Relay-owned sign-in and local storage survive a full process restart without foregrounding",
+    "live contained input updates application state and delivers editing keys without OS focus",
+    "offscreen contained input updates application state and delivers editing keys without OS focus",
+    "restored hidden browser tabs defer requests until used and never load closed or replaced pages",
+    "native popups preserve OAuth routing and remain independent when their opener closes",
+    "actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases",
+    "live background accessibility actions change only a dedicated non-activating fixture and leave foreground and cursor untouched",
+    "rendered Chat Directory controls reach the real engine and persist independently",
+    "hidden isolated Chromium composer validates real layout and one-click send wiring",
+    "installed Himalaya sends exact MIME to disposable loopback SMTP and strips Bcc headers",
+    "real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart",
+    "unsafe filesystem links cannot be queued or cleared"
+  ],
+  "fileSymlinkCapabilitySkips": [
+    {
+      "name": "symlinked source is rejected where file symlink creation is available",
+      "file": "tests/application-history.test.mjs",
+      "platform": "win32",
+      "operation": "create file symlink fixture",
+      "errorCode": "EPERM",
+      "assertionsRan": false,
+      "reason": "File symlink fixture creation failed: EPERM"
+    },
+    {
+      "name": "unsafe filesystem links cannot be queued or cleared",
+      "file": "tests/storage-management.test.mjs",
+      "platform": "win32",
+      "operation": "create file symlink fixture",
+      "errorCode": "EPERM",
+      "assertionsRan": false,
+      "reason": "File symlink fixture creation failed: EPERM"
+    }
+  ],
+  "skipDetails": [
+    {
+      "name": "symlinked source is rejected where file symlink creation is available",
+      "reason": "File symlink fixture creation failed: EPERM",
+      "assertionsRan": false
+    },
+    {
+      "name": "Relay-owned sign-in and local storage survive a full process restart without foregrounding",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+      "assertionsRan": false
+    },
+    {
+      "name": "live contained input updates application state and delivers editing keys without OS focus",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 for the isolated native fixture.",
+      "assertionsRan": false
+    },
+    {
+      "name": "offscreen contained input updates application state and delivers editing keys without OS focus",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 for the isolated native fixture.",
+      "assertionsRan": false
+    },
+    {
+      "name": "restored hidden browser tabs defer requests until used and never load closed or replaced pages",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 for disposable Electron restoration.",
+      "assertionsRan": false
+    },
+    {
+      "name": "native popups preserve OAuth routing and remain independent when their opener closes",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+      "assertionsRan": false
+    },
+    {
+      "name": "actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases",
+      "reason": "Set RELAY_TRUSTED_FILL_QA=1 for the isolated native fixture.",
+      "assertionsRan": false
+    },
+    {
+      "name": "live background accessibility actions change only a dedicated non-activating fixture and leave foreground and cursor untouched",
+      "reason": null,
+      "assertionsRan": false
+    },
+    {
+      "name": "rendered Chat Directory controls reach the real engine and persist independently",
+      "reason": null,
+      "assertionsRan": false
+    },
+    {
+      "name": "hidden isolated Chromium composer validates real layout and one-click send wiring",
+      "reason": "Set BLACKICE_EMAIL_COMPOSE_QA=1 for the isolated native UI fixture.",
+      "assertionsRan": false
+    },
+    {
+      "name": "installed Himalaya sends exact MIME to disposable loopback SMTP and strips Bcc headers",
+      "reason": null,
+      "assertionsRan": false
+    },
+    {
+      "name": "real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart",
+      "reason": "Set RELAY_LIVE_FIREFOX_QA=1 on Windows to use a new disposable Firefox profile.",
+      "assertionsRan": false
+    },
+    {
+      "name": "unsafe filesystem links cannot be queued or cleared",
+      "reason": "File symlink fixture creation failed: EPERM",
+      "assertionsRan": false
+    }
+  ],
+  "unexpectedSkips": [],
+  "validationScope": "Windows source suite only; 13 named skipped tests did not run their assertions. Installer, native integrations, and live model behavior require separate verification."
+}
