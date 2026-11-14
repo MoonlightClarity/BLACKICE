@@ -1,0 +1,52 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "scope": "source-publication",
+  "sourceCommit": "b5f486fb88f9bcdd28b0ab9625ee87ee0fad3697",
+  "version": "2.39.89",
+  "startedAt": "2026-11-14T00:15:04.820Z",
+  "node": "v24.22.1",
+  "platform": "win32",
+  "appFingerprint": "2a4f7b0c3e4bb352e492c8bc097b46ec60bbc2e210f0a2fc0474592856187f5e",
+  "sourceIndexSha256": "77d8c0bab4de4287a9655902456bb35014ad5b6bfd9664bd198ce44395be1e94",
+  "sourceFilesVerified": 1598,
+  "testFiles": 748,
+  "testInventorySha256": "5d0ac08ba22f8097a70a04bd105a914fc26431c2f5075c25f5e33af02f70bae4",
+  "checkedAt": "2026-11-14T00:20:46.268Z",
+  "state": "passed",
+  "passed": true,
+  "fullSuite": true,
+  "countsComplete": true,
+  "fingerprintUnchanged": true,
+  "sourceUnchanged": true,
+  "tests": {
+    "total": 8622,
+    "passed": 8611,
+    "failed": 0,
+    "requiredSkipped": 0,
+    "optionalSkipped": 11,
+    "cancelled": 0,
+    "todo": 0,
+    "exitCode": 0
+  },
+  "testLogSha256": "e17fd8e535fa5e60c13fd7292502c3faa215f42fdc6c594a77df27b3ae8e5a2a",
+  "execution": {
+    "kind": "node-test-explicit-inventory",
+    "concurrency": 4,
+    "uniqueCoverageVerified": true
+  },
+  "optionalSkips": [
+    "Relay-owned sign-in and local storage survive a full process restart without foregrounding",
+    "live contained input updates application state and delivers editing keys without OS focus",
+    "offscreen contained input updates application state and delivers editing keys without OS focus",
+    "restored hidden browser tabs defer requests until used and never load closed or replaced pages",
+    "native popups preserve OAuth routing and remain independent when their opener closes",
+    "actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases",
+    "live background accessibility actions change only a dedicated non-activating fixture and leave foreground and cursor untouched",
+    "rendered Chat Directory controls reach the real engine and persist independently",
+    "hidden isolated Chromium composer validates real layout and one-click send wiring",
+    "installed Himalaya sends exact MIME to disposable loopback SMTP and strips Bcc headers",
+    "real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart"
+  ],
+  "validationScope": "Complete Windows source suite; optional native integrations and actual installer/local runtime separately verified."
+}
