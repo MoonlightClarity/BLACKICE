@@ -1,12 +1,13 @@
 import {randomUUID} from 'node:crypto';
 import {visualSvgUrl} from '../public/visual-document.mjs';
+import {ASSET_INSPECTION,assetInspectionHtml} from './visual-inspection.mjs';
 
 // Private, disposable Chromium surface. Never navigates a user tab or persists a draft.
 export function createVisualPreview({BrowserWindow,session}){
  let pending=Promise.resolve();
- return (compiled,{signal}={})=>{
+ return (compiled,{signal,inspection}={})=>{
   const task=pending.catch(()=>{}).then(async()=>{
-   signal?.throwIfAborted();const url=visualSvgUrl(compiled.svg);if(!url)throw Error('Preview requires a validated static SVG.');
+   signal?.throwIfAborted();if(inspection!==undefined&&inspection!=='asset')throw Error('Unknown visual inspection mode.');const url=visualSvgUrl(compiled.svg);if(!url)throw Error('Preview requires a validated static SVG.');
    const isolated=session.fromPartition('visual-preview-'+randomUUID());
    isolated.setPermissionCheckHandler(()=>false);
    isolated.setPermissionRequestHandler((_webContents,_permission,callback)=>callback(false));
@@ -24,7 +25,18 @@ export function createVisualPreview({BrowserWindow,session}){
     await new Promise(resolve=>setTimeout(resolve,100));signal?.throwIfAborted();
     const capture=await win.webContents.capturePage();const png=capture.resize({width}).toPNG();
     if(png.length>8*1024*1024)throw Error('Preview exceeds image limit.');
-    return {imageUrl:'data:image/png;base64,'+png.toString('base64'),width,height,diagnostics};
+    const result={imageUrl:'data:image/png;base64,'+png.toString('base64'),width,height,diagnostics,
+     qualityAssessment:{status:'not-assessed',reason:'Text-layout diagnostics and successful rendering do not assess color, silhouette, composition, usability or production readiness.'}};
+    if(inspection==='asset'){
+     win.setContentSize(ASSET_INSPECTION.width,ASSET_INSPECTION.height);
+     await win.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent(assetInspectionHtml(compiled.svg)));
+     await win.webContents.executeJavaScript('Promise.all([...document.images].map(image=>image.decode()))');
+     signal?.throwIfAborted();await new Promise(resolve=>setTimeout(resolve,100));signal?.throwIfAborted();
+     const sheet=(await win.webContents.capturePage()).resize({width:ASSET_INSPECTION.width}).toPNG();
+     if(sheet.length>8*1024*1024)throw Error('Inspection exceeds image limit.');
+     result.inspectionImageUrl='data:image/png;base64,'+sheet.toString('base64');result.inspection=ASSET_INSPECTION;
+    }
+    return result;
    }finally{clearTimeout(timer);signal?.removeEventListener('abort',cancel);cancel();await isolated.clearStorageData().catch(()=>{});}
   });pending=task;return task;
  };
