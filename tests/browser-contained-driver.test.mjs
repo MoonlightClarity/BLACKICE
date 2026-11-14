@@ -283,9 +283,12 @@ test('a detached renderer ref preserves its message across a boundary that loses
   const browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());
   const result = await createBrowserToolHandler({ browser })({ name: 'relay_browser', arguments: { action: 'click', tabId: tab.id, ref: 'old-media' } });
   assert.equal(result.success, false); assert.equal(result.code, 'BROWSER_REF_STALE');
-  assert.deepEqual(JSON.parse(result.contentItems[0].text), {
-    error: 'This element ref is stale. Take a new snapshot and choose its current ref. Do not reuse this ref. Observe the current page, then select the intended control\'s ref from frames[].elements[].ref. Inspect the page for effects before any retry.',
+  const { observation, ...recovery } = JSON.parse(result.contentItems[0].text).recovery;
+  assert.equal(observation.tabId, tab.id);
+  assert.deepEqual({ ...JSON.parse(result.contentItems[0].text), recovery }, {
+    error: 'This element ref is stale. Take a new snapshot and choose its current ref. Do not reuse this ref. Observe the current page, then select the intended control\'s ref from frames[].elements[].ref. No page input was dispatched.',
     code: 'BROWSER_REF_STALE',
+    actionDispatched: false,
     recovery: { nextCall: { action: 'snapshot', browser: 'relay', tabId: tab.id }, refSource: 'frames[].elements[].ref' },
   });
   assert.equal(tab.window.protocol.some(item => item.method.startsWith('Input.')), false, 'A detached target must fail before browser input.');
@@ -330,6 +333,22 @@ test('refs from separate filtered reads stay usable on their original connected 
   f.tab.window.webContents.mainFrame = { processId: 2, routingId: 2, framesInSubtree: [], executeJavaScript: async () => assert.fail('A stale frame must not dispatch input.') };
   await assert.rejects(f.driver.element(f.tab, { ref: refs[1], value: 'yes' }, 'select'), { code: 'BROWSER_REF_STALE' });
   assert.notEqual(f.tab.window.webContents.mainFrame, oldFrame);
+});
+
+test('a stale control returns fresh same-tab observations without applying the old action', async t => {
+  const f = await observedSelectFixture(t, ['Original']);
+  const browser = new BrowserWorkspace({ driver: f.driver }); t.after(() => browser.close());
+  const handler = createBrowserToolHandler({ browser });
+  const call = args => handler({ name: 'relay_browser', arguments: { tabId: f.tab.id, ...args } });
+  const first = JSON.parse((await call({ action: 'snapshot' })).contentItems[0].text);
+  const control = f.controls[0];
+  control.getAttribute = key => key === 'aria-label' ? 'Changed' : null;
+  const failed = JSON.parse((await call({ action: 'select', ref: first.frames[0].elements[0].ref, value: 'yes' })).contentItems[0].text);
+  assert.equal(failed.actionDispatched, false);
+  const current = failed.recovery.observation.frames[0].elements[0];
+  assert.equal(current.name, 'Changed');
+  assert.notEqual(current.ref, first.frames[0].elements[0].ref);
+  assert.equal(control.value, '');
 });
 
 test('same-document accumulated refs have a bounded recent lifetime', async t => {

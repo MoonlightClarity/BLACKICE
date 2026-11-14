@@ -255,7 +255,7 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation) {
   // here as well as at the host boundary, before focus or selection can change.
   if (['fill', 'fill-ready'].includes(action) && (typeof args?.text !== 'string' || args.value !== undefined)) return { __blackiceElementError: { message: 'Fill requires an explicit text string and does not accept value. Use text:"" to intentionally clear a field; value is only for select.', code: 'BROWSER_VALIDATION', inputDispatched: false } };
   const state = globalThis[key], el = state?.elements.get(ref);
-  if (!el?.isConnected) return { __blackiceElementError: { message: 'This element ref is stale. Take a new snapshot and choose its current ref.', code: 'BROWSER_REF_STALE' } };
+  if (!el?.isConnected) return { __blackiceElementError: { message: 'This element ref is stale. Take a new snapshot and choose its current ref.', code: 'BROWSER_REF_STALE', inputDispatched: false } };
   // Retaining a ref does not authorize a node that was hidden or repurposed
   // after observation. Reinspect rather than acting on changed semantics.
   const expected = state.identities?.get(ref);
@@ -266,7 +266,7 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation) {
     const labelled = (el.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ');
     const label = String(el.getAttribute('aria-label') || labelled || (el.labels ? [...el.labels].map(l => l.textContent).join(' ') : '') || el.getAttribute('placeholder') || el.getAttribute('aria-placeholder') || el.getAttribute('data-placeholder') || (!privateValue && el.textContent) || el.getAttribute('title') || el.getAttribute('alt') || '').replace(/\s+/g, ' ').trim().slice(0, 300);
     const actual = JSON.stringify([el.tagName, el.type || '', role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), label]);
-    if (style.display === 'none' || style.visibility === 'hidden' || !(box.width > 0 || box.height > 0) || actual !== expected) return { __blackiceElementError: { message: 'This observed control changed. Take a fresh snapshot and choose its current ref.', code: 'BROWSER_REF_STALE' } };
+    if (style.display === 'none' || style.visibility === 'hidden' || !(box.width > 0 || box.height > 0) || actual !== expected) return { __blackiceElementError: { message: 'This observed control changed. Take a fresh snapshot and choose its current ref.', code: 'BROWSER_REF_STALE', inputDispatched: false } };
   }
   if (el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true') throw new Error('This element is disabled. Inspect what is required first.');
   if (action === 'host-inspect') return inspectOperation(el, state, args);
@@ -1260,9 +1260,8 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
     if (result?.__blackiceElementError) {
       const { message, code, inputDispatched } = result.__blackiceElementError;
-      // Only the select branch's explicit type/value validation proves no input.
-      // Generic renderer errors and earlier pointer preparation remain uncertain.
-      throw Object.assign(error(message), { code, ...(action === 'select' && inputDispatched === false ? { inputDispatched: false } : {}) });
+      // A renderer ref rejection happens before the operation reaches its input path.
+      throw Object.assign(error(message), { code, ...(code === 'BROWSER_REF_STALE' && inputDispatched === false ? { actionDispatched: false, refreshObservedControls: true } : action === 'select' && inputDispatched === false ? { inputDispatched: false } : {}) });
     }
     if (!this.referenceCurrent(tab, args.ref)) throw Object.assign(error('The target frame changed while the element action was running. Inspect its actual effects before another attempt.'), { code: 'BROWSER_REF_STALE' });
     return { frame, result };

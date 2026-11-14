@@ -50,7 +50,18 @@ test('one goal continues for three turns in the same conversation and finishes w
     assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_goal'));
     assert.ok(options.dynamicTools.every(tool => tool.type === 'function'), 'Native dynamic tool catalog must be consistently canonical, including relay_goal');
     assert.match(options.developerInstructions,/PERSISTENT CONVERSATION GOAL/);
-    const {result} = await report(options,n === 3 ? 'complete' : 'progress'); assert.equal(result.success,true);
+    if (n > 1) {
+      const turn = [...engine.runs.values()].at(-1);
+      assert.match(turn.input, /Recorded evidence: The fixture verified/);
+      assert.match(turn.input, /Deferred branch: One destination requires manual verification/);
+      assert.match(turn.input, /Execute the recorded next operation if it still applies: Inspect the independent destination/);
+    }
+    const {result} = await report(options,n === 3 ? 'complete' : 'progress', {
+      evidence: 'The fixture verified stage ' + n + ' using its actual recorded test output.',
+      milestone: 'stage-' + n,
+      nextAction: 'Inspect the independent destination',
+      blockedBranch: 'One destination requires manual verification',
+    }); assert.equal(result.success,true);
     return output(n);
   });
   const first = engine.startRun({workflow:graph(),input:{task:'Complete three stages.',goal:{objective:'Complete three stages.'}},requestId:'three-turn-goal'});
@@ -98,7 +109,7 @@ test('ordinary final text cannot complete the goal and three empty turns are vis
   const {engine,goals,runtime} = await fixture(t, async (_,n) => ({...output(n),output:'All done!'}));
   const run = engine.startRun({workflow:graph(),input:{task:'Do work',goal:{objective:'Do work'}}});
   await waitFor(async () => (await goals.get(run.id))?.status === 'blocked');
-  const goal = await goals.get(run.id); assert.equal(runtime.calls.length,3); assert.equal(goal.completionEvidence,null); assert.match(goal.lastReason,/no tool work or recorded progress/);
+  const goal = await goals.get(run.id); assert.equal(runtime.calls.length,3); assert.equal(goal.completionEvidence,null); assert.match(goal.lastReason,/no new verified progress/);
 });
 
 test('explicit pause_after_turn keeps an in-flight turn and prevents automatic continuation', async t => {
@@ -412,4 +423,49 @@ test('control reconciliation refuses changed intent, lifecycle, run, goal and ab
  await assert.rejects(goals.control(first.id,{action:'pause',expectedRevision:before.revision,expectedControl:controlSnapshot(before)}),{code:'GOAL_REVISION_CONFLICT'});
  assert.equal(runtime.calls[0].signal.aborted,false);assert.equal(changed.goal.objective,'New user intent');
  await goals.control(first.id,{action:'pause',requestId:'reject-cleanup'});
+});
+
+test('autonomous recovery preserves prepared work, then detects repeated destination switching', async t => {
+  const actions = [];
+  let activeRun;
+  const browser = {
+    status: () => ({available:true, contained:true, tabs:activeRun ? [{tabId:'prepared',owner:{taskId:activeRun.taskId,runId:activeRun.id,nodeId:'agent'}}] : [], activeTab:'prepared'}),
+    async perform(args) {
+      actions.push(args.action);
+      if (args.action === 'click') throw Object.assign(new Error('Control changed'), {code:'BROWSER_REF_STALE', actionDispatched:false});
+      return {tabId:'prepared', frames:[{elements:[], text:args.action === 'read' ? 'Employer directory verifies the historical office' : 'Human verification challenge displayed'}]};
+    },
+  };
+  const {engine,goals,runtime} = await fixture(t, async (options,n) => {
+    const call = args => options.onToolCall({name:'relay_browser', arguments:{browser:'relay',tabId:'prepared',...args}});
+    const turn = [...engine.runs.values()].at(-1);
+    activeRun = turn;
+    if (n === 1) {
+      const detail = await call({action:'read',query:'historical office'});
+      assert.match(detail.contentItems[0].text,/directory verifies/);
+      await report(options,'progress',{milestone:'prepared:historical-office-verified', evidence:'The employer directory verifies the historical office.', nextAction:'Validate the prepared work-history field.'});
+    } else if (n === 2) {
+      assert.match(turn.input,/Validate the prepared work-history field/);
+      const stale = await call({action:'click',ref:'old-control'});
+      assert.equal(stale.code,'BROWSER_REF_STALE');
+      const current = await call({action:'snapshot'});
+      assert.match(current.contentItems[0].text,/verification challenge displayed/);
+      await report(options,'progress',{evidence:'An observed human verification challenge is still present.',blockedBranch:'Prepared application verification',nextAction:'Check a supported verification route for the prepared application.'});
+    } else {
+      assert.match(turn.input,/Return to the most advanced unfinished branch/);
+      assert.match(turn.input,/Most recent verified milestone/);
+      for (let k = 0; k < 4; k++) {
+        const switched = await call({action:'navigate',url:'https://example.test/other-'+n+'-'+k});
+        assert.equal(switched.success,true);
+        assert.equal(switched.contentItems.some(item => item.text?.includes('Goal steering:')), k === 3);
+      }
+      await report(options,'progress',{evidence:'Another destination was searched on turn '+n,nextAction:'Search a different destination.', ...(n === 4 ? {milestone:'prepared:historical-office-verified'} : {})});
+    }
+    return output(n);
+  },{engine:{browser}});
+  const run = engine.startRun({workflow:graph(),input:{task:'Prepare and verify application readiness without submitting.',goal:{objective:'Until verified readiness is achieved, keep resolving the prepared application.'}}});
+  await waitFor(async () => (await goals.get(run.id))?.status === 'blocked');
+  assert.equal(runtime.calls.length,4,JSON.stringify([...engine.runs.values()].map(r => r.error)));
+  assert.deepEqual(actions,['read','click','snapshot',...Array(8).fill('navigate')]);
+  assert.equal((await goals.get(run.id)).completionEvidence,null);
 });
