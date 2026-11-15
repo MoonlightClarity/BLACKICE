@@ -1,0 +1,62 @@
+{
+  "source": "8fbe66d7237a324d28db5a656a4539e53e43149d",
+  "node": "v24.22.2",
+  "platform": "win32",
+  "lexical": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp",
+  "canonical": "C:\\Users\\runneradmin\\AppData\\Local\\Temp",
+  "ancestry": [
+    {
+      "path": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp",
+      "real": "C:\\Users\\runneradmin\\AppData\\Local\\Temp",
+      "link": false,
+      "directory": true
+    },
+    {
+      "path": "C:\\Users\\RUNNER~1\\AppData\\Local",
+      "real": "C:\\Users\\runneradmin\\AppData\\Local",
+      "link": false,
+      "directory": true
+    },
+    {
+      "path": "C:\\Users\\RUNNER~1\\AppData",
+      "real": "C:\\Users\\runneradmin\\AppData",
+      "link": false,
+      "directory": true
+    },
+    {
+      "path": "C:\\Users\\RUNNER~1",
+      "real": "C:\\Users\\runneradmin",
+      "link": false,
+      "directory": true
+    },
+    {
+      "path": "C:\\Users",
+      "real": "C:\\Users",
+      "link": false,
+      "directory": true
+    },
+    {
+      "path": "C:\\",
+      "real": "C:\\",
+      "link": false,
+      "directory": true
+    }
+  ],
+  "outcomes": [
+    {
+      "kind": "lexical",
+      "dir": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\blackice-path-probe-JiI0Uz",
+      "real": "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\blackice-path-probe-JiI0Uz",
+      "passed": false,
+      "code": "BROWSER_PROFILE_UNSAFE_PATH",
+      "message": "Profile import cannot follow links, junctions, redirected paths, or special files. The previous import was preserved."
+    },
+    {
+      "kind": "canonical",
+      "dir": "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\blackice-path-probe-ZcXQPd",
+      "real": "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\blackice-path-probe-ZcXQPd",
+      "passed": true
+    }
+  ],
+  "scope": "Disposable CI fixture only; production guards unchanged; no full suite"
+}
