@@ -4,7 +4,24 @@ const ACTIONS=new Set(['set','update','pause','resume','clear']);
 const RESUMABLE=new Set(['paused','blocked','interrupted','budget_exhausted']);
 const ACTIVE_AUTONOMY=new Set(['active','waiting']);
 const toComputerDateTime=iso=>{if(!iso)return '';const d=new Date(iso);if(!Number.isFinite(d.getTime()))return '';const two=v=>String(v).padStart(2,'0');return [d.getFullYear(),two(d.getMonth()+1),two(d.getDate())].join('-')+'T'+two(d.getHours())+':'+two(d.getMinutes())+':'+two(d.getSeconds());};
-const computerDeadlineInput=value=>{const instant=new Date(value);if(!Number.isFinite(instant.getTime()))throw Error('Enter a valid date and time for the computer-local deadline.');return {deadlineAt:instant.toISOString(),deadlineTimeZone:Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'};};
+export const computerDeadlineInput=value=>{
+  const match=/^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)(?::(\d\d))?$/.exec(value);
+  if(!match)throw Error('Enter a complete computer-local date and time.');
+  const [year,month,day,hour,minute,second]=match.slice(1).map(Number);
+  if(!Number.isSafeInteger(year)||year<100||month<1||month>12||day<1||day>31||hour>23||minute>59||(second||0)>59)
+    throw Error('The deadline calendar fields are invalid.');
+  const instant=new Date(year,month-1,day,hour,minute,second||0);
+  const same=d=>d.getFullYear()===year&&d.getMonth()===month-1&&d.getDate()===day
+    &&d.getHours()===hour&&d.getMinutes()===minute&&d.getSeconds()===(second||0);
+  if(!same(instant))throw Error('That local deadline does not exist at the DST spring-forward transition. Choose a valid time.');
+  // A DST autumn fold has two UTC instants that share one datetime-local value.
+  // Do not choose the first silently: an explicit ISO UTC offset is required.
+  for(let delta=-180;delta<=180;delta+=15){
+    if(delta!==0&&same(new Date(instant.getTime()+delta*60000)))
+      throw Error('That local deadline is ambiguous at the DST fall-back transition. Supply a deadline with an explicit UTC offset.');
+  }
+  return {deadlineAt:instant.toISOString(),deadlineTimeZone:Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'};
+};
 
 /** The proposed objective is editable; only saved chat history, never inferred facts, supplies calibration. */
 export function autonomyCalibrationObjective({draft='',firstTask='',turns=0}={}) {
