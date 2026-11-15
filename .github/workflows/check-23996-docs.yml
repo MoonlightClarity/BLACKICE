@@ -1,0 +1,20 @@
+name: Check exact 2.39.96 candidate documentation
+on:
+  push:
+    branches: [codex/native-comparison-23995]
+    paths: [.github/workflows/check-23996-docs.yml]
+permissions:
+  contents: read
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 9c6bac43fc2c55aeb270d9ba5e123f7e99ab04be
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm run docs:check
