@@ -1,0 +1,92 @@
+name: Recover ONE failed v2.39.98 installer draft asset - NO publication
+on:
+  push:
+    branches: [codex/release23998-starter-recovery-20261115]
+    paths: ['.github/workflows/recover-blackice-23998-starter.yml']
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: blackice-23998-single-starter-751904314-recovery
+  cancel-in-progress: false
+jobs:
+  recover_only_draft_installer:
+    runs-on: windows-2025
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - name: Checkout isolated controller only, never edit released source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Pin Python for exact no-retry recovery
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Syntax-check controller and bind one unique CI admission before any effects
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $script='.github/verification/recover-23998-failed-asset.py'
+          if(!(Test-Path -LiteralPath $script -PathType Leaf)) { throw 'Recovery controller absent.' }
+          python -m py_compile $script
+          if($LASTEXITCODE -ne 0) { throw 'Controller Python syntax check failed.' }
+          $actual=(& git rev-parse HEAD).Trim()
+          if($actual -cne $env:GITHUB_SHA -or $actual -ceq '0101d3f88cc7f3f139394a1c943b899511668a90') { throw 'Controller/source checkout conflation.' }
+          if($env:GITHUB_RUN_ATTEMPT -cne '1') { throw 'No duplicate/retry workflow attempt permitted.' }
+          Write-Output "ONE_RECOVERY_ADMISSION run=$env:GITHUB_RUN_ID attempt=$env:GITHUB_RUN_ATTEMPT controller=$actual released_source=0101d3f88cc7f3f139394a1c943b899511668a90"
+      - name: Download ONLY original already verified 2.39.98 build artifact; no rebuild
+        uses: actions/download-artifact@v4
+        with:
+          name: blackice-23998-windows-candidate-NOT-PUBLISHED
+          run-id: 43732981837
+          repository: MoonlightClarity/BLACKICE
+          github-token: ${{ github.token }}
+          path: original-build
+      - name: READ-ONLY preflight on original bytes, exact starter, main/tag and existing draft
+        shell: pwsh
+        run: |
+          python .github/verification/recover-23998-failed-asset.py preflight
+          if($LASTEXITCODE -ne 0) { throw 'Original failure/source/asset changed; no deletion.' }
+      - name: DELETE ONLY original failed starter asset 751904314 once
+        shell: pwsh
+        run: |
+          python .github/verification/recover-23998-failed-asset.py delete
+          if($LASTEXITCODE -ne 0) { throw 'Deletion uncertain; never automatically retry.' }
+      - name: Confirm deletion by 404 and full release asset list
+        shell: pwsh
+        run: |
+          python .github/verification/recover-23998-failed-asset.py absence
+          if($LASTEXITCODE -ne 0) { throw 'Deletion not confirmed; no installer upload.' }
+      - name: ONE original 115669439-byte installer streaming POST to existing draft upload_url
+        timeout-minutes: 18
+        shell: pwsh
+        run: |
+          python .github/verification/recover-23998-failed-asset.py upload
+          if($LASTEXITCODE -ne 0) { throw 'Single upload uncertain; never repeat without reconciliation.' }
+      - name: READ-ONLY confirm new asset uploaded, expected size and SHA256 digest
+        shell: pwsh
+        run: |
+          python .github/verification/recover-23998-failed-asset.py uploaded
+          if($LASTEXITCODE -ne 0) { throw 'Asset metadata did not verify; draft stays unpublished.' }
+      - name: Independently download new release asset and hash actual bytes
+        shell: pwsh
+        run: |
+          python .github/verification/recover-23998-failed-asset.py download
+          if($LASTEXITCODE -ne 0) { throw 'Independent downloaded bytes not verified.' }
+      - name: Save terminal receipt - DRAFT ONLY
+        if: always()
+        shell: pwsh
+        run: |
+          python .github/verification/recover-23998-failed-asset.py terminal
+          if($LASTEXITCODE -ne 0) { throw 'Recovery incomplete; preserve evidence and stop.' }
+      - name: Preserve independent recovery receipts, never overwrite originals
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: blackice-23998-one-starter-asset-recovery-original-receipts
+          path: recovery-evidence
+          if-no-files-found: warn
