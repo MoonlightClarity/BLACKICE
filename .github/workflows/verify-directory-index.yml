@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 761f7c8165de12049b51cf031dd73cab00bd226a
+          ref: 90f4cee1be5980ae01da64cf369dedb1bd33c2fc
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
@@ -37,6 +37,6 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: directory-index-integrity-source-evidence
+          name: directory-23997-source-evidence
           path: source-suite-evidence
           if-no-files-found: warn
