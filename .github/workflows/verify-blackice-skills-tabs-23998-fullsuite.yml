@@ -19,8 +19,8 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 45
     env:
-      EXPECTED_SOURCE_COMMIT: 36996a7782163c65822c1b25cdc0aa0b5880fdc4
-      EXPECTED_SOURCE_INDEX: 7af98f35bd6fb65efdfd67882984dd109873d8b6316d4d56bb24850984e5897f
+      EXPECTED_SOURCE_COMMIT: 4690a0bdc44c4f710848de08d28bf063b21a1c6f
+      EXPECTED_SOURCE_INDEX: fe7eadf1cc0459f665365ef28a9276f3e35a2151110d27478fa095e00e791bac
       EXPECTED_APP_FINGERPRINT: 2bb59bf35b3e6c50433f3b4aaf1a3143e301bedf1d5ab5e7b652d70cf6598fd5
       EXPECTED_TEST_INVENTORY: 0ffc3248ea2e264460065f96d13ce40cbc4db0807d37d67bde8894589cd493ea
       EXPECTED_VERSION: '2.39.98'
@@ -28,7 +28,7 @@ jobs:
       - name: Checkout exact candidate source, not the workflow controller
         uses: actions/checkout@v7
         with:
-          ref: 36996a7782163c65822c1b25cdc0aa0b5880fdc4
+          ref: 4690a0bdc44c4f710848de08d28bf063b21a1c6f
           path: source
           persist-credentials: false
           fetch-depth: 1
