@@ -1,0 +1,84 @@
+{
+    "schema":  "blackice-startup-critical-trace-review-corrections-v1",
+    "createdAtUtc":  "2026-11-15T22:36:43.8856163Z",
+    "version":  "2.39.98",
+    "branch":  "fix/startup-critical-path-observability-20261115",
+    "sourceBase":  "0101d3f88cc7f3f139394a1c943b899511668a90",
+    "frozenPriorHead":  "fd2bbea80fb2727463edf14a2c731828da75963e",
+    "correctionCodeCommit":  "2b02bb002ec36f6df7135489a8f538fae63a86e9",
+    "correctionCodeTree":  "7a7e901a474148f313ceb9a41df9d44f7c667ef0",
+    "worktree":  "C:\\Users\\user\\Documents\\Codex\\BLACKICE-startup-trace-20261115",
+    "oldManifestSha256":  "d1c3a0ebf7d6e505727832de48fa581b8e7a6da8cd5669c8c56dd9b55e88c7af",
+    "oldCodeAndEvidencePreserved":  true,
+    "installationChanged":  false,
+    "releaseChanged":  false,
+    "liveWindowsStartupMeasured":  false,
+    "realApplicationsRun":  false,
+    "fullSuiteRun":  false,
+    "newSourceFiles":  [
+                           "desktop/main.mjs",
+                           "lib/startup-critical-trace.mjs"
+                       ],
+    "newRegressionFile":  "tests/startup-critical-trace-deadlines.test.mjs",
+    "buildBindingDefaultDeadlineMs":  250,
+    "checkpointDefaultDeadlineMs":  250,
+    "desktopDiagnosticAwaitRemoved":  true,
+    "lateDiagnosticResultHandled":  true,
+    "singleCheckpointWriter":  true,
+    "metricsFullPrecisionBeforeSerialization":  true,
+    "metricsSerialPrecisionDecimalPlaces":  3,
+    "newTests":  {
+                     "total":  46,
+                     "pass":  46,
+                     "fail":  0,
+                     "cancelled":  0,
+                     "skipped":  0,
+                     "receiptJobId":  "direct_01e150cdd6b9657db691b6acacc6772c9507bed9b19c26f4a2e68eb9bd6b6efd"
+                 },
+    "firstTests":  {
+                       "total":  6,
+                       "pass":  6,
+                       "fail":  0,
+                       "receiptJobId":  "direct_83cb49eba355f824df753e3f126161a4bf7ea5b7e10bd39537dbf7251a2b9aa5"
+                   },
+    "existingEvidence":  {
+                             "priorSourceHead":  "fd2bbea80fb2727463edf14a2c731828da75963e",
+                             "priorTestsPass":  135,
+                             "priorTestsFail":  0,
+                             "priorTestsRerun":  false
+                         },
+    "fileEvidence":  [
+                         {
+                             "path":  "desktop/main.mjs",
+                             "bytes":  44408,
+                             "sha256":  "b1e44510d1edc11ff4091d024e0da11bf02b3bb2fdb3ff0023cec44b2df6ba66"
+                         },
+                         {
+                             "path":  "lib/startup-critical-trace.mjs",
+                             "bytes":  21161,
+                             "sha256":  "b9a6b6deef8d7d27f27b81aa9d4e516ed3235276deb1407b7ebe55f025f91ee6"
+                         },
+                         {
+                             "path":  "tests/startup-critical-trace-deadlines.test.mjs",
+                             "bytes":  12702,
+                             "sha256":  "eefcddc1925093dbd52a173157d94c660b2636c37f4de602f6b73b7d2441f03d"
+                         },
+                         {
+                             "path":  "verification/STARTUP-CRITICAL-TRACE-REVIEW-CORRECTIONS-20261115.md",
+                             "bytes":  5783,
+                             "sha256":  "f0b0fc1dae7593a8393606b35c764113e311ab5676cac303174f8ac33c036af3"
+                         },
+                         {
+                             "path":  "verification/startup-tracing-20261115-review-corrections-first.tap",
+                             "bytes":  1737,
+                             "sha256":  "c92bc3cf3505afe0f73f07d6a3d1b5cbb2d47fdc12b0f6c37e23f56bff4f3cc5"
+                         },
+                         {
+                             "path":  "verification/startup-tracing-20261115-review-corrections-focused.tap",
+                             "bytes":  12079,
+                             "sha256":  "79057197b388795096c00fa0bc1fd9aee90bc2c429e07c0bfee0026cace67f1a"
+                         }
+                     ],
+    "reviewStatus":  "Narrow corrections implemented and locally focused-tested; independent exact review required before integration/live trace",
+    "limits":  "Async deadlines bound unresolved promises; synchronous event-loop stalls cannot be preempted. No durable trace possible if first checkpoint never commits. Future full startup profile/installed Windows efficacy remains unverified."
+}
