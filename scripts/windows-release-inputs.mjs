@@ -18,6 +18,8 @@ topLevelFiles.add('RELEASE-NOTES-2.38.0.md');
 topLevelFiles.add('RELEASE-NOTES-2.39.0.md');
 topLevelFiles.add('RELEASE-NOTES-2.39.1.md');
 for (const patch of [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]) topLevelFiles.add('RELEASE-NOTES-2.39.' + patch + '.md');
+// Retain the one reviewed 2.39.97 release note explicitly packaged alongside 2.39.98; do not allow arbitrary neighboring versions.
+topLevelFiles.add('RELEASE-NOTES-2.39.97.md');
 
 // Match the existing installer inputs without admitting arbitrary native helpers.
 const packagedNativeHelpers = new Set([

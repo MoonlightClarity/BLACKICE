@@ -41,6 +41,11 @@ test('2.33.14 permits its current notes and preserved 2.33.13 notes without appr
   for (const file of ['RELEASE-NOTES-2.33.15.md', 'RELEASE-NOTES-9.8.6.md', 'RELEASE-NOTES-custom.md', 'RELEASE-NOTES.md']) assert.equal(approvedWindowsPackageFile(file, '2.33.14'), false, file);
 });
 
+test('2.39.98 installer retains exactly its current and reviewed 2.39.97 notes without opening neighboring versions', () => {
+  for (const file of ['RELEASE-NOTES-2.39.97.md', 'RELEASE-NOTES-2.39.98.md']) assert.equal(approvedWindowsPackageFile(file, '2.39.98'), true, file);
+  for (const file of ['RELEASE-NOTES-2.39.96.md', 'RELEASE-NOTES-2.39.99.md', 'RELEASE-NOTES-2.39.98.md.bak', 'RELEASE-NOTES-custom.md']) assert.equal(approvedWindowsPackageFile(file, '2.39.98'), false, file);
+});
+
 test('Windows installer native helpers use exact approved paths without permitting arbitrary PowerShell or C# files', async () => {
   for (const file of ['desktop/make-icon.ps1', 'desktop/native-window-host.cs', 'desktop/native-window-host.ps1', 'desktop/installed-app-icons.cs', 'desktop/native-app-launcher.cs', 'desktop/native-foreground-guard.cs']) {
     assert.equal(approvedWindowsPackageFile(file, '2.35.2'), true, file);
