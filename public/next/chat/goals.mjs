@@ -3,6 +3,8 @@ import {stableId} from '../core/dom.mjs';
 const ACTIONS=new Set(['set','update','pause','resume','clear']);
 const RESUMABLE=new Set(['paused','blocked','interrupted','budget_exhausted']);
 const ACTIVE_AUTONOMY=new Set(['active','waiting']);
+const toComputerDateTime=iso=>{if(!iso)return '';const d=new Date(iso);if(!Number.isFinite(d.getTime()))return '';const two=v=>String(v).padStart(2,'0');return [d.getFullYear(),two(d.getMonth()+1),two(d.getDate())].join('-')+'T'+two(d.getHours())+':'+two(d.getMinutes())+':'+two(d.getSeconds());};
+const computerDeadlineInput=value=>{const instant=new Date(value);if(!Number.isFinite(instant.getTime()))throw Error('Enter a valid date and time for the computer-local deadline.');return {deadlineAt:instant.toISOString(),deadlineTimeZone:Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'};};
 
 /** The proposed objective is editable; only saved chat history, never inferred facts, supplies calibration. */
 export function autonomyCalibrationObjective({draft='',firstTask='',turns=0}={}) {
@@ -34,11 +36,12 @@ export function goalPresentation(goal,{running=false}={}) {
     completed:'Completed',waiting:'Waiting',blocked:'Needs attention',interrupted:'Interrupted',budget_exhausted:'Turn limit reached'};
   const turns=Number.isFinite(Number(goal.turns))?Math.max(0,Number(goal.turns)):0;
   const limit=goal.maxTurns==null?null:Number(goal.maxTurns);
+  if(status==='paused'&&goal.deadlineExpiredAt&&goal.pauseRequest?.status!=='pausing')labels.paused='Deadline reached';
   return {status,label:labels[status]||status,objective:String(goal.objective||''),
     progress:turns+' '+(turns===1?'turn':'turns')+(limit>0?' / '+limit:' · No turn limit'),
-    reason:String(goal.lastReason||''),canPause:['active','waiting'].includes(status)||(working&&!goal.pauseRequest),canResume:RESUMABLE.has(status)&&!working&&(!goal.pauseRequest||goal.pauseRequest.settled===true),working};
+    reason:String(goal.lastReason||''),canPause:['active','waiting'].includes(status)||(working&&!goal.pauseRequest),canResume:RESUMABLE.has(status)&&!working&&!goal.deadlineExpiredAt&&(!goal.pauseRequest||goal.pauseRequest.settled===true),working};
 }
-export async function updateConversationGoal({api,conversationId,goal,action,objective,maxTurns,executionOptions={}}) {
+export async function updateConversationGoal({api,conversationId,goal,action,objective,maxTurns,deadlineAt,deadlineTimeZone,executionOptions={}}) {
   if(!conversationId||conversationId==='new')throw Error('Start a conversation before changing its saved goal.');
   if(!ACTIONS.has(action))throw Error('Unknown goal action.');
   if(['set','update'].includes(action)&&(!String(objective??'').trim()))throw Error('Enter an objective for this goal.');
@@ -50,7 +53,8 @@ export async function updateConversationGoal({api,conversationId,goal,action,obj
     ...(['pause','resume'].includes(action)&&goal?.id&&Number.isSafeInteger(goal.generation)?{
       expectedControl:{goalId:goal.id,generation:goal.generation,status:goal.status,runId:goal.currentRunId||null}
     }:{}),
-    ...(objective!==undefined?{objective:String(objective).trim()}:{}),...(maxTurns!==undefined?{maxTurns}:{})
+    ...(objective!==undefined?{objective:String(objective).trim()}:{}),...(maxTurns!==undefined?{maxTurns}:{}),
+    ...(deadlineAt!==undefined?{deadlineAt}:{}),...(deadlineTimeZone!==undefined?{deadlineTimeZone}:{})
   });
 }
 
@@ -72,11 +76,13 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
     if(current){
       view.goalStatus.textContent=current.label;view.goalCard.dataset.status=current.status;
       view.goalObjective.textContent=current.objective;view.goalProgress.textContent=current.progress;
+      view.goalDeadline.textContent=goal?.deadlineAt?'Stop time: '+new Date(goal.deadlineAt).toLocaleString()+' (computer local); originally '+(goal.deadlineTimeZone||'UTC')+' · '+goal.deadlineAt:'';
+      view.goalDeadline.hidden=!goal?.deadlineAt;
       view.goalReason.textContent=current.reason;view.goalReason.hidden=!current.reason;
       view.goalPause.hidden=!current.canPause;view.goalResume.hidden=!current.canResume;
       for(const control of [view.goalEdit,view.goalPause,view.goalResume,view.goalClear])control.disabled=busy||locked||readonly;
     }
-    view.goalSave.disabled=busy||locked;view.goalCancel.disabled=busy||locked;view.goalInput.readOnly=busy||locked;view.goalLimit.disabled=busy||locked;
+    view.goalSave.disabled=busy||locked;view.goalCancel.disabled=busy||locked;view.goalInput.readOnly=busy||locked;view.goalLimit.disabled=busy||locked;view.goalDeadlineInput.disabled=busy||locked;
     view.goalCard.setAttribute('aria-busy',String(busy));
   };
   const closeEditor=()=>{
@@ -118,7 +124,7 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
         executionOptions:getContext()?.executionOptions||{}});
       if(accept(result?.goal??null,target))await onResult(result,target);
       return result;
-    } catch(error) {if(['GOAL_REVISION_CONFLICT','GOAL_PAUSE_TARGET','GOAL_PAUSE_PENDING'].includes(error?.code)&&target===owner&&!destroyed)await refresh();onError(error);throw error;}
+    } catch(error) {if(['GOAL_REVISION_CONFLICT','GOAL_PAUSE_TARGET','GOAL_PAUSE_PENDING','GOAL_DEADLINE_EXPIRED'].includes(error?.code)&&target===owner&&!destroyed)await refresh();onError(error);throw error;}
     finally {busy=false;if(!destroyed){paint();onChange();}}
   }
   function showEditor() {
@@ -127,6 +133,8 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
     const context=getContext()||{},turns=Math.max(0,Number(context.calibration?.turns)||0);
     view.goalInput.value=goal?.objective||autonomyCalibrationObjective({draft:context.draft,firstTask:context.calibration?.firstTask,turns});
     view.goalLimit.value=goal?.maxTurns==null?'':String(goal.maxTurns);
+    view.goalDeadlineInput.value=toComputerDateTime(goal?.deadlineAt);
+    view.goalDeadlineInput.dataset.original=view.goalDeadlineInput.value;
     view.goalTitle.textContent=goal&&goal.status!=='completed'?'Edit Goal':'Create Goal';
     view.goalSave.textContent=goal&&goal.status!=='completed'?'Save Goal':'Create Goal';
     if(view.goalContext){view.goalContext.hidden=owner==='new';view.goalContext.textContent=owner==='new'?'':`Using this chat’s ${turns} saved ${turns===1?'turn':'turns'} as context. Your corrections and selected settings stay with this conversation.`;}
@@ -143,15 +151,20 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
     }
     if(owner==='new'){
       if(command.action!=='set')throw Error('This conversation does not have a goal yet.');
-      const result=await onStart({objective:command.objective,maxTurns:command.maxTurns??null},{consumeDraft});
+      const result=await onStart({objective:command.objective,maxTurns:command.maxTurns??null,
+        ...(command.deadlineAt!==undefined?{deadlineAt:command.deadlineAt}:{}),
+        ...(command.deadlineTimeZone!==undefined?{deadlineTimeZone:command.deadlineTimeZone}:{})},{consumeDraft});
       return result||false;
     }
-    return act(command.action,{...(command.objective!==undefined?{objective:command.objective}:{}),...(command.maxTurns!==undefined?{maxTurns:command.maxTurns}:{})});
+    return act(command.action,{...(command.objective!==undefined?{objective:command.objective}:{}),...(command.maxTurns!==undefined?{maxTurns:command.maxTurns}:{}),
+      ...(command.deadlineAt!==undefined?{deadlineAt:command.deadlineAt}:{}),
+      ...(command.deadlineTimeZone!==undefined?{deadlineTimeZone:command.deadlineTimeZone}:{})});
   }
   view.goalToggle.addEventListener('click',async()=>{
     if(destroyed||busy||locked||loading||readonly)return;
     if(goal&&ACTIVE_AUTONOMY.has(goal.status))await act('pause').catch(()=>{});
-    else if(goal&&RESUMABLE.has(goal.status))await act('resume').catch(()=>{});
+    else if(goal&&RESUMABLE.has(goal.status)&&!goal.deadlineExpiredAt)await act('resume').catch(()=>{});
+    else if(goal?.deadlineExpiredAt)showEditor();
     else showEditor();
   });
   view.goalEdit.addEventListener('click',showEditor);
@@ -163,13 +176,15 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
     event.preventDefault();if(busy||locked||editorOwner!==owner)return;
     const objective=view.goalInput.value.trim(),limit=view.goalLimit.value.trim();
     const maxTurns=limit===''?null:Number(limit);
+    const deadlineValue=view.goalDeadlineInput.value, original=view.goalDeadlineInput.dataset.original||'';
+    const deadlineOptions=deadlineValue===original?{}:deadlineValue?computerDeadlineInput(deadlineValue):{deadlineAt:null};
     view.goalError.hidden=true;
     try{
       if(!objective)throw Error('Enter the outcome you want BLACKICE to achieve.');
       if(maxTurns!==null&&(!Number.isInteger(maxTurns)||maxTurns<1))throw Error('Use a positive whole number for the turn limit, or leave it empty.');
       let result;
-      if(owner==='new')result=await command({action:'set',objective,maxTurns},{consumeDraft:false});
-      else result=await act(goal&&goal.status!=='completed'?'update':'set',{objective,maxTurns});
+      if(owner==='new')result=await command({action:'set',objective,maxTurns,...deadlineOptions},{consumeDraft:false});
+      else result=await act(goal&&goal.status!=='completed'?'update':'set',{objective,maxTurns,...deadlineOptions});
       if(result)closeEditor();
     }catch(error){view.goalError.textContent=String(error?.message||error);view.goalError.hidden=false;}
   });

@@ -36,6 +36,16 @@ These commands are handled by BLACKICE Chat:
 
 Use **Calibrate** to modify the existing goal without replacing it. The optional turn limit is available in the editor.
 
+## Absolute deadlines (candidate; requires installation and live verification)
+
+A calibrated Goal may carry a persisted absolute `deadlineAt` ISO 8601 UTC instant, its original `deadlineTimeZone`, and the original expression. Strict objectives such as **"until 6 AM EST"** resolve to the next occurrence using the host computer clock at Goal creation. **EST** always means UTC−05:00; **EDT** always means UTC−04:00; **Eastern / ET** means `America/New_York` with daylight-saving changes. An unqualified "until 6 AM" uses the computer's local time zone. An explicit ISO 8601 `deadlineAt` with `Z` or UTC offset takes priority.
+
+Deadlines are independent of the relative `maxMinutes` allowance. An enabled Goal has a timer that expires at its boundary, persists a **paused** state before requesting cancellation of the current turn, and prevents subsequent automatic admission. There are further checks immediately before dispatch, after asynchronous preflight and during run admission, plus a goal-tool boundary before external tool dispatch. Existing in-flight external effects can still settle after cancellation; preserve their receipts as unknown until confirmed, never replay blindly.
+
+The deadline is **not reset by Resume or restart**. An expired Goal cannot resume until its deadline is explicitly edited (or cleared) with `deadlineAt` (plus optional `deadlineTimeZone`); ordinary objective edits and relative allowance resets do not move it. The editor shows the saved cutoff in local computer time while retaining its original time zone. On supported installed versions, `blackice_goal` and `blackice_start_chat.goal` accept an explicit absolute cutoff.
+
+After sleep the host checks overdue deadlines when it wakes; it cannot run or cancel while powered down. A monotonic in-process timer protects against a live wall-clock rollback, while the persisted expired latch prevents an already-expired Goal from restarting even if the clock goes backward. A rollback spanning an unobserved shutdown is not proof that real wall time has advanced: verify trusted system time before enabling unattended work. This is source behavior pending installed-runtime validation; a passing source test is not proof of live cancellation of third-party actions.
+
 ## Turn allowance
 
 The default is **unlimited**: no turn cap is added unless you specify one. `maxTurns` is a positive integer, or `null` for unlimited.
