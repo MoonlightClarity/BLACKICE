@@ -1,7 +1,7 @@
 name: Verify recovery and startup source candidate
 on:
   push:
-    branches: [codex/recovery-startup-2.39.95]
+    branches: [codex/recovery-startup-2.39.96]
   workflow_dispatch:
 permissions:
   contents: read
