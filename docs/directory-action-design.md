@@ -26,9 +26,9 @@ This path does not classify generic CODEX_TURN_FAILED as overflow. The experimen
 
 ## Initial cost measurement
 
-One synthetic 200-attempt/410-record run measured median attempt+outcome persistence 6.80 ms, p95 13.48 ms; five full-index reads took 306-394 ms. A 20-entry metadata page was approximately 2163 estimated tokens/5763 bytes. These costs expose a retrieval bottleneck, not evidence of workflow improvement. Exact-ID inspection now reads only the requested record instead of scanning the journal; full-index and note validation still scan all events. Cache was not flushed and host load was uncontrolled. No live-model or long-running completion result exists for this design yet.
+One synthetic 200-attempt/410-record run measured median attempt+outcome persistence 6.80 ms, p95 13.48 ms; five full-index reads took 306–394 ms. A 20-entry metadata page was approximately 2163 estimated tokens/5763 bytes. These costs expose a retrieval bottleneck, not evidence of workflow improvement. Exact-ID inspection now reads only the requested record instead of scanning the journal; full-index and note validation still scan all events. Cache was not flushed and host load was uncontrolled. No live-model or long-running completion result exists for this design yet.
 
-A later storage revision with durable claims and eight bounded readers measured persistence median 15.99 ms/p95 23.57 ms and index reads 83-91 ms on a separate equivalent synthetic fixture. This was not a controlled isolated comparison: both durability and reader behavior changed, cache/load were uncontrolled, and the working-view change came later. The extra write cost must be included, not hidden behind faster reads.
+A later storage revision with durable claims and eight bounded readers measured persistence median 15.99 ms/p95 23.57 ms and index reads 83–91 ms on a separate equivalent synthetic fixture. This was not a controlled isolated comparison: both durability and reader behavior changed, cache/load were uncontrolled, and the working-view change came later. The extra write cost must be included, not hidden behind faster reads.
 
 ## Promotion gates
 
