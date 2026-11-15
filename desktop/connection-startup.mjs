@@ -25,7 +25,9 @@ export async function runStartupPowerShell(script, { mutation = false, execFileI
   const args = ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', encode(script)];
   if (!mutation) {
     try { return (await execFileImpl(file, args, { windowsHide: true, timeout: 12000, maxBuffer: 65536, encoding: 'utf8' })).stdout; }
-    catch { throw fail('Windows startup settings could not be read.', 'CONNECTION_STARTUP_READ_FAILED'); }
+      catch (cause) { throw Object.assign(fail('Windows startup settings could not be read.', 'CONNECTION_STARTUP_READ_FAILED'),{
+        diagnostics:{timeoutMs:12000,killed:cause?.killed===true,exitCode:Number.isInteger(cause?.code)?cause.code:null,signal:['SIGTERM','SIGKILL'].includes(cause?.signal)?cause.signal:null,
+          launchCode:['ENOENT','EACCES','EPERM'].includes(cause?.code)?cause.code:null}}); }
   }
   // A UAC child may outlive a killed wrapper. Do not add a timeout, abort or
   // detached spawn here. The parent waits for the elevated helper; our promise

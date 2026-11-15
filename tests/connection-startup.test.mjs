@@ -106,7 +106,16 @@ test('native Windows startup proof retains all switches, quoted paths and curren
   ];
   const payload = Buffer.from(JSON.stringify({ spec, cases, approvals })).toString('base64');
   const script = `${STARTUP_COMMANDLINE_NATIVE}\n$data = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}')) | ConvertFrom-Json\n$commands = @($data.cases | ForEach-Object { [BlackiceStartupCommandLine]::Matches($_.command, $data.spec.path, [string[]]$data.spec.args) })\n$approvals = @($data.approvals | ForEach-Object { [BlackiceStartupCommandLine]::Approval([byte[]]$_.bytes) })\n@{ commands = $commands; approvals = $approvals } | ConvertTo-Json -Compress`;
-  assert.deepEqual(JSON.parse(await runStartupPowerShell(script)), { commands: cases.map(item => item.expected), approvals: approvals.map(item => item.expected) });
+  let output;try{output=await runStartupPowerShell(script);}catch(error){assert.fail(error.message+'; diagnostics='+JSON.stringify(error.diagnostics));}
+  assert.deepEqual(JSON.parse(output), { commands: cases.map(item => item.expected), approvals: approvals.map(item => item.expected) });
+});
+
+test('startup read failure retains bounded process diagnostics without stderr or command contents',async()=>{
+ await assert.rejects(runStartupPowerShell('fixture',{execFileImpl:async()=>{throw Object.assign(new Error('private command text'),{killed:true,signal:'SIGTERM',stderr:'private stderr',cmd:'private command'});}}),error=>{
+  assert.equal(error.code,'CONNECTION_STARTUP_READ_FAILED');
+  assert.deepEqual(error.diagnostics,{timeoutMs:12000,killed:true,exitCode:null,signal:'SIGTERM',launchCode:null});
+  assert.doesNotMatch(JSON.stringify(error),/private/);return true;
+ });
 });
 
 test('Tailscale can be explicitly repaired while an existing BLACKICE scheduled task remains untouched', async () => {

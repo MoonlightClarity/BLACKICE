@@ -156,6 +156,14 @@ test('failed recovery admission preserves the crash state and never makes a late
   await f.driver.writeChain;
 });
 
+test('a capacity-named failure without host admission proof cannot erase possible activation effects',async()=>{
+ const f=fixture(),tab=f.driver.newTab('https://example.test/page');await tab.loading;
+ tab.window.webContents.emit('render-process-gone',{}, {reason:'oom'});
+ f.driver.activate=async()=>{throw Object.assign(new Error('late capacity failure'),{code:'BROWSER_LIVE_LIMIT',actionDispatched:false});};
+ await assert.rejects(f.driver.perform({action:'reload',tabId:tab.id}),error=>error.code==='BROWSER_LIVE_LIMIT'&&error.actionDispatched!==false);
+ assert.equal(tab.rendererFailure.reason,'oom');await f.driver.writeChain;
+});
+
 test('a late load failure from a crashed window cannot poison its replacement', async () => {
   let rejectOld, started;
   const oldLoad = new Promise((_, reject) => { rejectOld = reject; });

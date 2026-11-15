@@ -250,10 +250,13 @@ test('an interval using Default continues its managed run only while that model 
   const completed = async (route, body) => {
     const admitted = await f.request(route, { method: 'POST', body });
     assert.ok([201, 202].includes(admitted.status), JSON.stringify(admitted.data));
+    let last;
     return until(() => {
       const job = f.app.operations.getJob(admitted.data.id);
+      last=job;
+      assert.ok(!['failed','cancelled','blocked'].includes(job.status),'Recurring Default operation failed: '+JSON.stringify(job));
       return job.status === 'completed' && job;
-    }, 'completed recurring Default run');
+    }, 'completed recurring Default run').catch(error=>{error.message+='; last job='+JSON.stringify(last)+'; runs='+JSON.stringify(f.app.engine.listRuns().map(r=>({id:r.id,status:r.status,error:r.error})));throw error;});
   };
 
   const first = await completed(trigger, { idempotencyKey: 'default-first' });

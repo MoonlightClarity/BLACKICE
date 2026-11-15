@@ -77,15 +77,16 @@ async function connectorTool(f, grant, name, args) {
   assert.equal(response.status, 200); assert.equal(response.body.error, undefined);
   return response.body.result;
 }
-async function settledConnectorJob(f, grant, jobId) {
-  for (let attempt = 0; attempt < 200; attempt++) {
+async function settledConnectorJob(f, grant, jobId, { executionBudgetMs = 0 } = {}) {
+  const deadline=Date.now()+executionBudgetMs+5000;let last;
+  while(Date.now()<deadline) {
     const result = await connectorTool(f, grant, 'blackice_get_job', { jobId });
-    assert.equal(result.isError, false); const job = result.structuredContent;
+    assert.equal(result.isError, false); const job = result.structuredContent;last=job;
     if (job.settled) return job;
     assert.notEqual(job.status, 'awaiting_input', 'authorized work must not request local approval');
     await new Promise(resolve => setTimeout(resolve, 10));
   }
-  assert.fail('The disposable direct action did not settle.');
+  assert.fail('The disposable direct action did not settle within its execution budget plus 5s receipt allowance: '+JSON.stringify(last));
 }
 
 test('the public gateway challenges anonymous MCP discovery and preserves authenticated initialization and execution on the same grant', async t => {
@@ -154,7 +155,7 @@ test('authenticated scoped commands and writes execute directly without a local 
   assert.equal(status.structuredContent.connectionId, grant.client.id); assert.deepEqual(status.structuredContent.grantedScopes, grant.client.scopes);
   const listing = await connectorTool(f, grant, 'blackice_run_command', { requestId: 'direct-list-without-approval', command: process.platform === 'win32' ? 'Get-ChildItem -Name' : 'ls', timeoutMs: 10000 });
   assert.equal(listing.isError, false); assert.notEqual(listing.structuredContent.status, 'awaiting_input');
-  const command = await settledConnectorJob(f, grant, listing.structuredContent.jobId); assert.equal(command.status, 'succeeded');
+  const command = await settledConnectorJob(f, grant, listing.structuredContent.jobId,{executionBudgetMs:10000}); assert.equal(command.status, 'succeeded');
   assert.equal(JSON.parse(command.result.text.text).exitCode, 0);
   const request = { requestId: 'direct-write-without-approval', action: 'write', path: 'scoped.txt', text: 'Direct scoped bytes.' };
   const write = await connectorTool(f, grant, 'blackice_workspace_write', request); assert.equal(write.isError, false); assert.notEqual(write.structuredContent.status, 'awaiting_input');

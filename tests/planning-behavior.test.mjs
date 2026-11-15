@@ -80,7 +80,7 @@ test('prepare isolates cases, keeps matched prompts identical, and refuses any o
 test('both original defects, unchanged typo, and unimplemented import fail', async t => {
   const report = await score(await fixture(t));
   assert.equal(report.modelStarted, false);
-  assert.deepEqual(report.cases.map(item => item.status), ['fail', 'fail', 'fail', 'fail']);
+  assert.deepEqual(report.cases.map(item => item.status), ['fail', 'fail', 'fail', 'fail'],JSON.stringify(report,null,2));
   assert.equal(report.status, 'fail');
 });
 
