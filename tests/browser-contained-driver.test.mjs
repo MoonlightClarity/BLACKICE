@@ -844,8 +844,51 @@ test('document identity is checked again after the asynchronous containment guar
   const expected = { expectedUrl: 'https://signin.example.test/', expectedDocumentId: `${tab.id}:${tab.revision}` };
   let guards = 0; const ensure = driver.ensureContained.bind(driver);
   driver.ensureContained = async (...args) => { await ensure(...args); if (++guards === 2) tab.revision++; };
-  await assert.rejects(driver.perform({ action: 'type', tabId: tab.id, ...expected, text: 'must not arrive' }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+  await assert.rejects(driver.perform({ action: 'type', tabId: tab.id, ...expected, text: 'must not arrive' }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', actionDispatched: false });
   assert.equal(windows[0].protocol.some(item => item.method === 'Input.insertText'), false);
+});
+
+test('operation phase proof rejects first keyboard input without cleanup input but retains partial Enter uncertainty',async t=>{
+ for(const phase of ['before-first','after-keydown','lost-reply'])await t.test(phase,async t=>{
+  let tab,armed=false;
+  const {driver,windows}=await fixture(t,{command:async(method,params)=>{
+   if(armed&&method==='Input.dispatchKeyEvent'&&params.type==='keyDown'){
+    if(phase==='after-keydown')tab.revision++;
+    if(phase==='lost-reply')throw Object.assign(Error('Reply lost after dispatch'),{code:'BROWSER_INPUT_DOCUMENT_CHANGED'});
+   }
+   return {};
+  }});
+  tab=driver.newTab('https://phase.test/');await tab.loading;armed=true;windows[0].protocol.length=0;
+  const args={action:'press',tabId:tab.id,key:'Enter',expectedUrl:'https://phase.test/',expectedDocumentId:`${tab.id}:${tab.revision}`};
+  if(phase==='before-first'){let guards=0;const ensure=driver.ensureContained.bind(driver);driver.ensureContained=async(...a)=>{await ensure(...a);if(++guards===2)tab.revision++;};}
+  await assert.rejects(driver.perform(args),e=>{assert.equal(e.code,'BROWSER_INPUT_DOCUMENT_CHANGED');assert.equal(e.actionDispatched===false,phase==='before-first');return true;});
+  const types=windows[0].protocol.filter(c=>c.method.startsWith('Input.')).map(c=>c.params.type);
+  assert.deepEqual(types,phase==='before-first'?[]:['keyDown','keyUp']);
+ });
+});
+
+test('operation phase proof preserves focus preparation and partial pointer effects',async t=>{
+ for(const phase of ['focus','pointer'])await t.test(phase,async t=>{
+  let tab,armed=false;
+  const {driver,windows}=await fixture(t,{command:async(method,params)=>{
+   if(armed&&(phase==='focus'&&method==='Emulation.setFocusEmulationEnabled'&&params.enabled||phase==='pointer'&&method==='Input.dispatchMouseEvent'&&params.type==='mouseMoved'))tab.revision++;
+   return {};
+  }});
+  tab=driver.newTab('https://phase.test/');await tab.loading;tab.window.liveSurface=phase==='focus';armed=true;windows[0].protocol.length=0;
+  const args={tabId:tab.id,expectedUrl:'https://phase.test/',expectedDocumentId:`${tab.id}:${tab.revision}`,...(phase==='focus'?{action:'type',text:'value'}:{action:'click',x:10,y:10})};
+  await assert.rejects(driver.perform(args,{source:'user'}),e=>{assert.equal(e.code,'BROWSER_INPUT_DOCUMENT_CHANGED');assert.notEqual(e.actionDispatched,false);return true;});
+  const input=windows[0].protocol.filter(c=>c.method.startsWith('Input.')).map(c=>c.params.type);
+  assert.deepEqual(input,phase==='focus'?[]:['mouseMoved'],'Do not synthesize mouseReleased when the press was never sent.');
+ });
+});
+
+test('operation phase proof never erases restored navigation with a later input refusal',async t=>{
+ const {driver,windows}=await fixture(t),tab=driver.newTab('https://phase.test/old');await tab.loading;
+ const args={action:'type',tabId:tab.id,text:'never inserted',expectedUrl:'https://phase.test/old',expectedDocumentId:`${tab.id}:${tab.revision}`};
+ tab.pendingURL='https://phase.test/restored';const before=windows[0].loads.length;windows[0].protocol.length=0;
+ await assert.rejects(driver.perform(args),e=>{assert.equal(e.code,'BROWSER_INPUT_DOCUMENT_CHANGED');assert.notEqual(e.actionDispatched,false);return true;});
+ assert.equal(windows[0].loads.length,before+1);assert.equal(windows[0].loads.at(-1),'https://phase.test/restored');
+ assert.equal(windows[0].protocol.some(c=>c.method.startsWith('Input.')),false);
 });
 
 test('cancellation after the containment guard does not dispatch a final text insertion', async t => {

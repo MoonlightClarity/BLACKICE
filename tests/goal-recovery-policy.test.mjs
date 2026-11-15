@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp, readFile, writeFile, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {observeGoalToolOutcome, repeatedUnproductiveOperations, assessGoalProgress, detectNoProgressDispatchLoop, detectUnknownEffectReplay} from '../lib/goal-recovery-policy.mjs';
+import {observeGoalToolOutcome, repeatedUnproductiveOperations, assessGoalProgress, detectNoProgressDispatchLoop, detectUnknownEffectReplay, inFlightEffectSignature} from '../lib/goal-recovery-policy.mjs';
 import {ConversationGoals} from '../lib/conversation-goals.mjs';
 
 const call = (name, args) => ({name, arguments: args});
@@ -24,6 +24,21 @@ test('an ambiguous external action must be reconciled, never silently retried', 
   assert.equal(row.kind,'uncertain_external_effect');
   assert.equal(row.actionDispatched,null);
   assert.match(row.guidance,/Do NOT replay/);
+});
+
+test('a browser wait timeout is observation failure and cannot erase or replay a preceding unknown click', () => {
+  const click=call('relay_browser',{action:'click',tabId:'t',ref:'submit'});
+  const unknown=observeGoalToolOutcome(click,result(false,'TIMEOUT'));
+  const wait=call('relay_browser',{action:'wait',tabId:'t',text:'Thank you'});
+  const timeout=observeGoalToolOutcome(wait,result(false,'BROWSER_ACTION_FAILED'));
+  assert.equal(timeout.kind,'recoverable_read_friction');
+  assert.equal(timeout.actionDispatched,null);
+  assert.equal(inFlightEffectSignature(wait),null);
+  assert.equal(detectUnknownEffectReplay([unknown],wait),null);
+  assert.equal(detectUnknownEffectReplay([unknown,timeout],click).code,'GOAL_EFFECT_UNRESOLVED');
+  assert.equal(unknown.kind,'uncertain_external_effect');
+  assert.equal(observeGoalToolOutcome(wait,result(true)).kind,'observation');
+  assert.equal(observeGoalToolOutcome(call('other_tool',{action:'wait'}),result(false,'TIMEOUT')).kind,'uncertain_external_effect');
 });
 
 test('a tool success and self-declared milestone are not verified progress', () => {

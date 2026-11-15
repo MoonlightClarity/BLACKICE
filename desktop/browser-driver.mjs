@@ -20,6 +20,8 @@ import { BrowserSubmissionObservations } from './browser-submission-observation.
 import { browserReceiptBindingKey, describeHostOperation } from '../lib/operation-descriptors.mjs';
 
 const error = message => new Error(message);
+// Evidence for one protocol command, never a claim about an entire operation.
+const commandDispatched = Symbol('commandDispatched');
 const DEFAULT_FOLDER = 'folder_user';
 // Refs stay bound to the observed DOM node for the current document. Retain a
 // bounded recent set so separate filtered reads can be used together.
@@ -1474,6 +1476,8 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (typeof expected.expectedDocumentId !== 'string' || typeof expected.expectedUrl !== 'string' || expected.expectedUrl !== tab.window.webContents.getURL() || expected.expectedDocumentId !== inputDocumentId(tab) && !this.scopedInputCurrent(tab, expected) || expected.ref && ['click', 'hover', 'fill', 'select', 'upload', 'press'].includes(expected.action) && !this.referenceCurrent(tab, expected.ref)) throw Object.assign(error('The page changed before keyboard or pointer input. Refresh the preview and click the intended field again.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
   }
   async cdp(tab, method, params = {}, signal, expected, sessionId) {
+    let dispatched = false;
+    try {
     if (tab.rendererFailure) throw rendererFailure(tab);
     const wc = tab.window.webContents;
     if (method.startsWith('Input.')) {
@@ -1491,9 +1495,14 @@ export class ElectronBrowserDriver extends EventEmitter {
       }
     } else if (!wc.debugger.isAttached()) { wc.debugger.attach('1.3'); tab.containmentReady = null; }
     cancel(signal);
+    dispatched = true;
     const native = sessionId ? wc.debugger.sendCommand(method, params, sessionId) : wc.debugger.sendCommand(method, params);
-    if (method === 'Page.handleJavaScriptDialog' || method === 'DOM.setFileInputFiles' || params.type === 'mouseReleased' || params.type === 'keyUp') return bounded(native, signal);
-    return this.pageWork(tab, native, signal);
+    if (method === 'Page.handleJavaScriptDialog' || method === 'DOM.setFileInputFiles' || params.type === 'mouseReleased' || params.type === 'keyUp') return await bounded(native, signal);
+    return await this.pageWork(tab, native, signal);
+    } catch (reason) {
+      if (reason && typeof reason === 'object') reason[commandDispatched] = dispatched;
+      throw reason;
+    }
   }
   async assertPointerReference(tab, expected, point, signal, sessionId) {
     let objectId;
@@ -1663,10 +1672,14 @@ export class ElectronBrowserDriver extends EventEmitter {
   }
   async clickPoint(tab, point, signal, expected, sessionId) {
     cancel(signal);
+    let release = true;
     try { await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 }, signal, expected, sessionId); }
+    catch (reason) { release = reason?.[commandDispatched] !== false; throw reason; }
     finally {
+      if (release) {
       try { await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 }, AbortSignal.timeout(1500), undefined, sessionId); }
       catch { tab.inputWarning = 'Browser button release could not be confirmed. Inspect or reload before continuing.'; }
+      }
     }
     cancel(signal);
   }
@@ -1876,8 +1889,10 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
     if (tab.suspendedWork.size && !cancelledAuthentication) throw Object.assign(error('The previous dialog action has not settled. Wait for its completion and inspect before continuing.'), { code: 'BROWSER_INTERACTION_SETTLING' });
     if (args.chooserId !== undefined) this.currentInteraction(tab, args);
+    let activationMayAffectPage = false;
     try {
     const resumed = !!tab.pendingURL && args.action !== 'navigate';
+    activationMayAffectPage = resumed || Boolean(tab.popupViewport || tab.surfaceNeedsSync) || !tab.window;
     if (args.action !== 'navigate') await this.activate(tab, signal);
     else { if (!tab.window) this.materialize(tab); await this.ensureContained(tab, signal); }
     if (tab.authenticationChallenge) return this.interactionReceipt(tab, { frames: [], actionDispatched: args.action === 'open', inspectBeforeContinuing: true });
@@ -1886,11 +1901,19 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (tab.loadError && (resumed && args.action === 'reload' || !['navigate', 'reload', 'back', 'forward'].includes(args.action))) throw navigationFailure(tab);
     if (['type', 'press', 'click', 'hover', 'fill', 'select', 'upload'].includes(args.action)) {
       try { this.assertInputDocument(tab, args); }
-      catch (cause) { throw Object.assign(cause, { actionDispatched: false }); }
+      catch (cause) {
+        // Restoring a suspended navigation or preparing a popup can already
+        // affect the page, even though the requested input has not been sent.
+        if (!activationMayAffectPage && !tab.popupViewport) cause.actionDispatched = false;
+        throw cause;
+      }
     }
     if (args.action === 'type' && (typeof args.text !== 'string' || !args.text.length || args.text.length > 16384 || typeof args.expectedDocumentId !== 'string' || typeof args.expectedUrl !== 'string')) throw error('Type 1–16384 characters into a field on the current observed page.');
     const navigation = ['click','press','reload','back','forward'].includes(args.action) ? this.watchNavigation(tab, signal) : null;
     let releaseInputFocus;
+    // Only these keyboard paths have no DOM focus/selection, popup resize,
+    // restored navigation or recovery preparation before their first input.
+    const unpreparedKeyboard = !activationMayAffectPage && !tab.window.liveSurface && !tab.popupViewport && !args.ref && !recoveryInput;
     try {
     if (['type', 'press', 'fill'].includes(args.action)) {
       const expected = args.expectedDocumentId === undefined && args.expectedUrl === undefined ? { expectedDocumentId: inputDocumentId(tab), expectedUrl: tab.window.webContents.getURL() } : args;
@@ -1910,7 +1933,11 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
     let receipt;
     if (args.action === 'type') {
-      await this.cdp(tab, 'Input.insertText', { text: args.text }, signal, args);
+      try { await this.cdp(tab, 'Input.insertText', { text: args.text }, signal, args); }
+      catch (reason) {
+        if (unpreparedKeyboard && !releaseInputFocus && !tab.popupViewport && reason?.[commandDispatched] === false) reason.actionDispatched = false;
+        throw reason;
+      }
       cancel(signal);
       // Human typing is streamed in order. Do not scan the whole page or echo
       // input text (including passwords) into a per-keystroke response.
@@ -1988,12 +2015,20 @@ export class ElectronBrowserDriver extends EventEmitter {
       const eventKey = key === 'Space' ? ' ' : key === 'A' && !(modifiers & 8) ? 'a' : key;
       const down = printable || { key: eventKey, ...keys[key], modifiers };
       const { text: _text, unmodifiedText: _unmodifiedText, ...up } = down;
+      let pressed = false, release = true;
       try {
         await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyDown', ...down }, signal, args);
+        pressed = true;
         if (key === 'Enter') await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'char', text: '\r', key: 'Enter', ...keys[key], modifiers }, signal, args);
+      } catch (reason) {
+        release = pressed || reason?.[commandDispatched] !== false;
+        if (!release && unpreparedKeyboard && !releaseInputFocus && !tab.popupViewport) reason.actionDispatched = false;
+        throw reason;
       } finally {
+        if (release) {
         try { await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyUp', ...up }, AbortSignal.timeout(1500)); }
         catch { tab.inputWarning = 'Browser key release could not be confirmed. Inspect or reload before continuing.'; }
+        }
       }
       cancel(signal); receipt = { pressed: printable && rawKey !== 'Space' ? printable.key : key };
       if (args.expectedDocumentId !== undefined) return { ...this.interactionReceipt(tab), receipt: { ...receipt, ...(args.modifiers?.length ? { modifiers: [...args.modifiers] } : {}), input: 'browser protocol', ...(tab.externalHandoff !== externalBefore ? { externalHandoff: { status: tab.externalHandoff.status } } : {}) } };
@@ -2106,6 +2141,9 @@ export class ElectronBrowserDriver extends EventEmitter {
     return { ...result, ...(receipt ? { receipt } : {}), tabs: this.status().tabs };
     } finally { navigation?.dispose(); await releaseInputFocus?.(); }
     } catch (reason) {
+      // A leaf helper may prove its input was not sent. That cannot erase an
+      // earlier navigation, surface synchronization or popup preparation.
+      if (activationMayAffectPage && reason?.actionDispatched === false) delete reason.actionDispatched;
       if (recoveringRenderer && !tab.window && !tab.rendererFailure) { tab.rendererFailure = recoveringRenderer; throw reason; }
       if (tab.rendererFailure) throw rendererFailure(tab, true);
       if (reason.code === 'BROWSER_INTERACTION_PENDING' && tab.pendingInteraction) return this.interactionReceipt(tab, { actionDispatched: true, inspectBeforeContinuing: true });

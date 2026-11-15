@@ -45,6 +45,22 @@ test('goals have no implicit budget and reject invalid authored limits', () => {
   assert.throws(() => validateGoalInput({objective:'x',maxMinutes:-1}),/positive/);
 });
 
+test('progress without model-authored goal ID uses the bound generation but rejects an explicit different goal', async t => {
+  const {engine,goals}=await fixture(t,async options=>{
+    const base={action:'progress',summary:'Document export was independently read back.',evidence:'Saved document matched the expected section and checksum.',nextAction:'Verify the remaining section.'};
+    const accepted=await options.onToolCall({name:'relay_goal',arguments:base});
+    assert.equal(accepted.success,true);
+    const wrong=await options.onToolCall({name:'relay_goal',arguments:{...base,goalId:'another-goal'}});
+    assert.equal(wrong.success,false);
+    assert.equal(wrong.code,'GOAL_CHANGED');
+    assert.equal((await report(options,'complete')).result.success,true);
+    return output(1);
+  });
+  const first=engine.startRun({workflow:graph(),input:{task:'Verify a document export.',goal:{objective:'Verify a document export.'}}});
+  await waitFor(async()=> (await goals.get(first.id))?.status==='completed');
+  assert.match(engine.getRun(first.id).goalProgress.summary,/Document export/);
+});
+
 test('one goal continues for three turns in the same conversation and finishes with evidence', async t => {
   const {engine,goals,runtime,conversations} = await fixture(t, async (options,n) => {
     assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_goal'));
