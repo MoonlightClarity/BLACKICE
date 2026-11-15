@@ -1,0 +1,275 @@
+name: Build exact BLACKICE 2.39.98 Windows candidate WITHOUT publication
+
+on:
+  push:
+    branches: [codex/release23998-build-controller-20261115]
+    paths: ['.github/workflows/verify-build-blackice-2.39.98-candidate.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: blackice-23998-nonpublishing-build-once
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 50
+    env:
+      EXPECTED_SOURCE_COMMIT: 0101d3f88cc7f3f139394a1c943b899511668a90
+      EXPECTED_SOURCE_INDEX: 59be2d3516059b1660e561a9a6351835bce68db88b1f7f3e731cd30c3271f61a
+      EXPECTED_APP_FINGERPRINT: 9a7287d06dcbc1bbb0cf23cdf26d3d0d0c61839993c91ed6fb868556d3c205c6
+      EXPECTED_VERSION: '2.39.98'
+      # No publishing token or signing credential is supplied to packaging.
+      WIN_CSC_LINK: ''
+      CSC_LINK: ''
+      RELAY_SIGNING_PUBLISHER: ''
+      RELAY_SIGNING_CERT_SHA1: ''
+      RELAY_AZURE_SIGNING_CONFIG: ''
+      WIN_CSC_KEY_PASSWORD: ''
+      CSC_KEY_PASSWORD: ''
+    steps:
+      - name: Checkout exact reviewed combined versioned source, not controller
+        uses: actions/checkout@v7
+        with:
+          ref: 0101d3f88cc7f3f139394a1c943b899511668a90
+          path: source
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Pin Windows Node environment
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.2'
+          package-manager-cache: false
+      - name: Pin Windows Python toolchain
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Preflight actual source HEAD, version, scope, environment and full source inventory
+        id: preflight
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Path release23998-evidence -Force | Out-Null
+          Push-Location source
+          try {
+            $actual=(& git rev-parse HEAD).Trim()
+            if($LASTEXITCODE -ne 0 -or $actual -cne $env:EXPECTED_SOURCE_COMMIT) { throw "Actual source HEAD differs: $actual" }
+            $dirty=@(& git status --porcelain --untracked-files=no)
+            if($dirty.Count -ne 0) { throw "Dirty tracked source pre-build: $($dirty.Count)" }
+            $ver=(& node -p "require('./package.json').version").Trim()
+            $lock=(& node -p "require('./package-lock.json').packages[''].version").Trim()
+            if($ver -cne $env:EXPECTED_VERSION -or $lock -cne $ver) { throw "Version mismatch package=$ver lock=$lock" }
+            if(!(Test-Path RELEASE-NOTES-2.39.98.md)) { throw "2.39.98 release notes missing" }
+            if(!(Select-String -LiteralPath desktop/electron-builder.yml -SimpleMatch 'RELEASE-NOTES-2.39.98.md' -Quiet)) { throw "Installer does not include 2.39.98 notes" }
+            $req=Get-Content -Raw .github/release-request.json | ConvertFrom-Json
+            if($req.version -cne '2.39.97') { throw 'Unexpected publication-request mutation' }
+            $code=Get-Content -Raw scripts/package-public.mjs
+            if(!$code.Contains("'--publish','never'")) { throw 'Packaging source no longer forbids publication' }
+            $binding=[ordered]@{
+              format=1; purpose='nonpublishing 2.39.98 Windows candidate'
+              sourceCommit=$actual; workflowControllerCommit=$env:GITHUB_SHA
+              workflowControllerDistinct=($env:GITHUB_SHA -cne $actual)
+              githubRepository=$env:GITHUB_REPOSITORY; githubRunId=$env:GITHUB_RUN_ID
+              githubRunAttempt=$env:GITHUB_RUN_ATTEMPT; githubRef=$env:GITHUB_REF
+              runnerEnvironment=$env:RUNNER_ENVIRONMENT; runnerOS=$env:RUNNER_OS
+              runnerArch=$env:RUNNER_ARCH; runnerName=$env:RUNNER_NAME
+              node=(& node --version).Trim(); npm=(& npm --version).Trim()
+              python=(& python --version).Trim(); git=(& git --version).Trim()
+              expectedVersion=$env:EXPECTED_VERSION
+              signingEnvironmentConfigured=$false
+              publicationRequest='historical 2.39.97; unchanged'
+              sourceCleanBefore=$true
+              atUtc=[DateTime]::UtcNow.ToString('o')
+            }
+            if(!$binding.workflowControllerDistinct) { throw 'Workflow controller must differ from exact source checkout' }
+            $binding | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath ../release23998-evidence/environment.json -Encoding utf8NoBOM
+            node --input-type=module -e "import {releaseSourceIndex} from './scripts/release-request.mjs';import {appFingerprint} from './scripts/release-check.mjs';import {writeFile} from 'node:fs/promises';const inventory=await releaseSourceIndex(process.cwd());const fingerprint=await appFingerprint(process.cwd());await writeFile('../release23998-evidence/source-before.json',JSON.stringify({actualSourceCommit:process.env.EXPECTED_SOURCE_COMMIT,appFingerprint:fingerprint,...inventory},null,2));if(inventory.sourceIndexSha256!==process.env.EXPECTED_SOURCE_INDEX||fingerprint!==process.env.EXPECTED_APP_FINGERPRINT)process.exit(4);"
+            if($LASTEXITCODE -ne 0) { throw 'Exact source index/fingerprint mismatch' }
+          } finally { Pop-Location }
+      - name: Install only locked build/test dependencies in isolated runner
+        id: dependencies
+        shell: pwsh
+        working-directory: source
+        run: |
+          $ErrorActionPreference='Stop'
+          npm ci --no-audit --no-fund
+          if($LASTEXITCODE -ne 0) { throw "npm ci failed with $LASTEXITCODE" }
+      - name: Verify 2.39.98 docs and release/package gates (not unchanged full suite)
+        id: targeted
+        shell: pwsh
+        working-directory: source
+        run: |
+          $ErrorActionPreference='Stop'
+          node scripts/check-documentation.mjs > ../release23998-evidence/documentation-check.txt
+          if($LASTEXITCODE -ne 0) { throw 'Documentation check failed'; }
+          node --test --test-concurrency=1 tests/release-check.test.mjs tests/release-request.test.mjs tests/windows-release-inputs.test.mjs > ../release23998-evidence/targeted-release-tests.tap
+          if($LASTEXITCODE -ne 0) {
+            Get-Content ../release23998-evidence/targeted-release-tests.tap -Tail 60 | Write-Output
+            throw 'Focused version/packaging source tests failed'
+          }
+          Get-Content ../release23998-evidence/targeted-release-tests.tap -Tail 12 | Write-Output
+      - name: Build NSIS x64 candidate with package source --publish never
+        id: package
+        shell: pwsh
+        working-directory: source
+        run: |
+          $ErrorActionPreference='Stop'
+          npm run package:public
+          if($LASTEXITCODE -ne 0) { throw "Nonpublishing package build failed with $LASTEXITCODE" }
+      - name: Verify unsigned/signed manifest, installer SHA256, size and safe static package inspection
+        id: inspect
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $dist='source/dist/Blackice-Public-Windows'
+          $name='Blackice-2.39.98-Setup.exe'
+          $setup=Join-Path $dist $name
+          $manifestPath=Join-Path $dist 'blackice-public-release.json'
+          if(!(Test-Path -LiteralPath $setup -PathType Leaf)) { throw 'Expected installer not created' }
+          if(!(Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'Release manifest missing' }
+          $manifest=Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          $stat=Get-Item -LiteralPath $setup
+          $sha=(Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifestSha=(Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($manifest.format -ne 1 -or $manifest.product -cne 'BLACKICE' -or $manifest.version -cne $env:EXPECTED_VERSION -or
+             $manifest.published -ne $false -or $manifest.appFingerprint -cne $env:EXPECTED_APP_FINGERPRINT -or
+             $manifest.artifact.name -cne $name -or $manifest.artifact.size -ne $stat.Length -or
+             $manifest.artifact.sha256 -cne $sha) { throw 'Installer manifest/source/fingerprint/bytes mismatch' }
+          if($manifest.releasePolicy.requireCodeSigning -ne $false) { throw 'Unexpected require-signing policy' }
+          if($manifest.signing.status -cnotin @('unsigned','signed')) { throw 'Invalid signing declaration' }
+          $certificateStatus='not-inspected'
+          try { $certificateStatus=[string](Get-AuthenticodeSignature -FilePath $setup).Status } catch { $certificateStatus='inspection-error' }
+          if($manifest.signing.status -ceq 'unsigned' -and $certificateStatus -ceq 'Valid') { throw 'Signer discrepancy: unexpectedly signed installer' }
+          $archiveCheck=[ordered]@{tool='7zip';state='unavailable';exitCode=$null;possibleNsisPayload=$null;sourceFileListHash=$null}
+          $seven=Get-Command 7z.exe -ErrorAction SilentlyContinue
+          if(!$seven -and (Test-Path 'C:\Program Files\7-Zip\7z.exe')) { $seven=Get-Item 'C:\Program Files\7-Zip\7z.exe' }
+          if($seven) {
+            $archiveLog='release23998-evidence/installer-archive-list.txt'
+            & $seven.Source l -slt $setup > $archiveLog 2>&1
+            $archiveCheck.exitCode=$LASTEXITCODE
+            $archiveCheck.state=if($LASTEXITCODE -eq 0){'parsed-static-list'}else{'archive-format-not-inspected'}
+            if($LASTEXITCODE -eq 0) {
+              $rows=Get-Content $archiveLog
+              $archiveCheck.possibleNsisPayload=[bool](@($rows|Where-Object{$_ -match 'app-64\.7z|BLACKICE\.exe|resources\\app'}).Count)
+              $archiveCheck.sourceFileListHash=(Get-FileHash -LiteralPath $archiveLog -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+          }
+          $checksums=@("$sha  $name","$manifestSha  blackice-public-release.json")
+          $checksums | Set-Content -LiteralPath (Join-Path $dist 'SHA256SUMS.txt') -Encoding utf8NoBOM
+          $result=[ordered]@{
+            format=1; product='BLACKICE'; scope='nonpublishing-windows-candidate'
+            sourceCommit=$env:EXPECTED_SOURCE_COMMIT; workflowControllerCommit=$env:GITHUB_SHA
+            version=$env:EXPECTED_VERSION; appFingerprint=$env:EXPECTED_APP_FINGERPRINT
+            installerName=$name; installerBytes=$stat.Length; installerSha256=$sha
+            manifestSha256=$manifestSha; signingClaim=$manifest.signing.status
+            publisherVerified=$manifest.signing.publisherVerified
+            authenticodeStatus=$certificateStatus; artifactPublished=$false
+            packageSourceFingerprintValidatedByBuilder=$true
+            scriptEnforcesPublishNever=$true
+            staticArchiveInspection=$archiveCheck
+            nativeInstallerExecutionPerformed=$false
+            installedRuntimeVerified=$false
+            checkedAtUtc=[DateTime]::UtcNow.ToString('o')
+          }
+          $result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath release23998-evidence/package-inspection.json -Encoding utf8NoBOM
+          Write-Output "INSTALLER_CANDIDATE_SHA256=$sha"
+          Write-Output "INSTALLER_CANDIDATE_BYTES=$($stat.Length)"
+      - name: Capture terminal source/installer evidence even on failure
+        if: always()
+        shell: pwsh
+        env:
+          PREFLIGHT_OUTCOME: ${{ steps.preflight.outcome }}
+          DEPENDENCIES_OUTCOME: ${{ steps.dependencies.outcome }}
+          TARGETED_OUTCOME: ${{ steps.targeted.outcome }}
+          PACKAGE_OUTCOME: ${{ steps.package.outcome }}
+          INSPECT_OUTCOME: ${{ steps.inspect.outcome }}
+        run: |
+          $ErrorActionPreference='Continue'
+          New-Item -ItemType Directory -Force -Path release23998-evidence | Out-Null
+          $receipt=[ordered]@{
+            format=1; product='BLACKICE'; scope='nonpublishing-2.39.98-release-prep'
+            expectedSourceCommit=$env:EXPECTED_SOURCE_COMMIT
+            controllerCommit=$env:GITHUB_SHA; githubRunId=$env:GITHUB_RUN_ID
+            githubRunAttempt=$env:GITHUB_RUN_ATTEMPT
+            expectedVersion=$env:EXPECTED_VERSION
+            expectedSourceIndex=$env:EXPECTED_SOURCE_INDEX
+            expectedAppFingerprint=$env:EXPECTED_APP_FINGERPRINT
+            preflightOutcome=$env:PREFLIGHT_OUTCOME
+            dependenciesOutcome=$env:DEPENDENCIES_OUTCOME
+            targetedOutcome=$env:TARGETED_OUTCOME
+            packageOutcome=$env:PACKAGE_OUTCOME
+            inspectOutcome=$env:INSPECT_OUTCOME
+            actualSourceHeadAfter=$null; trackedSourceCleanAfter=$null
+            sourceIndexAfter=$null; appFingerprintAfter=$null
+            sourceUnchanged=$false; fullSourceSuiteRerun=$false
+            previousCombinedSourceSuite='43728368940 succeeded on v2.39.97, 8775/8786 tests with 11 optional skips'
+            targetedCounts=$null; packageInspectionSha256=$null
+            installerSha256=$null; installerBytes=$null
+            actualInstallerPublishStatus='not-published'
+            status='unverified'; atUtc=[DateTime]::UtcNow.ToString('o')
+            unverified='Installed runtime and real startup; model/provider; parallel active children; in-flight external effects; native asynchronous browser; 11 source suite optional skips.'
+          }
+          if(Test-Path -LiteralPath source -PathType Container) {
+            Push-Location source
+            try {
+              $receipt.actualSourceHeadAfter=(& git rev-parse HEAD).Trim()
+              $receipt.trackedSourceCleanAfter=(@(& git status --porcelain --untracked-files=no).Count -eq 0)
+              node --input-type=module -e "import {releaseSourceIndex} from './scripts/release-request.mjs';import {appFingerprint} from './scripts/release-check.mjs';import {writeFile} from 'node:fs/promises';const inventory=await releaseSourceIndex(process.cwd());const fingerprint=await appFingerprint(process.cwd());await writeFile('../release23998-evidence/source-after.json',JSON.stringify({actualSourceCommit:process.argv[1],appFingerprint:fingerprint,...inventory},null,2));" $receipt.actualSourceHeadAfter
+              $receipt.afterCaptureExitCode=$LASTEXITCODE
+            } catch { $receipt.afterCaptureError=[string]$_ } finally { Pop-Location }
+          }
+          if((Test-Path release23998-evidence/source-before.json) -and (Test-Path release23998-evidence/source-after.json)) {
+            try {
+              $before=Get-Content -Raw release23998-evidence/source-before.json | ConvertFrom-Json
+              $after=Get-Content -Raw release23998-evidence/source-after.json | ConvertFrom-Json
+              $receipt.sourceIndexAfter=$after.sourceIndexSha256
+              $receipt.appFingerprintAfter=$after.appFingerprint
+              $receipt.sourceUnchanged=$receipt.actualSourceHeadAfter -ceq $env:EXPECTED_SOURCE_COMMIT -and
+                $before.sourceIndexSha256 -ceq $after.sourceIndexSha256 -and
+                $after.sourceIndexSha256 -ceq $env:EXPECTED_SOURCE_INDEX -and
+                $before.appFingerprint -ceq $after.appFingerprint -and
+                $after.appFingerprint -ceq $env:EXPECTED_APP_FINGERPRINT -and
+                $receipt.trackedSourceCleanAfter -eq $true
+            } catch { $receipt.comparisonError=[string]$_ }
+          }
+          if(Test-Path release23998-evidence/targeted-release-tests.tap) {
+            try {
+              $tap=Get-Content -Raw release23998-evidence/targeted-release-tests.tap
+              $counts=@{}
+              foreach($key in @('tests','pass','fail','skipped','cancelled','todo')) {
+                $m=[regex]::Matches($tap,"(?m)^# $key (\\d+)\\r?$")
+                $counts[$key]=if($m.Count -eq 1){[int]$m[0].Groups[1].Value}else{$null}
+              }
+              $receipt.targetedCounts=$counts
+              $receipt.targetedTapSha256=(Get-FileHash release23998-evidence/targeted-release-tests.tap -Algorithm SHA256).Hash.ToLowerInvariant()
+            } catch { $receipt.targetedCountError=[string]$_ }
+          }
+          if(Test-Path release23998-evidence/package-inspection.json) {
+            try {
+              $pkg=Get-Content -Raw release23998-evidence/package-inspection.json | ConvertFrom-Json
+              $receipt.packageInspectionSha256=(Get-FileHash release23998-evidence/package-inspection.json -Algorithm SHA256).Hash.ToLowerInvariant()
+              $receipt.installerSha256=$pkg.installerSha256
+              $receipt.installerBytes=$pkg.installerBytes
+            } catch { $receipt.packageInspectionReadError=[string]$_ }
+          }
+          $receipt.status=if($receipt.sourceUnchanged -and $env:PREFLIGHT_OUTCOME -ceq 'success' -and
+            $env:DEPENDENCIES_OUTCOME -ceq 'success' -and $env:TARGETED_OUTCOME -ceq 'success' -and
+            $env:PACKAGE_OUTCOME -ceq 'success' -and $env:INSPECT_OUTCOME -ceq 'success') {'candidate-built-verified-source-only'}else{'incomplete-or-failed'}
+          $receipt | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath release23998-evidence/terminal-controller.json -Encoding utf8NoBOM
+          if($receipt.status -cne 'candidate-built-verified-source-only') { throw "Exact source/build terminal gate incomplete: $($receipt.status)" }
+      - name: Preserve original build, test, environment, inspection and terminal receipts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: blackice-23998-nonpublishing-build-evidence
+          path: release23998-evidence
+          if-no-files-found: error
+      - name: Preserve only verified installer candidate and checksum manifest
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: blackice-23998-windows-candidate-NOT-PUBLISHED
+          path: source/dist/Blackice-Public-Windows/
+          if-no-files-found: error
