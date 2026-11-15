@@ -6,6 +6,7 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { HarnessEngine } from '../lib/engine.mjs';
 import { SwarmBoardStore } from '../lib/swarm-board.mjs';
+import { TaskStateStore } from '../lib/task-state.mjs';
 import { createNativeSwarmTools, NATIVE_SWARM_TOOL_NAMES } from '../lib/swarm-native-tools.mjs';
 import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-provider.mjs';
 
@@ -401,13 +402,46 @@ test('an actual native provider launch with uncertain result persistence never a
     assert.equal(observed.launch.state,'provider_attempted');
     assert.equal(observed.launch.result,null);
     assert.equal(observed.noReplay,true);
+    const selected=observed.delegation?.results?.find(row=>row.id==='uncertain_worker');
+    assert.ok(selected,'the real scheduler retains the affected child runtime receipt');
+    assert.match(selected.planningError||'',/Synthetic durable worker outcome write unavailable/,
+      'the failed persistence is reported, not hidden as verified durable completion');
     assert.equal(workerInvocations,1);
     assert.equal(f.board.snapshot('uncertain_swarm').items[0].phase,'queued');
     return {output:'Uncertain worker outcome preserved.',threadId:'uncertain-swarm'};
   });
+  // Test actual owned resource cleanup, not just the durable Swarm state.
+  // Install the real TaskStateStore awareness and observe its finish entry
+  // point; the contained-browser release handler is an isolated host fixture.
+  const taskStore=await new TaskStateStore({dataDir:f.engine.dataDir}).init();
+  f.engine.tasks=taskStore;
+  t.after(()=>taskStore.close());
+  const browserReleases=[], awarenessFinishes=[];
+  f.engine.browser={
+    status:()=>({contained:false,tabs:[]}),
+    releaseOwner:async(owner,options)=>{
+      browserReleases.push({owner,options});
+      return {released:[owner.nodeId]};
+    }
+  };
+  const originalFinish=taskStore.awareness.finish.bind(taskStore.awareness);
+  taskStore.awareness.finish=(id,status)=>{
+    awarenessFinishes.push({id,status});
+    return originalFinish(id,status);
+  };
   await f.run();
   const before=f.board.snapshot('uncertain_swarm');
   const prior=before.nativeLaunches[0];
+  const ownedBrowserReleases=browserReleases.filter(row=>row.owner.nodeId===prior.workerNodeId);
+  assert.equal(ownedBrowserReleases.length,1,
+    'the actual child browser owner is released even when its Swarm result write fails');
+  assert.equal(ownedBrowserReleases[0].options.status,'failed',
+    'uncertain durability cannot be mislabeled as completed browser cleanup');
+  assert.equal(ownedBrowserReleases[0].options.retainForContinuation,true,
+    'uncertain worker resources remain recoverable rather than discarded as successful');
+  const workerAwareness=awarenessFinishes.filter(row=>row.id===prior.runId+':'+prior.workerNodeId);
+  assert.deepEqual(workerAwareness.map(row=>row.status),['failed'],
+    'the real TaskStateStore worker-awareness lifecycle finishes despite persistence failure');
   assert.equal(prior.providerDispatchAttemptedAt!==null,true);
   assert.equal(prior.result,null);
   let replayed=0;
@@ -423,3 +457,98 @@ test('an actual native provider launch with uncertain result persistence never a
   assert.equal(workerInvocations,1);
   assert.equal(f.board.snapshot('uncertain_swarm').nativeLaunches.length,1);
 });
+
+for (const mutation of ['requirements', 'reassign', 'phase']) {
+  test('real engine refuses ' + mutation + ' after reservation while final provider dispatch is delayed', async t => {
+    let f, selectedProviderCalls=0, markCalls=0, enterDispatch, releaseDispatch;
+    const atDispatch=new Promise(resolve=>{enterDispatch=resolve;});
+    const dispatchHold=new Promise(resolve=>{releaseDispatch=resolve;});
+    t.after(()=>releaseDispatch());
+    const human={kind:'human',id:'local-session',label:'Local user'};
+    f=await fixture(t,async options=>{
+      if (options.prompt.startsWith('You are a short-lived BLACKICE subagent.')) {
+        if (options.prompt.includes('Independently inspect host admission receipts'))
+          return {output:'Independent synthetic audit completed.'};
+        selectedProviderCalls++;
+        return {output:'This stale worker must never be invoked.'};
+      }
+      await written(options,'create_project',{id:'post_reserve_project',name:'Post-reservation mutation',
+        objective:'A current source/owner/phase change must prevent the selected worker launch.'});
+      await written(options,'propose_item',{id:'post_reserve_item',title:'Precise pending work',
+        scope:'One bounded synthetic assignment',requirements:'Original requirement r1.',
+        ownerId:null,dependsOn:[],verificationTarget:'unit'},{
+        projectId:'post_reserve_project',
+        expectedProjectRevision:f.board.snapshot('post_reserve_project').revision});
+      const originalMark=f.nativeSwarmTools.markLaunchAttempt;
+      f.nativeSwarmTools.markLaunchAttempt=async args=>{
+        markCalls++;
+        enterDispatch(args);
+        await dispatchHold;
+        return originalMark(args);
+      };
+      const launchArgs={
+        requestId:'post_reserve_launch_'+mutation,projectId:'post_reserve_project',
+        itemId:'post_reserve_item',expectedItemRevision:1,expectedRequirementRevision:1,
+        assignedTaskId:'selected_worker',tasks:[
+          {id:'selected_worker',prompt:'Execute only the exact currently assigned work.'},
+          {id:'independent_audit',prompt:'Independently inspect host admission receipts without Swarm writes.'}
+        ]
+      };
+      const pending=options.onToolCall({name:'relay_swarm_launch',arguments:launchArgs});
+      let timer;
+      try {
+        await Promise.race([atDispatch,new Promise((_,reject)=>{
+          timer=setTimeout(()=>reject(Error('The real scheduler did not reach the final dispatch fence.')),5000);
+        })]);
+      } finally { clearTimeout(timer); }
+      const reserved=f.board.snapshot('post_reserve_project');
+      assert.equal(reserved.nativeLaunches.length,1,'binding occurred at admission before the held provider dispatch');
+      const launch=reserved.nativeLaunches[0], item=reserved.items[0];
+      assert.equal(launch.state,'reserved');
+      assert.equal(launch.providerDispatchAttemptedAt,null);
+      assert.equal(item.ownerId,launch.workerId);
+      assert.equal(item.phase,'queued');
+      assert.equal(markCalls,1);
+      assert.equal(selectedProviderCalls,0,'the designated provider has not been called');
+      const change=async (action,value,extra={})=>f.board.apply({
+        mutationId:'post_reserve_human_'+mutation+'_'+(++serial),action,value,
+        projectId:'post_reserve_project',...extra
+      },human);
+      if (mutation==='requirements') {
+        await change('edit_item',{requirements:'Human revised the exact work obligations to r2.'},{
+          itemId:'post_reserve_item',expectedItemRevision:item.revision});
+      } else if (mutation==='reassign') {
+        await change('register_worker',{id:'replacement_worker',label:'Different worker',
+          scope:'Different role, cannot inherit prior native identity',kind:'agent',
+          actorId:'native_replacement'},{
+          expectedProjectRevision:f.board.snapshot('post_reserve_project').revision});
+        await change('edit_item',{ownerId:'replacement_worker'},{
+          itemId:'post_reserve_item',expectedItemRevision:item.revision});
+      } else {
+        await change('transition',{phase:'delivered',reference:'human-reported-phase-only'},{
+          itemId:'post_reserve_item',expectedItemRevision:item.revision});
+      }
+      const changed=f.board.snapshot('post_reserve_project');
+      assert.notEqual(changed.items[0].revision,item.revision);
+      assert.equal(changed.nativeLaunches[0].state,'reserved');
+      assert.equal(selectedProviderCalls,0);
+      releaseDispatch();
+      const reply=await pending;
+      assert.equal(reply.success,false,'stale dispatch cannot report launch success');
+      const observed=body(reply);
+      assert.equal(observed.admitted,true,'original DAG admission was genuine');
+      assert.equal(observed.launch.state,'settled');
+      assert.equal(observed.launch.result.status,'failed');
+      assert.match(observed.launch.result.error,/reserved native assignment changed/i);
+      assert.equal(observed.launch.providerDispatchAttemptedAt,null,
+        'the last dispatch fence rejected the stale assignment BEFORE provider invocation');
+      assert.equal(observed.launch.result.workOutcomeVerified,false);
+      assert.equal(selectedProviderCalls,0);
+      assert.equal(f.board.snapshot('post_reserve_project').items[0].completionCurrent,false);
+      return {output:'Post-reservation '+mutation+' stopped the selected provider.',threadId:'stale-boundary-'+mutation};
+    });
+    await f.run();
+    assert.equal(markCalls,1);
+    assert.equal(selectedProviderCalls,0);
+  });
+}
