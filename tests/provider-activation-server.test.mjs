@@ -55,11 +55,11 @@ test('enable-only route rejects missing revisions and unrelated settings instead
   assert.deepEqual(runtime.calls,[]);
 });
 
-test('Goal effects module is delivered by the production handler with exact bytes',async t=>{
+test('removed Goal effects UI has no import or production route while Goals remain served',async t=>{
   const {runtime,request}=await fixture(t),url='/next/chat/goal-effects.mjs';
-  const goals=await request('/next/chat/goals.mjs');assert.equal(goals.status,200);assert.match(goals.data,/from '.\/goal-effects\.mjs'/);
-  const response=await request(url);assert.equal(response.status,200);assert.match(response.headers['content-type'],/javascript/);
-  assert.equal(response.headers['cache-control'],'no-store');assert.equal(response.data,await readFile(new URL('../public/next/chat/goal-effects.mjs',import.meta.url),'utf8'));
+  const goals=await request('/next/chat/goals.mjs');assert.equal(goals.status,200);assert.doesNotMatch(goals.data,/goal-effects\.mjs/);
+  assert.equal(goals.data,await readFile(new URL('../public/next/chat/goals.mjs',import.meta.url),'utf8'));
+  const response=await request(url);assert.equal(response.status,404);
   assert.equal((await request(url+'.backup')).status,404);assert.equal(runtime.calls.length,0);
 });
 

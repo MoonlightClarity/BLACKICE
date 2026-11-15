@@ -96,7 +96,7 @@ test('installer refuses corrupt files or mismatched executable versions before c
   assert.equal(await fs.readFile(path.join(fixture.installRoot, 'relay-install.json'), 'utf8'), before);
   await fs.rm(fixture.source, { recursive: true }); await fs.cp(path.join(base, '2.5.0'), fixture.source, { recursive: true });
   await fs.writeFile(path.join(fixture.source, 'resources/app/package.json'), JSON.stringify({ name: 'relay-agent-harness', version: '2.5.1' })); await fs.rm(path.join(fixture.source, MANIFEST_FILE)); await createDistributionManifest(fixture.source, '2.5.1');
-  await assert.rejects(fixture.run(), /versions do not match/); assert.equal(await fs.readFile(path.join(fixture.installRoot, 'relay-install.json'), 'utf8'), before);
+  await assert.rejects(fixture.run(), /versions\s+do\s+not\s+match/); assert.equal(await fs.readFile(path.join(fixture.installRoot, 'relay-install.json'), 'utf8'), before);
 });
 
 test('installer refuses accidental downgrades before shutdown or mutation but supports deliberate rollback and same-version reinstall', { skip: process.platform !== 'win32' }, async t => {
@@ -178,7 +178,7 @@ test('installer rejects overlapping roots, unrelated destination data and juncti
   try { await assert.rejects(fixture.run(), /link or junction/); assert.equal(await fs.readFile(path.join(outside, 'sentinel.txt'), 'utf8'), 'outside untouched'); }
   finally { await fs.unlink(junction); }
   const overlapping = fixture.args.map((argument,index,array)=>array[index-1]==='-InstallRoot'?fixture.source:argument);
-  await assert.rejects(execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', script, ...overlapping], { windowsHide: true, timeout: 20000 }), /separate folders/);
+  await assert.rejects(execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', script, ...overlapping], { windowsHide: true, timeout: 20000 }), /separate\s+folders/);
 });
 
 test('graceful update shutdown requires matching executable, process creation, local listener and Relay health', { skip: process.platform !== 'win32' }, async t => {

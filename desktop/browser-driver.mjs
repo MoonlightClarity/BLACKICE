@@ -22,6 +22,7 @@ import { browserReceiptBindingKey, describeHostOperation } from '../lib/operatio
 const error = message => new Error(message);
 // Evidence for one protocol command, never a claim about an entire operation.
 const commandDispatched = Symbol('commandDispatched');
+const capacityAdmissionRejected = Symbol('capacityAdmissionRejected');
 const DEFAULT_FOLDER = 'folder_user';
 // Refs stay bound to the observed DOM node for the current document. Retain a
 // bounded recent set so separate filtered reads can be used together.
@@ -37,7 +38,7 @@ const folderName = value => {
   if (typeof value !== 'string' || !value.trim() || value.length > 200 || /[\u0000-\u001f\u007f]/.test(value)) throw Object.assign(error('Use a folder name from 1 to 200 characters.'), { code: 'BROWSER_FOLDER_VALIDATION', actionDispatched: false });
   return value.trim();
 };
-const capacityError = (message, code) => Object.assign(error(message), { code, actionDispatched: false });
+const capacityError = (message, code) => Object.assign(error(message), { code, actionDispatched: false, [capacityAdmissionRejected]: true });
 const navigationFailure = tab => Object.assign(error(`The browser could not load the requested page: ${String(tab.loadError || 'navigation failed').slice(0, 1000)}`), { code: 'BROWSER_NAVIGATION_FAILED', actionDispatched: tab.navigationDispatched === true });
 const rendererFailure = (tab, actionDispatched = false) => Object.assign(error(`This browser page stopped unexpectedly (${tab.rendererFailure?.reason || 'unknown'}). Reload or navigate this tab explicitly, then inspect it before repeating any action.`), { code: 'BROWSER_RENDERER_GONE', actionDispatched });
 const disposedFrame = reason => /\brender frame was disposed\b/i.test(String(reason?.message || reason));
@@ -2143,7 +2144,8 @@ export class ElectronBrowserDriver extends EventEmitter {
     } catch (reason) {
       // A leaf helper may prove its input was not sent. That cannot erase an
       // earlier navigation, surface synchronization or popup preparation.
-      if (activationMayAffectPage && reason?.actionDispatched === false) delete reason.actionDispatched;
+      const activationNotStarted = reason?.[capacityAdmissionRejected] === true && !tab.window && !cancelledAuthentication;
+      if (activationMayAffectPage && !activationNotStarted && reason?.actionDispatched === false) delete reason.actionDispatched;
       if (recoveringRenderer && !tab.window && !tab.rendererFailure) { tab.rendererFailure = recoveringRenderer; throw reason; }
       if (tab.rendererFailure) throw rendererFailure(tab, true);
       if (reason.code === 'BROWSER_INTERACTION_PENDING' && tab.pendingInteraction) return this.interactionReceipt(tab, { actionDispatched: true, inspectBeforeContinuing: true });

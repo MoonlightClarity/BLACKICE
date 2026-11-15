@@ -1,0 +1,35 @@
+name: Diagnose remaining terminal failures
+on:
+  push:
+    branches: [codex/terminal-targeted-2.39.95]
+    paths: [scripts/run-terminal-targeted.mjs, .github/workflows/terminal-targeted.yml]
+permissions:
+  contents: write
+jobs:
+  targeted:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.2'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: node scripts/run-terminal-targeted.mjs
+      - name: Save targeted diagnostic receipt
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add verification/diagnostics/terminal-targeted.json
+          git commit -m "Record remaining failure diagnostics"
+          git push origin HEAD:codex/terminal-targeted-2.39.95
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: terminal-targeted
+          path: terminal-targeted.tap
+      - run: node -e "const r=require('./verification/diagnostics/terminal-targeted.json');process.exit(r.exitCode===0?0:1)"
