@@ -14,7 +14,7 @@ import {fixtureOutcomeReview,finishFixtureCandidate} from './fixture-modular-pro
 const graph=(sandbox='danger-full-access')=>({name:'Directory Chat fixture',nodes:[
  {id:'input',type:'input'},{id:'agent',type:'agent',model:'fixture::remote',name:'Chat',prompt:'CURRENT_AGENT_BOUNDARY: preserve source files and task restrictions.',sandbox},
  {id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode:'off'}});
-const phaseOf=options=>{if(!options.prompt.includes('SHADOWDANCER DIRECTORY MODE.'))return null;const tail=options.prompt.split('CURRENT_DIRECTORY:\n').at(-1);return JSON.parse(tail.split('\nREPOSITORY ')[0]);};
+const phaseOf=options=>{if(!options.prompt.includes('SHADOWDANCER DIRECTORY MODE.'))return null;const tail=options.prompt.split('CURRENT_DIRECTORY:\n').at(-1);return JSON.parse(tail.split('\nREPOSITORY ')[0].split('\n\nACTION DIRECTORY:')[0]);};
 const response=phase=>phase.label==='decompose'?{atomic:true}:phase.label==='integration'?{answer:'Directory evidence result.',used_refs:phase.payload.required_refs}:{status:'complete',nextAction:'',finding:'A bounded finding.',candidate_answer:'A bounded answer.',uncertainty:''};
 class Runtime extends EventEmitter{
  calls=[];children=[];store={get:()=>({baseUrl:'https://api.example/v1'})};
@@ -37,6 +37,24 @@ async function fixture(t,{runtime=new Runtime(),tasks}={}){
  return{root,cwd,dataDir,engine,runtime,settings,engines};
 }
 async function settle(engine,run){await engine.executions.get(run.id);const out=engine.getRun(run.id);assert.equal(out.status,'completed',out.error||out.nodes.agent.error);return out;}
+
+test('experimental action Directory uses the ordinary host path and stays absent with Directory off',async t=>{
+ const previous=process.env.BLACKICE_DIRECTORY_ACTIONS;
+ process.env.BLACKICE_DIRECTORY_ACTIONS='1';
+ t.after(()=>{if(previous===undefined)delete process.env.BLACKICE_DIRECTORY_ACTIONS;else process.env.BLACKICE_DIRECTORY_ACTIONS=previous;});
+ const f=await fixture(t);let observed=0;
+ f.runtime.inspect=async(options,phase)=>{
+  const tool=options.dynamicTools.find(x=>x.name==='relay_directory_action');
+  if(phase?.label==='work'){
+   assert.ok(tool);observed++;
+   const result=await options.onToolCall({name:'relay_directory_action',callId:'inspect-actions',arguments:{action:'read'}});
+   assert.notEqual(result.success,false,JSON.stringify(result));
+  }else if(!phase)assert.equal(tool,undefined);
+ };
+ await settle(f.engine,f.engine.startRun({workflow:graph(),input:{task:'Inspect synthetic action state.',directoryMode:'on'}}));
+ await settle(f.engine,f.engine.startRun({workflow:graph(),input:{task:'Ordinary synthetic control.',directoryMode:'off'}}));
+ assert.ok(observed>0);
+});
 test('GPT-6 Luna runs all Directory phases through protected native transport rather than ordinary Chat',async t=>{
  const f=await fixture(t),native=graph();
  native.nodes.find(n=>n.id==='agent').model='gpt-6-luna';

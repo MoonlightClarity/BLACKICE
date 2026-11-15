@@ -1,6 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createDirectoryDirections} from '../lib/directory-directions.mjs';
+
+test('rollover does not redirect an outstanding steering acknowledgement into the fresh session',async()=>{
+ const row={text:'Preserve the appendix'},rows=[row],calls=[];let release;
+ const gate=new Promise(resolve=>release=resolve);
+ const router=createDirectoryDirections({rows:()=>rows,runtime:{steerAgent:async threadId=>{
+  calls.push(threadId);if(threadId==='old'){await gate;throw Error('lost acknowledgement');}return {accepted:true,threadId,turnId:'fresh-turn'};
+ }}});
+ router.phase({directoryTurnId:'session1',threadId:'old',turnId:'old-turn'});
+ await new Promise(resolve=>setImmediate(resolve));
+ router.phase({directoryTurnId:'session1',finished:true});
+ router.phase({directoryTurnId:'session2',threadId:'fresh',turnId:'fresh-turn'});
+ await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(calls,['old']);
+ const correction={text:'The appendix must retain its table'};await router.steer(correction);
+ release();await router.close();
+ assert.deepEqual(calls,['old','fresh']);assert.equal(row.delivery.status,'uncertain');
+ assert.equal(row.delivery.targets[0].threadId,'old');assert.equal(correction.delivery.status,'delivered');
+ assert.equal(row.text,'Preserve the appendix','Accepted user text remains available to authoritative recovery context');
+});
 test('queued before phase IDs, delivered only on acknowledgement and never twice',async()=>{
  const rows=[{text:'preserve work'}],calls=[];let release;
  const gate=new Promise(r=>release=r);
