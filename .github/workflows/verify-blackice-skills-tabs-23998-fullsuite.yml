@@ -132,7 +132,7 @@ jobs:
             if($counts[$key] -ne $expected[$key]) { throw "TAP vs receipt count discrepancy for ${key}: $($counts[$key]) / $($expected[$key])" }
           }
           if($counts.tests -ne $counts.pass+$counts.fail+$counts.cancelled+$counts.skipped+$counts.todo) { throw 'TAP test arithmetic invalid' }
-          $namedSkips=@([regex]::Matches($tap,'(?m)^ok \d+ - .* # SKIP(?: .*)?\r?$'))
+          $namedSkips=@([regex]::Matches($tap,'(?m)^ok \d+ - (.*?) # SKIP(?: (.*))?\r?$'))
           if($namedSkips.Count -ne $counts.skipped -or @($receipt.skipDetails).Count -ne $counts.skipped) { throw 'Skipped assertion names/reasons incomplete or unmatched.' }
           for($i=0;$i -lt $namedSkips.Count;$i++) {
             $observed=$namedSkips[$i]

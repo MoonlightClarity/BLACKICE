@@ -1,0 +1,87 @@
+{
+  "format": 1,
+  "provenance": "Original immutable GitHub artifact 14173532635, exact failed run 43741804376",
+  "sourceCommit": "36996a7782163c65822c1b25cdc0aa0b5880fdc4",
+  "controllerCommit": "f73afde3b8edf0652ab22addfdd2477163e0d41f",
+  "originalTapSha256": "31a3373ac67e9245755f1698534692782fad88361ca655c457114ae66e2e4e54",
+  "originalReceiptSha256": "3ecea256b16373879db6044a2d7d825406b7b8f26c717c50995b639260478f99",
+  "originalSkipDetailsCanonicalSha256": "62547a0570651f96c0b971d9b4cf2db45ad1611afde311964442998bef32279d",
+  "originalCounts": {
+    "tests": 8838,
+    "pass": 8824,
+    "fail": 3,
+    "cancelled": 0,
+    "skipped": 11,
+    "todo": 0
+  },
+  "originalRawTapSkipLines": [
+    "ok 510 - Relay-owned sign-in and local storage survive a full process restart without foregrounding # SKIP Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+    "ok 835 - live contained input updates application state and delivers editing keys without OS focus # SKIP Set RELAY_LIVE_BROWSER_QA=1 for the isolated native fixture.",
+    "ok 836 - offscreen contained input updates application state and delivers editing keys without OS focus # SKIP Set RELAY_LIVE_BROWSER_QA=1 for the isolated native fixture.",
+    "ok 837 - restored hidden browser tabs defer requests until used and never load closed or replaced pages # SKIP Set RELAY_LIVE_BROWSER_QA=1 for disposable Electron restoration.",
+    "ok 880 - native popups preserve OAuth routing and remain independent when their opener closes # SKIP Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+    "ok 1055 - actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases # SKIP Set RELAY_TRUSTED_FILL_QA=1 for the isolated native fixture.",
+    "ok 2364 - live background accessibility actions change only a dedicated non-activating fixture and leave foreground and cursor untouched # SKIP",
+    "ok 2596 - rendered Chat Directory controls reach the real engine and persist independently # SKIP",
+    "ok 2793 - hidden isolated Chromium composer validates real layout and one-click send wiring # SKIP Set BLACKICE_EMAIL_COMPOSE_QA=1 for the isolated native UI fixture.",
+    "ok 2818 - installed Himalaya sends exact MIME to disposable loopback SMTP and strips Bcc headers # SKIP",
+    "ok 3156 - real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart # SKIP Set RELAY_LIVE_FIREFOX_QA=1 on Windows to use a new disposable Firefox profile."
+  ],
+  "originalSourceReceiptSkipDetails": [
+    {
+      "name": "Relay-owned sign-in and local storage survive a full process restart without foregrounding",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+      "assertionsRan": false
+    },
+    {
+      "name": "live contained input updates application state and delivers editing keys without OS focus",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 for the isolated native fixture.",
+      "assertionsRan": false
+    },
+    {
+      "name": "offscreen contained input updates application state and delivers editing keys without OS focus",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 for the isolated native fixture.",
+      "assertionsRan": false
+    },
+    {
+      "name": "restored hidden browser tabs defer requests until used and never load closed or replaced pages",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 for disposable Electron restoration.",
+      "assertionsRan": false
+    },
+    {
+      "name": "native popups preserve OAuth routing and remain independent when their opener closes",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+      "assertionsRan": false
+    },
+    {
+      "name": "actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases",
+      "reason": "Set RELAY_TRUSTED_FILL_QA=1 for the isolated native fixture.",
+      "assertionsRan": false
+    },
+    {
+      "name": "live background accessibility actions change only a dedicated non-activating fixture and leave foreground and cursor untouched",
+      "reason": null,
+      "assertionsRan": false
+    },
+    {
+      "name": "rendered Chat Directory controls reach the real engine and persist independently",
+      "reason": null,
+      "assertionsRan": false
+    },
+    {
+      "name": "hidden isolated Chromium composer validates real layout and one-click send wiring",
+      "reason": "Set BLACKICE_EMAIL_COMPOSE_QA=1 for the isolated native UI fixture.",
+      "assertionsRan": false
+    },
+    {
+      "name": "installed Himalaya sends exact MIME to disposable loopback SMTP and strips Bcc headers",
+      "reason": null,
+      "assertionsRan": false
+    },
+    {
+      "name": "real headless Firefox operates disposable pages and keeps its own sign-in across a clean restart",
+      "reason": "Set RELAY_LIVE_FIREFOX_QA=1 on Windows to use a new disposable Firefox profile.",
+      "assertionsRan": false
+    }
+  ]
+}
