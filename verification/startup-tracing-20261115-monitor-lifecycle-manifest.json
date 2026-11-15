@@ -1,0 +1,74 @@
+{
+    "schema":  "blackice-startup-critical-trace-monitor-lifecycle-review-v1",
+    "atUtc":  "2026-11-15T22:43:22.8835103Z",
+    "baseSource":  "0101d3f88cc7f3f139394a1c943b899511668a90",
+    "firstFrozenCodeCommit":  "d41ed60427b1459ee79608584a4ca2c8d4534624",
+    "firstFrozenEvidenceCommit":  "fd2bbea80fb2727463edf14a2c731828da75963e",
+    "priorCorrectionCode":  "2b02bb002ec36f6df7135489a8f538fae63a86e9",
+    "priorCorrectionEvidence":  "e2e3ec296b4cb24405e6d7487c01f97827259d4f",
+    "newCorrectionCode":  "0eada884e366e607886a58f0e67d592393fb697b",
+    "newCorrectionTree":  "7fb3a124f7d27acbf1d431129ddfe971fa877537",
+    "branch":  "fix/startup-critical-path-observability-20261115",
+    "worktree":  "C:\\Users\\user\\Documents\\Codex\\BLACKICE-startup-trace-20261115",
+    "preservedManifestSha256":  {
+                                    "verification/startup-tracing-20261115-review-corrections-manifest.json":  "54df0f8410248e29eb9840ca00d95c4ca5b5611c20fa97aef282cfe0d82e6662",
+                                    "verification/startup-tracing-20261115-manifest.json":  "d1c3a0ebf7d6e505727832de48fa581b8e7a6da8cd5669c8c56dd9b55e88c7af"
+                                },
+    "changedCodeFiles":  [
+                             "lib/startup-critical-trace.mjs"
+                         ],
+    "changedTests":  [
+                         "tests/startup-critical-trace-deadlines.test.mjs"
+                     ],
+    "targetedTests":  {
+                          "total":  2,
+                          "passed":  2,
+                          "failed":  0,
+                          "skipped":  0,
+                          "cancelled":  0,
+                          "jobId":  "direct_ce3da9fea41002893fd1f778614ab1091c687283aad8ef6ca94370769ea7ee58",
+                          "file":  "verification/startup-tracing-20261115-monitor-lifecycle-first.tap"
+                      },
+    "priorCorrectionsTAP":  {
+                                "pass":  46,
+                                "failed":  0,
+                                "rerun":  false,
+                                "independentlyChecked":  true
+                            },
+    "observations":  {
+                         "lateMonitorCreatedAfterFinish":  false,
+                         "terminalTimerAbsent":  true,
+                         "terminalProgressFrozenAfterFinish":  true,
+                         "realMonitorEnableCount":  1,
+                         "realMonitorDisableCount":  1,
+                         "injectedDelayedMonitorCount":  0
+                     },
+    "installedCodeChanged":  false,
+    "installedTraceActivated":  false,
+    "fullSuiteRun":  false,
+    "restartOrRelease":  false,
+    "realApplicationsRun":  false,
+    "files":  [
+                  {
+                      "path":  "lib/startup-critical-trace.mjs",
+                      "bytes":  21917,
+                      "sha256":  "1883d3ba7e3a772349ed81758ce3546dd5a2a32b576f894597570270b41d138b"
+                  },
+                  {
+                      "path":  "tests/startup-critical-trace-deadlines.test.mjs",
+                      "bytes":  16838,
+                      "sha256":  "aa39dfd6e42d460958272c4e81af271a683461bc1a60c693f0bef4334fd0ec72"
+                  },
+                  {
+                      "path":  "verification/STARTUP-CRITICAL-TRACE-MONITOR-LIFECYCLE-REVIEW-20261115.md",
+                      "bytes":  4989,
+                      "sha256":  "b444563e7aa4f756f6474169960f6dba2870e91dd2bd84900418a99d72f9c5a8"
+                  },
+                  {
+                      "path":  "verification/startup-tracing-20261115-monitor-lifecycle-first.tap",
+                      "bytes":  659,
+                      "sha256":  "31cc58dcdf081e2c866f1d1cf5c19743ce3986d2808f68c18f171ac0968a5a1a"
+                  }
+              ],
+    "review":  "Narrow lifecycle fix locally tested; independent exact review required before integration or live trace"
+}

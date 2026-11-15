@@ -1,0 +1,22 @@
+﻿TAP version 13
+# Subtest: finish before a held build resolves never creates or enables a late monitor, timer or new samples
+ok 1 - finish before a held build resolves never creates or enables a late monitor, timer or new samples
+  ---
+  duration_ms: 379.9717
+  type: 'test'
+  ...
+# Subtest: a real event-loop delay monitor is disabled exactly once and does not resample after finish
+ok 2 - a real event-loop delay monitor is disabled exactly once and does not resample after finish
+  ---
+  duration_ms: 324.391
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 820.7759
