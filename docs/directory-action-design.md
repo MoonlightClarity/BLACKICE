@@ -1,0 +1,37 @@
+# Action-oriented Directory experiment
+
+Status: isolated implementation, not enabled in the installed app or included in frozen recovery release d4639eb. Constructor actionDirectory=true selects it; false preserves current phase Directory. This is a structural experiment with a separate typed-overflow containment path. Neither has live-model validation yet.
+
+## Why structure changes
+
+One whole-night work phase with 118 incomplete checkpoints failed to provide a bounded, recoverable account of ongoing actions. Receipt novelty is not outcome progress. Eleven compactions and an earlier peak do not prove the terminal cause: final nonzero input was 451510. Existing phase files remain evidence, not a migration target to erase.
+
+## Boundaries and authority
+
+A host attempt is one admitted tool invocation, durably recorded before dispatch. Its outcome links the exact existing receipt file and digest; a successful tool call is not independent confirmation of the user's outcome. A meaningful action is a model-authored objective with inputs/state, decision, next action and explicit evidence links. It may span many attempts or inspections. Action revisions form parent-linked records, not a global mutable summary. Model notes are always agent-authored; current host-supplied instructions and source input have separate phase-authority records. Corrections reference originals and never delete them. Model notes cannot clear Goal effect fences or confer authorization.
+
+Action boundaries are explicit and revisable. Different exports or edits with equal arguments remain distinct attempts. Only an identical host invocation ID is prevented from being admitted twice; semantic equality never deduplicates legitimate work. An attempt lacking an outcome remains unknown after failure/restart, not presumed unsent. Failed observation and uncertain external effect remain distinct in the original receipt and Goal policy.
+
+## Concurrency and storage
+
+Immutable event IDs derive from event identity, with a separate content hash. Same-process writes serialize; exclusive file creation prevents two processes from replacing an event. Conflicting content for the same identity fails. Concurrent revisions with the same parent are retained as forks, requiring explicit reconciliation rather than last-writer-wins. Partial writes are retained and cause load failure; this prototype has no silent repair. Files are synced before returning, but filesystem power-loss behavior and parent-directory durability remain unverified.
+
+The model reads a metadata index and inspects exact event ranges. Pagination carries a revision and rejects continuation after concurrent updates; exact IDs remain stable. Existing tool-result files hold full outcomes, avoiding another full transcript copy in the journal. source:true retrieves and hash-verifies the original receipt. No deletion, compaction of originals or rewrite of historic data occurs. The journal lives at conversation scope so successor runs can inspect prior action records. Legacy phase import is not implemented yet and remains a promotion blocker.
+
+## Incremental state and recovery
+
+Attempts and outcomes persist within work, without waiting for phase completion. relay_directory_action records action revisions incrementally. It does not execute work. After typed CONTEXT_OVERFLOW, the experimental runner waits for runtime settlement, refreshes authority, saves a recovery packet and starts a fresh provider session with a unique tool-call namespace. It points to exact journal sources and the latest checkpoint instead of replaying the transcript. Cancellation is checked before admission. Two rollover attempts maximum and repeated exhaustion without new outcome records terminate explicitly. That limit is containment, not proof of semantic progress; repeated low-value observations can still consume both attempts.
+
+This path does not classify generic CODEX_TURN_FAILED as overflow. The experimental Codex adapter now maps only terminal turn.error.codexErrorInfo === contextWindowExceeded to CONTEXT_OVERFLOW, preserving interrupted cancellation precedence. The official protocol schema defines this typed variant and TurnError field: https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/schema/json/v2/ThreadStartResponse.json . Four mapping regressions pass, including generic errors whose message mentions context. The observed historical run did not retain this raw typed field, so coverage of that exact incident remains unproven. Deadline enforcement currently relies on the runtime's cancellation signal; explicit deadline propagation requires verification. Admitted callback promises are awaited before replacement; one delayed-callback regression passes, but native runtime cleanup and pending steering still need adversarial integration tests. These are not solved by the journal alone.
+
+## Initial cost measurement
+
+One synthetic 200-attempt/410-record run measured median attempt+outcome persistence 6.80 ms, p95 13.48 ms; five full-index reads took 306–394 ms. A 20-entry metadata page was approximately 2163 estimated tokens/5763 bytes. These costs expose a retrieval bottleneck, not evidence of workflow improvement. Exact-ID inspection now reads only the requested record instead of scanning the journal; full-index and note validation still scan all events. Cache was not flushed and host load was uncontrolled. No live-model or long-running completion result exists for this design yet.
+
+## Promotion gates
+
+1. Preserve objective, obligations, inputs, completed and unknown effects through corrections, concurrent revisions, corruption and process restart. Never replay automatically.
+2. Add current-action retrieval across run boundaries, exact-source inspection and a bounded working set. The initial reader scans all events and returns all unresolved IDs: scale cost must be measured and improved before production.
+3. Test actual models inside BLACKICE on document export/edit, browser data entry and research synthesis, plus safe job-search replay. Compare Directory off, legacy phase Directory, action Directory and isolated containment. Fix model/profile/task/order where possible.
+4. Measure verified completion, elapsed time, tool/model turns, inspections and real state deltas, tokens/compactions, storage and retrieval latency, abandonment, lost obligations, duplicated effects and unresolved outcomes. Scripted runtimes test contracts, not model usability.
+5. Keep the independent recovery/startup release moving. Do not restart the active app or migrate active history for this experiment.
