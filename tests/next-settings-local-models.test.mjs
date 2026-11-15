@@ -192,3 +192,24 @@ test('llama settings preserve startup context and distinguish router from single
   assert.equal(f.$('#next-local-context').disabled, false);
   assert.equal(f.$('#next-local-context').value, '8192');
 });
+
+
+test('official llama.cpp releases is the direct primary action, with metadata discovery only under Advanced',async t=>{
+  const f=fixture(t,call=>call.route==='/api/local-models/downloads'?Promise.reject(Error('metadata offline')):undefined);
+  await f.enter();
+  const runtime=f.$('#next-local-engine');runtime.value='llamacpp';await runtime.dispatch('change');
+  const official=f.$('#next-llama-releases'),details=f.$('#next-llama-discovery'),discover=f.$('#next-llama-discover');
+  assert.equal(official.getAttribute('href'),'https://github.com/ggml-org/llama.cpp/releases');
+  assert.equal(official.getAttribute('target'),'_blank');
+  assert.equal(official.getAttribute('rel'),'noopener noreferrer');
+  assert.match(official.className,/next-primary/);
+  assert.equal(details.tagName.toLowerCase(),'details');
+  assert.equal(details.getAttribute('open'),null);
+  assert.equal(discover.closest('#next-llama-discovery'),details);
+  assert.equal(official.parentElement,f.$('#next-llama-setup'),'official releases is outside the collapsed Advanced controls');
+  await f.click('#next-llama-releases');
+  assert.equal(f.calls.filter(call=>call.route==='/api/local-models/downloads').length,0,'opening the direct link never requests metadata');
+  await f.click('#next-llama-discover');
+  await until(()=>!discover.disabled);
+  assert.match(f.$('#next-llama-download-status').textContent,/metadata offline/,'legacy discovery remains explicitly available');
+});

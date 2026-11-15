@@ -27,8 +27,8 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
   runtimeStatus.id = 'next-local-runtime-status'; runtimeStatus.setAttribute('role', 'status');
   const setup = node('section', '', 'next-stack'); setup.id = 'next-llama-setup';
   setup.append(node('h3', 'Download llama.cpp'));
-  const discover = button('Find official downloads'); discover.id = 'next-llama-discover';
-  const releases = node('a', 'Official releases and setup documentation'); releases.setAttribute('href', 'https://github.com/ggml-org/llama.cpp/releases');
+  const discover = button('Search release metadata'); discover.id = 'next-llama-discover';
+  const releases = node('a', 'Open official llama.cpp releases'); releases.id = 'next-llama-releases'; releases.className = 'next-primary next-llama-releases-primary'; releases.setAttribute('href', 'https://github.com/ggml-org/llama.cpp/releases');
   releases.setAttribute('target', '_blank'); releases.setAttribute('rel', 'noopener noreferrer');
   const assets = node('select', '', 'next-field'); assets.id = 'next-llama-asset'; assets.hidden = true;
   const download = node('a', 'Download selected archive'); download.id = 'next-llama-download'; download.hidden = true;
@@ -36,7 +36,12 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
   const companionLink = node('a', 'Download required CUDA runtime DLLs'); companionLink.id = 'next-llama-companion'; companionLink.hidden = true;
   companionLink.setAttribute('target', '_blank'); companionLink.setAttribute('rel', 'noopener noreferrer');
   const downloadStatus = node('p', '', 'next-help'); downloadStatus.id = 'next-llama-download-status'; downloadStatus.setAttribute('role', 'status');
-  setup.append(node('p', 'Choose the archive for your operating system, architecture and CPU/GPU backend. Windows CUDA builds require the matching cudart DLL archive extracted beside the runtime binaries. These are runtime binaries, not model weights. Downloads open your default browser; BLACKICE does not install or run them automatically.', 'next-help'), discover, releases, label('Official binary archive (platform and architecture are in the filename)', assets), download, companionLink, downloadStatus,
+  const discovery = node('details', '', 'next-provider-advanced next-llama-download-discovery'); discovery.id = 'next-llama-discovery';
+  const discoveryContents = node('div', '', 'next-stack');
+  discoveryContents.append(discover, label('Official binary archive (platform and architecture are in the filename)', assets), download, companionLink, downloadStatus);
+  discovery.append(node('summary', 'Advanced: search release metadata for a specific archive'), discoveryContents);
+  setup.append(releases,
+    node('p', 'Choose the archive for your operating system, architecture and CPU/GPU backend. Windows CUDA builds require the matching cudart DLL archive extracted beside the runtime binaries. These are runtime binaries, not model weights. Downloads open your default browser; BLACKICE does not install or run them automatically.', 'next-help'), discovery,
     node('p', 'Extract the runtime archive and keep its libraries beside llama-server. With an existing GGUF model, start the server locally, then use Refresh local models above. Replace the example model path with yours.', 'next-help'),
     node('pre', 'llama-server -m "path/to/model.gguf" --host 127.0.0.1 --port 8080'),
     node('p', 'On Windows use llama-server.exe from the extracted folder; on macOS/Linux use ./llama-server. Select matching dependencies from the same release when required. Downloading does not make the runtime available until you start it.', 'next-help'));

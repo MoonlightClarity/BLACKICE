@@ -33,6 +33,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     '<section class="next-card next-schedule-create" id="next-tasks-create" aria-labelledby="next-tasks-create-heading" hidden>',
     '<header class="next-schedule-detail-head"><h3 id="next-tasks-create-heading">New schedule</h3><button type="button" id="next-tasks-close-create">Close</button></header>',
     '<form id="next-tasks-form" class="next-stack">',
+    '<label class="next-label next-schedule-title">Title (optional)<input class="next-field" name="name" maxlength="160" placeholder="Uses the first line of the task"></label>',
     '<label class="next-label">What should BLACKICE do?<textarea class="next-field" name="input" rows="3" required placeholder="For example, summarize new items in the project folder."></textarea></label>',
     '<label class="next-label">Repeat<select class="next-field" name="trigger"><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekly">Every week</option><option value="interval">At regular intervals</option><option value="cron">Custom schedule (advanced)</option><option value="manual">Only when I run it</option><option value="webhook">When a webhook arrives</option></select></label>',
     '<div class="next-row next-schedule-timing"><label class="next-label" data-schedule-for="daily weekdays weekly">Time of day<input class="next-field" name="time" type="time" value="09:00"></label>',
@@ -42,7 +43,6 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     '<p class="next-help" data-schedule-for="interval">Intervals repeat after elapsed time. Choose Every day or Every week to run at the same local clock time.</p>',
     '<label class="next-label" data-schedule-for="cron">Advanced cron expression<input class="next-field" name="expression" value="0 9 * * *" placeholder="minute hour day month weekday"></label>',
     '<details id="next-tasks-create-options"><summary>More options</summary><div class="next-stack">',
-    '<label class="next-label">Name (optional)<input class="next-field" name="name" maxlength="160" placeholder="Uses the first line of the task"></label>',
     '<label class="next-label">Task type<select class="next-field" name="taskType"><option value="chat">Chat task</option><option value="workflow">Saved workflow (multi-agent)</option></select></label>',
     '<div class="next-stack" id="next-tasks-workflow-fields" hidden>',
     '<p class="next-help">A saved workflow retains its pinned agent models, planning settings, and workflow steps.</p>',
@@ -358,7 +358,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       editNotice=note;
       const form=add(view.detail,'form','','next-schedule-edit-form next-stack');
       editForm=form;form.dataset.scheduleEdit=selected.id;
-      scheduleField(form,'Name','name',draft.name,{required:true});
+      scheduleField(form,'Title','name',draft.name,{required:true}).maxLength=160;
       scheduleField(form,'Task instructions','input',draft.input,{tag:'textarea',required:true});
       scheduleField(form,'Working folder','cwd',draft.cwd,{required:true});
       const recovery=scheduleField(form,'After a clean restart or explicit resume','catchUpPolicy',draft.catchUpPolicy,{
@@ -661,7 +661,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       const delivery=result.delivery||{},card=add(view.results,'article','','next-card next-schedule-result');
       card.dataset.resultJobId=result.id;
       const title=add(card,'div','','next-task-job-top');
-      add(title,'strong',result.deploymentName||result.id);
+      add(title,'h3',result.deploymentName||result.id,'next-task-job-title');
       const state=add(title,'span',delivery.state==='acknowledged'?'Reviewed':'Awaiting review','next-status-pill');
       state.dataset.state=delivery.state==='acknowledged'?'saved':'running';
       add(card,'p','Agent outcome: '+(delivery.outcome||result.status||'unknown')+' · Available: '+humanTime(delivery.availableAt),'next-help');
@@ -712,7 +712,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     for(const job of jobs){
       const row=add(view.jobs,'article','','next-task-job-row');row.dataset.jobId=job.id;
       const top=add(row,'div','','next-task-job-top');
-      add(top,'strong',deployments.find(d=>d.id===job.deploymentId)?.name||removed.find(d=>d.id===job.deploymentId)?.name||job.deploymentName||job.name||job.id);
+      add(top,'h3',deployments.find(d=>d.id===job.deploymentId)?.name||removed.find(d=>d.id===job.deploymentId)?.name||job.deploymentName||job.name||job.id,'next-task-job-title');
       const badge=add(top,'span',job.status||'unknown','next-status-pill');badge.dataset.state=job.status||'unknown';
       const linked=jobLinkedRun(job);
       add(row,'p',humanTime(job.createdAt)+(linked?.attemptNumber?' · Attempt '+linked.attemptNumber:'')+(job.error?' · '+jobFailureSummary(job.error):''),'next-task-job-meta');
