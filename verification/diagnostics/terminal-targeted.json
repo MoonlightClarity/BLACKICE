@@ -1,0 +1,85 @@
+{
+  "source": "cf4e3ccd634d05b6311694e5d5d4f4a39ca1049d",
+  "startedAt": "2026-11-15T06:26:19.655Z",
+  "finishedAt": "2026-11-15T06:27:51.112Z",
+  "environment": {
+    "lexical": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp",
+    "canonical": "C:\\Users\\runneradmin\\AppData\\Local\\Temp",
+    "directory": "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\blackice-source-suite-QEqF3D",
+    "ancestry": [
+      {
+        "path": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp",
+        "link": false
+      },
+      {
+        "path": "C:\\Users\\RUNNER~1\\AppData\\Local",
+        "link": false
+      },
+      {
+        "path": "C:\\Users\\RUNNER~1\\AppData",
+        "link": false
+      },
+      {
+        "path": "C:\\Users\\RUNNER~1",
+        "link": false
+      },
+      {
+        "path": "C:\\Users",
+        "link": false
+      },
+      {
+        "path": "C:\\",
+        "link": false
+      },
+      {
+        "path": "C:\\Users\\runneradmin\\AppData\\Local\\Temp",
+        "link": false
+      },
+      {
+        "path": "C:\\Users\\runneradmin\\AppData\\Local",
+        "link": false
+      },
+      {
+        "path": "C:\\Users\\runneradmin\\AppData",
+        "link": false
+      },
+      {
+        "path": "C:\\Users\\runneradmin",
+        "link": false
+      },
+      {
+        "path": "C:\\Users",
+        "link": false
+      },
+      {
+        "path": "C:\\",
+        "link": false
+      }
+    ],
+    "policy": "Canonical isolated test fixtures only; production path guards unchanged."
+  },
+  "files": [
+    "tests/browser-resource-resilience.test.mjs",
+    "tests/chatgpt-connector-http.test.mjs",
+    "tests/connection-startup.test.mjs",
+    "tests/distribution.test.mjs",
+    "tests/next-static-route.test.mjs",
+    "tests/operations-http.test.mjs",
+    "tests/planning-behavior.test.mjs",
+    "tests/provider-activation-server.test.mjs",
+    "tests/windows-release-inputs.test.mjs"
+  ],
+  "concurrency": 1,
+  "exitCode": 0,
+  "signal": null,
+  "counts": {
+    "tests": 136,
+    "pass": 136,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0
+  },
+  "failures": [],
+  "stderr": "",
+  "scope": "Targeted disposable Windows fixtures; no installed app; production deadlines unchanged"
+}
