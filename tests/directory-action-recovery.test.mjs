@@ -7,6 +7,28 @@ import {ShadowdancerDirectory} from '../lib/shadowdancer-directory.mjs';
 const overflow=()=>Object.assign(new Error('provider context capacity exceeded'),{code:'CONTEXT_OVERFLOW'});
 const done=()=>({output:JSON.stringify({status:'complete',nextAction:'none',finding:'Fixture export verified',candidate_answer:'Export ready',uncertainty:''})});
 const tool={type:'function',name:'fixture_export',description:'Fixture only',inputSchema:{type:'object',properties:{action:{type:'string'}}}};
+
+test('overflow replacement consumes the shared admission budget and preserves the completed receipt',async t=>{
+ let calls=0,effects=0;
+ const runner=await fixture(t,{runAgent:async options=>{calls++;await options.onToolCall({name:'fixture_export',callId:'once',arguments:{}});throw overflow();}},async()=>{effects++;return {success:true};});
+ runner.limits.maxCalls=1;
+ await assert.rejects(runner.infer('work','modules/budget',{objective:'Export once'}),{code:'DIRECTORY_CALL_BUDGET'});
+ assert.equal(calls,1);assert.equal(effects,1);assert.equal(runner.stats.calls,1);assert.equal(runner.stats.resets,1);assert.equal(runner.stats.sessionsFailed,1);
+ assert.equal((await runner.actionJournal.events()).filter(r=>r.event.kind==='outcome').length,1);
+});
+test('failed and successful replacement sessions are both accounted',async t=>{
+ let calls=0;
+ const runner=await fixture(t,{runAgent:async()=>{if(++calls===1)throw overflow();return done();}},async()=>{});
+ await runner.infer('work','modules/accounting',{objective:'Recover'});
+ assert.equal(runner.stats.calls,2);assert.equal(runner.stats.resets,2);assert.equal(runner.stats.sessionsFailed,1);assert.equal(runner.stats.sessionsSucceeded,1);
+});
+test('concurrent phases cannot exceed a shared one-session budget',async t=>{
+ let calls=0;
+ const runner=await fixture(t,{runAgent:async()=>{calls++;return done();}},async()=>{});runner.limits.maxCalls=1;
+ const results=await Promise.allSettled(['a','b'].map(id=>runner.infer('work','modules/'+id,{objective:id})));
+ assert.equal(calls,1);assert.equal(runner.stats.calls,1);assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
+ assert.equal(results.find(r=>r.status==='rejected').reason.code,'DIRECTORY_CALL_BUDGET');
+});
 async function fixture(t,runtime,dispatchTool,signal){const cwd=await mkdtemp(path.join(os.tmpdir(),'directory-recover-'));t.after(()=>rm(cwd,{recursive:true,force:true}));const runner=new ShadowdancerDirectory({cwd,conversationId:'fixture',runId:'run',model:'fixture',runtime,baseTools:[tool],dispatchTool,actionDirectory:true,signal,getAuthoritativeContext:async()=> 'User constraint: retain source records.'});await runner.open();return runner;}
 test('completed and uncertain outcomes survive typed exhaustion before phase completion',async t=>{
  let runner,calls=0,dispatches=0,firstSession;

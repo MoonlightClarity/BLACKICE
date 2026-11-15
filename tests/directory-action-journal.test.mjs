@@ -6,6 +6,31 @@ import path from 'node:path';
 import {DirectoryActionJournal} from '../lib/directory-action-journal.mjs';
 import {createHash} from 'node:crypto';
 async function fixture(t){const root=await mkdtemp(path.join(os.tmpdir(),'directory-actions-'));t.after(()=>rm(root,{recursive:true,force:true}));return new DirectoryActionJournal(root);}
+
+test('receipts may be evidence but cannot masquerade as action-state revisions',async t=>{
+ const journal=await fixture(t),attempt=await journal.begin('effect',{name:'export'},{actionId:'a'});
+ const outcome=await journal.outcome(attempt,{success:true},{receipt:'retained'});
+ for(const row of [attempt,outcome]){
+  await assert.rejects(journal.note('bad-parent-'+row.id,{actionId:'a',parent:row.id}),{code:'DIRECTORY_PARENT_MISSING'});
+  await assert.rejects(journal.note('bad-merge-'+row.id,{actionId:'a',reconciles:[row.id]}),{code:'DIRECTORY_RECONCILIATION_MISSING'});
+ }
+ const a=await journal.note('a',{actionId:'a',evidence:[attempt.id,outcome.id]});
+ const left=await journal.note('left',{actionId:'a',parent:a.id,state:'left'}),right=await journal.note('right',{actionId:'a',parent:a.id,state:'right'});
+ const merged=await journal.note('merged',{actionId:'a',parent:left.id,reconciles:[right.id],evidence:[outcome.id]});
+ assert.equal(merged.event.kind,'action-state');
+ const rows=await journal.events();assert.equal(rows.find(r=>r.id===attempt.id).digest,attempt.digest);assert.equal(rows.find(r=>r.id===outcome.id).digest,outcome.digest);
+ assert.equal(rows.length,6);
+});
+
+test('bounded pages disclose growing full scans and retain all authority history',async t=>{
+ const journal=await fixture(t);
+ for(let i=0;i<80;i++)await journal.append(['authority',i],{kind:'phase-authority',authority:'host-supplied',authoritativeContext:'Correction '+i});
+ const first=await journal.read({limit:5});
+ assert.equal(first.events.length,5);assert.equal(first.total,80);
+ assert.deepEqual(first.retrieval,{strategy:'validated-full-scan',scannedEvents:80,workingEvents:80,authorityEvents:80,constantCost:false});
+ const next=await journal.read({offset:first.nextOffset,limit:5,revision:first.revision});assert.equal(next.retrieval.scannedEvents,80);
+ assert.equal((await journal.events()).length,80);
+});
 test('restart retains completed and unknown attempts without replay or semantic deduplication',async t=>{
  const j=await fixture(t),call={name:'export',arguments:{path:'report'}};
  const a=await j.begin('first',call,{objective:'Deliver report'});await j.outcome(a,{success:true},{receipt:'exact-1'});
