@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { performance } from 'node:perf_hooks';
+import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 import { StartupCriticalTrace } from '../lib/startup-critical-trace.mjs';
 
@@ -41,6 +41,90 @@ test('desktop startup indicator and fatal-error reporting do not await diagnosti
   assert.match(source, /void criticalStartupTrace\.finish\('ready'\)/);
   assert.match(source, /void criticalStartupTrace\.finish\('failed'\)/);
   assert.doesNotMatch(source, /await criticalStartupTrace\.(start|finish)\(/);
+});
+
+test('finish before a held build resolves never creates or enables a late monitor, timer or new samples', async t => {
+  const root = await isolated(t), held = deferred();
+  const monitors = { created: 0, enabled: 0, disabled: 0 };
+  const io = { ...fs, readFile: selected => selected === codeFile ? held.promise : fs.readFile(selected) };
+  const trace = new StartupCriticalTrace({ dataDir: root, io, intervalMs: 250, startTimer: true,
+    buildTimeoutMs: 25, checkpointTimeoutMs: 60,
+    createDelayMonitor: () => {
+      monitors.created++;
+      return {
+        enable() { monitors.enabled++; },
+        disable() { monitors.disabled++; },
+        get count() { return 0; }, get max() { return 0; },
+        percentile: () => 0,
+      };
+    },
+  });
+  const starting = trace.start({ buildFiles: { code: codeFile } });
+  const completed = await observedWithin(() => trace.finish('failed'));
+  assert.equal(completed.state.outcome, 'failed');
+  assert.equal(trace.done, true);
+  const sampleCountAtFinish = trace.samples.length;
+  assert.equal(sampleCountAtFinish, 1, 'finish must capture its terminal sample once');
+  await observedWithin(() => starting);
+  assert.equal(trace.source.status, 'timed_out');
+  assert.deepEqual(monitors, { created: 0, enabled: 0, disabled: 0 });
+  assert.equal(trace.delay, null);
+  assert.equal(trace.timer, null);
+  assert.equal(trace.samples.length, sampleCountAtFinish);
+  const durable = await eventually(async () => {
+    try {
+      const value = JSON.parse(await fs.readFile(trace.file, 'utf8'));
+      return value.state.outcome === 'failed' && value.launch.source.status === 'timed_out' ? value : null;
+    } catch { return null; }
+  });
+  assert.equal(durable.progressSamples.length, sampleCountAtFinish);
+  const checkpoints = trace.checkpointNumber;
+  await new Promise(resolve => setTimeout(resolve, 300)); // Beyond the would-be timer interval.
+  assert.equal(trace.timer, null);
+  assert.equal(trace.checkpointNumber, checkpoints);
+  assert.equal(trace.samples.length, sampleCountAtFinish);
+  held.resolve(Buffer.from('late successful source must not re-enable diagnostics'));
+  await eventually(() => trace.traceIo.lateBuildSettlements === 1);
+  assert.equal(trace.source.status, 'timed_out');
+  assert.deepEqual(monitors, { created: 0, enabled: 0, disabled: 0 });
+});
+
+test('a real event-loop delay monitor is disabled exactly once and does not resample after finish', async t => {
+  const root = await isolated(t);
+  const calls = { created: 0, enabled: 0, disabled: 0 };
+  let histogram;
+  const trace = new StartupCriticalTrace({ dataDir: root, intervalMs: 250, startTimer: true,
+    createDelayMonitor: options => {
+      calls.created++;
+      histogram = monitorEventLoopDelay(options);
+      return {
+        enable() { calls.enabled++; return histogram.enable(); },
+        disable() { calls.disabled++; return histogram.disable(); },
+        get count() { return histogram.count; },
+        get max() { return histogram.max; },
+        percentile(p) { return histogram.percentile(p); },
+      };
+    },
+  });
+  await trace.start({ buildFiles: { code: codeFile } });
+  assert.deepEqual(calls, { created: 1, enabled: 1, disabled: 0 });
+  assert.ok(trace.timer);
+  await observedWithin(() => trace.finish('ready'));
+  assert.deepEqual(calls, { created: 1, enabled: 1, disabled: 1 });
+  assert.equal(trace.done, true);
+  assert.equal(trace.timer, null);
+  const savedSamples = trace.samples.length;
+  await trace.checkpoint();
+  assert.equal(trace.samples.length, savedSamples, 'post-finish persistence cannot create samples');
+  await trace.finish('ready');
+  await trace.start({ buildFiles: { code: codeFile } });
+  assert.deepEqual(calls, { created: 1, enabled: 1, disabled: 1 });
+  const checkpoints = trace.checkpointNumber, delayCount = histogram.count;
+  await new Promise(resolve => setTimeout(resolve, 300));
+  assert.equal(trace.timer, null);
+  assert.equal(trace.checkpointNumber, checkpoints);
+  assert.equal(trace.samples.length, savedSamples);
+  assert.equal(histogram.count, delayCount, 'disabled real monitor cannot keep sampling');
 });
 
 test('desktop-style finish racing timed-out binding retains final state and degraded source evidence', async t => {
