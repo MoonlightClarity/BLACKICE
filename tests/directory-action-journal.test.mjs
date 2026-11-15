@@ -7,6 +7,53 @@ import {DirectoryActionJournal} from '../lib/directory-action-journal.mjs';
 import {createHash} from 'node:crypto';
 async function fixture(t){const root=await mkdtemp(path.join(os.tmpdir(),'directory-actions-'));t.after(()=>rm(root,{recursive:true,force:true}));return new DirectoryActionJournal(root);}
 
+test('incremental revisions use exact references without whole-history scans and retain forks',async t=>{
+ const j=await fixture(t),initial=await j.note('initial',{actionId:'a'});
+ for(let i=0;i<160;i++)await j.append(['history',i],{kind:'phase-authority',text:'Retained obligation '+i});
+ j.events=()=>{throw new Error('Unexpected full scan during incremental note');};
+ const [left,right]=await Promise.all([
+  j.note('left',{actionId:'a',parent:initial.id,evidence:[initial.id,initial.id]}),
+  j.note('right',{actionId:'a',parent:initial.id,correctionOf:initial.id})]);
+ const restarted=new DirectoryActionJournal(j.root),view=await restarted.read();
+ assert.deepEqual(new Set(view.conflicts[0]),new Set([left.id,right.id]));
+ assert.equal((await restarted.events()).length,163);
+});
+
+test('reference validation distinguishes missing, unpublished and corrupt records without clearing history',async t=>{
+ const j=await fixture(t),id='a'.repeat(64);
+ await assert.rejects(j.note('missing',{actionId:'a',evidence:[id]}),{code:'DIRECTORY_EVIDENCE_MISSING'});
+ await writeFile(path.join(j.root,id+'.json.claim'),id);
+ await assert.rejects(j.note('pending',{actionId:'a',evidence:[id]}),{code:'DIRECTORY_ACTION_PENDING'});
+ const original=await j.note('original',{actionId:'a'});
+ await writeFile(path.join(j.root,original.id+'.json'),JSON.stringify({...original,event:{...original.event,state:'tampered'}}));
+ await assert.rejects(j.note('corrupt',{actionId:'a',parent:original.id}),{code:'DIRECTORY_ACTION_CORRUPT'});
+ for(const invalid of ['null','{']){
+  await writeFile(path.join(j.root,original.id+'.json'),invalid);
+  await assert.rejects(j.note('invalid-'+invalid,{actionId:'a',evidence:[original.id]}),{code:'DIRECTORY_ACTION_CORRUPT'});
+ }
+ await writeFile(path.join(j.root,original.id+'.json'),JSON.stringify({...original,event:{...original.event,state:'tampered'}}));
+ // Independent state can still be recorded; this is not a global health claim.
+ await j.note('independent',{actionId:'b',state:'Unrelated work'});
+ await assert.rejects(j.read(),{code:'DIRECTORY_ACTION_CORRUPT'});
+});
+
+test('note enforces reference bounds and rejects path-like references before lookup',async t=>{
+ const j=await fixture(t);
+ for(const field of ['evidence','reconciles']){
+  await assert.rejects(j.note(field,{actionId:'a',[field]:Array(101).fill('a'.repeat(64))}),{code:'DIRECTORY_REFERENCE_LIMIT'});
+  await assert.rejects(j.note(field+'-type',{actionId:'a',[field]:'not-an-array'}),{code:'DIRECTORY_REFERENCE_LIMIT'});
+ }
+ await assert.rejects(j.note('path',{actionId:'a',evidence:['../outside']}),{code:'DIRECTORY_EVIDENCE_MISSING'});
+ assert.equal((await j.events()).length,0);
+});
+
+test('cancelled or expired incremental updates publish no new note',async t=>{
+ const j=await fixture(t),a=await j.note('kept',{actionId:'a'}),controller=new AbortController();controller.abort(new Error('fixture cancellation'));
+ await assert.rejects(j.note('cancelled',{actionId:'a',parent:a.id},{signal:controller.signal}),/fixture cancellation/);
+ await assert.rejects(j.note('expired',{actionId:'a',parent:a.id},{deadlineAt:Date.now()-1}),{code:'DIRECTORY_DEADLINE'});
+ assert.equal((await j.events()).length,1);
+});
+
 test('receipts may be evidence but cannot masquerade as action-state revisions',async t=>{
  const journal=await fixture(t),attempt=await journal.begin('effect',{name:'export'},{actionId:'a'});
  const outcome=await journal.outcome(attempt,{success:true},{receipt:'retained'});
