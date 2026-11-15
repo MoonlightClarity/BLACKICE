@@ -1,0 +1,26 @@
+name: Diagnose Windows fixture paths
+on:
+  push:
+    branches: [codex/ci-path-diagnostics-d463]
+    paths: [scripts/diagnose-windows-temp.mjs, .github/workflows/diagnose-windows-temp.yml]
+permissions:
+  contents: write
+jobs:
+  paths:
+    runs-on: windows-2025
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.2'
+      - run: npm ci
+      - run: node scripts/diagnose-windows-temp.mjs
+      - name: Save diagnostic evidence on isolated branch
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add verification/diagnostics/windows-temp-d463.json
+          git commit -m "Record Windows fixture path evidence"
+          git push origin HEAD:codex/ci-path-diagnostics-d463
