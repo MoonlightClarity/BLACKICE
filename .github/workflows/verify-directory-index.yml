@@ -23,10 +23,16 @@ jobs:
       - name: Verify bundled Electron SQLite capability without launching the app
         shell: pwsh
         run: |
-          $env:ELECTRON_RUN_AS_NODE = '1'
-          & ./node_modules/electron/dist/electron.exe -e "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync(':memory:');console.log(JSON.stringify({kind:'electron-sqlite-capability',electron:process.versions.electron,node:process.versions.node,sqlite:db.prepare('select sqlite_version() as version').get().version,modelAdmissions:0}));db.close();"
+          @'
+          const {spawnSync}=require('node:child_process');
+          const executable=require('electron');
+          const code="const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync(':memory:');console.log(JSON.stringify({kind:'electron-sqlite-capability',electron:process.versions.electron,node:process.versions.node,sqlite:db.prepare('select sqlite_version() as version').get().version,modelAdmissions:0}));db.close();";
+          const result=spawnSync(executable,['-e',code],{env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},encoding:'utf8',windowsHide:true});
+          process.stdout.write(result.stdout||'');process.stderr.write(result.stderr||'');
+          if(result.error)throw result.error;
+          process.exitCode=result.status===0?0:1;
+          '@ | node
           if ($LASTEXITCODE -ne 0) { throw 'Bundled Electron SQLite capability failed.' }
-          Remove-Item Env:ELECTRON_RUN_AS_NODE
       - run: node scripts/source-suite-receipt.mjs source-suite-evidence
       - uses: actions/upload-artifact@v7
         if: always()
