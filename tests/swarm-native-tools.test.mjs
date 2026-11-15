@@ -38,7 +38,9 @@ async function fixture(t) {
 }
 test('native adapter is host-task/node bound and offers exact read/write/receive/ack contracts',async t=>{
   const f=await fixture(t);
-  assert.deepEqual(f.coordinator.tools.map(v=>v.name),NATIVE_SWARM_TOOL_NAMES);
+  assert.deepEqual(f.coordinator.tools.map(v=>v.name),NATIVE_SWARM_TOOL_NAMES.filter(name=>name!=='relay_swarm_launch'));
+  assert.equal(f.coordinator.tools.some(tool=>tool.name==='relay_swarm_launch'),false,
+    'launch is not advertised when no real engine delegation callback is attached');
   assert.ok(f.coordinator.tools.every(v=>v.type==='function' && v.inputSchema.additionalProperties===false));
   assert.equal(f.coordinator.identity.id,nativeSwarmActorId({taskId:'saved_task',nodeId:'coordinator'}));
   assert.notEqual(f.coordinator.identity.id,f.worker.identity.id);

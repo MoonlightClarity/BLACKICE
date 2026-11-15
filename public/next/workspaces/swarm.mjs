@@ -223,6 +223,13 @@ export function createSwarmWorkspace({ mount, api, events, notify = () => {} } =
     if (item.dependsOn.length) el(b, 'small', '↳ ' + item.dependsOn.join(' · '), 'swarm-muted');
     if (item.unresolvedFailures?.length) pill(b, 'contradicted',
       item.unresolvedFailures.length + ' failed evidence');
+    if (item.nativeLaunch) pill(b, item.nativeLaunch.applicable ? item.nativeLaunch.state : 'stale',
+      item.nativeLaunch.applicable
+        ? item.nativeLaunch.state === 'settled'
+          ? 'Worker runtime ' + (item.nativeLaunch.result?.status || 'unknown') + ' · outcome unverified'
+          : item.nativeLaunch.state === 'provider_attempted' ? 'Provider launch attempted · outcome unknown'
+            : 'Worker launch reserved · not yet invoked'
+        : 'Previous worker launch stale');
     if (item.nativeHandoff) pill(b, item.nativeHandoff.applicable ? item.nativeHandoff.state : 'stale',
       item.nativeHandoff.applicable
         ? item.nativeHandoff.state === 'acknowledged' ? 'Native acknowledgment observed' : 'Native response prepared'
@@ -354,6 +361,33 @@ export function createSwarmWorkspace({ mount, api, events, notify = () => {} } =
     }
     const waiting = item.dependenciesWaiting || [];
     if (waiting.length) el(detail, 'p', 'Waiting for recorded completion and integration: ' + waiting.join(', '), 'swarm-warning');
+    const nativeLaunches = (project.nativeLaunches || []).filter(launch => launch.itemId === item.id);
+    if (nativeLaunches.length) {
+      const section = el(detail, 'section', '', 'swarm-panel');
+      heading(section, 'Host-launched native workers',
+        'A launch reservation is not a provider call. Provider invocation attempts, worker runtime results, assignment acknowledgments, and accepted project completion are separately recorded. Nothing here certifies external work.');
+      for (const launch of nativeLaunches) {
+        const row = el(section, 'article', '', 'swarm-ledger-row');
+        pill(row, launch.state, launch.state === 'settled'
+          ? 'Runtime ' + (launch.result?.status || 'unknown') + ' (not work proof)'
+          : launch.state === 'provider_attempted' ? 'Provider invocation attempted'
+            : 'Reserved before provider invocation');
+        el(row, 'strong', launch.id);
+        el(row, 'p', 'Native task ' + launch.assignedTaskId + ' · worker ' + launch.workerActorId
+          + ' · requirements r' + launch.requirementRevision);
+        el(row, 'small', 'Reserved ' + labelDate(launch.reservedAt)
+          + (launch.providerDispatchAttemptedAt
+            ? ' · provider attempt ' + labelDate(launch.providerDispatchAttemptedAt)
+            : ' · no recorded provider attempt')
+          + (launch.result?.recordedAt
+            ? ' · runtime result ' + labelDate(launch.result.recordedAt)
+            : ' · runtime result unknown'), 'swarm-muted');
+        el(row, 'small', 'Exact assignment SHA-256 ' + launch.assignmentDigest
+          + ' · no automatic replay; result and acknowledgment are not work acceptance.', 'swarm-muted');
+      }
+      if (item.nativeLaunch?.applicable === false)
+        el(section, 'p', 'This launch is stale against current requirements/owner. Its previous runtime status is retained, not current proof.', 'swarm-warning');
+    }
     const nativeReceipts = (project.nativeDeliveries || []).filter(receipt => receipt.itemId === item.id);
     if (nativeReceipts.length) {
       const section = el(detail, 'section', '', 'swarm-panel');

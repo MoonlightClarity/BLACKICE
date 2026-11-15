@@ -60,6 +60,9 @@ test('actual temporary server registers native engine tools; engine/model callba
   };
   f.runtime.onFixture=async options=>{
     assert.ok(options.dynamicTools.some(entry=>entry.name==='relay_swarm_write'));
+    assert.equal(options.dynamicTools.some(entry=>entry.name==='relay_swarm_launch'),
+      options.dynamicTools.some(entry=>entry.name==='relay_delegate'),
+      'server only advertises actual native Swarm worker launch when the real scheduler is attached');
     const self=(await dispatch(options,'relay_swarm_read')).self;
     identity=self.id;
     const created=await dispatch(options,'relay_swarm_write',{
