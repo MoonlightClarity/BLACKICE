@@ -17,8 +17,8 @@ jobs:
       max-parallel: 1
       matrix:
         source:
-          - 3d893c1b3e486b1c5dc2fb85fbfa820a6e467429
-          - d4bd90b76661fdb6cb747eab5c5064cd335c57dd
+          - a86844b2ec5f397835045dfb904dc00f726d4b5a
+          - 27715ee9b8cea7bf75eb9dcb34c174293379914d
     steps:
       - uses: actions/checkout@v7
         with:
