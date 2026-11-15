@@ -1,0 +1,352 @@
+TAP version 13
+# Subtest: concurrent identical admissions have one durable identity and changed arguments conflict
+ok 1 - concurrent identical admissions have one durable identity and changed arguments conflict
+  ---
+  duration_ms: 46.5551
+  type: 'test'
+  ...
+# Subtest: request lookup waits for durable admission and checks the owner and original digest without admitting work
+ok 2 - request lookup waits for durable admission and checks the owner and original digest without admitting work
+  ---
+  duration_ms: 27.7275
+  type: 'test'
+  ...
+# Subtest: idempotency keys are scoped to the authenticated owner and record reads enforce that owner
+ok 3 - idempotency keys are scoped to the authenticated owner and record reads enforce that owner
+  ---
+  duration_ms: 30.0482
+  type: 'test'
+  ...
+# Subtest: restart retains completed receipts and marks queued or dispatched work interrupted without replay
+ok 4 - restart retains completed receipts and marks queued or dispatched work interrupted without replay
+  ---
+  duration_ms: 71.2579
+  type: 'test'
+  ...
+# Subtest: saved local approvals survive restart but volatile signed inputs never do
+ok 5 - saved local approvals survive restart but volatile signed inputs never do
+  ---
+  duration_ms: 56.2054
+  type: 'test'
+  ...
+# Subtest: startup uses at most eight readers and validates the entire index before any recovery write or admission
+ok 6 - startup uses at most eight readers and validates the entire index before any recovery write or admission
+  ---
+  duration_ms: 119.0138
+  type: 'test'
+  ...
+# Subtest: startup indexes exact UTF-8 receipt bytes with preserved Unicode payload and hash
+ok 7 - startup indexes exact UTF-8 receipt bytes with preserved Unicode payload and hash
+  ---
+  duration_ms: 39.6058
+  type: 'test'
+  ...
+# Subtest: a failed startup reader stops new reads and drains in-flight work before lease release or close
+ok 8 - a failed startup reader stops new reads and drains in-flight work before lease release or close
+  ---
+  duration_ms: 127.0663
+  type: 'test'
+  ...
+# Subtest: expected revision rejects stale interaction edits and immutable request fields cannot change
+ok 9 - expected revision rejects stale interaction edits and immutable request fields cannot change
+  ---
+  duration_ms: 24.7581
+  type: 'test'
+  ...
+# Subtest: a second process cannot own the same live ledger; after hard process exit recovery is honest
+ok 10 - a second process cannot own the same live ledger; after hard process exit recovery is honest
+  ---
+  duration_ms: 560.4794
+  type: 'test'
+  ...
+# Subtest: corrupt durable records fail closed without deleting records or silently forgetting request IDs
+ok 11 - corrupt durable records fail closed without deleting records or silently forgetting request IDs
+  ---
+  duration_ms: 38.0734
+  type: 'test'
+  ...
+# Subtest: ledger capacity preserves all idempotency receipts instead of silently expiring old keys
+ok 12 - ledger capacity preserves all idempotency receipts instead of silently expiring old keys
+  ---
+  duration_ms: 29.0675
+  type: 'test'
+  ...
+# Subtest: completed history can exceed the unfinished limit and retains exact identities and payloads after reopening
+ok 13 - completed history can exceed the unfinished limit and retains exact identities and payloads after reopening
+  ---
+  duration_ms: 113.5954
+  type: 'test'
+  ...
+# Subtest: queued, running and awaiting-input work consume capacity, while terminal outcomes release it
+ok 14 - queued, running and awaiting-input work consume capacity, while terminal outcomes release it
+  ---
+  duration_ms: 67.0987
+  type: 'test'
+  ...
+# Subtest: terminal payloads leave memory and metadata reads never hydrate or copy arguments, clients or results
+ok 15 - terminal payloads leave memory and metadata reads never hydrate or copy arguments, clients or results
+  ---
+  duration_ms: 45.9011
+  type: 'test'
+  ...
+# Subtest: terminal hydration is serialized with receipt updates and snapshots remain independent of later admissions
+ok 16 - terminal hydration is serialized with receipt updates and snapshots remain independent of later admissions
+  ---
+  duration_ms: 41.8802
+  type: 'test'
+  ...
+# Subtest: unreadable or changed terminal receipt files fail closed without forgetting identities or overwriting evidence
+    # Subtest: corrupt
+    ok 1 - corrupt
+      ---
+      duration_ms: 46.3784
+      type: 'test'
+      ...
+    # Subtest: changed
+    ok 2 - changed
+      ---
+      duration_ms: 37.2843
+      type: 'test'
+      ...
+    # Subtest: missing
+    ok 3 - missing
+      ---
+      duration_ms: 22.1231
+      type: 'test'
+      ...
+    1..3
+ok 17 - unreadable or changed terminal receipt files fail closed without forgetting identities or overwriting evidence
+  ---
+  duration_ms: 106.44
+  type: 'test'
+  ...
+# Subtest: unconfirmed writes cannot overwrite receipt evidence, including a rename that committed before reporting failure
+    # Subtest: rename not committed
+    ok 1 - rename not committed
+      ---
+      duration_ms: 49.892
+      type: 'test'
+      ...
+    # Subtest: rename committed
+    ok 2 - rename committed
+      ---
+      duration_ms: 52.7789
+      type: 'test'
+      ...
+    1..2
+ok 18 - unconfirmed writes cannot overwrite receipt evidence, including a rename that committed before reporting failure
+  ---
+  duration_ms: 103.1619
+  type: 'test'
+  ...
+# Subtest: a failed temporary handle close preserves the storage error used to cancel active work
+ok 19 - a failed temporary handle close preserves the storage error used to cancel active work
+  ---
+  duration_ms: 29.7614
+  type: 'test'
+  ...
+# Subtest: Windows receipt replacement tolerates a transient reader and saves one next revision
+    # Subtest: EPERM
+    ok 1 - EPERM
+      ---
+      duration_ms: 68.7112
+      type: 'test'
+      ...
+    # Subtest: EACCES
+    ok 2 - EACCES
+      ---
+      duration_ms: 72.7313
+      type: 'test'
+      ...
+    # Subtest: EBUSY
+    ok 3 - EBUSY
+      ---
+      duration_ms: 63.5147
+      type: 'test'
+      ...
+    1..3
+ok 20 - Windows receipt replacement tolerates a transient reader and saves one next revision
+  ---
+  duration_ms: 205.5703
+  type: 'test'
+  ...
+# Subtest: Windows receipt replacement exhausts a bounded refusal without overwriting the prior receipt
+ok 21 - Windows receipt replacement exhausts a bounded refusal without overwriting the prior receipt
+  ---
+  duration_ms: 390.8943
+  type: 'test'
+  ...
+# Subtest: receipt replacement does not retry other platforms or unknown write failures
+    # Subtest: linux:EPERM
+    ok 1 - linux:EPERM
+      ---
+      duration_ms: 27.7562
+      type: 'test'
+      ...
+    # Subtest: win32:EIO
+    ok 2 - win32:EIO
+      ---
+      duration_ms: 29.926
+      type: 'test'
+      ...
+    # Subtest: win32:ENOENT
+    ok 3 - win32:ENOENT
+      ---
+      duration_ms: 27.1735
+      type: 'test'
+      ...
+    1..3
+ok 22 - receipt replacement does not retry other platforms or unknown write failures
+  ---
+  duration_ms: 85.7295
+  type: 'test'
+  ...
+# Subtest: Windows receipt retries stop when the destination, temporary file or lease changes
+    # Subtest: destination
+    ok 1 - destination
+      ---
+      duration_ms: 39.089
+      type: 'test'
+      ...
+    # Subtest: destination removed
+    ok 2 - destination removed
+      ---
+      duration_ms: 36.5081
+      type: 'test'
+      ...
+    # Subtest: temporary
+    ok 3 - temporary
+      ---
+      duration_ms: 51.3072
+      type: 'test'
+      ...
+    # Subtest: temporary removed
+    ok 4 - temporary removed
+      ---
+      duration_ms: 29.8197
+      type: 'test'
+      ...
+    # Subtest: lease
+    ok 5 - lease
+      ---
+      duration_ms: 37.9082
+      type: 'test'
+      ...
+    1..5
+ok 23 - Windows receipt retries stop when the destination, temporary file or lease changes
+  ---
+  duration_ms: 195.5071
+  type: 'test'
+  ...
+# Subtest: Windows receipt retries never replace an unexpectedly created admission destination
+ok 24 - Windows receipt retries never replace an unexpectedly created admission destination
+  ---
+  duration_ms: 28.9403
+  type: 'test'
+  ...
+# Subtest: Windows receipt retries recheck destination and lease after the initial proof enters its wait
+    # Subtest: destination
+    ok 1 - destination
+      ---
+      duration_ms: 72.9779
+      type: 'test'
+      ...
+    # Subtest: lease
+    ok 2 - lease
+      ---
+      duration_ms: 66.2467
+      type: 'test'
+      ...
+    1..2
+ok 25 - Windows receipt retries recheck destination and lease after the initial proof enters its wait
+  ---
+  duration_ms: 139.8558
+  type: 'test'
+  ...
+# Subtest: Windows receipt retry categories never turn a committed rename with a lost acknowledgement into success
+ok 26 - Windows receipt retry categories never turn a committed rename with a lost acknowledgement into success
+  ---
+  duration_ms: 45.9868
+  type: 'test'
+  ...
+# Subtest: startup bulk resource index preserves exact order and subsequent updates
+ok 27 - startup bulk resource index preserves exact order and subsequent updates
+  ---
+  duration_ms: 278.7098
+  type: 'test'
+  ...
+# Subtest: URL identity preserves resource query, ordering and path; only tracking and fragment stripped
+ok 28 - URL identity preserves resource query, ordering and path; only tracking and fragment stripped
+  ---
+  duration_ms: 1.7397
+  type: 'test'
+  ...
+# Subtest: private inputs and arbitrary links are not indexed; observed connected result is supported
+ok 29 - private inputs and arbitrary links are not indexed; observed connected result is supported
+  ---
+  duration_ms: 1.1024
+  type: 'test'
+  ...
+# Subtest: automatic durable backfill survives reopen and preserves uncertain outcomes
+ok 30 - automatic durable backfill survives reopen and preserves uncertain outcomes
+  ---
+  duration_ms: 65.9946
+  type: 'test'
+  ...
+# Subtest: owner and all required scopes isolate both matches and payloads
+ok 31 - owner and all required scopes isolate both matches and payloads
+  ---
+  duration_ms: 40.7772
+  type: 'test'
+  ...
+# Subtest: missing and interrupted receipts never imply success
+ok 32 - missing and interrupted receipts never imply success
+  ---
+  duration_ms: 33.7379
+  type: 'test'
+  ...
+# Subtest: bounded query hydrates only selected matches and limits evidence
+ok 33 - bounded query hydrates only selected matches and limits evidence
+  ---
+  duration_ms: 268.8028
+  type: 'test'
+  ...
+# Subtest: startup metrics report validation, recovery and bounded counters without receipt payloads
+ok 34 - startup metrics report validation, recovery and bounded counters without receipt payloads
+  ---
+  duration_ms: 52.2627
+  type: 'test'
+  ...
+# Subtest: failed validation stays fail closed and telemetry does not expose offending content
+ok 35 - failed validation stays fail closed and telemetry does not expose offending content
+  ---
+  duration_ms: 36.5851
+  type: 'test'
+  ...
+# Subtest: throwing or rejected telemetry callbacks cannot change ledger readiness
+ok 36 - throwing or rejected telemetry callbacks cannot change ledger readiness
+  ---
+  duration_ms: 24.7383
+  type: 'test'
+  ...
+# Subtest: diagnostics persistence accepts only the fixed metric shape and discards arbitrary text
+ok 37 - diagnostics persistence accepts only the fixed metric shape and discards arbitrary text
+  ---
+  duration_ms: 13.0851
+  type: 'test'
+  ...
+# Subtest: unobserved stores do not allocate instrumentation or emit anything during later reads
+ok 38 - unobserved stores do not allocate instrumentation or emit anything during later reads
+  ---
+  duration_ms: 18.0118
+  type: 'test'
+  ...
+1..38
+# tests 56
+# suites 0
+# pass 56
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3940.9959

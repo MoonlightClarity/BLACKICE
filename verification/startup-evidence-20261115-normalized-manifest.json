@@ -1,0 +1,42 @@
+{
+    "kind":  "supplementary-view-only-normalization",
+    "codeCommit":  "f815902a7d2ff12f085b111b939fd5c9b70b8d6b",
+    "rootManifestSha256":  "c96ae118fe39e7892288fb9e23624dd19513062090859c599f3ead499c321bc9",
+    "sourcePreserved":  true,
+    "entries":  [
+                    {
+                        "raw":  "startup-evidence-20261115-focused-tests.tap",
+                        "rawEncoding":  "UTF-16LE BOM, original PowerShell redirected output preserved",
+                        "rawBytes":  23964,
+                        "rawSha256":  "96ed421c20b2380d3e28d0cf48e4f6062aa499be3f41b1a72ef05127400499ba",
+                        "normalized":  "startup-evidence-20261115-focused-tests.utf8.tap",
+                        "normalizedEncoding":  "UTF-8 without BOM",
+                        "normalizedBytes":  11981,
+                        "normalizedSha256":  "4727dffc18857165856ef980a250a68b34cb6c638b9e759b72852eeea4451600",
+                        "decodedTextExactlyEqual":  true
+                    },
+                    {
+                        "raw":  "startup-evidence-20261115-byte-benchmark.json",
+                        "rawEncoding":  "UTF-16LE BOM, original PowerShell redirected output preserved",
+                        "rawBytes":  3962,
+                        "rawSha256":  "58cdbd7361aeaf9d4bccc3fadeee089595d23464b1629f5b544bb67e545642d4",
+                        "normalized":  "startup-evidence-20261115-byte-benchmark.utf8.json",
+                        "normalizedEncoding":  "UTF-8 without BOM",
+                        "normalizedBytes":  1980,
+                        "normalizedSha256":  "9930110530ac0f7832e9e279f7513f4fd00fb86a4d800f2a95daeab847f5c834",
+                        "decodedTextExactlyEqual":  true
+                    },
+                    {
+                        "raw":  "startup-evidence-20261115-ledger-compare.json",
+                        "rawEncoding":  "UTF-16LE BOM, original PowerShell redirected output preserved",
+                        "rawBytes":  13672,
+                        "rawSha256":  "1ed98d71370279f4c6da9d2a448982bc4eb0552fd063b794c9bc588c196bee9a",
+                        "normalized":  "startup-evidence-20261115-ledger-compare.utf8.json",
+                        "normalizedEncoding":  "UTF-8 without BOM",
+                        "normalizedBytes":  6835,
+                        "normalizedSha256":  "2554d7dcbce5953bab3fc4dfcd250751411c6fca099a6b62aa6f8a146b4da372",
+                        "decodedTextExactlyEqual":  true
+                    }
+                ],
+    "limit":  "UTF-8 copies provide readable review; original raw tool output unchanged and still authoritative"
+}
