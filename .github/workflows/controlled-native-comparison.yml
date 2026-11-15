@@ -17,8 +17,8 @@ jobs:
       max-parallel: 1
       matrix:
         source:
-          - 770f377bbf5248e7719af69ec5c727f96e4d012c
-          - 6720d1d608f3267fed947cdbc49ee7bb7375d237
+          - 3d893c1b3e486b1c5dc2fb85fbfa820a6e467429
+          - d4bd90b76661fdb6cb747eab5c5064cd335c57dd
     steps:
       - uses: actions/checkout@v7
         with:
@@ -42,7 +42,7 @@ jobs:
           $env:BLACKICE_FILL_QA_OUTPUT=Join-Path (Get-Location) 'native-evidence/fill'
           @'
           import {spawnSync} from 'node:child_process';
-          import {writeFileSync,realpathSync} from 'node:fs';
+          import {writeFileSync,realpathSync,readFileSync} from 'node:fs';
           import {createHash} from 'node:crypto';
           import {appFingerprint} from './scripts/release-check.mjs';
           const startedAt=new Date().toISOString();
@@ -57,6 +57,7 @@ jobs:
           writeFileSync('native-evidence/receipt.json',JSON.stringify(receipt,null,2));
           console.log('NATIVE_COMPARISON_RECEIPT='+JSON.stringify(receipt));
           console.log(tap);
+          try { console.log('NATIVE_FIXTURE_REPORT='+readFileSync('native-evidence/fill/result.json','utf8').replace(/\\n/g,'')); } catch {}
           process.exitCode=receipt.passed?0:1;
           '@ | Set-Content -LiteralPath run-native-comparison.mjs -Encoding utf8NoBOM
           node run-native-comparison.mjs
