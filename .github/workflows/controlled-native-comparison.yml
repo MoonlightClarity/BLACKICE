@@ -1,0 +1,69 @@
+name: Controlled native browser comparison
+on:
+  push:
+    branches: [codex/native-comparison-23995]
+    paths: [.github/workflows/controlled-native-comparison.yml]
+permissions:
+  contents: read
+concurrency:
+  group: controlled-native-comparison-23995
+  cancel-in-progress: false
+jobs:
+  native:
+    runs-on: windows-2025
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        source:
+          - 770f377bbf5248e7719af69ec5c727f96e4d012c
+          - 6720d1d608f3267fed947cdbc49ee7bb7375d237
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.source }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.2'
+      - run: npm ci
+      - name: Run disposable native input fixtures
+        shell: pwsh
+        env:
+          RELAY_LIVE_BROWSER_QA: '1'
+          RELAY_TRUSTED_FILL_QA: '1'
+          EXACT_SOURCE: ${{ matrix.source }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:TEMP=(Get-Item -LiteralPath $env:TEMP).FullName
+          $env:TMP=$env:TEMP
+          New-Item -ItemType Directory -Path native-evidence -Force | Out-Null
+          $env:BLACKICE_FILL_QA_OUTPUT=Join-Path (Get-Location) 'native-evidence/fill'
+          @'
+          import {spawnSync} from 'node:child_process';
+          import {writeFileSync,realpathSync} from 'node:fs';
+          import {createHash} from 'node:crypto';
+          import {appFingerprint} from './scripts/release-check.mjs';
+          const startedAt=new Date().toISOString();
+          process.env.TEMP=realpathSync(process.env.TEMP);process.env.TMP=process.env.TEMP;process.env.TMPDIR=process.env.TEMP;
+          const args=['--test','--test-concurrency=1','--test-reporter=tap','--test-name-pattern=contained input updates application state|actual hidden Chromium fill commits','tests/browser-input-focus.integration.test.mjs','tests/browser-trusted-fill.test.mjs'];
+          const result=spawnSync(process.execPath,args,{encoding:'utf8',timeout:240000,maxBuffer:16*1024*1024,env:process.env});
+          const tap=result.stdout||'';
+          writeFileSync('native-evidence/suite.tap',tap);
+          writeFileSync('native-evidence/stderr.txt',result.stderr||'');
+          const counts=Object.fromEntries(['tests','pass','fail','skipped','cancelled'].map(key=>[key,Number(tap.match(new RegExp('^# '+key+' (\\d+)','m'))?.[1]??NaN)]));
+          const receipt={source:process.env.EXACT_SOURCE,appFingerprint:await appFingerprint(process.cwd()),startedAt,endedAt:new Date().toISOString(),node:process.version,platform:process.platform,counts,exitCode:result.status,error:result.error?.code||null,tapSha256:createHash('sha256').update(tap).digest('hex'),passed:result.status===0&&counts.pass===3&&counts.fail===0&&counts.skipped===0&&counts.cancelled===0,scope:'Actual BLACKICE driver with disposable Chromium fixtures; no model, installed user profile or external account. Not a Planning/Directory efficacy comparison.'};
+          writeFileSync('native-evidence/receipt.json',JSON.stringify(receipt,null,2));
+          console.log('NATIVE_COMPARISON_RECEIPT='+JSON.stringify(receipt));
+          console.log(tap);
+          process.exitCode=receipt.passed?0:1;
+          '@ | Set-Content -LiteralPath run-native-comparison.mjs -Encoding utf8NoBOM
+          node run-native-comparison.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Native comparison failed; preserve evidence.' }
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-${{ matrix.source }}
+          path: native-evidence
+          if-no-files-found: error
