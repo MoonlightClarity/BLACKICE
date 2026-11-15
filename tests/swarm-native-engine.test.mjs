@@ -458,6 +458,122 @@ test('an actual native provider launch with uncertain result persistence never a
   assert.equal(f.board.snapshot('uncertain_swarm').nativeLaunches.length,1);
 });
 
+test('real Swarm launch records durable authorization but Goal cutoff after async dispatch prevents model call and cleans worker',async t=>{
+  const cutoff=100, clock={now:99};
+  let f, selectedCalls=0, audits=0, admissionChecks=0, fences=0, launchArgs;
+  f=await fixture(t,async options=>{
+    if (options.prompt.startsWith('You are a short-lived BLACKICE subagent.')) {
+      if (options.prompt.includes('Independently inspect the admission receipt')) {
+        audits++;return {output:'Independent synthetic audit.'};
+      }
+      selectedCalls++;
+      return {output:'INVALID: this model must never run after the Goal cutoff.'};
+    }
+    await written(options,'create_project',{id:'deadline_swarm',name:'Deadline dispatch boundary',
+      objective:'Durable provider authorization is not proof a provider was actually called.'});
+    await written(options,'propose_item',{id:'deadline_item',title:'Exact bounded worker',
+      scope:'No work after the absolute Goal deadline.',
+      requirements:'Only execute while current source and Goal admission permit.',
+      ownerId:null,dependsOn:[],verificationTarget:'unit'},{
+      projectId:'deadline_swarm',expectedProjectRevision:f.board.snapshot('deadline_swarm').revision
+    });
+    const originalMark=f.nativeSwarmTools.markLaunchAttempt;
+    f.nativeSwarmTools.markLaunchAttempt=async args=>{
+      fences++;
+      const durable=await originalMark(args);
+      const snapshot=f.board.snapshot('deadline_swarm');
+      assert.equal(snapshot.nativeLaunches.length,1);
+      assert.equal(snapshot.nativeLaunches[0].state,'provider_attempted',
+        'real Swarm board persisted the pre-model authorization fence');
+      assert.equal(snapshot.nativeLaunches[0].result,null);
+      // Cross the cutoff AFTER the real durable fence await has settled.
+      // No deadline timer or explicit cancellation helper runs.
+      await Promise.resolve();
+      clock.now=cutoff;
+      return durable;
+    };
+    launchArgs={
+      requestId:'goal_boundary_after_durable_swarm_fence',projectId:'deadline_swarm',
+      itemId:'deadline_item',expectedItemRevision:1,expectedRequirementRevision:1,
+      assignedTaskId:'deadline_worker',tasks:[
+        {id:'deadline_worker',prompt:'Only execute an exact admitted native assignment.'},
+        {id:'independent_clock_audit',prompt:'Independently inspect the admission receipt; no external effects.'}
+      ]
+    };
+    const response=await options.onToolCall({name:'relay_swarm_launch',arguments:launchArgs});
+    assert.equal(response.success,false);
+    const report=body(response);
+    assert.equal(report.admitted,true);
+    assert.equal(report.launch.state,'settled');
+    assert.equal(report.launch.dispatchAdmission,'durable-authorized-only');
+    assert.equal(report.launch.result.status,'failed');
+    assert.equal(report.launch.result.hostRunAgentCallAttempted,false,
+      'host refused runtime.runAgent even though a durable authorization was recorded');
+    assert.equal(report.launch.result.externalProviderInvocationVerified,false);
+    assert.match(report.launch.result.error,/absolute Goal deadline passed before provider admission/);
+    assert.ok(report.launch.providerDispatchAttemptedAt);
+    assert.equal(selectedCalls,0,'selected native model was never called');
+    assert.equal(report.launch.result.workOutcomeVerified,false);
+    return {output:'Goal deadline recheck prevented selected native provider work.',
+      threadId:'deadline-authorization-only'};
+  });
+  // Exercise the engine's real beforeModel callback using a deterministic Goal
+  // wall-clock admission stub. The separate goal-deadline-review2 regression
+  // exercises ConversationGoals.assertProviderAdmission itself.
+  f.engine.goals={
+    prepareRun(){},async admitRun(){},
+    assertProviderAdmission(_run,{signal}={}){
+      admissionChecks++;
+      if(signal?.aborted)throw Object.assign(Error('Parent cancelled.'),{name:'AbortError',code:'ABORT_ERR'});
+      if(clock.now>=cutoff)throw Object.assign(
+        Error('The absolute Goal deadline passed before provider admission.'),
+        {code:'GOAL_DEADLINE_EXPIRED',actionDispatched:false});
+    },
+    forRun:()=>null,instructions:()=>'',wrapTools:(_run,_node,handler)=>handler,
+    retainsResources:()=>false,async close(){}
+  };
+  const tasks=await new TaskStateStore({dataDir:f.engine.dataDir}).init();
+  f.engine.tasks=tasks;
+  t.after(()=>tasks.close());
+  const releases=[],finishes=[];
+  f.engine.browser={
+    status:()=>({contained:false,tabs:[]}),
+    releaseOwner:async(owner,options)=>{releases.push({owner,options});return {released:[owner.nodeId]};}
+  };
+  const originalFinish=tasks.awareness.finish.bind(tasks.awareness);
+  tasks.awareness.finish=(id,status)=>{finishes.push({id,status});return originalFinish(id,status);};
+  const started=f.engine.startRun({workflow:graph(),
+    input:'Run only the isolated Goal cutoff Swarm provider fence fixture.',planningMode:'off'});
+  await f.engine.executions.get(started.id);
+  const state=f.board.snapshot('deadline_swarm');
+  const launch=state.nativeLaunches[0];
+  assert.ok(launch);
+  assert.equal(state.items[0].phase,'queued');
+  assert.equal(state.items[0].completionCurrent,false);
+  assert.equal(launch.state,'settled');
+  assert.equal(launch.result.status,'failed');
+  assert.equal(launch.result.hostRunAgentCallAttempted,false);
+  assert.equal(fences,1);
+  assert.equal(selectedCalls,0);
+  assert.ok(admissionChecks>=3,'Goal gate ran before the job and again after the awaited dispatch fence');
+  assert.equal(releases.filter(row=>row.owner.nodeId===launch.workerNodeId).length,1,
+    'browser lifecycle cleanup was performed despite post-fence Goal rejection');
+  assert.equal(releases.find(row=>row.owner.nodeId===launch.workerNodeId).options.status,'failed');
+  assert.deepEqual(finishes.filter(row=>row.id===launch.runId+':'+launch.workerNodeId)
+    .map(row=>row.status),['failed'],'real awareness lifecycle ended with failed status');
+  let replays=0;
+  const reopened=await f.nativeSwarmTools({
+    taskId:launch.taskId,runId:launch.runId,nodeId:launch.parentNodeId,isWorker:false,
+    launchDelegates:async()=>{replays++;throw Error('Duplicate provider call forbidden');}
+  });
+  const deduped=body(await reopened.handle({name:'relay_swarm_launch',arguments:launchArgs}));
+  assert.equal(deduped.duplicate,true);
+  assert.equal(deduped.noReplay,true);
+  assert.equal(deduped.modelStarted,false);
+  assert.equal(replays,0);
+  assert.equal(selectedCalls,0);
+});
+
 for (const mutation of ['requirements', 'reassign', 'phase']) {
   test('real engine refuses ' + mutation + ' after reservation while final provider dispatch is delayed', async t => {
     let f, selectedProviderCalls=0, markCalls=0, enterDispatch, releaseDispatch;

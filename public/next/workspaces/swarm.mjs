@@ -227,7 +227,7 @@ export function createSwarmWorkspace({ mount, api, events, notify = () => {} } =
       item.nativeLaunch.applicable
         ? item.nativeLaunch.state === 'settled'
           ? 'Worker runtime ' + (item.nativeLaunch.result?.status || 'unknown') + ' · outcome unverified'
-          : item.nativeLaunch.state === 'provider_attempted' ? 'Provider launch attempted · outcome unknown'
+          : item.nativeLaunch.state === 'provider_attempted' ? 'Host dispatch authorized · actual provider call unverified'
             : 'Worker launch reserved · not yet invoked'
         : 'Previous worker launch stale');
     if (item.nativeHandoff) pill(b, item.nativeHandoff.applicable ? item.nativeHandoff.state : 'stale',
@@ -365,23 +365,30 @@ export function createSwarmWorkspace({ mount, api, events, notify = () => {} } =
     if (nativeLaunches.length) {
       const section = el(detail, 'section', '', 'swarm-panel');
       heading(section, 'Host-launched native workers',
-        'A launch reservation is not a provider call. Provider invocation attempts, worker runtime results, assignment acknowledgments, and accepted project completion are separately recorded. Nothing here certifies external work.');
+        'A launch reservation and durable dispatch authorization are NOT proof of a provider call. Host runtime.runAgent invocation, worker runtime results, assignment acknowledgments, and accepted work are separate observations. No remote-provider or external-work efficacy is certified.');
       for (const launch of nativeLaunches) {
         const row = el(section, 'article', '', 'swarm-ledger-row');
         pill(row, launch.state, launch.state === 'settled'
           ? 'Runtime ' + (launch.result?.status || 'unknown') + ' (not work proof)'
-          : launch.state === 'provider_attempted' ? 'Provider invocation attempted'
+          : launch.state === 'provider_attempted' ? 'Host dispatch authorized; model call not verified'
             : 'Reserved before provider invocation');
         el(row, 'strong', launch.id);
         el(row, 'p', 'Native task ' + launch.assignedTaskId + ' · worker ' + launch.workerActorId
           + ' · requirements r' + launch.requirementRevision);
         el(row, 'small', 'Reserved ' + labelDate(launch.reservedAt)
           + (launch.providerDispatchAttemptedAt
-            ? ' · provider attempt ' + labelDate(launch.providerDispatchAttemptedAt)
-            : ' · no recorded provider attempt')
+            ? ' · durable dispatch fence ' + labelDate(launch.providerDispatchAttemptedAt)
+            : ' · no recorded dispatch authorization')
           + (launch.result?.recordedAt
             ? ' · runtime result ' + labelDate(launch.result.recordedAt)
             : ' · runtime result unknown'), 'swarm-muted');
+        if (launch.result)
+          el(row, 'small', 'Host runtime.runAgent call: '
+            + (launch.result.hostRunAgentCallAttempted === true ? 'attempted'
+              : launch.result.hostRunAgentCallAttempted === false ? 'NOT called'
+                : 'unknown (no host call evidence)')
+            + ' · remote provider invocation: NOT verified'
+            + ' · worker result: ' + (launch.result.status || 'unknown'), 'swarm-muted');
         el(row, 'small', 'Exact assignment SHA-256 ' + launch.assignmentDigest
           + ' · no automatic replay; result and acknowledgment are not work acceptance.', 'swarm-muted');
       }
