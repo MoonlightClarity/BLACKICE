@@ -486,16 +486,17 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
   process.on('SIGTERM', () => app.quit());
   process.on('SIGINT', () => app.quit());
   app.whenReady().then(async () => {
-    // The first durable checkpoint precedes profile recovery and local-harness
-    // startup. A hard exit leaves an explicit incomplete, last-known-stage file.
-    await criticalStartupTrace.start({ buildFiles: {
+    // Begin best-effort tracing before profile recovery. Diagnostic source reads
+    // or checkpoint I/O must never delay the startup indicator or profile work.
+    // If the first checkpoint cannot persist, health reports the limitation.
+    void criticalStartupTrace.start({ buildFiles: {
       package: path.join(APP_DIR, 'package.json'),
       desktop: path.join(APP_DIR, 'desktop', 'main.mjs'),
       server: path.join(APP_DIR, 'server.mjs'),
       directjobs: path.join(APP_DIR, 'lib', 'direct-execution-jobs.mjs'),
       ledgermetrics: path.join(APP_DIR, 'lib', 'ledger-startup-metrics.mjs'),
       criticaltrace: path.join(APP_DIR, 'lib', 'startup-critical-trace.mjs'),
-    } });
+    } }).catch(() => {});
     profileTraceSpan = criticalStartupTrace.begin('desktop-profile');
     await repairDesktopShortcut({ shell, appData: app.getPath('appData'), executable: process.execPath, iconPath: DESKTOP_ICON, appUserModelId: APP_USER_MODEL_ID })
       .catch(() => console.warn('BLACKICE could not refresh its Windows shortcut icon.'));
@@ -619,10 +620,10 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
     restartReady = true;
     criticalStartupTrace.mark('desktop-ready');
     await startup.step(() => saveRuntimeRecord());
-    await criticalStartupTrace.finish('ready');
+    void criticalStartupTrace.finish('ready').catch(() => {});
   }).catch(async error => {
     criticalStartupTrace.end(profileTraceSpan, 'failed', error);
-    await criticalStartupTrace.finish('failed').catch(() => {});
+    void criticalStartupTrace.finish('failed').catch(() => {});
     if (startup.stopped || shutdownPromise || didClose) return;
     startup.progress('local-harness', 'failed');
     await diagnostics.recordError('desktop', 'start_failed', error);
