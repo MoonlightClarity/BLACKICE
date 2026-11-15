@@ -18,6 +18,15 @@ function fixture(t){
 }
 const savedGoal=(changes={})=>({id:'goal-one',revision:2,objective:'Finish the implementation and verify it.',status:'active',turns:2,maxTurns:null,currentRunId:'run-one',...changes});
 
+test('ordinary chats and active goals do not mount an uncertain-actions review task',async t=>{
+  const {dom,view}=fixture(t),calls=[];
+  const controls=createGoalControls({view,api:async(route)=>{calls.push(route);return {goal:savedGoal()};},getContext:()=>({})});
+  t.after(()=>controls.destroy());
+  assert.equal(dom.mount.querySelector('#next-chat-goal-effects'),null);
+  assert.doesNotMatch(dom.mount.textContent,/Review uncertain|Inspect uncertain actions|Evidence checked/);
+  assert.ok(calls.every(route=>!route.endsWith('/goal-effects')));
+});
+
 test('calibrate an existing chat, turn autonomy on, off, and on again without a new conversation',async t=>{
   const {view}=fixture(t),posts=[];
   let goal=null,createdRuns=0;

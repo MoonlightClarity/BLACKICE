@@ -1252,7 +1252,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     let result;
     try {
       const main = tab.window.webContents.mainFrame;
-      if (frame !== main && !main.framesInSubtree.includes(frame)) throw Object.assign(error('The observed frame was replaced. Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE' });
+      if (frame !== main && !main.framesInSubtree.includes(frame)) throw Object.assign(error('The observed frame was replaced. Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE', actionDispatched: false });
       result = await this.pageWork(tab, frame.executeJavaScript(`(${elementActionResult.toString()})(${elementAction.toString()},${smoothPageScroll.toString()},${JSON.stringify(this.key)},${JSON.stringify(args.ref)},${JSON.stringify(action)},${JSON.stringify({ ...args, ...extra })},${inspectObservedFormControl.toString()})`), signal);
     } catch (reason) {
       if (disposedFrame(reason)) { tab.refs.delete(args.ref); tab.refContexts?.delete(args.ref); throw Object.assign(error('The observed frame was replaced. Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE' }); }

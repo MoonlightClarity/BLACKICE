@@ -441,6 +441,7 @@ export async function createHarnessServer(options = {}) {
   engine.nativeVisualTools=nativeVisualTools(visuals,{isClosing:connectorClosing});
   const emailClient = options.emailClient || null;
   directExecution = options.directExecution || await startupPhase(diagnostics, 'direct-jobs', () => new DirectExecutionAPI({
+    onStartupDiagnostics: value => diagnostics.record(value),
     dataDir: path.resolve(dataDir), allowedRoot: defaultCwd, browser, patchStore: engine.filePatches, taskStore:tasks,
     isClosing: connectorClosing, onChange: connectorChanged,
     resolveBrowserConversationOwner: id => resolveBrowserConversationOwner(id, conversations),

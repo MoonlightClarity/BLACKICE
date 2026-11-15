@@ -331,7 +331,7 @@ test('refs from separate filtered reads stay usable on their original connected 
   // An observed frame that has been replaced is also retired before input.
   const oldFrame = f.frame;
   f.tab.window.webContents.mainFrame = { processId: 2, routingId: 2, framesInSubtree: [], executeJavaScript: async () => assert.fail('A stale frame must not dispatch input.') };
-  await assert.rejects(f.driver.element(f.tab, { ref: refs[1], value: 'yes' }, 'select'), { code: 'BROWSER_REF_STALE' });
+  await assert.rejects(f.driver.element(f.tab, { ref: refs[1], value: 'yes' }, 'select'), { code: 'BROWSER_REF_STALE', actionDispatched: false });
   assert.notEqual(f.tab.window.webContents.mainFrame, oldFrame);
 });
 

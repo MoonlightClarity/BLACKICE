@@ -74,7 +74,7 @@ test('saved local approvals survive restart but volatile signed inputs never do'
   assert.equal((await second.get(secret.id)).effects.possible, false);
 });
 
-test('startup uses at most four readers and validates the entire index before any recovery write or admission', async t => {
+test('startup uses at most eight readers and validates the entire index before any recovery write or admission', async t => {
   const { make, directory } = await harness(t), first = make(), saved = [];
   const interaction = { id: 'startup-pending', kind: 'verification' };
   for (let index = 0; index < 10; index++) {
@@ -94,16 +94,16 @@ test('startup uses at most four readers and validates the entire index before an
   let active = 0, peak = 0, started = 0, validated = 0, recoveries = 0, countsResolved = false;
   reopened.readRecord = async id => {
     const number = ++started; active++; peak = Math.max(peak, active);
-    try { const result = await readRecord(id); if (number <= 4) await release.promise; validated++; return result; }
+    try { const result = await readRecord(id); if (number <= 8) await release.promise; validated++; return result; }
     finally { active--; }
   };
   reopened.save = async record => { assert.equal(validated, 10); assert.equal(active, 0); assert.equal(reopened.records.size, 10); assert.equal(reopened.hasLease, true); recoveries++; return save(record); };
   const init = reopened.init(); assert.equal(reopened.init(), init, 'Concurrent callers share one scan.');
   const counts = reopened.counts().then(value => { countsResolved = true; return value; });
   const duplicate = reopened.admit(saved[0].input);
-  await until(() => started === 4); assert.equal(active, 4); assert.equal(countsResolved, false); assert.equal(recoveries, 0);
+  await until(() => started === 8); assert.equal(active, 8); assert.equal(countsResolved, false); assert.equal(recoveries, 0);
   release.resolve(); await init;
-  assert.equal(peak, 4); assert.equal(started, 10); assert.equal(recoveries, 4);
+  assert.equal(peak, 8); assert.equal(started, 10); assert.equal(recoveries, 4);
   assert.deepEqual(await counts, { total: 10, unfinished: 2 });
   assert.equal((await duplicate).created, false); assert.equal((await duplicate).job.status, 'interrupted');
   reopened.readRecord = readRecord; reopened.save = save;
@@ -120,7 +120,7 @@ test('startup uses at most four readers and validates the entire index before an
 
 test('a failed startup reader stops new reads and drains in-flight work before lease release or close', async t => {
   const { make, directory } = await harness(t), first = make(), jobs = [];
-  for (let index = 0; index < 8; index++) jobs.push((await first.admit(admission('failed-preload-' + index))).job);
+  for (let index = 0; index < 12; index++) jobs.push((await first.admit(admission('failed-preload-' + index))).job);
   await first.close();
   const broken = jobs[0].id, brokenFile = path.join(directory, 'direct-execution-jobs', broken + '.json'); await writeFile(brokenFile, '{broken-startup-receipt');
   const before = await Promise.all(jobs.map(job => readFile(path.join(directory, 'direct-execution-jobs', job.id + '.json'))));
@@ -129,13 +129,13 @@ test('a failed startup reader stops new reads and drains in-flight work before l
   reopened.readRecord = async id => { started++; active++; try { if (id !== broken) await release.promise; return await readRecord(id); } finally { active--; } };
   reopened.save = async () => { assert.fail('No recovery may write around a failed validation.'); };
   const init = reopened.init().then(() => { assert.fail('Corrupt startup must fail.'); }, error => { settled = true; return error; });
-  await until(() => reopened.storageError && active === 3);
-  assert.equal(started, 4); assert.equal(settled, false); assert.equal(reopened.hasLease, true);
+  await until(() => reopened.storageError && active === 7);
+  assert.equal(started, 8); assert.equal(settled, false); assert.equal(reopened.hasLease, true);
   await assert.rejects(make().init(), { code: 'DIRECT_JOB_LOCKED' });
   const closing = reopened.close().then(() => { closed = true; });
   await new Promise(resolve => setImmediate(resolve)); assert.equal(closed, false); assert.equal(reopened.hasLease, true);
   release.resolve(); assert.equal((await init).code, 'DIRECT_JOB_STORAGE'); await closing;
-  assert.equal(active, 0); assert.equal(started, 4); assert.equal(reopened.hasLease, false);
+  assert.equal(active, 0); assert.equal(started, 8); assert.equal(reopened.hasLease, false);
   await assert.rejects(readFile(reopened.leaseFile), { code: 'ENOENT' });
   assert.deepEqual(await Promise.all(jobs.map(job => readFile(path.join(directory, 'direct-execution-jobs', job.id + '.json')))), before);
   await assert.rejects(make().init(), { code: 'DIRECT_JOB_STORAGE' }, 'The failed executor released its lease but preserved corruption.');

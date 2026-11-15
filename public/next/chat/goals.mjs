@@ -1,5 +1,4 @@
 import {stableId} from '../core/dom.mjs';
-import {createGoalEffects} from './goal-effects.mjs';
 
 const ACTIONS=new Set(['set','update','pause','resume','clear']);
 const RESUMABLE=new Set(['paused','blocked','interrupted','budget_exhausted']);
@@ -57,7 +56,6 @@ export async function updateConversationGoal({api,conversationId,goal,action,obj
 
 /** The server owns the goal and its loop. This view never schedules work itself. */
 export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},onChange=()=>{},onGoalChange=()=>{},notify=()=>{},onError=()=>{}}) {
-  const effectControls=view.goalEffectsMount?createGoalEffects({mount:view.goalEffectsMount,api}):null;
   let owner='new',goal=null,loading=false,busy=false,locked=false,readonly=false,working=false,destroyed=false,readToken=0,editorOwner=null;
   let readError='',queuedRead=null;
   const paint=()=>{
@@ -180,7 +178,6 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
     update(context={}) {
       const target=context.conversationId||'new',changed=target!==owner;
       readonly=Boolean(context.readonly);locked=Boolean(context.busy);working=Boolean(context.running);
-      effectControls?.update(target,{readonly:readonly||locked});
       if(changed){
         ++readToken;owner=target;goal=null;loading=false;readError='';closeEditor();
         if(owner!=='new')void refresh();
@@ -202,6 +199,6 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
     getGoal:()=>goal,
     isBusy:()=>busy,
     close:closeEditor,
-    destroy(){destroyed=true;++readToken;closeEditor();effectControls?.destroy();}
+    destroy(){destroyed=true;++readToken;closeEditor();}
   };
 }

@@ -1,0 +1,29 @@
+name: Verify recovery and startup source candidate
+on:
+  push:
+    branches: [codex/recovery-startup-2.39.95]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.2'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: node scripts/source-suite-receipt.mjs source-suite-evidence
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: source-suite-evidence
+          path: source-suite-evidence
+          if-no-files-found: error
