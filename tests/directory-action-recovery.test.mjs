@@ -90,3 +90,57 @@ test('failed journal admission proves only this invocation unsent and retains pr
  runner=await fixture(t,runtime,async()=>{dispatches++;return {success:false,code:'LOST_REPLY'};});
  await runner.infer('work','modules/1',{objective:'Reconcile an uncertain export'});assert.equal(dispatches,1);
 });
+
+test('concurrent work phases associate receipts only with their explicitly selected action',async t=>{
+ let ready=0,release;const gate=new Promise(resolve=>release=resolve);
+ const runtime={runAgent:async options=>{
+  const id=options.prompt.includes('phase-left')?'left':'right';
+  const selected=await options.onToolCall({name:'relay_directory_action',callId:'focus',arguments:{action:'record',actionId:id,objective:'Check '+id,state:'Verification pending',focus:true}});
+  assert.equal(selected.success,true);if(++ready===2)release();await gate;
+  await options.onToolCall({name:'fixture_export',callId:'shared-provider-id',arguments:{target:id}});
+  return done();
+ }};
+ const runner=await fixture(t,runtime,async call=>call.arguments.target==='left'?{success:true}:{success:false,code:'LOST_REPLY'});
+ await Promise.all([runner.infer('work','modules/1',{objective:'phase-left'}),runner.infer('work','modules/2',{objective:'phase-right'})]);
+ for(const id of ['left','right']){
+  const state=await runner.actionJournal.read({actionId:id});assert.equal(state.total,3);
+  const attempt=(await runner.actionJournal.events()).find(r=>r.event.kind==='attempt'&&r.event.actionId===id);
+  assert.equal(attempt.event.call.arguments.target,id);assert.equal(attempt.event.associationAuthority,'agent-selected');
+ }
+ const index=await runner.actionJournal.read();assert.equal(index.metadataCounts.unknownOutcomes,1);
+ const heads=index.events.filter(r=>r.event.kind==='action-state');assert.ok(heads.every(r=>r.event.hostEvidence.attempts===1));
+});
+
+test('action selection survives typed rollover without claiming completion or replaying prior effects',async t=>{
+ let sessions=0,runner;
+ const runtime={runAgent:async options=>{
+  if(++sessions===1){await options.onToolCall({name:'relay_directory_action',callId:'focus',arguments:{action:'record',actionId:'report',state:'Exported appendix still needs verification',focus:true}});
+   await options.onToolCall({name:'fixture_export',callId:'export',arguments:{action:'export'}});throw overflow();}
+  assert.match(options.prompt,/"focusedActionId":"report"/);
+  await options.onToolCall({name:'fixture_export',callId:'read',arguments:{action:'read'}});return done();
+ }};
+ let exports=0;runner=await fixture(t,runtime,async call=>{if(call.arguments.action==='export')exports++;return {success:true};});
+ await runner.infer('work','modules/1',{objective:'Export report and verify appendix'});
+ const rows=await runner.actionJournal.events();assert.equal(exports,1);
+ assert.ok(rows.filter(r=>r.event.kind==='attempt').every(r=>r.event.actionId==='report'));
+ const index=await runner.actionJournal.read();const head=index.events.find(r=>r.event.kind==='action-state');
+ assert.equal(head.event.hostEvidence.outcomes,2);assert.match(head.event.preview.state,/still needs verification/);
+ assert.equal(index.events.filter(r=>r.event.kind==='outcome').length,0,'Grouped successful tool receipts remain in action history, not loose working entries');
+ assert.equal((await runner.actionJournal.read({actionId:'report'})).total,5);
+});
+
+test('a fresh runner preserves associated history but does not silently select an earlier action',async t=>{
+ const first=await fixture(t,{runAgent:async options=>{
+  await options.onToolCall({name:'relay_directory_action',callId:'focus',arguments:{action:'record',actionId:'prior',focus:true,state:'Receipt retained'}});
+  await options.onToolCall({name:'fixture_export',callId:'read',arguments:{action:'read'}});return done();
+ }},async()=>({success:true}));
+ await first.infer('work','modules/1',{objective:'Inspect first source'});
+ const second=new ShadowdancerDirectory({cwd:first.cwd,conversationId:'fixture',runId:'successor',model:'fixture',actionDirectory:true,baseTools:[tool],dispatchTool:async()=>({success:true}),runtime:{runAgent:async options=>{
+  await options.onToolCall({name:'fixture_export',callId:'read',arguments:{action:'read'}});return done();
+ }}});
+ await second.open();await second.infer('work','modules/1',{objective:'Inspect a different source'});
+ const attempts=(await second.actionJournal.events()).filter(r=>r.event.kind==='attempt');assert.equal(attempts.length,2);
+ assert.equal(attempts.filter(r=>r.event.actionId==='prior').length,1);
+ assert.equal(attempts.filter(r=>r.event.actionId===undefined).length,1);
+ assert.equal((await second.actionJournal.read({actionId:'prior'})).total,3);
+});
