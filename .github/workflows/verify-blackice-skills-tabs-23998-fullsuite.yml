@@ -1,0 +1,253 @@
+name: Verify exact BLACKICE 2.39.98 Skills + tabs Windows source suite once
+
+on:
+  push:
+    branches:
+      - codex/skills-tabs-23998-fullsuite-controller-20261115
+    paths:
+      - .github/workflows/verify-blackice-skills-tabs-23998-fullsuite.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: blackice-skills-tabs-23998-exact-fullsuite-once
+  cancel-in-progress: false
+
+jobs:
+  source_suite:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      EXPECTED_SOURCE_COMMIT: 36996a7782163c65822c1b25cdc0aa0b5880fdc4
+      EXPECTED_SOURCE_INDEX: 7af98f35bd6fb65efdfd67882984dd109873d8b6316d4d56bb24850984e5897f
+      EXPECTED_APP_FINGERPRINT: 2bb59bf35b3e6c50433f3b4aaf1a3143e301bedf1d5ab5e7b652d70cf6598fd5
+      EXPECTED_TEST_INVENTORY: 0ffc3248ea2e264460065f96d13ce40cbc4db0807d37d67bde8894589cd493ea
+      EXPECTED_VERSION: '2.39.98'
+    steps:
+      - name: Checkout exact candidate source, not the workflow controller
+        uses: actions/checkout@v7
+        with:
+          ref: 36996a7782163c65822c1b25cdc0aa0b5880fdc4
+          path: source
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Pin Node for source suite
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.2'
+          package-manager-cache: false
+      - name: Pin Python for Windows fixtures
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Bind checked-out source and capture complete before evidence
+        id: preflight
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Path source-suite-evidence -Force | Out-Null
+          Push-Location source
+          try {
+            $actual=(& git rev-parse HEAD).Trim()
+            if($LASTEXITCODE -ne 0 -or $actual -cne $env:EXPECTED_SOURCE_COMMIT) { throw "Wrong source HEAD: $actual" }
+            $dirty=@(& git status --porcelain --untracked-files=no)
+            if($dirty.Count -ne 0) { throw "Tracked candidate dirty before suite: $($dirty.Count)" }
+            $report=[ordered]@{
+              format=1
+              expectedSourceCommit=$env:EXPECTED_SOURCE_COMMIT
+              actualSourceCommit=$actual
+              workflowControllerCommit=$env:GITHUB_SHA
+              workflowRunId=$env:GITHUB_RUN_ID
+              workflowRunAttempt=$env:GITHUB_RUN_ATTEMPT
+              githubRef=$env:GITHUB_REF
+              githubRepository=$env:GITHUB_REPOSITORY
+              runnerEnvironment=$env:RUNNER_ENVIRONMENT
+              runnerOS=$env:RUNNER_OS
+              runnerArchitecture=$env:RUNNER_ARCH
+              runnerName=$env:RUNNER_NAME
+              node=(& node --version).Trim()
+              npm=(& npm --version).Trim()
+              python=(& python --version).Trim()
+              git=(& git --version).Trim()
+              timestampUtc=[DateTime]::UtcNow.ToString('o')
+              trackedDirtyBefore=$dirty
+              expectedSourceIndex=$env:EXPECTED_SOURCE_INDEX
+              expectedAppFingerprint=$env:EXPECTED_APP_FINGERPRINT
+              expectedVersion=$env:EXPECTED_VERSION
+            }
+            $report | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath ../source-suite-evidence/controller-environment.json -Encoding utf8NoBOM
+            node --input-type=module -e "import {releaseSourceIndex} from './scripts/release-request.mjs';import {appFingerprint} from './scripts/release-check.mjs';import {writeFile} from 'node:fs/promises';const inventory=await releaseSourceIndex(process.cwd());const fingerprint=await appFingerprint(process.cwd());await writeFile('../source-suite-evidence/source-before.json',JSON.stringify({sourceCommit:process.env.EXPECTED_SOURCE_COMMIT,appFingerprint:fingerprint,...inventory},null,2)+'\n');"
+            if($LASTEXITCODE -ne 0) { throw 'Before source inventory/fingerprint capture failed.' }
+            $before=Get-Content -LiteralPath ../source-suite-evidence/source-before.json -Raw | ConvertFrom-Json
+            if($before.sourceIndexSha256 -cne $env:EXPECTED_SOURCE_INDEX -or $before.appFingerprint -cne $env:EXPECTED_APP_FINGERPRINT) { throw 'Before source inventory/fingerprint does not match frozen 2.39.98 source.' }
+            $version=(& node -p "require('./package.json').version").Trim()
+            if($version -cne $env:EXPECTED_VERSION) { throw "Version mismatch: $version" }
+            if($env:GITHUB_SHA -ceq $actual) { throw 'Controller and checked-out source commit must remain distinct.' }
+          } finally { Pop-Location }
+      - name: Install locked test dependencies only (no application installation)
+        id: deps
+        shell: pwsh
+        working-directory: source
+        run: |
+          $ErrorActionPreference='Stop'
+          npm ci --no-audit --no-fund
+          if($LASTEXITCODE -ne 0) { throw "npm ci failed with $LASTEXITCODE" }
+      - name: Run ONE explicit Windows full source suite
+        id: suite
+        shell: pwsh
+        working-directory: source
+        run: |
+          $ErrorActionPreference='Stop'
+          node scripts/source-suite-receipt.mjs ../source-suite-evidence
+          if($LASTEXITCODE -ne 0) { throw "Source suite failed with $LASTEXITCODE" }
+      - name: Verify saved TAP reporter totals match parsed source receipt, skip identities and bytes
+        id: tap_consistency
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $tapFile='source-suite-evidence/suite.tap'
+          $receiptFile='source-suite-evidence/windows-2.39.98.json'
+          if(!(Test-Path -LiteralPath $tapFile) -or !(Test-Path -LiteralPath $receiptFile)) { throw 'Missing original suite TAP or 2.39.98 source receipt.' }
+          $tap=Get-Content -LiteralPath $tapFile -Raw
+          $receipt=Get-Content -LiteralPath $receiptFile -Raw | ConvertFrom-Json
+          $keys=@('tests','pass','fail','cancelled','skipped','todo')
+          $counts=[ordered]@{}
+          foreach($key in $keys) {
+            $pattern="(?m)^# $key (\d+)\r?$"
+            $hits=[regex]::Matches($tap,$pattern)
+            if($hits.Count -ne 1) { throw "TAP reporter/parser mismatch for $key; expected one total, got $($hits.Count)" }
+            $counts[$key]=[int]$hits[0].Groups[1].Value
+          }
+          $expected=[ordered]@{
+            tests=$receipt.tests.total
+            pass=$receipt.tests.passed
+            fail=$receipt.tests.failed
+            cancelled=$receipt.tests.cancelled
+            skipped=($receipt.tests.requiredSkipped+$receipt.tests.optionalSkipped)
+            todo=$receipt.tests.todo
+          }
+          foreach($key in $keys) {
+            if($counts[$key] -ne $expected[$key]) { throw "TAP vs receipt count discrepancy for ${key}: $($counts[$key]) / $($expected[$key])" }
+          }
+          if($counts.tests -ne $counts.pass+$counts.fail+$counts.cancelled+$counts.skipped+$counts.todo) { throw 'TAP test arithmetic invalid' }
+          $namedSkips=@([regex]::Matches($tap,'(?m)^ok \d+ - .* # SKIP(?: .*)?\r?$'))
+          if($namedSkips.Count -ne $counts.skipped -or @($receipt.skipDetails).Count -ne $counts.skipped) { throw 'Skipped assertion names/reasons incomplete or unmatched.' }
+          for($i=0;$i -lt $namedSkips.Count;$i++) {
+            $observed=$namedSkips[$i]
+            $reason=if($observed.Groups[2].Success -and $observed.Groups[2].Value.Length -gt 0){$observed.Groups[2].Value}else{$null}
+            $saved=$receipt.skipDetails[$i]
+            if($saved.name -cne $observed.Groups[1].Value -or [string]$saved.reason -cne [string]$reason -or $saved.assertionsRan -ne $false) { throw "TAP skip identity or reason mismatch at position $i" }
+          }
+          $sha=(Get-FileHash -LiteralPath $tapFile -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($sha -cne $receipt.testLogSha256) { throw 'Raw TAP SHA-256 mismatch.' }
+          if($receipt.sourceCommit -cne $env:EXPECTED_SOURCE_COMMIT -or $receipt.workflowControllerCommit -cne $env:GITHUB_SHA) { throw 'Wrong source/controller identity in suite receipt.' }
+          if($receipt.version -cne $env:EXPECTED_VERSION -or $receipt.sourceIndexSha256 -cne $env:EXPECTED_SOURCE_INDEX -or $receipt.appFingerprint -cne $env:EXPECTED_APP_FINGERPRINT -or $receipt.testInventorySha256 -cne $env:EXPECTED_TEST_INVENTORY) { throw 'Suite receipt identity or source inventory differs from frozen expected source.' }
+          if(@($receipt.unexpectedSkips).Count -ne 0 -or $receipt.tests.requiredSkipped -ne 0) { throw 'Unapproved skipped assertion.' }
+          if($receipt.passed -ne $true -or $receipt.countsComplete -ne $true -or $receipt.checkoutUnchanged -ne $true -or $receipt.sourceUnchanged -ne $true -or $receipt.fingerprintUnchanged -ne $true) { throw 'Source suite receipt is not a complete passing exact-source receipt.' }
+          $validated=[ordered]@{
+            format=1
+            kind='independent-reporter-parser-consistency-on-original-TAP'
+            sourceCommit=$receipt.sourceCommit
+            workflowControllerCommit=$receipt.workflowControllerCommit
+            githubRunId=$env:GITHUB_RUN_ID
+            githubRunAttempt=$env:GITHUB_RUN_ATTEMPT
+            tapSha256=$sha
+            counts=$counts
+            requiredSkipped=$receipt.tests.requiredSkipped
+            namedSkipCount=$namedSkips.Count
+            skippedDetails=$receipt.skipDetails
+            sourceIndexSha256=$receipt.sourceIndexSha256
+            appFingerprint=$receipt.appFingerprint
+            passed=$true
+            checkedAtUtc=[DateTime]::UtcNow.ToString('o')
+          }
+          $validated | ConvertTo-Json -Depth 25 | Set-Content -LiteralPath source-suite-evidence/tap-parser-consistency.json -Encoding utf8NoBOM
+          Write-Output "TAP_EXACT_REPORTER_PASS=$($counts.pass) TOTAL=$($counts.tests) SKIPPED=$($counts.skipped) SKIP_DETAILS=$($namedSkips.Count)"
+      - name: Capture exact after inventory, fingerprints and terminal controller
+        if: always()
+        shell: pwsh
+        env:
+          PREFLIGHT_STEP_OUTCOME: ${{ steps.preflight.outcome }}
+          DEPS_STEP_OUTCOME: ${{ steps.deps.outcome }}
+          SUITE_STEP_OUTCOME: ${{ steps.suite.outcome }}
+          TAP_CONSISTENCY_STEP_OUTCOME: ${{ steps.tap_consistency.outcome }}
+        run: |
+          $ErrorActionPreference='Continue'
+          New-Item -ItemType Directory -Path source-suite-evidence -Force | Out-Null
+          $terminal=[ordered]@{
+            format=1
+            scope='exact Windows source suite only'
+            expectedSourceCommit=$env:EXPECTED_SOURCE_COMMIT
+            workflowControllerCommit=$env:GITHUB_SHA
+            workflowRunId=$env:GITHUB_RUN_ID
+            workflowRunAttempt=$env:GITHUB_RUN_ATTEMPT
+            preflightOutcome=$env:PREFLIGHT_STEP_OUTCOME
+            dependencyOutcome=$env:DEPS_STEP_OUTCOME
+            suiteStepOutcome=$env:SUITE_STEP_OUTCOME
+            tapConsistencyOutcome=$env:TAP_CONSISTENCY_STEP_OUTCOME
+            expectedSourceIndex=$env:EXPECTED_SOURCE_INDEX
+            expectedAppFingerprint=$env:EXPECTED_APP_FINGERPRINT
+            expectedVersion=$env:EXPECTED_VERSION
+            checkedAtUtc=[DateTime]::UtcNow.ToString('o')
+            actualSourceCommitAfter=$null
+            trackedDirtyAfter=$null
+            sourceIndexBefore=$null
+            sourceIndexAfter=$null
+            appFingerprintBefore=$null
+            appFingerprintAfter=$null
+            sourceUnchanged=$false
+            afterCaptureExitCode=$null
+            receiptPresent=$false
+            receiptSha256=$null
+            receiptState=$null
+            receiptCounts=$null
+            skipDetails=$null
+            parserConsistencyEvidencePresent=$false
+            limitations='Only Windows source assertions; no real provider, parallel active child, in-flight external effects, or native async browser proof.'
+          }
+          if(Test-Path -LiteralPath source -PathType Container) {
+            Push-Location source
+            try {
+              $terminal.actualSourceCommitAfter=(& git rev-parse HEAD).Trim()
+              $terminal.trackedDirtyAfter=@(& git status --porcelain --untracked-files=no)
+              node --input-type=module -e "import {releaseSourceIndex} from './scripts/release-request.mjs';import {appFingerprint} from './scripts/release-check.mjs';import {writeFile} from 'node:fs/promises';const inventory=await releaseSourceIndex(process.cwd());const fingerprint=await appFingerprint(process.cwd());await writeFile('../source-suite-evidence/source-after.json',JSON.stringify({sourceCommit:process.env.EXPECTED_SOURCE_COMMIT,actualCommit:process.argv[1],appFingerprint:fingerprint,...inventory},null,2)+'\n');" $terminal.actualSourceCommitAfter
+              $terminal.afterCaptureExitCode=$LASTEXITCODE
+            } catch { $terminal.afterCaptureError=[string]$_ }
+            finally { Pop-Location }
+          }
+          $beforePath='source-suite-evidence/source-before.json'
+          $afterPath='source-suite-evidence/source-after.json'
+          if((Test-Path -LiteralPath $beforePath) -and (Test-Path -LiteralPath $afterPath)) {
+            try {
+              $before=Get-Content -LiteralPath $beforePath -Raw | ConvertFrom-Json
+              $after=Get-Content -LiteralPath $afterPath -Raw | ConvertFrom-Json
+              $terminal.sourceIndexBefore=$before.sourceIndexSha256
+              $terminal.sourceIndexAfter=$after.sourceIndexSha256
+              $terminal.appFingerprintBefore=$before.appFingerprint
+              $terminal.appFingerprintAfter=$after.appFingerprint
+              $terminal.sourceUnchanged=($terminal.actualSourceCommitAfter -ceq $env:EXPECTED_SOURCE_COMMIT -and $before.sourceIndexSha256 -ceq $after.sourceIndexSha256 -and $before.appFingerprint -ceq $after.appFingerprint -and $before.sourceIndexSha256 -ceq $env:EXPECTED_SOURCE_INDEX -and $after.sourceIndexSha256 -ceq $env:EXPECTED_SOURCE_INDEX -and $before.appFingerprint -ceq $env:EXPECTED_APP_FINGERPRINT -and $after.appFingerprint -ceq $env:EXPECTED_APP_FINGERPRINT -and $terminal.trackedDirtyAfter.Count -eq 0)
+            } catch { $terminal.afterComparisonError=[string]$_ }
+          }
+          $receipt='source-suite-evidence/windows-2.39.98.json'
+          if(Test-Path -LiteralPath $receipt) {
+            try {
+              $actual=Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
+              $terminal.receiptPresent=$true
+              $terminal.receiptSha256=(Get-FileHash -LiteralPath $receipt -Algorithm SHA256).Hash.ToLowerInvariant()
+              $terminal.receiptState=$actual.state
+              $terminal.receiptCounts=$actual.tests
+              $terminal.skipDetails=$actual.skipDetails
+              $terminal.parserConsistencyEvidencePresent=(Test-Path -LiteralPath source-suite-evidence/tap-parser-consistency.json -PathType Leaf)
+            } catch { $terminal.receiptError=[string]$_ }
+          }
+          $terminal | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath source-suite-evidence/terminal-controller.json -Encoding utf8NoBOM
+          if($terminal.actualSourceCommitAfter -cne $env:EXPECTED_SOURCE_COMMIT -or $terminal.sourceUnchanged -ne $true -or ($env:SUITE_STEP_OUTCOME -ceq 'success' -and $env:TAP_CONSISTENCY_STEP_OUTCOME -cne 'success')) { throw 'Terminal source identity, before/after index/fingerprint, or TAP parser agreement mismatch.' }
+      - name: Preserve original raw TAP, inventory, environment and terminal evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: blackice-skills-tabs-23998-fullsuite-original-evidence
+          path: source-suite-evidence
+          if-no-files-found: error
