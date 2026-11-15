@@ -1,0 +1,287 @@
+﻿TAP version 13
+# Subtest: renderer hang and resume diagnostics persist fixed metadata within existing retention bounds
+ok 1 - renderer hang and resume diagnostics persist fixed metadata within existing retention bounds
+  ---
+  duration_ms: 53.9412
+  type: 'test'
+  ...
+# Subtest: native restart diagnostics preserve concrete refusal codes without arbitrary restart-prefixed payloads
+ok 2 - native restart diagnostics preserve concrete refusal codes without arbitrary restart-prefixed payloads
+  ---
+  duration_ms: 80.4262
+  type: 'test'
+  ...
+# Subtest: prompt library diagnostics expose health without retaining template bodies or field values
+ok 3 - prompt library diagnostics expose health without retaining template bodies or field values
+  ---
+  duration_ms: 5.3648
+  type: 'test'
+  ...
+# Subtest: API inactivity has a distinct safe diagnostic code without retaining provider or prompt details
+ok 4 - API inactivity has a distinct safe diagnostic code without retaining provider or prompt details
+  ---
+  duration_ms: 10.1236
+  type: 'test'
+  ...
+# Subtest: diagnostics durably retain only safe event metadata and an independent support snapshot
+ok 5 - diagnostics durably retain only safe event metadata and an independent support snapshot
+  ---
+  duration_ms: 24.3661
+  type: 'test'
+  ...
+# Subtest: messages, credentials, tokens, cookies, paths, prompts and payloads never enter the log or export
+ok 6 - messages, credentials, tokens, cookies, paths, prompts and payloads never enter the log or export
+  ---
+  duration_ms: 30.1722
+  type: 'test'
+  ...
+# Subtest: malformed event values and throwing error metadata are contained without invoking arbitrary serialization
+ok 7 - malformed event values and throwing error metadata are contained without invoking arbitrary serialization
+  ---
+  duration_ms: 20.8
+  type: 'test'
+  ...
+# Subtest: rotation bounds file count, bytes and retained events across restart
+ok 8 - rotation bounds file count, bytes and retained events across restart
+  ---
+  duration_ms: 509.409
+  type: 'test'
+  ...
+# Subtest: lowering the retained segment count removes only owned old segments and preserves unrelated files
+ok 9 - lowering the retained segment count removes only owned old segments and preserves unrelated files
+  ---
+  duration_ms: 15.2275
+  type: 'test'
+  ...
+# Subtest: partial, corrupt and hostile log lines are tolerated and an unterminated final record does not absorb later events
+ok 10 - partial, corrupt and hostile log lines are tolerated and an unterminated final record does not absorb later events
+  ---
+  duration_ms: 20.7239
+  type: 'test'
+  ...
+# Subtest: oversized existing logs are read in bounded tails and reset to the byte budget
+ok 11 - oversized existing logs are read in bounded tails and reset to the byte budget
+  ---
+  duration_ms: 19.9446
+  type: 'test'
+  ...
+# Subtest: disk-full and unreadable logs never throw or recurse, preserve bounded in-memory evidence and recover health
+ok 12 - disk-full and unreadable logs never throw or recurse, preserve bounded in-memory evidence and recover health
+  ---
+  duration_ms: 17.382
+  type: 'test'
+  ...
+# Subtest: startup I/O errors are reported by status and do not block subsequent lifecycle hooks
+ok 13 - startup I/O errors are reported by status and do not block subsequent lifecycle hooks
+  ---
+  duration_ms: 8.3299
+  type: 'test'
+  ...
+# Subtest: a rotation failure is observable and a later event can recover without exceeding the file budget
+ok 14 - a rotation failure is observable and a later event can recover without exceeding the file budget
+  ---
+  duration_ms: 65.6121
+  type: 'test'
+  ...
+# Subtest: bounded pending admission drops an event storm and flush/close settle every accepted write
+ok 15 - bounded pending admission drops an event storm and flush/close settle every accepted write
+  ---
+  duration_ms: 20.8416
+  type: 'test'
+  ...
+# Subtest: fixed lifecycle hooks accept failure codes while excluding Error names, messages and renderer descriptions
+ok 16 - fixed lifecycle hooks accept failure codes while excluding Error names, messages and renderer descriptions
+  ---
+  duration_ms: 64.0587
+  type: 'test'
+  ...
+# Subtest: restart and window lifecycle failures survive logging and reopening without exporting error text
+ok 17 - restart and window lifecycle failures survive logging and reopening without exporting error text
+  ---
+  duration_ms: 49.234
+  type: 'test'
+  ...
+# Subtest: startup phase diagnostics require fixed phases and retain only bounded timing fields across restart
+ok 18 - startup phase diagnostics require fixed phases and retain only bounded timing fields across restart
+  ---
+  duration_ms: 86.7916
+  type: 'test'
+  ...
+# Subtest: malformed or arbitrary startup labels are dropped rather than stored as partial events
+ok 19 - malformed or arbitrary startup labels are dropped rather than stored as partial events
+  ---
+  duration_ms: 3.6986
+  type: 'test'
+  ...
+# Subtest: reopening startup timing logs revalidates phases and strips hostile payloads
+ok 20 - reopening startup timing logs revalidates phases and strips hostile payloads
+  ---
+  duration_ms: 11.2958
+  type: 'test'
+  ...
+# Subtest: startup metrics report validation, recovery and bounded counters without receipt payloads
+ok 21 - startup metrics report validation, recovery and bounded counters without receipt payloads
+  ---
+  duration_ms: 58.2692
+  type: 'test'
+  ...
+# Subtest: failed validation stays fail closed and telemetry does not expose offending content
+ok 22 - failed validation stays fail closed and telemetry does not expose offending content
+  ---
+  duration_ms: 40.9795
+  type: 'test'
+  ...
+# Subtest: throwing or rejected telemetry callbacks cannot change ledger readiness
+ok 23 - throwing or rejected telemetry callbacks cannot change ledger readiness
+  ---
+  duration_ms: 27.3302
+  type: 'test'
+  ...
+# Subtest: diagnostics persistence accepts only the fixed metric shape and discards arbitrary text
+ok 24 - diagnostics persistence accepts only the fixed metric shape and discards arbitrary text
+  ---
+  duration_ms: 13.8384
+  type: 'test'
+  ...
+# Subtest: unobserved stores do not allocate instrumentation or emit anything during later reads
+ok 25 - unobserved stores do not allocate instrumentation or emit anything during later reads
+  ---
+  duration_ms: 21.5389
+  type: 'test'
+  ...
+# Subtest: desktop startup indicator and fatal-error reporting do not await diagnostic IO
+ok 26 - desktop startup indicator and fatal-error reporting do not await diagnostic IO
+  ---
+  duration_ms: 7.5252
+  type: 'test'
+  ...
+# Subtest: desktop-style finish racing timed-out binding retains final state and degraded source evidence
+ok 27 - desktop-style finish racing timed-out binding retains final state and degraded source evidence
+  ---
+  duration_ms: 84.3253
+  type: 'test'
+  ...
+# Subtest: permanently unresolved build read cannot block start, error handling or initial incomplete checkpoint
+ok 28 - permanently unresolved build read cannot block start, error handling or initial incomplete checkpoint
+  ---
+  duration_ms: 57.331
+  type: 'test'
+  ...
+# Subtest: late failed build binding is consumed and never overwrites the timed-out source identity
+ok 29 - late failed build binding is consumed and never overwrites the timed-out source identity
+  ---
+  duration_ms: 78.5574
+  type: 'test'
+  ...
+# Subtest: permanently unresolved checkpoint sync never gates startup or failure and cannot start another writer
+ok 30 - permanently unresolved checkpoint sync never gates startup or failure and cannot start another writer
+  ---
+  duration_ms: 41.0374
+  type: 'test'
+  ...
+# Subtest: late checkpoint sync success publishes a terminal checkpoint only after old writer fully closes
+ok 31 - late checkpoint sync success publishes a terminal checkpoint only after old writer fully closes
+  ---
+  duration_ms: 63.2401
+  type: 'test'
+  ...
+# Subtest: late checkpoint sync rejection is consumed and a single follow-up writer preserves failure evidence
+ok 32 - late checkpoint sync rejection is consumed and a single follow-up writer preserves failure evidence
+  ---
+  duration_ms: 72.3803
+  type: 'test'
+  ...
+# Subtest: sub-millisecond parse/hash/index costs accumulate precisely before one presentation rounding
+ok 33 - sub-millisecond parse/hash/index costs accumulate precisely before one presentation rounding
+  ---
+  duration_ms: 56.4409
+  type: 'test'
+  ...
+# Subtest: parented phases and source binding persist explicit incomplete launch evidence
+ok 34 - parented phases and source binding persist explicit incomplete launch evidence
+  ---
+  duration_ms: 40.0132
+  type: 'test'
+  ...
+# Subtest: held open and read reveal the exact in-flight wait without touching original receipts
+ok 35 - held open and read reveal the exact in-flight wait without touching original receipts
+  ---
+  duration_ms: 95.7486
+  type: 'test'
+  ...
+# Subtest: injected inaccessible receipt fails closed, preserves original bytes and records stat failure
+ok 36 - injected inaccessible receipt fails closed, preserves original bytes and records stat failure
+  ---
+  duration_ms: 67.835
+  type: 'test'
+  ...
+# Subtest: failed read waits for other in-flight reader to drain and closes both handles before releasing lease
+ok 37 - failed read waits for other in-flight reader to drain and closes both handles before releasing lease
+  ---
+  duration_ms: 86.2601
+  type: 'test'
+  ...
+# Subtest: four-minute-equivalent progress history is bounded and explicitly accounts for truncated samples
+ok 38 - four-minute-equivalent progress history is bounded and explicitly accounts for truncated samples
+  ---
+  duration_ms: 845.9846
+  type: 'test'
+  ...
+# Subtest: bounded telemetry uses no per-file disk writes and makes persistence failure visible
+ok 39 - bounded telemetry uses no per-file disk writes and makes persistence failure visible
+  ---
+  duration_ms: 62.7955
+  type: 'test'
+  ...
+# 20k in-memory operation observations 16 ms; no per-receipt writes
+# Subtest: startup progress reports actual phase transitions without affecting startup
+ok 40 - startup progress reports actual phase transitions without affecting startup
+  ---
+  duration_ms: 3.8461
+  type: 'test'
+  ...
+# Subtest: startup timing waits for the operation and measures monotonic elapsed time without changing its value
+ok 41 - startup timing waits for the operation and measures monotonic elapsed time without changing its value
+  ---
+  duration_ms: 1.3965
+  type: 'test'
+  ...
+# Subtest: synchronous and asynchronous failures keep their exact identity and record only failed timing metadata
+ok 42 - synchronous and asynchronous failures keep their exact identity and record only failed timing metadata
+  ---
+  duration_ms: 0.6653
+  type: 'test'
+  ...
+# Subtest: diagnostic throws, rejected writes and unavailable stores cannot replace successful values or original errors
+ok 43 - diagnostic throws, rejected writes and unavailable stores cannot replace successful values or original errors
+  ---
+  duration_ms: 1.0054
+  type: 'test'
+  ...
+# Subtest: untrusted phases are rejected before operation, clock reads or diagnostic calls
+ok 44 - untrusted phases are rejected before operation, clock reads or diagnostic calls
+  ---
+  duration_ms: 0.8727
+  type: 'test'
+  ...
+# Subtest: every supported phase records a bounded integer duration and invalid operations never run
+ok 45 - every supported phase records a bounded integer duration and invalid operations never run
+  ---
+  duration_ms: 0.8867
+  type: 'test'
+  ...
+# Subtest: browser owner recovery is a supported bounded startup phase
+ok 46 - browser owner recovery is a supported bounded startup phase
+  ---
+  duration_ms: 0.2842
+  type: 'test'
+  ...
+1..46
+# tests 46
+# suites 0
+# pass 46
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3459.6008

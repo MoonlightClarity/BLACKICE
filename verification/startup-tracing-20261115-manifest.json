@@ -1,0 +1,182 @@
+{
+    "schema":  "blackice-startup-critical-trace-lane-v1",
+    "timeUtc":  "2026-11-15T22:10:24.8857471Z",
+    "parentSource":  "0101d3f88cc7f3f139394a1c943b899511668a90",
+    "candidateCodeCommit":  "d41ed60427b1459ee79608584a4ca2c8d4534624",
+    "codeTree":  "1d82c7587a86959aba1aaf81a5627aa7a6824900",
+    "branch":  "fix/startup-critical-path-observability-20261115",
+    "worktree":  "C:\\Users\\user\\Documents\\Codex\\BLACKICE-startup-trace-20261115",
+    "version":  "2.39.98",
+    "installedVersionAtReview":  "2.39.98",
+    "installedTraceActive":  false,
+    "rootIntegrated":  false,
+    "releaseOrRestartPerformed":  false,
+    "fullSuitePerformed":  false,
+    "liveHistoryOpened":  false,
+    "liveApplications":  false,
+    "focusedTests":  {
+                         "count":  135,
+                         "passed":  135,
+                         "failed":  0,
+                         "skipped":  0,
+                         "cancelled":  0,
+                         "runJob":  "direct_781457f6adf341c50f187d4aef6578e681c15ac0be0dd01665532991ca849e6c"
+                     },
+    "firstSynthetic":  {
+                           "runJob":  "direct_0be272d1e69295234da38e5c9b25405a040b4115c0c1cef27cd5f772b436124c",
+                           "count":  285,
+                           "stateHash":  "bb7fd4f8049f7bf29c8fb5e41e6264faa86f689572164ddb117fa04afce28828",
+                           "medians":  {
+                                           "baseline":  {
+                                                            "wallMs":  151.237,
+                                                            "processCpuMs":  141
+                                                        },
+                                           "traced":  {
+                                                          "wallMs":  157.082,
+                                                          "processCpuMs":  219
+                                                      }
+                                       }
+                       },
+    "secondSynthetic":  {
+                            "runJob":  "direct_efb003be685e72cb2fd430d57813971931c6806391237f8e754ef80cd1956f7c",
+                            "count":  285,
+                            "stateHash":  "6f86247f6956b490e1c95e72f92660fc8f312960fd8bc5ea765a98f290abf97b",
+                            "medians":  {
+                                            "baseline":  {
+                                                             "wallMs":  437.748,
+                                                             "processCpuMs":  375
+                                                         },
+                                            "traced":  {
+                                                           "wallMs":  283.929,
+                                                           "processCpuMs":  312
+                                                       }
+                                        },
+                            "warning":  "Reversed direction under host/cache variation. Neither proves real overhead."
+                        },
+    "actualInstalledEvidence":  {
+                                    "pid":  1396,
+                                    "startedUtc":  "2026-11-15T21:33:03.014Z",
+                                    "desktopReadyMs":  220294,
+                                    "directJobsMs":  206624,
+                                    "scanMs":  206030,
+                                    "receipts":  66848,
+                                    "bytes":  1287176259,
+                                    "concurrentReadAggregateMs":  1463856,
+                                    "cpuMs":  60531,
+                                    "eventLoopActiveIdleUnusable":  true
+                                },
+    "privateEvidence":  {
+                            "path":  "C:\\Users\\user\\Documents\\Codex\\BLACKICE-startup-trace-private-evidence-20261115",
+                            "notPublic":  true,
+                            "eventsSha256":  "13dd540d35b20bac1fc445cbd4c5481a7087eb8462c50eb1a8f26579487c2952",
+                            "runtimeSha256":  "836a11b4e8996303c6c116bc268ffd9b0969566d43a1eaf82356fb086ffbe441",
+                            "sourceStable":  true
+                        },
+    "traceLimits":  {
+                        "checkpointMs":  1500,
+                        "maxBytes":  49152,
+                        "progressSamples":  160,
+                        "pendingRecordMax":  12,
+                        "slowOperationMax":  12,
+                        "sourceCommitNotInferred":  true,
+                        "syncEventLoopBlockNotExternallySampled":  true
+                    },
+    "sourceEvidence":  [
+                           {
+                               "path":  "desktop/main.mjs",
+                               "bytes":  44299,
+                               "sha256":  "4fafff745847ce6f5a49c28da9c51ed134b77648aa6b9557c66ba252dbfa396a"
+                           },
+                           {
+                               "path":  "lib/diagnostics.mjs",
+                               "bytes":  14016,
+                               "sha256":  "551559534842be8e7fa56a9d0a9b2c0b30ecb39231e8f13296a2a4481f31b8ca"
+                           },
+                           {
+                               "path":  "lib/direct-execution-api.mjs",
+                               "bytes":  68339,
+                               "sha256":  "f58da61a4b68e54e3df39e05f088dae3a7a894feb8a8e6d9298f921265a30c9c"
+                           },
+                           {
+                               "path":  "lib/direct-execution-jobs.mjs",
+                               "bytes":  33963,
+                               "sha256":  "ddbb83aad9003d4b98f4ae360a764c68643b671b232c9e357133629899b42b9b"
+                           },
+                           {
+                               "path":  "lib/ledger-startup-metrics.mjs",
+                               "bytes":  2524,
+                               "sha256":  "c91c062d44eb0d382c944cca993c5584be7005975e300ed2394907705bb02238"
+                           },
+                           {
+                               "path":  "lib/startup-critical-trace.mjs",
+                               "bytes":  15624,
+                               "sha256":  "2c214351d0522125050eded82d256c85dd7da7e28df4cd2877146a641bb6a00c"
+                           },
+                           {
+                               "path":  "lib/startup-timing.mjs",
+                               "bytes":  1772,
+                               "sha256":  "94c2be6475f540a8044c0abbf56a749c01e7d9863e6808c62660a4c5455d60bc"
+                           },
+                           {
+                               "path":  "server.mjs",
+                               "bytes":  157050,
+                               "sha256":  "7ca7fa23b0e067c5fde09fbe251b078d7eb1a4a1e426a329fdf7d48af54d3b7d"
+                           },
+                           {
+                               "path":  "tests/startup-critical-trace.test.mjs",
+                               "bytes":  14063,
+                               "sha256":  "166999481e2965dee45778df10fadbd3e9e56dca468e3d5d6329b9db120f4465"
+                           },
+                           {
+                               "path":  "verification/STARTUP-CRITICAL-TRACE-HANDOFF-20261115.md",
+                               "bytes":  8422,
+                               "sha256":  "fbda0d7a8f4974e3e425d5a1c3942dcc4701a43cbde411bd5229af53240f8a30"
+                           },
+                           {
+                               "path":  "verification/startup-trace-20261115-existing-focused.tap",
+                               "bytes":  12405,
+                               "sha256":  "2f806ef6e30cb85bea72f460cf617f7521a63996e680450d1fd8d06bae0e7e4c"
+                           },
+                           {
+                               "path":  "verification/startup-tracing-20261115-new-focused.tap",
+                               "bytes":  1183,
+                               "sha256":  "d01be75bd49fe8a6070d39eff272bd00e64a7d8e4fbcd6b1981b13f48232c263"
+                           },
+                           {
+                               "path":  "verification/startup-tracing-20261115-instrumented.tap",
+                               "bytes":  6450,
+                               "sha256":  "d64e99ba9326175240b851314c8e2a4fa089c5d94d7bd761cd093417117f0c23"
+                           },
+                           {
+                               "path":  "verification/startup-tracing-20261115-cap.tap",
+                               "bytes":  1452,
+                               "sha256":  "79ec15a6adf5209793225fb38fad1b18a38915c942cb44031eab632d862dd388"
+                           },
+                           {
+                               "path":  "verification/startup-tracing-20261115-drain.tap",
+                               "bytes":  1729,
+                               "sha256":  "ff4a4095aaff8a08b7eb65bc4d98072f9f1aadeb926705aed28ed7609b4febd7"
+                           },
+                           {
+                               "path":  "verification/startup-tracing-20261115-final-focused.tap",
+                               "bytes":  32906,
+                               "sha256":  "40c344dfe246dd691a24808c5477ba680523a5b21bf3ada57f529b98c8687a7f"
+                           },
+                           {
+                               "path":  "verification/startup-tracing-20261115-overhead.mjs",
+                               "bytes":  5775,
+                               "sha256":  "80d7135cb2a35ab5f8de33f1f633c4c8ddd8c5e592c90412669fd7ef68980599"
+                           },
+                           {
+                               "path":  "verification/startup-tracing-20261115-overhead.json",
+                               "bytes":  8026,
+                               "sha256":  "3c4a26d1dcd9b45a780b7092fa1c9c4e8c2a9474f329c1b52fed62f5928dd73f"
+                           },
+                           {
+                               "path":  "verification/startup-tracing-20261115-overhead-final.json",
+                               "bytes":  8046,
+                               "sha256":  "1d22c721160d36d8e27a96499f7167161b7db4dbca84bb9310147160be2deaf4"
+                           }
+                       ],
+    "review":  "Requires independent exact source review, packaged Windows runtime-source binding, safe live startup capture and root-only integration."
+}

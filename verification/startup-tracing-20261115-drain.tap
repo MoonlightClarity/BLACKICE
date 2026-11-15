@@ -1,0 +1,47 @@
+﻿TAP version 13
+# Subtest: parented phases and source binding persist explicit incomplete launch evidence
+ok 1 - parented phases and source binding persist explicit incomplete launch evidence
+  ---
+  duration_ms: 41.0679
+  type: 'test'
+  ...
+# Subtest: held open and read reveal the exact in-flight wait without touching original receipts
+ok 2 - held open and read reveal the exact in-flight wait without touching original receipts
+  ---
+  duration_ms: 83.7614
+  type: 'test'
+  ...
+# Subtest: injected inaccessible receipt fails closed, preserves original bytes and records stat failure
+ok 3 - injected inaccessible receipt fails closed, preserves original bytes and records stat failure
+  ---
+  duration_ms: 70.7765
+  type: 'test'
+  ...
+# Subtest: failed read waits for other in-flight reader to drain and closes both handles before releasing lease
+ok 4 - failed read waits for other in-flight reader to drain and closes both handles before releasing lease
+  ---
+  duration_ms: 89.3534
+  type: 'test'
+  ...
+# Subtest: four-minute-equivalent progress history is bounded and explicitly accounts for truncated samples
+ok 5 - four-minute-equivalent progress history is bounded and explicitly accounts for truncated samples
+  ---
+  duration_ms: 714.9105
+  type: 'test'
+  ...
+# Subtest: bounded telemetry uses no per-file disk writes and makes persistence failure visible
+ok 6 - bounded telemetry uses no per-file disk writes and makes persistence failure visible
+  ---
+  duration_ms: 49.1492
+  type: 'test'
+  ...
+# 20k in-memory operation observations 13 ms; no per-receipt writes
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1157.3676

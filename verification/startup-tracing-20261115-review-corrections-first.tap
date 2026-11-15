@@ -1,0 +1,46 @@
+﻿TAP version 13
+# Subtest: permanently unresolved build read cannot block start, error handling or initial incomplete checkpoint
+ok 1 - permanently unresolved build read cannot block start, error handling or initial incomplete checkpoint
+  ---
+  duration_ms: 71.8086
+  type: 'test'
+  ...
+# Subtest: late failed build binding is consumed and never overwrites the timed-out source identity
+ok 2 - late failed build binding is consumed and never overwrites the timed-out source identity
+  ---
+  duration_ms: 76.8895
+  type: 'test'
+  ...
+# Subtest: permanently unresolved checkpoint sync never gates startup or failure and cannot start another writer
+ok 3 - permanently unresolved checkpoint sync never gates startup or failure and cannot start another writer
+  ---
+  duration_ms: 43.3215
+  type: 'test'
+  ...
+# Subtest: late checkpoint sync success publishes a terminal checkpoint only after old writer fully closes
+ok 4 - late checkpoint sync success publishes a terminal checkpoint only after old writer fully closes
+  ---
+  duration_ms: 61.8431
+  type: 'test'
+  ...
+# Subtest: late checkpoint sync rejection is consumed and a single follow-up writer preserves failure evidence
+ok 5 - late checkpoint sync rejection is consumed and a single follow-up writer preserves failure evidence
+  ---
+  duration_ms: 62.8507
+  type: 'test'
+  ...
+# Subtest: sub-millisecond parse/hash/index costs accumulate precisely before one presentation rounding
+ok 6 - sub-millisecond parse/hash/index costs accumulate precisely before one presentation rounding
+  ---
+  duration_ms: 63.011
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 478.3148

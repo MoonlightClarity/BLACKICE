@@ -1,0 +1,335 @@
+﻿{
+  "kind": "blackice-23998-synthetic-trace-overhead",
+  "at": "2026-11-15T22:08:52.007Z",
+  "source": "0101d3f88cc7f3f139394a1c943b899511668a90",
+  "profile": "newly-created-temporary-synthetic-only",
+  "version": "2.39.98",
+  "node": "v22.23.5",
+  "platform": "win32",
+  "order": [
+    "baseline",
+    "traced",
+    "traced",
+    "baseline",
+    "baseline",
+    "traced"
+  ],
+  "receipts": 285,
+  "expectedStateHash": "6f86247f6956b490e1c95e72f92660fc8f312960fd8bc5ea765a98f290abf97b",
+  "attempts": [
+    {
+      "attempt": 1,
+      "mode": "baseline",
+      "wallMs": 318.556,
+      "processCpuMs": 265,
+      "receipts": 285,
+      "bytes": 15207566,
+      "stateHash": "6f86247f6956b490e1c95e72f92660fc8f312960fd8bc5ea765a98f290abf97b",
+      "stages": null,
+      "operations": null
+    },
+    {
+      "attempt": 2,
+      "mode": "traced",
+      "wallMs": 283.929,
+      "processCpuMs": 312,
+      "receipts": 285,
+      "bytes": 15207566,
+      "stateHash": "6f86247f6956b490e1c95e72f92660fc8f312960fd8bc5ea765a98f290abf97b",
+      "stages": [
+        {
+          "id": 1,
+          "parentId": null,
+          "name": "ledger-lease",
+          "startMs": 59,
+          "endMs": 87,
+          "outcome": "ready",
+          "durationMs": 28
+        },
+        {
+          "id": 2,
+          "parentId": null,
+          "name": "ledger-enumerate",
+          "startMs": 87,
+          "endMs": 94,
+          "outcome": "ready",
+          "durationMs": 7
+        },
+        {
+          "id": 3,
+          "parentId": null,
+          "name": "ledger-scan",
+          "startMs": 94,
+          "endMs": 343,
+          "outcome": "ready",
+          "durationMs": 249
+        },
+        {
+          "id": 4,
+          "parentId": null,
+          "name": "ledger-sort",
+          "startMs": 343,
+          "endMs": 343,
+          "outcome": "ready",
+          "durationMs": 0
+        },
+        {
+          "id": 5,
+          "parentId": null,
+          "name": "ledger-recovery",
+          "startMs": 343,
+          "endMs": 343,
+          "outcome": "ready",
+          "durationMs": 0
+        }
+      ],
+      "operations": {
+        "stat": {
+          "started": 285,
+          "maxMs": 13
+        },
+        "open": {
+          "started": 285,
+          "maxMs": 13
+        },
+        "read": {
+          "started": 285,
+          "maxMs": 6
+        },
+        "parse": {
+          "started": 285,
+          "maxMs": 4
+        },
+        "validate": {
+          "started": 285,
+          "maxMs": 0
+        },
+        "hash": {
+          "started": 285,
+          "maxMs": 3
+        },
+        "index": {
+          "started": 285,
+          "maxMs": 0
+        },
+        "close": {
+          "started": 285,
+          "maxMs": 14
+        }
+      }
+    },
+    {
+      "attempt": 3,
+      "mode": "traced",
+      "wallMs": 256.671,
+      "processCpuMs": 328,
+      "receipts": 285,
+      "bytes": 15207566,
+      "stateHash": "6f86247f6956b490e1c95e72f92660fc8f312960fd8bc5ea765a98f290abf97b",
+      "stages": [
+        {
+          "id": 1,
+          "parentId": null,
+          "name": "ledger-lease",
+          "startMs": 5,
+          "endMs": 11,
+          "outcome": "ready",
+          "durationMs": 6
+        },
+        {
+          "id": 2,
+          "parentId": null,
+          "name": "ledger-enumerate",
+          "startMs": 12,
+          "endMs": 14,
+          "outcome": "ready",
+          "durationMs": 2
+        },
+        {
+          "id": 3,
+          "parentId": null,
+          "name": "ledger-scan",
+          "startMs": 14,
+          "endMs": 261,
+          "outcome": "ready",
+          "durationMs": 247
+        },
+        {
+          "id": 4,
+          "parentId": null,
+          "name": "ledger-sort",
+          "startMs": 261,
+          "endMs": 261,
+          "outcome": "ready",
+          "durationMs": 0
+        },
+        {
+          "id": 5,
+          "parentId": null,
+          "name": "ledger-recovery",
+          "startMs": 261,
+          "endMs": 261,
+          "outcome": "ready",
+          "durationMs": 0
+        }
+      ],
+      "operations": {
+        "stat": {
+          "started": 285,
+          "maxMs": 11
+        },
+        "open": {
+          "started": 285,
+          "maxMs": 11
+        },
+        "read": {
+          "started": 285,
+          "maxMs": 11
+        },
+        "parse": {
+          "started": 285,
+          "maxMs": 8
+        },
+        "validate": {
+          "started": 285,
+          "maxMs": 0
+        },
+        "hash": {
+          "started": 285,
+          "maxMs": 2
+        },
+        "index": {
+          "started": 285,
+          "maxMs": 0
+        },
+        "close": {
+          "started": 285,
+          "maxMs": 11
+        }
+      }
+    },
+    {
+      "attempt": 4,
+      "mode": "baseline",
+      "wallMs": 437.748,
+      "processCpuMs": 375,
+      "receipts": 285,
+      "bytes": 15207566,
+      "stateHash": "6f86247f6956b490e1c95e72f92660fc8f312960fd8bc5ea765a98f290abf97b",
+      "stages": null,
+      "operations": null
+    },
+    {
+      "attempt": 5,
+      "mode": "baseline",
+      "wallMs": 628.527,
+      "processCpuMs": 468,
+      "receipts": 285,
+      "bytes": 15207566,
+      "stateHash": "6f86247f6956b490e1c95e72f92660fc8f312960fd8bc5ea765a98f290abf97b",
+      "stages": null,
+      "operations": null
+    },
+    {
+      "attempt": 6,
+      "mode": "traced",
+      "wallMs": 343.494,
+      "processCpuMs": 281,
+      "receipts": 285,
+      "bytes": 15207566,
+      "stateHash": "6f86247f6956b490e1c95e72f92660fc8f312960fd8bc5ea765a98f290abf97b",
+      "stages": [
+        {
+          "id": 1,
+          "parentId": null,
+          "name": "ledger-lease",
+          "startMs": 6,
+          "endMs": 14,
+          "outcome": "ready",
+          "durationMs": 8
+        },
+        {
+          "id": 2,
+          "parentId": null,
+          "name": "ledger-enumerate",
+          "startMs": 14,
+          "endMs": 17,
+          "outcome": "ready",
+          "durationMs": 3
+        },
+        {
+          "id": 3,
+          "parentId": null,
+          "name": "ledger-scan",
+          "startMs": 17,
+          "endMs": 349,
+          "outcome": "ready",
+          "durationMs": 332
+        },
+        {
+          "id": 4,
+          "parentId": null,
+          "name": "ledger-sort",
+          "startMs": 349,
+          "endMs": 349,
+          "outcome": "ready",
+          "durationMs": 0
+        },
+        {
+          "id": 5,
+          "parentId": null,
+          "name": "ledger-recovery",
+          "startMs": 349,
+          "endMs": 349,
+          "outcome": "ready",
+          "durationMs": 0
+        }
+      ],
+      "operations": {
+        "stat": {
+          "started": 285,
+          "maxMs": 16
+        },
+        "open": {
+          "started": 285,
+          "maxMs": 18
+        },
+        "read": {
+          "started": 285,
+          "maxMs": 17
+        },
+        "parse": {
+          "started": 285,
+          "maxMs": 13
+        },
+        "validate": {
+          "started": 285,
+          "maxMs": 5
+        },
+        "hash": {
+          "started": 285,
+          "maxMs": 4
+        },
+        "index": {
+          "started": 285,
+          "maxMs": 3
+        },
+        "close": {
+          "started": 285,
+          "maxMs": 18
+        }
+      }
+    }
+  ],
+  "medians": {
+    "baseline": {
+      "wallMs": 437.748,
+      "processCpuMs": 375
+    },
+    "traced": {
+      "wallMs": 283.929,
+      "processCpuMs": 312
+    }
+  },
+  "limits": "This is a synthetic 285-receipt full-validate ledger component, not a 66,848-receipt restored profile, desktop launch, physical disk diagnosis or whole-startup proof. Cold cache not established, OS/AV load uncontrolled, process CPU includes unrelated work."
+}

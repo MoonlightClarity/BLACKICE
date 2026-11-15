@@ -1,0 +1,155 @@
+﻿TAP version 13
+# Subtest: renderer hang and resume diagnostics persist fixed metadata within existing retention bounds
+ok 1 - renderer hang and resume diagnostics persist fixed metadata within existing retention bounds
+  ---
+  duration_ms: 50.7295
+  type: 'test'
+  ...
+# Subtest: native restart diagnostics preserve concrete refusal codes without arbitrary restart-prefixed payloads
+ok 2 - native restart diagnostics preserve concrete refusal codes without arbitrary restart-prefixed payloads
+  ---
+  duration_ms: 70.4337
+  type: 'test'
+  ...
+# Subtest: prompt library diagnostics expose health without retaining template bodies or field values
+ok 3 - prompt library diagnostics expose health without retaining template bodies or field values
+  ---
+  duration_ms: 4.1315
+  type: 'test'
+  ...
+# Subtest: API inactivity has a distinct safe diagnostic code without retaining provider or prompt details
+ok 4 - API inactivity has a distinct safe diagnostic code without retaining provider or prompt details
+  ---
+  duration_ms: 7.9928
+  type: 'test'
+  ...
+# Subtest: diagnostics durably retain only safe event metadata and an independent support snapshot
+ok 5 - diagnostics durably retain only safe event metadata and an independent support snapshot
+  ---
+  duration_ms: 18.277
+  type: 'test'
+  ...
+# Subtest: messages, credentials, tokens, cookies, paths, prompts and payloads never enter the log or export
+ok 6 - messages, credentials, tokens, cookies, paths, prompts and payloads never enter the log or export
+  ---
+  duration_ms: 22.3748
+  type: 'test'
+  ...
+# Subtest: malformed event values and throwing error metadata are contained without invoking arbitrary serialization
+ok 7 - malformed event values and throwing error metadata are contained without invoking arbitrary serialization
+  ---
+  duration_ms: 17.9639
+  type: 'test'
+  ...
+# Subtest: rotation bounds file count, bytes and retained events across restart
+ok 8 - rotation bounds file count, bytes and retained events across restart
+  ---
+  duration_ms: 605.7899
+  type: 'test'
+  ...
+# Subtest: lowering the retained segment count removes only owned old segments and preserves unrelated files
+ok 9 - lowering the retained segment count removes only owned old segments and preserves unrelated files
+  ---
+  duration_ms: 14.2748
+  type: 'test'
+  ...
+# Subtest: partial, corrupt and hostile log lines are tolerated and an unterminated final record does not absorb later events
+ok 10 - partial, corrupt and hostile log lines are tolerated and an unterminated final record does not absorb later events
+  ---
+  duration_ms: 19.7837
+  type: 'test'
+  ...
+# Subtest: oversized existing logs are read in bounded tails and reset to the byte budget
+ok 11 - oversized existing logs are read in bounded tails and reset to the byte budget
+  ---
+  duration_ms: 16.5553
+  type: 'test'
+  ...
+# Subtest: disk-full and unreadable logs never throw or recurse, preserve bounded in-memory evidence and recover health
+ok 12 - disk-full and unreadable logs never throw or recurse, preserve bounded in-memory evidence and recover health
+  ---
+  duration_ms: 13.0244
+  type: 'test'
+  ...
+# Subtest: startup I/O errors are reported by status and do not block subsequent lifecycle hooks
+ok 13 - startup I/O errors are reported by status and do not block subsequent lifecycle hooks
+  ---
+  duration_ms: 7.2065
+  type: 'test'
+  ...
+# Subtest: a rotation failure is observable and a later event can recover without exceeding the file budget
+ok 14 - a rotation failure is observable and a later event can recover without exceeding the file budget
+  ---
+  duration_ms: 54.5066
+  type: 'test'
+  ...
+# Subtest: bounded pending admission drops an event storm and flush/close settle every accepted write
+ok 15 - bounded pending admission drops an event storm and flush/close settle every accepted write
+  ---
+  duration_ms: 18.3262
+  type: 'test'
+  ...
+# Subtest: fixed lifecycle hooks accept failure codes while excluding Error names, messages and renderer descriptions
+ok 16 - fixed lifecycle hooks accept failure codes while excluding Error names, messages and renderer descriptions
+  ---
+  duration_ms: 51.6038
+  type: 'test'
+  ...
+# Subtest: restart and window lifecycle failures survive logging and reopening without exporting error text
+ok 17 - restart and window lifecycle failures survive logging and reopening without exporting error text
+  ---
+  duration_ms: 43.2884
+  type: 'test'
+  ...
+# Subtest: startup phase diagnostics require fixed phases and retain only bounded timing fields across restart
+ok 18 - startup phase diagnostics require fixed phases and retain only bounded timing fields across restart
+  ---
+  duration_ms: 76.3256
+  type: 'test'
+  ...
+# Subtest: malformed or arbitrary startup labels are dropped rather than stored as partial events
+ok 19 - malformed or arbitrary startup labels are dropped rather than stored as partial events
+  ---
+  duration_ms: 3.4924
+  type: 'test'
+  ...
+# Subtest: reopening startup timing logs revalidates phases and strips hostile payloads
+ok 20 - reopening startup timing logs revalidates phases and strips hostile payloads
+  ---
+  duration_ms: 8.7614
+  type: 'test'
+  ...
+# Subtest: parented phases and source binding persist explicit incomplete launch evidence
+ok 21 - parented phases and source binding persist explicit incomplete launch evidence
+  ---
+  duration_ms: 37.6824
+  type: 'test'
+  ...
+# Subtest: held open and read reveal the exact in-flight wait without touching original receipts
+ok 22 - held open and read reveal the exact in-flight wait without touching original receipts
+  ---
+  duration_ms: 76.1166
+  type: 'test'
+  ...
+# Subtest: injected inaccessible receipt fails closed, preserves original bytes and records stat failure
+ok 23 - injected inaccessible receipt fails closed, preserves original bytes and records stat failure
+  ---
+  duration_ms: 62.8141
+  type: 'test'
+  ...
+# Subtest: bounded telemetry uses no per-file disk writes and makes persistence failure visible
+ok 24 - bounded telemetry uses no per-file disk writes and makes persistence failure visible
+  ---
+  duration_ms: 49.3877
+  type: 'test'
+  ...
+# 20k in-memory operation observations 12 ms; no per-receipt writes
+1..24
+# tests 24
+# suites 0
+# pass 24
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1525.488

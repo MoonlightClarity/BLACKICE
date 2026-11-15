@@ -466,6 +466,7 @@ export async function createHarnessServer(options = {}) {
   const emailClient = options.emailClient || null;
   directExecution = options.directExecution || await startupPhase(diagnostics, 'direct-jobs', () => new DirectExecutionAPI({
     onStartupDiagnostics: value => diagnostics.record(value),
+    startupTrace: diagnostics.startupTrace || null,
     dataDir: path.resolve(dataDir), allowedRoot: defaultCwd, browser, patchStore: engine.filePatches, taskStore:tasks,
     isClosing: connectorClosing, onChange: connectorChanged,
     resolveBrowserConversationOwner: id => resolveBrowserConversationOwner(id, conversations),
@@ -1473,6 +1474,7 @@ export async function createHarnessServer(options = {}) {
       if (typeof waitForRemote !== 'boolean') throw new TypeError('Choose whether to wait for remote startup.');
       await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
       boundPort = server.address().port;
+      diagnostics.startupTrace?.mark('http-listening');
       remoteStartup = remoteAccess ? startupPhase(diagnostics, 'remote-route', () => remoteAccess.attach({ origin: `http://127.0.0.1:${boundPort}`, sessionCookie: `relay_session_${boundPort}=${session}` })) : Promise.resolve();
       // The desktop can open its local workspace while the saved HTTPS route
       // reconnects. RemoteAccessManager continues to own admission and cleanup.
