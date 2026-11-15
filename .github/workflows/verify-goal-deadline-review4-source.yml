@@ -1,0 +1,168 @@
+name: Verify Deadline Review 4 exact Windows source once
+
+on:
+  push:
+    branches:
+      - codex/goal-deadline-review4-source-verifier
+    paths:
+      - .github/workflows/verify-goal-deadline-review4-source.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: goal-deadline-review4-exact-source-once
+  cancel-in-progress: false
+
+jobs:
+  source_suite:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      EXPECTED_SOURCE_COMMIT: cc4b97683a46ebedd412c4c17875859d14732810
+    steps:
+      - name: Checkout exact candidate source, not the workflow controller
+        uses: actions/checkout@v7
+        with:
+          ref: cc4b97683a46ebedd412c4c17875859d14732810
+          path: source
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Pin Node for source suite
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.2'
+          package-manager-cache: false
+      - name: Pin Python for Windows fixtures
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Bind checked-out source and capture complete before evidence
+        id: preflight
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Path source-suite-evidence -Force | Out-Null
+          Push-Location source
+          try {
+            $actual=(& git rev-parse HEAD).Trim()
+            if($LASTEXITCODE -ne 0 -or $actual -cne $env:EXPECTED_SOURCE_COMMIT) { throw "Wrong source HEAD: $actual" }
+            $dirty=@(& git status --porcelain --untracked-files=no)
+            if($dirty.Count -ne 0) { throw "Tracked candidate dirty before suite: $($dirty.Count)" }
+            $report=[ordered]@{
+              format=1
+              expectedSourceCommit=$env:EXPECTED_SOURCE_COMMIT
+              actualSourceCommit=$actual
+              workflowControllerCommit=$env:GITHUB_SHA
+              workflowRunId=$env:GITHUB_RUN_ID
+              workflowRunAttempt=$env:GITHUB_RUN_ATTEMPT
+              githubRef=$env:GITHUB_REF
+              githubRepository=$env:GITHUB_REPOSITORY
+              runnerEnvironment=$env:RUNNER_ENVIRONMENT
+              runnerOS=$env:RUNNER_OS
+              runnerArchitecture=$env:RUNNER_ARCH
+              runnerName=$env:RUNNER_NAME
+              node=(& node --version).Trim()
+              npm=(& npm --version).Trim()
+              python=(& python --version).Trim()
+              git=(& git --version).Trim()
+              timestampUtc=[DateTime]::UtcNow.ToString('o')
+              trackedDirtyBefore=$dirty
+            }
+            $report | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath ../source-suite-evidence/controller-environment.json -Encoding utf8NoBOM
+            node --input-type=module -e "import {releaseSourceIndex} from './scripts/release-request.mjs';import {appFingerprint} from './scripts/release-check.mjs';import {writeFile} from 'node:fs/promises';const inventory=await releaseSourceIndex(process.cwd());const fingerprint=await appFingerprint(process.cwd());await writeFile('../source-suite-evidence/source-before.json',JSON.stringify({sourceCommit:process.env.EXPECTED_SOURCE_COMMIT,appFingerprint:fingerprint,...inventory},null,2)+'\n');"
+            if($LASTEXITCODE -ne 0) { throw 'Before source inventory/fingerprint capture failed.' }
+          } finally { Pop-Location }
+      - name: Install locked test dependencies only (no application installation)
+        id: deps
+        shell: pwsh
+        working-directory: source
+        run: |
+          $ErrorActionPreference='Stop'
+          npm ci --no-audit --no-fund
+          if($LASTEXITCODE -ne 0) { throw "npm ci failed with $LASTEXITCODE" }
+      - name: Run ONE explicit Windows full source suite
+        id: suite
+        shell: pwsh
+        working-directory: source
+        run: |
+          $ErrorActionPreference='Stop'
+          node scripts/source-suite-receipt.mjs ../source-suite-evidence
+          if($LASTEXITCODE -ne 0) { throw "Source suite failed with $LASTEXITCODE" }
+      - name: Capture exact after inventory, fingerprints and terminal controller
+        if: always()
+        shell: pwsh
+        env:
+          PREFLIGHT_STEP_OUTCOME: ${{ steps.preflight.outcome }}
+          DEPS_STEP_OUTCOME: ${{ steps.deps.outcome }}
+          SUITE_STEP_OUTCOME: ${{ steps.suite.outcome }}
+        run: |
+          $ErrorActionPreference='Continue'
+          New-Item -ItemType Directory -Path source-suite-evidence -Force | Out-Null
+          $terminal=[ordered]@{
+            format=1
+            scope='exact Windows source suite only'
+            expectedSourceCommit=$env:EXPECTED_SOURCE_COMMIT
+            workflowControllerCommit=$env:GITHUB_SHA
+            workflowRunId=$env:GITHUB_RUN_ID
+            workflowRunAttempt=$env:GITHUB_RUN_ATTEMPT
+            preflightOutcome=$env:PREFLIGHT_STEP_OUTCOME
+            dependencyOutcome=$env:DEPS_STEP_OUTCOME
+            suiteStepOutcome=$env:SUITE_STEP_OUTCOME
+            checkedAtUtc=[DateTime]::UtcNow.ToString('o')
+            actualSourceCommitAfter=$null
+            trackedDirtyAfter=$null
+            sourceIndexBefore=$null
+            sourceIndexAfter=$null
+            appFingerprintBefore=$null
+            appFingerprintAfter=$null
+            sourceUnchanged=$false
+            afterCaptureExitCode=$null
+            receiptPresent=$false
+            receiptSha256=$null
+            receiptState=$null
+            receiptCounts=$null
+            limitations='Only Windows source assertions; no real provider, parallel active child, in-flight external effects, or native async browser proof.'
+          }
+          if(Test-Path -LiteralPath source -PathType Container) {
+            Push-Location source
+            try {
+              $terminal.actualSourceCommitAfter=(& git rev-parse HEAD).Trim()
+              $terminal.trackedDirtyAfter=@(& git status --porcelain --untracked-files=no)
+              node --input-type=module -e "import {releaseSourceIndex} from './scripts/release-request.mjs';import {appFingerprint} from './scripts/release-check.mjs';import {writeFile} from 'node:fs/promises';const inventory=await releaseSourceIndex(process.cwd());const fingerprint=await appFingerprint(process.cwd());await writeFile('../source-suite-evidence/source-after.json',JSON.stringify({sourceCommit:process.env.EXPECTED_SOURCE_COMMIT,actualCommit:process.argv[1],appFingerprint:fingerprint,...inventory},null,2)+'\n');" $terminal.actualSourceCommitAfter
+              $terminal.afterCaptureExitCode=$LASTEXITCODE
+            } catch { $terminal.afterCaptureError=[string]$_ }
+            finally { Pop-Location }
+          }
+          $beforePath='source-suite-evidence/source-before.json'
+          $afterPath='source-suite-evidence/source-after.json'
+          if((Test-Path -LiteralPath $beforePath) -and (Test-Path -LiteralPath $afterPath)) {
+            try {
+              $before=Get-Content -LiteralPath $beforePath -Raw | ConvertFrom-Json
+              $after=Get-Content -LiteralPath $afterPath -Raw | ConvertFrom-Json
+              $terminal.sourceIndexBefore=$before.sourceIndexSha256
+              $terminal.sourceIndexAfter=$after.sourceIndexSha256
+              $terminal.appFingerprintBefore=$before.appFingerprint
+              $terminal.appFingerprintAfter=$after.appFingerprint
+              $terminal.sourceUnchanged=($terminal.actualSourceCommitAfter -ceq $env:EXPECTED_SOURCE_COMMIT -and $before.sourceIndexSha256 -ceq $after.sourceIndexSha256 -and $before.appFingerprint -ceq $after.appFingerprint -and $terminal.trackedDirtyAfter.Count -eq 0)
+            } catch { $terminal.afterComparisonError=[string]$_ }
+          }
+          $receipt='source-suite-evidence/windows-2.39.97.json'
+          if(Test-Path -LiteralPath $receipt) {
+            try {
+              $actual=Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
+              $terminal.receiptPresent=$true
+              $terminal.receiptSha256=(Get-FileHash -LiteralPath $receipt -Algorithm SHA256).Hash.ToLowerInvariant()
+              $terminal.receiptState=$actual.state
+              $terminal.receiptCounts=$actual.tests
+            } catch { $terminal.receiptError=[string]$_ }
+          }
+          $terminal | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath source-suite-evidence/terminal-controller.json -Encoding utf8NoBOM
+          if($terminal.actualSourceCommitAfter -cne $env:EXPECTED_SOURCE_COMMIT -or $terminal.sourceUnchanged -ne $true) { throw 'Terminal source identity or before/after inventory/fingerprint mismatch.' }
+      - name: Preserve original raw TAP, inventory, environment and terminal evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: deadline-review4-exact-source-evidence
+          path: source-suite-evidence
+          if-no-files-found: error
