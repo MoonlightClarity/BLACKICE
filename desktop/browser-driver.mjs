@@ -17,6 +17,7 @@ import { BrowserSurfaceHost } from './browser-surface.mjs';
 import { performProviderKeySource } from './provider-key-source.mjs';
 import { inspectObservedFormControl, observePageReceiptRecords } from './browser-operation-observation.mjs';
 import { BrowserSubmissionObservations } from './browser-submission-observation.mjs';
+import { inspectCleanupDOM } from './browser-cleanup-dom.mjs';
 import { browserReceiptBindingKey, describeHostOperation } from '../lib/operation-descriptors.mjs';
 
 const error = message => new Error(message);
@@ -503,7 +504,7 @@ export class ElectronBrowserDriver extends EventEmitter {
   liveTabs() { return [...this.tabs.values()].filter(tab => tab.window && !tab.window.isDestroyed()); }
   status() {
     const live = this.liveTabs();
-    return { contained: true, canShow: false, protection: this.protection.status(), persistence: { healthy: !this.persistenceError, ...(this.persistenceError ? { error: 'Browser folders and pages could not be saved.' } : {}) }, folders: [...this.folders.values()].map(folder => ({ ...folder })), capacity: { live: live.filter(tab => tab.purpose !== 'chat-mode').length, maxLive: this.maxLiveTabs, saved: this.tabs.size, maxSaved: this.maxSavedTabs, perTaskLive: this.maxTaskTabs }, ownerActiveTabs: Object.fromEntries(this.ownerActiveTabs), tabs: [...this.tabs.values()].map(t => ({ tabId: t.id, documentId: inputDocumentId(t), folderId: t.folderId, parentTabId: t.parentTabId || null, ...(t.owner ? { owner: { ...t.owner } } : {}), ownershipKind: t.owner ? 'ai' : 'user', conversationId: t.owner?.conversationId || null, ...(t.purpose === 'chat-mode' ? { purpose: 'chat-mode' } : {}), ...(t.providerKeyProtected ? { protectedContent: true } : {}), url: this.tabURL(t), title: this.tabTitle(t), loading: !t.pendingURL && Boolean(t.window?.webContents.isLoading()), canGoBack: !t.pendingURL && Boolean(t.window?.webContents.navigationHistory?.canGoBack?.()), canGoForward: !t.pendingURL && Boolean(t.window?.webContents.navigationHistory?.canGoForward?.()), visible: Boolean(t.window?.isVisible()), contained: true, canShow: false, protection: this.protection.tabStatus(t.id, this.tabURL(t)), suspended: !t.window || Boolean(t.pendingURL), interactionSettling: t.suspendedWork.size > 0, ...(t.rendererFailure ? { rendererFailure: { ...t.rendererFailure } } : {}), ...(t.pendingInteraction ? { pendingInteraction: structuredClone(t.pendingInteraction) } : {}) })), activeTab: this.activeTab, downloads: this.downloads.filter((item, index) => item.status === 'downloading' || index >= this.downloads.length - 20), activeDownloads: this.downloads.filter(item => item.status === 'downloading').length, profile: 'BLACKICE contained browser · saved locally', ...(this.diagnostics ? { diagnostics: this.diagnostics.snapshot() } : {}) };
+    return { contained: true, canShow: false, protection: this.protection.status(), persistence: { healthy: !this.persistenceError, ...(this.persistenceError ? { error: 'Browser folders and pages could not be saved.' } : {}) }, folders: [...this.folders.values()].map(folder => ({ ...folder })), capacity: { live: live.filter(tab => tab.purpose !== 'chat-mode').length, maxLive: this.maxLiveTabs, saved: this.tabs.size, maxSaved: this.maxSavedTabs, perTaskLive: this.maxTaskTabs }, ownerActiveTabs: Object.fromEntries(this.ownerActiveTabs), tabs: [...this.tabs.values()].map(t => ({ tabId: t.id, documentId: inputDocumentId(t), folderId: t.folderId, parentTabId: t.parentTabId || null, ...(t.owner ? { owner: { ...t.owner } } : {}), ownershipKind: t.owner ? 'ai' : 'user', conversationId: t.owner?.conversationId || null, ...(t.humanCreated ? { humanCreated: true } : {}), ...(t.userPinned ? { userPinned: true } : {}), ...(t.submissionObservations?.pending?.size || t.externalHandoff && t.externalHandoff.status !== 'handed-to-os' ? { uncertainEffects: true } : {}), ...(t.purpose === 'chat-mode' ? { purpose: 'chat-mode' } : {}), ...(t.providerKeyProtected ? { protectedContent: true } : {}), url: this.tabURL(t), title: this.tabTitle(t), loading: !t.pendingURL && Boolean(t.window?.webContents.isLoading()), canGoBack: !t.pendingURL && Boolean(t.window?.webContents.navigationHistory?.canGoBack?.()), canGoForward: !t.pendingURL && Boolean(t.window?.webContents.navigationHistory?.canGoForward?.()), visible: Boolean(t.window?.isVisible()), contained: true, canShow: false, protection: this.protection.tabStatus(t.id, this.tabURL(t)), suspended: !t.window || Boolean(t.pendingURL), interactionSettling: t.suspendedWork.size > 0, ...(t.rendererFailure ? { rendererFailure: { ...t.rendererFailure } } : {}), ...(t.pendingInteraction ? { pendingInteraction: structuredClone(t.pendingInteraction) } : {}) })), activeTab: this.activeTab, downloads: this.downloads.filter((item, index) => item.status === 'downloading' || index >= this.downloads.length - 20), activeDownloads: this.downloads.filter(item => item.status === 'downloading').length, profile: 'BLACKICE contained browser · saved locally', ...(this.diagnostics ? { diagnostics: this.diagnostics.snapshot() } : {}) };
   }
   protectionStatus() { return { ...this.protection.status(), tabs: [...this.tabs.values()].map(tab => ({ tabId: tab.id, ...this.protection.tabStatus(tab.id, this.tabURL(tab)) })) }; }
   async configureProtection(options, { signal } = {}) {
@@ -785,6 +786,63 @@ export class ElectronBrowserDriver extends EventEmitter {
     for (const child of this.tabs.values()) if (child.parentTabId === tab.id) child.parentTabId = this.tabs.has(tab.parentTabId) ? tab.parentTabId : null;
     for (const [key, id] of this.ownerActiveTabs) if (id === tab.id) { const next = [...this.tabs.values()].find(item => browserOwnerKey(item.owner) === key); if (next) this.ownerActiveTabs.set(key, next.id); else this.ownerActiveTabs.delete(key); }
     if (this.activeTab === tab.id) this.activeTab = [...this.tabs.values()].find(item => !item.owner)?.id || this.tabs.keys().next().value || null;
+  }
+  /** Safety state must be checked both before and after asynchronous DOM inspection. */
+  cleanupRuntimeReason(tab, webContents = null) {
+    if (!tab || this.tabs.get(tab.id) !== tab || this.closed || tab.closing)
+      return 'The cleanup tab is no longer available.';
+    if (tab.purpose === 'chat-mode' || tab.providerKeyProtected || tab.credentialCaptureBlocked
+      || tab.humanCreated || tab.userPinned)
+      return 'This is a reserved or person-touched page.';
+    if (tab.authenticationChallenge || tab.pendingInteraction || tab.suspendedWork?.size
+      || this.downloads.some(item => item.tabId === tab.id && item.status === 'downloading')
+      || tab.submissionObservations?.pending?.size || tab.externalHandoff && tab.externalHandoff.status !== 'handed-to-os'
+      || tab.rendererFailure || tab.loadError)
+      return 'This page has unsettled interaction, authentication, download or external effects.';
+    if (!tab.window || tab.window.isDestroyed() || tab.pendingURL || tab.suspending)
+      return 'This page is suspended or becoming unavailable.';
+    const wc = tab.window.webContents;
+    if (!wc || wc !== (webContents || wc) || wc.isDestroyed?.() || wc.isLoading?.())
+      return 'This page is loading or its native renderer changed.';
+    return null;
+  }
+  /** Inspect every reachable frame and shadow tree, without page navigation or input. */
+  async cleanupInspection(tabId, { signal } = {}) {
+    cancel(signal);
+    const tab = this.tabs.get(tabId);
+    if (!tab) return { state: 'gone' };
+    const reason = this.cleanupRuntimeReason(tab);
+    if (reason) return { state: 'unknown', reason };
+    const wc = tab.window.webContents, window = tab.window;
+    const beforeUrl = this.tabURL(tab), beforeDocument = inputDocumentId(tab);
+    let timer;
+    try {
+      const result = await Promise.race([
+        wc.executeJavaScript('(' + inspectCleanupDOM.toString() + ')(document)'),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(Error('Inspection timed out.')), 1200); }),
+      ]);
+      cancel(signal);
+      const after = this.cleanupRuntimeReason(tab, wc);
+      if (after) return { state: 'unknown', reason: after };
+      if (tab.window !== window || this.tabURL(tab) !== beforeUrl
+        || inputDocumentId(tab) !== beforeDocument)
+        return { state: 'unknown', reason: 'The inspected document or native window changed.' };
+      // Never convert Boolean false, partial / error results, or absent roots
+      // into evidence that the whole page was inspected.
+      if (!result || typeof result !== 'object' ||
+        !['clear', 'limited', 'interactive', 'unknown'].includes(result.state))
+        return { state: 'unknown', reason: 'The page returned an incomplete inspection result.' };
+      // No page-JS probe can see a closed shadow root on an ordinary div/span.
+      // Treat any legacy 'clear' response as limited, not proof that the
+      // entire native document contains no unfinished user content.
+      return result.state === 'clear'
+        ? { state: 'limited', coverage: 'reachable-dom-only',
+            reason: 'No visible editable content detected; closed shadow roots on ordinary div/span elements can contain hidden forms.' }
+        : result;
+    } catch (cause) {
+      if (signal?.aborted) cancel(signal);
+      return { state: 'unknown', reason: 'The page did not confirm that its embedded scopes were inspected.' };
+    } finally { clearTimeout(timer); }
   }
   closeTab(tab) {
     this.cancelAuthentication(tab);
@@ -1808,7 +1866,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       dispose: () => { clearTimeout(timer); wc.removeListener('did-start-navigation', listener); wake?.(); },
     };
   }
-  async perform(args, { signal, source = 'agent', owner: context, destinationOwner, validateUploadPath, suppressResultSnapshot = false, operationDescriptor, operationId, recoveryInput } = {}) {
+  async perform(args, { signal, source = 'agent', owner: context, destinationOwner, validateUploadPath, suppressResultSnapshot = false, operationDescriptor, operationId, recoveryInput, cleanupGuard, cleanupReviewed = false } = {}) {
     cancel(signal);
     const fillText = args.action === 'fill' ? validateBrowserFillRequest(args) : undefined;
     if (args.action === 'upload') validateBrowserUploadRequest(args);
@@ -1840,6 +1898,28 @@ export class ElectronBrowserDriver extends EventEmitter {
     let tab = args.action === 'open' ? this.newTab(browserURL(args.url), { owner, humanCreated: source === 'user', folderId: args.folderId, parentTabId: args.parentTabId }) : this.tab(selected);
     const externalBefore = tab.externalHandoff;
     if (owner && !sameOwner(tab.owner, owner) && !(owner.allowUserTabs && !tab.owner)) throw capacityError('This browser tab belongs to another task.', 'BROWSER_TAB_OWNERSHIP');
+    if (source === 'host-cleanup' && args.action === 'close') {
+      if (!args.expectedUrl || !args.expectedDocumentId || this.tabURL(tab) !== args.expectedUrl
+        || inputDocumentId(tab) !== args.expectedDocumentId)
+        throw capacityError('The cleanup target changed document identity.', 'BROWSER_CLEANUP_STALE_TARGET');
+      const safety = await this.cleanupInspection(tab.id, { signal });
+      // Cancellation, person interaction, downloads and dialogs may arrive
+      // while Chromium evaluates the probe. No await is allowed between this
+      // final guard and the native close.
+      cancel(signal);
+      if (safety.state !== 'clear' && safety.state !== 'limited')
+        throw capacityError(safety.reason || 'This page is not verified finished; inspect it individually.', 'BROWSER_CLEANUP_PROTECTED');
+      if (safety.state === 'limited' && cleanupReviewed !== true)
+        throw capacityError('Limited inspection cannot see closed shadow roots on ordinary elements. Review this page and select it explicitly before closing.', 'BROWSER_CLEANUP_REVIEW_REQUIRED');
+      const reason = this.cleanupRuntimeReason(tab);
+      if (reason) throw capacityError(reason, 'BROWSER_CLEANUP_PROTECTED');
+      if (this.tabURL(tab) !== args.expectedUrl || inputDocumentId(tab) !== args.expectedDocumentId)
+        throw capacityError('The cleanup target changed during inspection.', 'BROWSER_CLEANUP_STALE_TARGET');
+      if (typeof cleanupGuard === 'function') cleanupGuard();
+      cancel(signal);
+      this.closeTab(tab);
+      return this.savedStatus();
+    }
     if (source === 'user') tab.humanCreated = true;
     if (['diagnostics', 'debug_reset', 'stop'].includes(args.action)) {
       if (source !== 'user' && tab.purpose === 'chat-mode') throw capacityError('The human ChatGPT tab is reserved for its caller.', 'BROWSER_HUMAN_CHAT_RESERVED');

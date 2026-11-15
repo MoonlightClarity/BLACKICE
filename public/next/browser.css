@@ -162,5 +162,19 @@
 .next-native-browser .next-browser-tab-group:has(.next-browser-tab[aria-selected=true]),.next-browser-workspace .next-browser-tab-group:has(.next-browser-tab[aria-selected=true]){background:var(--next-selection-background,var(--raised));border-color:var(--next-selection-border,var(--accent))}
 .next-native-browser .next-browser-tab-group .next-browser-tab[aria-selected=true],.next-browser-workspace .next-browser-tab-group .next-browser-tab[aria-selected=true]{color:var(--text-primary,inherit)}
 .next-native-browser .next-native-browser-empty h1{color:var(--text-primary,inherit)}
+/* Explicit, conversation-bound bulk cleanup with visible exclusions. */
+.next-browser-cleanup-panel{padding:12px 14px;border:1px solid var(--line);border-radius:7px;background:var(--panel);max-height:42vh;overflow:auto;flex:none;min-height:0}
+.next-browser-cleanup-panel[hidden]{display:none}
+.next-browser-cleanup-panel h2{font-size:14px;margin:0 0 5px}
+.next-browser-cleanup-panel p{font-size:11px;color:var(--muted);margin:4px 0 9px}
+.next-browser-cleanup-controls{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px}
+.next-browser-cleanup-controls label{display:flex;flex-direction:column;min-width:170px;flex:1;font-size:11px;gap:4px}
+.next-browser-cleanup-controls .next-field{min-height:32px;max-width:100%}
+.next-browser-cleanup-list{display:grid;gap:5px;margin:9px 0;max-height:190px;overflow:auto}
+.next-browser-cleanup-row{display:flex;gap:9px;align-items:center;padding:7px 9px;border:1px solid var(--line);border-radius:5px;font-size:11px;min-width:0}
+.next-browser-cleanup-row span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.next-browser-cleanup-row strong{font-size:10px;color:var(--muted)}
+.next-browser-cleanup-row small{color:var(--muted);font-size:10px;flex:1}
+.next-browser-cleanup-row input{flex:none}
 @media(max-width:800px){.next-browser-ownership{gap:6px;flex-wrap:wrap}.next-browser-conversation-label{max-width:none;flex-basis:calc(100% - 220px)}.next-browser-conversation-label>span{display:none}.next-browser-move{flex-basis:170px}.next-browser-owner-hint{font-size:10px}.next-browser-tab-owner{max-width:80px}}
 @media(max-width:570px){.next-browser-scopes{order:0}.next-browser-move{order:1}.next-browser-conversation-label{order:2;flex-basis:100%}.next-browser-owner-hint{display:none}}

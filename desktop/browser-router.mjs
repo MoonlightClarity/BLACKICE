@@ -140,6 +140,14 @@ export class BrowserRouter extends EventEmitter {
     if (selected.browser !== 'relay' || typeof this.drivers.relay?.providerKeySource !== 'function') throw fail('Protected provider key setup is available only in the contained browser.', 'PROVIDER_KEY_SOURCE_UNAVAILABLE');
     return this.drivers.relay.providerKeySource({ ...args, tabId: selected.nativeId }, options);
   }
+  /** Read-only contained-page safety check; never starts a hidden Firefox page. */
+  async cleanupInspection(tabId) {
+    if (this.closed) return { state: 'unknown', reason: 'The browser is closed.' };
+    const selected = this.owner({ tabId, browser: 'relay' }, this.status());
+    if (selected.browser !== 'relay' || !this.drivers.relay?.cleanupInspection)
+      return { state: 'unknown', reason: 'Contained-page safety inspection is unavailable.' };
+    return this.drivers.relay.cleanupInspection(selected.nativeId);
+  }
   async releaseOwner(owner, options = {}) {
     if (this.closed || typeof this.drivers.relay?.releaseOwner !== 'function') return { suspended: [], retained: [], unavailable: true };
     return this.drivers.relay.releaseOwner(owner, options);

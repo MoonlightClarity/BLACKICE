@@ -75,6 +75,137 @@ const assertContained = window => {
   assert.equal(window.options.webPreferences.nodeIntegrationInSubFrames, undefined); assert.equal(window.options.webPreferences.preload, undefined);
 };
 
+test('native cleanup checks a synthetic page without navigation and rejects form/person-touched state', async t => {
+  const { driver, windows } = await fixture(t); await driver.init();
+  const owner = { taskId: 'fixture-conversation', nodeId: 'research', runId: 'fixture-run',
+    conversationId: 'fixture-conversation' };
+  const tab = driver.newTab('https://fixture.invalid/completed', { owner }); await tab.loading;
+  const before = driver.status().tabs.find(entry => entry.tabId === tab.id);
+  const loads = [...windows[0].loads], wc = tab.window.webContents;
+  wc.executeJavaScript = async script => { assert.match(script, /querySelector/); return {state:'interactive'}; };
+  assert.equal((await driver.cleanupInspection(tab.id)).state, 'interactive');
+  tab.userPinned = true;
+  assert.match((await driver.cleanupInspection(tab.id)).reason, /person-touched/);
+  tab.userPinned = false;
+  wc.executeJavaScript = async () => ({state:'clear'});
+  assert.equal((await driver.cleanupInspection(tab.id)).state, 'limited');
+  assert.deepEqual(windows[0].loads, loads, 'Inspecting must not reload or navigate.');
+  await assert.rejects(driver.perform({ action:'close', tabId:tab.id,
+    expectedDocumentId: 'stale', expectedUrl:before.url }, { source:'host-cleanup' }),
+  { code:'BROWSER_CLEANUP_STALE_TARGET' });
+  assert.ok(driver.tabs.has(tab.id));
+  await driver.perform({ action:'close', tabId:tab.id,
+    expectedDocumentId:before.documentId, expectedUrl:before.url }, { source:'host-cleanup', cleanupReviewed:true });
+  assert.equal(driver.tabs.has(tab.id), false);
+});
+
+/** Deliberately minimal isolated DOM: top-level querySelector cannot see shadow roots or child documents. */
+const cleanupDocument = (elements = []) => ({
+  nodeType: 9, readyState:'complete',
+  querySelector:() => elements.find(element => ['form','input','textarea','select'].includes(element.localName)
+    || element.editable === true) || null,
+  querySelectorAll:() => elements,
+});
+const cleanupElement = (localName, fields = {}) => ({localName, shadowRoot:null, ...fields});
+
+test('cleanup inspection finds unfinished nested iframe/shadow forms, protects opaque frames and still permits clean inspected roots', async t => {
+  const {driver}=await fixture(t); await driver.init();
+  const owner={taskId:'fixture-cleanup',runId:'run-cleanup',nodeId:'research',conversationId:'fixture-cleanup'};
+  const tab=driver.newTab('https://fixture.invalid/completed',{owner});await tab.loading;
+  const wc=tab.window.webContents;
+  const inspect=async document => {
+    wc.executeJavaScript=async source=>{
+      assert.match(source,/querySelector/);
+      return Function('document','return '+source)(document);
+    };
+    return driver.cleanupInspection(tab.id);
+  };
+  const empty=cleanupDocument([cleanupElement('p')]);
+  assert.equal((await inspect(empty)).state,'limited','A simple page is a manually reviewable candidate, not certified empty of hidden content.');
+  const frameForm=cleanupDocument([cleanupElement('form')]);
+  const child=cleanupElement('iframe',{contentDocument:frameForm});
+  assert.equal((await inspect(cleanupDocument([child]))).state,'interactive','Nested form cannot be mistaken for an empty top document.');
+  const nestedClean=cleanupDocument([cleanupElement('iframe',{contentDocument:cleanupDocument([cleanupElement('p')])})]);
+  assert.equal((await inspect(nestedClean)).state,'limited','Fully traversed same-origin iframe remains eligible for manual review.');
+  const shadowForm={querySelector:()=>({}),querySelectorAll:()=>[cleanupElement('form')]};
+  assert.equal((await inspect(cleanupDocument([cleanupElement('x-form',{shadowRoot:shadowForm})]))).state,'interactive');
+  const shadowIframe={querySelector:()=>null,querySelectorAll:()=>[cleanupElement('iframe',{contentDocument:frameForm})]};
+  assert.equal((await inspect(cleanupDocument([cleanupElement('x-nested',{shadowRoot:shadowIframe})]))).state,'interactive',
+    'An iframe inside a shadow tree must also be inspected.');
+  const cleanShadow={querySelector:()=>null,querySelectorAll:()=>[cleanupElement('p')]};
+  assert.equal((await inspect(cleanupDocument([cleanupElement('x-shell',{shadowRoot:cleanShadow})]))).state,'limited');
+  const blocked=cleanupElement('iframe');
+  Object.defineProperty(blocked,'contentDocument',{get(){throw Error('cross-origin');}});
+  assert.equal((await inspect(cleanupDocument([blocked]))).state,'unknown','Uninspectable iframe must not be clean.');
+  assert.equal((await inspect(cleanupDocument([cleanupElement('iframe',{contentDocument:null})]))).state,'unknown',
+    'An unready frame cannot be treated as empty.');
+  assert.equal((await inspect(cleanupDocument([cleanupElement('x-closed')]))).state,'unknown','Unobservable custom closed shadow must not be clean.');
+  wc.executeJavaScript=async()=>false;
+  assert.equal((await driver.cleanupInspection(tab.id)).state,'unknown',
+    'Legacy Boolean false is not complete multi-scope evidence.');
+  assert.ok(driver.tabs.has(tab.id),'Read-only inspection must not close fixture tabs.');
+});
+
+test('closed shadow content on an ordinary div is not falsely certified clear and needs an explicit local review', async t => {
+  const { driver } = await fixture(t); await driver.init();
+  const owner = { taskId: 'fixture-cleanup', runId: 'run-cleanup', nodeId: 'research', conversationId: 'fixture-cleanup' };
+  const tab = driver.newTab('https://fixture.invalid/ordinary-div', { owner }); await tab.loading;
+  const before = driver.status().tabs.find(item => item.tabId === tab.id);
+  const ordinary = cleanupElement('div', { inaccessibleClosedShadowContains: cleanupElement('form') });
+  const page = cleanupDocument([ordinary]);
+  tab.window.webContents.executeJavaScript = async source => Function('document', 'return ' + source)(page);
+  const observed = await driver.cleanupInspection(tab.id);
+  assert.equal(observed.state, 'limited',
+    'A closed shadow tree on built-in elements is not visible to page JS: never certify the entire page clear.');
+  assert.match(observed.reason, /closed shadow/i);
+  await assert.rejects(driver.perform({ action: 'close', tabId: tab.id,
+    expectedUrl: before.url, expectedDocumentId: before.documentId }, { source: 'host-cleanup' }),
+  { code: 'BROWSER_CLEANUP_REVIEW_REQUIRED' });
+  assert.ok(driver.tabs.has(tab.id), 'Without explicit per-page review, a hidden draft keeps its tab.');
+  await driver.perform({ action: 'close', tabId: tab.id,
+    expectedUrl: before.url, expectedDocumentId: before.documentId },
+  { source: 'host-cleanup', cleanupReviewed: true });
+  assert.equal(driver.tabs.has(tab.id), false, 'A deliberate reviewed manual close remains possible.');
+});
+
+for (const [name,mutate] of [
+  ['user pin',tab=>{tab.userPinned=true;}],
+  ['human attachment',tab=>{tab.humanCreated=true;}],
+  ['active download',(tab,driver)=>{driver.downloads.push({tabId:tab.id,status:'downloading'});}],
+  ['pending browser dialog',tab=>{tab.pendingInteraction={status:'pending',kind:'javascript_dialog'};}],
+  ['pending website effect',tab=>{tab.submissionObservations={completed:[],pending:new Map([['post',{status:'pending'}]]),saved:()=>({})};}],
+  ['pending external handoff',tab=>{tab.externalHandoff={status:'pending'};}],
+  ['unsettled native input',tab=>{tab.suspendedWork.add('in-flight');}],
+]) test('delayed cleanup DOM probe preserves a tab when '+name+' appears while pending', async t => {
+  const {driver}=await fixture(t);await driver.init();
+  const owner={taskId:'fixture-cleanup',runId:'run-cleanup',nodeId:'research',conversationId:'fixture-cleanup'};
+  const tab=driver.newTab('https://fixture.invalid/completed',{owner});await tab.loading;
+  const before=driver.status().tabs.find(item=>item.tabId===tab.id);
+  let resolve;tab.window.webContents.executeJavaScript=()=>new Promise(done=>{resolve=done;});
+  const pending=driver.perform({action:'close',tabId:tab.id,expectedUrl:before.url,expectedDocumentId:before.documentId},{source:'host-cleanup',cleanupReviewed:true});
+  for(let i=0;!resolve&&i<50;i++)await tick();
+  assert.equal(typeof resolve,'function','Native probe must be in flight before changing page state.');
+  mutate(tab,driver);
+  resolve({state:'clear'});
+  await assert.rejects(pending,/pending|person|download|interaction|unsettled|protected|page|clean|effect|inspect/i);
+  assert.ok(driver.tabs.has(tab.id),'Newly busy or person-owned page must remain open.');
+});
+
+test('delayed cleanup DOM probe observes cancellation before close despite an earlier clean read', async t => {
+  const {driver}=await fixture(t);await driver.init();
+  const owner={taskId:'fixture-cleanup',runId:'run-cleanup',nodeId:'research',conversationId:'fixture-cleanup'};
+  const tab=driver.newTab('https://fixture.invalid/completed',{owner});await tab.loading;
+  const before=driver.status().tabs.find(item=>item.tabId===tab.id);
+  const controller=new AbortController();
+  let resolve;tab.window.webContents.executeJavaScript=()=>new Promise(done=>{resolve=done;});
+  const pending=driver.perform({action:'close',tabId:tab.id,expectedUrl:before.url,expectedDocumentId:before.documentId},{source:'host-cleanup',signal:controller.signal,cleanupReviewed:true});
+  for(let i=0;!resolve&&i<50;i++)await tick();
+  assert.equal(typeof resolve,'function');
+  controller.abort();resolve({state:'clear'});
+  await assert.rejects(pending,{name:'AbortError'});
+  assert.ok(driver.tabs.has(tab.id),'A canceled cleanup must preserve the tab.');
+});
+
 test('local files and Chromium internal pages keep their actual URL and survive a lazy restart', async t => {
   const { driver, directory, windows } = await fixture(t); await driver.init();
   const local = path.join(directory, 'local fixture.html'); await writeFile(local, '<!doctype html><title>Local fixture</title><input>');

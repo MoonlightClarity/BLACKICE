@@ -1,0 +1,16 @@
+TAP version 13
+# Subtest: native cleanup checks a synthetic page without navigation and rejects form/person-touched state
+ok 1 - native cleanup checks a synthetic page without navigation and rejects form/person-touched state
+  ---
+  duration_ms: 868.1874
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 995.5399

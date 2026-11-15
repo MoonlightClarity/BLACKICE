@@ -1,0 +1,70 @@
+TAP version 13
+# Subtest: native cleanup checks a synthetic page without navigation and rejects form/person-touched state
+ok 1 - native cleanup checks a synthetic page without navigation and rejects form/person-touched state
+  ---
+  duration_ms: 840.9964
+  type: 'test'
+  ...
+# Subtest: cleanup inspection finds unfinished nested iframe/shadow forms, protects opaque frames and still permits clean inspected roots
+ok 2 - cleanup inspection finds unfinished nested iframe/shadow forms, protects opaque frames and still permits clean inspected roots
+  ---
+  duration_ms: 591.5958
+  type: 'test'
+  ...
+# Subtest: delayed cleanup DOM probe preserves a tab when user pin appears while pending
+ok 3 - delayed cleanup DOM probe preserves a tab when user pin appears while pending
+  ---
+  duration_ms: 611.0738
+  type: 'test'
+  ...
+# Subtest: delayed cleanup DOM probe preserves a tab when human attachment appears while pending
+ok 4 - delayed cleanup DOM probe preserves a tab when human attachment appears while pending
+  ---
+  duration_ms: 538.5483
+  type: 'test'
+  ...
+# Subtest: delayed cleanup DOM probe preserves a tab when active download appears while pending
+ok 5 - delayed cleanup DOM probe preserves a tab when active download appears while pending
+  ---
+  duration_ms: 564.1781
+  type: 'test'
+  ...
+# Subtest: delayed cleanup DOM probe preserves a tab when pending browser dialog appears while pending
+ok 6 - delayed cleanup DOM probe preserves a tab when pending browser dialog appears while pending
+  ---
+  duration_ms: 629.4369
+  type: 'test'
+  ...
+# Subtest: delayed cleanup DOM probe preserves a tab when pending website effect appears while pending
+ok 7 - delayed cleanup DOM probe preserves a tab when pending website effect appears while pending
+  ---
+  duration_ms: 588.0759
+  type: 'test'
+  ...
+# Subtest: delayed cleanup DOM probe preserves a tab when pending external handoff appears while pending
+ok 8 - delayed cleanup DOM probe preserves a tab when pending external handoff appears while pending
+  ---
+  duration_ms: 592.5373
+  type: 'test'
+  ...
+# Subtest: delayed cleanup DOM probe preserves a tab when unsettled native input appears while pending
+ok 9 - delayed cleanup DOM probe preserves a tab when unsettled native input appears while pending
+  ---
+  duration_ms: 651.7027
+  type: 'test'
+  ...
+# Subtest: delayed cleanup DOM probe observes cancellation before close despite an earlier clean read
+ok 10 - delayed cleanup DOM probe observes cancellation before close despite an earlier clean read
+  ---
+  duration_ms: 607.7173
+  type: 'test'
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6374.2097
