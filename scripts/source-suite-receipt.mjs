@@ -7,24 +7,31 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { appFingerprint } from './release-check.mjs';
 import { releaseSourceIndex } from './release-request.mjs';
+import {prepareSourceTestTemp} from './source-test-temp.mjs';
 const root=process.cwd(),output=path.resolve(process.argv[2]||'source-suite-evidence');
 const hash=x=>createHash('sha256').update(x).digest('hex');
 const startedAt=new Date().toISOString(),before=await releaseSourceIndex(root),fingerprint=await appFingerprint(root);
 const files=before.records.filter(r=>/^tests\/[^/]+\.test\.mjs$/.test(r.path)).map(r=>r.path).sort();
 if(process.platform!=='win32'||!files.length||new Set(files).size!==files.length)throw Error('A unique Windows source inventory is required.');
 await fs.mkdir(output,{recursive:true});
+const temporaryEnvironment=await prepareSourceTestTemp();
+await fs.writeFile(path.join(output,'temporary-environment.json'),JSON.stringify(temporaryEnvironment,null,2));
+console.log('Source fixture environment: '+JSON.stringify(temporaryEnvironment));
 await fs.writeFile(path.join(output,'inventory.json'),JSON.stringify({startedAt,appFingerprint:fingerprint,...before,testFiles:files},null,2));
 const stream=run({files:files.map(f=>path.join(root,f)),concurrency:4,timeout:120000});
 let observedPasses=0;
 const active=new Map();
 stream.on('test:dequeue',event=>{if(event.nesting===0)active.set(event.name,Date.now());});
 for(const type of ['test:pass','test:fail'])stream.on(type,event=>{if(event.nesting===0)active.delete(event.name);});
-const heartbeat=setInterval(()=>console.log('Source suite heartbeat: '+JSON.stringify({passed:observedPasses,active:[...active].map(([name,at])=>({name,seconds:Math.round((Date.now()-at)/1000)}))})),30000);
+const heartbeatFile=createWriteStream(path.join(output,'heartbeat.ndjson'));
+let heartbeatError;heartbeatFile.on('error',error=>{heartbeatError=error;});
+const heartbeat=setInterval(()=>{const row={at:new Date().toISOString(),passed:observedPasses,active:[...active].map(([name,at])=>({name,seconds:Math.round((Date.now()-at)/1000)}))};heartbeatFile.write(JSON.stringify(row)+'\n');console.log('Source suite heartbeat: '+JSON.stringify(row));},30000);
 heartbeat.unref();
 stream.on('test:pass',()=>{if(++observedPasses%250===0)console.log('Source assertions passed so far: '+observedPasses);});
 stream.on('test:fail',event=>console.log('Source failure: '+JSON.stringify({name:event.name,file:event.file,error:event.details?.error?.message})));
 try { await pipeline(stream.compose(tap),createWriteStream(path.join(output,'suite.tap'))); }
-finally { clearInterval(heartbeat); }
+finally { clearInterval(heartbeat);await new Promise(resolve=>heartbeatFile.end(resolve)); }
+if(heartbeatError)throw heartbeatError;
 const bytes=await fs.readFile(path.join(output,'suite.tap')),log=bytes.toString('utf8');
 const counts=Object.fromEntries(['tests','pass','fail','cancelled','skipped','todo'].map(k=>{
  const found=[...log.matchAll(new RegExp('^# '+k+' (\\d+)\\r?$','gm'))];
