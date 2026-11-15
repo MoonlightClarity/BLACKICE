@@ -1,0 +1,124 @@
+name: Attest preserved BLACKICE 2.39.98 CI evidence only - NO tests or build
+on:
+  push:
+    branches: [codex/release23998-prior-evidence-attestation-20261115]
+    paths: ['.github/workflows/verify-prior-23998-evidence.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: blackice-23998-original-evidence-controller-only-once
+  cancel-in-progress: false
+jobs:
+  attest_original_receipts:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    env:
+      EXPECTED_SOURCE: 0101d3f88cc7f3f139394a1c943b899511668a90
+      ORIGINAL_RUN: '43735536388'
+      ORIGINAL_BUILD_RUN: '43732981837'
+    steps:
+      - name: Checkout only the separate attestation controller script
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 3
+      - name: Pin Python for read-only ZIP and JSON validation
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Syntax-check exact standalone attestation logic; no app code or tests
+        id: syntax
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $script='.github/verification/verify-prior-23998-evidence.py'
+          if(!(Test-Path -LiteralPath $script -PathType Leaf)) { throw 'Verified controller script missing.' }
+          python -m py_compile $script
+          if($LASTEXITCODE -ne 0) { throw 'Controller script has invalid Python syntax.' }
+          $controller=(& git rev-parse HEAD).Trim()
+          if($controller -cne $env:GITHUB_SHA -or $controller -ceq $env:EXPECTED_SOURCE) { throw 'Controller commit mismatch or controller-source conflation.' }
+          New-Item -ItemType Directory -Force 'verification-output','prior-originals' | Out-Null
+          [ordered]@{format=1;mode='prior-evidence-only';controllerCommit=$controller;exactSourceCommit=$env:EXPECTED_SOURCE;githubRunId=$env:GITHUB_RUN_ID;githubRunAttempt=$env:GITHUB_RUN_ATTEMPT;nodeSuiteCommandsExecuted=0;installerBuildCommandsExecuted=0;runner=$env:RUNNER_OS;python=(& python --version).Trim();atUtc=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath verification-output/controller-environment.json -Encoding utf8NoBOM
+      - name: Read exact previous run metadata and download original artifact ZIPs by immutable ID
+        id: original_inputs
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $repo='MoonlightClarity/BLACKICE'
+          function GhJson([string]$resource) {
+            $raw=& gh api $resource
+            if($LASTEXITCODE -ne 0){throw "GitHub read-only API failed: $resource"}
+            return ($raw -join [Environment]::NewLine) | ConvertFrom-Json
+          }
+          $sourceRef=GhJson "repos/$repo/git/ref/heads/codex/release23998-source-prep-20261115"
+          $mainRef=GhJson "repos/$repo/git/ref/heads/main"
+          if($sourceRef.object.sha -cne $env:EXPECTED_SOURCE -or $mainRef.object.sha -cne '2371578ed97960a235abbdd3dbdec14da91a4703') { throw 'Source branch or main changed since reviewed admission.' }
+          $original=GhJson "repos/$repo/actions/runs/$env:ORIGINAL_RUN"
+          $build=GhJson "repos/$repo/actions/runs/$env:ORIGINAL_BUILD_RUN"
+          $originalJobs=GhJson "repos/$repo/actions/runs/$env:ORIGINAL_RUN/jobs?per_page=100"
+          $buildJobs=GhJson "repos/$repo/actions/runs/$env:ORIGINAL_BUILD_RUN/jobs?per_page=100"
+          $originalArtifacts=GhJson "repos/$repo/actions/runs/$env:ORIGINAL_RUN/artifacts?per_page=100"
+          $buildArtifacts=GhJson "repos/$repo/actions/runs/$env:ORIGINAL_BUILD_RUN/artifacts?per_page=100"
+          $originalSteps=@{};foreach($job in @($originalJobs.jobs)){foreach($step in @($job.steps)){$originalSteps[$step.name]=$step.conclusion}}
+          $buildSteps=@{};foreach($job in @($buildJobs.jobs)){foreach($step in @($job.steps)){$buildSteps[$step.name]=$step.conclusion}}
+          if($original.conclusion -cne 'failure' -or $build.conclusion -cne 'success') { throw 'Original CI classification changed.' }
+          $expected=@(
+            @{key='full';id=14170039144;name='blackice-23998-fullsuite-original-evidence';bytes=764810;sha='7287d8fcb66386b30edebbff0b75a3b80f9d16944f34a878d3360b73f6ecb83d';run=43735536388},
+            @{key='build';id=14169485417;name='blackice-23998-nonpublishing-build-evidence';bytes=179090;sha='dafdcf3853db7419880c4bffb1e62a017454a3547c2a102ca6012bb17c4d5ffa';run=43732981837},
+            @{key='installer';id=14169143495;name='blackice-23998-windows-candidate-NOT-PUBLISHED';bytes=115652656;sha='d5bd5756a7c1d7fe55102ccf6757b6bb8c8fb8c8b96336607b11f6d7dee6b48a';run=43732981837}
+          )
+          $found=@{}
+          foreach($item in $expected){
+            $rows=if($item.key -ceq 'full'){@($originalArtifacts.artifacts)}else{@($buildArtifacts.artifacts)}
+            $matches=@($rows|Where-Object{[long]$_.id -eq [long]$item.id})
+            if($matches.Count -ne 1){throw "Original artifact metadata missing/duplicated: $($item.key)"}
+            $artifact=$matches[0]
+            if($artifact.name -cne $item.name -or [long]$artifact.size_in_bytes -ne [long]$item.bytes -or $artifact.expired -ne $false -or [long]$artifact.workflow_run.id -ne [long]$item.run){throw "Original artifact metadata mismatch: $($item.key)"}
+            $found[$item.key]=$artifact
+            $dest="prior-originals/$($item.key).zip"
+            & curl.exe --fail --location --silent --show-error --retry 2 --header "Authorization: Bearer $env:GH_TOKEN" --header 'Accept: application/vnd.github+json' --header 'X-GitHub-Api-Version: 2022-11-28' --output $dest "https://api.github.com/repos/$repo/actions/artifacts/$($item.id)/zip"
+            if($LASTEXITCODE -ne 0){throw "Original GitHub artifact download failed: $($item.key)"}
+            $actual=(Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant()
+            if($actual -cne $item.sha -or (Get-Item -LiteralPath $dest).Length -ne $item.bytes){throw "Immutable original ZIP bytes/hash mismatch: $($item.key)"}
+            Write-Output "ORIGINAL_ARTIFACT_MATCH $($item.key) id=$($item.id) sha256=$actual"
+          }
+          $summary=[ordered]@{originalRun=$original;buildRun=$build;originalSteps=$originalSteps;buildSteps=$buildSteps;artifacts=$found;candidateBranchSha=$sourceRef.object.sha;mainSha=$mainRef.object.sha}
+          $summary | ConvertTo-Json -Depth 40 | Set-Content -LiteralPath verification-output/upstream.json -Encoding utf8NoBOM
+      - name: Attest saved TAP, skipped identities/reasons, source index and original installer bytes only
+        id: verify
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python .github/verification/verify-prior-23998-evidence.py --full prior-originals/full.zip --build prior-originals/build.zip --installer prior-originals/installer.zip --upstream verification-output/upstream.json --out verification-output/prior-evidence-attestation.json
+          if($LASTEXITCODE -ne 0){throw 'Existing receipts do not attest as expected; original evidence remains unchanged.'}
+          $att=Get-Content -Raw verification-output/prior-evidence-attestation.json | ConvertFrom-Json
+          if($att.checksFailed -ne 0 -or $att.newTestsExecuted -ne $false -or $att.newBuildPerformed -ne $false -or $att.originalFullSuiteWorkflowConclusion -notmatch '^failure' -or $att.checksPassed -lt 40){throw 'Controller-only attestation status contract failed.'}
+          Write-Output "CONTROLLER_ONLY_ATTESTATION_PASSED checks=$($att.checksPassed) old_suite=8776/8787 old_build=69/69 original_workflow_failure_preserved=true"
+      - name: Preserve independent terminal receipt separately from originals
+        if: always()
+        shell: pwsh
+        env:
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+          INPUTS_OUTCOME: ${{ steps.original_inputs.outcome }}
+          SYNTAX_OUTCOME: ${{ steps.syntax.outcome }}
+        run: |
+          $ErrorActionPreference='Continue'
+          New-Item -ItemType Directory -Force verification-output | Out-Null
+          $receipt=[ordered]@{format=1;kind='controller-only-original-receipt-verification';controllerCommit=$env:GITHUB_SHA;runId=$env:GITHUB_RUN_ID;runAttempt=$env:GITHUB_RUN_ATTEMPT;sourceCommit=$env:EXPECTED_SOURCE;originalRunId=43735536388;originalRunConclusion='failure - preserved';originalBuildRunId=43732981837;newSourceSuiteExecuted=$false;newInstallerBuildExecuted=$false;originalArtifactsOverwritten=$false;syntaxOutcome=$env:SYNTAX_OUTCOME;downloadOutcome=$env:INPUTS_OUTCOME;verificationOutcome=$env:VERIFY_OUTCOME;attestationSha256=$null;attestationChecks=$null;state='not-verified';atUtc=[DateTime]::UtcNow.ToString('o')}
+          $att='verification-output/prior-evidence-attestation.json'
+          if(Test-Path $att){try{$j=Get-Content -Raw $att|ConvertFrom-Json;$receipt.attestationSha256=(Get-FileHash -LiteralPath $att -Algorithm SHA256).Hash.ToLowerInvariant();$receipt.attestationChecks=$j.checksPassed;if($j.checksFailed -eq 0 -and $env:VERIFY_OUTCOME -ceq 'success'){$receipt.state='verified-original-evidence-only'}}catch{$receipt.readError=[string]$_}}
+          $receipt|ConvertTo-Json -Depth 12|Set-Content -LiteralPath verification-output/terminal-controller-only.json -Encoding utf8NoBOM
+          if($receipt.state -cne 'verified-original-evidence-only'){throw 'Original evidence could not be attested: preserve failure without retrying tests.'}
+      - name: Upload ONLY new controller receipt; do not re-upload or overwrite old artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: blackice-23998-existing-receipts-controller-attestation
+          path: |
+            verification-output/controller-environment.json
+            verification-output/prior-evidence-attestation.json
+            verification-output/terminal-controller-only.json
+          if-no-files-found: error
