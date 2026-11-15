@@ -8,6 +8,36 @@ const overflow=()=>Object.assign(new Error('provider context capacity exceeded')
 const done=()=>({output:JSON.stringify({status:'complete',nextAction:'none',finding:'Fixture export verified',candidate_answer:'Export ready',uncertainty:''})});
 const tool={type:'function',name:'fixture_export',description:'Fixture only',inputSchema:{type:'object',properties:{action:{type:'string'}}}};
 
+test('interruption after durable note reports its ID without activating focus or dispatching a follow-on effect',async t=>{
+ const controller=new AbortController();let runner,dispatches=0,receipt;
+ runner=await fixture(t,{runAgent:async options=>{
+  receipt=await options.onToolCall({name:'relay_directory_action',callId:'focus',arguments:{action:'record',actionId:'a',focus:true}});
+  assert.equal(receipt.code,'DIRECTORY_ACTION_COMMITTED_INTERRUPTED');
+  await assert.rejects(options.onToolCall({name:'fixture_export',callId:'after-cancel',arguments:{}}),{code:'DIRECTORY_ADMISSION_STOPPED',actionDispatched:false});
+  return done();
+ }},async()=>{dispatches++;return {success:true};},controller.signal);
+ const note=runner.actionJournal.note.bind(runner.actionJournal);
+ runner.actionJournal.note=async(...args)=>{const row=await note(...args);controller.abort();return row;};
+ await assert.rejects(runner.infer('work','modules/interruption',{objective:'Record then export'}),{name:'AbortError'});
+ const body=JSON.parse(receipt.contentItems[0].text),rows=await runner.actionJournal.events();
+ assert.equal(body.focusActivated,false);assert.equal(rows.filter(r=>r.id===body.committedEventId).length,1);
+ assert.equal(rows.filter(r=>r.event.kind==='attempt').length,0);assert.equal(dispatches,0);
+});
+
+test('deadline expiring after durable note retains it without focus activation or completion publication',async t=>{
+ let runner,receipt,effects=0;
+ runner=await fixture(t,{runAgent:async options=>{
+  receipt=await options.onToolCall({name:'relay_directory_action',callId:'deadline-focus',arguments:{action:'record',actionId:'a',focus:true}});
+  await assert.rejects(options.onToolCall({name:'fixture_export',callId:'late-effect',arguments:{}}),{code:'DIRECTORY_ADMISSION_STOPPED',actionDispatched:false});
+  return done();
+ }},async()=>{effects++;return {success:true};});
+ const note=runner.actionJournal.note.bind(runner.actionJournal);
+ runner.actionJournal.note=async(...args)=>{const row=await note(...args);runner.deadlineAt=Date.now()-1;return row;};
+ await assert.rejects(runner.infer('work','modules/deadline',{objective:'Record then export'}),{code:'DIRECTORY_DEADLINE'});
+ assert.equal(receipt.code,'DIRECTORY_ACTION_COMMITTED_INTERRUPTED');const body=JSON.parse(receipt.contentItems[0].text);
+ assert.equal(body.focusActivated,false);assert.equal((await runner.actionJournal.events()).filter(row=>row.id===body.committedEventId).length,1);assert.equal(effects,0);
+});
+
 test('overflow replacement consumes the shared admission budget and preserves the completed receipt',async t=>{
  let calls=0,effects=0;
  const runner=await fixture(t,{runAgent:async options=>{calls++;await options.onToolCall({name:'fixture_export',callId:'once',arguments:{}});throw overflow();}},async()=>{effects++;return {success:true};});

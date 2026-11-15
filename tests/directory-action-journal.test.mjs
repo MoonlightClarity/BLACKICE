@@ -7,6 +7,25 @@ import {DirectoryActionJournal} from '../lib/directory-action-journal.mjs';
 import {createHash} from 'node:crypto';
 async function fixture(t){const root=await mkdtemp(path.join(os.tmpdir(),'directory-actions-'));t.after(()=>rm(root,{recursive:true,force:true}));return new DirectoryActionJournal(root);}
 
+test('cancellation while queued prevents note reservation after the queue drains',async t=>{
+ const j=await fixture(t),controller=new AbortController();let release,entered;
+ const gate=new Promise(r=>release=r),started=new Promise(r=>entered=r);
+ const blocking=j.append(['block'],{kind:'phase-authority'},{beforeReservation:async()=>{entered();await gate;}});
+ await started;
+ const note=j.note('queued',{actionId:'a'},{signal:controller.signal});const rejected=assert.rejects(note,/cancel queued/);
+ controller.abort(new Error('cancel queued'));release();await blocking;await rejected;
+ assert.equal((await j.events()).length,1);
+});
+
+test('cancellation during exact reference read preserves the source and publishes no revision',async t=>{
+ const j=await fixture(t),original=await j.note('original',{actionId:'a'}),controller=new AbortController();let release,entered;
+ const gate=new Promise(r=>release=r),started=new Promise(r=>entered=r),read=j._readReferenceFile.bind(j);
+ j._readReferenceFile=async file=>{const bytes=await read(file);entered();await gate;return bytes;};
+ const note=j.note('reading',{actionId:'a',parent:original.id},{signal:controller.signal});const rejected=assert.rejects(note,/cancel read/);
+ await started;controller.abort(new Error('cancel read'));release();await rejected;
+ const rows=await j.events();assert.equal(rows.length,1);assert.equal(rows[0].digest,original.digest);
+});
+
 test('incremental revisions use exact references without whole-history scans and retain forks',async t=>{
  const j=await fixture(t),initial=await j.note('initial',{actionId:'a'});
  for(let i=0;i<160;i++)await j.append(['history',i],{kind:'phase-authority',text:'Retained obligation '+i});
