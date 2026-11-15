@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { promises as fs } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { DirectExecutionJobs, directRequestDigest } from '../lib/direct-execution-jobs.mjs';
 
 const client = { id: 'grant-a', label: 'ChatGPT test', kind: 'chatgpt', scopes: ['read', 'files:read'] };
@@ -116,6 +117,33 @@ test('startup uses at most eight readers and validates the entire index before a
   const terminal = reopened.records.get(saved[6].job.id);
   for (const key of ['arguments', 'client', 'result']) assert.equal(Object.hasOwn(terminal, key), false);
   assert.deepEqual((await reopened.get(saved[6].job.id)).result, { exact: 6 }); assert.deepEqual(await readFile(terminalFile), originalTerminal);
+});
+
+test('startup indexes exact UTF-8 receipt bytes with preserved Unicode payload and hash', async t => {
+  const { make } = await harness(t);
+  const first = make();
+  const { job } = await first.admit(admission('byte-io-unicode', { action: 'read', path: 'résumé-日本語.txt' }));
+  const result = { success: true, contentItems: [{ type: 'inputText', text: 'Café ☕ / 日本語 / مرحبا' }] };
+  await first.update(job.id, () => ({ status: 'succeeded', result, finishedAt: new Date().toISOString() }));
+  const original = await readFile(first.file(job.id));
+  const expectedHash = createHash('sha256').update(original).digest('hex');
+  await first.close();
+  let startupReads = 0;
+  const reopened = make({ io: {
+    ...fs,
+    readFile: (file, ...args) => {
+      if (file === first.file(job.id)) {
+        startupReads++;
+        assert.deepEqual(args, [], 'startup must read canonical bytes, not a decoded/re-encoded receipt string');
+      }
+      return fs.readFile(file, ...args);
+    },
+  } });
+  await reopened.init();
+  assert.equal(startupReads, 1);
+  assert.equal(reopened.records.get(job.id).receiptHash, expectedHash);
+  assert.deepEqual((await reopened.get(job.id)).result, result);
+  assert.deepEqual(await readFile(reopened.file(job.id)), original);
 });
 
 test('a failed startup reader stops new reads and drains in-flight work before lease release or close', async t => {
