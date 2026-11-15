@@ -1890,7 +1890,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
     if (tab.suspendedWork.size && !cancelledAuthentication) throw Object.assign(error('The previous dialog action has not settled. Wait for its completion and inspect before continuing.'), { code: 'BROWSER_INTERACTION_SETTLING' });
     if (args.chooserId !== undefined) this.currentInteraction(tab, args);
-    let activationMayAffectPage = false;
+    let activationMayAffectPage = false, fillPreparationCompleted = false;
     try {
     const resumed = !!tab.pendingURL && args.action !== 'navigate';
     activationMayAffectPage = resumed || Boolean(tab.popupViewport || tab.surfaceNeedsSync) || !tab.window;
@@ -1949,6 +1949,9 @@ export class ElectronBrowserDriver extends EventEmitter {
       const guard = args.expectedDocumentId === undefined && args.expectedUrl === undefined ? { expectedDocumentId: inputDocumentId(tab), expectedUrl: tab.window.webContents.getURL() } : args;
       if (recoveryInput) await recoveryInput({ signal, prepared: true });
       receipt = (await this.element(tab, { ...args, text }, 'fill', signal)).result;
+      // Focus preparation can invoke page handlers. A later unsent renderer
+      // operation proves only that later operation unsent, not the whole fill.
+      fillPreparationCompleted = true;
       if (receipt.needsTrustedTextInput) {
         // The DOM setter bypasses trusted input and dirty-value/blur state in
         // controlled forms. Only focus/selection preparation runs in the page;
@@ -2145,7 +2148,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       // A leaf helper may prove its input was not sent. That cannot erase an
       // earlier navigation, surface synchronization or popup preparation.
       const activationNotStarted = reason?.[capacityAdmissionRejected] === true && !tab.window && !cancelledAuthentication;
-      if (activationMayAffectPage && !activationNotStarted && reason?.actionDispatched === false) delete reason.actionDispatched;
+      if ((fillPreparationCompleted || activationMayAffectPage && !activationNotStarted) && reason?.actionDispatched === false) delete reason.actionDispatched;
       if (recoveringRenderer && !tab.window && !tab.rendererFailure) { tab.rendererFailure = recoveringRenderer; throw reason; }
       if (tab.rendererFailure) throw rendererFailure(tab, true);
       if (reason.code === 'BROWSER_INTERACTION_PENDING' && tab.pendingInteraction) return this.interactionReceipt(tab, { actionDispatched: true, inspectBeforeContinuing: true });

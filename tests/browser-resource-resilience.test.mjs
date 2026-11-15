@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
-import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview } from '../lib/browser.mjs';
+import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview, validateBrowserFillRequest } from '../lib/browser.mjs';
 import { BrowserDiagnostics } from '../lib/browser-diagnostics.mjs';
 import { BrowserTabDiagnostics, diagnosticText } from '../lib/browser-tab-diagnostics.mjs';
 import { ownershipAction, ownershipChange } from '../lib/browser-ownership.mjs';
@@ -13,6 +13,22 @@ import { sameBrowserOwner, conversationBrowserNode } from '../lib/browser-conver
 import { loadBrowserCompatibility } from '../desktop/browser-compatibility.mjs';
 
 const source = await readFile(new URL('../desktop/browser-driver.mjs', import.meta.url), 'utf8');
+
+for (const afterFocus of [false, true]) test('fill stale proof is scoped to preparation phase; focus completed=' + afterFocus, async () => {
+  const f = fixture(), tab = f.driver.newTab('https://example.test/page');
+  await tab.loading;
+  let focusCalls = 0;
+  f.driver.element = async (_tab, _args, action) => {
+    if (action === 'fill' && afterFocus) { focusCalls++; return { result: { needsTrustedTextInput: true } }; }
+    throw Object.assign(new Error('Observed reference retired'), { code: 'BROWSER_REF_STALE', actionDispatched: false });
+  };
+  await assert.rejects(f.driver.perform({ action: 'fill', tabId: tab.id, ref: 'synthetic', text: 'replacement' }), error => {
+    assert.equal(error.code, 'BROWSER_REF_STALE', error.stack);
+    assert.equal(error.actionDispatched, afterFocus ? undefined : false);
+    return true;
+  });
+  assert.equal(focusCalls, afterFocus ? 1 : 0);
+});
 
 function fixture({ writeFile = async () => {}, loadURL = async () => {} } = {}) {
   const windows = [], writes = [], renames = [];
@@ -47,7 +63,7 @@ function fixture({ writeFile = async () => {}, loadURL = async () => {} } = {}) 
   protection.status = protection.tabStatus = () => ({});
   protection.forgetTab = () => {};
   const context = vm.createContext({ BrowserWindow: Window, session: { fromPartition: () => session }, EventEmitter,
-    createHash, randomUUID, path, browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview, BrowserDiagnostics, BrowserTabDiagnostics, diagnosticText, ownershipAction, ownershipChange, sameBrowserOwner, conversationBrowserNode, loadBrowserCompatibility,
+    createHash, randomUUID, path, browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview, validateBrowserFillRequest, BrowserDiagnostics, BrowserTabDiagnostics, diagnosticText, ownershipAction, ownershipChange, sameBrowserOwner, conversationBrowserNode, loadBrowserCompatibility,
     fs: { writeFile: async (file, value) => { writes.push(JSON.parse(value)); await writeFile(file, value); }, rename: async (...args) => { renames.push(args); } },
     setTimeout, clearTimeout, AbortSignal, structuredClone, URL,
   });

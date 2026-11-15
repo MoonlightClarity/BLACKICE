@@ -16,7 +16,7 @@ const markup = (frame = false) => `<!doctype html><title>Trusted fill fixture</t
 <input aria-label="${frame ? 'Frame field' : 'Preferred Name'}" id="name" value="Initial text"><input aria-label="Address" id="address"><textarea aria-label="Notes" id="notes">Initial notes</textarea>
 <input aria-label="Email" id="email" type="email" value="old@example.test"><input aria-label="Number" id="number" type="number" value="123"><input aria-label="Read only" id="readonly" readonly value="preserve"><input aria-label="Disabled" id="disabled" disabled value="preserve">
 <input aria-label="Navigate on focus" id="navigate" value="preserve"><input aria-label="Redirect on select" id="redirect" value="preserve">
-<button id="commit">Commit fixture</button><div aria-label="Rich text" role="textbox" contenteditable="true" id="rich">Initial rich</div>
+<input aria-label="Retire after focus" id="retire" value="preserve"><button id="commit">Commit fixture</button><div aria-label="Rich text" role="textbox" contenteditable="true" id="rich">Initial rich</div>
 ${frame ? '' : '<iframe title="Cross-origin fixture" src="http://localhost:PORT/frame"></iframe>'}
 <script>
 window.fixture={fields:{},events:[]};
@@ -27,7 +27,9 @@ for(const el of document.querySelectorAll('input,textarea,[contenteditable]')){
  el.addEventListener('blur',e=>{fixture.events.push({id:el.id,type:'blur',trusted:e.isTrusted});if(e.isTrusted&&item.focused&&item.trustedInputs){item.committed=item.draft;item.blurs++;}item.focused=false;});
 }
 document.getElementById('navigate').addEventListener('focus',()=>location.hash='changed-during-fill');
-document.getElementById('redirect').addEventListener('keydown',event=>{if(event.code==='KeyA')document.getElementById('address').focus();});
+document.getElementById('retire').addEventListener('focus',event=>{fixture.retiredTarget=event.target;queueMicrotask(()=>{fixture.retirements=(fixture.retirements||0)+1;event.target.remove();});});
+const redirect=document.getElementById('redirect'), nativeSelect=redirect.select.bind(redirect);
+redirect.select=()=>{nativeSelect();fixture.selectionRedirects=(fixture.selectionRedirects||0)+1;document.getElementById('address').focus();};
 </script>`;
 const check = (name, fn) => { fn(); report.checks.push(name); };
 async function main() {
@@ -70,12 +72,26 @@ async function main() {
   const childState = await child.executeJavaScript('({field:structuredClone(window.fixture.fields.name),raw:document.getElementById("name").value})');
   check('cross-origin iframe fill reaches its own trusted application state', () => { assert.equal(childState.raw, 'Frame 東京🚀'); assert.equal(childState.field.committed, 'Frame 東京🚀'); assert.ok(childState.field.trustedInputs > 0); });
   report.frameProcesses = { main: wc.mainFrame.processId, child: child.processId, crossProcess: wc.mainFrame.processId !== child.processId };
-  await fresh(); await assert.rejects(driver.perform({ action: 'fill', tabId: tab.id, ref: ref('Redirect on select'), text: 'must not reach another field', expectedUrl: snapshot.url, expectedDocumentId: snapshot.documentId }), /lost focus/);
-  const redirected = await wc.executeJavaScript(`({raw:document.getElementById('redirect').value,address:document.getElementById('address').value})`);
-  check('selection key focus redirection cannot send replacement into another field', () => { assert.equal(redirected.raw, 'preserve'); assert.equal(redirected.address, 'Main remains separate'); });
-  await fresh(); await assert.rejects(driver.perform({ action: 'fill', tabId: tab.id, ref: ref('Navigate on focus'), text: 'must not follow navigation' }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+  await fresh(); await assert.rejects(driver.perform({ action: 'fill', tabId: tab.id, ref: ref('Redirect on select'), text: 'must not reach another field', expectedUrl: snapshot.url, expectedDocumentId: snapshot.documentId }), /lost focus|could not be selected/);
+  const redirected = await wc.executeJavaScript(`({raw:document.getElementById('redirect').value,address:document.getElementById('address').value,selectionRedirects:fixture.selectionRedirects})`);
+  check('selection focus redirection cannot send replacement into another field', () => { assert.equal(redirected.selectionRedirects, 1); assert.equal(redirected.raw, 'preserve'); assert.equal(redirected.address, 'Main remains separate'); });
+  await fresh(); await assert.rejects(driver.perform({ action: 'fill', tabId: tab.id, ref: ref('Navigate on focus'), text: 'must not follow navigation' }), error => {
+    report.navigationRejection = { code: error.code, actionDispatched: error.actionDispatched ?? null };
+    assert.ok(['BROWSER_INPUT_DOCUMENT_CHANGED', 'BROWSER_REF_STALE'].includes(error.code));
+    assert.notEqual(error.actionDispatched, false, 'Focus already ran; rejection must not claim the whole action was unsent');
+    return true;
+  });
+  assert.match(wc.getURL(), /#changed-during-fill$/);
   const navigated = await wc.executeJavaScript('document.getElementById("navigate").value');
   check('ref-only fill captures identity and stops if focus navigates the document', () => assert.equal(navigated, 'preserve'));
+  await fresh(); await assert.rejects(driver.perform({ action: 'fill', tabId: tab.id, ref: ref('Retire after focus'), text: 'must not reach a retired field' }), error => {
+    report.retirementRejection = { code: error.code, actionDispatched: error.actionDispatched ?? null };
+    assert.equal(error.code, 'BROWSER_REF_STALE');
+    assert.notEqual(error.actionDispatched, false, 'Focus handler already removed the target; whole fill is not proven unsent');
+    return true;
+  });
+  const retired = await wc.executeJavaScript('({count:fixture.retirements,value:fixture.retiredTarget.value,connected:fixture.retiredTarget.isConnected})');
+  check('post-focus retirement preserves prior effects without inserting text', () => { assert.equal(retired.count, 1); assert.equal(retired.value, 'preserve'); assert.equal(retired.connected, false); });
   check('contained browser never opens or focuses an OS window', () => { assert.equal(tab.window.isVisible(), false); assert.equal(tab.window.isFocusable(), false); assert.equal(tab.window.isFocused(), false); });
   report.ok = true;
 }
