@@ -1,11 +1,11 @@
 {
-  "source": "cf4e3ccd634d05b6311694e5d5d4f4a39ca1049d",
-  "startedAt": "2026-11-15T06:26:19.655Z",
-  "finishedAt": "2026-11-15T06:27:51.112Z",
+  "source": "b1da49d6bfa98c59f0f27cd11853b5cc6fb4c2ed",
+  "startedAt": "2026-11-15T06:30:13.177Z",
+  "finishedAt": "2026-11-15T06:31:37.495Z",
   "environment": {
     "lexical": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp",
     "canonical": "C:\\Users\\runneradmin\\AppData\\Local\\Temp",
-    "directory": "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\blackice-source-suite-QEqF3D",
+    "directory": "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\blackice-source-suite-dxNXqp",
     "ancestry": [
       {
         "path": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp",
@@ -69,17 +69,20 @@
     "tests/provider-activation-server.test.mjs",
     "tests/windows-release-inputs.test.mjs"
   ],
-  "concurrency": 1,
-  "exitCode": 0,
+  "concurrency": 4,
+  "exitCode": 1,
   "signal": null,
   "counts": {
     "tests": 136,
-    "pass": 136,
-    "fail": 0,
+    "pass": 134,
+    "fail": 2,
     "cancelled": 0,
     "skipped": 0
   },
-  "failures": [],
+  "failures": [
+    "not ok 47 - native Windows startup proof retains all switches, quoted paths and current-profile identity\n  ---\n  duration_ms: 12017.1248\n  type: 'test'\n  location: 'D:\\\\a\\\\BLACKICE\\\\BLACKICE\\\\tests\\\\connection-startup.test.mjs:86:1'\n  failureType: 'testCodeFailure'\n  error: 'Windows startup settings could not be read.; diagnostics={\"timeoutMs\":12000,\"killed\":true,\"exitCode\":null,\"signal\":\"SIGTERM\",\"launchCode\":null}'\n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  operator: 'fail'\n  stack: |-\n    TestContext.<anonymous> (file:///D:/a/BLACKICE/BLACKICE/tests/connection-startup.test.mjs:109:81)\n    process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    async Test.run (node:internal/test_runner/test:1409:7)\n    async Test.processPendingSubtests (node:internal/test_runner/test:974:7)\n  ...",
+    "not ok 59 - installer verifies a staged real PE version, creates the exact stable shortcut and preserves a prior install on update\n  ---\n  duration_ms: 20134.0031\n  type: 'test'\n  location: 'D:\\\\a\\\\BLACKICE\\\\BLACKICE\\\\tests\\\\distribution.test.mjs:79:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    Command failed: powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File D:\\a\\BLACKICE\\BLACKICE\\scripts\\Install-Relay.ps1 -Source C:\\Users\\runneradmin\\AppData\\Local\\Temp\\blackice-source-suite-dxNXqp\\relay-distribution-test-adjBqR\\bundle -InstallRoot C:\\Users\\runneradmin\\AppData\\Local\\Temp\\blackice-source-suite-dxNXqp\\relay-distribution-test-adjBqR\\Programs\\Relay -DesktopPath C:\\Users\\runneradmin\\AppData\\Local\\Temp\\blackice-source-suite-dxNXqp\\relay-distribution-test-adjBqR\\Desktop -RuntimeMarker C:\\Users\\runneradmin\\AppData\\Local\\Temp\\blackice-source-suite-dxNXqp\\relay-distribution-test-adjBqR\\no-user-runtime.json -NoLaunch\n    \n  code: 'ERR_TEST_FAILURE'\n  stack: |-\n    genericNodeError (node:internal/errors:986:15)\n    wrappedFn (node:internal/errors:540:14)\n    ChildProcess.exithandler (node:child_process:417:12)\n    ChildProcess.emit (node:events:514:28)\n    maybeClose (node:internal/child_process:1172:16)\n    ChildProcess._handle.onexit (node:internal/child_process:335:5)\n  ..."
+  ],
   "stderr": "",
   "scope": "Targeted disposable Windows fixtures; no installed app; production deadlines unchanged"
 }
