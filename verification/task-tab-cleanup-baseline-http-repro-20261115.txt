@@ -1,0 +1,16 @@
+BLACKICE task-scoped cleanup — static route regression on frozen baseline
+Baseline commit: 69d153d55e0792ab0c9fc513a970f85750eb086a
+Test source: tests/next-route-http.test.mjs (new focused import-asset assertion)
+Command: node --test --test-name-pattern="real BLACKICE server serves only" tests/next-route-http.test.mjs
+Observed before allowlist fix:
+  not ok 1 - real BLACKICE server serves only the current interface and keeps old bookmarks from changing settings
+  /next/workspaces/browser-scoped-cleanup-ui.mjs should be served by the real HTTP route.
+  404 !== 200
+  # pass 0
+  # fail 1
+Observed after explicit allowlist correction:
+  # pass 1
+  # fail 0
+  Content-Type: text/javascript; charset=utf-8
+  Existing, deliberately unlisted sibling is denied with HTTP 404.
+The HTTP tests use only a disposable harness server; they never attach to live BLACKICE or close tabs.

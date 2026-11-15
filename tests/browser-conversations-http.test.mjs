@@ -41,7 +41,9 @@ class BrowserDriver {
     this.pages = new Map(this.tabs.map(tab => [tab.tabId, { webContents: {}, form: 'Unsubmitted draft', history: [tab.url], tab }]));
     this.calls = [];
     this.effects = 0;
+    this.cleanupStates = new Map();
   }
+  async cleanupInspection(tabId) { return { state: this.cleanupStates.get(tabId) || 'clear' }; }
   status() {
     const owners = new Map(this.tabs.filter(tab => tab.owner).map(tab => [tab.owner.taskId, tab.owner]));
     return { available: true, contained: true, canShow: false, activeTab: 'page', persistence: { healthy: true },
@@ -448,4 +450,80 @@ test('restore during a close batch prevents further closes',async t=>{
   const response=await f.request('/api/conversations/conversation-a/archive',{});
   assert.deepEqual(response.data.tabCleanup.closedTabIds,['page']);
   assert.ok(f.driver.tabs.some(tab=>tab.tabId==='popup'));
+});
+
+test('standalone HTTP cleanup previews exact conversation and selected tabs without changing archived state', async t => {
+  const f = await fixture(t);
+  assert.equal((await f.move('conversation', 'conversation-a')).status, 200);
+  f.driver.cleanupStates.set('popup', 'interactive');
+  const preview = await f.request('/api/browser/cleanup-preview', { kind:'conversation', conversationId:'conversation-a' });
+  assert.equal(preview.status, 200, JSON.stringify(preview.data));
+  assert.equal(preview.data.total, 2);
+  assert.equal(preview.data.eligible, 1);
+  assert.deepEqual(preview.data.rows.filter(tab => tab.eligible).map(tab => tab.tabId), ['page']);
+  const blocked = await f.request('/api/browser/cleanup', {
+    scope: preview.data.scope, previewId: preview.data.previewId, selectedTabIds:['popup'],
+  });
+  assert.equal(blocked.status, 409);
+  assert.equal(f.driver.tabs.length, 3);
+  const result = await f.request('/api/browser/cleanup', {
+    scope: preview.data.scope, previewId: preview.data.previewId, selectedTabIds:['page'],
+  });
+  assert.equal(result.status, 200, JSON.stringify(result.data));
+  assert.deepEqual(result.data.closedTabIds, ['page']);
+  assert.deepEqual(result.data.remainingTabIds, ['popup']);
+  assert.equal(result.data.persistenceVerified, true);
+  assert.equal(f.driver.tabs.length, 2);
+  const catalogue = await f.status();
+  assert.equal(catalogue.conversations.find(c => c.id === 'conversation-a').state, 'active');
+  assert.ok(catalogue.tabs.some(tab => tab.tabId === 'other' && tab.ownershipKind === 'user'));
+  assert.ok(catalogue.tabs.some(tab => tab.tabId === 'popup' && tab.conversationId === 'conversation-a'));
+});
+
+
+test('HTTP limited-inspection candidate requires exact per-tab review before a scoped close', async t => {
+  const f = await fixture(t);
+  assert.equal((await f.move('conversation','conversation-a')).status, 200);
+  f.driver.cleanupStates.set('page','limited');
+  const preview = await f.request('/api/browser/cleanup-preview',
+    { kind:'conversation', conversationId:'conversation-a' });
+  assert.equal(preview.status,200,JSON.stringify(preview.data));
+  assert.equal(preview.data.reviewRequired,1);
+  assert.equal(preview.data.rows.find(row => row.tabId === 'page').manualReviewRequired,true);
+  const proposal = {
+    scope:preview.data.scope, previewId:preview.data.previewId, selectedTabIds:['page'],
+  };
+  const notReviewed = await f.request('/api/browser/cleanup', proposal);
+  assert.equal(notReviewed.status,409,'HTTP route must not silently treat limited DOM coverage as verified safe.');
+  assert.match(notReviewed.data.error,/review/i);
+  assert.ok(f.driver.tabs.find(tab => tab.tabId === 'page'),'Unreviewed page remains open.');
+  const wrongReview = await f.request('/api/browser/cleanup',
+    {...proposal, reviewedTabIds:['other']});
+  assert.equal(wrongReview.status,400,'Review identity cannot be supplied for a different tab.');
+  const reviewed = await f.request('/api/browser/cleanup',
+    {...proposal, reviewedTabIds:['page']});
+  assert.equal(reviewed.status,200,JSON.stringify(reviewed.data));
+  assert.deepEqual(reviewed.data.closedTabIds,['page']);
+  assert.deepEqual(new Set(f.driver.tabs.map(tab=>tab.tabId)),new Set(['popup','other']));
+});
+
+test('HTTP cleanup rejects stale preview and remote/connector-wide scope without touching tabs', async t => {
+  const f = await fixture(t);
+  assert.equal((await f.move('conversation', 'conversation-a')).status, 200);
+  const preview = await f.request('/api/browser/cleanup-preview', { kind:'task',
+    conversationId:'conversation-a', taskId:'conversation-a', nodeId:'conversation' });
+  assert.equal(preview.status, 200, JSON.stringify(preview.data));
+  f.driver.tabs.find(tab => tab.tabId === 'page').documentId = 'page:2';
+  const stale = await f.request('/api/browser/cleanup', {
+    scope: preview.data.scope, previewId: preview.data.previewId, selectedTabIds:['page'],
+  });
+  assert.equal(stale.status, 409);
+  assert.match(stale.data.error, /Preview again before closing/);
+  for (const route of ['/api/browser/cleanup-preview', '/api/browser/cleanup']) {
+    const remote = await f.request(route, {}, { 'x-blackice-remote': '1' });
+    assert.equal(remote.status, 403);
+  }
+  const global = await f.request('/api/browser/cleanup-preview', { kind:'all', conversationId:'conversation-a' });
+  assert.equal(global.status, 400);
+  assert.deepEqual(new Set(f.driver.tabs.map(t => t.tabId)), new Set(['page', 'popup', 'other']));
 });

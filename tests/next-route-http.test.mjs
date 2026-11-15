@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
 import http from 'node:http';
-import {createHash} from 'node:crypto';
-import {mkdtemp,mkdir,rm} from 'node:fs/promises';
+import {createHash,randomUUID} from 'node:crypto';
+import {mkdtemp,mkdir,rm,writeFile,stat} from 'node:fs/promises';
 import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {tmpdir} from 'node:os';
 import {createHarnessServer} from '../server.mjs';
 
@@ -62,7 +63,7 @@ test('real BLACKICE server serves only the current interface and keeps old bookm
   const assets=['/next/app.mjs','/next/chat/chat.mjs','/next/chat/reader-worker.mjs',
     '/next/chat/reader-client.mjs','/next/chat/reader-model.mjs','/next/workspaces/planning.mjs',
     '/next/workspaces/activity.mjs','/next/workspaces/browser-model.mjs',
-    '/next/workspaces/browser-native.mjs',
+    '/next/workspaces/browser-native.mjs', '/next/workspaces/browser-scoped-cleanup-ui.mjs',
     '/next/base.css','/next/chat.css','/next/chat-management.css','/next/brand.css','/next/controls.css','/next/browser.css','/next/knowledge.css',
     '/next/workspaces/task-lifecycle.mjs',
     '/next/workspaces/knowledge.mjs','/next/workspaces/knowledge-model.mjs',
@@ -91,6 +92,21 @@ test('real BLACKICE server serves only the current interface and keeps old bookm
   for(const resource of ['/assets/blackice-v2-field.svg','/assets/blackice-v2-horizon.svg']){
     assert.equal((await get(resource,cookie)).status,404,'Retired city artwork must stay unavailable: '+resource);
   }
+  const scoped=await get('/next/workspaces/browser-scoped-cleanup-ui.mjs',cookie);
+  assert.equal(scoped.status,200,'The imported cleanup panel must be served by its exact route.');
+  assert.equal(scoped.headers['content-type'],'text/javascript; charset=utf-8');
+  assert.match(scoped.text,/createBrowserScopedCleanup/);
+  // Use a disposable real adjacent file, not a made-up path; this verifies
+  // that static delivery still requires explicit allowlisting.
+  const unlistedSibling='browser-scoped-cleanup-unlisted-'+randomUUID()+'.mjs';
+  // fileURLToPath handles Windows drive paths and never touches the installed profile.
+  const diskPath=path.join(path.dirname(fileURLToPath(new URL('../public/next/workspaces/browser-native.mjs',import.meta.url))),unlistedSibling);
+  await writeFile(diskPath,'export const mustNotServe=true;\\n',{flag:'wx'});
+  try {
+    assert.ok((await stat(diskPath)).isFile(),'Negative sibling exists on disk.');
+    const refused=await get('/next/workspaces/'+unlistedSibling,cookie);
+    assert.equal(refused.status,404,'An existing unlisted sibling must not be implicitly served.');
+  } finally { await rm(diskPath,{force:true}); }
   const unlisted=await get('/next/missing-secret-file.mjs',cookie);
   assert.equal(unlisted.status,404,'Unknown filenames never escape the static allowlist.');
 });

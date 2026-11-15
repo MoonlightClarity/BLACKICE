@@ -3,6 +3,7 @@ import { normalizeBrowserAddress } from '../../browser-address.mjs';
 import { browserFrame, pagePoint, browserInputGuard, wheelPixels, pendingDialog } from './browser-model.mjs';
 import { createNativeBrowserWorkspace } from './browser-native.mjs';
 import { browserOwnershipMarkup, createBrowserOwnershipControls, browserTabOwnerLabel } from './browser-ownership-ui.mjs';
+import { browserScopedCleanupMarkup, createBrowserScopedCleanup } from './browser-scoped-cleanup-ui.mjs';
 
 /** Interactive, contained Chromium surface. This is a native-browser capture,
  * not a copied webpage, iframe, or a separate foreground browser window.
@@ -29,8 +30,10 @@ export function createBrowserWorkspace(options) {
     '<button type="button" id="next-browser-inspect">Read page</button>',
     '<button type="button" id="next-browser-shot" class="next-primary">Refresh view</button>',
     '<button type="button" id="next-browser-close">Close tab</button>',
+    '<button type="button" id="next-browser-cleanup-open">Clean up task…</button>',
     '<label class="next-browser-auto-label"><input type="checkbox" id="next-browser-auto"> Live preview</label></div>',
     '<p class="next-help" id="next-browser-status" role="status" aria-live="polite">Choose a contained page.</p>',
+    browserScopedCleanupMarkup(),
     '<section class="next-browser-dialog" id="next-browser-interaction" hidden aria-live="polite"></section>',
     '<div class="next-browser-visual" id="next-browser-preview">',
     '<div class="next-browser-no-frame">Open or select a page to view it inside BLACKICE.</div></div>',
@@ -95,6 +98,7 @@ export function createBrowserWorkspace(options) {
     onMoveStatus(data,{preferred}){preferredSelection=preferred;applyStatus(data);},
     onMoveEnd(){busy=false;showFrame(frame);render();},
   });
+  const cleanup=createBrowserScopedCleanup({mount,api,refresh,notify,isBusy:()=>busy});
   function renderTabs() {
     const fragment=ui.tabs.ownerDocument.createDocumentFragment();
     const visible=ownership.visible(tabs);
@@ -204,6 +208,7 @@ export function createBrowserWorkspace(options) {
   function applyStatus(data){
     const old=selected,previousView=JSON.stringify(ownership.view);tabs=containedTabs(data);
     ownership.update({...data,tabs});
+    cleanup.update({...data,tabs});
     const visible=ownership.visible(tabs);
     const scopeChanged=previousView!==JSON.stringify(ownership.view);
     const backend=[data.activeTab,data.browsers?.relay?.activeTab].find(id=>visible.some(tab=>tab.tabId===id));
@@ -396,6 +401,6 @@ export function createBrowserWorkspace(options) {
       clearInterval(pollTimer);pollTimer=null;clearTimeout(refreshTimer);refreshTimer=null;
       clearTimeout(wheelTimer);wheelTimer=null;wheelQueue=null;frame=null;pending=null;
       ui.preview.replaceChildren();},
-    destroy(){this.leave();destroyed=true;ownership.destroy();addressDrafts.clear();openIntent=null;mount.ownerDocument.removeEventListener('keydown',keydown);mount.innerHTML='';},
+    destroy(){this.leave();destroyed=true;ownership.destroy();cleanup.destroy();addressDrafts.clear();openIntent=null;mount.ownerDocument.removeEventListener('keydown',keydown);mount.innerHTML='';},
   };
 }

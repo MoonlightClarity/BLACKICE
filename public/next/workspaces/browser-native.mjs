@@ -1,6 +1,7 @@
 import { text } from '../core/dom.mjs';
 import { normalizeBrowserAddress } from '../../browser-address.mjs';
 import { browserOwnershipMarkup, createBrowserOwnershipControls, browserTabOwnerLabel } from './browser-ownership-ui.mjs';
+import { browserScopedCleanupMarkup, createBrowserScopedCleanup } from './browser-scoped-cleanup-ui.mjs';
 
 export function nativePageBounds(rect,viewport) {
   if(!rect||!viewport||![rect.left,rect.top,rect.width,rect.height,viewport.width,viewport.height].every(Number.isFinite))return null;
@@ -110,10 +111,12 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
     '<input class="next-field" type="text" id="next-browser-url" autocomplete="url" spellcheck="false" inputmode="url" aria-label="Website address" placeholder="Search or enter a website address">',
     '<button type="submit" id="next-browser-go" class="next-primary">Go</button>',
     '<button type="button" id="next-browser-new" aria-label="New tab" title="New tab (Ctrl+T)">+ Tab</button>',
-    '<button type="button" id="next-browser-close-all" title="Close all personal and conversation browser tabs">Close All Tabs</button>',
+    '<button type="button" id="next-browser-close-all" title="Global close across conversations: inspect the preview first">Close All Tabs</button>',
+    '<button type="button" id="next-browser-cleanup-open" title="Preview and close only tabs belonging to one named task or conversation">Clean up task…</button>',
     '<button type="button" id="next-browser-downloads-toggle" aria-expanded="false" aria-controls="next-browser-downloads">Downloads</button>',
     '</form></div>',
     '<p id="next-browser-status" class="next-native-browser-status" role="status" aria-live="polite"></p>',
+    browserScopedCleanupMarkup(),
     '<section id="next-browser-downloads" class="next-native-downloads" aria-label="Downloads" hidden></section>',
     '<form id="next-browser-auth" class="next-native-auth" aria-labelledby="next-browser-auth-title" hidden>',
     '<h2 id="next-browser-auth-title"></h2><p id="next-browser-auth-realm"></p>',
@@ -238,6 +241,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
     onMoveStatus(data,options){applyStatus(data,options);},
     onMoveEnd(){busy=false;render();void drainNewTabs();},
   });
+  const cleanup=createBrowserScopedCleanup({mount,api,refresh,notify,isBusy:()=>busy||Boolean(openingBlank)});
   function geometry(){
     geometryFrame=null;
     if(geometryTimer!==null){window.clearTimeout(geometryTimer);geometryTimer=null;}
@@ -355,6 +359,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
     if(!active||!data||!Array.isArray(data.tabs))return;
     const previous=selected,previousTabs=tabs,previousView=JSON.stringify(ownership.view);tabs=nativeBrowserTabs(data);
     ownership.update({...data,tabs});
+    cleanup.update({...data,tabs});
     const visible=ownership.visible(tabs),scoped={...data,tabs:visible};
     const scopeChanged=previousView!==JSON.stringify(ownership.view);
     const popup=nativeBrowserPopupHandoff(previousTabs,tabs,previous);
@@ -429,6 +434,11 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
   }
   async function closeAllTabs(){
     if(!active||destroyed||busy||!tabs.length)return;
+    const named=tabs.map(tab=>browserTabOwnerLabel(tab)+' — '+(tab.title||tab.url||tab.tabId));
+    const warning='GLOBAL CLOSE ALL: '+tabs.length+' tabs across Personal and ALL conversations. This may include other coordination tasks.\n\n'
+      +named.slice(0,35).join('\n')+(named.length>35?'\n… plus '+(named.length-35)+' more':'')
+      +'\n\nPrefer “Clean up task…” for scoped cleanup. Continue global close?';
+    if(typeof window.confirm!=='function'||!window.confirm(warning))return;
     busy=true;newTabRequests.length=0;ui.status.dataset.error='false';render();
     try{
       const result=await api('/api/browser/close-all','POST',{},{deadlineMs:30000});
@@ -505,7 +515,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
       if(geometryFrame!==null)window.cancelAnimationFrame(geometryFrame);geometryFrame=null;
       if(geometryTimer!==null)window.clearTimeout(geometryTimer);geometryTimer=null;
       ui.page.dataset.attached='false';surface.hide();},
-    destroy(){this.leave();destroyed=true;ownership.destroy();newTabRequests.length=0;addressDrafts.clear();authDrafts.clear();ui.authUser.value='';ui.authPassword.value='';surface.destroy();observer?.disconnect();unsubscribeShortcut?.();
+    destroy(){this.leave();destroyed=true;ownership.destroy();cleanup.destroy();newTabRequests.length=0;addressDrafts.clear();authDrafts.clear();ui.authUser.value='';ui.authPassword.value='';surface.destroy();observer?.disconnect();unsubscribeShortcut?.();
       document.removeEventListener('keydown',keydown);window.removeEventListener('resize',scheduleGeometry);
       window.removeEventListener('scroll',scheduleGeometry,true);mount.innerHTML='';},
   };

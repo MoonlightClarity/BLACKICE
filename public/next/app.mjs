@@ -16,6 +16,7 @@ const modules={
   workflows:()=>import('./workspaces/workflow-execution.mjs').then(m=>m.createWorkflowWorkspace),
   browser:()=>import('./workspaces/browser.mjs').then(m=>m.createBrowserWorkspace),
   knowledge:()=>import('./workspaces/knowledge.mjs').then(m=>m.createKnowledgeWorkspace),
+  skills:()=>import('./workspaces/skills.mjs').then(m=>m.createSkillsWorkspace),
   settings:()=>import('./workspaces/settings.mjs').then(m=>m.createSettingsWorkspace),
 };
 const notify=(message,error=false)=>{
@@ -47,17 +48,18 @@ function updateTabs(name){
   }
 }
 function openWorkspaceTarget(space){
-  const {conversationId,requestId,nodeId,modelProviderId}=space?.navigation||{};
+  const {conversationId,requestId,nodeId,modelProviderId,knowledgeId}=space?.navigation||{};
+  if(knowledgeId!==undefined){space?.instance?.openSkillId?.(knowledgeId);return;}
   if(modelProviderId){space?.instance?.openModelProvider?.(modelProviderId);return;}
   if(requestId)space?.instance?.openRequestId?.(requestId,{nodeId});
   else if(conversationId)space?.instance?.openConversationId?.(conversationId);
 }
-async function show(name,{conversationId,requestId,nodeId,modelProviderId}={}){
+async function show(name,{conversationId,requestId,nodeId,modelProviderId,knowledgeId}={}){
   // Legacy Tasks/Activity hashes now open scheduled automation rather than a task dashboard.
   if(name==='activity'||name==='tasks'){name='cronjobs';try{history.replaceState(null,'','#cronjobs');}catch{}}
   if(!modules[name])return;
   const previous=current;const target=++revision;
-  const navigation={conversationId,requestId,nodeId,modelProviderId};
+  const navigation={conversationId,requestId,nodeId,modelProviderId,knowledgeId};
   if(previous===name){const space=spaces.get(name);if(space){space.navigation=navigation;openWorkspaceTarget(space);}return;}
   if(previous && spaces.has(previous)){
     const item=spaces.get(previous);

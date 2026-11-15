@@ -1,0 +1,334 @@
+TAP version 13
+# Subtest: direct cleanup protocol is exposed in both MCP instructions and browser action metadata
+ok 1 - direct cleanup protocol is exposed in both MCP instructions and browser action metadata
+  ---
+  duration_ms: 8.0628
+  type: 'test'
+  ...
+# Subtest: host completion status reaches both worker and node browser finalizers
+ok 2 - host completion status reaches both worker and node browser finalizers
+  ---
+  duration_ms: 2.4797
+  type: 'test'
+  ...
+# Subtest: browser HTTP status lists saved empty and archived conversations, names families, and separates Personal tabs
+ok 3 - browser HTTP status lists saved empty and archived conversations, names families, and separates Personal tabs
+  ---
+  duration_ms: 376.3446
+  type: 'test'
+  ...
+# Subtest: browser HTTP moves a live tab branch from Personal to an empty conversation, to another conversation, and back
+ok 4 - browser HTTP moves a live tab branch from Personal to an empty conversation, to another conversation, and back
+  ---
+  duration_ms: 272.2481
+  type: 'test'
+  ...
+# Subtest: browser HTTP rejects stale pages and unavailable conversations without changing tab ownership
+ok 5 - browser HTTP rejects stale pages and unavailable conversations without changing tab ownership
+  ---
+  duration_ms: 275.9663
+  type: 'test'
+  ...
+# Subtest: a manual new browser tab stays Personal while another conversation owns tabs
+ok 6 - a manual new browser tab stays Personal while another conversation owns tabs
+  ---
+  duration_ms: 233.6725
+  type: 'test'
+  ...
+# Subtest: Close All Tabs closes personal and conversation tabs but not the reserved calling-chat tab
+ok 7 - Close All Tabs closes personal and conversation tabs but not the reserved calling-chat tab
+  ---
+  duration_ms: 232.0742
+  type: 'test'
+  ...
+# Subtest: archive closes only the archived/trashed conversation tabs, including legacy turn owners
+ok 8 - archive closes only the archived/trashed conversation tabs, including legacy turn owners
+  ---
+  duration_ms: 249.0448
+  type: 'test'
+  ...
+# Subtest: delete closes only the archived/trashed conversation tabs, including legacy turn owners
+ok 9 - delete closes only the archived/trashed conversation tabs, including legacy turn owners
+  ---
+  duration_ms: 234.8197
+  type: 'test'
+  ...
+# Subtest: a failed tab close does not roll back a saved archive and returns the failure
+ok 10 - a failed tab close does not roll back a saved archive and returns the failure
+  ---
+  duration_ms: 254.8408
+  type: 'test'
+  ...
+# Subtest: browser ownership HTTP endpoint uses the local user path rather than a remote connection header
+ok 11 - browser ownership HTTP endpoint uses the local user path rather than a remote connection header
+  ---
+  duration_ms: 274.4216
+  type: 'test'
+  ...
+# Subtest: a conversation moved to Trash while its ownership transfer is queued is not assigned the tab
+ok 12 - a conversation moved to Trash while its ownership transfer is queued is not assigned the tab
+  ---
+  duration_ms: 260.0611
+  type: 'test'
+  ...
+# Subtest: archive rejects running unsettled work without closing tabs
+ok 13 - archive rejects running unsettled work without closing tabs
+  ---
+  duration_ms: 248.5576
+  type: 'test'
+  ...
+# Subtest: archive rejects cancelled unsettled work without closing tabs
+ok 14 - archive rejects cancelled unsettled work without closing tabs
+  ---
+  duration_ms: 274.6995
+  type: 'test'
+  ...
+# Subtest: queued owned open is rejected after archive and restore permits a later open
+ok 15 - queued owned open is rejected after archive and restore permits a later open
+  ---
+  duration_ms: 365.069
+  type: 'test'
+  ...
+# Subtest: cleanup drains a late owned popup but preserves a transferred Personal page
+ok 16 - cleanup drains a late owned popup but preserves a transferred Personal page
+  ---
+  duration_ms: 253.7848
+  type: 'test'
+  ...
+# Subtest: cleanup bounds a continuously spawning adapter and reports remaining tabs
+ok 17 - cleanup bounds a continuously spawning adapter and reports remaining tabs
+  ---
+  duration_ms: 258.8078
+  type: 'test'
+  ...
+# Subtest: archive refuses work that starts while retirement is being saved
+ok 18 - archive refuses work that starts while retirement is being saved
+  ---
+  duration_ms: 236.502
+  type: 'test'
+  ...
+# Subtest: delete refuses work that starts while retirement is being saved
+ok 19 - delete refuses work that starts while retirement is being saved
+  ---
+  duration_ms: 259.1684
+  type: 'test'
+  ...
+# Subtest: restoring while retirement cleanup is queued preserves the restored conversation tabs
+ok 20 - restoring while retirement cleanup is queued preserves the restored conversation tabs
+  ---
+  duration_ms: 278.364
+  type: 'test'
+  ...
+# Subtest: partial close failure reports the failed tab and closes the other matching tab
+ok 21 - partial close failure reports the failed tab and closes the other matching tab
+  ---
+  duration_ms: 259.2121
+  type: 'test'
+  ...
+# Subtest: Trash rejects active work without closing tabs
+ok 22 - Trash rejects active work without closing tabs
+  ---
+  duration_ms: 254.471
+  type: 'test'
+  ...
+# Subtest: retirement reserves engine admission throughout asynchronous metadata persistence
+ok 23 - retirement reserves engine admission throughout asynchronous metadata persistence
+  ---
+  duration_ms: 265.8797
+  type: 'test'
+  ...
+# Subtest: restore during a close batch prevents further closes
+ok 24 - restore during a close batch prevents further closes
+  ---
+  duration_ms: 265.9056
+  type: 'test'
+  ...
+# Subtest: standalone HTTP cleanup previews exact conversation and selected tabs without changing archived state
+ok 25 - standalone HTTP cleanup previews exact conversation and selected tabs without changing archived state
+  ---
+  duration_ms: 248.5911
+  type: 'test'
+  ...
+# Subtest: HTTP limited-inspection candidate requires exact per-tab review before a scoped close
+ok 26 - HTTP limited-inspection candidate requires exact per-tab review before a scoped close
+  ---
+  duration_ms: 258.8859
+  type: 'test'
+  ...
+# Subtest: HTTP cleanup rejects stale preview and remote/connector-wide scope without touching tabs
+ok 27 - HTTP cleanup rejects stale preview and remote/connector-wide scope without touching tabs
+  ---
+  duration_ms: 270.7578
+  type: 'test'
+  ...
+# Subtest: conversation destinations include empty and archived conversations, never Trash
+ok 28 - conversation destinations include empty and archived conversations, never Trash
+  ---
+  duration_ms: 2.7992
+  type: 'test'
+  ...
+# Subtest: catalog separates personal, native-conversation and unassigned connector tabs without guessed attribution
+ok 29 - catalog separates personal, native-conversation and unassigned connector tabs without guessed attribution
+  ---
+  duration_ms: 0.9228
+  type: 'test'
+  ...
+# Subtest: a transferred conversation page belongs to later workers and excludes the previous conversation
+ok 30 - a transferred conversation page belongs to later workers and excludes the previous conversation
+  ---
+  duration_ms: 1.3396
+  type: 'test'
+  ...
+# Subtest: the empty-conversation transfer requires resolved destination and exact observed page identity
+ok 31 - the empty-conversation transfer requires resolved destination and exact observed page identity
+  ---
+  duration_ms: 0.6121
+  type: 'test'
+  ...
+# Subtest: scoped cleanup panel previews exact task tabs and never dispatches global close or archive
+ok 32 - scoped cleanup panel previews exact task tabs and never dispatches global close or archive
+  ---
+  duration_ms: 12.4368
+  type: 'test'
+  ...
+# Subtest: limited inspection requires deliberate per-page selection and displays the hidden-root limitation
+ok 33 - limited inspection requires deliberate per-page selection and displays the hidden-root limitation
+  ---
+  duration_ms: 3.5684
+  type: 'test'
+  ...
+# Subtest: cleanup panel cannot infer a conversation from a shared connector owner
+ok 34 - cleanup panel cannot infer a conversation from a shared connector owner
+  ---
+  duration_ms: 2.5291
+  type: 'test'
+  ...
+# Subtest: scope demands a real conversation and exact worker, not connector-wide ownership
+ok 35 - scope demands a real conversation and exact worker, not connector-wide ownership
+  ---
+  duration_ms: 4.7087
+  type: 'test'
+  ...
+# Subtest: limited DOM inspection is a manually reviewable candidate, not verified completion
+ok 36 - limited DOM inspection is a manually reviewable candidate, not verified completion
+  ---
+  duration_ms: 5.005
+  type: 'test'
+  ...
+# Subtest: preview protects active, transferred, forms, suspended, download and unknown effects
+ok 37 - preview protects active, transferred, forms, suspended, download and unknown effects
+  ---
+  duration_ms: 1.1431
+  type: 'test'
+  ...
+# Subtest: exact preview closes selected owner pages only, reports a late popup without adopting it
+ok 38 - exact preview closes selected owner pages only, reports a late popup without adopting it
+  ---
+  duration_ms: 1.8764
+  type: 'test'
+  ...
+# Subtest: stale document, transfer, and active-work races reject before any close
+ok 39 - stale document, transfer, and active-work races reject before any close
+  ---
+  duration_ms: 2.1639
+  type: 'test'
+  ...
+# Subtest: partial failure preserves failed pages, reports exact remaining count and never retries
+ok 40 - partial failure preserves failed pages, reports exact remaining count and never retries
+  ---
+  duration_ms: 1.3033
+  type: 'test'
+  ...
+# Subtest: the real browser router forwards inspection and a guarded close to the contained driver
+ok 41 - the real browser router forwards inspection and a guarded close to the contained driver
+  ---
+  duration_ms: 2.1321
+  type: 'test'
+  ...
+# Subtest: task resuming after the last DOM probe is blocked by the native last-moment guard
+ok 42 - task resuming after the last DOM probe is blocked by the native last-moment guard
+  ---
+  duration_ms: 1.6021
+  type: 'test'
+  ...
+# Subtest: page becoming person-owned mid-batch is retained, never closed
+ok 43 - page becoming person-owned mid-batch is retained, never closed
+  ---
+  duration_ms: 1.174
+  type: 'test'
+  ...
+# Subtest: unhealthy browser persistence rejects cleanup even when a read-only page looks finished
+ok 44 - unhealthy browser persistence rejects cleanup even when a read-only page looks finished
+  ---
+  duration_ms: 0.623
+  type: 'test'
+  ...
+# Subtest: reloaded saved ownership still matches the same exact conversation without attributing shared grant tabs
+ok 45 - reloaded saved ownership still matches the same exact conversation without attributing shared grant tabs
+  ---
+  duration_ms: 0.3858
+  type: 'test'
+  ...
+# Subtest: ownership filtering keeps Personal outside every conversation and includes legacy AI only in its own scope
+ok 46 - ownership filtering keeps Personal outside every conversation and includes legacy AI only in its own scope
+  ---
+  duration_ms: 2.7847
+  type: 'test'
+  ...
+# Subtest: native browser defaults to the current conversation, keeps other owners separate, and never follows a foreign active tab
+ok 47 - native browser defaults to the current conversation, keeps other owners separate, and never follows a foreign active tab
+  ---
+  duration_ms: 307.567
+  type: 'test'
+  ...
+# Subtest: native browser moves the same selected page to an empty conversation and back to Personal with no page reload
+ok 48 - native browser moves the same selected page to an empty conversation and back to Personal with no page reload
+  ---
+  duration_ms: 88.9894
+  type: 'test'
+  ...
+# Subtest: native browser remembers a selected tab and its address draft independently in each ownership scope
+ok 49 - native browser remembers a selected tab and its address draft independently in each ownership scope
+  ---
+  duration_ms: 230.8503
+  type: 'test'
+  ...
+# Subtest: native browser keeps a rejected move in its source conversation and creates manual new tabs as Personal
+ok 50 - native browser keeps a rejected move in its source conversation and creates manual new tabs as Personal
+  ---
+  duration_ms: 31.9255
+  type: 'test'
+  ...
+# Subtest: captured browser defaults to the current conversation, keeps other owners separate, and never follows a foreign active tab
+ok 51 - captured browser defaults to the current conversation, keeps other owners separate, and never follows a foreign active tab
+  ---
+  duration_ms: 1717.3538
+  type: 'test'
+  ...
+# Subtest: captured browser moves the same selected page to an empty conversation and back to Personal with no page reload
+ok 52 - captured browser moves the same selected page to an empty conversation and back to Personal with no page reload
+  ---
+  duration_ms: 88.4746
+  type: 'test'
+  ...
+# Subtest: captured browser remembers a selected tab and its address draft independently in each ownership scope
+ok 53 - captured browser remembers a selected tab and its address draft independently in each ownership scope
+  ---
+  duration_ms: 931.8008
+  type: 'test'
+  ...
+# Subtest: captured browser keeps a rejected move in its source conversation and creates manual new tabs as Personal
+ok 54 - captured browser keeps a rejected move in its source conversation and creates manual new tabs as Personal
+  ---
+  duration_ms: 41.0653
+  type: 'test'
+  ...
+1..54
+# tests 54
+# suites 0
+# pass 54
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7254.7382

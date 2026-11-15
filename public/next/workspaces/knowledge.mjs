@@ -316,6 +316,12 @@ export function createKnowledgeWorkspace({mount,api,events,notify}) {
     queueList();
   }
   return {
+    openSkillId(id){
+      if(!active||destroyed||mutationBusy)return;
+      els.kind.value='skill';els['type-label'].hidden=true;els.new.textContent='New skill';els.state.value='active';
+      queueList({reset:true});
+      if(id===null)newEntry();else if(typeof id==='string')void openEntry(id);
+    },
     enter(){
       if(active||destroyed)return;active=true;unsubscribe=events?.subscribe(onEvent);void loadList();
       if(selected&&!drafts.has(selected))void openEntry(selected);

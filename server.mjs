@@ -30,6 +30,7 @@ import { createMistralVibeHttp } from './lib/mistral-vibe-http.mjs';
 import { DesktopController } from './lib/desktop.mjs';
 import { NativeWindowManager } from './lib/native-window-tools.mjs';
 import { KnowledgeStore } from './lib/knowledge.mjs';
+import { createSkillsCatalog, skillIdFromRequestPath } from './lib/skills-catalog.mjs';
 import { PlanningBrowserStore } from './lib/planning-browser.mjs';
 import { PlanningBrowserRuntime } from './lib/planning-browser-runtime.mjs';
 import { PlanningDiagnostics } from './lib/planning-diagnostics.mjs';
@@ -136,6 +137,7 @@ export async function createHarnessServer(options = {}) {
   const applicationWorkspace=options.applicationWorkspace||await new ApplicationWorkspace({dataDir,runtime:options.applicationRuntime,catalog:options.applicationCatalog}).init();
   const knowledge = options.knowledge || new KnowledgeStore({ dataDir });
   await knowledge.init();
+  const skillsCatalog=createSkillsCatalog({knowledge,defaultCwd,nativeSkills:(cwd,options)=>runtime.codex?.inspectSkills?.(cwd,options)||{available:false,skills:[],reason:'Native Codex skill inspection is unavailable.'}});
   const planningBrowser = options.planningBrowser || await new PlanningBrowserStore({ dataDir: path.resolve(dataDir), knowledge }).init();
   const planningBrowserRuntime = options.planningBrowserRuntime || new PlanningBrowserRuntime({ store: planningBrowser, runtime, getSettings: () => runtimeSettings.get(), defaultCwd, onUpdated: event => sendEvent(event) });
   const prompts = options.prompts || new PromptTemplateStore({ dataDir }); await prompts.init();
@@ -166,6 +168,20 @@ export async function createHarnessServer(options = {}) {
   const ownerRecovery=createOwnerRecovery({enabled:options.nativeOwnerRecovery===true});
   const engine = options.engine || new HarnessEngine({ ownerRecovery, runtime, dataDir, defaultCwd, desktop, knowledge, browser, identity, connections, tasks, attachments, email, ...(options.maxConcurrentRuns !== undefined ? {maxConcurrentRuns:options.maxConcurrentRuns} : {}) });
   engine.ownerRecovery=ownerRecovery;
+  const activeBrowserCleanupRunIds = () => {
+    const ids = new Set(engine.executionStatus().activeRunIds || []);
+    // Live/unsettled work protects the entire task. A *settled* failed or
+    // cancelled run may be resumed, but does not freeze every tab in all other
+    // runs of that conversation: guard its exact run ID instead.
+    const running = new Set(['queued', 'running', 'waiting', 'paused', 'awaiting_input', 'awaiting-user']);
+    for (const run of engine.runs?.values() || []) {
+      const inFlight = running.has(run.status) || run.settled === false;
+      if (!inFlight && !['failed', 'cancelled'].includes(run.status)) continue;
+      ids.add(run.id);
+      if (inFlight && run.taskId) ids.add(run.taskId);
+    }
+    return ids;
+  };
   await startupPhase(diagnostics, 'history', () => engine.init());
   // The history loader has now marked interrupted runs terminal. Reconcile
   // their saved browser owners before accepting new tasks, without replaying
@@ -1145,6 +1161,18 @@ export async function createHarnessServer(options = {}) {
         }
         return json(res, 200, browserStatus(req));
       }
+      if (pathname === '/api/browser/cleanup-preview' && req.method === 'POST') {
+        if (req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Preview tab cleanup in the local browser workspace.' });
+        const scope = await body(req, 20000);
+        return json(res, 200, await browser.previewScopedCleanup(scope,
+          { conversations: browserConversations, activeRunIds: activeBrowserCleanupRunIds }));
+      }
+      if (pathname === '/api/browser/cleanup' && req.method === 'POST') {
+        if (req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Close only previewed tabs from the local browser workspace.' });
+        const value = await body(req, 30000);
+        return json(res, 200, await browser.executeScopedCleanup(value,
+          { conversations: browserConversations, activeRunIds: activeBrowserCleanupRunIds }));
+      }
       if (pathname === '/api/browser/close-all' && req.method === 'POST') {
         if (req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Close all tabs from the browser workspace on this computer.' });
         await body(req);
@@ -1256,6 +1284,15 @@ export async function createHarnessServer(options = {}) {
       if (promptAction && req.method === 'POST' && ['delete', 'restore'].includes(promptAction[2])) { const value = await promptBody(req, promptAction[2] === 'delete' ? ['expectedRevision'] : ['expectedRevision', 'revision']); return json(res, 200, { template: await (promptAction[2] === 'delete' ? prompts.remove(promptAction[1], { expectedRevision: value.expectedRevision }) : prompts.restore(promptAction[1], { expectedRevision: value.expectedRevision, revision: value.revision })) }); }
       const promptMatch = pathname.match(/^\/api\/prompts\/([A-Za-z0-9_-]+)$/);
       if (promptMatch && req.method === 'GET') return json(res, 200, { template: prompts.get(promptMatch[1]) });
+      if(pathname==='/api/skills'&&req.method==='GET'){
+        const query=new URL(req.url,`http://${host}`).searchParams;
+        return json(res,200,await skillsCatalog.list({cwd:query.get('cwd')||undefined,query:query.get('query')||'',source:query.get('source')||'all',refresh:query.get('refresh')==='true'}));
+      }
+      const skillId=skillIdFromRequestPath(pathname);
+      if(skillId&&req.method==='GET'){
+        const query=new URL(req.url,`http://${host}`).searchParams;
+        return json(res,200,await skillsCatalog.detail({id:skillId,cwd:query.get('cwd')||undefined}));
+      }
       if (pathname === '/api/knowledge' && req.method === 'GET') {
         const query = new URL(req.url, `http://${host}`).searchParams;
         return json(res, 200, knowledge.list({ ...(query.has('kind') ? { kind: query.get('kind') } : {}), ...(query.has('memoryType') ? { memoryType: query.get('memoryType') } : {}), ...(query.has('query') ? { query: query.get('query') } : {}), ...(query.has('cwd') ? { cwd: query.get('cwd') } : {}), ...(query.has('limit') ? { limit: Number(query.get('limit')) } : {}), ...(query.has('includeDeleted') ? {includeDeleted:query.get('includeDeleted')==='true'} : {}), ...(query.has('deletedOnly') ? {deletedOnly:query.get('deletedOnly')==='true'} : {}) }));
@@ -1387,8 +1424,8 @@ export async function createHarnessServer(options = {}) {
         'workspaces/swarm.mjs','workspaces/planning.mjs','workspaces/planning-browser.mjs','workspaces/planning-current.mjs','workspaces/planning-current-model.mjs','workspaces/response-cycle-ui.mjs','workspaces/tradecraft-timeline.mjs','workspaces/planning-visual.mjs','workspaces/intelligence-planning-model.mjs','workspaces/intelligence-planning-ui.mjs','workspaces/intelligence-map-model.mjs','workspaces/intelligence-map-ui.mjs','workspaces/tasks.mjs','workspaces/schedule-inspection-model.mjs','workspaces/tasks-visual-model.mjs','workspaces/task-lifecycle.mjs','workspaces/workflow-execution.mjs',
         'workspaces/workflow-editor.mjs','workspaces/workflow-edit-model.mjs',
         'workspaces/workflow-overview-model.mjs','workspaces/workflow-canvas-model.mjs','workspaces/workflow-canvas.mjs','workspaces/workflow-graph-author.mjs',
-        'workspaces/workflow-graph-edit.mjs','workspaces/browser-model.mjs','workspaces/browser-ownership-ui.mjs','workspaces/browser-native.mjs',
-        'browser.css','knowledge.css','workspaces/knowledge.mjs','workspaces/knowledge-model.mjs',
+        'workspaces/workflow-graph-edit.mjs','workspaces/browser-model.mjs','workspaces/browser-ownership-ui.mjs','workspaces/browser-scoped-cleanup-ui.mjs','workspaces/browser-native.mjs',
+        'browser.css','knowledge.css','skills.css','workspaces/skills.mjs','workspaces/knowledge.mjs','workspaces/knowledge-model.mjs',
         'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/activity-overview.mjs','workspaces/activity-model.mjs','activity.css','workspaces/settings.mjs','workspaces/settings-storage.mjs','workspaces/settings-gemini-connector.mjs','workspaces/settings-claude-connector.mjs','workspaces/settings-restart.mjs',
         'settings.css','settings-identity.css','settings-providers.css','settings-connections.css',
         'workspaces/settings-identity.mjs','workspaces/applications.mjs','workspaces/settings-subscriptions.mjs','workspaces/settings-local-models.mjs','workspaces/llama-launch-settings.mjs','workspaces/settings-providers.mjs','workspaces/native-write-recovery.mjs','workspaces/settings-provider-directory.mjs','workspaces/settings-connections.mjs','workspaces/settings-import.mjs'];
