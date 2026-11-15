@@ -194,11 +194,11 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
     const objective=view.goalInput.value.trim(),limit=view.goalLimit.value.trim();
     const maxTurns=limit===''?null:Number(limit);
     const deadlineValue=view.goalDeadlineInput.value, original=view.goalDeadlineInput.dataset.original||'';
-    const deadlineOptions=deadlineValue===original?{}:deadlineValue?computerDeadlineInput(deadlineValue):{deadlineAt:null};
     view.goalError.hidden=true;
     try{
       if(!objective)throw Error('Enter the outcome you want BLACKICE to achieve.');
       if(maxTurns!==null&&(!Number.isInteger(maxTurns)||maxTurns<1))throw Error('Use a positive whole number for the turn limit, or leave it empty.');
+      const deadlineOptions=deadlineValue===original?{}:deadlineValue?computerDeadlineInput(deadlineValue):{deadlineAt:null};
       let result;
       if(owner==='new')result=await command({action:'set',objective,maxTurns,...deadlineOptions},{consumeDraft:false});
       else result=await act(goal&&goal.status!=='completed'?'update':'set',{objective,maxTurns,...deadlineOptions});
