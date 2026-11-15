@@ -42,10 +42,22 @@ test('retired virtual machine resources are not approved as Windows installer in
   ]) assert.equal(approvedWindowsPackageFile(file, '2.39.60'), false, file);
 });
 
-test('retiring Workbench preserves Chat, Planning, Cronjobs, Browser, Knowledge and Settings', () => {
+test('2.39.98 retains Workbench-free navigation and adds exactly one real Skills workspace', () => {
   const index = read('public/next/index.html');
+  const app = read('public/next/app.mjs');
+  const server = read('server.mjs');
   const spaces = [...index.matchAll(/data-space="([^"]+)"/g)].map(match => match[1]);
-  assert.deepEqual(spaces, ['chat','planning','cronjobs','browser','knowledge','settings']);
+  // This frozen Skills+tabs lane intentionally keeps Planning pending the
+  // separate Swarm navigation integration; no old workspace may disappear.
+  const retained = ['chat','planning','cronjobs','browser','knowledge','settings'];
+  assert.deepEqual(spaces.filter(name=>retained.includes(name)),retained);
+  assert.deepEqual(spaces,['chat','planning','cronjobs','browser','knowledge','skills','settings']);
+  assert.equal(spaces.filter(name=>name==='skills').length,1);
+  assert.match(index,/<button[^>]*data-space="skills"[^>]*>Skills<\/button>/);
+  assert.match(index,/<link[^>]*href="\/next\/skills\.css"/);
+  assert.match(app,/skills:\(\)=>import\('\.\/workspaces\/skills\.mjs'\)\.then\(m=>m\.createSkillsWorkspace\)/);
+  assert.match(server,/'skills\.css','workspaces\/skills\.mjs'/);
+  assert.doesNotMatch(app,/createWorkbenchWorkspace|workspaces\/workbench\.mjs/);
 });
 
 test('retained Cronjobs routes preserve the workflow manager and legacy Tasks and Activity aliases', async () => {

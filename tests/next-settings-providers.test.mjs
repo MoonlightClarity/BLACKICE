@@ -525,9 +525,18 @@ test('anonymous free-model connections retain their scoped catalog and metadata 
   assert.equal(saved.models.length,1);assert.equal(saved.models[0].isFree,true);assert.equal(saved.models[0].freeSource,'provider-reported');assert.deepEqual(saved.models[0].aliases,['gpt-oss-20b']);
   await f.open('gateway');await f.open('free_kilo_metadata');await until(()=>!f.$('#next-provider-catalog-load').disabled);
   assert.equal(f.$('#next-provider-catalog-free').checked,true);
-  await f.click('#next-provider-catalog-clear');await until(()=>f.calls.filter(call=>call.route==='/api/providers/free_kilo_metadata/models').length>=3);
+  const beforeClear=f.calls.filter(call=>call.route==='/api/providers/free_kilo_metadata/models').length;
+  assert.equal(beforeClear,2,'One saved catalog read after creation and one after reopening; no implicit duplicate lookup.');
+  await f.click('#next-provider-catalog-clear');
+  // filtersChanged({immediate:true}) uses setTimeout(0). One hundred
+  // setImmediate spins are NOT a timer-phase barrier under Node 24.
+  // Await the actual timer phase, without extending timeouts or production delays.
+  await new Promise(resolve=>setTimeout(resolve,0));
+  await until(()=>f.calls.filter(call=>call.route==='/api/providers/free_kilo_metadata/models').length===beforeClear+1);
   assert.equal(f.calls.filter(call=>call.route==='/api/providers/free_kilo_metadata/models').at(-1).body.freeOnly,true);
+  assert.equal(f.calls.filter(call=>call.route==='/api/providers/free_kilo_metadata/models').at(-1).body.query,'');
   assert.equal(f.state.providers.find(item=>item.id==='free_kilo_metadata').models[0].id,'openai-fast');
+  assert.equal(f.writes().filter(call=>call.route==='/api/providers').length,2,'Clear changes only the catalog filters, not saved selections.');
 });
 
 test('Kilo preset scopes its catalog while existing custom connection filters and models stay independent', async t => {
