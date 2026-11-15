@@ -1,0 +1,33 @@
+name: Inspect native comparison evidence
+on:
+  push:
+    branches: [codex/native-comparison-23995]
+    paths: [.github/workflows/inspect-native-evidence.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 43690859759
+          pattern: native-*
+          path: evidence
+      - name: Print existing bounded fixture receipts without executing tests
+        run: |
+          node --input-type=module <<'JS'
+          import {readdir,readFile} from 'node:fs/promises';
+          import path from 'node:path';
+          for(const dir of await readdir('evidence')){
+            for(const relative of ['receipt.json','fill/result.json']){
+              const file=path.join('evidence',dir,relative);
+              const bytes=await readFile(file);
+              if(bytes.length>100000)throw Error('Unexpected report size');
+              console.log('EXISTING_NATIVE_REPORT='+JSON.stringify({artifact:dir,file:relative,report:JSON.parse(bytes)}));
+            }
+          }
+          JS
