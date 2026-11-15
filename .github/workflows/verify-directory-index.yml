@@ -1,0 +1,36 @@
+name: Verify isolated Directory index prototype
+on:
+  push:
+    branches: [codex/directory-index-verify]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 105b7485b03eeb05c72a0f11c382071454af0f06
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.2'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - name: Verify bundled Electron SQLite capability without launching the app
+        shell: pwsh
+        run: |
+          $env:ELECTRON_RUN_AS_NODE = '1'
+          & ./node_modules/electron/dist/electron.exe -e "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync(':memory:');console.log(JSON.stringify({kind:'electron-sqlite-capability',electron:process.versions.electron,node:process.versions.node,sqlite:db.prepare('select sqlite_version() as version').get().version,modelAdmissions:0}));db.close();"
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled Electron SQLite capability failed.' }
+          Remove-Item Env:ELECTRON_RUN_AS_NODE
+      - run: node scripts/source-suite-receipt.mjs source-suite-evidence
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: directory-index-source-evidence
+          path: source-suite-evidence
+          if-no-files-found: warn
