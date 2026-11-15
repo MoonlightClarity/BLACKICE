@@ -18,8 +18,28 @@ test('receipts may be evidence but cannot masquerade as action-state revisions',
  const left=await journal.note('left',{actionId:'a',parent:a.id,state:'left'}),right=await journal.note('right',{actionId:'a',parent:a.id,state:'right'});
  const merged=await journal.note('merged',{actionId:'a',parent:left.id,reconciles:[right.id],evidence:[outcome.id]});
  assert.equal(merged.event.kind,'action-state');
+ assert.equal((await journal.read()).metadataCounts.conflicts,0);
  const rows=await journal.events();assert.equal(rows.find(r=>r.id===attempt.id).digest,attempt.digest);assert.equal(rows.find(r=>r.id===outcome.id).digest,outcome.digest);
  assert.equal(rows.length,6);
+});
+
+test('incomplete merges and competing different-parent merges remain conflicts until explicitly joined',async t=>{
+ const j=await fixture(t),root=await j.note('root',{actionId:'a'});
+ const attempt=await j.begin('uncertain-click',{name:'relay_browser',arguments:{action:'click'}},{actionId:'a'});
+ await j.outcome(attempt,{success:false,code:'LOST_REPLY'},{receipt:'unknown'});
+ const left=await j.note('left',{actionId:'a',parent:root.id}),right=await j.note('right',{actionId:'a',parent:root.id});
+ const partial=await j.note('partial',{actionId:'a',parent:left.id});
+ let view=await j.read();assert.equal(view.metadataCounts.conflicts,1);assert.deepEqual(new Set(view.conflicts[0]),new Set([partial.id,right.id]));
+ const mergeA=await j.note('merge-a',{actionId:'a',parent:partial.id,reconciles:[right.id]});
+ assert.equal((await j.read()).metadataCounts.conflicts,0);
+ const mergeB=await j.note('merge-b',{actionId:'a',parent:right.id,reconciles:[partial.id]});
+ view=await j.read();assert.equal(view.metadataCounts.conflicts,1);assert.deepEqual(new Set(view.conflicts[0]),new Set([mergeA.id,mergeB.id]));
+ const other=await j.note('other',{actionId:'separate-action'});
+ await assert.rejects(j.note('cross-action',{actionId:'a',parent:mergeA.id,reconciles:[other.id]}),{code:'DIRECTORY_RECONCILIATION_MISSING'});
+ await j.note('final',{actionId:'a',parent:mergeA.id,reconciles:[mergeB.id]});
+ assert.equal((await j.read()).metadataCounts.conflicts,0);
+ assert.equal((await j.read()).metadataCounts.unknownOutcomes,1);
+ assert.equal((await j.events()).length,10);
 });
 
 test('bounded pages disclose growing full scans and retain all authority history',async t=>{
