@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: be9d8c0b3cd3efeac5e931df8ca907f693d4348a
+          ref: 32a12e86ce19c25d83ce51eb42ec36005a381858
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
@@ -24,7 +24,7 @@ jobs:
         shell: pwsh
         run: |
           $candidateHead = git rev-parse HEAD
-          if ($candidateHead -ne 'be9d8c0b3cd3efeac5e931df8ca907f693d4348a') { throw 'Unexpected checkout source.' }
+          if ($candidateHead -ne '32a12e86ce19c25d83ce51eb42ec36005a381858') { throw 'Unexpected checkout source.' }
           Write-Output "VERIFIED_CHECKOUT_SOURCE=$candidateHead"
       - run: npm run docs:check
       - run: node scripts/source-suite-receipt.mjs source-suite-evidence
