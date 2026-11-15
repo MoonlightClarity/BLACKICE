@@ -137,7 +137,7 @@ export function createSwarmWorkspace({ mount, api, events, notify = () => {} } =
   };
   const workerSection = (root, project) => {
     const panel = el(root, 'section', '', 'swarm-panel');
-    heading(panel, 'Workers & ownership', 'Scopes are declarations, not proof a worker is running.');
+    heading(panel, 'Workers & ownership', 'Scopes are declarations, not proof a worker is running. An OAuth connector grant is shared across chats: binding its ID does not identify an individual chat or verified worker.');
     const list = el(panel, 'div', '', 'swarm-worker-list');
     for (const worker of project.workers) {
       const line = el(list, 'article', '', 'swarm-worker');
@@ -145,7 +145,7 @@ export function createSwarmWorkspace({ mount, api, events, notify = () => {} } =
       el(line, 'strong', worker.label);
       el(line, 'small', worker.id, 'swarm-id');
       el(line, 'p', worker.scope);
-      el(line, 'span', worker.actorId ? 'Bound to connector ID ' + worker.actorId : 'No authenticated worker identity bound', 'swarm-muted');
+      el(line, 'span', worker.actorId ? 'Bound to shared OAuth grant ' + worker.actorId + ' (not a chat identity)' : 'No OAuth connector grant bound; per-chat identity unavailable', 'swarm-muted');
     }
     if (!project.workers.length) el(list, 'p', 'No workers registered.', 'swarm-muted');
     const details = el(panel, 'details', '', 'swarm-disclosure');
@@ -160,8 +160,8 @@ export function createSwarmWorkspace({ mount, api, events, notify = () => {} } =
     const kind = field(f, 'Type', { tag: 'select', options: [['agent', 'Agent'], ['human', 'Human']] });
     const scope = field(f, 'Authorized scope', { tag: 'textarea', required: true,
       placeholder: 'Explicit files, outcomes and limitations' });
-    const actor = field(f, 'Optional bound connector identity', {
-      placeholder: 'Exact authenticated worker client ID, if known' });
+    const actor = field(f, 'Optional shared OAuth connector grant ID', {
+      placeholder: 'Exact grant self.id from Swarm connector read; shared across chats' });
     submit(f, 'Register worker');
   };
   const createWorkItem = (root, project) => {

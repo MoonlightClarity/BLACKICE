@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { SwarmBoardStore } from '../lib/swarm-board.mjs';
 import { createSwarmDirectTools } from '../lib/swarm-direct-tools.mjs';
+import { validDirectArguments } from '../lib/direct-execution-api.mjs';
+import { SWARM_ACTION_NAMES } from '../lib/swarm-action-contract.mjs';
 
 const human = { kind: 'human', id: 'local-session', label: 'Local user' };
 const worker = { kind: 'connector', id: 'worker-client', label: 'Worker connector' };
@@ -209,7 +211,7 @@ test('read/write connector definitions expose distinct scopes and never forge ac
   assert.equal(JSON.parse(inspected.contentItems[0].text).self.id, 'worker-client');
   await assert.rejects(write.execute({ requestId: 'request-two', mutationId: 'mutation-two', action: 'edit_project',
     projectId: 'swarm_demo', expectedProjectRevision: 1, value: { name: 'Forged' } }),
-    /authenticated worker context/);
+    /authenticated connector grant context/);
 });
 
 test('dependent readiness follows current upstream completion and exact integration approval', async t => {
@@ -294,4 +296,73 @@ test('only the bound worker or local human may report delivery or request worker
     itemAction(ctx.store, 'build', 'request_ready', { note: 'I own this item.' }), worker);
   assert.equal(itemOf(ctx.store).readiness, 'ready_requested');
   assert.equal(itemOf(ctx.store).readyRequest.actor.id, worker.id);
+});
+
+test('published direct-write schema fully discriminates action revisions and value requirements', async t => {
+  const { store } = await fixture(t);
+  const write = createSwarmDirectTools({ board: store }).find(entry => entry.definition.name === 'blackice_swarm_write');
+  const spec = write.definition.inputSchema;
+  assert.ok(Array.isArray(spec.oneOf) && spec.oneOf.length >= SWARM_ACTION_NAMES.length,
+    'discoverable per-action oneOf variants, including state-specific variants');
+  const mk = (action, value, extra = {}) =>
+    ({ requestId: 'schema_request', mutationId: 'schema_mutation', action, ...extra, value });
+  const byProject = { projectId: 'project_one', expectedProjectRevision: 1 };
+  const byItem = { projectId: 'project_one', itemId: 'item_one', expectedItemRevision: 1 };
+  const valid = [
+    mk('create_project', { id: 'project_one', name: 'One', objective: 'Explicit scope.' }),
+    mk('edit_project', { name: 'Revised' }, byProject),
+    mk('register_worker', { id: 'worker_one', label: 'Worker', scope: 'One file.', actorId: 'oauth_grant_one' }, byProject),
+    mk('propose_item', { id: 'item_one', title: 'Proof', scope: 'One file.', requirements: 'Unit check',
+      ownerId: null, dependsOn: [], verificationTarget: 'unit' }, byProject),
+    mk('edit_item', { requirements: 'Revised check' }, byItem),
+    mk('transition', { phase: 'queued' }, byItem),
+    mk('transition', { phase: 'delivered', reference: 'external-receipt' }, byItem),
+    mk('record_source', { id: 'source_one', text: 'Payload A' }, byProject),
+    mk('record_source', { id: 'source_one', text: 'Payload B' },
+      { projectId: 'project_one', expectedSourceRevision: 1 }),
+    mk('record_evidence', { id: 'evidence_one', claim: 'Build succeeds', epistemic: 'observed',
+      authority: 'unit', outcome: 'pass', sourceId: 'source_one', sourceRevision: 1,
+      requirementRevision: 1 }, { projectId: 'project_one', itemId: 'item_one' }),
+    mk('resolve_failure', { evidenceId: 'failed_one', replacementId: 'passed_two', reason: 'New proof.' },
+      { projectId: 'project_one', itemId: 'item_one' }),
+    mk('request_ready', { note: 'Request, not approval.' }, byItem),
+    mk('decide_ready', { disposition: 'approved', reason: 'Current comparable reported proof.',
+      evidenceIds: ['evidence_one'] }, byItem),
+    mk('decide_ready', { disposition: 'blocked', reason: 'Specific blocking evidence.' }, byItem),
+    mk('record_integration', { status: 'recorded', reference: 'commit_123' }, byItem),
+    mk('record_integration', { status: 'proposed' }, byItem),
+  ];
+  assert.deepEqual([...new Set(valid.map(args => args.action))].sort(), [...SWARM_ACTION_NAMES].sort());
+  for (const args of valid) assert.equal(validDirectArguments(args, spec), true, args.action + ' must validate');
+  assert.equal(validDirectArguments({ ...valid[0], expectedItemRevision: 1 }, spec), false,
+    'create_project must reject unrelated top-level revision fields');
+  assert.equal(validDirectArguments({ ...valid[1], value: {} }, spec), false,
+    'edit_project needs at least one field');
+  assert.equal(validDirectArguments({ ...valid[3], value: { ...valid[3].value, ownerId: 'worker_one', arbitrary: true } }, spec), false,
+    'nested value must reject unsupported keys');
+  assert.equal(validDirectArguments({ ...valid[6], value: { phase: 'delivered' } }, spec), false,
+    'delivered requires a reference');
+  assert.equal(validDirectArguments({ ...valid[7], expectedSourceRevision: 1 }, spec), false,
+    'source create and update locks are mutually exclusive');
+  assert.equal(validDirectArguments({ ...valid[8], expectedProjectRevision: 1 }, spec), false,
+    'source update cannot quietly accept an extra project revision');
+  assert.equal(validDirectArguments({ ...valid[12], value: { disposition: 'approved', reason: 'No evidence.' } }, spec), false,
+    'approvals require selected evidence IDs');
+  assert.equal(validDirectArguments({ ...valid[14], value: { status: 'recorded' } }, spec), false,
+    'integration recording requires a reference');
+  assert.equal(validDirectArguments({ ...valid[13], expectedProjectRevision: 2 }, spec), false,
+    'item decision must not accept project-level optimistic locks');
+});
+
+test('nativeContext is not an authenticated Swarm connector grant or a registered native worker adapter', async t => {
+  const { store } = await fixture(t);
+  const [read, write] = createSwarmDirectTools({ board: store });
+  const nativeContext = { runId: 'native_fake', nodeId: 'agent_fake' };
+  const observed = JSON.parse((await read.execute({ requestId: 'read_native' }, { nativeContext })).contentItems[0].text);
+  assert.equal(observed.self, null);
+  assert.equal(observed.identityScope.nativeWorkerToolsRegistered, false);
+  await assert.rejects(write.execute({ requestId: 'write_native', mutationId: 'native_mutation',
+    action: 'create_project', value: { id: 'native_wrong', name: 'No', objective: 'Not a native binding.' } },
+    { nativeContext }), error => error.code === 'SWARM_ACTOR_REQUIRED');
+  assert.equal(store.snapshot().projects.length, 0, 'unverified native context had no effects');
 });
