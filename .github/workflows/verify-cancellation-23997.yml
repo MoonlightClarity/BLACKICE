@@ -1,0 +1,36 @@
+name: Verify 2.39.97 cancellation candidate
+on:
+  push:
+    branches: [codex/cancellation-23997-verify]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: be9d8c0b3cd3efeac5e931df8ca907f693d4348a
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.2'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - name: Verify exact checkout
+        shell: pwsh
+        run: |
+          $candidateHead = git rev-parse HEAD
+          if ($candidateHead -ne 'be9d8c0b3cd3efeac5e931df8ca907f693d4348a') { throw 'Unexpected checkout source.' }
+          Write-Output "VERIFIED_CHECKOUT_SOURCE=$candidateHead"
+      - run: npm run docs:check
+      - run: node scripts/source-suite-receipt.mjs source-suite-evidence
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: cancellation-23997-source-evidence
+          path: source-suite-evidence
+          if-no-files-found: warn
