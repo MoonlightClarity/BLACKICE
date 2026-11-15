@@ -18,6 +18,7 @@ import { OperationsStore } from './lib/operations.mjs';
 import {ProjectStore} from './lib/projects.mjs';
 import { SwarmBoardStore } from './lib/swarm-board.mjs';
 import { createSwarmDirectTools } from './lib/swarm-direct-tools.mjs';
+import { createNativeSwarmTools } from './lib/swarm-native-tools.mjs';
 import {MethodStore} from './lib/methods.mjs';
 import {CapabilityStore} from './lib/capabilities.mjs';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
@@ -202,6 +203,9 @@ export async function createHarnessServer(options = {}) {
   // Start the scheduler only after native task admission and connector authority are ready.
   engine.operations=operations;
   const swarmBoard=await new SwarmBoardStore({dataDir}).init();
+  // Real engine-bound native Swarm tool provider, separate from the OAuth grant adapter.
+  // The engine passes saved task/run/node identity; model input cannot supply it.
+  engine.nativeSwarmTools=createNativeSwarmTools({board:swarmBoard});
   const projects=await new ProjectStore({dataDir,engine,isPaused:()=>Boolean(engine.maintenanceRequested)}).init();
   guardArchivedProjectExecution(projects, planningOrganization);
   const capabilities=await new CapabilityStore({dataDir,projects}).init();

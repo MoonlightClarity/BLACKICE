@@ -137,7 +137,7 @@ export function createSwarmWorkspace({ mount, api, events, notify = () => {} } =
   };
   const workerSection = (root, project) => {
     const panel = el(root, 'section', '', 'swarm-panel');
-    heading(panel, 'Workers & ownership', 'Scopes are declarations, not proof a worker is running. An OAuth connector grant is shared across chats: binding its ID does not identify an individual chat or verified worker.');
+    heading(panel, 'Workers & ownership', 'Scopes are recorded declarations, not proof of a running worker. OAuth grants are shared across chats; native worker IDs are host-bound to a saved task/node and are not OAuth grants.');
     const list = el(panel, 'div', '', 'swarm-worker-list');
     for (const worker of project.workers) {
       const line = el(list, 'article', '', 'swarm-worker');
@@ -145,7 +145,10 @@ export function createSwarmWorkspace({ mount, api, events, notify = () => {} } =
       el(line, 'strong', worker.label);
       el(line, 'small', worker.id, 'swarm-id');
       el(line, 'p', worker.scope);
-      el(line, 'span', worker.actorId ? 'Bound to shared OAuth grant ' + worker.actorId + ' (not a chat identity)' : 'No OAuth connector grant bound; per-chat identity unavailable', 'swarm-muted');
+      el(line, 'span', worker.actorId ? worker.actorId.startsWith('native_')
+        ? 'Bound to native task/node identity ' + worker.actorId + ' (not live-status proof)'
+        : 'Bound to shared OAuth grant ' + worker.actorId + ' (not a chat identity)'
+      : 'No authenticated actor binding; recorded scope only', 'swarm-muted');
     }
     if (!project.workers.length) el(list, 'p', 'No workers registered.', 'swarm-muted');
     const details = el(panel, 'details', '', 'swarm-disclosure');
@@ -160,8 +163,8 @@ export function createSwarmWorkspace({ mount, api, events, notify = () => {} } =
     const kind = field(f, 'Type', { tag: 'select', options: [['agent', 'Agent'], ['human', 'Human']] });
     const scope = field(f, 'Authorized scope', { tag: 'textarea', required: true,
       placeholder: 'Explicit files, outcomes and limitations' });
-    const actor = field(f, 'Optional shared OAuth connector grant ID', {
-      placeholder: 'Exact grant self.id from Swarm connector read; shared across chats' });
+    const actor = field(f, 'Optional authenticated actor ID', {
+      placeholder: 'Exact self.id from native relay_swarm_read or OAuth Swarm read; do not invent' });
     submit(f, 'Register worker');
   };
   const createWorkItem = (root, project) => {
@@ -220,6 +223,10 @@ export function createSwarmWorkspace({ mount, api, events, notify = () => {} } =
     if (item.dependsOn.length) el(b, 'small', '↳ ' + item.dependsOn.join(' · '), 'swarm-muted');
     if (item.unresolvedFailures?.length) pill(b, 'contradicted',
       item.unresolvedFailures.length + ' failed evidence');
+    if (item.nativeHandoff) pill(b, item.nativeHandoff.applicable ? item.nativeHandoff.state : 'stale',
+      item.nativeHandoff.applicable
+        ? item.nativeHandoff.state === 'acknowledged' ? 'Native acknowledgment observed' : 'Native response prepared'
+        : 'Native handoff stale');
   };
   const board = (root, project) => {
     const wrap = el(root, 'div', '', 'swarm-board-columns');
@@ -347,6 +354,28 @@ export function createSwarmWorkspace({ mount, api, events, notify = () => {} } =
     }
     const waiting = item.dependenciesWaiting || [];
     if (waiting.length) el(detail, 'p', 'Waiting for recorded completion and integration: ' + waiting.join(', '), 'swarm-warning');
+    const nativeReceipts = (project.nativeDeliveries || []).filter(receipt => receipt.itemId === item.id);
+    if (nativeReceipts.length) {
+      const section = el(detail, 'section', '', 'swarm-panel');
+      heading(section, 'Native engine handoff',
+        'Host-prepared assignment response is not worker acknowledgment. A separately observed token echo acknowledges receipt, never work execution or a release.');
+      for (const receipt of nativeReceipts) {
+        const row = el(section, 'article', '', 'swarm-ledger-row');
+        pill(row, receipt.state, receipt.state === 'acknowledged'
+          ? 'Acknowledged by native callback' : 'Response prepared only');
+        el(row, 'strong', receipt.id);
+        el(row, 'p', 'Requirements r' + receipt.requirementRevision
+          + ' · native identity ' + receipt.actorId);
+        el(row, 'small', 'Prepared ' + labelDate(receipt.preparedAt)
+          + (receipt.acknowledgedAt ? ' · acknowledged ' + labelDate(receipt.acknowledgedAt) : ' · acknowledgment not observed'),
+          'swarm-muted');
+        el(row, 'small', 'Assignment SHA-256 ' + receipt.assignmentDigest
+          + ' · runtime source ' + receipt.originatingRunId
+          + ' · does NOT establish provider/model efficacy, external delivery or work completion.', 'swarm-muted');
+      }
+      if (item.nativeHandoff?.applicable === false)
+        el(section, 'p', 'Latest native handoff is stale for current scope or requirements. Do not reuse its acknowledgment as current proof.', 'swarm-warning');
+    }
     const editPanel = el(detail, 'details', '', 'swarm-disclosure');
     el(editPanel, 'summary', 'Edit scope, owner, requirements, dependencies');
     const edit = form(editPanel, 'swarm-form', () => mutate('edit_item',
