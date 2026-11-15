@@ -16,6 +16,8 @@ import { conversationGoalsDirectTool } from './lib/conversation-goals-direct-too
 import { createActivityService } from './lib/activity.mjs';
 import { OperationsStore } from './lib/operations.mjs';
 import {ProjectStore} from './lib/projects.mjs';
+import { SwarmBoardStore } from './lib/swarm-board.mjs';
+import { createSwarmDirectTools } from './lib/swarm-direct-tools.mjs';
 import {MethodStore} from './lib/methods.mjs';
 import {CapabilityStore} from './lib/capabilities.mjs';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
@@ -199,6 +201,7 @@ export async function createHarnessServer(options = {}) {
   // preserves explicit Stop, and journals overdue occurrences instead of replaying them.
   // Start the scheduler only after native task admission and connector authority are ready.
   engine.operations=operations;
+  const swarmBoard=await new SwarmBoardStore({dataDir}).init();
   const projects=await new ProjectStore({dataDir,engine,isPaused:()=>Boolean(engine.maintenanceRequested)}).init();
   guardArchivedProjectExecution(projects, planningOrganization);
   const capabilities=await new CapabilityStore({dataDir,projects}).init();
@@ -373,6 +376,7 @@ export async function createHarnessServer(options = {}) {
   email?.on?.('updated', value => sendEvent({type:'email.updated',data:email.status(),at:new Date().toISOString()}));
   operations.on?.('updated',value=>sendEvent({type:'operations.updated',data:value,at:new Date().toISOString()}));
   projects.on?.('updated',value=>sendEvent({type:'projects.updated',data:value,at:new Date().toISOString()}));
+  swarmBoard.on('updated',value=>sendEvent({type:'swarm.updated',data:value,at:new Date().toISOString()}));
   capabilities.on?.('updated',value=>sendEvent({type:'capabilities.updated',data:value,at:new Date().toISOString()}));
   applicationWorkspace.on?.('updated',value=>sendEvent({type:'application-sessions.updated',data:value,at:new Date().toISOString()}));
   conversations.on?.('updated',value=>sendEvent({type:'conversations.updated',data:value,at:new Date().toISOString()}));
@@ -449,7 +453,7 @@ export async function createHarnessServer(options = {}) {
     ...(options.desktopRestart ? { desktopRestart: options.desktopRestart, restartStatus: context => options.desktopRestart.status({ ownerId: context.canRestart ? context.ownerId : undefined }) } : {}),
     // Vault health can change between startups or recover during this process.
     // Keep its tool definitions stable; every credential action checks the store.
-    additionalTools: [visualTool(visuals,{isClosing:connectorClosing,authorizeWrite:client=>directExecution.require(client,['files:write'])}), conversationGoalsDirectTool({ goals, isClosing: connectorClosing }), createNativeTaskContextTool({getBridge:()=>engine.nativeTaskContextBridge}), ...createDirectPlanningBrowserTools({ store: planningBrowser, getExecutionSnapshot: () => planningBrowserRuntime.status(), getCatalog: () => planningBrowserCatalog({ store: planningBrowser, conversations, runtime, runtimeSettings, runner: planningBrowserRuntime }), onChange: sendEvent }), ...createDirectPlanningExecutionTools({store:planningBrowser,runner:planningBrowserRuntime,onChange:sendEvent}), ...createDirectProviderSetupTools({ runtime, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes), isEncryptionAvailable: () => options.credentialStorage?.isEncryptionAvailable?.() === true, browserOwnerForClient: client => client.id === LOCAL_BROWSER_CLIENT.id && client.kind === LOCAL_BROWSER_CLIENT.kind ? null : connectorBrowserOwner(client.id) }), chatGPTFileImportTool({ directory: path.join(defaultCwd, 'blackice-imports') }), chatGPTStartChatTool({ engine, attachments, defaultCwd, isClosing: connectorClosing }), planningOntologyDirectTool({runtimeSettings}), ...createDirectConnectedBrowserTools({ manager: connections, connectChrome: options.connectChromeBrowser }), ...createDirectBrowserProfileTools({ profiles: browserProfiles, manager: connections, onChange: refreshBrowserProfiles }), ...(options.desktopRestart ? [desktopRestartTool({ restart: options.desktopRestart, getJob: id => directExecution.jobs.get(id) })] : []), ...(options.frontendDevtools ? [frontendDevtoolsTool({ frontend: options.frontendDevtools, artifactDirectory: path.join(dataDir, 'frontend-development') })] : []), ...createDirectBrowserCredentialTools({ vault: browserCredentials, browser, resolveBrowserConversationOwner: id => resolveBrowserConversationOwner(id, conversations), reauthorize: (client, { scopes }) => directExecution.require(client, scopes) })],
+    additionalTools: [...createSwarmDirectTools({board:swarmBoard,isClosing:connectorClosing}), visualTool(visuals,{isClosing:connectorClosing,authorizeWrite:client=>directExecution.require(client,['files:write'])}), conversationGoalsDirectTool({ goals, isClosing: connectorClosing }), createNativeTaskContextTool({getBridge:()=>engine.nativeTaskContextBridge}), ...createDirectPlanningBrowserTools({ store: planningBrowser, getExecutionSnapshot: () => planningBrowserRuntime.status(), getCatalog: () => planningBrowserCatalog({ store: planningBrowser, conversations, runtime, runtimeSettings, runner: planningBrowserRuntime }), onChange: sendEvent }), ...createDirectPlanningExecutionTools({store:planningBrowser,runner:planningBrowserRuntime,onChange:sendEvent}), ...createDirectProviderSetupTools({ runtime, browser, reauthorize: (client, { scopes }) => directExecution.require(client, scopes), isEncryptionAvailable: () => options.credentialStorage?.isEncryptionAvailable?.() === true, browserOwnerForClient: client => client.id === LOCAL_BROWSER_CLIENT.id && client.kind === LOCAL_BROWSER_CLIENT.kind ? null : connectorBrowserOwner(client.id) }), chatGPTFileImportTool({ directory: path.join(defaultCwd, 'blackice-imports') }), chatGPTStartChatTool({ engine, attachments, defaultCwd, isClosing: connectorClosing }), planningOntologyDirectTool({runtimeSettings}), ...createDirectConnectedBrowserTools({ manager: connections, connectChrome: options.connectChromeBrowser }), ...createDirectBrowserProfileTools({ profiles: browserProfiles, manager: connections, onChange: refreshBrowserProfiles }), ...(options.desktopRestart ? [desktopRestartTool({ restart: options.desktopRestart, getJob: id => directExecution.jobs.get(id) })] : []), ...(options.frontendDevtools ? [frontendDevtoolsTool({ frontend: options.frontendDevtools, artifactDirectory: path.join(dataDir, 'frontend-development') })] : []), ...createDirectBrowserCredentialTools({ vault: browserCredentials, browser, resolveBrowserConversationOwner: id => resolveBrowserConversationOwner(id, conversations), reauthorize: (client, { scopes }) => directExecution.require(client, scopes) })],
     authorizeClient: async (client, { requiredScopes }) => {
       if (client.id === 'local-browser-tools' && client.kind === 'local-browser') return !connectorClosing() && requiredScopes.every(scope => LOCAL_BROWSER_CLIENT.scopes.includes(scope));
       if (client.id === LOCAL_FRONTEND_CLIENT.id && client.kind === LOCAL_FRONTEND_CLIENT.kind) return Boolean(options.frontendDevtools) && !connectorClosing() && requiredScopes.every(scope => LOCAL_FRONTEND_CLIENT.scopes.includes(scope));
@@ -687,6 +691,16 @@ export async function createHarnessServer(options = {}) {
         if(!value||Array.isArray(value)||Object.keys(value).length!==1||typeof value.model!=='string')return json(res,400,{error:'Supply one exact model ID as {model}.'});
         const result=req.method==='POST'?await runtime.addCodexModel(value.model):await runtime.removeCodexModel(value.model);
         runtimeUpdate();return json(res,200,result);
+      }
+      if(pathname==='/api/swarm'&&req.method==='GET')return json(res,200,swarmBoard.snapshot());
+      const swarmProjectMatch=pathname.match(/^\/api\/swarm\/projects\/([A-Za-z0-9_-]+)$/);
+      if(swarmProjectMatch&&req.method==='GET')return json(res,200,swarmBoard.snapshot(swarmProjectMatch[1]));
+      if(pathname==='/api/swarm/actions'&&req.method==='POST'){
+        const value=await body(req,128*1024);
+        const pending=swarmBoard.apply(value,{kind:'human',id:'local-session',label:'Local user'});
+        fileMutations.add(pending);
+        try{return json(res,200,await pending);}
+        finally{fileMutations.delete(pending);}
       }
       if(pathname==='/api/projects'&&req.method==='GET')return json(res,200,await projectPlanningWorkspace({projects,planningOrganization}));
       if(pathname==='/api/projects'&&req.method==='POST')return json(res,201,await projectPlanningWorkspace({projects,planningOrganization},await projects.create(await body(req))));
@@ -1360,13 +1374,13 @@ export async function createHarnessServer(options = {}) {
       files['/visual-paint.mjs'] = 'visual-paint.mjs';
       files['/token-usage.mjs'] = 'token-usage.mjs';
       files['/provider-availability.mjs'] = 'provider-availability.mjs';
-      const nextFiles = ['visuals.css','index.html','base.css','chat.css','chat-management.css','brand.css','work-visual.css','intelligence-planning.css','intelligence-map.css','controls.css','layout-fixes.css','planning-ontology.css','planning-browser.css','planning-current.css','guard.js','app.mjs',
+      const nextFiles = ['swarm.css','visuals.css','index.html','base.css','chat.css','chat-management.css','brand.css','work-visual.css','intelligence-planning.css','intelligence-map.css','controls.css','layout-fixes.css','planning-ontology.css','planning-browser.css','planning-current.css','guard.js','app.mjs',
         'core/api.mjs','core/dom.mjs','core/events.mjs','core/model-picker.mjs','core/context-controls.mjs','model-picker.css',
         'chat/chat.mjs','chat/visuals.mjs','chat/model.mjs','chat/render.mjs','chat/send.mjs','chat/goals.mjs','chat/autonomy.mjs','chat/planning-timeline.mjs',
         'chat/options-model.mjs','chat/ontology-preferences.mjs','chat/execution-preferences.mjs','chat/artifacts.mjs','parity.css',
         'chat/reader-model.mjs','chat/reader-worker.mjs','chat/reader-client.mjs',
         // Native hosting UI assets are registered at the public root below.
-        'workspaces/planning.mjs','workspaces/planning-browser.mjs','workspaces/planning-current.mjs','workspaces/planning-current-model.mjs','workspaces/response-cycle-ui.mjs','workspaces/tradecraft-timeline.mjs','workspaces/planning-visual.mjs','workspaces/intelligence-planning-model.mjs','workspaces/intelligence-planning-ui.mjs','workspaces/intelligence-map-model.mjs','workspaces/intelligence-map-ui.mjs','workspaces/tasks.mjs','workspaces/schedule-inspection-model.mjs','workspaces/tasks-visual-model.mjs','workspaces/task-lifecycle.mjs','workspaces/workflow-execution.mjs',
+        'workspaces/swarm.mjs','workspaces/planning.mjs','workspaces/planning-browser.mjs','workspaces/planning-current.mjs','workspaces/planning-current-model.mjs','workspaces/response-cycle-ui.mjs','workspaces/tradecraft-timeline.mjs','workspaces/planning-visual.mjs','workspaces/intelligence-planning-model.mjs','workspaces/intelligence-planning-ui.mjs','workspaces/intelligence-map-model.mjs','workspaces/intelligence-map-ui.mjs','workspaces/tasks.mjs','workspaces/schedule-inspection-model.mjs','workspaces/tasks-visual-model.mjs','workspaces/task-lifecycle.mjs','workspaces/workflow-execution.mjs',
         'workspaces/workflow-editor.mjs','workspaces/workflow-edit-model.mjs',
         'workspaces/workflow-overview-model.mjs','workspaces/workflow-canvas-model.mjs','workspaces/workflow-canvas.mjs','workspaces/workflow-graph-author.mjs',
         'workspaces/workflow-graph-edit.mjs','workspaces/browser-model.mjs','workspaces/browser-ownership-ui.mjs','workspaces/browser-native.mjs',
@@ -1403,7 +1417,8 @@ export async function createHarnessServer(options = {}) {
       const emailDeliveryError = /^\/api\/email\/(?:compose|send|deliveries(?:\/[a-zA-Z0-9_-]+)?)$/.test(pathname) && typeof error.code === 'string' && /^[A-Z0-9_]{1,100}$/.test(error.code);
       const scheduleReadinessError = /^\/api\/operations\/deployments(?:\/[A-Za-z0-9_-]+(?:\/(?:readiness|trigger))?)?$/.test(pathname) && /^TASK_VIABILITY_[A-Z_]+$/.test(error.code || '');
       const planningRetirementError = ['PLANNING_CYCLE_RETIRED', 'PLANNING_EXECUTION_MODE_RETIRED'].includes(error.code);
-      if (!res.headersSent) json(res, error.status || (/not found/i.test(error.message) ? 404 : 400), { error: error.message, ...(emailRegistrationConflict ? { code: 'EMAIL_OAUTH_REVISION_CONFLICT' } : emailDeliveryError || scheduleReadinessError || planningRetirementError || pathname === '/api/chatgpt-connector/prepare' && error.code === 'REMOTE_TAILSCALE_MISSING' ? { code: error.code } : {}) });
+      const swarmError = pathname.startsWith('/api/swarm') && /^SWARM_[A-Z_]+$/.test(error.code || '');
+      if (!res.headersSent) json(res, error.status || (/not found/i.test(error.message) ? 404 : 400), { error: error.message, ...(emailRegistrationConflict ? { code: 'EMAIL_OAUTH_REVISION_CONFLICT' } : emailDeliveryError || scheduleReadinessError || planningRetirementError || swarmError || pathname === '/api/chatgpt-connector/prepare' && error.code === 'REMOTE_TAILSCALE_MISSING' ? { code: error.code } : {}), ...(swarmError && Number.isSafeInteger(error.currentRevision) ? { currentRevision: error.currentRevision } : {}) });
       else res.end();
     }
   });
@@ -1412,7 +1427,7 @@ export async function createHarnessServer(options = {}) {
   const heartbeat = setInterval(() => { for (const res of clients) if(!writeEventStream(res,': heartbeat\n\n'))clients.delete(res); }, 15000);
   heartbeat.unref();
   return {
-    server, engine, goals, ownerRecovery, runtime, runtimeSettings, desktop, knowledge, prompts, browser,browserProfiles,browserCredentials,browserCredentialMirror,browserCredentialDestinations,applicationWorkspace,nativeWindows, identity, learning, connections, tasks, planningOrganization, planningBrowser, planningBrowserRuntime, taskViability, responseCycle, attachments, email, emailOAuth, emailClient, inbox, conversations, operations,projects,capabilities,liveEdits,diagnostics,supportSnapshot,beginMaintenance,endMaintenance,assertRestartReady,assertRestartPrepared,beginRestart,endRestart,remoteAccess,remoteAgentApi,chatGPTConnector,chatGPTOAuth,directExecution,chatGPTPlanning,connectorSetup,
+    server, engine, goals, ownerRecovery, runtime, runtimeSettings, desktop, knowledge, prompts, browser,browserProfiles,browserCredentials,browserCredentialMirror,browserCredentialDestinations,applicationWorkspace,nativeWindows, identity, learning, connections, tasks, planningOrganization, planningBrowser, planningBrowserRuntime, taskViability, responseCycle, attachments, email, emailOAuth, emailClient, inbox, conversations, operations,projects,swarmBoard,capabilities,liveEdits,diagnostics,supportSnapshot,beginMaintenance,endMaintenance,assertRestartReady,assertRestartPrepared,beginRestart,endRestart,remoteAccess,remoteAgentApi,chatGPTConnector,chatGPTOAuth,directExecution,chatGPTPlanning,connectorSetup,
     async listen({ waitForRemote = true } = {}) {
       if (typeof waitForRemote !== 'boolean') throw new TypeError('Choose whether to wait for remote startup.');
       await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
@@ -1458,6 +1473,7 @@ export async function createHarnessServer(options = {}) {
         await cleanup(() => autonomy.close());
         await cleanup(() => methods.close());
         await cleanup(() => projects.close());
+        await cleanup(() => swarmBoard.close());
         await cleanup(() => capabilities.close());
         await cleanup(() => operations.close());
         await cleanup(() => inbox.close());
