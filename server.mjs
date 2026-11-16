@@ -1,4 +1,4 @@
-import { stoppedBrowserOwnerStatus, assertStoppedTabEffects } from './lib/browser-stopped-adoption.mjs';
+import { stoppedBrowserOwnerStatus, readStoppedTabEffects } from './lib/browser-stopped-adoption.mjs';
 import {VisualArtifacts,visualTool,nativeVisualTools,handleVisualHttp} from './lib/visual-artifacts.mjs';
 import {handleShadowdancerContextHttp} from './lib/shadowdancer-context-http.mjs';
 import {createNativePlanningTools} from './lib/native-planning-tools.mjs';
@@ -483,7 +483,7 @@ export async function createHarnessServer(options = {}) {
       return Boolean(chatGPTConnector?.enabled && current && requiredScopes.every(scope => current.scopes.includes(scope)));
     },
   }).init());
-  browser.setStoppedOwnerResolver?.(owner => stoppedBrowserOwnerStatus(owner, engine, directExecution), owner => assertStoppedTabEffects(owner, engine));
+  browser.setStoppedOwnerResolver?.(owner => stoppedBrowserOwnerStatus(owner, engine, directExecution), owner => readStoppedTabEffects(owner, engine));
   if(directExecution.taskRuntime)engine.nativeTaskContextBridge=new NativeTaskContextBridge({runtime:directExecution.taskRuntime,tasks,planSource:directExecution.planSource,canEnforceProtectedDispatch:async ({nativeTaskId,runId})=>{const selected=runId?engine.runs.get(runId):[...engine.runs.values()].filter(run=>(run.taskId||run.id)===nativeTaskId).at(-1);if(!selected)return false;for(const node of selected.workflow.nodes.filter(node=>node.type==='agent')){if(runtime.supportsHostOnlyToolDispatch?.({model:node.model,cwd:selected.cwd})!==true)await runtime.ensureHostOnlyToolDispatch?.({model:node.model,cwd:selected.cwd});if(runtime.supportsHostOnlyToolDispatch?.({model:node.model,cwd:selected.cwd})!==true)return false;}return true;},isActive:id=>[...engine.runs.values()].some(run=>(run.taskId||run.id)===id&&run.settled!==true),reauthorize:(client,scopes)=>directExecution.require(client,scopes)});
   const projectAttachedPlanningState = async state => {
     // A revoked/unavailable direct grant must not prevent reading the local saved plan.
