@@ -16,12 +16,12 @@ async function fixture(t, content = old, provenance = { source: 'seed' }) {
   await store.update({kind:'soul', content, expectedRevision:before.revision, expectedHash:before.diskHash, provenance});
   return {dataDir, store, open};
 }
-test('identity refresh is concise and prior seed is exact', () => {
+test('identity default and prior seed are exact', () => {
   assert.equal(createHash('sha256').update(old).digest('hex'), '18658fa7e02228a5288c9e66c73e08991b192b4735f344ae7e7988ab92928039');
-  assert.ok(DEFAULT_SOUL.length <= old.length);
+  assert.equal(createHash('sha256').update(DEFAULT_SOUL).digest('hex'), '456f447a1a43dc8bc9682572333836c92768276abc75383a323a4b80e564a649');
   assert.match(DEFAULT_SOUL, /calibrated inference/);
   assert.match(DEFAULT_SOUL, /not new authority/);
-  assert.match(DEFAULT_SOUL, /actual authorization and tool limits/);
+  assert.match(DEFAULT_SOUL, /actual authorization, higher-priority constraints, and tool limitations/);
 });
 for (const provenance of [{source:'seed'}, {source:'development', reason:'Updated the unchanged starter identity to the fixed BLACKICE identity.'}]) {
   test('refreshes exact shipped identity with '+provenance.source+' provenance once', async t => {
