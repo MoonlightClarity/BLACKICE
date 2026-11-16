@@ -77,40 +77,41 @@ test('actual password type, visibility, editability and snapshot identity are ma
   }
 });
 
-test('opaque-filled password values remain masked after a show-password toggle and a same-document snapshot revision', async () => {
+test('ordinary snapshots expose account fields consistently before and after a show-password toggle', async () => {
   const f = fixture(); await (await f.driver.prepareCredentialFill(f.args))(secret);
-  vm.runInContext(`document.documentElement={children:[password,confirmation,username]};document.title='Owned fixture';document.getElementById=()=>null;for(const el of document.documentElement.children){el.children=[];el.childNodes=[];el.getAttribute=name=>name==='aria-label'?el.id:null;}password.type='text';confirmation.type='text';`, f.context);
+  vm.runInContext(`document.documentElement={children:[password,confirmation,username]};document.title='Owned fixture';document.getElementById=()=>null;for(const el of document.documentElement.children){el.children=[];el.childNodes=[];el.getAttribute=name=>name==='aria-label'?el.id:null;}`, f.context);
   const snapshotSource = source.slice(source.indexOf('function pageSnapshot('), source.indexOf('\nasync function smoothPageScroll('));
-  const result = vm.runInContext(`(${snapshotSource})("__fixture","revised-prefix","")`, f.context);
-  assert.equal(result.elements.length, 3);
-  assert.ok(result.elements.filter(element => ['password', 'confirmation'].includes(element.name)).every(element => !Object.hasOwn(element, 'value')));
-  assert.equal(result.elements.find(element => element.name === 'username').value, secret.username);
-  assert.ok(!JSON.stringify(result).includes(secret.password));
-  const found = vm.runInContext(`(${snapshotSource})("__fixture","revised-again",${JSON.stringify(secret.password)})`, f.context);
-  assert.equal(found.elements.length, 0, 'Query matching must not expose a protected password either.');
-});
-
-test('agent screenshots are blocked after protected filling even when a site reveals then hides the password; human previews remain available', async () => {
-  const f = fixture(); let captures = 0, encodings = 0;
-  f.driver.capture = async () => { captures++; return { image: { getSize: () => ({ width: 1280, height: 900 }), toDataURL: () => { encodings++; return 'data:image/png;base64,owned-preview'; } } }; };
-  await (await f.driver.prepareCredentialFill(f.args))(secret);
-  for (const type of ['text', 'password', 'text']) {
+  for (const type of ['password','text']) {
     f.context.password.type = type;
-    await assert.rejects(f.driver.perform({ action: 'screenshot', tabId: f.tab.id }), { code: 'BROWSER_CREDENTIAL_CAPTURE_BLOCKED' });
+    const result = vm.runInContext(`(${snapshotSource})("__fixture","revised-prefix","")`, f.context);
+    assert.equal(result.elements.find(element => element.name === 'password').value, secret.password);
+    assert.equal(result.elements.find(element => element.name === 'username').value, secret.username);
+    const found = vm.runInContext(`(${snapshotSource})("__fixture","revised-again",${JSON.stringify(secret.password)})`, f.context);
+    assert.equal(found.elements.length, 2);
   }
-  assert.equal(captures, 0); assert.equal(encodings, 0);
-  const human = await f.driver.perform({ action: 'screenshot', tabId: f.tab.id }, { source: 'user' });
-  assert.equal(human.imageUrl, 'data:image/png;base64,owned-preview'); assert.equal(captures, 1); assert.equal(encodings, 1);
 });
 
-test('a secret commit during an in-flight agent capture prevents pixels from being encoded or returned', async () => {
-  const f = fixture(), commit = await f.driver.prepareCredentialFill(f.args); let encodings = 0, captures = 0;
-  f.driver.capture = async () => {
-    captures++; await commit(secret); f.context.password.type = 'text'; f.context.password.type = 'password';
-    return { image: { getSize: () => ({ width: 1280, height: 900 }), toDataURL: () => { encodings++; return 'never-return-this'; } } };
-  };
+test('account forms remain available to agent screenshots after filling', async () => {
+  const f = fixture(); let captures = 0;
+  f.driver.capture = async () => { captures++; return { image: { getSize: () => ({ width: 1280, height: 900 }), toDataURL: () => 'data:image/png;base64,fixture' } }; };
+  await (await f.driver.prepareCredentialFill(f.args))(secret);
+  for (const type of ['text', 'password']) {
+    f.context.password.type = type;
+    assert.equal((await f.driver.perform({ action: 'screenshot', tabId: f.tab.id })).imageUrl, 'data:image/png;base64,fixture');
+  }
+  assert.equal(captures, 2);
+  f.tab.providerKeyProtected = true;
   await assert.rejects(f.driver.perform({ action: 'screenshot', tabId: f.tab.id }), { code: 'BROWSER_CREDENTIAL_CAPTURE_BLOCKED' });
-  assert.equal(captures, 1); assert.equal(encodings, 0); assert.equal(f.tab.credentialCaptureBlocked, true);
+});
+
+test('filling an account field during capture does not lock the page', async () => {
+  const f = fixture(), commit = await f.driver.prepareCredentialFill(f.args); let captures = 0;
+  f.driver.capture = async () => {
+    captures++; await commit(secret);
+    return { image: { getSize: () => ({ width: 1280, height: 900 }), toDataURL: () => 'data:image/png;base64,fixture' } };
+  };
+  assert.equal((await f.driver.perform({ action: 'screenshot', tabId: f.tab.id })).imageUrl, 'data:image/png;base64,fixture');
+  assert.equal(captures, 1); assert.equal(f.tab.credentialCaptureBlocked, undefined);
 });
 
 test('frame, top-page and document guards cannot be weakened by a caller or stale observed ref', async () => {
@@ -175,17 +176,18 @@ test('router secret handoff stays in the same contained driver and is invalidate
   tabId = 'owned-tab'; const second = await router.prepareCredentialFill(args); router.closed = true; await assert.rejects(second(secret)); assert.equal(commits, 0);
 });
 
-test('protected credential observation reports its actual limitation without leakage or stale-page recovery advice', async () => {
+test('filled account forms admit ordinary control inspection without a credential-page lock', async () => {
   const f = fixture(); await (await f.driver.prepareCredentialFill(f.args))(secret);
-  f.driver.element = async () => { throw new Error('Protected DOM must not be inspected'); };
-  f.driver.currentSubmissionObservations = async () => { throw new Error('Protected receipts must not be inspected'); };
-  for (const action of ['click', 'fill', 'press']) {
-    await assert.rejects(f.driver.observeOperation({ action, tabId: f.tab.id, ref: 'username-ref' }), error =>
-      error.code === 'BROWSER_CREDENTIAL_OBSERVATION_BLOCKED' && !error.message.includes(secret.password)
-      && !error.message.includes(secret.username) && /refreshed snapshot will not clear/.test(error.message));
+  f.tab.window.webContents.getTitle = () => 'Signup';
+  let inspected = 0;
+  f.driver.element = async (_tab,args) => { inspected++; return { result: { ref: args.ref, kind: 'field' } }; };
+  f.driver.currentSubmissionObservations = async () => ({});
+  for (const action of ['click','fill','press']) {
+    const observed = await f.driver.observeOperation({ action, tabId: f.tab.id, ref: 'username-ref' });
+    assert.equal(observed.current, true); assert.equal(observed.control.kind, 'field');
   }
-  assert.equal(f.tab.credentialCaptureBlocked, true);
-  await assert.rejects(f.driver.perform({ action: 'screenshot', tabId: f.tab.id }), { code: 'BROWSER_CREDENTIAL_CAPTURE_BLOCKED' });
+  assert.equal(inspected, 3); assert.equal(f.tab.credentialCaptureBlocked, undefined);
+  await assert.rejects(f.driver.observeOperation({ action: 'click', tabId: f.tab.id }, { owner: { taskId:'another',runId:'another',nodeId:'another' } }), { code:'BROWSER_TAB_OWNERSHIP' });
 });
 
 test('genuine replaced documents retain stale-input rejection independently of credential observation', async () => {

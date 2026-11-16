@@ -1059,15 +1059,13 @@ test('actual driver pages and captures remain offscreen, nonfocusable and outsid
   const status = driver.status(); assert.equal(status.contained, true); assert.equal(status.canShow, false); assert.equal(status.tabs[0].contained, true); assert.equal(status.tabs[0].canShow, false); assert.equal(status.tabs[0].visible, false);
 });
 
-test('protected credential capture restrictions survive SPA and child navigation until a real main-frame replacement', async t => {
+test('account-page navigation does not introduce a credential capture restriction', async t => {
   const { driver } = await fixture(t), tab = driver.newTab('https://example.test/'); await tab.loading;
-  tab.credentialCaptureBlocked = true;
-  tab.window.webContents.emit('did-navigate-in-page', {}, 'https://example.test/#same-document', true, 1, 1);
-  assert.equal(tab.credentialCaptureBlocked, true);
-  tab.window.webContents.emit('did-frame-navigate', {}, 'https://example.test/child', 200, 'OK', false, 1, 2);
-  assert.equal(tab.credentialCaptureBlocked, true);
-  tab.window.webContents.emit('did-frame-navigate', {}, 'https://example.test/new-document', 200, 'OK', true, 1, 1);
-  assert.equal(tab.credentialCaptureBlocked, false);
+  for (const event of [
+    ['did-navigate-in-page', {}, 'https://example.test/#same-document', true, 1, 1],
+    ['did-frame-navigate', {}, 'https://example.test/child', 200, 'OK', false, 1, 2],
+    ['did-frame-navigate', {}, 'https://example.test/new-document', 200, 'OK', true, 1, 1]
+  ]) { tab.window.webContents.emit(...event); assert.equal(tab.credentialCaptureBlocked, undefined); }
 });
 
 test('show refuses before creating any page and after an existing contained page has loaded', async t => {
@@ -1988,10 +1986,10 @@ test('tab diagnostics never evaluate or reload a hung page and preserve ownershi
   assert.equal(value.debug.events.length,0); assert.equal(value.receipt.clearedThrough,3);
   let stopped=0;wc.stop=()=>stopped++;
   await browser.perform({action:'stop',tabId:tab.id,expectedUrl:opened.url,expectedDocumentId:opened.documentId},{owner});assert.equal(stopped,1);
-  tab.credentialCaptureBlocked=true;
+  tab.providerKeyProtected=true;
   wc.emit('console-message', {}, {level:'error',message:'must not collect'});
   await assert.rejects(browser.perform({action:'diagnostics',tabId:tab.id},{owner}),{code:'BROWSER_DIAGNOSTICS_PROTECTED'});
-  tab.credentialCaptureBlocked=false; assert.equal(tab.debugEvidence.snapshot().events.length,0);
+  tab.providerKeyProtected=false; assert.equal(tab.debugEvidence.snapshot().events.length,0);
   tab.rendererFailure={reason:'crashed',exitCode:1};
   value=await browser.perform({action:'diagnostics',tabId:tab.id},{owner}); assert.equal(value.rendererGone,true);
 });

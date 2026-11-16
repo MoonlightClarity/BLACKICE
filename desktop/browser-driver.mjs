@@ -127,7 +127,7 @@ const bounded = (promise, signal, ms = 12000) => new Promise((resolve, reject) =
 // No Node APIs, keys or local application handles are exposed to the page.
 function pageSnapshot(key, prefix, query, readContext = false) {
   let state = globalThis[key];
-  if (!state || state.document !== document || state.prefix !== prefix) state = globalThis[key] = { document, prefix, documentId: Math.random().toString(36).slice(2), elements: new Map(), identities: new Map(), descriptors: new WeakMap(), ids: new WeakMap(), next: 0, credentialFields: state?.document === document && state.credentialFields || new WeakSet() };
+  if (!state || state.document !== document || state.prefix !== prefix) state = globalThis[key] = { document, prefix, documentId: Math.random().toString(36).slice(2), elements: new Map(), identities: new Map(), descriptors: new WeakMap(), ids: new WeakMap(), next: 0 };
   const items = [], text = []; let scanned = 0, truncated = false;
   const normalized = value => String(value || '').replace(/\s+/g, ' ').trim();
   const contextual = Boolean(readContext && query), needle = String(query || '').toLowerCase();
@@ -173,24 +173,20 @@ function pageSnapshot(key, prefix, query, readContext = false) {
       // Reading every ancestor's innerText/geometry can repeatedly lay out a
       // large feed. Only controls need boxes and accessible names.
       const box = control ? el.getBoundingClientRect() : null;
-      const privateValue = el.type === 'password' || state.credentialFields?.has(el);
       if (box && (box.width > 0 || box.height > 0)) {
-        // A site's show-password toggle or same-document navigation must not
-        // turn an opaque host-filled password into a model-visible value.
         const labelled = (el.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ');
-        const label = normalized(el.getAttribute('aria-label') || labelled || (el.labels ? [...el.labels].map(l => l.textContent).join(' ') : '') || el.getAttribute('placeholder') || el.getAttribute('aria-placeholder') || el.getAttribute('data-placeholder') || (!privateValue && el.textContent) || el.getAttribute('title') || el.getAttribute('alt')).slice(0, 300);
+        const label = normalized(el.getAttribute('aria-label') || labelled || (el.labels ? [...el.labels].map(l => l.textContent).join(' ') : '') || el.getAttribute('placeholder') || el.getAttribute('aria-placeholder') || el.getAttribute('data-placeholder') || el.textContent || el.getAttribute('title') || el.getAttribute('alt')).slice(0, 300);
         const descriptor = JSON.stringify([el.tagName, el.type || '', role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), label]);
         let ref = state.ids.get(el);
         if (!ref || state.descriptors.get(el) !== descriptor) {
           if (ref) { state.elements.delete(ref); state.identities.delete(ref); }
           ref = `${prefix}:${state.documentId}:${++state.next}`; state.ids.set(el, ref); state.descriptors.set(el, descriptor);
         }
-        if (!query || `${label} ${!privateValue && 'value' in el ? el.value : ''}`.toLowerCase().includes(query.toLowerCase())) {
+        if (!query || `${label} ${'value' in el ? el.value : ''}`.toLowerCase().includes(query.toLowerCase())) {
           state.elements.delete(ref); state.elements.set(ref, el); state.identities.set(ref, descriptor);
-          items.push({ ref, role: role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), name: label, tag: el.tagName.toLowerCase(), ...(el.type ? { type: el.type } : {}), ...(!privateValue && 'value' in el ? { value: String(el.value).slice(0, 300) } : {}), disabled: Boolean(el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true'), ...(el.checked ? { checked: true } : {}), ...(el.getAttribute('aria-expanded') ? { expanded: el.getAttribute('aria-expanded') } : {}), ...(el.tagName === 'A' ? { href: el.href } : {}), ...(el.tagName === 'SELECT' ? { options: [...el.options].slice(0, 80).map(o => ({ value: o.value, label: o.label })) } : {}) });
+          items.push({ ref, role: role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), name: label, tag: el.tagName.toLowerCase(), ...(el.type ? { type: el.type } : {}), ...('value' in el ? { value: String(el.value).slice(0, 300) } : {}), disabled: Boolean(el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true'), ...(el.checked ? { checked: true } : {}), ...(el.getAttribute('aria-expanded') ? { expanded: el.getAttribute('aria-expanded') } : {}), ...(el.tagName === 'A' ? { href: el.href } : {}), ...(el.tagName === 'SELECT' ? { options: [...el.options].slice(0, 80).map(o => ({ value: o.value, label: o.label })) } : {}) });
         }
       }
-      if (privateValue) continue;
       for (const node of el.childNodes) if (node.nodeType === 3) {
         if (contextual && (textScanned >= 16000 || textChars >= 22000)) { truncated = true; break; }
         collectText(node);
@@ -209,7 +205,7 @@ function pageSnapshot(key, prefix, query, readContext = false) {
   for (const node of document.querySelectorAll('output,[role="status"],[role="alert"],tr')) {
     if (semanticRecords.length >= 40) { semanticTruncated = true; break; }
     const style = getComputedStyle(node), box = node.getBoundingClientRect();
-    if (style.display === 'none' || style.visibility === 'hidden' || !(box.width || box.height) || node.querySelector('input[type="password"]')) continue;
+    if (style.display === 'none' || style.visibility === 'hidden' || !(box.width || box.height)) continue;
     let selector;
     if (node.id && document.querySelectorAll('#' + CSS.escape(node.id)).length === 1) selector = '#' + CSS.escape(node.id);
     else {
@@ -227,10 +223,10 @@ function pageSnapshot(key, prefix, query, readContext = false) {
     if (semanticChars > 12000) { semanticTruncated = true; break; }
     semanticRecords.push(record);
   }
-  const forms = [...document.forms].slice(0, 20).filter(form => ![...form.elements].some(field => field.type === 'password' || state.credentialFields?.has(field))).map(form => ({
+  const forms = [...document.forms].slice(0, 20).map(form => ({
     action: form.action, method: form.method, fields: [...form.elements].filter(field => field.name).slice(0, 100).map(field => ({ name: field.name.slice(0, 256), type: field.type || field.tagName.toLowerCase() }))
   }));
-  const validation = [...document.querySelectorAll('input,select,textarea')].filter(field => field.type !== 'password' && !state.credentialFields?.has(field) && (field.validity?.valid === false || field.getAttribute('aria-invalid') === 'true')).slice(0, 100)
+  const validation = [...document.querySelectorAll('input,select,textarea')].filter(field => (field.validity?.valid === false || field.getAttribute('aria-invalid') === 'true')).slice(0, 100)
     .map(field => ({ name: String(field.name || field.id || '').slice(0, 256), message: String(field.validationMessage || field.getAttribute('aria-errormessage') || '').slice(0, 1000) }));
   return { title: document.title, url: location.href, elements: query ? items.filter(i => `${i.name} ${i.value || ''}`.toLowerCase().includes(query.toLowerCase())) : items, text: text.join('\n').slice(0, 22000), truncated, ...(semanticRecords.length ? { semanticRecords, semanticTruncated } : {}), ...(forms.length ? { forms } : {}), ...(validation.length ? { validation } : {}), readyState: document.readyState, ...(contextual ? { textContext: { matches, before: 1, after: 8 } } : {}) };
 }
@@ -267,9 +263,8 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation) {
   if (expected) {
     const style = getComputedStyle(el), box = el.getBoundingClientRect();
     const role = el.getAttribute('role') || ({ A: 'link', BUTTON: 'button', INPUT: el.type === 'checkbox' ? 'checkbox' : el.type === 'radio' ? 'radio' : 'textbox', TEXTAREA: 'textbox', SELECT: 'combobox', SUMMARY: 'button' }[el.tagName]) || (/^H[1-6]$/.test(el.tagName) ? 'heading' : '');
-    const privateValue = el.type === 'password' || state.credentialFields?.has(el);
     const labelled = (el.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ');
-    const label = String(el.getAttribute('aria-label') || labelled || (el.labels ? [...el.labels].map(l => l.textContent).join(' ') : '') || el.getAttribute('placeholder') || el.getAttribute('aria-placeholder') || el.getAttribute('data-placeholder') || (!privateValue && el.textContent) || el.getAttribute('title') || el.getAttribute('alt') || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+    const label = String(el.getAttribute('aria-label') || labelled || (el.labels ? [...el.labels].map(l => l.textContent).join(' ') : '') || el.getAttribute('placeholder') || el.getAttribute('aria-placeholder') || el.getAttribute('data-placeholder') || el.textContent || el.getAttribute('title') || el.getAttribute('alt') || '').replace(/\s+/g, ' ').trim().slice(0, 300);
     const actual = JSON.stringify([el.tagName, el.type || '', role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), label]);
     if (style.display === 'none' || style.visibility === 'hidden' || !(box.width > 0 || box.height > 0) || actual !== expected) return { __blackiceElementError: { message: 'This observed control changed. Take a fresh snapshot and choose its current ref.', code: 'BROWSER_REF_STALE', inputDispatched: false } };
   }
@@ -368,8 +363,6 @@ function credentialFields(key, args, secret) {
     if (!secret || secret.origin !== args.origin || secret.credentialId !== args.credentialId || secret.revision !== args.revision || typeof secret.password !== 'string' || !secret.password || secret.password.length > 4096 || args.usernameRef && (typeof secret.username !== 'string' || !secret.username)) return { valid: false };
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
     if (typeof setter !== 'function') return { valid: false };
-    current.credentialFields ||= new WeakSet();
-    for (const item of selected) if (item.password) current.credentialFields.add(item.element);
     // All fields are checked before any secret write; values are assigned
     // before site event handlers run. This path never clicks or submits.
     for (const item of selected) {
@@ -685,7 +678,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     tab.debugEvidence ||= new BrowserTabDiagnostics();
     const diagnostic = (kind, details) => { if (tab.window === window && tab.purpose !== 'chat-mode' && !tab.providerKeyProtected) tab.debugEvidence.lifecycle(kind, details); };
     wc.on('console-message', (_event, details, message, lineNumber, sourceId) => {
-      if (tab.window !== window || tab.purpose === 'chat-mode' || tab.providerKeyProtected || tab.credentialCaptureBlocked) return;
+      if (tab.window !== window || tab.purpose === 'chat-mode' || tab.providerKeyProtected) return;
       tab.debugEvidence.console(details && typeof details === 'object' ? details : { level: details, message, lineNumber, sourceId });
     });
     for (const [event, kind] of [['did-start-loading', 'loading-started'], ['did-stop-loading', 'loading-stopped'], ['unresponsive', 'unresponsive'], ['responsive', 'responsive']]) wc.on(event, () => diagnostic(kind));
@@ -707,7 +700,7 @@ export class ElectronBrowserDriver extends EventEmitter {
         void this.setHumanSurface(tab, tab.humanSurface).catch(() => {});
     });
     wc.debugger.on('message', (_event, method, params) => {
-      if (tab.window === window && !tab.providerKeyProtected && !tab.credentialCaptureBlocked) tab.submissionObservations?.observe(method, params);
+      if (tab.window === window && !tab.providerKeyProtected) tab.submissionObservations?.observe(method, params);
       if (tab.humanSurface && ['Page.fileChooserOpened', 'Page.javascriptDialogOpening', 'Page.javascriptDialogClosed'].includes(method)) return;
       if (method === 'Page.fileChooserOpened') {
         const supported = Number.isSafeInteger(params?.backendNodeId) && params.backendNodeId > 0;
@@ -754,9 +747,6 @@ export class ElectronBrowserDriver extends EventEmitter {
     wc.on('will-attach-webview', event => event.preventDefault());
     if (this.liveSurface) wc.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame === true) this.cancelAuthentication(tab); });
     wc.on('did-frame-navigate', (_event, _url, _responseCode, _statusText, isMainFrame, frameProcessId, frameRoutingId) => {
-      // Only a new top-level document retires the capture restriction. Hash
-      // changes, SPA routes and child navigations can retain a filled field.
-      if (isMainFrame === true) tab.credentialCaptureBlocked = false;
       this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId);
     });
     wc.on('did-navigate-in-page', (_event, _url, isMainFrame, frameProcessId, frameRoutingId) => this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId));
@@ -813,7 +803,7 @@ export class ElectronBrowserDriver extends EventEmitter {
   cleanupRuntimeReason(tab, webContents = null) {
     if (!tab || this.tabs.get(tab.id) !== tab || this.closed || tab.closing)
       return 'The cleanup tab is no longer available.';
-    if (tab.purpose === 'chat-mode' || tab.providerKeyProtected || tab.credentialCaptureBlocked
+    if (tab.purpose === 'chat-mode' || tab.providerKeyProtected
       || tab.humanCreated || tab.userPinned)
       return 'This is a reserved or person-touched page.';
     if (tab.authenticationChallenge || tab.pendingInteraction || tab.suspendedWork?.size
@@ -1359,7 +1349,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     // lifecycle/read scope here; perform() owns serialized lazy activation.
     // Never navigate during admission or let metadata become receipt/recovery
     // evidence, a form binding, or authorization for stale page input.
-    if ((!tab.window || tab.pendingURL) && !tab.rendererFailure && !tab.providerKeyProtected && !tab.credentialCaptureBlocked
+    if ((!tab.window || tab.pendingURL) && !tab.rendererFailure && !tab.providerKeyProtected
       && ['read', 'snapshot', 'screenshot', 'reload', 'navigate', 'close', 'diagnostics', 'suspend', 'tab_select'].includes(args.action)
       && !recoveryInspection && receiptBindings.length === 0 && expectedDocumentId === undefined && expectedUrl === undefined
       && args.expectedDocumentId === undefined && args.expectedUrl === undefined && args.ref === undefined) {
@@ -1367,10 +1357,6 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
     if (!tab.window || tab.window.isDestroyed() || tab.pendingURL || tab.rendererFailure || tab.providerKeyProtected)
       throw capacityError('The current browser document cannot be inspected.', 'BROWSER_INPUT_DOCUMENT_CHANGED');
-    // Capture protection is not a stale document. A refreshed snapshot cannot
-    // remove this limitation, and retrying it must not be described as navigation.
-    if (tab.credentialCaptureBlocked)
-      throw capacityError('Protected credentials prevent host operation inspection on this document. A refreshed snapshot will not clear this protection; credential-safe submission is not supported by this observer.', 'BROWSER_CREDENTIAL_OBSERVATION_BLOCKED');
     if (expectedDocumentId !== undefined && (expectedDocumentId !== inputDocumentId(tab) || expectedUrl !== tab.window.webContents.getURL()))
       throw capacityError('The result document changed before receipt inspection.', 'BROWSER_INPUT_DOCUMENT_CHANGED');
     this.assertInputDocument(tab, args);
@@ -1458,10 +1444,6 @@ export class ElectronBrowserDriver extends EventEmitter {
       if (used) throw unavailable(); used = true;
       try {
         await this.ensureContained(tab, signal); assertCurrent();
-        // This host-owned flag is set before an uncertain renderer write. A
-        // site can reveal/hide a password during asynchronous capture, so a
-        // field-type scan cannot safely authorize agent screenshots.
-        tab.credentialCaptureBlocked = true;
         const result = await this.pageWork(tab, evaluate(secret), signal);
         if (result?.filled !== true) throw unavailable();
         cancel(signal);
@@ -1945,7 +1927,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (source === 'user') tab.humanCreated = true;
     if (['diagnostics', 'debug_reset', 'stop'].includes(args.action)) {
       if (source !== 'user' && tab.purpose === 'chat-mode') throw capacityError('The human ChatGPT tab is reserved for its caller.', 'BROWSER_HUMAN_CHAT_RESERVED');
-      if (tab.providerKeyProtected || tab.credentialCaptureBlocked) throw capacityError('Diagnostic content is unavailable while credential capture is protected.', 'BROWSER_DIAGNOSTICS_PROTECTED');
+      if (tab.providerKeyProtected) throw capacityError('Diagnostic content is unavailable while credential capture is protected.', 'BROWSER_DIAGNOSTICS_PROTECTED');
       const wc = tab.window && !tab.window.isDestroyed() ? tab.window.webContents : null;
       let receipt;
       if (args.action !== 'diagnostics') {
@@ -2209,7 +2191,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
     if (args.action === 'screenshot') {
       const assertCredentialCapture = () => {
-        if (source !== 'user' && (tab.credentialCaptureBlocked || tab.providerKeyProtected)) throw Object.assign(error(tab.providerKeyProtected ? 'This provider-key tab is protected. Use protected provider key inspection or the local human browser view.' : 'This page received a protected credential. Continue with its masked snapshot; only the local human preview is available until the main page is replaced.'), { code: 'BROWSER_CREDENTIAL_CAPTURE_BLOCKED' });
+        if (source !== 'user' && tab.providerKeyProtected) throw Object.assign(error('This provider-key tab is protected. Use protected provider key inspection or the local human browser view.'), { code: 'BROWSER_CREDENTIAL_CAPTURE_BLOCKED' });
       };
       assertCredentialCapture();
       if (preview) this.assertInputDocument(tab, args);
