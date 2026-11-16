@@ -150,3 +150,10 @@ test('save conflict receipts explain recovery without echoing arbitrary exceptio
     assert.equal(result.success,false);assert.equal(receipt(result).code,code);assert.ok(!JSON.stringify(result).includes(password));
   }
 });
+
+test('agent update keeps omitted metadata omitted when dispatching to the vault', async()=>{
+  let received;const vault={...vaultFixture(),async save(args){received=args;return {...entry,vaultRevision:2}}};
+  const handler=createBrowserCredentialToolHandler({vault,ownerId:'owned',beforeDispatch:async()=>{}});
+  const result=await handler({name:BROWSER_CREDENTIAL_TOOL.name,arguments:{action:'update',origin,password,credentialId:entry.credentialId,revision:1,expectedRevision:1,requestId:'metadata_only'}});
+  assert.equal(result.success,true);assert.equal(Object.hasOwn(received,'username'),false);assert.equal(Object.hasOwn(received,'label'),false);
+});

@@ -166,3 +166,15 @@ test('agent save needs trusted owner and authorization, revoked writes leave sto
   assert.equal((await c.vault.status()).revision,0);
   await assert.rejects(c.vault.importCSV({csv:'url,username,password\nhttps://example.test,u,p',requestId:'import'}, {source:'agent',expectedRevision:0}), {code:'CREDENTIAL_LOCAL_ONLY'});
 });
+
+test('agent password-only update preserves omitted metadata and explicit empty clears it', async t => {
+  const c=await fixture(t), opts=expectedRevision=>({source:'agent',ownerId:'tool_metadata',expectedRevision,beforeCommit:async()=>{}});
+  const saved=await c.vault.save({...request('metadata_create'),label:'Important account',password:'Synthetic-First-1!'},opts(0));
+  const input={origin:saved.origin,credentialId:saved.credentialId,revision:saved.revision,password:'Synthetic-Second-2!',requestId:'metadata_update'};
+  const updated=await c.vault.save(input,opts(1));
+  assert.equal(updated.username,saved.username);assert.equal(updated.label,saved.label);
+  const reopened=await c.open(), replay=await reopened.save(input,opts(1));assert.equal(replay.existing,true);assert.equal(replay.username,saved.username);
+  await reopened.withSecret(ref(updated),value=>{assert.equal(value.username,saved.username);assert.equal(value.password,input.password)});
+  const cleared=await reopened.save({...input,revision:updated.revision,username:'',label:'',requestId:'metadata_clear'},opts(2));
+  assert.equal(cleared.username,'');assert.equal(cleared.label,'');
+});
