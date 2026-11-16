@@ -90,12 +90,12 @@ test('missing protected storage preserves the public catalog and credential acti
   const f = await fixture(t, { encrypted: false }), healthy = await fixture(t), state = await (await f.request()).json();
   assert.equal(state.vault.available, false); assert.equal((await f.request('/api/status')).status, 200);
   const catalog = healthy.app.chatGPTConnector.tools(), fingerprint = healthy.app.chatGPTConnector.catalogStatus();
-  assert.deepEqual(catalog.filter(tool => tool.name.startsWith('blackice_credentials_')).map(tool => tool.name), ['blackice_credentials_list', 'blackice_credentials_generate', 'blackice_credentials_fill', 'blackice_credentials_authenticate']);
+  assert.deepEqual(catalog.filter(tool => tool.name.startsWith('blackice_credentials_')).map(tool => tool.name), ['blackice_credentials_list', 'blackice_credentials_generate', 'blackice_credentials_save', 'blackice_credentials_update', 'blackice_credentials_fill', 'blackice_credentials_authenticate']);
   assert.deepEqual(f.app.chatGPTConnector.tools(), catalog);
   assert.deepEqual(f.app.chatGPTConnector.catalogStatus(), fingerprint);
   assert.equal(f.app.chatGPTConnector.instructions(), healthy.app.chatGPTConnector.instructions());
   const origin = 'https://example.test';
-  for (const [action, extra] of [['list', {}], ['generate', { username: 'owned' }], ['fill', { credentialId: 'credential_fixture', revision: 1, browser: 'relay', tabId: 'fixture', expectedUrl: origin + '/login', expectedDocumentId: 'fixture:1', passwordRef: 'password-ref' }]]) {
+  for (const [action, extra] of [['list', {}], ['generate', { username: 'owned' }], ['save', { password: 'fixture', expectedRevision: 0 }], ['update', { password: 'fixture', expectedRevision: 0, credentialId: 'credential_fixture', revision: 1 }], ['fill', { credentialId: 'credential_fixture', revision: 1, browser: 'relay', tabId: 'fixture', expectedUrl: origin + '/login', expectedDocumentId: 'fixture:1', passwordRef: 'password-ref' }]]) {
     const job = await credentialJob(f, 'blackice_credentials_' + action, { origin, requestId: 'unavailable_' + action, ...extra });
     assert.equal(job.status, 'failed'); assert.equal(job.interaction, null); assert.equal(job.result.success, false);
     assert.equal(JSON.parse(job.result.text.text).code, 'BROWSER_CREDENTIAL_UNAVAILABLE');
@@ -110,7 +110,7 @@ test('credential storage can recover after startup without changing the public c
   let available = false;
   const f = await fixture(t, { isEncryptionAvailable: () => available }), catalog = f.app.chatGPTConnector.tools(), fingerprint = f.app.chatGPTConnector.catalogStatus();
   assert.equal((await (await f.request()).json()).vault.available, false);
-  assert.equal(catalog.filter(tool => tool.name.startsWith('blackice_credentials_')).length, 4);
+  assert.equal(catalog.filter(tool => tool.name.startsWith('blackice_credentials_')).length, 6);
   const before = await credentialJob(f, 'blackice_credentials_list', { origin: 'https://example.test', requestId: 'before_recovery' });
   assert.equal(before.status, 'failed'); assert.equal(JSON.parse(before.result.text.text).code, 'BROWSER_CREDENTIAL_UNAVAILABLE');
   available = true;

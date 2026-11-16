@@ -115,3 +115,38 @@ test('direct credential adapters execute under granted scopes with durable safe 
   assert.equal(tools.find(tool => tool.definition.name.endsWith('_list')).definition.scope, 'browser:read');
   await assert.rejects(api.call('blackice_credentials_fill', { requestId: 'denied_fill', ...target }, { ...client, scopes: ['read', 'browser:read'] }), { code: 'DIRECT_SCOPE_REQUIRED', scope: 'browser:write' });
 });
+
+test('agent save/update actions carry exact revisions and trusted owner, and list supplies vault revision', async () => {
+  const saved=[], vault={...vaultFixture(),async status(){return {available:true,healthy:true,revision:7}},async save(args,options){await options.beforeCommit();saved.push({args,options});return {...entry,revision:2,vaultRevision:8}}};
+  let auth=0; const handler=createBrowserCredentialToolHandler({vault,ownerId:'task:owned',beforeDispatch:async()=>{auth++}});
+  const listed=receipt(await handler({name:BROWSER_CREDENTIAL_TOOL.name,arguments:{action:'list',origin}})); assert.equal(listed.vaultRevision,7);
+  const input={origin,password,username:entry.username,requestId:'save_owned',expectedRevision:7};
+  assert.equal((await handler({name:BROWSER_CREDENTIAL_TOOL.name,arguments:{action:'save',...input}})).success,true);
+  assert.equal(saved[0].options.source,'agent');assert.match(saved[0].options.ownerId,/^tool_[a-f0-9]{64}$/);assert.equal(saved[0].options.expectedRevision,7);
+  assert.equal(saved[0].args.password,password);assert.equal(saved[0].args.expectedRevision,undefined);
+  assert.equal((await handler({name:BROWSER_CREDENTIAL_TOOL.name,arguments:{action:'update',...input,credentialId:entry.credentialId,revision:1}})).success,true);
+  for(const bad of [{action:'update',...input},{action:'save',...input,credentialId:entry.credentialId},{action:'save',...input,expectedRevision:-1},{action:'save',...input,ownerId:'forged'}]) assert.equal((await handler({name:BROWSER_CREDENTIAL_TOOL.name,arguments:bad})).success,false);
+  assert.equal(saved.length,2);assert.ok(auth>=4);
+  const untrusted=createBrowserCredentialToolHandler({vault,ownerId:'task:owned'});
+  assert.equal((await untrusted({name:BROWSER_CREDENTIAL_TOOL.name,arguments:{action:'save',...input}})).success,false);
+});
+test('direct save/update adapters retain request IDs and require browser write authority', async () => {
+  const saved=[],vault={...vaultFixture(),async save(args,options){await options.beforeCommit();saved.push({args,options});return {...entry,vaultRevision:1}}};
+  const tools=createDirectBrowserCredentialTools({vault,reauthorize:async(client,{scopes})=>{assert.deepEqual(scopes,['browser:write']);if(!client.allowed)throw Error('revoked')}});
+  const save=tools.find(x=>x.definition.name==='blackice_credentials_save'), update=tools.find(x=>x.definition.name==='blackice_credentials_update');
+  assert.ok(save&&update);assert.equal(update.definition.inputSchema.required.includes('revision'),true);
+  const args={origin,password,requestId:'direct_save',expectedRevision:0};
+  assert.equal((await save.execute(args,{client:{id:'owned',allowed:true}})).success,true);
+  assert.equal(saved[0].args.requestId,'direct_save');
+  await assert.rejects(save.execute(args,{client:{id:'owned',allowed:false}}));
+  assert.equal(saved.length,1);
+});
+
+test('save conflict receipts explain recovery without echoing arbitrary exception text', async () => {
+  for (const code of ['CREDENTIAL_REVISION_CONFLICT','CREDENTIAL_EXISTS','CREDENTIAL_REQUEST_CONFLICT']) {
+    const vault={...vaultFixture(),async save(){throw Object.assign(Error(password),{code})}};
+    const handler=createBrowserCredentialToolHandler({vault,ownerId:'owned',beforeDispatch:async()=>{}});
+    const result=await handler({name:BROWSER_CREDENTIAL_TOOL.name,arguments:{action:'save',origin,password,expectedRevision:0,requestId:'conflict'}});
+    assert.equal(result.success,false);assert.equal(receipt(result).code,code);assert.ok(!JSON.stringify(result).includes(password));
+  }
+});

@@ -137,3 +137,32 @@ test('separate processes publish one idempotent generation through the on-disk l
   assert.equal(results[0].credentialId, results[1].credentialId); assert.equal(results.filter(value => value.existing).length, 1);
   await assert.rejects(fs.stat(c.vault.store.file + '.lock'), { code: 'ENOENT' });
 });
+
+test('authorized agent save/update preserves existing vault identity, restart and retries', async t => {
+  const c = await fixture(t); let checks = 0;
+  const options = revision => ({ source: 'agent', ownerId: 'tool_owned', expectedRevision: revision, beforeCommit: async () => { checks++; } });
+  const input = { ...request('agent_save'), password: 'Synthetic-Saved-1!' };
+  const saved = await c.vault.save(input, options(0));
+  assert.equal(saved.revision, 1); assert.ok(checks >= 2);
+  assert.equal((await c.vault.save(input, options(0))).existing, true);
+  await assert.rejects(c.vault.save({ ...input, password: 'Different-1!' }, options(1)), { code: 'CREDENTIAL_REQUEST_CONFLICT' });
+  const reopened = await c.open();
+  await reopened.withSecret(ref(saved), row => { assert.equal(row.password, input.password); });
+  const update = { ...input, credentialId: saved.credentialId, revision: 1, requestId: 'agent_update', password: 'Synthetic-Updated-2!' };
+  await assert.rejects(reopened.save(update, options(0)), { code: 'CREDENTIAL_REVISION_CONFLICT' });
+  const changed = await reopened.save(update, options(1));
+  assert.equal(changed.credentialId, saved.credentialId); assert.equal(changed.revision, 2);
+  assert.equal((await reopened.save(update, options(1))).existing, true);
+  await assert.rejects(reopened.save({ ...update, requestId: 'stale_entry' }, options(2)), { code: 'CREDENTIAL_REVISION_CONFLICT' });
+  const final = await c.open(); await final.withSecret(ref(changed), row => { assert.equal(row.password, update.password); });
+});
+test('agent save needs trusted owner and authorization, revoked writes leave store unchanged', async t => {
+  const c = await fixture(t), input = { ...request('agent_authority'), password: 'Synthetic-Only-1!' };
+  for (const options of [{source:'agent'}, {source:'agent',ownerId:'tool_a'}, {source:'agent',beforeCommit:()=>{} }]) {
+    await assert.rejects(c.vault.save(input, {...options,expectedRevision:0}), {code:'CREDENTIAL_SAVE_AUTHORITY'});
+  }
+  let checks=0;
+  await assert.rejects(c.vault.save(input, {source:'agent',ownerId:'tool_a',expectedRevision:0,beforeCommit:()=>{if(++checks>1) throw Error('revoked');}}));
+  assert.equal((await c.vault.status()).revision,0);
+  await assert.rejects(c.vault.importCSV({csv:'url,username,password\nhttps://example.test,u,p',requestId:'import'}, {source:'agent',expectedRevision:0}), {code:'CREDENTIAL_LOCAL_ONLY'});
+});
