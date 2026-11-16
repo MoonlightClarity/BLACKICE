@@ -462,6 +462,7 @@ export async function createHarnessServer(options = {}) {
     onChange: () => sendEvent({ type: 'browser-credentials.updated', data: credentialPresence(), at: new Date().toISOString() }),
   }).init();
   engine.credentials = browserCredentials;
+  browser.setPasswordManager?.(browserCredentials);
   const visuals = new VisualArtifacts({renderPreview:options.visualPreview,dataDir:path.resolve(dataDir),assertConversation:id=>conversations.get(id),onChange:sendEvent,isClosing:connectorClosing});
   engine.nativeVisualTools=nativeVisualTools(visuals,{isClosing:connectorClosing});
   const emailClient = options.emailClient || null;

@@ -9,6 +9,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview, validateBrowserUploadRequest, validateBrowserFillRequest } from '../lib/browser.mjs';
 import { captureHiddenPage } from './browser-capture.mjs';
+import { NativePasswordManager, passwordManagerURL, passwordManagerPreload } from './native-password-manager.mjs';
 import { loadBrowserCompatibility } from './browser-compatibility.mjs';
 import { BrowserDiagnostics } from '../lib/browser-diagnostics.mjs';
 import { BrowserTabDiagnostics, diagnosticText } from '../lib/browser-tab-diagnostics.mjs';
@@ -632,8 +633,10 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (!tab.humanCreated && tab.owner && live.filter(item => item.owner?.taskId === tab.owner.taskId).length >= this.maxTaskTabs) throw capacityError(`This task has ${this.maxTaskTabs} live pages. Reuse or close one of its own pages before opening another.`, 'BROWSER_TASK_TAB_LIMIT');
   }
   setOwnerAdmission(check) { this.ownerAdmission = check; }
-  newTab(url, { restore = false, title = '', window: suppliedWindow, purpose = null, owner: context, humanCreated = false, providerKeyProtected = false, folderId, parentTabId = null, id } = {}) {
+  setPasswordManager(options) { this.passwordManager = new NativePasswordManager(this, options); }
+  newTab(url, { restore = false, title = '', window: suppliedWindow, purpose = null, owner: context, humanCreated = false, providerKeyProtected = false, folderId, parentTabId = null, id, passwordManagerContext = null } = {}) {
     if (this.closed) throw error('Browser workspace has closed.');
+    if (url === passwordManagerURL && !passwordManagerContext) throw capacityError('Open Passwords from the browser toolbar or password_manager action.', 'PASSWORD_MANAGER_TARGET_REQUIRED');
     let owner = browserOwner(context);
     if (purpose !== null && purpose !== 'chat-mode') throw error('Use a supported contained browser tab purpose.');
     if (purpose === 'chat-mode' && owner) throw capacityError('The human ChatGPT tab cannot belong to an agent task.', 'BROWSER_HUMAN_CHAT_RESERVED');
@@ -650,7 +653,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (!suppliedWindow && !restore && this.tabs.size >= this.maxSavedTabs) throw capacityError('The saved browser page capacity is full. Close an unneeded page in the browser workspace.', 'BROWSER_SAVED_LIMIT');
     if (purpose === 'chat-mode' && !this.hasTabCapacity(purpose)) throw capacityError('The dedicated human ChatGPT tab is already open.', 'BROWSER_CHAT_MODE_TAB_EXISTS');
     if (!suppliedWindow && !restore && !humanCreated && purpose !== 'chat-mode' && !owner && [...this.tabs.values()].filter(tab => tab.purpose !== 'chat-mode' && !tab.owner).length >= this.maxTabs) throw capacityError(`Use at most ${this.maxTabs} personal browser tabs. Close one before opening another; task folders have separate capacity.`, 'BROWSER_TAB_LIMIT');
-    const tab = { id: id || randomUUID(), url, title: blankPageURL(url) ? 'New tab' : title, purpose, folderId: folder.id, parentTabId: parent?.id || null, owner: ownerRecord(owner), humanCreated: humanCreated === true, providerKeyProtected: providerKeyProtected === true, pendingURL: restore && !suppliedWindow ? url : null, preparingURL: !restore && !suppliedWindow ? url : null, window: null, refs: new Map(), refContexts: new Map(), frameRevisions: new Map(), mainRevision: 0, revision: 0, interactionWaiters: new Set(), rendererWaiters: new Set(), suspendedWork: new Set(), loading: Promise.resolve() };
+    const tab = { passwordManagerContext, id: id || randomUUID(), url, title: blankPageURL(url) ? 'New tab' : title, purpose, folderId: folder.id, parentTabId: parent?.id || null, owner: ownerRecord(owner), humanCreated: humanCreated === true, providerKeyProtected: providerKeyProtected === true, pendingURL: restore && !suppliedWindow ? url : null, preparingURL: !restore && !suppliedWindow ? url : null, window: null, refs: new Map(), refContexts: new Map(), frameRevisions: new Map(), mainRevision: 0, revision: 0, interactionWaiters: new Set(), rendererWaiters: new Set(), suspendedWork: new Set(), loading: Promise.resolve() };
     if (!restore && !suppliedWindow) this.assertLiveCapacity(tab);
     this.tabs.set(tab.id, tab);
     if (owner) this.ownerActiveTabs.set(browserOwnerKey(owner), tab.id); else this.activeTab = tab.id;
@@ -670,11 +673,14 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (suppliedWindow && ((this.liveSurface ? suppliedWindow.liveSurface !== true : suppliedWindow.webContents.isOffscreen?.() !== true) || suppliedWindow.isVisible() || suppliedWindow.isFocusable())) {
       suppliedWindow.destroy(); throw error('The browser popup could not remain contained. Use the Observe view to inspect the original page.');
     }
-    const window = suppliedWindow || (this.liveSurface ? this.createSurfaceWindow(containedWindowOptions(this.session)) : new BrowserWindow(containedWindowOptions(this.session)));
+    const windowOptions = containedWindowOptions(this.session);
+    if (tab.passwordManagerContext) windowOptions.webPreferences.preload = passwordManagerPreload;
+    const window = suppliedWindow || (this.liveSurface ? this.createSurfaceWindow(windowOptions) : new BrowserWindow(windowOptions));
     window.removeMenu();
     tab.window = window; tab.suspending = false; tab.closing = false;
     tab.popupViewport = suppliedWindow ? { ready: false, resetRequired: false, pending: null } : null;
     const wc = window.webContents;
+    if (tab.passwordManagerContext) this.passwordManager.attach(tab, wc);
     tab.debugEvidence ||= new BrowserTabDiagnostics();
     const diagnostic = (kind, details) => { if (tab.window === window && tab.purpose !== 'chat-mode' && !tab.providerKeyProtected) tab.debugEvidence.lifecycle(kind, details); };
     wc.on('console-message', (_event, details, message, lineNumber, sourceId) => {
@@ -1923,6 +1929,11 @@ export class ElectronBrowserDriver extends EventEmitter {
       cancel(signal);
       this.closeTab(tab);
       return this.savedStatus();
+    }
+    if (args.action === 'password_manager') {
+      if (!this.passwordManager) throw capacityError('The local password manager is unavailable. Ordinary browsing remains available.', 'PASSWORD_MANAGER_UNAVAILABLE');
+      const manager = await this.passwordManager.open(tab, owner);
+      return { ...await this.snapshot(manager, undefined, signal), targetTabId: tab.id };
     }
     if (source === 'user') tab.humanCreated = true;
     if (['diagnostics', 'debug_reset', 'stop'].includes(args.action)) {

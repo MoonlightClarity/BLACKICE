@@ -34,6 +34,7 @@ files:
   - desktop/**/*.cs
   - desktop/**/*.ps1
   - desktop/browser-compatibility/**/*
+  - desktop/password-manager/**/*
   - '!desktop/build-icon.mjs'
   - CHAT-MODE.md
   - RELEASE-NOTES-2.31.0.md
