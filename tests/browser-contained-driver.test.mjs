@@ -2392,3 +2392,95 @@ test('retired conversation blocks delayed popup adoption through routed owner ad
   const restored=f.driver.newTab('https://fixture.invalid/restored',{owner});await restored.loading;
   assert.ok(f.driver.tabs.has(restored.id),'Restore removes the admission fence without a restart');
 });
+
+
+test('stopped-task adoption preserves live page, typed form state, popups and durable owner receipt', async t => {
+  const {driver,directory,windows}=await fixture(t);await driver.init();
+  const router=new BrowserRouter({independent:driver}),browser=new BrowserWorkspace({driver:router});t.after(()=>browser.close());
+  const previous={taskId:'stopped-a',runId:'run-a',nodeId:'agent'},next={taskId:'new-a',runId:'run-b',nodeId:'agent'};
+  let effectsChecked=0;
+  browser.setStoppedOwnerResolver(owner=>({eligible:owner.taskId===previous.taskId,runId:owner.runId,status:'completed'}),async()=>{effectsChecked++;});
+  const opened=await browser.perform({action:'open',url:'https://example.test/form'},{owner:previous});
+  const tab=driver.tabs.get(opened.tabId),wc=tab.window.webContents;wc.testTypedValue='unsent application draft';
+  const child=driver.newTab('https://example.test/popup',{owner:previous,parentTabId:tab.id});
+  const before={window:tab.window,loads:windows[0].loads.length,protocol:windows[0].protocol.length};
+  const listed=await browser.perform({action:'tabs'},{owner:next});
+  assert.equal(listed.tabs.length,0);
+  const candidate=listed.ownershipCandidates.find(row=>row.tabId===tab.id);assert.equal(candidate.adoption.eligible,true);
+  await assert.rejects(browser.perform({action:'snapshot',tabId:tab.id},{owner:next}),{code:'BROWSER_TAB_OWNERSHIP'});
+  const args={action:'take_ownership',tabId:tab.id,expectedUrl:candidate.url,expectedDocumentId:candidate.documentId,expectedOwnerKey:candidate.ownerKey};
+  const result=await browser.perform(args,{owner:next});
+  assert.equal(effectsChecked,1);assert.deepEqual(tab.owner,next);assert.equal(tab.window,before.window);
+  assert.equal(wc.testTypedValue,'unsent application draft');assert.equal(windows[0].loads.length,before.loads);assert.equal(windows[0].protocol.length,before.protocol);
+  assert.deepEqual(child.owner,previous);assert.equal(child.parentTabId,null);
+  assert.equal(result.ownershipReceipt.adoption.previousOwnerKey,candidate.ownerKey);
+  assert.deepEqual(result.ownershipReceipt.previousOwner,previous);
+  await assert.rejects(browser.perform({action:'snapshot',tabId:tab.id},{owner:previous}),{code:'BROWSER_TAB_OWNERSHIP'});
+  await driver.releaseOwner(previous,{status:'completed'});assert.deepEqual(tab.owner,next);
+  await browser.close();
+  const restored=new driver.constructor({dataDir:directory,downloadDir:path.join(directory,'downloads')});await restored.init();
+  assert.deepEqual(restored.tabs.get(tab.id).owner,next);
+  assert.deepEqual(restored.tabs.get(tab.id).ownershipReceipt,result.ownershipReceipt);
+  await restored.close();
+});
+
+test('stopped-task adoption rejects resumed owners after queued admission and during effect verification',async t=>{
+  const {driver}=await fixture(t);await driver.init();const browser=new BrowserWorkspace({driver});t.after(()=>browser.close());
+  const old={taskId:'race-old',runId:'run-old',nodeId:'agent'},next={taskId:'race-new',runId:'run-new',nodeId:'agent'};
+  let stopped=true;
+  browser.setStoppedOwnerResolver(owner=>({eligible:stopped&&owner.taskId===old.taskId,runId:owner.runId,status:'completed'}),async()=>{});
+  const opened=await browser.perform({action:'open',url:'https://example.test/'},{owner:old});
+  const args={action:'take_ownership',tabId:opened.tabId,expectedUrl:opened.url,expectedDocumentId:opened.documentId,expectedOwnerKey:JSON.stringify([old.taskId,old.nodeId,old.runId])};
+  await assert.rejects(browser.perform(args,{owner:next,beforeDispatch:async()=>{stopped=false;}}),{code:'BROWSER_TAB_OWNERSHIP'});
+  assert.deepEqual(driver.tabs.get(opened.tabId).owner,old);
+  stopped=true;browser.setStoppedOwnerResolver(owner=>({eligible:stopped&&owner.taskId===old.taskId,runId:owner.runId,status:'completed'}),async()=>{stopped=false;});
+  await assert.rejects(browser.perform(args,{owner:next}),{code:'BROWSER_TAB_OWNERSHIP'});
+  assert.deepEqual(driver.tabs.get(opened.tabId).owner,old);
+});
+
+test('two stopped-task adopters cannot both win; stale document, effects and pinned tabs fail closed',async t=>{
+  const {driver}=await fixture(t);await driver.init();const browser=new BrowserWorkspace({driver});t.after(()=>browser.close());
+  const old={taskId:'claim-old',runId:'run-old',nodeId:'agent'},one={taskId:'claim-one',runId:'run-one',nodeId:'agent'},two={taskId:'claim-two',runId:'run-two',nodeId:'agent'};
+  browser.setStoppedOwnerResolver(owner=>({eligible:owner.taskId===old.taskId,runId:owner.runId,status:'cancelled'}),async()=>{});
+  const opened=await browser.perform({action:'open',url:'https://example.test/'},{owner:old}),tab=driver.tabs.get(opened.tabId);
+  const args={action:'take_ownership',tabId:opened.tabId,expectedUrl:opened.url,expectedDocumentId:opened.documentId,expectedOwnerKey:JSON.stringify([old.taskId,old.nodeId,old.runId])};
+  await assert.rejects(browser.perform({...args,expectedDocumentId:'stale'},{owner:one}),{code:'BROWSER_INPUT_DOCUMENT_CHANGED'});
+  tab.userPinned=true;await assert.rejects(browser.perform(args,{owner:one}),{code:'BROWSER_TAB_OWNERSHIP'});tab.userPinned=false;
+  tab.adoptionUncertainEffects=true;await assert.rejects(browser.perform(args,{owner:one}),{code:'BROWSER_TAB_OWNERSHIP'});tab.adoptionUncertainEffects=false;
+  browser.setStoppedOwnerResolver(owner=>({eligible:true,runId:owner.runId,status:'cancelled'}),async()=>{throw Object.assign(Error('uncertain'),{code:'BROWSER_ADOPTION_EFFECTS_UNCERTAIN'});});
+  await assert.rejects(browser.perform(args,{owner:one}),{code:'BROWSER_ADOPTION_EFFECTS_UNCERTAIN'});
+  browser.setStoppedOwnerResolver(owner=>({eligible:owner.taskId===old.taskId,runId:owner.runId,status:'cancelled'}),async()=>{});
+  const results=await Promise.allSettled([browser.perform(args,{owner:one}),browser.perform(args,{owner:two})]);
+  assert.equal(results.filter(row=>row.status==='fulfilled').length,1);
+  assert.equal(results[1].reason.code,'BROWSER_DESTINATION_CHANGED');assert.deepEqual(tab.owner,one);
+});
+
+test('pending effect adoption protection survives browser persistence and restart',async t=>{
+  const {driver,directory}=await fixture(t);await driver.init();
+  const old={taskId:'effect-old',runId:'effect-run',nodeId:'agent'};
+  const tab=driver.newTab('https://example.test/',{owner:old});
+  tab.externalHandoff={status:'pending'};
+  driver.persist();await driver.close();
+  const restored=new driver.constructor({dataDir:directory,downloadDir:path.join(directory,'downloads')});await restored.init();
+  restored.setStoppedOwnerResolver(owner=>({eligible:true,runId:owner.runId,status:'failed'}),async()=>{});
+  const saved=restored.status().tabs.find(row=>row.tabId===tab.id);
+  assert.equal(saved.uncertainEffects,true);assert.equal(saved.adoption.eligible,false);
+  await restored.close();
+});
+
+test('stopped-task adoption obeys cancellation and destination capacity without navigation',async t=>{
+  const {driver}=await fixture(t);await driver.init();const browser=new BrowserWorkspace({driver});t.after(()=>browser.close());
+  const old={taskId:'limits-old',runId:'run-old',nodeId:'agent'},next={taskId:'limits-new',runId:'run-new',nodeId:'agent'};
+  const opened=await browser.perform({action:'open',url:'https://example.test/'},{owner:old});
+  const args={action:'take_ownership',tabId:opened.tabId,expectedUrl:opened.url,expectedDocumentId:opened.documentId,expectedOwnerKey:JSON.stringify([old.taskId,old.nodeId,old.runId])};
+  const controller=new AbortController();
+  browser.setStoppedOwnerResolver(owner=>({eligible:owner.taskId===old.taskId,runId:owner.runId,status:'failed'}),async()=>{controller.abort();});
+  await assert.rejects(browser.perform(args,{owner:next,signal:controller.signal}),{name:'AbortError'});
+  await browser.active?.settled;await tick();
+  assert.deepEqual(driver.tabs.get(opened.tabId).owner,old);
+  browser.setStoppedOwnerResolver(owner=>({eligible:owner.taskId===old.taskId,runId:owner.runId,status:'failed'}),async()=>{});
+  await browser.perform({action:'open',url:'https://example.test/own'},{owner:next});
+  driver.maxTaskTabs=1;
+  await assert.rejects(browser.perform(args,{owner:next}),{code:'BROWSER_TASK_TAB_LIMIT'});
+  assert.deepEqual(driver.tabs.get(opened.tabId).owner,old);
+});

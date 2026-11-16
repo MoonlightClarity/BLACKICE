@@ -21,6 +21,7 @@ export class BrowserRouter extends EventEmitter {
       const listener = () => this.emit('changed'); driver.on('changed', listener); this.listeners.push([driver, listener]);
     }
   }
+  setStoppedOwnerResolver(resolve, verifyEffects) { this.drivers.relay?.setStoppedOwnerResolver?.(resolve, verifyEffects); }
   setOwnerAdmission(check) { this.drivers.relay?.setOwnerAdmission?.(check); }
   // Child creation and initialization belong to the desktop runtime. In
   // particular, restoring/listing a workspace must not start Firefox.

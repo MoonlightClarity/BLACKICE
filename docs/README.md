@@ -12,7 +12,7 @@ Start with the [project README](../README.md). A named document's date, original
 | Choose models and API connections | [API providers](API-PROVIDERS.md) and [local models](local-models.md) |
 | Connect an external assistant to BLACKICE's direct tools | [ChatGPT](../CHATGPT-CONNECTOR.md), [Gemini](GEMINI-CONNECTOR.md), [Claude](CLAUDE-CONNECTOR.md) |
 | Remote access and connection scope | [Remote access](../REMOTE-ACCESS.md) |
-| Use the browser and imported profiles | [Browser import](../BROWSER-IMPORT.md), [password handling](../BROWSER-PASSWORDS.md), [request filtering](../BROWSER-PROTECTION.md) |
+| Use the browser and imported profiles | [Browser import](../BROWSER-IMPORT.md), [password handling](../BROWSER-PASSWORDS.md), [request filtering](../BROWSER-PROTECTION.md), [stopped-task tab adoption](stopped-task-tab-adoption.md) |
 | Keep work moving within a conversation | [Goal mode](GOAL-MODE.md) |
 | Choose *optional* reasoning | [Current On/Off Planning modules](MODULAR-PLANNING-ONTOLOGY.md) and [benchmark trade-offs](PLANNING-TRADEOFFS.md) |
 | Inspect conversation Goals and Directory work | Planning: **Current work**; see [Goal mode](GOAL-MODE.md) and the [current Planning screen source](../public/next/workspaces/planning-current.mjs) |

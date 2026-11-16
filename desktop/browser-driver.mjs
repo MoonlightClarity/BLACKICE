@@ -16,6 +16,7 @@ import { BrowserProtection, protectionOrigin } from '../lib/browser-protection.m
 import { BrowserSurfaceHost } from './browser-surface.mjs';
 import { performProviderKeySource } from './provider-key-source.mjs';
 import { inspectObservedFormControl, observePageReceiptRecords } from './browser-operation-observation.mjs';
+import { decorateStoppedTabAdoption } from '../lib/browser-stopped-adoption.mjs';
 import { BrowserSubmissionObservations } from './browser-submission-observation.mjs';
 import { inspectCleanupDOM } from './browser-cleanup-dom.mjs';
 import { browserReceiptBindingKey, describeHostOperation } from '../lib/operation-descriptors.mjs';
@@ -479,6 +480,8 @@ export class ElectronBrowserDriver extends EventEmitter {
           ? { ...priorOwner, nodeId: conversationBrowserNode, conversationId: priorOwner.taskId } : priorOwner) : null;
         const restoredTab = this.newTab(browserURL(entry.url), { restore: true, id: validId(entry.tabId) && !this.tabs.has(entry.tabId) ? entry.tabId : undefined, title: typeof entry.title === 'string' ? entry.title : '', purpose: entry.purpose === 'chat-mode' ? 'chat-mode' : null, owner, humanCreated: entry.humanCreated === true, providerKeyProtected: entry.providerKeyProtected === true, folderId: this.folders.has(entry.folderId) ? entry.folderId : undefined });
         restoredTab.userPinned = entry.userPinned === true;
+        restoredTab.adoptionUncertainEffects = entry.adoptionUncertainEffects === true;
+        if (entry.ownershipReceipt?.action === 'take_ownership' && entry.ownershipReceipt.tabId === restoredTab.id && entry.ownershipReceipt.adoption) restoredTab.ownershipReceipt = structuredClone(entry.ownershipReceipt);
         restoredTab.submissionObservations = new BrowserSubmissionObservations(entry.submissionObservations);
       } catch {}
       for (const entry of entries) {
@@ -504,8 +507,10 @@ export class ElectronBrowserDriver extends EventEmitter {
   liveTabs() { return [...this.tabs.values()].filter(tab => tab.window && !tab.window.isDestroyed()); }
   status() {
     const live = this.liveTabs();
-    return { contained: true, canShow: false, protection: this.protection.status(), persistence: { healthy: !this.persistenceError, ...(this.persistenceError ? { error: 'Browser folders and pages could not be saved.' } : {}) }, folders: [...this.folders.values()].map(folder => ({ ...folder })), capacity: { live: live.filter(tab => tab.purpose !== 'chat-mode').length, maxLive: this.maxLiveTabs, saved: this.tabs.size, maxSaved: this.maxSavedTabs, perTaskLive: this.maxTaskTabs }, ownerActiveTabs: Object.fromEntries(this.ownerActiveTabs), tabs: [...this.tabs.values()].map(t => ({ tabId: t.id, documentId: inputDocumentId(t), folderId: t.folderId, parentTabId: t.parentTabId || null, ...(t.owner ? { owner: { ...t.owner } } : {}), ownershipKind: t.owner ? 'ai' : 'user', conversationId: t.owner?.conversationId || null, ...(t.humanCreated ? { humanCreated: true } : {}), ...(t.userPinned ? { userPinned: true } : {}), ...(t.submissionObservations?.pending?.size || t.externalHandoff && t.externalHandoff.status !== 'handed-to-os' ? { uncertainEffects: true } : {}), ...(t.purpose === 'chat-mode' ? { purpose: 'chat-mode' } : {}), ...(t.providerKeyProtected ? { protectedContent: true } : {}), url: this.tabURL(t), title: this.tabTitle(t), loading: !t.pendingURL && Boolean(t.window?.webContents.isLoading()), canGoBack: !t.pendingURL && Boolean(t.window?.webContents.navigationHistory?.canGoBack?.()), canGoForward: !t.pendingURL && Boolean(t.window?.webContents.navigationHistory?.canGoForward?.()), visible: Boolean(t.window?.isVisible()), contained: true, canShow: false, protection: this.protection.tabStatus(t.id, this.tabURL(t)), suspended: !t.window || Boolean(t.pendingURL), interactionSettling: t.suspendedWork.size > 0, ...(t.rendererFailure ? { rendererFailure: { ...t.rendererFailure } } : {}), ...(t.pendingInteraction ? { pendingInteraction: structuredClone(t.pendingInteraction) } : {}) })), activeTab: this.activeTab, downloads: this.downloads.filter((item, index) => item.status === 'downloading' || index >= this.downloads.length - 20), activeDownloads: this.downloads.filter(item => item.status === 'downloading').length, profile: 'BLACKICE contained browser · saved locally', ...(this.diagnostics ? { diagnostics: this.diagnostics.snapshot() } : {}) };
+    const status = { contained: true, canShow: false, protection: this.protection.status(), persistence: { healthy: !this.persistenceError, ...(this.persistenceError ? { error: 'Browser folders and pages could not be saved.' } : {}) }, folders: [...this.folders.values()].map(folder => ({ ...folder })), capacity: { live: live.filter(tab => tab.purpose !== 'chat-mode').length, maxLive: this.maxLiveTabs, saved: this.tabs.size, maxSaved: this.maxSavedTabs, perTaskLive: this.maxTaskTabs }, ownerActiveTabs: Object.fromEntries(this.ownerActiveTabs), tabs: [...this.tabs.values()].map(t => ({ tabId: t.id, documentId: inputDocumentId(t), folderId: t.folderId, parentTabId: t.parentTabId || null, ...(t.owner ? { owner: { ...t.owner } } : {}), ownershipKind: t.owner ? 'ai' : 'user', conversationId: t.owner?.conversationId || null, ...(t.humanCreated ? { humanCreated: true } : {}), ...(t.userPinned ? { userPinned: true } : {}), ...(t.adoptionUncertainEffects || t.submissionObservations?.pending?.size || t.externalHandoff && t.externalHandoff.status !== 'handed-to-os' ? { uncertainEffects: true } : {}), ...(t.purpose === 'chat-mode' ? { purpose: 'chat-mode' } : {}), ...(t.providerKeyProtected ? { protectedContent: true } : {}), url: this.tabURL(t), title: this.tabTitle(t), loading: !t.pendingURL && Boolean(t.window?.webContents.isLoading()), canGoBack: !t.pendingURL && Boolean(t.window?.webContents.navigationHistory?.canGoBack?.()), canGoForward: !t.pendingURL && Boolean(t.window?.webContents.navigationHistory?.canGoForward?.()), visible: Boolean(t.window?.isVisible()), contained: true, canShow: false, protection: this.protection.tabStatus(t.id, this.tabURL(t)), suspended: !t.window || Boolean(t.pendingURL), interactionSettling: t.suspendedWork.size > 0, ...(t.rendererFailure ? { rendererFailure: { ...t.rendererFailure } } : {}), ...(t.pendingInteraction ? { pendingInteraction: structuredClone(t.pendingInteraction) } : {}) })), activeTab: this.activeTab, downloads: this.downloads.filter((item, index) => item.status === 'downloading' || index >= this.downloads.length - 20), activeDownloads: this.downloads.filter(item => item.status === 'downloading').length, profile: 'BLACKICE contained browser · saved locally', ...(this.diagnostics ? { diagnostics: this.diagnostics.snapshot() } : {}) };
+    return decorateStoppedTabAdoption(status, this.stoppedOwnerResolver);
   }
+  setStoppedOwnerResolver(resolve, verifyEffects) { this.stoppedOwnerResolver = resolve; this.stoppedOwnerEffects = verifyEffects; }
   protectionStatus() { return { ...this.protection.status(), tabs: [...this.tabs.values()].map(tab => ({ tabId: tab.id, ...this.protection.tabStatus(tab.id, this.tabURL(tab)) })) }; }
   async configureProtection(options, { signal } = {}) {
     if (this.closed) throw Object.assign(error('The browser workspace is closing.'), { code: 'BROWSER_CLOSED' });
@@ -514,7 +519,7 @@ export class ElectronBrowserDriver extends EventEmitter {
   }
   persist() {
     if (this.restoring || this.closed) return;
-    const entries = [...this.tabs.values()].filter(t => savedPageURL(this.tabURL(t))).map(t => ({ tabId: t.id, url: this.tabURL(t), title: this.tabTitle(t), folderId: t.folderId, parentTabId: t.parentTabId || null, ...(t.owner ? { owner: { ...t.owner } } : {}), ...(t.humanCreated ? { humanCreated: true } : {}), ...(t.userPinned ? { userPinned: true } : {}), ...(t.ownershipReceipt ? { ownershipReceipt: t.ownershipReceipt } : {}), ...(t.providerKeyProtected ? { providerKeyProtected: true } : {}), ...(t.purpose === 'chat-mode' ? { purpose: 'chat-mode' } : {}), ...(t.submissionObservations?.completed.length ? { submissionObservations: t.submissionObservations.saved() } : {}) }));
+    const entries = [...this.tabs.values()].filter(t => savedPageURL(this.tabURL(t))).map(t => ({ tabId: t.id, url: this.tabURL(t), title: this.tabTitle(t), folderId: t.folderId, parentTabId: t.parentTabId || null, ...(t.owner ? { owner: { ...t.owner } } : {}), ...(t.humanCreated ? { humanCreated: true } : {}), ...(t.userPinned ? { userPinned: true } : {}), ...(t.ownershipReceipt ? { ownershipReceipt: t.ownershipReceipt } : {}), ...(t.adoptionUncertainEffects || t.submissionObservations?.pending?.size || t.externalHandoff && t.externalHandoff.status !== 'handed-to-os' ? { adoptionUncertainEffects: true } : {}), ...(t.providerKeyProtected ? { providerKeyProtected: true } : {}), ...(t.purpose === 'chat-mode' ? { purpose: 'chat-mode' } : {}), ...(t.submissionObservations?.completed.length ? { submissionObservations: t.submissionObservations.saved() } : {}) }));
     const saved = { version: 2, folders: [...this.folders.values()].map(folder => ({ ...folder })), tabs: entries, activeTab: this.activeTab };
     // Navigation and title events can arrive faster than the disk can flush.
     // Retain one latest pending snapshot instead of an unbounded promise queue
@@ -552,8 +557,18 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (this.persistenceError) throw Object.assign(error('The browser changed in memory, but its folder and page state could not be saved. Inspect the current browser state before repeating the action.'), { code: 'BROWSER_SAVE_FAILED', actionDispatched: true });
     return { ...this.status(), ...extra };
   }
-  async changeOwnership(args, source, caller, destinationOwner = null) {
-    const change = ownershipChange(args, this.status(), caller, source, destinationOwner);
+  async changeOwnership(args, source, caller, destinationOwner = null, signal) {
+    // Verify durable effects first, then no await between the final lifecycle/owner check and changing ownership.
+    // Resume admission is synchronous on this same host event loop: it either
+    // wins before this check, or sees the new owner after this atomic mutation.
+    let change = ownershipChange(args, this.status(), caller, source, destinationOwner);
+    if (change.adoption) {
+      if (typeof this.stoppedOwnerEffects !== 'function') throw capacityError('Stopped-owner effect history is unavailable.', 'BROWSER_ADOPTION_EFFECTS_UNCERTAIN');
+      await this.stoppedOwnerEffects(change.tab.owner);
+      cancel(signal);
+      this.ownerAdmission?.(caller);
+      change = ownershipChange(args, this.status(), caller, source, destinationOwner);
+    }
     const tab = this.tab(args.tabId), family = source === 'user' && args.includeChildren === true;
     const branch = new Set([tab.id]);
     if (family) for (let changed = true; changed;) {
@@ -568,7 +583,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
     if (!family && change.owner && tab.owner?.taskId !== change.owner.taskId && tab.window && !tab.window.isDestroyed() && this.liveTabs().filter(t => t.owner?.taskId === change.owner.taskId).length >= this.maxTaskTabs) throw capacityError('The destination task live-tab capacity is full.', 'BROWSER_TASK_TAB_LIMIT');
     const previousOwner = tab.owner ? { ...tab.owner } : null, folder = this.folderFor(change.owner, change.folderId);
-    const receipt = { action: args.action, tabId: tab.id, documentId: inputDocumentId(tab), url: this.tabURL(tab), previousOwner, owner: change.owner, previousFolderId: tab.folderId, folderId: folder.id, at: new Date().toISOString(), ...(family ? { movedTabIds: [...branch] } : {}) };
+    const receipt = { action: args.action, tabId: tab.id, documentId: inputDocumentId(tab), url: this.tabURL(tab), previousOwner, owner: change.owner, previousFolderId: tab.folderId, folderId: folder.id, at: new Date().toISOString(), ...(change.adoption ? { adoption: change.adoption } : {}), ...(family ? { movedTabIds: [...branch] } : {}) };
     if (!family) for (const child of this.tabs.values()) if (child.parentTabId === tab.id) child.parentTabId = null;
     for (const moved of moving) {
       moved.owner = change.owner ? { ...change.owner } : null; moved.folderId = folder.id;
@@ -1878,7 +1893,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     const owner = browserOwner(context);
     if (args.action === 'tabs') return this.status();
     if (args.action === 'downloads') return { downloads: this.downloads.slice(-30) };
-    if (ownershipAction(args.action)) return this.changeOwnership(args, source, owner, browserOwner(destinationOwner));
+    if (ownershipAction(args.action)) return this.changeOwnership(args, source, owner, browserOwner(destinationOwner), signal);
     if (['folder_create', 'folder_rename', 'folder_close', 'tab_move', 'suspend'].includes(args.action)) return this.organize(args, source, owner);
     if (args.action === 'reuse_session') throw error('Session transfer was removed because it can invalidate the source sign-in. Connect directly to the existing browser instead.');
     if (args.action === 'tab_select' && (Object.keys(args).some(key => !['action', 'browser', 'tabId'].includes(key)) || typeof args.tabId !== 'string' || !validId(args.tabId))) throw capacityError('Select one observed browser tab by its tab ID.', 'BROWSER_VALIDATION');
