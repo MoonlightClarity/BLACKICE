@@ -44,3 +44,42 @@ for (const directoryMode of ['off','on']) test('identity delivered in '+director
  assert.equal(JSON.stringify(runtime.calls[0]),oldText);
  assert.ok(runtime.soulReads.length>readCount);assert.ok(runtime.soulReads.slice(readCount).every(r=>r.content==='# Custom identity\nCUSTOM_NEXT_TURN'));
 });
+
+test('sequential agent nodes share admission SOUL while USER remains live and next execution sees user edit',async t=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'blackice-soul-sequential-'));
+ const cwd=path.join(dir,'workspace');await mkdir(cwd);
+ const dataDir=path.join(dir,'data'),identity=await new IdentityStore({dataDir}).init();
+ const original=await identity.read('soul');
+ let enteredA,releaseA;const entered=new Promise(r=>enteredA=r),gate=new Promise(r=>releaseA=r);
+ class Runtime extends EventEmitter {
+  calls=[];reads=[];store={get:()=>({baseUrl:'https://api.example/v1'})};
+  status(){return {connected:true,authenticated:true,defaultModel:'fixture::remote',models:[{id:'fixture::remote',supportsTools:true}]};}
+  async runAgent(options){
+   this.calls.push(options);
+   if(this.calls.length===1){enteredA();await gate;}
+   const read=async kind=>JSON.parse((await options.onToolCall({name:'relay_identity',arguments:{action:'read',kind}})).contentItems[0].text);
+   this.reads.push({soul:await read('soul'),user:await read('user')});
+   return {output:'Fixture complete.',threadId:'sequential-'+this.calls.length};
+  }
+ }
+ const runtime=new Runtime(),engine=await new HarnessEngine({runtime,dataDir,defaultCwd:cwd,identity}).init();
+ engine.runtimeSettings={get:()=>({subagentsEnabled:false,executionGuardrails:false})};
+ t.after(async()=>{releaseA();await engine.close();await identity.close();await rm(dir,{recursive:true,force:true});});
+ const workflow={name:'Sequential identity',nodes:[{id:'input',type:'input'},{id:'a',type:'agent',model:'fixture::remote',prompt:'First step.'},{id:'b',type:'agent',model:'fixture::remote',prompt:'Second step.'},{id:'output',type:'output'}],edges:[{source:'input',target:'a'},{source:'a',target:'b'},{source:'b',target:'output'}],settings:{planningMode:'off'}};
+ const first=engine.startRun({workflow,input:{task:'Two steps.',directoryMode:'off'}});
+ await entered;
+ const changed=await identity.update({kind:'soul',content:'# NEXT_EXECUTION_SOUL',expectedRevision:original.revision,expectedHash:original.diskHash,provenance:{source:'user'}});
+ const user=await identity.read('user');
+ await identity.update({kind:'user',content:'# LIVE_USER_EDIT',expectedRevision:user.revision,expectedHash:user.diskHash,provenance:{source:'user'}});
+ releaseA();await engine.executions.get(first.id);
+ assert.equal(engine.getRun(first.id).status,'completed',engine.getRun(first.id).error);
+ assert.equal(runtime.calls.length,2);assert.equal(runtime.reads.length,2);
+ for(const {soul,user} of runtime.reads){assert.equal(soul.content,original.content);assert.equal(soul.hash,original.hash);assert.equal(soul.revision,original.revision);assert.equal(user.content,'# LIVE_USER_EDIT');}
+ for(const call of runtime.calls){assert.match(JSON.stringify(call),/calibrated inference/);assert.doesNotMatch(JSON.stringify(call),/NEXT_EXECUTION_SOUL/);}
+ assert.match(JSON.stringify(runtime.calls[1]),/LIVE_USER_EDIT/);
+ const second=engine.startRun({workflow,input:{task:'Two new steps.',directoryMode:'off'}});
+ await engine.executions.get(second.id);assert.equal(engine.getRun(second.id).status,'completed',engine.getRun(second.id).error);
+ assert.equal(runtime.calls.length,4);
+ for(const {soul} of runtime.reads.slice(2)){assert.equal(soul.content,changed.content);assert.equal(soul.hash,changed.hash);assert.equal(soul.revision,changed.revision);}
+ for(const call of runtime.calls.slice(2))assert.match(JSON.stringify(call),/NEXT_EXECUTION_SOUL/);
+});
