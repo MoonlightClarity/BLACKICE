@@ -1,9 +1,11 @@
 # BLACKICE release notes index
 
-> **Status: Current source index, not an installer receipt.** The repository's package version is **2.39.98**. Start with the [2.39.98 source release note](RELEASE-NOTES-2.39.98.md), then verify the separately published [Windows releases](https://github.com/MoonlightClarity/BLACKICE/releases) and your installed version. Source tests, candidate checks, public uploads, and local installation are different states.
+> **Status: Proposed local source for 2.39.100, not an installer receipt.** The repository's package version is **2.39.100**. Start with the [2.39.100 source preparation note](RELEASE-NOTES-2.39.100.md); the prior [2.39.99 source note](RELEASE-NOTES-2.39.99.md) and [published Windows releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe different tested or distributed states. No 2.39.100 Windows source suite, installer, or release is yet confirmed.
 
 ## Recent versioned source notes
 
+- [2.39.100](RELEASE-NOTES-2.39.100.md) — proposed source, not a built release
+- [2.39.99](RELEASE-NOTES-2.39.99.md) — earlier separate candidate
 - [2.39.98](RELEASE-NOTES-2.39.98.md)
 - [2.39.97](RELEASE-NOTES-2.39.97.md)
 - [2.39.96](RELEASE-NOTES-2.39.96.md)
