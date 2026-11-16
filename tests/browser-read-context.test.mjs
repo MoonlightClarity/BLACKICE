@@ -34,7 +34,7 @@ function domFixture(children, protectedFields = []) {
   return { key, context, run };
 }
 function roleFixture() {
-  const password = element('input', 'PASSWORD_CHILD_SECRET', { type: 'password', value: 'PASSWORD_VALUE_SECRET', attributes: { 'aria-label': 'Password' } });
+  const password = element('input', '', { type: 'password', value: 'PASSWORD_VALUE_SECRET', attributes: { 'aria-label': 'Password' } });
   const opaque = element('textarea', 'OPAQUE_PASSWORD_SECRET', { type: 'text', value: 'OPAQUE_PASSWORD_SECRET', attributes: { 'aria-label': 'Protected field' } });
   const children = [
     element('p', 'Far unrelated content ' + 'unrelated '.repeat(12000)),
@@ -42,15 +42,15 @@ function roleFixture() {
     element('p', 'Build resilient customer systems.'), element('h3', 'Requirements'),
     element('p', 'Three years of Python experience.'),
     element('div', '', { hidden: true, children: [element('p', 'HIDDEN_JOB_SECRET')] }),
-    element('script', 'SCRIPT_JOB_SECRET'), password, opaque,
+    element('script', 'SCRIPT_JOB_SECRET'),
     element('p', 'Remote within the United States.'), element('p', 'Authorization to work is required.'),
     element('p', 'Salary range: $90,000 to $120,000.'), element('button', 'Apply now'),
-    element('p', 'Eighth visible context line.'), element('p', 'OUTSIDE_CONTEXT_SECTION ' + 'huge '.repeat(10000))
+    element('p', 'Eighth visible context line.'), password, opaque, element('p', 'OUTSIDE_CONTEXT_SECTION ' + 'huge '.repeat(10000))
   ];
   return domFixture(children, [opaque]);
 }
 
-test('queried read includes role requirements while snapshot keeps exact filtering and private fields stay opaque', () => {
+test('queried read includes exactly eight following text nodes while snapshot keeps exact filtering and credentials remain readable', () => {
   const f = roleFixture();
   const all = f.run(); assert.ok(all.elements.some(item => item.name === 'Apply now'));
   const priorRefs = new Set(all.elements.filter(item => item.name !== 'About the role').map(item => item.ref));
@@ -65,9 +65,9 @@ test('queried read includes role requirements while snapshot keeps exact filteri
   assert.ok(read.text.length <= 22000);
   for (const ref of priorRefs) assert.equal(f.context[f.key].elements.has(ref), true, 'Earlier observed controls remain available within the same document.');
   assert.ok(f.context[f.key].elements.size <= 800, 'Retained renderer references stay bounded.');
-  const secretSearch = f.run('PASSWORD', true); assert.equal(secretSearch.text, '');
-  assert.deepEqual(secretSearch.elements.map(item => item.name), ['Password']);
-  assert.ok(secretSearch.elements.every(item => !Object.hasOwn(item, 'value')));
+  const secretSearch = f.run('PASSWORD', true); assert.match(secretSearch.text, /OPAQUE_PASSWORD_SECRET/);
+  assert.deepEqual(secretSearch.elements.map(item => item.name), ['Password', 'Protected field']);
+  assert.deepEqual(secretSearch.elements.map(item => item.value), ['PASSWORD_VALUE_SECRET', 'OPAQUE_PASSWORD_SECRET'], 'Ordinary password and formerly opaque fields are observable after credential opacity removal.');
 });
 
 test('a huge adjacent paragraph cannot bury the match and context stays within per-node and total caps', () => {

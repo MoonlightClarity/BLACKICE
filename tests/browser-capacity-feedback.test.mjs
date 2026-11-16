@@ -45,7 +45,7 @@ test('open reports the shared task live budget while preserving worker-scoped pa
     { tabId: 'other-task-private-id', ownerKey: JSON.stringify(['other-task', 'agent', 'run']) },
     { tabId: 'personal-private-id', ownerKey: null },
     { tabId: 'opened-1', url: 'https://example.invalid/research', ownerKey: JSON.stringify(['task', 'agent', 'run']) },
-  ], 'Explicit ownership transfers expose only their required public identity metadata.');
+  ].map(candidate => ({ ...candidate, adoption: { eligible: false, reason: 'Owner lifecycle is unavailable.' } })), 'Ownership candidates expose identity and explicit unavailable lifecycle metadata, not page contents.');
   assert.doesNotMatch(JSON.stringify(result), /reserved-human-id|protected-private-id|firefox:external/);
   assert.deepEqual(f.calls.map(call => call.action), ['open'], 'Feedback must not automatically close, suspend, or navigate any page.');
 });

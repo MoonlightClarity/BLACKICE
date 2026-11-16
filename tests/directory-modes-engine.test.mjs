@@ -9,6 +9,7 @@ import {mkdtemp,mkdir,readFile,writeFile,rm,access} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
 import {HarnessEngine} from '../lib/engine.mjs';
+import {IdentityStore} from '../lib/identity.mjs';
 import {normalizePlanningOntology} from '../public/planning-module-policy.mjs';
 import {fixtureOutcomeReview,finishFixtureCandidate} from './fixture-modular-provider.mjs';
 const graph=(sandbox='danger-full-access')=>({name:'Directory Chat fixture',nodes:[
@@ -252,7 +253,9 @@ test('Retry retains Directory preference and starts fresh bounded phases',async 
 
 test('attributed attachment and handoff data stay outside source-page authority while user restrictions survive',async t=>{
  const f=await fixture(t),id='file_'+'a'.repeat(32);
- f.engine.identity={snapshot:async()=>({text:'IDENTITY_PREFERENCE_MARKER: preserve user privacy.',revisions:{},truncated:false})};
+ f.engine.identity=await new IdentityStore({dataDir:f.dataDir}).init();
+ const soul=await f.engine.identity.read('soul');
+ await f.engine.identity.update({kind:'soul',content:'IDENTITY_PREFERENCE_MARKER: preserve user privacy.',expectedRevision:soul.revision});
  const first=await settle(f.engine,f.engine.startRun({workflow:graph(),input:{task:'PRIOR_RESTRICTION: do not send or modify anything.',directoryMode:'off',subagentsMode:'off'}}));
  f.engine.attachments={validateIds:ids=>ids,snapshot:async()=>[{id,name:'fixture.txt',kind:'text',mime:'text/plain',size:200,sha256:'a'.repeat(64)}],prompt:async()=>'ATTACHMENT_RAW_MUST_NOT_REPEAT '.repeat(60)};
  const imports=[];let sourcePages=0;
