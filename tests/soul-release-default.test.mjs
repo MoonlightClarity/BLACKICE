@@ -45,3 +45,19 @@ test('model identity tool cannot mutate SOUL even with explicit user quote; user
  assert.equal(snap.documents.soul.content,DEFAULT_SOUL);assert.equal((await s.snapshot()).documents.soul.content,'# User applied next version');
  assert.match(IDENTITY_INSTRUCTIONS,/only the user may apply/i);assert.doesNotMatch(IDENTITY_INSTRUCTIONS,/perform that requested change/);
 });
+
+test('snapshot-bound model read returns full original bytes after user edit even when prompt is truncated',async t=>{
+ const {open}=await fixture(t);const s=await open(),before=await s.read('soul');
+ const snapshot=await s.snapshot({budgetChars:2048});
+ assert.equal(snapshot.documents.soul.truncated,true);
+ assert.equal(snapshot.fullDocuments.soul.content,before.content);
+ assert.ok(Object.isFrozen(snapshot.fullDocuments.soul));
+ const handler=createIdentityToolHandler({store:s,snapshot});
+ const read=async h=>JSON.parse((await h({name:'relay_identity',arguments:{action:'read',kind:'soul'}})).contentItems[0].text);
+ const original=await read(handler);
+ await s.update({kind:'soul',content:'# USER NEXT VERSION',expectedRevision:before.revision,expectedHash:before.diskHash,provenance:{source:'user'}});
+ assert.deepEqual(await read(handler),original);assert.equal(original.content,before.content);
+ assert.equal(original.hash,before.hash);assert.equal(original.revision,before.revision);
+ const next=createIdentityToolHandler({store:s,snapshot:await s.snapshot()});
+ assert.equal((await read(next)).content,'# USER NEXT VERSION');
+});

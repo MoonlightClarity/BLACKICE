@@ -12,10 +12,11 @@ for (const directoryMode of ['off','on']) test('identity delivered in '+director
  const dataDir=path.join(dir,'data'), identity=await new IdentityStore({dataDir}).init();
  let admitted, release;const entered=new Promise(r=>admitted=r), gate=new Promise(r=>release=r);
  class Runtime extends EventEmitter {
-  calls=[]; store={get:()=>({baseUrl:'https://api.example/v1'})};
+  calls=[]; soulReads=[]; store={get:()=>({baseUrl:'https://api.example/v1'})};
   status(){return {connected:true,authenticated:true,defaultModel:'fixture::remote',models:[{id:'fixture::remote',supportsTools:true}]};}
   async runAgent(options){
    this.calls.push(options); if(this.calls.length===1){admitted();await gate;}
+   if(options.dynamicTools?.some(t=>t.name==='relay_identity')) this.soulReads.push(JSON.parse((await options.onToolCall({name:'relay_identity',arguments:{action:'read',kind:'soul'}})).contentItems[0].text));
    const phase=options.prompt.includes('SHADOWDANCER DIRECTORY MODE.')?JSON.parse(options.prompt.split('CURRENT_DIRECTORY:\n').at(-1).split('\nREPOSITORY ')[0]):null;
    const result=!phase?'Fixture complete.':phase.label==='decompose'?{atomic:true}:phase.label==='integration'?{answer:'Fixture complete.',used_refs:phase.payload.required_refs}:{status:'complete',nextAction:'',finding:'Fixture finding.',candidate_answer:'Fixture complete.',uncertainty:''};
    return {output:typeof result==='string'?result:JSON.stringify(result),threadId:'fixture-'+this.calls.length};
@@ -32,7 +33,8 @@ for (const directoryMode of ['off','on']) test('identity delivered in '+director
  await identity.update({kind:'soul',content:'# Custom identity\nCUSTOM_NEXT_TURN',expectedRevision:doc.revision,expectedHash:doc.diskHash});
  release();await engine.executions.get(first.id);
  assert.equal(engine.getRun(first.id).status,'completed',engine.getRun(first.id).error);
- const count=runtime.calls.length;
+ const count=runtime.calls.length, readCount=runtime.soulReads.length;
+ assert.ok(readCount>0);assert.ok(runtime.soulReads.every(r=>r.content===doc.content&&r.hash===doc.hash&&r.revision===doc.revision));
  assert.ok(runtime.calls.every(c=>JSON.stringify(c).includes('calibrated inference')));
  assert.ok(runtime.calls.every(c=>!JSON.stringify(c).includes('CUSTOM_NEXT_TURN')));
  if(directoryMode==='on')assert.ok(count>=3);
@@ -40,4 +42,5 @@ for (const directoryMode of ['off','on']) test('identity delivered in '+director
  assert.equal(engine.getRun(second.id).status,'completed',engine.getRun(second.id).error);
  assert.ok(runtime.calls.slice(count).every(c=>JSON.stringify(c).includes('CUSTOM_NEXT_TURN')));
  assert.equal(JSON.stringify(runtime.calls[0]),oldText);
+ assert.ok(runtime.soulReads.length>readCount);assert.ok(runtime.soulReads.slice(readCount).every(r=>r.content==='# Custom identity\nCUSTOM_NEXT_TURN'));
 });
