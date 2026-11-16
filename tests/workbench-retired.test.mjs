@@ -47,12 +47,15 @@ test('2.39.98 retains Workbench-free navigation and adds exactly one real Skills
   const app = read('public/next/app.mjs');
   const server = read('server.mjs');
   const spaces = [...index.matchAll(/data-space="([^"]+)"/g)].map(match => match[1]);
-  // This frozen Skills+tabs lane intentionally keeps Planning pending the
-  // separate Swarm navigation integration; no old workspace may disappear.
-  const retained = ['chat','planning','cronjobs','browser','knowledge','settings'];
+  // Combined Swarm replaces the visible Planning tab; its exact deep-link
+  // route remains available without resurrecting Workbench or Applications.
+  const retained = ['chat','swarm','cronjobs','browser','knowledge','skills','settings'];
   assert.deepEqual(spaces.filter(name=>retained.includes(name)),retained);
-  assert.deepEqual(spaces,['chat','planning','cronjobs','browser','knowledge','skills','settings']);
+  assert.deepEqual(spaces,retained);
+  assert.equal(spaces.filter(name=>name==='swarm').length,1);
   assert.equal(spaces.filter(name=>name==='skills').length,1);
+  assert.doesNotMatch(index,/data-space="planning"/);
+  assert.match(app,/planning:\(\)=>import\('\.\/workspaces\/planning-current\.mjs'\)/);
   assert.match(index,/<button[^>]*data-space="skills"[^>]*>Skills<\/button>/);
   assert.match(index,/<link[^>]*href="\/next\/skills\.css"/);
   assert.match(app,/skills:\(\)=>import\('\.\/workspaces\/skills\.mjs'\)\.then\(m=>m\.createSkillsWorkspace\)/);

@@ -59,6 +59,16 @@ export function createBrowserScopedCleanup({ mount, api, refresh, notify = () =>
     preview = null; ui.execute.disabled = true; ui.list.replaceChildren();
     ui.summary.textContent = '';
   }
+  // Browser screenshots and ownership moves can change busy without changing
+  // the saved tab catalog. Refresh only button state, never the scoped preview
+  // or selection, whenever the parent Browser renders that transition.
+  function syncActivity() {
+    if (destroyed || ui.panel.hidden) return;
+    ui.preview.disabled = pending || isBusy() || !selection();
+    ui.cancel.disabled = pending;
+    ui.execute.disabled = pending || isBusy() || !preview
+      || ![...ui.list.querySelectorAll('input[data-cleanup-id]')].some(input => input.checked);
+  }
   function populate() {
     const priorConversation = ui.conversation.value, priorTask = ui.task.value;
     const conversations = (status.conversations || []).filter(item =>
@@ -72,8 +82,7 @@ export function createBrowserScopedCleanup({ mount, api, refresh, notify = () =>
       option(ui.task, JSON.stringify([group.taskId, group.nodeId]), group.label + ' (' + group.count + ')');
     }
     if ([...ui.task.querySelectorAll('option')].some(item => item.value === priorTask)) ui.task.value = priorTask;
-    ui.preview.disabled = pending || isBusy() || !selection();
-    ui.cancel.disabled = pending;
+    syncActivity();
   }
   function renderPreview() {
     ui.list.replaceChildren();
@@ -89,9 +98,7 @@ export function createBrowserScopedCleanup({ mount, api, refresh, notify = () =>
         checkbox.setAttribute('type','checkbox'); checkbox.checked = row.manualReviewRequired !== true;
         checkbox.dataset.cleanupId = row.tabId;
         if (row.manualReviewRequired) checkbox.setAttribute('aria-label', 'I reviewed ' + row.title + ' and choose to close this page');
-        checkbox.addEventListener('change', () => {
-          ui.execute.disabled = pending || ![...ui.list.querySelectorAll('input[data-cleanup-id]')].some(input => input.checked);
-        });
+        checkbox.addEventListener('change', syncActivity);
         label.append(checkbox);
       } else text(label, 'Preserved', 'strong');
       text(label, row.title || row.url || row.tabId, 'span');
@@ -99,7 +106,7 @@ export function createBrowserScopedCleanup({ mount, api, refresh, notify = () =>
       if (row.inspectionWarning) text(label, row.inspectionWarning, 'small');
       label.title = row.url || '';
     }
-    ui.execute.disabled = pending || ![...ui.list.querySelectorAll('input[data-cleanup-id]')].some(input => input.checked);
+    syncActivity();
   }
   async function loadPreview() {
     if (pending || isBusy()) return;
@@ -147,6 +154,7 @@ export function createBrowserScopedCleanup({ mount, api, refresh, notify = () =>
   ui.preview.addEventListener('click', () => void loadPreview());
   ui.execute.addEventListener('click', () => void execute());
   return {
+    syncActivity,
     update(next) {
       if (destroyed) return;
       const signature = JSON.stringify((next?.tabs || []).map(tab =>

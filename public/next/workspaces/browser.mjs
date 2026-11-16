@@ -178,6 +178,7 @@ export function createBrowserWorkspace(options) {
   function render(){
     if(!active||destroyed)return;
     ownership.render();renderTabs();
+    cleanup.syncActivity();
     const tab=current(),ready=Boolean(tab),hasFrame=Boolean(selectedSnapshot());
     for(const button of [ui.inspect,ui.shot,ui.close])button.disabled=busy||!ready;
     for(const button of [ui.typeSend,ui.keySend])button.disabled=busy||!hasFrame||awaitingDialog();

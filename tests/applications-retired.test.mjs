@@ -17,7 +17,8 @@ test('no renderer or Electron IPC entry point can launch a native application', 
 
 test('unrelated workspace tabs stay registered', () => {
   const html = text('public/next/index.html');
-  for (const space of ['chat','planning','cronjobs','browser','knowledge','settings'])
+  // Swarm replaces only the visible Planning tab; existing workspaces remain.
+  for (const space of ['chat','swarm','cronjobs','browser','knowledge','skills','settings'])
     assert.match(html, new RegExp('data-space="' + space + '"'));
-  assert.doesNotMatch(html, /data-space="workbench"/);
+  assert.doesNotMatch(html, /data-space="planning"|data-space="workbench"/);
 });

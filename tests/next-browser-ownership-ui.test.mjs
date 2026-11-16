@@ -61,7 +61,7 @@ async function fixture(t, {native, currentConversation = 'a', extraTabs = false}
     tab('unassigned',null,{ownershipKind:'ai',owner:{taskId:'connector',nodeId:'bridge'}})],
     activeTab:'b-tab',conversations:[{id:'a',title:'Conversation A',taskId:'task-a',latestRunId:'run-a'},{id:'b',title:'Conversation B'},{id:'empty',title:'Empty conversation'}]};
   if(extraTabs)state.tabs.push(tab('personal-second'),tab('a-second','a'),tab('b-second','b'));
-  let failed = false, next = 0;
+  let failed = false, next = 0, nextScreenshotGate = null, nextActionGate = null;
   const snapshot = () => structuredClone(state);
   const workspace = createBrowserWorkspace({mount:dom.mount,notify(){},
     events:{subscribe(handler){subscribers.add(handler);return () => subscribers.delete(handler);}},
@@ -78,12 +78,32 @@ async function fixture(t, {native, currentConversation = 'a', extraTabs = false}
         chosen.owner = body.destination === 'user' ? null : {taskId:body.conversationId,nodeId:'agent'};
         return {...snapshot(),ownershipReceipt:{movedTabIds:[chosen.tabId]}};
       }
+      if (route === '/api/browser/cleanup-preview') {
+        assert.deepEqual(body,{kind:'conversation',conversationId:'a'});
+        const scoped=state.tabs.filter(item=>item.conversationId==='a');
+        return {scope:body,previewId:'c'.repeat(64),total:scoped.length,
+          eligible:0,protected:scoped.length,
+          rows:scoped.map(item=>({tabId:item.tabId,title:item.title,
+            url:item.url,documentId:item.documentId,eligible:false,reason:'Protected fixture'}))};
+      }
       assert.equal(route,'/api/browser/action');
+      if (nextActionGate?.action === body.action) {
+        const gate=nextActionGate.gate;nextActionGate=null;
+        await gate.promise;
+      }
       if (body.action === 'open') {
         const opened = tab('opened-' + (++next),null,{url:body.url});state.tabs.push(opened);state.activeTab=opened.tabId;return structuredClone(opened);
       }
       const chosen = state.tabs.find(item => item.tabId === body.tabId);assert.ok(chosen);
-      if (body.action === 'screenshot') return {...structuredClone(chosen),width:1000,height:700,imageUrl:'data:image/png;base64,aGVsbG8='};
+      if (body.action === 'screenshot') {
+        // Hold an actual Browser screenshot response without blocking status or
+        // the cleanup controller; this is the observed delayed-busy boundary.
+        if (nextScreenshotGate) {
+          const gate = nextScreenshotGate; nextScreenshotGate = null;
+          await gate.promise;
+        }
+        return {...structuredClone(chosen),width:1000,height:700,imageUrl:'data:image/png;base64,aGVsbG8='};
+      }
       if (body.action === 'tab_select') state.activeTab=chosen.tabId;
       return structuredClone(chosen);
     }});
@@ -94,6 +114,8 @@ async function fixture(t, {native, currentConversation = 'a', extraTabs = false}
   const change = async (selector,value) => {const select=dom.$(selector);select.value=value;await select.dispatch('change');await sleep(0);};
   return {...dom,state,calls,surfaces,workspace,storage,selected,visible,change,
     setFailure(value){failed=value;},
+    holdNextScreenshot(gate){nextScreenshotGate=gate;},
+    holdNextAction(action,gate){nextActionGate={action,gate};},
     async refresh(){const before=calls.filter(call=>call.method==='GET').length;for(const handler of subscribers)handler({type:'browser.status'});await until(()=>calls.filter(call=>call.method==='GET').length>before);await sleep(10);},
     async idle(){await until(()=>!dom.$('#next-browser-personal').disabled);},
     transfers:() => calls.filter(call=>call.route==='/api/browser/ownership'),
@@ -184,3 +206,66 @@ for (const native of [true,false]) {
     assert.deepEqual(f.navigations().map(call=>call.body),[{action:'open',browser:'relay',url:'about:blank'}]);
   });
 }
+
+test('captured Browser restores scoped Preview after a delayed screenshot settles without selection change',async t=>{
+  const f=await fixture(t,{native:false});await f.idle();
+  await f.click('#next-browser-cleanup-open');
+  await f.change('#next-browser-cleanup-conversation','a');
+  const button=f.$('#next-browser-cleanup-preview');
+  const conversation=f.$('#next-browser-cleanup-conversation');
+  const originalConversation=conversation.value;
+  assert.equal(originalConversation,'a');
+  assert.equal(button.disabled,false,'Exact conversation scope enables Preview when idle');
+  const beforeCaptures=f.calls.filter(call=>call.body?.action==='screenshot').length;
+  let release;
+  const gate={promise:new Promise(resolve=>{release=resolve;})};
+  f.holdNextScreenshot(gate);
+  try {
+    await f.click('#next-browser-shot');
+    await until(()=>f.calls.filter(call=>call.body?.action==='screenshot').length>beforeCaptures);
+    assert.equal(f.$('#next-browser-shot').disabled,true,'Screenshot is genuinely in flight');
+    assert.equal(button.disabled,true,'Cleanup Preview must remain disabled during the delayed screenshot');
+    await f.click('#next-browser-cleanup-preview');
+    assert.equal(f.calls.filter(call=>call.route==='/api/browser/cleanup-preview').length,0,
+      'Busy screenshot must never dispatch a cleanup preview');
+  } finally {release();}
+  await until(()=>!f.$('#next-browser-shot').disabled);
+  assert.equal(button.disabled,false,
+    'Screenshot completion must re-enable Preview without conversation-selection events or another status read');
+  assert.equal(conversation.value,originalConversation,'A busy transition must not rebuild or change the scope');
+  await f.click('#next-browser-cleanup-preview');
+  await until(()=>f.calls.filter(call=>call.route==='/api/browser/cleanup-preview').length===1);
+  assert.match(f.$('#next-browser-cleanup-summary').textContent,/protected/);
+  assert.equal(f.$('#next-browser-cleanup-execute').disabled,true,
+    'Read-only preview never authorizes closure of protected pages');
+  assert.equal(f.calls.filter(call=>call.route==='/api/browser/cleanup').length,0);
+});
+
+test('native Browser restores scoped Preview after a delayed action without changing its selection',async t=>{
+  const f=await fixture(t,{native:true});await f.idle();
+  await f.click('#next-browser-cleanup-open');
+  await f.change('#next-browser-cleanup-conversation','a');
+  const button=f.$('#next-browser-cleanup-preview');
+  const conversation=f.$('#next-browser-cleanup-conversation');
+  assert.equal(conversation.value,'a');
+  assert.equal(button.disabled,false);
+  const beforeReloads=f.calls.filter(call=>call.body?.action==='reload').length;
+  let release;
+  const gate={promise:new Promise(resolve=>{release=resolve;})};
+  f.holdNextAction('reload',gate);
+  try {
+    await f.click('#next-browser-reload');
+    await until(()=>f.calls.filter(call=>call.body?.action==='reload').length>beforeReloads);
+    assert.equal(f.$('#next-browser-reload').disabled,true,'Native Browser operation is actually awaiting the API');
+    assert.equal(button.disabled,true,'Scoped Preview stays disabled during the native in-flight action');
+    await f.click('#next-browser-cleanup-preview');
+    assert.equal(f.calls.filter(call=>call.route==='/api/browser/cleanup-preview').length,0);
+  } finally {release();}
+  await until(()=>!f.$('#next-browser-reload').disabled);
+  assert.equal(button.disabled,false,'Native render must release the Preview busy gate without another selection event');
+  assert.equal(conversation.value,'a','The exact conversation selector is retained after busy settles');
+  await f.click('#next-browser-cleanup-preview');
+  await until(()=>f.calls.filter(call=>call.route==='/api/browser/cleanup-preview').length===1);
+  assert.equal(f.$('#next-browser-cleanup-execute').disabled,true,'The preview still protects all pages');
+  assert.equal(f.calls.filter(call=>call.route==='/api/browser/cleanup').length,0);
+});

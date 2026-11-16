@@ -313,6 +313,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
   }
   function render(){
     ownership.render();renderTabs();renderDownloads();renderAuth();
+    cleanup.syncActivity();
     const tab=current(),key=tab?'page':openingBlank?'new':'empty';
     const paintKey=key==='empty'?key+JSON.stringify(ownership.view):key;
     ui.back.disabled=busy||!tab||tab.canGoBack===false;
