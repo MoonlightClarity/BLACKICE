@@ -418,3 +418,19 @@ test('actual direct ledger and HTTP adapter share scope validation, saved receip
   assert.equal(repeated.body.jobId, admitted.jobId); assert.equal(repeated.body.existing, true); assert.equal(calls, 1);
   const changed = { ...args, ref: 'different-key-ref' }; await assert.rejects(api.call('blackice_provider_import_key', changed, client)); assert.equal(calls, 1);
 });
+test('provider-key inspection initializes its bookkeeping after an ordinary snapshot in the same document', async () => {
+  const page = pageFixture();
+  const driverSource = await readFile(new URL('../desktop/browser-driver.mjs', import.meta.url), 'utf8');
+  const snapshotSource = driverSource.slice(driverSource.indexOf('function pageSnapshot('), driverSource.indexOf('\nasync function smoothPageScroll(')).trim();
+  const originalQuery = page.context.document.querySelectorAll;
+  Object.assign(page.context.document, { documentElement:{children:[]}, forms:[], title:'Provider', readyState:'complete', querySelectorAll:()=>[] });
+  page.context.getComputedStyle = page.context.window.getComputedStyle;
+  vm.runInContext(`(${snapshotSource})('private_ref_state','0-0-1-1','')`, page.context);
+  assert.equal(page.context.private_ref_state.credentialFields, undefined);
+  page.context.document.querySelectorAll = originalQuery;
+  page.add();
+  const inspected = page.run({action:'inspect'});
+  assert.equal(inspected.valid,true); assert.equal(inspected.sources.length,1); noSecret(inspected);
+  const captured = page.run({action:'import',ref:inspected.sources[0].ref});
+  assert.equal(captured.value,SECRET);
+});

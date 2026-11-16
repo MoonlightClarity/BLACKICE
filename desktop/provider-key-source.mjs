@@ -24,6 +24,9 @@ export function providerKeyPage(key, prefix, args) {
     for (let frame = window; frame !== frame.top; frame = frame.parent) if (frame.parent.origin !== args.origin || !visible(frame.frameElement)) return { valid: false };
     let state = globalThis[key];
     if (!state || state.document !== document || state.prefix !== prefix) state = globalThis[key] = { document, prefix, documentId: Math.random().toString(36).slice(2), elements: new Map(), identities: new Map(), descriptors: new WeakMap(), ids: new WeakMap(), next: 0, credentialFields: new WeakSet() };
+    // A normal browser snapshot may have initialized this same document state.
+    // Provider-key bookkeeping belongs to this helper, not ordinary form reads.
+    state.credentialFields ||= new WeakSet();
     state.providerKeySources ||= new Map(); state.providerKeyRefs ||= new WeakMap();
     const valueOf = el => ['INPUT', 'TEXTAREA'].includes(el.tagName) ? String(el.value ?? '').trim() : String(el.textContent ?? '').trim();
     const validValue = value => value.length >= 8 && value.length <= 20000 && !/\s|[\u0000-\u001f\u007f]/.test(value) && !/(?:\*{2,}|[•●…]|\.{3})/.test(value);
