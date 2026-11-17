@@ -314,3 +314,40 @@ test('disposable native fixture excludes foreign restart origin without altering
   assert.deepEqual(source, prior);
   assert.notEqual(result, source);
 });
+
+test('diagnostic installer mode retains failed qualification and never supplies a passing receipt', async () => {
+  const directory = await fs.mkdtemp(path.join(tmpdir(), 'blackice-diagnostic-'));
+  try {
+    await fs.mkdir(path.join(directory, 'verification'));
+    const receiptPath = 'verification/qualification.json';
+    const original = JSON.parse(await fs.readFile(new URL('../verification/qualification-2.40.1.json', import.meta.url)));
+    const options = {directory, receiptPath, version:original.version, appFingerprint:original.appFingerprint, tracked:new Set([receiptPath]), artifactSha256:original.artifact.sha256};
+    const save = value => fs.writeFile(path.join(directory, receiptPath), JSON.stringify(value));
+    await save(original);
+    await assert.rejects(readWindowsSourceTestReceipt(options));
+    const result = await readWindowsSourceTestReceipt({...options, diagnosticOnly:true});
+    assert.equal(result.publicReleaseReady, false);
+    assert.deepEqual(result.qualification, original);
+    assert.equal(result.tests.failed, 1);
+    assert.match(result.receiptSha256, /^[a-f0-9]{64}$/);
+    for (const override of [{version:'0.0.0'}, {appFingerprint:'0'.repeat(64)}, {artifactSha256:'0'.repeat(64)}, {tracked:new Set()}]) {
+      await assert.rejects(readWindowsSourceTestReceipt({...options, diagnosticOnly:true, ...override}));
+    }
+    for (const change of [{passed:true}, {fullSuiteSource:'missing'}, {testLogSha256:'missing'}, {tests:{...original.tests,failed:0}}, {tests:{...original.tests,total:1}}]) {
+      await save({...original,...change});
+      await assert.rejects(readWindowsSourceTestReceipt({...options, diagnosticOnly:true}));
+    }
+  } finally { await fs.rm(directory,{recursive:true,force:true}); }
+});
+
+test('diagnostic hosted mode returns before generating release readiness; default remains strict', async () => {
+  const script = await fs.readFile(new URL('../scripts/verify-windows-release.ps1', import.meta.url),'utf8');
+  const workflow = await fs.readFile(new URL('../.github/workflows/verify-windows-release.yml', import.meta.url),'utf8');
+  const diagnostic = script.slice(script.indexOf('if ($DiagnosticOnly) {'),script.indexOf('$receipts=@{'));
+  assert.match(diagnostic,/publicReleaseReady=\$false/);
+  assert.match(diagnostic,/sourceQualification=\$prior/);
+  assert.match(diagnostic,/return/);
+  assert.doesNotMatch(diagnostic,/release-check\.mjs|blackice-release-receipts\.json/);
+  assert.match(workflow,/diagnostic_only:[\s\S]*?default: false/);
+  assert.match(workflow,/blackice-installer-diagnostic\.json/);
+});

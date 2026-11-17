@@ -104,7 +104,7 @@ export function approvedWindowsPackageFile(relative, version) {
 }
 
 /** Read existing, tracked evidence; never synthesize a passing source-test receipt. */
-export async function readWindowsSourceTestReceipt({ directory, receiptPath, version, appFingerprint, tracked, sourceIndexSha256 }) {
+export async function readWindowsSourceTestReceipt({ directory, receiptPath, version, appFingerprint, tracked, sourceIndexSha256, diagnosticOnly = false, artifactSha256 }) {
   check(typeof receiptPath === 'string' && /^verification\/[A-Za-z0-9][A-Za-z0-9._-]*\.json$/.test(receiptPath), 'Choose a source-test receipt under verification/.');
   check(tracked?.has(receiptPath), 'Source-test receipt is not tracked in the approved source.');
   const verification = await fs.lstat(path.join(directory, 'verification'));
@@ -112,6 +112,13 @@ export async function readWindowsSourceTestReceipt({ directory, receiptPath, ver
   const file = path.join(directory, receiptPath), stat = await fs.lstat(file);
   check(stat.isFile() && !stat.isSymbolicLink() && stat.size <= 1000000, 'Source-test receipt must be a regular bounded file.');
   const bytes = await fs.readFile(file), prior = JSON.parse(bytes), tests = prior.tests;
+  if (diagnosticOnly === true) {
+    check(prior.format === 1 && prior.product === 'BLACKICE' && prior.classification === 'qualification-provenance-not-a-passing-source-receipt' && prior.version === version && prior.appFingerprint === appFingerprint && prior.passed === false, 'Diagnostic source qualification binding mismatch');
+    check(/^[a-f\d]{64}$/.test(artifactSha256) && prior.artifact?.sha256 === artifactSha256, 'Diagnostic installer binding mismatch');
+    check(/^[a-f\d]{40}$/.test(prior.fullSuiteSource) && /^[a-f\d]{40}$/.test(prior.packagedSource) && /^[a-f\d]{64}$/.test(prior.testLogSha256), 'Diagnostic source/log provenance missing');
+    check(tests && ['total', 'passed', 'failed', 'optionalSkipped', 'cancelled', 'exitCode'].every(key => Number.isSafeInteger(tests[key]) && tests[key] >= 0) && tests.failed > 0 && tests.exitCode > 0 && tests.total === tests.passed + tests.failed + tests.optionalSkipped + tests.cancelled, 'Diagnostic failed-suite counts invalid');
+    return { receiptPath, receiptSha256: createHash('sha256').update(bytes).digest('hex'), diagnosticOnly: true, publicReleaseReady: false, qualification: prior, tests, testLogSha256: prior.testLogSha256 };
+  }
   check(prior.format === 1 && prior.product === 'BLACKICE' && prior.scope === 'source-publication' && prior.version === version && prior.appFingerprint === appFingerprint && prior.fingerprintUnchanged === true && prior.platform === 'win32', 'Prior source test receipt binding mismatch');
   check(tests && ['total', 'passed', 'failed', 'requiredSkipped', 'optionalSkipped', 'cancelled', 'exitCode'].every(key => Number.isSafeInteger(tests[key]) && tests[key] >= 0) && tests.passed > 0 && tests.failed === 0 && tests.requiredSkipped === 0 && tests.cancelled === 0 && tests.exitCode === 0 && tests.total === tests.passed + tests.failed + tests.requiredSkipped + tests.optionalSkipped, 'Prior required tests did not pass');
   check(/^[a-f\d]{64}$/.test(prior.testLogSha256), 'Prior test log provenance missing');

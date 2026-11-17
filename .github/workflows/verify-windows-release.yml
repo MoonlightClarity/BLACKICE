@@ -3,6 +3,10 @@ name: Verify Windows release installer
 on:
   workflow_dispatch:
     inputs:
+      diagnostic_only:
+        description: Installer diagnostics only; retain failed source qualification and never produce release readiness
+        type: boolean
+        default: false
       release_id:
         description: Exact existing draft release REST ID
         required: true
@@ -43,6 +47,7 @@ jobs:
       run:
         shell: pwsh
     env:
+      DIAGNOSTIC_ONLY: ${{ inputs.diagnostic_only }}
       RELEASE_ID: ${{ inputs.release_id }}
       RELEASE_TAG: ${{ inputs.tag }}
       EXPECTED_SHA256: ${{ inputs.expected_sha256 }}
@@ -113,7 +118,7 @@ jobs:
             $pattern='^' + $assetHash + '\s+\*?' + [regex]::Escape($assetName) + '$'
             if (@($checksums | Where-Object { $_ -cmatch $pattern }).Count -ne 1) { throw 'SHA256SUMS binding mismatch.' }
           }
-          $binding=@{format=1;product='BLACKICE';releaseId=$release.databaseId;tag=$release.tagName;draftAtDownload=$release.isDraft;sourceCommit=$env:EXPECTED_SOURCE_COMMIT;workflowCommit=$env:GITHUB_SHA;appFingerprint=$env:EXPECTED_FINGERPRINT;artifactSha256=$hash;artifactBytes=(Get-Item $setup).Length;sourceTestReceipt=$env:SOURCE_TEST_RECEIPT;githubRunId=$env:GITHUB_RUN_ID;githubRunAttempt=$env:GITHUB_RUN_ATTEMPT}
+          $binding=@{format=1;product='BLACKICE';releaseId=$release.databaseId;tag=$release.tagName;draftAtDownload=$release.isDraft;sourceCommit=$env:EXPECTED_SOURCE_COMMIT;workflowCommit=$env:GITHUB_SHA;appFingerprint=$env:EXPECTED_FINGERPRINT;artifactSha256=$hash;artifactBytes=(Get-Item $setup).Length;sourceTestReceipt=$env:SOURCE_TEST_RECEIPT;diagnosticOnly=($env:DIAGNOSTIC_ONLY -eq 'true');githubRunId=$env:GITHUB_RUN_ID;githubRunAttempt=$env:GITHUB_RUN_ATTEMPT}
           $binding | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $env:BLACKICE_EVIDENCE 'blackice-github-validation.json') -Encoding utf8NoBOM
 
       - name: Exercise installation, isolated native runtime, and uninstallation
@@ -128,7 +133,8 @@ jobs:
             -ExpectedSha256 $env:EXPECTED_SHA256 `
             -ExpectedFingerprint $env:EXPECTED_FINGERPRINT `
             -ExpectedSourceCommit $env:EXPECTED_SOURCE_COMMIT `
-            -SourceTestReceipt $env:SOURCE_TEST_RECEIPT
+            -SourceTestReceipt $env:SOURCE_TEST_RECEIPT `
+            -DiagnosticOnly:($env:DIAGNOSTIC_ONLY -eq 'true')
 
       - name: Attach only sanitized verification evidence to the same draft
         if: ${{ always() && env.BLACKICE_EVIDENCE != '' }}
@@ -145,7 +151,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'REST draft identity verification failed.' }
           $release=$validated | ConvertFrom-Json
           if (!$release.isDraft -or $release.databaseId -ne $binding.releaseId -or $release.tagName -cne $binding.tag -or $release.targetCommitish -cne $env:EXPECTED_SOURCE_COMMIT) { throw 'Release changed or is no longer the same draft; refusing upload.' }
-          $names=@('blackice-github-validation.json','blackice-windows-install-validation.json','blackice-runtime-integrity.json','blackice-source-test-provenance.json','blackice-runtime-validation.json','blackice-release-receipts.json','blackice-public-readiness.json')
+          $names=@('blackice-github-validation.json','blackice-windows-install-validation.json','blackice-runtime-integrity.json','blackice-source-test-provenance.json','blackice-runtime-validation.json','blackice-release-receipts.json','blackice-public-readiness.json','blackice-installer-diagnostic.json')
           $files=@()
           foreach ($name in $names) {
             $file=Join-Path $env:BLACKICE_EVIDENCE $name

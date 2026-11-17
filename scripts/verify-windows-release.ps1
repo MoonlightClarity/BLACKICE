@@ -9,7 +9,8 @@ param(
   [Parameter(Mandatory)][ValidatePattern('^[a-f0-9]{64}$')][string]$ExpectedSha256,
   [Parameter(Mandatory)][ValidatePattern('^[a-f0-9]{64}$')][string]$ExpectedFingerprint,
   [Parameter(Mandatory)][ValidatePattern('^[a-f0-9]{40}$')][string]$ExpectedSourceCommit,
-  [Parameter(Mandatory)][ValidatePattern('^verification/[A-Za-z0-9][A-Za-z0-9._-]*\.json$')][string]$SourceTestReceipt
+  [Parameter(Mandatory)][ValidatePattern('^verification/[A-Za-z0-9][A-Za-z0-9._-]*\.json$')][string]$SourceTestReceipt,
+  [switch]$DiagnosticOnly
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -281,7 +282,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
-const [src,app,install,out,expected,version,commit,receiptPath]=process.argv.slice(2);
+const [src,app,install,out,expected,version,commit,receiptPath,diagnostic,artifactSha256]=process.argv.slice(2);
 const check=(v,m)=>{if(!v)throw Error(m)};
 check(Number(process.versions.node.split('.')[0])>=22,'Node 22 or newer required');
 const sha=b=>createHash('sha256').update(b).digest('hex');
@@ -314,12 +315,12 @@ for(const name of ['LICENSE.electron.txt','LICENSES.chromium.html']) {
   check(stat.isFile()&&!stat.isSymbolicLink()&&bytes.length>100,'Electron license missing');
   notices.push({path:`<electron>/${name}`,bytes:bytes.length,sha256:sha(bytes)});
 }
-const prior=await readWindowsSourceTestReceipt({directory:src,receiptPath,version,appFingerprint:expected,tracked});
+const prior=await readWindowsSourceTestReceipt({directory:src,receiptPath,version,appFingerprint:expected,tracked,diagnosticOnly:diagnostic==='True',artifactSha256});
 const provenance={sourceCommit:commit,githubRunId:process.env.GITHUB_RUN_ID,githubRunAttempt:process.env.GITHUB_RUN_ATTEMPT};
 await save('blackice-source-test-provenance.json',{format:1,product:'BLACKICE',...provenance,...prior,rerunInThisWorkflow:false});
 await save('blackice-runtime-integrity.json',{format:1,product:'BLACKICE',...provenance,node:process.version,sourceFingerprint:source,installedFingerprint:installed,filesVerified:records.length,inventorySha256:sha(Buffer.from(JSON.stringify(records.sort((a,b)=>a.path.localeCompare(b.path,'en'))))),privateFileScan:{method:'every installed app file matches tracked source and packaging allowlist',filesExamined:records.length,rejectedFiles:0},notices,passed:true});
 '@ | Set-Content -LiteralPath $integrityScript -Encoding utf8NoBOM
-  Invoke-Node @($integrityScript,$SourceRoot,$app,$install,$EvidenceDirectory,$ExpectedFingerprint,$version,$commit,$SourceTestReceipt)
+  Invoke-Node @($integrityScript,$SourceRoot,$app,$install,$EvidenceDirectory,$ExpectedFingerprint,$version,$commit,$SourceTestReceipt,$DiagnosticOnly.ToString(),$ExpectedSha256)
   $stage='runtime'
   $runtimeReport=Join-Path $EvidenceDirectory 'blackice-runtime-validation.json'
   Invoke-Node @((Join-Path $SourceRoot 'scripts\verify-installed-runtime.mjs'),'--app-dir',$app,'--exe',$exe,'--test-root',(Join-Path $work 'runtime'),'--report',$runtimeReport,'--expected-version',$version,'--expected-fingerprint',$ExpectedFingerprint,'--hidden-only')
@@ -375,6 +376,11 @@ await save('blackice-runtime-integrity.json',{format:1,product:'BLACKICE',...pro
 Assert $report.passed 'Windows installation/runtime/uninstallation validation failed; no passing release receipt generated.'
 $integrity=Get-Content -Raw (Join-Path $EvidenceDirectory 'blackice-runtime-integrity.json') | ConvertFrom-Json -AsHashtable
 $prior=Get-Content -Raw (Join-Path $EvidenceDirectory 'blackice-source-test-provenance.json') | ConvertFrom-Json -AsHashtable
+if ($DiagnosticOnly) {
+  # Not a release receipt or readiness verdict. Failed source tests remain failed.
+  Save-Json @{format=1;product='BLACKICE';classification='diagnostic-installer-only';diagnosticOnly=$true;publicReleaseReady=$false;published=$false;version=$version;sourceCommit=$commit;artifactSha256=$ExpectedSha256;appFingerprint=$ExpectedFingerprint;installerValidationPassed=$report.passed;sourceQualification=$prior;githubRunId=$env:GITHUB_RUN_ID} (Join-Path $EvidenceDirectory 'blackice-installer-diagnostic.json')
+  return
+}
 $receipts=@{format=1;product='BLACKICE';version=$version;appFingerprint=$ExpectedFingerprint;artifactSha256=$ExpectedSha256
   tests=$prior.tests;sourceTestProvenance=$prior
   installIntegrity=@{passed=$report.passed;filesVerified=$integrity.filesVerified;sourceInstalledMatch=($integrity.sourceFingerprint -eq $integrity.installedFingerprint);shortcutVerified=($shortcuts.Count -eq 2);publicInstallerTested=$installed}
