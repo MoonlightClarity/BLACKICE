@@ -43,6 +43,8 @@ test('separate skill contents cover native sourcing, direct employer route and m
  assert.match(browser,/site's own search/);assert.match(browser,/document-changed/);assert.match(browser,/uncertain submissions/);
  assert.match(jobs,/start with relevant job boards/);assert.match(jobs,/employer's current posting/);assert.match(jobs,/General web search is a supplement/);
  assert.match(jobs,/prior submissions/);assert.match(jobs,/deadline/);
+ assert.match(jobs,/facts and educated inference/);assert.match(jobs,/Uncertainty alone is not a reason to stop/);
+ assert.doesNotMatch(jobs,/citizenship|Never invent tenure/i);
 });
 test('both new skills are included in packaging and source/build identity inventories',async()=>{
  const build=await readFile(new URL('../desktop/electron-builder.yml',import.meta.url),'utf8');
