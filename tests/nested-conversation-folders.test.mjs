@@ -48,3 +48,22 @@ test('folder controls are on demand while the primary folder tree remains visibl
  assert.equal(view.folderSettings.contains(view.list),false);
  assert.equal(view.folderSettings.contains(view.folderStatus),false,'operation feedback remains visible');
 });
+
+test('active folder remains evident without reopening manually collapsed options on refresh',async t=>{
+ const {createConversationFolderUI}=await import('../public/next/chat/folders.mjs');
+ const d=fixture(t),view=createChatFrame(d.mount);
+ const ui=createConversationFolderUI({view,api:async()=>{},getItems:()=>[],getBucket:()=> 'active',getSelectedRoot:()=>null});
+ t.after(()=>ui.destroy());
+ const snapshot={healthy:true,revision:1,autoEnabled:false,folders:[{id:'work',name:'Work'}]};
+ ui.accept(snapshot);ui.manage('work');
+ assert.equal(view.folderSettings.open,true);
+ view.folderSettings.open=false;
+ ui.refresh();ui.accept(snapshot);ui.onListLoaded([],snapshot);
+ assert.equal(view.folderSettings.open,false);
+ assert.equal(view.folderSettings.querySelector('summary').textContent,'Folder options: Work');
+ view.folderFilter.value='all';await view.folderFilter.dispatch('change');
+ assert.equal(view.folderSettings.open,false);
+ assert.equal(view.folderSettings.querySelector('summary').textContent,'Folder options');
+ ui.manage('work');
+ assert.equal(view.folderSettings.open,true,'explicit management still opens its controls');
+});

@@ -45,7 +45,7 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
       selected='all';safeSet('blackice.next.chatFolder',selected);
     }
     view.folderFilter.value=selected;
-    if(selected!=='all'&&view.folderSettings)view.folderSettings.open=true;
+    const summary=view.folderSettings?.querySelector('summary'); if(summary)summary.textContent=selected==='all'?'Folder options':'Folder options: '+(selected==='ungrouped'?'Unfiled':nameOf(selected));
     const named=Boolean(selectedFolder()),disabled=localBusy||isBusy()||organization.healthy===false;
     view.folderRename.hidden=!named;view.folderDelete.hidden=!named;
     for(const element of [view.folderNew,view.folderRename,view.folderDelete])element.disabled=disabled;
