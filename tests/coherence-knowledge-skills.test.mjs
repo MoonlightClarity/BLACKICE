@@ -9,11 +9,19 @@ import {createKnowledgeWorkspace} from '../public/next/workspaces/knowledge.mjs'
 import {createSkillsWorkspace} from '../public/next/workspaces/skills.mjs';
 import {planningDOM} from './fixture-planning-dom.mjs';
 const until=async p=>{const end=Date.now()+5000;while(Date.now()<end){if(p())return;await new Promise(r=>setTimeout(r,10));}throw Error('Coherence workflow did not settle');};
+
+async function approveAgentFixture(store, operation) {
+ const before=store.list({includeDeleted:true,limit:300});let approvalId;
+ await assert.rejects(operation,error=>{assert.equal(error.code,'KNOWLEDGE_APPROVAL_REQUIRED');approvalId=error.approvalId;return true;});
+ assert.deepEqual(store.list({includeDeleted:true,limit:300}),before,'pending fixture is not active');
+ const proposal=store.listApprovals().find(item=>item.id===approvalId);assert.equal(proposal.provenance.source,'agent');
+ const result=await store.decideApproval(approvalId,{decision:'approve'});assert.equal(result.status,'approved');assert.equal(result.entry.provenance.source,'agent');return result.entry;
+}
 async function setup(t,kind='memory'){
  const dom=planningDOM(t),proto=Object.getPrototypeOf(dom.mount),type=Object.getOwnPropertyDescriptor(proto,'type');Object.defineProperty(proto,'type',{get:type.get,set(v){this.setAttribute('type',v);}});
  proto.replaceChildren=function(...c){for(const x of this.children)x.parentElement=null;this.children=[];this.rawText='';this.markup='';this.append(...c);};
  const dir=await mkdtemp(path.join(tmpdir(),'blackice-coherence-ui-')),cwd=path.join(dir,'project'),store=await new KnowledgeStore({dataDir:dir}).init();
- const original=await store.upsert({id:'entry',kind,title:'Original entry',content:'Original content',cwd},{source:'agent',nodeId:'learning-fixture'});
+ const original=await approveAgentFixture(store,store.upsert({id:'entry',kind,title:'Original entry',content:'Original content',cwd},{source:'agent',nodeId:'learning-fixture'}));
  let discoveries=0;const catalog=createSkillsCatalog({knowledge:store,defaultCwd:cwd,nativeSkills:async()=>{discoveries++;return {available:true,skills:[{name:'Excluded skill',path:path.join(dir,'excluded','SKILL.md')}]};}});
  const calls=[],events=new Set(),api=async(route,method='GET',body)=>{calls.push({route,method,body});const u=new URL(route,'http://test'),q=u.searchParams,id=u.pathname.split('/')[3];
  if(u.pathname==='/api/knowledge/folders')return method==='GET'?store.folders():store.organize(body);

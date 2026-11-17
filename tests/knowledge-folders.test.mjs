@@ -4,6 +4,14 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { KnowledgeStore } from '../lib/knowledge.mjs';
+
+async function approveAgentFixture(store, operation) {
+ const before=store.list({includeDeleted:true,limit:300});let approvalId;
+ await assert.rejects(operation,error=>{assert.equal(error.code,'KNOWLEDGE_APPROVAL_REQUIRED');approvalId=error.approvalId;return true;});
+ assert.deepEqual(store.list({includeDeleted:true,limit:300}),before,'pending fixture is not active');
+ const proposal=store.listApprovals().find(item=>item.id===approvalId);assert.equal(proposal.provenance.source,'agent');
+ const result=await store.decideApproval(approvalId,{decision:'approve'});assert.equal(result.status,'approved');assert.equal(result.entry.provenance.source,'agent');return result.entry;
+}
 async function setup(t) {
   const dataDir=await mkdtemp(path.join(tmpdir(),'blackice-folders-test-'));
   const store=await new KnowledgeStore({dataDir}).init();
@@ -13,7 +21,7 @@ async function setup(t) {
 const add=(store,title,extra={},provenance={source:'user'})=>store.upsert({kind:'memory',title,content:'Durable content',...extra},provenance);
 test('folder lifecycle changes only organization and preserves applicability, provenance, bytes and history',async t=>{
   const {store,dataDir}=await setup(t);
-  const first=await add(store,'Decision',{cwd:path.join(dataDir,'project')},{source:'agent',nodeId:'learning-one',reason:'Automatic learning'});
+  const first=await approveAgentFixture(store,add(store,'Decision',{cwd:path.join(dataDir,'project')},{source:'agent',nodeId:'learning-one',reason:'Automatic learning'}));
   await store.upsert({id:first.id,kind:'memory',title:'Decision revised',content:'Revised content',expectedRevision:1});
   const before=await readFile(store.file,'utf8'),history=store.history(first.id),context=store.context(first.cwd);
   let folders=await store.folders();assert.equal(folders.revision,1);
@@ -30,7 +38,7 @@ test('folder lifecycle changes only organization and preserves applicability, pr
 });
 test('source filters separate learned lessons from ordinary agent notes and users',async t=>{
   const {store}=await setup(t);
-  const user=await add(store,'Mine');const agent=await add(store,'Agent',{}, {source:'agent',nodeId:'task-one'});const learned=await add(store,'Learned',{}, {source:'agent',nodeId:'learning-one'});
+  const user=await add(store,'Mine');const agent=await approveAgentFixture(store,add(store,'Agent',{}, {source:'agent',nodeId:'task-one'}));const learned=await approveAgentFixture(store,add(store,'Learned',{}, {source:'agent',nodeId:'learning-one'}));
   assert.deepEqual(store.list({source:'user'}).map(x=>x.id),[user.id]);assert.deepEqual(store.list({source:'agent'}).map(x=>x.id),[agent.id]);assert.deepEqual(store.list({source:'learned'}).map(x=>x.id),[learned.id]);
   assert.equal(store.list({source:'all'}).length,3);assert.throws(()=>store.list({source:'unknown'}));
 });
