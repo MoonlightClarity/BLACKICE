@@ -309,7 +309,8 @@ test('automatic fact and skill proposals require owner approval, retain source a
   assert.equal(knowledge.get(skill.knowledgeId).provenance.nodeId,`learning-${first.id}`);
   const next=learning.getContext(cwd,{query:'export concise',runIds:['provider-source-a']});
   assert.equal(learning.getContext(cwd,{runIds:['unrelated-task']}).facts.length,0);
-  assert.equal(next.skills.length,0);assert.equal(next.facts[0].id,fact.id);
+  assert.equal(next.skills[0].id,skill.id);assert.equal(next.facts[0].id,fact.id);
+  assert.equal(learning.getContext(cwd,{runIds:['unrelated-task']}).skills.length,0);
   assert.deepEqual([...new Set(skill.evidence.map(item=>item.runId))],['provider-source-a']);
   const second=await learning.scheduleAfterRun(observed('provider-source-b'));
   assert.equal((await approve(second.id)).status,'completed');assert.equal(calls.length,2);
