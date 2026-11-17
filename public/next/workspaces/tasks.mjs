@@ -80,7 +80,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     '</section>',
     '<section id="next-tasks-panel-results" class="next-task-panel" role="tabpanel" aria-labelledby="next-tasks-tab-results" hidden>',
     '<h2>Scheduled results</h2><p class="next-help">Results are available locally in BLACKICE. They are not automatically sent to ChatGPT or another destination. Mark reviewed only after inspecting the result.</p>',
-    '<p class="next-help" id="next-tasks-results-count" role="status"></p><div id="next-tasks-results" class="next-task-job-list"></div></section>',
+    '<p class="next-help" id="next-tasks-results-count" role="status"></p><div id="next-tasks-results" class="next-task-job-list"></div><button type="button" id="next-tasks-results-more" hidden>Show more results</button></section>',
     '<section id="next-tasks-panel-jobs" class="next-task-panel" role="tabpanel" aria-labelledby="next-tasks-tab-jobs" hidden>',
     '<h2>Job history</h2><p class="next-help" id="next-tasks-job-count" role="status"></p><div id="next-tasks-jobs" class="next-task-job-list"></div>',
     '<button type="button" id="next-tasks-jobs-more" hidden>Show more jobs</button></section>',
@@ -120,7 +120,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
   const add=(parent,tag,label,cls)=>text(parent,label,tag,cls);
   let active=false,busy=false,revision=0,subscriptions=null,refreshTimer=null,snapshot=null,mutationError='',scheduleProgress='';
   let workflowList=[],workflowLimit=80,workflowQuery='',workflowEpoch=0,workflowTimer=null,workflowLoaded=false,workflowLoading=false;
-  let section=cronjobsOnly?'schedules':'board',jobsLimit=35,selectedScheduleId=null,scheduleMode='inspect',editSource=null,editForm=null,editNotice=null;
+  let section=cronjobsOnly?'schedules':'board',jobsLimit=35,resultsLimit=100,selectedScheduleId=null,scheduleMode='inspect',editSource=null,editForm=null,editNotice=null;
   const scheduleFolders=createScheduleFolders({mount:$('next-tasks-folders'),api,notify,refresh:()=>refresh()});
   const readinessBySchedule=new Map();
   const createChatProfile=initScheduleChatOptions(view.chatFields,{getStatus});
@@ -662,7 +662,13 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     $('next-tasks-tab-results').textContent=inbox.available?'Results ('+inbox.available+' to review)':'Results';
     $('next-tasks-results-count').textContent=inbox.available+' awaiting review · '+inbox.acknowledged+' reviewed · '+inbox.total+' total · Newest result first';
     if(!inbox.items?.length)add(view.results,'p','No local scheduled results recorded yet. Older job history remains available in Job history.','next-empty');
-    for(const result of newestResults(inbox.items)){
+    // Full public jobs already carry delivery receipts. Do not strand older unread
+    // results behind the API summary's 100-item window.
+    const resultMap=new Map((snapshot.jobs||[]).filter(job=>job.delivery?.destination==='local-inbox'&&['available','acknowledged'].includes(job.delivery.state)).map(job=>[job.id,job]));
+    for(const item of inbox.items||[])resultMap.set(item.id,{...resultMap.get(item.id),...item});
+    const allResults=newestResults([...resultMap.values()]),shownResults=allResults.slice(0,resultsLimit);
+    $('next-tasks-results-more').hidden=shownResults.length>=allResults.length;
+    for(const result of shownResults){
       const delivery=result.delivery||{},card=add(view.results,'article','','next-card next-schedule-result');
       card.dataset.resultJobId=result.id;
       const title=add(card,'div','','next-task-job-top');
@@ -708,7 +714,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
         acknowledge.addEventListener('click',()=>void execute('/api/operations/jobs/'+encodeURIComponent(result.id)+'/acknowledge','POST',{expectedRevision:delivery.revision}));
       }else add(actions,'span','Reviewed: '+humanTime(delivery.acknowledgedAt),'next-help');
     }
-    if((inbox.items?.length||0)<inbox.total)add(view.results,'p','Showing '+inbox.items.length+' of '+inbox.total+' receipts. More are retained in Job history.','next-help');
+    if(shownResults.length<allResults.length)add(view.results,'p','Showing '+shownResults.length+' of '+allResults.length+' receipts. Use Show more results to inspect older receipts.','next-help');
     view.jobs.replaceChildren();
     const allJobs=newestJobs(Array.isArray(snapshot.jobs)?snapshot.jobs:[]),jobs=allJobs.slice(0,jobsLimit);
     $('next-tasks-job-count').textContent='Showing '+jobs.length+' of '+allJobs.length+' saved jobs · Latest run first';
@@ -826,6 +832,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     else if(section==='workflows'){workflows?.leave();workflows?.enter();workflows?.updateStatus?.(getStatus?.());}
     else{void refresh();if(section==='schedules')void fillWorkflows();}
   });
+  $('next-tasks-results-more').addEventListener('click',()=>{resultsLimit+=100;paint();});
   $('next-tasks-jobs-more').addEventListener('click',()=>{jobsLimit+=35;paint();});
   view.pause.addEventListener('click',()=>void execute('/api/operations/pause','POST',{reason:cronjobsOnly?'Paused from Cronjobs workspace.':'Paused from Tasks workspace.'}));
   view.resume.addEventListener('click',()=>void execute('/api/operations/resume','POST',{resumeInbox:Boolean(snapshot?.status?.blockedReason)}));

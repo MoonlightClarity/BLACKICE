@@ -759,3 +759,23 @@ test('cronjob results and history render newest dates first independently of sto
  assert.match(f.$('#next-tasks-job-count').textContent,/Latest run first/);
  assert.equal(f.jobs[0].id,'job-0');
 });
+
+test('older unread results beyond summary100 remain reachable and can be reviewed without changing order',async t=>{
+ const f=fixture(t,{hook:({path},{jobs,schedule})=>{
+  if(path!=='/api/operations')return;
+  const available=jobs.filter(x=>x.delivery?.state==='available').length;
+  return {status:{paused:false},deployments:[schedule],jobs:structuredClone(jobs),results:{total:jobs.length,available,acknowledged:jobs.length-available,items:structuredClone(jobs.slice(1,101))}};
+ }});
+ const original=structuredClone(f.jobs[0]);f.jobs.splice(0,f.jobs.length,original);
+ for(let i=1;i<=105;i++)f.jobs.push({...structuredClone(original),id:'recent-'+i,delivery:{...original.delivery,state:'acknowledged',availableAt:new Date(Date.parse(original.delivery.availableAt)+i*60000).toISOString()}});
+ f.component.enter();await settle();await f.clickReady('#next-tasks-tab-results');
+ assert.equal(f.$('#next-tasks-results').querySelectorAll('[data-result-job-id]').length,100);
+ assert.equal(f.$('#next-tasks-results').querySelector('[data-result-job-id="job-0"]'),null);
+ assert.equal(f.$('#next-tasks-results-more').hidden,false);
+ await f.clickReady('#next-tasks-results-more');
+ assert.equal(f.$('#next-tasks-results').querySelectorAll('[data-result-job-id]').length,106);
+ assert.equal(f.$('#next-tasks-results-more').hidden,true);
+ await f.clickReady('[data-result-acknowledge="job-0"]');
+ assert.equal(f.jobs[0].delivery.state,'acknowledged');
+ assert.equal(f.$('#next-tasks-results').querySelectorAll('[data-result-job-id]').at(-1).dataset.resultJobId,'job-0');
+});
