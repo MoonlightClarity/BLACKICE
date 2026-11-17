@@ -1384,3 +1384,18 @@ test('steering interrupts planning review and preserves the latest direction', a
   assert.equal(requests[1].body.messages.at(-1).content, 'Use my corrected requirement.');
   assert.ok(!events.some(e => e.type === 'message' && e.phase === 'final_answer' && e.text === 'Old answer.'));
 });
+
+test('terminal Stop wins a race with steering while preserving the accepted direction', async t => {
+  const arrived = deferred(), controller = new AbortController();
+  const { runtime, baseUrl, cwd, requests } = await harness(t, () => { arrived.resolve(); });
+  await runtime.saveProvider({ id: 'stop-steer', type: 'compatible', baseUrl, models: ['model'] });
+  let threadId;
+  const pending = runtime.runAgent({ cwd, prompt: 'Original.', model: 'stop-steer::model', signal: controller.signal,
+    onEvent: e => { threadId ||= e.threadId; } });
+  const rejected = assert.rejects(pending, { code: 'ABORT_ERR' });
+  await arrived.promise; const state = runtime.active.get(threadId);
+  const steering = runtime.steerAgent(threadId, 'Accepted new direction.');
+  controller.abort(); await steering; await rejected;
+  assert.equal(requests.length, 1, 'terminal stop must not start another inference');
+  assert.ok(state.record.messages.some(m => m.role === 'user' && m.content === 'Accepted new direction.'));
+});
