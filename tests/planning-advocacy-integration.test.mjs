@@ -11,7 +11,6 @@ import { PlanningBrowserStore } from '../lib/planning-browser.mjs';
 import { planningModuleOutputSchema, validatePlanningModuleResponse, planningFormatDiagnostic } from '../lib/planning-browser-runtime.mjs';
 import { normalizePlanningReview, appendPlanningReview, validateSavedPlanningReviews } from '../lib/planning-review.mjs';
 import { defaultPlanInstructions } from '../lib/engine.mjs';
-import { PLANNING_SKILL_VERSION, PLANNING_SKILL_CONTENT } from '../lib/planning-skill.mjs';
 
 const cost = (value, basis = 'Illustrative minute-equivalent user-loss estimate for this option.') => ({ value, basis });
 const risk = (probability = 0.01, severity = 5) => ({
@@ -248,11 +247,8 @@ test('new native blocked review requires a numerical checkpoint, preserves cache
   assert.doesNotThrow(() => validateSavedPlanningReviews({ planningReviews: [{ ...blocked, runId: 'run', nodeId: 'node', scopeStepId: null, reviewedRevision: 1, at: '2026-11-04T00:00:00.000Z', signature: digest, contextSignature: digest, sequenceSignature: digest }] }));
 });
 
-test('Planning Off ordinary instructions are unchanged; the On skill carries audience and quantified decision rules', () => {
+test('Planning Off ordinary instructions are unchanged; operation guidance retains audience and quantified decision rules', () => {
   for (const guarded of [false, true]) assert.doesNotMatch(defaultPlanInstructions('detailed', 12, 'off', guarded), /userAgency|expected user cost|FIRST-PARTY BLACKICE PLANNING SKILL/);
-  assert.equal(PLANNING_SKILL_VERSION, 4);
-  assert.match(PLANNING_SKILL_CONTENT, /expected user cost = sum\(probability/);
-  assert.match(PLANNING_SKILL_CONTENT, /maximum budget volunteered in negotiation/);
   assert.match(USER_AGENCY_GUIDANCE, /no affirmative duty to volunteer unasked weaknesses/);
   assert.match(USER_AGENCY_GUIDANCE, /Report actual task failures/);
   assert.match(USER_AGENCY_GUIDANCE, /baseline and time horizon/);

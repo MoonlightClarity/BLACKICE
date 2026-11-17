@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { ProviderRuntime } from '../lib/providers.mjs';
-import { planningSkillInstructions, PLANNING_SKILL_CONTENT, PLANNING_SKILL_SHA256 } from '../lib/planning-skill.mjs';
+import { AUTONOMY_TOOL } from '../lib/conversation-autonomy.mjs';
 import { composeAgentDeveloperInstructions } from '../lib/developer-instruction-budget.mjs';
 
 class NoNativeProcess extends EventEmitter {
@@ -14,7 +14,7 @@ class NoNativeProcess extends EventEmitter {
   async runAgent() { throw Error('Skill delivery fixtures cannot start native processes or models.'); }
 }
 
-for (const type of ['openai', 'anthropic', 'compatible']) test(type + ': complete versioned skill reaches the actual provider request unchanged on initial and continued turns', async t => {
+for (const type of ['openai', 'anthropic', 'compatible']) test(type + ': tool-local guidance reaches the actual provider request without a bundled skill on initial and continued turns', async t => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'blackice-skill-delivery-'));
   const requests = [];
   const response = type === 'openai'
@@ -38,15 +38,15 @@ for (const type of ['openai', 'anthropic', 'compatible']) test(type + ': complet
     await rm(resolved, { recursive: true, force: true });
   });
   await runtime.saveProvider({ id: 'skill', type, baseUrl: 'http://127.0.0.1:1/v1', apiKey: 'synthetic-skill-fixture-key', models: ['fixture-model'] });
-  const instructions = composeAgentDeveloperInstructions({ core: 'BLACKICE fixture identity\n', planning: planningSkillInstructions('on'), worker: '\nAssigned scope: read-only synthetic task.' }).instructions;
-  const first = await runtime.runAgent({ cwd: directory, model: 'skill::fixture-model', prompt: 'No external operations.', developerInstructions: instructions });
-  await runtime.runAgent({ cwd: directory, model: 'skill::fixture-model', threadId: first.threadId, prompt: 'Continue this synthetic task.', developerInstructions: instructions });
+  const instructions = composeAgentDeveloperInstructions({ core: 'BLACKICE fixture identity\n', worker: '\nAssigned scope: read-only synthetic task.' }).instructions;
+  const first = await runtime.runAgent({ cwd: directory, model: 'skill::fixture-model', prompt: 'No external operations.', developerInstructions: instructions, dynamicTools:[AUTONOMY_TOOL], onToolCall:async()=>{throw Error("No synthetic tool call expected");} });
+  await runtime.runAgent({ cwd: directory, model: 'skill::fixture-model', threadId: first.threadId, prompt: 'Continue this synthetic task.', developerInstructions: instructions, dynamicTools:[AUTONOMY_TOOL], onToolCall:async()=>{throw Error('No synthetic tool call expected');} });
   const wireInstructions = body => type === 'openai' ? body.instructions : type === 'anthropic' ? body.system : body.messages.find(item => item.role === 'system')?.content;
   assert.equal(requests.length, 2);
   for (const body of requests) {
     const delivered = wireInstructions(body);
     assert.equal(delivered, instructions);
-    assert.equal(delivered.split(PLANNING_SKILL_CONTENT).length, 2);
-    assert.ok(delivered.includes('END REQUIRED BLACKICE PLANNING SKILL v4 sha256=' + PLANNING_SKILL_SHA256));
+    assert.doesNotMatch(delivered,/FIRST-PARTY BLACKICE PLANNING SKILL|Read current calibration/);
+    assert.ok(JSON.stringify(body.tools).includes('Read current calibration'));
   }
 });

@@ -22,7 +22,7 @@ Targeted identity, learning, engine-delivery, default-SOUL and protected workspa
 
 ## SOUL separation and upgrade behavior
 
-The concise SOUL default keeps purpose, user agency, practical judgment, calibrated inference, proportionate effort and communication character. Detailed task decomposition stays in planning-skill/planning-policy; delegation in subagents; evidence and comparison method in analytical-method; effect reconciliation in operational-receipts and its tool contracts; scheduling in control-tools; immutable snapshots and revision checks in identity/engine. These modules were already present: the reduction does not copy the removed text into another catch-all prompt.
+The concise SOUL default keeps purpose, user agency, practical judgment, calibrated inference, proportionate effort and communication character. Detailed task decomposition stays in the planning tool contracts and planning-policy; delegation in subagents; evidence and comparison method in analytical-method; effect reconciliation in operational-receipts and its tool contracts; scheduling in control-tools; immutable snapshots and revision checks in identity/engine. These modules were already present: the reduction does not copy the removed text into another catch-all prompt.
 
 Core judgment remains in SOUL and analytical-method is delivered independently of formal Planning mode. Engine invocation tests cover planning-off ordinary and Directory turns, frozen active identities and next-turn owner edits. Historical planning-mode/worker suites are additional regression coverage, not proof of a live task outcome. Broader harness-identity procedural sprawl remains a separate issue.
 

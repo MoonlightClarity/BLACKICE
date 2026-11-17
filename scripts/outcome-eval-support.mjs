@@ -32,9 +32,8 @@ export function parseOutcomeOptions(args) {
 
 async function snapshotSource(source, target, dependencyRoot) {
   await fs.mkdir(target);
-  // Server imports include shared desktop modules and the packaged Planning skill.
-  // Preserve those dependency families, including reviewed skill references.
-  for (const directory of ['lib', 'public', 'desktop', 'skills']) await fs.cp(path.join(source, directory), path.join(target, directory), { recursive: true });
+  // Preserve the runtime dependency families; BLACKICE ships no built-in skills.
+  for (const directory of ['lib', 'public', 'desktop']) await fs.cp(path.join(source, directory), path.join(target, directory), { recursive: true });
   for (const file of ['server.mjs', 'package.json']) await fs.copyFile(path.join(source, file), path.join(target, file));
   const files = {};
   async function walk(directory, relative = '') {

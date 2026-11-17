@@ -22,7 +22,8 @@ test('contained sign-in blocks external browser fallback while independent integ
   status(){return{connected:true,authenticated:true,defaultModel:'model-test',models:[{id:'model-test',model:'model-test',available:true}]};}
   async runAgent(options){
    assert.match(options.prompt,/WEBSITE SIGN-IN AND VERIFICATION/);
-   assert.match(options.developerInstructions,/an employer-direct ATS route and any observed email or magic-link login option/);
+   assert.match(options.dynamicTools.find(tool=>tool.name==='relay_browser').description,/employer-direct ATS route and any observed email or magic-link login option/);
+   assert.doesNotMatch(options.developerInstructions,/BROWSER STATE RECOVERY/);
    assert.equal(options.dynamicTools.some(tool=>tool.name==='relay_browser_signin'),true);
    const reported=await options.onToolCall({name:'relay_browser_signin',arguments:{site:'https://www.linkedin.com/feed/',reason:'sign-in',evidence:'login-redirect'}});
    assert.equal(reported.success,true);

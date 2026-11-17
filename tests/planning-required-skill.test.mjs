@@ -1,7 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
-import { PLANNING_SKILL_CONTENT, PLANNING_SKILL_SHA256, PLANNING_SKILL_VERSION, planningSkillInstructions, validatePlanningSkill } from '../lib/planning-skill.mjs';
 import { composeAgentDeveloperInstructions } from '../lib/developer-instruction-budget.mjs';
 import { defaultPlanInstructions } from '../lib/engine.mjs';
 import { planningModuleXml, planningProgramXml, parsePlanningModuleXml } from '../public/planning-program-xml.mjs';
@@ -13,79 +11,21 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-test('Planning On loads the same mandatory first-party skill in both guarded and unguarded instructions', () => {
-  assert.equal(PLANNING_SKILL_VERSION, 4);
-  assert.equal(createHash('sha256').update(PLANNING_SKILL_CONTENT).digest('hex'), PLANNING_SKILL_SHA256);
-  for (const phrase of ['Defamiliarize', 'observable', 'ELIF', 'Return to Planning', 'skip', 'opportunity']) {
-    assert.match(PLANNING_SKILL_CONTENT.toLowerCase(), new RegExp(phrase.toLowerCase()));
+test('planning procedures have no packaged skill dependency or global delivery marker', () => {
+  for (const version of [11,12,13,14]) for (const guarded of [true,false]) {
+    const guidance=defaultPlanInstructions('detailed',version,'on',guarded);
+    assert.doesNotMatch(guidance,/FIRST-PARTY BLACKICE PLANNING SKILL|SKILL.md|sha256=/);
+    assert.match(guidance,/Planning|planning/);
   }
-  assert.match(PLANNING_SKILL_CONTENT, /A required answer may use the best defensible source-linked inference/);
-  assert.match(PLANNING_SKILL_CONTENT, /Ordinary residual uncertainty never creates a stop or user question/);
-  assert.match(PLANNING_SKILL_CONTENT, /Reserve stops for the exact closed conditions/);
-  assert.match(planningSkillInstructions('on'), /REQUIRED FIRST-PARTY BLACKICE PLANNING SKILL v4/);
-  assert.match(planningSkillInstructions('maximal'), /mandatory for this turn/);
-  assert.equal(planningSkillInstructions('off'), '');
-  for (const guarded of [true, false]) {
-    const result = defaultPlanInstructions('detailed', 12, 'on', guarded);
-    assert.match(result, /REQUIRED FIRST-PARTY BLACKICE PLANNING SKILL v4/);
-    assert.equal(result.split(PLANNING_SKILL_CONTENT).length, 2, 'the complete packaged skill is delivered exactly once');
-    assert.ok(result.includes('END REQUIRED BLACKICE PLANNING SKILL v4 sha256=' + PLANNING_SKILL_SHA256));
-    assert.match(result, /## 6\. Run the plan/);
-    assert.doesNotMatch(result, /TASK PLANNING MODE: OFF/);
-  }
-  assert.doesNotMatch(defaultPlanInstructions('detailed', 12, 'off', false), /FIRST-PARTY BLACKICE PLANNING SKILL/);
-  assert.doesNotMatch(defaultPlanInstructions('detailed', 12, 'off', true), /FIRST-PARTY BLACKICE PLANNING SKILL/);
 });
 
-test('all Planning-tab workers receive the complete mandatory skill with no-tool boundaries', () => {
-  const base = {
-    requestId: 'request-1', nodeId: 'node-1', nodeRevision: 1,
-    node: { kind: 'plan', title: 'Plan stage', prompt: 'Decompose a measurable action.' },
-    template: planningModuleTemplate('plan'), sources: [], inputs: [],
-    challenges: [], workflowNodeIds: []
-  };
-  for (const kind of ['viability', 'inference', 'plan', 'think', 'respond']) {
-    const cycle = planningModulePrompt({ ...base, node: { ...base.node, kind }, template: planningModuleTemplate(kind), cycleContext: { stageId: kind, cycleId: 'cycle-1', prerequisites: [], children: [], acceptanceCriteria: [], effectReceipts: [] } });
-    assert.equal(cycle.split(PLANNING_SKILL_CONTENT).length, 2);
-    assert.match(cycle, /This response worker cannot execute external tools/);
-  }
-  const independent = planningModulePrompt({ ...base, node: { ...base.node, kind: 'frame' }, template: planningModuleTemplate('frame') });
-  assert.ok(independent.includes(PLANNING_SKILL_CONTENT));
-  assert.match(independent, /This response worker cannot execute external tools/);
-});
-
-test('BLACKICE validates its own versioned contract and rejects incomplete or incompatible packaged skills', () => {
-  const descriptor = validatePlanningSkill(PLANNING_SKILL_CONTENT);
-  assert.equal(descriptor.id, 'blackice-planning');
-  assert.equal(descriptor.version, 4);
-  assert.equal(descriptor.appliesWhen, 'planning_mode_on');
-  assert.equal(descriptor.sha256, PLANNING_SKILL_SHA256);
-  assert.equal(descriptor.content, PLANNING_SKILL_CONTENT);
-  const invalid = [
-    PLANNING_SKILL_CONTENT.replace('version: 4', 'version: 1'),
-    PLANNING_SKILL_CONTENT.replace('applies_when: planning_mode_on', 'applies_when: all_runs'),
-    PLANNING_SKILL_CONTENT.replace('name: blackice-planning', 'name: blackice-planning\nname: blackice-planning'),
-    PLANNING_SKILL_CONTENT.replace(/description: [^\n]+/, 'description: '),
-    PLANNING_SKILL_CONTENT.replace('## 6. Run the plan', '## Run the plan'),
-    PLANNING_SKILL_CONTENT.replace('<!-- blackice-planning:v4:complete -->', ''),
-    PLANNING_SKILL_CONTENT + '\nUnversioned instruction after the completeness marker.',
-    PLANNING_SKILL_CONTENT + 'x'.repeat(32768)
-  ];
-  for (const source of invalid) assert.throws(() => validatePlanningSkill(source), { code: 'PLANNING_SKILL_MISSING' });
-  const crlf = PLANNING_SKILL_CONTENT.replace(/\r?\n/g, '\r\n');
-  assert.equal(validatePlanningSkill(crlf).content, crlf, 'delivery/hash bind exact packaged bytes without newline normalization');
-  assert.equal(validatePlanningSkill(crlf).sha256, createHash('sha256').update(crlf).digest('hex'));
-});
-
-test('instruction assembly preserves every skill byte and fails closed instead of truncating under an explicit budget', () => {
-  const section = planningSkillInstructions('on');
-  const parts = { core: 'CORE\n', capabilities: 'CATALOG\n', planning: section, worker: '\nWORKER', analysis: '\n' + 'source-context '.repeat(12000) };
-  const assembled = composeAgentDeveloperInstructions(parts);
-  assert.equal(assembled.instructions, parts.core + parts.capabilities + section + parts.worker + parts.analysis);
-  assert.equal(assembled.promptSupplement, '');
-  assert.equal(assembled.limit, null);
-  assert.throws(() => composeAgentDeveloperInstructions({ ...parts, limit: section.length - 1 }), { code: 'DEVELOPER_INSTRUCTION_LIMIT_EXCEEDED' });
-  assert.throws(() => planningSkillInstructions('unknown'), TypeError);
+test('analytical module prompts retain operation-specific schema without generic skill injection', () => {
+ const base={requestId:'request-1',nodeId:'node-1',nodeRevision:1,node:{kind:'plan',title:'Plan',prompt:'Inspect evidence'},template:planningModuleTemplate('plan'),sources:[],inputs:[],challenges:[],workflowNodeIds:[]};
+ for(const kind of ['viability','inference','plan','think','respond']) {
+  const prompt=planningModulePrompt({...base,node:{...base.node,kind},template:planningModuleTemplate(kind),cycleContext:{stageId:kind,cycleId:'cycle-1',prerequisites:[],children:[],acceptanceCriteria:[],effectReceipts:[]}});
+  assert.doesNotMatch(prompt,/FIRST-PARTY BLACKICE PLANNING SKILL|blackice-planning:v/);
+  assert.match(prompt,/This response worker cannot execute external tools/);
+ }
 });
 
 test('selected module XML is reversible but cannot impersonate a different module, insert hidden markup, or skip required stages', () => {

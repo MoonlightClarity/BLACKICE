@@ -5,11 +5,11 @@ import {createKnowledgeWorkspace} from './knowledge.mjs';
 export function createSkillsWorkspace({mount,api,events,notify,onNavigate}) {
   mount.innerHTML=[
     '<div class="next-panel next-skills-root"><div class="next-panel-inner">',
-    '<header class="next-panel-head"><div><h1>Skills</h1><p>Inspect procedures available to BLACKICE. Saved procedures and BLACKICE built-ins.</p></div>',
+    '<header class="next-panel-head"><div><h1>Skills</h1><p>Inspect procedures available to BLACKICE. Saved procedures.</p></div>',
     '<div class="next-row"><button id="skills-refresh" type="button">Refresh catalog</button><button id="skills-organize" type="button">Organize saved skills</button><button id="skills-new" type="button" class="next-primary">New saved skill</button></div></header>',
     '<div class="next-skills-filters">',
     '<label class="next-label">Find a skill<input id="skills-query" class="next-field" type="search" maxlength="256" placeholder="Search titles, descriptions and saved content"></label>',
-    '<label class="next-label">Source<select id="skills-source" class="next-field"><option value="all">All sources</option><option value="bundled">BLACKICE built-in</option><option value="saved">Saved procedures</option></select></label>',
+    '<label class="next-label">Source<select id="skills-source" class="next-field"><option value="all">All sources</option><option value="saved">Saved procedures</option></select></label>',
     '<label class="next-label">Working folder<input id="skills-cwd" class="next-field" spellcheck="false" placeholder="Default working folder"></label></div>',
     '<p id="skills-status" class="next-skills-status" role="status" aria-live="polite"></p>',
     '<p id="skills-source-status" class="next-skills-status"></p>',
@@ -54,7 +54,7 @@ export function createSkillsWorkspace({mount,api,events,notify,onNavigate}) {
   };
   const state=(element,message,error=false)=>{element.textContent=message;element.dataset.error=String(error);};
   const readable={
-    source:{bundled:'BLACKICE bundled',saved:'Saved procedure',codex:'Codex discovery'},
+    source:{saved:'Saved procedure',codex:'Codex discovery'},
     loaded:{available_on_demand:'Available to read when needed',host_loaded:'Loaded by host (conditional use)',not_verified:'No per-turn loading evidence',not_loaded_in_blackice:'Excluded from BLACKICE native sessions'},
     applicability:{conditional:'Depends on task settings',in_scope:'In current folder scope',other_workspace:'Saved for another working folder',excluded_by_host:'Excluded by host'},
   };
@@ -90,16 +90,16 @@ export function createSkillsWorkspace({mount,api,events,notify,onNavigate}) {
     const draw=(parent,folder)=>{if(count(folder))group(parent,folder.name,folder.id,saved.filter(item=>assigned(item)===folder.id),folder.children);};
     for(const folder of knowledgeFolderTree(organization.folders||[]))draw(nodes.list,folder);
     if(saved.some(item=>!assigned(item)))group(nodes.list,'Unfiled','unfiled',saved.filter(item=>!assigned(item)));
-    if(builtins.length)group(nodes.list,'BLACKICE built-ins','builtins',builtins);
+    if(builtins.length)group(nodes.list,'External discoveries','external',builtins);
   }
   function showDetailInfo(record){
     nodes.meta.replaceChildren();nodes['tech-meta'].replaceChildren();nodes.technical.hidden=false;
-    const simple=[['Source',record.source==='saved'?'Saved procedure':record.source==='bundled'?'BLACKICE built-in':'External discovery (disabled)'],['Applies to',record.appliesWhen||'Not specified']];
+    const simple=[['Source',record.source==='saved'?'Saved procedure':'External discovery (disabled)'],['Applies to',record.appliesWhen||'Not specified']];
     for(const [field,value] of simple){create(nodes.meta,'dt',field);create(nodes.meta,'dd',value);}
     const fields=[
       ['Source',label('source',record.source)],
       ['Scope',record.scope==='workspace'?'Saved working folder':record.scope==='global'?'Global':record.scope==='first_party'?'First party':'Native discovery'],
-      ['Source / folder',record.source==='saved'?(record.path?'Saved knowledge, folder scope: '+record.path:'Saved knowledge, global scope'):(record.path||'Bundled with BLACKICE')],
+      ['Source / folder',record.source==='saved'?(record.path?'Saved knowledge, folder scope: '+record.path:'Saved knowledge, global scope'):(record.path||'External discovery')],
       ['Loaded',label('loaded',record.loaded)],
       ['Enabled',record.source==='codex'?'No in BLACKICE sessions':record.enabled===true?'Yes':record.enabled===false?'No':'No per-skill enabled state'],
       ['Applicability',label('applicability',record.applicability)],
@@ -159,11 +159,11 @@ export function createSkillsWorkspace({mount,api,events,notify,onNavigate}) {
       state(nodes.status,items.length+(external?' disabled external discoveries':' skill'+(items.length===1?'':'s'))+' shown'+(result.truncated?' (catalog limit reached; narrow your search).':'.'));
       if(folderError)state(nodes.status,nodes.status.textContent+' Folders unavailable; showing an ungrouped catalog. '+failure(folderError),true);
       const native=result.sources?.codex;
-      if(!external)state(nodes['source-status'],'Saved procedures and BLACKICE built-ins.');
+      if(!external)state(nodes['source-status'],'Saved procedures.');
       else if(native?.status==='partial'||native?.status==='error'||native?.status==='unavailable')
         state(nodes['source-status'],'Codex discovery '+native.status+': '+(native.reason||'Not connected.'),native.status==='error');
       else if(native?.status==='available')state(nodes['source-status'],'Codex discovery available. Native entries remain disabled in BLACKICE sessions.');
-      else state(nodes['source-status'],'Saved procedures and BLACKICE built-ins.');
+      else state(nodes['source-status'],'Saved procedures.');
       if(selection){
         const entry=items.find(item=>item.id===selection);
         if(!entry){selection=null;detailEpoch++;detailController?.abort();clearDetail('Selected skill is not in the refreshed results.');paintList();}

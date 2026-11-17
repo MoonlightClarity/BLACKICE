@@ -83,7 +83,9 @@ async function fixture(t, execute) {
 for (const mode of ['auto', 'on', 'maximal', 'forced', 'advisory']) test(mode + ' migrates to explicit modules without legacy operation gates or model effort changes', async t => {
   const f = await fixture(t, async options => {
     assert.ok(options.developerInstructions.startsWith(BLACKICE_HARNESS_INSTRUCTIONS));
-    assert.match(options.developerInstructions, /BLACKICE PLANNING MODULES \u2014 ON \/ OFF/);
+    assert.doesNotMatch(options.developerInstructions, /BLACKICE PLANNING MODULES/);
+    const planningTool=options.dynamicTools.find(tool=>tool.name==='relay_task'||tool.name==='relay_planning_read');
+    if(planningTool)assert.match(planningTool.description,/task|planning/i);
     assert.doesNotMatch(options.developerInstructions, /REQUIRED FIRST-PARTY BLACKICE PLANNING SKILL/);
     assert.equal(typeof options.onBeforeFinal, 'function');
     options.onEvent({ type: 'delta', itemId: 'answer', delta: 'The actual local write is complete.' });
@@ -176,7 +178,7 @@ test('a legacy On alias does not reject a tool-less model or invoke a planner', 
 
 test('a legacy On continuation preserves the exact native catalog and provider session', async t => {
   const f = await fixture(t, async (options, number) => {
-    assert.match(options.developerInstructions, /TASK PLANNING MODE: OFF/);
+    assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|FIRST-PARTY BLACKICE PLANNING SKILL/);
     if (number === 2) {
       assert.equal(options.threadId, 'planning-mode-thread');
       assert.ok(!options.dynamicTools.some(tool => tool.name === 'relay_task'));
@@ -194,10 +196,10 @@ test('a legacy On continuation preserves the exact native catalog and provider s
 test('Off permits normal operations and final output without creating an automatic outline or method lookup', async t => {
   const f = await fixture(t, async options => {
     assert.ok(options.developerInstructions.startsWith(BLACKICE_HARNESS_INSTRUCTIONS));
-    assert.match(options.developerInstructions, /TASK PLANNING MODE: OFF/);
+    assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|FIRST-PARTY BLACKICE PLANNING SKILL/);
     assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|Maintain the current task outline|form a brief operational plan|For substantive work, discover relevant methods/);
     assert.doesNotMatch(options.prompt, /DEFAULT TASK OUTLINE|METHOD DISCOVERY AND ADAPTATION/);
-    assert.match(options.prompt, /EXECUTION GUARDRAILS: OFF|OPTIONAL TASK NOTES/); assert.match(options.prompt, /EXTERNAL ACTION RECOVERY/);
+    assert.match(options.dynamicTools.find(tool=>tool.name==='relay_task').description,/Optional|optional/); assert.ok(options.dynamicTools.some(tool=>/receipt|reconcil|uncertain/i.test(tool.description)), 'Recovery guidance remains on actual tools');
     const optionalTaskTool = options.dynamicTools.find(tool => tool.name === 'relay_task');
     assert.equal(optionalTaskTool.name, 'relay_task'); assert.match(optionalTaskTool.description, /Optional compact auditable task context/, 'Explicit Off does not advertise mandatory planning.');
     options.onEvent({ type: 'delta', delta: 'The actual operation is complete.' });
@@ -251,10 +253,10 @@ test('continuation preserves the exact prior tree, evidence, notes and native sc
     } else if (number === 2) {
       assert.equal(options.threadId, 'planning-mode-thread'); assert.deepEqual(options.dynamicTools.map(item => item.name), oldTools.map(item => item.name));
       assert.deepEqual(options.dynamicTools, oldTools, 'Historical aliases do not replace the existing optional catalog.');
-      assert.match(options.developerInstructions, /TASK PLANNING MODE: OFF/);
+      assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|FIRST-PARTY BLACKICE PLANNING SKILL/);
       assert.equal((await call(options, 'relay_workspace', { action: 'write', path: 'continued.txt', text: 'continued without automatic plan' })).success, true);
     } else {
-      assert.match(options.developerInstructions, /TASK PLANNING MODE: OFF/);
+      assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|FIRST-PARTY BLACKICE PLANNING SKILL/);
       const written = await call(options, 'relay_workspace', { action: 'write', path: 'on.txt', text: 'Authorized optional work.' }); assert.equal(written.success, true);
       const current = await task(options, { action: 'read' }); assert.deepEqual(current.steps, saved.steps);
       const expanded = await plan(options, { previous: current, steps: [...current.steps, action('follow-up')] }); assert.deepEqual(expanded.steps[0], saved.steps[0]);
@@ -294,8 +296,8 @@ test('legacy Maximal follow-up preserves earlier completed evidence and adds ful
 
 test('Retry inherits the accepted mode and an explicit override changes only the new recovery turn', async t => {
   const f = await fixture(t, async (options, number) => {
-    if (number < 3) { assert.match(options.developerInstructions, /TASK PLANNING MODE: OFF/); throw Error('Observed fixture transport failure.'); }
-    assert.match(options.developerInstructions, /TASK PLANNING MODE: OFF/); await completeAndReview(options, await plan(options)); return { output: 'Recovered in the selected mode.', threadId: 'planning-mode-thread' };
+    if (number < 3) { assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|FIRST-PARTY BLACKICE PLANNING SKILL/); throw Error('Observed fixture transport failure.'); }
+    assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|FIRST-PARTY BLACKICE PLANNING SKILL/); await completeAndReview(options, await plan(options)); return { output: 'Recovered in the selected mode.', threadId: 'planning-mode-thread' };
   });
   const first = await f.settle(f.start({ planningMode: 'off' }).id); assert.equal(first.status, 'failed');
   assert.throws(() => f.engine.retryRun(first.id, { planningMode: 'invalid' }), { code: 'PLANNING_MODE_INVALID' });
@@ -369,7 +371,7 @@ test('planning stays independent of model effort while concrete user overrides r
 test('a saved Inbox workflow keeps each selected mode across restart and real engine dispatch', async t => {
   const f = await fixture(t, async (options, number, context) => {
     const mode = context.engine.listRuns().find(run => run.status === 'running').planningMode;
-    if (mode === 'off') assert.match(options.developerInstructions, /TASK PLANNING MODE: OFF/); else await completeAndReview(options, await plan(options));
+    if (mode === 'off') assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|FIRST-PARTY BLACKICE PLANNING SKILL/); else await completeAndReview(options, await plan(options));
     return { output: 'Queued mode honored.', threadId: `queued-mode-${number}` };
   });
   const options = { dataDir: f.directory, engine: f.engine, delayMs: 0 }; let inbox = await new TaskInbox(options).init();
@@ -415,7 +417,7 @@ test('Off keeps optional legacy task tools and external recovery guidance withou
 
 test('Off identity and disabled automatic planning apply to delegated workers without changing coordinator ownership', async t => {
   const f = await fixture(t, async options => {
-    assert.ok(options.developerInstructions.startsWith(BLACKICE_HARNESS_INSTRUCTIONS)); assert.match(options.developerInstructions, /TASK PLANNING MODE: OFF/);
+    assert.ok(options.developerInstructions.startsWith(BLACKICE_HARNESS_INSTRUCTIONS)); assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|FIRST-PARTY BLACKICE PLANNING SKILL/);
     if (options.prompt.startsWith('You are a short-lived BLACKICE subagent.')) {
       assert.ok(!options.dynamicTools.some(tool => tool.name === 'relay_task')); assert.doesNotMatch(options.developerInstructions, /form a brief operational plan/);
       assert.match(options.developerInstructions, /The coordinator owns the final remote send/);

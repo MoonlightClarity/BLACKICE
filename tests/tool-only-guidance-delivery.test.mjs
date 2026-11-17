@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { ProviderRuntime } from '../lib/providers.mjs';
-import { BUNDLED_TASK_SKILL_GUIDANCE } from '../lib/bundled-task-skills.mjs';
+import { BROWSER_TOOL } from '../lib/browser.mjs';
 import { capabilityGuidance } from '../lib/tool-routing.mjs';
 import { composeAgentDeveloperInstructions } from '../lib/developer-instruction-budget.mjs';
 
@@ -15,7 +15,7 @@ class NoNativeProcess extends EventEmitter {
   async runAgent() { throw Error('Skill delivery fixtures cannot start native processes or models.'); }
 }
 
-for (const type of ['openai', 'anthropic', 'compatible']) test(type + ': bundled skill discovery reaches the actual provider request unchanged on initial and continued turns', async t => {
+for (const type of ['openai', 'anthropic', 'compatible']) test(type + ': browser tool guidance reaches the actual provider tool definition, not the prompt on initial and continued turns', async t => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'blackice-skill-delivery-'));
   const requests = [];
   const response = type === 'openai'
@@ -40,14 +40,15 @@ for (const type of ['openai', 'anthropic', 'compatible']) test(type + ': bundled
   });
   await runtime.saveProvider({ id: 'skill', type, baseUrl: 'http://127.0.0.1:1/v1', apiKey: 'synthetic-skill-fixture-key', models: ['fixture-model'] });
   const instructions = composeAgentDeveloperInstructions({ core: 'BLACKICE fixture identity\n', capabilities: capabilityGuidance([{name:'relay_skills'},{name:'relay_browser'}],{planningMode:'off'}), worker: '\nAssigned scope: read-only synthetic task.' }).instructions;
-  const first = await runtime.runAgent({ cwd: directory, model: 'skill::fixture-model', prompt: 'No external operations.', developerInstructions: instructions });
-  await runtime.runAgent({ cwd: directory, model: 'skill::fixture-model', threadId: first.threadId, prompt: 'Continue this synthetic task.', developerInstructions: instructions });
+  const first = await runtime.runAgent({ cwd: directory, model: 'skill::fixture-model', prompt: 'No external operations.', developerInstructions: instructions, dynamicTools:[BROWSER_TOOL] });
+  await runtime.runAgent({ cwd: directory, model: 'skill::fixture-model', threadId: first.threadId, prompt: 'Continue this synthetic task.', developerInstructions: instructions, dynamicTools:[BROWSER_TOOL] });
   const wireInstructions = body => type === 'openai' ? body.instructions : type === 'anthropic' ? body.system : body.messages.find(item => item.role === 'system')?.content;
   assert.equal(requests.length, 2);
   for (const body of requests) {
     const delivered = wireInstructions(body);
     assert.equal(delivered, instructions);
-    assert.equal(delivered.split(BUNDLED_TASK_SKILL_GUIDANCE).length, 2);
-    assert.ok(delivered.includes('builtin:job-search'));
+    assert.doesNotMatch(delivered,/BUNDLED TASK SKILLS|builtin:|relevant job boards/);
+    assert.ok(JSON.stringify(body.tools).includes('relevant job boards'));
+    assert.ok(JSON.stringify(body.tools).includes('educated inference'));
   }
 });

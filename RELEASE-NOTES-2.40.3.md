@@ -2,8 +2,8 @@
 
 ## Changes
 
-- Added separate general-browser and job-search skills. Browser guidance covers source selection, purposeful navigation, forms, recovery and outcome verification. Job-search guidance prefers native job-board searches and current employer/ATS routes, using general web search as a supplement.
-- Both skills are discoverable and readable through relay_skills and visible in Skills. Exact skill IDs and applicability guidance accompany the attached tool; full procedures are read on demand. Bundled procedures remain read-only and separate from saved skills.
+- Browser and job-search guidance lives in the actual browser tool description. It covers source selection, purposeful navigation, forms, recovery and outcome verification, with native job-board searches and current employer/ATS routes preferred over general web search as the default.
+- Removed all built-in skills, their bundled files and separate skill-loading instructions. Planning and autonomy guidance accompanies its owning tools instead. Saved user skills remain separate, with owner-approved changes; no built-in skill catalog or read step is required.
 - Required-file discovery now starts with actual environment paths and progressively searches relevant locations beyond the working folder using existing list and command tools. An empty USER.md does not imply files are absent. This does not change filesystem permissions or impose a sandbox.
 - Model-proposed saved memory and skill changes now wait for owner approval. A persistent review control shows before/after content, scope and provenance; dismissal does not apply a proposal. Stale approvals cannot overwrite newer edits. Background learning follows the same approval path, and task-derived context is not automatically promoted to unrelated tasks.
 - USER.md remains owner-controlled. Model identity tools are read-only, task learning no longer writes the profile, and structured agent file tools protect the configured identity directory. Existing custom and intentionally empty profiles are preserved.
@@ -13,7 +13,7 @@
 
 ## Verification scope
 
-Focused deterministic checks cover real engine skill delivery, outside-workspace synthetic file discovery, profile preservation, approval/rejection and restart reconciliation. They establish tool and instruction behavior, not guaranteed live-model adherence. Exact final-source Windows suite and installer evidence are recorded separately; focused checks are not a substitute for those gates.
+Focused deterministic checks cover real engine tool-guidance delivery, outside-workspace synthetic file discovery, profile preservation, approval/rejection and restart reconciliation. They establish tool and instruction behavior, not guaranteed live-model adherence. Exact final-source Windows suite and installer evidence are recorded separately; focused checks are not a substitute for those gates.
 
 ## Limitations
 

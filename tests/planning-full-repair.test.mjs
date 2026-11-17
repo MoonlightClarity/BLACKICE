@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { planningFullRepairInventory } from '../lib/planning-full-repair.mjs';
-import { planningSkillInstructions } from '../lib/planning-skill.mjs';
 import { PLANNING_BROWSER_LIMITS } from '../public/planning-browser-model.mjs';
 import { planningModuleOutputSchema, planningModulePrompt, planningFormatDiagnostic,
   validatePlanningModuleResponse, PLANNING_MAX_FORMAT_REPAIRS } from '../lib/planning-browser-runtime.mjs';
@@ -97,8 +96,8 @@ test('realistic full-repair prompt retains all sources/schema and emphasizes one
   assert.equal(prompt.indexOf(checklist), prompt.lastIndexOf(checklist), 'The detailed checklist appears only once.');
   assert.equal(payload.formatRepair.repairChecklist, undefined);
   assert.ok(prompt.indexOf(JSON.stringify(diagnostic)) < prompt.indexOf('Produce the public analytical response'));
-  assert.ok(!prompt.includes(planningSkillInstructions('on')), 'A repair does not repeat generic Planning boilerplate.');
-  assert.ok(planningModulePrompt(attempt).includes(planningSkillInstructions('on')), 'Initial generation retains its mandatory skill.');
+  assert.doesNotMatch(prompt,/FIRST-PARTY BLACKICE PLANNING SKILL/);
+  assert.doesNotMatch(planningModulePrompt(attempt),/FIRST-PARTY BLACKICE PLANNING SKILL/);
   assert.ok(prompt.includes(JSON.stringify(schema)));
   assert.ok(prompt.indexOf('"path":"response.checks[1].note"') < prompt.indexOf('Produce the public analytical response'));
   assert.match(prompt, /host will not choose between conflicting values/);
