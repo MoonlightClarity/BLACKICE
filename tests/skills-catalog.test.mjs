@@ -8,7 +8,7 @@ import {createSkillsCatalog,skillIdFromRequestPath} from '../lib/skills-catalog.
 
 test('HTTP skill IDs survive URL encoding but reject traversal and malformed segments',()=>{
   assert.equal(skillIdFromRequestPath('/api/skills/saved%3Asaved-procedure'),'saved:saved-procedure');
-  assert.equal(skillIdFromRequestPath('/api/skills/builtin%3Aplanning-v5'),'builtin:planning-v5');
+  assert.equal(skillIdFromRequestPath('/api/skills/builtin%3Aplanning-v5'),null);
   assert.equal(skillIdFromRequestPath('/api/skills/native%3A'+'a'.repeat(64)),'native:'+'a'.repeat(64));
   assert.equal(skillIdFromRequestPath('/api/skills/saved%3A..%2Fsecret'),null);
   assert.equal(skillIdFromRequestPath('/api/skills/saved%XX'),null);
@@ -24,18 +24,16 @@ async function fixture(t,{nativeSkills}={}){
   return {dir,cwd,other,store,create:()=>createSkillsCatalog({knowledge:store,defaultCwd:cwd,nativeSkills})};
 }
 
-test('catalog distinguishes host-loaded conditional skills, scoped saved content and excluded native discovery',async t=>{
+test('catalog distinguishes no built-in skills, scoped saved content and excluded native discovery',async t=>{
   const f=await fixture(t,{nativeSkills:async()=>({available:true,skills:[],errors:[]})});
   const global=await f.store.upsert({id:'global-skill',kind:'skill',title:'Prepare release',summary:'Release checklist',content:'# Release\nVerify provenance.'});
   const local=await f.store.upsert({id:'project-skill',kind:'skill',title:'Project checks',content:'# Project\nInspect artifacts.',cwd:f.other});
   const catalog=f.create();
   const listed=await catalog.list({cwd:f.cwd});
-  assert.equal(listed.entries.filter(item=>item.source==='bundled').length,5);
+  assert.equal(listed.entries.filter(item=>item.source==='bundled').length,0);
   assert.equal(listed.entries.filter(item=>item.source==='saved').length,2);
   assert.equal(listed.sources.codex.status,'not_requested');
-  const host=listed.entries.find(item=>item.id==='builtin:planning-v5');
-  assert.equal(host.loaded,'host_loaded');assert.equal(host.enabled,null);
-  assert.equal(host.applicability,'conditional');assert.match((await catalog.detail({id:host.id})).content,/BLACKICE Planning/);
+  await assert.rejects(catalog.detail({id:'builtin:planning-v5'}),{status:404});
   const saved=listed.entries.find(item=>item.id==='saved:'+global.id);
   assert.equal(saved.scope,'global');assert.equal(saved.applicability,'in_scope');assert.equal(saved.loaded,'not_verified');assert.equal(saved.enabled,null);
   assert.equal((await catalog.detail({id:saved.id})).content,global.content);
@@ -59,7 +57,7 @@ test('unavailable and malformed native discovery are surfaced, not disguised as 
   const f=await fixture(t,{nativeSkills:async()=>({available:false,skills:[],reason:'Disconnected'})}),catalog=f.create();
   const listed=await catalog.list({source:'codex'});
   assert.equal(listed.sources.codex.status,'unavailable');assert.match(listed.sources.codex.reason,/Disconnected/);
-  assert.equal((await catalog.list()).entries.length,5,'bundled knowledge is still accessible');
+  assert.equal((await catalog.list()).entries.length,0,'no built-in skills remain');
   const broken=createSkillsCatalog({knowledge:f.store,defaultCwd:f.cwd,nativeSkills:async()=>({available:true,skills:null})});
   assert.equal((await broken.list({source:'codex'})).sources.codex.status,'error');
   assert.equal((await broken.list({source:'bundled'})).sources.codex.status,'not_requested');

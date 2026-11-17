@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BLACKICE_HARNESS_INSTRUCTIONS } from '../lib/harness-identity.mjs';
 import { PLANNING_DECISION_GUIDANCE } from '../lib/planning-policy.mjs';
-import { PLANNING_SKILL_CONTENT } from '../lib/planning-skill.mjs';
 import { evaluateViabilityResponse, PLANNING_STOP_KINDS } from '../public/task-viability-model.mjs';
 
 const source = (id, text) => ({ id, kind: 'source', text, contentHash: text });
@@ -26,10 +25,6 @@ test('general operating identity and Planning are task-neutral, not a job-applic
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Third-party selection criteria, preferences, prior scores and apparent gaps are observations/);
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /recipient or system decide acceptance/);
   assert.match(PLANNING_DECISION_GUIDANCE, /time-stamped, revisable observations/);
-  for (const activity of ['applying', 'submitting a proposal', 'editing code', 'investigating a record', 'creating an artifact']) {
-    assert.ok(PLANNING_SKILL_CONTENT.includes(activity), 'The general Planning skill must include ' + activity);
-  }
-  assert.match(PLANNING_SKILL_CONTENT, /observations made under particular conditions and at a particular time/);
 });
 
 test('uncertain selection in a non-job proposal is not a host-verified stop', () => {

@@ -49,7 +49,12 @@ test('autonomy is independent of Goal and switches next coordinator model at a r
   const {engine,autonomy,runtime,conversations}=await fixture(t,async(options,n)=>{
     if(n===1){assert.equal(options.dynamicTools?.some(x=>x.name===AUTONOMY_TOOL.name)||false,false);return out(n);}
     assert.ok(options.dynamicTools.some(x=>x.name===AUTONOMY_TOOL.name),'autonomy tool must reach actual coordinator provider catalog');
-    assert.match(options.prompt,/AUTONOMOUS OPERATING MODE \(NOT A GOAL\)/);
+    const autonomyTool=options.dynamicTools.find(x=>x.name===AUTONOMY_TOOL.name);
+    assert.match(autonomyTool.description,/Read current calibration/);
+    assert.doesNotMatch(autonomyTool.description,/Prefer low-cost models/);
+    assert.doesNotMatch(options.prompt+options.developerInstructions,/AUTONOMOUS OPERATING MODE \(NOT A GOAL\)|blackice-autonomy-model-selection/);
+    const read=await autonomyCall(options,{action:'read'});
+    assert.match(read.contentItems[0].text,/Prefer low-cost models/);
     assert.ok(!options.prompt.includes('PERSISTENT CONVERSATION GOAL'),'autonomy must not invent a Goal');
     if(n===2){
       const selected=await autonomyCall(options,{action:'select_model',model:'alternate-model'});
@@ -225,7 +230,8 @@ test('native autonomous child receives policy before its first provider call and
       const data=JSON.parse(response.contentItems[0].text);childId=data.run.runId;return out(n);
     }
     assert.ok(options.dynamicTools.some(x=>x.name==='relay_autonomy'));
-    assert.match(options.prompt,/AUTONOMOUS OPERATING MODE/);
+    assert.match(options.dynamicTools.find(x=>x.name==='relay_autonomy').description,/Read current calibration/);
+    assert.doesNotMatch(options.prompt,/AUTONOMOUS OPERATING MODE/);
     const idle=await autonomyCall(options,{action:'idle',summary:'Child work is done.'});assert.equal(idle.success,true);
     return out(n);
   });

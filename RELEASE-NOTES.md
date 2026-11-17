@@ -4,7 +4,7 @@
 
 ## Recent versioned source notes
 
-- [2.40.3](RELEASE-NOTES-2.40.3.md) - browser/job skills, file discovery, owner-approved knowledge, profile boundaries and responsive interruption
+- [2.40.3](RELEASE-NOTES-2.40.3.md) - browser/job tool guidance, file discovery, owner-approved knowledge, profile boundaries and responsive interruption
 
 - [2.40.2](RELEASE-NOTES-2.40.2.md) - integrated tab-folder extension, compact content lists, chronological Cron and retired app-wide throttle
 

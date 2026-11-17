@@ -219,7 +219,7 @@ export async function runAdvocacyCase({ runtime, root, item, planningMode = 'ont
 
 async function sourceFingerprint() {
   const source = fileURLToPath(new URL('../', import.meta.url)), files = {};
-  for (const file of ['package.json', 'lib/engine.mjs', 'lib/harness-identity.mjs', 'lib/browser.mjs', 'lib/browser-signin.mjs', 'lib/mcp.mjs', 'lib/tool-routing.mjs', 'lib/codex.mjs', 'lib/planning-policy.mjs', 'lib/task-state.mjs', 'server.mjs', 'lib/task-viability.mjs', 'lib/response-cycle.mjs', 'lib/planning-browser-runtime.mjs', 'skills/planning/SKILL.md', 'scripts/verify-luna-advocacy.mjs']) files[file] = hash(await readFile(path.join(source, file)));
+  for (const file of ['package.json', 'lib/engine.mjs', 'lib/harness-identity.mjs', 'lib/browser.mjs', 'lib/browser-signin.mjs', 'lib/mcp.mjs', 'lib/tool-routing.mjs', 'lib/codex.mjs', 'lib/planning-policy.mjs', 'lib/task-state.mjs', 'server.mjs', 'lib/task-viability.mjs', 'lib/response-cycle.mjs', 'lib/planning-browser-runtime.mjs', 'scripts/verify-luna-advocacy.mjs']) files[file] = hash(await readFile(path.join(source, file)));
   return { source, files, sha256: hash(json(files)) };
 }
 

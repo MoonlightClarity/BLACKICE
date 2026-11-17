@@ -89,14 +89,16 @@ test('late completion of a previous selection cannot replace newer inspected con
       delay=false;const snapshot=await catalog.detail({id:'saved:saved-procedure'});await gate.promise;return snapshot;
     }
   }});
+  await f.store.upsert({id:'second-procedure',kind:'skill',title:'Second saved procedure',content:'Second saved content',cwd:f.cwd});
+  await f.click('#skills-refresh');await until(()=>f.$('[data-skill-id="saved:second-procedure"]'));
   delay=true;await f.click('[data-skill-id="saved:saved-procedure"]');
   await until(()=>f.$('#skills-detail-status').textContent.includes('Loading full skill content'));
-  await f.click('[data-skill-id="builtin:planning-v5"]');
-  await until(()=>f.$('#skills-meta').textContent.includes('BLACKICE built-in'));
+  await f.click('[data-skill-id="saved:second-procedure"]');
+  await until(()=>f.$('#skills-heading').textContent==='Second saved procedure');
   gate.resolve();await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(f.$('#skills-heading').textContent,'BLACKICE Planning (current contract)');
-  assert.match(f.$('#skills-content').textContent,/BLACKICE Planning/);
-  assert.equal(f.$('#skills-edit').hidden,true);
+  assert.equal(f.$('#skills-heading').textContent,'Second saved procedure');
+  assert.match(f.$('#skills-content').textContent,/Second saved content/);
+  assert.equal(f.$('#skills-edit').hidden,false);
 });
 test('leave/re-enter during pending detail replaces the read without accepting stale completion',async t=>{
   const first=deferred(),second=deferred();
@@ -189,14 +191,14 @@ test('normal Skills catalog uses procedure vocabulary and isolates disabled exte
   }});
   assert.equal(f.$('[data-skill-id="saved:saved-procedure"]').textContent,'Review exact artifacts');
   assert.doesNotMatch(f.$('#skills-list').textContent,/Local saved knowledge/);
-  assert.equal(f.$('#skills-source-status').textContent,'Saved procedures and BLACKICE built-ins.');
+  assert.equal(f.$('#skills-source-status').textContent,'Saved procedures.');
   assert.equal(f.$('#skills-source-status').dataset.error,'false');
   await f.click('#skills-external');
   await until(()=>f.$('#skills-source-status').textContent.includes('External diagnostic fixture'));
   assert.equal(f.$('#skills-source-status').dataset.error,'true');
   await f.click('#skills-normal');
   await until(()=>f.$('[data-skill-id="saved:saved-procedure"]'));
-  assert.equal(f.$('#skills-source-status').textContent,'Saved procedures and BLACKICE built-ins.');
+  assert.equal(f.$('#skills-source-status').textContent,'Saved procedures.');
   assert.equal(f.$('#skills-source-status').dataset.error,'false');
 });
 

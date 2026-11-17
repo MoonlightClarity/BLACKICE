@@ -25,9 +25,9 @@ test('native restart diagnostics ignore unknown codes, non-error JSON, malformed
 });
 
 test('Windows installer inventory accepts the new runtime assets and the selected release notes', () => {
-  assert.equal(approvedWindowsPackageFile('skills/autonomy/SKILL.md','9.8.7'),true);
+  assert.equal(approvedWindowsPackageFile('skills/autonomy/SKILL.md','9.8.7'),false);
   assert.equal(approvedWindowsPackageFile('skills/autonomy/unreviewed.md','9.8.7'),false);
-  for (const file of ['BROWSER-IMPORT.md', 'CHATGPT-CONNECTOR.md', 'scripts/browser-cli.mjs', 'scripts/repair-shortcuts.ps1', 'skills/planning/SKILL.md', 'desktop/browser-compatibility/manifest.json', 'desktop/browser-compatibility/main.js', 'desktop/browser-compatibility.mjs', 'lib/browser-profile.mjs', 'public/browser-ui.mjs', 'RELEASE-NOTES-9.8.7.md', 'RELEASE-NOTES-2.33.8.md', 'RELEASE-NOTES-2.33.9.md', 'RELEASE-NOTES-2.33.10.md', 'RELEASE-NOTES-2.33.11.md', 'RELEASE-NOTES-2.33.12.md', 'RELEASE-NOTES-2.33.13.md', 'RELEASE-NOTES-2.34.0.md']) {
+  for (const file of ['BROWSER-IMPORT.md', 'CHATGPT-CONNECTOR.md', 'scripts/browser-cli.mjs', 'scripts/repair-shortcuts.ps1', 'desktop/browser-compatibility/manifest.json', 'desktop/browser-compatibility/main.js', 'desktop/browser-compatibility.mjs', 'lib/browser-profile.mjs', 'public/browser-ui.mjs', 'RELEASE-NOTES-9.8.7.md', 'RELEASE-NOTES-2.33.8.md', 'RELEASE-NOTES-2.33.9.md', 'RELEASE-NOTES-2.33.10.md', 'RELEASE-NOTES-2.33.11.md', 'RELEASE-NOTES-2.33.12.md', 'RELEASE-NOTES-2.33.13.md', 'RELEASE-NOTES-2.34.0.md']) {
     assert.equal(approvedWindowsPackageFile(file, '9.8.7'), true, file);
   }
   for (const file of ['README.md', 'scripts/browser-profile-smoke.mjs', 'scripts/windows-release-inputs.mjs', 'RELEASE-NOTES-9.8.6.md', 'RELEASE-NOTES-2.33.14.md', 'desktop/unknown.json', 'desktop/build-icon.mjs', 'lib/example.test.mjs', 'public/.env', 'lib/node_modules/unsafe.mjs', 'lib/.currents-backup-file.mjs', 'lib/browser.mjs.ownership-backup', 'public/assets.ownership-backup/private.mjs', 'desktop/old.ownership-backup/worker.mjs', 'scripts/other-shortcuts.ps1', 'skills/planning/../private.md', 'skills/unapproved/SKILL.md', '../lib/file.mjs', 'lib/../private.txt', 'lib\\file.mjs']) {
@@ -249,23 +249,8 @@ if(Test-Path -LiteralPath $marker){throw 'A fixture executable ran instead of be
 });
 
 
-test('planning skill package includes only reviewed contract and reference documents and rejects arbitrary neighbors', async () => {
-  for (const reviewed of ['skills/planning/CONTRACT-V2.md', 'skills/planning/references/evidence-preserving-execution.md']) {
-    assert.equal(approvedWindowsPackageFile(reviewed, '9.8.7'), true, reviewed);
-    assert.equal((await fs.stat(new URL('../' + reviewed, import.meta.url))).isFile(), true);
-  }
-  for (const file of ['skills/planning/CONTRACT-V3.md', 'skills/planning/CONTRACT-V2.md.bak', 'skills/planning/CONTRACT-V2.mjs', 'skills/planning/references/private.md', 'skills/planning/references/evidence-preserving-execution.mjs', 'skills/planning/references/evidence-preserving-execution.md.bak', 'skills/planning/references/evidence-preserving-execution.md.currents-backup-private', 'skills/planning/references/../SKILL.md', 'skills/unapproved/references/evidence-preserving-execution.md']) assert.equal(approvedWindowsPackageFile(file, '9.8.7'), false, file);
-  // The builder includes the full planning skill tree, so every future addition
-  // must receive its own review instead of silently bypassing this exact allowlist.
-  async function inspect(relative) {
-    for (const entry of await fs.readdir(new URL('../' + relative + '/', import.meta.url), { withFileTypes: true })) {
-      const file = relative + '/' + entry.name;
-      if (forbiddenWindowsPackagePath(file)) continue;
-      if (entry.isDirectory()) await inspect(file);
-      else assert.equal(approvedWindowsPackageFile(file, '9.8.7'), true, file);
-    }
-  }
-  await inspect('skills/planning');
+test('retired built-in skill files and neighboring paths are never approved package files', () => {
+ for (const file of ['skills/planning/SKILL.md','skills/planning/CONTRACT-V2.md','skills/planning/references/evidence-preserving-execution.md','skills/autonomy/SKILL.md','skills/browser/SKILL.md','skills/job-search/SKILL.md','skills/planning/CONTRACT-V3.md','skills/planning/SKILL.md.bak','skills/unapproved/SKILL.md']) assert.equal(approvedWindowsPackageFile(file, '2.40.3'), false, file);
 });
 
 test('.104 retains only its selected .103 recovery note alongside the current release',()=>{
