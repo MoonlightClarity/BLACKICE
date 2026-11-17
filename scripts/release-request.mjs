@@ -68,6 +68,21 @@ function validSourceSkips(prior, count) {
     [...byName.keys()].every(name => skips.includes(name));
 }
 
+/** Classify observed TAP skips using the same policy as source-publication validation. */
+export function classifySourceSkips(skips) {
+  if (!Array.isArray(skips)) throw new TypeError('Observed source skips must be an array.');
+  const capability = skips.filter(item => fileSymlinkCapabilityTests.has(item?.name)).map(item => ({
+    name: item.name, file: fileSymlinkCapabilityTests.get(item.name), platform: 'win32',
+    operation: 'create file symlink fixture', errorCode: typeof item.reason === 'string' ? item.reason.match(/(EPERM|EACCES)$/)?.[1] : undefined,
+    assertionsRan: false, reason: item.reason,
+  }));
+  const names = skips.map(item => item?.name);
+  const unexpectedSkips = skips.filter(item => names.filter(name => name === item?.name).length !== 1 ||
+    !validSourceSkips({ optionalSkips: [item?.name],
+      fileSymlinkCapabilitySkips: capability.filter(record => record.name === item?.name) }, 1));
+  return { capability, unexpectedSkips };
+}
+
 export async function verifyReleaseSource(request, directory) {
   request = validateReleaseRequest(request);
   const metadata = JSON.parse(await fs.readFile(path.join(directory, 'package.json'), 'utf8'));
