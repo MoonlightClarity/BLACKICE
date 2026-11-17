@@ -272,12 +272,12 @@ test('fabricated evidence, inferred user facts and a failed-run working skill ar
   const review=await learning.scheduleAfterRun(add('failed-run',{status:'failed',output:'',error:'Export check failed'}));const result=await done(review.id);assert.equal(result.status,'completed',result.error);assert.equal(knowledge.list().length,1);assert.equal(learning.listLessons()[0].confidence,'tentative_after_failure');assert.equal(knowledge.list()[0].kind,'memory');
 });
 
-test('profile facts require exact direct-user statements and the profile callback receives trusted source text',async t=>{
+test('task facts remain scoped learning and never invoke the global profile callback',async t=>{
   const profile=[];
   const {learning,add,done}=await harness(t,async options=>{
     await call(options,proposal(options,{kind:'fact',key:'concise-output',title:'Concise output',summary:'The user requested concise output for this working folder.',content:'Use concise output for this working folder.',evidence:[{id:'task',quote:'Please use concise output'}]}));await finish(options);return{};
   },{onProfileFact:async value=>profile.push(value)});
-  const review=await learning.scheduleAfterRun(add());await done(review.id);assert.equal(profile.length,1);assert.equal(profile[0].sourceQuote,'Please use concise output');assert.match(profile[0].trustedUserText,/Please use concise output/);assert.equal(profile[0].sourceRunId,'source-run');assert.equal(learning.listLessons()[0].profileUpdated,true);
+  const review=await learning.scheduleAfterRun(add());await done(review.id);assert.equal(profile.length,0);assert.equal(learning.listLessons()[0].profilePromotion,'not_promoted_task_context');
 });
 
 test('automatic fact and skill changes apply without approval, retain their source and model, and can be undone after use',async t=>{
@@ -293,10 +293,10 @@ test('automatic fact and skill changes apply without approval, retain their sour
   const observed=id=>add(id,{events:[{data:{type:'thread',model:providerModel}}]});
   const first=await learning.scheduleAfterRun(observed('provider-source-a'));
   assert.equal((await done(first.id)).status,'completed');
-  assert.equal(learning.listLessons().length,2);assert.equal(knowledge.list().length,2);assert.equal(profile.length,1);
+  assert.equal(learning.listLessons().length,2);assert.equal(knowledge.list().length,2);assert.equal(profile.length,0);
   const skill=learning.listLessons().find(item=>item.kind==='skill'),fact=learning.listLessons().find(item=>item.kind==='fact');
   assert.deepEqual(skill.provenance,{source:'learning',action:'created',reviewId:first.id,runId:'provider-source-a',trigger:'automatic',model:providerModel,at:skill.provenance.at});
-  assert.equal(fact.evidence[0].quote,'Please use concise output');assert.equal(fact.profileUpdated,true);
+  assert.equal(fact.evidence[0].quote,'Please use concise output');assert.equal(fact.profilePromotion,'not_promoted_task_context');
   assert.equal(knowledge.get(skill.knowledgeId).provenance.nodeId,`learning-${first.id}`);
   const next=learning.getContext(cwd,{query:'export concise'});
   assert.equal(next.skills.length,0);assert.equal(next.facts[0].id,fact.id);
@@ -335,36 +335,16 @@ test('automatic reviews preserve user corrections and keep rejected replacement 
   assert.equal(kept.history[0].content,original.content);assert.equal(knowledge.get(kept.knowledgeId).content,correction);
 });
 
-test('undoing or restoring learned facts also reverses the exact USER.md entry and keeps both audits',async t=>{
-  const {learning,knowledge,add,done,directory,cwd}=await harness(t,async(options,index)=>{
-    await call(options,proposal(options,{kind:'fact',key:'communication-output',title:'Output preference',summary:index===1?'Use concise output.':'Use concise output with source links.',content:index===1?'Use concise output.':'Use concise output and include source links.',evidence:[{id:'task',quote:index===1?'use concise output':'use concise output and include source links'}]}));
+test('scoped learning create restore and remove never modify USER.md',async t=>{
+  const {learning,add,done,directory}=await harness(t,async options=>{
+    await call(options,proposal(options,{kind:'fact',key:'communication-output',title:'Output preference',summary:'Use concise output.',content:'Use concise output.',evidence:[{id:'task',quote:'Please use concise output'}]}));
     await finish(options);return{};
-  },{learningMode:null});
+  });
   const identity=await new IdentityStore({dataDir:directory}).init();t.after(()=>identity.close());
-  learning.onProfileFact=value=>identity.recordFact(value);learning.onProfileFactUndo=value=>identity.removeFact(value);
-  const input='For future tasks, use concise output and include source links.';
-  const first=await learning.scheduleAfterRun(add('profile-one',{input}));await done(first.id);
-  const initial=learning.listLessons()[0],firstProfile=await identity.read('user');
-  assert.match(firstProfile.content,/Use concise output\./);assert.equal(initial.profileEntry.sourceLearningId,initial.id);
-  const second=await learning.scheduleAfterRun(add('profile-two',{input}));assert.equal((await done(second.id)).status,'completed');
-  let current=learning.listLessons()[0];const secondKnowledge=knowledge.get(current.knowledgeId);
-  assert.equal(current.profileUpdated,true);assert.match((await identity.read('user')).content,/Use concise output with source links\./);
-  assert.ok(!(await identity.read('user')).content.includes('- Use concise output.\n'));
-  await learning.restoreLesson(current.id,1);
-  assert.match((await identity.read('user')).content,/Use concise output\./);assert.ok(!(await identity.read('user')).content.includes('with source links.'));
-  // The Library's own undo reaches this same path after it restores a stored knowledge revision.
-  const restoredKnowledge=await knowledge.upsert({...secondKnowledge},{source:'user',reason:'Undo library change'});
-  await learning.recordKnowledgeChange(restoredKnowledge);
-  current=learning.listLessons()[0];assert.equal(current.provenance.action,'restored');assert.equal(current.profileUpdated,true);
-  assert.match((await identity.read('user')).content,/Use concise output with source links\./);
-  await learning.removeLesson(current.id);
-  assert.equal(learning.getContext(cwd).facts.length,0);assert.ok(!(await identity.read('user')).content.includes('Use concise output'));
-  await learning.restoreLesson(current.id,1);
-  assert.equal(learning.getContext(cwd).facts.length,1);assert.match((await identity.read('user')).content,/Use concise output\./);
-  const beforeDeletion=knowledge.get(current.knowledgeId);await knowledge.remove(current.knowledgeId);await learning.recordKnowledgeDeletion(current.knowledgeId,beforeDeletion);
-  assert.ok(!(await identity.read('user')).content.includes('Use concise output'));assert.equal(learning.getContext(cwd).facts.length,0);
-  const history=await identity.versions('user');assert.ok(history.length>=7);assert.ok(history.some(item=>item.provenance.reason==='Undid an automatically learned profile fact.'));
-  assert.match((await identity.readVersion('user',firstProfile.revision)).content,/Use concise output\./);
+  let calls=0;learning.onProfileFact=()=>{calls++;};learning.onProfileFactUndo=()=>{calls++;};
+  const before=await identity.read('user'), review=await learning.scheduleAfterRun(add());await done(review.id);
+  const lesson=learning.listLessons()[0];await learning.removeLesson(lesson.id);await learning.restoreLesson(lesson.id,1);
+  assert.equal(calls,0);assert.equal((await identity.read('user')).hash,before.hash);
 });
 
 test('credentials hidden in skill metadata and mixed tool citations for a user fact cannot be committed',async t=>{

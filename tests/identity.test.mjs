@@ -69,14 +69,32 @@ test('history retention bounds old snapshots and canonical deletion recovers fro
   const versions = await store.versions('soul'); assert.equal(versions.length, 3); await assert.rejects(store.readVersion('soul', 1), { status: 404 });
   await fs.unlink(file('soul')); assert.equal((await store.read('soul')).content, doc.content); assert.equal(await fs.readFile(file('soul'), 'utf8'), doc.content);
 });
-test('identity tool requires real user evidence for profile updates, records provenance, and rejects webpage claims', async t => {
-  const { store } = await setup(t), events = [], handler = createIdentityToolHandler({ store, runId: 'run-user', nodeId: 'agent', trustedUserText: 'Remember that I prefer compact answers.', onEvent: event => events.push(event) });
-  const read = JSON.parse((await invoke(handler, { action: 'read', kind: 'user' })).contentItems[0].text);
-  await assert.rejects(invoke(handler, { action: 'update', kind: 'user', content: '# User\nPrefers pink.', expectedRevision: read.revision, sourceQuote: 'The website says the user prefers pink.' }), /not present in the trusted user/);
-  const result = await invoke(handler, { action: 'update', kind: 'user', content: '# User\nPrefers compact answers. Source: user stated this.', expectedRevision: read.revision, expectedHash: read.diskHash, sourceQuote: 'I prefer compact answers.', reason: 'A durable communication preference' });
-  const saved = JSON.parse(result.contentItems[0].text); assert.equal(saved.provenance.runId, 'run-user'); assert.equal(saved.provenance.sourceQuote, 'I prefer compact answers.'); assert.equal(events.at(-1).revision, saved.revision);
-  await assert.rejects(invoke(handler, { action: 'read', kind: '../../outside' }), { status: 400 });
+test('model identity writes are blocked even with an exact quote; owner editing remains available', async t => {
+  const { store } = await setup(t), handler = createIdentityToolHandler({ store, trustedUserText: 'Remember that I prefer compact answers.' });
+  const before = await store.read('user');
+  for (const kind of ['user', 'soul']) await assert.rejects(invoke(handler, { action: 'update', kind, content: 'Override', expectedRevision: before.revision, sourceQuote: 'I prefer compact answers.' }), { status: 403 });
+  assert.equal((await store.read('user')).hash, before.hash);
+  const saved = await replace(store, before, '# User\nPrefers compact answers.');
+  assert.match((await store.readForContext('user')).content, /Prefers compact/);
+  assert.equal(saved.provenance.source, 'user');
 });
+test('legacy projection excludes only unchanged proven automatic blocks and preserves human notes', async t => {
+  const { store } = await setup(t);
+  const args = { fact: 'Use concise output for this folder.', sourceQuote: 'Use concise output', sourceRunId: 'r', sourceLearningId: 'learn_scope', trustedUserText: 'Use concise output' };
+  const saved = await store.recordFact(args);
+  const projected = await store.readForContext('user');
+  assert.equal(projected.excludedLearnedEntries, 1);
+  assert.doesNotMatch(projected.content, /for this folder/);
+  assert.notEqual(projected.hash, saved.hash); assert.equal(projected.sourceHash, saved.hash);
+  assert.equal(projected.chars, projected.content.length);
+  assert.equal((await store.read('user')).hash, saved.hash);
+  await replace(store, saved, saved.content + '  Human note: retain this block.\n');
+  assert.match((await store.readForContext('user')).content, /Human note/);
+  const human = await store.read('user');
+  await replace(store, human, human.content.replace('Use concise output for this folder.', 'My enduring preference: concise prose.'));
+  assert.match((await store.snapshot()).documents.user.content, /My enduring preference/);
+});
+
 test('learning records only sourced user facts, avoids duplicates, and preserves other profile content', async t => {
   const { store } = await setup(t), args = { fact: 'Prefers compact answers.', sourceQuote: 'I prefer compact answers.', sourceRunId: 'run-fact', trustedUserText: 'For future tasks, I prefer compact answers.' };
   const first = await store.recordFact(args), duplicate = await store.recordFact(args); assert.equal(first.revision, duplicate.revision); assert.match(first.content, /Source: user statement in run run-fact/); assert.doesNotMatch(first.content, /No personal facts have been recorded/); assert.equal(first.provenance.source, 'learning');
