@@ -225,3 +225,51 @@ test('native local review failures preserve actual usage and do not become model
   assert.equal(events.findLast(row => row.type === 'usage').usage.totalTokens, 5);
   assert.equal(events.filter(row => row.type === 'message').length, 0); assert.equal(f.requests.filter(row => row.method === 'turn/start').length, 1);
 });
+
+test('native steering cancels host children, closes admissions until settlement, and preserves confirmed receipts', async t => {
+  const f = nativeFixture(t), entered = deferred(), aborted = deferred(), release = deferred(); let calls = 0;
+  const { work, state } = await f.begin({ dynamicTools: [tool], onToolCall: async (call, { signal }) => {
+    calls++; signal.addEventListener('abort', () => aborted.resolve(), { once: true }); entered.resolve(); await release.promise; return receipt;
+  } });
+  const params = { threadId: state.threadId, turnId: state.turnId, tool: 'relay_once', arguments: {} };
+  const operation = f.client._dynamicToolCall({ id: 71, params: { ...params, callId: 'confirmed' } });
+  await entered.promise;
+  const steering = f.client.steerAgent(state.threadId, 'Replace the old plan.');
+  await aborted.promise;
+  await f.client._dynamicToolCall({ id: 72, params: { ...params, callId: 'unstarted' } });
+  assert.equal(calls, 1);
+  assert.equal(f.sent.find(row => row.id === 72).result.success, false);
+  release.resolve(); await operation; await steering;
+  assert.equal(f.sent.find(row => row.id === 71).result.success, true);
+  assert.equal(state.toolController.signal.aborted, false);
+  f.complete(state, 'Reconciled revised plan.');
+  assert.equal((await work).output, 'Reconciled revised plan.');
+});
+
+test('native steering aborts a stalled planning reviewer without waiting for its voluntary return', async t => {
+  const f = nativeFixture(t), entered = deferred(), aborted = deferred(); let reviews = 0;
+  const { work, state } = await f.begin({ onBeforeFinal: async ({ signal }) => {
+    if (++reviews > 1) return;
+    entered.resolve();
+    await new Promise((resolve, reject) => signal.addEventListener('abort', () => { aborted.resolve(); reject(signal.reason); }, { once: true }));
+  } });
+  f.complete(state, 'Superseded candidate.'); await entered.promise;
+  await f.client.steerAgent(state.threadId, 'Only do the corrected scope.');
+  await aborted.promise; await tick();
+  assert.match(JSON.stringify(f.requests.filter(row => row.method === 'turn/start')[1]), /corrected scope/);
+  f.complete(state, 'Corrected final.');
+  assert.equal((await work).output, 'Corrected final.');
+});
+
+test('native steering invalidates a queued callback before it can start and later admits corrected work', async t => {
+  const f = nativeFixture(t); let calls = 0;
+  const { work, state } = await f.begin({ dynamicTools: [tool], onToolCall: async () => { calls++; return receipt; } });
+  const params = { threadId: state.threadId, turnId: state.turnId, tool: 'relay_once', arguments: {} };
+  const operation = f.client._dynamicToolCall({ id: 81, params: { ...params, callId: 'queued-old' } });
+  const steering = f.client.steerAgent(state.threadId, 'Replace the queued action.');
+  await Promise.all([operation, steering]);
+  assert.equal(calls, 0); assert.equal(f.sent.find(row => row.id === 81).result.success, false);
+  await f.client._dynamicToolCall({ id: 82, params: { ...params, callId: 'corrected' } });
+  assert.equal(calls, 1); assert.equal(f.sent.find(row => row.id === 82).result.success, true);
+  f.complete(state, 'Corrected work only.'); await work;
+});

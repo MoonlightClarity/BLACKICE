@@ -1314,3 +1314,73 @@ test('known credentials echoed in valid upstream identifier fields are redacted 
   const receipt = runtime.listProviders()[0].modelChecks['exact:free'].lastFailure;
   assert.equal(receipt.upstreamCode, '[redacted]'); assert.equal(receipt.upstreamProvider, '[redacted]'); assert.ok(!JSON.stringify(runtime.status()).includes(secret));
 });
+
+for (const type of ['openai', 'anthropic', 'compatible']) test(type + ': steering interrupts a stalled inference without waiting for its response', async t => {
+  const arrived = deferred(), closed = deferred();
+  const { runtime, baseUrl, cwd, requests } = await harness(t, (request, response, index) => {
+    if (index === 1) { response.on('close', () => closed.resolve()); arrived.resolve(); return; }
+    if (type === 'openai') json(response, { status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Replanned.' }] }] });
+    else if (type === 'anthropic') json(response, { content: [{ type: 'text', text: 'Replanned.' }], stop_reason: 'end_turn' });
+    else json(response, { choices: [{ message: { role: 'assistant', content: 'Replanned.' }, finish_reason: 'stop' }] });
+  });
+  await runtime.saveProvider({ id: 'interrupt', type, baseUrl, apiKey: 'fixture-key', models: ['model'], maxSteps: 1 });
+  let threadId;
+  const pending = runtime.runAgent({ cwd, prompt: 'Original direction.', model: 'interrupt::model', timeoutMs: 3000, onEvent: e => { threadId ||= e.threadId; } });
+  await arrived.promise;
+  await runtime.steerAgent(threadId, 'Stop that approach. Use the revised scope.');
+  assert.equal((await pending).output, 'Replanned.');
+  await closed.promise;
+  assert.match(JSON.stringify(requests[1].body), /Use the revised scope/);
+});
+
+test('steering cancels admitted child work, blocks remaining batch calls and retains confirmed effects', async t => {
+  const entered = deferred(), aborted = deferred(), release = deferred();
+  const { runtime, baseUrl, cwd, requests } = await harness(t, (request, response, index) => {
+    if (index === 1) json(response, { choices: [{ message: { role: 'assistant', tool_calls: [
+      { id: 'one', type: 'function', function: { name: 'relay_observe', arguments: '{"target":"one"}' } },
+      { id: 'two', type: 'function', function: { name: 'relay_observe', arguments: '{"target":"two"}' } }
+    ] }, finish_reason: 'tool_calls' }] });
+    else json(response, { choices: [{ message: { role: 'assistant', content: 'Reconciled.' }, finish_reason: 'stop' }] });
+  });
+  await runtime.saveProvider({ id: 'batch-steer', type: 'compatible', baseUrl, models: ['model'] });
+  let threadId; const calls = [];
+  const pending = runtime.runAgent({ cwd, prompt: 'Do the old plan.', model: 'batch-steer::model', timeoutMs: 3000, dynamicTools: [tool],
+    onEvent: e => { threadId ||= e.threadId; },
+    onToolCall: async (call, { signal }) => {
+      calls.push(call.arguments.target);
+      signal.addEventListener('abort', () => aborted.resolve(), { once: true }); entered.resolve();
+      await release.promise;
+      return { success: true, contentItems: [{ type: 'inputText', text: 'Confirmed effect one.' }] };
+    } });
+  await entered.promise;
+  await runtime.steerAgent(threadId, 'Do not start any more old-plan work.');
+  await aborted.promise;
+  assert.equal(requests.length, 1, 'wait for admitted work to settle before fresh inference');
+  release.resolve();
+  assert.equal((await pending).output, 'Reconciled.');
+  assert.deepEqual(calls, ['one']);
+  const messages = requests[1].body.messages;
+  assert.match(messages.find(m => m.tool_call_id === 'one').content, /Confirmed effect one/);
+  assert.match(messages.find(m => m.tool_call_id === 'two').content, /Not executed.*newer user direction/);
+  assert.equal(messages.at(-1).content, 'Do not start any more old-plan work.');
+});
+
+test('steering interrupts planning review and preserves the latest direction', async t => {
+  const reviewing = deferred(), aborted = deferred();
+  const { runtime, baseUrl, cwd, requests } = await harness(t, (request, response, index) =>
+    json(response, { choices: [{ message: { role: 'assistant', content: index === 1 ? 'Old answer.' : 'Revised answer.' }, finish_reason: 'stop' }] }));
+  await runtime.saveProvider({ id: 'review-steer', type: 'compatible', baseUrl, models: ['model'] });
+  let threadId, reviews = 0; const events = [];
+  const pending = runtime.runAgent({ cwd, prompt: 'Original task.', model: 'review-steer::model', timeoutMs: 3000,
+    onEvent: e => { threadId ||= e.threadId; events.push(e); },
+    onBeforeFinal: async ({ signal }) => {
+      if (++reviews > 1) return null;
+      reviewing.resolve();
+      await new Promise((resolve, reject) => signal.addEventListener('abort', () => { aborted.resolve(); reject(signal.reason); }, { once: true }));
+    } });
+  await reviewing.promise; await runtime.steerAgent(threadId, 'Use my corrected requirement.');
+  await aborted.promise;
+  assert.equal((await pending).output, 'Revised answer.');
+  assert.equal(requests[1].body.messages.at(-1).content, 'Use my corrected requirement.');
+  assert.ok(!events.some(e => e.type === 'message' && e.phase === 'final_answer' && e.text === 'Old answer.'));
+});
