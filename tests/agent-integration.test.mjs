@@ -36,20 +36,22 @@ async function application(t,{execute,connectionsFactory,autoLearning=false,maxC
   return{app,runtime,request,settled,directory,dataDir,cwd};
 }
 
-test('identity is attached as real tools and an immutable per-turn snapshot, then refreshed for the next turn',async t=>{
+test('identity tools stay read-only while owner edits refresh only the next immutable turn snapshot',async t=>{
   let initialRevision,initialPrompt;
   const {app,runtime,request,settled}=await application(t,{execute:async(options,index)=>{
     assert.ok(options.dynamicTools.some(item=>item.name==='relay_identity'));assert.match(options.prompt,/BLACKICE GLOBAL IDENTITY/);
     if(index===1){
       initialPrompt=options.prompt;const record=toolData(await tool(options,'relay_identity',{action:'read',kind:'user'}));initialRevision=record.revision;
-      const saved=toolData(await tool(options,'relay_identity',{action:'update',kind:'user',content:record.content+'\n- Prefer compact handoffs.\n',expectedRevision:record.revision,expectedHash:record.diskHash,sourceQuote:'Prefer compact handoffs.'}));
+      await assert.rejects(tool(options,'relay_identity',{action:'update',kind:'user',content:record.content+'\n- Prefer compact handoffs.\n',expectedRevision:record.revision,expectedHash:record.diskHash,sourceQuote:'Prefer compact handoffs.'}),/user-controlled and read-only/);
+      assert.equal((await request('/api/identity/user')).data.content,record.content);
+      const response=await request('/api/identity/user',{method:'PUT',body:{content:record.content+'\n- Prefer compact handoffs.\n',expectedRevision:record.revision,expectedHash:record.diskHash}});assert.equal(response.status,200);const saved=response.data;
       assert.equal(saved.revision,record.revision+1);assert.equal(options.prompt,initialPrompt,'saving cannot mutate the current turn snapshot');
     }else assert.match(options.prompt,/Prefer compact handoffs/);
     return{output:'Verified fixture result.',threadId:`fixture-thread-${index}`};
   }});
   const first=app.engine.startRun({workflow:graph(),input:'Prefer compact handoffs. Please save that preference.'}),done=await settled(first.id);
   assert.equal(done.status,'completed',done.error);assert.equal(done.nodes.agent.identity.revisions.user,initialRevision);assert.equal(done.nodes.agent.identity.truncated,false);
-  assert.ok(done.events.some(event=>event.data.type==='identity'&&event.data.action==='update'));
+  assert.ok(done.events.some(event=>event.data.type==='identity'&&event.data.action==='read'));
   const second=app.engine.startRun({workflow:graph(),input:'Use the profile on the next turn.'});const next=await settled(second.id);
   assert.equal(next.status,'completed',next.error);
   assert.equal(next.nodes.agent.identity.revisions.user,initialRevision+1);assert.equal(runtime.calls.length,2);
@@ -95,9 +97,9 @@ test('automatic review is scheduled only after settlement and its cancellation f
   }finally{release.resolve();await app.learning.updateSettings({mode:'manual'});}
 });
 
-test('a completed reflection persists a real skill and the next agent receives and reads it through the knowledge tool',async t=>{
+test('reflection proposes a skill and only owner approval makes it inspectable by the next agent',async t=>{
   let foreground=0,readSkill=false;
-  const {app,settled,cwd}=await application(t,{autoLearning:true,execute:async options=>{
+  const {app,settled,cwd,request}=await application(t,{autoLearning:true,execute:async options=>{
     if(options.dynamicTools.some(item=>item.name==='relay_learn')){
       await tool(options,'relay_learn',{action:'record',kind:'skill',key:'verify-fixture',title:'Verify the fixture',summary:'Read the fixture result before reporting success.',content:'Read the current artifact and compare it with the requested result.',whenToUse:'When checking fixture exports in this folder.',verification:'Read the actual output file.',evidence:[{id:'node_agent',quote:'Verified fixture result.'}]});
       await tool(options,'relay_learn',{action:'finish',summaryOfReview:'Recorded the observed fixture verification procedure.'});return{output:'Recorded evidence-backed skill.'};
@@ -105,7 +107,10 @@ test('a completed reflection persists a real skill and the next agent receives a
     foreground++;if(foreground===2){const lesson=app.learning.listLessons()[0];assert.doesNotMatch(options.prompt,new RegExp(lesson.knowledgeId));const receipt=await tool(options,'relay_skills',{action:'read',id:lesson.knowledgeId});assert.equal(receipt.success,true);assert.match(text(receipt),/Read the current artifact/);readSkill=true;}
     return{output:'Verified fixture result.',threadId:`skill-thread-${foreground}`};
   }});
-  app.learning.delayMs=0;const first=app.engine.startRun({workflow:graph(),input:'Verify the fixture export'});await settled(first.id);await waitFor(()=>app.learning.listLessons().length&&app.learning.status().activeReviewId===null,'automatic skill commit');
+  app.learning.delayMs=0;const first=app.engine.startRun({workflow:graph(),input:'Verify the fixture export'});await settled(first.id);await waitFor(()=>app.knowledge.listApprovals().length&&app.learning.status().activeReviewId===null,'pending skill proposal');
+  assert.equal(app.learning.listLessons().length,0);assert.equal(app.knowledge.list().length,0);
+  const proposal=app.knowledge.listApprovals()[0];assert.equal(proposal.provenance.runId,first.id);
+  const decision=await request('/api/knowledge/approvals/'+proposal.id,{method:'POST',body:{decision:'approve'}});assert.equal(decision.status,200);assert.equal(decision.data.status,'approved');
   const lesson=app.learning.listLessons()[0];assert.equal(app.knowledge.get(lesson.knowledgeId).provenance.runId,first.id);assert.equal(app.learning.getContext(cwd).skills.length,0); // Learned skills remain inspectable but are not auto-injected as authoritative context.
   await app.learning.updateSettings({mode:'manual'});const second=app.engine.startRun({workflow:graph(),input:'Verify the next fixture export'});const next=await settled(second.id);assert.equal(next.status,'completed',next.error);assert.equal(readSkill,true);assert.deepEqual(next.nodes.agent.learningContext.skills,[]);
 });

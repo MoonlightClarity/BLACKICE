@@ -193,10 +193,10 @@ test('attached agent tools read and write the actual scoped store with run prove
     const read = decode(await options.onToolCall(tool('relay_memory', { action: 'read', id: 'local-note' })));
     assert.equal(read.entry.content, 'Local convention body.');
     const remembered = decode(await options.onToolCall(tool('relay_memory', { action: 'remember', title: 'Verified fact', content: 'Checked from this workspace.' })));
-    assert.equal(remembered.entry.provenance.source, 'agent');
-    assert.equal(remembered.entry.provenance.nodeId, 'alpha');
+    assert.equal(remembered.pendingApproval,true);assert.equal(remembered.applied,false);assert.equal(remembered.entry,undefined);
+    observations.push(remembered.approvalId);
     const skill = decode(await options.onToolCall(tool('relay_skills', { action: 'save', title: 'Check and package', content: '# Steps\nRun checks, inspect, package.' })));
-    assert.equal(skill.entry.kind, 'skill');
+    assert.equal(skill.pendingApproval,true);assert.equal(skill.applied,false);assert.equal(skill.entry,undefined);observations.push(skill.approvalId);
     const history = decode(await options.onToolCall(tool('relay_history', { action: 'search' })));
     assert.equal(history.results.length, 0, 'active run is excluded from its own history');
     // A thrown mutation has no confirmed runtime receipt. Keep the expected
@@ -213,7 +213,10 @@ test('attached agent tools read and write the actual scoped store with run prove
   const started = await api('/api/runs', { method: 'POST', body: { workflow: singleAgentGraph(), input: 'Remember a checked fact and save a procedure.' } });
   const run = await settled(started.data.id);
   assert.equal(run.status, 'completed', run.error);
-  assert.equal(observations.length, 1);
+  assert.equal(observations.length, 3);
+  assert.equal((await api('/api/knowledge')).data.filter(entry=>entry.provenance.source==='agent').length,0);
+  const proposals=(await api('/api/knowledge/approvals')).data.approvals;assert.equal(proposals.length,2);
+  for(const id of observations.slice(1)){const proposal=proposals.find(item=>item.id===id);assert.equal(proposal.provenance.source,'agent');assert.equal(proposal.provenance.nodeId,'alpha');assert.equal(proposal.provenance.runId,run.id);const decision=await api('/api/knowledge/approvals/'+id,{method:'POST',body:{decision:'approve'}});assert.equal(decision.status,200);assert.equal(decision.data.status,'approved');assert.equal(decision.data.entry.kind,id===observations[1]?'memory':'skill');assert.equal(decision.data.entry.title,id===observations[1]?'Verified fact':'Check and package');}
   const agentEntries = (await api('/api/knowledge')).data.filter(entry => entry.provenance.source === 'agent');
   assert.equal(agentEntries.length, 2);
   for (const metadata of agentEntries) {
@@ -227,10 +230,10 @@ test('attached agent tools read and write the actual scoped store with run prove
   assert.ok(!runtime.calls[0].prompt.includes('other-note'));
   assert.ok(!runtime.calls[0].prompt.includes('Local convention body.'), 'catalog inserts metadata, full content requires a read');
   assert.deepEqual(app.engine.getRun(run.id).nodes.alpha.knowledgeCatalog.memories.map(entry => entry.id).sort(), ['global-note', 'local-note']);
-  assert.ok(run.events.some(event => event.data.type === 'knowledge' && event.data.status === 'completed' && event.data.title === 'Verified fact'));
+  assert.ok(run.events.some(event => event.data.type === 'knowledge' && event.data.status === 'pending_approval' && event.data.approvalId === observations[1]));
 });
 
-test('cancellation blocks late agent knowledge writes and queued store writes before they commit', async t => {
+test('cancellation blocks late agent knowledge writes and queued proposals before admission', async t => {
   const entered = deferred(), release = deferred();
   const runtime = new FakeRuntime(async options => { entered.resolve(options); return release.promise; });
   const { api, app, settled } = await application(t, { runtime });
@@ -238,10 +241,10 @@ test('cancellation blocks late agent knowledge writes and queued store writes be
   const started = await api('/api/runs', { method: 'POST', body: { workflow: singleAgentGraph(), input: 'Await cancellation.' } });
   const active = await entered.promise;
   const blocker = deferred();
-  // Hold the shared write queue to exercise the cancellation check at execution time,
+  // Hold the agent approval queue to exercise the cancellation check at execution time,
   // after the callback accepted a valid request but before any storage mutation.
-  const originalChain = app.knowledge.writeChain;
-  app.knowledge.writeChain = originalChain.then(() => blocker.promise);
+  const originalChain = app.knowledge.approvalChain;
+  app.knowledge.approvalChain = originalChain.then(() => blocker.promise);
   const pending = active.onToolCall(tool('relay_memory', { action: 'remember', id: 'queued-agent-note', title: 'Queued fact', content: 'Must not commit.' }));
   pending.catch(() => {});
   try {
@@ -252,6 +255,7 @@ test('cancellation blocks late agent knowledge writes and queued store writes be
     assert.equal(app.knowledge.get('queued-agent-note').content, 'Must remain unchanged.');
     assert.equal(app.knowledge.get('queued-agent-note').revision, 1);
     assert.equal(app.knowledge.list().length, 1);
+    assert.equal(app.knowledge.listApprovals().length,0,'cancelled proposals never become actionable');
   } finally { blocker.resolve(); release.resolve({ output: 'Late output', threadId: 'cancelled-knowledge-thread' }); }
   assert.equal((await settled(started.data.id)).status, 'cancelled');
 });

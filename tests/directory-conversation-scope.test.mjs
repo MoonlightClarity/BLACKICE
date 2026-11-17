@@ -60,6 +60,14 @@ class Runtime extends EventEmitter{
     return {output:JSON.stringify(value)};
   }
 }
+
+async function approveAgentFixture(store, operation) {
+ const before=store.list({includeDeleted:true});let approvalId;
+ await assert.rejects(operation,error=>{assert.equal(error.code,'KNOWLEDGE_APPROVAL_REQUIRED');approvalId=error.approvalId;return true;});
+ assert.deepEqual(store.list({includeDeleted:true}),before);
+ const decision=await store.decideApproval(approvalId,{decision:'approve'});assert.equal(decision.status,'approved');assert.equal(decision.entry.provenance.source,'agent');return decision.entry;
+}
+
 test('production Directory excludes other conversation catalogs and retains its own saved notes',async t=>{
   const root=await mkdtemp(path.join(os.tmpdir(),'directory-conversation-scope-')),cwd=path.join(root,'workspace'),dataDir=path.join(root,'data');await mkdir(cwd);
   const knowledge=await new KnowledgeStore({dataDir}).init(),runtime=new Runtime();
@@ -68,8 +76,8 @@ test('production Directory excludes other conversation catalogs and retains its 
   t.after(async()=>{await engine.close();await knowledge.writeChain;await rm(root,{recursive:true,force:true});});
   const first=engine.startRun({workflow,input:{task:'Explain the local fixture.',directoryMode:'on',subagentsMode:'off'}});
   await engine.executions.get(first.id);assert.equal(engine.getRun(first.id).status,'completed',engine.getRun(first.id).error);
-  const own=await knowledge.upsert({kind:'memory',title:'CURRENT_CONVERSATION_NOTE',summary:'CURRENT_CONVERSATION_NOTE',content:'Same conversation evidence.',cwd},{source:'agent',runId:first.id,nodeId:'agent'});
-  await knowledge.upsert({kind:'memory',title:'FOREIGN_CONVERSATION_NOTE',summary:'FOREIGN_CONVERSATION_NOTE',content:'Other conversation evidence.',cwd},{source:'agent',runId:'unrelated-run',nodeId:'agent'});
+  const own=await approveAgentFixture(knowledge,knowledge.upsert({kind:'memory',title:'CURRENT_CONVERSATION_NOTE',summary:'CURRENT_CONVERSATION_NOTE',content:'Same conversation evidence.',cwd},{source:'agent',runId:first.id,nodeId:'agent'}));
+  await approveAgentFixture(knowledge,knowledge.upsert({kind:'memory',title:'FOREIGN_CONVERSATION_NOTE',summary:'FOREIGN_CONVERSATION_NOTE',content:'Other conversation evidence.',cwd},{source:'agent',runId:'unrelated-run',nodeId:'agent'}));
   await knowledge.upsert({kind:'memory',title:'UNSCOPED_WORKSPACE_NOTE',summary:'UNSCOPED_WORKSPACE_NOTE',content:'No conversation source.',cwd});
   const continuation=engine.continueRun(first.id,{nodeId:'agent',message:'Continue explaining the same fixture.',directoryMode:'on',subagentsMode:'off'});
   await engine.executions.get(continuation.id);
