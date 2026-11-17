@@ -2,6 +2,6 @@
   "format": 1,
   "version": "2.40.0",
   "appFingerprint": "d5419061e2135a14e6085ba04539e154f278ea7a3dc62c61235fb1cc714372e5",
-  "sourceTestReceipt": "verification/public-2.40.0-provenance.json",
+  "sourceTestReceipt": "verification/windows-2.40.0.json",
   "publish": false
 }
