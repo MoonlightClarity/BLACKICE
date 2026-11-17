@@ -19,3 +19,11 @@ This is not an OS sandbox. Arbitrary shell execution, native provider file tools
 ## Verification
 
 Targeted identity, learning, engine-delivery, default-SOUL and protected workspace suites exercise model rejection with exact user quotes, owner editing, default preservation, scope projection, unchanged source files, learned create/remove/restore, aliases, Windows case and alias retargeting during admission. No live profile migration or deletion is performed by this change.
+
+## SOUL separation and upgrade behavior
+
+The concise SOUL default keeps purpose, user agency, practical judgment, calibrated inference, proportionate effort and communication character. Detailed task decomposition stays in planning-skill/planning-policy; delegation in subagents; evidence and comparison method in analytical-method; effect reconciliation in operational-receipts and its tool contracts; scheduling in control-tools; immutable snapshots and revision checks in identity/engine. These modules were already present: the reduction does not copy the removed text into another catch-all prompt.
+
+Core judgment remains in SOUL and analytical-method is delivered independently of formal Planning mode. Engine invocation tests cover planning-off ordinary and Directory turns, frozen active identities and next-turn owner edits. Historical planning-mode/worker suites are additional regression coverage, not proof of a live task outcome. Broader harness-identity procedural sprawl remains a separate issue.
+
+Defaults now seed only missing new profiles. Opening or upgrading an existing installation does not replace its SOUL, even when its text matches an older shipped default with seed/development provenance. Adoption of the concise version is an explicit owner/editor change, retaining history and conflict checks. This avoids a silent installed-profile migration.

@@ -29,6 +29,8 @@ for (const directoryMode of ['off','on']) test('identity delivered in '+director
  const first=engine.startRun({workflow,input:{task:'Reply briefly.',directoryMode}});
  await entered;const oldText=JSON.stringify(runtime.calls[0]);
  assert.match(oldText,/calibrated inference/);
+ assert.match(oldText,/GENERAL ANALYTICAL METHOD/);
+ assert.doesNotMatch(oldText,/## Execution and coordination|## Verification and practical learning/);
  const doc=await identity.read('soul');
  await identity.update({kind:'soul',content:'# Custom identity\nCUSTOM_NEXT_TURN',expectedRevision:doc.revision,expectedHash:doc.diskHash});
  release();await engine.executions.get(first.id);

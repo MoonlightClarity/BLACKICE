@@ -18,24 +18,24 @@ async function fixture(t, content = old, provenance = { source: 'seed' }) {
 }
 test('identity default and prior seed are exact', () => {
   assert.equal(createHash('sha256').update(old).digest('hex'), '18658fa7e02228a5288c9e66c73e08991b192b4735f344ae7e7988ab92928039');
-  assert.equal(createHash('sha256').update(DEFAULT_SOUL).digest('hex'), '456f447a1a43dc8bc9682572333836c92768276abc75383a323a4b80e564a649');
+  assert.equal(createHash('sha256').update(DEFAULT_SOUL).digest('hex'), '36c0582bb743d2759fe6d36e575975f7f92410ef5d24cbb3b74faca5feda3af8');
   assert.match(DEFAULT_SOUL, /calibrated inference/);
   assert.match(DEFAULT_SOUL, /not new authority/);
   assert.match(DEFAULT_SOUL, /actual authorization, higher-priority constraints, and tool limitations/);
 });
 for (const provenance of [{source:'seed'}, {source:'development', reason:'Updated the unchanged starter identity to the fixed BLACKICE identity.'}]) {
-  test('refreshes exact shipped identity with '+provenance.source+' provenance once', async t => {
+  test('preserves exact shipped identity with '+provenance.source+' provenance', async t => {
     const {dataDir, store, open} = await fixture(t, old, provenance);
     const prior = await store.snapshot(), user = await store.read('user');
     const upgraded = await open(), current = await upgraded.read('soul');
-    assert.equal(current.content, DEFAULT_SOUL);
-    assert.equal(current.revision, prior.documents.soul.revision + 1);
+    assert.equal(current.content, old);
+    assert.equal(current.revision, prior.documents.soul.revision);
     assert.equal(prior.documents.soul.content, old);
-    assert.equal((await upgraded.readVersion('soul', current.revision - 1)).content, old);
-    assert.equal(await fs.readFile(path.join(dataDir,'identity','SOUL.md.bak'),'utf8'), old);
+    assert.equal((await upgraded.readVersion('soul', current.revision)).content, old);
+    assert.equal(await fs.readFile(path.join(dataDir,'identity','SOUL.md'),'utf8'), old);
     assert.deepEqual(await upgraded.read('user'), user);
     assert.equal((await (await open()).read('soul')).revision, current.revision);
-    assert.ok((await upgraded.snapshot()).text.includes('calibrated inference'));
+    assert.equal((await upgraded.snapshot()).fullDocuments.soul.content, old);
   });
 }
 for (const [label,content,provenance] of [
