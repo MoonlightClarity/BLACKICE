@@ -1243,3 +1243,17 @@ test('Vibe rejects delayed native bridge calls between cancellation settlement a
   assert.equal(result.code, 'TOOL_SUPERSEDED'); assert.equal(calls, 0);
   release.resolve(); assert.equal((await running).output, 'answer 2');
 });
+
+test('terminal Stop takes precedence over concurrent Vibe review steering', async t => {
+  const f = await fixture(t), entered = deferred(), controller = new AbortController(); let threadId;
+  const running = f.runtime.runAgent(input({ signal: controller.signal,
+    onEvent: e => { if (e.type === 'thread') threadId = e.threadId; },
+    onBeforeFinal: ({ signal }) => { entered.resolve(); return new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })); }
+  }));
+  const rejected = assert.rejects(running, { code: 'ABORTED' });
+  await entered.promise;
+  const steering = f.runtime.steerAgent(threadId, 'Accepted corrected direction.');
+  controller.abort(Object.assign(Error('Stopped'), { code: 'ABORTED' }));
+  await steering; await rejected;
+  assert.equal(f.connections[0].calls.filter(c => c.method === 'session/prompt').length, 1);
+});
