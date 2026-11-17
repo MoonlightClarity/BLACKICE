@@ -37,6 +37,20 @@ app.whenReady().then(async()=>{
   await until(()=>driver.status().tabs.find(t=>t.tabId===first.tabId)?.collectionId===child);
   await until(()=>js("!!document.querySelector('[data-collection-id="+JSON.stringify(child)+"] [data-tab-id="+JSON.stringify(first.tabId)+"]')"));
   report.checks.push('Extension creates nested folders and moves real native tab through existing host collection action');
+  assert.equal(await js(`document.querySelector('[data-collection-id="${child}"]').parentElement.closest('[data-collection-id]').dataset.collectionId`),parent);
+  assert.equal(await js(`document.querySelector('[data-collection-id="${child}"] > .blackice-tab-folder-toggle').textContent`),'Companies (1)');
+  assert.equal(await js(`document.querySelector('[data-collection-id="${parent}"] > .blackice-tab-folder-toggle').textContent`),'Research (1)');
+  assert.equal(await js("document.querySelectorAll('.blackice-tab-folder-icon').length"),3);
+  await js(`document.querySelector('[data-collection-id="${parent}"] > .blackice-tab-folder-toggle').click()`);
+  assert.equal(await js(`document.querySelector('[data-collection-id="${child}"]').closest('[hidden]')!==null`),true);
+  await js('window.fixture.refresh()');await idle();
+  await until(()=>js(`document.querySelector('[data-collection-id="${child}"]').closest('[hidden]')!==null`));
+  await js(`document.querySelector('[data-collection-id="${parent}"] > .blackice-tab-folder-toggle').click()`);
+  await until(()=>js(`document.querySelector('[data-collection-id="${child}"]').getBoundingClientRect().width>0`));
+  await new Promise(r=>setTimeout(r,150));
+  await fs.writeFile(path.join(out,'nested-tabstrip.png'),(await shell.webContents.capturePage({x:0,y:0,width:1000,height:220})).toPNG());
+  report.checks.push('Child folders are nested inside parent tabstrip with icons, descendant counts, and parent collapse across refresh');
+
   await idle();await js("(()=>{const row=document.querySelector('[data-tab-id="+JSON.stringify(first.tabId)+"]').parentElement;const transfer=new DataTransfer();row.dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer:transfer}));document.querySelector('[data-collection-id=\"\"]').dispatchEvent(new DragEvent('drop',{bubbles:true,dataTransfer:transfer}));})()");
   await until(()=>driver.status().tabs.find(t=>t.tabId===first.tabId).collectionId===null);
   await idle();await js("(()=>{const row=document.querySelector('[data-tab-id="+JSON.stringify(first.tabId)+"]').parentElement;const transfer=new DataTransfer();row.dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer:transfer}));document.querySelector('[data-collection-id="+JSON.stringify(child)+"]').dispatchEvent(new DragEvent('drop',{bubbles:true,dataTransfer:transfer}));})()");

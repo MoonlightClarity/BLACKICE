@@ -32,15 +32,19 @@
    const extras=[...host.children].filter(n=>!n.classList.contains('next-browser-tab-group')&&!n.classList.contains('blackice-tab-folder')&&!n.classList.contains('blackice-tab-add')&&!n.classList.contains('blackice-tab-editor'));
    host.replaceChildren();
    const label=f=>{const names=[f.name],seen=new Set([f.id]);let p=folders.get(f.parentId);while(p&&!seen.has(p.id)){names.unshift(p.name);seen.add(p.id);p=folders.get(p.parentId);}return names.join(' / ');};
-   for(const [id,items]of buckets){if(!id&&!items.length)continue;const folder=folders.get(id),group=el('section',null,'blackice-tab-folder');group.dataset.collectionId=id;
-    const toggle=el('button',(folder?label(folder):'Unfiled')+' ('+items.length+')','blackice-tab-folder-toggle');toggle.type='button';toggle.setAttribute('aria-expanded',String(!state.collapsed.has(id)));toggle.title=folder?'Click to collapse; double-click or right-click to edit':'Unfiled tabs';
+   const parents=new Map();for(const f of model.collections){let parent=folders.has(f.parentId)?f.parentId:'';const seen=new Set([f.id]);let cursor=parent;while(cursor){if(seen.has(cursor)){parent='';break;}seen.add(cursor);cursor=folders.get(cursor)?.parentId;}parents.set(f.id,parent);}
+   const children=id=>model.collections.filter(f=>parents.get(f.id)===id);
+   const count=id=>(buckets.get(id)?.length||0)+children(id).reduce((n,f)=>n+count(f.id),0);
+   function renderFolder(id){const items=buckets.get(id)||[],folder=folders.get(id),group=el('section',null,'blackice-tab-folder');group.dataset.collectionId=id;
+    const toggle=el('button',(folder?folder.name:'Unfiled')+' ('+(id?count(id):items.length)+')','blackice-tab-folder-toggle');const icon=el('span',null,'blackice-tab-folder-icon');icon.setAttribute('aria-hidden','true');toggle.prepend(icon);toggle.type='button';toggle.setAttribute('aria-expanded',String(!state.collapsed.has(id)));toggle.title=folder?'Click to collapse; double-click or right-click to edit':'Unfiled tabs';
     const content=el('div',null,'blackice-tab-folder-tabs');content.hidden=state.collapsed.has(id);content.append(...items);
     toggle.onclick=()=>{state.collapsed.has(id)?state.collapsed.delete(id):state.collapsed.add(id);content.hidden=state.collapsed.has(id);toggle.setAttribute('aria-expanded',String(!content.hidden));};
     if(folder){toggle.ondblclick=()=>editor(folder);toggle.oncontextmenu=e=>{e.preventDefault();editor(folder);};}
     group.ondragover=e=>{if([...e.dataTransfer.types].includes('application/x-blackice-tab'))e.preventDefault();};
-    group.ondrop=e=>{const tabId=e.dataTransfer.getData('application/x-blackice-tab');if(model.tabs.some(t=>t.tabId===tabId)){e.preventDefault();request('tab_collect',{tabId,collectionId:id||null});}};
-    group.append(toggle);if(folder){const menu=el('button','…','blackice-tab-folder-menu');menu.type='button';menu.title='Edit folder';menu.setAttribute('aria-label','Edit '+label(folder));menu.disabled=model.busy;menu.onclick=()=>editor(folder);group.append(menu);}group.append(content);host.append(group);
+    group.ondrop=e=>{const tabId=e.dataTransfer.getData('application/x-blackice-tab');if(model.tabs.some(t=>t.tabId===tabId)){e.preventDefault();e.stopPropagation();request('tab_collect',{tabId,collectionId:id||null});}};
+    group.append(toggle);if(folder){const menu=el('button','…','blackice-tab-folder-menu');menu.type='button';menu.title='Edit folder';menu.setAttribute('aria-label','Edit '+label(folder));menu.disabled=model.busy;menu.onclick=()=>editor(folder);group.append(menu);}group.append(content);for(const child of (id?children(id):[]))content.append(renderFolder(child.id));return group;
    }
+   for(const folder of children(''))host.append(renderFolder(folder.id));if(buckets.get('').length)host.append(renderFolder(''));
    const add=el('button','+ Folder','blackice-tab-add');add.type='button';add.disabled=model.busy;add.onclick=()=>editor(null);host.append(add,...extras);
    if(state.editor){host.append(state.editor);for(const c of state.editor.querySelectorAll('button,input,select'))c.disabled=model.busy;}
    if(focusId)[...host.querySelectorAll('[data-tab-id]')].find(n=>n.dataset.tabId===focusId)?.focus({preventScroll:true});
