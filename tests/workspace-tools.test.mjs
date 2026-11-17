@@ -239,3 +239,35 @@ test('the one MiB preview excludes its unfinished line and never promises an unr
     assert.equal(beyond.success, false); assert.equal(parsed(beyond).code, 'WORKSPACE_READ_PREVIEW_LIMIT'); assert.match(parsed(beyond).error, /run/);
   }
 });
+
+
+for (const allEnabled of [false, true]) test(`oversized context listings preserve ${allEnabled ? 'all-enabled' : 'selected'} admitted policy within serialized output bound`, async t => {
+  const { activeTaskPolicy } = await import('../lib/active-task-policy.mjs');
+  const { normalizePlanningOntology, PLANNING_ONTOLOGY_MODULES } = await import('../public/planning-module-policy.mjs');
+  const planningOntology = normalizePlanningOntology({ version: 2, modules: Object.fromEntries(PLANNING_ONTOLOGY_MODULES.map(({ id }) => [id, allEnabled || ['time_management', 'anti_overalignment'].includes(id)])) });
+  const policy = activeTaskPolicy({ id: 'oversized-policy', planningMode: 'off', planningOntology });
+  const { handler, cwd } = await harness(t, { getTaskPolicy: () => policy });
+  await Promise.all(Array.from({ length: 150 }, (_, i) => writeFile(path.join(cwd, String(i).padStart(3, '0') + '-'.repeat(180) + '.txt'), '')));
+  const raw = createWorkspaceToolHandler({ cwd });
+  const unbound = parsed(await raw(call({ action: 'list' })));
+  assert.ok(unbound.preview, 'fixture must exceed the generic output bound');
+  for (let repeat = 0; repeat < 2; repeat++) {
+    const response = await handler(call({ action: 'list' }));
+    assert.equal(response.success, true);
+    assert.ok(response.contentItems[0].text.length <= 40000);
+    const value = parsed(response);
+    assert.deepEqual(value.activeTaskPolicy, policy);
+    assert.match(value.activeTaskPolicy.instructions, /IMMEDIATE EFFORT CALIBRATION/);
+    assert.match(value.activeTaskPolicy.instructions, /MINIMUM-SCOPE BLOCKING/);
+    assert.equal(value.truncated, true);
+    assert.match(value.nextAction, /narrow filename search/);
+    assert.ok(value.entries.length > 0 && value.entries.length < 150);
+    assert.equal(value.preview, undefined);
+  }
+  const explicit = await handler(call({ action: 'list', path: '.' }));
+  assert.ok(explicit.contentItems[0].text.length <= 40000);
+  const compact = parsed(explicit).activeTaskPolicy;
+  assert.equal(compact.instructions, undefined);
+  assert.deepEqual(compact.enabledModules, policy.enabledModules);
+  assert.deepEqual(compact.instructionsAvailableVia, { tool: 'relay_workspace', arguments: { action: 'list' } });
+});
