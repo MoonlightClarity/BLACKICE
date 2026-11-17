@@ -189,3 +189,32 @@ test('a saved native conversation keeps its original tools while a new chat rece
   const fresh = app.engine.startRun({workflow: graph, input: 'A fresh chat may use the new application tool.'}); await app.engine.executions.get(fresh.id);
   assert.equal(app.engine.getRun(fresh.id).status, 'completed', app.engine.getRun(fresh.id).error); assert.equal(model.calls.length, 3); assert.equal(privateRuntime.calls.length, 0);
 });
+
+test('module receipts distinguish effective policy from absent built-in instructions and remain readable in history', async t=>{
+ const {app,model}=await fixture(t);
+ const policy={version:2,modules:{inference:false,time_management:true,feasibility:false,decomposition:false,branching:false,replanning:false,metacognition:false,anti_overalignment:false,verification:false,subagents:true}};
+ await app.runtimeSettings.update({planningOntology:policy});
+ const off=app.engine.startRun({workflow:graph,input:'Report capabilities.'});
+ await app.engine.executions.get(off.id);
+ const offRun=app.engine.getRun(off.id);
+ assert.equal(offRun.status,'completed',offRun.error);
+ const receipt=offRun.nodes.agent.moduleActivation;
+ assert.equal(receipt.state,'runtime-dispatch');assert.equal(receipt.adherence,'unverified');
+ assert.equal(receipt.modules.find(x=>x.id==='time_management').configured,true);
+ assert.equal(receipt.modules.find(x=>x.id==='time_management').instructionIncluded,false);
+ model.execute=async options=>{
+  assert.doesNotMatch(options.developerInstructions,/IMMEDIATE EFFORT CALIBRATION/);
+  const result=await options.onToolCall({name:'relay_history',arguments:{action:'read',id:off.id}});
+  assert.equal(result.success,true);
+  const history=JSON.parse(result.contentItems[0].text);
+  assert.equal(history.run.nodes.find(x=>x.id==='agent').moduleActivation.state,'runtime-dispatch');
+  return {output:'Checked receipt, not model adherence.',threadId:'module-receipt-fixture'};
+ };
+ const on=app.engine.startRun({workflow:graph,input:'Inspect prior receipt.',planningMode:'on',planningOntology:policy});
+ await app.engine.executions.get(on.id);
+ const onRun=app.engine.getRun(on.id);
+ assert.equal(onRun.status,'completed',onRun.error);
+ assert.equal(onRun.nodes.agent.moduleActivation.modules.find(x=>x.id==='time_management').effective,true);
+ assert.equal(onRun.nodes.agent.moduleActivation.modules.find(x=>x.id==='time_management').instructionIncluded,false);
+ assert.ok(onRun.events.some(e=>e.data?.type==='planning.module-delivery'));
+});
