@@ -67,15 +67,15 @@ const graph = {
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const until = async (check, label = 'HTTP fixture condition') => { const deadline = Date.now() + 4000; while (Date.now() < deadline) { const result = await check(); if (result) return result; await new Promise(resolve => setTimeout(resolve, 5)); } assert.fail(`${label} did not settle`); };
 
-test('execution settings API saves a user-selected limit, applies it live, and restores it after restart', async t => {
+test('execution settings API normalizes retired app-wide caps to unlimited and retains authentication', async t => {
   const { app, request, auth } = await application(t), post = value => request('/api/execution/settings', { method: 'POST', headers: auth, body: value });
   assert.equal((await request('/api/execution/settings')).status, 401); assert.equal((await request('/api/execution/settings', { method: 'POST', body: { maxConcurrentRuns: 1 } })).status, 401);
   const initial = await request('/api/execution/settings', { headers: auth }); assert.equal(initial.status, 200); assert.deepEqual(initial.data, { maxConcurrentRuns: null });
-  const saved = await post({ maxConcurrentRuns: 96 }); assert.equal(saved.status, 200); assert.deepEqual(saved.data, { maxConcurrentRuns: 96 });
-  assert.equal((await request('/api/status', { headers: auth })).data.execution.capacity, 96);
-  const dataDir = app.engine.dataDir, defaultCwd = app.engine.defaultCwd; assert.equal(JSON.parse(await readFile(path.join(dataDir, 'execution-settings.json'), 'utf8')).maxConcurrentRuns, 96); await app.close();
+  const saved = await post({ maxConcurrentRuns: 96 }); assert.equal(saved.status, 200); assert.deepEqual(saved.data, { maxConcurrentRuns: null });
+  assert.equal((await request('/api/status', { headers: auth })).data.execution.capacity, null);
+  const dataDir = app.engine.dataDir, defaultCwd = app.engine.defaultCwd; assert.equal(JSON.parse(await readFile(path.join(dataDir, 'execution-settings.json'), 'utf8')).maxConcurrentRuns, null); await app.close();
   const restored = await createHarnessServer({ runtime: new FakeRuntime(), port: 0, dataDir, defaultCwd });
-  try { assert.equal(restored.engine.executionStatus().capacity, 96); assert.deepEqual(restored.engine.executionSettings(), { maxConcurrentRuns: 96 }); }
+  try { assert.equal(restored.engine.executionStatus().capacity, null); assert.deepEqual(restored.engine.executionSettings(), { maxConcurrentRuns: null }); }
   finally { await restored.close(); }
 });
 

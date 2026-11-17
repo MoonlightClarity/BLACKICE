@@ -77,22 +77,27 @@ test('new installs have no application concurrency limit and more than four inde
   } finally { release.resolve({ output: 'Fixture cleanup.' }); }
 });
 
-test('execution settings persist user limits above 32, retain explicit constructor overrides, and can return to unlimited', async t => {
-  const { engine, dataDir, cwd, runtime, engines } = await harness(t);
-  const events = []; engine.on('event', event => { if (event.type === 'execution.settings') events.push(event); });
-  await engine.updateExecutionSettings({ maxConcurrentRuns: 65 });
-  assert.deepEqual(engine.executionSettings(), { maxConcurrentRuns: 65 }); assert.equal(engine.executionStatus().availableSlots, 65); assert.equal(engine.executionStatus().unlimited, false);
-  assert.deepEqual(JSON.parse(await readFile(path.join(dataDir, 'execution-settings.json'), 'utf8')), { maxConcurrentRuns: 65 }); assert.equal(events.length, 1); assert.equal(events[0].data.execution.capacity, 65);
-  await engine.close();
-  const restored = await new HarnessEngine({ runtime, dataDir, defaultCwd: cwd }).init(); engines.push(restored); assert.equal(restored.executionStatus().capacity, 65); await restored.close();
-  const controlled = await new HarnessEngine({ runtime, dataDir, defaultCwd: cwd, maxConcurrentRuns: 1 }).init(); engines.push(controlled); assert.equal(controlled.executionStatus().capacity, 1); assert.equal(JSON.parse(await readFile(path.join(dataDir, 'execution-settings.json'), 'utf8')).maxConcurrentRuns, 65);
-  await controlled.updateExecutionSettings({ maxConcurrentRuns: Number.MAX_SAFE_INTEGER }); assert.equal(controlled.executionStatus().capacity, Number.MAX_SAFE_INTEGER);
-  await controlled.updateExecutionSettings({ maxConcurrentRuns: null }); await controlled.close();
-  const unbounded = await new HarnessEngine({ runtime, dataDir, defaultCwd: cwd }).init(); engines.push(unbounded); assert.deepEqual(unbounded.executionSettings(), { maxConcurrentRuns: null }); assert.equal(unbounded.executionStatus().availableSlots, null);
+test('legacy saved application caps are ignored without migration and old writes cannot restore the cap', async t => {
+ const {engine,dataDir,cwd,runtime,engines}=await harness(t);
+ const file=path.join(dataDir,'execution-settings.json');
+ await writeFile(file,JSON.stringify({maxConcurrentRuns:1}));
+ await engine.close();
+ const restored=await new HarnessEngine({runtime,dataDir,defaultCwd:cwd}).init();engines.push(restored);
+ assert.equal(restored.executionStatus().unlimited,true);
+ const runs=[restored.startRun({workflow:workflow(),input:'First independent task.'}),restored.startRun({workflow:workflow(),input:'Second independent task despite old cap of one.'})];
+ await Promise.all(runs.map(run=>restored.executions.get(run.id)));assert.ok(runs.every(run=>restored.getRun(run.id).status==='completed'));
+ assert.equal(await readFile(file,'utf8'),JSON.stringify({maxConcurrentRuns:1}),'startup does not rewrite legacy data');
+ await restored.updateExecutionSettings({maxConcurrentRuns:65});
+ assert.deepEqual(restored.executionSettings(),{maxConcurrentRuns:null});
+ assert.equal(JSON.parse(await readFile(file,'utf8')).maxConcurrentRuns,null);
+ await restored.close();
+ const again=await new HarnessEngine({runtime,dataDir,defaultCwd:cwd}).init();engines.push(again);
+ assert.equal(again.executionStatus().unlimited,true);
+ const controlled=await new HarnessEngine({runtime,dataDir,defaultCwd:cwd,maxConcurrentRuns:1}).init();engines.push(controlled);
+ assert.equal(controlled.executionStatus().capacity,1,'explicit embedding/test hook remains independent of retired app setting');
 });
-
 test('lowering the limit leaves all current chats running and delays only new starts until capacity is free', async t => {
-  const holds = [deferred(), deferred(), deferred(), deferred()], runtime = new FakeRuntime(() => holds[runtime.calls.length - 1].promise), { engine } = await harness(t, runtime);
+  const holds = [deferred(), deferred(), deferred(), deferred()], runtime = new FakeRuntime(() => holds[runtime.calls.length - 1].promise), { engine } = await harness(t, runtime, {maxConcurrentRuns:null});
   try {
     const runs = Array.from({ length: 3 }, (_, index) => engine.startRun({ workflow: workflow(), input: `Held limit-change chat ${index}` })); await waitFor(() => runtime.calls.length === 3, 'three chats start');
     await engine.updateExecutionSettings({ maxConcurrentRuns: 1 }); assert.equal(engine.executionStatus().activeCount, 3); assert.equal(engine.executionStatus().availableSlots, 0); assert.ok(runtime.calls.every(call => !call.signal.aborted));
@@ -105,7 +110,7 @@ test('lowering the limit leaves all current chats running and delays only new st
 });
 
 test('invalid concurrency settings are rejected without changing the effective or saved limit', async t => {
-  const { engine, dataDir } = await harness(t); await engine.updateExecutionSettings({ maxConcurrentRuns: 64 });
+  const { engine, dataDir } = await harness(t, new FakeRuntime(), {maxConcurrentRuns:null}); await engine.updateExecutionSettings({ maxConcurrentRuns: 64 });
   const invalid = [0, -1, 2.5, Infinity, NaN, '8', true, {}, Number.MAX_SAFE_INTEGER + 1];
   for (const maxConcurrentRuns of invalid) { assert.throws(() => new HarnessEngine({ maxConcurrentRuns }), { code: 'EXECUTION_SETTINGS_INVALID' }); await assert.rejects(engine.updateExecutionSettings({ maxConcurrentRuns }), { status: 400, code: 'EXECUTION_SETTINGS_INVALID' }); }
   for (const value of [null, [], {}, { maxConcurrentRuns: null, extra: true }]) await assert.rejects(engine.updateExecutionSettings(value), { status: 400, code: 'EXECUTION_SETTINGS_INVALID' });
@@ -122,11 +127,11 @@ test('a failed execution settings save does not apply or announce a limit and a 
   await rmdir(destination); await engine.updateExecutionSettings({ maxConcurrentRuns: 70 }); assert.equal(engine.executionStatus().capacity, 70); assert.equal(engine.storageStatus().healthy, true); assert.equal(events.length, 1);
 });
 
-test('invalid saved execution settings are preserved and reported instead of silently applying unlimited', async t => {
+test('retired invalid execution settings are preserved but cannot block application startup', async t => {
   const { engine, dataDir, cwd, runtime, engines } = await harness(t); await engine.close();
   const destination = path.join(dataDir, 'execution-settings.json'); await writeFile(destination, '{broken settings');
   const restored = new HarnessEngine({ runtime, dataDir, defaultCwd: cwd }); engines.push(restored);
-  await assert.rejects(restored.init(), /Cannot load execution settings.*existing file has been preserved/); assert.equal(await readFile(destination, 'utf8'), '{broken settings');
+  await restored.init(); assert.equal(restored.executionStatus().unlimited,true); assert.equal(await readFile(destination, 'utf8'), '{broken settings');
 });
 
 test('large valid workflows retain user-selected parallelism and start all ready branches when unlimited', async t => {
