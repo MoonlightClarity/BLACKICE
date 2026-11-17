@@ -17,16 +17,27 @@ for(const mode of ['fresh','upgrade-removed-agents','existing-user-agents'])test
  const dataDir=path.join(root,'data'),defaultCwd=path.join(root,'workspace'),agents=path.join(defaultCwd,'AGENTS.md');
  await fs.mkdir(defaultCwd);const custom='# Local user project instructions\nKeep my own work.\n';
  if(mode==='existing-user-agents')await fs.writeFile(agents,custom);
+ let expectedSoul=DEFAULT_SOUL,expectedRecord;
  if(mode==='upgrade-removed-agents'){
   const old=await fs.readFile(new URL('./fixtures/soul-default-20261115.md',import.meta.url),'utf8');
   const store=await new IdentityStore({dataDir}).init(),doc=await store.read('soul');
-  await store.update({kind:'soul',content:old,expectedRevision:doc.revision,expectedHash:doc.diskHash,provenance:{source:'seed'}});
+  expectedSoul=old;expectedRecord=await store.update({kind:'soul',content:old,expectedRevision:doc.revision,expectedHash:doc.diskHash,provenance:{source:'seed'}});
   await store.close();await fs.writeFile(agents,'Historical fixture instructions');await fs.unlink(agents);
  }
  let app; t.after(async()=>{await app?.close();await fs.rm(root,{recursive:true,force:true});});
  for(let i=0;i<2;i++){
   app=await createHarnessServer({runtime:new Runtime(),port:0,dataDir,defaultCwd});
-  assert.equal(await fs.readFile(path.join(dataDir,'identity','SOUL.md'),'utf8'),DEFAULT_SOUL);
+  assert.equal(await fs.readFile(path.join(dataDir,'identity','SOUL.md'),'utf8'),expectedSoul);
+  const inspection=await new IdentityStore({dataDir}).init();
+  try {
+   const actual=await inspection.read('soul');
+   if(!expectedRecord)expectedRecord=actual;
+   assert.equal(actual.revision,expectedRecord.revision,'startup must not silently create a replacement revision');
+   assert.equal(actual.hash,expectedRecord.hash);
+   assert.deepEqual(actual.provenance,expectedRecord.provenance);
+   assert.equal((await inspection.snapshot()).fullDocuments.soul.content,expectedSoul);
+   assert.equal((await inspection.versions('soul')).length,expectedRecord.revision);
+  } finally { await inspection.close(); }
   if(mode==='existing-user-agents')assert.equal(await fs.readFile(agents,'utf8'),custom);
   else await assert.rejects(fs.stat(agents),{code:'ENOENT'});
   await app.close();app=null;
