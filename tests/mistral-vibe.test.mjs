@@ -1154,3 +1154,68 @@ test('runtime uses advertised opaque selector IDs and never assumes thinking is 
   assert.ok(f.connections.flatMap(c => c.calls).some(c => c.method === 'session/set_config_option' && c.params.configId === 'depth' && c.params.value === 'off'));
   assert.equal(f.connections.flatMap(c => c.calls).some(c => c.method === 'session/set_config_option' && ['model', 'thinking'].includes(c.params.configId)), false);
 });
+
+test('steering requests ACP cancellation, cancels child work and waits for acknowledgement plus actual settlement', async t => {
+  const entered = deferred(), aborted = deferred(), release = deferred(), acknowledged = deferred();
+  let bridgeOptions, operation, confirmed, threadId, calls = 0;
+  const f = await fixture(t, {
+    toolBridgeFactory: async options => {
+      bridgeOptions = options;
+      return { server: { type: 'http', name: 'blackice', url: 'http://127.0.0.1:1/mcp', headers: [] },
+        toolNames: new Set(['blackice_do_work']), settle: async () => { await operation; }, close: async () => { await operation; } };
+    },
+    onPrompt: async c => {
+      if (c.turn > 1) return c.answer('Corrected answer.');
+      operation = bridgeOptions.onToolCall({ name: 'do_work', arguments: {} }, { signal: bridgeOptions.signal }).then(result => { confirmed = result; });
+      return acknowledged.promise;
+    }
+  });
+  const running = f.runtime.runAgent(input({ timeoutMs: 3000, dynamicTools: [{ name: 'do_work', inputSchema: { type: 'object', properties: {} } }],
+    onEvent: e => { if (e.type === 'thread') threadId = e.threadId; },
+    onToolCall: async (call, { signal }) => {
+      calls++; signal.addEventListener('abort', () => aborted.resolve(), { once: true }); entered.resolve(); await release.promise;
+      return { success: true, contentItems: [{ type: 'inputText', text: 'Confirmed effect retained.' }] };
+    } }));
+  await entered.promise;
+  await f.runtime.steerAgent(threadId, 'Use the corrected scope.');
+  await aborted.promise;
+  assert.ok(f.connections[0].calls.some(c => c.method === 'session/cancel' && c.notification));
+  const skipped = await bridgeOptions.onToolCall({ name: 'do_work', arguments: {} }, { signal: bridgeOptions.signal });
+  assert.equal(skipped.code, 'TOOL_SUPERSEDED'); assert.equal(calls, 1);
+  assert.equal(f.connections[0].turn, 1);
+  acknowledged.resolve({ stopReason: 'cancelled' }); await tick();
+  assert.equal(f.connections[0].turn, 1, 'protocol acknowledgement alone does not settle admitted effects');
+  release.resolve();
+  assert.equal((await running).output, 'Corrected answer.');
+  assert.equal(confirmed.success, true); assert.equal(calls, 1);
+  assert.equal(f.connections[0].calls.filter(c => c.method === 'session/prompt')[1].params.prompt[0].text, 'Use the corrected scope.');
+});
+
+test('steering aborts a stalled Vibe planning reviewer and uses the latest direction', async t => {
+  const entered = deferred(), aborted = deferred(); let threadId, reviews = 0;
+  const f = await fixture(t);
+  const running = f.runtime.runAgent(input({ timeoutMs: 3000,
+    onEvent: e => { if (e.type === 'thread') threadId = e.threadId; },
+    onBeforeFinal: async ({ signal }) => {
+      if (++reviews > 1) return null;
+      entered.resolve();
+      await new Promise((resolve, reject) => signal.addEventListener('abort', () => { aborted.resolve(); reject(signal.reason); }, { once: true }));
+    } }));
+  await entered.promise; await f.runtime.steerAgent(threadId, 'Use the latest requirement.'); await aborted.promise;
+  assert.equal((await running).output, 'answer 2');
+  assert.equal(f.connections[0].calls.filter(c => c.method === 'session/prompt')[1].params.prompt[0].text, 'Use the latest requirement.');
+});
+
+test('Vibe steering during prompt preparation prevents admission of the superseded prompt', async t => {
+  const entered = deferred(), release = deferred(); let threadId, held = false;
+  const f = await fixture(t), save = f.runtime._saveThread.bind(f.runtime);
+  f.runtime._saveThread = async record => {
+    await save(record);
+    if (record.state === 'running' && !held) { held = true; entered.resolve(); await release.promise; }
+  };
+  const running = f.runtime.runAgent(input({ timeoutMs: 3000, onEvent: e => { if (e.type === 'thread') threadId = e.threadId; } }));
+  await entered.promise; await f.runtime.steerAgent(threadId, 'Revised before admission.'); release.resolve();
+  await running;
+  const prompts = f.connections[0].calls.filter(c => c.method === 'session/prompt');
+  assert.equal(prompts.length, 1); assert.match(prompts[0].params.prompt[0].text, /Revised before admission/);
+});
