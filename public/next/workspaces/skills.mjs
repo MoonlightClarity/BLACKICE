@@ -55,7 +55,7 @@ export function createSkillsWorkspace({mount,api,events,notify,onNavigate}) {
   const state=(element,message,error=false)=>{element.textContent=message;element.dataset.error=String(error);};
   const readable={
     source:{bundled:'BLACKICE bundled',saved:'Saved procedure',codex:'Codex discovery'},
-    loaded:{host_loaded:'Loaded by host (conditional use)',not_verified:'No per-turn loading evidence',not_loaded_in_blackice:'Excluded from BLACKICE native sessions'},
+    loaded:{available_on_demand:'Available to read when needed',host_loaded:'Loaded by host (conditional use)',not_verified:'No per-turn loading evidence',not_loaded_in_blackice:'Excluded from BLACKICE native sessions'},
     applicability:{conditional:'Depends on task settings',in_scope:'In current folder scope',other_workspace:'Saved for another working folder',excluded_by_host:'Excluded by host'},
   };
   const label=(kind,value)=>readable[kind]?.[value]||value||'Unknown';

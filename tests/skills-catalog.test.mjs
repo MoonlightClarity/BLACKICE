@@ -30,7 +30,7 @@ test('catalog distinguishes host-loaded conditional skills, scoped saved content
   const local=await f.store.upsert({id:'project-skill',kind:'skill',title:'Project checks',content:'# Project\nInspect artifacts.',cwd:f.other});
   const catalog=f.create();
   const listed=await catalog.list({cwd:f.cwd});
-  assert.equal(listed.entries.filter(item=>item.source==='bundled').length,3);
+  assert.equal(listed.entries.filter(item=>item.source==='bundled').length,5);
   assert.equal(listed.entries.filter(item=>item.source==='saved').length,2);
   assert.equal(listed.sources.codex.status,'not_requested');
   const host=listed.entries.find(item=>item.id==='builtin:planning-v5');
@@ -59,7 +59,7 @@ test('unavailable and malformed native discovery are surfaced, not disguised as 
   const f=await fixture(t,{nativeSkills:async()=>({available:false,skills:[],reason:'Disconnected'})}),catalog=f.create();
   const listed=await catalog.list({source:'codex'});
   assert.equal(listed.sources.codex.status,'unavailable');assert.match(listed.sources.codex.reason,/Disconnected/);
-  assert.equal((await catalog.list()).entries.length,3,'bundled knowledge is still accessible');
+  assert.equal((await catalog.list()).entries.length,5,'bundled knowledge is still accessible');
   const broken=createSkillsCatalog({knowledge:f.store,defaultCwd:f.cwd,nativeSkills:async()=>({available:true,skills:null})});
   assert.equal((await broken.list({source:'codex'})).sources.codex.status,'error');
   assert.equal((await broken.list({source:'bundled'})).sources.codex.status,'not_requested');
