@@ -44,6 +44,7 @@ test('whole workspace shows simultaneous workflows, folder nesting and focused d
  await f.click('.swarm-folder-select[data-folder-id="research"]');
  assert.equal(f.mount.querySelectorAll('.swarm-sheet tbody tr').length,3);
  await f.click('.swarm-task-link');
+ await f.click([...f.mount.querySelectorAll('.swarm-formula-bar button')].find(x=>x.textContent==='Open task'));
  assert.equal([...f.mount.querySelectorAll('.swarm-detail-page')].filter(n=>!n.hidden).length,1);
  assert.equal(f.mount.querySelector('[data-detail-tab="overview"]').hidden,false);
  await f.click('.swarm-detail-tabs button[data-section="evidence"]');
@@ -105,3 +106,24 @@ test('rejected folder revision can be discarded and retried at current revision'
 });
 
 test('valid all and unfiled folder IDs do not collide with navigation views',()=>{const current=structuredClone(data);current.organization.folders.push({id:'all',name:'Actual all',parentId:null},{id:'unfiled',name:'Actual unfiled',parentId:null});current.organization.projectFolders.a='all';current.organization.projectFolders.b='unfiled';current.organization.itemFolders={};assert.equal(workbookRows(current,{folder:'all'}).length,2);assert.equal(workbookRows(current,{folder:'unfiled'}).length,2);assert.equal(workbookRows(current,{folder:':all'}).length,4);assert.equal(workbookRows(current,{folder:':unfiled'}).length,0);});
+
+ test('spreadsheet cells select, navigate, edit one property and cancel without mutation',async t=>{
+ const f=planningDOM(t),current=structuredClone(data),writes=[];const view=createSwarmWorkspace({mount:f.mount,api:async(route,method='GET',body)=>{if(method==='GET')return structuredClone(current);writes.push(structuredClone(body));const p=current.projects.find(p=>p.id===body.projectId),i=p.items.find(i=>i.id===body.itemId);Object.assign(i,body.value);i.revision++;return {project:p};},events:{subscribe:()=>()=>{}}});t.after(()=>view.destroy());const tick=()=>new Promise(r=>setImmediate(r));view.enter();await tick();
+ assert.equal(f.mount.querySelectorAll('.swarm-grid-cell').length,32);assert.equal(f.mount.querySelectorAll('.swarm-column-letter').length,8);
+ const cell=f.$('.swarm-grid-cell');await f.click(cell);assert.equal(writes.length,0);await f.key(cell,'ArrowRight');assert.equal(f.$('.swarm-cell-address').textContent,'B1');await f.key(f.document.activeElement,'ArrowLeft');await f.key(f.document.activeElement,'Enter');
+ await f.input('.swarm-cell-editor input','New title');await f.$('.swarm-cell-editor form').dispatch('submit');await tick();await tick();
+ assert.equal(writes.length,1);assert.deepEqual(writes[0].value,{title:'New title'});assert.equal(writes[0].expectedItemRevision,1);assert.equal(f.mount.querySelectorAll('.swarm-grid tbody tr').length,4,'all workflows remain visible');
+ await f.key(f.$('.swarm-grid-cell'),'F2');await f.input('.swarm-cell-editor input','Discard me');await f.key(f.$('.swarm-cell-editor input'),'Escape');assert.equal(f.$('.swarm-cell-editor').hidden,true);assert.equal(writes.length,1);
+ });
+ test('cell draft survives navigation and preserves original revision after remote change',async t=>{
+ const f=planningDOM(t),current=structuredClone(data),writes=[];const view=createSwarmWorkspace({mount:f.mount,api:async(route,method='GET',body)=>{if(method==='GET')return structuredClone(current);writes.push(body);throw Object.assign(Error('Conflict'),{code:'SWARM_REVISION_CONFLICT'});},events:{subscribe:()=>()=>{}}});t.after(()=>view.destroy());const tick=()=>new Promise(r=>setImmediate(r));view.enter();await tick();await f.key(f.$('.swarm-grid-cell'),'Enter');await f.input('.swarm-cell-editor input','Draft');await f.click('.swarm-folder-select[data-folder-id="research"]');current.projects[0].items[0].revision=2;view.leave();view.enter();await tick();await f.click('.swarm-folder-select[data-folder-id=":all"]');assert.equal(f.$('.swarm-cell-editor input').value,'Draft');
+ const proto=Object.getPrototypeOf(f.mount),old=proto.insertAdjacentElement;proto.insertAdjacentElement=function(_,n){this.parentElement.append(n)};t.after(()=>{if(old)proto.insertAdjacentElement=old;else delete proto.insertAdjacentElement});await f.$('.swarm-cell-editor form').dispatch('submit');await tick();await tick();assert.equal(writes[0].expectedItemRevision,1);assert.equal(f.$('.swarm-cell-editor input').value,'Draft');
+ });
+
+test('cell save freezes editor and restores selected row keyboard focus',async t=>{
+ const f=planningDOM(t),current=structuredClone(data);let resolveSave;
+ const view=createSwarmWorkspace({mount:f.mount,api:async(route,method='GET',body)=>{if(method==='GET')return structuredClone(current);await new Promise(r=>resolveSave=r);const p=current.projects.find(p=>p.id===body.projectId),i=p.items.find(i=>i.id===body.itemId);Object.assign(i,body.value);i.revision++;return {project:p};},events:{subscribe:()=>()=>{}}});t.after(()=>view.destroy());const tick=()=>new Promise(r=>setImmediate(r));view.enter();await tick();
+ const cell=f.mount.querySelectorAll('.swarm-grid-cell')[8];await f.key(cell,'Enter');await f.input('.swarm-cell-editor input','Second row saved');await f.$('.swarm-cell-editor form').dispatch('submit');await tick();
+ assert.equal(f.$('.swarm-cell-editor input').disabled,true);assert.ok([...f.mount.querySelectorAll('.swarm-cell-editor button')].every(b=>b.disabled));await f.key(f.$('.swarm-cell-editor input'),'Escape');assert.equal(f.$('.swarm-cell-editor').hidden,false);
+ resolveSave();await tick();await tick();assert.equal(f.$('.swarm-cell-address').textContent,'A2');assert.equal(f.document.activeElement,f.mount.querySelectorAll('.swarm-grid-cell')[8]);await f.key(f.document.activeElement,'ArrowRight');assert.equal(f.$('.swarm-cell-address').textContent,'B2');
+});

@@ -286,3 +286,14 @@ test('restoring protected pre-association backup preserves original login withou
   const upgraded=await c.open();assert.deepEqual(await upgraded.list({origin:'https://login.sso.test'}),[]);
   await assert.rejects(upgraded.withLoginSecret({...ref(saved),origin:'https://login.sso.test'},()=>assert.fail()),{code:'CREDENTIAL_ORIGIN_MISMATCH'});
 });
+
+test('human reveal retrieves only an exact current login without changing stored state', async t => {
+ const c=await fixture(t), entry=await c.vault.generate(request()), before=await fs.readFile(c.vault.store.file);
+ const result=await c.vault.reveal(ref(entry),context());
+ assert.equal(result.password.length,24);assert.equal(result.credentialId,entry.credentialId);
+ assert.deepEqual(await fs.readFile(c.vault.store.file),before);
+ assert.ok(!JSON.stringify(await c.vault.status()).includes(result.password));
+ await assert.rejects(c.vault.reveal(ref(entry),{source:'agent'}),{code:'CREDENTIAL_LOCAL_ONLY'});
+ await assert.rejects(c.vault.reveal({...ref(entry),revision:999},context()),{code:'CREDENTIAL_REVISION_CONFLICT'});
+ await assert.rejects(c.vault.reveal({...ref(entry),origin:'https://other.test'},context()),{code:'CREDENTIAL_ORIGIN_MISMATCH'});
+});

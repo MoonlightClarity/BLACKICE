@@ -1,0 +1,40 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "version": "2.40.1",
+  "classification": "qualification-provenance-not-a-passing-source-receipt",
+  "packagedSource": "f746630cc13db1973ec45affaac6b302e04fa676",
+  "fullSuiteSource": "ad4d07231a118a8715dbb2e6ce66fed6c80029b8",
+  "metadataChangedAfterSuite": true,
+  "appFingerprint": "d76ad445659d39228373f0582ac6204eeee802d428fa4ec91b9322e7ee5cfad5",
+  "passed": false,
+  "tests": {
+    "total": 9252,
+    "passed": 9240,
+    "failed": 1,
+    "optionalSkipped": 11,
+    "cancelled": 0,
+    "exitCode": 1
+  },
+  "testLogSha256": "5d08e3a8cf37e8b7cf5e464a42f0aa028b5d87bde8f12b18ab6c26700404d80c",
+  "failure": {
+    "name": "terminal record can transition to dispatched nonterminal and recover uncertainty with intact archived original",
+    "file": "tests/direct-execution-packs.test.mjs",
+    "cause": "unconfirmed; nonreproduced without code changes",
+    "exactTestRerun": "passed",
+    "fullFileRerun": {
+      "passed": 32,
+      "failed": 0
+    }
+  },
+  "localPackagedLauncher": "EACCES before startup; not qualified",
+  "electronHostSmoke": "extracted application desktop main reached ready under Electron host; not equivalent to installed launcher",
+  "artifact": {
+    "name": "Blackice-2.40.1-Setup.exe",
+    "sha256": "f2dea30adb718e58e36bd3ca4445103a066858e898d5e69a2b0d08252d6729a9",
+    "bytes": 151468384,
+    "signing": "unsigned"
+  },
+  "hostedInstallation": "not run",
+  "published": false
+}

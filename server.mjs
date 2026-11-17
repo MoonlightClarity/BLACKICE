@@ -58,6 +58,7 @@ import { CHAT_MODE_RETIRED_MESSAGE } from './lib/retired-models.mjs';
 import { IdentityStore } from './lib/identity.mjs';
 import { LearningStore } from './lib/learning.mjs';
 import { ConnectionManager } from './lib/mcp.mjs';
+import { searchMCPRegistry } from './lib/mcp-registry-catalog.mjs';
 import { AttachmentStore } from './lib/attachments.mjs';
 import { TaskStateStore } from './lib/task-state.mjs';
 import { TaskInbox } from './lib/inbox.mjs';
@@ -965,7 +966,9 @@ export async function createHarnessServer(options = {}) {
         if (pathname === '/api/browser-credentials' && req.method === 'GET') {
           return json(res, 200, { vault: await browserCredentials.status(), mirror: await browserCredentialMirror.status(), destinations: await browserCredentialDestinations.status(), localManagement: true });
         }
+        res.setHeader('Cache-Control', 'no-store');
         const credentialActions = {
+          '/api/browser-credentials/reveal': [browserCredentials, 'reveal', ['credentialId', 'revision', 'origin']],
           '/api/browser-credentials/save': [browserCredentials, 'save', ['origin', 'username', 'password', 'label', 'credentialId', 'revision', 'requestId']],
           '/api/browser-credentials/associate': [browserCredentials, 'associate', ['origin', 'username', 'credentialId', 'revision', 'loginOrigin', 'operation', 'requestId']],
           '/api/browser-credentials/delete': [browserCredentials, 'delete', ['credentialId', 'revision', 'requestId']],
@@ -1122,6 +1125,10 @@ export async function createHarnessServer(options = {}) {
       const learningMatch = pathname.match(/^\/api\/learning\/(reviews|lessons)\/([a-zA-Z0-9_-]+)(?:\/(retry|restore))?$/);
       if (learningMatch && req.method === 'POST' && (learningMatch[1] === 'reviews' && learningMatch[3] === 'retry' || learningMatch[1] === 'lessons' && learningMatch[3] === 'restore')) { const value = await body(req); return json(res, 200, learningMatch[1] === 'reviews' ? await learning.retryReview(learningMatch[2]) : await learning.restoreLesson(learningMatch[2], value.revision)); }
       if (learningMatch?.[1] === 'lessons' && !learningMatch[3] && req.method === 'DELETE') { await body(req); return json(res, 200, await learning.removeLesson(learningMatch[2])); }
+      if (pathname === '/api/tool-registry' && req.method === 'GET') {
+        const search = new URL(req.url, `http://${host}`).searchParams;
+        return json(res, 200, await searchMCPRegistry({query:search.get('query') || '', cursor:search.get('cursor') || ''}));
+      }
       if (pathname === '/api/connections' && req.method === 'GET') return json(res, 200, connections.list());
       if (pathname === '/api/connections/import' && req.method === 'POST') {
         const value = await body(req), parsed = parseConnectionImport(value.configuration, { existingIds: connections.list().map(item => item.id), maxConnections: 40 });

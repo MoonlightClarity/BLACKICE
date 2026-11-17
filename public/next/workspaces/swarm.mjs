@@ -49,12 +49,15 @@ export function createSwarmWorkspace({ mount, api, events, notify = () => {}, on
   const lifecycle = project => project.lifecycle || 'active';
   const visibleProjects = () => (data?.projects || []).filter(p => lifecycle(p) === projectView);
   const drafts = new Map();
+  const cellDrafts = new Map();
+  const cellSelections = new Map();
+  let gridFocusKey = null;
   const folderCreateIds = new Map();
   let renderedContext = null, renderedProject = null, submittingForm = null, renderedOrgRevision = 0;
   const draftContext = () => JSON.stringify([selectedFolder, selectedProject, inspectingItem ? selectedItem : 'board']);
   const draftFields = () => {
     const seen = new Map();
-    return [...mount.querySelectorAll('.swarm-input')].filter(node=>node.dataset.swarmTransient!=='true').map(node => {
+    return [...mount.querySelectorAll('.swarm-input')].filter(node=>node.dataset.swarmTransient!=='true'&&!node.closest('.swarm-cell-editor')).map(node => {
       const label = node.parentElement.querySelector('.swarm-field-label')?.textContent || '';
       const count = seen.get(label) || 0; seen.set(label, count + 1);
       return { node, key: label + ':' + count };
@@ -128,7 +131,7 @@ export function createSwarmWorkspace({ mount, api, events, notify = () => {}, on
     return group;
   };
   let retryCandidate = null;
-  const mutate = async (action, rest) => {
+  const mutate = async (action, rest, keepSheet = false) => {
     if (waiting) return;
     const submittedContext = renderedContext;
     const submittedFields = draftFields().filter(({node}) => submittingForm?.contains(node))
@@ -155,7 +158,7 @@ export function createSwarmWorkspace({ mount, api, events, notify = () => {}, on
       if (renderedContext === submittedContext) for (const {node,key} of draftFields()) {
         if (submittedValues.has(key) && submittedValues.get(key) === node.value) node.dataset.initialValue = node.value;
       }
-      if (draftContext() === submittedContext) {
+      if (!keepSheet && draftContext() === submittedContext) {
         if (result.project) selectedProject = result.project.id;
         if (result.project?.items?.length && !selectedItem) selectedItem = result.project.items.at(-1).id;
       }
@@ -179,6 +182,7 @@ export function createSwarmWorkspace({ mount, api, events, notify = () => {}, on
         status.textContent = notice;
       }
     } finally { waiting = false; if (!failed) render(); }
+    return !failed;
   };
   const refresh = async (force = false) => {
     if (!active && !force) return;
@@ -311,25 +315,84 @@ export function createSwarmWorkspace({ mount, api, events, notify = () => {}, on
   const board = (root, project=null) => {
     const filters=el(root,'div','','swarm-sheet-filters');
     const query=field(filters,'Find tasks',{value:searchQuery,placeholder:'Task, workflow or owner'});
-    query.dataset.swarmTransient='true';query.classList.add('swarm-sheet-query');query.addEventListener('input',()=>{searchQuery=query.value;draw();});
-    const stage=field(filters,'Stage',{tag:'select',value:phaseFilter,options:[['all','All stages'],...phases.map(p=>[p,phaseLabel[p]])]});
-    stage.dataset.swarmTransient='true';stage.addEventListener('change',()=>{phaseFilter=stage.value;draw();});
-    const region=el(root,'div','','swarm-sheet-region');region.tabIndex=0;region.setAttribute('role','region');region.setAttribute('aria-label','Workflow tasks, scroll horizontally for more columns');
+    query.dataset.swarmTransient='true';query.classList.add('swarm-sheet-query');
+    const stage=field(filters,'Stage',{tag:'select',value:phaseFilter,options:[['all','All stages'],...phases.map(p=>[p,phaseLabel[p]])]});stage.dataset.swarmTransient='true';
+    const formula=el(root,'div','','swarm-formula-bar');
+    const address=el(formula,'output','A1','swarm-cell-address');address.setAttribute('aria-label','Selected cell');
+    const value=el(formula,'span','Select a cell. Enter or F2 edits Task, Owner or Folder.','swarm-cell-value');
+    const editButton=button(formula,'Edit cell',()=>editCell());editButton.disabled=true;
+    const detailsButton=button(formula,'Open task',()=>openTask());detailsButton.disabled=true;
+    const editor=el(root,'div','','swarm-cell-editor');editor.hidden=true;
+    const region=el(root,'div','','swarm-sheet-region');region.setAttribute('role','region');region.setAttribute('aria-label','Task spreadsheet');
+    let cells=[],selected=null,editing=false,rows=[];
+    const sheetKey=JSON.stringify([selectedFolder,project?.id||null,projectView]);
+    const openTask=()=>{if(!selected||editing)return;const {project:p,item}=selected.row;returnProject=selectedProject;selectedProject=p.id;selectedItem=item.id;detailTab='overview';inspectingItem = true; render();const title=get(mount,'.swarm-detail-heading h2');if(title){title.tabIndex=-1;title.focus({ preventScroll: true });}};
+    const select=(cell,focus=false)=>{if(editing)return;for(const c of cells){c.node.tabIndex=c===cell?0:-1;c.node.setAttribute('aria-selected',String(c===cell));}selected=cell;cellSelections.set(sheetKey,{projectId:cell.row.project.id,itemId:cell.row.item.id,col:cell.col});address.textContent=String.fromCharCode(65+cell.col)+(cell.index+1);value.textContent=cell.label;editButton.disabled=!['title','ownerId','folderId'].includes(cell.key)||projectView!=='active';detailsButton.disabled=false;if(focus)cell.node.focus();};
+    const editCell=(saved=null)=>{
+      if(!selected||editing||editButton.disabled||waiting)return;
+      editing=true;editor.hidden=false;editor.replaceChildren();query.disabled=true;stage.disabled=true;
+      const cell=selected,{project:p,item,folderId}=saved?.row||cell.row;
+      const draft=saved||{row:cell.row,col:cell.col,value:cell.key==='folderId'?(folderId||''):item[cell.key]||''};cellDrafts.set(sheetKey,draft);
+      let saving=false;
+      const cancel=()=>{if(saving)return;cellDrafts.delete(sheetKey);editing=false;editor.hidden=true;editor.replaceChildren();query.disabled=false;stage.disabled=false;select(cell,true);};
+      const f=form(editor,'swarm-inline-edit',async()=>{
+        const raw=input.value;if(cell.key==='title'&&!raw.trim())return;
+        const next=cell.key==='title'?raw:raw||null;
+        const before=cell.key==='folderId'?folderId:item[cell.key];
+        if(next===before){cancel();return;}
+        // Only the edited property is sent. Revision checks and retry identity stay in mutate.
+        cellDrafts.delete(sheetKey);
+        saving=true;gridFocusKey=sheetKey;for(const control of f.querySelectorAll('input,select,button'))control.disabled=true;
+        let savedOK;
+        if(cell.key==='folderId')savedOK=await mutate('file_item',{projectId:p.id,itemId:item.id,expectedOrganizationRevision:draft.organizationRevision??org().revision,value:{folderId:next}},true);
+        else savedOK=await mutate('edit_item',{projectId:p.id,itemId:item.id,expectedItemRevision:item.revision,value:{[cell.key]:next}},true);
+        if(!savedOK){cellDrafts.set(sheetKey,draft);gridFocusKey=null;saving=false;for(const control of f.querySelectorAll('input,select,button'))control.disabled=false;input.focus();}
+      });
+      const input=field(f,'Edit '+cell.header,{value:draft.value,required:cell.key==='title',tag:cell.key==='title'?'input':'select',options:cell.key==='ownerId'?[['','Unassigned'],...p.workers.map(w=>[w.id,w.label])]:cell.key==='folderId'?folderOptions():null});
+      draft.organizationRevision??=org().revision;
+      input.addEventListener('input',()=>{draft.value=input.value;});input.addEventListener('change',()=>{draft.value=input.value;});
+      submit(f,'Save cell');button(f,'Cancel',cancel);input.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation?.();cancel();}});input.focus();
+    };
+    const headers=['Task','Workflow / project','Stage','Owner','Folder','Runtime','Evidence','Review'];
+    const keys=['title','project','phase','ownerId','folderId','runtime','evidence','review'];
     const draw=()=>{
-      region.replaceChildren();const rows=workbookRows(data,{folder:selectedFolder,projectId:project?.id||null,phase:phaseFilter,query:searchQuery,lifecycle:projectView});
-      const table=el(region,'table','','swarm-sheet');const caption=el(table,'caption',rows.length+' task'+(rows.length===1?'':'s')+' · stages are recorded; execution is shown separately');
-      const head=el(table,'thead'),hr=el(head,'tr');for(const label of ['Task','Workflow / project','Stage','Owner','Runtime','Evidence','Review']){const th=el(hr,'th',label);th.scope='col';}
+      region.replaceChildren();cells=[];selected=null;editButton.disabled=true;detailsButton.disabled=true;
+      rows=workbookRows(data,{folder:selectedFolder,projectId:project?.id||null,phase:phaseFilter,query:searchQuery,lifecycle:projectView});
+      const table=el(region,'table','','swarm-sheet swarm-grid');table.setAttribute('role','grid');table.setAttribute('aria-label','Workflow task spreadsheet');
+      el(table,'caption',rows.length+' tasks. Arrow keys move between cells; Enter edits or opens details. Stage records are separate from execution.');
+      const head=el(table,'thead'),hr=el(head,'tr');el(hr,'th','#');
+      headers.forEach((label,i)=>{const th=el(hr,'th');th.scope='col';el(th,'span',String.fromCharCode(65+i),'swarm-column-letter');el(th,'span',label);});
       const body=el(table,'tbody');
-      for(const {project:p,item,folderId} of rows){
-        const tr=el(body,'tr');tr.dataset.itemId=item.id;tr.dataset.projectId=p.id;
-        const cell=el(tr,'td');const open=button(cell,item.title,()=>{returnProject=selectedProject;selectedProject=p.id;selectedItem=item.id;detailTab='overview';inspectingItem = true; render();const title=get(mount,'.swarm-detail-heading h2');if(title){title.tabIndex=-1;title.focus({ preventScroll: true });}},'swarm-card swarm-task-link');
-        open.dataset.itemId=item.id;open.dataset.projectId=p.id;el(cell,'small',folderPath(org(),folderId),'swarm-task-folder');
-        el(tr,'td',p.name);pill(el(tr,'td'),item.phase,phaseLabel[item.phase]);el(tr,'td',p.workers.find(w=>w.id===item.ownerId)?.label||'Unassigned');
-        el(tr,'td',runtimeSummary(item),'swarm-runtime-cell');const proof=evidenceSummary(item),proofCell=el(tr,'td');pill(proofCell,proof.state,proof.label);if(item.staleEvidence?.length)el(proofCell,'small',item.staleEvidence.length+' stale history');
-        const review=el(tr,'td');el(review,'span',pretty(item.readiness));if(item.readyRequest&&!item.readyDecision)el(review,'small','Worker-ready only');
-      }
-      if(!rows.length){const row=el(body,'tr'),cell=el(row,'td','No tasks match this folder and filter.');cell.colSpan=7;}
-    };draw();
+      rows.forEach((row,index)=>{
+        const {project:p,item,folderId}=row,tr=el(body,'tr');tr.dataset.itemId=item.id;tr.dataset.projectId=p.id;
+        const number=el(tr,'th',String(index+1),'swarm-row-number');number.scope='row';
+        const proof=evidenceSummary(item),labels=[item.title,p.name,phaseLabel[item.phase],p.workers.find(w=>w.id===item.ownerId)?.label||'Unassigned',folderPath(org(),folderId),runtimeSummary(item),proof.label+(item.staleEvidence?.length?' ('+item.staleEvidence.length+' stale)':''),pretty(item.readiness)+(item.readyRequest&&!item.readyDecision?' (worker-ready only)':'')];
+        labels.forEach((label,col)=>{
+          const td=el(tr,'td',label,'swarm-grid-cell'+(col===0?' swarm-card swarm-task-link':''));td.dataset.itemId=item.id;td.dataset.projectId=p.id;td.dataset.column=keys[col];td.setAttribute('role','gridcell');td.setAttribute('aria-label',headers[col]+': '+label);td.setAttribute('aria-readonly',String(projectView!=='active'||!['title','ownerId','folderId'].includes(keys[col])));td.title=label;
+          const cell={node:td,row,index,col,key:keys[col],header:headers[col],label};cells.push(cell);td.tabIndex=-1;
+          td.addEventListener('focus',()=>select(cell));td.addEventListener('click',()=>select(cell,true));
+          td.addEventListener('dblclick',()=>{select(cell);if(!editButton.disabled)editCell();else openTask();});
+          td.addEventListener('keydown',event=>{
+            if(editing)return;select(cell);
+            if(event.key==='Enter'||event.key==='F2'){event.preventDefault();if(!editButton.disabled)editCell();else openTask();return;}
+            let next=null;
+            if(event.key==='ArrowRight')next=cells[index*8+Math.min(7,col+1)];
+            if(event.key==='ArrowLeft')next=cells[index*8+Math.max(0,col-1)];
+            if(event.key==='ArrowDown')next=cells[Math.min(rows.length-1,index+1)*8+col];
+            if(event.key==='ArrowUp')next=cells[Math.max(0,index-1)*8+col];
+            if(event.key==='Home')next=cells[(event.ctrlKey?0:index)*8];
+            if(event.key==='End')next=cells[(event.ctrlKey?rows.length-1:index)*8+7];
+            if(event.key==='Tab'){const n=index*8+col+(event.shiftKey?-1:1);if(n>=0&&n<cells.length)next=cells[n];}
+            if(next){event.preventDefault();select(next,true);next.node.scrollIntoView?.({block:'nearest',inline:'nearest'});}
+          });
+        });
+      });
+      if(cells.length){const previous=cellSelections.get(sheetKey);select(cells.find(c=>c.row.project.id===previous?.projectId&&c.row.item.id===previous?.itemId&&c.col===previous?.col)||cells[0]);if(gridFocusKey===sheetKey&&!waiting){gridFocusKey=null;select(selected,true);}const saved=cellDrafts.get(sheetKey);if(saved){const cell=cells.find(c=>c.row.project.id===saved.row.project.id&&c.row.item.id===saved.row.item.id&&c.col===saved.col);if(cell){select(cell);editCell(saved);}}}
+      else {const row=el(body,'tr'),cell=el(row,'td','No tasks match this folder and filter.');cell.colSpan=9;address.textContent='';value.textContent='No matching tasks';}
+    };
+    query.addEventListener('input',()=>{searchQuery=query.value;draw();});stage.addEventListener('change',()=>{phaseFilter=stage.value;draw();});draw();
+    const sheets=el(root,'nav','','swarm-sheet-tabs');sheets.setAttribute('aria-label','Workflow sheets');
+    for(const [id,label]of [[null,'All tasks'],...visibleProjects().map(p=>[p.id,p.name])]){const tab=button(sheets,label,()=>{captureDraft();changeProject(id);});tab.setAttribute('aria-pressed',String((project?.id||null)===id));}
   };
   const sourcePanel = (root, project) => {
     const details = el(root, 'details', '', 'swarm-disclosure');

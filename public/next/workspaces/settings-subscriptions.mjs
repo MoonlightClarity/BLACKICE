@@ -14,7 +14,7 @@ export function createSubscriptionModelSettings(props, createLegacy) {
   };
   const header=element('section','next-card');
   header.append(
-    element('h2','','Codex subscription'),
+    element('h2','','Codex models & account'),
     element('p','next-help','Use your Codex account for native Codex models. Existing conversations retain the model and provider that originally created them.')
   );
   const list=element('div','next-stack');
@@ -53,6 +53,9 @@ export function createSubscriptionModelSettings(props, createLegacy) {
   mount.append(header,native,localMount,advanced);
   const local=createLocalModelSettings({mount:localMount,api,onChanged:()=>props.onChanged?.()});
   const legacy=createLegacy({...props,mount:legacyMount});
+  // Keep native Codex controls with its account, not among API connections.
+  const codexControls=legacyMount.querySelector('#next-provider-codex');
+  if(codexControls)header.append(codexControls);
   let active=false,destroyed=false,revision=0,expanded=false,currentStatus=null,busy=null,operationError='';
   const provider=()=>currentStatus?.subscriptionProviders?.find(item=>item?.id==='mistral-vibe'&&item?.type==='subscription-cli');
   const modelId=model=>typeof model==='string'?model:typeof model?.id==='string'?model.id:typeof model?.modelId==='string'?model.modelId:typeof model?.model==='string'?model.model:'';
@@ -128,8 +131,8 @@ export function createSubscriptionModelSettings(props, createLegacy) {
   advanced.addEventListener('toggle',toggle);
   render();
   return {
-    enter(){if(destroyed||active)return;active=true;local.enter();render();void load();toggle();},
-    leave(){active=false;revision++;local.leave();render();if(expanded){legacy.leave?.();expanded=false;}},
+    enter(){if(destroyed||active)return;active=true;legacy.setCodexActive?.(true);local.enter();render();void load();toggle();},
+    leave(){active=false;legacy.setCodexActive?.(false);revision++;local.leave();render();if(expanded){legacy.leave?.();expanded=false;}},
     updateStatus,
     focusProvider(id){if(id==='mistral-vibe'&&!destroyed&&active){native.open=true;native.focus({preventScroll:false});}},
     updateRuntimeSettings(value){legacy.updateRuntimeSettings?.(value);},

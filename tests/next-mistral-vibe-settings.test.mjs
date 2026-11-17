@@ -110,3 +110,18 @@ test('reported Vibe reasoning choices and exact model alias remain selectable wi
 });
 
 test('native catalog limitations are visible text and clear when refreshed',async t=>{const f=fixture(t,{initial:status(native({authenticated:true,connected:true,available:true,models:[exactModel],catalogNotice:'ACP-only catalog <not markup>'}))});await settle();assert.equal(f.$('#next-mistral-vibe-catalog-notice').textContent,'ACP-only catalog <not markup>');assert.equal(f.$('#next-mistral-vibe-catalog-notice').hidden,false);assert.equal(f.writes().length,0);f.panel.updateStatus(status(native({authenticated:true,models:[exactModel]})));assert.equal(f.$('#next-mistral-vibe-catalog-notice').hidden,true);});
+
+test('Codex controls are grouped with account rather than duplicated in API connections',async t=>{
+ const dom=planningDOM(t);let clicks=0;
+ const panel=createSubscriptionModelSettings({mount:dom.mount,api:async()=>status(native())},({mount})=>{
+  const controls=dom.element('details');controls.id='next-provider-codex';
+  const action=dom.element('button');action.id='fixture-codex-control';action.addEventListener('click',()=>clicks++);
+  controls.append(action);mount.append(controls);return{enter(){},leave(){},destroy(){}};
+ });
+ t.after(()=>panel.destroy());panel.enter();await settle();
+ assert.equal(dom.mount.querySelectorAll('#next-provider-codex').length,1);
+ assert.equal(dom.$('#next-connect-another-endpoint').contains(dom.$('#next-provider-codex')),false);
+ assert.match(dom.$('#next-provider-codex').parentElement.textContent,/Codex models & account/);
+ await dom.click('#fixture-codex-control');assert.equal(clicks,1);
+ panel.leave();panel.enter();await settle();assert.equal(dom.mount.querySelectorAll('#next-provider-codex').length,1);
+});

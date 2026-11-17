@@ -155,3 +155,14 @@ test('maintenance prevents a credential mutation and both static manager assets 
   assert.equal(response.status, 503); f.app.endMaintenance();
   assert.equal((await (await f.request()).json()).vault.entries.length, 0);
 });
+
+test('local human reveal is non-cacheable and rejects remote callers',async t=>{
+ const f=await fixture(t);
+ const entry=await (await f.post('/save',{origin:'https://example.test',username:'human',password:'synthetic-human-only',expectedRevision:0,requestId:'human-save'})).json();
+ const body={credentialId:entry.credentialId,revision:entry.revision,origin:'https://example.test'};
+ const result=await f.post('/reveal',body);assert.equal(result.status,200);assert.equal(result.headers.get('cache-control'),'no-store');
+ assert.equal((await result.json()).password,'synthetic-human-only');
+ assert.equal((await f.request(local+'/reveal',{method:'POST',body,headers:{'x-blackice-remote':'1'}})).status,403);
+ assert.equal((await f.request(local+'/reveal',{method:'POST',body,headers:{Origin:'https://other.test'}})).status,403);
+ assert.equal((await f.post('/reveal',{...body,revision:999})).status,409);
+});

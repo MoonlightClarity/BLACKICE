@@ -6,7 +6,7 @@ import { browserCredentialsView, mountBrowserCredentials } from '../public/brows
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const entry = (id = 'login-one', revision = 1) => ({ credentialId: id, revision, origin: 'https://example.test', username: `${id}@example.test`, label: `Fixture ${id}`, source: 'user', createdAt: '2026-10-20T12:00:00Z', updatedAt: '2026-10-20T12:00:00Z' });
-const status = () => ({ localManagement: true, vault: { available: true, healthy: true, revision: 2, capabilities: { save: true, delete: true }, entries: [entry(), entry('login-two', 2)] }, mirror: { available: true, healthy: true, revision: 7, settings: { enabled: false, destination: 'chrome' }, capabilities: { configure: true, queue: true, beginImport: true }, entries: [], batches: [] }, destinations: [{ id: 'chrome', available: true, supported: true }, { id: 'firefox', available: true, supported: true }, { id: 'neo', available: false, supported: true }] });
+const status = () => ({ localManagement: true, vault: { available: true, healthy: true, revision: 2, capabilities: { save: true, delete: true, reveal: true }, entries: [entry(), entry('login-two', 2)] }, mirror: { available: true, healthy: true, revision: 7, settings: { enabled: false, destination: 'chrome' }, capabilities: { configure: true, queue: true, beginImport: true }, entries: [], batches: [] }, destinations: [{ id: 'chrome', available: true, supported: true }, { id: 'firefox', available: true, supported: true }, { id: 'neo', available: false, supported: true }] });
 async function mounted(t, handler, options = {}) {
   const f = planningDOM(t), calls = []; let current = status(), serial = 0;
   const ui = mountBrowserCredentials({ mount: f.mount, intervalMs: 100000, makeRequestId: () => `fixture-request-${++serial}`, api: async (...args) => { calls.push(args); if (args[0] === '/api/browser-credentials') return structuredClone(current); return handler?.(args, current); }, ...options });
@@ -234,4 +234,23 @@ test('Settings status changes preserve the live password field, focus, selection
   snapshot.status.connected = true; snapshot.status.defaultModel = 'provider::new'; ui.update();
   assert.equal(f.$('#credentials-password'), password); assert.equal(password.value, 'synthetic-unsaved'); assert.equal(f.document.activeElement, password); assert.deepEqual([password.selectionStart, password.selectionEnd], [2, 7]);
   ui.destroy(); assert.equal(password.value, '');
+});
+
+test('human password reveal is explicit and cleared when hidden or detached',async t=>{
+ const f=await mounted(t,async ([route,,body])=>{assert.equal(route,'/api/browser-credentials/reveal');return {...body,password:'synthetic-reveal-only'};});
+ assert.ok(!f.calls.some(c=>c[0].endsWith('/reveal')));
+ await f.click('[data-credentials-action="reveal"]');await tick();
+ assert.equal(f.$('#credentials-revealed-value').value,'synthetic-reveal-only');
+ assert.doesNotMatch(f.mount.innerHTML,/synthetic-reveal-only/);
+ await f.click('[data-credentials-action="hide-password"]');
+ assert.equal(f.$('#credentials-revealed-value').value,'');
+ await f.click('[data-credentials-action="reveal"]');await tick();
+ f.ui.hidePassword();assert.equal(f.$('#credentials-revealed-value').value,'');
+});
+
+test('late retrieval cannot reopen a hidden password',async t=>{
+ let release;const pending=new Promise(resolve=>release=resolve);
+ const f=await mounted(t,async([route,,body])=>{await pending;return {...body,password:'synthetic-late-only'};});
+ await f.click('[data-credentials-action="reveal"]');f.ui.hidePassword();release();await tick();
+ assert.equal(f.$('#credentials-revealed-value').value,'');assert.equal(f.$('#credentials-revealed').hidden,true);
 });

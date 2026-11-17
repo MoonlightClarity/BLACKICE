@@ -11,7 +11,7 @@ const previewResult=(body,extra={})=>({ok:true,catalogAvailable:true,models:[{id
 const provider=(id='gateway',extra={})=>({id,name:'Saved gateway',preset:'compatible',type:'compatible',baseUrl:'https://gateway.example/v1',enabled:true,maxTokens:8192,maxSteps:null,
   configured:true,requiresApiKey:false,hasApiKey:true,hasHeaders:true,headerNames:['X-Gateway-Key'],secretStorage:'encrypted',updatedAt:'2026-10-25T10:00:00Z',
   models:[{id:'saved-model',displayName:'Saved model',contextWindowTokens:128000,contextWindowSource:'provider-reported',supportsTools:true,maxOutputTokens:16000,maxOutputTokensSource:'provider-reported',contextWindowObservedAt:'2026-10-25T09:00:00Z',maxOutputObservedAt:'2026-10-25T09:00:00Z',inputModalities:['text'],outputModalities:['text']}],...extra});
-async function fixture(t,{providers=[provider(),provider('second',{name:'Second gateway'})],runtimeSettings={hiddenModelProviders:[]},hook}={}){
+async function fixture(t,{providers=[provider(),provider('second',{name:'Second gateway'})],runtimeSettings={hiddenModelProviders:[]},hook,wrapped=false}={}){
   const dom=planningDOM(t),prototype=Object.getPrototypeOf(dom.mount),type=Object.getOwnPropertyDescriptor(prototype,'type');
   Object.defineProperty(prototype,'type',{get:type.get,set(value){this.setAttribute('type',value);}});
   prototype.replaceChildren=function(...children){for(const child of this.children)child.parentElement=null;this.children=[];this.rawText='';this.markup='';this.append(...children);};
@@ -21,6 +21,8 @@ async function fixture(t,{providers=[provider(),provider('second',{name:'Second 
   const api=async(route,method='GET',body,options)=>{
     const call={route,method,body:structuredClone(body),options};calls.push(call);
     if(hook){const result=await hook(call,state);if(result!==undefined)return result;}
+    if(wrapped&&route==='/api/status')return {codex:state.codex};
+    if(wrapped&&route==='/api/config')return {};
     if(route==='/api/runtime/settings'&&method==='GET')return structuredClone(state.runtimeSettings);
     if(route==='/api/runtime/settings'&&method==='POST'){state.runtimeSettings={...state.runtimeSettings,...body};return structuredClone(state.runtimeSettings);}
     if(route==='/api/providers'&&method==='GET')return structuredClone(state.providers);
@@ -47,7 +49,8 @@ async function fixture(t,{providers=[provider(),provider('second',{name:'Second 
     }
     throw Error('Unexpected provider API '+method+' '+route);
   };
-  const panel=createProviderSettings({mount:dom.mount,api,events:{subscribe(handler){subscribers.add(handler);return()=>subscribers.delete(handler);}},notify:value=>notices.push(value),onChanged:()=>{changed++;},getRuntimeSettings:()=>state.runtimeSettings,onRuntimeSettings:value=>{state.runtimeSettings=structuredClone(value);}});
+  const makePanel=wrapped?props=>createSubscriptionModelSettings(props,createProviderSettings):createProviderSettings;
+  const panel=makePanel({mount:dom.mount,api,events:{subscribe(handler){subscribers.add(handler);return()=>subscribers.delete(handler);}},notify:value=>notices.push(value),onChanged:()=>{changed++;},getRuntimeSettings:()=>state.runtimeSettings,onRuntimeSettings:value=>{state.runtimeSettings=structuredClone(value);}});
   t.after(()=>panel.destroy());panel.enter();await until(()=>dom.$('[data-provider-id]')||state.providers.length===0&&!dom.$('#next-provider-refresh').disabled);
   return {...dom,panel,calls,state,notices,subscribers,get changed(){return changed;},writes:()=>calls.filter(call=>call.method!=='GET'&&call.route!=='/api/providers/preview'&&!/^\/api\/providers\/[^/]+\/models$/.test(call.route)),
     async open(id='gateway'){await dom.click(`[data-provider-id="${id}"]`);await settle();},
@@ -754,4 +757,56 @@ test('legacy service URLs on custom saved connections show migration guidance wi
   assert.equal(f.$('#next-provider-preset').value,'pollinations');assert.equal(f.$('#next-provider-base-url').value,'https://gen.pollinations.ai/v1');
   assert.equal(f.$('#next-provider-id').value,original.id);assert.equal(f.$('#next-provider-name').value,original.name);assert.equal(f.$('[data-provider-model-id="saved-model"]').checked,true);
   assert.deepEqual(f.state.providers,[original]);assert.equal(f.writes().length,0,'Explicit migration fills a reviewable draft; it does not save or duplicate the connection.');
+});
+
+test('real Codex controls remain active independently of optional API expansion',async t=>{
+  const f=await fixture(t,{wrapped:true});
+  const details=f.$('#next-connect-another-endpoint');
+  await f.open();await f.input('#next-provider-name','Keep API draft');
+  details.open=false;await details.dispatch('toggle');await settle();
+  assert.equal(f.subscribers.size,0,'collapsed API panel unsubscribes as before');
+  const providerReads=()=>f.calls.filter(c=>c.route==='/api/providers').length;
+  const before=providerReads();
+  await f.click('#next-provider-codex-read');await settle();
+  assert.match(f.$('#next-provider-codex-list').textContent,/Native model/);
+  await f.input('#next-provider-codex-id','custom-after-collapse');
+  await f.click('#next-provider-codex-add');await settle();
+  assert.deepEqual(f.state.customModels,['custom-after-collapse']);
+  await f.input('#next-provider-codex-id','native-model');
+  await f.click('#next-provider-codex-check');await settle();
+  assert.equal(f.state.codex.modelCheck.model,'native-model');
+  await f.click('#next-provider-codex-hide');await settle();
+  assert.deepEqual(f.state.runtimeSettings.hiddenModelProviders,['codex']);
+  assert.equal(f.$('#next-provider-codex-read').disabled,false);
+  assert.equal(providerReads(),before,'native actions do not restart hidden API loading');
+  f.panel.leave();
+  const stopped=f.calls.length;
+  await f.click('#next-provider-codex-read');await settle();
+  assert.equal(f.calls.length,stopped,'leaving Models stops Codex too');
+  f.panel.enter();await settle();
+  await f.click('#next-provider-codex-read');await settle();
+  assert.equal(f.calls.filter(c=>c.route==='/api/codex/models?refresh=true').length,2);
+  assert.equal(f.subscribers.size,0,'reenter with API collapsed keeps it paused');
+  details.open=true;await details.dispatch('toggle');await settle();
+  assert.equal(f.subscribers.size,1);
+  assert.equal(f.$('#next-provider-name').value,'Keep API draft');
+  assert.equal(f.mount.querySelectorAll('#next-provider-codex').length,1);
+});
+
+test('collapsing optional APIs preserves an in-flight native read but leaving Models cancels it',async t=>{
+  let gate,signal;
+  const f=await fixture(t,{wrapped:true,hook:call=>{
+    if(gate&&call.route==='/api/codex/models?refresh=true'){signal=call.options.signal;return gate.promise;}
+  }});
+  gate=deferred();
+  await f.click('#next-provider-codex-read');await settle();
+  const details=f.$('#next-connect-another-endpoint');
+  details.open=false;await details.dispatch('toggle');
+  assert.equal(signal.aborted,false);
+  gate.resolve({...f.state.codex,models:[{id:'late-native',model:'late-native'}]});await settle();
+  assert.match(f.$('#next-provider-codex-list').textContent,/late-native/);
+  gate=deferred();await f.click('#next-provider-codex-read');await settle();
+  f.panel.leave();assert.equal(signal.aborted,true);
+  gate.resolve({...f.state.codex,models:[{id:'ignored-native',model:'ignored-native'}]});await settle();
+  assert.doesNotMatch(f.$('#next-provider-codex-list').textContent,/ignored-native/);
 });

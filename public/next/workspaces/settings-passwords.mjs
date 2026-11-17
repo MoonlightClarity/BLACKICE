@@ -27,7 +27,7 @@ export function createPasswordSettings({mount,api}={}) {
       }
       else void controller.refresh(true);
     },
-    leave(){active=false;child.remove();},
+    leave(){active=false;controller?.hidePassword?.();child.remove();},
     destroy(){if(destroyed)return;this.leave();destroyed=true;controller?.destroy();controller=null;},
   };
 }

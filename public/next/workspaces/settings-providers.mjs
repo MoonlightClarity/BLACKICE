@@ -68,6 +68,8 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
 
   let runtimeSettings=copy(getRuntimeSettings()||{});
   const hiddenProviders=()=>new Set(Array.isArray(runtimeSettings.hiddenModelProviders)?runtimeSettings.hiddenModelProviders:[]);
+  let nativeActive=false;
+  const codexActive=()=>active||nativeActive;
   let active=false,destroyed=false,selected=null,providers=[],listLimit=LIST_PAGE,listBusy=false,listSequence=0,listAbort,unsubscribe=null;
   let busy=false,catalogBusy=false,catalogSequence=0,catalogAbort,catalogTimer=null,loaded=false,stale=false,codex=null,codexLimit=LIST_PAGE,codexSequence=0,codexAbort,codexBusy=false,uncertainCheck=false;
   const current=()=>drafts.get(selected);
@@ -98,7 +100,7 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
     f.new.disabled=busy;f.openrouter.disabled=busy;f.mistral.disabled=busy;f.refresh.disabled=busy||listBusy;f.filter.disabled=busy;f.more.disabled=busy;
 
     for(const button of [...f.list.querySelectorAll('button'),...f['hidden-list'].querySelectorAll('button')])button.disabled=busy;
-    f['codex-hide'].disabled=busy;
+    f['codex-hide'].disabled=!codexActive()||busy;
     if(draft){
       f['chat-path'].disabled=busy||draft.type!=='compatible';
       f['catalog-free'].disabled=busy||getProviderPreset(draft.preset)?.freeOnly===true;
@@ -114,9 +116,9 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
       f['catalog-next'].disabled=!canCatalog||draft.catalogPending===true||!draft.catalog?.hasMore;
       f.catalog.setAttribute('aria-busy',String(catalogBusy||draft.catalogPending===true));
     }
-    for(const control of [f['codex-id'],f['codex-add'],f['codex-read'],f['codex-more']])control.disabled=busy||codexBusy;
-    f['codex-check'].disabled=busy||codexBusy||uncertainCheck||!codex?.connected||!codex?.authenticated||codex?.modelCheckBlocked===true||codex?.modelCheck?.status==='checking';
-    for(const button of f['codex-list'].querySelectorAll('button'))button.disabled=busy||codexBusy;
+    for(const control of [f['codex-id'],f['codex-add'],f['codex-read'],f['codex-more']])control.disabled=!codexActive()||busy||codexBusy;
+    f['codex-check'].disabled=!codexActive()||busy||codexBusy||uncertainCheck||!codex?.connected||!codex?.authenticated||codex?.modelCheckBlocked===true||codex?.modelCheck?.status==='checking';
+    for(const button of f['codex-list'].querySelectorAll('button'))button.disabled=!codexActive()||busy||codexBusy;
     f.root.setAttribute('aria-busy',String(busy));
   }
   function paintList(){
@@ -189,14 +191,14 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
     finally{busy=false;if(!destroyed)controls();}
   }
   async function setProviderHidden(id,hide){
-    if(!active||destroyed||busy)return;busy=true;cancelCatalog();status(f.info,hide?'Hiding provider from model menus…':'Restoring provider to model menus…');controls();
+    if(!(id==='codex'?codexActive():active)||destroyed||busy)return;busy=true;cancelCatalog();status(f.info,hide?'Hiding provider from model menus…':'Restoring provider to model menus…');controls();
     try{
       const latest=await api('/api/runtime/settings','GET');if(destroyed)return;
       const ids=new Set(Array.isArray(latest.hiddenModelProviders)?latest.hiddenModelProviders:[]);hide?ids.add(id):ids.delete(id);
       const saved=await api('/api/runtime/settings','POST',{hiddenModelProviders:[...ids]});if(destroyed)return;
       runtimeSettings=copy(saved);onRuntimeSettings(saved);notifyChanged();status(f.info,hide?'Provider hidden from model menus. Restore it from Hidden providers.':'Provider restored to model menus.');
     }catch(error){if(!destroyed)status(f.info,safeError(error),true);}
-    finally{busy=false;if(active&&!destroyed){paintList();controls();if(stale)void load();}}
+    finally{busy=false;if(codexActive()&&!destroyed){paintList();controls();if(active&&stale)void load();}}
   }
   function paintGroups(parent,models,draft,scope){
     const groups=groupModels(models,{providers:providers,defaultProviderId:draft.id,defaultLabel:draft.saved?.name||draft.name,mode:'publisher'});
@@ -445,16 +447,16 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
     controls();
   }
   async function readCodex(){
-    if(!active||destroyed||codexBusy||busy)return;const token=++codexSequence,controller=new AbortController();codexAbort=controller;codexBusy=true;
+    if(!codexActive()||destroyed||codexBusy||busy)return;const token=++codexSequence,controller=new AbortController();codexAbort=controller;codexBusy=true;
     status(f['codex-error'],'');status(f['codex-status'],'Refreshing native model limits and check status…');controls();
     try{const result=await api('/api/codex/models?refresh=true','GET',undefined,{signal:controller.signal});
-      if(!active||destroyed||token!==codexSequence)return;codex=result;uncertainCheck=false;
+      if(!codexActive()||destroyed||token!==codexSequence)return;codex=result;uncertainCheck=false;
       status(f['codex-status'],`${result.connected&&result.authenticated?'Codex connected.':'Connect and sign in to Codex to try a model.'} ${checkReceipt(result.modelCheck)}${result.modelCheckBlocked?' Previous check cleanup is unresolved; restart BLACKICE before trying another model.':''}`);paintCodex();notifyChanged();
-    }catch(error){if(active&&!destroyed&&token===codexSequence){status(f['codex-error'],safeError(error),true);status(f['codex-status'],'Model limits could not refresh. Previous results are kept. Use Refresh model list and limits to retry.');}}
-    finally{if(token===codexSequence){codexBusy=false;codexAbort=null;if(active&&!destroyed)controls();}}
+    }catch(error){if(codexActive()&&!destroyed&&token===codexSequence){status(f['codex-error'],safeError(error),true);status(f['codex-status'],'Model limits could not refresh. Previous results are kept. Use Refresh model list and limits to retry.');}}
+    finally{if(token===codexSequence){codexBusy=false;codexAbort=null;if(codexActive()&&!destroyed)controls();}}
   }
   async function codexAction(action,selectedModel){
-    if(!active||destroyed||busy||codexBusy)return;const model=(selectedModel??f['codex-id'].value).trim();
+    if(!codexActive()||destroyed||busy||codexBusy)return;const model=(selectedModel??f['codex-id'].value).trim();
     if(!nativeId(model)){status(f['codex-error'],'Enter an exact native Codex model ID, without spaces or a provider prefix.',true);return;}
     if(action==='check'&&(uncertainCheck||!codex?.connected||!codex?.authenticated||codex?.modelCheckBlocked||codex?.modelCheck?.status==='checking'))return;
     busy=true;codexSequence++;codexAbort?.abort();codexBusy=false;status(f['codex-error'],'');status(f['codex-status'],action==='check'?`Checking ${model}… One bounded text request.`:action==='DELETE'?'Removing saved model ID…':'Saving model ID…');controls();
@@ -464,7 +466,7 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
       if(action==='POST'&&f['codex-id'].value.trim()===model)f['codex-id'].value='';
       status(f['codex-status'],action==='check'?checkReceipt(result.result):action==='DELETE'?'Saved ID removed. Advertised models remain listed.':'Model ID saved. '+modelLimitDetails((result.models||[]).find(item=>(item.model||item.id)===model)||{}).map(([label,value])=>label+': '+value).join(' · ')+'.');notifyChanged();
     }catch(error){if(!destroyed){if(action==='check')uncertainCheck=!error.status;status(f['codex-error'],safeError(error),true);status(f['codex-status'],action==='check'?'Check result unavailable. Read model and check status before trying again.':'The action did not complete successfully. Read status to inspect the saved IDs before retrying.');}}
-    finally{busy=false;if(active&&!destroyed){paintCodex();controls();if(stale)void load();}}
+    finally{busy=false;if(codexActive()&&!destroyed){paintCodex();controls();if(active&&stale)void load();}}
   }
   for(const sort of MODEL_SORTS){const option=add(f['catalog-sort'],'option',sort.label);option.value=sort.id;}
   f.form.addEventListener('submit',event=>event.preventDefault());
@@ -494,6 +496,7 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
   f.filter.addEventListener('input',()=>{listLimit=LIST_PAGE;paintList();});f.more.addEventListener('click',()=>{listLimit+=LIST_PAGE;paintList();});f.refresh.addEventListener('click',()=>void load());
   f['codex-add'].addEventListener('click',()=>void codexAction('POST'));f['codex-check'].addEventListener('click',()=>void codexAction('check'));f['codex-read'].addEventListener('click',()=>void readCodex());
   f['codex-id'].addEventListener('keydown',event=>{if(event.key==='Enter')event.preventDefault();});f['codex-filter'].addEventListener('input',()=>{codexLimit=LIST_PAGE;paintCodex();});f['codex-more'].addEventListener('click',()=>{codexLimit+=LIST_PAGE;paintCodex();});
+  function pauseCodex(){if(codexBusy)status(f['codex-status'],'Status read paused. Refresh model list and limits to load the current result.');codexSequence++;codexAbort?.abort();codexAbort=null;codexBusy=false;controls();}
   const onEvent=event=>{if(!active||destroyed||!['runtime.status','provider.updated'].includes(event.type))return;
     const latest=event.data?.providers;if(Array.isArray(latest)&&JSON.stringify(latest)===JSON.stringify(providers))return;
     stale=true;if(busy)return;
@@ -502,9 +505,10 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
   };
   const providerDirectory=createProviderDirectoryUI({mount:f['directory-root'],api,onChoose:chooseDirectoryProvider});
   return {
+    setCodexActive(value){nativeActive=value===true;if(!codexActive())pauseCodex();else paintCodex();},
     updateRuntimeSettings(value){if(destroyed||!value||typeof value!=='object')return;runtimeSettings=copy(value);if(active)paintList();},
     enter(){if(destroyed||active)return;runtimeSettings=copy(getRuntimeSettings()||runtimeSettings);active=true;unsubscribe=events?.subscribe?.(onEvent)||null;paintList();paintEditor();paintCodex();providerDirectory.enter();if(!loaded||stale)void load();},
-    leave(){providerDirectory.leave();active=false;unsubscribe?.();unsubscribe=null;stale=true;listSequence++;listAbort?.abort();listAbort=null;listBusy=false;cancelCatalog();if(codexBusy)status(f['codex-status'],'Status read paused. Refresh model list and limits to load the current result.');codexSequence++;codexAbort?.abort();codexAbort=null;codexBusy=false;},
-    destroy(){this.leave();providerDirectory.destroy();destroyed=true;for(const draft of drafts.values()){draft.key='';draft.headers='';}drafts.clear();f.key.value='';f.headers.value='';mount.replaceChildren();},
+    leave(){providerDirectory.leave();active=false;unsubscribe?.();unsubscribe=null;stale=true;listSequence++;listAbort?.abort();listAbort=null;listBusy=false;cancelCatalog();if(!nativeActive)pauseCodex();},
+    destroy(){nativeActive=false;this.leave();providerDirectory.destroy();destroyed=true;for(const draft of drafts.values()){draft.key='';draft.headers='';}drafts.clear();f.key.value='';f.headers.value='';mount.replaceChildren();},
   };
 }

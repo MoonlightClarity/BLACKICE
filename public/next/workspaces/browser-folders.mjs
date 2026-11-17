@@ -1,5 +1,5 @@
 import {text} from '../core/dom.mjs';
-export const browserFoldersMarkup=()=>'<details class="next-browser-folders" open><summary>Folders</summary><div id="next-browser-folders-body"></div></details>';
+export const browserFoldersMarkup=()=>'<details class="next-browser-folders"><summary>Manage folders</summary><div id="next-browser-folders-body"></div></details>';
 export function browserCollectionTree(collections,tabs){
  const map=new Map((collections||[]).map(f=>[f.id,{...f,children:[],tabs:[]}]));
  const roots=[],loose=[];
@@ -9,7 +9,7 @@ export function browserCollectionTree(collections,tabs){
 }
 export function createBrowserFolders({mount,api,getTabs,getSelected,isBusy,select,refresh,notice}){
  const host=mount.querySelector('#next-browser-folders-body'),doc=mount.ownerDocument;
- let collections=[],editing=null,pending=false,destroyed=false,key='',collapsed=new Set();
+ let collections=[],editing=null,pending=false,destroyed=false,key='',collapsed=new Set(),tabCollapsed=new Set();
  const button=(root,label,fn)=>{const b=text(root,label,'button');b.type='button';b.disabled=pending||isBusy();b.addEventListener('click',fn);return b;};
  async function action(action,args){
   if(pending||isBusy()||destroyed)return;
@@ -35,17 +35,17 @@ export function createBrowserFolders({mount,api,getTabs,getSelected,isBusy,selec
   function options(nodes,depth=0){for(const f of nodes){opt(move,f.id,'  '.repeat(depth)+f.name);options(f.children,depth+1);}}options(tree.roots);
   move.value=tabs.find(t=>t.tabId===getSelected())?.collectionId||'';
   move.addEventListener('change',()=>void action('tab_collect',{tabId:getSelected(),collectionId:move.value||null}));
-  const list=text(host,'','div','next-browser-folder-tree');list.setAttribute('aria-label','Browser folders and tabs');
-  function tabRows(parent,rows){for(const tab of rows){const b=button(parent,tab.title||tab.url||'New tab',()=>select(tab.tabId));b.className='next-browser-folder-tab';b.setAttribute('aria-current',String(tab.tabId===getSelected()));b.title=tab.url||'';}}
+  const list=text(host,'','div','next-browser-folder-tree');list.setAttribute('aria-label','Manage browser folders');
+  function tabRows(parent,rows){if(rows.length)text(parent,rows.length+' tabs','span','next-help');}
   function folders(parent,nodes){for(const folder of nodes){
    const group=text(parent,'','section','next-browser-folder-group'),head=text(group,'','div','next-browser-folder-heading');
    const toggle=button(head,(collapsed.has(folder.id)?'\u25b8 ':'\u25be ')+folder.name,()=>{collapsed.has(folder.id)?collapsed.delete(folder.id):collapsed.add(folder.id);key='';render();});
-   const icon=doc.createElementNS('http://www.w3.org/2000/svg','svg');icon.setAttribute('viewBox','0 0 24 24');icon.setAttribute('aria-hidden','true');icon.setAttribute('class','next-browser-folder-icon');const path=doc.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d','M3 5h6l2 3h10v11H3z');icon.append(path);toggle.prepend(icon);
+   const icon=doc.createElementNS('http://www.w3.org/2000/svg','svg');icon.setAttribute('viewBox','0 0 24 24');icon.setAttribute('aria-hidden','true');icon.setAttribute('class','next-browser-folder-icon');const path=doc.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d','M3 5h6l2 3h10v11H3z');icon.append(path);toggle.insertBefore(icon,toggle.firstChild);
    toggle.setAttribute('aria-expanded',String(!collapsed.has(folder.id)));toggle.className='next-browser-folder-toggle';
    button(head,'Edit',()=>{editing={...folder};key='';render();}).setAttribute('aria-label','Edit folder '+folder.name);
    if(!collapsed.has(folder.id)){const children=text(group,'','div','next-browser-folder-children');tabRows(children,folder.tabs);folders(children,folder.children);if(!folder.tabs.length&&!folder.children.length)text(children,'Empty folder','span','next-help');}
   }}folders(list,tree.roots);
-  if(tree.loose.length){const loose=text(list,'','section','next-browser-folder-group');text(loose,'Unfiled','h3');tabRows(loose,tree.loose);}
+
   if(!collections.length&&!tabs.length)text(list,'Create folders to organize your tabs.','p','next-help');
   if(editing){
    const form=text(host,'','form','next-browser-folder-editor'),name=text(form,'','input','next-field');form.dataset.editor=String(editing.id??'new');name.dataset.folderName='';name.maxLength=200;name.required=true;name.setAttribute('aria-label','Folder name');name.placeholder='Folder name';name.value=draft??editing.name??'';
@@ -63,5 +63,41 @@ export function createBrowserFolders({mount,api,getTabs,getSelected,isBusy,selec
    });
   }
  }
- return {update(data){collections=Array.isArray(data.collections)?data.collections:[];render();},render,destroy(){destroyed=true;}};
+
+ // Folder membership belongs to the existing browser tab model. Render it once,
+ // in browser chrome, rather than maintaining a second list of the same tabs.
+ function captureFocus(host){
+  const active=doc.activeElement;
+  if(!active||!host.contains?.(active))return ()=>{};
+  const tabId=active.dataset.tabId,closeId=active.dataset.closeTab;
+  const collectionId=active.classList.contains('next-browser-collection-toggle')?active.parentElement.dataset.collectionId:undefined;
+  return ()=>{
+   const target=tabId!==undefined?[...host.querySelectorAll('[data-tab-id]')].find(n=>n.dataset.tabId===tabId):
+    closeId!==undefined?[...host.querySelectorAll('[data-close-tab]')].find(n=>n.dataset.closeTab===closeId):
+    collectionId!==undefined?[...host.querySelectorAll('.next-browser-collection-toggle')].find(n=>n.parentElement.dataset.collectionId===collectionId):null;
+   if(target&&!target.closest?.('[hidden]'))target.focus?.({preventScroll:true});
+  };
+ }
+ function groupTabs(host){
+  const restoreFocus=captureFocus(host);
+  const tabs=getTabs(),byId=new Map(tabs.map(t=>[t.tabId,t]));
+  const nodes=[...host.querySelectorAll('.next-browser-tab-group')];
+  const extra=[...host.children].filter(n=>!n.classList.contains('next-browser-tab-group')&&!n.classList.contains('next-browser-tab-collection'));
+  const buckets=new Map(),labels=new Map();
+  const tree=browserCollectionTree(collections,[]);
+  function paths(rows,prefix=''){for(const f of rows){const name=prefix?prefix+' / '+f.name:f.name;labels.set(f.id,name);paths(f.children,name);}}paths(tree.roots);
+  for(const node of nodes){const id=node.querySelector('[data-tab-id]')?.dataset.tabId;const folder=byId.get(id)?.collectionId;const key=labels.has(folder)?folder:'';if(!buckets.has(key))buckets.set(key,[]);buckets.get(key).push(node);}
+  host.replaceChildren();
+  for(const [id,rows] of buckets){
+   const group=text(host,'','section','next-browser-tab-collection');group.dataset.collectionId=id;
+   const heading=button(group,'',()=>{tabCollapsed.has(id)?tabCollapsed.delete(id):tabCollapsed.add(id);groupTabs(host);});
+   heading.disabled=false; // Local presentation remains usable during browser requests.
+   text(heading,(id?labels.get(id):'Unfiled')+' ('+rows.length+')','span','next-browser-collection-label');
+   heading.className='next-browser-collection-toggle';heading.setAttribute('aria-expanded',String(!tabCollapsed.has(id)));heading.title=id?labels.get(id):'Tabs not in a folder';
+   const icon=doc.createElementNS('http://www.w3.org/2000/svg','svg');icon.setAttribute('viewBox','0 0 24 24');icon.setAttribute('aria-hidden','true');icon.setAttribute('class','next-browser-folder-icon');const path=doc.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d','M3 5h6l2 3h10v11H3z');icon.append(path);heading.insertBefore(icon,heading.firstChild);
+   const items=text(group,'','div','next-browser-collection-tabs');items.hidden=tabCollapsed.has(id);items.append(...rows);
+  }
+  host.append(...extra);restoreFocus();
+ }
+ return {captureFocus,groupTabs,update(data){collections=Array.isArray(data.collections)?data.collections:[];render();},render,destroy(){destroyed=true;}};
 }

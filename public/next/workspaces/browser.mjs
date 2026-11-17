@@ -106,6 +106,7 @@ export function createBrowserWorkspace(options) {
   const folders=createBrowserFolders({mount,api,getTabs:()=>ownership.visible(tabs),getSelected:()=>selected,isBusy:()=>busy,select,refresh,notice});
   const cleanup=createBrowserScopedCleanup({mount,api,refresh,notify,isBusy:()=>busy});
   function renderTabs() {
+    const restoreTabFocus=folders.captureFocus(ui.tabs);
     const fragment=ui.tabs.ownerDocument.createDocumentFragment();
     const visible=ownership.visible(tabs);
     if(!visible.length)text(fragment,ownership.emptyLabel(),'span','next-browser-tabs-empty');
@@ -130,6 +131,7 @@ export function createBrowserWorkspace(options) {
       close.addEventListener('click',()=>{if(!busy)void operate('close',{tabId:tab.tabId});});
     }
     ui.tabs.replaceChildren(fragment);
+    folders.groupTabs(ui.tabs);restoreTabFocus();
   }
   function renderDialog(){
     ui.dialog.replaceChildren();

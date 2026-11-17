@@ -182,3 +182,23 @@ test('failed explicit connect remains separate from saved state and is never rep
   f.panel.leave();f.panel.enter();await settled();await settled();assert.equal(attempts,1);
   assert.equal(f.get('name').value,local.name);f.panel.destroy();
 });
+
+test('public catalog prepares an HTTP draft without installing or connecting',async()=>{
+ const f=panelFixture(async route=>route==='/api/connections'?[]:{servers:[{name:'example/search',description:'Synthetic server',endpoints:['https://tools.example/mcp']}],nextCursor:''});
+ f.panel.enter();await settled();assert.equal(f.calls.length,1);
+ f.get('discover-query').value='search';f.get('discover').emit('click');await settled();
+ assert.equal(f.calls[1][0],'/api/tool-registry?query=search&cursor=');
+ const card=f.get('discover-results').children[0];card.children.find(c=>c.tagName==='BUTTON').emit('click');
+ assert.equal(f.get('url').value,'https://tools.example/mcp');assert.equal(f.get('transport').value,'http');
+ assert.equal(f.calls.length,2);f.panel.destroy();
+});
+
+test('registry configuration obeys connection validation and preserves unsupported destinations',async()=>{
+ const {catalogConnectionDraft}=await import('../public/next/workspaces/settings-connections.mjs');
+ const draft=catalogConnectionDraft({title:'x'.repeat(300)},'https://tools.example/mcp');
+ assert.equal(draft.name.length,120);assert.doesNotThrow(()=>connectionSettingsPayload(draft));
+ for(const url of ['https://tools.example/mcp?region=us','https://tools.example/mcp#part','https://tools.example/{tenant}','https://tools.example/%7Btenant%7D'])assert.equal(catalogConnectionDraft({name:'Tools'},url),null);
+ const f=panelFixture(async route=>route==='/api/connections'?[]:{servers:[{name:'example/local',endpoints:['https://tools.example/mcp?region=us'],packages:[{type:'npm',name:'@example/tools'}]}]});
+ f.panel.enter();await settled();f.get('discover').emit('click');await settled();
+ const card=f.get('discover-results').children[0];assert.ok(card.children.some(c=>c.textContent.includes('npm: @example/tools')));assert.ok(card.children.some(c=>c.textContent.includes('Manual setup required')));assert.ok(!card.children.some(c=>c.tagName==='BUTTON'));f.panel.destroy();
+});

@@ -197,3 +197,19 @@
 @media(max-width:760px){.next-browser-folder-tree{max-height:150px}.next-browser-folder-editor>*{max-width:100%}}
 
 .next-browser-folder-icon{width:18px;height:18px;vertical-align:middle;fill:none;stroke:currentColor;stroke-width:1.6;margin-right:6px}
+
+/* One folder-aware tab strip. Organization controls stay closed until requested. */
+.next-browser-tab-collection{display:flex;align-items:center;flex:0 0 auto;min-width:0;gap:4px;border-inline-start:2px solid var(--accent,#678);padding-inline-start:4px}
+.next-browser-collection-toggle{display:flex;align-items:center;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 7px;min-height:30px;font-size:11px;flex:none}
+.next-browser-collection-tabs{display:flex;align-items:center;gap:4px}
+.next-browser-collection-tabs[hidden]{display:none}
+.next-browser-folders{margin:2px 0;padding:2px 6px;border:0;background:transparent}
+.next-browser-folders summary{font-size:11px;font-weight:400}
+.next-browser-folders[open]{max-height:190px;overflow:auto}
+.next-browser-navigation .next-browser-address{flex-wrap:wrap}
+.next-browser-navigation .next-browser-address #next-browser-url{flex:1 1 180px}
+.next-browser-navigation .next-browser-tabs{max-width:100%;flex-shrink:0}
+@media(max-width:800px){.next-browser-collection-toggle{max-width:120px}.next-browser-navigation .next-browser-address{gap:3px}.next-browser-address button{font-size:11px}.next-browser-folders[open]{max-height:130px}}
+
+.next-browser-collection-toggle .next-browser-folder-icon{flex:none}
+.next-browser-collection-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

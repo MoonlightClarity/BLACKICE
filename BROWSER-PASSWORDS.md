@@ -15,6 +15,9 @@ The optional **Automatically queue saved passwords** preference queues current s
 
 ## Local management
 
+Saved logins have **Show password**, **Copy password**, and **Hide password** controls for the human user. Retrieval happens only when Show is selected, names the exact displayed login revision, and returns a non-cacheable response. Hide, leaving the Passwords settings panel, or a changed/deleted login clears the displayed value. Clipboard copying is explicit; if clipboard access is unavailable, select the displayed value and copy with the keyboard. This local UI does not add a model retrieval tool.
+
+
 The local password form can add or replace a saved login. Website addresses must be HTTPS origins. A replace operation names the existing credential revision and the current vault revision; a conflicting edit cannot silently replace a newer password. A successful save clears the masked draft. An uncertain save preserves the draft and its request ID so the same request can be retried without creating a second login.
 
 Background refreshes preserve active input, focus and selection. A checkbox is bound to the credential revision actually displayed; if polling discovers a newer revision while the displayed row is preserved, clicking the old row cannot silently choose the new password.

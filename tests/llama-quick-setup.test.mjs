@@ -144,8 +144,21 @@ test('model onboarding separates included engine from external model download wi
  assert.match(f.$('#next-llama-model-guide').textContent,/Get a model.*permanent folder.*chat model selector/s);
  assert.equal(f.$('#next-llama-model-browse').textContent,'Choose model file');
  const link=f.$('#next-llama-model-catalog');
- assert.equal(link.getAttribute('href'),'https://huggingface.co/ggml-org/collections');
+ assert.equal(link.getAttribute('href'),'https://huggingface.co/models?library=gguf&search=');
  assert.equal(link.getAttribute('rel'),'noopener noreferrer');
- assert.match(f.mount.textContent,/does not download model files automatically/);
+ assert.match(f.mount.textContent,/No download or model call is started here/);
  assert.equal(f.writes().length,0);
+});
+
+test('model discovery encodes search and prepares an editable-context prompt without requests',async t=>{
+ const f=fixture(t);await f.enter();const before=f.calls.length;
+ await f.input('#next-llama-model-query','coding & small <fast>');
+ const link=new URL(f.$('#next-llama-model-catalog').getAttribute('href'));
+ assert.equal(link.origin,'https://huggingface.co');assert.equal(link.searchParams.get('library'),'gguf');
+ assert.equal(link.searchParams.get('search'),'coding & small <fast>');
+ await f.click('#next-llama-prepare-prompt');
+ assert.match(f.$('#next-llama-model-prompt').value,/coding & small <fast>/);
+ assert.match(f.$('#next-llama-model-prompt').value,/external runtime\/API/);
+ assert.match(f.mount.textContent,/cannot be loaded by simply renaming/);
+ assert.equal(f.calls.length,before);assert.equal(f.writes().length,0);
 });

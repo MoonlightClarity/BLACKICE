@@ -275,6 +275,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{},onN
     },document.hidden?32:250);
   }
   function renderTabs(){
+    const restoreTabFocus=folders.captureFocus(ui.tabs);
     const filtered=ownership.visible(tabs),visible=filtered.slice(0,tabLimit);
     const chosen=filtered.find(tab=>tab.tabId===selected);
     if(chosen&&!visible.includes(chosen))visible.push(chosen);
@@ -312,6 +313,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{},onN
       const more=text(ui.tabs,'More tabs ('+(filtered.length-visible.length)+')','button','next-native-more-tabs');more.type='button';
       more.addEventListener('click',()=>{tabLimit+=80;renderTabs();scheduleGeometry();});
     }
+    folders.groupTabs(ui.tabs);restoreTabFocus();
   }
   function renderDownloads(){
     ui.downloadsToggle.textContent='Downloads'+(downloads.length?' ('+downloads.length+')':'');

@@ -21,6 +21,13 @@ export function connectionSettingsDraft(entry={}) {
     enabled:entry.enabled!==false,timeout:String((entry.timeoutMs??30000)/1000),command:entry.command||'',
     args:(entry.args||[]).join('\n'),cwd:entry.cwd||'',url:entry.url||'',env:'',headers:''};
 }
+// Registry descriptions are discovery metadata, not executable configuration.
+export function catalogConnectionDraft(item, endpoint) {
+ const name=String(item.title||item.name||'MCP server').replace(/\0/g,'').trim().slice(0,120);
+ const draft={...connectionSettingsDraft(),name,transport:'http',url:endpoint};
+ if (/[{}]|%7[bBdD]/.test(String(endpoint))) return null;
+ try { connectionSettingsPayload(draft); return draft; } catch { return null; }
+}
 export function connectionSettingsSnapshot(entry) {
   if(!entry)return null;
   return JSON.stringify({id:entry.id,name:entry.name,transport:entry.transport,enabled:entry.enabled!==false,
@@ -75,6 +82,7 @@ export function createConnectionSettings({mount,api,events,notify=()=>{},onChang
     '<section id="next-connections-root" class="next-connection-settings" aria-label="Tool connections">',
     '<header class="next-section-actions"><div><h2>Tool connections</h2><p class="next-help">Add each MCP server once here. This shared catalog is available to BLACKICE agents across providers that support tools, including Codex; it is not owned by one provider. Servers configured only in another app are not automatically imported. Use Import tool configuration below to bring an existing server into this catalog.</p></div>',
     '<div class="next-row"><button type="button" id="next-connections-refresh">Refresh</button><button type="button" id="next-connections-new">Add server</button></div></header>',
+    '<section class="next-card" aria-label="Discover tools"><h3>Find tools in the MCP Registry</h3><p class="next-help">Search public tool-server names, such as filesystem, search, or GitHub. Searching does not install software or connect an account.</p><div class="next-row"><input id="next-connections-discover-query" class="next-field" type="search" maxlength="256" placeholder="Search the public catalog" aria-label="Search public tool catalog"><button id="next-connections-discover" type="button">Search catalog</button></div><p id="next-connections-discover-note" role="status" class="next-help"></p><div id="next-connections-discover-results"></div><button id="next-connections-discover-more" type="button" hidden>More results</button></section>',
     '<p id="next-connections-feedback" role="status" class="next-help"></p>',
     '<div class="next-connections-layout"><div id="next-connections-list" class="next-connections-list" aria-label="Saved tool servers"></div>',
     '<section class="next-connections-editor"><h3 id="next-connections-heading">Add a tool server</h3>',
@@ -258,6 +266,41 @@ export function createConnectionSettings({mount,api,events,notify=()=>{},onChang
   importPanel=createConnectionImportSettings({mount:$('import-panel'),api,onReload:()=>load(),
     onBusyChange(value){importBusy=value;if(value){readSequence++;loading=false;}if(!destroyed)controls();},
     onChanged(){if(active){void load();onChanged();}else importChanged=true;}});
+  let discoverSequence=0, nextCursor='', discoveryQuery='';
+  async function discover(more=false){
+    if(!active||destroyed)return;
+    const sequence=++discoverSequence, token=generation, query=more?discoveryQuery:$('discover-query').value.trim();
+    $('discover-note').textContent='Searching the public MCP Registry…';$('discover-more').hidden=true;
+    if(!more)$('discover-results').replaceChildren();
+    try{
+      const result=await api('/api/tool-registry?query='+encodeURIComponent(query)+'&cursor='+encodeURIComponent(more?nextCursor:''));
+      if(!active||destroyed||token!==generation||sequence!==discoverSequence)return;
+      discoveryQuery=query;nextCursor=result.nextCursor||'';
+      for(const item of result.servers||[]){
+        const card=text($('discover-results'),'','article','next-connections-tool');
+        text(card,item.title||item.name,'h4');text(card,item.name+(item.version?' · '+item.version:''),'code');text(card,item.description,'p');
+        if(item.website){const link=text(card,'Setup instructions','a');link.href=item.website;link.target='_blank';link.rel='noopener noreferrer';}
+        for(const endpoint of item.endpoints||[]){
+          const prepared=catalogConnectionDraft(item,endpoint);
+          if(!prepared){text(card,'Manual setup required: '+endpoint,'p','next-help');continue;}
+          const use=text(card,'Configure HTTP connection','button');use.type='button';
+          use.addEventListener('click',()=>{
+            if(busy||importBusy)return;
+            if(dirty()&&(current()?.entry||JSON.stringify(current().fields)!==JSON.stringify(connectionSettingsDraft({id:current().fields.id})))){say('Save or reload your current connection draft before configuring another server.',true);return;}
+            drafts.delete('new');open();const draft=current();draft.fields={...prepared,id:draft.fields.id};paintFields();say('Catalog connection prepared. Review the endpoint and any required credentials, then Save. Nothing has connected.');
+            ui.heading.scrollIntoView?.({block:'nearest'});
+          });
+        }
+        for(const pkg of item.packages||[])text(card,(pkg.type||'Package')+': '+pkg.name,'code','next-help');
+        if(!item.endpoints?.length)text(card,'Local server or other transport. Follow its setup instructions, then Add server or Import tool configuration.','p','next-help');
+      }
+      $('discover-note').textContent=(result.servers?.length||0)?'Public registry results. Choose a server to configure; individual tools are listed after connection.':'No servers matched. Try a shorter server name.';
+      $('discover-more').hidden=!nextCursor;
+    }catch{if(active&&!destroyed&&token===generation&&sequence===discoverSequence)$('discover-note').textContent='Catalog search unavailable. You can still add a server manually or retry.';}
+  }
+  $('discover').addEventListener('click',()=>void discover());
+  $('discover-more').addEventListener('click',()=>void discover(true));
+  $('discover-query').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();void discover();}});
   remember();paintFields();drawList();drawCatalog();
   return {
     enter(){if(active||destroyed)return;active=true;generation++;importPanel.enter();unsubscribe=events?.subscribe?.(onEvent);void load();if(importChanged){importChanged=false;onChanged();}},

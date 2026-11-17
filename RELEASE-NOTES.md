@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: Proposed 2.40.0 integrated candidate source, not an installer or publication receipt.** Package version is **2.40.0**. Start with the [2.40.0 candidate notes](RELEASE-NOTES-2.40.0.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.1 candidate source, not an installation or publication receipt.** Package version is **2.40.1**. Start with the [2.40.1 notes](RELEASE-NOTES-2.40.1.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
+
+- [2.40.1](RELEASE-NOTES-2.40.1.md) - browser, spreadsheet, password and model-discovery usability candidate
 
 - [2.40.0](RELEASE-NOTES-2.40.0.md) - working usability candidate; not released
 
