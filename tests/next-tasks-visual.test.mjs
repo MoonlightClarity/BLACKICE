@@ -745,3 +745,17 @@ test('Cronjobs puts its optional Title before instructions and uses saved names 
   assert.match(edit.parentElement.textContent,/Title/);
   assert.ok(f.calls.every(call=>call.method==='GET'),'inspection and editing do not admit jobs');
 });
+
+test('cronjob results and history render newest dates first independently of stored insertion order',async t=>{
+ const f=fixture(t);
+ f.jobs[0].createdAt='2026-10-24T10:00:00Z';
+ f.jobs[0].attempts[1].startedAt='2026-10-29T10:00:00Z';
+ f.jobs[1].createdAt='2026-10-28T10:00:00Z';
+ f.jobs[1].delivery={...f.jobs[0].delivery,jobId:'job-1',state:'acknowledged',availableAt:'2026-10-30T10:00:00Z',acknowledgedAt:'2026-11-01T10:00:00Z'};
+ f.component.enter();await settle();await f.clickReady('#next-tasks-tab-results');
+ assert.deepEqual(f.$('#next-tasks-results').children.filter(x=>x.dataset.resultJobId).map(x=>x.dataset.resultJobId),['job-1','job-0']);
+ await f.clickReady('#next-tasks-tab-jobs');
+ assert.deepEqual(f.$('#next-tasks-jobs').children.slice(0,2).map(x=>x.dataset.jobId),['job-0','job-1']);
+ assert.match(f.$('#next-tasks-job-count').textContent,/Latest run first/);
+ assert.equal(f.jobs[0].id,'job-0');
+});

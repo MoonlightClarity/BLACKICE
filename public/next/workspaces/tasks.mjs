@@ -1,3 +1,4 @@
+import { newestJobs, newestResults, jobLastRunAt } from '../../scheduled-history-order.mjs';
 import { createScheduleFolders } from './schedule-folders.mjs';
 import { text } from '../core/dom.mjs';
 import { workflowCatalogWindow } from './workflow-overview-model.mjs';
@@ -659,9 +660,9 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     view.results.replaceChildren();
     const inbox=snapshot.results||{items:[],total:0,available:0,acknowledged:0};
     $('next-tasks-tab-results').textContent=inbox.available?'Results ('+inbox.available+' to review)':'Results';
-    $('next-tasks-results-count').textContent=inbox.available+' awaiting review · '+inbox.acknowledged+' reviewed · '+inbox.total+' total (new receipt tracking only)';
+    $('next-tasks-results-count').textContent=inbox.available+' awaiting review · '+inbox.acknowledged+' reviewed · '+inbox.total+' total · Newest result first';
     if(!inbox.items?.length)add(view.results,'p','No local scheduled results recorded yet. Older job history remains available in Job history.','next-empty');
-    for(const result of inbox.items||[]){
+    for(const result of newestResults(inbox.items)){
       const delivery=result.delivery||{},card=add(view.results,'article','','next-card next-schedule-result');
       card.dataset.resultJobId=result.id;
       const title=add(card,'div','','next-task-job-top');
@@ -709,8 +710,8 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     }
     if((inbox.items?.length||0)<inbox.total)add(view.results,'p','Showing '+inbox.items.length+' of '+inbox.total+' receipts. More are retained in Job history.','next-help');
     view.jobs.replaceChildren();
-    const allJobs=Array.isArray(snapshot.jobs)?snapshot.jobs:[],jobs=allJobs.slice(0,jobsLimit);
-    $('next-tasks-job-count').textContent='Showing '+jobs.length+' of '+allJobs.length+' saved jobs';
+    const allJobs=newestJobs(Array.isArray(snapshot.jobs)?snapshot.jobs:[]),jobs=allJobs.slice(0,jobsLimit);
+    $('next-tasks-job-count').textContent='Showing '+jobs.length+' of '+allJobs.length+' saved jobs · Latest run first';
     $('next-tasks-jobs-more').hidden=jobs.length>=allJobs.length;
     if(!jobs.length)add(view.jobs,'p','No recorded scheduled jobs.','next-empty');
     for(const job of jobs){
@@ -719,7 +720,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       add(top,'h3',deployments.find(d=>d.id===job.deploymentId)?.name||removed.find(d=>d.id===job.deploymentId)?.name||job.deploymentName||job.name||job.id,'next-task-job-title');
       const badge=add(top,'span',job.status||'unknown','next-status-pill');badge.dataset.state=job.status||'unknown';
       const linked=jobLinkedRun(job);
-      add(row,'p',humanTime(job.createdAt)+(linked?.attemptNumber?' · Attempt '+linked.attemptNumber:'')+(job.error?' · '+jobFailureSummary(job.error):''),'next-task-job-meta');
+      add(row,'p',(job.startedAt||job.attempts?.some(attempt=>attempt.startedAt)?'Last run: ':'Created: ')+humanTime(jobLastRunAt(job))+(linked?.attemptNumber?' · Attempt '+linked.attemptNumber:'')+(job.error?' · '+jobFailureSummary(job.error):''),'next-task-job-meta');
       const actions=add(row,'div','','next-task-job-actions');
       if(linked){const open=add(actions,'button',linked.current?'Open task':'Open previous attempt');open.type='button';open.dataset.jobRunId=linked.runId;open.addEventListener('click',()=>onNavigate?.('chat',{conversationId:linked.runId}));}
       const receipt=add(row,'details','','next-task-menu');receipt.dataset.jobInspect=job.id;

@@ -87,5 +87,5 @@ test('read-only result inbox excludes old jobs without delivery receipts',()=>{
  assert.equal(all.items.length,1);
  assert.deepEqual(jobs,before);
  const prioritized=resultInbox([other,value],{includeAcknowledged:true});
- assert.equal(prioritized.items[0].id,value.id,'unacknowledged results precede reviewed history');
+ assert.equal(prioritized.items[0].id,other.id,'equal dates preserve input order regardless of review state');
 });

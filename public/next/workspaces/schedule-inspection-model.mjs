@@ -1,3 +1,4 @@
+import { newestJobs } from '../../scheduled-history-order.mjs';
 import {scheduleDraftFromTrigger,scheduleLabel,scheduleTriggerFromDraft} from '../../schedule-model.mjs';
 import {createMissionWorkflow} from '../../mission-model.mjs';
 import {DEFAULT_CHAT_OPTIONS,chatOptionChoices,normalizeChatOptions,validateChatOptions} from '../chat/options-model.mjs';
@@ -145,7 +146,7 @@ export function scheduleUpdateFromDraft(deployment, draft) {
 
 export function scheduleJobs(snapshot, deploymentId, limit = 10) {
   const matches = (snapshot?.jobs || []).filter(job => job.deploymentId === deploymentId);
-  return { total: matches.length, jobs: matches.slice(0, limit) };
+  return { total: matches.length, jobs: newestJobs(matches).slice(0, limit) };
 }
 
 /** Shared Chat execution semantics. Schedule timing is deliberately independent of this profile. */
