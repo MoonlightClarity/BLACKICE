@@ -39,11 +39,11 @@ test('default choices include Automatic/Codex and retain option identity and an 
 });
 
 test('unsaved General preferences survive refresh and workspace navigation',async t=>{
-  const f=await fixture(t);await f.input('#next-runtime-idle','12');await f.input('#next-execution-limit','7');
+  const f=await fixture(t);await f.input('#next-runtime-idle','12');
   f.runtime.providerIdleTimeoutMs=120000;f.workspace.leave();f.workspace.enter();await settle();await settle();
-  assert.equal(f.$('#next-runtime-idle').value,'12');assert.equal(f.$('#next-execution-limit').value,'7');
+  assert.equal(f.$('#next-runtime-idle').value,'12');
   await f.click('#next-settings-refresh');await settle();
-  assert.equal(f.$('#next-runtime-idle').value,'12');assert.equal(f.$('#next-execution-limit').value,'7');
+  assert.equal(f.$('#next-runtime-idle').value,'12');
   assert.equal(f.calls.filter(item=>item.method!=='GET').length,0);
 });
 
@@ -51,19 +51,19 @@ test('queued independent saves capture intent, prevent duplicate writes and reta
   const gate=deferred();let held=false;
   const f=await fixture(t,({route,method,body,runtime})=>{
     if(route==='/api/runtime/settings'&&method==='POST'){held=true;return gate.promise.then(()=>({...runtime,...body}));}
+    if(route==='/api/execution/settings'&&method==='GET')return {maxConcurrentRuns:4};
   });
   await f.input('#next-runtime-idle','10');await f.$('#next-runtime-settings-form').dispatch('submit');
   await f.$('#next-runtime-settings-form').dispatch('submit');await until(()=>held);
-  await f.input('#next-execution-limit','4');await f.$('#next-execution-form').dispatch('submit');
-  await f.$('#next-execution-form').dispatch('submit');await f.input('#next-execution-limit','9');
+  await f.click('#next-execution-remove');await f.click('#next-execution-remove');
   await f.input('#next-runtime-idle','11');gate.resolve();
   await until(()=>f.$('#next-execution-feedback').textContent==='Saved.');
   const writes=f.calls.filter(item=>item.method==='POST');assert.equal(writes.length,2);
-  assert.equal(writes[0].body.providerIdleTimeoutMs,600000);assert.equal(writes[1].body.maxConcurrentRuns,4);
+  assert.equal(writes[0].body.providerIdleTimeoutMs,600000);assert.equal(writes[1].body.maxConcurrentRuns,null);
   assert.equal(Object.hasOwn(writes[0].body,'subagentsEnabled'),false);
   assert.equal(Object.hasOwn(writes[0].body,'maxSubagents'),false);
   assert.equal(f.$('#next-runtime-subagents'),null);assert.equal(f.$('#next-runtime-max-subagents'),null);
-  assert.equal(f.$('#next-runtime-idle').value,'11');assert.equal(f.$('#next-execution-limit').value,'9');
+  assert.equal(f.$('#next-runtime-idle').value,'11');assert.equal(f.$('#next-execution-legacy').hidden,true);
 });
 
 test('Enter within a General field does not implicitly submit a settings mutation',async t=>{
@@ -142,4 +142,22 @@ test('picker account setup opens the native Models card and refresh preserves un
   await f.click('#next-settings-section-general');await settle();
   assert.equal(selector.value,'native-model');assert.equal(f.$('#next-runtime-idle').value,'13');
   assert.deepEqual(f.calls.filter(call=>call.method!=='GET').map(call=>call.route),['/api/subscriptions/mistral-vibe/refresh']);
+});
+
+test('legacy cap is hidden without a finite saved limit and reads never remove it',async t=>{
+  const f=await fixture(t);assert.equal(f.$('#next-execution-limit'),null);assert.equal(f.$('#next-execution-form'),null);
+  assert.equal(f.$('#next-execution-legacy').hidden,true);await f.click('#next-execution-remove');await settle();
+  assert.equal(f.calls.some(x=>x.method==='POST'),false);
+});
+test('failed explicit cap removal retains notice and permits retry',async t=>{
+  let fail=true;const f=await fixture(t,({route,method})=>{
+    if(route==='/api/execution/settings'&&method==='GET')return {maxConcurrentRuns:3};
+    if(route==='/api/execution/settings'&&method==='POST'&&fail)return Promise.reject(Error('Save unavailable'));
+  });
+  assert.equal(f.$('#next-execution-legacy').hidden,false);assert.match(f.$('#next-execution-notice').textContent,/3 task/);
+  assert.equal(f.calls.some(x=>x.method==='POST'),false);await f.click('#next-execution-remove');
+  await until(()=>f.$('#next-execution-feedback').textContent==='Save unavailable');
+  assert.equal(f.$('#next-execution-legacy').hidden,false);assert.equal(f.$('#next-execution-remove').disabled,false);
+  fail=false;await f.click('#next-execution-remove');await until(()=>f.$('#next-execution-legacy').hidden);
+  assert.deepEqual(f.calls.filter(x=>x.method==='POST').map(x=>x.body),[{maxConcurrentRuns:null},{maxConcurrentRuns:null}]);
 });

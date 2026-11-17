@@ -7,7 +7,6 @@ import { createContextControls } from '../core/context-controls.mjs';
 
 const REASONING=['default','none','minimal','low','medium','high','xhigh','max','ultra'];
 const VERBOSITY=['concise','balanced','detailed'];
-const positive=value=>Number.isSafeInteger(value)&&value>=1&&value<=1000;
 
 export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{}}) {
   mount.innerHTML=[
@@ -52,13 +51,12 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '<div class="next-row"><button type="submit" class="next-primary">Save response settings</button>',
     '<span class="next-help" id="next-runtime-feedback" role="status"></span></div>',
     '</form></section>',
-    '<details class="next-card"><summary>Tasks running at once</summary>',
-    '<p class="next-help">Independent tasks can run concurrently. An empty limit means no BLACKICE application-imposed limit.</p>',
-    '<form class="next-row" id="next-execution-form">',
-    '<label class="next-label" style="min-width:220px">Maximum simultaneous tasks<input class="next-field" type="number" id="next-execution-limit" min="1" placeholder="No application limit"></label>',
-    '<button type="submit" class="next-primary">Save task limit</button>',
-    '<span class="next-help" role="status" id="next-execution-feedback"></span></form></details>',
     '<details class="next-card"><summary>Troubleshooting</summary><div id="next-native-recovery"></div>',
+    '<section class="next-card" id="next-execution-legacy" hidden><h2>Saved task limit</h2>',
+    '<p class="next-help" id="next-execution-notice"></p>',
+    '<p class="next-help">This older setting can leave scheduled tasks waiting. Removing it allows independent tasks to run without a BLACKICE application-imposed limit; provider limits still apply.</p>',
+    '<button type="button" id="next-execution-remove">Remove limit</button>',
+    '<p class="next-help" role="status" id="next-execution-feedback"></p></section>',
     '<section class="next-card"><h2>Model connection</h2>',
     '<p class="next-help">Manage saved model connections in the Models section.</p>',
     '<button type="button" id="next-settings-reconnect">Reconnect model connection</button>',
@@ -92,11 +90,11 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     runtime:$('next-runtime-settings-form'),effort:$('next-runtime-effort'),tier:$('next-runtime-tier'),
     verbosity:$('next-runtime-verbosity'),idle:$('next-runtime-idle'),timeout:$('next-runtime-timeout'),
     gmail:$('next-runtime-gmail'),guardrails:$('next-runtime-guardrails'),
-    runtimeFeedback:$('next-runtime-feedback'),execution:$('next-execution-form'),
-    limit:$('next-execution-limit'),executionFeedback:$('next-execution-feedback'),
+    runtimeFeedback:$('next-runtime-feedback'),executionCard:$('next-execution-legacy'),
+    executionNotice:$('next-execution-notice'),removeLimit:$('next-execution-remove'),executionFeedback:$('next-execution-feedback'),
   };
   let active=false,destroyed=false,generation=0,status=getStatus?.()||{},section='general',sectionRevision=0,
-    modelDirty=false,modelRevision=0,runtimeDirty=false,runtimeRevision=0,executionDirty=false,executionRevision=0,statusRead=0;
+    modelDirty=false,modelRevision=0,runtimeDirty=false,runtimeRevision=0,statusRead=0;
   const pending=new Set(),panels=new Map(),sectionButtons=[...mount.querySelectorAll('[data-settings-section]')];
   let runtimeSettings=status.runtimeSettings||{};
   const modelPicker=createGroupedModelPicker({select:f.model,label:'Default model',onSetupProvider:openModelProvider,onEnableProvider:async id=>{
@@ -248,7 +246,9 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     f.runtimeFeedback.textContent='';
   }
   function drawExecution(config={}){
-    f.limit.value=Number.isSafeInteger(config.maxConcurrentRuns)?String(config.maxConcurrentRuns):'';
+    const limit=config.maxConcurrentRuns;
+    f.executionCard.hidden=!(Number.isSafeInteger(limit)&&limit>0);
+    f.executionNotice.textContent=f.executionCard.hidden?'':'A saved limit allows '+limit+' task(s) to run at once.';
     f.executionFeedback.textContent='';
   }
   async function load(){
@@ -270,7 +270,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     const reviews=results[3].status==='fulfilled'?(Array.isArray(results[3].value?.requests)?results[3].value.requests:[]).filter(row=>['pending','approved'].includes(row.state)):[];
     $('next-review-notice').hidden=!reviews.length;
     $('next-review-count').textContent=reviews.length+' paused action(s) need review.';
-    if(results[2].status==='fulfilled'){if(!executionDirty)drawExecution(results[2].value);}
+    if(results[2].status==='fulfilled'){if(!pending.has('execution'))drawExecution(results[2].value);}
     else f.executionFeedback.textContent='Execution preferences unavailable.';
   }
   // Each explicitly submitted settings mutation owns one operation. Queue
@@ -312,10 +312,10 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     drawStatus(response);
     },f.modelFeedback);
   });
-  for(const form of [f.runtime,f.execution]){
+  for(const form of [f.runtime]){
     form.addEventListener('keydown',event=>{if(event.key==='Enter'&&!['TEXTAREA','BUTTON'].includes(event.target?.tagName))event.preventDefault();});
     for(const event of ['input','change'])form.addEventListener(event,()=>{
-      if(form===f.runtime){runtimeDirty=true;runtimeRevision++;}else{executionDirty=true;executionRevision++;}
+      runtimeDirty=true;runtimeRevision++;
     });
   }
   f.runtime.addEventListener('submit',event=>{
@@ -342,18 +342,13 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
       if(revision===runtimeRevision){runtimeDirty=false;drawRuntime(updated);}else updateRuntimeSettings(updated);
     },f.runtimeFeedback);
   });
-  f.execution.addEventListener('submit',event=>{
-    event.preventDefault();
-    const value=f.limit.value.trim(),limit=value?Number(value):null;
-    if(limit!==null&&!positive(limit)){
-      f.executionFeedback.textContent='Choose a positive limit (1–1000) or leave blank.';
-      return;
-    }
-    const revision=executionRevision;
-    void mutate('execution',f.execution.querySelector('button[type="submit"]'),async()=>{
-      const saved=await api('/api/execution/settings','POST',{maxConcurrentRuns:limit});
+  f.removeLimit.addEventListener('click',()=>{
+    if(f.executionCard.hidden)return;
+    void mutate('execution',f.removeLimit,async()=>{
+      const saved=await api('/api/execution/settings','POST',{maxConcurrentRuns:null});
       generation++;
-      if(revision===executionRevision){executionDirty=false;drawExecution(saved);}
+      drawExecution(saved);
+      if(!f.executionCard.hidden)throw Error('The saved task limit is still active. Refresh and try again.');
     },f.executionFeedback);
   });
   f.reconnect.addEventListener('click',()=>void mutate('reconnect',f.reconnect,async()=>{

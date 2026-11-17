@@ -12,6 +12,8 @@ test('everyday settings separate app connections and hide empty action review wi
  const f=await fixture(t);assert.equal(f.$('#next-settings-section-recovery'),null);assert.equal(f.$('#next-review-notice').hidden,true);
  assert.equal(f.$('#next-settings-section-apps').textContent,'App connections');assert.match(f.$('#next-settings-general').textContent,/Response defaults/);assert.match(f.$('#next-settings-general').textContent,/Advanced task settings/);
  assert.equal(f.$('#next-runtime-guardrails').closest('details').open,false);
+ assert.equal(f.$('#next-execution-limit'),null);assert.equal(f.$('#next-execution-legacy').hidden,false);
+ assert.match(f.$('#next-execution-legacy').closest('details').textContent,/Troubleshooting/);
  assert.equal(f.calls.some(x=>x.method!=='GET'),false);
  assert.equal(f.$('#next-settings-connector').parentElement.id,'next-settings-apps');
  await f.click('#next-settings-section-apps');await settle();assert.equal(f.$('#next-settings-apps').hidden,false);assert.equal(f.$('#next-settings-general').hidden,true);assert.equal(f.$('#next-settings-section-apps').getAttribute('aria-selected'),'true');
