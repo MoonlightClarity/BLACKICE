@@ -18,6 +18,24 @@ test('blank profile does not prevent bounded command discovery and reading outsi
  const discovered=parsed(await h(call({action:'run',command})));assert.equal(discovered.exitCode,0);const file=discovered.stdout.trim();assert.equal(file,path.join(outside,'Synthetic Resume.txt'));
  assert.match(parsed(await h(call({action:'read',path:file}))).content,/systems analysis/);assert.equal(await readFile(path.join(cwd,'USER.md'),'utf8'),'');
 });
+test('large Documents listing switches to narrow filename search and resumes from observed task context',async t=>{
+ const root=await mkdtemp(path.join(tmpdir(),'blackice-large-discovery-')),cwd=path.join(root,'work'),documents=path.join(root,'Documents');
+ t.after(()=>rm(root,{recursive:true,force:true}));await mkdir(cwd);await mkdir(documents);await writeFile(path.join(cwd,'USER.md'),'');
+ await Promise.all(Array.from({length:350},(_,i)=>writeFile(path.join(documents,'A'+String(i).padStart(4,'0')+'.txt'),'Unrelated synthetic document')));
+ await writeFile(path.join(documents,'Z Synthetic Resume.txt'),'Synthetic resume: verified outside large listing.');
+ const first=createWorkspaceToolHandler({cwd});const initial=parsed(await first(call({action:'list'})));
+ const parent=parsed(await first(call({action:'list',path:initial.discovery.parentDirectory})));
+ const observed=parent.entries.find(x=>x.type==='directory'&&x.name==='Documents');assert.ok(observed);
+ const listing=parsed(await first(call({action:'list',path:observed.path,limit:100})));
+ assert.equal(listing.truncated,true);assert.equal(listing.entries.length,100);assert.ok(!listing.entries.some(x=>x.name.includes('Resume')));assert.match(listing.nextAction,/narrow filename search/);
+ const oversized=parsed(await first(call({action:'list',path:observed.path,limit:300})));assert.equal(oversized.truncated,true);assert.match(oversized.nextAction,/narrow filename search/);assert.equal(oversized.path,observed.path);
+ const command=process.platform==='win32'?`Get-ChildItem -LiteralPath ${quote(listing.path)} -File -Filter '*Resume*' | Select-Object -ExpandProperty FullName`:`find ${quote(listing.path)} -maxdepth 1 -type f -iname '*resume*'`;
+ const checkpoint=JSON.parse(JSON.stringify({directory:listing.path,pattern:'*Resume*',nextCommand:command}));
+ const resumed=createWorkspaceToolHandler({cwd});const found=parsed(await resumed(call({action:'run',command:checkpoint.nextCommand})));
+ assert.equal(found.exitCode,0);assert.equal(found.truncated,false);const file=found.stdout.trim();assert.equal(file,path.join(documents,'Z Synthetic Resume.txt'));
+ assert.match(parsed(await resumed(call({action:'read',path:file}))).content,/verified outside large listing/);assert.equal(await readFile(path.join(cwd,'USER.md'),'utf8'),'');
+ assert.match(WORKSPACE_INSTRUCTIONS,/immediately switch to a narrow filename query/);assert.match(WORKSPACE_INSTRUCTIONS,/resume that work on continuation/);
+});
 test('model guidance describes existing command discovery without requiring profile facts or new permissions',async()=>{
  assert.match(WORKSPACE_INSTRUCTIONS,/not a filesystem sandbox/);assert.match(WORKSPACE_INSTRUCTIONS,/bounded filename discovery with list or run/);assert.match(WORKSPACE_INSTRUCTIONS,/search searches file contents, not filenames/);assert.match(WORKSPACE_INSTRUCTIONS,/rather than assuming a username/);assert.match(WORKSPACE_INSTRUCTIONS,/do not crawl the entire computer/);
  assert.deepEqual(WORKSPACE_TOOL.inputSchema.properties.action.enum,['list','read','write','patch','patch_history','undo_patch','search','run']);
