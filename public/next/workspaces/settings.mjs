@@ -1,4 +1,5 @@
 import { connectionDefaultModels } from '../../connection-models.mjs';
+import { createNativeWriteRecovery } from './native-write-recovery.mjs';
 import { createForceRestart } from './settings-restart.mjs';
 import { createGroupedModelPicker } from '../core/model-picker.mjs';
 import { enableProviderForModel } from '../../provider-availability.mjs';
@@ -11,26 +12,26 @@ const positive=value=>Number.isSafeInteger(value)&&value>=1&&value<=1000;
 export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{}}) {
   mount.innerHTML=[
     '<div class="next-panel"><div class="next-panel-inner">',
-    '<header class="next-panel-head"><div><h1>Settings</h1><p>Workspace preferences, identity, models and tool connections.</p></div>',
+    '<header class="next-panel-head"><div><h1>Settings</h1><p>Choose how BLACKICE responds, which models it uses, and what it connects to.</p></div>',
     '<button type="button" id="next-settings-refresh">Refresh</button></header>',
     '<nav class="next-settings-sections" role="tablist" aria-label="Settings sections">',
-    ...[['general','General'],['identity','Identity'],['models','Models'],['connections','Tools'],['storage','Storage & Data'],['recovery','Blocked actions'],['connector','ChatGPT connector'],['gemini','Gemini connector'],['claude','Claude connector']].map(([id,label])=>
+    ...[['general','General'],['identity','Behavior & profile'],['models','Models'],['connections','Tools'],['storage','Storage & Data'],['apps','App connections']].map(([id,label])=>
       '<button type="button" id="next-settings-section-'+id+'" data-settings-section="'+id+'" role="tab" aria-controls="next-settings-'+id+'" aria-selected="'+(id==='general')+'" tabindex="'+(id==='general'?'0':'-1')+'">'+label+'</button>'),
     '</nav><div id="next-settings-general" role="tabpanel" aria-labelledby="next-settings-section-general">',
+    '<div id="next-review-notice" hidden><p id="next-review-count"></p><button type="button" id="next-review-open">Review paused actions</button></div>',
     '<section class="next-card"><h2>Local working folder</h2>',
     '<p class="next-help">Used for new conversations; existing tasks retain their original working directory.</p>',
     '<div class="next-row"><input class="next-field" style="flex:1;width:auto" id="next-settings-cwd" aria-label="Working directory">',
     '<button type="button" id="next-settings-choose">Choose…</button>',
     '<button type="button" class="next-primary" id="next-settings-save-cwd">Save</button></div></section>',
-    '<section class="next-card"><h2>Model subscriptions</h2>',
-    '<p class="next-help">Choose a Codex or Mistral Vibe Code model, or use an optional API connection. Your saved chats retain their selected models. Set up providers in Models; adding or enabling a connection keeps the current default.</p>',
+    '<section class="next-card"><h2>Default model</h2>',
+    '<p class="next-help">Used for new chats. Existing chats keep their selected models. Add accounts, local models or API providers in Models.</p>',
     '<p id="next-settings-subscription-status" class="next-help" role="status"></p>',
-    '<h3>Default model</h3>',
     '<div class="next-row"><select id="next-settings-model" class="next-field" style="flex:1;width:auto"></select>',
     '<button type="button" class="next-primary" id="next-settings-save-model">Set default</button></div>',
     '<p id="next-settings-model-feedback" class="next-help" role="status"></p></section>',
-    '<section class="next-card"><h2>Runtime preferences</h2>',
-    '<p class="next-help">These settings are saved by BLACKICE, not just in this browser.</p>',
+    '<section class="next-card"><h2>Response defaults</h2>',
+    '<p class="next-help">Choose the starting settings for new agent turns. Individual tasks can keep their own choices.</p>',
     '<form id="next-runtime-settings-form" class="next-stack">',
     '<div class="next-settings-grid">',
     '<label class="next-label">Default reasoning<select class="next-field" id="next-runtime-effort"></select></label>',
@@ -38,39 +39,50 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '<option value="default">Standard</option><option value="fast">Fast</option></select></label>',
     '<label class="next-label">Answer detail<select class="next-field" id="next-runtime-verbosity">',
     '<option value="concise">Concise</option><option value="balanced">Balanced</option><option value="detailed">Detailed</option></select></label>',
-    '<label class="next-label">Provider idle timeout (minutes)<input class="next-field" type="number" id="next-runtime-idle" min="1" max="1440"></label>',
+    '</div><details class="next-compatibility"><summary>Advanced task settings</summary><div class="next-settings-grid">',
+    '<label class="next-label">Stop waiting after no model activity (minutes)<input class="next-field" type="number" id="next-runtime-idle" min="1" max="1440"></label>',
     '<label class="next-label">Maximum task runtime (minutes)<input class="next-field" type="number" id="next-runtime-timeout" min="1" max="1440" placeholder="No limit"></label>',
     '</div>',
     '<label class="next-row"><input type="checkbox" id="next-runtime-gmail" aria-describedby="next-runtime-gmail-help"> Use connected Gmail</label>',
     '<p class="next-help" id="next-runtime-gmail-help">Allow native agents to read your connected Gmail for authorized tasks, including email verification. This uses your existing connection.</p>',
-    '<details class="next-compatibility"><summary>Legacy execution compatibility</summary>',
+    '<details class="next-compatibility"><summary>Older-task compatibility</summary>',
      '<label class="next-row"><input type="checkbox" id="next-runtime-guardrails" aria-describedby="next-runtime-guardrails-help"> External-action checkpoints</label>',
-    '<p class="next-help" id="next-runtime-guardrails-help">Optional legacy external-send compatibility only. Planning uses independent Modules or Off; this switch never creates a plan contract.</p></details>',
-    '<div id="next-runtime-context"></div>',
-    '<div class="next-row"><button type="submit" class="next-primary">Save runtime preferences</button>',
+    '<p class="next-help" id="next-runtime-guardrails-help">Retain execution checkpoints used by older saved tasks. This does not enable Modules or create a plan.</p></details>',
+    '<div id="next-runtime-context"></div></details>',
+    '<div class="next-row"><button type="submit" class="next-primary">Save response settings</button>',
     '<span class="next-help" id="next-runtime-feedback" role="status"></span></div>',
     '</form></section>',
-    '<section class="next-card"><h2>Execution concurrency</h2>',
+    '<details class="next-card"><summary>Tasks running at once</summary>',
     '<p class="next-help">Independent tasks can run concurrently. An empty limit means no BLACKICE application-imposed limit.</p>',
     '<form class="next-row" id="next-execution-form">',
-    '<label class="next-label" style="min-width:220px">Maximum concurrent tasks<input class="next-field" type="number" id="next-execution-limit" min="1" placeholder="No application limit"></label>',
-    '<button type="submit" class="next-primary">Save concurrency</button>',
-    '<span class="next-help" role="status" id="next-execution-feedback"></span></form></section>',
-    '<section class="next-card"><h2>Model runtime</h2>',
+    '<label class="next-label" style="min-width:220px">Maximum simultaneous tasks<input class="next-field" type="number" id="next-execution-limit" min="1" placeholder="No application limit"></label>',
+    '<button type="submit" class="next-primary">Save task limit</button>',
+    '<span class="next-help" role="status" id="next-execution-feedback"></span></form></details>',
+    '<details class="next-card"><summary>Troubleshooting</summary><div id="next-native-recovery"></div>',
+    '<section class="next-card"><h2>Model connection</h2>',
     '<p class="next-help">Manage saved model connections in the Models section.</p>',
-    '<button type="button" id="next-settings-reconnect">Reconnect model runtime</button>',
+    '<button type="button" id="next-settings-reconnect">Reconnect model connection</button>',
     '<p id="next-settings-reconnect-feedback" class="next-help" role="status"></p></section>',
     '<section class="next-card" id="next-settings-restart-card" hidden><h2>Restart BLACKICE</h2>',
     '<p class="next-help">Force restart attempts to stop active work and browser activity and close private application sessions. It pauses scheduled and queued work. Unsaved session work may be lost. It can still fail if work cannot settle or storage cannot be saved. Resume schedules afterward.</p>',
     '<div class="next-row"><button type="button" id="next-settings-force-restart">Force restart</button>',
     '<button type="button" id="next-settings-check-restart" hidden>Check restart</button></div>',
     '<p id="next-settings-restart-feedback" class="next-help" role="status" aria-live="polite"></p></section>',
-    '<section class="next-card"><h2>Runtime health</h2><p class="next-help" id="next-settings-status" role="status">Checking BLACKICE…</p></section>',
-    '</div>',
+    '<section class="next-card"><h2>Connection status</h2><p class="next-help" id="next-settings-status" role="status">Checking BLACKICE…</p></section>',
+    '</details></div>',
+    '<div id="next-settings-apps" role="tabpanel" aria-labelledby="next-settings-section-apps" hidden><h2>Use BLACKICE from another app</h2><p class="next-help">One BLACKICE MCP server can serve multiple apps at the same time. Each app connects to the same server URL with its own setup and authorization; choosing a tab below does not switch or replace another connection. These are setup guides, not exclusive providers. To add external tools for models running inside BLACKICE, use Tools instead.</p><nav class="next-settings-sections" role="tablist" aria-label="App setup guides">',
+    ...[['connector','ChatGPT'],['gemini','Gemini'],['claude','Claude']].map(([id,label])=>'<button type="button" id="next-settings-section-'+id+'" data-settings-section="'+id+'" role="tab" aria-controls="next-settings-'+id+'" aria-selected="false" tabindex="-1">'+label+'</button>'),
+    '</nav></div>',
     ...['identity','models','connections','storage','recovery','connector','gemini','claude'].map(id=>'<div id="next-settings-'+id+'" role="tabpanel" aria-labelledby="next-settings-section-'+id+'" hidden></div>'),
     '</div></div>',
   ].join('');
+  const appSections=['connector','gemini','claude'];
   const $=id=>mount.querySelector('#'+id);
+  for(const id of appSections)$('next-settings-apps').append($('next-settings-'+id));
+  $('next-settings-recovery').setAttribute('aria-label','Actions needing review');
+  $('next-settings-recovery').removeAttribute('aria-labelledby');
+  const nativeRecovery=createNativeWriteRecovery({mount:$('next-native-recovery'),api});
+  $('next-review-open').addEventListener('click',()=>void selectSection('recovery'));
   const f={
     cwd:$('next-settings-cwd'),choose:$('next-settings-choose'),saveCwd:$('next-settings-save-cwd'),
     model:$('next-settings-model'),saveModel:$('next-settings-save-model'),subscriptionStatus:$('next-settings-subscription-status'),
@@ -147,15 +159,17 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     catch(error){if(active&&token===generation&&read===statusRead)f.status.textContent=error.message;}
   }
   async function selectSection(name){
+    if(name==='apps')name=appSections.includes(section)?section:'connector';
     if(destroyed||!['general',...Object.keys(loaders)].includes(name))return;
     if(section!==name)panels.get(section)?.instance?.leave?.();
     if(name!=='general')modelPicker.close({restoreFocus:false});
     section=name;const token=++sectionRevision;
     for(const button of sectionButtons){
-      const selected=button.dataset.settingsSection===name;
+      const selected=button.dataset.settingsSection===name||(button.dataset.settingsSection==='apps'&&appSections.includes(name))||(name==='recovery'&&button.dataset.settingsSection==='general');
       button.setAttribute('aria-selected',String(selected));button.tabIndex=selected?0:-1;
-      $('next-settings-'+button.dataset.settingsSection).hidden=!selected;
+      $('next-settings-'+button.dataset.settingsSection).hidden=!(button.dataset.settingsSection===name||(button.dataset.settingsSection==='apps'&&appSections.includes(name)));
     }
+    $('next-settings-recovery').hidden=name!=='recovery';
     f.refresh.hidden=name!=='general';
     if(!active)return;
     if(name==='general'){void load();return;}
@@ -175,16 +189,17 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     await selectSection('models');
     if(active&&!destroyed&&section==='models')panels.get('models')?.instance?.focusProvider?.(id);
   }
-  sectionButtons.forEach((button,index)=>{
+  sectionButtons.forEach(button=>{
     button.addEventListener('click',()=>void selectSection(button.dataset.settingsSection));
     button.addEventListener('keydown',event=>{
-      let next=index;
-      if(event.key==='ArrowRight')next=(index+1)%sectionButtons.length;
-      else if(event.key==='ArrowLeft')next=(index+sectionButtons.length-1)%sectionButtons.length;
+      const siblings=sectionButtons.filter(item=>item.parentElement===button.parentElement),position=siblings.indexOf(button);
+      let next=position;
+      if(event.key==='ArrowRight')next=(position+1)%siblings.length;
+      else if(event.key==='ArrowLeft')next=(position+siblings.length-1)%siblings.length;
       else if(event.key==='Home')next=0;
-      else if(event.key==='End')next=sectionButtons.length-1;
+      else if(event.key==='End')next=siblings.length-1;
       else return;
-      event.preventDefault();sectionButtons[next].focus();void selectSection(sectionButtons[next].dataset.settingsSection);
+      event.preventDefault();siblings[next].focus();void selectSection(siblings[next].dataset.settingsSection);
     });
   });
   function drawStatus(info){
@@ -193,7 +208,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     if(f.subscriptionStatus) {
       const c=status.codex||status;
       const native=[c.connected&&c.authenticated?'Codex: ready':'Codex: connect account',
-        ...(status.subscriptionProviders||[]).map(provider=>(provider.name||provider.id)+': '+(provider.available===true?'ready':provider.installed!==true?'CLI not installed':provider.authenticated!==true?'sign in required':'refresh connection and models'))];
+        ...(status.subscriptionProviders||[]).filter(provider=>provider.installed===true||provider.authenticated===true).map(provider=>(provider.name||provider.id)+': '+(provider.available===true?'ready':provider.installed!==true?'CLI not installed':provider.authenticated!==true?'sign in required':'refresh connection and models'))];
       f.subscriptionStatus.textContent=native.join('  ·  ');
     }
     f.status.textContent='BLACKICE '+(status.version||'')+' · '+
@@ -241,6 +256,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
       api('/api/status'),
       api('/api/runtime/settings'),
       api('/api/execution/settings'),
+      api('/api/owner-recovery'),
     ]);
     if(!active||token!==generation)return;
     if(read===statusRead){
@@ -249,6 +265,9 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     }
     if(results[1].status==='fulfilled'){if(!runtimeDirty)drawRuntime(results[1].value);else updateRuntimeSettings(results[1].value);}
     else f.runtimeFeedback.textContent='Runtime preferences unavailable.';
+    const reviews=results[3].status==='fulfilled'?(Array.isArray(results[3].value?.requests)?results[3].value.requests:[]).filter(row=>['pending','approved'].includes(row.state)):[];
+    $('next-review-notice').hidden=!reviews.length;
+    $('next-review-count').textContent=reviews.length+' paused action(s) need review.';
     if(results[2].status==='fulfilled'){if(!executionDirty)drawExecution(results[2].value);}
     else f.executionFeedback.textContent='Execution preferences unavailable.';
   }
@@ -345,6 +364,6 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     enter(){if(destroyed||active)return;active=true;drawStatus(getStatus?.()||status);void selectSection(section);},
     leave(){modelPicker.close({restoreFocus:false});active=false;generation++;sectionRevision++;panels.get(section)?.instance?.leave?.();},
     updateStatus(value){if(active&&value&&typeof value==='object'&&!Array.isArray(value)){statusRead++;drawStatus(value);}},
-    destroy(){this.leave();destroyed=true;contextDefaults.destroy();modelPicker.destroy();for(const panel of panels.values())panel.instance?.destroy?.();mount.innerHTML='';},
+    destroy(){this.leave();destroyed=true;nativeRecovery.destroy();contextDefaults.destroy();modelPicker.destroy();for(const panel of panels.values())panel.instance?.destroy?.();mount.innerHTML='';},
   };
 }

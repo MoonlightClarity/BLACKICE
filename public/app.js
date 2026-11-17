@@ -127,7 +127,6 @@
   function showContainedBrowser(){closeModal({restoreFocus:false});showObserve();observeUI?.selectSurface('browser');}
   function showTaskNotes(){return showPlanning({currentTask:true});}
 
-  async function showEmailWorkspace(){const owner=beginSubview();try{if(!emailUI){const{initEmailUI}=await import('/email-ui.mjs');if(!ownsSubview(owner))return;emailUI=initEmailUI({api,showModal,closeModal,toast,escape,icon,onChanged:refreshStatus});}if(ownsSubview(owner))await emailUI.open();}catch(error){if(owner.view===viewIntent)toast(error.message,true);}}
   function showContextSettings(){showModal('context-settings',`${modalHeader('Advanced context capacity','BLACKICE manages routine context compaction automatically. Override a model budget only when necessary.','context')}<form id="mission-context-settings"><div class="agent-context-modal"><img src="/assets/context.svg" alt="">${renderContextFields(missionUI?.getDraft().context||{},{prefix:'mission-context-default'})}<p class="field-help">Changes apply to the next message. Current work keeps its saved settings.</p></div><div class="modal-footer"><button class="button" type="button" data-action="close-modal">Cancel</button><button class="button primary" type="submit">Save context budget</button></div></form>`);}
   async function compactContext(runId,nodeId){try{toast('Creating a continuity checkpoint…');await api(`/api/runs/${encodeURIComponent(runId)}/compact`,'POST',{nodeId});scheduleRunRefresh(runId);toast('Context compacted. The original conversation is retained.');}catch(e){toast(e.message,true);}}
   async function rateMission(runId,value){await api('/api/learning/feedback','POST',{runId,value});toast(value==='good'?'Feedback saved. BLACKICE will review what worked.':'Feedback saved. BLACKICE will review what needs work.');}
@@ -230,7 +229,6 @@
   function missionSnapshot(){return{status:state.status,desktop:state.desktop,statusLoaded:state.statusLoaded,runs:runsWithCurrent(state.runs,state.currentRun),currentRun:state.currentRun,streamState:state.streamState};}
   async function startMissionTask(config){
     const ownership=beginViewOperation(),generations=new Map(runEventGenerations);
-    if(config.desktop&&!state.desktop.enabled)state.desktop=desktopStatus(await api('/api/desktop/attach','POST',{}));
     const workflow=createMissionWorkflow({...config,id:config.requestId?`mission_${config.requestId}`:uid('mission')}),saved=await api('/api/workflows','POST',workflow),graph=saved.workflow||saved;
     const response=await api('/api/runs','POST',{workflow:graph,input:{task:config.task,cwd:config.cwd,attachmentIds:config.attachmentIds||[],...(config.serviceTier!==undefined?{serviceTier:config.serviceTier}:{}),...(config.planDetail?{planDetail:config.planDetail}:{}),...(config.planningMode?{planningMode:config.planningMode}:{})},...(config.requestId?{requestId:config.requestId}:{})}),run=rememberRunReceipt(response.run||response,generations),savedGraph=normalizeWorkflow(run.workflow||graph);
     state.workflows=[savedGraph,...state.workflows.filter(item=>item.id!==savedGraph.id)];

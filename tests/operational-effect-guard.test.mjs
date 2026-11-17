@@ -44,34 +44,33 @@ async function fixture(t){
   return {directory,cwd,dataDir,store,makeStore,guard,submit,events,raw, counts:()=>({attempts,dispatched}),setEvidence:fn=>{evidence=fn;}};
 }
 
-test('recognized ATS history is checked and UNKNOWN is durably reserved before a native submit without any plan or task context',async t=>{
+test('ATS actions use generic exact-effect receipts, not application-history fencing',async t=>{
   const f=await fixture(t);
   const first=await f.submit(descriptor('submit-A',jobA),f.guard('first'));
   assert.equal(first.success,true);
   assert.equal(f.counts().dispatched,1);
   assert.equal(f.events.at(-1).state,'unknown');
-  assert.equal(f.events.at(-1).source,'application');
+  assert.equal(f.events.at(-1).source,'generic');
   const second=await f.submit(descriptor('submit-A-retry',jobA),f.guard('second'));
-  assert.equal(second.success,false);
-  assert.equal(second.code,'APPLICATION_HISTORY_RESERVED');
-  assert.equal(f.counts().dispatched,1,'no second application was dispatched');
+  assert.equal(second.success,true);
+  assert.equal(f.counts().dispatched,2,'distinct effect is not blocked by ATS identity');
   const other=await f.submit(descriptor('submit-B',jobB),f.guard('third'));
   assert.equal(other.success,true);
-  assert.equal(f.counts().dispatched,2,'unrelated requisitions continue');
+  assert.equal(f.counts().dispatched,3,'unrelated requisitions continue');
   assert.notEqual(applicationTarget(jobA).key,applicationTarget(jobB).key);
 });
 
-test('older application history survives planning removal and fences native submissions',async t=>{
+test('older application history remains data, not a native dispatch gate',async t=>{
   const f=await fixture(t);
   await writeFile(path.join(f.cwd,'applications.jsonl'),JSON.stringify({url:jobA,status:'submitted'})+'\n');
   const outcome=await f.submit(descriptor('prior-job',jobA),f.guard());
-  assert.equal(outcome.code,'APPLICATION_HISTORY_PRIOR');
-  assert.equal(f.counts().dispatched,0);
+  assert.equal(outcome.success,true);
+  assert.equal(f.counts().dispatched,1);
   const different=await f.submit(descriptor('different',jobB),f.guard());
   assert.equal(different.success,true);
 });
 
-test('non-ATS commit receipt is durable across store and worker lifetimes, without requiring an attached taskContext',async t=>{
+test('receipts persist across lifetimes without vetoing a new explicit browser call',async t=>{
   const f=await fixture(t),d=descriptor('generic-1');
   const first=await f.submit(d,f.guard('task-one'));
   assert.equal(first.success,true);
@@ -83,22 +82,21 @@ test('non-ATS commit receipt is durable across store and worker lifetimes, witho
   await f.store.close();
   const reopened=await f.makeStore();
   const duplicate=await f.submit(d,f.guard('task-two',reopened));
-  assert.equal(duplicate.code,'OPERATIONAL_EFFECT_UNCERTAIN');
-  assert.equal(f.counts().dispatched,1);
+  assert.equal(duplicate.success,true);
+  assert.equal(f.counts().dispatched,2);
   const unrelated=await f.submit(descriptor('generic-2'),f.guard('task-two',reopened));
   assert.equal(unrelated.success,true);
-  assert.equal(f.counts().dispatched,2);
+  assert.equal(f.counts().dispatched,3);
 });
 
-test('one simultaneous cross-task reservation wins, while a second exact effect remains stopped',async t=>{
+test('explicit simultaneous browser calls are observed without cross-task veto',async t=>{
   const f=await fixture(t),otherStore=await f.makeStore();
   const [a,b]=await Promise.all([
     f.submit(descriptor('racing-1'),f.guard('first')),
     f.submit(descriptor('racing-1'),f.guard('second',otherStore))
   ]);
-  assert.equal([a,b].filter(row=>row.success).length,1);
-  assert.equal([a,b].find(row=>!row.success).code,'OPERATIONAL_EFFECT_UNCERTAIN');
-  assert.equal(f.counts().dispatched,1);
+  assert.equal([a,b].filter(row=>row.success).length,2);
+  assert.equal(f.counts().dispatched,2);
 });
 
 test('host-confirmed non-dispatch releases a local reservation but an unverified successful click never does',async t=>{
@@ -119,25 +117,26 @@ test('a fabricated normalizer confirmation cannot substitute for a native receip
   assert.equal(first.success,true);
   assert.equal((await f.guard('one').records())[0].state,'unknown');
   const replay=await f.submit(d,f.guard('two'));
-  assert.equal(replay.code,'OPERATIONAL_EFFECT_UNCERTAIN');
-  assert.equal(f.counts().dispatched,1);
+  assert.equal(replay.success,true);
+  assert.equal(f.counts().dispatched,2);
 });
 
-test('a damaged claim file prevents only consequential effects; ordinary inspection remains available',async t=>{
+test('damaged receipt storage reports a warning without blocking browser input',async t=>{
   const f=await fixture(t),g=f.guard('one');
   await writeFile(f.store.file(g.scopeId)+'.effects','not-json');
   const refused=await f.submit(descriptor('new-commit'),g);
-  assert.equal(refused.code,'OPERATIONAL_RECEIPTS_UNAVAILABLE');
-  assert.equal(f.counts().dispatched,0);
+  assert.equal(refused.success,true);
+  assert.equal(f.counts().dispatched,1);
+  assert.ok(f.events.some(row=>row.type==='operation.receipt.warning'));
   const observed=await g.wrap(f.raw)({...args('snapshot'),descriptor:descriptor('x','https://example.com','observe')});
   assert.equal(observed.success,true);
 });
 
-test('unclassified final submission on a recognized ATS cannot bypass form classification',async t=>{
+test('opaque ATS action is not blocked by application label classification',async t=>{
   const f=await fixture(t),d=descriptor('ambiguous',jobA,'opaque');
   const response=await f.submit(d,f.guard());
-  assert.equal(response.code,'APPLICATION_HISTORY_UNINSPECTED');
-  assert.equal(f.counts().dispatched,0);
+  assert.equal(response.success,true);
+  assert.equal(f.counts().dispatched,1);
 });
 
 test('native effect guard never adds plan modules, response-cycle calls, or automatic model turns',async t=>{
@@ -148,4 +147,85 @@ test('native effect guard never adds plan modules, response-cycle calls, or auto
   await f.submit(descriptor('any-one'),g);
   assert.equal(f.events.length,1);
   assert.equal(f.events[0].type,'operational.effect');
+});
+
+test('malformed historical files and legacy claims do not block browser dispatch',async t=>{
+ const f=await fixture(t);
+ await writeFile(path.join(f.cwd,'applications.jsonl'),'not JSON');
+ await mkdir(path.join(f.cwd,'.application-registry'));
+ await writeFile(path.join(f.cwd,'.application-registry','claims.json'),'not JSON');
+ const result=await f.submit(descriptor('fresh',jobA),f.guard());
+ assert.equal(result.success,true); assert.equal(f.counts().dispatched,1);
+ assert.equal(await readFile(path.join(f.cwd,'applications.jsonl'),'utf8'),'not JSON');
+});
+test('neither runtime invokes application-history gate',async()=>{
+ for(const file of ['operational-effect-guard.mjs','planning-contract-runtime.mjs']){
+  const source=await readFile(new URL('../lib/'+file,import.meta.url),'utf8');
+  assert.doesNotMatch(source,/createApplicationHistoryGate|applicationHistory\.(?:check|reconcile)|application\.check/);
+ }
+});
+
+test('same call ID returns its saved result without replay, while a new call stays explicit',async t=>{
+ const f=await fixture(t),g=f.guard(),run=g.wrap(f.raw),call={...args('click','stable'),descriptor:descriptor('same')};
+ const first=await run(call),second=await run(call);
+ assert.deepEqual(second,first); assert.equal(f.counts().dispatched,1);
+ assert.equal((await run({...call,callId:'new-explicit-call'})).success,true);
+ assert.equal(f.counts().dispatched,2);
+});
+test('browser explicit input never opens owner recovery for retained history',async t=>{
+ const f=await fixture(t); let requested=0;
+ const g=createOperationalEffectGuard({store:f.store,cwd:f.cwd,taskId:'test',runId:'run',nodeId:'agent',ownerRecovery:{enabled:true,request:async()=>{requested++;throw Error('must not request');}}});
+ await f.submit(descriptor('same'),g); await f.submit(descriptor('same'),g);
+ assert.equal(requested,0); assert.equal(f.counts().dispatched,2);
+});
+
+for(const fault of ['unreadable','reservation-write'])test('same call is retained in memory under '+fault+' without blocking new calls',async t=>{
+ const f=await fixture(t),g=f.guard(),run=g.wrap(f.raw),call={...args('click','stable-degraded'),descriptor:descriptor('same')};
+ if(fault==='unreadable')await writeFile(f.store.file(g.scopeId)+'.effects','not-json');
+ else f.store.enqueue=async()=>{throw Error('synthetic reservation storage failure');};
+ const first=await run(call);assert.equal(first.success,true);
+ assert.deepEqual(await run(call),first);assert.equal(f.counts().dispatched,1);
+ await assert.rejects(run({...call,arguments:{...call.arguments,ref:'changed'}}),{code:'OPERATIONAL_CALL_ID_REUSED'});
+ assert.equal((await run({...call,callId:'explicit-new'})).success,true);assert.equal(f.counts().dispatched,2);
+});
+test('two guard instances share the exact call identity in process even with degraded storage',async t=>{
+ const f=await fixture(t),g=f.guard(),other=f.guard('task-A',await f.makeStore());
+ await writeFile(f.store.file(g.scopeId)+'.effects','not-json');
+ const call={...args('click','shared-identity'),descriptor:descriptor('same')};
+ const [first,second]=await Promise.all([g.wrap(f.raw)(call),other.wrap(f.raw)(call)]);
+ assert.deepEqual(second,first);assert.equal(f.counts().dispatched,1);
+ assert.deepEqual(await other.wrap(f.raw)(call),first);assert.equal(f.counts().dispatched,1);
+ assert.equal((await other.wrap(f.raw)({...call,callId:'new'})).success,true);assert.equal(f.counts().dispatched,2);
+});
+test('lost-return rejection is retained in memory without redispatch under damaged storage',async t=>{
+ const f=await fixture(t),g=f.guard();await writeFile(f.store.file(g.scopeId)+'.effects','not-json');
+ let dispatches=0;const raw=async(call,context)=>{await context.onOperationDispatch(call.descriptor);dispatches++;throw Object.assign(Error('lost return'),{code:'LOST'});};
+ raw.describeOperation=async call=>call.descriptor;const run=g.wrap(raw),call={...args('click','lost'),descriptor:descriptor('same')};
+ await assert.rejects(run(call),{code:'LOST'});await assert.rejects(run(call),{code:'LOST'});assert.equal(dispatches,1);
+});
+
+test('degraded cache bounds result retention while old identities never redispatch',async t=>{
+ const f=await fixture(t),g=f.guard(),run=g.wrap(f.raw);await writeFile(f.store.file(g.scopeId)+'.effects','bad');
+ for(let i=0;i<40;i++)await run({...args('click','bounded-'+i),descriptor:descriptor('same')});
+ await assert.rejects(run({...args('click','bounded-0'),descriptor:descriptor('same')}),{code:'OPERATIONAL_RESULT_UNAVAILABLE'});
+ assert.equal(f.counts().dispatched,40);
+ assert.equal((await run({...args('click','bounded-39'),descriptor:descriptor('same')})).success,true);
+ assert.equal(f.counts().dispatched,40);
+ await run({...args('click','large'),descriptor:descriptor('same'),result:receipt({payload:'x'.repeat(70000)})});
+ await assert.rejects(run({...args('click','large'),descriptor:descriptor('same')}),{code:'OPERATIONAL_RESULT_UNAVAILABLE'});
+ assert.equal(f.counts().dispatched,41);
+});
+test('healthy saved calls are recovered from durable receipts, not retained payload cache',async t=>{
+ const f=await fixture(t),g=f.guard(),run=g.wrap(f.raw),call={...args('click','healthy'),descriptor:descriptor('same')};
+ await run(call);const file=f.store.file(g.scopeId)+'.effects',journal=JSON.parse(await readFile(file,'utf8'));
+ journal.records[0].result=receipt({fromDurable:true});await writeFile(file,JSON.stringify(journal));
+ assert.deepEqual(await run(call),receipt({fromDurable:true}));assert.equal(f.counts().dispatched,1);
+});
+
+for(const fault of ['corrupt','missing'])test('healthy saved identity survives later '+fault+' journal without replay',async t=>{
+ const f=await fixture(t),g=f.guard(),run=g.wrap(f.raw),call={...args('click','healthy-degraded'),descriptor:descriptor('same')};
+ await run(call);const file=f.store.file(g.scopeId)+'.effects';
+ if(fault==='corrupt')await writeFile(file,'bad');else await rm(file);
+ await assert.rejects(run(call),{code:'OPERATIONAL_RESULT_UNAVAILABLE'});assert.equal(f.counts().dispatched,1);
+ assert.equal((await run({...call,callId:'new-after-degradation'})).success,true);assert.equal(f.counts().dispatched,2);
 });

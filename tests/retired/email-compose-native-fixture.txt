@@ -1,0 +1,13 @@
+test('hidden isolated Chromium composer validates real layout and one-click send wiring', { skip: process.env.BLACKICE_EMAIL_COMPOSE_QA !== '1' && 'Set BLACKICE_EMAIL_COMPOSE_QA=1 for the isolated native UI fixture.', timeout: 60000 }, async t => {
+  const directory = process.env.BLACKICE_EMAIL_COMPOSE_QA_OUTPUT ? path.resolve(process.env.BLACKICE_EMAIL_COMPOSE_QA_OUTPUT) : await fs.mkdtemp(path.join(tmpdir(), 'blackice-email-compose-'));
+  await fs.mkdir(directory, { recursive: true });
+  if (!process.env.BLACKICE_EMAIL_COMPOSE_QA_OUTPUT) t.after(() => fs.rm(directory, { recursive: true, force: true, maxRetries: 6, retryDelay: 100 }));
+  const environment = { ...process.env }; delete environment.ELECTRON_RUN_AS_NODE;
+  const require = createRequire(import.meta.url), script = fileURLToPath(new URL('./fixtures/email-compose-native.mjs', import.meta.url));
+  const child = spawn(require('electron'), [script, `--fixture-data=${directory}`], { env: environment, windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
+  let output = ''; for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => { output = (output + chunk).slice(-6000); });
+  const timer = setTimeout(() => child.kill(), 55000);
+  const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', resolve); }).finally(() => clearTimeout(timer));
+  const report = JSON.parse(await fs.readFile(path.join(directory, 'result.json'), 'utf8'));
+  assert.equal(code, 0, report.error || output); assert.equal(report.ok, true); assert.equal(report.closedWindows, true); assert.equal(report.liveMailRequests, 0); assert.ok(report.checks.length >= 6);
+});

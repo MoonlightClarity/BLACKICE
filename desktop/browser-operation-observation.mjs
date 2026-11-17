@@ -6,8 +6,7 @@ export async function inspectObservedFormControl(el, state, args) {
   if (!el?.isConnected) return { kind: 'opaque' };
   if (args.hostRecoveryInspection === true) {
     // Host-only observation: no focus, DOM events, form serialization or input.
-    // Password/credential controls deliberately have no reviewable snapshot.
-    if (el.type === 'password' || state?.credentialFields?.has(el) || !globalThis.crypto?.subtle) return { ref: args.ref, kind: 'opaque' };
+    if (!globalThis.crypto?.subtle) return { ref: args.ref, kind: 'opaque' };
     const details = await inspectObservedFormControl(el, state, { ...args, hostRecoveryInspection: false });
     if (['BUTTON', 'INPUT'].includes(el.tagName) && ['submit', 'image'].includes(el.type)
       && !['form-submit', 'form-navigation'].includes(details.kind)) return { ref: args.ref, kind: 'opaque' };
@@ -16,7 +15,7 @@ export async function inspectObservedFormControl(el, state, args) {
       const identity = node => { if (!node) return null; if (!state.recoveryNodes.has(node)) state.recoveryNodes.set(node, 'node-' + (++state.nextRecoveryNode)); return state.recoveryNodes.get(node); };
       const nodeId = identity(el);
       const stateOf = () => {
-        if (!el.isConnected || el.type === 'password' || state?.credentialFields?.has(el)) throw Error('Changed protected control');
+        if (!el.isConnected) throw Error('Changed control');
         const attributes = [...el.attributes].filter(item => item.name !== 'style').map(item => [item.name, item.value]).sort(([a],[b]) => a.localeCompare(b));
         const form = el.form ? { id: identity(el.form), action: el.form.action, method: el.form.method, target: el.form.target, enctype: el.form.enctype } : null;
         const snapshot = { nodeId, tag: el.tagName, attributes, value: typeof el.value === 'string' ? el.value : null,
@@ -42,8 +41,7 @@ export async function inspectObservedFormControl(el, state, args) {
     return { ...basic, kind: 'opaque' };
   }
   const form = el.form;
-  if (!form?.isConnected || el.type === 'image' || !globalThis.crypto?.subtle
-    || [...form.elements].some(field => field.type === 'password' || state?.credentialFields?.has(field))) return { ...basic, kind: 'opaque' };
+  if (!form?.isConnected || el.type === 'image' || !globalThis.crypto?.subtle) return { ...basic, kind: 'opaque' };
   const hash = async bytes => [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(value => value.toString(16).padStart(2, '0')).join('');
   const textHash = value => hash(new TextEncoder().encode(JSON.stringify(value)));
   try {

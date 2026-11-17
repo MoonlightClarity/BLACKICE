@@ -720,3 +720,28 @@ test('editing a schedule updates Chat profile without altering pinned attachment
   assert.equal(f.schedule.revision,2);
   assert.deepEqual(f.jobs,admitted,'Editing future settings must not rewrite admitted attempts');
 });
+
+
+test('Cronjobs puts its optional Title before instructions and uses saved names as job headings', async t => {
+  const f=fixture(t,{cronjobs:true});f.component.enter();await settle();
+  await f.clickReady('#next-tasks-new-schedule');
+  const form=f.$('#next-tasks-form'),title=form.querySelector('[name="name"]'),instructions=form.querySelector('[name="input"]');
+  assert.ok(title && instructions);
+  assert.equal(title.parentElement.parentElement,form,'Title is not nested under More options');
+  assert.match(title.parentElement.textContent,/Title \(optional\)/);
+  assert.equal(title.getAttribute('maxlength'),'160');
+  assert.equal(form.querySelectorAll('[name="name"]').length,1,'existing storage field is reused');
+  assert.ok(form.children.indexOf(title.parentElement)<form.children.indexOf(instructions.parentElement));
+  await f.clickReady('#next-tasks-tab-results');
+  assert.equal(f.$('#next-tasks-results').querySelector('.next-task-job-title').textContent,'Scheduled review');
+  await f.clickReady('#next-tasks-tab-jobs');
+  assert.equal(f.$('[data-job-id="job-0"]').querySelector('.next-task-job-title').textContent,'Scheduled review');
+  await f.clickReady('#next-tasks-tab-schedules');
+  await f.clickReady('[data-schedule-inspect="schedule-a"]');
+  await f.clickReady('[data-schedule-edit-open="schedule-a"]');
+  const edit=f.$('[data-schedule-edit="schedule-a"]').querySelector('[name="name"]');
+  assert.equal(edit.value,'Scheduled review');
+  assert.equal(edit.maxLength,160);
+  assert.match(edit.parentElement.textContent,/Title/);
+  assert.ok(f.calls.every(call=>call.method==='GET'),'inspection and editing do not admit jobs');
+});

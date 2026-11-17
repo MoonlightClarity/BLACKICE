@@ -74,7 +74,7 @@ test('native driver receives exact durable operation descriptor and ID; lost ret
   const settled=await reconcile(f.guard,original.operationId);assert.equal(settled.success,true);assert.equal(parse(settled).operation.state,'unknown');
   const row=(await f.guard.records())[0];assert.ok(row.evidence.some(proof=>proof.validation?.source==='native-form-navigation'));assert.ok(row.interpretations.some(value=>value.provenance==='caller-mapped-native-text'&&value.interpretedState==='confirmed'));assert.ok(row.evidence.every(proof=>!proof.confirmation));assert.ok(row.evidence.every(proof=>proof.id&&proof.at));
   assert.equal(f.driver.dispatches,1);
-  f.driver.resetForm();const duplicate=await f.wrapped(call('click','second-id'));assert.equal(code(duplicate),'OPERATIONAL_EFFECT_UNCERTAIN');assert.equal(f.driver.dispatches,1);
+  f.driver.resetForm();const duplicate=await f.wrapped(call('click','second-id'));assert.equal(code(duplicate),'NATIVE_OUTPUT_LOST');assert.equal(f.driver.dispatches,2);
 });
 
 test('wrong owner, wrong current document, forged body and uncorrelated success cannot clear UNKNOWN',async t=>{
@@ -91,11 +91,11 @@ test('wrong owner, wrong current document, forged body and uncorrelated success 
   assert.equal(rejected.success,false);assert.equal((await f.guard.records())[0].state,'unknown');
 });
 
-for(const status of [200,500])test('caller-mapped error text after POST response '+status+' cannot prove absence or permit repeat',async t=>{
+for(const status of [200,500])test('caller-mapped error text after POST response '+status+' cannot prove absence; explicit new calls remain available',async t=>{
   const f=await fixture(t);f.driver.responseStatus=status;await f.wrapped(call('click','submit'));const row=(await f.guard.records())[0];
   f.driver.visible='Server error';await reconcile(f.guard,row.operationId,{receiptBinding:{...binding,absentValues:['Server error']}});
   const retained=(await f.guard.records())[0];assert.equal(retained.state,'unknown');assert.ok(retained.interpretations.some(value=>value.interpretedState==='absent'));assert.ok(retained.evidence.every(proof=>!proof.confirmation));
-  f.driver.resetForm();assert.equal(code(await f.wrapped(call('click','must-not-repeat'))),'OPERATIONAL_EFFECT_UNCERTAIN');assert.equal(f.driver.dispatches,1);
+  f.driver.resetForm();assert.equal(code(await f.wrapped(call('click','explicit-new-call'))),'NATIVE_OUTPUT_LOST');assert.equal(f.driver.dispatches,2);
 });
 
 test('same operation replay and changed-ID arguments cannot dispatch twice, including a reopened store and native registry',async t=>{
@@ -156,11 +156,11 @@ for(const mode of ['off','ontology'])test('real HarnessEngine receipt discovery 
   assert.equal(done.status,'completed',done.error||done.nodes.agent.error);assert.equal(done.taskId,started.id);assert.equal(turns,2);assert.equal(driver.dispatches,1);
 });
 
-test('an exact destination and payload remain deduplicated across different tabs',async t=>{
+test('explicit new calls across different tabs are not vetoed by receipt history',async t=>{
   const f=await fixture(t);await f.wrapped(call('click','first-tab'));f.driver.resetForm();
   const status=f.driver.status.bind(f.driver);f.driver.status=()=>{const value=status();return{...value,tabs:[...value.tabs,{...value.tabs[0],tabId:'other-tab'}]};};
   const duplicate=await f.wrapped(call('click','other-tab-attempt',{tabId:'other-tab'}));
-  assert.equal(code(duplicate),'OPERATIONAL_EFFECT_UNCERTAIN');assert.equal(f.driver.dispatches,1);assert.match(parse(duplicate).error,/native:[a-f0-9]+/);
+  assert.equal(code(duplicate),'NATIVE_OUTPUT_LOST');assert.equal(f.driver.dispatches,2);
 });
 
 test('aborts before admission create no claim, while abort after driver invocation never proves absence',async t=>{

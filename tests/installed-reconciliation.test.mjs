@@ -96,20 +96,23 @@ test('browser coordinate, ref-upload and prompt decisions reject missing observe
   assert.equal(calls.length, 3); await browser.perform({ ...prompt, decision: 'accept' }); assert.equal(calls.length, 4);
 });
 
-test('wait rejects input-only guards with actionable recovery and dispatches without them', async t => {
+test('wait ignores inherited observation metadata without weakening input validation', async t => {
   const calls = [], driver = { status: () => ({ available: true, contained: true, activeTab: 'owned-tab', tabs: [{ tabId: 'owned-tab' }] }), perform: async args => { calls.push(args); return { matched: args.query }; } };
   const browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());
   const wait = { action: 'wait', browser: 'relay', tabId: 'owned-tab', query: 'Ready', timeoutMs: 10000 };
-  for (const guards of [{ expectedUrl: 'https://example.invalid/form' }, { expectedUrl: 'https://example.invalid/form', expectedDocumentId: 'owned-tab:1' }]) {
-    await assert.rejects(browser.perform({ ...wait, ...guards }), error => {
-      assert.equal(error.code, 'BROWSER_VALIDATION');
-      assert.match(error.message, /wait action does not accept expectedDocumentId or expectedUrl\. Omit both fields/);
-      return true;
-    });
+  const observations = [
+    { expectedUrl: 'https://example.invalid/form' },
+    { expectedDocumentId: 'owned-tab:old' },
+    { expectedUrl: 'https://example.invalid/previous', expectedDocumentId: 'owned-tab:old' },
+    { expectedUrl: null, expectedDocumentId: null },
+  ];
+  for (const observed of observations) {
+    const input = { ...wait, ...observed }, before = structuredClone(input);
+    assert.equal((await browser.perform(input)).matched, 'Ready');
+    assert.deepEqual(input, before, 'Normalization must not mutate caller arguments.');
   }
-  assert.equal(calls.length, 0, 'Rejected calls must not dispatch.');
   assert.equal((await browser.perform(wait)).matched, 'Ready');
-  assert.deepEqual(calls, [wait]);
+  assert.deepEqual(calls, Array.from({ length: observations.length + 1 }, () => wait));
   await assert.rejects(browser.perform({ ...wait, action: 'fill', ref: 'observed-field', text: 'Fixture', expectedUrl: 'https://example.invalid/form' }), /Page input requires the current observed document identity and URL/);
-  assert.equal(calls.length, 1, 'Input actions still require a complete guard pair when supplied.');
+  assert.equal(calls.length, observations.length + 1, 'Input actions still require a complete guard pair when supplied.');
 });

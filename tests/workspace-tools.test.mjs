@@ -175,7 +175,7 @@ test('queued/cancelled calls do not write and application guidance describes ava
   assert.match(WORKSPACE_INSTRUCTIONS, /Authorized application launches and other task-relevant operating system commands may use run/);
   assert.match(WORKSPACE_INSTRUCTIONS, /preserve unrelated user work/);
   assert.match(WORKSPACE_INSTRUCTIONS, /respect stop, detach and cancellation/);
-  assert.match(WORKSPACE_INSTRUCTIONS, /relay_desktop/); assert.match(WORKSPACE_INSTRUCTIONS, /relay_browser/);
+  assert.doesNotMatch(WORKSPACE_INSTRUCTIONS, /relay_desktop/); assert.match(WORKSPACE_INSTRUCTIONS, /Live Windows desktop UIA is retired/); assert.match(WORKSPACE_INSTRUCTIONS, /relay_browser/);
 });
 
 async function completeReadPages(handler, selected, expected) {

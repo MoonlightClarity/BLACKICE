@@ -94,14 +94,6 @@ test('native popup navigation follows its selected parent through the router and
   assert.equal(redirected.tabId, child.id); assert.equal(redirected.url, 'https://site.example.test/feed');
 });
 
-test('saved-tab selection cannot dispatch to an external browser adapter', async () => {
-  const independent = new FakeDriver(['contained']), firefox = new FakeDriver(['external']);
-  const router = new BrowserRouter({ independent, firefox });
-  await assert.rejects(router.perform({ action: 'tab_select', browser: 'firefox', tabId: 'firefox:external' }), { code: 'BROWSER_CONTAINED_ONLY' });
-  assert.equal(independent.calls.length, 0); assert.equal(firefox.calls.length, 0);
-  await router.close();
-});
-
 test('a native task popup follows the observed task without changing another owner selection', async t => {
   const { driver, router, popup } = await nativePopupFixture(t);
   const owner = { taskId: 'task', runId: 'run', nodeId: 'agent' }, other = { taskId: 'other', runId: 'other-run', nodeId: 'other-agent' };
@@ -142,99 +134,6 @@ test('a closed native popup returns follow selection to its parent rather than t
   const status = router.status(); assert.equal(status.activeTab, parent.id); assert.equal(observeBrowserModel(status).selected.tabId, parent.id);
 });
 
-test('guarded direct typing cannot fall through to an external browser', async () => {
-  const independent = new FakeDriver(['owned']), firefox = new FakeDriver(['external']), router = new BrowserRouter({ independent, firefox });
-  try {
-    for (const action of ['type', 'press']) await assert.rejects(router.perform({ action, browser: 'firefox', tabId: 'firefox:external', text: 'fixture', key: 'Enter', expectedDocumentId: 'external:1', expectedUrl: 'https://example.com/external' }), { code: 'BROWSER_CONTAINED_INPUT_REQUIRED' });
-    assert.equal(firefox.calls.length, 0);
-    await router.perform({ action: 'type', browser: 'relay', tabId: 'owned', text: 'fixture', expectedDocumentId: 'owned:1', expectedUrl: 'https://example.com/owned' });
-    assert.equal(independent.calls.length, 1); assert.equal(independent.calls[0].args.tabId, 'owned');
-  } finally { await router.close(); }
-});
-
-test('merged status and tab listing do not start an unused Firefox adapter', async () => {
-  const independent = new FakeDriver(['relay-tab']), firefox = new FakeDriver([], { available: true, initialized: false });
-  const router = await new BrowserRouter({ independent, firefox }).init();
-  try {
-    const status = router.status(); assert.equal(status.tabs[0].browser, 'relay'); assert.equal(status.tabs[0].canShow, false); assert.equal(status.tabs[0].contained, true); assert.equal(status.contained, true); assert.equal(status.browsers.firefox.canShow, false);
-    assert.equal((await router.perform({ action: 'tabs', browser: 'firefox' })).tabs.length, 1);
-    await assert.rejects(router.perform({ action: 'close', browser: 'firefox' }), { code: 'BROWSER_TAB_NOT_FOUND' });
-    assert.equal(firefox.calls.length, 0); assert.equal(independent.calls.length, 0);
-  } finally { await router.close(); }
-  assert.equal(firefox.closeCalls, 1); assert.equal(independent.closeCalls, 1);
-});
-
-test('open defaults to Relay while explicit Firefox opens retain namespaced ownership', async () => {
-  const independent = new FakeDriver(), firefox = new FakeDriver(), router = new BrowserRouter({ independent, firefox });
-  try {
-    const relay = await router.perform({ action: 'open', url: 'https://example.com/relay' });
-    assert.equal(relay.browser, 'relay'); assert.equal(relay.tabId, 'opened');
-    const controller = new AbortController(), options = { signal: controller.signal };
-    const remote = await router.perform({ action: 'open', browser: 'firefox', tabId: relay.tabId, url: 'https://example.com/firefox' }, options);
-    assert.equal(remote.browser, 'firefox'); assert.equal(remote.tabId, 'firefox:opened'); assert.equal(firefox.calls[0].args.browser, undefined); assert.equal(firefox.calls[0].options, options);
-    assert.equal(firefox.calls[0].args.tabId, undefined, 'opening a new page cannot forward a tab ID from the other browser');
-    assert.deepEqual(remote.tabs.map(tab => [tab.tabId, tab.browser, tab.canShow]), [['opened', 'relay', false], ['firefox:opened', 'firefox', false]]);
-    assert.equal(router.status().activeTab, 'firefox:opened');
-    await router.perform({ action: 'snapshot', tabId: remote.tabId });
-    assert.equal(firefox.calls[1].args.tabId, 'opened');
-    await router.perform({ action: 'snapshot' }); assert.equal(firefox.calls.length, 3);
-  } finally { await router.close(); }
-});
-
-test('a browser mismatch or unknown tab cannot reach either adapter', async () => {
-  const independent = new FakeDriver(['same-id']), firefox = new FakeDriver(['same-id']), router = new BrowserRouter({ independent, firefox });
-  try {
-    await assert.rejects(router.perform({ action: 'fill', browser: 'relay', tabId: 'firefox:same-id', text: 'must not type' }), { code: 'BROWSER_TAB_MISMATCH' });
-    await assert.rejects(router.perform({ action: 'click', browser: 'firefox', tabId: 'same-id', ref: 'control' }), { code: 'BROWSER_TAB_MISMATCH' });
-    await assert.rejects(router.perform({ action: 'snapshot', tabId: 'firefox:unknown' }), { code: 'BROWSER_TAB_NOT_FOUND' });
-    await assert.rejects(router.perform({ action: 'open', browser: 'chrome', url: 'https://example.com/' }), { code: 'BROWSER_VALIDATION' });
-    assert.equal(independent.calls.length + firefox.calls.length, 0);
-  } finally { await router.close(); }
-});
-
-test('neither Firefox nor contained Relay can invoke a separate window action', async () => {
-  const independent = new FakeDriver(['relay-tab']), firefox = new FakeDriver(['firefox-tab']), router = new BrowserRouter({ independent, firefox });
-  try {
-    await assert.rejects(router.show('firefox:firefox-tab'), { code: 'BROWSER_HEADLESS' });
-    assert.deepEqual(firefox.showCalls, []); assert.equal(firefox.calls.length, 0);
-    await assert.rejects(router.show('relay-tab'), { code: 'BROWSER_CONTAINED' }); assert.deepEqual(independent.showCalls, []);
-    assert.equal(independent.calls.length, 0); assert.equal(router.status().browsers.relay.canShow, false);
-  } finally { await router.close(); }
-});
-
-test('downloads keep their browser identity and closing a Firefox tab returns merged tabs', async () => {
-  const independent = new FakeDriver(['relay-tab']), firefox = new FakeDriver(['firefox-tab']), router = new BrowserRouter({ independent, firefox });
-  try {
-    const all = await router.perform({ action: 'downloads' }); assert.equal(all.downloads.length, 2);
-    assert.equal(all.downloads[1].tabId, 'firefox:firefox-tab'); assert.equal(all.downloads[1].browser, 'firefox');
-    assert.equal((await router.perform({ action: 'downloads', browser: 'relay' })).downloads.length, 1); assert.equal(firefox.calls.length, 0);
-    const closed = await router.perform({ action: 'close', tabId: 'firefox:firefox-tab' });
-    assert.deepEqual(closed.tabs.map(tab => tab.tabId), ['relay-tab']); assert.equal(closed.activeTab, 'relay-tab');
-  } finally { await router.close(); }
-});
-
-test('changed events propagate and shutdown closes both adapters before reporting the first error', async () => {
-  const independent = new FakeDriver(), firefox = new FakeDriver(), first = new Error('First close failed'), second = new Error('Second close failed');
-  independent.close = async () => { independent.closeCalls++; throw first; };
-  firefox.close = async () => { firefox.closeCalls++; throw second; };
-  const router = new BrowserRouter({ independent, firefox }); let changed = 0; router.on('changed', () => changed++);
-  independent.emit('changed'); firefox.emit('changed'); assert.equal(changed, 2);
-  await assert.rejects(router.close(), error => error === first); assert.equal(independent.closeCalls, 1); assert.equal(firefox.closeCalls, 1);
-  independent.emit('changed'); firefox.emit('changed'); assert.equal(changed, 2);
-  await assert.rejects(router.close(), error => error === first); assert.equal(independent.closeCalls, 1); assert.equal(router.status().available, false);
-  await assert.rejects(router.perform({ action: 'tabs' }), { code: 'BROWSER_CLOSED' });
-});
-
-test('concurrent shutdown callers await one shared close operation and observe the same failure', async () => {
-  const independent = new FakeDriver(), firefox = new FakeDriver(), failure = new Error('Profile is still closing'); let release;
-  firefox.close = () => { firefox.closeCalls++; return new Promise((_resolve, reject) => { release = () => reject(failure); }); };
-  const router = new BrowserRouter({ independent, firefox });
-  const first = router.close(), second = router.close(); assert.equal(first, second);
-  let settled = false; const observed = second.catch(error => { settled = true; assert.equal(error, failure); });
-  await new Promise(resolve => setImmediate(resolve)); assert.equal(settled, false); assert.equal(firefox.closeCalls, 1);
-  release(); await observed; await assert.rejects(first, error => error === failure); await assert.rejects(router.init(), { code: 'BROWSER_CLOSED' });
-});
-
 test('closing the router cannot turn a late adapter completion into a successful page action', async () => {
   const independent = new FakeDriver(['relay-tab']); let finish;
   independent.perform = () => new Promise(resolve => { finish = resolve; });
@@ -255,26 +154,6 @@ test('pre-cancelled actions never reach an adapter and late cancellation never r
   } finally { await router.close(); }
 });
 
-test('opening a Firefox task publishes its selected tab after the adapter creates it', async () => {
-  const independent = new FakeDriver(['relay-tab']), firefox = new FakeDriver(), router = new BrowserRouter({ independent, firefox }), selected = [];
-  router.on('changed', () => selected.push(router.status().activeTab));
-  try { await router.perform({ action: 'open', browser: 'firefox', url: 'https://example.com/' }); assert.equal(selected.at(-1), 'firefox:opened'); }
-  finally { await router.close(); }
-});
-
-test('folder organization routes without an active page and cleanup only touches the contained driver', async () => {
-  const owner = { taskId: 'task', runId: 'run', nodeId: 'node' }, independent = new FakeDriver(), firefox = new FakeDriver(['external']);
-  independent.perform = async function(args, options) { this.calls.push({ args, options }); return { folders: [{ id: 'folder', kind: 'user', name: args.name }], folder: { id: 'folder', kind: 'user', name: args.name } }; };
-  independent.releaseOwner = async value => { assert.deepEqual(value, owner); return { suspended: ['owned'], retained: [] }; };
-  const router = new BrowserRouter({ independent, firefox });
-  try {
-    const result = await router.perform({ action: 'folder_create', name: 'Research' }, { source: 'user' });
-    assert.equal(result.folder.name, 'Research'); assert.deepEqual(independent.calls[0].args, { action: 'folder_create', name: 'Research' }); assert.equal(firefox.calls.length, 0);
-    assert.deepEqual(await router.releaseOwner(owner), { suspended: ['owned'], retained: [] });
-    await assert.rejects(router.perform({ action: 'folder_create', browser: 'firefox', name: 'Wrong driver' }, { source: 'user' }), { code: 'BROWSER_CONTAINED_ONLY' });
-  } finally { await router.close(); }
-});
-
 test('an owned task open cannot change a manually selected router page', async () => {
   const independent = new FakeDriver(['personal']), router = new BrowserRouter({ independent });
   try {
@@ -284,14 +163,73 @@ test('an owned task open cannot change a manually selected router page', async (
   } finally { await router.close(); }
 });
 
-test('browser persistence flush reaches only the contained driver and propagates storage failures', async () => {
-  const independent = new FakeDriver(['saved']), firefox = new FakeDriver(['external']); let flushes = 0, failSave = false;
-  independent.flushPersistence = async () => { flushes++; if (failSave) throw Object.assign(new Error('Storage unavailable.'), { code: 'BROWSER_SAVE_FAILED' }); };
-  firefox.flushPersistence = () => assert.fail('Contained folder persistence must not activate an external browser.');
-  const router = new BrowserRouter({ independent, firefox });
-  try {
-    assert.equal((await router.flushPersistence()).tabs.length, 2); assert.equal(flushes, 1);
-    failSave = true; await assert.rejects(router.flushPersistence(), { code: 'BROWSER_SAVE_FAILED' });
-    assert.equal(independent.closeCalls, 0); assert.equal(firefox.closeCalls, 0);
-  } finally { await router.close(); }
+
+test('retired Firefox adapter is never initialized, listed, selected, closed or called',async()=>{
+ const independent=new FakeDriver(['mail']),firefox=new FakeDriver(['old']);
+ const router=await new BrowserRouter({independent,firefox}).init();
+ assert.deepEqual(Object.keys(router.status().browsers),['relay']);
+ assert.deepEqual(router.status().tabs.map(t=>t.tabId),['mail']);
+ await assert.rejects(router.perform({action:'open',browser:'firefox',url:'https://example.test'}),{code:'BROWSER_VALIDATION'});
+ assert.equal(firefox.calls.length,0);await router.close();assert.equal(firefox.closeCalls,0);
+});
+test('contained webmail uses ordinary open read fill click upload and screenshot routing',async()=>{
+ const driver=new FakeDriver(),router=await new BrowserRouter({independent:driver}).init();
+ const opened=await router.perform({action:'open',url:'https://mail.example.test'});
+ for(const action of ['read','fill','click','upload','screenshot'])await router.perform({action,tabId:opened.tabId,ref:'field',text:'draft',paths:['fixture.txt']});
+ assert.deepEqual(driver.calls.map(c=>c.args.action),['open','read','fill','click','upload','screenshot']);
+ assert.equal(router.status().activeTab,opened.tabId);await router.close();assert.equal(driver.closeCalls,1);
+});
+test('desktop and UI no longer wire Firefox or a separate email composer',async()=>{
+ const source=async p=>readFile(new URL('../'+p,import.meta.url),'utf8');
+ assert.doesNotMatch(await source('desktop/main.mjs'),/LazyFirefoxDriver|firefox-lazy|independent, firefox/);
+ assert.doesNotMatch(await source('server.mjs'),/pathname === '\/api\/browser\/firefox\/disconnect'/);
+ assert.doesNotMatch(await source('public/browser-ui.mjs'),/firefoxSection|browser-firefox-disconnect|Firefox pages/);
+ assert.doesNotMatch(await source('public/app.js'),/showEmailWorkspace|import\('\/email-ui.mjs'\)/);
+ assert.match(await source('server.mjs'),/EMAIL_RETIRED/);
+});
+
+test('contained unknown tab cannot reach the driver',async()=>{
+ const independent=new FakeDriver(['known']),router=new BrowserRouter({independent});
+ try{
+  for(const action of ['fill','click','snapshot'])await assert.rejects(router.perform({action,browser:'relay',tabId:'unknown',ref:'control',text:'fixture'}),{code:'BROWSER_TAB_NOT_FOUND'});
+  assert.equal(independent.calls.length,0);
+ }finally{await router.close();}
+});
+test('contained show rejects without opening or foregrounding the native window',async()=>{
+ const independent=new FakeDriver(['known']),router=new BrowserRouter({independent});
+ try{
+  await assert.rejects(router.show('known'),{code:'BROWSER_CONTAINED'});
+  assert.deepEqual(independent.showCalls,[]);assert.equal(independent.calls.length,0);
+ }finally{await router.close();}
+});
+test('contained changed events detach after failed close and close remains idempotent',async()=>{
+ const independent=new FakeDriver(),failure=new Error('Contained close failed');
+ independent.close=async()=>{independent.closeCalls++;throw failure;};
+ const router=new BrowserRouter({independent});let changed=0;router.on('changed',()=>changed++);
+ independent.emit('changed');assert.equal(changed,1);
+ await assert.rejects(router.close(),error=>error===failure);assert.equal(independent.closeCalls,1);
+ independent.emit('changed');assert.equal(changed,1);assert.equal(independent.listenerCount('changed'),0);
+ await assert.rejects(router.close(),error=>error===failure);assert.equal(independent.closeCalls,1);
+ assert.equal(router.status().available,false);await assert.rejects(router.perform({action:'tabs'}),{code:'BROWSER_CLOSED'});
+});
+test('concurrent contained shutdown callers share one close promise and failure',async()=>{
+ const independent=new FakeDriver(),failure=new Error('Contained close pending');let release;
+ independent.close=()=>{independent.closeCalls++;return new Promise((_resolve,reject)=>{release=()=>reject(failure);});};
+ const router=new BrowserRouter({independent}),first=router.close(),second=router.close();assert.equal(first,second);
+ let settled=false;const observed=second.catch(error=>{settled=true;assert.equal(error,failure);});
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(settled,false);assert.equal(independent.closeCalls,1);
+ release();await observed;await assert.rejects(first,error=>error===failure);await assert.rejects(router.init(),{code:'BROWSER_CLOSED'});
+});
+test('contained folder routing works without an active tab and forwards releaseOwner',async()=>{
+ const owner={taskId:'task',runId:'run',nodeId:'node'},independent=new FakeDriver();let releases=0;
+ independent.perform=async function(args,options){this.calls.push({args,options});return{folder:{id:'folder',kind:'user',name:args.name}};};
+ independent.releaseOwner=async(value,options)=>{releases++;assert.deepEqual(value,owner);assert.deepEqual(options,{reason:'test'});return{suspended:['owned'],retained:[]};};
+ const router=new BrowserRouter({independent});
+ try{
+  assert.equal(router.status().activeTab,null);
+  const result=await router.perform({action:'folder_create',name:'Research'},{source:'user'});
+  assert.equal(result.folder.name,'Research');assert.deepEqual(independent.calls[0].args,{action:'folder_create',name:'Research'});
+  assert.deepEqual(independent.calls[0].options,{source:'user'});
+  assert.deepEqual(await router.releaseOwner(owner,{reason:'test'}),{suspended:['owned'],retained:[]});assert.equal(releases,1);
+ }finally{await router.close();}
 });

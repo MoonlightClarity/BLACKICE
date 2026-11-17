@@ -70,3 +70,7 @@ This attribution is preserved for historical source provenance. If guest video i
 ## Redistribution
 
 Include the root [LICENSE](LICENSE), [NOTICE](NOTICE), and this index in source and binary packages. Preserve the third-party license, attribution, source, and provenance files alongside the components they describe. Follow each component's own terms for its redistribution or modification; do not replace upstream notices with the BLACKICE Apache license.
+
+## Bundled llama.cpp runtime (Windows x64)
+
+Official ggml-org/llama.cpp v1.0.0, binary build b12359, source commit b1b770d90. CPU and Vulkan runtime archives are SHA-256 pinned in scripts/prepare-llama-runtime.mjs. llama.cpp is MIT licensed; the complete license is in desktop/llama.cpp-LICENSE and shipped alongside the runtime. The upstream LLVM OpenMP license is preserved in each backend directory. No model weights are bundled.

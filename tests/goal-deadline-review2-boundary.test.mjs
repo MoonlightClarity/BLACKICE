@@ -66,6 +66,37 @@ test('child provider final admission rejects a deadline that changed during chil
  await s.goals.close();
  assert.deepEqual(s.state.root.goalUnresolvedEffects,pauseEvidence);
 });
+test('final Goal wall-clock admission after awaited Swarm dispatch hook blocks provider without timer delivery',async()=>{
+  const s=stub();let calls=0,admissionChecks=0,durableFences=0;
+  try {
+    const handler=createSubagentToolHandler({cwd:'C:/fixture',model:'fixture',maxParallel:1,
+      allowAutonomousDelegation:true,
+      runtime:{runAgent:async()=>{calls++;return{output:'provider was incorrectly invoked'};}},
+      beforeModel:({signal})=>{
+        admissionChecks++;s.goals.assertProviderAdmission(s.run,{signal});
+      },
+      onProviderDispatch:async()=>{
+        durableFences++;
+        // The first Goal admission has already passed. An asynchronous
+        // durable Swarm dispatch save crosses the wall-clock deadline while
+        // cancellation timer delivery is deliberately not invoked.
+        await Promise.resolve();s.clock.now=ms(cutoff);
+      }
+    });
+    const response=await handler({name:SUBAGENT_TOOL.name,
+      arguments:{tasks:[{id:'deadline_fenced_worker',prompt:'No provider may start after cutoff.'}]}});
+    const result=JSON.parse(response.contentItems[0].text);
+    assert.equal(admissionChecks,2,'same real host Goal admission must run before and after awaited durable hook');
+    assert.equal(durableFences,1,'the durable attempt hook was invoked once');
+    assert.equal(calls,0,'runtime.runAgent must not run after the absolute cutoff');
+    assert.equal(result.completed,0);
+    assert.equal(result.results[0].status,'failed');
+    assert.match(result.results[0].error,/absolute Goal deadline passed before provider admission/);
+    assert.equal(result.results[0].hostRunAgentCallAttempted,false,
+      'a durable attempt/fence is not evidence of a provider call');
+    assert.deepEqual(s.state.root.goalUnresolvedEffects,pauseEvidence);
+  } finally { await s.goals.close(); }
+});
 test('deadline abort propagates to existing child, leaves a queued sibling unstarted, and preserves unknown effects',async()=>{
  const s=stub();let started=0,entered=deferred();
  const handler=createSubagentToolHandler({cwd:'C:/fixture',model:'fixture',maxParallel:1,allowAutonomousDelegation:true,signal:s.controllers.signal,

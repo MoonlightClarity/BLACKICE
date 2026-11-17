@@ -20,7 +20,7 @@ Start LM Studio's local server at `http://127.0.0.1:1234`, refresh the Local mod
 
 BLACKICE connects directly to the official `llama-server` OpenAI-compatible API. Neither Ollama nor LM Studio is required.
 
-1. Install a **llama.cpp v1.0.0 or compatible** `llama-server` build from the [official release](https://github.com/ggml-org/llama.cpp/releases/tag/v1.0.0). This runtime is **not bundled or installed automatically** by BLACKICE.
+1. The Windows x64 installer includes a pinned **llama.cpp v1.0.0** runtime; no separate runtime installation is needed. Other platforms or custom setups can use a compatible `llama-server` from the [official release](https://github.com/ggml-org/llama.cpp/releases/tag/v1.0.0). Model weights remain separate. See [bundled runtime provenance](BUNDLED-LLAMA.md).
 2. Put existing GGUF weights in a folder (for example `C:\Models`). From a terminal, start **router mode**:
 
    ```powershell
@@ -49,3 +49,5 @@ BLACKICE reads `GET /models` (router) or `GET /v1/models` (single process), send
 ### Validation scope
 
 The adapter is covered by controlled HTTP and UI fixtures, including single-server mode, router lifecycle, and per-slot context metadata. A live llama.cpp model, GPU performance, and end-to-end agent tool use are not yet verified. Sleeping processes are shown as sleeping rather than resident in memory; inference can wake them.
+
+Candidate bundled-runtime implementation and verification: [Bundled llama.cpp](BUNDLED-LLAMA.md). This is not an installed-release claim.

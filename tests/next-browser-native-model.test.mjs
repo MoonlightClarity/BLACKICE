@@ -98,3 +98,13 @@ test('failed attach stays quiet on passive paints and explicit navigation retrie
   assert.deepEqual(calls.at(-1),{action:'attach',tabId:'recoverable',bounds:resized});
   assert.deepEqual(attached,['recoverable']);surface.destroy();
 });
+
+test('website alert notice remains page-scoped plain text without a prompt or focus change',async()=>{
+ const {nativeBrowserNotice}=await import('../public/next/workspaces/browser-native.mjs');
+ const notice={source:'website-alert',status:'acknowledged',url:'https://fixture.invalid',documentId:'d',message:'Your file has been uploaded successfully.'};
+ const tab={url:notice.url,documentId:'d',siteNotices:[notice]};
+ assert.equal(nativeBrowserNotice(tab),'Website notice: Your file has been uploaded successfully.');
+ assert.equal(nativeBrowserNotice({...tab,documentId:'new'}),'');
+ assert.equal(nativeBrowserNotice({...tab,siteNotices:[{...notice,status:'unresolved'}]}),'');
+ assert.equal(nativeBrowserNotice({...tab,siteNotices:[{...notice,message:'<script>untrusted</script>'}]}),'Website notice: <script>untrusted</script>');
+});

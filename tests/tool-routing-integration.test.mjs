@@ -9,7 +9,9 @@ import path from 'node:path';
 import { ProviderRuntime } from '../lib/providers.mjs';
 import { CodexRuntime } from '../lib/codex.mjs';
 import { HarnessEngine } from './fixture-legacy-planning-engine.mjs';
+import { HarnessEngine as CurrentHarnessEngine } from '../lib/engine.mjs';
 import { KnowledgeStore } from '../lib/knowledge.mjs';
+import { TaskStateStore } from '../lib/task-state.mjs';
 import { WORKSPACE_TOOL } from '../lib/workspace-tools.mjs';
 import { capabilityGuidance } from '../lib/tool-routing.mjs';
 import { estimateContextTokens } from '../lib/context.mjs';
@@ -47,8 +49,8 @@ for(const type of ['openai','anthropic','compatible'])test(`${type}: the engine 
 const fixtureSource=String.raw`import readline from 'node:readline';
 import { appendFileSync } from 'node:fs';
 const send=value=>process.stdout.write(JSON.stringify(value)+'\n'),reply=(id,result)=>send({id,result}),notice=(method,params)=>send({method,params});
-const threads=new Map();let counter=0,skillConfig={},configUnavailable=false;
-readline.createInterface({input:process.stdin}).on('line',line=>{const {id,method,params={}}=JSON.parse(line);if(id===undefined)return;appendFileSync(process.argv[2],JSON.stringify({method,params})+'\n');
+const pendingTools=new Map();const threads=new Map();let counter=0,skillConfig={},configUnavailable=false;
+readline.createInterface({input:process.stdin}).on('line',line=>{const message=JSON.parse(line),{id,method,params={}}=message;if(id===undefined)return;if(!method&&pendingTools.has(id)){const done=pendingTools.get(id);pendingTools.delete(id);done(message.result);return;}appendFileSync(process.argv[2],JSON.stringify({method,params})+'\n');
 if(method==='initialize')return reply(id,{});
 if(method==='account/read')return reply(id,{account:{type:'chatgpt',planType:'fixture'},requiresOpenaiAuth:true});
 if(method==='model/list')return reply(id,{data:[{id:'routing-native-model',model:'routing-native-model',isDefault:true,supportedReasoningEfforts:[]}],nextCursor:null});
@@ -58,6 +60,14 @@ if(method==='skills/list')return reply(id,{data:params.cwds.map(cwd=>({cwd,skill
 if(method==='thread/start'){const threadId='routing-native-'+(++counter);threads.set(threadId,{instructions:params.developerInstructions||'',tools:params.dynamicTools||[],turns:0});return reply(id,{thread:{id:threadId,...(params.ephemeral===true?{ephemeral:true}:{})},model:'routing-native-model'});}
 if(method==='fixture/restoreLegacyCatalog'){const state=threads.get(params.threadId);state.tools=state.tools.filter(tool=>params.names.includes(tool.name));return reply(id,{names:state.tools.map(tool=>tool.name)});}
 if(method==='thread/resume'){const state=threads.get(params.threadId);if(params.developerInstructions!==undefined)state.instructions=params.developerInstructions;return reply(id,{thread:{id:params.threadId},model:'routing-native-model'});}
+if(method==='turn/start'&&JSON.stringify(params.input).includes('CALL_SHARED_CATALOG')){
+ const state=threads.get(params.threadId),turnId='shared-turn-'+(++counter),results=[];
+ reply(id,{turn:{id:turnId}});notice('turn/started',{threadId:params.threadId,turn:{id:turnId,status:'inProgress'}});
+ const steps=[{action:'connections'},{action:'tools',connectionId:'shared-fixture'},{action:'call',connectionId:'shared-fixture',name:'verify_fixture',arguments:{label:'only-new-request'}}];
+ const next=()=>{if(!steps.length){const item={type:'agentMessage',id:'shared-result',text:JSON.stringify({tools:state.tools.map(x=>x.name),results,input:params.input})};notice('item/completed',{threadId:params.threadId,turnId,item});notice('turn/completed',{threadId:params.threadId,turn:{id:turnId,status:'completed',items:[item]}});return;}
+ const callId='shared-call-'+(++counter);pendingTools.set(callId,result=>{results.push(result);next();});send({id:callId,method:'item/tool/call',params:{threadId:params.threadId,turnId,callId,tool:'relay_connections',arguments:steps.shift()}});
+ };setImmediate(next);return;
+}
 if(method==='turn/start'){const state=threads.get(params.threadId),turnId='native-turn-'+(++counter);state.turns++;reply(id,{turn:{id:turnId}});const item={type:'agentMessage',id:'reply-'+turnId,text:JSON.stringify({instructions:state.instructions,tools:state.tools.map(tool=>tool.name),input:params.input})};setImmediate(()=>{notice('turn/started',{threadId:params.threadId,turn:{id:turnId,status:'inProgress'}});notice('item/completed',{threadId:params.threadId,turnId,item});notice('thread/tokenUsage/updated',{threadId:params.threadId,turnId,tokenUsage:{total:{inputTokens:state.turns*20,outputTokens:state.turns*5,totalTokens:state.turns*25},last:{inputTokens:20,outputTokens:5,totalTokens:25},modelContextWindow:128000}});notice('turn/completed',{threadId:params.threadId,turn:{id:turnId,status:'completed',items:[item]}});});return;}
 reply(id,{});});`;
 async function nativeHarness(t){const directory=await mkdtemp(path.join(tmpdir(),'relay-routing-native-')),cwd=path.join(directory,'workspace');await mkdir(cwd);const fixture=path.join(directory,'app-server.mjs'),log=path.join(directory,'wire.jsonl'),cleanup=[];await writeFile(fixture,fixtureSource);const runtime=new CodexRuntime({command:process.execPath,args:[fixture,log],cwd,requestTimeoutMs:3000,runTimeoutMs:5000});t.after(async()=>{for(const close of cleanup)await close();await runtime.close();assert.match(path.basename(directory),/^relay-routing-native-/);await rm(directory,{recursive:true,force:true});});return{directory,cwd,runtime,cleanup,wire:async()=>(await readFile(log,'utf8')).trim().split('\n').filter(Boolean).map(line=>JSON.parse(line))};}
@@ -202,4 +212,41 @@ test('native contained-browser scope does not start a model turn with unreadable
   await assert.rejects(runtime.runAgent({ cwd, prompt: 'MALFORMED_SCOPE', dynamicTools: [browserScopeTool] }), error => error.code === 'CODEX_CAPABILITY_SCOPE_UNAVAILABLE');
   const records = await wire();
   assert.equal(records.filter(record => ['thread/start', 'thread/resume', 'turn/start'].includes(record.method)).length, 0);
+});
+
+for(const Engine of [HarnessEngine,CurrentHarnessEngine])test('missing shared MCP catalog upgrades a stopped native session once with history and real calls ('+(Engine===HarnessEngine?'legacy':'current')+')',async t=>{
+ const {runtime,directory,cwd,wire,cleanup}=await nativeHarness(t);await runtime.start();
+ const tasks=await new TaskStateStore({dataDir:directory}).init();
+ const engine=await new Engine({runtime,tasks,dataDir:directory,defaultCwd:cwd}).init();cleanup.push(()=>engine.close(),()=>tasks.close());
+ const settled=id=>until(()=>{const r=engine.getRun(id);return r.settled&&r;});
+ const first=engine.startRun({workflow:graph('routing-native-model'),input:'COMPLETED_RECEIPT: earlier work already done'}),one=await settled(first.id);
+ assert.equal(one.status,'completed',one.error);assert.ok(!one.nodes.agent.toolNames.includes('relay_connections'));
+ let state=await tasks.get(one.taskId);
+ for(const receiptId of ['confirmed-work','uncertain-work']){
+  state=await tasks.externalAction(one.taskId,{operation:'prepare',receiptId,destination:'https://fixture.invalid/'+receiptId,content:receiptId},{expectedRevision:state.revision});
+  state=await tasks.externalAction(one.taskId,{operation:'attempt',receiptId},{expectedRevision:state.revision});
+  if(receiptId==='confirmed-work')state=await tasks.externalAction(one.taskId,{operation:'confirm',receiptId,url:'https://fixture.invalid/result',evidence:'fixture receipt confirmed'},{expectedRevision:state.revision});
+ }
+ state=await tasks.checkpoint(one.taskId,{completed:['Earlier work complete'],nextSteps:['Investigate the unresolved outcome'],nextAction:'Inspect uncertain-work before any repeat'},{expectedRevision:state.revision});
+ const savedCheckpoint=structuredClone(state.checkpoint),savedEffects=structuredClone(state.externalActions);
+ const original=JSON.stringify(engine.getRun(first.id)),calls=[];
+ engine.connections={list:()=>[{id:'shared-fixture',name:'Shared fixture',enabled:true}],redact:x=>String(x),
+  tools:async id=>({tools:[{name:'verify_fixture',inputSchema:{type:'object'}}]}),
+  call:async(id,name,args)=>{calls.push({id,name,args});return {content:[{type:'text',text:'verified only-new-request'}]};}};
+ const request={nodeId:'agent',message:'CALL_SHARED_CATALOG',requestId:'shared-catalog-upgrade'};
+ const next=engine.continueRun(first.id,request);assert.equal(engine.continueRun(first.id,request).id,next.id);
+ const two=await settled(next.id);assert.equal(two.status,'completed',two.error);
+ assert.equal(two.taskId,one.taskId);assert.notEqual(two.nodes.agent.threadId,one.nodes.agent.threadId);
+ assert.equal(two.modelHandoff.reason,'shared-tool-catalog-upgrade');assert.equal(two.modelHandoff.sourceThreadId,one.nodes.agent.threadId);
+ assert.equal(JSON.stringify(engine.getRun(first.id)),original,'original history and receipts unchanged');
+ const receipt=JSON.parse(two.nodes.agent.output);assert.ok(receipt.tools.includes('relay_connections'));
+ assert.equal(receipt.results.length,3);assert.ok(receipt.results.every(x=>x.success));assert.match(JSON.stringify(receipt.input),/COMPLETED_RECEIPT/);
+ assert.match(JSON.stringify(receipt.input),/Do not replay completed or uncertain actions/);
+ assert.match(JSON.stringify(receipt.input),/CURRENT TASK STATE AT CAPABILITY REFRESH/);assert.match(JSON.stringify(receipt.input),/uncertain-work/);
+ assert.deepEqual((await tasks.get(one.taskId)).externalActions,savedEffects);assert.deepEqual((await tasks.get(one.taskId)).checkpoint,savedCheckpoint);assert.match(JSON.stringify(receipt.input),/Inspect uncertain-work before any repeat/);
+ assert.deepEqual(calls,[{id:'shared-fixture',name:'verify_fixture',args:{label:'only-new-request'}}]);
+ assert.equal(engine.continueRun(first.id,request).id,next.id);assert.equal(calls.length,1);
+ const third=engine.continueRun(next.id,{nodeId:'agent',message:'Just report status'}),three=await settled(third.id);
+ assert.equal(three.status,'completed',three.error);assert.equal(three.nodes.agent.threadId,two.nodes.agent.threadId);assert.equal(three.modelHandoff,undefined);
+ assert.equal(calls.length,1);assert.deepEqual((await wire()).filter(x=>['thread/start','thread/resume'].includes(x.method)).map(x=>x.method),['thread/start','thread/start','thread/resume']);
 });

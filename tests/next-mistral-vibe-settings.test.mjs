@@ -28,14 +28,14 @@ function fixture(t,{initial=status(native()),hook}={}){
 test('native Mistral account settings are separate from optional API keys and opening them is read-only',async t=>{
   const f=fixture(t);await settle();
   const card=f.$('#next-mistral-vibe'),apis=f.$('#next-connect-another-endpoint');
-  assert.equal(card.querySelector('h2').textContent,'Mistral Vibe Code');
-  assert.match(card.textContent,/native account connection is separate from Mistral API keys/);
+  assert.equal(card.querySelector('summary').textContent,'Optional Mistral account');assert.equal(card.open,false);
+  assert.match(card.textContent,/separate from Mistral API keys/);
   assert.equal(card.querySelector('input'),null);assert.equal(card.querySelector('a'),null);
   assert.match(apis.querySelector('summary').textContent,/Optional API connections/);
   assert.equal(apis.contains(card),false);assert.equal(f.$('#next-mistral-vibe-login').disabled,false);
   assert.match(f.$('#next-mistral-vibe-status').textContent,/Sign in to your Mistral account/);
   assert.equal(f.$('#next-mistral-vibe-catalog').hidden,true);assert.deepEqual(f.writes(),[]);
-  f.panel.focusProvider('mistral-vibe');assert.equal(f.document.activeElement,card);
+  f.panel.focusProvider('mistral-vibe');assert.equal(f.document.activeElement,card);assert.equal(card.open,true);
   f.panel.leave();f.panel.enter();await settle();assert.equal(f.$('#fixture-api-draft').value,'Keep my API draft');
   assert.equal(f.lifecycle.entered,2);assert.equal(f.lifecycle.left,1);assert.deepEqual(f.writes(),[]);
 });

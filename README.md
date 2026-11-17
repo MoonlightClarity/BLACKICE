@@ -67,15 +67,10 @@ For the verified local setup path, see the [ChatGPT connector guide](CHATGPT-CON
 
 **Codex and hosted models.** For native inference, install and sign in with the [Codex CLI](https://github.com/openai/codex) separately from BLACKICE. Check **Settings → Models → Codex subscription** and choose the exact model for a chat or set a default in **Settings → General**. Saved conversations retain their original model/provider identity. Native Codex uses your account's access and quotas; optional hosted API connections use the provider's API address, model ID and required credentials. A model listed as free or accessible today may still have limits, and **some providers charge for API calls**. BLACKICE does not supply paid credits or guarantee third-party endpoint compatibility.
 
-**Local models.** The integration source has a **Settings → Models → Local models** panel for separately installed **Ollama**, **LM Studio**, and **llama.cpp** services. These runtimes and model weights are **not bundled**. Start the chosen local runtime and obtain compatible weights, then refresh its model list and load/add the model to BLACKICE. Tool calling, context size, GPU support, and usable performance depend on the specific server, model, and hardware. The setup below covers the basic server requirement; additional runtime instructions depend on the service and build you install.
+**Local models.** Settings → Models → Local models supports the included Windows x64 llama.cpp runtime and separately installed Ollama or LM Studio services. For llama.cpp, choose an existing GGUF file, name it, and select **Save & load model**. GGUF weights are not bundled or automatically downloaded. The pinned runtime probes Vulkan and falls back to an independent CPU build; actual status, model support and performance depend on the hardware and model.
 
-**llama.cpp specifically.** The integration candidate can discover archives from the [official llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases); that is a **download helper**, not proof that a server was installed, started, loaded, or accelerated on the GPU. Extract a compatible runtime with any required matching libraries, obtain GGUF model weights, and start an actual server, for example:
+**Advanced llama.cpp setups.** Existing custom executables and external servers remain supported. Saving a new model catalog restarts only an idle BLACKICE-owned router; active work reports a retryable deferral rather than being interrupted. See [local models](docs/local-models.md) and [prior runtime validation plan](docs/RELEASE-2.39.102-VERIFICATION.md). This source preparation does not establish that an installed version contains the bundle.
 
-```powershell
-llama-server -m "C:\Models\example.gguf" --host 127.0.0.1 --port 8080
-```
-
-Then choose **llama.cpp 1.0** in **Local models**, refresh, and add the discovered loaded model. Context and CPU/GPU placement are configured at server startup; check the server's observed status and logs before claiming GPU use. On-demand BLACKICE-owned launcher settings are **integration-candidate functionality**, not a promise for the current installer.
 
 ## A browser the user and agent can work in
 
@@ -179,7 +174,7 @@ The aim is to reduce supervision while making results easier to verify. Reliabil
 
 ## Getting started
 
-1. **Install on 64-bit Windows.** Open the [published Windows releases](https://github.com/MoonlightClarity/BLACKICE/releases), read the release notes and installer/checksum information, run the appropriate `Blackice-<version>-Setup.exe`, and launch BLACKICE from its shortcut. The installer bundles the desktop application, **not** your model account, cloud API quota, model weights, or local model servers.
+1. **Install on 64-bit Windows.** Open the [published Windows releases](https://github.com/MoonlightClarity/BLACKICE/releases), read the release notes and installer/checksum information, run the appropriate `Blackice-<version>-Setup.exe`, and launch BLACKICE from its shortcut. The Windows x64 installer bundles the desktop application and a pinned llama.cpp runtime. It does **not** bundle your model account, cloud API quota, model weights, or separate Ollama/LM Studio services.
 2. **Connect a model.** For the supported native route, install and sign in to the [Codex CLI](https://github.com/openai/codex) separately. Check **Settings → Models → Codex subscription** and choose an available model in **Settings → General** or Chat. If you prefer an optional API or local endpoint, configure and verify it deliberately in **Settings → Models**.
 3. **Choose the workspace.** In **Settings → General**, select a working folder and start **Chat**. Supply any relevant files and constraints. For ChatGPT using BLACKICE directly, follow the separate [connector setup](CHATGPT-CONNECTOR.md), which may require Tailscale and an authorized MCP connection.
 4. **Choose the amount of reasoning.** The post-integration candidate places the eight Planning switches under **Chat → Planning → Modules** and a separate **Directory** switch beside the composer; both start Off unless you opt in. Verify these controls against the release you installed.

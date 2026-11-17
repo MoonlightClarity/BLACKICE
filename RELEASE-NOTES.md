@@ -1,9 +1,23 @@
 # BLACKICE release notes index
 
-> **Status: Current source index, not an installer receipt.** The repository's package version is **2.39.98**. Start with the [2.39.98 source release note](RELEASE-NOTES-2.39.98.md), then verify the separately published [Windows releases](https://github.com/MoonlightClarity/BLACKICE/releases) and your installed version. Source tests, candidate checks, public uploads, and local installation are different states.
+> **Status: Proposed 2.39.106 integrated candidate source, not an installer or publication receipt.** Package version is **2.39.106**. Start with the [2.39.106 candidate notes](RELEASE-NOTES-2.39.106.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
 
+- [2.39.106](RELEASE-NOTES-2.39.106.md) - browser wait compatibility and targeted outcome-review evidence
+
+- [2.39.105](RELEASE-NOTES-2.39.105.md) - Swarm lifecycle, nested chats, shared connections and browser continuity candidate
+
+- [2.39.104](RELEASE-NOTES-2.39.104.md) - integrated browser and startup candidate
+
+- [2.39.103](RELEASE-NOTES-2.39.103.md) - startup recovery source
+
+- [2.39.102](RELEASE-NOTES-2.39.102.md) - proposed source
+
+- [2.39.101](RELEASE-NOTES-2.39.101.md) - prior source notes
+
+- [2.39.100](RELEASE-NOTES-2.39.100.md) - prior source notes; installed and draft artifacts tracked separately
+- [2.39.99](RELEASE-NOTES-2.39.99.md) — earlier separate candidate
 - [2.39.98](RELEASE-NOTES-2.39.98.md)
 - [2.39.97](RELEASE-NOTES-2.39.97.md)
 - [2.39.96](RELEASE-NOTES-2.39.96.md)

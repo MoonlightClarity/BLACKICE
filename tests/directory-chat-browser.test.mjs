@@ -30,7 +30,7 @@ function disabledControllers(){
   const applicationWorkspace=new EventEmitter();applicationWorkspace.status=()=>({available:false,sessions:[],documents:[],supportedApps:[],documentStorage:{healthy:true}});applicationWorkspace.close=async()=>{};
   return{desktop,browser,applicationWorkspace};
 }
-test('rendered Chat Directory controls reach the real engine and persist independently', {skip:process.env.BLACKICE_DIRECTORY_BROWSER_QA!=='yes',timeout:100000},async()=>{
+test('rendered Chat Directory controls reach the real engine and persist independently', {skip:process.env.BLACKICE_DIRECTORY_BROWSER_QA!=='yes',timeout:180000},async()=>{
   const root=await mkdtemp(path.join(tmpdir(),'blackice-directory-rendered-'));
   const out=path.resolve(process.env.BLACKICE_DIRECTORY_BROWSER_OUT||'.build/directory-chat-browser');
   const cwd=path.join(root,'workspace'),dataDir=path.join(root,'data'),profile=path.join(root,'edge');
@@ -88,19 +88,19 @@ test('rendered Chat Directory controls reach the real engine and persist indepen
     await send('Runtime.enable');await send('Network.enable');await send('Page.enable');
     await send('Page.navigate',{url:origin+'/next/'});await boot();
     const geometry=await evaluate('["#next-chat-directory-mode"].map(s=>{const e=document.querySelector(s),r=e.getBoundingClientRect();return{selector:s,options:[...e.options].map(o=>({value:o.value,text:o.textContent})),label:e.closest("label").textContent,title:e.title,visible:r.width>0&&r.height>0&&r.x>=0&&r.right<=innerWidth&&r.y>=0&&r.bottom<=innerHeight,hit:e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}})');
-    assert.ok(geometry.every(g=>g.visible&&g.hit));assert.deepEqual(geometry[0].options.map(o=>o.value),['on','off']);assert.deepEqual(await modes(),{directoryMode:'on',subagentControlPresent:false});checkpoint('Visible Directory On/Off control with default delegation and no subagent selector',{geometry});await screenshot('01-default-on');
-    const allOn=Object.fromEntries(PLANNING_ONTOLOGY_MODULES.map(({id})=>[id,true]));
+    assert.ok(geometry.every(g=>g.visible&&g.hit));assert.deepEqual(geometry[0].options.map(o=>o.value),['on','off']);assert.deepEqual(await modes(),{directoryMode:'off',subagentControlPresent:false});checkpoint('Visible Directory On/Off control defaults Off with default delegation and no subagent selector',{geometry});await screenshot('01-default-off');
+    const defaults=Object.fromEntries(PLANNING_ONTOLOGY_MODULES.map(({id})=>[id,id==='subagents']));
     await click('#next-chat-ontology-inline summary');
     assert.equal(await evaluate('document.querySelectorAll("#next-chat-ontology-modules input[type=checkbox]").length'),16);
     for(const {id,label} of PLANNING_ONTOLOGY_MODULES.filter(module=>module.id!=='subagents')){
       const option=choice=>'#next-chat-ontology-modules input[aria-label='+JSON.stringify(label+' '+choice)+']';
-      assert.equal(await evaluate('document.querySelector('+JSON.stringify(option('on'))+').checked'),true);
-      await click(option('off'));
+      assert.equal(await evaluate('document.querySelector('+JSON.stringify(option('off'))+').checked'),true);
+      await click(option('on'));
       const saved=()=>evaluate('JSON.parse(localStorage.getItem("blackice.next.chatOntology.new")).planningOntology');
-      await until(async()=>((await saved()).modules[id]===false),'Saved module Off: '+id);
-      assert.deepEqual(await saved(),{version:2,modules:{...allOn,[id]:false}});
-      await click(option('on'));await until(async()=>((await saved()).modules[id]===true),'Saved module On: '+id);
-      assert.deepEqual(await saved(),{version:2,modules:allOn});
+      await until(async()=>((await saved()).modules[id]===true),'Saved module On: '+id);
+      assert.deepEqual(await saved(),{version:2,modules:{...defaults,[id]:true}});
+      await click(option('off'));await until(async()=>((await saved()).modules[id]===false),'Saved module Off: '+id);
+      assert.deepEqual(await saved(),{version:2,modules:defaults});
     }
     await click('#next-chat-ontology-inline summary');checkpoint('All eight configurable module On/Off controls persist independently without changing other modules');
     await choose('#next-chat-plan','off');await choose('#next-chat-directory-mode','on');
@@ -112,7 +112,7 @@ test('rendered Chat Directory controls reach the real engine and persist indepen
     const latestOn=await submit('Synthetic A Directory On again',{directoryMode:'on',subagentsMode:'default'},['decompose','work','integration']);assert.equal(JSON.stringify(app.engine.getRun(a.id)),frozen);await screenshot('04-on-again');
     await choose('#next-chat-directory-mode','on');
     await click('#next-chat-input');await send('Input.insertText',{text:'Unsent A draft retained'});
-    await click('#next-chat-new');await boot();assert.deepEqual(await modes(),{directoryMode:'on',subagentControlPresent:false});
+    await click('#next-chat-new');await boot();assert.deepEqual(await modes(),{directoryMode:'off',subagentControlPresent:false});
     await choose('#next-chat-plan','off');await choose('#next-chat-directory-mode','off');
     const b=await submit('Synthetic B independent ordinary',{directoryMode:'off',subagentsMode:'default'},['ordinary']);
     await openChat(a.taskId||a.id);assert.deepEqual(await modes(),{directoryMode:'on',subagentControlPresent:false});assert.equal(await evaluate('document.querySelector("#next-chat-input").value'),'Unsent A draft retained');

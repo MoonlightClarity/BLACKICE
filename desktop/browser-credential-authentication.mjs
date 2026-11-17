@@ -13,14 +13,8 @@ export function credentialAuthenticationForm(key, args, dispatch = false) {
     const method = (submit.hasAttribute('formmethod') ? submit.formMethod : form.method).toUpperCase();
     const target = submit.hasAttribute('formtarget') ? submit.formTarget : form.target;
     if (action.origin !== args.origin || action.protocol !== 'https:' || action.username || action.password || method !== 'POST' || !['','_self'].includes(target)) return { valid: false };
-    // This first supported shape is solely credentials. Additional visible choices
-    // or commitments require a distinct reviewed operation, not an auth shortcut.
-    for (const field of form.elements) {
-      if (fields.includes(field) || field === submit || field.disabled || field.matches(':disabled') || ['submit','button','reset','hidden'].includes(field.type)) continue;
-      return { valid: false };
-    }
-    if (args.intent === 'login' && (args.confirmationRef || password.autocomplete !== 'current-password')) return { valid: false };
-    if (args.intent === 'signup' && password.autocomplete !== 'new-password') return { valid: false };
+    // Additional fields and autocomplete hints do not define authorization.
+    // Preserve their existing state; normal browser validation still applies.
     state.authenticationForms ||= new Map();
     const prior = state.authenticationForms.get(args.requestId);
     const binding = { form, submit, fields, action: action.href, method, target };

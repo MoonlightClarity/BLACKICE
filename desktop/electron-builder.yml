@@ -3,6 +3,11 @@ productName: BLACKICE
 copyright: Copyright 2026 BLACKICE
 asar: false
 npmRebuild: false
+extraResources:
+  - from: .build/llama.cpp
+    to: llama.cpp
+    filter:
+      - "**/*"
 toolsets:
   nsis: "1.2.1"
 directories:
@@ -34,6 +39,7 @@ files:
   - desktop/**/*.cs
   - desktop/**/*.ps1
   - desktop/browser-compatibility/**/*
+  - desktop/password-manager/**/*
   - '!desktop/build-icon.mjs'
   - CHAT-MODE.md
   - RELEASE-NOTES-2.31.0.md
@@ -86,7 +92,10 @@ files:
   - RELEASE-NOTES-2.39.26.md
   - RELEASE-NOTES-2.39.27.md
   - RELEASE-NOTES-2.39.97.md
-  - RELEASE-NOTES-2.39.98.md
+  - RELEASE-NOTES-2.39.103.md
+  - RELEASE-NOTES-2.39.104.md
+  - RELEASE-NOTES-2.39.105.md
+  - RELEASE-NOTES-2.39.106.md
   - docs/GOAL-MODE.md
   - PLANNING-ORGANIZATION.md
   - REMOTE-ACCESS.md

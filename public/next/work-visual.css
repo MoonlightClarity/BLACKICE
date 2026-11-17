@@ -531,3 +531,11 @@
 .next-planning-workspace .next-plan-criteria>p{
   line-height:1.45
 }
+
+/* Direct official release download; metadata discovery stays in Advanced. */
+.next-llama-releases-primary{align-self:flex-start;display:inline-flex;align-items:center;justify-content:center;min-height:40px;max-width:100%;padding:9px 14px;border:1px solid var(--next-primary-border,var(--line));border-radius:6px;text-align:center;text-decoration:none;overflow-wrap:anywhere}
+.next-llama-releases-primary:hover{background:var(--next-primary-hover-background,var(--raised));border-color:var(--next-primary-hover-border,var(--line));color:var(--next-primary-foreground)}
+.next-llama-releases-primary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.next-llama-download-discovery>.next-stack{margin-top:12px}
+.next-task-job-title{font-size:15px;line-height:1.4;margin:0;min-width:0;overflow-wrap:anywhere}
+@media(max-width:620px){.next-llama-releases-primary{align-self:stretch}}

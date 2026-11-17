@@ -1,0 +1,33 @@
+﻿import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createKnowledgeToolHandler,KNOWLEDGE_TOOLS} from '../lib/knowledge.mjs';
+import {directoryUserHistoryFor} from '../lib/shadowdancer-engine.mjs';
+const decode=r=>JSON.parse(r.contentItems.find(x=>x.type==='inputText').text);
+const cwd=process.cwd();
+const old={id:'old-six-am',taskId:'old-six-am',cwd,createdAt:'2026-11-15T04:00:00Z',status:'failed',workflowName:'Apply for jobs for me until 6 AM EST.',input:'Resume autonomous execution: Apply for jobs for me until 6 AM EST. Preserve original scope.',taskState:{taskId:'old-six-am',revision:1,goal:'Apply for jobs for me until 6 AM EST.'},events:[{at:'2026-11-15T04:01:00Z',data:{type:'tool.result',tool:'relay_workspace',action:'read',callId:'contact-receipt',success:true,text:'Candidate contact phone 5550100; resume located.'}}]};
+const current={id:'current-three',taskId:'current-three',cwd,createdAt:'2026-11-16T20:00:00Z',input:'Apply to jobs for me. Stop at 3 jobs.',events:[]};
+const call=(action,args={})=>({name:'relay_history',arguments:{action,...args}});
+test('old deadline remains attributed history in search and read without changing current Directory authority',async()=>{
+ const original=JSON.stringify(old),handler=createKnowledgeToolHandler({cwd,runId:current.id,getRuns:()=>[current,old]});
+ const result=decode(await handler(call('search',{query:'contact phone resume'})));
+ assert.equal(result.results.length,1);const row=result.results[0];
+ assert.equal(row.recordType,'historical-run');assert.equal(row.authority,'historical-data-only');assert.equal(row.historicalLabel,'Previous task');
+ assert.equal(row.sourceRunId,old.id);assert.equal(row.sourceCreatedAt,old.createdAt);assert.equal(row.workflowName,old.workflowName);
+ assert.match(row.authorityNote,/deadlines.*source run/);assert.match(row.authorityNote,/does not reactivate/);
+ assert.equal(row.matchedReceipt.callId,'contact-receipt');assert.match(row.excerpt,/5550100/);
+ assert.equal(row.input,undefined);assert.deepEqual(row.omittedPreviewFields,['input']);
+ const full=decode(await handler(call('read',{id:old.id,query:'contact phone resume'}))).run;
+ assert.equal(full.input,old.input);assert.equal(full.taskGoal.text,old.taskState.goal);assert.equal(full.authority,'historical-data-only');
+ assert.ok(full.toolReceipts.some(r=>r.callId==='contact-receipt'));
+ assert.equal(JSON.stringify(old),original,'retrieval preserves original evidence');
+ const authority=directoryUserHistoryFor(current,[old,current]);assert.deepEqual(authority.map(r=>r.text),[current.input]);
+ const savedPacket=JSON.parse(JSON.stringify({objective:current.input,history:result}));
+ assert.equal(savedPacket.objective,current.input);assert.equal(savedPacket.history.results[0].authority,'historical-data-only');
+});
+test('historical goal-only match is still discoverable with its boundary and original text',async()=>{
+ const handler=createKnowledgeToolHandler({cwd,runId:current.id,getRuns:()=>[current,{...old,events:[]}]});
+ const result=decode(await handler(call('search',{query:'6 AM EST'})));
+ assert.equal(result.results[0].input,old.input);assert.equal(result.results[0].sourceRunId,old.id);
+ assert.equal(result.results[0].authority,'historical-data-only');assert.match(result.results[0].excerpt,/6 AM EST/);
+ assert.match(KNOWLEDGE_TOOLS.find(t=>t.name==='relay_history').description,/Retrieval never reactivates/);
+});

@@ -57,7 +57,7 @@ async function fixture({pauseModule,apiResponse,desktop=true}={}){
     renderHeader=()=>{};renderGraph=()=>{};renderInspector=()=>{};markDirty=()=>{state.dirty=true;};saveWorkflow=()=>__effects.push('save');showRun=()=>__effects.push('run');restoreHistory=direction=>__effects.push(direction);toast=(message,error)=>__messages.push({message,error});
     missionUI={getDraft:()=>__draft,getSelection:()=>null,capturePromptDraft:()=>({...__draft}),applyPromptDraft(capture,text){if(capture.task!==__draft.task)return{applied:false};__draft.task=text;return{applied:true};},focus(){document.activeElement=document.querySelector('#mission-task');__effects.push('chat-focus:'+state.screen);},update(){},submitFocused(){__effects.push('chat-submit');}};configureUI={update(){},draft:__settingsDraft};observeUI={update(){},leave(){},enter(){}};
     ${clickRegistration}
-    globalThis.app={state,mountConfigure,mountObserve,showChatGPTConnectorSettings,toast:renderToast,handleGlobalKey,updateSkipLink,syncWorkflowView,ensureWorkflowView,applyView,fit,showModal,closeModal,showPlanning,showTaskNotes,showMission,showObserve,showConfigure,showWorkflow,selectWorkspaceMode,handleWorkspaceModeKey,renderMode,showLearning,showEmailWorkspace,showIdentity,showToolConnections,showFilePatches,showKnowledge,showConnections,showBrowserWorkspace,showProjects,showInbox,showOperations,showSchedule,showSwarm,showDeployOperation};
+    globalThis.app={state,mountConfigure,mountObserve,showChatGPTConnectorSettings,toast:renderToast,handleGlobalKey,updateSkipLink,syncWorkflowView,ensureWorkflowView,applyView,fit,showModal,closeModal,showPlanning,showTaskNotes,showMission,showObserve,showConfigure,showWorkflow,selectWorkspaceMode,handleWorkspaceModeKey,renderMode,showLearning,showIdentity,showToolConnections,showFilePatches,showKnowledge,showConnections,showBrowserWorkspace,showProjects,showInbox,showOperations,showSchedule,showSwarm,showDeployOperation};
   })();`);
   await vm.runInContext(adapted,context);
   const app=context.app;app.state.workflow={id:'draft',name:'Unfinished workflow',nodes:[],edges:[],settings:{cwd:'C:\\fixture'}};app.state.dirty=false;
@@ -206,7 +206,7 @@ test('an old modal focus callback cannot focus a removed dialog after navigation
   const f=await fixture();f.showModal('learning','<input>');f.selectWorkspaceMode('observe');f.flush();assert.equal(f.state.modal,null);assert.equal(f.document.activeElement.dataset.mode,'observe');
 });
 
-for(const[name,module]of [['showPlanning','planning-workspace-ui'],['showEmailWorkspace','email-ui'],['showLearning','learning-ui'],['showIdentity','identity-ui'],['showToolConnections','tool-connections-ui'],['showFilePatches','file-patches-ui'],['showKnowledge','knowledge-ui'],['showConnections','connections-ui'],['showBrowserWorkspace','browser-ui'],['showProjects','projects-ui'],['showInbox','inbox-ui'],['showOperations','advanced-ui'],['showSchedule','advanced-ui'],['showSwarm','advanced-ui'],['showDeployOperation','advanced-ui']])test(`a delayed ${name} import cannot reopen over a newly selected workspace`,async()=>{
+for(const[name,module]of [['showPlanning','planning-workspace-ui'],['showLearning','learning-ui'],['showIdentity','identity-ui'],['showToolConnections','tool-connections-ui'],['showFilePatches','file-patches-ui'],['showKnowledge','knowledge-ui'],['showConnections','connections-ui'],['showBrowserWorkspace','browser-ui'],['showProjects','projects-ui'],['showInbox','inbox-ui'],['showOperations','advanced-ui'],['showSchedule','advanced-ui'],['showSwarm','advanced-ui'],['showDeployOperation','advanced-ui']])test(`a delayed ${name} import cannot reopen over a newly selected workspace`,async()=>{
   const f=await fixture({pauseModule:`/${module}.mjs`});f.showConfigure();const opening=f[name]();await turn();f.selectWorkspaceMode('view');f.release();await opening;f.flush();assert.equal(f.state.screen,'mission');assert.equal(f.state.modal,null);assert.equal(f.mount.innerHTML,'');assert.deepEqual(f.opened,[]);assert.deepEqual(f.messages,[]);
 });
 
@@ -223,8 +223,8 @@ test('workspace tab arrow keys wrap and Home/End activate a single reachable tab
   key('view','ArrowLeft');assert.equal(f.state.screen,'configure');key('configure','ArrowRight');assert.equal(f.state.screen,'mission');key('view','End');assert.equal(f.state.screen,'configure');key('configure','Home');assert.equal(f.state.screen,'mission');assert.equal(prevented,4);assert.deepEqual(f.tabs.map(tab=>tab.tabIndex),[0,-1,-1,-1,-1]);
 });
 
-test('leaving Email cancels its pending requests while preserving the original chat draft',async()=>{
-  const f=await fixture();await f.showEmailWorkspace();assert.equal(f.state.modal,'email');f.selectWorkspaceMode('view');f.flush();assert.equal(f.state.modal,null);assert.deepEqual(f.cancelled,['email']);assert.equal(f.draft.task,'Keep my unsent task');assert.equal(f.document.activeElement.dataset.mode,'view');
+test('leaving Browser closes its modal while preserving the original chat draft',async()=>{
+  const f=await fixture();await f.showBrowserWorkspace();assert.equal(f.state.modal,'browser');f.selectWorkspaceMode('view');f.flush();assert.equal(f.state.modal,null);assert.equal(f.draft.task,'Keep my unsent task');assert.equal(f.document.activeElement.dataset.mode,'view');
 });
 
 

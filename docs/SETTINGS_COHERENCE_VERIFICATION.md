@@ -1,0 +1,11 @@
+# Settings coherence verification
+
+Base: 790e0a062987fc584d2257d260817c7a6a2a6eab (.100).
+
+UI-only simplification: six primary Settings destinations; app connections grouped by host application; observable behavior/profile language; response defaults with advanced task settings collapsed; simultaneous-task limit and Troubleshooting collapsed; review entry only when pending/approved records exist; interrupted tool results moved from Models to Troubleshooting; optional Mistral account collapsed and expanded by an explicit setup link. Existing API routes, persisted values, model wiring, exact-action review and no-replay behavior remain intact.
+
+Verification: 99 affected unit/integration tests passed. Disposable, hidden Electron fixture rendered actual source at 1100 and390 pixels, asserted no horizontal document overflow and no settings mutations. Ten PNGs and result.json saved under evidence/settings-coherence in the isolated checkout. Final temporary profile removed after renderer exit. Model screenshots use the base .100 local-model UI, not the separate forthcoming bundled-llama patch. App connector fixture deliberately returns an unavailable endpoint; screenshots do not prove external account connectivity. No live app or user settings were changed. Full aggregate suite and integrated installed-app acceptance remain release-integration work.
+
+Run tests with node --test tests/next-settings-coherence.test.mjs tests/next-settings-model.test.mjs tests/next-settings-identity.test.mjs tests/next-settings-restart.test.mjs tests/next-settings-providers.test.mjs tests/next-settings-providers-integration.test.mjs tests/next-mistral-vibe-settings.test.mjs tests/codex-native-write-recovery.test.mjs tests/native-write-recovery-boundary.test.mjs.
+
+Renderer: run tests/settings-coherence-visual.cjs using the existing official Electron executable, with an absolute entry path and explicit checkout working directory, hidden. It creates only synthetic fixture stores and a dedicated temporary profile. Remove the exact profile named in evidence/settings-coherence/result.json after Electron exits, verifying it is inside the OS temporary directory and has the blackice-settings-coherence- prefix.

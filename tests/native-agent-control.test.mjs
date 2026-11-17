@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {NATIVE_AGENT_TOOL, createNativeAgentToolHandler} from '../lib/native-agent-control.mjs';
+import {NATIVE_AGENT_TOOL,NATIVE_AGENT_V1_TOOL, createNativeAgentToolHandler} from '../lib/native-agent-control.mjs';
 
 const tool = (handler, args) => handler({name:NATIVE_AGENT_TOOL.name,arguments:args})
   .then(value => JSON.parse(value.contentItems[0].text));
@@ -22,6 +22,7 @@ function harness() {
   let writes = 0, failSteer = false;
   const engine = {
     runs,
+    autonomy:{policyForRun:()=>null,get:async()=>null},
     get writes(){return writes;},
     startRun(input) {
       starts.push(input);
@@ -77,7 +78,8 @@ test('internal autonomous start inherits pinned model, uses existing engine, and
   assert.equal(started.completed,false);
   assert.equal(started.autonomous,true);
   assert.equal(h.starts[0].workflow.nodes.find(node=>node.type==='agent').model,'codex-model');
-  assert.deepEqual(h.starts[0].input.goal,{objective:'Audit a workspace',maxTurns:null});
+  assert.equal(h.starts[0].input.goal,undefined);
+  assert.deepEqual(h.engine.runs.get(started.run.runId).autonomyRequest.modelAllowlist,['codex-model']);
   assert.equal(h.engine.runs.get('external'),h.external);
   assert.deepEqual(h.engine.runs.get(started.run.runId).nativeController,
     {type:'native-agent',runId:'parent',nodeId:'agent',requestId:'mission-1'});
@@ -160,4 +162,50 @@ test('native steering preserves queued receipt without claiming delivery or repl
   assert.equal(replay.replayed,true);
   assert.deepEqual(replay.delivery,first.delivery);
   assert.equal(calls,1);
+});
+test('autonomy scope limits unrelated coordination but BLACKICE scope exposes it',async()=>{
+  const h=harness();let scope='conversation';
+  h.engine.autonomy.policyForRun=()=>({enabled:true,scope,modelAllowlist:['codex-model']});
+  assert.equal((await tool(h.handler,{action:'list',scope:'all'})).total,1);
+  await assert.rejects(()=>tool(h.handler,{action:'get',runId:'external'}),e=>e.code==='NATIVE_AGENT_SCOPE');
+  scope='blackice';
+  assert.equal((await tool(h.handler,{action:'list',scope:'all'})).total,2);
+  assert.equal((await tool(h.handler,{action:'get',runId:'external'})).run.runId,'external');
+});
+test('native child inherits model policy even when continuation is manual',async()=>{
+  const h=harness();
+  h.engine.autonomy.policyForRun=()=>({id:'policy',generation:1,enabled:true,scope:'goal',goalId:'bound',modelAllowlist:['codex-model'],calibration:'Save quota'});
+  await assert.rejects(()=>tool(h.handler,{action:'start',requestId:'bad-model',task:'Child',model:'premium'}),e=>e.code==='AUTONOMY_MODEL_NOT_ALLOWED');
+  const result=await tool(h.handler,{action:'start',requestId:'manual-policy',task:'Child'});
+  const seed=h.engine.runs.get(result.run.runId).autonomyRequest;
+  assert.equal(seed.enabled,false);
+  assert.deepEqual(seed.modelAllowlist,['codex-model']);
+  assert.equal(seed.controller.goalId,'bound');
+  assert.equal(h.starts[0].input.nativeAutonomy.enabled,false);
+});
+test('native request identity binds autonomous flag independently from goal objective',async()=>{
+  const h=harness();
+  await tool(h.handler,{action:'start',requestId:'same-request',task:'Child',autonomous:false});
+  await assert.rejects(()=>tool(h.handler,{action:'start',requestId:'same-request',task:'Child',autonomous:true}));
+  const explicit=await tool(h.handler,{action:'start',requestId:'manual-goal',task:'Child',goalObjective:'Outcome',autonomous:false});
+  assert.equal(h.engine.runs.get(explicit.run.runId).autonomyRequest.enabled,false);
+  assert.equal(h.starts.at(-1).input.goal.objective,'Outcome');
+});
+
+test('v1 native schema keeps legacy goal semantics for a pinned session',async()=>{
+  const h=harness();
+  const handler=createNativeAgentToolHandler({engine:h.engine,run:h.parent,nodeId:'agent',schemaVersion:1});
+  const result=await tool(handler,{action:'start',requestId:'legacy-auto',task:'Legacy objective',autonomous:true,maxTurns:2});
+  assert.equal(result.autonomous,true);
+  assert.deepEqual(h.starts[0].input.goal,{objective:'Legacy objective',maxTurns:2});
+  assert.equal(NATIVE_AGENT_V1_TOOL.inputSchema.properties.goalObjective,undefined);
+  assert.match(NATIVE_AGENT_V1_TOOL.inputSchema.properties.autonomous.description,/persistent Goal/);
+});
+test('native stop disables autonomy between settled turns',async()=>{
+  const h=harness();h.external.status='completed';h.external.settled=true;
+  let disabled=false;
+  h.engine.autonomy.raw=()=>({id:'external-policy',revision:3,enabled:true,status:'active'});
+  h.engine.autonomy.control=async(id,body)=>{assert.equal(id,'external');assert.equal(body.action,'disable');disabled=true;};
+  const result=await tool(h.handler,{action:'stop',requestId:'between-turns',runId:'external'});
+  assert.equal(disabled,true);assert.equal(result.autonomyDisabled,true);assert.equal(result.stopRequested,true);
 });

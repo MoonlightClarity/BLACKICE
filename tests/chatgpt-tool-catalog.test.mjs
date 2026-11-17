@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { BROWSER_CLEANUP_PROTOCOL } from '../lib/browser-cleanup-policy.mjs';
+import { legacyBrowserCleanupProtocol, legacyToolCatalogVersion, legacyToolCatalogSha256 } from './fixtures/chatgpt-tool-catalog-legacy-policy.mjs';
 import { createChatGPTToolCatalog } from '../lib/chatgpt-tool-catalog.mjs';
 import { DirectExecutionAPI } from '../lib/direct-execution-api.mjs';
 import { ChatGPTPlanningAPI } from '../lib/chatgpt-planning.mjs';
@@ -19,7 +21,7 @@ const definition = (name, extra = {}) => ({
 const unavailable = () => assert.fail('Discovery must not execute a tool.');
 const provider = tools => ({ tools: () => tools, call: unavailable });
 
-test('the configured catalog retains 31 tools with reviewed authentication, canonical creation, fill and conversation contracts', () => {
+test('the configured catalog retains 34 tools with reviewed authentication, canonical creation, fill and conversation contracts', () => {
   // Bind the reviewed public definitions, including recursive planning,
   // bounded contained diagnostics, exact-identity ownership/debug controls,
   // the cleanup protocol, the explicit relay default for credential fill,
@@ -33,23 +35,85 @@ test('the configured catalog retains 31 tools with reviewed authentication, cano
     desktopRestartTool({ restart: { request: unavailable }, getJob: unavailable }),
     ...createDirectBrowserCredentialTools({ vault: {}, browser: {}, reauthorize: unavailable }),
   ] });
-  const catalog = createChatGPTToolCatalog({ providers: [execution, new ChatGPTPlanningAPI({})], version: '2.33.5' });
+  // Pin the reviewed .100 contract and reconstruct historical contracts below.
+  const catalog = createChatGPTToolCatalog({ providers: [execution, new ChatGPTPlanningAPI({})], version: '2.39.100' });
   assert.deepEqual(catalog.tools().map(tool => tool.name), [
     'blackice_direct_status', 'blackice_list_jobs', 'blackice_get_job', 'blackice_cancel_job',
     'blackice_workspace_read', 'blackice_workspace_write', 'blackice_run_command', 'blackice_browser_read',
     'blackice_browser_action', 'blackice_browser_upload', 'blackice_task_contract', 'blackice_task_context', 'blackice_import_file', 'blackice_connected_browser_read',
     'blackice_connected_browser_action', 'blackice_profile_list', 'blackice_profile_import', 'blackice_profile_connect',
-    'blackice_restart', 'blackice_credentials_list', 'blackice_credentials_generate', 'blackice_credentials_fill', 'blackice_credentials_authenticate',
+    'blackice_restart', 'blackice_credentials_list', 'blackice_credentials_generate', 'blackice_credentials_save', 'blackice_credentials_update', 'blackice_credentials_associate', 'blackice_credentials_fill', 'blackice_credentials_authenticate',
     'blackice_list_plans', 'blackice_get_plan', 'blackice_get_run_result', 'blackice_list_swarm_plans',
     'blackice_get_swarm_plan', 'blackice_get_plan_groups', 'blackice_edit_plan', 'blackice_edit_plan_groups',
   ]);
   assert.deepEqual(catalog.status(), {
-    // Reviewed explicit task/context tools, source binding, receipt alternatives and optional operation scopes.
-    sha256: '6ef69a4088e9cb7df34f62291f92435f82eacc769cf3bf44d669fbf06ec1e224',
-    toolCount: 31,
-    serverVersion: '2.33.5',
+    // A complete reviewed current contract, not an inferred version or reused old SHA.
+    sha256: '8319ea9cb8f5dc9249936ff562d896ed989e22c5f3a3255d13aab4d0d0db3fc8',
+    toolCount: 34,
+    serverVersion: '2.39.100',
   });
-  assert.equal(createHash('sha256').update(JSON.stringify(catalog.tools())).digest('hex'), catalog.status().sha256);
+  const sha=tools=>createHash('sha256').update(JSON.stringify(tools)).digest('hex');
+  const currentTools=catalog.tools();
+  assert.equal(sha(currentTools),catalog.status().sha256);
+  const currentAction=currentTools.find(tool=>tool.name==='blackice_browser_action');
+  assert.ok(currentAction.description.endsWith(BROWSER_CLEANUP_PROTOCOL),'The active contract must carry the reviewed scoped-cleanup protocol.');
+  assert.match(BROWSER_CLEANUP_PROTOCOL,/limited DOM inspection for deliberate per-page manual review/);
+  assert.match(BROWSER_CLEANUP_PROTOCOL,/pending effects/);
+
+
+  // .104 changes exactly the shared task-context description (21 occurrences)
+  // and optional authenticate form description. Keep every historical hash.
+  // Remove only the reviewed SSO action before checking preserved historical contracts.
+  const reviewed100=structuredClone(currentTools.filter(tool=>tool.name!=='blackice_credentials_associate'));
+  const oldContext='Host-issued context for this exact task and authenticated owner. Required to opt this call into protected task execution. Never infer it from the grant or another conversation.';
+  const newContext='Host-issued context for this exact task and authenticated owner. Optional metadata for browser calls; never a prerequisite to browser dispatch. Non-browser adapters may use it for explicit task-scoped execution. Never infer it from the grant or another conversation.';
+  let contextDescriptions=0;
+  const restoreContext=value=>{if(!value||typeof value!=='object')return;for(const [key,entry]of Object.entries(value)){if(key==='taskContext'&&Object.hasOwn(entry,'description')){assert.equal(entry.description,newContext);entry.description=oldContext;contextDescriptions++;}else restoreContext(entry);}};
+  restoreContext(reviewed100);assert.equal(contextDescriptions,21);
+  const reviewedAuthentication=reviewed100.find(tool=>tool.name==='blackice_credentials_authenticate');
+  assert.ok(reviewedAuthentication.description.startsWith('Dispatch one authorized same-origin HTTPS POST login/signup'));
+  reviewedAuthentication.description=reviewedAuthentication.description.replace('Dispatch one authorized same-origin HTTPS POST login/signup','Dispatch one authorized credential-only HTTPS login/signup');
+  assert.equal(sha(reviewed100),'c439ec5da1acd8890fe279f7852dd11c043793d7c1a7c1aa25e9061ea4b41032');
+
+  // Undo exactly the reviewed .100 additions before testing historical hashes.
+  // These literals are the parent da1cb32 contract, not refreshed fingerprints.
+  for (const name of ['blackice_credentials_save', 'blackice_credentials_update']) {
+    const entry = catalog.get(name), tool = entry.definition;
+    assert.deepEqual(entry.requiredScopes, ['read', 'browser:write']);
+    assert.deepEqual(tool.annotations, { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+    assert.equal(tool.inputSchema.additionalProperties, false);
+    assert.deepEqual(tool.inputSchema.required, name.endsWith('_save')
+      ? ['requestId', 'origin', 'password', 'expectedRevision']
+      : ['requestId', 'origin', 'password', 'expectedRevision', 'credentialId', 'revision']);
+    assert.equal(tool.inputSchema.properties.expectedRevision.minimum, 0);
+    assert.equal(tool.inputSchema.properties.password.maxLength, 1024);
+  }
+  const priorTools=structuredClone(reviewed100.filter(tool=>!['blackice_credentials_save','blackice_credentials_update'].includes(tool.name)));
+  const priorAction=priorTools.find(tool=>tool.name==='blackice_browser_action');
+  assert.deepEqual(priorAction.inputSchema.properties.expectedOwnerKey, { type:'string', minLength:1, maxLength:650 });
+  delete priorAction.inputSchema.properties.expectedOwnerKey;
+  assert.equal(priorAction.inputSchema.properties.promptText.description, 'Response to the exact observed JavaScript prompt within the authorized task.');
+  priorAction.inputSchema.properties.promptText.description='Response to an observed ordinary JavaScript prompt. Never supply passwords or authentication secrets.';
+  const currentAccountGuidance='Use ordinary browser controls for authorized account fields, required acknowledgements and submission. The password manager and legacy blackice_credentials_generate/blackice_credentials_fill helpers are optional continuity tools, not prerequisites to browser input.';
+  assert.ok(priorAction.description.includes(currentAccountGuidance));
+  priorAction.description=priorAction.description.replace(currentAccountGuidance,'Use blackice_credentials_generate and blackice_credentials_fill for account passwords; never put plaintext passwords or authentication secrets in generic input or promptText.');
+  const priorAuthentication=priorTools.find(tool=>tool.name==='blackice_credentials_authenticate');
+  assert.ok(priorAuthentication.description.includes('The helper result returns no password text.'));
+  priorAuthentication.description=priorAuthentication.description.replace('The helper result returns no password text.','Passwords remain secret.');
+  assert.equal(sha(priorTools),'9e67ae699068c08d0d582fd52754d5d642be447f278690e2d61a4a1a9f305bf2');
+
+  // Rebuild ONLY the historical cleanup description from its immutable fixture.
+  const historicalTools=structuredClone(priorTools);
+  const historicalAction=historicalTools.find(tool=>tool.name==='blackice_browser_action');
+  historicalAction.description=historicalAction.description.slice(0,-BROWSER_CLEANUP_PROTOCOL.length)+legacyBrowserCleanupProtocol;
+  const withoutDescription=tools=>tools.map(({description,...unchanged})=>unchanged);
+  assert.deepEqual(withoutDescription(historicalTools),withoutDescription(priorTools));
+  assert.equal(sha(historicalTools),legacyToolCatalogSha256);
+  assert.deepEqual({sha256:sha(historicalTools),toolCount:historicalTools.length,serverVersion:legacyToolCatalogVersion},{
+    sha256:'6ef69a4088e9cb7df34f62291f92435f82eacc769cf3bf44d669fbf06ec1e224',
+    toolCount:31,
+    serverVersion:'2.33.5',
+  });
 
   // Authentication is one reviewed addition; it does not relax the existing
   // fill schema or permit plaintext secrets or caller-supplied authority.
@@ -68,7 +132,7 @@ test('the configured catalog retains 31 tools with reviewed authentication, cano
     additionalProperties: false,
   });
   assert.match(authentication.description, /Reuse the same requestId after uncertainty; dispatch is not authentication proof/);
-  const previousTools = structuredClone(catalog.tools().filter(tool => tool.name !== authentication.name));
+  const previousTools = structuredClone(historicalTools.filter(tool => tool.name !== authentication.name));
   assert.equal(previousTools.length, 30);
   // Verify and undo only the intentional archive/Trash cleanup protocol change
   // before comparing the prior reviewed complete catalog and subsequent deltas.
@@ -149,7 +213,9 @@ test('the configured catalog retains 31 tools with reviewed authentication, cano
   assert.equal(read.inputSchema.properties.expectedUrl,undefined);
   assert.equal(read.inputSchema.properties.expectedDocumentId,undefined);
   const browserAction=catalog.tools().find(tool=>tool.name==='blackice_browser_action');
-  assert.match(browserAction.description,/Preserve personal\/pre-existing tabs, the human calling chat tab/);
+  assert.match(browserAction.description,/Keep personal\/pre-existing pages, user-owned or transferred tabs, the calling coordination chat/);
+  assert.match(browserAction.description,/agent cleanup needs independent evidence that the page's work is finished/);
+  assert.match(browserAction.description,/limited DOM inspection for deliberate per-page manual review/);
   const action=browserAction.inputSchema;
   for(const name of ['take_ownership','transfer_ownership','debug_reset','stop'])assert.ok(action.properties.action.enum.includes(name));
   assert.deepEqual(action.properties.destination.enum,['user','task']);

@@ -24,11 +24,11 @@ export function createSubscriptionModelSettings(props, createLegacy) {
   list.append(feedback);
   header.append(list);
 
-  const native=element('section','next-card next-stack');
+  const native=element('details','next-card next-stack');
   native.id='next-mistral-vibe';native.dataset.nativeProvider='mistral-vibe';native.setAttribute('tabindex','-1');
-  const nativeTitle=element('h2','','Mistral Vibe Code');nativeTitle.id='next-mistral-vibe-title';
+  const nativeTitle=element('summary','','Optional Mistral account');nativeTitle.id='next-mistral-vibe-title';
   native.setAttribute('aria-labelledby',nativeTitle.id);
-  native.append(nativeTitle,element('p','next-help','Connect your Mistral account through Mistral Vibe Code. This native account connection is separate from Mistral API keys.'));
+  native.append(nativeTitle,element('p','next-help','Connect through Mistral Vibe Code if you use it. Installation, sign-in and a compatible model are required. This is separate from Mistral API keys.'));
   const nativeStatus=element('p','next-help','Checking Mistral Vibe Code…');nativeStatus.id='next-mistral-vibe-status';nativeStatus.setAttribute('role','status');nativeStatus.setAttribute('aria-live','polite');
   const nativeVersion=element('p','next-help');nativeVersion.id='next-mistral-vibe-version';
   const nativeActions=element('div','next-row'),nativeLogin=button('next-mistral-vibe-login','Sign in to Mistral Vibe Code'),nativeRefresh=button('next-mistral-vibe-refresh','Refresh connection and models');
@@ -129,7 +129,7 @@ export function createSubscriptionModelSettings(props, createLegacy) {
     enter(){if(destroyed||active)return;active=true;local.enter();render();void load();toggle();},
     leave(){active=false;revision++;local.leave();render();if(expanded){legacy.leave?.();expanded=false;}},
     updateStatus,
-    focusProvider(id){if(id==='mistral-vibe'&&!destroyed&&active)native.focus({preventScroll:false});},
+    focusProvider(id){if(id==='mistral-vibe'&&!destroyed&&active){native.open=true;native.focus({preventScroll:false});}},
     updateRuntimeSettings(value){legacy.updateRuntimeSettings?.(value);},
     destroy(){if(destroyed)return;this.leave();destroyed=true;local.destroy();legacy.destroy?.();advanced.removeEventListener('toggle',toggle);mount.replaceChildren();}
   };

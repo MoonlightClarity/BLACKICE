@@ -13,11 +13,11 @@ const driver = id => ({
   async perform(args) { this.calls.push(args); return { tabId: id, text: 'Observed page' }; }, async close() {},
 });
 
-test('agent browser keeps routing and returned tabs on Relay after a manual Firefox selection', async t => {
+test('agent browser and manual controls use Relay with no retired Firefox routing', async t => {
   const relay = driver('relay-tab'), firefox = driver('native-tab'), router = new BrowserRouter({ independent: relay, firefox });
   const workspace = new BrowserWorkspace({ driver: router }); t.after(() => workspace.close());
-  await workspace.perform({ action: 'snapshot', tabId: 'firefox:native-tab' }, { source: 'user' });
-  assert.equal(firefox.calls.length, 1, 'the existing manual router remains available');
+  await assert.rejects(workspace.perform({ action: 'snapshot', tabId: 'firefox:native-tab' }, { source: 'user' }), { code: 'BROWSER_TAB_NOT_FOUND' });
+  assert.equal(firefox.calls.length, 0, 'retired adapter is not registered');
   const handler = createBrowserToolHandler({ browser: workspace });
   assert.deepEqual(BROWSER_TOOL.inputSchema.properties.browser.enum, ['relay']);
   const listed = JSON.parse((await handler(browserCall({ action: 'tabs' }))).contentItems[0].text);
@@ -27,34 +27,34 @@ test('agent browser keeps routing and returned tabs on Relay after a manual Fire
   const downloads = JSON.parse((await handler(browserCall({ action: 'downloads' }))).contentItems[0].text);
   assert.deepEqual(downloads.downloads.map(item => item.browser), ['relay']);
   assert.equal((await handler(browserCall({ action: 'snapshot' }))).success, true);
-  assert.equal(relay.calls.length, 1); assert.equal(firefox.calls.length, 1);
+  assert.equal(relay.calls.length, 1); assert.equal(firefox.calls.length, 0);
   for (const args of [{ action: 'open', browser: 'firefox', url: 'https://example.com/' }, { action: 'snapshot', tabId: 'firefox:native-tab' }]) {
     const rejected = await handler(browserCall(args)); assert.equal(rejected.success, false); assert.match(rejected.contentItems[0].text, /External browser interaction is unavailable/);
   }
-  assert.equal(firefox.calls.length, 1, 'stale agent schemas and external tab IDs cannot select Firefox');
+  assert.equal(firefox.calls.length, 0, 'stale agent schemas and external tab IDs cannot select Firefox');
 });
 
-test('manual Firefox selection preserves the actual ordinary Relay target regardless of tab ordering', async t => {
+test('contained selection preserves the actual ordinary target regardless of tab ordering', async t => {
   const relay = driver('ordinary-active'), firefox = driver('native-tab');
   const tabs = [{ tabId: 'human-chat', purpose: 'chat-mode' }, { tabId: 'ordinary-first' }, { tabId: 'ordinary-active' }];
   relay.status = () => ({ available: true, tabs, activeTab: 'ordinary-active' });
   const router = new BrowserRouter({ independent: relay, firefox }), workspace = new BrowserWorkspace({ driver: router }); t.after(() => workspace.close());
-  await workspace.perform({ action: 'snapshot', tabId: 'firefox:native-tab' }, { source: 'user' });
-  assert.equal(router.status().activeTab, 'firefox:native-tab'); assert.equal(router.status().browsers.relay.activeTab, 'ordinary-active');
+  await assert.rejects(workspace.perform({ action: 'snapshot', tabId: 'firefox:native-tab' }, { source: 'user' }), { code: 'BROWSER_TAB_NOT_FOUND' });
+  assert.equal(router.status().activeTab, 'ordinary-active'); assert.equal(router.status().browsers.relay.activeTab, 'ordinary-active');
   const handler = createBrowserToolHandler({ browser: workspace });
   const listed = JSON.parse((await handler(browserCall({ action: 'tabs' }))).contentItems[0].text);
   assert.deepEqual(listed.tabs.map(tab => tab.tabId), ['ordinary-first', 'ordinary-active']);
   assert.equal(listed.activeTab, 'ordinary-active'); assert.equal(listed.browsers.relay.activeTab, 'ordinary-active');
   assert.equal((await handler(browserCall({ action: 'read' }))).success, true);
-  assert.equal(relay.calls[0].tabId, 'ordinary-active'); assert.equal(firefox.calls.length, 1);
+  assert.equal(relay.calls[0].tabId, 'ordinary-active'); assert.equal(firefox.calls.length, 0);
 });
 
-test('manual Firefox selection never substitutes an ordinary tab for the actual reserved Relay selection', async t => {
+test('contained selection never substitutes an ordinary tab for the actual reserved selection', async t => {
   const relay = driver('ordinary-first'), firefox = driver('native-tab');
   const tabs = [{ tabId: 'ordinary-first' }, { tabId: 'human-chat', purpose: 'chat-mode', title: 'PRIVATE_CALLING_CONVERSATION' }];
   let activeTab = 'human-chat'; relay.status = () => ({ available: true, tabs, activeTab });
   const router = new BrowserRouter({ independent: relay, firefox }), workspace = new BrowserWorkspace({ driver: router }); t.after(() => workspace.close());
-  await workspace.perform({ action: 'snapshot', tabId: 'firefox:native-tab' }, { source: 'user' });
+  await assert.rejects(workspace.perform({ action: 'snapshot', tabId: 'firefox:native-tab' }, { source: 'user' }), { code: 'BROWSER_TAB_NOT_FOUND' });
   const handler = createBrowserToolHandler({ browser: workspace });
   let listed = JSON.parse((await handler(browserCall({ action: 'tabs' }))).contentItems[0].text);
   assert.deepEqual(listed.tabs.map(tab => tab.tabId), ['ordinary-first']); assert.equal(listed.activeTab, null); assert.equal(listed.browsers.relay.activeTab, null);
@@ -72,7 +72,7 @@ test('manual Firefox selection never substitutes an ordinary tab for the actual 
 test('Firefox-only readiness cannot advertise or dispatch a contained browser', async t => {
   const firefox = driver('native-tab'), router = new BrowserRouter({ firefox }), workspace = new BrowserWorkspace({ driver: router });
   t.after(() => workspace.close());
-  assert.equal(router.status().available, true, 'manual Firefox remains available');
+  assert.equal(router.status().available, false, 'retired Firefox cannot provide browser availability');
   assert.equal(router.status().contained, false); assert.equal(router.status().containedAvailable, false);
   assert.equal(containedBrowserAvailable(workspace.status()), false);
   const result = await createBrowserToolHandler({ browser: workspace })(browserCall({ action: 'open', url: 'https://example.com/' }));

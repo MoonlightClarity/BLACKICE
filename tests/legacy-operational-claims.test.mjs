@@ -203,7 +203,7 @@ test('opaque command keeps explicit observed destination overlap but cwd alone i
   await assert.rejects(assertNoRetainedEffectConflict(f.store,'new-task',descriptor,{tool:'relay_browser',action:'click'}),{code:'TASK_CONTRACT_EFFECT_UNCERTAIN'});
   await assertNoRetainedEffectConflict(f.store,'new-task',external('https://other.test/apply'),{tool:'relay_browser',action:'click'});
 });
-test('new browser document cannot escape an UNKNOWN destination and reload is not an observation',async t=>{
+test('legacy helper retains UNKNOWN but independent browser reload is not vetoed',async t=>{
   const f=await fixture(t),old=external();
   old.resources=[{key:'tab:old',access:'write'},{key:'form:old-document',access:'write'}];
   await f.save([row(old.resources,{...old,deliveryState:'interrupted',effectState:'unknown'})]);
@@ -213,7 +213,7 @@ test('new browser document cannot escape an UNKNOWN destination and reload is no
   const descriptor={effect:'interact',operationKey:'reload-old-tab',resources:[{key:'tab:old',access:'write'}]};
   const raw=async()=>{dispatched++;return{success:true,contentItems:[]};};raw.describeOperation=async()=>descriptor;
   const result=await f.guard.wrap(raw)({name:'relay_browser',arguments:{action:'reload',tabId:'old'}});
-  assert.equal(code(result),'TASK_CONTRACT_EFFECT_UNCERTAIN');assert.equal(dispatched,0);
+  assert.equal(result.success,true);assert.equal(dispatched,1);
 });
 
 test('a changed early journal during a multi-batch scan is rechecked before admission',async t=>{

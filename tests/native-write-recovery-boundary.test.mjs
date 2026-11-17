@@ -44,7 +44,7 @@ test('operator can identify uncertain calls without rendering markup and sees li
   assert.equal(list.children.length,64);assert.match(list.children[0].textContent,/thread-1; call call-1/);
   assert.match(list.children.at(-1).textContent,/tool <example>.*thread-64; call call-64/);
   assert.equal(list.children.at(-1).children.length,0,'identifiers must remain text');
-  assert.match(dom.mount.textContent,/Showing 2–65 of 65 uncertain deliveries/);
+  assert.match(dom.mount.textContent,/Showing 2–65 of 65 unconfirmed tool results/);
   const buttons=dom.mount.querySelectorAll('button');await buttons[2].dispatch('click',{},true);
   assert.equal(list.children.length,1);assert.match(list.children[0].textContent,/thread-0; call call-0/);
   await buttons[3].dispatch('click',{},true);assert.equal(list.children.length,64);

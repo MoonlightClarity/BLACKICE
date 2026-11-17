@@ -137,3 +137,152 @@ test('separate processes publish one idempotent generation through the on-disk l
   assert.equal(results[0].credentialId, results[1].credentialId); assert.equal(results.filter(value => value.existing).length, 1);
   await assert.rejects(fs.stat(c.vault.store.file + '.lock'), { code: 'ENOENT' });
 });
+
+test('authorized agent save/update preserves existing vault identity, restart and retries', async t => {
+  const c = await fixture(t); let checks = 0;
+  const options = revision => ({ source: 'agent', ownerId: 'tool_owned', expectedRevision: revision, beforeCommit: async () => { checks++; } });
+  const input = { ...request('agent_save'), password: 'Synthetic-Saved-1!' };
+  const saved = await c.vault.save(input, options(0));
+  assert.equal(saved.revision, 1); assert.ok(checks >= 2);
+  assert.equal((await c.vault.save(input, options(0))).existing, true);
+  await assert.rejects(c.vault.save({ ...input, password: 'Different-1!' }, options(1)), { code: 'CREDENTIAL_REQUEST_CONFLICT' });
+  const reopened = await c.open();
+  await reopened.withSecret(ref(saved), row => { assert.equal(row.password, input.password); });
+  const update = { ...input, credentialId: saved.credentialId, revision: 1, requestId: 'agent_update', password: 'Synthetic-Updated-2!' };
+  await assert.rejects(reopened.save(update, options(0)), { code: 'CREDENTIAL_REVISION_CONFLICT' });
+  const changed = await reopened.save(update, options(1));
+  assert.equal(changed.credentialId, saved.credentialId); assert.equal(changed.revision, 2);
+  assert.equal((await reopened.save(update, options(1))).existing, true);
+  await assert.rejects(reopened.save({ ...update, requestId: 'stale_entry' }, options(2)), { code: 'CREDENTIAL_REVISION_CONFLICT' });
+  const final = await c.open(); await final.withSecret(ref(changed), row => { assert.equal(row.password, update.password); });
+});
+test('agent save needs trusted owner and authorization, revoked writes leave store unchanged', async t => {
+  const c = await fixture(t), input = { ...request('agent_authority'), password: 'Synthetic-Only-1!' };
+  for (const options of [{source:'agent'}, {source:'agent',ownerId:'tool_a'}, {source:'agent',beforeCommit:()=>{} }]) {
+    await assert.rejects(c.vault.save(input, {...options,expectedRevision:0}), {code:'CREDENTIAL_SAVE_AUTHORITY'});
+  }
+  let checks=0;
+  await assert.rejects(c.vault.save(input, {source:'agent',ownerId:'tool_a',expectedRevision:0,beforeCommit:()=>{if(++checks>1) throw Error('revoked');}}));
+  assert.equal((await c.vault.status()).revision,0);
+  await assert.rejects(c.vault.importCSV({csv:'url,username,password\nhttps://example.test,u,p',requestId:'import'}, {source:'agent',expectedRevision:0}), {code:'CREDENTIAL_LOCAL_ONLY'});
+});
+
+test('agent password-only update preserves omitted metadata and explicit empty clears it', async t => {
+  const c=await fixture(t), opts=expectedRevision=>({source:'agent',ownerId:'tool_metadata',expectedRevision,beforeCommit:async()=>{}});
+  const saved=await c.vault.save({...request('metadata_create'),label:'Important account',password:'Synthetic-First-1!'},opts(0));
+  const input={origin:saved.origin,credentialId:saved.credentialId,revision:saved.revision,password:'Synthetic-Second-2!',requestId:'metadata_update'};
+  const updated=await c.vault.save(input,opts(1));
+  assert.equal(updated.username,saved.username);assert.equal(updated.label,saved.label);
+  const reopened=await c.open(), replay=await reopened.save(input,opts(1));assert.equal(replay.existing,true);assert.equal(replay.username,saved.username);
+  await reopened.withSecret(ref(updated),value=>{assert.equal(value.username,saved.username);assert.equal(value.password,input.password)});
+  const cleared=await reopened.save({...input,revision:updated.revision,username:'',label:'',requestId:'metadata_clear'},opts(2));
+  assert.equal(cleared.username,'');assert.equal(cleared.label,'');
+});
+
+test('SSO associations bind exact account, persist opaque credentials, and revoke without changing password', async t => {
+  const {vault,open}=await fixture(t), saved=await vault.generate(request()), loginOrigin='https://login.sso.test';
+  const input={...ref(saved),username:saved.username,loginOrigin,operation:'allow',requestId:'associate.1'};
+  const options={source:'agent',ownerId:'owned_task',expectedRevision:1,beforeCommit:async()=>{}};
+  await assert.rejects(vault.withLoginSecret({...ref(saved),origin:loginOrigin},()=>assert.fail()),{code:'CREDENTIAL_ORIGIN_MISMATCH'});
+  for (const extra of [{username:'different'}, {origin:'https://different.test'}]) await assert.rejects(vault.associate({...input,...extra},options),{code:'CREDENTIAL_ACCOUNT_MISMATCH'});
+  await assert.rejects(vault.associate(input,{...options,beforeCommit:undefined}),{code:'CREDENTIAL_ASSOCIATION_AUTHORITY'});
+  await assert.rejects(vault.associate(input,{...options,beforeCommit:()=>{throw Error('revoked')}}),/revoked/);
+  let original;await vault.withSecret(ref(saved),value=>{original=value.password});
+  const linked=await vault.associate(input,options), retry=await vault.associate(input,options);
+  assert.equal(linked.revision,2);assert.equal(retry.existing,true);assert.equal(retry.revision,2);
+  assert.deepEqual(linked.loginOrigins,[loginOrigin]);assert.ok(!JSON.stringify(linked).includes(original));
+  const reopened=await open();assert.deepEqual((await reopened.list({origin:loginOrigin})).map(value=>value.credentialId),[saved.credentialId]);
+  const selection={...ref(linked),origin:loginOrigin};
+  await reopened.withLoginSecret(selection,value=>{assert.equal(value.password,original);assert.equal(value.origin,loginOrigin);assert.equal(value.username,saved.username)});
+  // Export/mirror still cannot silently relocate a credential.
+  await assert.rejects(vault.withSecret(selection,()=>assert.fail()),{code:'CREDENTIAL_ORIGIN_MISMATCH'});
+  await assert.rejects(vault.withLoginSecret({...selection,origin:loginOrigin+'.evil.test'},()=>assert.fail()),{code:'CREDENTIAL_ORIGIN_MISMATCH'});
+  await assert.rejects(vault.withLoginSecret({...selection,revision:1},()=>assert.fail()),{code:'CREDENTIAL_REVISION_CONFLICT'});
+  const removed=await vault.associate({...input,revision:2,operation:'remove',requestId:'remove.1'},{...options,expectedRevision:2});
+  await assert.rejects(vault.withLoginSecret({...ref(removed),origin:loginOrigin},()=>assert.fail()),{code:'CREDENTIAL_ORIGIN_MISMATCH'});
+  await vault.withSecret(ref(removed),value=>{assert.equal(value.password,original)});
+});
+test('SSO fill uses the same opaque account through real browser routing; authentication remains single-dispatch', async t=>{
+  const {BrowserWorkspace}=await import('../lib/browser.mjs');
+  const {vault}=await fixture(t), saved=await vault.generate(request()), loginOrigin='https://login.sso.test';
+  const linked=await vault.associate({...ref(saved),username:saved.username,loginOrigin,operation:'allow',requestId:'link'},context(1));
+  let fills=0,auths=0;
+  const target={browser:'relay',tabId:'ordinary',credentialId:linked.credentialId,revision:linked.revision,origin:loginOrigin,expectedUrl:loginOrigin+'/account',expectedDocumentId:'doc',passwordRef:'password'};
+  const browser=new BrowserWorkspace({driver:{status:()=>({available:true,contained:true,tabs:[{tabId:'ordinary',browser:'relay',url:target.expectedUrl}]}),async prepareCredentialFill(args){assert.equal(args.origin,loginOrigin);return async value=>{assert.equal(value.username,saved.username);assert.equal(value.origin,loginOrigin);fills++;return {filled:true}}}}});
+  t.after(()=>browser.close());
+  assert.equal((await browser.fillCredential(target,{vault})).filled,true);assert.equal(fills,1);
+  const auth={...target,requestId:'auth',intent:'login',submitRef:'submit'};
+  const operation=async(value,mark)=>{assert.equal(value.origin,loginOrigin);assert.equal(value.username,saved.username);await mark();auths++;return{submissionRequested:true}};
+  const options={ownerId:'owned',beforeDispatch:async()=>{}};
+  assert.equal((await vault.authenticateOnce(auth,operation,options)).outcome,'dispatched');
+  assert.equal((await vault.authenticateOnce(auth,operation,options)).existing,true);assert.equal(auths,1);
+});
+test('SSO association rejects nonexact origins and account updates clear associations',async t=>{
+  const {vault}=await fixture(t),saved=await vault.generate(request());
+  const args={...ref(saved),username:saved.username,loginOrigin:'https://login.sso.test',operation:'allow',requestId:'link'};
+  for(const loginOrigin of ['http://sso.test','https://sso.test/path','https://user:pass@sso.test','https://sso.test?foo','https://*.sso.test',saved.origin]){
+    // URL accepts wildcard host syntax, but associations must reject it.
+    await assert.rejects(vault.associate({...args,loginOrigin},context(1)));
+  }
+  const linked=await vault.associate(args,context(1));
+  const updated=await vault.save({...ref(linked),username:saved.username,password:'new-fixture-only',requestId:'update'},context(2));
+  assert.equal(updated.loginOrigins,undefined);
+  await assert.rejects(vault.withLoginSecret({...ref(updated),origin:args.loginOrigin},()=>assert.fail()),{code:'CREDENTIAL_ORIGIN_MISMATCH'});
+});
+
+test('SSO storage round-trips through the exact .104 strict reader without migrating entries',async t=>{
+  const {BrowserCredentialVault:LegacyVault}=await import('./fixtures/browser-credentials-239104.mjs');
+  const c=await fixture(t),saved=await c.vault.generate(request());
+  const legacy=await new LegacyVault({dataDir:c.dataDir,...c.security}).init();t.after(()=>legacy.close());
+  const linked=await c.vault.associate({...ref(saved),username:saved.username,loginOrigin:'https://login.sso.test',operation:'allow',requestId:'link'},context(1));
+  const raw=await c.vault.store.read();assert.ok(raw.entries.every(entry=>!Object.hasOwn(entry,'loginOrigins')));
+  assert.equal(raw.loginAssociations.length,1);
+  const oldStatus=await legacy.status();assert.equal(oldStatus.healthy,true);assert.equal(oldStatus.entries[0].credentialId,saved.credentialId);
+  let original;await legacy.withSecret(ref(linked),value=>{original=value.password});
+  // A legacy writer preserves the top-level extension while creating another account.
+  await legacy.generate({...request('legacy_extra'),origin:'https://other.test'});
+  await c.vault.withLoginSecret({...ref(linked),origin:'https://login.sso.test'},value=>{assert.equal(value.password,original)});
+  const cleared=await c.vault.associate({...ref(linked),username:saved.username,loginOrigin:'https://login.sso.test',operation:'remove',requestId:'clear'},context(3));
+  assert.equal((await legacy.status()).healthy,true);
+  await legacy.withSecret(ref(cleared),value=>{assert.equal(value.password,original)});
+  await assert.rejects(c.vault.withLoginSecret({...ref(cleared),origin:'https://login.sso.test'},()=>assert.fail()),{code:'CREDENTIAL_ORIGIN_MISMATCH'});
+});
+test('legacy password update and deletion invalidate stale SSO associations on upgrade',async t=>{
+  const {BrowserCredentialVault:LegacyVault}=await import('./fixtures/browser-credentials-239104.mjs');
+  const c=await fixture(t),saved=await c.vault.generate(request());
+  const legacy=await new LegacyVault({dataDir:c.dataDir,...c.security}).init();t.after(()=>legacy.close());
+  const linked=await c.vault.associate({...ref(saved),username:saved.username,loginOrigin:'https://login.sso.test',operation:'allow',requestId:'link'},context(1));
+  const updated=await legacy.save({...ref(linked),username:saved.username,password:'updated-only-fixture',requestId:'legacy_update'},context(2));
+  assert.deepEqual(await c.vault.list({origin:'https://login.sso.test'}),[]);
+  await assert.rejects(c.vault.withLoginSecret({...ref(updated),origin:'https://login.sso.test'},()=>assert.fail()),{code:'CREDENTIAL_ORIGIN_MISMATCH'});
+  const relinked=await c.vault.associate({...ref(updated),username:updated.username,loginOrigin:'https://login.sso.test',operation:'allow',requestId:'relink'},context(3));
+  await c.vault.withLoginSecret({...ref(relinked),origin:'https://login.sso.test'},value=>{assert.equal(value.password,'updated-only-fixture')});
+  await legacy.delete({credentialId:relinked.credentialId,revision:relinked.revision,requestId:'legacy_delete'},context(4));
+  assert.deepEqual(await c.vault.list({origin:'https://login.sso.test'}),[]);
+  assert.equal((await c.vault.status()).healthy,true);
+  const another=await c.vault.generate({...request('replacement')});
+  assert.notEqual(another.credentialId,saved.credentialId);
+  await assert.rejects(c.vault.withLoginSecret({...ref(another),origin:'https://login.sso.test'},()=>assert.fail()),{code:'CREDENTIAL_ORIGIN_MISMATCH'});
+});
+test('SSO association state accepts only bounded exact extension records',async t=>{
+  const c=await fixture(t),saved=await c.vault.generate(request());
+  await c.vault.associate({...ref(saved),username:saved.username,loginOrigin:'https://login.sso.test',operation:'allow',requestId:'link'},context(1));
+  const raw=await c.vault.store.read();
+  for(const mutation of [state=>state.loginAssociations.push({...state.loginAssociations[0]}),state=>state.loginAssociations[0].loginOrigins=['https://*.sso.test'],state=>state.loginAssociations[0].extra='unexpected']){
+    const state=structuredClone(raw);mutation(state);assert.throws(()=>c.vault.store.validate(state));
+  }
+});
+
+test('restoring protected pre-association backup preserves original login without granting an SSO alias',async t=>{
+  const {BrowserCredentialVault:LegacyVault}=await import('./fixtures/browser-credentials-239104.mjs');
+  const c=await fixture(t),saved=await c.vault.generate(request());let original;
+  await c.vault.withSecret(ref(saved),value=>{original=value.password});
+  await c.vault.associate({...ref(saved),username:saved.username,loginOrigin:'https://login.sso.test',operation:'allow',requestId:'link'},context(1));
+  // Synthetic isolated backup restore only, never the user's vault.
+  await fs.copyFile(c.vault.store.file+'.bak',c.vault.store.file);
+  const legacy=await new LegacyVault({dataDir:c.dataDir,...c.security}).init();t.after(()=>legacy.close());
+  assert.equal((await legacy.status()).healthy,true);
+  await legacy.withSecret(ref(saved),value=>{assert.equal(value.password,original)});
+  const upgraded=await c.open();assert.deepEqual(await upgraded.list({origin:'https://login.sso.test'}),[]);
+  await assert.rejects(upgraded.withLoginSecret({...ref(saved),origin:'https://login.sso.test'},()=>assert.fail()),{code:'CREDENTIAL_ORIGIN_MISMATCH'});
+});

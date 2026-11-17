@@ -13,7 +13,7 @@ export async function desktopRuntimeModules(directory) {
       if (entry.name.includes('.currents-backup-') || entry.name.endsWith('.ownership-backup') || name === 'desktop/build-icon.mjs') continue;
       if (entry.isSymbolicLink()) throw new Error('Application inputs cannot contain links.');
       if (entry.isDirectory()) await visit(name);
-      else if (entry.isFile() && (/\.(?:mjs|cjs)$/.test(name) || name.startsWith('desktop/browser-compatibility/')) && !name.endsWith('.test.mjs')) files.push(name);
+      else if (entry.isFile() && (/\.(?:mjs|cjs)$/.test(name) || name.startsWith('desktop/browser-compatibility/') || name.startsWith('desktop/password-manager/')) && !name.endsWith('.test.mjs')) files.push(name);
     }
   }
   await visit('desktop'); return files.sort();

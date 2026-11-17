@@ -10,10 +10,10 @@ import { createOwnerRecoveryHandlers } from './owner-recovery.mjs';
 import { BrowserWorkspace } from '../lib/browser.mjs';
 import { ElectronBrowserDriver } from './browser-driver.mjs';
 import { BrowserRouter } from './browser-router.mjs';
-import { LazyFirefoxDriver } from './firefox-lazy.mjs';
 import { startBackgroundBrowser } from '../lib/browser-startup.mjs';
 import { DiagnosticsStore } from '../lib/diagnostics.mjs';
 import { startupPhase } from '../lib/startup-timing.mjs';
+import { StartupCriticalTrace } from '../lib/startup-critical-trace.mjs';
 import {recoverProfileRestore} from '../lib/profile-backup.mjs';
 import {prepareProfileMaintenance,registerMaintenanceHelper,cancelPreparedMaintenance,awaitProfileMaintenance,readMaintenanceReceipt} from '../lib/profile-maintenance.mjs';
 import { DesktopLifecycle, parseDesktopLaunchArgs, prepareDesktopProfile, buildDesktopRelaunchArgs } from './lifecycle.mjs';
@@ -106,6 +106,14 @@ try { localCrashReportsEnabled = (await initializeLocalCrashReporting({ app, cra
 catch { console.warn('BLACKICE local-only crash reporting could not initialize.'); }
 nativeTheme.themeSource = 'dark';
 const diagnostics = new DiagnosticsStore({ dataDir: app.getPath('userData'), version: app.getVersion() });
+const criticalStartupTrace = new StartupCriticalTrace({
+  dataDir: app.getPath('userData'), profileDir: app.getPath('userData'),
+  profileMode: launch.profileDir ? 'custom' : 'default',
+  executable: process.execPath, version: app.getVersion(), processStartedAt,
+  onFailure: ({ code }) => console.warn('BLACKICE startup critical trace unavailable (' + code + ').'),
+});
+diagnostics.startupTrace = criticalStartupTrace;
+let profileTraceSpan = null;
 // Record only bounded native process outcomes. Never mutate BrowserWindows or
 // reload a renderer synchronously inside Chromium process-death callbacks.
 const recordProcessGone = receipt => {
@@ -322,8 +330,7 @@ async function startLocalHarness(dataDir, defaultCwd) {
         },
       }),
     }).init());
-    const firefox = await new LazyFirefoxDriver().init();
-    const driver = new BrowserRouter({ independent, firefox });
+    const driver = new BrowserRouter({ independent });
     const browser = new BrowserWorkspace({ driver });
     const secretStorage = safeStorage.isEncryptionAvailable() ? {
       encryptSecret: value => safeStorage.encryptString(value).toString('base64'),
@@ -414,7 +421,7 @@ function createWindow() {
   let readyToShow = false;
   const handoffStartup = () => startup.handoff(mainWindow, readyToShow);
   mainWindow.on('show', handoffStartup);
-  mainWindow.once('ready-to-show', () => { readyToShow = true; if (!startup.stopped && !desktopLifecycle.stopped && desktopLifecycle.mode === 'window') { if (desktopLifecycle.activateWindow) { if (windowState.maximized) mainWindow.maximize(); mainWindow.show(); } else mainWindow.showInactive(); } handoffStartup(); });
+  mainWindow.once('ready-to-show', () => { criticalStartupTrace.mark('renderer-ready-to-show'); void criticalStartupTrace.checkpoint(); readyToShow = true; if (!startup.stopped && !desktopLifecycle.stopped && desktopLifecycle.mode === 'window') { if (desktopLifecycle.activateWindow) { if (windowState.maximized) mainWindow.maximize(); mainWindow.show(); } else mainWindow.showInactive(); } handoffStartup(); });
   for (const event of ['move', 'resize', 'maximize', 'unmaximize']) mainWindow.on(event, () => {
     clearTimeout(windowSaveTimer); windowSaveTimer = setTimeout(() => { void saveWindowState(); }, 350);
   });
@@ -477,6 +484,18 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
   process.on('SIGTERM', () => app.quit());
   process.on('SIGINT', () => app.quit());
   app.whenReady().then(async () => {
+    // Begin best-effort tracing before profile recovery. Diagnostic source reads
+    // or checkpoint I/O must never delay the startup indicator or profile work.
+    // If the first checkpoint cannot persist, health reports the limitation.
+    void criticalStartupTrace.start({ buildFiles: {
+      package: path.join(APP_DIR, 'package.json'),
+      desktop: path.join(APP_DIR, 'desktop', 'main.mjs'),
+      server: path.join(APP_DIR, 'server.mjs'),
+      directjobs: path.join(APP_DIR, 'lib', 'direct-execution-jobs.mjs'),
+      ledgermetrics: path.join(APP_DIR, 'lib', 'ledger-startup-metrics.mjs'),
+      criticaltrace: path.join(APP_DIR, 'lib', 'startup-critical-trace.mjs'),
+    } }).catch(() => {});
+    profileTraceSpan = criticalStartupTrace.begin('desktop-profile');
     await repairDesktopShortcut({ shell, appData: app.getPath('appData'), executable: process.execPath, iconPath: DESKTOP_ICON, appUserModelId: APP_USER_MODEL_ID })
       .catch(() => console.warn('BLACKICE could not refresh its Windows shortcut icon.'));
     await startup.showIndicator();
@@ -535,9 +554,10 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
     if (desktopRestart.isRestartStartup()) { launch.showInactive = true; desktopLifecycle.activateWindow = false; }
     else if (!launch.showInactive) startup.activateIndicator();
     startup.progress('profile', 'ready');
+    criticalStartupTrace.end(profileTraceSpan, 'ready');
     const local = await startup.step(() => startupPhase(diagnostics, 'local-harness', () => startLocalHarness(dataDir, defaultCwd)), value => value.instance.close());
     harness = local.instance;
-    await startup.step(() => harness.desktop.setEnabled(true));
+    // Live desktop UIA is retired. Starting the contained browser must not enable it.
     harness.server.on('relay.shutdown', () => app.quit());
     origin = local.url;
     const ownerRecoveryHandlers = createOwnerRecoveryHandlers({ trustedSender, control: harness.ownerRecovery, showMessageBox: options => dialog.showMessageBox(mainWindow, options) });
@@ -596,8 +616,12 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
     await startup.step(() => diagnostics.record({ component: 'desktop', event: 'ready' }));
     await startup.step(() => desktopRestart.confirmStartup());
     restartReady = true;
+    criticalStartupTrace.mark('desktop-ready');
     await startup.step(() => saveRuntimeRecord());
+    void criticalStartupTrace.finish('ready').catch(() => {});
   }).catch(async error => {
+    criticalStartupTrace.end(profileTraceSpan, 'failed', error);
+    void criticalStartupTrace.finish('failed').catch(() => {});
     if (startup.stopped || shutdownPromise || didClose) return;
     startup.progress('local-harness', 'failed');
     await diagnostics.recordError('desktop', 'start_failed', error);

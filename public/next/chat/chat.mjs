@@ -1,5 +1,7 @@
+import {createActivityInspector} from './activity-inspector.mjs';
 import {createVisualWorkspace} from './visuals.mjs';
 import { createChatFrame, paintIndex, paintIntroduction, paintHistory, paintModels, captureChatScroll, restoreChatScroll } from './render.mjs';
+import { createConversationFolderUI } from './folders.mjs';
 import { createGroupedModelPicker } from '../core/model-picker.mjs';
 import { enableProviderForModel } from '../../provider-availability.mjs';
 import { summaries, filterSummaries, conversationRuns, rootId, lastRunId, running, planningProgressForRun, CHAT_INDEX_BATCH, CHAT_MESSAGE_BATCH, messageLimitsAfterRefresh, conversationBucket, conversationActionState, conversationManagementTarget, resolveConversationSelection, mergeChatRunUpdate, chatHeaderStatus, projectConversationGoal } from './model.mjs';
@@ -43,8 +45,13 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     indexLimit:CHAT_INDEX_BATCH, indexQuery:'',messageLimits:new Map(),
     attachmentIds:new Map(), attachmentsPending:false,managing:false,selecting:false,selection:new Map(),visible:[],listRead:0,destroyed:false,inputRevision:0,
     options:{...restoreChatPlanningOptions((()=>{try{return JSON.parse(localStorage.getItem('blackice.next.chatOptions')||'{}');}catch{return{};}})(),getStatus?.()?.runtimeSettings?.planningOntology),model:'default'} };
+  const folderUI=createConversationFolderUI({view,api,notify,
+    getItems:()=>state.list,getBucket:()=>state.bucket,getSelectedRoot:()=>root(),
+    isBusy:()=>state.managing||state.pending,isActive:()=>state.active&&!state.destroyed,
+    onChanged:()=>indexPaint(),onRefresh:()=>{if(state.active)void loadList();},onError:()=>{}});
   let goalControls=null,autonomyControls=null;
   const directoryInspector=createDirectoryInspector({frame:view.shell,api,getConversationId:()=>state.selected,getRunId:()=>state.runs.at(-1)?.id||null});
+  const activityInspector=createActivityInspector({frame:view.shell,api,events,getRunId:()=>state.runs.at(-1)?.id||null});
   let newPlanningExecutionMode=state.options.planningExecutionMode;
   const executionNotice=mount.ownerDocument.createElement('section');
   executionNotice.setAttribute('id','next-chat-execution-notice');
@@ -186,6 +193,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     if(view.model.disabled!==state.pending){view.model.disabled=state.pending;refreshChoices(runtimeStatus);}
     syncContext();
     directoryInspector.refresh(state.selected?state.runs.at(-1)?.id:null);
+    activityInspector.refresh(state.selected?state.runs.at(-1)?.id:null);
     const item=state.selected,bucket=selectedBucket(),latest=state.runs.at(-1),busy=state.pending||state.managing||contextControls.isCompacting()||goalControls?.isBusy()||autonomyControls?.isBusy();
     goalControls?.update({conversationId:root(),running:state.runs.some(run=>run.status==='running'&&run.settled!==true),readonly:bucket!=='active',busy:state.pending||state.managing||state.loading});
     autonomyControls?.update({conversationId:root(),readonly:bucket!=='active',busy:state.pending||state.managing||state.loading});
@@ -260,12 +268,13 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   function indexPaint() {
     const query=view.search.value;
     if(query!==state.indexQuery){state.indexQuery=query;state.indexLimit=CHAT_INDEX_BATCH;}
-    state.visible=paintIndex(view,filterSummaries(state.list,query),root(),item=>{view.shell.dataset.showList='false';void open(item);},{
+    state.visible=paintIndex(view,filterSummaries(folderUI.filtered(state.list),query),root(),item=>{view.shell.dataset.showList='false';void open(item);},{
       limit:state.indexLimit,
       onMore:()=>{state.indexLimit+=CHAT_INDEX_BATCH;indexPaint();},
       selecting:state.selecting,selection:state.selection,busy:state.managing||state.pending,
+      folderNames:folderUI.folderNames(),groupFolders:true,showEmptyFolders:!query&&folderUI.selected==='all',onFolderToggle:visible=>{state.visible=visible;drawManagement();},
       onToggle:(item,checked)=>{if(state.managing)return;if(checked){const target=managementTarget(rootId(item));state.selection.set(target.id,{runId:target.runId,state:target.state});}else state.selection.delete(rootId(item));managementMessage('');drawManagement();},
-      onAction:(item,action)=>action==='rename'?startRename(item):void requestManagement(action,selectionFor(item)),
+      onAction:(item,action)=>['move_folder','reset_folder_auto'].includes(action)?folderUI.onRowAction(item,action):action==='rename'?startRename(item):void requestManagement(action,selectionFor(item)),
     });
     drawManagement();
   }
@@ -295,7 +304,8 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
         if(initial&&listRequested&&!listInitialize&&initial.bucket===state.bucket&&initial.generation===state.generation)listInitialize=initial;
         return;
       }
-      state.list=summaries(answer.conversations).map(item=>({...item,state:conversationBucket(item.state)||bucket}));indexPaint();
+      state.list=summaries(answer.conversations).map(item=>({...item,state:conversationBucket(item.state)||bucket}));
+      folderUI.onListLoaded(state.list,answer.folderOrganization);indexPaint();
       const current=state.list.find(item=>rootId(item)===root());
       if(current){state.selected={...state.selected,...current};updateHead();}
       loaded=true;
@@ -649,6 +659,10 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
         render({preserve:true});
       }
     }
+    if(event.type==='agent.event' && data.type==='shadowdancer.step'){
+      const additions=planningActivityForEvent(currentRun.id,event,null,nextOrder());
+      if(additions.length){currentRun.planningActivity=mergePlanningActivity(currentRun.planningActivity,additions);render({preserve:true});}
+    }
     if(event.type==='agent.event' && data.type==='planning.reassessment'){
       if(data.module==='modular-outcome'){currentRun.outcomeRecoveryByNode||={};currentRun.outcomeRecoveryByNode[event.nodeId||'agent']=data.status;}
       currentRun.planningActivity=mergePlanningActivity(currentRun.planningActivity,
@@ -781,7 +795,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
 
       goalControls.close();autonomyControls.close();
       modelPicker.close({restoreFocus:false});
-      state.active=false;state.generation++;state.listRead++;state.unsubscribe?.();state.unsubscribe=null;
+      state.active=false;folderUI.stop();state.generation++;state.listRead++;state.unsubscribe?.();state.unsubscribe=null;
       listRequested=false;listInitialize=null;listController?.abort();
       closeTrash();if(view.renameDialog.open){view.renameDialog.close();if(!state.managing)renameTarget=null;}
       state.dataController?.abort();state.loading=false;artifacts.cancel();visuals.cancel();
@@ -793,6 +807,6 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     updateStatus(status) {if(status&&typeof status==='object'&&!Array.isArray(status)){runtimeStatus=status;if(root()==='new')restoreOntology('new');refreshChoices(status);updateHead();}},
     openConversationId(id){if(!id)return;const item=state.list.find(row=>rootId(row)===id||lastRunId(row)===id)||{id,runId:id,title:'Conversation'};void open(item);},
     getState() {return {active:state.active,selected:root(),runCount:state.runs.length,listing:state.list.length,selectionCount:state.selection.size,managing:state.managing};},
-    destroy(){this.leave();state.destroyed=true;goalControls.destroy();autonomyControls.destroy();contextControls.destroy();directoryInspector.destroy();modelPicker.destroy();reader.close();artifacts.destroy();visuals.destroy();attachmentsUI.destroy();mount.innerHTML='';}
+    destroy(){this.leave();state.destroyed=true;folderUI.destroy();goalControls.destroy();autonomyControls.destroy();contextControls.destroy();directoryInspector.destroy();activityInspector.destroy();modelPicker.destroy();reader.close();artifacts.destroy();visuals.destroy();attachmentsUI.destroy();mount.innerHTML='';}
   };
 }

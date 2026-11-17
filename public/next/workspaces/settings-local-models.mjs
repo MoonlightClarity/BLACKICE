@@ -1,8 +1,13 @@
 /** Local model management lives in the main Models section, not the advanced API editor. */
 import { createLlamaCppLaunchSettings } from './llama-launch-settings.mjs';
 
-export function createLocalModelSettings({ mount, api, onChanged = () => {} } = {}) {
+export function createLocalModelSettings({ mount, api, onChanged = () => {}, storage } = {}) {
   const doc = mount.ownerDocument;
+  if(storage===undefined)try{storage=globalThis.localStorage;}catch{}
+  const selectionKey='blackice.next.local-model-runtime';
+  let savedEngine;try{savedEngine=storage?.getItem(selectionKey);}catch{}
+  if(!['ollama','lmstudio','llamacpp'].includes(savedEngine))savedEngine=null;
+  let selectionChosen=Boolean(savedEngine);
   const node = (tag, value = '', css = '') => {
     const el = doc.createElement(tag);
     if (css) el.className = css;
@@ -14,21 +19,21 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
   const card = node('section', '', 'next-card next-stack');
   card.setAttribute('aria-label', 'Local model loading');
   card.append(node('h2', 'Local models'),
-    node('p', 'Load and unload models through Ollama, LM Studio, or a local llama.cpp 1.0 server. llama.cpp router mode can load GGUF models discovered in --models-dir; import GGUF files or Safetensors folders through Ollama without quantization. Once loaded, models appear in the normal BLACKICE model picker.', 'next-help'));
+    node('p', 'Use the included llama.cpp engine with a downloaded model, or connect models you already run in Ollama or LM Studio. Loaded models appear in the BLACKICE model picker.', 'next-help'));
   const row = node('div', '', 'next-row');
   const engine = node('select', '', 'next-field');
-  for (const [id, name] of [['ollama', 'Ollama'], ['lmstudio', 'LM Studio'], ['llamacpp', 'llama.cpp 1.0']]) {
+  for (const [id, name] of [['ollama', 'Ollama'], ['lmstudio', 'LM Studio'], ['llamacpp', 'llama.cpp']]) {
     const option = node('option', name); option.setAttribute('value', id); engine.append(option);
   }
-  engine.id = 'next-local-engine';
+  engine.id = 'next-local-engine';if(savedEngine)engine.value=savedEngine;
   const refresh = button('Refresh local models'); refresh.id = 'next-local-refresh';
   row.append(label('Runtime', engine), refresh);
   const runtimeStatus = node('p', 'Checking local runtimes…', 'next-help');
   runtimeStatus.id = 'next-local-runtime-status'; runtimeStatus.setAttribute('role', 'status');
-  const setup = node('section', '', 'next-stack'); setup.id = 'next-llama-setup';
-  setup.append(node('h3', 'Download llama.cpp'));
-  const discover = button('Find official downloads'); discover.id = 'next-llama-discover';
-  const releases = node('a', 'Official releases and setup documentation'); releases.setAttribute('href', 'https://github.com/ggml-org/llama.cpp/releases');
+  const setup = node('details', '', 'next-stack'); setup.id = 'next-llama-setup';
+  setup.append(node('summary', 'Advanced: manual runtime downloads'));
+  const discover = button('Search release metadata'); discover.id = 'next-llama-discover';
+  const releases = node('a', 'Open official llama.cpp releases'); releases.id = 'next-llama-releases'; releases.className = 'next-llama-releases-primary'; releases.setAttribute('href', 'https://github.com/ggml-org/llama.cpp/releases');
   releases.setAttribute('target', '_blank'); releases.setAttribute('rel', 'noopener noreferrer');
   const assets = node('select', '', 'next-field'); assets.id = 'next-llama-asset'; assets.hidden = true;
   const download = node('a', 'Download selected archive'); download.id = 'next-llama-download'; download.hidden = true;
@@ -36,7 +41,12 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
   const companionLink = node('a', 'Download required CUDA runtime DLLs'); companionLink.id = 'next-llama-companion'; companionLink.hidden = true;
   companionLink.setAttribute('target', '_blank'); companionLink.setAttribute('rel', 'noopener noreferrer');
   const downloadStatus = node('p', '', 'next-help'); downloadStatus.id = 'next-llama-download-status'; downloadStatus.setAttribute('role', 'status');
-  setup.append(node('p', 'Choose the archive for your operating system, architecture and CPU/GPU backend. Windows CUDA builds require the matching cudart DLL archive extracted beside the runtime binaries. These are runtime binaries, not model weights. Downloads open your default browser; BLACKICE does not install or run them automatically.', 'next-help'), discover, releases, label('Official binary archive (platform and architecture are in the filename)', assets), download, companionLink, downloadStatus,
+  const discovery = node('details', '', 'next-provider-advanced next-llama-download-discovery'); discovery.id = 'next-llama-discovery';
+  const discoveryContents = node('div', '', 'next-stack');
+  discoveryContents.append(discover, label('Official binary archive (platform and architecture are in the filename)', assets), download, companionLink, downloadStatus);
+  discovery.append(node('summary', 'Advanced: search release metadata for a specific archive'), discoveryContents);
+  setup.append(releases,
+    node('p', 'Choose the archive for your operating system, architecture and CPU/GPU backend. Windows CUDA builds require the matching cudart DLL archive extracted beside the runtime binaries. These are runtime binaries, not model weights. Downloads open your default browser; BLACKICE does not install or run them automatically.', 'next-help'), discovery,
     node('p', 'Extract the runtime archive and keep its libraries beside llama-server. With an existing GGUF model, start the server locally, then use Refresh local models above. Replace the example model path with yours.', 'next-help'),
     node('pre', 'llama-server -m "path/to/model.gguf" --host 127.0.0.1 --port 8080'),
     node('p', 'On Windows use llama-server.exe from the extracted folder; on macOS/Linux use ./llama-server. Select matching dependencies from the same release when required. Downloading does not make the runtime available until you start it.', 'next-help'));
@@ -47,6 +57,7 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
   choiceRow.append(label('Local model', models), load, unload);
   const context = node('input', '', 'next-field'); context.setAttribute('type', 'number'); context.min = '128'; context.max = '262144';
   context.placeholder = 'Runtime default'; context.id = 'next-local-context'; context.style.maxWidth = '180px';
+  const contextLabel = label('Context length (optional)', context);
   const contextHelp = node('p', 'Optional context window for the next load. Leave blank to use the runtime default. Unloading does not delete model files or BLACKICE conversations.', 'next-help');
   const importDetails = node('details', '', 'next-provider-advanced');
   const summary = node('summary', 'Import local weights into Ollama');
@@ -58,9 +69,9 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
   importDetails.append(summary, importHelp, label('Model file or directory', sourcePath), label('Local Ollama model name', alias), importRow);
   const feedback = node('p', '', 'next-help'); feedback.id = 'next-local-feedback'; feedback.setAttribute('role', 'status'); feedback.setAttribute('aria-live', 'polite');
   const launchMount = node('div');launchMount.hidden = true;
-  card.append(row, runtimeStatus, setup, choiceRow, label('Context length (optional)', context), contextHelp, launchMount, importDetails, feedback);
+  card.append(row, launchMount, runtimeStatus, choiceRow, contextLabel, contextHelp, setup, importDetails, feedback);
   mount.append(card);
-  const launchSettings = createLlamaCppLaunchSettings({mount:launchMount,api});
+  const launchSettings = createLlamaCppLaunchSettings({mount:launchMount,api,onChanged:async result=>{await onChanged();await refreshCatalog({preferredEngine:'llamacpp',preferredModel:result.model});}});
   let alive = true, active = false, busy = false, generation = 0, snapshot = { engines: [] };
   let downloadGeneration = 0, discovering = false, downloadAssets = [];
   const selected = () => snapshot.engines?.find(item => item.id === engine.value) || { available: false, models: [] };
@@ -68,10 +79,12 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
   function updateChoices() {
     const value = selected();
     const isLlama = engine.value === 'llamacpp';
+    contextLabel.hidden=isLlama;
+    choiceRow.hidden=isLlama && !(value.models || []).length;
     setup.hidden = !isLlama;
     launchMount.hidden = !isLlama;
     contextHelp.textContent = isLlama
-      ? 'llama.cpp sets context at startup using --ctx-size or --models-preset. Change it on the server, then reload. Unloading never deletes weights or conversations.'
+      ? 'Adjust context and performance under Advanced runtime & model settings. Unloading never deletes weights or conversations.'
       : 'Optional context window for the next load. Leave blank to use the runtime default. Unloading does not delete model files or BLACKICE conversations.';
     importDetails.hidden = engine.value !== 'ollama';
     const previous = models.value;
@@ -83,7 +96,7 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
     if ((value.models || []).some(item => item.id === previous)) models.value = previous;
     runtimeStatus.textContent = value.available
       ? value.name + ' is running · ' + (value.models || []).length + ' local models found.'
-      : value.name + ' is not available. Start its local server to list and load models.' + (value.error ? ' ' + value.error : '');
+      : isLlama ? 'No llama.cpp server is running. Choose a GGUF model above to start one.' : value.name + ' is not available. Start its local server to list and load models.' + (value.error ? ' ' + value.error : '');
     if (value.available && isLlama) runtimeStatus.textContent += value.mode === 'router'
       ? ' Router mode supports model load and unload.'
       : ' Single-model server: the running model can be added to Chat, but only the server owner can unload it.';
@@ -104,7 +117,19 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
       const value = await api('/api/local-models');
       if (!alive || token !== generation) return;
       snapshot = value && Array.isArray(value.engines) ? value : { engines: [] };
-      if (preferredEngine) engine.value = preferredEngine;
+      if (preferredEngine) {engine.value = preferredEngine;selectionChosen=true;}
+      if(!selectionChosen){
+        const existing=snapshot.engines.find(item=>item.available&&item.models?.length);
+        let initial=existing?.id;
+        if(!initial){
+          try{const providers=await api('/api/providers');initial=(Array.isArray(providers)?providers:[]).find(p=>p.enabled!==false&&p.models?.length&&['ollama','lmstudio','llamacpp'].includes(p.preset))?.preset;}catch{}
+          if(!alive||token!==generation||selectionChosen)return;
+          if(!initial)try{const config=await api('/api/local-models/config');if(config.runtime?.available&&config.runtime.source==='bundled')initial='llamacpp';}catch{}
+        }
+        if(!alive||token!==generation||selectionChosen)return;
+        engine.value=initial||'ollama';selectionChosen=true;
+        if(active&&engine.value==='llamacpp')launchSettings.enter();
+      }
       updateChoices();
       if (preferredModel && (selected().models || []).some(item => item.id === preferredModel)) models.value = preferredModel;
       updateChoices();
@@ -175,8 +200,8 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {} } = 
       if (token === downloadGeneration) { discovering = false; discover.disabled = false; }
     }
   });
-  refresh.addEventListener('click', () => { if (!busy) void refreshCatalog(); });
-  engine.addEventListener('change', () => { updateChoices(); if(active && engine.value==='llamacpp') launchSettings.enter(); else launchSettings.leave(); });
+  refresh.addEventListener('click', () => { if (!busy) {void refreshCatalog();if(engine.value==='llamacpp')void launchSettings.refresh();} });
+  engine.addEventListener('change', () => { selectionChosen=true;try{storage?.setItem(selectionKey,engine.value);}catch{} updateChoices(); if(active && engine.value==='llamacpp') launchSettings.enter(); else launchSettings.leave(); });
   models.addEventListener('change', updateChoices);
   load.addEventListener('click', () => void operation('load'));
   unload.addEventListener('click', () => void operation('unload'));

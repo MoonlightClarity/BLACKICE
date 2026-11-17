@@ -72,7 +72,7 @@ test('engine completion review keeps Directory extended capacity and ordinary Ch
   }
 });
 
-test('large review indexes exact sources, repairs an unread valid citation, and reads only its needed receipt',async t=>{
+test('large wrapped review retains inspection provenance, repairs an unread citation, and reads only its needed receipt',async t=>{
   const cwd=await mkdtemp(path.join(os.tmpdir(),'modular-disk-review-'));t.after(()=>rm(cwd,{recursive:true,force:true}));
   const content='Submission accepted: ACCEPT-EXACT-9. '+('saved observed data 😀 '.repeat(22000))+' RECEIPT_TAIL';
   const rows=Array.from({length:3},(_,index)=>({id:'owned-operation-'+index,source:'host-dispatch-receipt',tool:'relay_browser',action:'read',status:'completed',success:true,
@@ -106,7 +106,7 @@ test('large review indexes exact sources, repairs an unread valid citation, and 
       }
     }else assert.equal(calls.length,1,'Only bounded review repair may open another reviewer');
     options.onEvent({type:'usage',usage:{total:{inputTokens:400000},last:{inputTokens:6000,outputTokens:200},modelContextWindow:12000}});
-    return {output:JSON.stringify({...assessment,evidenceRefs:[first.citationRef],metadataOnlyRefs:[]}),usage:{inputTokens:500000,total:{inputTokens:500000},last:{inputTokens:4200,outputTokens:100},modelContextWindow:12000}};
+    return {output:JSON.stringify({type:'object',additionalProperties:false,required:['decision','summary','remaining','nextAction','evidenceRefs','blockers'],properties:{...assessment,evidenceRefs:[first.citationRef],metadataOnlyRefs:[]}}),usage:{inputTokens:500000,total:{inputTokens:500000},last:{inputTokens:4200,outputTokens:100},modelContextWindow:12000}};
   }};
   const controller=createModularCompletionController({policy,getSnapshot:()=>snapshot,onReturn:()=>returns++,onUpdate:row=>updates.push(row),
     review:args=>reviewModularOutcome({runtime,cwd,model:'fixture',context,...args,onUsage:row=>usage.push(row)})});
@@ -170,23 +170,25 @@ test('review reads share capacity and duplicate context notifications cannot ref
   await reviewModularOutcome({cwd,model:'fixture',context,snapshot,candidate:{output:'The recorded data is available.'},onUsage:value=>usage.push(value),
     runtime:{async runAgent(options){
       const packet=JSON.parse(options.prompt.split('\n\n').find(part=>part.startsWith('{"snapshot":'))),ref=packet.snapshot.evidence.records[0].savedSource.ref;
-      options.onEvent({type:'usage',usage:{last:{inputTokens:9300,outputTokens:0},total:{inputTokens:9300},modelContextWindow:12000}});
-      const call={name:'relay_directory_context',arguments:{action:'read',ref,limit:100000}};
+      options.onEvent({type:'usage',usage:{last:{inputTokens:8000,outputTokens:0},total:{inputTokens:8000},modelContextWindow:12000}});
+      const call={name:'relay_directory_context',arguments:{action:'read',ref,limit:100}};
       const replies=await Promise.all([options.onToolCall(call),options.onToolCall(call)]);
-      assert.equal(replies[0].success,true);assert.equal(replies[1].success,false,'Parallel reads cannot each spend the same remaining capacity');
-      assert.ok(estimateContextTokens(call)+estimateContextTokens(replies[0])<=700);
-      const firstPage=JSON.parse(replies[0].contentItems[0].text);
-      options.onEvent({type:'context',context:{actualInputTokens:9300,actualOutputTokens:0,compactionCount:1,lastCompaction:{id:'compaction-with-stale-usage'},remainingTokens:700,remainingIsEstimate:true}});
-      assert.equal((await options.onToolCall(call)).success,false,'A compaction marker with unchanged actual usage cannot refund earlier replies');
-      options.onEvent({type:'usage',usage:{last:{inputTokens:9300,outputTokens:0},total:{inputTokens:18600},modelContextWindow:12000}});
-      assert.equal((await options.onToolCall(call)).success,false,'Repeated actual values cannot refund capacity through a different event or cumulative total');
+      assert.ok(replies.every(reply=>reply.success));
+      const consumed=replies.reduce((sum,reply)=>sum+estimateContextTokens(call)+estimateContextTokens(reply),0);
+      options.onEvent({type:'context',context:{actualInputTokens:8000,actualOutputTokens:0,compactionCount:1,lastCompaction:{id:'compaction-with-stale-usage'},remainingTokens:2000,remainingIsEstimate:true}});
+      options.onEvent({type:'usage',usage:{last:{inputTokens:8000,outputTokens:0},total:{inputTokens:16000},modelContextWindow:12000}});
+      const fullCall={name:'relay_directory_context',arguments:{action:'read',ref,limit:100000}};
+      const limited=await options.onToolCall(fullCall);
+      assert.equal(limited.success,true);
+      assert.ok(consumed+estimateContextTokens(fullCall)+estimateContextTokens(limited)<=2000,'Duplicate usage and compaction notices cannot refund already delivered bytes');
+      const firstPage=JSON.parse(limited.contentItems[0].text);
       options.onEvent({type:'context',context:{actualInputTokens:3000,actualOutputTokens:0,compactionCount:1,lastCompaction:{id:'compaction-with-stale-usage'},remainingTokens:0,remainingIsEstimate:true}});
       const replenished=await options.onToolCall({name:'relay_directory_context',arguments:{action:'read',ref,offset:firstPage.end,limit:10000}});
       assert.equal(replenished.success,true,'A genuinely smaller measured context restores capacity despite a stale remaining estimate');
       const nextPage=JSON.parse(replenished.contentItems[0].text);assert.equal(nextPage.offset,firstPage.end);assert.equal(nextPage.end-nextPage.offset,10000);
       return {output:JSON.stringify({...assessment,metadataOnlyRefs:[]})};
     }}});
-  assert.equal(usage[0].reviewContext.peakInputTokens,9300);assert.equal(usage[0].reviewContext.lastInputTokens,3000);
+  assert.equal(usage[0].reviewContext.peakInputTokens,8000);assert.equal(usage[0].reviewContext.lastInputTokens,3000);
   assert.equal(usage[0].reviewContext.compactionCount,1);
 });
 
@@ -214,4 +216,20 @@ test('the real API provider transports the isolated evidence-read tool and its s
   assert.equal(await controller.beforeFinal({output:'Accepted with receipt API-SAVED-ACCEPTANCE-17.'}),null);
   const result=await controller.assertReady();assert.equal(requests.length,2);assert.equal(result.assessment.evidenceInspection.reads.length,1);
   assert.deepEqual(result.assessment.evidenceInspection.reads[0].evidenceIds,['api-operation']);
+});
+
+test('ordinary Chat returns original partial candidate when optional reviewer is unavailable without replay',async t=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'modular-chat-unavailable-'));let reviews=0,work=0;
+ const candidate={output:'No applications were submitted. Research remains incomplete.'};
+ class UnavailableRuntime extends Runtime {async runAgent(options){
+  if(options.prompt.startsWith('BLACKICE MODULAR OUTCOME REVIEW.')){reviews++;return {output:'{"type":"object","properties":{}}'};}
+  work++;assert.equal((await options.onBeforeFinal(candidate))??null,null);return candidate;
+ }}
+ const runtime=new UnavailableRuntime();const app=await createHarnessServer({runtime,port:0,dataDir:path.join(root,'data'),defaultCwd:path.join(root,'workspace')});
+ t.after(async()=>{await app.close();await rm(root,{recursive:true,force:true});});await app.learning.updateSettings({mode:'manual'});
+ const workflow={name:'Unreviewed Chat fixture',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',model:'fixture',prompt:'Perform the task.'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{planningMode:'ontology',planningOntology:policy}};
+ const run=app.engine.startRun({workflow,input:{task:'Apply to up to three roles.',directoryMode:'off',subagentsMode:'off',planningMode:'ontology',planningOntology:policy}});
+ await app.engine.executions.get(run.id);const saved=app.engine.getRun(run.id);
+ assert.equal(saved.status,'completed',saved.error);assert.equal(saved.nodes.agent.output,candidate.output);assert.equal(work,1);assert.equal(reviews,3);
+ assert.equal(saved.nodes.agent.modularReview.status,'unavailable');assert.equal(saved.nodes.agent.modularReview.decision,'unreviewed');
 });

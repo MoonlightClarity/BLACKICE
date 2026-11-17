@@ -18,7 +18,10 @@ test('real Settings navigation mounts recovery and native review sends only exac
   const ui=createSettingsWorkspace({mount:f.mount,api,getStatus:()=>info,events:{subscribe:()=>()=>{}}});
   t.after(()=>ui.destroy());ui.enter();
   const until=async fn=>{for(let i=0;i<100;i++){if(fn())return;await new Promise(r=>setImmediate(r));}throw Error('UI did not settle');};
-  await f.click('#next-settings-section-recovery');
+  assert.equal(f.$('#next-settings-section-recovery'),null);
+  await until(()=>f.$('#next-review-notice').hidden===false);
+  assert.match(f.$('#next-review-count').textContent,/1 paused action/);
+  await f.click('#next-review-open');
   await until(()=>f.$('[data-owner-recovery="review"]'));
   assert.equal(f.$('#next-settings-recovery').hidden,false);
   const first=f.click('[data-owner-recovery="review"]');

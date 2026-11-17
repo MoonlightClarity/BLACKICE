@@ -240,8 +240,8 @@ test('independent MCP clients, token renewal and reconstruction retain one grant
   const first = client(f.current, f.tokens, 'first-conversation-turn');
   await first.initialize();
   const catalog = (await first.result('tools/list')).tools;
-  assert.equal(catalog.length, 31, 'The fixture must exercise the complete desktop catalog.');
-  assert.ok(catalog.some(tool => tool.name === 'blackice_credentials_authenticate'));
+  assert.equal(catalog.length, 34, 'The fixture must exercise the complete desktop catalog.');
+  for (const name of ['blackice_credentials_save', 'blackice_credentials_update', 'blackice_credentials_associate', 'blackice_credentials_authenticate']) assert.ok(catalog.some(tool => tool.name === name), name);
   assert.ok(catalog.some(tool => tool.name === 'blackice_task_contract'));
   assert.ok(catalog.some(tool => tool.name === 'blackice_task_context'));
   const fingerprint = f.current.connector.catalogStatus();

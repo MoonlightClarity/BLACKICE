@@ -24,7 +24,7 @@ export function createAutonomyControls({view,api,getStatus,getContext,onResult=(
   let owner='new',value=null,busy=false,loading=false,locked=false,readonly=false,destroyed=false,readToken=0;
   let readError='',selectedModels=[],modelRows=[],editorOwner=null;
   const {autonomyToggle:toggle,autonomySettings:settings,autonomyDialog:dialog,autonomyForm:form,
-    autonomyCalibration:calibration,autonomySearch:search,autonomyModels:models,autonomyError:errorText,
+    autonomyScope:scope,autonomyCalibration:calibration,autonomySearch:search,autonomyModels:models,autonomyError:errorText,
     autonomyCancel:cancel,autonomySave:save}=view;
   const paint=()=>{
     if(destroyed)return;
@@ -39,9 +39,9 @@ export function createAutonomyControls({view,api,getStatus,getContext,onResult=(
       :value?'Resume autonomous operation with saved calibration and model allowlist.'
       :'Configure permitted models and turn autonomous operation on.');
     settings.disabled=unavailable;
-    settings.title='Edit autonomy calibration and model whitelist.';
+    settings.title='Choose autonomy scope, calibration and model whitelist.';
     settings.hidden=owner==='new'&&!value;
-    save.disabled=busy;cancel.disabled=busy;calibration.readOnly=busy;search.disabled=busy;
+    save.disabled=busy;cancel.disabled=busy;if(scope)scope.disabled=busy;calibration.readOnly=busy;search.disabled=busy;
   };
   const close=()=>{editorOwner=null;if(dialog.open)dialog.close();};
   function populate(){
@@ -72,7 +72,7 @@ export function createAutonomyControls({view,api,getStatus,getContext,onResult=(
   }
   function showEditor(){
     if(destroyed||owner==='new'||busy||loading||locked||readonly)return;
-    editorOwner=owner;calibration.value=value?.calibration||'';
+    editorOwner=owner;calibration.value=value?.calibration||'';if(scope)scope.value=value?.scope||'conversation';
     search.value='';errorText.hidden=true;errorText.textContent='';
     populate();save.textContent=value?.enabled?'Save calibration':'Enable autonomy';
     dialog.showModal();calibration.focus({preventScroll:true});
@@ -134,7 +134,7 @@ export function createAutonomyControls({view,api,getStatus,getContext,onResult=(
       if(modelAllowlist.length>64)throw Error('Select at most 64 models.');
       const selectedModel=value?.selectedModel&&modelAllowlist.includes(value.selectedModel)?value.selectedModel:null;
       const result=await act(value?.enabled?'calibrate':'enable',{
-        calibration:calibration.value,modelAllowlist,selectedModel,
+        calibration:calibration.value,modelAllowlist,selectedModel,scope:scope?.value||'conversation',
       });
       if(result)close();
     }catch(error){errorText.textContent=String(error?.message||error);errorText.hidden=false;}

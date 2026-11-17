@@ -91,3 +91,18 @@ test('browser owner recovery is a supported bounded startup phase', async () => 
   assert.equal(events[0].phase, 'browser-owner-recovery');
   assert.equal(events[0].outcome, 'ready');
 });
+test('conversation folders initialization is a supported startup phase', async () => {
+  const events = [], value = { ready: true };
+  assert.equal(await startupPhase({ record: event => events.push(event) }, 'conversation-folders', () => value), value);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].phase, 'conversation-folders');
+  assert.equal(events[0].outcome, 'ready');
+});
+
+test('every literal server startup phase is registered', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const source = await readFile(new URL('../server.mjs', import.meta.url), 'utf8');
+  const used = [...source.matchAll(/startupPhase\(diagnostics,\s*['"]([^'"]+)['"]/g)].map(match => match[1]);
+  assert.ok(used.includes('conversation-folders'), 'The real server initialization is covered.');
+  for (const phase of used) assert.ok(STARTUP_PHASES.includes(phase), 'Unregistered server startup phase: ' + phase);
+});

@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
-import { approvedWindowsPackageFile, forbiddenWindowsPackagePath, readWindowsSourceTestReceipt, nativeRestartCLIOutcome } from '../scripts/windows-release-inputs.mjs';
+import { approvedWindowsPackageFile, explicitWindowsReleaseNotes, approvedExplicitWindowsReleaseNote, forbiddenWindowsPackagePath, readWindowsSourceTestReceipt, nativeRestartCLIOutcome } from '../scripts/windows-release-inputs.mjs';
 
 test('native restart diagnostics retain only the exit code and an enumerated error code from noisy private logs', () => {
   const log = ['Native warning: C:\\private\\profile Bearer private-token', 'not JSON ACCESS_RUNTIME_OWNERSHIP', '{broken', JSON.stringify({ error: 'Private message C:\\private\\profile Bearer private-token', code: 'ACCESS_HOST_NOT_RUNNING', requestId: 'private-request', token: 'private-token' })].join('\r\n');
@@ -56,6 +56,15 @@ test('Windows installer native helpers use exact approved paths without permitti
   }
 });
 
+test('native password manager approves exactly its shipped HTML and CSS assets, not neighboring content', async () => {
+  for (const file of ['desktop/password-manager/index.html', 'desktop/password-manager/style.css']) {
+    assert.equal(approvedWindowsPackageFile(file, '2.39.100'), true, file);
+    assert.equal((await fs.stat(new URL('../' + file, import.meta.url))).isFile(), true, file);
+  }
+  for (const file of ['desktop/password-manager/other.html', 'desktop/password-manager/other.css', 'desktop/password-manager/nested/index.html', 'desktop/password-manager/nested/style.css', 'desktop/other/index.html', 'desktop/other/style.css', 'desktop/password-manager/index.html.bak', 'desktop/password-manager/style.css.bak', 'desktop/password-manager/../index.html', 'desktop\\password-manager\\index.html', '/desktop/password-manager/index.html']) {
+    assert.equal(approvedWindowsPackageFile(file, '2.39.100'), false, file);
+  }
+});
 test('retired VM files are never approved for Windows packaging', () => {
   for (const file of ['WORKBENCH-NATIVE-DISPLAY.md','desktop/workbench-elevated-command.ps1','desktop/workbench-vmconnect-bridge.cs','scripts/workbench-guest-agent.ps1','scripts/workbench-headless-broker.ps1','scripts/package-workbench-freerdp.mjs','lib/workbench-agent-tools.mjs','lib/windows-workbench.mjs','resources/guest/workbench-guest-video.exe','resources/workbench-native/package.json','public/next/workbench.css','public/next/workspaces/workbench.mjs']) {
     assert.equal(approvedWindowsPackageFile(file, '2.39.60'), false, file);
@@ -257,4 +266,41 @@ test('planning skill package includes only reviewed contract and reference docum
     }
   }
   await inspect('skills/planning');
+});
+
+test('.104 retains only its selected .103 recovery note alongside the current release',()=>{
+ for(const f of ['RELEASE-NOTES-2.39.103.md','RELEASE-NOTES-2.39.104.md'])assert.equal(approvedWindowsPackageFile(f,'2.39.104'),true,f);
+ for(const f of ['RELEASE-NOTES-2.39.102.md','RELEASE-NOTES-2.39.105.md','RELEASE-NOTES-2.39.103.md.bak'])assert.equal(approvedWindowsPackageFile(f,'2.39.104'),false,f);
+});
+
+test('retained release notes derive only from exact numeric top-level builder files entries', () => {
+  const config = [
+    'extraResources:', '  - RELEASE-NOTES-9.8.0.md', 'files:',
+    '  - RELEASE-NOTES-2.39.105.md', '  - "RELEASE-NOTES-2.39.106.md"',
+    "  - 'RELEASE-NOTES-3.0.0.md'", '  - RELEASE-NOTES-2.39.*.md',
+    '  - docs/private.md', '  - ../RELEASE-NOTES-2.39.104.md',
+    '  - docs/RELEASE-NOTES-2.39.104.md', '  - RELEASE-NOTES-02.39.104.md',
+    '  - !RELEASE-NOTES-2.39.104.md', '  - RELEASE-NOTES-2.39.105.md.bak',
+    '  - RELEASE-NOTES-custom.md', 'win:', '  - RELEASE-NOTES-9.8.1.md',
+  ].join('\n');
+  assert.deepEqual(explicitWindowsReleaseNotes(config), [
+    'RELEASE-NOTES-2.39.105.md', 'RELEASE-NOTES-2.39.106.md', 'RELEASE-NOTES-3.0.0.md',
+  ]);
+  for (const config of [null, '', 'files:\n  - lib/**/*\nwin:\n', 'files:\n  - "RELEASE-NOTES-2.39.105.md\'\nwin:\n'])
+    assert.deepEqual(explicitWindowsReleaseNotes(config), []);
+});
+test('explicit retained note approval survives future version bumps without admitting arbitrary neighbors', () => {
+  const notes = explicitWindowsReleaseNotes('files:\n  - RELEASE-NOTES-2.39.105.md\n  - RELEASE-NOTES-2.39.106.md\n  - RELEASE-NOTES-2.39.107.md\n  - RELEASE-NOTES-3.0.0.md\nwin:\n');
+  for (const current of ['2.39.106', '2.39.107', '3.0.0']) {
+    assert.equal(approvedExplicitWindowsReleaseNote('RELEASE-NOTES-2.39.105.md', current, notes), true);
+    assert.equal(approvedExplicitWindowsReleaseNote('RELEASE-NOTES-2.39.106.md', current, notes), true);
+    for (const file of ['RELEASE-NOTES-2.39.104.md','RELEASE-NOTES-4.0.0.md','RELEASE-NOTES-custom.md','docs/private.md','../RELEASE-NOTES-2.39.105.md'])
+      assert.equal(approvedExplicitWindowsReleaseNote(file, current, notes), false, file);
+  }
+  assert.equal(approvedExplicitWindowsReleaseNote('RELEASE-NOTES-2.39.107.md', '2.39.106', notes), false);
+  assert.equal(approvedExplicitWindowsReleaseNote('RELEASE-NOTES-3.0.0.md', '2.39.107', notes), false);
+  for (const bad of [null, '2.39', '2.39.106-beta', '../2.39.106'])
+    assert.equal(approvedExplicitWindowsReleaseNote('RELEASE-NOTES-2.39.105.md', bad, notes), false);
+  assert.equal(approvedWindowsPackageFile('RELEASE-NOTES-2.39.105.md','2.39.106'), true);
+  assert.equal(approvedWindowsPackageFile('RELEASE-NOTES-2.39.107.md','2.39.106'), false);
 });

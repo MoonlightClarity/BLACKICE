@@ -41,7 +41,7 @@ function fixture(t,{request}={}){
 test('identity loads only on enter and keeps two global drafts through tab and workspace switches',async t=>{
   const f=fixture(t);assert.deepEqual(f.calls,[]);f.panel.enter();await settle();
   assert.deepEqual(f.calls.map(call=>call.path),['/api/identity/soul']);
-  assert.match(f.mount.textContent,/Global character.*all working folders/);
+  assert.match(f.mount.textContent,/Instructions for how BLACKICE responds.*Shared across working folders/);
   assert.match(f.mount.textContent,/next agent turn/);
   await f.input('#next-identity-content','Soul draft\nSecond line');
   await f.key(f.$('#next-identity-content'),'Enter');assert.equal(f.calls.length,1,'Enter in Markdown must not save.');

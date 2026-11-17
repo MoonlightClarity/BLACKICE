@@ -608,3 +608,11 @@ test('direct browser grants receive stable task ownership and cannot target anot
   const replay = await api.call('blackice_browser_action', { requestId: 'owned-open', action: 'open', url: 'https://example.test/source' }, client);
   assert.equal(replay.existing, true); assert.equal(replay.jobId, first.jobId); assert.equal(dispatched.length, 3);
 });
+test('direct browser guidance permits ordinary account input without requiring the credential helper', async t => {
+  const { api } = await harness(t);
+  const definition = api.tools(client).find(tool => tool.name === 'blackice_browser_action');
+  assert.match(definition.description,/ordinary browser controls for authorized account fields/);
+  assert.match(definition.description,/optional continuity tools/);
+  assert.doesNotMatch(definition.description,/never put plaintext passwords|Use blackice_credentials_generate and/);
+  assert.doesNotMatch(definition.inputSchema.properties.promptText.description,/Never supply passwords/);
+});

@@ -166,26 +166,76 @@ test('non-whitelisted coordinator model is rejected at actual provider dispatch'
   assert.equal(run.errorCode,'AUTONOMY_MODEL_NOT_ALLOWED');
 });
 
-test('legacy Goal and separate autonomy never launch competing continuation loops',async t=>{
+
+test('Goal and autonomy coexist with one queued continuation and whitelisted model',async t=>{
+  const {engine,autonomy,runtime,conversations}=await fixture(t,async(options,n)=>out(n),{autoStart:false});
+  const goals=await new ConversationGoals({engine,conversations,autoStart:false,continuationDelayMs:10}).init();
+  t.after(()=>goals.close());
+  const first=engine.startRun({workflow:graph(),input:'One answer.'});
+  await waitFor(()=>engine.getRun(first.id).settled);
+  await autonomy.control(first.id,{action:'enable',modelAllowlist:['alternate-model'],scope:'conversation'});
+  const created=await goals.control(first.id,{action:'set',objective:'A bounded objective',maxTurns:1,requestId:'coexist-goal'});
+  assert.equal(created.goal.status,'active');
+  assert.equal(autonomy.chains,goals.chains,'both dispatchers serialize on the same conversation queue');
+  goals.start();autonomy.start();
+  await waitFor(()=>runtime.calls.length===2);
+  await waitFor(async()=>(await goals.get(first.id)).status==='budget_exhausted');
+  await new Promise(resolve=>setTimeout(resolve,80));
+  assert.equal(runtime.calls.length,2,'no autonomy loop may bypass the goal budget');
+  assert.equal(runtime.calls[1].model,'alternate-model');
+  const family=await conversations.family(first.id);
+  assert.ok(family.runs[1].goal.automatic&&family.runs[1].autonomy.automatic);
+});
+
+test('goal-scoped autonomy binds the current goal and does not transfer to its replacement',async t=>{
   const {engine,autonomy,conversations}=await fixture(t,async(options,n)=>out(n),{autoStart:false});
   const goals=await new ConversationGoals({engine,conversations,autoStart:false}).init();
   t.after(()=>goals.close());
-  const first=engine.startRun({workflow:graph(),input:'One independent answer.'});
-  await waitFor(()=>engine.getRun(first.id).settled);
-  await autonomy.control(first.id,{action:'enable',modelAllowlist:['test-model'],calibration:'Do not spend premium quota.'});
-  await assert.rejects(()=>goals.control(first.id,{action:'set',objective:'Legacy persistent goal.',requestId:'legacy-goal-conflict'}),
-    error=>error.code==='GOAL_AUTONOMY_CONFLICT');
-  const protectedRow=await autonomy.get(first.id);
-  assert.deepEqual(protectedRow.modelAllowlist,['test-model']);
-  await autonomy.control(first.id,{action:'disable',expectedRevision:protectedRow.revision});
-  const created=await goals.control(first.id,{action:'set',objective:'Legacy persistent goal.',requestId:'legacy-goal-create'});
-  assert.equal(created.goal.objective,'Legacy persistent goal.');
-  assert.equal(created.goal.status,'active');
-  await assert.rejects(()=>autonomy.control(first.id,{action:'enable',modelAllowlist:['test-model']}),
-    error=>error.code==='AUTONOMY_GOAL_CONFLICT');
-  assert.equal((await goals.get(first.id)).objective,'Legacy persistent goal.');
-  assert.equal((await autonomy.get(first.id)).enabled,false);
+  const first=engine.startRun({workflow:graph(),input:'One answer.'});await waitFor(()=>engine.getRun(first.id).settled);
+  await assert.rejects(()=>autonomy.control(first.id,{action:'enable',scope:'goal',modelAllowlist:['test-model']}),e=>e.code==='AUTONOMY_GOAL_REQUIRED');
+  await goals.control(first.id,{action:'set',objective:'Original objective',requestId:'bound-one'});
+  const original=await goals.get(first.id);
+  await autonomy.control(first.id,{action:'enable',scope:'goal',modelAllowlist:['test-model']});
+  assert.equal((await autonomy.get(first.id)).goalId,original.id);
+  assert.equal(autonomy.forRun(engine.runs.get(first.id)).scope,'goal');
+  await goals.control(first.id,{action:'set',objective:'Replacement objective',requestId:'bound-two'});
+  assert.equal(autonomy.forRun(engine.runs.get(first.id)),null);
+  assert.equal(autonomy.canContinueGoal(first.id),false);
+  assert.equal(await autonomy.dispatch(first.id),null);
 });
+
+test('disabled autonomy prevents goal automatic dispatch without deleting the goal',async t=>{
+  const {engine,autonomy,conversations,runtime}=await fixture(t,async(options,n)=>out(n),{autoStart:false});
+  const goals=await new ConversationGoals({engine,conversations,autoStart:false}).init();t.after(()=>goals.close());
+  const first=engine.startRun({workflow:graph(),input:'One answer.'});await waitFor(()=>engine.getRun(first.id).settled);
+  await autonomy.control(first.id,{action:'enable',modelAllowlist:['test-model']});
+  await goals.control(first.id,{action:'set',objective:'Keep this goal',requestId:'off-goal'});
+  await autonomy.control(first.id,{action:'disable'});
+  goals.start();autonomy.start();
+  await new Promise(resolve=>setTimeout(resolve,80));
+  assert.equal(runtime.calls.length,1);
+  assert.equal((await goals.get(first.id)).objective,'Keep this goal');
+});
+
+test('native autonomous child receives policy before its first provider call and creates no implicit Goal',async t=>{
+  let childId;
+  const {engine,autonomy,runtime,conversations}=await fixture(t,async(options,n)=>{
+    if(n===1){
+      const response=await options.onToolCall({name:'relay_agents',arguments:{action:'start',requestId:'child-auto',task:'A bounded child task',autonomous:true,planningMode:'off'}});
+      const data=JSON.parse(response.contentItems[0].text);childId=data.run.runId;return out(n);
+    }
+    assert.ok(options.dynamicTools.some(x=>x.name==='relay_autonomy'));
+    assert.match(options.prompt,/AUTONOMOUS OPERATING MODE/);
+    const idle=await autonomyCall(options,{action:'idle',summary:'Child work is done.'});assert.equal(idle.success,true);
+    return out(n);
+  });
+  const first=engine.startRun({workflow:graph(),input:'Start one child.'});await waitFor(()=>engine.getRun(first.id).settled);
+  await waitFor(async()=>childId&&(await autonomy.get(childId))?.status==='idle','native child idle');
+  assert.equal(runtime.calls.length,2);
+  assert.equal(conversations.states[childId]?.goal,undefined);
+  assert.equal((await autonomy.get(childId)).scope,'conversation');
+});
+
 
 test('native history restoration can include autonomy without losing saved tool schema',async t=>{
   const {engine}=await fixture(t,async(options,n)=>out(n),{autoStart:false});
@@ -216,4 +266,71 @@ test('user may explicitly choose model for a manual turn without silently changi
   assert.equal(runtime.calls.length,2);
   assert.deepEqual((await autonomy.get(first.id)).modelAllowlist,['test-model']);
   assert.equal((await autonomy.get(first.id)).enabled,false);
+});
+
+test('inherited scope and lifetime apply to manual child and all its native descendants',async t=>{
+  const {engine,autonomy,conversations}=await fixture(t,async(options,n)=>out(n),{autoStart:false});
+  const goals=await new ConversationGoals({engine,conversations,autoStart:false}).init();t.after(()=>goals.close());
+  const first=engine.startRun({workflow:graph(),input:'Parent.'});await waitFor(()=>engine.getRun(first.id).settled);
+  await goals.control(first.id,{action:'set',objective:'Bound parent',requestId:'parent-goal'});
+  await autonomy.control(first.id,{action:'enable',scope:'goal',modelAllowlist:['test-model']});
+  const state=await autonomy.get(first.id),goal=await goals.get(first.id);
+  const child={id:'scope-child',taskId:'scope-child',status:'queued',autonomyRequest:{enabled:false,modelAllowlist:['test-model'],selectedModel:'test-model',calibration:'',controller:{conversationId:first.id,runId:first.id,id:state.id,generation:state.generation,requiresEnabled:true,goalId:goal.id}}};
+  await autonomy.admitRun(child);
+  assert.equal(autonomy.raw(child.id).enabled,false);
+  assert.equal(autonomy.policyForRun(child).controller.goalId,goal.id);
+  autonomy.assertRunPolicy(child);
+  await goals.control(first.id,{action:'pause',requestId:'stop-parent'});
+  assert.throws(()=>autonomy.assertRunPolicy(child),e=>e.code==='AUTONOMY_SCOPE_ENDED');
+  assert.equal(autonomy.scopeCurrent(child.id),false);
+});
+test('explicit manual native child with goal does not gain automatic continuation',async t=>{
+  let childId;
+  const {engine,autonomy,runtime,conversations}=await fixture(t,async(options,n)=>{
+    if(n===1){
+      const response=await options.onToolCall({name:'relay_agents',arguments:{action:'start',requestId:'manual-child-goal',task:'One child turn',goalObjective:'A recorded outcome',autonomous:false,planningMode:'off'}});
+      childId=JSON.parse(response.contentItems[0].text).run.runId;
+    }
+    return out(n);
+  });
+  const goals=await new ConversationGoals({engine,conversations,continuationDelayMs:10}).init();t.after(()=>goals.close());
+  const first=engine.startRun({workflow:graph(),input:'One manual child.'});await waitFor(()=>engine.getRun(first.id).settled);
+  await waitFor(()=>childId&&engine.getRun(childId).settled);
+  await new Promise(resolve=>setTimeout(resolve,80));
+  assert.equal(runtime.calls.length,2);
+  assert.equal((await autonomy.get(childId)).enabled,false);
+  assert.equal((await goals.get(childId)).objective,'A recorded outcome');
+});
+
+test('inherited pause-after-turn permits admitted work but no new continuation; deadline and durable interruption still win',async t=>{
+  const {engine,autonomy,conversations}=await fixture(t,async(options,n)=>out(n),{autoStart:false});
+  const goals=await new ConversationGoals({engine,conversations,autoStart:false}).init();t.after(()=>goals.close());
+  const first=engine.startRun({workflow:graph(),input:'Parent.'});await waitFor(()=>engine.getRun(first.id).settled);
+  await goals.control(first.id,{action:'set',objective:'Bound parent',requestId:'finishing-parent'});
+  await autonomy.control(first.id,{action:'enable',scope:'goal',modelAllowlist:['test-model']});
+  const state=await autonomy.get(first.id),goal=await goals.get(first.id);
+  const child={id:'finish-child',taskId:'finish-child',status:'running',autonomyRequest:{enabled:true,modelAllowlist:['test-model'],selectedModel:'test-model',calibration:'',controller:{conversationId:first.id,runId:first.id,id:state.id,generation:state.generation,requiresEnabled:true,goalId:goal.id}}};
+  await autonomy.admitRun(child);
+  await goals.save(first.id,{...goal,status:'paused',finishCurrentRunId:first.id});
+  assert.equal(autonomy.scopeCurrent(child.id),false,'new continuation is not allowed');
+  assert.doesNotThrow(()=>autonomy.assertRunPolicy(child),'already admitted child may finish');
+  await goals.save(first.id,{...goal,status:'paused',finishCurrentRunId:first.id,deadlineAt:new Date(Date.now()-1000).toISOString()});
+  assert.throws(()=>goals.assertProviderAdmission(child),e=>e.code==='AUTONOMY_SCOPE_ENDED','shared lower provider/tool boundary includes inherited deadline');
+  await goals.save(first.id,goal);
+  const source=autonomy.raw(first.id);
+  await autonomy.save(first.id,{...source,status:'interrupted'});
+  assert.throws(()=>autonomy.assertRunPolicy(child),e=>e.code==='AUTONOMY_SCOPE_ENDED','durable source interruption survives lack of a loaded source execution');
+});
+test('saved v1 native agent catalog upgrades through a fresh session without replacing the conversation',async t=>{
+  const {engine,conversations}=await fixture(t,async(options,n)=>out(n),{autoStart:false});
+  const first=engine.startRun({workflow:graph(),input:'Original task.'});await waitFor(()=>engine.getRun(first.id).settled);
+  const original=engine.runs.get(first.id);original.nodes.agent.nativeAgentSchemaVersion=1;
+  assert.ok(original.nodes.agent.toolNames.includes('relay_agents'));
+  const family=await conversations.family(first.id);
+  const next=engine.continueRun(first.id,{nodeId:'agent',message:'Continue with current capabilities.'},{historyRuns:family.runs});
+  await waitFor(()=>engine.getRun(next.id).settled);
+  const saved=engine.runs.get(next.id);
+  assert.equal(saved.taskId,first.id);
+  assert.equal(saved.modelHandoff.reason,'native-agent-scope-capability');
+  assert.equal(saved.nodes.agent.nativeAgentSchemaVersion,2);
 });

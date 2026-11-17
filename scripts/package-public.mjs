@@ -1,3 +1,5 @@
+import { inspectLlamaBundle } from '../lib/llama-cpp-bundle.mjs';
+import { prepareLlamaRuntime } from './prepare-llama-runtime.mjs';
 import { promises as fs, createReadStream } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -17,12 +19,15 @@ const config=publicBuilderConfiguration(signing,{source,output:buildRoot,require
 let previousMoved=false,promoted=false;
 await fs.mkdir(path.dirname(configFile),{recursive:true});await fs.mkdir(outputs,{recursive:true});
 try{
+  await prepareLlamaRuntime({destination:path.join(source,'.build/llama.cpp'),cache:path.join(source,'.build/llama-cache')});
   // This file contains public certificate selectors only. Passwords/PFX values
   // remain in the inherited signing environment and never enter build inputs.
   await fs.writeFile(configFile,JSON.stringify(config,null,2),{flag:'wx',mode:0o600});
   await new Promise((resolve,reject)=>{const child=spawn(process.execPath,[path.join(source,'node_modules/electron-builder/cli.js'),'--win','nsis','--x64','--config',configFile,'--publish','never'],{cwd:source,env:{...process.env},stdio:'inherit',windowsHide:true});child.once('error',reject);child.once('exit',code=>code===0?resolve():reject(Error(`Public packaging failed with exit code ${code}.`)));});
   const name=`Blackice-${version}-Setup.exe`,installer=path.join(buildRoot,name),application=path.join(buildRoot,'win-unpacked','BLACKICE.exe');
   if(signing.configured)for(const file of [application,installer]){const signature=await verifyPublisherSignature(file,signing.publisher);if(!signature.valid)throw Error(`The ${path.basename(file)} publisher signature was not valid (${signature.status}). The public output was left untouched.`);}
+  const runtime = await inspectLlamaBundle({root:path.join(buildRoot,'win-unpacked','resources','llama.cpp')});
+  if(!runtime.available)throw Error('Packaged llama.cpp verification failed: '+runtime.message);
   const fingerprint=await appFingerprint(path.join(buildRoot,'win-unpacked','resources/app'));
   if(fingerprint!==await appFingerprint(source))throw Error('Application sources changed during packaging. Rebuild and retest this candidate.');
   await fs.mkdir(stage,{recursive:false});await fs.copyFile(installer,path.join(stage,name));

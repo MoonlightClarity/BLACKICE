@@ -160,3 +160,96 @@ test('HTTP activation is local-session only and verifies the exact registered pr
   assert.deepEqual(calls,['small.gguf']);
   assert.equal((await localModelHTTP({...call,pathname:'/api/local-models/config',method:'GET',remote:true})).status,403);
 });
+
+test('acquire waits for asynchronous tree termination before probing or granting a new lease', async () => {
+  const f=mockSupervisor();
+  const first=await f.supervisor.acquire(f.config,1);first.release();
+  const terminate=f.supervisor.terminate;
+  let completeStop,probes=0,admitted=false;
+  const probe=f.supervisor.probe.bind(f.supervisor);
+  f.supervisor.probe=()=>{probes++;return probe();};
+  f.supervisor.terminate=child=>new Promise(resolve=>{completeStop=()=>{child.kill();resolve();};});
+  assert.equal(f.supervisor.stopOwned(),true);
+  assert.equal(f.supervisor.status().stopping,true);
+  const second=f.supervisor.acquire(f.config,1).then(lease=>{admitted=true;return lease;});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(admitted,false);assert.equal(probes,0);assert.equal(f.launches.length,1);
+  completeStop();
+  const lease=await second;
+  assert.equal(f.launches.length,2);assert.equal(lease.owned,true);
+  assert.equal(f.supervisor.status().stopping,false);
+  lease.release();f.supervisor.terminate=terminate;await f.supervisor.close();
+});
+
+test('unconfirmed tree termination blocks admission even while its endpoint still responds',async()=>{
+  const f=mockSupervisor();const lease=await f.supervisor.acquire(f.config,1);lease.release();
+  const terminate=f.supervisor.terminate;
+  f.supervisor.terminate=async()=>{};
+  assert.equal(f.supervisor.stopOwned(),true);
+  await new Promise(resolve=>setImmediate(resolve));
+  let probes=0;const probe=f.supervisor.probe.bind(f.supervisor);
+  f.supervisor.probe=()=>{probes++;return probe();};
+  await assert.rejects(f.supervisor.acquire(f.config,1),{code:'LOCAL_LLAMA_STOP_PENDING'});
+  assert.equal(probes,0);assert.equal(f.launches.length,1);
+  f.launches[0].child.kill();await new Promise(resolve=>setImmediate(resolve));
+  f.supervisor.terminate=terminate;
+  const next=await f.supervisor.acquire(f.config,1);assert.equal(f.launches.length,2);
+  next.release();await f.supervisor.close();
+});
+
+test('failed spawn without PID handles later error and never attempts to terminate an invalid PID',async()=>{
+  const f=mockSupervisor();let errorsHandled=false,kills=0;
+  f.supervisor.spawn=()=>{
+    const child=new EventEmitter();child.kill=()=>{kills++;return true;};
+    queueMicrotask(()=>{errorsHandled=child.listenerCount('error')>0;child.emit('error',Object.assign(Error('missing executable'),{code:'ENOENT'}));child.emit('close',-1);});
+    return child;
+  };
+  f.supervisor.terminate=async()=>{kills++;};
+  await assert.rejects(f.supervisor.acquire(f.config,1),{code:'LOCAL_LLAMA_SPAWN_FAILED'});
+  assert.equal(errorsHandled,true);assert.equal(kills,0);assert.equal(f.supervisor.child,null);
+  await f.supervisor.close();
+});
+
+test('saved model revision restarts an idle owned router before granting the new model lease',async()=>{
+  const f=mockSupervisor();const first=await f.supervisor.acquire(f.config,1);first.release();
+  const nextConfig={...f.config,modelPaths:{second:'C:\\Models\\second.gguf'}};
+  const second=await f.supervisor.acquire(nextConfig,2);
+  assert.equal(f.launches.length,2);assert.equal(f.kills,1);
+  assert.equal(f.supervisor.status(2).pendingRestart,false);
+  assert.match(f.presets[1].content,/\[second\]/);
+  second.release();await f.supervisor.close();
+});
+
+test('saved model revision is deferred without killing an in-flight lease, then loads on retry',async()=>{
+  const f=mockSupervisor();const first=await f.supervisor.acquire(f.config,1);
+  const nextConfig={...f.config,modelPaths:{second:'C:\\Models\\second.gguf'}};
+  await assert.rejects(f.supervisor.acquire(nextConfig,2),{code:'LOCAL_LLAMA_RESTART_BUSY',status:409});
+  assert.equal(f.kills,0);assert.equal(f.launches.length,1);
+  assert.equal(f.supervisor.status(2).activeLeases,1);assert.equal(f.supervisor.status(2).pendingRestart,true);
+  first.release();const second=await f.supervisor.acquire(nextConfig,2);
+  assert.equal(f.kills,1);assert.equal(f.launches.length,2);
+  second.release();await f.supervisor.close();
+});
+
+test('changed model revision never restarts an external router',async()=>{
+  const f=mockSupervisor({external:true});const lease=await f.supervisor.acquire(f.config,2);
+  assert.equal(lease.owned,false);assert.equal(f.launches.length,0);assert.equal(f.kills,0);
+  lease.release();await f.supervisor.close();
+});
+
+test('a newer revision coalesced with startup is deferred instead of receiving an old catalog lease',async()=>{
+  const f=mockSupervisor();
+  const first=f.supervisor.acquire(f.config,1);
+  const newer=f.supervisor.acquire({...f.config,modelPaths:{second:'C:\\Models\\second.gguf'}},2);
+  const pendingRejection=assert.rejects(newer,{code:'LOCAL_LLAMA_RESTART_BUSY'});
+  const lease=await first;await pendingRejection;
+  assert.equal(f.kills,0);assert.equal(f.launches.length,1);assert.equal(f.supervisor.status(2).activeLeases,1);
+  lease.release();await f.supervisor.close();
+});
+
+test('invalid new executable is rejected before stopping the existing idle router',async()=>{
+  const f=mockSupervisor();const lease=await f.supervisor.acquire(f.config,1);lease.release();
+  await assert.rejects(f.supervisor.acquire({...f.config,executablePath:'C:\\missing.exe'},2),{code:'LOCAL_LLAMA_EXECUTABLE_MISSING'});
+  assert.equal(f.kills,0);assert.equal(f.launches.length,1);assert.equal(f.supervisor.status().owned,true);
+  await f.supervisor.close();
+});

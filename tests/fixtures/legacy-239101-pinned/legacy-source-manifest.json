@@ -1,0 +1,29 @@
+{
+  "schema": "blackice-pinned-legacy-direct-reader-v1",
+  "sourceCommit": "30c4a7f7d5ec75d32f924399daa9af3e56620d93",
+  "packageVersion": "2.39.101",
+  "includesOnly": "legacy direct-job reader and its two relative imports",
+  "files": [
+    {
+      "path": "direct-execution-jobs.mjs",
+      "origin": "lib/direct-execution-jobs.mjs",
+      "gitBlob": "726682c802bbb349c997616bca8929fb06e9b3e6",
+      "sha256": "ddbb83aad9003d4b98f4ae360a764c68643b671b232c9e357133629899b42b9b",
+      "bytes": 33963
+    },
+    {
+      "path": "direct-resource-history.mjs",
+      "origin": "lib/direct-resource-history.mjs",
+      "gitBlob": "bc1f2e08bd2d989c2e660aef23dfb74a2226a4f0",
+      "sha256": "75181b29deac1a30741d6bf0ab7378cea81c2a4f0c6bba70c93b702739b13309",
+      "bytes": 3996
+    },
+    {
+      "path": "ledger-startup-metrics.mjs",
+      "origin": "lib/ledger-startup-metrics.mjs",
+      "gitBlob": "1f2a7cc8694137fec881d620b11cb20cfde29620",
+      "sha256": "c91c062d44eb0d382c944cca993c5584be7005975e300ed2394907705bb02238",
+      "bytes": 2524
+    }
+  ]
+}

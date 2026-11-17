@@ -17,10 +17,12 @@ test('HTTP 429 leaves the conversation intact and supports a different model on 
   await mkdir(cwd);
   const server=createServer(async(req,res)=>{
     if(req.method==='GET'&&req.url==='/v1/models'){
+      // Keep this rate-limit/model-handoff test below the context-compaction threshold.
+      // Compaction has its own tests and legitimately adds a separate model request.
       res.writeHead(200,{'content-type':'application/json'});
       return res.end(JSON.stringify({data:[
-        {id:'limited-model',context_length:32768,max_output_tokens:4096},
-        {id:'working-model',context_length:32768,max_output_tokens:4096},
+        {id:'limited-model',context_length:131072,max_output_tokens:4096},
+        {id:'working-model',context_length:131072,max_output_tokens:4096},
       ]}));
     }
     if(req.method!=='POST'||req.url!=='/v1/chat/completions'){
@@ -58,6 +60,7 @@ test('HTTP 429 leaves the conversation intact and supports a different model on 
   await engine.executions.get(next.id);
   const recovered=engine.getRun(next.id);
   assert.equal(recovered.status,'completed',recovered.error);
+  assert.equal(calls.some(call=>call.messages.some(message=>message.role==='system'&&String(message.content).includes('Summarize historical context only'))),false,'fixture must not invoke history compaction');
   assert.deepEqual(calls.map(x=>x.model),['limited-model','working-model']);
   assert.match(recovered.output,/Alternative provider model succeeded/);
   assert.equal(engine.getRun(first.id).errorCode,'PROVIDER_RATE_LIMIT');

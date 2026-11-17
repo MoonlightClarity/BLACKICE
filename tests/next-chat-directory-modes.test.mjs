@@ -80,3 +80,22 @@ test('Chat start/continue always submit default delegation while live direction 
  assert.match(calls[0].route,/steer$/);assert.equal(calls[0].value.directoryMode,undefined);assert.equal(calls[0].value.subagentsMode,undefined);
  assert.equal(active.executionModes.directoryMode,'auto');
 });
+
+test('mounted Chat displays Directory action events before the active run finishes',async t=>{
+ const dom=testDOM(t),oldWorker=globalThis.Worker,oldStorage=globalThis.localStorage;globalThis.localStorage=store();let receive;
+ const active=run('directory-live',{directoryMode:'on'});active.status='running';active.settled=false;active.nodes.agent.status='running';active.nodes.agent.output='';
+ const family={rootId:active.id,state:'active',runs:[active]};
+ globalThis.Worker=class{handlers=new Map();addEventListener(type,handler){this.handlers.set(type,handler);}postMessage(packet){if(packet.type==='cancel')return;queueMicrotask(()=>this.handlers.get('message')?.({data:{id:packet.id,ok:true,family:projectFamily(structuredClone(family))}}));}terminate(){}};
+ const status={cwd:'C:\\fixture',defaultModel:'fixture',models:[{id:'fixture',available:true}],runtimeSettings:{}};
+ const api=async route=>{if(route.startsWith('/api/conversations?'))return{conversations:[]};if(route==='/api/attachments')return[];if(route==='/api/status')return status;throw Error('Unexpected API '+route);};
+ const workspace=createChatWorkspace({mount:dom.mount,api,events:{subscribe:handler=>{receive=handler;return()=>{};}},getStatus:()=>status});
+ t.after(()=>{workspace.destroy();if(oldStorage===undefined)delete globalThis.localStorage;else globalThis.localStorage=oldStorage;if(oldWorker===undefined)delete globalThis.Worker;else globalThis.Worker=oldWorker;});
+ workspace.enter();workspace.openConversationId(active.id);for(let i=0;i<70&&workspace.getState().runCount!==1;i++)await new Promise(r=>setTimeout(r,5));
+ assert.equal(workspace.getState().runCount,1);
+ receive({type:'agent.event',runId:active.id,nodeId:'agent',at:'2026-11-16T00:00:00Z',data:{type:'shadowdancer.step',callId:'work:one',tool:'relay_workspace',action:'read',event:'action-started'}});
+ assert.match(dom.mount.textContent,/Action started/);assert.match(dom.mount.textContent,/Waiting for its result/);
+ receive({type:'agent.event',runId:active.id,nodeId:'agent',at:'2026-11-16T00:00:01Z',data:{type:'shadowdancer.step',callId:'work:one',tool:'relay_workspace',action:'read',event:'action-returned',receiptStatus:'success'}});
+ assert.match(dom.mount.textContent,/Tool returned/);assert.match(dom.mount.textContent,/relay_workspace/);
+ receive({type:'agent.event',runId:active.id,nodeId:'agent',at:'2026-11-16T00:00:02Z',data:{type:'message',phase:'commentary',itemId:'work:commentary:1',text:'I checked the local fixture.'}});
+ assert.match(dom.mount.textContent,/I checked the local fixture/);
+});

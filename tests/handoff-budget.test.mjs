@@ -5,6 +5,7 @@ import { mkdtemp,mkdir,rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { HarnessEngine } from '../lib/engine.mjs';
+import { IdentityStore } from '../lib/identity.mjs';
 import { contextSnapshot,estimateContextTokens } from '../lib/context.mjs';
 
 async function handoffFixture(t,{history,context,reportedWindow,priorContext,nextModel,nextContext,effort,nextEffort,defaultEffort,identityText=''}={}){
@@ -14,7 +15,8 @@ async function handoffFixture(t,{history,context,reportedWindow,priorContext,nex
     async runAgent(options){calls.push(options);const index=calls.length,output=index===1?history:'Follow-up verified.',threadId=`handoff-private-${index}`;options.onEvent({type:'thread',model:options.model,effort:options.effort==='default'?defaultEffort:options.effort,threadId,codexHistory:'relay'});if(index===1&&priorContext)options.onEvent({type:'context',context:priorContext,threadId});options.onEvent({type:'message',itemId:`message-${index}`,text:output,phase:'final_answer',threadId});return{output,threadId,codexHistory:'relay'};}
     async close(){}
   }
-  const runtime=new Runtime(),identity=identityText?{snapshot:async()=>({text:identityText,revisions:{soul:1,user:1},createdAt:'fixture'})}:undefined;
+  const runtime=new Runtime(),identity=identityText?await new IdentityStore({dataDir}).init():undefined;
+  if(identity){const current=await identity.read('soul');await identity.update({kind:'soul',content:identityText,expectedRevision:current.revision});}
   const engine=new HarnessEngine({runtime,dataDir,defaultCwd:cwd,identity});engine.runtimeSettings={get:()=>({codexHistory:'relay'})};await engine.init();
   t.after(async()=>{await engine.close();assert.match(path.basename(directory),/^relay-handoff-budget-/);await rm(directory,{recursive:true,force:true});});
   const workflow={id:'handoff-budget',name:'Context budget',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Verifier',model:'budget-model',prompt:'Keep verified history and inspect current files before acting.',...(context?{context}:{}),...(effort?{effort}:{})},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode:'off'}};

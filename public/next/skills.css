@@ -1,0 +1,39 @@
+.next-skills-root .next-panel-head{align-items:flex-start;gap:18px}
+.next-skills-filters{display:grid;grid-template-columns:minmax(200px,2fr) minmax(155px,1fr) minmax(180px,1.4fr);gap:12px;margin:14px 0 8px}
+.next-skills-status{font-size:12px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere;margin:7px 0}
+.next-skills-status[data-error=true]{color:#f5ae9c}
+.next-skills-layout{display:grid;grid-template-columns:minmax(230px,340px) minmax(0,1fr);gap:18px;margin-top:16px;align-items:start}
+.next-skills-aside{max-height:70dvh;overflow:auto;overscroll-behavior:contain}
+.next-skills-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.next-skills-list button{display:flex;flex-direction:column;align-items:start;text-align:left;gap:7px;width:100%;padding:12px;min-width:0;overflow-wrap:anywhere}
+.next-skills-list button[aria-pressed=true]{border-color:var(--accent);background:var(--next-selection-background)}
+.next-skills-list strong{font-size:13px}
+.next-skills-list small{font-size:11px;color:var(--muted);line-height:1.5}
+.next-skills-description{font-size:12px;line-height:1.4;color:#b9c8d7;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.next-skills-empty{font-size:13px;color:var(--muted);padding:18px;border:1px dashed var(--line);border-radius:8px}
+.next-skills-inspector{min-width:0}
+.next-skills-inspector-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px}
+.next-skills-inspector-head h2{font-size:19px;max-width:100%;overflow-wrap:anywhere;margin:0}
+.next-skills-meta{display:grid;grid-template-columns:minmax(90px,130px) minmax(0,1fr);gap:8px 12px;margin:16px 0 18px;font-size:12px;line-height:1.6}
+.next-skills-meta dt{font-weight:600;color:var(--muted)}
+.next-skills-meta dd{margin:0;overflow-wrap:anywhere}
+.next-skills-content{box-sizing:border-box;border:1px solid var(--line);border-radius:8px;padding:18px;background:var(--next-control-background);max-height:65dvh;overflow:auto;font:12px/1.55 Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:850px){.next-skills-filters{grid-template-columns:1fr 1fr}.next-skills-filters label:first-child{grid-column:1/-1}.next-skills-layout{grid-template-columns:minmax(180px,250px) minmax(0,1fr)}}
+@media(max-width:650px){.next-skills-filters,.next-skills-layout{grid-template-columns:1fr}.next-skills-filters label:first-child{grid-column:auto}.next-skills-aside{max-height:36dvh}.next-skills-root.next-panel{padding:16px}.next-skills-meta{grid-template-columns:95px minmax(0,1fr)}}
+
+.next-skills-diagnostics{margin:12px 0;padding:10px;border:1px solid var(--line);border-radius:8px}.next-skills-diagnostics button{margin-right:8px}
+
+/* Keep the embedded editor inside its workspace: focus must never scroll the shell. */
+.next-skills-editor-shell{height:100%;min-height:0;min-width:0;display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden}
+.next-skills-editor-nav{padding:12px 28px;border-bottom:1px solid var(--line);background:var(--panel)}
+.next-skills-editor-body{min-height:0;min-width:0;overflow:hidden}
+.next-skills-editor-body>.next-panel{height:100%;overflow:auto;overscroll-behavior:contain}
+.next-skills-editor-body .next-panel-head{flex-wrap:wrap}
+.next-skills-editor-body .next-knowledge-scope-fields{grid-template-columns:minmax(0,1fr)}
+@media(max-width:650px){.next-skills-editor-nav{padding:10px 16px}}
+
+/* Catalog browsing already lives behind Back; keep authoring focused on the procedure. */
+.next-skills-editor-body :is(.next-knowledge-toolbar,.next-knowledge-filters,.next-knowledge-layout>aside,.next-knowledge-root>.next-panel-inner>.next-knowledge-status:not([data-error="true"])){display:none}
+.next-skills-editor-body .next-knowledge-layout{grid-template-columns:minmax(0,1fr)}
+.next-skills-editor-body .next-knowledge-filing{order:1;margin-bottom:0}
+.next-skills-editor-body .next-panel-inner{max-width:960px}

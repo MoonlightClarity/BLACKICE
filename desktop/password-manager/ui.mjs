@@ -1,0 +1,22 @@
+const $=id=>document.getElementById(id);
+let current={vaultRevision:null,entries:[]},editing=null,busy=false,attempt=null;
+const notice=(text,error=false)=>{$('status').textContent=text;$('status').dataset.error=String(error);};
+const request=async value=>{if(!window.blackicePasswords)throw Error('Open Passwords using the browser Passwords button.');const result=await window.blackicePasswords.request(value);if(!result.ok)throw Error(result.error);return result.value;};
+const disabled=value=>{busy=value;for(const button of document.querySelectorAll('button'))button.disabled=value;};
+function rows(){const root=$('entries');root.replaceChildren();if(!current.entries.length){root.textContent='No saved login for this site.';return;}
+ for(const entry of current.entries){const item=document.createElement('article');item.className='entry';const info=document.createElement('div'),title=document.createElement('strong'),detail=document.createElement('p'),actions=document.createElement('div');title.textContent=entry.label||entry.origin;detail.textContent=(entry.username||'No username')+' · revision '+entry.revision;info.append(title,detail);actions.className='actions';
+ const use=document.createElement('button');use.textContent='Use on site';use.dataset.credentialId=entry.credentialId;use.onclick=()=>operate('fill',{origin:entry.origin,credentialId:entry.credentialId,revision:entry.revision});
+ const replace=document.createElement('button');replace.textContent='Replace';replace.onclick=()=>{editing=entry;attempt=null;$('origin').value=entry.origin;$('username').value=entry.username;$('label').value=entry.label;$('password').value='';$('editing').textContent='Replacing saved login '+entry.credentialId+' at revision '+entry.revision+'. This does not change the website account password.';$('password').focus();};
+ actions.append(use,replace);item.append(info,actions);root.append(item);}}
+async function refresh(initial=false){current=await request({action:'status',...($('origin').value?{origin:$('origin').value}:{})});if(initial&&!$('origin').value)$('origin').value=current.origin||'';rows();if(!current.available||!current.healthy)throw Error('The existing encrypted vault is unavailable. Existing files are preserved; normal browsing remains available.');}
+async function operate(action,input){if(busy)return;disabled(true);notice(action==='fill'?'Filling the original page…':'Updating the local vault…');try{
+ let data={...input};if(['generate','save'].includes(action)){const signature=JSON.stringify([action,data]);if(attempt?.signature===signature)data=attempt.request;else{data={...data,requestId:crypto.randomUUID().replaceAll('-','')};attempt={signature,request:data};}}
+ const result=await request({action,...data});
+ if(action==='fill')notice(result.message||'Filled the target page. No form was submitted.');
+ else{attempt=null;editing=null;$('password').value='';$('editing').textContent='';await refresh();notice((result.existing?'Previously saved request confirmed. ':'Saved in the encrypted local vault. ')+(result.credentialId||''));}
+ }catch(error){notice(error.message,true);}finally{disabled(false);}}
+$('generate').onclick=()=>{if(editing){notice('Clear the replacement form to generate a new login. Use Replace to save an updated existing password.',true);return;}if(!$('origin').reportValidity())return;operate('generate',{origin:$('origin').value,username:$('username').value,label:$('label').value,length:Number($('length').value)});};
+$('login-form').onsubmit=event=>{event.preventDefault();if(!$('password').value){notice('Enter a password to save, or choose Generate and save.',true);return;}operate('save',{origin:$('origin').value,username:$('username').value,label:$('label').value,password:$('password').value,expectedRevision:current.vaultRevision,...(editing?{credentialId:editing.credentialId,revision:editing.revision}:{})});};
+$('clear').onclick=()=>{editing=null;attempt=null;$('password').value='';$('username').value='';$('label').value='';$('editing').textContent='';notice('Local form cleared. Saved logins are unchanged.');};
+$('refresh').onclick=async()=>{if(busy)return;disabled(true);try{await refresh();notice('Saved logins refreshed.');}catch(e){notice(e.message,true);}finally{disabled(false);}};
+disabled(true);refresh(true).then(()=>notice('Local vault ready. Generate a new login, save an existing one, or use a saved login.')).catch(e=>notice(e.message,true)).finally(()=>disabled(false));

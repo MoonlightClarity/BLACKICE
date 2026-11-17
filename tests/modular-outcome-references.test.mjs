@@ -99,13 +99,13 @@ test('unknown or fabricated citations remain rejected after review-only repairs 
   const candidate={output:'The business result is BUSINESS-123.'},calls=[],updates=[];let returns=0;
   const controller=createModularCompletionController({policy,getSnapshot:()=>state,onReturn:()=>returns++,onUpdate:value=>updates.push(value),
     review:async args=>{calls.push(args);return assessment(['BUSINESS-123','/saved/receipt.json','fabricated-call']);}});
-  await assert.rejects(controller.beforeFinal(candidate),{code:'MODULAR_REVIEW_EVIDENCE'});
+  assert.equal(await controller.beforeFinal(candidate),null);
   assert.equal(calls.length,3);assert.equal(returns,0);
   assert.ok(calls.every(call=>call.snapshot===state&&call.candidate===candidate));
   assert.equal(calls[0].repair,undefined);assert.equal(calls[1].repair.attempt,1);assert.equal(calls[2].repair.attempt,2);
-  assert.equal(updates.at(-1).status,'rejected-evidence');
-  assert.deepEqual(updates.at(-1).assessment.evidenceRefs,['BUSINESS-123','/saved/receipt.json','fabricated-call']);
-  await assert.rejects(controller.assertReady(),{code:'MODULAR_OUTCOME_INCOMPLETE'});
+  assert.equal(updates.at(-2).status,'rejected-evidence');assert.equal(updates.at(-1).status,'unavailable');
+  assert.deepEqual(updates.at(-2).assessment.evidenceRefs,['BUSINESS-123','/saved/receipt.json','fabricated-call']);
+  assert.equal((await controller.assertReady()).reviewUnavailable,true);
 });
 
 test('nested blocker references are repaired through the same exact host bindings',async()=>{

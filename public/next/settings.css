@@ -94,3 +94,10 @@
   #next-settings-storage :is(button,input,summary):focus-visible{outline-color:Highlight}
   #next-settings-storage .storage-removal-row:focus-within{outline-color:Highlight}
 }
+
+/* Local GGUF setup uses the existing Settings typography and control system. */
+.next-llama-quick{min-width:0;padding:16px 0;border-block:1px solid var(--line)}
+.next-llama-quick :is(h3,p){margin:0;overflow-wrap:anywhere}
+.next-llama-quick .next-row{gap:10px}
+.next-llama-quick button{min-height:40px}
+.next-llama-quick pre{white-space:pre-wrap;overflow-wrap:anywhere}

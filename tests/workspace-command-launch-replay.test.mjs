@@ -7,11 +7,12 @@ import { randomUUID, createHash } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
 import { EventEmitter } from 'node:events';
 import vm from 'node:vm';
+import * as ledger from '../lib/direct-execution-jobs.mjs';
 
 // Actual frozen ledger/API and candidate workspace implementation. Only their
 // unrelated adapters and the process launcher are substituted. Storage is real
 // in a disposable test directory. No shell, browser, HTTP, or provider runs.
-const sources = Object.fromEntries(await Promise.all(['workspace-tools', 'direct-execution-jobs', 'direct-execution-api'].map(async name =>
+const sources = Object.fromEntries(await Promise.all(['workspace-tools', 'direct-execution-api'].map(async name =>
   [name, await fs.readFile(new URL(`../lib/${name}.mjs`, import.meta.url), 'utf8')])));
 const forbidden = () => { throw Error('Unexpected external adapter in inert replay test'); };
 function evaluate(name, globals, exports) {
@@ -37,8 +38,8 @@ async function fixture(t, observed) {
     return child;
   };
   const workspace = evaluate('workspace-tools', { spawn, DESKTOP_RESTART_ORIGIN_ENV: 'BLACKICE_RESTART_ORIGIN' }, ['createWorkspaceToolHandler']);
-  const ledger = evaluate('direct-execution-jobs', { directResourceKeys: () => [], normalizeResourceUrl: forbidden, resourceObservation: forbidden },
-    ['DirectExecutionJobs', 'DIRECT_JOB_LIMITS', 'DIRECT_JOB_STATES', 'directJobTerminal', 'directRequestDigest']);
+  // Use the real imported ledger and its pack dependencies; only process
+  // dispatch and unrelated API adapters are inert substitutes.
   const apiModule = evaluate('direct-execution-api', { ...ledger,
     createWorkspaceToolHandler: options => {
       const handler = workspace.createWorkspaceToolHandler(options);

@@ -1,6 +1,6 @@
 # BLACKICE documentation
 
-> **Status: Current source index.** This index is checked against this source candidate's package version, **2.39.98**. It describes source documentation, **not proof that a particular installer was published or installed**. Check the [release downloads](https://github.com/MoonlightClarity/BLACKICE/releases) and your installed application's version before assuming a feature is available. The [2.39.98 source release notes](../RELEASE-NOTES-2.39.98.md) and [release-note index](../RELEASE-NOTES.md) describe version-specific changes and verification limits.
+> **Status: Proposed next-release source index.** Checked against package version **2.39.106**, not an installed or published artifact. See [2.39.106 source notes](../RELEASE-NOTES-2.39.106.md), [runtime inventory and installer coverage](RELEASE-2.39.102-VERIFICATION.md), and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases).
 
 Start with the [project README](../README.md). A named document's date, original deployment note, test result, or branch name does not override this index or the code in the version you actually run.
 
@@ -12,15 +12,15 @@ Start with the [project README](../README.md). A named document's date, original
 | Choose models and API connections | [API providers](API-PROVIDERS.md) and [local models](local-models.md) |
 | Connect an external assistant to BLACKICE's direct tools | [ChatGPT](../CHATGPT-CONNECTOR.md), [Gemini](GEMINI-CONNECTOR.md), [Claude](CLAUDE-CONNECTOR.md) |
 | Remote access and connection scope | [Remote access](../REMOTE-ACCESS.md) |
-| Use the browser and imported profiles | [Browser import](../BROWSER-IMPORT.md), [password handling](../BROWSER-PASSWORDS.md), [request filtering](../BROWSER-PROTECTION.md) |
+| Use the browser and imported profiles | [Browser import](../BROWSER-IMPORT.md), [password handling](../BROWSER-PASSWORDS.md), [request filtering](../BROWSER-PROTECTION.md), [stopped-task tab adoption](stopped-task-tab-adoption.md) |
 | Keep work moving within a conversation | [Goal mode](GOAL-MODE.md) |
 | Choose *optional* reasoning | [Current On/Off Planning modules](MODULAR-PLANNING-ONTOLOGY.md) and [benchmark trade-offs](PLANNING-TRADEOFFS.md) |
-| Inspect conversation Goals and Directory work | Planning: **Current work**; see [Goal mode](GOAL-MODE.md) and the [current Planning screen source](../public/next/workspaces/planning-current.mjs) |
+| Coordinate projects and inspect saved work | [Swarm project lifecycle](swarm-project-lifecycle.md); [Goal mode](GOAL-MODE.md). The retained [Planning screen source](../public/next/workspaces/planning-current.mjs) is a legacy route, not the primary navigation tab. |
 | Build or publish a Windows release | [Signing and release](../SIGNING-AND-RELEASE.md) and [third-party notices](../THIRD-PARTY-NOTICES.md) |
 
 **Planning controls today:** eight selectable Planning modules use **On/Off**; Directory uses **On/Off** separately. Unspecified selections default Off. Delegation is an available tool capability, not a ninth toggle. Older Forced/Advisory, Mandatory/Optional/Forbidden/Auto, and forced per-operation plan instructions are **not current controls**. Saved choices remain subject to their actual migration/compatibility semantics. See the current [Planning module guide](MODULAR-PLANNING-ONTOLOGY.md).
 
-**Planning workspace navigation:** Planning opens **Current work**, showing each conversation's Goal and Directory records. The filter distinguishes **Saved conversations**, **Running now**, **Archived**, and **All conversations**; a saved conversation is not necessarily running. **Saved graph plans** is a separate view for explicit graph requests and earlier planning records, not the current Directory work. Opening these views reads saved records rather than creating a plan or starting a model. The earlier group-outline UI is documented only as an [organization reference](../PLANNING-ORGANIZATION.md), not current navigation.
+**Workspace navigation:** Swarm is the visible project coordination tab. The retained Planning route exposes saved Current work and graph-plan views for compatibility; it is not a separate primary navigation tab. Reading those records does not create a plan or start a model. See [Swarm lifecycle](swarm-project-lifecycle.md); older organization views are [historical reference](../PLANNING-ORGANIZATION.md).
 
 **Workbench retirement:** earlier BLACKICE releases documented an optional Windows VM Workbench and native-display paths. Those are **not current setup features** in 2.39.82 source: the VM UI, APIs and installer inputs were retired. The [retirement regression](../tests/workbench-retired.test.mjs) checks this boundary. Historical [2.39.26 pairing notes](../RELEASE-NOTES-2.39.26.md) are retained for provenance, not as instructions to install a missing Workbench component.
 

@@ -1,0 +1,21 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/next/base.css"><link rel="stylesheet" href="/next/controls.css"><link rel="stylesheet" href="/next/settings-providers.css"><link rel="stylesheet" href="/next/settings.css">
+</head><body><main class="next-panel"><div id="mount" class="next-panel-inner"></div></main>
+<script type="module">
+import {createLocalModelSettings} from '/next/workspaces/settings-local-models.mjs';
+import {DEFAULT_LLAMA_CPP_SETTINGS} from '/config.mjs';
+window.calls=[];window.picked=[];window.loaded=false;
+window.relayDesktop={pickFiles:async()=>window.picked};
+let config={revision:0,settings:structuredClone(DEFAULT_LLAMA_CPP_SETTINGS),recommended:structuredClone(DEFAULT_LLAMA_CPP_SETTINGS),process:{},runtime:{available:true,source:'bundled',version:'v1.0.0',backend:'CPU',message:'CPU fallback: no compatible Vulkan device found.'}};
+const api=async(route,method='GET',body)=>{
+ window.calls.push({route,method,body});
+ if(route==='/api/providers')return [];
+ if(route==='/api/local-models/config'){if(method==='POST')config={...config,revision:config.revision+1,settings:body.settings};return structuredClone(config);}
+ if(route==='/api/local-models')return {engines:[{id:'llamacpp',name:'llama.cpp',available:window.loaded,mode:'router',models:window.loaded?[{id:window.currentModel,loaded:true,manageable:true}]:[]}]};
+ if(route==='/api/local-models/load'){window.loaded=true;window.currentModel=body.model;return {model:body.model,selection:'local_llamacpp::'+body.model};}
+ throw Error('Unexpected fixture request '+route);
+};
+window.panel=createLocalModelSettings({mount:document.querySelector('#mount'),api,storage:null});
+panel.enter();
+window.ready=true;
+</script></body></html>

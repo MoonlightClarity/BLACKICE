@@ -64,3 +64,30 @@ test('direct authentication schema and callback retain stable request ID and exa
  const {action,...args}=toolTarget;const result=await tool.execute(args,{client:{id:'test-client'}});
  assert.equal(result.success,true);assert.equal(calls,1);assert.ok(checks>=3);
 });
+
+test('native and direct helpers expose precise pre-dispatch fallback without leaking arbitrary error text',async()=>{
+ const browser={status:()=>({available:true,contained:true}),fillCredential(){},
+ async authenticateCredential(){throw Object.assign(Error('secret-fixture-value'),{code:'BROWSER_CREDENTIAL_AUTH_UNSUPPORTED'});}};
+ const vault={status:async()=>({available:true,healthy:true})};
+ const handler=createBrowserCredentialToolHandler({vault,browser,ownerId:'fixture',beforeDispatch:async()=>{}});
+ const native=await handler({name:'relay_credentials',arguments:toolTarget});
+ const direct=createDirectBrowserCredentialTools({vault,browser,reauthorize:async()=>{}}).find(t=>t.definition.name==='blackice_credentials_authenticate');
+ const {action,...args}=toolTarget;
+ const external=await direct.execute(args,{client:{id:'fixture'}});
+ for(const result of [native,external]){
+  const value=JSON.parse(result.contentItems[0].text);
+  assert.equal(result.success,false);assert.equal(value.submissionRequested,false);
+  assert.match(value.error,/credential fill.*ordinary browser controls/);
+  assert.ok(!JSON.stringify(result).includes('secret-fixture-value'));
+ }
+ assert.doesNotMatch(direct.definition.description,/credential-only/);
+});
+test('uncertain authentication failure never receives unsupported-form no-submission guidance',async()=>{
+ const browser={status:()=>({available:true,contained:true}),fillCredential(){},
+ async authenticateCredential(){throw Object.assign(Error('secret-fixture-value'),{code:'BROWSER_CREDENTIAL_AUTH_UNCONFIRMED'});}};
+ const handler=createBrowserCredentialToolHandler({vault:{status:async()=>({available:true,healthy:true})},browser,ownerId:'fixture',beforeDispatch:async()=>{}});
+ const result=await handler({name:'relay_credentials',arguments:toolTarget}),value=JSON.parse(result.contentItems[0].text);
+ assert.equal(value.submissionRequested,undefined);
+ assert.match(value.error,/do not assume an authentication submission was absent/);
+ assert.doesNotMatch(value.error,/No authentication submission was attempted|secret-fixture-value/);
+});

@@ -140,15 +140,19 @@ test('large valid workflows retain user-selected parallelism and start all ready
   finally { release.resolve({ output: 'Fixture cleanup.' }); }
 });
 
-test('desktop agents run in parallel while their actual shared Windows actions remain serialized by the adapter', async t => {
-  const firstAction = deferred(); let entered = 0, active = 0, peak = 0;
-  const desktop = new DesktopController({ platform: 'win32', runner: async () => { active++; peak = Math.max(peak, active); if (++entered === 1) await firstAction.promise; await new Promise(resolve => setTimeout(resolve, 5)); active--; return { windows: [] }; } }); desktop.setEnabled(true);
-  const runtime = new FakeRuntime(async options => { const result = await options.onToolCall({ name: 'relay_desktop', arguments: { action: 'windows' } }); assert.equal(result.success, true); return { output: 'Desktop observations complete.' }; });
-  const { engine } = await harness(t, runtime, { desktop });
-  const agents = Array.from({ length: 5 }, (_, index) => ({ ...node(`desktop-${index}`, 'agent', `Observe branch ${index}`), desktop: true }));
-  const graph = workflow({ nodes: [node('input', 'input'), ...agents, node('output', 'output')], edges: agents.flatMap(agent => [edge('input', agent.id), edge(agent.id, 'output')]), settings: { maxParallel: 5 } });
-  try { const run = engine.startRun({ workflow: graph, input: 'Observe independent Windows information.' }); await waitFor(() => runtime.calls.length === 5 && entered === 1, 'all five agents execute while the first shared desktop action is held'); assert.equal(engine.getRun(run.id).workflow.settings.maxParallel, 5); assert.equal(peak, 1); firstAction.resolve(); await engine.executions.get(run.id); assert.equal(engine.getRun(run.id).status, 'completed'); assert.equal(entered, 5); assert.equal(peak, 1); }
-  finally { firstAction.resolve(); desktop.setEnabled(false); }
+test('historical desktop flags neither advertise nor dispatch live UIA', async t => {
+  let effects=0;
+  const desktop={status:()=>({enabled:false}),perform:async()=>{effects++;throw Error('must not dispatch');}};
+  const runtime=new FakeRuntime(async options=>{
+    assert.ok(!options.dynamicTools.some(tool=>tool.name==='relay_desktop'));
+    const result=await options.onToolCall({name:'relay_desktop',arguments:{action:'invoke',ref:'old'}});
+    assert.equal(result.success,false);assert.equal(result.code,'DESKTOP_RETIRED');
+    assert.equal(JSON.parse(result.contentItems[0].text).actionDispatched,false);
+    return {output:'Retired desktop request reported without effects.'};
+  });
+  const {engine}=await harness(t,runtime,{desktop});const graph=workflow();graph.nodes.find(n=>n.type==='agent').desktop=true;
+  const run=engine.startRun({workflow:graph,input:'Continue the saved task without live UIA'});
+  await engine.executions.get(run.id);assert.equal(engine.getRun(run.id).status,'completed');assert.equal(effects,0);
 });
 
 test('provider failure codes survive saved run reconstruction and archived conversation recovery', async t => {
@@ -866,7 +870,7 @@ test('cancelled runs cannot resume until every agent acknowledges stopping', asy
   assert.equal(runtime.calls.length, 2);
 });
 
-test('resume rechecks the original workspace and direct desktop connection', async t => {
+test('resume preserves workspace and provider checks without requiring retired desktop', async t => {
   const runtime = new FakeRuntime(async () => { throw new Error('retry me'); });
   const { engine, cwd } = await harness(t, runtime);
   let attached = true;
@@ -875,11 +879,11 @@ test('resume rechecks the original workspace and direct desktop connection', asy
   const run = engine.startRun({ workflow: graph, input: { task: 'desktop retry', cwd } });
   await waitFor(() => engine.getRun(run.id).settled, 'desktop failure settles');
   attached = false;
-  assert.throws(() => engine.retryRun(run.id), /Attach the Windows desktop/);
-  attached = true;
+  const resumed=engine.retryRun(run.id);
+  await engine.executions.get(resumed.id);
   runtime.status = () => ({ connected: false, authenticated: true, lastError: 'Codex connection interrupted' });
   assert.throws(() => engine.retryRun(run.id), /Codex connection interrupted/);
-  assert.equal(runtime.calls.length, 1);
+  assert.equal(runtime.calls.length, 2);
   assert.throws(() => engine.startRun({ workflow: workflow(), input: { task: 'bad workspace', cwd: {} } }), /Workspace folder must be a path/);
 });
 

@@ -26,6 +26,10 @@ export function createChatFrame(mount) {
     '<input class="next-field next-sidebar-search" type="search" id="next-chat-search" placeholder="Search" aria-label="Find a conversation">',
     '<select class="next-field next-sidebar-filter" id="next-chat-bucket" aria-label="Conversation view">',
     '<option value="active">Active</option><option value="archived">Archive</option><option value="deleted">Trash</option></select>',
+    '<div class="next-chat-folder-picker"><select id="next-chat-folder-filter" class="next-field" aria-label="Conversation folder"><option value="all">All folders</option><option value="ungrouped">Unfiled</option></select><button id="next-chat-folder-new" type="button">+ Folder</button></div>',
+    '<div class="next-chat-folder-tools"><button id="next-chat-folder-rename" type="button" hidden>Rename folder</button><button id="next-chat-folder-delete" type="button" hidden>Delete folder</button></div>',
+    '<label class="next-chat-folder-auto"><input id="next-chat-folder-auto" type="checkbox" checked> Automatically group chats</label>',
+    '<p id="next-chat-folder-status" class="next-chat-folder-status" role="status" hidden></p><button id="next-chat-folder-undo" type="button" hidden>Undo last move</button><button id="next-chat-folder-more" type="button" hidden>Organize more</button>',
     '<button id="next-chat-select" type="button" aria-controls="next-chat-bulk" aria-expanded="false">Multi-select</button>',
     '<section id="next-chat-bulk" class="next-chat-bulk" aria-label="Selected conversations" hidden>',
     '<div class="next-chat-bulk-heading"><span id="next-chat-bulk-count" role="status">0 selected</span><button id="next-chat-bulk-cancel" type="button">Cancel</button></div>',
@@ -65,16 +69,24 @@ export function createChatFrame(mount) {
     '</div></details></form>',
     '<p id="next-chat-hint" class="next-chat-hint" role="status">Enter to send · Shift+Enter for a new line</p>',
     '</footer></div>',
-    '<dialog id="next-chat-goal-dialog" class="next-chat-management-dialog next-chat-goal-dialog" aria-labelledby="next-chat-goal-title"><form id="next-chat-goal-form"><h2 id="next-chat-goal-title">Create Goal</h2><p>Goal Mode tracks one explicit objective and its completion evidence. This is separate from autonomous operation and its model allowlist.</p><p id="next-chat-goal-context" class="next-chat-goal-context" hidden></p><label class="next-label">Objective and completion criteria<textarea id="next-chat-goal-input" class="next-field" rows="5" maxlength="12000" required placeholder="Describe the outcome and how to know it is done."></textarea></label><label class="next-label">Turn limit (optional)<input id="next-chat-goal-limit" class="next-field" type="number" min="1" step="1" inputmode="numeric" placeholder="No limit"></label><label class="next-label">Stop at computer-local time (optional)<input id="next-chat-goal-deadline-input" class="next-field" type="datetime-local" step="1"></label><p class="next-help">A phrase such as until 6 AM EST also establishes an automatic stop. EST is fixed UTC-05:00; Eastern follows daylight saving time. Saved deadlines do not reset on Resume.</p><p class="next-help">Goal Mode is optional and independent of autonomous operation. Turning it off retains the saved goal and progress.</p><p id="next-chat-goal-error" role="alert" hidden></p><div class="next-chat-dialog-actions"><button id="next-chat-goal-cancel" type="button">Cancel</button><button id="next-chat-goal-save" type="submit" class="next-primary">Save Goal</button></div></form></dialog><dialog id="next-chat-autonomy-dialog" class="next-chat-management-dialog next-chat-goal-dialog" aria-labelledby="next-chat-autonomy-title"><form id="next-chat-autonomy-form"><h2 id="next-chat-autonomy-title">Autonomous operation</h2><p>This mode is independent of Goal Mode. BLACKICE may continue the conversation, select permitted models, and delegate work. Calibration guides its decisions.</p><label class="next-label">Calibration (optional)<textarea id="next-chat-autonomy-calibration" class="next-field" rows="4" maxlength="12000" placeholder="How should BLACKICE make decisions and use your time and model quotas?"></textarea></label><label class="next-label">Model whitelist (required)<input id="next-chat-autonomy-search" class="next-field" type="search" placeholder="Filter available models" aria-label="Filter autonomous models"></label><div id="next-chat-autonomy-models" class="next-chat-autonomy-models" role="group" aria-label="Models permitted for autonomy"></div><p class="next-help">Only selected models may be used for autonomous continuations or delegated workers. Model suitability and capabilities are judged by the model-selection skill, not hardcoded restrictions.</p><p id="next-chat-autonomy-error" role="alert" hidden></p><div class="next-chat-dialog-actions"><button id="next-chat-autonomy-cancel" type="button">Cancel</button><button id="next-chat-autonomy-save" type="submit" class="next-primary">Enable autonomy</button></div></form></dialog><dialog id="next-chat-trash-dialog" class="next-chat-management-dialog" aria-labelledby="next-chat-trash-title">',
+    '<dialog id="next-chat-goal-dialog" class="next-chat-management-dialog next-chat-goal-dialog" aria-labelledby="next-chat-goal-title"><form id="next-chat-goal-form"><h2 id="next-chat-goal-title">Create Goal</h2><p>Goal Mode tracks one explicit objective and its completion evidence. This is separate from autonomous operation and its model allowlist.</p><p id="next-chat-goal-context" class="next-chat-goal-context" hidden></p><label class="next-label">Objective and completion criteria<textarea id="next-chat-goal-input" class="next-field" rows="5" maxlength="12000" required placeholder="Describe the outcome and how to know it is done."></textarea></label><label class="next-label">Turn limit (optional)<input id="next-chat-goal-limit" class="next-field" type="number" min="1" step="1" inputmode="numeric" placeholder="No limit"></label><label class="next-label">Stop at computer-local time (optional)<input id="next-chat-goal-deadline-input" class="next-field" type="datetime-local" step="1"></label><p class="next-help">A phrase such as until 6 AM EST also establishes an automatic stop. EST is fixed UTC-05:00; Eastern follows daylight saving time. Saved deadlines do not reset on Resume.</p><p class="next-help">Goal Mode is optional and independent of autonomous operation. Turning it off retains the saved goal and progress.</p><p id="next-chat-goal-error" role="alert" hidden></p><div class="next-chat-dialog-actions"><button id="next-chat-goal-cancel" type="button">Cancel</button><button id="next-chat-goal-save" type="submit" class="next-primary">Save Goal</button></div></form></dialog><dialog id="next-chat-autonomy-dialog" class="next-chat-management-dialog next-chat-goal-dialog" aria-labelledby="next-chat-autonomy-title"><form id="next-chat-autonomy-form"><h2 id="next-chat-autonomy-title">Autonomous operation</h2><p>Goals describe outcomes. Autonomy governs continuing work and can operate alongside a Goal.</p><label class="next-label">Operating scope<select id="next-chat-autonomy-scope" class="next-field"><option value="conversation">This conversation and its delegated work</option><option value="goal">Current goal only</option><option value="blackice">BLACKICE-wide operator</option></select></label><p class="next-help">BLACKICE-wide uses this conversation to coordinate authorized work across the app. It does not turn on every old chat. Current-goal scope stops with that saved goal. User stops and deadlines always remain in effect.</p><label class="next-label">Calibration (optional)<textarea id="next-chat-autonomy-calibration" class="next-field" rows="4" maxlength="12000" placeholder="How should BLACKICE make decisions and use your time and model quotas?"></textarea></label><label class="next-label">Model whitelist (required)<input id="next-chat-autonomy-search" class="next-field" type="search" placeholder="Filter available models" aria-label="Filter autonomous models"></label><div id="next-chat-autonomy-models" class="next-chat-autonomy-models" role="group" aria-label="Models permitted for autonomy"></div><p class="next-help">Only selected models may be used for autonomous continuations or delegated workers. Model suitability and capabilities are judged by the model-selection skill, not hardcoded restrictions.</p><p id="next-chat-autonomy-error" role="alert" hidden></p><div class="next-chat-dialog-actions"><button id="next-chat-autonomy-cancel" type="button">Cancel</button><button id="next-chat-autonomy-save" type="submit" class="next-primary">Enable autonomy</button></div></form></dialog><dialog id="next-chat-trash-dialog" class="next-chat-management-dialog" aria-labelledby="next-chat-trash-title">',
     '<h2 id="next-chat-trash-title">Move to Trash?</h2><p id="next-chat-trash-message"></p><p>You can restore chats from Trash. Saved messages and files are preserved.</p>',
     '<div class="next-chat-dialog-actions"><button id="next-chat-trash-cancel" type="button" autofocus>Cancel</button><button id="next-chat-trash-confirm" type="button">Move to Trash</button></div></dialog>',
     '<dialog id="next-chat-rename-dialog" class="next-chat-management-dialog" aria-labelledby="next-chat-rename-title">',
     '<form id="next-chat-rename-form"><h2 id="next-chat-rename-title">Rename chat</h2><label class="next-label">Chat title<input id="next-chat-rename-input" class="next-field" maxlength="120" required></label>',
     '<p id="next-chat-rename-error" role="alert" hidden></p><div class="next-chat-dialog-actions"><button id="next-chat-rename-cancel" type="button">Cancel</button><button id="next-chat-rename-save" type="submit" class="next-primary">Save</button></div></form></dialog>',
+    '<dialog id="next-chat-folder-dialog" class="next-chat-management-dialog" aria-labelledby="next-chat-folder-dialog-title"><form id="next-chat-folder-form"><h2 id="next-chat-folder-dialog-title">Create folder</h2><label class="next-label">Folder name<input id="next-chat-folder-name" class="next-field" maxlength="60" required></label><p id="next-chat-folder-dialog-error" role="alert" hidden></p><div class="next-chat-dialog-actions"><button id="next-chat-folder-cancel" type="button">Cancel</button><button id="next-chat-folder-save" type="submit" class="next-primary">Save folder</button></div></form></dialog>',
+    '<dialog id="next-chat-folder-move-dialog" class="next-chat-management-dialog" aria-labelledby="next-chat-folder-move-title"><form id="next-chat-folder-move-form"><h2 id="next-chat-folder-move-title">Organize chat</h2><p id="next-chat-folder-move-reason"></p><label class="next-label">Move to<select id="next-chat-folder-move-target" class="next-field"><option value="">Unfiled</option></select></label><p class="next-help">Manual placement stays put until you reset it to automatic. This never shares context with other chats.</p><div class="next-chat-dialog-actions"><button id="next-chat-folder-move-cancel" type="button">Cancel</button><button id="next-chat-folder-move-auto" type="button">Reset to automatic</button><button id="next-chat-folder-move-save" type="submit" class="next-primary">Move</button></div></form></dialog>',
+    '<dialog id="next-chat-folder-delete-dialog" class="next-chat-management-dialog" aria-labelledby="next-chat-folder-delete-title"><h2 id="next-chat-folder-delete-title">Delete folder?</h2><p id="next-chat-folder-delete-label"></p><p>Every saved conversation stays intact, in the same Archive or Trash state. Only its folder membership is removed.</p><div class="next-chat-dialog-actions"><button id="next-chat-folder-delete-cancel" type="button">Cancel</button><button id="next-chat-folder-delete-confirm" type="button" class="next-primary">Delete folder only</button></div></dialog>',
     '</div>',
   ].join('');
   const find = id => mount.querySelector('#'+id);
   return { shell:find('next-chat'),list:find('next-chat-list'),search:find('next-chat-search'),bucket:find('next-chat-bucket'),
+    folderFilter:find('next-chat-folder-filter'),folderNew:find('next-chat-folder-new'),folderRename:find('next-chat-folder-rename'),folderDelete:find('next-chat-folder-delete'),
+    folderAuto:find('next-chat-folder-auto'),folderStatus:find('next-chat-folder-status'),folderUndo:find('next-chat-folder-undo'),folderMore:find('next-chat-folder-more'),
+    folderDialog:find('next-chat-folder-dialog'),folderForm:find('next-chat-folder-form'),folderDialogTitle:find('next-chat-folder-dialog-title'),folderName:find('next-chat-folder-name'),folderDialogError:find('next-chat-folder-dialog-error'),folderCancel:find('next-chat-folder-cancel'),folderSave:find('next-chat-folder-save'),
+    folderMoveDialog:find('next-chat-folder-move-dialog'),folderMoveForm:find('next-chat-folder-move-form'),folderMoveTitle:find('next-chat-folder-move-title'),folderMoveReason:find('next-chat-folder-move-reason'),folderMoveTarget:find('next-chat-folder-move-target'),folderMoveCancel:find('next-chat-folder-move-cancel'),folderMoveAuto:find('next-chat-folder-move-auto'),folderMoveSave:find('next-chat-folder-move-save'),
+    folderDeleteDialog:find('next-chat-folder-delete-dialog'),folderDeleteLabel:find('next-chat-folder-delete-label'),folderDeleteCancel:find('next-chat-folder-delete-cancel'),folderDeleteConfirm:find('next-chat-folder-delete-confirm'),
     newButton:find('next-chat-new'),mobileList:find('next-chat-mobile-list'),
     title:find('next-chat-title'),subtitle:find('next-chat-subtitle'),rename:find('next-chat-rename'),archive:find('next-chat-archive'),
     trash:find('next-chat-delete'),exports:find('next-chat-export'),exportMarkdown:find('next-chat-export-markdown'),exportJson:find('next-chat-export-json'),
@@ -87,7 +99,7 @@ export function createChatFrame(mount) {
     ontologyInline:find('next-chat-ontology-inline'),ontologyModules:find('next-chat-ontology-modules'),ontologySave:find('next-chat-ontology-default'),ontologyStatus:find('next-chat-ontology-feedback'),
     form:find('next-chat-form'),input:find('next-chat-input'),attachments:find('next-chat-attachments'),model:find('next-chat-model'),plan:find('next-chat-plan'),
     directoryMode:find('next-chat-directory-mode'),
-    autonomyToggle:find('next-chat-autonomy-toggle'),autonomySettings:find('next-chat-autonomy-settings'),autonomyDialog:find('next-chat-autonomy-dialog'),autonomyForm:find('next-chat-autonomy-form'),autonomyCalibration:find('next-chat-autonomy-calibration'),autonomySearch:find('next-chat-autonomy-search'),autonomyModels:find('next-chat-autonomy-models'),autonomyError:find('next-chat-autonomy-error'),autonomyCancel:find('next-chat-autonomy-cancel'),autonomySave:find('next-chat-autonomy-save'),
+    autonomyToggle:find('next-chat-autonomy-toggle'),autonomySettings:find('next-chat-autonomy-settings'),autonomyDialog:find('next-chat-autonomy-dialog'),autonomyForm:find('next-chat-autonomy-form'),autonomyScope:find('next-chat-autonomy-scope'),autonomyCalibration:find('next-chat-autonomy-calibration'),autonomySearch:find('next-chat-autonomy-search'),autonomyModels:find('next-chat-autonomy-models'),autonomyError:find('next-chat-autonomy-error'),autonomyCancel:find('next-chat-autonomy-cancel'),autonomySave:find('next-chat-autonomy-save'),
     goalToggle:find('next-chat-goal-toggle'),goalCard:find('next-chat-goal-card'),goalStatus:find('next-chat-goal-status'),goalObjective:find('next-chat-goal-objective'),goalProgress:find('next-chat-goal-progress'),goalDeadline:find('next-chat-goal-deadline'),goalReason:find('next-chat-goal-reason'),goalEdit:find('next-chat-goal-edit'),goalPause:find('next-chat-goal-pause'),goalResume:find('next-chat-goal-resume'),goalClear:find('next-chat-goal-clear'),goalDialog:find('next-chat-goal-dialog'),goalForm:find('next-chat-goal-form'),goalTitle:find('next-chat-goal-title'),goalInput:find('next-chat-goal-input'),goalContext:find('next-chat-goal-context'),goalLimit:find('next-chat-goal-limit'),goalDeadlineInput:find('next-chat-goal-deadline-input'),goalError:find('next-chat-goal-error'),goalCancel:find('next-chat-goal-cancel'),goalSave:find('next-chat-goal-save'),
     effort:find('next-chat-effort'),tier:find('next-chat-tier'),send:find('next-chat-send'),hint:find('next-chat-hint') };
 }
@@ -96,13 +108,17 @@ export function createChatFrame(mount) {
 // exposed window, so the full searchable catalog never becomes a DOM cache.
 const indexViews = new WeakMap();
 
-export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATCH,onMore,selecting=false,selection=new Map(),onToggle,onAction,busy=false}={}) {
+export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATCH,onMore,selecting=false,selection=new Map(),onToggle,onAction,busy=false,folderNames=new Map(),groupFolders=false,showEmptyFolders=true,onFolderToggle}={}) {
   const list=view.list,doc=list.ownerDocument;
   let cache=indexViews.get(list);
-  if(!cache){cache={rows:new Map()};indexViews.set(list,cache);}
+  if(!cache){cache={rows:new Map(),groups:new Map()};indexViews.set(list,cache);}
   cache.onMore=onMore;
   const {shown,hidden,pinned}=conversationIndexWindow(items,limit,chosen);
   const visible=pinned?[pinned,...shown]:shown,order=[],retained=new Set();
+  const groupedRows=new Map(),groupCounts=new Map();let moved=false;
+  const folderKey=item=>folderNames.has(item.folderId)?item.folderId:'';
+  if(groupFolders)for(const item of items){const key=folderKey(item);groupCounts.set(key,(groupCounts.get(key)||0)+1);}
+  const exposed=()=>visible.filter(item=>cache.groups.get(folderKey(item))?.node.open);
   const focused=list.contains(doc.activeElement)?doc.activeElement:null,scrollTop=list.scrollTop;
   const setText=(node,value)=>{if(node.textContent!==value)node.textContent=value;};
   const marker=(key,label,className,tag='p')=>{
@@ -110,7 +126,7 @@ export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATC
     setText(cache[key],label);return cache[key];
   };
   if(!items.length)order.push(marker('empty','No conversations here.','next-chat-placeholder'));
-  if(pinned)order.push(marker('pinned','Current conversation','next-conversation-pinned-label'));
+  if(pinned&&!groupFolders)order.push(marker('pinned','Current conversation','next-conversation-pinned-label'));
   for(const item of visible){
     const id=rootId(item),title=String(item.rootTitle||item.title||'Conversation');
     const bucket=item.state||'active',actions=Boolean(onAction)&&!selecting;
@@ -130,12 +146,13 @@ export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATC
       entry.button=button;entry.titleNode=text(button,'','span','next-conversation-title');
       const foot=text(button,'','span','next-conversation-meta');
       entry.statusNode=text(foot,'');entry.dateNode=text(foot,'');
+      entry.folderNode=text(button,'','small','next-conversation-folder-provenance');
       button.addEventListener('click',()=>entry.onSelect?.(entry.item));
       if(actions){
         const menu=text(row,'','details','next-conversation-actions');entry.menu=menu;
         entry.summary=text(menu,'…','summary');
         const contents=text(menu,'','div','next-conversation-menu');
-        for(const [action,label]of [...(bucket!=='deleted'?[['rename','Rename']]:[]),[bucket==='active'?'archive':'restore',bucket==='active'?'Archive':'Restore'],...(bucket!=='deleted'?[['delete','Move to Trash']]:[])]){
+        for(const [action,label]of [...(bucket!=='deleted'?[['rename','Rename']]:[]),['move_folder','Move to folder...'],['reset_folder_auto','Reset to automatic'],[bucket==='active'?'archive':'restore',bucket==='active'?'Archive':'Restore'],...(bucket!=='deleted'?[['delete','Move to Trash']]:[])]){
           const control=text(contents,label,'button');control.type='button';control.dataset.chatAction=action;
           entry.controls.set(action,control);
           control.addEventListener('click',()=>{menu.open=false;entry.onAction?.(entry.item,action);});
@@ -157,6 +174,12 @@ export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATC
     if(entry.status!==status){setText(entry.statusNode,status);entry.status=status;}
     const date=item.updatedAt||item.createdAt;
     if(entry.date!==date){setText(entry.dateNode,formatDate(date));entry.date=date;}
+    const folderName=item.folderId?folderNames.get(item.folderId)||'Folder':null;
+    const suggestedName=item.folderSuggestion?folderNames.get(item.folderSuggestion):null;
+    const badge=item.folderSource==='automatic'?'Auto: '+(folderName||'Unfiled'):item.folderSource==='manual'?'Manual: '+(folderName||'Unfiled'):suggestedName?'Consider: '+suggestedName:'';
+    setText(entry.folderNode,badge);
+    entry.folderNode.hidden=!badge;
+    entry.folderNode.title=item.folderReason||'';
     const selected=id===chosen;
     if(entry.selected!==selected){entry.button.setAttribute('aria-current',String(selected));entry.selected=selected;}
     if(entry.button.disabled!==busy)entry.button.disabled=busy;
@@ -179,7 +202,36 @@ export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATC
       for(const [link,format]of entry.exports)link.href='/api/conversations/'+encodeURIComponent(runId)+'/export?format='+format;
       entry.runId=runId;
     }
-    retained.add(id);order.push(entry.row);
+    retained.add(id);
+    if(groupFolders){const key=folderNames.has(item.folderId)?item.folderId:'';
+      if(!groupedRows.has(key))groupedRows.set(key,[]);groupedRows.get(key).push(entry.row);
+    }else order.push(entry.row);
+  }
+  if(groupFolders){
+    const allGroups=[...folderNames.entries(),['','Unfiled']];
+    for(const [key,name] of allGroups){
+      const rows=groupedRows.get(key)||[],total=groupCounts.get(key)||0;
+      if(!total&&(key===''||!showEmptyFolders))continue;
+      let group=cache.groups.get(key);
+      if(!group){
+        const node=doc.createElement('details');node.className='next-chat-folder-group';node.dataset.chatFolder=key;
+        const summary=text(node,'','summary','next-chat-folder-heading');
+        const label=text(summary,'','span'),count=text(summary,'','small');
+        const body=text(node,'','div','next-chat-folder-children');
+        group={node,label,count,body};cache.groups.set(key,group);node.open=true;
+        node.addEventListener('toggle',()=>{group.onToggle?.();});
+      }
+      group.onToggle=()=>onFolderToggle?.(exposed());
+      setText(group.label,name);setText(group.count,String(total));
+      const containsChosen=visible.some(item=>rootId(item)===chosen&&(folderNames.has(item.folderId)?item.folderId:'')===key);
+      if(containsChosen&&group.chosen!==chosen)group.node.open=true;
+      group.chosen=containsChosen?chosen:null;
+      const children=[...rows];
+      if(!rows.length){if(!group.empty)group.empty=text(doc.createElement('div'),'','p','next-chat-folder-empty');setText(group.empty,total?'Load more chats below to see this folder.':'No chats in this folder.');children.push(group.empty);}
+      for(let i=0;i<children.length;i++)if(group.body.childNodes[i]!==children[i]){group.body.insertBefore(children[i],group.body.childNodes[i]||null);moved=true;}
+      while(group.body.childNodes.length>children.length)group.body.lastChild.remove();
+      order.push(group.node);
+    }
   }
   if(hidden>0){
     const more=marker('more','Show '+Math.min(CHAT_INDEX_BATCH,hidden)+' more ('+hidden+' remaining)','next-conversation-more','button');
@@ -188,7 +240,6 @@ export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATC
   }
   // Move only rows whose order changed. Unchanged updates do not replace
   // children, close a menu, blur a focused control, or reset the scroll position.
-  let moved=false;
   for(let index=0;index<order.length;index++){
     const existing=list.childNodes[index]||null;
     if(existing!==order[index]){list.insertBefore(order[index],existing);moved=true;}
@@ -199,7 +250,7 @@ export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATC
     list.scrollTop=scrollTop;
     if(focused?.isConnected&&doc.activeElement!==focused)focused.focus({preventScroll:true});
   }
-  return visible;
+  return groupFolders?exposed():visible;
 }
 
 export function paintIntroduction(view, message = '') {

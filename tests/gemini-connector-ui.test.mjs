@@ -106,10 +106,25 @@ test('Gemini connector setup opens only BLACKICE contained browser and never cha
   assert.match(f.mount.textContent,/ChatGPT: 1 separate active grant/);
 });
 
-test('Settings navigation and static-file registration include independent Gemini section', async () => {
+test('App connections navigation and static-file registration include independent Gemini section', async t => {
   const settings = await readFile(new URL('../public/next/workspaces/settings.mjs',import.meta.url),'utf8');
   const server = await readFile(new URL('../server.mjs',import.meta.url),'utf8');
-  assert.match(settings,/\['connector','ChatGPT connector'\],\['gemini','Gemini connector'\]/);
+  const { createSettingsWorkspace } = await import('../public/next/workspaces/settings.mjs');
+  const f = planningDOM(t);
+  const workspace = createSettingsWorkspace({ mount:f.mount, api:async()=>({}), getStatus:()=>({}), events:{subscribe:()=>()=>{}} });
+  t.after(()=>workspace.destroy());
+  assert.equal(f.$('#next-settings-section-apps').textContent,'App connections');
+  for (const [id,label] of [['connector','ChatGPT'],['gemini','Gemini'],['claude','Claude']]) {
+    assert.equal(f.$('#next-settings-section-'+id).textContent,label);
+    assert.equal(f.$('#next-settings-section-'+id).closest('[role="tabpanel"]').id,'next-settings-apps');
+    assert.equal(f.$('#next-settings-'+id).parentElement.id,'next-settings-apps');
+  }
+  await f.click('#next-settings-section-apps');
+  await f.click('#next-settings-section-gemini');
+  assert.equal(f.$('#next-settings-apps').hidden,false);
+  assert.equal(f.$('#next-settings-gemini').hidden,false);
+  assert.equal(f.$('#next-settings-connector').hidden,true);
+  assert.equal(f.$('#next-settings-section-gemini').getAttribute('aria-selected'),'true');
   assert.match(settings,/gemini:\(\)=>import\('\.\/settings-gemini-connector\.mjs'\)/);
   assert.match(server,/'workspaces\/settings-gemini-connector\.mjs'/);
 });

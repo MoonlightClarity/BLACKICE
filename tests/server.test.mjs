@@ -396,35 +396,17 @@ test('HTTP resume rejects cancellation until the provider has stopped', async t 
   await app.engine.executions.get(started.data.id);
 });
 
-test('desktop attaches directly and disconnecting it stops an active desktop workflow', async t => {
-  class FakeDesktop extends EventEmitter {
-    constructor() { super(); this.enabled = false; this.attachments = []; }
-    status() { return { available: true, enabled: this.enabled, platform: 'win32' }; }
-    async setEnabled(enabled) { this.enabled = enabled; this.attachments.push(enabled); this.emit('status', this.status()); return this.status(); }
+test('legacy desktop HTTP routes are retired without attaching injected live access', async t => {
+  let calls=0;const desktop={status:()=>({available:true,enabled:true}),setEnabled:()=>{calls++;},perform:()=>{calls++;}};
+  const {app,request,auth}=await application(t,{desktop});
+  assert.equal(app.desktop.status().retired,true);
+  for(const [route,method] of [['attach','POST'],['frame','GET'],['windows','GET']]){
+    const result=await request('/api/desktop/'+route,{method,headers:auth,...(method==='POST'?{body:{}}:{})});
+    assert.equal(result.status,410);assert.equal(result.data.code,'DESKTOP_RETIRED');assert.equal(result.data.actionDispatched,false);
   }
-  const desktop = new FakeDesktop();
-  let active;
-  const runtime = new FakeRuntime();
-  runtime.runAgent = options => {
-    active = options;
-    return new Promise((resolve, reject) => options.signal.addEventListener('abort', () => reject(new Error('desktop detached')), { once: true }));
-  };
-  const { app, request, auth } = await application(t, { runtime, desktop });
-  assert.deepEqual(desktop.attachments, [true], 'desktop connects without an approval step');
-  const flow = structuredClone(graph); flow.nodes.find(node => node.type === 'agent').desktop = true;
-  const started = await request('/api/runs', { method: 'POST', headers: auth, body: { workflow: flow, input: 'desktop connection test' } });
-  assert.equal(started.status, 201);
-  while (!active) await new Promise(resolve => setTimeout(resolve, 10));
-  assert.ok(active.dynamicTools.length);
-  assert.equal(typeof active.onToolCall, 'function');
-  assert.equal(active.sandbox, 'danger-full-access');
-  const detached = await request('/api/desktop/detach', { method: 'POST', headers: auth, body: {} });
-  assert.equal(detached.status, 200);
-  assert.equal(active.signal.aborted, true);
-  await app.engine.executions.get(started.data.id);
-  assert.equal(app.engine.getRun(started.data.id).status, 'cancelled');
-  assert.equal((await request(`/api/runs/${started.data.id}/retry`, { method: 'POST', headers: auth, body: {} })).status, 400);
-  assert.equal((await request('/api/desktop/attach', { method: 'POST', headers: auth, body: {} })).data.enabled, true);
+  assert.equal((await request('/api/desktop/status',{headers:auth})).data.available,false);
+  assert.equal((await request('/api/desktop/detach',{method:'POST',headers:auth,body:{}})).status,200);
+  assert.equal(calls,0);
 });
 
 for (const firstFailure of ['storage', 'desktop']) {
@@ -439,7 +421,8 @@ for (const firstFailure of ['storage', 'desktop']) {
     }
     const runtime = new FakeRuntime();
     runtime.close = async () => { stages.push('provider'); throw providerError; };
-    const { app, url, auth } = await application(t, { runtime, desktop: new FakeDesktop() });
+    const { app, url, auth } = await application(t, { runtime });
+    app.desktop.setEnabled = FakeDesktop.prototype.setEnabled;
     app.engine.persist = async () => { stages.push('storage'); throw storageError; };
     const expectedError = firstFailure === 'desktop' ? desktopError : storageError;
     const close = app.close.bind(app);

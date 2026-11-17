@@ -2,11 +2,13 @@ export const KNOWLEDGE_PAGE_SIZE = 80;
 export const KNOWLEDGE_LIST_LIMIT = 300;
 export const KNOWLEDGE_HISTORY_LIMIT = 9;
 
-export function knowledgeListPath({kind='memory',query='',memoryType='',cwd='',deletedOnly=false}={}) {
+export function knowledgeListPath({kind='memory',query='',memoryType='',cwd='',folderId=null,source='all',deletedOnly=false}={}) {
   const params=new URLSearchParams({kind:kind==='skill'?'skill':'memory',limit:String(KNOWLEDGE_LIST_LIMIT)});
   if(query.trim())params.set('query',query.trim().slice(0,256));
   if(kind!=='skill'&&memoryType)params.set('memoryType',memoryType);
   if(cwd.trim())params.set('cwd',cwd.trim());
+  if(folderId!==null)params.set('folderId',folderId);
+  if(source!=='all')params.set('source',source);
   if(deletedOnly)params.set('deletedOnly','true');
   return '/api/knowledge?'+params;
 }

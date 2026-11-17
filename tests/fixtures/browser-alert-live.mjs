@@ -1,0 +1,60 @@
+import {app,BrowserWindow,BaseWindow,WebContentsView} from 'electron';
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import {ElectronBrowserDriver} from '../../desktop/browser-driver.mjs';
+import {activeBrowserOwnerStatus} from '../../lib/browser-stopped-adoption.mjs';
+import {createLiveBrowserWindow} from '../../desktop/browser-surface.mjs';
+const arg=n=>process.argv.find(x=>x.startsWith('--'+n+'='))?.slice(n.length+3);
+const dataDir=arg('fixture-data'),mode=arg('fixture-mode');
+if(!dataDir||!path.isAbsolute(dataDir)||!['live','offscreen'].includes(mode))throw Error('Disposable fixture required');
+app.setPath('userData',path.join(dataDir,'profile'));
+app.on('window-all-closed',()=>{});
+const observations=[],checks=[],windowsSeen=[];
+class ObservedBaseWindow extends BaseWindow { constructor(options) { super(options);windowsSeen.push(this);this.on('show',()=>observations.push('base-window-show'));this.on('focus',()=>observations.push('base-window-focus')); } }
+app.on('browser-window-created',(_e,w)=>{w.on('show',()=>observations.push('window-show'));w.on('focus',()=>observations.push('window-focus'));});
+const write=r=>fs.writeFileSync(path.join(dataDir,'result.json'),JSON.stringify({...r,mode,observations,checks,liveProfileAccessed:false},null,2));
+const timer=setTimeout(()=>{write({ok:false,error:'Fixture timeout'});app.exit(1)},25000);
+app.whenReady().then(async()=>{
+ let driver,server,result;
+ try{
+ server=http.createServer((_q,r)=>r.end('<title>Owned alert fixture</title><button onclick="notice()">Trigger upload notice</button><input type="file" aria-label="Synthetic upload" onchange="notice()"><script>window.effects=0;window.completed=0;function notice(){effects++;alert("Your file has been uploaded successfully.");completed++}</script>'));
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ driver=await new ElectronBrowserDriver({dataDir,downloadDir:path.join(dataDir,'downloads'),...(mode==='live'?{liveSurface:true,createSurfaceWindow:options=>createLiveBrowserWindow({BaseWindow:ObservedBaseWindow,WebContentsView,options})}:{})}).init();
+ const owner={taskId:'fixture-alert',nodeId:'agent',runId:'fixture-run',conversationId:'fixture-alert'};
+ const tab=driver.newTab('http://127.0.0.1:'+server.address().port+'/',{owner});
+ driver.setActiveOwnerResolver(value=>activeBrowserOwnerStatus(value,{runs:new Map([[owner.runId,{id:owner.runId,taskId:owner.taskId,status:'running',settled:false}]])}));
+ await driver.activate(tab);const wc=tab.window.webContents;wc.on('focus',()=>observations.push('webcontents-focus'));
+ let dialogs=0,commands=0;
+ wc.debugger.on('message',(_e,m)=>{if(m==='Page.javascriptDialogOpening')dialogs++;});
+ const native=wc.debugger.sendCommand.bind(wc.debugger);
+ wc.debugger.sendCommand=(method,...rest)=>{if(method==='Page.handleJavaScriptDialog')commands++;return native(method,...rest);};
+ const snapshot=await driver.perform({action:'snapshot',tabId:tab.id},{owner});
+ const button=snapshot.frames.flatMap(frame=>frame.elements).find(item=>item.name==='Trigger upload notice');
+ assert.ok(button);
+ const start=Date.now();
+ const actionResult=await driver.perform({action:'click',tabId:tab.id,ref:button.ref,expectedUrl:snapshot.url,expectedDocumentId:snapshot.documentId},{owner});
+ assert.ok(!actionResult.pendingInteraction,'Production click must return without a pending alert');
+ assert.notEqual(actionResult.actionDispatched,false);
+ for(let i=0;i<100&&!tab.siteNotices?.some(n=>n.status==='acknowledged');i++)await new Promise(r=>setTimeout(r,10));
+ const state=await wc.executeJavaScript('({effects,completed})');
+ assert.deepEqual(state,{effects:1,completed:1});assert.equal(dialogs,1);assert.equal(commands,1);
+ assert.equal(tab.pendingInteraction,null);assert.equal(tab.siteNotices[0].message,'Your file has been uploaded successfully.');
+ assert.ok(Date.now()-start<5000);assert.deepEqual(observations,[]);
+ const uploadSnapshot=await driver.perform({action:'snapshot',tabId:tab.id},{owner});
+ const input=uploadSnapshot.frames.flatMap(frame=>frame.elements).find(item=>item.name==='Synthetic upload');assert.ok(input);
+ const file=path.join(dataDir,'synthetic-resume.txt');fs.writeFileSync(file,'Disposable synthetic upload, no real user data.');
+ const uploadResult=await driver.perform({action:'upload',tabId:tab.id,ref:input.ref,paths:[file],expectedUrl:uploadSnapshot.url,expectedDocumentId:uploadSnapshot.documentId},{owner});
+ assert.ok(!uploadResult.pendingInteraction);assert.notEqual(uploadResult.actionDispatched,false);
+ const afterUpload=await wc.executeJavaScript('({effects,completed,files:document.querySelector("input").files.length})');
+ assert.deepEqual(afterUpload,{effects:2,completed:2,files:1});assert.equal(dialogs,2);assert.equal(commands,2);assert.equal(tab.suspendedWork.size,0);
+ assert.deepEqual(observations,[]);
+ checks.push('production-click-and-upload-return-success-without-pending-interaction');
+ assert.ok([...BrowserWindow.getAllWindows(),...windowsSeen].every(w=>!w.isVisible()&&!w.isFocused()));
+ checks.push('actual-alert-resolves-once','no-effect-replay','message-retained','no-browser-window-show-or-focus');
+ result={ok:true,elapsedMs:Date.now()-start,state,afterUpload,dialogs,commands,electron:process.versions.electron};
+ }catch(e){result={ok:false,error:e.stack};}
+ try{await driver?.close();if(server)await new Promise(r=>{server.closeAllConnections();server.close(r)});}catch(e){result.ok=false;result.shutdownError=e.stack;}
+ write(result);clearTimeout(timer);app.exit(result.ok?0:1);
+});

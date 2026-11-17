@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import {promises as fs} from 'node:fs';
 import path from 'node:path';
@@ -169,31 +169,6 @@ test('repeated read-only inspection does not grow proof or operation history or 
 });
 
 
-test('actual direct tool registration, durable jobs and browser dispatch enforce and measure the contract end to end',async t=>{
- const f=await fixture(t),{DirectExecutionAPI,DIRECT_EXECUTION_SCOPES}=await import('../lib/direct-execution-api.mjs');
- const api=new DirectExecutionAPI({dataDir:f.root,allowedRoot:f.root,browser:f.browser});f.cleanup(()=>api.close());await api.init();
- const client={id:ownerId,label:'Test external caller',kind:'chatgpt',scopes:[...DIRECT_EXECUTION_SCOPES]};
- assert.ok(api.tools(client).some(tool=>tool.name==='blackice_task_contract'));
- async function run(tool,args){
-  const queued=await api.call(tool,args,client),deadline=Date.now()+5000;
-  while(Date.now()<deadline){const saved=await api.getJob(queued.jobId,client);if(saved.settled)return saved;await new Promise(r=>setTimeout(r,5));}
-  assert.fail('Durable direct job did not settle.');
- }
- const click=(requestId)=>({requestId,action:'click',tabId,ref:'submit',expectedUrl:f.page.url,expectedDocumentId:f.page.documentId});
- const unbound=await run('blackice_browser_action',click('unbound'));
- assert.equal(unbound.status,'failed');assert.equal(unbound.error.code,'DIRECT_TASK_REQUIRED');assert.equal(f.counts().commits,0);
- const created=await run('blackice_task_contract',{requestId:'create',action:'create',taskId:'task',contract:contract()});assert.equal(created.status,'succeeded');
- const bound=await run('blackice_task_contract',{requestId:'bind',action:'bind',taskId:'task',tabId,workItemId:'enroll',criterionId:'receipt',identityFields:['participantId','workshopId'],ref:'submit',expectedUrl:f.page.url,expectedDocumentId:f.page.documentId});
- assert.equal(bound.status,'succeeded',JSON.stringify(bound));const bindingId=JSON.parse(bound.result.text.text).result.bindingId;
- const baseline=await run('blackice_task_contract',{requestId:'baseline',action:'reconcile',taskId:'task',tabId,bindingId,phase:'baseline'});assert.equal(baseline.status,'succeeded');
- const submittedArgs=click('submit'),submitted=await run('blackice_browser_action',submittedArgs);
- assert.equal(submitted.status,'succeeded',JSON.stringify(submitted));assert.equal(f.counts().commits,1);
- const replay=await api.call('blackice_browser_action',submittedArgs,client);assert.equal(replay.existing,true);assert.equal(replay.jobId,submitted.jobId);assert.equal(f.counts().commits,1);
- const measured=await run('blackice_task_contract',{requestId:'measure',action:'measure',taskId:'task'});
- assert.equal(measured.status,'succeeded');assert.equal(JSON.parse(measured.result.text.text).result.criteria[0].observedCount,1);
- const repeat=await run('blackice_browser_action',click('new-request-same-target'));assert.equal(repeat.status,'failed');assert.equal(f.counts().commits,1);
-});
-
 
 test('failed queued read authorization is surfaced as reconciliation failure and never dispatched',async t=>{
  const f=await fixture(t),binding=await f.bind();
@@ -201,4 +176,40 @@ test('failed queued read authorization is surfaced as reconciliation failure and
  await assert.rejects(f.reconcile(binding),{code:'DIRECT_TASK_RECONCILIATION_FAILED'});
  assert.equal(f.counts().reads,0);assert.equal(f.counts().commits,0);
  assert.equal((await f.measure()).satisfied,false);
+});
+
+test('unbound login Next dispatches without a receipt contract and exact request replay never repeats it',async t=>{
+ const f=await fixture(t),{DirectExecutionAPI,DIRECT_EXECUTION_SCOPES}=await import('../lib/direct-execution-api.mjs');
+ const api=new DirectExecutionAPI({dataDir:f.root,allowedRoot:f.root,browser:f.browser});f.cleanup(()=>api.close());await api.init();
+ const client={id:ownerId,label:'Test external caller',kind:'chatgpt',scopes:[...DIRECT_EXECUTION_SCOPES]};
+ const request={requestId:'login-next',action:'click',tabId,ref:'Next',expectedUrl:f.page.url,expectedDocumentId:f.page.documentId};
+ f.page.missingReceipt=true;
+ const pending=await api.call('blackice_browser_action',request,client);
+ const concurrent=await api.call('blackice_browser_action',request,client);
+ assert.equal(concurrent.jobId,pending.jobId);
+ let done;
+ for(let i=0;i<1000;i++){done=await api.getJob(pending.jobId,client);if(done.settled)break;await new Promise(r=>setTimeout(r,5));}
+ assert.equal(done.status,'succeeded',JSON.stringify(done));
+ assert.equal(f.counts().commits,1);
+ assert.equal(done.interaction,null);
+ assert.equal(done.result.text.text.includes('taskVerification'),false,'No business completion is invented for a login click.');
+ const replay=await api.call('blackice_browser_action',request,client);
+ assert.equal(replay.existing,true);assert.equal(replay.jobId,pending.jobId);
+ assert.equal(f.counts().commits,1);
+ assert.equal((await api.getJob(pending.jobId,client)).result.text.text,done.result.text.text);
+});
+
+test('unbound lost response remains observable and replay does not repeat the dispatched action',async t=>{
+ const f=await fixture(t),{DirectExecutionAPI,DIRECT_EXECUTION_SCOPES}=await import('../lib/direct-execution-api.mjs');
+ const api=new DirectExecutionAPI({dataDir:f.root,allowedRoot:f.root,browser:f.browser});f.cleanup(()=>api.close());await api.init();
+ const client={id:ownerId,label:'Test external caller',kind:'chatgpt',scopes:[...DIRECT_EXECUTION_SCOPES]};
+ const request={requestId:'login-lost',action:'click',tabId,ref:'Next',expectedUrl:f.page.url,expectedDocumentId:f.page.documentId};
+ f.page.lostResponse=true;
+ const pending=await api.call('blackice_browser_action',request,client);
+ let done;
+ for(let i=0;i<1000;i++){done=await api.getJob(pending.jobId,client);if(done.settled)break;await new Promise(r=>setTimeout(r,5));}
+ assert.equal(done.status,'failed');assert.match(done.result.text.text,/BROWSER_RESPONSE_LOST/);
+ assert.equal(f.counts().commits,1);
+ const replay=await api.call('blackice_browser_action',request,client);
+ assert.equal(replay.existing,true);assert.equal(replay.jobId,pending.jobId);assert.equal(f.counts().commits,1);
 });

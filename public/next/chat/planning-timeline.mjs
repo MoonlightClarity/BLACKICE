@@ -51,6 +51,14 @@ export function planningActivityForEvent(runId, event, previousState = null, ord
       title: 'Compose response', text: 'Preparing the response from the reviewed findings.' }];
     return [];
   }
+  if(data.type==='shadowdancer.step'&&data.callId&&['action-started','action-returned','action-uncertain'].includes(data.event)){
+    const tool=clean(data.tool,120)||'tool',action=clean(data.action,80);
+    const title=data.event==='action-started'?'Action started':data.event==='action-uncertain'?'Action outcome unknown':'Tool returned';
+    const detail=data.event==='action-started'?'Waiting for its result.':data.event==='action-uncertain'?'No settled receipt was received. Do not assume the action failed or repeat it.':
+      data.receiptStatus==='success'?'The tool reported success; task completion is not yet verified.':data.receiptStatus==='failure'?'The tool reported a failure.':'The tool returned without an explicit success status.';
+    return [{id:'directory:'+runId+':'+nodeId+':'+clean(data.callId,250)+':'+data.event,phase:'think',source:'directory-action',at,order,nodeId,
+      title,text:tool+(action?' / '+action:'')+'. '+detail}];
+  }
   if (data.type === 'planning.reassessment') {
     if(data.module==='modular-outcome'&&['recovering','stalled'].includes(data.reviewStatus))return [{
       id:'return:'+runId+':'+nodeId+':outcome:'+data.sequence+':'+data.reviewStatus,phase:'plan',source:'runtime-reassessment',at,order,nodeId,
@@ -111,7 +119,7 @@ export function mergePlanningActivity(previous = [], additions = []) {
 // serialized task snapshot or an arbitrary provider/tool payload.
 function publicActivity(value) {
   if (!value || typeof value !== 'object') return null;
-  const phase = ({ plan: 'plan', review: 'plan', observation: 'think', outcome: 'think', composition: 'think', 'runtime-reassessment': 'plan' })[value.source];
+  const phase = ({ plan: 'plan', review: 'plan', observation: 'think', outcome: 'think', composition: 'think', 'directory-action': 'think', 'runtime-reassessment': 'plan' })[value.source];
   const id = clean(value.id, 500);
   if (!phase || value.phase !== phase || !id) return null;
   return { id, phase, source: value.source, at: time(value.at),
@@ -127,7 +135,7 @@ function publicActivity(value) {
 
 export function projectPlanningActivity(run, { previousState = null } = {}) {
   const saved = (Array.isArray(run?.planningActivity) ? run.planningActivity : []).filter(row =>
-    typeof row?.id === 'string' && ['plan', 'finding', 'outcome', 'review', 'return', 'composition'].some(prefix => row.id.startsWith(`${prefix}:${run?.id}:`)));
+    typeof row?.id === 'string' && ['plan', 'finding', 'outcome', 'review', 'return', 'composition', 'directory'].some(prefix => row.id.startsWith(`${prefix}:${run?.id}:`)));
   let rows = mergePlanningActivity([], saved);
   const recordedRevision = rows.length && Number.isSafeInteger(run?.planningActivityRevision) ? run.planningActivityRevision : 0;
   for (const [order, event] of (Array.isArray(run?.events) ? run.events : []).entries()) {
@@ -203,7 +211,7 @@ export function chatWorkSummary(phases) {
   const latest = entries.findLast(entry => !['composition','runtime-reassessment','review'].includes(entry.source)) || entries.at(-1);
   const active = phases.some(phase => phase.active);
   const title = 'Details';
-  const raw = String(latest?.message?.text || (latest?.source === 'observation' ? latest.text : latest?.title) || latest?.text || 'Saved progress');
+  const raw = String(latest?.message?.text || (latest?.source === 'directory-action' ? latest.title+': '+latest.text : '') || (latest?.source === 'observation' ? latest.text : latest?.title) || latest?.text || 'Saved progress');
   const preview = chatProgressPreview(raw, 'Saved progress');
   return { title, preview, count: entries.length, active };
 }

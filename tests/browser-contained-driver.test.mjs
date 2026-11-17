@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { activeBrowserOwnerStatus } from '../lib/browser-stopped-adoption.mjs';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
@@ -74,6 +75,137 @@ const assertContained = window => {
   assert.equal(window.options.webPreferences.webviewTag, false);
   assert.equal(window.options.webPreferences.nodeIntegrationInSubFrames, undefined); assert.equal(window.options.webPreferences.preload, undefined);
 };
+
+test('native cleanup checks a synthetic page without navigation and rejects form/person-touched state', async t => {
+  const { driver, windows } = await fixture(t); await driver.init();
+  const owner = { taskId: 'fixture-conversation', nodeId: 'research', runId: 'fixture-run',
+    conversationId: 'fixture-conversation' };
+  const tab = driver.newTab('https://fixture.invalid/completed', { owner }); await tab.loading;
+  const before = driver.status().tabs.find(entry => entry.tabId === tab.id);
+  const loads = [...windows[0].loads], wc = tab.window.webContents;
+  wc.executeJavaScript = async script => { assert.match(script, /querySelector/); return {state:'interactive'}; };
+  assert.equal((await driver.cleanupInspection(tab.id)).state, 'interactive');
+  tab.userPinned = true;
+  assert.match((await driver.cleanupInspection(tab.id)).reason, /person-touched/);
+  tab.userPinned = false;
+  wc.executeJavaScript = async () => ({state:'clear'});
+  assert.equal((await driver.cleanupInspection(tab.id)).state, 'limited');
+  assert.deepEqual(windows[0].loads, loads, 'Inspecting must not reload or navigate.');
+  await assert.rejects(driver.perform({ action:'close', tabId:tab.id,
+    expectedDocumentId: 'stale', expectedUrl:before.url }, { source:'host-cleanup' }),
+  { code:'BROWSER_CLEANUP_STALE_TARGET' });
+  assert.ok(driver.tabs.has(tab.id));
+  await driver.perform({ action:'close', tabId:tab.id,
+    expectedDocumentId:before.documentId, expectedUrl:before.url }, { source:'host-cleanup', cleanupReviewed:true });
+  assert.equal(driver.tabs.has(tab.id), false);
+});
+
+/** Deliberately minimal isolated DOM: top-level querySelector cannot see shadow roots or child documents. */
+const cleanupDocument = (elements = []) => ({
+  nodeType: 9, readyState:'complete',
+  querySelector:() => elements.find(element => ['form','input','textarea','select'].includes(element.localName)
+    || element.editable === true) || null,
+  querySelectorAll:() => elements,
+});
+const cleanupElement = (localName, fields = {}) => ({localName, shadowRoot:null, ...fields});
+
+test('cleanup inspection finds unfinished nested iframe/shadow forms, protects opaque frames and still permits clean inspected roots', async t => {
+  const {driver}=await fixture(t); await driver.init();
+  const owner={taskId:'fixture-cleanup',runId:'run-cleanup',nodeId:'research',conversationId:'fixture-cleanup'};
+  const tab=driver.newTab('https://fixture.invalid/completed',{owner});await tab.loading;
+  const wc=tab.window.webContents;
+  const inspect=async document => {
+    wc.executeJavaScript=async source=>{
+      assert.match(source,/querySelector/);
+      return Function('document','return '+source)(document);
+    };
+    return driver.cleanupInspection(tab.id);
+  };
+  const empty=cleanupDocument([cleanupElement('p')]);
+  assert.equal((await inspect(empty)).state,'limited','A simple page is a manually reviewable candidate, not certified empty of hidden content.');
+  const frameForm=cleanupDocument([cleanupElement('form')]);
+  const child=cleanupElement('iframe',{contentDocument:frameForm});
+  assert.equal((await inspect(cleanupDocument([child]))).state,'interactive','Nested form cannot be mistaken for an empty top document.');
+  const nestedClean=cleanupDocument([cleanupElement('iframe',{contentDocument:cleanupDocument([cleanupElement('p')])})]);
+  assert.equal((await inspect(nestedClean)).state,'limited','Fully traversed same-origin iframe remains eligible for manual review.');
+  const shadowForm={querySelector:()=>({}),querySelectorAll:()=>[cleanupElement('form')]};
+  assert.equal((await inspect(cleanupDocument([cleanupElement('x-form',{shadowRoot:shadowForm})]))).state,'interactive');
+  const shadowIframe={querySelector:()=>null,querySelectorAll:()=>[cleanupElement('iframe',{contentDocument:frameForm})]};
+  assert.equal((await inspect(cleanupDocument([cleanupElement('x-nested',{shadowRoot:shadowIframe})]))).state,'interactive',
+    'An iframe inside a shadow tree must also be inspected.');
+  const cleanShadow={querySelector:()=>null,querySelectorAll:()=>[cleanupElement('p')]};
+  assert.equal((await inspect(cleanupDocument([cleanupElement('x-shell',{shadowRoot:cleanShadow})]))).state,'limited');
+  const blocked=cleanupElement('iframe');
+  Object.defineProperty(blocked,'contentDocument',{get(){throw Error('cross-origin');}});
+  assert.equal((await inspect(cleanupDocument([blocked]))).state,'unknown','Uninspectable iframe must not be clean.');
+  assert.equal((await inspect(cleanupDocument([cleanupElement('iframe',{contentDocument:null})]))).state,'unknown',
+    'An unready frame cannot be treated as empty.');
+  assert.equal((await inspect(cleanupDocument([cleanupElement('x-closed')]))).state,'unknown','Unobservable custom closed shadow must not be clean.');
+  wc.executeJavaScript=async()=>false;
+  assert.equal((await driver.cleanupInspection(tab.id)).state,'unknown',
+    'Legacy Boolean false is not complete multi-scope evidence.');
+  assert.ok(driver.tabs.has(tab.id),'Read-only inspection must not close fixture tabs.');
+});
+
+test('closed shadow content on an ordinary div is not falsely certified clear and needs an explicit local review', async t => {
+  const { driver } = await fixture(t); await driver.init();
+  const owner = { taskId: 'fixture-cleanup', runId: 'run-cleanup', nodeId: 'research', conversationId: 'fixture-cleanup' };
+  const tab = driver.newTab('https://fixture.invalid/ordinary-div', { owner }); await tab.loading;
+  const before = driver.status().tabs.find(item => item.tabId === tab.id);
+  const ordinary = cleanupElement('div', { inaccessibleClosedShadowContains: cleanupElement('form') });
+  const page = cleanupDocument([ordinary]);
+  tab.window.webContents.executeJavaScript = async source => Function('document', 'return ' + source)(page);
+  const observed = await driver.cleanupInspection(tab.id);
+  assert.equal(observed.state, 'limited',
+    'A closed shadow tree on built-in elements is not visible to page JS: never certify the entire page clear.');
+  assert.match(observed.reason, /closed shadow/i);
+  await assert.rejects(driver.perform({ action: 'close', tabId: tab.id,
+    expectedUrl: before.url, expectedDocumentId: before.documentId }, { source: 'host-cleanup' }),
+  { code: 'BROWSER_CLEANUP_REVIEW_REQUIRED' });
+  assert.ok(driver.tabs.has(tab.id), 'Without explicit per-page review, a hidden draft keeps its tab.');
+  await driver.perform({ action: 'close', tabId: tab.id,
+    expectedUrl: before.url, expectedDocumentId: before.documentId },
+  { source: 'host-cleanup', cleanupReviewed: true });
+  assert.equal(driver.tabs.has(tab.id), false, 'A deliberate reviewed manual close remains possible.');
+});
+
+for (const [name,mutate] of [
+  ['user pin',tab=>{tab.userPinned=true;}],
+  ['human attachment',tab=>{tab.humanCreated=true;}],
+  ['active download',(tab,driver)=>{driver.downloads.push({tabId:tab.id,status:'downloading'});}],
+  ['pending browser dialog',tab=>{tab.pendingInteraction={status:'pending',kind:'javascript_dialog'};}],
+  ['pending website effect',tab=>{tab.submissionObservations={completed:[],pending:new Map([['post',{status:'pending'}]]),saved:()=>({})};}],
+  ['pending external handoff',tab=>{tab.externalHandoff={status:'pending'};}],
+  ['unsettled native input',tab=>{tab.suspendedWork.add('in-flight');}],
+]) test('delayed cleanup DOM probe preserves a tab when '+name+' appears while pending', async t => {
+  const {driver}=await fixture(t);await driver.init();
+  const owner={taskId:'fixture-cleanup',runId:'run-cleanup',nodeId:'research',conversationId:'fixture-cleanup'};
+  const tab=driver.newTab('https://fixture.invalid/completed',{owner});await tab.loading;
+  const before=driver.status().tabs.find(item=>item.tabId===tab.id);
+  let resolve;tab.window.webContents.executeJavaScript=()=>new Promise(done=>{resolve=done;});
+  const pending=driver.perform({action:'close',tabId:tab.id,expectedUrl:before.url,expectedDocumentId:before.documentId},{source:'host-cleanup',cleanupReviewed:true});
+  for(let i=0;!resolve&&i<50;i++)await tick();
+  assert.equal(typeof resolve,'function','Native probe must be in flight before changing page state.');
+  mutate(tab,driver);
+  resolve({state:'clear'});
+  await assert.rejects(pending,/pending|person|download|interaction|unsettled|protected|page|clean|effect|inspect/i);
+  assert.ok(driver.tabs.has(tab.id),'Newly busy or person-owned page must remain open.');
+});
+
+test('delayed cleanup DOM probe observes cancellation before close despite an earlier clean read', async t => {
+  const {driver}=await fixture(t);await driver.init();
+  const owner={taskId:'fixture-cleanup',runId:'run-cleanup',nodeId:'research',conversationId:'fixture-cleanup'};
+  const tab=driver.newTab('https://fixture.invalid/completed',{owner});await tab.loading;
+  const before=driver.status().tabs.find(item=>item.tabId===tab.id);
+  const controller=new AbortController();
+  let resolve;tab.window.webContents.executeJavaScript=()=>new Promise(done=>{resolve=done;});
+  const pending=driver.perform({action:'close',tabId:tab.id,expectedUrl:before.url,expectedDocumentId:before.documentId},{source:'host-cleanup',signal:controller.signal,cleanupReviewed:true});
+  for(let i=0;!resolve&&i<50;i++)await tick();
+  assert.equal(typeof resolve,'function');
+  controller.abort();resolve({state:'clear'});
+  await assert.rejects(pending,{name:'AbortError'});
+  assert.ok(driver.tabs.has(tab.id),'A canceled cleanup must preserve the tab.');
+});
 
 test('local files and Chromium internal pages keep their actual URL and survive a lazy restart', async t => {
   const { driver, directory, windows } = await fixture(t); await driver.init();
@@ -928,15 +1060,13 @@ test('actual driver pages and captures remain offscreen, nonfocusable and outsid
   const status = driver.status(); assert.equal(status.contained, true); assert.equal(status.canShow, false); assert.equal(status.tabs[0].contained, true); assert.equal(status.tabs[0].canShow, false); assert.equal(status.tabs[0].visible, false);
 });
 
-test('protected credential capture restrictions survive SPA and child navigation until a real main-frame replacement', async t => {
+test('account-page navigation does not introduce a credential capture restriction', async t => {
   const { driver } = await fixture(t), tab = driver.newTab('https://example.test/'); await tab.loading;
-  tab.credentialCaptureBlocked = true;
-  tab.window.webContents.emit('did-navigate-in-page', {}, 'https://example.test/#same-document', true, 1, 1);
-  assert.equal(tab.credentialCaptureBlocked, true);
-  tab.window.webContents.emit('did-frame-navigate', {}, 'https://example.test/child', 200, 'OK', false, 1, 2);
-  assert.equal(tab.credentialCaptureBlocked, true);
-  tab.window.webContents.emit('did-frame-navigate', {}, 'https://example.test/new-document', 200, 'OK', true, 1, 1);
-  assert.equal(tab.credentialCaptureBlocked, false);
+  for (const event of [
+    ['did-navigate-in-page', {}, 'https://example.test/#same-document', true, 1, 1],
+    ['did-frame-navigate', {}, 'https://example.test/child', 200, 'OK', false, 1, 2],
+    ['did-frame-navigate', {}, 'https://example.test/new-document', 200, 'OK', true, 1, 1]
+  ]) { tab.window.webContents.emit(...event); assert.equal(tab.credentialCaptureBlocked, undefined); }
 });
 
 test('show refuses before creating any page and after an existing contained page has loaded', async t => {
@@ -1857,10 +1987,10 @@ test('tab diagnostics never evaluate or reload a hung page and preserve ownershi
   assert.equal(value.debug.events.length,0); assert.equal(value.receipt.clearedThrough,3);
   let stopped=0;wc.stop=()=>stopped++;
   await browser.perform({action:'stop',tabId:tab.id,expectedUrl:opened.url,expectedDocumentId:opened.documentId},{owner});assert.equal(stopped,1);
-  tab.credentialCaptureBlocked=true;
+  tab.providerKeyProtected=true;
   wc.emit('console-message', {}, {level:'error',message:'must not collect'});
   await assert.rejects(browser.perform({action:'diagnostics',tabId:tab.id},{owner}),{code:'BROWSER_DIAGNOSTICS_PROTECTED'});
-  tab.credentialCaptureBlocked=false; assert.equal(tab.debugEvidence.snapshot().events.length,0);
+  tab.providerKeyProtected=false; assert.equal(tab.debugEvidence.snapshot().events.length,0);
   tab.rendererFailure={reason:'crashed',exitCode:1};
   value=await browser.perform({action:'diagnostics',tabId:tab.id},{owner}); assert.equal(value.rendererGone,true);
 });
@@ -2260,4 +2390,342 @@ test('retired conversation blocks delayed popup adoption through routed owner ad
   state='active';
   const restored=f.driver.newTab('https://fixture.invalid/restored',{owner});await restored.loading;
   assert.ok(f.driver.tabs.has(restored.id),'Restore removes the admission fence without a restart');
+});
+
+
+test('stopped-task adoption preserves live page, typed form state, popups and durable owner receipt', async t => {
+  const {driver,directory,windows}=await fixture(t);await driver.init();
+  const router=new BrowserRouter({independent:driver}),browser=new BrowserWorkspace({driver:router});t.after(()=>browser.close());
+  const previous={taskId:'stopped-a',runId:'run-a',nodeId:'agent'},next={taskId:'new-a',runId:'run-b',nodeId:'agent'};
+  let effectsChecked=0;
+  browser.setStoppedOwnerResolver(owner=>({eligible:owner.taskId===previous.taskId,runId:owner.runId,status:'completed'}),async()=>{effectsChecked++;});
+  const opened=await browser.perform({action:'open',url:'https://example.test/form'},{owner:previous});
+  const tab=driver.tabs.get(opened.tabId),wc=tab.window.webContents;wc.testTypedValue='unsent application draft';
+  const child=driver.newTab('https://example.test/popup',{owner:previous,parentTabId:tab.id});
+  const before={window:tab.window,loads:windows[0].loads.length,protocol:windows[0].protocol.length};
+  const listed=await browser.perform({action:'tabs'},{owner:next});
+  assert.equal(listed.tabs.length,0);
+  const candidate=listed.ownershipCandidates.find(row=>row.tabId===tab.id);assert.equal(candidate.adoption.eligible,true);
+  await assert.rejects(browser.perform({action:'snapshot',tabId:tab.id},{owner:next}),{code:'BROWSER_TAB_OWNERSHIP'});
+  const args={action:'take_ownership',tabId:tab.id,expectedUrl:candidate.url,expectedDocumentId:candidate.documentId,expectedOwnerKey:candidate.ownerKey};
+  const result=await browser.perform(args,{owner:next});
+  assert.equal(effectsChecked,1);assert.deepEqual(tab.owner,next);assert.equal(tab.window,before.window);
+  assert.equal(wc.testTypedValue,'unsent application draft');assert.equal(windows[0].loads.length,before.loads);assert.equal(windows[0].protocol.length,before.protocol);
+  assert.deepEqual(child.owner,previous);assert.equal(child.parentTabId,null);
+  assert.equal(result.ownershipReceipt.adoption.previousOwnerKey,candidate.ownerKey);
+  assert.deepEqual(result.ownershipReceipt.previousOwner,previous);
+  await assert.rejects(browser.perform({action:'snapshot',tabId:tab.id},{owner:previous}),{code:'BROWSER_TAB_OWNERSHIP'});
+  await driver.releaseOwner(previous,{status:'completed'});assert.deepEqual(tab.owner,next);
+  await browser.close();
+  const restored=new driver.constructor({dataDir:directory,downloadDir:path.join(directory,'downloads')});await restored.init();
+  assert.deepEqual(restored.tabs.get(tab.id).owner,next);
+  assert.deepEqual(restored.tabs.get(tab.id).ownershipReceipt,result.ownershipReceipt);
+  await restored.close();
+});
+
+test('stopped-task adoption rejects resumed owners after queued admission and during effect verification',async t=>{
+  const {driver}=await fixture(t);await driver.init();const browser=new BrowserWorkspace({driver});t.after(()=>browser.close());
+  const old={taskId:'race-old',runId:'run-old',nodeId:'agent'},next={taskId:'race-new',runId:'run-new',nodeId:'agent'};
+  let stopped=true;
+  browser.setStoppedOwnerResolver(owner=>({eligible:stopped&&owner.taskId===old.taskId,runId:owner.runId,status:'completed'}),async()=>{});
+  const opened=await browser.perform({action:'open',url:'https://example.test/'},{owner:old});
+  const args={action:'take_ownership',tabId:opened.tabId,expectedUrl:opened.url,expectedDocumentId:opened.documentId,expectedOwnerKey:JSON.stringify([old.taskId,old.nodeId,old.runId])};
+  await assert.rejects(browser.perform(args,{owner:next,beforeDispatch:async()=>{stopped=false;}}),{code:'BROWSER_TAB_OWNERSHIP'});
+  assert.deepEqual(driver.tabs.get(opened.tabId).owner,old);
+  stopped=true;browser.setStoppedOwnerResolver(owner=>({eligible:stopped&&owner.taskId===old.taskId,runId:owner.runId,status:'completed'}),async()=>{stopped=false;});
+  await assert.rejects(browser.perform(args,{owner:next}),{code:'BROWSER_TAB_OWNERSHIP'});
+  assert.deepEqual(driver.tabs.get(opened.tabId).owner,old);
+});
+
+test('two stopped-task adopters cannot both win; stale document, effects and pinned tabs fail closed',async t=>{
+  const {driver}=await fixture(t);await driver.init();const browser=new BrowserWorkspace({driver});t.after(()=>browser.close());
+  const old={taskId:'claim-old',runId:'run-old',nodeId:'agent'},one={taskId:'claim-one',runId:'run-one',nodeId:'agent'},two={taskId:'claim-two',runId:'run-two',nodeId:'agent'};
+  browser.setStoppedOwnerResolver(owner=>({eligible:owner.taskId===old.taskId,runId:owner.runId,status:'cancelled'}),async()=>{});
+  const opened=await browser.perform({action:'open',url:'https://example.test/'},{owner:old}),tab=driver.tabs.get(opened.tabId);
+  const args={action:'take_ownership',tabId:opened.tabId,expectedUrl:opened.url,expectedDocumentId:opened.documentId,expectedOwnerKey:JSON.stringify([old.taskId,old.nodeId,old.runId])};
+  await assert.rejects(browser.perform({...args,expectedDocumentId:'stale'},{owner:one}),{code:'BROWSER_INPUT_DOCUMENT_CHANGED'});
+  tab.userPinned=true;await assert.rejects(browser.perform(args,{owner:one}),{code:'BROWSER_TAB_OWNERSHIP'});tab.userPinned=false;
+  tab.adoptionUncertainEffects=true;assert.equal(driver.status().tabs.find(row=>row.tabId===tab.id).adoption.eligible,true);tab.adoptionUncertainEffects=false;
+  browser.setStoppedOwnerResolver(owner=>({eligible:owner.taskId===old.taskId,runId:owner.runId,status:'cancelled'}),async()=>{});
+  const results=await Promise.allSettled([browser.perform(args,{owner:one}),browser.perform(args,{owner:two})]);
+  assert.equal(results.filter(row=>row.status==='fulfilled').length,1);
+  assert.equal(results[1].reason.code,'BROWSER_DESTINATION_CHANGED');assert.deepEqual(tab.owner,one);
+});
+
+test('pending effect adoption protection survives browser persistence and restart',async t=>{
+  const {driver,directory}=await fixture(t);await driver.init();
+  const old={taskId:'effect-old',runId:'effect-run',nodeId:'agent'};
+  const tab=driver.newTab('https://example.test/',{owner:old});
+  tab.externalHandoff={status:'pending'};
+  driver.persist();await driver.close();
+  const restored=new driver.constructor({dataDir:directory,downloadDir:path.join(directory,'downloads')});await restored.init();
+  restored.setStoppedOwnerResolver(owner=>({eligible:true,runId:owner.runId,status:'failed'}),async()=>{});
+  const saved=restored.status().tabs.find(row=>row.tabId===tab.id);
+  assert.equal(saved.uncertainEffects,true);assert.equal(saved.adoption.eligible,true);
+  const next={taskId:'restored-new',runId:'new-run',nodeId:'agent'};
+  const result=await restored.changeOwnership({action:'take_ownership',tabId:saved.tabId,expectedUrl:saved.url,expectedDocumentId:saved.documentId,expectedOwnerKey:JSON.stringify([old.taskId,old.nodeId,old.runId])},'agent',next);
+  assert.equal(result.ownershipReceipt.adoption.inheritedEffects.uncertain,true);
+  assert.equal(restored.status().tabs.find(row=>row.tabId===tab.id).inheritedEffects.uncertain,true);
+  await restored.close();
+});
+
+test('stopped-task adoption obeys cancellation and destination capacity without navigation',async t=>{
+  const {driver}=await fixture(t);await driver.init();const browser=new BrowserWorkspace({driver});t.after(()=>browser.close());
+  const old={taskId:'limits-old',runId:'run-old',nodeId:'agent'},next={taskId:'limits-new',runId:'run-new',nodeId:'agent'};
+  const opened=await browser.perform({action:'open',url:'https://example.test/'},{owner:old});
+  const args={action:'take_ownership',tabId:opened.tabId,expectedUrl:opened.url,expectedDocumentId:opened.documentId,expectedOwnerKey:JSON.stringify([old.taskId,old.nodeId,old.runId])};
+  const controller=new AbortController();
+  browser.setStoppedOwnerResolver(owner=>({eligible:owner.taskId===old.taskId,runId:owner.runId,status:'failed'}),async()=>{controller.abort();});
+  await assert.rejects(browser.perform(args,{owner:next,signal:controller.signal}),{name:'AbortError'});
+  await browser.active?.settled;await tick();
+  assert.deepEqual(driver.tabs.get(opened.tabId).owner,old);
+  browser.setStoppedOwnerResolver(owner=>({eligible:owner.taskId===old.taskId,runId:owner.runId,status:'failed'}),async()=>{});
+  await browser.perform({action:'open',url:'https://example.test/own'},{owner:next});
+  driver.maxTaskTabs=1;
+  await assert.rejects(browser.perform(args,{owner:next}),{code:'BROWSER_TASK_TAB_LIMIT'});
+  assert.deepEqual(driver.tabs.get(opened.tabId).owner,old);
+});
+
+test('interrupted owner then settled continuation can hand off uncertainty without replay or clearing receipts',async t=>{
+  const {stoppedBrowserOwnerStatus}=await import('../lib/browser-stopped-adoption.mjs');
+  const {driver,windows}=await fixture(t);await driver.init();const browser=new BrowserWorkspace({driver});t.after(()=>browser.close());
+  const old={taskId:'restart-task',runId:'interrupted-run',nodeId:'agent'},next={taskId:'next-task',runId:'next-run',nodeId:'agent'};
+  const interrupted={id:old.runId,taskId:old.taskId,status:'failed',settled:true,browserOwnerInterrupted:true};
+  const continuation={id:'continued-run',parentRunId:old.runId,taskId:old.taskId,status:'running',settled:false};
+  const engine={runs:new Map([[old.runId,interrupted],['continued-run',continuation]]),executionEntries:()=>[],conversationBusy:()=>false};
+  const history={sourceOwner:old,uncertain:true,operations:[{operationId:'prior-post',state:'unknown'}]};
+  browser.setStoppedOwnerResolver(owner=>stoppedBrowserOwnerStatus(owner,engine),async()=>structuredClone(history));
+  const opened=await browser.perform({action:'open',url:'https://example.test/form'},{owner:old}),tab=driver.tabs.get(opened.tabId);
+  const args={action:'take_ownership',tabId:tab.id,expectedUrl:opened.url,expectedDocumentId:opened.documentId,expectedOwnerKey:JSON.stringify([old.taskId,old.nodeId,old.runId])};
+  await assert.rejects(browser.perform(args,{owner:next}),{code:'BROWSER_TAB_OWNERSHIP'});
+  continuation.status='completed';continuation.settled=true;
+  const before={loads:windows[0].loads.length,protocol:windows[0].protocol.length};
+  tab.adoptionUncertainEffects=true;
+  await browser.perform(args,{owner:next});
+  assert.deepEqual({loads:windows[0].loads.length,protocol:windows[0].protocol.length},before);
+  assert.equal(tab.adoptionUncertainEffects,true);assert.equal(history.operations[0].state,'unknown');
+  const listed=await browser.perform({action:'tabs'},{owner:next});
+  assert.equal(listed.tabs[0].inheritedEffects.uncertain,true);
+  assert.equal(listed.tabs[0].inheritedEffects.sources[0].operations[0].operationId,'prior-post');
+});
+
+test('owned plain alerts are acknowledged once without replay and retain the website message', async t => {
+  const { driver, windows } = await fixture(t); await driver.init();
+  const owner = { taskId: 'alert-task', nodeId: 'agent', runId: 'alert-run', conversationId: 'alert-task' };
+  const tab = driver.newTab('https://fixture.invalid/upload', { owner }); await tab.loading;
+  driver.setActiveOwnerResolver(value => activeBrowserOwnerStatus(value, {runs:new Map([[owner.runId,{id:owner.runId,taskId:owner.taskId,status:'running',settled:false}]])}));
+  let admitted = 0; driver.ownerAdmission = value => { assert.deepEqual(value, owner); admitted++; };
+  const notices = []; driver.on('site-notice', notice => notices.push(notice));
+  const before = windows[0].protocol.length;
+  windows[0].webContents.debugger.emit('message', {}, 'Page.javascriptDialogOpening', { type: 'alert', message: 'Your file has been uploaded successfully.' });
+  await tick();
+  assert.equal(admitted, 1);
+  assert.deepEqual(windows[0].protocol.slice(before), [{ method:'Page.handleJavaScriptDialog', params:{accept:true} }]);
+  assert.equal(tab.pendingInteraction, null);
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0].notice.status, 'acknowledged');
+  assert.equal(driver.status().tabs.find(x => x.tabId === tab.id).siteNotices[0].message, 'Your file has been uploaded successfully.');
+  assert.equal((await driver.snapshot(tab)).siteNotices[0].source, 'website-alert');
+});
+
+test('confirm prompt and beforeunload remain explicit; human and unadmitted alerts are not auto-handled', async t => {
+  const { driver, windows } = await fixture(t); await driver.init();
+  const tab = driver.newTab('https://fixture.invalid/dialog', { owner: { taskId:'t',nodeId:'agent',runId:'r',conversationId:'t' } }); await tab.loading;
+  for (const type of ['confirm','prompt','beforeunload']) {
+    const count = windows[0].protocol.length;
+    windows[0].webContents.debugger.emit('message', {}, 'Page.javascriptDialogOpening', { type, message:'Decision required' }); await tick();
+    assert.equal(windows[0].protocol.length, count); assert.equal(tab.pendingInteraction.dialogType, type);
+  }
+  driver.ownerAdmission = () => { throw Error('Task stopped'); };
+  windows[0].webContents.debugger.emit('message', {}, 'Page.javascriptDialogOpening', { type:'alert',message:'Paused task' }); await tick();
+  assert.equal(tab.siteNotices, undefined);
+  tab.owner = null;
+  windows[0].webContents.debugger.emit('message', {}, 'Page.javascriptDialogOpening', { type:'alert',message:'Human page' }); await tick();
+  assert.equal(tab.siteNotices, undefined);
+});
+
+test('failed automatic alert acknowledgement preserves explicit recovery and alert-only acknowledge alias', async t => {
+  let rejectAlert = true;
+  const { driver, windows } = await fixture(t, { command: async method => {
+    if (method === 'Page.handleJavaScriptDialog' && rejectAlert) throw Error('Synthetic CDP failure'); return {};
+  } }); await driver.init();
+  const tab = driver.newTab('https://fixture.invalid/dialog', { owner:{taskId:'t',nodeId:'agent',runId:'r',conversationId:'t'} }); await tab.loading;
+  driver.setActiveOwnerResolver(value => activeBrowserOwnerStatus(value,{runs:new Map([['r',{id:'r',taskId:'t',status:'running',settled:false}]])}));
+  windows[0].webContents.debugger.emit('message', {}, 'Page.javascriptDialogOpening', {type:'alert',message:'Notice'}); await tick();
+  assert.equal(tab.siteNotices[0].status,'unresolved'); assert.equal(tab.pendingInteraction.status,'pending');
+  rejectAlert = false;
+  const current = tab.pendingInteraction;
+  const result = await driver.resolveInteraction(tab,{interactionId:current.id,expectedUrl:current.url,expectedDocumentId:current.documentId,decision:'acknowledge'});
+  assert.equal(result.receipt.replayed,false); assert.equal(tab.pendingInteraction,null);
+  windows[0].webContents.debugger.emit('message', {}, 'Page.javascriptDialogOpening', {type:'confirm',message:'Choose'});
+  const confirm = tab.pendingInteraction;
+  await assert.rejects(driver.resolveInteraction(tab,{interactionId:confirm.id,expectedUrl:confirm.url,expectedDocumentId:confirm.documentId,decision:'acknowledge'}),/Accept or dismiss/);
+});
+
+test('automatic alert requires positive current production lifecycle, not archive admission',async t=>{
+ const {driver,windows}=await fixture(t);await driver.init();
+ const owner={taskId:'t',nodeId:'agent',runId:'r',conversationId:'t'};
+ const tab=driver.newTab('https://fixture.invalid/lifecycle',{owner});await tab.loading;
+ const run={id:'r',taskId:'t',status:'running',settled:false},engine={runs:new Map([['r',run]])};
+ driver.setActiveOwnerResolver(value=>activeBrowserOwnerStatus(value,engine));
+ driver.setOwnerAdmission(()=>{}); // Production archive admission alone says nothing about running.
+ for(const status of ['completed','failed','cancelled','paused','queued']){
+  run.status=status;const before=windows[0].protocol.length;
+  windows[0].webContents.debugger.emit('message',{},'Page.javascriptDialogOpening',{type:'alert',message:status});await tick();
+  assert.equal(windows[0].protocol.length,before);assert.equal(tab.pendingInteraction.status,'pending');
+ }
+ engine.runs.clear();assert.equal(driver.canAcknowledgeSiteAlert(tab,tab.window),false);
+});
+test('automatic alerts do not reject in-flight pageWork; failed acknowledgment does',async t=>{
+ let reject=false;
+ const {driver,windows}=await fixture(t,{command:async method=>{if(method==='Page.handleJavaScriptDialog'&&reject)throw Error('failure');return {};}});await driver.init();
+ const owner={taskId:'t',nodeId:'agent',runId:'r',conversationId:'t'},tab=driver.newTab('https://fixture.invalid/work',{owner});await tab.loading;
+ driver.setActiveOwnerResolver(value=>activeBrowserOwnerStatus(value,{runs:new Map([['r',{id:'r',taskId:'t',status:'running'}]])}));
+ let release;const original=new Promise(r=>release=r);const result=driver.pageWork(tab,original);
+ windows[0].webContents.debugger.emit('message',{},'Page.javascriptDialogOpening',{type:'alert',message:'success'});await tick();release('once');
+ assert.equal(await result,'once');assert.equal(tab.suspendedWork.size,0);
+ reject=true;const failed=driver.pageWork(tab,new Promise(()=>{}));const observed=assert.rejects(failed,{code:'BROWSER_INTERACTION_PENDING'});
+ windows[0].webContents.debugger.emit('message',{},'Page.javascriptDialogOpening',{type:'alert',message:'failure'});await observed;
+});
+
+test('next snapshot and read wait for in-flight automatic alert without a second acknowledgement',async t=>{
+ let release;const ack=new Promise(resolve=>release=resolve);let acknowledgements=0;
+ const {driver,windows}=await fixture(t,{command:async method=>{if(method==='Page.handleJavaScriptDialog'){acknowledgements++;return ack;}return {};}});await driver.init();
+ const owner={taskId:'t',nodeId:'agent',runId:'r',conversationId:'t'},tab=driver.newTab('https://fixture.invalid/delayed',{owner});await tab.loading;
+ driver.setActiveOwnerResolver(value=>activeBrowserOwnerStatus(value,{runs:new Map([['r',{id:'r',taskId:'t',status:'running'}]])}));
+ windows[0].webContents.debugger.emit('message',{},'Page.javascriptDialogOpening',{type:'alert',message:'Saved'});
+ let snapshots=0;const snapshot=driver.perform({action:'snapshot',tabId:tab.id},{owner}).then(result=>{snapshots++;return result;});
+ let reads=0;const read=driver.perform({action:'read',tabId:tab.id},{owner}).then(result=>{reads++;return result;});
+ await tick();assert.equal(snapshots,0);assert.equal(reads,0);assert.equal(acknowledgements,1);
+ release({});const results=await Promise.all([snapshot,read]);
+ for(const result of results){assert.equal(result.pendingInteraction,undefined);assert.notEqual(result.actionDispatched,false);}
+ assert.equal(acknowledgements,1);assert.equal(tab.suspendedWork.size,0);
+});
+test('next snapshot waiting on a failed automatic alert returns the exact explicit pending interaction',async t=>{
+ let reject;const ack=new Promise((_resolve,no)=>reject=no);
+ const {driver,windows}=await fixture(t,{command:async method=>method==='Page.handleJavaScriptDialog'?ack:{}});await driver.init();
+ const owner={taskId:'t',nodeId:'agent',runId:'r',conversationId:'t'},tab=driver.newTab('https://fixture.invalid/delayed-failure',{owner});await tab.loading;
+ driver.setActiveOwnerResolver(value=>activeBrowserOwnerStatus(value,{runs:new Map([['r',{id:'r',taskId:'t',status:'running'}]])}));
+ windows[0].webContents.debugger.emit('message',{},'Page.javascriptDialogOpening',{type:'alert',message:'Notice'});
+ const id=tab.pendingInteraction.id;const snapshot=driver.perform({action:'snapshot',tabId:tab.id},{owner});
+ await tick();reject(Error('Synthetic delayed failure'));const result=await snapshot;
+ assert.equal(result.pendingInteraction.id,id);assert.equal(result.pendingInteraction.automatic,false);assert.equal(result.actionDispatched,false);
+});
+
+test('real connector API idle owner can be adopted once by a native agent and active connector alerts resolve', async t=>{
+ const {driver,directory,windows}=await fixture(t);await driver.init();
+ const {DirectExecutionAPI,DIRECT_EXECUTION_SCOPES}=await import('../lib/direct-execution-api.mjs');
+ const {connectorBrowserOwner}=await import('../lib/connector-browser-owner.mjs');
+ const {stoppedBrowserOwnerStatus,readStoppedTabEffects}=await import('../lib/browser-stopped-adoption.mjs');
+ const browser=new BrowserWorkspace({driver}),engine={runs:new Map(),executionEntries:()=>[]};
+ const apiDir=await mkdtemp(path.join(tmpdir(),'connector-owner-api-'));
+ const api=await new DirectExecutionAPI({dataDir:apiDir,allowedRoot:directory,browser}).init();
+ t.after(async()=>{await api.close();await browser.close();await rm(apiDir,{recursive:true,force:true});});
+ browser.setStoppedOwnerResolver(owner=>stoppedBrowserOwnerStatus(owner,engine,api),owner=>readStoppedTabEffects(owner,engine,api));
+ browser.setActiveOwnerResolver(owner=>activeBrowserOwnerStatus(owner,engine,api));
+ const client={id:'connector-test',scopes:[...DIRECT_EXECUTION_SCOPES]},previous=connectorBrowserOwner(client.id);
+ const admitted=await api.call('blackice_browser_action',{requestId:'create-owned',action:'open',url:'https://example.test/draft'},client);
+ let job;for(let n=0;n<100;n++){job=await api.getJob(admitted.jobId,client);if(job.settled)break;await tick();}
+ assert.equal(job.status,'succeeded',JSON.stringify(job));
+ const tab=[...driver.tabs.values()][0];await tab.loading;tab.window.webContents.testTypedValue='draft preserved';
+ const active=(await api.jobs.admit({ownerId:client.id,requestId:'active-dialog',tool:'blackice_browser_action',arguments:{action:'click',tabId:tab.id},requiredScopes:['browser:write'],client,mutating:true})).job;
+ await api.jobs.update(active.id,()=>({status:'running'}));
+ assert.equal(driver.status().tabs[0].adoption.eligible,false);
+ windows[0].webContents.debugger.emit('message',{},'Page.javascriptDialogOpening',{type:'alert',message:'Uploaded'});
+ await tick();assert.equal(tab.pendingInteraction,null);assert.equal(tab.siteNotices[0].status,'acknowledged');
+ assert.equal(windows[0].protocol.filter(row=>row.method==='Page.handleJavaScriptDialog').length,1);
+ await api.jobs.update(active.id,()=>({status:'succeeded',finishedAt:new Date().toISOString(),effects:{possible:true,confirmed:true}}));
+ const next={taskId:'next-native',runId:'next-run',nodeId:'agent'};
+ const listed=await browser.perform({action:'tabs'},{owner:next}),candidate=listed.ownershipCandidates.find(row=>row.tabId===tab.id);
+ assert.equal(candidate.adoption.eligible,true);
+ const args={action:'take_ownership',tabId:tab.id,expectedUrl:candidate.url,expectedDocumentId:candidate.documentId,expectedOwnerKey:candidate.ownerKey};
+ const result=await browser.perform(args,{owner:next});
+ assert.deepEqual(tab.owner,next);assert.equal(tab.window.webContents.testTypedValue,'draft preserved');
+ assert.equal(result.ownershipReceipt.adoption.inheritedEffects.directJobs.length,2);
+ await assert.rejects(browser.perform(args,{owner:{taskId:'other',nodeId:'agent',runId:'other-run'}}),{code:'BROWSER_DESTINATION_CHANGED'});
+ assert.equal(windows[0].protocol.filter(row=>row.method==='Page.handleJavaScriptDialog').length,1);
+ assert.deepEqual(result.ownershipReceipt.previousOwner,{taskId:previous.taskId,nodeId:previous.nodeId,runId:previous.runId});
+ engine.runs.set(next.runId,{id:next.runId,taskId:next.taskId,status:'completed',settled:true});
+ const second={id:'second-connector',scopes:[...DIRECT_EXECUTION_SCOPES]};
+ const current=driver.status().tabs.find(row=>row.tabId===tab.id);
+ const reverseArgs={requestId:'adopt-native',action:'take_ownership',tabId:tab.id,expectedUrl:current.url,expectedDocumentId:current.documentId,expectedOwnerKey:JSON.stringify([next.taskId,next.nodeId,next.runId])};
+ const reverse=await api.call('blackice_browser_action',reverseArgs,second);
+ for(let n=0;n<100;n++){job=await api.getJob(reverse.jobId,second);if(job.settled)break;await new Promise(r=>setTimeout(r,5));}
+ assert.equal(job.status,'succeeded',JSON.stringify(job));
+ assert.equal(tab.owner.taskId,connectorBrowserOwner(second.id).taskId);
+ assert.equal(tab.window.webContents.testTypedValue,'draft preserved');
+ const retry=await api.call('blackice_browser_action',reverseArgs,second);
+ assert.equal(retry.jobId,reverse.jobId);assert.equal(retry.existing,true);
+
+});
+
+test('legacy exposed owner key works through model handler and direct API without repeated effects', async t=>{
+ const {driver,directory,windows}=await fixture(t);await driver.init();
+ const {DirectExecutionAPI,DIRECT_EXECUTION_SCOPES}=await import('../lib/direct-execution-api.mjs');
+ const {connectorBrowserOwner}=await import('../lib/connector-browser-owner.mjs');
+ const {stoppedBrowserOwnerStatus,readStoppedTabEffects}=await import('../lib/browser-stopped-adoption.mjs');
+ const browser=new BrowserWorkspace({driver}),engine={runs:new Map(),executionEntries:()=>[]};
+ const apiDir=await mkdtemp(path.join(tmpdir(),'connector-owner-api-'));
+ const api=await new DirectExecutionAPI({dataDir:apiDir,allowedRoot:directory,browser}).init();
+ t.after(async()=>{await api.close();await browser.close();await rm(apiDir,{recursive:true,force:true});});
+ browser.setStoppedOwnerResolver(owner=>stoppedBrowserOwnerStatus(owner,engine,api),owner=>readStoppedTabEffects(owner,engine,api));
+ browser.setActiveOwnerResolver(owner=>activeBrowserOwnerStatus(owner,engine,api));
+ const client={id:'connector-test',scopes:[...DIRECT_EXECUTION_SCOPES]},previous=connectorBrowserOwner(client.id);
+ const admitted=await api.call('blackice_browser_action',{requestId:'create-owned',action:'open',url:'https://example.test/draft'},client);
+ let job;for(let n=0;n<100;n++){job=await api.getJob(admitted.jobId,client);if(job.settled)break;await tick();}
+ assert.equal(job.status,'succeeded',JSON.stringify(job));
+ const tab=[...driver.tabs.values()][0];await tab.loading;tab.window.webContents.testTypedValue='draft preserved';
+ const active=(await api.jobs.admit({ownerId:client.id,requestId:'active-dialog',tool:'blackice_browser_action',arguments:{action:'click',tabId:tab.id},requiredScopes:['browser:write'],client,mutating:true})).job;
+ await api.jobs.update(active.id,()=>({status:'running'}));
+ assert.equal(driver.status().tabs[0].adoption.eligible,false);
+ windows[0].webContents.debugger.emit('message',{},'Page.javascriptDialogOpening',{type:'alert',message:'Uploaded'});
+ await tick();assert.equal(tab.pendingInteraction,null);assert.equal(tab.siteNotices[0].status,'acknowledged');
+ assert.equal(windows[0].protocol.filter(row=>row.method==='Page.handleJavaScriptDialog').length,1);
+ await api.jobs.update(active.id,()=>({status:'succeeded',finishedAt:new Date().toISOString(),effects:{possible:true,confirmed:true}}));
+ const next={taskId:'next-native',runId:'next-run',nodeId:'agent'};
+ const listed=await browser.perform({action:'tabs'},{owner:next}),candidate=listed.ownershipCandidates.find(row=>row.tabId===tab.id);
+ assert.equal(candidate.adoption.eligible,true);
+ const args={action:'take_ownership',tabId:tab.id,expectedUrl:candidate.url,expectedDocumentId:candidate.documentId,destinationOwnerKey:candidate.ownerKey};
+ const {createBrowserToolHandler}=await import('../lib/browser.mjs'); const modelHandler=createBrowserToolHandler({browser,owner:next,maxCalls:4}); const call={name:'relay_browser',arguments:args}; const descriptor=await modelHandler.describeOperation(call); const modelResult=await modelHandler(call,{operationId:'legacy-model-adopt',operationDescriptor:descriptor}); assert.equal(modelResult.success,true,JSON.stringify(modelResult)); const result={ownershipReceipt:tab.ownershipReceipt};
+ assert.deepEqual(tab.owner,next);assert.equal(tab.window.webContents.testTypedValue,'draft preserved');
+ assert.equal(result.ownershipReceipt.adoption.inheritedEffects.directJobs.length,2);
+ await assert.rejects(browser.perform(args,{owner:{taskId:'other',nodeId:'agent',runId:'other-run'}}),{code:'BROWSER_DESTINATION_CHANGED'});
+ assert.equal(windows[0].protocol.filter(row=>row.method==='Page.handleJavaScriptDialog').length,1);
+ assert.deepEqual(result.ownershipReceipt.previousOwner,{taskId:previous.taskId,nodeId:previous.nodeId,runId:previous.runId});
+ engine.runs.set(next.runId,{id:next.runId,taskId:next.taskId,status:'completed',settled:true});
+ const second={id:'second-connector',scopes:[...DIRECT_EXECUTION_SCOPES]};
+ const current=driver.status().tabs.find(row=>row.tabId===tab.id);
+ const reverseArgs={requestId:'adopt-native',action:'take_ownership',tabId:tab.id,expectedUrl:current.url,expectedDocumentId:current.documentId,destinationOwnerKey:JSON.stringify([next.taskId,next.nodeId,next.runId])};
+ const reverse=await api.call('blackice_browser_action',reverseArgs,second);
+ for(let n=0;n<100;n++){job=await api.getJob(reverse.jobId,second);if(job.settled)break;await new Promise(r=>setTimeout(r,5));}
+ assert.equal(job.status,'succeeded',JSON.stringify(job));
+ assert.equal(tab.owner.taskId,connectorBrowserOwner(second.id).taskId);
+ assert.equal(tab.window.webContents.testTypedValue,'draft preserved');
+ const retry=await api.call('blackice_browser_action',reverseArgs,second);
+ assert.equal(retry.jobId,reverse.jobId);assert.equal(retry.existing,true);
+
+});
+
+test('navigation admission does not depend on the previous document or inspect its DOM', async t => {
+  const { driver, windows } = await fixture(t), tab = driver.newTab('https://example.test/old'); await tab.loading;
+  const browser = new BrowserWorkspace({ driver }), handler = createBrowserToolHandler({ browser }); t.after(() => browser.close());
+  const call = { name: 'relay_browser', arguments: { action: 'navigate', tabId: tab.id, url: 'https://example.test/new',
+    expectedDocumentId: `${tab.id}:${tab.revision}`, expectedUrl: tab.url } };
+  driver.navigationChanged(tab, true);
+  driver.currentSubmissionObservations = async () => { assert.equal(tab.window.webContents.getURL(), 'https://example.test/new', 'Navigation must not inspect the old page'); return {}; };
+  const descriptor = await handler.describeOperation(call);
+  assert.equal(descriptor.commit, undefined);
+  assert.ok(descriptor.resources.some(resource => resource.key === `tab:${tab.id}`));
+  // Another redirect after admission must not bind navigation to the abandoned URL.
+  windows[0].url = tab.url = 'https://example.test/redirect';
+  driver.navigationChanged(tab, true);
+  assert.equal((await handler.describeOperation(call)).operationKey, descriptor.operationKey);
+  let admissions = 0;
+  const result = await handler(call, { operationDescriptor: descriptor, onOperationDispatch: () => { admissions++; } });
+  assert.equal(result.success, true, JSON.stringify(result));
+  assert.equal(windows[0].loads.filter(url => url === 'https://example.test/new').length, 1);
+  assert.equal(admissions, 1);
+  await assert.rejects(driver.observeOperation(call.arguments, { recoveryInspection: true }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+  await assert.rejects(driver.observeOperation(call.arguments, { receiptBindings: [{ format: 'dom' }] }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+  await assert.rejects(driver.observeOperation({ ...call.arguments, action: 'click', ref: 'old-control' }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
 });

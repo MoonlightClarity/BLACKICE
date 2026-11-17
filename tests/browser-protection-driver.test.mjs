@@ -39,7 +39,7 @@ test('the contained session filters only after opt-in and exposes guarded filter
   await workspace.configureProtection({ action: 'site', tabId: tab.id, origin: 'https://example.com', enabled: false }); assert.deepEqual(request(), { cancel: false });
   tab.window.url = 'https://different.example/article';
   await assert.rejects(workspace.configureProtection({ action: 'site', tabId: tab.id, origin: 'https://example.com', enabled: false }), { code: 'BROWSER_PROTECTION_STALE_TAB' }); assert.deepEqual(request(), { cancel: true });
-  await assert.rejects(workspace.configureProtection({ action: 'site', tabId: 'firefox:external', origin: 'https://external.test', enabled: false }), { code: 'BROWSER_PROTECTION_CONTAINED_ONLY' });
+  await assert.rejects(workspace.configureProtection({ action: 'site', tabId: 'firefox:external', origin: 'https://external.test', enabled: false }), { code: 'BROWSER_TAB_NOT_FOUND' });
   await assert.rejects(workspace.configureProtection({ action: 'site', tabId: 'unknown', origin: 'https://example.com', enabled: false }), { code: 'BROWSER_TAB_NOT_FOUND' });
   await workspace.configureProtection({ action: 'global', enabled: false }, { source: 'agent' }); assert.deepEqual(request(), { cancel: false });
   await assert.rejects(workspace.perform({ action: 'protection', enabled: false }), { code: 'BROWSER_VALIDATION' }); assert.equal(BROWSER_ACTIONS.includes('protection'), true); assert.ok(BROWSER_TOOL.inputSchema.properties.operation.enum.includes('global'));

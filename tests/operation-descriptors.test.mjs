@@ -863,3 +863,38 @@ test('inspected native field Enter is opaque while ordinary field input stays av
     assert.equal(descriptor.effect, expected);
   }
 });
+
+test('signup and login forms with passwords use ordinary field and submission descriptors', async () => {
+  const oldLocation = globalThis.location, oldFormData = globalThis.FormData;
+  globalThis.location = { href: 'https://portal.test/signup' };
+  let dispatched = 0;
+  globalThis.FormData = class { constructor() { dispatched++; throw Error('No inspection events'); } };
+  try {
+    const field = (type, name, value) => ({ tagName:'INPUT', type, name, value, isConnected:true, matches:()=>false, getAttribute:()=>null });
+    const username = field('email','username','synthetic@example.test');
+    const password = field('password','password','Synthetic-only-42!');
+    const confirm = field('password','confirmation','Synthetic-only-42!');
+    const terms = Object.assign(field('checkbox','terms','accepted'), { checked:false });
+    const submit = { tagName:'BUTTON', type:'submit', name:'', value:'', textContent:'Create account', isConnected:true, hasAttribute:()=>false, getAttribute:()=>null };
+    const form = { isConnected:true, action:'https://portal.test/account', method:'post', enctype:'application/x-www-form-urlencoded', target:'_self', elements:[username,password,confirm,terms,submit] };
+    for (const field of form.elements) field.form = form;
+    const state = {}, args = { ref:'e1', action:'click' };
+    assert.equal((await inspectObservedFormControl(password,state,{ ref:'password',action:'fill' })).kind,'field');
+    assert.equal((await inspectObservedFormControl(terms,state,{ ref:'terms',action:'click' })).kind,'field');
+    const before = await inspectObservedFormControl(submit,state,args);
+    assert.equal(before.kind,'form-submit');
+    terms.checked = true;
+    const signup = await inspectObservedFormControl(submit,state,args);
+    assert.equal(signup.kind,'form-submit'); assert.notEqual(signup.form.payloadDigest,before.form.payloadDigest);
+    assert.ok(signup.form.identityDigests.some(item=>item.name==='terms'));
+    assert.ok(signup.form.identityDigests.some(item=>item.name==='password'));
+    const observed = { current:true, tabId:'relay:one', documentId:'one:1', url:globalThis.location.href, control:signup };
+    observed.control.form.documentId = observed.documentId;
+    const descriptor = await describeHostOperation(browserCall(),{ browserObservation:observed });
+    assert.equal(descriptor.effect,'commit');
+    form.elements=[username,password,submit]; submit.textContent='Log in'; form.action='https://portal.test/login';
+    const login = await inspectObservedFormControl(submit,state,args);
+    assert.equal(login.kind,'form-submit'); assert.notEqual(login.form.payloadDigest,signup.form.payloadDigest);
+    assert.equal(dispatched,0);
+  } finally { globalThis.location=oldLocation;globalThis.FormData=oldFormData; }
+});

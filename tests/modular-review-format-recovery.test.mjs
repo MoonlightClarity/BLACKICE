@@ -43,10 +43,10 @@ test('persistent invalid fields stop after a shared three-assessment budget and 
   const updates=[];let calls=0,returns=0;
   const c=createModularCompletionController({policy,getSnapshot:()=>snapshot,onUpdate:r=>updates.push(r),onReturn:()=>returns++,
     review:async()=>{calls++;return {...good(),blockers:[null]};}});
-  await assert.rejects(c.beforeFinal(candidate),{code:'MODULAR_REVIEW_INVALID'});
+  assert.equal(await c.beforeFinal(candidate),null);
   assert.equal(calls,3);assert.equal(returns,0);
-  assert.equal(updates.at(-1).status,'rejected-format');assert.deepEqual(updates.at(-1).assessment.blockers,[null]);
-  await assert.rejects(c.assertReady(),{code:'MODULAR_OUTCOME_INCOMPLETE'});
+  assert.equal(updates.at(-1).status,'unavailable');assert.deepEqual(updates.at(-2).assessment.blockers,[null]);
+  assert.equal((await c.assertReady()).reviewUnavailable,true);
 });
 
 test('format repair does not bypass citation validation or reset total repair budget',async()=>{
@@ -54,8 +54,8 @@ test('format repair does not bypass citation validation or reset total repair bu
   const c=createModularCompletionController({policy,getSnapshot:()=>snapshot,onUpdate:r=>updates.push(r),review:async()=>{
     calls++;return calls===1?null:{...good(),evidenceRefs:['invented']};
   }});
-  await assert.rejects(c.beforeFinal(candidate),{code:'MODULAR_REVIEW_EVIDENCE'});
-  assert.equal(calls,3);assert.equal(updates.at(-1).status,'rejected-evidence');
+  assert.equal(await c.beforeFinal(candidate),null);
+  assert.equal(calls,3);assert.equal(updates.at(-2).status,'rejected-evidence');assert.equal(updates.at(-1).status,'unavailable');
 });
 
 test('format repair preserves genuine remaining work rather than promoting it to completion',async()=>{

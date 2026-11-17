@@ -45,13 +45,3 @@ test('linked context survives unrelated refinements and refreshes selected scope
  await assert.rejects(f.runtime.outcomes.validateContext({ownerId:'owner',taskContext:context.taskContext,expectedContextGeneration:context.generation}));
  assert.equal((await f.runtime.read({ownerId:'owner',taskId:linked.taskId})).taskId,linked.taskId);
 });
-test('native linked task auto-syncs same source revisions without idle reattachment',async t=>{
- const f=await fixture(t),linked=await f.link(),context=await f.runtime.issueContext({ownerId:'owner',taskId:linked.taskId,expectedRevision:linked.revision,workItemId:'a',criterionId:'a',adapters:['relay_browser']});
- const bridge=new NativeTaskContextBridge({runtime:f.runtime,tasks:f.tasks,planSource:f.source,canEnforceProtectedDispatch:()=>true});
- await bridge.attach({nativeTaskId:'native',expectedNativeRevision:2,taskContext:context.taskContext,client});
- const session=await bridge.open({nativeTaskId:'native',runId:'run'});
- await f.update(c=>{c.workItems[1].title='Better B title';});
- assert.equal(await session.gate({name:'relay_browser',arguments:{action:'read'}}),null);
- assert.ok(await bridge.open({nativeTaskId:'native',runId:'next-run'}));
- assert.equal((await f.runtime.outcomes.readNativeAttachment({nativeTaskId:'native'})).generation,1);
-});

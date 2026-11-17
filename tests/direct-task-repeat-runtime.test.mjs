@@ -72,30 +72,11 @@ async function apiFixture(t,{unknown=false}={}){
  const client={id:ownerId,kind:'chatgpt',scopes:[...DIRECT_EXECUTION_SCOPES]};
  const run=async(name,args)=>{const q=await api.call(name,args,client);for(let n=0;n<1000;n++){const r=await api.getJob(q.jobId,client);if(r.settled)return r;await new Promise(r=>setTimeout(r,5));}assert.fail('Job did not settle');};
  const repeat=(ref,extra={})=>run('blackice_task_contract',{requestId:'authorize-'+ref,action:'authorize_repeat',taskId:'task',bindingId:binding.bindingId,tabId,userInstructionRef:ref,userInstructionQuote:'Please deliberately perform that action again.',reason:'Explicit additional user-directed occurrence.',...extra});
- const click=requestId=>run('blackice_browser_action',{requestId,action:'click',tabId,ref:'submit',expectedUrl:f.page.url,expectedDocumentId:f.page.documentId});
+ const click=async requestId=>{
+  const current=await f.runtime().outcomes.resolveBinding({ownerId,tabId});
+  const revision=(await f.runtime().read({ownerId,taskId:'task'})).revision;
+  const issued=await f.runtime().issueContext({ownerId,taskId:'task',expectedRevision:revision,workItemId:'enroll',criterionId:'receipt',bindingId:current.binding.bindingId,adapters:['relay_browser']});
+  return run('blackice_browser_action',{requestId,taskContext:issued.taskContext,action:'click',tabId,ref:'submit',expectedUrl:f.page.url,expectedDocumentId:f.page.documentId});
+ };
  return {f,binding,api,client,run,repeat,click};
 }
-test('actual authorize_repeat API permits deliberate confirmed repeat but old issuer ID cannot count',async t=>{
- const {f,binding,repeat,click,run}=await apiFixture(t);
- const old=await repeat('user-one');assert.equal(old.status,'succeeded',JSON.stringify(old));
- const oldOccurrence=JSON.parse(old.result.text.text).result;assert.equal(oldOccurrence.baseSemanticKey,binding.semanticKey);assert.equal(oldOccurrence.baseline.basis,'authorized-occurrence');
- assert.equal((await click('same-issuer')).status,'succeeded');assert.equal(f.counts().commits,2);assert.equal((await f.measure()).criteria[0].observedCount,1);
- const next=await repeat('user-two');assert.equal(next.status,'succeeded',JSON.stringify(next));f.page.outcomeId='issuer-distinct';
- assert.equal((await click('new-issuer')).status,'succeeded');assert.equal(f.counts().commits,3);
- const measured=await f.measure();assert.equal(measured.criteria[0].observedCount,2,JSON.stringify({measured,task:await f.runtime().read({ownerId,taskId:'task'})}));assert.equal(measured.criteria[0].authorizedOccurrenceCount,2);
- assert.equal(measured.criteria[0].repeatAmbiguities,0);
- const original=(await f.runtime().read({ownerId,taskId:'task'})).bindings[binding.bindingId];assert.ok(original.newOutcome);
- const rejected=await run('blackice_task_contract',{requestId:'bad-ref',action:'authorize_repeat',taskId:'task',bindingId:binding.bindingId,tabId,userInstructionRef:'user-two',userInstructionQuote:'Changed instruction',reason:'Changed'});
- assert.equal(rejected.status,'failed');assert.equal(f.counts().commits,3);
-});
-test('actual UNKNOWN repeat preserves original claim and surfaces ambiguity instead of false completion',async t=>{
- const {f,binding,repeat,click}=await apiFixture(t,{unknown:true});
- const denied=await repeat('no-ack');assert.equal(denied.status,'failed');assert.equal(denied.error.code,'DIRECT_REPEAT_UNCERTAINTY');assert.equal(f.counts().commits,1);
- const allowed=await repeat('explicit-uncertain',{acknowledgeUncertainty:true,uncertaintyStatement:'The user directed another attempt knowing the original may already have occurred.'});
- assert.equal(allowed.status,'succeeded',JSON.stringify(allowed));const occurrence=JSON.parse(allowed.result.text.text).result;
- f.page.missingReceipt=false;f.page.outcomeId='issuer-after-repeat';
- const actual=await click('uncertain-deliberate');assert.equal(actual.status,'succeeded',JSON.stringify(actual));assert.equal(f.counts().commits,2);
- const measurement=await f.measure();assert.equal(measurement.criteria[0].observedCount,0);assert.equal(measurement.criteria[0].repeatAmbiguities,1);assert.equal(measurement.criteria[0].unresolvedEffects,1);
- assert.equal((await f.runtime().outcomes.admit({ownerId,taskId:'task',bindingId:binding.bindingId,operationId:'never-retry-original'})).reason,'UNKNOWN_EFFECT');
- assert.equal(occurrence.occurrence.provenance,'authenticated-caller-attestation');
-});

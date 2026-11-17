@@ -22,7 +22,7 @@ test('no opaque coordinate/focused typing, external scheme or unsupported histor
   const op=call({action:'open',url:'https://example.test/new',ref:undefined,tabId:undefined,text:undefined});
   assert.equal(createBrowserRecoveryBinding(op,op.arguments,null).page,null);
 });
-test('native noncredential control inspection hashes current value and stable DOM identity without input', async () => {
+test('native field inspection hashes current value and stable DOM identity without input, including passwords', async () => {
   const state={},el={isConnected:true,tagName:'INPUT',type:'text',value:'First',name:'name',textContent:'',attributes:[{name:'name',value:'name'}],getAttribute:name=>name==='name'?'name':null};
   const args={action:'fill',ref:'e1',hostRecoveryInspection:true};
   const a=await inspectObservedFormControl(el,state,args),same=await inspectObservedFormControl(el,state,args);
@@ -31,7 +31,11 @@ test('native noncredential control inspection hashes current value and stable DO
   el.value='Second';const b=await inspectObservedFormControl(el,state,args);
   assert.notEqual(a.recovery.stateDigest,b.recovery.stateDigest);
   const replacement=await inspectObservedFormControl({...el},state,args);assert.notEqual(a.recovery.nodeId,replacement.recovery.nodeId);
-  el.type='password';assert.equal((await inspectObservedFormControl(el,state,args)).recovery,undefined);
+  el.type='password';const password=await inspectObservedFormControl(el,state,args);
+  assert.equal(password.recovery.nodeId,b.recovery.nodeId);assert.equal(password.recovery.type,'password');
+  assert.equal(JSON.stringify(password).includes('Second'),false);
+  el.value='Changed password';const changed=await inspectObservedFormControl(el,state,args);
+  assert.notEqual(changed.recovery.stateDigest,password.recovery.stateDigest);
 });
 test('raw handler exposes native capture and revalidation, forwards final input check, rejects drift', async () => {
   let observation=observed(),inputChecks=0,dispatched=0;
@@ -52,7 +56,7 @@ test('late native rejection never claims preparation had no effects', async () =
   const failed=await handler(op,{recoveryBinding:binding});const body=JSON.parse(failed.contentItems[0].text);
   assert.equal(body.code,'BROWSER_RECOVERY_CHANGED');assert.equal(Object.hasOwn(body,'actionDispatched'),false);assert.equal(Object.hasOwn(body,'inputDispatched'),false);
 });
-test('credential or unsupported submit payload cannot degrade to button-only recovery', async () => {
+test('malformed or unsupported submit payload cannot degrade to button-only recovery', async () => {
   const el={isConnected:true,tagName:'BUTTON',type:'submit',form:{isConnected:true,elements:[{type:'password'}]}};
   assert.equal((await inspectObservedFormControl(el,{}, {action:'click',ref:'submit',hostRecoveryInspection:true})).recovery,undefined);
   el.type='image';

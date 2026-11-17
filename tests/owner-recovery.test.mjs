@@ -57,7 +57,7 @@ test('concrete file uncertainty remains blocked without inventing an owner excep
   assert.equal((await f.guard.wrap(f.raw)(call())).code,'TASK_CONTRACT_EFFECT_UNCERTAIN');
   assert.equal(f.broker.list().length,0);
 });
-test('browser submission remains admitted past unrelated shell history and duplicate protection remains active',async t=>{
+test('browser submission permits explicit new calls while transport replay remains suppressed',async t=>{
   const f=await fixture(t);let dispatched=0;
   const descriptor={version:1,effect:'commit',operationKey:'current-submit',resources:[{key:'destination:https://example.test/submit',access:'write'}],
     commit:{effectKey:'exact-submit',destinationKey:'destination:https://example.test/submit',payloadDigest:'exact-payload'}};
@@ -65,8 +65,9 @@ test('browser submission remains admitted past unrelated shell history and dupli
   raw.describeOperation=async()=>descriptor;
   const c={name:'relay_browser',callId:'one',arguments:{action:'click',tabId:'tab',ref:'submit'}};
   assert.equal((await f.guard.wrap(raw)(c)).success,true);
-  await assert.rejects(f.guard.wrap(raw)({...c,callId:'two'}),{code:'OPERATIONAL_EFFECT_UNCERTAIN'});
-  assert.equal(dispatched,1);assert.equal(f.broker.list().length,0);
+  assert.equal((await f.guard.wrap(raw)({...c,callId:'two'})).success,true);
+  assert.equal((await f.guard.wrap(raw)(c)).success,true);
+  assert.equal(dispatched,2);assert.equal(f.broker.list().length,0);
 });
 test('actual HarnessEngine continues two authorized writes without review for unrelated old opaque history',async t=>{
   const f=await fixture(t);let calls=0;
@@ -88,24 +89,20 @@ test('actual HarnessEngine continues two authorized writes without review for un
   assert.equal(await fs.readFile(f.legacy,'utf8'),before);
 });
 
-for(const outcome of ['approve','cancel','drift'])test('explicit overlapping destination recovery remains exact: '+outcome,async t=>{
-  const f=await fixture(t),destination='destination:https://explicit.test/submit';
-  await fs.writeFile(f.legacy,JSON.stringify(journal([{...row,resources:[{key:destination,access:'write'}]}])));
-  let dispatched=0,current='original';
-  const d={effect:'commit',operationKey:'new-submit',resources:[{key:destination,access:'write'}],commit:{effectKey:'submit',destinationKey:destination,payloadDigest:'payload'}};
-  const raw=async(c,context)=>{
-    try{await context.onOperationDispatch(d);}catch(error){return{success:false,code:error.code,contentItems:[{type:'inputText',text:JSON.stringify({actionDispatched:false})}]};}
-    dispatched++;return{success:true,contentItems:[]};
-  };
-  raw.describeOperation=async()=>d;
-  raw.captureRecoveryBinding=async()=>({documentId:current});
-  raw.revalidateRecoveryBinding=async binding=>{if(binding.documentId!==current)throw Object.assign(Error('changed'),{code:'OWNER_RECOVERY_PRECONDITION',actionDispatched:false});};
-  const before=await fs.readFile(f.legacy,'utf8');
-  const promise=f.guard.wrap(raw)({name:'relay_browser',callId:'exact',arguments:{action:'click',tabId:'tab',ref:'submit'}}),pending=await f.pending();
-  if(outcome==='cancel')f.broker.cancel({requestId:pending.requestId,revision:pending.revision,actor});
-  else{if(outcome==='drift')current='changed';await f.approve();}
-  const result=await promise;
-  assert.equal(result.success,outcome==='approve');assert.equal(dispatched,outcome==='approve'?1:0);
-  assert.equal(await fs.readFile(f.legacy,'utf8'),before);
-  assert.equal(f.broker.read(pending.requestId).state,outcome==='approve'?'consumed':outcome==='cancel'?'cancelled':'invalidated');
+test('overlapping browser destination proceeds without owner review and preserves history',async t=>{
+ const f=await fixture(t),destination='destination:https://explicit.test/submit';
+ await fs.writeFile(f.legacy,JSON.stringify(journal([{...row,resources:[{key:destination,access:'write'}]}])));
+ let dispatched=0,recoveryCalls=0;
+ const d={effect:'commit',operationKey:'new-submit',resources:[{key:destination,access:'write'}],commit:{effectKey:'submit',destinationKey:destination,payloadDigest:'payload'}};
+ const raw=async(c,context)=>{await context.onOperationDispatch(d);dispatched++;return{success:true,contentItems:[]};};
+ raw.describeOperation=async()=>d;
+ raw.captureRecoveryBinding=async()=>{recoveryCalls++;throw Error('browser must not create owner recovery');};
+ raw.revalidateRecoveryBinding=raw.captureRecoveryBinding;
+ const before=await fs.readFile(f.legacy,'utf8'),run=f.guard.wrap(raw);
+ const c={name:'relay_browser',callId:'exact',arguments:{action:'click',tabId:'tab',ref:'submit'}};
+ const first=await run(c);assert.equal(first.success,true);
+ assert.deepEqual(await run(c),first);assert.equal(dispatched,1,'same transport call is not replayed');
+ assert.equal((await run({...c,callId:'new-explicit'})).success,true);assert.equal(dispatched,2);
+ assert.equal(recoveryCalls,0);assert.deepEqual(f.broker.list(),[]);
+ assert.equal(await fs.readFile(f.legacy,'utf8'),before);
 });

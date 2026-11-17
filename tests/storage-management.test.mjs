@@ -224,3 +224,16 @@ test('preview binds exact contents before confirmation; new or changed files req
  await writeFile(path.join(workspaceDir,'folder','a'),'changed');
  await assert.rejects(manager.schedule({workspaceEntries:[fresh.id],confirmation:'DELETE SELECTED DATA'}),/changed since preview/);
 });
+
+test('saved context cleanup includes organizational folders without touching runtime settings',async t=>{
+  const {dataDir,manager}=await setup(t);
+  await writeFile(path.join(dataDir,'knowledge.json'),'saved content');
+  await writeFile(path.join(dataDir,'knowledge-folders.json'),'folder metadata');
+  await writeFile(path.join(dataDir,'runtime-settings.json'),'settings');
+  await manager.schedule({categories:['context'],confirmation:'DELETE SELECTED DATA'});
+  assert.equal(await exists(path.join(dataDir,'knowledge-folders.json')),true,'scheduling alone must not delete data');
+  await manager.applyAtStartup();
+  assert.equal(await exists(path.join(dataDir,'knowledge-folders.json')),false);
+  assert.equal(await exists(path.join(dataDir,'knowledge.json')),false);
+  assert.equal(await readFile(path.join(dataDir,'runtime-settings.json'),'utf8'),'settings');
+});

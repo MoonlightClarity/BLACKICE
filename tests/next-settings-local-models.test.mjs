@@ -192,3 +192,61 @@ test('llama settings preserve startup context and distinguish router from single
   assert.equal(f.$('#next-local-context').disabled, false);
   assert.equal(f.$('#next-local-context').value, '8192');
 });
+
+
+test('manual llama.cpp releases remain available under Advanced',async t=>{
+  const f=fixture(t,call=>call.route==='/api/local-models/downloads'?Promise.reject(Error('metadata offline')):undefined);
+  await f.enter();
+  const runtime=f.$('#next-local-engine');runtime.value='llamacpp';await runtime.dispatch('change');
+  const official=f.$('#next-llama-releases'),details=f.$('#next-llama-discovery'),discover=f.$('#next-llama-discover');
+  assert.equal(official.getAttribute('href'),'https://github.com/ggml-org/llama.cpp/releases');
+  assert.equal(official.getAttribute('target'),'_blank');
+  assert.equal(official.getAttribute('rel'),'noopener noreferrer');
+  assert.doesNotMatch(official.className,/next-primary/);assert.equal(f.$('#next-llama-setup').tagName.toLowerCase(),'details');assert.equal(f.$('#next-llama-setup').open,false);
+  assert.equal(details.tagName.toLowerCase(),'details');
+  assert.equal(details.getAttribute('open'),null);
+  assert.equal(discover.closest('#next-llama-discovery'),details);
+  assert.equal(official.parentElement,f.$('#next-llama-setup'),'official releases is outside the collapsed Advanced controls');
+  await f.click('#next-llama-releases');
+  assert.equal(f.calls.filter(call=>call.route==='/api/local-models/downloads').length,0,'opening the direct link never requests metadata');
+  await f.click('#next-llama-discover');
+  await until(()=>!discover.disabled);
+  assert.match(f.$('#next-llama-download-status').textContent,/metadata offline/,'legacy discovery remains explicitly available');
+});
+
+test('fresh supported install exposes bundled llama setup without changing runtime selector',async t=>{
+ const dom=planningDOM(t),calls=[];
+ const panel=createLocalModelSettings({mount:dom.mount,storage:null,api:async route=>{
+  calls.push(route);
+  if(route==='/api/local-models')return {engines:[{id:'ollama',available:false,models:[]},{id:'llamacpp',available:false,models:[]}]};
+  if(route==='/api/providers')return [];
+  if(route==='/api/local-models/config')return {revision:0,settings:{},recommended:{},runtime:{available:true,source:'bundled',backend:'CPU'}};
+  throw Error(route);
+ }});
+ t.after(()=>panel.destroy());panel.enter();
+ await until(()=>dom.$('#next-local-engine').value==='llamacpp');
+ assert.equal(dom.$('#next-llama-setup').hidden,false);
+ assert.equal(dom.$('#next-llama-model-start').isConnected,true);
+ assert.match(dom.$('#next-llama-runtime-status').textContent,/Included/);
+});
+test('saved external runtime selection stays selected even with bundled runtime available',async t=>{
+ const dom=planningDOM(t),writes=[];
+ const panel=createLocalModelSettings({mount:dom.mount,storage:{getItem:()=> 'lmstudio',setItem:(k,v)=>writes.push(v)},api:async route=>{
+  if(route==='/api/local-models')return {engines:[]};throw Error('Unexpected '+route);
+ }});
+ t.after(()=>panel.destroy());panel.enter();await settle();
+ assert.equal(dom.$('#next-local-engine').value,'lmstudio');
+ assert.equal(dom.$('#next-llama-setup').hidden,true);
+ dom.$('#next-local-engine').value='ollama';await dom.$('#next-local-engine').dispatch('change');
+ assert.deepEqual(writes,['ollama']);
+});
+test('configured offline external provider is not migrated to bundled runtime',async t=>{
+ const dom=planningDOM(t);
+ const panel=createLocalModelSettings({mount:dom.mount,storage:null,api:async route=>{
+  if(route==='/api/local-models')return {engines:[]};
+  if(route==='/api/providers')return [{preset:'lmstudio',enabled:true,models:[{id:'saved-model'}]}];
+  throw Error('Do not probe bundled defaults for an existing configured user');
+ }});
+ t.after(()=>panel.destroy());panel.enter();await until(()=>dom.$('#next-local-engine').value==='lmstudio');
+ assert.equal(dom.$('#next-llama-setup').hidden,true);
+});

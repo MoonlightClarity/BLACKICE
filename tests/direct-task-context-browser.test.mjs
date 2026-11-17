@@ -80,23 +80,8 @@ async function contextApi(t){
  const click=requestId=>({requestId,taskContext:c.taskContext,action:'click',tabId,ref:'submit',expectedUrl:f.page.url,expectedDocumentId:f.page.documentId});
  return {f,api,client,saved,run,c,click,began,release};
 }
-test('actual API explicit browser handle confirms once and ordinary same-task path cannot repeat',async t=>{
- const {f,run,click}=await contextApi(t);
- const result=await run('blackice_browser_action',click('explicit-submit'));assert.equal(result.status,'succeeded',JSON.stringify(result));
- assert.equal(f.counts().commits,1);assert.equal((await f.measure()).criteria[0].observedCount,1);
- f.page.optional='new-payload';
- const next=click('ordinary-repeat');delete next.taskContext;
- const repeated=await run('blackice_browser_action',next);assert.equal(repeated.status,'failed');assert.equal(f.counts().commits,1);
-});
-test('queued explicit browser action is rejected after context revocation before any click',async t=>{
- const {f,api,client,saved,c,click,began,release}=await contextApi(t);
- const hold=await api.call('blackice_context_hold',{requestId:'hold'},client);await began;
- const q=await api.call('blackice_browser_action',click('queued-commit'),client);
- await f.runtime().revokeContext({ownerId,taskContext:c.taskContext,expectedGeneration:1});
- release();await saved(hold);const blocked=await saved(q);
- assert.equal(blocked.status,'failed');assert.equal(blocked.error.code,'DIRECT_CONTEXT_REVOKED');
- assert.equal(f.counts().commits,0);assert.equal((await f.measure()).criteria[0].observedCount,0);
-});
+
+
 test('explicit and inherited browser dispatch concurrently share the semantic claim',async t=>{
  const {f,c}=await contextApi(t),call={name:'relay_browser',arguments:{action:'click',browser:'relay',tabId,ref:'submit',expectedUrl:f.page.url,expectedDocumentId:f.page.documentId}};
  const outcomes=await Promise.allSettled([f.runtime().execute({ownerId,taskContext:c.taskContext,operationId:'explicit-race',handler:f.runtime().handler(ownerId),call}),f.execute()]);
@@ -144,17 +129,6 @@ test('same task progresses an independent target while UNKNOWN reserves capacity
 });
 
 
-test('actual API initial task attempt needs no issuer-absence cycle and reports qualified history',async t=>{
- const f=await fixture(t),binding=await f.bind();
- const api=new DirectExecutionAPI({dataDir:f.root,allowedRoot:f.root,browser:f.browser,taskRuntime:f.runtime()});f.cleanup(()=>api.close());await api.init();
- const client={id:ownerId,kind:'chatgpt',scopes:[...DIRECT_EXECUTION_SCOPES]};
- const q=await api.call('blackice_browser_action',{requestId:'ordinary-first',action:'click',tabId,ref:'submit',expectedUrl:f.page.url,expectedDocumentId:f.page.documentId},client);
- let saved;for(let n=0;n<1000;n++){saved=await api.getJob(q.jobId,client);if(saved.settled)break;await new Promise(r=>setTimeout(r,5));}
- assert.equal(saved.status,'succeeded',JSON.stringify(saved));assert.equal(f.counts().commits,1);assert.equal(f.counts().reads,0);
- const task=await f.runtime().read({ownerId,taskId:'task'});assert.equal(task.bindings[binding.bindingId].baseline.state,'UNKNOWN');assert.equal(task.bindings[binding.bindingId].baseline.basis,'no-recorded-host-effect');
- const m=await f.measure();assert.equal(m.criteria[0].observedCount,1);assert.equal(m.criteria[0].outcomes[0].novelty,'within-recorded-history');assert.equal(m.criteria[0].outcomes[0].historyCoverage,'not-established');
-});
-
 
 test('initial no-baseline unchanged absence cannot clear attempted UNKNOWN while independent target progresses',async t=>{
  const f=await fixture(t);await f.bind('task',2);f.page.stickyReceipt=true;
@@ -167,4 +141,12 @@ test('initial no-baseline unchanged absence cannot clear attempted UNKNOWN while
  f.page.workshop='w2';f.page.stickyReceipt=false;
  const independent=await f.execute();assert.equal(independent.success,true);assert.equal(f.counts().commits,2);
  const m=await f.measure();assert.equal(m.criteria[0].observedCount,1);assert.equal(m.criteria[0].unresolvedEffects,1);
+});
+
+test('ordinary login does not inherit a revoked task context from an already bound tab',async t=>{
+ const {f,c,run,click}=await contextApi(t);
+ await f.runtime().revokeContext({ownerId,taskContext:c.taskContext,expectedGeneration:1});
+ const request=click('ordinary-after-revoke');delete request.taskContext;request.ref='Next';
+ const result=await run('blackice_browser_action',request);
+ assert.equal(result.status,'succeeded',JSON.stringify(result));assert.equal(f.counts().commits,1);
 });

@@ -11,14 +11,14 @@ import {ConversationArchive} from '../lib/conversations.mjs';
 const call=(name,args)=>({name,arguments:args});
 const parsed=r=>JSON.parse(r.contentItems[0].text);
 
-test('audit navigation validation is known absent and corrected action reaches the destination once',async t=>{
+test('invalid navigation destination is known absent while stale old-document metadata does not block the corrected destination',async t=>{
  let dispatches=0,url='https://fixture.test/start';
  const browser=new BrowserWorkspace({driver:{status:()=>({available:true,contained:true,tabs:[{tabId:'t',url}],activeTab:'t'}),perform:async args=>{dispatches++;url=args.url;return {tabId:'t',url};}}});
  t.after(()=>browser.close());const handler=createBrowserToolHandler({browser});
- const invalid=call('relay_browser',{action:'navigate',browser:'relay',tabId:'t',url:'https://fixture.test/finish',expectedUrl:url,expectedDocumentId:'t:1'});
+ const invalid=call('relay_browser',{action:'navigate',browser:'relay',tabId:'t',url:'',expectedUrl:url,expectedDocumentId:'t:1'});
  const rejected=await handler(invalid);assert.equal(rejected.success,false);assert.equal(dispatches,0);
  const observed=observeGoalToolOutcome(invalid,rejected);assert.equal(observed.kind,'recoverable_no_dispatch');assert.equal(observed.actionDispatched,false);assert.equal(detectUnknownEffectReplay([observed],invalid),null);
- const repaired=call('relay_browser',{action:'navigate',browser:'relay',tabId:'t',url:'https://fixture.test/finish'});
+ const repaired=call('relay_browser',{action:'navigate',browser:'relay',tabId:'t',url:'https://fixture.test/finish',expectedUrl:'https://fixture.test/abandoned',expectedDocumentId:'t:1'});
  assert.equal((await handler(repaired)).success,true);assert.equal(url,'https://fixture.test/finish');assert.equal(dispatches,1);
 });
 

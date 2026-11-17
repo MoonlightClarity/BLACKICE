@@ -73,7 +73,7 @@ export function connectionCatalogWindow(catalog={},limit=20) {
 export function createConnectionSettings({mount,api,events,notify=()=>{},onChanged=()=>{}}) {
   mount.innerHTML=[
     '<section id="next-connections-root" class="next-connection-settings" aria-label="Tool connections">',
-    '<header class="next-section-actions"><div><h2>Tool connections</h2><p class="next-help">Connect local and remote MCP servers for your agents.</p></div>',
+    '<header class="next-section-actions"><div><h2>Tool connections</h2><p class="next-help">Add each MCP server once here. This shared catalog is available to BLACKICE agents across providers that support tools, including Codex; it is not owned by one provider. Servers configured only in another app are not automatically imported. Use Import tool configuration below to bring an existing server into this catalog.</p></div>',
     '<div class="next-row"><button type="button" id="next-connections-refresh">Refresh</button><button type="button" id="next-connections-new">Add server</button></div></header>',
     '<p id="next-connections-feedback" role="status" class="next-help"></p>',
     '<div class="next-connections-layout"><div id="next-connections-list" class="next-connections-list" aria-label="Saved tool servers"></div>',

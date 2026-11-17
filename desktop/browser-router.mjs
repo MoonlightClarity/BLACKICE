@@ -1,8 +1,7 @@
 import { EventEmitter } from 'node:events';
 
-const FIREFOX_PREFIX = 'firefox:';
 const fail = (message, code = 'BROWSER_VALIDATION') => Object.assign(new Error(message), { code });
-const externalId = (browser, id) => browser === 'firefox' ? `${FIREFOX_PREFIX}${id}` : String(id);
+const externalId = (_browser, id) => String(id);
 const cancelled = () => Object.assign(fail('Browser action cancelled. Inspect the page before repeating an action.', 'ABORT_ERR'), { name: 'AbortError' });
 function descendsFrom(owners, child, parent) {
   const seen = new Set();
@@ -13,17 +12,20 @@ function descendsFrom(owners, child, parent) {
   return false;
 }
 
-/** Combines a ready Relay browser with a Firefox adapter that connects lazily. */
+/** Routes the contained BLACKICE browser. */
 export class BrowserRouter extends EventEmitter {
-  constructor({ independent, firefox } = {}) {
-    super(); this.drivers = { relay: independent, firefox }; this.activeTab = null; this.closed = false; this.listeners = [];
+  constructor({ independent } = {}) {
+    super(); this.drivers = { relay: independent }; this.activeTab = null; this.closed = false; this.listeners = [];
     for (const driver of Object.values(this.drivers)) if (driver?.on) {
       const listener = () => this.emit('changed'); driver.on('changed', listener); this.listeners.push([driver, listener]);
     }
   }
+  setActiveOwnerResolver(resolve) { this.drivers.relay?.setActiveOwnerResolver?.(resolve); }
+  setStoppedOwnerResolver(resolve, verifyEffects) { this.drivers.relay?.setStoppedOwnerResolver?.(resolve, verifyEffects); }
+  setPasswordManager(options) { this.drivers.relay?.setPasswordManager?.(options); }
   setOwnerAdmission(check) { this.drivers.relay?.setOwnerAdmission?.(check); }
   // Child creation and initialization belong to the desktop runtime. In
-  // particular, restoring/listing a workspace must not start Firefox.
+  // particular, restoring/listing a workspace must not start external browsers.
   async init() { if (this.closed) throw fail('The browser workspace has closed.', 'BROWSER_CLOSED'); return this; }
   status() {
     const tabs = [], downloads = [], browsers = {}, owners = new Map(), previousOwners = this.owners; let fallback = null, relayStatus = {};
@@ -99,7 +101,7 @@ export class BrowserRouter extends EventEmitter {
   async perform(args, options = {}) {
     if (this.closed) throw fail('The browser workspace has closed.', 'BROWSER_CLOSED');
     if (options.signal?.aborted) throw cancelled();
-    if (!args || (args.browser != null && !['relay', 'firefox'].includes(args.browser))) throw fail('Choose relay or firefox as the browser.');
+    if (!args || (args.browser != null && args.browser !== 'relay')) throw fail('Choose the built-in relay browser.');
     const status = this.status();
     if (args.action === 'tabs') return status;
     if (args.action === 'downloads') return { downloads: args.browser ? status.downloads.filter(item => item.browser === args.browser) : status.downloads };
@@ -131,7 +133,6 @@ export class BrowserRouter extends EventEmitter {
     if (this.closed) throw fail('The browser workspace has closed.', 'BROWSER_CLOSED');
     const status = this.status();
     const selected = tabId != null || status.activeTab ? this.owner({ tabId }, status) : { browser: 'relay' };
-    if (selected.browser === 'firefox') throw fail('Firefox runs in the background without a visible window. Use its page snapshot or screenshot here.', 'BROWSER_HEADLESS');
     throw fail('Browser pages stay contained inside BLACKICE. Use the Observe view to inspect and control them.', 'BROWSER_CONTAINED');
   }
   async providerKeySource(args, options = {}) {
@@ -139,6 +140,14 @@ export class BrowserRouter extends EventEmitter {
     const selected = this.owner(args, this.status());
     if (selected.browser !== 'relay' || typeof this.drivers.relay?.providerKeySource !== 'function') throw fail('Protected provider key setup is available only in the contained browser.', 'PROVIDER_KEY_SOURCE_UNAVAILABLE');
     return this.drivers.relay.providerKeySource({ ...args, tabId: selected.nativeId }, options);
+  }
+  /** Read-only contained-page safety check; never starts an external page. */
+  async cleanupInspection(tabId) {
+    if (this.closed) return { state: 'unknown', reason: 'The browser is closed.' };
+    const selected = this.owner({ tabId, browser: 'relay' }, this.status());
+    if (selected.browser !== 'relay' || !this.drivers.relay?.cleanupInspection)
+      return { state: 'unknown', reason: 'Contained-page safety inspection is unavailable.' };
+    return this.drivers.relay.cleanupInspection(selected.nativeId);
   }
   async releaseOwner(owner, options = {}) {
     if (this.closed || typeof this.drivers.relay?.releaseOwner !== 'function') return { suspended: [], retained: [], unavailable: true };

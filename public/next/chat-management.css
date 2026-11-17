@@ -26,8 +26,18 @@
 .next-chat-management-dialog::backdrop{background:#030812ba}
 .next-chat-management-dialog h2{margin:0 0 16px;font-size:19px}
 .next-chat-management-dialog p{line-height:1.6;color:var(--muted)}
-.next-chat-management-dialog input{width:100%}
+.next-chat-management-dialog input:not([type=checkbox]):not([type=radio]){width:100%}
 .next-chat-dialog-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:22px}
 .next-chat-head-actions{flex-wrap:wrap;justify-content:flex-end;max-width:62%}
 @media(max-width:820px){.next-chat-head-actions{gap:4px}.next-chat-head-actions button,.next-chat-export>summary{font-size:10px;padding:6px 7px}.next-chat-management-dialog{padding:18px}}
 @media(forced-colors:active){.next-conversation-menu,.next-chat-export>div,.next-chat-management-dialog{background:Canvas;color:CanvasText;border-color:ButtonText}.next-conversation-menu a,.next-chat-export a{color:LinkText}.next-conversation-menu button{color:ButtonText}.next-chat-management-status[data-error=true]{color:CanvasText}}
+
+/* Folder hierarchy: containers own their chat rows, not just list filters. */
+.next-chat-folder-group{margin:6px 0;border-radius:8px}
+.next-chat-folder-heading{display:flex;gap:8px;align-items:center;padding:9px 8px;cursor:pointer;color:var(--next-text);font-weight:600;list-style:none}
+.next-chat-folder-heading::before{content:'\25B8';width:12px;flex:none}
+.next-chat-folder-group[open]>.next-chat-folder-heading::before{content:'\25BE'}
+.next-chat-folder-heading>span{overflow-wrap:anywhere;flex:1;min-width:0}
+.next-chat-folder-heading>small{font-weight:400;opacity:.65}
+.next-chat-folder-children{margin-left:15px;padding-left:7px;border-left:1px solid var(--next-border, #444)}
+.next-chat-folder-empty{padding:8px;font-size:12px;opacity:.65}

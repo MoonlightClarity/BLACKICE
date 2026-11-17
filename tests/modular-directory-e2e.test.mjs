@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,readFile,writeFile,rm,mkdir} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {modularCompletionEnabled,modularOutcomeEvidence,createModularCompletionController,createModularEvidenceJournal} from '../lib/modular-completion.mjs';
+import {reviewModularOutcome,modularCompletionEnabled,modularOutcomeEvidence,createModularCompletionController,createModularEvidenceJournal} from '../lib/modular-completion.mjs';
 import {ShadowdancerDirectory,runShadowdancerDirectory} from '../lib/shadowdancer-directory.mjs';
 
 const policy={version:2,modules:{inference:true,feasibility:true,decomposition:true,branching:true,replanning:true,metacognition:true,anti_overalignment:true,verification:true,subagents:true}};
@@ -151,3 +151,81 @@ test('fresh Directory work continues from full host observations and performs th
  assert.equal((await controller.assertReady()).ready,true);
  assert.equal(phases.filter(label=>label==='work').length,2);
 }));
+
+test('atomic Directory preserves unavailable-review candidate without synthesis, replay or verified labels',async()=>temp(async cwd=>{
+ const updates=[];let reviews=0,work=0;const answer='No applications were submitted; the remaining outcome is uncertain.';
+ const controller=createModularCompletionController({policy,getSnapshot:snapshot,onUpdate:r=>updates.push(r),review:async()=>{reviews++;return null;}});
+ const runtime={async runAgent(options){
+  const view=JSON.parse(options.prompt.split('CURRENT_DIRECTORY:\n').at(-1));
+  if(view.label==='decompose')return {output:'{"atomic":true}'};
+  assert.equal(view.label,'work','No synthesis or operational replay for reviewer failure');work++;
+  const candidate={output:JSON.stringify({status:'blocked',nextAction:'',finding:'Current outcome uncertain',candidate_answer:answer,uncertainty:'Submission status not established'})};
+  assert.equal(await options.onBeforeFinal(candidate),null);return candidate;
+ }};
+ const result=await runShadowdancerDirectory({cwd,conversationId:'unavailable-atomic',runId:'unavailable-atomic',model:'fixture',runtime,input:'/directory Apply to up to three jobs.',planningOntology:policy,
+  supportsAtomicOutcomeReview:true,onBeforeFinal:controller.beforeFinal,getCompletionAssessment:()=>updates.at(-1)});
+ assert.equal(work,1);assert.equal(reviews,3);assert.equal(result.answer,answer);assert.equal(result.atomicOutcomeAccepted,false);assert.equal(result.atomicBoundaryFinalized,true);assert.equal(result.reviewUnavailable,true);
+ const final=JSON.parse(await readFile(result.finalPath,'utf8'));assert.equal(final.status,'unreviewed');assert.equal(final.integrationAuthority,'host_preserved_active_worker_candidate');
+ assert.equal(final.assessment.decision,'unreviewed');
+ const summary=JSON.parse(await readFile(path.join(result.root,'conversation/context/summary.json'),'utf8'));assert.equal(summary.directoryStatus,'unreviewed');assert.equal(summary.integrationStatus,'unreviewed');
+ assert.equal((await controller.assertReady()).reviewUnavailable,true);
+}));
+
+test('atomic Directory retains grounded outcome conflict instead of publishing fallback',async()=>temp(async cwd=>{
+ let reviews=0,work=0;const updates=[];
+ const state={policy,request:{text:'Preserve public outputs.'},evidence:{records:[{id:'baseline',result:'return {value:x}'},{id:'current',result:'returned undefined'}]}};
+ const controller=createModularCompletionController({policy,getSnapshot:()=>state,onUpdate:r=>updates.push(r),review:async()=>{reviews++;return {decision:'respond',summary:'Done',remaining:[],nextAction:'',evidenceRefs:['evidence-0001','evidence-0002'],blockers:[],outcomeChecks:[{obligation:'Preserve output',basis:'existing-interface',contractQuote:'return {value:x}',contractRefs:['evidence-0001'],resultRefs:['evidence-0002'],disposition:'contradicted',material:true,reason:'Output was lost'}]};}});
+ const runtime={async runAgent(options){const view=JSON.parse(options.prompt.split('CURRENT_DIRECTORY:\n').at(-1));if(view.label==='decompose')return {output:'{"atomic":true}'};assert.equal(view.label,'work');work++;const candidate={output:JSON.stringify({status:'complete',nextAction:'',finding:'Done',candidate_answer:'Done',uncertainty:''})};await options.onBeforeFinal(candidate);return candidate;}};
+ await assert.rejects(runShadowdancerDirectory({cwd,conversationId:'atomic-conflict',runId:'atomic-conflict',model:'fixture',runtime,input:'/directory Preserve public outputs.',planningOntology:policy,supportsAtomicOutcomeReview:true,onBeforeFinal:controller.beforeFinal,getCompletionAssessment:()=>updates.at(-1)}),{code:'MODULAR_REVIEW_CONFLICT'});
+ assert.equal(work,1);assert.equal(reviews,3);await assert.rejects(controller.assertReady(),{code:'MODULAR_OUTCOME_INCOMPLETE'});
+}));
+
+for(const cancelParent of [false,true]){
+ test('atomic Directory handles actual evidence-reader exhaustion with parent cancellation '+cancelParent,async()=>temp(async cwd=>{
+  const updates=[],usage=[],parent=new AbortController();let reviews=0,work=0,reads=0,savedOriginal;
+  const answer='No applications were submitted; research is incomplete.';
+  const state={request:{id:'user-request',text:'Apply to up to three roles.'},policy,evidence:{auditRoot:path.join(cwd,'receipts'),records:[
+   {id:'observed-research',source:'host-dispatch-receipt',tool:'relay_browser',action:'read',success:true,
+    result:{contentItems:[{type:'inputText',text:'Original observed result '+('source '.repeat(30000))}]}}
+  ]}};
+  const controller=createModularCompletionController({policy,signal:parent.signal,getSnapshot:()=>state,onUpdate:r=>updates.push(r),
+   review:args=>reviewModularOutcome({cwd,model:'fixture',context:{preset:'custom',windowTokens:12000,outputReserveTokens:1000,headroomTokens:1000},signal:parent.signal,...args,onUsage:value=>usage.push(value),
+    runtime:{async runAgent(options){
+     reviews++;const packet=JSON.parse(options.prompt.split('\n\n').find(part=>part.startsWith('{"snapshot":')));
+     savedOriginal=packet.snapshot.savedReview.original.file;
+     options.onEvent({type:'usage',usage:{last:{inputTokens:10000,outputTokens:0}}});
+     reads++;await assert.rejects(options.onToolCall({name:'relay_directory_context',arguments:{action:'read',ref:packet.snapshot.evidence.records[0].savedSource.ref}}),{code:'MODULAR_REVIEW_CONTEXT_CAPACITY'});
+     assert.equal(options.signal.aborted,true);assert.equal(parent.signal.aborted,false);
+     if(cancelParent)parent.abort();
+     throw Object.assign(new Error('Reviewer cancelled'),{name:'AbortError',code:'ABORT_ERR'});
+    }}
+   })});
+  const runtime={async runAgent(options){
+   const view=JSON.parse(options.prompt.split('CURRENT_DIRECTORY:\n').at(-1));
+   if(view.label==='decompose')return {output:'{"atomic":true}'};
+   assert.equal(view.label,'work','No synthesis or task replay is admitted');work++;
+   const candidate={output:JSON.stringify({status:'blocked',nextAction:'',finding:'Research incomplete',candidate_answer:answer,uncertainty:'No submission established'})};
+   assert.equal(await options.onBeforeFinal(candidate),null);return candidate;
+  }};
+  const run=()=>runShadowdancerDirectory({cwd,conversationId:'atomic-capacity',runId:'atomic-capacity',model:'fixture',runtime,signal:parent.signal,
+   input:'/directory Apply to up to three roles.',planningOntology:policy,supportsAtomicOutcomeReview:true,onBeforeFinal:controller.beforeFinal,
+   getCompletionAssessment:()=>updates.at(-1),getCompletionEvidence:()=>state.evidence});
+  if(cancelParent){
+   await assert.rejects(run(),{code:'ABORT_ERR'});
+   assert.equal(updates.some(row=>row.status==='unavailable'),false);
+   await assert.rejects(controller.assertReady(),{code:'ABORT_ERR'});
+  }else{
+   const result=await run();
+   assert.equal(result.answer,answer);assert.equal(result.atomicOutcomeAccepted,false);assert.equal(result.atomicBoundaryFinalized,true);assert.equal(result.reviewUnavailable,true);
+   const final=JSON.parse(await readFile(result.finalPath,'utf8'));
+   assert.equal(final.status,'unreviewed');assert.equal(final.integrationAuthority,'host_preserved_active_worker_candidate');
+   assert.equal(final.assessment.reason,'MODULAR_REVIEW_CONTEXT_CAPACITY');assert.equal(final.assessment.decision,'unreviewed');
+   assert.deepEqual(JSON.parse(await readFile(final.evidenceFile,'utf8')),state.evidence);
+   const summary=JSON.parse(await readFile(path.join(result.root,'conversation/context/summary.json'),'utf8'));
+   assert.equal(summary.directoryStatus,'unreviewed');assert.equal(summary.integrationStatus,'unreviewed');
+   assert.equal((await controller.assertReady()).reviewUnavailable,true);
+  }
+  assert.equal(work,1);assert.equal(reviews,1);assert.equal(reads,1);assert.equal(usage.length,1);assert.ok(usage[0].reviewContext.capacityStop);
+  assert.deepEqual(JSON.parse(await readFile(savedOriginal,'utf8')).snapshot,state,'Original evidence survives reviewer stop and parent cancellation');
+ }));
+}

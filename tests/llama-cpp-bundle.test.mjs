@@ -1,0 +1,13 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { createHash } from 'node:crypto';
+import { inspectLlamaBundle,LLAMA_BUNDLE_VERSION } from '../lib/llama-cpp-bundle.mjs';
+import { LocalModelManager } from '../lib/local-model-manager.mjs';
+const hash=b=>createHash('sha256').update(b).digest('hex');
+async function fixture(t){const root=await fs.mkdtemp(path.join(os.tmpdir(),'blackice-bundle-test-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));const files=[];for(const backend of ['cpu','vulkan']){await fs.mkdir(path.join(root,backend));const bytes=Buffer.from(backend);await fs.writeFile(path.join(root,backend,'llama-server.exe'),bytes);files.push({path:backend+'/llama-server.exe',size:bytes.length,sha256:hash(bytes)});}await fs.writeFile(path.join(root,'manifest.json'),JSON.stringify({version:LLAMA_BUNDLE_VERSION,files}));return root;}
+test('bundle selects actual Vulkan device and otherwise verifies CPU fallback',async t=>{const root=await fixture(t),calls=[];const gpu=await inspectLlamaBundle({root,platform:'win32',arch:'x64',run:async(f,args)=>{calls.push([f,args]);return {stdout:'Available devices:\n  Vulkan0: Test GPU (1024 MiB)'};}});assert.equal(gpu.backend,'Vulkan');assert.match(gpu.fallbackPath,/cpu/);const cpu=await inspectLlamaBundle({root,platform:'win32',arch:'x64',run:async(f,args)=>{calls.push([f,args]);if(f.includes('vulkan'))throw Error('driver unavailable');return {stdout:'version 1.0.0'};}});assert.equal(cpu.backend,'CPU');assert.ok(calls.some(([,a])=>a[0]==='--version'));});
+test('missing, corrupt and unsupported bundle never executes',async t=>{const root=await fixture(t);let calls=0;const run=async()=>{calls++;return {stdout:''};};assert.equal((await inspectLlamaBundle({root,platform:'linux',run})).available,false);await fs.appendFile(path.join(root,'cpu','llama-server.exe'),'bad');assert.equal((await inspectLlamaBundle({root,platform:'win32',arch:'x64',run})).available,false);assert.equal(calls,0);});
+test('custom settings preserved without probing or replacing custom binary',async t=>{const root=await fixture(t),manager=await new LocalModelManager({dataDir:root,llamaBundleRoot:root}).init();await manager.configureLlama({expectedRevision:0,settings:{executablePath:path.join(root,'cpu','llama-server.exe'),modelPaths:{saved:path.join(root,'saved.gguf')}}});manager.bundledRuntime=()=>{throw Error('must not probe bundle');};assert.equal((await manager.llamaRuntimeStatus()).source,'custom');assert.equal(manager.llamaConfig().settings.modelPaths.saved,path.join(root,'saved.gguf'));await manager.close();});

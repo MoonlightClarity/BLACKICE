@@ -1,0 +1,27 @@
+{
+  "installerSha256": "4d763d9f915abd07eb7d837c74d62648912578d70971043ed03c94d738f0f85a",
+  "classification": "publication-candidate-provenance-not-source-test-receipt",
+  "priorSuite": {
+    "passed": 9145,
+    "scope": "original testedSource, not this sanitized commit",
+    "failed": 0,
+    "skipped": 0
+  },
+  "testedSource": "59c8d9a6948360c05a81349e93b58a6a7743529e",
+  "evidenceCommit": "434096acabddb6245ca1db9a4553aef1ef58d024",
+  "publicationAllowed": false,
+  "version": "2.39.106",
+  "appFingerprint": "15a99a13f2c061ee1fe05c4b7f6e8c01757e958d2d9e675b6b6c82cbf0db1690",
+  "format": 1,
+  "publicParent": "0101d3f88cc7f3f139394a1c943b899511668a90",
+  "limits": [
+    "Independent review and sanitized-source qualification pending",
+    "Prior suite applies to original testedSource only",
+    "Synthetic regression fixture replaces private task-derived content; render helper uses portable dependency path",
+    "Documentation sanitized and reconciled; public installer must be rebuilt from this candidate",
+    "Raw internal evidence omitted; runtime fingerprint remains equivalent"
+  ],
+  "productCommit": "2bce5f27aa4603e98801d8a379e355455ddb4d96",
+  "installerBytes": 151435053,
+  "originalInstallerPublicPromotionAllowed": false
+}

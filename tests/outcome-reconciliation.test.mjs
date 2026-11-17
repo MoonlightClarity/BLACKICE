@@ -81,3 +81,18 @@ test('persistent internally contradictory review stops bounded correction withou
  let calls=0;const c=createModularCompletionController({policy,getSnapshot:snapshot,review:async()=>{calls++;return assessment({outcomeChecks:[row()]});}});
  await assert.rejects(c.beforeFinal({output:'done'}),{code:'MODULAR_REVIEW_CONFLICT'});assert.equal(calls,3);
 });
+test('grounded conflict survives a later malformed assessment instead of failing open',async()=>{
+ let calls=0;const c=createModularCompletionController({policy,getSnapshot:snapshot,review:async()=>{calls++;return calls===1?assessment({outcomeChecks:[row()]}):null;}});
+ await assert.rejects(c.beforeFinal({output:'done'}),{code:'MODULAR_REVIEW_CONFLICT'});assert.equal(calls,3);
+});
+
+test('uninspected citations cannot turn a model audit contradiction into a grounded fatal conflict',async t=>{
+ const {reviewModularOutcome}=await import('../lib/modular-completion.mjs');const {mkdtemp,rm}=await import('node:fs/promises');const os=await import('node:os');const path=await import('node:path');
+ const cwd=await mkdtemp(path.join(os.tmpdir(),'uninspected-conflict-'));t.after(()=>rm(cwd,{recursive:true,force:true}));
+ const state=snapshot();for(const record of state.evidence.records)record.result.contentItems[0].text+=' observed '.repeat(20000);
+ state.evidence.auditRoot=path.join(cwd,'receipts');const updates=[];let calls=0;
+ const runtime={async runAgent(options){calls++;assert.ok(options.dynamicTools,'Saved evidence requires read-back');return {output:JSON.stringify({...assessment({outcomeChecks:[row()]}),metadataOnlyRefs:[]})};}};
+ const c=createModularCompletionController({policy,getSnapshot:()=>state,onUpdate:r=>updates.push(r),review:args=>reviewModularOutcome({runtime,cwd,model:'fixture',context:{preset:'custom',windowTokens:12000,outputReserveTokens:1000,headroomTokens:1000},...args})});
+ assert.equal(await c.beforeFinal({output:'Outcome uncertain.'}),null);assert.equal(calls,3);
+ assert.equal(updates.filter(r=>r.validation?.uninspectedReferences?.length===2).length,3);assert.equal((await c.assertReady()).reviewUnavailable,true);
+});

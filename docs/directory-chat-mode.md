@@ -12,6 +12,14 @@ A work result contains `status`, `nextAction`, `finding`, `candidate_answer` and
 
 Dependent work receives actual saved tool receipts, including their complete contents, in addition to model findings. Synthesis can inspect evidence but cannot repeat operational effects. A response-only correction repairs the report without replaying completed work. A model answer, a successful tool call, and completion of the user's outcome are distinct observations.
 
+## Visible progress during a phase
+
+Chat displays completed commentary whose public phase is explicitly identified by the native Codex adapter, without waiting for the whole Directory phase. Generic commentary labels from other adapters are not sufficient: some adapters relabel rejected final answers or incomplete JSON as commentary, so those remain suppressed. Unclassified text deltas, structured leaf answers, and reasoning records remain private; this does not fabricate narration when a provider emits none.
+
+The host publishes metadata-only action-started, tool-returned, and outcome-unknown activity through the existing Chat event stream. The inline preview names the tool/action; Details retains bounded chronological activity. Arguments and raw results are not copied into this public projection. A tool reporting success is not proof that the user's task is complete. A transport exception is reported as unknown, not as a safely retryable failure. Existing saved receipts and no-replay behavior are unchanged.
+
+This is an observability bridge, not the complete action-oriented Directory redesign. Durable semantic action records, within-phase context rollover, authority lineage, and independently verified effect outcomes remain separate work. Historical goals and deadlines in retrieved records remain source data, not current instructions.
+
 ## Current conversation by default
 
 Saved Directory files belong to one conversation under `.shadowdancer/<conversationId>`. Its later runs share that conversation's current context. Automatic learning and memory-catalog admission also follow the conversation's run lineage; sharing a working folder does not import another conversation's notes. User profile settings and the currently authorized request remain available.
