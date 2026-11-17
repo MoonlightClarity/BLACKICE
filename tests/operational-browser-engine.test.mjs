@@ -61,12 +61,17 @@ test('real HarnessEngine browser pathway observes explicit actions without histo
   const workflow=createMissionWorkflow({task:'Submit two distinct test applications',model:'fixture-model',cwd,planningMode:'off'});
   const started=engine.startRun({workflow,input:{task:'Submit two distinct test applications',cwd,planningMode:'off'}});
   activeRunId=started.id;
-  let done;
-  for(let i=0;i<150;i++){
-    done=engine.getRun(started.id);
-    if(done?.settled)break;
-    await new Promise(resolve=>setTimeout(resolve,10));
-  }
+  // Await the real execution lifecycle, not a fixed number of scheduling turns.
+  // Slow CI storage/browser receipts must settle before their outcome is asserted.
+  const execution=engine.executions.get(started.id);assert.ok(execution,'run has an owned execution');
+  let timer;
+  try{
+    await Promise.race([execution,new Promise((_,reject)=>{timer=setTimeout(()=>{
+      const state=engine.getRun(started.id);
+      reject(new Error('Browser execution did not settle within 15s: '+JSON.stringify({status:state.status,settled:state.settled,agent:state.nodes.agent?.status,dispatches,providerTurns})));
+    },15000);})]);
+  }finally{clearTimeout(timer);}
+  const done=engine.getRun(started.id);assert.equal(done.settled,true);
   assert.equal(done.status,'completed',done.error||done.nodes.agent?.error);
   assert.equal(dispatches,3);
   assert.equal(providerTurns,1,'no mandatory planning or extra review model turn');
