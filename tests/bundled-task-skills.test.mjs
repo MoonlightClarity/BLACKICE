@@ -23,7 +23,12 @@ test('two distinct bundled procedures are discoverable, readable and immutable t
  }
  assert.equal(store.status().count,0);
  await assert.rejects(invoke({action:'read',id:'builtin:../../secret'}),/Invalid/);
- const saved=decode(await invoke({action:'save',title:'User procedure',content:'Useful method'})).entry;
+ const proposal=decode(await invoke({action:'save',title:'User procedure',content:'Useful method'}));
+ assert.equal(proposal.pendingApproval,true);assert.equal(proposal.applied,false);
+ assert.equal(store.status().count,0,'A proposed saved skill is not active before approval.');
+ assert.ok(!decode(await invoke({action:'search',query:'User procedure'})).entries.some(item=>item.title==='User procedure'));
+ const decision=await store.decideApproval(proposal.approvalId,{decision:'approve'});
+ assert.equal(decision.status,'approved');const saved=decision.entry;
  assert.equal(decode(await invoke({action:'read',id:saved.id})).entry.content,'Useful method');
  assert.ok(decode(await invoke({action:'search',query:'User procedure'})).entries.some(item=>item.id===saved.id));
  const limited=decode(await invoke({action:'search',limit:1}));assert.equal(limited.entries.length,1);assert.equal(limited.truncated,true);
