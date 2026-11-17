@@ -19,7 +19,7 @@ test('real review stages all changes; rejection never activates, approval reconc
  const review=await learning.learnNow(run.id);await wait(()=>learning.getReview(review.id).status==='pending_approval');
  assert.equal(knowledge.list().length,0);assert.equal(learning.listLessons().length,0);assert.equal(knowledge.listApprovals().length,2);
  const [first,second]=knowledge.listApprovals();await learning.recordApprovalDecision(await knowledge.decideApproval(first.id,{decision:'reject'}));assert.equal(learning.listLessons().length,0);
- await learning.recordApprovalDecision(await knowledge.decideApproval(second.id,{decision:'approve'}));assert.equal(learning.listLessons().length,1);assert.equal(learning.getReview(review.id).status,'completed');
+ await learning.recordApprovalDecision(await knowledge.decideApproval(second.id,{decision:'approve'}));assert.equal(learning.listLessons().length,1);assert.equal(learning.getReview(review.id).status,'completed');assert.equal(learning.getReview(review.id).appliedIds.length,1);
  const lesson=learning.listLessons()[0];assert.equal(learning.getContext(cwd,{runIds:['task-b']}).skills.length,0);
  await learning.removeLesson(lesson.id);await learning.restoreLesson(lesson.id);
  assert.equal(learning.listLessons()[0].knowledgeProvenance.source,'agent');assert.equal(learning.getContext(cwd,{runIds:['task-b']}).skills.length,0);
@@ -43,6 +43,6 @@ test('restart reconciles approved and rejected proposals without inventing appli
  assert.equal(learning.listLessons().length,0,'simulate interruption before learning reconciliation');
  await learning.close();
  const restarted=await new LearningStore({dataDir,runtime,knowledge,getRun:()=>run,delayMs:0}).init();
- try { assert.equal(restarted.listLessons().length,1);assert.equal(restarted.getReview(review.id).status,'completed');assert.equal(restarted.listLessons()[0].knowledgeId,second.value.id); }
+ try { assert.equal(restarted.listLessons().length,1);assert.equal(restarted.getReview(review.id).status,'completed');assert.equal(restarted.getReview(review.id).appliedIds.length,1);assert.equal(restarted.listLessons()[0].knowledgeId,second.value.id); }
  finally { await restarted.close(); }
 });
