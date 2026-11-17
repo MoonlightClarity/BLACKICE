@@ -309,3 +309,12 @@ test('native live direction invalidates earlier final candidates and late comple
   assert.deepEqual(candidates, ['Corrected scope answer.']);
   assert.ok(!events.some(e => e.type === 'message' && e.phase === 'final_answer' && e.text === old.text));
 });
+
+test('duplicate native completion cannot start two reviews while direction delivery is settling', async t => {
+  const f = nativeFixture(t), delivery = deferred(); let reviews = 0;
+  const { work, state } = await f.begin({ onBeforeFinal: async () => { reviews++; } });
+  state.pendingDirectionDelivery = delivery.promise;
+  f.complete(state, 'Confirmed candidate.'); f.complete(state, 'Confirmed candidate.');
+  delivery.resolve(); await work;
+  assert.equal(reviews, 1);
+});
