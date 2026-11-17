@@ -26,6 +26,10 @@ export function validateReleaseRequest(value, context = {}) {
 }
 
 const optionalWindowsSourceTests = new Set([
+  // Explicit opt-in native fixtures; skipped assertions remain unexecuted.
+  'native live informational alert releases without focus or effect replay',
+  'native offscreen informational alert releases without focus or effect replay',
+  'real packaged desktop main reaches ready with UIA retired and no launcher window',
   'Relay-owned sign-in and local storage survive a full process restart without foregrounding',
   'restored hidden browser tabs defer requests until used and never load closed or replaced pages',
   'native popups preserve OAuth routing and remain independent when their opener closes',
