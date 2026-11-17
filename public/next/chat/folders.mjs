@@ -45,6 +45,7 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
       selected='all';safeSet('blackice.next.chatFolder',selected);
     }
     view.folderFilter.value=selected;
+    if(selected!=='all'&&view.folderSettings)view.folderSettings.open=true;
     const named=Boolean(selectedFolder()),disabled=localBusy||isBusy()||organization.healthy===false;
     view.folderRename.hidden=!named;view.folderDelete.hidden=!named;
     for(const element of [view.folderNew,view.folderRename,view.folderDelete])element.disabled=disabled;
@@ -269,7 +270,7 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     budget+=SESSION_BUDGET;view.folderMore.hidden=true;notice('');
     enqueue(getItems());scheduleAuto();
   });
-  function manage(id){if(!folderById(id)||!isWritable())return;selected=id;safeSet('blackice.next.chatFolder',selected);refresh();onChanged();view.folderRename.focus();}
+  function manage(id){if(!folderById(id)||!isWritable())return;selected=id;safeSet('blackice.next.chatFolder',selected);refresh();onChanged();if(view.folderSettings)view.folderSettings.open=true;view.folderRename.focus();}
   return {manage,accept,filtered,folderNames,onRowAction,onListLoaded,stop,destroy,refresh,
     get selected(){return selected;},get organization(){return organization;}};
 }

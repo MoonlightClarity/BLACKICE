@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {planningDOM} from './fixture-planning-dom.mjs';
-import {paintIndex} from '../public/next/chat/render.mjs';
+import {paintIndex,createChatFrame} from '../public/next/chat/render.mjs';
 function fixture(t){const d=planningDOM(t);Object.defineProperties(Object.getPrototypeOf(d.mount),{type:{configurable:true,get(){return this.getAttribute('type')||''},set(v){this.setAttribute('type',v)}},childNodes:{get(){return this.children}},lastChild:{get(){return this.children.at(-1)}}});return d;}
 test('chat folder containers nest rows and retain collapse, focus and selection across refresh',t=>{
  const d=fixture(t),list=d.element('div');d.mount.append(list);
@@ -38,4 +38,13 @@ test('folder management is named and matching searches expose collapsed rows',t=
  assert.equal(paintIndex({list},items,null,()=>{},{...options,expandFolders:true}).length,1);
  assert.equal(group.open,true);
  paintIndex({list},items,null,()=>{},options);assert.equal(group.open,false);
+});
+
+test('folder controls are on demand while the primary folder tree remains visible',t=>{
+ const d=fixture(t),view=createChatFrame(d.mount);
+ assert.equal(view.folderSettings.open,false);
+ assert(view.folderSettings.contains(view.folderFilter));
+ assert(view.folderSettings.contains(view.folderAuto));
+ assert.equal(view.folderSettings.contains(view.list),false);
+ assert.equal(view.folderSettings.contains(view.folderStatus),false,'operation feedback remains visible');
 });

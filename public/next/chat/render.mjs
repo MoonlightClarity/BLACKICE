@@ -22,13 +22,13 @@ export function chatRunError(run) {
 export function createChatFrame(mount) {
   mount.innerHTML = [
     '<div class="next-chat" id="next-chat"><aside class="next-chat-sidebar">',
-    '<div class="next-sidebar-head"><div class="next-sidebar-row"><strong>Conversations</strong><button id="next-chat-mobile-close" type="button" aria-label="Close conversations and folders">Close</button><button id="next-chat-new" type="button">+ New</button></div>',
+    '<div class="next-sidebar-head"><div class="next-sidebar-row"><strong>Chats</strong><button id="next-chat-mobile-close" type="button" aria-label="Close conversations and folders">Close</button><button id="next-chat-new" type="button">+ New</button></div>',
     '<input class="next-field next-sidebar-search" type="search" id="next-chat-search" placeholder="Search" aria-label="Find a conversation">',
     '<select class="next-field next-sidebar-filter" id="next-chat-bucket" aria-label="Conversation view">',
     '<option value="active">Active</option><option value="archived">Archive</option><option value="deleted">Trash</option></select>',
-    '<div class="next-chat-folder-picker"><select id="next-chat-folder-filter" class="next-field" aria-label="Conversation folder"><option value="all">All folders</option><option value="ungrouped">Unfiled</option></select><button id="next-chat-folder-new" type="button">+ Folder</button></div>',
+    '<details id="next-chat-folder-settings" class="next-chat-folder-settings"><summary>Folder options</summary><div class="next-chat-folder-picker"><select id="next-chat-folder-filter" class="next-field" aria-label="Conversation folder"><option value="all">All folders</option><option value="ungrouped">Unfiled</option></select><button id="next-chat-folder-new" type="button">+ Folder</button></div>',
     '<div class="next-chat-folder-tools"><button id="next-chat-folder-rename" type="button" hidden>Rename folder</button><button id="next-chat-folder-delete" type="button" hidden>Delete folder</button></div>',
-    '<label class="next-chat-folder-auto"><input id="next-chat-folder-auto" type="checkbox" checked> Automatically group chats</label>',
+    '<label class="next-chat-folder-auto"><input id="next-chat-folder-auto" type="checkbox" checked> Automatically group chats</label></details>',
     '<p id="next-chat-folder-status" class="next-chat-folder-status" role="status" hidden></p><button id="next-chat-folder-undo" type="button" hidden>Undo last move</button><button id="next-chat-folder-more" type="button" hidden>Organize more</button>',
     '<button id="next-chat-select" type="button" aria-controls="next-chat-bulk" aria-expanded="false">Multi-select</button>',
     '<section id="next-chat-bulk" class="next-chat-bulk" aria-label="Selected conversations" hidden>',
@@ -82,7 +82,7 @@ export function createChatFrame(mount) {
   ].join('');
   const find = id => mount.querySelector('#'+id);
   return { shell:find('next-chat'),list:find('next-chat-list'),search:find('next-chat-search'),bucket:find('next-chat-bucket'),
-    folderFilter:find('next-chat-folder-filter'),folderNew:find('next-chat-folder-new'),folderRename:find('next-chat-folder-rename'),folderDelete:find('next-chat-folder-delete'),
+    folderSettings:find('next-chat-folder-settings'),folderFilter:find('next-chat-folder-filter'),folderNew:find('next-chat-folder-new'),folderRename:find('next-chat-folder-rename'),folderDelete:find('next-chat-folder-delete'),
     folderAuto:find('next-chat-folder-auto'),folderStatus:find('next-chat-folder-status'),folderUndo:find('next-chat-folder-undo'),folderMore:find('next-chat-folder-more'),
     folderDialog:find('next-chat-folder-dialog'),folderForm:find('next-chat-folder-form'),folderDialogTitle:find('next-chat-folder-dialog-title'),folderName:find('next-chat-folder-name'),folderDialogError:find('next-chat-folder-dialog-error'),folderCancel:find('next-chat-folder-cancel'),folderSave:find('next-chat-folder-save'),
     folderMoveDialog:find('next-chat-folder-move-dialog'),folderMoveForm:find('next-chat-folder-move-form'),folderMoveTitle:find('next-chat-folder-move-title'),folderMoveReason:find('next-chat-folder-move-reason'),folderMoveTarget:find('next-chat-folder-move-target'),folderMoveCancel:find('next-chat-folder-move-cancel'),folderMoveAuto:find('next-chat-folder-move-auto'),folderMoveSave:find('next-chat-folder-move-save'),
@@ -165,6 +165,7 @@ export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATC
     // Event handlers read the latest row and callbacks even when a refreshed
     // catalog has identical visible text but a newer continuation identifier.
     entry.item=item;entry.onSelect=onSelect;entry.onToggle=onToggle;entry.onAction=onAction;
+    entry.button.title=title;
     if(entry.title!==title){
       setText(entry.titleNode,title);entry.title=title;
       entry.check?.setAttribute('aria-label','Select '+title);

@@ -35,7 +35,7 @@ try{
  await until(()=>run("document.querySelectorAll('[data-knowledge-id]').length===4"),'child filtering');
  await run("document.querySelector('[data-knowledge-id]').click()");
  await until(()=>run("document.querySelector('#next-knowledge-content').value.includes('Second paragraph')"),'full memory');
- assert.ok(await run("document.querySelector('.next-knowledge-excerpt').getBoundingClientRect().height<20"));result.checks.push('Memory row one-line preview; full content retained');
+ assert.ok(await run("document.querySelector('[data-knowledge-id]').children.length===1&&parseFloat(getComputedStyle(document.querySelector('[data-knowledge-id] strong')).fontSize)<=12"));result.checks.push('Memory title-only compact row; full content retained');
  await shot('02-memory-open-desktop');
 
  await run("document.querySelector('.next-knowledge-folder-actions').open=true");
@@ -55,6 +55,7 @@ try{
  await run("document.querySelector('[data-skill-id^=\"saved:\"]').click()");
  await until(()=>run("document.querySelector('#skills-content').textContent.includes('Second paragraph')"),'full skill');
  assert.ok(await run("getComputedStyle(document.querySelector('.next-skills-folder>summary'),'::before').maskImage!=='none'"));result.checks.push('Decorative recognizable folder icons present');
+ assert.ok(await run("document.querySelector('[data-skill-id^=\"saved:\"]').children.length===1&&parseFloat(getComputedStyle(document.querySelector('[data-skill-id^=\"saved:\"] strong')).fontSize)<=12"));result.checks.push('Skill title-only compact row; full content retained');
  await shot('03-skills-tree-desktop');
 
  // Reproduce native details toggle timing, not only the DOM fixture.

@@ -49,3 +49,20 @@
 #next-chat-mobile-list{display:none}@media(max-width:650px){#next-chat-mobile-list{display:inline-flex;align-self:flex-start}}
 
 #next-chat-mobile-close{display:none}@media(max-width:650px){#next-chat-mobile-close{display:inline-flex;margin-left:auto}}
+/* Compact navigation: the folder tree is primary; management stays on demand. */
+.next-chat .next-sidebar-head{padding:10px;gap:7px}
+.next-chat .next-sidebar-row>strong{font-size:12px}
+.next-chat .next-chat-folder-settings>summary{font-size:12px;cursor:pointer;color:var(--muted);padding:5px 0}
+.next-chat .next-chat-folder-settings[open]{display:grid;gap:6px}
+.next-chat .next-chat-folder-settings .next-chat-folder-picker{margin-top:6px}
+.next-chat .next-conversation{padding:6px 8px;gap:3px}
+.next-chat .next-conversation-title{font-size:12px;font-weight:400;line-height:1.4}
+.next-chat .next-conversation-meta{font-size:10px;line-height:1.3}
+.next-chat .next-conversation-actions{margin-top:3px}
+.next-chat .next-conversation-row{margin-block:2px}
+.next-chat .next-chat-folder-heading{font-size:12px;font-weight:500;padding-block:6px}
+.next-chat .next-chat-heading strong{font-size:13px;font-weight:500}
+.next-chat .next-chat-head{min-height:48px;padding-block:8px}
+.next-chat .next-chat-intro h1{font-size:22px;line-height:1.3;max-width:400px}
+.next-chat .next-chat-intro p{font-size:12px;margin-top:10px;line-height:1.5}
+.next-chat .next-chat-intro:has(>h1)::before{width:48px;height:48px;margin-bottom:16px}
