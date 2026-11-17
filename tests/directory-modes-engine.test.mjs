@@ -260,7 +260,9 @@ test('attributed attachment and handoff data stay outside source-page authority 
  f.engine.attachments={validateIds:ids=>ids,snapshot:async()=>[{id,name:'fixture.txt',kind:'text',mime:'text/plain',size:200,sha256:'a'.repeat(64)}],prompt:async()=>'ATTACHMENT_RAW_MUST_NOT_REPEAT '.repeat(60)};
  const imports=[];let sourcePages=0;
  f.runtime.inspect=async(options,phase)=>{
-  assert.match(options.prompt,/IDENTITY_PREFERENCE_MARKER/);assert.match(options.prompt,/Do not call host Chrome/);assert.match(options.prompt,/Preserve an in-progress form and inspect prior effects before retrying/);
+  assert.match(options.prompt,/IDENTITY_PREFERENCE_MARKER/);assert.doesNotMatch(options.prompt,/Do not call host Chrome|Preserve an in-progress form and inspect prior effects before retrying/);
+  assert.equal(options.dynamicTools.some(tool=>tool.name==='relay_browser'),false,'no browser module is configured in this Directory fixture');
+  assert.equal(options.hostOnlyTools,true,'Directory phases cannot regain provider-native browser tools');
   if(phase?.label==='context-page')imports.push(options.prompt);
   if(phase?.label==='page-extract'){
    sourcePages++;assert.doesNotMatch(options.prompt,/ATTACHMENT_RAW_MUST_NOT_REPEAT|Ordinary Chat result/);

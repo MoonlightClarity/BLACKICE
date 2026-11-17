@@ -147,7 +147,8 @@ test('provider HTTP tools registered by the engine invoke the actual browser wor
   for(const {args,options} of driver.calls){assert.equal(args.owner,undefined);assert.equal(options.owner.taskId,run.taskId||run.id);assert.equal(options.owner.runId,run.id);assert.equal(options.owner.nodeId,'agent');}
   assert.deepEqual(driver.status().tabs.find(tab=>tab.tabId===personalTab.tabId),personalTab);assert.equal(driver.status().activeTab,personalTab.tabId);
   assert.ok(requests[0].tools.some(tool=>tool.name==='relay_browser'));
-  assert.ok(requests[0].input.some(item=>String(item.content).includes('BROWSER WORKSPACE')));
+  const browserTool=requests[0].tools.find(tool=>tool.name==='relay_browser');assert.match(browserTool.description,/contained BLACKICE browser/);assert.ok(browserTool.parameters.properties.action.enum.includes('screenshot'));
+  assert.ok(!requests[0].input.some(item=>String(item.content).includes('BROWSER WORKSPACE')),'browser usage lives on the attached tool, not global prompt prose');
   assert.equal(requests.length,3);assert.equal(run.nodes.agent.planning.status,'off');
   const wire=JSON.stringify(requests[2].input);assert.match(wire,/The page shows the verified fixture value/);assert.match(wire,/UElYRUxT/,'pixels reach the selected provider as an actual tool result');
   assert.ok(!JSON.stringify(run.events).includes('UElYRUxT'),'trace does not retain screenshot payloads');assert.ok(run.events.some(event=>event.data.type==='browser.action'));

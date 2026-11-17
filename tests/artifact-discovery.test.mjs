@@ -131,11 +131,11 @@ test('real engine discovers a workspace-written SVG final link and persists its 
   const { cwd, directory, store } = await harness(t), events = [];
   const runtime = new Runtime(async options => {
     const written = await options.onToolCall({ name: 'relay_workspace', arguments: { action: 'write', path: 'chess.svg', text: svg } }); assert.equal(written.success, true);
-    assert.match(options.prompt, /Markdown links to the exact actual file paths/); return { output: 'Created [Chess board](chess.svg). [Missing optional export](missing.png)', threadId: 'provider_svg' };
+    const workspace=options.dynamicTools.find(tool=>tool.name==='relay_workspace');assert.ok(workspace.inputSchema.properties.action.enum.includes('write'));assert.doesNotMatch(options.prompt,/Markdown links to the exact actual file paths/); return { output: 'Created [Chess board](chess.svg). [Missing optional export](missing.png)', threadId: 'provider_svg' };
   });
   const engine = new HarnessEngine({ runtime, dataDir: path.join(directory, 'engine'), defaultCwd: cwd, tasks: store }); await engine.init(); engine.on('event', event => events.push(event)); t.after(() => engine.close());
   const run = await settled(engine, engine.startRun({ workflow: graph, input: 'Create a chess board as an SVG.' }).id);
-  assert.equal(run.status, 'completed'); assert.equal(run.taskState.artifacts.length, 1); assert.equal(run.taskState.artifacts[0].fileName, 'chess.svg');
+  assert.equal(run.status, 'completed',run.error||run.nodes.agent?.error); assert.equal(run.taskState.artifacts.length, 1); assert.equal(run.taskState.artifacts[0].fileName, 'chess.svg');
   const receipt = run.nodes.agent.artifactDiscovery; assert.equal(receipt.registered.length, 1); assert.equal(receipt.skipped.length, 1); assert.equal(receipt.skipped[0].code, 'ENOENT'); assert.ok(events.some(event => event.data?.type === 'task.artifacts'));
   assert.equal(await readFile(path.join(cwd, 'chess.svg'), 'utf8'), svg); assert.equal((await store.previewArtifact(run.taskId, run.taskState.artifacts[0].id)).text, svg);
   await engine.close(); const disk = JSON.parse(await readFile(path.join(directory, 'engine', 'runs.json'), 'utf8')); assert.deepEqual(disk.find(item => item.id === run.id).nodes.agent.artifactDiscovery, receipt);

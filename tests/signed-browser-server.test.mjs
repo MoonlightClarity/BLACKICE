@@ -8,10 +8,10 @@ import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
 
 class Runtime extends EventEmitter {
-  prompts = [];
+  prompts = []; calls=[];
   status() { return { connected: true, authenticated: true, defaultModel: 'fixture' }; }
   async start() { return this.status(); }
-  async runAgent(options) { this.prompts.push(options.prompt); return { output: 'Actual fixture result.', threadId: 'signed-browser-fixture' }; }
+  async runAgent(options) { this.prompts.push(options.prompt);this.calls.push(options);if(options.dynamicTools.some(tool=>tool.name==='relay_connections')){const blocked=await options.onToolCall({name:'relay_connections',arguments:{action:'tools',connectionId:'browseros-neo'}});assert.equal(blocked.success,false);assert.equal(blocked.code,'BROWSER_CONTAINED_ONLY');assert.equal(blocked.receipt.actionDispatched,false);} return { output: 'Actual fixture result.', threadId: 'signed-browser-fixture' }; }
   async close() {}
 }
 
@@ -50,7 +50,8 @@ test('legacy native discovery preserves its manual connection while background r
   await app.engine.executions.get(run.id);
   assert.equal(app.engine.getRun(run.id).status,'completed','an ordinary model turn can still finish when native background readiness is unverified');
   assert.doesNotMatch(runtime.prompts[0], /EXISTING BROWSER SESSION/, 'ordinary tasks use the configured connection instructions instead of the legacy session block');
-  assert.match(runtime.prompts[0], /Use only the BLACKICE contained browser via relay_browser/);
-  assert.match(runtime.prompts[0], /Do not call host Chrome, Neo, imported native profiles or any other host\/external browser/, 'Preserving a manually discovered connection does not expose it as an agent browser fallback.');
+  assert.doesNotMatch(runtime.prompts[0], /Use only the BLACKICE contained browser via relay_browser/,'no browser usage block is injected into an unavailable-module task');
+  assert.doesNotMatch(runtime.prompts[0],/Do not call host Chrome, Neo, imported native profiles/);
+  assert.ok(runtime.calls[0].dynamicTools.some(tool=>tool.name==='relay_connections'),'attached gateway rejects the native browser route without dispatching');
   assert.equal(methods.filter(method => method === 'tools/call').length, 4, 'Discovery and explicit reconnect/start only read the browser inventory');
 });
