@@ -295,3 +295,17 @@ for (const earlyNotification of [false, true]) test('native queued direction is 
   assert.equal(state.pendingDirections.length, 0);
   f.complete(state, 'Revised continuation.'); assert.equal((await work).output, 'Revised continuation.');
 });
+
+test('native live direction invalidates earlier final candidates and late completion fallback', async t => {
+  const f = nativeFixture(t), candidates = [], events = [];
+  const { work, state } = await f.begin({ onEvent: e => events.push(e), onBeforeFinal: async c => { candidates.push(c.output); } });
+  const metadata = { threadId: state.threadId, turnId: state.turnId };
+  const old = { type: 'agentMessage', id: 'superseded-answer', phase: 'final_answer', text: 'Old scope answer.' };
+  f.client._notification('item/completed', { ...metadata, item: old });
+  await f.client.steerAgent(state.threadId, 'Use corrected scope.');
+  f.client._notification('item/completed', { ...metadata, item: old });
+  f.complete(state, 'Corrected scope answer.');
+  assert.equal((await work).output, 'Corrected scope answer.');
+  assert.deepEqual(candidates, ['Corrected scope answer.']);
+  assert.ok(!events.some(e => e.type === 'message' && e.phase === 'final_answer' && e.text === old.text));
+});
