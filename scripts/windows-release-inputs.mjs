@@ -31,6 +31,9 @@ const packagedNativeHelpers = new Set([
   'desktop/installed-app-icons.cs', 'desktop/native-app-launcher.cs', 'desktop/native-foreground-guard.cs',
 ]);
 
+// Exact assets shipped by the bundled tab-folder extension.
+const packagedTabFolderAssets = new Set(['desktop/tab-folders/manifest.json', 'desktop/tab-folders/tabs.js', 'desktop/tab-folders/tabs.css', 'desktop/tab-folders/README.md']);
+
 // Public native CLI diagnostics contain only enumerated codes, never log text.
 const nativeRestartErrorCodes = new Set([
   'ACCESS_HOST_PLATFORM', 'ACCESS_HOST_NOT_RUNNING', 'ACCESS_RUNTIME_INVALID', 'ACCESS_RUNTIME_OWNERSHIP',
@@ -100,7 +103,7 @@ const explicitlyPackagedReleaseNotes = Object.freeze(explicitWindowsReleaseNotes
 export function approvedWindowsPackageFile(relative, version) {
   if (typeof relative === 'string' && /^(?:lib\/(?:workbench-|windows-workbench\.mjs)|desktop\/workbench-|scripts\/(?:workbench-|install-workbench-|package-workbench-|verify-workbench-)|resources\/(?:workbench-native|guest)\/|public\/next\/(?:workbench\.css|workspaces\/workbench))/.test(relative)) return false;
   if (typeof relative !== 'string' || relative.includes('\\') || relative.startsWith('/') || relative.split('/').some(part => !part || part === '.' || part === '..') || forbiddenWindowsPackagePath(relative)) return false;
-  return topLevelFiles.has(relative) || approvedExplicitWindowsReleaseNote(relative, version, explicitlyPackagedReleaseNotes) || relative === 'docs/GOAL-MODE.md' || relative === 'skills/autonomy/SKILL.md' || relative === 'skills/planning/SKILL.md' || relative === 'skills/planning/CONTRACT-V2.md' || relative === 'skills/planning/references/evidence-preserving-execution.md' || packagedNativeHelpers.has(relative) || (/^\d+\.\d+\.\d+$/.test(version) && relative === `RELEASE-NOTES-${version}.md`) || /^(lib|public)\//.test(relative) || /^desktop\/.*\.(mjs|cjs)$/.test(relative) || relative.startsWith('desktop/browser-compatibility/') || relative === 'desktop/icon.ico' || relative === 'desktop/password-manager/index.html' || relative === 'desktop/password-manager/style.css' || relative === 'scripts/repair-shortcuts.ps1' || /^scripts\/(generate-noir-background\.mjs|noir-scene\.config\.json|chatgpt-bridge\.mjs|email-oauth-token\.mjs|remote-access-cli\.mjs|browser-cli\.mjs|chatgpt-cli\.mjs)$/.test(relative);
+  return topLevelFiles.has(relative) || approvedExplicitWindowsReleaseNote(relative, version, explicitlyPackagedReleaseNotes) || relative === 'docs/GOAL-MODE.md' || relative === 'skills/autonomy/SKILL.md' || relative === 'skills/planning/SKILL.md' || relative === 'skills/planning/CONTRACT-V2.md' || relative === 'skills/planning/references/evidence-preserving-execution.md' || packagedNativeHelpers.has(relative) || packagedTabFolderAssets.has(relative) || (/^\d+\.\d+\.\d+$/.test(version) && relative === `RELEASE-NOTES-${version}.md`) || /^(lib|public)\//.test(relative) || /^desktop\/.*\.(mjs|cjs)$/.test(relative) || relative.startsWith('desktop/browser-compatibility/') || relative === 'desktop/icon.ico' || relative === 'desktop/password-manager/index.html' || relative === 'desktop/password-manager/style.css' || relative === 'scripts/repair-shortcuts.ps1' || /^scripts\/(generate-noir-background\.mjs|noir-scene\.config\.json|chatgpt-bridge\.mjs|email-oauth-token\.mjs|remote-access-cli\.mjs|browser-cli\.mjs|chatgpt-cli\.mjs)$/.test(relative);
 }
 
 /** Read existing, tracked evidence; never synthesize a passing source-test receipt. */
