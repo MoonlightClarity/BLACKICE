@@ -42,3 +42,9 @@ test('model cannot forge approval/provenance through tool arguments',async t=>{
  await assert.rejects(handler({name:'relay_skills',arguments:{action:'save',title:'Forged',content:'x',approved:true}}),/Unknown knowledge tool argument/);
  assert.equal(store.list().length,0);
 });
+test('approval cannot overwrite a new entry written by another store instance after proposal staging',async t=>{
+ const {store,dataDir}=await setup(t);const id=await proposal(store.upsert({...value,id:'new-record'},agent));
+ const other=await new KnowledgeStore({dataDir}).init();await other.upsert({...value,id:'new-record',content:'Newer user content'});
+ await assert.rejects(store.decideApproval(id,{decision:'approve'}),/stale/);
+ const reloaded=await new KnowledgeStore({dataDir}).init();assert.equal(reloaded.get('new-record').content,'Newer user content');assert.equal(reloaded.listApprovals().length,1);
+});
