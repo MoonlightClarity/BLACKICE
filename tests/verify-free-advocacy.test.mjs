@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createFreeEvaluationRuntime, FREE_MODEL, FREE_MODEL_ID, FREE_EVALUATION_BUDGETS, observedFreeEvaluationBudgets } from '../scripts/verify-free-advocacy.mjs';
 
-import { DEFAULT_PLANNING_ONTOLOGY } from '../public/planning-module-policy.mjs';
+import { DEFAULT_PLANNING_ONTOLOGY, planningOntologyInstructions } from '../public/planning-module-policy.mjs';
 import { ADVOCACY_CASES, runAdvocacyCase } from '../scripts/verify-luna-advocacy.mjs';
 
 const catalog = pricing => ({ data: [{ id: FREE_MODEL_ID, pricing, context_length: 1000000,
@@ -89,7 +89,11 @@ test('direct modular execution preserves the isolated configured budget and actu
     assert.equal(body.max_tokens, 8192, 'The direct execution wire reserve remains distinct from the configured 32768-token ceiling.');
     assert.equal(body.response_format, undefined);
     assert.ok(body.tools.some(tool => tool.function.name === 'relay_browser'));
-    assert.ok(body.messages.some(message => /BLACKICE PLANNING MODULES \u2014 ON \/ OFF/.test(message.content || '')));
+    const workspaceTool=body.tools.find(tool=>tool.function.name==='relay_workspace').function;
+    assert.match(workspaceTool.description,/list without path or cwd to read full activeTaskPolicy/);
+    assert.ok(workspaceTool.parameters.properties.action.enum.includes('list'));
+    assert.match(body.tools.find(tool=>tool.function.name==='relay_control').function.description,/catalog or describe for activeTaskPolicy/);
+    assert.ok(!body.messages.filter(message=>['system','developer'].includes(message.role)).some(message=>/BLACKICE PLANNING MODULES/.test(message.content||'')));
   }
   assert.equal(setup.budgets.providerMaxTokens, 32768);
   assert.deepEqual(observedFreeEvaluationBudgets(setup.requests).observedWireMaxTokens, { withTools: [8192], withoutTools: [] });
@@ -159,4 +163,56 @@ test('the whole-case deadline aborts the real isolated provider transport and se
   assert.equal(result.inputIntegrity, true); assert.deepEqual(result.externalDispatches, []);
   assert.deepEqual(setup.native, { startCalls: 0, runCalls: 0 });
   assert.equal(setup.requests.filter(request => request.method === 'POST').length, 1);
+});
+
+test('actual modular policy read reaches isolated provider transport before a synthetic error', async t => {
+  const root = await temporary(t), bodies = [];
+  const setup = await createFreeEvaluationRuntime({ root, fetchImpl: async (_url, options) => {
+    if ((options.method || 'GET') === 'GET') return new Response(JSON.stringify(catalog({ prompt: '0', completion: '0' })), { headers: { 'content-type': 'application/json' } });
+    bodies.push(JSON.parse(options.body));
+    if(bodies.length===1) return new Response(JSON.stringify({id:'policy-read',model:FREE_MODEL_ID,choices:[{message:{role:'assistant',content:'',tool_calls:[{id:'read-policy',type:'function',function:{name:'relay_workspace',arguments:JSON.stringify({action:'list'})}}]},finish_reason:'tool_calls'}]}),{headers:{'content-type':'application/json'}});
+    return new Response(JSON.stringify({ error: { message: 'Synthetic budget capture; no model called.' } }), { status: 400, headers: { 'content-type': 'application/json' } });
+  } });
+  t.after(() => setup.runtime.close());
+  const result = await runAdvocacyCase({ runtime: setup.runtime, root,
+    item: ADVOCACY_CASES.find(item => item.id === 'required-nationality-decline'),
+    model: FREE_MODEL, effort: 'default', timeoutMs: 10000, runTimeoutMs: FREE_EVALUATION_BUDGETS.runTimeoutMs });
+  await setup.flush();
+  assert.equal(result.status, 'failed');
+  assert.match(result.error, /Synthetic budget capture/);
+  assert.equal(result.settled, true);
+  assert.equal(result.timedOut, false);
+  assert.equal(result.runTimeoutMs, 600000);
+  assert.equal(result.planningConfiguration.requestedMode, 'ontology');
+  assert.equal(result.planningConfiguration.effectiveMode, 'off');
+  assert.equal(result.planningConfiguration.enforcement, null);
+  assert.equal(result.planningConfiguration.guardrails, false);
+  assert.deepEqual(result.planningConfiguration.ontology, DEFAULT_PLANNING_ONTOLOGY);
+  assert.equal(result.responseCycle, null); assert.equal(result.planningGraph, null); assert.equal(result.viability, null);
+  assert.equal(result.assessment.objective, 'fail'); assert.equal(result.assessment.checks.caseDeadline, true);
+  assert.equal(result.inputIntegrity, true); assert.deepEqual(result.externalDispatches, []);
+  assert.equal(result.planningConfiguration.servicesAttached, true);
+  assert.equal(bodies.length, 2, 'One direct execution reads policy then reaches the synthetic provider failure without an analytical or repair pass.');
+  const policyMessage=bodies[1].messages.find(message=>message.role==='tool'&&message.tool_call_id==='read-policy');
+  assert.ok(policyMessage,'The actual tool result is serialized back to the provider.');
+  const delivered=JSON.parse(policyMessage.content).activeTaskPolicy;
+  assert.equal(delivered.source,'admitted-run');
+  assert.deepEqual(delivered.planningOntology,DEFAULT_PLANNING_ONTOLOGY);
+  assert.equal(delivered.instructions,planningOntologyInstructions(DEFAULT_PLANNING_ONTOLOGY));
+  for (const body of bodies) {
+    assert.equal(body.model, FREE_MODEL_ID);
+    assert.equal(body.max_tokens, 8192, 'The direct execution wire reserve remains distinct from the configured 32768-token ceiling.');
+    assert.equal(body.response_format, undefined);
+    assert.ok(body.tools.some(tool => tool.function.name === 'relay_browser'));
+    const workspaceTool=body.tools.find(tool=>tool.function.name==='relay_workspace').function;
+    assert.match(workspaceTool.description,/list without path or cwd to read full activeTaskPolicy/);
+    assert.ok(workspaceTool.parameters.properties.action.enum.includes('list'));
+    assert.match(body.tools.find(tool=>tool.function.name==='relay_control').function.description,/catalog or describe for activeTaskPolicy/);
+    assert.ok(!body.messages.filter(message=>['system','developer'].includes(message.role)).some(message=>/BLACKICE PLANNING MODULES/.test(message.content||'')));
+  }
+  assert.equal(setup.budgets.providerMaxTokens, 32768);
+  assert.deepEqual(observedFreeEvaluationBudgets(setup.requests).observedWireMaxTokens, { withTools: [8192], withoutTools: [] });
+  assert.equal(result.calls.length, 1); assert.ok(result.calls.every(call => call.responseOnly === false));
+  assert.deepEqual(setup.native, { startCalls: 0, runCalls: 0 });
+  assert.equal(result.form.calls.length, 0);
 });

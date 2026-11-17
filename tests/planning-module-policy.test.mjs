@@ -113,10 +113,16 @@ test('new ontology chats retain Planning choices and default delegation on conti
     async runAgent(options){
       const review=fixtureOutcomeReview(options);if(review)return review;
       this.calls.push(options);
-      assert.match(options.developerInstructions,/BLACKICE PLANNING MODULES \u2014 ON \/ OFF/);
-      assert.match(options.developerInstructions,/MINIMUM-SCOPE BLOCKING/);
-      assert.match(options.developerInstructions,/SOURCE AND INFERENCE CALIBRATION/);
-      assert.match(options.developerInstructions,/continue other applications/i);
+      const policyReceipt = await options.onToolCall({name:'relay_control',arguments:{action:'describe'}});
+      assert.equal(policyReceipt.success,true,JSON.stringify(policyReceipt));
+      const admittedPolicy = JSON.parse(policyReceipt.contentItems.find(item=>item.type==='inputText').text).activeTaskPolicy;
+      assert.equal(admittedPolicy.source,'admitted-run');
+      assert.doesNotMatch(options.developerInstructions,/BLACKICE PLANNING MODULES|IMMEDIATE EFFORT CALIBRATION|MINIMUM-SCOPE BLOCKING/);
+      assert.deepEqual(admittedPolicy.planningOntology,policy);
+      assert.equal(admittedPolicy.instructions,planningOntologyInstructions(policy));
+      assert.match(admittedPolicy.instructions,/MINIMUM-SCOPE BLOCKING/);
+      assert.match(admittedPolicy.instructions,/SOURCE AND INFERENCE CALIBRATION/);
+      assert.match(admittedPolicy.instructions,/continue other applications/i);
       assert.ok(!options.dynamicTools.some(tool=>tool.name==='relay_task'), 'forbidden decomposition removes task plan tool');
       assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_delegate'), 'retired subagent choice cannot silently remove default delegation');
       const forbidden=await options.onToolCall({name:'relay_control',arguments:{action:'planning_cycle_create'}});

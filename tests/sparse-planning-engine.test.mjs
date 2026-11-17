@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {HarnessEngine} from '../lib/engine.mjs';
 import {TaskStateStore} from '../lib/task-state.mjs';
-import {normalizePlanningOntology,PLANNING_ONTOLOGY_MODULES} from '../public/planning-module-policy.mjs';
+import {normalizePlanningOntology,PLANNING_ONTOLOGY_MODULES,planningOntologyInstructions,DEFAULT_PLANNING_ONTOLOGY} from '../public/planning-module-policy.mjs';
 import {fixtureOutcomeReview,finishFixtureCandidate} from './fixture-modular-provider.mjs';
 const graph={id:'defaults-engine',name:'Defaults engine',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',model:'fixture',prompt:'Perform the authorized local write.'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1}};
 async function fixture(t,execute){
@@ -19,7 +19,12 @@ async function fixture(t,execute){
 }
 test('actual default-Off engine writes and completes without a hidden reviewer or task ritual',async t=>{
  let calls=0,effects=0;
- const f=await fixture(t,async options=>{calls++;assert.match(options.developerInstructions,/IMMEDIATE EFFORT CALIBRATION/);assert.equal(options.onBeforeFinal,undefined);assert.ok(!options.dynamicTools.some(tool=>tool.name==='relay_task'));assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_workspace'));
+ const f=await fixture(t,async options=>{calls++;const policyReceipt = await options.onToolCall({name:'relay_control',arguments:{action:'describe'}});
+      assert.equal(policyReceipt.success,true,JSON.stringify(policyReceipt));
+      const admittedPolicy = JSON.parse(policyReceipt.contentItems.find(item=>item.type==='inputText').text).activeTaskPolicy;
+      assert.equal(admittedPolicy.source,'admitted-run');
+      assert.doesNotMatch(options.developerInstructions,/BLACKICE PLANNING MODULES|IMMEDIATE EFFORT CALIBRATION|MINIMUM-SCOPE BLOCKING/);
+ assert.deepEqual(admittedPolicy.planningOntology,DEFAULT_PLANNING_ONTOLOGY);assert.equal(admittedPolicy.instructions,planningOntologyInstructions(DEFAULT_PLANNING_ONTOLOGY));assert.match(admittedPolicy.instructions,/IMMEDIATE EFFORT CALIBRATION/);assert.equal(options.onBeforeFinal,undefined);assert.ok(!options.dynamicTools.some(tool=>tool.name==='relay_task'));assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_workspace'));
  const call={name:'relay_workspace',callId:'same-write',arguments:{action:'write',path:'result.txt',text:'verified local output'}};
  const first=await options.onToolCall(call);assert.equal(first.success,true,JSON.stringify(first));effects++;assert.deepEqual(await options.onToolCall(structuredClone(call)),first);
  return{output:'Wrote result.txt.',threadId:'defaults-thread'};});
@@ -38,7 +43,12 @@ test('explicit full saved module choices survive failure, restart, Retry and Con
 
 test('fresh engine admission inherits missing time management from old defaults without overriding explicit Off',async t=>{
  let observed=[];
- const f=await fixture(t,async options=>{observed.push(options.developerInstructions);assert.equal(options.onBeforeFinal,undefined);return{output:'Answer',threadId:'defaults-thread'};});
+ const f=await fixture(t,async options=>{const policyReceipt = await options.onToolCall({name:'relay_control',arguments:{action:'describe'}});
+      assert.equal(policyReceipt.success,true,JSON.stringify(policyReceipt));
+      const admittedPolicy = JSON.parse(policyReceipt.contentItems.find(item=>item.type==='inputText').text).activeTaskPolicy;
+      assert.equal(admittedPolicy.source,'admitted-run');
+      assert.doesNotMatch(options.developerInstructions,/BLACKICE PLANNING MODULES|IMMEDIATE EFFORT CALIBRATION|MINIMUM-SCOPE BLOCKING/);
+assert.equal(admittedPolicy.instructions,planningOntologyInstructions(admittedPolicy.planningOntology));observed.push(admittedPolicy.instructions);assert.equal(options.onBeforeFinal,undefined);return{output:'Answer',threadId:'defaults-thread'};});
  const legacy={version:2,modules:{inference:false,verification:false}},before=JSON.stringify(legacy);
  f.settings.planningOntology=legacy;
  const enabled=await f.settle(f.engine.startRun({workflow:graph,input:'Give a brief answer.'}));

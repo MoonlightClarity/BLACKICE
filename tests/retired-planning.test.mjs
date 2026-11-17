@@ -17,7 +17,7 @@ import {createChatFrame} from '../public/next/chat/render.mjs';
 import {planningDOM} from './fixture-planning-dom.mjs';
 import {HarnessEngine,validateWorkflow} from '../lib/engine.mjs';
 import {TaskStateStore} from '../lib/task-state.mjs';
-import {normalizePlanningOntology} from '../public/planning-module-policy.mjs';
+import {normalizePlanningOntology,DEFAULT_PLANNING_ONTOLOGY,planningOntologyInstructions} from '../public/planning-module-policy.mjs';
 import {readConversationOntology} from '../public/next/chat/ontology-preferences.mjs';
 import {createScheduledChatWorkflow,scheduleChatOptionsMarkup} from '../public/next/workspaces/schedule-inspection-model.mjs';
 
@@ -74,7 +74,13 @@ test('explicit Plan-only cannot start while old Forced with Automatic still comp
     async runAgent(options){
       const review=fixtureOutcomeReview(options);if(review)return review;
       runCount++;
-      assert.match(options.developerInstructions,/BLACKICE PLANNING MODULES \u2014 ON \/ OFF/);
+      const policyReceipt = await options.onToolCall({name:'relay_control',arguments:{action:'describe'}});
+      assert.equal(policyReceipt.success,true,JSON.stringify(policyReceipt));
+      const admittedPolicy = JSON.parse(policyReceipt.contentItems.find(item=>item.type==='inputText').text).activeTaskPolicy;
+      assert.equal(admittedPolicy.source,'admitted-run');
+      assert.doesNotMatch(options.developerInstructions,/BLACKICE PLANNING MODULES|IMMEDIATE EFFORT CALIBRATION|MINIMUM-SCOPE BLOCKING/);
+      assert.deepEqual(admittedPolicy.planningOntology,DEFAULT_PLANNING_ONTOLOGY);
+      assert.equal(admittedPolicy.instructions,planningOntologyInstructions(DEFAULT_PLANNING_ONTOLOGY));
       assert.doesNotMatch(options.developerInstructions,/Save this turn.s task outline first|Planning is On. Read/);
       assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_workspace'));
       const receipt=await options.onToolCall({name:'relay_workspace',arguments:{action:'write',path:'leaf'+runCount+'.txt',text:'completed-'+runCount}});

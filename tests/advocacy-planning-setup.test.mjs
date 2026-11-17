@@ -23,7 +23,12 @@ test('default fictional form setup uses direct modular execution and preserves a
     async runAgent(options) {
       this.calls.push(options);
       assert.notEqual(options.responseOnly, true); assert.equal(options.onBeforeFinal, undefined);
-      assert.ok(options.developerInstructions.includes(planningOntologyInstructions(DEFAULT_PLANNING_ONTOLOGY))); assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_browser'));
+      const policyReceipt = await options.onToolCall({name:'relay_workspace',arguments:{action:'list'}});
+      assert.equal(policyReceipt.success,true,JSON.stringify(policyReceipt));
+      const admittedPolicy = JSON.parse(policyReceipt.contentItems.find(item=>item.type==='inputText').text).activeTaskPolicy;
+      assert.equal(admittedPolicy.source,'admitted-run');
+      assert.doesNotMatch(options.developerInstructions,/BLACKICE PLANNING MODULES|IMMEDIATE EFFORT CALIBRATION|MINIMUM-SCOPE BLOCKING/);
+      assert.deepEqual(admittedPolicy.planningOntology,DEFAULT_PLANNING_ONTOLOGY); assert.equal(admittedPolicy.instructions,planningOntologyInstructions(DEFAULT_PLANNING_ONTOLOGY)); assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_browser'));
       throw Object.assign(Error('Synthetic operational provider failure; no external form accessed.'), { code: 'FIXTURE_PROVIDER_FAILURE' });
     }
     async close() { this.closes++; }
@@ -116,7 +121,12 @@ for (const scenario of [
         return { decision: 'respond', summary: 'The fixture report accurately describes the recorded submission or validation result.', remaining: [], nextAction: '', blockers: [] };
       }); if (review) return review;
       calls++; assert.equal(calls, 1); assert.notEqual(options.responseOnly, true); assert.equal(typeof options.onBeforeFinal, scenario.planningOntology ? 'function' : 'undefined');
-      assert.ok(options.developerInstructions.includes(planningOntologyInstructions(scenario.planningOntology || DEFAULT_PLANNING_ONTOLOGY)));
+      const policyReceipt = await options.onToolCall({name:'relay_workspace',arguments:{action:'list'}});
+      assert.equal(policyReceipt.success,true,JSON.stringify(policyReceipt));
+      const admittedPolicy = JSON.parse(policyReceipt.contentItems.find(item=>item.type==='inputText').text).activeTaskPolicy;
+      assert.equal(admittedPolicy.source,'admitted-run');
+      assert.doesNotMatch(options.developerInstructions,/BLACKICE PLANNING MODULES|IMMEDIATE EFFORT CALIBRATION|MINIMUM-SCOPE BLOCKING/);
+      assert.deepEqual(admittedPolicy.planningOntology,scenario.planningOntology || DEFAULT_PLANNING_ONTOLOGY); assert.equal(admittedPolicy.instructions,planningOntologyInstructions(scenario.planningOntology || DEFAULT_PLANNING_ONTOLOGY));
       options.onEvent({ type: 'thread', threadId: 'synthetic-form-thread', model: 'fixture-model' });
       const send = async (args, callId) => {
         const result = await options.onToolCall({ name: 'relay_browser', arguments: args, callId });
