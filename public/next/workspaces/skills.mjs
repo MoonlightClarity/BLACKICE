@@ -1,4 +1,4 @@
-import {compactKnowledgePreview,knowledgeFolderTree} from './knowledge-model.mjs';
+import {knowledgeFolderTree} from './knowledge-model.mjs';
 import {createKnowledgeWorkspace} from './knowledge.mjs';
 
 /** Skills are inspectable sources, not automatically admitted task instructions. */
@@ -70,9 +70,8 @@ export function createSkillsWorkspace({mount,api,events,notify,onNavigate}) {
       const row=create(parent,'li');
       const button=create(row,'button');
       button.type='button';button.dataset.skillId=item.id;button.setAttribute('aria-pressed',String(selection===item.id));
-      create(button,'strong',item.title||'Unnamed skill');
-      if(item.summary)create(button,'span',compactKnowledgePreview(item.summary),'next-skills-description');
-      create(button,'small',label('source',item.source));
+      button.title=item.title||'Unnamed skill';
+      create(button,'strong',button.title);
       button.addEventListener('click',()=>void select(item.id));
     };
     if(external||!organization){for(const item of items)appendItem(nodes.list,item);return;}

@@ -187,7 +187,7 @@ test('normal Skills catalog uses procedure vocabulary and isolates disabled exte
     const result=await catalog.list({source:url.searchParams.get('source')||'all'});
     return {...result,sources:{...result.sources,codex:{status:'error',reason:'External diagnostic fixture'}}};
   }});
-  assert.match(f.$('#skills-list').textContent,/Saved procedure/);
+  assert.equal(f.$('[data-skill-id="saved:saved-procedure"]').textContent,'Review exact artifacts');
   assert.doesNotMatch(f.$('#skills-list').textContent,/Local saved knowledge/);
   assert.equal(f.$('#skills-source-status').textContent,'Saved procedures and BLACKICE built-ins.');
   assert.equal(f.$('#skills-source-status').dataset.error,'false');
@@ -203,4 +203,15 @@ test('normal Skills catalog uses procedure vocabulary and isolates disabled exte
 test('unavailable folder metadata leaves the full catalog usable and reports the degraded grouping',async t=>{
  const f=await fixture(t,{hook:async call=>{if(call.route==='/api/knowledge/folders')throw Error('Folder fixture unavailable');}});
  assert.match(f.$('#skills-status').textContent,/Folders unavailable/);await f.selectSaved();assert.match(f.$('#skills-content').textContent,/exact revisions/);
+});
+
+
+test('skill rows contain only the title while selection retains full content and source details',async t=>{
+  const f=await fixture(t),row=f.$('[data-skill-id="saved:saved-procedure"]');
+  assert.equal(row.textContent,'Review exact artifacts');assert.equal(row.title,'Review exact artifacts');
+  assert.equal(row.children.length,1);assert.equal(row.querySelector('span'),null);assert.equal(row.querySelector('small'),null);
+  await f.selectSaved();assert.match(f.$('#skills-content').textContent,/Use exact revisions/);
+  assert.match(f.$('#skills-meta').textContent,/Saved procedure/);
+  await f.click('#skills-edit');await until(()=>f.$('#skills-editor-summary').value==='Reliable review');
+  assert.ok(f.calls.every(call=>call.method==='GET'));
 });

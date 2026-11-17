@@ -74,3 +74,13 @@ test('a history-read error keeps the deleted entry and error across navigation u
   f.workspace.leave();f.workspace.enter();await settle();assert.match(f.$('#next-knowledge-editor-info').textContent,/History unavailable/);assert.equal(f.restores().length,0);
   await f.click('#next-knowledge-recover');await until(()=>!f.store.history('managed').deleted);assert.equal(f.restores().length,1);
 });
+
+
+test('memory list contains only its compact title while full summary and metadata remain in the editor',async t=>{
+  const f=await fixture(t),row=f.$('[data-knowledge-id="managed"]');
+  assert.equal(row.textContent,'Managed memory');assert.equal(row.title,'Managed memory');
+  assert.equal(row.children.length,1);assert.equal(row.querySelector('p'),null);assert.equal(row.querySelector('small'),null);
+  assert.equal(f.$('#next-knowledge-summary').value,'Keep summary');assert.equal(f.$('#next-knowledge-content').value,'Full saved body');
+  assert.match(f.$('#next-knowledge-entry-meta').textContent,/Revision 1/);
+  assert.equal(f.calls.some(call=>call.method!=='GET'),false);
+});

@@ -121,7 +121,7 @@ test('Skills organization is reachable from catalog and compact rows keep full p
  await f.store.organize({action:'move',entryIds:['entry'],folderId:child,expectedRevision:org.revision});
  const entry=f.store.get('entry');await f.store.upsert({...entry,summary:'Detailed '.repeat(40),expectedRevision:entry.revision});
  await f.click('#skills-refresh');await until(()=>f.$('#skills-list').textContent.includes('Review (1)'));
- const row=f.$('[data-skill-id="saved:entry"]');assert.ok(row.querySelector('.next-skills-description').textContent.length<=110);assert.equal(row.querySelector('small').textContent,'Saved procedure');
+ const row=f.$('[data-skill-id="saved:entry"]');assert.equal(row.textContent,entry.title);assert.equal(row.querySelector('.next-skills-description'),null);assert.equal(row.querySelector('small'),null);
  assert.equal(row.parentElement.parentElement.parentElement.className,'next-skills-folder');
  await f.click(row);await until(()=>f.$('#skills-content').textContent==='Original content');
  await f.click('#skills-organize');assert.equal(f.$('.next-skills-editor-shell').classList.contains('next-skills-organizing'),true);await until(()=>f.$('#skills-editor-folder-parent'));

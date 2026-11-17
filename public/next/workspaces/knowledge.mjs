@@ -1,7 +1,7 @@
 import {text,formatDate} from '../core/dom.mjs';
 import {KNOWLEDGE_PAGE_SIZE,KNOWLEDGE_LIST_LIMIT,knowledgeListPath,knowledgeWindow,
   knowledgeDraft,knowledgeDraftChanged,knowledgeSavePayload,knowledgeExpectedRevision,
-  knowledgeHistoryRows,knowledgeRestorePayload,knowledgeRecoveryPayload,knowledgeAuthor,compactKnowledgePreview,knowledgeFolderTree,knowledgeFolderOptions} from './knowledge-model.mjs';
+  knowledgeHistoryRows,knowledgeRestorePayload,knowledgeRecoveryPayload,knowledgeAuthor,knowledgeFolderTree,knowledgeFolderOptions} from './knowledge-model.mjs';
 
 /** Knowledge reads are lazy and cancellable. Only explicit form actions write. */
 export function createKnowledgeWorkspace({mount,api,events,notify,kind = 'memory',idPrefix='next-knowledge',onBusy}) {
@@ -144,9 +144,8 @@ export function createKnowledgeWorkspace({mount,api,events,notify,kind = 'memory
       const row=add(els.list,'li');
       const button=add(row,'button');button.type='button';button.dataset.knowledgeId=item.id;
       button.setAttribute('aria-pressed',String(item.id===selected));
-      add(button,'strong',item.title||'Untitled entry');
-      if(item.summary||item.excerpt)add(button,'p',compactKnowledgePreview(item.summary||item.excerpt),'next-knowledge-excerpt');
-      add(button,'small',[item.memoryType||item.kind,knowledgeAuthor(item)].join(' · '));
+      button.title=item.title||'Untitled entry';
+      add(button,'strong',button.title);
       button.addEventListener('click',()=>void openEntry(item.id));
     }
     els.more.hidden=!window.hasMore;
