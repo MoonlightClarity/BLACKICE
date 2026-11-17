@@ -195,14 +195,19 @@ test('four-minute-equivalent progress history is bounded and explicitly accounts
   const trace = new StartupCriticalTrace({ dataDir: root, version: '2.39.98',
     now: () => mono, wall: () => 1800000000000 + mono,
     intervalMs: 1500, startTimer: false });
+  // checkpoint() deliberately returns at its diagnostic deadline, not
+  // necessarily at disk settlement. This test advances a simulated sampling
+  // clock, so drain the actual writer before scheduling its next sample.
+  const drainWriter = async () => { while (trace.pendingWrite) await trace.pendingWrite; };
   await trace.start({ buildFiles: { code: code('../lib/startup-critical-trace.mjs') } });
+  await drainWriter();
   const token = trace.begin('direct-jobs');
   for (let step = 0; step < 175; step++) {
     mono += 1500;
     trace.ledgerProgress({ required: 66848, dispatched: step * 20, validated: step * 20 });
-    await trace.checkpoint();
+    await trace.checkpoint(); await drainWriter();
   }
-  trace.end(token, 'ready'); await trace.finish('ready');
+  trace.end(token, 'ready'); await trace.finish('ready'); await drainWriter();
   const saved = await readTrace(trace);
   assert.equal(saved.progressSamples.length, 160);
   assert.equal(saved.droppedSamples, 17);
@@ -259,4 +264,33 @@ test('bounded telemetry uses no per-file disk writes and makes persistence failu
   assert.ok(final.spans.length <= 64);
   assert.ok((await fs.readFile(trace.file)).length < 48 * 1024);
   t.diagnostic('20k in-memory operation observations ' + Math.round(totalMs) + ' ms; no per-receipt writes');
+});
+
+test('a timed-out checkpoint drops overlapping sample attempts until its writer really settles', async t => {
+  const root = await fixture(t), entered = deferred(), release = deferred(); let hold = false, mono = 0;
+  const io = { ...fs, rename: async (...args) => {
+    if (hold) { entered.resolve(); await release.promise; }
+    return fs.rename(...args);
+  } };
+  const trace = new StartupCriticalTrace({ dataDir: root, io, startTimer: false,
+    now: () => mono, wall: () => 1800000000000 + mono, checkpointTimeoutMs: 10 });
+  const drainWriter = async () => { while (trace.pendingWrite) await trace.pendingWrite; };
+  await trace.start({ buildFiles: { code: code('../lib/startup-critical-trace.mjs') } }); await drainWriter();
+  const token = trace.begin('direct-jobs'); hold = true;
+  try {
+    mono += 1500; const bounded = trace.checkpoint(); await entered.promise;
+    assert.equal(await bounded, false, 'The public deadline must not wait for the held rename.');
+    for (let attempt = 0; attempt < 3; attempt++) {
+      mono += 1500; assert.equal(await trace.checkpoint(), false);
+    }
+    assert.equal(trace.traceIo.droppedCheckpoints, 3);
+    assert.equal(trace.samples.length, 2, 'Overlapping requests do not pretend to have captured three more samples.');
+    trace.end(token, 'ready'); await trace.finish('ready');
+    assert.equal((await readTrace(trace)).state.incomplete, true, 'finish is bounded too; the previous durable checkpoint remains visible until settlement.');
+  } finally { hold = false; release.resolve(); await drainWriter(); }
+  const saved = await readTrace(trace);
+  assert.equal(saved.state.outcome, 'ready'); assert.equal(saved.progressSamples.length, 3);
+  assert.equal(saved.droppedSamples, 0); assert.equal(saved.traceHealth.droppedCheckpoints, 3);
+  assert.ok(saved.traceHealth.checkpointTimeouts >= 1);
+  assert.equal(saved.traceHealth.failedWrites, 0);
 });

@@ -100,7 +100,7 @@ test('Retry after a lost publication response reconciles its durable attempt ins
 });
 
 test('a delayed older milestone receipt cannot replace a newer committed swarm state',async t=>{
- const committed=deferred(),release=deferred();let taskId,initialRevision,olderRevision,latestRevision;
+ const committed=deferred(),release=deferred();let taskId,initialRevision,olderRevision,latestRevision,reviewRevision;
  const f=await fixture(t,async options=>{
    const initial=await call(options,{action:'read'});taskId=initial.taskId;initialRevision=initial.revision;
    const older=call(options,{action:'plan',expectedRevision:initial.revision,steps:[{id:'deliver',title:'Compare the supplied fixture result',status:'active',operation:{kind:'reasoning',target:'The supplied milestone fixture output'},result:'The checked fixture output.',note:'Compare the supplied fixture output with its expected value.',doneWhen:'The output is checked.'}]});
@@ -109,16 +109,21 @@ test('a delayed older milestone receipt cannot replace a newer committed swarm s
    latestRevision=latest.revision;release.resolve();olderRevision=(await older).revision;
    const adopted=f.engine.getRun(options.runId||f.engine.listRuns()[0].id).taskState;
    assert.equal(adopted.revision,latestRevision);assert.equal(adopted.steps[0].status,'done');assert.equal(adopted.steps[0].evidence,'Checked actual output.');
-   await finishFixturePlan(options,{summary:'The supplied output was checked and the delayed older receipt did not replace its newer completed milestone. No selected work remains.'});
+   const raceEvents=f.engine.getRun(options.runId||f.engine.listRuns()[0].id).events.filter(event=>event.data?.type==='task.state').map(event=>event.data.state.revision);
+   assert.deepEqual(raceEvents,[latestRevision],'Before explicit review, only the newer milestone mutation is published; the delayed older receipt stays rejected.');
+   const reviewed=await finishFixturePlan(options,{summary:'The supplied output was checked and the delayed older receipt did not replace its newer completed milestone. No selected work remains.'});
+   reviewRevision=reviewed.revision;
+   assert.equal(reviewRevision,latestRevision+1);
+   assert.equal(reviewed.steps[0].status,'done');assert.equal(reviewed.steps[0].evidence,'Checked actual output.');
    return{output:'Done.',threadId:'provider_milestone-race'};
  });
  const original=f.tasks.setPlan.bind(f.tasks);f.tasks.setPlan=async(...args)=>{const result=await original(...args);committed.resolve();await release.promise;return result;};
  const run=await f.settled(f.engine.startRun({workflow:f.workflow,input:'Check concurrent progress.'}).id);assert.equal(run.status,'completed');assert.equal(run.taskState.progress.done,1);assert.equal(run.taskState.revision,(await f.tasks.get(taskId)).revision);
  const events=run.events.filter(event=>event.data?.type==='task.state').map(event=>event.data.state.revision);assert.equal(olderRevision,initialRevision+1);assert.equal(latestRevision,olderRevision+1);
- // Only the newest explicit mutation is published: initial/read snapshots are
- // adopted silently, the delayed older receipt is rejected, and no mandatory
- // final review invents another revision after the completed milestone.
- assert.deepEqual(events,[latestRevision]);assert.equal(run.taskState.revision,latestRevision);
+ // Initial/read snapshots stay silent and the stale receipt stays rejected.
+ // The fixture then explicitly requested review, which legitimately commits
+ // one additional revision; no implicit mutation may appear beyond that.
+ assert.deepEqual(events,[latestRevision,reviewRevision]);assert.equal(run.taskState.revision,reviewRevision);
 });
 
 test('settled run snapshots reload authoritative milestones even when the writer event was lost',async t=>{
