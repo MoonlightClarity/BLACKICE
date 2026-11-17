@@ -1,3 +1,4 @@
+import { createKnowledgeApprovals } from './core/knowledge-approvals.mjs';
 import { createApi } from './core/api.mjs';
 import { createEventBus } from './core/events.mjs';
 import { updateWorkspaceTabs } from './core/workspace-navigation.mjs';
@@ -34,6 +35,7 @@ const connection=(state)=>{
   health.dataset.status=state==='connected'?'ready':'error';
 };
 const events=createEventBus({onConnection:connection});
+const knowledgeApprovals=createKnowledgeApprovals({mount:document.querySelector('.next-topbar-right'),api,events,notify});
 events.subscribe(receipt=>{
   if(receipt.type!=='runtime.status'||!receipt.data)return;
   status=receipt.data;
@@ -113,6 +115,7 @@ window.addEventListener('hashchange',()=>{
 window.addEventListener('beforeunload',()=>{
   for(const {instance} of spaces.values())instance?.leave?.();
   for(const timer of notifications)clearTimeout(timer);
+  knowledgeApprovals.destroy();
   events.close();
 });
 // Painting the shell never waits for a full history parse or an external provider.

@@ -379,6 +379,7 @@ export async function createHarnessServer(options = {}) {
       if (!writeEventStream(res,text)) clients.delete(res);
     }
   };
+  knowledge.onApproval = event => sendEvent({ ...event, at: new Date().toISOString() });
   notifySignedBrowser=()=>sendEvent({type:'browser.updated',data:browserStatus(),at:new Date().toISOString()});
   const offPlanningAwareness = tasks.awareness?.subscribe(data => sendEvent({ type: 'planning.awareness', data, at: new Date().toISOString() }));
   remoteAccess?.on?.('updated', value => sendEvent({ type: 'remote-access.updated', data: value, at: new Date().toISOString() }));
@@ -1347,6 +1348,21 @@ export async function createHarnessServer(options = {}) {
         const query=new URL(req.url,`http://${host}`).searchParams;
         return json(res,200,await skillsCatalog.detail({id:skillId,cwd:query.get('cwd')||undefined}));
       }
+      if ((pathname === '/api/knowledge' || pathname.startsWith('/api/knowledge/')) && req.method !== 'GET' && req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Review and edit saved knowledge in BLACKICE on this computer.', code: 'KNOWLEDGE_LOCAL_REVIEW_REQUIRED' });
+      if (pathname === '/api/knowledge/approvals' && req.method === 'GET') return json(res, 200, { approvals: await knowledge.listApprovals() });
+      const knowledgeApproval = pathname.match(/^\/api\/knowledge\/approvals\/([a-zA-Z0-9_-]+)$/);
+      if (knowledgeApproval && req.method === 'POST') {
+        const value = await body(req);
+        if (!value || !['approve','reject'].includes(value.decision) || Object.keys(value).some(key => key !== 'decision')) throw Object.assign(new Error('Choose approve or reject for this exact proposal.'), { status: 400 });
+        const result = await mutateKnowledge(async () => {
+          await learning.cancelBackground('You are reviewing a proposed memory or skill.');
+          const decision = await knowledge.decideApproval(knowledgeApproval[1], { decision: value.decision });
+          await learning.recordApprovalDecision(decision);
+          return decision;
+        });
+        sendEvent({ type: 'knowledge.updated', data: knowledge.status(), at: new Date().toISOString() });
+        return json(res, 200, result);
+      }
       if (pathname === '/api/knowledge/folders' && req.method === 'GET') return json(res, 200, await knowledge.folders());
       if (pathname === '/api/knowledge/folders' && req.method === 'POST') {
         const bodyValue = await body(req); const result = await mutateKnowledge(() => knowledge.organize(bodyValue));
@@ -1476,7 +1492,7 @@ export async function createHarnessServer(options = {}) {
       files['/token-usage.mjs'] = 'token-usage.mjs';
       files['/provider-availability.mjs'] = 'provider-availability.mjs';
       const nextFiles = ['schedule-folders.css','swarm.css','visuals.css','index.html','base.css','chat.css','chat-management.css','brand.css','work-visual.css','intelligence-planning.css','intelligence-map.css','controls.css','layout-fixes.css','planning-ontology.css','planning-browser.css','planning-current.css','guard.js','app.mjs',
-        'core/api.mjs','core/workspace-navigation.mjs','core/dom.mjs','core/events.mjs','core/model-picker.mjs','core/context-controls.mjs','model-picker.css',
+        'core/knowledge-approvals.mjs','core/api.mjs','core/workspace-navigation.mjs','core/dom.mjs','core/events.mjs','core/model-picker.mjs','core/context-controls.mjs','model-picker.css',
         'chat/chat.mjs','chat/folders.mjs','chat/visuals.mjs','chat/model.mjs','chat/render.mjs','chat/send.mjs','chat/goals.mjs','chat/autonomy.mjs','chat/planning-timeline.mjs',
         'chat/activity-inspector.mjs','chat/options-model.mjs','chat/ontology-preferences.mjs','chat/execution-preferences.mjs','chat/artifacts.mjs','parity.css',
         'chat/reader-model.mjs','chat/reader-worker.mjs','chat/reader-client.mjs',

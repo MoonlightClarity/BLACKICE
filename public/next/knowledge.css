@@ -96,3 +96,21 @@
 
 .next-knowledge-root .next-panel-head h1{font-size:18px;line-height:1.3;margin:0}
 .next-knowledge-editor h2{font-size:16px;line-height:1.35}
+
+/* Exact model proposals are inert until owner review. */
+.next-approval-trigger{font-size:11px;max-width:170px;white-space:normal}
+.next-approval-dialog{width:min(1000px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto;background:#151719;color:#e9e9e9;border:1px solid #5e6265;border-radius:12px;padding:24px;box-sizing:border-box}
+.next-approval-dialog::backdrop{background:#0009}
+.next-approval-dialog h2{font-size:19px;margin:0 0 8px}
+.next-approval-dialog h3{font-size:16px;margin:14px 0 8px}
+.next-approval-choices{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
+.next-approval-choices button[aria-pressed=true]{border-color:#e7e7e7}
+.next-approval-diff{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.next-approval-diff>section{min-width:0;border:1px solid #45494c;padding:12px;border-radius:6px}
+.next-approval-diff h4{margin:0 0 10px}
+.next-approval-content,.next-approval-metadata{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.6 ui-monospace,monospace;max-height:40vh;overflow:auto}
+.next-approval-scope{font-size:12px;overflow-wrap:anywhere}
+.next-approval-status{font-size:13px;min-height:20px}
+.next-approval-status[data-error=true]{color:#ffb9b9}
+.next-approval-dialog>.next-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+@media(max-width:640px){.next-approval-diff{grid-template-columns:1fr}.next-approval-dialog{padding:16px}.next-approval-content{max-height:24vh}}
