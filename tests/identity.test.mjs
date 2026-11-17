@@ -149,3 +149,9 @@ test('cancelled updates leave canonical content and revision untouched; close dr
   await assert.rejects(replace(store, before, 'Cancelled write', { signal: controller.signal }), { name: 'AbortError' }); assert.equal(await fs.readFile(file('soul'), 'utf8'), before.content); assert.equal((await store.read('soul')).revision, before.revision);
   await store.close(); await assert.rejects(store.read('soul'), { status: 503 });
 });
+
+test('profile projection metadata fits the minimum supported context budget', async t => {
+ const {store}=await setup(t);
+ const snapshot=await store.snapshot({budgetChars:IDENTITY_LIMITS.minContextChars});
+ assert.ok(snapshot.chars<=IDENTITY_LIMITS.minContextChars);
+});
