@@ -273,3 +273,25 @@ test('native steering invalidates a queued callback before it can start and late
   assert.equal(calls, 1); assert.equal(f.sent.find(row => row.id === 82).result.success, true);
   f.complete(state, 'Corrected work only.'); await work;
 });
+
+for (const earlyNotification of [false, true]) test('native queued direction is delivered during continuation opening, notification=' + earlyNotification, async t => {
+  const f = nativeFixture(t), entered = deferred(), release = deferred();
+  const request = f.client._request.bind(f.client); let starts = 0, reviews = 0, calls = 0;
+  f.client._request = async (method, params) => {
+    const result = await request(method, params);
+    if (method === 'turn/start' && ++starts === 2) { entered.resolve(); await release.promise; }
+    return result;
+  };
+  const { work, state } = await f.begin({ dynamicTools: [tool], onToolCall: async () => { calls++; return receipt; },
+    onBeforeFinal: async () => ++reviews === 1 ? { continue: true, prompt: 'Old continuation scope.' } : null });
+  f.complete(state, 'First candidate.'); await entered.promise;
+  await f.client.steerAgent(state.threadId, 'Revised during opening.');
+  await f.client._dynamicToolCall({ id: 91, params: { threadId: state.threadId, turnId: 'turn-2', callId: 'stale', tool: 'relay_once', arguments: {} } });
+  assert.equal(calls, 0); assert.equal(f.sent.find(row => row.id === 91).result.code, 'TOOL_SUPERSEDED');
+  if (earlyNotification) f.client._notification('turn/started', { threadId: state.threadId, turn: { id: 'turn-2', status: 'inProgress' } });
+  release.resolve(); await tick(); await tick();
+  const steers = f.requests.filter(row => row.method === 'turn/steer');
+  assert.equal(steers.length, 1); assert.equal(steers[0].params.input[0].text, 'Revised during opening.');
+  assert.equal(state.pendingDirections.length, 0);
+  f.complete(state, 'Revised continuation.'); assert.equal((await work).output, 'Revised continuation.');
+});

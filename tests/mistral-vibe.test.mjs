@@ -1219,3 +1219,27 @@ test('Vibe steering during prompt preparation prevents admission of the supersed
   const prompts = f.connections[0].calls.filter(c => c.method === 'session/prompt');
   assert.equal(prompts.length, 1); assert.match(prompts[0].params.prompt[0].text, /Revised before admission/);
 });
+
+test('Vibe rejects delayed native bridge calls between cancellation settlement and revised prompt admission', async t => {
+  const entered = deferred(), release = deferred(); let threadId, bridgeOptions, preparations = 0, calls = 0;
+  const f = await fixture(t, {
+    toolBridgeFactory: async options => {
+      bridgeOptions = options;
+      return { server: { type: 'http', name: 'blackice', url: 'http://127.0.0.1:1/mcp', headers: [] }, toolNames: new Set(['blackice_do_work']), settle: async () => {}, close: async () => {} };
+    },
+    onPrompt: async c => { if (c.turn === 1) await f.runtime.steerAgent(threadId, 'Revised prompt.'); return c.answer('answer ' + c.turn); }
+  });
+  const save = f.runtime._saveThread.bind(f.runtime);
+  f.runtime._saveThread = async record => {
+    await save(record);
+    if (record.state === 'running' && ++preparations === 3) { entered.resolve(); await release.promise; }
+  };
+  const running = f.runtime.runAgent(input({ timeoutMs: 3000, dynamicTools: [{ name: 'do_work', inputSchema: { type: 'object', properties: {} } }],
+    onEvent: e => { if (e.type === 'thread') threadId = e.threadId; },
+    onToolCall: async () => { calls++; return { success: true, contentItems: [{ type: 'inputText', text: 'Should not run.' }] }; }
+  }));
+  await entered.promise;
+  const result = await bridgeOptions.onToolCall({ name: 'do_work', arguments: {} }, { signal: bridgeOptions.signal });
+  assert.equal(result.code, 'TOOL_SUPERSEDED'); assert.equal(calls, 0);
+  release.resolve(); assert.equal((await running).output, 'answer 2');
+});
