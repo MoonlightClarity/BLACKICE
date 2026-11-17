@@ -60,7 +60,7 @@ test('real BLACKICE server serves only the current interface and keeps old bookm
   assert.match(next.text,/src="\/next\/app\.mjs"/);
   assert.doesNotMatch(next.text,/src="\/app\.js"/);
   assert.ok(next.headers['set-cookie'],'Explicit V2 alias should still establish a local session.');
-  const assets=['/next/app.mjs','/next/chat/chat.mjs','/next/chat/reader-worker.mjs',
+  const assets=['/next/app.mjs','/next/core/knowledge-approvals.mjs','/next/chat/chat.mjs','/next/chat/reader-worker.mjs',
     '/next/chat/reader-client.mjs','/next/chat/reader-model.mjs','/next/workspaces/planning.mjs',
     '/next/workspaces/activity.mjs','/next/workspaces/browser-model.mjs',
     '/next/workspaces/browser-native.mjs', '/next/workspaces/browser-scoped-cleanup-ui.mjs',
