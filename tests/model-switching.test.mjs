@@ -99,17 +99,46 @@ test('engine rejects a smaller model window before dispatch without losing the s
   assert.deepEqual(engine.getRun(original.id), original, 'The failed continuation must not mutate its earlier run snapshot.');
 });
 
-test('accepted provider directions and intermediate assistant replies survive a cross-provider handoff', async t => {
-  const hold = deferred(), { engine: makeEngine, requests, directory, archives } = await fixture(t, 'compatible', async ({ index }) => { if (index === 1) await hold.promise; }, { modelBContext: 262144 }), engine = await makeEngine(), archive = await new ConversationArchive({ dataDir: path.join(directory, 'engine'), engine }).init(); archives.push(archive);
+for (const confirmedIntermediate of [false, true]) test('cross-provider handoff retains accepted direction and only observed replies; intermediate=' + confirmedIntermediate, async t => {
+  const hold = deferred(), interruptedIndex = confirmedIntermediate ? 2 : 1;
+  const { engine: makeEngine, runtime, requests, directory, archives } = await fixture(t, 'compatible', async ({ index, response }) => {
+    if (confirmedIntermediate && index === 1) {
+      // This actual response is observed before steering. Its unsupported
+      // fixture tool produces a confirmed failure receipt with no side effect,
+      // then the next inference stalls so the user can interrupt it.
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'Actual fixture reply 1 from model-a.',
+        tool_calls: [{ id: 'confirmed-no-effect', type: 'function', function: { name: 'fixture_unattached_no_effect', arguments: '{}' } }] }, finish_reason: 'tool_calls' }] }));
+      return false;
+    }
+    if (index === interruptedIndex) await hold.promise;
+  }, { modelBContext: 262144 }), engine = await makeEngine(), archive = await new ConversationArchive({ dataDir: path.join(directory, 'engine'), engine }).init(); archives.push(archive);
   const first = engine.startRun({ workflow: createMissionWorkflow({ id: 'direction-chat', task: 'ORIGINAL_HANDOFF_TASK', model: 'primary::model-a', planningMode: 'off' }), input: 'ORIGINAL_HANDOFF_TASK' });
-  try { await until(() => requests.length && engine.getRun(first.id).nodes.agent.turnId); const receipt = await engine.steerRun(first.id, { nodeId: 'agent', message: 'ACTUAL_ACCEPTED_USER_DIRECTION' }); assert.equal(receipt.accepted, true); } finally { hold.resolve(); }
-  await engine.executions.get(first.id); const previous = engine.getRun(first.id); assert.equal(previous.status, 'completed'); assert.ok(previous.events.some(event => event.data?.type === 'steer' && event.data.text === 'ACTUAL_ACCEPTED_USER_DIRECTION')); assert.equal(requests.length, 2);
-  await archive.chain; engine.runs.get(first.id).events = Array.from({ length: 2500 }, (_, index) => ({ nodeId: 'agent', data: { type: 'item', item: { type: 'commandExecution', id: `bounded-${index}` } } }));
+  try {
+    await until(() => requests.length === interruptedIndex && engine.getRun(first.id).nodes.agent.turnId);
+    const receipt = await engine.steerRun(first.id, { nodeId: 'agent', message: 'ACTUAL_ACCEPTED_USER_DIRECTION' }); assert.equal(receipt.accepted, true);
+  } finally { hold.resolve(); }
+  await engine.executions.get(first.id); const previous = engine.getRun(first.id); assert.equal(previous.status, 'completed', previous.error);
+  assert.ok(previous.events.some(event => event.data?.type === 'steer' && event.data.text === 'ACTUAL_ACCEPTED_USER_DIRECTION'));
+  assert.equal(requests.length, interruptedIndex + 1);
+  const observedReplies = [...(confirmedIntermediate ? ['Actual fixture reply 1 from model-a.'] : []), 'Actual fixture reply ' + (interruptedIndex + 1) + ' from model-a.'];
+  const unobservedReply = 'Actual fixture reply ' + interruptedIndex + ' from model-a.';
+  const saved = JSON.stringify((await runtime.readThread(previous.nodes.agent.threadId)).transcript);
+  for (const text of observedReplies) assert.ok(saved.includes(text));
+  assert.ok(!saved.includes(unobservedReply), 'A response withheld until after interruption was never observed and must not be invented in history.');
+  if (confirmedIntermediate) assert.match(saved, /not attached to the active agent/, 'The actually received failure receipt survives without claiming a tool effect.');
+  await archive.chain; engine.runs.get(first.id).events = Array.from({ length: 2500 }, (_, index) => ({ nodeId: 'agent', data: { type: 'item', item: { type: 'commandExecution', id: 'bounded-' + index } } }));
   const family = await archive.family(first.id), visible = run => assistantMessages(run).map(message => message.text);
-  assert.deepEqual(visible(family.runs[0]), ['ACTUAL_ACCEPTED_USER_DIRECTION', 'Actual fixture reply 1 from model-a.', 'Actual fixture reply 2 from model-a.']);
+  assert.deepEqual(visible(family.runs[0]), [...(confirmedIntermediate ? [observedReplies[0]] : []), 'ACTUAL_ACCEPTED_USER_DIRECTION', observedReplies.at(-1)]);
   const next = engine.continueRun(first.id, { nodeId: 'agent', message: 'Switch provider and retain the discussion.', model: 'secondary::model-b' }, { historyRuns: family.runs }); await engine.executions.get(next.id);
-  const handoff = JSON.stringify(requests.at(-1).body.messages); assert.match(handoff, /USER DIRECTION: ACTUAL_ACCEPTED_USER_DIRECTION/); assert.match(handoff, /Actual fixture reply 1 from model-a/); assert.match(handoff, /Actual fixture reply 2 from model-a/); assert.notEqual(engine.getRun(next.id).nodes.agent.threadId, previous.nodes.agent.threadId);
-  await archive.close(); const restored = await new ConversationArchive({ dataDir: path.join(directory, 'engine'), engine }).init(); archives.push(restored); assert.deepEqual(visible(await restored.get(first.id)), visible(family.runs[0]), 'actual HTTP replies and directions survive a fresh archive instance even when the execution ring has evicted them');
+  assert.equal(engine.getRun(next.id).status, 'completed', engine.getRun(next.id).error);
+  const handoff = JSON.stringify(requests.at(-1).body.messages);
+  assert.match(handoff, /USER DIRECTION: ACTUAL_ACCEPTED_USER_DIRECTION/);
+  for (const text of observedReplies) assert.ok(handoff.includes(text));
+  assert.ok(!handoff.includes(unobservedReply));
+  assert.notEqual(engine.getRun(next.id).nodes.agent.threadId, previous.nodes.agent.threadId);
+  await archive.close(); const restored = await new ConversationArchive({ dataDir: path.join(directory, 'engine'), engine }).init(); archives.push(restored);
+  assert.deepEqual(visible(await restored.get(first.id)), visible(family.runs[0]), 'Observed replies and accepted directions survive archive restart even after the execution ring evicts them.');
 });
 
 test('retrying a failed provider handoff retains actual history without resuming the old native thread', async t => {
