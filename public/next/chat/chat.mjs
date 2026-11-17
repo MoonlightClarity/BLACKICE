@@ -268,11 +268,11 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   function indexPaint() {
     const query=view.search.value;
     if(query!==state.indexQuery){state.indexQuery=query;state.indexLimit=CHAT_INDEX_BATCH;}
-    state.visible=paintIndex(view,filterSummaries(folderUI.filtered(state.list),query),root(),item=>{view.shell.dataset.showList='false';void open(item);},{
+    state.visible=paintIndex(view,filterSummaries(folderUI.filtered(state.list),query),root(),item=>{view.shell.dataset.showList='false';view.mobileList.setAttribute('aria-expanded','false');void open(item);},{
       limit:state.indexLimit,
       onMore:()=>{state.indexLimit+=CHAT_INDEX_BATCH;indexPaint();},
       selecting:state.selecting,selection:state.selection,busy:state.managing||state.pending,
-      folderNames:folderUI.folderNames(),groupFolders:true,showEmptyFolders:!query&&folderUI.selected==='all',onFolderToggle:visible=>{state.visible=visible;drawManagement();},
+      folderNames:folderUI.folderNames(),groupFolders:true,onFolderManage:id=>folderUI.manage(id),expandFolders:Boolean(query),showEmptyFolders:!query&&folderUI.selected==='all',onFolderToggle:visible=>{state.visible=visible;drawManagement();},
       onToggle:(item,checked)=>{if(state.managing)return;if(checked){const target=managementTarget(rootId(item));state.selection.set(target.id,{runId:target.runId,state:target.state});}else state.selection.delete(rootId(item));managementMessage('');drawManagement();},
       onAction:(item,action)=>['move_folder','reset_folder_auto'].includes(action)?folderUI.onRowAction(item,action):action==='rename'?startRename(item):void requestManagement(action,selectionFor(item)),
     });
@@ -775,7 +775,8 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   view.trash.addEventListener('click',()=>{if(state.selected)void requestManagement('delete',selectionFor(state.selected));});
   view.rename.addEventListener('click',()=>{if(state.selected)startRename(state.selected);});
   view.stop.addEventListener('click',()=>{const target=state.runs.findLast(running);if(target)void runAction('stop',target.id);});
-  view.mobileList.addEventListener('click',()=>{view.shell.dataset.showList=view.shell.dataset.showList==='true'?'false':'true';});
+  view.mobileClose.addEventListener('click',()=>{view.shell.dataset.showList='false';view.mobileList.setAttribute('aria-expanded','false');view.mobileList.focus();});
+  view.mobileList.addEventListener('click',()=>{view.shell.dataset.showList=view.shell.dataset.showList==='true'?'false':'true';view.mobileList.setAttribute('aria-expanded',view.shell.dataset.showList);});
   return {
     enter() {
       if(state.active||state.destroyed)return;

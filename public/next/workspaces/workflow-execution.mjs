@@ -13,8 +13,8 @@ import { layoutWorkflowCanvas,canvasEdgePath,CANVAS_NODE_WIDTH,CANVAS_NODE_HEIGH
 export function createWorkflowWorkspace(context) {
   const {mount,onNavigate}=context;
   mount.innerHTML='<div class="next-panel next-workflows-workspace next-visual-workspace"><div class="next-panel-inner">'+
-    '<header class="next-panel-head"><div><h1>Saved workflows</h1><p>Manage reusable multi-agent workflows for cronjobs.</p></div>'+
-    '<button type="button" id="next-workflows-back">Back to Cronjobs</button></header>'+
+    '<header class="next-panel-head"><div><h1>Saved workflows</h1><p>Build reusable multi-agent workflows. Run one now, or use it in a cronjob.</p></div>'+
+    '<button type="button" id="next-workflows-back">Open Cronjobs</button></header>'+
     '<section id="next-workflows-editor" aria-label="Saved workflow management"></section></div></div>';
   mount.querySelector('#next-workflows-back').addEventListener('click',()=>onNavigate?.('cronjobs'));
   const editor=createWorkflowActivityUI({...context,mount:mount.querySelector('#next-workflows-editor')});

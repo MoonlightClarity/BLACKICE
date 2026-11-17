@@ -127,7 +127,7 @@ test('isolation disables ambient surfaces and never uses Vibe empty allowlist se
   for (const name of ['enable_mcp', 'enable_connectors', 'enable_subagents', 'enable_background_processes', 'include_project_context', 'enable_update_checks', 'enable_telemetry']) assert.match(none, new RegExp(name + ' = false'));
   assert.match(none, /disabled_skills = \["\*"\]/);
   assert.match(none, /generate_titles = false/);
-  assert.match(none, /experimental_enable_model_catalog = true/);
+  assert.doesNotMatch(none, /experimental_enable_model_catalog/);
   const attached = vibeIsolationConfig({ toolNames: ['blackice_lookup', 'mcp_blackice.lookup'] });
   assert.match(attached, /enable_mcp = true/);
   assert.match(attached, /enabled_tools = \["blackice_lookup","mcp_blackice.lookup"\]/);
@@ -510,43 +510,38 @@ test('account refresh selects every visible native model for its own settings an
   assert.equal(status.authenticated, true);
 });
 
-test('cold catalog discovery waits for the native cache and reads a snapshot without requiring a notification or prompt', async t => {
-  const f = await accountFixture(t, { cacheDelayMs: 20, catalogWaitMs: 500 });
+test('ACP discovery does not wait for absent private cache or require a prompt', async t => {
+  const f = await accountFixture(t, { catalogMissing: true, catalogWaitMs: 5000 });
   const started = Date.now();
   const status = await f.runtime.refresh();
-  assert.equal(status.models.length, 3);
+  assert.equal(status.models.length, 1);
+  assert.equal(status.catalogSource, 'acp-session');
+  assert.equal(status.lastError, null);
   assert.ok(Date.now() - started < 2000);
   assert.equal(f.connections.flatMap(connection => connection.calls).some(call => call.method === 'session/prompt'), false);
-  await Promise.all(f.connections.map(connection => connection.cacheWrite));
 });
 
-test('missing or failed catalog refresh preserves the working connection, list and durable receipt', async t => {
+test('missing cache replaces stale choices with current ACP; optional probe failure retains current choices', async t => {
   const f = await accountFixture(t);
-  const confirmed = await f.runtime.refresh();
+  await f.runtime.refresh();
   const durableFile = path.join(f.dir, 'mistral-vibe', 'catalog.json');
-  const durable = await fs.readFile(durableFile, 'utf8');
-  const oldHome = path.join(f.dir, 'mistral-vibe', 'catalog', 'home');
-  await fs.mkdir(oldHome, { recursive: true });
-  await fs.writeFile(path.join(oldHome, 'model_catalog_cache.json'), JSON.stringify(accountCache()));
   f.catalogMissing = true;
-  const unavailable = await f.runtime.refresh();
-  assert.equal(unavailable.accountCatalogState, 'stale');
-  assert.match(unavailable.lastError, /could not be refreshed/);
-  assert.deepEqual(unavailable.models, confirmed.models);
-  assert.equal(unavailable.defaultModel, confirmed.defaultModel);
-  assert.equal(unavailable.authenticated, true);
-  assert.equal(unavailable.connected, true);
-  assert.equal(unavailable.available, true);
-  assert.equal(await fs.readFile(durableFile, 'utf8'), durable);
-  assert.notEqual(f.connections[0].options.env.VIBE_HOME, f.connections[1].options.env.VIBE_HOME);
-  assert.ok(f.connections.every(connection => connection.closed));
+  const current = await f.runtime.refresh();
+  assert.equal(current.accountCatalogState, 'unavailable');
+  assert.equal(current.lastError, null);
+  assert.deepEqual(current.models.map(model => model.id), ['mistral-medium-3.5']);
+  assert.equal(current.available, true);
+  const receipt = JSON.parse(await fs.readFile(durableFile, 'utf8'));
+  assert.equal(receipt.version, 2);
+  assert.equal(receipt.compatibilityVersion, 1);
+  assert.equal(receipt.catalogSource, 'acp-session');
   f.catalogMissing = false;
   f.selectionFailure = 'zai-glm-5-3-flash';
   const failed = await f.runtime.refresh();
-  assert.deepEqual(failed.models, confirmed.models);
+  assert.equal(failed.models.length, 3);
+  assert.match(failed.lastError, /optional per-model controls/);
   assert.equal(failed.available, true);
   assert.equal(failed.authenticated, true);
-  assert.equal(await fs.readFile(durableFile, 'utf8'), durable);
   assert.ok(f.connections.every(connection => connection.closed));
 });
 
@@ -603,17 +598,14 @@ test('cancellation during account-catalog warmup never sends a prompt and releas
 });
 
 
-test('a partial native view never replaces a complete confirmed account catalog', async t => {
+test('optional selector responses cannot replace the advertised ACP model identities', async t => {
   const f = await accountFixture(t);
   const confirmed = await f.runtime.refresh();
-  const durable = await fs.readFile(path.join(f.dir, 'mistral-vibe', 'catalog.json'), 'utf8');
   f.catalogPartial = true;
   const status = await f.runtime.refresh();
-  assert.equal(status.accountCatalogState, 'stale');
-  assert.match(status.lastError, /complete fresh account catalog/);
   assert.equal(status.available, true);
-  assert.deepEqual(status.models, confirmed.models);
-  assert.equal(await fs.readFile(path.join(f.dir, 'mistral-vibe', 'catalog.json'), 'utf8'), durable);
+  assert.match(status.lastError, /optional per-model controls/);
+  assert.deepEqual(status.models.map(model => model.id), confirmed.models.map(model => model.id));
 });
 
 test('closing during metadata cleanup drains Refresh and prevents post-close catalog publication', async t => {
@@ -1058,4 +1050,107 @@ test('a cleanup status observer cannot replace persistence failure or reject del
     assert.equal((await f.runtime._readThread(threadId)).state, 'uncertain');
     await f.runtime.close();
   }
+});
+
+test('standard model and thought categories support opaque IDs and grouped choices', () => {
+  const options = [
+    { id: 'engine-selector', category: 'model', type: 'select', currentValue: 'a', options: [{ group: 'supported', name: 'Models', options: [{ value: 'a', name: 'A' }] }] },
+    { id: 'reasoning-selector', category: 'thought_level', type: 'select', currentValue: 'none', options: [{ value: 'none', name: 'None' }] },
+  ];
+  const result = vibeModelCatalog(options);
+  assert.equal(result.defaultModel, 'a');
+  assert.equal(result.models[0].defaultReasoningEffort, 'none');
+  assert.throws(() => vibeModelCatalog({}), { code: 'MISTRAL_VIBE_CATALOG' });
+});
+
+test('removed private auth extension reports failure without changing billing or starting inference', async t => {
+  const f = await fixture(t, { handler: (_c, method) => {
+    if (method === '_auth/status') throw Object.assign(Error('Method not found'), { code: -32601 });
+  } });
+  await assert.rejects(f.runtime.refresh(), { code: -32601 });
+  assert.equal(f.runtime.status().available, false);
+  assert.ok(f.connections.every(connection => connection.closed));
+  assert.equal(f.connections.flatMap(c => c.calls).some(c => c.method === 'session/prompt'), false);
+});
+
+test('missing ACP model capability preserves saved choices as explicitly stale fallback, not new entitlement', async t => {
+  const f = await fixture(t, { handler: (_c, method) => {
+    if (method === 'session/new') return { sessionId: 'metadata-only', configOptions: [] };
+  } });
+  const status = await f.runtime.refresh();
+  assert.equal(status.catalogSource, 'saved-fallback');
+  assert.equal(status.models[0].id, 'mistral-medium-3.5');
+  assert.match(status.lastError, /could not be refreshed/);
+  await assert.rejects(fs.access(path.join(f.dir, 'mistral-vibe', 'catalog.json')));
+});
+
+test('ordinary prompt uses ACP without a same-model polling selection or cache wait', async t => {
+  const f = await fixture(t, { catalogWaitMs: 5000 });
+  const start = Date.now();
+  const result = await f.runtime.runAgent(input());
+  assert.equal(result.output, 'answer 1');
+  assert.ok(Date.now() - start < 2000);
+  assert.equal(f.connections.flatMap(c => c.calls).some(c => c.method === 'session/set_config_option' && c.params.configId === 'model'), false);
+});
+
+test('unknown cache schema is optional and cannot add or replace ACP identities', async t => {
+  const f = await fixture(t);
+  f.runtime._nativeCatalogCache = async () => ({ schemaVersion: 999, models: [{ id: 'not-advertised' }] });
+  const result = await f.runtime.refresh();
+  assert.equal(result.catalogSource, 'acp-session');
+  assert.equal(result.lastError, null);
+  assert.deepEqual(result.models.map(model => model.id), ['mistral-medium-3.5']);
+});
+
+test('first connection without an ACP model catalog reports unavailable, not fabricated choices', async t => {
+  const f = await fixture(t, { handler: (_c, method) => {
+    if (method === 'session/new') return { sessionId: 'metadata-only', configOptions: [] };
+  } });
+  f.runtime._status({ models: [], defaultModel: null });
+  await assert.rejects(f.runtime.refresh(), { code: 'MISTRAL_VIBE_CATALOG' });
+  assert.equal(f.runtime.status().available, false);
+  assert.deepEqual(f.runtime.status().models, []);
+});
+
+test('a successful ordinary turn does not read private catalog storage at all', async t => {
+  const f = await fixture(t);
+  f.runtime._nativeCatalogCache = () => { throw Error('private storage must be irrelevant'); };
+  assert.equal((await f.runtime.runAgent(input())).output, 'answer 1');
+});
+
+test('refresh explicitly reports a previously selected model no longer advertised; saved conversations are not rewritten', async t => {
+  const f = await fixture(t);
+  f.runtime._status({ defaultModel: 'previous-choice', models: [{ id: 'previous-choice', model: 'previous-choice' }] });
+  const result = await f.runtime.refresh();
+  assert.equal(result.defaultModel, 'mistral-medium-3.5');
+  assert.match(result.lastError, /previously selected Mistral model/);
+  assert.match(result.catalogNotice, /fewer choices/);
+});
+
+test('legacy and current saved catalog formats load, unknown future formats do not', async t => {
+  for (const version of [1, 2, 99]) {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'blackice-vibe-catalog-version-'));
+    t.after(() => fs.rm(dir, { recursive: true, force: true }));
+    await fs.mkdir(path.join(dir, 'mistral-vibe'));
+    await fs.writeFile(path.join(dir, 'mistral-vibe', 'catalog.json'), JSON.stringify({ version, ...vibeModelCatalog(configOptions), cliVersion: 'fixture-version' }));
+    const runtime = new MistralVibeRuntime({ dataDir: dir, cliPath: path.join(dir, 'missing') });
+    t.after(() => runtime.close());
+    const status = await runtime.init();
+    assert.equal(status.models.length, version === 99 ? 0 : 1);
+    assert.equal(status.available, false);
+  }
+});
+
+test('runtime uses advertised opaque selector IDs and never assumes thinking is named thinking', async t => {
+  const renamed = configOptions.map(option => ({ ...option, id: option.id === 'model' ? 'engine' : 'depth', category: option.id === 'model' ? 'model' : 'thought_level', type: 'select' }));
+  const f = await fixture(t, { handler: (connection, method) => {
+    if (method === 'session/new') { connection.sessionId = 'opaque-selectors'; connection.totals = 0; return { sessionId: connection.sessionId, configOptions: renamed }; }
+    if (method === 'session/set_config_option') return { configOptions: renamed };
+  } });
+  const status = await f.runtime.refresh();
+  assert.equal(status.available, true);
+  const result = await f.runtime.runAgent(input({ effort: 'none' }));
+  assert.equal(result.output, 'answer 1');
+  assert.ok(f.connections.flatMap(c => c.calls).some(c => c.method === 'session/set_config_option' && c.params.configId === 'depth' && c.params.value === 'off'));
+  assert.equal(f.connections.flatMap(c => c.calls).some(c => c.method === 'session/set_config_option' && ['model', 'thinking'].includes(c.params.configId)), false);
 });

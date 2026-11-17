@@ -53,3 +53,23 @@ test('corrupt organization metadata fails closed and keeps original bytes',async
   assert.deepEqual(reopened.list(),[]);await assert.rejects(reopened.folders());assert.throws(()=>reopened.list({folderId:''}),{status:503});
   assert.equal(await readFile(store.organizationFile,'utf8'),'broken');
 });
+
+test('nested folders persist, validate parents and promote children without touching saved content',async t=>{
+ const {store,dataDir}=await setup(t);const entry=await add(store,'Nested');const before=await readFile(store.file,'utf8');
+ let state=await store.organize({action:'create',name:'Research',expectedRevision:1});const parent=state.folders[0].id;
+ state=await store.organize({action:'create',name:'Applications',parentId:parent,expectedRevision:state.revision});const child=state.folders[1].id;
+ state=await store.organize({action:'move',entryIds:[entry.id],folderId:child,expectedRevision:state.revision});
+ const reopened=await new KnowledgeStore({dataDir}).init();assert.equal((await reopened.folders()).folders[1].parentId,parent);assert.equal(reopened.list({folderId:child})[0].id,entry.id);
+ await assert.rejects(store.organize({action:'create',name:'Invalid',parentId:'missing',expectedRevision:state.revision}),{status:404});
+ state=await store.organize({action:'remove',folderId:parent,expectedRevision:state.revision});assert.equal(state.folders[0].parentId,null);assert.equal(state.assignments[entry.id],child);assert.equal(await readFile(store.file,'utf8'),before);
+ const corrupt={...state,folders:[{...state.folders[0],parentId:child}]};await writeFile(store.organizationFile,JSON.stringify(corrupt));await assert.rejects(store.folders(),/hierarchy/);
+});
+
+test('existing folders can move under another folder but never form a cycle',async t=>{
+ const {store}=await setup(t);let s=await store.organize({action:'create',name:'One',expectedRevision:1});const one=s.folders[0].id;
+ s=await store.organize({action:'create',name:'Two',expectedRevision:s.revision});const two=s.folders[1].id;
+ s=await store.organize({action:'reparent',folderId:two,parentId:one,expectedRevision:s.revision});assert.equal(s.folders[1].parentId,one);
+ await assert.rejects(store.organize({action:'reparent',folderId:one,parentId:two,expectedRevision:s.revision}),{status:409});
+ await assert.rejects(store.organize({action:'reparent',folderId:one,parentId:one,expectedRevision:s.revision}),{status:409});
+ s=await store.organize({action:'reparent',folderId:two,parentId:null,expectedRevision:s.revision});assert.equal(s.folders[1].parentId,null);
+});

@@ -269,6 +269,7 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     budget+=SESSION_BUDGET;view.folderMore.hidden=true;notice('');
     enqueue(getItems());scheduleAuto();
   });
-  return {accept,filtered,folderNames,onRowAction,onListLoaded,stop,destroy,refresh,
+  function manage(id){if(!folderById(id)||!isWritable())return;selected=id;safeSet('blackice.next.chatFolder',selected);refresh();onChanged();view.folderRename.focus();}
+  return {manage,accept,filtered,folderNames,onRowAction,onListLoaded,stop,destroy,refresh,
     get selected(){return selected;},get organization(){return organization;}};
 }

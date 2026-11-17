@@ -63,6 +63,6 @@ test('shell exposes only Cronjobs navigation while keeping workflow and legacy r
   assert.match(index,/data-space="cronjobs"/);
   assert.doesNotMatch(index,/data-space="(?:tasks|activity|workflows)"/);
   assert.match(app,/m=>m.createWorkflowWorkspace/);
-  assert.match(app,/name==='workflows'\?'cronjobs':name/);
+  assert.match(app,/updateWorkspaceTabs\(tabs,name\)/);
   assert.match(app,/requested==='activity'\|\|requested==='tasks'\?'cronjobs'/);
 });

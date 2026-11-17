@@ -178,3 +178,22 @@
 .next-browser-cleanup-row input{flex:none}
 @media(max-width:800px){.next-browser-ownership{gap:6px;flex-wrap:wrap}.next-browser-conversation-label{max-width:none;flex-basis:calc(100% - 220px)}.next-browser-conversation-label>span{display:none}.next-browser-move{flex-basis:170px}.next-browser-owner-hint{font-size:10px}.next-browser-tab-owner{max-width:80px}}
 @media(max-width:570px){.next-browser-scopes{order:0}.next-browser-move{order:1}.next-browser-conversation-label{order:2;flex-basis:100%}.next-browser-owner-hint{display:none}}
+
+/* Organizational folders never transfer browser task ownership. */
+.next-browser-folders{border:1px solid var(--next-border,#39434c);border-radius:8px;margin:6px 0;padding:6px 10px;background:var(--next-surface,#151b21)}
+.next-browser-folders summary{cursor:pointer;font-weight:600;font-size:13px}
+#next-browser-folders-body>.next-row{margin:7px 0}
+.next-browser-folder-tree{max-height:210px;overflow:auto;display:flex;flex-direction:column;gap:3px}
+.next-browser-folder-heading{display:flex;gap:6px;align-items:center}
+.next-browser-folder-heading button,.next-browser-folder-tab{min-height:28px;padding:3px 8px;font-size:12px}
+.next-browser-folder-toggle{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.next-browser-folder-children{border-left:1px solid var(--next-border,#39434c);margin-left:10px;padding-left:12px}
+.next-browser-folder-tab{display:block;text-align:left;width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:transparent;border-color:transparent}
+.next-browser-folder-tab[aria-current="true"]{background:var(--next-surface-active,#253a49);border-color:var(--next-accent,#67bbdf)}
+.next-browser-folder-group h3{font-size:12px;margin:6px 8px}
+.next-browser-folder-editor{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.next-browser-folder-editor input{flex:1;min-width:120px}
+.next-browser-folder-editor select{max-width:200px}
+@media(max-width:760px){.next-browser-folder-tree{max-height:150px}.next-browser-folder-editor>*{max-width:100%}}
+
+.next-browser-folder-icon{width:18px;height:18px;vertical-align:middle;fill:none;stroke:currentColor;stroke-width:1.6;margin-right:6px}

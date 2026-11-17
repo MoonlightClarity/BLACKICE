@@ -127,7 +127,7 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {}, sto
           if(!initial)try{const config=await api('/api/local-models/config');if(config.runtime?.available&&config.runtime.source==='bundled')initial='llamacpp';}catch{}
         }
         if(!alive||token!==generation||selectionChosen)return;
-        engine.value=initial||'ollama';selectionChosen=true;
+        engine.value=initial||'llamacpp';selectionChosen=true;
         if(active&&engine.value==='llamacpp')launchSettings.enter();
       }
       updateChoices();

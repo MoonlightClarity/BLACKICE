@@ -16,7 +16,7 @@ class SyntheticRuntime extends EventEmitter {
   status(){return{connected:true,authenticated:true,defaultModel:'fixture::remote',defaultModelSelection:'fixture::remote',defaultModelAvailable:true,models:[{id:'fixture::remote',model:'fixture::remote',displayName:'Isolated fixture',available:true,supportsTools:true}],activeTurns:0};}
   async init(){} async start(){return this.status();} async close(){}
   async runAgent(o){
-    const phase=phaseOf(o);this.calls.push({phase:phase?.label||'ordinary',delegate:o.dynamicTools?.some(t=>t.name==='relay_delegate')||false,hostOnly:o.hostOnlyTools===true,thread:o.threadId||null});
+    const phase=phaseOf(o);this.calls.push({promptHead:o.prompt.slice(0,650),phase:phase?.label||(o.prompt.startsWith("You are Relay's post-task learning reviewer.")?'learning':'ordinary'),delegate:o.dynamicTools?.some(t=>t.name==='relay_delegate')||false,hostOnly:o.hostOnlyTools===true,thread:o.threadId||null});
     assert.ok(this.calls.length<35,'Bounded synthetic turns only');
     const output=phase?JSON.stringify(phase.label==='context-page'?{summary:'Synthetic prior evidence only.',refs:[]}:phase.label==='decompose'?{atomic:true}:phase.label==='integration'?{answer:'DIRECTORY_RENDERED_RESULT',used_refs:phase.payload.required_refs}:{status:'complete',nextAction:'',finding:'Synthetic evidence only.',candidate_answer:'A bounded answer.',uncertainty:''}):'ORDINARY_RENDERED_RESULT';
     o.onEvent?.({type:'thread',threadId:'fixture-'+this.calls.length,turnId:'turn-'+this.calls.length,model:'fixture::remote'});
@@ -65,12 +65,12 @@ test('rendered Chat Directory controls reach the real engine and persist indepen
     const run=await until(()=>app.engine.listRuns().find(r=>!before.has(r.id)),'UI admitted run');
     await until(()=>app.engine.getRun(run.id).settled,'Real execution settled');
     const saved=app.engine.getRun(run.id);assert.equal(saved.status,'completed',saved.error||JSON.stringify(saved.nodes));assert.deepEqual(saved.executionModes,expectedModes);
-    const calls=runtime.calls.slice(callStart);assert.deepEqual(calls.map(c=>c.phase).filter(phase=>phase!=='context-page'),expectedPhases);assert.ok(calls.length<=expectedPhases.length+6,'Context pages stay bounded');assert.equal(Boolean(saved.nodes.agent.shadowdancer),expectedPhases.includes('work'));assert.equal(saved.nodes.agent.output,expectedPhases.includes('work')?'DIRECTORY_RENDERED_RESULT':'ORDINARY_RENDERED_RESULT');
+    const allCalls=runtime.calls.slice(callStart),background=allCalls.filter(c=>c.phase==='learning');assert.ok(background.every(c=>!c.delegate),'Background learning never counts as task delegation');const calls=allCalls.filter(c=>c.phase!=='learning');assert.deepEqual(calls.map(c=>c.phase).filter(phase=>phase!=='context-page'),expectedPhases);assert.ok(calls.length<=expectedPhases.length+6,'Context pages stay bounded');assert.equal(Boolean(saved.nodes.agent.shadowdancer),expectedPhases.includes('work'));assert.equal(saved.nodes.agent.output,expectedPhases.includes('work')?'DIRECTORY_RENDERED_RESULT':'ORDINARY_RENDERED_RESULT');
     const active=calls.find(c=>c.phase==='work'||c.phase==='ordinary');assert.equal(active.delegate,expectedModes.subagentsMode!=='off');
     const request=report.requests.slice(requestStart).find(r=>r.path==='/api/runs'||r.path.endsWith('/continue'));assert.ok(request,'Actual UI HTTP run payload');
     assert.deepEqual({directoryMode:(request.body.input||request.body).directoryMode,subagentsMode:(request.body.input||request.body).subagentsMode},expectedModes);
     await until(()=>evaluate('document.querySelector('+JSON.stringify('[data-run-id="'+run.id+'"] .next-status-pill')+')?.textContent==="Response saved"&&!document.querySelector("#next-chat-send").disabled'),'Rendered saved turn');
-    checkpoint(task,{runId:run.id,executionModes:saved.executionModes,phases:calls.map(c=>c.phase),delegate:active.delegate,payload:request.body.input||request.body});
+    checkpoint(task,{runId:run.id,executionModes:saved.executionModes,phases:calls.map(c=>c.phase),backgroundLearningCalls:background.length,delegate:active.delegate,payload:request.body.input||request.body});
     return saved;
   };
   const openChat=async id=>{await until(()=>evaluate('Boolean(document.querySelector('+JSON.stringify('.next-conversation[data-conversation="'+id+'"]')+'))'),'Saved chat selector');await click('.next-conversation[data-conversation="'+id+'"]');await boot();await until(()=>evaluate('document.querySelector(".next-conversation[aria-current=true]")?.dataset.conversation==='+JSON.stringify(id)),'Selected conversation');};
@@ -89,20 +89,23 @@ test('rendered Chat Directory controls reach the real engine and persist indepen
     await send('Page.navigate',{url:origin+'/next/'});await boot();
     const geometry=await evaluate('["#next-chat-directory-mode"].map(s=>{const e=document.querySelector(s),r=e.getBoundingClientRect();return{selector:s,options:[...e.options].map(o=>({value:o.value,text:o.textContent})),label:e.closest("label").textContent,title:e.title,visible:r.width>0&&r.height>0&&r.x>=0&&r.right<=innerWidth&&r.y>=0&&r.bottom<=innerHeight,hit:e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}})');
     assert.ok(geometry.every(g=>g.visible&&g.hit));assert.deepEqual(geometry[0].options.map(o=>o.value),['on','off']);assert.deepEqual(await modes(),{directoryMode:'off',subagentControlPresent:false});checkpoint('Visible Directory On/Off control defaults Off with default delegation and no subagent selector',{geometry});await screenshot('01-default-off');
-    const defaults=Object.fromEntries(PLANNING_ONTOLOGY_MODULES.map(({id})=>[id,id==='subagents']));
+    const defaults=Object.fromEntries(PLANNING_ONTOLOGY_MODULES.map(({id})=>[id,id==='subagents'||id==='time_management']));
     await click('#next-chat-ontology-inline summary');
-    assert.equal(await evaluate('document.querySelectorAll("#next-chat-ontology-modules input[type=checkbox]").length'),16);
+    assert.equal(await evaluate('document.querySelectorAll("#next-chat-ontology-modules input[type=checkbox]").length'),18);
     for(const {id,label} of PLANNING_ONTOLOGY_MODULES.filter(module=>module.id!=='subagents')){
       const option=choice=>'#next-chat-ontology-modules input[aria-label='+JSON.stringify(label+' '+choice)+']';
-      assert.equal(await evaluate('document.querySelector('+JSON.stringify(option('off'))+').checked'),true);
+      assert.equal(await evaluate('document.querySelector('+JSON.stringify(option('off'))+').checked'),id!=='time_management');
+      const priorOn=await evaluate('document.querySelector('+JSON.stringify(option('on'))+').checked');
       await click(option('on'));
       const saved=()=>evaluate('JSON.parse(localStorage.getItem("blackice.next.chatOntology.new")).planningOntology');
       await until(async()=>((await saved()).modules[id]===true),'Saved module On: '+id);
       assert.deepEqual(await saved(),{version:2,modules:{...defaults,[id]:true}});
       await click(option('off'));await until(async()=>((await saved()).modules[id]===false),'Saved module Off: '+id);
-      assert.deepEqual(await saved(),{version:2,modules:defaults});
+      assert.deepEqual(await saved(),{version:2,modules:{...defaults,[id]:false}});
+      if(priorOn){await click(option('on'));await until(async()=>((await saved()).modules[id]===true),'Restored prior On: '+id);}
+      assert.equal((await saved()).modules[id],priorOn);
     }
-    await click('#next-chat-ontology-inline summary');checkpoint('All eight configurable module On/Off controls persist independently without changing other modules');
+    await click('#next-chat-ontology-inline summary');checkpoint('All nine configurable module On/Off controls persist independently without changing other modules');
     await choose('#next-chat-plan','off');await choose('#next-chat-directory-mode','on');
     const a=await submit('Synthetic A Directory On',{directoryMode:'on',subagentsMode:'default'},['decompose','work','integration']);await screenshot('02-directory-on');
     const frozen=JSON.stringify(app.engine.getRun(a.id));

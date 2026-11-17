@@ -1,14 +1,14 @@
 /** Local operator control for inspecting and explicitly retiring a stalled connection. */
 export function createNativeWriteRecovery({mount,api}) {
   const doc=mount.ownerDocument, section=doc.createElement('section');
-  const title=doc.createElement('h3');title.textContent='Interrupted tool results';
+  const title=doc.createElement('h3');title.textContent='Codex connection recovery';
   const message=doc.createElement('p');message.setAttribute('role','status');message.setAttribute('aria-live','polite');
-  message.textContent='A tool may have run, but its result may not have reached the agent. Check what happened before retrying.';
-  const inspect=doc.createElement('button');inspect.setAttribute('type','button');inspect.textContent='Check interrupted results';
+  message.textContent='Status has not been checked. Inspect the Codex connection if a task stopped receiving tool results.';
+  const inspect=doc.createElement('button');inspect.setAttribute('type','button');inspect.textContent='Check connection status';
   const recover=doc.createElement('button');recover.setAttribute('type','button');recover.textContent='Disconnect stalled model session';recover.disabled=true;
   const note=doc.createElement('p');note.textContent='Recovery does not replay a tool or start a new model turn. Check the destination before repeating an action.';
-  const receiptHeading=doc.createElement('h4');receiptHeading.textContent='Results not confirmed received';
-  const receiptSummary=doc.createElement('p');receiptSummary.textContent='Check interrupted results to see available call identifiers.';
+  const receiptHeading=doc.createElement('h4');receiptHeading.textContent='Unconfirmed result-delivery records';
+  const receiptSummary=doc.createElement('p');receiptSummary.textContent='Check connection status to inspect any retained delivery records.';
   const receipts=doc.createElement('ul');receipts.setAttribute('aria-label','Uncertain native deliveries');
   const older=doc.createElement('button');older.setAttribute('type','button');older.textContent='Older receipts';older.disabled=true;
   const newer=doc.createElement('button');newer.setAttribute('type','button');newer.textContent='Newer receipts';newer.disabled=true;
@@ -35,13 +35,13 @@ export function createNativeWriteRecovery({mount,api}) {
       if(s.recoveryRequired&&Number.isSafeInteger(id)&&id>0&&Number.isSafeInteger(pid)&&pid>0){
         observed={expectedWriteId:id,expectedPid:pid};recover.disabled=false;
         message.textContent=`Recovery required: write ${id}, process ${pid}. ${s.uncertainCount||0} result(s) have uncertain delivery.`;
-      } else message.textContent=`No recoverable stalled write is currently identified. ${s.uncertainCount||0} result(s) have uncertain delivery.`;
+      } else message.textContent=(s.uncertainCount||0)>0?`No current Codex connection stall is identified. ${s.uncertainCount} retained result(s) have unconfirmed delivery; these records do not mean the connection is currently stalled.`:'No current Codex connection stall or unconfirmed result delivery is identified.';
     }catch(error){if(alive&&current===epoch)message.textContent=error.message||'Could not inspect native writes.';}
     finally{busy=false;if(alive)inspect.disabled=false;}
   });
   recover.addEventListener('click',async()=>{
     if(busy||!alive||!observed)return;const identity=observed;observed=null;recover.disabled=true;inspect.disabled=true;busy=true;
-    try{const data=await api('/api/codex/native-write-recovery','POST',identity);if(alive)message.textContent=data.result?.status==='retired'?'Old connection retired. Check interrupted results again for the latest uncertain receipts; check the destination before any repeat.':'Recovery completed; inspect status before further action.';}
+    try{const data=await api('/api/codex/native-write-recovery','POST',identity);if(alive)message.textContent=data.result?.status==='retired'?'Old connection retired. Check connection status again for the latest uncertain receipts; check the destination before any repeat.':'Recovery completed; inspect status before further action.';}
     catch(error){if(alive)message.textContent=(error.message||'Recovery failed.')+' Inspect again before another recovery attempt; do not repeat the tool action.';}
     finally{busy=false;if(alive)inspect.disabled=false;}
   });

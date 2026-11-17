@@ -1,5 +1,6 @@
 import { createApi } from './core/api.mjs';
 import { createEventBus } from './core/events.mjs';
+import { updateWorkspaceTabs } from './core/workspace-navigation.mjs';
 
 const stage=document.getElementById('next-stage');
 const tabs=[...document.querySelectorAll('.next-tab[data-space]')];
@@ -40,26 +41,21 @@ events.subscribe(receipt=>{
   health.dataset.status=status.connected===false?'error':'ready';
   spaces.get(current)?.instance?.updateStatus?.(status);
 });
-function updateTabs(name){
-  for(const tab of tabs){
-    const selected=tab.dataset.space===(name==='workflows'?'cronjobs':name);
-    tab.setAttribute('aria-selected',String(selected));
-    tab.tabIndex=selected?0:-1;
-  }
-}
+function updateTabs(name){updateWorkspaceTabs(tabs,name);}
 function openWorkspaceTarget(space){
-  const {conversationId,requestId,nodeId,modelProviderId,knowledgeId}=space?.navigation||{};
+  const {conversationId,requestId,nodeId,modelProviderId,knowledgeId,settingsSection}=space?.navigation||{};
+  if(settingsSection){space?.instance?.openSection?.(settingsSection);return;}
   if(knowledgeId!==undefined){space?.instance?.openSkillId?.(knowledgeId);return;}
   if(modelProviderId){space?.instance?.openModelProvider?.(modelProviderId);return;}
   if(requestId)space?.instance?.openRequestId?.(requestId,{nodeId});
   else if(conversationId)space?.instance?.openConversationId?.(conversationId);
 }
-async function show(name,{conversationId,requestId,nodeId,modelProviderId,knowledgeId}={}){
+async function show(name,{conversationId,requestId,nodeId,modelProviderId,knowledgeId,settingsSection}={}){
   // Legacy Tasks/Activity hashes now open scheduled automation rather than a task dashboard.
   if(name==='activity'||name==='tasks'){name='cronjobs';try{history.replaceState(null,'','#cronjobs');}catch{}}
   if(!modules[name])return;
   const previous=current;const target=++revision;
-  const navigation={conversationId,requestId,nodeId,modelProviderId,knowledgeId};
+  const navigation={conversationId,requestId,nodeId,modelProviderId,knowledgeId,settingsSection};
   if(previous===name){const space=spaces.get(name);if(space){space.navigation=navigation;openWorkspaceTarget(space);}return;}
   if(previous && spaces.has(previous)){
     const item=spaces.get(previous);

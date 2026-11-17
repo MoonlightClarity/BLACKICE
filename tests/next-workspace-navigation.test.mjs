@@ -40,3 +40,39 @@ test('native account setup navigation survives lazy Settings loading without cha
   await app.show('settings',{modelProviderId:'mistral-vibe'});
   assert.deepEqual(providers,['mistral-vibe','mistral-vibe']);assert.deepEqual(conversations,[]);
 });
+
+import {updateWorkspaceTabs} from '../public/next/core/workspace-navigation.mjs';
+import {planningDOM} from './fixture-planning-dom.mjs';
+import {readFile} from 'node:fs/promises';
+const names=['chat','swarm','cronjobs','browser','knowledge','skills','settings'];
+function tabs(t){const f=planningDOM(t);return names.map(name=>{const el=f.element('button');el.dataset.space=name;f.mount.append(el);return el;});}
+test('workflows never highlights Cronjobs or Swarm regardless of entry point',t=>{
+ const items=tabs(t);
+ for(const origin of ['swarm','cronjobs']){
+  updateWorkspaceTabs(items,origin);
+  assert.equal(items.filter(tab=>tab.getAttribute('aria-selected')==='true').length,1);
+  updateWorkspaceTabs(items,'workflows');
+  assert.equal(items.filter(tab=>tab.getAttribute('aria-selected')==='true').length,0);
+  assert.equal(items.filter(tab=>tab.tabIndex===0).length,1);
+  assert.equal(items[0].tabIndex,0);
+ }
+});
+test('direct workflow link stays neutral and returning to a main workspace selects exactly it',t=>{
+ const items=tabs(t);updateWorkspaceTabs(items,'workflows');
+ assert.equal(items.every(tab=>tab.getAttribute('aria-selected')==='false'),true);
+ for(const name of names){
+  updateWorkspaceTabs(items,name);
+  assert.deepEqual(items.filter(tab=>tab.getAttribute('aria-selected')==='true').map(tab=>tab.dataset.space),[name]);
+  assert.deepEqual(items.filter(tab=>tab.tabIndex===0).map(tab=>tab.dataset.space),[name]);
+ }
+});
+test('Planning subview also retains keyboard access without claiming another workspace',t=>{
+ const items=tabs(t);updateWorkspaceTabs(items,'planning');
+ assert.equal(items.filter(tab=>tab.tabIndex===0).length,1);
+ assert.equal(items.every(tab=>tab.getAttribute('aria-selected')==='false'),true);
+});
+test('live shell uses the tested navigation helper',async()=>{
+ const source=await readFile(new URL('../public/next/app.mjs',import.meta.url),'utf8');
+ assert.match(source,/updateWorkspaceTabs\(tabs,name\)/);
+ assert.doesNotMatch(source,/name==='workflows'\?'cronjobs'/);
+});

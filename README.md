@@ -94,7 +94,7 @@ The installed Windows account and available applications determine which files a
 
 ## Planning you can configure for the task
 
-In the **post-integration candidate**, Chat exposes **eight** optional Planning modules under **Planning → Modules**, each with an **On/Off** choice. **All eight default to Off** in that candidate. You can change a conversation's choices, save defaults for future chats, or turn additional Planning instructions off. Earlier installed versions may have different controls; the exact release UI and defaults still need a final installer check.
+In the **post-integration candidate**, Chat exposes **nine** optional Planning modules under **Planning → Modules**, each with an **On/Off** choice. **Time management defaults On; the other eight default Off** in that candidate. You can change a conversation's choices, save defaults for future chats, or turn additional Planning instructions off. Earlier installed versions may have different controls; the exact release UI and defaults still need a final installer check.
 
 The methods address different sources of wasted work:
 
@@ -115,7 +115,7 @@ User advocacy is part of this design. BLACKICE's reasoning guidance asks the age
 
 ## Long tasks with fresh context and saved work
 
-Longer tasks accumulate sources, intermediate findings, decisions, and unfinished steps. **Directory mode** gives that work a persistent structure. In the integration candidate it has its own **On/Off** control, **Off by default**, separate from the eight Planning modules. Turning it on may improve continuity on long or complex tasks, but processing phases, context assembly, and additional model calls take time; it is not a guaranteed improvement.
+Longer tasks accumulate sources, intermediate findings, decisions, and unfinished steps. **Directory mode** gives that work a persistent structure. In the integration candidate it has its own **On/Off** control, **Off by default**, separate from the nine Planning modules. Turning it on may improve continuity on long or complex tasks, but processing phases, context assembly, and additional model calls take time; it is not a guaranteed improvement.
 
 Directory runs focused stages with a **fresh model context for each stage**. It loads the stage's saved inputs and relevant material, supplies the user's authoritative instructions, and records the outputs and source references under the conversation. Later stages can reopen that work as they need it. Saved conversation history remains available.
 
@@ -177,7 +177,7 @@ The aim is to reduce supervision while making results easier to verify. Reliabil
 1. **Install on 64-bit Windows.** Open the [published Windows releases](https://github.com/MoonlightClarity/BLACKICE/releases), read the release notes and installer/checksum information, run the appropriate `Blackice-<version>-Setup.exe`, and launch BLACKICE from its shortcut. The Windows x64 installer bundles the desktop application and a pinned llama.cpp runtime. It does **not** bundle your model account, cloud API quota, model weights, or separate Ollama/LM Studio services.
 2. **Connect a model.** For the supported native route, install and sign in to the [Codex CLI](https://github.com/openai/codex) separately. Check **Settings → Models → Codex subscription** and choose an available model in **Settings → General** or Chat. If you prefer an optional API or local endpoint, configure and verify it deliberately in **Settings → Models**.
 3. **Choose the workspace.** In **Settings → General**, select a working folder and start **Chat**. Supply any relevant files and constraints. For ChatGPT using BLACKICE directly, follow the separate [connector setup](CHATGPT-CONNECTOR.md), which may require Tailscale and an authorized MCP connection.
-4. **Choose the amount of reasoning.** The post-integration candidate places the eight Planning switches under **Chat → Planning → Modules** and a separate **Directory** switch beside the composer; both start Off unless you opt in. Verify these controls against the release you installed.
+4. **Choose the amount of reasoning.** The post-integration candidate places the nine Planning switches under **Chat → Planning → Modules** and a separate **Directory** switch beside the composer; Directory and eight modules default Off; Time management defaults On, with explicit saved Off preserved. Verify these controls against the release you installed.
 5. **Try a first task.** Ask: *“Create `blackice-check.txt` in the working folder containing `BLACKICE file check`, read it back, and tell me the file path and exact content.”* Verify that the actual file and content exist; a model assertion alone is not enough.
 6. **Inspect and continue.** Review the browser state, file changes, command outputs and action receipts. Correct or resume the same conversation as needed; use **Cronjobs** if the work should repeat on a schedule.
 

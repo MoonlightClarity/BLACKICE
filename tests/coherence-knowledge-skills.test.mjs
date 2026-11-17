@@ -36,7 +36,7 @@ test('manual organization creates, files, filters, renames and removes folders w
  await until(()=>!f.$('#next-knowledge-folder-create').disabled);await f.input('#next-knowledge-folder-name','Research');await f.click('#next-knowledge-folder-create');await until(()=>f.$('#next-knowledge-file-in').children.length===2);
  const folders=await f.store.folders(),id=folders.folders[0].id;f.$('#next-knowledge-file-in').value=id;await f.$('#next-knowledge-file-in').dispatch('change');for(const listener of f.events)listener({type:'knowledge.updated'});await new Promise(r=>setTimeout(r,260));assert.equal(f.$('#next-knowledge-file-in').value,id,'Unrelated refresh preserves pending folder destination');await f.click('#next-knowledge-file-move');await until(()=>f.store.list({folderId:id}).length===1);
  assert.deepEqual(f.store.get('entry'),before);assert.deepEqual(f.store.history('entry'),history);
- const folderButton=f.$('#next-knowledge-folders').children.find(x=>x.textContent==='Research');await f.click(folderButton);await until(()=>f.calls.some(x=>x.route.includes('folderId='+id)));
+ const folderButton=f.$('#next-knowledge-folders').querySelector('[data-folder-id="'+id+'"]');await f.click(folderButton);await until(()=>f.calls.some(x=>x.route.includes('folderId='+id)));
  await f.input('#next-knowledge-folder-name','Project decisions');await f.click('#next-knowledge-folder-rename');await until(()=>f.$('#next-knowledge-folders').textContent.includes('Project decisions'));
  await f.click('#next-knowledge-folder-remove');await until(()=>f.$('#next-knowledge-file-in').children.length===1);assert.equal(f.store.list({folderId:''}).length,1);assert.deepEqual(f.store.get('entry'),before);
  f.$('#next-knowledge-source').value='user';await f.$('#next-knowledge-source').dispatch('change');await until(()=>f.$('#next-knowledge-list-note').textContent==='0 of 0 entries shown.');assert.equal(f.$('#next-knowledge-filter-note').hidden,false);
@@ -70,8 +70,76 @@ test('save, Trash and restore immediately release folder controls without refres
 test('external removal of selected folder resets filter while keeping unsaved draft',async t=>{
  const f=await setup(t);await until(()=>f.$('[data-knowledge-id="entry"]'));await f.click('[data-knowledge-id="entry"]');await until(()=>f.$('#next-knowledge-content').value==='Original content');
  await until(()=>!f.$('#next-knowledge-folder-create').disabled);await f.input('#next-knowledge-folder-name','Temporary');await f.click('#next-knowledge-folder-create');await until(()=>f.$('#next-knowledge-file-in').children.length===2);
- let folders=await f.store.folders(),id=folders.folders[0].id;await f.store.organize({action:'move',expectedRevision:folders.revision,folderId:id,entryIds:['entry']});await f.click(f.$('#next-knowledge-folders').children.find(x=>x.textContent==='Temporary'));await until(()=>f.calls.some(x=>x.route.includes('folderId='+id)));
+ let folders=await f.store.folders(),id=folders.folders[0].id;await f.store.organize({action:'move',expectedRevision:folders.revision,folderId:id,entryIds:['entry']});await f.click(f.$('#next-knowledge-folders').querySelector('[data-folder-id="'+id+'"]'));await until(()=>f.calls.some(x=>x.route.includes('folderId='+id)));
  await f.input('#next-knowledge-content','Unsaved draft');folders=await f.store.folders();await f.store.organize({action:'remove',expectedRevision:folders.revision,folderId:id});for(const listener of f.events)listener({type:'knowledge.updated'});
  await until(()=>!f.$('#next-knowledge-folders').textContent.includes('Temporary'));await until(()=>f.calls.filter(x=>x.route.startsWith('/api/knowledge?')).at(-1)?.route.includes('folderId=')===false);
  assert.equal(f.$('#next-knowledge-folders').children[0].getAttribute('aria-pressed'),'true');assert.equal(f.$('#next-knowledge-folder-name').value,'');assert.equal(f.$('#next-knowledge-folder-rename').disabled,true);assert.equal(f.$('#next-knowledge-folder-remove').disabled,true);assert.equal(f.$('#next-knowledge-content').value,'Unsaved draft');assert.equal(f.store.get('entry').content,'Original content');
+});
+
+test('memory relationships open readable targets without rewriting records or losing source drafts',async t=>{
+ const f=await setup(t);const target=await f.store.upsert({id:'related',kind:'memory',title:'Decision rationale',content:'Supporting evidence',cwd:f.original.cwd});
+ await f.store.upsert({...f.original,expectedRevision:1,relations:[{type:'supports',targetId:target.id}]});
+ for(const listener of f.events)listener({type:'knowledge.updated'});
+ await until(()=>f.$('[data-knowledge-id="related"]'));
+ await f.click('[data-knowledge-id="entry"]');await until(()=>f.$('[data-related-memory-id="related"]'));
+ const link=f.$('[data-related-memory-id="related"]');assert.equal(link.textContent,'Decision rationale');assert.match(link.title,/related/);
+ await f.input('#next-knowledge-content','Unsaved source edit');
+ const writes=f.calls.filter(c=>c.method!=='GET').length;
+ await f.click(link);await until(()=>f.$('#next-knowledge-title').value==='Decision rationale');
+ assert.equal(f.$('#next-knowledge-content').value,'Supporting evidence');
+ await f.click('[data-knowledge-id="entry"]');await until(()=>f.$('#next-knowledge-title').value==='Original entry');
+ assert.equal(f.$('#next-knowledge-content').value,'Unsaved source edit');
+ assert.equal(f.calls.filter(c=>c.method!=='GET').length,writes);
+ assert.deepEqual(f.store.get('entry').relations,[{type:'supports',targetId:'related'}]);
+});
+test('related memories outside filters remain reachable without clearing the search',async t=>{
+ const f=await setup(t);await f.store.upsert({id:'related',kind:'memory',title:'Decision rationale',content:'Supporting evidence',cwd:f.original.cwd});
+ await f.store.upsert({...f.original,expectedRevision:1,relations:[{type:'informs',targetId:'related'}]});
+ await f.input('#next-knowledge-query','Original');
+ await until(()=>f.$('[data-knowledge-id="entry"]')&&!f.$('[data-knowledge-id="related"]'));
+ await f.click('[data-knowledge-id="entry"]');await until(()=>f.$('[data-related-memory-id="related"]'));
+ assert.equal(f.$('[data-related-memory-id="related"]').textContent,'Open related memory');
+ await f.click('[data-related-memory-id="related"]');await until(()=>f.$('#next-knowledge-title').value==='Decision rationale');
+ assert.equal(f.$('#next-knowledge-query').value,'Original');assert.equal(f.$('#next-knowledge-filter-note').hidden,false);
+});
+
+test('nested memory folders render as descendants and preserve the full selected content',async t=>{
+ const f=await setup(t);await until(()=>f.$('[data-knowledge-id="entry"]'));
+ let org=await f.store.organize({action:'create',name:'Research',expectedRevision:1});const parent=org.folders[0].id;
+ org=await f.store.organize({action:'create',name:'Applications',parentId:parent,expectedRevision:org.revision});const child=org.folders[1].id;
+ await f.store.organize({action:'move',entryIds:['entry'],folderId:child,expectedRevision:org.revision});
+ await f.click('#next-knowledge-refresh');await until(()=>f.$('[data-folder-id="'+child+'"]'));
+ const button=f.$('[data-folder-id="'+child+'"]');assert.equal(button.parentElement.parentElement.parentElement.className,'next-folder-children');
+ assert.ok(f.$('#next-knowledge-file-in').textContent.includes('Research / Applications'));
+ await f.click(button);await until(()=>f.calls.some(call=>call.route.includes('folderId='+child)));await f.click('[data-knowledge-id="entry"]');await until(()=>f.$('#next-knowledge-content').value==='Original content');
+ const toggle=f.$('.next-folder-toggle');await f.click(toggle);assert.equal(f.$('.next-folder-toggle').getAttribute('aria-expanded'),'false');
+});
+test('Skills organization is reachable from catalog and compact rows keep full procedures on demand',async t=>{
+ const f=await setup(t,'skill');await until(()=>f.$('[data-skill-id="saved:entry"]'));
+ let org=await f.store.organize({action:'create',name:'Research',expectedRevision:1});const parent=org.folders[0].id;
+ org=await f.store.organize({action:'create',name:'Review',parentId:parent,expectedRevision:org.revision});const child=org.folders[1].id;
+ await f.store.organize({action:'move',entryIds:['entry'],folderId:child,expectedRevision:org.revision});
+ const entry=f.store.get('entry');await f.store.upsert({...entry,summary:'Detailed '.repeat(40),expectedRevision:entry.revision});
+ await f.click('#skills-refresh');await until(()=>f.$('#skills-list').textContent.includes('Review (1)'));
+ const row=f.$('[data-skill-id="saved:entry"]');assert.ok(row.querySelector('.next-skills-description').textContent.length<=110);assert.equal(row.querySelector('small').textContent,'Saved procedure');
+ assert.equal(row.parentElement.parentElement.parentElement.className,'next-skills-folder');
+ await f.click(row);await until(()=>f.$('#skills-content').textContent==='Original content');
+ await f.click('#skills-organize');assert.equal(f.$('.next-skills-editor-shell').classList.contains('next-skills-organizing'),true);await until(()=>f.$('#skills-editor-folder-parent'));
+ await f.click('#skills-back');assert.equal(f.$('.next-skills-root').hidden,false);
+});
+
+test('Skills search reveals collapsed ancestor folders and restores browsing collapse state',async t=>{
+ const f=await setup(t,'skill');await until(()=>f.$('[data-skill-id="saved:entry"]'));
+ let org=await f.store.organize({action:'create',name:'Research',expectedRevision:1});const parent=org.folders[0].id;
+ org=await f.store.organize({action:'create',name:'Review',parentId:parent,expectedRevision:org.revision});const child=org.folders[1].id;
+ await f.store.organize({action:'move',entryIds:['entry'],folderId:child,expectedRevision:org.revision});await f.click('#skills-refresh');await until(()=>f.$('#skills-list').textContent.includes('Review (1)'));
+ const groups=()=>f.$('#skills-list').querySelectorAll('.next-skills-folder');
+ for(const folder of groups().slice(0,2)){folder.open=false;await folder.dispatch('toggle');}
+ await f.input('#skills-query','Original');await until(()=>f.calls.some(call=>call.route.includes('query=Original'))&&!f.$('#skills-refresh').disabled);
+ assert.equal(groups()[0].open,true,'search must reveal the collapsed root');assert.equal(groups()[1].open,true,'search must reveal the collapsed subfolder');
+ for(const folder of groups().slice(0,2))await folder.dispatch('toggle');
+ groups()[1].open=false;await groups()[1].dispatch('toggle');
+ await f.input('#skills-query','');await until(()=>!f.$('#skills-refresh').disabled&&groups()[0].open===false);
+ assert.equal(groups()[1].open,false,'clearing search restores original child state');
+ await f.input('#skills-query','Original');await until(()=>!f.$('#skills-refresh').disabled&&groups()[0].open===true);assert.equal(groups()[1].open,true);
 });

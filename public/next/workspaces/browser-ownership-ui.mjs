@@ -58,7 +58,7 @@ export function browserOwnershipMarkup() {
     '<label class="next-browser-conversation-label" id="next-browser-conversation-label" hidden>',
     '<span>Conversation</span><select id="next-browser-conversation" class="next-field" aria-label="Filter AI tabs by conversation"></select></label>',
     '<span id="next-browser-owner-hint" class="next-browser-owner-hint"></span>',
-    '<select id="next-browser-move" class="next-field next-browser-move" aria-label="Move selected tab" disabled><option value="">Move tab to…</option></select>',
+    '<select id="next-browser-move" class="next-field next-browser-move" aria-label="Assign selected tab owner" disabled><option value="">Assign owner…</option></select>',
     '</div>',
   ].join('');
 }
@@ -141,7 +141,7 @@ export function createBrowserOwnershipControls({mount, api, getTab, isBusy = () 
     for (const item of conversations) destinations.push(['conversation:' + item.id, item.title, owned === item.id]);
     const nextMoveKey = JSON.stringify([tab?.tabId, destinations]);
     if (moveKey !== nextMoveKey) {
-      moveKey = nextMoveKey; ui.move.replaceChildren(); option(ui.move, '', 'Move tab to…');
+      moveKey = nextMoveKey; ui.move.replaceChildren(); option(ui.move, '', 'Assign owner…');
       for (const [value, label, unavailable] of destinations) option(ui.move, value, label, unavailable);
     }
     ui.move.disabled = disabled || !tab || !tab.documentId;

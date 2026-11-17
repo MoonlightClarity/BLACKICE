@@ -18,7 +18,7 @@ test('small grid contains configurable module choices in a compact disclosure',t
  assert.equal(frame.ontologyAuto,undefined);assert.equal(frame.ontologyToggle,undefined);
  assert.equal(frame.subagentsMode,undefined);assert.equal(dom.$('#next-chat-subagents-mode'),null);
  assert.doesNotMatch(frame.shell.innerHTML,/M\/O\/F|value="auto"|Configure modules|next-chat-ontology-panel/);
- assert.equal(PLANNING_ONTOLOGY_MODULES.length,9);assert.deepEqual(PLANNING_MODULE_STATES,['on','off']);
+ assert.equal(PLANNING_ONTOLOGY_MODULES.length,10);assert.deepEqual(PLANNING_MODULE_STATES,['on','off']);
  const css=readFileSync(new URL('../public/next/chat.css',import.meta.url),'utf8');assert.match(css,/\.next-chat-ontology-grid\s*\{display:grid;grid-template-columns:repeat\(3/);assert.match(css,/\.next-chat-ontology-choice>input\{appearance:auto/);
 });
 test('every Chat module import is registered with the server',()=>{

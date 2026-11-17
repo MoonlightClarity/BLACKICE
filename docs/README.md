@@ -1,6 +1,6 @@
 # BLACKICE documentation
 
-> **Status: Proposed next-release source index.** Checked against package version **2.39.106**, not an installed or published artifact. See [2.39.106 source notes](../RELEASE-NOTES-2.39.106.md), [runtime inventory and installer coverage](RELEASE-2.39.102-VERIFICATION.md), and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases).
+> **Status: Proposed next-release source index.** Checked against package version **2.40.0**, not an installed or published artifact. See [2.40.0 source notes](../RELEASE-NOTES-2.40.0.md), [runtime inventory and installer coverage](RELEASE-2.39.102-VERIFICATION.md), and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases).
 
 Start with the [project README](../README.md). A named document's date, original deployment note, test result, or branch name does not override this index or the code in the version you actually run.
 
@@ -18,7 +18,7 @@ Start with the [project README](../README.md). A named document's date, original
 | Coordinate projects and inspect saved work | [Swarm project lifecycle](swarm-project-lifecycle.md); [Goal mode](GOAL-MODE.md). The retained [Planning screen source](../public/next/workspaces/planning-current.mjs) is a legacy route, not the primary navigation tab. |
 | Build or publish a Windows release | [Signing and release](../SIGNING-AND-RELEASE.md) and [third-party notices](../THIRD-PARTY-NOTICES.md) |
 
-**Planning controls today:** eight selectable Planning modules use **On/Off**; Directory uses **On/Off** separately. Unspecified selections default Off. Delegation is an available tool capability, not a ninth toggle. Older Forced/Advisory, Mandatory/Optional/Forbidden/Auto, and forced per-operation plan instructions are **not current controls**. Saved choices remain subject to their actual migration/compatibility semantics. See the current [Planning module guide](MODULAR-PLANNING-ONTOLOGY.md).
+**Planning controls today:** nine selectable Planning modules use **On/Off**; Directory uses **On/Off** separately. Time management defaults On; the other eight and Directory default Off. Explicit saved Off is preserved. Delegation is an available tool capability, not an extra toggle. Older Forced/Advisory, Mandatory/Optional/Forbidden/Auto, and forced per-operation plan instructions are **not current controls**. Saved choices remain subject to their actual migration/compatibility semantics. See the current [Planning module guide](MODULAR-PLANNING-ONTOLOGY.md).
 
 **Workspace navigation:** Swarm is the visible project coordination tab. The retained Planning route exposes saved Current work and graph-plan views for compatibility; it is not a separate primary navigation tab. Reading those records does not create a plan or start a model. See [Swarm lifecycle](swarm-project-lifecycle.md); older organization views are [historical reference](../PLANNING-ORGANIZATION.md).
 

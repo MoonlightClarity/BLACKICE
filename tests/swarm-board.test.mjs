@@ -332,6 +332,11 @@ test('published direct-write schema fully discriminates action revisions and val
     mk('record_integration', { status: 'recorded', reference: 'commit_123' }, byItem),
     mk('record_integration', { status: 'proposed' }, byItem),
     ...['archive_project','trash_project','restore_project'].map(name => mk(name, {}, byProject)),
+    mk('create_folder',{id:'folder',name:'Folder'},{expectedOrganizationRevision:0}),
+    mk('edit_folder',{id:'folder',parentId:null},{expectedOrganizationRevision:1}),
+    mk('remove_folder',{id:'folder'},{expectedOrganizationRevision:1}),
+    mk('file_project',{folderId:'folder'},{expectedOrganizationRevision:1,projectId:'project_one'}),
+    mk('file_item',{folderId:null},{expectedOrganizationRevision:1,projectId:'project_one',itemId:'item_one'}),
   ];
   assert.deepEqual([...new Set(valid.map(args => args.action))].sort(), [...SWARM_ACTION_NAMES].sort());
   for (const args of valid) assert.equal(validDirectArguments(args, spec), true, args.action + ' must validate');
@@ -362,6 +367,9 @@ test('nativeContext is not an authenticated Swarm connector grant or a registere
   const observed = JSON.parse((await read.execute({ requestId: 'read_native' }, { nativeContext })).contentItems[0].text);
   assert.equal(observed.self, null);
   assert.equal(observed.identityScope.nativeWorkerToolsRegistered, false);
+  assert.match(observed.identityScope.description,/OAuth adapter, not the separate native engine/);
+  assert.doesNotMatch(write.definition.description,/registration is absent/);
+  assert.match(write.definition.description,/native coordinator sessions use the separate relay_swarm tools/);
   await assert.rejects(write.execute({ requestId: 'write_native', mutationId: 'native_mutation',
     action: 'create_project', value: { id: 'native_wrong', name: 'No', objective: 'Not a native binding.' } },
     { nativeContext }), error => error.code === 'SWARM_ACTOR_REQUIRED');

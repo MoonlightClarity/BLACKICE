@@ -2,7 +2,7 @@ import {visualPatch} from '../../visual-edits.mjs';
 import {compileVisual,visualSvgUrl,VISUAL_COMPOSITION_EXAMPLE} from '../../visual-document.mjs';
 
 export function createVisualWorkspace({mount,api,getConversationId,notify=()=>{}}){
- const doc=mount.ownerDocument,section=doc.createElement('section');section.className='next-visuals next-visuals-inline';section.setAttribute('aria-label','Conversation visuals');mount.append(section);
+ const doc=mount.ownerDocument,section=doc.createElement('section');section.className='next-visuals next-visuals-inline';section.hidden=true;section.setAttribute('aria-label','Conversation visuals');mount.append(section);
  let owner=null,generation=0,cache=null,dialog=null,disposed=false;
  const el=(tag,text,parent=section)=>{const e=doc.createElement(tag);if(text!==undefined)e.textContent=text;parent.append(e);return e;};
  const button=(text,parent,action)=>{const b=el('button',text,parent);b.type='button';b.onclick=()=>Promise.resolve().then(action).catch(error=>notify(error.message));return b;};
@@ -58,7 +58,7 @@ export function createVisualWorkspace({mount,api,getConversationId,notify=()=>{}
   if(initialImage?.complete)readable();else initialImage?.addEventListener('load',readable,{once:true});
  }
  async function refresh(force=false){
-  if(disposed)return;const selected=getConversationId();if(selected!==owner){owner=selected;generation++;cache=null;dialog?.close();section.replaceChildren();}
+  if(disposed)return;const selected=getConversationId();if(selected!==owner){owner=selected;generation++;cache=null;dialog?.close();section.replaceChildren();section.hidden=true;}
   if(!owner||owner==='new'){section.hidden=true;return;}if(cache&&!force){section.hidden=!cache.artifacts.length;return;}
   const token=++generation,url=endpoint();try{const value=await api(url);if(disposed||token!==generation)return;cache=value;section.replaceChildren();
    section.hidden=!value.artifacts.length;

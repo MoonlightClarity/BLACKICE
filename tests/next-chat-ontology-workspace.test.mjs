@@ -66,7 +66,7 @@ test('switching saved conversations restores each policy ahead of changing globa
  assert.equal(find('Task decomposition','off').checked,true);
 });
 
-test('mounted Chat composer uses 16 explicit On/Off checkboxes and persists only the current conversation',async t=>{
+test('mounted Chat composer uses 18 explicit On/Off checkboxes and persists only the current conversation',async t=>{
  const dom=testDOM(t),stored=new Map(),oldStorage=globalThis.localStorage,oldWorker=globalThis.Worker;
  globalThis.localStorage={getItem:key=>stored.get(key)||null,setItem:(key,value)=>stored.set(key,String(value)),removeItem:key=>stored.delete(key)};
  delete globalThis.Worker;
@@ -85,8 +85,8 @@ test('mounted Chat composer uses 16 explicit On/Off checkboxes and persists only
  const disclosure=dom.$('#next-chat-ontology-inline');
  assert.equal(disclosure.tagName,'DETAILS');
  assert.equal(disclosure.open,false,'initial composer stays compact');
- assert.equal(rows.length,8);
- assert.equal(grid.querySelectorAll('input[type="checkbox"]').length,16);
+ assert.equal(rows.length,9);
+ assert.equal(grid.querySelectorAll('input[type="checkbox"]').length,18);
  const option=(label,choice)=>grid.querySelectorAll('input').find(input=>input.getAttribute('aria-label')===label+' '+choice);
  assert.equal(option('Subagent orchestration','on'),undefined);
  assert.equal(option('Subagent orchestration','off'),undefined);

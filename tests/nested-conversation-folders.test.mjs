@@ -26,3 +26,16 @@ test('bounded windows retain selected chat nested in its folder',t=>{
  assert(visible.some(x=>x.rootId==='x239'));assert(list.querySelector('[data-chat-folder="later"]').contains(list.querySelector('[data-conversation="x239"]')));
  assert(list.querySelectorAll('.next-conversation-row').length<=21);
 });
+test('folder management is named and matching searches expose collapsed rows',t=>{
+ const d=fixture(t),list=d.element('div');d.mount.append(list);
+ const items=[{rootId:'a',title:'Alpha',folderId:'work'}];
+ const options={groupFolders:true,folderNames:new Map([['work','Work']]),onFolderManage:()=>{}};
+ paintIndex({list},items,null,()=>{},options);
+ const group=list.querySelector('[data-chat-folder="work"]');
+ assert.equal(group.querySelector('.next-chat-folder-manage').getAttribute('aria-label'),'Manage Work folder');
+ group.open=false;
+ assert.equal(paintIndex({list},items,null,()=>{},options).length,0);
+ assert.equal(paintIndex({list},items,null,()=>{},{...options,expandFolders:true}).length,1);
+ assert.equal(group.open,true);
+ paintIndex({list},items,null,()=>{},options);assert.equal(group.open,false);
+});

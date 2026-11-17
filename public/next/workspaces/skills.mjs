@@ -1,3 +1,4 @@
+import {compactKnowledgePreview,knowledgeFolderTree} from './knowledge-model.mjs';
 import {createKnowledgeWorkspace} from './knowledge.mjs';
 
 /** Skills are inspectable sources, not automatically admitted task instructions. */
@@ -5,7 +6,7 @@ export function createSkillsWorkspace({mount,api,events,notify,onNavigate}) {
   mount.innerHTML=[
     '<div class="next-panel next-skills-root"><div class="next-panel-inner">',
     '<header class="next-panel-head"><div><h1>Skills</h1><p>Inspect procedures available to BLACKICE. Saved procedures and BLACKICE built-ins.</p></div>',
-    '<div class="next-row"><button id="skills-refresh" type="button">Refresh catalog</button><button id="skills-new" type="button" class="next-primary">New saved skill</button></div></header>',
+    '<div class="next-row"><button id="skills-refresh" type="button">Refresh catalog</button><button id="skills-organize" type="button">Organize saved skills</button><button id="skills-new" type="button" class="next-primary">New saved skill</button></div></header>',
     '<div class="next-skills-filters">',
     '<label class="next-label">Find a skill<input id="skills-query" class="next-field" type="search" maxlength="256" placeholder="Search titles, descriptions and saved content"></label>',
     '<label class="next-label">Source<select id="skills-source" class="next-field"><option value="all">All sources</option><option value="bundled">BLACKICE built-in</option><option value="saved">Saved procedures</option></select></label>',
@@ -28,7 +29,8 @@ export function createSkillsWorkspace({mount,api,events,notify,onNavigate}) {
   const editorBody=document.createElement('div');editorBody.className='next-skills-editor-body';editorMount.append(editorBody);
   const editor=createKnowledgeWorkspace({mount:editorBody,api,events,notify,kind:'skill',idPrefix:'skills-editor',onBusy:busy=>{back.disabled=busy;}});
   let editing=false;
-  function editSkill(id){editing=true;catalogRoot.hidden=true;editorMount.hidden=false;editor.enter();editor.openSkillId(id);}
+  function editSkill(id){editorMount.classList.remove('next-skills-organizing');editing=true;catalogRoot.hidden=true;editorMount.hidden=false;editor.enter();editor.openSkillId(id);}
+  mount.querySelector('#skills-organize').addEventListener('click',()=>{editing=true;catalogRoot.hidden=true;editorMount.hidden=false;editorMount.classList.add('next-skills-organizing');editor.enter();});
   back.addEventListener('click',()=>{if(back.disabled)return;editor.leave();editing=false;editorMount.hidden=true;catalogRoot.hidden=false;if(active)void load();});
   const diagnostics=document.createElement('details');diagnostics.className='next-skills-diagnostics';
   const summary=document.createElement('summary');summary.textContent='External skill diagnostics';diagnostics.append(summary);
@@ -41,7 +43,7 @@ export function createSkillsWorkspace({mount,api,events,notify,onNavigate}) {
   normalButton.addEventListener('click',()=>{external=false;schedule({reset:true});});
   const el=id=>mount.querySelector('#skills-'+id);
   const nodes=Object.fromEntries(['query','source','cwd','refresh','new','status','source-status','list','heading','reload','edit','detail-status','meta','tech-meta','technical','content'].map(id=>[id,el(id)]));
-  let active=false,destroyed=false,unsubscribe=null,items=[],selection=null,detail=null,queue=null;
+  let active=false,destroyed=false,unsubscribe=null,items=[],organization=null,folderError=null,selection=null,detail=null,queue=null;
   let listEpoch=0,detailEpoch=0,listController=null,detailController=null,refreshTimer=null;
   const failure=error=>String(error?.message||error||'Skill catalog unavailable.');
   const create=(parent,tag,label='',className='')=>{
@@ -52,7 +54,7 @@ export function createSkillsWorkspace({mount,api,events,notify,onNavigate}) {
   };
   const state=(element,message,error=false)=>{element.textContent=message;element.dataset.error=String(error);};
   const readable={
-    source:{bundled:'BLACKICE bundled',saved:'Local saved knowledge',codex:'Codex discovery'},
+    source:{bundled:'BLACKICE bundled',saved:'Saved procedure',codex:'Codex discovery'},
     loaded:{host_loaded:'Loaded by host (conditional use)',not_verified:'No per-turn loading evidence',not_loaded_in_blackice:'Excluded from BLACKICE native sessions'},
     applicability:{conditional:'Depends on task settings',in_scope:'In current folder scope',other_workspace:'Saved for another working folder',excluded_by_host:'Excluded by host'},
   };
@@ -60,18 +62,36 @@ export function createSkillsWorkspace({mount,api,events,notify,onNavigate}) {
   const detailPath=id=>'/api/skills/'+encodeURIComponent(id)+'?cwd='+encodeURIComponent(nodes.cwd.value);
   const listPath=refresh=>'/api/skills?'+new URLSearchParams({source:external?'codex':nodes.source.value,query:nodes.query.value,cwd:nodes.cwd.value,refresh:String(refresh)});
   const isSelected=(epoch,id)=>active&&!destroyed&&detailEpoch===epoch&&selection===id;
+  const closedFolders=new Set();
   function paintList(){
     nodes.list.replaceChildren();
     if(items.length===0)create(nodes.list,'li','No matching skills in this source and search.','next-skills-empty');
-    for(const item of items){
-      const row=create(nodes.list,'li');
+    const appendItem=(parent,item)=>{
+      const row=create(parent,'li');
       const button=create(row,'button');
       button.type='button';button.dataset.skillId=item.id;button.setAttribute('aria-pressed',String(selection===item.id));
       create(button,'strong',item.title||'Unnamed skill');
-      if(item.summary)create(button,'span',item.summary,'next-skills-description');
-      create(button,'small',label('source',item.source)+' · '+(item.scope==='workspace'?'Folder-scoped':item.scope==='global'?'Global':item.scope==='first_party'?'First party':'Native')+' · '+label('applicability',item.applicability));
+      if(item.summary)create(button,'span',compactKnowledgePreview(item.summary),'next-skills-description');
+      create(button,'small',label('source',item.source));
       button.addEventListener('click',()=>void select(item.id));
-    }
+    };
+    if(external||!organization){for(const item of items)appendItem(nodes.list,item);return;}
+    const saved=items.filter(item=>item.source==='saved'),builtins=items.filter(item=>item.source!=='saved');
+    // Search reveals matching ancestry without changing the browsing preference.
+    // Capture this render's mode: native toggle events may arrive after a newer render.
+    const searching=Boolean(nodes.query.value.trim());
+    const group=(parent,title,key,entries,children=[])=>{
+      const row=create(parent,'li'),section=create(row,'details','','next-skills-folder');section.open=searching||!closedFolders.has(key);
+      create(section,'summary',title+' ('+(entries.length+children.reduce((total,child)=>total+count(child),0))+')');
+      section.addEventListener('toggle',()=>{if(searching)return;if(section.open)closedFolders.delete(key);else closedFolders.add(key);});
+      const list=create(section,'ul','','next-skills-list');for(const child of children)draw(list,child);for(const item of entries)appendItem(list,item);return section;
+    };
+    const assigned=item=>{const id=organization.assignments?.[item.id.replace(/^saved:/,'')];return organization.folders?.some(folder=>folder.id===id)?id:'';};
+    const count=folder=>saved.filter(item=>assigned(item)===folder.id).length+folder.children.reduce((total,child)=>total+count(child),0);
+    const draw=(parent,folder)=>{if(count(folder))group(parent,folder.name,folder.id,saved.filter(item=>assigned(item)===folder.id),folder.children);};
+    for(const folder of knowledgeFolderTree(organization.folders||[]))draw(nodes.list,folder);
+    if(saved.some(item=>!assigned(item)))group(nodes.list,'Unfiled','unfiled',saved.filter(item=>!assigned(item)));
+    if(builtins.length)group(nodes.list,'BLACKICE built-ins','builtins',builtins);
   }
   function showDetailInfo(record){
     nodes.meta.replaceChildren();nodes['tech-meta'].replaceChildren();nodes.technical.hidden=false;
@@ -133,11 +153,15 @@ export function createSkillsWorkspace({mount,api,events,notify,onNavigate}) {
       if(!active||epoch!==listEpoch)return;
       if(!result||!Array.isArray(result.entries))throw Error('The skill catalog response is unreadable.');
       items=result.entries;
+      try{const folders=await api('/api/knowledge/folders','GET',undefined,{signal:listController.signal});if(!active||epoch!==listEpoch)return;organization=folders;folderError=null;}
+      catch(error){if(!active||epoch!==listEpoch)return;if(error.name==='AbortError')throw error;organization=null;folderError=error;}
       if(!nodes.cwd.value&&typeof result.cwd==='string')nodes.cwd.placeholder='Default: '+result.cwd;
       paintList();
       state(nodes.status,items.length+(external?' disabled external discoveries':' skill'+(items.length===1?'':'s'))+' shown'+(result.truncated?' (catalog limit reached; narrow your search).':'.'));
+      if(folderError)state(nodes.status,nodes.status.textContent+' Folders unavailable; showing an ungrouped catalog. '+failure(folderError),true);
       const native=result.sources?.codex;
-      if(native?.status==='partial'||native?.status==='error'||native?.status==='unavailable')
+      if(!external)state(nodes['source-status'],'Saved procedures and BLACKICE built-ins.');
+      else if(native?.status==='partial'||native?.status==='error'||native?.status==='unavailable')
         state(nodes['source-status'],'Codex discovery '+native.status+': '+(native.reason||'Not connected.'),native.status==='error');
       else if(native?.status==='available')state(nodes['source-status'],'Codex discovery available. Native entries remain disabled in BLACKICE sessions.');
       else state(nodes['source-status'],'Saved procedures and BLACKICE built-ins.');

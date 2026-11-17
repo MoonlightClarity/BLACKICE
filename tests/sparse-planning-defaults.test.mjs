@@ -10,15 +10,15 @@ import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {RuntimeSettingsStore} from '../lib/runtime-settings.mjs';
-const allOff=policy=>PLANNING_ONTOLOGY_MODULES.filter(m=>m.id!=='subagents').every(m=>policy.modules[m.id]===false);
-test('unconfigured UI and policy opt out of extra reasoning and Directory',()=>{
+const lightweightDefault=policy=>PLANNING_ONTOLOGY_MODULES.filter(m=>!['subagents','time_management'].includes(m.id)).every(m=>policy.modules[m.id]===false)&&policy.modules.time_management===true;
+test('unconfigured UI enables in-turn time management without review or Directory',()=>{
  const options=normalizeChatOptions(),policy=normalizePlanningOntology();
- assert.ok(allOff(policy));assert.ok(allOff(options.planningOntology));
+ assert.ok(lightweightDefault(policy));assert.ok(lightweightDefault(options.planningOntology));
  assert.equal(options.directoryMode,'off');
  assert.equal(readConversationExecutionModes().directoryMode,'off');
- assert.ok(allOff(readConversationOntology().planningOntology));
- assert.equal(modularCompletionEnabled(policy),false,'all Off does not silently run completion reviews');
- assert.match(planningOntologyInstructions(policy),/All Planning modules are Off/);
+ assert.ok(lightweightDefault(readConversationOntology().planningOntology));
+ assert.equal(modularCompletionEnabled(policy),false,'time management does not silently run completion reviews');
+ assert.match(planningOntologyInstructions(policy),/ON: Time management/);
  assert.match(planningOntologyInstructions(policy),/Availability does not require a separate worker/);
 });
 test('saved defaults, conversation choices and explicit Directory On survive',()=>{
@@ -31,14 +31,14 @@ test('saved defaults, conversation choices and explicit Directory On survive',()
  assert.equal(readConversationExecutionModes({runs}).directoryMode,'on');
  assert.equal(normalizeChatOptions({directoryMode:'on'}).directoryMode,'on');
  assert.equal(normalizeChatOptions({directoryMode:'auto'}).directoryMode,'on','legacy explicit auto remains compatible');
- assert.ok(allOff(normalizePlanningOntology()),'selected policy does not mutate factory defaults');
+ assert.ok(lightweightDefault(normalizePlanningOntology()),'selected policy does not mutate factory defaults');
 });
 test('connector omitted choices match UI; explicit and saved choices remain available',async()=>{
  const starts=[],engine={startRun(args){starts.push(args);return{id:'r',taskId:'r',status:'queued'};},runtimeSettings:{get:()=>({})}};
  const tool=chatGPTStartChatTool({engine,defaultCwd:'C:/fixture'});
  const args={requestId:'sparse-default',message:'Inspect a file'};
  await tool.execute(args,{client:{id:'fixture'}});
- assert.equal(starts[0].input.directoryMode,'off');assert.ok(allOff(starts[0].input.planningOntology));
+ assert.equal(starts[0].input.directoryMode,'off');assert.ok(lightweightDefault(starts[0].input.planningOntology));
  assert.equal(tool.durableArguments(args).directoryMode,'off');
  const selected=normalizePlanningOntology({version:2,modules:{verification:true}});
  engine.runtimeSettings.get=()=>({planningOntology:selected});

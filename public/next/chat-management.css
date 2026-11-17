@@ -41,3 +41,11 @@
 .next-chat-folder-heading>small{font-weight:400;opacity:.65}
 .next-chat-folder-children{margin-left:15px;padding-left:7px;border-left:1px solid var(--next-border, #444)}
 .next-chat-folder-empty{padding:8px;font-size:12px;opacity:.65}
+
+.next-chat-folder-manage{flex:none;padding:2px 7px;min-height:26px;line-height:1.2}
+
+.next-chat-folder-heading>span::before{content:'';display:inline-block;width:16px;height:14px;margin-right:7px;vertical-align:-2px;background:currentColor;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 20'%3E%3Cpath d='M2 2h7l3 3h10v13H2z' fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat}
+
+#next-chat-mobile-list{display:none}@media(max-width:650px){#next-chat-mobile-list{display:inline-flex;align-self:flex-start}}
+
+#next-chat-mobile-close{display:none}@media(max-width:650px){#next-chat-mobile-close{display:inline-flex;margin-left:auto}}

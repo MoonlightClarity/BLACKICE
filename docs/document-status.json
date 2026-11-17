@@ -22,7 +22,8 @@
     "docs/PLANNING-TRADEOFFS.md",
     "docs/README.md",
     "docs/local-models.md",
-    "docs/visual-reasoning.md"
+    "docs/visual-reasoning.md",
+    "docs/mistral-acp-compatibility.md"
   ],
   "reference": [
     "docs/local-model-download-design.md",
@@ -57,7 +58,15 @@
     "docs/planning-cycle-convergence.md",
     "docs/planning-field-repair.md",
     "docs/planning-tool-exposure.md",
-    "docs/review-expectation-provenance.md"
+    "docs/review-expectation-provenance.md",
+    "docs/time-management.md",
+    "docs/FOLDER-COMPACT-UX-20261117.md",
+    "docs/FOLDER-SEARCH-REGRESSION-20261117.md",
+    "docs/UX-EXISTING-CAPABILITIES-AUDIT-20261117.md",
+    "docs/connectors-mistral-architecture-audit.md",
+    "docs/design/swarm-workbook.md",
+    "docs/ux-concept-audit-20261117.md",
+    "docs/ux-directory-visibility-20261117.md"
   ],
   "historical": [
     "APPLICATION-COMPATIBILITY.md",

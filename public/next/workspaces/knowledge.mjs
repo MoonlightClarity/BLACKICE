@@ -1,7 +1,7 @@
 import {text,formatDate} from '../core/dom.mjs';
 import {KNOWLEDGE_PAGE_SIZE,KNOWLEDGE_LIST_LIMIT,knowledgeListPath,knowledgeWindow,
   knowledgeDraft,knowledgeDraftChanged,knowledgeSavePayload,knowledgeExpectedRevision,
-  knowledgeHistoryRows,knowledgeRestorePayload,knowledgeRecoveryPayload,knowledgeAuthor} from './knowledge-model.mjs';
+  knowledgeHistoryRows,knowledgeRestorePayload,knowledgeRecoveryPayload,knowledgeAuthor,compactKnowledgePreview,knowledgeFolderTree,knowledgeFolderOptions} from './knowledge-model.mjs';
 
 /** Knowledge reads are lazy and cancellable. Only explicit form actions write. */
 export function createKnowledgeWorkspace({mount,api,events,notify,kind = 'memory',idPrefix='next-knowledge',onBusy}) {
@@ -17,7 +17,7 @@ export function createKnowledgeWorkspace({mount,api,events,notify,kind = 'memory
     '<div class="next-knowledge-filters"><label class="next-label">Source<select id="next-knowledge-source" class="next-field"><option value="all">All sources</option><option value="user">Saved by you</option><option value="agent">Saved by agent</option><option value="learned">Automatic lessons</option></select></label><label class="next-label">Applies in working folder<input id="next-knowledge-scope" class="next-field" placeholder="Any working directory" spellcheck="false"></label>',
     '<label class="next-label">Show<select id="next-knowledge-state" class="next-field"><option value="active">Saved memories</option><option value="deleted">Trash</option></select></label></div>',
     '<p class="next-knowledge-status" id="next-knowledge-info" role="status" aria-live="polite"></p>',
-    '<div class="next-knowledge-layout"><aside class="next-knowledge-folders-panel" aria-label="Folder navigation"><h2>Folders</h2><nav id="next-knowledge-folders" aria-label="Folders"></nav><details class="next-knowledge-folder-actions"><summary>Manage folders</summary><label class="next-label">Folder name<input id="next-knowledge-folder-name" class="next-field" maxlength="80" placeholder="New folder name"></label><div class="next-row"><button id="next-knowledge-folder-create" type="button">Create folder</button><button id="next-knowledge-folder-rename" type="button" disabled>Rename</button><button id="next-knowledge-folder-remove" type="button" disabled>Remove folder</button></div><p class="next-help">Removing a folder keeps its entries in Unfiled.</p></details></aside><aside class="next-knowledge-entries-panel" aria-label="Saved memories"><h2 id="next-knowledge-list-heading">Memories</h2><ul id="next-knowledge-list" class="next-knowledge-list"></ul>',
+    '<div class="next-knowledge-layout"><aside class="next-knowledge-folders-panel" aria-label="Folder navigation"><h2>Folders</h2><nav id="next-knowledge-folders" aria-label="Folders"></nav><details class="next-knowledge-folder-actions"><summary>Manage folders</summary><label class="next-label">Folder name<input id="next-knowledge-folder-name" class="next-field" maxlength="80" placeholder="New folder name"></label><label class="next-label">Parent folder<select id="next-knowledge-folder-parent" class="next-field"><option value="">Top level</option></select></label><div class="next-row"><button id="next-knowledge-folder-create" type="button">Create folder</button><button id="next-knowledge-folder-rename" type="button" disabled>Rename</button><button id="next-knowledge-folder-reparent" type="button" disabled>Move folder</button><button id="next-knowledge-folder-remove" type="button" disabled>Remove folder</button></div><p class="next-help">Removing a folder keeps its entries in Unfiled and moves its subfolders up one level.</p></details></aside><aside class="next-knowledge-entries-panel" aria-label="Saved memories"><h2 id="next-knowledge-list-heading">Memories</h2><ul id="next-knowledge-list" class="next-knowledge-list"></ul>',
     '<div class="next-knowledge-list-footer"><button type="button" id="next-knowledge-more" hidden>Show more</button>',
     '<p class="next-help" id="next-knowledge-list-note"></p></div></aside>',
     '<section id="next-knowledge-detail" class="next-card next-knowledge-editor" aria-label="Memory editor">',
@@ -40,12 +40,12 @@ export function createKnowledgeWorkspace({mount,api,events,notify,kind = 'memory
     '</section></div></div></div>',
   ].join('').replaceAll('id="next-knowledge-','id="'+idPrefix+'-');
   const find=id=>mount.querySelector('#'+idPrefix+'-'+id);
-  const els=Object.fromEntries(['list-heading','folders','folder-name','folder-create','folder-rename','folder-remove','file-in','file-move','source','root','refresh','new','kind','query','type','type-label','scope','state','info','list','more','list-note',
+  const els=Object.fromEntries(['list-heading','folders','folder-name','folder-parent','folder-create','folder-rename','folder-reparent','folder-remove','file-in','file-move','source','root','refresh','new','kind','query','type','type-label','scope','state','info','list','more','list-note',
     'filter-note','detail','heading','editor-info','stale','form','entry-meta','title','summary','content','cwd','memory-type','memory-type-label',
     'sources','save','delete','recover','discard','history','history-panel'].map(id=>[id,find(id)]));
   els.kind.value=kind;
   if(kind==='skill'){
-    mount.querySelector('h1').textContent='Saved skills';
+    mount.querySelector('h1').textContent='Saved skills';els['editor-info'].textContent='Choose a saved procedure or create a skill.';
     mount.querySelector('.next-panel-head p').textContent='Create, edit and restore your reusable procedures.';
     els.new.textContent='New skill';els['type-label'].hidden=true;els.query.placeholder='Search saved skills';els['list-heading'].textContent='Saved skills';els.detail.setAttribute('aria-label','Skill editor');els.list.parentElement.setAttribute('aria-label','Saved skills');els.state.querySelector('option').textContent='Saved skills';
   }
@@ -54,21 +54,32 @@ export function createKnowledgeWorkspace({mount,api,events,notify,kind = 'memory
   let listGeneration=0,detailGeneration=0,historyGeneration=0,listController=null,detailController=null,historyController=null;
   let listBusy=false,detailBusy=false,historyBusy=false,mutationBusy=false,listStale=true,timer=null;
   let organization=null,folderChoice=null,organizationBusy=false,folderGeneration=0;
-  const filingDrafts=new Map();
+  const filingDrafts=new Map(),collapsedFolders=new Set();
   const current=()=>drafts.get(selected);
   function paintFolders(){
     onBusy?.(mutationBusy||organizationBusy);
     els.folders.replaceChildren();
-    for(const folder of [{id:null,name:kind==='skill'?'All saved skills':'All memories'},{id:'',name:'Unfiled'},...(organization?.folders||[])]){
-      const button=add(els.folders,'button',folder.name);button.type='button';button.setAttribute('aria-pressed',String(folderChoice===folder.id));
-      button.disabled=organizationBusy||mutationBusy;button.addEventListener('click',()=>{folderChoice=folder.id;els['folder-name'].value=folder.id?folder.name:'';paintFolders();queueList({reset:true});});
-    }
+    const folderButton=(parent,folder)=>{
+      const button=add(parent,'button',folder.name);button.type='button';button.dataset.folderId=folder.id??'all';button.setAttribute('aria-pressed',String(folderChoice===folder.id));
+      button.disabled=organizationBusy||mutationBusy;button.addEventListener('click',()=>{folderChoice=folder.id;els['folder-name'].value=folder.id?folder.name:'';els['folder-parent'].value=folder.parentId||'';paintFolders();els.folders.querySelector('[data-folder-id="'+(folder.id??'all')+'"]')?.focus({preventScroll:true});queueList({reset:true});});return button;
+    };
+    folderButton(els.folders,{id:null,name:kind==='skill'?'All saved skills':'All memories'});folderButton(els.folders,{id:'',name:'Unfiled'});
+    const draw=(parent,folders)=>{for(const folder of folders){
+      const branch=add(parent,'div','','next-folder-branch'),row=add(branch,'div','','next-folder-row');
+      if(folder.children.length){const toggle=add(row,'button',collapsedFolders.has(folder.id)?'▸':'▾','next-folder-toggle');toggle.type='button';toggle.dataset.folderToggle=folder.id;toggle.setAttribute('aria-label',(collapsedFolders.has(folder.id)?'Expand ':'Collapse ')+folder.name);toggle.setAttribute('aria-expanded',String(!collapsedFolders.has(folder.id)));toggle.disabled=organizationBusy||mutationBusy;toggle.addEventListener('click',()=>{if(collapsedFolders.has(folder.id))collapsedFolders.delete(folder.id);else collapsedFolders.add(folder.id);paintFolders();els.folders.querySelector('[data-folder-toggle="'+folder.id+'"]')?.focus({preventScroll:true});});}
+      folderButton(row,folder);
+      if(folder.children.length){const children=add(branch,'div','','next-folder-children');children.hidden=collapsedFolders.has(folder.id);draw(children,folder.children);}
+    }};draw(els.folders,knowledgeFolderTree(organization?.folders||[]));
+    const parentValue=els['folder-parent'].value;els['folder-parent'].replaceChildren();
+    for(const folder of [{id:'',path:'Top level'},...knowledgeFolderOptions(organization?.folders||[])]){const option=add(els['folder-parent'],'option',folder.path);option.value=folder.id;}
+    els['folder-parent'].value=organization?.folders?.some(folder=>folder.id===parentValue)?parentValue:'';els['folder-parent'].disabled=organizationBusy||mutationBusy;
     els['folder-rename'].disabled=organizationBusy||mutationBusy||!folderChoice;els['folder-remove'].disabled=organizationBusy||mutationBusy||!folderChoice;
+    els['folder-reparent'].disabled=organizationBusy||mutationBusy||!folderChoice;
     els['folder-create'].disabled=organizationBusy||mutationBusy||!organization;
     const entryId=current()?.entry?.id;
     const value=filingDrafts.has(entryId)?filingDrafts.get(entryId):(entryId?organization?.assignments?.[entryId]||'':'');
     els['file-in'].replaceChildren();
-    for(const folder of [{id:'',name:'Unfiled'},...(organization?.folders||[])]){const option=add(els['file-in'],'option',folder.name);option.value=folder.id;}
+    for(const folder of [{id:'',path:'Unfiled'},...knowledgeFolderOptions(organization?.folders||[])]){const option=add(els['file-in'],'option',folder.path);option.value=folder.id;}
     const unavailable=Boolean(value&&!organization?.folders?.some(folder=>folder.id===value));
     if(unavailable){const option=add(els['file-in'],'option','Folder unavailable: choose another');option.value=value;option.disabled=true;}
     els['file-in'].value=value;els['file-in'].disabled=organizationBusy||mutationBusy||!current()?.entry||!!current()?.entry?.deleted;
@@ -82,15 +93,16 @@ export function createKnowledgeWorkspace({mount,api,events,notify,kind = 'memory
   async function organize(action){
     if(!organization||organizationBusy||mutationBusy)return;
     const payload={action,expectedRevision:organization.revision};
+    if(action==='create'||action==='reparent')payload.parentId=els['folder-parent'].value||null;
     if(action==='create'||action==='rename')payload.name=els['folder-name'].value.trim();
-    if(action==='rename'||action==='remove')payload.folderId=folderChoice;
+    if(action==='rename'||action==='remove'||action==='reparent')payload.folderId=folderChoice;
     if(action==='move'){if(!current()?.entry||current().entry.deleted)return;payload.entryIds=[current().entry.id];payload.folderId=els['file-in'].value||null;}
     organizationBusy=true;paintFolders();updateControls();
     try{await api('/api/knowledge/folders','POST',payload);if(action==='move')filingDrafts.delete(payload.entryIds[0]);if(action==='remove')folderChoice=null;await loadFolders();queueList();}
     catch(error){info(els.info,failure(error)+' Refresh folders before retrying.',true);await loadFolders();}
     finally{organizationBusy=false;if(active){paintFolders();updateControls();}}
   }
-  for(const action of ['create','rename','remove'])els['folder-'+action].addEventListener('click',()=>void organize(action));
+  for(const action of ['create','rename','remove','reparent'])els['folder-'+action].addEventListener('click',()=>void organize(action));
   els['file-in'].addEventListener('change',()=>{if(current()?.entry){filingDrafts.set(current().entry.id,els['file-in'].value);paintFolders();}});
   els['file-move'].addEventListener('click',()=>void organize('move'));
   els.source.addEventListener('change',()=>queueList({reset:true}));
@@ -106,6 +118,7 @@ export function createKnowledgeWorkspace({mount,api,events,notify,kind = 'memory
     onBusy?.(mutationBusy||organizationBusy);
     for(const node of [els.kind,els.source,els.query,els.type,els.scope,els.state,els.new,els.refresh,els.more])node.disabled=mutationBusy||organizationBusy;
     for(const button of els.list.querySelectorAll('button'))button.disabled=mutationBusy||organizationBusy;
+    for(const button of els.sources.querySelectorAll('button'))button.disabled=mutationBusy||organizationBusy;
     const draft=current(),deleted=Boolean(draft?.entry?.deleted),saved=Boolean(draft?.entry);
     for(const field of [els.title,els.summary,els.content,els.cwd]){field.disabled=mutationBusy||organizationBusy;field.readOnly=deleted;}
     els['memory-type'].disabled=mutationBusy||organizationBusy||deleted;
@@ -132,7 +145,7 @@ export function createKnowledgeWorkspace({mount,api,events,notify,kind = 'memory
       const button=add(row,'button');button.type='button';button.dataset.knowledgeId=item.id;
       button.setAttribute('aria-pressed',String(item.id===selected));
       add(button,'strong',item.title||'Untitled entry');
-      if(item.summary||item.excerpt)add(button,'p',item.summary||item.excerpt,'next-knowledge-excerpt');
+      if(item.summary||item.excerpt)add(button,'p',compactKnowledgePreview(item.summary||item.excerpt),'next-knowledge-excerpt');
       add(button,'small',[item.memoryType||item.kind,knowledgeAuthor(item)].join(' · '));
       button.addEventListener('click',()=>void openEntry(item.id));
     }
@@ -167,7 +180,13 @@ export function createKnowledgeWorkspace({mount,api,events,notify,kind = 'memory
     add(details,'summary',(entry.sources?.length||0)+' sources · '+(entry.relations?.length||0)+' relationships');
     const list=add(details,'ul');
     for(const source of entry.sources||[])add(list,'li',source);
-    for(const relation of entry.relations||[])add(list,'li',relation.type+' → '+relation.targetId);
+    for(const relation of entry.relations||[]){
+      const row=add(list,'li'),related=items.find(item=>item.id===relation.targetId)||drafts.get(relation.targetId)?.entry;
+      add(row,'span',relation.type+' ');
+      const button=add(row,'button',related?.title||'Open related memory');button.type='button';
+      button.dataset.relatedMemoryId=relation.targetId;button.title='Open memory '+relation.targetId;
+      button.addEventListener('click',()=>void openEntry(relation.targetId));
+    }
     add(details,'p','Sources and relationships are preserved when you save.','next-help');
   }
   function paintEditor(){

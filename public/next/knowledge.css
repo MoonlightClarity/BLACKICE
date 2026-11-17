@@ -80,3 +80,25 @@
  .next-knowledge-filing{grid-template-columns:minmax(0,1fr)}
  .next-knowledge-root>.next-panel-inner>.next-panel-head{flex-wrap:wrap;align-items:flex-start}
 }
+
+/* Explorer hierarchy stays a tree at every width. */
+.next-knowledge-root nav[aria-label="Folders"]{display:block}
+.next-folder-row{display:flex;align-items:center;gap:3px}
+.next-folder-row:not(:has(.next-folder-toggle))::before{content:"";flex:0 0 25px}
+.next-knowledge-root nav[aria-label="Folders"] .next-folder-row>button:not(.next-folder-toggle){flex:1;min-width:0}
+.next-knowledge-root nav[aria-label="Folders"] .next-folder-toggle{width:25px;min-height:30px;padding:2px;flex:0 0 25px;text-align:center}
+.next-folder-children{margin-left:14px;padding-left:8px;border-left:1px solid var(--line)}
+.next-folder-branch{margin-top:4px}
+
+/* Decorative folder silhouette; text remains the accessible name. */
+.next-knowledge-root .next-folder-row>button:not(.next-folder-toggle)::before,
+.next-skills-folder>summary::before{
+ content:"";display:inline-block;width:16px;height:14px;margin-right:7px;vertical-align:-2px;flex-shrink:0;background:currentColor;
+ -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 20'%3E%3Cpath d='M2 2h7l3 3h10v13H2z' fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
+ mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 20'%3E%3Cpath d='M2 2h7l3 3h10v13H2z' fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+
+.next-knowledge-list button{gap:3px;padding:8px 10px}
+.next-knowledge-list strong{font-size:13px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.next-knowledge-list .next-knowledge-excerpt{-webkit-line-clamp:1;font-size:12px;line-height:1.4}
+.next-knowledge-list small{font-size:11px;line-height:1.3}

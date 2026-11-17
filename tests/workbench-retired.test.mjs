@@ -1,3 +1,4 @@
+import { updateWorkspaceTabs } from '../public/next/core/workspace-navigation.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -78,16 +79,16 @@ test('retained Cronjobs routes preserve the workflow manager and legacy Tasks an
   const element=()=>({children:[],dataset:{},hidden:false,setAttribute(name,value){this[name]=value;},append(...items){this.children.push(...items);},querySelector(){return null;}});
   const tabs=['chat','planning','cronjobs','browser','knowledge','settings'].map(name=>Object.assign(element(),{dataset:{space:name}}));
   const modules=Object.fromEntries(['cronjobs','workflows'].map(name=>[name,async()=>()=>({enter(){opened.push(name);},leave(){},updateStatus(){}})]));
-  const app=new Function('modules','document','stage','tabs','history',
+  const app=new Function('modules','document','stage','tabs','history','updateWorkspaceTabs',
     'let current=null,revision=0,status=null;const spaces=new Map(),api=()=>{},events={},notify=()=>{};'+routes+';return{show,spaces};'
-  )(modules,{createElement:element},element(),tabs,{replaceState(_state,_title,hash){hashes.push(hash);}});
+  )(modules,{createElement:element},element(),tabs,{replaceState(_state,_title,hash){hashes.push(hash);}},updateWorkspaceTabs);
 
   await app.show('tasks');await app.spaces.get('cronjobs').loading;
   assert.deepEqual(opened,['cronjobs']);assert.equal(hashes.at(-1),'#cronjobs');
   assert.equal(app.spaces.has('tasks'),false);
   await app.show('workflows');await app.spaces.get('workflows').loading;
   assert.equal(opened.at(-1),'workflows');assert.equal(hashes.at(-1),'#workflows');
-  assert.deepEqual(tabs.filter(tab=>tab['aria-selected']==='true').map(tab=>tab.dataset.space),['cronjobs']);
+  assert.deepEqual(tabs.filter(tab=>tab['aria-selected']==='true').map(tab=>tab.dataset.space),[]);
   await app.show('activity');
   assert.equal(opened.at(-1),'cronjobs');assert.equal(hashes.at(-1),'#cronjobs');
   assert.deepEqual([...app.spaces.keys()],['cronjobs','workflows']);

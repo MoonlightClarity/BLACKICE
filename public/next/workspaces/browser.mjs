@@ -1,3 +1,4 @@
+import {browserFoldersMarkup,createBrowserFolders} from './browser-folders.mjs';
 import { text } from '../core/dom.mjs';
 import { normalizeBrowserAddress } from '../../browser-address.mjs';
 import { browserFrame, pagePoint, browserInputGuard, wheelPixels, pendingDialog } from './browser-model.mjs';
@@ -11,13 +12,14 @@ import { browserScopedCleanupMarkup, createBrowserScopedCleanup } from './browse
  */
 export function createBrowserWorkspace(options) {
   if(typeof globalThis.window?.relayDesktop?.browserSurface==='function')return createNativeBrowserWorkspace(options);
-  const {mount,api,events,notify}=options;
+  const {mount,api,events,notify,onNavigate}=options;
   mount.innerHTML=[
     '<div class="next-panel next-browser-layout"><div class="next-panel-inner next-browser-workspace">',
     '<header class="next-panel-head"><div><h1>Browser</h1><p>Contained native Chromium pages · no external browser window</p></div>',
     '<button type="button" id="next-browser-refresh">Refresh tabs</button></header>',
     '<div class="next-browser-navigation" id="next-browser-navigation" aria-label="Browser navigation">',
     browserOwnershipMarkup(),
+    browserFoldersMarkup(),
     '<div class="next-browser-tabs" id="next-browser-tabs" role="tablist" aria-label="Contained tabs"></div>',
     '<form id="next-browser-form" class="next-row next-browser-address" role="search">',
     '<button type="button" id="next-browser-back" aria-label="Back" title="Back">←</button>',
@@ -27,6 +29,7 @@ export function createBrowserWorkspace(options) {
     '<button type="submit" class="next-primary">Go</button><button type="button" id="next-browser-new" aria-label="New tab" title="New tab (Ctrl+T)">+ Tab</button></form>',
     '</div>',
     '<div class="next-row next-browser-actions">',
+    '<button type="button" id="next-browser-passwords">Passwords</button>',
     '<button type="button" id="next-browser-inspect">Read page</button>',
     '<button type="button" id="next-browser-shot" class="next-primary">Refresh view</button>',
     '<button type="button" id="next-browser-close">Close tab</button>',
@@ -58,6 +61,8 @@ export function createBrowserWorkspace(options) {
     key:$('next-browser-key'),keySend:$('next-browser-key-send'),
     auto:$('next-browser-auto'),dialog:$('next-browser-interaction'),readout:$('next-browser-readout'),
   };
+  $('next-browser-passwords').hidden=typeof onNavigate!=='function';
+  $('next-browser-passwords').addEventListener('click',()=>onNavigate?.('settings',{settingsSection:'passwords'}));
   let active=false,destroyed=false,selected=null,tabs=[],frame=null,busy=false,sequence=0,lifecycle=0,
     openIntent=null,preferredSelection=null,preferBackend=false,needCapture=false,
     unsubscribe=null,pollTimer=null,wheelTimer=null,wheelQueue=null,watch=false,pending=null;
@@ -98,6 +103,7 @@ export function createBrowserWorkspace(options) {
     onMoveStatus(data,{preferred}){preferredSelection=preferred;applyStatus(data);},
     onMoveEnd(){busy=false;showFrame(frame);render();},
   });
+  const folders=createBrowserFolders({mount,api,getTabs:()=>ownership.visible(tabs),getSelected:()=>selected,isBusy:()=>busy,select,refresh,notice});
   const cleanup=createBrowserScopedCleanup({mount,api,refresh,notify,isBusy:()=>busy});
   function renderTabs() {
     const fragment=ui.tabs.ownerDocument.createDocumentFragment();
@@ -177,7 +183,7 @@ export function createBrowserWorkspace(options) {
   }
   function render(){
     if(!active||destroyed)return;
-    ownership.render();renderTabs();
+    ownership.render();renderTabs();folders.render();
     cleanup.syncActivity();
     const tab=current(),ready=Boolean(tab),hasFrame=Boolean(selectedSnapshot());
     for(const button of [ui.inspect,ui.shot,ui.close])button.disabled=busy||!ready;
@@ -209,6 +215,7 @@ export function createBrowserWorkspace(options) {
   function applyStatus(data){
     const old=selected,previousView=JSON.stringify(ownership.view);tabs=containedTabs(data);
     ownership.update({...data,tabs});
+    folders.update(data);
     cleanup.update({...data,tabs});
     const visible=ownership.visible(tabs);
     const scopeChanged=previousView!==JSON.stringify(ownership.view);
@@ -402,6 +409,6 @@ export function createBrowserWorkspace(options) {
       clearInterval(pollTimer);pollTimer=null;clearTimeout(refreshTimer);refreshTimer=null;
       clearTimeout(wheelTimer);wheelTimer=null;wheelQueue=null;frame=null;pending=null;
       ui.preview.replaceChildren();},
-    destroy(){this.leave();destroyed=true;ownership.destroy();cleanup.destroy();addressDrafts.clear();openIntent=null;mount.ownerDocument.removeEventListener('keydown',keydown);mount.innerHTML='';},
+    destroy(){this.leave();destroyed=true;ownership.destroy();cleanup.destroy();folders.destroy();addressDrafts.clear();openIntent=null;mount.ownerDocument.removeEventListener('keydown',keydown);mount.innerHTML='';},
   };
 }

@@ -5,7 +5,7 @@ test('Swarm creation uses the main empty state and never compresses rail forms i
  const source=await readFile(new URL('../public/next/workspaces/swarm.mjs',import.meta.url),'utf8');
  const css=await readFile(new URL('../public/next/swarm.css',import.meta.url),'utf8');
  assert.match(source,/if \(projectView === 'active' && projects.length\) createProject\(rail\)/);
- assert.match(source,/if \(!project && projectView === 'active'\) createProject\(get\(main, '.swarm-empty'\)\)/);
+ assert.match(source,/if \(!project && projectView === 'active' && get\(main,'.swarm-empty'\)\) createProject\(get\(main, '.swarm-empty'\)\)/);
  assert.match(css,/\.swarm-rail \.swarm-form\.swarm-two,\.swarm-rail \.swarm-form\.swarm-three\{grid-template-columns:minmax\(0,1fr\)\}/);
 });
 test('Knowledge gives folders their own responsive surface, with management initially collapsed',async()=>{

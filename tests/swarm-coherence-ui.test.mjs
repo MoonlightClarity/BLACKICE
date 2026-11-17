@@ -22,11 +22,18 @@ test('Swarm selection has a focusable detail and explicit return path; repeated 
  const source=await readFile(new URL('../public/next/workspaces/swarm.mjs',import.meta.url),'utf8');
  assert.match(source,/inspectingItem = true; render\(\)/);
  assert.match(source,/title.focus\(\{ preventScroll: true \}\)/);
- assert.match(source,/Back to work board/);
+ assert.match(source,/Back to task sheet/);
  assert.match(source,/event.key === 'Escape'/);
  assert.match(source,/original.focus\(\)/);
  assert.doesNotMatch(source,/OAuth grants are shared|No authenticated actor binding|Evidence authority needed/);
  const cleanup=await readFile(new URL('../public/next/workspaces/browser-scoped-cleanup-ui.mjs',import.meta.url),'utf8');
  assert.match(cleanup,/repeatedLabels.get\(group.label\) > 1/);
  assert.match(cleanup,/JSON.stringify\(\[group.taskId, group.nodeId\]\)/);
+});
+
+test('Swarm work labels describe outcomes rather than requiring coding concepts',async()=>{
+ const source=await readFile(new URL('../public/next/workspaces/swarm.mjs',import.meta.url),'utf8');
+ assert.match(source,/'Work to cover'/);assert.match(source,/'Done when'/);assert.match(source,/'Responsibilities and limits'/);
+ assert.doesNotMatch(source,/'Owned files or interfaces'|'Acceptance requirements'|'Authorized scope'/);
+ assert.match(source,/scope: scope.value/);assert.match(source,/requirements: requirements.value/);
 });

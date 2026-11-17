@@ -781,6 +781,7 @@ export async function createHarnessServer(options = {}) {
       const capabilityMatch=pathname.match(/^\/api\/capabilities\/([a-zA-Z0-9_-]+)\/use$/);
       if(capabilityMatch&&req.method==='POST')return json(res,201,await capabilities.use(capabilityMatch[1],await body(req)));
       if(pathname==='/api/operations'&&req.method==='GET')return json(res,200,operations.snapshot());
+      if(pathname==='/api/operations/folders'&&req.method==='POST')return json(res,200,await operations.organizeSchedules(await body(req)));
       if(pathname==='/api/operations/schedule-preview'&&req.method==='POST')return json(res,200,operations.previewSchedule(await body(req)));
       if(pathname==='/api/operations/pause'&&req.method==='POST'){const value=await body(req);return json(res,200,await operations.pause(value.reason||'Paused by you.'));}
       if(pathname==='/api/operations/resume'&&req.method==='POST')return json(res,200,await operations.resume(await body(req)));
@@ -1466,19 +1467,19 @@ export async function createHarnessServer(options = {}) {
       files['/visual-paint.mjs'] = 'visual-paint.mjs';
       files['/token-usage.mjs'] = 'token-usage.mjs';
       files['/provider-availability.mjs'] = 'provider-availability.mjs';
-      const nextFiles = ['swarm.css','visuals.css','index.html','base.css','chat.css','chat-management.css','brand.css','work-visual.css','intelligence-planning.css','intelligence-map.css','controls.css','layout-fixes.css','planning-ontology.css','planning-browser.css','planning-current.css','guard.js','app.mjs',
-        'core/api.mjs','core/dom.mjs','core/events.mjs','core/model-picker.mjs','core/context-controls.mjs','model-picker.css',
+      const nextFiles = ['schedule-folders.css','swarm.css','visuals.css','index.html','base.css','chat.css','chat-management.css','brand.css','work-visual.css','intelligence-planning.css','intelligence-map.css','controls.css','layout-fixes.css','planning-ontology.css','planning-browser.css','planning-current.css','guard.js','app.mjs',
+        'core/api.mjs','core/workspace-navigation.mjs','core/dom.mjs','core/events.mjs','core/model-picker.mjs','core/context-controls.mjs','model-picker.css',
         'chat/chat.mjs','chat/folders.mjs','chat/visuals.mjs','chat/model.mjs','chat/render.mjs','chat/send.mjs','chat/goals.mjs','chat/autonomy.mjs','chat/planning-timeline.mjs',
         'chat/activity-inspector.mjs','chat/options-model.mjs','chat/ontology-preferences.mjs','chat/execution-preferences.mjs','chat/artifacts.mjs','parity.css',
         'chat/reader-model.mjs','chat/reader-worker.mjs','chat/reader-client.mjs',
         // Native hosting UI assets are registered at the public root below.
-        'workspaces/swarm.mjs','workspaces/planning.mjs','workspaces/planning-browser.mjs','workspaces/planning-current.mjs','workspaces/planning-current-model.mjs','workspaces/response-cycle-ui.mjs','workspaces/tradecraft-timeline.mjs','workspaces/planning-visual.mjs','workspaces/intelligence-planning-model.mjs','workspaces/intelligence-planning-ui.mjs','workspaces/intelligence-map-model.mjs','workspaces/intelligence-map-ui.mjs','workspaces/tasks.mjs','workspaces/schedule-inspection-model.mjs','workspaces/tasks-visual-model.mjs','workspaces/task-lifecycle.mjs','workspaces/workflow-execution.mjs',
+        'workspaces/swarm.mjs', 'workspaces/swarm-workbook.mjs','workspaces/planning.mjs','workspaces/planning-browser.mjs','workspaces/planning-current.mjs','workspaces/planning-current-model.mjs','workspaces/response-cycle-ui.mjs','workspaces/tradecraft-timeline.mjs','workspaces/planning-visual.mjs','workspaces/intelligence-planning-model.mjs','workspaces/intelligence-planning-ui.mjs','workspaces/intelligence-map-model.mjs','workspaces/intelligence-map-ui.mjs','workspaces/tasks.mjs','workspaces/schedule-folders.mjs','workspaces/schedule-inspection-model.mjs','workspaces/tasks-visual-model.mjs','workspaces/task-lifecycle.mjs','workspaces/workflow-execution.mjs',
         'workspaces/workflow-editor.mjs','workspaces/workflow-edit-model.mjs',
         'workspaces/workflow-overview-model.mjs','workspaces/workflow-canvas-model.mjs','workspaces/workflow-canvas.mjs','workspaces/workflow-graph-author.mjs',
-        'workspaces/workflow-graph-edit.mjs','workspaces/browser-model.mjs','workspaces/browser-ownership-ui.mjs','workspaces/browser-scoped-cleanup-ui.mjs','workspaces/browser-native.mjs',
+        'workspaces/workflow-graph-edit.mjs','workspaces/browser-folders.mjs','workspaces/browser-model.mjs','workspaces/browser-ownership-ui.mjs','workspaces/browser-scoped-cleanup-ui.mjs','workspaces/browser-native.mjs',
         'browser.css','knowledge.css','skills.css','workspaces/skills.mjs','workspaces/knowledge.mjs','workspaces/knowledge-model.mjs',
-        'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/activity-overview.mjs','workspaces/activity-model.mjs','activity.css','workspaces/settings.mjs','workspaces/settings-storage.mjs','workspaces/settings-gemini-connector.mjs','workspaces/settings-claude-connector.mjs','workspaces/settings-restart.mjs',
-        'settings.css','settings-identity.css','settings-providers.css','settings-connections.css',
+        'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/activity-overview.mjs','workspaces/activity-model.mjs','activity.css','workspaces/settings.mjs','workspaces/settings-passwords.mjs','workspaces/settings-storage.mjs','workspaces/settings-gemini-connector.mjs','workspaces/settings-claude-connector.mjs','workspaces/settings-mcp-apps.mjs','workspaces/settings-restart.mjs',
+        'settings.css','settings-passwords.css','settings-identity.css','settings-providers.css','settings-connections.css',
         'workspaces/settings-identity.mjs','workspaces/applications.mjs','workspaces/settings-subscriptions.mjs','workspaces/settings-local-models.mjs','workspaces/llama-launch-settings.mjs','workspaces/settings-providers.mjs','workspaces/native-write-recovery.mjs','workspaces/settings-provider-directory.mjs','workspaces/settings-connections.mjs','workspaces/settings-import.mjs'];
       for (const file of nextFiles) files['/next/' + file] = 'next/' + file;
       files['/next'] = 'next/index.html'; files['/next/'] = 'next/index.html';

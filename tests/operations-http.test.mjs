@@ -486,3 +486,23 @@ test('conversation HTTP reads retain actual turns after recent-run eviction and 
   await context.restart();const family=(await context.request(`/api/conversations/${next.data.id}`)).data;assert.equal(family.runs.length,2);assert.equal(family.runs[0].id,first.data.id);assert.equal(context.calls.length,2,'opening archived conversations does not run agents');
   const continued=await context.request(`/api/runs/${first.data.id}/continue`,{method:'POST',body:{nodeId:'agent',message:'Continue the archived original turn.'}});assert.equal(continued.status,201);await until(()=>context.app.engine.getRun(continued.data.id).settled);assert.equal(context.calls.length,3);assert.equal(context.calls[2].threadId,'http-fixture-thread');assert.equal((await context.request(`/api/conversations/${continued.data.id}`)).data.runs.length,3);
 });
+
+test('cron folders use authenticated metadata API and leave execution definitions untouched',async t=>{
+  const f=await fixture(t),schedule=await f.create({enabled:false});
+  const before=structuredClone(f.app.operations.state.deployments);
+  const unauthorized=await f.request('/api/operations/folders',{method:'POST',auth:false,body:{action:'create',name:'No',expectedRevision:0}});
+  assert.notEqual(unauthorized.status,200);
+  const created=await f.request('/api/operations/folders',{method:'POST',body:{action:'create',name:'Research',expectedRevision:0}});
+  assert.equal(created.status,200);
+  const assigned=await f.request('/api/operations/folders',{method:'POST',body:{action:'assign',deploymentId:schedule.id,folderId:created.data.folders[0].id,expectedRevision:1}});
+  assert.equal(assigned.status,200);
+  assert.equal((await f.request('/api/operations')).data.organization.assignments[schedule.id],created.data.folders[0].id);
+  const conflict=await f.request('/api/operations/folders',{method:'POST',body:{action:'remove',id:created.data.folders[0].id,expectedRevision:1}});
+  assert.equal(conflict.status,409);
+  assert.deepEqual(f.app.operations.state.deployments,before);
+  assert.deepEqual(f.app.operations.state.jobs,[]);
+  for(const asset of ['/next/workspaces/schedule-folders.mjs','/next/schedule-folders.css']){
+    const response=await fetch(f.url+asset,{headers:{Cookie:f.cookie}});
+    assert.equal(response.status,200,asset);assert.ok((await response.text()).length>100);
+  }
+});

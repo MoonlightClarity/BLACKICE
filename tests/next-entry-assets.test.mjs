@@ -39,6 +39,32 @@ test('the production server serves every stylesheet and script linked by the Nex
       failures.push({ url, status: response.status, contentType: response.headers.get('content-type') });
     }
   }
-  assert.deepEqual(failures, [], 'Entry assets must load through production routing, not only the permissive UI fixture server.');
+  // Traverse actual static and lazy module imports through the production
+  // handler, rather than checking only that imported files exist on disk.
+  const modules=[...new Set(assets.filter(url=>/\.m?js$/.test(new URL(url,base).pathname)))];
+  const visited=new Set(),critical=[];
+  for(const route of ['/next/core/workspace-navigation.mjs','/next/workspaces/settings-passwords.mjs','/next/settings-passwords.css','/browser-credentials-ui.mjs','/browser-credentials.css']){
+    const response=await fetch(base+route,{headers:{Cookie:cookie}});
+    const content=await response.text(),expected=route.endsWith('.css')?'text/css':'text/javascript';
+    critical.push({route,status:response.status,contentType:response.headers.get('content-type'),bytes:Buffer.byteLength(content)});
+    if(response.status!==200||!response.headers.get('content-type')?.startsWith(expected)||!content.trim())failures.push(critical.at(-1));
+  }
+  while(modules.length){
+    const route=modules.shift();if(visited.has(route))continue;visited.add(route);
+    const response=await fetch(base+route,{headers:{Cookie:cookie}});
+    const content=await response.text();
+    if(response.status!==200||!response.headers.get('content-type')?.startsWith('text/javascript')){
+      failures.push({route,status:response.status,contentType:response.headers.get('content-type')});continue;
+    }
+    for(const match of content.matchAll(/(?:from\s*|import\s*\()['"]([^'"]+)['"]/g)){
+      const specifier=match[1];if(!specifier.startsWith('.')&&!specifier.startsWith('/'))continue;
+      const target=new URL(specifier,new URL(route,base));
+      if(target.origin===new URL(base).origin&&!visited.has(target.pathname))modules.push(target.pathname);
+    }
+  }
+  const denied=await fetch(base+'/next/not-a-registered-asset.mjs',{headers:{Cookie:cookie}});
+  assert.equal(denied.status,404,'Static registration must not become an unrestricted filesystem server.');
+  t.diagnostic(JSON.stringify({critical,reachableModules:visited.size}));
+  assert.deepEqual(failures, [], 'Entry and reachable import assets must load through production routing, not only the permissive UI fixture server.');
   t.diagnostic(JSON.stringify({ assets: assets.length, stylesheetQueryStringsPreserved: assets.some(url => url.includes('.css?')) }));
 });

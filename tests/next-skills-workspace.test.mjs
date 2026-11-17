@@ -43,7 +43,7 @@ test('DOM selection shows actual full content, source, scope and truthful loadin
   assert.match(f.$('#skills-tech-meta').textContent,/No per-turn loading evidence/);
   assert.equal(f.$('#skills-edit').hidden,false);
   await f.click('#skills-edit');await until(()=>f.$('#skills-editor-content').value.includes('exact revisions'));assert.equal(f.navigation.length,0);assert.equal(f.$('.next-skills-root').hidden,true);await f.click('#skills-back');
-  await f.click('#skills-new');assert.equal(f.navigation.length,0);assert.equal(f.$('#skills-editor-save').textContent,'Create skill');
+  await f.click('#skills-new');assert.equal(f.$('.next-skills-editor-body').querySelector('h1').textContent,'Saved skills');assert.match(f.$('.next-skills-editor-body').textContent,/Create, edit and restore your reusable procedures/);assert.equal(f.navigation.length,0);assert.equal(f.$('#skills-editor-save').textContent,'Create skill');
   assert.ok(f.calls.every(call=>call.method==='GET'),'the inspector never mutates knowledge');
 });
 test('source filtering and empty state are explicit, and refresh restores nonempty results',async t=>{
@@ -178,4 +178,29 @@ test('list failure retains old list, displays error and succeeds on explicit ref
   assert.ok(f.$('[data-skill-id="saved:saved-procedure"]'));
   await f.click('#skills-refresh');
   await until(()=>!f.$('#skills-status').textContent.includes('Catalog transport failed'));
+});
+
+test('normal Skills catalog uses procedure vocabulary and isolates disabled external discovery diagnostics',async t=>{
+  const f=await fixture(t,{hook:async(call,catalog)=>{
+    const url=new URL(call.route,'http://test');
+    if(url.pathname!=='/api/skills')return;
+    const result=await catalog.list({source:url.searchParams.get('source')||'all'});
+    return {...result,sources:{...result.sources,codex:{status:'error',reason:'External diagnostic fixture'}}};
+  }});
+  assert.match(f.$('#skills-list').textContent,/Saved procedure/);
+  assert.doesNotMatch(f.$('#skills-list').textContent,/Local saved knowledge/);
+  assert.equal(f.$('#skills-source-status').textContent,'Saved procedures and BLACKICE built-ins.');
+  assert.equal(f.$('#skills-source-status').dataset.error,'false');
+  await f.click('#skills-external');
+  await until(()=>f.$('#skills-source-status').textContent.includes('External diagnostic fixture'));
+  assert.equal(f.$('#skills-source-status').dataset.error,'true');
+  await f.click('#skills-normal');
+  await until(()=>f.$('[data-skill-id="saved:saved-procedure"]'));
+  assert.equal(f.$('#skills-source-status').textContent,'Saved procedures and BLACKICE built-ins.');
+  assert.equal(f.$('#skills-source-status').dataset.error,'false');
+});
+
+test('unavailable folder metadata leaves the full catalog usable and reports the degraded grouping',async t=>{
+ const f=await fixture(t,{hook:async call=>{if(call.route==='/api/knowledge/folders')throw Error('Folder fixture unavailable');}});
+ assert.match(f.$('#skills-status').textContent,/Folders unavailable/);await f.selectSaved();assert.match(f.$('#skills-content').textContent,/exact revisions/);
 });

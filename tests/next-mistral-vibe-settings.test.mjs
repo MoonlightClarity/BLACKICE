@@ -108,3 +108,5 @@ test('reported Vibe reasoning choices and exact model alias remain selectable wi
   assert.throws(()=>validateChatOptions(info,{model:id,effort:'off'}),/valid reasoning level/);
   assert.equal(info.defaultModelSelection,'gpt-6-luna');
 });
+
+test('native catalog limitations are visible text and clear when refreshed',async t=>{const f=fixture(t,{initial:status(native({authenticated:true,connected:true,available:true,models:[exactModel],catalogNotice:'ACP-only catalog <not markup>'}))});await settle();assert.equal(f.$('#next-mistral-vibe-catalog-notice').textContent,'ACP-only catalog <not markup>');assert.equal(f.$('#next-mistral-vibe-catalog-notice').hidden,false);assert.equal(f.writes().length,0);f.panel.updateStatus(status(native({authenticated:true,models:[exactModel]})));assert.equal(f.$('#next-mistral-vibe-catalog-notice').hidden,true);});

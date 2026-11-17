@@ -169,3 +169,47 @@
 
 .swarm-project-views,.swarm-project-actions{flex-wrap:wrap;gap:8px}
 .swarm-project-views button[aria-pressed=true]{outline:2px solid var(--next-button-border);outline-offset:1px}
+
+/* Workbook: folders scope independent workflows, rows summarize tasks. */
+.swarm-folder-tree{display:flex;flex-direction:column;gap:3px;margin:16px 0}
+.swarm-folder-select{display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:9px 10px 9px calc(10px + var(--folder-depth,0)*16px);border:1px solid transparent;background:transparent;min-height:40px}
+.swarm-folder-select>span:not(.swarm-folder-icon){flex:1;overflow-wrap:anywhere}
+.swarm-folder-select>small{font-variant-numeric:tabular-nums;color:var(--sw-muted)}
+.swarm-folder-select[aria-pressed=true]{background:var(--next-selection-background);border-color:var(--accent)}
+.swarm-folder-icon{display:inline-block;flex:0 0 19px;width:19px;height:17px;background:currentColor;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 20'%3E%3Cpath fill='none' stroke='black' stroke-width='1.7' stroke-linejoin='round' d='M2 17V3h7l3 3h10v11z'/%3E%3C/svg%3E") center/contain no-repeat;color:var(--text-secondary)}
+.swarm-folder-tools{margin-bottom:20px}.swarm-folder-tools .swarm-form{padding:12px 8px}.swarm-folder-remove{margin:8px}
+.swarm-workflow-list{border-top:1px solid var(--line);padding-top:18px}
+.swarm-workflow-list .swarm-project-select{gap:3px;padding:9px}.swarm-workflow-list .swarm-project-select small{font-size:12px}
+.swarm-sheet-heading{margin-bottom:18px}.swarm-sheet-heading h2{margin:0 0 5px;font-size:24px}.swarm-sheet-heading p{margin:0;color:var(--sw-muted)}
+.swarm-sheet-filters{display:grid;grid-template-columns:minmax(180px,1fr) minmax(130px,210px);gap:14px;align-items:end;margin:16px 0}
+.swarm-sheet-region{overflow:auto;max-width:100%;border:1px solid var(--line);border-radius:10px;background:var(--next-card-background)}
+.swarm-sheet{width:100%;min-width:940px;border-collapse:collapse;text-align:left;font-size:13px}
+.swarm-sheet caption{text-align:left;padding:12px 14px;color:var(--sw-muted);font-size:12px;border-bottom:1px solid var(--line)}
+.swarm-sheet th{background:var(--panel);color:var(--text-secondary);font-size:12px;font-weight:650;padding:11px 12px;white-space:nowrap}
+.swarm-sheet td{padding:13px 12px;border-top:1px solid var(--line);vertical-align:top}
+.swarm-sheet td:first-child{width:28%;min-width:210px}.swarm-sheet td:nth-child(2){min-width:130px}
+.swarm-sheet td small{display:block;margin-top:4px;color:var(--sw-muted)}
+.swarm-sheet tr:hover{background:var(--next-selection-background)}
+.swarm-sheet .swarm-task-link.swarm-card{display:block;min-height:0;max-width:100%;width:auto;border:0;box-shadow:none;background:transparent;padding:0;margin:0;color:var(--text-primary);font-size:14px;font-weight:600;text-align:left;line-height:1.4;white-space:normal}
+.swarm-sheet .swarm-task-link:hover{text-decoration:underline}
+.swarm-task-folder{font-size:11px}.swarm-runtime-cell{max-width:150px;font-size:12px}
+.swarm-sheet .swarm-badge{font-size:11px;white-space:normal}
+.swarm-project-header{padding:16px 18px}.swarm-project-header p{font-size:13px;max-height:4.5em;overflow:auto}
+.swarm-project-header h2{font-size:22px}.swarm-project-header .swarm-muted{font-size:11px}
+.swarm-detail{max-width:1100px;width:100%;padding:20px}
+.swarm-detail-tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding:10px 0;margin-bottom:18px}
+.swarm-detail-tabs button{min-height:40px;padding:8px 14px;background:transparent;border:1px solid transparent}
+.swarm-detail-tabs button[aria-pressed=true]{background:var(--next-selection-background);border-color:var(--accent)}
+.swarm-detail-page[hidden]{display:none!important}.swarm-detail-page{min-height:180px}
+.swarm-task-requirements{white-space:pre-wrap;font-size:15px}.swarm-task-filing{display:grid;grid-template-columns:minmax(180px,1fr) auto;align-items:end;gap:12px;margin:18px 0}
+.swarm-task-filing .swarm-submit{margin:0}.swarm-detail-page .swarm-facts{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.swarm-folder-close{display:none}
+@media(max-width:800px){
+ .swarm-layout{position:relative;display:flex;overflow:hidden}.swarm-main{flex:1;min-height:0;overflow:auto;padding:18px 14px 32px}
+ .swarm-rail{display:none}.swarm-folders-open .swarm-rail{display:block;position:absolute;left:0;top:0;bottom:0;width:min(90%,330px);z-index:6;box-shadow:15px 0 35px #0008;overflow:auto}
+ .swarm-folder-close{display:block;margin-bottom:12px}.swarm-sheet{min-width:900px}.swarm-sheet-region{border-radius:6px}
+ .swarm-detail{padding:14px}.swarm-detail-tabs{gap:4px}.swarm-detail-tabs button{padding:8px 10px}
+ .swarm-task-filing{grid-template-columns:minmax(0,1fr)}.swarm-sheet-filters{grid-template-columns:minmax(0,1fr) 130px}
+}
+
+@media(max-width:800px){.swarm-folders-open .swarm-rail{background:#101318}}

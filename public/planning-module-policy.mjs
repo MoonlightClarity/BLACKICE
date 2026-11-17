@@ -2,6 +2,7 @@
 export const PLANNING_MODULE_STATES = Object.freeze(['on', 'off']);
 export const PLANNING_ONTOLOGY_MODULES = Object.freeze([
   { id: 'inference', label: 'Intent inference', description: 'Infer the intended outcome, constraints and relevant context without a separate model pass.' },
+  { id: 'time_management', label: 'Time management', description: 'Immediately balance depth against throughput for this task; adapt effort to observed cost, consequences and user priorities without an extra planning pass.' },
   { id: 'feasibility', label: 'Feasibility', description: 'Check real capabilities, dependencies and actual blockers proportionally.' },
   { id: 'decomposition', label: 'Task decomposition', description: 'Break complex work into actionable substeps only when valuable.' },
   { id: 'branching', label: 'Conditional logic', description: 'Use nested IF/ELIF/ELSE and Boolean reasoning when real branches exist.' },
@@ -13,7 +14,7 @@ export const PLANNING_ONTOLOGY_MODULES = Object.freeze([
 ]);
 export const DEFAULT_PLANNING_ONTOLOGY = Object.freeze({
   version: 2,
-  modules: Object.freeze(Object.fromEntries(PLANNING_ONTOLOGY_MODULES.map(({id}) => [id, id === 'subagents']))),
+  modules: Object.freeze(Object.fromEntries(PLANNING_ONTOLOGY_MODULES.map(({id}) => [id, id === 'subagents' || id === 'time_management']))),
 });
 const ids = new Set(PLANNING_ONTOLOGY_MODULES.map(({id}) => id));
 const validRecord = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -31,6 +32,8 @@ export function normalizePlanningOntology(value, { strict = false } = {}) {
     return invalid('The On/Off policy accepts only version and modules.');
   if(legacy&&value.autoSelect!==undefined&&typeof value.autoSelect!=='boolean')return invalid('Invalid legacy automatic-selection value.');
   if(value.modules!==undefined&&(!validRecord(value.modules)||Object.keys(value.modules).some(key=>!ids.has(key))))return invalid('Planning policy contains an unknown module.');
+  // Missing new fields adopt their defaults at admission. Explicit Off stays Off.
+  // Normalize a copy; never rewrite the historical input or saved settings file.
   const modules={...DEFAULT_PLANNING_ONTOLOGY.modules};
   const oldStates={mandatory:true,optional:true,auto:true,forbidden:false,on:true,off:false};
   for(const [id,state] of Object.entries(value.modules||{})){
@@ -62,7 +65,17 @@ export const ANTI_OVERALIGNMENT_STOP_CALIBRATION = Object.freeze([
   'Inspect previous submission records and destination receipts before possibly repeated external effects; an open tab is not proof of a duplicate or its cause. If the effect remains uncertain, quarantine only that affected submission while other applications proceed.',
   'No separate per-action checklist, mandatory planning contract or user approval ritual. In the final user report, distinguish completed outcomes, parked leaf items and unverified external results; name only actual evidence and blockers.'
 ]);
+export const TIME_MANAGEMENT_INSTRUCTIONS = [
+  'IMMEDIATE EFFORT CALIBRATION: At task start, before optional research or planning, choose a proportionate approach within this same turn. Identify the useful outcome, explicit hard constraints, cost of a mistake, reversibility, and cost of delay. Do not ask the user to configure this or run a separate assessment.',
+  'Balance throughput and thoroughness by expected usefulness, not by a fixed fast/slow personality. User steering such as quick, comprehensive, high-volume or carefully checked takes priority. Retain model and reasoning-effort settings; this module allocates work rather than silently changing those settings.',
+  'For repeatable, low-cost opportunities, check the explicit filters once, use the minimum sufficient evidence, act on suitable options, and verify the effect. Avoid speculative fit scoring, exhaustive comparisons, repeated screening or cosmetic refinement that does not change the next useful action. For high-impact, hard-to-reverse or uncertain work, spend effort on the particular uncertainty that could materially change the outcome.',
+  'Reassess when observed latency, errors, evidence or user direction changes the value of further work. Increase depth where a concrete failure warrants it; reduce redundant inspection and review when their marginal value is low. Do not turn this reassessment into a per-action checklist or recurring narration.',
+  'Elapsed time and tool-call counts are costs, NOT completed outcomes. Measure progress by useful verified deliverables or effects per elapsed time, including quality, filter compliance, rework and remaining uncertainty. Reading, planning, promises and premature final answers are not substitutes for requested execution.',
+  'Never relax explicit hard constraints, fabricate facts or completion, duplicate uncertain effects, invent a deadline or action limit, or stop useful authorized work merely because time has passed. Keep required effect verification; reduce unnecessary depth, not truthfulness. Respect actual user deadlines and stopping conditions.',
+  'When another review module is enabled, review only material remaining obligations and changed evidence; do not reopen settled branches without a specific reason or demand polish beyond the requested outcome. This module itself adds no approval gate, separate reviewer or mandatory user interruption.'
+].join(' ');
 const descriptions = {
+  time_management:TIME_MANAGEMENT_INSTRUCTIONS,
   inference:'identify user intent and real constraints before acting',
   feasibility:'check resources and actual blocking dependencies at the point of need',
   decomposition:'decompose meaningful compound work into actionable subtasks',

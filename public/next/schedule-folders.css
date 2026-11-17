@@ -1,0 +1,15 @@
+
+/* Nested schedule organization is independent of scheduling/execution. */
+.next-schedule-folder-list{display:grid;gap:14px;min-width:0}
+.next-schedule-folder-branch{min-width:0;border:1px solid var(--line, #34404d);border-radius:10px;padding:10px}
+.next-schedule-folder-branch>summary{cursor:pointer;font-weight:600;overflow-wrap:anywhere;padding:4px}
+.next-schedule-folder-branch>summary .next-status-pill{margin-left:8px}
+.next-schedule-folder-children{display:grid;gap:12px;padding-left:14px;border-left:1px solid var(--line, #34404d);margin-top:10px}
+.next-schedule-folder-manager{margin-bottom:14px}
+.next-schedule-folder-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.next-schedule-folder-form>.next-row{grid-column:1/-1}
+.next-schedule-file-control{font-size:12px;margin-bottom:8px}
+.next-schedule-unfiled{min-width:0}
+@media(max-width:700px){.next-schedule-folder-form{grid-template-columns:1fr}.next-schedule-folder-children{padding-left:8px}}
+
+.next-schedule-folder-branch>summary::before,.next-schedule-folder-manager>summary::before{content:"";display:inline-block;width:16px;height:14px;margin-right:7px;vertical-align:-1px;background:currentColor;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 20'%3E%3Cpath d='M2 2h7l3 3h10v13H2z' fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat}

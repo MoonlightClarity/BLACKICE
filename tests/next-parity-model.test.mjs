@@ -19,7 +19,7 @@ test('V2 offers native model-specific reasoning and speed choices without false 
   assert.equal(rows.tiers.find(item=>item.id==='fast').disabled,false);
   assert.deepEqual(validateChatOptions(status,selected),{...selected,directoryMode:'off',subagentsMode:'default',planningMode:'ontology',planningExecutionMode:'automatic',
     planningOntology:{version:2,modules:{inference:false,feasibility:false,decomposition:false,
-      branching:false,replanning:false,metacognition:false,anti_overalignment:false,verification:false,subagents:true}}});
+      branching:false,replanning:false,metacognition:false,anti_overalignment:false,verification:false,time_management:true,subagents:true}}});
   assert.throws(()=>validateChatOptions(status,{...selected,effort:'ultra'}),/does not offer|reasoning/i);
   assert.throws(()=>validateChatOptions(status,{model:'vendor::restricted',serviceTier:'fast'}),/Fast mode|Codex/i);
   assert.throws(()=>validateChatOptions(status,{model:'nonexistent'}),/available model/);
@@ -38,7 +38,7 @@ test('V2 preserves Directory choices and resets subagent overrides without chang
 });
 test('V2 preserves each configurable module Off independently with either Directory state',()=>{
   const modules={inference:true,feasibility:true,decomposition:true,branching:true,
-    replanning:true,metacognition:true,anti_overalignment:true,verification:true,subagents:true};
+    replanning:true,metacognition:true,anti_overalignment:true,verification:true,time_management:true,subagents:true};
   for(const moduleId of Object.keys(modules).filter(id=>id!=='subagents'))for(const directoryMode of ['on','off']){
     const policy={version:2,modules:{...modules,[moduleId]:false}};
     const selected=validateChatOptions(status,{model:'codex-reasoning',directoryMode,planningOntology:policy});

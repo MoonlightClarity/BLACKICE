@@ -9,7 +9,7 @@ import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
-import { nativeRestartCLIOutcome } from './windows-release-inputs.mjs';
+import { nativeRestartCLIOutcome, disposableDesktopFixtureEnvironment } from './windows-release-inputs.mjs';
 
 const args = process.argv.slice(2);
 const hiddenOnly = args.includes('--hidden-only');
@@ -79,9 +79,7 @@ async function main() {
     report.failures.push({ stage, code: /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code || '') ? error.code : 'VALIDATION_FAILED', sites });
   }
   function launch(flags) {
-    const fd = openSync(path.join(work, 'private-native.log'), 'a'), env = { ...process.env };
-    delete env.ELECTRON_RUN_AS_NODE;
-    delete env.NODE_OPTIONS;
+    const fd = openSync(path.join(work, 'private-native.log'), 'a'), env = disposableDesktopFixtureEnvironment();
     let child;
     try { child = spawn(executable, ['--profile-dir', profile, ...flags], { windowsHide: true, stdio: ['ignore', fd, fd], env, shell: false }); }
     finally { closeSync(fd); }

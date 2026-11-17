@@ -118,3 +118,13 @@ export async function readWindowsSourceTestReceipt({ directory, receiptPath, ver
   if (sourceIndexSha256 !== undefined) check(typeof sourceIndexSha256 === 'string' && /^[a-f\d]{64}$/.test(sourceIndexSha256) && prior.sourceIndexSha256 === sourceIndexSha256, 'Prior source-test inventory binding mismatch');
   return { receiptPath, receiptSha256: createHash('sha256').update(bytes).digest('hex'), checkedAt: prior.checkedAt, platform: prior.platform, node: prior.node, appFingerprint: prior.appFingerprint, sourceIndexSha256: prior.sourceIndexSha256, tests, testLogSha256: prior.testLogSha256 };
 }
+
+// Disposable release fixtures own a new custom profile. A connector origin from
+// the invoking installed app cannot authorize that unrelated fixture instance.
+export function disposableDesktopFixtureEnvironment(source = process.env) {
+  const env = { ...source };
+  delete env.ELECTRON_RUN_AS_NODE;
+  delete env.NODE_OPTIONS;
+  delete env.BLACKICE_RESTART_ORIGIN;
+  return env;
+}

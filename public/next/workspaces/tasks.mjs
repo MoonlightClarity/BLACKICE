@@ -1,3 +1,4 @@
+import { createScheduleFolders } from './schedule-folders.mjs';
 import { text } from '../core/dom.mjs';
 import { workflowCatalogWindow } from './workflow-overview-model.mjs';
 import { createTaskHistory } from './task-lifecycle.mjs';
@@ -72,7 +73,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     '<div class="next-row"><button type="submit" class="next-primary">Save schedule</button><button type="button" id="next-tasks-preview">Preview next runs</button></div>',
     '<p class="next-help" role="status" id="next-tasks-preview-output"></p>',
     '</form></section>',
-    '<h2>Scheduled work</h2><div id="next-tasks-deployments" class="next-grid"></div>',
+    '<h2>Scheduled work</h2><div id="next-tasks-folders"></div><div id="next-tasks-deployments" class="next-schedule-folder-list"></div>',
     '<section id="next-tasks-schedule-detail" class="next-card next-schedule-inspector" aria-label="Schedule inspection and editing" hidden></section>',
     '<details class="next-card next-schedule-removed" id="next-tasks-removed" hidden><summary>Removed schedules (audit history)</summary><div id="next-tasks-removed-list"></div></details>',
     '</section>',
@@ -119,6 +120,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
   let active=false,busy=false,revision=0,subscriptions=null,refreshTimer=null,snapshot=null,mutationError='',scheduleProgress='';
   let workflowList=[],workflowLimit=80,workflowQuery='',workflowEpoch=0,workflowTimer=null,workflowLoaded=false,workflowLoading=false;
   let section=cronjobsOnly?'schedules':'board',jobsLimit=35,selectedScheduleId=null,scheduleMode='inspect',editSource=null,editForm=null,editNotice=null;
+  const scheduleFolders=createScheduleFolders({mount:$('next-tasks-folders'),api,notify,refresh:()=>refresh()});
   const readinessBySchedule=new Map();
   const createChatProfile=initScheduleChatOptions(view.chatFields,{getStatus});
   let createAttachmentIds=[],createAttachmentPending=false,createAttachmentsUI=null,editAttachmentsUI=null;
@@ -610,13 +612,15 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     view.deployments.replaceChildren();
     const deployments=Array.isArray(snapshot.deployments)?snapshot.deployments:[];
     if(!deployments.length)add(view.deployments,'p',cronjobsOnly?'No cronjobs yet. Select New cronjob to get started.':'No saved schedules yet. Select New schedule to get started.','next-empty');
+    const groups=scheduleFolders.group(view.deployments,deployments,snapshot.organization);
     for(const task of deployments){
-      const card=add(view.deployments,'article','','next-card');
+      const card=add(groups.target(task),'article','','next-card');
       add(card,'h3',task.name||'Scheduled task');
       add(card,'p',task.input?.slice(0,180)||'','next-help');
       const meta=add(card,'p','','next-help');
       const trigger=task.trigger||{};
       meta.textContent=scheduleTriggerLabel(trigger)+' · '+(task.overdue?'Overdue since: '+humanTime(task.overdueSince):'Next: '+humanTime(task.nextAt));
+      groups.fileControl(card,task);
       const controls=add(card,'div','','next-row');
       const inspect=add(controls,'button',selectedScheduleId===task.id?'Hide inspection':'Inspect / edit');
       inspect.type='button';inspect.dataset.scheduleInspect=task.id;inspect.disabled=busy;

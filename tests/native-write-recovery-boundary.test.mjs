@@ -69,3 +69,12 @@ test('uncertain native delivery after cancellation persists and survives engine 
   assert.equal(restored.nodes.agent.nativeWriteUncertain[0].deliveryStatus,'unknown');
   assert.equal(restored.nodes.agent.nativeWriteUncertain[0].replayAllowed,false);
 });
+
+test('recovery panel distinguishes unchecked, healthy, and historical uncertainty without implying a current interruption',async t=>{
+  const dom=planningDOM(t),calls=[];let state={status:{recoveryRequired:false,uncertainCount:0},uncertain:[]};
+  const ui=createNativeWriteRecovery({mount:dom.mount,api:async(route,method='GET')=>{calls.push({route,method});return state;}});t.after(()=>ui.destroy());
+  assert.match(dom.mount.textContent,/Codex connection recovery/);assert.match(dom.mount.textContent,/Status has not been checked/);assert.doesNotMatch(dom.mount.textContent,/Interrupted tool results/);assert.equal(calls.length,0);
+  const buttons=dom.mount.querySelectorAll('button');await buttons[0].dispatch('click',{},true);assert.match(dom.mount.textContent,/No current Codex connection stall or unconfirmed result delivery is identified/);assert.equal(buttons[1].disabled,true);
+  state={status:{recoveryRequired:false,uncertainCount:1},uncertain:[{writeId:9,tool:'fixture',threadId:'old',callId:'retained',reason:'lost'}]};
+  await buttons[0].dispatch('click',{},true);assert.match(dom.mount.textContent,/these records do not mean the connection is currently stalled/);assert.match(dom.mount.textContent,/call retained/);assert.equal(buttons[1].disabled,true);assert.ok(calls.every(x=>x.method==='GET'));
+});

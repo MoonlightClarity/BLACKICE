@@ -304,3 +304,13 @@ test('explicit retained note approval survives future version bumps without admi
   assert.equal(approvedWindowsPackageFile('RELEASE-NOTES-2.39.105.md','2.39.106'), true);
   assert.equal(approvedWindowsPackageFile('RELEASE-NOTES-2.39.107.md','2.39.106'), false);
 });
+
+test('disposable native fixture excludes foreign restart origin without altering parent environment', async () => {
+  const { disposableDesktopFixtureEnvironment } = await import('../scripts/windows-release-inputs.mjs');
+  const source = { BLACKICE_RESTART_ORIGIN: 'a'.repeat(64), ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '--inspect', PATH: 'fixture-path', APPDATA: 'fixture-appdata', KEEP: 'yes' };
+  const prior = { ...source };
+  const result = disposableDesktopFixtureEnvironment(source);
+  assert.deepEqual(result, { PATH: 'fixture-path', APPDATA: 'fixture-appdata', KEEP: 'yes' });
+  assert.deepEqual(source, prior);
+  assert.notEqual(result, source);
+});

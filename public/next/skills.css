@@ -1,3 +1,4 @@
+.next-skills-root.next-panel{background:var(--next-workspace-background)}
 .next-skills-root .next-panel-head{align-items:flex-start;gap:18px}
 .next-skills-filters{display:grid;grid-template-columns:minmax(200px,2fr) minmax(155px,1fr) minmax(180px,1.4fr);gap:12px;margin:14px 0 8px}
 .next-skills-status{font-size:12px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere;margin:7px 0}
@@ -37,3 +38,14 @@
 .next-skills-editor-body .next-knowledge-layout{grid-template-columns:minmax(0,1fr)}
 .next-skills-editor-body .next-knowledge-filing{order:1;margin-bottom:0}
 .next-skills-editor-body .next-panel-inner{max-width:960px}
+
+.next-skills-list button{gap:3px;padding:8px 10px}
+.next-skills-description{-webkit-line-clamp:1}
+.next-skills-list strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.next-skills-folder>summary{cursor:pointer;padding:9px 6px;font-size:13px;font-weight:600;overflow-wrap:anywhere}
+.next-skills-folder>.next-skills-list{margin-left:12px;padding-left:8px;border-left:1px solid var(--line)}
+.next-skills-editor-shell.next-skills-organizing .next-skills-editor-body .next-knowledge-root .next-panel-inner .next-knowledge-layout>aside{display:block}
+.next-skills-editor-shell.next-skills-organizing .next-knowledge-layout{grid-template-columns:minmax(180px,220px) minmax(220px,1fr) minmax(0,1.5fr)}
+.next-skills-editor-shell.next-skills-organizing .next-panel-inner{max-width:1600px}
+.next-skills-editor-shell.next-skills-organizing .next-skills-editor-body .next-knowledge-root .next-panel-inner :is(.next-knowledge-toolbar,.next-knowledge-filters){display:grid}
+@media(max-width:1000px){.next-skills-editor-shell.next-skills-organizing .next-knowledge-layout{grid-template-columns:minmax(0,1fr)}}

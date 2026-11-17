@@ -148,3 +148,22 @@ Use **Blackice-<version>-Setup.exe** to install, reinstall, or update the regist
 `scripts/Install-Relay.ps1`, `relay-distribution.json`, and `release:check -- --local` remain compatibility tools for historical Relay portable bundles. Current packaging commands do not produce that format. Its existing `Relay.exe` and manifest identities must remain intact when verifying those older bundles. A local verification report never establishes public release readiness, and a portable deployment test cannot replace the actual Setup.exe installation gate.
 
 The historical helper supports same-version redeployment, refuses accidental downgrades, and provides explicit `-AllowDowngrade` and `-RequirePublisher` options. Do not use it to overwrite an installation registered by Setup; update that installation through Setup so files and Windows registration remain consistent.
+
+## Explicit publication and product/build versioning (next release)
+
+The Windows publisher is started only with **Run workflow** (`workflow_dispatch`) on `main`. Ordinary source pushes, including edits to `.github/release-request.json`, do not run the publisher. This does not hide or reclassify earlier failed runs. The separate documentation and attribution workflows keep their own triggers.
+
+An explicit dispatch still checks the exact source, test evidence, candidate bytes and tag identity. `publish: false` requests draft preparation, not a validation bypass; `publish: true` permits the final publication step only after all existing checks pass. A request without passing qualification evidence must still fail when deliberately dispatched. Do not manufacture a passing receipt or promote a different artifact to make a check green.
+
+### Next product version: 2.40.0
+
+Use **2.40.0** as the next working product version for the coherent usability release. Set the version, lockfile metadata, notes and release request together in the integration lane before qualification. This policy-only change does not bump the currently published 2.39.106 version.
+
+- Minor versions identify coherent backward-compatible feature/usability improvements. Patch versions identify fixes to a released product version, not each agent iteration or packaging attempt.
+- Keep internal attempts separate using a build record such as `buildId: 20261117.3`, with exact `sourceCommit`, application fingerprint, installer SHA-256 and `channel: internal`.
+- Put attempts in distinct build/evidence directories. Preserve failed attempts. Promote the exact qualified artifact; never overwrite a published installer or retag historical releases.
+- Retain existing 2.39 tags and releases. There is no need to publish missing patch numbers or rewrite history.
+- Keep the current numeric `X.Y.Z` package version. The release validator and Windows version handling are not presently suffix-compatible. A `+build` suffix is not an upgrade-order mechanism; preview channels need separate compatibility work before adoption.
+- 2.40.0 sorts above 2.39.106. Preserve application identity, installer/profile paths and migration behavior, and verify the actual upgrade rather than assuming numeric ordering proves compatibility.
+
+A build ID display in diagnostics/About is a later implementation item, not a feature claimed by this documentation change. Public release timing follows a useful verified change, not a per-build or daily quota.

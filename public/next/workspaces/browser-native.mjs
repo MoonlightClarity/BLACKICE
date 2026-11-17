@@ -1,3 +1,4 @@
+import {browserFoldersMarkup,createBrowserFolders} from './browser-folders.mjs';
 import { text } from '../core/dom.mjs';
 import { normalizeBrowserAddress } from '../../browser-address.mjs';
 import { browserOwnershipMarkup, createBrowserOwnershipControls, browserTabOwnerLabel } from './browser-ownership-ui.mjs';
@@ -104,12 +105,13 @@ export function createNativeBrowserSurface({surface,onError=()=>{},onAttached=()
 
 /** The actual Chromium page occupies the native viewport. Mouse, text,
  * selection, scrolling, menus and browser dialogs are handled by Chromium. */
-export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
+export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{},onNavigate}) {
   const document=mount.ownerDocument,window=document.defaultView,bridge=window.relayDesktop;
   mount.innerHTML=[
     '<div class="next-native-browser" data-browser-mode="native">',
     '<div class="next-browser-navigation" aria-label="Browser navigation">',
     browserOwnershipMarkup(),
+    browserFoldersMarkup(),
     '<div class="next-browser-tabs" id="next-browser-tabs" role="tablist" aria-label="Browser tabs"></div>',
     '<form id="next-browser-form" class="next-row next-browser-address" role="search">',
     '<button type="button" id="next-browser-back" aria-label="Back" title="Back">←</button>',
@@ -121,6 +123,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
     '<button type="button" id="next-browser-close-all" title="Global close across conversations: inspect the preview first">Close All Tabs</button>',
     '<button type="button" id="next-browser-cleanup-open" title="Preview and close only tabs belonging to one named task or conversation">Clean up task…</button>',
     '<button type="button" id="next-browser-downloads-toggle" aria-expanded="false" aria-controls="next-browser-downloads">Downloads</button>',
+    '<button type="button" id="next-browser-passwords">Passwords</button>',
     '</form></div>',
     '<p id="next-browser-site-notice" class="next-native-browser-status" aria-live="polite" hidden></p>',
     '<p id="next-browser-status" class="next-native-browser-status" role="status" aria-live="polite"></p>',
@@ -145,6 +148,8 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
     authUser:$('next-browser-auth-user'),authPassword:$('next-browser-auth-password'),authSubmit:$('next-browser-auth-submit'),
     authCancel:$('next-browser-auth-cancel'),authNote:$('next-browser-auth-note'),
   };
+  $('next-browser-passwords').hidden=typeof onNavigate!=='function';
+  $('next-browser-passwords').addEventListener('click',()=>onNavigate?.('settings',{settingsSection:'passwords'}));
   let active=false,destroyed=false,selected=null,tabs=[],downloads=[],busy=false,openingBlank=null,
     generation=0,refreshSequence=0,pendingSelection=null,addressRevision=0,selectionRevision=0,unsubscribe=null,
     refreshTimer=null,geometryFrame=null,geometryTimer=null,tabLimit=80,downloadsKey='',emptyKey='',pendingNavigation=null,authKey=null,
@@ -249,6 +254,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
     onMoveStatus(data,options){applyStatus(data,options);},
     onMoveEnd(){busy=false;render();void drainNewTabs();},
   });
+  const folders=createBrowserFolders({mount,api,getTabs:()=>ownership.visible(tabs),getSelected:()=>selected,isBusy:()=>busy,select,refresh,notice});
   const cleanup=createBrowserScopedCleanup({mount,api,refresh,notify,isBusy:()=>busy||Boolean(openingBlank)});
   function geometry(){
     geometryFrame=null;
@@ -320,7 +326,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
     }
   }
   function render(){
-    ownership.render();renderTabs();renderDownloads();renderAuth();
+    ownership.render();renderTabs();folders.render();renderDownloads();renderAuth();
     const siteNotice=nativeBrowserNotice(current());
     ui.siteNotice.textContent=siteNotice;ui.siteNotice.hidden=!siteNotice;
     cleanup.syncActivity();
@@ -370,6 +376,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
     if(!active||!data||!Array.isArray(data.tabs))return;
     const previous=selected,previousTabs=tabs,previousView=JSON.stringify(ownership.view);tabs=nativeBrowserTabs(data);
     ownership.update({...data,tabs});
+    folders.update(data);
     cleanup.update({...data,tabs});
     const visible=ownership.visible(tabs),scoped={...data,tabs:visible};
     const scopeChanged=previousView!==JSON.stringify(ownership.view);
@@ -526,7 +533,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{}}) {
       if(geometryFrame!==null)window.cancelAnimationFrame(geometryFrame);geometryFrame=null;
       if(geometryTimer!==null)window.clearTimeout(geometryTimer);geometryTimer=null;
       ui.page.dataset.attached='false';surface.hide();},
-    destroy(){this.leave();destroyed=true;ownership.destroy();cleanup.destroy();newTabRequests.length=0;addressDrafts.clear();authDrafts.clear();ui.authUser.value='';ui.authPassword.value='';surface.destroy();observer?.disconnect();unsubscribeShortcut?.();
+    destroy(){this.leave();destroyed=true;ownership.destroy();cleanup.destroy();folders.destroy();newTabRequests.length=0;addressDrafts.clear();authDrafts.clear();ui.authUser.value='';ui.authPassword.value='';surface.destroy();observer?.disconnect();unsubscribeShortcut?.();
       document.removeEventListener('keydown',keydown);window.removeEventListener('resize',scheduleGeometry);
       window.removeEventListener('scroll',scheduleGeometry,true);mount.innerHTML='';},
   };

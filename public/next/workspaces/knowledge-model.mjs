@@ -90,3 +90,10 @@ export function knowledgeAuthor(entry) {
   return entry?.provenance?.source==='user'?'You':entry?.provenance?.source==='agent'
     ?String(entry.provenance.nodeId||'').startsWith('learning-')?'Learned':'Agent':'Saved';
 }
+
+export function compactKnowledgePreview(value,limit=110){const text=String(value||"").replace(/\s+/g," ").trim();return text.length>limit?text.slice(0,limit-1).trimEnd()+"…":text;}
+export function knowledgeFolderTree(folders=[]){
+ const rows=folders.map(folder=>({...folder,children:[]})),byId=new Map(rows.map(row=>[row.id,row])),roots=[];
+ for(const row of rows){let parent=byId.get(row.parentId),cursor=parent,seen=new Set([row.id]);while(cursor&&!seen.has(cursor.id)){seen.add(cursor.id);cursor=byId.get(cursor.parentId);}if(cursor)parent=null;if(parent)parent.children.push(row);else roots.push(row);}return roots;
+}
+export function knowledgeFolderOptions(folders=[]){const result=[];const visit=(rows,path=[])=>{for(const row of rows){const names=[...path,row.name];result.push({...row,path:names.join(" / ")});visit(row.children,names);}};visit(knowledgeFolderTree(folders));return result;}

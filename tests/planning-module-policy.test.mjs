@@ -19,8 +19,8 @@ const content=response=>JSON.parse(response.contentItems[0].text);
 test('selectable modules retain On/Off choices while retired delegation choices use the default',()=>{
   const base=normalizePlanningOntology();
   assert.equal(base.version,2);assert.equal(Object.hasOwn(base,'autoSelect'),false);
-  assert.equal(PLANNING_ONTOLOGY_MODULES.length,9);
-  assert.ok(PLANNING_ONTOLOGY_MODULES.every(module=>base.modules[module.id]===(module.id==='subagents')));
+  assert.equal(PLANNING_ONTOLOGY_MODULES.length,10);
+  assert.ok(PLANNING_ONTOLOGY_MODULES.every(module=>base.modules[module.id]===(module.id==='subagents'||module.id==='time_management')));
   const legacy={version:1,autoSelect:false,modules:{inference:'mandatory',decomposition:'forbidden',subagents:'forbidden'}};
   const before=structuredClone(legacy),custom=normalizePlanningOntology(legacy);
   assert.deepEqual(legacy,before,'Historical input is not rewritten.');
@@ -35,7 +35,7 @@ test('selectable modules retain On/Off choices while retired delegation choices 
   for(const module of PLANNING_ONTOLOGY_MODULES){
     const policy=normalizePlanningOntology({version:2,modules:{[module.id]:false}});
     const automatic=module.id==='subagents';
-    assert.equal(policy.modules[module.id],automatic);assert.equal(Object.values(policy.modules).filter(v=>v===false).length,8);
+    assert.equal(policy.modules[module.id],automatic);assert.equal(Object.values(policy.modules).filter(v=>v===false).length,module.id==='time_management'?9:8);
   }
   for(const value of [{modules:{unknown:true}},{modules:{inference:'forced'}},{autoSelect:'yes'},
     {version:3},{version:2,autoSelect:false},{version:2,modules:{inference:'mandatory'}}])
@@ -90,7 +90,7 @@ test('direct ChatGPT ontology tool reads and saves the same runtime default atom
   assert.equal(tool.definition.name,'blackice_planning_ontology');
   const initial=content(await tool.execute({requestId:'ont-get-1',action:'get'}));
   assert.equal(initial.policy.modules.verification,false);
-  assert.equal(initial.modules.length,9);
+  assert.equal(initial.modules.length,10);
   const selected={autoSelect:false,modules:{verification:'mandatory',decomposition:'forbidden',subagents:'forbidden'}};
   const result=content(await tool.execute({requestId:'ont-set-1',action:'set',ontology:selected}));
   assert.equal(result.saved,true);

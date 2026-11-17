@@ -34,9 +34,10 @@ export function createSubscriptionModelSettings(props, createLegacy) {
   const nativeActions=element('div','next-row'),nativeLogin=button('next-mistral-vibe-login','Sign in to Mistral Vibe Code'),nativeRefresh=button('next-mistral-vibe-refresh','Refresh connection and models');
   nativeActions.append(nativeLogin,nativeRefresh);
   const nativeError=element('p','next-help');nativeError.id='next-mistral-vibe-error';nativeError.setAttribute('role','alert');
+  const catalogNotice=element('p','next-help');catalogNotice.id='next-mistral-vibe-catalog-notice';catalogNotice.setAttribute('role','status');
   const catalog=element('details'),catalogTitle=element('summary','','Models reported by Vibe Code'),catalogModels=element('ul','next-stack');
   catalog.id='next-mistral-vibe-catalog';catalogModels.id='next-mistral-vibe-models';catalog.append(catalogTitle,catalogModels);
-  native.append(nativeStatus,nativeVersion,nativeActions,nativeError,catalog,
+  native.append(nativeStatus,nativeVersion,nativeActions,nativeError,catalogNotice,catalog,
     element('p','next-help','Sign-in opens in BLACKICE’s browser. After signing in, refresh the connection to load its model catalog, then choose a model in Chat or General settings.'));
 
   const advanced=element('details','next-card');
@@ -79,6 +80,7 @@ export function createSubscriptionModelSettings(props, createLegacy) {
       :value.connected!==true?'Signed in · the Mistral Vibe Code connection is not ready. Refresh to reconnect.'
       :'Signed in · no model catalog is available yet. Refresh to load it.';
     const problem=operationError||value?.lastError||'';nativeError.textContent=String(problem).slice(0,1200);nativeError.hidden=!problem;
+    catalogNotice.textContent=String(value?.catalogNotice||'').slice(0,1600);catalogNotice.hidden=!value?.catalogNotice;
     while(catalogModels.children.length)catalogModels.children[0].remove();
     for(const model of models.slice(0,80)){
       const id=modelId(model),name=typeof model==='object'&&(model.displayName||model.name);

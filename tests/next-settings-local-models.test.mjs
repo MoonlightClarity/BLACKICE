@@ -250,3 +250,14 @@ test('configured offline external provider is not migrated to bundled runtime',a
  t.after(()=>panel.destroy());panel.enter();await until(()=>dom.$('#next-local-engine').value==='lmstudio');
  assert.equal(dom.$('#next-llama-setup').hidden,true);
 });
+
+test('fresh unconfigured local setup does not lead to an unavailable external engine',async t=>{
+ const dom=planningDOM(t),calls=[];
+ const panel=createLocalModelSettings({mount:dom.mount,storage:null,api:async(route,method='GET')=>{
+  calls.push({route,method});if(route==='/api/local-models')return {engines:[]};
+  if(route==='/api/providers')return [];throw Error('Runtime metadata temporarily unavailable');
+ }});
+ t.after(()=>panel.destroy());panel.enter();await until(()=>dom.$('#next-local-engine').value==='llamacpp');
+ assert.equal(dom.$('#next-llama-setup').hidden,false);
+ assert.equal(calls.some(call=>call.method!=='GET'),false);
+});

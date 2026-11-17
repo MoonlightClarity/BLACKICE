@@ -212,3 +212,17 @@ test('actual authenticated direct adapter and HTTP actions roundtrip against one
   assert.equal(nativeCatalog.some(entry => /swarm/i.test(entry.name)), false,
     'native Swarm worker tool parity remains absent');
 });
+
+test('folder HTTP mutations preserve work and survive an exact retry without dispatch',async t=>{
+ const {call}=await setup(t);
+ const create=await call('/api/swarm/actions','POST',{mutationId:'org-project',action:'create_project',value:{id:'org_project',name:'Concurrent workflow',objective:'Fixture'}});
+ const request={mutationId:'folder-once',action:'create_folder',expectedOrganizationRevision:0,value:{id:'release',name:'Release'}};
+ const folder=await call('/api/swarm/actions','POST',request);assert.equal(folder.code,200);assert.equal(folder.body.organization.revision,1);
+ assert.equal((await call('/api/swarm/actions','POST',request)).body.duplicate,true);
+ const filed=await call('/api/swarm/actions','POST',{mutationId:'file-once',action:'file_project',expectedOrganizationRevision:1,projectId:'org_project',value:{folderId:'release'}});
+ assert.equal(filed.code,200);
+ const snapshot=(await call('/api/swarm')).body;assert.equal(snapshot.organization.projectFolders.org_project,'release');
+ assert.deepEqual(snapshot.projects[0],create.body.project);
+ const stale=await call('/api/swarm/actions','POST',{mutationId:'stale-folder',action:'edit_folder',expectedOrganizationRevision:0,value:{id:'release',name:'Stale'}});
+ assert.equal(stale.code,409);assert.equal(stale.body.currentRevision,2);
+});

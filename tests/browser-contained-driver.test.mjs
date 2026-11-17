@@ -2729,3 +2729,26 @@ test('navigation admission does not depend on the previous document or inspect i
   await assert.rejects(driver.observeOperation(call.arguments, { receiptBindings: [{ format: 'dom' }] }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
   await assert.rejects(driver.observeOperation({ ...call.arguments, action: 'click', ref: 'old-control' }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
 });
+test('organizational folders preserve ownership and persist independently',async t=>{
+ const {driver,directory}=await fixture(t);await driver.init();
+ const owner={taskId:'collection-fixture',nodeId:'research',runId:'run'};
+ const tab=driver.newTab('https://example.test/',{owner,restore:true});
+ const original={owner:structuredClone(tab.owner),folderId:tab.folderId,parentTabId:tab.parentTabId,userPinned:tab.userPinned,humanCreated:tab.humanCreated};
+ const router=new BrowserRouter({independent:driver}),workspace=new BrowserWorkspace({driver:router});
+ await workspace.perform({action:'collection_create',name:'Research'},{source:'user'});
+ const root=driver.status().collections[0];
+ await workspace.perform({action:'collection_create',name:'Leads',parentCollectionId:root.id},{source:'user'});
+ const child=driver.status().collections[1];
+ await workspace.perform({action:'tab_collect',tabId:tab.id,collectionId:child.id},{source:'user'});
+ assert.deepEqual({owner:tab.owner,folderId:tab.folderId,parentTabId:tab.parentTabId,userPinned:tab.userPinned,humanCreated:tab.humanCreated},original);
+ assert.equal(router.status().tabs[0].collectionId,child.id);
+ await assert.rejects(workspace.perform({action:'collection_rename',collectionId:root.id,name:'invalid',parentCollectionId:child.id},{source:'user'}),/itself/);
+ assert.equal(root.name,'Research');
+ await driver.flushPersistence();
+ const saved=JSON.parse(await readFile(path.join(directory,'browser-tabs.json'),'utf8'));
+ assert.equal(saved.collections[1].parentId,root.id);assert.equal(saved.tabs[0].collectionId,child.id);
+ const restored=await fixture(t);await writeFile(path.join(restored.directory,'browser-tabs.json'),JSON.stringify(saved));await restored.driver.init();
+ assert.deepEqual(restored.driver.status().collections,saved.collections);assert.equal(restored.driver.status().tabs[0].collectionId,child.id);assert.deepEqual(restored.driver.status().tabs[0].owner,original.owner);
+ await workspace.perform({action:'collection_remove',collectionId:child.id},{source:'user'});
+ assert.equal(driver.tabs.size,1);assert.equal(tab.collectionId,root.id);assert.deepEqual(tab.owner,original.owner);
+});

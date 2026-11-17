@@ -19,14 +19,14 @@ async function fixture(t,execute){
 }
 test('actual default-Off engine writes and completes without a hidden reviewer or task ritual',async t=>{
  let calls=0,effects=0;
- const f=await fixture(t,async options=>{calls++;assert.equal(options.onBeforeFinal,undefined);assert.ok(!options.dynamicTools.some(tool=>tool.name==='relay_task'));assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_workspace'));
+ const f=await fixture(t,async options=>{calls++;assert.match(options.developerInstructions,/IMMEDIATE EFFORT CALIBRATION/);assert.equal(options.onBeforeFinal,undefined);assert.ok(!options.dynamicTools.some(tool=>tool.name==='relay_task'));assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_workspace'));
  const call={name:'relay_workspace',callId:'same-write',arguments:{action:'write',path:'result.txt',text:'verified local output'}};
  const first=await options.onToolCall(call);assert.equal(first.success,true,JSON.stringify(first));effects++;assert.deepEqual(await options.onToolCall(structuredClone(call)),first);
  return{output:'Wrote result.txt.',threadId:'defaults-thread'};});
  const run=await f.settle(f.engine.startRun({workflow:graph,input:'Write the local result.'}));
  assert.equal(run.status,'completed',run.error);assert.equal(calls,1);assert.equal(effects,1);assert.equal(await readFile(path.join(f.cwd,'result.txt'),'utf8'),'verified local output');
- assert.ok(PLANNING_ONTOLOGY_MODULES.filter(m=>m.id!=='subagents').every(m=>run.planningOntology.modules[m.id]===false));
- assert.equal(run.executionModes.directoryMode,'off');
+ assert.ok(PLANNING_ONTOLOGY_MODULES.filter(m=>!['subagents','time_management'].includes(m.id)).every(m=>run.planningOntology.modules[m.id]===false));
+ assert.equal(run.planningOntology.modules.time_management,true);assert.equal(run.executionModes.directoryMode,'off');
 });
 test('explicit full saved module choices survive failure, restart, Retry and Continue despite new default-Off',async t=>{
  const selected=normalizePlanningOntology({version:2,modules:Object.fromEntries(PLANNING_ONTOLOGY_MODULES.map(m=>[m.id,true]))});let calls=0;
@@ -34,4 +34,18 @@ test('explicit full saved module choices survive failure, restart, Retry and Con
  const failed=await f.settle(f.engine.startRun({workflow:graph,input:'Complete bounded synthetic task.',planningOntology:selected}));assert.equal(failed.status,'failed');assert.equal(failed.errorCode,'FIXTURE_FAILURE');const frozen=JSON.stringify(failed.planningOntology);
  await f.reopen();const retried=await f.settle(f.engine.retryRun(failed.id));assert.equal(retried.status,'completed',retried.error);assert.deepEqual(retried.planningOntology,selected);
  const continued=await f.settle(f.engine.continueRun(retried.id,{nodeId:'agent',message:'Repeat the bounded check.'}));assert.equal(continued.status,'completed',continued.error);assert.deepEqual(continued.planningOntology,selected);assert.equal(JSON.stringify(f.engine.getRun(failed.id).planningOntology),frozen);assert.equal(f.engine.getRun(failed.id).status,'failed');
+});
+
+test('fresh engine admission inherits missing time management from old defaults without overriding explicit Off',async t=>{
+ let observed=[];
+ const f=await fixture(t,async options=>{observed.push(options.developerInstructions);assert.equal(options.onBeforeFinal,undefined);return{output:'Answer',threadId:'defaults-thread'};});
+ const legacy={version:2,modules:{inference:false,verification:false}},before=JSON.stringify(legacy);
+ f.settings.planningOntology=legacy;
+ const enabled=await f.settle(f.engine.startRun({workflow:graph,input:'Give a brief answer.'}));
+ assert.equal(enabled.status,'completed',enabled.error);assert.equal(enabled.planningOntology.modules.time_management,true);
+ assert.match(observed[0],/IMMEDIATE EFFORT CALIBRATION/);assert.equal(JSON.stringify(legacy),before);
+ f.settings.planningOntology={version:2,modules:{...legacy.modules,time_management:false}};
+ const disabled=await f.settle(f.engine.startRun({workflow:graph,input:'Give another brief answer.'}));
+ assert.equal(disabled.planningOntology.modules.time_management,false);
+ assert.doesNotMatch(observed[1],/IMMEDIATE EFFORT CALIBRATION/);assert.equal(observed.length,2);
 });

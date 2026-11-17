@@ -15,7 +15,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '<header class="next-panel-head"><div><h1>Settings</h1><p>Choose how BLACKICE responds, which models it uses, and what it connects to.</p></div>',
     '<button type="button" id="next-settings-refresh">Refresh</button></header>',
     '<nav class="next-settings-sections" role="tablist" aria-label="Settings sections">',
-    ...[['general','General'],['identity','Behavior & profile'],['models','Models'],['connections','Tools'],['storage','Storage & Data'],['apps','App connections']].map(([id,label])=>
+    ...[['general','General'],['identity','Behavior & profile'],['models','Models'],['connections','Tools'],['passwords','Passwords'],['storage','Storage & Data'],['apps','App connections']].map(([id,label])=>
       '<button type="button" id="next-settings-section-'+id+'" data-settings-section="'+id+'" role="tab" aria-controls="next-settings-'+id+'" aria-selected="'+(id==='general')+'" tabindex="'+(id==='general'?'0':'-1')+'">'+label+'</button>'),
     '</nav><div id="next-settings-general" role="tabpanel" aria-labelledby="next-settings-section-general">',
     '<div id="next-review-notice" hidden><p id="next-review-count"></p><button type="button" id="next-review-open">Review paused actions</button></div>',
@@ -71,12 +71,12 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '<section class="next-card"><h2>Connection status</h2><p class="next-help" id="next-settings-status" role="status">Checking BLACKICE…</p></section>',
     '</details></div>',
     '<div id="next-settings-apps" role="tabpanel" aria-labelledby="next-settings-section-apps" hidden><h2>Use BLACKICE from another app</h2><p class="next-help">One BLACKICE MCP server can serve multiple apps at the same time. Each app connects to the same server URL with its own setup and authorization; choosing a tab below does not switch or replace another connection. These are setup guides, not exclusive providers. To add external tools for models running inside BLACKICE, use Tools instead.</p><nav class="next-settings-sections" role="tablist" aria-label="App setup guides">',
-    ...[['connector','ChatGPT'],['gemini','Gemini'],['claude','Claude']].map(([id,label])=>'<button type="button" id="next-settings-section-'+id+'" data-settings-section="'+id+'" role="tab" aria-controls="next-settings-'+id+'" aria-selected="false" tabindex="-1">'+label+'</button>'),
+    ...[['connector','ChatGPT'],['gemini','Gemini'],['claude','Claude'],['mcpapps','Other MCP apps']].map(([id,label])=>'<button type="button" id="next-settings-section-'+id+'" data-settings-section="'+id+'" role="tab" aria-controls="next-settings-'+id+'" aria-selected="false" tabindex="-1">'+label+'</button>'),
     '</nav></div>',
-    ...['identity','models','connections','storage','recovery','connector','gemini','claude'].map(id=>'<div id="next-settings-'+id+'" role="tabpanel" aria-labelledby="next-settings-section-'+id+'" hidden></div>'),
+    ...['identity','models','connections','passwords','storage','recovery','connector','gemini','claude','mcpapps'].map(id=>'<div id="next-settings-'+id+'" role="tabpanel" aria-labelledby="next-settings-section-'+id+'" hidden></div>'),
     '</div></div>',
   ].join('');
-  const appSections=['connector','gemini','claude'];
+  const appSections=['connector','gemini','claude','mcpapps'];
   const $=id=>mount.querySelector('#'+id);
   for(const id of appSections)$('next-settings-apps').append($('next-settings-'+id));
   $('next-settings-recovery').setAttribute('aria-label','Actions needing review');
@@ -120,10 +120,12 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
   f.forceRestart.addEventListener('click',()=>void restart.start());
   f.checkRestart.addEventListener('click',()=>void restart.check());
   const loaders={
+    mcpapps:()=>import('./settings-mcp-apps.mjs').then(module=>module.createMcpAppsSettings),
     identity:()=>import('./settings-identity.mjs').then(module=>module.createIdentitySettings),
     models:()=>Promise.all([import('./settings-providers.mjs'),import('./settings-subscriptions.mjs')]).then(([legacy,focus])=>
       props=>focus.createSubscriptionModelSettings(props,legacy.createProviderSettings)),
     connections:()=>import('./settings-connections.mjs').then(module=>module.createConnectionSettings),
+    passwords:()=>import('./settings-passwords.mjs').then(module=>module.createPasswordSettings),
     storage:()=>import('./settings-storage.mjs').then(module=>module.createStorageSettings),
     recovery:()=>import('../../owner-recovery-ui.mjs').then(module=>props=>module.mountOwnerRecovery({...props,autoStart:false})),
     gemini:()=>import('./settings-gemini-connector.mjs').then(module=>module.createGeminiConnectorSettings),
@@ -361,6 +363,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
   f.refresh.addEventListener('click',()=>void load());
   return {
     openModelProvider,
+    openSection:selectSection,
     enter(){if(destroyed||active)return;active=true;drawStatus(getStatus?.()||status);void selectSection(section);},
     leave(){modelPicker.close({restoreFocus:false});active=false;generation++;sectionRevision++;panels.get(section)?.instance?.leave?.();},
     updateStatus(value){if(active&&value&&typeof value==='object'&&!Array.isArray(value)){statusRead++;drawStatus(value);}},
