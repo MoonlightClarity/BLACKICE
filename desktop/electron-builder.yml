@@ -43,6 +43,7 @@ files:
   - desktop/tab-folders/**/*
   - '!desktop/build-icon.mjs'
   - CHAT-MODE.md
+  - RELEASE-NOTES-2.40.2.md
   - RELEASE-NOTES-2.31.0.md
   - RELEASE-NOTES-2.31.1.md
   - RELEASE-NOTES-2.32.0.md
