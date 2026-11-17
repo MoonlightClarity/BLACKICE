@@ -3,6 +3,10 @@ name: Verify Windows release installer
 on:
   workflow_dispatch:
     inputs:
+      release_id:
+        description: Exact existing draft release REST ID
+        required: true
+        type: string
       tag:
         description: Existing draft release tag
         required: true
@@ -39,6 +43,7 @@ jobs:
       run:
         shell: pwsh
     env:
+      RELEASE_ID: ${{ inputs.release_id }}
       RELEASE_TAG: ${{ inputs.tag }}
       EXPECTED_SHA256: ${{ inputs.expected_sha256 }}
       EXPECTED_FINGERPRINT: ${{ inputs.expected_fingerprint }}
@@ -48,7 +53,8 @@ jobs:
       - name: Validate inputs and fetch exact trusted source
         run: |
           $ErrorActionPreference='Stop'
-          if ($env:RELEASE_TAG -cnotmatch '^v\d+\.\d+\.\d+$' -or
+          if ($env:RELEASE_ID -cnotmatch '^[1-9][0-9]*$' -or
+              $env:RELEASE_TAG -cnotmatch '^v\d+\.\d+\.\d+$' -or
               $env:EXPECTED_SHA256 -cnotmatch '^[a-f0-9]{64}$' -or
               $env:EXPECTED_FINGERPRINT -cnotmatch '^[a-f0-9]{64}$' -or
               $env:EXPECTED_SOURCE_COMMIT -cnotmatch '^[a-f0-9]{40}$' -or
@@ -82,16 +88,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference='Stop'
-          $raw=gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft,tagName,databaseId,targetCommitish,assets
-          if ($LASTEXITCODE -ne 0) { throw 'Draft lookup failed.' }
-          $release=$raw | ConvertFrom-Json
+          $raw=gh api "repos/$env:GITHUB_REPOSITORY/releases/$env:RELEASE_ID"
+          if ($LASTEXITCODE -ne 0) { throw "REST draft lookup failed for ID $env:RELEASE_ID; existing workflow token may lack draft access. No fallback build or publication." }
+          $validated=$raw | node (Join-Path $env:BLACKICE_SOURCE 'scripts/github-draft-identity.mjs') $env:RELEASE_ID $env:RELEASE_TAG $env:EXPECTED_SOURCE_COMMIT
+          if ($LASTEXITCODE -ne 0) { throw 'REST draft identity verification failed.' }
+          $release=$validated | ConvertFrom-Json
           if (!$release.isDraft -or $release.tagName -cne $env:RELEASE_TAG -or $release.targetCommitish -cne $env:EXPECTED_SOURCE_COMMIT) { throw 'Draft release identity/target mismatch.' }
           $name='Blackice-' + $env:RELEASE_TAG.Substring(1) + '-Setup.exe'
           foreach ($assetName in @($name,'blackice-public-release.json','SHA256SUMS.txt')) {
             if (@($release.assets | Where-Object name -CEQ $assetName).Count -ne 1) { throw 'Expected unique draft asset missing.' }
           }
-          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --dir $env:BLACKICE_DISTRIBUTION --pattern $name --pattern blackice-public-release.json --pattern SHA256SUMS.txt
-          if ($LASTEXITCODE -ne 0) { throw 'Draft download failed.' }
+          foreach ($assetName in @($name,'blackice-public-release.json','SHA256SUMS.txt')) {
+            $asset=@($release.assets | Where-Object name -CEQ $assetName)[0]
+            $headers=@{ Authorization = "Bearer $env:GH_TOKEN"; Accept='application/octet-stream'; 'X-GitHub-Api-Version'='2022-11-28' }
+            # PowerShell drops Authorization on cross-host redirects; never preserve it.
+            Invoke-WebRequest -Headers $headers -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/assets/$($asset.id)" -OutFile (Join-Path $env:BLACKICE_DISTRIBUTION $assetName)
+          }
           $setup=Join-Path $env:BLACKICE_DISTRIBUTION $name
           $hash=(Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($hash -cne $env:EXPECTED_SHA256) { throw 'Downloaded installer SHA-256 mismatch.' }
@@ -127,9 +139,11 @@ jobs:
           $bindingPath=Join-Path $env:BLACKICE_EVIDENCE 'blackice-github-validation.json'
           if (!(Test-Path -LiteralPath $bindingPath)) { Write-Host 'No bound draft evidence to upload.'; exit 0 }
           $binding=Get-Content -Raw -LiteralPath $bindingPath | ConvertFrom-Json
-          $raw=gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft,tagName,databaseId,targetCommitish
-          if ($LASTEXITCODE -ne 0) { throw 'Draft recheck failed.' }
-          $release=$raw | ConvertFrom-Json
+          $raw=gh api "repos/$env:GITHUB_REPOSITORY/releases/$env:RELEASE_ID"
+          if ($LASTEXITCODE -ne 0) { throw "REST draft lookup failed for ID $env:RELEASE_ID; existing workflow token may lack draft access. No fallback build or publication." }
+          $validated=$raw | node (Join-Path $env:BLACKICE_SOURCE 'scripts/github-draft-identity.mjs') $env:RELEASE_ID $env:RELEASE_TAG $env:EXPECTED_SOURCE_COMMIT
+          if ($LASTEXITCODE -ne 0) { throw 'REST draft identity verification failed.' }
+          $release=$validated | ConvertFrom-Json
           if (!$release.isDraft -or $release.databaseId -ne $binding.releaseId -or $release.tagName -cne $binding.tag -or $release.targetCommitish -cne $env:EXPECTED_SOURCE_COMMIT) { throw 'Release changed or is no longer the same draft; refusing upload.' }
           $names=@('blackice-github-validation.json','blackice-windows-install-validation.json','blackice-runtime-integrity.json','blackice-source-test-provenance.json','blackice-runtime-validation.json','blackice-release-receipts.json','blackice-public-readiness.json')
           $files=@()
@@ -143,8 +157,13 @@ jobs:
             }
           }
           # This fixed JSON allowlist can never replace Setup.exe or its manifest.
-          gh release upload $env:RELEASE_TAG @files --repo $env:GITHUB_REPOSITORY --clobber
-          if ($LASTEXITCODE -ne 0) { throw 'Supporting evidence upload failed.' }
+          foreach ($file in $files) {
+            $name=Split-Path $file -Leaf
+            if (@($release.assets | Where-Object name -CEQ $name).Count) { throw "Evidence asset already exists; inspect before replacing: $name" }
+            $upload="https://uploads.github.com/repos/$env:GITHUB_REPOSITORY/releases/$env:RELEASE_ID/assets?name=$name"
+            gh api --method POST $upload -H 'Content-Type: application/json' --input $file
+            if ($LASTEXITCODE -ne 0) { throw 'Supporting evidence REST upload failed; inspect before retrying.' }
+          }
           $readiness=Join-Path $env:BLACKICE_EVIDENCE 'blackice-public-readiness.json'
           if (Test-Path -LiteralPath $readiness) {
             $result=Get-Content -Raw -LiteralPath $readiness | ConvertFrom-Json
