@@ -5,15 +5,15 @@ import {createSettingsWorkspace} from '../public/next/workspaces/settings.mjs';
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 async function fixture(t,requests=[]){
  const d=planningDOM(t),calls=[],status={connected:true,authenticated:true,models:[],execution:{activeCount:0}};
- const api=async(route,method='GET',body)=>{calls.push({route,method,body});if(route==='/api/status')return status;if(route==='/api/runtime/settings')return {providerIdleTimeoutMs:300000,...body};if(route==='/api/execution/settings')return {maxConcurrentRuns:3,...body};if(route==='/api/owner-recovery')return {localManagement:true,requests};if(route==='/api/codex/native-write-recovery')return {status:{},uncertain:[]};throw Error('Fixture does not expose '+route);};
+ const api=async(route,method='GET',body)=>{calls.push({route,method,body});if(route==='/api/status')return status;if(route==='/api/runtime/settings')return {providerIdleTimeoutMs:300000,...body};if(route==='/api/owner-recovery')return {localManagement:true,requests};if(route==='/api/codex/native-write-recovery')return {status:{},uncertain:[]};throw Error('Fixture does not expose '+route);};
  const workspace=createSettingsWorkspace({mount:d.mount,api,getStatus:()=>status,events:{subscribe:()=>()=>{}}});t.after(()=>workspace.destroy());workspace.enter();await settle();await settle();return {...d,workspace,calls,requests};
 }
 test('everyday settings separate app connections and hide empty action review without changing saved controls',async t=>{
  const f=await fixture(t);assert.equal(f.$('#next-settings-section-recovery'),null);assert.equal(f.$('#next-review-notice').hidden,true);
  assert.equal(f.$('#next-settings-section-apps').textContent,'App connections');assert.match(f.$('#next-settings-general').textContent,/Response defaults/);assert.match(f.$('#next-settings-general').textContent,/Advanced task settings/);
  assert.equal(f.$('#next-runtime-guardrails').closest('details').open,false);
- assert.equal(f.$('#next-execution-limit'),null);assert.equal(f.$('#next-execution-legacy').hidden,false);
- assert.match(f.$('#next-execution-legacy').closest('details').textContent,/Troubleshooting/);
+ assert.equal(f.$('#next-execution-limit'),null);assert.equal(f.$('#next-execution-legacy'),null);
+ assert.equal(f.calls.some(x=>x.route==='/api/execution/settings'),false);
  assert.equal(f.calls.some(x=>x.method!=='GET'),false);
  assert.equal(f.$('#next-settings-connector').parentElement.id,'next-settings-apps');
  await f.click('#next-settings-section-apps');await settle();assert.equal(f.$('#next-settings-apps').hidden,false);assert.equal(f.$('#next-settings-general').hidden,true);assert.equal(f.$('#next-settings-section-apps').getAttribute('aria-selected'),'true');

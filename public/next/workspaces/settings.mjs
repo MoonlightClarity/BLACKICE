@@ -52,11 +52,6 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '<span class="next-help" id="next-runtime-feedback" role="status"></span></div>',
     '</form></section>',
     '<details class="next-card"><summary>Troubleshooting</summary><div id="next-native-recovery"></div>',
-    '<section class="next-card" id="next-execution-legacy" hidden><h2>Saved task limit</h2>',
-    '<p class="next-help" id="next-execution-notice"></p>',
-    '<p class="next-help">This older setting can leave scheduled tasks waiting. Removing it allows independent tasks to run without a BLACKICE application-imposed limit; provider limits still apply.</p>',
-    '<button type="button" id="next-execution-remove">Remove limit</button>',
-    '<p class="next-help" role="status" id="next-execution-feedback"></p></section>',
     '<section class="next-card"><h2>Model connection</h2>',
     '<p class="next-help">Manage saved model connections in the Models section.</p>',
     '<button type="button" id="next-settings-reconnect">Reconnect model connection</button>',
@@ -90,8 +85,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     runtime:$('next-runtime-settings-form'),effort:$('next-runtime-effort'),tier:$('next-runtime-tier'),
     verbosity:$('next-runtime-verbosity'),idle:$('next-runtime-idle'),timeout:$('next-runtime-timeout'),
     gmail:$('next-runtime-gmail'),guardrails:$('next-runtime-guardrails'),
-    runtimeFeedback:$('next-runtime-feedback'),executionCard:$('next-execution-legacy'),
-    executionNotice:$('next-execution-notice'),removeLimit:$('next-execution-remove'),executionFeedback:$('next-execution-feedback'),
+    runtimeFeedback:$('next-runtime-feedback'),
   };
   let active=false,destroyed=false,generation=0,status=getStatus?.()||{},section='general',sectionRevision=0,
     modelDirty=false,modelRevision=0,runtimeDirty=false,runtimeRevision=0,statusRead=0;
@@ -245,19 +239,12 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     f.guardrails.checked=config.executionGuardrails===true;
     f.runtimeFeedback.textContent='';
   }
-  function drawExecution(config={}){
-    const limit=config.maxConcurrentRuns;
-    f.executionCard.hidden=!(Number.isSafeInteger(limit)&&limit>0);
-    f.executionNotice.textContent=f.executionCard.hidden?'':'A saved limit allows '+limit+' task(s) to run at once.';
-    f.executionFeedback.textContent='';
-  }
   async function load(){
     if(!active)return;
     const token=++generation,read=++statusRead;
     const results=await Promise.allSettled([
       api('/api/status'),
       api('/api/runtime/settings'),
-      api('/api/execution/settings'),
       api('/api/owner-recovery'),
     ]);
     if(!active||token!==generation)return;
@@ -267,11 +254,9 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     }
     if(results[1].status==='fulfilled'){if(!runtimeDirty)drawRuntime(results[1].value);else updateRuntimeSettings(results[1].value);}
     else f.runtimeFeedback.textContent='Runtime preferences unavailable.';
-    const reviews=results[3].status==='fulfilled'?(Array.isArray(results[3].value?.requests)?results[3].value.requests:[]).filter(row=>['pending','approved'].includes(row.state)):[];
+    const reviews=results[2].status==='fulfilled'?(Array.isArray(results[2].value?.requests)?results[2].value.requests:[]).filter(row=>['pending','approved'].includes(row.state)):[];
     $('next-review-notice').hidden=!reviews.length;
     $('next-review-count').textContent=reviews.length+' paused action(s) need review.';
-    if(results[2].status==='fulfilled'){if(!pending.has('execution'))drawExecution(results[2].value);}
-    else f.executionFeedback.textContent='Execution preferences unavailable.';
   }
   // Each explicitly submitted settings mutation owns one operation. Queue
   // independent form submissions instead of dropping the second one while the
@@ -341,15 +326,6 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
       generation++;
       if(revision===runtimeRevision){runtimeDirty=false;drawRuntime(updated);}else updateRuntimeSettings(updated);
     },f.runtimeFeedback);
-  });
-  f.removeLimit.addEventListener('click',()=>{
-    if(f.executionCard.hidden)return;
-    void mutate('execution',f.removeLimit,async()=>{
-      const saved=await api('/api/execution/settings','POST',{maxConcurrentRuns:null});
-      generation++;
-      drawExecution(saved);
-      if(!f.executionCard.hidden)throw Error('The saved task limit is still active. Refresh and try again.');
-    },f.executionFeedback);
   });
   f.reconnect.addEventListener('click',()=>void mutate('reconnect',f.reconnect,async()=>{
     await api('/api/runtime/reconnect','POST',{});

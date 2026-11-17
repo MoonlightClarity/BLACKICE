@@ -670,19 +670,14 @@ try {
   await evaluate('document.querySelector(".next-tab[data-space=settings]").click(); true');
   await until(()=>evaluate('Boolean(document.querySelector("#next-settings-model"))'),'Settings workspace');
   counts.settings=true;
-  fixture.state.executionSettings.maxConcurrentRuns=3;
-  await evaluate('document.querySelector("#next-settings-refresh").click();true');
-  await until(()=>evaluate('document.querySelector("#next-execution-legacy").hidden===false'),'Legacy task limit');
   await until(()=>evaluate('Boolean(document.querySelector("#next-runtime-effort option[value=high]"))'),'Runtime preference choices');
-  await evaluate('document.querySelector("#next-runtime-verbosity").value="detailed";document.querySelector("#next-runtime-settings-form").requestSubmit();document.querySelector("#next-execution-remove").click();true');
+  await evaluate('document.querySelector("#next-runtime-verbosity").value="detailed";document.querySelector("#next-runtime-settings-form").requestSubmit();true');
   await until(()=>fixture.state.settingsMutations.some(item=>item.path==='/api/runtime/settings'),'Runtime preferences saved');
-  await until(()=>fixture.state.settingsMutations.some(item=>item.path==='/api/execution/settings'),'Rapid independent settings save');
   assert.equal(fixture.state.runtimeSettings.verbosity,'detailed');
-  // The execution save was already submitted alongside the runtime save.
   assert.equal(fixture.state.settingsMutations.filter(item=>item.path==='/api/runtime/settings').length,1);
-  assert.equal(fixture.state.settingsMutations.filter(item=>item.path==='/api/execution/settings').length,1);
-  assert.equal(fixture.state.executionSettings.maxConcurrentRuns,null);
-  counts.runtimeAndConcurrency=true;
+  assert.equal(fixture.state.settingsMutations.filter(item=>item.path==='/api/execution/settings').length,0);
+  assert.equal(await evaluate('document.querySelector("#next-execution-limit")===null && document.querySelector("#next-execution-legacy")===null'),true);
+  counts.runtimeSettings=true;
   assert.equal(fixture.state.settingsPanelRequests.some(item=>/\/api\/(?:identity|providers|connections|codex)/.test(item)),false,
     'General Settings must not fetch inactive editors or catalogs.');
   assert.deepEqual(await evaluate('["default","codex","fixture::model"].map(value=>Boolean([...document.querySelector("#next-settings-model").options].find(option=>option.value===value)))'),[true,true,true]);

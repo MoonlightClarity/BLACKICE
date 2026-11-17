@@ -16,7 +16,6 @@ async function fixture(t,override){
     if(custom!==undefined)return custom;
     if(route==='/api/status')return structuredClone(info);
     if(route==='/api/runtime/settings')return method==='GET'?structuredClone(runtime):{...runtime,...body};
-    if(route==='/api/execution/settings')return {maxConcurrentRuns:method==='GET'?null:body.maxConcurrentRuns};
     if(route==='/api/models/default')return {...info,defaultModelSelection:body.model};
     throw Error('Unexpected settings request '+route);
   };
@@ -51,19 +50,19 @@ test('queued independent saves capture intent, prevent duplicate writes and reta
   const gate=deferred();let held=false;
   const f=await fixture(t,({route,method,body,runtime})=>{
     if(route==='/api/runtime/settings'&&method==='POST'){held=true;return gate.promise.then(()=>({...runtime,...body}));}
-    if(route==='/api/execution/settings'&&method==='GET')return {maxConcurrentRuns:4};
   });
   await f.input('#next-runtime-idle','10');await f.$('#next-runtime-settings-form').dispatch('submit');
   await f.$('#next-runtime-settings-form').dispatch('submit');await until(()=>held);
-  await f.click('#next-execution-remove');await f.click('#next-execution-remove');
+  f.$('#next-settings-model').value='native-model';await f.$('#next-settings-model').dispatch('change');
+  await f.click('#next-settings-save-model');await f.click('#next-settings-save-model');
   await f.input('#next-runtime-idle','11');gate.resolve();
-  await until(()=>f.$('#next-execution-feedback').textContent==='Saved.');
+  await until(()=>f.$('#next-settings-model-feedback').textContent==='Saved.');
   const writes=f.calls.filter(item=>item.method==='POST');assert.equal(writes.length,2);
-  assert.equal(writes[0].body.providerIdleTimeoutMs,600000);assert.equal(writes[1].body.maxConcurrentRuns,null);
+  assert.equal(writes[0].body.providerIdleTimeoutMs,600000);assert.equal(writes[1].body.model,'native-model');
   assert.equal(Object.hasOwn(writes[0].body,'subagentsEnabled'),false);
   assert.equal(Object.hasOwn(writes[0].body,'maxSubagents'),false);
   assert.equal(f.$('#next-runtime-subagents'),null);assert.equal(f.$('#next-runtime-max-subagents'),null);
-  assert.equal(f.$('#next-runtime-idle').value,'11');assert.equal(f.$('#next-execution-legacy').hidden,true);
+  assert.equal(f.$('#next-runtime-idle').value,'11');
 });
 
 test('Enter within a General field does not implicitly submit a settings mutation',async t=>{
@@ -144,20 +143,10 @@ test('picker account setup opens the native Models card and refresh preserves un
   assert.deepEqual(f.calls.filter(call=>call.method!=='GET').map(call=>call.route),['/api/subscriptions/mistral-vibe/refresh']);
 });
 
-test('legacy cap is hidden without a finite saved limit and reads never remove it',async t=>{
-  const f=await fixture(t);assert.equal(f.$('#next-execution-limit'),null);assert.equal(f.$('#next-execution-form'),null);
-  assert.equal(f.$('#next-execution-legacy').hidden,true);await f.click('#next-execution-remove');await settle();
+test('settings never expose or read the deprecated execution cap',async t=>{
+  const f=await fixture(t);
+  for(const id of ['next-execution-limit','next-execution-form','next-execution-legacy','next-execution-remove'])assert.equal(f.$('#'+id),null);
+  f.workspace.leave();f.workspace.enter();await settle();await f.click('#next-settings-refresh');await settle();
+  assert.equal(f.calls.some(x=>x.route==='/api/execution/settings'),false);
   assert.equal(f.calls.some(x=>x.method==='POST'),false);
-});
-test('failed explicit cap removal retains notice and permits retry',async t=>{
-  let fail=true;const f=await fixture(t,({route,method})=>{
-    if(route==='/api/execution/settings'&&method==='GET')return {maxConcurrentRuns:3};
-    if(route==='/api/execution/settings'&&method==='POST'&&fail)return Promise.reject(Error('Save unavailable'));
-  });
-  assert.equal(f.$('#next-execution-legacy').hidden,false);assert.match(f.$('#next-execution-notice').textContent,/3 task/);
-  assert.equal(f.calls.some(x=>x.method==='POST'),false);await f.click('#next-execution-remove');
-  await until(()=>f.$('#next-execution-feedback').textContent==='Save unavailable');
-  assert.equal(f.$('#next-execution-legacy').hidden,false);assert.equal(f.$('#next-execution-remove').disabled,false);
-  fail=false;await f.click('#next-execution-remove');await until(()=>f.$('#next-execution-legacy').hidden);
-  assert.deepEqual(f.calls.filter(x=>x.method==='POST').map(x=>x.body),[{maxConcurrentRuns:null},{maxConcurrentRuns:null}]);
 });
