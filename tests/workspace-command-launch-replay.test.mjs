@@ -7,6 +7,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
 import { EventEmitter } from 'node:events';
 import vm from 'node:vm';
+import {FIND_FILES_TOOL,validateFileSearchCall} from '../lib/file-search-contract.mjs';
 import {managedContextPaths} from '../lib/managed-context-paths.mjs';
 import {createFileSearch} from '../lib/workspace-file-search.mjs';
 import {homedir} from 'node:os';
@@ -20,10 +21,11 @@ const sources = Object.fromEntries(await Promise.all(['workspace-tools', 'direct
   [name, await fs.readFile(new URL(`../lib/${name}.mjs`, import.meta.url), 'utf8')])));
 const forbidden = () => { throw Error('Unexpected external adapter in inert replay test'); };
 function evaluate(name, globals, exports) {
-  const sandbox = { managedContextPaths, createFileSearch, homedir, describeHostOperation, normalizeHostOperationResult, fs, path, createHash, randomUUID, StringDecoder, Buffer, TextDecoder,
+  const sandbox = { FIND_FILES_TOOL, validateFileSearchCall, managedContextPaths, createFileSearch, homedir, describeHostOperation, normalizeHostOperationResult, fs, path, createHash, randomUUID, StringDecoder, Buffer, TextDecoder,
     structuredClone, setTimeout, clearTimeout, queueMicrotask, AbortController, AbortSignal,
     process: { pid: process.pid, platform: 'linux', env: {}, kill: forbidden }, ...globals };
-  vm.runInNewContext(sources[name].replace(/^import .*;\n/gm, '').replace(/^export /gm, '') +
+  // Strip complete ESM re-exports before declaration keywords; imported contracts are injected above.
+  vm.runInNewContext(sources[name].replace(/^import .*;\n/gm, '').replace(/^export \{[^\r\n]*\} from [^\r\n]*;\r?\n/gm, '').replace(/^export /gm, '') +
     `\nthis.exports = { ${exports.join(',')} };`, sandbox, { filename: name + '.mjs' });
   return sandbox.exports;
 }

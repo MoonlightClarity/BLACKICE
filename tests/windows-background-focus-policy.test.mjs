@@ -5,6 +5,7 @@ import {EventEmitter} from 'node:events';
 import {StringDecoder} from 'node:string_decoder';
 import path from 'node:path';
 import vm from 'node:vm';
+import {FIND_FILES_TOOL,validateFileSearchCall} from '../lib/file-search-contract.mjs';
 import {tailscaleStartupRepairScript} from '../desktop/connection-startup.mjs';
 import {resolveCodexCommand} from '../lib/codex-discovery.mjs';
 
@@ -26,10 +27,11 @@ test('normal Windows workspace commands suppress console creation while preservi
     });
     return child;
   };
-  const sandbox={spawn,fs:{stat:async()=>({isDirectory:()=>true})},path:path.win32,StringDecoder,
+  const sandbox = { FIND_FILES_TOOL, validateFileSearchCall,spawn,fs:{stat:async()=>({isDirectory:()=>true})},path:path.win32,StringDecoder,
     process:{platform:'win32',env:{}},DESKTOP_RESTART_ORIGIN_ENV:'BLACKICE_RESTART_ORIGIN',
     setTimeout,clearTimeout,AbortSignal,Buffer,TextDecoder};
-  vm.runInNewContext(value.replace(/^import .*;\r?\n/gm,'').replace(/^export /gm,'')+
+  // Strip complete ESM re-exports before declaration keywords; imported contracts are injected above.
+  vm.runInNewContext(value.replace(/^import .*;\r?\n/gm,'').replace(/^export \{[^\r\n]*\} from [^\r\n]*;\r?\n/gm,'').replace(/^export /gm,'')+
     '\nthis.createHandler=createWorkspaceToolHandler;',sandbox);
   const handler=sandbox.createHandler({cwd:'C:\\fixture'}),command='Write-Output "plain text"';
   const response=await handler({name:'relay_workspace',arguments:{action:'run',command}});

@@ -5,6 +5,7 @@ import { EventEmitter } from 'node:events';
 import { StringDecoder } from 'node:string_decoder';
 import path from 'node:path';
 import vm from 'node:vm';
+import {FIND_FILES_TOOL,validateFileSearchCall} from '../lib/file-search-contract.mjs';
 
 // Evaluate the exact implementation with inert dependencies. No real subprocess,
 // filesystem mutation, provider, network, or blocked incident payload can run.
@@ -24,10 +25,11 @@ function fixture({ platform = 'win32', failure, observed = false, synchronous = 
     });
     return child;
   };
-  const sandbox = { spawn, fs: { stat: async () => ({ isDirectory: () => true }), readdir: async () => [] }, path, StringDecoder,
+  const sandbox = { FIND_FILES_TOOL, validateFileSearchCall, spawn, fs: { stat: async () => ({ isDirectory: () => true }), readdir: async () => [] }, path, StringDecoder,
     process: { platform, env: { BLACKICE_RESTART_ORIGIN: 'stale', KEEP: 'value' } },
     DESKTOP_RESTART_ORIGIN_ENV: 'BLACKICE_RESTART_ORIGIN', setTimeout, clearTimeout, AbortSignal, Buffer, TextDecoder };
-  const transformed = source.replace(/^import .*;\n/gm, '').replace(/^export /gm, '');
+  // Strip complete ESM re-exports before declaration keywords; imported contracts are injected above.
+  const transformed = source.replace(/^import .*;\n/gm, '').replace(/^export \{[^\r\n]*\} from [^\r\n]*;\r?\n/gm, '').replace(/^export /gm, '');
   vm.runInNewContext(transformed + '\nthis.api = { createWorkspaceToolHandler, WORKSPACE_INSTRUCTIONS, processFailure };', sandbox);
   const handler = sandbox.api.createWorkspaceToolHandler({ cwd: '/fixture' });
   const run = async (command = 'Write-Output "plain text"') => {
