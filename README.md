@@ -8,9 +8,9 @@ The goal is to reduce the work of managing the agent: copying instructions betwe
 
 **[Download for Windows](https://github.com/MoonlightClarity/BLACKICE/releases)** · **[Source](https://github.com/MoonlightClarity/BLACKICE)** · **[Issues](https://github.com/MoonlightClarity/BLACKICE/issues)** · **[Apache-2.0 license](LICENSE)**
 
-> **Upcoming-release draft:** This guide targets the release **after** the ongoing integration, not the currently installed build. Candidate-only controls and defaults below require confirmation against the exact tested installer before publication; check the [published release notes](https://github.com/MoonlightClarity/BLACKICE/releases) for what is available today.
+> **Source guide:** This README describes the current source, not proof of an installed or published build. Check the [published release notes](https://github.com/MoonlightClarity/BLACKICE/releases) for the exact installer you use. Source tests and renderer checks do not establish packaged-installation success.
 
-**Guide:** [Getting started](#getting-started) · [Capabilities](#what-you-can-delegate) · [Models](#models-and-providers) · [Planning modules](#planning-you-can-configure-for-the-task) · [Goals and autonomy](#goal-mode-and-autonomous-operation) · [Troubleshooting](#configuration-and-troubleshooting) · [Contributors](#contributors)
+**Guide:** [Getting started](#getting-started) · [Capabilities](#what-you-can-delegate) · [Models](#models-and-providers) · [Planning and Activity](#planning-and-activity) · [Goals and continuing work](#goal-mode-and-continuing-work) · [Troubleshooting](#configuration-and-troubleshooting) · [Contributors](#contributors)
 
 ## Why BLACKICE exists
 
@@ -21,7 +21,7 @@ Coordinating all of that can become a second job for the person delegating it. B
 | What the user needs | What BLACKICE supplies | Practical benefit |
 | --- | --- | --- |
 | **Get work carried out** | Browser actions, file operations, commands, and connected tools available to the assistant. | Delegate the steps involved in producing a result, including applying edits and checking the destination. |
-| **Explain the task less often** | Saved conversations, task records, reusable workflows, memories, and skills. | Carry relevant information and prior progress into continuing work. |
+| **Explain the task less often** | Saved conversations, task records, saved workflow graphs, and release-owned skills. | Carry relevant information and prior progress into continuing work. |
 | **Stay in control of the approach** | Model selection, per-conversation reasoning controls, visible browser pages, and inspectable plans and action history. | Adjust how the agent works and inspect the material behind its decisions. |
 | **Understand what actually finished** | Command outputs, file patch receipts, browser observations, and recorded action states. | Review a result, investigate a failure, or resume an interrupted action using concrete records. |
 | **Repeat useful work** | Cronjobs with saved workflow settings, schedules, overlap handling, and run history. | Configure recurring work once and review its subsequent runs. |
@@ -47,7 +47,7 @@ The selected model performs the reasoning. BLACKICE supplies the workspace, tool
 
 ### Inside BLACKICE
 
-**Codex is the supported native subscription runtime.** Install and authenticate the [Codex CLI](https://github.com/openai/codex) separately, then choose an available Codex model in BLACKICE. Other compatible API endpoints (including OpenAI Responses, Anthropic Messages, and OpenAI Chat Completions-style services) are **optional advanced integrations**; the current Models UI labels these unsupported, and their compatibility, tool support, quotas, and pricing depend on the provider. Retired native CLI integrations are not new-model options, although older conversations keep their history.
+**Codex is the supported native subscription runtime.** Install and authenticate the [Codex CLI](https://github.com/openai/codex) separately, then choose an available Codex model in BLACKICE. Other compatible API endpoints (including OpenAI Responses, Anthropic Messages, and OpenAI Chat Completions-style services) are **optional advanced integrations**; the current Models UI labels these unsupported, and their compatibility, tool support, quotas, and pricing depend on the provider. Retired native CLI integrations are not new-model options. Saved history can remain inspectable, but incompatible legacy native-session formats are rejected rather than silently migrated or resumed.
 
 Conversations retain their recorded model and provider. Changing the default affects the appropriate future selections while preserving the identity of earlier work. BLACKICE keeps its own conversation history so a continuing task can retain useful context.
 
@@ -92,58 +92,39 @@ Direct actions have durable identifiers and saved results. If the connection dro
 
 The installed Windows account and available applications determine which files and commands the host can use.
 
-## Planning you can configure for the task
+## Planning and Activity
 
-In the **post-integration candidate**, Chat exposes **nine** optional Planning modules under **Planning → Modules**, each with an **On/Off** choice. **Time management defaults On; the other eight default Off** in that candidate. You can change a conversation's choices, save defaults for future chats, or turn additional Planning instructions off. Earlier installed versions may have different controls; the exact release UI and defaults still need a final installer check.
+Ordinary Chat does not require a Planning module selection or Directory mode. The old module switches, automatic planning loops, and Directory context editor are removed.
 
-The methods address different sources of wasted work:
+**Goal controls** let you state and inspect an objective for a conversation. The retained Planning view also provides access to saved graph requests: explicit objectives, steps, dependencies, and recorded responses. These are inspectable work records, not a claim that an automatic coordinator is always running.
 
-| Module | Purpose and useful example | Candidate default | Likely cost or trade-off |
-| --- | --- | --- | --- |
-| **Intent inference** | Clarify real intent and constraints when a request is ambiguous. | Off | May overinterpret an otherwise clear task. |
-| **Feasibility** | Check a missing tool or input before a consequential step. | Off | Can turn assumptions into unnecessary checks. |
-| **Task decomposition** | Split a multi-file fix into inspectable work items. | Off | Adds instructions and coordination to simple work. |
-| **Conditional logic** | Select the next action based on observed form or test states. | Off | Unneeded branches can distract from execution. |
-| **Recursive reassessment** | Revisit a diagnosis after a failing test changes the evidence. | Off | May reopen settled choices and take longer. |
-| **Metacognition** | Challenge a high-impact assumption before a recommendation. | Off | Reflection costs context and may add no evidence. |
-| **Anti-overalignment calibration** | Avoid treating a third-party preference as a new hard stop. | Off | Can be redundant for straightforward requests. |
-| **Outcome verification** | Read back an edited file or check a destination's receipt. | Off | More tool work and latency; verification can still be incomplete. |
+**Activity** reads retained updates, tool calls, and available structured outputs for the selected run. Internal outputs are opt-in. Activity does not create work, edit context, or expose private reasoning. Ordinary artifacts and conversation history remain available.
 
-**Why this helps:** you can shape the reasoning around the task. A straightforward file edit and an uncertain research problem can use different methods. An enabled module adds task-specific guidance; it does **not** necessarily trigger a separate model pass, change models, or improve the result. More enabled modules consume additional instructions/context and can increase latency or even worsen outcomes. Enable them when their expected benefit justifies the cost; limited experiments do not establish a universal winner or reproducible percentage savings. **Subagent delegation is not a ninth selectable Planning module**: a model may choose supported delegation when independent work justifies its extra coordination and model usage.
+### Skills and organization
 
-User advocacy is part of this design. BLACKICE's reasoning guidance asks the agent to distinguish hard constraints from preferences, use available context, and make supported routine decisions. A blocked step should be handled at the smallest practical scope so other actionable work can continue.
+The **Skills** workspace presents release-owned, read-only methods. You can organize these skills in nested folders; this organization does not change their contents or turn them into automatically learned memory. Browser tab folders are also nested and preserve the tabs' ownership boundaries.
 
-## Long tasks with fresh context and saved work
+The **Knowledge/memory**, **My workflows**, and **To-do** workspaces are removed. This does not remove the separate saved workflow graph manager under **Cronjobs**, or the core task and delegation tools. Previously saved files are not automatically deleted merely because their UI or service was retired.
 
-Longer tasks accumulate sources, intermediate findings, decisions, and unfinished steps. **Directory mode** gives that work a persistent structure. In the integration candidate it has its own **On/Off** control, **Off by default**, separate from the nine Planning modules. Turning it on may improve continuity on long or complex tasks, but processing phases, context assembly, and additional model calls take time; it is not a guaranteed improvement.
+### Current navigation and compatibility limits
 
-Directory runs focused stages with a **fresh model context for each stage**. It loads the stage's saved inputs and relevant material, supplies the user's authoritative instructions, and records the outputs and source references under the conversation. Later stages can reopen that work as they need it. Saved conversation history remains available.
+The top-level workspaces are **Chat, Cronjobs, Browser, Skills, and Settings**. Saved workflow graphs are available through **Cronjobs → Manage saved workflows**. Planning is a retained task-inspection route, not a top-level tab.
 
-**Why this helps:** each step can focus on the material it needs while earlier work stays available for reuse. A long task can span multiple model calls, and you can inspect what each stage received and produced. This supports continuity and reduces the need to reconstruct the task from memory. Each call still uses the selected model's actual context capacity.
+Automatic learning, old Autonomy/Swarm execution, Directory processing, and the module-selection UI are retired. The repository-wide zero-legacy inventory is not complete; this release must not be read as a guarantee that every historical reference or compatibility path has been eliminated. Incompatible legacy native sessions are rejected rather than migrated. Preserve any history you need and start a current session instead of assuming an old native session can continue.
 
-Context audits expose the conversation's model turns, saved inputs, and recorded results. The current audit viewer is for inspection. Supported context tools can correct designated retained information, record the revision, and identify derived results that need rebuilding.
+## Parallel work and saved workflow graphs
 
-### Reusable knowledge and skills
+Core delegation remains available for independent research questions or implementation steps. Saved workflow graphs can retain explicit agent nodes, dependencies, and model settings. These capabilities are separate from the removed Swarm UI and automatic orchestration machinery.
 
-The **Knowledge** workspace stores editable reusable memories and skill entries. Users can create and edit entries, scope them to folders, review revisions, and use Trash and restore controls. Saved analytical plans can also represent nested questions, dependencies, observations, and uncertainty. This is **not** a claim that proposed skills-library discovery or semantic Directory retrieval designs have shipped.
+**Why this helps:** separable work can progress together, and its outputs can be inspected before they are combined. Coordination still costs time and model usage; the selected model and task determine whether delegation is useful.
 
-**Why this helps:** preferences, project decisions, and repeatable procedures have a place to live beyond a single request. You can correct what agents retain and reuse stable instructions across appropriate work.
+## Goal Mode and continuing work
 
-## Parallel work with a coordinator
+An ordinary chat can use available tools for the current request and then stop. **Goal Mode** tracks an explicitly stated objective, progress, and completion or unresolved effects, with pause and resume controls. A goal does not authorize unrelated work or establish that an external action succeeded.
 
-Supported workflows can assign independent research questions, files, or work items to separate agents. Dependencies determine which work can proceed in parallel and which must wait. A coordinator collects the results and integrates them into the task.
+The old **Autonomous operation** controls and their automatic execution are removed. Do not assume an unattended self-drive replacement, automatic model selection, calibration, or an autonomous-model allowlist has shipped. Core delegation and scheduled work remain separate capabilities.
 
-BLACKICE's orchestration guidance considers the expected time saved, the value of independent analysis, model cost, and the effort required to combine the outputs.
-
-**Why this helps:** separable work can progress together while you keep a single overall objective. The useful result is the combined deliverable and its quality; the benefit varies with how well the task can be divided.
-
-## Goal Mode and autonomous operation
-
-**An agent choosing a tool is not the same as enabling autonomous operation.** An ordinary chat can use available browser, file, command, and planning tools for the current request and then stop. Delegating a separate worker or scheduling future runs are also distinct choices.
-
-The **post-integration candidate** separates two conversation-level controls. **Goal Mode** tracks one explicitly stated objective, its progress, and its completion or unresolved effects; it can be paused or resumed without discarding the conversation. **Autonomous operation** is a separately enabled mode for continuing work, making routine decisions, choosing eligible models, and delegating when worthwhile. It does not invent a permanent goal from the first user message. Its proposed **calibration** and **user-selected exact-model allowlist** constrain autonomous coordinator and worker model use. A model must not silently expand that list or fall back to an unlisted charged model.
-
-These controls and their reliable pause, resume, model attribution, and unresolved-effect handling are **candidate features pending final integrated/UI tests**. In particular, preventing some duplicate in-flight effects does not guarantee exactly-once delivery to an external website. Check a saved uncertain receipt and its destination before retrying a consequential action.
+A saved uncertain action receipt is not proof of success or failure. Check the destination before retrying a consequential action; preventing some duplicate in-flight work does not guarantee exactly-once delivery to an external website.
 
 ## Recurring work with Cronjobs
 
@@ -177,7 +158,7 @@ The aim is to reduce supervision while making results easier to verify. Reliabil
 1. **Install on 64-bit Windows.** Open the [published Windows releases](https://github.com/MoonlightClarity/BLACKICE/releases), read the release notes and installer/checksum information, run the appropriate `Blackice-<version>-Setup.exe`, and launch BLACKICE from its shortcut. The Windows x64 installer bundles the desktop application and a pinned llama.cpp runtime. It does **not** bundle your model account, cloud API quota, model weights, or separate Ollama/LM Studio services.
 2. **Connect a model.** For the supported native route, install and sign in to the [Codex CLI](https://github.com/openai/codex) separately. Check **Settings → Models → Codex subscription** and choose an available model in **Settings → General** or Chat. If you prefer an optional API or local endpoint, configure and verify it deliberately in **Settings → Models**.
 3. **Choose the workspace.** In **Settings → General**, select a working folder and start **Chat**. Supply any relevant files and constraints. For ChatGPT using BLACKICE directly, follow the separate [connector setup](CHATGPT-CONNECTOR.md), which may require Tailscale and an authorized MCP connection.
-4. **Choose the amount of reasoning.** The post-integration candidate places the nine Planning switches under **Chat → Planning → Modules** and a separate **Directory** switch beside the composer; Directory and eight modules default Off; Time management defaults On, with explicit saved Off preserved. Verify these controls against the release you installed.
+4. **Choose the model and reasoning controls.** Select the model, available reasoning effort, and context options for your chat. Use Goal controls for an explicit continuing objective. There are no Planning-module or Directory switches in the current interface.
 5. **Try a first task.** Ask: *“Create `blackice-check.txt` in the working folder containing `BLACKICE file check`, read it back, and tell me the file path and exact content.”* Verify that the actual file and content exist; a model assertion alone is not enough.
 6. **Inspect and continue.** Review the browser state, file changes, command outputs and action receipts. Correct or resume the same conversation as needed; use **Cronjobs** if the work should repeat on a schedule.
 
@@ -185,14 +166,14 @@ Model accounts, API keys, quotas, and service capabilities come from the selecte
 
 ## Configuration and troubleshooting
 
-**Find the controls.** **Settings → General** holds the working folder, default model, runtime preferences and runtime health. **Settings → Models** shows Codex, optional advanced endpoints and local-model management (where included in the tested build). **Settings → Tools** manages MCP tool connections; importing a configuration is not the same as confirming a live connection. The post-integration **Chat** composer has Planning module and Directory choices, with separate candidate controls for Goal Mode and autonomous operation. **Settings → ChatGPT connector** configures the direct remote link.
+**Find the controls.** **Settings → General** holds the working folder, default model, runtime preferences and runtime health. **Settings → Models** shows Codex, optional advanced endpoints and local-model management (where included in the tested build). **Settings → Tools** manages MCP tool connections; importing a configuration is not the same as confirming a live connection. The **Chat** composer retains model, reasoning, context, and Goal controls; retired module, Directory, and old Autonomy controls are not part of current setup. **Settings → ChatGPT connector** configures the direct remote link.
 
 - **Slow startup or an unresponsive model:** check **Settings → General → Runtime health** and the model connection status. Distinguish app startup from a Codex sign-in, unavailable server, or model request. The UI exposes **Refresh** and **Reconnect model runtime**; inspect the returned state before considering a restart, and preserve unfinished work.
 - **Missing provider or model:** verify the Codex CLI is installed and authenticated, or that the explicitly configured API/local server is reachable. Refresh its model list, check the exact model and provider quota, and inspect any reported error. A downloaded llama.cpp archive alone is not a running server.
 - **Missing tool:** review **Settings → Tools** and whether its connection is enabled and actually connected; also check that the selected model supports tool use. Available tools depend on both the host and the active model.
 - **After an update:** refresh runtime status and reconnect the model runtime only if needed. For direct ChatGPT use, reuse a healthy existing connection and verify a fresh status request. If its address or authorization changed, follow the [connector recovery instructions](CHATGPT-CONNECTOR.md) instead of blindly registering duplicates.
 
-**Known limits:** the host must be running for tools and schedules; website authentication and unsupported controls can interrupt work; external action receipts can remain uncertain. Candidate fixes, particularly Goal-effect resolution and automatic local-server launching, are **not released guarantees**.
+**Known limits:** the host must be running for tools and schedules; website authentication and unsupported controls can interrupt work; external action receipts can remain uncertain. Source-level fixes are **not installed-release guarantees**. Incompatible legacy native sessions are rejected, and the repository-wide zero-legacy inventory remains incomplete.
 
 ### Data and remote access
 
