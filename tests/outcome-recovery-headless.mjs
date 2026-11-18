@@ -78,4 +78,4 @@ try{
   checks.clearsOnReassessment=true;assert.equal(posts.length,0);assert.equal(errors.length,0);
   console.log('PASS '+JSON.stringify({checks,style,posts,errors,headless:true,syntheticData:true}));
 }catch(error){console.error(error.stack||error);process.exitCode=1;}
-finally{try{await send('Browser.close');}catch{}try{ws?.close();}catch{}try{child?.kill();}catch{}fixture.server.closeAllConnections();await new Promise(resolve=>fixture.server.close(resolve));await fixture.closeKnowledge();await rm(directory,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
+finally{try{await send('Browser.close');}catch{}try{ws?.close();}catch{}try{child?.kill();}catch{}fixture.server.closeAllConnections();await new Promise(resolve=>fixture.server.close(resolve));await fixture.close();await rm(directory,{recursive:true,force:true,maxRetries:5,retryDelay:200});}

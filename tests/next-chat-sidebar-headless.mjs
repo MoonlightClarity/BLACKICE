@@ -87,6 +87,6 @@ try{
 finally{
   if(ws?.readyState===WebSocket.OPEN){try{await send('Browser.close');}catch{}}
   try{ws?.close();}catch{}try{child?.kill();}catch{}
-  fixture.server.closeAllConnections();await new Promise(resolve=>fixture.server.close(resolve));await fixture.closeKnowledge();
+  fixture.server.closeAllConnections();await new Promise(resolve=>fixture.server.close(resolve));await fixture.close();
   await rm(directory,{recursive:true,force:true,maxRetries:5,retryDelay:200});
 }

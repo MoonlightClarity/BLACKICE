@@ -107,7 +107,7 @@ async function verify(){try{
   await writeFile(path.join(out,'goal-mode-visual.json'),JSON.stringify({passed:true,checks,posts,errors},null,2));
   console.log(JSON.stringify({passed:true,checks,posts:posts.length,errors}));
 }catch(error){await writeFile(path.join(out,'goal-mode-visual.json'),JSON.stringify({passed:false,error:error.stack,checks,posts,errors},null,2));console.error(error.stack);process.exitCode=1;}
-finally{if(window&&!window.isDestroyed())window.destroy();fixture.server.closeAllConnections();await new Promise(resolve=>fixture.server.close(resolve));await fixture.closeKnowledge();await rm(profile,{recursive:true,force:true,maxRetries:3,retryDelay:100}).catch(()=>{});app.exit(process.exitCode||0);}
+finally{if(window&&!window.isDestroyed())window.destroy();fixture.server.closeAllConnections();await new Promise(resolve=>fixture.server.close(resolve));await fixture.close();await rm(profile,{recursive:true,force:true,maxRetries:3,retryDelay:100}).catch(()=>{});app.exit(process.exitCode||0);}
 
 }
 void verify();

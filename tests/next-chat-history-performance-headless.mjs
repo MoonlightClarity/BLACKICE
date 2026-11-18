@@ -119,4 +119,4 @@ try{
   assert.equal(errors.length,0,errors.join('\n'));assert.deepEqual(networkCalls,[]);
   console.log('PASS '+JSON.stringify({renderer,syntheticData:true,headless:true,realApiCalls:networkCalls.length}));
 }catch(error){console.error(error.stack||error);process.exitCode=1;}
-finally{try{if(ws?.readyState===WebSocket.OPEN)await send('Browser.close');}catch{}try{ws?.close();}catch{}try{child?.kill();}catch{}fixture.server.closeAllConnections();await new Promise(resolve=>fixture.server.close(resolve));await fixture.closeKnowledge();await rm(directory,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
+finally{try{if(ws?.readyState===WebSocket.OPEN)await send('Browser.close');}catch{}try{ws?.close();}catch{}try{child?.kill();}catch{}fixture.server.closeAllConnections();await new Promise(resolve=>fixture.server.close(resolve));await fixture.close();await rm(directory,{recursive:true,force:true,maxRetries:5,retryDelay:200});}

@@ -110,4 +110,4 @@ try{
   if(process.env.BLACKICE_CHAT_MANAGEMENT_SCREENSHOT){const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});await writeFile(process.env.BLACKICE_CHAT_MANAGEMENT_SCREENSHOT,Buffer.from(shot.data,'base64'));}
   console.log('PASS '+JSON.stringify({checks,mutationCount:mutations.length,syntheticData:true,headless:true}));
 }catch(error){console.error(error.stack||error);process.exitCode=1;}
-finally{try{await send('Browser.close');}catch{}try{ws?.close();}catch{}try{child?.kill();}catch{}fixture.server.closeAllConnections();await new Promise(resolve=>fixture.server.close(resolve));await fixture.closeKnowledge();await rm(directory,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
+finally{try{await send('Browser.close');}catch{}try{ws?.close();}catch{}try{child?.kill();}catch{}fixture.server.closeAllConnections();await new Promise(resolve=>fixture.server.close(resolve));await fixture.close();await rm(directory,{recursive:true,force:true,maxRetries:5,retryDelay:200});}

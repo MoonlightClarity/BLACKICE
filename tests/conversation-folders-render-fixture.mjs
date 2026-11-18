@@ -106,7 +106,7 @@ async function close(){
   if(closing)return;closing=true;
   fixture.server.closeAllConnections();
   await new Promise(resolve=>fixture.server.close(resolve));
-  await fixture.closeKnowledge();
+  await fixture.close();
   await rm(profile,{recursive:true,force:true,maxRetries:5,retryDelay:50});
   console.log(JSON.stringify({event:'fixture_closed',audit:audits}));
 }

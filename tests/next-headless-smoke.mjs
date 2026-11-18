@@ -826,7 +826,7 @@ finally{
   try{processHandle?.kill();}catch{}
   fixture.server.closeAllConnections();
   await new Promise(resolve=>fixture.server.close(resolve));
-  await fixture.closeKnowledge();
+  await fixture.close();
   await sleep(180);
   await rm(dir,{recursive:true,force:true,maxRetries:3,retryDelay:100}).catch(()=>{});
 }

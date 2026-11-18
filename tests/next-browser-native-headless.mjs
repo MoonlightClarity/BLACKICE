@@ -468,6 +468,6 @@ try{
   try{socket?.close();}catch{}
   try{browserProcess?.kill();}catch{}
   fixture.server.closeAllConnections();await new Promise(resolve=>fixture.server.close(resolve));
-  await fixture.closeKnowledge();await sleep(180);
+  await fixture.close();await sleep(180);
   await rm(directory,{recursive:true,force:true,maxRetries:3,retryDelay:100}).catch(()=>{});
 }

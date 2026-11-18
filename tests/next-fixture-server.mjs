@@ -1,8 +1,7 @@
 /** Headless, entirely synthetic UI fixture. This never opens the user's profile. */
 import { createServer } from 'node:http';
-import { readFile, mkdtemp, writeFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { KnowledgeStore } from '../lib/knowledge.mjs';
+import { readFile } from 'node:fs/promises';
+import {createSkillsCatalog,skillIdFromRequestPath} from '../lib/skills-catalog.mjs';
 import { createSettingsFixture } from './next-settings-fixture.mjs';
 import { createPlanningBrowserFixture } from './next-planning-browser-fixture.mjs';
 import { createActivityService } from '../lib/activity.mjs';
@@ -77,7 +76,7 @@ export function makeFixture({heavyHistory=false,largeCatalog=false,largeWorkflow
       providerIdleTimeoutMs:300000,runTimeoutMs:null,subagentsEnabled:false,maxSubagents:3},
     executionSettings:{maxConcurrentRuns:null},
     providers:[{id:'codex',displayName:'Codex',connected:true}],
-    settingsMutations:[],postedWorkflows:[],submittedRuns:[],knowledgeMutations:[],
+    settingsMutations:[],postedWorkflows:[],submittedRuns:[],
     operationsPaused:false,scheduleMutations:[],resultAcknowledgements:[],
     workflowIndexRequests:0,workflowFullListRequests:0,workflowDetailRequests:[],scheduledWrites:[],
     workflows:[{id:'sample-workflow',name:'Example workflow',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Agent',model:'default',prompt:'Review saved fixture evidence.'},{id:'output',type:'output'}],
@@ -86,22 +85,7 @@ export function makeFixture({heavyHistory=false,largeCatalog=false,largeWorkflow
       ...(nativeBrowser?{nativeSurface:true,canGoBack:true,canGoForward:true}:{})}],
     activeBrowserTab:'fixture-tab',downloads:[],browserStatusGate:null,browserActionGate:null,
   };
-  const knowledgeReady=(async()=>{
-    const directory=await mkdtemp(path.join(tmpdir(),'blackice-next-knowledge-fixture-'));
-    const at=new Date(base).toISOString();
-    const entry=(id,kind,title,content,extra={})=>({id,kind,title,summary:'Fixture saved knowledge',content,cwd:null,
-      revision:1,createdAt:at,updatedAt:at,action:'create',provenance:{source:'user',at},
-      ...(kind==='memory'?{memoryType:'note',sources:[],relations:[]}:{}),...extra});
-    const entries=[entry('memory-fixture','memory','Saved fixture memory','Original memory content',
-      {memoryType:'fact',sources:['https://example.test/evidence'],relations:[{type:'supports',targetId:'memory-related'}]}),
-      entry('memory-related','memory','Related fixture note','Related evidence'),
-      entry('skill-fixture','skill','Saved fixture skill','First step\nSecond step'),
-      ...Array.from({length:100},(_,i)=>entry('memory-catalog-'+i,'memory','Library note '+i,
-        i===99?'Deep body needle for server search':'Saved note '+i))];
-    await writeFile(path.join(directory,'knowledge.json'),JSON.stringify({version:1,entries}));
-    const store=await new KnowledgeStore({dataDir:directory}).init();
-    return {store,directory};
-  })();
+  const skillsCatalog=createSkillsCatalog();
   if(largeWorkflow){
     const nodes=Array.from({length:1500},(_,i)=>({
       id:'stage-'+i,name:'Stage '+i,type:i===0?'input':i===1499?'output':'agent',
@@ -140,28 +124,10 @@ export function makeFixture({heavyHistory=false,largeCatalog=false,largeWorkflow
     calls.push(req.method+' '+pathname);
     if(await settingsFixture.handle(req,res,url))return;
     if(await planningFixture(req,res,url))return;
-    if(pathname==='/api/knowledge'||pathname.startsWith('/api/knowledge/')){
-      try{
-        const {store}=await knowledgeReady;
-        const sendChanged=()=>{for(const stream of subscribers)stream.write('data: '+JSON.stringify({type:'knowledge.updated',data:store.status()})+'\n\n');};
-        const match=pathname.match(/^\/api\/knowledge\/([A-Za-z0-9_-]+)(?:\/(history|restore))?$/);
-        if(req.method==='GET'){
-          if(match)return json(res,match[2]==='history'?store.history(match[1]):store.get(match[1]));
-          const q=url.searchParams,query={};
-          for(const name of ['kind','memoryType','query','cwd'])if(q.has(name))query[name]=q.get(name);
-          if(q.has('limit'))query.limit=Number(q.get('limit'));
-          for(const name of ['includeDeleted','deletedOnly'])if(q.has(name))query[name]=q.get(name)==='true';
-          return json(res,store.list(query));
-        }
-        let raw='';for await(const part of req)raw+=part;
-        const value=JSON.parse(raw||'{}');let saved;
-        if(req.method==='POST'&&!match)saved=await store.upsert(value,{source:'user'});
-        else if(req.method==='DELETE'&&match)saved=await store.remove(match[1],{expectedRevision:value.expectedRevision});
-        else if(req.method==='POST'&&match?.[2]==='restore')saved=await store.restore(match[1],value.revision,{source:'user'},{expectedRevision:value.expectedRevision});
-        else return json(res,{error:'Unavailable knowledge fixture operation'},404);
-        state.knowledgeMutations.push({path:pathname,method:req.method,body:value});sendChanged();return json(res,saved);
-      }catch(error){return json(res,{error:error.message},error.status||400);}
-    }
+    if(pathname==='/api/skills'&&req.method==='GET')return json(res,await skillsCatalog.list({query:url.searchParams.get('query')||''}));
+    if(pathname==='/api/skills/folders'&&req.method==='GET')return json(res,{version:1,revision:0,folders:[],assignments:{}});
+    const skillId=skillIdFromRequestPath(pathname);
+    if(skillId&&req.method==='GET'){try{return json(res,await skillsCatalog.detail({id:skillId}));}catch(error){return json(res,{error:error.message},error.status||400);}}
     if(pathname==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive'});res.write('data: '+JSON.stringify({type:'runtime.status',data:state.status})+'\n\n');subscribers.add(res);res.on('close',()=>subscribers.delete(res));return;}
     if(req.method==='GET'&&(pathname==='/api/activity'||pathname.startsWith('/api/activity/'))){
       try{
@@ -342,7 +308,7 @@ export function makeFixture({heavyHistory=false,largeCatalog=false,largeWorkflow
     try{const content=await readFile(path.join(PUBLIC,file));res.writeHead(200,{'Content-Type':mime[path.extname(file)]||'image/png','Cache-Control':'no-store'});res.end(content);}
     catch{return json(res,{error:'Static file unavailable'},404);}
   };
-  return {server:createServer(handler),state,calls,knowledge:async()=>(await knowledgeReady).store,settings:settingsFixture.stores,
-    async closeKnowledge(){const {store,directory}=await knowledgeReady;await store.writeChain;await settingsFixture.close();await rm(directory,{recursive:true,force:true});},
+  return {server:createServer(handler),state,calls,settings:settingsFixture.stores,
+    async close(){await settingsFixture.close();},
     send(event){for(const res of subscribers)res.write('data: '+JSON.stringify(event)+'\n\n');}};
 }
