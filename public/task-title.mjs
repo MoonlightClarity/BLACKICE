@@ -16,3 +16,19 @@ export function taskTitle(input, { max = 120, fallback = 'New task' } = {}) {
   const shortened = String(result || fallback).slice(0, limit);
   return shortened.replace(/[\uD800-\uDBFF]$/, '');
 }
+
+/** Automatic sidebar topic label only; explicit conversation names bypass this formatter. */
+export function conversationTitle(input,{fallback='Conversation'}={}){
+  const authored=taskTitle(input,{max:4096,fallback});
+  let topic=authored.replace(/^(?:(?:please|can you|could you|would you|help me|i need (?:you to|help with)|i want (?:you to|to))\s+)+/i,'')
+    .replace(/^(?:build|create|make|write|research|find|fix|explain|review|compare|implement)\s+(?:(?:a|an|the)\s+)?/i,'');
+  topic=topic.split(/[.!?](?:\s|$)/,1)[0].trim()||authored;
+  const words=topic.split(/\s+/);let label='';
+  for(const word of words.slice(0,6)){
+    if(label&&label.length+1+word.length>48)break;
+    label+=(label?' ':'')+word;
+  }
+  label=label.slice(0,48).replace(/[\uD800-\uDBFF]$/,'').replace(/[,:;.!?]+$/,'');
+  label=label.replace(/(?:\s+(?:and|or|for|with|the|a|an|my|your|to|of|in|on))+$/i,'');
+  return label?label[0].toLocaleUpperCase()+label.slice(1):fallback;
+}

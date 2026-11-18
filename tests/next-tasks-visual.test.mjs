@@ -777,3 +777,12 @@ test('older unread results beyond summary100 remain reachable and can be reviewe
  assert.equal(f.jobs[0].delivery.state,'acknowledged');
  assert.equal(f.$('#next-tasks-results').querySelectorAll('[data-result-job-id]').at(-1).dataset.resultJobId,'job-0');
 });
+
+test('Cronjobs renders schedules chronologically and keeps inspection actions bound to the right row',async t=>{
+ const rows=[{id:'late',name:'Later',enabled:true,nextAt:2000},{id:'none',name:'Unscheduled',enabled:false,nextAt:null},{id:'early',name:'Earlier',enabled:true,nextAt:1000}].map(x=>({...x,input:'Task',revision:1,trigger:{type:'interval',everySeconds:60}}));
+ const before=structuredClone(rows);
+ const f=fixture(t,{hook:async({path})=>path==='/api/operations'?{status:{healthy:true},deployments:rows,jobs:[],results:{items:[]}}:undefined});
+ f.component.enter();await settle();await f.clickReady('#next-tasks-tab-schedules');
+ assert.deepEqual(f.$('#next-tasks-deployments').querySelectorAll('[data-schedule-inspect]').map(x=>x.dataset.scheduleInspect),['early','late','none']);
+ assert.deepEqual(rows,before);assert.equal(f.calls.some(x=>x.method!=='GET'),false);
+});

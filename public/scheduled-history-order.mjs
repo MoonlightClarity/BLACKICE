@@ -17,3 +17,13 @@ const newest=(rows,date)=>[...(rows||[])].sort((a,b)=>{
 });
 export const newestJobs=rows=>newest(rows,jobLastRunAt);
 export const newestResults=rows=>newest(rows,resultAvailableAt);
+
+/** Upcoming schedules, overdue first; undated/disabled rows follow in stable ID order. */
+export function chronologicalSchedules(rows=[]){
+  const scheduledAt=row=>row?.enabled===false?null:instant(row?.overdue?row.overdueSince:row?.nextAt)??instant(row?.nextAt);
+  return [...rows].sort((a,b)=>{
+    const left=scheduledAt(a),right=scheduledAt(b);
+    if(left!==right)return left===null?1:right===null?-1:left-right;
+    const x=String(a.id),y=String(b.id);return x<y?-1:x>y?1:0;
+  });
+}

@@ -24,3 +24,11 @@ test('operations snapshot sorts presentation without changing dispatch state or 
  assert.deepEqual(view.jobs.map(x=>x.id),['newer','older']);assert.deepEqual(jobs,before);
  view.jobs[0].createdAt='changed';assert.deepEqual(jobs,before);
 });
+
+test('cron schedules sort by actual due time with undated last and stable IDs without mutation',async()=>{
+ const {chronologicalSchedules}=await import('../public/scheduled-history-order.mjs');
+ const rows=[{id:'webhook',nextAt:null},{id:'later',enabled:true,nextAt:2000},{id:'b',nextAt:1000},{id:'a',nextAt:1000},{id:'disabled',enabled:false,nextAt:1},{id:'overdue',enabled:true,overdue:true,overdueSince:'1970-01-01T00:00:00.500Z',nextAt:500},{id:'invalid',nextAt:'bad'}];
+ const before=structuredClone(rows),expected=['overdue','a','b','later','disabled','invalid','webhook'];
+ assert.deepEqual(chronologicalSchedules(rows).map(x=>x.id),expected);
+ assert.deepEqual(chronologicalSchedules([...rows].reverse()).map(x=>x.id),expected);assert.deepEqual(rows,before);
+});

@@ -1,4 +1,4 @@
-import { newestJobs, newestResults, jobLastRunAt } from '../../scheduled-history-order.mjs';
+import { newestJobs, newestResults, jobLastRunAt, chronologicalSchedules } from '../../scheduled-history-order.mjs';
 import { createScheduleFolders } from './schedule-folders.mjs';
 import { text } from '../core/dom.mjs';
 import { workflowCatalogWindow } from './workflow-overview-model.mjs';
@@ -611,7 +611,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       :status.ticker?.state==='error'?'Scheduler tick failed: '+(status.ticker.lastError||'Unknown failure')
       :'Schedules ready · '+(status.enabled||0)+' enabled · '+(status.running||0)+' running'+(status.ticker?.lastSuccessAt?' · Last tick: '+humanTime(status.ticker.lastSuccessAt):''));
     view.deployments.replaceChildren();
-    const deployments=Array.isArray(snapshot.deployments)?snapshot.deployments:[];
+    const deployments=chronologicalSchedules(Array.isArray(snapshot.deployments)?snapshot.deployments:[]);
     if(!deployments.length)add(view.deployments,'p',cronjobsOnly?'No cronjobs yet. Select New cronjob to get started.':'No saved schedules yet. Select New schedule to get started.','next-empty');
     const groups=scheduleFolders.group(view.deployments,deployments,snapshot.organization);
     for(const task of deployments){

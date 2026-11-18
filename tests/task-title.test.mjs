@@ -28,15 +28,16 @@ test('structured requests keep their exact message while workflow and sidebar la
  const input=outlined,workflow=createMissionWorkflow({id:'outline',task:input});
  assert.equal(workflow.name,'Build a chess game with SVG pieces');
  const item={id:'outline-0',taskId:'outline-0',input,workflow,createdAt:'2026-10-17T12:00:00Z',status:'completed'};
- assert.equal(conversationSummaries([item])[0].title,workflow.name);assert.equal(item.input,outlined);
+ assert.equal(conversationSummaries([item])[0].title,'Chess game with SVG pieces');assert.equal(item.input,outlined);
 });
 
 test('derived outline titles survive conversation restart and never replace an explicit rename',async t=>{
  const resources=[],dataDir=await directory(t,resources),engine=new Engine(),archive=await new ConversationArchive({dataDir,engine}).init();resources.push(archive);
  const run={id:'outline-0',taskId:'outline-0',createdAt:'2026-10-17T12:00:00Z',input:outlined,workflow:createMissionWorkflow({id:'outline',task:outlined}),status:'completed',settled:true,nodes:{agent:{status:'completed',output:'Done'}},output:'Done',events:[]};
- engine.runs.set(run.id,run);await archive.capture(run);assert.equal(archive.list()[0].title,'Build a chess game with SVG pieces');
- await archive.rename(run.id,'My game');await archive.close();const restored=await new ConversationArchive({dataDir,engine:new Engine()}).init();resources.push(restored);
- assert.equal(restored.list()[0].title,'My game');assert.equal((await restored.get(run.id)).input,outlined);assert.equal((await restored.family(run.id)).title,'My game');
+ engine.runs.set(run.id,run);await archive.capture(run);assert.equal(archive.list()[0].title,'Chess game with SVG pieces');
+ const manualTitle='My deliberately detailed manually named conversation about the chess game';
+ await archive.rename(run.id,manualTitle);await archive.close();const restored=await new ConversationArchive({dataDir,engine:new Engine()}).init();resources.push(restored);
+ assert.equal(restored.list()[0].title,manualTitle);assert.equal((await restored.get(run.id)).input,outlined);assert.equal((await restored.family(run.id)).title,manualTitle);
 });
 
 test('Inbox stores meaningful outline labels and freezes the authored prompt through restart',async t=>{
@@ -45,4 +46,15 @@ test('Inbox stores meaningful outline labels and freezes the authored prompt thr
  assert.equal(item.title,'Build a chess game with SVG pieces');assert.equal(item.input,outlined);
  const named=await inbox.add({input:outlined,workflow,cwd,title:'My saved brief'});assert.equal(named.title,'My saved brief');await inbox.close();
  const restored=await new TaskInbox(options).init();resources.push(restored);assert.equal(restored.get(item.id).title,item.title);assert.equal(restored.get(item.id).input,outlined);assert.equal(restored.get(named.id).title,named.title);
+});
+
+test('automatic conversation labels are concise topics rather than verbose opening requests',async()=>{
+ const {conversationTitle}=await import('../public/task-title.mjs');
+ assert.equal(conversationTitle('Could you please research the best remote engineering roles for my next career move? Include salaries and benefits.'),'Best remote engineering roles');
+ assert.equal(conversationTitle('Please fix the login regression. Keep all tests passing.'),'Login regression');
+ assert.equal(conversationTitle('Create a deployment checklist with explicit rollback and recovery verification steps'),'Deployment checklist with explicit rollback');
+ assert.equal(conversationTitle('  '),'Conversation');
+ for(const value of ['x'.repeat(200),'word '.repeat(200),'## Goal\n\nPlease review a very long request containing many detailed requirements']){
+  const title=conversationTitle(value);assert.ok(title.length<=48);assert.ok(title.split(/\s+/).length<=6);
+ }
 });

@@ -1,4 +1,4 @@
-import { taskTitle } from './task-title.mjs';
+import { conversationTitle } from './task-title.mjs';
 import { REASONING_LEVELS, reasoningSelectionSupported } from './reasoning-model.mjs';
 import { newerTaskState } from './run-state-model.mjs';
 import { PLANNING_INPUT_MODES, planningChoice, planningModeDetail, selectPlanningEffort } from './planning-mode.mjs';
@@ -77,7 +77,7 @@ export function conversationSummaries(runs) {
   const groups = new Map(), byId = new Map(runs.map(run => [run.id, run]));
   for (const run of [...runs].sort((a, b) => time(a) - time(b))) {
     const id = conversationId(run, runs, byId), existing = groups.get(id);
-    if (!existing) groups.set(id, { id, rootRunId: run.id, runId: run.id, title: taskTitle(runUserText(run), { max: 140, fallback: run.workflowName || 'Conversation' }), updatedAt: run.createdAt, status: run.status, settled: run.settled, runs: 1 });
+    if (!existing) groups.set(id, { id, rootRunId: run.id, runId: run.id, title: conversationTitle(runUserText(run), { fallback: run.workflowName || 'Conversation' }), updatedAt: run.createdAt, status: run.status, settled: run.settled, runs: 1 });
     else { existing.runId = run.id; existing.updatedAt = run.createdAt; existing.status = run.status; existing.settled = run.settled; existing.runs++; }
   }
   // Preserve first-active-run precedence without scanning every run for every group.
