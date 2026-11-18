@@ -8,7 +8,7 @@ Candidate source notes, not an installation or publication receipt.
 - Show all Browser tabs in a nested project-folder outline. Preserve ownership boundaries, persistent in-use marks, explicit mark/release controls and protected bulk cleanup. Support folder drag, keyboard nesting and revision-aware inline rename.
 - Rename Chat folders inline with edit-start revision checks and no stale-rename replay.
 - Edit Skills as one document with Save. Keep unsaved drafts through refresh and conflicts; organize skills with nested folders and drag/keyboard moves. Models read effective content on demand and cannot save through skill tools.
-- Bundle the owner-approved SOUL and exact full Calibrated Depth and Action skill document. Existing owner-edited content is not overwritten. Only the approved SOUL spelling correction and terminal-newline normalization were applied.
+- Bundle the owner-approved SOUL and exact full Calibrated Depth and Action skill document. Existing owner-edited content is not overwritten. The approved SOUL effort bullet now names the current bottleneck, stage-specific value and task completion versus downstream outcome; the remaining approved text is unchanged.
 
 - Add an on-demand, user-editable browser tab-management skill for explicit in-use marks, project-folder organization and verified cleanup of disposable task-created tabs.
 

@@ -5,12 +5,12 @@ import path from 'node:path';
 import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
 import {IdentityStore,DEFAULT_SOUL,createIdentityToolHandler,IDENTITY_INSTRUCTIONS} from '../lib/identity.mjs';
-const exact=await fs.readFile(new URL('./fixtures/soul-default-approved-20261118.md',import.meta.url));
+const exact=await fs.readFile(new URL('./fixtures/soul-default-revised-20261118.md',import.meta.url));
 const previous=await fs.readFile(new URL('./fixtures/soul-default-20261115.md',import.meta.url),'utf8');
 async function fixture(t){const dataDir=await fs.mkdtemp(path.join(tmpdir(),'blackice-release-soul-'));const stores=[];const open=async()=>{const s=await new IdentityStore({dataDir}).init();stores.push(s);return s;};t.after(async()=>{for(const s of stores)await s.close();await fs.rm(dataDir,{recursive:true,force:true});});return {dataDir,open};}
 test('fresh profile receives exact concise default and restart is idempotent',async t=>{
  const {dataDir,open}=await fixture(t);const s=await open(),doc=await s.read('soul');
- assert.equal(createHash('sha256').update(exact).digest('hex'),'ff7e24c0f0b38673ac413a534fe435c1f56edee0ca62f46f5d25755f498cdba1');
+ assert.equal(createHash('sha256').update(exact).digest('hex'),'11086ba13eba291ca792d5c8cfeba4563e9c6ca595f8183aae27f7b30dbf0d2a');
  assert.deepEqual(Buffer.from(DEFAULT_SOUL),exact);assert.deepEqual(await fs.readFile(path.join(dataDir,'identity','SOUL.md')),exact);
  assert.equal((await (await open()).read('soul')).revision,doc.revision);
  const snap=await s.snapshot();assert.equal(snap.documents.soul.truncated,false);assert.equal(snap.documents.soul.hash,doc.hash);assert.ok(Object.isFrozen(snap.documents.soul));
@@ -61,3 +61,5 @@ test('snapshot-bound model read returns full original bytes after user edit even
  const next=createIdentityToolHandler({store:s,snapshot:await s.snapshot()});
  assert.equal((await read(next)).content,'# USER NEXT VERSION');
 });
+
+test("revised default changes only the owner-approved effort bullet",async()=>{const prior=await fs.readFile(new URL("./fixtures/soul-default-approved-20261118.md",import.meta.url),"utf8");assert.equal(DEFAULT_SOUL,prior.replace("Weigh the costs of delay, interruption, and missed opportunity alongside the risks of acting. Reasoning, planning, and verification should earn their cost, whether or not formal planning is enabled.","Weigh the costs of delay, interruption, and missed opportunity alongside the risks of acting. Direct effort toward the current bottleneck, and invest in proportion to the value that effort can create at this stage. Distinguish completing a task from the later outcome it may enable. Reasoning, planning, and verification should earn their cost, whether or not formal planning is enabled."));});
