@@ -1,12 +1,13 @@
 /** A user-managed outline. No task dispatch, model calls, or memory admission. */
 export function createTodosWorkspace({mount,api,events,notify=()=>{}}){
+ mount.replaceChildren();
  const doc=mount.ownerDocument;
  const el=(parent,tag,text='',cls='')=>{const n=doc.createElement(tag);n.textContent=text;if(cls)n.className=cls;parent.append(n);return n;};
  mount.classList.add('todo-workspace');
  const head=el(mount,'header','','todo-header');el(head,'h1','To-do');el(head,'p','A simple outline for your tasks. Nothing runs automatically.','next-help');
  const tools=el(mount,'div','','todo-tools');
  const btn=(parent,label,fn)=>{const b=el(parent,'button',label);b.type='button';b.addEventListener('click',fn);return b;};
- const refreshButton=btn(tools,'Refresh',async()=>{await refresh();if(!destroyed&&!uncertain){selected=null;render();message('Refreshed. Select a task to edit its current title.');}});
+ const refreshButton=btn(tools,'Refresh',async()=>{const ok=await refresh();if(ok&&!destroyed&&!uncertain){selected=null;render();message('Refreshed. Select a task to edit its current title.');}});
  const summary=el(tools,'span','','next-help');
  const feedback=el(mount,'p','','todo-feedback');feedback.setAttribute('role','status');
  const addForm=el(mount,'form','','todo-add');
@@ -61,17 +62,17 @@ export function createTodosWorkspace({mount,api,events,notify=()=>{}}){
   editor.hidden=!selected;updateAdd();controls();
  }
  async function refresh(){
-  if(destroyed||busy)return;const token=++epoch;
-  try{const result=await api('/api/todos');if(destroyed||token!==epoch)return;
+  if(destroyed||busy)return false;const token=++epoch;
+  try{const result=await api('/api/todos');if(destroyed||token!==epoch)return false;
    if(!Array.isArray(result.items)||!Number.isSafeInteger(result.revision))throw Error('Invalid task list response.');
-   data=result;uncertain=false;render();
-  }catch(error){if(!destroyed&&token===epoch)message('Could not load tasks: '+error.message,true);}
+   data=result;uncertain=false;render();return true;
+  }catch(error){if(!destroyed&&token===epoch)message('Could not load tasks: '+error.message,true);return false;}
  }
  async function mutate(value){
-  if(busy||uncertain||destroyed)return false;busy=true;epoch++;controls();message('Saving…');
+  if(busy||uncertain||destroyed)return false;const previousRevision=data.revision;busy=true;epoch++;controls();message('Saving…');
   try{const result=await api('/api/todos','POST',{expectedRevision:data.revision,...value,requestId:crypto.randomUUID()});
    if(destroyed)return false;if(!Array.isArray(result.items)||!Number.isSafeInteger(result.revision))throw Error('The server did not confirm the saved task list.');
-   data=result;editRevision=data.revision;if(value.action==='create'){selected=value.id;editInput.value=value.title;addInput.value='';if(value.parentId)collapsed.delete(value.parentId);}
+   data=result;if(editRevision===previousRevision||(value.action==='update'&&value.id===selected&&Object.hasOwn(value,'title'))||value.action==='create')editRevision=data.revision;if(value.action==='create'){selected=value.id;editInput.value=value.title;addInput.value='';if(value.parentId)collapsed.delete(value.parentId);}
    render();message('Saved.');return true;
   }catch(error){uncertain=true;if(!destroyed)message('Not confirmed: '+error.message+' Refresh before trying again; this action was not replayed.',true);return false;}
   finally{busy=false;if(!destroyed){render();}}
