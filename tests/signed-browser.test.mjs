@@ -55,7 +55,7 @@ async function harness(t, { catalog = tools, hang = false, inventory, hangInvent
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const manager = await new ConnectionManager({ dataDir }).init();
-  t.after(async () => { await manager.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(dataDir, { recursive: true, force: true }); });
+  t.after(async () => { try { await manager.close(); } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(dataDir, { recursive: true, force: true }); } });
   return { manager, calls, url: `http://127.0.0.1:${server.address().port}/mcp`, expireNext: method => { expireOnMethod = method; } };
 }
 
