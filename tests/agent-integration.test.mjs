@@ -103,7 +103,7 @@ test('retired learning routes cannot create a review or publish generated knowle
   await assert.rejects(readFile(path.join(dataDir,'learning.json')),{code:'ENOENT'});
 });
 
-test('connected capabilities are registered and call a real MCP transport through the engine with redacted API state and shutdown cleanup',async t=>{
+test('retired registry stays absent while specialized browser transport preserves redaction and shutdown cleanup',async t=>{
   const methods=[],wire=[];let manager;
   const {app,request,settled,dataDir}=await application(t,{connectionsFactory:async({dataDir})=>{
     manager=new ConnectionManager({dataDir,fetchImpl:async(_url,options)=>{
@@ -113,18 +113,19 @@ test('connected capabilities are registered and call a real MCP transport throug
       return new Response(JSON.stringify({jsonrpc:'2.0',id:message.id,result}),{status:200,headers:{'Content-Type':'application/json',...(message.method==='initialize'?{'Mcp-Session-Id':'fixture-session'}:{})}});
     }});return manager;
   },execute:async options=>{
-    assert.ok(options.dynamicTools.some(item=>item.name==='relay_connections'));assert.match(options.prompt,/CONNECTED CAPABILITIES/);
-    const listed=await tool(options,'relay_connections',{action:'connections'});assert.match(text(listed),/fixture-mcp/);
-    const tools=await tool(options,'relay_connections',{action:'tools',connectionId:'fixture-mcp'});assert.match(text(tools),/verify_fixture/);
-    const result=await tool(options,'relay_connections',{action:'call',connectionId:'fixture-mcp',name:'verify_fixture',arguments:{label:'artifact'}});assert.equal(result.success,true);assert.match(text(result),/Verified MCP fixture artifact/);
+    assert.equal(options.dynamicTools.some(item=>item.name==='relay_connections'),false);
+    assert.doesNotMatch(options.prompt,/CONNECTED CAPABILITIES/);
     return{output:'Connected fixture verified.',threadId:'mcp-thread'};
   }});
   assert.equal((await request('/api/connections',{authenticated:false})).status,401);
-  const saved=await request('/api/connections',{method:'POST',body:{id:'fixture-mcp',name:'Fixture MCP',transport:'http',url:'https://fixture.invalid/mcp',headers:{Authorization:'Bearer fixture-only-secret-123'}}});assert.equal(saved.status,200);assert.ok(!JSON.stringify(saved.data).includes('fixture-only-secret'));
-  const started=app.engine.startRun({workflow:graph(),input:'Verify the fixture using the connected capability.'});const run=await settled(started.id);assert.equal(run.status,'completed',run.error);assert.ok(run.events.some(event=>event.data.type==='connection.action'&&event.data.toolName==='verify_fixture'));
+  const removed=await request('/api/connections',{method:'POST',body:{id:'fixture-mcp',transport:'http',url:'https://fixture.invalid/mcp'}});assert.equal(removed.status,404);assert.deepEqual(manager.list(),[]);
+  const saved=await manager.save({id:'browseros-neo',name:'BrowserOS neo',transport:'http',url:'http://127.0.0.1:9000/mcp',headers:{Authorization:'Bearer fixture-only-secret-123'}});assert.ok(!JSON.stringify(saved).includes('fixture-only-secret'));
+  const result=await manager.call('browseros-neo','verify_fixture',{label:'artifact'});assert.equal(result.structuredContent.verified,true);
+
+  const started=app.engine.startRun({workflow:graph(),input:'Verify the fixture using the connected capability.'});const run=await settled(started.id);assert.equal(run.status,'completed',run.error);assert.equal(run.events.some(event=>event.data.type==='connection.action'),false);
   assert.deepEqual(methods,['initialize','notifications/initialized','tools/list','tools/call']);assert.equal(wire.at(-1).headers.Authorization,'Bearer fixture-only-secret-123');
-  assert.ok(!(await readFile(path.join(dataDir,'connections.json'),'utf8')).includes('fixture-only-secret'));assert.ok(!JSON.stringify((await request('/api/status')).data).includes('fixture-only-secret'));
-  const client=manager.clients.get('fixture-mcp');await app.close();assert.equal(client.closed,true);assert.equal(manager.closed,true);assert.equal(app.runtime.closed,true);
+  assert.ok(!(await readFile(manager.file,'utf8')).includes('fixture-only-secret'));assert.ok(!JSON.stringify((await request('/api/status')).data).includes('fixture-only-secret'));
+  const client=manager.clients.get('browseros-neo');await app.close();assert.equal(client.closed,true);assert.equal(manager.closed,true);assert.equal(app.runtime.closed,true);
 });
 
 test('owner identity edits stay durable while retired learning routes reject mutation and shutdown preserves identity boundaries',async t=>{

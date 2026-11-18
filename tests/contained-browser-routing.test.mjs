@@ -30,17 +30,12 @@ test('contained ownership and sign-in pause retain BLACKICE-only task browser ro
    assert.match(options.prompt,/Use only the BLACKICE contained browser/);
    const browserTool=options.dynamicTools.find(tool=>tool.name==='relay_browser');assert.match(browserTool.description,/Never attach or launch Chrome/);assert.match(browserTool.description,/Retain tabs and in-progress forms/);
    assert.doesNotMatch(options.prompt,/Do not call (?:host )?Chrome|Preserve an in-progress form/);
-   assert.deepEqual(options.dynamicTools.find(tool=>tool.name==='relay_connections').inputSchema.properties.action.enum,['connections','tools','call']);
+   assert.equal(options.dynamicTools.some(tool=>tool.name==='relay_connections'),false);
    const foreign=await options.onToolCall({name:'relay_browser',arguments:{action:'read',tabId:'personal-tab'}});assert.equal(foreign.success,false);assert.equal(foreign.code,'BROWSER_TAB_OWNERSHIP');assert.equal(pages,0);
-   const discovered=await options.onToolCall({name:'relay_connections',arguments:{action:'tools',connectionId:config.id}});
-   assert.equal(discovered.success,false);assert.equal(discovered.code,'BROWSER_CONTAINED_ONLY');assert.equal(discovered.receipt.actionDispatched,false);
-   const opened=await options.onToolCall({name:'relay_connections',arguments:{action:'call',connectionId:config.id,name:'tabs',arguments:{action:'new',url:'https://another.example/'}}});
-   assert.equal(opened.success,false);assert.equal(opened.code,'BROWSER_CONTAINED_ONLY');assert.equal(opened.receipt.actionDispatched,false);
    assert.equal((await options.onToolCall({name:'relay_browser',arguments:{action:'open',browser:'relay',url:'https://example.com/'}})).success,true);
    const report=await options.onToolCall({name:'relay_browser_signin',arguments:{site:'https://example.com/',reason:'sign-in',evidence:'login-form'}});assert.equal(report.success,true);assert.match(report.contentItems[0].text,/Observe/);
    const repeat=await options.onToolCall({name:'relay_browser',arguments:{action:'click',tabId:'contained-tab',ref:'submit'}});assert.equal(repeat.success,false);assert.match(repeat.contentItems[0].text,/actions are paused/);
-   const nativeAfterPause=await options.onToolCall({name:'relay_connections',arguments:{action:'call',connectionId:config.id,name:'run',arguments:{code:'return await browser.pages.list();'}}});
-   assert.equal(nativeAfterPause.success,false);assert.equal(nativeAfterPause.code,'BROWSER_CONTAINED_ONLY');assert.equal(nativeAfterPause.receipt.actionDispatched,false);
+   assert.equal(options.dynamicTools.some(tool=>tool.name==='relay_connections'),false);
    return{output:'Contained sign-in is paused; independent preparation can continue without a native browser.'};
   }
  }

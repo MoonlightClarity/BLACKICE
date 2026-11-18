@@ -2,15 +2,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
-import {mkdtemp,mkdir,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,readFile,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {HarnessEngine} from '../lib/engine.mjs';
 import {createMissionWorkflow} from '../public/mission-model.mjs';
 
-test('contained sign-in blocks external browser fallback while independent integrations remain usable',async t=>{
+test('contained sign-in blocks external browser fallback while independent workspace reads remain usable',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'agentdesk-quiet-auth-')),cwd=path.join(root,'work'),dataDir=path.join(root,'data');
- await mkdir(cwd);
+ await mkdir(cwd);await writeFile(path.join(cwd,'note.txt'),'Independent synthetic local note.');
  let browserCalls=0,nativeCalls=0,independentCalls=0,windowOpens=0;
  const connections={
   signedBrowser:{available:true,connectionId:'browseros-neo',toolNames:['tabs','navigate','snapshot','act']},
@@ -32,10 +32,9 @@ test('contained sign-in blocks external browser fallback while independent integ
    const guarded=await options.onToolCall({name:'relay_browser',arguments:{action:'navigate',tabId:'contained-tab',url:'https://www.linkedin.com/'}});
    assert.equal(guarded.success,false);
    assert.match(guarded.contentItems[0].text,/Browser actions are paused/);
-   const native=await options.onToolCall({name:'relay_connections',arguments:{action:'call',connectionId:'browseros-neo',name:'tabs',arguments:{}}});
-   assert.equal(native.success,false);assert.equal(native.code,'BROWSER_CONTAINED_ONLY');assert.equal(native.receipt.actionDispatched,false);
-    const independent=await options.onToolCall({name:'relay_connections',arguments:{action:'call',connectionId:'fixture-notes',name:'read_note',arguments:{}}});
-    assert.equal(independent.success,true);assert.match(independent.contentItems[0].text,/independent synthetic local note/);
+   assert.equal(options.dynamicTools.some(t=>t.name==='relay_connections'),false);
+    const independent=await options.onToolCall({name:'relay_workspace',arguments:{action:'read',path:'note.txt'}});
+    assert.equal(independent.success,true);assert.match(independent.contentItems[0].text,/Independent synthetic local note/);
    return{output:'LinkedIn sign-in is required; nothing was published.'};
   }
  }
@@ -49,7 +48,7 @@ test('contained sign-in blocks external browser fallback while independent integ
  for(let i=0;i<80;i++){run=engine.getRun(started.id);if(run?.settled)break;await new Promise(r=>setTimeout(r,20));}
  assert.equal(run.status,'completed',run.error);
  assert.equal(browserCalls,0);
- assert.equal(nativeCalls,0);assert.equal(independentCalls,1);
+ assert.equal(nativeCalls,0);assert.equal(independentCalls,0);
  assert.equal(windowOpens,0);
  assert.equal(run.browserSignIn.hostname,'www.linkedin.com');assert.equal(run.browserSignIn.browser,'relay');
  assert.equal(run.browserSignIn.status,'awaiting-user');
@@ -61,7 +60,7 @@ test('contained sign-in blocks external browser fallback while independent integ
 
 test('native social-login report inspects an owned email alternative and keeps the site unpaused',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'blackice-email-fallback-')),cwd=path.join(root,'work'),dataDir=path.join(root,'data');
- await mkdir(cwd);
+ await mkdir(cwd);await writeFile(path.join(cwd,'note.txt'),'Independent synthetic local note.');
  let owner=null,snapshots=0,clicks=0;
  const browser={
   status:()=>({available:true,contained:true,tabs:[{tabId:'auth-tab',url:'https://www.linkedin.com/login',documentId:'auth-tab:1',browser:'relay',purpose:'ordinary',folderId:'task-auth',owner}],activeTab:'auth-tab',folders:[{id:'task-auth',kind:'task',taskId:owner?.taskId}]}),
@@ -112,9 +111,9 @@ test('native social-login report inspects an owned email alternative and keeps t
  assert.doesNotMatch(run.nodes.agent.output,/application submitted|sign-in completed/i);
 });
 
-test('guarded delegated workers preserve the contained challenge while independent integrations remain usable',async t=>{
+test('guarded delegated workers preserve the contained challenge while independent workspace reads remain usable',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'agentdesk-delegated-auth-')),cwd=path.join(root,'work'),dataDir=path.join(root,'data');
- await mkdir(cwd);
+ await mkdir(cwd);await writeFile(path.join(cwd,'note.txt'),'Independent synthetic local note.');
  let calls=0,nativeCalls=0,independentCalls=0;
  const connections={
   signedBrowser:{available:true,connectionId:'browseros-neo'},
@@ -127,21 +126,20 @@ test('guarded delegated workers preserve the contained challenge while independe
    if(options.prompt.startsWith('You are a short-lived BLACKICE subagent.')){
     assert.ok(options.dynamicTools.some(t=>t.name==='relay_browser_signin'));
     assert.ok(!options.dynamicTools.some(t=>t.name==='relay_delegate'));
-    assert.ok(options.dynamicTools.some(t=>t.name==='relay_connections'));
+    assert.equal(options.dynamicTools.some(t=>t.name==='relay_connections'),false);
     assert.ok(!options.dynamicTools.some(t=>t.name==='relay_task'));
     assert.match(options.developerInstructions,/assigned canonical work-item IDs|assigned.*scope/);
     assert.match(options.prompt,/actual results, evidence and uncertainty/);
     if(options.prompt.includes('Read the independent synthetic local note.')){
-     const independent=await options.onToolCall({name:'relay_connections',arguments:{action:'call',connectionId:'fixture-notes',name:'read_note',arguments:{}}});
+     const independent=await options.onToolCall({name:'relay_workspace',arguments:{action:'read',path:'note.txt'}});
      assert.equal(independent.success,true);return {output:'Independent synthetic local note checked.'};
     }
     const reported=await options.onToolCall({name:'relay_browser_signin',arguments:{site:'https://linkedin.com/feed',reason:'sign-in',evidence:'login-form'}});
     assert.equal(reported.success,true);
     const second=await options.onToolCall({name:'relay_browser',arguments:{action:'tabs'}});
     assert.equal(second.success,false);
-    const native=await options.onToolCall({name:'relay_connections',arguments:{action:'call',connectionId:'browseros-neo',name:'tabs',arguments:{}}});
-    assert.equal(native.success,false);assert.equal(native.code,'BROWSER_CONTAINED_ONLY');assert.equal(native.receipt.actionDispatched,false);
-     const independent=await options.onToolCall({name:'relay_connections',arguments:{action:'call',connectionId:'fixture-notes',name:'read_note',arguments:{}}});
+    assert.equal(options.dynamicTools.some(t=>t.name==='relay_connections'),false);
+     const independent=await options.onToolCall({name:'relay_workspace',arguments:{action:'read',path:'note.txt'}});
      assert.equal(independent.success,true);
     return {output:'LinkedIn sign-in required'};
    }
@@ -165,5 +163,5 @@ test('guarded delegated workers preserve the contained challenge while independe
  assert.equal(run.status,'completed',run.error);
  assert.equal(run.browserSignIn?.hostname,'linkedin.com');assert.equal(run.browserSignIn.browser,'relay');
  assert.equal(run.events.filter(e=>e.data?.type==='browser.signin').length,1);
- assert.equal(calls,0);assert.equal(nativeCalls,0);assert.equal(independentCalls,2);
+ assert.equal(calls,0);assert.equal(nativeCalls,0);assert.equal(independentCalls,0);
 });

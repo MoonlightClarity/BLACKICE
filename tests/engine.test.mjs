@@ -998,10 +998,10 @@ for (const throws of [false, true]) test(`unavailable contained browser records 
   assert.equal(issue.available, false); assert.equal(issue.tool, 'Contained browser'); assert.match(issue.message, /contained BLACKICE browser is unavailable/i);
   assert.match(issue.message, /do not connect or launch an external browser/);
   assert.ok(events.some(event => event.type === 'agent.event' && event.data?.type === 'capability' && event.data.available === false));
-  assert.ok(runtime.calls[0].dynamicTools.some(tool => tool.name === 'relay_connections'), 'other supported connection tools remain attached');
-  assert.match(runtime.calls[0].prompt, /All website work stays in the contained BLACKICE relay_browser/);
-  assert.match(runtime.calls[0].prompt, /other external browser adapters are not task fallbacks/);
-  assert.deepEqual(runtime.calls[0].dynamicTools.find(tool => tool.name === 'relay_connections').inputSchema.properties.action.enum, ['connections', 'tools', 'call']);
+  assert.equal(runtime.calls[0].dynamicTools.some(tool => tool.name === 'relay_connections'), false, 'retired registry is not advertised');
+  assert.match(runtime.calls[0].dynamicTools.find(tool => tool.name === 'relay_browser').description, /contained/i);
+  assert.match(runtime.calls[0].dynamicTools.find(tool => tool.name === 'relay_browser').description, /Never attach or launch Chrome/);
+  assert.ok(runtime.calls[0].dynamicTools.some(tool => tool.name === 'relay_workspace'), 'core workspace remains available');
   await engine.close();
   const restored = await new HarnessEngine({ runtime: new FakeRuntime(), dataDir, defaultCwd: cwd }).init(); engines.push(restored);
   assert.deepEqual(restored.getRun(run.id).nodes.agent.capabilityIssues, [issue]);

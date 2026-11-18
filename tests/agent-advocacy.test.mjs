@@ -88,12 +88,9 @@ test('actual engine wiring supplies advocacy guidance and only the contained bro
     assert.match(options.developerInstructions, /without asking whether to start, proceed or continue/);
     assert.equal(options.onApproval, undefined);
     const connectionTool = options.dynamicTools.find(tool => tool.name === 'relay_connections');
-    assert.ok(connectionTool);
-    assert.equal(connectionTool.inputSchema.properties.action.enum.includes('connect_chrome'), false);
+    assert.equal(connectionTool, undefined);
     for (const args of [{ action: 'connect_chrome' }, { action: 'call', connectionId: 'chrome-live', name: 'list_pages', arguments: {} }]) {
-      const response = await call(options, 'relay_connections', args);
-      assert.equal(response.success, false);
-      assert.equal(response.code || unpack(response).code, 'BROWSER_CONTAINED_ONLY');
+      await assert.rejects(call(options, 'relay_connections', args), /Unknown knowledge tool/);
     }
     const opened = await call(options, 'relay_browser', { action: 'open', browser: 'relay', url: `https://forms.example.test/${known.id}` });
     assert.equal(opened.success, true); const page = unpack(opened);
