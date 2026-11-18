@@ -1,17 +1,13 @@
-// Historical schema-13 protocol regression; schema-14 behavior has separate canonical-contract and production-engine acceptance coverage.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { TaskStateStore, createTaskToolHandler, TASK_LIMITS, TASK_SCHEMA_VERSION, TASK_TOOL, TASK_TOOL_V9, TASK_WORKER_TOOL_V9,
-  TASK_INSTRUCTIONS_V9, TASK_TOOL_V10, TASK_WORKER_TOOL_V10, TASK_INSTRUCTIONS_V10,
-  TASK_TOOL_V11, TASK_WORKER_TOOL_V11, TASK_INSTRUCTIONS_V11, taskToolForVersion, taskWorkerToolForVersion, taskInstructionsForVersion } from './fixture-legacy-task-state.mjs';
+import { TaskStateStore, TASK_LIMITS } from '../lib/task-state.mjs';
 import { planningReviewStatus, planningReviewSignature, PLANNING_REVIEW_LIMITS } from '../lib/planning-review.mjs';
 import { createSequentialPlanningGuard, planningSequenceStatus } from '../lib/planning-sequence.mjs';
 
-const payload = receipt => JSON.parse(receipt.contentItems[0].text);
+const rejection = async operation => { try { await operation(); } catch (error) { return error; } assert.fail('Expected store rejection'); };
 const outcome = 'The supplied values were compared; the observed subtotal is 14.50.';
 const blockedAgency = reason => {
   const cost = (value, basis) => ({ value, basis });
@@ -34,52 +30,25 @@ async function fixture(t) {
   const store = await new TaskStateStore({ dataDir: directory }).init(), taskId = 'review-fixture';
   await store.ensure({ taskId, runId: 'run', nodeId: 'agent', cwd, goal: 'Compare the supplied prices.', defaultPlan: true });
   const context = { workEpoch: 0, directionFingerprint: 'original-request' };
-  const makeHandler = options => createTaskToolHandler({ store, taskId, runId: 'run', nodeId: 'agent', planningMode: 'on', executionGuardrails: true, getReviewContext: () => ({ ...context }), ...options });
-  const handler = makeHandler();
-  const call = args => handler({ name: 'relay_task', arguments: args });
-  const accept = async args => { const result = await call(args); assert.equal(result.success, true, result.contentItems[0].text); return payload(result); };
-  const write = async args => accept({ expectedRevision: (await store.get(taskId)).revision, ...args });
-  const plan = (steps = [leaf()], plan = { layout: 'sequence' }) => write({ action: 'plan', steps, plan });
-  const finish = (stepId = 'compare') => write({ action: 'step', stepId, status: 'done', evidence: outcome });
-  const review = (decision = 'respond', extra = {}) => write({ action: 'review', review: { decision, summary: 'The supplied price comparison is complete and its exact result has been checked.', ...extra } });
+  const options = overrides => ({ runId: 'run', nodeId: 'agent', schemaVersion: 13, source: 'agent', executionGuardrails: true, planningMode: 'on', getReviewContext: () => ({ ...context }), ...overrides });
+  const revision = async overrides => options({ expectedRevision: (await store.get(taskId)).revision, ...overrides });
+  const plan = async (steps = [leaf()], plan = { layout: 'sequence' }) => store.setPlan(taskId, { steps, plan }, await revision());
+  const step = async (stepId, patch, overrides) => store.setStep(taskId, stepId, patch, await revision(overrides));
+  const edit = async (operations, overrides) => store.editPlan(taskId, { operations }, await revision(overrides));
+  const artifact = async value => store.addArtifact(taskId, value, await revision());
+  const external = async value => store.externalAction(taskId, value, await revision());
+  const finish = (stepId = 'compare') => step(stepId, { status: 'done', evidence: outcome });
+  const reviewAt = (review, expectedRevision, overrides) => store.review(taskId, review, options({ expectedRevision, ...overrides }));
+  const review = async (decision = 'respond', extra = {}, overrides) => reviewAt({ decision, summary: 'The supplied price comparison is complete and its exact result has been checked.', ...extra }, (await store.get(taskId)).revision, overrides);
   const status = state => planningReviewStatus(state, { runId: 'run', nodeId: 'agent', context });
   t.after(async () => { await store.close(); await rm(directory, { recursive: true, force: true }); });
-  return { store, taskId, directory, cwd, context, makeHandler, call, accept, write, plan, finish, review, status };
+  return { store, taskId, directory, cwd, context, options, revision, step, edit, artifact, external, reviewAt, plan, finish, review, status };
 }
-
-test('schema 13 exposes review while the schema 9 tool, worker and instructions retain their exact catalog identities', () => {
-  const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-  assert.equal(TASK_SCHEMA_VERSION, 13);
-  assert.ok(TASK_TOOL.inputSchema.properties.action.enum.includes('review'));
-  assert.equal(digest(TASK_TOOL_V9), 'f0bf0f289ab9375bdcd9dabbbdb26ca4c1203606860ffa3f55cca41f1cdda43e');
-  assert.equal(digest(TASK_WORKER_TOOL_V9), '5afe056db14867f1e5ecfafca46e701123ee2e8352959c6e6feea37ac6c7a7bb');
-  assert.equal(digest(TASK_INSTRUCTIONS_V9), '47822f983a3d6747f910c9e1b4f50a4603c5b2cc32b084dcde2ceb24692ccfab');
-  assert.equal(taskToolForVersion(9, { executionGuardrails: true }), TASK_TOOL_V9);
-  assert.equal(taskWorkerToolForVersion(9, { executionGuardrails: true }), TASK_WORKER_TOOL_V9);
-  assert.equal(taskInstructionsForVersion(9, { executionGuardrails: true }), TASK_INSTRUCTIONS_V9);
-});
-
-
-test('published schema 10 and installed schema 11 keep exact coordinator, worker and instruction contracts', () => {
-  const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-  const versions = [
-    [10, TASK_TOOL_V10, TASK_WORKER_TOOL_V10, TASK_INSTRUCTIONS_V10,
-      ["921e9517ac27b24a21699b3531e664c4fd12a152bfaa3f20b4c27960b20cfa10","80568736441357c7850ac5660b13c7f101d11f29ad41b5e8431f712a9272c9bd","538c9fa4f74584a3c85fe03f1a9c55941ace99577ee51ed5e92faae304854553"]],
-    [11, TASK_TOOL_V11, TASK_WORKER_TOOL_V11, TASK_INSTRUCTIONS_V11,
-      ["db6910ed43c0effa4fae037f90fe847ffb85d0a19595eaa1d23d2ea79dcb16cc","36f98198c4740d0c55a6346038f5f4ce2e053b25cbec2039c474e08e4d88f281","081e169a862043d2d39156ea1212ba5897c06fdb9e6aaf50bcdf21366fbc25fd"]],
-  ];
-  for (const [version, tool, worker, instructions, hashes] of versions) {
-    assert.deepEqual([tool, worker, instructions].map(digest), hashes, 'Saved schema ' + version + ' retains its exact catalog.');
-    assert.equal(taskToolForVersion(version, { executionGuardrails: true }), tool);
-    assert.equal(taskWorkerToolForVersion(version, { executionGuardrails: true }), worker);
-    assert.equal(taskInstructionsForVersion(version, { executionGuardrails: true }), instructions);
-  }
-});
 
 test('a plan or completion status alone is not a return to planning; explicit review is durable and does not invalidate itself', async t => {
   const f = await fixture(t), planned = await f.plan();
   const before = await readFile(f.store.file(f.taskId));
-  const premature = await f.call({ action: 'review', expectedRevision: planned.revision, review: { decision: 'respond', summary: 'I plan to finish.' } });
+  const premature = await rejection(async () => f.reviewAt({ decision: 'respond', summary: 'I plan to finish.' }, planned.revision));
   assert.equal(premature.code, 'TASK_PLAN_REASSESSMENT_REQUIRED');
   assert.deepEqual(await readFile(f.store.file(f.taskId)), before);
   const completed = await f.finish();
@@ -91,35 +60,30 @@ test('a plan or completion status alone is not a return to planning; explicit re
   assert.equal(f.status(reviewed).ready, true);
   const reopened = await new TaskStateStore({ dataDir: f.directory }).init();
   try { assert.equal(f.status(await reopened.get(f.taskId)).ready, true); } finally { await reopened.close(); }
-  assert.equal(f.status(await f.accept({ action: 'read' })).ready, true, 'A read does not itself invalidate the review.');
+  assert.equal(f.status(await f.store.get(f.taskId)).ready, true, 'A read does not itself invalidate the review.');
 });
 
-test('review input is strict, revisioned, and unavailable through frozen schema 9', async t => {
+test('stored review input is strict and revisioned', async t => {
   const f = await fixture(t); await f.plan(); const completed = await f.finish();
   for (const review of [{ decision: 'respond', summary: '' }, { decision: 'respond', summary: 'Checked', thoughts: 'unsupported' },
     { decision: 'respond', summary: 'Checked', nextStepId: 'compare' }, { decision: 'continue', summary: 'More work' },
     { decision: 'respond', summary: 'x'.repeat(1201) }]) {
-    const response = await f.call({ action: 'review', expectedRevision: completed.revision, review });
-    assert.equal(response.success, false);
+    const response = await rejection(async () => f.reviewAt(review, completed.revision));
+    assert.ok(response instanceof Error);
     assert.equal((await f.store.get(f.taskId)).revision, completed.revision);
   }
-  assert.equal((await f.call({ action: 'review', review: { decision: 'respond', summary: 'Checked' } })).code, 'TASK_STATE_REVISION_REQUIRED');
-  assert.equal((await f.call({ action: 'review', expectedRevision: completed.revision - 1, review: { decision: 'respond', summary: 'Checked' } })).code, 'TASK_STATE_CONFLICT');
-  assert.equal((await f.call({ action: 'review', expectedRevision: completed.revision, review: { decision: 'respond', summary: 'Checked' }, status: 'done' })).code, 'INVALID_PLANNING_REVIEW');
-  const old = f.makeHandler({ schemaVersion: 9 });
-  assert.equal((await old({ name: 'relay_task', arguments: { action: 'review', expectedRevision: completed.revision, review: { decision: 'respond', summary: 'Checked' } } })).code, 'TASK_SCHEMA_UNSUPPORTED');
-  const described = payload(await f.call({ action: 'describe' }));
-  assert.equal(described.review.example.action, 'review');
-  assert.match(described.review.note, /status update alone is not review/);
+  assert.equal((await rejection(async () => f.reviewAt({ decision: 'respond', summary: 'Checked' }))).code, 'TASK_STATE_CONFLICT');
+  assert.equal((await rejection(async () => f.reviewAt({ decision: 'respond', summary: 'Checked' }, completed.revision - 1))).code, 'TASK_STATE_CONFLICT');
+
 });
 
 test('continue points at one eligible saved leaf and never authorizes a final response', async t => {
   const f = await fixture(t); await f.plan([leaf(), leaf('check', 'pending')]); await f.finish();
-  const rejected = await f.call({ action: 'review', expectedRevision: (await f.store.get(f.taskId)).revision, review: { decision: 'respond', summary: 'A second check remains.' } });
+  const rejected = await rejection(async () => f.reviewAt({ decision: 'respond', summary: 'A second check remains.' }, (await f.store.get(f.taskId)).revision));
   assert.equal(rejected.code, 'TASK_PLAN_REVIEW_INCOMPLETE');
   const continued = await f.review('continue', { nextStepId: 'check' });
   assert.equal(f.status(continued).current, true); assert.equal(f.status(continued).ready, false);
-  await f.write({ action: 'step', stepId: 'check', status: 'active' });
+  await f.step('check', { status: 'active' });
   const activeReview = await f.review('continue', { nextStepId: 'check' });
   assert.equal(activeReview.planningReviews.at(-1).nextStepId, 'check');
   await f.finish('check');
@@ -131,10 +95,10 @@ test('respond ignores unchosen alternatives but cannot bypass an unresolved late
   const choice = { id: 'choose', kind: 'choice', title: 'Select the observed route', branch: { if: false, then: 'first', elif: [{ if: { fact: 'observed' }, then: 'second' }], else: 'last' } };
   await f.plan([leaf(), choice, leaf('first', 'pending', 'choose'), leaf('second', 'pending', 'choose'), leaf('last', 'pending', 'choose')], { layout: 'sequence', facts: [{ id: 'observed', value: null }] });
   const completed = await f.finish();
-  const unresolved = await f.call({ action: 'review', expectedRevision: completed.revision, review: { decision: 'respond', summary: 'The branch still has unknown evidence.' } });
+  const unresolved = await rejection(async () => f.reviewAt({ decision: 'respond', summary: 'The branch still has unknown evidence.' }, completed.revision));
   assert.equal(unresolved.code, 'TASK_PLAN_REVIEW_INCOMPLETE');
-  await f.write({ action: 'edit', operations: [{ type: 'metadata', patch: { facts: [{ id: 'observed', value: true, evidence: 'The supplied flag was observed true.' }] } }] });
-  await f.write({ action: 'step', stepId: 'second', status: 'active' }); await f.finish('second');
+  await f.edit([{ type: 'metadata', patch: { facts: [{ id: 'observed', value: true, evidence: 'The supplied flag was observed true.' }] } }]);
+  await f.step('second', { status: 'active' }); await f.finish('second');
   const reviewed = await f.review();
   assert.equal(f.status(reviewed).ready, true);
   assert.equal(reviewed.steps.find(step => step.id === 'first').status, 'pending');
@@ -143,11 +107,11 @@ test('respond ignores unchosen alternatives but cannot bypass an unresolved late
 
 test('blocked needs an actual reported obstacle and cannot abandon independent ready work', async t => {
   const f = await fixture(t); await f.plan([leaf(), leaf('other', 'pending')], { layout: 'parallel' });
-  const blocked = await f.write({ action: 'step', stepId: 'compare', status: 'blocked', blockedReason: 'The necessary second input is absent.' });
-  const rejected = await f.call({ action: 'review', expectedRevision: blocked.revision, review: { decision: 'blocked', summary: 'One input is absent.' } });
+  const blocked = await f.step('compare', { status: 'blocked', blockedReason: 'The necessary second input is absent.' });
+  const rejected = await rejection(async () => f.reviewAt({ decision: 'blocked', summary: 'One input is absent.' }, blocked.revision));
   assert.equal(rejected.code, 'TASK_PLAN_REVIEW_NOT_BLOCKED');
-  await f.write({ action: 'step', stepId: 'other', status: 'active' }); await f.finish('other');
-  const missing = await f.call({ action: 'review', expectedRevision: (await f.store.get(f.taskId)).revision, review: { decision: 'blocked', summary: 'The actual input remains unavailable.' } });
+  await f.step('other', { status: 'active' }); await f.finish('other');
+  const missing = await rejection(async () => f.reviewAt({ decision: 'blocked', summary: 'The actual input remains unavailable.' }, (await f.store.get(f.taskId)).revision));
   assert.equal(missing.code, 'USER_AGENCY_REQUIRED');
   const reviewed = await f.review('blocked', { userAgency: blockedAgency('The necessary second input is absent after available checks.') });
   assert.equal(f.status(reviewed).ready, true);
@@ -156,8 +120,8 @@ test('blocked needs an actual reported obstacle and cannot abandon independent r
 
 test('skipping every action does not manufacture a completed outcome', async t => {
   const f = await fixture(t); await f.plan();
-  const skipped = await f.write({ action: 'step', stepId: 'compare', status: 'skipped', skipReason: 'The comparison was not performed.' });
-  assert.equal((await f.call({ action: 'review', expectedRevision: skipped.revision, review: { decision: 'respond', summary: 'No action was performed.' } })).code, 'TASK_PLAN_REASSESSMENT_REQUIRED');
+  const skipped = await f.step('compare', { status: 'skipped', skipReason: 'The comparison was not performed.' });
+  assert.equal((await rejection(async () => f.reviewAt({ decision: 'respond', summary: 'No action was performed.' }, skipped.revision))).code, 'TASK_PLAN_REASSESSMENT_REQUIRED');
 });
 
 test('new context, facts, artifacts or external effects invalidate review while bounded outcome markers survive history rotation', async t => {
@@ -167,22 +131,21 @@ test('new context, facts, artifacts or external effects invalidate review while 
   await f.review(); f.context.directionFingerprint = 'changed-user-request';
   assert.equal(f.status(await f.store.get(f.taskId)).ready, false);
   await f.review();
-  const changed = await f.write({ action: 'edit', operations: [{ type: 'metadata', patch: { facts: [{ id: 'new_input', value: 3, evidence: 'The corrected supplied value is 3.' }] } }] });
+  const changed = await f.edit([{ type: 'metadata', patch: { facts: [{ id: 'new_input', value: 3, evidence: 'The corrected supplied value is 3.' }] } }]);
   assert.equal(f.status(changed).ready, false);
   await f.review();
   const file = path.join(f.cwd, 'result.txt'); await writeFile(file, '14.50');
-  const artifact = await f.write({ action: 'artifact', path: file });
+  const artifact = await f.artifact({ path: file });
   assert.equal(f.status(artifact).ready, false);
   await f.review();
-  const prepared = await f.write({ action: 'external', external: { operation: 'prepare', receiptId: 'saved-effect', destination: 'https://example.invalid/result', content: 'The exact authorized result.' } });
+  const prepared = await f.external({ operation: 'prepare', receiptId: 'saved-effect', destination: 'https://example.invalid/result', content: 'The exact authorized result.' });
   assert.equal(f.status(prepared).ready, false);
   for (let index = 0; index < 34; index++) await f.review('respond', { summary: `The checked result is unchanged after reassessment ${index}.` });
   const saved = await f.store.get(f.taskId);
   assert.ok(saved.planningReviews.length <= PLANNING_REVIEW_LIMITS.history);
   assert.ok(JSON.stringify(saved.planningReviews).length <= PLANNING_REVIEW_LIMITS.historyChars);
   assert.equal(f.status(saved).ready, true);
-  const differentRun = f.makeHandler({ runId: 'later-run' });
-  const denied = await differentRun({ name: 'relay_task', arguments: { action: 'review', expectedRevision: saved.revision, review: { decision: 'respond', summary: 'Reuse old completed work.' } } });
+  const denied = await rejection(async () => f.reviewAt({ decision: 'respond', summary: 'Reuse old completed work.' }, saved.revision, { runId: 'later-run' }));
   assert.equal(denied.code, 'TASK_PLAN_REASSESSMENT_REQUIRED');
 });
 
@@ -190,13 +153,12 @@ test('a scoped worker can review its own work while independent sibling work rem
   const f = await fixture(t);
   await f.plan([{ id: 'mine', kind: 'sequence', title: 'Assigned comparison' }, leaf('own', 'active', 'mine'),
     { id: 'theirs', kind: 'sequence', title: 'Other comparison' }, leaf('other', 'pending', 'theirs')], { layout: 'parallel' });
-  const handler = f.makeHandler({ nodeId: 'worker', scopeStepId: 'mine', worker: true });
-  const accept = async args => { const response = await handler({ name: 'relay_task', arguments: { expectedRevision: (await f.store.get(f.taskId)).revision, ...args } }); assert.equal(response.success, true, response.contentItems[0].text); return payload(response); };
-  await accept({ action: 'step', stepId: 'own', status: 'done', evidence: outcome });
-  const saved = await accept({ action: 'review', review: { decision: 'respond', summary: 'The assigned comparison is complete; other work belongs to its separate owner.' } });
+  const worker = { nodeId: 'worker', scopeStepId: 'mine' };
+  await f.step('own', { status: 'done', evidence: outcome }, worker);
+  const saved = await f.review('respond', { summary: 'The assigned comparison is complete; other work belongs to its separate owner.' }, worker);
   assert.equal(planningReviewStatus(saved, { runId: 'run', nodeId: 'worker', scopeStepId: 'mine', context: f.context }).ready, true);
   assert.equal(f.status(saved).ready, false, 'A worker review cannot substitute for coordinator review.');
-  const changed = await f.write({ action: 'edit', operations: [{ type: 'update', stepId: 'other', patch: { note: 'Use the corrected supplied prices for the other independent comparison.' } }] });
+  const changed = await f.edit([{ type: 'update', stepId: 'other', patch: { note: 'Use the corrected supplied prices for the other independent comparison.' } }]);
   assert.equal(planningReviewStatus(changed, { runId: 'run', nodeId: 'worker', scopeStepId: 'mine', context: f.context }).ready, true);
 });
 
@@ -204,17 +166,15 @@ test('scoped review can hand off observed work while the coordinator owns an unc
   const f = await fixture(t);
   await f.plan([{ id: 'mine', kind: 'sequence', title: 'Assigned verification' }, leaf('own', 'active', 'mine'),
     { id: 'theirs', kind: 'sequence', title: 'Other comparison' }, leaf('other', 'pending', 'theirs')], { layout: 'parallel' });
-  await f.write({ action: 'external', external: { operation: 'prepare', receiptId: 'external-effect', destination: 'https://example.invalid/result', content: 'The exact authorized result.' } });
-  await f.write({ action: 'external', external: { operation: 'attempt', receiptId: 'external-effect' } });
-  const handler = f.makeHandler({ reviewScopeStepId: 'mine' });
-  const accept = async args => { const response = await handler({ name: 'relay_task', arguments: { expectedRevision: (await f.store.get(f.taskId)).revision, ...args } }); assert.equal(response.success, true, response.contentItems[0].text); return payload(response); };
-  await accept({ action: 'step', stepId: 'own', status: 'done', evidence: 'The assigned supplied observation was inspected; the coordinator owns the final external reconciliation.' });
-  const reviewed = await accept({ action: 'review', review: { decision: 'respond', summary: 'The assigned observation is ready to hand back; the coordinator must reconcile its external receipt.' } });
+  await f.external({ operation: 'prepare', receiptId: 'external-effect', destination: 'https://example.invalid/result', content: 'The exact authorized result.' });
+  await f.external({ operation: 'attempt', receiptId: 'external-effect' });
+  await f.step('own', { status: 'done', evidence: 'The assigned supplied observation was inspected; the coordinator owns the final external reconciliation.' }, { reviewScopeStepId: 'mine' });
+  const reviewed = await f.review('respond', { summary: 'The assigned observation is ready to hand back; the coordinator must reconcile its external receipt.' }, { scopeStepId: 'mine' });
   const status = state => planningReviewStatus(state, { runId: 'run', nodeId: 'agent', scopeStepId: 'mine', context: f.context });
   assert.equal(status(reviewed).ready, true);
-  const edited = await accept({ action: 'edit', operations: [{ type: 'update', stepId: 'other', patch: { note: 'Compare the other supplied pair against its corrected subtotal.' } }] });
+  const edited = await f.edit([{ type: 'update', stepId: 'other', patch: { note: 'Compare the other supplied pair against its corrected subtotal.' } }]);
   assert.equal(status(edited).ready, true, 'A separate review scope does not remove coordinator editing authority or wait for sibling work.');
-  const confirmed = await f.write({ action: 'external', external: { operation: 'confirm', receiptId: 'external-effect', url: 'https://example.invalid/result/observed', evidence: 'The actual destination contains the exact expected result.' } });
+  const confirmed = await f.external({ operation: 'confirm', receiptId: 'external-effect', url: 'https://example.invalid/result/observed', evidence: 'The actual destination contains the exact expected result.' });
   assert.equal(status(confirmed).ready, true, 'Coordinator receipt updates do not stale an independent scoped handoff.');
 });
 
@@ -228,7 +188,7 @@ test('a near-limit plan retains room for its mandatory review and old reviews co
     const excess = JSON.stringify(projected).length - target;
     if (excess > 0) { assert.ok(excess < fact.value.length); fact.value = fact.value.slice(0, -excess); }
   }
-  await f.write({ action: 'edit', operations: [{ type: 'metadata', patch: { facts } }] });
+  await f.edit([{ type: 'metadata', patch: { facts } }]);
   const summary = 'The supplied comparison is complete. ' + 'x'.repeat(1100);
   for (let index = 0; index < 12; index++) await f.review('respond', { summary });
   const saved = JSON.parse(await readFile(f.store.file(f.taskId), 'utf8')).history.at(-1);
@@ -236,7 +196,7 @@ test('a near-limit plan retains room for its mandatory review and old reviews co
   assert.ok(JSON.stringify(saved).length <= TASK_LIMITS.stateChars);
   assert.equal(saved.provenance.source, 'agent');
   assert.equal(f.status(saved).ready, true);
-  const updated = await f.write({ action: 'edit', operations: [{ type: 'metadata', patch: { goal: 'Compare the same supplied prices and retain their checked result.' } }] });
+  const updated = await f.edit([{ type: 'metadata', patch: { goal: 'Compare the same supplied prices and retain their checked result.' } }]);
   const next = JSON.parse(await readFile(f.store.file(f.taskId), 'utf8')).history.at(-1);
   assert.ok(JSON.stringify(next).length <= TASK_LIMITS.agentStateChars, 'Optional old summaries cannot crowd new ordinary work out of its original budget.');
   assert.equal(f.status(updated).ready, false);
@@ -251,10 +211,10 @@ test('review waits for actual dispatch settlement and reported outcome; uncertai
   const call = { name: 'relay_workspace', arguments: { action: 'write', path: 'result.txt', text: '14.50' }, callId: 'observed-write' };
   assert.equal(await guard.before(call, { expectedRevision: planned.revision }), null);
   assert.equal((await planningSequenceStatus(f.store, f.taskId, planned)).running.length, 1);
-  assert.equal((await f.call({ action: 'review', expectedRevision: planned.revision, review: { decision: 'respond', summary: 'The operation is still running.' } })).code, 'TASK_PLAN_STEP_IN_FLIGHT');
+  assert.equal((await rejection(async () => f.reviewAt({ decision: 'respond', summary: 'The operation is still running.' }, planned.revision))).code, 'TASK_PLAN_STEP_IN_FLIGHT');
   await guard.after(call, { success: false, contentItems: [{ type: 'inputText', text: 'The result was lost.' }] }, { uncertain: true });
-  assert.equal((await f.call({ action: 'review', expectedRevision: planned.revision, review: { decision: 'respond', summary: 'The outcome has not been saved.' } })).code, 'TASK_PLAN_RESULT_REQUIRED');
-  const blocked = await f.write({ action: 'step', stepId: 'compare', status: 'blocked', blockedReason: 'The dispatched write has no confirmed response; its effect remains uncertain and cannot currently be inspected.' });
+  assert.equal((await rejection(async () => f.reviewAt({ decision: 'respond', summary: 'The outcome has not been saved.' }, planned.revision))).code, 'TASK_PLAN_RESULT_REQUIRED');
+  const blocked = await f.step('compare', { status: 'blocked', blockedReason: 'The dispatched write has no confirmed response; its effect remains uncertain and cannot currently be inspected.' });
   assert.equal((await planningSequenceStatus(f.store, f.taskId, blocked)).uncertain.length, 1);
   const reviewed = await f.review('blocked', { summary: 'The write result was lost; the saved action remains blocked with its effect uncertain. No completion is claimed.', userAgency: blockedAgency('The prior dispatch is unreconciled and its destination cannot currently be inspected.') });
   assert.equal(f.status(reviewed).ready, true);

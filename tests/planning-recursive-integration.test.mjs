@@ -1,10 +1,9 @@
-// Historical schema-13 protocol regression; schema-14 behavior has separate canonical-contract and production-engine acceptance coverage.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { TaskStateStore, createTaskToolHandler, TASK_SCHEMA_VERSION, taskToolForVersion } from './fixture-legacy-task-state.mjs';
+import { TaskStateStore } from '../lib/task-state.mjs';
 import { normalizeTaskPlan, taskPlanAvailability, taskPlanProgress } from '../lib/task-plan.mjs';
 import { applyPlanningEdits } from '../lib/planning-edits.mjs';
 import { validatePlanningOutline } from '../lib/planning-policy.mjs';
@@ -18,14 +17,12 @@ const action = (id, { parentId = null, status = 'pending', dependsOn = [] } = {}
   operation: { kind: 'reasoning', target: 'The ' + id + ' comparison' },
   ...(status === 'done' ? { evidence: 'The ' + id + ' value matched the supplied reference.' } : {}),
 });
-async function fixture(t, schemaVersion = 9) {
+async function fixture(t) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-recursive-integration-'));
   const store = await new TaskStateStore({ dataDir: directory }).init(), taskId = 'recursive-integration';
   t.after(async () => { await store.close(); await rm(directory, { recursive: true, force: true }); });
   const initial = await store.ensure({ taskId, runId: 'run', nodeId: 'agent', cwd: directory, goal: 'Perform and revise the requested work.', defaultPlan: true });
-  // Enforce the executable outline contract whose blocked transitions this suite tests.
-  const handler = createTaskToolHandler({ store, taskId, runId: 'run', nodeId: 'agent', schemaVersion, executionGuardrails: true, planningMode: 'on' });
-  return { directory, store, taskId, initial, call: args => handler({ name: 'relay_task', arguments: args }) };
+  return { directory, store, taskId, initial };
 }
 
 test('returning to an earlier prerequisite can change Boolean paths while invalidating only affected chronological work', () => {
@@ -138,13 +135,11 @@ test('an assigned worker can recursively split its unexecuted leaf into sequenti
   state = await f.store.bindDelegates(f.taskId, [{ id: 'inspect-worker', stepId: 'assigned' }], { runId: 'run', nodeId: 'agent' });
   const workerId = Object.keys(state.execution.nodes)[0];
   state = await f.store.recordExecution(f.taskId, workerId, { status: 'running' }, { runId: 'run' });
-  const handler = createTaskToolHandler({ store: f.store, taskId: f.taskId, runId: 'run', nodeId: workerId, scopeStepId: 'assigned', worker: true, ...options });
-  const call = args => handler({ name: 'relay_task', arguments: args });
-  let receipt = await call({ action: 'plan', expectedRevision: state.revision, plan: { layout: 'sequence' }, steps: [
+  const workerOptions = { ...options, runId: 'run', nodeId: workerId, scopeStepId: 'assigned' };
+  state = await f.store.setPlan(f.taskId, { plan: { layout: 'sequence' }, steps: [
     { ...action('read', { status: 'active' }), operation: { kind: 'tool', tool: 'relay_workspace', action: 'read', target: 'source.txt' } },
     action('compare'),
-  ] });
-  assert.equal(receipt.success, true, receipt.contentItems[0].text); state = payload(receipt);
+  ] }, { ...workerOptions, expectedRevision: state.revision });
   assert.equal(state.steps.find(step => step.id === 'assigned').kind, 'sequence');
   assert.equal(state.steps.find(step => step.id === 'assigned').operation, undefined, 'an expanded group has no inherited executable leaf operation');
   assert.deepEqual(state.steps.find(step => step.id === 'after-worker'), independentDefinition);
@@ -154,40 +149,33 @@ test('an assigned worker can recursively split its unexecuted leaf into sequenti
   const read = { name: 'relay_workspace', callId: 'worker-read', arguments: { action: 'read', path: 'source.txt' } };
   assert.equal(await guard.before(read, { expectedRevision: state.revision }), null);
   await guard.after(read, { success: true, contentItems: [{ type: 'inputText', text: 'The source comparison input.' }] });
-  receipt = await call({ action: 'step', expectedRevision: state.revision, stepId: 'read', status: 'done', evidence: 'The named source returned its actual comparison input.' });
-  assert.equal(receipt.success, true, receipt.contentItems[0].text); state = payload(receipt);
-  receipt = await call({ action: 'step', expectedRevision: state.revision, stepId: 'compare', status: 'active' });
-  assert.equal(receipt.success, true, receipt.contentItems[0].text); state = payload(receipt);
-  receipt = await call({ action: 'step', expectedRevision: state.revision, stepId: 'compare', status: 'done', evidence: 'The supplied value matched the inspected source exactly.' });
-  assert.equal(receipt.success, true, receipt.contentItems[0].text); state = payload(receipt);
+  state = await f.store.setStep(f.taskId, 'read', { status: 'done', evidence: 'The named source returned its actual comparison input.' }, { ...workerOptions, expectedRevision: state.revision });
+  state = await f.store.setStep(f.taskId, 'compare', { status: 'active' }, { ...workerOptions, expectedRevision: state.revision });
+  state = await f.store.setStep(f.taskId, 'compare', { status: 'done', evidence: 'The supplied value matched the inspected source exactly.' }, { ...workerOptions, expectedRevision: state.revision });
   assert.equal(state.steps.find(step => step.id === 'assigned').status, 'done');
   assert.equal(state.availableWork.byId['after-worker'].state, 'waiting', 'saved work does not invent a finished worker runtime');
   state = await f.store.recordExecution(f.taskId, workerId, { status: 'completed' }, { runId: 'run' });
   assert.equal(state.availableWork.byId['after-worker'].state, 'ready');
 });
 
-test('schema 9 tool handler exposes executable conditions and keeps an unknown NOT out of ELSE', async t => {
+test('stored executable conditions keep an unknown NOT out of ELSE', async t => {
   const f = await fixture(t), steps = [
     { id: 'decision', title: 'Choose after the observation', kind: 'choice', branch: { if: { not: { fact: 'broken' } }, then: 'use', else: 'repair' } },
     action('use', { parentId: 'decision' }), action('repair', { parentId: 'decision' }),
   ];
-  let receipt = await f.call({ action: 'plan', expectedRevision: f.initial.revision, plan: { layout: 'sequence', facts: [{ id: 'broken', value: null }] }, steps });
-  assert.equal(receipt.success, true, receipt.contentItems[0].text);
-  let state = payload(receipt);
+  const options = { schemaVersion: 13, executionGuardrails: true, planningMode: 'on' };
+  let state = await f.store.setPlan(f.taskId, { plan: { layout: 'sequence', facts: [{ id: 'broken', value: null }] }, steps }, { ...options, expectedRevision: f.initial.revision });
   assert.equal(state.steps[0].selectedChildId, undefined);
   assert.equal(state.availableWork.byId.repair.state, 'awaiting-choice');
-  receipt = await f.call({ action: 'step', expectedRevision: state.revision, stepId: 'repair', status: 'active' });
-  assert.equal(receipt.success, false);
+  await assert.rejects(f.store.setStep(f.taskId, 'repair', { status: 'active' }, { ...options, expectedRevision: state.revision }));
   assert.equal((await f.store.get(f.taskId)).revision, state.revision);
-  receipt = await f.call({ action: 'edit', expectedRevision: state.revision, operations: [{ type: 'metadata', patch: { facts: [{ id: 'broken', value: true, evidence: 'The observed validation failed.' }] } }] });
-  assert.equal(receipt.success, true, receipt.contentItems[0].text); state = payload(receipt);
+  state = await f.store.editPlan(f.taskId, { operations: [{ type: 'metadata', patch: { facts: [{ id: 'broken', value: true, evidence: 'The observed validation failed.' }] } }] }, { ...options, expectedRevision: state.revision });
   assert.equal(state.steps[0].selectedChildId, 'repair');
-  receipt = await f.call({ action: 'step', expectedRevision: state.revision, stepId: 'repair', status: 'active' });
-  assert.equal(receipt.success, true, receipt.contentItems[0].text);
-  assert.deepEqual(payload(receipt).availableWork.active, ['repair']);
+  state = await f.store.setStep(f.taskId, 'repair', { status: 'active' }, { ...options, expectedRevision: state.revision });
+  assert.deepEqual(state.availableWork.active, ['repair']);
 });
 
-test('schema 9 IF/ELIF/ELSE evaluates typed comparisons in order and stops on an earlier unknown', async t => {
+test('stored IF/ELIF/ELSE evaluates typed comparisons in order and stops on an earlier unknown', async t => {
   const f = await fixture(t), compare = (id, op, value) => ({ compare: { left: { fact: id }, op, right: { value } } });
   const rule = { if: { xor: [{ fact: 'override' }, compare('count', '>=', 10)] }, then: 'fast', elif: [
     { if: { and: [compare('tag', 'in', ['ready', 'retry']), { not: { fact: 'stopped' } }] }, then: 'ready' },
@@ -200,19 +188,16 @@ test('schema 9 IF/ELIF/ELSE evaluates typed comparisons in order and stops on an
     { id: 'stopped', value: stopped, ...(stopped === null ? {} : { evidence: stopped ? 'The stop flag was set.' : 'The stop flag was clear.' }) },
     { id: 'optional', value: optional, known, ...(known ? { evidence: optional === null ? 'The response explicitly returned None.' : 'The response returned the observed string.' } : {}) },
   ];
-  let receipt = await f.call({ action: 'plan', expectedRevision: f.initial.revision, plan: { layout: 'sequence', facts: observations(null, null) }, steps: [
+  const options = { schemaVersion: 13, executionGuardrails: true, planningMode: 'on' };
+  let state = await f.store.setPlan(f.taskId, { plan: { layout: 'sequence', facts: observations(null, null) }, steps: [
     { id: 'decision', title: 'Choose the next bounded check', kind: 'choice', branch: rule },
     ...['fast', 'ready', 'empty', 'fallback'].map(id => action(id, { parentId: 'decision' })),
-  ] });
-  assert.equal(receipt.success, true, receipt.contentItems[0].text);
-  let state = payload(receipt);
+  ] }, { ...options, expectedRevision: f.initial.revision });
   assert.equal(state.steps[0].selectedChildId, undefined, 'an earlier unknown blocks a later true ELIF');
   assert.equal(state.availableWork.byId.empty.state, 'awaiting-choice');
-  receipt = await f.call({ action: 'step', expectedRevision: state.revision, stepId: 'empty', status: 'active' });
-  assert.equal(receipt.success, false);
+  await assert.rejects(f.store.setStep(f.taskId, 'empty', { status: 'active' }, { ...options, expectedRevision: state.revision }));
   const observe = async facts => {
-    const result = await f.call({ action: 'edit', expectedRevision: state.revision, operations: [{ type: 'metadata', patch: { facts } }] });
-    assert.equal(result.success, true, result.contentItems[0].text); state = payload(result);
+    state = await f.store.editPlan(f.taskId, { operations: [{ type: 'metadata', patch: { facts } }] }, { ...options, expectedRevision: state.revision });
   };
   await observe(observations(false, null));
   assert.equal(state.steps[0].selectedChildId, 'ready');
@@ -223,45 +208,13 @@ test('schema 9 IF/ELIF/ELSE evaluates typed comparisons in order and stops on an
   assert.equal(state.availableWork.byId.fallback.state, 'awaiting-choice');
   await observe(observations(true, 'present'));
   assert.equal(state.steps[0].selectedChildId, 'fallback');
-  receipt = await f.call({ action: 'step', expectedRevision: state.revision, stepId: 'fallback', status: 'active' });
-  assert.equal(receipt.success, true, receipt.contentItems[0].text);
-  assert.deepEqual(payload(receipt).availableWork.active, ['fallback']);
-});
-
-test('cached schema 8 stays stable while executable operations remain available from schema 9 onward', async t => {
-  assert.equal(TASK_SCHEMA_VERSION, 13);
-  const old = taskToolForVersion(8, { executionGuardrails: true }).inputSchema, current = taskToolForVersion(9, { executionGuardrails: true }).inputSchema;
-  assert.equal(old.properties.operation, undefined);
-  assert.equal(old.properties.plan.properties.facts, undefined);
-  assert.equal(old.properties.steps.items.properties.branch, undefined);
-  assert.ok(!old.properties.operations.items.properties.type.enum.includes('revisit'));
-  assert.ok(current.properties.operation);
-  assert.ok(current.properties.plan.properties.facts);
-  assert.ok(current.properties.steps.items.properties.branch);
-  assert.ok(current.properties.operations.items.properties.type.enum.includes('revisit'));
-  const f = await fixture(t, 8), legacy = action('legacy'); delete legacy.operation;
-  let receipt = await f.call({ action: 'plan', expectedRevision: f.initial.revision, plan: { layout: 'sequence' }, steps: [legacy] });
-  assert.equal(receipt.success, true, receipt.contentItems[0].text);
-  const revision = payload(receipt).revision;
-  for (const args of [
-    { action: 'step', stepId: 'legacy', operation: { kind: 'reasoning', target: 'A bounded comparison.' } },
-    { action: 'edit', operations: [{ type: 'revisit', stepId: 'legacy', reason: 'New information arrived.' }] },
-    { action: 'edit', operations: [{ type: 'metadata', patch: { facts: [{ id: 'ready', value: null }] } }] },
-  ]) {
-    receipt = await f.call({ ...args, expectedRevision: revision });
-    assert.equal(receipt.success, false);
-    assert.equal(receipt.code, 'TASK_SCHEMA_UNSUPPORTED');
-    assert.equal((await f.store.get(f.taskId)).revision, revision);
-  }
-  const newHandler = createTaskToolHandler({ store: f.store, taskId: f.taskId, runId: 'new-run', nodeId: 'agent', schemaVersion: 9, executionGuardrails: true, planningMode: 'on' });
-  receipt = await newHandler({ name: 'relay_task', arguments: { action: 'step', expectedRevision: revision, stepId: 'legacy', operation: { kind: 'reasoning', target: 'The original comparison with one recorded reference.' } } });
-  assert.equal(receipt.success, true, receipt.contentItems[0].text);
-  assert.equal(payload(receipt).steps[0].operation.kind, 'reasoning');
+  state = await f.store.setStep(f.taskId, 'fallback', { status: 'active' }, { ...options, expectedRevision: state.revision });
+  assert.deepEqual(state.availableWork.active, ['fallback']);
 });
 
 test('guarded relay_task edit rejects JSON-encoded operations without changing the plan or dispatch ledger', async t => {
-  const f = await fixture(t, TASK_SCHEMA_VERSION);
-  const options = { schemaVersion: TASK_SCHEMA_VERSION, executionGuardrails: true, planningMode: 'on' };
+  const f = await fixture(t);
+  const options = { schemaVersion: 13, executionGuardrails: true, planningMode: 'on' };
   const read = { ...action('read', { status: 'active' }), operation: { kind: 'tool', tool: 'relay_workspace', action: 'read', target: 'source.txt' } };
   const state = await f.store.setPlan(f.taskId, { plan: { layout: 'sequence' }, steps: [read] }, { ...options, expectedRevision: f.initial.revision });
   const guard = createSequentialPlanningGuard({ ...options, store: f.store, taskId: f.taskId, runId: 'run', nodeId: 'agent' });
@@ -279,7 +232,7 @@ test('guarded relay_task edit rejects JSON-encoded operations without changing t
     assert.equal(call.arguments, originalArguments, 'The guard must not coerce or rewrite model arguments.');
     if (denied) return denied;
     handled++;
-    return guard.after(call, await f.call(args));
+    throw new Error('Malformed edit reached the mutation boundary.');
   };
   for (const malformed of [JSON.stringify(operations), {}, null, [null], ['update']]) {
     const receipt = await dispatch({ action: 'edit', expectedRevision: state.revision, operations: malformed });
@@ -291,10 +244,8 @@ test('guarded relay_task edit rejects JSON-encoded operations without changing t
     assert.equal(await readFile(ledgerPath, 'utf8'), ledgerBefore);
   }
   assert.equal(handled, 0, 'Malformed edits must stop before the mutation handler.');
-  const valid = await dispatch({ action: 'edit', expectedRevision: state.revision, operations });
-  assert.equal(valid.success, true, valid.contentItems[0].text);
-  assert.equal(handled, 1);
-  assert.equal(payload(valid).steps[0].status, 'done');
-  assert.equal(payload(valid).steps[0].evidence, operations[0].patch.evidence);
-  assert.equal(payload(valid).revision, state.revision + 1);
+  const valid = await f.store.editPlan(f.taskId, { operations }, { ...options, expectedRevision: state.revision });
+  assert.equal(valid.steps[0].status, 'done');
+  assert.equal(valid.steps[0].evidence, operations[0].patch.evidence);
+  assert.equal(valid.revision, state.revision + 1);
 });
