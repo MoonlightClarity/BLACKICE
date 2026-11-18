@@ -1,0 +1,34 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {EventEmitter} from 'node:events';
+import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {createHarnessServer} from '../server.mjs';
+class Runtime extends EventEmitter{status(){return{connected:true,authenticated:true,defaultModel:'fixture',models:[{id:'fixture',supportsTools:true}]};}async start(){return this.status();}async runAgent(){throw Error('TODO operations must not start a model.');}async close(){}}
+test('authenticated TODO HTTP supports outline edits, replay and restart while legacy records remain untouched',async t=>{
+ const root=await mkdtemp(path.join(tmpdir(),'blackice-todo-http-')),dataDir=path.join(root,'data'),cwd=path.join(root,'work');await mkdir(dataDir);await mkdir(cwd);
+ const legacy=JSON.stringify({projects:[{id:'old',name:'Earlier project',objective:'Keep reference',workers:[{token:'private-worker-token'}],items:[{id:'old-item',title:'Earlier item',phase:'queued',privateToken:'secret'}]}]});
+ await writeFile(path.join(dataDir,'swarm-board.json'),legacy);
+ let app,base,cookie;
+ const open=async()=>{app=await createHarnessServer({runtime:new Runtime(),dataDir,defaultCwd:cwd,port:0,remoteAccess:false});base=await app.listen();cookie=(await fetch(base)).headers.get('set-cookie').split(';')[0];};
+ await open();t.after(async()=>{await app.close();await rm(root,{recursive:true,force:true});});
+ const request=async(route,method='GET',value,headers={})=>{const res=await fetch(new URL(route,base),{method,headers:{Cookie:cookie,...(method==='GET'?{}:{'Content-Type':'application/json'}),...headers},...(method==='GET'?{}:{body:JSON.stringify(value)})});return{status:res.status,value:await res.json()};};
+ const empty=await request('/api/todos');assert.equal(empty.status,200);assert.equal(empty.value.items.length,0);assert.equal(empty.value.legacyAvailable,true);
+ const create={action:'create',id:'parent',title:'Parent',expectedRevision:empty.value.revision,requestId:'create-parent'};
+ const parent=await request('/api/todos','POST',create);assert.equal(parent.status,200,JSON.stringify(parent.value));
+ const child=await request('/api/todos','POST',{action:'create',id:'child',parentId:'parent',title:'Child',expectedRevision:parent.value.revision,requestId:'create-child'});assert.equal(child.status,200);
+ const replay=await request('/api/todos','POST',create);assert.equal(replay.status,200);assert.equal(replay.value.items.length,2);
+ const cycle=await request('/api/todos','POST',{action:'move',id:'parent',parentId:'child',expectedRevision:child.value.revision,requestId:'bad-cycle'});assert.equal(cycle.status,400);
+ assert.equal((await request('/api/todos','POST',{action:'update',id:'child',title:'Stale',expectedRevision:empty.value.revision,requestId:'stale-edit'})).status,409);
+ assert.equal((await request('/api/todos','POST',{action:'update',id:'child',completed:true,expectedRevision:child.value.revision,requestId:'remote-edit'},{'x-blackice-remote':'1'})).status,403);
+ const done=await request('/api/todos','POST',{action:'update',id:'child',completed:true,expectedRevision:child.value.revision,requestId:'done-child'});assert.equal(done.status,200);
+ const preview=await request('/api/todos/legacy');assert.equal(preview.value.readOnly,true);assert.equal(preview.value.projects[0].items[0].title,'Earlier item');assert.doesNotMatch(JSON.stringify(preview.value),/private-worker-token|privateToken|secret/);
+ assert.equal(await readFile(path.join(dataDir,'swarm-board.json'),'utf8'),legacy);
+ await app.close();await open();const restored=await request('/api/todos');assert.deepEqual(restored.value,done.value);
+ assert.equal((await request('/api/todos','POST',create)).value.items.length,2);
+ assert.equal((await request('/api/todos','POST',{...create,title:'Changed'})).status,409);
+ const removed=await request('/api/todos','POST',{action:'remove',id:'parent',expectedRevision:done.value.revision,requestId:'remove-tree'});assert.equal(removed.value.items.length,0);
+ assert.equal(await readFile(path.join(dataDir,'swarm-board.json'),'utf8'),legacy);
+ assert.equal(app.engine.listRuns().length,0);
+});
