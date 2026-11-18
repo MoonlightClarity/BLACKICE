@@ -422,7 +422,7 @@ function createWindow() {
     closeWindow:()=>{if(!window.isDestroyed())window.close();},
     onRetained:()=>desktopLifecycle.cancelQuit(),
     onError:error=>{void diagnostics.recordError('native-apps','detach_failed',error);},
-    onAllowed:()=>{recovery.stop();void saveWindowState();}
+    onAllowed:()=>{void saveWindowState();}
   });
   mainWindow.on('close',ordinaryClose);
   mainWindow.on('closed', () => { mainWindow = null; launcherWindowClosed(); });

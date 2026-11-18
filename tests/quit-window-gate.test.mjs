@@ -23,3 +23,10 @@ test('frontend cleanup waits for accepted navigation, preserving the cancelled e
  assert.match(source,/addEventListener\('pagehide'/);assert.doesNotMatch(source,/addEventListener\('beforeunload'/);
  const skills=await readFile(new URL('../public/next/workspaces/skills.mjs',import.meta.url),'utf8');assert.match(skills,/drafts.size\|\|rename/);assert.match(skills,/event.preventDefault\(\)/);
 });
+test('desktop recovery remains active until accepted close, not before renderer veto',async()=>{
+ const source=await readFile(new URL('../desktop/main.mjs',import.meta.url),'utf8');
+ assert.match(source,/onAllowed:\(\)=>\{void saveWindowState\(\);\}/);
+ assert.doesNotMatch(source,/onAllowed:\(\)=>\{recovery.stop\(\)/);
+ const recovery=await readFile(new URL('../desktop/renderer-recovery.mjs',import.meta.url),'utf8');
+ assert.match(recovery,/this.listen\(window, 'closed', \(\) => this.stop\(\)\)/);
+});
