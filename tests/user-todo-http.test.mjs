@@ -5,6 +5,8 @@ import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createHarnessServer} from '../server.mjs';
+import {planningDOM} from './fixture-planning-dom.mjs';
+import {createTodosWorkspace} from '../public/next/workspaces/todos.mjs';
 class Runtime extends EventEmitter{status(){return{connected:true,authenticated:true,defaultModel:'fixture',models:[{id:'fixture',supportsTools:true}]};}async start(){return this.status();}async runAgent(){throw Error('TODO operations must not start a model.');}async close(){}}
 test('authenticated TODO HTTP supports outline edits, replay and restart while legacy records remain untouched',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'blackice-todo-http-')),dataDir=path.join(root,'data'),cwd=path.join(root,'work');await mkdir(dataDir);await mkdir(cwd);
@@ -30,5 +32,18 @@ test('authenticated TODO HTTP supports outline edits, replay and restart while l
  assert.equal((await request('/api/todos','POST',{...create,title:'Changed'})).status,409);
  const removed=await request('/api/todos','POST',{action:'remove',id:'parent',expectedRevision:done.value.revision,requestId:'remove-tree'});assert.equal(removed.value.items.length,0);
  assert.equal(await readFile(path.join(dataDir,'swarm-board.json'),'utf8'),legacy);
+ const dom=planningDOM(t);
+ const api=async(route,method='GET',value)=>{const response=await request(route,method,value);if(response.status>=400)throw Error(response.value.error);return response.value;};
+ const ui=createTodosWorkspace({mount:dom.mount,api,events:{subscribe:()=>()=>{}}});t.after(()=>ui.destroy());
+ const until=async predicate=>{for(let i=0;i<200;i++){if(predicate())return;await new Promise(r=>setTimeout(r,10));}assert.fail('TODO UI did not settle');};
+ const button=text=>dom.mount.querySelectorAll('button').find(x=>x.textContent===text);
+ ui.enter();await until(()=>dom.$('.todo-outline').textContent.includes('No tasks'));
+ dom.$('.todo-add input').value='Actual HTTP parent';await dom.$('.todo-add').dispatch('submit');await until(()=>Boolean(button('Actual HTTP parent')));
+ await button('Actual HTTP parent').dispatch('click');await button('Add subtask').dispatch('click');
+ dom.$('.todo-add input').value='Actual HTTP child';await dom.$('.todo-add').dispatch('submit');await until(()=>Boolean(button('Actual HTTP child')));
+ const stored=await app.userTodos.snapshot(),rootItem=stored.items.find(x=>x.title==='Actual HTTP parent'),childItem=stored.items.find(x=>x.title==='Actual HTTP child');
+ assert.equal(childItem.parentId,rootItem.id);assert.equal(childItem.position,0);
+ await button('Outdent').dispatch('click');await until(()=>dom.$('.todo-feedback').textContent==='Saved.');
+ assert.equal((await app.userTodos.snapshot()).items.find(x=>x.id===childItem.id).parentId,null);
  assert.equal(app.engine.listRuns().length,0);
 });
