@@ -132,8 +132,8 @@ test('committed metadata changes publish ordered family receipts independently f
  assert.equal(archive.list('archived')[0].title,'Shared current title');
  const deleted=await archive.setState(second.id,'deleted'),restored=await archive.setState(first.id,'active');assert.equal(deleted.revision,3);assert.equal(restored.revision,4);assert.equal(receipts.length,4);
  await archive.capture(second);assert.equal(receipts.length,4);assert.equal(archive.status().metadataRevision,4);await archive.close();
- const reopened=await new ConversationArchive({dataDir,engine:new Engine()}).init();archives.push(reopened);assert.equal(reopened.status().metadataRevision,0);assert.equal(reopened.list()[0].title,'Shared current title');assert.equal(reopened.list()[0].state,'active');
- const next=await reopened.rename(first.id,'Title after reopening');assert.equal(next.revision,1);
+ const reopened=await new ConversationArchive({dataDir,engine:new Engine()}).init();archives.push(reopened);assert.equal(reopened.status().metadataRevision,4);assert.equal(reopened.list()[0].title,'Shared current title');assert.equal(reopened.list()[0].state,'active');
+ const next=await reopened.rename(first.id,'Title after reopening');assert.equal(next.revision,5);
 });
 
 test('failed metadata saves emit no change receipt or revision and later commits publish the actual retained state',async t=>{
